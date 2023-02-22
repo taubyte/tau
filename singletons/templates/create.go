@@ -1,5 +1,7 @@
 package templates
 
+import git "github.com/taubyte/go-simple-git"
+
 var _templates *templates
 
 func getOrCreateTemplates() *templates {
@@ -11,4 +13,8 @@ func getOrCreateTemplates() *templates {
 	}
 
 	return _templates
+}
+
+func (t *templates) Repository() *git.Repository {
+	return t.repository
 }
