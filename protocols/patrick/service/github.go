@@ -15,13 +15,13 @@ import (
 	"github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
-	"github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/utils/id"
 	"gopkg.in/go-playground/webhooks.v5/github"
 )
 
 func (srv *PatrickService) githubCheckHookAndExtractSecret(ctx http.Context) (interface{}, error) {
-	if common.FakeSecret && srv.devMode {
+	if protocolsCommon.FakeSecret && srv.devMode {
 		ctx.SetVariable("GithubSecret", "taubyte_secret")
 		return nil, nil
 	}
@@ -58,9 +58,9 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 		return nil, err
 	}
 
-	if common.DelayJob {
+	if protocolsCommon.DelayJob {
 		newJob.Delay = &patrick.DelayConfig{
-			Time: int(common.DelayJobTime),
+			Time: int(protocolsCommon.DelayJobTime),
 		}
 	}
 

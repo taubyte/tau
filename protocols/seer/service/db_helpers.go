@@ -10,11 +10,10 @@ import (
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
-	"github.com/taubyte/odo/protocols/seer/common"
 )
 
 func (srv *oracleService) insertService(id string, service iface.ServiceInfo) error {
-	statement, err := srv.seer.nodeDB.Prepare(common.InsertService)
+	statement, err := srv.seer.nodeDB.Prepare(InsertService)
 	if err != nil {
 		return fmt.Errorf("insertService prepare failed with: %s", err)
 	}
@@ -32,7 +31,7 @@ func (srv *oracleService) insertService(id string, service iface.ServiceInfo) er
 }
 
 func (srv *oracleService) insertMeta(id string, mtype iface.ServiceType, key string, value string) error {
-	statement, err := srv.seer.nodeDB.Prepare(common.InsertMeta)
+	statement, err := srv.seer.nodeDB.Prepare(InsertMeta)
 	if err != nil {
 		return fmt.Errorf("meta prepare failed with: %s", err)
 	}
@@ -56,7 +55,7 @@ func (h *dnsHandler) getServiceIp(service string) ([]string, error) {
 	unique := make(map[string]bool, 0)
 
 	h.seer.nodeDBMutex.RLock()
-	rows, err := h.seer.nodeDB.Query(common.GetServiceIp, time.Now().UnixNano()-common.ValidServiceResponseTime.Nanoseconds(), service)
+	rows, err := h.seer.nodeDB.Query(GetServiceIp, time.Now().UnixNano()-ValidServiceResponseTime.Nanoseconds(), service)
 	h.seer.nodeDBMutex.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("getServiceIp for `%s` query failed with: %s", service, err)
@@ -90,7 +89,7 @@ func (h *dnsHandler) getNodeIp() ([]string, error) {
 	unique := make(map[string]bool, 0)
 	// Query for nodes that have responded in the last 5 minutes
 	h.seer.nodeDBMutex.RLock()
-	rows, err := h.seer.nodeDB.Query(common.GetStableNodeIps, time.Now().UnixNano()-common.ValidServiceResponseTime.Nanoseconds())
+	rows, err := h.seer.nodeDB.Query(GetStableNodeIps, time.Now().UnixNano()-ValidServiceResponseTime.Nanoseconds())
 	h.seer.nodeDBMutex.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("getNodeIp query failed with: %s", err)
@@ -117,7 +116,7 @@ func (h *dnsHandler) getNodeIp() ([]string, error) {
 func initializeDB(srv *Service, config *commonIface.GenericConfig) error {
 	var file *os.File
 	var err error
-	dbPath := path.Join(config.Root, common.NodeDatabaseFileName)
+	dbPath := path.Join(config.Root, NodeDatabaseFileName)
 	// Create SQLite DB
 	file, err = os.Open(dbPath)
 	if err != nil {

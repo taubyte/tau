@@ -6,7 +6,7 @@ import (
 	"time"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/odo/protocols/monkey/common"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
 // Used in tests for setting the unexported contexts
@@ -22,15 +22,15 @@ func (c *Context) ForceGitDir(dir string) {
 }
 
 func (c *Context) startTimeout(ctx context.Context, ctxC context.CancelFunc) {
-	defaultWaitTime := common.DefaultLockTime
-	if common.TimeoutTest {
+	defaultWaitTime := protocolCommon.DefaultLockTime
+	if protocolCommon.TimeoutTest {
 		defaultWaitTime = 5
 	}
 
 	<-time.After(time.Duration(defaultWaitTime) * time.Second)
 	err := c.Patrick.Timeout(c.Job.Id)
 	if err != nil {
-		common.Logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Sending timeout for job %s failed with %v", c.Job.Id, err)})
+		logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Sending timeout for job %s failed with %v", c.Job.Id, err)})
 		return
 	}
 

@@ -17,7 +17,8 @@ import (
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
-	common "github.com/taubyte/odo/protocols/hoarder/common"
+
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
 var (
@@ -40,7 +41,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	err := config.Build(commonIface.ConfigBuilder{
-		DefaultP2PListenPort: common.DefaultP2PListenPort,
+		DefaultP2PListenPort: protocolCommon.HoarderDefaultP2PListenPort,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("config build failed with: %s", err)
@@ -50,7 +51,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 
 	// TODO move database root to new
 	if config.Node == nil {
-		srv.node, err = configutils.NewNode(ctx, config, common.DatabaseName)
+		srv.node, err = configutils.NewNode(ctx, config, protocolCommon.Hoarder)
 		if err != nil {
 			return nil, fmt.Errorf("config new node failed with: %s", err)
 		}
@@ -64,7 +65,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 		clientNode = config.ClientNode
 	}
 
-	if srv.stream, err = streams.New(srv.node, common.ServiceName, common.Protocol); err != nil {
+	if srv.stream, err = streams.New(srv.node, protocolCommon.Hoarder, protocolCommon.HoarderProtocol); err != nil {
 		return nil, fmt.Errorf("new streams failed with: %s", err)
 	}
 
@@ -94,8 +95,8 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 }
 
 func (srv *Service) Close() error {
-	fmt.Println("Closing", common.DatabaseName)
-	defer fmt.Println(common.DatabaseName, "closed")
+	fmt.Println("Closing", protocolCommon.Hoarder)
+	defer fmt.Println(protocolCommon.Hoarder, "closed")
 
 	srv.stream.Stop()
 	srv.tnsClient.Close()

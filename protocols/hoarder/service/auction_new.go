@@ -8,8 +8,9 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
-	"github.com/taubyte/odo/protocols/hoarder/common"
 )
+
+const maxWaitTime = 15 * time.Second
 
 func (srv *Service) auctionNew(auction *hoarderIface.Auction, msg *pubsub.Message) error {
 	srv.startAuction(auction)
@@ -44,7 +45,7 @@ func (srv *Service) startAuction(action *hoarderIface.Auction) {
 		case <-srv.ctx.Done():
 			return
 
-		case <-time.After(common.MaxWaitTime):
+		case <-time.After(maxWaitTime):
 			if err := srv.publishAction(srv.ctx, action, hoarderIface.AuctionEnd); err != nil {
 				logger.Errorf("action publish failed with: %s", err)
 			}

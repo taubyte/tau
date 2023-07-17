@@ -12,9 +12,8 @@ import (
 	"github.com/taubyte/go-interfaces/services/seer"
 
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
-	common "github.com/taubyte/odo/protocols/tns/common"
-
 	commonSpec "github.com/taubyte/go-specs/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/engine"
 
 	configutils "bitbucket.org/taubyte/p2p/config"
@@ -35,7 +34,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	err := config.Build(commonIface.ConfigBuilder{
-		DefaultP2PListenPort: common.DefaultP2PListenPort,
+		DefaultP2PListenPort: protocolsCommon.TnsDefaultP2PListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
 	})
 	if err != nil {
@@ -43,7 +42,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewNode(ctx, config, common.DatabaseName)
+		srv.node, err = configutils.NewNode(ctx, config, protocolsCommon.Tns)
 		if err != nil {
 			return nil, err
 		}
@@ -51,7 +50,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 		srv.node = config.Node
 	}
 
-	srv.db, err = kv.New(logger.Std(), srv.node, common.DatabaseName, 5)
+	srv.db, err = kv.New(logger.Std(), srv.node, protocolsCommon.Tns, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +63,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	// should end if any of the two contexts ends
 
 	// P2P
-	srv.stream, err = streams.New(srv.node, common.ServiceName, commonSpec.TnsProtocol)
+	srv.stream, err = streams.New(srv.node, protocolsCommon.Tns, commonSpec.TnsProtocol)
 	if err != nil {
 		return nil, err
 	}
@@ -91,8 +90,8 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 
 func (srv *Service) Close() error {
 	// TODO use debug logger
-	fmt.Println("Closing", common.DatabaseName)
-	defer fmt.Println(common.DatabaseName, "closed")
+	fmt.Println("Closing", protocolsCommon.Tns)
+	defer fmt.Println(protocolsCommon.Tns, "closed")
 
 	// node.ctx
 	srv.stream.Stop()

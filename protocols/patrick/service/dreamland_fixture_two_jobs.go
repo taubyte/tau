@@ -7,13 +7,12 @@ import (
 
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
 	"bitbucket.org/taubyte/dreamland/common"
-	commonAuth "github.com/taubyte/odo/protocols/auth/common"
 
 	dreamlandRegistry "bitbucket.org/taubyte/dreamland/registry"
 	"github.com/taubyte/go-interfaces/services/tns"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
-	_patrick "github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 
 	_ "github.com/taubyte/odo/protocols/auth/service"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
@@ -58,13 +57,13 @@ func fixture(u common.Universe, params ...interface{}) error {
 	}
 
 	// override ID of project generated so that it matches id in config
-	commonAuth.GetNewProjectID = func(args ...interface{}) string { return commonTest.ProjectID }
+	protocolsCommon.GetNewProjectID = func(args ...interface{}) string { return commonTest.ProjectID }
 
 	if err = commonTest.RegisterTestProject(u.Context(), mockAuthURL); err != nil {
 		return fmt.Errorf("registering test project failed with %w", err)
 	}
 
-	_patrick.FakeSecret = true
+	protocolsCommon.FakeSecret = true
 	if err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo); err != nil {
 		return fmt.Errorf("pushing conifg job failed with %w", err)
 	}
@@ -87,7 +86,7 @@ func fixture(u common.Universe, params ...interface{}) error {
 
 	attempts = 0
 	var response tns.Object
-	response = _patrick.NewEmptyObject()
+	response = newEmptyObject()
 	for {
 		commitObj, err := tnsClient.Fetch(spec.Current(commonTest.ProjectID, commonTest.Branch))
 		if err != nil {

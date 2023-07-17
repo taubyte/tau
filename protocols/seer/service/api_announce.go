@@ -8,7 +8,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/go-interfaces/p2p/streams"
 	"github.com/taubyte/go-interfaces/services/seer"
-	seerCommon "github.com/taubyte/odo/protocols/seer/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 )
 
 func parseServicefromBody(body streams.Body) (seer.Services, error) {
@@ -73,7 +73,7 @@ func (srv *oracleService) announceServiceHandler(ctx context.Context, conn strea
 		return nil, fmt.Errorf("failed marshalling node %s with %v", id, err)
 	}
 
-	err = srv.seer.node.PubSubPublish(ctx, seerCommon.OraclePubSubPath, nodeBytes)
+	err = srv.seer.node.PubSubPublish(ctx, protocolsCommon.OraclePubSubPath, nodeBytes)
 	if err != nil {
 		return nil, fmt.Errorf("sending node `%s` from seer `%s` over pubsub failed with: %s", id, srv.seer.node.ID(), err)
 	}

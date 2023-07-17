@@ -10,9 +10,10 @@ import (
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/p2p/streams"
-	common "github.com/taubyte/odo/protocols/auth/common"
 	dirs "github.com/taubyte/utils/fs/dir"
 	maps "github.com/taubyte/utils/maps"
+
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
 var (
@@ -47,7 +48,7 @@ func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss erro
 
 	c.errCacheMiss = errCacheMiss
 	//[]string{"12D3KooWMrLZ2m7dTJf1a1VEsReJnRH1iNRg9U9WyLMQHMZTnjAB", "12D3KooWBm5BkzoAt4yyxodtrRsZUoWZ5aHCg3KRx8WJofAZsPsa"}
-	c.client, err = client.New(ctx, node, nil, common.Protocol, MinPeers, MaxPeers)
+	c.client, err = client.New(ctx, node, nil, protocolCommon.AuthProtocol, MinPeers, MaxPeers)
 	if err != nil {
 		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("ACME Store creation failed: %s", err.Error())})
 		return nil, err

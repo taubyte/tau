@@ -11,7 +11,7 @@ import (
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	iface "github.com/taubyte/go-interfaces/services/patrick"
-	"github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 )
 
 var (
@@ -33,7 +33,7 @@ func New(ctx context.Context, node peer.Node) (iface.Client, error) {
 		c   Client
 		err error
 	)
-	if c.client, err = client.New(ctx, node, nil, common.Protocol, MinPeers, MaxPeers); err != nil {
+	if c.client, err = client.New(ctx, node, nil, protocolsCommon.Patrick, MinPeers, MaxPeers); err != nil {
 		logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("API client creation failed: %s", err.Error())})
 		return nil, err
 	}

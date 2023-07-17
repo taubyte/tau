@@ -13,7 +13,6 @@ import (
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/seer"
-	"github.com/taubyte/odo/protocols/seer/common"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -101,7 +100,7 @@ func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn stre
 	address := conn.RemoteMultiaddr().String()
 	addr := strings.Split(address, "/")
 
-	statement, err := srv.seer.nodeDB.Prepare(common.UsageStatement)
+	statement, err := srv.seer.nodeDB.Prepare(UsageStatement)
 	if err != nil {
 		return nil, fmt.Errorf("failed heartbeat insert prepare with: %w", err)
 	}

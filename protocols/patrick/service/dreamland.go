@@ -7,9 +7,8 @@ import (
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	dreamlandRegistry "bitbucket.org/taubyte/dreamland/registry"
 	iface "github.com/taubyte/go-interfaces/common"
-
 	commonIface "github.com/taubyte/go-interfaces/services/common"
-	patrickCommon "github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 )
 
 func init() {
@@ -32,14 +31,14 @@ func createPatrickService(ctx context.Context, config *iface.ServiceConfig) (ifa
 	// Used to test cancel job on go-patrick-http
 	if result, ok := config.Others["delay"]; ok {
 		if result == 1 {
-			patrickCommon.DelayJob = true
+			protocolsCommon.DelayJob = true
 		}
 	}
 
 	// Used to test retry job on go-patrick-http
 	if result, ok := config.Others["retry"]; ok {
 		if result == 1 {
-			patrickCommon.RetryJob = true
+			protocolsCommon.RetryJob = true
 		}
 	}
 

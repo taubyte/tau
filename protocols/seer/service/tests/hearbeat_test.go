@@ -11,7 +11,7 @@ import (
 	dreamland "bitbucket.org/taubyte/dreamland/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
-	"github.com/taubyte/odo/protocols/seer/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"gotest.tools/v3/assert"
 )
 
@@ -34,7 +34,7 @@ func TestHeartbeat(t *testing.T) {
 
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer": {Others: map[string]int{"dns": common.DefaultDevDnsPort, "mock": 1}},
+			"seer": {Others: map[string]int{"dns": protocolsCommon.DefaultDevDnsPort, "mock": 1}},
 		},
 		Simples: simConf,
 	})
