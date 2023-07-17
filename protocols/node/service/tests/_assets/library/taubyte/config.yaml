@@ -1,0 +1,6 @@
+version: "1.1"
+enviroment:
+  image: taubyte/go-wasi:latest
+  variables: {}
+workflow:
+- build
