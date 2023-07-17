@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"time"
 
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
@@ -81,7 +81,7 @@ func readLogsTestHelper(testCtx context.Context, response *monkey.StatusResponse
 		return fmt.Errorf("Getting log filed failed with %s", err.Error())
 	}
 	// Read the logs
-	logs, err := ioutil.ReadAll(rs)
+	logs, err := io.ReadAll(rs)
 	if err != nil {
 		return fmt.Errorf("Reading log file failed with %s", err.Error())
 	}

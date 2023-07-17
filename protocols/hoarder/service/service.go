@@ -7,8 +7,6 @@ import (
 	moodyBlues "bitbucket.org/taubyte/go-moody-blues"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
-	seer_client "bitbucket.org/taubyte/seer-p2p-client"
-	tnsApi "bitbucket.org/taubyte/tns-p2p-client"
 	"github.com/fxamacker/cbor/v2"
 	pebble "github.com/ipfs/go-ds-pebble"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -17,6 +15,8 @@ import (
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
+	seer_client "github.com/taubyte/odo/clients/p2p/seer"
+	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
 	common "github.com/taubyte/odo/protocols/hoarder/common"
 )
 

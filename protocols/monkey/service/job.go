@@ -10,7 +10,7 @@ import (
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/go-specs/methods"
-	authClient "github.com/taubyte/odo/protocols/auth/api/p2p"
+	authClient "github.com/taubyte/odo/clients/p2p/auth"
 	common "github.com/taubyte/odo/protocols/monkey/common"
 	"github.com/taubyte/odo/protocols/monkey/jobs"
 )

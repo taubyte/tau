@@ -9,8 +9,8 @@ import (
 	dreamland "bitbucket.org/taubyte/dreamland/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 
-	_ "github.com/taubyte/odo/protocols/monkey/api/p2p"
-	_ "github.com/taubyte/odo/protocols/patrick/api/p2p"
+	_ "github.com/taubyte/odo/clients/p2p/monkey"
+	_ "github.com/taubyte/odo/clients/p2p/patrick"
 	"github.com/taubyte/odo/protocols/patrick/common"
 )
 

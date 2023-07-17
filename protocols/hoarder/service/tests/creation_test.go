@@ -11,7 +11,7 @@ import (
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/seer/service"
 
-	_ "github.com/taubyte/odo/protocols/hoarder/api/p2p"
+	_ "github.com/taubyte/odo/clients/p2p/hoarder"
 )
 
 func TestService(t *testing.T) {

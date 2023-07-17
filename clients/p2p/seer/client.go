@@ -1,0 +1,195 @@
+package p2p
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	moody "bitbucket.org/taubyte/go-moody-blues"
+	streamClient "bitbucket.org/taubyte/p2p/streams/client"
+	"bitbucket.org/taubyte/p2p/streams/command/response"
+	"github.com/fxamacker/cbor/v2"
+	moodyIface "github.com/taubyte/go-interfaces/moody"
+	peer "github.com/taubyte/go-interfaces/p2p/peer"
+	"github.com/taubyte/go-interfaces/p2p/streams"
+	iface "github.com/taubyte/go-interfaces/services/seer"
+	commonSpec "github.com/taubyte/go-specs/common"
+	"github.com/taubyte/utils/maps"
+)
+
+var (
+	MinPeers                 = 0
+	MaxPeers                 = 2
+	DefaultGeoBeaconInterval = 5 * time.Minute
+	ErrorGeoBeaconStopped    = errors.New("GeoBeacon Stopped")
+	logger                   moodyIface.Logger
+)
+
+func init() {
+	logger, _ = moody.New("seer.p2p.client")
+}
+
+var _ iface.Client = &Client{}
+
+func New(ctx context.Context, node peer.Node) (client *Client, err error) {
+	c := &Client{}
+	c.client, err = streamClient.New(ctx, node, nil, commonSpec.SeerProtocol, MinPeers, MaxPeers)
+	if err != nil {
+		logger.Errorf(fmt.Sprintf("API client creation failed: %s", err.Error()))
+		return
+	}
+
+	c.services = make(iface.Services, 0)
+	return c, nil
+}
+
+/* Peer */
+
+type Peer struct {
+	Id       string
+	Location iface.PeerLocation
+}
+
+/* geo */
+
+type Geo Client
+
+type GeoBeacon struct {
+	ctx        context.Context
+	ctx_cancel context.CancelFunc
+	geo        *Geo
+	location   iface.Location
+	status     error
+	_status    chan error
+}
+
+func (c *Client) Geo() iface.Geo {
+	return (*Geo)(c)
+}
+
+func (g *Geo) newPeer(id string, loc iface.PeerLocation) *iface.Peer {
+	return &iface.Peer{
+		Id:       id,
+		Location: loc,
+	}
+}
+
+func (g *Geo) newPeerList(response response.Response) ([]*iface.Peer, error) {
+	__peers, ok := response["peers"]
+	if !ok {
+		return nil, fmt.Errorf("no `peers` found in %v", response)
+	}
+
+	_peers, ok := __peers.(map[interface{}]interface{})
+	if !ok {
+		return nil, fmt.Errorf("processing `peers` of type %T", __peers)
+	}
+
+	peers, err := maps.ToStringKeys(_peers)
+	if err != nil {
+		return nil, fmt.Errorf("processing `peers` returned %s", err)
+	}
+
+	ret := make([]*iface.Peer, 0)
+	for _id, _loc := range peers {
+		loc := iface.PeerLocation{}
+
+		// hack: marshal then unmarshal to get it into a struct
+		bloc, err := cbor.Marshal(_loc)
+		if err == nil {
+			if err = cbor.Unmarshal(bloc, &loc); err == nil {
+				ret = append(ret, g.newPeer(_id, loc))
+			}
+		}
+
+	}
+
+	return ret, nil
+}
+
+func (g *Geo) All() ([]*iface.Peer, error) {
+	response, err := g.client.Send("geo", streams.Body{"action": "query-all"})
+	if err != nil {
+		return nil, fmt.Errorf("provider replied with %s", err)
+	}
+
+	return g.newPeerList(response)
+}
+
+// distance is in meter
+func (g *Geo) Distance(from iface.Location, distance float32) ([]*iface.Peer, error) {
+	response, err := g.client.Send("geo", streams.Body{"action": "query", "from": from, "distance": distance})
+	if err != nil {
+		return nil, err
+	}
+
+	return g.newPeerList(response)
+}
+
+func (g *Geo) Set(location iface.Location) (err error) {
+	_, err = g.client.Send("geo", streams.Body{"action": "set", "location": location})
+	return err
+}
+
+func (g *Geo) Beacon(location iface.Location) iface.GeoBeacon {
+	ctx, ctx_cancel := context.WithCancel(g.client.Context())
+	return &GeoBeacon{
+		ctx:        ctx,
+		ctx_cancel: ctx_cancel,
+		geo:        g,
+		_status:    make(chan error, 16),
+		location:   location,
+	}
+}
+
+func (b *GeoBeacon) updateLocation() error {
+	return b.geo.Set(b.location)
+}
+
+// clean up status for better memory management
+func (b *GeoBeacon) cleanStatus() {
+	defer close(b._status)
+	for {
+		select {
+		case <-b._status:
+		default:
+			return
+		}
+	}
+}
+
+func (b *GeoBeacon) Start() {
+	go func() {
+		var err error
+
+		// First update as soon as we start
+		err = b.updateLocation()
+		if err != nil {
+			b._status <- err
+		}
+
+		for {
+			select {
+			case <-time.After(DefaultGeoBeaconInterval):
+				if err = b.updateLocation(); err != nil {
+					b._status <- err
+				}
+			case err = <-b._status:
+				b.status = err
+			case <-b.ctx.Done():
+				b.cleanStatus()
+				b.status = ErrorGeoBeaconStopped
+				return
+			}
+		}
+	}()
+}
+
+func (b *GeoBeacon) Status() error {
+	return b.status
+}
+
+func (b *GeoBeacon) Stop() {
+	b.ctx_cancel()
+}
