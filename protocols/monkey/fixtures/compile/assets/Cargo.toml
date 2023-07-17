@@ -1,0 +1,12 @@
+[package]
+name = "hello-wasm"
+version = "0.1.0"
+description = "testing rust on Taubyte vm"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+path = "lib.rs"
+
+[dependencies]
+taubyte-sdk = { git = "https://bitbucket.org/taubyte/rust-sdk" }
