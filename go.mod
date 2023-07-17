@@ -3,7 +3,6 @@ module github.com/taubyte/odo
 go 1.19
 
 require (
-	bitbucket.org/taubyte/auth v0.4.4
 	bitbucket.org/taubyte/config-compiler v0.4.2
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	bitbucket.org/taubyte/dreamland v0.4.1
@@ -18,16 +17,10 @@ require (
 	bitbucket.org/taubyte/go-node-pubsub v0.3.1
 	bitbucket.org/taubyte/go-node-smartops v0.2.0
 	bitbucket.org/taubyte/go-node-storage v0.2.1
-	bitbucket.org/taubyte/hoarder v0.3.1
 	bitbucket.org/taubyte/http-auto v0.1.1
 	bitbucket.org/taubyte/kvdb v0.4.1
-	bitbucket.org/taubyte/monkey v0.4.1
-	bitbucket.org/taubyte/node v0.5.4-pre.v2
 	bitbucket.org/taubyte/p2p v0.8.2
-	bitbucket.org/taubyte/patrick v0.3.1
-	bitbucket.org/taubyte/seer v0.3.1
 	bitbucket.org/taubyte/seer-p2p-client v0.1.1
-	bitbucket.org/taubyte/tns v0.4.1
 	bitbucket.org/taubyte/tns-p2p-client v0.1.1
 	github.com/foxcpp/go-mockdns v1.0.0
 	github.com/fxamacker/cbor/v2 v2.4.0
@@ -77,6 +70,7 @@ require (
 require (
 	atomicgo.dev/cursor v0.1.1 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
+	bitbucket.org/taubyte/auth v0.4.4 // indirect
 	bitbucket.org/taubyte/billing v0.2.7-pre // indirect
 	bitbucket.org/taubyte/go-auth-http v0.1.2 // indirect
 	bitbucket.org/taubyte/go-node-tvm v0.2.2 // indirect

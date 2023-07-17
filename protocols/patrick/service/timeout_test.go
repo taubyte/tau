@@ -6,8 +6,8 @@ import (
 
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
-	monkey "bitbucket.org/taubyte/monkey/common"
 	commonIface "github.com/taubyte/go-interfaces/common"
+	monkey "github.com/taubyte/odo/protocols/monkey/common"
 )
 
 func TestTimeout(t *testing.T) {

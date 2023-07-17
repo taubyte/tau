@@ -16,12 +16,12 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
 
-	commonAuth "bitbucket.org/taubyte/auth/common"
-	_ "bitbucket.org/taubyte/auth/service"
-	patrickService "bitbucket.org/taubyte/patrick/service"
 	_ "bitbucket.org/taubyte/tns-p2p-client"
+	commonAuth "github.com/taubyte/odo/protocols/auth/common"
+	_ "github.com/taubyte/odo/protocols/auth/service"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/monkey/api/p2p"
+	patrickService "github.com/taubyte/odo/protocols/patrick/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 

@@ -10,8 +10,8 @@ import (
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
-	_ "bitbucket.org/taubyte/node/service"
 	commonIface "github.com/taubyte/go-interfaces/common"
+	_ "github.com/taubyte/odo/protocols/node/service"
 )
 
 // TODO: Could shorten test doing a tns lookup or looking at patrick to see if jobs are done instead of sleep.

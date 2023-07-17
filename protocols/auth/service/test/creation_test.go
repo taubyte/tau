@@ -12,11 +12,11 @@ import (
 
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
 	gitTest "bitbucket.org/taubyte/dreamland-test/git"
-	_ "bitbucket.org/taubyte/hoarder/service"
-	_ "bitbucket.org/taubyte/monkey/api/p2p"
 	_ "bitbucket.org/taubyte/tns-p2p-client"
-	_ "bitbucket.org/taubyte/tns/service"
 	commonAuth "github.com/taubyte/odo/protocols/auth/common"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
+	_ "github.com/taubyte/odo/protocols/monkey/api/p2p"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 func TestAuth(t *testing.T) {

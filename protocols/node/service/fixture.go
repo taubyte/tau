@@ -10,7 +10,7 @@ import (
 	dreamlandRegistry "bitbucket.org/taubyte/dreamland/registry"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
-	_ "bitbucket.org/taubyte/auth/service"
+	_ "github.com/taubyte/odo/protocols/auth/service"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/monkey/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"

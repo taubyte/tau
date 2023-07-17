@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	authAPI "bitbucket.org/taubyte/auth/api/p2p"
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	auto "bitbucket.org/taubyte/http-auto"
 	kv "bitbucket.org/taubyte/kvdb/database"
-	monkeyApi "bitbucket.org/taubyte/monkey/api/p2p"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
 	seerClient "bitbucket.org/taubyte/seer-p2p-client"
@@ -18,6 +16,8 @@ import (
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
+	authAPI "github.com/taubyte/odo/protocols/auth/api/p2p"
+	monkeyApi "github.com/taubyte/odo/protocols/monkey/api/p2p"
 	common "github.com/taubyte/odo/protocols/patrick/common"
 )
 

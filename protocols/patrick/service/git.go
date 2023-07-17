@@ -6,12 +6,12 @@ import (
 	"io"
 	"strconv"
 
-	authClient "bitbucket.org/taubyte/auth/api/p2p"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	authIface "github.com/taubyte/go-interfaces/services/auth"
 	iface "github.com/taubyte/go-interfaces/services/patrick"
+	authClient "github.com/taubyte/odo/protocols/auth/api/p2p"
 	"github.com/taubyte/utils/fs/dir"
 	"golang.org/x/net/context"
 )

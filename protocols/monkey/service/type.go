@@ -5,12 +5,12 @@ import (
 	"os"
 
 	streams "bitbucket.org/taubyte/p2p/streams/service"
-	patrickClient "bitbucket.org/taubyte/patrick/api/p2p"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	iface "github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	tnsClient "github.com/taubyte/go-interfaces/services/tns"
+	patrickClient "github.com/taubyte/odo/protocols/patrick/api/p2p"
 )
 
 /* This is a variable so that it can be overridden in tests */

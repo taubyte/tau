@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	commonAuth "bitbucket.org/taubyte/auth/common"
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
 	"bitbucket.org/taubyte/dreamland/common"
+	commonAuth "github.com/taubyte/odo/protocols/auth/common"
 
 	dreamlandRegistry "bitbucket.org/taubyte/dreamland/registry"
 	"github.com/taubyte/go-interfaces/services/tns"
@@ -15,10 +15,10 @@ import (
 	"github.com/taubyte/go-specs/methods"
 	_patrick "github.com/taubyte/odo/protocols/patrick/common"
 
-	_ "bitbucket.org/taubyte/auth/service"
-	_ "bitbucket.org/taubyte/hoarder/service"
-	_ "bitbucket.org/taubyte/monkey/service"
-	_ "bitbucket.org/taubyte/tns/service"
+	_ "github.com/taubyte/odo/protocols/auth/service"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
+	_ "github.com/taubyte/odo/protocols/monkey/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 func init() {

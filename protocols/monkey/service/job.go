@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	authClient "bitbucket.org/taubyte/auth/api/p2p"
 	compilerCommon "bitbucket.org/taubyte/config-compiler/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/go-specs/methods"
+	authClient "github.com/taubyte/odo/protocols/auth/api/p2p"
 	common "github.com/taubyte/odo/protocols/monkey/common"
 	"github.com/taubyte/odo/protocols/monkey/jobs"
 )

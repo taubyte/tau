@@ -12,11 +12,11 @@ import (
 
 	dns "github.com/miekg/dns"
 
-	_ "bitbucket.org/taubyte/auth/service"
-	_ "bitbucket.org/taubyte/hoarder/service"
-	_ "bitbucket.org/taubyte/monkey/service"
-	_ "bitbucket.org/taubyte/node/service"
-	_ "bitbucket.org/taubyte/patrick/service"
+	_ "github.com/taubyte/odo/protocols/auth/service"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
+	_ "github.com/taubyte/odo/protocols/monkey/service"
+	_ "github.com/taubyte/odo/protocols/node/service"
+	_ "github.com/taubyte/odo/protocols/patrick/service"
 )
 
 var (

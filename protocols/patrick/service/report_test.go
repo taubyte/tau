@@ -5,18 +5,18 @@ import (
 	"testing"
 	"time"
 
-	_ "bitbucket.org/taubyte/auth/service"
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
 	"bitbucket.org/taubyte/dreamland/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
+	_ "github.com/taubyte/odo/protocols/auth/service"
 
-	_ "bitbucket.org/taubyte/hoarder/service"
-	_ "bitbucket.org/taubyte/monkey/service"
-	_ "bitbucket.org/taubyte/seer/service"
-	_ "bitbucket.org/taubyte/tns/service"
 	"github.com/taubyte/go-interfaces/services/patrick"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
+	_ "github.com/taubyte/odo/protocols/monkey/service"
 	_ "github.com/taubyte/odo/protocols/patrick/api/p2p"
+	_ "github.com/taubyte/odo/protocols/seer/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 func TestReportSsh(t *testing.T) {
