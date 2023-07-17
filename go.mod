@@ -42,7 +42,6 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pterm/pterm v0.12.55
 	github.com/spf13/afero v1.9.5
-	github.com/stripe/stripe-go/v72 v72.122.0
 	github.com/taubyte/go-interfaces v0.2.4
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.8
@@ -51,7 +50,6 @@ require (
 	github.com/taubyte/go-simple-container v0.4.2
 	github.com/taubyte/go-simple-git v0.2.5
 	github.com/taubyte/go-specs v0.10.5
-	github.com/taubyte/http v0.10.1
 	github.com/taubyte/tau v0.1.6
 	github.com/taubyte/utils v0.1.6
 	github.com/taubyte/vm v0.2.1
@@ -248,6 +246,7 @@ require (
 	github.com/taubyte/domain-validation v1.0.0 // indirect
 	github.com/taubyte/go-doci v1.0.2 // indirect
 	github.com/taubyte/go-sdk-symbols v0.2.6 // indirect
+	github.com/taubyte/http v0.10.1 // indirect
 	github.com/tetratelabs/wazero v1.0.3 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.0 // indirect
