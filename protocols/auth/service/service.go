@@ -16,7 +16,6 @@ import (
 	tnsApi "bitbucket.org/taubyte/tns-p2p-client"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	common "github.com/taubyte/odo/protocols/auth/common"
-	tls "github.com/taubyte/odo/protocols/auth/tls"
 
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 )
@@ -109,7 +108,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, 
 	// Not writing if deploying a network
 	if commonIface.Deployment != commonIface.Odo {
 		// HACK: Make sure certificates there
-		tls.WriteCerts()
+		// tls.WriteCerts()
 	}
 
 	if config.Http == nil {
