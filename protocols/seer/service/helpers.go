@@ -1,0 +1,64 @@
+package service
+
+import (
+	"fmt"
+
+	peercore "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/utils/maps"
+)
+
+func (srv *Service) ListNodes() ([]string, error) {
+	resp, err := srv.oracle.listServiceIds("node")
+	if err != nil {
+		return nil, fmt.Errorf("failed ListNodes with %v", err)
+	}
+
+	return maps.StringArray(resp, "ids")
+}
+
+func validateSignature(body streams.Body) (string, bool, error) {
+	// Grab Id's and Signature from body
+	nodeId := body["id"]
+	clientId := body["client"]
+	signature := body["signature"]
+
+	nodeIDStr, ok := nodeId.(string)
+	if !ok {
+		return "", false, fmt.Errorf("could not transform nodeId to string")
+	}
+
+	peerId, err := peercore.Decode(nodeIDStr)
+	if err != nil {
+		return "", false, fmt.Errorf("failed decoding `%s` with: %s", nodeIDStr, err)
+	}
+
+	clientIDStr, ok := clientId.(string)
+	if !ok {
+		return "", false, fmt.Errorf("could not transform clientId to string")
+	}
+
+	sigBytes, ok := signature.([]byte)
+	if !ok {
+		return "", false, fmt.Errorf("could not transform signature to []byte")
+	}
+
+	id, err := peercore.FromCid(peercore.ToCid(peerId))
+	if err != nil {
+		return "", false, fmt.Errorf("fromcid failed with: %s", err)
+	}
+
+	// Get public key
+	pubKey, err := id.ExtractPublicKey()
+	if err != nil {
+		return "", false, fmt.Errorf("extract public key failed with: %s", err)
+	}
+
+	valid, err := pubKey.Verify([]byte(peerId.String()+clientIDStr), sigBytes)
+	if err != nil {
+		return "", false, fmt.Errorf("verify public key failed with: %s", err)
+	}
+
+	// Verify Signature and id's
+	return peerId.String(), valid, nil
+}
