@@ -1,15 +1,15 @@
 package jobs
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
 	"gotest.tools/assert"
 
-	_ "bitbucket.org/taubyte/hoarder/service"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
 
-	_ "bitbucket.org/taubyte/tns/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 func TestRunWasmBasic(t *testing.T) {
@@ -20,7 +20,7 @@ func TestRunWasmBasic(t *testing.T) {
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)
 
-	logFile, err := ioutil.TempFile("", "wasm_config_log.txt")
+	logFile, err := os.CreateTemp("/tmp", "wasm_config_log.txt")
 	assert.NilError(t, err)
 
 	job := newJob(commonTest.ConfigRepo, "job_for_config")
@@ -29,7 +29,7 @@ func TestRunWasmBasic(t *testing.T) {
 	err = jobContext.config(job)()
 	assert.NilError(t, err)
 
-	logFile, err = ioutil.TempFile("", "wasm_code_log.text")
+	logFile, err = os.CreateTemp("/tmp", "wasm_code_log.text")
 	assert.NilError(t, err)
 
 	job = newJob(commonTest.CodeRepo, "job_for_code")

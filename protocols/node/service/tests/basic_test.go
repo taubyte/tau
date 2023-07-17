@@ -12,16 +12,16 @@ import (
 	"bitbucket.org/taubyte/config-compiler/decompile"
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
-	"bitbucket.org/taubyte/monkey/fixtures/compile"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/odo/protocols/monkey/fixtures/compile"
 
 	_ "bitbucket.org/taubyte/auth/service"
 	_ "bitbucket.org/taubyte/config-compiler/fixtures"
-	_ "bitbucket.org/taubyte/hoarder/service"
 	_ "bitbucket.org/taubyte/patrick/service"
-	_ "bitbucket.org/taubyte/tns/service"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/node/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 var (

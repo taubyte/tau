@@ -10,12 +10,12 @@ import (
 	_ "bitbucket.org/taubyte/config-compiler/fixtures"
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
-	_ "bitbucket.org/taubyte/node/service"
 	_ "bitbucket.org/taubyte/tns-p2p-client"
-	_ "bitbucket.org/taubyte/tns/service"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/monkey/fixtures/compile"
+	_ "github.com/taubyte/odo/protocols/node/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 func TestZipWebsite(t *testing.T) {

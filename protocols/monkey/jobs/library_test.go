@@ -1,7 +1,7 @@
 package jobs
 
 import (
-	"io/ioutil"
+	"os"
 	"testing"
 
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
@@ -16,7 +16,7 @@ func TestRunLibraryBasic(t *testing.T) {
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)
 
-	logFile, err := ioutil.TempFile("", "config_log.txt")
+	logFile, err := os.CreateTemp("/tmp", "config_log.txt")
 	assert.NilError(t, err)
 
 	job := newJob(commonTest.ConfigRepo, "job_for_config")
@@ -25,7 +25,7 @@ func TestRunLibraryBasic(t *testing.T) {
 	err = jobContext.config(job)()
 	assert.NilError(t, err)
 
-	logFile, err = ioutil.TempFile("", "library_log.text")
+	logFile, err = os.CreateTemp("/tmp", "library_log.text")
 	assert.NilError(t, err)
 
 	job = newJob(commonTest.LibraryRepo, "job_for_library")

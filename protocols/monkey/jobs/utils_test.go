@@ -3,7 +3,7 @@ package jobs
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"strconv"
 	"time"
@@ -192,7 +192,7 @@ func checkAsset(node peer.Node, tnsClient tns.Client, resId string) error {
 		return err
 	}
 
-	fileBytes, err := ioutil.ReadAll(f)
+	fileBytes, err := io.ReadAll(f)
 	if err != nil {
 		return err
 	}

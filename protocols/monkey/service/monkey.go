@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	hoarderClient "bitbucket.org/taubyte/hoarder/api/p2p"
 	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/patrick"
+	hoarderClient "github.com/taubyte/odo/protocols/hoarder/api/p2p"
 	common "github.com/taubyte/odo/protocols/monkey/common"
 )
 

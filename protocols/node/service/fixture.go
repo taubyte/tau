@@ -11,9 +11,9 @@ import (
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
 	_ "bitbucket.org/taubyte/auth/service"
-	_ "bitbucket.org/taubyte/hoarder/service"
-	_ "bitbucket.org/taubyte/monkey/service"
-	_ "bitbucket.org/taubyte/tns/service"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
+	_ "github.com/taubyte/odo/protocols/monkey/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 func init() {

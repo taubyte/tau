@@ -50,7 +50,6 @@ bitbucket.org/taubyte/monkey v0.4.1/go.mod h1:rB3e3vMG68YoWI+VxQumScgT0dhrArLovt
 bitbucket.org/taubyte/mycelium v0.4.4 h1:rIF106k8XVJ/4eBcAXfIezX867OgxOhEoaKwHJKDTg8=
 bitbucket.org/taubyte/mycelium v0.4.4/go.mod h1:mXtPwtL9pMR/zQn9T8biEQ+etnJlbQ2LeI/3oVqt7WY=
 bitbucket.org/taubyte/node v0.5.4-pre.v2 h1:wRZgKimh5PvZi/xsu2cNvDVFUGFTBiIXaD6r7TE95SU=
-bitbucket.org/taubyte/node v0.5.4-pre.v2/go.mod h1:HEsWM3ySBD5fL0sPkDBYBXTvvJpdgncImcNTNwbThv4=
 bitbucket.org/taubyte/p2p v0.8.2 h1:CETvXaN9NuB65Fhi7HbbsROBoicx6mQbfJuB+qXpX6Q=
 bitbucket.org/taubyte/p2p v0.8.2/go.mod h1:830CBFljLI6oDJaZtIuRIM/KM3C0DCMuNIPr3xqTT6c=
 bitbucket.org/taubyte/patrick v0.3.1 h1:lu63m+qnaRB9I2l+SXxwR7FTyfkfnB+Y4CP3bdYZjcQ=

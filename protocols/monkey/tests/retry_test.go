@@ -18,11 +18,11 @@ import (
 
 	commonAuth "bitbucket.org/taubyte/auth/common"
 	_ "bitbucket.org/taubyte/auth/service"
-	_ "bitbucket.org/taubyte/hoarder/service"
 	patrickService "bitbucket.org/taubyte/patrick/service"
 	_ "bitbucket.org/taubyte/tns-p2p-client"
-	_ "bitbucket.org/taubyte/tns/service"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/monkey/api/p2p"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 func TestRunWasmRetry(t *testing.T) {

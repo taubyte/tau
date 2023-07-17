@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	hoarderClient "bitbucket.org/taubyte/hoarder/api/p2p"
 	"github.com/taubyte/go-interfaces/builders"
 	containers "github.com/taubyte/go-simple-container"
 	git "github.com/taubyte/go-simple-git"
 	specs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
+	hoarderClient "github.com/taubyte/odo/protocols/hoarder/api/p2p"
 	"github.com/taubyte/utils/maps"
 )
 

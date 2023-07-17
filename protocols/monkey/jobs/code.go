@@ -3,7 +3,6 @@ package jobs
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"path"
 	"sync"
@@ -45,7 +44,7 @@ func (c code) handleOps(ops []Op) error {
 	var doneCount int
 
 	for _, op := range ops {
-		logFile, err := ioutil.TempFile("", fmt.Sprintf("log-%s", op.id))
+		logFile, err := os.CreateTemp("/tmp", fmt.Sprintf("log-%s", op.id))
 		if err != nil {
 			return fmt.Errorf("creating log temp-file failed with: %s", err)
 		}
