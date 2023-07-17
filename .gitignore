@@ -5,6 +5,10 @@
 
 ./protocols/hoarder/testGIT
 ./protocols/monkey/build/
+./protocols/auth/build/
+./protocols/seer/build/
+./protocols/patrick/build/
+./protocols/patrick/.patrick/
 **fakeroot/
 ./protocols/node/.node/
 ./protocols/tns/storage
