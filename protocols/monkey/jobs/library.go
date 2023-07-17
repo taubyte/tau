@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	build "bitbucket.org/taubyte/go-builder"
+	build "github.com/taubyte/builder"
 	"github.com/taubyte/go-interfaces/builders"
 )
 
