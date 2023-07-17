@@ -18,14 +18,14 @@ import (
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
 	moodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
-	_ "bitbucket.org/taubyte/node/service"
 	_ "bitbucket.org/taubyte/tns-p2p-client"
-	_ "bitbucket.org/taubyte/tns/service"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/go-interfaces/services/substrate/storage"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	storages "github.com/taubyte/odo/protocols/node/components/storage"
+	_ "github.com/taubyte/odo/protocols/node/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 
 	_ "embed"
 )

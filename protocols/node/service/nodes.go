@@ -3,15 +3,15 @@ package service
 import (
 	"fmt"
 
-	counters "bitbucket.org/taubyte/go-node-counters"
-	ipfs "bitbucket.org/taubyte/go-node-ipfs"
-	p2p "bitbucket.org/taubyte/go-node-p2p"
-	pubSub "bitbucket.org/taubyte/go-node-pubsub"
-	smartOps "bitbucket.org/taubyte/go-node-smartops"
-	storage "bitbucket.org/taubyte/go-node-storage"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	counters "github.com/taubyte/odo/protocols/node/components/counters"
 	database "github.com/taubyte/odo/protocols/node/components/database"
 	http "github.com/taubyte/odo/protocols/node/components/http"
+	ipfs "github.com/taubyte/odo/protocols/node/components/ipfs"
+	p2p "github.com/taubyte/odo/protocols/node/components/p2p"
+	pubSub "github.com/taubyte/odo/protocols/node/components/pubsub"
+	smartOps "github.com/taubyte/odo/protocols/node/components/smartops"
+	storage "github.com/taubyte/odo/protocols/node/components/storage"
 
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 )

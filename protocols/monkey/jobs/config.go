@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"bitbucket.org/taubyte/config-compiler/compile"
-	_ "bitbucket.org/taubyte/go-builder"
+	_ "github.com/taubyte/builder"
 	"github.com/taubyte/go-interfaces/services/common"
 	projectSchema "github.com/taubyte/go-project-schema/project"
 )

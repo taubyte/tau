@@ -6,8 +6,8 @@ import (
 
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
-	_ "bitbucket.org/taubyte/node/service"
 	commonIface "github.com/taubyte/go-interfaces/common"
+	_ "github.com/taubyte/odo/protocols/node/service"
 	"gotest.tools/assert"
 )
 

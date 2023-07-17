@@ -5,7 +5,7 @@ import (
 
 	"github.com/taubyte/go-interfaces/builders"
 
-	build "bitbucket.org/taubyte/go-builder"
+	build "github.com/taubyte/builder"
 )
 
 func (w website) handle() error {

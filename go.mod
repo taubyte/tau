@@ -3,28 +3,17 @@ module github.com/taubyte/odo
 go 1.19
 
 require (
+	bitbucket.org/taubyte/billing v0.2.7-pre
 	bitbucket.org/taubyte/config-compiler v0.4.2
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	bitbucket.org/taubyte/dreamland v0.4.1
 	bitbucket.org/taubyte/dreamland-test v0.3.1
-	bitbucket.org/taubyte/go-builder v0.1.2
 	bitbucket.org/taubyte/go-moody-blues v0.1.34
-	bitbucket.org/taubyte/go-node-counters v0.1.7-pre
-	bitbucket.org/taubyte/go-node-ipfs v0.2.0
-	bitbucket.org/taubyte/go-node-p2p v0.2.1
-	bitbucket.org/taubyte/go-node-pubsub v0.3.1
-	bitbucket.org/taubyte/go-node-smartops v0.2.0
-	bitbucket.org/taubyte/go-node-storage v0.2.1
 	bitbucket.org/taubyte/go-node-tvm v0.2.2
-	bitbucket.org/taubyte/hoarder v0.3.1
 	bitbucket.org/taubyte/http-auto v0.1.1
 	bitbucket.org/taubyte/kvdb v0.4.1
-	bitbucket.org/taubyte/monkey v0.4.1
-	bitbucket.org/taubyte/node v0.5.4-pre.v2
 	bitbucket.org/taubyte/p2p v0.8.2
-	bitbucket.org/taubyte/seer v0.3.1
 	bitbucket.org/taubyte/seer-p2p-client v0.1.1
-	bitbucket.org/taubyte/tns v0.4.1
 	bitbucket.org/taubyte/tns-p2p-client v0.1.1
 	bitbucket.org/taubyte/vm-test-examples v0.5.1-pre.v3
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
@@ -47,10 +36,11 @@ require (
 	github.com/multiformats/go-multiaddr v0.9.0
 	github.com/multiformats/go-multicodec v0.9.0
 	github.com/multiformats/go-varint v0.0.7
-	github.com/otiai10/copy v1.11.0
+	github.com/otiai10/copy v1.12.0
 	github.com/pkg/errors v0.9.1
 	github.com/pterm/pterm v0.12.55
 	github.com/spf13/afero v1.9.5
+	github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29
 	github.com/taubyte/domain-validation v1.0.0
 	github.com/taubyte/go-interfaces v0.2.4
 	github.com/taubyte/go-project-schema v0.9.3
@@ -74,7 +64,7 @@ require (
 	golang.org/x/oauth2 v0.7.0
 	gopkg.in/go-playground/webhooks.v5 v5.17.0
 	gotest.tools v2.2.0+incompatible
-	gotest.tools/v3 v3.4.0
+	gotest.tools/v3 v3.5.0
 	modernc.org/sqlite v1.23.1
 )
 
@@ -82,12 +72,9 @@ require (
 	atomicgo.dev/cursor v0.1.1 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	bitbucket.org/taubyte/auth v0.4.4 // indirect
-	bitbucket.org/taubyte/billing v0.2.7-pre // indirect
 	bitbucket.org/taubyte/go-auth-http v0.1.2 // indirect
-	bitbucket.org/taubyte/go-node-database v0.2.1-pre // indirect
-	bitbucket.org/taubyte/go-node-http v0.3.2 // indirect
+	bitbucket.org/taubyte/go-node-counters v0.1.7-pre // indirect
 	bitbucket.org/taubyte/mycelium v0.4.4 // indirect
-	bitbucket.org/taubyte/patrick v0.3.1 // indirect
 	github.com/CAFxX/httpcompression v0.0.8 // indirect
 	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
@@ -245,13 +232,14 @@ require (
 	github.com/raulk/go-watchdog v1.3.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rivo/uniseg v0.4.4 // indirect
-	github.com/rogpeppe/go-internal v1.10.0 // indirect
+	github.com/rogpeppe/go-internal v1.11.0 // indirect
 	github.com/rs/cors v1.8.3 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sergi/go-diff v1.2.0 // indirect
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/stripe/stripe-go/v72 v72.86.0 // indirect
 	github.com/taubyte/go-doci v1.0.2 // indirect
 	github.com/taubyte/go-sdk-symbols v0.2.6 // indirect
 	github.com/tetratelabs/wazero v1.0.3 // indirect

@@ -10,9 +10,9 @@ import (
 	dreamland "bitbucket.org/taubyte/dreamland/services"
 	commonIface "bitbucket.org/taubyte/go-interfaces/common"
 	moodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
-	_ "bitbucket.org/taubyte/node/service"
+	_ "github.com/taubyte/odo/protocols/node/service"
 	_ "bitbucket.org/taubyte/patrick/service"
-	tnsClient "bitbucket.org/taubyte/tns/api/p2p"
+	tnsClient "github.com/taubyte/odo/protocols/tns/api/p2p"
 )
 
 // Ignore the repo src file

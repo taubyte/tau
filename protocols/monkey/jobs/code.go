@@ -7,7 +7,7 @@ import (
 	"path"
 	"sync"
 
-	build "bitbucket.org/taubyte/go-builder"
+	build "github.com/taubyte/builder"
 	"github.com/taubyte/go-interfaces/builders"
 	projectSchema "github.com/taubyte/go-project-schema/project"
 	git "github.com/taubyte/go-simple-git"

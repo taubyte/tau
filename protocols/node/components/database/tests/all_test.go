@@ -13,15 +13,15 @@ import (
 	gitTest "bitbucket.org/taubyte/dreamland-test/git"
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
-	_ "bitbucket.org/taubyte/node/service"
 	_ "bitbucket.org/taubyte/tns-p2p-client"
-	_ "bitbucket.org/taubyte/tns/service"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	db "github.com/taubyte/go-interfaces/services/substrate/database"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	service "github.com/taubyte/odo/protocols/node/components/database"
+	_ "github.com/taubyte/odo/protocols/node/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 	"gotest.tools/v3/assert"
 )
 

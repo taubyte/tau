@@ -14,9 +14,9 @@ import (
 	"bitbucket.org/taubyte/go-interfaces/services/patrick"
 	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/go-specs/methods"
-	tnsClient "bitbucket.org/taubyte/tns/api/p2p"
+	tnsClient "github.com/taubyte/odo/protocols/tns/api/p2p"
 
-	monkeyJob "bitbucket.org/taubyte/monkey/jobs"
+	monkeyJob "github.com/taubyte/odo/protocols/monkey/jobs"
 )
 
 var _root string
