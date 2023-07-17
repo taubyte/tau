@@ -4,14 +4,14 @@ import (
 	"fmt"
 
 	counters "bitbucket.org/taubyte/go-node-counters"
-	database "bitbucket.org/taubyte/go-node-database"
-	http "bitbucket.org/taubyte/go-node-http"
 	ipfs "bitbucket.org/taubyte/go-node-ipfs"
 	p2p "bitbucket.org/taubyte/go-node-p2p"
 	pubSub "bitbucket.org/taubyte/go-node-pubsub"
 	smartOps "bitbucket.org/taubyte/go-node-smartops"
 	storage "bitbucket.org/taubyte/go-node-storage"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	database "github.com/taubyte/odo/protocols/node/components/database"
+	http "github.com/taubyte/odo/protocols/node/components/http"
 
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 )
