@@ -1,0 +1,265 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"path"
+	"time"
+
+	compilerCommon "bitbucket.org/taubyte/config-compiler/common"
+	commonTest "bitbucket.org/taubyte/dreamland-test/common"
+	commonDreamland "bitbucket.org/taubyte/dreamland/common"
+	"bitbucket.org/taubyte/go-interfaces/services/monkey"
+	"bitbucket.org/taubyte/go-interfaces/services/patrick"
+	git "github.com/taubyte/go-simple-git"
+	"github.com/taubyte/go-specs/methods"
+	tnsClient "github.com/taubyte/odo/protocols/tns/api/p2p"
+
+	monkeyJob "github.com/taubyte/odo/protocols/monkey/jobs"
+)
+
+var _root string
+
+func init() {
+	var err error
+	_root, err = os.Getwd()
+	if err != nil {
+		panic(fmt.Sprintf("GETwd failed with %s", err.Error()))
+	}
+}
+
+func waitForTestStatus(client monkey.Client, jid string, wantStatus patrick.JobStatus) error {
+	test := func() error {
+		response, err := client.Status(jid)
+		if err != nil {
+			return err
+
+		}
+		if response.Status != wantStatus {
+			return fmt.Errorf("job was not successful `%s != %s`", response.Status.String(), wantStatus.String())
+		}
+
+		return nil
+	}
+
+	attempts := 0
+	maxAttempts := 10
+	cont := func() {
+		attempts += 1
+		time.Sleep(time.Second)
+	}
+
+	// ==== Wait for job ====
+	for {
+		err := test()
+		if err != nil && attempts >= maxAttempts {
+			return fmt.Errorf("test failed after %d attempts with: %s", attempts, err.Error())
+		} else if err == nil {
+			break
+		}
+		cont()
+	}
+
+	return nil
+}
+
+func getRunForConfig(ctx context.Context, simple commonDreamland.Simple, tnsClient *tnsClient.Client, logFile *os.File) func() error {
+	return func() error {
+		fakJob := &patrick.Job{}
+		fakJob.Meta.Repository.ID = commonTest.ConfigRepo.ID
+		fakJob.Meta.Repository.SSHURL = fmt.Sprintf("git@github.com:%s/%s", commonTest.GitUser, commonTest.ConfigRepo.Name)
+		fakJob.Meta.Repository.Provider = "github"
+		fakJob.Meta.HeadCommit.ID = "asdfghjkl"
+		fakJob.Meta.Repository.Branch = "master"
+		fakJob.Id = "job1forlibrary_test"
+		c := monkeyJob.Context{
+			Tns:       tnsClient,
+			RepoType:  compilerCommon.ConfigRepository,
+			Job:       fakJob,
+			Node:      simple.GetNode(),
+			ProjectID: commonTest.ProjectID,
+			LogFile:   logFile,
+		}
+
+		c.ForceContext(ctx)
+
+		repo, err := git.New(
+			ctx,
+			git.URL(commonTest.ConfigRepo.URL),
+			git.Token(commonTest.GitToken),
+			git.Root(path.Join(_root, "src_config/src")),
+		)
+		if err != nil {
+			return err
+		}
+
+		gitProvider := c.Job.Meta.Repository.Provider
+		gitRepoID := fmt.Sprintf("%d", c.Job.Meta.Repository.ID)
+		repoPath, err := methods.GetRepositoryPath(gitProvider, gitRepoID, commonTest.ProjectID)
+		if err != nil {
+			return err
+		}
+
+		err = tnsClient.Push(repoPath.Type().Slice(), compilerCommon.ConfigRepository)
+		if err != nil {
+			return err
+		}
+
+		time.Sleep(1 * time.Second)
+		c.WorkDir = path.Join(_root, "src_config")
+		c.ForceGitDir(repo.Root())
+		repo = nil
+		return c.Config()
+	}
+}
+
+func getRunForLibrary(ctx context.Context, simple commonDreamland.Simple, tnsClient *tnsClient.Client, logFile *os.File) func() error {
+	return func() error {
+		fakJob := &patrick.Job{}
+		fakJob.Meta.Repository.ID = commonTest.LibraryRepo.ID
+		fakJob.Meta.Repository.SSHURL = fmt.Sprintf("git@github.com:%s/%s", commonTest.GitUser, commonTest.LibraryRepo.Name)
+		fakJob.Meta.Repository.Provider = "github"
+		fakJob.Meta.HeadCommit.ID = "asdfghjkl"
+		fakJob.Meta.Repository.Branch = "master"
+		fakJob.Id = "job1forlibrary_test"
+		c := monkeyJob.Context{
+			Tns:       tnsClient,
+			RepoType:  compilerCommon.LibraryRepository,
+			Job:       fakJob,
+			Node:      simple.GetNode(),
+			ProjectID: commonTest.ProjectID,
+			LogFile:   logFile,
+		}
+
+		c.ForceContext(ctx)
+
+		repo, err := git.New(
+			ctx,
+			git.URL(commonTest.LibraryRepo.URL),
+			git.Token(commonTest.GitToken),
+			git.Root(path.Join(_root, "src_library/src")),
+		)
+		if err != nil {
+			return err
+		}
+
+		gitProvider := c.Job.Meta.Repository.Provider
+		gitRepoID := fmt.Sprintf("%d", c.Job.Meta.Repository.ID)
+		repoPath, err := methods.GetRepositoryPath(gitProvider, gitRepoID, commonTest.ProjectID)
+		if err != nil {
+			return err
+		}
+
+		err = tnsClient.Push(repoPath.Type().Slice(), compilerCommon.LibraryRepository)
+		if err != nil {
+			return err
+		}
+
+		time.Sleep(1 * time.Second)
+		c.WorkDir = path.Join(_root, "src_library")
+		c.ForceGitDir(repo.Root())
+		repo = nil
+		return c.Library()
+	}
+}
+
+func getRunForCode(ctx context.Context, simple commonDreamland.Simple, tnsClient *tnsClient.Client, logFile *os.File) func() error {
+	return func() error {
+		fakJob := &patrick.Job{}
+		fakJob.Meta.Repository.ID = commonTest.CodeRepo.ID
+		fakJob.Meta.Repository.SSHURL = fmt.Sprintf("git@github.com:%s/%s", commonTest.GitUser, commonTest.CodeRepo.Name)
+		fakJob.Meta.Repository.Provider = "github"
+		fakJob.Meta.HeadCommit.ID = "asdfghjkl"
+		fakJob.Meta.Repository.Branch = "master"
+		fakJob.Id = "job1forwasm_test"
+		c := monkeyJob.Context{
+			Tns:       tnsClient,
+			RepoType:  compilerCommon.CodeRepository,
+			Job:       fakJob,
+			Node:      simple.GetNode(),
+			ProjectID: commonTest.ProjectID,
+			LogFile:   logFile,
+		}
+
+		c.ForceContext(ctx)
+
+		repo, err := git.New(
+			ctx,
+			git.URL(commonTest.CodeRepo.URL),
+			git.Token(commonTest.GitToken),
+			git.Root(path.Join(_root, "src_code/src")),
+		)
+		if err != nil {
+			return err
+		}
+
+		gitProvider := c.Job.Meta.Repository.Provider
+		gitRepoID := fmt.Sprintf("%d", c.Job.Meta.Repository.ID)
+		repoPath, err := methods.GetRepositoryPath(gitProvider, gitRepoID, commonTest.ProjectID)
+		if err != nil {
+			return err
+		}
+
+		err = tnsClient.Push(repoPath.Type().Slice(), compilerCommon.CodeRepository)
+		if err != nil {
+			return err
+		}
+
+		time.Sleep(1 * time.Second)
+		c.WorkDir = path.Join(_root, "src_code")
+		c.ForceGitDir(repo.Root())
+		repo = nil
+		return c.Wasm()
+	}
+}
+
+func getRunForWebsite(ctx context.Context, simple commonDreamland.Simple, tnsClient *tnsClient.Client, logFile *os.File) func() error {
+	return func() error {
+		fakJob := &patrick.Job{}
+		fakJob.Meta.Repository.ID = 512949549
+		fakJob.Meta.Repository.SSHURL = fmt.Sprintf("git@github.com:%s/%s", commonTest.GitUser, "tb_website_socketWebsite")
+		fakJob.Meta.Repository.Provider = "github"
+		fakJob.Meta.HeadCommit.ID = "asdfghjkl"
+		fakJob.Meta.Repository.Branch = "master"
+		fakJob.Id = "job1forwasm_test"
+		c := monkeyJob.Context{
+			Tns:       tnsClient,
+			RepoType:  compilerCommon.WebsiteRepository,
+			Job:       fakJob,
+			Node:      simple.GetNode(),
+			ProjectID: commonTest.ProjectID,
+			LogFile:   logFile,
+		}
+
+		c.ForceContext(ctx)
+
+		repo, err := git.New(
+			ctx,
+			git.URL("https://github.com/taubyte-test/tb_website_prodSocketWebsite"),
+			git.Token(commonTest.GitToken),
+			git.Root(path.Join(_root, "src_website/src")),
+		)
+		if err != nil {
+			return err
+		}
+
+		gitProvider := c.Job.Meta.Repository.Provider
+		gitRepoID := fmt.Sprintf("%d", c.Job.Meta.Repository.ID)
+		repoPath, err := methods.GetRepositoryPath(gitProvider, gitRepoID, commonTest.ProjectID)
+		if err != nil {
+			return err
+		}
+
+		err = tnsClient.Push(repoPath.Type().Slice(), compilerCommon.WebsiteRepository)
+		if err != nil {
+			return err
+		}
+
+		time.Sleep(1 * time.Second)
+		c.WorkDir = path.Join(_root, "src_website")
+		c.ForceGitDir(repo.Root())
+		repo = nil
+		return c.Website()
+	}
+}

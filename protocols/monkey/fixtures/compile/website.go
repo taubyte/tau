@@ -7,9 +7,9 @@ import (
 	"os"
 	"strings"
 
-	builder "bitbucket.org/taubyte/go-builder"
 	"github.com/otiai10/copy"
 	"github.com/pterm/pterm"
+	builder "github.com/taubyte/builder"
 	iface "github.com/taubyte/go-interfaces/builders"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/monkey/jobs"
