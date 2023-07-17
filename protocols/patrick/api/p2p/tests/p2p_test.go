@@ -4,20 +4,20 @@ import (
 	_ "embed"
 	"testing"
 
-	_ "bitbucket.org/taubyte/auth/service"
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
-	_ "bitbucket.org/taubyte/hoarder/service"
 	commonIface "github.com/taubyte/go-interfaces/common"
+	_ "github.com/taubyte/odo/protocols/auth/service"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/patrick/api/p2p"
 
-	_ "bitbucket.org/taubyte/tns/service"
 	"github.com/fxamacker/cbor/v2"
 	iface "github.com/taubyte/go-interfaces/services/patrick"
 	commonPatrick "github.com/taubyte/odo/protocols/patrick/common"
 	"github.com/taubyte/odo/protocols/patrick/service"
 	_ "github.com/taubyte/odo/protocols/patrick/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 func TestClientWithUniverse(t *testing.T) {

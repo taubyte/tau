@@ -15,10 +15,10 @@ import (
 	_patrick "github.com/taubyte/odo/protocols/patrick/common"
 	"github.com/taubyte/utils/maps"
 
-	_ "bitbucket.org/taubyte/auth/service"
-	_ "bitbucket.org/taubyte/hoarder/service"
-	_ "bitbucket.org/taubyte/monkey/service"
-	_ "bitbucket.org/taubyte/tns/service"
+	_ "github.com/taubyte/odo/protocols/auth/service"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
+	_ "github.com/taubyte/odo/protocols/monkey/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 func init() {

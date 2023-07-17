@@ -17,12 +17,12 @@ import (
 
 	projectLib "github.com/taubyte/go-project-schema/project"
 
-	commonAuth "bitbucket.org/taubyte/auth/common"
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
 	gitTest "bitbucket.org/taubyte/dreamland-test/git"
+	commonAuth "github.com/taubyte/odo/protocols/auth/common"
 
-	_ "bitbucket.org/taubyte/auth/service"
 	_ "bitbucket.org/taubyte/tns-p2p-client"
+	_ "github.com/taubyte/odo/protocols/auth/service"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/monkey/api/p2p"
 	_ "github.com/taubyte/odo/protocols/tns/service"

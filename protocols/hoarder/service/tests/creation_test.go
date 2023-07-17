@@ -7,9 +7,9 @@ import (
 
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
-	_ "bitbucket.org/taubyte/seer/service"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
+	_ "github.com/taubyte/odo/protocols/seer/service"
 
 	_ "github.com/taubyte/odo/protocols/hoarder/api/p2p"
 )

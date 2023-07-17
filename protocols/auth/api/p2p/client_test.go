@@ -7,11 +7,11 @@ import (
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
-	_ "bitbucket.org/taubyte/tns/service"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	_ "github.com/taubyte/odo/protocols/auth/service"
 	"github.com/taubyte/odo/protocols/auth/service/hooks"
 	"github.com/taubyte/odo/protocols/auth/service/repositories"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 
 	//cmd "bitbucket.org/taubyte/p2p/streams/command"
 	//cr "bitbucket.org/taubyte/p2p/streams/command/response"

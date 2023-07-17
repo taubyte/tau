@@ -6,9 +6,9 @@ import (
 	"github.com/taubyte/go-interfaces/services/http"
 	iface "github.com/taubyte/go-interfaces/services/patrick"
 
-	auth "bitbucket.org/taubyte/auth/api/p2p"
-	monkey "bitbucket.org/taubyte/monkey/api/p2p"
 	ifaceTns "github.com/taubyte/go-interfaces/services/tns"
+	auth "github.com/taubyte/odo/protocols/auth/api/p2p"
+	monkey "github.com/taubyte/odo/protocols/monkey/api/p2p"
 
 	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/go-interfaces/kvdb"

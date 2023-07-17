@@ -5,15 +5,15 @@ import (
 	"testing"
 	"time"
 
-	_ "bitbucket.org/taubyte/auth/service"
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
 	"bitbucket.org/taubyte/dreamland/services"
-	_ "bitbucket.org/taubyte/hoarder/service"
-	_ "bitbucket.org/taubyte/monkey/service"
-	_ "bitbucket.org/taubyte/seer/service"
-	_ "bitbucket.org/taubyte/tns/service"
 	commonIface "github.com/taubyte/go-interfaces/common"
+	_ "github.com/taubyte/odo/protocols/auth/service"
+	_ "github.com/taubyte/odo/protocols/hoarder/service"
+	_ "github.com/taubyte/odo/protocols/monkey/service"
 	_ "github.com/taubyte/odo/protocols/patrick/api/p2p"
+	_ "github.com/taubyte/odo/protocols/seer/service"
+	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
 func TestFixtureProvidesClients(t *testing.T) {

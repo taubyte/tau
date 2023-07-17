@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"bitbucket.org/taubyte/auth/github"
 	moody "github.com/taubyte/go-interfaces/moody"
+	"github.com/taubyte/odo/protocols/auth/github"
 
 	"github.com/taubyte/go-interfaces/services/http"
 	httpAuth "github.com/taubyte/http/auth"

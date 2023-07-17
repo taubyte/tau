@@ -20,11 +20,11 @@ import (
 
 	dbApi "bitbucket.org/taubyte/go-node-database"
 	storageApi "bitbucket.org/taubyte/go-node-storage"
-	_ "bitbucket.org/taubyte/seer/service"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	_ "github.com/taubyte/odo/protocols/hoarder/api/p2p"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/node/service"
+	_ "github.com/taubyte/odo/protocols/seer/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 

@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/odo/protocols/patrick/common"
 
-	_ "bitbucket.org/taubyte/auth/service"
+	_ "github.com/taubyte/odo/protocols/auth/service"
 )
 
 func TestPatrick(t *testing.T) {
