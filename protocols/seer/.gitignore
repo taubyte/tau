@@ -3,21 +3,12 @@
 # Learn more about .gitignore:
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
-./protocols/hoarder/testGIT
-./protocols/monkey/build/
-./protocols/auth/build/
-./protocols/seer/build/
-./protocols/patrick/build/
-./protocols/patrick/.patrick/
-**fakeroot/
-./protocols/node/.node/
-./protocols/tns/storage
-
 # Node artifact files
 node_modules/
 dist/
 build/
 fakeroot/
+
 
 
 # Compiled Java class files
