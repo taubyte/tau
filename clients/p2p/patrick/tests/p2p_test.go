@@ -4,9 +4,9 @@ import (
 	_ "embed"
 	"testing"
 
-	commonTest "bitbucket.org/taubyte/dreamland-test/common"
-	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
+	dreamlandCommon "github.com/taubyte/dreamland/core/common"
+	dreamland "github.com/taubyte/dreamland/core/services"
+	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	_ "github.com/taubyte/odo/clients/p2p/patrick"
 	_ "github.com/taubyte/odo/protocols/auth/service"

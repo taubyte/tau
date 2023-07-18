@@ -3,8 +3,8 @@ package git
 import (
 	"fmt"
 
-	"bitbucket.org/taubyte/go-auth-http/git/common"
 	"github.com/google/go-github/v32/github"
+	"github.com/taubyte/odo/clients/http/auth/git/common"
 )
 
 type repository struct {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"bitbucket.org/taubyte/go-auth-http/git/common"
-	githubClient "bitbucket.org/taubyte/go-auth-http/git/github"
+	"github.com/taubyte/odo/clients/http/auth/git/common"
+	githubClient "github.com/taubyte/odo/clients/http/auth/git/github"
 )
 
 func New(ctx context.Context, provider, token string) common.Client {

@@ -11,11 +11,11 @@ import (
 	ci "github.com/taubyte/go-simple-container/gc"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
 
-	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"

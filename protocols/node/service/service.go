@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 
-	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	peer "bitbucket.org/taubyte/p2p/peer"
+	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	nodeP2PIFace "github.com/taubyte/go-interfaces/services/substrate/p2p"

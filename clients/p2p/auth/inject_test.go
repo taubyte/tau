@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
+	dreamlandCommon "github.com/taubyte/dreamland/core/common"
+	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/http/helpers"
 	"github.com/taubyte/odo/protocols/auth/acme/store"

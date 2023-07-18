@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"bitbucket.org/taubyte/dreamland/common"
-	dreamlandRegistry "bitbucket.org/taubyte/dreamland/registry"
+	"github.com/taubyte/dreamland/core/common"
+	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	iface "github.com/taubyte/go-interfaces/common"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 )

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"bitbucket.org/taubyte/go-auth-http/git/common"
+	"github.com/taubyte/odo/clients/http/auth/git/common"
 )
 
 type Client struct {

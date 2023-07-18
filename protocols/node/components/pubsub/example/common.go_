@@ -8,8 +8,8 @@ import (
 	"time"
 
 	compilerCommon "bitbucket.org/taubyte/config-compiler/common"
-	commonTest "bitbucket.org/taubyte/dreamland-test/common"
-	commonDreamland "bitbucket.org/taubyte/dreamland/common"
+	commonTest "github.com/taubyte/dreamland/helpers"
+	commonDreamland "github.com/taubyte/dreamland/core/common"
 	"bitbucket.org/taubyte/go-interfaces/services/monkey"
 	"bitbucket.org/taubyte/go-interfaces/services/patrick"
 	git "github.com/taubyte/go-simple-git"

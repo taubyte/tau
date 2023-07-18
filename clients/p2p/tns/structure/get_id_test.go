@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	_ "bitbucket.org/taubyte/config-compiler/fixtures"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
+	dreamland "github.com/taubyte/dreamland/core/services"
 	"github.com/taubyte/go-interfaces/services/tns"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/odo/clients/p2p/tns"

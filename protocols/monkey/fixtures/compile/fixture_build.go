@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"bitbucket.org/taubyte/dreamland/common"
-	dreamlandRegistry "bitbucket.org/taubyte/dreamland/registry"
+	"github.com/taubyte/dreamland/core/common"
+	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	spec "github.com/taubyte/go-specs/common"
 )
 
