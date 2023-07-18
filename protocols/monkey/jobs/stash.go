@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/taubyte/go-interfaces/moody"
-	hoarderClient "github.com/taubyte/odo/protocols/hoarder/api/p2p"
+	hoarderClient "github.com/taubyte/odo/clients/p2p/hoarder"
 )
 
 func (c Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {

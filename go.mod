@@ -8,13 +8,14 @@ require (
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	bitbucket.org/taubyte/dreamland v0.4.1
 	bitbucket.org/taubyte/dreamland-test v0.3.1
+	bitbucket.org/taubyte/go-auth-http v0.1.2
 	bitbucket.org/taubyte/go-moody-blues v0.1.34
 	bitbucket.org/taubyte/go-node-counters v0.1.7-pre
 	bitbucket.org/taubyte/p2p v0.8.2
-	bitbucket.org/taubyte/seer-p2p-client v0.1.1
 	bitbucket.org/taubyte/tns-p2p-client v0.1.1
 	bitbucket.org/taubyte/vm-test-examples v0.5.1-pre.v3
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
+	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/foxcpp/go-mockdns v1.0.0
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/go-git/go-git/v5 v5.4.2
@@ -30,6 +31,7 @@ require (
 	github.com/jellydator/ttlcache/v3 v3.0.1
 	github.com/libp2p/go-libp2p v0.28.1
 	github.com/libp2p/go-libp2p-pubsub v0.9.3
+	github.com/mackerelio/go-osstat v0.2.4
 	github.com/miekg/dns v1.1.55
 	github.com/mitchellh/mapstructure v1.5.0
 	github.com/multiformats/go-multiaddr v0.9.0
@@ -61,7 +63,9 @@ require (
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
 	golang.org/x/net v0.10.0
 	golang.org/x/oauth2 v0.7.0
+	golang.org/x/sys v0.8.0
 	gopkg.in/go-playground/webhooks.v5 v5.17.0
+	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools v2.2.0+incompatible
 	gotest.tools/v3 v3.5.0
 	modernc.org/sqlite v1.23.1
@@ -71,17 +75,16 @@ require (
 	atomicgo.dev/cursor v0.1.1 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	bitbucket.org/taubyte/auth v0.4.4 // indirect
-	bitbucket.org/taubyte/go-auth-http v0.1.2 // indirect
 	bitbucket.org/taubyte/http-auto v0.1.1 // indirect
 	bitbucket.org/taubyte/kvdb v0.4.1 // indirect
 	bitbucket.org/taubyte/mycelium v0.4.4 // indirect
+	bitbucket.org/taubyte/seer-p2p-client v0.1.1 // indirect
 	github.com/CAFxX/httpcompression v0.0.8 // indirect
 	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
 	github.com/ProtonMail/go-crypto v0.0.0-20220407094043-a94812496cf5 // indirect
 	github.com/acomagu/bufpipe v1.0.3 // indirect
 	github.com/andybalholm/brotli v1.0.5 // indirect
-	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
@@ -190,7 +193,6 @@ require (
 	github.com/libp2p/go-reuseport v0.3.0 // indirect
 	github.com/libp2p/go-yamux/v4 v4.0.0 // indirect
 	github.com/lithammer/fuzzysearch v1.1.5 // indirect
-	github.com/mackerelio/go-osstat v0.2.4 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/marten-seemann/tcp v0.0.0-20210406111302-dfbc87cc63fd // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
@@ -264,7 +266,6 @@ require (
 	go.uber.org/zap v1.24.0 // indirect
 	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/sync v0.2.0 // indirect
-	golang.org/x/sys v0.8.0 // indirect
 	golang.org/x/term v0.8.0 // indirect
 	golang.org/x/text v0.9.0 // indirect
 	golang.org/x/tools v0.9.1 // indirect
@@ -275,7 +276,6 @@ require (
 	google.golang.org/protobuf v1.30.0 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 	lukechampine.com/uint128 v1.2.0 // indirect
 	modernc.org/cc/v3 v3.40.0 // indirect

@@ -7,8 +7,8 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/patrick"
 
 	ifaceTns "github.com/taubyte/go-interfaces/services/tns"
-	auth "github.com/taubyte/odo/protocols/auth/api/p2p"
-	monkey "github.com/taubyte/odo/protocols/monkey/api/p2p"
+	auth "github.com/taubyte/odo/clients/p2p/auth"
+	monkey "github.com/taubyte/odo/clients/p2p/monkey"
 
 	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/go-interfaces/kvdb"

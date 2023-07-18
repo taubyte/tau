@@ -14,7 +14,7 @@ import (
 	git "github.com/taubyte/go-simple-git"
 	specs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
-	hoarderClient "github.com/taubyte/odo/protocols/hoarder/api/p2p"
+	hoarderClient "github.com/taubyte/odo/clients/p2p/hoarder"
 	"github.com/taubyte/utils/maps"
 )
 

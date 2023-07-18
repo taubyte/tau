@@ -5,15 +5,15 @@ import (
 	"crypto/rand"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/big"
+	"os"
 	"strings"
 	"time"
 
 	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/patrick"
+	hoarderClient "github.com/taubyte/odo/clients/p2p/hoarder"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
-	hoarderClient "github.com/taubyte/odo/protocols/hoarder/api/p2p"
 )
 
 func (m *Monkey) Run() {
@@ -123,7 +123,7 @@ func (s *Service) newMonkey(job *patrick.Job) (*Monkey, error) {
 	}
 
 	if locked {
-		logFile, err := ioutil.TempFile("", fmt.Sprintf("log-%s", jid))
+		logFile, err := os.CreateTemp("/tmp", fmt.Sprintf("log-%s", jid))
 		if err != nil {
 			return nil, err
 		}

@@ -5,8 +5,8 @@ import (
 
 	ifaceTns "github.com/taubyte/go-interfaces/services/tns"
 	basicHttp "github.com/taubyte/http/basic"
+	authP2P "github.com/taubyte/odo/clients/p2p/auth"
 	acme "github.com/taubyte/odo/protocols/auth/acme/store"
-	authP2P "github.com/taubyte/odo/protocols/auth/api/p2p"
 )
 
 type Service struct {

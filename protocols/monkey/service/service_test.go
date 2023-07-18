@@ -9,9 +9,9 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
+	_ "github.com/taubyte/odo/clients/p2p/monkey"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
-	_ "github.com/taubyte/odo/protocols/monkey/api/p2p"
 )
 
 func init() {

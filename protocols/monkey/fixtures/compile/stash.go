@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"io"
 
-	tns "bitbucket.org/taubyte/tns-p2p-client"
 	"github.com/pterm/pterm"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
+	tns "github.com/taubyte/odo/clients/p2p/tns"
 	"github.com/taubyte/odo/protocols/monkey/jobs"
 )
 
