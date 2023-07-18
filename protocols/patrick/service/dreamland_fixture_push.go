@@ -12,7 +12,7 @@ import (
 	"bitbucket.org/taubyte/dreamland/common"
 	dreamlandRegistry "bitbucket.org/taubyte/dreamland/registry"
 	spec "github.com/taubyte/go-specs/common"
-	_patrick "github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/utils/maps"
 
 	_ "github.com/taubyte/odo/protocols/auth/service"
@@ -227,7 +227,7 @@ func pushWrapper(u common.Universe, gitPayload []byte, repo commonTest.Repositor
 		return err
 	}
 
-	_patrick.FakeSecret = true
+	protocolsCommon.FakeSecret = true
 	fmt.Printf("Pushing job to repo %v  projectID: %s\n", repo, commonTest.ProjectID)
 	err = commonTest.PushJob(gitPayload, mockPatrickURL, repo)
 	if err != nil {

@@ -5,12 +5,12 @@ import (
 	"testing"
 
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
-	"github.com/taubyte/odo/protocols/monkey/common"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 	"gotest.tools/v3/assert"
 )
 
 func TestBranch(t *testing.T) {
-	common.LocalPatrick = true
+	protocolCommon.LocalPatrick = true
 	u, err := startDreamland("testRunBranch")
 	defer u.Stop()
 	assert.NilError(t, err)

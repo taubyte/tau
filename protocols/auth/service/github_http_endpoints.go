@@ -7,9 +7,9 @@ import (
 	"time"
 
 	http "github.com/taubyte/go-interfaces/services/http"
-	common "github.com/taubyte/odo/protocols/auth/common"
 	"github.com/taubyte/odo/protocols/auth/github"
 	"github.com/taubyte/odo/protocols/auth/service/repositories"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -102,7 +102,7 @@ func (srv *AuthService) newGitHubProjectHTTPHandler(ctx http.Context) (interface
 		return nil, err
 	}
 
-	projectID := common.GetNewProjectID(projectName, time.Now().Unix(), rand.Intn(1000000000))
+	projectID := protocolCommon.GetNewProjectID(projectName, time.Now().Unix(), rand.Intn(1000000000))
 	return srv.newGitHubProject(ctx.Request().Context(), client, projectID, projectName, configID, codeID)
 }
 

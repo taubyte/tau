@@ -10,8 +10,8 @@ import (
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
-	common "github.com/taubyte/odo/protocols/monkey/common"
 )
 
 func init() {
@@ -21,7 +21,7 @@ func init() {
 }
 
 func TestService(t *testing.T) {
-	common.LocalPatrick = true
+	protocolCommon.LocalPatrick = true
 	u := dreamland.Multiverse("TestService")
 	defer u.Stop()
 

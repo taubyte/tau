@@ -11,8 +11,8 @@ import (
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	p2p "github.com/taubyte/odo/clients/p2p/monkey"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
-	"github.com/taubyte/odo/protocols/monkey/common"
 	"github.com/taubyte/odo/protocols/monkey/service"
 )
 
@@ -21,7 +21,7 @@ func TestClient(t *testing.T) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 
-	common.LocalPatrick = true
+	protocolCommon.LocalPatrick = true
 
 	u := dreamland.Multiverse("TestClient")
 	defer u.Stop()

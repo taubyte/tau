@@ -20,13 +20,13 @@ import (
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
 
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
+
 	_ "embed"
 
 	p2pDatastore "bitbucket.org/taubyte/p2p/peer"
 
 	_ "modernc.org/sqlite"
-
-	common "github.com/taubyte/odo/protocols/seer/common"
 )
 
 var (
@@ -44,8 +44,8 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 	}
 
 	err := config.Build(commonIface.ConfigBuilder{
-		DefaultP2PListenPort: common.DefaultP2PListenPort,
-		DevHttpListenPort:    common.DevHttpListenPort,
+		DefaultP2PListenPort: protocolsCommon.SeerDefaultP2PListenPort,
+		DevHttpListenPort:    protocolsCommon.SeerDevHttpListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
 	})
 	if err != nil {
@@ -70,7 +70,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewLiteNode(ctx, config, common.DatabaseName)
+		srv.node, err = configutils.NewLiteNode(ctx, config, protocolsCommon.Seer)
 		if err != nil {
 			return nil, fmt.Errorf("new lite node failed with: %s", err)
 		}
@@ -85,7 +85,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 		clientNode = config.ClientNode
 	}
 
-	srv.db, err = kv.New(logger.Std(), srv.node, common.DatabaseName, 5)
+	srv.db, err = kv.New(logger.Std(), srv.node, protocolsCommon.Seer, 5)
 	if err != nil {
 		return nil, fmt.Errorf("new key-value store failed with: %s", err)
 	}
@@ -120,7 +120,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 	}
 
 	// Stream
-	srv.stream, err = streams.New(srv.node, common.ServiceName, commonSpec.SeerProtocol)
+	srv.stream, err = streams.New(srv.node, protocolsCommon.Seer, commonSpec.SeerProtocol)
 	if err != nil {
 		return nil, fmt.Errorf("new p2p stream failed with: %w", err)
 	}
@@ -164,8 +164,8 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 
 func (srv *Service) Close() error {
 	// TODO use debug logger
-	fmt.Println("Closing", common.DatabaseName)
-	defer fmt.Println(common.DatabaseName, "closed")
+	fmt.Println("Closing", protocolsCommon.Seer)
+	defer fmt.Println(protocolsCommon.Seer, "closed")
 
 	// node.ctx
 	srv.stream.Stop()

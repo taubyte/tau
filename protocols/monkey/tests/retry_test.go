@@ -18,8 +18,8 @@ import (
 
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
-	commonAuth "github.com/taubyte/odo/protocols/auth/common"
 	_ "github.com/taubyte/odo/protocols/auth/service"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	patrickService "github.com/taubyte/odo/protocols/patrick/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"
@@ -63,7 +63,7 @@ func TestRunWasmRetry(t *testing.T) {
 	}
 
 	// override ID of project generated so that it matches id in config
-	commonAuth.GetNewProjectID = func(args ...interface{}) string { return commonTest.ProjectID }
+	protocolCommon.GetNewProjectID = func(args ...interface{}) string { return commonTest.ProjectID }
 	err = commonTest.RegisterTestProject(u.Context(), authHttpURL)
 	if err != nil {
 		t.Error(err)

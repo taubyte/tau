@@ -11,7 +11,7 @@ import (
 
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
 	_ "github.com/taubyte/odo/clients/p2p/patrick"
-	"github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 )
 
 func TestReAnnounce(t *testing.T) {
@@ -65,7 +65,7 @@ func TestReAnnounce(t *testing.T) {
 		return
 	}
 
-	common.FakeSecret = true
+	protocolsCommon.FakeSecret = true
 	err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
 	if err != nil {
 		t.Error(err)

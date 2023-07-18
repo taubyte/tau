@@ -15,7 +15,6 @@ import (
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonInterface "github.com/taubyte/go-interfaces/services/common"
-	common "github.com/taubyte/odo/protocols/auth/common"
 	"github.com/taubyte/odo/protocols/auth/github"
 
 	"github.com/taubyte/odo/protocols/auth/service/hooks"
@@ -49,7 +48,7 @@ func generateKey() (string, string, string, error) {
 		return "", "", "", err
 	}
 
-	return common.DeployKeyName, string(ssh.MarshalAuthorizedKey(pub)), private.String(), nil
+	return deployKeyName, string(ssh.MarshalAuthorizedKey(pub)), private.String(), nil
 }
 
 func (srv *AuthService) newGitHubRepository(ctx context.Context, client *github.Client, project_id string, name string, description string, private bool) (string, string, error) {

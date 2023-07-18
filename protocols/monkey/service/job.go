@@ -11,7 +11,6 @@ import (
 	"github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/go-specs/methods"
 	authClient "github.com/taubyte/odo/clients/p2p/auth"
-	common "github.com/taubyte/odo/protocols/monkey/common"
 	"github.com/taubyte/odo/protocols/monkey/jobs"
 )
 
@@ -79,7 +78,7 @@ func (m *Monkey) RunJob() (err error) {
 			return fmt.Errorf("fetch project failed with: %w", err)
 		}
 
-		repoType = compilerCommon.RepositoryType(common.ToNumber(repoTypeResponse.Interface()))
+		repoType = compilerCommon.RepositoryType(ToNumber(repoTypeResponse.Interface()))
 		gitRepo, err = ac.Repositories().Github().Get(repo.ID)
 		if err != nil {
 			return fmt.Errorf("auth github get failed with: %w", err)
@@ -95,7 +94,7 @@ func (m *Monkey) RunJob() (err error) {
 			break
 		}
 
-		common.Logger.Debug(moodyCommon.Object{"msg": "Deploy key is empty, retrying"})
+		logger.Debug(moodyCommon.Object{"msg": "Deploy key is empty, retrying"})
 		time.Sleep(5 * time.Second)
 		gitRepo, err = ac.Repositories().Github().Get(repo.ID)
 		if err != nil {

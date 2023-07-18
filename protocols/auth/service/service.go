@@ -15,9 +15,9 @@ import (
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
-	common "github.com/taubyte/odo/protocols/auth/common"
 
 	commonIface "github.com/taubyte/go-interfaces/services/common"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
 var (
@@ -38,8 +38,8 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, 
 	srv.webHookUrl = fmt.Sprintf(`https://patrick.tau.%s`, config.NetworkUrl)
 
 	err := config.Build(commonIface.ConfigBuilder{
-		DefaultP2PListenPort: common.DefaultP2PListenPort,
-		DevHttpListenPort:    common.DevHttpListenPort,
+		DefaultP2PListenPort: protocolCommon.AuthDefaultP2PListenPort,
+		DevHttpListenPort:    protocolCommon.AuthDevHttpListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
 	})
 	if err != nil {
@@ -48,11 +48,11 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, 
 
 	srv.devMode = config.DevMode
 	if srv.devMode {
-		common.DeployKeyName = common.DevDeployKeyName
+		deployKeyName = devDeployKeyName
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewNode(ctx, config, common.DatabaseName)
+		srv.node, err = configutils.NewNode(ctx, config, protocolCommon.Auth)
 		if err != nil {
 			return nil, err
 		}
@@ -73,7 +73,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, 
 		clientNode = config.ClientNode
 	}
 
-	srv.db, err = kv.New(logger.Std(), srv.node, common.DatabaseName, 5)
+	srv.db, err = kv.New(logger.Std(), srv.node, protocolCommon.Auth, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, 
 	srv.rootDomain = config.NetworkUrl
 
 	// P2P
-	srv.stream, err = streams.New(srv.node, common.ServiceName, common.Protocol)
+	srv.stream, err = streams.New(srv.node, protocolCommon.Auth, protocolCommon.AuthProtocol)
 	if err != nil {
 		return nil, err
 	}
@@ -131,8 +131,8 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, 
 
 func (srv *AuthService) Close() error {
 	// TODO use debug logger
-	fmt.Println("Closing", common.DatabaseName)
-	defer fmt.Println(common.DatabaseName, "closed")
+	fmt.Println("Closing", protocolCommon.Auth)
+	defer fmt.Println(protocolCommon.Auth, "closed")
 
 	// node.ctx
 	srv.stream.Stop()

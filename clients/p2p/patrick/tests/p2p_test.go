@@ -14,7 +14,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	iface "github.com/taubyte/go-interfaces/services/patrick"
-	commonPatrick "github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/patrick/service"
 	_ "github.com/taubyte/odo/protocols/patrick/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"
@@ -72,7 +72,7 @@ func TestClientWithUniverse(t *testing.T) {
 		return
 	}
 
-	commonPatrick.FakeSecret = true
+	protocolsCommon.FakeSecret = true
 	err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
 	if err != nil {
 		t.Error(err)

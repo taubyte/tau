@@ -7,7 +7,7 @@ import (
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	"github.com/taubyte/odo/protocols/seer/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 
 	_ "github.com/taubyte/odo/protocols/auth/service"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
@@ -21,7 +21,7 @@ func TestCalls(t *testing.T) {
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer": {Others: map[string]int{"dns": common.DefaultDevDnsPort, "mock": 1}},
+			"seer": {Others: map[string]int{"dns": protocolsCommon.DefaultDevDnsPort, "mock": 1}},
 			"node": {Others: map[string]int{"copies": 2}},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{

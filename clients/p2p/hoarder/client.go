@@ -11,7 +11,7 @@ import (
 	"github.com/taubyte/go-interfaces/moody"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	iface "github.com/taubyte/go-interfaces/services/hoarder"
-	common "github.com/taubyte/odo/protocols/hoarder/common"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
 var _ iface.Client = &Client{}
@@ -38,7 +38,7 @@ func New(ctx context.Context, node peer.Node) (*Client, error) {
 		err error
 	)
 
-	if c.client, err = client.New(ctx, node, nil, common.Protocol, MinPeers, MaxPeers); err != nil {
+	if c.client, err = client.New(ctx, node, nil, protocolCommon.HoarderProtocol, MinPeers, MaxPeers); err != nil {
 		logger.Errorf(fmt.Sprintf("API client creation failed: %v", err))
 		return nil, err
 	}

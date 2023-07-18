@@ -17,10 +17,11 @@ import (
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/protocols/node/common"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 	smartopsPlugins "github.com/taubyte/vm-plugins/smartops"
 	tbPlugins "github.com/taubyte/vm-plugins/taubyte"
+
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
 var (
@@ -41,8 +42,8 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	err := config.Build(commonIface.ConfigBuilder{
-		DefaultP2PListenPort: common.DefaultP2PListenPort,
-		DevHttpListenPort:    common.DevHttpListenPort,
+		DefaultP2PListenPort: protocolCommon.NodeDefaultP2PListenPort,
+		DevHttpListenPort:    protocolCommon.NodeDevHttpListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
 	})
 	if err != nil {
@@ -55,7 +56,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewLiteNode(ctx, config, common.DatabaseName)
+		srv.node, err = configutils.NewLiteNode(ctx, config, protocolCommon.Node)
 		if err != nil {
 			return nil, fmt.Errorf("creating new lite node failed with: %w", err)
 		}
@@ -157,8 +158,8 @@ func (srv *Service) Orbitals() []vm.Plugin {
 
 func (srv *Service) Close() error {
 	// TODO use debug logger
-	fmt.Println("Closing", common.DatabaseName)
-	defer fmt.Println(common.DatabaseName, "closed")
+	fmt.Println("Closing", protocolCommon.Node)
+	defer fmt.Println(protocolCommon.Node, "closed")
 
 	for _, orbitals := range srv.orbitals {
 		if err := orbitals.Close(); err != nil {

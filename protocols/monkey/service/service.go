@@ -10,16 +10,19 @@ import (
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	ci "github.com/taubyte/go-simple-container/gc"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	common "github.com/taubyte/odo/protocols/monkey/common"
 
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
+	moody "bitbucket.org/taubyte/go-moody-blues"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
+
+var logger, _ = moody.New("monkey.service")
 
 func (srv *Service) subscribe() error {
 	return srv.node.PubSubSubscribe(
@@ -30,9 +33,9 @@ func (srv *Service) subscribe() error {
 		func(err error) {
 			// re-establish if fails
 			if err.Error() != "context canceled" {
-				common.Logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Subscription had an error: %s", err.Error())})
+				logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Subscription had an error: %s", err.Error())})
 				if err := srv.subscribe(); err != nil {
-					common.Logger.Errorf("resubscribe failed with: %s", err)
+					logger.Errorf("resubscribe failed with: %s", err)
 				}
 			}
 		},
@@ -48,7 +51,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	err := config.Build(commonIface.ConfigBuilder{
-		DefaultP2PListenPort: common.DefaultP2PListenPort,
+		DefaultP2PListenPort: protocolCommon.MonkeyDefaultP2PListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
 	})
 	if err != nil {
@@ -70,7 +73,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewLiteNode(ctx, config, common.ServiceName)
+		srv.node, err = configutils.NewLiteNode(ctx, config, protocolCommon.Monkey)
 		if err != nil {
 			return nil, err
 		}
@@ -92,7 +95,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 		return nil, err
 	}
 
-	srv.stream, err = streams.New(srv.node, common.ServiceName, common.Protocol)
+	srv.stream, err = streams.New(srv.node, protocolCommon.Monkey, protocolCommon.MonkeyProtocol)
 	if err != nil {
 		return nil, err
 	}
@@ -126,8 +129,8 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 
 func (srv *Service) Close() error {
 	// TODO use debug logger
-	fmt.Println("Closing", common.ServiceName)
-	defer fmt.Println(common.ServiceName, "closed")
+	fmt.Println("Closing", protocolCommon.Monkey)
+	defer fmt.Println(protocolCommon.Monkey, "closed")
 
 	// node.ctx
 	srv.stream.Stop()

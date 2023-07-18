@@ -7,18 +7,17 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/patrick"
-	monkeyCommon "github.com/taubyte/odo/protocols/monkey/common"
 )
 
 func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 	var receivedJob patrick.Job
 	err := cbor.Unmarshal(msg.Data, &receivedJob)
 	if err != nil {
-		monkeyCommon.Logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Subscription unmarshal had an error: %s", err.Error())})
+		logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Subscription unmarshal had an error: %s", err.Error())})
 		return
 	} else {
 		if len(receivedJob.Id) == 0 {
-			monkeyCommon.Logger.Error(moodyCommon.Object{"msg": "Got an empty job."})
+			logger.Error(moodyCommon.Object{"msg": "Got an empty job."})
 			return
 		}
 
@@ -28,13 +27,13 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 
 		_, ok := srv.monkeys[receivedJob.Id]
 		if ok {
-			monkeyCommon.Logger.Debug(moodyCommon.Object{"msg": fmt.Sprintf("Already processing job: `%s`", receivedJob.Id)})
+			logger.Debug(moodyCommon.Object{"msg": fmt.Sprintf("Already processing job: `%s`", receivedJob.Id)})
 			return
 		}
 
 		monkey, err := srv.newMonkey(&receivedJob)
 		if err != nil {
-			monkeyCommon.Logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("New monkey had an error: `%s`", err.Error())})
+			logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("New monkey had an error: `%s`", err.Error())})
 			return
 		}
 

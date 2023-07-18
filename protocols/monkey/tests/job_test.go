@@ -12,14 +12,12 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
-	"github.com/taubyte/odo/protocols/monkey/common"
 	"github.com/taubyte/odo/protocols/monkey/service"
-
-	projectLib "github.com/taubyte/go-project-schema/project"
 
 	commonTest "bitbucket.org/taubyte/dreamland-test/common"
 	gitTest "bitbucket.org/taubyte/dreamland-test/git"
-	commonAuth "github.com/taubyte/odo/protocols/auth/common"
+	projectLib "github.com/taubyte/go-project-schema/project"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
@@ -31,7 +29,7 @@ import (
 )
 
 func TestConfigJob(t *testing.T) {
-	common.LocalPatrick = true
+	protocolCommon.LocalPatrick = true
 	service.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
@@ -73,7 +71,7 @@ func TestConfigJob(t *testing.T) {
 	monkeyClient := simple.Monkey()
 
 	// Override auth method so that projectID is not changed
-	commonAuth.GetNewProjectID = func(args ...interface{}) string {
+	protocolCommon.GetNewProjectID = func(args ...interface{}) string {
 		return commonTest.ProjectID
 	}
 

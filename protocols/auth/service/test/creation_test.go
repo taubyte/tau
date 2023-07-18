@@ -14,7 +14,7 @@ import (
 	gitTest "bitbucket.org/taubyte/dreamland-test/git"
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
-	commonAuth "github.com/taubyte/odo/protocols/auth/common"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"
 )
@@ -51,7 +51,7 @@ func TestAuth(t *testing.T) {
 
 	// tnsClient := simple.TNS()
 
-	commonAuth.GetNewProjectID = func(args ...interface{}) string {
+	protocolCommon.GetNewProjectID = func(args ...interface{}) string {
 		return commonTest.ProjectID
 	}
 
@@ -147,3 +147,10 @@ func TestAuth(t *testing.T) {
 	// }
 	// return
 }
+
+// func CreateHttpClient() *http.Client {
+// 	tr := &http.Transport{
+// 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+// 	}
+// 	return &http.Client{Transport: tr}
+// }

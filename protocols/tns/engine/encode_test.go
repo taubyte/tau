@@ -11,7 +11,7 @@ import (
 	kv "bitbucket.org/taubyte/kvdb/database"
 	"bitbucket.org/taubyte/p2p/keypair"
 	"bitbucket.org/taubyte/p2p/peer"
-	"github.com/taubyte/odo/protocols/tns/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/flat"
 )
 
@@ -43,7 +43,7 @@ func TestEncode(t *testing.T) {
 		return
 	}
 
-	db, err := kv.New(logger.Std(), peerC, common.DatabaseName, 5)
+	db, err := kv.New(logger.Std(), peerC, protocolsCommon.Tns, 5)
 	if err != nil {
 		t.Errorf("New db failed with err: %v", err)
 		return
