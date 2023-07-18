@@ -9,7 +9,6 @@ import (
 	"time"
 
 	keypair "bitbucket.org/taubyte/p2p/keypair"
-	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/utils/fs/file"
 	"github.com/urfave/cli/v2"
 )
@@ -26,7 +25,7 @@ func UtilsPing(c *cli.Context, pid string) error {
 		return err
 	}
 
-	Logger.Debug(moody.Object{"message": fmt.Sprintf("SWARM :%v", Node.Peer().Peerstore().Peers())})
+	Logger.Debug(fmt.Sprintf("SWARM :%v", Node.Peer().Peerstore().Peers()))
 
 	_, rtt, err := Node.Ping(pid, 4)
 	time.Sleep(time.Second * 1)

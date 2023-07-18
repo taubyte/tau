@@ -10,7 +10,6 @@ import (
 
 	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/fxamacker/cbor/v2"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/utils/maps"
@@ -140,7 +139,7 @@ func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn stre
 		return nil, fmt.Errorf("heartbeat insert exec for hostname: `%s` failed with: %s", hostname, err)
 	}
 
-	logger.Info(moodyCommon.Object{"message": fmt.Sprintf("Inserted/Updated %s in Usage", id)})
+	logger.Info(map[string]interface{}{"message": fmt.Sprintf("Inserted/Updated %s in Usage", id)})
 
 	return cr.Response{"Updated Usage": id}, nil
 }
@@ -152,7 +151,7 @@ func (srv *oracleService) listIds() (cr.Response, error) {
 	row, err := srv.seer.nodeDB.Query("SELECT Id FROM Usage")
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed listIds query error: %v", err)})
+		logger.Error(map[string]interface{}{"message": fmt.Sprintf("Failed listIds query error: %v", err)})
 		return nil, fmt.Errorf("failed listIds query error: %w", err)
 	}
 	defer row.Close()
@@ -177,7 +176,7 @@ func (srv *oracleService) listServiceIds(name string) (cr.Response, error) {
 	row, err := srv.seer.nodeDB.Query(statement)
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed listServiceIds query error: %v", err)})
+		logger.Error(map[string]interface{}{"message": fmt.Sprintf("Failed listServiceIds query error: %v", err)})
 		return nil, fmt.Errorf("failed listServiceIds query error: %w", err)
 	}
 	defer row.Close()
@@ -205,7 +204,7 @@ func (srv *oracleService) getInfo(id string) (cr.Response, error) {
 	row, err := srv.seer.nodeDB.Query(statement)
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed query from usage for %s with: %v", id, err)})
+		logger.Error(map[string]interface{}{"message": fmt.Sprintf("Failed query from usage for %s with: %v", id, err)})
 		return nil, fmt.Errorf("failed info query error: %w", err)
 	}
 	defer row.Close()
@@ -248,7 +247,7 @@ func (srv *oracleService) getInfo(id string) (cr.Response, error) {
 	row2, err := srv.seer.nodeDB.Query(getType)
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed getting type from services for %s with: %v", service.Id, err)})
+		logger.Error(map[string]interface{}{"message": fmt.Sprintf("Failed getting type from services for %s with: %v", service.Id, err)})
 		return nil, fmt.Errorf("failed getting types query error: %w", err)
 	}
 	defer row2.Close()
@@ -264,7 +263,7 @@ func (srv *oracleService) getInfo(id string) (cr.Response, error) {
 
 	serviceBytes, err := json.Marshal(service)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed marshalling service for %s with: %v", service.Id, err)})
+		logger.Error(map[string]interface{}{"message": fmt.Sprintf("Failed marshalling service for %s with: %v", service.Id, err)})
 		return nil, fmt.Errorf("marshalling service failed with: %s", err)
 	}
 

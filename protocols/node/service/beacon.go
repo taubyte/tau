@@ -6,7 +6,6 @@ import (
 
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
@@ -42,13 +41,13 @@ func (srv *Service) startBeacon(config *commonIface.GenericConfig) (beacon *serv
 func (beacon *serviceBeacon) hostname() (err error) {
 	ma, err := multiaddr.NewMultiaddr(beacon.config.P2PAnnounce[0])
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		logger.Error(map[string]interface{}{"message": err.Error()})
 		return err
 	}
 
 	addr, err := ma.ValueForProtocol(multiaddr.P_IP4)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		logger.Error(map[string]interface{}{"message": err.Error()})
 		return err
 	}
 

@@ -7,9 +7,9 @@ import (
 
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
+	logging "github.com/ipfs/go-log/v2"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	logger, _ = moody.New("auth.service")
+	logger = logging.Logger("auth.service")
 )
 
 func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, error) {
@@ -73,7 +73,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, 
 		clientNode = config.ClientNode
 	}
 
-	srv.db, err = kv.New(logger.Std(), srv.node, protocolCommon.Auth, 5)
+	srv.db, err = kv.New(logger, srv.node, protocolCommon.Auth, 5)
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
@@ -28,7 +27,7 @@ func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
 			if err != nil {
 				err = p.republishJob(ctx, jid)
 				if err != nil {
-					logger.Error(moody.Object{"msg": fmt.Sprintf("Failed republishing job %s with error: %v", jid, err)})
+					logger.Error(map[string]interface{}{"msg": fmt.Sprintf("Failed republishing job %s with error: %v", jid, err)})
 					continue
 				}
 			}
@@ -49,7 +48,7 @@ func (p *PatrickService) ReannounceFailedJobs(ctx context.Context) error {
 			job, err := p.getJob(ctx, id, "")
 			if err != nil {
 				// Continuing incase job gets schedule while routine is going
-				logger.Error(moody.Object{"msg": fmt.Sprintf("Failed getting %s with error: %v", id, err)})
+				logger.Error(map[string]interface{}{"msg": fmt.Sprintf("Failed getting %s with error: %v", id, err)})
 				continue
 			}
 
@@ -65,14 +64,14 @@ func (p *PatrickService) ReannounceFailedJobs(ctx context.Context) error {
 
 			job_byte, err := cbor.Marshal(job)
 			if err != nil {
-				logger.Error(moody.Object{"msg": fmt.Sprintf("Failed cbor marshall on job %s with err: %v", id, err)})
+				logger.Error(map[string]interface{}{"msg": fmt.Sprintf("Failed cbor marshall on job %s with err: %v", id, err)})
 				continue
 			}
 
 			// Put the job back into the list
 			err = p.db.Put(ctx, "/jobs/"+job.Id, job_byte)
 			if err != nil {
-				logger.Error(moody.Object{"msg": fmt.Sprintf("Failed putting job %s into database with error: %v", id, err)})
+				logger.Error(map[string]interface{}{"msg": fmt.Sprintf("Failed putting job %s into database with error: %v", id, err)})
 				continue
 			}
 

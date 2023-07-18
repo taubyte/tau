@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/kvdb"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 )
 
 var (
-	logger, _ = moody.New("auth.service.api.projects")
+	logger = logging.Logger("auth.service.api.projects")
 )
 
 func (r *ProjectObject) Serialize() Data {
@@ -74,27 +73,27 @@ func fetchGithub(ctx context.Context, kv kvdb.KVDB, id int) (Project, error) {
 
 // id: provided as string even if it's an int
 func Fetch(ctx context.Context, kv kvdb.KVDB, id string) (Project, error) {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Project.Fetch (%s)", id)})
+	logger.Debug(fmt.Sprintf("Project.Fetch (%s)", id))
 	proj_name_key := fmt.Sprintf("/projects/%s/name", id)
 	name, err := kv.Get(ctx, proj_name_key)
 	if err != nil {
-		logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Project.Fetch (%s) -> key=%s (not found)", id, proj_name_key)})
+		logger.Debug(fmt.Sprintf("Project.Fetch (%s) -> key=%s (not found)", id, proj_name_key))
 		return nil, fmt.Errorf("project `%s` not found", id)
 	}
 
 	configRepo, err := kv.Get(ctx, fmt.Sprintf("/projects/%s/repositories/config", id))
 	if err != nil {
-		logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Project.Fetch (%s) -> key=%s (not found)", id, proj_name_key)})
+		logger.Debug(fmt.Sprintf("Project.Fetch (%s) -> key=%s (not found)", id, proj_name_key))
 		return nil, fmt.Errorf("project `%s` not found", id)
 	}
 
 	codeRepo, err := kv.Get(ctx, fmt.Sprintf("/projects/%s/repositories/code", id))
 	if err != nil {
-		logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Project.Fetch (%s) -> key=%s (not found)", id, proj_name_key)})
+		logger.Debug(fmt.Sprintf("Project.Fetch (%s) -> key=%s (not found)", id, proj_name_key))
 		return nil, fmt.Errorf("project `%s` not found", id)
 	}
 
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Project.Fetch (%s) -> FOUND", id)})
+	logger.Debug(fmt.Sprintf("Project.Fetch (%s) -> FOUND", id))
 	return New(kv, Data{
 		"id":     id,
 		"name":   string(name),

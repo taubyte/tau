@@ -10,7 +10,6 @@ import (
 	"time"
 
 	cr "bitbucket.org/taubyte/p2p/streams/command/response"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/p2p/streams"
 	"github.com/taubyte/utils/maps"
 )
@@ -22,8 +21,8 @@ var ErrCacheMiss = errors.New("acme/autocert: certificate cache miss")
 
 // TODO: make sure we verify expiration
 func (srv *AuthService) x509Validate(fqdn string, certificate []byte) error {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Validating certificate for `%s`", fqdn)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Validating certificate for `%s` done", fqdn)})
+	logger.Debug(fmt.Sprintf("Validating certificate for `%s`", fqdn))
+	defer logger.Debug(fmt.Sprintf("Validating certificate for `%s` done", fqdn))
 	block, _ := pem.Decode(certificate)
 	if block == nil {
 		return errors.New("failed to parse certificate PEM")
@@ -47,8 +46,8 @@ func (srv *AuthService) x509Validate(fqdn string, certificate []byte) error {
 
 // TODO: validate fqdn
 func (srv *AuthService) setACMECertificate(ctx context.Context, fqdn string, certificate []byte) error {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Set certificate for `%s`", fqdn)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Set certificate for `%s` done", fqdn)})
+	logger.Debug(fmt.Sprintf("Set certificate for `%s`", fqdn))
+	defer logger.Debug(fmt.Sprintf("Set certificate for `%s` done", fqdn))
 
 	/*err := srv.x509Validate(fqdn, certificate)
 	if err != nil {
@@ -57,26 +56,26 @@ func (srv *AuthService) setACMECertificate(ctx context.Context, fqdn string, cer
 
 	err := srv.db.Put(ctx, "/acme/"+base64.StdEncoding.EncodeToString([]byte(fqdn))+"/certificate/pem", certificate)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Set certificate for `%s` failed: %s", fqdn, err.Error())})
+		logger.Error(fmt.Sprintf("Set certificate for `%s` failed: %s", fqdn, err.Error()))
 		return err
 	}
 
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Set certificate for `%s` = %v", fqdn, certificate)})
+	logger.Debug(fmt.Sprintf("Set certificate for `%s` = %v", fqdn, certificate))
 
 	return nil
 }
 
 func (srv *AuthService) setACMEStaticCertificate(ctx context.Context, fqdn string, certificate []byte) error {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Set certificate for `%s`", fqdn)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Set certificate for `%s` done", fqdn)})
+	logger.Debug(fmt.Sprintf("Set certificate for `%s`", fqdn))
+	defer logger.Debug(fmt.Sprintf("Set certificate for `%s` done", fqdn))
 
 	err := srv.db.Put(ctx, "/static/"+base64.StdEncoding.EncodeToString([]byte(fqdn))+"/certificate/pem", certificate)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Set certificate for `%s` failed: %s", fqdn, err.Error())})
+		logger.Error(fmt.Sprintf("Set certificate for `%s` failed: %s", fqdn, err.Error()))
 		return fmt.Errorf("failed setting static certificate with %v", err)
 	}
 
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Set certificate for `%s` = %v", fqdn, certificate)})
+	logger.Debug(fmt.Sprintf("Set certificate for `%s` = %v", fqdn, certificate))
 
 	return nil
 }
@@ -84,22 +83,22 @@ func (srv *AuthService) setACMEStaticCertificate(ctx context.Context, fqdn strin
 // TODO: validate fqdn
 // LATER: validate peer has access to it
 func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]byte, error) {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Get certificate for `%s`", fqdn)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Get certificate for `%s` done", fqdn)})
+	logger.Debug(fmt.Sprintf("Get certificate for `%s`", fqdn))
+	defer logger.Debug(fmt.Sprintf("Get certificate for `%s` done", fqdn))
 
 	key := "/acme/" + base64.StdEncoding.EncodeToString([]byte(fqdn)) + "/certificate/pem"
 	certificate, err := srv.db.Get(ctx, key)
 	if err != nil {
 		certificate, err = srv.getACMEStaticCertificate(ctx, fqdn)
 		if err != nil {
-			logger.Error(moodyCommon.Object{"message": "Get certificate for " + fqdn + " returned " + err.Error()})
+			logger.Error("Get certificate for " + fqdn + " returned " + err.Error())
 			return nil, ErrCacheMiss
 		}
 	}
 
 	if certificate == nil {
 		// cleanup entry
-		logger.Error(moodyCommon.Object{"message": fqdn + " : Found empty certificate!"})
+		logger.Error(fqdn + " : Found empty certificate!")
 		srv.db.Delete(ctx, key)
 		return nil, ErrCacheMiss //errors.New("Found empty certificate!")
 	}
@@ -109,19 +108,19 @@ func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]
 	/*err = srv.x509Validate(fqdn, certificate)
 	if err != nil {
 		// clean-up entry
-		logger.Error(moodyCommon.Object{"message":fqdn, " : ", err)})
+		logger.Error(fqdn, " : ", err))
 		srv.db.Delete(key)
 		return nil, ErrCacheMiss //err
 	}*/ // TODO: re-add later
 
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Get certificate for `%s`: %v", fqdn, certificate)})
+	logger.Debug(fmt.Sprintf("Get certificate for `%s`: %v", fqdn, certificate))
 
 	return certificate, nil
 }
 
 func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn string) ([]byte, error) {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Get certificate for `%s`", fqdn)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Get certificate for `%s` done", fqdn)})
+	logger.Debug(fmt.Sprintf("Get certificate for `%s`", fqdn))
+	defer logger.Debug(fmt.Sprintf("Get certificate for `%s` done", fqdn))
 
 	key := "/static/" + base64.StdEncoding.EncodeToString([]byte(fqdn)) + "/certificate/pem"
 	certificate, err := srv.db.Get(ctx, key)
@@ -130,27 +129,27 @@ func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn strin
 		key := "/static/" + base64.StdEncoding.EncodeToString([]byte(wildCard)) + "/certificate/pem"
 		certificate, err = srv.db.Get(ctx, key)
 		if err != nil {
-			logger.Error(moodyCommon.Object{"message": "Get certificate for " + fqdn + " returned " + err.Error()})
+			logger.Error("Get certificate for " + fqdn + " returned " + err.Error())
 			return nil, ErrCacheMiss
 		}
 	}
 
 	if certificate == nil {
 		// cleanup entry
-		logger.Error(moodyCommon.Object{"message": fqdn + " : Found empty certificate!"})
+		logger.Error(fqdn + " : Found empty certificate!")
 		srv.db.Delete(ctx, key)
 		return nil, ErrCacheMiss
 	}
 
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Get certificate for `%s`: %v", fqdn, certificate)})
+	logger.Debug(fmt.Sprintf("Get certificate for `%s`: %v", fqdn, certificate))
 
 	return certificate, nil
 }
 
 // add a proces to clean-up
 func (srv *AuthService) getACMECache(ctx context.Context, key string) ([]byte, error) {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Get acme cache for `%s`", key)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Get acme cache for `%s` done", key)})
+	logger.Debug(fmt.Sprintf("Get acme cache for `%s`", key))
+	defer logger.Debug(fmt.Sprintf("Get acme cache for `%s` done", key))
 
 	key_base := "/acme/cache/" + base64.StdEncoding.EncodeToString([]byte(key))
 	data, err := srv.db.Get(ctx, key_base+"/data")
@@ -159,21 +158,21 @@ func (srv *AuthService) getACMECache(ctx context.Context, key string) ([]byte, e
 	}
 
 	if data == nil {
-		logger.Error(moodyCommon.Object{"message": key + " : Found empty !"})
+		logger.Error(key + " : Found empty !")
 		srv.db.Delete(ctx, key_base+"/data")
 		srv.db.Delete(ctx, key_base+"/timestamp")
 		return nil, ErrCacheMiss
 	}
 
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Get acme cache for `%s`: %v", key, data)})
+	logger.Debug(fmt.Sprintf("Get acme cache for `%s`: %v", key, data))
 
 	return data, nil
 }
 
 // add a GC to clean up data
 func (srv *AuthService) setACMECache(ctx context.Context, key string, data []byte) error {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Set acme cache for `%s`", key)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Set acme cache for `%s` done", key)})
+	logger.Debug(fmt.Sprintf("Set acme cache for `%s`", key))
+	defer logger.Debug(fmt.Sprintf("Set acme cache for `%s` done", key))
 
 	key_base := "/acme/cache/" + base64.StdEncoding.EncodeToString([]byte(key))
 	err := srv.db.Put(ctx, key_base+"/data", data)
@@ -191,8 +190,8 @@ func (srv *AuthService) setACMECache(ctx context.Context, key string, data []byt
 }
 
 func (srv *AuthService) deleteACMECache(ctx context.Context, key string) error {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Del acme cache for `%s`", key)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Del acme cache for `%s` done", key)})
+	logger.Debug(fmt.Sprintf("Del acme cache for `%s`", key))
+	defer logger.Debug(fmt.Sprintf("Del acme cache for `%s` done", key))
 
 	key_base := "/acme/cache/" + base64.StdEncoding.EncodeToString([]byte(key))
 	err := srv.db.Delete(ctx, key_base+"/data")

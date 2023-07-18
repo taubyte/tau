@@ -7,9 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
-	bbMoodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	logging "github.com/ipfs/go-log/v2"
 	p2p "github.com/taubyte/go-interfaces/p2p/peer"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/odo/protocols/node/service"
@@ -17,14 +15,15 @@ import (
 )
 
 var (
-	Logger, _     = moody.New("node")
+	Logger        = logging.Logger("node")
 	Node          p2p.Node
 	Context       context.Context
 	ContextCancel context.CancelFunc
 )
 
 func initLogger() {
-	bbMoodyCommon.LogLevel(bbMoodyCommon.DebugLevelError)
+	lvl, _ := logging.LevelFromString("ERROR")
+	logging.SetAllLoggers(lvl)
 }
 
 func initContext() {
@@ -67,7 +66,7 @@ func StartNode(c *cli.Context) {
 
 	srv, err := service.New(Context, config)
 	if err != nil {
-		Logger.Error(moodyCommon.Object{"message": err.Error()})
+		Logger.Error(err.Error())
 		fmt.Println(err)
 		Context.Done()
 		os.Exit(0)

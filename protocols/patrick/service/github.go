@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
@@ -82,10 +81,10 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 	}
 	switch payload.(type) {
 	case github.PushPayload:
-		logger.Debug(moody.Object{"msg": fmt.Sprintf("Hook triggred. Push: %v", payload)})
+		logger.Debug(map[string]interface{}{"msg": fmt.Sprintf("Hook triggred. Push: %v", payload)})
 		pl, err := json.Marshal(payload)
 		if err != nil {
-			logger.Error(moody.Object{"msg": fmt.Sprintf("Got %v when creating pipeline for %s ", err, payload)})
+			logger.Error(map[string]interface{}{"msg": fmt.Sprintf("Got %v when creating pipeline for %s ", err, payload)})
 			return nil, errors.New("can't decode push payload")
 		}
 
@@ -100,7 +99,7 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 		newJob.Meta.Repository.Provider = "github"
 		newJob.Id = job_id
 
-		logger.Info(moody.Object{"message": "SOmething", "payload": string(pl), "job": newJob.Meta})
+		logger.Info(map[string]interface{}{"message": "SOmething", "payload": string(pl), "job": newJob.Meta})
 
 		// Setting current branch and main branch
 		if newJob.Meta.Repository.MainBranch == "" {

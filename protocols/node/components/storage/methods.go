@@ -31,7 +31,7 @@ func (s *Service) Storage(context storage.Context) (storageIface.Storage, error)
 			return nil, err
 		}
 
-		storage, err = s.storageMethod(s, context, s.Logger().Std(), s.matcher)
+		storage, err = s.storageMethod(s, context, s.Logger(), s.matcher)
 		if err != nil {
 			return nil, err
 		}

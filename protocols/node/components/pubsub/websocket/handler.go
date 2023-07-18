@@ -9,7 +9,6 @@ import (
 	p2p "bitbucket.org/taubyte/p2p/peer"
 	"github.com/gorilla/websocket"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	moody "github.com/taubyte/go-interfaces/moody"
 	service "github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-specs/extract"
 	messagingSpec "github.com/taubyte/go-specs/messaging"
@@ -40,7 +39,7 @@ func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn)
 	id, err := AddSubscription(srv, handler.matcher.Path(), func(msg *pubsub.Message) {
 		handler.ch <- msg.GetData()
 	}, func(err error) {
-		srv.Logger().Error(moody.Object{
+		srv.Logger().Error(map[string]interface{}{
 			"message": fmt.Sprintf("Add subscription to `%s` failed with %s", handler.matcher.Path(), err),
 			"handler": handler.matcher,
 		})

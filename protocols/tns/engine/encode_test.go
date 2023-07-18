@@ -7,16 +7,16 @@ import (
 	"testing"
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	"bitbucket.org/taubyte/p2p/keypair"
 	"bitbucket.org/taubyte/p2p/peer"
+	logging "github.com/ipfs/go-log/v2"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/flat"
 )
 
 func TestEncode(t *testing.T) {
-	logger, _ := moody.New("tns.service.testing")
+	logger := logging.Logger("tns.service.testing")
 
 	testCtx, testCtxC := context.WithCancel(context.Background())
 	defer func() {
@@ -43,7 +43,7 @@ func TestEncode(t *testing.T) {
 		return
 	}
 
-	db, err := kv.New(logger.Std(), peerC, protocolsCommon.Tns, 5)
+	db, err := kv.New(logger, peerC, protocolsCommon.Tns, 5)
 	if err != nil {
 		t.Errorf("New db failed with err: %v", err)
 		return

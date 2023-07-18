@@ -1,12 +1,12 @@
 package counters
 
-import "github.com/taubyte/go-interfaces/moody"
+import logging "github.com/ipfs/go-log/v2"
 
-var subLogger moody.Logger
+var subLogger logging.StandardLogger
 
-func (s *Service) Logger() moody.Logger {
+func (s *Service) Logger() logging.StandardLogger {
 	if subLogger == nil {
-		subLogger = s.Service.Logger().Sub("counter")
+		subLogger = logging.Logger("node.counter")
 	}
 
 	return subLogger

@@ -5,8 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
-	moodyIface "github.com/taubyte/go-interfaces/moody"
+	logging "github.com/ipfs/go-log/v2"
 	p2p "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/substrate/database"
 	smartOps "github.com/taubyte/go-interfaces/services/substrate/smartops"
@@ -32,8 +31,8 @@ func (s *mockService) Context() context.Context {
 	return context.Background()
 }
 
-func (s *mockService) Logger() moodyIface.Logger {
-	logger, _ := moody.New("test")
+func (s *mockService) Logger() logging.StandardLogger {
+	logger := logging.Logger("test")
 	return logger
 
 }

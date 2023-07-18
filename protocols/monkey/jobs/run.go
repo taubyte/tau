@@ -4,18 +4,17 @@ import (
 	"context"
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/pkg/errors"
-	ifaecMoody "github.com/taubyte/go-interfaces/moody"
 )
 
 var (
-	logger ifaecMoody.Logger
+	logger *logging.ZapEventLogger
 )
 
 func init() {
 	var err error
-	logger, err = moody.New("monkey.jobs.client")
+	logger = logging.Logger("monkey.jobs.client")
 	if err != nil {
 		panic(errors.Wrap(err, "Initializing moody logger failed"))
 	}

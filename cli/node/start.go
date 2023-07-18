@@ -9,8 +9,8 @@ import (
 	"syscall"
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues/common"
 	"bitbucket.org/taubyte/p2p/peer"
+	logging "github.com/ipfs/go-log/v2"
 	ifaceCommon "github.com/taubyte/go-interfaces/common"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	commonSpecs "github.com/taubyte/go-specs/common"
@@ -22,7 +22,8 @@ import (
 )
 
 func Start(ctx context.Context, config *commonIface.GenericConfig, shape string) error {
-	moody.LogLevel(moody.DebugLevelFatal)
+	lvl, _ := logging.LevelFromString("FATAL")
+	logging.SetAllLoggers(lvl)
 
 	config.Shape = shape
 

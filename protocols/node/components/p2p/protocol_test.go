@@ -5,7 +5,6 @@ import (
 	"reflect"
 	"testing"
 
-	moodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
 	"bitbucket.org/taubyte/p2p/streams/client"
 	"bitbucket.org/taubyte/vm-test-examples/structure"
 	commonDreamland "github.com/taubyte/dreamland/core/common"
@@ -17,7 +16,7 @@ import (
 
 // TODO: Needed?
 func TestProtocolListen(t *testing.T) {
-	moodyCommon.Dev = true
+	// moodyCommon.Dev = true
 	structure.RefreshTestVariables()
 	fakeFetch(map[string]structureSpec.Service{
 		testServiceId: {

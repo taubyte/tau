@@ -2,8 +2,6 @@ package main
 
 import (
 	"os"
-
-	moody "github.com/taubyte/go-interfaces/moody"
 )
 
 func main() {
@@ -12,7 +10,7 @@ func main() {
 	initContext()
 
 	if err := defineCLI().Run(os.Args); err != nil {
-		Logger.Error(moody.Object{"message": err.Error()})
+		Logger.Error(err.Error())
 	}
 
 	os.Exit(0)

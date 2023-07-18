@@ -2,9 +2,10 @@ module github.com/taubyte/odo
 
 go 1.19
 
+replace github.com/taubyte/go-interfaces => ../go-interfaces
+
 require (
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
-	bitbucket.org/taubyte/go-moody-blues v0.1.34
 	bitbucket.org/taubyte/p2p v0.8.2
 	bitbucket.org/taubyte/vm-test-examples v0.5.1-pre.v3
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
@@ -70,6 +71,7 @@ require (
 	atomicgo.dev/cursor v0.1.1 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	atomicgo.dev/schedule v0.0.2 // indirect
+	bitbucket.org/taubyte/go-moody-blues v0.1.34 // indirect
 	bitbucket.org/taubyte/seer-p2p-client v0.1.1 // indirect
 	bitbucket.org/taubyte/tns-p2p-client v0.1.1 // indirect
 	github.com/CAFxX/httpcompression v0.0.8 // indirect

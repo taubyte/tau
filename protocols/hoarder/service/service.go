@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	moodyBlues "bitbucket.org/taubyte/go-moody-blues"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
 	"github.com/fxamacker/cbor/v2"
 	pebble "github.com/ipfs/go-ds-pebble"
+	logging "github.com/ipfs/go-log/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
@@ -21,11 +20,11 @@ import (
 )
 
 var (
-	logger moody.Logger
+	logger *logging.ZapEventLogger
 )
 
 func init() {
-	logger, _ = moodyBlues.New("hoarder.service")
+	logger = logging.Logger("hoarder.service")
 }
 
 func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, error) {

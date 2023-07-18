@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
+	logging "github.com/ipfs/go-log/v2"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	authAPI "github.com/taubyte/odo/clients/p2p/auth"
@@ -23,7 +22,7 @@ import (
 
 var (
 	BootstrapTime                   = 10 * time.Second
-	logger, _                       = moody.New("patrick.service")
+	logger                          = logging.Logger("patrick.service")
 	DefaultReAnnounceJobTime        = 7 * time.Minute
 	DefaultReAnnounceFailedJobsTime = 7 * time.Minute
 )
@@ -49,7 +48,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*PatrickServic
 
 	srv.devMode = config.DevMode
 
-	logger.Error(moodyCommon.Object{"msg": config})
+	logger.Error(map[string]interface{}{"msg": config})
 
 	if config.Node == nil {
 		srv.node, err = configutils.NewNode(ctx, config, protocolsCommon.Patrick)
@@ -83,7 +82,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*PatrickServic
 	}
 
 	// Create a database to store the jobs in
-	srv.db, err = kv.New(logger.Std(), srv.node, protocolsCommon.Patrick, 5)
+	srv.db, err = kv.New(logger, srv.node, protocolsCommon.Patrick, 5)
 	if err != nil {
 		return nil, fmt.Errorf("failed kv new with error: %w", err)
 	}
@@ -135,14 +134,14 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*PatrickServic
 				err := srv.ReannounceJobs(_ctx)
 				cancel()
 				if err != nil {
-					logger.Error(moodyCommon.Object{"msg": err.Error()})
+					logger.Error(map[string]interface{}{"msg": err.Error()})
 				}
 			case <-time.After(DefaultReAnnounceFailedJobsTime):
 				_ctx, cancel := context.WithTimeout(ctx, DefaultReAnnounceFailedJobsTime)
 				err := srv.ReannounceFailedJobs(_ctx)
 				cancel()
 				if err != nil {
-					logger.Error(moodyCommon.Object{"msg": err.Error()})
+					logger.Error(map[string]interface{}{"msg": err.Error()})
 				}
 			case <-ctx.Done():
 				return

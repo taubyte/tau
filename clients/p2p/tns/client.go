@@ -6,7 +6,6 @@ import (
 
 	"bitbucket.org/taubyte/p2p/streams/client"
 	"github.com/mitchellh/mapstructure"
-	"github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/p2p/streams"
 	"github.com/taubyte/go-interfaces/services/tns"
@@ -28,11 +27,11 @@ func New(ctx context.Context, node peer.Node) (tns.Client, error) {
 	c.node = node
 	c.client, err = client.New(ctx, node, nil, spec.TnsProtocol, MinPeers, MaxPeers)
 	if err != nil {
-		logger.Error(moody.Object{"message": fmt.Sprintf("API client creation failed: %s", err.Error())})
+		logger.Error(fmt.Sprintf("API client creation failed: %s", err.Error()))
 		return nil, err
 	}
 
-	logger.Debug(moody.Object{"message": "API client Created!"})
+	logger.Debug("API client Created!")
 	return &c, nil
 }
 
@@ -45,7 +44,7 @@ func (c *Client) Close() {
 func (c *Client) List(depth int) ([]string, error) {
 	response, err := c.client.Send("list", streams.Body{"depth": depth})
 	if err != nil {
-		logger.Error(moody.Object{"error": err.Error()})
+		logger.Error(err.Error())
 		return nil, err
 	}
 
@@ -60,8 +59,8 @@ func (c *Client) List(depth int) ([]string, error) {
 /****** FETCH *******/
 // Fetch a key, does not watch nor cache value
 func (c *Client) Fetch(path tns.Path) (tns.Object, error) {
-	logger.Debug(moody.Object{"message": fmt.Sprintf("Fetching keys %v", path.String())})
-	defer logger.Debug(moody.Object{"message": fmt.Sprintf("Fetching keys %v DONE", path.String())})
+	logger.Debug(fmt.Sprintf("Fetching keys %v", path.String()))
+	defer logger.Debug(fmt.Sprintf("Fetching keys %v DONE", path.String()))
 
 	var err error
 	object := c.cache.get(path)
@@ -83,8 +82,8 @@ func (c *Client) Fetch(path tns.Path) (tns.Object, error) {
 /****** FETCH *******/
 // Fetch a key, does not watch nor cache value
 func (c *Client) Lookup(query tns.Query) (interface{}, error) {
-	logger.Debug(moody.Object{"message": fmt.Sprintf("Fetching prefixes %v/%v", query, query)})
-	defer logger.Debug(moody.Object{"message": fmt.Sprintf("Fetching prefixes %v/%v DONE", query, query)})
+	logger.Debug(fmt.Sprintf("Fetching prefixes %v/%v", query, query))
+	defer logger.Debug(fmt.Sprintf("Fetching prefixes %v/%v DONE", query, query))
 
 	return c.lookup(query)
 }
@@ -92,15 +91,15 @@ func (c *Client) Lookup(query tns.Query) (interface{}, error) {
 /****** PUSH *******/
 
 func (c *Client) Push(path []string, data interface{}) error {
-	logger.Debug(moody.Object{"message": fmt.Sprintf("Pushing object at %s", path)})
-	defer logger.Debug(moody.Object{"message": fmt.Sprintf("Pushing keys %s DONE", path)})
+	logger.Debug(fmt.Sprintf("Pushing object at %s", path))
+	defer logger.Debug(fmt.Sprintf("Pushing keys %s DONE", path))
 
 	response, err := c.client.Send("push", streams.Body{
 		"path": path,
 		"data": data,
 	})
 	if err != nil {
-		logger.Error(moody.Object{"message": fmt.Sprintf("push failed with: %s", err.Error())})
+		logger.Error(fmt.Sprintf("push failed with: %s", err.Error()))
 		return err
 	}
 	_pushed, ok := response["pushed"]
@@ -123,7 +122,7 @@ func (c *Client) Push(path []string, data interface{}) error {
 func (c *Client) fetch(path []string) (interface{}, error) {
 	response, err := c.client.Send("fetch", streams.Body{"path": path})
 	if err != nil {
-		logger.Error(moody.Object{"message": fmt.Sprintf("fetch failed with: %s", err.Error())})
+		logger.Error(fmt.Sprintf("fetch failed with: %s", err.Error()))
 		return nil, err
 	}
 
@@ -138,7 +137,7 @@ func (c *Client) fetch(path []string) (interface{}, error) {
 func (c *Client) lookup(query tns.Query) ([]string, error) {
 	response, err := c.client.Send("lookup", streams.Body{"prefix": query.Prefix, "regex": query.RegEx})
 	if err != nil {
-		logger.Error(moody.Object{"message": fmt.Sprintf("lookup failed with: %s", err.Error())})
+		logger.Error(fmt.Sprintf("lookup failed with: %s", err.Error()))
 		return nil, err
 	}
 

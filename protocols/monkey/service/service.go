@@ -5,24 +5,22 @@ import (
 	"fmt"
 	"regexp"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	configutils "bitbucket.org/taubyte/p2p/config"
+	streams "bitbucket.org/taubyte/p2p/streams/service"
+	logging "github.com/ipfs/go-log/v2"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	ci "github.com/taubyte/go-simple-container/gc"
-	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-
-	moody "bitbucket.org/taubyte/go-moody-blues"
-	configutils "bitbucket.org/taubyte/p2p/config"
-	streams "bitbucket.org/taubyte/p2p/streams/service"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
+	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
-var logger, _ = moody.New("monkey.service")
+var logger = logging.Logger("monkey.service")
 
 func (srv *Service) subscribe() error {
 	return srv.node.PubSubSubscribe(
@@ -33,7 +31,7 @@ func (srv *Service) subscribe() error {
 		func(err error) {
 			// re-establish if fails
 			if err.Error() != "context canceled" {
-				logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Subscription had an error: %s", err.Error())})
+				logger.Error(fmt.Sprintf("Subscription had an error: %s", err.Error()))
 				if err := srv.subscribe(); err != nil {
 					logger.Errorf("resubscribe failed with: %s", err)
 				}

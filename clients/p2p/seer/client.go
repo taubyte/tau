@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	streamClient "bitbucket.org/taubyte/p2p/streams/client"
 	"bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/fxamacker/cbor/v2"
-	moodyIface "github.com/taubyte/go-interfaces/moody"
+	logging "github.com/ipfs/go-log/v2"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/seer"
@@ -23,11 +22,11 @@ var (
 	MaxPeers                 = 2
 	DefaultGeoBeaconInterval = 5 * time.Minute
 	ErrorGeoBeaconStopped    = errors.New("GeoBeacon Stopped")
-	logger                   moodyIface.Logger
+	logger                   *logging.ZapEventLogger
 )
 
 func init() {
-	logger, _ = moody.New("seer.p2p.client")
+	logger = logging.Logger("seer.p2p.client")
 }
 
 var _ iface.Client = &Client{}

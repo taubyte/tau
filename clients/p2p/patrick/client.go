@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	client "bitbucket.org/taubyte/p2p/streams/client"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	logging "github.com/ipfs/go-log/v2"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	iface "github.com/taubyte/go-interfaces/services/patrick"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
@@ -19,7 +18,7 @@ var (
 	MaxPeers                 = 5
 	DefaultGeoBeaconInterval = 5 * time.Minute
 	ErrorGeoBeaconStoped     = errors.New("GeoBeacon Stopped")
-	logger, _                = moody.New("patrick.p2p.client")
+	logger                   = logging.Logger("patrick.p2p.client")
 )
 
 var _ iface.Client = &Client{}
@@ -34,7 +33,7 @@ func New(ctx context.Context, node peer.Node) (iface.Client, error) {
 		err error
 	)
 	if c.client, err = client.New(ctx, node, nil, protocolsCommon.Patrick, MinPeers, MaxPeers); err != nil {
-		logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("API client creation failed: %s", err.Error())})
+		logger.Error(fmt.Sprintf("API client creation failed: %s", err.Error()))
 		return nil, err
 	}
 

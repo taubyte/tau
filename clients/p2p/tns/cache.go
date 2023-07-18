@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/odo/clients/p2p/tns/common"
@@ -48,7 +47,7 @@ func (c *cache) put(key tns.Path, value interface{}) {
 
 	sub, err := c.listen(key)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		logger.Error(err.Error())
 		return
 	}
 

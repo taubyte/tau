@@ -904,8 +904,6 @@ github.com/taubyte/dreamland v0.0.0-20230718183213-ba499b2adb43 h1:lEZ5fUUnsNnFf
 github.com/taubyte/dreamland v0.0.0-20230718183213-ba499b2adb43/go.mod h1:buqL+i390JgBkhZt0U7OTiqot8ZMnOQgVc/tkzi0XfE=
 github.com/taubyte/go-doci v1.0.2 h1:Q9ptLrwr2ZH0o+pzEd8jCrUb0JiZ2KZWvdIQP6BYl54=
 github.com/taubyte/go-doci v1.0.2/go.mod h1:Y3Wfq12Nom9h+0iKFMqqA4tq1mI15bsTNVcR6uBnva8=
-github.com/taubyte/go-interfaces v0.2.4 h1:uWRn81W1ULYF9bWkLeDzgiTYvvUnEcv2jKYtpe4EpeA=
-github.com/taubyte/go-interfaces v0.2.4/go.mod h1:9GDCq2MMFEZ6rDv/gqZbFLjDz//lgE0CBllumUBc19A=
 github.com/taubyte/go-project-schema v0.9.3 h1:2H0ClUZq7f97OgtL0FUe9tv2v12wOmnTAIiJGLei/gU=
 github.com/taubyte/go-project-schema v0.9.3/go.mod h1:8Rt5zsVfj8qbYCT+7++oax/nFVKvVfAepzVkqXrNTs8=
 github.com/taubyte/go-sdk v0.3.8 h1:RIg7N+ccIwTwqPopRMCrKgGhVigN1tPTCi1JG/mm4fg=

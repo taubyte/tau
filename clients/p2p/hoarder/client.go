@@ -6,9 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	moodyBlues "bitbucket.org/taubyte/go-moody-blues"
 	client "bitbucket.org/taubyte/p2p/streams/client"
-	"github.com/taubyte/go-interfaces/moody"
+	logging "github.com/ipfs/go-log/v2"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	iface "github.com/taubyte/go-interfaces/services/hoarder"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
@@ -21,7 +20,7 @@ var (
 	MaxPeers                 = 2
 	DefaultGeoBeaconInterval = 5 * time.Minute
 	ErrorGeoBeaconStopped    = errors.New("geoBeacon Stopped")
-	logger                   moody.Logger
+	logger                   *logging.ZapEventLogger
 )
 
 type Client struct {
@@ -29,7 +28,7 @@ type Client struct {
 }
 
 func init() {
-	logger, _ = moodyBlues.New("hoarder.p2p.client")
+	logger = logging.Logger("hoarder.p2p.client")
 }
 
 func New(ctx context.Context, node peer.Node) (*Client, error) {

@@ -11,7 +11,6 @@ import (
 	"github.com/h2non/filetype"
 	"github.com/h2non/filetype/matchers"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
@@ -172,7 +171,7 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 		job.Status = patrick.JobStatusOpen
 		job_byte, err := cbor.Marshal(job)
 		if err != nil {
-			logger.Error(moody.Object{"msg": fmt.Sprintf("failed cbor marshall on job %s with err: %v", job.Id, err)})
+			logger.Error(map[string]interface{}{"msg": fmt.Sprintf("failed cbor marshall on job %s with err: %v", job.Id, err)})
 			return nil, fmt.Errorf("failed marshalling job %s with err %w", job.Id, err)
 		}
 
@@ -185,7 +184,7 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 		// Put the job back into the list
 		err = srv.db.Put(requestCtx, "/jobs/"+job.Id, job_byte)
 		if err != nil {
-			logger.Error(moody.Object{"msg": fmt.Sprintf("failed putting job %s into database with error: %v", job.Id, err)})
+			logger.Error(map[string]interface{}{"msg": fmt.Sprintf("failed putting job %s into database with error: %v", job.Id, err)})
 			return nil, fmt.Errorf("failed putting job %s with %w", job.Id, err)
 		}
 

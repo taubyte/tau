@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	client "bitbucket.org/taubyte/p2p/streams/client"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	logging "github.com/ipfs/go-log/v2"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	iface "github.com/taubyte/go-interfaces/services/auth"
 
@@ -14,9 +13,9 @@ import (
 )
 
 var (
-	MinPeers  = 2
-	MaxPeers  = 4
-	logger, _ = moody.New("auth.api.p2p")
+	MinPeers = 2
+	MaxPeers = 4
+	logger   = logging.Logger("auth.api.p2p")
 )
 
 var _ iface.Client = &Client{}
@@ -32,11 +31,11 @@ func New(ctx context.Context, node peer.Node) (*Client, error) {
 	)
 	c.client, err = client.New(ctx, node, nil, protocolCommon.AuthProtocol, MinPeers, MaxPeers)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("API client creation failed: %s", err.Error())})
+		logger.Error(fmt.Sprintf("API client creation failed: %s", err.Error()))
 		return nil, err
 	}
 
-	logger.Debug(moodyCommon.Object{"message": "API client Created!"})
+	logger.Debug(fmt.Sprintf("message: API client Created!"))
 	return &c, nil
 }
 

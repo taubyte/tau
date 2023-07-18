@@ -7,11 +7,10 @@ import (
 	"regexp"
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
+	logging "github.com/ipfs/go-log/v2"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	commonSpec "github.com/taubyte/go-specs/common"
@@ -30,7 +29,7 @@ import (
 )
 
 var (
-	logger, _ = moody.New("seer.service")
+	logger = logging.Logger("seer.service")
 )
 
 func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options) (*Service, error) {
@@ -56,7 +55,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 		p2pDatastore.Datastore = "pebble"
 	}
 
-	logger.Info(moodyCommon.Object{"message": fmt.Sprintf("Config: %#v", config)})
+	logger.Info(map[string]interface{}{"message": fmt.Sprintf("Config: %#v", config)})
 
 	srv.dnsResolver = net.DefaultResolver
 	srv.generatedDomain = config.Domains.Generated
@@ -85,7 +84,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 		clientNode = config.ClientNode
 	}
 
-	srv.db, err = kv.New(logger.Std(), srv.node, protocolsCommon.Seer, 5)
+	srv.db, err = kv.New(logger, srv.node, protocolsCommon.Seer, 5)
 	if err != nil {
 		return nil, fmt.Errorf("new key-value store failed with: %s", err)
 	}
@@ -93,7 +92,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 	// Setup/Start DNS service
 	err = srv.newDnsServer(config.DevMode, config.DnsPort)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("creating Dns server failed with: %s", err)})
+		logger.Error(map[string]interface{}{"message": fmt.Sprintf("creating Dns server failed with: %s", err)})
 		return nil, fmt.Errorf("new dns server failed with: %s", err)
 	}
 

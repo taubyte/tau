@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/odo/protocols/auth/github"
 
 	"github.com/taubyte/go-interfaces/services/http"
@@ -27,7 +26,7 @@ func (srv *Service) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, error) {
 		ctx.SetVariable("GithubClientDone", rctx_cancel)
 
 		debugMsg := fmt.Sprintf("[GitHubTokenHTTPAuth] ctx=%v", ctx.Variables())
-		logger.Debug(moody.Object{"message": debugMsg})
+		logger.Debug(map[string]interface{}{"message": debugMsg})
 
 		return nil, nil
 	}

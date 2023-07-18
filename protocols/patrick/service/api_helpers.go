@@ -7,7 +7,6 @@ import (
 
 	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/fxamacker/cbor/v2"
-	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 )
@@ -16,7 +15,7 @@ import (
 func (p *PatrickService) lockHelper(lockData []byte, jid string, method bool) (cr.Response, error) {
 	var jobLock Lock
 	if err := cbor.Unmarshal(lockData, &jobLock); err != nil {
-		logger.Error(moody.Object{"msg": fmt.Sprintf("Reading lock for `%s` failed with: %v", jid, err)})
+		logger.Error(map[string]interface{}{"msg": fmt.Sprintf("Reading lock for `%s` failed with: %v", jid, err)})
 		// continue assuming another patrick crashed when trying to lock
 	} else if jobLock.Timestamp+jobLock.Eta > time.Now().Unix() {
 		if method {

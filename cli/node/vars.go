@@ -1,9 +1,9 @@
 package node
 
 import (
-	moody "bitbucket.org/taubyte/go-moody-blues"
+	logging "github.com/ipfs/go-log/v2"
 )
 
 var (
-	logger, _ = moody.New("odo")
+	logger = logging.Logger("odo")
 )

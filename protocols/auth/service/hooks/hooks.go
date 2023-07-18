@@ -6,16 +6,15 @@ import (
 	"fmt"
 	"strconv"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/kvdb"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/odo/pkgs/kvdb/database"
 	"github.com/taubyte/utils/maps"
 	"github.com/taubyte/utils/network"
 )
 
 var (
-	logger, _ = moody.New("auth.service.api.hooks")
+	logger = logging.Logger("auth.service.api.hooks")
 )
 
 type Data map[string]interface{}
@@ -78,22 +77,22 @@ func (h *GithubHook) Delete(ctx context.Context) error {
 	err = h.KV.Delete(ctx, root+"/github/id")
 	if err != nil {
 		lerror = err
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		logger.Error(err.Error())
 	}
 	err = h.KV.Delete(ctx, root+"/github/secret")
 	if err != nil {
 		lerror = err
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		logger.Error(err.Error())
 	}
 	err = h.KV.Delete(ctx, root+"/github/repository")
 	if err != nil {
 		lerror = err
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		logger.Error(err.Error())
 	}
 	err = h.KV.Delete(ctx, fmt.Sprintf("/repositories/github/%d/hooks/%s", h.Repository, h.Id))
 	if err != nil {
 		lerror = err
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		logger.Error(err.Error())
 	}
 
 	return lerror

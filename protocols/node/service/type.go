@@ -3,7 +3,10 @@ package service
 import (
 	"context"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	logging "github.com/ipfs/go-log/v2"
+	peer "github.com/taubyte/go-interfaces/p2p/peer"
+	commonIface "github.com/taubyte/go-interfaces/services/common"
+	http "github.com/taubyte/go-interfaces/services/http"
 	iface "github.com/taubyte/go-interfaces/services/substrate"
 	countersIface "github.com/taubyte/go-interfaces/services/substrate/counters"
 	databaseIface "github.com/taubyte/go-interfaces/services/substrate/database"
@@ -15,10 +18,6 @@ import (
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/storage"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-interfaces/vm"
-
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
-	http "github.com/taubyte/go-interfaces/services/http"
 )
 
 var _ iface.Service = &Service{}
@@ -62,7 +61,7 @@ func (s *Service) Http() http.Service {
 	return s.http
 }
 
-func (s *Service) Logger() moodyCommon.Logger {
+func (s *Service) Logger() logging.StandardLogger {
 	return logger
 }
 

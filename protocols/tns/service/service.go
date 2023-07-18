@@ -4,23 +4,22 @@ import (
 	"context"
 	"fmt"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 
+	configutils "bitbucket.org/taubyte/p2p/config"
+	logging "github.com/ipfs/go-log/v2"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	commonSpec "github.com/taubyte/go-specs/common"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/engine"
-
-	configutils "bitbucket.org/taubyte/p2p/config"
 )
 
 var (
-	logger, _ = moody.New("tns.service")
+	logger = logging.Logger("tns.service")
 )
 
 func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, error) {
@@ -50,7 +49,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 		srv.node = config.Node
 	}
 
-	srv.db, err = kv.New(logger.Std(), srv.node, protocolsCommon.Tns, 5)
+	srv.db, err = kv.New(logger, srv.node, protocolsCommon.Tns, 5)
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	compilerCommon "github.com/taubyte/config-compiler/common"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/go-specs/methods"
 	authClient "github.com/taubyte/odo/clients/p2p/auth"
@@ -94,7 +93,7 @@ func (m *Monkey) RunJob() (err error) {
 			break
 		}
 
-		logger.Debug(moodyCommon.Object{"msg": "Deploy key is empty, retrying"})
+		logger.Debug("Deploy key is empty, retrying")
 		time.Sleep(5 * time.Second)
 		gitRepo, err = ac.Repositories().Github().Get(repo.ID)
 		if err != nil {

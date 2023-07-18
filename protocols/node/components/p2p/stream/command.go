@@ -7,7 +7,6 @@ import (
 
 	"bitbucket.org/taubyte/p2p/streams/client"
 	"github.com/ipfs/go-cid"
-	"github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/p2p/streams"
 	"github.com/taubyte/go-interfaces/services/substrate/p2p"
 	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
@@ -58,7 +57,7 @@ func (c *Command) Send(ctx context.Context, body map[string]interface{}) (stream
 
 	resp, err := p2pClient.Send(c.matcher.Command, body)
 	if err != nil {
-		c.srv.Logger().Error(moody.Object{"message": fmt.Sprintf("sending command %s failed with %s", c.matcher.Command, err)})
+		c.srv.Logger().Error(fmt.Sprintf("sending command %s failed with %s", c.matcher.Command, err))
 	}
 
 	return resp, err
@@ -72,7 +71,7 @@ func (c *Command) SendTo(ctx context.Context, pid cid.Cid, body map[string]inter
 
 	resp, err := p2pClient.SendTo(pid, c.matcher.Command, body)
 	if err != nil {
-		c.srv.Logger().Error(moody.Object{"message": fmt.Sprintf("sending command %s to %s failed with %s", c.matcher.Command, pid, err)})
+		c.srv.Logger().Error(fmt.Sprintf("sending command %s to %s failed with %s", c.matcher.Command, pid, err))
 	}
 
 	return resp, err

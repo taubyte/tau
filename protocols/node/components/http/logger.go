@@ -1,14 +1,14 @@
 package nodehttp
 
 import (
-	"github.com/taubyte/go-interfaces/moody"
+	logging "github.com/ipfs/go-log/v2"
 )
 
-var subLogger moody.Logger
+var subLogger logging.StandardLogger
 
-func (s *Service) Logger() moody.Logger {
+func (s *Service) Logger() logging.StandardLogger {
 	if subLogger == nil {
-		subLogger = s.Service.Logger().Sub("http")
+		subLogger = logging.Logger("node.http")
 	}
 
 	return subLogger
