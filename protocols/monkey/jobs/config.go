@@ -3,8 +3,8 @@ package jobs
 import (
 	"fmt"
 
-	"bitbucket.org/taubyte/config-compiler/compile"
 	_ "github.com/taubyte/builder"
+	"github.com/taubyte/config-compiler/compile"
 	projectSchema "github.com/taubyte/go-project-schema/project"
 )
 

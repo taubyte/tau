@@ -7,7 +7,7 @@ import (
 	"path"
 	"time"
 
-	compilerCommon "bitbucket.org/taubyte/config-compiler/common"
+	compilerCommon "github.com/taubyte/config-compiler/common"
 	commonTest "github.com/taubyte/dreamland/helpers"
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	"bitbucket.org/taubyte/go-interfaces/services/monkey"

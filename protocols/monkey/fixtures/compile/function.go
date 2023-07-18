@@ -8,10 +8,10 @@ import (
 	"path"
 	"strings"
 
-	"bitbucket.org/taubyte/config-compiler/common"
 	"github.com/otiai10/copy"
 	"github.com/pterm/pterm"
 	"github.com/spf13/afero"
+	"github.com/taubyte/config-compiler/common"
 	"github.com/taubyte/go-project-schema/functions"
 	"github.com/taubyte/go-project-schema/project"
 	wasmSpec "github.com/taubyte/go-specs/builders/wasm"

@@ -9,7 +9,7 @@ package test
 // 	"strings"
 // 	"time"
 
-// 	"bitbucket.org/taubyte/config-compiler/decompile"
+// 	"github.com/taubyte/config-compiler/decompile"
 // 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 // 	dreamland "github.com/taubyte/dreamland/core/services"
 // 	commonIface "github.com/taubyte/go-interfaces/common"

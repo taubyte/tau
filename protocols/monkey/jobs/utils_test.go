@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	compilerCommon "bitbucket.org/taubyte/config-compiler/common"
+	compilerCommon "github.com/taubyte/config-compiler/common"
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonTest "github.com/taubyte/dreamland/helpers"

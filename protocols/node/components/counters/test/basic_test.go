@@ -7,7 +7,7 @@ package test
 // 	"testing"
 
 // 	_ "bitbucket.org/taubyte/billing/service"
-// 	_ "bitbucket.org/taubyte/config-compiler/fixtures"
+// 	_ "github.com/taubyte/config-compiler/fixtures"
 // 	structureSpec "github.com/taubyte/go-specs/structure"
 // 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 // 	_ "github.com/taubyte/odo/protocols/node/service"

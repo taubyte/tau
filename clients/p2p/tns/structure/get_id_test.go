@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	_ "bitbucket.org/taubyte/config-compiler/fixtures"
+	_ "github.com/taubyte/config-compiler/fixtures"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	"github.com/taubyte/go-interfaces/services/tns"
 	structureSpec "github.com/taubyte/go-specs/structure"

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"bitbucket.org/taubyte/config-compiler/compile"
-	"bitbucket.org/taubyte/config-compiler/decompile"
+	"github.com/taubyte/config-compiler/compile"
+	"github.com/taubyte/config-compiler/decompile"
 	commonTest "github.com/taubyte/dreamland/helpers"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"gotest.tools/assert"

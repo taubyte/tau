@@ -9,14 +9,14 @@ import (
 	"path"
 	"testing"
 
-	"bitbucket.org/taubyte/config-compiler/decompile"
+	"github.com/taubyte/config-compiler/decompile"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/monkey/fixtures/compile"
 
-	_ "bitbucket.org/taubyte/config-compiler/fixtures"
+	_ "github.com/taubyte/config-compiler/fixtures"
 	_ "github.com/taubyte/odo/protocols/auth/service"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/node/service"

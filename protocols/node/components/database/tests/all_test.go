@@ -7,8 +7,8 @@ import (
 	"os"
 	"testing"
 
-	"bitbucket.org/taubyte/config-compiler/compile"
-	"bitbucket.org/taubyte/config-compiler/decompile"
+	"github.com/taubyte/config-compiler/compile"
+	"github.com/taubyte/config-compiler/decompile"
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonTest "github.com/taubyte/dreamland/helpers"

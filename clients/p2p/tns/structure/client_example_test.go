@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	_ "bitbucket.org/taubyte/config-compiler/fixtures"
+	_ "github.com/taubyte/config-compiler/fixtures"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
 	_ "github.com/taubyte/odo/protocols/tns/service"

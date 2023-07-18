@@ -3,7 +3,6 @@ module github.com/taubyte/odo
 go 1.19
 
 require (
-	bitbucket.org/taubyte/config-compiler v0.4.2
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	bitbucket.org/taubyte/go-moody-blues v0.1.34
 	bitbucket.org/taubyte/p2p v0.8.2
@@ -36,6 +35,7 @@ require (
 	github.com/pterm/pterm v0.12.62
 	github.com/spf13/afero v1.9.5
 	github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29
+	github.com/taubyte/config-compiler v0.0.0-20230718195145-c00201cfb4b2
 	github.com/taubyte/domain-validation v1.0.0
 	github.com/taubyte/dreamland v0.0.0-20230718183213-ba499b2adb43
 	github.com/taubyte/go-interfaces v0.2.4
@@ -70,11 +70,7 @@ require (
 	atomicgo.dev/cursor v0.1.1 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	atomicgo.dev/schedule v0.0.2 // indirect
-	bitbucket.org/taubyte/auth v0.4.5 // indirect
-	bitbucket.org/taubyte/dreamland v0.4.1 // indirect
-	bitbucket.org/taubyte/dreamland-test v0.3.1 // indirect
-	bitbucket.org/taubyte/go-auth-http v0.1.2 // indirect
-	bitbucket.org/taubyte/mycelium v0.4.4 // indirect
+	bitbucket.org/taubyte/seer-p2p-client v0.1.1 // indirect
 	bitbucket.org/taubyte/tns-p2p-client v0.1.1 // indirect
 	github.com/CAFxX/httpcompression v0.0.8 // indirect
 	github.com/DataDog/zstd v1.5.2 // indirect

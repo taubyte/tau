@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"bitbucket.org/taubyte/config-compiler/compile"
 	"github.com/ipfs/go-datastore"
+	"github.com/taubyte/config-compiler/compile"
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonTest "github.com/taubyte/dreamland/helpers"

@@ -5,8 +5,8 @@ import (
 	"path"
 	"testing"
 
-	"bitbucket.org/taubyte/config-compiler/decompile"
-	_ "bitbucket.org/taubyte/config-compiler/fixtures"
+	"github.com/taubyte/config-compiler/decompile"
+	_ "github.com/taubyte/config-compiler/fixtures"
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"

@@ -6,10 +6,10 @@ import (
 	"io/ioutil"
 	"time"
 
-	"bitbucket.org/taubyte/config-compiler/decompile"
 	"github.com/h2non/filetype"
 	"github.com/h2non/filetype/matchers"
 	"github.com/spf13/afero"
+	"github.com/taubyte/config-compiler/decompile"
 	http "github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-project-schema/pretty"
 	projectSchema "github.com/taubyte/go-project-schema/project"

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	compilerCommon "bitbucket.org/taubyte/config-compiler/common"
+	compilerCommon "github.com/taubyte/config-compiler/common"
 	"github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
