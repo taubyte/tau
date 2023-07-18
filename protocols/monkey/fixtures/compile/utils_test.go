@@ -5,7 +5,7 @@ import (
 	"io/ioutil"
 	"net/http"
 
-	"bitbucket.org/taubyte/dreamland/common"
+	"github.com/taubyte/dreamland/core/common"
 )
 
 var (

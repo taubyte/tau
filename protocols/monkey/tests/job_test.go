@@ -6,16 +6,16 @@ import (
 	"os"
 	"time"
 
-	"bitbucket.org/taubyte/config-compiler/compile"
-	commonDreamland "bitbucket.org/taubyte/dreamland/common"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
+	"github.com/taubyte/config-compiler/compile"
+	commonDreamland "github.com/taubyte/dreamland/core/common"
+	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/odo/protocols/monkey/service"
 
-	commonTest "bitbucket.org/taubyte/dreamland-test/common"
-	gitTest "bitbucket.org/taubyte/dreamland-test/git"
+	commonTest "github.com/taubyte/dreamland/helpers"
+	gitTest "github.com/taubyte/dreamland/helpers/git"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 

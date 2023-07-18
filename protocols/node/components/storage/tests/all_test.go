@@ -7,17 +7,17 @@ import (
 	"strings"
 	"testing"
 
-	"bitbucket.org/taubyte/config-compiler/compile"
-	"bitbucket.org/taubyte/config-compiler/decompile"
-	commonTest "bitbucket.org/taubyte/dreamland-test/common"
+	"github.com/taubyte/config-compiler/compile"
+	"github.com/taubyte/config-compiler/decompile"
+	commonTest "github.com/taubyte/dreamland/helpers"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"gotest.tools/assert"
 
-	gitTest "bitbucket.org/taubyte/dreamland-test/git"
+	gitTest "github.com/taubyte/dreamland/helpers/git"
 
-	commonDreamland "bitbucket.org/taubyte/dreamland/common"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
 	moodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
+	commonDreamland "github.com/taubyte/dreamland/core/common"
+	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/go-interfaces/services/substrate/storage"

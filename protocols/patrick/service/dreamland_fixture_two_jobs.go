@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	commonTest "bitbucket.org/taubyte/dreamland-test/common"
-	"bitbucket.org/taubyte/dreamland/common"
+	"github.com/taubyte/dreamland/core/common"
+	commonTest "github.com/taubyte/dreamland/helpers"
 
-	dreamlandRegistry "bitbucket.org/taubyte/dreamland/registry"
+	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	"github.com/taubyte/go-interfaces/services/tns"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"

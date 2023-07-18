@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	compilerCommon "bitbucket.org/taubyte/config-compiler/common"
+	compilerCommon "github.com/taubyte/config-compiler/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/go-specs/methods"

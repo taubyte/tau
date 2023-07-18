@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"bitbucket.org/taubyte/go-auth-http/git/common"
+	"github.com/taubyte/odo/clients/http/auth/git/common"
 )
 
 // GetProjectById returns the project with the given id and an error

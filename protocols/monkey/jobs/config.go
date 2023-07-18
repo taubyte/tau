@@ -3,9 +3,8 @@ package jobs
 import (
 	"fmt"
 
-	"bitbucket.org/taubyte/config-compiler/compile"
 	_ "github.com/taubyte/builder"
-	"github.com/taubyte/go-interfaces/services/common"
+	"github.com/taubyte/config-compiler/compile"
 	projectSchema "github.com/taubyte/go-project-schema/project"
 )
 
@@ -27,10 +26,9 @@ func (c config) handle() (err error) {
 	compileOps := []compile.Option{}
 	if c.Monkey.Dev() {
 		compileOps = append(compileOps, compile.Dev())
-	}
-
-	if common.Deployment == common.Odo {
+	} else {
 		compileOps = append(compileOps, compile.DVKey(c.DVPublicKey))
+
 	}
 
 	compiler, err := compile.New(rc, compileOps...)

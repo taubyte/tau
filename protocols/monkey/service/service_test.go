@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	commonDreamland "bitbucket.org/taubyte/dreamland/common"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
+	commonDreamland "github.com/taubyte/dreamland/core/common"
+	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"

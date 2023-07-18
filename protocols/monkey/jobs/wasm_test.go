@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	commonTest "bitbucket.org/taubyte/dreamland-test/common"
+	commonTest "github.com/taubyte/dreamland/helpers"
 	"gotest.tools/assert"
 
 	_ "github.com/taubyte/odo/protocols/hoarder/service"

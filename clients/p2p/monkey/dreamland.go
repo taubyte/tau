@@ -1,7 +1,7 @@
 package p2p
 
 import (
-	dreamlandRegistry "bitbucket.org/taubyte/dreamland/registry"
+	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	"github.com/taubyte/go-interfaces/common"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 )

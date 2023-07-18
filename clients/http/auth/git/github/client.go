@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"bitbucket.org/taubyte/go-auth-http/git/common"
 	"github.com/google/go-github/v32/github"
+	"github.com/taubyte/odo/clients/http/auth/git/common"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 )

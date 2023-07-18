@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	git "bitbucket.org/taubyte/go-auth-http/git"
+	git "github.com/taubyte/odo/clients/http/auth/git"
 )
 
 // New returns a new Client based on the options provided and an error

@@ -66,14 +66,11 @@ func (srv *Service) attachNodeHttp(config *commonIface.GenericConfig) (err error
 
 	if config.DevMode {
 		ops = append(ops, http.Dev())
+		ops = append(ops, http.DvKey(config.DVPublicKey))
 	}
 
 	if config.Verbose {
 		ops = append(ops, http.Verbose())
-	}
-
-	if commonIface.Deployment == commonIface.Odo {
-		ops = append(ops, http.DvKey(config.DVPublicKey))
 	}
 
 	srv.nodeHttp, err = http.New(srv, ops...)

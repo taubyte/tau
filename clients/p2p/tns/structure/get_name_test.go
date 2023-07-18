@@ -3,8 +3,8 @@ package structure_test
 import (
 	"testing"
 
-	_ "bitbucket.org/taubyte/config-compiler/fixtures"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
+	_ "github.com/taubyte/config-compiler/fixtures"
+	dreamland "github.com/taubyte/dreamland/core/services"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
 	_ "github.com/taubyte/odo/protocols/tns/service"

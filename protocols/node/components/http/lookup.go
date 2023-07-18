@@ -6,7 +6,6 @@ import (
 	_ "embed"
 
 	dv "github.com/taubyte/domain-validation"
-	iface "github.com/taubyte/go-interfaces/services/common"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
 	"github.com/taubyte/go-interfaces/services/tns"
 	spec "github.com/taubyte/go-specs/common"
@@ -56,8 +55,10 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 			return nil, fmt.Errorf("checking serviceable pick's project ID failed with: %s", err)
 		}
 
-		publicKey := domainValPublicKeyData
-		if iface.Deployment == iface.Odo {
+		var publicKey []byte
+		if s.dev {
+			publicKey = domainValPublicKeyData
+		} else {
 			publicKey = s.dvPublicKey
 		}
 

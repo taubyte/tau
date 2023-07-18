@@ -1,0 +1,24 @@
+privatekey: CAESQJxQzCe/N/C8A5TIgrL9F0p5iGgBa9wIgCOkDr4De475V5NSzWX2EnMKzYW9pygBCTJSuezIc6w/TT/unZKJ5mo=
+swarmkey: test_swarm.key
+services: [patrick,node,tns,monkey,seer,auth,hoarder]
+p2p-listen: [/ip4/0.0.0.0/tcp/8100]
+p2p-announce: [/ip4/123/tcp/8100]
+devmode: true
+ports:
+  main: 8100
+  lite: 8102
+  ipfs: 8104
+location:
+  lat: 120
+  long: 21
+http-listen: 0.0.0.0:443
+network-url: example.com
+domains:
+  key:
+    private: test.key
+  services: ^[^.]+\.tau\.example\.com
+  generated: g.example.com
+  whitelist:
+    postfix: [test.com]
+    regex:
+      - '^[^.]+\.test\.example\.com'

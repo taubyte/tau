@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	commonTest "bitbucket.org/taubyte/dreamland-test/common"
-	"bitbucket.org/taubyte/dreamland/common"
-	dreamlandRegistry "bitbucket.org/taubyte/dreamland/registry"
+	"github.com/taubyte/dreamland/core/common"
+	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
+	commonTest "github.com/taubyte/dreamland/helpers"
 	spec "github.com/taubyte/go-specs/common"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/utils/maps"
