@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"time"
 
-	odo "bitbucket.org/taubyte/odo"
 	"bitbucket.org/taubyte/p2p/keypair"
 	"bitbucket.org/taubyte/p2p/peer"
 	"github.com/multiformats/go-multiaddr"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
+	odo "github.com/taubyte/odo/cli"
 )
 
 func createClientNode(ctx context.Context, config *commonIface.GenericConfig, shape, databasePath string) (*peer.Node, error) {
@@ -35,6 +35,7 @@ func createClientNode(ctx context.Context, config *commonIface.GenericConfig, sh
 
 	clientPort, ok := config.Ports["lite"]
 	if !ok {
+		ctxC()
 		return nil, fmt.Errorf("did not fine lite port in config")
 	}
 

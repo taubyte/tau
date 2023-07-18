@@ -1,4 +1,4 @@
-package cli
+package commands
 
 func Start(args ...string) error {
 	app, err := Build()

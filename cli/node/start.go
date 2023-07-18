@@ -10,11 +10,11 @@ import (
 	"time"
 
 	moody "bitbucket.org/taubyte/go-moody-blues/common"
-	auto "bitbucket.org/taubyte/http-auto"
 	"bitbucket.org/taubyte/p2p/peer"
 	ifaceCommon "github.com/taubyte/go-interfaces/common"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	commonSpecs "github.com/taubyte/go-specs/common"
+	auto "github.com/taubyte/odo/pkgs/http-auto"
 	slices "github.com/taubyte/utils/slices/string"
 
 	configutils "bitbucket.org/taubyte/p2p/config"
@@ -25,9 +25,6 @@ func Start(ctx context.Context, config *commonIface.GenericConfig, shape string)
 	moody.LogLevel(moody.DebugLevelFatal)
 
 	config.Shape = shape
-	if shape == "node" {
-		startNodeProfiler()
-	}
 
 	ctx, ctx_cancel := context.WithCancel(ctx)
 	sigkill := make(chan os.Signal, 1)

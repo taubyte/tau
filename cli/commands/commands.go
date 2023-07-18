@@ -1,10 +1,10 @@
-package cli
+package commands
 
 import (
 	"fmt"
 
-	"bitbucket.org/taubyte/odo/node"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
+	"github.com/taubyte/odo/cli/node"
 	"github.com/urfave/cli/v2"
 )
 

@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	"bitbucket.org/taubyte/odo/cli"
+	cli "github.com/taubyte/odo/cli/commands"
 )
 
 func main() {
