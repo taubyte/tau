@@ -14,10 +14,10 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/go-interfaces/services/tns"
 	domainSpecs "github.com/taubyte/go-specs/domain"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/miekg/dns"
-	"github.com/taubyte/odo/protocols/seer/common"
 )
 
 // TODO: Implement a spam cache that blocks spam dns request
@@ -62,13 +62,13 @@ func (srv *dnsServer) Stop() {
 func (seer *Service) newDnsServer(devMode bool, port int) error {
 	//Create cache nodes and spam requests
 	_cache := ttlcache.New(ttlcache.WithTTL[string, []string](5*time.Minute), ttlcache.WithDisableTouchOnHit[string, []string]())
-	_negativeCache := ttlcache.New(ttlcache.WithTTL[string, bool](common.DefaultBlockTime), ttlcache.WithDisableTouchOnHit[string, bool]())
+	_negativeCache := ttlcache.New(ttlcache.WithTTL[string, bool](DefaultBlockTime), ttlcache.WithDisableTouchOnHit[string, bool]())
 
 	// Create TCP and UDP
 	var s *dnsServer
 	validate.UseResolver(seer.dnsResolver)
 	if devMode {
-		devPort := common.DefaultDevDnsPort
+		devPort := protocolsCommon.DefaultDevDnsPort
 		if port != 0 {
 			devPort = port
 		}
@@ -79,8 +79,8 @@ func (seer *Service) newDnsServer(devMode bool, port int) error {
 		}
 	} else {
 		s = &dnsServer{
-			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(common.DefaultDnsPort), Net: "tcp"},
-			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(common.DefaultDnsPort), Net: "udp"},
+			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(protocolsCommon.DefaultDnsPort), Net: "tcp"},
+			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(protocolsCommon.DefaultDnsPort), Net: "udp"},
 			Seer: seer,
 		}
 	}
@@ -187,7 +187,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	logger.Error(moody.Object{"message": fmt.Sprintf("%s is not registered in taubyte", name)})
 
 	// Store in negative cache as spam
-	h.negativeCache.Set(msg.Question[0].Name, true, common.DefaultBlockTime)
+	h.negativeCache.Set(msg.Question[0].Name, true, DefaultBlockTime)
 
 	err = w.WriteMsg(errMsg)
 	if err != nil {

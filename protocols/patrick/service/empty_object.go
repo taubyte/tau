@@ -1,4 +1,4 @@
-package common
+package service
 
 import (
 	"github.com/taubyte/go-interfaces/services/tns"
@@ -23,6 +23,6 @@ func (e *emptyObject) Current(branch string) ([]tns.Path, error) {
 	return nil, nil
 }
 
-func NewEmptyObject() tns.Object {
+func newEmptyObject() tns.Object {
 	return &emptyObject{}
 }

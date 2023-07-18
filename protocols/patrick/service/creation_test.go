@@ -13,7 +13,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
-	"github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 
 	_ "github.com/taubyte/odo/protocols/auth/service"
 )
@@ -67,7 +67,7 @@ func TestPatrick(t *testing.T) {
 		return
 	}
 
-	common.FakeSecret = true
+	protocolsCommon.FakeSecret = true
 	err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
 	if err != nil {
 		t.Error(err)

@@ -9,9 +9,9 @@ import (
 	dreamland "bitbucket.org/taubyte/dreamland/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	_ "github.com/taubyte/odo/protocols/monkey/api/p2p"
 	_ "github.com/taubyte/odo/protocols/patrick/api/p2p"
-	"github.com/taubyte/odo/protocols/patrick/common"
 )
 
 func TestReAnnounce(t *testing.T) {
@@ -65,7 +65,7 @@ func TestReAnnounce(t *testing.T) {
 		return
 	}
 
-	common.FakeSecret = true
+	protocolsCommon.FakeSecret = true
 	err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
 	if err != nil {
 		t.Error(err)

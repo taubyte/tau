@@ -8,7 +8,7 @@ import (
 	commonDreamland "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	"github.com/taubyte/odo/protocols/seer/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 
 	dns "github.com/miekg/dns"
 
@@ -20,7 +20,7 @@ import (
 )
 
 var (
-	defaultTestPort = fmt.Sprintf("127.0.0.1:%d", common.DefaultDevDnsPort)
+	defaultTestPort = fmt.Sprintf("127.0.0.1:%d", protocolsCommon.DefaultDevDnsPort)
 	fqdn            = "testing_website_builder.com."
 	regexFqdn       = "qkfkkvlaw2.g.tau.link."
 	failedFqdn      = "asdhw23.g.tau.link.net."
@@ -38,7 +38,7 @@ func TestDns(t *testing.T) {
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":    {Others: map[string]int{"dns": common.DefaultDevDnsPort, "mock": 1}},
+			"seer":    {Others: map[string]int{"dns": protocolsCommon.DefaultDevDnsPort, "mock": 1}},
 			"tns":     {},
 			"monkey":  {},
 			"patrick": {},

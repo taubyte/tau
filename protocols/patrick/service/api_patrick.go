@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/go-interfaces/p2p/streams"
 	commonIface "github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
-	"github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -196,7 +196,7 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 			return fmt.Errorf("failed finding job %s in timeoutHandler with %v", jid, err)
 		}
 
-		if job.Attempt == common.MaxJobAttempts {
+		if job.Attempt == protocolsCommon.MaxJobAttempts {
 			job.Status = commonIface.JobStatusFailed
 			job.Logs = cid_log
 

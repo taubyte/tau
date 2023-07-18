@@ -8,8 +8,9 @@ import (
 	"github.com/miekg/dns"
 	moody "github.com/taubyte/go-interfaces/moody"
 	domainSpecs "github.com/taubyte/go-specs/domain"
-	"github.com/taubyte/odo/protocols/seer/common"
 )
+
+const defaultFallback string = "__"
 
 func (h *dnsHandler) replyFallback(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
 	logger.Info(moody.Object{"message": fmt.Sprintf("HITTING FALLBACK FOR %s", msg.Question[0].Name)})
@@ -20,7 +21,7 @@ func (h *dnsHandler) replyFallback(w dns.ResponseWriter, r *dns.Msg, errMsg *dns
 			Class:  dns.ClassINET,
 			Ttl:    60,
 		},
-		Target: common.DefaultFallback + r.Question[0].Name,
+		Target: defaultFallback + r.Question[0].Name,
 	})
 
 	err := w.WriteMsg(&msg)

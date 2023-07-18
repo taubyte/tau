@@ -15,9 +15,9 @@ import (
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 
 	_ "bitbucket.org/taubyte/tns-p2p-client"
-	commonAuth "github.com/taubyte/odo/protocols/auth/common"
 	_ "github.com/taubyte/odo/protocols/auth/service"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/monkey/api/p2p"
@@ -63,7 +63,7 @@ func TestRunWasmRetry(t *testing.T) {
 	}
 
 	// override ID of project generated so that it matches id in config
-	commonAuth.GetNewProjectID = func(args ...interface{}) string { return commonTest.ProjectID }
+	protocolCommon.GetNewProjectID = func(args ...interface{}) string { return commonTest.ProjectID }
 	err = commonTest.RegisterTestProject(u.Context(), authHttpURL)
 	if err != nil {
 		t.Error(err)

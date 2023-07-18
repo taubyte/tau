@@ -1,8 +1,8 @@
-package common
+package main
 
 import "github.com/urfave/cli/v2"
 
-var BasicFlags = []cli.Flag{
+var dev = []cli.Flag{
 	&cli.BoolFlag{
 		Name: "dev",
 	},

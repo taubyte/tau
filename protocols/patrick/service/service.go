@@ -17,8 +17,8 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	authAPI "github.com/taubyte/odo/protocols/auth/api/p2p"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	monkeyApi "github.com/taubyte/odo/protocols/monkey/api/p2p"
-	common "github.com/taubyte/odo/protocols/patrick/common"
 )
 
 var (
@@ -39,8 +39,8 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*PatrickServic
 	}
 
 	err := config.Build(commonIface.ConfigBuilder{
-		DefaultP2PListenPort: common.DefaultP2PListenPort,
-		DevHttpListenPort:    common.DevHttpListenPort,
+		DefaultP2PListenPort: protocolsCommon.PatrickDefaultP2PListenPort,
+		DevHttpListenPort:    protocolsCommon.PatrickDevHttpListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
 	})
 	if err != nil {
@@ -52,7 +52,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*PatrickServic
 	logger.Error(moodyCommon.Object{"msg": config})
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewNode(ctx, config, common.DatabaseName)
+		srv.node, err = configutils.NewNode(ctx, config, protocolsCommon.Patrick)
 		if err != nil {
 			return nil, err
 		}
@@ -83,12 +83,12 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*PatrickServic
 	}
 
 	// Create a database to store the jobs in
-	srv.db, err = kv.New(logger.Std(), srv.node, common.DatabaseName, 5)
+	srv.db, err = kv.New(logger.Std(), srv.node, protocolsCommon.Patrick, 5)
 	if err != nil {
 		return nil, fmt.Errorf("failed kv new with error: %w", err)
 	}
 
-	srv.stream, err = streams.New(srv.node, common.ServiceName, common.Protocol)
+	srv.stream, err = streams.New(srv.node, protocolsCommon.Patrick, protocolsCommon.PatrickProtocol)
 	if err != nil {
 		return nil, fmt.Errorf("failed stream new with error: %w", err)
 	}
@@ -155,8 +155,8 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*PatrickServic
 
 func (srv *PatrickService) Close() error {
 	// TODO use debug logger
-	fmt.Println("Closing", common.DatabaseName)
-	defer fmt.Println(common.DatabaseName, "closed")
+	fmt.Println("Closing", protocolsCommon.Patrick)
+	defer fmt.Println(protocolsCommon.Patrick, "closed")
 
 	// node.ctx
 	srv.stream.Stop()

@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
-	"github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -103,7 +103,7 @@ func (srv *PatrickService) cancelJob(ctx http.Context) (iface interface{}, err e
 			lockBytes, err = srv.db.Get(requestCtx, "/locked/jobs/"+jid)
 			if err != nil {
 				attempts++
-				if attempts == common.MaxCancelAttemps {
+				if attempts == protocolsCommon.MaxCancelAttempts {
 					return nil, fmt.Errorf("failed cancelling job %s max attempts exceeded", jid)
 				}
 				time.Sleep(2 * time.Second)
@@ -139,7 +139,7 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 	requestCtx := ctx.Request().Context()
 
 	// This is just to make the successful job set to fail to retry it for testing on go-patrick-http test
-	if srv.devMode && common.RetryJob {
+	if srv.devMode && protocolsCommon.RetryJob {
 		// Get the specific job from archived
 		job, err := srv.getJob(requestCtx, "/archive/jobs/", jid)
 		if err != nil {

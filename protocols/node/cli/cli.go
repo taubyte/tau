@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/odo/protocols/node/common"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/net/context"
 )
@@ -27,7 +26,7 @@ func defineCLI() *(cli.App) {
 					StartNode(c)
 					return nil
 				},
-				Flags: common.BasicFlags,
+				Flags: dev,
 			},
 			{
 				Name:    "utils",
@@ -40,7 +39,7 @@ func defineCLI() *(cli.App) {
 						Action: func(c *cli.Context) error {
 							return UtilsProvide(c, c.Args().Slice())
 						},
-						Flags: common.BasicFlags,
+						Flags: dev,
 					},
 					{
 						Name:  "fetch",
@@ -50,7 +49,7 @@ func defineCLI() *(cli.App) {
 							defer ctx_cancel()
 							return UtilsFetch(c, ctx, c.Args().Get(0))
 						},
-						Flags: common.BasicFlags,
+						Flags: dev,
 					},
 					{
 						Name:  "genkey",
@@ -58,7 +57,7 @@ func defineCLI() *(cli.App) {
 						Action: func(c *cli.Context) error {
 							return UtilsGenKey()
 						},
-						Flags: common.BasicFlags,
+						Flags: dev,
 					},
 					{
 						Name:    "ping",
@@ -67,13 +66,13 @@ func defineCLI() *(cli.App) {
 						Action: func(c *cli.Context) error {
 							return UtilsPing(c, c.Args().First())
 						},
-						Flags: common.BasicFlags,
+						Flags: dev,
 					},
 					{
 						Name:    "addr",
 						Aliases: []string{"a"},
 						Usage:   "Show local addresses",
-						Flags:   common.BasicFlags,
+						Flags:   dev,
 					},
 					{
 						Name:  "peers",
@@ -81,7 +80,7 @@ func defineCLI() *(cli.App) {
 						Action: func(c *cli.Context) error {
 							return UtilsPeers(c)
 						},
-						Flags: common.BasicFlags,
+						Flags: dev,
 					},
 				},
 			},

@@ -10,7 +10,7 @@ import (
 	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
-	"github.com/taubyte/odo/protocols/patrick/common"
+	protocolsCommon "github.com/taubyte/odo/protocols/common"
 )
 
 func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
@@ -54,7 +54,7 @@ func (p *PatrickService) ReannounceFailedJobs(ctx context.Context) error {
 			}
 
 			// If already tried twice or did not fail skip it
-			if job.Attempt == common.MaxJobAttempts || job.Status != patrick.JobStatusFailed {
+			if job.Attempt == protocolsCommon.MaxJobAttempts || job.Status != patrick.JobStatusFailed {
 				continue
 			}
 

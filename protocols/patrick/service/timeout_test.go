@@ -7,11 +7,11 @@ import (
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	dreamland "bitbucket.org/taubyte/dreamland/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	monkey "github.com/taubyte/odo/protocols/monkey/common"
+	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
 func TestTimeout(t *testing.T) {
-	monkey.TimeoutTest = true
+	protocolCommon.TimeoutTest = true
 	u := dreamland.Multiverse("testTimeout")
 	defer u.Stop()
 

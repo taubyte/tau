@@ -1,4 +1,13 @@
-package common
+package service
+
+import "time"
+
+var (
+	NodeDatabaseFileName     string = "node-database.db"
+	IPKey                           = "IP"
+	DefaultBlockTime                = 60 * time.Second
+	ValidServiceResponseTime        = 5 * time.Minute
+)
 
 const (
 	UsageStatement = `INSERT OR REPLACE INTO Usage(Id, Name, Timestamp, UsedMemory, TotalMemory, FreeMemory, TotalCpu, CpuCount, User, Nice, System, Idle, Iowait, Irq, Softirq, Steal, Guest, GuestNice, StatCount, Address, TotalDisk, FreeDisk, UsedDisk, AvailableDisk) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
