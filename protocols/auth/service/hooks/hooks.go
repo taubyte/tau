@@ -7,9 +7,9 @@ import (
 	"strconv"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	"bitbucket.org/taubyte/kvdb/database"
 	"github.com/taubyte/go-interfaces/kvdb"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	"github.com/taubyte/odo/pkgs/kvdb/database"
 	"github.com/taubyte/utils/maps"
 	"github.com/taubyte/utils/network"
 )

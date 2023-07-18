@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 
-	tvm "bitbucket.org/taubyte/go-node-tvm"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
 	iface "github.com/taubyte/go-interfaces/services/substrate/pubsub"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
+	tvm "github.com/taubyte/odo/vm"
 )
 
 func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Function, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {

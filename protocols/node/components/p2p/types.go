@@ -3,9 +3,9 @@ package p2p
 import (
 	"context"
 
-	"bitbucket.org/taubyte/go-node-tvm/cache"
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 	p2pIface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	"github.com/taubyte/odo/vm/cache"
 )
 
 var _ p2pIface.Service = &Service{}

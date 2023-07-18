@@ -9,7 +9,7 @@ package nodehttp
 // 	"github.com/taubyte/odo/protocols/node/components/http/common"
 // 	"github.com/taubyte/odo/protocols/node/components/http/function"
 // 	"github.com/taubyte/odo/protocols/node/components/http/website"
-// 	"bitbucket.org/taubyte/go-node-tvm/lookup"
+// 	"github.com/taubyte/odo/vm/lookup"
 // 	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
 // 	structureSpec "github.com/taubyte/go-specs/structure"
 // )

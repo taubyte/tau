@@ -3,10 +3,10 @@ package kv
 import (
 	"fmt"
 
-	kvdb "bitbucket.org/taubyte/kvdb/database"
 	"github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/p2p/peer"
 	iface "github.com/taubyte/go-interfaces/services/substrate/database"
+	kvdb "github.com/taubyte/odo/pkgs/kvdb/database"
 	db "github.com/taubyte/odo/protocols/node/components/database/common"
 )
 

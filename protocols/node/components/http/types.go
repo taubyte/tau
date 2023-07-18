@@ -1,9 +1,9 @@
 package nodehttp
 
 import (
-	"bitbucket.org/taubyte/go-node-tvm/cache"
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 	iface "github.com/taubyte/go-interfaces/services/substrate/http"
+	"github.com/taubyte/odo/vm/cache"
 )
 
 var _ iface.Service = &Service{}

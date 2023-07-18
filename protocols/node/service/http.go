@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strconv"
 
-	auto "bitbucket.org/taubyte/http-auto"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
+	auto "github.com/taubyte/odo/pkgs/http-auto"
 )
 
 func (srv *Service) startHttp(config *commonIface.GenericConfig) (err error) {

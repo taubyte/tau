@@ -5,11 +5,11 @@ import (
 	"errors"
 	"fmt"
 
-	"bitbucket.org/taubyte/go-node-tvm/cache"
 	"bitbucket.org/taubyte/vm-test-examples/structure"
 	p2p "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/tns"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/odo/vm/cache"
 )
 
 var (

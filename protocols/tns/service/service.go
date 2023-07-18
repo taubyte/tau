@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	kv "bitbucket.org/taubyte/kvdb/database"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
+	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	commonSpec "github.com/taubyte/go-specs/common"

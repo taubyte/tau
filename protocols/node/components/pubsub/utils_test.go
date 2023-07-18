@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	"bitbucket.org/taubyte/go-node-tvm/cache"
 	p2p "bitbucket.org/taubyte/p2p/peer"
 	"bitbucket.org/taubyte/vm-test-examples/structure"
 	"github.com/taubyte/go-interfaces/services/tns"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/websocket"
+	"github.com/taubyte/odo/vm/cache"
 )
 
 func init() {

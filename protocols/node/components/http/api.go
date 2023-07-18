@@ -6,12 +6,12 @@ import (
 
 	goHttp "net/http"
 
-	"bitbucket.org/taubyte/go-node-tvm/counter"
-	"bitbucket.org/taubyte/go-node-tvm/helpers"
-	"bitbucket.org/taubyte/go-node-tvm/lookup"
 	"github.com/taubyte/go-interfaces/services/http"
 	iface "github.com/taubyte/go-interfaces/services/substrate/http"
 	"github.com/taubyte/odo/protocols/node/components/http/common"
+	"github.com/taubyte/odo/vm/counter"
+	"github.com/taubyte/odo/vm/helpers"
+	"github.com/taubyte/odo/vm/lookup"
 )
 
 func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {

@@ -6,11 +6,11 @@ import (
 
 	_ "bitbucket.org/taubyte/billing/service"
 	_ "bitbucket.org/taubyte/config-compiler/fixtures"
-	bench "bitbucket.org/taubyte/go-node-tvm/cache"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	_ "github.com/taubyte/odo/protocols/node/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"
+	bench "github.com/taubyte/odo/vm/cache"
 )
 
 var (

@@ -3,11 +3,11 @@ package pubsub
 import (
 	"time"
 
-	counter "bitbucket.org/taubyte/go-node-tvm/counter"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	iface "github.com/taubyte/go-interfaces/services/substrate/pubsub"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/websocket"
+	counter "github.com/taubyte/odo/vm/counter"
 )
 
 type handleType int

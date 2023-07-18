@@ -10,10 +10,9 @@ require (
 	bitbucket.org/taubyte/dreamland-test v0.3.1
 	bitbucket.org/taubyte/go-auth-http v0.1.2
 	bitbucket.org/taubyte/go-moody-blues v0.1.34
-	bitbucket.org/taubyte/go-node-tvm v0.2.2
-	bitbucket.org/taubyte/http-auto v0.1.1
-	bitbucket.org/taubyte/kvdb v0.4.1
+	bitbucket.org/taubyte/go-node-counters v0.1.7-pre
 	bitbucket.org/taubyte/p2p v0.8.2
+	bitbucket.org/taubyte/tns-p2p-client v0.1.1
 	bitbucket.org/taubyte/vm-test-examples v0.5.1-pre.v3
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -26,6 +25,7 @@ require (
 	github.com/hsanjuan/ipfs-lite v1.7.0
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
+	github.com/ipfs/go-ds-crdt v0.4.0
 	github.com/ipfs/go-ds-pebble v0.2.4
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/jellydator/ttlcache/v3 v3.0.1
@@ -75,10 +75,10 @@ require (
 	atomicgo.dev/cursor v0.1.1 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	bitbucket.org/taubyte/auth v0.4.4 // indirect
-	bitbucket.org/taubyte/go-node-counters v0.1.7-pre // indirect
+	bitbucket.org/taubyte/http-auto v0.1.1 // indirect
+	bitbucket.org/taubyte/kvdb v0.4.1 // indirect
 	bitbucket.org/taubyte/mycelium v0.4.4 // indirect
 	bitbucket.org/taubyte/seer-p2p-client v0.1.1 // indirect
-	bitbucket.org/taubyte/tns-p2p-client v0.1.1 // indirect
 	github.com/CAFxX/httpcompression v0.0.8 // indirect
 	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
@@ -154,7 +154,6 @@ require (
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
 	github.com/ipfs/go-block-format v0.1.2 // indirect
 	github.com/ipfs/go-cidutil v0.1.0 // indirect
-	github.com/ipfs/go-ds-crdt v0.4.0 // indirect
 	github.com/ipfs/go-ipfs-delay v0.0.1 // indirect
 	github.com/ipfs/go-ipfs-pq v0.0.3 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect

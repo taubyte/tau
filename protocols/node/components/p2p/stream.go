@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	counter "bitbucket.org/taubyte/go-node-tvm/counter"
-	"bitbucket.org/taubyte/go-node-tvm/lookup"
 	"bitbucket.org/taubyte/p2p/streams"
 	"bitbucket.org/taubyte/p2p/streams/command"
 	ce "bitbucket.org/taubyte/p2p/streams/command/error"
@@ -15,6 +13,8 @@ import (
 	"github.com/taubyte/go-interfaces/p2p/peer"
 	ifaceStreams "github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	counter "github.com/taubyte/odo/vm/counter"
+	"github.com/taubyte/odo/vm/lookup"
 )
 
 type commandService struct {

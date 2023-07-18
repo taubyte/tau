@@ -1,7 +1,7 @@
 package nodehttp
 
 import (
-	"bitbucket.org/taubyte/go-node-tvm/cache"
+	"github.com/taubyte/odo/vm/cache"
 
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 )
