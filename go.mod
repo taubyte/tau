@@ -5,15 +5,16 @@ go 1.19
 replace github.com/taubyte/go-interfaces => ../go-interfaces
 
 require (
-	bitbucket.org/taubyte/billing v0.2.7-pre
+	bitbucket.org/taubyte/billing v0.2.7
 	bitbucket.org/taubyte/config-compiler v0.4.2
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	bitbucket.org/taubyte/dreamland v0.4.1
 	bitbucket.org/taubyte/dreamland-test v0.3.1
 	bitbucket.org/taubyte/go-auth-http v0.1.2
 	bitbucket.org/taubyte/go-moody-blues v0.1.34
-	bitbucket.org/taubyte/go-node-counters v0.1.7-pre
+	bitbucket.org/taubyte/go-node-counters v0.1.7
 	bitbucket.org/taubyte/go-node-tvm v0.2.2
+	bitbucket.org/taubyte/odo v0.0.0-20230714150045-657e83952cbd
 	bitbucket.org/taubyte/p2p v0.8.2
 	bitbucket.org/taubyte/tns-p2p-client v0.1.1
 	bitbucket.org/taubyte/vm-test-examples v0.5.1-pre.v3
@@ -64,6 +65,7 @@ require (
 	go4.org v0.0.0-20230225012048-214862532bf5
 	golang.org/x/crypto v0.7.0
 	golang.org/x/exp v0.0.0-20230321023759-10a507213a29
+	golang.org/x/mod v0.10.0
 	golang.org/x/net v0.10.0
 	golang.org/x/oauth2 v0.7.0
 	golang.org/x/sys v0.8.0
@@ -78,10 +80,24 @@ require (
 	atomicgo.dev/cursor v0.1.1 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	bitbucket.org/taubyte/auth v0.4.4 // indirect
+	bitbucket.org/taubyte/go-builder v0.1.2 // indirect
+	bitbucket.org/taubyte/go-node-database v0.2.1 // indirect
+	bitbucket.org/taubyte/go-node-http v0.3.2 // indirect
+	bitbucket.org/taubyte/go-node-ipfs v0.2.0 // indirect
+	bitbucket.org/taubyte/go-node-p2p v0.2.1 // indirect
+	bitbucket.org/taubyte/go-node-pubsub v0.3.1 // indirect
+	bitbucket.org/taubyte/go-node-smartops v0.2.0 // indirect
+	bitbucket.org/taubyte/go-node-storage v0.2.1 // indirect
+	bitbucket.org/taubyte/hoarder v0.3.1 // indirect
 	bitbucket.org/taubyte/http-auto v0.1.1 // indirect
 	bitbucket.org/taubyte/kvdb v0.4.1 // indirect
+	bitbucket.org/taubyte/monkey v0.4.1 // indirect
 	bitbucket.org/taubyte/mycelium v0.4.4 // indirect
+	bitbucket.org/taubyte/node v0.5.4 // indirect
+	bitbucket.org/taubyte/patrick v0.3.1 // indirect
+	bitbucket.org/taubyte/seer v0.3.1 // indirect
 	bitbucket.org/taubyte/seer-p2p-client v0.1.1 // indirect
+	bitbucket.org/taubyte/tns v0.4.1 // indirect
 	github.com/CAFxX/httpcompression v0.0.8 // indirect
 	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
@@ -267,7 +283,6 @@ require (
 	go.uber.org/fx v1.19.2 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.24.0 // indirect
-	golang.org/x/mod v0.10.0 // indirect
 	golang.org/x/sync v0.2.0 // indirect
 	golang.org/x/term v0.8.0 // indirect
 	golang.org/x/text v0.9.0 // indirect

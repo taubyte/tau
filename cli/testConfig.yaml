@@ -1,0 +1,25 @@
+privatekey: CAESQJxQzCe/N/C8A5TIgrL9F0p5iGgBa9wIgCOkDr4De475V5NSzWX2EnMKzYW9pygBCTJSuezIc6w/TT/unZKJ5mo=
+swarmkey: test_swarm.key
+services: [patrick,node,tns,monkey]
+p2p-listen: [/ip4/0.0.0.0/tcp/8100]
+p2p-announce: [/ip4/52.173.200.208/tcp/8100]
+devmode: true
+ports:
+  main: 8100
+  lite: 8102
+  ipfs: 8104
+location:
+  lat: 120
+  long: 21
+http-listen: 0.0.0.0:443
+network-url: aron.lol
+domains:
+  key:
+    private: test.key
+  services: ^[^.]+\.tau\.aron\.lol
+  generated: g.aron.lol
+  whitelist:
+    postfix: [g.aron.lol,test.com]
+    regex:
+      - '^[^.]+\.g\.aron\.lol'
+      - '^[^.]+\.test\.example\.com'
