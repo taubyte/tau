@@ -1,7 +1,7 @@
 package kv
 
 import (
-	kvdb "bitbucket.org/taubyte/kvdb/database"
+	kvdb "github.com/taubyte/odo/pkgs/kvdb/database"
 )
 
 type kv struct {

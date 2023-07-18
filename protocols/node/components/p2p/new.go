@@ -1,9 +1,9 @@
 package p2p
 
 import (
-	"bitbucket.org/taubyte/go-node-tvm/cache"
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/odo/protocols/node/components/p2p/common"
+	"github.com/taubyte/odo/vm/cache"
 )
 
 func New(srv nodeIface.Service, options ...Option) (*Service, error) {

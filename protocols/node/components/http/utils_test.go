@@ -7,7 +7,7 @@ package nodehttp
 // 	"strings"
 
 // 	"github.com/taubyte/odo/protocols/node/components/http/common"
-// 	"bitbucket.org/taubyte/go-node-tvm/cache"
+// 	"github.com/taubyte/odo/vm/cache"
 // 	"bitbucket.org/taubyte/vm-test-examples/structure"
 // 	p2p "github.com/taubyte/go-interfaces/p2p/peer"
 // 	"github.com/taubyte/go-interfaces/services/tns"

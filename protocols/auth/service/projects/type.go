@@ -1,6 +1,6 @@
 package projects
 
-import "bitbucket.org/taubyte/kvdb/database"
+import "github.com/taubyte/odo/pkgs/kvdb/database"
 
 type Data map[string]interface{}
 

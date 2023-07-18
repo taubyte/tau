@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"time"
 
-	counter "bitbucket.org/taubyte/go-node-tvm/counter"
-	"bitbucket.org/taubyte/go-node-tvm/lookup"
 	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	counter "github.com/taubyte/odo/vm/counter"
+	"github.com/taubyte/odo/vm/lookup"
 	"github.com/taubyte/utils/multihash"
 )
 

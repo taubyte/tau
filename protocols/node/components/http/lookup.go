@@ -5,7 +5,6 @@ import (
 
 	_ "embed"
 
-	"bitbucket.org/taubyte/go-node-tvm/helpers"
 	dv "github.com/taubyte/domain-validation"
 	iface "github.com/taubyte/go-interfaces/services/common"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
@@ -19,6 +18,7 @@ import (
 	"github.com/taubyte/odo/protocols/node/components/http/common"
 	"github.com/taubyte/odo/protocols/node/components/http/function"
 	"github.com/taubyte/odo/protocols/node/components/http/website"
+	"github.com/taubyte/odo/vm/helpers"
 )
 
 var (

@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	tvm "bitbucket.org/taubyte/go-node-tvm"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
 	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	tvm "github.com/taubyte/odo/vm"
 )
 
 func New(srv iface.Service, config structureSpec.Function, matcher *iface.MatchDefinition) (commonIface.Serviceable, error) {

@@ -30,7 +30,6 @@ bitbucket.org/taubyte/go-node-pubsub v0.3.1 h1:mt/K+kXifOJTxgAroH/tInFFtVhcD06FP
 bitbucket.org/taubyte/go-node-smartops v0.2.0 h1:sYIkctZJwAkB3CA9qYOOR1hVpg0WPb8KgLW6ydZ3mT4=
 bitbucket.org/taubyte/go-node-storage v0.2.1 h1:NRHdrWJxbVQsEHnopbFp0zyT7Owe4hT8gPyxlEHSuA4=
 bitbucket.org/taubyte/go-node-tvm v0.2.2 h1:xkHzESazNK2ZbwQQGtaAs6QPmrOTtwO1rURBBP32uRI=
-bitbucket.org/taubyte/go-node-tvm v0.2.2/go.mod h1:NQOUogHcKKdB5E9kOb+Ju48SmrCPMgbAqbo1vRSqsPY=
 bitbucket.org/taubyte/hoarder v0.3.1 h1:YYZUqC6Oj7tlOjZOBJIyEoCIGgoVxfXQ9m6+7Vx11dU=
 bitbucket.org/taubyte/http-auto v0.1.1 h1:bpJfCtS9TrbMl2u1HItu8k6nJAFjjpOnwgjyxxh+41g=
 bitbucket.org/taubyte/http-auto v0.1.1/go.mod h1:eagS3duYAxY3ilyr9o8oC1Mvhj0fgh/0kHSdqk/tnis=

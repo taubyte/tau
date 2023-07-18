@@ -7,8 +7,6 @@ import (
 
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	auto "bitbucket.org/taubyte/http-auto"
-	kv "bitbucket.org/taubyte/kvdb/database"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
 	seerClient "bitbucket.org/taubyte/seer-p2p-client"
@@ -16,6 +14,8 @@ import (
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
+	auto "github.com/taubyte/odo/pkgs/http-auto"
+	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 	authAPI "github.com/taubyte/odo/protocols/auth/api/p2p"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	monkeyApi "github.com/taubyte/odo/protocols/monkey/api/p2p"

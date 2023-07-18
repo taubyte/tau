@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	"bitbucket.org/taubyte/go-node-tvm/lookup"
 	moody "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
 	iface "github.com/taubyte/go-interfaces/services/substrate/pubsub"
@@ -13,6 +12,7 @@ import (
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/function"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/websocket"
+	"github.com/taubyte/odo/vm/lookup"
 )
 
 var (

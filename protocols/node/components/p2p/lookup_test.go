@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"bitbucket.org/taubyte/go-node-tvm/lookup"
 	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/odo/vm/lookup"
 )
 
 var testServices = map[string]structureSpec.Service{

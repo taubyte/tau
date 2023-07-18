@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	tvm "bitbucket.org/taubyte/go-node-tvm"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
 	iface "github.com/taubyte/go-interfaces/services/substrate/http"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-specs/extract"
 	"github.com/taubyte/odo/protocols/node/components/http/common"
+	tvm "github.com/taubyte/odo/vm"
 )
 
 func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	kv "bitbucket.org/taubyte/kvdb/database"
 	"bitbucket.org/taubyte/p2p/keypair"
 	"bitbucket.org/taubyte/p2p/peer"
+	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/flat"
 )
