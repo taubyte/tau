@@ -3,7 +3,7 @@ package compile
 import (
 	"fmt"
 
-	"bitbucket.org/taubyte/dreamland/common"
+	"github.com/taubyte/dreamland/core/common"
 	git "github.com/taubyte/go-simple-git"
 )
 

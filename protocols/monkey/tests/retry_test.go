@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	commonTest "bitbucket.org/taubyte/dreamland-test/common"
-	commonDreamland "bitbucket.org/taubyte/dreamland/common"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
+	commonDreamland "github.com/taubyte/dreamland/core/common"
+	dreamland "github.com/taubyte/dreamland/core/services"
+	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	spec "github.com/taubyte/go-specs/common"

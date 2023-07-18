@@ -8,8 +8,8 @@ import (
 
 	"bitbucket.org/taubyte/config-compiler/decompile"
 	_ "bitbucket.org/taubyte/config-compiler/fixtures"
-	commonDreamland "bitbucket.org/taubyte/dreamland/common"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
+	commonDreamland "github.com/taubyte/dreamland/core/common"
+	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/odo/clients/p2p/tns"

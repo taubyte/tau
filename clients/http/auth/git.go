@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	git "bitbucket.org/taubyte/go-auth-http/git"
-	"bitbucket.org/taubyte/go-auth-http/git/common"
 	"github.com/avast/retry-go"
+	git "github.com/taubyte/odo/clients/http/auth/git"
+	"github.com/taubyte/odo/clients/http/auth/git/common"
 )
 
 // Git returns a git client based on the current git provider

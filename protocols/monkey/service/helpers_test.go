@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	commonDreamland "bitbucket.org/taubyte/dreamland/common"
+	commonDreamland "github.com/taubyte/dreamland/core/common"
 	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
