@@ -14,7 +14,6 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	commonInterface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/odo/protocols/auth/github"
 
 	"github.com/taubyte/odo/protocols/auth/service/hooks"
@@ -78,11 +77,10 @@ func (srv *AuthService) newGitHubRepository(ctx context.Context, client *github.
 	}*/
 
 	var defaultHookName string = "taubyte_push_hook"
-
 	var defaultGithubHookUrl string
-	if commonInterface.Deployment == commonInterface.Taubyte {
+	if srv.devMode {
 		defaultGithubHookUrl = "https://hooks.git.taubyte.com/github/" + hook_id
-	} else if commonInterface.Deployment == commonInterface.Odo {
+	} else {
 		defaultGithubHookUrl = srv.webHookUrl + "/github/" + hook_id
 	}
 
@@ -172,9 +170,9 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *gi
 
 	var defaultHookName string = "taubyte_push_hook"
 	var defaultGithubHookUrl string
-	if commonInterface.Deployment == commonInterface.Taubyte {
+	if srv.devMode {
 		defaultGithubHookUrl = "https://hooks.git.taubyte.com/github/" + hook_id
-	} else if commonInterface.Deployment == commonInterface.Odo {
+	} else {
 		defaultGithubHookUrl = srv.webHookUrl + "/github/" + hook_id
 	}
 

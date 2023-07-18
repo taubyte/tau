@@ -63,7 +63,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 		dev: config.DevMode,
 	}
 
-	if commonIface.Deployment == commonIface.Odo {
+	if !config.DevMode {
 		domainSpecs.SpecialDomain = regexp.MustCompile(config.Domains.Generated)
 	}
 

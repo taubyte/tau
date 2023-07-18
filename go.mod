@@ -2,6 +2,8 @@ module github.com/taubyte/odo
 
 go 1.19
 
+replace github.com/taubyte/go-interfaces => ../go-interfaces
+
 require (
 	bitbucket.org/taubyte/billing v0.2.7-pre
 	bitbucket.org/taubyte/config-compiler v0.4.2
@@ -11,6 +13,7 @@ require (
 	bitbucket.org/taubyte/go-auth-http v0.1.2
 	bitbucket.org/taubyte/go-moody-blues v0.1.34
 	bitbucket.org/taubyte/go-node-counters v0.1.7-pre
+	bitbucket.org/taubyte/go-node-tvm v0.2.2
 	bitbucket.org/taubyte/p2p v0.8.2
 	bitbucket.org/taubyte/tns-p2p-client v0.1.1
 	bitbucket.org/taubyte/vm-test-examples v0.5.1-pre.v3

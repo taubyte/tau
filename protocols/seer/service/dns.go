@@ -11,7 +11,6 @@ import (
 
 	validate "github.com/taubyte/domain-validation"
 	moody "github.com/taubyte/go-interfaces/moody"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/go-interfaces/services/tns"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
@@ -134,13 +133,9 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 	name = strings.ToLower(name)
 
-	// Special Case for Odo autocert/domains
-	if commonIface.Deployment == commonIface.Odo {
-
-		if domainSpecs.TaubyteServiceDomain.MatchString(name) || h.seer.caaRecordBypass.MatchString(name) {
-			h.odoDnsResolve(name, w, r, errMsg, msg)
-			return
-		}
+	if domainSpecs.TaubyteServiceDomain.MatchString(name) || h.seer.caaRecordBypass.MatchString(name) {
+		h.odoDnsResolve(name, w, r, errMsg, msg)
+		return
 	}
 
 	// First Case -> check if it matches .g.tau.link generated domain

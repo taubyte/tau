@@ -30,6 +30,7 @@ bitbucket.org/taubyte/go-node-pubsub v0.3.1 h1:mt/K+kXifOJTxgAroH/tInFFtVhcD06FP
 bitbucket.org/taubyte/go-node-smartops v0.2.0 h1:sYIkctZJwAkB3CA9qYOOR1hVpg0WPb8KgLW6ydZ3mT4=
 bitbucket.org/taubyte/go-node-storage v0.2.1 h1:NRHdrWJxbVQsEHnopbFp0zyT7Owe4hT8gPyxlEHSuA4=
 bitbucket.org/taubyte/go-node-tvm v0.2.2 h1:xkHzESazNK2ZbwQQGtaAs6QPmrOTtwO1rURBBP32uRI=
+bitbucket.org/taubyte/go-node-tvm v0.2.2/go.mod h1:NQOUogHcKKdB5E9kOb+Ju48SmrCPMgbAqbo1vRSqsPY=
 bitbucket.org/taubyte/hoarder v0.3.1 h1:YYZUqC6Oj7tlOjZOBJIyEoCIGgoVxfXQ9m6+7Vx11dU=
 bitbucket.org/taubyte/http-auto v0.1.1 h1:bpJfCtS9TrbMl2u1HItu8k6nJAFjjpOnwgjyxxh+41g=
 bitbucket.org/taubyte/http-auto v0.1.1/go.mod h1:eagS3duYAxY3ilyr9o8oC1Mvhj0fgh/0kHSdqk/tnis=
@@ -925,8 +926,6 @@ github.com/taubyte/domain-validation v1.0.0 h1:yUt6y7b/3PC9aocvl7s8cBKG4ieN35zQq
 github.com/taubyte/domain-validation v1.0.0/go.mod h1:/X3yd7sBjnE323rA8I9PiUt5+NlKU4I02nQik25Vqe8=
 github.com/taubyte/go-doci v1.0.2 h1:Q9ptLrwr2ZH0o+pzEd8jCrUb0JiZ2KZWvdIQP6BYl54=
 github.com/taubyte/go-doci v1.0.2/go.mod h1:Y3Wfq12Nom9h+0iKFMqqA4tq1mI15bsTNVcR6uBnva8=
-github.com/taubyte/go-interfaces v0.2.4 h1:uWRn81W1ULYF9bWkLeDzgiTYvvUnEcv2jKYtpe4EpeA=
-github.com/taubyte/go-interfaces v0.2.4/go.mod h1:9GDCq2MMFEZ6rDv/gqZbFLjDz//lgE0CBllumUBc19A=
 github.com/taubyte/go-project-schema v0.9.3 h1:2H0ClUZq7f97OgtL0FUe9tv2v12wOmnTAIiJGLei/gU=
 github.com/taubyte/go-project-schema v0.9.3/go.mod h1:8Rt5zsVfj8qbYCT+7++oax/nFVKvVfAepzVkqXrNTs8=
 github.com/taubyte/go-sdk v0.3.8 h1:RIg7N+ccIwTwqPopRMCrKgGhVigN1tPTCi1JG/mm4fg=

@@ -105,12 +105,6 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, 
 		return nil, err
 	}
 
-	// Not writing if deploying a network
-	if commonIface.Deployment != commonIface.Odo {
-		// HACK: Make sure certificates there
-		// tls.WriteCerts()
-	}
-
 	if config.Http == nil {
 		srv.http, err = auto.Configure(config).BasicHttp(ctx)
 		if err != nil {
