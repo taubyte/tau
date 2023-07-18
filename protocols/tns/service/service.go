@@ -11,7 +11,7 @@ import (
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 
-	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
+	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	commonSpec "github.com/taubyte/go-specs/common"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/engine"

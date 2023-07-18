@@ -7,10 +7,10 @@ import (
 	"reflect"
 	"testing"
 
-	commonTest "bitbucket.org/taubyte/dreamland-test/common"
-	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
 	"github.com/fxamacker/cbor/v2"
+	dreamlandCommon "github.com/taubyte/dreamland/core/common"
+	dreamland "github.com/taubyte/dreamland/core/services"
+	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"

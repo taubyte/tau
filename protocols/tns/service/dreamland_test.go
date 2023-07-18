@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	commonDreamland "bitbucket.org/taubyte/dreamland/common"
-	"bitbucket.org/taubyte/dreamland/services"
+	commonDreamland "github.com/taubyte/dreamland/core/common"
+	"github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
 	_ "github.com/taubyte/odo/clients/p2p/tns"

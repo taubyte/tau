@@ -3,9 +3,9 @@ package counter
 import (
 	"time"
 
-	"bitbucket.org/taubyte/go-node-counters/metrics"
 	iface "github.com/taubyte/go-interfaces/services/substrate/common"
 	"github.com/taubyte/go-interfaces/services/substrate/counters"
+	"github.com/taubyte/odo/protocols/node/components/counters/metrics"
 )
 
 // ErrorWrapper is an wraps an error in the cold start and execution of a serviceable.

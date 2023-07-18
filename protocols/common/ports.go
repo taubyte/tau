@@ -1,6 +1,6 @@
 package common
 
-import dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
+import dreamlandCommon "github.com/taubyte/dreamland/core/common"
 
 // TODO: These ports are tied to generic config/dreamland and will need looked at moving generic config
 var (

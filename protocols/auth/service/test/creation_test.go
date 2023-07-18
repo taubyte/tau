@@ -5,13 +5,13 @@ import (
 	"os"
 	"testing"
 
-	commonDreamland "bitbucket.org/taubyte/dreamland/common"
-	dreamland "bitbucket.org/taubyte/dreamland/services"
+	commonDreamland "github.com/taubyte/dreamland/core/common"
+	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	_ "github.com/taubyte/odo/protocols/auth/service"
 
-	commonTest "bitbucket.org/taubyte/dreamland-test/common"
-	gitTest "bitbucket.org/taubyte/dreamland-test/git"
+	commonTest "github.com/taubyte/dreamland/helpers"
+	gitTest "github.com/taubyte/dreamland/helpers/git"
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
 	protocolCommon "github.com/taubyte/odo/protocols/common"

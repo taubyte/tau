@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	commonDreamland "bitbucket.org/taubyte/dreamland/common"
-	"bitbucket.org/taubyte/dreamland/services"
+	commonDreamland "github.com/taubyte/dreamland/core/common"
+	"github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	_ "github.com/taubyte/odo/clients/p2p/patrick"
 	_ "github.com/taubyte/odo/protocols/auth/service"

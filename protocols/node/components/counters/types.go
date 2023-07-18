@@ -11,6 +11,16 @@ import (
 
 var _ iface.Service = &Service{}
 
+type unImplementedService struct {
+	nodeIface.Service
+	ctx context.Context
+}
+
+func (*unImplementedService) Close() error                     { return nil }
+func (u *unImplementedService) Context() context.Context       { return u.ctx }
+func (*unImplementedService) Push(wms ...*iface.WrappedMetric) {}
+func (*unImplementedService) Start()                           {}
+
 type Service struct {
 	nodeIface.Service
 	ledger     map[string]iface.Metric
