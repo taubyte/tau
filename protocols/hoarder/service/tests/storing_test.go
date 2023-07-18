@@ -19,7 +19,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/substrate/storage"
 
 	projectLib "github.com/taubyte/go-project-schema/project"
-	_ "github.com/taubyte/odo/protocols/hoarder/api/p2p"
+	_ "github.com/taubyte/odo/clients/p2p/hoarder"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	dbApi "github.com/taubyte/odo/protocols/node/components/database"
 	storageApi "github.com/taubyte/odo/protocols/node/components/storage"

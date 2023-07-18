@@ -11,7 +11,7 @@ import (
 	commonIface "bitbucket.org/taubyte/go-interfaces/common"
 	moodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
 	_ "github.com/taubyte/odo/protocols/node/service"
-	_ "bitbucket.org/taubyte/patrick/service"
+	_ "github.com/taubyte/odo/protocols/patrick/service"
 	tnsClient "github.com/taubyte/odo/protocols/tns/api/p2p"
 )
 

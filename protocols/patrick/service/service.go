@@ -11,14 +11,14 @@ import (
 	kv "bitbucket.org/taubyte/kvdb/database"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
-	seerClient "bitbucket.org/taubyte/seer-p2p-client"
-	tnsApi "bitbucket.org/taubyte/tns-p2p-client"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
-	authAPI "github.com/taubyte/odo/protocols/auth/api/p2p"
+	authAPI "github.com/taubyte/odo/clients/p2p/auth"
+	monkeyApi "github.com/taubyte/odo/clients/p2p/monkey"
+	seerClient "github.com/taubyte/odo/clients/p2p/seer"
+	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
-	monkeyApi "github.com/taubyte/odo/protocols/monkey/api/p2p"
 )
 
 var (

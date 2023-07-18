@@ -13,12 +13,12 @@ import (
 	kv "bitbucket.org/taubyte/kvdb/database"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
-	seerClient "bitbucket.org/taubyte/seer-p2p-client"
-	tnsClient "bitbucket.org/taubyte/tns-p2p-client"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	commonSpec "github.com/taubyte/go-specs/common"
+	seerClient "github.com/taubyte/odo/clients/p2p/seer"
+	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
 
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 

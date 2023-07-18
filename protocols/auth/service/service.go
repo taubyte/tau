@@ -12,9 +12,9 @@ import (
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	auto "bitbucket.org/taubyte/http-auto"
-	seerClient "bitbucket.org/taubyte/seer-p2p-client"
-	tnsApi "bitbucket.org/taubyte/tns-p2p-client"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
+	seerClient "github.com/taubyte/odo/clients/p2p/seer"
+	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
 
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	protocolCommon "github.com/taubyte/odo/protocols/common"

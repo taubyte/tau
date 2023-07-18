@@ -19,10 +19,10 @@ import (
 	projectLib "github.com/taubyte/go-project-schema/project"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 
-	_ "bitbucket.org/taubyte/tns-p2p-client"
+	_ "github.com/taubyte/odo/clients/p2p/monkey"
+	_ "github.com/taubyte/odo/clients/p2p/tns"
 	_ "github.com/taubyte/odo/protocols/auth/service"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
-	_ "github.com/taubyte/odo/protocols/monkey/api/p2p"
 	_ "github.com/taubyte/odo/protocols/tns/service"
 
 	"testing"

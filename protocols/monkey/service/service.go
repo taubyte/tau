@@ -5,20 +5,20 @@ import (
 	"fmt"
 	"regexp"
 
-	tnsClient "bitbucket.org/taubyte/tns-p2p-client"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	ci "github.com/taubyte/go-simple-container/gc"
+	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
 
 	dreamlandCommon "bitbucket.org/taubyte/dreamland/common"
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
-	seerClient "bitbucket.org/taubyte/seer-p2p-client"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
+	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
