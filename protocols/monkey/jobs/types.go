@@ -6,17 +6,17 @@ import (
 	"os"
 
 	compilerCommon "github.com/taubyte/config-compiler/common"
-	"github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/go-interfaces/services/tns"
 	ci "github.com/taubyte/go-simple-container"
+	"github.com/taubyte/p2p/peer"
 )
 
 type Context struct {
 	ctx              context.Context
 	ctxC             context.CancelFunc
-	Node             peer.Node
+	Node             *peer.Node
 	Tns              tns.Client
 	RepoType         compilerCommon.RepositoryType
 	ProjectID        string
@@ -32,7 +32,7 @@ type Context struct {
 	ConfigRepoRoot   string
 	Monkey           monkey.Service
 
-	OdoClientNode peer.Node
+	OdoClientnode *peer.Node
 
 	DVPublicKey []byte
 }

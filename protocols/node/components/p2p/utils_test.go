@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	"bitbucket.org/taubyte/vm-test-examples/structure"
-	p2p "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/tns"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/vm/cache"
+	"github.com/taubyte/p2p/peer"
 )
 
 var (
@@ -37,7 +37,7 @@ func fakeFetch(services map[string]structureSpec.Service, functions map[string]s
 	}
 }
 
-func NewTestService(node p2p.Node) *Service {
+func NewTestService(node *peer.Node) *Service {
 	nodeService := structure.MockNodeService(node, context.Background())
 
 	return &Service{

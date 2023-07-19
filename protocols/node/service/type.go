@@ -16,9 +16,9 @@ import (
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-interfaces/vm"
 
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	http "github.com/taubyte/go-interfaces/services/http"
+	"github.com/taubyte/p2p/peer"
 )
 
 var _ iface.Service = &Service{}
@@ -31,7 +31,7 @@ type Config struct {
 
 type Service struct {
 	ctx          context.Context
-	node         peer.Node
+	node         *peer.Node
 	http         http.Service
 	vm           vm.Service
 	nodeHttp     httpIface.Service
@@ -50,7 +50,7 @@ type Service struct {
 	orbitals []vm.Plugin
 }
 
-func (n *Service) Node() peer.Node {
+func (n *Service) Node() *peer.Node {
 	return n.node
 }
 

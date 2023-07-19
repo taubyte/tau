@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/odo/protocols/tns/flat"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 
-	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/p2p/streams"
 	"github.com/taubyte/utils/maps"
 )
 
-func (srv *Service) pushHandler(ctx context.Context, conn streams.Connection, body streams.Body) (cr.Response, error) {
+func (srv *Service) pushHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 
 	path, err := maps.StringArray(body, "path")
 	if err != nil {

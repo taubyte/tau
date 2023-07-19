@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	client "bitbucket.org/taubyte/p2p/streams/client"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
-	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/p2p/peer"
+	client "github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/p2p/streams/command"
 	dirs "github.com/taubyte/utils/fs/dir"
 	maps "github.com/taubyte/utils/maps"
 
@@ -27,13 +27,13 @@ var (
 //
 //	the certififcate is not valid restart the service after a random sleep.
 type Store struct {
-	node         peer.Node
+	node         *peer.Node
 	client       *client.Client
 	cacheDir     dirs.Directory
 	errCacheMiss error
 }
 
-func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss error) (*Store, error) {
+func New(ctx context.Context, node *peer.Node, cacheDir string, errCacheMiss error) (*Store, error) {
 	var (
 		c   Store
 		err error
@@ -64,15 +64,15 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting `%s` done", name)})
 
 	var (
-		body    *streams.Body
+		body    *command.Body
 		dataKey string
 	)
 
 	if strings.HasSuffix(name, "+token") == true || strings.HasSuffix(name, "+rsa") == true || strings.HasSuffix(name, "+key") == true || strings.HasSuffix(name, ".key") == true {
-		body = &streams.Body{"action": "cache-get", "key": name}
+		body = &command.Body{"action": "cache-get", "key": name}
 		dataKey = "data"
 	} else {
-		body = &streams.Body{"action": "get", "fqdn": name}
+		body = &command.Body{"action": "get", "fqdn": name}
 		dataKey = "certificate"
 	}
 
@@ -103,12 +103,12 @@ func (d *Store) Put(ctx context.Context, name string, data []byte) error {
 	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Storing `%s`", name)})
 	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Storing `%s` done", name)})
 
-	var body *streams.Body
+	var body *command.Body
 
 	if strings.HasSuffix(name, "+token") == true || strings.HasSuffix(name, "+rsa") == true || strings.HasSuffix(name, "+key") == true || strings.HasSuffix(name, ".key") == true {
-		body = &streams.Body{"action": "cache-set", "key": name, "data": data}
+		body = &command.Body{"action": "cache-set", "key": name, "data": data}
 	} else {
-		body = &streams.Body{"action": "set", "fqdn": name, "certificate": data}
+		body = &command.Body{"action": "set", "fqdn": name, "certificate": data}
 	}
 
 	// write file to DB by sending command
@@ -128,7 +128,7 @@ func (d *Store) Delete(ctx context.Context, name string) error {
 
 	// token or any cached data can be deleted
 	if strings.HasSuffix(name, "+token") == true || strings.HasSuffix(name, "+rsa") == true || strings.HasSuffix(name, "+key") == true || strings.HasSuffix(name, ".key") == true {
-		_, err := d.client.Send("acme", streams.Body{"action": "cache-delete", "key": name})
+		_, err := d.client.Send("acme", command.Body{"action": "cache-delete", "key": name})
 		if err != nil {
 			logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Deleting `%s` error: %s", name, err.Error())})
 		}

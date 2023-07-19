@@ -11,10 +11,10 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
+	"github.com/taubyte/p2p/peer"
 
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
@@ -104,7 +104,7 @@ func TestRunWasmRetry(t *testing.T) {
 	}
 }
 
-func checkAsset(ctx context.Context, resId, commit string, node peer.Node, tnsClient *tnsClient.Client) error {
+func checkAsset(ctx context.Context, resId, commit string, node *peer.Node, tnsClient *tnsClient.Client) error {
 	// assetHash := multihash.Hash(commonTest.ProjectID + resId)
 	assetHash, err := methods.GetTNSAssetPath(commonTest.ProjectID, resId, commit)
 	if err != nil {

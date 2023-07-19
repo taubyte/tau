@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"bitbucket.org/taubyte/p2p/streams/client"
 	"github.com/taubyte/config-compiler/decompile"
 	_ "github.com/taubyte/config-compiler/fixtures"
 	commonDreamland "github.com/taubyte/dreamland/core/common"
@@ -24,6 +23,7 @@ import (
 	_ "github.com/taubyte/odo/protocols/node/service"
 	_ "github.com/taubyte/odo/protocols/seer/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"
+	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/utils/id"
 )
 

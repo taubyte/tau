@@ -3,9 +3,9 @@ package service
 import (
 	"context"
 
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	kv "github.com/taubyte/go-interfaces/kvdb"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
+	"github.com/taubyte/p2p/peer"
+	streams "github.com/taubyte/p2p/streams/service"
 
 	"github.com/taubyte/go-interfaces/services/http"
 
@@ -18,7 +18,7 @@ var _ iface.Service = &AuthService{}
 
 type AuthService struct {
 	ctx       context.Context
-	node      peer.Node
+	node      *peer.Node
 	db        kv.KVDB
 	http      http.Service
 	stream    *streams.CommandService
@@ -34,7 +34,7 @@ type AuthService struct {
 	hostUrl string
 }
 
-func (s *AuthService) Node() peer.Node {
+func (s *AuthService) Node() *peer.Node {
 	return s.node
 }
 

@@ -7,11 +7,11 @@ import (
 	"time"
 
 	moodyBlues "bitbucket.org/taubyte/go-moody-blues"
-	client "bitbucket.org/taubyte/p2p/streams/client"
 	"github.com/taubyte/go-interfaces/moody"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	iface "github.com/taubyte/go-interfaces/services/hoarder"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
+	"github.com/taubyte/p2p/peer"
+	client "github.com/taubyte/p2p/streams/client"
 )
 
 var _ iface.Client = &Client{}
@@ -32,7 +32,7 @@ func init() {
 	logger, _ = moodyBlues.New("hoarder.p2p.client")
 }
 
-func New(ctx context.Context, node peer.Node) (*Client, error) {
+func New(ctx context.Context, node *peer.Node) (*Client, error) {
 	var (
 		c   Client
 		err error

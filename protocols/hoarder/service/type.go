@@ -5,19 +5,19 @@ import (
 	"fmt"
 	"sync"
 
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	"github.com/ipfs/go-datastore"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	ifaceTns "github.com/taubyte/go-interfaces/services/tns"
+	"github.com/taubyte/p2p/peer"
+	streams "github.com/taubyte/p2p/streams/service"
 )
 
 var _ hoarderIface.Service = &Service{}
 
 type Service struct {
 	ctx            context.Context
-	node           peer.Node
+	node           *peer.Node
 	tnsClient      ifaceTns.Client
 	store          datastore.Batching
 	stream         *streams.CommandService
@@ -27,7 +27,7 @@ type Service struct {
 	lotteryPool    lotteryPool
 }
 
-func (s *Service) Node() peer.Node {
+func (s *Service) Node() *peer.Node {
 	return s.node
 }
 

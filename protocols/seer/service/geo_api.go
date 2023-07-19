@@ -7,14 +7,15 @@ import (
 	"strings"
 	"time"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/seer"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
-func parseLocationfromBody(body streams.Body, key string) (iface.Location, error) {
+func parseLocationfromBody(body command.Body, key string) (iface.Location, error) {
 	var loc iface.Location
 	_loc, ok := body[key]
 	if !ok {
@@ -35,7 +36,7 @@ func parseLocationfromBody(body streams.Body, key string) (iface.Location, error
 	return loc, nil
 }
 
-func (geo *geoService) locationServiceHandler(ctx context.Context, conn streams.Connection, body streams.Body) (cr.Response, error) {
+func (geo *geoService) locationServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err

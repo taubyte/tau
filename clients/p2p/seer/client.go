@@ -7,14 +7,14 @@ import (
 	"time"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	streamClient "bitbucket.org/taubyte/p2p/streams/client"
-	"bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/fxamacker/cbor/v2"
 	moodyIface "github.com/taubyte/go-interfaces/moody"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	commonSpec "github.com/taubyte/go-specs/common"
+	"github.com/taubyte/p2p/peer"
+	streamClient "github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -32,7 +32,7 @@ func init() {
 
 var _ iface.Client = &Client{}
 
-func New(ctx context.Context, node peer.Node) (client *Client, err error) {
+func New(ctx context.Context, node *peer.Node) (client *Client, err error) {
 	c := &Client{}
 	c.client, err = streamClient.New(ctx, node, nil, commonSpec.SeerProtocol, MinPeers, MaxPeers)
 	if err != nil {
@@ -109,7 +109,7 @@ func (g *Geo) newPeerList(response response.Response) ([]*iface.Peer, error) {
 }
 
 func (g *Geo) All() ([]*iface.Peer, error) {
-	response, err := g.client.Send("geo", streams.Body{"action": "query-all"})
+	response, err := g.client.Send("geo", command.Body{"action": "query-all"})
 	if err != nil {
 		return nil, fmt.Errorf("provider replied with %s", err)
 	}
@@ -119,7 +119,7 @@ func (g *Geo) All() ([]*iface.Peer, error) {
 
 // distance is in meter
 func (g *Geo) Distance(from iface.Location, distance float32) ([]*iface.Peer, error) {
-	response, err := g.client.Send("geo", streams.Body{"action": "query", "from": from, "distance": distance})
+	response, err := g.client.Send("geo", command.Body{"action": "query", "from": from, "distance": distance})
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (g *Geo) Distance(from iface.Location, distance float32) ([]*iface.Peer, er
 }
 
 func (g *Geo) Set(location iface.Location) (err error) {
-	_, err = g.client.Send("geo", streams.Body{"action": "set", "location": location})
+	_, err = g.client.Send("geo", command.Body{"action": "set", "location": location})
 	return err
 }
 

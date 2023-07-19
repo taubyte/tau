@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/fxamacker/cbor/v2"
 	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
+	cr "github.com/taubyte/p2p/streams/command/response"
 )
 
 // Helper just to check if a job is already registered as lock

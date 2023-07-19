@@ -10,9 +10,9 @@ import (
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/odo/protocols/monkey/service"
+	"github.com/taubyte/p2p/peer"
 
 	commonTest "github.com/taubyte/dreamland/helpers"
 	gitTest "github.com/taubyte/dreamland/helpers/git"
@@ -30,7 +30,7 @@ import (
 
 func TestConfigJob(t *testing.T) {
 	protocolCommon.LocalPatrick = true
-	service.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
+	service.NewPatrick = func(ctx context.Context, node *peer.Node) (patrick.Client, error) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 

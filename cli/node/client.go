@@ -6,11 +6,11 @@ import (
 	"strconv"
 	"time"
 
-	"bitbucket.org/taubyte/p2p/keypair"
-	"bitbucket.org/taubyte/p2p/peer"
 	"github.com/multiformats/go-multiaddr"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	odo "github.com/taubyte/odo/cli"
+	"github.com/taubyte/p2p/keypair"
+	"github.com/taubyte/p2p/peer"
 )
 
 func createClientNode(ctx context.Context, config *commonIface.GenericConfig, shape, databasePath string) (*peer.Node, error) {

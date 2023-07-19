@@ -4,14 +4,14 @@ import (
 	"fmt"
 	"time"
 
-	"bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/ipfs/go-cid"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
 	"github.com/taubyte/go-interfaces/services/substrate/counters"
 	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command/response"
 	plugins "github.com/taubyte/vm-plugins/taubyte"
 )
 
@@ -31,7 +31,7 @@ func (f *Function) Close() {
 	f.instanceCtxC()
 }
 
-func (f *Function) Handle(cmd streams.Command) (t time.Time, res streams.Response, err error) {
+func (f *Function) Handle(cmd streams.Command) (t time.Time, res response.Response, err error) {
 	instance, runtime, plugin, err := f.function.Instantiate(commonIface.FunctionContext{
 		Config:      f.config,
 		Project:     f.matcher.Project,

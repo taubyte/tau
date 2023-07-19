@@ -13,12 +13,12 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	"github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/go-interfaces/services/tns"
 	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/go-specs/methods"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
+	"github.com/taubyte/p2p/peer"
 )
 
 func newTestContext(ctx context.Context, simple commonDreamland.Simple, logFile *os.File) testContext {
@@ -161,7 +161,7 @@ func startDreamland(name string) (u commonDreamland.Universe, err error) {
 	return
 }
 
-func checkAssets(node peer.Node, tnsClient tns.Client, resIds []string) error {
+func checkAssets(node *peer.Node, tnsClient tns.Client, resIds []string) error {
 	for _, resId := range resIds {
 		if err := checkAsset(node, tnsClient, resId); err != nil {
 			return err
@@ -171,7 +171,7 @@ func checkAssets(node peer.Node, tnsClient tns.Client, resIds []string) error {
 	return nil
 }
 
-func checkAsset(node peer.Node, tnsClient tns.Client, resId string) error {
+func checkAsset(node *peer.Node, tnsClient tns.Client, resId string) error {
 	assetHash, err := methods.GetTNSAssetPath(commonTest.ProjectID, resId, testBranch)
 	if err != nil {
 		return err

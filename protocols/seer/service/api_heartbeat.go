@@ -8,15 +8,16 @@ import (
 	"strings"
 	"time"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/fxamacker/cbor/v2"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/seer"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
-func parseUsagefromBody(body streams.Body) (iface.UsageData, error) {
+func parseUsagefromBody(body command.Body) (iface.UsageData, error) {
 	var usage iface.UsageData
 	data, ok := body["usage"]
 	if !ok {
@@ -38,7 +39,7 @@ func parseUsagefromBody(body streams.Body) (iface.UsageData, error) {
 }
 
 // store usage
-func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn streams.Connection, body streams.Body) (cr.Response, error) {
+func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	action, err := maps.String(body, "action")
 	if err != nil {
 		action = ""

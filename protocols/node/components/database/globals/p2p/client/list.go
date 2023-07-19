@@ -3,12 +3,12 @@ package client
 import (
 	"fmt"
 
-	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 
 func (c *Client) List(projectID, prefix string) ([]string, error) {
-	response, err := c.streamClient.Send("list", streams.Body{
+	response, err := c.streamClient.Send("list", command.Body{
 		"projectID": projectID,
 		"prefix":    prefix,
 	})

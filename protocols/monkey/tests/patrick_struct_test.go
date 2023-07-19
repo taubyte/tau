@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
+	"github.com/taubyte/p2p/peer"
 )
 
 type starfish struct {

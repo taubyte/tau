@@ -5,9 +5,9 @@ import (
 	"io"
 	"sync"
 
-	p2p "bitbucket.org/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
+	p2p "github.com/taubyte/p2p/peer"
 )
 
 var _ commonIface.Serviceable = &WebSocket{}

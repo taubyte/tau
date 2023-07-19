@@ -7,9 +7,9 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/odo/clients/p2p/tns/common"
+	"github.com/taubyte/p2p/peer"
 )
 
 type subscription struct {
@@ -21,13 +21,13 @@ type subscription struct {
 }
 
 type cache struct {
-	node          peer.Node
+	node          *peer.Node
 	lock          sync.RWMutex
 	data          map[string]interface{}
 	subscriptions map[string]*subscription
 }
 
-func newCache(node peer.Node) *cache {
+func newCache(node *peer.Node) *cache {
 	return &cache{
 		node:          node,
 		subscriptions: map[string]*subscription{},

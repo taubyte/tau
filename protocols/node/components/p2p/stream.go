@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"time"
 
-	"bitbucket.org/taubyte/p2p/streams"
-	"bitbucket.org/taubyte/p2p/streams/command"
-	ce "bitbucket.org/taubyte/p2p/streams/command/error"
-	"bitbucket.org/taubyte/p2p/streams/command/router"
 	"github.com/mitchellh/mapstructure"
-	"github.com/taubyte/go-interfaces/p2p/peer"
-	ifaceStreams "github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
 	counter "github.com/taubyte/odo/vm/counter"
 	"github.com/taubyte/odo/vm/lookup"
+	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/p2p/streams"
+	ifaceStreams "github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	ce "github.com/taubyte/p2p/streams/command/error"
+	"github.com/taubyte/p2p/streams/command/router"
 )
 
 type commandService struct {
@@ -76,7 +76,7 @@ func (srv *Service) StartStream(name, protocol string, handler iface.StreamHandl
 }
 
 // Handles calls made with sdk
-func (s *Service) Handle(cmd ifaceStreams.Command) (resp ifaceStreams.Response, err error) {
+func (s *Service) Handle(cmd ifaceStreams.Command) (resp ifaceresponse.Response, err error) {
 	start := time.Now()
 	_matcher, ok := cmd.Get("matcher")
 	if !ok {

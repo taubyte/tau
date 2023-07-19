@@ -8,8 +8,6 @@ import (
 	"time"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	configutils "bitbucket.org/taubyte/p2p/config"
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
@@ -20,11 +18,12 @@ import (
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 
+	// configutils "github.com/taubyte/p2p/config"
+	streams "github.com/taubyte/p2p/streams/service"
+
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 
 	_ "embed"
-
-	p2pDatastore "bitbucket.org/taubyte/p2p/peer"
 
 	_ "modernc.org/sqlite"
 )
@@ -52,10 +51,6 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 		return nil, fmt.Errorf("building config failed with: %s", err)
 	}
 
-	if !config.DevMode {
-		p2pDatastore.Datastore = "pebble"
-	}
-
 	logger.Info(moodyCommon.Object{"message": fmt.Sprintf("Config: %#v", config)})
 
 	srv.dnsResolver = net.DefaultResolver
@@ -70,10 +65,10 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewLiteNode(ctx, config, protocolsCommon.Seer)
-		if err != nil {
-			return nil, fmt.Errorf("new lite node failed with: %s", err)
-		}
+		// srv.node, err = configutils.NewLiteNode(ctx, config, protocolsCommon.Seer)
+		// if err != nil {
+		// 	return nil, fmt.Errorf("new lite node failed with: %s", err)
+		// }
 	} else {
 		srv.node = config.Node
 		srv.odo = true

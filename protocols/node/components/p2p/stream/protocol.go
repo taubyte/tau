@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
 	counter "github.com/taubyte/odo/vm/counter"
 	"github.com/taubyte/odo/vm/lookup"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/multihash"
 )
 
@@ -24,7 +25,7 @@ func (st *Stream) ProtocolHash() (protocol string, err error) {
 	return multihash.Hash(st.matcher.Project+st.config.Id) + st.matcher.Protocol, nil
 }
 
-func (st *Stream) HandleRaw(cmd streams.Command) (resp streams.Response, err error) {
+func (st *Stream) HandleRaw(cmd streams.Command) (resp response.Response, err error) {
 	start := time.Now()
 	st.matcher.Command = cmd.Name()
 

@@ -3,9 +3,9 @@ package api
 import (
 	"fmt"
 
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	"github.com/taubyte/go-interfaces/services/substrate/database"
 	"github.com/taubyte/odo/protocols/node/components/database/globals/p2p/common"
+	streams "github.com/taubyte/p2p/streams/service"
 )
 
 func Start(srv database.Service) (streamHandler *StreamHandler, err error) {

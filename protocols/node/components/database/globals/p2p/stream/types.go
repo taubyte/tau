@@ -1,8 +1,8 @@
 package api
 
 import (
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	"github.com/taubyte/go-interfaces/services/substrate/database"
+	streams "github.com/taubyte/p2p/streams/service"
 )
 
 type StreamHandler struct {

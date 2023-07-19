@@ -9,9 +9,10 @@ import (
 	"fmt"
 	"time"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -205,7 +206,7 @@ func (srv *AuthService) deleteACMECache(ctx context.Context, key string) error {
 	return nil
 }
 
-func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Connection, body streams.Body) (cr.Response, error) {
+func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
 	// params:
 	//  TODO: add encrption key to service library
 	//  action: get/set

@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	client "bitbucket.org/taubyte/p2p/streams/client"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	iface "github.com/taubyte/go-interfaces/services/auth"
+	peer "github.com/taubyte/p2p/peer"
+	client "github.com/taubyte/p2p/streams/client"
 
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
@@ -25,7 +25,7 @@ type Client struct {
 	client *client.Client
 }
 
-func New(ctx context.Context, node peer.Node) (*Client, error) {
+func New(ctx context.Context, node *peer.Node) (*Client, error) {
 	var (
 		c   Client
 		err error

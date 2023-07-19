@@ -5,11 +5,11 @@ import (
 	"regexp"
 	"sync"
 
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	"github.com/miekg/dns"
 	"github.com/taubyte/go-interfaces/kvdb"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	iface "github.com/taubyte/go-interfaces/services/seer"
+	"github.com/taubyte/p2p/peer"
+	streams "github.com/taubyte/p2p/streams/service"
 
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/go-interfaces/services/http"
@@ -39,7 +39,7 @@ type geoService struct {
 }
 
 type Service struct {
-	node   peer.Node
+	node   *peer.Node
 	db     kvdb.KVDB
 	http   http.Service
 	stream *streams.CommandService
@@ -61,7 +61,7 @@ type Service struct {
 	odo bool
 }
 
-func (s *Service) Node() peer.Node {
+func (s *Service) Node() *peer.Node {
 	return s.node
 }
 

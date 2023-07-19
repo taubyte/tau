@@ -3,11 +3,11 @@ package client
 import (
 	"errors"
 
-	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
 )
 
 func (c *Client) Get(projectID, key, _type string) (interface{}, error) {
-	response, err := c.streamClient.Send("get", streams.Body{
+	response, err := c.streamClient.Send("get", command.Body{
 		"projectID": projectID,
 		"key":       key,
 		"type":      _type,

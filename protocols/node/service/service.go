@@ -8,8 +8,6 @@ import (
 	"fmt"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	configutils "bitbucket.org/taubyte/p2p/config"
-	peer "bitbucket.org/taubyte/p2p/peer"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
@@ -17,6 +15,8 @@ import (
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
+	// configutils "github.com/taubyte/p2p/config"
+	peer "github.com/taubyte/p2p/peer"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 	smartopsPlugins "github.com/taubyte/vm-plugins/smartops"
 	tbPlugins "github.com/taubyte/vm-plugins/taubyte"
@@ -56,10 +56,10 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewLiteNode(ctx, config, protocolCommon.Node)
-		if err != nil {
-			return nil, fmt.Errorf("creating new lite node failed with: %w", err)
-		}
+		// srv.node, err = configutils.NewLiteNode(ctx, config, protocolCommon.Node)
+		// if err != nil {
+		// 	return nil, fmt.Errorf("creating new lite node failed with: %w", err)
+		// }
 	} else {
 		srv.node = config.Node
 	}

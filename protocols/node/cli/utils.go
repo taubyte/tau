@@ -8,8 +8,8 @@ import (
 	"os"
 	"time"
 
-	keypair "bitbucket.org/taubyte/p2p/keypair"
 	moody "github.com/taubyte/go-interfaces/moody"
+	keypair "github.com/taubyte/p2p/keypair"
 	"github.com/taubyte/utils/fs/file"
 	"github.com/urfave/cli/v2"
 )

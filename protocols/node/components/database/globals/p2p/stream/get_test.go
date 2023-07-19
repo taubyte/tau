@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	"github.com/taubyte/go-interfaces/services/substrate/database"
+	"github.com/taubyte/p2p/streams/command"
 	mh "github.com/taubyte/utils/multihash"
 )
 
@@ -27,7 +27,7 @@ func TestGetHandler(t *testing.T) {
 		},
 	}
 
-	resp, err := mockHandler.getHandler(context.TODO(), nil, streams.Body{
+	resp, err := mockHandler.getHandler(context.TODO(), nil, command.Body{
 		"projectID": testProjectID,
 		"key":       "/key1",
 		"type":      "string",
@@ -42,7 +42,7 @@ func TestGetHandler(t *testing.T) {
 		return
 	}
 
-	resp, err = mockHandler.getHandler(context.TODO(), nil, streams.Body{
+	resp, err = mockHandler.getHandler(context.TODO(), nil, command.Body{
 		"projectID": testProjectID,
 		"key":       "/key2",
 		"type":      "uint32",

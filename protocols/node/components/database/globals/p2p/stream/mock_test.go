@@ -7,10 +7,10 @@ import (
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	moodyIface "github.com/taubyte/go-interfaces/moody"
-	p2p "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/substrate/database"
 	smartOps "github.com/taubyte/go-interfaces/services/substrate/smartops"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/p2p/peer"
 	mh "github.com/taubyte/utils/multihash"
 )
 
@@ -66,7 +66,7 @@ func (s *mockService) Global(projectID string) (database.Database, error) {
 	return db, nil
 }
 
-func (s *mockService) Node() p2p.Node {
+func (s *mockService) Node() *peer.Node {
 	return nil
 }
 

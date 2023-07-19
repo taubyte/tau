@@ -3,11 +3,10 @@ package p2p
 import (
 	"testing"
 
-	"bitbucket.org/taubyte/p2p/streams/command"
 	"bitbucket.org/taubyte/vm-test-examples/structure"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/p2p/common"
+	"github.com/taubyte/p2p/streams/command"
 )
 
 var (
@@ -39,7 +38,7 @@ func TestHandleForMatcher(t *testing.T) {
 		Command:  testCommand,
 	}
 	testData := []byte("Hello, world!")
-	cmd := command.New(testCommand, streams.Body{
+	cmd := command.New(testCommand, command.Body{
 		"matcher": testMatcher,
 		"data":    testData,
 	})

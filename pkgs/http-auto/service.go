@@ -4,16 +4,16 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/common"
 	service "github.com/taubyte/go-interfaces/services/http"
 	basicHttp "github.com/taubyte/http/basic"
 	basicHttpSecure "github.com/taubyte/http/basic/secure"
 	"github.com/taubyte/http/options"
+	"github.com/taubyte/p2p/peer"
 )
 
 type ConfigHandler interface {
-	AutoHttp(node peer.Node, ops ...options.Option) (http service.Service, err error)
+	AutoHttp(node *peer.Node, ops ...options.Option) (http service.Service, err error)
 	BasicHttp(ctx context.Context, ops ...options.Option) (http service.Service, err error)
 }
 
@@ -27,7 +27,7 @@ func Configure(genericConfig *common.GenericConfig) ConfigHandler {
 	return &config{*genericConfig}
 }
 
-func (config *config) AutoHttp(node peer.Node, ops ...options.Option) (http service.Service, err error) {
+func (config *config) AutoHttp(node *peer.Node, ops ...options.Option) (http service.Service, err error) {
 	ops = append(ops, options.Listen(config.HttpListen))
 
 	if config.DevMode {

@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	moodyBlues "bitbucket.org/taubyte/go-moody-blues"
-	configutils "bitbucket.org/taubyte/p2p/config"
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	"github.com/fxamacker/cbor/v2"
 	pebble "github.com/ipfs/go-ds-pebble"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -18,6 +16,8 @@ import (
 	seer_client "github.com/taubyte/odo/clients/p2p/seer"
 	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
+	// configutils "github.com/taubyte/p2p/config"
+	streams "github.com/taubyte/p2p/streams/service"
 )
 
 var (
@@ -50,10 +50,10 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 
 	// TODO move database root to new
 	if config.Node == nil {
-		srv.node, err = configutils.NewNode(ctx, config, protocolCommon.Hoarder)
-		if err != nil {
-			return nil, fmt.Errorf("config new node failed with: %s", err)
-		}
+		// srv.node, err = configutils.NewNode(ctx, config, protocolCommon.Hoarder)
+		// if err != nil {
+		// 	return nil, fmt.Errorf("config new node failed with: %s", err)
+		// }
 	} else {
 		srv.node = config.Node
 	}

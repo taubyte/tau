@@ -5,9 +5,9 @@ import (
 
 	"github.com/ipfs/go-cid"
 	"github.com/taubyte/go-interfaces/kvdb"
-	p2p "github.com/taubyte/go-interfaces/p2p/peer"
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/storage"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/p2p/peer"
 )
 
 var _ storageIface.Storage = &Store{}
@@ -23,7 +23,7 @@ type Store struct {
 }
 
 type Meta struct {
-	node    p2p.Node
+	node    *peer.Node
 	cid     cid.Cid
 	version int
 }

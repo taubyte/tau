@@ -2,10 +2,13 @@ module github.com/taubyte/odo
 
 go 1.19
 
+replace github.com/ipfs/go-block-format => github.com/ipfs/go-block-format v0.1.1
+
+replace github.com/taubyte/go-interfaces => ../go-interfaces
+
 require (
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	bitbucket.org/taubyte/go-moody-blues v0.1.34
-	bitbucket.org/taubyte/p2p v0.8.2
 	bitbucket.org/taubyte/vm-test-examples v0.5.1-pre.v3
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -47,6 +50,7 @@ require (
 	github.com/taubyte/go-simple-git v0.2.5
 	github.com/taubyte/go-specs v0.10.5
 	github.com/taubyte/http v0.10.1
+	github.com/taubyte/p2p v0.9.0
 	github.com/taubyte/tau v0.1.6
 	github.com/taubyte/utils v0.1.6
 	github.com/taubyte/vm v0.2.1
@@ -70,6 +74,7 @@ require (
 	atomicgo.dev/cursor v0.1.1 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	atomicgo.dev/schedule v0.0.2 // indirect
+	bitbucket.org/taubyte/p2p v0.8.2 // indirect
 	bitbucket.org/taubyte/seer-p2p-client v0.1.1 // indirect
 	bitbucket.org/taubyte/tns-p2p-client v0.1.1 // indirect
 	github.com/CAFxX/httpcompression v0.0.8 // indirect
@@ -154,6 +159,7 @@ require (
 	github.com/ipfs/go-ipld-cbor v0.0.6 // indirect
 	github.com/ipfs/go-ipld-format v0.4.0 // indirect
 	github.com/ipfs/go-ipld-legacy v0.1.1 // indirect
+	github.com/ipfs/go-libipfs v0.6.2 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/ipfs/go-metrics-interface v0.0.1 // indirect
 	github.com/ipfs/go-peertaskqueue v0.8.1 // indirect

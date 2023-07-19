@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	configutils "bitbucket.org/taubyte/p2p/config"
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
+	// configutils "github.com/taubyte/p2p/config"
+	streams "github.com/taubyte/p2p/streams/service"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
@@ -52,10 +52,10 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, 
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewNode(ctx, config, protocolCommon.Auth)
-		if err != nil {
-			return nil, err
-		}
+		// srv.node, err = configutils.NewNode(ctx, config, protocolCommon.Auth)
+		// if err != nil {
+		// 	return nil, err
+		// }
 	} else {
 		if len(config.DVPrivateKey) == 0 || len(config.DVPublicKey) == 0 {
 			return nil, errors.New("private and public key cannot be empty")

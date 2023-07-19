@@ -12,14 +12,14 @@ import (
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	configutils "bitbucket.org/taubyte/p2p/config"
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
+	// configutils "github.com/taubyte/p2p/config"
+	streams "github.com/taubyte/p2p/streams/service"
 )
 
 var logger, _ = moody.New("monkey.service")
@@ -73,10 +73,10 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewLiteNode(ctx, config, protocolCommon.Monkey)
-		if err != nil {
-			return nil, err
-		}
+		// srv.node, err = configutils.NewLiteNode(ctx, config, protocolCommon.Monkey)
+		// if err != nil {
+		// 	return nil, err
+		// }
 	} else {
 		srv.node = config.Node
 		srv.dvPublicKey = config.DVPublicKey

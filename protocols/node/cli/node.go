@@ -10,15 +10,15 @@ import (
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	bbMoodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	p2p "github.com/taubyte/go-interfaces/p2p/peer"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/odo/protocols/node/service"
+	"github.com/taubyte/p2p/peer"
 	"github.com/urfave/cli/v2"
 )
 
 var (
 	Logger, _     = moody.New("node")
-	Node          p2p.Node
+	Node          *peer.Node
 	Context       context.Context
 	ContextCancel context.CancelFunc
 )

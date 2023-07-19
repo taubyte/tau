@@ -11,13 +11,13 @@ import (
 	"crypto/tls"
 
 	logging "github.com/ipfs/go-log/v2"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	basicHttp "github.com/taubyte/http/basic"
 	"github.com/taubyte/http/options"
 	authP2P "github.com/taubyte/odo/clients/p2p/auth"
 	tnsP2P "github.com/taubyte/odo/clients/p2p/tns"
 	autoOptions "github.com/taubyte/odo/pkgs/http-auto/options"
+	"github.com/taubyte/p2p/peer"
 
 	acmeStore "github.com/taubyte/odo/protocols/auth/acme/store"
 
@@ -41,7 +41,7 @@ func (s *Service) SetOption(opt interface{}) error {
 }
 
 // Must listen on port 443
-func New(node, clientNode peer.Node, opts ...options.Option) (*Service, error) {
+func New(node, clientNode *peer.Node, opts ...options.Option) (*Service, error) {
 	logger.Debug("New Auto HTTP")
 	defer logger.Debug("New Auto HTTP -> done")
 	_s, err := basicHttp.New(node.Context(), opts...)

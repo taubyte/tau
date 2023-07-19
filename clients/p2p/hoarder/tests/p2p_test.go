@@ -11,13 +11,13 @@ import (
 
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 
-	keypair "bitbucket.org/taubyte/p2p/keypair"
+	keypair "github.com/taubyte/p2p/keypair"
 
 	hoarder_client "github.com/taubyte/odo/clients/p2p/hoarder"
 
-	peer "bitbucket.org/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
 	service "github.com/taubyte/odo/protocols/hoarder/service"
+	peer "github.com/taubyte/p2p/peer"
 )
 
 func TestClient(t *testing.T) {
