@@ -27,13 +27,13 @@ var (
 //
 //	the certififcate is not valid restart the service after a random sleep.
 type Store struct {
-	node         *peer.Node
+	node         peer.Node
 	client       *client.Client
 	cacheDir     dirs.Directory
 	errCacheMiss error
 }
 
-func New(ctx context.Context, node *peer.Node, cacheDir string, errCacheMiss error) (*Store, error) {
+func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss error) (*Store, error) {
 	var (
 		c   Store
 		err error

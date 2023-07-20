@@ -4,7 +4,7 @@ import (
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	iface "github.com/taubyte/go-interfaces/services/substrate/pubsub"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/websocket"
 	counter "github.com/taubyte/odo/vm/counter"

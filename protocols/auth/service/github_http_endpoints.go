@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"time"
 
-	http "github.com/taubyte/go-interfaces/services/http"
+	http "github.com/taubyte/http"
 	"github.com/taubyte/odo/protocols/auth/github"
 	"github.com/taubyte/odo/protocols/auth/service/repositories"
 	protocolCommon "github.com/taubyte/odo/protocols/common"

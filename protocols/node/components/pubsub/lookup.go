@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	moody "github.com/taubyte/go-interfaces/moody"
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	iface "github.com/taubyte/go-interfaces/services/substrate/pubsub"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 	functionSpec "github.com/taubyte/go-specs/function"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"

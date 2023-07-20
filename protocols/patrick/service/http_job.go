@@ -12,9 +12,9 @@ import (
 	"github.com/h2non/filetype/matchers"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
+	http "github.com/taubyte/http"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/utils/maps"
 )

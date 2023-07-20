@@ -42,7 +42,7 @@ func getDB(path string) *KVDatabase {
 	return dbs[path]
 }
 
-func New(logger logging.StandardLogger, node *peer.Node, path string, rebroadcastIntervalSec int) (s *KVDatabase, err error) {
+func New(logger logging.StandardLogger, node peer.Node, path string, rebroadcastIntervalSec int) (s *KVDatabase, err error) {
 	cachedDB := getDB(path)
 	if cachedDB != nil {
 		return cachedDB, nil

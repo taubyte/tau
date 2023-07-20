@@ -18,7 +18,7 @@ import (
 
 var (
 	Logger, _     = moody.New("node")
-	Node          *peer.Node
+	Node          peer.Node
 	Context       context.Context
 	ContextCancel context.CancelFunc
 )

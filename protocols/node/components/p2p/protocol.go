@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/p2p/stream"
 )

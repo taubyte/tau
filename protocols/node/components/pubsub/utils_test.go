@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"bitbucket.org/taubyte/vm-test-examples/structure"
 	"github.com/taubyte/go-interfaces/services/tns"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/websocket"
+	"github.com/taubyte/odo/protocols/node/components/structure"
 	"github.com/taubyte/odo/vm/cache"
 	"github.com/taubyte/p2p/peer"
 )

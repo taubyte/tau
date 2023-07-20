@@ -11,15 +11,13 @@ import (
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
-	nodeP2PIFace "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	nodeP2PIFace "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	// configutils "github.com/taubyte/p2p/config"
-	peer "github.com/taubyte/p2p/peer"
+	smartopsPlugins "github.com/taubyte/vm-core-plugins/smartops"
+	tbPlugins "github.com/taubyte/vm-core-plugins/taubyte"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
-	smartopsPlugins "github.com/taubyte/vm-plugins/smartops"
-	tbPlugins "github.com/taubyte/vm-plugins/taubyte"
 
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
@@ -50,10 +48,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 		return nil, err
 	}
 	srv.branch = config.Branch
-
-	if !config.DevMode {
-		peer.Datastore = "pebble"
-	}
+	srv.dev = config.DevMode
 
 	if config.Node == nil {
 		// srv.node, err = configutils.NewLiteNode(ctx, config, protocolCommon.Node)
@@ -196,4 +191,8 @@ func (srv *Service) P2PNode() (nodeP2P nodeP2PIFace.Service, err error) {
 	}
 
 	return srv.nodeP2P, nil
+}
+
+func (srv *Service) Dev() bool {
+	return srv.dev
 }

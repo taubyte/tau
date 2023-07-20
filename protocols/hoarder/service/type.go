@@ -17,7 +17,7 @@ var _ hoarderIface.Service = &Service{}
 
 type Service struct {
 	ctx            context.Context
-	node           *peer.Node
+	node           peer.Node
 	tnsClient      ifaceTns.Client
 	store          datastore.Batching
 	stream         *streams.CommandService
@@ -27,7 +27,7 @@ type Service struct {
 	lotteryPool    lotteryPool
 }
 
-func (s *Service) Node() *peer.Node {
+func (s *Service) Node() peer.Node {
 	return s.node
 }
 

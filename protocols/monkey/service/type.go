@@ -14,7 +14,7 @@ import (
 )
 
 /* This is a variable so that it can be overridden in tests */
-var NewPatrick = func(ctx context.Context, node *peer.Node) (patrick.Client, error) {
+var NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 	return patrickClient.New(ctx, node)
 }
 
@@ -33,12 +33,12 @@ type Monkey struct {
 
 type Service struct {
 	ctx           context.Context
-	node          *peer.Node
+	node          peer.Node
 	stream        *streams.CommandService
 	monkeys       map[string]*Monkey
 	patrickClient patrick.Client
 	tnsClient     tnsClient.Client
-	odoClientnode *peer.Node
+	odoClientNode peer.Node
 
 	dev         bool
 	dvPublicKey []byte
@@ -52,7 +52,7 @@ func (s *Service) Delete(jid string) {
 	delete(s.monkeys, jid)
 }
 
-func (s *Service) Node() *peer.Node {
+func (s *Service) Node() peer.Node {
 	return s.node
 }
 

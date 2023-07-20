@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	iface "github.com/taubyte/go-interfaces/services/substrate/http"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-specs/extract"
 	"github.com/taubyte/odo/protocols/node/components/http/common"

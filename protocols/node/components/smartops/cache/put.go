@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/utils/multihash"
 )
 
-func (c *cache) Put(project, application, smartOpId string, ctx context.Context, instance iface.Instance) error {
+func (c *cache) Put(project, application, smartOpId string, ctx context.Context, instance substrate.Instance) error {
 	hash := multihash.Hash(project + application + smartOpId)
 
 	c.Lock()

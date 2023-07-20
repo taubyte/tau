@@ -5,7 +5,7 @@ package nodehttp
 // 	"net/url"
 // 	"testing"
 
-// 	"bitbucket.org/taubyte/vm-test-examples/structure"
+// 	// "bitbucket.org/taubyte/vm-test-examples/structure"
 // 	structureSpec "github.com/taubyte/go-specs/structure"
 // )
 

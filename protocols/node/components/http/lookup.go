@@ -6,7 +6,7 @@ import (
 	_ "embed"
 
 	dv "github.com/taubyte/domain-validation"
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/services/tns"
 	spec "github.com/taubyte/go-specs/common"
 	domainSpec "github.com/taubyte/go-specs/domain"

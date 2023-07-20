@@ -18,7 +18,7 @@ import (
 	"github.com/taubyte/utils/maps"
 )
 
-func New(ctx context.Context, node *peer.Node) (tns.Client, error) {
+func New(ctx context.Context, node peer.Node) (tns.Client, error) {
 	var (
 		c   Client
 		err error

@@ -31,7 +31,7 @@ func (c *Client) Close() {
 	c.client.Close()
 }
 
-func New(ctx context.Context, node *peer.Node) (*Client, error) {
+func New(ctx context.Context, node peer.Node) (*Client, error) {
 	var (
 		c   Client
 		err error

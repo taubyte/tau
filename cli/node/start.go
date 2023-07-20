@@ -17,7 +17,7 @@ import (
 	"github.com/taubyte/p2p/peer"
 	slices "github.com/taubyte/utils/slices/string"
 
-	httpService "github.com/taubyte/go-interfaces/services/http"
+	httpService "github.com/taubyte/http"
 )
 
 func Start(ctx context.Context, config *commonIface.GenericConfig, shape string) error {

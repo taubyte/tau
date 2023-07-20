@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	"github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/vm/lookup"
 )
@@ -25,7 +25,7 @@ var testFunctions = map[string]structureSpec.Function{
 	},
 }
 
-var testMatcher = &iface.MatchDefinition{
+var testMatcher = &p2p.MatchDefinition{
 	Project:  testProject,
 	Protocol: testProtocol,
 	Command:  "testCommand",
@@ -46,7 +46,7 @@ func TestLookup(t *testing.T) {
 		return
 	}
 
-	matcher, ok := matches[0].Matcher().(*iface.MatchDefinition)
+	matcher, ok := matches[0].Matcher().(*p2p.MatchDefinition)
 	if ok == false {
 		t.Errorf("Received matcher is wrong type: got `%v` expected `%v`", matches[0].Matcher(), testMatcher)
 		return

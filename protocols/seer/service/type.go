@@ -12,8 +12,8 @@ import (
 	streams "github.com/taubyte/p2p/streams/service"
 
 	commonIface "github.com/taubyte/go-interfaces/services/common"
-	"github.com/taubyte/go-interfaces/services/http"
 	tnsClient "github.com/taubyte/go-interfaces/services/tns"
+	http "github.com/taubyte/http"
 )
 
 type Data map[string]interface{}
@@ -39,7 +39,7 @@ type geoService struct {
 }
 
 type Service struct {
-	node   *peer.Node
+	node   peer.Node
 	db     kvdb.KVDB
 	http   http.Service
 	stream *streams.CommandService
@@ -61,7 +61,7 @@ type Service struct {
 	odo bool
 }
 
-func (s *Service) Node() *peer.Node {
+func (s *Service) Node() peer.Node {
 	return s.node
 }
 

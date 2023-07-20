@@ -4,10 +4,19 @@ import (
 	"context"
 	"fmt"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/database"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	"github.com/taubyte/odo/protocols/node/components/database/common"
 	db "github.com/taubyte/odo/protocols/node/components/database/database"
 )
+
+func (s *Service) Cache() components.Cache {
+	return nil
+}
+
+func (s *Service) CheckTns(components.MatchDefinition) ([]components.Serviceable, error) {
+	return nil, nil
+}
 
 func (s *Service) Database(context iface.Context) (database iface.Database, err error) {
 	hash, err := common.GetDatabaseHash(context)

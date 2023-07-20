@@ -1,7 +1,7 @@
 package common
 
 import (
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 )
 
 var _ commonIface.MatchDefinition = &MatchDefinition{}

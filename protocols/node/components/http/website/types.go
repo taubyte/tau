@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/spf13/afero"
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	iface "github.com/taubyte/go-interfaces/services/substrate/http"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/http/common"
 )

@@ -3,7 +3,7 @@ package nodehttp
 import (
 	"context"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 )
 
 // Used internally, not be confused with service config Dev

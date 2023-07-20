@@ -1,7 +1,7 @@
 package database
 
 import (
-	iface "github.com/taubyte/go-interfaces/services/substrate/database"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	structureSpec "github.com/taubyte/go-specs/structure"
 )
 

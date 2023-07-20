@@ -1,8 +1,8 @@
 package service
 
 import (
-	"github.com/taubyte/go-interfaces/services/http"
 	iface "github.com/taubyte/go-interfaces/services/patrick"
+	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/peer"
 	streams "github.com/taubyte/p2p/streams/service"
 
@@ -19,7 +19,7 @@ var _ iface.Service = &PatrickService{}
 
 type PatrickService struct {
 	monkeyClient *monkey.Client
-	node         *peer.Node
+	node         peer.Node
 	http         http.Service
 	stream       *streams.CommandService
 	authClient   *auth.Client
@@ -34,7 +34,7 @@ func (s *PatrickService) KV() kvdb.KVDB {
 	return s.db
 }
 
-func (s *PatrickService) Node() *peer.Node {
+func (s *PatrickService) Node() peer.Node {
 	return s.node
 }
 

@@ -7,8 +7,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	"github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/services/substrate/p2p"
-	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	"github.com/taubyte/odo/protocols/node/components/p2p/common"
 	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
@@ -20,9 +19,9 @@ type Command struct {
 	matcher *iface.MatchDefinition
 }
 
-func (st *Stream) Command(command string) (p2p.Command, error) {
+func (st *Stream) Command(command string) (iface.Command, error) {
 	if len(command) == 0 {
-		return nil, errors.New("Cannot send an empty command")
+		return nil, errors.New("cannot send an empty command")
 	}
 
 	st.matcher.Command = command
@@ -40,8 +39,8 @@ func (c *Command) beforeSend(ctx context.Context, body command.Body) (*client.Cl
 	}
 
 	data, ok := body["data"]
-	if ok == false {
-		return nil, nil, fmt.Errorf("No data found in body")
+	if !ok {
+		return nil, nil, fmt.Errorf("no data found in body")
 	}
 
 	return p2pClient, command.Body{

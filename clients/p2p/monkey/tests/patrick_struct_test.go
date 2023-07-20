@@ -18,7 +18,7 @@ func (s *starfish) Close() {
 	s.Jobs = nil
 }
 
-func (s *starfish) AddJob(t *testing.T, peerC *peer.Node, job *patrick.Job) error {
+func (s *starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error {
 	job_bytes, err := cbor.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("Marshal job to add failed: %w", err)

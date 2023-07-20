@@ -5,7 +5,7 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/go-interfaces/services/hoarder"
-	iface "github.com/taubyte/go-interfaces/services/substrate/database"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
 )
 

@@ -4,7 +4,6 @@ package tests
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -16,6 +15,7 @@ import (
 	hoarder_client "github.com/taubyte/odo/clients/p2p/hoarder"
 
 	commonIface "github.com/taubyte/go-interfaces/services/common"
+	"github.com/taubyte/odo/protocols/common"
 	service "github.com/taubyte/odo/protocols/hoarder/service"
 	peer "github.com/taubyte/p2p/peer"
 )
@@ -23,7 +23,7 @@ import (
 func TestClient(t *testing.T) {
 	ctx := context.Background()
 
-	srvRoot, err := ioutil.TempDir("", "clientSrvRoot")
+	srvRoot, err := os.MkdirTemp("/tmp", "clientSrvRoot")
 	if err != nil {
 		t.Error(err)
 		return
@@ -34,7 +34,7 @@ func TestClient(t *testing.T) {
 		Root:        srvRoot,
 		P2PListen:   []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)},
 		P2PAnnounce: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)},
-		SwarmKey:    peer.DefaultSwarmKey(),
+		SwarmKey:    common.SwarmKey(),
 		Bootstrap:   false,
 		DevMode:     true,
 	})
@@ -49,7 +49,7 @@ func TestClient(t *testing.T) {
 		ctx,
 		nil,
 		keypair.NewRaw(),
-		peer.DefaultSwarmKey(),
+		common.SwarmKey(),
 		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11012)},
 		nil,
 		true,

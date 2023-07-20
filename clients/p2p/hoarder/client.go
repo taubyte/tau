@@ -32,7 +32,7 @@ func init() {
 	logger, _ = moodyBlues.New("hoarder.p2p.client")
 }
 
-func New(ctx context.Context, node *peer.Node) (*Client, error) {
+func New(ctx context.Context, node peer.Node) (*Client, error) {
 	var (
 		c   Client
 		err error

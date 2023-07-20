@@ -4,7 +4,7 @@ import (
 	"context"
 
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
-	p2pIface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	p2pIface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	"github.com/taubyte/odo/vm/cache"
 )
 

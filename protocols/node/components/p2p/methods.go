@@ -1,7 +1,7 @@
 package p2p
 
 import (
-	iface "github.com/taubyte/go-interfaces/services/substrate/common"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components"
 )
 
 // Used internally, not be confused with service config Dev

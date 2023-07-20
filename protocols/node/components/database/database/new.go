@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/database"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	"github.com/taubyte/odo/protocols/node/components/database/common"
 	kv "github.com/taubyte/odo/protocols/node/components/database/kv"
 )

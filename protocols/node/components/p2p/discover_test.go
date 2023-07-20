@@ -7,6 +7,7 @@ import (
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
+	"github.com/taubyte/odo/protocols/node/components/p2p"
 	_ "github.com/taubyte/odo/protocols/node/service"
 	"gotest.tools/assert"
 )
@@ -24,7 +25,10 @@ func TestService_Discover(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	peers, err := u.Node().P2P().Discover(u.Context(), 5, time.Second*2)
+	srv, err := p2p.New(u.Node())
+	assert.NilError(t, err)
+
+	peers, err := srv.Discover(u.Context(), 5, time.Second*2)
 	assert.NilError(t, err)
 
 	assert.Equal(t, len(peers), 3)

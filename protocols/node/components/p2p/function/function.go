@@ -5,14 +5,14 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	"github.com/taubyte/go-interfaces/services/substrate/counters"
-	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/p2p/streams/command/response"
-	plugins "github.com/taubyte/vm-plugins/taubyte"
+	plugins "github.com/taubyte/vm-core-plugins/taubyte"
 )
 
 func (f *Function) Commit() string {
@@ -23,15 +23,11 @@ func (f *Function) Project() (cid.Cid, error) {
 	return cid.Decode(f.matcher.Project)
 }
 
-func (f *Function) Counter() counters.Service {
-	return f.srv.Counter()
-}
-
 func (f *Function) Close() {
 	f.instanceCtxC()
 }
 
-func (f *Function) Handle(cmd streams.Command) (t time.Time, res response.Response, err error) {
+func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Response, err error) {
 	instance, runtime, plugin, err := f.function.Instantiate(commonIface.FunctionContext{
 		Config:      f.config,
 		Project:     f.matcher.Project,
@@ -115,6 +111,6 @@ func (f *Function) Config() *structureSpec.Function {
 	return &f.config
 }
 
-func (f *Function) Service() commonIface.Service {
+func (f *Function) Service() components.ServiceComponent {
 	return f.srv
 }

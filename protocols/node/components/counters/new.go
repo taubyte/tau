@@ -1,12 +1,11 @@
 package counters
 
 import (
-	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
-	iface "github.com/taubyte/go-interfaces/services/substrate/counters"
+	"github.com/taubyte/go-interfaces/services/substrate"
 )
 
 // TODO Counters Need to be redone
-func New(srv nodeIface.Service) (service iface.Service, err error) {
+func New(srv substrate.Service) (service substrate.CounterService, err error) {
 	return &unImplementedService{}, nil
 
 	// service = &Service{

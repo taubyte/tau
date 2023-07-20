@@ -13,7 +13,7 @@ import (
 	"github.com/taubyte/p2p/peer"
 )
 
-func createClientNode(ctx context.Context, config *commonIface.GenericConfig, shape, databasePath string) (*peer.Node, error) {
+func createClientNode(ctx context.Context, config *commonIface.GenericConfig, shape, databasePath string) (peer.Node, error) {
 	_ctx, ctxC := context.WithCancel(ctx)
 	ma, err := multiaddr.NewMultiaddr(config.P2PAnnounce[0])
 	if err != nil {

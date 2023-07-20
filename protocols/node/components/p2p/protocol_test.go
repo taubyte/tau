@@ -6,11 +6,11 @@ import (
 	"testing"
 
 	moodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
-	"bitbucket.org/taubyte/vm-test-examples/structure"
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/p2p/common"
+	"github.com/taubyte/odo/protocols/node/components/structure"
 	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
 )

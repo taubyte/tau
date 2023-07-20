@@ -17,7 +17,7 @@ package tests
 // )
 
 // func TestClient(t *testing.T) {
-// 	service.NewPatrick = func(ctx context.Context, node *peer.Node) (patrick.Client, error) {
+// 	service.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 // 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 // 	}
 

@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/taubyte/go-interfaces/services/substrate/database"
+	"github.com/taubyte/go-interfaces/services/substrate/components/database"
 	streams "github.com/taubyte/p2p/streams/service"
 )
 

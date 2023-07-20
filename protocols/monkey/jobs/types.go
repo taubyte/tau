@@ -16,7 +16,7 @@ import (
 type Context struct {
 	ctx              context.Context
 	ctxC             context.CancelFunc
-	Node             *peer.Node
+	Node             peer.Node
 	Tns              tns.Client
 	RepoType         compilerCommon.RepositoryType
 	ProjectID        string
@@ -32,7 +32,7 @@ type Context struct {
 	ConfigRepoRoot   string
 	Monkey           monkey.Service
 
-	OdoClientnode *peer.Node
+	OdoClientNode peer.Node
 
 	DVPublicKey []byte
 }

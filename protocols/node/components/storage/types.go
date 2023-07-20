@@ -6,10 +6,11 @@ import (
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/kvdb"
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
-	storageIface "github.com/taubyte/go-interfaces/services/substrate/storage"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
+	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
 )
 
-var _ storageIface.Service = &Service{}
+var _ components.ServiceComponent = &Service{}
 
 type storageMethod func(storageIface.Service, storageIface.Context, log.StandardLogger, map[string]kvdb.KVDB) (storageIface.Storage, error)
 
@@ -25,6 +26,14 @@ type Service struct {
 
 	commitLock sync.RWMutex
 	commits    map[string]string
+}
+
+func (s *Service) Cache() components.Cache {
+	return nil
+}
+
+func (s *Service) CheckTns(components.MatchDefinition) ([]components.Serviceable, error) {
+	return nil, nil
 }
 
 func (s *Service) Close() error {

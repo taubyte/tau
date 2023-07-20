@@ -4,20 +4,19 @@ import (
 	"context"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	"github.com/taubyte/go-interfaces/services/substrate"
 	iface "github.com/taubyte/go-interfaces/services/substrate"
-	countersIface "github.com/taubyte/go-interfaces/services/substrate/counters"
-	databaseIface "github.com/taubyte/go-interfaces/services/substrate/database"
-	httpIface "github.com/taubyte/go-interfaces/services/substrate/http"
-	ipfsIface "github.com/taubyte/go-interfaces/services/substrate/ipfs"
-	p2pIface "github.com/taubyte/go-interfaces/services/substrate/p2p"
-	pubSubIface "github.com/taubyte/go-interfaces/services/substrate/pubsub"
-	smartOpsIface "github.com/taubyte/go-interfaces/services/substrate/smartops"
-	storageIface "github.com/taubyte/go-interfaces/services/substrate/storage"
+	databaseIface "github.com/taubyte/go-interfaces/services/substrate/components/database"
+	httpIface "github.com/taubyte/go-interfaces/services/substrate/components/http"
+	ipfsIface "github.com/taubyte/go-interfaces/services/substrate/components/ipfs"
+	p2pIface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
+	pubSubIface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
+	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-interfaces/vm"
 
 	commonIface "github.com/taubyte/go-interfaces/services/common"
-	http "github.com/taubyte/go-interfaces/services/http"
+	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/peer"
 )
 
@@ -31,7 +30,7 @@ type Config struct {
 
 type Service struct {
 	ctx          context.Context
-	node         *peer.Node
+	node         peer.Node
 	http         http.Service
 	vm           vm.Service
 	nodeHttp     httpIface.Service
@@ -40,8 +39,9 @@ type Service struct {
 	nodeDatabase databaseIface.Service
 	nodeStorage  storageIface.Service
 	nodeP2P      p2pIface.Service
-	nodeCounters countersIface.Service
-	nodeSmartOps smartOpsIface.Service
+	nodeCounters substrate.CounterService
+	nodeSmartOps substrate.SmartOpsService
+	dev          bool
 
 	tns tns.Client
 
@@ -50,7 +50,11 @@ type Service struct {
 	orbitals []vm.Plugin
 }
 
-func (n *Service) Node() *peer.Node {
+func (n *Service) Context() context.Context {
+	return n.ctx
+}
+
+func (n *Service) Node() peer.Node {
 	return n.node
 }
 
@@ -66,11 +70,11 @@ func (s *Service) Logger() moodyCommon.Logger {
 	return logger
 }
 
-func (s *Service) Counter() countersIface.Service {
+func (s *Service) Counter() substrate.CounterService {
 	return s.nodeCounters
 }
 
-func (s *Service) SmartOps() smartOpsIface.Service {
+func (s *Service) SmartOps() substrate.SmartOpsService {
 	return s.nodeSmartOps
 }
 

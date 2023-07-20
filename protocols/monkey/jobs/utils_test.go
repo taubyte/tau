@@ -161,7 +161,7 @@ func startDreamland(name string) (u commonDreamland.Universe, err error) {
 	return
 }
 
-func checkAssets(node *peer.Node, tnsClient tns.Client, resIds []string) error {
+func checkAssets(node peer.Node, tnsClient tns.Client, resIds []string) error {
 	for _, resId := range resIds {
 		if err := checkAsset(node, tnsClient, resId); err != nil {
 			return err
@@ -171,7 +171,7 @@ func checkAssets(node *peer.Node, tnsClient tns.Client, resIds []string) error {
 	return nil
 }
 
-func checkAsset(node *peer.Node, tnsClient tns.Client, resId string) error {
+func checkAsset(node peer.Node, tnsClient tns.Client, resId string) error {
 	assetHash, err := methods.GetTNSAssetPath(commonTest.ProjectID, resId, testBranch)
 	if err != nil {
 		return err

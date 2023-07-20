@@ -6,15 +6,15 @@ import (
 	"path"
 	"time"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/go-interfaces/vm"
 	smartOpUtil "github.com/taubyte/odo/protocols/node/components/smartops/util"
-	smartOpPluginLib "github.com/taubyte/vm-plugins/smartops"
-	taubytePlugin "github.com/taubyte/vm-plugins/taubyte"
+	smartOpPluginLib "github.com/taubyte/vm-core-plugins/smartops"
+	taubytePlugin "github.com/taubyte/vm-core-plugins/taubyte"
 	vmContext "github.com/taubyte/vm/context"
 )
 
-func Initialize(srv iface.Service, ctx InstanceContext) (*instance, error) {
+func Initialize(srv substrate.Service, ctx InstanceContext) (*instance, error) {
 	fI := &instance{
 		srv:         srv,
 		context:     ctx,

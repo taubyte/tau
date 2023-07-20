@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	http "github.com/taubyte/go-interfaces/services/http"
 	iface "github.com/taubyte/go-interfaces/services/seer"
+	http "github.com/taubyte/http"
 )
 
 func (srv *Service) setupDnsHTTPRoutes() {

@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/odo/protocols/auth/github"
 
 	//fasthttp "github.com/valyala/fasthttp"
-	http "github.com/taubyte/go-interfaces/services/http"
+	http "github.com/taubyte/http"
 	httpAuth "github.com/taubyte/http/auth"
 )
 

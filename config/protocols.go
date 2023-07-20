@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/taubyte/go-interfaces/services/http"
+	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/peer"
 )
 

@@ -32,7 +32,7 @@ func init() {
 
 var _ iface.Client = &Client{}
 
-func New(ctx context.Context, node *peer.Node) (client *Client, err error) {
+func New(ctx context.Context, node peer.Node) (client *Client, err error) {
 	c := &Client{}
 	c.client, err = streamClient.New(ctx, node, nil, commonSpec.SeerProtocol, MinPeers, MaxPeers)
 	if err != nil {

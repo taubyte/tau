@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	"github.com/taubyte/go-interfaces/services/substrate/counters"
-	iface "github.com/taubyte/go-interfaces/services/substrate/http"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-specs/extract"
 	"github.com/taubyte/odo/protocols/node/components/http/common"
@@ -76,8 +75,4 @@ func (w *Website) Ready() error {
 	}
 
 	return w.readyError
-}
-
-func (w *Website) Counter() counters.Service {
-	return w.srv.Counter()
 }

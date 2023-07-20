@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/go-interfaces/moody"
-	iface "github.com/taubyte/go-interfaces/services/substrate/database"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	kv "github.com/taubyte/odo/protocols/node/components/database/kv"
 	"github.com/taubyte/p2p/peer"
@@ -15,7 +15,7 @@ var DefaultGlobalConfig = &structureSpec.Database{
 	Size: 1000000,
 }
 
-func New(hash string, logger moody.Logger, node *peer.Node) (iface.Database, error) {
+func New(hash string, logger moody.Logger, node peer.Node) (iface.Database, error) {
 	c := iface.Context{
 		Config: DefaultGlobalConfig,
 	}

@@ -15,7 +15,7 @@ import (
 )
 
 func init() {
-	NewPatrick = func(ctx context.Context, node *peer.Node) (patrick.Client, error) {
+	NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 }

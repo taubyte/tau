@@ -13,7 +13,7 @@ var (
 	MaxPeers = 4
 )
 
-func New(ctx context.Context, node *peer.Node) (client *Client, err error) {
+func New(ctx context.Context, node peer.Node) (client *Client, err error) {
 	client = &Client{}
 	if client.streamClient, err = streamClient.New(ctx, node, nil, common.StreamProtocol, MinPeers, MaxPeers); err != nil {
 		return nil, err

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"path"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/vm"
-	plugins "github.com/taubyte/vm-plugins/taubyte"
+	plugins "github.com/taubyte/vm-core-plugins/taubyte"
 	vmContext "github.com/taubyte/vm/context"
 )
 

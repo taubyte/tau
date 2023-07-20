@@ -12,13 +12,13 @@ import (
 var _ iface.Service = &Service{}
 
 type Service struct {
-	node   *peer.Node
+	node   peer.Node
 	db     kvdb.KVDB
 	stream *streams.CommandService
 	engine *engine.Engine
 }
 
-func (s *Service) Node() *peer.Node {
+func (s *Service) Node() peer.Node {
 	return s.node
 }
 

@@ -1,6 +1,6 @@
 package smartOpUtil
 
-import iface "github.com/taubyte/go-interfaces/services/substrate/smartops"
+import iface "github.com/taubyte/go-interfaces/services/substrate"
 
 var _ iface.Util = &util{}
 

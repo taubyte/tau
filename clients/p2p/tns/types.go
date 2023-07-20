@@ -6,7 +6,7 @@ import (
 )
 
 type Client struct {
-	node   *peer.Node
+	node   peer.Node
 	client *client.Client
 	cache  *cache
 }

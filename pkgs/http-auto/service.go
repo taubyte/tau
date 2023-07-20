@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/go-interfaces/services/common"
-	service "github.com/taubyte/go-interfaces/services/http"
+	service "github.com/taubyte/http"
 	basicHttp "github.com/taubyte/http/basic"
 	basicHttpSecure "github.com/taubyte/http/basic/secure"
 	"github.com/taubyte/http/options"
@@ -13,7 +13,7 @@ import (
 )
 
 type ConfigHandler interface {
-	AutoHttp(node *peer.Node, ops ...options.Option) (http service.Service, err error)
+	AutoHttp(node peer.Node, ops ...options.Option) (http service.Service, err error)
 	BasicHttp(ctx context.Context, ops ...options.Option) (http service.Service, err error)
 }
 
@@ -27,7 +27,7 @@ func Configure(genericConfig *common.GenericConfig) ConfigHandler {
 	return &config{*genericConfig}
 }
 
-func (config *config) AutoHttp(node *peer.Node, ops ...options.Option) (http service.Service, err error) {
+func (config *config) AutoHttp(node peer.Node, ops ...options.Option) (http service.Service, err error) {
 	ops = append(ops, options.Listen(config.HttpListen))
 
 	if config.DevMode {
@@ -60,6 +60,7 @@ func (config *config) BasicHttp(ctx context.Context, ops ...options.Option) (htt
 }
 
 func (config *config) devHttp(ctx context.Context, ops ...options.Option) (http service.Service, err error) {
+	fmt.Println(1)
 	if !config.HttpSecure {
 		http, err = basicHttp.New(ctx, ops...)
 	} else {

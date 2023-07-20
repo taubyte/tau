@@ -21,13 +21,13 @@ type subscription struct {
 }
 
 type cache struct {
-	node          *peer.Node
+	node          peer.Node
 	lock          sync.RWMutex
 	data          map[string]interface{}
 	subscriptions map[string]*subscription
 }
 
-func newCache(node *peer.Node) *cache {
+func newCache(node peer.Node) *cache {
 	return &cache{
 		node:          node,
 		subscriptions: map[string]*subscription{},

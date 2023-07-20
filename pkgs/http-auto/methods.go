@@ -41,7 +41,7 @@ func (s *Service) SetOption(opt interface{}) error {
 }
 
 // Must listen on port 443
-func New(node, clientNode *peer.Node, opts ...options.Option) (*Service, error) {
+func New(node, clientNode peer.Node, opts ...options.Option) (*Service, error) {
 	logger.Debug("New Auto HTTP")
 	defer logger.Debug("New Auto HTTP -> done")
 	_s, err := basicHttp.New(node.Context(), opts...)

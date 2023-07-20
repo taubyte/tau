@@ -6,7 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
 )
 
 var cacheItemTTL = 300 * time.Second
@@ -22,7 +22,7 @@ type cache struct {
 }
 
 type cacheItem struct {
-	instance iface.Instance
+	instance substrate.Instance
 	count    atomic.Int32
 }
 

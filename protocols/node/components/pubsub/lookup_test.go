@@ -4,9 +4,9 @@ import (
 	"reflect"
 	"testing"
 
-	"bitbucket.org/taubyte/vm-test-examples/structure"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
+	"github.com/taubyte/odo/protocols/node/components/structure"
 )
 
 func TestLookup(t *testing.T) {

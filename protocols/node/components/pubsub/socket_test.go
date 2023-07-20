@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"testing"
 
-	"bitbucket.org/taubyte/vm-test-examples/structure"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/odo/protocols/node/components/structure"
 
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
 	multihash "github.com/taubyte/utils/multihash"

@@ -60,7 +60,7 @@ func (f *FunctionInstance) Call(runtime vm.Runtime, id interface{}) error {
 	defer ctxC()
 
 	ret := fx.Call(ctx, id)
-	if f.parent.Verbose() {
+	if f.parent.srv.Dev() {
 		defer func() {
 			fmt.Println("\n\nERROR: ")
 			io.Copy(os.Stdout, runtime.Stderr())

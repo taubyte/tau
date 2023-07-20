@@ -10,10 +10,10 @@ import (
 	"github.com/h2non/filetype/matchers"
 	"github.com/spf13/afero"
 	"github.com/taubyte/config-compiler/decompile"
-	http "github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-project-schema/pretty"
 	projectSchema "github.com/taubyte/go-project-schema/project"
 	commonSpec "github.com/taubyte/go-specs/common"
+	http "github.com/taubyte/http"
 
 	"github.com/taubyte/utils/maps"
 )

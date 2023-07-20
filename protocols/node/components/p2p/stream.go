@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/mitchellh/mapstructure"
-	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	counter "github.com/taubyte/odo/vm/counter"
 	"github.com/taubyte/odo/vm/lookup"
 	"github.com/taubyte/p2p/peer"
@@ -14,6 +14,7 @@ import (
 	ifaceStreams "github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	ce "github.com/taubyte/p2p/streams/command/error"
+	"github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/p2p/streams/command/router"
 )
 
@@ -76,7 +77,7 @@ func (srv *Service) StartStream(name, protocol string, handler iface.StreamHandl
 }
 
 // Handles calls made with sdk
-func (s *Service) Handle(cmd ifaceStreams.Command) (resp ifaceresponse.Response, err error) {
+func (s *Service) Handle(cmd *command.Command) (resp response.Response, err error) {
 	start := time.Now()
 	_matcher, ok := cmd.Get("matcher")
 	if !ok {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/go-interfaces/services/substrate/database"
+	"github.com/taubyte/go-interfaces/services/substrate/components/database"
 	"github.com/taubyte/p2p/streams/command"
 	mh "github.com/taubyte/utils/multihash"
 )

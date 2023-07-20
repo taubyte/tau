@@ -8,12 +8,11 @@ import (
 	goHttp "net/http"
 
 	"github.com/ipfs/go-cid"
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	"github.com/taubyte/go-interfaces/services/substrate/counters"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/http/common"
-	plugins "github.com/taubyte/vm-plugins/taubyte"
+	plugins "github.com/taubyte/vm-core-plugins/taubyte"
 )
 
 func (f *Function) Project() (cid.Cid, error) {
@@ -80,12 +79,8 @@ func (f *Function) Validate(matcher commonIface.MatchDefinition) error {
 }
 
 // TODO the below are generic
-func (f *Function) Service() commonIface.Service {
+func (f *Function) Service() commonIface.ServiceComponent {
 	return f.srv
-}
-
-func (f *Function) Counter() counters.Service {
-	return f.srv.Counter()
 }
 
 func (f *Function) Config() *structureSpec.Function {

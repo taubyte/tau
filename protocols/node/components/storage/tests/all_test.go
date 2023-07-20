@@ -20,7 +20,7 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
-	"github.com/taubyte/go-interfaces/services/substrate/storage"
+	"github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
 	storages "github.com/taubyte/odo/protocols/node/components/storage"

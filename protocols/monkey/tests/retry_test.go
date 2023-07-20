@@ -104,7 +104,7 @@ func TestRunWasmRetry(t *testing.T) {
 	}
 }
 
-func checkAsset(ctx context.Context, resId, commit string, node *peer.Node, tnsClient *tnsClient.Client) error {
+func checkAsset(ctx context.Context, resId, commit string, node peer.Node, tnsClient *tnsClient.Client) error {
 	// assetHash := multihash.Hash(commonTest.ProjectID + resId)
 	assetHash, err := methods.GetTNSAssetPath(commonTest.ProjectID, resId, commit)
 	if err != nil {

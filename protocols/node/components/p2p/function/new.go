@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	tvm "github.com/taubyte/odo/vm"
 )

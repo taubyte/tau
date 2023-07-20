@@ -1,7 +1,8 @@
 package tvm
 
 import (
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
+	"github.com/taubyte/go-interfaces/services/substrate"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	structureSpec "github.com/taubyte/go-specs/structure"
 )
 
@@ -11,12 +12,8 @@ var (
 )
 
 type Function struct {
-	srv         commonIface.Service
+	srv         substrate.Service
 	serviceable commonIface.Serviceable
-}
-
-func (f *Function) Verbose() bool {
-	return f.srv.Verbose()
 }
 
 type FunctionInstance struct {

@@ -25,7 +25,7 @@ type Client struct {
 	client *client.Client
 }
 
-func New(ctx context.Context, node *peer.Node) (*Client, error) {
+func New(ctx context.Context, node peer.Node) (*Client, error) {
 	var (
 		c   Client
 		err error

@@ -8,7 +8,7 @@ package nodehttp
 
 // 	"github.com/taubyte/odo/protocols/node/components/http/common"
 // 	"github.com/taubyte/odo/vm/cache"
-// 	"bitbucket.org/taubyte/vm-test-examples/structure"
+// 	// "bitbucket.org/taubyte/vm-test-examples/structure"
 // 	"github.com/taubyte/p2p/peer"
 // 	"github.com/taubyte/go-interfaces/services/tns"
 // 	functionSpec "github.com/taubyte/go-specs/function"
@@ -136,7 +136,7 @@ package nodehttp
 // 	return nil
 // }
 
-// func NewTestService(node *peer.Node) *Service {
+// func NewTestService(node peer.Node) *Service {
 // 	nodeService := structure.MockNodeService(node, context.Background())
 // 	return &Service{
 // 		Service: nodeService,

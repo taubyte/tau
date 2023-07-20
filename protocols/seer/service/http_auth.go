@@ -9,7 +9,7 @@ import (
 	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/odo/protocols/auth/github"
 
-	"github.com/taubyte/go-interfaces/services/http"
+	http "github.com/taubyte/http"
 	httpAuth "github.com/taubyte/http/auth"
 )
 

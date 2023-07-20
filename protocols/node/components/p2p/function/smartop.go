@@ -3,12 +3,12 @@ package function
 import (
 	"context"
 
-	smartOps "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 	"github.com/taubyte/odo/protocols/node/components/p2p/service"
 )
 
-var _ smartOps.SmartOpEventCaller = &Function{}
+var _ substrate.SmartOpEventCaller = &Function{}
 
 const resourceType = sdkSmartOpsCommon.ResourceTypeFunctionP2P
 

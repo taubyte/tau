@@ -49,7 +49,7 @@ func (f *instance) Call(runtime vm.Runtime, id interface{}) (uint32, error) {
 	defer ctxC()
 
 	ret := fx.Call(ctx, id)
-	if f.srv.Verbose() {
+	if f.srv.Dev() {
 		defer func() {
 			fmt.Println("\n\nERROR: ")
 			io.Copy(os.Stdout, runtime.Stderr())

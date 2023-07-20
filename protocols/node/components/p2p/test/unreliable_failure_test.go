@@ -20,6 +20,7 @@ import (
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
 	"github.com/taubyte/odo/protocols/monkey/fixtures/compile"
+	"github.com/taubyte/odo/protocols/node/components/p2p"
 	_ "github.com/taubyte/odo/protocols/node/service"
 	_ "github.com/taubyte/odo/protocols/seer/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"
@@ -198,7 +199,10 @@ func sendTestCommand(ctx *testContext, node nodeIface.Service) error {
 	protocol := "/testproto/v1"
 	command := "someCommand"
 
-	srv := node.P2P()
+	srv, err := p2p.New(node)
+	if err != nil {
+		return fmt.Errorf("creating new P2P node failed with: %w", err)
+	}
 
 	stream, err := srv.Stream(ctx.Context(), ctx.Project(), ctx.Application(), protocol)
 	if err != nil {
