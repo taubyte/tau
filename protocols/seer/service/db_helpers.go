@@ -8,8 +8,8 @@ import (
 	"time"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
+	"github.com/taubyte/odo/config"
 )
 
 func (srv *oracleService) insertService(id string, service iface.ServiceInfo) error {
@@ -113,10 +113,10 @@ func (h *dnsHandler) getNodeIp() ([]string, error) {
 	return ips, nil
 }
 
-func initializeDB(srv *Service, config *commonIface.GenericConfig) error {
+func initializeDB(srv *Service, config *config.Protocol) error {
 	var file *os.File
 	var err error
-	dbPath := path.Join(config.Root, NodeDatabaseFileName)
+	dbPath := path.Join(config.Root, srv.shape, NodeDatabaseFileName)
 	// Create SQLite DB
 	file, err = os.Open(dbPath)
 	if err != nil {

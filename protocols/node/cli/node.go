@@ -11,7 +11,7 @@ import (
 	bbMoodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	p2p "github.com/taubyte/go-interfaces/p2p/peer"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
+	odoConfig "github.com/taubyte/odo/config"
 	"github.com/taubyte/odo/protocols/node/service"
 	"github.com/urfave/cli/v2"
 )
@@ -48,7 +48,7 @@ func nodeDone() {
 }
 
 func StartNode(c *cli.Context) {
-	config := &commonIface.GenericConfig{}
+	config := &odoConfig.Protocol{}
 	if c.IsSet("dev") {
 		config.DevMode = true
 	}

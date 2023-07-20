@@ -38,7 +38,7 @@ func TestDns(t *testing.T) {
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":    {Others: map[string]int{"dns": protocolsCommon.DefaultDevDnsPort, "mock": 1}},
+			"seer":    {Others: map[string]int{"mock": 1}},
 			"tns":     {},
 			"monkey":  {},
 			"patrick": {},
@@ -84,7 +84,7 @@ func TestDns(t *testing.T) {
 	}
 
 	if len(tcpResp.Answer) != 1 {
-		t.Errorf("Expected 2 tcp for domain regex answers got %d on tcp", len(tcpResp.Answer))
+		t.Errorf("Expected 1 tcp for domain regex answers got %d on tcp", len(tcpResp.Answer))
 		return
 	}
 

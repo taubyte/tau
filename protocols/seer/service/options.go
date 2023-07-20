@@ -13,7 +13,6 @@ func Resolver(resolver iface.Resolver) Options {
 		// if resolver == nil {
 		// 	return errors.New("Resolver cannot be nil")
 		// }
-
 		s.dnsResolver = resolver
 
 		return nil

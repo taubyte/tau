@@ -6,11 +6,11 @@ import (
 	"net/url"
 	"strconv"
 
-	commonIface "github.com/taubyte/go-interfaces/services/common"
+	"github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 )
 
-func (srv *Service) startHttp(config *commonIface.GenericConfig) (err error) {
+func (srv *Service) startHttp(config *config.Protocol) (err error) {
 	listen := config.HttpListen
 
 	if config.Http == nil {

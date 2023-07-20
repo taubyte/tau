@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	"github.com/taubyte/go-interfaces/p2p/peer"
-	"github.com/taubyte/go-interfaces/services/common"
 	service "github.com/taubyte/go-interfaces/services/http"
 	basicHttp "github.com/taubyte/http/basic"
 	basicHttpSecure "github.com/taubyte/http/basic/secure"
 	"github.com/taubyte/http/options"
+	"github.com/taubyte/odo/config"
 )
 
 type ConfigHandler interface {
@@ -17,17 +17,17 @@ type ConfigHandler interface {
 	BasicHttp(ctx context.Context, ops ...options.Option) (http service.Service, err error)
 }
 
-type config struct {
-	common.GenericConfig
+type autoConf struct {
+	config.Protocol
 }
 
 // TODO: Change to New(opts...) and takes an option to pass in a config
 // TODO: Fix when all other repo's change to github specs
-func Configure(genericConfig *common.GenericConfig) ConfigHandler {
-	return &config{*genericConfig}
+func Configure(conf *config.Protocol) ConfigHandler {
+	return &autoConf{*conf}
 }
 
-func (config *config) AutoHttp(node peer.Node, ops ...options.Option) (http service.Service, err error) {
+func (config *autoConf) AutoHttp(node peer.Node, ops ...options.Option) (http service.Service, err error) {
 	ops = append(ops, options.Listen(config.HttpListen))
 
 	if config.DevMode {
@@ -43,13 +43,12 @@ func (config *config) AutoHttp(node peer.Node, ops ...options.Option) (http serv
 	return
 }
 
-func (config *config) BasicHttp(ctx context.Context, ops ...options.Option) (http service.Service, err error) {
+func (config *autoConf) BasicHttp(ctx context.Context, ops ...options.Option) (http service.Service, err error) {
 	ops = append(ops, options.Listen(config.HttpListen))
 
 	if config.DevMode {
 		return config.devHttp(ctx, ops...)
 	} else {
-		ops = append(ops, options.LoadCertificate(config.TLS.Certificate, config.TLS.Key))
 		http, err = basicHttpSecure.New(ctx, ops...)
 		if err != nil {
 			return nil, fmt.Errorf("failed https new with error: %w", err)
@@ -59,8 +58,8 @@ func (config *config) BasicHttp(ctx context.Context, ops ...options.Option) (htt
 	return
 }
 
-func (config *config) devHttp(ctx context.Context, ops ...options.Option) (http service.Service, err error) {
-	if !config.HttpSecure {
+func (config *autoConf) devHttp(ctx context.Context, ops ...options.Option) (http service.Service, err error) {
+	if !config.EnableHTTPS {
 		http, err = basicHttp.New(ctx, ops...)
 	} else {
 		ops = append(ops, options.SelfSignedCertificate())

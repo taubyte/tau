@@ -7,24 +7,19 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	moody "bitbucket.org/taubyte/go-moody-blues/common"
-	"bitbucket.org/taubyte/p2p/peer"
 	ifaceCommon "github.com/taubyte/go-interfaces/common"
 	commonIface "github.com/taubyte/go-interfaces/services/common"
+	httpService "github.com/taubyte/go-interfaces/services/http"
 	commonSpecs "github.com/taubyte/go-specs/common"
+	"github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	slices "github.com/taubyte/utils/slices/string"
-
-	configutils "bitbucket.org/taubyte/p2p/config"
-	httpService "github.com/taubyte/go-interfaces/services/http"
 )
 
-func Start(ctx context.Context, config *commonIface.GenericConfig, shape string) error {
+func Start(ctx context.Context, config *config.Protocol) error {
 	moody.LogLevel(moody.DebugLevelFatal)
-
-	config.Shape = shape
 
 	ctx, ctx_cancel := context.WithCancel(ctx)
 	sigkill := make(chan os.Signal, 1)
@@ -36,37 +31,21 @@ func Start(ctx context.Context, config *commonIface.GenericConfig, shape string)
 		ctx_cancel()
 	}()
 
-	dbPath := commonIface.DatabasePath + shape
+	databasePath := commonIface.DatabasePath + config.Shape
 
 	if config.DevMode {
-		dbPath = shape
-	}
-
-	config.Verbose = true
-	setNetworkDomains(config)
-
-	var err error
-	if len(config.Protocols) < 1 {
-		peerInfo, err := commonIface.ConvertToAddrInfo(config.Peers)
+		dir, err := os.Getwd()
 		if err != nil {
 			return err
 		}
+		config.Root = dir
+		databasePath = config.Shape
+	}
+	config.Verbose = true
 
-		config.Node, err = peer.NewFull(ctx, dbPath, config.PrivateKey, config.SwarmKey, config.P2PListen, config.P2PAnnounce, true, peer.BootstrapParams{Enable: true, Peers: peerInfo})
-		if err != nil {
-			return fmt.Errorf("creating new full node failed with: %s", err)
-		}
-	} else {
-		config.Node, err = configutils.NewNode(ctx, config, dbPath)
-		if err != nil {
-			return fmt.Errorf("creating new node for shape `%s` failed with: %s", shape, err)
-		}
-
-		// Create client node
-		config.ClientNode, err = createClientNode(ctx, config, shape, dbPath)
-		if err != nil {
-			return fmt.Errorf("creating client node failed with: %s", err)
-		}
+	err := createP2PNodes(ctx, databasePath, config.Shape, config)
+	if err != nil {
+		return err
 	}
 
 	// Create httpNode if needed
@@ -124,8 +103,8 @@ func Start(ctx context.Context, config *commonIface.GenericConfig, shape string)
 		httpNode.Start()
 	}
 
-	fmt.Printf("\n CONFIG DUMP FOR SHAPE %s: %#v\n", shape, config)
-	fmt.Printf("%s started! with id: %s\n", shape, config.Node.ID())
+	// TODO: Use logger
+	fmt.Printf("%s started! with id: %s\n", config.Shape, config.Node.ID())
 
 	// https://github.com/ipfs/go-ipfs/blob/8f623c9124d6c0b1d511a072a4d13633884c7b40/core/builder.go
 
@@ -133,9 +112,6 @@ func Start(ctx context.Context, config *commonIface.GenericConfig, shape string)
 	for _, srv := range services {
 		srv.Close()
 	}
-
-	fmt.Println("Waiting for Protocols to shutdown...")
-	time.Sleep(10 * time.Second)
 
 	if config.ClientNode != nil {
 		config.ClientNode.Close()
@@ -148,9 +124,6 @@ func Start(ctx context.Context, config *commonIface.GenericConfig, shape string)
 	if config.Http != nil {
 		config.Http.Stop()
 	}
-
-	fmt.Println("Waiting for Nodes to shutdown...")
-	time.Sleep(5 * time.Second)
 
 	return nil
 }

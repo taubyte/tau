@@ -5,18 +5,17 @@ import (
 	"fmt"
 
 	moodyBlues "bitbucket.org/taubyte/go-moody-blues"
-	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
 	"github.com/fxamacker/cbor/v2"
 	pebble "github.com/ipfs/go-ds-pebble"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/go-interfaces/moody"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
 	seer_client "github.com/taubyte/odo/clients/p2p/seer"
 	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
+	odoConfig "github.com/taubyte/odo/config"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
@@ -28,18 +27,15 @@ func init() {
 	logger, _ = moodyBlues.New("hoarder.service")
 }
 
-func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, error) {
+func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 	var srv Service
 	srv.ctx = ctx
 
 	if config == nil {
-		_cnf := &commonIface.GenericConfig{}
-		_cnf.Bootstrap = true
-
-		config = _cnf
+		config = &odoConfig.Protocol{}
 	}
 
-	err := config.Build(commonIface.ConfigBuilder{
+	err := config.Build(odoConfig.ConfigBuilder{
 		DefaultP2PListenPort: protocolCommon.HoarderDefaultP2PListenPort,
 	})
 	if err != nil {
@@ -50,7 +46,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 
 	// TODO move database root to new
 	if config.Node == nil {
-		srv.node, err = configutils.NewNode(ctx, config, protocolCommon.Hoarder)
+		srv.node, err = odoConfig.NewNode(ctx, config, protocolCommon.Hoarder)
 		if err != nil {
 			return nil, fmt.Errorf("config new node failed with: %s", err)
 		}
@@ -99,7 +95,6 @@ func (srv *Service) Close() error {
 
 	srv.stream.Stop()
 	srv.tnsClient.Close()
-	srv.node.Close()
 
 	if srv.store != nil {
 		srv.store.Close()

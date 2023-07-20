@@ -8,15 +8,14 @@ import (
 	"fmt"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	configutils "bitbucket.org/taubyte/p2p/config"
 	peer "bitbucket.org/taubyte/p2p/peer"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	nodeP2PIFace "github.com/taubyte/go-interfaces/services/substrate/p2p"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
+	odoConfig "github.com/taubyte/odo/config"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 	smartopsPlugins "github.com/taubyte/vm-plugins/smartops"
 	tbPlugins "github.com/taubyte/vm-plugins/taubyte"
@@ -28,20 +27,17 @@ var (
 	logger, _ = moody.New("node.service")
 )
 
-func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, error) {
+func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 	srv := &Service{
 		ctx:      ctx,
 		orbitals: make([]vm.Plugin, 0),
 	}
 
 	if config == nil {
-		_cnf := &commonIface.GenericConfig{}
-		_cnf.Bootstrap = true
-
-		config = _cnf
+		config = &odoConfig.Protocol{}
 	}
 
-	err := config.Build(commonIface.ConfigBuilder{
+	err := config.Build(odoConfig.ConfigBuilder{
 		DefaultP2PListenPort: protocolCommon.NodeDefaultP2PListenPort,
 		DevHttpListenPort:    protocolCommon.NodeDevHttpListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
@@ -56,7 +52,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewLiteNode(ctx, config, protocolCommon.Node)
+		srv.node, err = odoConfig.NewLiteNode(ctx, config, protocolCommon.Node)
 		if err != nil {
 			return nil, fmt.Errorf("creating new lite node failed with: %w", err)
 		}
@@ -180,13 +176,8 @@ func (srv *Service) Close() error {
 	srv.nodeSmartOps.Close()
 
 	// ctx
-	srv.node.Close()
-
-	// ctx
 	srv.vm.Close()
 
-	// ctx
-	srv.http.Stop()
 	return nil
 }
 

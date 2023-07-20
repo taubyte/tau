@@ -14,9 +14,9 @@ import (
 	keypair "bitbucket.org/taubyte/p2p/keypair"
 
 	hoarder_client "github.com/taubyte/odo/clients/p2p/hoarder"
+	"github.com/taubyte/odo/config"
 
 	peer "bitbucket.org/taubyte/p2p/peer"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	service "github.com/taubyte/odo/protocols/hoarder/service"
 )
 
@@ -30,12 +30,11 @@ func TestClient(t *testing.T) {
 	}
 	defer os.RemoveAll(srvRoot)
 
-	srv, err := service.New(ctx, &commonIface.GenericConfig{
+	srv, err := service.New(ctx, &config.Protocol{
 		Root:        srvRoot,
 		P2PListen:   []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)},
 		P2PAnnounce: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)},
 		SwarmKey:    peer.DefaultSwarmKey(),
-		Bootstrap:   false,
 		DevMode:     true,
 	})
 
