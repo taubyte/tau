@@ -1,21 +1,28 @@
-package commands
+package app
 
 import (
 	"fmt"
 
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/odo/cli/node"
 	"github.com/urfave/cli/v2"
 )
 
-func Build() (*cli.App, error) {
-	app := &cli.App{
-		Commands: []*cli.Command{},
+func Run(args ...string) error {
+	err := App().Run(args)
+	if err != nil {
+		return err
 	}
 
-	app.Commands = append(app.Commands, startShape())
+	return nil
+}
 
-	return app, nil
+func App() *cli.App {
+	app := &cli.App{
+		Commands: []*cli.Command{
+			startShape(),
+		},
+	}
+	return app
 }
 
 func startShape() *cli.Command {
@@ -33,17 +40,19 @@ func startShape() *cli.Command {
 				Required: true,
 				Aliases:  []string{"c"},
 			},
+			&cli.BoolFlag{
+				Name: "dev",
+			},
 		},
 
 		Action: func(ctx *cli.Context) error {
-			shape := ctx.String("shape")
-			var config commonIface.GenericConfig
-			_, err := config.Parse(ctx)
+			protocolConfig, sourceConfig, err := parseSourceConfig(ctx)
 			if err != nil {
-				return fmt.Errorf("parsing ctx for shape `%s` failed with: %s", shape, err)
+				return fmt.Errorf("parsing config failed with: %s", err)
 			}
 
-			return node.Start(ctx.Context, &config, shape)
+			setNetworkDomains(sourceConfig)
+			return node.Start(ctx.Context, protocolConfig)
 		},
 	}
 }

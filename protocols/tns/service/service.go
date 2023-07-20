@@ -6,34 +6,30 @@ import (
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
+	"github.com/taubyte/odo/config"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	commonSpec "github.com/taubyte/go-specs/common"
+	odoConfig "github.com/taubyte/odo/config"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/engine"
-
-	configutils "bitbucket.org/taubyte/p2p/config"
 )
 
 var (
 	logger, _ = moody.New("tns.service")
 )
 
-func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, error) {
+func New(ctx context.Context, config *config.Protocol) (*Service, error) {
 	srv := &Service{}
 
 	if config == nil {
-		_cnf := &commonIface.GenericConfig{}
-		_cnf.Bootstrap = true
-
-		config = _cnf
+		config = &odoConfig.Protocol{}
 	}
 
-	err := config.Build(commonIface.ConfigBuilder{
+	err := config.Build(odoConfig.ConfigBuilder{
 		DefaultP2PListenPort: protocolsCommon.TnsDefaultP2PListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
 	})
@@ -42,7 +38,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewNode(ctx, config, protocolsCommon.Tns)
+		srv.node, err = odoConfig.NewNode(ctx, config, protocolsCommon.Tns)
 		if err != nil {
 			return nil, err
 		}
@@ -96,11 +92,7 @@ func (srv *Service) Close() error {
 	// node.ctx
 	srv.stream.Stop()
 
-	// Maybe not??
-	// ctx, needs to close after node as node will try to close it's store
 	srv.db.Close()
 
-	// ctx
-	srv.node.Close()
 	return nil
 }

@@ -7,7 +7,7 @@ import (
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	iface "github.com/taubyte/go-interfaces/common"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
+	odoConfig "github.com/taubyte/odo/config"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 )
 
@@ -16,11 +16,10 @@ func init() {
 }
 
 func createPatrickService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {
-	serviceConfig := &commonIface.GenericConfig{}
+	serviceConfig := &odoConfig.Protocol{}
 	serviceConfig.Root = config.Root
 	serviceConfig.P2PListen = []string{fmt.Sprintf(dreamlandCommon.DefaultP2PListenFormat, config.Port)}
 	serviceConfig.P2PAnnounce = []string{fmt.Sprintf(dreamlandCommon.DefaultP2PListenFormat, config.Port)}
-	serviceConfig.Bootstrap = false
 	serviceConfig.DevMode = true
 	serviceConfig.SwarmKey = config.SwarmKey
 
@@ -43,7 +42,7 @@ func createPatrickService(ctx context.Context, config *iface.ServiceConfig) (ifa
 	}
 
 	if result, ok := config.Others["secure"]; ok {
-		serviceConfig.HttpSecure = (result != 0)
+		serviceConfig.EnableHTTPS = (result != 0)
 	}
 
 	return New(ctx, serviceConfig)

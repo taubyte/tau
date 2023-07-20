@@ -57,8 +57,8 @@ type Service struct {
 
 	generatedDomain string
 	caaRecordBypass *regexp.Regexp // TOOD: move this into go-specs
-
-	odo bool
+	shape           string
+	odo             bool
 }
 
 func (s *Service) Node() peer.Node {

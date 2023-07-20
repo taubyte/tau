@@ -7,7 +7,7 @@ import (
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	iface "github.com/taubyte/go-interfaces/common"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
+	odoConfig "github.com/taubyte/odo/config"
 )
 
 func init() {
@@ -15,13 +15,12 @@ func init() {
 }
 
 func createNodeService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {
-	serviceConfig := &commonIface.GenericConfig{
+	serviceConfig := &odoConfig.Protocol{
 		Ports: make(map[string]int),
 	}
 	serviceConfig.Root = config.Root
 	serviceConfig.P2PListen = []string{fmt.Sprintf(dreamlandCommon.DefaultP2PListenFormat, config.Port)}
 	serviceConfig.P2PAnnounce = []string{fmt.Sprintf(dreamlandCommon.DefaultP2PListenFormat, config.Port)}
-	serviceConfig.Bootstrap = false
 	serviceConfig.DevMode = true
 	serviceConfig.SwarmKey = config.SwarmKey
 
@@ -36,10 +35,10 @@ func createNodeService(ctx context.Context, config *iface.ServiceConfig) (iface.
 	}
 
 	if result, ok := config.Others["secure"]; ok {
-		serviceConfig.HttpSecure = (result != 0)
+		serviceConfig.EnableHTTPS = (result != 0)
 	}
 
-	serviceConfig.DVPublicKey = config.PublicKey
+	serviceConfig.DomainValidation.PublicKey = config.PublicKey
 
 	return New(ctx, serviceConfig)
 }

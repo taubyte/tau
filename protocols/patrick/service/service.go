@@ -6,16 +6,16 @@ import (
 	"time"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	configutils "bitbucket.org/taubyte/p2p/config"
 	streams "bitbucket.org/taubyte/p2p/streams/service"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	authAPI "github.com/taubyte/odo/clients/p2p/auth"
 	monkeyApi "github.com/taubyte/odo/clients/p2p/monkey"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
+	"github.com/taubyte/odo/config"
+	odoConfig "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
@@ -28,17 +28,16 @@ var (
 	DefaultReAnnounceFailedJobsTime = 7 * time.Minute
 )
 
-func New(ctx context.Context, config *commonIface.GenericConfig) (*PatrickService, error) {
+func New(ctx context.Context, config *config.Protocol) (*PatrickService, error) {
 	var srv PatrickService
 
 	if config == nil {
-		_cnf := &commonIface.GenericConfig{}
-		_cnf.Bootstrap = true
+		_cnf := &odoConfig.Protocol{}
 
 		config = _cnf
 	}
 
-	err := config.Build(commonIface.ConfigBuilder{
+	err := config.Build(odoConfig.ConfigBuilder{
 		DefaultP2PListenPort: protocolsCommon.PatrickDefaultP2PListenPort,
 		DevHttpListenPort:    protocolsCommon.PatrickDevHttpListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
@@ -52,7 +51,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*PatrickServic
 	logger.Error(moodyCommon.Object{"msg": config})
 
 	if config.Node == nil {
-		srv.node, err = configutils.NewNode(ctx, config, protocolsCommon.Patrick)
+		srv.node, err = odoConfig.NewNode(ctx, config, protocolsCommon.Patrick)
 		if err != nil {
 			return nil, err
 		}
@@ -169,10 +168,5 @@ func (srv *PatrickService) Close() error {
 	// ctx, needs to close after node as node will try to close it's store
 	srv.db.Close()
 
-	// ctx
-	srv.node.Close()
-
-	// ctx
-	srv.http.Stop()
 	return nil
 }

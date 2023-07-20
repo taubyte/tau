@@ -4,21 +4,15 @@ import (
 	"context"
 
 	serviceIface "github.com/taubyte/go-interfaces/services"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
+	"github.com/taubyte/odo/config"
 )
 
 type packageInterface struct{}
 
-func (packageInterface) Config() *commonIface.GenericConfig {
-	return &commonIface.GenericConfig{}
-}
-
-func (packageInterface) New(ctx context.Context, cnf *commonIface.GenericConfig) (serviceIface.Service, error) {
+func (packageInterface) New(ctx context.Context, cnf *config.Protocol) (serviceIface.Service, error) {
 	return New(ctx, cnf)
 }
 
-var _ commonIface.Package = packageInterface{}
-
-func Package() packageInterface {
+func Package() config.Package {
 	return packageInterface{}
 }

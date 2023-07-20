@@ -22,9 +22,9 @@ func UtilsGenKey() error {
 func UtilsPing(c *cli.Context, pid string) error {
 	StartNode(c)
 
-	if err := waitForSwarm(); err != nil {
-		return err
-	}
+	// if err := waitForSwarm(); err != nil {
+	// 	return err
+	// }
 
 	Logger.Debug(moody.Object{"message": fmt.Sprintf("SWARM :%v", Node.Peer().Peerstore().Peers())})
 

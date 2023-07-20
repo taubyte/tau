@@ -19,7 +19,7 @@ var (
 	SeerDevHttpListenPort    = 9000 + dreamlandCommon.DefaultSeerHttpPort
 
 	DefaultDnsPort    = 53
-	DefaultDevDnsPort = 4253
+	DefaultDevDnsPort = 4444
 
 	TnsDefaultP2PListenPort = 4253
 

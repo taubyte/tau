@@ -67,13 +67,9 @@ func (seer *Service) newDnsServer(devMode bool, port int) error {
 	var s *dnsServer
 	validate.UseResolver(seer.dnsResolver)
 	if devMode {
-		devPort := protocolsCommon.DefaultDevDnsPort
-		if port != 0 {
-			devPort = port
-		}
 		s = &dnsServer{
-			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(devPort), Net: "tcp"},
-			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(devPort), Net: "udp"},
+			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(protocolsCommon.DefaultDevDnsPort), Net: "tcp"},
+			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(protocolsCommon.DefaultDevDnsPort), Net: "udp"},
 			Seer: seer,
 		}
 	} else {
@@ -133,11 +129,6 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 	name = strings.ToLower(name)
 
-	if domainSpecs.TaubyteServiceDomain.MatchString(name) || h.seer.caaRecordBypass.MatchString(name) {
-		h.odoDnsResolve(name, w, r, errMsg, msg)
-		return
-	}
-
 	// First Case -> check if it matches .g.tau.link generated domain
 	if domainSpecs.SpecialDomain.MatchString(name) {
 		h.reply(w, r, errMsg, msg)
@@ -150,6 +141,11 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 			h.reply(w, r, errMsg, msg)
 			return
 		}
+	}
+
+	if domainSpecs.TaubyteServiceDomain.MatchString(name) || h.seer.caaRecordBypass.MatchString(name) {
+		h.odoDnsResolve(name, w, r, errMsg, msg)
+		return
 	}
 
 	// Third case ->  check if domain exist in tns
