@@ -3,6 +3,7 @@ module github.com/taubyte/odo
 go 1.19
 
 replace (
+	github.com/taubyte/config-compiler => /home/tafkhan/Documents/Work/Taubyte/new/config-compiler
 	github.com/taubyte/dreamland => /home/tafkhan/Documents/Work/Taubyte/new/dreamland
 	github.com/taubyte/go-interfaces => /home/tafkhan/Documents/Work/Taubyte/Repos/go-interfaces
 	github.com/taubyte/http => /home/tafkhan/Documents/Work/Taubyte/Repos/http
@@ -70,6 +71,7 @@ require (
 	golang.org/x/oauth2 v0.10.0
 	golang.org/x/sys v0.10.0
 	gopkg.in/go-playground/webhooks.v5 v5.17.0
+	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools v2.2.0+incompatible
 	gotest.tools/v3 v3.5.0

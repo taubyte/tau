@@ -7,18 +7,18 @@ import (
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
+	"github.com/taubyte/odo/config"
 )
 
 type serviceBeacon struct {
 	*Service
-	config     *commonIface.GenericConfig
+	config     *config.Protocol
 	seerClient *seerClient.Client
 }
 
-func (srv *Service) startBeacon(config *commonIface.GenericConfig) (beacon *serviceBeacon, err error) {
+func (srv *Service) startBeacon(config *config.Protocol) (beacon *serviceBeacon, err error) {
 	beacon = &serviceBeacon{Service: srv, config: config}
 
 	// For Odo

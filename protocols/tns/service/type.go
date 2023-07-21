@@ -2,8 +2,8 @@ package service
 
 import (
 	"github.com/taubyte/go-interfaces/kvdb"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	iface "github.com/taubyte/go-interfaces/services/tns"
+	"github.com/taubyte/odo/config"
 	"github.com/taubyte/odo/protocols/tns/engine"
 	"github.com/taubyte/p2p/peer"
 	streams "github.com/taubyte/p2p/streams/service"
@@ -27,5 +27,5 @@ func (s *Service) KV() kvdb.KVDB {
 }
 
 type Config struct {
-	commonIface.GenericConfig `yaml:"z,omitempty"`
+	config.Protocol `yaml:"z,omitempty"`
 }

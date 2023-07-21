@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	"github.com/taubyte/odo/config"
 	counters "github.com/taubyte/odo/protocols/node/components/counters"
 	database "github.com/taubyte/odo/protocols/node/components/database"
 	http "github.com/taubyte/odo/protocols/node/components/http"
@@ -12,8 +13,6 @@ import (
 	pubSub "github.com/taubyte/odo/protocols/node/components/pubsub"
 	smartOps "github.com/taubyte/odo/protocols/node/components/smartops"
 	storage "github.com/taubyte/odo/protocols/node/components/storage"
-
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 )
 
 func attachNodesError(name string, err error) error {
@@ -23,7 +22,7 @@ func attachNodesError(name string, err error) error {
 	return err
 }
 
-func (srv *Service) attachNodes(config *commonIface.GenericConfig) (err error) {
+func (srv *Service) attachNodes(config *config.Protocol) (err error) {
 	// Needs to happen first, as others depend on it
 	if err = srv.attachNodeCounters(config); err != nil {
 		return attachNodesError("counters", err)
@@ -61,12 +60,12 @@ func (srv *Service) attachNodes(config *commonIface.GenericConfig) (err error) {
 	return nil
 }
 
-func (srv *Service) attachNodeHttp(config *commonIface.GenericConfig) (err error) {
+func (srv *Service) attachNodeHttp(config *config.Protocol) (err error) {
 	ops := []http.Option{}
 
 	if config.DevMode {
 		ops = append(ops, http.Dev())
-		ops = append(ops, http.DvKey(config.DVPublicKey))
+		ops = append(ops, http.DvKey(config.DomainValidation.PublicKey))
 	}
 
 	if config.Verbose {
@@ -77,7 +76,7 @@ func (srv *Service) attachNodeHttp(config *commonIface.GenericConfig) (err error
 	return
 }
 
-func (srv *Service) attachNodePubSub(config *commonIface.GenericConfig) (err error) {
+func (srv *Service) attachNodePubSub(config *config.Protocol) (err error) {
 	ops := []pubSub.Option{}
 
 	if config.DevMode {
@@ -92,7 +91,7 @@ func (srv *Service) attachNodePubSub(config *commonIface.GenericConfig) (err err
 	return
 }
 
-func (srv *Service) attachNodeIpfs(config *commonIface.GenericConfig) (err error) {
+func (srv *Service) attachNodeIpfs(config *config.Protocol) (err error) {
 	ipfsPort, ok := config.Ports["ipfs"]
 	if !ok {
 		err = fmt.Errorf("did not find ipfs port in config")
@@ -104,7 +103,7 @@ func (srv *Service) attachNodeIpfs(config *commonIface.GenericConfig) (err error
 	return
 }
 
-func (srv *Service) attachNodeDatabase(config *commonIface.GenericConfig) (err error) {
+func (srv *Service) attachNodeDatabase(config *config.Protocol) (err error) {
 	ops := []database.Option{}
 
 	if config.DevMode {
@@ -115,7 +114,7 @@ func (srv *Service) attachNodeDatabase(config *commonIface.GenericConfig) (err e
 	return
 }
 
-func (srv *Service) attachNodeStorage(config *commonIface.GenericConfig) (err error) {
+func (srv *Service) attachNodeStorage(config *config.Protocol) (err error) {
 	ops := []storage.Option{}
 
 	if config.DevMode {
@@ -126,7 +125,7 @@ func (srv *Service) attachNodeStorage(config *commonIface.GenericConfig) (err er
 	return
 }
 
-func (srv *Service) attachNodeP2P(config *commonIface.GenericConfig) (err error) {
+func (srv *Service) attachNodeP2P(config *config.Protocol) (err error) {
 	ops := []p2p.Option{}
 
 	if config.DevMode {
@@ -141,12 +140,12 @@ func (srv *Service) attachNodeP2P(config *commonIface.GenericConfig) (err error)
 	return
 }
 
-func (srv *Service) attachNodeCounters(config *commonIface.GenericConfig) (err error) {
+func (srv *Service) attachNodeCounters(config *config.Protocol) (err error) {
 	srv.nodeCounters, err = counters.New(srv)
 	return
 }
 
-func (srv *Service) attachNodeSmartOps(config *commonIface.GenericConfig) (err error) {
+func (srv *Service) attachNodeSmartOps(config *config.Protocol) (err error) {
 	ops := []smartOps.Option{}
 
 	if config.DevMode {

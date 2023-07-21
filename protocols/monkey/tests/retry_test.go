@@ -14,6 +14,7 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
+	"github.com/taubyte/odo/protocols/patrick/service"
 	"github.com/taubyte/p2p/peer"
 
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
@@ -21,7 +22,6 @@ import (
 	_ "github.com/taubyte/odo/protocols/auth/service"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
-	patrickService "github.com/taubyte/odo/protocols/patrick/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 
@@ -29,8 +29,8 @@ func TestRunWasmRetry(t *testing.T) {
 	t.Skip("Review later,  is there a valid reason to retry as now code clones config")
 
 	// Reduce times from minutes to seconds for testing
-	patrickService.DefaultReAnnounceFailedJobsTime = 10 * time.Second
-	patrickService.DefaultReAnnounceJobTime = 10 * time.Second
+	service.DefaultReAnnounceFailedJobsTime = 10 * time.Second
+	service.DefaultReAnnounceJobTime = 10 * time.Second
 
 	u := dreamland.Multiverse("test-run-wasm-retry")
 	defer u.Stop()

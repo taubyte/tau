@@ -11,9 +11,9 @@ import (
 	"github.com/taubyte/p2p/peer"
 	streams "github.com/taubyte/p2p/streams/service"
 
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	tnsClient "github.com/taubyte/go-interfaces/services/tns"
 	http "github.com/taubyte/http"
+	"github.com/taubyte/odo/config"
 )
 
 type Data map[string]interface{}
@@ -57,8 +57,8 @@ type Service struct {
 
 	generatedDomain string
 	caaRecordBypass *regexp.Regexp // TOOD: move this into go-specs
-
-	odo bool
+	shape           string
+	odo             bool
 }
 
 func (s *Service) Node() peer.Node {
@@ -74,5 +74,5 @@ func (s *Service) Resolver() iface.Resolver {
 }
 
 type Config struct {
-	commonIface.GenericConfig `yaml:"z,omitempty"`
+	config.Protocol `yaml:"z,omitempty"`
 }

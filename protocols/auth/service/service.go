@@ -5,18 +5,16 @@ import (
 	"errors"
 	"fmt"
 
-	kv "github.com/taubyte/odo/pkgs/kvdb/database"
-	// configutils "github.com/taubyte/p2p/config"
-	streams "github.com/taubyte/p2p/streams/service"
-
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
+	odoConfig "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
+	kv "github.com/taubyte/odo/pkgs/kvdb/database"
+	streams "github.com/taubyte/p2p/streams/service"
 
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
@@ -24,20 +22,17 @@ var (
 	logger, _ = moody.New("auth.service")
 )
 
-func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, error) {
+func New(ctx context.Context, config *odoConfig.Protocol) (*AuthService, error) {
 	var srv AuthService
 	srv.ctx = ctx
 
 	if config == nil {
-		_cnf := &commonIface.GenericConfig{}
-		_cnf.Bootstrap = true
-
-		config = _cnf
+		config = &odoConfig.Protocol{}
 	}
 
 	srv.webHookUrl = fmt.Sprintf(`https://patrick.tau.%s`, config.NetworkUrl)
 
-	err := config.Build(commonIface.ConfigBuilder{
+	err := config.Build(odoConfig.ConfigBuilder{
 		DefaultP2PListenPort: protocolCommon.AuthDefaultP2PListenPort,
 		DevHttpListenPort:    protocolCommon.AuthDevHttpListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
@@ -52,20 +47,20 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*AuthService, 
 	}
 
 	if config.Node == nil {
-		// srv.node, err = configutils.NewNode(ctx, config, protocolCommon.Auth)
-		// if err != nil {
-		// 	return nil, err
-		// }
+		srv.node, err = odoConfig.NewNode(ctx, config, protocolCommon.Auth)
+		if err != nil {
+			return nil, err
+		}
 	} else {
-		if len(config.DVPrivateKey) == 0 || len(config.DVPublicKey) == 0 {
+		if len(config.DomainValidation.PrivateKey) == 0 || len(config.DomainValidation.PublicKey) == 0 {
 			return nil, errors.New("private and public key cannot be empty")
 		}
 
 		srv.node = config.Node
 	}
 
-	srv.dvPrivateKey = config.DVPrivateKey
-	srv.dvPublicKey = config.DVPublicKey
+	srv.dvPrivateKey = config.DomainValidation.PrivateKey
+	srv.dvPublicKey = config.DomainValidation.PublicKey
 
 	// For Odo
 	clientNode := srv.node
@@ -137,10 +132,5 @@ func (srv *AuthService) Close() error {
 	// ctx, needs to close after node as node will try to close it's store
 	srv.db.Close()
 
-	// ctx
-	srv.node.Close()
-
-	// ctx
-	srv.http.Stop()
 	return nil
 }

@@ -15,17 +15,15 @@ import (
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-interfaces/vm"
 
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	http "github.com/taubyte/http"
+	"github.com/taubyte/odo/config"
 	"github.com/taubyte/p2p/peer"
 )
 
 var _ iface.Service = &Service{}
 
-var _ commonIface.Config = &Config{}
-
 type Config struct {
-	commonIface.GenericConfig `yaml:"z,omitempty"`
+	config.Protocol `yaml:"z,omitempty"`
 }
 
 type Service struct {

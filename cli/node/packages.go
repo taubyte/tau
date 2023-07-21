@@ -9,10 +9,10 @@ import (
 	seerService "github.com/taubyte/odo/protocols/seer/service"
 	tnsService "github.com/taubyte/odo/protocols/tns/service"
 
-	commonIface "github.com/taubyte/go-interfaces/services/common"
+	"github.com/taubyte/odo/config"
 )
 
-var available = map[string]commonIface.Package{
+var available = map[string]config.Package{
 	"auth":    authService.Package(),
 	"hoarder": hoarderService.Package(),
 	"monkey":  monkeyService.Package(),

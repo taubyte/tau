@@ -8,8 +8,9 @@ package service
 // 	"testing"
 // 	"time"
 
-// 	commonIface "github.com/taubyte/go-interfaces/services/common"
+// 	"github.com/taubyte/odo/config"
 // 	"github.com/taubyte/odo/protocols/tns/flat"
+// 	p2p "github.com/taubyte/p2p/peer"
 // )
 
 // func TestPush(t *testing.T) {
@@ -30,12 +31,11 @@ package service
 // 	}
 // 	defer os.RemoveAll(srvRoot)
 
-// 	srv, err := New(testCtx, &commonIface.GenericConfig{
+// 	srv, err := New(testCtx, &config.Protocol{
 // 		Root:      srvRoot,
 // 		P2PListen: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11001)},
-// 		Bootstrap: false,
 // 		DevMode:   true,
-// 		// SwarmKey:  p2p.DefaultSwarmKey(),
+// 		SwarmKey:  p2p.DefaultSwarmKey(),
 // 	})
 
 // 	if err != nil {

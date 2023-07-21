@@ -9,10 +9,10 @@ import (
 	ifaceTns "github.com/taubyte/go-interfaces/services/tns"
 	auth "github.com/taubyte/odo/clients/p2p/auth"
 	monkey "github.com/taubyte/odo/clients/p2p/monkey"
+	"github.com/taubyte/odo/config"
 
 	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/go-interfaces/kvdb"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 )
 
 var _ iface.Service = &PatrickService{}
@@ -39,7 +39,7 @@ func (s *PatrickService) Node() peer.Node {
 }
 
 type Config struct {
-	commonIface.GenericConfig `yaml:"z,omitempty"`
+	config.Protocol `yaml:"z,omitempty"`
 }
 
 // TODO: optimize cbor storage

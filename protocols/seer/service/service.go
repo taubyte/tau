@@ -7,23 +7,21 @@ import (
 	"regexp"
 	"time"
 
+	_ "embed"
+
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	commonSpec "github.com/taubyte/go-specs/common"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
+	"github.com/taubyte/odo/config"
+	odoConfig "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
-
-	// configutils "github.com/taubyte/p2p/config"
-	streams "github.com/taubyte/p2p/streams/service"
-
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
-
-	_ "embed"
+	streams "github.com/taubyte/p2p/streams/service"
 
 	_ "modernc.org/sqlite"
 )
@@ -32,17 +30,16 @@ var (
 	logger, _ = moody.New("seer.service")
 )
 
-func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options) (*Service, error) {
-	srv := &Service{}
-
-	if config == nil {
-		_cnf := &commonIface.GenericConfig{}
-		_cnf.Bootstrap = true
-
-		config = _cnf
+func New(ctx context.Context, config *config.Protocol, opts ...Options) (*Service, error) {
+	srv := &Service{
+		shape: config.Shape,
 	}
 
-	err := config.Build(commonIface.ConfigBuilder{
+	if config == nil {
+		config = &odoConfig.Protocol{}
+	}
+
+	err := config.Build(odoConfig.ConfigBuilder{
 		DefaultP2PListenPort: protocolsCommon.SeerDefaultP2PListenPort,
 		DevHttpListenPort:    protocolsCommon.SeerDevHttpListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
@@ -54,7 +51,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 	logger.Info(moodyCommon.Object{"message": fmt.Sprintf("Config: %#v", config)})
 
 	srv.dnsResolver = net.DefaultResolver
-	srv.generatedDomain = config.Domains.Generated
+	srv.generatedDomain = config.GeneratedDomain
 	srv.caaRecordBypass = regexp.MustCompile(fmt.Sprintf("tau.%s", config.NetworkUrl))
 
 	for _, op := range opts {
@@ -65,10 +62,10 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 	}
 
 	if config.Node == nil {
-		// srv.node, err = configutils.NewLiteNode(ctx, config, protocolsCommon.Seer)
-		// if err != nil {
-		// 	return nil, fmt.Errorf("new lite node failed with: %s", err)
-		// }
+		srv.node, err = odoConfig.NewLiteNode(ctx, config, protocolsCommon.Seer)
+		if err != nil {
+			return nil, fmt.Errorf("new lite node failed with: %s", err)
+		}
 	} else {
 		srv.node = config.Node
 		srv.odo = true
@@ -86,7 +83,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 	}
 
 	// Setup/Start DNS service
-	err = srv.newDnsServer(config.DevMode, config.DnsPort)
+	err = srv.newDnsServer(config.DevMode, 53)
 	if err != nil {
 		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("creating Dns server failed with: %s", err)})
 		return nil, fmt.Errorf("new dns server failed with: %s", err)
@@ -133,7 +130,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig, opts ...Options
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
 
-	err = config.StartSeerBeacon(sc, seerIface.ServiceTypeSeer, commonIface.SeerBeaconOptionMeta(map[string]string{"others": "dns"}))
+	err = config.StartSeerBeacon(sc, seerIface.ServiceTypeSeer, odoConfig.SeerBeaconOptionMeta(map[string]string{"others": "dns"}))
 	if err != nil {
 		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
@@ -169,14 +166,6 @@ func (srv *Service) Close() error {
 	srv.tns.Close()
 
 	srv.db.Close()
-
-	// ctx
-	if !srv.odo {
-		srv.node.Close()
-		srv.http.Stop()
-	}
-
-	// ctx, needs to close after node as node will try to close it's store
 
 	// ctx
 	srv.dns.Stop()

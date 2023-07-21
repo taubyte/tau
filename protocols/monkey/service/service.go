@@ -6,10 +6,10 @@ import (
 	"regexp"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	ci "github.com/taubyte/go-simple-container/gc"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
+	"github.com/taubyte/odo/config"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -17,8 +17,9 @@ import (
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
+	odoConfig "github.com/taubyte/odo/config"
+
 	protocolCommon "github.com/taubyte/odo/protocols/common"
-	// configutils "github.com/taubyte/p2p/config"
 	streams "github.com/taubyte/p2p/streams/service"
 )
 
@@ -42,15 +43,12 @@ func (srv *Service) subscribe() error {
 	)
 }
 
-func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, error) {
+func New(ctx context.Context, config *config.Protocol) (*Service, error) {
 	if config == nil {
-		_cnf := &commonIface.GenericConfig{}
-		_cnf.Bootstrap = true
-
-		config = _cnf
+		config = &odoConfig.Protocol{}
 	}
 
-	err := config.Build(commonIface.ConfigBuilder{
+	err := config.Build(odoConfig.ConfigBuilder{
 		DefaultP2PListenPort: protocolCommon.MonkeyDefaultP2PListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
 	})
@@ -64,7 +62,7 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	if !config.DevMode {
-		domainSpecs.SpecialDomain = regexp.MustCompile(config.Domains.Generated)
+		domainSpecs.SpecialDomain = regexp.MustCompile(config.GeneratedDomain)
 	}
 
 	err = ci.Start(ctx, ci.Interval(ci.DefaultInterval), ci.MaxAge(ci.DefaultMaxAge))
@@ -73,13 +71,13 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	}
 
 	if config.Node == nil {
-		// srv.node, err = configutils.NewLiteNode(ctx, config, protocolCommon.Monkey)
-		// if err != nil {
-		// 	return nil, err
-		// }
+		srv.node, err = odoConfig.NewLiteNode(ctx, config, protocolCommon.Monkey)
+		if err != nil {
+			return nil, err
+		}
 	} else {
 		srv.node = config.Node
-		srv.dvPublicKey = config.DVPublicKey
+		srv.dvPublicKey = config.DomainValidation.PublicKey
 	}
 
 	// For Odo
@@ -139,7 +137,5 @@ func (srv *Service) Close() error {
 	srv.tnsClient.Close()
 	srv.patrickClient.Close()
 
-	// ctx
-	srv.node.Close()
 	return nil
 }

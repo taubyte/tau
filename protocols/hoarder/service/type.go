@@ -6,9 +6,9 @@ import (
 	"sync"
 
 	"github.com/ipfs/go-datastore"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	ifaceTns "github.com/taubyte/go-interfaces/services/tns"
+	"github.com/taubyte/odo/config"
 	"github.com/taubyte/p2p/peer"
 	streams "github.com/taubyte/p2p/streams/service"
 )
@@ -36,7 +36,7 @@ func (s *Service) Datastore() datastore.Batching {
 }
 
 type Config struct {
-	commonIface.GenericConfig `yaml:"z,omitempty"`
+	config.Protocol `yaml:"z,omitempty"`
 }
 
 func (c *Config) String() string {

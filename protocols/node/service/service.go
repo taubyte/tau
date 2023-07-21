@@ -10,13 +10,11 @@ import (
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	nodeP2PIFace "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	smartopsPlugins "github.com/taubyte/vm-core-plugins/smartops"
-	tbPlugins "github.com/taubyte/vm-core-plugins/taubyte"
+	odoConfig "github.com/taubyte/odo/config"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
 	protocolCommon "github.com/taubyte/odo/protocols/common"
@@ -26,20 +24,17 @@ var (
 	logger, _ = moody.New("node.service")
 )
 
-func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, error) {
+func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 	srv := &Service{
 		ctx:      ctx,
 		orbitals: make([]vm.Plugin, 0),
 	}
 
 	if config == nil {
-		_cnf := &commonIface.GenericConfig{}
-		_cnf.Bootstrap = true
-
-		config = _cnf
+		config = &odoConfig.Protocol{}
 	}
 
-	err := config.Build(commonIface.ConfigBuilder{
+	err := config.Build(odoConfig.ConfigBuilder{
 		DefaultP2PListenPort: protocolCommon.NodeDefaultP2PListenPort,
 		DevHttpListenPort:    protocolCommon.NodeDevHttpListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
@@ -51,10 +46,10 @@ func New(ctx context.Context, config *commonIface.GenericConfig) (*Service, erro
 	srv.dev = config.DevMode
 
 	if config.Node == nil {
-		// srv.node, err = configutils.NewLiteNode(ctx, config, protocolCommon.Node)
-		// if err != nil {
-		// 	return nil, fmt.Errorf("creating new lite node failed with: %w", err)
-		// }
+		srv.node, err = odoConfig.NewLiteNode(ctx, config, protocolCommon.Node)
+		if err != nil {
+			return nil, fmt.Errorf("creating new lite node failed with: %w", err)
+		}
 	} else {
 		srv.node = config.Node
 	}
@@ -175,13 +170,8 @@ func (srv *Service) Close() error {
 	srv.nodeSmartOps.Close()
 
 	// ctx
-	srv.node.Close()
-
-	// ctx
 	srv.vm.Close()
 
-	// ctx
-	srv.http.Stop()
 	return nil
 }
 
