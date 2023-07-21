@@ -7,7 +7,6 @@ import (
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	"github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
-	"github.com/taubyte/odo/config"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 	streams "github.com/taubyte/p2p/streams/service"
 
@@ -22,7 +21,7 @@ var (
 	logger, _ = moody.New("tns.service")
 )
 
-func New(ctx context.Context, config *config.Protocol) (*Service, error) {
+func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 	srv := &Service{}
 
 	if config == nil {

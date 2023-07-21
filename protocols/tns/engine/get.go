@@ -43,7 +43,7 @@ func (e *Engine) Get(ctx context.Context, path ...string) (*flat.Object, error) 
 		var decoded interface{}
 		err = decode(data, &decoded)
 		if err != nil {
-			return nil, fmt.Errorf("Decode failed: %v", err)
+			return nil, fmt.Errorf("decode failed: %v", err)
 		}
 		if decoded != nil {
 			object.Data = append(object.Data, flat.Item{

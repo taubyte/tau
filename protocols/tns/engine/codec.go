@@ -22,7 +22,7 @@ func getCodec(data []byte) (multicodec.Code, int, error) {
 			return kc, shift, nil
 		}
 	}
-	return 0, -1, fmt.Errorf("Unknown codec %x", code)
+	return 0, -1, fmt.Errorf("unknown codec %x", code)
 }
 
 func encode(data interface{}) ([]byte, error) {

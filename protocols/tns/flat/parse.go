@@ -20,7 +20,7 @@ func parseInterface(path []string, data interface{}) (Items, error) {
 
 func parseMap(path []string, dvalue reflect.Value) (Items, error) {
 	if dvalue.Kind() != reflect.Map {
-		return nil, fmt.Errorf("Failed parsing a map of type %s", dvalue.Type().String())
+		return nil, fmt.Errorf("failed parsing a map of type %s", dvalue.Type().String())
 	}
 
 	_items := make(Items, 0)
@@ -29,7 +29,7 @@ func parseMap(path []string, dvalue reflect.Value) (Items, error) {
 			kval = kval.Elem()
 		}
 		if kval.Kind() != reflect.String {
-			return nil, fmt.Errorf("Failed parsing a map: keys of type %s", kval.Type().String())
+			return nil, fmt.Errorf("failed parsing a map: keys of type %s", kval.Type().String())
 		}
 		subval := dvalue.MapIndex(kval)
 		_path := make([]string, len(path))
@@ -46,7 +46,7 @@ func parseMap(path []string, dvalue reflect.Value) (Items, error) {
 
 func parseValue(path []string, dvalue reflect.Value) (Items, error) {
 	var data interface{}
-	if dvalue.IsValid() == true {
+	if dvalue.IsValid() {
 		data = dvalue.Interface()
 	}
 	return Items{
