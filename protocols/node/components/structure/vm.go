@@ -34,39 +34,39 @@ type testRuntime struct {
 	vm.Runtime
 }
 
-func (testReturn) Error() error {
+func (*testReturn) Error() error {
 	return nil
 }
 
-func (testFunctionStruct) Call(ctx context.Context, args ...interface{}) vm.Return {
+func (*testFunctionStruct) Call(ctx context.Context, args ...interface{}) vm.Return {
 	return &testReturn{}
 }
 
-func (testModule) Function(name string) (vm.FunctionInstance, error) {
+func (*testModule) Function(name string) (vm.FunctionInstance, error) {
 	return &testFunctionStruct{}, nil
 }
 
-func (TestVm) New(context vm.Context, config vm.Config) (vm.Instance, error) {
-	return testInstance{}, nil
+func (*TestVm) New(context vm.Context, config vm.Config) (vm.Instance, error) {
+	return &testInstance{}, nil
 }
 
-func (testInstance) Close() error {
+func (*testInstance) Close() error {
 	return nil
 }
 
-func (testInstance) Call(vm.Runtime, interface{}) error {
+func (*testInstance) Call(vm.Runtime, interface{}) error {
 	return nil
 }
 
-func (testInstance) Runtime(*vm.HostModuleDefinitions) (vm.Runtime, error) {
+func (*testInstance) Runtime(*vm.HostModuleDefinitions) (vm.Runtime, error) {
 	return &testRuntime{}, nil
 }
 
-func (testRuntime) Close() error {
+func (*testRuntime) Close() error {
 	return nil
 }
 
-func (testRuntime) Module(name string) (vm.ModuleInstance, error) {
+func (*testRuntime) Module(name string) (vm.ModuleInstance, error) {
 	v, ok := AttachedTestFunctions[name]
 	if !ok {
 		AttachedTestFunctions[name] = 1
@@ -76,6 +76,6 @@ func (testRuntime) Module(name string) (vm.ModuleInstance, error) {
 	return &testModule{}, nil
 }
 
-func (testRuntime) Attach(plugin vm.Plugin) (vm.PluginInstance, vm.ModuleInstance, error) {
+func (*testRuntime) Attach(plugin vm.Plugin) (vm.PluginInstance, vm.ModuleInstance, error) {
 	return &testPluginInstance{}, nil, nil
 }

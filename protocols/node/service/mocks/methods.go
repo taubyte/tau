@@ -70,3 +70,7 @@ func (m *mockedSubstrate) Context() context.Context {
 func (m *mockedSubstrate) Dev() bool {
 	return true
 }
+
+func (m *mockedSubstrate) Verbose() bool {
+	return true
+}

@@ -4,7 +4,6 @@ import (
 	"context"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/services/substrate"
 	iface "github.com/taubyte/go-interfaces/services/substrate"
 	databaseIface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	httpIface "github.com/taubyte/go-interfaces/services/substrate/components/http"
@@ -37,9 +36,10 @@ type Service struct {
 	nodeDatabase databaseIface.Service
 	nodeStorage  storageIface.Service
 	nodeP2P      p2pIface.Service
-	nodeCounters substrate.CounterService
-	nodeSmartOps substrate.SmartOpsService
+	nodeCounters iface.CounterService
+	nodeSmartOps iface.SmartOpsService
 	dev          bool
+	verbose      bool
 
 	tns tns.Client
 
@@ -68,11 +68,11 @@ func (s *Service) Logger() moodyCommon.Logger {
 	return logger
 }
 
-func (s *Service) Counter() substrate.CounterService {
+func (s *Service) Counter() iface.CounterService {
 	return s.nodeCounters
 }
 
-func (s *Service) SmartOps() substrate.SmartOpsService {
+func (s *Service) SmartOps() iface.SmartOpsService {
 	return s.nodeSmartOps
 }
 

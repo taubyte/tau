@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/ipfs/go-cid"
-	"github.com/taubyte/go-interfaces/services/substrate/components"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
@@ -111,6 +110,6 @@ func (f *Function) Config() *structureSpec.Function {
 	return &f.config
 }
 
-func (f *Function) Service() components.ServiceComponent {
+func (f *Function) Service() commonIface.ServiceComponent {
 	return f.srv
 }

@@ -46,6 +46,7 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 	}
 	srv.branch = config.Branch
 	srv.dev = config.DevMode
+	srv.verbose = config.Verbose
 
 	if config.Node == nil {
 		srv.node, err = odoConfig.NewLiteNode(ctx, config, protocolCommon.Node)

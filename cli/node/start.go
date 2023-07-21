@@ -9,15 +9,15 @@ import (
 	"syscall"
 
 	moody "bitbucket.org/taubyte/go-moody-blues/common"
+	"github.com/taubyte/go-interfaces/services"
 	commonSpecs "github.com/taubyte/go-specs/common"
 	httpService "github.com/taubyte/http"
 	"github.com/taubyte/odo/config"
-	protocol "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	slices "github.com/taubyte/utils/slices/string"
 )
 
-func Start(ctx context.Context, config *config.Protocol) error {
+func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 	moody.LogLevel(moody.DebugLevelFatal)
 
 	ctx, ctx_cancel := context.WithCancel(ctx)
@@ -30,41 +30,41 @@ func Start(ctx context.Context, config *config.Protocol) error {
 		ctx_cancel()
 	}()
 
-	databasePath := protocol.DatabasePath + config.Shape
+	databasePath := config.DatabasePath + protocolConfig.Shape
 
-	if config.DevMode {
+	if protocolConfig.DevMode {
 		dir, err := os.Getwd()
 		if err != nil {
 			return err
 		}
-		config.Root = dir
-		databasePath = config.Shape
+		protocolConfig.Root = dir
+		databasePath = protocolConfig.Shape
 	}
-	config.Verbose = true
+	protocolConfig.Verbose = true
 
-	err := createP2PNodes(ctx, databasePath, config.Shape, config)
+	err := createP2PNodes(ctx, databasePath, protocolConfig.Shape, protocolConfig)
 	if err != nil {
 		return err
 	}
 
 	// Create httpNode if needed
 	var httpNode httpService.Service
-	for _, srv := range config.Protocols {
+	for _, srv := range protocolConfig.Protocols {
 		if slices.Contains(commonSpecs.HttpProtocols, srv) {
-			httpNode, err = auto.Configure(config).AutoHttp(config.Node)
+			httpNode, err = auto.Configure(protocolConfig).AutoHttp(protocolConfig.Node)
 			if err != nil {
 				return fmt.Errorf("new autoHttp failed with: %s", err)
 			}
 
-			config.Http = httpNode
+			protocolConfig.Http = httpNode
 			break
 		}
 	}
 
 	// Attach any p2p/http endpoints
 	var includesNode bool
-	services := make([]ifaceCommon.Service, 0)
-	for _, srv := range config.Protocols {
+	services := make([]services.Service, 0)
+	for _, srv := range protocolConfig.Protocols {
 		if srv == "node" {
 			includesNode = true
 			continue
@@ -75,7 +75,7 @@ func Start(ctx context.Context, config *config.Protocol) error {
 			return fmt.Errorf("services `%s` does not exist ", srv)
 		}
 
-		_srv, err := srvPkg.New(ctx, config)
+		_srv, err := srvPkg.New(ctx, protocolConfig)
 		if err != nil {
 			return fmt.Errorf("new for service `%s` failed with: %s", srv, err)
 		}
@@ -90,7 +90,7 @@ func Start(ctx context.Context, config *config.Protocol) error {
 			return errors.New("node was not found in available packages")
 		}
 
-		_srv, err := srvPkg.New(ctx, config)
+		_srv, err := srvPkg.New(ctx, protocolConfig)
 		if err != nil {
 			return fmt.Errorf("new for node failed with: %s", err)
 		}
@@ -103,7 +103,7 @@ func Start(ctx context.Context, config *config.Protocol) error {
 	}
 
 	// TODO: Use logger
-	fmt.Printf("%s started! with id: %s\n", config.Shape, config.Node.ID())
+	fmt.Printf("%s started! with id: %s\n", protocolConfig.Shape, protocolConfig.Node.ID())
 
 	// https://github.com/ipfs/go-ipfs/blob/8f623c9124d6c0b1d511a072a4d13633884c7b40/core/builder.go
 
@@ -112,16 +112,16 @@ func Start(ctx context.Context, config *config.Protocol) error {
 		srv.Close()
 	}
 
-	if config.ClientNode != nil {
-		config.ClientNode.Close()
+	if protocolConfig.ClientNode != nil {
+		protocolConfig.ClientNode.Close()
 	}
 
-	if config.Node != nil {
-		config.Node.Close()
+	if protocolConfig.Node != nil {
+		protocolConfig.Node.Close()
 	}
 
-	if config.Http != nil {
-		config.Http.Stop()
+	if protocolConfig.Http != nil {
+		protocolConfig.Http.Stop()
 	}
 
 	return nil

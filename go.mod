@@ -11,6 +11,7 @@ replace (
 	github.com/taubyte/p2p => /home/tafkhan/Documents/Work/Taubyte/new/p2p
 	github.com/taubyte/vm => /home/tafkhan/Documents/Work/Taubyte/Repos/vm
 	github.com/taubyte/vm-core-plugins => /home/tafkhan/Documents/Work/Taubyte/Repos/vm-core-plugins
+	github.com/tetratelabs/wazero => /home/tafkhan/Documents/Work/Taubyte/test/wazero
 )
 
 require (

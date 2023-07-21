@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"strings"
 	"time"
 
@@ -270,7 +270,7 @@ func (srv *PatrickService) downloadAsset(ctx http.Context) (interface{}, error) 
 		return nil, fmt.Errorf("rewinding asset file %s failed with %s", assetCid, err)
 	}
 
-	fileData, err := ioutil.ReadAll(file)
+	fileData, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading asset file %s with %v", assetCid, err)
 	}

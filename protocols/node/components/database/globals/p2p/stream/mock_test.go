@@ -30,6 +30,10 @@ func (s *mockService) SmartOps() substrate.SmartOpsService {
 	return nil
 }
 
+func (s *mockService) Verbose() bool {
+	return false
+}
+
 func (s *mockService) Branch() string {
 	return "master"
 }

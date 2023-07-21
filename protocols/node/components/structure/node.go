@@ -36,8 +36,8 @@ func MockNodeService(node peer.Node, ctx context.Context) substrate.Service {
 	ctx = node.Context()
 	s := &NodeService{
 		node:         node,
-		tns:          TestClient{},
-		vm:           TestVm{},
+		tns:          &TestClient{},
+		vm:           &TestVm{},
 		nodeSmartOps: &TestSmartOps{},
 		nodeCounters: &TestCounters{},
 		logger:       logger,
@@ -88,14 +88,14 @@ func (s *NodeService) Context() context.Context {
 	return s.ctx
 }
 
-// func (s *NodeService) P2P() p2p.Service {
-// 	return s.nodeP2P
-// }
-
 func (s *NodeService) Counter() substrate.CounterService {
 	return s.nodeCounters
 }
 
 func (s *NodeService) Dev() bool {
 	return true
+}
+
+func (s *NodeService) Verbose() bool {
+	return false
 }

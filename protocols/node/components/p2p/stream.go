@@ -11,7 +11,6 @@ import (
 	"github.com/taubyte/odo/vm/lookup"
 	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/p2p/streams"
-	ifaceStreams "github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	ce "github.com/taubyte/p2p/streams/command/error"
 	"github.com/taubyte/p2p/streams/command/response"
@@ -44,7 +43,7 @@ func (srv *Service) StartStream(name, protocol string, handler iface.StreamHandl
 		return nil, errors.New("not able to create command router")
 	}
 
-	cs.stream.Start(func(s ifaceStreams.Stream) {
+	cs.stream.Start(func(s streams.Stream) {
 		defer s.Close()
 
 		c, err := command.Decode(s.Conn(), s)

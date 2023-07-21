@@ -4,13 +4,12 @@ import (
 	"context"
 
 	"github.com/taubyte/go-interfaces/services/substrate"
-	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 )
 
 var _ substrate.SmartOpsService = &Service{}
 
 type Service struct {
-	nodeIface.Service
+	substrate.Service
 	dev     bool
 	verbose bool
 
