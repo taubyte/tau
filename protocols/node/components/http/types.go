@@ -10,8 +10,6 @@ var _ iface.Service = &Service{}
 
 type Service struct {
 	nodeIface.Service
-	dev         bool
-	verbose     bool
 	cache       *cache.Cache
 	dvPublicKey []byte
 }

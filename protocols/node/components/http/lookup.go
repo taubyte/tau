@@ -56,13 +56,13 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 		}
 
 		var publicKey []byte
-		if s.dev {
+		if s.Dev() {
 			publicKey = domainValPublicKeyData
 		} else {
 			publicKey = s.dvPublicKey
 		}
 
-		if err = domainSpec.ValidateDNS(project.String(), matcher.Host, s.dev, dv.PublicKey(publicKey)); err != nil {
+		if err = domainSpec.ValidateDNS(project.String(), matcher.Host, s.Dev(), dv.PublicKey(publicKey)); err != nil {
 			return nil, fmt.Errorf("validating dns failed for match definition `%v` failed with: %s", *matcher, err)
 		}
 

@@ -9,7 +9,6 @@ import (
 func New(srv nodeIface.Service, options ...Option) (*Service, error) {
 	s := &Service{
 		Service: srv,
-		dev:     false,
 		cache:   cache.New(),
 	}
 
