@@ -3,7 +3,7 @@ package tests
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"testing"
 	"time"
 
@@ -18,7 +18,6 @@ import (
 	"github.com/taubyte/p2p/peer"
 
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
-	_ "github.com/taubyte/odo/clients/p2p/tns"
 	_ "github.com/taubyte/odo/protocols/auth/service"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 	_ "github.com/taubyte/odo/protocols/hoarder/service"
@@ -126,7 +125,7 @@ func checkAsset(ctx context.Context, resId, commit string, node peer.Node, tnsCl
 		return err
 	}
 
-	fileBytes, err := ioutil.ReadAll(f)
+	fileBytes, err := io.ReadAll(f)
 	if err != nil {
 		return err
 	}
