@@ -108,7 +108,6 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*AuthService, error) 
 	} else {
 		srv.http = config.Http
 	}
-
 	srv.setupHTTPRoutes()
 
 	if config.Http == nil {

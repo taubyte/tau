@@ -50,96 +50,6 @@ func generateKey() (string, string, string, error) {
 	return deployKeyName, string(ssh.MarshalAuthorizedKey(pub)), private.String(), nil
 }
 
-func (srv *AuthService) newGitHubRepository(ctx context.Context, client *github.Client, project_id string, name string, description string, private bool) (string, string, error) {
-	err := client.CreateRepository(&name, &description, &private)
-	if err != nil || client.Cur() == nil {
-		return "", "", err
-	}
-
-	repo_full_name := *(client.Cur().FullName)
-	repo_url := *(client.Cur().SSHURL)
-	_repo_id := *(client.Cur().ID)
-
-	repo_id := fmt.Sprintf("%d", _repo_id)
-
-	/*repo_key := "/repositories/github/" + repo_id
-	err = srv.db.Put(repo_key+"/name", []byte(repo_full_name))
-	err = srv.db.Put(repo_key+"/project", []byte(project_id))*/
-
-	/*err = srv.db.Put(
-		fmt.Sprintf("/user/github/%s/repositories/%s", user_login, repo_id),
-		[]byte(repo_full_name),
-	)*/
-
-	hook_id := idutils.Generate(project_id, repo_full_name) //   cu.NewUUID()
-	/*if err != nil {
-		return repo_id, "", err
-	}*/
-
-	var defaultHookName string = "taubyte_push_hook"
-	var defaultGithubHookUrl string
-	if srv.devMode {
-		defaultGithubHookUrl = "https://hooks.git.taubyte.com/github/" + hook_id
-	} else {
-		defaultGithubHookUrl = srv.webHookUrl + "/github/" + hook_id
-	}
-
-	hook_githubid, secret, err := client.CreatePushHook(&defaultHookName, &defaultGithubHookUrl, srv.devMode)
-	if err != nil {
-		return repo_id, "", err
-	}
-
-	kname, kpub, kpriv, err := generateKey()
-	if err != nil {
-		return repo_id, "", err
-	}
-
-	err = client.CreateDeployKey(&kname, &kpub)
-	if err != nil {
-		return repo_id, "", err
-	}
-
-	repo, err := repositories.New(srv.KV(), repositories.Data{
-		"id":       _repo_id,
-		"provider": "github",
-		"name":     repo_full_name,
-		"url":      repo_url,
-		"project":  project_id,
-		"key":      kpriv,
-	})
-	if err != nil {
-		return repo_id, "", err
-	}
-
-	err = repo.Register(ctx)
-	if err != nil {
-		return repo_id, "", err
-	}
-
-	hook, err := hooks.New(srv.KV(), hooks.Data{
-		"id":         hook_id,
-		"provider":   "github",
-		"github_id":  hook_githubid,
-		"repository": _repo_id,
-		"secret":     secret,
-	})
-	if err != nil {
-		return repo_id, "", err
-	}
-
-	err = hook.Register(ctx)
-	if err != nil {
-		return repo_id, "", err
-	}
-
-	/*err = srv.db.Put("/hooks/"+hook_uuid+"/id", []byte(fmt.Sprint(hook_id)))
-	err = srv.db.Put("/hooks/"+hook_uuid+"/secret", []byte(secret))
-	err = srv.db.Put("/hooks/"+hook_uuid+"/provider", []byte("github"))
-	err = srv.db.Put("/hooks/"+hook_uuid+"/repository", []byte(repo_id))*/
-
-	return repo_id, kpriv, nil
-}
-
 func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *github.Client, repoID string) (map[string]interface{}, error) {
 	//response := make(map[string]interface{})
 
@@ -154,7 +64,7 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *gi
 
 	_, err = srv.db.Get(ctx, repoKey)
 	if err == nil {
-		return nil, fmt.Errorf("repository `%s` already registred!", repoID)
+		return nil, fmt.Errorf("repository `%s` already registered", repoID)
 	}
 
 	// select repo
@@ -340,53 +250,6 @@ func (srv *AuthService) newGitHubProject(ctx context.Context, client *github.Cli
 	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Project Add returned %v", response)})
 
 	return response, nil
-}
-
-func (srv *AuthService) newGitHubItemRepo(ctx context.Context, client *github.Client, repotype string, projectid string, name string, private bool) (map[string]interface{}, map[string]string, error) {
-	response := make(map[string]interface{})
-	lib := make(map[string]string)
-
-	logger.Debug(moodyCommon.Object{"message": "Creating " + repotype + " " + name})
-
-	id := idutils.Generate(projectid, "repository") //cu.NewUUID()
-	/*if err != nil {
-		response["error"] = repotype + " creation error: " + err.Error()
-		return response, lib, nil
-	}*/
-
-	logger.Debug(moodyCommon.Object{"message": repotype + " ID=" + id})
-
-	rid, _, err := srv.newGitHubRepository(ctx,
-		client,
-		projectid,
-		"tb_"+repotype+"_"+name,
-		"Repository for "+name+" "+repotype+".",
-		private,
-	)
-	if err != nil {
-		response["error"] = "Creation of configuration repository error: " + err.Error()
-		return response, lib, nil
-	}
-
-	project_key := "/projects/" + projectid
-	if err = srv.db.Put(ctx, project_key+"/"+repotype+"/"+id, []byte(rid)); err != nil {
-		return response, lib, err
-	}
-
-	response[repotype] = map[string]interface{}{
-		"id":   id,
-		"name": name,
-		"repository": map[string]string{
-			"id":       rid,
-			"name":     client.Cur().GetName(),
-			"fullname": client.Cur().GetFullName(),
-			"url":      client.Cur().GetURL(),
-		},
-	}
-
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("New %s, %s", repotype, response)})
-
-	return response, nil, nil
 }
 
 func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client *github.Client) (map[string]interface{}, error) {

@@ -23,44 +23,6 @@ func getGithubClientFromContext(ctx http.Context) (*github.Client, error) {
 	return v.(*github.Client), nil
 }
 
-func (srv *AuthService) newGitHubLibraryRepoHTTPHandler(ctx http.Context) (interface{}, error) {
-	client, err := getGithubClientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	ctxVars := ctx.Variables()
-	switch ctxVars["id"].(type) {
-	case string:
-		switch ctxVars["name"].(type) {
-		case string:
-			response, _, err := srv.newGitHubItemRepo(ctx.Request().Context(), client, "library", ctxVars["id"].(string), ctxVars["name"].(string), true)
-			return response, err
-		default:
-			return nil, errors.New("invalid value for library name")
-		}
-	}
-	return nil, errors.New("invalid value for project id")
-}
-
-func (srv *AuthService) newGitHubWebsiteRepoHTTPHandler(ctx http.Context) (interface{}, error) {
-	client, err := getGithubClientFromContext(ctx)
-	if err != nil {
-		return nil, err
-	}
-	ctxVars := ctx.Variables()
-	switch ctxVars["id"].(type) {
-	case string:
-		switch ctxVars["name"].(type) {
-		case string:
-			response, _, err := srv.newGitHubItemRepo(ctx.Request().Context(), client, "website", ctxVars["id"].(string), ctxVars["name"].(string), true)
-			return response, err
-		default:
-			return nil, errors.New("invalid value for website name")
-		}
-	}
-	return nil, errors.New("invalid value for project id")
-}
-
 func extractProjectVariables(ctx http.Context) (configID, codeID, projectName string, err error) {
 	ctxVars := ctx.Variables()
 	config_repo, err := maps.InterfaceToStringKeys(ctxVars["config"])
@@ -140,14 +102,11 @@ func (srv *AuthService) registerGitHubUserRepositoryHTTPHandler(ctx http.Context
 	if provider != "github" {
 		return nil, fmt.Errorf("provider `%s` is not supported", provider)
 	}
-
 	repoId, err := maps.String(ctxVars, "id")
 	if err != nil {
 		return nil, fmt.Errorf("parsing github repository ID failed with %w", err)
 	}
-
 	response, err := srv.registerGitHubRepository(ctx.Request().Context(), client, repoId)
-
 	return response, err
 }
 
@@ -379,11 +338,6 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		Handler: srv.getGitHubProjectInfoHTTPHandler,
 	})
 
-	////srv.http.POST("/projects/{id}/libraries/new/{name}", []string{"id", "name"}, []string{"projects/libraries/new"}, srv.GitHubTokenHTTPAuth, srv.newGitHubLibraryRepoHTTPHandler, srv.GitHubTokenHTTPAuthCleanup)
-	////srv.http.POST("/projects/{id}/websites/new/{name}", []string{"id", "name"}, []string{"projects/website/new"}, srv.GitHubTokenHTTPAuth, srv.newGitHubWebsiteRepoHTTPHandler, srv.GitHubTokenHTTPAuthCleanup)
-	//srv.http.POST("/p7rojects/{id}/websites/new/{name}", srv.GitHubTokenAuth(srv.newGitHubWebsiteRepoHandler))
-
-	//srv.http.DELETE("/projects/{id}", []string{"id"}, []string{"projects/write"}, srv.GitHubTokenHTTPAuth, srv.deleteGitHubProjectHandler, srv.GitHubTokenHTTPAuthCleanup)
 	srv.http.DELETE(&http.RouteDefinition{
 		Host: host,
 		Path: "/projects/{id}",
@@ -398,8 +352,6 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		Handler: srv.deleteGitHubProjectHandler,
 	})
 
-	// TODO: srv.router.GET("/projects/{pid}/libraries/{id}", srv.GitHubTokenAuth(srv.getGitHubLibraryRepoHandler))
-	//srv.http.GET("/me", nil, []string{"user/self"}, srv.GitHubTokenHTTPAuth, srv.getGitHubUserHTTPHandler, srv.GitHubTokenHTTPAuthCleanup)
 	srv.http.GET(&http.RouteDefinition{
 		Host:  host,
 		Path:  "/me",
@@ -410,7 +362,5 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		},
 		Handler: srv.getGitHubUserHTTPHandler,
 	})
-
-	//srv.http.GET("/me", srv.GitHubTokenAuth(srv.getGitHubUserHandler)) ->> was already commented before refactor
 
 }
