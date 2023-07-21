@@ -2,7 +2,7 @@ package compile_test
 
 import (
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/taubyte/dreamland/core/common"
@@ -24,11 +24,13 @@ func callHal(u common.Universe, path string) ([]byte, error) {
 	}
 
 	host := fmt.Sprintf("hal.computers.com:%d", nodePort)
+
 	ret, err := http.DefaultClient.Get(fmt.Sprintf("http://%s%s", host, path))
 	if err != nil {
 		return nil, err
 	}
+
 	defer ret.Body.Close()
 
-	return ioutil.ReadAll(ret.Body)
+	return io.ReadAll(ret.Body)
 }
