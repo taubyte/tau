@@ -11,7 +11,7 @@ import (
 func (kv *kv) Get(ctx context.Context, key string) (data []byte, err error) {
 	data, err = kv.database.Get(ctx, key)
 	if err != nil {
-		return nil, fmt.Errorf("Failed getting key %s using database %s with error: %v", key, kv.name, err)
+		return nil, fmt.Errorf("failed getting key %s using database %s with error: %v", key, kv.name, err)
 	}
 
 	return
@@ -26,14 +26,14 @@ func (kv *kv) Put(ctx context.Context, key string, v []byte) error {
 	// Register actual data into the database
 	err = kv.database.Put(ctx, key, v)
 	if err != nil {
-		return fmt.Errorf("Failed putting %s in database %s with error: %v", key, kv.name, err)
+		return fmt.Errorf("failed putting %s in database %s with error: %v", key, kv.name, err)
 	}
 
 	// Register size of input
 	sizeString := strconv.Itoa(len(v))
 	err = kv.database.Put(ctx, path.Join("size", key), []byte(sizeString))
 	if err != nil {
-		return fmt.Errorf("Failed putting size for key %s in database with error: %v", key, err)
+		return fmt.Errorf("failed putting size for key %s in database with error: %v", key, err)
 	}
 
 	return nil
@@ -43,13 +43,13 @@ func (kv *kv) Delete(ctx context.Context, key string) error {
 	// Delete key
 	err := kv.database.Delete(ctx, key)
 	if err != nil {
-		return fmt.Errorf("Failed deleting key %s with error: %v", key, err)
+		return fmt.Errorf("failed deleting key %s with error: %v", key, err)
 	}
 
 	// Delete size of key
 	err = kv.database.Delete(ctx, path.Join("size", key))
 	if err != nil {
-		return fmt.Errorf("Failed deleting key %s with error: %v", key, err)
+		return fmt.Errorf("failed deleting key %s with error: %v", key, err)
 	}
 
 	return nil
