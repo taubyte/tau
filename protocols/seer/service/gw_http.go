@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"time"
 
 	"github.com/h2non/filetype"
@@ -111,7 +111,7 @@ func (srv *Service) downloadAsset(ctx http.Context) (interface{}, error) {
 	//rewind f
 	file.Seek(0, 0)
 
-	fileData, err := ioutil.ReadAll(file)
+	fileData, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading asset file %s with %v", assetCID, err)
 	}

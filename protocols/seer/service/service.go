@@ -16,7 +16,6 @@ import (
 	commonSpec "github.com/taubyte/go-specs/common"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/config"
 	odoConfig "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
@@ -30,13 +29,13 @@ var (
 	logger, _ = moody.New("seer.service")
 )
 
-func New(ctx context.Context, config *config.Protocol, opts ...Options) (*Service, error) {
-	srv := &Service{
-		shape: config.Shape,
-	}
-
+func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Service, error) {
 	if config == nil {
 		config = &odoConfig.Protocol{}
+	}
+
+	srv := &Service{
+		shape: config.Shape,
 	}
 
 	err := config.Build(odoConfig.ConfigBuilder{
@@ -83,7 +82,7 @@ func New(ctx context.Context, config *config.Protocol, opts ...Options) (*Servic
 	}
 
 	// Setup/Start DNS service
-	err = srv.newDnsServer(config.DevMode, 53)
+	err = srv.newDnsServer(config.DevMode, config.Ports["dns"])
 	if err != nil {
 		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("creating Dns server failed with: %s", err)})
 		return nil, fmt.Errorf("new dns server failed with: %s", err)

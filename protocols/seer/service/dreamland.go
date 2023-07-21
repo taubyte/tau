@@ -22,6 +22,8 @@ func createService(ctx context.Context, config *iface.ServiceConfig) (iface.Serv
 	serviceConfig.P2PListen = []string{fmt.Sprintf(dreamlandCommon.DefaultP2PListenFormat, config.Port)}
 	serviceConfig.P2PAnnounce = []string{fmt.Sprintf(dreamlandCommon.DefaultP2PListenFormat, config.Port)}
 	serviceConfig.DevMode = true
+	serviceConfig.Ports = make(map[string]int)
+	serviceConfig.Ports["dns"] = config.Others["dns"]
 
 	serviceConfig.SwarmKey = config.SwarmKey
 
