@@ -19,7 +19,7 @@ func (c *Structure[T]) getById(branch, commit, projectId, appId, resourceId stri
 
 	err = resourcesInterface.Bind(&resource)
 	if resource == nil {
-		err = fmt.Errorf("Resource (%T) with ID %s not found", resource, resourceId)
+		err = fmt.Errorf("resource (%T) with ID %s not found", resource, resourceId)
 	} else {
 		resource.SetId(resourceId)
 	}

@@ -14,7 +14,7 @@ import (
 var (
 	DefaultUsageBeaconInterval    = 30 * time.Second
 	DefaultAnnounceBeaconInterval = 10 * time.Minute
-	DefaultUsageBeaconStopedError = errors.New("Usage Stopped")
+	ErrorUsageBeaconStopped       = errors.New("usage Stopped")
 )
 
 type Usage Client
@@ -124,7 +124,7 @@ func (u *UsageBeacon) Start() {
 				u.status = err
 			case <-u.ctx.Done():
 				u.cleanStatus()
-				u.status = DefaultUsageBeaconStopedError
+				u.status = ErrorUsageBeaconStopped
 				return
 			}
 		}

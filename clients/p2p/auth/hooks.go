@@ -71,7 +71,7 @@ func (h *Hooks) List() ([]string, error) {
 	}
 	ids, err := maps.StringArray(response, "hooks")
 	if err != nil {
-		return nil, fmt.Errorf("Failed map string array on list error: %v", err)
+		return nil, fmt.Errorf("failed map string array on list error: %v", err)
 	}
 	return ids, nil
 }
