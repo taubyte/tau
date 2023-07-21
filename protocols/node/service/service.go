@@ -18,6 +18,8 @@ import (
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
 	protocolCommon "github.com/taubyte/odo/protocols/common"
+	smartopsPlugins "github.com/taubyte/vm-core-plugins/smartops"
+	tbPlugins "github.com/taubyte/vm-core-plugins/taubyte"
 )
 
 var (

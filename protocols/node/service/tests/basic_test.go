@@ -3,7 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"os"
 	"path"
@@ -170,5 +170,5 @@ func callHal(u dreamlandCommon.Universe, path string) ([]byte, error) {
 	}
 	defer ret.Body.Close()
 
-	return ioutil.ReadAll(ret.Body)
+	return io.ReadAll(ret.Body)
 }
