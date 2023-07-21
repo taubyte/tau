@@ -9,7 +9,6 @@ import (
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	ci "github.com/taubyte/go-simple-container/gc"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/config"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -43,7 +42,7 @@ func (srv *Service) subscribe() error {
 	)
 }
 
-func New(ctx context.Context, config *config.Protocol) (*Service, error) {
+func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 	if config == nil {
 		config = &odoConfig.Protocol{}
 	}
