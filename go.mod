@@ -2,8 +2,6 @@ module github.com/taubyte/odo
 
 go 1.19
 
-replace github.com/taubyte/go-interfaces => /home/tafkhan/Documents/Work/Taubyte/Repos/go-interfaces
-
 require (
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
@@ -38,7 +36,7 @@ require (
 	github.com/taubyte/config-compiler v0.4.3
 	github.com/taubyte/domain-validation v1.0.0
 	github.com/taubyte/dreamland v0.4.2
-	github.com/taubyte/go-interfaces v0.2.6
+	github.com/taubyte/go-interfaces v0.2.7
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.8
 	github.com/taubyte/go-sdk-smartops v0.1.3
