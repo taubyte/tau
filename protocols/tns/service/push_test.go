@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	p2p "bitbucket.org/taubyte/p2p/peer"
 	"github.com/taubyte/odo/config"
+	"github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/flat"
 )
 
@@ -35,7 +35,7 @@ func TestPush(t *testing.T) {
 		Root:      srvRoot,
 		P2PListen: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11001)},
 		DevMode:   true,
-		SwarmKey:  p2p.DefaultSwarmKey(),
+		SwarmKey:  common.SwarmKey(),
 	})
 
 	if err != nil {

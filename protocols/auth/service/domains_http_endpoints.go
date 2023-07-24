@@ -7,7 +7,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	dv "github.com/taubyte/domain-validation"
-	http "github.com/taubyte/go-interfaces/services/http"
+	http "github.com/taubyte/http"
 )
 
 func (srv *AuthService) tokenDomainHTTPHandler(ctx http.Context) (interface{}, error) {
@@ -36,6 +36,8 @@ func (srv *AuthService) tokenDomainHTTPHandler(ctx http.Context) (interface{}, e
 	if err != nil {
 		return nil, fmt.Errorf("new domain validation failed with: %s", err)
 	}
+
+	fmt.Printf("CLAIMS::::: %#v", claim)
 
 	token, err := claim.Sign()
 	if err != nil {

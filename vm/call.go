@@ -56,11 +56,12 @@ func (f *FunctionInstance) Call(runtime vm.Runtime, id interface{}) error {
 		return fmt.Errorf("calling function `%s` for function `%s` failed with: %s", f.config.Call, f.config.Name, err.Error())
 	}
 
-	ctx, ctxC := context.WithTimeout(f.parent.srv.Context(), time.Duration(f.config.Timeout))
+	ctx, ctxC := context.WithTimeout(f.parent.srv.Context(), time.Duration(time.Nanosecond*time.Duration(f.config.Timeout)))
+
 	defer ctxC()
 
 	ret := fx.Call(ctx, id)
-	if f.parent.Verbose() {
+	if f.parent.srv.Verbose() {
 		defer func() {
 			fmt.Println("\n\nERROR: ")
 			io.Copy(os.Stdout, runtime.Stderr())

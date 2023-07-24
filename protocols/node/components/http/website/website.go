@@ -12,11 +12,11 @@ import (
 
 	"github.com/ipfs/go-cid"
 	"github.com/spf13/afero/zipfs"
-	http "github.com/taubyte/go-interfaces/services/http"
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	"github.com/taubyte/go-specs/methods"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	http "github.com/taubyte/http"
 	"github.com/taubyte/odo/protocols/node/components/http/common"
 	"go4.org/readerutil"
 )
@@ -139,7 +139,7 @@ func pathContains(path, requestPath string) matcherSpec.Index {
 	return score
 }
 
-func (w *Website) Service() commonIface.Service {
+func (w *Website) Service() commonIface.ServiceComponent {
 	return w.srv
 }
 

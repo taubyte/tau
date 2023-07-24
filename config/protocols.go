@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	"github.com/taubyte/go-interfaces/p2p/keypair"
-	"github.com/taubyte/go-interfaces/p2p/peer"
-	"github.com/taubyte/go-interfaces/services/http"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	spec "github.com/taubyte/go-specs/common"
+	http "github.com/taubyte/http"
+	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/utils/env"
 )
 

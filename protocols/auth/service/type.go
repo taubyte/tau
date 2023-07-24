@@ -3,14 +3,14 @@ package service
 import (
 	"context"
 
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	kv "github.com/taubyte/go-interfaces/kvdb"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
+	"github.com/taubyte/odo/config"
+	"github.com/taubyte/p2p/peer"
+	streams "github.com/taubyte/p2p/streams/service"
 
-	"github.com/taubyte/go-interfaces/services/http"
+	http "github.com/taubyte/http"
 
 	iface "github.com/taubyte/go-interfaces/services/auth"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	"github.com/taubyte/go-interfaces/services/tns"
 )
 
@@ -43,5 +43,5 @@ func (s *AuthService) KV() kv.KVDB {
 }
 
 type Config struct {
-	commonIface.GenericConfig `yaml:"z,omitempty"`
+	config.Protocol `yaml:"z,omitempty"`
 }

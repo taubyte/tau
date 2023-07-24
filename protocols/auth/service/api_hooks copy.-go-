@@ -8,8 +8,8 @@ import (
 	"github.com/taubyte/odo/protocols/auth/service/hooks"
 	"github.com/taubyte/odo/protocols/auth/service/projects"
 	"github.com/taubyte/odo/protocols/auth/service/repositories"
-	cmd "bitbucket.org/taubyte/p2p/streams/command"
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
+	cmd "github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 

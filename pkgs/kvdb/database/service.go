@@ -6,7 +6,7 @@ import (
 	"time"
 
 	crdt "github.com/ipfs/go-ds-crdt"
-	p2p "github.com/taubyte/go-interfaces/p2p/peer"
+	"github.com/taubyte/p2p/peer"
 
 	logging "github.com/ipfs/go-log/v2"
 
@@ -42,7 +42,7 @@ func getDB(path string) *KVDatabase {
 	return dbs[path]
 }
 
-func New(logger logging.StandardLogger, node p2p.Node, path string, rebroadcastIntervalSec int) (s *KVDatabase, err error) {
+func New(logger logging.StandardLogger, node peer.Node, path string, rebroadcastIntervalSec int) (s *KVDatabase, err error) {
 	cachedDB := getDB(path)
 	if cachedDB != nil {
 		return cachedDB, nil

@@ -3,13 +3,13 @@ package function
 import (
 	"context"
 
-	smartOps "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/messaging"
-	"github.com/taubyte/vm-plugins/taubyte/event"
+	"github.com/taubyte/vm-core-plugins/taubyte/event"
 )
 
-var _ smartOps.SmartOpEventCaller = &Function{}
+var _ substrate.SmartOpEventCaller = &Function{}
 
 func (f *Function) Type() uint32 {
 	return uint32(sdkSmartOpsCommon.ResourceTypeFunctionPubSub)

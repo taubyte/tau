@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/auth"
+	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -55,7 +55,7 @@ func (h *Hooks) Get(hook_id string) (iface.Hook, error) {
 	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting hook `%s`", hook_id)})
 	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting hook `%s` done", hook_id)})
 
-	response, err := h.client.Send("hooks", streams.Body{"action": "get", "id": hook_id})
+	response, err := h.client.Send("hooks", command.Body{"action": "get", "id": hook_id})
 	if err != nil {
 		logger.Error(moodyCommon.Object{"message": err.Error()})
 		return nil, err
@@ -65,13 +65,13 @@ func (h *Hooks) Get(hook_id string) (iface.Hook, error) {
 }
 
 func (h *Hooks) List() ([]string, error) {
-	response, err := h.client.Send("hooks", streams.Body{"action": "list"})
+	response, err := h.client.Send("hooks", command.Body{"action": "list"})
 	if err != nil {
 		return nil, err
 	}
 	ids, err := maps.StringArray(response, "hooks")
 	if err != nil {
-		return nil, fmt.Errorf("Failed map string array on list error: %v", err)
+		return nil, fmt.Errorf("failed map string array on list error: %v", err)
 	}
 	return ids, nil
 }

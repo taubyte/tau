@@ -3,12 +3,12 @@ package p2p
 import (
 	"fmt"
 
-	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 
 func (c *Client) List() ([]string, error) {
-	resp, err := c.client.Send("hoarder", streams.Body{"action": "list"})
+	resp, err := c.client.Send("hoarder", command.Body{"action": "list"})
 	if err != nil {
 		logger.Errorf(fmt.Sprintf("Failed listing cids with error: %v", err))
 		return nil, fmt.Errorf("failed calling send with error: %w", err)

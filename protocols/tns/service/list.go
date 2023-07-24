@@ -5,14 +5,15 @@ import (
 	"fmt"
 	"strings"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	moody "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/tns"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
-func (srv *Service) listHandler(ctx context.Context, conn streams.Connection, body streams.Body) (cr.Response, error) {
+func (srv *Service) listHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	keys := make([]string, 0)
 	unique := make(map[string]bool)
 	depth, err := maps.Int(body, "depth")

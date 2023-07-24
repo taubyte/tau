@@ -17,10 +17,10 @@ func (f *Object) toInterface() interface{} {
 		cur := object
 		for idx, sub := range item.Path {
 			next, ok := cur[sub]
-			if ok == true {
-				cur, ok = next.(map[string]interface{})
-				if ok == false {
-					continue
+			if ok {
+				switch v := next.(type) {
+				case map[string]interface{}:
+					cur = v
 				}
 			} else {
 				if idx == len(item.Path)-1 {

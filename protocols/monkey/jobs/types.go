@@ -6,11 +6,11 @@ import (
 	"os"
 
 	compilerCommon "github.com/taubyte/config-compiler/common"
-	"github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/go-interfaces/services/tns"
 	ci "github.com/taubyte/go-simple-container"
+	"github.com/taubyte/p2p/peer"
 )
 
 type Context struct {

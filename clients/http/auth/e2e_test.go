@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"net/http"
+	"os"
 	"testing"
 
 	"gotest.tools/v3/assert"
@@ -13,6 +14,16 @@ var (
 	testProvider = "github"
 	testToken    = testGitToken()
 )
+
+func testGitToken() string {
+	token := os.Getenv("TEST_GIT_TOKEN")
+
+	if token == "" {
+		panic("TEST_GIT_TOKEN not set")
+	}
+
+	return token
+}
 
 func newTestClient() (*Client, error) {
 	ctx := context.Background()

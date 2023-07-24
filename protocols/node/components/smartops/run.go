@@ -3,11 +3,11 @@ package smartOps
 import (
 	"fmt"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/odo/protocols/node/components/smartops/instance"
 )
 
-func (s *Service) Run(caller iface.SmartOpEventCaller, smartOpIds []string) (uint32, error) {
+func (s *Service) Run(caller substrate.SmartOpEventCaller, smartOpIds []string) (uint32, error) {
 	if len(smartOpIds) < 1 {
 		return 0, nil
 	}

@@ -3,7 +3,6 @@ package compile
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
@@ -46,7 +45,7 @@ func (ctx resourceContext) library(config *structureSpec.Library) (err error) {
 }
 
 func (l libraryContext) directory() error {
-	root, err := ioutil.TempDir(os.TempDir(), fmt.Sprintf("%s-*", l.ctx.resourceId))
+	root, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("%s-*", l.ctx.resourceId))
 	if err != nil {
 		return err
 	}
@@ -66,7 +65,7 @@ func (l libraryContext) directory() error {
 		}
 
 		if fileStat.IsDir() {
-			files, err := ioutil.ReadDir(filePath)
+			files, err := os.ReadDir(filePath)
 			if err != nil {
 				return err
 			}

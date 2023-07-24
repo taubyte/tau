@@ -3,9 +3,9 @@ package client
 import (
 	"context"
 
-	streamClient "bitbucket.org/taubyte/p2p/streams/client"
-	"github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/odo/protocols/node/components/database/globals/p2p/common"
+	"github.com/taubyte/p2p/peer"
+	streamClient "github.com/taubyte/p2p/streams/client"
 )
 
 var (

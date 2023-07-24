@@ -4,12 +4,12 @@ import (
 	"fmt"
 
 	"github.com/mitchellh/mapstructure"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	"github.com/taubyte/go-interfaces/services/monkey"
+	"github.com/taubyte/p2p/streams/command"
 )
 
 func (c *Client) Status(jid string) (*monkey.StatusResponse, error) {
-	resp, err := c.client.Send("job", streams.Body{"jid": jid, "action": "status"})
+	resp, err := c.client.Send("job", command.Body{"jid": jid, "action": "status"})
 	if err != nil {
 		return nil, fmt.Errorf("failed calling job with error: %w", err)
 	}

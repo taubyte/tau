@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"math"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
-	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
-func (s *StreamHandler) getHandler(ctx context.Context, conn streams.Connection, body streams.Body) (cr.Response, error) {
+func (s *StreamHandler) getHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	projectID, err := maps.String(body, "projectID")
 	if err != nil {
 		return nil, err

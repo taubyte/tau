@@ -3,7 +3,7 @@ package messaging
 import (
 	"context"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/pubsub"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
 )
 

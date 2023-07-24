@@ -12,9 +12,9 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	moody "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
+	http "github.com/taubyte/http"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/utils/id"
 	"gopkg.in/go-playground/webhooks.v5/github"

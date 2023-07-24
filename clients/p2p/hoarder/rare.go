@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 
 func (c *Client) Rare() ([]string, error) {
 	// looks for items that only have one copy in the network
-	resp, err := c.client.Send("hoarder", streams.Body{"action": "rare"})
+	resp, err := c.client.Send("hoarder", command.Body{"action": "rare"})
 	if err != nil {
 		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed getting rare cids with error: %v", err)})
 		return nil, fmt.Errorf("failed calling send with error: %w", err)

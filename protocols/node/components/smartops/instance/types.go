@@ -3,12 +3,12 @@ package instance
 import (
 	"context"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
 	vmCommon "github.com/taubyte/go-interfaces/vm"
 	structureSpec "github.com/taubyte/go-specs/structure"
 )
 
-var _ iface.Instance = &instance{}
+var _ substrate.Instance = &instance{}
 
 type rtResponse struct {
 	runtime       vmCommon.Runtime
@@ -20,9 +20,9 @@ type instance struct {
 	ctx  context.Context
 	ctxC context.CancelFunc
 
-	srv     iface.Service
+	srv     substrate.Service
 	context InstanceContext
-	util    iface.Util
+	util    substrate.Util
 
 	path string
 

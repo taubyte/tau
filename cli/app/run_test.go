@@ -12,10 +12,10 @@ import (
 
 var (
 	shape = "test"
-	ports = []int{8100, 8102, 8104}
 )
 
 // TODO: add hoarder to config when its fixed
+// TODO: Build in tmp
 func TestStart(t *testing.T) {
 	app := App()
 	defer os.RemoveAll(shape + odo.ClientPrefix)

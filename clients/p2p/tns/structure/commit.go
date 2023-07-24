@@ -14,7 +14,7 @@ func (c *Structure[T]) Commit(projectId, branch string) (string, error) {
 
 	iface := commitObj.Interface()
 	commit, ok := iface.(string)
-	if ok == false {
+	if !ok {
 		return "", fmt.Errorf("Commit not found for %s/%s: %v", branch, projectId, iface)
 	}
 

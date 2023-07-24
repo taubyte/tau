@@ -8,11 +8,11 @@ import (
 	"time"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	"bitbucket.org/taubyte/p2p/keypair"
-	"bitbucket.org/taubyte/p2p/peer"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/flat"
+	"github.com/taubyte/p2p/keypair"
+	"github.com/taubyte/p2p/peer"
 )
 
 func TestEncode(t *testing.T) {
@@ -32,7 +32,7 @@ func TestEncode(t *testing.T) {
 		testCtx,
 		nil,
 		keypair.NewRaw(),
-		peer.DefaultSwarmKey(),
+		protocolsCommon.SwarmKey(),
 		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11002)},
 		nil,
 		true,

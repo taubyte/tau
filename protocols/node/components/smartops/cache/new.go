@@ -3,9 +3,11 @@ package cache
 import (
 	"context"
 	"time"
+
+	"github.com/taubyte/go-interfaces/services/substrate"
 )
 
-func New(ctx context.Context) *cache {
+func New(ctx context.Context) substrate.SmartOpsCache {
 	c := &cache{
 		items: make(map[string]*cacheItem),
 	}

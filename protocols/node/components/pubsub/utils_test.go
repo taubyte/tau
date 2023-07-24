@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	p2p "bitbucket.org/taubyte/p2p/peer"
-	"bitbucket.org/taubyte/vm-test-examples/structure"
 	"github.com/taubyte/go-interfaces/services/tns"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/websocket"
+	"github.com/taubyte/odo/protocols/node/components/structure"
 	"github.com/taubyte/odo/vm/cache"
+	"github.com/taubyte/p2p/peer"
 )
 
 func init() {
@@ -52,7 +52,7 @@ func fakeFetch(messagings map[string]structureSpec.Messaging, functions map[stri
 	}
 }
 
-func NewTestService(node *p2p.Node) *Service {
+func NewTestService(node *peer.Node) *Service {
 	ctx := context.Background()
 
 	s := &Service{

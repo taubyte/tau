@@ -3,7 +3,7 @@ package website
 import (
 	"context"
 
-	smartOps "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	smartOps "github.com/taubyte/go-interfaces/services/substrate"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 )
 

@@ -6,9 +6,8 @@ import (
 	"path"
 	"time"
 
-	oldp2p "bitbucket.org/taubyte/p2p/peer"
-	"github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/odo/utils"
+	"github.com/taubyte/p2p/peer"
 )
 
 var WaitForSwamDuration = 10 * time.Second
@@ -24,7 +23,7 @@ func NewNode(ctx context.Context, config *Protocol, databaseName string) (peer.N
 		return nil, fmt.Errorf("getting bootstrap perms in NewNode failed with: %s", err)
 	}
 
-	peerNode, err := oldp2p.NewPublic(
+	peerNode, err := peer.NewPublic(
 		ctx,
 		path.Join(config.Root, databaseName),
 		config.PrivateKey,
@@ -51,7 +50,7 @@ func NewLiteNode(ctx context.Context, config *Protocol, databaseName string) (pe
 		return nil, fmt.Errorf("getting bootstrap perms in NewLiteNode failed with: %s", err)
 	}
 
-	node, err := oldp2p.NewLitePublic(
+	node, err := peer.NewLitePublic(
 		ctx,
 		path.Join(config.Root, databaseName),
 		config.PrivateKey,

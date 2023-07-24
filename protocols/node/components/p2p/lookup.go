@@ -3,8 +3,8 @@ package p2p
 import (
 	"fmt"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	"github.com/taubyte/odo/protocols/node/components/p2p/common"
 	"github.com/taubyte/odo/protocols/node/components/p2p/function"

@@ -12,9 +12,10 @@ import (
 	"github.com/taubyte/odo/protocols/auth/service/hooks"
 	"github.com/taubyte/odo/protocols/auth/service/repositories"
 	_ "github.com/taubyte/odo/protocols/tns/service"
+	"gotest.tools/v3/assert"
 
-	//cmd "bitbucket.org/taubyte/p2p/streams/command"
-	//cr "bitbucket.org/taubyte/p2p/streams/command/response"
+	//cmd "github.com/taubyte/p2p/streams/command"
+	//cr "github.com/taubyte/p2p/streams/command/response"
 
 	idutils "github.com/taubyte/utils/id"
 )
@@ -60,6 +61,7 @@ func TestClient(t *testing.T) {
 	}
 
 	hkNil, err := simple.Auth().Hooks().Get("")
+	assert.Assert(t, err != nil)
 	if hkNil != nil {
 		t.Error("Returned Hook for empty id: ", hkNil)
 	}

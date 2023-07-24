@@ -1,7 +1,7 @@
 package database
 
 import (
-	iface "github.com/taubyte/go-interfaces/services/substrate/database"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	globals "github.com/taubyte/odo/protocols/node/components/database/globals"
 	mh "github.com/taubyte/utils/multihash"
 )

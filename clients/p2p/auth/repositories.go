@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/auth"
+	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -71,7 +71,7 @@ func (r *GithubRepositories) Get(id int) (iface.GithubRepository, error) {
 	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting Github Repository `%d`", id)})
 	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting Github Repository `%d` done", id)})
 
-	response, err := r.client.Send("repositories", streams.Body{"action": "get", "provider": "github", "id": id})
+	response, err := r.client.Send("repositories", command.Body{"action": "get", "provider": "github", "id": id})
 	if err != nil {
 		return nil, err
 	}
@@ -80,13 +80,13 @@ func (r *GithubRepositories) Get(id int) (iface.GithubRepository, error) {
 }
 
 func (r *GithubRepositories) List() ([]string, error) {
-	response, err := r.client.Send("repositories", streams.Body{"action": "list"})
+	response, err := r.client.Send("repositories", command.Body{"action": "list"})
 	if err != nil {
 		return nil, err
 	}
 	ids, err := maps.StringArray(response, "ids")
 	if err != nil {
-		return nil, fmt.Errorf("Failed map string array on list error: %v", err)
+		return nil, fmt.Errorf("failed map string array on list error: %v", err)
 	}
 	return ids, nil
 }

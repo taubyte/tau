@@ -3,11 +3,11 @@ package cache
 import (
 	"context"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/utils/multihash"
 )
 
-func (c *cache) Get(project, application, smartOpId string, ctx context.Context) (instance iface.Instance, ok bool) {
+func (c *cache) Get(project, application, smartOpId string, ctx context.Context) (instance substrate.Instance, ok bool) {
 	hash := multihash.Hash(project + application + smartOpId)
 
 	c.RLock()

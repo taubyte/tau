@@ -4,13 +4,13 @@ import (
 	"context"
 	"os"
 
-	streams "bitbucket.org/taubyte/p2p/streams/service"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
-	commonIface "github.com/taubyte/go-interfaces/services/common"
 	iface "github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	tnsClient "github.com/taubyte/go-interfaces/services/tns"
 	patrickClient "github.com/taubyte/odo/clients/p2p/patrick"
+	"github.com/taubyte/odo/config"
+	"github.com/taubyte/p2p/peer"
+	streams "github.com/taubyte/p2p/streams/service"
 )
 
 /* This is a variable so that it can be overridden in tests */
@@ -60,4 +60,4 @@ func (s *Service) Dev() bool {
 	return s.dev
 }
 
-type Config commonIface.GenericConfig
+type Config config.Protocol

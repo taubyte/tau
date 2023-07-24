@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"testing"
 
-	keypair "bitbucket.org/taubyte/p2p/keypair"
+	keypair "github.com/taubyte/p2p/keypair"
 
-	peer "bitbucket.org/taubyte/p2p/peer"
+	peer "github.com/taubyte/p2p/peer"
 
 	logging "github.com/ipfs/go-log/v2"
 )

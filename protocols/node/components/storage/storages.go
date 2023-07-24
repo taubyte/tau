@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"regexp"
 
-	storageIface "github.com/taubyte/go-interfaces/services/substrate/storage"
+	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/storage/common"
 )

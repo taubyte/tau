@@ -3,7 +3,6 @@ package compile
 import (
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path"
 	"strings"
@@ -78,7 +77,7 @@ func (f functionContext) zWasmFile() error {
 }
 
 func (f functionContext) codeFile(language wasmSpec.SupportedLanguage) error {
-	root, err := ioutil.TempDir(os.TempDir(), fmt.Sprintf("%s-*", f.ctx.resourceId))
+	root, err := os.MkdirTemp("/tmp", fmt.Sprintf("%s-*", f.ctx.resourceId))
 	if err != nil {
 		return err
 	}
@@ -155,7 +154,7 @@ func (f functionContext) wasmFile() error {
 		}
 	}
 
-	out, err := ioutil.TempFile("", "")
+	out, err := os.CreateTemp("/tmp", "")
 	if err != nil {
 		return fmt.Errorf("open file failed with %w", err)
 	}

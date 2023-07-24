@@ -7,20 +7,16 @@ import (
 
 	"github.com/ipfs/go-cid"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	"github.com/taubyte/go-interfaces/services/substrate/counters"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
-	plugins "github.com/taubyte/vm-plugins/taubyte"
+	plugins "github.com/taubyte/vm-core-plugins/taubyte"
 )
 
 func (f *Function) Commit() string {
 	return f.commit
-}
-
-func (f *Function) Counter() counters.Service {
-	return f.srv.Counter()
 }
 
 func (f *Function) Project() (cid.Cid, error) {
@@ -105,6 +101,6 @@ func (f *Function) MMI() common.MessagingMapItem {
 	return f.mmi
 }
 
-func (f *Function) Service() commonIface.Service {
+func (f *Function) Service() components.ServiceComponent {
 	return f.srv
 }

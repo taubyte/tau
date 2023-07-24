@@ -3,8 +3,7 @@ package websocket
 import (
 	"context"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	"github.com/taubyte/go-interfaces/services/substrate/counters"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
 )
 
@@ -15,7 +14,6 @@ func New(srv common.LocalService, mmi common.MessagingMapItem, matcher *common.M
 		ctxC:    ctxC,
 		srv:     srv,
 		mmi:     mmi,
-		verbose: srv.Verbose(),
 		matcher: matcher,
 	}
 	ws.project = matcher.Project
@@ -34,8 +32,4 @@ func (w *WebSocket) Id() (id string) {
 
 func (w *WebSocket) Ready() error {
 	return nil
-}
-
-func (w *WebSocket) Counter() counters.Service {
-	return w.srv.Counter()
 }

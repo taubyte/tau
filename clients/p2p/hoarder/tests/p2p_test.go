@@ -4,26 +4,26 @@ package tests
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
 
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 
-	keypair "bitbucket.org/taubyte/p2p/keypair"
+	keypair "github.com/taubyte/p2p/keypair"
 
 	hoarder_client "github.com/taubyte/odo/clients/p2p/hoarder"
 	"github.com/taubyte/odo/config"
 
-	peer "bitbucket.org/taubyte/p2p/peer"
+	"github.com/taubyte/odo/protocols/common"
 	service "github.com/taubyte/odo/protocols/hoarder/service"
+	peer "github.com/taubyte/p2p/peer"
 )
 
 func TestClient(t *testing.T) {
 	ctx := context.Background()
 
-	srvRoot, err := ioutil.TempDir("", "clientSrvRoot")
+	srvRoot, err := os.MkdirTemp("/tmp", "clientSrvRoot")
 	if err != nil {
 		t.Error(err)
 		return
@@ -34,7 +34,7 @@ func TestClient(t *testing.T) {
 		Root:        srvRoot,
 		P2PListen:   []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)},
 		P2PAnnounce: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)},
-		SwarmKey:    peer.DefaultSwarmKey(),
+		SwarmKey:    common.SwarmKey(),
 		DevMode:     true,
 	})
 
@@ -48,7 +48,7 @@ func TestClient(t *testing.T) {
 		ctx,
 		nil,
 		keypair.NewRaw(),
-		peer.DefaultSwarmKey(),
+		common.SwarmKey(),
 		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11012)},
 		nil,
 		true,

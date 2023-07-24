@@ -5,11 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	"github.com/taubyte/odo/protocols/auth/service/hooks"
 	"github.com/taubyte/odo/protocols/auth/service/projects"
 	"github.com/taubyte/odo/protocols/auth/service/repositories"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -34,7 +35,7 @@ func (srv *AuthService) listHooks(ctx context.Context) (cr.Response, error) {
 	return cr.Response{"hooks": ids}, nil
 }
 
-func (srv *AuthService) apiHookServiceHandler(ctx context.Context, st streams.Connection, body streams.Body) (cr.Response, error) {
+func (srv *AuthService) apiHookServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
 	// params:
 	//  TODO: add encrption key to service library
 	//  action: get/set
@@ -79,7 +80,7 @@ func (srv *AuthService) listRepo(ctx context.Context) (cr.Response, error) {
 	return cr.Response{"ids": ids}, nil
 }
 
-func (srv *AuthService) apiGitRepositoryServiceHandler(ctx context.Context, st streams.Connection, body streams.Body) (cr.Response, error) {
+func (srv *AuthService) apiGitRepositoryServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
 	// params:
 	//  TODO: add encrption key to service library
 	//  action: get/set
@@ -135,7 +136,7 @@ func (srv *AuthService) listProjects(ctx context.Context) (cr.Response, error) {
 	return cr.Response{"ids": ids}, nil
 }
 
-func (srv *AuthService) apiProjectsServiceHandler(ctx context.Context, st streams.Connection, body streams.Body) (cr.Response, error) {
+func (srv *AuthService) apiProjectsServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
 	// params:
 	//  TODO: add encrption key to service library
 	//  action: get/set

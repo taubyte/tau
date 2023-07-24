@@ -10,20 +10,17 @@ import (
 	_ "embed"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	commonSpec "github.com/taubyte/go-specs/common"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/config"
 	odoConfig "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
-
-	p2pDatastore "bitbucket.org/taubyte/p2p/peer"
+	streams "github.com/taubyte/p2p/streams/service"
 
 	_ "modernc.org/sqlite"
 )
@@ -32,13 +29,13 @@ var (
 	logger, _ = moody.New("seer.service")
 )
 
-func New(ctx context.Context, config *config.Protocol, opts ...Options) (*Service, error) {
-	srv := &Service{
-		shape: config.Shape,
-	}
-
+func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Service, error) {
 	if config == nil {
 		config = &odoConfig.Protocol{}
+	}
+
+	srv := &Service{
+		shape: config.Shape,
 	}
 
 	err := config.Build(odoConfig.ConfigBuilder{
@@ -48,10 +45,6 @@ func New(ctx context.Context, config *config.Protocol, opts ...Options) (*Servic
 	})
 	if err != nil {
 		return nil, fmt.Errorf("building config failed with: %s", err)
-	}
-
-	if !config.DevMode {
-		p2pDatastore.Datastore = "pebble"
 	}
 
 	logger.Info(moodyCommon.Object{"message": fmt.Sprintf("Config: %#v", config)})
@@ -89,7 +82,7 @@ func New(ctx context.Context, config *config.Protocol, opts ...Options) (*Servic
 	}
 
 	// Setup/Start DNS service
-	err = srv.newDnsServer(config.DevMode, 53)
+	err = srv.newDnsServer(config.DevMode, config.Ports["dns"])
 	if err != nil {
 		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("creating Dns server failed with: %s", err)})
 		return nil, fmt.Errorf("new dns server failed with: %s", err)

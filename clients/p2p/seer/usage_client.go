@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/odo/clients/p2p/seer/usage"
+	"github.com/taubyte/p2p/streams/command/response"
 )
 
 var (
 	DefaultUsageBeaconInterval    = 30 * time.Second
 	DefaultAnnounceBeaconInterval = 10 * time.Minute
-	DefaultUsageBeaconStopedError = errors.New("Usage Stopped")
+	ErrorUsageBeaconStopped       = errors.New("usage Stopped")
 )
 
 type Usage Client
@@ -43,7 +43,7 @@ func (u *Usage) AddService(svrType iface.ServiceType, meta map[string]string) {
 	u.services = append(u.services, iface.ServiceInfo{Type: svrType, Meta: meta})
 }
 
-func (u *Usage) updateUsage(hostname, nodeId, clientNodeId string, signature []byte) (streams.Response, error) {
+func (u *Usage) updateUsage(hostname, nodeId, clientNodeId string, signature []byte) (response.Response, error) {
 	usageData, err := usage.GetUsage()
 	if err != nil {
 		return nil, fmt.Errorf("getting usage of hostname `%s` failed with: %s", hostname, err)
@@ -57,7 +57,7 @@ func (u *Usage) updateUsage(hostname, nodeId, clientNodeId string, signature []b
 	return resp, nil
 }
 
-func (u *Usage) updateAnnounce(nodeId, clientNodeId string, signature []byte) (streams.Response, error) {
+func (u *Usage) updateAnnounce(nodeId, clientNodeId string, signature []byte) (response.Response, error) {
 	resp, err := u.Announce(u.services, nodeId, clientNodeId, signature)
 	if err != nil {
 		return nil, err
@@ -124,7 +124,7 @@ func (u *UsageBeacon) Start() {
 				u.status = err
 			case <-u.ctx.Done():
 				u.cleanStatus()
-				u.status = DefaultUsageBeaconStopedError
+				u.status = ErrorUsageBeaconStopped
 				return
 			}
 		}

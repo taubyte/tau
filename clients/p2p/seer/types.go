@@ -1,8 +1,8 @@
 package p2p
 
 import (
-	client "bitbucket.org/taubyte/p2p/streams/client"
 	iface "github.com/taubyte/go-interfaces/services/seer"
+	client "github.com/taubyte/p2p/streams/client"
 )
 
 type Client struct {

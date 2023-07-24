@@ -15,7 +15,7 @@ import (
 	gitTest "github.com/taubyte/dreamland/helpers/git"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
-	db "github.com/taubyte/go-interfaces/services/substrate/database"
+	db "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/odo/clients/p2p/tns"

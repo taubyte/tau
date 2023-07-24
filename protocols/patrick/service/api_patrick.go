@@ -6,17 +6,18 @@ import (
 	"strings"
 	"time"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/fxamacker/cbor/v2"
 	moody "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	commonIface "github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
-func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams.Connection, body streams.Body) (cr.Response, error) {
+func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	// var cid string
 	cidMap := make(map[string]string, 0)
 	assetMap := make(map[string]string, 0)

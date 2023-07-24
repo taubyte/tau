@@ -3,7 +3,7 @@ package pubsub
 import (
 	"context"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/common"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components"
 )
 
 func (s *Service) Close() error {

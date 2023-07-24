@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/go-interfaces/p2p/streams"
-	"github.com/taubyte/go-interfaces/services/substrate/database"
+	"github.com/taubyte/go-interfaces/services/substrate/components/database"
+	"github.com/taubyte/p2p/streams/command"
 	mh "github.com/taubyte/utils/multihash"
 	"golang.org/x/exp/slices"
 )
@@ -30,7 +30,7 @@ func TestListHandler(t *testing.T) {
 		},
 	}
 
-	resp, err := mockHandler.listHandler(context.TODO(), nil, streams.Body{
+	resp, err := mockHandler.listHandler(context.TODO(), nil, command.Body{
 		"projectID": testProjectID,
 		"prefix":    "/key",
 	})

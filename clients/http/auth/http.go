@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 )
 
@@ -26,7 +25,7 @@ func (c *Client) do(path, method string, data interface{}, ret interface{}) erro
 			return fmt.Errorf("%s -- `%s` failed to marshal data with %s", method, path, err)
 		}
 		req.Header.Add("Content-Type", "application/json")
-		req.Body = ioutil.NopCloser(bytes.NewReader(_data))
+		req.Body = io.NopCloser(bytes.NewReader(_data))
 	}
 
 	resp, err := c.client.Do(req)

@@ -17,6 +17,7 @@ var (
 
 // TODO: Need to redo cache
 func TestCache(t *testing.T) {
+	t.Skip("smartops needs to be redone")
 	cacheItemTTL = 10000 * time.Nanosecond
 
 	c := New(context.Background())

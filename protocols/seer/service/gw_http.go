@@ -3,17 +3,17 @@ package service
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"time"
 
 	"github.com/h2non/filetype"
 	"github.com/h2non/filetype/matchers"
 	"github.com/spf13/afero"
 	"github.com/taubyte/config-compiler/decompile"
-	http "github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-project-schema/pretty"
 	projectSchema "github.com/taubyte/go-project-schema/project"
 	commonSpec "github.com/taubyte/go-specs/common"
+	http "github.com/taubyte/http"
 
 	"github.com/taubyte/utils/maps"
 )
@@ -111,7 +111,7 @@ func (srv *Service) downloadAsset(ctx http.Context) (interface{}, error) {
 	//rewind f
 	file.Seek(0, 0)
 
-	fileData, err := ioutil.ReadAll(file)
+	fileData, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading asset file %s with %v", assetCID, err)
 	}

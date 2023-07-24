@@ -13,12 +13,12 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	"github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/go-interfaces/services/tns"
 	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/go-specs/methods"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
+	"github.com/taubyte/p2p/peer"
 )
 
 func newTestContext(ctx context.Context, simple commonDreamland.Simple, logFile *os.File) testContext {

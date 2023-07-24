@@ -41,7 +41,7 @@ func (srv *PatrickService) getProjectIDFromJob(job *patrick.Job) (projectID stri
 
 		respArr, ok := resp.([]string)
 		if !ok || len(respArr) == 0 {
-			err = fmt.Errorf("response from lookup not an array or empty: `%v`", resp)
+			err = fmt.Errorf("response from lookup not an array or is empty: `%v`", resp)
 			return
 		}
 

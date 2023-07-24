@@ -6,13 +6,13 @@ import (
 	"testing"
 
 	moodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
-	"bitbucket.org/taubyte/p2p/streams/client"
-	"bitbucket.org/taubyte/vm-test-examples/structure"
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/p2p/common"
+	"github.com/taubyte/odo/protocols/node/components/structure"
+	"github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/p2p/streams/command"
 )
 
 // TODO: Needed?
@@ -80,7 +80,7 @@ func TestProtocolListen(t *testing.T) {
 		return
 	}
 
-	sendData := streams.Body{
+	sendData := command.Body{
 		"someData":      []byte("Hello, world"),
 		"someotherData": "Hello from the other side",
 	}

@@ -14,7 +14,7 @@ import (
 	pathUtil "github.com/taubyte/utils/path"
 
 	"github.com/alecthomas/units"
-	storageIface "github.com/taubyte/go-interfaces/services/substrate/storage"
+	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	storageSpec "github.com/taubyte/go-specs/storage"
 	readerUtils "go4.org/readerutil"
 )

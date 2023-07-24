@@ -3,11 +3,12 @@ package app
 import (
 	"errors"
 	"fmt"
-	"github.com/libp2p/go-libp2p-core/pnet"
-	domainSpecs "github.com/taubyte/go-specs/domain"
-	"github.com/taubyte/odo/config"
 	"regexp"
 	"strings"
+
+	"github.com/libp2p/go-libp2p/core/pnet"
+	domainSpecs "github.com/taubyte/go-specs/domain"
+	"github.com/taubyte/odo/config"
 )
 
 var (

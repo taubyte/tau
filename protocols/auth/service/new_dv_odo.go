@@ -1,5 +1,3 @@
-//go:build odo
-
 package service
 
 import (

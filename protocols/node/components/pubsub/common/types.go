@@ -4,7 +4,7 @@ import (
 	"context"
 	"strconv"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/pubsub"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 )
 
 type MatchDefinition struct {

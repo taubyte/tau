@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"sync"
 
-	p2p "bitbucket.org/taubyte/p2p/peer"
 	"github.com/gorilla/websocket"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	moody "github.com/taubyte/go-interfaces/moody"
-	service "github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-specs/extract"
 	messagingSpec "github.com/taubyte/go-specs/messaging"
+	service "github.com/taubyte/http"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
+	p2p "github.com/taubyte/p2p/peer"
 )
 
 var subs *subsViewer

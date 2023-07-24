@@ -13,7 +13,7 @@ package test
 // 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 // 	dreamland "github.com/taubyte/dreamland/core/services"
 // 	commonIface "github.com/taubyte/go-interfaces/common"
-// 	counterSpec "github.com/taubyte/go-interfaces/services/substrate/counters"
+// 	counterSpec "github.com/taubyte/go-interfaces/services/substrate/components"
 // 	structureSpec "github.com/taubyte/go-specs/structure"
 // 	"github.com/taubyte/odo/protocols/monkey/fixtures/compile"
 // )

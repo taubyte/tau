@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/common"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/services/tns"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 )

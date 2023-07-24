@@ -3,28 +3,22 @@ package smartOps
 import (
 	"context"
 
-	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
-	"github.com/taubyte/go-interfaces/services/substrate/counters"
-	iface "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
 )
 
-var _ iface.Service = &Service{}
+var _ substrate.SmartOpsService = &Service{}
 
 type Service struct {
-	nodeIface.Service
+	substrate.Service
 	dev     bool
 	verbose bool
 
-	cache iface.Cache
+	cache substrate.SmartOpsCache
 }
 
 func (s *Service) Close() error {
 	s.cache.Close()
 	return nil
-}
-
-func (s *Service) Counter() counters.Service {
-	return s.Service.Counter()
 }
 
 func (s *Service) Context() context.Context {

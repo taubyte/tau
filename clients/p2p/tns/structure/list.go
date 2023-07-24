@@ -63,8 +63,8 @@ func (c AllClient[T]) List() (map[string]T, error) {
 		}
 
 		for k, v := range applicationIdResourceMap {
-			if _, ok := resourceMap[k]; ok == true {
-				return nil, fmt.Errorf("Found matching id in project(%s): %s", c.projectId, k)
+			if _, ok := resourceMap[k]; ok {
+				return nil, fmt.Errorf("found matching id in project(%s): %s", c.projectId, k)
 			}
 			resourceMap[k] = v
 		}

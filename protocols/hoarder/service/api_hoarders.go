@@ -5,16 +5,17 @@ import (
 	"fmt"
 	"strings"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
-func (srv *Service) ServiceHandler(ctx context.Context, conn streams.Connection, body streams.Body) (cr.Response, error) {
+func (srv *Service) ServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err

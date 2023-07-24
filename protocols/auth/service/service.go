@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
@@ -14,6 +13,7 @@ import (
 	odoConfig "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
+	streams "github.com/taubyte/p2p/streams/service"
 
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
@@ -108,7 +108,6 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*AuthService, error) 
 	} else {
 		srv.http = config.Http
 	}
-
 	srv.setupHTTPRoutes()
 
 	if config.Http == nil {

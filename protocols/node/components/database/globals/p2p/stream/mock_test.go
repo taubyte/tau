@@ -7,12 +7,18 @@ import (
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
 	moodyIface "github.com/taubyte/go-interfaces/moody"
-	p2p "github.com/taubyte/go-interfaces/p2p/peer"
-	"github.com/taubyte/go-interfaces/services/substrate/database"
-	smartOps "github.com/taubyte/go-interfaces/services/substrate/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
+	"github.com/taubyte/go-interfaces/services/substrate/components/database"
+	"github.com/taubyte/go-interfaces/services/tns"
+	"github.com/taubyte/go-interfaces/vm"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	http "github.com/taubyte/http"
+	"github.com/taubyte/p2p/peer"
 	mh "github.com/taubyte/utils/multihash"
 )
+
+// TODO: Needs to create real mocks
 
 var _ database.Service = &mockService{}
 
@@ -20,8 +26,48 @@ type mockService struct {
 	databases map[string]database.Database
 }
 
-func (s *mockService) SmartOps() smartOps.Service {
+func (s *mockService) SmartOps() substrate.SmartOpsService {
 	return nil
+}
+
+func (s *mockService) Verbose() bool {
+	return false
+}
+
+func (s *mockService) Branch() string {
+	return "master"
+}
+
+func (s *mockService) Cache() components.Cache {
+	return nil
+}
+
+func (s *mockService) Orbitals() []vm.Plugin {
+	return nil
+}
+
+func (s *mockService) Tns() tns.Client {
+	return nil
+}
+
+func (s *mockService) Vm() vm.Service {
+	return nil
+}
+
+func (s *mockService) CheckTns(components.MatchDefinition) ([]components.Serviceable, error) {
+	return nil, nil
+}
+
+func (s *mockService) Counter() substrate.CounterService {
+	return nil
+}
+
+func (s *mockService) Http() http.Service {
+	return nil
+}
+
+func (s *mockService) Dev() bool {
+	return true
 }
 
 func (s *mockService) Database(context database.Context) (database.Database, error) {
@@ -66,7 +112,7 @@ func (s *mockService) Global(projectID string) (database.Database, error) {
 	return db, nil
 }
 
-func (s *mockService) Node() p2p.Node {
+func (s *mockService) Node() peer.Node {
 	return nil
 }
 

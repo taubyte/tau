@@ -1,27 +1,28 @@
 package utils
 
 import (
-	oldp2p "bitbucket.org/taubyte/p2p/peer"
 	"fmt"
+
 	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
+	"github.com/taubyte/p2p/peer"
 )
 
-func ConvertBootstrap(peers []string, devMode bool) (oldp2p.BootstrapParams, error) {
+func ConvertBootstrap(peers []string, devMode bool) (peer.BootstrapParams, error) {
 	if devMode && len(peers) < 1 {
-		return oldp2p.StandAlone(), nil
+		return peer.StandAlone(), nil
 	}
 
 	if len(peers) > 0 {
 		peers, err := ConvertToAddrInfo(peers)
 		if err != nil {
-			return oldp2p.BootstrapParams{}, fmt.Errorf("converting peers to libp2p addr info failed with: %s", err)
+			return peer.BootstrapParams{}, fmt.Errorf("converting peers to libp2p addr info failed with: %s", err)
 		}
 
-		return oldp2p.Bootstrap(peers...), nil
+		return peer.Bootstrap(peers...), nil
 	}
 
-	return oldp2p.StandAlone(), nil
+	return peer.StandAlone(), nil
 }
 
 func ConvertToAddrInfo(peers []string) ([]libp2p.AddrInfo, error) {

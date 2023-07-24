@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	"github.com/fxamacker/cbor/v2"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	"github.com/taubyte/go-interfaces/services/seer"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 )
 
-func parseServicefromBody(body streams.Body) (seer.Services, error) {
+func parseServicefromBody(body command.Body) (seer.Services, error) {
 	var services seer.Services
 	data, ok := body["services"]
 	if !ok {
@@ -33,7 +34,7 @@ func parseServicefromBody(body streams.Body) (seer.Services, error) {
 }
 
 // store service
-func (srv *oracleService) announceServiceHandler(ctx context.Context, conn streams.Connection, body streams.Body) (cr.Response, error) {
+func (srv *oracleService) announceServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	allServices, err := parseServicefromBody(body)
 	if err != nil {
 		return nil, err

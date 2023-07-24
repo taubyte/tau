@@ -3,8 +3,8 @@ package service
 import (
 	"strconv"
 
-	http "github.com/taubyte/go-interfaces/services/http"
 	iface "github.com/taubyte/go-interfaces/services/seer"
+	http "github.com/taubyte/http"
 )
 
 func (srv *Service) getGeoAllHTTPHandler(ctx http.Context) (interface{}, error) {

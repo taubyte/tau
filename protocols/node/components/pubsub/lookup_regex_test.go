@@ -3,9 +3,9 @@ package pubsub
 import (
 	"testing"
 
-	"bitbucket.org/taubyte/vm-test-examples/structure"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
+	"github.com/taubyte/odo/protocols/node/components/structure"
 )
 
 func TestLookupRegex(t *testing.T) {

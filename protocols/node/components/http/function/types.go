@@ -3,13 +3,12 @@ package function
 import (
 	"context"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
-	iface "github.com/taubyte/go-interfaces/services/substrate/http"
+	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/http/common"
 )
 
-var _ commonIface.Serviceable = &Function{}
 var _ iface.Serviceable = &Function{}
 var _ iface.Function = &Function{}
 

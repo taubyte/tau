@@ -5,26 +5,25 @@ import (
 	"sync"
 
 	"github.com/taubyte/go-interfaces/services/billing"
-	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
-	iface "github.com/taubyte/go-interfaces/services/substrate/counters"
+	"github.com/taubyte/go-interfaces/services/substrate"
 )
 
-var _ iface.Service = &Service{}
+var _ substrate.CounterService = &Service{}
 
 type unImplementedService struct {
-	nodeIface.Service
+	substrate.Service
 	ctx context.Context
 }
 
-func (*unImplementedService) Close() error                     { return nil }
-func (u *unImplementedService) Context() context.Context       { return u.ctx }
-func (*unImplementedService) Push(wms ...*iface.WrappedMetric) {}
-func (*unImplementedService) Start()                           {}
+func (*unImplementedService) Close() error                         { return nil }
+func (u *unImplementedService) Context() context.Context           { return u.ctx }
+func (*unImplementedService) Push(wms ...*substrate.WrappedMetric) {}
+func (*unImplementedService) Start()                               {}
 
 type Service struct {
-	nodeIface.Service
-	ledger     map[string]iface.Metric
-	metricChan chan *iface.WrappedMetric
+	substrate.Service
+	ledger     map[string]substrate.Metric
+	metricChan chan *substrate.WrappedMetric
 	ledgerLock sync.RWMutex
 	reportCtx  context.Context
 	reportCtxC context.CancelFunc

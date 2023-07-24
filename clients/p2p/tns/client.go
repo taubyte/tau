@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"bitbucket.org/taubyte/p2p/streams/client"
 	"github.com/mitchellh/mapstructure"
 	"github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/p2p/peer"
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/odo/clients/p2p/tns/common"
+	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/p2p/streams/command"
 
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/extract"
@@ -43,7 +43,7 @@ func (c *Client) Close() {
 
 /****** LIST *******/
 func (c *Client) List(depth int) ([]string, error) {
-	response, err := c.client.Send("list", streams.Body{"depth": depth})
+	response, err := c.client.Send("list", command.Body{"depth": depth})
 	if err != nil {
 		logger.Error(moody.Object{"error": err.Error()})
 		return nil, err
@@ -95,7 +95,7 @@ func (c *Client) Push(path []string, data interface{}) error {
 	logger.Debug(moody.Object{"message": fmt.Sprintf("Pushing object at %s", path)})
 	defer logger.Debug(moody.Object{"message": fmt.Sprintf("Pushing keys %s DONE", path)})
 
-	response, err := c.client.Send("push", streams.Body{
+	response, err := c.client.Send("push", command.Body{
 		"path": path,
 		"data": data,
 	})
@@ -121,7 +121,7 @@ func (c *Client) Push(path []string, data interface{}) error {
 /****** COMMON *******/
 
 func (c *Client) fetch(path []string) (interface{}, error) {
-	response, err := c.client.Send("fetch", streams.Body{"path": path})
+	response, err := c.client.Send("fetch", command.Body{"path": path})
 	if err != nil {
 		logger.Error(moody.Object{"message": fmt.Sprintf("fetch failed with: %s", err.Error())})
 		return nil, err
@@ -136,7 +136,7 @@ func (c *Client) fetch(path []string) (interface{}, error) {
 }
 
 func (c *Client) lookup(query tns.Query) ([]string, error) {
-	response, err := c.client.Send("lookup", streams.Body{"prefix": query.Prefix, "regex": query.RegEx})
+	response, err := c.client.Send("lookup", command.Body{"prefix": query.Prefix, "regex": query.RegEx})
 	if err != nil {
 		logger.Error(moody.Object{"message": fmt.Sprintf("lookup failed with: %s", err.Error())})
 		return nil, err

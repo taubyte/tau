@@ -7,9 +7,9 @@ import (
 	"time"
 
 	commonDreamland "github.com/taubyte/dreamland/core/common"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
+	"github.com/taubyte/p2p/peer"
 )
 
 type MonkeyTestContext struct {

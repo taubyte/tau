@@ -6,7 +6,7 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 	"github.com/taubyte/go-interfaces/moody"
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
-	storageIface "github.com/taubyte/go-interfaces/services/substrate/storage"
+	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	"github.com/taubyte/odo/protocols/node/components/storage/storage"
 )
 

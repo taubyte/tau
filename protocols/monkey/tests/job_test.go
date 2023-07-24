@@ -10,9 +10,9 @@ import (
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/odo/protocols/monkey/service"
+	"github.com/taubyte/p2p/peer"
 
 	commonTest "github.com/taubyte/dreamland/helpers"
 	gitTest "github.com/taubyte/dreamland/helpers/git"

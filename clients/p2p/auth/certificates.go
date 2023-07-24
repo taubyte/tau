@@ -8,24 +8,24 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 
 // Injecting to /static
 func (c *Client) InjectStaticCertificate(domain string, data []byte) error {
-	_, err := c.client.Send("acme", streams.Body{"action": "set-static", "fqdn": domain, "certificate": data})
+	_, err := c.client.Send("acme", command.Body{"action": "set-static", "fqdn": domain, "certificate": data})
 	if err != nil {
-		return fmt.Errorf("Failed sending inject certificate with %v", err)
+		return fmt.Errorf("failed sending inject certificate with %v", err)
 	}
 
 	return nil
 }
 
 func (c *Client) InjectKey(domain string, data []byte) error {
-	_, err := c.client.Send("acme", streams.Body{"action": "cache-set", "key": domain, "data": data})
+	_, err := c.client.Send("acme", command.Body{"action": "cache-set", "key": domain, "data": data})
 	if err != nil {
-		return fmt.Errorf("Failed sending inject key with %v", err)
+		return fmt.Errorf("failed sending inject key with %v", err)
 	}
 
 	return nil
@@ -33,9 +33,9 @@ func (c *Client) InjectKey(domain string, data []byte) error {
 
 // Getting from /acme
 func (c *Client) GetCertificate(domain string) ([]byte, error) {
-	resp, err := c.client.Send("acme", streams.Body{"action": "get", "fqdn": domain})
+	resp, err := c.client.Send("acme", command.Body{"action": "get", "fqdn": domain})
 	if err != nil {
-		return nil, fmt.Errorf("Failed get certificate for %s with %v", domain, err)
+		return nil, fmt.Errorf("failed get certificate for %s with %v", domain, err)
 	}
 
 	return maps.ByteArray(resp, "certificate")
@@ -48,14 +48,14 @@ func (c *Client) GetStaticCertificate(domain string) (*tls.Certificate, error) {
 		return nil, errors.New("acme/autocert: server name component count invalid")
 	}
 
-	resp, err := c.client.Send("acme", streams.Body{"action": "get-static", "fqdn": domain})
+	resp, err := c.client.Send("acme", command.Body{"action": "get-static", "fqdn": domain})
 	if err != nil {
-		return nil, fmt.Errorf("Failed get certificate for %s with %v", domain, err)
+		return nil, fmt.Errorf("failed get certificate for %s with %v", domain, err)
 	}
 
 	certData, err := maps.ByteArray(resp, "certificate")
 	if err != nil {
-		return nil, fmt.Errorf("Failed finding certificate with %v", err)
+		return nil, fmt.Errorf("failed finding certificate with %v", err)
 	}
 
 	cert := &tls.Certificate{}
@@ -72,7 +72,7 @@ func (c *Client) GetStaticCertificate(domain string) (*tls.Certificate, error) {
 		if block.Type == "PRIVATE KEY" || strings.HasSuffix(block.Type, "PRIVATE KEY") {
 			cert.PrivateKey, err = x509.ParsePKCS8PrivateKey(block.Bytes)
 			if err != nil {
-				return nil, fmt.Errorf("Failed parsing private key with %v", err)
+				return nil, fmt.Errorf("failed parsing private key with %v", err)
 			}
 		}
 		certData = rest

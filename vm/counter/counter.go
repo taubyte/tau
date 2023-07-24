@@ -1,10 +1,12 @@
 package counter
 
 import (
+	"fmt"
+	"path"
 	"time"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/common"
-	"github.com/taubyte/go-interfaces/services/substrate/counters"
+	"github.com/taubyte/go-interfaces/services/substrate"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/odo/protocols/node/components/counters/metrics"
 )
 
@@ -18,12 +20,12 @@ import (
 //
 // If a cold start time is provided, and an error the counter that will be pushed is a successful cold start, with a failed execution.
 // If a cold start time is provided, and a nil error the counter that will be pushed is a successful cold start and execution.
-func ErrorWrapper(serviceable iface.Serviceable, startTime time.Time, coldStartDone time.Time, gerr error) error {
+func ErrorWrapper(serviceable components.Serviceable, startTime time.Time, coldStartDone time.Time, gerr error) error {
 	go func() {
 		if serviceable != nil {
 			doneTime := time.Now()
 			var skipExecution bool
-			basePath, err := iface.NewPathFromServiceable(serviceable)
+			basePath, err := newPathFromServiceable(serviceable)
 			if err != nil {
 				serviceable.Service().Logger().Errorf("Creating counter path failed with: %s", err)
 				return
@@ -48,7 +50,7 @@ func ErrorWrapper(serviceable iface.Serviceable, startTime time.Time, coldStartD
 				coldStartTime = coldStartDone.Sub(startTime).Nanoseconds()
 			}
 
-			ws := []*counters.WrappedMetric{
+			ws := []*substrate.WrappedMetric{
 				{
 					Key:    basePath.String(),
 					Metric: metrics.NewSumMetric[uint64](1),
@@ -66,22 +68,30 @@ func ErrorWrapper(serviceable iface.Serviceable, startTime time.Time, coldStartD
 					Metric: metrics.NewSumMetric(coldStartTime),
 				},
 			}
-			if skipExecution == false {
+			if !skipExecution {
 				ws = append(ws,
-					&counters.WrappedMetric{
+					&substrate.WrappedMetric{
 						Key:    basePath.Execution().String(),
 						Metric: metrics.NewSumMetric[uint64](1),
 					},
-					&counters.WrappedMetric{
+					&substrate.WrappedMetric{
 						Key:    basePath.Execution().Time().String(),
 						Metric: metrics.NewSumMetric(doneTime.Sub(coldStartDone).Nanoseconds()),
 					},
 				)
 			}
-
-			serviceable.Counter().Push(ws...)
+			serviceable.Service().Counter().Push(ws...)
 		}
 	}()
 
 	return gerr
+}
+
+func newPathFromServiceable(serv components.Serviceable) (substrate.Path, error) {
+	project, err := serv.Project()
+	if err != nil {
+		return nil, fmt.Errorf("getting project cid from serviceable failed with: %s", err)
+	}
+
+	return substrate.NewPath(path.Join(project.String(), serv.Id())), nil
 }

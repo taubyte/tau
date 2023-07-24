@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	moodyBlues "bitbucket.org/taubyte/go-moody-blues"
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	"github.com/fxamacker/cbor/v2"
 	pebble "github.com/ipfs/go-ds-pebble"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -17,6 +16,7 @@ import (
 	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
 	odoConfig "github.com/taubyte/odo/config"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
+	streams "github.com/taubyte/p2p/streams/service"
 )
 
 var (

@@ -6,8 +6,8 @@ import (
 
 	goHttp "net/http"
 
-	"github.com/taubyte/go-interfaces/services/http"
-	iface "github.com/taubyte/go-interfaces/services/substrate/http"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
+	http "github.com/taubyte/http"
 	"github.com/taubyte/odo/protocols/node/components/http/common"
 	"github.com/taubyte/odo/vm/counter"
 	"github.com/taubyte/odo/vm/helpers"

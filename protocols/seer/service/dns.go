@@ -67,9 +67,13 @@ func (seer *Service) newDnsServer(devMode bool, port int) error {
 	var s *dnsServer
 	validate.UseResolver(seer.dnsResolver)
 	if devMode {
+		devPort := protocolsCommon.DefaultDevDnsPort
+		if port != 0 {
+			devPort = port
+		}
 		s = &dnsServer{
-			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(protocolsCommon.DefaultDevDnsPort), Net: "tcp"},
-			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(protocolsCommon.DefaultDevDnsPort), Net: "udp"},
+			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(devPort), Net: "tcp"},
+			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(devPort), Net: "udp"},
 			Seer: seer,
 		}
 	} else {

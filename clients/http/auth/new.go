@@ -20,7 +20,7 @@ func New(ctx context.Context, options ...Option) (*Client, error) {
 	for _, opt := range options {
 		err := opt(c)
 		if err != nil {
-			return nil, fmt.Errorf("When Creating Auth HTTP Client, parsing options failed with: %s", err.Error())
+			return nil, fmt.Errorf("when Creating Auth HTTP Client, parsing options failed with: %s", err.Error())
 		}
 	}
 
@@ -28,7 +28,7 @@ func New(ctx context.Context, options ...Option) (*Client, error) {
 		Timeout: c.timeout,
 	}
 
-	if c.unsecure == false {
+	if !c.unsecure {
 		c.client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{
 				RootCAs: rootCAs,

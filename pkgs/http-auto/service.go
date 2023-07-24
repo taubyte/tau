@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/taubyte/go-interfaces/p2p/peer"
-	service "github.com/taubyte/go-interfaces/services/http"
+	service "github.com/taubyte/http"
 	basicHttp "github.com/taubyte/http/basic"
 	basicHttpSecure "github.com/taubyte/http/basic/secure"
 	"github.com/taubyte/http/options"
 	"github.com/taubyte/odo/config"
+	"github.com/taubyte/p2p/peer"
 )
 
 type ConfigHandler interface {

@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/taubyte/go-interfaces/p2p/streams"
 	iface "github.com/taubyte/go-interfaces/services/seer"
+	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
-func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId string, signature []byte) (streams.Response, error) {
-	resp, err := u.client.Send("heartbeat", streams.Body{"usage": usage, "hostname": hostname, "id": nodeId, "client": clientNodeId, "signature": signature})
+func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId string, signature []byte) (response.Response, error) {
+	resp, err := u.client.Send("heartbeat", command.Body{"usage": usage, "hostname": hostname, "id": nodeId, "client": clientNodeId, "signature": signature})
 	if err != nil {
 		logger.Errorf(fmt.Sprintf("Heartbeat failed with: %s", err.Error()))
 		return nil, fmt.Errorf("calling heartbeat send failed with: %s", err)
@@ -19,7 +20,7 @@ func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId
 }
 
 func (u *Usage) List() ([]string, error) {
-	resp, err := u.client.Send("heartbeat", streams.Body{"action": "list"})
+	resp, err := u.client.Send("heartbeat", command.Body{"action": "list"})
 	if err != nil {
 		logger.Errorf(fmt.Sprintf("Listing ids failed with: %s", err.Error()))
 		return nil, fmt.Errorf("calling list send failed with: %s", err)
@@ -39,7 +40,7 @@ func (u *Usage) List() ([]string, error) {
 }
 
 func (u *Usage) Get(id string) (*iface.UsageReturn, error) {
-	resp, err := u.client.Send("heartbeat", streams.Body{"action": "info", "id": id})
+	resp, err := u.client.Send("heartbeat", command.Body{"action": "info", "id": id})
 	if err != nil {
 		logger.Errorf(fmt.Sprintf("Getting usage %s failed with: %s", id, err.Error()))
 		return &iface.UsageReturn{}, fmt.Errorf("calling info send failed with: %s", err)
@@ -63,8 +64,8 @@ func (u *Usage) Get(id string) (*iface.UsageReturn, error) {
 	return usage, nil
 }
 
-func (u *Usage) ListServiceId(name string) (streams.Response, error) {
-	resp, err := u.client.Send("heartbeat", streams.Body{"action": "listService", "name": name})
+func (u *Usage) ListServiceId(name string) (response.Response, error) {
+	resp, err := u.client.Send("heartbeat", command.Body{"action": "listService", "name": name})
 	if err != nil {
 		logger.Errorf(fmt.Sprintf("List Specific for %s failed with: %s", name, err.Error()))
 		return nil, fmt.Errorf("calling heartbeat listService send failed with: %s", err)

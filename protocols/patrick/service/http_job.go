@@ -3,7 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"strings"
 	"time"
 
@@ -12,9 +12,9 @@ import (
 	"github.com/h2non/filetype/matchers"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/services/http"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
+	http "github.com/taubyte/http"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/utils/maps"
 )
@@ -270,7 +270,7 @@ func (srv *PatrickService) downloadAsset(ctx http.Context) (interface{}, error) 
 		return nil, fmt.Errorf("rewinding asset file %s failed with %s", assetCid, err)
 	}
 
-	fileData, err := ioutil.ReadAll(file)
+	fileData, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading asset file %s with %v", assetCid, err)
 	}

@@ -22,6 +22,10 @@ func attachNodesError(name string, err error) error {
 	return err
 }
 
+func (srv *Service) Verbose() bool {
+	return srv.verbose
+}
+
 func (srv *Service) attachNodes(config *config.Protocol) (err error) {
 	// Needs to happen first, as others depend on it
 	if err = srv.attachNodeCounters(config); err != nil {
@@ -64,12 +68,7 @@ func (srv *Service) attachNodeHttp(config *config.Protocol) (err error) {
 	ops := []http.Option{}
 
 	if config.DevMode {
-		ops = append(ops, http.Dev())
 		ops = append(ops, http.DvKey(config.DomainValidation.PublicKey))
-	}
-
-	if config.Verbose {
-		ops = append(ops, http.Verbose())
 	}
 
 	srv.nodeHttp, err = http.New(srv, ops...)

@@ -3,7 +3,7 @@ package common
 import (
 	"fmt"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/database"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	mh "github.com/taubyte/utils/multihash"
 )
 

@@ -3,11 +3,11 @@ package instance
 import (
 	"fmt"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/smartops"
-	smartOpPlugins "github.com/taubyte/vm-plugins/smartops"
+	"github.com/taubyte/go-interfaces/services/substrate"
+	smartOpPlugins "github.com/taubyte/vm-core-plugins/smartops"
 )
 
-func (i *instance) Run(caller iface.SmartOpEventCaller) (uint32, error) {
+func (i *instance) Run(caller substrate.SmartOpEventCaller) (uint32, error) {
 	runtime, _, smartOpPlugin, err := i.instantiate()
 	if err != nil {
 		return 0, fmt.Errorf("instantiating runtime failed with: %v", err)

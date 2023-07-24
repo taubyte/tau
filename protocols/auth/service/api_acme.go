@@ -2,16 +2,15 @@ package service
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"errors"
 	"fmt"
 	"time"
 
-	cr "bitbucket.org/taubyte/p2p/streams/command/response"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	"github.com/taubyte/go-interfaces/p2p/streams"
+	"github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -19,31 +18,6 @@ import (
 var ErrCacheMiss = errors.New("acme/autocert: certificate cache miss")
 
 // https://golang.org/pkg/crypto/x509/#example_Certificate_Verify
-
-// TODO: make sure we verify expiration
-func (srv *AuthService) x509Validate(fqdn string, certificate []byte) error {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Validating certificate for `%s`", fqdn)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Validating certificate for `%s` done", fqdn)})
-	block, _ := pem.Decode(certificate)
-	if block == nil {
-		return errors.New("failed to parse certificate PEM")
-	}
-
-	cert, err := x509.ParseCertificate(block.Bytes)
-	if err != nil {
-		return errors.New("Failed to parse certificate: " + err.Error())
-	}
-
-	opts := x509.VerifyOptions{
-		DNSName: fqdn,
-	}
-
-	if _, err := cert.Verify(opts); err != nil {
-		return errors.New("Failed to verify certificate: " + err.Error())
-	}
-
-	return nil
-}
 
 // TODO: validate fqdn
 func (srv *AuthService) setACMECertificate(ctx context.Context, fqdn string, certificate []byte) error {
@@ -205,7 +179,7 @@ func (srv *AuthService) deleteACMECache(ctx context.Context, key string) error {
 	return nil
 }
 
-func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Connection, body streams.Body) (cr.Response, error) {
+func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
 	// params:
 	//  TODO: add encrption key to service library
 	//  action: get/set

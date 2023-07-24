@@ -1,13 +1,11 @@
 package ipfs
 
-import (
-	p2p "github.com/taubyte/go-interfaces/p2p/peer"
-)
+import "github.com/taubyte/p2p/peer"
 
 type Option func(*Service) error
 
 type Service struct {
-	p2p.Node
+	peer.Node
 	private       bool
 	swarmListen   []string
 	swarmAnnounce []string

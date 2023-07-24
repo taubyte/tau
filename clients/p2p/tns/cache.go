@@ -7,9 +7,9 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/odo/clients/p2p/tns/common"
+	"github.com/taubyte/p2p/peer"
 )
 
 type subscription struct {

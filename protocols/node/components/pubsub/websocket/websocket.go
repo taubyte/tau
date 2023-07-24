@@ -6,7 +6,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/common"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
@@ -22,7 +22,7 @@ func (ws *WebSocket) HandleMessage(msg *pubsub.Message) (t time.Time, err error)
 	return
 }
 
-func (ws *WebSocket) Match(matcher commonIface.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
+func (ws *WebSocket) Match(matcher components.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
 	currentMatch := matcherSpec.NoMatch
 	_matcher, ok := matcher.(*common.MatchDefinition)
 	if !ok {
@@ -40,7 +40,7 @@ func (ws *WebSocket) Commit() string {
 	return ws.matcher.Commit
 }
 
-func (ws *WebSocket) Validate(matcher commonIface.MatchDefinition) error {
+func (ws *WebSocket) Validate(matcher components.MatchDefinition) error {
 	if len(ws.mmi.Matches(ws.matcher.Channel)) == 0 {
 		return errors.New("websocket channels do not match")
 	}
@@ -48,7 +48,7 @@ func (ws *WebSocket) Validate(matcher commonIface.MatchDefinition) error {
 	return nil
 }
 
-func (ws *WebSocket) Matcher() commonIface.MatchDefinition {
+func (ws *WebSocket) Matcher() components.MatchDefinition {
 	return ws.matcher
 }
 
@@ -74,7 +74,7 @@ var AttachWebSocket = func(ws *WebSocket) error {
 	return nil
 }
 
-func (ws *WebSocket) Service() commonIface.Service {
+func (ws *WebSocket) Service() components.ServiceComponent {
 	return ws.srv
 }
 

@@ -3,7 +3,7 @@ package service
 import (
 	"fmt"
 
-	storageIface "github.com/taubyte/go-interfaces/services/substrate/storage"
+	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
 )
 
 func (s *Service) validateCommit(hash, projectId, branch string) (bool, string, error) {

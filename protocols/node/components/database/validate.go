@@ -3,7 +3,7 @@ package database
 import (
 	"fmt"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/database"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 )
 
 func (s *Service) validateCommit(hash, projectId, branch string) (bool, string, error) {

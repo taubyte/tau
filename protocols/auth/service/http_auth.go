@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/odo/protocols/auth/github"
 
 	//fasthttp "github.com/valyala/fasthttp"
-	http "github.com/taubyte/go-interfaces/services/http"
+	http "github.com/taubyte/http"
 	httpAuth "github.com/taubyte/http/auth"
 )
 
@@ -30,15 +30,21 @@ type APIRequestHandler func(actx *APIAuthContext, xvars *APIContextVars, ctx *fa
 func (srv *AuthService) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, error) {
 	auth := httpAuth.GetAuthorization(ctx)
 	if auth != nil && (auth.Type == "oauth" || auth.Type == "github") {
+
 		rctx, rctx_cancel := context.WithTimeout(srv.ctx, time.Duration(30)*time.Second)
+
 		client, err := github.New(rctx, auth.Token)
 		if err != nil {
 			rctx_cancel()
 			return nil, errors.New("invalid Github token")
 		}
+
 		ctx.SetVariable("GithubClient", client)
+
 		ctx.SetVariable("GithubClientDone", rctx_cancel)
+
 		logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("[GitHubTokenHTTPAuth] ctx=%v", ctx.Variables())})
+
 		return nil, nil
 	}
 	return nil, errors.New("valid Github token required")
@@ -80,23 +86,23 @@ func (srv *AuthService) GitHubTokenAuth(f GitHubAuthRequestHandler) fasthttp.Req
 func (srv *AuthService) APITokenAuth(f APIRequestHandler, contextVariables []string, scope []string) fasthttp.RequestHandler {
 	return func(ctx *fasthttp.RequestCtx) {
 
-		fmt.Println(ctx)
-		fmt.Println("Headers: ", string(ctx.Request.Header.RawHeaders()))
-		fmt.Println("Body: ", string(ctx.Request.Body()))
-		fmt.Println("PostBody: ", string(ctx.PostBody()))
+
+
+
+
 
 		auth := ctx.Request.Header.Peek("Authorization")
 
 		xvars, err := srv.extractContextVars(ctx, contextVariables)
 		if err != nil {
-			fmt.Println("ERROR processing Vars: ", err)
+
 			fmt.Fprint(ctx, err)
 			ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 			return
 		}
 
 		if len(auth) > 0 {
-			fmt.Println("Processing auth: ", string(auth))
+
 			if bytes.HasPrefix(auth, apikeyAuthPrefix) {
 				token := string(auth[len(apikeyAuthPrefix):])
 
@@ -111,9 +117,9 @@ func (srv *AuthService) APITokenAuth(f APIRequestHandler, contextVariables []str
 			} else if bytes.HasPrefix(auth, githubAuthPrefix) {
 				token := string(auth[len(githubAuthPrefix):])
 
-				fmt.Println("Processing github token: ", token)
+
 				actx, err := srv.checkGithubAPIToken(token, xvars)
-				fmt.Println("return: ", actx, " error:", err)
+
 
 				if err == nil {
 					res, err := f(actx, xvars, ctx)
@@ -123,7 +129,7 @@ func (srv *AuthService) APITokenAuth(f APIRequestHandler, contextVariables []str
 
 			}
 		}
-		fmt.Println("No Auth!")
+
 		ctx.SetStatusCode(fasthttp.StatusUnauthorized)
 	}
 }
@@ -142,9 +148,9 @@ func (srv *AuthService) extractContextVars(ctx *fasthttp.RequestCtx, contextVari
 	if len(_body) > 0 {
 		err := json.Unmarshal(_body, &body)
 
-		fmt.Println("BODY: ", string(_body))
-		fmt.Println("JSON: ", body)
-		fmt.Println("ERROR: ", err)
+
+
+
 	}
 
 	for _, k := range contextVariables {
@@ -164,7 +170,6 @@ func (srv *AuthService) extractContextVars(ctx *fasthttp.RequestCtx, contextVari
 
 	}
 
-	fmt.Println("xvars: ", xvars)
 
 	return &xvars, nil
 }

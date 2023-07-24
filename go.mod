@@ -2,15 +2,21 @@ module github.com/taubyte/odo
 
 go 1.19
 
-replace github.com/taubyte/go-interfaces => ../go-interfaces
-
-replace github.com/ipfs/go-block-format => github.com/ipfs/go-block-format v0.1.1
+replace (
+	github.com/taubyte/config-compiler => /home/tafkhan/Documents/Work/Taubyte/new/config-compiler
+	github.com/taubyte/dreamland => /home/tafkhan/Documents/Work/Taubyte/new/dreamland
+	github.com/taubyte/go-interfaces => /home/tafkhan/Documents/Work/Taubyte/Repos/go-interfaces
+	github.com/taubyte/http => /home/tafkhan/Documents/Work/Taubyte/Repos/http
+	github.com/taubyte/odo => /home/tafkhan/Documents/Work/Taubyte/new/odo
+	github.com/taubyte/p2p => /home/tafkhan/Documents/Work/Taubyte/new/p2p
+	github.com/taubyte/vm => /home/tafkhan/Documents/Work/Taubyte/Repos/vm
+	github.com/taubyte/vm-core-plugins => /home/tafkhan/Documents/Work/Taubyte/Repos/vm-core-plugins
+	github.com/tetratelabs/wazero => /home/tafkhan/Documents/Work/Taubyte/test/wazero
+)
 
 require (
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	bitbucket.org/taubyte/go-moody-blues v0.1.34
-	bitbucket.org/taubyte/p2p v0.8.2
-	bitbucket.org/taubyte/vm-test-examples v0.5.1-pre.v3
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/foxcpp/go-mockdns v1.0.0
@@ -51,12 +57,13 @@ require (
 	github.com/taubyte/go-simple-container v0.4.2
 	github.com/taubyte/go-simple-git v0.2.5
 	github.com/taubyte/go-specs v0.10.5
-	github.com/taubyte/http v0.10.1
+	github.com/taubyte/http v0.10.2
+	github.com/taubyte/p2p v0.9.0
 	github.com/taubyte/tau v0.1.6
 	github.com/taubyte/utils v0.1.6
 	github.com/taubyte/vm v0.2.1
+	github.com/taubyte/vm-core-plugins v0.0.0-00010101000000-000000000000
 	github.com/taubyte/vm-orbit v0.1.1
-	github.com/taubyte/vm-plugins v0.2.2
 	github.com/urfave/cli/v2 v2.25.7
 	go4.org v0.0.0-20230225012048-214862532bf5
 	golang.org/x/crypto v0.11.0
@@ -76,8 +83,6 @@ require (
 	atomicgo.dev/cursor v0.1.1 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	atomicgo.dev/schedule v0.0.2 // indirect
-	bitbucket.org/taubyte/seer-p2p-client v0.1.1 // indirect
-	bitbucket.org/taubyte/tns-p2p-client v0.1.1 // indirect
 	github.com/CAFxX/httpcompression v0.0.8 // indirect
 	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect
@@ -160,7 +165,6 @@ require (
 	github.com/ipfs/go-ipld-cbor v0.0.6 // indirect
 	github.com/ipfs/go-ipld-format v0.4.0 // indirect
 	github.com/ipfs/go-ipld-legacy v0.1.1 // indirect
-	github.com/ipfs/go-libipfs v0.6.2 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/ipfs/go-metrics-interface v0.0.1 // indirect
 	github.com/ipfs/go-peertaskqueue v0.8.1 // indirect
@@ -240,7 +244,6 @@ require (
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/taubyte/go-doci v1.0.2 // indirect
 	github.com/taubyte/go-sdk-symbols v0.2.6 // indirect
 	github.com/tetratelabs/wazero v1.0.3 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect

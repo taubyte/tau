@@ -7,7 +7,7 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/kvdb"
-	storageIface "github.com/taubyte/go-interfaces/services/substrate/storage"
+	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	kvd "github.com/taubyte/odo/pkgs/kvdb/database"
 	common "github.com/taubyte/odo/protocols/node/components/storage/common"
 )

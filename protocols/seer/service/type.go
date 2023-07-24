@@ -5,15 +5,15 @@ import (
 	"regexp"
 	"sync"
 
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	"github.com/miekg/dns"
 	"github.com/taubyte/go-interfaces/kvdb"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
 	iface "github.com/taubyte/go-interfaces/services/seer"
+	"github.com/taubyte/p2p/peer"
+	streams "github.com/taubyte/p2p/streams/service"
 
-	commonIface "github.com/taubyte/go-interfaces/services/common"
-	"github.com/taubyte/go-interfaces/services/http"
 	tnsClient "github.com/taubyte/go-interfaces/services/tns"
+	http "github.com/taubyte/http"
+	"github.com/taubyte/odo/config"
 )
 
 type Data map[string]interface{}
@@ -74,5 +74,5 @@ func (s *Service) Resolver() iface.Resolver {
 }
 
 type Config struct {
-	commonIface.GenericConfig `yaml:"z,omitempty"`
+	config.Protocol `yaml:"z,omitempty"`
 }

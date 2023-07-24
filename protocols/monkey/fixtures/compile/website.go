@@ -3,7 +3,6 @@ package compile
 import (
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"strings"
 
@@ -53,7 +52,7 @@ func (w websiteContext) zip() error {
 }
 
 func (w websiteContext) directory() error {
-	root, err := ioutil.TempDir(os.TempDir(), fmt.Sprintf("%s-*", w.ctx.resourceId))
+	root, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("%s-*", w.ctx.resourceId))
 	if err != nil {
 		return err
 	}

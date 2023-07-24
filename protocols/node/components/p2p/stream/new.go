@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/p2p"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/node/components/p2p/service"
@@ -27,9 +27,9 @@ func New(srv iface.Service, ctx context.Context, config *structureSpec.Service, 
 		val, err := _service.SmartOps(config.SmartOps)
 		if err != nil || val > 0 {
 			if err != nil {
-				return nil, fmt.Errorf("Running smart ops failed with: %s", err)
+				return nil, fmt.Errorf("running smart ops failed with: %s", err)
 			}
-			return nil, fmt.Errorf("Exited: %d", val)
+			return nil, fmt.Errorf("exited: %d", val)
 		}
 	}
 

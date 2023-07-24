@@ -3,7 +3,7 @@ package p2p
 import (
 	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	"github.com/taubyte/go-interfaces/common"
-	peer "github.com/taubyte/go-interfaces/p2p/peer"
+	"github.com/taubyte/p2p/peer"
 )
 
 func init() {

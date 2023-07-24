@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/libp2p/go-libp2p-core/pnet"
+	"github.com/libp2p/go-libp2p/core/pnet"
 	"github.com/taubyte/odo/config"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/exp/slices"

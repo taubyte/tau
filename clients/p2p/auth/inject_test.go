@@ -98,7 +98,7 @@ func TestInject(t *testing.T) {
 		return
 	}
 
-	if bytes.Compare(data, cert) != 0 {
+	if !bytes.Equal(data, cert) {
 		t.Error("Expected key to match")
 		return
 	}

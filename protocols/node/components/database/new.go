@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
-	iface "github.com/taubyte/go-interfaces/services/substrate/database"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	globalStream "github.com/taubyte/odo/protocols/node/components/database/globals/p2p/stream"
 )
 

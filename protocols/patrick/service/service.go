@@ -6,7 +6,6 @@ import (
 	"time"
 
 	moody "bitbucket.org/taubyte/go-moody-blues"
-	streams "bitbucket.org/taubyte/p2p/streams/service"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
@@ -15,10 +14,11 @@ import (
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
 	"github.com/taubyte/odo/config"
-	odoConfig "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
+
+	streams "github.com/taubyte/p2p/streams/service"
 )
 
 var (
@@ -28,16 +28,16 @@ var (
 	DefaultReAnnounceFailedJobsTime = 7 * time.Minute
 )
 
-func New(ctx context.Context, config *config.Protocol) (*PatrickService, error) {
+func New(ctx context.Context, protocolConfig *config.Protocol) (*PatrickService, error) {
 	var srv PatrickService
 
-	if config == nil {
-		_cnf := &odoConfig.Protocol{}
+	if protocolConfig == nil {
+		_cnf := &config.Protocol{}
 
-		config = _cnf
+		protocolConfig = _cnf
 	}
 
-	err := config.Build(odoConfig.ConfigBuilder{
+	err := protocolConfig.Build(config.ConfigBuilder{
 		DefaultP2PListenPort: protocolsCommon.PatrickDefaultP2PListenPort,
 		DevHttpListenPort:    protocolsCommon.PatrickDevHttpListenPort,
 		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
@@ -46,23 +46,23 @@ func New(ctx context.Context, config *config.Protocol) (*PatrickService, error) 
 		return nil, fmt.Errorf("building config failed with: %s", err)
 	}
 
-	srv.devMode = config.DevMode
+	srv.devMode = protocolConfig.DevMode
 
-	logger.Error(moodyCommon.Object{"msg": config})
+	logger.Error(moodyCommon.Object{"msg": protocolConfig})
 
-	if config.Node == nil {
-		srv.node, err = odoConfig.NewNode(ctx, config, protocolsCommon.Patrick)
+	if protocolConfig.Node == nil {
+		srv.node, err = config.NewNode(ctx, protocolConfig, protocolsCommon.Patrick)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		srv.node = config.Node
+		srv.node = protocolConfig.Node
 	}
 
 	// For odo
 	clientNode := srv.node
-	if config.ClientNode != nil {
-		clientNode = config.ClientNode
+	if protocolConfig.ClientNode != nil {
+		clientNode = protocolConfig.ClientNode
 	}
 
 	// Auth Consumer/Client
@@ -92,22 +92,22 @@ func New(ctx context.Context, config *config.Protocol) (*PatrickService, error) 
 		return nil, fmt.Errorf("failed stream new with error: %w", err)
 	}
 
-	srv.hostUrl = config.NetworkUrl
+	srv.hostUrl = protocolConfig.NetworkUrl
 	srv.setupStreamRoutes()
 
 	// HTTP
-	if config.Http == nil {
-		srv.http, err = auto.Configure(config).AutoHttp(srv.node)
+	if protocolConfig.Http == nil {
+		srv.http, err = auto.Configure(protocolConfig).AutoHttp(srv.node)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		srv.http = config.Http
+		srv.http = protocolConfig.Http
 	}
 
 	srv.setupHTTPRoutes()
 
-	if config.Http == nil {
+	if protocolConfig.Http == nil {
 		srv.http.Start()
 	}
 
@@ -116,7 +116,7 @@ func New(ctx context.Context, config *config.Protocol) (*PatrickService, error) 
 		return nil, fmt.Errorf("failed creating seer client %v", err)
 	}
 
-	err = config.StartSeerBeacon(sc, seerIface.ServiceTypePatrick)
+	err = protocolConfig.StartSeerBeacon(sc, seerIface.ServiceTypePatrick)
 	if err != nil {
 		return nil, err
 	}

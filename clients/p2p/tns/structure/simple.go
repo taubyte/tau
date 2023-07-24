@@ -22,7 +22,7 @@ func (s *simpleClient) Project(projectID, branch string) (interface{}, error) {
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("Fetching project object failed: %w", err)
+		return nil, fmt.Errorf("fetching project object failed: %w", err)
 	}
 
 	return projectObj.Interface(), nil
@@ -32,13 +32,13 @@ func (s *simpleClient) GetRepositoryProjectId(gitProvider, repoId string) (proje
 	queryKey := []string{string(methods.RepositoryPathVariable), gitProvider, repoId}
 	resp, err := s.Structure.tns.Lookup(tns.Query{Prefix: queryKey})
 	if err != nil {
-		err = fmt.Errorf("Lookup repository `%s` failed with: %s", repoId, err)
+		err = fmt.Errorf("lookup repository `%s` failed with: %s", repoId, err)
 		return
 	}
 
 	respArr, ok := resp.([]string)
 	if !ok || len(respArr) == 0 {
-		err = fmt.Errorf("Response from lookup repository `%s` not an array or empty: `%v`", repoId, resp)
+		err = fmt.Errorf("response from lookup repository `%s` not an array or empty: `%v`", repoId, resp)
 		return
 	}
 
@@ -46,7 +46,7 @@ func (s *simpleClient) GetRepositoryProjectId(gitProvider, repoId string) (proje
 		if strings.Contains(key, "/type") {
 			repoInfo := strings.Split(key, "/")
 			if len(repoInfo) < 3 {
-				err = fmt.Errorf("Invalid project key when getting /type for repository `%s`: %s", repoId, key)
+				err = fmt.Errorf("invalid project key when getting /type for repository `%s`: %s", repoId, key)
 				return
 			}
 			projectId = repoInfo[len(repoInfo)-2]
