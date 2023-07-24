@@ -6,7 +6,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/taubyte/go-interfaces/moody"
 	hoarderClient "github.com/taubyte/odo/clients/p2p/hoarder"
 )
 
@@ -28,13 +27,13 @@ func (c Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {
 			case <-time.After(10 * time.Second):
 				hoarder, err := hoarderClient.New(ctx, c.OdoClientNode)
 				if err != nil {
-					logger.Error(moody.Object{"message": fmt.Errorf("creating hoarder client failed with: %s", err)})
+					logger.Errorf("creating hoarder client failed with: %w", err)
 					continue
 				}
 
 				_, err = hoarder.Stash(cid)
 				if err != nil {
-					logger.Error(moody.Object{"message": fmt.Errorf("stashing `%s` failed with: %s", cid, err)})
+					logger.Error("stashing `%s` failed with: %w", cid, err)
 					continue
 				}
 			}

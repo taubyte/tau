@@ -7,15 +7,14 @@ import (
 	"regexp"
 	"strconv"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
+	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/kvdb"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/odo/protocols/auth/service/hooks"
 )
 
 var (
 	GitProviders = []string{"github"}
-	logger, _    = moody.New("auth.service.api.repositories")
+	logger       = log.Logger("auth.service.api.repositories")
 )
 
 func (r *GithubRepository) Serialize() Data {
@@ -110,14 +109,14 @@ func (r *GithubRepository) Hooks(ctx context.Context) []hooks.Hook {
 	re := regexp.MustCompile("/hooks/([^/]+)$")
 	for _, k := range keys {
 		m := re.FindStringSubmatch(k)
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("repo.Hooks match:%s", m)})
+		logger.Errorf("repo.Hooks match:%s", m)
 		if len(m) > 1 {
 			hook_id := m[1]
 			h, err := hooks.Fetch(ctx, r.KV, hook_id)
 			if err == nil {
 				hks = append(hks, h)
 			} else {
-				logger.Error(moodyCommon.Object{"message": err.Error()})
+				logger.Error(err)
 			}
 		}
 	}

@@ -10,7 +10,6 @@ import (
 	"time"
 
 	validate "github.com/taubyte/domain-validation"
-	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/tns"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
@@ -32,8 +31,6 @@ func (srv *dnsServer) Start(ctx context.Context) {
 		fmt.Println("Starting DNS Server on UDP")
 		if err := srv.Udp.ListenAndServe(); err != nil {
 			errorMsg := fmt.Sprintf("failed starting UPD Server error: %v", err)
-			logger.Error(moody.Object{"message": errorMsg})
-
 			panic(errors.New(errorMsg))
 		}
 	}()
@@ -42,8 +39,6 @@ func (srv *dnsServer) Start(ctx context.Context) {
 		fmt.Println("Starting DNS Server on TCP")
 		if err := srv.Tcp.ListenAndServe(); err != nil {
 			errorMsg := fmt.Sprintf("failed starting TCP Server error: %v", err)
-			logger.Error(moody.Object{"message": errorMsg})
-
 			panic(errors.New(errorMsg))
 		}
 	}()
@@ -51,10 +46,10 @@ func (srv *dnsServer) Start(ctx context.Context) {
 
 func (srv *dnsServer) Stop() {
 	if err := srv.Udp.Shutdown(); err != nil {
-		logger.Errorf("stopping UDP Server failed with: %s", err)
+		logger.Errorf("stopping UDP Server failed with: %w", err)
 	}
 	if err := srv.Tcp.Shutdown(); err != nil {
-		logger.Errorf("stopping TCP Server failed with: %s", err)
+		logger.Errorf("stopping TCP Server failed with: %w", err)
 	}
 }
 
@@ -104,15 +99,18 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	errMsg := &_errMsg
 	errMsg.Rcode = dns.RcodeNameError
 
+	if len(msg.Question) < 1 {
+		logger.Error("msg question is empty")
+	}
 	if spam := h.negativeCache.Get(msg.Question[0].Name); spam != nil {
-		logger.Error(moody.Object{"message": fmt.Sprintf("%s is currently blocked", msg.Question[0].Name)})
+		logger.Errorf("%s is currently blocked", msg.Question[0].Name)
 		if err := w.WriteMsg(errMsg); err != nil {
-			logger.Errorf("writing error message `%s` failed with %s", errMsg, err)
+			logger.Errorf("writing error message `%s` failed with %w", errMsg, err)
 		}
 		return
 	}
 
-	logger.Info(moody.Object{"message": fmt.Sprintf("GOT REQUEST FOR: %s FROM IP: %s", msg.Question[0].Name, w.RemoteAddr().String())})
+	logger.Infof("GOT REQUEST FOR: %s FROM IP: %s", msg.Question[0].Name, w.RemoteAddr().String())
 
 	if msg.Question == nil || len(msg.Question) == 0 {
 		w.Close()
@@ -122,7 +120,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	defer func() {
 		err := w.Close()
 		if err != nil {
-			logger.Error(moody.Object{"message": fmt.Sprintf("Failed closing dns response writer with %v", err)})
+			logger.Errorf("Failed closing dns response writer with %v", err)
 			return
 		}
 	}()
@@ -155,9 +153,9 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// Third case ->  check if domain exist in tns
 	tnsPathSlice, err := h.createDomainTnsPathSlice(name)
 	if err != nil {
-		logger.Error(moody.Object{"message": fmt.Sprintf("Failed createDomainTnsPathSlice for %s with %v", name, err)})
+		logger.Errorf("Failed createDomainTnsPathSlice for %s with %w", name, err)
 		if err := w.WriteMsg(errMsg); err != nil {
-			logger.Errorf("writing error message `%s` failed with %s", errMsg, err)
+			logger.Errorf("writing error message `%s` failed with %w", errMsg, err)
 		}
 		return
 	}
@@ -169,7 +167,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if err == nil {
 		domPath, ok := tnsInterface.([]string)
 		if !ok {
-			logger.Error(moody.Object{"message": "failed converting tns interface to []string"})
+			logger.Error("failed converting tns interface to []string")
 			return
 		}
 
@@ -179,7 +177,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 	}
 
-	logger.Error(moody.Object{"message": fmt.Sprintf("%s is not registered in taubyte", name)})
+	logger.Errorf("%s is not registered in taubyte", name)
 
 	// Store in negative cache as spam
 	h.negativeCache.Set(msg.Question[0].Name, true, DefaultBlockTime)
@@ -195,7 +193,7 @@ func (h *dnsHandler) odoDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg
 	service := strings.Split(name, ".")[0]
 	ips, err := h.getServiceIp(service)
 	if err != nil {
-		logger.Error(moody.Object{"message": fmt.Sprintf("getting ip for %s failed with %s", service, err)})
+		logger.Errorf("getting ip for %s failed with %s", service, err)
 		if err := w.WriteMsg(errMsg); err != nil {
 			logger.Errorf("writing error message `%s` failed with %s", errMsg, err)
 		}
@@ -215,7 +213,7 @@ func (h *dnsHandler) odoDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg
 
 	err = w.WriteMsg(&msg)
 	if err != nil {
-		logger.Error(moody.Object{"message": fmt.Sprintf("writing msg for url `%s` failed with %s", name, err)})
+		logger.Errorf("writing msg for url `%s` failed with %w", name, err)
 		w.WriteMsg(errMsg)
 	}
 }

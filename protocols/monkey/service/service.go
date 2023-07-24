@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"regexp"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	"github.com/ipfs/go-log/v2"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	ci "github.com/taubyte/go-simple-container/gc"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	domainSpecs "github.com/taubyte/go-specs/domain"
@@ -22,7 +21,7 @@ import (
 	streams "github.com/taubyte/p2p/streams/service"
 )
 
-var logger, _ = moody.New("monkey.service")
+var logger = log.Logger("monkey.service")
 
 func (srv *Service) subscribe() error {
 	return srv.node.PubSubSubscribe(
@@ -33,9 +32,9 @@ func (srv *Service) subscribe() error {
 		func(err error) {
 			// re-establish if fails
 			if err.Error() != "context canceled" {
-				logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Subscription had an error: %s", err.Error())})
+				logger.Errorf("Subscription had an error: %w", err)
 				if err := srv.subscribe(); err != nil {
-					logger.Errorf("resubscribe failed with: %s", err)
+					logger.Errorf("resubscribe failed with: %w", err)
 				}
 			}
 		},

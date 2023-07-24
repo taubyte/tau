@@ -2,9 +2,10 @@ module github.com/taubyte/odo
 
 go 1.19
 
+replace github.com/taubyte/go-interfaces => /home/tafkhan/Documents/Work/Taubyte/Repos/go-interfaces
+
 require (
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
-	bitbucket.org/taubyte/go-moody-blues v0.1.34
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/foxcpp/go-mockdns v1.0.0

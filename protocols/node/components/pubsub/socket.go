@@ -1,8 +1,6 @@
 package pubsub
 
 import (
-	"fmt"
-
 	"github.com/taubyte/odo/protocols/node/components/pubsub/common"
 )
 
@@ -21,7 +19,7 @@ func (s *Service) WebSocketURL(projectId, appId, channel string) (string, error)
 	// Ignoring picks because if there are no picks there is an error returned
 	_, err := s.Lookup(matcher)
 	if err != nil {
-		s.Logger().Std().Error(fmt.Sprintf("Socket generation failed with err: %s", err.Error()))
+		common.Logger.Errorf("Socket generation failed with err: %w", err)
 		return "", err
 	}
 

@@ -3,8 +3,6 @@ package structure
 import (
 	"context"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
-	blues "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-interfaces/vm"
@@ -22,16 +20,12 @@ type NodeService struct {
 	httpSrv      http.Service
 	nodeSmartOps substrate.SmartOpsService
 	nodeCounters substrate.CounterService
-	logger       blues.Logger
-	branch       string
-	ctx          context.Context
+
+	branch string
+	ctx    context.Context
 }
 
 func MockNodeService(node peer.Node, ctx context.Context) substrate.Service {
-	logger, _ := moody.New("test")
-	if node == nil {
-		node = peer.MockNode(ctx)
-	}
 
 	ctx = node.Context()
 	s := &NodeService{
@@ -40,7 +34,6 @@ func MockNodeService(node peer.Node, ctx context.Context) substrate.Service {
 		vm:           &TestVm{},
 		nodeSmartOps: &TestSmartOps{},
 		nodeCounters: &TestCounters{},
-		logger:       logger,
 		branch:       "master",
 		ctx:          ctx,
 	}
@@ -66,10 +59,6 @@ func (s *NodeService) Orbitals() []vm.Plugin {
 
 func (s *NodeService) Vm() vm.Service {
 	return s.vm
-}
-
-func (s *NodeService) Logger() blues.Logger {
-	return s.logger
 }
 
 func (s *NodeService) Tns() tns.Client {

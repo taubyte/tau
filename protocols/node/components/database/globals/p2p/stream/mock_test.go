@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
-	moodyIface "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/services/substrate/components/database"
@@ -76,12 +74,6 @@ func (s *mockService) Database(context database.Context) (database.Database, err
 
 func (s *mockService) Context() context.Context {
 	return context.Background()
-}
-
-func (s *mockService) Logger() moodyIface.Logger {
-	logger, _ := moody.New("test")
-	return logger
-
 }
 
 func (s *mockService) Databases() map[string]database.Database {

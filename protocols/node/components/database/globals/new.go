@@ -3,7 +3,7 @@ package globals
 import (
 	"fmt"
 
-	"github.com/taubyte/go-interfaces/moody"
+	"github.com/ipfs/go-log/v2"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	kv "github.com/taubyte/odo/protocols/node/components/database/kv"
@@ -15,7 +15,7 @@ var DefaultGlobalConfig = &structureSpec.Database{
 	Size: 1000000,
 }
 
-func New(hash string, logger moody.Logger, node peer.Node) (iface.Database, error) {
+func New(hash string, logger log.StandardLogger, node peer.Node) (iface.Database, error) {
 	c := iface.Context{
 		Config: DefaultGlobalConfig,
 	}

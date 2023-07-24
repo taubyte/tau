@@ -2,11 +2,9 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/p2p/peer"
 	client "github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
@@ -17,9 +15,9 @@ import (
 )
 
 var (
-	MinPeers  = 0
-	MaxPeers  = 4
-	logger, _ = moody.New("auth.acme.store")
+	MinPeers = 0
+	MaxPeers = 4
+	logger   = log.Logger("auth.acme.store")
 )
 
 // Store implements Store and Cache using taubyte acme service
@@ -39,7 +37,7 @@ func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss erro
 		err error
 	)
 
-	logger.Debug(moodyCommon.Object{"message": "ACME Distributed Store Creation..."})
+	logger.Debug("ACME Distributed Store Creation...")
 	c.node = node
 	c.cacheDir, err = dirs.New(cacheDir)
 	if err != nil {
@@ -50,25 +48,25 @@ func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss erro
 	//[]string{"12D3KooWMrLZ2m7dTJf1a1VEsReJnRH1iNRg9U9WyLMQHMZTnjAB", "12D3KooWBm5BkzoAt4yyxodtrRsZUoWZ5aHCg3KRx8WJofAZsPsa"}
 	c.client, err = client.New(ctx, node, nil, protocolCommon.AuthProtocol, MinPeers, MaxPeers)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("ACME Store creation failed: %s", err.Error())})
+		logger.Errorf("ACME Store creation failed: %w", err)
 		return nil, err
 	}
 
-	logger.Debug(moodyCommon.Object{"message": "ACME Distributed Store Created!"})
+	logger.Debug("ACME Distributed Store Created!")
 	return &c, nil
 }
 
 // Get reads a certificate data from the specified file name.
 func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting `%s`", name)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting `%s` done", name)})
+	logger.Debug("Getting `%s`", name)
+	defer logger.Debug("Getting `%s` done", name)
 
 	var (
 		body    *command.Body
 		dataKey string
 	)
 
-	if strings.HasSuffix(name, "+token") == true || strings.HasSuffix(name, "+rsa") == true || strings.HasSuffix(name, "+key") == true || strings.HasSuffix(name, ".key") == true {
+	if strings.HasSuffix(name, "+token") || strings.HasSuffix(name, "+rsa") || strings.HasSuffix(name, "+key") || strings.HasSuffix(name, ".key") {
 		body = &command.Body{"action": "cache-get", "key": name}
 		dataKey = "data"
 	} else {
@@ -79,20 +77,20 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 	res, err := d.client.TrySend("acme", *body)
 	if err != nil {
 		if d.errCacheMiss != nil && err.Error() == d.errCacheMiss.Error() {
-			logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Cache miss for `%s` returning ErrCacheMiss", name)})
+			logger.Debugf("Cache miss for `%s` returning ErrCacheMiss", name)
 			return nil, d.errCacheMiss
 		}
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Getting `%s` failed: %s", name, err.Error())})
+		logger.Errorf("Getting `%s` failed: %w", name, err)
 		return nil, err
 	}
 
 	pem, err := maps.ByteArray(res, dataKey)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Reading PEM error: %s", err.Error())})
+		logger.Errorf("Reading PEM error: %w", err)
 		return nil, err
 	}
 
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting `%s` = %v", name, pem)})
+	logger.Debugf("Getting `%s` = %v", name, pem)
 
 	return pem, nil
 }
@@ -100,12 +98,12 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 // Put writes the certificate data to the specified file name.
 // The file will be created with 0600 permissions.
 func (d *Store) Put(ctx context.Context, name string, data []byte) error {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Storing `%s`", name)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Storing `%s` done", name)})
+	logger.Debugf("Storing `%s`", name)
+	defer logger.Debugf("Storing `%s` done", name)
 
 	var body *command.Body
 
-	if strings.HasSuffix(name, "+token") == true || strings.HasSuffix(name, "+rsa") == true || strings.HasSuffix(name, "+key") == true || strings.HasSuffix(name, ".key") == true {
+	if strings.HasSuffix(name, "+token") || strings.HasSuffix(name, "+rsa") || strings.HasSuffix(name, "+key") || strings.HasSuffix(name, ".key") {
 		body = &command.Body{"action": "cache-set", "key": name, "data": data}
 	} else {
 		body = &command.Body{"action": "set", "fqdn": name, "certificate": data}
@@ -114,23 +112,23 @@ func (d *Store) Put(ctx context.Context, name string, data []byte) error {
 	// write file to DB by sending command
 	_, err := d.client.TrySend("acme", *body)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Storing `%s` error: %s", name, err.Error())})
+		logger.Errorf("Storing `%s` error: %w", name, err)
 	}
 	return err
 }
 
 // Delete removes the specified certificate or tokens (cached data).
 func (d *Store) Delete(ctx context.Context, name string) error {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Deleteing `%s`", name)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Deleteing `%s` done", name)})
+	logger.Debugf("Deleting `%s`", name)
+	defer logger.Debugf("Deleting `%s` done", name)
 	// client can not delete
 	// certificate life cycle is handled by the Auth peers
 
 	// token or any cached data can be deleted
-	if strings.HasSuffix(name, "+token") == true || strings.HasSuffix(name, "+rsa") == true || strings.HasSuffix(name, "+key") == true || strings.HasSuffix(name, ".key") == true {
+	if strings.HasSuffix(name, "+token") || strings.HasSuffix(name, "+rsa") || strings.HasSuffix(name, "+key") || strings.HasSuffix(name, ".key") {
 		_, err := d.client.Send("acme", command.Body{"action": "cache-delete", "key": name})
 		if err != nil {
-			logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Deleting `%s` error: %s", name, err.Error())})
+			logger.Error("Deleting `%s` error: %w", name, err)
 		}
 		return err
 	}

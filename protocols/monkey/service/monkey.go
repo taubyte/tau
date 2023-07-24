@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	hoarderClient "github.com/taubyte/odo/clients/p2p/hoarder"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
@@ -22,13 +21,13 @@ func (m *Monkey) Run() {
 	islocked, err := m.Service.patrickClient.IsLocked(m.Id)
 	if !islocked {
 		errormsg := fmt.Sprintf("Locking job %s failed", m.Id)
-		logger.Error(moody.Object{"msg": errormsg})
+		logger.Error(errormsg)
 		m.logFile.Write([]byte(errormsg))
 	}
 
 	if err != nil {
 		errormsg := fmt.Sprintf("Checking if locked job %s failed with: %s", m.Id, err.Error())
-		logger.Error(moody.Object{"msg": errormsg})
+		logger.Error(errormsg)
 		m.logFile.Write([]byte(errormsg))
 	}
 
@@ -38,7 +37,7 @@ func (m *Monkey) Run() {
 	err = m.RunJob()
 	if err != nil {
 		errormsg := fmt.Sprintf("Running job `%s` failed with error: %s", m.Id, err.Error())
-		logger.Error(moody.Object{"msg": errormsg})
+		logger.Error(errormsg)
 		m.logFile.Write([]byte(errormsg))
 	} else {
 		m.logFile.Write([]byte(fmt.Sprintf("Running job `%s` was successful", m.Id)))
@@ -49,7 +48,7 @@ func (m *Monkey) Run() {
 	cid_of_logs, err0 := m.Service.node.AddFile(m.logFile)
 	if err0 != nil {
 		errormsg := fmt.Sprintf("Writing cid of job `%s` failed: %s", m.Id, err.Error())
-		logger.Error(moody.Object{"msg": errormsg})
+		logger.Error(errormsg)
 		m.logFile.Write([]byte(errormsg))
 	}
 
@@ -63,14 +62,14 @@ func (m *Monkey) Run() {
 			err = m.Service.patrickClient.Unlock(m.Id)
 			if err != nil {
 				errormsg := fmt.Sprintf("Unlocking job failed `%s` failed with: %s", m.Id, err.Error())
-				logger.Error(moody.Object{"msg": errormsg})
+				logger.Error(errormsg)
 				m.logFile.Write([]byte(errormsg))
 			}
 		} else {
 			err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid)
 			if err != nil {
 				errormsg := fmt.Sprintf("Marking job failed `%s` failed with: %s", m.Id, err.Error())
-				logger.Error(moody.Object{"msg": errormsg})
+				logger.Error(errormsg)
 				m.logFile.Write([]byte(errormsg))
 			}
 			m.Status = patrick.JobStatusFailed
@@ -79,7 +78,7 @@ func (m *Monkey) Run() {
 		err = m.Service.patrickClient.Done(m.Id, m.Job.Logs, m.Job.AssetCid)
 		if err != nil {
 			errormsg := fmt.Sprintf("Marking job done `%s` failed: %s", m.Id, err.Error())
-			logger.Error(moody.Object{"msg": errormsg})
+			logger.Error(errormsg)
 			m.logFile.Write([]byte(errormsg))
 			m.Status = patrick.JobStatusFailed
 		} else {
@@ -90,7 +89,7 @@ func (m *Monkey) Run() {
 	hoarder, err := hoarderClient.New(m.Service.ctx, m.Service.node)
 	if err != nil {
 		errormsg := err.Error()
-		logger.Error(moody.Object{"msg": errormsg})
+		logger.Error(errormsg)
 		m.logFile.Write([]byte(errormsg))
 	}
 
@@ -98,7 +97,7 @@ func (m *Monkey) Run() {
 	_, err = hoarder.Stash(cid_of_logs)
 	if err != nil {
 		errormsg := fmt.Sprintf("Hoarding cid `%s` of job `%s` failed: %s", cid_of_logs, m.Id, err.Error())
-		logger.Error(moody.Object{"msg": errormsg})
+		logger.Error(errormsg)
 		m.logFile.Write([]byte(errormsg))
 	}
 	m.LogCID = cid_of_logs

@@ -6,16 +6,10 @@ import (
 	"fmt"
 	"strconv"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	"github.com/taubyte/go-interfaces/kvdb"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/odo/pkgs/kvdb/database"
 	"github.com/taubyte/utils/maps"
 	"github.com/taubyte/utils/network"
-)
-
-var (
-	logger, _ = moody.New("auth.service.api.hooks")
 )
 
 type Data map[string]interface{}
@@ -78,22 +72,22 @@ func (h *GithubHook) Delete(ctx context.Context) error {
 	err = h.KV.Delete(ctx, root+"/github/id")
 	if err != nil {
 		lerror = err
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		// logger.Error(moodyCommon.Object{"message": err.Error()})
 	}
 	err = h.KV.Delete(ctx, root+"/github/secret")
 	if err != nil {
 		lerror = err
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		// logger.Error(moodyCommon.Object{"message": err.Error()})
 	}
 	err = h.KV.Delete(ctx, root+"/github/repository")
 	if err != nil {
 		lerror = err
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		// logger.Error(moodyCommon.Object{"message": err.Error()})
 	}
 	err = h.KV.Delete(ctx, fmt.Sprintf("/repositories/github/%d/hooks/%s", h.Repository, h.Id))
 	if err != nil {
 		lerror = err
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		// logger.Error(moodyCommon.Object{"message": err.Error()})
 	}
 
 	return lerror
@@ -224,6 +218,6 @@ func New(kv kvdb.KVDB, data Data) (Hook, error) {
 			Repository: repository,
 		}, nil
 	default:
-		return nil, errors.New(fmt.Sprintf("Unknows hook type `%s`", provider))
+		return nil, errors.New(fmt.Sprintf("unknown hook type `%s`", provider))
 	}
 }

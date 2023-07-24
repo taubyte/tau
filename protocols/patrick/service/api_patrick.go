@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	moody "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
@@ -171,19 +170,19 @@ func (p *PatrickService) unlockHandler(ctx context.Context, jid string) (cr.Resp
 	}
 	var jobLock Lock
 	if err = cbor.Unmarshal(lockData, &jobLock); err != nil {
-		logger.Error(moody.Object{"msg": fmt.Sprintf("Unamrshal for `%s` failed with: %v", jid, err)})
+		logger.Errorf("Unamrshal for `%s` failed with: %w", jid, err)
 	}
 
 	jobLock.Eta = 0
 	jobLock.Timestamp = 0
 	lockBytes, err := cbor.Marshal(jobLock)
 	if err != nil {
-		logger.Error(moody.Object{"msg": fmt.Sprintf("Marshal for `%s` failed with: %v", jid, err)})
+		logger.Errorf("Marshal for `%s` failed with: %v", jid, err)
 	}
 
 	err = p.db.Put(ctx, "/locked/jobs/"+jid, lockBytes)
 	if err != nil {
-		logger.Error(moody.Object{"msg": fmt.Sprintf("Putting locked job for `%s` failed with: %v", jid, err)})
+		logger.Error("Putting locked job for `%s` failed with: %w", jid, err)
 	}
 
 	return cr.Response{"unlocked": jid}, nil

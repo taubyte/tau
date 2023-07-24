@@ -3,10 +3,8 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
-	moody "github.com/taubyte/go-interfaces/moody"
 	http "github.com/taubyte/http"
 	httpAuth "github.com/taubyte/http/auth"
 	"github.com/taubyte/odo/protocols/auth/github"
@@ -135,7 +133,7 @@ func (srv *PatrickService) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, e
 		}
 		ctx.SetVariable("GithubClient", client)
 		ctx.SetVariable("GithubClientDone", rctx_cancel)
-		logger.Debug(moody.Object{"msg": fmt.Sprintf("[GitHubTokenHTTPAuth] ctx=%v", ctx.Variables())})
+		logger.Debugf("[GitHubTokenHTTPAuth] ctx=%v", ctx.Variables())
 		return nil, nil
 	}
 	return nil, errors.New("valid Github token required")

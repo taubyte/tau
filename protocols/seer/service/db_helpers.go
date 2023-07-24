@@ -7,7 +7,6 @@ import (
 	"path"
 	"time"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/odo/config"
 )
@@ -156,7 +155,7 @@ func initializeDB(srv *Service, config *config.Protocol) error {
 	// Create tables for database
 	err = initializeTables(srv.nodeDB)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed initializing table error: %v", err)})
+		logger.Errorf("Failed initializing table error: %w", err)
 		return fmt.Errorf("initializing table failed with: %s", err)
 	}
 
@@ -167,7 +166,7 @@ func (srv *oracleService) insertHandler(id string, services iface.Services) ([]s
 	var err error
 	var registered []string
 
-	logger.Info(moodyCommon.Object{"message": fmt.Sprintf("Inserting services: %s, for id: %s", services, id)})
+	logger.Infof("Inserting services: %s, for id: %s", services, id)
 	for _, service := range services {
 		err = srv.insertService(id, service)
 		if err != nil {

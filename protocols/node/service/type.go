@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	iface "github.com/taubyte/go-interfaces/services/substrate"
 	databaseIface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	httpIface "github.com/taubyte/go-interfaces/services/substrate/components/http"
@@ -62,10 +61,6 @@ func (s *Service) Vm() vm.Service {
 
 func (s *Service) Http() http.Service {
 	return s.http
-}
-
-func (s *Service) Logger() moodyCommon.Logger {
-	return logger
 }
 
 func (s *Service) Counter() iface.CounterService {

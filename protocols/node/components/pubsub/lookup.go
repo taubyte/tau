@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 
-	moody "github.com/taubyte/go-interfaces/moody"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 	functionSpec "github.com/taubyte/go-specs/function"
@@ -68,7 +67,7 @@ func (s *Service) CheckTns(_matcher commonIface.MatchDefinition) ([]commonIface.
 
 	functions, err := s.Tns().Function().All(matcher.Project, matcher.Application, s.Branch()).List()
 	if err != nil {
-		s.Logger().Error(moody.Object{"message": fmt.Sprintf("Fetching functions list interface failed with: %s", err)})
+		common.Logger.Errorf("Fetching functions list interface failed with: %w", err)
 		return nil, err
 	}
 
@@ -81,7 +80,7 @@ func (s *Service) CheckTns(_matcher commonIface.MatchDefinition) ([]commonIface.
 		var serv commonIface.Serviceable
 		serv, err = function.New(s, messagingContext.Function, *objectPathIface, matcher)
 		if err != nil {
-			s.Logger().Std().Error(fmt.Sprintf("getting Serviceable function failed with: %s", err))
+			common.Logger.Errorf("getting Serviceable function failed with: %w", err)
 			continue
 		}
 

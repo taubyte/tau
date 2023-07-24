@@ -15,7 +15,6 @@ import (
 
 	gitTest "github.com/taubyte/dreamland/helpers/git"
 
-	moodyCommon "bitbucket.org/taubyte/go-moody-blues/common"
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
@@ -70,10 +69,6 @@ const (
 )
 
 // TODO: FIX TESTS
-
-func init() {
-	moodyCommon.Dev = true
-}
 
 func TestAll(t *testing.T) {
 	t.Skip("this is a broken project")
