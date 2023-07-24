@@ -16,7 +16,6 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/patrick"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/patrick/service"
-	_ "github.com/taubyte/odo/protocols/patrick/service"
 	_ "github.com/taubyte/odo/protocols/tns/service"
 )
 

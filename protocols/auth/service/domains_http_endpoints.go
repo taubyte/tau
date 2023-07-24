@@ -37,6 +37,8 @@ func (srv *AuthService) tokenDomainHTTPHandler(ctx http.Context) (interface{}, e
 		return nil, fmt.Errorf("new domain validation failed with: %s", err)
 	}
 
+	fmt.Printf("CLAIMS::::: %#v", claim)
+
 	token, err := claim.Sign()
 	if err != nil {
 		return nil, fmt.Errorf("signing claim failed with: %s", err)

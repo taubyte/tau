@@ -9,8 +9,6 @@ bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292 h1:KvKW5t8dPtw
 bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292/go.mod h1:PwjQRvSiS2n61XRxUTDyar1IYlwXiY1n8RJZbQAklRA=
 bitbucket.org/taubyte/go-moody-blues v0.1.34 h1:h+QZi1oSmBGebJntY8xmRGgtUMJcSRN44N4zt9hMp6c=
 bitbucket.org/taubyte/go-moody-blues v0.1.34/go.mod h1:W+AvsYWzOYR7a5vr17aIktjhBNXHz9Ey3T3aTNjwFTA=
-bitbucket.org/taubyte/p2p v0.8.2 h1:CETvXaN9NuB65Fhi7HbbsROBoicx6mQbfJuB+qXpX6Q=
-bitbucket.org/taubyte/p2p v0.8.2/go.mod h1:830CBFljLI6oDJaZtIuRIM/KM3C0DCMuNIPr3xqTT6c=
 cloud.google.com/go v0.26.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.31.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
 cloud.google.com/go v0.34.0/go.mod h1:aQUYkXzVsufM+DwF1aE+0xfcU+56JwCaLick0ClmMTw=
@@ -906,8 +904,6 @@ github.com/taubyte/utils v0.1.6 h1:bRSJZW/8E/wpT3wwyU3C97M9ddAJ52AfXFeP47JRGsY=
 github.com/taubyte/utils v0.1.6/go.mod h1:b/tKY1xKIxLH5ixFRTsrdz+vGhmiOcR9SpdVYiJDpsI=
 github.com/taubyte/vm-orbit v0.1.1 h1:K6rOBZO06dHKgcKIf9fR68lKJRHTT/KcEgdfDWU5RkM=
 github.com/taubyte/vm-orbit v0.1.1/go.mod h1:8p8HwBlucsL3MjJ9GwC6yd51AIMCmJnOCTeJi7MSF0M=
-github.com/tetratelabs/wazero v1.0.3 h1:IWmaxc/5vKg71DE+c0SLjjLFAA3u3tD/Zegpgif2Wpo=
-github.com/tetratelabs/wazero v1.0.3/go.mod h1:wYx2gNRg8/WihJfSDxA1TIL8H+GkfLYm+bIfbblu9VQ=
 github.com/tklauser/go-sysconf v0.3.11 h1:89WgdJhk5SNwJfu+GKyYveZ4IaJ7xAkecBo+KdJV0CM=
 github.com/tklauser/go-sysconf v0.3.11/go.mod h1:GqXfhXY3kiPa0nAXPDIQIWzJbMCB7AmcWpGR8lSZfqI=
 github.com/tklauser/numcpus v0.6.0 h1:kebhY2Qt+3U6RNK7UqpYNA+tJ23IBEGKkB7JQBfDYms=

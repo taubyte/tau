@@ -83,7 +83,6 @@ require (
 	atomicgo.dev/cursor v0.1.1 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	atomicgo.dev/schedule v0.0.2 // indirect
-	bitbucket.org/taubyte/p2p v0.8.2 // indirect
 	github.com/CAFxX/httpcompression v0.0.8 // indirect
 	github.com/DataDog/zstd v1.5.2 // indirect
 	github.com/Microsoft/go-winio v0.5.2 // indirect

@@ -24,6 +24,7 @@ func createAuthService(ctx context.Context, config *iface.ServiceConfig) (iface.
 
 	if config.Others["http"] != 443 {
 		serviceConfig.HttpListen = fmt.Sprintf("%s:%d", dreamlandCommon.DefaultURL, config.Others["http"])
+		fmt.Println("AUTH HTTP LISTEN:::::", serviceConfig.HttpListen)
 	}
 
 	if result, ok := config.Others["secure"]; ok {
