@@ -5,19 +5,11 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/pkg/errors"
 )
 
 var (
 	logger = log.Logger("monkey.jobs.client")
 )
-
-func init() {
-	var err error
-	if err != nil {
-		panic(errors.Wrap(err, "Initializing moody logger failed"))
-	}
-}
 
 func (c *Context) Run(ctx context.Context, ctxC context.CancelFunc) (err error) {
 	c.ctx, c.ctxC = ctx, ctxC
