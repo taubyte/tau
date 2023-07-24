@@ -8,7 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	moody "bitbucket.org/taubyte/go-moody-blues/common"
+	"github.com/ipfs/go-log/v2"
+
 	"github.com/taubyte/go-interfaces/services"
 	commonSpecs "github.com/taubyte/go-specs/common"
 	httpService "github.com/taubyte/http"
@@ -18,7 +19,7 @@ import (
 )
 
 func Start(ctx context.Context, protocolConfig *config.Protocol) error {
-	moody.LogLevel(moody.DebugLevelFatal)
+	log.SetAllLoggers(log.LevelFatal)
 
 	ctx, ctx_cancel := context.WithCancel(ctx)
 	sigkill := make(chan os.Signal, 1)

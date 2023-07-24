@@ -1,11 +1,8 @@
 package service
 
 import (
-	"fmt"
-
 	"github.com/fxamacker/cbor/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 )
 
@@ -34,13 +31,13 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 		var node nodeData
 		err := cbor.Unmarshal(msg.Data, &node)
 		if err != nil {
-			logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Failed unmarshalling node data with %s", err.Error())})
+			logger.Errorf("Failed unmarshalling node data with %w", err)
 			return
 		}
 
 		_, err = srv.oracle.insertHandler(node.Cid, node.Services)
 		if err != nil {
-			logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Failed inserting node data with %s", err.Error())})
+			logger.Errorf("Failed inserting node data with %w", err)
 			return
 		}
 	}

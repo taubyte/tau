@@ -7,9 +7,8 @@ import (
 	"errors"
 	"fmt"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
+	"github.com/ipfs/go-log/v2"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	nodeP2PIFace "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
@@ -23,7 +22,7 @@ import (
 )
 
 var (
-	logger, _ = moody.New("node.service")
+	logger = log.Logger("node.service")
 )
 
 func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
@@ -134,7 +133,7 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 	}
 
 	if len(config.P2PAnnounce) == 0 {
-		logger.Error(moodyCommon.Object{"message": errors.New("P2P Announce is empty")})
+		logger.Error("P2P Announce is empty")
 		return nil, errors.New("P2P Announce is empty")
 	}
 

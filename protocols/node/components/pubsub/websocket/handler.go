@@ -8,7 +8,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	moody "github.com/taubyte/go-interfaces/moody"
+
 	"github.com/taubyte/go-specs/extract"
 	messagingSpec "github.com/taubyte/go-specs/messaging"
 	service "github.com/taubyte/http"
@@ -40,10 +40,7 @@ func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn)
 	id, err := AddSubscription(srv, handler.matcher.Path(), func(msg *pubsub.Message) {
 		handler.ch <- msg.GetData()
 	}, func(err error) {
-		srv.Logger().Error(moody.Object{
-			"message": fmt.Sprintf("Add subscription to `%s` failed with %s", handler.matcher.Path(), err),
-			"handler": handler.matcher,
-		})
+		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher.Path(), err)
 		if handler.ctx.Err() == nil {
 			handler.ch <- []byte(err.Error())
 		}

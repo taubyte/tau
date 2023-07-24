@@ -27,7 +27,6 @@ func ErrorWrapper(serviceable components.Serviceable, startTime time.Time, coldS
 			var skipExecution bool
 			basePath, err := newPathFromServiceable(serviceable)
 			if err != nil {
-				serviceable.Service().Logger().Errorf("Creating counter path failed with: %s", err)
 				return
 			}
 

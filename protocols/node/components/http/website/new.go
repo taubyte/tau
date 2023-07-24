@@ -54,7 +54,6 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 			err = web.validateAsset()
 			if err != nil {
 				web.ctxC()
-				web.srv.Logger().Errorf(fmt.Sprintf("Validating cached website asset failed with: %s", err))
 			}
 
 			return _w, nil

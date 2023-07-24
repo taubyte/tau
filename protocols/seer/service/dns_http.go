@@ -3,7 +3,6 @@ package service
 import (
 	"fmt"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	http "github.com/taubyte/http"
 )
@@ -100,7 +99,7 @@ func (srv *Service) getDnsService(ctx http.Context) (interface{}, error) {
 	row, err := srv.nodeDB.Query(getService)
 	srv.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("getting service %s from usage failed with: %s", id, err)})
+		logger.Errorf("getting service %s from usage failed with: %w", id, err)
 		return nil, fmt.Errorf("getHttpServices query failed with: %s", err)
 	}
 	defer row.Close()

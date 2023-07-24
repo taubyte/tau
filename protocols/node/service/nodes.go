@@ -3,7 +3,6 @@ package service
 import (
 	"fmt"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/odo/config"
 	counters "github.com/taubyte/odo/protocols/node/components/counters"
 	database "github.com/taubyte/odo/protocols/node/components/database"
@@ -17,7 +16,7 @@ import (
 
 func attachNodesError(name string, err error) error {
 	err = fmt.Errorf("creating node %s failed with %s", name, err.Error())
-	logger.Error(moodyCommon.Object{"message": err.Error()})
+	logger.Error(err)
 
 	return err
 }

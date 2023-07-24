@@ -13,7 +13,6 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/odo/protocols/auth/github"
 
 	"github.com/taubyte/odo/protocols/auth/service/hooks"
@@ -206,9 +205,9 @@ func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client *
 
 func (srv *AuthService) newGitHubProject(ctx context.Context, client *github.Client, projectID, projectName, configID, codeID string) (map[string]interface{}, error) {
 	response := make(map[string]interface{})
-	logger.Debug(moodyCommon.Object{"message": "Creating project " + projectName})
+	logger.Debug("Creating project " + projectName)
 
-	logger.Debug(moodyCommon.Object{"message": "Project ID=" + projectID})
+	logger.Debug("Project ID=" + projectID)
 	response["project"] = map[string]string{"id": projectID, "name": projectName}
 
 	gituser := client.Me()
@@ -247,7 +246,7 @@ func (srv *AuthService) newGitHubProject(ctx context.Context, client *github.Cli
 		return nil, err
 	}
 
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Project Add returned %v", response)})
+	logger.Debugf("Project Add returned %v", response)
 
 	return response, nil
 }
@@ -260,14 +259,14 @@ func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client *g
 
 	repos := client.ListMyRepos()
 
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("User repos:%v", repos)})
+	logger.Debug("User repos:%v", repos)
 
 	user_repos := make(map[string]interface{}, 0)
 	for repo_id := range repos {
 		repo_key := fmt.Sprintf("/repositories/github/%s/name", repo_id)
 		v, err := srv.db.Get(ctx, repo_key)
 		if err == nil && len(v) > 0 {
-			logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Check %s got %s", repo_key, string(v))})
+			logger.Debugf("Check %s got %s", repo_key, string(v))
 			user_repos[repo_id] = map[string]interface{}{
 				"id":   repo_id,
 				"name": string(v),
@@ -275,7 +274,7 @@ func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client *g
 		}
 	}
 
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("getGitHubProjects: extracted %s", user_repos)})
+	logger.Debug("getGitHubProjects: extracted %s", user_repos)
 
 	response["repositories"] = user_repos
 
@@ -304,7 +303,7 @@ func (srv *AuthService) getGitHubUserProjects(ctx context.Context, client *githu
 		}
 	}
 
-	logger.Debug(moodyCommon.Object{"message": user_projects})
+	logger.Debug(user_projects)
 
 	response["projects"] = getMapValues(user_projects)
 

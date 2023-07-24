@@ -2,11 +2,9 @@ package p2p
 
 import (
 	"context"
-	"fmt"
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
+	"github.com/ipfs/go-log/v2"
 	iface "github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/p2p/peer"
 	client "github.com/taubyte/p2p/streams/client"
@@ -18,7 +16,7 @@ var (
 	MinPeers                 = 0
 	MaxPeers                 = 2
 	DefaultGeoBeaconInterval = 5 * time.Minute
-	logger, _                = moody.New("monkey.p2p.client")
+	logger                   = log.Logger("monkey.p2p.client")
 )
 
 var _ iface.Client = &Client{}
@@ -39,7 +37,7 @@ func New(ctx context.Context, node peer.Node) (*Client, error) {
 
 	c.client, err = client.New(ctx, node, nil, protocolCommon.MonkeyProtocol, MinPeers, MaxPeers)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("API client creation failed: %s", err.Error())})
+		logger.Errorf("API client creation failed: %w", err)
 		return nil, err
 	}
 	return &c, nil

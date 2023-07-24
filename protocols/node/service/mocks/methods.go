@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/pkg/errors"
-	"github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-interfaces/vm"
@@ -36,10 +35,6 @@ func (m *mockedSubstrate) Http() httpSrv.Service {
 
 func (m *mockedSubstrate) Vm() vm.Service {
 	return m.vm
-}
-
-func (m *mockedSubstrate) Logger() moody.Logger {
-	return logger
 }
 
 func (m *mockedSubstrate) Tns() tns.Client {

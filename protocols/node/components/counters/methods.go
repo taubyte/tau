@@ -32,7 +32,7 @@ func (s *Service) Start() {
 					s.ledgerLock.Unlock()
 				} else {
 					if err := genericMetric.Aggregate(metric.Metric); err != nil {
-						s.Logger().Errorf("aggregate metric failed with: %s", err)
+						subLogger.Errorf("aggregate metric failed with: %s", err)
 					}
 				}
 			case <-time.After(substrate.DefaultReportTime):
@@ -55,7 +55,7 @@ func (s *Service) Start() {
 func (s *Service) report(ledger map[string]substrate.Metric) {
 	err := s.billingClient.Report(ledger)
 	if err != nil {
-		s.Logger().Errorf(fmt.Sprintf("Failed reporting to billing with %v", err))
+		subLogger.Errorf(fmt.Sprintf("Failed reporting to billing with %v", err))
 	}
 }
 

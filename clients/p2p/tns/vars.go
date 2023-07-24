@@ -3,7 +3,7 @@ package p2p
 import (
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
+	"github.com/ipfs/go-log/v2"
 )
 
 var (
@@ -11,5 +11,5 @@ var (
 	MaxPeers                  = 4
 	CacheFetchRetryWait       = 1 * time.Second
 	MaximumCacheFetchInterval = 1 * time.Second
-	logger, _                 = moody.New("tns.api.p2p")
+	logger                    = log.Logger("tns.api.p2p")
 )

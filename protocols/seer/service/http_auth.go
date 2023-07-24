@@ -3,10 +3,8 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
-	moody "github.com/taubyte/go-interfaces/moody"
 	"github.com/taubyte/odo/protocols/auth/github"
 
 	http "github.com/taubyte/http"
@@ -26,8 +24,7 @@ func (srv *Service) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, error) {
 		ctx.SetVariable("GithubClient", client)
 		ctx.SetVariable("GithubClientDone", rctx_cancel)
 
-		debugMsg := fmt.Sprintf("[GitHubTokenHTTPAuth] ctx=%v", ctx.Variables())
-		logger.Debug(moody.Object{"message": debugMsg})
+		logger.Debugf("[GitHubTokenHTTPAuth] ctx=%v", ctx.Variables())
 
 		return nil, nil
 	}

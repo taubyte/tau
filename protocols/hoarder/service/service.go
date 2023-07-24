@@ -4,11 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	moodyBlues "bitbucket.org/taubyte/go-moody-blues"
 	"github.com/fxamacker/cbor/v2"
 	pebble "github.com/ipfs/go-ds-pebble"
+	"github.com/ipfs/go-log/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/taubyte/go-interfaces/moody"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
@@ -20,12 +19,8 @@ import (
 )
 
 var (
-	logger moody.Logger
+	logger = log.Logger("hoarder.service")
 )
-
-func init() {
-	logger, _ = moodyBlues.New("hoarder.service")
-}
 
 func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 	var srv Service
@@ -136,10 +131,10 @@ func (srv *Service) subscribe() error {
 		func(err error) {
 			// re-establish if fails
 			if err.Error() != "context canceled" {
-				logger.Errorf(fmt.Sprintf("Subscription had an error: %s", err.Error()))
+				logger.Errorf("Subscription had an error: %w", err)
 
 				if err := srv.subscribe(); err != nil {
-					logger.Errorf("resubscribe failed with: %s", err)
+					logger.Errorf("resubscribe failed with: %w", err)
 				}
 			}
 		},

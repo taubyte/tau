@@ -25,7 +25,7 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 	for _, objectPathIface := range functions {
 		var serv commonIface.Serviceable
 		if serv, err = function.New(s, *objectPathIface, matcher); err != nil {
-			s.Logger().Std().Error(fmt.Sprintf("Getting Serviceable function failed with: %s", err))
+			common.Logger.Errorf("Getting Serviceable function failed with: %s", err)
 			continue
 		}
 

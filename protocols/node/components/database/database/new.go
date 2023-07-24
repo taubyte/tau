@@ -15,7 +15,7 @@ func New(srv iface.Service, dbContext iface.Context) (iface.Database, error) {
 		return nil, err
 	}
 
-	keystore, err := kv.New(dbContext.Config.Size, databaseHash, srv.Logger(), srv.Node())
+	keystore, err := kv.New(dbContext.Config.Size, databaseHash, common.Logger, srv.Node())
 	if err != nil {
 		return nil, fmt.Errorf("failed creating KV database for %s with error: %v", dbContext.Matcher, err)
 	}

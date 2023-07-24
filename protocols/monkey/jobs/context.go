@@ -2,10 +2,8 @@ package jobs
 
 import (
 	"context"
-	"fmt"
 	"time"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
@@ -30,7 +28,7 @@ func (c *Context) startTimeout(ctx context.Context, ctxC context.CancelFunc) {
 	<-time.After(time.Duration(defaultWaitTime) * time.Second)
 	err := c.Patrick.Timeout(c.Job.Id)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"msg": fmt.Sprintf("Sending timeout for job %s failed with %v", c.Job.Id, err)})
+		logger.Errorf("Sending timeout for job %s failed with %v", c.Job.Id, err)
 		return
 	}
 

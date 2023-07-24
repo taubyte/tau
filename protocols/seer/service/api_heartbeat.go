@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
@@ -141,7 +140,7 @@ func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn stre
 		return nil, fmt.Errorf("heartbeat insert exec for hostname: `%s` failed with: %s", hostname, err)
 	}
 
-	logger.Info(moodyCommon.Object{"message": fmt.Sprintf("Inserted/Updated %s in Usage", id)})
+	logger.Infof("Inserted/Updated %s in Usage", id)
 
 	return cr.Response{"Updated Usage": id}, nil
 }
@@ -153,7 +152,7 @@ func (srv *oracleService) listIds() (cr.Response, error) {
 	row, err := srv.seer.nodeDB.Query("SELECT Id FROM Usage")
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed listIds query error: %v", err)})
+		logger.Errorf("Failed listIds query error: %w", err)
 		return nil, fmt.Errorf("failed listIds query error: %w", err)
 	}
 	defer row.Close()
@@ -178,7 +177,7 @@ func (srv *oracleService) listServiceIds(name string) (cr.Response, error) {
 	row, err := srv.seer.nodeDB.Query(statement)
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed listServiceIds query error: %v", err)})
+		logger.Errorf("Failed listServiceIds query error: %w", err)
 		return nil, fmt.Errorf("failed listServiceIds query error: %w", err)
 	}
 	defer row.Close()
@@ -206,7 +205,7 @@ func (srv *oracleService) getInfo(id string) (cr.Response, error) {
 	row, err := srv.seer.nodeDB.Query(statement)
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed query from usage for %s with: %v", id, err)})
+		logger.Errorf("Failed query from usage for %s with: %w", id, err)
 		return nil, fmt.Errorf("failed info query error: %w", err)
 	}
 	defer row.Close()
@@ -249,7 +248,7 @@ func (srv *oracleService) getInfo(id string) (cr.Response, error) {
 	row2, err := srv.seer.nodeDB.Query(getType)
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed getting type from services for %s with: %v", service.Id, err)})
+		logger.Errorf("Failed getting type from services for %s with: %w", service.Id, err)
 		return nil, fmt.Errorf("failed getting types query error: %w", err)
 	}
 	defer row2.Close()
@@ -265,7 +264,7 @@ func (srv *oracleService) getInfo(id string) (cr.Response, error) {
 
 	serviceBytes, err := json.Marshal(service)
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("Failed marshalling service for %s with: %v", service.Id, err)})
+		logger.Errorf("Failed marshalling service for %s with: %w", service.Id, err)
 		return nil, fmt.Errorf("marshalling service failed with: %s", err)
 	}
 

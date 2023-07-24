@@ -9,9 +9,8 @@ import (
 
 	_ "embed"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
+	"github.com/ipfs/go-log/v2"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	commonSpec "github.com/taubyte/go-specs/common"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
@@ -26,7 +25,7 @@ import (
 )
 
 var (
-	logger, _ = moody.New("seer.service")
+	logger = log.Logger("seer.service")
 )
 
 func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Service, error) {
@@ -47,7 +46,7 @@ func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Ser
 		return nil, fmt.Errorf("building config failed with: %s", err)
 	}
 
-	logger.Info(moodyCommon.Object{"message": fmt.Sprintf("Config: %#v", config)})
+	logger.Infof("Config: %#v", config)
 
 	srv.dnsResolver = net.DefaultResolver
 	srv.generatedDomain = config.GeneratedDomain
@@ -76,7 +75,7 @@ func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Ser
 		clientNode = config.ClientNode
 	}
 
-	srv.db, err = kv.New(logger.Std(), srv.node, protocolsCommon.Seer, 5)
+	srv.db, err = kv.New(logger, srv.node, protocolsCommon.Seer, 5)
 	if err != nil {
 		return nil, fmt.Errorf("new key-value store failed with: %s", err)
 	}
@@ -84,7 +83,7 @@ func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Ser
 	// Setup/Start DNS service
 	err = srv.newDnsServer(config.DevMode, config.Ports["dns"])
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": fmt.Sprintf("creating Dns server failed with: %s", err)})
+		logger.Errorf("creating Dns server failed with: %s", err)
 		return nil, fmt.Errorf("new dns server failed with: %s", err)
 	}
 

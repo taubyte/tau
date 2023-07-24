@@ -1,19 +1,17 @@
 package service
 
 import (
-	"fmt"
 	"net"
 	"time"
 
 	"github.com/miekg/dns"
-	moody "github.com/taubyte/go-interfaces/moody"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 )
 
 const defaultFallback string = "__"
 
 func (h *dnsHandler) replyFallback(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
-	logger.Info(moody.Object{"message": fmt.Sprintf("HITTING FALLBACK FOR %s", msg.Question[0].Name)})
+	logger.Infof("HITTING FALLBACK FOR %s", msg.Question[0].Name)
 	msg.Answer = append(msg.Answer, &dns.CNAME{
 		Hdr: dns.RR_Header{
 			Name:   r.Question[0].Name,
@@ -26,7 +24,7 @@ func (h *dnsHandler) replyFallback(w dns.ResponseWriter, r *dns.Msg, errMsg *dns
 
 	err := w.WriteMsg(&msg)
 	if err != nil {
-		logger.Error(moody.Object{"message": fmt.Sprintf("Failed writing fallback msg with %v", err)})
+		logger.Errorf("Failed writing fallback msg with %v", err)
 	}
 }
 
@@ -50,10 +48,10 @@ func (h *dnsHandler) reply(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, ms
 
 	err = w.WriteMsg(&msg)
 	if err != nil {
-		logger.Error(moody.Object{"message": fmt.Sprintf("write message failed with: %s", err)})
+		logger.Errorf("write message failed with: %s", err)
 		err = w.WriteMsg(errMsg)
 		if err != nil {
-			logger.Error(moody.Object{"message": fmt.Sprintf("Failed writing error message for WriteMsg with %v", err)})
+			logger.Errorf("Failed writing error message for WriteMsg with %v", err)
 		}
 	}
 }

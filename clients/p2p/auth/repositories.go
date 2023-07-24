@@ -3,7 +3,6 @@ package p2p
 import (
 	"fmt"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	iface "github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
@@ -68,8 +67,8 @@ func (r *GithubRepositories) New(obj map[string]interface{}) (iface.GithubReposi
 }
 
 func (r *GithubRepositories) Get(id int) (iface.GithubRepository, error) {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting Github Repository `%d`", id)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting Github Repository `%d` done", id)})
+	logger.Debugf("Getting Github Repository `%d`", id)
+	defer logger.Debugf("Getting Github Repository `%d` done", id)
 
 	response, err := r.client.Send("repositories", command.Body{"action": "get", "provider": "github", "id": id})
 	if err != nil {

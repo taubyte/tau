@@ -7,6 +7,7 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
+	"github.com/taubyte/odo/protocols/node/components/p2p/common"
 	counter "github.com/taubyte/odo/vm/counter"
 	"github.com/taubyte/odo/vm/lookup"
 	"github.com/taubyte/p2p/peer"
@@ -50,7 +51,7 @@ func (srv *Service) StartStream(name, protocol string, handler iface.StreamHandl
 		if err != nil {
 			err1 := ce.Encode(s, err)
 			if err1 != nil {
-				srv.Logger().Errorf("ce.Encode1- failed with: %s", err1)
+				common.Logger.Errorf("ce.Encode1- failed with: %w", err1)
 				return
 			}
 			return
@@ -60,7 +61,7 @@ func (srv *Service) StartStream(name, protocol string, handler iface.StreamHandl
 		if err != nil {
 			err1 := ce.Encode(s, err)
 			if err1 != nil {
-				srv.Logger().Errorf("ce.Encode-2 failed with: %s", err1)
+				common.Logger.Errorf("ce.Encode-2 failed with: %w", err1)
 				return
 			}
 			return
@@ -68,7 +69,7 @@ func (srv *Service) StartStream(name, protocol string, handler iface.StreamHandl
 
 		err = creturn.Encode(s)
 		if err != nil {
-			srv.Logger().Errorf("ce.Encode-3 failed with: %s", err)
+			common.Logger.Errorf("ce.Encode-3 failed with: %w", err)
 			return
 		}
 	})
