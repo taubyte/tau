@@ -9,11 +9,11 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 
-	_ "github.com/taubyte/odo/protocols/auth/service"
-	_ "github.com/taubyte/odo/protocols/hoarder/service"
-	_ "github.com/taubyte/odo/protocols/monkey/service"
-	_ "github.com/taubyte/odo/protocols/node/service"
-	_ "github.com/taubyte/odo/protocols/patrick/service"
+	_ "github.com/taubyte/odo/protocols/auth"
+	_ "github.com/taubyte/odo/protocols/hoarder"
+	_ "github.com/taubyte/odo/protocols/monkey"
+	_ "github.com/taubyte/odo/protocols/patrick"
+	_ "github.com/taubyte/odo/protocols/substrate"
 )
 
 func TestCalls(t *testing.T) {

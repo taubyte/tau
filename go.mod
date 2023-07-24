@@ -4,6 +4,15 @@ go 1.19
 
 replace github.com/taubyte/go-interfaces => /home/tafkhan/Documents/Work/Taubyte/Repos/go-interfaces
 
+replace github.com/taubyte/dreamland => /home/tafkhan/Documents/Work/Taubyte/new/dreamland
+
+replace github.com/taubyte/config-compiler => /home/tafkhan/Documents/Work/Taubyte/new/config-compiler
+
+replace github.com/taubyte/odo => /home/tafkhan/Documents/Work/Taubyte/new/odo
+
+replace github.com/taubyte/vm => /home/tafkhan/Documents/Work/Taubyte/Repos/vm
+
+
 require (
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137

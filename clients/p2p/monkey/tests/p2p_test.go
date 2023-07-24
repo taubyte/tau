@@ -11,13 +11,13 @@ import (
 	"github.com/taubyte/go-interfaces/services/patrick"
 	p2p "github.com/taubyte/odo/clients/p2p/monkey"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
-	_ "github.com/taubyte/odo/protocols/hoarder/service"
-	"github.com/taubyte/odo/protocols/monkey/service"
+	_ "github.com/taubyte/odo/protocols/hoarder"
+	"github.com/taubyte/odo/protocols/monkey"
 	"github.com/taubyte/p2p/peer"
 )
 
 func TestClient(t *testing.T) {
-	service.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
+	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 
