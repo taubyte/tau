@@ -2,8 +2,6 @@ module github.com/taubyte/odo
 
 go 1.19
 
-replace github.com/taubyte/dreamland => /home/tafkhan/Documents/Work/Taubyte/new/dreamland
-
 require (
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	bitbucket.org/taubyte/go-moody-blues v0.1.34
@@ -36,9 +34,9 @@ require (
 	github.com/pterm/pterm v0.12.62
 	github.com/spf13/afero v1.9.5
 	github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29
-	github.com/taubyte/config-compiler v0.0.0-20230724195442-6377ab4dc792
+	github.com/taubyte/config-compiler v0.4.3
 	github.com/taubyte/domain-validation v1.0.0
-	github.com/taubyte/dreamland v0.0.0-20230718183213-ba499b2adb43
+	github.com/taubyte/dreamland v0.4.2
 	github.com/taubyte/go-interfaces v0.2.6
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.8
