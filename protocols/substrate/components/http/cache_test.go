@@ -74,12 +74,12 @@ func TestCache(t *testing.T) {
 		return
 	}
 
-	// time.Sleep(500 * time.Microsecond)
+	time.Sleep(500 * time.Microsecond)
 
-	// if cached, _ := s.cache.Get(functionMatcher); len(cached) != 0 {
-	// 	t.Error("Expected function cache to be clear")
-	// 	return
-	// }
+	if cached, _ := s.cache.Get(functionMatcher); len(cached) != 0 {
+		t.Error("Expected function cache to be clear")
+		return
+	}
 
 	if err := checkFunction(s, testFunctionId, functionMatcher); err != nil {
 		t.Error(err)
@@ -103,13 +103,13 @@ func TestCache(t *testing.T) {
 
 	time.Sleep(200 * time.Microsecond)
 
-	// if cached, _ := s.cache.Get(functionMatcher); len(cached) != 0 {
-	// 	t.Error("Expected function to be cleared")
-	// 	return
-	// }
+	if cached, _ := s.cache.Get(functionMatcher); len(cached) != 0 {
+		t.Error("Expected function to be cleared")
+		return
+	}
 
-	// if cached, _ := s.cache.Get(functionMatcher2); len(cached) != 0 {
-	// 	t.Error("Expected function 2 to be cleared")
-	// 	return
-	// }
+	if cached, _ := s.cache.Get(functionMatcher2); len(cached) != 0 {
+		t.Error("Expected function 2 to be cleared")
+		return
+	}
 }
