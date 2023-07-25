@@ -33,7 +33,7 @@ require (
 	github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29
 	github.com/taubyte/config-compiler v0.4.4
 	github.com/taubyte/domain-validation v1.0.0
-	github.com/taubyte/dreamland v0.4.3
+	github.com/taubyte/dreamland v0.4.4
 	github.com/taubyte/go-interfaces v0.2.7
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.8

@@ -880,8 +880,8 @@ github.com/taubyte/config-compiler v0.4.4 h1:/0XnrEc08wvzBCBigFjnyZjWfp4tF7IfCs+
 github.com/taubyte/config-compiler v0.4.4/go.mod h1:a2J00DWUx/MsagVg6+Z1cHq3u+XzMBbzZb199tl2Yx0=
 github.com/taubyte/domain-validation v1.0.0 h1:yUt6y7b/3PC9aocvl7s8cBKG4ieN35zQqVQIywGUg4o=
 github.com/taubyte/domain-validation v1.0.0/go.mod h1:/X3yd7sBjnE323rA8I9PiUt5+NlKU4I02nQik25Vqe8=
-github.com/taubyte/dreamland v0.4.3 h1:UDhG28KYelZCE5Jv8yFqCBf6NDWi4FfPr9edVSuY8vg=
-github.com/taubyte/dreamland v0.4.3/go.mod h1:BXcSeI4Qe7SZ2+/FDMnGlTwsFVZgIDjWvnjMUMHyOo0=
+github.com/taubyte/dreamland v0.4.4 h1:k+LLSl6dNTPf3OusQPjti0uLZ4N3CzMSPtf/mrY9zHs=
+github.com/taubyte/dreamland v0.4.4/go.mod h1:orG8AhLssuXv8ZCXKkqKldWm6J6jhofFnRe2RX/z4C8=
 github.com/taubyte/go-interfaces v0.2.7 h1:NAr+WvPuHK7kc7Pzo2vw2bFX+ErYJ9Ao60xkshanIko=
 github.com/taubyte/go-interfaces v0.2.7/go.mod h1:mJQCOPZnCK7bG1wR3KG64lmJ2rzaTrydwifxBR4XPqk=
 github.com/taubyte/go-project-schema v0.9.3 h1:2H0ClUZq7f97OgtL0FUe9tv2v12wOmnTAIiJGLei/gU=
