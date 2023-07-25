@@ -124,14 +124,11 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 }
 
 func (srv *Service) Close() error {
-	// TODO use debug logger
-	fmt.Println("Closing", protocolCommon.Monkey)
-	defer fmt.Println(protocolCommon.Monkey, "closed")
+	logger.Info("Closing", protocolCommon.Monkey)
+	defer logger.Info(protocolCommon.Monkey, "closed")
 
-	// node.ctx
 	srv.stream.Stop()
 
-	// ctx & partly relies on node
 	srv.tnsClient.Close()
 	srv.patrickClient.Close()
 

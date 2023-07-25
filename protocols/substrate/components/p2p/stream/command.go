@@ -31,7 +31,6 @@ func (st *Stream) Command(command string) (iface.Command, error) {
 }
 
 func (c *Command) beforeSend(ctx context.Context, body command.Body) (*client.Client, command.Body, error) {
-	// TODO srv.p2pClient
 	p2pClient, err := client.New(ctx, c.srv.Node(), nil, common.Protocol, common.MinPeers, common.MaxPeers)
 	if err != nil {
 		return nil, nil, fmt.Errorf("New p2p client failed with: %s", err)
@@ -48,7 +47,6 @@ func (c *Command) beforeSend(ctx context.Context, body command.Body) (*client.Cl
 	}, nil
 }
 
-// TODO: should be in client
 func (c *Command) Send(ctx context.Context, body map[string]interface{}) (response.Response, error) {
 	p2pClient, body, err := c.beforeSend(ctx, body)
 	if err != nil {

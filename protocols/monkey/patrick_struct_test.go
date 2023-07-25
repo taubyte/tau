@@ -25,6 +25,7 @@ func (s *starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error
 	}
 
 	s.Jobs[job.Id] = job
+	// TODO Use .Messaging().Topic() ... topic.Publish() instead
 	err = peerC.Messaging().Publish(patrickSpecs.PubSubIdent, job_bytes)
 	if err != nil {
 		return fmt.Errorf("Publish job failed: %w", err)

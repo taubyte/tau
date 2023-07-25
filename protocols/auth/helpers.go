@@ -1,7 +1,6 @@
 package auth
 
 import (
-	"regexp"
 	"strings"
 )
 
@@ -36,6 +35,3 @@ func extractIdFromKey(list []string, split string, index int) []string {
 	}
 	return ids
 }
-
-// https://www.cloudhadoop.com/2018/12/go-example-program-to-check-string_13.html
-var isStringVarName = regexp.MustCompile(`^[a-zA-Z]+[a-zA-Z0-9]*$`).MatchString

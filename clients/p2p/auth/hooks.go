@@ -1,4 +1,4 @@
-package p2p
+package auth
 
 import (
 	"errors"
@@ -8,8 +8,6 @@ import (
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
-
-type Hooks Client
 
 func (c *Client) Hooks() iface.Hooks {
 	return (*Hooks)(c)

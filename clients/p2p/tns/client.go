@@ -1,4 +1,4 @@
-package p2p
+package tns
 
 import (
 	"context"
@@ -60,7 +60,7 @@ func (c *Client) List(depth int) ([]string, error) {
 // Fetch a key, does not watch nor cache value
 func (c *Client) Fetch(path tns.Path) (tns.Object, error) {
 	logger.Debugf("Fetching keys %v", path.String())
-	defer logger.Debug("Fetching keys %v DONE", path.String())
+	defer logger.Debugf("Fetching keys %v DONE", path.String())
 
 	var err error
 	object := c.cache.get(path)
@@ -142,12 +142,6 @@ func (c *Client) lookup(query tns.Query) ([]string, error) {
 	}
 
 	return maps.StringArray(response, "keys")
-}
-
-type responseObject struct {
-	object interface{}
-	path   tns.Path
-	tns    *Client
 }
 
 // Use for indexed object links

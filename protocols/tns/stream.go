@@ -14,10 +14,9 @@ func (srv *Service) setupStreamRoutes() {
 		return cr.Response{"time": int(time.Now().Unix())}, nil
 	})
 
-	srv.stream.Router().AddStatic("push", srv.pushHandler) // TODO: requires secret + maybe a handshare using project PSK
+	// TODO: requires secret + maybe a handshare using project PSK
+	srv.stream.Router().AddStatic("push", srv.pushHandler)
 	srv.stream.Router().AddStatic("fetch", srv.fetchHandler)
 	srv.stream.Router().AddStatic("lookup", srv.lookupHandler)
 	srv.stream.Router().AddStatic("list", srv.listHandler)
-	// a node can suscribe to a regexp pubsub
-	// name /tns/updates/<updated key name>
 }

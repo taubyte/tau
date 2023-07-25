@@ -1,30 +1,14 @@
-package p2p
+package tns
 
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/odo/clients/p2p/tns/common"
 	"github.com/taubyte/p2p/peer"
 )
-
-type subscription struct {
-	ctx  context.Context
-	ctxC context.CancelFunc
-
-	virtualCtx  context.Context
-	virtualCtxC context.CancelFunc
-}
-
-type cache struct {
-	node          peer.Node
-	lock          sync.RWMutex
-	data          map[string]interface{}
-	subscriptions map[string]*subscription
-}
 
 func newCache(node peer.Node) *cache {
 	return &cache{
@@ -70,11 +54,10 @@ func (c *cache) listen(key tns.Path) (*subscription, error) {
 	// Locked by the caller
 	sub, ok := c.subscriptions[topic]
 	if ok {
-
 		// TODO: Update timeout
-
 		return sub, nil
 	}
+
 	sub = &subscription{}
 	sub.ctx, sub.ctxC = context.WithCancel(c.node.Context())
 	sub.virtualCtx, sub.virtualCtxC = context.WithCancel(sub.ctx)

@@ -17,7 +17,6 @@ type storageMethod func(storageIface.Service, storageIface.Context, log.Standard
 type Service struct {
 	nodeIface.Service
 
-	dev           bool
 	storages      map[string]storageIface.Storage
 	storagesLock  sync.RWMutex
 	storageMethod storageMethod

@@ -108,9 +108,7 @@ func (srv *Service) downloadAsset(ctx http.Context) (interface{}, error) {
 	file.Read(typeBuff)
 	defer file.Close()
 
-	//rewind f
 	file.Seek(0, 0)
-
 	fileData, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading asset file %s with %v", assetCID, err)
@@ -143,7 +141,6 @@ func (srv *Service) setupTNSGatewayHTTPRoutes() {
 		Handler: srv.projectConfigHandler,
 	})
 
-	//srv.http.GET("/geo/distance/{distance}/{latitude}/{longitude}", []string{"distance", "latitude", "longitude"}, []string{"geo/query"}, nil, srv.getGeoDistanceHTTPHandler, nil)
 	srv.http.GET(&http.RouteDefinition{
 		Host: host,
 		Path: "/download/{projectId}/{assetCID}",

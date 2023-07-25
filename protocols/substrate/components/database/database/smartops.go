@@ -8,7 +8,6 @@ import (
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 )
 
-// var _ substrate.SmartOpEventCaller = &Database{}
 var _ substrate.SmartOpEventCaller = &Database{}
 
 const resourceType = sdkSmartOpsCommon.ResourceTypeDatabase

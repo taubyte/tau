@@ -18,8 +18,8 @@ import (
 func (m *Monkey) Run() {
 	// declare started
 	m.Status = patrick.JobStatusLocked
-	islocked, err := m.Service.patrickClient.IsLocked(m.Id)
-	if !islocked {
+	isLocked, err := m.Service.patrickClient.IsLocked(m.Id)
+	if !isLocked {
 		errormsg := fmt.Sprintf("Locking job %s failed", m.Id)
 		logger.Error(errormsg)
 		m.logFile.Write([]byte(errormsg))

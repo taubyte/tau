@@ -126,7 +126,8 @@ func initializeDB(srv *Service, config *config.Protocol) error {
 			if err != nil {
 				return fmt.Errorf("creating file after stat failed with: %s", err)
 			}
-		} else { //If file does exist rename and create new database
+		} else {
+			//If file does exist rename and create new database
 			newFileName := fmt.Sprintf("%s%d", file.Name(), time.Now().UnixNano())
 
 			if err := os.Rename(file.Name(), newFileName); err != nil {

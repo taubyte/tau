@@ -1,6 +1,6 @@
 package common
 
-import "github.com/libp2p/go-libp2p-core/pnet"
+import "github.com/libp2p/go-libp2p/core/pnet"
 
 func SwarmKey() pnet.PSK {
 	return []byte(`/key/swarm/psk/1.0.0/

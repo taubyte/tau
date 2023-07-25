@@ -32,7 +32,7 @@ func (f *Function) SmartOps(ev *event.Event) (uint32, error) {
 				ch,
 			)
 
-			// TODO, should not error here, should remove from the mmi, then continue running the function with
+			// TODO: should not error here, should remove from the mmi, then continue running the function with
 			// the reduced mmi
 			if err != nil {
 				return 0, err

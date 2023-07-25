@@ -33,16 +33,19 @@ func (srv *PatrickService) projectAllJobHandler(ctx http.Context) (interface{}, 
 	prefix := fmt.Sprintf("/by/project/%s/", projectId)
 	res, err := srv.db.List(ctx.Request().Context(), prefix)
 	if err != nil {
-		return []string{}, fmt.Errorf("GET FAILED WITH: %s", err.Error())
+		return []string{}, fmt.Errorf("get failed with: %w", err)
 	}
+
 	jids := make([]string, len(res))
 	for idx, jobKey := range res {
 		jids[idx] = strings.TrimPrefix(jobKey, prefix)
 	}
+
 	data := project{
 		ProjectId: projectId,
 		JobIds:    jids,
 	}
+
 	return data, nil
 }
 
@@ -264,7 +267,6 @@ func (srv *PatrickService) downloadAsset(ctx http.Context) (interface{}, error) 
 		return nil, fmt.Errorf("rewinding asset file %s failed with %s", assetCid, err)
 	}
 
-	//rewind f
 	if _, err := file.Seek(0, 0); err != nil {
 		return nil, fmt.Errorf("rewinding asset file %s failed with %s", assetCid, err)
 	}

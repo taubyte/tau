@@ -1,4 +1,4 @@
-package p2p
+package auth
 
 import (
 	"fmt"
@@ -7,22 +7,6 @@ import (
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
-
-/* repository */
-type Repositories Client
-type GithubRepositories Repositories
-
-type RepositoryCommon struct {
-	project string
-	Name    string
-	Url     string
-	id      int
-}
-
-type GithubRepository struct {
-	RepositoryCommon
-	Key string
-}
 
 func (r RepositoryCommon) Id() int {
 	return r.id

@@ -68,7 +68,7 @@ func (h *GithubHook) Delete(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-
+	// TODO: Make common vars
 	root := "/hooks/" + h.Id
 
 	var lerror error

@@ -76,6 +76,6 @@ func Build(u common.Universe, params ...interface{}) error {
 	if err := values.parse(params); err != nil {
 		return err
 	}
-	fmt.Println(values)
+
 	return err
 }

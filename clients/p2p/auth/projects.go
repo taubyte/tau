@@ -1,4 +1,4 @@
-package p2p
+package auth
 
 import (
 	"fmt"
@@ -7,9 +7,6 @@ import (
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
-
-/* projects */
-type Projects Client
 
 func (c *Client) Projects() iface.Projects {
 	return (*Projects)(c)

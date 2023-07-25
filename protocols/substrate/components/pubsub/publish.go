@@ -3,7 +3,6 @@ package pubsub
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
 )
@@ -17,7 +16,7 @@ func (s *Service) Publish(ctx context.Context, projectId, appId, channel string,
 
 	picks, err := s.Lookup(matcher)
 	if err != nil {
-		common.Logger.Errorf(fmt.Sprintf("lookup failed with err: %w", err))
+		common.Logger.Errorf("lookup failed with err: %w", err)
 		return err
 	}
 	if len(picks) == 0 {

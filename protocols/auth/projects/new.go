@@ -18,7 +18,6 @@ func (r Repository) Id() int {
 }
 
 func New(kv kvdb.KVDB, data Data) (Project, error) {
-
 	id, err := maps.String(data, "id")
 	if err != nil {
 		return nil, err

@@ -10,7 +10,6 @@ import (
 
 	"crypto/tls"
 
-	logging "github.com/ipfs/go-log/v2"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	basicHttp "github.com/taubyte/http/basic"
 	"github.com/taubyte/http/options"
@@ -25,16 +24,13 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
-var DefaultAllowedMethods = basicHttp.DefaultAllowedMethods
-var logger = logging.Logger("http.auto")
-
 func (s *Service) SetOption(opt interface{}) error {
 	if opt == nil {
 		return errors.New("`nil` option")
 	}
-	switch opt.(type) {
+	switch checker := opt.(type) {
 	case autoOptions.OptionChecker:
-		s.customDomainChecker = opt.(autoOptions.OptionChecker).Checker
+		s.customDomainChecker = checker.Checker
 	}
 	// default: we ignore option we do not know so other modules can process them
 	return nil
@@ -76,8 +72,6 @@ func New(node, clientNode peer.Node, opts ...options.Option) (*Service, error) {
 		return nil, err
 	}
 
-	cachedir, _ := clientNode.NewFolder("acme")
-
 	s.authClient, err = authP2P.New(s.Context(), clientNode)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating auth client with %v", err)
@@ -88,7 +82,8 @@ func New(node, clientNode peer.Node, opts ...options.Option) (*Service, error) {
 		return nil, fmt.Errorf("failed creating tns client with %v", err)
 	}
 
-	s.certStore, err = acmeStore.New(clientNode.Context(), clientNode, cachedir.Path(), autocert.ErrCacheMiss)
+	cacheDir, _ := clientNode.NewFolder("acme")
+	s.certStore, err = acmeStore.New(clientNode.Context(), clientNode, cacheDir.Path(), autocert.ErrCacheMiss)
 	if err != nil {
 		logger.Error("new Auto HTTP: ", err)
 		return nil, err
@@ -103,13 +98,12 @@ func (s *Service) Start() {
 		// TODO: run a go-routine that restart the service if certificate expires
 		m := &autocert.Manager{
 			Prompt: autocert.AcceptTOS,
-			Cache:  s.certStore, //autocert.DirCache(".")
+			Cache:  s.certStore,
 		}
 
 		cfg := &tls.Config{
 			GetCertificate: func(hello *tls.ClientHelloInfo) (cert *tls.Certificate, err error) {
 				logger.Debugf("Looking for a static certificate for %s", hello.ServerName)
-				//Lowercase the domain
 				hello.ServerName = strings.ToLower(hello.ServerName)
 
 				// Make sure its registered inside tns first and get projectID
@@ -119,8 +113,8 @@ func (s *Service) Start() {
 					if !s.customDomainChecker(hello) {
 						return nil, fmt.Errorf("customDomainChecker for %s was false", hello.ServerName)
 					}
-				} else if domainSpecs.TaubyteServiceDomain.MatchString(hello.ServerName) == false &&
-					domainSpecs.TaubyteHooksDomain.MatchString(hello.ServerName) == false {
+				} else if !domainSpecs.TaubyteServiceDomain.MatchString(hello.ServerName) &&
+					!domainSpecs.TaubyteHooksDomain.MatchString(hello.ServerName) {
 					projectId, err := s.validateFromTns(hello.ServerName)
 					if err != nil {
 						return nil, fmt.Errorf("failed validateFromTns for %s with %v", hello.ServerName, err)

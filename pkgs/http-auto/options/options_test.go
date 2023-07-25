@@ -33,7 +33,7 @@ func TestCustomDomainChecker(t *testing.T) {
 		return
 	}
 	for _, o := range mc.values {
-		if _o, ok := o.(OptionChecker); ok == true && _o.Checker != nil && _o.Checker(nil) == true {
+		if _o, ok := o.(OptionChecker); ok && _o.Checker != nil && _o.Checker(nil) {
 			return
 		}
 	}

@@ -1,13 +1,11 @@
-package p2p
+package seer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/ipfs/go-log/v2"
 
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	commonSpec "github.com/taubyte/go-specs/common"
@@ -17,20 +15,6 @@ import (
 	"github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
 )
-
-var (
-	MinPeers                 = 0
-	MaxPeers                 = 2
-	DefaultGeoBeaconInterval = 5 * time.Minute
-	ErrorGeoBeaconStopped    = errors.New("GeoBeacon Stopped")
-	logger                   log.StandardLogger
-)
-
-func init() {
-	logger = log.Logger("seer.p2p.client")
-}
-
-var _ iface.Client = &Client{}
 
 func New(ctx context.Context, node peer.Node) (client *Client, err error) {
 	c := &Client{}
@@ -42,26 +26,6 @@ func New(ctx context.Context, node peer.Node) (client *Client, err error) {
 
 	c.services = make(iface.Services, 0)
 	return c, nil
-}
-
-/* Peer */
-
-type Peer struct {
-	Id       string
-	Location iface.PeerLocation
-}
-
-/* geo */
-
-type Geo Client
-
-type GeoBeacon struct {
-	ctx        context.Context
-	ctx_cancel context.CancelFunc
-	geo        *Geo
-	location   iface.Location
-	status     error
-	_status    chan error
 }
 
 func (c *Client) Geo() iface.Geo {
@@ -192,4 +156,9 @@ func (b *GeoBeacon) Status() error {
 
 func (b *GeoBeacon) Stop() {
 	b.ctx_cancel()
+}
+
+func (c *Client) Close() {
+	c.client.Close()
+	c.services = nil
 }

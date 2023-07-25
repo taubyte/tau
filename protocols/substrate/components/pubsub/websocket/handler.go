@@ -28,7 +28,6 @@ func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn)
 	conn.EnableWriteCompression(true)
 	handler, err := createWsHandler(srv, ctx, conn)
 	if err != nil {
-		// TODO log error
 		conn.WriteJSON(WrappedMessage{
 			Error: fmt.Sprintf("Creating handler failed with: %v", err),
 		})
@@ -110,7 +109,7 @@ func removeSubscription(name string, subIdx int) {
 }
 
 func AddSubscription(srv common.LocalService, name string, handler p2p.PubSubConsumerHandler, err_handler p2p.PubSubConsumerErrorHandler) (subIdex int, err error) {
-	// Todo this block should be its own function for lock/unlock
+	// TODO: this block should be its own function for lock/unlock
 	subs.Lock()
 	subset, ok := subs.subscriptions[name]
 	if !ok {

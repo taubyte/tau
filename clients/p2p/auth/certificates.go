@@ -1,4 +1,4 @@
-package p2p
+package auth
 
 import (
 	"crypto/tls"

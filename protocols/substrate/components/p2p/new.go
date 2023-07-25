@@ -6,7 +6,7 @@ import (
 	"github.com/taubyte/odo/vm/cache"
 )
 
-func New(srv nodeIface.Service, options ...Option) (*Service, error) {
+func New(srv nodeIface.Service) (*Service, error) {
 	s := &Service{
 		Service: srv,
 		cache:   cache.New(),
@@ -16,12 +16,5 @@ func New(srv nodeIface.Service, options ...Option) (*Service, error) {
 	if s.stream, err = s.StartStream(common.ServiceName, common.Protocol, s.Handle); err != nil {
 		return nil, err
 	}
-
-	for _, opt := range options {
-		if err := opt(s); err != nil {
-			return nil, err
-		}
-	}
-
 	return s, nil
 }

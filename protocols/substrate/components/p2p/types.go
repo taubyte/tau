@@ -12,10 +12,8 @@ var _ p2pIface.Service = &Service{}
 
 type Service struct {
 	nodeIface.Service
-	stream  p2pIface.CommandService
-	dev     bool
-	verbose bool
-	cache   *cache.Cache
+	stream p2pIface.CommandService
+	cache  *cache.Cache
 }
 
 func (s *Service) Close() error {

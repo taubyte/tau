@@ -153,19 +153,12 @@ func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Ser
 }
 
 func (srv *Service) Close() error {
-	// TODO use debug logger
-	fmt.Println("Closing", protocolsCommon.Seer)
-	defer fmt.Println(protocolsCommon.Seer, "closed")
+	logger.Info("Closing", protocolsCommon.Seer)
+	defer logger.Info()
 
-	// node.ctx
 	srv.stream.Stop()
-
-	// ctx & partly relies on node
 	srv.tns.Close()
-
 	srv.db.Close()
-
-	// ctx
 	srv.dns.Stop()
 	return nil
 }

@@ -20,7 +20,6 @@ import (
 )
 
 func TestClientWithUniverse(t *testing.T) {
-	// dreamland.BigBang()
 	u := dreamland.Multiverse("single")
 	defer u.Stop()
 

@@ -1,4 +1,4 @@
-package p2p
+package monkey
 
 import (
 	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"

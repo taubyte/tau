@@ -118,17 +118,11 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*AuthService, error) 
 }
 
 func (srv *AuthService) Close() error {
-	// TODO use debug logger
-	fmt.Println("Closing", protocolCommon.Auth)
-	defer fmt.Println(protocolCommon.Auth, "closed")
+	logger.Info("Closing", protocolCommon.Auth)
+	defer logger.Info(protocolCommon.Auth, "closed")
 
-	// node.ctx
 	srv.stream.Stop()
-
-	// ctx & partly relies on node
 	srv.tnsClient.Close()
-
-	// ctx, needs to close after node as node will try to close it's store
 	srv.db.Close()
 
 	return nil

@@ -8,17 +8,11 @@ import (
 	globalStream "github.com/taubyte/odo/protocols/substrate/components/database/globals/p2p/stream"
 )
 
-func New(srv nodeIface.Service, options ...Option) (service *Service, err error) {
+func New(srv nodeIface.Service) (service *Service, err error) {
 	service = &Service{
 		Service:   srv,
 		databases: make(map[string]iface.Database),
 		commits:   make(map[string]string, 0),
-	}
-
-	for _, opt := range options {
-		if err := opt(service); err != nil {
-			return nil, fmt.Errorf("running option %v failed with: %s", opt, err)
-		}
 	}
 
 	// Attach to stream if present

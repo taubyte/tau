@@ -11,7 +11,7 @@ import (
 )
 
 func (srv *PatrickService) setupGithubRoutes() {
-	host := ""
+	var host string
 	if len(srv.hostUrl) > 0 {
 		host = "patrick.tau." + srv.hostUrl
 	}

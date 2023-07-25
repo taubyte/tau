@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/utils/maps"
 )
 
-func parseLocationfromBody(body command.Body, key string) (iface.Location, error) {
+func parseLocationFromBody(body command.Body, key string) (iface.Location, error) {
 	var loc iface.Location
 	_loc, ok := body[key]
 	if !ok {
@@ -51,14 +51,14 @@ func (geo *geoService) locationServiceHandler(ctx context.Context, conn streams.
 			return nil, err
 		}
 
-		from, err := parseLocationfromBody(body, "from")
+		from, err := parseLocationFromBody(body, "from")
 		if err != nil {
 			return nil, err
 		}
 
 		return geo.getNodes(ctx, from, distance)
 	case "set":
-		loc, err := parseLocationfromBody(body, "location")
+		loc, err := parseLocationFromBody(body, "location")
 		if err != nil {
 			return nil, err
 		}

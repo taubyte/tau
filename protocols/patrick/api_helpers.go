@@ -48,6 +48,7 @@ func (p *PatrickService) updateStatus(ctx context.Context, jid string, cid_log m
 	job.Logs = cid_log
 	job.AssetCid = assetCid
 
+	// TODO: Un-export job locks, and create methods
 	jobData, err := cbor.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("marshal in updateStatus error: %w", err)
@@ -78,7 +79,6 @@ func (p *PatrickService) republishJob(ctx context.Context, jid string) error {
 		}
 
 		job.Timestamp = time.Now().Unix()
-
 		job_bytes, err := cbor.Marshal(job)
 		if err != nil {
 			return fmt.Errorf("failed to marshal job %s with error: %w", jid, err)

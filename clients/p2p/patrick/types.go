@@ -1,0 +1,17 @@
+package patrick
+
+import (
+	iface "github.com/taubyte/go-interfaces/services/patrick"
+	client "github.com/taubyte/p2p/streams/client"
+)
+
+var _ iface.Client = &Client{}
+
+type Client struct {
+	client *client.Client
+}
+
+type Peer struct {
+	Client
+	Id string
+}

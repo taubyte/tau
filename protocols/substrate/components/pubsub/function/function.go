@@ -8,7 +8,7 @@ import (
 	"github.com/ipfs/go-cid"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/go-interfaces/services/substrate/components"
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
@@ -24,7 +24,7 @@ func (f *Function) Project() (cid.Cid, error) {
 }
 
 func (f *Function) HandleMessage(msg *pubsub.Message) (t time.Time, err error) {
-	instance, runtime, plugin, err := f.function.Instantiate(commonIface.FunctionContext{
+	instance, runtime, plugin, err := f.function.Instantiate(components.FunctionContext{
 		Config:      f.config,
 		Project:     f.matcher.Project,
 		Application: f.matcher.Application,
@@ -51,7 +51,7 @@ func (f *Function) HandleMessage(msg *pubsub.Message) (t time.Time, err error) {
 	return time.Now(), instance.Call(runtime, ev.Id)
 }
 
-func (f *Function) Match(matcher commonIface.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
+func (f *Function) Match(matcher components.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
 	currentMatch := matcherSpec.NoMatch
 	_matcher, ok := matcher.(*common.MatchDefinition)
 	if !ok {
@@ -65,11 +65,11 @@ func (f *Function) Match(matcher commonIface.MatchDefinition) (currentMatchIndex
 	return currentMatch
 }
 
-func (f *Function) Matcher() commonIface.MatchDefinition {
+func (f *Function) Matcher() components.MatchDefinition {
 	return f.matcher
 }
 
-func (f *Function) Validate(matcher commonIface.MatchDefinition) error {
+func (f *Function) Validate(matcher components.MatchDefinition) error {
 	if f.Match(f.matcher) == matcherSpec.NoMatch {
 		return errors.New("function channels do not match")
 	}

@@ -18,7 +18,7 @@ import (
 	"github.com/taubyte/odo/protocols/auth/hooks"
 	"github.com/taubyte/odo/protocols/auth/repositories"
 
-	idutils "github.com/taubyte/utils/id"
+	"github.com/taubyte/utils/id"
 
 	corsjwt "bitbucket.org/taubyte/cors_jwt"
 )
@@ -50,34 +50,19 @@ func generateKey() (string, string, string, error) {
 }
 
 func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *github.Client, repoID string) (map[string]interface{}, error) {
-	//response := make(map[string]interface{})
-
 	err := client.GetByID(repoID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch repository failed with %w", err)
 	}
 
-	//gituser := client.Me()
-
 	repoKey := fmt.Sprintf("/repositories/github/%s/key", repoID)
-
 	_, err = srv.db.Get(ctx, repoKey)
 	if err == nil {
 		return nil, fmt.Errorf("repository `%s` already registered", repoID)
 	}
 
-	// select repo
-	// err = client.GetByID(repoID)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("Repository `%s` is not valid github repository!", repoID)
-	// }
-
-	hook_id := idutils.Generate(repoKey) //   cu.NewUUID()
-	/*if err != nil {
-		return repo_id, "", err
-	}*/
-
-	var defaultHookName string = "taubyte_push_hook"
+	hook_id := id.Generate(repoKey)
+	defaultHookName := "taubyte_push_hook"
 	var defaultGithubHookUrl string
 	if srv.devMode {
 		defaultGithubHookUrl = "https://hooks.git.taubyte.com/github/" + hook_id
@@ -167,10 +152,7 @@ func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client *
 		return nil, fmt.Errorf("fetch repository failed with %w", err)
 	}
 
-	//gituser := client.Me()
-
 	repoKey := fmt.Sprintf("/repositories/github/%s/key", repoID)
-
 	kpriv, err := srv.db.Get(ctx, repoKey)
 	if err != nil {
 		return nil, fmt.Errorf("repository `%s` (%s) not registred! err = %w", repoID, repoKey, err)
@@ -220,7 +202,7 @@ func (srv *AuthService) newGitHubProject(ctx context.Context, client *github.Cli
 	if err = srv.db.Put(ctx, project_key+"/repositories/provider", []byte("github")); err != nil {
 		return nil, err
 	}
-	//fmt.Printf("New owner %d(%p) %s(%p)", *(gituser.ID), gituser.ID, gituser.GetName())
+
 	err = srv.db.Put(ctx, project_key+"/owners/"+fmt.Sprintf("%d", *(gituser.ID)), []byte(gituser.GetLogin()))
 	if err != nil {
 		return nil, err
@@ -253,13 +235,8 @@ func (srv *AuthService) newGitHubProject(ctx context.Context, client *github.Cli
 
 func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client *github.Client) (map[string]interface{}, error) {
 	response := make(map[string]interface{})
-
-	/*orgs, _, err := client.Organizations.List(rctx, *(client.Me().Login), &github.RepositoryListByOrgOptions{})
-	repos, _, err := client.Repositories.ListByOrg(context.Background(), "github", opt)*/
-
 	repos := client.ListMyRepos()
-
-	logger.Debug("User repos:%v", repos)
+	logger.Debugf("User repos:%v", repos)
 
 	user_repos := make(map[string]interface{}, 0)
 	for repo_id := range repos {
@@ -274,7 +251,7 @@ func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client *g
 		}
 	}
 
-	logger.Debug("getGitHubProjects: extracted %s", user_repos)
+	logger.Debugf("getGitHubProjects: extracted %s", user_repos)
 
 	response["repositories"] = user_repos
 
@@ -283,7 +260,6 @@ func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client *g
 
 func (srv *AuthService) getGitHubUserProjects(ctx context.Context, client *github.Client) (map[string]interface{}, error) {
 	response := make(map[string]interface{})
-
 	user_projects := make(map[string]interface{}, 0)
 	for repo_id := range client.ListMyRepos() {
 		repo_key := fmt.Sprintf("/repositories/github/%s/project", repo_id)
