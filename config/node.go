@@ -15,7 +15,6 @@ var WaitForSwamDuration = 10 * time.Second
 func NewNode(ctx context.Context, config *Protocol, databaseName string) (peer.Node, error) {
 	if config.DevMode {
 		return NewLiteNode(ctx, config, databaseName)
-
 	}
 
 	bootstrapParam, err := utils.ConvertBootstrap(config.Peers, config.DevMode)

@@ -16,7 +16,7 @@ import (
 	"github.com/taubyte/odo/config"
 
 	"github.com/taubyte/odo/protocols/common"
-	service "github.com/taubyte/odo/protocols/hoarder/service"
+	service "github.com/taubyte/odo/protocols/hoarder"
 	peer "github.com/taubyte/p2p/peer"
 )
 

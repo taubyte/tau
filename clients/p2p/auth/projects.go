@@ -1,16 +1,12 @@
-package p2p
+package auth
 
 import (
 	"fmt"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	iface "github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
-
-/* projects */
-type Projects Client
 
 func (c *Client) Projects() iface.Projects {
 	return (*Projects)(c)
@@ -49,8 +45,8 @@ func (p *Projects) New(obj map[string]interface{}) *iface.Project {
 }
 
 func (p *Projects) Get(project_id string) *iface.Project {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting project `%s`", project_id)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting project `%s` done", project_id)})
+	logger.Debugf("Getting project `%s`", project_id)
+	defer logger.Debugf("Getting project `%s` done", project_id)
 
 	response, err := p.client.Send("projects", command.Body{"action": "get", "id": project_id})
 	if err != nil {

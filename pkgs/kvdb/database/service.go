@@ -1,7 +1,6 @@
 package database
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
@@ -56,7 +55,6 @@ func New(logger logging.StandardLogger, node peer.Node, path string, rebroadcast
 	}
 
 	s.closeCtx, s.closeCtxC = node.NewChildContextWithCancel()
-
 	s.broadcaster, err = crdt.NewPubSubBroadcaster(s.closeCtx, node.Messaging(), path+"/broadcast")
 	if err != nil {
 		s.closeCtxC()
@@ -69,11 +67,13 @@ func New(logger logging.StandardLogger, node peer.Node, path string, rebroadcast
 	if rebroadcastIntervalSec == 0 {
 		rebroadcastIntervalSec = defaultRebroadcastIntervalSec
 	}
+
 	opts.RebroadcastInterval = time.Duration(rebroadcastIntervalSec * int(time.Second))
 	opts.PutHook = func(k ds.Key, v []byte) {
 		logger.Infof("Added: [%s] -> %s\n", k, string(v))
 
 	}
+
 	opts.DeleteHook = func(k ds.Key) {
 		logger.Infof("Removed: [%s]\n", k)
 	}
@@ -89,7 +89,7 @@ func New(logger logging.StandardLogger, node peer.Node, path string, rebroadcast
 		for {
 			select {
 			case <-time.After(3 * time.Second):
-				fmt.Println("KVDB ", path, "HEADS -> ", s.datastore.InternalStats().Heads)
+				logger.Debug("KVDB ", path, "HEADS -> ", s.datastore.InternalStats().Heads)
 			case <-s.closeCtx.Done():
 				return
 			}

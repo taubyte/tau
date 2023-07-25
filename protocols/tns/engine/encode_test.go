@@ -4,10 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+
 	"testing"
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
+	"github.com/ipfs/go-log/v2"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/flat"
@@ -16,8 +17,7 @@ import (
 )
 
 func TestEncode(t *testing.T) {
-	logger, _ := moody.New("tns.service.testing")
-
+	logger := log.Logger("tns.service.testing")
 	testCtx, testCtxC := context.WithCancel(context.Background())
 	defer func() {
 		s := (3 * time.Second)
@@ -28,7 +28,7 @@ func TestEncode(t *testing.T) {
 		time.Sleep(s)
 	}()
 
-	peerC, err := peer.New( // consumer
+	peerC, err := peer.New(
 		testCtx,
 		nil,
 		keypair.NewRaw(),
@@ -43,7 +43,7 @@ func TestEncode(t *testing.T) {
 		return
 	}
 
-	db, err := kv.New(logger.Std(), peerC, protocolsCommon.Tns, 5)
+	db, err := kv.New(logger, peerC, protocolsCommon.Tns, 5)
 	if err != nil {
 		t.Errorf("New db failed with err: %v", err)
 		return

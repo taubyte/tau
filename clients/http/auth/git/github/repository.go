@@ -35,8 +35,8 @@ func (g *getter) Name() string {
 	return g.GetName()
 }
 
-// Fullname returns the `user/repository` fullname of the repository
-func (g *getter) Fullname() string {
+// FullName returns the `user/repository` fullname of the repository
+func (g *getter) FullName() string {
 	return g.GetFullName()
 }
 

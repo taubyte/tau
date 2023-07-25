@@ -1,14 +1,12 @@
-package p2p
+package seer
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
-	moody "bitbucket.org/taubyte/go-moody-blues"
 	"github.com/fxamacker/cbor/v2"
-	moodyIface "github.com/taubyte/go-interfaces/moody"
+
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	commonSpec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/p2p/peer"
@@ -18,50 +16,16 @@ import (
 	"github.com/taubyte/utils/maps"
 )
 
-var (
-	MinPeers                 = 0
-	MaxPeers                 = 2
-	DefaultGeoBeaconInterval = 5 * time.Minute
-	ErrorGeoBeaconStopped    = errors.New("GeoBeacon Stopped")
-	logger                   moodyIface.Logger
-)
-
-func init() {
-	logger, _ = moody.New("seer.p2p.client")
-}
-
-var _ iface.Client = &Client{}
-
 func New(ctx context.Context, node peer.Node) (client *Client, err error) {
 	c := &Client{}
 	c.client, err = streamClient.New(ctx, node, nil, commonSpec.SeerProtocol, MinPeers, MaxPeers)
 	if err != nil {
-		logger.Errorf(fmt.Sprintf("API client creation failed: %s", err.Error()))
+		logger.Errorf("API client creation failed: %w", err)
 		return
 	}
 
 	c.services = make(iface.Services, 0)
 	return c, nil
-}
-
-/* Peer */
-
-type Peer struct {
-	Id       string
-	Location iface.PeerLocation
-}
-
-/* geo */
-
-type Geo Client
-
-type GeoBeacon struct {
-	ctx        context.Context
-	ctx_cancel context.CancelFunc
-	geo        *Geo
-	location   iface.Location
-	status     error
-	_status    chan error
 }
 
 func (c *Client) Geo() iface.Geo {
@@ -192,4 +156,9 @@ func (b *GeoBeacon) Status() error {
 
 func (b *GeoBeacon) Stop() {
 	b.ctx_cancel()
+}
+
+func (c *Client) Close() {
+	c.client.Close()
+	c.services = nil
 }

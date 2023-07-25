@@ -1,4 +1,4 @@
-package authservice
+package crypto
 
 import (
 	"crypto/rand"
@@ -6,6 +6,8 @@ import (
 	"io"
 	"math/big"
 )
+
+// TODO: Move this to utils
 
 // Source https://play.golang.org/p/4FkNSiUDMg
 func NewUUID() (string, error) {

@@ -1,4 +1,4 @@
-package p2p
+package seer
 
 import (
 	"fmt"
@@ -11,7 +11,7 @@ import (
 func (u *Usage) Announce(services iface.Services, nodeId, clientNodeId string, signature []byte) (response.Response, error) {
 	resp, err := u.client.Send("announce", command.Body{"services": services, "id": nodeId, "client": clientNodeId, "signature": signature})
 	if err != nil {
-		logger.Std().Error(fmt.Sprintf("announce failed with: %s", err))
+		logger.Errorf("announce failed with: %w", err)
 		return nil, fmt.Errorf("calling announce send failed with: %s", err)
 	}
 

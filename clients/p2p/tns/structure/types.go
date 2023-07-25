@@ -1,5 +1,7 @@
 package structure
 
+// TODO: This needs to be refactored with the tns/mocks
+
 import (
 	"github.com/taubyte/go-interfaces/services/tns"
 	commonSpec "github.com/taubyte/go-specs/common"

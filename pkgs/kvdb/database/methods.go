@@ -50,12 +50,10 @@ func (kvd *KVDatabase) ListAsync(ctx context.Context, prefix string) (chan strin
 		for {
 			select {
 			case entry, ok := <-source:
-				if ok == false {
+				if !ok || entry.Error != nil {
 					return
 				}
-				if entry.Error != nil {
-					return
-				}
+
 				c <- entry.Key
 			case <-ctx.Done():
 				return

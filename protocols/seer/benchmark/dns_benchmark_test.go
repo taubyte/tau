@@ -7,24 +7,6 @@ import (
 	"github.com/miekg/dns"
 )
 
-/* Valid Seer Ip's
-<--- GCP --->
-35.226.220.13
-35.230.124.202
-
-<--- NETACTUATE--->
-45.159.98.203 <- This one kind of slow
-103.84.155.170
-43.245.48.25
-192.73.252.54
-192.73.240.147
-104.225.103.61
-192.73.243.173
-45.159.97.245
-
-
-*/
-
 var maxGoRoutines = 12
 var fqdn = "nodes.taubyte.com."
 var blockedFqdn = "poop.com."

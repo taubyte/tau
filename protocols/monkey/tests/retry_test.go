@@ -14,14 +14,14 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/protocols/patrick/service"
+	service "github.com/taubyte/odo/protocols/patrick"
 	"github.com/taubyte/p2p/peer"
 
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
-	_ "github.com/taubyte/odo/protocols/auth/service"
+	_ "github.com/taubyte/odo/protocols/auth"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
-	_ "github.com/taubyte/odo/protocols/hoarder/service"
-	_ "github.com/taubyte/odo/protocols/tns/service"
+	_ "github.com/taubyte/odo/protocols/hoarder"
+	_ "github.com/taubyte/odo/protocols/tns"
 )
 
 func TestRunWasmRetry(t *testing.T) {
@@ -89,7 +89,6 @@ func TestRunWasmRetry(t *testing.T) {
 	}
 	// FIXME, reduce this time to 5 seconds and patrick will throw a dead pool error
 	time.Sleep(60 * time.Second)
-	//FIXME GET THIS COMMIT SOMEWHERE
 	err = checkAsset(u.Context(), "2463235f-54ad-43bc-b5ad-e466c194de12", spec.DefaultBranch, simple.GetNode(), tnsClient)
 	if err != nil {
 		t.Error(err)
@@ -104,7 +103,6 @@ func TestRunWasmRetry(t *testing.T) {
 }
 
 func checkAsset(ctx context.Context, resId, commit string, node peer.Node, tnsClient *tnsClient.Client) error {
-	// assetHash := multihash.Hash(commonTest.ProjectID + resId)
 	assetHash, err := methods.GetTNSAssetPath(commonTest.ProjectID, resId, commit)
 	if err != nil {
 		return err

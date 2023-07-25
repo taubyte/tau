@@ -1,4 +1,4 @@
-package p2p
+package seer
 
 import (
 	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"

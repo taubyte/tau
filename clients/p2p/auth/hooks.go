@@ -1,16 +1,13 @@
-package p2p
+package auth
 
 import (
 	"errors"
 	"fmt"
 
-	moodyCommon "github.com/taubyte/go-interfaces/moody"
 	iface "github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
-
-type Hooks Client
 
 func (c *Client) Hooks() iface.Hooks {
 	return (*Hooks)(c)
@@ -52,12 +49,12 @@ func (h *Hooks) New(obj map[string]interface{}) (iface.Hook, error) {
 }
 
 func (h *Hooks) Get(hook_id string) (iface.Hook, error) {
-	logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting hook `%s`", hook_id)})
-	defer logger.Debug(moodyCommon.Object{"message": fmt.Sprintf("Getting hook `%s` done", hook_id)})
+	logger.Debugf("Getting hook `%s`", hook_id)
+	defer logger.Debugf("Getting hook `%s` done", hook_id)
 
 	response, err := h.client.Send("hooks", command.Body{"action": "get", "id": hook_id})
 	if err != nil {
-		logger.Error(moodyCommon.Object{"message": err.Error()})
+		logger.Error(err)
 		return nil, err
 	}
 

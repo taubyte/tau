@@ -1,4 +1,4 @@
-package p2p_test
+package auth_test
 
 import (
 	"strconv"
@@ -8,16 +8,13 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	_ "github.com/taubyte/odo/protocols/auth/service"
-	"github.com/taubyte/odo/protocols/auth/service/hooks"
-	"github.com/taubyte/odo/protocols/auth/service/repositories"
-	_ "github.com/taubyte/odo/protocols/tns/service"
+	_ "github.com/taubyte/odo/protocols/auth"
+	"github.com/taubyte/odo/protocols/auth/hooks"
+	"github.com/taubyte/odo/protocols/auth/repositories"
+	_ "github.com/taubyte/odo/protocols/tns"
 	"gotest.tools/v3/assert"
 
-	//cmd "github.com/taubyte/p2p/streams/command"
-	//cr "github.com/taubyte/p2p/streams/command/response"
-
-	idutils "github.com/taubyte/utils/id"
+	"github.com/taubyte/utils/id"
 )
 
 func TestClient(t *testing.T) {
@@ -88,7 +85,7 @@ func TestClient(t *testing.T) {
 
 	/***** HOOKS *****/
 
-	hook_id := idutils.Generate()
+	hook_id := id.Generate()
 	// now let's create a hook
 	hk, err := hooks.New(u.Auth().KV(), hooks.Data{
 		"id":         hook_id,

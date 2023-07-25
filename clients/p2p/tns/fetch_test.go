@@ -1,4 +1,4 @@
-package p2p_test
+package tns_test
 
 import (
 	"reflect"
@@ -8,7 +8,7 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
-	_ "github.com/taubyte/odo/protocols/tns/service"
+	_ "github.com/taubyte/odo/protocols/tns"
 )
 
 func TestFetch(t *testing.T) {

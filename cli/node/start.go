@@ -8,7 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	moody "bitbucket.org/taubyte/go-moody-blues/common"
+	"github.com/ipfs/go-log/v2"
+
 	"github.com/taubyte/go-interfaces/services"
 	commonSpecs "github.com/taubyte/go-specs/common"
 	httpService "github.com/taubyte/http"
@@ -18,7 +19,7 @@ import (
 )
 
 func Start(ctx context.Context, protocolConfig *config.Protocol) error {
-	moody.LogLevel(moody.DebugLevelFatal)
+	log.SetAllLoggers(log.LevelFatal)
 
 	ctx, ctx_cancel := context.WithCancel(ctx)
 	sigkill := make(chan os.Signal, 1)
@@ -26,7 +27,7 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 
 	go func() {
 		<-sigkill
-		fmt.Println("Exiting... Odo")
+		logger.Info("Exiting... Odo")
 		ctx_cancel()
 	}()
 
@@ -103,9 +104,7 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 	}
 
 	// TODO: Use logger
-	fmt.Printf("%s started! with id: %s\n", protocolConfig.Shape, protocolConfig.Node.ID())
-
-	// https://github.com/ipfs/go-ipfs/blob/8f623c9124d6c0b1d511a072a4d13633884c7b40/core/builder.go
+	logger.Infof("%s started! with id: %s", protocolConfig.Shape, protocolConfig.Node.ID())
 
 	<-ctx.Done()
 	for _, srv := range services {

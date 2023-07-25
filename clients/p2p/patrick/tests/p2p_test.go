@@ -9,18 +9,17 @@ import (
 	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	_ "github.com/taubyte/odo/clients/p2p/patrick"
-	_ "github.com/taubyte/odo/protocols/auth/service"
-	_ "github.com/taubyte/odo/protocols/hoarder/service"
+	_ "github.com/taubyte/odo/protocols/auth"
+	_ "github.com/taubyte/odo/protocols/hoarder"
 
 	"github.com/fxamacker/cbor/v2"
 	iface "github.com/taubyte/go-interfaces/services/patrick"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
-	"github.com/taubyte/odo/protocols/patrick/service"
-	_ "github.com/taubyte/odo/protocols/tns/service"
+	service "github.com/taubyte/odo/protocols/patrick"
+	_ "github.com/taubyte/odo/protocols/tns"
 )
 
 func TestClientWithUniverse(t *testing.T) {
-	// dreamland.BigBang()
 	u := dreamland.Multiverse("single")
 	defer u.Stop()
 

@@ -1,4 +1,4 @@
-package p2p_test
+package auth_test
 
 import (
 	"bytes"

@@ -7,7 +7,7 @@ import (
 
 	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/go-interfaces/services/substrate/components"
-	"github.com/taubyte/odo/protocols/node/components/counters/metrics"
+	"github.com/taubyte/odo/protocols/substrate/components/counters/metrics"
 )
 
 // ErrorWrapper is an wraps an error in the cold start and execution of a serviceable.
@@ -27,7 +27,6 @@ func ErrorWrapper(serviceable components.Serviceable, startTime time.Time, coldS
 			var skipExecution bool
 			basePath, err := newPathFromServiceable(serviceable)
 			if err != nil {
-				serviceable.Service().Logger().Errorf("Creating counter path failed with: %s", err)
 				return
 			}
 

@@ -11,26 +11,26 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
-	"github.com/taubyte/odo/protocols/monkey/service"
 	"github.com/taubyte/p2p/peer"
 
 	commonTest "github.com/taubyte/dreamland/helpers"
 	gitTest "github.com/taubyte/dreamland/helpers/git"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
+	"github.com/taubyte/odo/protocols/monkey"
 
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
-	_ "github.com/taubyte/odo/protocols/auth/service"
-	_ "github.com/taubyte/odo/protocols/hoarder/service"
-	_ "github.com/taubyte/odo/protocols/tns/service"
+	_ "github.com/taubyte/odo/protocols/auth"
+	_ "github.com/taubyte/odo/protocols/hoarder"
+	_ "github.com/taubyte/odo/protocols/tns"
 
 	"testing"
 )
 
 func TestConfigJob(t *testing.T) {
 	protocolCommon.LocalPatrick = true
-	service.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
+	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 

@@ -23,7 +23,8 @@ func createP2PNodes(ctx context.Context, databasePath, shape string, conf *confi
 		if err != nil {
 			return fmt.Errorf("creating new full node failed with: %s", err)
 		}
-	} else { // Non elder nodes
+	} else {
+		// Non elder nodes
 		conf.Node, err = config.NewNode(ctx, conf, databasePath)
 		if err != nil {
 			return fmt.Errorf("creating new node for shape `%s` failed with: %s", shape, err)
