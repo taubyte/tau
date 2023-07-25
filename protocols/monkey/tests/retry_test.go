@@ -14,14 +14,14 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/protocols/patrick/service"
+	service "github.com/taubyte/odo/protocols/patrick"
 	"github.com/taubyte/p2p/peer"
 
 	_ "github.com/taubyte/odo/clients/p2p/monkey"
-	_ "github.com/taubyte/odo/protocols/auth/service"
+	_ "github.com/taubyte/odo/protocols/auth"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
-	_ "github.com/taubyte/odo/protocols/hoarder/service"
-	_ "github.com/taubyte/odo/protocols/tns/service"
+	_ "github.com/taubyte/odo/protocols/hoarder"
+	_ "github.com/taubyte/odo/protocols/tns"
 )
 
 func TestRunWasmRetry(t *testing.T) {

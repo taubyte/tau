@@ -10,8 +10,8 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 
-	_ "github.com/taubyte/odo/protocols/node/service"
-	_ "github.com/taubyte/odo/protocols/seer/service"
+	_ "github.com/taubyte/odo/protocols/seer"
+	_ "github.com/taubyte/odo/protocols/substrate"
 )
 
 func TestHeartBeat(t *testing.T) {

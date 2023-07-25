@@ -1,13 +1,13 @@
 package node
 
 import (
-	authService "github.com/taubyte/odo/protocols/auth/service"
-	hoarderService "github.com/taubyte/odo/protocols/hoarder/service"
-	monkeyService "github.com/taubyte/odo/protocols/monkey/service"
-	nodeService "github.com/taubyte/odo/protocols/node/service"
-	patrickService "github.com/taubyte/odo/protocols/patrick/service"
-	seerService "github.com/taubyte/odo/protocols/seer/service"
-	tnsService "github.com/taubyte/odo/protocols/tns/service"
+	authService "github.com/taubyte/odo/protocols/auth"
+	hoarderService "github.com/taubyte/odo/protocols/hoarder"
+	monkeyService "github.com/taubyte/odo/protocols/monkey"
+	patrickService "github.com/taubyte/odo/protocols/patrick"
+	seerService "github.com/taubyte/odo/protocols/seer"
+	nodeService "github.com/taubyte/odo/protocols/substrate"
+	tnsService "github.com/taubyte/odo/protocols/tns"
 
 	"github.com/taubyte/odo/config"
 )
