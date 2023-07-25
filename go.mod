@@ -3,6 +3,7 @@ module github.com/taubyte/odo
 go 1.19
 
 replace github.com/taubyte/go-interfaces => /home/tafkhan/Documents/Work/Taubyte/Repos/go-interfaces
+
 replace github.com/taubyte/vm-core-plugins => /home/tafkhan/Documents/Work/Taubyte/Repos/vm-core-plugins
 
 require (

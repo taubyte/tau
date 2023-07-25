@@ -882,8 +882,6 @@ github.com/taubyte/domain-validation v1.0.0 h1:yUt6y7b/3PC9aocvl7s8cBKG4ieN35zQq
 github.com/taubyte/domain-validation v1.0.0/go.mod h1:/X3yd7sBjnE323rA8I9PiUt5+NlKU4I02nQik25Vqe8=
 github.com/taubyte/dreamland v0.4.3 h1:UDhG28KYelZCE5Jv8yFqCBf6NDWi4FfPr9edVSuY8vg=
 github.com/taubyte/dreamland v0.4.3/go.mod h1:BXcSeI4Qe7SZ2+/FDMnGlTwsFVZgIDjWvnjMUMHyOo0=
-github.com/taubyte/go-interfaces v0.2.7 h1:NAr+WvPuHK7kc7Pzo2vw2bFX+ErYJ9Ao60xkshanIko=
-github.com/taubyte/go-interfaces v0.2.7/go.mod h1:mJQCOPZnCK7bG1wR3KG64lmJ2rzaTrydwifxBR4XPqk=
 github.com/taubyte/go-project-schema v0.9.3 h1:2H0ClUZq7f97OgtL0FUe9tv2v12wOmnTAIiJGLei/gU=
 github.com/taubyte/go-project-schema v0.9.3/go.mod h1:8Rt5zsVfj8qbYCT+7++oax/nFVKvVfAepzVkqXrNTs8=
 github.com/taubyte/go-sdk v0.3.8 h1:RIg7N+ccIwTwqPopRMCrKgGhVigN1tPTCi1JG/mm4fg=
@@ -910,8 +908,6 @@ github.com/taubyte/utils v0.1.6 h1:bRSJZW/8E/wpT3wwyU3C97M9ddAJ52AfXFeP47JRGsY=
 github.com/taubyte/utils v0.1.6/go.mod h1:b/tKY1xKIxLH5ixFRTsrdz+vGhmiOcR9SpdVYiJDpsI=
 github.com/taubyte/vm v1.0.2 h1:obWrHnx6IgMUyk1NNH3+2Lp/ixXEbZRDfKnsoe5kJzc=
 github.com/taubyte/vm v1.0.2/go.mod h1:9Wm/Ojv2uefz1Wl7fSuQxNzrmSrIYCuLFE6A/Yk556g=
-github.com/taubyte/vm-core-plugins v0.3.2 h1:sp2Y4MKH0sG33QwOn/6onFqOBWo1ikA5GtIyxUXiZhc=
-github.com/taubyte/vm-core-plugins v0.3.2/go.mod h1:4IY/p4YUBcEzgIikPbGJf+v1SA38jmUKEb+GzXT81og=
 github.com/taubyte/vm-orbit v1.0.0 h1:oSzlnGUTJWItGoz9WTS6nW68sh0zcllOOQkLtbc0LkU=
 github.com/taubyte/vm-orbit v1.0.0/go.mod h1:VlAJlncXNzlpMvXzdEin46iOFKrtQB56TU0TOqR8Xu8=
 github.com/tetratelabs/wazero v1.0.3 h1:IWmaxc/5vKg71DE+c0SLjjLFAA3u3tD/Zegpgif2Wpo=
