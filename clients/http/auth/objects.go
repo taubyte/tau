@@ -28,6 +28,24 @@ type ProjectReturn struct {
 	Project *Project `json:"project"`
 }
 
+// ProjectWithCors is the same as ProjectReturn but includes Cors
+type ProjectReturnWithCors struct {
+	Project *ProjectWithCors `json:"project"`
+}
+
+type ProjectWithCors struct {
+	objectBasic
+	Id       string            `json:"id"`
+	Name     string            `json:"name"`
+	RepoList *RawRepoDataOuter `json:"Repositories"`
+	Cors     Cors              `json:"cors"`
+}
+
+type Cors struct {
+	Url   string `json:"url"`
+	Token string `json:"token"`
+}
+
 // ProjectsReturn is the data that is returned from the server when listing projects
 type ProjectsReturn struct {
 	Projects []*Project `json:"projects"`
