@@ -52,7 +52,7 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 	var httpNode httpService.Service
 	for _, srv := range protocolConfig.Protocols {
 		if slices.Contains(commonSpecs.HttpProtocols, srv) {
-			httpNode, err = auto.Configure(protocolConfig).AutoHttp(protocolConfig.Node)
+			httpNode, err = auto.NewAuto(ctx, protocolConfig.Node, protocolConfig)
 			if err != nil {
 				return fmt.Errorf("new autoHttp failed with: %s", err)
 			}

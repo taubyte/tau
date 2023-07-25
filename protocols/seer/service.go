@@ -18,6 +18,7 @@ import (
 	odoConfig "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
+	"github.com/taubyte/odo/protocols/common"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	streams "github.com/taubyte/p2p/streams/service"
 
@@ -128,14 +129,14 @@ func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Ser
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
 
-	err = config.StartSeerBeacon(sc, seerIface.ServiceTypeSeer, odoConfig.SeerBeaconOptionMeta(map[string]string{"others": "dns"}))
+	err = common.StartSeerBeacon(config, sc, seerIface.ServiceTypeSeer, common.SeerBeaconOptionMeta(map[string]string{"others": "dns"}))
 	if err != nil {
 		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
 
 	// HTTP
 	if config.Http == nil {
-		srv.http, err = auto.Configure(config).AutoHttp(srv.node)
+		srv.http, err = auto.NewAuto(ctx, srv.node, config)
 		if err != nil {
 			return nil, fmt.Errorf("new http failed with: %s", err)
 		}

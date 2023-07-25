@@ -15,6 +15,7 @@ import (
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
 	streams "github.com/taubyte/p2p/streams/service"
 
+	"github.com/taubyte/odo/protocols/common"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 )
 
@@ -95,13 +96,13 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*AuthService, error) 
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
 
-	err = config.StartSeerBeacon(sc, seerIface.ServiceTypeAuth)
+	err = common.StartSeerBeacon(config, sc, seerIface.ServiceTypeAuth)
 	if err != nil {
 		return nil, err
 	}
 
 	if config.Http == nil {
-		srv.http, err = auto.Configure(config).BasicHttp(ctx)
+		srv.http, err = auto.NewBasic(ctx, config)
 		if err != nil {
 			return nil, fmt.Errorf("new http failed with: %s", err)
 		}
