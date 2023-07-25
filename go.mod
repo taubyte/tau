@@ -10,8 +10,6 @@ replace github.com/taubyte/config-compiler => /home/tafkhan/Documents/Work/Tauby
 
 replace github.com/taubyte/odo => /home/tafkhan/Documents/Work/Taubyte/new/odo
 
-replace github.com/taubyte/vm => /home/tafkhan/Documents/Work/Taubyte/Repos/vm
-
 require (
 	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
@@ -58,7 +56,7 @@ require (
 	github.com/taubyte/p2p v0.9.1
 	github.com/taubyte/tau v0.1.6
 	github.com/taubyte/utils v0.1.6
-	github.com/taubyte/vm v1.0.1
+	github.com/taubyte/vm v1.0.2
 	github.com/taubyte/vm-core-plugins v0.3.2
 	github.com/taubyte/vm-orbit v0.1.1
 	github.com/urfave/cli/v2 v2.25.7
