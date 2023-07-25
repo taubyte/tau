@@ -19,7 +19,7 @@ func (c *Client) GetProjectById(projectId string) (*Project, error) {
 	return data.Project, nil
 }
 
-// GetProjectById returns the project with the given id and an error
+// GetProjectByIdWithCors returns the project with cors information with the given id and an error
 func (c *Client) GetProjectByIdWithCors(projectId string) (*ProjectReturnWithCors, error) {
 	data := new(ProjectReturnWithCors)
 	err := c.get("/projects/"+projectId, &data)
