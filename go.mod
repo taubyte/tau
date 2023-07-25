@@ -6,7 +6,6 @@ replace github.com/taubyte/go-interfaces => /home/tafkhan/Documents/Work/Taubyte
 replace github.com/taubyte/vm-core-plugins => /home/tafkhan/Documents/Work/Taubyte/Repos/vm-core-plugins
 
 require (
-	bitbucket.org/taubyte/cors_jwt v0.0.0-20230320193005-fe981677d292
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/foxcpp/go-mockdns v1.0.0
@@ -52,7 +51,7 @@ require (
 	github.com/taubyte/utils v0.1.6
 	github.com/taubyte/vm v1.0.2
 	github.com/taubyte/vm-core-plugins v0.3.2
-	github.com/taubyte/vm-orbit v0.1.1
+	github.com/taubyte/vm-orbit v1.0.0
 	github.com/urfave/cli/v2 v2.25.7
 	go4.org v0.0.0-20230225012048-214862532bf5
 	golang.org/x/crypto v0.11.0

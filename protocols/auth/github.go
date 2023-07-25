@@ -19,8 +19,6 @@ import (
 	"github.com/taubyte/odo/protocols/auth/repositories"
 
 	"github.com/taubyte/utils/id"
-
-	corsjwt "bitbucket.org/taubyte/cors_jwt"
 )
 
 // ref: https://github.com/keybase/bot-sshca/blob/master/src/keybaseca/sshutils/generate.go#L53
@@ -315,12 +313,6 @@ func (srv *AuthService) getGitHubProjectInfo(ctx context.Context, client *github
 		return response, nil
 	}
 
-	var jwtCorsToken string
-	claims, err := corsjwt.New(corsjwt.GitHub(string(proj_config_repo)), corsjwt.GitHub(string(proj_code_repo)), corsjwt.Token(client.Token))
-	if err == nil {
-		jwtCorsToken, _ = claims.Sign()
-	}
-
 	response["project"] = map[string]interface{}{
 		"id":   projectid,
 		"name": string(proj_name),
@@ -328,10 +320,6 @@ func (srv *AuthService) getGitHubProjectInfo(ctx context.Context, client *github
 			"provider":      string(proj_gitprovider),
 			"configuration": client.ShortRepositoryInfo(string(proj_config_repo)),
 			"code":          client.ShortRepositoryInfo(string(proj_code_repo)),
-		},
-		"cors": map[string]interface{}{
-			"url":   "doci://__git_cors__.bridges.taubyte.com",
-			"token": jwtCorsToken,
 		},
 	}
 
