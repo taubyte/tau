@@ -182,7 +182,7 @@ func (p *PatrickService) unlockHandler(ctx context.Context, jid string) (cr.Resp
 
 	err = p.db.Put(ctx, "/locked/jobs/"+jid, lockBytes)
 	if err != nil {
-		logger.Error("Putting locked job for `%s` failed with: %w", jid, err)
+		logger.Errorf("Putting locked job for `%s` failed with: %w", jid, err)
 	}
 
 	return cr.Response{"unlocked": jid}, nil

@@ -33,7 +33,7 @@ func (c Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {
 
 				_, err = hoarder.Stash(cid)
 				if err != nil {
-					logger.Error("stashing `%s` failed with: %w", cid, err)
+					logger.Errorf("stashing `%s` failed with: %w", cid, err)
 					continue
 				}
 			}

@@ -21,10 +21,10 @@ const (
 func (s *Service) handle(startTime time.Time, matcher *common.MatchDefinition, _type handleType, data interface{}) {
 	picks, err := s.Lookup(matcher)
 	if err != nil {
-		common.Logger.Error("lookup failed with: %w", err)
+		common.Logger.Errorf("lookup failed with: %w", err)
 	}
 	if len(picks) == 0 {
-		common.Logger.Error("pick ==nil failed with err")
+		common.Logger.Errorf("pick ==nil failed with err")
 
 	}
 	for _, pick := range picks {

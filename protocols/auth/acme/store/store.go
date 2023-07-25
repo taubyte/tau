@@ -128,7 +128,7 @@ func (d *Store) Delete(ctx context.Context, name string) error {
 	if strings.HasSuffix(name, "+token") || strings.HasSuffix(name, "+rsa") || strings.HasSuffix(name, "+key") || strings.HasSuffix(name, ".key") {
 		_, err := d.client.Send("acme", command.Body{"action": "cache-delete", "key": name})
 		if err != nil {
-			logger.Error("Deleting `%s` error: %w", name, err)
+			logger.Errorf("Deleting `%s` error: %w", name, err)
 		}
 		return err
 	}

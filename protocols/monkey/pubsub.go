@@ -30,7 +30,7 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 
 		monkey, err := srv.newMonkey(&receivedJob)
 		if err != nil {
-			logger.Error("New monkey had an error: `%w`", err)
+			logger.Errorf("New monkey had an error: `%w`", err)
 			return
 		}
 
