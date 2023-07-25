@@ -77,16 +77,6 @@ func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]
 		return nil, ErrCacheMiss //errors.New("Found empty certificate!")
 	}
 
-	// double check that the certificate in store is valid
-	// just in case it expired or was corrupted
-	/*err = srv.x509Validate(fqdn, certificate)
-	if err != nil {
-		// clean-up entry
-		// logger.Error(moodyCommon.Object{"message":fqdn, " : ", err)})
-		srv.db.Delete(key)
-		return nil, ErrCacheMiss //err
-	}*/ // TODO: re-add later
-
 	logger.Debugf("Get certificate for `%s`: %v", fqdn, certificate)
 
 	return certificate, nil
