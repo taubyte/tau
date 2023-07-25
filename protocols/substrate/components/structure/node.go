@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/go-interfaces/vm"
 	http "github.com/taubyte/http"
 	httpMock "github.com/taubyte/http/mocks"
+	"github.com/taubyte/odo/protocols/substrate/components/counters"
 	"github.com/taubyte/p2p/peer"
 )
 
@@ -26,17 +27,16 @@ type NodeService struct {
 }
 
 func MockNodeService(node peer.Node, ctx context.Context) substrate.Service {
-
-	ctx = node.Context()
 	s := &NodeService{
 		node:         node,
 		tns:          &TestClient{},
 		vm:           &TestVm{},
 		nodeSmartOps: &TestSmartOps{},
-		nodeCounters: &TestCounters{},
 		branch:       "master",
 		ctx:          ctx,
 	}
+
+	s.nodeCounters, _ = counters.New(s)
 
 	s.httpSrv = httpMock.NewUnimplemented(ctx)
 

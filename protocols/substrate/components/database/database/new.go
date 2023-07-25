@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/taubyte/go-interfaces/services/substrate"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	"github.com/taubyte/odo/protocols/substrate/components/database/common"
 	kv "github.com/taubyte/odo/protocols/substrate/components/database/kv"
 )
 
-func New(srv iface.Service, dbContext iface.Context) (iface.Database, error) {
+func New(srv substrate.Service, dbContext iface.Context) (iface.Database, error) {
 	databaseHash, err := common.GetDatabaseHash(dbContext)
 	if err != nil {
 		return nil, err
@@ -21,8 +22,8 @@ func New(srv iface.Service, dbContext iface.Context) (iface.Database, error) {
 	}
 
 	db := &Database{
-		srv:       srv,
-		node:      srv.Node(),
+		srv: srv,
+
 		dbContext: dbContext,
 		keystore:  keystore,
 	}
@@ -39,10 +40,9 @@ func New(srv iface.Service, dbContext iface.Context) (iface.Database, error) {
 	return db, nil
 }
 
-func Open(srv iface.Service, dbContext iface.Context, kv iface.KV) (iface.Database, error) {
+func Open(srv substrate.Service, dbContext iface.Context, kv iface.KV) (iface.Database, error) {
 	db := &Database{
 		srv:       srv,
-		node:      srv.Node(),
 		dbContext: dbContext,
 		keystore:  kv,
 	}

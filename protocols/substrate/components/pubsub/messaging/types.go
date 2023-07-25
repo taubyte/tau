@@ -3,8 +3,8 @@ package messaging
 import (
 	"context"
 
-	"github.com/taubyte/go-interfaces/services/substrate"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
+	"github.com/taubyte/go-interfaces/services/substrate/smartops"
 	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
 )
 
@@ -17,7 +17,7 @@ type Channel struct {
 	srv iface.Service
 }
 
-var _ substrate.SmartOpEventCaller = &Channel{}
+var _ smartops.EventCaller = &Channel{}
 var _ iface.Channel = &Channel{}
 
 func (c *Channel) Type() uint32 {

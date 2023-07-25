@@ -4,11 +4,11 @@ import (
 	"context"
 
 	"github.com/ipfs/go-cid"
-	"github.com/taubyte/go-interfaces/services/substrate"
+	"github.com/taubyte/go-interfaces/services/substrate/smartops"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 )
 
-var _ substrate.SmartOpEventCaller = &Stream{}
+var _ smartops.EventCaller = &Stream{}
 
 const resourceType = sdkSmartOpsCommon.ResourceTypeService
 
