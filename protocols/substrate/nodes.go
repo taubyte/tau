@@ -112,16 +112,6 @@ func (srv *Service) attachNodeCounters(config *config.Protocol) (err error) {
 }
 
 func (srv *Service) attachNodeSmartOps(config *config.Protocol) (err error) {
-	ops := []smartOps.Option{}
-
-	if config.DevMode {
-		ops = append(ops, smartOps.Dev())
-	}
-
-	if config.Verbose {
-		ops = append(ops, smartOps.Verbose())
-	}
-
-	srv.nodeSmartOps, err = smartOps.New(srv, ops...)
+	srv.nodeSmartOps, err = smartOps.New(srv)
 	return
 }

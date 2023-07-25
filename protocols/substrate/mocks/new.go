@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/go-interfaces/vm"
 	httpMock "github.com/taubyte/http/mocks"
 	counterSrv "github.com/taubyte/odo/protocols/substrate/components/counters"
-	soMock "github.com/taubyte/odo/protocols/substrate/components/smartops/mocks"
+	smartops "github.com/taubyte/odo/protocols/substrate/components/smartops"
 	"github.com/taubyte/vm/backend/dfs"
 	"github.com/taubyte/vm/backend/file"
 	"github.com/taubyte/vm/backend/url"
@@ -50,7 +50,10 @@ func New(ctx context.Context, ops ...option) (MockedSubstrate, error) {
 		return nil, fmt.Errorf("starting counter service failed with: %w", err)
 	}
 
-	service.smartOps = soMock.New(service)
+	service.smartOps, err = smartops.New(service)
+	if err != nil {
+		return nil, fmt.Errorf("starting smartops service failed with: %w", err)
+	}
 
 	backends := []vm.Backend{
 		dfs.New(service.node),

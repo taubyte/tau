@@ -3,11 +3,11 @@ package function
 import (
 	"context"
 
-	smartOps "github.com/taubyte/go-interfaces/services/substrate"
+	"github.com/taubyte/go-interfaces/services/substrate/smartops"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 )
 
-var _ smartOps.SmartOpEventCaller = &Function{}
+var _ smartops.EventCaller = &Function{}
 
 const resourceType = sdkSmartOpsCommon.ResourceTypeFunctionHTTP
 

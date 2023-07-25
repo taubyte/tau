@@ -3,11 +3,11 @@ package website
 import (
 	"context"
 
-	smartOps "github.com/taubyte/go-interfaces/services/substrate"
+	"github.com/taubyte/go-interfaces/services/substrate/smartops"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 )
 
-var _ smartOps.SmartOpEventCaller = &Website{}
+var _ smartops.EventCaller = &Website{}
 
 const resourceType = sdkSmartOpsCommon.ResourceTypeWebsite
 
