@@ -129,11 +129,6 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 		}
 
 		return newJob, nil
-	/*case github.ReleasePayload:
-	release := payload.(github.ReleasePayload)
-	// Do whatever you want from here...
-	fmt.Printf("%+v", release)
-	*/
 	default:
 		return nil, fmt.Errorf("this is not a push event. but a %T", payload)
 	}

@@ -45,7 +45,6 @@ func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss erro
 	}
 
 	c.errCacheMiss = errCacheMiss
-	//[]string{"12D3KooWMrLZ2m7dTJf1a1VEsReJnRH1iNRg9U9WyLMQHMZTnjAB", "12D3KooWBm5BkzoAt4yyxodtrRsZUoWZ5aHCg3KRx8WJofAZsPsa"}
 	c.client, err = client.New(ctx, node, nil, protocolCommon.AuthProtocol, MinPeers, MaxPeers)
 	if err != nil {
 		logger.Errorf("ACME Store creation failed: %w", err)
@@ -58,8 +57,8 @@ func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss erro
 
 // Get reads a certificate data from the specified file name.
 func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
-	logger.Debug("Getting `%s`", name)
-	defer logger.Debug("Getting `%s` done", name)
+	logger.Debugf("Getting `%s`", name)
+	defer logger.Debugf("Getting `%s` done", name)
 
 	var (
 		body    *command.Body
@@ -133,6 +132,5 @@ func (d *Store) Delete(ctx context.Context, name string) error {
 		return err
 	}
 
-	// return a slient nil
 	return nil
 }

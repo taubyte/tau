@@ -10,7 +10,5 @@ var _ common.LocalService = &Service{}
 
 type Service struct {
 	nodeIface.Service
-	dev     bool
-	verbose bool
-	cache   *cache.Cache
+	cache *cache.Cache
 }

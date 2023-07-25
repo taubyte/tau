@@ -98,7 +98,8 @@ func TestReAnnounce(t *testing.T) {
 		return
 	}
 
-	time.Sleep(10 * time.Second) // Wait for reannounce to update attempts to 1 and send back to /jobs
+	// Wait for reannounce to update attempts to 1 and send back to /jobs
+	time.Sleep(10 * time.Second)
 
 	retry_job, err := simples.Patrick().Get(job_byte.Id)
 	if err != nil {
@@ -117,7 +118,8 @@ func TestReAnnounce(t *testing.T) {
 		return
 	}
 
-	time.Sleep(10 * time.Second) // Wait for reannounce to update attempts to 2 and send back to /jobs
+	// Wait for reannounce to update attempts to 2 and send back to /jobs
+	time.Sleep(10 * time.Second)
 
 	retry_job, err = simples.Patrick().Get(retry_job.Id)
 	if err != nil {

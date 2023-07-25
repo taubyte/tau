@@ -75,17 +75,7 @@ func (srv *Service) attachNodeHttp(config *config.Protocol) (err error) {
 }
 
 func (srv *Service) attachNodePubSub(config *config.Protocol) (err error) {
-	ops := []pubSub.Option{}
-
-	if config.DevMode {
-		ops = append(ops, pubSub.Dev())
-	}
-
-	if config.Verbose {
-		ops = append(ops, pubSub.Verbose())
-	}
-
-	srv.nodePubSub, err = pubSub.New(srv, ops...)
+	srv.nodePubSub, err = pubSub.New(srv)
 	return
 }
 
@@ -102,39 +92,17 @@ func (srv *Service) attachNodeIpfs(config *config.Protocol) (err error) {
 }
 
 func (srv *Service) attachNodeDatabase(config *config.Protocol) (err error) {
-	ops := []database.Option{}
-
-	if config.DevMode {
-		ops = append(ops, database.Dev())
-	}
-
-	srv.nodeDatabase, err = database.New(srv, ops...)
+	srv.nodeDatabase, err = database.New(srv)
 	return
 }
 
 func (srv *Service) attachNodeStorage(config *config.Protocol) (err error) {
-	ops := []storage.Option{}
-
-	if config.DevMode {
-		ops = append(ops, storage.Dev())
-	}
-
-	srv.nodeStorage, err = storage.New(srv, ops...)
+	srv.nodeStorage, err = storage.New(srv)
 	return
 }
 
 func (srv *Service) attachNodeP2P(config *config.Protocol) (err error) {
-	ops := []p2p.Option{}
-
-	if config.DevMode {
-		ops = append(ops, p2p.Dev())
-	}
-
-	if config.Verbose {
-		ops = append(ops, p2p.Verbose())
-	}
-
-	srv.nodeP2P, err = p2p.New(srv, ops...)
+	srv.nodeP2P, err = p2p.New(srv)
 	return
 }
 

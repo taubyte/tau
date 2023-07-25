@@ -5,18 +5,10 @@ import (
 	"github.com/taubyte/odo/vm/cache"
 )
 
-func New(srv nodeIface.Service, options ...Option) (*Service, error) {
+func New(srv nodeIface.Service) (*Service, error) {
 	s := &Service{
 		Service: srv,
-		dev:     false,
 		cache:   cache.New(),
-	}
-
-	for _, opt := range options {
-		err := opt(s)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	s.attach()

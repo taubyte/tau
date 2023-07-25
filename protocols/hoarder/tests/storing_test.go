@@ -122,13 +122,13 @@ func TestStoring(t *testing.T) {
 		return
 	}
 
-	db, err := dbApi.New(u.Node(), dbApi.Dev())
+	db, err := dbApi.New(u.Node())
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	storageNode, err := storageApi.New(u.Node(), storageApi.Dev())
+	storageNode, err := storageApi.New(u.Node())
 	if err != nil {
 		t.Error(err)
 		return

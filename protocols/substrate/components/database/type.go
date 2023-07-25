@@ -12,7 +12,6 @@ var _ iface.Service = &Service{}
 
 type Service struct {
 	nodeIface.Service
-	dev           bool
 	databases     map[string]iface.Database
 	commits       map[string]string
 	databasesLock sync.RWMutex

@@ -13,7 +13,6 @@ import (
 )
 
 func (srv *Service) pushHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-
 	path, err := maps.StringArray(body, "path")
 	if err != nil {
 		return nil, err

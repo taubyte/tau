@@ -85,8 +85,8 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 }
 
 func (srv *Service) Close() error {
-	fmt.Println("Closing", protocolCommon.Hoarder)
-	defer fmt.Println(protocolCommon.Hoarder, "closed")
+	logger.Info("Closing", protocolCommon.Hoarder)
+	defer logger.Info(protocolCommon.Hoarder, "closed")
 
 	srv.stream.Stop()
 	srv.tnsClient.Close()

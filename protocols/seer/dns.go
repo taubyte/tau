@@ -25,10 +25,9 @@ type dnsHandler struct {
 	negativeCache *ttlcache.Cache[string, bool]
 }
 
-// will panic if error
 func (srv *dnsServer) Start(ctx context.Context) {
 	go func() {
-		fmt.Println("Starting DNS Server on UDP")
+		logger.Info("Starting DNS Server on UDP")
 		if err := srv.Udp.ListenAndServe(); err != nil {
 			errorMsg := fmt.Sprintf("failed starting UPD Server error: %v", err)
 			panic(errors.New(errorMsg))
@@ -36,7 +35,7 @@ func (srv *dnsServer) Start(ctx context.Context) {
 	}()
 
 	go func() {
-		fmt.Println("Starting DNS Server on TCP")
+		logger.Info("Starting DNS Server on TCP")
 		if err := srv.Tcp.ListenAndServe(); err != nil {
 			errorMsg := fmt.Sprintf("failed starting TCP Server error: %v", err)
 			panic(errors.New(errorMsg))
@@ -95,7 +94,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	msg.SetReply(r)
 	msg.Authoritative = true
 
-	_errMsg := *r // make a copy
+	_errMsg := *r
 	errMsg := &_errMsg
 	errMsg.Rcode = dns.RcodeNameError
 
@@ -109,8 +108,6 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 		return
 	}
-
-	logger.Infof("GOT REQUEST FOR: %s FROM IP: %s", msg.Question[0].Name, w.RemoteAddr().String())
 
 	if msg.Question == nil || len(msg.Question) == 0 {
 		w.Close()

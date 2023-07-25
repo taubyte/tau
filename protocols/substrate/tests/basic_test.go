@@ -127,7 +127,7 @@ func TestBasicWithLibrary(t *testing.T) {
 		return
 	}
 
-	// TODO: This revisit this part
+	// TODO: This revisit Website Compile Fixture, Keep commented code
 	// err = u.RunFixture("compileFor", compile.BasicCompileFor{
 	// 	ProjectId:  testProjectId,
 	// 	ResourceId: testWebsiteId,

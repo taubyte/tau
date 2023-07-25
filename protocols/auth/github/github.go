@@ -59,22 +59,24 @@ func (client *Client) GetCurrentRepository() (*github.Repository, error) {
 	if client.current_repository == nil {
 		return nil, errors.New("Client has no current repository")
 	}
+
 	return client.current_repository, nil
 }
 
-func (client *Client) CreateRepository(name *string, description *string, private *bool) error {
-	var err error
+func (client *Client) CreateRepository(name *string, description *string, private *bool) (err error) {
 	client.current_repository, _, err = client.Repositories.Create(client.ctx, "", &github.Repository{
 		Name:        name,
 		Private:     private,
 		Description: description,
 	})
-	return err
+
+	return
 }
 
 func (client *Client) CreateDeployKey(name *string, key *string) error {
 	if client.current_repository == nil {
-		return errors.New("No repository selected.")
+		// TODO: Make this a standard error
+		return errors.New("no repository selected")
 	}
 
 	_, _, err := client.Repositories.CreateKey(client.ctx, *(client.user.Login), *(client.current_repository.Name), &github.Key{
@@ -87,7 +89,7 @@ func (client *Client) CreateDeployKey(name *string, key *string) error {
 
 func (client *Client) CreatePushHook(name *string, url *string, devMode bool) (int64, string, error) {
 	if client.current_repository == nil {
-		return 0, "", errors.New("No repository selected.")
+		return 0, "", errors.New("no repository selected")
 	}
 
 	secret, err := cu.GenerateSecretString()
@@ -96,12 +98,11 @@ func (client *Client) CreatePushHook(name *string, url *string, devMode bool) (i
 	}
 
 	// Don't create hooks in devMode as we are faking pushes
-	if devMode == true {
+	if devMode {
 		return 1, secret, nil
 	}
 
 	hk, _, err := client.Repositories.CreateHook(client.ctx, *(client.user.Login), *(client.current_repository.Name), &github.Hook{
-		//URL: url,
 		Events: []string{
 			"push",
 		},
@@ -118,9 +119,6 @@ func (client *Client) CreatePushHook(name *string, url *string, devMode bool) (i
 		return 0, "", err
 	}
 
-	/*fmt.Println(*hk)
-	fmt.Println(*res)*/
-
 	return *(hk.ID), secret, err
 }
 
@@ -130,8 +128,7 @@ func (client *Client) ListMyRepos() map[string]interface{} {
 		rlo := github.RepositoryListOptions{ListOptions: github.ListOptions{Page: i, PerPage: 100}, Sort: "created"} //Visibility: "all", Type: "all"}
 
 		_repos, _, err := client.Repositories.List(client.ctx, "", &rlo)
-		//fmt.Println("ListMyRepos List:", _repos)
-		//fmt.Println("ListMyRepos Response:", _response)
+		// TODO: Simplify this logic
 		if err == nil && len(_repos) > 0 {
 			for _, v := range _repos {
 				repos[fmt.Sprintf("%d", *(v.ID))] = map[string]string{
@@ -147,23 +144,23 @@ func (client *Client) ListMyRepos() map[string]interface{} {
 }
 
 func (client *Client) ShortRepositoryInfo(id string) map[string]interface{} {
-	repoinfo := make(map[string]interface{})
+	repoInfo := make(map[string]interface{})
 
 	_id, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
-		repoinfo["error"] = "Incorrect repository ID"
-		return repoinfo
+		repoInfo["error"] = "Incorrect repository ID"
+		return repoInfo
 	}
 
-	_repoinfo, _, err := client.Repositories.GetByID(client.ctx, _id)
+	_repoInfo, _, err := client.Repositories.GetByID(client.ctx, _id)
 	if err != nil {
-		repoinfo["error"] = fmt.Sprintf("Error %s", err)
-		return repoinfo
+		repoInfo["error"] = fmt.Sprintf("Error %s", err)
+		return repoInfo
 	}
 
-	repoinfo["name"] = *(_repoinfo.Name)
-	repoinfo["fullname"] = *(_repoinfo.FullName)
-	repoinfo["url"] = *(_repoinfo.URL)
+	repoInfo["name"] = *(_repoInfo.Name)
+	repoInfo["fullname"] = *(_repoInfo.FullName)
+	repoInfo["url"] = *(_repoInfo.URL)
 
-	return repoinfo
+	return repoInfo
 }

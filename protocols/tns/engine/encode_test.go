@@ -28,7 +28,7 @@ func TestEncode(t *testing.T) {
 		time.Sleep(s)
 	}()
 
-	peerC, err := peer.New( // consumer
+	peerC, err := peer.New(
 		testCtx,
 		nil,
 		keypair.NewRaw(),

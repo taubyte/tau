@@ -17,7 +17,6 @@ import (
 )
 
 func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	// var cid string
 	cidMap := make(map[string]string, 0)
 	assetMap := make(map[string]string, 0)
 	action, err := maps.String(body, "action")
@@ -218,7 +217,7 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 			return nil
 		}
 
-		// Update attemp and timestamp and status
+		// Update attempt and timestamp and status
 		job.Attempt++
 		job.Timestamp = time.Now().Unix()
 		job.Status = commonIface.JobStatusOpen

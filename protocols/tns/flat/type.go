@@ -2,7 +2,7 @@ package flat
 
 type Object struct {
 	Root []string
-	data interface{} // keep data alive till query is deleted
+	data interface{}
 	Data Items
 }
 

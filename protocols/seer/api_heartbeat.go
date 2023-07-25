@@ -16,7 +16,7 @@ import (
 	"github.com/taubyte/utils/maps"
 )
 
-func parseUsagefromBody(body command.Body) (iface.UsageData, error) {
+func parseUsageFromBody(body command.Body) (iface.UsageData, error) {
 	var usage iface.UsageData
 	data, ok := body["usage"]
 	if !ok {
@@ -87,7 +87,7 @@ func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn stre
 		id = conn.RemotePeer().String()
 	}
 
-	usage, err := parseUsagefromBody(body)
+	usage, err := parseUsageFromBody(body)
 	if err != nil {
 		return nil, err
 	}

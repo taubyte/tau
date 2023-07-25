@@ -149,17 +149,15 @@ func (srv *Service) Orbitals() []vm.Plugin {
 }
 
 func (srv *Service) Close() error {
-	// TODO use debug logger
-	fmt.Println("Closing", protocolCommon.Node)
-	defer fmt.Println(protocolCommon.Node, "closed")
+	logger.Info("Closing", protocolCommon.Node)
+	defer logger.Info(protocolCommon.Node, "closed")
 
 	for _, orbitals := range srv.orbitals {
 		if err := orbitals.Close(); err != nil {
-			fmt.Printf("Failed to close orbital `%s`\n", orbitals.Name())
+			logger.Errorf("Failed to close orbital `%s`", orbitals.Name())
 		}
 	}
 
-	// ctx & partly relies on node
 	srv.tns.Close()
 
 	srv.nodeHttp.Close()
@@ -171,7 +169,6 @@ func (srv *Service) Close() error {
 	srv.nodeCounters.Close()
 	srv.nodeSmartOps.Close()
 
-	// ctx
 	srv.vm.Close()
 
 	return nil

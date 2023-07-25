@@ -31,7 +31,7 @@ type Repository interface {
 type RepositoryGetter interface {
 	ID() string
 	Name() string
-	Fullname() string
+	FullName() string
 	Private() bool
 }
 

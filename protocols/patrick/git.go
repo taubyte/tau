@@ -74,10 +74,9 @@ func (gr *GitRepository) Url() *string {
 }
 
 func (gr *GitRepository) Clone(ctx context.Context, path string, ref string) error {
-
 	url := gr.Url()
 	if url == nil {
-		return errors.New("fepository does not have a URL")
+		return errors.New("repository does not have a URL")
 	}
 
 	var err error

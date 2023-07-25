@@ -8,7 +8,6 @@ import (
 )
 
 func (srv *Service) auctionEnd(auction *hoarderIface.Auction, msg *pubsub.Message) error {
-	// All done finalize the lottery
 	var winner *hoarderIface.Auction
 	var currentBiggest uint64
 	for _, lottery := range srv.lotteryPool[auction.Meta.ConfigId+auction.Meta.Match] {

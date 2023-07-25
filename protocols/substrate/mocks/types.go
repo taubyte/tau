@@ -24,7 +24,7 @@ type mockedSubstrate struct {
 	ctxC     context.CancelFunc
 	branch   string
 
-	// TODO: Both should be removed
+	// TODO: Should be removed
 	counters substrate.CounterService
 }
 

@@ -152,19 +152,13 @@ func New(ctx context.Context, protocolConfig *config.Protocol) (*PatrickService,
 }
 
 func (srv *PatrickService) Close() error {
-	// TODO use debug logger
-	fmt.Println("Closing", protocolsCommon.Patrick)
-	defer fmt.Println(protocolsCommon.Patrick, "closed")
+	logger.Info("Closing", protocolsCommon.Patrick)
+	defer logger.Info(protocolsCommon.Patrick, "closed")
 
-	// node.ctx
 	srv.stream.Stop()
-
-	// ctx & partly relies on node
 	srv.tnsClient.Close()
 	srv.authClient.Close()
 	srv.monkeyClient.Close()
-
-	// ctx, needs to close after node as node will try to close it's store
 	srv.db.Close()
 
 	return nil

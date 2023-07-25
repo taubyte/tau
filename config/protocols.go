@@ -21,7 +21,6 @@ var (
 	DefaultKeyFileName     string = "/tb/priv/privkey.pem"
 )
 
-// TODO: fix the peer.Node to new p2p when its merged
 type Protocol struct {
 	Root      string
 	Shape     string

@@ -24,6 +24,7 @@ type Config struct {
 	config.Protocol `yaml:"z,omitempty"`
 }
 
+// TODO: Node shouldn't have to have all components
 type Service struct {
 	ctx          context.Context
 	node         peer.Node

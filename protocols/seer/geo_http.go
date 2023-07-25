@@ -63,7 +63,6 @@ func (srv *Service) setupLocationHTTPRoutes() {
 		host = "seer.tau." + srv.hostUrl
 	}
 
-	//srv.http.GET("/geo/all", []string{}, []string{"geo/query/all"}, nil, srv.getGeoAllHTTPHandler, nil)
 	srv.http.GET(&http.RouteDefinition{
 		Host: host,
 		Path: "/geo/all",
@@ -74,7 +73,6 @@ func (srv *Service) setupLocationHTTPRoutes() {
 		Handler: srv.getGeoAllHTTPHandler,
 	})
 
-	//srv.http.GET("/geo/distance/{distance}/{latitude}/{longitude}", []string{"distance", "latitude", "longitude"}, []string{"geo/query"}, nil, srv.getGeoDistanceHTTPHandler, nil)
 	srv.http.GET(&http.RouteDefinition{
 		Host: host,
 		Path: "/geo/distance/{distance}/{latitude}/{longitude}",

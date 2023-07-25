@@ -19,7 +19,7 @@ import (
 )
 
 func TestWebsite(t *testing.T) {
-	// dreamland.BigBang()
+	dreamland.BigBang()
 	u := dreamland.MultiverseWithConfig(dreamland.UniverseConfig{
 		Name: "MonkeyFixtureTestWebsite",
 		Id:   "MonkeyFixtureTestWebsite",

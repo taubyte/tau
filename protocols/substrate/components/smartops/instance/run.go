@@ -21,8 +21,7 @@ func (i *instance) Run(caller substrate.SmartOpEventCaller) (uint32, error) {
 
 	resource := smartOpSdk.CreateSmartOp(caller)
 
-	// TODO: FIX ME
-
+	// TODO: FIX ME DO NOT REMOVE COMMENTED CODE
 	// sdk, ok := sdkPlugin.(sdkPlugins.Instance)
 	// if !ok {
 	// 	return 0, fmt.Errorf("smartops Plugin is not a plugin instance `%T`", smartOpPlugin)

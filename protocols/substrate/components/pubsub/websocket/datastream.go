@@ -35,7 +35,6 @@ func (h *dataStreamHandler) In() {
 		default:
 			_, msg, err := h.conn.ReadMessage()
 			if err != nil {
-				// TODO log error
 				h.conn.WriteJSON(WrappedMessage{
 					Error: fmt.Sprintf("reading data In on `%s` failed with: %s", h.matcher.Path(), err),
 				})
@@ -45,7 +44,6 @@ func (h *dataStreamHandler) In() {
 
 			err = h.srv.Node().PubSubPublish(h.ctx, h.matcher.Path(), msg)
 			if err != nil {
-				// TODO log error
 				h.conn.WriteJSON(WrappedMessage{
 					Error: fmt.Sprintf("reading data In then Publish failed with: %v", err),
 				})

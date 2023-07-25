@@ -55,8 +55,6 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 		return nil, err
 	}
 
-	// should end if any of the two contexts ends
-
 	// P2P
 	srv.stream, err = streams.New(srv.node, protocolsCommon.Tns, commonSpec.TnsProtocol)
 	if err != nil {
@@ -85,8 +83,8 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 
 func (srv *Service) Close() error {
 	// TODO use debug logger
-	fmt.Println("Closing", protocolsCommon.Tns)
-	defer fmt.Println(protocolsCommon.Tns, "closed")
+	logger.Info("Closing", protocolsCommon.Tns)
+	defer logger.Info(protocolsCommon.Tns, "closed")
 
 	// node.ctx
 	srv.stream.Stop()

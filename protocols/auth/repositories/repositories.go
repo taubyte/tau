@@ -21,80 +21,39 @@ func (r *GithubRepository) Serialize() Data {
 	return Data{
 		"id":       r.Id,
 		"provider": r.Provider,
-		//"name":     r.Name,
-		"project": r.Project,
-		"key":     r.Key,
-		//"url":      r.Url,
+		"project":  r.Project,
+		"key":      r.Key,
 	}
 }
 
-func (r *GithubRepository) Delete(ctx context.Context) error {
-	var (
-		lerror error
-		err    error
-	)
+func (r *GithubRepository) Delete(ctx context.Context) (err error) {
+	var lError error
 
 	// let's clear the hooks first
 	for _, h := range r.Hooks(ctx) {
 		err = h.Delete(ctx)
 		if err != nil {
-			lerror = err
+			lError = err
 		}
 	}
 
-	repo_key := fmt.Sprintf("/repositories/github/%d", r.Id)
-
-	// err = r.KV.Delete(repo_key + "/name")
-	// if err != nil {
-	// 	lerror = err
-	// }
-
-	// err = r.KV.Delete(repo_key + "/project")
-	// if err != nil {
-	// 	lerror = err
-	// }
-
-	err = r.KV.Delete(ctx, repo_key+"/key")
+	// TODO: This can be a common method
+	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.Id)
+	err = r.KV.Delete(ctx, repo_key)
 	if err != nil {
-		lerror = err
+		lError = err
 	}
 
-	// err = r.KV.Delete(repo_key + "/url")
-	// if err != nil {
-	// 	lerror = err
-	// }
-
-	return lerror
+	return lError
 }
 
-func (r *GithubRepository) Register(ctx context.Context) error {
-	var err error
-
-	repo_key := fmt.Sprintf("/repositories/github/%d", r.Id)
-
-	// err = r.KV.Put(repo_key+"/name", []byte(r.Name))
-	// if err != nil {
-	// 	r.Delete()
-	// 	return err
-	// }
-
-	// err = r.KV.Put(repo_key+"/project", []byte(r.Project))
-	// if err != nil {
-	// 	r.Delete()
-	// 	return err
-	// }
-
-	err = r.KV.Put(ctx, repo_key+"/key", []byte(r.Key))
+func (r *GithubRepository) Register(ctx context.Context) (err error) {
+	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.Id)
+	err = r.KV.Put(ctx, repo_key, []byte(r.Key))
 	if err != nil {
 		r.Delete(ctx)
 		return err
 	}
-
-	// err = r.KV.Put(repo_key+"/url", []byte(r.Url))
-	// if err != nil {
-	// 	r.Delete()
-	// 	return err
-	// }
 
 	return nil
 }
@@ -153,37 +112,24 @@ func Provider(ctx context.Context, kv kvdb.KVDB, id string) (string, error) {
 func fetchGithub(ctx context.Context, kv kvdb.KVDB, id int) (Repository, error) {
 	repo_key := fmt.Sprintf("/repositories/github/%d", id)
 
-	// name, err := kv.Get(repo_key + "/name")
-	// if err != nil {
-	// 	return nil, err
-	// }
-
-	projectId, _ := kv.Get(ctx, repo_key+"/project")
-	// Ignoring the error here because not all repositories
-	// have a project
-
 	key, err := kv.Get(ctx, repo_key+"/key")
 	if err != nil {
 		return nil, err
 	}
 
-	// url, err := kv.Get(repo_key + "/url")
-	// if err != nil {
-	// 	return nil, err
-	// }
-
+	// Ignoring the error here because not all repositories
+	// have a project
+	projectId, _ := kv.Get(ctx, repo_key+"/project")
 	return New(kv, Data{
-		"id": id,
-		//"name":     string(name),
+		"id":       id,
 		"provider": "github",
 		"project":  string(projectId),
 		"key":      string(key),
-		//"url":      string(url),
 	})
 
 }
 
-// FIX: ask for provider
+// TODO: ask for provider
 // id: provided as string even if it's an int
 func Fetch(ctx context.Context, kv kvdb.KVDB, id string) (Repository, error) {
 	// figure out the provider

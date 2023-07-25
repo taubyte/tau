@@ -19,7 +19,7 @@ var testDB *KVDatabase
 func init() {
 	ctx := context.Background()
 
-	node, err := peer.New( // provider
+	node, err := peer.New(
 		ctx,
 		nil,
 		keypair.NewRaw(),
@@ -32,8 +32,6 @@ func init() {
 	if err != nil {
 		panic(fmt.Sprintf("Peer creation returned error `%s`", err.Error()))
 	}
-
-	//defer node.Close()
 
 	testDB, err = New(logger, node, "test", 5)
 	if err != nil {
@@ -72,7 +70,6 @@ func TestAsyncRegExp(t *testing.T) {
 		}
 	}
 
-	//ReadQueryResultTimeout = 100000 * time.Nanosecond
 	c, err := testDB.ListRegExAsync(ctx, "", "/[ab]/?.*")
 	if err != nil {
 		t.Error(err)
@@ -122,5 +119,4 @@ func TestAsyncRegExp(t *testing.T) {
 		t.Error("Regex list return wrong result")
 		return
 	}
-
 }

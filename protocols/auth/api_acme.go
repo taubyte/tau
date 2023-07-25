@@ -23,18 +23,13 @@ func (srv *AuthService) setACMECertificate(ctx context.Context, fqdn string, cer
 	logger.Debugf("Set certificate for `%s`", fqdn)
 	defer logger.Debugf("Set certificate for `%s` done", fqdn)
 
-	/*err := srv.x509Validate(fqdn, certificate)
-	if err != nil {
-		return err
-	}*/ // TODO add later
-
 	err := srv.db.Put(ctx, "/acme/"+base64.StdEncoding.EncodeToString([]byte(fqdn))+"/certificate/pem", certificate)
 	if err != nil {
 		logger.Errorf("Set certificate for `%s` failed: %w", fqdn, err)
 		return err
 	}
 
-	logger.Debug("Set certificate for `%s` = %v", fqdn, certificate)
+	logger.Debugf("Set certificate for `%s` = %v", fqdn, certificate)
 
 	return nil
 }
@@ -74,7 +69,7 @@ func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]
 		// cleanup entry
 		logger.Error(fqdn + " : Found empty certificate!")
 		srv.db.Delete(ctx, key)
-		return nil, ErrCacheMiss //errors.New("Found empty certificate!")
+		return nil, ErrCacheMiss
 	}
 
 	logger.Debugf("Get certificate for `%s`: %v", fqdn, certificate)
@@ -110,10 +105,10 @@ func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn strin
 	return certificate, nil
 }
 
-// add a proces to clean-up
+// add a process to clean-up
 func (srv *AuthService) getACMECache(ctx context.Context, key string) ([]byte, error) {
 	logger.Debugf("Get acme cache for `%s`", key)
-	defer logger.Debug("Get acme cache for `%s` done", key)
+	defer logger.Debugf("Get acme cache for `%s` done", key)
 
 	key_base := "/acme/cache/" + base64.StdEncoding.EncodeToString([]byte(key))
 	data, err := srv.db.Get(ctx, key_base+"/data")
@@ -136,7 +131,7 @@ func (srv *AuthService) getACMECache(ctx context.Context, key string) ([]byte, e
 // add a GC to clean up data
 func (srv *AuthService) setACMECache(ctx context.Context, key string, data []byte) error {
 	logger.Debugf("Set acme cache for `%s`", key)
-	defer logger.Debug("Set acme cache for `%s` done", key)
+	defer logger.Debugf("Set acme cache for `%s` done", key)
 
 	key_base := "/acme/cache/" + base64.StdEncoding.EncodeToString([]byte(key))
 	err := srv.db.Put(ctx, key_base+"/data", data)
@@ -154,8 +149,8 @@ func (srv *AuthService) setACMECache(ctx context.Context, key string, data []byt
 }
 
 func (srv *AuthService) deleteACMECache(ctx context.Context, key string) error {
-	logger.Debug("Del acme cache for `%s`", key)
-	defer logger.Debug("Del acme cache for `%s` done", key)
+	logger.Debugf("Del acme cache for `%s`", key)
+	defer logger.Debugf("Del acme cache for `%s` done", key)
 
 	key_base := "/acme/cache/" + base64.StdEncoding.EncodeToString([]byte(key))
 	err := srv.db.Delete(ctx, key_base+"/data")
@@ -169,7 +164,6 @@ func (srv *AuthService) deleteACMECache(ctx context.Context, key string) error {
 }
 
 func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	// params:
 	//  TODO: add encrption key to service library
 	//  action: get/set
 	//  fqdn: domain name
@@ -250,6 +244,6 @@ func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Conne
 		}
 		return nil, nil
 	default:
-		return nil, errors.New("Acme action `" + action + "` not reconized.")
+		return nil, errors.New("Acme action `" + action + "` not recognized")
 	}
 }
