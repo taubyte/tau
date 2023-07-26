@@ -2,10 +2,6 @@ module github.com/taubyte/odo
 
 go 1.19
 
-replace github.com/taubyte/dreamland => ../dreamland
-
-replace github.com/taubyte/go-interfaces => /home/tafkhan/Documents/Work/Taubyte/Repos/go-interfaces
-
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -37,8 +33,8 @@ require (
 	github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29
 	github.com/taubyte/config-compiler v0.4.4
 	github.com/taubyte/domain-validation v1.0.0
-	github.com/taubyte/dreamland v0.4.5
-	github.com/taubyte/go-interfaces v0.2.8
+	github.com/taubyte/dreamland v0.4.6-pre
+	github.com/taubyte/go-interfaces v0.2.9
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.8
 	github.com/taubyte/go-sdk-smartops v0.1.3
