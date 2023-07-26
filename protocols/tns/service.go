@@ -7,13 +7,12 @@ import (
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/services/seer"
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
-	kv "github.com/taubyte/odo/pkgs/kvdb/database"
+	"github.com/taubyte/odo/pkgs/kvdb"
 	streams "github.com/taubyte/p2p/streams/service"
 
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	commonSpec "github.com/taubyte/go-specs/common"
 	odoConfig "github.com/taubyte/odo/config"
-	"github.com/taubyte/odo/protocols/common"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/engine"
 )
@@ -46,7 +45,12 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 		srv.node = config.Node
 	}
 
-	srv.db, err = kv.New(logger, srv.node, protocolsCommon.Tns, 5)
+	srv.dbFactory = config.Databases
+	if srv.dbFactory == nil {
+		srv.dbFactory = kvdb.New(srv.node)
+	}
+
+	srv.db, err = srv.dbFactory.New(logger, protocolsCommon.Tns, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +78,7 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 		return nil, fmt.Errorf("failed creating seer client error: %v", err)
 	}
 
-	err = common.StartSeerBeacon(config, sc, seer.ServiceTypeTns)
+	err = protocolsCommon.StartSeerBeacon(config, sc, seer.ServiceTypeTns)
 	if err != nil {
 		return nil, err
 	}

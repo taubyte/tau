@@ -12,11 +12,11 @@ import (
 
 var _ components.ServiceComponent = &Service{}
 
-type storageMethod func(storageIface.Service, storageIface.Context, log.StandardLogger, map[string]kvdb.KVDB) (storageIface.Storage, error)
+type storageMethod func(storageIface.Service, kvdb.Factory, storageIface.Context, log.StandardLogger, map[string]kvdb.KVDB) (storageIface.Storage, error)
 
 type Service struct {
 	nodeIface.Service
-
+	dbFactory     kvdb.Factory
 	storages      map[string]storageIface.Storage
 	storagesLock  sync.RWMutex
 	storageMethod storageMethod

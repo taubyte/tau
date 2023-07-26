@@ -8,13 +8,14 @@ import (
 	"github.com/taubyte/odo/protocols/substrate/components/storage/storage"
 )
 
-func New(srv nodeIface.Service, options ...Option) (*Service, error) {
+func New(srv nodeIface.Service, factory kvdb.Factory, options ...Option) (*Service, error) {
 	s := &Service{
 		Service:       srv,
 		storages:      make(map[string]storageIface.Storage),
 		matcher:       make(map[string]kvdb.KVDB, 0),
 		commits:       make(map[string]string, 0),
 		storageMethod: storage.New,
+		dbFactory:     factory,
 	}
 
 	for _, opt := range options {

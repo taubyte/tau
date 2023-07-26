@@ -34,7 +34,7 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 		}
 
 		// Create new db from config template
-		if database, err = db.New(s, context); err != nil {
+		if database, err = db.New(s, s.DBFactory, context); err != nil {
 			return nil, fmt.Errorf("creating new database failed with: %s", err)
 		}
 

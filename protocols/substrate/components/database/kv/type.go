@@ -1,11 +1,9 @@
 package kv
 
-import (
-	kvdb "github.com/taubyte/odo/pkgs/kvdb/database"
-)
+import "github.com/taubyte/go-interfaces/kvdb"
 
 type kv struct {
 	name     string
-	database *kvdb.KVDatabase
+	database kvdb.KVDB
 	maxSize  uint64
 }

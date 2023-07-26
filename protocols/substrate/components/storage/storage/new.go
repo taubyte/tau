@@ -8,7 +8,6 @@ import (
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/kvdb"
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
-	kvd "github.com/taubyte/odo/pkgs/kvdb/database"
 	common "github.com/taubyte/odo/protocols/substrate/components/storage/common"
 )
 
@@ -20,7 +19,7 @@ func storageError(ctx storageIface.Context) string {
 	}
 }
 
-func New(srv storageIface.Service, storageContext storageIface.Context, logger log.StandardLogger, matches map[string]kvdb.KVDB) (storageIface.Storage, error) {
+func New(srv storageIface.Service, factory kvdb.Factory, storageContext storageIface.Context, logger log.StandardLogger, matches map[string]kvdb.KVDB) (storageIface.Storage, error) {
 	storageHash, err := common.GetStorageHash(storageContext)
 	if err != nil {
 		return nil, fmt.Errorf("getting hash for `%s` failed with: %s", storageError(storageContext), err)
@@ -78,7 +77,7 @@ func New(srv storageIface.Service, storageContext storageIface.Context, logger l
 		return nil, fmt.Errorf("exited: %d", val)
 	}
 
-	_storage, err := kvd.New(logger, srv.Node(), storageHash, common.BroadcastInterval)
+	_storage, err := factory.New(logger, storageHash, common.BroadcastInterval)
 	if err != nil {
 		return nil, fmt.Errorf("creating new kvdb for `%s` failed with: %s", storageError(storageContext), err)
 	}

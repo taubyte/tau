@@ -20,6 +20,7 @@ import (
 
 	projectLib "github.com/taubyte/go-project-schema/project"
 	_ "github.com/taubyte/odo/clients/p2p/hoarder"
+	"github.com/taubyte/odo/pkgs/kvdb"
 	_ "github.com/taubyte/odo/protocols/hoarder"
 	_ "github.com/taubyte/odo/protocols/seer"
 	_ "github.com/taubyte/odo/protocols/substrate"
@@ -122,13 +123,14 @@ func TestStoring(t *testing.T) {
 		return
 	}
 
-	db, err := dbApi.New(u.Substrate())
+	dbs := kvdb.New(u.Hoarder().Node())
+	db, err := dbApi.New(u.Substrate(), dbs)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	storageNode, err := storageApi.New(u.Substrate())
+	storageNode, err := storageApi.New(u.Substrate(), dbs)
 	if err != nil {
 		t.Error(err)
 		return

@@ -1,4 +1,4 @@
-package database
+package kvdb
 
 import (
 	"context"
@@ -42,7 +42,7 @@ func NewFilterKeyRegEx(regexs ...string) (*FilterKeyRegEx, error) {
 	return f, nil
 }
 
-func (kvd *KVDatabase) ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error) {
+func (kvd *kvDatabase) ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error) {
 	result, err := kvd.listRegEx(ctx, prefix, regexs...)
 	if err != nil {
 		return nil, err
@@ -61,7 +61,7 @@ func (kvd *KVDatabase) ListRegEx(ctx context.Context, prefix string, regexs ...s
 	return keys, nil
 }
 
-func (kvd *KVDatabase) ListRegExAsync(ctx context.Context, prefix string, regexs ...string) (chan string, error) {
+func (kvd *kvDatabase) ListRegExAsync(ctx context.Context, prefix string, regexs ...string) (chan string, error) {
 	result, err := kvd.listRegEx(ctx, prefix, regexs...)
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func (kvd *KVDatabase) ListRegExAsync(ctx context.Context, prefix string, regexs
 	return c, nil
 }
 
-func (kvd *KVDatabase) listRegEx(ctx context.Context, prefix string, regexs ...string) (query.Results, error) {
+func (kvd *kvDatabase) listRegEx(ctx context.Context, prefix string, regexs ...string) (query.Results, error) {
 	filter, err := NewFilterKeyRegEx(regexs...)
 	if err != nil {
 		return nil, err

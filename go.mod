@@ -33,8 +33,8 @@ require (
 	github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29
 	github.com/taubyte/config-compiler v0.4.4
 	github.com/taubyte/domain-validation v1.0.0
-	github.com/taubyte/dreamland v0.4.5
-	github.com/taubyte/go-interfaces v0.2.8
+	github.com/taubyte/dreamland v0.4.6-pre
+	github.com/taubyte/go-interfaces v0.2.9
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.8
 	github.com/taubyte/go-sdk-smartops v0.1.3
@@ -46,7 +46,7 @@ require (
 	github.com/taubyte/p2p v0.9.1
 	github.com/taubyte/tau v0.1.6
 	github.com/taubyte/utils v0.1.6
-	github.com/taubyte/vm v1.0.2
+	github.com/taubyte/vm v1.0.3
 	github.com/taubyte/vm-core-plugins v0.3.3
 	github.com/taubyte/vm-orbit v1.0.0
 	github.com/urfave/cli/v2 v2.25.7

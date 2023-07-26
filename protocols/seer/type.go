@@ -39,13 +39,14 @@ type geoService struct {
 }
 
 type Service struct {
-	node   peer.Node
-	db     kvdb.KVDB
-	http   http.Service
-	stream *streams.CommandService
-	geo    *geoService
-	oracle *oracleService
-	dns    *dnsServer
+	node      peer.Node
+	db        kvdb.KVDB
+	dbFactory kvdb.Factory
+	http      http.Service
+	stream    *streams.CommandService
+	geo       *geoService
+	oracle    *oracleService
+	dns       *dnsServer
 
 	nodeDBMutex sync.RWMutex
 	nodeDB      *sql.DB

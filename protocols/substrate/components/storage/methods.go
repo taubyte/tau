@@ -30,7 +30,7 @@ func (s *Service) Storage(context storageIface.Context) (storageIface.Storage, e
 			return nil, err
 		}
 
-		storage, err = s.storageMethod(s, context, common.Logger, s.matcher)
+		storage, err = s.storageMethod(s, s.dbFactory, context, common.Logger, s.matcher)
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +118,12 @@ func (s *Service) pubsubStorage(context storageIface.Context, branch string) err
 		return fmt.Errorf("marshalling auction failed with %w", err)
 	}
 
-	if err = s.Node().Messaging().Publish(hoarderSpecs.PubSubIdent, dataBytes); err != nil {
+	topic, err := s.Node().Messaging().Join(hoarderSpecs.PubSubIdent)
+	if err != nil {
+		return fmt.Errorf("getting topic for `%s` failed with: %w", hoarderSpecs.PubSubIdent, err)
+	}
+
+	if err = topic.Publish(s.Context(), dataBytes); err != nil {
 		return fmt.Errorf("failed publishing storage %s with %w", context.Matcher, err)
 	}
 

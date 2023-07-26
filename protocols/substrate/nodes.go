@@ -27,16 +27,16 @@ func (srv *Service) Verbose() bool {
 
 func (srv *Service) attachNodes(config *config.Protocol) (err error) {
 	// Needs to happen first, as others depend on it
-	if err = srv.attachNodeCounters(config); err != nil {
+	if err = srv.attachNodeCounters(); err != nil {
 		return attachNodesError("counters", err)
 	}
 
 	// Needs to happen second, as others depend on it
-	if err = srv.attachNodeSmartOps(config); err != nil {
+	if err = srv.attachNodeSmartOps(); err != nil {
 		return attachNodesError("smartops", err)
 	}
 
-	if err = srv.attachNodePubSub(config); err != nil {
+	if err = srv.attachNodePubSub(); err != nil {
 		return attachNodesError("pubsub", err)
 	}
 
@@ -44,15 +44,15 @@ func (srv *Service) attachNodes(config *config.Protocol) (err error) {
 		return attachNodesError("ipfs", err)
 	}
 
-	if err = srv.attachNodeDatabase(config); err != nil {
+	if err = srv.attachNodeDatabase(); err != nil {
 		return attachNodesError("database", err)
 	}
 
-	if err = srv.attachNodeStorage(config); err != nil {
+	if err = srv.attachNodeStorage(); err != nil {
 		return attachNodesError("storage", err)
 	}
 
-	if err = srv.attachNodeP2P(config); err != nil {
+	if err = srv.attachNodeP2P(); err != nil {
 		return attachNodesError("p2p", err)
 	}
 
@@ -74,7 +74,7 @@ func (srv *Service) attachNodeHttp(config *config.Protocol) (err error) {
 	return
 }
 
-func (srv *Service) attachNodePubSub(config *config.Protocol) (err error) {
+func (srv *Service) attachNodePubSub() (err error) {
 	srv.nodePubSub, err = pubSub.New(srv)
 	return
 }
@@ -91,27 +91,27 @@ func (srv *Service) attachNodeIpfs(config *config.Protocol) (err error) {
 	return
 }
 
-func (srv *Service) attachNodeDatabase(config *config.Protocol) (err error) {
-	srv.nodeDatabase, err = database.New(srv)
+func (srv *Service) attachNodeDatabase() (err error) {
+	srv.nodeDatabase, err = database.New(srv, srv.databases)
 	return
 }
 
-func (srv *Service) attachNodeStorage(config *config.Protocol) (err error) {
-	srv.nodeStorage, err = storage.New(srv)
+func (srv *Service) attachNodeStorage() (err error) {
+	srv.nodeStorage, err = storage.New(srv, srv.databases)
 	return
 }
 
-func (srv *Service) attachNodeP2P(config *config.Protocol) (err error) {
+func (srv *Service) attachNodeP2P() (err error) {
 	srv.nodeP2P, err = p2p.New(srv)
 	return
 }
 
-func (srv *Service) attachNodeCounters(config *config.Protocol) (err error) {
+func (srv *Service) attachNodeCounters() (err error) {
 	srv.nodeCounters, err = counters.New(srv)
 	return
 }
 
-func (srv *Service) attachNodeSmartOps(config *config.Protocol) (err error) {
+func (srv *Service) attachNodeSmartOps() (err error) {
 	srv.nodeSmartOps, err = smartOps.New(srv)
 	return
 }

@@ -18,3 +18,7 @@ type unImplementedService struct {
 func (u *unImplementedService) Run(smartops.EventCaller, []string) (uint32, error) {
 	return 0, nil
 }
+
+func (u *unImplementedService) Close() error {
+	return nil
+}

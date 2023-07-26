@@ -1,4 +1,4 @@
-package database
+package kvdb
 
 import (
 	"context"
@@ -8,22 +8,22 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 )
 
-func (kvd *KVDatabase) Get(ctx context.Context, key string) ([]byte, error) {
+func (kvd *kvDatabase) Get(ctx context.Context, key string) ([]byte, error) {
 	k := ds.NewKey(key)
 	return kvd.datastore.Get(ctx, k)
 }
 
-func (kvd *KVDatabase) Put(ctx context.Context, key string, v []byte) error {
+func (kvd *kvDatabase) Put(ctx context.Context, key string, v []byte) error {
 	k := ds.NewKey(key)
 	return kvd.datastore.Put(ctx, k, v)
 }
 
-func (kvd *KVDatabase) Delete(ctx context.Context, key string) error {
+func (kvd *kvDatabase) Delete(ctx context.Context, key string) error {
 	k := ds.NewKey(key)
 	return kvd.datastore.Delete(ctx, k)
 }
 
-func (kvd *KVDatabase) List(ctx context.Context, prefix string) ([]string, error) {
+func (kvd *kvDatabase) List(ctx context.Context, prefix string) ([]string, error) {
 	result, err := kvd.list(ctx, prefix)
 	if err != nil {
 		return nil, err
@@ -36,7 +36,7 @@ func (kvd *KVDatabase) List(ctx context.Context, prefix string) ([]string, error
 	return keys, nil
 }
 
-func (kvd *KVDatabase) ListAsync(ctx context.Context, prefix string) (chan string, error) {
+func (kvd *kvDatabase) ListAsync(ctx context.Context, prefix string) (chan string, error) {
 	result, err := kvd.list(ctx, prefix)
 	if err != nil {
 		return nil, err
@@ -64,14 +64,14 @@ func (kvd *KVDatabase) ListAsync(ctx context.Context, prefix string) (chan strin
 	return c, nil
 }
 
-func (kvd *KVDatabase) list(ctx context.Context, prefix string) (query.Results, error) {
+func (kvd *kvDatabase) list(ctx context.Context, prefix string) (query.Results, error) {
 	return kvd.datastore.Query(ctx, query.Query{
 		Prefix:   prefix,
 		KeysOnly: true,
 	})
 }
 
-func (kvd *KVDatabase) Batch(ctx context.Context) (kvdb.Batch, error) {
+func (kvd *kvDatabase) Batch(ctx context.Context) (kvdb.Batch, error) {
 	b, err := kvd.datastore.Batch(ctx)
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (b *Batch) Commit() error {
 	return b.store.Commit(b.ctx)
 }
 
-func (kvd *KVDatabase) Sync(ctx context.Context, key string) error {
+func (kvd *kvDatabase) Sync(ctx context.Context, key string) error {
 	k := ds.NewKey(key)
 	return kvd.datastore.Sync(ctx, k)
 }

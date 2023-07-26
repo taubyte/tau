@@ -30,6 +30,8 @@ func createAuthService(ctx context.Context, config *iface.ServiceConfig) (iface.
 		serviceConfig.EnableHTTPS = (result != 0)
 	}
 
+	serviceConfig.Databases = config.Databases
+
 	serviceConfig.DomainValidation.PrivateKey = config.PrivateKey
 	serviceConfig.DomainValidation.PublicKey = config.PublicKey
 

@@ -21,5 +21,6 @@ func createTNSService(ctx context.Context, config *iface.ServiceConfig) (iface.S
 		P2PAnnounce: []string{fmt.Sprintf(common.DefaultP2PListenFormat, config.Port)},
 		DevMode:     true,
 		SwarmKey:    config.SwarmKey,
+		Databases:   config.Databases,
 	})
 }

@@ -1,10 +1,11 @@
-package database
+package kvdb
 
 import (
 	"context"
 	"fmt"
 	"testing"
 
+	"github.com/taubyte/go-interfaces/kvdb"
 	keypair "github.com/taubyte/p2p/keypair"
 
 	peer "github.com/taubyte/p2p/peer"
@@ -14,7 +15,7 @@ import (
 
 var logger = logging.Logger("test.kvdb")
 
-var testDB *KVDatabase
+var testDB kvdb.KVDB
 
 func init() {
 	ctx := context.Background()
@@ -33,7 +34,8 @@ func init() {
 		panic(fmt.Sprintf("Peer creation returned error `%s`", err.Error()))
 	}
 
-	testDB, err = New(logger, node, "test", 5)
+	factory := New(node)
+	testDB, err = factory.New(logger, "test", 5)
 	if err != nil {
 		panic(err)
 	}

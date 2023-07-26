@@ -22,6 +22,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
+	"github.com/taubyte/odo/pkgs/kvdb"
 	_ "github.com/taubyte/odo/protocols/substrate"
 	storages "github.com/taubyte/odo/protocols/substrate/components/storage"
 	_ "github.com/taubyte/odo/protocols/tns"
@@ -111,8 +112,8 @@ func TestAll(t *testing.T) {
 	}
 
 	tnsClient := simple.TNS()
-
-	service, err := storages.New(u.Substrate())
+	dbFactory := kvdb.New(u.Substrate().Node())
+	service, err := storages.New(u.Substrate(), dbFactory)
 	if err != nil {
 		t.Errorf("Creating storages service failed with: %s", err.Error())
 		return

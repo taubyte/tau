@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/taubyte/go-interfaces/kvdb"
 	"github.com/taubyte/go-interfaces/p2p/keypair"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	spec "github.com/taubyte/go-specs/common"
@@ -39,6 +40,7 @@ type Protocol struct {
 
 	Node       peer.Node
 	PrivateKey []byte
+	Databases  kvdb.Factory
 
 	ClientNode peer.Node
 
