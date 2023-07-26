@@ -3,6 +3,7 @@ package substrate
 import (
 	"context"
 
+	"github.com/taubyte/go-interfaces/kvdb"
 	iface "github.com/taubyte/go-interfaces/services/substrate"
 	databaseIface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	httpIface "github.com/taubyte/go-interfaces/services/substrate/components/http"
@@ -40,6 +41,7 @@ type Service struct {
 	nodeSmartOps iface.SmartOpsService
 	dev          bool
 	verbose      bool
+	databases    kvdb.Factory
 
 	tns tns.Client
 

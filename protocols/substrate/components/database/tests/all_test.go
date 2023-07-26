@@ -19,6 +19,7 @@ import (
 	projectLib "github.com/taubyte/go-project-schema/project"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/odo/clients/p2p/tns"
+	"github.com/taubyte/odo/pkgs/kvdb"
 	_ "github.com/taubyte/odo/protocols/substrate"
 	service "github.com/taubyte/odo/protocols/substrate/components/database"
 	_ "github.com/taubyte/odo/protocols/tns"
@@ -120,8 +121,11 @@ func TestAll(t *testing.T) {
 		Matcher:   databaseMatch3,
 	}
 
+	u.Substrate().Node()
+
+	dbFactory := kvdb.New(u.Substrate().Node())
 	/************************** Testing New Databases *********************************/
-	srv, err := service.New(u.Substrate())
+	srv, err := service.New(u.Substrate(), dbFactory)
 	assert.NilError(t, err)
 
 	dbNew, err := srv.Database(context)

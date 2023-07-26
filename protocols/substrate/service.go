@@ -14,6 +14,7 @@ import (
 	"github.com/taubyte/go-seer"
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
 	odoConfig "github.com/taubyte/odo/config"
+	"github.com/taubyte/odo/pkgs/kvdb"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
 	protocolCommon "github.com/taubyte/odo/protocols/common"
@@ -54,6 +55,11 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 		}
 	} else {
 		srv.node = config.Node
+	}
+
+	srv.databases = config.Databases
+	if srv.databases == nil {
+		srv.databases = kvdb.New(srv.node)
 	}
 
 	// For Odo

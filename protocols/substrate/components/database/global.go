@@ -15,7 +15,7 @@ func (s *Service) Global(projectID string) (db iface.Database, err error) {
 	db, ok = s.databases[hash]
 	s.databasesLock.RUnlock()
 	if !ok {
-		if db, err = globals.New(hash, common.Logger, s.Node()); err != nil {
+		if db, err = globals.New(hash, common.Logger, s.DBFactory); err != nil {
 			return nil, err
 		}
 

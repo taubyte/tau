@@ -1,7 +1,6 @@
 package substrate
 
 import (
-	"context"
 	"fmt"
 	"regexp"
 
@@ -53,8 +52,4 @@ func (s *Service) getStoreConfig(project, application, matcher string) (*structu
 	}
 
 	return nil, fmt.Errorf("`%s` did not match with any storages", matcher)
-}
-
-func (s *Service) Context() context.Context {
-	return s.Node().Context()
 }
