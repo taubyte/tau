@@ -11,8 +11,8 @@ func (c *Client) Rare() ([]string, error) {
 	// looks for items that only have one copy in the network
 	resp, err := c.client.Send("hoarder", command.Body{"action": "rare"})
 	if err != nil {
-		logger.Errorf("Failed getting rare cids with error: %w", err)
-		return nil, fmt.Errorf("failed calling send with error: %w", err)
+		logger.Error("Failed getting rare cids with:", err.Error())
+		return nil, fmt.Errorf("failed calling send with: %w", err)
 	}
 
 	if empty, exits := resp["rare"]; empty == nil && exits {

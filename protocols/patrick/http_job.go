@@ -187,7 +187,7 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 		// Put the job back into the list
 		err = srv.db.Put(requestCtx, "/jobs/"+job.Id, job_byte)
 		if err != nil {
-			logger.Errorf("failed putting job %s into database with error: %w", job.Id, err)
+			logger.Errorf("failed putting job %s into database with error: %s", job.Id, err.Error())
 			return nil, fmt.Errorf("failed putting job %s with %w", job.Id, err)
 		}
 

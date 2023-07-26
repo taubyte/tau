@@ -47,7 +47,7 @@ func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss erro
 	c.errCacheMiss = errCacheMiss
 	c.client, err = client.New(ctx, node, nil, protocolCommon.AuthProtocol, MinPeers, MaxPeers)
 	if err != nil {
-		logger.Errorf("ACME Store creation failed: %w", err)
+		logger.Error("ACME Store creation failed:", err.Error())
 		return nil, err
 	}
 
@@ -79,13 +79,13 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 			logger.Debugf("Cache miss for `%s` returning ErrCacheMiss", name)
 			return nil, d.errCacheMiss
 		}
-		logger.Errorf("Getting `%s` failed: %w", name, err)
+		logger.Errorf("Getting `%s` failed: %s", name, err.Error())
 		return nil, err
 	}
 
 	pem, err := maps.ByteArray(res, dataKey)
 	if err != nil {
-		logger.Errorf("Reading PEM error: %w", err)
+		logger.Error("Reading PEM failed with:", err.Error())
 		return nil, err
 	}
 
@@ -111,7 +111,7 @@ func (d *Store) Put(ctx context.Context, name string, data []byte) error {
 	// write file to DB by sending command
 	_, err := d.client.TrySend("acme", *body)
 	if err != nil {
-		logger.Errorf("Storing `%s` error: %w", name, err)
+		logger.Errorf("Storing `%s` error: %s", name, err.Error())
 	}
 	return err
 }
@@ -127,7 +127,7 @@ func (d *Store) Delete(ctx context.Context, name string) error {
 	if strings.HasSuffix(name, "+token") || strings.HasSuffix(name, "+rsa") || strings.HasSuffix(name, "+key") || strings.HasSuffix(name, ".key") {
 		_, err := d.client.Send("acme", command.Body{"action": "cache-delete", "key": name})
 		if err != nil {
-			logger.Errorf("Deleting `%s` error: %w", name, err)
+			logger.Errorf("Deleting `%s` error: %s", name, err.Error())
 		}
 		return err
 	}

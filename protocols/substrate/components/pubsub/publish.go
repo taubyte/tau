@@ -16,11 +16,11 @@ func (s *Service) Publish(ctx context.Context, projectId, appId, channel string,
 
 	picks, err := s.Lookup(matcher)
 	if err != nil {
-		common.Logger.Errorf("lookup failed with err: %w", err)
+		common.Logger.Error("lookup failed with: %s", err.Error())
 		return err
 	}
 	if len(picks) == 0 {
-		common.Logger.Error("pick==nil failed with err")
+		common.Logger.Error("lookup returned no picks")
 		return errors.New("asset not found")
 	}
 

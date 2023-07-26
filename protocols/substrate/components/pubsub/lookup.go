@@ -67,7 +67,7 @@ func (s *Service) CheckTns(_matcher commonIface.MatchDefinition) ([]commonIface.
 
 	functions, err := s.Tns().Function().All(matcher.Project, matcher.Application, s.Branch()).List()
 	if err != nil {
-		common.Logger.Errorf("Fetching functions list interface failed with: %w", err)
+		common.Logger.Error("Fetching functions list interface failed with:", err.Error())
 		return nil, err
 	}
 
@@ -80,7 +80,7 @@ func (s *Service) CheckTns(_matcher commonIface.MatchDefinition) ([]commonIface.
 		var serv commonIface.Serviceable
 		serv, err = function.New(s, messagingContext.Function, *objectPathIface, matcher)
 		if err != nil {
-			common.Logger.Errorf("getting Serviceable function failed with: %w", err)
+			common.Logger.Error("getting Serviceable function failed with:", err.Error())
 			continue
 		}
 

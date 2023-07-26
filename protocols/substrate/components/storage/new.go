@@ -19,7 +19,7 @@ func New(srv nodeIface.Service, options ...Option) (*Service, error) {
 
 	for _, opt := range options {
 		if err := opt(s); err != nil {
-			common.Logger.Errorf("Running option %v failed with %v", opt, err)
+			common.Logger.Errorf("Running option %v failed with %s", opt, err.Error())
 			return nil, err
 		}
 	}

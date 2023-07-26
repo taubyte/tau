@@ -156,7 +156,7 @@ func initializeDB(srv *Service, config *config.Protocol) error {
 	// Create tables for database
 	err = initializeTables(srv.nodeDB)
 	if err != nil {
-		logger.Errorf("Failed initializing table error: %w", err)
+		logger.Error("initializing table failed with:", err.Error())
 		return fmt.Errorf("initializing table failed with: %s", err)
 	}
 

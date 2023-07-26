@@ -10,7 +10,7 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 	var receivedJob patrick.Job
 	err := cbor.Unmarshal(msg.Data, &receivedJob)
 	if err != nil {
-		logger.Errorf("Subscription unmarshal had an error: %w", err)
+		logger.Error("Subscription unmarshal had an error:", err.Error())
 		return
 	} else {
 		if len(receivedJob.Id) == 0 {
@@ -30,7 +30,7 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 
 		monkey, err := srv.newMonkey(&receivedJob)
 		if err != nil {
-			logger.Errorf("New monkey had an error: `%w`", err)
+			logger.Error("New monkey had an error:", err.Error())
 			return
 		}
 

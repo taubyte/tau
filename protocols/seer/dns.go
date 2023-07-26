@@ -45,10 +45,10 @@ func (srv *dnsServer) Start(ctx context.Context) {
 
 func (srv *dnsServer) Stop() {
 	if err := srv.Udp.Shutdown(); err != nil {
-		logger.Errorf("stopping UDP Server failed with: %w", err)
+		logger.Error("stopping UDP Server failed with:", err.Error())
 	}
 	if err := srv.Tcp.Shutdown(); err != nil {
-		logger.Errorf("stopping TCP Server failed with: %w", err)
+		logger.Error("stopping TCP Server failed with:", err.Error())
 	}
 }
 
@@ -104,7 +104,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if spam := h.negativeCache.Get(msg.Question[0].Name); spam != nil {
 		logger.Errorf("%s is currently blocked", msg.Question[0].Name)
 		if err := w.WriteMsg(errMsg); err != nil {
-			logger.Errorf("writing error message `%s` failed with %w", errMsg, err)
+			logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
 		}
 		return
 	}
@@ -117,7 +117,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	defer func() {
 		err := w.Close()
 		if err != nil {
-			logger.Errorf("Failed closing dns response writer with %v", err)
+			logger.Errorf("closing dns response writer failed with: %s", err.Error())
 			return
 		}
 	}()
@@ -150,9 +150,9 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	// Third case ->  check if domain exist in tns
 	tnsPathSlice, err := h.createDomainTnsPathSlice(name)
 	if err != nil {
-		logger.Errorf("Failed createDomainTnsPathSlice for %s with %w", name, err)
+		logger.Errorf("createDomainTnsPathSlice for %s with: %s", name, err.Error())
 		if err := w.WriteMsg(errMsg); err != nil {
-			logger.Errorf("writing error message `%s` failed with %w", errMsg, err)
+			logger.Errorf("writing error message `%s` failed with: %s", errMsg, err.Error())
 		}
 		return
 	}
@@ -181,7 +181,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 	err = w.WriteMsg(errMsg)
 	if err != nil {
-		logger.Errorf("writing error msg in ServeDns failed with: %s", err)
+		logger.Errorf("writing error msg in ServeDns failed with: %s", err.Error())
 	}
 }
 
@@ -190,9 +190,9 @@ func (h *dnsHandler) odoDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg
 	service := strings.Split(name, ".")[0]
 	ips, err := h.getServiceIp(service)
 	if err != nil {
-		logger.Errorf("getting ip for %s failed with %s", service, err)
+		logger.Errorf("getting ip for %s failed with %s", service, err.Error())
 		if err := w.WriteMsg(errMsg); err != nil {
-			logger.Errorf("writing error message `%s` failed with %s", errMsg, err)
+			logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
 		}
 		return
 	}
@@ -210,7 +210,7 @@ func (h *dnsHandler) odoDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg
 
 	err = w.WriteMsg(&msg)
 	if err != nil {
-		logger.Errorf("writing msg for url `%s` failed with %w", name, err)
+		logger.Errorf("writing msg for url `%s` failed with: %s", name, err.Error())
 		w.WriteMsg(errMsg)
 	}
 }

@@ -13,8 +13,8 @@ import (
 func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId string, signature []byte) (response.Response, error) {
 	resp, err := u.client.Send("heartbeat", command.Body{"usage": usage, "hostname": hostname, "id": nodeId, "client": clientNodeId, "signature": signature})
 	if err != nil {
-		logger.Errorf(fmt.Sprintf("Heartbeat failed with: %s", err.Error()))
-		return nil, fmt.Errorf("calling heartbeat send failed with: %s", err)
+		logger.Error("Heartbeat failed with:", err.Error())
+		return nil, fmt.Errorf("calling heartbeat send failed with: %w", err)
 	}
 	return resp, nil
 }
@@ -22,8 +22,8 @@ func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId
 func (u *Usage) List() ([]string, error) {
 	resp, err := u.client.Send("heartbeat", command.Body{"action": "list"})
 	if err != nil {
-		logger.Errorf(fmt.Sprintf("Listing ids failed with: %s", err.Error()))
-		return nil, fmt.Errorf("calling list send failed with: %s", err)
+		logger.Error("Listing ids failed with:", err.Error())
+		return nil, fmt.Errorf("calling list send failed with: %w", err)
 	}
 
 	_ids, ok := resp["ids"]
@@ -42,7 +42,7 @@ func (u *Usage) List() ([]string, error) {
 func (u *Usage) Get(id string) (*iface.UsageReturn, error) {
 	resp, err := u.client.Send("heartbeat", command.Body{"action": "info", "id": id})
 	if err != nil {
-		logger.Errorf(fmt.Sprintf("Getting usage %s failed with: %s", id, err.Error()))
+		logger.Error(fmt.Sprintf("Getting usage %s failed with: %s", id, err.Error()))
 		return &iface.UsageReturn{}, fmt.Errorf("calling info send failed with: %s", err)
 	}
 
@@ -67,7 +67,7 @@ func (u *Usage) Get(id string) (*iface.UsageReturn, error) {
 func (u *Usage) ListServiceId(name string) (response.Response, error) {
 	resp, err := u.client.Send("heartbeat", command.Body{"action": "listService", "name": name})
 	if err != nil {
-		logger.Errorf(fmt.Sprintf("List Specific for %s failed with: %s", name, err.Error()))
+		logger.Error(fmt.Sprintf("List Specific for %s failed with: %s", name, err.Error()))
 		return nil, fmt.Errorf("calling heartbeat listService send failed with: %s", err)
 	}
 

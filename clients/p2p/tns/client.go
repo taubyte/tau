@@ -27,7 +27,7 @@ func New(ctx context.Context, node peer.Node) (tns.Client, error) {
 	c.node = node
 	c.client, err = client.New(ctx, node, nil, spec.TnsProtocol, MinPeers, MaxPeers)
 	if err != nil {
-		logger.Errorf("API client creation failed: %w", err)
+		logger.Error("API client creation failed:", err)
 		return nil, err
 	}
 
@@ -99,7 +99,7 @@ func (c *Client) Push(path []string, data interface{}) error {
 		"data": data,
 	})
 	if err != nil {
-		logger.Errorf("push failed with: %w", err)
+		logger.Error("push failed with:", err)
 		return err
 	}
 	_pushed, ok := response["pushed"]
@@ -122,7 +122,7 @@ func (c *Client) Push(path []string, data interface{}) error {
 func (c *Client) fetch(path []string) (interface{}, error) {
 	response, err := c.client.Send("fetch", command.Body{"path": path})
 	if err != nil {
-		logger.Errorf("fetch failed with: %w", err)
+		logger.Error("fetch failed with:", err)
 		return nil, err
 	}
 
@@ -137,7 +137,7 @@ func (c *Client) fetch(path []string) (interface{}, error) {
 func (c *Client) lookup(query tns.Query) ([]string, error) {
 	response, err := c.client.Send("lookup", command.Body{"prefix": query.Prefix, "regex": query.RegEx})
 	if err != nil {
-		logger.Errorf("lookup failed with: %w", err)
+		logger.Error("lookup failed with:", err)
 		return nil, err
 	}
 

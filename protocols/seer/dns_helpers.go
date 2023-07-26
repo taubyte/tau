@@ -24,7 +24,7 @@ func (h *dnsHandler) replyFallback(w dns.ResponseWriter, r *dns.Msg, errMsg *dns
 
 	err := w.WriteMsg(&msg)
 	if err != nil {
-		logger.Errorf("Failed writing fallback msg with %v", err)
+		logger.Error("writing fallback msg failed with:", err.Error())
 	}
 }
 
@@ -48,10 +48,10 @@ func (h *dnsHandler) reply(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, ms
 
 	err = w.WriteMsg(&msg)
 	if err != nil {
-		logger.Errorf("write message failed with: %s", err)
+		logger.Error("write message failed with: %s", err.Error())
 		err = w.WriteMsg(errMsg)
 		if err != nil {
-			logger.Errorf("Failed writing error message for WriteMsg with %v", err)
+			logger.Error("writing error message for WriteMsg failed with:", err.Error())
 		}
 	}
 }

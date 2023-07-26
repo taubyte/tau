@@ -68,7 +68,7 @@ func (r *GithubRepository) Hooks(ctx context.Context) []hooks.Hook {
 	re := regexp.MustCompile("/hooks/([^/]+)$")
 	for _, k := range keys {
 		m := re.FindStringSubmatch(k)
-		logger.Errorf("repo.Hooks match:%s", m)
+		logger.Debugf("repo.Hooks match:%s", m)
 		if len(m) > 1 {
 			hook_id := m[1]
 			h, err := hooks.Fetch(ctx, r.KV, hook_id)

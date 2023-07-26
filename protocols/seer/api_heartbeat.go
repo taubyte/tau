@@ -152,7 +152,7 @@ func (srv *oracleService) listIds() (cr.Response, error) {
 	row, err := srv.seer.nodeDB.Query("SELECT Id FROM Usage")
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Errorf("Failed listIds query error: %w", err)
+		logger.Error("listIds query failed with:", err.Error())
 		return nil, fmt.Errorf("failed listIds query error: %w", err)
 	}
 	defer row.Close()
@@ -205,7 +205,7 @@ func (srv *oracleService) getInfo(id string) (cr.Response, error) {
 	row, err := srv.seer.nodeDB.Query(statement)
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Errorf("Failed query from usage for %s with: %w", id, err)
+		logger.Errorf("query from usage for %s failed with with: %s", id, err.Error())
 		return nil, fmt.Errorf("failed info query error: %w", err)
 	}
 	defer row.Close()
@@ -248,7 +248,7 @@ func (srv *oracleService) getInfo(id string) (cr.Response, error) {
 	row2, err := srv.seer.nodeDB.Query(getType)
 	srv.seer.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Errorf("Failed getting type from services for %s with: %w", service.Id, err)
+		logger.Errorf("getting type from services for %s failed with: %s", service.Id, err.Error())
 		return nil, fmt.Errorf("failed getting types query error: %w", err)
 	}
 	defer row2.Close()
@@ -264,7 +264,7 @@ func (srv *oracleService) getInfo(id string) (cr.Response, error) {
 
 	serviceBytes, err := json.Marshal(service)
 	if err != nil {
-		logger.Errorf("Failed marshalling service for %s with: %w", service.Id, err)
+		logger.Errorf("marshalling service for %s failed with: %s", service.Id, err.Error())
 		return nil, fmt.Errorf("marshalling service failed with: %s", err)
 	}
 

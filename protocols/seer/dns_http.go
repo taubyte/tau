@@ -99,7 +99,7 @@ func (srv *Service) getDnsService(ctx http.Context) (interface{}, error) {
 	row, err := srv.nodeDB.Query(getService)
 	srv.nodeDBMutex.RUnlock()
 	if err != nil {
-		logger.Errorf("getting service %s from usage failed with: %w", id, err)
+		logger.Errorf("getting service %s from usage failed with: %s", id, err.Error())
 		return nil, fmt.Errorf("getHttpServices query failed with: %s", err)
 	}
 	defer row.Close()

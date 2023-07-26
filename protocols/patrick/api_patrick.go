@@ -169,19 +169,19 @@ func (p *PatrickService) unlockHandler(ctx context.Context, jid string) (cr.Resp
 	}
 	var jobLock Lock
 	if err = cbor.Unmarshal(lockData, &jobLock); err != nil {
-		logger.Errorf("Unamrshal for `%s` failed with: %w", jid, err)
+		logger.Errorf("Unamrshal for `%s` failed with: %s", jid, err.Error())
 	}
 
 	jobLock.Eta = 0
 	jobLock.Timestamp = 0
 	lockBytes, err := cbor.Marshal(jobLock)
 	if err != nil {
-		logger.Errorf("Marshal for `%s` failed with: %v", jid, err)
+		logger.Errorf("Marshal for `%s` failed with: %s", jid, err.Error())
 	}
 
 	err = p.db.Put(ctx, "/locked/jobs/"+jid, lockBytes)
 	if err != nil {
-		logger.Errorf("Putting locked job for `%s` failed with: %w", jid, err)
+		logger.Errorf("Putting locked job for `%s` failed with: %s", jid, err.Error())
 	}
 
 	return cr.Response{"unlocked": jid}, nil

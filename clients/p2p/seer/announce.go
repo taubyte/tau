@@ -11,7 +11,7 @@ import (
 func (u *Usage) Announce(services iface.Services, nodeId, clientNodeId string, signature []byte) (response.Response, error) {
 	resp, err := u.client.Send("announce", command.Body{"services": services, "id": nodeId, "client": clientNodeId, "signature": signature})
 	if err != nil {
-		logger.Errorf("announce failed with: %w", err)
+		logger.Error("announce failed with:", err.Error())
 		return nil, fmt.Errorf("calling announce send failed with: %s", err)
 	}
 

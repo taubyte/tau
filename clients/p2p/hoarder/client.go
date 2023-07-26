@@ -2,7 +2,6 @@ package p2p
 
 import (
 	"context"
-	"fmt"
 
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/p2p/peer"
@@ -16,7 +15,7 @@ func New(ctx context.Context, node peer.Node) (*Client, error) {
 	)
 
 	if c.client, err = client.New(ctx, node, nil, protocolCommon.HoarderProtocol, MinPeers, MaxPeers); err != nil {
-		logger.Errorf(fmt.Sprintf("API client creation failed: %v", err))
+		logger.Error("API client creation failed:", err.Error())
 		return nil, err
 	}
 	return &c, nil

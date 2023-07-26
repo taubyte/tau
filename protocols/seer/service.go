@@ -84,7 +84,7 @@ func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Ser
 	// Setup/Start DNS service
 	err = srv.newDnsServer(config.DevMode, config.Ports["dns"])
 	if err != nil {
-		logger.Errorf("creating Dns server failed with: %s", err)
+		logger.Error("creating Dns server failed with:", err.Error())
 		return nil, fmt.Errorf("new dns server failed with: %s", err)
 	}
 

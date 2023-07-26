@@ -132,10 +132,10 @@ func (srv *Service) subscribe() error {
 		func(err error) {
 			// re-establish if fails
 			if err.Error() != "context canceled" {
-				logger.Errorf("Subscription had an error: %w", err)
+				logger.Error("Subscription had an error:", err.Error())
 
 				if err := srv.subscribe(); err != nil {
-					logger.Errorf("resubscribe failed with: %w", err)
+					logger.Error("resubscribe failed with:", err.Error())
 				}
 			}
 		},

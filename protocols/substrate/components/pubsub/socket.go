@@ -19,7 +19,7 @@ func (s *Service) WebSocketURL(projectId, appId, channel string) (string, error)
 	// Ignoring picks because if there are no picks there is an error returned
 	_, err := s.Lookup(matcher)
 	if err != nil {
-		common.Logger.Errorf("Socket generation failed with err: %w", err)
+		common.Logger.Error("Socket generation failed with err:", err.Error())
 		return "", err
 	}
 

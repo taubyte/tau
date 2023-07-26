@@ -47,7 +47,7 @@ func (srv *Service) startAuction(action *hoarderIface.Auction) {
 
 		case <-time.After(maxWaitTime):
 			if err := srv.publishAction(srv.ctx, action, hoarderIface.AuctionEnd); err != nil {
-				logger.Errorf("action publish failed with: %s", err)
+				logger.Error("action publish failed with:", err.Error())
 			}
 		}
 	}()

@@ -21,10 +21,10 @@ const (
 func (s *Service) handle(startTime time.Time, matcher *common.MatchDefinition, _type handleType, data interface{}) {
 	picks, err := s.Lookup(matcher)
 	if err != nil {
-		common.Logger.Errorf("lookup failed with: %w", err)
+		common.Logger.Error("lookup failed with:", err.Error())
 	}
 	if len(picks) == 0 {
-		common.Logger.Errorf("pick ==nil failed with err")
+		common.Logger.Error("lookup returned no picks")
 
 	}
 	for _, pick := range picks {
@@ -39,7 +39,7 @@ func (s *Service) handle(startTime time.Time, matcher *common.MatchDefinition, _
 			}
 			if err != nil {
 				counter.ErrorWrapper(_pick, startTime, coldStartDone, err)
-				common.Logger.Errorf("Handling message failed with: %w", err)
+				common.Logger.Error("Handling message failed with:", err.Error())
 			}
 		}(pick)
 	}
@@ -65,7 +65,7 @@ func (s *Service) Subscribe(projectId, appId, path string) error {
 	})
 
 	if err != nil {
-		common.Logger.Errorf("subscribe failed with err: %w", err)
+		common.Logger.Error("subscribe failed with:", err.Error())
 	}
 
 	return err

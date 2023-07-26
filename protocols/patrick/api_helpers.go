@@ -15,7 +15,7 @@ import (
 func (p *PatrickService) lockHelper(lockData []byte, jid string, method bool) (cr.Response, error) {
 	var jobLock Lock
 	if err := cbor.Unmarshal(lockData, &jobLock); err != nil {
-		logger.Errorf("Reading lock for `%s` failed with: %w", jid, err)
+		logger.Errorf("Reading lock for `%s` failed with: %s", jid, err.Error())
 		// continue assuming another patrick crashed when trying to lock
 	} else if jobLock.Timestamp+jobLock.Eta > time.Now().Unix() {
 		if method {

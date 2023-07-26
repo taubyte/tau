@@ -20,7 +20,7 @@ func New(ctx context.Context, node peer.Node) (client *Client, err error) {
 	c := &Client{}
 	c.client, err = streamClient.New(ctx, node, nil, commonSpec.SeerProtocol, MinPeers, MaxPeers)
 	if err != nil {
-		logger.Errorf("API client creation failed: %w", err)
+		logger.Error("API client creation failed: %s", err)
 		return
 	}
 

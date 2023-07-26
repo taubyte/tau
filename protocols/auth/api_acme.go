@@ -25,7 +25,7 @@ func (srv *AuthService) setACMECertificate(ctx context.Context, fqdn string, cer
 
 	err := srv.db.Put(ctx, "/acme/"+base64.StdEncoding.EncodeToString([]byte(fqdn))+"/certificate/pem", certificate)
 	if err != nil {
-		logger.Errorf("Set certificate for `%s` failed: %w", fqdn, err)
+		logger.Errorf("Set certificate for `%s` failed with: %s", fqdn, err.Error())
 		return err
 	}
 
@@ -40,7 +40,7 @@ func (srv *AuthService) setACMEStaticCertificate(ctx context.Context, fqdn strin
 
 	err := srv.db.Put(ctx, "/static/"+base64.StdEncoding.EncodeToString([]byte(fqdn))+"/certificate/pem", certificate)
 	if err != nil {
-		logger.Errorf("Set certificate for `%s` failed: %w", fqdn, err)
+		logger.Errorf("Set certificate for `%s` failed with: %s", fqdn, err.Error())
 		return fmt.Errorf("failed setting static certificate with %v", err)
 	}
 

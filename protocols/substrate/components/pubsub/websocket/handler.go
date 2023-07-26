@@ -39,7 +39,7 @@ func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn)
 	id, err := AddSubscription(srv, handler.matcher.Path(), func(msg *pubsub.Message) {
 		handler.ch <- msg.GetData()
 	}, func(err error) {
-		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher.Path(), err)
+		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher.Path(), err.Error())
 		if handler.ctx.Err() == nil {
 			handler.ch <- []byte(err.Error())
 		}

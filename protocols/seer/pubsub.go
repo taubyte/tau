@@ -15,9 +15,9 @@ func (srv *Service) subscribe() error {
 		func(err error) {
 			// re-establish if fails
 			if err.Error() != "context canceled" {
-				logger.Errorf("seer pubsub subscription to `%s` had an error: %s", protocolsCommon.OraclePubSubPath, err.Error())
+				logger.Errorf("seer pubsub subscription to `%s` failed with: %s", protocolsCommon.OraclePubSubPath, err.Error())
 				if err := srv.subscribe(); err != nil {
-					logger.Errorf("resubscribe to `%s` failed with: %s", protocolsCommon.OraclePubSubPath, err)
+					logger.Errorf("resubscribe to `%s` failed with: %s", protocolsCommon.OraclePubSubPath, err.Error())
 				}
 			}
 		},
@@ -31,13 +31,13 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 		var node nodeData
 		err := cbor.Unmarshal(msg.Data, &node)
 		if err != nil {
-			logger.Errorf("Failed unmarshalling node data with %w", err)
+			logger.Error("Failed unmarshalling node data with:", err.Error())
 			return
 		}
 
 		_, err = srv.oracle.insertHandler(node.Cid, node.Services)
 		if err != nil {
-			logger.Errorf("Failed inserting node data with %w", err)
+			logger.Error("Failed inserting node data with: %s", err.Error())
 			return
 		}
 	}

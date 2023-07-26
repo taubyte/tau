@@ -51,7 +51,7 @@ func (srv *Service) StartStream(name, protocol string, handler iface.StreamHandl
 		if err != nil {
 			err1 := ce.Encode(s, err)
 			if err1 != nil {
-				common.Logger.Errorf("ce.Encode1- failed with: %w", err1)
+				common.Logger.Error("ce.Encode1- failed with:", err1.Error())
 				return
 			}
 			return
@@ -61,7 +61,7 @@ func (srv *Service) StartStream(name, protocol string, handler iface.StreamHandl
 		if err != nil {
 			err1 := ce.Encode(s, err)
 			if err1 != nil {
-				common.Logger.Errorf("ce.Encode-2 failed with: %w", err1)
+				common.Logger.Error("ce.Encode-2 failed with:", err1.Error())
 				return
 			}
 			return
@@ -69,7 +69,7 @@ func (srv *Service) StartStream(name, protocol string, handler iface.StreamHandl
 
 		err = creturn.Encode(s)
 		if err != nil {
-			common.Logger.Errorf("ce.Encode-3 failed with: %w", err)
+			common.Logger.Error("ce.Encode-3 failed with:", err.Error())
 			return
 		}
 	})

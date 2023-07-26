@@ -27,7 +27,7 @@ func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
 			if err != nil {
 				err = p.republishJob(ctx, jid)
 				if err != nil {
-					logger.Errorf("Failed republishing job %s with error: %w", jid, err)
+					logger.Errorf("Failed republishing job %s with error: %s", jid, err.Error())
 					continue
 				}
 			}
@@ -48,7 +48,7 @@ func (p *PatrickService) ReannounceFailedJobs(ctx context.Context) error {
 			job, err := p.getJob(ctx, id, "")
 			if err != nil {
 				// Continuing incase job gets schedule while routine is going
-				logger.Errorf("Failed getting %s with error: %v", id, err)
+				logger.Errorf("Failed getting %s with: %s", id, err.Error())
 				continue
 			}
 
@@ -64,14 +64,14 @@ func (p *PatrickService) ReannounceFailedJobs(ctx context.Context) error {
 
 			job_byte, err := cbor.Marshal(job)
 			if err != nil {
-				logger.Errorf("Failed cbor marshall on job %s with err: %w", id, err)
+				logger.Errorf("Failed cbor marshall on job %s with: %s", id, err.Error())
 				continue
 			}
 
 			// Put the job back into the list
 			err = p.db.Put(ctx, "/jobs/"+job.Id, job_byte)
 			if err != nil {
-				logger.Errorf("Failed putting job %s into database with error: %w", id, err)
+				logger.Errorf("Failed putting job %s into database with: %s", id, err.Error())
 				continue
 			}
 

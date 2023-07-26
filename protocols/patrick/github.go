@@ -84,7 +84,7 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 		logger.Debugf("Hook triggred. Push: %v", payload)
 		pl, err := json.Marshal(payload)
 		if err != nil {
-			logger.Errorf("Got %v when creating pipeline for %s ", err, payload)
+			logger.Errorf("new pipeline for payload `%#v` failed with: %s", payload, err.Error())
 			return nil, errors.New("can't decode push payload")
 		}
 
