@@ -13,6 +13,7 @@ import (
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	commonSpec "github.com/taubyte/go-specs/common"
 	odoConfig "github.com/taubyte/odo/config"
+	"github.com/taubyte/odo/protocols/common"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/engine"
 )
@@ -73,7 +74,7 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 		return nil, fmt.Errorf("failed creating seer client error: %v", err)
 	}
 
-	err = config.StartSeerBeacon(sc, seer.ServiceTypeTns)
+	err = common.StartSeerBeacon(config, sc, seer.ServiceTypeTns)
 	if err != nil {
 		return nil, err
 	}

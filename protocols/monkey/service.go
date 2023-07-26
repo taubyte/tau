@@ -17,6 +17,7 @@ import (
 	seerClient "github.com/taubyte/odo/clients/p2p/seer"
 	odoConfig "github.com/taubyte/odo/config"
 
+	"github.com/taubyte/odo/protocols/common"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
 	streams "github.com/taubyte/p2p/streams/service"
 )
@@ -103,7 +104,7 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
 
-	err = config.StartSeerBeacon(sc, seerIface.ServiceTypeMonkey)
+	err = common.StartSeerBeacon(config, sc, seerIface.ServiceTypeMonkey)
 	if err != nil {
 		return nil, fmt.Errorf("starting seer beacon failed with %s", err)
 	}

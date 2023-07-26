@@ -1,4 +1,4 @@
-package config
+package common
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/taubyte/go-interfaces/services/seer"
+	"github.com/taubyte/odo/config"
 )
 
 type seerBeaconConfig struct {
@@ -21,7 +22,7 @@ func SeerBeaconOptionMeta(meta map[string]string) seerBeaconOption {
 	}
 }
 
-func (config *Protocol) StartSeerBeacon(sc seer.Client, serviceType seer.ServiceType, ops ...seerBeaconOption) error {
+func StartSeerBeacon(config *config.Protocol, sc seer.Client, serviceType seer.ServiceType, ops ...seerBeaconOption) error {
 	seerConfig := &seerBeaconConfig{
 		serviceMeta: make(map[string]string, 0),
 	}
