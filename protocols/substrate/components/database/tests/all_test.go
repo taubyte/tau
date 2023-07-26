@@ -121,8 +121,6 @@ func TestAll(t *testing.T) {
 		Matcher:   databaseMatch3,
 	}
 
-	u.Substrate().Node()
-
 	dbFactory := kvdb.New(u.Substrate().Node())
 	/************************** Testing New Databases *********************************/
 	srv, err := service.New(u.Substrate(), dbFactory)

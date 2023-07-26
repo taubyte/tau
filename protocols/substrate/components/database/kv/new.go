@@ -7,7 +7,6 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 
-	// kvdb "github.com/taubyte/odo/pkgs/kvdb"
 	db "github.com/taubyte/odo/protocols/substrate/components/database/common"
 )
 

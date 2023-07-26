@@ -6,8 +6,7 @@ import (
 )
 
 type Database struct {
-	hash string
-	// node      peer.Node
+	hash      string
 	dbContext iface.Context
 	config    *structureSpec.Database
 	keystore  iface.KV
