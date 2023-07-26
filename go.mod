@@ -1,8 +1,11 @@
 module github.com/taubyte/odo
 
 go 1.19
+
 replace github.com/taubyte/dreamland => ../dreamland
+
 replace github.com/taubyte/go-interfaces => /home/tafkhan/Documents/Work/Taubyte/Repos/go-interfaces
+
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -47,7 +50,7 @@ require (
 	github.com/taubyte/p2p v0.9.1
 	github.com/taubyte/tau v0.1.6
 	github.com/taubyte/utils v0.1.6
-	github.com/taubyte/vm v1.0.2
+	github.com/taubyte/vm v1.0.3
 	github.com/taubyte/vm-core-plugins v0.3.3
 	github.com/taubyte/vm-orbit v1.0.0
 	github.com/urfave/cli/v2 v2.25.7
