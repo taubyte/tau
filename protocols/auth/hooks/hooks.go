@@ -8,7 +8,6 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/kvdb"
-	"github.com/taubyte/odo/pkgs/kvdb/database"
 	"github.com/taubyte/utils/maps"
 	"github.com/taubyte/utils/network"
 )
@@ -129,7 +128,7 @@ func (h *GithubHook) Register(ctx context.Context) error {
 	return nil
 }
 
-func Exist(ctx context.Context, kv *database.KVDatabase, id string) bool {
+func Exist(ctx context.Context, kv kvdb.KVDB, id string) bool {
 	ret, err := kv.Get(ctx, "/hooks/"+id+"/provider")
 	if err != nil || ret == nil {
 		return false

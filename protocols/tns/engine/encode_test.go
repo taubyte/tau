@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	kv "github.com/taubyte/odo/pkgs/kvdb/database"
+	"github.com/taubyte/odo/pkgs/kvdb"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/odo/protocols/tns/flat"
 	"github.com/taubyte/p2p/keypair"
@@ -43,7 +43,8 @@ func TestEncode(t *testing.T) {
 		return
 	}
 
-	db, err := kv.New(logger, peerC, protocolsCommon.Tns, 5)
+	dbFactory := kvdb.New(peerC)
+	db, err := dbFactory.New(logger, protocolsCommon.Tns, 5)
 	if err != nil {
 		t.Errorf("New db failed with err: %v", err)
 		return

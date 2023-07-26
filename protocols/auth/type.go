@@ -23,6 +23,7 @@ type AuthService struct {
 	http      http.Service
 	stream    *streams.CommandService
 	tnsClient tns.Client
+	dbFactory kv.Factory
 
 	rootDomain string
 	devMode    bool

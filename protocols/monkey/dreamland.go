@@ -23,7 +23,8 @@ func createService(ctx context.Context, config *iface.ServiceConfig) (iface.Serv
 		DomainValidation: odoConfig.DomainValidation{
 			PublicKey: config.PublicKey,
 		},
-		SwarmKey: config.SwarmKey,
+		SwarmKey:  config.SwarmKey,
+		Databases: config.Databases,
 	}
 
 	return New(ctx, serviceConfig)

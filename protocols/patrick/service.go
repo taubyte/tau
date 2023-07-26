@@ -14,7 +14,7 @@ import (
 	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
 	"github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
-	kv "github.com/taubyte/odo/pkgs/kvdb/database"
+	"github.com/taubyte/odo/pkgs/kvdb"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 
 	streams "github.com/taubyte/p2p/streams/service"
@@ -58,6 +58,11 @@ func New(ctx context.Context, protocolConfig *config.Protocol) (*PatrickService,
 		srv.node = protocolConfig.Node
 	}
 
+	srv.dbFactory = protocolConfig.Databases
+	if srv.dbFactory == nil {
+		srv.dbFactory = kvdb.New(srv.node)
+	}
+
 	// For odo
 	clientNode := srv.node
 	if protocolConfig.ClientNode != nil {
@@ -81,7 +86,7 @@ func New(ctx context.Context, protocolConfig *config.Protocol) (*PatrickService,
 	}
 
 	// Create a database to store the jobs in
-	srv.db, err = kv.New(logger, srv.node, protocolsCommon.Patrick, 5)
+	srv.db, err = srv.dbFactory.New(logger, protocolsCommon.Patrick, 5)
 	if err != nil {
 		return nil, fmt.Errorf("failed kv new with error: %w", err)
 	}

@@ -22,6 +22,7 @@ func createPatrickService(ctx context.Context, config *iface.ServiceConfig) (ifa
 	serviceConfig.P2PAnnounce = []string{fmt.Sprintf(dreamlandCommon.DefaultP2PListenFormat, config.Port)}
 	serviceConfig.DevMode = true
 	serviceConfig.SwarmKey = config.SwarmKey
+	serviceConfig.Databases = config.Databases
 
 	if config.Others["http"] != 443 {
 		serviceConfig.HttpListen = fmt.Sprintf("%s:%d", dreamlandCommon.DefaultHost, config.Others["http"])

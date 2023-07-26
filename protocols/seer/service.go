@@ -17,8 +17,7 @@ import (
 	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
 	odoConfig "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
-	kv "github.com/taubyte/odo/pkgs/kvdb/database"
-	"github.com/taubyte/odo/protocols/common"
+	"github.com/taubyte/odo/pkgs/kvdb"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	streams "github.com/taubyte/p2p/streams/service"
 
@@ -70,13 +69,18 @@ func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Ser
 		srv.odo = true
 	}
 
+	srv.dbFactory = config.Databases
+	if srv.dbFactory == nil {
+		srv.dbFactory = kvdb.New(srv.node)
+	}
+
 	// For odo
 	clientNode := srv.node
 	if config.ClientNode != nil {
 		clientNode = config.ClientNode
 	}
 
-	srv.db, err = kv.New(logger, srv.node, protocolsCommon.Seer, 5)
+	srv.db, err = srv.dbFactory.New(logger, protocolsCommon.Seer, 5)
 	if err != nil {
 		return nil, fmt.Errorf("new key-value store failed with: %s", err)
 	}
@@ -129,7 +133,7 @@ func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Ser
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
 
-	err = common.StartSeerBeacon(config, sc, seerIface.ServiceTypeSeer, common.SeerBeaconOptionMeta(map[string]string{"others": "dns"}))
+	err = protocolsCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeSeer, protocolsCommon.SeerBeaconOptionMeta(map[string]string{"others": "dns"}))
 	if err != nil {
 		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}

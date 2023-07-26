@@ -12,11 +12,9 @@ import (
 	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
 	odoConfig "github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
-	kv "github.com/taubyte/odo/pkgs/kvdb/database"
-	streams "github.com/taubyte/p2p/streams/service"
-
-	"github.com/taubyte/odo/protocols/common"
+	"github.com/taubyte/odo/pkgs/kvdb"
 	protocolCommon "github.com/taubyte/odo/protocols/common"
+	streams "github.com/taubyte/p2p/streams/service"
 )
 
 var (
@@ -60,6 +58,11 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*AuthService, error) 
 		srv.node = config.Node
 	}
 
+	srv.dbFactory = config.Databases
+	if srv.dbFactory == nil {
+		srv.dbFactory = kvdb.New(srv.node)
+	}
+
 	srv.dvPrivateKey = config.DomainValidation.PrivateKey
 	srv.dvPublicKey = config.DomainValidation.PublicKey
 
@@ -69,7 +72,7 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*AuthService, error) 
 		clientNode = config.ClientNode
 	}
 
-	srv.db, err = kv.New(logger, srv.node, protocolCommon.Auth, 5)
+	srv.db, err = srv.dbFactory.New(logger, protocolCommon.Auth, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +99,7 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*AuthService, error) 
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
 
-	err = common.StartSeerBeacon(config, sc, seerIface.ServiceTypeAuth)
+	err = protocolCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeAuth)
 	if err != nil {
 		return nil, err
 	}

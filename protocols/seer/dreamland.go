@@ -24,6 +24,7 @@ func createService(ctx context.Context, config *iface.ServiceConfig) (iface.Serv
 	serviceConfig.DevMode = true
 	serviceConfig.Ports = make(map[string]int)
 	serviceConfig.Ports["dns"] = config.Others["dns"]
+	serviceConfig.Databases = config.Databases
 
 	serviceConfig.SwarmKey = config.SwarmKey
 

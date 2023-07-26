@@ -15,6 +15,7 @@ import (
 	httpService "github.com/taubyte/http"
 	"github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
+	"github.com/taubyte/odo/pkgs/kvdb"
 	slices "github.com/taubyte/utils/slices/string"
 )
 
@@ -47,6 +48,8 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 	if err != nil {
 		return err
 	}
+
+	protocolConfig.Databases = kvdb.New(protocolConfig.Node)
 
 	// Create httpNode if needed
 	var httpNode httpService.Service
@@ -113,6 +116,10 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 
 	if protocolConfig.ClientNode != nil {
 		protocolConfig.ClientNode.Close()
+	}
+
+	if protocolConfig.Databases != nil {
+		protocolConfig.Databases.Close()
 	}
 
 	if protocolConfig.Node != nil {

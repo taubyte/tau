@@ -25,6 +25,7 @@ type PatrickService struct {
 	authClient   *auth.Client
 	tnsClient    ifaceTns.Client
 	db           kvdb.KVDB
+	dbFactory    kvdb.Factory
 	devMode      bool
 
 	hostUrl string

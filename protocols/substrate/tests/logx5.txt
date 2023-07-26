@@ -1,1 +1,0 @@
-FAIL	github.com/taubyte/odo/protocols/substrate/tests [setup failed]

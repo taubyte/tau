@@ -1,6 +1,8 @@
 package projects
 
-import "github.com/taubyte/odo/pkgs/kvdb/database"
+import (
+	"github.com/taubyte/go-interfaces/kvdb"
+)
 
 type Data map[string]interface{}
 
@@ -11,7 +13,7 @@ type Project interface {
 }
 
 type ProjectObject struct {
-	KV     *database.KVDatabase
+	KV     kvdb.KVDB
 	Id     string
 	Name   string
 	Config int
