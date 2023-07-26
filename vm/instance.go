@@ -53,9 +53,7 @@ func (f *Function) Instantiate(ctx commonIface.FunctionContext, branch, commit s
 			)),
 	}
 
-	if f.srv.Dev() {
-		config.Output = vm.Buffer
-	}
+	config.Output = vm.Buffer
 
 	instance, err := f.srv.Vm().New(_context, config)
 	if err != nil {

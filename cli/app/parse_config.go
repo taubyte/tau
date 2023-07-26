@@ -47,6 +47,7 @@ func parseSourceConfig(ctx *cli.Context) (*config.Protocol, *config.Source, erro
 		protocol.NetworkUrl = src.NetworkUrl
 		protocol.GeneratedDomain = src.Domains.Generated
 		protocol.ServicesDomain = src.Domains.Services
+		protocol.HttpListen = src.HttpListen
 		protocol.PrivateKey = []byte(src.Privatekey)
 		protocol.Protocols = src.Protocols
 		protocol.Plugins = src.Plugins
