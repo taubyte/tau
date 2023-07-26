@@ -26,10 +26,10 @@ func TestASFunction(t *testing.T) {
 
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"tns":     {},
-			"node":    {Others: map[string]int{"verbose": 1}},
-			"hoarder": {},
-			"seer":    {Others: map[string]int{"copies": 2}},
+			"tns":       {},
+			"substrate": {Others: map[string]int{"verbose": 1}},
+			"hoarder":   {},
+			"seer":      {Others: map[string]int{"copies": 2}},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{
 			"client": {

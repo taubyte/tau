@@ -88,8 +88,8 @@ func TestAll(t *testing.T) {
 
 	err = u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"tns":  {},
-			"node": {},
+			"tns":       {},
+			"substrate": {},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{
 			"client": {
@@ -112,7 +112,7 @@ func TestAll(t *testing.T) {
 
 	tnsClient := simple.TNS()
 
-	service, err := storages.New(u.Node())
+	service, err := storages.New(u.Substrate())
 	if err != nil {
 		t.Errorf("Creating storages service failed with: %s", err.Error())
 		return

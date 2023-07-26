@@ -37,7 +37,7 @@ func TestPubsub(t *testing.T) {
 
 	time.Sleep(10 * time.Second)
 	for i := 0; i < nodeCount; i++ {
-		err = u.Service("node", &commonIface.ServiceConfig{})
+		err = u.Service("substrate", &commonIface.ServiceConfig{})
 		if err != nil {
 			t.Error(err)
 			return

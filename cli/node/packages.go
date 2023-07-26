@@ -13,11 +13,11 @@ import (
 )
 
 var available = map[string]config.Package{
-	"auth":    authService.Package(),
-	"hoarder": hoarderService.Package(),
-	"monkey":  monkeyService.Package(),
-	"node":    nodeService.Package(),
-	"patrick": patrickService.Package(),
-	"seer":    seerService.Package(),
-	"tns":     tnsService.Package(),
+	"auth":      authService.Package(),
+	"hoarder":   hoarderService.Package(),
+	"monkey":    monkeyService.Package(),
+	"substrate": nodeService.Package(),
+	"patrick":   patrickService.Package(),
+	"seer":      seerService.Package(),
+	"tns":       tnsService.Package(),
 }

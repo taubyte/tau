@@ -15,7 +15,6 @@ import (
 	"github.com/taubyte/odo/config"
 	auto "github.com/taubyte/odo/pkgs/http-auto"
 	kv "github.com/taubyte/odo/pkgs/kvdb/database"
-	"github.com/taubyte/odo/protocols/common"
 	protocolsCommon "github.com/taubyte/odo/protocols/common"
 
 	streams "github.com/taubyte/p2p/streams/service"
@@ -116,7 +115,7 @@ func New(ctx context.Context, protocolConfig *config.Protocol) (*PatrickService,
 		return nil, fmt.Errorf("failed creating seer client %v", err)
 	}
 
-	err = common.StartSeerBeacon(protocolConfig, sc, seerIface.ServiceTypePatrick)
+	err = protocolsCommon.StartSeerBeacon(protocolConfig, sc, seerIface.ServiceTypePatrick)
 	if err != nil {
 		return nil, err
 	}

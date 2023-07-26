@@ -46,9 +46,9 @@ func TestStoring(t *testing.T) {
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"hoarder": {Others: map[string]int{"copies": copies}},
-			"tns":     {},
-			"node":    {},
+			"hoarder":   {Others: map[string]int{"copies": copies}},
+			"tns":       {},
+			"substrate": {},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{
 			"client": {
@@ -122,13 +122,13 @@ func TestStoring(t *testing.T) {
 		return
 	}
 
-	db, err := dbApi.New(u.Node())
+	db, err := dbApi.New(u.Substrate())
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	storageNode, err := storageApi.New(u.Node())
+	storageNode, err := storageApi.New(u.Substrate())
 	if err != nil {
 		t.Error(err)
 		return

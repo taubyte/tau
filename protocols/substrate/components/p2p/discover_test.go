@@ -19,13 +19,13 @@ func TestService_Discover(t *testing.T) {
 
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"node": {Others: map[string]int{"copies": 4}},
+			"substrate": {Others: map[string]int{"copies": 4}},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{},
 	})
 	assert.NilError(t, err)
 
-	srv, err := p2p.New(u.Node())
+	srv, err := p2p.New(u.Substrate())
 	assert.NilError(t, err)
 
 	peers, err := srv.Discover(u.Context(), 5, time.Second*2)

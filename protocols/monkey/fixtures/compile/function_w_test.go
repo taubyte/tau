@@ -27,9 +27,9 @@ func TestWasmFunction(t *testing.T) {
 
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"tns":     {},
-			"node":    {Others: map[string]int{"verbose": 1}},
-			"hoarder": {},
+			"tns":       {},
+			"substrate": {Others: map[string]int{"verbose": 1}},
+			"hoarder":   {},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{
 			"client": {

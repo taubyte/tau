@@ -21,8 +21,8 @@ func TestCalls(t *testing.T) {
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer": {Others: map[string]int{"dns": protocolsCommon.DefaultDevDnsPort, "mock": 1}},
-			"node": {Others: map[string]int{"copies": 2}},
+			"seer":      {Others: map[string]int{"dns": protocolsCommon.DefaultDevDnsPort, "mock": 1}},
+			"substrate": {Others: map[string]int{"copies": 2}},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{
 			"client": {
@@ -46,7 +46,7 @@ func TestCalls(t *testing.T) {
 
 	time.Sleep(10 * time.Second)
 
-	ids, err := simple.Seer().Usage().ListServiceId("node")
+	ids, err := simple.Seer().Usage().ListServiceId("substrate")
 	if err != nil {
 		t.Error(err)
 		return

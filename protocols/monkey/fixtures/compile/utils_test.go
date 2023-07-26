@@ -18,7 +18,7 @@ var (
 )
 
 func callHal(u common.Universe, path string) ([]byte, error) {
-	nodePort, err := u.GetPortHttp(u.Node().Node())
+	nodePort, err := u.GetPortHttp(u.Substrate().Node())
 	if err != nil {
 		return nil, err
 	}

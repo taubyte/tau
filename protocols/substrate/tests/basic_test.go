@@ -37,12 +37,12 @@ func TestBasicWithLibrary(t *testing.T) {
 
 	err := u.StartWithConfig(&dreamlandCommon.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"hoarder": {},
-			"tns":     {},
-			"node":    {},
-			"auth":    {},
-			"patrick": {},
-			"monkey":  {},
+			"hoarder":   {},
+			"tns":       {},
+			"substrate": {},
+			"auth":      {},
+			"patrick":   {},
+			"monkey":    {},
 		},
 		Simples: map[string]dreamlandCommon.SimpleConfig{
 			"client": {
@@ -158,7 +158,7 @@ func callHal(u dreamlandCommon.Universe, path string) ([]byte, error) {
 	if u == nil {
 		return nil, errors.New("universe nil")
 	}
-	nodePort, err := u.GetPortHttp(u.Node().Node())
+	nodePort, err := u.GetPortHttp(u.Substrate().Node())
 	if err != nil {
 		return nil, err
 	}

@@ -54,7 +54,7 @@ func TestCache(t *testing.T) {
 
 	// Pushing on a separate client so that it does not artificially update the cache
 	{
-		tnsClient, err := p2p.New(simple.GetNode().Context(), simple.GetNode())
+		tnsClient, err := p2p.New(simple.PeerNode().Context(), simple.PeerNode())
 		if err != nil {
 			t.Error(err)
 			return

@@ -59,7 +59,7 @@ func TestProtocolListen(t *testing.T) {
 		return
 	}
 
-	receiverService := NewTestService(receiver.GetNode())
+	receiverService := NewTestService(receiver.PeerNode())
 	receiverService.stream, err = receiverService.StartStream(common.ServiceName, common.Protocol, receiverService.Handle)
 	if err != nil {
 		t.Error(err)
@@ -83,7 +83,7 @@ func TestProtocolListen(t *testing.T) {
 		"someotherData": "Hello from the other side",
 	}
 
-	p2pClient, err := client.New(context.Background(), sender.GetNode(), nil, protocolToUse, common.MinPeers, common.MaxPeers)
+	p2pClient, err := client.New(context.Background(), sender.PeerNode(), nil, protocolToUse, common.MinPeers, common.MaxPeers)
 	if err != nil {
 		t.Error(err)
 		return

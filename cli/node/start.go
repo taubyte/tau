@@ -66,7 +66,7 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 	var includesNode bool
 	services := make([]services.Service, 0)
 	for _, srv := range protocolConfig.Protocols {
-		if srv == "node" {
+		if srv == "substrate" {
 			includesNode = true
 			continue
 		}
@@ -86,7 +86,7 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 
 	// Running node last if included in list
 	if includesNode {
-		srvPkg, ok := available["node"]
+		srvPkg, ok := available["substrate"]
 		if !ok {
 			return errors.New("node was not found in available packages")
 		}

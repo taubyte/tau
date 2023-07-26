@@ -2,6 +2,8 @@ module github.com/taubyte/odo
 
 go 1.19
 
+replace github.com/taubyte/dreamland => /home/tafkhan/Documents/Work/Taubyte/new/dreamland
+
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible

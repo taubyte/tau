@@ -26,9 +26,9 @@ func TestZWasmFunction(t *testing.T) {
 
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"tns":     {},
-			"node":    {},
-			"hoarder": {},
+			"tns":       {},
+			"substrate": {},
+			"hoarder":   {},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{
 			"client": {

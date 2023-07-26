@@ -64,9 +64,9 @@ func TestFail(t *testing.T) {
 		u := dreamland.Multiverse("TestFail")
 		err := u.StartWithConfig(&commonDreamland.Config{
 			Services: map[string]commonIface.ServiceConfig{
-				"tns":     {},
-				"node":    {Others: map[string]int{"verbose": 1, "copies": 2}},
-				"hoarder": {},
+				"tns":       {},
+				"substrate": {Others: map[string]int{"verbose": 1, "copies": 2}},
+				"hoarder":   {},
 			},
 			Simples: map[string]commonDreamland.SimpleConfig{
 				"client": {
@@ -81,18 +81,18 @@ func TestFail(t *testing.T) {
 			return
 		}
 
-		pids, err := u.GetServicePids("node")
+		pids, err := u.GetServicePids("substrate")
 		if err != nil {
 			mostRecentError = err
 			return
 		}
 
-		node1, ok := u.NodeByPid(pids[0])
+		node1, ok := u.SubstrateByPid(pids[0])
 		if ok == false {
 			mostRecentError = errors.New("Node1 not found")
 			return
 		}
-		node2, ok := u.NodeByPid(pids[1])
+		node2, ok := u.SubstrateByPid(pids[1])
 		if ok == false {
 			mostRecentError = errors.New("Node2 not found")
 			return

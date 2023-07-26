@@ -28,7 +28,7 @@ func TestDevRetry(t *testing.T) {
 			"auth":    {},
 			"monkey":  {},
 			"hoarder": {},
-			"node": {
+			"substrate": {
 				Others: map[string]int{"verbose": 1},
 			},
 		},
@@ -73,7 +73,7 @@ func TestDevRetry(t *testing.T) {
 	}
 
 	time.Sleep(60 * time.Second)
-	nodePort, err := u.GetPortHttp(u.Node().Node())
+	nodePort, err := u.GetPortHttp(u.Substrate().Node())
 	if err != nil {
 		t.Error(err)
 		return

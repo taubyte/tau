@@ -16,13 +16,13 @@ func TestBasicUsage(t *testing.T) {
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":    {Others: map[string]int{"dns": protocolsCommon.DefaultDevDnsPort, "mock": 1}},
-			"tns":     {},
-			"monkey":  {},
-			"patrick": {},
-			"auth":    {},
-			"hoarder": {},
-			"node":    {Others: map[string]int{"copies": 2}},
+			"seer":      {Others: map[string]int{"dns": protocolsCommon.DefaultDevDnsPort, "mock": 1}},
+			"tns":       {},
+			"monkey":    {},
+			"patrick":   {},
+			"auth":      {},
+			"hoarder":   {},
+			"substrate": {Others: map[string]int{"copies": 2}},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{
 			"client": {

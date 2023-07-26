@@ -26,8 +26,8 @@ func TestHeartBeat(t *testing.T) {
 
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer": {},
-			"node": {},
+			"seer":      {},
+			"substrate": {},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{
 			"client": {

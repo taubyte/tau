@@ -29,11 +29,11 @@ func newTestContext(ctx context.Context, simple commonDreamland.Simple, logFile 
 			ctx:           ctx,
 			ctxC:          ctxC,
 			Tns:           tnsClient,
-			Node:          simple.GetNode(),
+			Node:          simple.PeerNode(),
 			LogFile:       logFile,
 			Monkey:        &mockMonkey{},
 			ProjectID:     commonTest.ProjectID,
-			OdoClientNode: simple.GetNode(),
+			OdoClientNode: simple.PeerNode(),
 		},
 	}
 }

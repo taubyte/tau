@@ -68,7 +68,7 @@ func injectPlugin(u common.Universe, params ...interface{}) error {
 	}
 
 	ctx := u.Context()
-	node := u.Node()
+	node := u.Substrate()
 	srv, ok := node.(*Service)
 	if !ok {
 		return fmt.Errorf("node service %#v is not type %v", node, srv)

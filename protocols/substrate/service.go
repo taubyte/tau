@@ -48,7 +48,7 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 	srv.verbose = config.Verbose
 
 	if config.Node == nil {
-		srv.node, err = odoConfig.NewLiteNode(ctx, config, protocolCommon.Node)
+		srv.node, err = odoConfig.NewLiteNode(ctx, config, protocolCommon.Substrate)
 		if err != nil {
 			return nil, fmt.Errorf("creating new lite node failed with: %w", err)
 		}
@@ -149,8 +149,8 @@ func (srv *Service) Orbitals() []vm.Plugin {
 }
 
 func (srv *Service) Close() error {
-	logger.Info("Closing", protocolCommon.Node)
-	defer logger.Info(protocolCommon.Node, "closed")
+	logger.Info("Closing", protocolCommon.Substrate)
+	defer logger.Info(protocolCommon.Substrate, "closed")
 
 	for _, orbitals := range srv.orbitals {
 		if err := orbitals.Close(); err != nil {

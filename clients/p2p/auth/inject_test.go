@@ -77,7 +77,7 @@ func TestInject(t *testing.T) {
 		return
 	}
 
-	newStore, err := store.New(u.Context(), simple.GetNode(), testDir, err)
+	newStore, err := store.New(u.Context(), simple.PeerNode(), testDir, err)
 	if err != nil {
 		t.Error(err)
 		return

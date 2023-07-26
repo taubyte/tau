@@ -64,8 +64,8 @@ func TestAll(t *testing.T) {
 	defer u.Stop()
 	err = u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"tns":  {},
-			"node": {},
+			"tns":       {},
+			"substrate": {},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{
 			"client": {
@@ -121,7 +121,7 @@ func TestAll(t *testing.T) {
 	}
 
 	/************************** Testing New Databases *********************************/
-	srv, err := service.New(u.Node())
+	srv, err := service.New(u.Substrate())
 	assert.NilError(t, err)
 
 	dbNew, err := srv.Database(context)

@@ -23,7 +23,7 @@ func createAuthService(ctx context.Context, config *iface.ServiceConfig) (iface.
 	serviceConfig.SwarmKey = config.SwarmKey
 
 	if config.Others["http"] != 443 {
-		serviceConfig.HttpListen = fmt.Sprintf("%s:%d", dreamlandCommon.DefaultURL, config.Others["http"])
+		serviceConfig.HttpListen = fmt.Sprintf("%s:%d", dreamlandCommon.DefaultHost, config.Others["http"])
 	}
 
 	if result, ok := config.Others["secure"]; ok {

@@ -119,7 +119,7 @@ func parseValidationKey(privateKeyPath, publicKeyPath string) ([]byte, []byte, e
 
 /*
 1. Auth needs private key to start properly
-2. Monkey/Node either need a public key or a private key to generate a public key from
+2. Monkey/Substrate either need a public key or a private key to generate a public key from
 */
 func validateKeys(protocols []string, privateKey, publicKey string) error {
 	if slices.Contains(protocols, "auth") && privateKey == "" {
@@ -127,7 +127,7 @@ func validateKeys(protocols []string, privateKey, publicKey string) error {
 	}
 
 	for _, srv := range protocols {
-		if (srv == "monkey" || srv == "node") && (privateKey == "" && publicKey == "") {
+		if (srv == "monkey" || srv == "substrate") && (privateKey == "" && publicKey == "") {
 			return errors.New("domains public key cannot be empty when running monkey or node")
 		}
 	}

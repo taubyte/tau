@@ -10,7 +10,7 @@ var (
 	HoarderDefaultP2PListenPort = 4260
 
 	NodeDefaultP2PListenPort = 4242
-	NodeDevHttpListenPort    = 9000 + dreamlandCommon.DefaultNodeHttpPort
+	NodeDevHttpListenPort    = 9000 + dreamlandCommon.DefaultSubstrateHttpPort
 
 	PatrickDefaultP2PListenPort = 4222
 	PatrickDevHttpListenPort    = 9000 + dreamlandCommon.DefaultPatrickHttpPort
