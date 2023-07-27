@@ -2,8 +2,6 @@ module github.com/taubyte/tau
 
 go 1.19
 
-replace github.com/taubyte/config-compiler => /home/tafkhan/Documents/Work/Taubyte/Repos/config-compiler
-
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -34,7 +32,7 @@ require (
 	github.com/pterm/pterm v0.12.62
 	github.com/spf13/afero v1.9.5
 	github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29
-	github.com/taubyte/config-compiler v0.4.4
+	github.com/taubyte/config-compiler v0.4.5
 	github.com/taubyte/domain-validation v1.0.0
 	github.com/taubyte/go-interfaces v0.2.9
 	github.com/taubyte/go-project-schema v0.9.3
