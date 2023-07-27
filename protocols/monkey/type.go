@@ -7,10 +7,10 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	tnsClient "github.com/taubyte/go-interfaces/services/tns"
-	patrickClient "github.com/taubyte/odo/clients/p2p/patrick"
-	"github.com/taubyte/odo/config"
 	"github.com/taubyte/p2p/peer"
 	streams "github.com/taubyte/p2p/streams/service"
+	patrickClient "github.com/taubyte/tau/clients/p2p/patrick"
+	"github.com/taubyte/tau/config"
 )
 
 /* This is a variable so that it can be overridden in tests */

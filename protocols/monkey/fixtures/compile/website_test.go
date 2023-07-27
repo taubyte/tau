@@ -12,10 +12,10 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	_ "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/protocols/monkey/fixtures/compile"
-	_ "github.com/taubyte/odo/protocols/substrate"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns"
+	"github.com/taubyte/tau/protocols/monkey/fixtures/compile"
+	_ "github.com/taubyte/tau/protocols/substrate"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func TestWebsite(t *testing.T) {

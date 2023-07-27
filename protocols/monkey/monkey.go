@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/taubyte/go-interfaces/services/patrick"
-	hoarderClient "github.com/taubyte/odo/clients/p2p/hoarder"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
+	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func (m *Monkey) Run() {

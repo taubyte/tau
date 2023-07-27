@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/messaging"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/messaging"
 )
 
 func (h *dataStreamHandler) SmartOps() error {

@@ -1,4 +1,4 @@
-module github.com/taubyte/odo
+module github.com/taubyte/tau
 
 go 1.19
 
@@ -44,7 +44,7 @@ require (
 	github.com/taubyte/go-specs v0.10.5
 	github.com/taubyte/http v0.10.3
 	github.com/taubyte/p2p v0.9.1
-	github.com/taubyte/tau v0.1.6
+	github.com/taubyte/tau-cli v0.1.8
 	github.com/taubyte/utils v0.1.6
 	github.com/taubyte/vm v1.0.3
 	github.com/taubyte/vm-core-plugins v0.3.3
@@ -230,6 +230,7 @@ require (
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/taubyte/go-sdk-symbols v0.2.6 // indirect
+	github.com/taubyte/odo v0.0.0-20230727154809-0688a5d7674b // indirect
 	github.com/tetratelabs/wazero v1.0.3 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.0 // indirect

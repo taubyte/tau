@@ -14,10 +14,10 @@ import (
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	"github.com/taubyte/go-specs/methods"
 	websiteSpec "github.com/taubyte/go-specs/website"
-	"github.com/taubyte/odo/protocols/substrate/components/http/common"
-	"github.com/taubyte/odo/protocols/substrate/components/http/function"
-	"github.com/taubyte/odo/protocols/substrate/components/http/website"
-	"github.com/taubyte/odo/vm/helpers"
+	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/http/function"
+	"github.com/taubyte/tau/protocols/substrate/components/http/website"
+	"github.com/taubyte/tau/vm/helpers"
 )
 
 var (

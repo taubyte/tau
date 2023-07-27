@@ -6,7 +6,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
 type dataStreamHandler struct {

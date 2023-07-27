@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 
-	db "github.com/taubyte/odo/protocols/substrate/components/database/common"
+	db "github.com/taubyte/tau/protocols/substrate/components/database/common"
 )
 
 func New(size uint64, name string, logger log.StandardLogger, factory kvdb.Factory) (iface iface.KV, err error) {

@@ -11,7 +11,7 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	_ "github.com/taubyte/odo/protocols/substrate"
+	_ "github.com/taubyte/tau/protocols/substrate"
 )
 
 // TODO: Could shorten test doing a tns lookup or looking at patrick to see if jobs are done instead of sleep.

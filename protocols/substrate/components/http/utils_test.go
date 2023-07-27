@@ -10,10 +10,10 @@ import (
 	functionSpec "github.com/taubyte/go-specs/function"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	websiteSpec "github.com/taubyte/go-specs/website"
-	"github.com/taubyte/odo/protocols/substrate/components/http/common"
-	"github.com/taubyte/odo/protocols/substrate/components/structure"
-	"github.com/taubyte/odo/vm/cache"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/structure"
+	"github.com/taubyte/tau/vm/cache"
 	slices "github.com/taubyte/utils/slices/string"
 )
 

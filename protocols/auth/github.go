@@ -13,10 +13,10 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/taubyte/odo/protocols/auth/github"
+	"github.com/taubyte/tau/protocols/auth/github"
 
-	"github.com/taubyte/odo/protocols/auth/hooks"
-	"github.com/taubyte/odo/protocols/auth/repositories"
+	"github.com/taubyte/tau/protocols/auth/hooks"
+	"github.com/taubyte/tau/protocols/auth/repositories"
 
 	"github.com/taubyte/utils/id"
 )

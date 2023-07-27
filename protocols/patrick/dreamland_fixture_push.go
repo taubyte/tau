@@ -12,13 +12,13 @@ import (
 	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	commonTest "github.com/taubyte/dreamland/helpers"
 	spec "github.com/taubyte/go-specs/common"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/utils/maps"
 
-	_ "github.com/taubyte/odo/protocols/auth"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/monkey"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/protocols/auth"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/monkey"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func init() {

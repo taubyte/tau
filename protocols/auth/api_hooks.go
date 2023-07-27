@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/taubyte/odo/protocols/auth/hooks"
-	"github.com/taubyte/odo/protocols/auth/projects"
-	"github.com/taubyte/odo/protocols/auth/repositories"
 	"github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	cr "github.com/taubyte/p2p/streams/command/response"
+	"github.com/taubyte/tau/protocols/auth/hooks"
+	"github.com/taubyte/tau/protocols/auth/projects"
+	"github.com/taubyte/tau/protocols/auth/repositories"
 	"github.com/taubyte/utils/maps"
 )
 

@@ -2,8 +2,8 @@ package database
 
 import (
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
-	"github.com/taubyte/odo/protocols/substrate/components/database/common"
-	globals "github.com/taubyte/odo/protocols/substrate/components/database/globals"
+	"github.com/taubyte/tau/protocols/substrate/components/database/common"
+	globals "github.com/taubyte/tau/protocols/substrate/components/database/globals"
 	mh "github.com/taubyte/utils/multihash"
 )
 

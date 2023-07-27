@@ -7,7 +7,7 @@ import (
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p/stream"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p/stream"
 )
 
 func (srv *Service) LookupService(matcher *iface.MatchDefinition) (*structureSpec.Service, string, error) {

@@ -3,9 +3,9 @@ package p2p
 import (
 	"context"
 
-	protocolCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/p2p/peer"
 	client "github.com/taubyte/p2p/streams/client"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func New(ctx context.Context, node peer.Node) (*Client, error) {

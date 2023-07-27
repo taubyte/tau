@@ -17,8 +17,8 @@ import (
 	"github.com/taubyte/go-interfaces/services/tns"
 	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/go-specs/methods"
-	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
 	"github.com/taubyte/p2p/peer"
+	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 )
 
 func newTestContext(ctx context.Context, simple commonDreamland.Simple, logFile *os.File) testContext {

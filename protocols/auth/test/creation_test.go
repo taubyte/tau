@@ -8,15 +8,15 @@ import (
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	_ "github.com/taubyte/odo/protocols/auth"
+	_ "github.com/taubyte/tau/protocols/auth"
 
 	commonTest "github.com/taubyte/dreamland/helpers"
 	gitTest "github.com/taubyte/dreamland/helpers/git"
-	_ "github.com/taubyte/odo/clients/p2p/monkey"
-	_ "github.com/taubyte/odo/clients/p2p/tns"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/clients/p2p/monkey"
+	_ "github.com/taubyte/tau/clients/p2p/tns"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func TestAuth(t *testing.T) {

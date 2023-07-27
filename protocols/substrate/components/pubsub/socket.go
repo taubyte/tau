@@ -1,7 +1,7 @@
 package pubsub
 
 import (
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
 func (s *Service) WebSocketURL(projectId, appId, channel string) (string, error) {

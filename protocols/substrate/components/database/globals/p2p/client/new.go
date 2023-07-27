@@ -3,9 +3,9 @@ package client
 import (
 	"context"
 
-	"github.com/taubyte/odo/protocols/substrate/components/database/globals/p2p/common"
 	"github.com/taubyte/p2p/peer"
 	streamClient "github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/tau/protocols/substrate/components/database/globals/p2p/common"
 )
 
 var (

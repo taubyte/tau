@@ -9,7 +9,7 @@ import (
 	"os"
 
 	"github.com/libp2p/go-libp2p/core/pnet"
-	"github.com/taubyte/odo/config"
+	"github.com/taubyte/tau/config"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v2"

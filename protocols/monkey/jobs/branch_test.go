@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	commonTest "github.com/taubyte/dreamland/helpers"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 	"gotest.tools/v3/assert"
 )
 

@@ -8,9 +8,9 @@ import (
 	"github.com/ipfs/go-datastore"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	ifaceTns "github.com/taubyte/go-interfaces/services/tns"
-	"github.com/taubyte/odo/config"
 	"github.com/taubyte/p2p/peer"
 	streams "github.com/taubyte/p2p/streams/service"
+	"github.com/taubyte/tau/config"
 )
 
 var _ hoarderIface.Service = &Service{}

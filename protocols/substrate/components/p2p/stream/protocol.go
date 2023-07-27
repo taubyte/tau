@@ -6,10 +6,10 @@ import (
 	"time"
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
-	counter "github.com/taubyte/odo/vm/counter"
-	"github.com/taubyte/odo/vm/lookup"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/p2p/streams/command/response"
+	counter "github.com/taubyte/tau/vm/counter"
+	"github.com/taubyte/tau/vm/lookup"
 	"github.com/taubyte/utils/multihash"
 )
 

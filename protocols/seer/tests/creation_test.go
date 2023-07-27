@@ -10,7 +10,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 
-	_ "github.com/taubyte/odo/protocols/seer"
+	_ "github.com/taubyte/tau/protocols/seer"
 )
 
 func TestService(t *testing.T) {

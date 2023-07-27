@@ -8,10 +8,10 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 	functionSpec "github.com/taubyte/go-specs/function"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/function"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/websocket"
-	"github.com/taubyte/odo/vm/lookup"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/function"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/websocket"
+	"github.com/taubyte/tau/vm/lookup"
 )
 
 var (

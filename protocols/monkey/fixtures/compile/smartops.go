@@ -15,7 +15,7 @@ import (
 	wasmSpec "github.com/taubyte/go-specs/builders/wasm"
 	smartopsSpec "github.com/taubyte/go-specs/smartops"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/monkey/jobs"
+	"github.com/taubyte/tau/protocols/monkey/jobs"
 	"github.com/taubyte/utils/bundle"
 )
 

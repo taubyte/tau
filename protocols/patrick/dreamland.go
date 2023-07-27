@@ -7,8 +7,8 @@ import (
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	iface "github.com/taubyte/go-interfaces/common"
-	odoConfig "github.com/taubyte/odo/config"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	odoConfig "github.com/taubyte/tau/config"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func init() {

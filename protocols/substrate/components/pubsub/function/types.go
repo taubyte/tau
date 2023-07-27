@@ -6,7 +6,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
 var _ commonIface.Serviceable = &Function{}

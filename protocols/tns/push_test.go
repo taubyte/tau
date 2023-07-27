@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/odo/config"
-	"github.com/taubyte/odo/protocols/common"
-	"github.com/taubyte/odo/protocols/tns/flat"
+	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/protocols/common"
+	"github.com/taubyte/tau/protocols/tns/flat"
 )
 
 func TestPush(t *testing.T) {

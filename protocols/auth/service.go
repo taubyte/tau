@@ -8,13 +8,13 @@ import (
 	"github.com/ipfs/go-log/v2"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
-	seerClient "github.com/taubyte/odo/clients/p2p/seer"
-	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
-	odoConfig "github.com/taubyte/odo/config"
-	auto "github.com/taubyte/odo/pkgs/http-auto"
-	"github.com/taubyte/odo/pkgs/kvdb"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
 	streams "github.com/taubyte/p2p/streams/service"
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
+	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
+	odoConfig "github.com/taubyte/tau/config"
+	auto "github.com/taubyte/tau/pkgs/http-auto"
+	"github.com/taubyte/tau/pkgs/kvdb"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 var (

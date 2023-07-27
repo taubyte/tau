@@ -2,8 +2,8 @@ package p2p
 
 import (
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p/common"
-	"github.com/taubyte/odo/vm/cache"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
+	"github.com/taubyte/tau/vm/cache"
 )
 
 func New(srv nodeIface.Service) (*Service, error) {

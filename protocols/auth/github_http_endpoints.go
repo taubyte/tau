@@ -7,9 +7,9 @@ import (
 	"time"
 
 	http "github.com/taubyte/http"
-	"github.com/taubyte/odo/protocols/auth/github"
-	"github.com/taubyte/odo/protocols/auth/repositories"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
+	"github.com/taubyte/tau/protocols/auth/github"
+	"github.com/taubyte/tau/protocols/auth/repositories"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/utils/maps"
 )
 

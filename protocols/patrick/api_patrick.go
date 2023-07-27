@@ -9,10 +9,10 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	commonIface "github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	cr "github.com/taubyte/p2p/streams/command/response"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/utils/maps"
 )
 

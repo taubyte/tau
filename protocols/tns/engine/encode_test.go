@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/taubyte/odo/pkgs/kvdb"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
-	"github.com/taubyte/odo/protocols/tns/flat"
 	"github.com/taubyte/p2p/keypair"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/pkgs/kvdb"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
+	"github.com/taubyte/tau/protocols/tns/flat"
 )
 
 func TestEncode(t *testing.T) {

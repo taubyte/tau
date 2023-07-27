@@ -19,14 +19,14 @@ import (
 	"github.com/taubyte/go-interfaces/services/substrate/components/storage"
 
 	projectLib "github.com/taubyte/go-project-schema/project"
-	_ "github.com/taubyte/odo/clients/p2p/hoarder"
-	"github.com/taubyte/odo/pkgs/kvdb"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/seer"
-	_ "github.com/taubyte/odo/protocols/substrate"
-	dbApi "github.com/taubyte/odo/protocols/substrate/components/database"
-	storageApi "github.com/taubyte/odo/protocols/substrate/components/storage"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder"
+	"github.com/taubyte/tau/pkgs/kvdb"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/seer"
+	_ "github.com/taubyte/tau/protocols/substrate"
+	dbApi "github.com/taubyte/tau/protocols/substrate/components/database"
+	storageApi "github.com/taubyte/tau/protocols/substrate/components/storage"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 const (

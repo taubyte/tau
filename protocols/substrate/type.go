@@ -15,8 +15,8 @@ import (
 	"github.com/taubyte/go-interfaces/vm"
 
 	http "github.com/taubyte/http"
-	"github.com/taubyte/odo/config"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/config"
 )
 
 var _ iface.Service = &Service{}

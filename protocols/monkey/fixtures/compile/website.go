@@ -11,7 +11,7 @@ import (
 	builder "github.com/taubyte/builder"
 	iface "github.com/taubyte/go-interfaces/builders"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/monkey/jobs"
+	"github.com/taubyte/tau/protocols/monkey/jobs"
 )
 
 type websiteContext struct {

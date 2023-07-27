@@ -8,7 +8,7 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-specs/extract"
-	"github.com/taubyte/odo/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 )
 
 func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) (serviceable commonIface.Serviceable, err error) {

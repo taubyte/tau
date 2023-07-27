@@ -6,10 +6,10 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 	"github.com/taubyte/go-interfaces/services/tns"
-	"github.com/taubyte/odo/clients/p2p/tns/common"
 	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/clients/p2p/tns/common"
 
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/extract"

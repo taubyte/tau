@@ -8,7 +8,7 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func TestFetch(t *testing.T) {

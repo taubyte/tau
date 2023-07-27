@@ -6,8 +6,8 @@ import (
 	"sync"
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
 	p2p "github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
 var _ commonIface.Serviceable = &WebSocket{}

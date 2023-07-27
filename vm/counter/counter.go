@@ -7,7 +7,7 @@ import (
 
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/services/substrate/counters"
-	"github.com/taubyte/odo/protocols/substrate/components/counters/metrics"
+	"github.com/taubyte/tau/protocols/substrate/components/counters/metrics"
 )
 
 // ErrorWrapper is an wraps an error in the cold start and execution of a serviceable.

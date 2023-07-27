@@ -12,12 +12,12 @@ import (
 	nodeP2PIFace "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
-	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	odoConfig "github.com/taubyte/odo/config"
-	"github.com/taubyte/odo/pkgs/kvdb"
+	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
+	odoConfig "github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkgs/kvdb"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
-	protocolCommon "github.com/taubyte/odo/protocols/common"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 	smartopsPlugins "github.com/taubyte/vm-core-plugins/smartops"
 	tbPlugins "github.com/taubyte/vm-core-plugins/taubyte"
 )

@@ -8,10 +8,10 @@ import (
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	http "github.com/taubyte/http"
-	"github.com/taubyte/odo/protocols/substrate/components/http/common"
-	"github.com/taubyte/odo/vm/counter"
-	"github.com/taubyte/odo/vm/helpers"
-	"github.com/taubyte/odo/vm/lookup"
+	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/vm/counter"
+	"github.com/taubyte/tau/vm/helpers"
+	"github.com/taubyte/tau/vm/lookup"
 )
 
 func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {

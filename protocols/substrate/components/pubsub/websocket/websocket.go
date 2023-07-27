@@ -9,7 +9,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
 func (ws *WebSocket) Project() (cid.Cid, error) {

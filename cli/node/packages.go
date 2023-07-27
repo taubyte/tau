@@ -1,15 +1,15 @@
 package node
 
 import (
-	authService "github.com/taubyte/odo/protocols/auth"
-	hoarderService "github.com/taubyte/odo/protocols/hoarder"
-	monkeyService "github.com/taubyte/odo/protocols/monkey"
-	patrickService "github.com/taubyte/odo/protocols/patrick"
-	seerService "github.com/taubyte/odo/protocols/seer"
-	nodeService "github.com/taubyte/odo/protocols/substrate"
-	tnsService "github.com/taubyte/odo/protocols/tns"
+	authService "github.com/taubyte/tau/protocols/auth"
+	hoarderService "github.com/taubyte/tau/protocols/hoarder"
+	monkeyService "github.com/taubyte/tau/protocols/monkey"
+	patrickService "github.com/taubyte/tau/protocols/patrick"
+	seerService "github.com/taubyte/tau/protocols/seer"
+	nodeService "github.com/taubyte/tau/protocols/substrate"
+	tnsService "github.com/taubyte/tau/protocols/tns"
 
-	"github.com/taubyte/odo/config"
+	"github.com/taubyte/tau/config"
 )
 
 var available = map[string]config.Package{

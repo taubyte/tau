@@ -11,7 +11,7 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"gotest.tools/v3/assert"
 )
 

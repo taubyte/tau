@@ -7,9 +7,9 @@ import (
 	streams "github.com/taubyte/p2p/streams/service"
 
 	ifaceTns "github.com/taubyte/go-interfaces/services/tns"
-	auth "github.com/taubyte/odo/clients/p2p/auth"
-	monkey "github.com/taubyte/odo/clients/p2p/monkey"
-	"github.com/taubyte/odo/config"
+	auth "github.com/taubyte/tau/clients/p2p/auth"
+	monkey "github.com/taubyte/tau/clients/p2p/monkey"
+	"github.com/taubyte/tau/config"
 
 	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/go-interfaces/kvdb"

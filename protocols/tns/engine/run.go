@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/taubyte/odo/protocols/tns/flat"
+	"github.com/taubyte/tau/protocols/tns/flat"
 )
 
 func (e *Engine) Merge(ctx context.Context, object *flat.Object) error {

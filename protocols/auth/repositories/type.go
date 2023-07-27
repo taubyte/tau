@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/taubyte/go-interfaces/kvdb"
-	"github.com/taubyte/odo/protocols/auth/hooks"
+	"github.com/taubyte/tau/protocols/auth/hooks"
 )
 
 type Data map[string]interface{}

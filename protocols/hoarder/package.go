@@ -4,7 +4,7 @@ import (
 	"context"
 
 	serviceIface "github.com/taubyte/go-interfaces/services"
-	"github.com/taubyte/odo/config"
+	"github.com/taubyte/tau/config"
 )
 
 type packageInterface struct{}

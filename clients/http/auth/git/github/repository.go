@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/google/go-github/v32/github"
-	"github.com/taubyte/odo/clients/http/auth/git/common"
+	"github.com/taubyte/tau/clients/http/auth/git/common"
 )
 
 type repository struct {

@@ -7,8 +7,8 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 	"github.com/taubyte/go-interfaces/services/substrate"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
-	"github.com/taubyte/odo/protocols/substrate/components/database/common"
-	kv "github.com/taubyte/odo/protocols/substrate/components/database/kv"
+	"github.com/taubyte/tau/protocols/substrate/components/database/common"
+	kv "github.com/taubyte/tau/protocols/substrate/components/database/kv"
 )
 
 func New(srv substrate.Service, factory kvdb.Factory, dbContext iface.Context) (iface.Database, error) {

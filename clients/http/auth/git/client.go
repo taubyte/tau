@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/taubyte/odo/clients/http/auth/git/common"
-	githubClient "github.com/taubyte/odo/clients/http/auth/git/github"
+	"github.com/taubyte/tau/clients/http/auth/git/common"
+	githubClient "github.com/taubyte/tau/clients/http/auth/git/github"
 )
 
 func New(ctx context.Context, provider, token string) common.Client {

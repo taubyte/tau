@@ -8,7 +8,7 @@ import (
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/kvdb"
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
-	common "github.com/taubyte/odo/protocols/substrate/components/storage/common"
+	common "github.com/taubyte/tau/protocols/substrate/components/storage/common"
 )
 
 func storageError(ctx storageIface.Context) string {

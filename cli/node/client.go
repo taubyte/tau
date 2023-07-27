@@ -8,10 +8,10 @@ import (
 
 	"github.com/multiformats/go-multiaddr"
 	"github.com/taubyte/go-interfaces/p2p/keypair"
-	odo "github.com/taubyte/odo/cli"
-	"github.com/taubyte/odo/config"
-	commonIface "github.com/taubyte/odo/utils"
 	"github.com/taubyte/p2p/peer"
+	odo "github.com/taubyte/tau/cli"
+	"github.com/taubyte/tau/config"
+	commonIface "github.com/taubyte/tau/utils"
 )
 
 func createClientNode(ctx context.Context, conf *config.Protocol, shape, databasePath string) (peer.Node, error) {

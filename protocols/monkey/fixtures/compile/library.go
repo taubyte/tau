@@ -11,7 +11,7 @@ import (
 	"github.com/pterm/pterm"
 	wasmSpec "github.com/taubyte/go-specs/builders/wasm"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/monkey/jobs"
+	"github.com/taubyte/tau/protocols/monkey/jobs"
 )
 
 type libraryContext struct {

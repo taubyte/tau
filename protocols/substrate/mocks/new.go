@@ -6,8 +6,8 @@ import (
 
 	"github.com/taubyte/go-interfaces/vm"
 	httpMock "github.com/taubyte/http/mocks"
-	counterSrv "github.com/taubyte/odo/protocols/substrate/components/counters"
-	smartops "github.com/taubyte/odo/protocols/substrate/components/smartops"
+	counterSrv "github.com/taubyte/tau/protocols/substrate/components/counters"
+	smartops "github.com/taubyte/tau/protocols/substrate/components/smartops"
 	"github.com/taubyte/vm/backend/dfs"
 	"github.com/taubyte/vm/backend/file"
 	"github.com/taubyte/vm/backend/url"

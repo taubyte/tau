@@ -13,12 +13,12 @@ import (
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	basicHttp "github.com/taubyte/http/basic"
 	"github.com/taubyte/http/options"
-	authP2P "github.com/taubyte/odo/clients/p2p/auth"
-	tnsP2P "github.com/taubyte/odo/clients/p2p/tns"
-	autoOptions "github.com/taubyte/odo/pkgs/http-auto/options"
 	"github.com/taubyte/p2p/peer"
+	authP2P "github.com/taubyte/tau/clients/p2p/auth"
+	tnsP2P "github.com/taubyte/tau/clients/p2p/tns"
+	autoOptions "github.com/taubyte/tau/pkgs/http-auto/options"
 
-	acmeStore "github.com/taubyte/odo/protocols/auth/acme/store"
+	acmeStore "github.com/taubyte/tau/protocols/auth/acme/store"
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"

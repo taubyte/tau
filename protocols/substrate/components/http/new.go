@@ -1,7 +1,7 @@
 package http
 
 import (
-	"github.com/taubyte/odo/vm/cache"
+	"github.com/taubyte/tau/vm/cache"
 
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 )

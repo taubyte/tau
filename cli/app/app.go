@@ -3,7 +3,7 @@ package app
 import (
 	"fmt"
 
-	"github.com/taubyte/odo/cli/node"
+	"github.com/taubyte/tau/cli/node"
 	"github.com/urfave/cli/v2"
 )
 

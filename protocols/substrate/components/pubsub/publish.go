@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
 func (s *Service) Publish(ctx context.Context, projectId, appId, channel string, data []byte) error {

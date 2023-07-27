@@ -4,7 +4,7 @@ import (
 	"regexp"
 
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
 func (s *Service) GetMessagingsMap(matcher *common.MatchDefinition) (messagingsMap *common.MessagingMap, err error) {

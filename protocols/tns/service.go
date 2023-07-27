@@ -6,15 +6,15 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/services/seer"
-	seerClient "github.com/taubyte/odo/clients/p2p/seer"
-	"github.com/taubyte/odo/pkgs/kvdb"
 	streams "github.com/taubyte/p2p/streams/service"
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
+	"github.com/taubyte/tau/pkgs/kvdb"
 
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	commonSpec "github.com/taubyte/go-specs/common"
-	odoConfig "github.com/taubyte/odo/config"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
-	"github.com/taubyte/odo/protocols/tns/engine"
+	odoConfig "github.com/taubyte/tau/config"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
+	"github.com/taubyte/tau/protocols/tns/engine"
 )
 
 var (

@@ -11,7 +11,7 @@ import (
 	dirs "github.com/taubyte/utils/fs/dir"
 	maps "github.com/taubyte/utils/maps"
 
-	protocolCommon "github.com/taubyte/odo/protocols/common"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 var (

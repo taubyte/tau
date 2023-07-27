@@ -2,8 +2,8 @@ package pubsub
 
 import (
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
-	"github.com/taubyte/odo/vm/cache"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/vm/cache"
 )
 
 var _ common.LocalService = &Service{}

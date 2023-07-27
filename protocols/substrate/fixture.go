@@ -10,10 +10,10 @@ import (
 	commonTest "github.com/taubyte/dreamland/helpers"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
-	_ "github.com/taubyte/odo/protocols/auth"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/monkey"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/protocols/auth"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/monkey"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func init() {

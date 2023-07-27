@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/taubyte/go-interfaces/services/substrate/components/database"
-	"github.com/taubyte/odo/protocols/substrate/components/database/globals/p2p/common"
 	streams "github.com/taubyte/p2p/streams/service"
+	"github.com/taubyte/tau/protocols/substrate/components/database/globals/p2p/common"
 )
 
 func Start(srv database.Service) (streamHandler *StreamHandler, err error) {

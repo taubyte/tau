@@ -11,12 +11,12 @@ import (
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
-	seer_client "github.com/taubyte/odo/clients/p2p/seer"
-	tnsApi "github.com/taubyte/odo/clients/p2p/tns"
-	odoConfig "github.com/taubyte/odo/config"
-	"github.com/taubyte/odo/protocols/common"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
 	streams "github.com/taubyte/p2p/streams/service"
+	seer_client "github.com/taubyte/tau/clients/p2p/seer"
+	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
+	odoConfig "github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/protocols/common"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 var (

@@ -6,7 +6,7 @@ import (
 
 	"github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/vm/lookup"
+	"github.com/taubyte/tau/vm/lookup"
 )
 
 var testServices = map[string]structureSpec.Service{

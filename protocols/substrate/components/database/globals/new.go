@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	kv "github.com/taubyte/odo/protocols/substrate/components/database/kv"
+	kv "github.com/taubyte/tau/protocols/substrate/components/database/kv"
 )
 
 // TODO, get from project?

@@ -7,8 +7,8 @@ import (
 	basicHttp "github.com/taubyte/http/basic"
 	basicHttpSecure "github.com/taubyte/http/basic/secure"
 	"github.com/taubyte/http/options"
-	"github.com/taubyte/odo/config"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/config"
 )
 
 func NewAuto(ctx context.Context, node peer.Node, config *config.Protocol, ops ...options.Option) (http service.Service, err error) {

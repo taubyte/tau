@@ -12,12 +12,12 @@ import (
 	"github.com/taubyte/go-interfaces/services/tns"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
-	_ "github.com/taubyte/odo/protocols/auth"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/monkey"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/protocols/auth"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/monkey"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func init() {

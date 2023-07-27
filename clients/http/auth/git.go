@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/avast/retry-go"
-	git "github.com/taubyte/odo/clients/http/auth/git"
-	"github.com/taubyte/odo/clients/http/auth/git/common"
+	git "github.com/taubyte/tau/clients/http/auth/git"
+	"github.com/taubyte/tau/clients/http/auth/git/common"
 )
 
 // Git returns a git client based on the current git provider

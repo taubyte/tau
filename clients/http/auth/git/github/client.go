@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/google/go-github/v32/github"
-	"github.com/taubyte/odo/clients/http/auth/git/common"
+	"github.com/taubyte/tau/clients/http/auth/git/common"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
 )

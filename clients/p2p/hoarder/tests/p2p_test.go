@@ -12,12 +12,12 @@ import (
 
 	keypair "github.com/taubyte/p2p/keypair"
 
-	hoarder_client "github.com/taubyte/odo/clients/p2p/hoarder"
-	"github.com/taubyte/odo/config"
+	hoarder_client "github.com/taubyte/tau/clients/p2p/hoarder"
+	"github.com/taubyte/tau/config"
 
-	"github.com/taubyte/odo/protocols/common"
-	service "github.com/taubyte/odo/protocols/hoarder"
 	peer "github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/protocols/common"
+	service "github.com/taubyte/tau/protocols/hoarder"
 )
 
 func TestClient(t *testing.T) {

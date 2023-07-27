@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	odo "github.com/taubyte/odo/cli"
+	odo "github.com/taubyte/tau/cli"
 	"gotest.tools/v3/assert"
 )
 

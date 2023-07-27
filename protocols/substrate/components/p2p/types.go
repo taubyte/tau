@@ -5,7 +5,7 @@ import (
 
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 	p2pIface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
-	"github.com/taubyte/odo/vm/cache"
+	"github.com/taubyte/tau/vm/cache"
 )
 
 var _ p2pIface.Service = &Service{}

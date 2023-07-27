@@ -6,8 +6,8 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p/common"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p/function"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p/function"
 )
 
 func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIface.Serviceable, error) {

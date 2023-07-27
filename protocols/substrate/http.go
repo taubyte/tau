@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/taubyte/odo/config"
-	auto "github.com/taubyte/odo/pkgs/http-auto"
+	"github.com/taubyte/tau/config"
+	auto "github.com/taubyte/tau/pkgs/http-auto"
 )
 
 func (srv *Service) startHttp(config *config.Protocol) (err error) {

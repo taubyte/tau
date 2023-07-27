@@ -14,14 +14,14 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/monkey/fixtures/compile"
+	"github.com/taubyte/tau/protocols/monkey/fixtures/compile"
 
 	_ "github.com/taubyte/config-compiler/fixtures"
-	_ "github.com/taubyte/odo/protocols/auth"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/patrick"
-	_ "github.com/taubyte/odo/protocols/substrate"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/protocols/auth"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/patrick"
+	_ "github.com/taubyte/tau/protocols/substrate"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 var (

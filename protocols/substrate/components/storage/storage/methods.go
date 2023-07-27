@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/ipfs/go-cid"
-	"github.com/taubyte/odo/protocols/substrate/components/storage/common"
+	"github.com/taubyte/tau/protocols/substrate/components/storage/common"
 	pathUtil "github.com/taubyte/utils/path"
 
 	"github.com/alecthomas/units"

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/taubyte/odo/protocols/auth/github"
+	"github.com/taubyte/tau/protocols/auth/github"
 
 	http "github.com/taubyte/http"
 	httpAuth "github.com/taubyte/http/auth"

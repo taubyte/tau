@@ -5,7 +5,7 @@ import (
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 	"github.com/taubyte/go-interfaces/services/substrate/smartops"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
 // For running smartOps of a messaging channel before running a function itself.

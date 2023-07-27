@@ -9,11 +9,11 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
-	p2p "github.com/taubyte/odo/clients/p2p/monkey"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	"github.com/taubyte/odo/protocols/monkey"
 	"github.com/taubyte/p2p/peer"
+	p2p "github.com/taubyte/tau/clients/p2p/monkey"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	"github.com/taubyte/tau/protocols/monkey"
 )
 
 func TestClient(t *testing.T) {

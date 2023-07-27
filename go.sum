@@ -900,10 +900,12 @@ github.com/taubyte/go-specs v0.10.5 h1:R3eli3cpiw5WKMoO8MzO0+sk72LGTQXWSxUoWN7vs
 github.com/taubyte/go-specs v0.10.5/go.mod h1:HWMNhpmQzy/1Eg6s5TICKl+/talTXLX6jYEUuWCsaGg=
 github.com/taubyte/http v0.10.3 h1:UUfDVllEgDE7qD0CPPBXd2+jjbTH5If2f/1G3//9d7A=
 github.com/taubyte/http v0.10.3/go.mod h1:iYTdJl6dk3m1tC6H5WAJRX/R81ROwy7cg++zazkOqcY=
+github.com/taubyte/odo v0.0.0-20230727154809-0688a5d7674b h1:2Jt0GOC/2OoSG8R+SG8ctWD1m8XVla3IMb4Z69QIZLg=
+github.com/taubyte/odo v0.0.0-20230727154809-0688a5d7674b/go.mod h1:RFHdU43b3x590UQENAP6gAV3KkgiuU6ES9qoQLfqIEA=
 github.com/taubyte/p2p v0.9.1 h1:W8whhWbYO5oCqOSUM+gNKCERtVGmTJHTZuTw+MJuswg=
 github.com/taubyte/p2p v0.9.1/go.mod h1:0vWZjiX8yNT3VwZO2x+mgRdEDCbwzSPOyyfBU3UEiTk=
-github.com/taubyte/tau v0.1.6 h1:trzExS7eC4aK3mX/6MZiCPciP/cLwB6npy4ic7eDLOk=
-github.com/taubyte/tau v0.1.6/go.mod h1:+F6LUc06OraMoKNeWDWjq/Xy+vTXe8B6o9d6EJA0jAc=
+github.com/taubyte/tau-cli v0.1.8 h1:81VcK9ZfKoAwzjwhnxQkxXa/kjv9fyb4kUephaqcxa0=
+github.com/taubyte/tau-cli v0.1.8/go.mod h1:4BC0INT2qB3RnDVooAPuc8XWu7trU4smhJ/XdhKjYkA=
 github.com/taubyte/utils v0.1.6 h1:bRSJZW/8E/wpT3wwyU3C97M9ddAJ52AfXFeP47JRGsY=
 github.com/taubyte/utils v0.1.6/go.mod h1:b/tKY1xKIxLH5ixFRTsrdz+vGhmiOcR9SpdVYiJDpsI=
 github.com/taubyte/vm v1.0.3 h1:Z9IYHdHiWVh0/v1+dvWblGe6Ny+ni3t4yr8GIgfhavg=

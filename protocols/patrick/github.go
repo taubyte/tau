@@ -14,7 +14,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	http "github.com/taubyte/http"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/utils/id"
 	"gopkg.in/go-playground/webhooks.v5/github"
 )

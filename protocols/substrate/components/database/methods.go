@@ -6,8 +6,8 @@ import (
 
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
-	"github.com/taubyte/odo/protocols/substrate/components/database/common"
-	db "github.com/taubyte/odo/protocols/substrate/components/database/database"
+	"github.com/taubyte/tau/protocols/substrate/components/database/common"
+	db "github.com/taubyte/tau/protocols/substrate/components/database/database"
 )
 
 func (s *Service) Cache() components.Cache {

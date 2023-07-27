@@ -4,9 +4,9 @@ import (
 	"context"
 
 	iface "github.com/taubyte/go-interfaces/services/patrick"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/p2p/peer"
 	client "github.com/taubyte/p2p/streams/client"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func New(ctx context.Context, node peer.Node) (iface.Client, error) {

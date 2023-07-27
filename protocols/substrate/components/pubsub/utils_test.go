@@ -7,10 +7,10 @@ import (
 
 	"github.com/taubyte/go-interfaces/services/tns"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/websocket"
-	"github.com/taubyte/odo/protocols/substrate/components/structure"
-	"github.com/taubyte/odo/vm/cache"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/websocket"
+	"github.com/taubyte/tau/protocols/substrate/components/structure"
+	"github.com/taubyte/tau/vm/cache"
 )
 
 func init() {

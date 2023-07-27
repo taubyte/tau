@@ -10,7 +10,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	iface "github.com/taubyte/go-interfaces/services/tns"
 	spec "github.com/taubyte/go-specs/common"
-	p2p "github.com/taubyte/odo/clients/p2p/tns"
+	p2p "github.com/taubyte/tau/clients/p2p/tns"
 )
 
 var _ iface.Client = &p2p.Client{}

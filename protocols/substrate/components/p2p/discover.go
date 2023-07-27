@@ -6,7 +6,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/discovery"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p/common"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
 )
 
 func (s *Service) Discover(ctx context.Context, max int, timeout time.Duration) ([]peer.AddrInfo, error) {

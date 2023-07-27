@@ -12,8 +12,8 @@ import (
 	"github.com/taubyte/go-specs/extract"
 	messagingSpec "github.com/taubyte/go-specs/messaging"
 	service "github.com/taubyte/http"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
 	p2p "github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
 var subs *subsViewer

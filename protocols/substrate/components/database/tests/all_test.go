@@ -18,11 +18,11 @@ import (
 	db "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	_ "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/pkgs/kvdb"
-	_ "github.com/taubyte/odo/protocols/substrate"
-	service "github.com/taubyte/odo/protocols/substrate/components/database"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns"
+	"github.com/taubyte/tau/pkgs/kvdb"
+	_ "github.com/taubyte/tau/protocols/substrate"
+	service "github.com/taubyte/tau/protocols/substrate/components/database"
+	_ "github.com/taubyte/tau/protocols/tns"
 	"gotest.tools/v3/assert"
 )
 

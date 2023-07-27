@@ -7,15 +7,15 @@ import (
 
 	"github.com/mitchellh/mapstructure"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p/common"
-	counter "github.com/taubyte/odo/vm/counter"
-	"github.com/taubyte/odo/vm/lookup"
 	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	ce "github.com/taubyte/p2p/streams/command/error"
 	"github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/p2p/streams/command/router"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
+	counter "github.com/taubyte/tau/vm/counter"
+	"github.com/taubyte/tau/vm/lookup"
 )
 
 type commandService struct {

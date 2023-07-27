@@ -7,7 +7,7 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p/service"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p/service"
 )
 
 func New(srv iface.Service, ctx context.Context, config *structureSpec.Service, serviceApplication string, matcher *iface.MatchDefinition) (iface.Stream, error) {

@@ -21,11 +21,11 @@ import (
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	projectLib "github.com/taubyte/go-project-schema/project"
-	_ "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/pkgs/kvdb"
-	_ "github.com/taubyte/odo/protocols/substrate"
-	storages "github.com/taubyte/odo/protocols/substrate/components/storage"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns"
+	"github.com/taubyte/tau/pkgs/kvdb"
+	_ "github.com/taubyte/tau/protocols/substrate"
+	storages "github.com/taubyte/tau/protocols/substrate/components/storage"
+	_ "github.com/taubyte/tau/protocols/tns"
 
 	_ "embed"
 )

@@ -17,7 +17,7 @@ import (
 	"github.com/taubyte/go-specs/methods"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	http "github.com/taubyte/http"
-	"github.com/taubyte/odo/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"go4.org/readerutil"
 )
 

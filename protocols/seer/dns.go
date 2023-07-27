@@ -12,7 +12,7 @@ import (
 	validate "github.com/taubyte/domain-validation"
 	"github.com/taubyte/go-interfaces/services/tns"
 	domainSpecs "github.com/taubyte/go-specs/domain"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/miekg/dns"

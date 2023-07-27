@@ -9,7 +9,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func (p *PatrickService) ReannounceJobs(ctx context.Context) error {

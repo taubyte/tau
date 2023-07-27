@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
-	git "github.com/taubyte/odo/clients/http/auth/git"
+	git "github.com/taubyte/tau/clients/http/auth/git"
 )
 
 // New returns a new Client based on the options provided and an error

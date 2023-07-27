@@ -3,10 +3,10 @@ package tns
 import (
 	"github.com/taubyte/go-interfaces/kvdb"
 	iface "github.com/taubyte/go-interfaces/services/tns"
-	"github.com/taubyte/odo/config"
-	"github.com/taubyte/odo/protocols/tns/engine"
 	"github.com/taubyte/p2p/peer"
 	streams "github.com/taubyte/p2p/streams/service"
+	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/protocols/tns/engine"
 )
 
 var _ iface.Service = &Service{}

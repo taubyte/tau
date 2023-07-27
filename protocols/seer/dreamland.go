@@ -9,7 +9,7 @@ import (
 	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	iface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/seer"
-	odoConfig "github.com/taubyte/odo/config"
+	odoConfig "github.com/taubyte/tau/config"
 )
 
 func init() {

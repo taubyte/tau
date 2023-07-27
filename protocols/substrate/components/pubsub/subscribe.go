@@ -5,9 +5,9 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/websocket"
-	counter "github.com/taubyte/odo/vm/counter"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/websocket"
+	counter "github.com/taubyte/tau/vm/counter"
 )
 
 type handleType int

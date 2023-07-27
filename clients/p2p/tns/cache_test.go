@@ -8,8 +8,8 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
-	p2p "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/clients/p2p/tns/common"
+	p2p "github.com/taubyte/tau/clients/p2p/tns"
+	"github.com/taubyte/tau/clients/p2p/tns/common"
 )
 
 func TestCache(t *testing.T) {

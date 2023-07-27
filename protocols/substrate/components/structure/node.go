@@ -8,8 +8,8 @@ import (
 	"github.com/taubyte/go-interfaces/vm"
 	http "github.com/taubyte/http"
 	httpMock "github.com/taubyte/http/mocks"
-	"github.com/taubyte/odo/protocols/substrate/components/counters"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/protocols/substrate/components/counters"
 )
 
 var _ substrate.Service = &NodeService{}

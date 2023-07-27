@@ -7,8 +7,8 @@ import (
 	commonTest "github.com/taubyte/dreamland/helpers"
 	"gotest.tools/assert"
 
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func TestRunWebsiteBasic(t *testing.T) {

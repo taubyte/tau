@@ -7,10 +7,10 @@ import (
 
 	"github.com/ipfs/go-cid"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p/common"
 	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/p2p/streams/command/response"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
 )
 
 type Command struct {

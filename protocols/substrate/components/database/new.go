@@ -6,7 +6,7 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
-	globalStream "github.com/taubyte/odo/protocols/substrate/components/database/globals/p2p/stream"
+	globalStream "github.com/taubyte/tau/protocols/substrate/components/database/globals/p2p/stream"
 )
 
 func New(srv nodeIface.Service, factory kvdb.Factory) (service *Service, err error) {

@@ -6,9 +6,9 @@ import (
 
 	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/taubyte/odo/config"
-	"github.com/taubyte/odo/utils"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/utils"
 )
 
 func createP2PNodes(ctx context.Context, databasePath, shape string, conf *config.Protocol) error {

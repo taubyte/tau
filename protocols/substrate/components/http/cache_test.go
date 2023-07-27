@@ -5,7 +5,7 @@ import (
 	"time"
 
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 )
 
 // TODO: Revisit cache clearing

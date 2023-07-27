@@ -6,8 +6,8 @@ import (
 
 	_ "github.com/taubyte/config-compiler/fixtures"
 	dreamland "github.com/taubyte/dreamland/core/services"
-	_ "github.com/taubyte/odo/clients/p2p/tns"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func ExampleClient() {

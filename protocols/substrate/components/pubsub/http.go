@@ -3,8 +3,8 @@ package pubsub
 import (
 	"github.com/gorilla/websocket"
 	service "github.com/taubyte/http"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
-	_websocket "github.com/taubyte/odo/protocols/substrate/components/pubsub/websocket"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
+	_websocket "github.com/taubyte/tau/protocols/substrate/components/pubsub/websocket"
 )
 
 func (s *Service) attach() {

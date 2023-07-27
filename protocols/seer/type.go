@@ -13,7 +13,7 @@ import (
 
 	tnsClient "github.com/taubyte/go-interfaces/services/tns"
 	http "github.com/taubyte/http"
-	"github.com/taubyte/odo/config"
+	"github.com/taubyte/tau/config"
 )
 
 type Data map[string]interface{}

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	iface "github.com/taubyte/go-interfaces/services/seer"
-	"github.com/taubyte/odo/config"
+	"github.com/taubyte/tau/config"
 )
 
 func (srv *oracleService) insertService(id string, service iface.ServiceInfo) error {

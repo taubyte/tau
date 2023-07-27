@@ -5,7 +5,7 @@ import (
 
 	"github.com/taubyte/go-interfaces/services/substrate/smartops"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p/service"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p/service"
 )
 
 var _ smartops.EventCaller = &Function{}

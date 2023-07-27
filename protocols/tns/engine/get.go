@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/odo/protocols/tns/flat"
+	"github.com/taubyte/tau/protocols/tns/flat"
 )
 
 func (e *Engine) match(ctx context.Context, path ...string) ([]string, error) {

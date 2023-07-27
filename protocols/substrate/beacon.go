@@ -7,9 +7,9 @@ import (
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
-	seerClient "github.com/taubyte/odo/clients/p2p/seer"
-	"github.com/taubyte/odo/config"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p/common"
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
+	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
 )
 
 type serviceBeacon struct {

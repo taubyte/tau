@@ -3,15 +3,15 @@ package substrate
 import (
 	"fmt"
 
-	"github.com/taubyte/odo/config"
-	counters "github.com/taubyte/odo/protocols/substrate/components/counters"
-	database "github.com/taubyte/odo/protocols/substrate/components/database"
-	http "github.com/taubyte/odo/protocols/substrate/components/http"
-	ipfs "github.com/taubyte/odo/protocols/substrate/components/ipfs"
-	p2p "github.com/taubyte/odo/protocols/substrate/components/p2p"
-	pubSub "github.com/taubyte/odo/protocols/substrate/components/pubsub"
-	smartOps "github.com/taubyte/odo/protocols/substrate/components/smartops"
-	storage "github.com/taubyte/odo/protocols/substrate/components/storage"
+	"github.com/taubyte/tau/config"
+	counters "github.com/taubyte/tau/protocols/substrate/components/counters"
+	database "github.com/taubyte/tau/protocols/substrate/components/database"
+	http "github.com/taubyte/tau/protocols/substrate/components/http"
+	ipfs "github.com/taubyte/tau/protocols/substrate/components/ipfs"
+	p2p "github.com/taubyte/tau/protocols/substrate/components/p2p"
+	pubSub "github.com/taubyte/tau/protocols/substrate/components/pubsub"
+	smartOps "github.com/taubyte/tau/protocols/substrate/components/smartops"
+	storage "github.com/taubyte/tau/protocols/substrate/components/storage"
 )
 
 func attachNodesError(name string, err error) error {

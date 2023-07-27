@@ -7,8 +7,8 @@ import (
 	"time"
 
 	iface "github.com/taubyte/go-interfaces/services/seer"
-	"github.com/taubyte/odo/clients/p2p/seer/usage"
 	"github.com/taubyte/p2p/streams/command/response"
+	"github.com/taubyte/tau/clients/p2p/seer/usage"
 )
 
 var (

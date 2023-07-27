@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
-	"github.com/taubyte/odo/protocols/substrate/components/structure"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/structure"
 )
 
 func TestLookup(t *testing.T) {

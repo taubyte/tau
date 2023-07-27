@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
-	_ "github.com/taubyte/odo/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns"
 )
 
 func TestDreamlandDoubleClient(t *testing.T) {

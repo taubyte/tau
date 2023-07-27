@@ -7,7 +7,7 @@ import (
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func TestTimeout(t *testing.T) {

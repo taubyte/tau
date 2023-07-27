@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/odo/clients/http/auth/git/common"
+	"github.com/taubyte/tau/clients/http/auth/git/common"
 )
 
 // GetProjectById returns the project with the given id and an error

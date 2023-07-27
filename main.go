@@ -4,7 +4,7 @@ import (
 	"log"
 	"os"
 
-	cli "github.com/taubyte/odo/cli/app"
+	cli "github.com/taubyte/tau/cli/app"
 )
 
 func main() {

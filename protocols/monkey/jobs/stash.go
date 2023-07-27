@@ -6,7 +6,7 @@ import (
 	"io"
 	"time"
 
-	hoarderClient "github.com/taubyte/odo/clients/p2p/hoarder"
+	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 )
 
 func (c Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {

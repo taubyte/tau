@@ -8,8 +8,8 @@ import (
 	"github.com/pterm/pterm"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
-	tns "github.com/taubyte/odo/clients/p2p/tns"
-	"github.com/taubyte/odo/protocols/monkey/jobs"
+	tns "github.com/taubyte/tau/clients/p2p/tns"
+	"github.com/taubyte/tau/protocols/monkey/jobs"
 )
 
 func (ctx resourceContext) stashAndPush(id string, file io.ReadSeekCloser) error {

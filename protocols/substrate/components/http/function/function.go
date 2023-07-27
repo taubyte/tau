@@ -11,7 +11,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	plugins "github.com/taubyte/vm-core-plugins/taubyte"
 )
 

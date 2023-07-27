@@ -11,7 +11,7 @@ import (
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/http/helpers"
-	"github.com/taubyte/odo/protocols/auth/acme/store"
+	"github.com/taubyte/tau/protocols/auth/acme/store"
 )
 
 var testDir = "testdir"

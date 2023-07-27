@@ -13,15 +13,15 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
-	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
-	service "github.com/taubyte/odo/protocols/patrick"
 	"github.com/taubyte/p2p/peer"
+	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
+	service "github.com/taubyte/tau/protocols/patrick"
 
-	_ "github.com/taubyte/odo/clients/p2p/monkey"
-	_ "github.com/taubyte/odo/protocols/auth"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/clients/p2p/monkey"
+	_ "github.com/taubyte/tau/protocols/auth"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func TestRunWasmRetry(t *testing.T) {

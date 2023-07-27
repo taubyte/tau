@@ -13,9 +13,9 @@ import (
 	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
-	_ "github.com/taubyte/odo/protocols/auth"
+	_ "github.com/taubyte/tau/protocols/auth"
 )
 
 func TestPatrick(t *testing.T) {

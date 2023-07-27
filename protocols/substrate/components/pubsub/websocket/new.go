@@ -4,7 +4,7 @@ import (
 	"context"
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
-	"github.com/taubyte/odo/protocols/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
 func New(srv common.LocalService, mmi common.MessagingMapItem, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {

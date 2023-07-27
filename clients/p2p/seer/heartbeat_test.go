@@ -8,10 +8,10 @@ import (
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	seerClient "github.com/taubyte/odo/clients/p2p/seer"
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 
-	_ "github.com/taubyte/odo/protocols/seer"
-	_ "github.com/taubyte/odo/protocols/substrate"
+	_ "github.com/taubyte/tau/protocols/seer"
+	_ "github.com/taubyte/tau/protocols/substrate"
 )
 
 func TestHeartBeat(t *testing.T) {

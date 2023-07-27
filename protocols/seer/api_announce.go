@@ -6,10 +6,10 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/go-interfaces/services/seer"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
 	"github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	cr "github.com/taubyte/p2p/streams/command/response"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func parseServicefromBody(body command.Body) (seer.Services, error) {

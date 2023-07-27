@@ -8,18 +8,18 @@ import (
 	"github.com/ipfs/go-log/v2"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	ci "github.com/taubyte/go-simple-container/gc"
-	tnsClient "github.com/taubyte/odo/clients/p2p/tns"
+	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
-	seerClient "github.com/taubyte/odo/clients/p2p/seer"
-	odoConfig "github.com/taubyte/odo/config"
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
+	odoConfig "github.com/taubyte/tau/config"
 
-	"github.com/taubyte/odo/protocols/common"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
 	streams "github.com/taubyte/p2p/streams/service"
+	"github.com/taubyte/tau/protocols/common"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 var logger = log.Logger("monkey.service")

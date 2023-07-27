@@ -6,8 +6,8 @@ import (
 	"path"
 	"time"
 
-	"github.com/taubyte/odo/utils"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/utils"
 )
 
 var WaitForSwamDuration = 10 * time.Second

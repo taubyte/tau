@@ -16,14 +16,14 @@ import (
 	commonTest "github.com/taubyte/dreamland/helpers"
 	gitTest "github.com/taubyte/dreamland/helpers/git"
 	projectLib "github.com/taubyte/go-project-schema/project"
-	protocolCommon "github.com/taubyte/odo/protocols/common"
-	"github.com/taubyte/odo/protocols/monkey"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
+	"github.com/taubyte/tau/protocols/monkey"
 
-	_ "github.com/taubyte/odo/clients/p2p/monkey"
-	_ "github.com/taubyte/odo/clients/p2p/tns"
-	_ "github.com/taubyte/odo/protocols/auth"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/clients/p2p/monkey"
+	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/protocols/auth"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/tns"
 
 	"testing"
 )

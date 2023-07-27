@@ -7,7 +7,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/multiformats/go-multiaddr"
 	"github.com/taubyte/go-interfaces/services/seer"
-	"github.com/taubyte/odo/config"
+	"github.com/taubyte/tau/config"
 )
 
 type seerBeaconConfig struct {

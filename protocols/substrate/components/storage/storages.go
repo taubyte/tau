@@ -6,7 +6,7 @@ import (
 
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/odo/protocols/substrate/components/storage/common"
+	"github.com/taubyte/tau/protocols/substrate/components/storage/common"
 )
 
 func (s *Service) Storages() map[string]storageIface.Storage {

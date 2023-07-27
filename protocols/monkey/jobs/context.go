@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	protocolCommon "github.com/taubyte/odo/protocols/common"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 // Used in tests for setting the unexported contexts

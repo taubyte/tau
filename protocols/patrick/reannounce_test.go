@@ -9,9 +9,9 @@ import (
 	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
 
-	_ "github.com/taubyte/odo/clients/p2p/monkey"
-	_ "github.com/taubyte/odo/clients/p2p/patrick"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	_ "github.com/taubyte/tau/clients/p2p/monkey"
+	_ "github.com/taubyte/tau/clients/p2p/patrick"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func TestReAnnounce(t *testing.T) {

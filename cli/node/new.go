@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/taubyte/odo/config"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/config"
 )
 
 func NewNode(ctx context.Context, config *config.Protocol, databaseName string) (peer.Node, error) {

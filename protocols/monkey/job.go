@@ -9,8 +9,8 @@ import (
 	compilerCommon "github.com/taubyte/config-compiler/common"
 	"github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/go-specs/methods"
-	authClient "github.com/taubyte/odo/clients/p2p/auth"
-	"github.com/taubyte/odo/protocols/monkey/jobs"
+	authClient "github.com/taubyte/tau/clients/p2p/auth"
+	"github.com/taubyte/tau/protocols/monkey/jobs"
 )
 
 func (m *Monkey) RunJob() (err error) {

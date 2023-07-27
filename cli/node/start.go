@@ -13,9 +13,9 @@ import (
 	"github.com/taubyte/go-interfaces/services"
 	commonSpecs "github.com/taubyte/go-specs/common"
 	httpService "github.com/taubyte/http"
-	"github.com/taubyte/odo/config"
-	auto "github.com/taubyte/odo/pkgs/http-auto"
-	"github.com/taubyte/odo/pkgs/kvdb"
+	"github.com/taubyte/tau/config"
+	auto "github.com/taubyte/tau/pkgs/http-auto"
+	"github.com/taubyte/tau/pkgs/kvdb"
 	slices "github.com/taubyte/utils/slices/string"
 )
 

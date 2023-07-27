@@ -4,9 +4,9 @@ import (
 	"context"
 
 	kv "github.com/taubyte/go-interfaces/kvdb"
-	"github.com/taubyte/odo/config"
 	"github.com/taubyte/p2p/peer"
 	streams "github.com/taubyte/p2p/streams/service"
+	"github.com/taubyte/tau/config"
 
 	http "github.com/taubyte/http"
 

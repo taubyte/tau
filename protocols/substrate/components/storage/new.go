@@ -4,8 +4,8 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
-	"github.com/taubyte/odo/protocols/substrate/components/storage/common"
-	"github.com/taubyte/odo/protocols/substrate/components/storage/storage"
+	"github.com/taubyte/tau/protocols/substrate/components/storage/common"
+	"github.com/taubyte/tau/protocols/substrate/components/storage/storage"
 )
 
 func New(srv nodeIface.Service, factory kvdb.Factory, options ...Option) (*Service, error) {

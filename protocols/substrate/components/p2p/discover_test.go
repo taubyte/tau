@@ -7,8 +7,8 @@ import (
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	_ "github.com/taubyte/odo/protocols/substrate"
-	"github.com/taubyte/odo/protocols/substrate/components/p2p"
+	_ "github.com/taubyte/tau/protocols/substrate"
+	"github.com/taubyte/tau/protocols/substrate/components/p2p"
 	"gotest.tools/assert"
 )
 

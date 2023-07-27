@@ -3,7 +3,7 @@ package seer
 import (
 	"github.com/fxamacker/cbor/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	protocolsCommon "github.com/taubyte/odo/protocols/common"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func (srv *Service) subscribe() error {

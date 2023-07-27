@@ -13,7 +13,7 @@ import (
 	storageSpec "github.com/taubyte/go-specs/storage"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	websiteSpec "github.com/taubyte/go-specs/website"
-	"github.com/taubyte/odo/clients/p2p/tns/structure"
+	"github.com/taubyte/tau/clients/p2p/tns/structure"
 )
 
 var FakeFetchMethod = func(tns.Path) (tns.Object, error) {

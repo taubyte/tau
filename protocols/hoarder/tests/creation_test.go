@@ -8,10 +8,10 @@ import (
 	commonDreamland "github.com/taubyte/dreamland/core/common"
 	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/seer"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/seer"
 
-	_ "github.com/taubyte/odo/clients/p2p/hoarder"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder"
 )
 
 func TestService(t *testing.T) {

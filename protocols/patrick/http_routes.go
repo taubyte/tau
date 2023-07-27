@@ -7,7 +7,7 @@ import (
 
 	http "github.com/taubyte/http"
 	httpAuth "github.com/taubyte/http/auth"
-	"github.com/taubyte/odo/protocols/auth/github"
+	"github.com/taubyte/tau/protocols/auth/github"
 )
 
 func (srv *PatrickService) setupGithubRoutes() {

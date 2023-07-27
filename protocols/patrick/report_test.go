@@ -9,14 +9,14 @@ import (
 	"github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
-	_ "github.com/taubyte/odo/protocols/auth"
+	_ "github.com/taubyte/tau/protocols/auth"
 
 	"github.com/taubyte/go-interfaces/services/patrick"
-	_ "github.com/taubyte/odo/clients/p2p/patrick"
-	_ "github.com/taubyte/odo/protocols/hoarder"
-	_ "github.com/taubyte/odo/protocols/monkey"
-	_ "github.com/taubyte/odo/protocols/seer"
-	_ "github.com/taubyte/odo/protocols/tns"
+	_ "github.com/taubyte/tau/clients/p2p/patrick"
+	_ "github.com/taubyte/tau/protocols/hoarder"
+	_ "github.com/taubyte/tau/protocols/monkey"
+	_ "github.com/taubyte/tau/protocols/seer"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func TestReportSsh(t *testing.T) {
