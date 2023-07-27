@@ -73,7 +73,7 @@ func Get(fixture string) (FixtureHandler, error) {
 		if !ok {
 			return nil, fmt.Errorf("fixture %s does not exist", fixture)
 		}
-		return nil, fmt.Errorf("fixture `%s` is nil, have you imported _ \"bitbucket.org/taubyte/%s\"", fixture, importRequired.ImportRef)
+		return nil, fmt.Errorf("fixture `%s` is nil, have you imported _ \"github.com/taubyte/%s\"", fixture, importRequired.ImportRef)
 	}
 	return fixtureHandler, nil
 }
