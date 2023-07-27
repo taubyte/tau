@@ -58,8 +58,8 @@ func (srv *Service) getGeoDistanceHTTPHandler(ctx http.Context) (interface{}, er
 }
 
 func (srv *Service) setupLocationHTTPRoutes() {
-	host := ""
-	if len(srv.hostUrl) > 0 {
+	var host string
+	if !srv.devMode && len(srv.hostUrl) > 0 {
 		host = "seer.tau." + srv.hostUrl
 	}
 

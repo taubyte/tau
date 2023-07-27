@@ -12,7 +12,7 @@ import (
 
 func (srv *PatrickService) setupGithubRoutes() {
 	var host string
-	if len(srv.hostUrl) > 0 {
+	if !srv.devMode && len(srv.hostUrl) > 0 {
 		host = "patrick.tau." + srv.hostUrl
 	}
 
@@ -39,8 +39,8 @@ func (srv *PatrickService) setupGithubRoutes() {
 }
 
 func (srv *PatrickService) setupJobRoutes() {
-	host := ""
-	if len(srv.hostUrl) > 0 {
+	var host string
+	if !srv.devMode && len(srv.hostUrl) > 0 {
 		host = "patrick.tau." + srv.hostUrl
 	}
 

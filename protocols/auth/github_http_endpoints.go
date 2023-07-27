@@ -218,8 +218,8 @@ func (srv *AuthService) getGitHubUserHTTPHandler(ctx http.Context) (interface{},
 }
 
 func (srv *AuthService) setupGitHubHTTPRoutes() {
-	host := ""
-	if len(srv.hostUrl) > 0 {
+	var host string
+	if !srv.devMode && len(srv.hostUrl) > 0 {
 		host = "auth.tau." + srv.hostUrl
 	}
 

@@ -8,8 +8,8 @@ import (
 )
 
 func (srv *Service) setupDnsHTTPRoutes() {
-	host := ""
-	if len(srv.hostUrl) > 0 {
+	var host string
+	if !srv.devMode && len(srv.hostUrl) > 0 {
 		host = "seer.tau." + srv.hostUrl
 	}
 

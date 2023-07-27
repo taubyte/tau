@@ -50,8 +50,8 @@ func (srv *AuthService) tokenDomainHTTPHandler(ctx http.Context) (interface{}, e
 }
 
 func (srv *AuthService) setupDomainsHTTPRoutes() {
-	host := ""
-	if len(srv.hostUrl) > 0 {
+	var host string
+	if !srv.devMode && len(srv.hostUrl) > 0 {
 		host = "auth.tau." + srv.hostUrl
 	}
 
