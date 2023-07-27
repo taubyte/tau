@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	iface "github.com/taubyte/go-interfaces/common"
 	odoConfig "github.com/taubyte/tau/config"
+	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 )
 

@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/dreamland/core/common"
-	commonTest "github.com/taubyte/dreamland/helpers"
+	"github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
 
-	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	"github.com/taubyte/go-interfaces/services/tns"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
+	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
 	_ "github.com/taubyte/tau/protocols/auth"

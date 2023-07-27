@@ -4,10 +4,10 @@ import (
 	"strconv"
 	"testing"
 
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
-	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
+	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	_ "github.com/taubyte/tau/protocols/auth"
 	"github.com/taubyte/tau/protocols/auth/hooks"
 	"github.com/taubyte/tau/protocols/auth/repositories"

@@ -5,8 +5,8 @@ import (
 	"sort"
 
 	_ "github.com/taubyte/config-compiler/fixtures"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	_ "github.com/taubyte/tau/protocols/tns"
 )
 

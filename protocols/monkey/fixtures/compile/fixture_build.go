@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/taubyte/dreamland/core/common"
-	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	spec "github.com/taubyte/go-specs/common"
+	"github.com/taubyte/tau/libdream/common"
+	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 )
 
 func init() {

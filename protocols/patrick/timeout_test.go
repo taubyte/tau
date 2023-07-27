@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
+	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 

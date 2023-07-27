@@ -9,16 +9,16 @@ import (
 
 	"github.com/taubyte/config-compiler/compile"
 	"github.com/taubyte/config-compiler/decompile"
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
-	commonTest "github.com/taubyte/dreamland/helpers"
-	gitTest "github.com/taubyte/dreamland/helpers/git"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	db "github.com/taubyte/go-interfaces/services/substrate/components/database"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	gitTest "github.com/taubyte/tau/libdream/helpers/git"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	"github.com/taubyte/tau/pkgs/kvdb"
 	_ "github.com/taubyte/tau/protocols/substrate"
 	service "github.com/taubyte/tau/protocols/substrate/components/database"
@@ -56,14 +56,9 @@ func TestAll(t *testing.T) {
 	meta.HeadCommit.ID = "commitID"
 	meta.Repository.Provider = "github"
 
-	err := dreamland.BigBang()
-	if err != nil {
-		panic(err)
-	}
-
 	u := dreamland.Multiverse("blackhole")
 	defer u.Stop()
-	err = u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
 			"substrate": {},

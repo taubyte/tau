@@ -9,14 +9,14 @@ import (
 
 	"github.com/ipfs/go-datastore"
 	"github.com/taubyte/config-compiler/compile"
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
-	commonTest "github.com/taubyte/dreamland/helpers"
-	gitTest "github.com/taubyte/dreamland/helpers/git"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/go-interfaces/services/substrate/components/database"
 	"github.com/taubyte/go-interfaces/services/substrate/components/storage"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	gitTest "github.com/taubyte/tau/libdream/helpers/git"
+	dreamland "github.com/taubyte/tau/libdream/services"
 
 	projectLib "github.com/taubyte/go-project-schema/project"
 	_ "github.com/taubyte/tau/clients/p2p/hoarder"

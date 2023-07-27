@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
-	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
 	"github.com/taubyte/p2p/peer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	service "github.com/taubyte/tau/protocols/patrick"
 
 	_ "github.com/taubyte/tau/clients/p2p/monkey"

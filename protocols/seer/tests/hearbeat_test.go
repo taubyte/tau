@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"gotest.tools/v3/assert"
 )

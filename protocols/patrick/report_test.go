@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	"github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	"github.com/taubyte/tau/libdream/services"
 	_ "github.com/taubyte/tau/protocols/auth"
 
 	"github.com/taubyte/go-interfaces/services/patrick"

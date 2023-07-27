@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
-	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
+	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
 	_ "github.com/taubyte/tau/protocols/auth"

@@ -9,9 +9,6 @@ import (
 	"time"
 
 	compilerCommon "github.com/taubyte/config-compiler/common"
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
-	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/go-interfaces/services/tns"
@@ -19,6 +16,9 @@ import (
 	"github.com/taubyte/go-specs/methods"
 	"github.com/taubyte/p2p/peer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	dreamland "github.com/taubyte/tau/libdream/services"
 )
 
 func newTestContext(ctx context.Context, simple commonDreamland.Simple, logFile *os.File) testContext {

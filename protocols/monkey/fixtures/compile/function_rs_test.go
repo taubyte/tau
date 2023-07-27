@@ -6,10 +6,10 @@ import (
 	"testing"
 
 	"github.com/taubyte/config-compiler/decompile"
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	"github.com/taubyte/tau/protocols/monkey/fixtures/compile"
 )
 

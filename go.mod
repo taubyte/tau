@@ -2,12 +2,15 @@ module github.com/taubyte/tau
 
 go 1.19
 
+replace github.com/taubyte/config-compiler => /home/tafkhan/Documents/Work/Taubyte/Repos/config-compiler
+
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/foxcpp/go-mockdns v1.0.0
 	github.com/fxamacker/cbor/v2 v2.4.0
 	github.com/go-git/go-git/v5 v5.4.2
+	github.com/google/go-github v17.0.0+incompatible
 	github.com/google/go-github/v32 v32.1.0
 	github.com/gorilla/websocket v1.5.0
 	github.com/h2non/filetype v1.1.3
@@ -33,7 +36,6 @@ require (
 	github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29
 	github.com/taubyte/config-compiler v0.4.4
 	github.com/taubyte/domain-validation v1.0.0
-	github.com/taubyte/dreamland v0.4.6-pre
 	github.com/taubyte/go-interfaces v0.2.9
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.8
@@ -120,7 +122,6 @@ require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb // indirect
 	github.com/google/go-cmp v0.5.9 // indirect
-	github.com/google/go-github v17.0.0+incompatible // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/pprof v0.0.0-20230705174524-200ffdc848b8 // indirect

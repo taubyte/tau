@@ -5,11 +5,11 @@ import (
 	"fmt"
 
 	"github.com/foxcpp/go-mockdns"
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	iface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/seer"
 	odoConfig "github.com/taubyte/tau/config"
+	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 )
 
 func init() {

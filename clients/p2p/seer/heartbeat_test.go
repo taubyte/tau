@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream/services"
 
 	_ "github.com/taubyte/tau/protocols/seer"
 	_ "github.com/taubyte/tau/protocols/substrate"

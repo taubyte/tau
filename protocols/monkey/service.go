@@ -11,11 +11,11 @@ import (
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	odoConfig "github.com/taubyte/tau/config"
+	dreamlandCommon "github.com/taubyte/tau/libdream/common"
 
 	streams "github.com/taubyte/p2p/streams/service"
 	"github.com/taubyte/tau/protocols/common"

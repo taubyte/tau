@@ -7,15 +7,15 @@ import (
 	"time"
 
 	"github.com/taubyte/config-compiler/compile"
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/p2p/peer"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream/services"
 
-	commonTest "github.com/taubyte/dreamland/helpers"
-	gitTest "github.com/taubyte/dreamland/helpers/git"
 	projectLib "github.com/taubyte/go-project-schema/project"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	gitTest "github.com/taubyte/tau/libdream/helpers/git"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/tau/protocols/monkey"
 

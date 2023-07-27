@@ -3,8 +3,8 @@ package compile
 import (
 	"fmt"
 
-	"github.com/taubyte/dreamland/core/common"
 	git "github.com/taubyte/go-simple-git"
+	"github.com/taubyte/tau/libdream/common"
 )
 
 type resourceContext struct {

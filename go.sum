@@ -874,12 +874,8 @@ github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 h1:epCh84lMvA70
 github.com/tarm/serial v0.0.0-20180830185346-98f6abe2eb07/go.mod h1:kDXzergiv9cbyO7IOYJZWg1U88JhDg3PB6klq9Hg2pA=
 github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29 h1:3YjOrKOx3wSNqtSJz2dfJqmfgsAqd90JSzhD3QMWwbE=
 github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29/go.mod h1:McWLSLqcH2HnovV6uzeBb4EwceMaA5y/n0xCptkZuQM=
-github.com/taubyte/config-compiler v0.4.4 h1:/0XnrEc08wvzBCBigFjnyZjWfp4tF7IfCs+wLrIESM4=
-github.com/taubyte/config-compiler v0.4.4/go.mod h1:a2J00DWUx/MsagVg6+Z1cHq3u+XzMBbzZb199tl2Yx0=
 github.com/taubyte/domain-validation v1.0.0 h1:yUt6y7b/3PC9aocvl7s8cBKG4ieN35zQqVQIywGUg4o=
 github.com/taubyte/domain-validation v1.0.0/go.mod h1:/X3yd7sBjnE323rA8I9PiUt5+NlKU4I02nQik25Vqe8=
-github.com/taubyte/dreamland v0.4.6-pre h1:+F7PwavBvk2dB5SjPdW4TkRb9NqNnIo53jdAtrhqdm0=
-github.com/taubyte/dreamland v0.4.6-pre/go.mod h1:rsQ1tvt7eMSPoFvZmtN3xCyiNf2oPg/dnu7dJ1lTtok=
 github.com/taubyte/go-interfaces v0.2.9 h1:O3t3xuPMYc80TEzCJdMiQnJBy0yMj6Er0xh91eKHsOo=
 github.com/taubyte/go-interfaces v0.2.9/go.mod h1:ED75qRg7642RhL9SF12rtrvxPhxuUJVbAnaHIkUv92k=
 github.com/taubyte/go-project-schema v0.9.3 h1:2H0ClUZq7f97OgtL0FUe9tv2v12wOmnTAIiJGLei/gU=

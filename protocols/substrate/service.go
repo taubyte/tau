@@ -8,12 +8,12 @@ import (
 	"fmt"
 
 	"github.com/ipfs/go-log/v2"
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	nodeP2PIFace "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	odoConfig "github.com/taubyte/tau/config"
+	dreamlandCommon "github.com/taubyte/tau/libdream/common"
 	"github.com/taubyte/tau/pkgs/kvdb"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 

@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/taubyte/dreamland/core/common"
-	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
-	commonTest "github.com/taubyte/dreamland/helpers"
 	spec "github.com/taubyte/go-specs/common"
+	"github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/utils/maps"
 

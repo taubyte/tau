@@ -7,10 +7,10 @@ import (
 	"os"
 	"testing"
 
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/http/helpers"
+	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	"github.com/taubyte/tau/protocols/auth/acme/store"
 )
 

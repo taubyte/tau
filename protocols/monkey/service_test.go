@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/p2p/peer"
 	_ "github.com/taubyte/tau/clients/p2p/monkey"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 )

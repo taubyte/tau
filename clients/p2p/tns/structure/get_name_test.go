@@ -4,9 +4,9 @@ import (
 	"testing"
 
 	_ "github.com/taubyte/config-compiler/fixtures"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	_ "github.com/taubyte/tau/protocols/tns"
 )
 

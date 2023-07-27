@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/dreamland/core/common"
-	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
-	commonTest "github.com/taubyte/dreamland/helpers"
+	"github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
 	_ "github.com/taubyte/tau/protocols/auth"
