@@ -53,7 +53,7 @@ func (f *Function) Instantiate(ctx commonIface.FunctionContext, branch, commit s
 			)),
 	}
 
-	if f.srv.Dev() {
+	if f.srv.Verbose() {
 		config.Output = vm.Buffer
 	}
 

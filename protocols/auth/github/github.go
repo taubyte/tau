@@ -161,6 +161,7 @@ func (client *Client) ShortRepositoryInfo(id string) map[string]interface{} {
 	repoInfo["name"] = *(_repoInfo.Name)
 	repoInfo["fullname"] = *(_repoInfo.FullName)
 	repoInfo["url"] = *(_repoInfo.URL)
+	repoInfo["id"] = id
 
 	return repoInfo
 }

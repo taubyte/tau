@@ -42,7 +42,6 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 		protocolConfig.Root = dir
 		databasePath = protocolConfig.Shape
 	}
-	protocolConfig.Verbose = true
 
 	err := createP2PNodes(ctx, databasePath, protocolConfig.Shape, protocolConfig)
 	if err != nil {

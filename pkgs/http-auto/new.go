@@ -13,7 +13,6 @@ import (
 
 func NewAuto(ctx context.Context, node peer.Node, config *config.Protocol, ops ...options.Option) (http service.Service, err error) {
 	ops = append(ops, options.Listen(config.HttpListen))
-
 	if config.DevMode {
 		return devHttp(ctx, config.EnableHTTPS, ops...)
 	} else {
