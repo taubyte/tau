@@ -60,6 +60,7 @@ type Service struct {
 	caaRecordBypass *regexp.Regexp // TOOD: move this into go-specs
 	shape           string
 	odo             bool
+	devMode         bool
 }
 
 func (s *Service) Node() peer.Node {

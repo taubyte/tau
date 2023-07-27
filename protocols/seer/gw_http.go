@@ -127,8 +127,8 @@ func (srv *Service) downloadAsset(ctx http.Context) (interface{}, error) {
 }
 
 func (srv *Service) setupTNSGatewayHTTPRoutes() {
-	host := ""
-	if len(srv.hostUrl) > 0 {
+	var host string
+	if !srv.devMode && len(srv.hostUrl) > 0 {
 		host = "seer.tau." + srv.hostUrl
 	}
 

@@ -69,6 +69,7 @@ func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Ser
 		srv.odo = true
 	}
 
+	srv.devMode = config.DevMode
 	srv.dbFactory = config.Databases
 	if srv.dbFactory == nil {
 		srv.dbFactory = kvdb.New(srv.node)
