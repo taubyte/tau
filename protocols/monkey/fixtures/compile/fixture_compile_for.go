@@ -6,11 +6,11 @@ import (
 	"path"
 	"strings"
 
-	"github.com/taubyte/dreamland/core/common"
-	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	tauTemplates "github.com/taubyte/tau-cli/singletons/templates"
+	"github.com/taubyte/tau/libdream/common"
+	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 )
 
 func init() {

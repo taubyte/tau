@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
-	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
+	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	dreamland "github.com/taubyte/tau/libdream/services"
 
 	_ "github.com/taubyte/tau/clients/p2p/monkey"
 	_ "github.com/taubyte/tau/clients/p2p/patrick"

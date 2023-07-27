@@ -4,11 +4,11 @@ import (
 	"reflect"
 	"testing"
 
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	"github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	"github.com/taubyte/tau/libdream/services"
 )
 
 func TestDreamlandDoubleClient(t *testing.T) {

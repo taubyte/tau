@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/taubyte/dreamland/core/common"
+	"github.com/taubyte/tau/libdream/common"
 )
 
 var (

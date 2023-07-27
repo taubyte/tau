@@ -1,9 +1,9 @@
 package tns
 
 import (
-	dreamlandRegistry "github.com/taubyte/dreamland/core/registry"
 	"github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/p2p/peer"
+	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 )
 
 func init() {

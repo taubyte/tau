@@ -10,9 +10,9 @@ import (
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	"github.com/taubyte/tau/pkgs/kvdb"
 
-	dreamlandCommon "github.com/taubyte/dreamland/core/common"
 	commonSpec "github.com/taubyte/go-specs/common"
 	odoConfig "github.com/taubyte/tau/config"
+	dreamlandCommon "github.com/taubyte/tau/libdream/common"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/tau/protocols/tns/engine"
 )

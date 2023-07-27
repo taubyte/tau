@@ -8,18 +8,17 @@ import (
 
 	"github.com/taubyte/config-compiler/decompile"
 	_ "github.com/taubyte/config-compiler/fixtures"
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	"github.com/taubyte/tau/protocols/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/protocols/substrate"
 	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func TestWebsite(t *testing.T) {
-	dreamland.BigBang()
 	u := dreamland.MultiverseWithConfig(dreamland.UniverseConfig{
 		Name: "MonkeyFixtureTestWebsite",
 		Id:   "MonkeyFixtureTestWebsite",

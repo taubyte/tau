@@ -6,10 +6,10 @@ import (
 	"io"
 	"time"
 
-	commonDreamland "github.com/taubyte/dreamland/core/common"
 	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/p2p/peer"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
 )
 
 type MonkeyTestContext struct {

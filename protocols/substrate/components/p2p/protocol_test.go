@@ -5,11 +5,11 @@ import (
 	"reflect"
 	"testing"
 
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
 	"github.com/taubyte/tau/protocols/substrate/components/structure"
 )

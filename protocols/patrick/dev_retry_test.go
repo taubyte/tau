@@ -7,17 +7,16 @@ import (
 	"testing"
 	"time"
 
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
-	commonTest "github.com/taubyte/dreamland/helpers"
 	commonIface "github.com/taubyte/go-interfaces/common"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	commonTest "github.com/taubyte/tau/libdream/helpers"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	_ "github.com/taubyte/tau/protocols/substrate"
 )
 
 // TODO: Could shorten test doing a tns lookup or looking at patrick to see if jobs are done instead of sleep.
 func TestDevRetry(t *testing.T) {
 	t.Skip("Needs to be updated post code clone config for itself")
-	dreamland.BigBang()
 	u := dreamland.Multiverse("blackhole")
 	defer u.Stop()
 

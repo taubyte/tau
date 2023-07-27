@@ -4,12 +4,12 @@ import (
 	"testing"
 	"time"
 
-	commonDreamland "github.com/taubyte/dreamland/core/common"
-	dreamland "github.com/taubyte/dreamland/core/services"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
 	p2p "github.com/taubyte/tau/clients/p2p/tns"
 	"github.com/taubyte/tau/clients/p2p/tns/common"
+	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream/services"
 )
 
 func TestCache(t *testing.T) {
