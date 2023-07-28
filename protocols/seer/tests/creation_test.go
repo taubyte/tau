@@ -15,7 +15,7 @@ import (
 
 func TestService(t *testing.T) {
 	fake_location := iface.Location{Latitude: 32.91264411258042, Longitude: -96.8907727708027}
-	u := dreamland.Multiverse("seerService")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "seerService"})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{

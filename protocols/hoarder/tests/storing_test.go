@@ -43,7 +43,7 @@ var (
 )
 
 func TestStoring(t *testing.T) {
-	u := dreamland.Multiverse("TestStoring")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "TestStoring"})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{

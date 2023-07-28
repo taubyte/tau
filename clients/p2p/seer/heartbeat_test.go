@@ -21,7 +21,7 @@ func TestHeartBeat(t *testing.T) {
 		seerClient.DefaultUsageBeaconInterval = defaultInterval
 	}()
 
-	u := dreamland.Multiverse("TestHeartBeat")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "TestHeartBeat"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

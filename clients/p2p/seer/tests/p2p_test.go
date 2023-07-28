@@ -11,7 +11,7 @@ import (
 )
 
 func TestClient(t *testing.T) {
-	u := dreamland.Multiverse("seerClient")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "seerClient"})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{

@@ -12,7 +12,7 @@ import (
 )
 
 func TestFetch(t *testing.T) {
-	u := dreamland.Multiverse("TestFetch")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "TestFetch"})
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},

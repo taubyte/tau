@@ -16,7 +16,7 @@ var (
 // TODO: Revisit this test
 func TestPubsub(t *testing.T) {
 	t.Skip("this test needs to be redone")
-	u := dreamland.Multiverse("seerDNS_test")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "seerDNS_test"})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{

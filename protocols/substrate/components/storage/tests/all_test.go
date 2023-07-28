@@ -79,7 +79,7 @@ func TestAll(t *testing.T) {
 	meta.HeadCommit.ID = "commitID"
 	meta.Repository.Provider = "github"
 
-	u := dreamland.Multiverse("single")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "single"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{
