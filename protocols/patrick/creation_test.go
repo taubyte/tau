@@ -19,7 +19,7 @@ import (
 )
 
 func TestPatrick(t *testing.T) {
-	u := dreamland.Multiverse("testPatrick")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "testPatrick"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamlandCommon.Config{
