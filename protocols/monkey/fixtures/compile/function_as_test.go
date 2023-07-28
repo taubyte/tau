@@ -11,6 +11,7 @@ import (
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
 	commonDreamland "github.com/taubyte/tau/libdream/common"
+	_ "github.com/taubyte/tau/libdream/common/fixtures"
 	dreamland "github.com/taubyte/tau/libdream/services"
 	"github.com/taubyte/tau/protocols/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/protocols/seer"

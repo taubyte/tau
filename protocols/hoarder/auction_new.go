@@ -1,6 +1,7 @@
 package hoarder
 
 import (
+	"context"
 	"crypto/rand"
 	"fmt"
 	"time"
@@ -12,8 +13,8 @@ import (
 
 const maxWaitTime = 15 * time.Second
 
-func (srv *Service) auctionNew(auction *hoarderIface.Auction, msg *pubsub.Message) error {
-	srv.startAuction(auction)
+func (srv *Service) auctionNew(ctx context.Context, auction *hoarderIface.Auction, msg *pubsub.Message) error {
+	srv.startAuction(ctx, auction)
 
 	// Check if we have that actionId stored with the action
 	if found := srv.checkValidAction(auction.Meta.Match, hoarderIface.AuctionNew, msg.ReceivedFrom.Pretty()); !found {
@@ -28,7 +29,7 @@ func (srv *Service) auctionNew(auction *hoarderIface.Auction, msg *pubsub.Messag
 		num := *(*uint64)(unsafe.Pointer(&arr[0]))
 		auction.Lottery.Number = num
 
-		if err := srv.publishAction(srv.ctx, auction, hoarderIface.AuctionIntent); err != nil {
+		if err := srv.publishAction(ctx, auction, hoarderIface.AuctionIntent); err != nil {
 			return err
 		}
 	}
@@ -38,15 +39,15 @@ func (srv *Service) auctionNew(auction *hoarderIface.Auction, msg *pubsub.Messag
 	return nil
 }
 
-func (srv *Service) startAuction(action *hoarderIface.Auction) {
+func (srv *Service) startAuction(ctx context.Context, action *hoarderIface.Auction) {
 	// Start a countdown for the new action
 	go func() {
 		select {
-		case <-srv.ctx.Done():
+		case <-ctx.Done():
 			return
 
 		case <-time.After(maxWaitTime):
-			if err := srv.publishAction(srv.ctx, action, hoarderIface.AuctionEnd); err != nil {
+			if err := srv.publishAction(ctx, action, hoarderIface.AuctionEnd); err != nil {
 				logger.Error("action publish failed with:", err.Error())
 			}
 		}

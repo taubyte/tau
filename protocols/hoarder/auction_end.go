@@ -1,13 +1,14 @@
 package hoarder
 
 import (
+	"context"
 	"errors"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 )
 
-func (srv *Service) auctionEnd(auction *hoarderIface.Auction, msg *pubsub.Message) error {
+func (srv *Service) auctionEnd(ctx context.Context, auction *hoarderIface.Auction, msg *pubsub.Message) error {
 	var winner *hoarderIface.Auction
 	var currentBiggest uint64
 	for _, lottery := range srv.lotteryPool[auction.Meta.ConfigId+auction.Meta.Match] {
@@ -23,7 +24,7 @@ func (srv *Service) auctionEnd(auction *hoarderIface.Auction, msg *pubsub.Messag
 
 	// Self evaluate to check if we won or not
 	if winner.Lottery.HoarderId == srv.node.Peer().ID().Pretty() {
-		err := srv.storeAuction(auction)
+		err := srv.storeAuction(ctx, auction)
 		if err != nil {
 			return err
 		}

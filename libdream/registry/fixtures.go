@@ -127,8 +127,8 @@ var FixtureMap = map[string]FixtureDefinition{
 			},
 		},
 	},
-	"fakeProject":   {Description: "Pushes the internal project to tns", ImportRef: "dreamland/fixtures"},
-	"injectProject": {Description: "Pass in a *projectSchema.Project to inject it into tns", ImportRef: "dreamland/fixtures", BlockCLI: true},
+	"fakeProject":   {Description: "Pushes the internal project to tns", ImportRef: "tau/libdream/common/fixtures"},
+	"injectProject": {Description: "Pass in a *projectSchema.Project to inject it into tns", ImportRef: "tau/libdream/common/fixtures", BlockCLI: true},
 	"compileFor": {
 		Description: "pushes specific repos",
 		ImportRef:   "monkey/fixtures/compile",

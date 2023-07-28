@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
-	pebble "github.com/ipfs/go-ds-pebble"
 	"github.com/ipfs/go-log/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
@@ -15,7 +14,7 @@ import (
 	seer_client "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
-	"github.com/taubyte/tau/protocols/common"
+	"github.com/taubyte/tau/pkgs/kvdb"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
@@ -25,8 +24,6 @@ var (
 
 func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
 	var srv Service
-	srv.ctx = ctx
-
 	if config == nil {
 		config = &tauConfig.Protocol{}
 	}
@@ -60,12 +57,18 @@ func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
 		return nil, fmt.Errorf("new streams failed with: %s", err)
 	}
 
-	if srv.store, err = pebble.NewDatastore(config.Root, nil); err != nil {
-		return nil, fmt.Errorf("creating pebble datastore failed with: %s", err)
+	srv.dbFactory = config.Databases
+	if srv.dbFactory == nil {
+		srv.dbFactory = kvdb.New(srv.node)
+	}
+
+	srv.db, err = srv.dbFactory.New(logger, protocolCommon.Auth, 5)
+	if err != nil {
+		return nil, err
 	}
 
 	srv.setupStreamRoutes()
-	if err = srv.subscribe(); err != nil {
+	if err = srv.subscribe(ctx); err != nil {
 		return nil, fmt.Errorf("subscribe failed with: %s", err)
 	}
 
@@ -78,7 +81,7 @@ func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
 		return nil, fmt.Errorf("new seer client failed with: %s", err)
 	}
 
-	if err = common.StartSeerBeacon(config, sc, seerIface.ServiceTypeHoarder); err != nil {
+	if err = protocolCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeHoarder); err != nil {
 		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
 
@@ -88,19 +91,15 @@ func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
 func (srv *Service) Close() error {
 	logger.Info("Closing", protocolCommon.Hoarder)
 	defer logger.Info(protocolCommon.Hoarder, "closed")
-
 	srv.stream.Stop()
 	srv.tnsClient.Close()
-
-	if srv.store != nil {
-		srv.store.Close()
-	}
+	srv.db.Close()
 
 	return nil
 }
 
 // This only handles incoming new request for orders
-func (srv *Service) subscribe() error {
+func (srv *Service) subscribe(ctx context.Context) error {
 	return srv.node.PubSubSubscribe(
 		hoarderSpecs.PubSubIdent,
 		func(msg *pubsub.Message) {
@@ -117,11 +116,11 @@ func (srv *Service) subscribe() error {
 
 			switch auction.Type {
 			case hoarderIface.AuctionNew:
-				err = srv.auctionNew(auction, msg)
+				err = srv.auctionNew(ctx, auction, msg)
 			case hoarderIface.AuctionIntent:
 				err = srv.auctionIntent(auction, msg)
 			case hoarderIface.AuctionEnd:
-				err = srv.auctionEnd(auction, msg)
+				err = srv.auctionEnd(ctx, auction, msg)
 			}
 
 			if err != nil {
@@ -134,7 +133,7 @@ func (srv *Service) subscribe() error {
 			if err.Error() != "context canceled" {
 				logger.Error("Subscription had an error:", err.Error())
 
-				if err := srv.subscribe(); err != nil {
+				if err := srv.subscribe(ctx); err != nil {
 					logger.Error("resubscribe failed with:", err.Error())
 				}
 			}

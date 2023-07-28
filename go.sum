@@ -878,8 +878,6 @@ github.com/taubyte/config-compiler v0.4.5 h1:s7f6Jb/sJgC6C4ZIHOvctMgmXjz/Q58FnLc
 github.com/taubyte/config-compiler v0.4.5/go.mod h1:gaohk1BSknIudo16QSgeQqVWVGLyusPPdLn+wQ+xAmY=
 github.com/taubyte/domain-validation v1.0.0 h1:yUt6y7b/3PC9aocvl7s8cBKG4ieN35zQqVQIywGUg4o=
 github.com/taubyte/domain-validation v1.0.0/go.mod h1:/X3yd7sBjnE323rA8I9PiUt5+NlKU4I02nQik25Vqe8=
-github.com/taubyte/go-interfaces v0.2.9 h1:O3t3xuPMYc80TEzCJdMiQnJBy0yMj6Er0xh91eKHsOo=
-github.com/taubyte/go-interfaces v0.2.9/go.mod h1:ED75qRg7642RhL9SF12rtrvxPhxuUJVbAnaHIkUv92k=
 github.com/taubyte/go-project-schema v0.9.3 h1:2H0ClUZq7f97OgtL0FUe9tv2v12wOmnTAIiJGLei/gU=
 github.com/taubyte/go-project-schema v0.9.3/go.mod h1:8Rt5zsVfj8qbYCT+7++oax/nFVKvVfAepzVkqXrNTs8=
 github.com/taubyte/go-sdk v0.3.8 h1:RIg7N+ccIwTwqPopRMCrKgGhVigN1tPTCi1JG/mm4fg=

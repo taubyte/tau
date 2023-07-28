@@ -3,7 +3,7 @@ package cache
 import (
 	"bytes"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"sync"
 )
@@ -77,7 +77,7 @@ func ParallelGetWithBodyCheck(iterations int, toTest ...GetTester) error {
 
 					if passingResponse := _tester.PassingResponse; passingResponse != nil {
 						if body := passingResponse.Body; body != nil {
-							_body, err := ioutil.ReadAll(res.Body)
+							_body, err := io.ReadAll(res.Body)
 							if err != nil {
 								errChan <- err
 								return
@@ -96,7 +96,7 @@ func ParallelGetWithBodyCheck(iterations int, toTest ...GetTester) error {
 
 					if failingResponse := _tester.FailingResponse; failingResponse != nil {
 						if body := failingResponse.Body; body != nil {
-							_body, err := ioutil.ReadAll(res.Body)
+							_body, err := io.ReadAll(res.Body)
 							if err != nil {
 								errChan <- err
 								return

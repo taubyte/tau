@@ -3,7 +3,6 @@ package auth_test
 import (
 	"bytes"
 	"encoding/pem"
-	"fmt"
 	"os"
 	"testing"
 
@@ -85,7 +84,6 @@ func TestInject(t *testing.T) {
 
 	// Shoud Fail
 	_, err = newStore.Get(u.Context(), "test.fail.com")
-	fmt.Println("ERR ", err)
 	if err == nil {
 		t.Error("Expected error")
 		return

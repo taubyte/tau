@@ -21,6 +21,7 @@ Then run this test
 var testIterations = 1000
 
 func TestParallelismBasic(t *testing.T) {
+	t.Skip("need to run as a dreamland test")
 	err := ParallelGetWithBodyCheck(
 		testIterations,
 		GetTester{Url: "http://hal.computers.com:9630", FailingResponse: &ResponseCheck{Body: []byte("pong")}},
@@ -33,6 +34,7 @@ func TestParallelismBasic(t *testing.T) {
 }
 
 func TestParallelismWeb(t *testing.T) {
+	t.Skip("need to run as a dreamland test")
 	now := time.Now()
 	err := ParallelGetWithBodyCheck(testIterations, GetTester{Url: "http://hal.computers.com:9630", FailingResponse: &ResponseCheck{Body: []byte("pong")}})
 	if err != nil {
@@ -44,6 +46,7 @@ func TestParallelismWeb(t *testing.T) {
 }
 
 func TestParallelismFunc(t *testing.T) {
+	t.Skip("need to run as a dreamland test")
 	now := time.Now()
 	err := ParallelGetWithBodyCheck(testIterations, GetTester{Url: "http://hal.computers.com:9630/ping", PassingResponse: &ResponseCheck{Body: []byte("pong")}})
 	if err != nil {

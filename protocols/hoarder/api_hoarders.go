@@ -7,7 +7,6 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-datastore"
-	"github.com/ipfs/go-datastore/query"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
 	"github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
@@ -30,29 +29,24 @@ func (srv *Service) ServiceHandler(ctx context.Context, conn streams.Connection,
 	case "stash":
 		return srv.stashHandler(ctx, cid)
 	case "rare":
-		return srv.rareHandler()
+		return srv.rareHandler(ctx)
 	case "list":
-		return srv.listHandler()
+		return srv.listHandler(ctx)
 	}
 
 	return nil, fmt.Errorf("action %s unknown", action)
 }
 
-func (srv *Service) listHandler() (cr.Response, error) {
+func (srv *Service) listHandler(ctx context.Context) (cr.Response, error) {
 	cids := make([]string, 0)
-	_result, err := srv.store.Query(srv.ctx, query.Query{Prefix: hoarderSpecs.StashPath})
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := _result.Rest()
+	entries, err := srv.db.List(ctx, hoarderSpecs.StashPath)
 	if err != nil {
 		return nil, err
 	}
 
 	if len(entries) > 0 {
 		for _, ids := range entries {
-			allKeys := strings.Split(ids.Key, "/")
+			allKeys := strings.Split(ids, "/")
 			cids = append(cids, allKeys[len(allKeys)-1])
 		}
 	}
@@ -61,7 +55,8 @@ func (srv *Service) listHandler() (cr.Response, error) {
 }
 
 func (srv *Service) stashHandler(ctx context.Context, cid string) (cr.Response, error) {
-	if exist, _ := srv.store.Has(srv.ctx, datastore.NewKey(hoarderSpecs.CreateStashPath(cid))); !exist {
+	key := datastore.NewKey(hoarderSpecs.CreateStashPath(cid))
+	if data, _ := srv.db.Get(ctx, key.String()); data == nil {
 		reader, err := srv.node.GetFile(ctx, cid)
 		if err != nil {
 			return nil, fmt.Errorf("failed calling get file with error: %w", err)
@@ -78,7 +73,8 @@ func (srv *Service) stashHandler(ctx context.Context, cid string) (cr.Response, 
 
 		srv.regLock.Lock()
 		defer srv.regLock.Unlock()
-		if err = srv.store.Put(srv.ctx, datastore.NewKey(hoarderSpecs.CreateStashPath(cid)), registryBytes); err != nil {
+		key := datastore.NewKey(hoarderSpecs.CreateStashPath(cid))
+		if err = srv.db.Put(ctx, key.String(), registryBytes); err != nil {
 			return nil, err
 		}
 
@@ -88,14 +84,9 @@ func (srv *Service) stashHandler(ctx context.Context, cid string) (cr.Response, 
 	return nil, nil
 }
 
-func (srv *Service) rareHandler() (cr.Response, error) {
+func (srv *Service) rareHandler(ctx context.Context) (cr.Response, error) {
 	var rareCID []string
-	_result, err := srv.store.Query(srv.ctx, query.Query{Prefix: hoarderSpecs.StashPath})
-	if err != nil {
-		return nil, err
-	}
-
-	entries, err := _result.Rest()
+	entries, err := srv.db.List(ctx, hoarderSpecs.StashPath)
 	if err != nil {
 		return nil, err
 	}
@@ -103,7 +94,7 @@ func (srv *Service) rareHandler() (cr.Response, error) {
 	if len(entries) > 0 {
 		for _, ids := range entries {
 			var replicaData *registryItem
-			respBytes, err := srv.store.Get(srv.ctx, datastore.NewKey(ids.Key))
+			respBytes, err := srv.db.Get(ctx, ids)
 			if err != nil {
 				return nil, err
 			}
@@ -113,7 +104,7 @@ func (srv *Service) rareHandler() (cr.Response, error) {
 			}
 
 			if replicaData.Replicas == 1 {
-				rareCID = append(rareCID, ids.Key)
+				rareCID = append(rareCID, ids)
 			}
 
 		}

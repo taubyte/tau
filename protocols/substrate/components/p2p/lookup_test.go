@@ -1,11 +1,13 @@
 package p2p
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
 	"github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/vm/lookup"
 )
 
@@ -32,7 +34,7 @@ var testMatcher = &p2p.MatchDefinition{
 }
 
 func TestLookup(t *testing.T) {
-	s := NewTestService(nil)
+	s := NewTestService(peer.MockNode(context.Background()))
 	fakeFetch(testServices, testFunctions)
 
 	matches, err := lookup.Lookup(s, testMatcher)

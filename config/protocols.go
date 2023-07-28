@@ -28,7 +28,7 @@ type Protocol struct {
 	Peers           []string
 	P2PListen       []string
 	P2PAnnounce     []string
-	Ports           map[string]int
+	Ports           map[string]int // TODO: use a struct
 	Location        *seerIface.Location
 	NetworkUrl      string
 	HttpListen      string

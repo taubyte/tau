@@ -78,7 +78,7 @@ func (beacon *serviceBeacon) hostname() (err error) {
 	}
 
 	// Start usage beacon
-	beacon.seerClient.Usage().AddService(seerIface.ServiceTypeNode, map[string]string{"IP": addr})
+	beacon.seerClient.Usage().AddService(seerIface.ServiceTypeSubstrate, map[string]string{"IP": addr})
 	beacon.seerClient.Usage().Beacon(hostname, nodeId, clientNodeId, signature).Start()
 
 	return nil

@@ -43,7 +43,7 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 		s.databasesLock.Unlock()
 
 		if err = s.pubsubDatabase(context, s.Branch()); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("pubsubDatabase failed with: %w", err)
 		}
 
 		var commit string
@@ -61,7 +61,7 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 
 	valid, newCommitId, err := s.validateCommit(hash, context.ProjectId, s.Branch())
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("validating commit failed with: %w", err)
 	}
 
 	if !valid {
@@ -73,7 +73,7 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 
 		database, err = s.updateDatabase(database)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("updating database failed with: %w", err)
 		}
 
 		s.databases[hash] = database

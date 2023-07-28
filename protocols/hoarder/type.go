@@ -1,11 +1,10 @@
 package hoarder
 
 import (
-	"context"
 	"fmt"
 	"sync"
 
-	"github.com/ipfs/go-datastore"
+	"github.com/taubyte/go-interfaces/kvdb"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	ifaceTns "github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/p2p/peer"
@@ -16,10 +15,10 @@ import (
 var _ hoarderIface.Service = &Service{}
 
 type Service struct {
-	ctx            context.Context
 	node           peer.Node
 	tnsClient      ifaceTns.Client
-	store          datastore.Batching
+	db             kvdb.KVDB
+	dbFactory      kvdb.Factory
 	stream         *streams.CommandService
 	regLock        sync.RWMutex
 	auctions       auctionStore
@@ -29,10 +28,6 @@ type Service struct {
 
 func (s *Service) Node() peer.Node {
 	return s.node
-}
-
-func (s *Service) Datastore() datastore.Batching {
-	return s.store
 }
 
 type Config struct {

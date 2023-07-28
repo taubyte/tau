@@ -20,8 +20,8 @@ import (
 
 func TestZipWebsite(t *testing.T) {
 	u := dreamland.MultiverseWithConfig(dreamland.UniverseConfig{
-		Name: "MonkeyFixtureTestWebsite",
-		Id:   "MonkeyFixtureTestWebsite",
+		Name: "MonkeyFixtureTestWebsiteZip",
+		Id:   "MonkeyFixtureTestWebsiteZip",
 	})
 	defer u.Stop()
 

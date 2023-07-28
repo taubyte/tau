@@ -7,13 +7,15 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	commonDreamland "github.com/taubyte/tau/libdream/common"
 	dreamland "github.com/taubyte/tau/libdream/services"
-	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
+	_ "github.com/taubyte/tau/clients/p2p/seer"
+	_ "github.com/taubyte/tau/clients/p2p/tns"
 	_ "github.com/taubyte/tau/protocols/auth"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 	_ "github.com/taubyte/tau/protocols/monkey"
 	_ "github.com/taubyte/tau/protocols/patrick"
 	_ "github.com/taubyte/tau/protocols/substrate"
+	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func TestCalls(t *testing.T) {
@@ -21,7 +23,7 @@ func TestCalls(t *testing.T) {
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":      {Others: map[string]int{"dns": protocolsCommon.DefaultDevDnsPort, "mock": 1}},
+			"seer":      {Others: map[string]int{"mock": 1}},
 			"substrate": {Others: map[string]int{"copies": 2}},
 		},
 		Simples: map[string]commonDreamland.SimpleConfig{
@@ -58,7 +60,11 @@ func TestCalls(t *testing.T) {
 		return
 	}
 
-	serviceIds2 := serviceIds.([]interface{})
+	serviceIds2, ok := serviceIds.([]interface{})
+	if !ok {
+		t.Errorf("serviceIds %#v is not []interface{}", nil)
+		return
+	}
 
 	if len(serviceIds2) != 2 {
 		t.Errorf("Expected 2 nodes got %d", len(serviceIds2))
