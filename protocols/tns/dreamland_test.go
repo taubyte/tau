@@ -12,7 +12,7 @@ import (
 )
 
 func TestDreamlandDoubleClient(t *testing.T) {
-	u := services.Multiverse("single")
+	u := services.Multiverse(services.UniverseConfig{Name: "single"})
 	defer services.Zeno()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

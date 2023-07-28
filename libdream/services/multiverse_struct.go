@@ -21,17 +21,13 @@ func (m *multiverse) Exist(universe string) bool {
 }
 
 func (m *multiverse) Universe(name string) common.Universe {
-	return Multiverse(name)
+	return Multiverse(UniverseConfig{Name: name})
 }
 
 type UniverseConfig struct {
 	Name     string
 	Id       string
 	KeepRoot bool
-}
-
-func (m *multiverse) UniverseWithConfig(config UniverseConfig) common.Universe {
-	return MultiverseWithConfig(config)
 }
 
 func (m *multiverse) ValidServices() []string {

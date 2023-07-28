@@ -12,7 +12,6 @@ import (
 
 func TestLookupRegex(t *testing.T) {
 	s := NewTestService(peer.MockNode(context.Background()))
-
 	msg := map[string]structureSpec.Messaging{
 		"someMessagingId": {
 			Name:      "Somemessaging",

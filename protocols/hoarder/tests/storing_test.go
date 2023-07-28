@@ -45,7 +45,7 @@ var (
 // TODO: Fix Hoarder and tests
 func TestStoring(t *testing.T) {
 	t.Skip("hoarder needs to be fixed")
-	u := dreamland.Multiverse("TestStoring")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{

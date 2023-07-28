@@ -31,7 +31,7 @@ func TestRunWasmRetry(t *testing.T) {
 	service.DefaultReAnnounceFailedJobsTime = 10 * time.Second
 	service.DefaultReAnnounceJobTime = 10 * time.Second
 
-	u := dreamland.Multiverse("test-run-wasm-retry")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

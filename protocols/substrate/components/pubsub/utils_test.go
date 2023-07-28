@@ -56,7 +56,7 @@ func NewTestService(node peer.Node) *Service {
 	ctx := context.Background()
 
 	s := &Service{
-		Service: structure.MockNodeService(nil, ctx),
+		Service: structure.MockNodeService(peer.MockNode(ctx), ctx),
 		cache:   cache.New(),
 	}
 

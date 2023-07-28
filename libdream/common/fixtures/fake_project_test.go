@@ -12,7 +12,7 @@ import (
 
 func TestFakeProject(t *testing.T) {
 	t.Skip("needs to be reimplemented")
-	u := dreamland.Multiverse("TestFakeProject")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{

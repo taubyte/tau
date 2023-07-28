@@ -9,14 +9,14 @@ import (
 	projectSchema "github.com/taubyte/go-project-schema/project"
 	specs "github.com/taubyte/go-specs/methods"
 	commonDreamland "github.com/taubyte/tau/libdream/common"
-	"github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream/services"
 
 	_ "github.com/taubyte/tau/protocols/tns"
 )
 
 func TestUpdate(t *testing.T) {
 	t.Skip("needs to be reimplemented")
-	u := services.Multiverse("single_e2e")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

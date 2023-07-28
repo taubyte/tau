@@ -22,7 +22,7 @@ import (
 func TestASFunction(t *testing.T) {
 	t.Skip("this wasm build results in: abort: IO in ~lib/wasi_process.ts(177:16)")
 
-	u := dreamland.Multiverse("TestASFunction")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

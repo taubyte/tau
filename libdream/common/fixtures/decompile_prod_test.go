@@ -21,7 +21,7 @@ import (
 
 func TestDecompileProd(t *testing.T) {
 	t.Skip("using an old project")
-	u := dreamland.Multiverse("scratch")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{

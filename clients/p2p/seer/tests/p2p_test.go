@@ -10,8 +10,8 @@ import (
 	_ "github.com/taubyte/tau/protocols/seer"
 )
 
-func TestClient(t *testing.T) {
-	u := dreamland.Multiverse("seerClient")
+func TestSeerClient(t *testing.T) {
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{

@@ -18,7 +18,7 @@ import (
 )
 
 func TestGoFunction(t *testing.T) {
-	u := dreamland.MultiverseWithConfig(dreamland.UniverseConfig{
+	u := dreamland.Multiverse(dreamland.UniverseConfig{
 		Name: "MonkeyFixtureTestFunction",
 		Id:   "MonkeyFixtureTestFunction",
 	})

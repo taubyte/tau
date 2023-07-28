@@ -11,7 +11,7 @@ import (
 )
 
 func TestBasicUsage(t *testing.T) {
-	u := dreamland.Multiverse("basic_usage")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{

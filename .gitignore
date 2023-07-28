@@ -13,6 +13,7 @@
 ./protocols/node/.node/
 ./protocols/tns/storage
 **/testGIT
+**/cover.out
 
 # Node artifact files
 node_modules/

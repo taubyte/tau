@@ -21,7 +21,7 @@ import (
 
 func TestAuth(t *testing.T) {
 	t.Skip("Need to be reimplemented")
-	u := dreamland.Multiverse("test-config-job")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

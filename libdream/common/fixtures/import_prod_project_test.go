@@ -18,8 +18,7 @@ func TestImportProdProject(t *testing.T) {
 	t.Skip("currently custom domains do not work on dreamland")
 
 	spec.DefaultBranch = "master_test"
-
-	u := dreamland.Multiverse("TestImportProdProject")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

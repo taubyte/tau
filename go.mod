@@ -2,8 +2,6 @@ module github.com/taubyte/tau
 
 go 1.19
 
-replace github.com/taubyte/go-interfaces => ../go-interfaces
-
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -18,7 +16,6 @@ require (
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ds-crdt v0.4.0
-	github.com/ipfs/go-ds-pebble v0.2.4
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/jellydator/ttlcache/v3 v3.0.1
 	github.com/libp2p/go-libp2p v0.29.0
@@ -36,7 +33,7 @@ require (
 	github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29
 	github.com/taubyte/config-compiler v0.4.5
 	github.com/taubyte/domain-validation v1.0.0
-	github.com/taubyte/go-interfaces v0.2.9
+	github.com/taubyte/go-interfaces v0.2.10
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.8
 	github.com/taubyte/go-sdk-smartops v0.1.3
@@ -144,6 +141,7 @@ require (
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
 	github.com/ipfs/go-block-format v0.1.2 // indirect
 	github.com/ipfs/go-cidutil v0.1.0 // indirect
+	github.com/ipfs/go-ds-pebble v0.2.4 // indirect
 	github.com/ipfs/go-ipfs-delay v0.0.1 // indirect
 	github.com/ipfs/go-ipfs-pq v0.0.3 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.2 // indirect

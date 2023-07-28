@@ -10,7 +10,7 @@ import (
 )
 
 func TestPushAll(t *testing.T) {
-	u := dreamland.Multiverse("testPatrick")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

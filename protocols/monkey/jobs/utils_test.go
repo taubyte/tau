@@ -142,7 +142,7 @@ func cloneRepo(ctx context.Context, url string, preserve bool) (*git.Repository,
 }
 
 func startDreamland(name string) (u commonDreamland.Universe, err error) {
-	u = dreamland.Multiverse(name)
+	u = dreamland.Multiverse(dreamland.UniverseConfig{Name: name})
 	err = u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"hoarder": {},
