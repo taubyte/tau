@@ -8,5 +8,5 @@ import (
 
 var (
 	WaitForSwamDuration = 10 * time.Second
-	logger              = log.Logger("odo.cli.node")
+	logger              = log.Logger("tau.cli.node")
 )

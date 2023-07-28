@@ -7,12 +7,12 @@ import (
 	"github.com/taubyte/tau/config"
 )
 
-type packageInterface struct{}
+type protoCommandIface struct{}
 
-func (packageInterface) New(ctx context.Context, cnf *config.Protocol) (serviceIface.Service, error) {
+func (protoCommandIface) New(ctx context.Context, cnf *config.Protocol) (serviceIface.Service, error) {
 	return New(ctx, cnf)
 }
 
-func Package() config.Package {
-	return packageInterface{}
+func Package() config.ProtoCommandIface {
+	return protoCommandIface{}
 }

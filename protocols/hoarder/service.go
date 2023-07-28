@@ -14,7 +14,7 @@ import (
 	streams "github.com/taubyte/p2p/streams/service"
 	seer_client "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
-	odoConfig "github.com/taubyte/tau/config"
+	tauConfig "github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/protocols/common"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
@@ -23,26 +23,26 @@ var (
 	logger = log.Logger("hoarder.service")
 )
 
-func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
+func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
 	var srv Service
 	srv.ctx = ctx
 
 	if config == nil {
-		config = &odoConfig.Protocol{}
+		config = &tauConfig.Protocol{}
 	}
 
-	err := config.Build(odoConfig.ConfigBuilder{
-		DefaultP2PListenPort: protocolCommon.HoarderDefaultP2PListenPort,
-	})
+	err := config.Validate()
 	if err != nil {
 		return nil, fmt.Errorf("config build failed with: %s", err)
 	}
 
-	srv.createMaps()
+	srv.auctions = make(auctionStore)
+	srv.auctionHistory = make(auctionHistory)
+	srv.lotteryPool = make(lotteryPool)
 
 	// TODO move database root to new
 	if config.Node == nil {
-		srv.node, err = odoConfig.NewNode(ctx, config, protocolCommon.Hoarder)
+		srv.node, err = tauConfig.NewNode(ctx, config, protocolCommon.Hoarder)
 		if err != nil {
 			return nil, fmt.Errorf("config new node failed with: %s", err)
 		}

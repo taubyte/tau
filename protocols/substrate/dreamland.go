@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	iface "github.com/taubyte/go-interfaces/common"
-	odoConfig "github.com/taubyte/tau/config"
+	tauConfig "github.com/taubyte/tau/config"
 	dreamlandCommon "github.com/taubyte/tau/libdream/common"
 	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 )
@@ -15,7 +15,7 @@ func init() {
 }
 
 func createNodeService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {
-	serviceConfig := &odoConfig.Protocol{
+	serviceConfig := &tauConfig.Protocol{
 		Ports: make(map[string]int),
 	}
 	serviceConfig.Root = config.Root
@@ -25,9 +25,7 @@ func createNodeService(ctx context.Context, config *iface.ServiceConfig) (iface.
 	serviceConfig.SwarmKey = config.SwarmKey
 	serviceConfig.Databases = config.Databases
 
-	if config.Others["http"] != 443 {
-		serviceConfig.HttpListen = fmt.Sprintf("%s:%d", dreamlandCommon.DefaultHost, config.Others["http"])
-	}
+	serviceConfig.HttpListen = fmt.Sprintf("%s:%d", dreamlandCommon.DefaultHost, config.Others["http"])
 
 	serviceConfig.Ports["ipfs"] = config.Others["ipfs"]
 

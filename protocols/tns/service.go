@@ -11,8 +11,7 @@ import (
 	"github.com/taubyte/tau/pkgs/kvdb"
 
 	commonSpec "github.com/taubyte/go-specs/common"
-	odoConfig "github.com/taubyte/tau/config"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	tauConfig "github.com/taubyte/tau/config"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/tau/protocols/tns/engine"
 )
@@ -21,23 +20,20 @@ var (
 	logger = log.Logger("tns.service")
 )
 
-func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
+func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
 	srv := &Service{}
 
 	if config == nil {
-		config = &odoConfig.Protocol{}
+		config = &tauConfig.Protocol{}
 	}
 
-	err := config.Build(odoConfig.ConfigBuilder{
-		DefaultP2PListenPort: protocolsCommon.TnsDefaultP2PListenPort,
-		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
-	})
+	err := config.Validate()
 	if err != nil {
 		return nil, err
 	}
 
 	if config.Node == nil {
-		srv.node, err = odoConfig.NewNode(ctx, config, protocolsCommon.Tns)
+		srv.node, err = tauConfig.NewNode(ctx, config, protocolsCommon.Tns)
 		if err != nil {
 			return nil, err
 		}

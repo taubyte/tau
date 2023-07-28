@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/tau/config"
 )
 
-var available = map[string]config.Package{
+var available = map[string]config.ProtoCommandIface{
 	"auth":      authService.Package(),
 	"hoarder":   hoarderService.Package(),
 	"monkey":    monkeyService.Package(),

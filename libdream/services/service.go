@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"os"
+	"path"
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
@@ -17,8 +18,7 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 	}
 
 	serviceCount := len(u.service[name].nodes)
-
-	config.Root += "/" + name + "-" + fmt.Sprint(serviceCount) + "/" + u.id
+	config.Root = path.Join(config.Root, fmt.Sprintf("%s-%d", name, serviceCount), u.id)
 
 	// Ignoring error in case of opening
 	os.MkdirAll(config.Root, 0750)

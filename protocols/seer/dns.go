@@ -143,7 +143,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	if domainSpecs.TaubyteServiceDomain.MatchString(name) || h.seer.caaRecordBypass.MatchString(name) {
-		h.odoDnsResolve(name, w, r, errMsg, msg)
+		h.tauDnsResolve(name, w, r, errMsg, msg)
 		return
 	}
 
@@ -186,7 +186,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 // TODO: Clean this up, repetitive code
-func (h *dnsHandler) odoDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
+func (h *dnsHandler) tauDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
 	service := strings.Split(name, ".")[0]
 	ips, err := h.getServiceIp(service)
 	if err != nil {

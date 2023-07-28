@@ -14,8 +14,7 @@ import (
 	domainSpecs "github.com/taubyte/go-specs/domain"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
-	odoConfig "github.com/taubyte/tau/config"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	tauConfig "github.com/taubyte/tau/config"
 
 	streams "github.com/taubyte/p2p/streams/service"
 	"github.com/taubyte/tau/protocols/common"
@@ -42,15 +41,12 @@ func (srv *Service) subscribe() error {
 	)
 }
 
-func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
+func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
 	if config == nil {
-		config = &odoConfig.Protocol{}
+		config = &tauConfig.Protocol{}
 	}
 
-	err := config.Build(odoConfig.ConfigBuilder{
-		DefaultP2PListenPort: protocolCommon.MonkeyDefaultP2PListenPort,
-		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
-	})
+	err := config.Validate()
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +66,7 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
 	}
 
 	if config.Node == nil {
-		srv.node, err = odoConfig.NewLiteNode(ctx, config, protocolCommon.Monkey)
+		srv.node, err = tauConfig.NewLiteNode(ctx, config, protocolCommon.Monkey)
 		if err != nil {
 			return nil, err
 		}

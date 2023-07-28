@@ -13,12 +13,6 @@ import (
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
 )
 
-func (srv *Service) createMaps() {
-	srv.auctions = make(auctionStore)
-	srv.auctionHistory = make(auctionHistory)
-	srv.lotteryPool = make(lotteryPool)
-}
-
 func (srv *Service) validateMsg(auction *hoarderIface.Auction, msg *pubsub.Message) bool {
 	// If we get a message from ourselves and its not a timeout/end/failed we ignore
 	if msg.ReceivedFrom == srv.node.Peer().ID() && auction.Type != hoarderIface.AuctionEnd {

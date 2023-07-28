@@ -2,8 +2,10 @@ package services
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/taubyte/tau/libdream/common"
 )
@@ -14,12 +16,12 @@ var (
 )
 
 var (
-	lastUniversePortShift     = 9000
+	lastUniversePortShift     int
 	lastUniversePortShiftLock sync.Mutex
 )
 
 func init() {
-	lastUniversePortShift += 100
+	lastUniversePortShift = 9000 + int(rand.NewSource(time.Now().UnixNano()).Int63()%10000)
 }
 
 func LastSimplePortAllocated() int {
@@ -38,7 +40,6 @@ func LastUniversePortShift() int {
 			break
 		}
 		defer l.Close()
-
 	}
 	return lastUniversePortShift + 1
 }
