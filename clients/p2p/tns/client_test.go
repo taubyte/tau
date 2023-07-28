@@ -16,7 +16,7 @@ import (
 var _ iface.Client = &p2p.Client{}
 
 func TestClient(t *testing.T) {
-	u := dreamland.Multiverse("TestClient")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "TestClient"})
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},

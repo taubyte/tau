@@ -34,7 +34,7 @@ func TestConfigJob(t *testing.T) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 
-	u := dreamland.Multiverse("test-config-job")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "test-config-job"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

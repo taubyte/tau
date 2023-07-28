@@ -20,7 +20,7 @@ import (
 )
 
 func TestClientWithUniverse(t *testing.T) {
-	u := dreamland.Multiverse("single")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "single"})
 	defer u.Stop()
 
 	patrickHttpPort := 4443

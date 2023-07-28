@@ -13,7 +13,7 @@ import (
 )
 
 func TestCache(t *testing.T) {
-	u := dreamland.Multiverse("TestCache")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "TestCache"})
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},

@@ -32,7 +32,7 @@ var (
 )
 
 func TestBasicWithLibrary(t *testing.T) {
-	u := dreamland.Multiverse("TestBasicWithLibrary")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "TestBasicWithLibrary"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamlandCommon.Config{

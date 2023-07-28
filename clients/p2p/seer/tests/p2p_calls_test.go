@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 )
 
 func TestCalls(t *testing.T) {
-	u := dreamland.Multiverse("p2pCalls")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "p2pCalls"})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
@@ -57,6 +58,7 @@ func TestCalls(t *testing.T) {
 		t.Error(err)
 		return
 	}
+	fmt.Println("IDSSS ", serviceIds)
 
 	serviceIds2 := serviceIds.([]interface{})
 

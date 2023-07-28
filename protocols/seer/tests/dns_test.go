@@ -34,7 +34,7 @@ func createDnsClient(net string) *dns.Client {
 }
 
 func TestDns(t *testing.T) {
-	u := dreamland.Multiverse("seerDNS_test")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "seerDNS_test"})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
