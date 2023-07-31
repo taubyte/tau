@@ -7,4 +7,5 @@ import (
 func init() {
 	dreamlandRegistry.Fixture("fakeProject", fakeProject)
 	dreamlandRegistry.Fixture("injectProject", injectProject)
+	dreamlandRegistry.Fixture("setBranch", setBranch)
 }
