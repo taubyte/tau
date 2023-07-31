@@ -70,14 +70,6 @@ func importProdProject(u commonDreamland.Universe, params ...interface{}) error 
 		helpers.GitToken = gitToken
 	}
 
-	branch := ""
-	if len(params) > 2 {
-		branch = params[2].(string)
-	}
-
-	if len(branch) > 0 {
-		helpers.Branch = branch
-	}
 	// Tracking how many jobs we run so that we can confirm we are waiting
 	// for the right number of jobs to run
 	var numJobs int
@@ -99,7 +91,7 @@ func importProdProject(u commonDreamland.Universe, params ...interface{}) error 
 	time.Sleep(1 * time.Second)
 
 	numJobs++
-	err = u.RunFixture("pushSpecific", SharedRepositoryData.Configuration.Id, SharedRepositoryData.Configuration.Fullname, projectId, helpers.Branch)
+	err = u.RunFixture("pushSpecific", SharedRepositoryData.Configuration.Id, SharedRepositoryData.Configuration.Fullname, projectId, spec.DefaultBranch)
 	if err != nil {
 		return err
 	}
@@ -110,14 +102,14 @@ func importProdProject(u commonDreamland.Universe, params ...interface{}) error 
 	go func() {
 		defer wg.Done()
 		<-time.After(time.Second)
-		if _, err := tnsClient.Fetch(spec.Current(projectId, helpers.Branch)); err != nil {
+		if _, err := tnsClient.Fetch(spec.Current(projectId, spec.DefaultBranch)); err != nil {
 			return
 		}
 	}()
 	wg.Wait()
 
 	numJobs++
-	err = u.RunFixture("pushSpecific", SharedRepositoryData.Code.Id, SharedRepositoryData.Code.Fullname, projectId, helpers.Branch)
+	err = u.RunFixture("pushSpecific", SharedRepositoryData.Code.Id, SharedRepositoryData.Code.Fullname, projectId, spec.DefaultBranch)
 	if err != nil {
 		return err
 	}
@@ -146,7 +138,7 @@ func importProdProject(u commonDreamland.Universe, params ...interface{}) error 
 		attempts++
 	}
 
-	project, err := tnsClient.Simple().Project(projectId, helpers.Branch)
+	project, err := tnsClient.Simple().Project(projectId, spec.DefaultBranch)
 	if err != nil {
 		return err
 	}
@@ -162,7 +154,7 @@ func importProdProject(u commonDreamland.Universe, params ...interface{}) error 
 
 	for r := range repoCan {
 		numJobs++
-		err = u.RunFixture("pushSpecific", r.repository_id, r.repository_name, projectId, helpers.Branch)
+		err = u.RunFixture("pushSpecific", r.repository_id, r.repository_name, projectId, spec.DefaultBranch)
 		if err != nil {
 			return err
 		}

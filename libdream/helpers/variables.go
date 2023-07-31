@@ -54,7 +54,6 @@ var (
 	GitProvider = "github"
 	ProjectID   = "Qmc3WjpDvCaVY3jWmxranUY7roFhRj66SNqstiRbKxDbU4"
 	GitUser     = "taubyte-test"
-	Branch      = "master"
 	ProjectName = "testproject"
 	KeepRepos   = []string{"tb_testproject", "tb_code_testproject", "tb_website_testwebsite", "tb_library_testLibrary", "tb_website_reactdemo", "tb_website_socketWebsite"}
 

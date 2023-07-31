@@ -107,20 +107,10 @@ func pushSpecific(u common.Universe, params ...interface{}) error {
 	}
 	repoId := params[0].(string)
 	fullname := params[1].(string)
-	branch := ""
 	projectId := ""
 	if len(params) > 2 {
 		projectId = params[2].(string)
-		if len(params) > 3 {
-			branch = params[3].(string)
-		}
 	}
-
-	if len(branch) > 0 {
-		commonTest.Branch = branch
-	}
-
-	spec.DefaultBranch = commonTest.Branch
 
 	intRepoId, err := strconv.Atoi(repoId)
 	if err != nil {
