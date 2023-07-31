@@ -30,17 +30,17 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pterm/pterm v0.12.62
 	github.com/spf13/afero v1.9.5
-	github.com/taubyte/builder v0.0.0-20230714181048-6ea47db67d29
-	github.com/taubyte/config-compiler v0.4.5
+	github.com/taubyte/builder v0.2.0
+	github.com/taubyte/config-compiler v0.4.6
 	github.com/taubyte/domain-validation v1.0.0
-	github.com/taubyte/go-interfaces v0.2.10
+	github.com/taubyte/go-interfaces v0.2.11
 	github.com/taubyte/go-project-schema v0.9.3
-	github.com/taubyte/go-sdk v0.3.8
+	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
 	github.com/taubyte/go-seer v1.0.6
 	github.com/taubyte/go-simple-container v0.4.2
 	github.com/taubyte/go-simple-git v0.2.5
-	github.com/taubyte/go-specs v0.10.5
+	github.com/taubyte/go-specs v0.10.6
 	github.com/taubyte/http v0.10.3
 	github.com/taubyte/p2p v0.9.1
 	github.com/taubyte/tau-cli v0.1.8
@@ -228,7 +228,7 @@ require (
 	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/taubyte/go-sdk-symbols v0.2.6 // indirect
+	github.com/taubyte/go-sdk-symbols v0.2.7 // indirect
 	github.com/taubyte/odo v0.0.0-20230727154809-0688a5d7674b // indirect
 	github.com/tetratelabs/wazero v1.0.3 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
