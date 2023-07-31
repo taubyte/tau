@@ -16,14 +16,14 @@ import (
 	"github.com/taubyte/tau/protocols/monkey"
 )
 
-func TestClient(t *testing.T) {
+func TestMonkeyClient(t *testing.T) {
 	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 
 	protocolCommon.LocalPatrick = true
 
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "TestClient"})
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

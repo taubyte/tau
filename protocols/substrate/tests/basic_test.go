@@ -17,6 +17,7 @@ import (
 	"github.com/taubyte/tau/protocols/monkey/fixtures/compile"
 
 	_ "github.com/taubyte/config-compiler/fixtures"
+	_ "github.com/taubyte/tau/libdream/common/fixtures"
 	_ "github.com/taubyte/tau/protocols/auth"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 	_ "github.com/taubyte/tau/protocols/patrick"
@@ -32,7 +33,7 @@ var (
 )
 
 func TestBasicWithLibrary(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "TestBasicWithLibrary"})
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamlandCommon.Config{

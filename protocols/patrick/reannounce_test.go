@@ -16,7 +16,7 @@ import (
 
 func TestReAnnounce(t *testing.T) {
 	t.Skip("Needs to be refactored properly into wait for job to fail then do a sleep")
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "testReannouce"})
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamlandCommon.Config{

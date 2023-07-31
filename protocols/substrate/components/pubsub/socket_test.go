@@ -1,10 +1,12 @@
 package pubsub
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/protocols/substrate/components/structure"
 
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
@@ -13,7 +15,7 @@ import (
 
 func TestSocketLookup(t *testing.T) {
 	testMessagingName := "someMessaging"
-	s := NewTestService(nil)
+	s := NewTestService(peer.MockNode(context.Background()))
 
 	structure.RefreshTestVariables()
 	refreshTestVariables()

@@ -31,7 +31,7 @@ func TestProtocolListen(t *testing.T) {
 		},
 	})
 
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "TestHandleForProject"})
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Simples: map[string]commonDreamland.SimpleConfig{
 			"sender": {

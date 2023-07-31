@@ -27,12 +27,7 @@ func (s *Service) pubsubDatabase(context iface.Context, branch string) error {
 		return fmt.Errorf("marshalling auction failed with %w", err)
 	}
 
-	topic, err := s.Node().Messaging().Join(hoarderSpecs.PubSubIdent)
-	if err != nil {
-		return fmt.Errorf("getting topic `%s` failed with: %w", hoarderSpecs.PubSubIdent, err)
-	}
-
-	if err = topic.Publish(s.Context(), dataBytes); err != nil {
+	if err := s.Node().Messaging().Publish(hoarderSpecs.PubSubIdent, dataBytes); err != nil {
 		return fmt.Errorf("publishing database `%s` failed with %w", context.Matcher, err)
 	}
 

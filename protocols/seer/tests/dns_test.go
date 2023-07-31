@@ -8,7 +8,6 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	commonDreamland "github.com/taubyte/tau/libdream/common"
 	dreamland "github.com/taubyte/tau/libdream/services"
-	"github.com/taubyte/tau/protocols/common"
 
 	dns "github.com/miekg/dns"
 
@@ -20,10 +19,9 @@ import (
 )
 
 var (
-	defaultTestPort = fmt.Sprintf("127.0.0.1:%d", common.DefaultDevDnsPort)
-	fqdn            = "testing_website_builder.com."
-	regexFqdn       = "qkfkkvlaw2.g.tau.link."
-	failedFqdn      = "asdhw23.g.tau.link.net."
+	fqdn       = "testing_website_builder.com."
+	regexFqdn  = "qkfkkvlaw2.g.tau.link."
+	failedFqdn = "asdhw23.g.tau.link.net."
 )
 
 func createDnsClient(net string) *dns.Client {
@@ -34,11 +32,15 @@ func createDnsClient(net string) *dns.Client {
 }
 
 func TestDns(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "seerDNS_test"})
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
+
+	dnsPort := u.PortFor("seer", "dns")
+	defaultTestPort := fmt.Sprintf("127.0.0.1:%d", dnsPort)
+
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":      {Others: map[string]int{"dns": common.DefaultDevDnsPort, "mock": 1}},
+			"seer":      {Others: map[string]int{"dns": dnsPort, "mock": 1}},
 			"tns":       {},
 			"monkey":    {},
 			"patrick":   {},

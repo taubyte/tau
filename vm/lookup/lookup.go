@@ -28,7 +28,6 @@ func Lookup(service iface.ServiceComponent, matcher iface.MatchDefinition) ([]if
 	}
 
 	return service.CheckTns(matcher)
-
 }
 
 func validate(serviceables []iface.Serviceable, service iface.ServiceComponent) error {

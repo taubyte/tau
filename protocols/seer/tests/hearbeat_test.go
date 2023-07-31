@@ -11,7 +11,6 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	commonDreamland "github.com/taubyte/tau/libdream/common"
 	dreamland "github.com/taubyte/tau/libdream/services"
-	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"gotest.tools/v3/assert"
 )
 
@@ -19,7 +18,7 @@ var client_count = 64
 
 func TestHeartbeat(t *testing.T) {
 	t.Skip("More of a benchmark than a test")
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "heartbeat"})
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	simConf := make(map[string]commonDreamland.SimpleConfig)
@@ -34,7 +33,7 @@ func TestHeartbeat(t *testing.T) {
 
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer": {Others: map[string]int{"dns": protocolsCommon.DefaultDevDnsPort, "mock": 1}},
+			"seer": {Others: map[string]int{"mock": 1}},
 		},
 		Simples: simConf,
 	})

@@ -161,5 +161,8 @@ func (srv *Service) Close() error {
 	srv.tns.Close()
 	srv.db.Close()
 	srv.dns.Stop()
+
+	srv.positiveCache.Stop()
+	srv.negativeCache.Stop()
 	return nil
 }

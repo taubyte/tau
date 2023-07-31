@@ -87,7 +87,7 @@ func (srv *Service) publishAction(ctx context.Context, action *hoarderIface.Auct
 	return nil
 }
 
-func (srv *Service) storeAuction(auction *hoarderIface.Auction) error {
+func (srv *Service) storeAuction(ctx context.Context, auction *hoarderIface.Auction) error {
 	switch auction.MetaType {
 	case hoarderIface.Database:
 		config, err := srv.tnsClient.Database().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, auction.Meta.Branch).GetById(auction.Meta.ConfigId)
@@ -108,7 +108,7 @@ func (srv *Service) storeAuction(auction *hoarderIface.Auction) error {
 			auction.Meta.Match = "/" + auction.Meta.Match
 		}
 
-		if err = srv.putIntoDb(datastore.NewKey(fmt.Sprintf("/hoarder/databases/%s%s", auction.Meta.ConfigId, auction.Meta.Match)), configBytes); err != nil {
+		if err = srv.putIntoDb(ctx, datastore.NewKey(fmt.Sprintf("/hoarder/databases/%s%s", auction.Meta.ConfigId, auction.Meta.Match)), configBytes); err != nil {
 			return err
 		}
 
@@ -133,7 +133,7 @@ func (srv *Service) storeAuction(auction *hoarderIface.Auction) error {
 			auction.Meta.Match = "/" + auction.Meta.Match
 		}
 
-		if err = srv.putIntoDb(datastore.NewKey(fmt.Sprintf("/hoarder/storages/%s%s", auction.Meta.ConfigId, auction.Meta.Match)), configBytes); err != nil {
+		if err = srv.putIntoDb(ctx, datastore.NewKey(fmt.Sprintf("/hoarder/storages/%s%s", auction.Meta.ConfigId, auction.Meta.Match)), configBytes); err != nil {
 			return err
 		}
 
@@ -144,10 +144,10 @@ func (srv *Service) storeAuction(auction *hoarderIface.Auction) error {
 	return errors.New("auction item was neither a storage or database")
 }
 
-func (srv *Service) putIntoDb(key datastore.Key, data []byte) error {
+func (srv *Service) putIntoDb(ctx context.Context, key datastore.Key, data []byte) error {
 	srv.regLock.Lock()
 	defer srv.regLock.Unlock()
-	if err := srv.store.Put(srv.ctx, key, data); err != nil {
+	if err := srv.db.Put(ctx, key.String(), data); err != nil {
 		return err
 	}
 	return nil

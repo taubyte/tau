@@ -142,11 +142,11 @@ func (u *Universe) StartWithConfig(mainConfig *common.Config) error {
 
 		wg.Add(1)
 		go func(service string, config ifaceCommon.ServiceConfig) {
+			defer wg.Done()
 			err := u.Service(service, &config)
 			if err != nil {
 				errChan <- fmt.Errorf("starting service `%s` failed with: %s", service, err)
 			}
-			wg.Done()
 		}(service, config)
 	}
 

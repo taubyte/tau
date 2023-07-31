@@ -1,9 +1,11 @@
 package p2p
 
 import (
+	"context"
 	"testing"
 
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
 	"github.com/taubyte/tau/protocols/substrate/components/structure"
@@ -15,7 +17,7 @@ var (
 )
 
 func TestHandleForMatcher(t *testing.T) {
-	s := NewTestService(nil)
+	s := NewTestService(peer.MockNode(context.Background()))
 
 	structure.RefreshTestVariables()
 	fakeFetch(map[string]structureSpec.Service{

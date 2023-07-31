@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/tns"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/libdream/common/fixtures"
 	dreamland "github.com/taubyte/tau/libdream/services"
 	_ "github.com/taubyte/tau/protocols/tns"
 )

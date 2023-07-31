@@ -56,7 +56,7 @@ func TestAll(t *testing.T) {
 	meta.HeadCommit.ID = "commitID"
 	meta.Repository.Provider = "github"
 
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: "blackhole"})
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
