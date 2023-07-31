@@ -10,8 +10,7 @@ import (
 	streams "github.com/taubyte/p2p/streams/service"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
-	odoConfig "github.com/taubyte/tau/config"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	tauConfig "github.com/taubyte/tau/config"
 	auto "github.com/taubyte/tau/pkgs/http-auto"
 	"github.com/taubyte/tau/pkgs/kvdb"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
@@ -21,21 +20,17 @@ var (
 	logger = log.Logger("auth.service")
 )
 
-func New(ctx context.Context, config *odoConfig.Protocol) (*AuthService, error) {
+func New(ctx context.Context, config *tauConfig.Protocol) (*AuthService, error) {
 	var srv AuthService
 	srv.ctx = ctx
 
 	if config == nil {
-		config = &odoConfig.Protocol{}
+		config = &tauConfig.Protocol{}
 	}
 
 	srv.webHookUrl = fmt.Sprintf(`https://patrick.tau.%s`, config.NetworkUrl)
 
-	err := config.Build(odoConfig.ConfigBuilder{
-		DefaultP2PListenPort: protocolCommon.AuthDefaultP2PListenPort,
-		DevHttpListenPort:    protocolCommon.AuthDevHttpListenPort,
-		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
-	})
+	err := config.Validate()
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +41,7 @@ func New(ctx context.Context, config *odoConfig.Protocol) (*AuthService, error) 
 	}
 
 	if config.Node == nil {
-		srv.node, err = odoConfig.NewNode(ctx, config, protocolCommon.Auth)
+		srv.node, err = tauConfig.NewNode(ctx, config, protocolCommon.Auth)
 		if err != nil {
 			return nil, err
 		}

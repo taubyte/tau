@@ -1,16 +1,18 @@
 package pubsub
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 	"github.com/taubyte/tau/protocols/substrate/components/structure"
 )
 
 func TestLookup(t *testing.T) {
-	s := NewTestService(nil)
+	s := NewTestService(peer.MockNode(context.Background()))
 	msg := map[string]structureSpec.Messaging{
 		"someMessagingId": {
 			Name:  "Somemessaging",

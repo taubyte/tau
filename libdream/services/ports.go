@@ -2,8 +2,10 @@ package services
 
 import (
 	"fmt"
+	"math/rand"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/taubyte/tau/libdream/common"
 )
@@ -11,16 +13,13 @@ import (
 var (
 	lastSimplePortAllocated     = 50
 	lastSimplePortAllocatedLock sync.Mutex
-)
 
-var (
 	lastUniversePortShift     = 9000
 	lastUniversePortShiftLock sync.Mutex
-)
 
-func init() {
-	lastUniversePortShift += 100
-}
+	maxUniverses     = 100
+	portsPerUniverse = 100
+)
 
 func LastSimplePortAllocated() int {
 	lastSimplePortAllocatedLock.Lock()
@@ -33,12 +32,12 @@ func LastUniversePortShift() int {
 	lastUniversePortShiftLock.Lock()
 	defer lastUniversePortShiftLock.Unlock()
 	for {
+		lastUniversePortShift += int(rand.NewSource(time.Now().UnixNano()).Int63()%int64(maxUniverses)) * portsPerUniverse
 		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", common.DefaultHost, lastUniversePortShift))
-		if err != nil {
+		if err == nil {
+			l.Close()
 			break
 		}
-		defer l.Close()
-
 	}
-	return lastUniversePortShift + 1
+	return lastUniversePortShift
 }

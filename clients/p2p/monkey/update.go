@@ -20,7 +20,6 @@ func mergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 
 func (c *Client) Update(jid string, body map[string]interface{}) (string, error) {
 	// check this job again
-
 	resp, err := c.client.Send("job", mergeMaps(command.Body{"action": "update", "jid": jid}, body))
 	if err != nil {
 		return jid, fmt.Errorf("failed calling send with error: %w", err)

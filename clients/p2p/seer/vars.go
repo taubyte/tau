@@ -11,6 +11,6 @@ var (
 	MinPeers                 = 0
 	MaxPeers                 = 2
 	DefaultGeoBeaconInterval = 5 * time.Minute
-	ErrorGeoBeaconStopped    = errors.New("GeoBeacon Stopped")
+	ErrorGeoBeaconStopped    = errors.New("geoBeacon Stopped")
 	logger                   = log.Logger("seer.p2p.client")
 )

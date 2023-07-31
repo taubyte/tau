@@ -251,7 +251,6 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		Handler: srv.importGitHubProjectHTTPHandler,
 	})
 
-	//srv.http.PUT("/repository/{provider}/{id}", []string{"provider", "id"}, []string{"repositories/write"}, srv.GitHubTokenHTTPAuth, srv.registerGitHubUserRepositoryHTTPHandler, srv.GitHubTokenHTTPAuthCleanup)
 	srv.http.PUT(&http.RouteDefinition{
 		Host: host,
 		Path: "/repository/{provider}/{id}",
@@ -266,7 +265,6 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		Handler: srv.registerGitHubUserRepositoryHTTPHandler,
 	})
 
-	//srv.http.DELETE("/repository/{provider}/{id}", []string{"provider", "id"}, []string{"repositories/write"}, srv.GitHubTokenHTTPAuth, srv.unregisterGitHubUserRepositoryHTTPHandler, srv.GitHubTokenHTTPAuthCleanup)
 	srv.http.DELETE(&http.RouteDefinition{
 		Host: host,
 		Path: "/repository/{provider}/{id}",
@@ -295,11 +293,6 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		Handler: srv.getGitHubUserRepositoryHTTPHandler,
 	})
 
-	//srv.http.GET("/repository/{provider}/{id}", []string{"provider", "repository"}, []string{"repositories/write"}, srv.GitHubTokenHTTPAuth, srv.registerGitHubUserRepositoryHTTPHandler, srv.GitHubTokenHTTPAuthCleanup) ->> was already commented before refactor
-
-	//------
-	/// -> "/repositories" is used by cleanup tool internally
-	//srv.http.GET("/repositories", nil, []string{"repositories/read"}, srv.GitHubTokenHTTPAuth, srv.getGitHubUserRepositoriesHTTPHandler, srv.GitHubTokenHTTPAuthCleanup)
 	srv.http.GET(&http.RouteDefinition{
 		Host:  host,
 		Path:  "/repositories",
@@ -311,7 +304,6 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		Handler: srv.getGitHubUserRepositoriesHTTPHandler,
 	})
 
-	//srv.http.GET("/projects", nil, []string{"projects/read"}, srv.GitHubTokenHTTPAuth, srv.getGitHubUserProjectsHTTPHandler, srv.GitHubTokenHTTPAuthCleanup)
 	srv.http.GET(&http.RouteDefinition{
 		Host:  host,
 		Path:  "/projects",
@@ -323,7 +315,6 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		Handler: srv.getGitHubUserProjectsHTTPHandler,
 	})
 
-	//srv.http.GET("/projects/{id}", []string{"id"}, []string{"projects/read"}, srv.GitHubTokenHTTPAuth, srv.getGitHubProjectInfoHTTPHandler, srv.GitHubTokenHTTPAuthCleanup)
 	srv.http.GET(&http.RouteDefinition{
 		Host: host,
 		Path: "/projects/{id}",

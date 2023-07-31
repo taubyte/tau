@@ -15,8 +15,7 @@ import (
 	streams "github.com/taubyte/p2p/streams/service"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
-	odoConfig "github.com/taubyte/tau/config"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	tauConfig "github.com/taubyte/tau/config"
 	auto "github.com/taubyte/tau/pkgs/http-auto"
 	"github.com/taubyte/tau/pkgs/kvdb"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
@@ -28,20 +27,16 @@ var (
 	logger = log.Logger("seer.service")
 )
 
-func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Service, error) {
+func New(ctx context.Context, config *tauConfig.Protocol, opts ...Options) (*Service, error) {
 	if config == nil {
-		config = &odoConfig.Protocol{}
+		config = &tauConfig.Protocol{}
 	}
 
 	srv := &Service{
 		shape: config.Shape,
 	}
 
-	err := config.Build(odoConfig.ConfigBuilder{
-		DefaultP2PListenPort: protocolsCommon.SeerDefaultP2PListenPort,
-		DevHttpListenPort:    protocolsCommon.SeerDevHttpListenPort,
-		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
-	})
+	err := config.Validate()
 	if err != nil {
 		return nil, fmt.Errorf("building config failed with: %s", err)
 	}
@@ -60,7 +55,7 @@ func New(ctx context.Context, config *odoConfig.Protocol, opts ...Options) (*Ser
 	}
 
 	if config.Node == nil {
-		srv.node, err = odoConfig.NewLiteNode(ctx, config, protocolsCommon.Seer)
+		srv.node, err = tauConfig.NewLiteNode(ctx, config, protocolsCommon.Seer)
 		if err != nil {
 			return nil, fmt.Errorf("new lite node failed with: %s", err)
 		}
@@ -166,5 +161,8 @@ func (srv *Service) Close() error {
 	srv.tns.Close()
 	srv.db.Close()
 	srv.dns.Stop()
+
+	srv.positiveCache.Stop()
+	srv.negativeCache.Stop()
 	return nil
 }

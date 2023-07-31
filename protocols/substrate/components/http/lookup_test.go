@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -8,6 +9,7 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"github.com/taubyte/tau/protocols/substrate/components/http/function"
 	"github.com/taubyte/tau/protocols/substrate/components/http/website"
@@ -15,7 +17,7 @@ import (
 )
 
 func TestLookup(t *testing.T) {
-	s := NewTestService(nil)
+	s := NewTestService(peer.MockNode(context.Background()))
 	testDomainName := "someDomain"
 	testFunctionId := "someFuncId"
 	testWebsiteId := "someWebId"

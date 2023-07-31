@@ -43,7 +43,7 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 		databasePath = protocolConfig.Shape
 	}
 
-	err := createP2PNodes(ctx, databasePath, protocolConfig.Shape, protocolConfig)
+	err := createNodes(ctx, databasePath, protocolConfig.Shape, protocolConfig)
 	if err != nil {
 		return err
 	}

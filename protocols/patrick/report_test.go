@@ -9,6 +9,7 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	commonDreamland "github.com/taubyte/tau/libdream/common"
 	"github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream/services"
 	_ "github.com/taubyte/tau/protocols/auth"
 
 	"github.com/taubyte/go-interfaces/services/patrick"
@@ -20,7 +21,7 @@ import (
 )
 
 func TestReportSsh(t *testing.T) {
-	u := services.Multiverse("ReportSsh")
+	u := services.Multiverse(dreamland.UniverseConfig{Name: "ReportSsh"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

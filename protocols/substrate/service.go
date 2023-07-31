@@ -8,12 +8,10 @@ import (
 	"fmt"
 
 	"github.com/ipfs/go-log/v2"
-	nodeP2PIFace "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
-	odoConfig "github.com/taubyte/tau/config"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	tauConfig "github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/pkgs/kvdb"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
@@ -26,30 +24,27 @@ var (
 	logger = log.Logger("node.service")
 )
 
-func New(ctx context.Context, config *odoConfig.Protocol) (*Service, error) {
+func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
 	srv := &Service{
 		ctx:      ctx,
 		orbitals: make([]vm.Plugin, 0),
 	}
 
 	if config == nil {
-		config = &odoConfig.Protocol{}
+		config = &tauConfig.Protocol{}
 	}
 
-	err := config.Build(odoConfig.ConfigBuilder{
-		DefaultP2PListenPort: protocolCommon.NodeDefaultP2PListenPort,
-		DevHttpListenPort:    protocolCommon.NodeDevHttpListenPort,
-		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
-	})
+	err := config.Validate()
 	if err != nil {
 		return nil, err
 	}
+
 	srv.branch = config.Branch
 	srv.dev = config.DevMode
 	srv.verbose = config.Verbose
 
 	if config.Node == nil {
-		srv.node, err = odoConfig.NewLiteNode(ctx, config, protocolCommon.Substrate)
+		srv.node, err = tauConfig.NewLiteNode(ctx, config, protocolCommon.Substrate)
 		if err != nil {
 			return nil, fmt.Errorf("creating new lite node failed with: %w", err)
 		}
@@ -178,14 +173,6 @@ func (srv *Service) Close() error {
 	srv.vm.Close()
 
 	return nil
-}
-
-func (srv *Service) P2PNode() (nodeP2P nodeP2PIFace.Service, err error) {
-	if srv.nodeP2P == nil {
-		return nil, errors.New("nodeP2P not created")
-	}
-
-	return srv.nodeP2P, nil
 }
 
 func (srv *Service) Dev() bool {

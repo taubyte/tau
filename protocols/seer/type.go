@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"sync"
 
+	"github.com/jellydator/ttlcache/v3"
 	"github.com/miekg/dns"
 	"github.com/taubyte/go-interfaces/kvdb"
 	iface "github.com/taubyte/go-interfaces/services/seer"
@@ -39,14 +40,16 @@ type geoService struct {
 }
 
 type Service struct {
-	node      peer.Node
-	db        kvdb.KVDB
-	dbFactory kvdb.Factory
-	http      http.Service
-	stream    *streams.CommandService
-	geo       *geoService
-	oracle    *oracleService
-	dns       *dnsServer
+	node          peer.Node
+	db            kvdb.KVDB
+	dbFactory     kvdb.Factory
+	http          http.Service
+	stream        *streams.CommandService
+	geo           *geoService
+	oracle        *oracleService
+	dns           *dnsServer
+	positiveCache *ttlcache.Cache[string, []string]
+	negativeCache *ttlcache.Cache[string, bool]
 
 	nodeDBMutex sync.RWMutex
 	nodeDB      *sql.DB

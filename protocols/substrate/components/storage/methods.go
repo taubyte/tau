@@ -118,12 +118,7 @@ func (s *Service) pubsubStorage(context storageIface.Context, branch string) err
 		return fmt.Errorf("marshalling auction failed with %w", err)
 	}
 
-	topic, err := s.Node().Messaging().Join(hoarderSpecs.PubSubIdent)
-	if err != nil {
-		return fmt.Errorf("getting topic for `%s` failed with: %w", hoarderSpecs.PubSubIdent, err)
-	}
-
-	if err = topic.Publish(s.Context(), dataBytes); err != nil {
+	if err = s.Node().Messaging().Publish(hoarderSpecs.PubSubIdent, dataBytes); err != nil {
 		return fmt.Errorf("failed publishing storage %s with %w", context.Matcher, err)
 	}
 

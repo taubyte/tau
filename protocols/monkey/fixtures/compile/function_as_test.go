@@ -11,6 +11,7 @@ import (
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
 	commonDreamland "github.com/taubyte/tau/libdream/common"
+	_ "github.com/taubyte/tau/libdream/common/fixtures"
 	dreamland "github.com/taubyte/tau/libdream/services"
 	"github.com/taubyte/tau/protocols/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/protocols/seer"
@@ -21,7 +22,7 @@ import (
 func TestASFunction(t *testing.T) {
 	t.Skip("this wasm build results in: abort: IO in ~lib/wasi_process.ts(177:16)")
 
-	u := dreamland.Multiverse("TestASFunction")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

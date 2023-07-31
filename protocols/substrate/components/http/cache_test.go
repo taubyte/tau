@@ -1,17 +1,19 @@
 package http
 
 import (
+	"context"
 	"testing"
 	"time"
 
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 )
 
 // TODO: Revisit cache clearing
 func TestCache(t *testing.T) {
 	t.Skip("cache needs to updated")
-	s := NewTestService(nil)
+	s := NewTestService(peer.MockNode(context.Background()))
 	testDomainName := "someDomain"
 	testFunctionId := "someFuncId"
 	domains = map[string]structureSpec.Domain{

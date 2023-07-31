@@ -12,7 +12,7 @@ import (
 
 func TestTimeout(t *testing.T) {
 	protocolCommon.TimeoutTest = true
-	u := dreamland.Multiverse("testTimeout")
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamlandCommon.Config{

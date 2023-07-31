@@ -1,16 +1,18 @@
 package http
 
 import (
+	"context"
 	"net/http"
 	"net/url"
 	"testing"
 
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/protocols/substrate/components/structure"
 )
 
 func TestFunction(t *testing.T) {
-	s := NewTestService(nil)
+	s := NewTestService(peer.MockNode(context.Background()))
 	testDomainName := "someDomain"
 	testFunctionId := "someFuncId"
 	testFunctionName := "someFunctionName"

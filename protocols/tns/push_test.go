@@ -32,14 +32,15 @@ func TestPush(t *testing.T) {
 	defer os.RemoveAll(srvRoot)
 
 	srv, err := New(testCtx, &config.Protocol{
-		Root:      srvRoot,
-		P2PListen: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11001)},
-		DevMode:   true,
-		SwarmKey:  common.SwarmKey(),
+		Root:        srvRoot,
+		P2PListen:   []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11001)},
+		P2PAnnounce: []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", 11001)},
+		DevMode:     true,
+		SwarmKey:    common.SwarmKey(),
 	})
 
 	if err != nil {
-		t.Error("Error creating Service")
+		t.Errorf("Error creating Service %s", err)
 		return
 	}
 

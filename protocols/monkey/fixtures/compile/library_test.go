@@ -20,7 +20,7 @@ import (
 // TODO: FIXME
 func TestLibrary(t *testing.T) {
 	t.Skip("Libraries are handled differently now")
-	u := dreamland.MultiverseWithConfig(dreamland.UniverseConfig{
+	u := dreamland.Multiverse(dreamland.UniverseConfig{
 		Name: "MonkeyFixtureTestLibrary",
 		Id:   "MonkeyFixtureTestLibrary",
 	})

@@ -84,6 +84,8 @@ type Universe interface {
 	SubstrateByPid(pid string) (substrate.Service, bool)
 	ListNumber(name string) int
 	GetServicePids(name string) ([]string, error)
+	//
+	PortFor(string, string) int
 }
 
 type Simple interface {

@@ -17,7 +17,7 @@ import (
 )
 
 func TestFixtureProvidesClients(t *testing.T) {
-	u := services.Multiverse("fixtureProvidesClients")
+	u := services.Multiverse(services.UniverseConfig{Name: "fixtureProvidesClients"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{
@@ -48,7 +48,7 @@ func TestFixtureProvidesClients(t *testing.T) {
 }
 
 func TestFixtureProvidesServices(t *testing.T) {
-	u := services.Multiverse("fixtureProvidesServices")
+	u := services.Multiverse(services.UniverseConfig{Name: "fixtureProvidesServices"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{
@@ -77,7 +77,7 @@ func TestFixtureProvidesServices(t *testing.T) {
 }
 
 func TestDreamlandFixture(t *testing.T) {
-	u := services.Multiverse("fixtureTest")
+	u := services.Multiverse(services.UniverseConfig{Name: "fixtureTest"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&commonDreamland.Config{

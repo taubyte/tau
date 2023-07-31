@@ -17,8 +17,8 @@ import (
 	"github.com/taubyte/utils/id"
 )
 
-func TestClient(t *testing.T) {
-	u := dreamland.Multiverse("testClient")
+func TestAuthClient(t *testing.T) {
+	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamlandCommon.Config{

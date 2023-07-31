@@ -19,9 +19,9 @@ import (
 )
 
 func TestZipWebsite(t *testing.T) {
-	u := dreamland.MultiverseWithConfig(dreamland.UniverseConfig{
-		Name: "MonkeyFixtureTestWebsite",
-		Id:   "MonkeyFixtureTestWebsite",
+	u := dreamland.Multiverse(dreamland.UniverseConfig{
+		Name: t.Name(),
+		Id:   t.Name(),
 	})
 	defer u.Stop()
 

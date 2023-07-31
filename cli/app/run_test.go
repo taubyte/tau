@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	odo "github.com/taubyte/tau/cli"
+	cli "github.com/taubyte/tau/cli"
 	"gotest.tools/v3/assert"
 )
 
@@ -18,7 +18,7 @@ var (
 // TODO: Build in tmp
 func TestStart(t *testing.T) {
 	app := App()
-	defer os.RemoveAll(shape + odo.ClientPrefix)
+	defer os.RemoveAll(shape + cli.ClientPrefix)
 	defer os.RemoveAll(shape)
 
 	ctx, ctxC := context.WithTimeout(context.Background(), time.Second*15)

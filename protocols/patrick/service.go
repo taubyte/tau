@@ -11,8 +11,7 @@ import (
 	monkeyApi "github.com/taubyte/tau/clients/p2p/monkey"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
-	"github.com/taubyte/tau/config"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	tauConfig "github.com/taubyte/tau/config"
 	auto "github.com/taubyte/tau/pkgs/http-auto"
 	"github.com/taubyte/tau/pkgs/kvdb"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
@@ -27,46 +26,40 @@ var (
 	DefaultReAnnounceFailedJobsTime = 7 * time.Minute
 )
 
-func New(ctx context.Context, protocolConfig *config.Protocol) (*PatrickService, error) {
+func New(ctx context.Context, config *tauConfig.Protocol) (*PatrickService, error) {
 	var srv PatrickService
 
-	if protocolConfig == nil {
-		_cnf := &config.Protocol{}
-
-		protocolConfig = _cnf
+	if config == nil {
+		config = &tauConfig.Protocol{}
 	}
 
-	err := protocolConfig.Build(config.ConfigBuilder{
-		DefaultP2PListenPort: protocolsCommon.PatrickDefaultP2PListenPort,
-		DevHttpListenPort:    protocolsCommon.PatrickDevHttpListenPort,
-		DevP2PListenFormat:   dreamlandCommon.DefaultP2PListenFormat,
-	})
+	err := config.Validate()
 	if err != nil {
 		return nil, fmt.Errorf("building config failed with: %s", err)
 	}
 
-	srv.devMode = protocolConfig.DevMode
+	srv.devMode = config.DevMode
 
-	logger.Info(protocolConfig)
+	logger.Info(config)
 
-	if protocolConfig.Node == nil {
-		srv.node, err = config.NewNode(ctx, protocolConfig, protocolsCommon.Patrick)
+	if config.Node == nil {
+		srv.node, err = tauConfig.NewNode(ctx, config, protocolsCommon.Patrick)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		srv.node = protocolConfig.Node
+		srv.node = config.Node
 	}
 
-	srv.dbFactory = protocolConfig.Databases
+	srv.dbFactory = config.Databases
 	if srv.dbFactory == nil {
 		srv.dbFactory = kvdb.New(srv.node)
 	}
 
 	// For odo
 	clientNode := srv.node
-	if protocolConfig.ClientNode != nil {
-		clientNode = protocolConfig.ClientNode
+	if config.ClientNode != nil {
+		clientNode = config.ClientNode
 	}
 
 	// Auth Consumer/Client
@@ -96,22 +89,22 @@ func New(ctx context.Context, protocolConfig *config.Protocol) (*PatrickService,
 		return nil, fmt.Errorf("failed stream new with error: %w", err)
 	}
 
-	srv.hostUrl = protocolConfig.NetworkUrl
+	srv.hostUrl = config.NetworkUrl
 	srv.setupStreamRoutes()
 
 	// HTTP
-	if protocolConfig.Http == nil {
-		srv.http, err = auto.NewAuto(ctx, srv.node, protocolConfig)
+	if config.Http == nil {
+		srv.http, err = auto.NewAuto(ctx, srv.node, config)
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		srv.http = protocolConfig.Http
+		srv.http = config.Http
 	}
 
 	srv.setupHTTPRoutes()
 
-	if protocolConfig.Http == nil {
+	if config.Http == nil {
 		srv.http.Start()
 	}
 
@@ -120,7 +113,7 @@ func New(ctx context.Context, protocolConfig *config.Protocol) (*PatrickService,
 		return nil, fmt.Errorf("failed creating seer client %v", err)
 	}
 
-	err = protocolsCommon.StartSeerBeacon(protocolConfig, sc, seerIface.ServiceTypePatrick)
+	err = protocolsCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypePatrick)
 	if err != nil {
 		return nil, err
 	}

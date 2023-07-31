@@ -20,7 +20,7 @@ import (
 	service "github.com/taubyte/tau/protocols/hoarder"
 )
 
-func TestClient(t *testing.T) {
+func TestHoarderClient(t *testing.T) {
 	ctx := context.Background()
 
 	srvRoot, err := os.MkdirTemp("/tmp", "clientSrvRoot")

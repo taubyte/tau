@@ -54,20 +54,16 @@ func (srv *dnsServer) Stop() {
 
 func (seer *Service) newDnsServer(devMode bool, port int) error {
 	//Create cache nodes and spam requests
-	_cache := ttlcache.New(ttlcache.WithTTL[string, []string](5*time.Minute), ttlcache.WithDisableTouchOnHit[string, []string]())
-	_negativeCache := ttlcache.New(ttlcache.WithTTL[string, bool](DefaultBlockTime), ttlcache.WithDisableTouchOnHit[string, bool]())
+	seer.positiveCache = ttlcache.New(ttlcache.WithTTL[string, []string](5*time.Minute), ttlcache.WithDisableTouchOnHit[string, []string]())
+	seer.negativeCache = ttlcache.New(ttlcache.WithTTL[string, bool](DefaultBlockTime), ttlcache.WithDisableTouchOnHit[string, bool]())
 
 	// Create TCP and UDP
 	var s *dnsServer
 	validate.UseResolver(seer.dnsResolver)
 	if devMode {
-		devPort := protocolsCommon.DefaultDevDnsPort
-		if port != 0 {
-			devPort = port
-		}
 		s = &dnsServer{
-			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(devPort), Net: "tcp"},
-			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(devPort), Net: "udp"},
+			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(port), Net: "tcp"},
+			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(port), Net: "udp"},
 			Seer: seer,
 		}
 	} else {
@@ -79,11 +75,11 @@ func (seer *Service) newDnsServer(devMode bool, port int) error {
 	}
 
 	seer.dns = s
-	s.Tcp.Handler = &dnsHandler{seer: seer, cache: _cache, negativeCache: _negativeCache}
-	s.Udp.Handler = &dnsHandler{seer: seer, cache: _cache, negativeCache: _negativeCache}
+	s.Tcp.Handler = &dnsHandler{seer: seer, cache: seer.positiveCache, negativeCache: seer.negativeCache}
+	s.Udp.Handler = &dnsHandler{seer: seer, cache: seer.positiveCache, negativeCache: seer.negativeCache}
 
-	go _cache.Start()
-	go _negativeCache.Start()
+	go seer.positiveCache.Start()
+	go seer.negativeCache.Start()
 
 	return nil
 }
@@ -143,7 +139,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 
 	if domainSpecs.TaubyteServiceDomain.MatchString(name) || h.seer.caaRecordBypass.MatchString(name) {
-		h.odoDnsResolve(name, w, r, errMsg, msg)
+		h.tauDnsResolve(name, w, r, errMsg, msg)
 		return
 	}
 
@@ -186,7 +182,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 // TODO: Clean this up, repetitive code
-func (h *dnsHandler) odoDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
+func (h *dnsHandler) tauDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
 	service := strings.Split(name, ".")[0]
 	ips, err := h.getServiceIp(service)
 	if err != nil {

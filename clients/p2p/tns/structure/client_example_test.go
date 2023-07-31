@@ -41,6 +41,4 @@ func ExampleClient() {
 	fmt.Printf("All storage Ids: %v\n", newIds)
 
 	// Output: All storage Ids: [QmV2KtAPhZHjFhH4iWXZFkWzB92iFUVHWScLNU5YEGLOBAL QmV2KtAPhZHjFhH4iWXZFkWzB92iFUVHWScLNU5YELOCAL QmVaeAmXrE4Zy94BYp3CG5UKDhmvB4gTdk72pG1oyKVbAe]
-	// Closing tns
-	// tns closed
 }

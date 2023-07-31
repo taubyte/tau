@@ -6,16 +6,11 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	peer "github.com/taubyte/p2p/peer"
-	"github.com/taubyte/tau/libdream/common"
 	"github.com/taubyte/tau/libdream/registry"
 )
 
 func (u *Universe) CreateHoarderService(config *commonIface.ServiceConfig) (peer.Node, error) {
 	var err error
-
-	if config.Port == 0 {
-		config.Port = u.portShift + common.DefaultHoarderPort
-	}
 
 	if registry.Registry.Hoarder.Service == nil {
 		return nil, fmt.Errorf(`service is nil, have you imported _ "github.com/taubyte/tau/protocols/hoarder"`)

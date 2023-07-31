@@ -18,7 +18,7 @@ import (
 )
 
 func TestWasmLibrary(t *testing.T) {
-	u := dreamland.MultiverseWithConfig(dreamland.UniverseConfig{
+	u := dreamland.Multiverse(dreamland.UniverseConfig{
 		Name: "MonkeyFixtureTestWasmLibrary",
 		Id:   "MonkeyFixtureTestWasmLibrary",
 	})

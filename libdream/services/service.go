@@ -3,6 +3,7 @@ package services
 import (
 	"fmt"
 	"os"
+	"path"
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
@@ -11,15 +12,26 @@ import (
 	"github.com/taubyte/tau/pkgs/kvdb"
 )
 
+func (u *Universe) PortFor(proto, _type string) int {
+	serviceCount := len(u.service[proto].nodes)
+	switch _type {
+	case "http":
+		return u.portShift + getHttpPort(proto) + serviceCount
+	case "p2p":
+		return u.portShift + getP2pPort(proto) + serviceCount
+	case "dns":
+		return u.portShift + common.DefaultDnsPort + serviceCount
+	}
+	return -1
+}
+
 func (u *Universe) createService(name string, config *commonIface.ServiceConfig) error {
 	if config.Root == "" {
 		config.Root = u.root
 	}
 
 	serviceCount := len(u.service[name].nodes)
-
-	config.Root += "/" + name + "-" + fmt.Sprint(serviceCount) + "/" + u.id
-
+	config.Root = path.Join(config.Root, fmt.Sprintf("%s-%d", name, serviceCount), u.id)
 	// Ignoring error in case of opening
 	os.MkdirAll(config.Root, 0750)
 
@@ -29,14 +41,9 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 
 	for _, k := range []string{"http", "p2p", "dns"} {
 		if _, ok := config.Others[k]; !ok {
-			switch k {
-			case "http":
-				config.Others[k] = u.portShift + getHttpPort(name) + serviceCount
-			case "p2p":
-				config.Port = u.portShift + getP2pPort(name) + serviceCount
-				config.Others[k] = config.Port
-			case "dns":
-				config.Others[k] = u.portShift + common.DefaultDnsPort + serviceCount
+			config.Others[k] = u.PortFor(name, k)
+			if k == "p2p" {
+				config.Port = config.Others[k]
 			}
 		}
 	}

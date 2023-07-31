@@ -52,11 +52,11 @@ func fakeFetch(messagings map[string]structureSpec.Messaging, functions map[stri
 	}
 }
 
-func NewTestService(node *peer.Node) *Service {
+func NewTestService(node peer.Node) *Service {
 	ctx := context.Background()
 
 	s := &Service{
-		Service: structure.MockNodeService(nil, ctx),
+		Service: structure.MockNodeService(peer.MockNode(ctx), ctx),
 		cache:   cache.New(),
 	}
 
