@@ -14,6 +14,7 @@
 ./protocols/tns/storage
 **/testGIT
 **/cover.out
+tau
 
 # Node artifact files
 node_modules/
