@@ -24,6 +24,7 @@ func init() {
 // to rewrite code
 var SharedRepositoryData *httpAuthClient.RawRepoDataOuter
 
+// TODO: pushSpecific might do the same thing
 func attachProdProject(u commonDreamland.Universe, params ...interface{}) error {
 	if len(params) < 2 {
 		return errors.New("attachProdProject expects 2 parameters [project-id] [git-token]")
