@@ -7,6 +7,7 @@ replace (
 	github.com/taubyte/go-interfaces => ../go-interfaces
 	github.com/taubyte/http => ../http
 	github.com/taubyte/tau => ../tau
+	github.com/taubyte/vm-core-plugins => ../vm-core-plugins
 )
 
 require (
