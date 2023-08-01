@@ -7,6 +7,7 @@ import (
 	"github.com/ipfs/go-cid"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
+	spec "github.com/taubyte/go-specs/common"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/p2p/streams/command"
@@ -27,11 +28,15 @@ func (f *Function) Close() {
 }
 
 func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Response, err error) {
-	instance, runtime, plugin, err := f.function.Instantiate(commonIface.FunctionContext{
-		Config:      f.config,
-		Project:     f.matcher.Project,
-		Application: f.matcher.Application,
-	}, f.srv.Branch(), f.commit)
+	instance, runtime, plugin, err := f.function.Instantiate(
+		commonIface.FunctionContext{
+			Config:      f.config,
+			Project:     f.matcher.Project,
+			Application: f.matcher.Application,
+		},
+		spec.DefaultBranch,
+		f.commit,
+	)
 	if err != nil {
 		return t, nil, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %s", f.config.Name, f.matcher.Project, f.matcher.Application, err)
 	}

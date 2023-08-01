@@ -6,7 +6,6 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 	"github.com/taubyte/go-interfaces/p2p/keypair"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
-	spec "github.com/taubyte/go-specs/common"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/peer"
 )
@@ -22,7 +21,6 @@ var (
 type Protocol struct {
 	Root      string
 	Shape     string
-	Branch    string
 	Protocols []string
 
 	Peers           []string
@@ -101,10 +99,6 @@ func (config *Protocol) Validate() error {
 		} else {
 			return errors.New("you must provide node private key")
 		}
-	}
-
-	if config.Branch == "" {
-		config.Branch = spec.DefaultBranch
 	}
 
 	return nil

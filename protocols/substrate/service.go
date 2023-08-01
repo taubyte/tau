@@ -39,7 +39,6 @@ func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
 		return nil, err
 	}
 
-	srv.branch = config.Branch
 	srv.dev = config.DevMode
 	srv.verbose = config.Verbose
 

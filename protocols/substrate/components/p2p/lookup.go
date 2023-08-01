@@ -5,6 +5,7 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
+	spec "github.com/taubyte/go-specs/common"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
 	"github.com/taubyte/tau/protocols/substrate/components/p2p/function"
@@ -17,7 +18,7 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 		return nil, fmt.Errorf("matcher not correct type expected (%T) got (%T)", new(common.MatchDefinition), matcherIface)
 	}
 
-	functions, err := s.Tns().Function().All(matcher.Project, matcher.Application, s.Branch()).List()
+	functions, err := s.Tns().Function().All(matcher.Project, matcher.Application, spec.DefaultBranch).List()
 	if err != nil {
 		return nil, err
 	}

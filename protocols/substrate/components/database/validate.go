@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
+	spec "github.com/taubyte/go-specs/common"
 )
 
 func (s *Service) validateCommit(hash, projectId, branch string) (bool, string, error) {
@@ -29,7 +30,7 @@ func (s *Service) validateCommit(hash, projectId, branch string) (bool, string, 
 
 func (s *Service) updateDatabase(database iface.Database) (iface.Database, error) {
 	config := database.DBContext()
-	newConfig, err := s.Tns().Database().All(config.ProjectId, config.ApplicationId, s.Branch()).GetByName(config.Config.Name)
+	newConfig, err := s.Tns().Database().All(config.ProjectId, config.ApplicationId, spec.DefaultBranch).GetByName(config.Config.Name)
 	if err != nil {
 		return nil, err
 	}

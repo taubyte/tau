@@ -32,10 +32,6 @@ func (s *mockService) Verbose() bool {
 	return false
 }
 
-func (s *mockService) Branch() string {
-	return "master"
-}
-
 func (s *mockService) Cache() components.Cache {
 	return nil
 }

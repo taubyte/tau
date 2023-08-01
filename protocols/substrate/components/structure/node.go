@@ -69,10 +69,6 @@ func (s *NodeService) SmartOps() substrate.SmartOpsService {
 	return s.nodeSmartOps
 }
 
-func (s *NodeService) Branch() string {
-	return s.branch
-}
-
 func (s *NodeService) Context() context.Context {
 	return s.ctx
 }

@@ -42,7 +42,7 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 
 		indexObject, err := s.Tns().Fetch(servKey.Versioning().Links())
 		if err == nil {
-			pathList, err := indexObject.Current(s.Branch())
+			pathList, err := indexObject.Current(spec.DefaultBranch)
 			if err == nil {
 				candidates = append(candidates, s.handleTNSPaths(stype, matcher, pathList)...)
 			}

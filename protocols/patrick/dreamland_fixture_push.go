@@ -52,13 +52,6 @@ func pushAll(u common.Universe, params ...interface{}) error {
 	}
 
 	projectId := ""
-	branch := ""
-	if len(params) > 0 {
-		projectId = params[0].(string)
-		if len(params) > 1 {
-			branch = params[1].(string)
-		}
-	}
 
 	resp, err := simple.TNS().Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github"}))
 	if err != nil {
@@ -73,7 +66,9 @@ func pushAll(u common.Universe, params ...interface{}) error {
 		if !ok {
 			return fmt.Errorf("fullname does not exist for repo : %s", repoId)
 		}
-		err := pushSpecific(u, repoId, fullName, projectId, branch)
+
+		fmt.Println("BRANCH:::", spec.DefaultBranch)
+		err := pushSpecific(u, repoId, fullName, projectId, spec.DefaultBranch)
 		if err != nil {
 			return err
 		}

@@ -9,6 +9,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 
+	spec "github.com/taubyte/go-specs/common"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
@@ -24,11 +25,15 @@ func (f *Function) Project() (cid.Cid, error) {
 }
 
 func (f *Function) HandleMessage(msg *pubsub.Message) (t time.Time, err error) {
-	instance, runtime, plugin, err := f.function.Instantiate(components.FunctionContext{
-		Config:      f.config,
-		Project:     f.matcher.Project,
-		Application: f.matcher.Application,
-	}, f.srv.Branch(), f.commit)
+	instance, runtime, plugin, err := f.function.Instantiate(
+		components.FunctionContext{
+			Config:      f.config,
+			Project:     f.matcher.Project,
+			Application: f.matcher.Application,
+		},
+		spec.DefaultBranch,
+		f.commit,
+	)
 	if err != nil {
 		return t, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %s", f.config.Name, f.matcher.Project, f.matcher.Application, err)
 	}

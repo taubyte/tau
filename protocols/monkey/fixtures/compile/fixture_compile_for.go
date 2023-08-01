@@ -30,9 +30,7 @@ func (b *BasicCompileFor) parse(params []interface{}) error {
 	basic, ok := params[0].(BasicCompileFor)
 	if ok {
 		*b = basic
-		if b.Branch == "" {
-			b.Branch = spec.DefaultBranch
-		}
+		b.Branch = spec.DefaultBranch
 
 		if len(b.Paths) == 0 {
 			return errors.New("path is required")

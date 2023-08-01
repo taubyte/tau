@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components"
+	spec "github.com/taubyte/go-specs/common"
 )
 
 // Lookup returns the list of serviceables retrieved from cache or tns
@@ -36,7 +37,7 @@ func validate(serviceables []iface.Serviceable, service iface.ServiceComponent) 
 		return fmt.Errorf("validating cached pick project id failed with: %s", err)
 	}
 
-	commit, err := service.Tns().Simple().Commit(project.String(), service.Branch())
+	commit, err := service.Tns().Simple().Commit(project.String(), spec.DefaultBranch)
 	if err != nil {
 		return err
 	}

@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"regexp"
 
+	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 )
 
 func (s *Service) fetchConfig(project, application, matcher string) (*structureSpec.Database, error) {
 	// Fetch config from tns and match
-	databases, err := s.Tns().Database().All(project, application, s.Branch()).List()
+	databases, err := s.Tns().Database().All(project, application, spec.DefaultBranch).List()
 	if err != nil {
 		return nil, fmt.Errorf("fetching indexed database object failed with: %s", err)
 	}

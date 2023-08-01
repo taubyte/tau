@@ -6,6 +6,7 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
+	spec "github.com/taubyte/go-specs/common"
 	functionSpec "github.com/taubyte/go-specs/function"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
@@ -65,7 +66,7 @@ func (s *Service) CheckTns(_matcher commonIface.MatchDefinition) ([]commonIface.
 		return available, nil
 	}
 
-	functions, err := s.Tns().Function().All(matcher.Project, matcher.Application, s.Branch()).List()
+	functions, err := s.Tns().Function().All(matcher.Project, matcher.Application, spec.DefaultBranch).List()
 	if err != nil {
 		common.Logger.Error("Fetching functions list interface failed with:", err.Error())
 		return nil, err

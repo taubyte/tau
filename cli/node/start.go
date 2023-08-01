@@ -105,7 +105,6 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 		httpNode.Start()
 	}
 
-	// TODO: Use logger
 	logger.Infof("%s started! with id: %s", protocolConfig.Shape, protocolConfig.Node.ID())
 
 	<-ctx.Done()

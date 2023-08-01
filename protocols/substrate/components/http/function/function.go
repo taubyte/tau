@@ -9,6 +9,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	spec "github.com/taubyte/go-specs/common"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
@@ -20,11 +21,15 @@ func (f *Function) Project() (cid.Cid, error) {
 }
 
 func (f *Function) Handle(w goHttp.ResponseWriter, r *goHttp.Request, matcher commonIface.MatchDefinition) (t time.Time, err error) {
-	instance, runtime, plugin, err := f.function.Instantiate(commonIface.FunctionContext{
-		Config:      f.config,
-		Project:     f.project,
-		Application: f.application,
-	}, f.srv.Branch(), f.commit)
+	instance, runtime, plugin, err := f.function.Instantiate(
+		commonIface.FunctionContext{
+			Config:      f.config,
+			Project:     f.project,
+			Application: f.application,
+		},
+		spec.DefaultBranch,
+		f.commit,
+	)
 	if err != nil {
 		return t, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %s", f.config.Name, f.project, f.application, err)
 	}
