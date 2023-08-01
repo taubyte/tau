@@ -3,7 +3,6 @@ swarmkey: test_swarm.key
 protocols: [patrick,substrate,tns,monkey,seer,auth]
 p2p-listen: [/ip4/0.0.0.0/tcp/8100]
 p2p-announce: [/ip4/127.0.0.1/tcp/8100]
-devmode: true
 ports:
   main: 8100
   lite: 8102
