@@ -60,6 +60,6 @@ const (
 	  );`
 
 	// TODO: Combine these two Statements
-	GetStableNodeIps = `SELECT Value from Meta, Usage WHERE Meta.Id = Usage.Id AND Usage.Timestamp > ? AND Key="IP" AND Type="node";`
+	GetStableNodeIps = `SELECT Value from Meta, Usage WHERE Meta.Id = Usage.Id AND Usage.Timestamp > ? AND Key="IP" AND Type="substrate";`
 	GetServiceIp     = `SELECT Value from Meta, Usage WHERE Meta.Id = Usage.Id AND Usage.Timestamp > ? AND Key="IP" AND  Type=?;`
 )

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/vm"
@@ -113,18 +114,20 @@ func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
 		}
 	} else {
 		var plugConfig []string
-		if err = seer.Get("plugins").Document().Get(config.Shape).Value(&plugConfig); err != nil {
-			return nil, fmt.Errorf("seer get plugins from shape `%s` failed with: %w", config.Shape, err)
-		}
-
-		for _, name := range plugConfig {
-			pluginName := pluginDir + name
-			plugin, err := orbit.Load(pluginName, ctx)
-			if err != nil {
-				return nil, fmt.Errorf("loading plugin `%s` failed with: %w", name, err)
+		if _, err := os.Stat("/tb/plugins/plugins.yaml"); err == nil {
+			if err = seer.Get("plugins").Document().Get(config.Shape).Value(&plugConfig); err != nil {
+				return nil, fmt.Errorf("seer get plugins from shape `%s` failed with: %w", config.Shape, err)
 			}
 
-			srv.orbitals = append(srv.orbitals, plugin)
+			for _, name := range plugConfig {
+				pluginName := pluginDir + name
+				plugin, err := orbit.Load(pluginName, ctx)
+				if err != nil {
+					return nil, fmt.Errorf("loading plugin `%s` failed with: %w", name, err)
+				}
+
+				srv.orbitals = append(srv.orbitals, plugin)
+			}
 		}
 
 	}
