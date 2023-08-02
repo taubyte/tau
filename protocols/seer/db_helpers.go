@@ -80,7 +80,7 @@ func (h *dnsHandler) getNodeIp() ([]string, error) {
 	var ips []string
 
 	// Check cache for node ips
-	nodeIps := h.cache.Get("nodes")
+	nodeIps := h.cache.Get("substrate")
 	if nodeIps != nil {
 		return nodeIps.Value(), nil
 	}
@@ -106,8 +106,8 @@ func (h *dnsHandler) getNodeIp() ([]string, error) {
 		}
 	}
 
-	// Cache nodes
-	h.cache.Set("nodes", ips, 5*time.Minute)
+	// Cache substrate ips
+	h.cache.Set("substrate", ips, 5*time.Minute)
 
 	return ips, nil
 }
