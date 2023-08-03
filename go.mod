@@ -2,14 +2,6 @@ module github.com/taubyte/tau
 
 go 1.19
 
-replace (
-	github.com/taubyte/dreamland => ../dreamland
-	github.com/taubyte/go-interfaces => ../go-interfaces
-	github.com/taubyte/http => ../http
-	github.com/taubyte/tau => ../tau
-	github.com/taubyte/vm-core-plugins => ../vm-core-plugins
-)
-
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -41,7 +33,7 @@ require (
 	github.com/taubyte/builder v0.2.0
 	github.com/taubyte/config-compiler v0.4.6
 	github.com/taubyte/domain-validation v1.0.0
-	github.com/taubyte/go-interfaces v0.2.11
+	github.com/taubyte/go-interfaces v0.2.12
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
@@ -49,12 +41,12 @@ require (
 	github.com/taubyte/go-simple-container v0.4.2
 	github.com/taubyte/go-simple-git v0.2.5
 	github.com/taubyte/go-specs v0.10.6
-	github.com/taubyte/http v0.10.3
+	github.com/taubyte/http v0.10.4
 	github.com/taubyte/p2p v0.9.1
 	github.com/taubyte/tau-cli v0.1.8
 	github.com/taubyte/utils v0.1.6
 	github.com/taubyte/vm v1.0.3
-	github.com/taubyte/vm-core-plugins v0.3.3
+	github.com/taubyte/vm-core-plugins v0.3.4
 	github.com/taubyte/vm-orbit v1.0.0
 	github.com/urfave/cli/v2 v2.25.7
 	go4.org v0.0.0-20230225012048-214862532bf5
