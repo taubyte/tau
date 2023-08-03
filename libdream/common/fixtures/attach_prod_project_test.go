@@ -3,6 +3,7 @@ package fixtures
 import (
 	"testing"
 
+	"github.com/ipfs/go-log/v2"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	commonDreamland "github.com/taubyte/tau/libdream/common"
 	"github.com/taubyte/tau/libdream/helpers"
@@ -12,9 +13,13 @@ import (
 	_ "github.com/taubyte/tau/protocols/monkey"
 	_ "github.com/taubyte/tau/protocols/patrick"
 	_ "github.com/taubyte/tau/protocols/tns"
+	"gotest.tools/v3/assert"
 )
 
 func TestAttachProdProject(t *testing.T) {
+	log.SetLogLevel("seer.p2p.client", "PANIC")
+	t.Skip("this project is not on prod anymore")
+
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -36,15 +41,11 @@ func TestAttachProdProject(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	err = u.RunFixture("attachProdProject", helpers.ProjectID, helpers.GitToken, "dreamland")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	err = u.RunFixture("setBranch", "dreamland")
+	assert.NilError(t, err)
 
+	err = u.RunFixture("attachProdProject", helpers.ProjectID, helpers.GitToken)
+	assert.NilError(t, err)
 }

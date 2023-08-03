@@ -6,6 +6,7 @@ import (
 
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
+	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/tau/protocols/substrate/components/database/common"
 	db "github.com/taubyte/tau/protocols/substrate/components/database/database"
 )
@@ -42,14 +43,14 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 		s.databases[hash] = database
 		s.databasesLock.Unlock()
 
-		if err = s.pubsubDatabase(context, s.Branch()); err != nil {
+		if err = s.pubsubDatabase(context, spec.DefaultBranch); err != nil {
 			return nil, fmt.Errorf("pubsubDatabase failed with: %w", err)
 		}
 
 		var commit string
-		commit, err = s.Tns().Simple().Commit(context.ProjectId, s.Branch())
+		commit, err = s.Tns().Simple().Commit(context.ProjectId, spec.DefaultBranch)
 		if err != nil {
-			return nil, fmt.Errorf("getting commit for project id `%s` and branch `%s` failed with: %s", context.ProjectId, s.Branch(), err)
+			return nil, fmt.Errorf("getting commit for project id `%s` and branch `%s` failed with: %s", context.ProjectId, spec.DefaultBranch, err)
 		}
 
 		s.commitLock.Lock()
@@ -59,7 +60,7 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 		return
 	}
 
-	valid, newCommitId, err := s.validateCommit(hash, context.ProjectId, s.Branch())
+	valid, newCommitId, err := s.validateCommit(hash, context.ProjectId, spec.DefaultBranch)
 	if err != nil {
 		return nil, fmt.Errorf("validating commit failed with: %w", err)
 	}

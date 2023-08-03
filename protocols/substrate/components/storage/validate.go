@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
+	spec "github.com/taubyte/go-specs/common"
 )
 
 func (s *Service) validateCommit(hash, projectId, branch string) (bool, string, error) {
@@ -29,7 +30,7 @@ func (s *Service) validateCommit(hash, projectId, branch string) (bool, string, 
 
 func (s *Service) updateStorage(storage storageIface.Storage) (storageIface.Storage, error) {
 	config := storage.ContextConfig()
-	newConfig, err := s.Tns().Storage().All(config.ProjectId, config.ApplicationId, s.Branch()).GetByName(config.Config.Name)
+	newConfig, err := s.Tns().Storage().All(config.ProjectId, config.ApplicationId, spec.DefaultBranch).GetByName(config.Config.Name)
 	if err != nil {
 		return nil, err
 	}

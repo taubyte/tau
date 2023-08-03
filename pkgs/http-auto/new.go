@@ -11,8 +11,17 @@ import (
 	"github.com/taubyte/tau/config"
 )
 
+func opsFromConfig(config *config.Protocol) []options.Option {
+	ops := []options.Option{options.Listen(config.HttpListen)}
+	if config.Verbose {
+		ops = append(ops, options.Debug())
+	}
+
+	return ops
+}
+
 func NewAuto(ctx context.Context, node peer.Node, config *config.Protocol, ops ...options.Option) (http service.Service, err error) {
-	ops = append(ops, options.Listen(config.HttpListen))
+	ops = append(ops, opsFromConfig(config)...)
 	if config.DevMode {
 		return devHttp(ctx, config.EnableHTTPS, ops...)
 	} else {
@@ -21,8 +30,7 @@ func NewAuto(ctx context.Context, node peer.Node, config *config.Protocol, ops .
 }
 
 func NewBasic(ctx context.Context, config *config.Protocol, ops ...options.Option) (http service.Service, err error) {
-	ops = append(ops, options.Listen(config.HttpListen))
-
+	ops = append(ops, opsFromConfig(config)...)
 	if config.DevMode {
 		return devHttp(ctx, config.EnableHTTPS, ops...)
 	} else {

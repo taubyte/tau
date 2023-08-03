@@ -6,6 +6,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/go-interfaces/services/hoarder"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/database"
+	spec "github.com/taubyte/go-specs/common"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
 )
 
@@ -18,7 +19,7 @@ func (s *Service) pubsubDatabase(context iface.Context, branch string) error {
 			ApplicationId: context.ApplicationId,
 			ProjectId:     context.ProjectId,
 			Match:         context.Matcher,
-			Branch:        s.Branch(),
+			Branch:        spec.DefaultBranch,
 		},
 	}
 

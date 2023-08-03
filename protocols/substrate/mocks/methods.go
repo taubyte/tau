@@ -41,10 +41,6 @@ func (m *mockedSubstrate) Tns() tns.Client {
 	return m.tns
 }
 
-func (m *mockedSubstrate) Branch() string {
-	return m.branch
-}
-
 func (m *mockedSubstrate) Counter() substrate.CounterService {
 	return m.counters
 }

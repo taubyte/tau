@@ -24,6 +24,13 @@ var FixtureMap = map[string]FixtureDefinition{
 	"setBranch": {
 		Description: "set the default branch for protocols to resolve",
 		ImportRef:   "libdream/common/fixtures",
+		Variables: []FixtureVariable{
+			{
+				Name:     "name",
+				Alias:    "n",
+				Required: true,
+			},
+		},
 	},
 	"createProjectWithJobs": {Description: "creates jobs for code and config repos", ImportRef: "patrick"},
 	"pushAll": {

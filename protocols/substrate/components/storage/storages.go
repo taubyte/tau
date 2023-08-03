@@ -5,6 +5,7 @@ import (
 	"regexp"
 
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
+	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/storage/common"
 )
@@ -28,7 +29,7 @@ func (s *Service) Get(context storageIface.Context) (storageIface.Storage, error
 }
 
 func (s *Service) getStoreConfig(project, application, matcher string) (*structureSpec.Storage, error) {
-	storages, err := s.Tns().Storage().All(project, application, s.Branch()).List()
+	storages, err := s.Tns().Storage().All(project, application, spec.DefaultBranch).List()
 	if err != nil {
 		return nil, fmt.Errorf("listing storage configs failed with: %s", err)
 	}

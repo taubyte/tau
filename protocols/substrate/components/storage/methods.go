@@ -9,6 +9,7 @@ import (
 	"github.com/ipfs/go-cid"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
+	spec "github.com/taubyte/go-specs/common"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
 	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/protocols/substrate/components/storage/common"
@@ -39,14 +40,14 @@ func (s *Service) Storage(context storageIface.Context) (storageIface.Storage, e
 		s.storages[hash] = storage
 		s.storagesLock.Unlock()
 
-		err = s.pubsubStorage(context, s.Branch())
+		err = s.pubsubStorage(context, spec.DefaultBranch)
 		if err != nil {
 			return nil, fmt.Errorf("pubsub storage `%s` failed with: %s", context.Matcher, err)
 		}
 
-		commit, err := s.Tns().Simple().Commit(context.ProjectId, s.Branch())
+		commit, err := s.Tns().Simple().Commit(context.ProjectId, spec.DefaultBranch)
 		if err != nil {
-			return nil, fmt.Errorf("getting commit for project id `%s` and branch `%s` failed with: %s", context.ProjectId, s.Branch(), err)
+			return nil, fmt.Errorf("getting commit for project id `%s` and branch `%s` failed with: %s", context.ProjectId, spec.DefaultBranch, err)
 		}
 
 		s.commitLock.Lock()
@@ -54,7 +55,7 @@ func (s *Service) Storage(context storageIface.Context) (storageIface.Storage, e
 		s.commitLock.Unlock()
 	}
 
-	valid, newCommitId, err := s.validateCommit(hash, context.ProjectId, s.Branch())
+	valid, newCommitId, err := s.validateCommit(hash, context.ProjectId, spec.DefaultBranch)
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +110,7 @@ func (s *Service) pubsubStorage(context storageIface.Context, branch string) err
 			ApplicationId: context.ApplicationId,
 			ProjectId:     context.ProjectId,
 			Match:         context.Matcher,
-			Branch:        s.Branch(),
+			Branch:        spec.DefaultBranch,
 		},
 	}
 

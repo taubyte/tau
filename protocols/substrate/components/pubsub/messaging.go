@@ -3,6 +3,7 @@ package pubsub
 import (
 	"regexp"
 
+	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
@@ -10,7 +11,7 @@ import (
 func (s *Service) GetMessagingsMap(matcher *common.MatchDefinition) (messagingsMap *common.MessagingMap, err error) {
 	messagingsMap = new(common.MessagingMap)
 
-	globalMessaging, err := s.Tns().Messaging().Global(matcher.Project, s.Branch()).List()
+	globalMessaging, err := s.Tns().Messaging().Global(matcher.Project, spec.DefaultBranch).List()
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +41,7 @@ func (s *Service) GetMessagingsMap(matcher *common.MatchDefinition) (messagingsM
 	}
 
 	if len(matcher.Application) > 0 {
-		relativeMessaging, err := s.Tns().Messaging().Relative(matcher.Project, matcher.Application, s.Branch()).List()
+		relativeMessaging, err := s.Tns().Messaging().Relative(matcher.Project, matcher.Application, spec.DefaultBranch).List()
 		if err != nil {
 			return nil, err
 		}

@@ -6,12 +6,13 @@ import (
 	"fmt"
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
+	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/p2p/stream"
 )
 
 func (srv *Service) LookupService(matcher *iface.MatchDefinition) (*structureSpec.Service, string, error) {
-	serviceMap, err := srv.Tns().Service().Global(matcher.Project, srv.Branch()).List()
+	serviceMap, err := srv.Tns().Service().Global(matcher.Project, spec.DefaultBranch).List()
 	if err != nil {
 		return nil, "", fmt.Errorf("fetching services for protocol `%s` failed with: %v", matcher.Protocol, err)
 	}
@@ -27,7 +28,7 @@ func (srv *Service) LookupService(matcher *iface.MatchDefinition) (*structureSpe
 
 	if len(matcher.Application) > 0 {
 		if foundService == nil || len(foundService.Id) == 0 {
-			serviceMap, err = srv.Tns().Service().Relative(matcher.Project, matcher.Application, srv.Branch()).List()
+			serviceMap, err = srv.Tns().Service().Relative(matcher.Project, matcher.Application, spec.DefaultBranch).List()
 			if err != nil {
 				return nil, "", fmt.Errorf("fetching services for protocol `%s` failed with: %v", matcher.Protocol, err)
 			}

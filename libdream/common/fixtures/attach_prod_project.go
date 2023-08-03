@@ -24,6 +24,7 @@ func init() {
 // to rewrite code
 var SharedRepositoryData *httpAuthClient.RawRepoDataOuter
 
+// TODO: pushSpecific might do the same thing
 func attachProdProject(u commonDreamland.Universe, params ...interface{}) error {
 	if len(params) < 2 {
 		return errors.New("attachProdProject expects 2 parameters [project-id] [git-token]")
@@ -39,7 +40,7 @@ func attachProdProject(u commonDreamland.Universe, params ...interface{}) error 
 		helpers.GitToken = gitToken
 	}
 
-	prodAuthURL := "https://auth.taubyte.com"
+	prodAuthURL := "https://auth.tau.sandbox.taubyte.com"
 	prodClient, err := httpAuthClient.New(u.Context(), httpAuthClient.URL(prodAuthURL), httpAuthClient.Auth(gitToken), httpAuthClient.Unsecure(), httpAuthClient.Provider(helpers.GitProvider))
 	if err != nil {
 		return fmt.Errorf("creating new auth client failed with: %w", err)

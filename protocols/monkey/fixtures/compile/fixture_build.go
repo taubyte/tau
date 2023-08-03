@@ -37,10 +37,7 @@ func (v *buildFixtureValues) parse(params []interface{}) error {
 	if !ok {
 		return errors.New("path(string) is required")
 	}
-	v.branch = params[3].(string)
-	if v.branch == "" {
-		v.branch = spec.DefaultBranch
-	}
+	v.branch = spec.DefaultBranch
 
 	return nil
 }

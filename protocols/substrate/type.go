@@ -43,10 +43,7 @@ type Service struct {
 	verbose      bool
 	databases    kvdb.Factory
 
-	tns tns.Client
-
-	branch string
-
+	tns      tns.Client
 	orbitals []vm.Plugin
 }
 
@@ -76,10 +73,6 @@ func (s *Service) SmartOps() iface.SmartOpsService {
 
 func (s *Service) Tns() tns.Client {
 	return s.tns
-}
-
-func (s *Service) Branch() string {
-	return s.branch
 }
 
 func (s *Service) P2P() p2pIface.Service {
