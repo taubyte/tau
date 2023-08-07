@@ -18,6 +18,7 @@ type FixtureDefinition struct {
 	ImportRef   string
 	Variables   []FixtureVariable
 	BlockCLI    bool
+	Internal    bool
 }
 
 var FixtureMap = map[string]FixtureDefinition{
@@ -32,7 +33,11 @@ var FixtureMap = map[string]FixtureDefinition{
 			},
 		},
 	},
-	"createProjectWithJobs": {Description: "creates jobs for code and config repos", ImportRef: "patrick"},
+	"createProjectWithJobs": {
+		Description: "creates jobs for code and config repos",
+		ImportRef:   "patrick",
+		Internal:    true,
+	},
 	"pushAll": {
 		Description: "pushes all ",
 		ImportRef:   "patrick",
@@ -49,12 +54,36 @@ var FixtureMap = map[string]FixtureDefinition{
 			},
 		},
 	},
-	"pushConfig":   {Description: "pushes into config repo", ImportRef: "patrick"},
-	"pushCode":     {Description: "pushes into code repo", ImportRef: "patrick"},
-	"pushWebsite":  {Description: "pushes website repo", ImportRef: "patrick"},
-	"pushLibrary":  {Description: "pushes library repo", ImportRef: "patrick"},
-	"attachDomain": {Description: "attaches default FQDN", ImportRef: "substrate"},
-	"clearRepos":   {Description: "delete all unused repos", ImportRef: "dreamland-test/fixtures"},
+	"pushConfig": {
+		Description: "pushes into config repo",
+		ImportRef:   "patrick",
+		Internal:    true,
+	},
+	"pushCode": {
+		Description: "pushes into code repo",
+		ImportRef:   "patrick",
+		Internal:    true,
+	},
+	"pushWebsite": {
+		Description: "pushes website repo",
+		ImportRef:   "patrick",
+		Internal:    true,
+	},
+	"pushLibrary": {
+		Description: "pushes library repo",
+		ImportRef:   "patrick",
+		Internal:    true,
+	},
+	"attachDomain": {
+		Description: "attaches default FQDN",
+		ImportRef:   "substrate",
+		Internal:    true,
+	},
+	"clearRepos": {
+		Description: "delete all unused repos",
+		ImportRef:   "dreamland-test/fixtures",
+		Internal:    true,
+	},
 	"attachPlugin": {
 		Description: "inject a plugin binary built using VM-Orbit",
 		ImportRef:   "substrate",
@@ -99,6 +128,7 @@ var FixtureMap = map[string]FixtureDefinition{
 	"attachProdProject": {
 		Description: "Attach a production project to dreamland",
 		ImportRef:   "dreamland-test/fixtures", // TODO should this fixture be in tns?
+		Internal:    true,
 		Variables: []FixtureVariable{
 			{
 				Name:        "project-id",
@@ -117,6 +147,7 @@ var FixtureMap = map[string]FixtureDefinition{
 	"importProdProject": {
 		Description: "Import a production project to dreamland and push all the repos",
 		ImportRef:   "dreamland-test/fixtures", // TODO should this fixture be in tns?
+		Internal:    true,
 		Variables: []FixtureVariable{
 			{
 				Name:        "project-id",
@@ -138,11 +169,21 @@ var FixtureMap = map[string]FixtureDefinition{
 			},
 		},
 	},
-	"fakeProject":   {Description: "Pushes the internal project to tns", ImportRef: "tau/libdream/common/fixtures"},
-	"injectProject": {Description: "Pass in a *projectSchema.Project to inject it into tns", ImportRef: "tau/libdream/common/fixtures", BlockCLI: true},
+	"fakeProject": {
+		Description: "Pushes the internal project to tns",
+		ImportRef:   "tau/libdream/common/fixtures",
+		Internal:    true,
+	},
+	"injectProject": {
+		Description: "Pass in a *projectSchema.Project to inject it into tns",
+		ImportRef:   "tau/libdream/common/fixtures",
+		BlockCLI:    true,
+		Internal:    true,
+	},
 	"compileFor": {
 		Description: "pushes specific repos",
 		ImportRef:   "monkey/fixtures/compile",
+		Internal:    true,
 		Variables: []FixtureVariable{
 			{
 				Name:        "project-id",
@@ -185,6 +226,7 @@ var FixtureMap = map[string]FixtureDefinition{
 	"buildLocalProject": {
 		Description: "pushes specific repos",
 		ImportRef:   "monkey/fixtures/compile",
+		Internal:    true,
 		Variables: []FixtureVariable{
 			{
 				Name:        "config",

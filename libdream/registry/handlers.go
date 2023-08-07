@@ -75,5 +75,6 @@ func Get(fixture string) (FixtureHandler, error) {
 		}
 		return nil, fmt.Errorf("fixture `%s` is nil, have you imported _ \"github.com/taubyte/%s\"", fixture, importRequired.ImportRef)
 	}
+
 	return fixtureHandler, nil
 }
