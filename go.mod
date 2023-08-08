@@ -28,9 +28,10 @@ require (
 	github.com/multiformats/go-varint v0.0.7
 	github.com/otiai10/copy v1.12.0
 	github.com/pkg/errors v0.9.1
-	github.com/pterm/pterm v0.12.62
+	github.com/pterm/pterm v0.12.65
 	github.com/spf13/afero v1.9.5
 	github.com/taubyte/builder v0.2.0
+	github.com/taubyte/cli-common v0.1.1
 	github.com/taubyte/config-compiler v0.4.6
 	github.com/taubyte/domain-validation v1.0.0
 	github.com/taubyte/go-interfaces v0.2.12
@@ -43,7 +44,6 @@ require (
 	github.com/taubyte/go-specs v0.10.6
 	github.com/taubyte/http v0.10.4
 	github.com/taubyte/p2p v0.9.1
-	github.com/taubyte/tau-cli v0.1.8
 	github.com/taubyte/utils v0.1.6
 	github.com/taubyte/vm v1.0.3
 	github.com/taubyte/vm-core-plugins v0.3.4
@@ -64,7 +64,7 @@ require (
 )
 
 require (
-	atomicgo.dev/cursor v0.1.1 // indirect
+	atomicgo.dev/cursor v0.2.0 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	atomicgo.dev/schedule v0.0.2 // indirect
 	github.com/CAFxX/httpcompression v0.0.8 // indirect
@@ -101,7 +101,7 @@ require (
 	github.com/elastic/gosigar v0.14.2 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/ethereum/go-ethereum v1.12.0 // indirect
-	github.com/fatih/color v1.7.0 // indirect
+	github.com/fatih/color v1.14.1 // indirect
 	github.com/flynn/noise v1.0.0 // indirect
 	github.com/francoispqt/gojay v1.2.13 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
@@ -135,7 +135,7 @@ require (
 	github.com/hashicorp/yamux v0.0.0-20180604194846-3520598351bb // indirect
 	github.com/holiman/uint256 v1.2.2-0.20230321075855-87b91420868c // indirect
 	github.com/huin/goupnp v1.2.0 // indirect
-	github.com/imdario/mergo v0.3.13 // indirect
+	github.com/imdario/mergo v0.3.15 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect
 	github.com/ipfs/boxo v0.8.1 // indirect
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
@@ -185,7 +185,7 @@ require (
 	github.com/marten-seemann/tcp v0.0.0-20210406111302-dfbc87cc63fd // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
-	github.com/mattn/go-runewidth v0.0.14 // indirect
+	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
 	github.com/mikioh/tcpinfo v0.0.0-20190314235526-30a79bb1804b // indirect
 	github.com/mikioh/tcpopt v0.0.0-20190314235656-172688c1accc // indirect

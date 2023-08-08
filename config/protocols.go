@@ -11,11 +11,11 @@ import (
 )
 
 var (
-	DatabasePath           string = "/tb/storage/databases/"
-	DefaultP2PListenFormat string = "/ip4/0.0.0.0/tcp/%d"
-	DefaultHTTPListen      string = "0.0.0.0:443"
-	DefaultCAFileName      string = "/tb/priv/fullchain.pem"
-	DefaultKeyFileName     string = "/tb/priv/privkey.pem"
+	DefaultRoot            = "/tb"
+	DefaultP2PListenFormat = "/ip4/0.0.0.0/tcp/%d"
+	DefaultHTTPListen      = "0.0.0.0:443"
+	DefaultCAFileName      = "/tb/priv/fullchain.pem"
+	DefaultKeyFileName     = "/tb/priv/privkey.pem"
 )
 
 type Protocol struct {
@@ -74,7 +74,7 @@ func (config *Protocol) Validate() error {
 	}
 
 	if config.Root == "" {
-		config.Root = DatabasePath
+		config.Root = DefaultRoot
 	}
 
 	// http

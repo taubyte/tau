@@ -6,9 +6,9 @@ import (
 	"path"
 	"strings"
 
+	tauTemplates "github.com/taubyte/cli-common/singletons/templates"
 	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	tauTemplates "github.com/taubyte/tau-cli/singletons/templates"
 	"github.com/taubyte/tau/libdream/common"
 	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 )

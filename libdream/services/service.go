@@ -35,6 +35,8 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 	// Ignoring error in case of opening
 	os.MkdirAll(config.Root, 0750)
 
+	os.Mkdir(config.Root+"/storage", 0755)
+
 	if config.Others == nil {
 		config.Others = make(map[string]int)
 	}
