@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/cli/node"
+	"github.com/taubyte/tau/config"
 	"github.com/urfave/cli/v2"
 )
 
@@ -36,12 +37,12 @@ func startShape() *cli.Command {
 				Aliases:  []string{"s"},
 			},
 			&cli.PathFlag{
-				Name:     "config",
-				Required: true,
-				Aliases:  []string{"c"},
+				Name:        "root",
+				DefaultText: config.DefaultRoot,
 			},
 			&cli.BoolFlag{
-				Name: "dev",
+				Name:    "dev-mode",
+				Aliases: []string{"dev"},
 			},
 		},
 

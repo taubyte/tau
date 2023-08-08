@@ -32,18 +32,9 @@ func Start(ctx context.Context, protocolConfig *config.Protocol) error {
 		ctx_cancel()
 	}()
 
-	databasePath := config.DatabasePath + protocolConfig.Shape
+	storagePath := protocolConfig.Root + "/storage/" + protocolConfig.Shape
 
-	if protocolConfig.DevMode {
-		dir, err := os.Getwd()
-		if err != nil {
-			return err
-		}
-		protocolConfig.Root = dir
-		databasePath = protocolConfig.Shape
-	}
-
-	err := createNodes(ctx, databasePath, protocolConfig.Shape, protocolConfig)
+	err := createNodes(ctx, storagePath, protocolConfig.Shape, protocolConfig)
 	if err != nil {
 		return err
 	}

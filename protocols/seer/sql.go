@@ -3,7 +3,7 @@ package seer
 import "time"
 
 var (
-	NodeDatabaseFileName     string = "node-database.db"
+	NodeDatabaseFileName     string = "seer-node-database.db"
 	IPKey                           = "IP"
 	DefaultBlockTime                = 60 * time.Second
 	ValidServiceResponseTime        = 5 * time.Minute

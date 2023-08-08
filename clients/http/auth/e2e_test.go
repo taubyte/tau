@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	authNodeUrl  = "https://auth.taubyte.com"
+	authNodeUrl  = "https://auth.tau.sandbox.taubyte.com"
 	testProvider = "github"
 	testToken    = testGitToken()
 )

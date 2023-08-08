@@ -16,7 +16,7 @@ import (
 	odo "github.com/taubyte/tau/cli"
 )
 
-func createLiteNode(ctx context.Context, conf *config.Protocol, shape, databasePath string) (peer.Node, error) {
+func createLiteNode(ctx context.Context, conf *config.Protocol, shape, storagePath string) (peer.Node, error) {
 	ma, err := multiaddr.NewMultiaddr(conf.P2PAnnounce[0])
 	if err != nil {
 		return nil, fmt.Errorf("new multiaddr failed with: %s", err)
@@ -44,7 +44,7 @@ func createLiteNode(ctx context.Context, conf *config.Protocol, shape, databaseP
 		return nil, err
 	}
 
-	node, err := peer.NewClientNode(ctx, databasePath+odo.ClientPrefix, keypair.NewRaw(), conf.SwarmKey, p2pListen, nil, true, _peer)
+	node, err := peer.NewClientNode(ctx, storagePath+odo.ClientPrefix, keypair.NewRaw(), conf.SwarmKey, p2pListen, nil, true, _peer)
 	if err != nil {
 		return nil, fmt.Errorf("creating new client node for shape `%s` failed with: %s", shape, err)
 	}
@@ -57,7 +57,7 @@ func createLiteNode(ctx context.Context, conf *config.Protocol, shape, databaseP
 	return node, nil
 }
 
-func createNodes(ctx context.Context, databasePath, shape string, conf *config.Protocol) error {
+func createNodes(ctx context.Context, storagePath, shape string, conf *config.Protocol) error {
 	var err error
 	if len(conf.Protocols) < 1 { // For elder nodes
 		peerInfo, err := utils.ConvertToAddrInfo(conf.Peers)
@@ -65,19 +65,19 @@ func createNodes(ctx context.Context, databasePath, shape string, conf *config.P
 			return err
 		}
 
-		conf.Node, err = peer.NewFull(ctx, databasePath, conf.PrivateKey, conf.SwarmKey, conf.P2PListen, conf.P2PAnnounce, true, peer.BootstrapParams{Enable: true, Peers: peerInfo})
+		conf.Node, err = peer.NewFull(ctx, storagePath, conf.PrivateKey, conf.SwarmKey, conf.P2PListen, conf.P2PAnnounce, true, peer.BootstrapParams{Enable: true, Peers: peerInfo})
 		if err != nil {
 			return fmt.Errorf("creating new full node failed with: %s", err)
 		}
 	} else {
 		// Non elder nodes
-		conf.Node, err = config.NewNode(ctx, conf, databasePath)
+		conf.Node, err = config.NewNode(ctx, conf, storagePath)
 		if err != nil {
 			return fmt.Errorf("creating new node for shape `%s` failed with: %s", shape, err)
 		}
 
 		// Create client node
-		conf.ClientNode, err = createLiteNode(ctx, conf, shape, databasePath)
+		conf.ClientNode, err = createLiteNode(ctx, conf, shape, storagePath)
 		if err != nil {
 			return fmt.Errorf("creating client node failed with: %s", err)
 		}

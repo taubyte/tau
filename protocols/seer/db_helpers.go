@@ -115,7 +115,7 @@ func (h *dnsHandler) getNodeIp() ([]string, error) {
 func initializeDB(srv *Service, config *config.Protocol) error {
 	var file *os.File
 	var err error
-	dbPath := path.Join(config.Root, srv.shape, NodeDatabaseFileName)
+	dbPath := path.Join(config.Root, "storage", srv.shape, NodeDatabaseFileName)
 	// Create SQLite DB
 	file, err = os.Open(dbPath)
 	if err != nil {
