@@ -30,7 +30,7 @@ func TestHoarderClient(t *testing.T) {
 	}
 	defer os.RemoveAll(srvRoot)
 
-	srv, err := service.New(ctx, &config.Protocol{
+	srv, err := service.New(ctx, &config.Node{
 		Root:        srvRoot,
 		P2PListen:   []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)},
 		P2PAnnounce: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)},

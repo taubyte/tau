@@ -49,6 +49,7 @@ require (
 	github.com/taubyte/vm-core-plugins v0.3.4
 	github.com/taubyte/vm-orbit v1.0.0
 	github.com/urfave/cli/v2 v2.25.7
+	github.com/urfave/cli/v3 v3.0.0-alpha4
 	go4.org v0.0.0-20230225012048-214862532bf5
 	golang.org/x/crypto v0.11.0
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1

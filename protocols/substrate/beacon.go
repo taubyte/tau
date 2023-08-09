@@ -14,11 +14,11 @@ import (
 
 type serviceBeacon struct {
 	*Service
-	config     *config.Protocol
+	config     *config.Node
 	seerClient *seerClient.Client
 }
 
-func (srv *Service) startBeacon(config *config.Protocol) (beacon *serviceBeacon, err error) {
+func (srv *Service) startBeacon(config *config.Node) (beacon *serviceBeacon, err error) {
 	beacon = &serviceBeacon{Service: srv, config: config}
 
 	// For Odo

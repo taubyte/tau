@@ -31,7 +31,7 @@ func (s *Service) Node() peer.Node {
 }
 
 type Config struct {
-	config.Protocol `yaml:"z,omitempty"`
+	config.Node `yaml:"z,omitempty"`
 }
 
 func (c *Config) String() string {

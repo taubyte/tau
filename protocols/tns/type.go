@@ -28,5 +28,5 @@ func (s *Service) KV() kvdb.KVDB {
 }
 
 type Config struct {
-	config.Protocol `yaml:"z,omitempty"`
+	config.Node `yaml:"z,omitempty"`
 }

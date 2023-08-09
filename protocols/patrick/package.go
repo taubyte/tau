@@ -9,7 +9,7 @@ import (
 
 type protoCommandIface struct{}
 
-func (protoCommandIface) New(ctx context.Context, cnf *config.Protocol) (serviceIface.Service, error) {
+func (protoCommandIface) New(ctx context.Context, cnf *config.Node) (serviceIface.Service, error) {
 	return New(ctx, cnf)
 }
 

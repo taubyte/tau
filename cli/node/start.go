@@ -19,7 +19,7 @@ import (
 	slices "github.com/taubyte/utils/slices/string"
 )
 
-func Start(ctx context.Context, protocolConfig *config.Protocol) error {
+func Start(ctx context.Context, protocolConfig *config.Node) error {
 	log.SetAllLoggers(log.LevelFatal)
 
 	ctx, ctx_cancel := context.WithCancel(ctx)

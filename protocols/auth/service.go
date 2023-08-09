@@ -20,15 +20,15 @@ var (
 	logger = log.Logger("auth.service")
 )
 
-func New(ctx context.Context, config *tauConfig.Protocol) (*AuthService, error) {
+func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	var srv AuthService
 	srv.ctx = ctx
 
 	if config == nil {
-		config = &tauConfig.Protocol{}
+		config = &tauConfig.Node{}
 	}
 
-	srv.webHookUrl = fmt.Sprintf(`https://patrick.tau.%s`, config.NetworkUrl)
+	srv.webHookUrl = fmt.Sprintf(`https://patrick.tau.%s`, config.NetworkFqdn)
 
 	err := config.Validate()
 	if err != nil {
@@ -78,7 +78,7 @@ func New(ctx context.Context, config *tauConfig.Protocol) (*AuthService, error) 
 	}
 	// should end if any of the two contexts ends
 
-	srv.rootDomain = config.NetworkUrl
+	srv.rootDomain = config.NetworkFqdn
 
 	// P2P
 	srv.stream, err = streams.New(srv.node, protocolCommon.Auth, protocolCommon.AuthProtocol)
@@ -86,7 +86,7 @@ func New(ctx context.Context, config *tauConfig.Protocol) (*AuthService, error) 
 		return nil, err
 	}
 
-	srv.hostUrl = config.NetworkUrl
+	srv.hostUrl = config.NetworkFqdn
 	srv.setupStreamRoutes()
 
 	sc, err := seerClient.New(ctx, clientNode)

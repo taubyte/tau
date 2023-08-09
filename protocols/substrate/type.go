@@ -22,7 +22,7 @@ import (
 var _ iface.Service = &Service{}
 
 type Config struct {
-	config.Protocol `yaml:"z,omitempty"`
+	config.Node `yaml:"z,omitempty"`
 }
 
 // TODO: Node shouldn't have to have all components

@@ -12,7 +12,7 @@ import (
 
 var WaitForSwamDuration = 10 * time.Second
 
-func NewNode(ctx context.Context, config *Protocol, databaseName string) (peer.Node, error) {
+func NewNode(ctx context.Context, config *Node, databaseName string) (peer.Node, error) {
 	if config.DevMode {
 		return NewLiteNode(ctx, config, databaseName)
 	}
@@ -43,7 +43,7 @@ func NewNode(ctx context.Context, config *Protocol, databaseName string) (peer.N
 	return peerNode, nil
 }
 
-func NewLiteNode(ctx context.Context, config *Protocol, databaseName string) (peer.Node, error) {
+func NewLiteNode(ctx context.Context, config *Node, databaseName string) (peer.Node, error) {
 	bootstrapParam, err := utils.ConvertBootstrap(config.Peers, config.DevMode)
 	if err != nil {
 		return nil, fmt.Errorf("getting bootstrap perms in NewLiteNode failed with: %s", err)

@@ -17,8 +17,10 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
+// TODO: move to config as a methods
+
 // Parse from yaml
-func parseSourceConfig(ctx *cli.Context) (*config.Protocol, *config.Source, error) {
+func parseSourceConfig(ctx *cli.Context) (*config.Node, *config.Source, error) {
 	root := ctx.Path("root")
 
 	if !filepath.IsAbs(root) {
@@ -26,7 +28,13 @@ func parseSourceConfig(ctx *cli.Context) (*config.Protocol, *config.Source, erro
 	}
 
 	configRoot := root + "/config"
-	configPath := path.Join(configRoot, ctx.String("shape")+".yaml")
+
+	var configPath string
+	if ctx.Path("path") != "" {
+		configPath = ctx.Path("path")
+	} else {
+		configPath = path.Join(configRoot, ctx.String("shape")+".yaml")
+	}
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
@@ -51,17 +59,17 @@ func parseSourceConfig(ctx *cli.Context) (*config.Protocol, *config.Source, erro
 		return nil, nil, err
 	}
 
-	protocol := &config.Protocol{
+	protocol := &config.Node{
 		Root:            root,
 		Shape:           ctx.String("shape"),
 		P2PAnnounce:     src.P2PAnnounce,
 		P2PListen:       src.P2PListen,
-		Ports:           src.Ports,
+		Ports:           src.Ports.ToMap(),
 		Location:        src.Location,
-		NetworkUrl:      src.NetworkUrl,
+		NetworkFqdn:     src.NetworkFqdn,
 		GeneratedDomain: src.Domains.Generated,
 		ServicesDomain:  src.Domains.Services,
-		HttpListen:      src.HttpListen,
+		HttpListen:      "0.0.0.0:443",
 		PrivateKey:      []byte(src.Privatekey),
 		Protocols:       src.Protocols,
 		Plugins:         src.Plugins,
@@ -84,10 +92,7 @@ func parseSourceConfig(ctx *cli.Context) (*config.Protocol, *config.Source, erro
 		return nil, nil, err
 	}
 
-	protocol.DomainValidation.PrivateKey, protocol.DomainValidation.PublicKey, err = parseValidationKey(
-		src.Domains.Key.Private,
-		src.Domains.Key.Public,
-	)
+	protocol.DomainValidation, err = parseValidationKey(&src.Domains.Key)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -108,28 +113,28 @@ func parseSwarmKey(filepath string) (pnet.PSK, error) {
 	return nil, nil
 }
 
-func parseValidationKey(privateKeyPath, publicKeyPath string) ([]byte, []byte, error) {
+func parseValidationKey(key *config.DVKey) (config.DomainValidation, error) {
 	// Private Key
-	privateKey, err := os.ReadFile(privateKeyPath)
+	privateKey, err := os.ReadFile(key.Private)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading private key `%s` failed with: %s", privateKeyPath, err)
+		return config.DomainValidation{}, fmt.Errorf("reading private key `%s` failed with: %s", key.Private, err)
 	}
 
 	// Public Key
 	var publicKey []byte
-	if publicKeyPath != "" {
-		publicKey, err = os.ReadFile(publicKeyPath)
+	if key.Public != "" {
+		publicKey, err = os.ReadFile(key.Public)
 		if err != nil {
-			return nil, nil, fmt.Errorf("reading public key `%s` failed with: %s", publicKeyPath, err)
+			return config.DomainValidation{}, fmt.Errorf("reading public key `%s` failed with: %s", key.Public, err)
 		}
 	} else {
 		publicKey, err = generatePublicKey(privateKey)
 		if err != nil {
-			return nil, nil, fmt.Errorf("generating public key failed with: %s", err)
+			return config.DomainValidation{}, fmt.Errorf("generating public key failed with: %s", err)
 		}
 	}
 
-	return privateKey, publicKey, nil
+	return config.DomainValidation{PrivateKey: privateKey, PublicKey: publicKey}, nil
 }
 
 /*

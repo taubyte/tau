@@ -112,7 +112,7 @@ func (h *dnsHandler) getNodeIp() ([]string, error) {
 	return ips, nil
 }
 
-func initializeDB(srv *Service, config *config.Protocol) error {
+func initializeDB(srv *Service, config *config.Node) error {
 	var file *os.File
 	var err error
 	dbPath := path.Join(config.Root, "storage", srv.shape, NodeDatabaseFileName)

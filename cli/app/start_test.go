@@ -9,7 +9,6 @@ import (
 
 	_ "embed"
 
-	cli "github.com/taubyte/tau/cli"
 	"gotest.tools/v3/assert"
 )
 
@@ -17,21 +16,19 @@ var (
 	shape = "test"
 )
 
-//go:embed testConfig.yaml
+//go:embed fixtures/testConfig.yaml
 var testConfig []byte
 
-//go:embed test_swarm.key
+//go:embed fixtures/test_swarm.key
 var testSwarmKey []byte
 
-//go:embed test.key
+//go:embed fixtures/test.key
 var testKey []byte
 
 // TODO: add hoarder to config when its fixed
 // TODO: Build in tmp
 func TestStart(t *testing.T) {
-	app := App()
-	defer os.RemoveAll(shape + cli.ClientPrefix)
-	defer os.RemoveAll(shape)
+	app := newApp()
 
 	ctx, ctxC := context.WithTimeout(context.Background(), time.Second*15)
 	defer ctxC()

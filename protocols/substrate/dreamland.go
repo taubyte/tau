@@ -15,7 +15,7 @@ func init() {
 }
 
 func createNodeService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {
-	serviceConfig := &tauConfig.Protocol{
+	serviceConfig := &tauConfig.Node{
 		Ports: make(map[string]int),
 	}
 	serviceConfig.Root = config.Root

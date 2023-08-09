@@ -10,7 +10,6 @@ ports:
 location:
   lat: 120
   long: 21
-http-listen: 0.0.0.0:443
 network-url: example.com
 domains:
   key:

@@ -16,7 +16,7 @@ import (
 	odo "github.com/taubyte/tau/cli"
 )
 
-func createLiteNode(ctx context.Context, conf *config.Protocol, shape, storagePath string) (peer.Node, error) {
+func createLiteNode(ctx context.Context, conf *config.Node, shape, storagePath string) (peer.Node, error) {
 	ma, err := multiaddr.NewMultiaddr(conf.P2PAnnounce[0])
 	if err != nil {
 		return nil, fmt.Errorf("new multiaddr failed with: %s", err)
@@ -57,7 +57,7 @@ func createLiteNode(ctx context.Context, conf *config.Protocol, shape, storagePa
 	return node, nil
 }
 
-func createNodes(ctx context.Context, storagePath, shape string, conf *config.Protocol) error {
+func createNodes(ctx context.Context, storagePath, shape string, conf *config.Node) error {
 	var err error
 	if len(conf.Protocols) < 1 { // For elder nodes
 		peerInfo, err := utils.ConvertToAddrInfo(conf.Peers)
