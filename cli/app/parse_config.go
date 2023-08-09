@@ -28,23 +28,19 @@ func parseSourceConfig(ctx *cli.Context) (*config.Node, *config.Source, error) {
 	}
 
 	configRoot := root + "/config"
-
-	var configPath string
-	if ctx.Path("path") != "" {
-		configPath = ctx.Path("path")
-	} else {
+	configPath := ctx.Path("path")
+	if configPath != "" {
 		configPath = path.Join(configRoot, ctx.String("shape")+".yaml")
 	}
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading config file path `%s` failed with: %s", configPath, err)
+		return nil, nil, fmt.Errorf("reading config file path `%s` failed with: %w", configPath, err)
 	}
 
 	src := &config.Source{}
 
-	err = yaml.Unmarshal(data, &src)
-	if err != nil {
+	if err = yaml.Unmarshal(data, &src); err != nil {
 		return nil, nil, fmt.Errorf("yaml unmarshal failed with: %w", err)
 	}
 
@@ -87,13 +83,11 @@ func parseSourceConfig(ctx *cli.Context) (*config.Node, *config.Source, error) {
 		protocol.PrivateKey = []byte(base64Key)
 	}
 
-	protocol.SwarmKey, err = parseSwarmKey(src.Swarmkey)
-	if err != nil {
+	if protocol.SwarmKey, err = parseSwarmKey(src.Swarmkey); err != nil {
 		return nil, nil, err
 	}
 
-	protocol.DomainValidation, err = parseValidationKey(&src.Domains.Key)
-	if err != nil {
+	if protocol.DomainValidation, err = parseValidationKey(&src.Domains.Key); err != nil {
 		return nil, nil, err
 	}
 
@@ -125,12 +119,12 @@ func parseValidationKey(key *config.DVKey) (config.DomainValidation, error) {
 	if key.Public != "" {
 		publicKey, err = os.ReadFile(key.Public)
 		if err != nil {
-			return config.DomainValidation{}, fmt.Errorf("reading public key `%s` failed with: %s", key.Public, err)
+			return config.DomainValidation{}, fmt.Errorf("reading public key `%s` failed with: %w", key.Public, err)
 		}
 	} else {
 		publicKey, err = generatePublicKey(privateKey)
 		if err != nil {
-			return config.DomainValidation{}, fmt.Errorf("generating public key failed with: %s", err)
+			return config.DomainValidation{}, fmt.Errorf("generating public key failed with: %w", err)
 		}
 	}
 
@@ -163,12 +157,12 @@ func generatePublicKey(privateKey []byte) ([]byte, error) {
 
 	key, err := x509.ParseECPrivateKey(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("parsing private key failed with: %s", err)
+		return nil, fmt.Errorf("parsing private key failed with: %w", err)
 	}
 
 	publicKeyDer, err := x509.MarshalPKIXPublicKey(key.Public())
 	if err != nil {
-		return nil, fmt.Errorf("marshalling PKIX pub key failed with: %s", err)
+		return nil, fmt.Errorf("marshalling PKIX pub key failed with: %w", err)
 	}
 	pubKeyBlock := pem.Block{
 		Type:    "PUBLIC KEY",

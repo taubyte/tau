@@ -31,14 +31,9 @@ import (
 
 func generateSourceConfig(ctx *cli.Context) (string, error) {
 	root := ctx.Path("root")
-
 	if !filepath.IsAbs(root) {
 		return "", fmt.Errorf("root folder `%s` is not absolute", root)
 	}
-
-	configRoot := root + "/config"
-
-	configPath := path.Join(configRoot, ctx.String("shape")+".yaml")
 
 	nodeID, nodeKey, err := generateNodeKeyAndID()
 	if err != nil {
@@ -84,14 +79,14 @@ func generateSourceConfig(ctx *cli.Context) (string, error) {
 		},
 	}
 
+	configRoot := root + "/config"
 	if ctx.Bool("swarm-key") {
 		swarmkey, err := generateSwarmKey()
 		if err != nil {
 			return "", err
 		}
 
-		err = os.WriteFile(path.Join(configRoot, "keys", "swarm.key"), []byte(swarmkey), 0440)
-		if err != nil {
+		if err = os.WriteFile(path.Join(configRoot, "keys", "swarm.key"), []byte(swarmkey), 0440); err != nil {
 			return "", err
 		}
 	}
@@ -102,17 +97,16 @@ func generateSourceConfig(ctx *cli.Context) (string, error) {
 			return "", err
 		}
 
-		err = os.WriteFile(path.Join(configRoot, "keys", "dv_private.pem"), priv, 0440)
-		if err != nil {
+		if err = os.WriteFile(path.Join(configRoot, "keys", "dv_private.pem"), priv, 0440); err != nil {
 			return "", err
 		}
 
-		err = os.WriteFile(path.Join(configRoot, "keys", "dv_public.pem"), pub, 0440)
-		if err != nil {
+		if err = os.WriteFile(path.Join(configRoot, "keys", "dv_public.pem"), pub, 0440); err != nil {
 			return "", err
 		}
 	}
 
+	configPath := path.Join(configRoot, ctx.String("shape")+".yaml")
 	f, err := os.Create(configPath)
 	if err != nil {
 		return "", err
@@ -120,8 +114,7 @@ func generateSourceConfig(ctx *cli.Context) (string, error) {
 	defer f.Close()
 
 	yamlEnc := yaml.NewEncoder(f)
-	err = yamlEnc.Encode(configStruct)
-	if err != nil {
+	if err = yamlEnc.Encode(configStruct); err != nil {
 		return "", err
 	}
 
@@ -200,8 +193,7 @@ func pemEncodePrivKey(priv *ecdsa.PrivateKey) ([]byte, error) {
 
 	privateKeyPEM := &pem.Block{Type: "EC PRIVATE KEY", Bytes: privateKey}
 	var privateBuf bytes.Buffer
-	err = pem.Encode(&privateBuf, privateKeyPEM)
-	if err != nil {
+	if err = pem.Encode(&privateBuf, privateKeyPEM); err != nil {
 		return nil, fmt.Errorf("pem encode private key failed with %w", err)
 	}
 
@@ -217,8 +209,7 @@ func pemEncodePubKey(priv *ecdsa.PrivateKey) ([]byte, error) {
 
 	publicKeyPEM := &pem.Block{Type: "PUBLIC KEY", Bytes: publicKey}
 	var public bytes.Buffer
-	err = pem.Encode(&public, publicKeyPEM)
-	if err != nil {
+	if err = pem.Encode(&public, publicKeyPEM); err != nil {
 		return nil, fmt.Errorf("failed encoding public key with %w", err)
 	}
 

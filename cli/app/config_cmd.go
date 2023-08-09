@@ -1,8 +1,7 @@
 package app
 
 import (
-	"fmt"
-
+	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/config"
 	"github.com/urfave/cli/v2"
 )
@@ -80,7 +79,7 @@ func configCommand() *cli.Command {
 				Action: func(ctx *cli.Context) error {
 					id, err := generateSourceConfig(ctx)
 					if id != "" {
-						fmt.Println("ID:", id)
+						pterm.Info.Println("ID:", id)
 					}
 					return err
 				},
