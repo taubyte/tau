@@ -48,5 +48,5 @@ func setNetworkDomains(conf *config.Source) {
 	domainSpecs.WhiteListedDomains = conf.Domains.Whitelist.Postfix
 	domainSpecs.TaubyteServiceDomain = regexp.MustCompile(conf.Domains.Services)
 	domainSpecs.SpecialDomain = regexp.MustCompile(conf.Domains.Generated)
-	domainSpecs.TaubyteHooksDomain = regexp.MustCompile(fmt.Sprintf(`https://patrick.tau.%s`, conf.NetworkUrl))
+	domainSpecs.TaubyteHooksDomain = regexp.MustCompile(fmt.Sprintf(`https://patrick.tau.%s`, conf.NetworkFqdn))
 }

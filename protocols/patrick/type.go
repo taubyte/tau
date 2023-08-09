@@ -40,7 +40,7 @@ func (s *PatrickService) Node() peer.Node {
 }
 
 type Config struct {
-	config.Protocol `yaml:"z,omitempty"`
+	config.Node `yaml:"z,omitempty"`
 }
 
 // TODO: optimize cbor storage

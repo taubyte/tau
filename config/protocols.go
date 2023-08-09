@@ -14,11 +14,9 @@ var (
 	DefaultRoot            = "/tb"
 	DefaultP2PListenFormat = "/ip4/0.0.0.0/tcp/%d"
 	DefaultHTTPListen      = "0.0.0.0:443"
-	DefaultCAFileName      = "/tb/priv/fullchain.pem"
-	DefaultKeyFileName     = "/tb/priv/privkey.pem"
 )
 
-type Protocol struct {
+type Node struct {
 	Root      string
 	Shape     string
 	Protocols []string
@@ -28,7 +26,7 @@ type Protocol struct {
 	P2PAnnounce     []string
 	Ports           map[string]int // TODO: use a struct
 	Location        *seerIface.Location
-	NetworkUrl      string
+	NetworkFqdn     string
 	HttpListen      string
 	GeneratedDomain string
 	ServicesDomain  string
@@ -65,9 +63,9 @@ type ConfigBuilder struct {
 	DevHttpListenPort int
 }
 
-func (config *Protocol) Validate() error {
+func (config *Node) Validate() error {
 	if config == nil {
-		config = &Protocol{}
+		config = &Node{}
 		config.PrivateKey = nil
 		config.SwarmKey = nil
 		config.DevMode = false

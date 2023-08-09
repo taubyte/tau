@@ -27,9 +27,9 @@ var (
 	logger = log.Logger("seer.service")
 )
 
-func New(ctx context.Context, config *tauConfig.Protocol, opts ...Options) (*Service, error) {
+func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service, error) {
 	if config == nil {
-		config = &tauConfig.Protocol{}
+		config = &tauConfig.Node{}
 	}
 
 	srv := &Service{
@@ -45,7 +45,7 @@ func New(ctx context.Context, config *tauConfig.Protocol, opts ...Options) (*Ser
 
 	srv.dnsResolver = net.DefaultResolver
 	srv.generatedDomain = config.GeneratedDomain
-	srv.caaRecordBypass = regexp.MustCompile(fmt.Sprintf("tau.%s", config.NetworkUrl))
+	srv.caaRecordBypass = regexp.MustCompile(fmt.Sprintf("tau.%s", config.NetworkFqdn))
 
 	for _, op := range opts {
 		err = op(srv)
@@ -116,7 +116,7 @@ func New(ctx context.Context, config *tauConfig.Protocol, opts ...Options) (*Ser
 		return nil, fmt.Errorf("new p2p stream failed with: %w", err)
 	}
 
-	srv.hostUrl = config.NetworkUrl
+	srv.hostUrl = config.NetworkFqdn
 	srv.setupStreamRoutes()
 
 	// Beacon

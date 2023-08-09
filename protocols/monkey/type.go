@@ -60,4 +60,4 @@ func (s *Service) Dev() bool {
 	return s.dev
 }
 
-type Config config.Protocol
+type Config config.Node

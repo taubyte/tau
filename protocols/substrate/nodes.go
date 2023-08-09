@@ -25,7 +25,7 @@ func (srv *Service) Verbose() bool {
 	return srv.verbose
 }
 
-func (srv *Service) attachNodes(config *config.Protocol) (err error) {
+func (srv *Service) attachNodes(config *config.Node) (err error) {
 	// Needs to happen first, as others depend on it
 	if err = srv.attachNodeCounters(); err != nil {
 		return attachNodesError("counters", err)
@@ -63,7 +63,7 @@ func (srv *Service) attachNodes(config *config.Protocol) (err error) {
 	return nil
 }
 
-func (srv *Service) attachNodeHttp(config *config.Protocol) (err error) {
+func (srv *Service) attachNodeHttp(config *config.Node) (err error) {
 	ops := []http.Option{}
 
 	if config.DevMode {
@@ -79,7 +79,7 @@ func (srv *Service) attachNodePubSub() (err error) {
 	return
 }
 
-func (srv *Service) attachNodeIpfs(config *config.Protocol) (err error) {
+func (srv *Service) attachNodeIpfs(config *config.Node) (err error) {
 	ipfsPort, ok := config.Ports["ipfs"]
 	if !ok {
 		err = fmt.Errorf("did not find ipfs port in config")

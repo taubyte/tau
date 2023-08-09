@@ -17,7 +17,7 @@ func init() {
 }
 
 func createService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {
-	serviceConfig := &tauConfig.Protocol{}
+	serviceConfig := &tauConfig.Node{}
 	serviceConfig.Root = config.Root
 	serviceConfig.P2PListen = []string{fmt.Sprintf(dreamlandCommon.DefaultP2PListenFormat, config.Port)}
 	serviceConfig.P2PAnnounce = []string{fmt.Sprintf(dreamlandCommon.DefaultP2PListenFormat, config.Port)}

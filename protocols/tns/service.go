@@ -20,11 +20,11 @@ var (
 	logger = log.Logger("tns.service")
 )
 
-func New(ctx context.Context, config *tauConfig.Protocol) (*Service, error) {
+func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	srv := &Service{}
 
 	if config == nil {
-		config = &tauConfig.Protocol{}
+		config = &tauConfig.Node{}
 	}
 
 	err := config.Validate()

@@ -31,7 +31,7 @@ func TestPush(t *testing.T) {
 	}
 	defer os.RemoveAll(srvRoot)
 
-	srv, err := New(testCtx, &config.Protocol{
+	srv, err := New(testCtx, &config.Node{
 		Root:        srvRoot,
 		P2PListen:   []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11001)},
 		P2PAnnounce: []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", 11001)},

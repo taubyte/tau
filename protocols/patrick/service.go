@@ -26,11 +26,11 @@ var (
 	DefaultReAnnounceFailedJobsTime = 7 * time.Minute
 )
 
-func New(ctx context.Context, config *tauConfig.Protocol) (*PatrickService, error) {
+func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 	var srv PatrickService
 
 	if config == nil {
-		config = &tauConfig.Protocol{}
+		config = &tauConfig.Node{}
 	}
 
 	err := config.Validate()
@@ -89,7 +89,7 @@ func New(ctx context.Context, config *tauConfig.Protocol) (*PatrickService, erro
 		return nil, fmt.Errorf("failed stream new with error: %w", err)
 	}
 
-	srv.hostUrl = config.NetworkUrl
+	srv.hostUrl = config.NetworkFqdn
 	srv.setupStreamRoutes()
 
 	// HTTP

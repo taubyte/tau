@@ -10,7 +10,7 @@ import (
 	auto "github.com/taubyte/tau/pkgs/http-auto"
 )
 
-func (srv *Service) startHttp(config *config.Protocol) (err error) {
+func (srv *Service) startHttp(config *config.Node) (err error) {
 	listen := config.HttpListen
 
 	if config.Http == nil {

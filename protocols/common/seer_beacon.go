@@ -22,7 +22,7 @@ func SeerBeaconOptionMeta(meta map[string]string) seerBeaconOption {
 	}
 }
 
-func StartSeerBeacon(config *config.Protocol, sc seer.Client, serviceType seer.ServiceType, ops ...seerBeaconOption) error {
+func StartSeerBeacon(config *config.Node, sc seer.Client, serviceType seer.ServiceType, ops ...seerBeaconOption) error {
 	seerConfig := &seerBeaconConfig{
 		serviceMeta: make(map[string]string, 0),
 	}

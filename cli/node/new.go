@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/config"
 )
 
-func NewNode(ctx context.Context, config *config.Protocol, databaseName string) (peer.Node, error) {
+func NewNode(ctx context.Context, config *config.Node, databaseName string) (peer.Node, error) {
 	if config.DevMode {
 		return NewLiteNode(ctx, config, databaseName)
 	}
@@ -16,7 +16,7 @@ func NewNode(ctx context.Context, config *config.Protocol, databaseName string) 
 	return nil, nil
 }
 
-func NewLiteNode(ctx context.Context, config *config.Protocol, databaseName string) (peer.Node, error) {
+func NewLiteNode(ctx context.Context, config *config.Node, databaseName string) (peer.Node, error) {
 	bootstrapParam, err := convertBootstrap(config.Peers, config.DevMode)
 	if err != nil {
 		return nil, fmt.Errorf("getting bootstrap perms in NewLiteNode failed with: %s", err)

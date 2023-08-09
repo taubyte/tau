@@ -79,5 +79,5 @@ func (s *Service) Resolver() iface.Resolver {
 }
 
 type Config struct {
-	config.Protocol `yaml:"z,omitempty"`
+	config.Node `yaml:"z,omitempty"`
 }

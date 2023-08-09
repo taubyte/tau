@@ -44,5 +44,5 @@ func (s *AuthService) KV() kv.KVDB {
 }
 
 type Config struct {
-	config.Protocol `yaml:"z,omitempty"`
+	config.Node `yaml:"z,omitempty"`
 }

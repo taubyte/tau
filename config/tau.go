@@ -4,17 +4,30 @@ import (
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 )
 
+type Ports struct {
+	Main int `yaml:"main"`
+	Lite int `yaml:"lite,omitempty"`
+	Ipfs int `yaml:"ipfs,omitempty"`
+}
+
+func (p Ports) ToMap() map[string]int {
+	return map[string]int{
+		"main": p.Main,
+		"lite": p.Lite,
+		"ipfs": p.Ipfs,
+	}
+}
+
 type Source struct {
 	Privatekey  string
 	Swarmkey    string
-	Protocols   []string `yaml:",omitempty"`
-	P2PListen   []string `yaml:"p2p-listen"`
-	P2PAnnounce []string `yaml:"p2p-announce"`
-	Ports       map[string]int
+	Protocols   []string            `yaml:",omitempty"`
+	P2PListen   []string            `yaml:"p2p-listen"`
+	P2PAnnounce []string            `yaml:"p2p-announce"`
+	Ports       Ports               `yaml:"ports"`
 	Location    *seerIface.Location `yaml:"location,omitempty"`
 	Peers       []string            `yaml:",omitempty"`
-	HttpListen  string              `yaml:"http-listen,omitempty"`
-	NetworkUrl  string              `yaml:"network-url"`
+	NetworkFqdn string              `yaml:"network-fqdn"`
 	Domains     Domains             `yaml:"domains"`
 	Plugins
 }

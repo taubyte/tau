@@ -95,17 +95,12 @@ ports:
 location:
   lat: 120
   long: 21
-http-listen: 0.0.0.0:443
 network-url: example.com
 domains:
   key:
     private: keys/test.key
-  services: ^[^.]+\.tau\.example\.com
-  generated: g.example.com
-  whitelist:
-    postfix: [test.com]
-    regex:
-      - '^[^.]+\.test\.example\.com'
+  services: ^[^.]+\.tau\.example\.com$
+  generated: g\.example\.com$
 ```
 
 ### Running `tau`
