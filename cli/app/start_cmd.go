@@ -29,7 +29,7 @@ func startCommand() *cli.Command {
 		},
 
 		Action: func(ctx *cli.Context) error {
-			protocolConfig, sourceConfig, err := parseSourceConfig(ctx)
+			_, protocolConfig, sourceConfig, err := parseSourceConfig(ctx)
 			if err != nil {
 				return fmt.Errorf("parsing config failed with: %s", err)
 			}

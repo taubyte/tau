@@ -34,4 +34,7 @@ func TestConfig(t *testing.T) {
 
 	err = app.RunContext(ctx, []string{os.Args[0], "cnf", "ok?", "-s", "test", "--root", root})
 	assert.NilError(t, err)
+
+	err = app.RunContext(ctx, []string{os.Args[0], "cnf", "show", "-s", "test", "--root", root})
+	assert.NilError(t, err)
 }

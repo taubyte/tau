@@ -30,8 +30,33 @@ func configCommand() *cli.Command {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					_, _, err := parseSourceConfig(ctx)
+					_, _, _, err := parseSourceConfig(ctx)
 					return err
+				},
+			},
+			{
+				Name:    "show",
+				Aliases: []string{"render", "display", "print"},
+				Flags: []cli.Flag{
+					&cli.StringFlag{
+						Name:    "shape",
+						Aliases: []string{"s"},
+					},
+					&cli.PathFlag{
+						Name:        "root",
+						DefaultText: config.DefaultRoot,
+					},
+					&cli.PathFlag{
+						Name:    "path",
+						Aliases: []string{"p"},
+					},
+				},
+				Action: func(ctx *cli.Context) error {
+					pid, cnf, _, err := parseSourceConfig(ctx)
+					if err != nil {
+						return err
+					}
+					return displayConfig(pid, cnf)
 				},
 			},
 			{

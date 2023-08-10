@@ -10,6 +10,8 @@ import (
 	"path"
 	"path/filepath"
 
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/pnet"
 	"github.com/taubyte/tau/config"
 	"github.com/urfave/cli/v2"
@@ -20,28 +22,28 @@ import (
 // TODO: move to config as a methods
 
 // Parse from yaml
-func parseSourceConfig(ctx *cli.Context) (*config.Node, *config.Source, error) {
+func parseSourceConfig(ctx *cli.Context) (string, *config.Node, *config.Source, error) {
 	root := ctx.Path("root")
 
 	if !filepath.IsAbs(root) {
-		return nil, nil, fmt.Errorf("root folder `%s` is not absolute", root)
+		return "", nil, nil, fmt.Errorf("root folder `%s` is not absolute", root)
 	}
 
 	configRoot := root + "/config"
 	configPath := ctx.Path("path")
-	if configPath != "" {
+	if configPath == "" {
 		configPath = path.Join(configRoot, ctx.String("shape")+".yaml")
 	}
 
 	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("reading config file path `%s` failed with: %w", configPath, err)
+		return "", nil, nil, fmt.Errorf("reading config file path `%s` failed with: %w", configPath, err)
 	}
 
 	src := &config.Source{}
 
 	if err = yaml.Unmarshal(data, &src); err != nil {
-		return nil, nil, fmt.Errorf("yaml unmarshal failed with: %w", err)
+		return "", nil, nil, fmt.Errorf("yaml unmarshal failed with: %w", err)
 	}
 
 	src.Domains.Key.Private = path.Join(configRoot, src.Domains.Key.Private)
@@ -52,7 +54,7 @@ func parseSourceConfig(ctx *cli.Context) (*config.Node, *config.Source, error) {
 
 	err = validateKeys(src.Protocols, src.Domains.Key.Private, src.Domains.Key.Public)
 	if err != nil {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 
 	protocol := &config.Node{
@@ -66,32 +68,42 @@ func parseSourceConfig(ctx *cli.Context) (*config.Node, *config.Source, error) {
 		GeneratedDomain: src.Domains.Generated,
 		ServicesDomain:  src.Domains.Services,
 		HttpListen:      "0.0.0.0:443",
-		PrivateKey:      []byte(src.Privatekey),
 		Protocols:       src.Protocols,
 		Plugins:         src.Plugins,
 		Peers:           src.Peers,
 		DevMode:         ctx.Bool("dev-mode"),
 	}
 
-	// Convert Keys
-	if len(src.Privatekey) > 0 {
-		base64Key, err := base64.StdEncoding.DecodeString(src.Privatekey)
-		if err != nil {
-			return nil, nil, fmt.Errorf("converting private key to base 64 failed with: %s", err)
-		}
-
-		protocol.PrivateKey = []byte(base64Key)
+	if len(src.Privatekey) == 0 {
+		return "", nil, nil, errors.New("private key can not be empty")
 	}
 
+	base64Key, err := base64.StdEncoding.DecodeString(src.Privatekey)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("converting private key to base 64 failed with: %s", err)
+	}
+
+	protocol.PrivateKey = []byte(base64Key)
+
 	if protocol.SwarmKey, err = parseSwarmKey(src.Swarmkey); err != nil {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 
 	if protocol.DomainValidation, err = parseValidationKey(&src.Domains.Key); err != nil {
-		return nil, nil, err
+		return "", nil, nil, err
 	}
 
-	return protocol, src, nil
+	pkey, err := crypto.UnmarshalPrivateKey(protocol.PrivateKey)
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	pid, err := peer.IDFromPublicKey(pkey.GetPublic())
+	if err != nil {
+		return "", nil, nil, err
+	}
+
+	return pid.Pretty(), protocol, src, nil
 }
 
 func parseSwarmKey(filepath string) (pnet.PSK, error) {
