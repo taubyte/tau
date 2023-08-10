@@ -17,6 +17,7 @@ require (
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ds-crdt v0.4.0
 	github.com/ipfs/go-log/v2 v2.5.1
+	github.com/jedib0t/go-pretty/v6 v6.4.6
 	github.com/jellydator/ttlcache/v3 v3.0.1
 	github.com/libp2p/go-libp2p v0.29.0
 	github.com/libp2p/go-libp2p-pubsub v0.9.3
@@ -49,7 +50,6 @@ require (
 	github.com/taubyte/vm-core-plugins v0.3.4
 	github.com/taubyte/vm-orbit v1.0.0
 	github.com/urfave/cli/v2 v2.25.7
-	github.com/urfave/cli/v3 v3.0.0-alpha4
 	go4.org v0.0.0-20230225012048-214862532bf5
 	golang.org/x/crypto v0.11.0
 	golang.org/x/exp v0.0.0-20230713183714-613f0c0eb8a1
