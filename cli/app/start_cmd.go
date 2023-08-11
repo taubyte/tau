@@ -37,7 +37,7 @@ func startCommand() *cli.Command {
 				return fmt.Errorf("parsing config failed with: %s", err)
 			}
 
-			// For Migration Start
+			// Migration Start
 			if _, err := os.Stat(fmt.Sprintf("/tb/storage/databases/%s", shape)); !os.IsNotExist(err) {
 				err = migrateDatabase(ctx.Context, shape, len(protocolConfig.Protocols) == 0)
 				if err != nil {
@@ -46,17 +46,11 @@ func startCommand() *cli.Command {
 			}
 
 			cmd := exec.Command("sudo", "systemctl", "stop", fmt.Sprintf("odo@%s.service", shape))
-			_, err = cmd.CombinedOutput()
-			if err != nil {
-				fmt.Printf("stopping odo@%s failed with: %s \n", shape, err)
-			}
+			cmd.CombinedOutput()
 
 			cmd = exec.Command("sudo", "systemctl", "disable", fmt.Sprintf("odo@%s.service", shape))
-			_, err = cmd.CombinedOutput()
-			if err != nil {
-				fmt.Printf("disabling odo@%s failed with: %s \n", shape, err)
-			}
-			// For Migration End
+			cmd.CombinedOutput()
+			// Migration End
 
 			setNetworkDomains(sourceConfig)
 			return node.Start(ctx.Context, protocolConfig)
