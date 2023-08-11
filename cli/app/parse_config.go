@@ -24,6 +24,9 @@ import (
 // Parse from yaml
 func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *config.Source, error) {
 	root := ctx.Path("root")
+	if root == "" {
+		root = config.DefaultRoot
+	}
 
 	if !filepath.IsAbs(root) {
 		return "", nil, nil, fmt.Errorf("root folder `%s` is not absolute", root)

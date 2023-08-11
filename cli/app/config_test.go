@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"testing"
@@ -9,6 +10,7 @@ import (
 
 	_ "embed"
 
+	"github.com/taubyte/tau/config"
 	"gotest.tools/v3/assert"
 )
 
@@ -24,6 +26,7 @@ func TestConfig(t *testing.T) {
 	}
 	defer os.RemoveAll(root)
 
+	fmt.Println("ROOT ", root)
 	os.Mkdir(root+"/storage", 0750)
 	os.Mkdir(root+"/storage/test", 0750)
 	os.Mkdir(root+"/config", 0750)
@@ -36,5 +39,9 @@ func TestConfig(t *testing.T) {
 	assert.NilError(t, err)
 
 	err = app.RunContext(ctx, []string{os.Args[0], "cnf", "show", "-s", "test", "--root", root})
+	assert.NilError(t, err)
+
+	config.DefaultRoot = root
+	err = app.RunContext(ctx, []string{os.Args[0], "cnf", "show", "-s", "test"})
 	assert.NilError(t, err)
 }
