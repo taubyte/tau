@@ -22,7 +22,7 @@ import (
 // TODO: move to config as a methods
 
 // Parse from yaml
-func parseSourceConfig(ctx *cli.Context) (string, *config.Node, *config.Source, error) {
+func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *config.Source, error) {
 	root := ctx.Path("root")
 
 	if !filepath.IsAbs(root) {
@@ -32,7 +32,7 @@ func parseSourceConfig(ctx *cli.Context) (string, *config.Node, *config.Source, 
 	configRoot := root + "/config"
 	configPath := ctx.Path("path")
 	if configPath == "" {
-		configPath = path.Join(configRoot, ctx.String("shape")+".yaml")
+		configPath = path.Join(configRoot, shape+".yaml")
 	}
 
 	data, err := os.ReadFile(configPath)
@@ -59,7 +59,7 @@ func parseSourceConfig(ctx *cli.Context) (string, *config.Node, *config.Source, 
 
 	protocol := &config.Node{
 		Root:            root,
-		Shape:           ctx.String("shape"),
+		Shape:           shape,
 		P2PAnnounce:     src.P2PAnnounce,
 		P2PListen:       src.P2PListen,
 		Ports:           src.Ports.ToMap(),

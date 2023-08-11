@@ -3,7 +3,6 @@ package config
 import (
 	"context"
 	"fmt"
-	"path"
 	"time"
 
 	"github.com/taubyte/p2p/peer"
@@ -12,9 +11,9 @@ import (
 
 var WaitForSwamDuration = 10 * time.Second
 
-func NewNode(ctx context.Context, config *Node, databaseName string) (peer.Node, error) {
+func NewNode(ctx context.Context, config *Node, storagePath string) (peer.Node, error) {
 	if config.DevMode {
-		return NewLiteNode(ctx, config, databaseName)
+		return NewLiteNode(ctx, config, storagePath)
 	}
 
 	bootstrapParam, err := utils.ConvertBootstrap(config.Peers, config.DevMode)
@@ -24,7 +23,7 @@ func NewNode(ctx context.Context, config *Node, databaseName string) (peer.Node,
 
 	peerNode, err := peer.NewPublic(
 		ctx,
-		path.Join(config.Root, databaseName),
+		storagePath,
 		config.PrivateKey,
 		config.SwarmKey,
 		config.P2PListen,
@@ -43,7 +42,7 @@ func NewNode(ctx context.Context, config *Node, databaseName string) (peer.Node,
 	return peerNode, nil
 }
 
-func NewLiteNode(ctx context.Context, config *Node, databaseName string) (peer.Node, error) {
+func NewLiteNode(ctx context.Context, config *Node, storagePath string) (peer.Node, error) {
 	bootstrapParam, err := utils.ConvertBootstrap(config.Peers, config.DevMode)
 	if err != nil {
 		return nil, fmt.Errorf("getting bootstrap perms in NewLiteNode failed with: %s", err)
@@ -51,7 +50,7 @@ func NewLiteNode(ctx context.Context, config *Node, databaseName string) (peer.N
 
 	node, err := peer.NewLitePublic(
 		ctx,
-		path.Join(config.Root, databaseName),
+		storagePath,
 		config.PrivateKey,
 		config.SwarmKey,
 		config.P2PListen,

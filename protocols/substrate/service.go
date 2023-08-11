@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/vm"
@@ -44,7 +45,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	srv.verbose = config.Verbose
 
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewLiteNode(ctx, config, protocolCommon.Substrate)
+		srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, protocolCommon.Substrate))
 		if err != nil {
 			return nil, fmt.Errorf("creating new lite node failed with: %w", err)
 		}

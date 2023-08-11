@@ -30,7 +30,7 @@ func configCommand() *cli.Command {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					_, _, _, err := parseSourceConfig(ctx)
+					_, _, _, err := parseSourceConfig(ctx, ctx.String("shape"))
 					return err
 				},
 			},
@@ -52,7 +52,7 @@ func configCommand() *cli.Command {
 					},
 				},
 				Action: func(ctx *cli.Context) error {
-					pid, cnf, _, err := parseSourceConfig(ctx)
+					pid, cnf, _, err := parseSourceConfig(ctx, ctx.String("shape"))
 					if err != nil {
 						return err
 					}

@@ -3,6 +3,7 @@ package monkey
 import (
 	"context"
 	"fmt"
+	"path"
 	"regexp"
 
 	"github.com/ipfs/go-log/v2"
@@ -66,7 +67,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewLiteNode(ctx, config, protocolCommon.Monkey)
+		srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, protocolCommon.Monkey))
 		if err != nil {
 			return nil, err
 		}
