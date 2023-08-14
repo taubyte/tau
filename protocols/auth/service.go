@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path"
 
 	"github.com/ipfs/go-log/v2"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
@@ -41,7 +42,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	}
 
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewNode(ctx, config, protocolCommon.Auth)
+		srv.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolCommon.Auth))
 		if err != nil {
 			return nil, err
 		}

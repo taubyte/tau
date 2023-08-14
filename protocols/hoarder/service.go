@@ -3,6 +3,7 @@ package hoarder
 import (
 	"context"
 	"fmt"
+	"path"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-log/v2"
@@ -39,7 +40,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 
 	// TODO move database root to new
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewNode(ctx, config, protocolCommon.Hoarder)
+		srv.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolCommon.Hoarder))
 		if err != nil {
 			return nil, fmt.Errorf("config new node failed with: %s", err)
 		}

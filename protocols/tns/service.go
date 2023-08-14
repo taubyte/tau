@@ -3,6 +3,7 @@ package tns
 import (
 	"context"
 	"fmt"
+	"path"
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/services/seer"
@@ -33,7 +34,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewNode(ctx, config, protocolsCommon.Tns)
+		srv.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolsCommon.Tns))
 		if err != nil {
 			return nil, err
 		}

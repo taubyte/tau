@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"path"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
@@ -43,7 +44,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 	logger.Info(config)
 
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewNode(ctx, config, protocolsCommon.Patrick)
+		srv.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolsCommon.Patrick))
 		if err != nil {
 			return nil, err
 		}

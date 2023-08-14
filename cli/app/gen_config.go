@@ -13,7 +13,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
@@ -74,8 +73,7 @@ func generateSourceConfig(ctx *cli.Context) (string, error) {
 				Private: path.Join("keys", "dv_private.pem"),
 				Public:  path.Join("keys", "dv_public.pem"),
 			},
-			Generated: regexp.QuoteMeta(fmt.Sprintf("g.%s", ctx.String("network"))) + `$`,
-			Services:  `^[^.]+\.tau\.` + regexp.QuoteMeta(ctx.String("network")) + `$`,
+			Generated: fmt.Sprintf("g.%s", ctx.String("network")),
 		},
 	}
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"path"
 	"regexp"
 	"time"
 
@@ -55,7 +56,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	}
 
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewLiteNode(ctx, config, protocolsCommon.Seer)
+		srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, protocolsCommon.Seer))
 		if err != nil {
 			return nil, fmt.Errorf("new lite node failed with: %s", err)
 		}
