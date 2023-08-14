@@ -54,10 +54,20 @@ $ go install github.com/taubyte/tau
 ```
 
 #### From binary
- - Download the [latest release](https://github.com/taubyte/tau/releases)
- - Place the binary in one of the `$PATH` directories
- - Ensure it's executable (`chmod +x`)
+To download the latest release run:
+```
+$ curl https://get.tau.link/tau | sh
+```
 
+To install
+```
+$ curl https://get.tau.link/tau | sh -s -- -i
+```
+
+Other options:
+ - `-O <path/to/download/folder>` if not specefied a temporrary folder is used
+ - `-r <path/to/root>` by default `/tb`
+ 
 ### Filesystem Structure
 We at Taubyte prioritize convention over configuration. Hence, we've pre-defined the filesystem structure and its location as follows:
 ```
