@@ -69,7 +69,7 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 		Location:        src.Location,
 		NetworkFqdn:     src.NetworkFqdn,
 		GeneratedDomain: src.Domains.Generated,
-		ServicesDomain:  src.Domains.Services,
+		ServicesDomain:  convertToServiceRegex(src.NetworkFqdn),
 		HttpListen:      "0.0.0.0:443",
 		Protocols:       src.Protocols,
 		Plugins:         src.Plugins,
