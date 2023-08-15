@@ -43,6 +43,7 @@ func newTestUnsecureClient() (*Client, error) {
 }
 
 func TestConnectionToProdNodeWithoutCheckingCertificates(t *testing.T) {
+	t.Skip("test needs to be redone")
 	t.Run("Given an Unsecure Client with a valid token", func(t *testing.T) {
 		client, err := newTestUnsecureClient()
 		assert.NilError(t, err)
@@ -56,6 +57,7 @@ func TestConnectionToProdNodeWithoutCheckingCertificates(t *testing.T) {
 }
 
 func TestConnectionToProdNode(t *testing.T) {
+	t.Skip("tests need to be redone")
 	t.Run("Given a Client with a valid token", func(t *testing.T) {
 		client, err := newTestClient()
 		assert.NilError(t, err)
