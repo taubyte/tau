@@ -13,7 +13,7 @@ type userDataResponse struct {
 func (u *User) Get() (*UserData, error) {
 	if u.userData == nil {
 		var response userDataResponse
-		err := u.client.get("/me", &response)
+		err := u.client.Get("/me", &response)
 		if err != nil {
 			return nil, err
 		}

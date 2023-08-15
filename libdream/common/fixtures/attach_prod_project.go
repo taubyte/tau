@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/go-github/github"
+	"github.com/taubyte/tau/clients/http"
 	httpAuthClient "github.com/taubyte/tau/clients/http/auth"
 	commonDreamland "github.com/taubyte/tau/libdream/common"
 	"github.com/taubyte/tau/libdream/helpers"
@@ -41,7 +42,7 @@ func attachProdProject(u commonDreamland.Universe, params ...interface{}) error 
 	}
 
 	prodAuthURL := "https://auth.tau.sandbox.taubyte.com"
-	prodClient, err := httpAuthClient.New(u.Context(), httpAuthClient.URL(prodAuthURL), httpAuthClient.Auth(gitToken), httpAuthClient.Unsecure(), httpAuthClient.Provider(helpers.GitProvider))
+	prodClient, err := httpAuthClient.New(u.Context(), http.URL(prodAuthURL), http.Auth(gitToken), http.Unsecure())
 	if err != nil {
 		return fmt.Errorf("creating new auth client failed with: %w", err)
 	}
@@ -76,7 +77,7 @@ func attachProdProject(u commonDreamland.Universe, params ...interface{}) error 
 		return fmt.Errorf("getting auth url failed with: %w", err)
 	}
 
-	devClient, err := httpAuthClient.New(u.Context(), httpAuthClient.URL(devAuthUrl), httpAuthClient.Auth(gitToken), httpAuthClient.Provider(helpers.GitProvider))
+	devClient, err := httpAuthClient.New(u.Context(), http.URL(devAuthUrl), http.Auth(gitToken))
 	if err != nil {
 		return fmt.Errorf("creating new http auth client failed with %w", err)
 	}

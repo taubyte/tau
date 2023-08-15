@@ -1,13 +1,11 @@
-package client
+package http
 
 import (
 	"errors"
 	"fmt"
-	neturl "net/url"
+	netUrl "net/url"
 	"time"
 )
-
-type Option func(c *Client) error
 
 // Unsecure returns an Option that will allow the client to connect to a server with an invalid certificate
 func Unsecure() Option {
@@ -20,9 +18,9 @@ func Unsecure() Option {
 // URL returns an Option that will set the url of the auth server
 func URL(url string) Option {
 	return func(c *Client) error {
-		_, err := neturl.ParseRequestURI(url)
+		_, err := netUrl.ParseRequestURI(url)
 		if err != nil {
-			return fmt.Errorf("new client options: Parsing url failed with %s", err.Error())
+			return fmt.Errorf("parsing url failed with: %w", err)
 		}
 
 		c.url = url
@@ -32,22 +30,17 @@ func URL(url string) Option {
 
 // Provider returns an Option that will set the git provider of the client
 // currently only github is supported
-func Provider(provider string) Option {
-	var providers = map[string]bool{
-		"github":    true,
-		"bitbucket": false,
-	}
+func Provider(provider supportedProvider) Option {
 	return func(c *Client) error {
-		enabled, ok := providers[provider]
-		if !ok {
-			return fmt.Errorf("new client provider option `%s` unknown", provider)
+		switch provider {
+		case Github:
+			c.provider = string(provider)
+		case Bitbucket:
+			return fmt.Errorf("provider %s currently is not supported", provider)
+		default:
+			return fmt.Errorf("provider %s unknown", provider)
 		}
 
-		if !enabled {
-			return fmt.Errorf("new client provider option `%s` not enabled", provider)
-		}
-
-		c.provider = provider
 		return nil
 	}
 }
@@ -56,7 +49,7 @@ func Provider(provider string) Option {
 func Auth(token string) Option {
 	return func(c *Client) error {
 		if token == "" {
-			return errors.New("new client token option can not be empty")
+			return errors.New("cannot set empty token")
 		}
 
 		c.token = token
@@ -67,8 +60,8 @@ func Auth(token string) Option {
 // Timeout returns an Option that will set the timeout of the client
 func Timeout(duration time.Duration) Option {
 	return func(c *Client) error {
-		if duration < 1*time.Second {
-			return errors.New("new client timeout option too low (<1s)")
+		if duration == 0 {
+			duration = DefaultTimeout
 		}
 
 		c.timeout = duration
