@@ -23,7 +23,7 @@ func (p *Project) Create(c *Client, configRepoId string, codeRepoId string) erro
 		},
 	}
 
-	err := p.client.post("/project/new/"+p.Name, &sendData, &ProjectReturn{p})
+	err := p.client.http.Post("/project/new/"+p.Name, &sendData, &ProjectReturn{p})
 	if err != nil {
 		return fmt.Errorf("creating new project failed with: %s", err)
 	}
@@ -33,7 +33,7 @@ func (p *Project) Create(c *Client, configRepoId string, codeRepoId string) erro
 
 // Create creates a new device for the project
 func (d *Device) Create(c *Client) error {
-	err := c.post(fmt.Sprintf("/project/%s/devices/new", d.Project.Id), d, d)
+	err := c.http.Post(fmt.Sprintf("/project/%s/devices/new", d.Project.Id), d, d)
 	if err != nil {
 		return fmt.Errorf("creating new device failed with: %s", err)
 	}

@@ -1,23 +1,13 @@
 package client
 
 import (
-	"context"
-	"net/http"
-	"time"
-
+	httpClient "github.com/taubyte/tau/clients/http"
 	"github.com/taubyte/tau/clients/http/auth/git/common"
 )
 
 type Client struct {
-	ctx         context.Context
-	client      *http.Client
-	gitClient   common.Client
-	token       string
-	provider    string
-	url         string
-	auth_header string
-	unsecure    bool
-	timeout     time.Duration
+	http      *httpClient.Client
+	gitClient common.Client
 }
 
 type User struct {

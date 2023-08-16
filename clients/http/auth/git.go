@@ -13,7 +13,7 @@ import (
 // Currently only github is supported
 func (c *Client) Git() common.Client {
 	if c.gitClient == nil {
-		c.gitClient = git.New(c.ctx, c.provider, c.token)
+		c.gitClient = git.New(c.http.Context(), c.http.Provider(), c.http.Token())
 	}
 
 	return c.gitClient
@@ -56,7 +56,7 @@ func (c *Client) GetRepositoryById(repoId string) (common.Repository, error) {
 func (c *Client) GetRepositoryByName(fullName string) (common.Repository, error) {
 	nameSplit := strings.Split(fullName, "/")
 	if len(nameSplit) != 2 {
-		return nil, fmt.Errorf("invalid git fullname: `%s`, expected `owner/name`", fullName)
+		return nil, fmt.Errorf("invalid git fullName: `%s`, expected `owner/name`", fullName)
 	}
 
 	owner := nameSplit[0]

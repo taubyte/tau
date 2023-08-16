@@ -14,6 +14,8 @@ import (
 	"strings"
 	"text/template"
 
+	httpClient "github.com/taubyte/tau/clients/http"
+
 	"github.com/taubyte/go-interfaces/services/patrick"
 	httpAuthClient "github.com/taubyte/tau/clients/http/auth"
 	commonAuth "github.com/taubyte/tau/protocols/common"
@@ -25,7 +27,7 @@ func RegisterTestProject(ctx context.Context, mockAuthURL string) (err error) {
 	// override ID of project generated so that it matches id in config
 	commonAuth.GetNewProjectID = func(args ...interface{}) string { return ProjectID }
 
-	ac, err = httpAuthClient.New(ctx, httpAuthClient.URL(mockAuthURL), httpAuthClient.Auth(GitToken), httpAuthClient.Provider("github"), httpAuthClient.Unsecure())
+	ac, err = httpAuthClient.New(ctx, httpClient.URL(mockAuthURL), httpClient.Auth(GitToken), httpClient.Unsecure())
 	if err != nil {
 		return err
 	}
@@ -48,7 +50,7 @@ func RegisterTestProject(ctx context.Context, mockAuthURL string) (err error) {
 }
 
 func RegisterTestDomain(ctx context.Context, mockAuthURL string) (err error) {
-	ac, err = httpAuthClient.New(ctx, httpAuthClient.URL(mockAuthURL), httpAuthClient.Auth(GitToken), httpAuthClient.Provider("github"), httpAuthClient.Unsecure())
+	ac, err = httpAuthClient.New(ctx, httpClient.URL(mockAuthURL), httpClient.Auth(GitToken), httpClient.Unsecure())
 	if err != nil {
 		return err
 	}
@@ -60,7 +62,7 @@ func RegisterTestDomain(ctx context.Context, mockAuthURL string) (err error) {
 
 func RegisterTestRepositories(ctx context.Context, mockAuthURL string, repos ...Repository) (err error) {
 	if len(mockAuthURL) != 0 {
-		ac, err = httpAuthClient.New(ctx, httpAuthClient.URL(mockAuthURL), httpAuthClient.Auth(GitToken), httpAuthClient.Provider("github"), httpAuthClient.Unsecure())
+		ac, err = httpAuthClient.New(ctx, httpClient.URL(mockAuthURL), httpClient.Auth(GitToken), httpClient.Unsecure())
 		if err != nil {
 			return err
 		}
