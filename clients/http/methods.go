@@ -66,7 +66,7 @@ func (c *Client) Delete(path string, data interface{}, ret interface{}) error {
 	return c.do(path, http.MethodDelete, data, ret)
 }
 
-func (c *Client) Http() *http.Client {
+func (c *Client) Client() *http.Client {
 	return c.client
 }
 

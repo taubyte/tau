@@ -11,7 +11,7 @@ import (
 // Note: The repository field is not populated
 func (c *Client) GetProjectById(projectId string) (*Project, error) {
 	var data ProjectReturn
-	err := c.Get("/projects/"+projectId, &data)
+	err := c.http.Get("/projects/"+projectId, &data)
 	if err != nil {
 		return nil, err
 	}
@@ -22,7 +22,7 @@ func (c *Client) GetProjectById(projectId string) (*Project, error) {
 // GetProjectByIdWithCors returns the project with cors information with the given id and an error
 func (c *Client) GetProjectByIdWithCors(projectId string) (*ProjectReturnWithCors, error) {
 	data := new(ProjectReturnWithCors)
-	err := c.Get("/projects/"+projectId, &data)
+	err := c.http.Get("/projects/"+projectId, &data)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func (c *Client) GetProjectByIdWithCors(projectId string) (*ProjectReturnWithCor
 // Projects returns a list of projects and an error
 func (c *Client) Projects() ([]*Project, error) {
 	var data ProjectsReturn
-	err := c.Get("/projects", &data)
+	err := c.http.Get("/projects", &data)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (c *Client) Projects() ([]*Project, error) {
 func (p *Project) Repositories() (*RawRepoDataOuter, error) {
 	if p.RepoList == nil {
 		var response ProjectReturn
-		err := p.client.Get("/projects/"+p.Id, &response)
+		err := p.client.http.Get("/projects/"+p.Id, &response)
 		if err != nil {
 			return nil, err
 		}
@@ -91,6 +91,6 @@ type deleteResponse struct {
 
 // Delete deletes the project and returns an error
 func (p *Project) Delete() (response deleteResponse, err error) {
-	err = p.client.Delete("/projects/"+p.Id, nil, &response)
+	err = p.client.http.Delete("/projects/"+p.Id, nil, &response)
 	return response, err
 }

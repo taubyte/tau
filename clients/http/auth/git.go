@@ -13,7 +13,7 @@ import (
 // Currently only github is supported
 func (c *Client) Git() common.Client {
 	if c.gitClient == nil {
-		c.gitClient = git.New(c.Context(), c.Provider(), c.Token())
+		c.gitClient = git.New(c.http.Context(), c.http.Provider(), c.http.Token())
 	}
 
 	return c.gitClient

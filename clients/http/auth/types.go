@@ -6,7 +6,7 @@ import (
 )
 
 type Client struct {
-	*httpClient.Client
+	http      *httpClient.Client
 	gitClient common.Client
 }
 

@@ -5,5 +5,5 @@ import (
 )
 
 type Client struct {
-	*http.Client
+	http *http.Client
 }

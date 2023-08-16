@@ -17,7 +17,7 @@ func New(ctx context.Context, options ...http.Option) (*Client, error) {
 	}
 
 	return &Client{
-		Client:    client,
+		http:      client,
 		gitClient: git.New(ctx, client.Provider(), client.Token()),
 	}, nil
 }
