@@ -39,7 +39,7 @@ func (c *Client) Job(jid string) (job *patrickIface.Job, err error) {
 
 func (c *Client) LogFile(jobId, resourceId string) (log io.ReadCloser, err error) {
 	method := http.MethodGet
-	path := "/logs/" + jobId + "/" + resourceId
+	path := "/logs" + "/" + resourceId
 
 	req, err := http.NewRequestWithContext(c.http.Context(), method, c.http.Url()+path, nil)
 	if err != nil {
