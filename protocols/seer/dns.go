@@ -16,6 +16,7 @@ import (
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/miekg/dns"
+	"github.com/taubyte/go-specs/common"
 )
 
 // TODO: Implement a spam cache that blocks spam dns request
@@ -118,6 +119,10 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 	}()
 
+	if len(msg.Question) < 1 {
+		return
+	}
+
 	name := msg.Question[0].Name
 	if strings.HasSuffix(msg.Question[0].Name, ".") {
 		name = strings.TrimSuffix(msg.Question[0].Name, ".")
@@ -183,10 +188,19 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 // TODO: Clean this up, repetitive code
 func (h *dnsHandler) tauDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
-	service := strings.Split(name, ".")[0]
-	ips, err := h.getServiceIp(service)
+	protocol := strings.Split(name, ".")[0]
+	if err := common.ValidateProtocols([]string{protocol}); err != nil {
+		logger.Errorf("validating protocol `%s` failed with: %w", protocol, err)
+		if err := w.WriteMsg(errMsg); err != nil {
+			logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
+		}
+
+		return
+	}
+
+	ips, err := h.getServiceIp(protocol)
 	if err != nil {
-		logger.Errorf("getting ip for %s failed with %s", service, err.Error())
+		logger.Errorf("getting ip for %s failed with %s", protocol, err.Error())
 		if err := w.WriteMsg(errMsg); err != nil {
 			logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
 		}
