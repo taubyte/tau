@@ -23,5 +23,6 @@ func (srv *Service) auctionIntent(auction *hoarderIface.Auction, msg *pubsub.Mes
 
 	pool = append(pool, auction)
 	srv.lotteryPool[auction.Meta.ConfigId+auction.Meta.Match] = pool
+	fmt.Println("IN HOARDER ", srv.node.ID().String(), "LOTTERY POO LENGHT ", len(srv.lotteryPool))
 	return nil
 }

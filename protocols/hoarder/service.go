@@ -8,6 +8,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-log/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	kv "github.com/taubyte/go-interfaces/kvdb"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
@@ -63,7 +64,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		srv.dbFactory = kvdb.New(srv.node)
 	}
 
-	srv.db, err = srv.dbFactory.New(logger, protocolCommon.Auth, 5)
+	srv.db, err = srv.dbFactory.New(logger, protocolCommon.Hoarder, 5)
 	if err != nil {
 		return nil, err
 	}
@@ -99,6 +100,10 @@ func (srv *Service) Close() error {
 	return nil
 }
 
+func (srv *Service) KV() kv.KVDB {
+	return srv.db
+}
+
 // This only handles incoming new request for orders
 func (srv *Service) subscribe(ctx context.Context) error {
 	return srv.node.PubSubSubscribe(
@@ -121,9 +126,9 @@ func (srv *Service) subscribe(ctx context.Context) error {
 			case hoarderIface.AuctionIntent:
 				err = srv.auctionIntent(auction, msg)
 			case hoarderIface.AuctionEnd:
+				// fmt.Println("HITTING AUCTION END FROM HOARDER ", srv.node.ID().String())
 				err = srv.auctionEnd(ctx, auction, msg)
 			}
-
 			if err != nil {
 				return
 			}

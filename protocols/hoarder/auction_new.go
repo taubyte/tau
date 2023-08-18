@@ -11,7 +11,7 @@ import (
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 )
 
-const maxWaitTime = 15 * time.Second
+const maxWaitTime = 20 * time.Second
 
 func (srv *Service) auctionNew(ctx context.Context, auction *hoarderIface.Auction, msg *pubsub.Message) error {
 	srv.startAuction(ctx, auction)
@@ -50,6 +50,8 @@ func (srv *Service) startAuction(ctx context.Context, action *hoarderIface.Aucti
 			if err := srv.publishAction(ctx, action, hoarderIface.AuctionEnd); err != nil {
 				logger.Error("action publish failed with:", err.Error())
 			}
+			fmt.Println("ENDING ACUTION FOR HOARDER ", srv.node.ID())
+			return
 		}
 	}()
 }

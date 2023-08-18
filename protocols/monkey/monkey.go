@@ -94,12 +94,15 @@ func (m *Monkey) Run() {
 	}
 
 	// Stash the logs
+	fmt.Println("STASHING LOGS WITH CID ", cid_of_logs)
 	_, err = hoarder.Stash(cid_of_logs)
 	if err != nil {
 		errormsg := fmt.Sprintf("Hoarding cid `%s` of job `%s` failed: %s", cid_of_logs, m.Id, err.Error())
+		fmt.Println("ERRORR MSG ", errormsg)
 		logger.Error(errormsg)
 		m.logFile.Write([]byte(errormsg))
 	}
+	fmt.Println("AFTER SHASING LOG FILE WITH CID ", cid_of_logs)
 	m.LogCID = cid_of_logs
 
 	// Free the jobID from monkey

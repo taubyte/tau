@@ -59,10 +59,13 @@ func (c Context) storeLogFile(file *os.File) (string, error) {
 	}
 
 	// Stash the logs
+	fmt.Println("STORING LOG FILE OF CID ", logCid)
 	_, err = hoarder.Stash(logCid)
 	if err != nil {
+		fmt.Println("ERR STORING LOG FILE ", err)
 		errMsg.append("hoarding log cid `%s` of job `%s` failed with: %s", logCid, c.Job.Id, err)
 	}
+	fmt.Println("AFTER STORING LOG FILEL OF CID ", logCid)
 
 	// Not handling this error due to hoarder failing
 	errMsg.write(file)

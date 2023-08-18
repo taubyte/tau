@@ -14,12 +14,12 @@ import (
 )
 
 func (srv *Service) validateMsg(auction *hoarderIface.Auction, msg *pubsub.Message) bool {
-	// If we get a message from ourselves and its not a timeout/end/failed we ignore
+	// If we get a message from ourselves and its not a end we ignore
 	if msg.ReceivedFrom == srv.node.Peer().ID() && auction.Type != hoarderIface.AuctionEnd {
 		return false
 	}
 
-	// If we get a message from other people and its end/timeout/ignore we ignore it
+	// If we get a message from other people and its end we ignore it
 	if msg.ReceivedFrom != srv.node.Peer().ID() && auction.Type == hoarderIface.AuctionEnd {
 		return false
 	}

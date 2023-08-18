@@ -44,7 +44,6 @@ var (
 
 // TODO: Fix Hoarder and tests
 func TestStoring(t *testing.T) {
-	t.Skip("hoarder needs to be fixed")
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&commonDreamland.Config{
@@ -189,14 +188,22 @@ func TestStoring(t *testing.T) {
 		}
 
 		key := datastore.NewKey(fmt.Sprintf("/hoarder/storages/%s%s", storageId, storageMatch))
-		storage, err := service.Node().GetFile(u.Context(), key.String())
-		fmt.Println("STORAGE:::", storage, err)
+		data, err := service.KV().Get(u.Context(), key.String())
+		if err == nil && len(data) > 0 {
+			storages += 1
+		}
+		// storage, err := service.Node().GetFile(u.Context(), key.String())
+		fmt.Println("STORAGE:::", len(data), err)
 
 		key = datastore.NewKey(fmt.Sprintf("/hoarder/databases/%s%s", databaseId, databaseMatch))
-		db, err := service.Node().GetFile(u.Context(), key.String())
-		fmt.Println("DB::::", db, err)
+		data, err = service.KV().Get(u.Context(), key.String())
+		if err == nil && len(data) > 0 {
+			databases += 1
+		}
+		fmt.Println("DB::::", len(data), err)
 	}
 
+	fmt.Println("HOW MANY FOUND ", databases+storages)
 	if databases+storages < 2 {
 		t.Errorf("Did not find both storage and database. Storage Found = %d, Database Found = %d", storages, databases)
 	}

@@ -3,6 +3,7 @@ package hoarder
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
@@ -11,6 +12,7 @@ import (
 func (srv *Service) auctionEnd(ctx context.Context, auction *hoarderIface.Auction, msg *pubsub.Message) error {
 	var winner *hoarderIface.Auction
 	var currentBiggest uint64
+	fmt.Println("HOARDER ", srv.Node().ID().String(), " HOW MANY LOTTERY ENTRIES ARE TEHRE ", len(srv.lotteryPool))
 	for _, lottery := range srv.lotteryPool[auction.Meta.ConfigId+auction.Meta.Match] {
 		if lottery.Lottery.Number > currentBiggest {
 			winner = lottery
