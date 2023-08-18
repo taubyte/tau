@@ -883,8 +883,8 @@ github.com/taubyte/cli-common v0.1.1 h1:cWgk/MABhKMoeLOJ1rQXg7mqrMhjBIHZmDJv0ewl
 github.com/taubyte/cli-common v0.1.1/go.mod h1:jsKlKVPrpZLhV6QyhQ5b7XdJJEpwX5oEx1C1DsN0f4Y=
 github.com/taubyte/config-compiler v0.4.6 h1:9s3xn955imE7gAyVFpcsBEkowhCir78b1HPWLcDAl38=
 github.com/taubyte/config-compiler v0.4.6/go.mod h1:gaohk1BSknIudo16QSgeQqVWVGLyusPPdLn+wQ+xAmY=
-github.com/taubyte/domain-validation v1.0.0 h1:yUt6y7b/3PC9aocvl7s8cBKG4ieN35zQqVQIywGUg4o=
-github.com/taubyte/domain-validation v1.0.0/go.mod h1:/X3yd7sBjnE323rA8I9PiUt5+NlKU4I02nQik25Vqe8=
+github.com/taubyte/domain-validation v1.0.1 h1:T1iRls4p5+uJLR8R/wf+dBt9Rlahg9BcCtBVbkoD0Ik=
+github.com/taubyte/domain-validation v1.0.1/go.mod h1:/X3yd7sBjnE323rA8I9PiUt5+NlKU4I02nQik25Vqe8=
 github.com/taubyte/go-interfaces v0.2.12 h1:YzkxGfqOIzQcsSqt3UDXgDE9lfvHLLx30ZNBlkqMHLc=
 github.com/taubyte/go-interfaces v0.2.12/go.mod h1:4DHAcs77uhLXLGWnoRca6kK/vUw0BPHGr0iXcwnBTaE=
 github.com/taubyte/go-project-schema v0.9.3 h1:2H0ClUZq7f97OgtL0FUe9tv2v12wOmnTAIiJGLei/gU=
@@ -901,8 +901,8 @@ github.com/taubyte/go-simple-container v0.4.2 h1:WMC/kgubrQiiDzMfLs3X0WcAMl9hkVO
 github.com/taubyte/go-simple-container v0.4.2/go.mod h1:7nFas4yr17+jFUWmQLBNZ//s40Y+7/iiJhJkXAJDGiY=
 github.com/taubyte/go-simple-git v0.2.5 h1:ESwhDVHGF0oVPFtZvCS5SzrugjCpK0KKaQIQC6AxzDE=
 github.com/taubyte/go-simple-git v0.2.5/go.mod h1:tPUTQo7GPNEYOV1kRMqWLv3cihLN4MKyK1kW36xr9wk=
-github.com/taubyte/go-specs v0.10.6 h1:iSy5gJ6qpEICNKdQsyG9BiFn0Pf3/SgYk/P5rbHIpR8=
-github.com/taubyte/go-specs v0.10.6/go.mod h1:HWMNhpmQzy/1Eg6s5TICKl+/talTXLX6jYEUuWCsaGg=
+github.com/taubyte/go-specs v0.10.7 h1:j9Kdk4JBP0ypiqWC5WCXGRhS+5cPupO4IdVSXapWGSE=
+github.com/taubyte/go-specs v0.10.7/go.mod h1:FiqQOzuUMERkMR6ZdYNqmWZlj00DA491LeAWnm0dgNo=
 github.com/taubyte/http v0.10.4 h1:Lvr43DYHamFlyr0ijNJrYDl0BAWeaMMQJdtnRQmKWNY=
 github.com/taubyte/http v0.10.4/go.mod h1:hSJYC7/yqRkrsZYe1Q0c194GKkVD0KGWDzw0sC+SAiU=
 github.com/taubyte/odo v0.0.0-20230727154809-0688a5d7674b h1:2Jt0GOC/2OoSG8R+SG8ctWD1m8XVla3IMb4Z69QIZLg=

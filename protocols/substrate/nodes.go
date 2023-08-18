@@ -64,13 +64,7 @@ func (srv *Service) attachNodes(config *config.Node) (err error) {
 }
 
 func (srv *Service) attachNodeHttp(config *config.Node) (err error) {
-	ops := []http.Option{}
-
-	if config.DevMode {
-		ops = append(ops, http.DvKey(config.DomainValidation.PublicKey))
-	}
-
-	srv.nodeHttp, err = http.New(srv, ops...)
+	srv.nodeHttp, err = http.New(srv, http.DvKey(config.DomainValidation.PublicKey))
 	return
 }
 
