@@ -117,35 +117,38 @@ func (c *Context) HandleOp(op Op, logFile *os.File) (io.ReadSeekCloser, error) {
 	if err != nil {
 		return nil, appendDebug("creating new wasm builder failed with: %s", err.Error())
 	}
-
-	var logs builders.Logs
+	var (
+		logs   builders.Logs
+		output builders.Output
+	)
 	defer func() {
 		if logs != nil {
 			if _, err := logs.CopyTo(logFile); err != nil {
 				appendDebug("copying logs from builder failed with: %w", err)
+			}
+
+			if len(debugMsg) > 0 {
 				logFile.Seek(0, io.SeekEnd)
-				logFile.WriteString(fmt.Sprintf("DEBUG:\n%s", debugMsg))
+				logFile.WriteString(fmt.Sprintf("DEBUG:\n%s\n", debugMsg))
 				logFile.Seek(0, io.SeekStart)
 			}
 
 			logs.Close()
 		}
+
+		if output != nil {
+			output.Close()
+		}
 	}()
 
-	output, err := buildAndSetLog(builder, &logs)
+	output, err = buildAndSetLog(builder, &logs)
 	if err != nil {
 		return nil, appendDebug("building function %s/%s failed with: %s", op.application, op.name, err.Error())
 	}
-	defer output.Close()
 
 	moduleReader, err := output.Compress(builders.WASM)
 	if err != nil {
 		return nil, appendDebug("compressing build files failed with: %s", err.Error())
-	}
-
-	_, err = logs.CopyTo(logFile)
-	if err != nil {
-		return nil, appendDebug("copying logs failed with: %s", err.Error())
 	}
 
 	return moduleReader, nil

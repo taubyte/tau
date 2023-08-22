@@ -38,6 +38,10 @@ type Context struct {
 	DVPublicKey []byte
 }
 
+func (c *Context) DebugMessage() string {
+	return c.debug
+}
+
 type Op struct {
 	id           string
 	name         string

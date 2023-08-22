@@ -1,8 +1,6 @@
 package jobs
 
 import (
-	"io"
-
 	"github.com/ipfs/go-log/v2"
 	_ "github.com/taubyte/builder"
 	"github.com/taubyte/config-compiler/compile"
@@ -18,16 +16,6 @@ func (c config) handle() error {
 	if project.Get().Id() != c.ProjectID {
 		return c.logErrorHandler("project ids not equal `%s` != `%s`", c.ProjectID, project.Get().Id())
 	}
-
-	defer func() {
-		if len(c.debug) > 0 {
-			c.LogFile.Seek(0, io.SeekEnd)
-			c.LogFile.WriteString(c.debug)
-			c.LogFile.Seek(0, io.SeekStart)
-
-			c.handleBuildDetails(c.ProjectID, nil, c.LogFile)
-		}
-	}()
 
 	rc, err := compile.CompilerConfig(project, c.Job.Meta)
 	if err != nil {
