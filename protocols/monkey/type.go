@@ -29,6 +29,7 @@ type Monkey struct {
 	Service *Service
 	Job     *patrick.Job
 	logFile *os.File
+	debug   string
 }
 
 type Service struct {

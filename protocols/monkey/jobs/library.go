@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/go-interfaces/builders"
 )
 
-func (c Context) HandleLibrary() (io.ReadSeekCloser, error) {
+func (c *Context) HandleLibrary() (io.ReadSeekCloser, error) {
 	builder, err := build.New(c.ctx, c.WorkDir)
 	if err != nil {
 		return nil, fmt.Errorf("creating new builder for git library repo `%d` failed with: %s", c.Job.Meta.Repository.ID, err)
@@ -35,7 +35,7 @@ func (c Context) HandleLibrary() (io.ReadSeekCloser, error) {
 	return zWasm, nil
 }
 
-func (l library) handle() error {
+func (l *library) handle() error {
 	zWasm, err := l.HandleLibrary()
 	if err != nil {
 		return fmt.Errorf("handling library failed with: %s", err)

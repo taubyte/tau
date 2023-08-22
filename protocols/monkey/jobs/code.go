@@ -7,32 +7,43 @@ import (
 	"path"
 	"sync"
 
+	"github.com/ipfs/go-log/v2"
 	build "github.com/taubyte/builder"
 	"github.com/taubyte/go-interfaces/builders"
 	projectSchema "github.com/taubyte/go-project-schema/project"
 	git "github.com/taubyte/go-simple-git"
 )
 
-func (c code) handle() error {
+func (c *Context) logErrorHandler(format string, args ...any) error {
+	err := fmt.Errorf(format, args...)
+	c.addDebugMsg(log.LevelError, err.Error())
+	return err
+}
+
+func (c *code) handle() error {
 	if err := c.checkConfig(); err != nil {
-		return fmt.Errorf("checking config repo for project failed with: %s", err)
+		return c.logErrorHandler("checking config repo for project failed with: %s", err)
 	}
 
 	project, err := projectSchema.Open(projectSchema.SystemFS(c.ConfigRepoRoot))
 	if err != nil {
-		return fmt.Errorf("opening project from path `%s` failed with: %s", c.ConfigRepoRoot, err)
+		return c.logErrorHandler("opening project from path `%s` failed with: %s", c.ConfigRepoRoot, err)
 	}
 
 	// Decompile and get includes and id of each function, website and library
 	ops, err := buildTodoFromConfig(project)
 	if err != nil {
-		return fmt.Errorf("building todo from config for project `%s` failed with: %s", project.Get().Id(), err)
+		return c.logErrorHandler("building todo from config for project `%s` failed with: %s", project.Get().Id(), err)
 	}
 
-	return c.handleOps(ops)
+	if err = c.handleOps(ops); err != nil {
+		return c.logErrorHandler(err.Error())
+	}
+
+	return nil
 }
 
-func (c code) handleOps(ops []Op) error {
+func (c *code) handleOps(ops []Op) error {
 	if len(ops) == 0 {
 		return nil
 	}
@@ -80,9 +91,9 @@ func (c code) handleOps(ops []Op) error {
 	}
 }
 
-func (c code) handleOp(op Op, logFile *os.File) error {
+func (c *code) handleOp(op Op, logFile *os.File) error {
 	moduleReader, err := c.HandleOp(op, logFile)
-	if err == nil {
+	if moduleReader != nil {
 		defer moduleReader.Close()
 	}
 
@@ -93,35 +104,48 @@ func (c code) handleOp(op Op, logFile *os.File) error {
 	return err
 }
 
-func (c Context) HandleOp(op Op, logFile *os.File) (io.ReadSeekCloser, error) {
+func (c *Context) HandleOp(op Op, logFile *os.File) (io.ReadSeekCloser, error) {
+	var debugMsg string
+	appendDebug := func(format string, args ...any) error {
+		err := fmt.Errorf(format, args...)
+		debugMsg += err.Error() + "\n"
+		return err
+	}
+
 	sourcePath := path.Join(c.gitDir, op.application, op.pathVariable, op.name)
 	builder, err := build.New(c.ctx, sourcePath)
 	if err != nil {
-		return nil, fmt.Errorf("creating new wasm builder failed with: %s", err)
+		return nil, appendDebug("creating new wasm builder failed with: %s", err.Error())
 	}
 
 	var logs builders.Logs
 	defer func() {
 		if logs != nil {
+			if _, err := logs.CopyTo(logFile); err != nil {
+				appendDebug("copying logs from builder failed with: %w", err)
+				logFile.Seek(0, io.SeekEnd)
+				logFile.WriteString(fmt.Sprintf("DEBUG:\n%s", debugMsg))
+				logFile.Seek(0, io.SeekStart)
+			}
+
 			logs.Close()
 		}
 	}()
 
 	output, err := buildAndSetLog(builder, &logs)
 	if err != nil {
-		logs.CopyTo(logFile)
-		return nil, fmt.Errorf("building function %s/%s failed with: %s", op.application, op.name, err)
+		return nil, appendDebug("building function %s/%s failed with: %s", op.application, op.name, err.Error())
 	}
 	defer output.Close()
 
 	moduleReader, err := output.Compress(builders.WASM)
 	if err != nil {
-		return nil, logs.FormatErr("compressing build files failed with: %s", err)
+		return nil, appendDebug("compressing build files failed with: %s", err.Error())
 	}
 
 	_, err = logs.CopyTo(logFile)
 	if err != nil {
-		return nil, logs.FormatErr("copying logs failed with: %s", err)
+		return nil, appendDebug("copying logs failed with: %s", err.Error())
 	}
 
 	return moduleReader, nil

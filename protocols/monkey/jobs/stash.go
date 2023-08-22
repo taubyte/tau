@@ -9,7 +9,7 @@ import (
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 )
 
-func (c Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {
+func (c *Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {
 	cid, err = c.Node.AddFile(zip)
 	if err != nil {
 		err = fmt.Errorf("adding build file to node failed with: %s", err)

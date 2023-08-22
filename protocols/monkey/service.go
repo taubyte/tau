@@ -18,7 +18,6 @@ import (
 	tauConfig "github.com/taubyte/tau/config"
 
 	streams "github.com/taubyte/p2p/streams/service"
-	"github.com/taubyte/tau/protocols/common"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
@@ -101,7 +100,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
 
-	err = common.StartSeerBeacon(config, sc, seerIface.ServiceTypeMonkey)
+	err = protocolCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeMonkey)
 	if err != nil {
 		return nil, fmt.Errorf("starting seer beacon failed with %s", err)
 	}

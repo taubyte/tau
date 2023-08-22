@@ -9,68 +9,43 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/builders"
 	containers "github.com/taubyte/go-simple-container"
 	git "github.com/taubyte/go-simple-git"
 	specs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
+	chidori "github.com/taubyte/utils/logger/zap"
 	"github.com/taubyte/utils/maps"
 )
 
-type errorMessage string
-
-func (e *errorMessage) append(format string, a ...any) {
-	*e += errorMessage(fmt.Sprintf("\n"+format, a))
-}
-func (e *errorMessage) write(file *os.File) *errorMessage {
-	if errS := string(*e); len(errS) > 0 {
-		_, err := file.WriteString(errS)
-		if err != nil {
-			e.append(err.Error())
+func (c *Context) storeLogFile(file *os.File) (string, error) {
+	if len(c.debug) > 0 {
+		if _, err := file.Seek(0, io.SeekEnd); err == nil {
+			file.WriteString("DEBUG: \n" + c.debug + "\n")
 		}
 	}
 
-	return e
-}
-func (e *errorMessage) Error() error {
-	if err := string(*e); len(err) > 0 {
-		return errors.New(err)
-	}
-
-	return nil
-}
-
-func (c Context) storeLogFile(file *os.File) (string, error) {
-	errMsg := new(errorMessage)
-	_, err := file.Seek(0, io.SeekStart)
+	file.Seek(0, io.SeekStart)
+	cid, err := c.Node.AddFile(file)
 	if err != nil {
-		errMsg.append(err.Error())
+		return "", fmt.Errorf("adding logs to node failed with: %s", err.Error())
+	} else {
+		hoarder, err := hoarderClient.New(c.OdoClientNode.Context(), c.OdoClientNode)
+		if err != nil {
+			chidori.Format(logger, log.LevelError, "new hoarder client failed with: %s", err)
+		}
+
+		if _, err = hoarder.Stash(cid); err != nil {
+			chidori.Format(logger, log.LevelError, "hoarding log cid `%s` of job `%s` failed with: %s", cid, c.Job.Id, err.Error())
+		}
 	}
 
-	logCid, err := c.Node.AddFile(file)
-	if err != nil {
-		errMsg.append("writing cid of job `%s` failed with: %s\n", c.Job.Id, err)
-	}
-
-	hoarder, err := hoarderClient.New(c.OdoClientNode.Context(), c.OdoClientNode)
-	if err != nil {
-		errMsg.append(err.Error())
-	}
-
-	// Stash the logs
-	_, err = hoarder.Stash(logCid)
-	if err != nil {
-		errMsg.append("hoarding log cid `%s` of job `%s` failed with: %s", logCid, c.Job.Id, err)
-	}
-
-	// Not handling this error due to hoarder failing
-	errMsg.write(file)
-
-	return logCid, nil
+	return cid, nil
 }
 
-func (c Context) fetchConfigSshUrl() (sshString string, err error) {
+func (c *Context) fetchConfigSshUrl() (sshString string, err error) {
 	tnsPath := specs.NewTnsPath([]string{"resolve", "repo", "github", strconv.Itoa(c.ConfigRepoId)})
 	tnsObj, err := c.Tns.Fetch(tnsPath)
 	if err != nil {
@@ -107,7 +82,7 @@ func buildAndSetLog(builder builders.Builder, logs *builders.Logs, ops ...contai
 		}
 	}()
 	if err != nil {
-		return nil, output.Logs().FormatErr("build failed with: %s", err)
+		return nil, err
 	}
 
 	return output, nil
@@ -136,7 +111,7 @@ func (c Context) getResourceRepositoryId() (id string, err error) {
 	return
 }
 
-func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
+func (c *Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 	cid, err := c.StashBuildFile(rsk)
 	if err != nil {
 		return fmt.Errorf("stashing build failed with: %s", err)
@@ -158,7 +133,7 @@ func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 	return err
 }
 
-func (c Context) handleLog(id string, logs *os.File) error {
+func (c *Context) handleLog(id string, logs *os.File) error {
 	logCid, err := c.storeLogFile(logs)
 	if err != nil {
 		return fmt.Errorf("storing log file for job `%s` failed with: %s", c.Job.Id, err)
@@ -168,7 +143,7 @@ func (c Context) handleLog(id string, logs *os.File) error {
 	return nil
 }
 
-func (c Context) handleBuildDetails(id string, compressedBuild io.ReadSeekCloser, logs *os.File) error {
+func (c *Context) handleBuildDetails(id string, compressedBuild io.ReadSeekCloser, logs *os.File) error {
 	if logs != nil {
 		if err := c.handleLog(id, logs); err != nil {
 			return err
@@ -200,4 +175,9 @@ func (c *Context) cloneAndSet() error {
 
 	c.gitDir, c.WorkDir = repo.Root(), repo.Dir()
 	return nil
+}
+
+func (c *Context) addDebugMsg(level log.LogLevel, format string, args ...any) {
+	msg := chidori.Format(logger, level, format, args...)
+	c.debug += msg + "\n"
 }

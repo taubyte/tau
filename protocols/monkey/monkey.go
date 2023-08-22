@@ -10,76 +10,51 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func (m *Monkey) Run() {
-	// declare started
 	m.Status = patrick.JobStatusLocked
 	isLocked, err := m.Service.patrickClient.IsLocked(m.Id)
 	if !isLocked {
-		errormsg := fmt.Sprintf("Locking job %s failed", m.Id)
-		logger.Error(errormsg)
-		m.logFile.Write([]byte(errormsg))
+		m.addDebugMsg(log.LevelError, "Locking job %s failed", m.Id)
+	}
+	if err != nil {
+		m.addDebugMsg(log.LevelError, "Checking if locked job %s failed with: %s", m.Id, err.Error())
 	}
 
-	if err != nil {
-		errormsg := fmt.Sprintf("Checking if locked job %s failed with: %s", m.Id, err.Error())
-		logger.Error(errormsg)
-		m.logFile.Write([]byte(errormsg))
-	}
-
-	// complete/run the actual job
-	// Running job goes here
-
-	err = m.RunJob()
-	if err != nil {
-		errormsg := fmt.Sprintf("Running job `%s` failed with error: %s", m.Id, err.Error())
-		logger.Error(errormsg)
-		m.logFile.Write([]byte(errormsg))
+	if err = m.RunJob(); err != nil {
+		m.addDebugMsg(log.LevelError, "Running job `%s` failed with error: %s", m.Id, err.Error())
 	} else {
-		m.logFile.Write([]byte(fmt.Sprintf("Running job `%s` was successful", m.Id)))
+		m.addDebugMsg(log.LevelInfo, "Running job `%s` was successful", m.Id)
 	}
 
-	// write the logs and save cid
 	m.logFile.Seek(0, io.SeekStart)
-	cid_of_logs, err0 := m.Service.node.AddFile(m.logFile)
+	cid, err0 := m.storeLogs(m.logFile)
 	if err0 != nil {
-		errormsg := fmt.Sprintf("Writing cid of job `%s` failed: %s", m.Id, err.Error())
-		logger.Error(errormsg)
-		m.logFile.Write([]byte(errormsg))
+		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err0.Error())
 	}
 
-	m.Job.Logs[m.Job.Id] = cid_of_logs
+	m.Job.Logs[m.Job.Id] = cid
 	if err != nil {
 		if strings.Contains(err.Error(), protocolCommon.RetryErrorString) {
-			// Delete from running
 			delete(m.Service.monkeys, m.Job.Id)
 
-			// unlock
-			err = m.Service.patrickClient.Unlock(m.Id)
-			if err != nil {
-				errormsg := fmt.Sprintf("Unlocking job failed `%s` failed with: %s", m.Id, err.Error())
-				logger.Error(errormsg)
-				m.logFile.Write([]byte(errormsg))
+			if err = m.Service.patrickClient.Unlock(m.Id); err != nil {
+				logger.Errorf("Unlocking job failed `%s` failed with: %s", m.Id, err.Error())
 			}
 		} else {
-			err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid)
-			if err != nil {
-				errormsg := fmt.Sprintf("Marking job failed `%s` failed with: %s", m.Id, err.Error())
-				logger.Error(errormsg)
-				m.logFile.Write([]byte(errormsg))
+			if err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid); err != nil {
+				logger.Errorf("Marking job failed `%s` failed with: %s", m.Id, err.Error())
 			}
 			m.Status = patrick.JobStatusFailed
 		}
 	} else {
-		err = m.Service.patrickClient.Done(m.Id, m.Job.Logs, m.Job.AssetCid)
-		if err != nil {
-			errormsg := fmt.Sprintf("Marking job done `%s` failed: %s", m.Id, err.Error())
-			logger.Error(errormsg)
-			m.logFile.Write([]byte(errormsg))
+		if err = m.Service.patrickClient.Done(m.Id, m.Job.Logs, m.Job.AssetCid); err != nil {
+			logger.Errorf("Marking job done `%s` failed: %s", m.Id, err.Error())
 			m.Status = patrick.JobStatusFailed
 		} else {
 			m.Status = patrick.JobStatusSuccess
@@ -88,19 +63,15 @@ func (m *Monkey) Run() {
 
 	hoarder, err := hoarderClient.New(m.Service.ctx, m.Service.node)
 	if err != nil {
-		errormsg := err.Error()
-		logger.Error(errormsg)
-		m.logFile.Write([]byte(errormsg))
+		logger.Error(err.Error())
 	}
 
 	// Stash the logs
-	_, err = hoarder.Stash(cid_of_logs)
-	if err != nil {
-		errormsg := fmt.Sprintf("Hoarding cid `%s` of job `%s` failed: %s", cid_of_logs, m.Id, err.Error())
-		logger.Error(errormsg)
-		m.logFile.Write([]byte(errormsg))
+	if _, err = hoarder.Stash(cid); err != nil {
+		logger.Errorf("Hoarding cid `%s` of job `%s` failed: %s", cid, m.Id, err.Error())
 	}
-	m.LogCID = cid_of_logs
+
+	m.LogCID = cid
 
 	// Free the jobID from monkey
 	if !protocolCommon.LocalPatrick {
@@ -139,6 +110,7 @@ func (s *Service) newMonkey(job *patrick.Job) (*Monkey, error) {
 		s.monkeys[jid] = m
 		return m, nil
 	}
+
 	return nil, fmt.Errorf("didn't actually lock")
 }
 

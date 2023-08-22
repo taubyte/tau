@@ -8,7 +8,7 @@ import (
 	build "github.com/taubyte/builder"
 )
 
-func (w website) handle() error {
+func (w *website) handle() error {
 	builder, err := build.New(w.ctx, w.WorkDir)
 	if err != nil {
 		return fmt.Errorf("creating new builder for git website repo `%d` failed with: %s", w.Job.Meta.Repository.ID, err)
