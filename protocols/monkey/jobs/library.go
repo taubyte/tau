@@ -30,7 +30,10 @@ func (l *library) handle() (err error) {
 		zWasm  io.ReadSeekCloser
 	)
 	defer func() {
-		l.logErrorHandler(err.Error())
+		if err != nil {
+			l.logErrorHandler(err.Error())
+		}
+
 		handleOutput(&output, l.LogFile, new(debugMessage).append(l.debug))
 		if zWasm != nil {
 			if err == nil {
