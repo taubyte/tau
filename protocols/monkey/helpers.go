@@ -5,9 +5,6 @@ import (
 	"io"
 	"os"
 	"reflect"
-
-	"github.com/ipfs/go-log/v2"
-	chidori "github.com/taubyte/utils/logger/zap"
 )
 
 func ToNumber(in interface{}) int {
@@ -21,14 +18,13 @@ func ToNumber(in interface{}) int {
 	return 0
 }
 
-func (m *Monkey) addDebugMsg(level log.LogLevel, format string, args ...any) {
-	msg := chidori.Format(logger, level, format, args...)
-	m.debug += msg + "\n"
-}
-
-func (m *Monkey) storeLogs(r *os.File) (string, error) {
-	if _, err := r.Seek(0, io.SeekEnd); err == nil {
-		r.WriteString("DEBUG: \n" + m.debug + "\n")
+func (m *Monkey) storeLogs(r *os.File, errors ...error) (string, error) {
+	if len(errors) > 0 {
+		r.Seek(0, io.SeekEnd)
+		r.WriteString("\nMonkey Errors:\n\n")
+		for _, err := range errors {
+			r.WriteString(err.Error() + "\n")
+		}
 	}
 
 	if _, err := r.Seek(0, io.SeekStart); err != nil {

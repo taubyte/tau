@@ -15,22 +15,22 @@ import (
 
 func (c *code) handle() error {
 	if err := c.checkConfig(); err != nil {
-		return c.logErrorHandler("checking config repo for project failed with: %s", err)
+		return fmt.Errorf("checking config repo for project failed with: %w", err)
 	}
 
 	project, err := projectSchema.Open(projectSchema.SystemFS(c.ConfigRepoRoot))
 	if err != nil {
-		return c.logErrorHandler("opening project from path `%s` failed with: %s", c.ConfigRepoRoot, err)
+		return fmt.Errorf("opening project from path `%s` failed with: %w", c.ConfigRepoRoot, err)
 	}
 
 	// Decompile and get includes and id of each function, website and library
 	ops, err := buildTodoFromConfig(project)
 	if err != nil {
-		return c.logErrorHandler("building todo from config for project `%s` failed with: %s", project.Get().Id(), err)
+		return fmt.Errorf("building todo from config for project `%s` failed with: %w", project.Get().Id(), err)
 	}
 
 	if err = c.handleOps(ops); err != nil {
-		return c.logErrorHandler(err.Error())
+		return err
 	}
 
 	return nil
@@ -100,27 +100,27 @@ func (c *code) handleOp(op Op, logFile *os.File) error {
 	return err
 }
 
-func (c *Context) HandleOp(op Op, logFile *os.File) (io.ReadSeekCloser, error) {
-	debugMessage := new(debugMessage)
-
+func (c *Context) HandleOp(op Op, logFile *os.File) (rsk io.ReadSeekCloser, err error) {
 	sourcePath := path.Join(c.gitDir, op.application, op.pathVariable, op.name)
 	builder, err := build.New(c.ctx, sourcePath)
 	if err != nil {
-		return nil, debugMessage.append("creating new wasm builder failed with: %s", err.Error()).error()
+		err = fmt.Errorf("creating new wasm builder failed with: %w", err)
+		return
 	}
 
-	defer builder.Close()
-
 	var output builders.Output
-	defer handleOutput(&output, logFile, debugMessage)
+	defer func() {
+		handleOutput(&output, logFile, &err)
+		builder.Close()
+	}()
 
 	if output, err = builder.Build(); err != nil {
-		return nil, debugMessage.append("building function %s/%s failed with: %s", op.application, op.name, err.Error()).error()
+		return nil, fmt.Errorf("building function %s/%s failed with: %w", op.application, op.name, err)
 	}
 
 	moduleReader, err := output.Compress(builders.WASM)
 	if err != nil {
-		return nil, debugMessage.append("compressing build files failed with: %s", err.Error()).error()
+		return nil, fmt.Errorf("compressing build files failed with: %w", err)
 	}
 
 	return moduleReader, nil

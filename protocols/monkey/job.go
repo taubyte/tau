@@ -127,9 +127,7 @@ func (m *Monkey) RunJob() (err error) {
 		c.ConfigPrivateKey = configRepo.PrivateKey()
 	}
 
-	err = c.Run(m.ctx, m.ctxC)
-	m.debug += c.DebugMessage() + "\n"
-	if err != nil {
+	if err = c.Run(m.ctx, m.ctxC); err != nil {
 		return fmt.Errorf("running job for type: %d on repo: %d failed with: %s", repoType, m.Job.Meta.Repository.ID, err.Error())
 	}
 

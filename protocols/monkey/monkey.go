@@ -10,35 +10,37 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func (m *Monkey) Run() {
+	errors := new(errorsLog)
+
 	m.Status = patrick.JobStatusLocked
 	isLocked, err := m.Service.patrickClient.IsLocked(m.Id)
 	if !isLocked {
-		m.addDebugMsg(log.LevelError, "Locking job %s failed", m.Id)
+		errors.appendAndLog("Locking job %s failed", m.Id)
 	}
 	if err != nil {
-		m.addDebugMsg(log.LevelError, "Checking if locked job %s failed with: %s", m.Id, err.Error())
+		errors.appendAndLog("Checking if locked job %s failed with: %s", m.Id, err.Error())
 	}
 
 	if err = m.RunJob(); err != nil {
-		m.addDebugMsg(log.LevelError, "Running job `%s` failed with error: %s", m.Id, err.Error())
+		errors.appendAndLog("Running job `%s` failed with error: %s", m.Id, err.Error())
 	} else {
-		m.addDebugMsg(log.LevelInfo, "Running job `%s` was successful", m.Id)
+		errors.appendAndLog("Running job `%s` was successful", m.Id)
 	}
 
 	m.logFile.Seek(0, io.SeekStart)
-	cid, err0 := m.storeLogs(m.logFile)
+	cid, err0 := m.storeLogs(m.logFile, *errors...)
 	if err0 != nil {
 		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err0.Error())
 	}
 
 	m.Job.Logs[m.Job.Id] = cid
+	m.LogCID = cid
 	if err != nil {
 		if strings.Contains(err.Error(), protocolCommon.RetryErrorString) {
 			delete(m.Service.monkeys, m.Job.Id)
@@ -70,8 +72,6 @@ func (m *Monkey) Run() {
 	if _, err = hoarder.Stash(cid); err != nil {
 		logger.Errorf("Hoarding cid `%s` of job `%s` failed: %s", cid, m.Id, err.Error())
 	}
-
-	m.LogCID = cid
 
 	// Free the jobID from monkey
 	if !protocolCommon.LocalPatrick {

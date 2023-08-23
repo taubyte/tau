@@ -2,8 +2,10 @@ package monkey
 
 import (
 	"context"
+	"errors"
 	"os"
 
+	"github.com/ipfs/go-log/v2"
 	iface "github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	tnsClient "github.com/taubyte/go-interfaces/services/tns"
@@ -11,6 +13,7 @@ import (
 	streams "github.com/taubyte/p2p/streams/service"
 	patrickClient "github.com/taubyte/tau/clients/p2p/patrick"
 	"github.com/taubyte/tau/config"
+	chidori "github.com/taubyte/utils/logger/zap"
 )
 
 /* This is a variable so that it can be overridden in tests */
@@ -29,7 +32,6 @@ type Monkey struct {
 	Service *Service
 	Job     *patrick.Job
 	logFile *os.File
-	debug   string
 }
 
 type Service struct {
@@ -62,3 +64,29 @@ func (s *Service) Dev() bool {
 }
 
 type Config config.Node
+
+const errorsCap = 50
+
+type errorsLog []error
+
+func (e errorsLog) append(err error) errorsLog {
+	if e == nil {
+		e = make(errorsLog, 0, errorsCap)
+	}
+	if err != nil {
+		e = append(e, err)
+	}
+
+	return e
+}
+
+func (e *errorsLog) appendAndLog(format string, args ...any) error {
+	if errString := chidori.Format(logger, log.LevelError, format, args...); len(errString) > 0 {
+		err := errors.New(errString)
+
+		*e = e.append(err)
+		return err
+	}
+
+	return nil
+}

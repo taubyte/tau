@@ -31,15 +31,10 @@ type Context struct {
 	ConfigPrivateKey string
 	ConfigRepoRoot   string
 	Monkey           monkey.Service
-	debug            string
 
 	OdoClientNode peer.Node
 
 	DVPublicKey []byte
-}
-
-func (c *Context) DebugMessage() string {
-	return c.debug
 }
 
 type Op struct {

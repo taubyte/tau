@@ -20,12 +20,6 @@ import (
 )
 
 func (c *Context) storeLogFile(file *os.File) (string, error) {
-	if len(c.debug) > 0 {
-		if _, err := file.Seek(0, io.SeekEnd); err == nil {
-			file.WriteString("DEBUG: \n" + c.debug + "\n")
-		}
-	}
-
 	file.Seek(0, io.SeekStart)
 	cid, err := c.Node.AddFile(file)
 	if err != nil {
@@ -68,17 +62,23 @@ func (c *Context) fetchConfigSshUrl() (sshString string, err error) {
 	return
 }
 
-func handleOutput(output *builders.Output, logFile *os.File, debugMsg *debugMessage) {
+// for singular resource repositories(not code repo), error should be nil, the monkey will be handling this logic
+func handleOutput(output *builders.Output, logFile *os.File, err *error) {
 	if output != nil {
 		_output := *output
 		logs := _output.Logs()
-		if _, err := logs.CopyTo(logFile); err != nil {
-			debugMsg.append("copying build logs failed with:" + err.Error())
+		if _, _err := logs.CopyTo(logFile); _err != nil {
+			_err = fmt.Errorf("copying build logs failed with: %w", _err)
+			if err != nil {
+				*err = fmt.Errorf("%s:%w", *err, _err)
+			} else {
+				*err = _err
+			}
 		}
 
-		if len(debugMsg.string()) > 0 {
+		if err != nil {
 			logFile.Seek(0, io.SeekEnd)
-			logFile.WriteString(fmt.Sprintf("DEBUG:\n%s\n", debugMsg.string()))
+			logFile.WriteString("Monkey Error:\n" + (*err).Error())
 		}
 
 		_output.Close()
@@ -172,35 +172,5 @@ func (c *Context) cloneAndSet() error {
 	}
 
 	c.gitDir, c.WorkDir = repo.Root(), repo.Dir()
-	return nil
-}
-
-func (c *Context) addDebugMsg(level log.LogLevel, format string, args ...any) {
-	msg := chidori.Format(logger, level, format, args...)
-	c.debug += msg + "\n"
-}
-
-type debugMessage string
-
-func (d *debugMessage) append(format string, args ...any) *debugMessage {
-	*d = debugMessage(fmt.Sprintf(format, args...))
-	return d
-}
-
-func (d *debugMessage) string() string {
-	return string(*d)
-}
-
-func (d *debugMessage) error() error {
-	return errors.New(string(*d))
-}
-
-func (c *Context) logErrorHandler(format string, args ...any) error {
-	err := fmt.Errorf(format, args...)
-	if len(err.Error()) > 0 {
-		c.addDebugMsg(log.LevelError, err.Error())
-		return err
-	}
-
 	return nil
 }

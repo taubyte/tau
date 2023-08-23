@@ -22,8 +22,7 @@ func (w *website) handle() (err error) {
 		zip    io.ReadSeekCloser
 	)
 	defer func() {
-		builder.Close()
-		handleOutput(&output, w.LogFile, new(debugMessage).append(w.debug))
+		handleOutput(&output, w.LogFile, nil)
 		if zip != nil {
 			if err == nil {
 				if err = w.handleBuildDetails(id, zip, w.LogFile); err != nil {
@@ -33,6 +32,8 @@ func (w *website) handle() (err error) {
 
 			zip.Close()
 		}
+
+		builder.Close()
 	}()
 
 	if output, err = builder.Build(builder.Wd().Website().SetWorkDir()); err != nil {

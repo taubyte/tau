@@ -30,15 +30,16 @@ func (l *library) handle() (err error) {
 		zWasm  io.ReadSeekCloser
 	)
 	defer func() {
-		if err != nil {
-			l.logErrorHandler(err.Error())
-		}
-
-		handleOutput(&output, l.LogFile, new(debugMessage).append(l.debug))
+		handleOutput(&output, l.LogFile, nil)
 		if zWasm != nil {
 			if err == nil {
-				if err = l.handleBuildDetails(id, zWasm, l.LogFile); err != nil {
-					err = fmt.Errorf("handling library build details failed with: %s", err)
+				if _err := l.handleBuildDetails(id, zWasm, nil); _err != nil {
+					_err = fmt.Errorf("handling library build details failed with: %s", err)
+					if err != nil {
+						err = fmt.Errorf("%s:%w", err, _err)
+					} else {
+						err = _err
+					}
 				}
 			}
 
