@@ -9,6 +9,7 @@ import (
 
 	"github.com/otiai10/copy"
 	"github.com/pterm/pterm"
+	"github.com/taubyte/go-interfaces/builders"
 	wasmSpec "github.com/taubyte/go-specs/builders/wasm"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/monkey/jobs"
@@ -92,10 +93,17 @@ func (l libraryContext) directory() error {
 	c.ForceGitDir(root)
 	c.ForceContext(l.ctx.universe.Context())
 
-	moduleReader, err := c.HandleLibrary()
+	output, err := c.HandleLibrary()
 	if err != nil {
 		return err
 	}
+
+	moduleReader, err := output.Compress(builders.WASM)
+	if err != nil {
+		return err
+	}
+
+	output.Logs().CopyTo(c.LogFile)
 
 	return l.ctx.stashAndPush(l.ctx.resourceId, moduleReader)
 }

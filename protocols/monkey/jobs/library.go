@@ -8,47 +8,51 @@ import (
 	"github.com/taubyte/go-interfaces/builders"
 )
 
-func (c *Context) HandleLibrary() (io.ReadSeekCloser, error) {
+func (c *Context) HandleLibrary() (builders.Output, error) {
 	builder, err := build.New(c.ctx, c.WorkDir)
 	if err != nil {
-		return nil, fmt.Errorf("creating new builder for git library repo `%d` failed with: %s", c.Job.Meta.Repository.ID, err)
+		return nil, fmt.Errorf("creating new builder for git library repo `%d` failed with: %w", c.Job.Meta.Repository.ID, err)
 	}
 	defer builder.Close()
 
-	var logs builders.Logs
-	output, err := buildAndSetLog(builder, &logs)
+	output, err := builder.Build()
 	if err != nil {
-		return nil, fmt.Errorf("building failed with: %s", err)
-	}
-	defer output.Close()
-
-	zWasm, err := output.Compress(builders.WASM)
-	if err != nil {
-		return nil, logs.FormatErr("compressing build files failed with: %s", err)
+		err = fmt.Errorf("building library failed with: %w", err)
 	}
 
-	_, err = logs.CopyTo(c.LogFile)
-	if err != nil {
-		return nil, logs.FormatErr("copying logs failed with: %s", err)
-	}
-
-	return zWasm, nil
+	return output, err
 }
 
-func (l *library) handle() error {
-	zWasm, err := l.HandleLibrary()
-	if err != nil {
+func (l *library) handle() (err error) {
+	var (
+		output builders.Output
+		id     string
+		zWasm  io.ReadSeekCloser
+	)
+	defer func() {
+		l.logErrorHandler(err.Error())
+		handleOutput(&output, l.LogFile, new(debugMessage).append(l.debug))
+		if zWasm != nil {
+			if err == nil {
+				if err = l.handleBuildDetails(id, zWasm, l.LogFile); err != nil {
+					err = fmt.Errorf("handling library build details failed with: %s", err)
+				}
+			}
+
+			zWasm.Close()
+		}
+	}()
+
+	if output, err = l.HandleLibrary(); err != nil {
 		return fmt.Errorf("handling library failed with: %s", err)
 	}
-	defer zWasm.Close()
 
-	libId, err := l.getResourceRepositoryId()
-	if err != nil {
+	if id, err = l.getResourceRepositoryId(); err != nil {
 		return fmt.Errorf("resource id for library repo failed with: %s", err)
 	}
 
-	if err = l.handleBuildDetails(libId, zWasm, l.LogFile); err != nil {
-		return fmt.Errorf("handling library build details failed with: %s", err)
+	if zWasm, err = output.Compress(builders.WASM); err != nil {
+		return fmt.Errorf("compressing build files failed with: %w", err)
 	}
 
 	return nil

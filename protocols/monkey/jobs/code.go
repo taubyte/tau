@@ -7,18 +7,11 @@ import (
 	"path"
 	"sync"
 
-	"github.com/ipfs/go-log/v2"
 	build "github.com/taubyte/builder"
 	"github.com/taubyte/go-interfaces/builders"
 	projectSchema "github.com/taubyte/go-project-schema/project"
 	git "github.com/taubyte/go-simple-git"
 )
-
-func (c *Context) logErrorHandler(format string, args ...any) error {
-	err := fmt.Errorf(format, args...)
-	c.addDebugMsg(log.LevelError, err.Error())
-	return err
-}
 
 func (c *code) handle() error {
 	if err := c.checkConfig(); err != nil {
@@ -48,11 +41,14 @@ func (c *code) handleOps(ops []Op) error {
 		return nil
 	}
 
-	var mainHandleErr error
-	var errLock sync.Mutex
-	errChan := make(chan error, 1)
-	doneChan := make(chan bool, 1)
-	var doneCount int
+	var (
+		mainHandleErr error
+		errLock       sync.Mutex
+		doneCount     int
+
+		errChan  = make(chan error, 1)
+		doneChan = make(chan bool, 1)
+	)
 
 	for _, op := range ops {
 		logFile, err := os.CreateTemp("/tmp", fmt.Sprintf("log-%s", op.id))
@@ -105,50 +101,26 @@ func (c *code) handleOp(op Op, logFile *os.File) error {
 }
 
 func (c *Context) HandleOp(op Op, logFile *os.File) (io.ReadSeekCloser, error) {
-	var debugMsg string
-	appendDebug := func(format string, args ...any) error {
-		err := fmt.Errorf(format, args...)
-		debugMsg += err.Error() + "\n"
-		return err
-	}
+	debugMessage := new(debugMessage)
 
 	sourcePath := path.Join(c.gitDir, op.application, op.pathVariable, op.name)
 	builder, err := build.New(c.ctx, sourcePath)
 	if err != nil {
-		return nil, appendDebug("creating new wasm builder failed with: %s", err.Error())
+		return nil, debugMessage.append("creating new wasm builder failed with: %s", err.Error()).error()
 	}
-	var (
-		logs   builders.Logs
-		output builders.Output
-	)
-	defer func() {
-		if logs != nil {
-			if _, err := logs.CopyTo(logFile); err != nil {
-				appendDebug("copying logs from builder failed with: %w", err)
-			}
 
-			if len(debugMsg) > 0 {
-				logFile.Seek(0, io.SeekEnd)
-				logFile.WriteString(fmt.Sprintf("DEBUG:\n%s\n", debugMsg))
-				logFile.Seek(0, io.SeekStart)
-			}
+	defer builder.Close()
 
-			logs.Close()
-		}
+	var output builders.Output
+	defer handleOutput(&output, logFile, debugMessage)
 
-		if output != nil {
-			output.Close()
-		}
-	}()
-
-	output, err = buildAndSetLog(builder, &logs)
-	if err != nil {
-		return nil, appendDebug("building function %s/%s failed with: %s", op.application, op.name, err.Error())
+	if output, err = builder.Build(); err != nil {
+		return nil, debugMessage.append("building function %s/%s failed with: %s", op.application, op.name, err.Error()).error()
 	}
 
 	moduleReader, err := output.Compress(builders.WASM)
 	if err != nil {
-		return nil, appendDebug("compressing build files failed with: %s", err.Error())
+		return nil, debugMessage.append("compressing build files failed with: %s", err.Error()).error()
 	}
 
 	return moduleReader, nil

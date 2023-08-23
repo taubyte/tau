@@ -11,7 +11,6 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/builders"
-	containers "github.com/taubyte/go-simple-container"
 	git "github.com/taubyte/go-simple-git"
 	specs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
@@ -30,7 +29,7 @@ func (c *Context) storeLogFile(file *os.File) (string, error) {
 	file.Seek(0, io.SeekStart)
 	cid, err := c.Node.AddFile(file)
 	if err != nil {
-		return "", fmt.Errorf("adding logs to node failed with: %s", err.Error())
+		return "", fmt.Errorf("adding logs to node failed with: %w", err)
 	} else {
 		hoarder, err := hoarderClient.New(c.OdoClientNode.Context(), c.OdoClientNode)
 		if err != nil {
@@ -48,6 +47,7 @@ func (c *Context) storeLogFile(file *os.File) (string, error) {
 func (c *Context) fetchConfigSshUrl() (sshString string, err error) {
 	tnsPath := specs.NewTnsPath([]string{"resolve", "repo", "github", strconv.Itoa(c.ConfigRepoId)})
 	tnsObj, err := c.Tns.Fetch(tnsPath)
+	// TODO: This should return
 	if err != nil {
 		time.Sleep(30 * time.Second)
 		tnsObj, err = c.Tns.Fetch(tnsPath)
@@ -68,24 +68,22 @@ func (c *Context) fetchConfigSshUrl() (sshString string, err error) {
 	return
 }
 
-func closeReader(reader io.ReadCloser) {
-	if reader != nil {
-		reader.Close()
-	}
-}
-
-func buildAndSetLog(builder builders.Builder, logs *builders.Logs, ops ...containers.ContainerOption) (builders.Output, error) {
-	output, err := builder.Build(ops...)
-	defer func() {
-		if output != nil {
-			*logs = output.Logs()
+func handleOutput(output *builders.Output, logFile *os.File, debugMsg *debugMessage) {
+	if output != nil {
+		_output := *output
+		logs := _output.Logs()
+		if _, err := logs.CopyTo(logFile); err != nil {
+			debugMsg.append("copying build logs failed with:" + err.Error())
 		}
-	}()
-	if err != nil {
-		return nil, err
+
+		if len(debugMsg.string()) > 0 {
+			logFile.Seek(0, io.SeekEnd)
+			logFile.WriteString(fmt.Sprintf("DEBUG:\n%s\n", debugMsg.string()))
+		}
+
+		_output.Close()
 	}
 
-	return output, nil
 }
 
 func (c Context) getResourceRepositoryId() (id string, err error) {
@@ -180,4 +178,29 @@ func (c *Context) cloneAndSet() error {
 func (c *Context) addDebugMsg(level log.LogLevel, format string, args ...any) {
 	msg := chidori.Format(logger, level, format, args...)
 	c.debug += msg + "\n"
+}
+
+type debugMessage string
+
+func (d *debugMessage) append(format string, args ...any) *debugMessage {
+	*d = debugMessage(fmt.Sprintf(format, args...))
+	return d
+}
+
+func (d *debugMessage) string() string {
+	return string(*d)
+}
+
+func (d *debugMessage) error() error {
+	return errors.New(string(*d))
+}
+
+func (c *Context) logErrorHandler(format string, args ...any) error {
+	err := fmt.Errorf(format, args...)
+	if len(err.Error()) > 0 {
+		c.addDebugMsg(log.LevelError, err.Error())
+		return err
+	}
+
+	return nil
 }
