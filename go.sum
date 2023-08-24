@@ -909,8 +909,8 @@ github.com/taubyte/odo v0.0.0-20230727154809-0688a5d7674b h1:2Jt0GOC/2OoSG8R+SG8
 github.com/taubyte/odo v0.0.0-20230727154809-0688a5d7674b/go.mod h1:RFHdU43b3x590UQENAP6gAV3KkgiuU6ES9qoQLfqIEA=
 github.com/taubyte/p2p v0.9.1 h1:W8whhWbYO5oCqOSUM+gNKCERtVGmTJHTZuTw+MJuswg=
 github.com/taubyte/p2p v0.9.1/go.mod h1:0vWZjiX8yNT3VwZO2x+mgRdEDCbwzSPOyyfBU3UEiTk=
-github.com/taubyte/utils v0.1.6 h1:bRSJZW/8E/wpT3wwyU3C97M9ddAJ52AfXFeP47JRGsY=
-github.com/taubyte/utils v0.1.6/go.mod h1:b/tKY1xKIxLH5ixFRTsrdz+vGhmiOcR9SpdVYiJDpsI=
+github.com/taubyte/utils v0.1.7 h1:iFMOxhBNJKdUrD+Z1UjP9W5559LlQN8178V54uLngdk=
+github.com/taubyte/utils v0.1.7/go.mod h1:MWO21qZu7AcBwJkJLsltwb3zWyN84xSexLCU28JC4gM=
 github.com/taubyte/vm v1.0.3 h1:Z9IYHdHiWVh0/v1+dvWblGe6Ny+ni3t4yr8GIgfhavg=
 github.com/taubyte/vm v1.0.3/go.mod h1:5pRQKirHakEXSdhCPtkbom1VA2z64JO01ce1F4JibBM=
 github.com/taubyte/vm-core-plugins v0.3.4 h1:NPYZfcL6JTS+YsQ5TYn/fO657L0Sqqk8vte7GBEtlqA=

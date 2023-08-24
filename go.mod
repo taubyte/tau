@@ -2,8 +2,6 @@ module github.com/taubyte/tau
 
 go 1.19
 
-replace github.com/taubyte/utils => ../utils
-
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -47,7 +45,7 @@ require (
 	github.com/taubyte/go-specs v0.10.7
 	github.com/taubyte/http v0.10.5
 	github.com/taubyte/p2p v0.9.1
-	github.com/taubyte/utils v0.1.6
+	github.com/taubyte/utils v0.1.7
 	github.com/taubyte/vm v1.0.3
 	github.com/taubyte/vm-core-plugins v0.3.4
 	github.com/taubyte/vm-orbit v1.0.0

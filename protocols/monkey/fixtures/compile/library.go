@@ -93,17 +93,17 @@ func (l libraryContext) directory() error {
 	c.ForceGitDir(root)
 	c.ForceContext(l.ctx.universe.Context())
 
-	output, err := c.HandleLibrary()
+	asset, err := c.HandleLibrary()
 	if err != nil {
 		return err
 	}
 
-	moduleReader, err := output.Compress(builders.WASM)
+	moduleReader, err := asset.Compress(builders.WASM)
 	if err != nil {
 		return err
 	}
 
-	output.Logs().CopyTo(c.LogFile)
+	asset.Logs().CopyTo(c.LogFile)
 
 	return l.ctx.stashAndPush(l.ctx.resourceId, moduleReader)
 }

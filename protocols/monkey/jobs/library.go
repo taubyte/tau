@@ -15,22 +15,22 @@ func (c *Context) HandleLibrary() (builders.Output, error) {
 	}
 	defer builder.Close()
 
-	output, err := builder.Build()
+	asset, err := builder.Build()
 	if err != nil {
 		err = fmt.Errorf("building library failed with: %w", err)
 	}
 
-	return output, err
+	return asset, err
 }
 
 func (l *library) handle() (err error) {
 	var (
-		output builders.Output
-		id     string
-		zWasm  io.ReadSeekCloser
+		asset builders.Output
+		id    string
+		zWasm io.ReadSeekCloser
 	)
 	defer func() {
-		handleOutput(&output, l.LogFile, nil)
+		handleAsset(&asset, l.LogFile, nil)
 		if zWasm != nil {
 			if err == nil {
 				if _err := l.handleBuildDetails(id, zWasm, nil); _err != nil {
@@ -47,7 +47,7 @@ func (l *library) handle() (err error) {
 		}
 	}()
 
-	if output, err = l.HandleLibrary(); err != nil {
+	if asset, err = l.HandleLibrary(); err != nil {
 		return fmt.Errorf("handling library failed with: %s", err)
 	}
 
@@ -55,7 +55,7 @@ func (l *library) handle() (err error) {
 		return fmt.Errorf("resource id for library repo failed with: %s", err)
 	}
 
-	if zWasm, err = output.Compress(builders.WASM); err != nil {
+	if zWasm, err = asset.Compress(builders.WASM); err != nil {
 		return fmt.Errorf("compressing build files failed with: %w", err)
 	}
 

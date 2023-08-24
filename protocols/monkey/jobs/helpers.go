@@ -63,9 +63,9 @@ func (c *Context) fetchConfigSshUrl() (sshString string, err error) {
 }
 
 // for singular resource repositories(not code repo), error should be nil, the monkey will be handling this logic
-func handleOutput(output *builders.Output, logFile *os.File, err *error) {
-	if output != nil {
-		_output := *output
+func handleAsset(asset *builders.Output, logFile *os.File, err *error) {
+	if asset != nil {
+		_output := *asset
 		logs := _output.Logs()
 		if _, _err := logs.CopyTo(logFile); _err != nil {
 			_err = fmt.Errorf("copying build logs failed with: %w", _err)

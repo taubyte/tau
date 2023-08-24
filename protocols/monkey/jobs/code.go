@@ -108,17 +108,17 @@ func (c *Context) HandleOp(op Op, logFile *os.File) (rsk io.ReadSeekCloser, err 
 		return
 	}
 
-	var output builders.Output
+	var asset builders.Output
 	defer func() {
-		handleOutput(&output, logFile, &err)
+		handleOutput(&asset, logFile, &err)
 		builder.Close()
 	}()
 
-	if output, err = builder.Build(); err != nil {
+	if asset, err = builder.Build(); err != nil {
 		return nil, fmt.Errorf("building function %s/%s failed with: %w", op.application, op.name, err)
 	}
 
-	moduleReader, err := output.Compress(builders.WASM)
+	moduleReader, err := asset.Compress(builders.WASM)
 	if err != nil {
 		return nil, fmt.Errorf("compressing build files failed with: %w", err)
 	}

@@ -17,12 +17,12 @@ func (w *website) handle() (err error) {
 	defer builder.Close()
 
 	var (
-		output builders.Output
-		id     string
-		zip    io.ReadSeekCloser
+		asset builders.Output
+		id    string
+		zip   io.ReadSeekCloser
 	)
 	defer func() {
-		handleOutput(&output, w.LogFile, nil)
+		handleAsset(&asset, w.LogFile, nil)
 		if zip != nil {
 			if err == nil {
 				if err = w.handleBuildDetails(id, zip, w.LogFile); err != nil {
@@ -36,11 +36,11 @@ func (w *website) handle() (err error) {
 		builder.Close()
 	}()
 
-	if output, err = builder.Build(builder.Wd().Website().SetWorkDir()); err != nil {
+	if asset, err = builder.Build(builder.Wd().Website().SetWorkDir()); err != nil {
 		return fmt.Errorf("building website failed with: %w", err)
 	}
 
-	if zip, err = output.Compress(builders.Website); err != nil {
+	if zip, err = asset.Compress(builders.Website); err != nil {
 		return fmt.Errorf("compressing build files failed with: %w", err)
 	}
 
