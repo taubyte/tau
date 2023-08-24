@@ -3,7 +3,6 @@ package monkey
 import (
 	"fmt"
 	"io"
-	"os"
 	"reflect"
 )
 
@@ -18,15 +17,17 @@ func ToNumber(in interface{}) int {
 	return 0
 }
 
-func (m *Monkey) storeLogs(r *os.File, errors ...error) (string, error) {
+func (m *Monkey) appendErrors(r io.WriteSeeker, errors ...error) {
 	if len(errors) > 0 {
 		r.Seek(0, io.SeekEnd)
-		r.WriteString("\nMonkey Errors:\n\n")
+		r.Write([]byte("\nCI/CD Errors:\n\n"))
 		for _, err := range errors {
-			r.WriteString(err.Error() + "\n")
+			r.Write([]byte(err.Error() + "\n"))
 		}
 	}
+}
 
+func (m *Monkey) storeLogs(r io.ReadSeeker, errors ...error) (string, error) {
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return "", fmt.Errorf("logs seek start failed with: %w", err)
 	}

@@ -36,6 +36,7 @@ func (m *Monkey) Run() {
 		m.logFile.WriteString(chidori.Format(logger, log.LevelInfo, "\nRunning job `%s` was successful\n", m.Id))
 	}
 
+	m.appendErrors(m.logFile, *errors...)
 	cid, err0 := m.storeLogs(m.logFile, *errors...)
 	if err0 != nil {
 		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err0.Error())
