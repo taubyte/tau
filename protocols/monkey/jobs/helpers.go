@@ -76,7 +76,7 @@ func handleOutput(output *builders.Output, logFile *os.File, err *error) {
 			}
 		}
 
-		if err != nil {
+		if err != nil && *err != nil {
 			logFile.Seek(0, io.SeekEnd)
 			logFile.WriteString("Monkey Error:\n" + (*err).Error())
 		}

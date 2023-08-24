@@ -10,9 +10,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
+	chidori "github.com/taubyte/utils/logger/zap"
 )
 
 func (m *Monkey) Run() {
@@ -30,10 +32,10 @@ func (m *Monkey) Run() {
 	if err = m.RunJob(); err != nil {
 		errors.appendAndLog("Running job `%s` failed with error: %s", m.Id, err.Error())
 	} else {
-		errors.appendAndLog("Running job `%s` was successful", m.Id)
+		m.logFile.Seek(0, io.SeekEnd)
+		m.logFile.WriteString(chidori.Format(logger, log.LevelInfo, "\nRunning job `%s` was successful\n", m.Id))
 	}
 
-	m.logFile.Seek(0, io.SeekStart)
 	cid, err0 := m.storeLogs(m.logFile, *errors...)
 	if err0 != nil {
 		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err0.Error())
