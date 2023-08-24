@@ -84,10 +84,10 @@ func (w websiteContext) directory() error {
 	}
 	io.Copy(os.Stdout, asset.Logs())
 
-	rsk, err := asset.Compress(iface.Website)
+	compressedAsset, err := asset.Compress(iface.Website)
 	if err != nil {
 		return err
 	}
 
-	return w.ctx.stashAndPush(w.ctx.resourceId, rsk)
+	return w.ctx.stashAndPush(w.ctx.resourceId, compressedAsset)
 }

@@ -110,7 +110,7 @@ func (c *Context) HandleOp(op Op, logFile *os.File) (rsk io.ReadSeekCloser, err 
 
 	var asset builders.Output
 	defer func() {
-		handleOutput(&asset, logFile, &err)
+		handleAsset(&asset, logFile, &err)
 		builder.Close()
 	}()
 
@@ -118,12 +118,12 @@ func (c *Context) HandleOp(op Op, logFile *os.File) (rsk io.ReadSeekCloser, err 
 		return nil, fmt.Errorf("building function %s/%s failed with: %w", op.application, op.name, err)
 	}
 
-	moduleReader, err := asset.Compress(builders.WASM)
+	compressedAsset, err := asset.Compress(builders.WASM)
 	if err != nil {
 		return nil, fmt.Errorf("compressing build files failed with: %w", err)
 	}
 
-	return moduleReader, nil
+	return compressedAsset, nil
 }
 
 func (c *code) checkConfig() error {

@@ -98,14 +98,14 @@ func (l libraryContext) directory() error {
 		return err
 	}
 
-	moduleReader, err := asset.Compress(builders.WASM)
+	compressedAsset, err := asset.Compress(builders.WASM)
 	if err != nil {
 		return err
 	}
 
 	asset.Logs().CopyTo(c.LogFile)
 
-	return l.ctx.stashAndPush(l.ctx.resourceId, moduleReader)
+	return l.ctx.stashAndPush(l.ctx.resourceId, compressedAsset)
 }
 
 func (l libraryContext) wasmFile() error {
