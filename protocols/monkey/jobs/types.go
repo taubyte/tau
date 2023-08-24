@@ -56,13 +56,13 @@ type repo interface {
 func (c Context) Handler() (repo, error) {
 	switch c.RepoType {
 	case compilerCommon.ConfigRepository:
-		return config{c}, nil
+		return &config{c}, nil
 	case compilerCommon.CodeRepository:
-		return code{c}, nil
+		return &code{c}, nil
 	case compilerCommon.LibraryRepository:
-		return library{c}, nil
+		return &library{c}, nil
 	case compilerCommon.WebsiteRepository:
-		return website{c}, nil
+		return &website{c}, nil
 	default:
 		return nil, fmt.Errorf("unexpected repository type `%d`", c.RepoType)
 	}

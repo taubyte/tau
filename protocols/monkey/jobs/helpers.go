@@ -9,70 +9,39 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/builders"
-	containers "github.com/taubyte/go-simple-container"
 	git "github.com/taubyte/go-simple-git"
 	specs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
+	chidori "github.com/taubyte/utils/logger/zap"
 	"github.com/taubyte/utils/maps"
 )
 
-type errorMessage string
-
-func (e *errorMessage) append(format string, a ...any) {
-	*e += errorMessage(fmt.Sprintf("\n"+format, a))
-}
-func (e *errorMessage) write(file *os.File) *errorMessage {
-	if errS := string(*e); len(errS) > 0 {
-		_, err := file.WriteString(errS)
+func (c Context) storeLogFile(file *os.File) (string, error) {
+	file.Seek(0, io.SeekStart)
+	cid, err := c.Node.AddFile(file)
+	if err != nil {
+		return "", fmt.Errorf("adding logs to node failed with: %w", err)
+	} else {
+		hoarder, err := hoarderClient.New(c.OdoClientNode.Context(), c.OdoClientNode)
 		if err != nil {
-			e.append(err.Error())
+			chidori.Format(logger, log.LevelError, "new hoarder client failed with: %s", err)
+		}
+
+		if _, err = hoarder.Stash(cid); err != nil {
+			chidori.Format(logger, log.LevelError, "hoarding log cid `%s` of job `%s` failed with: %s", cid, c.Job.Id, err.Error())
 		}
 	}
 
-	return e
-}
-func (e *errorMessage) Error() error {
-	if err := string(*e); len(err) > 0 {
-		return errors.New(err)
-	}
-
-	return nil
-}
-
-func (c Context) storeLogFile(file *os.File) (string, error) {
-	errMsg := new(errorMessage)
-	_, err := file.Seek(0, io.SeekStart)
-	if err != nil {
-		errMsg.append(err.Error())
-	}
-
-	logCid, err := c.Node.AddFile(file)
-	if err != nil {
-		errMsg.append("writing cid of job `%s` failed with: %s\n", c.Job.Id, err)
-	}
-
-	hoarder, err := hoarderClient.New(c.OdoClientNode.Context(), c.OdoClientNode)
-	if err != nil {
-		errMsg.append(err.Error())
-	}
-
-	// Stash the logs
-	_, err = hoarder.Stash(logCid)
-	if err != nil {
-		errMsg.append("hoarding log cid `%s` of job `%s` failed with: %s", logCid, c.Job.Id, err)
-	}
-
-	// Not handling this error due to hoarder failing
-	errMsg.write(file)
-
-	return logCid, nil
+	return cid, nil
 }
 
 func (c Context) fetchConfigSshUrl() (sshString string, err error) {
 	tnsPath := specs.NewTnsPath([]string{"resolve", "repo", "github", strconv.Itoa(c.ConfigRepoId)})
 	tnsObj, err := c.Tns.Fetch(tnsPath)
+	// TODO: This should return
 	if err != nil {
 		time.Sleep(30 * time.Second)
 		tnsObj, err = c.Tns.Fetch(tnsPath)
@@ -93,24 +62,28 @@ func (c Context) fetchConfigSshUrl() (sshString string, err error) {
 	return
 }
 
-func closeReader(reader io.ReadCloser) {
-	if reader != nil {
-		reader.Close()
-	}
-}
-
-func buildAndSetLog(builder builders.Builder, logs *builders.Logs, ops ...containers.ContainerOption) (builders.Output, error) {
-	output, err := builder.Build(ops...)
-	defer func() {
-		if output != nil {
-			*logs = output.Logs()
+// for singular resource repositories(not code repo), error should be nil, the monkey will be handling this logic
+func handleAsset(asset *builders.Output, logFile *os.File, err *error) {
+	if asset != nil {
+		_output := *asset
+		logs := _output.Logs()
+		if _, _err := logs.CopyTo(logFile); _err != nil {
+			_err = fmt.Errorf("copying build logs failed with: %w", _err)
+			if err != nil {
+				*err = fmt.Errorf("%s:%w", *err, _err)
+			} else {
+				*err = _err
+			}
 		}
-	}()
-	if err != nil {
-		return nil, output.Logs().FormatErr("build failed with: %s", err)
+
+		if err != nil && *err != nil {
+			logFile.Seek(0, io.SeekEnd)
+			logFile.WriteString("\nMonkey Error:\n" + (*err).Error())
+		}
+
+		_output.Close()
 	}
 
-	return output, nil
 }
 
 func (c Context) getResourceRepositoryId() (id string, err error) {

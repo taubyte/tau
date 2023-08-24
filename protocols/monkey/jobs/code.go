@@ -15,21 +15,25 @@ import (
 
 func (c code) handle() error {
 	if err := c.checkConfig(); err != nil {
-		return fmt.Errorf("checking config repo for project failed with: %s", err)
+		return fmt.Errorf("checking config repo for project failed with: %w", err)
 	}
 
 	project, err := projectSchema.Open(projectSchema.SystemFS(c.ConfigRepoRoot))
 	if err != nil {
-		return fmt.Errorf("opening project from path `%s` failed with: %s", c.ConfigRepoRoot, err)
+		return fmt.Errorf("opening project from path `%s` failed with: %w", c.ConfigRepoRoot, err)
 	}
 
 	// Decompile and get includes and id of each function, website and library
 	ops, err := buildTodoFromConfig(project)
 	if err != nil {
-		return fmt.Errorf("building todo from config for project `%s` failed with: %s", project.Get().Id(), err)
+		return fmt.Errorf("building todo from config for project `%s` failed with: %w", project.Get().Id(), err)
 	}
 
-	return c.handleOps(ops)
+	if err = c.handleOps(ops); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (c code) handleOps(ops []Op) error {
@@ -37,11 +41,14 @@ func (c code) handleOps(ops []Op) error {
 		return nil
 	}
 
-	var mainHandleErr error
-	var errLock sync.Mutex
-	errChan := make(chan error, 1)
-	doneChan := make(chan bool, 1)
-	var doneCount int
+	var (
+		mainHandleErr error
+		errLock       sync.Mutex
+		doneCount     int
+
+		errChan  = make(chan error, 1)
+		doneChan = make(chan bool, 1)
+	)
 
 	for _, op := range ops {
 		logFile, err := os.CreateTemp("/tmp", fmt.Sprintf("log-%s", op.id))
@@ -82,7 +89,7 @@ func (c code) handleOps(ops []Op) error {
 
 func (c code) handleOp(op Op, logFile *os.File) error {
 	moduleReader, err := c.HandleOp(op, logFile)
-	if err == nil {
+	if moduleReader != nil {
 		defer moduleReader.Close()
 	}
 
@@ -93,38 +100,30 @@ func (c code) handleOp(op Op, logFile *os.File) error {
 	return err
 }
 
-func (c Context) HandleOp(op Op, logFile *os.File) (io.ReadSeekCloser, error) {
+func (c Context) HandleOp(op Op, logFile *os.File) (rsk io.ReadSeekCloser, err error) {
 	sourcePath := path.Join(c.gitDir, op.application, op.pathVariable, op.name)
 	builder, err := build.New(c.ctx, sourcePath)
 	if err != nil {
-		return nil, fmt.Errorf("creating new wasm builder failed with: %s", err)
+		err = fmt.Errorf("creating new wasm builder failed with: %w", err)
+		return
 	}
 
-	var logs builders.Logs
+	var asset builders.Output
 	defer func() {
-		if logs != nil {
-			logs.Close()
-		}
+		handleAsset(&asset, logFile, &err)
+		builder.Close()
 	}()
 
-	output, err := buildAndSetLog(builder, &logs)
-	if err != nil {
-		logs.CopyTo(logFile)
-		return nil, fmt.Errorf("building function %s/%s failed with: %s", op.application, op.name, err)
-	}
-	defer output.Close()
-
-	moduleReader, err := output.Compress(builders.WASM)
-	if err != nil {
-		return nil, logs.FormatErr("compressing build files failed with: %s", err)
+	if asset, err = builder.Build(); err != nil {
+		return nil, fmt.Errorf("building function %s/%s failed with: %w", op.application, op.name, err)
 	}
 
-	_, err = logs.CopyTo(logFile)
+	compressedAsset, err := asset.Compress(builders.WASM)
 	if err != nil {
-		return nil, logs.FormatErr("copying logs failed with: %s", err)
+		return nil, fmt.Errorf("compressing build files failed with: %w", err)
 	}
 
-	return moduleReader, nil
+	return compressedAsset, nil
 }
 
 func (c *code) checkConfig() error {

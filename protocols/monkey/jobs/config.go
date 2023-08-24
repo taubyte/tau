@@ -2,16 +2,19 @@ package jobs
 
 import (
 	"fmt"
+	"io"
 
+	"github.com/ipfs/go-log/v2"
 	_ "github.com/taubyte/builder"
 	"github.com/taubyte/config-compiler/compile"
 	projectSchema "github.com/taubyte/go-project-schema/project"
+	chidori "github.com/taubyte/utils/logger/zap"
 )
 
-func (c config) handle() (err error) {
+func (c config) handle() error {
 	project, err := projectSchema.Open(projectSchema.SystemFS(c.gitDir))
 	if err != nil {
-		return
+		return fmt.Errorf("opening project failed with: %s", err.Error())
 	}
 
 	if project.Get().Id() != c.ProjectID {
@@ -20,7 +23,7 @@ func (c config) handle() (err error) {
 
 	rc, err := compile.CompilerConfig(project, c.Job.Meta)
 	if err != nil {
-		return
+		return fmt.Errorf("compiling project failed with: %s", err.Error())
 	}
 
 	compileOps := []compile.Option{}
@@ -33,14 +36,22 @@ func (c config) handle() (err error) {
 
 	compiler, err := compile.New(rc, compileOps...)
 	if err != nil {
-		return
+		return fmt.Errorf("new config compiler failed with: %s", err.Error())
 	}
 
 	defer compiler.Close()
-	err = compiler.Build()
-	if err != nil {
-		return
+	if err = compiler.Build(); err != nil {
+		return fmt.Errorf("config compiler build failed with: %s", err.Error())
 	}
 
-	return compiler.Publish(c.Tns)
+	if err = compiler.Publish(c.Tns); err != nil {
+		return fmt.Errorf("publishing compiled config failed with: %s", err.Error())
+	}
+
+	c.LogFile.Seek(0, io.SeekEnd)
+	c.LogFile.WriteString(
+		chidori.Format(logger, log.LevelInfo, "Successfully written config to tns:\n%v\n", compiler.Object()),
+	)
+
+	return nil
 }

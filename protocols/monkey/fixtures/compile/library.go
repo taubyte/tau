@@ -9,6 +9,7 @@ import (
 
 	"github.com/otiai10/copy"
 	"github.com/pterm/pterm"
+	"github.com/taubyte/go-interfaces/builders"
 	wasmSpec "github.com/taubyte/go-specs/builders/wasm"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/monkey/jobs"
@@ -92,12 +93,19 @@ func (l libraryContext) directory() error {
 	c.ForceGitDir(root)
 	c.ForceContext(l.ctx.universe.Context())
 
-	moduleReader, err := c.HandleLibrary()
+	asset, err := c.HandleLibrary()
 	if err != nil {
 		return err
 	}
 
-	return l.ctx.stashAndPush(l.ctx.resourceId, moduleReader)
+	compressedAsset, err := asset.Compress(builders.WASM)
+	if err != nil {
+		return err
+	}
+
+	asset.Logs().CopyTo(c.LogFile)
+
+	return l.ctx.stashAndPush(l.ctx.resourceId, compressedAsset)
 }
 
 func (l libraryContext) wasmFile() error {

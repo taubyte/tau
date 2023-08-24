@@ -78,16 +78,16 @@ func (w websiteContext) directory() error {
 		return fmt.Errorf("builder new failed with: %s", err)
 	}
 
-	output, err := builder.Build(builder.Wd().Website().SetWorkDir())
+	asset, err := builder.Build(builder.Wd().Website().SetWorkDir())
 	if err != nil {
 		return err
 	}
-	io.Copy(os.Stdout, output.Logs())
+	io.Copy(os.Stdout, asset.Logs())
 
-	rsk, err := output.Compress(iface.Website)
+	compressedAsset, err := asset.Compress(iface.Website)
 	if err != nil {
 		return err
 	}
 
-	return w.ctx.stashAndPush(w.ctx.resourceId, rsk)
+	return w.ctx.stashAndPush(w.ctx.resourceId, compressedAsset)
 }

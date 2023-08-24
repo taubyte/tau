@@ -31,7 +31,7 @@ require (
 	github.com/pkg/errors v0.9.1
 	github.com/pterm/pterm v0.12.65
 	github.com/spf13/afero v1.9.5
-	github.com/taubyte/builder v0.2.0
+	github.com/taubyte/builder v0.2.1
 	github.com/taubyte/cli-common v0.1.1
 	github.com/taubyte/config-compiler v0.4.6
 	github.com/taubyte/domain-validation v1.0.1
@@ -40,12 +40,12 @@ require (
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
 	github.com/taubyte/go-seer v1.0.6
-	github.com/taubyte/go-simple-container v0.4.2
+	github.com/taubyte/go-simple-container v0.4.3
 	github.com/taubyte/go-simple-git v0.2.5
 	github.com/taubyte/go-specs v0.10.7
-	github.com/taubyte/http v0.10.4
+	github.com/taubyte/http v0.10.5
 	github.com/taubyte/p2p v0.9.1
-	github.com/taubyte/utils v0.1.6
+	github.com/taubyte/utils v0.1.7
 	github.com/taubyte/vm v1.0.3
 	github.com/taubyte/vm-core-plugins v0.3.4
 	github.com/taubyte/vm-orbit v1.0.0
