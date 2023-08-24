@@ -13,7 +13,7 @@ import (
 	git "github.com/taubyte/go-simple-git"
 )
 
-func (c *code) handle() error {
+func (c code) handle() error {
 	if err := c.checkConfig(); err != nil {
 		return fmt.Errorf("checking config repo for project failed with: %w", err)
 	}
@@ -36,7 +36,7 @@ func (c *code) handle() error {
 	return nil
 }
 
-func (c *code) handleOps(ops []Op) error {
+func (c code) handleOps(ops []Op) error {
 	if len(ops) == 0 {
 		return nil
 	}
@@ -87,7 +87,7 @@ func (c *code) handleOps(ops []Op) error {
 	}
 }
 
-func (c *code) handleOp(op Op, logFile *os.File) error {
+func (c code) handleOp(op Op, logFile *os.File) error {
 	moduleReader, err := c.HandleOp(op, logFile)
 	if moduleReader != nil {
 		defer moduleReader.Close()
@@ -100,7 +100,7 @@ func (c *code) handleOp(op Op, logFile *os.File) error {
 	return err
 }
 
-func (c *Context) HandleOp(op Op, logFile *os.File) (rsk io.ReadSeekCloser, err error) {
+func (c Context) HandleOp(op Op, logFile *os.File) (rsk io.ReadSeekCloser, err error) {
 	sourcePath := path.Join(c.gitDir, op.application, op.pathVariable, op.name)
 	builder, err := build.New(c.ctx, sourcePath)
 	if err != nil {

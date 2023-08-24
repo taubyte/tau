@@ -19,7 +19,7 @@ import (
 	"github.com/taubyte/utils/maps"
 )
 
-func (c *Context) storeLogFile(file *os.File) (string, error) {
+func (c Context) storeLogFile(file *os.File) (string, error) {
 	file.Seek(0, io.SeekStart)
 	cid, err := c.Node.AddFile(file)
 	if err != nil {
@@ -38,7 +38,7 @@ func (c *Context) storeLogFile(file *os.File) (string, error) {
 	return cid, nil
 }
 
-func (c *Context) fetchConfigSshUrl() (sshString string, err error) {
+func (c Context) fetchConfigSshUrl() (sshString string, err error) {
 	tnsPath := specs.NewTnsPath([]string{"resolve", "repo", "github", strconv.Itoa(c.ConfigRepoId)})
 	tnsObj, err := c.Tns.Fetch(tnsPath)
 	// TODO: This should return
@@ -109,7 +109,7 @@ func (c Context) getResourceRepositoryId() (id string, err error) {
 	return
 }
 
-func (c *Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
+func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 	cid, err := c.StashBuildFile(rsk)
 	if err != nil {
 		return fmt.Errorf("stashing build failed with: %s", err)
@@ -131,7 +131,7 @@ func (c *Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error 
 	return err
 }
 
-func (c *Context) handleLog(id string, logs *os.File) error {
+func (c Context) handleLog(id string, logs *os.File) error {
 	logCid, err := c.storeLogFile(logs)
 	if err != nil {
 		return fmt.Errorf("storing log file for job `%s` failed with: %s", c.Job.Id, err)
@@ -141,7 +141,7 @@ func (c *Context) handleLog(id string, logs *os.File) error {
 	return nil
 }
 
-func (c *Context) handleBuildDetails(id string, compressedBuild io.ReadSeekCloser, logs *os.File) error {
+func (c Context) handleBuildDetails(id string, compressedBuild io.ReadSeekCloser, logs *os.File) error {
 	if logs != nil {
 		if err := c.handleLog(id, logs); err != nil {
 			return err

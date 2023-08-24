@@ -44,16 +44,16 @@ type Op struct {
 	pathVariable string
 }
 
-type code struct{ *Context }
-type website struct{ *Context }
-type library struct{ *Context }
-type config struct{ *Context }
+type code struct{ Context }
+type website struct{ Context }
+type library struct{ Context }
+type config struct{ Context }
 
 type repo interface {
 	handle() error
 }
 
-func (c *Context) Handler() (repo, error) {
+func (c Context) Handler() (repo, error) {
 	switch c.RepoType {
 	case compilerCommon.ConfigRepository:
 		return &config{c}, nil
