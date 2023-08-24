@@ -78,7 +78,7 @@ func handleAsset(asset *builders.Output, logFile *os.File, err *error) {
 
 		if err != nil && *err != nil {
 			logFile.Seek(0, io.SeekEnd)
-			logFile.WriteString("Monkey Error:\n" + (*err).Error())
+			logFile.WriteString("\nMonkey Error:\n" + (*err).Error())
 		}
 
 		_output.Close()
