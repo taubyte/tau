@@ -52,13 +52,15 @@ func (g *Gateway) Match(matcher Matcher) (substrate.Service, error) {
 		}
 	}()
 
-loop:
-	for {
+	var done bool
+	for !done {
 		select {
 		case <-ctx.Done():
-			break loop
+			done = true
+			break
 		case <-doneChan:
-			break loop
+			done = true
+			break
 		case nodeScore := <-nodeChan:
 			if nodeScore.score > highMatch {
 				highMatch, match = nodeScore.score, nodeScore.node
