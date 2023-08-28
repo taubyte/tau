@@ -7,6 +7,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	"github.com/taubyte/go-interfaces/services/tns"
+	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/extract"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	tvm "github.com/taubyte/tau/vm"
@@ -40,7 +41,7 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 		f.readyCtxC()
 	}()
 
-	_f, err := srv.Cache().Add(f)
+	_f, err := srv.Cache().Add(f, spec.DefaultBranch)
 	if err != nil {
 		return nil, fmt.Errorf("adding http function serviceable failed with: %s", err)
 	}

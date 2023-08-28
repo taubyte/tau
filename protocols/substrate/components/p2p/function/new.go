@@ -6,6 +6,7 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
+	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	tvm "github.com/taubyte/tau/vm"
 )
@@ -27,7 +28,7 @@ func New(srv iface.Service, config structureSpec.Function, matcher *iface.MatchD
 		f.readyCtxC()
 	}()
 
-	_f, err := srv.Cache().Add(f)
+	_f, err := srv.Cache().Add(f, spec.DefaultBranch)
 	if err != nil {
 		return nil, fmt.Errorf("adding P2P function serviceable failed with: %s", err)
 	}

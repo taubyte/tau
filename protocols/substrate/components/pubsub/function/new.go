@@ -6,6 +6,7 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
+	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 	tvm "github.com/taubyte/tau/vm"
@@ -29,7 +30,7 @@ func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Fu
 		f.readyCtxC()
 	}()
 
-	_f, err := srv.Cache().Add(f)
+	_f, err := srv.Cache().Add(f, spec.DefaultBranch)
 	if err != nil {
 		return nil, fmt.Errorf("adding pubsub function serviceable failed with: %s", err)
 	}

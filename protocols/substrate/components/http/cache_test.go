@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/taubyte/go-interfaces/services/substrate/components"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
@@ -51,17 +52,17 @@ func TestCache(t *testing.T) {
 	functionMatcher2 := common.New(host, "/ping2", "GET")
 	websiteMatcher := common.New(host, "/", "GET")
 
-	if cached, _ := s.cache.Get(functionMatcher2); len(cached) != 0 {
+	if cached, _ := s.cache.Get(functionMatcher2, components.GetOptions{Validation: true}); len(cached) != 0 {
 		t.Error("Function 2 should not be cached yet")
 		return
 	}
 
-	if cached, _ := s.cache.Get(functionMatcher); len(cached) != 0 {
+	if cached, _ := s.cache.Get(functionMatcher, components.GetOptions{Validation: true}); len(cached) != 0 {
 		t.Error("Function should not be cached yet")
 		return
 	}
 
-	if cached, _ := s.cache.Get(websiteMatcher); len(cached) != 0 {
+	if cached, _ := s.cache.Get(websiteMatcher, components.GetOptions{Validation: true}); len(cached) != 0 {
 		t.Error("Website should not be cached yet")
 		return
 	}
@@ -71,14 +72,14 @@ func TestCache(t *testing.T) {
 		return
 	}
 
-	if cached, _ := s.cache.Get(functionMatcher); len(cached) != 1 {
+	if cached, _ := s.cache.Get(functionMatcher, components.GetOptions{Validation: true}); len(cached) != 1 {
 		t.Error("Expected function to be cached")
 		return
 	}
 
 	time.Sleep(500 * time.Microsecond)
 
-	if cached, _ := s.cache.Get(functionMatcher); len(cached) != 0 {
+	if cached, _ := s.cache.Get(functionMatcher, components.GetOptions{Validation: true}); len(cached) != 0 {
 		t.Error("Expected function cache to be clear")
 		return
 	}
@@ -93,24 +94,24 @@ func TestCache(t *testing.T) {
 		return
 	}
 
-	if cached, _ := s.cache.Get(functionMatcher); len(cached) != 1 {
+	if cached, _ := s.cache.Get(functionMatcher, components.GetOptions{Validation: true}); len(cached) != 1 {
 		t.Error("Expected function to be cached")
 		return
 	}
 
-	if cached, _ := s.cache.Get(functionMatcher2); len(cached) != 1 {
+	if cached, _ := s.cache.Get(functionMatcher2, components.GetOptions{Validation: true}); len(cached) != 1 {
 		t.Error("Expected function 2 to be cached")
 		return
 	}
 
 	time.Sleep(200 * time.Microsecond)
 
-	if cached, _ := s.cache.Get(functionMatcher); len(cached) != 0 {
+	if cached, _ := s.cache.Get(functionMatcher, components.GetOptions{Validation: true}); len(cached) != 0 {
 		t.Error("Expected function to be cleared")
 		return
 	}
 
-	if cached, _ := s.cache.Get(functionMatcher2); len(cached) != 0 {
+	if cached, _ := s.cache.Get(functionMatcher2, components.GetOptions{Validation: true}); len(cached) != 0 {
 		t.Error("Expected function 2 to be cleared")
 		return
 	}

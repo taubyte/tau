@@ -2,10 +2,8 @@ package lookup
 
 import (
 	"errors"
-	"fmt"
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components"
-	spec "github.com/taubyte/go-specs/common"
 )
 
 // Lookup returns the list of serviceables retrieved from cache or tns
@@ -21,32 +19,10 @@ func Lookup(service iface.ServiceComponent, matcher iface.MatchDefinition) ([]if
 		return nil, errors.New("no matcher provided")
 	}
 
-	picks, err := service.Cache().Get(matcher)
+	picks, err := service.Cache().Get(matcher, iface.GetOptions{Validation: true})
 	if err == nil {
-		if err = validate(picks, service); err == nil {
-			return picks, nil
-		}
+		return picks, nil
 	}
 
 	return service.CheckTns(matcher)
-}
-
-func validate(serviceables []iface.Serviceable, service iface.ServiceComponent) error {
-	project, err := serviceables[0].Project()
-	if err != nil {
-		return fmt.Errorf("validating cached pick project id failed with: %s", err)
-	}
-
-	commit, err := service.Tns().Simple().Commit(project.String(), spec.DefaultBranch)
-	if err != nil {
-		return err
-	}
-
-	for _, serviceable := range serviceables {
-		if serviceable.Commit() != commit {
-			return fmt.Errorf("cached pick commit `%s` is outdated, latest commit is `%s`", serviceable.Commit(), commit)
-		}
-	}
-
-	return nil
 }
