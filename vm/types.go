@@ -11,6 +11,7 @@ var (
 	_ commonIface.FunctionInstance = &FunctionInstance{}
 )
 
+// This guy should be cached
 type Function struct {
 	srv         substrate.Service
 	serviceable commonIface.Serviceable

@@ -49,6 +49,7 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 		return _f, nil
 	}
 
+	// TODO: Shouldn't be .function
 	f.function = tvm.New(f.srv, f)
 
 	return f, nil

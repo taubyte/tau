@@ -50,15 +50,7 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 	w.ctx, w.ctxC = context.WithCancel(w.srv.Context())
 
 	if w != _w {
-		web, ok := _w.(*Website)
-		if ok {
-			err = web.validateAsset()
-			if err != nil {
-				web.ctxC()
-			}
-
-			return _w, nil
-		}
+		return _w, nil
 	}
 
 	err = w.getAsset()

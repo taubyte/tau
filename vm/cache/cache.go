@@ -2,24 +2,11 @@ package cache
 
 import (
 	"fmt"
-	"sync"
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components"
 	spec "github.com/taubyte/go-specs/common"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
-	"github.com/taubyte/go-specs/methods"
 )
-
-// The Cache struct wraps cache methods for use by node-services.
-type Cache struct {
-	cacheMap map[string]map[string]cacheItem
-	locker   sync.RWMutex
-}
-
-type cacheItem struct {
-	serviceable iface.Serviceable
-	assetCid    string
-}
 
 // Close safely clears the cache and releases resources.
 //
@@ -67,7 +54,7 @@ func (c *Cache) Add(serviceable iface.Serviceable, branch string) (iface.Service
 		return nil, fmt.Errorf("validating serviceable failed with: %s", err)
 	}
 
-	cid, err := serviceableCid(serviceable, "", branch)
+	cid, err := computeServiceableCid(serviceable, "", branch)
 	if err != nil {
 		return nil, fmt.Errorf("getting cid for serviceable `%s` failed with: %w", serviceable.Id(), err)
 	}
@@ -141,7 +128,7 @@ func (c *Cache) validate(cacheItem cacheItem, branch string) error {
 		return fmt.Errorf("cached pick commit `%s` is outdated, latest commit is `%s`", serviceable.Commit(), commit)
 	}
 
-	cid, err := serviceableCid(serviceable, projectCid, branch)
+	cid, err := computeServiceableCid(serviceable, projectCid, branch)
 	if err != nil {
 		return fmt.Errorf("getting cached serviceable `%s` cid failed with: %w", serviceable.Id(), err)
 	}
@@ -151,32 +138,4 @@ func (c *Cache) validate(cacheItem cacheItem, branch string) error {
 	}
 
 	return nil
-}
-
-func serviceableCid(serviceable iface.Serviceable, projectCid, branch string) (string, error) {
-	if len(projectCid) < 1 {
-		project, err := serviceable.Project()
-		if err != nil {
-			return "", fmt.Errorf("getting project id failed with: %w", err)
-		}
-
-		projectCid = project.String()
-	}
-
-	assetPath, err := methods.GetTNSAssetPath(projectCid, serviceable.Id(), branch)
-	if err != nil {
-		return "", fmt.Errorf("getting tns asset path failed with: %w", err)
-	}
-
-	cidObj, err := serviceable.Service().Tns().Fetch(assetPath)
-	if err != nil {
-		return "", fmt.Errorf("fetching cid object failed with: %w", err)
-	}
-
-	cid, ok := cidObj.Interface().(string)
-	if !ok {
-		return "", fmt.Errorf("cid %#v is not a string", cidObj)
-	}
-
-	return cid, nil
 }
