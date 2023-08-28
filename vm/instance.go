@@ -22,8 +22,12 @@ func roundedUpDivWithUpperLimit(val, chunkSize, limit uint64) uint64 {
 	return count
 }
 
-// Instantiate method returns a Function instance with channels for getting a runtime, and plugin.
 func (f *Function) Instantiate(ctx commonIface.FunctionContext, branch, commit string) (commonIface.FunctionInstance, vm.Runtime, interface{}, error) {
+	return f.instantiate(ctx, branch, commit)
+}
+
+// Instantiate method returns a Function instance with channels for getting a runtime, and plugin.
+func (f *Function) instantiate(ctx commonIface.FunctionContext, branch, commit string) (commonIface.FunctionInstance, vm.Runtime, interface{}, error) {
 	fI := &FunctionInstance{
 		project:     ctx.Project,
 		application: ctx.Application,
