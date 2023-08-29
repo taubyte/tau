@@ -47,6 +47,7 @@ func (f *Function) startInstanceProducer() {
 				}
 			case <-time.After(5 * time.Minute):
 			case req := <-f.instanceRequest:
+				// ALL THIS should now use shadow
 				atomic.AddUint64(&f.instanceReqCount, 1)
 				res := instanceRequestResponse{}
 				if head != nil {
