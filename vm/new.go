@@ -2,7 +2,6 @@ package tvm
 
 import (
 	"context"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -23,14 +22,9 @@ func New(ctx context.Context, serviceable commonIface.Serviceable) commonIface.F
 		ctx:             ctx,
 		serviceable:     serviceable,
 		instanceRequest: make(chan instanceRequest, MaxInstanceRequest),
-		shadows: &sync.Pool{
-			New: func() any {
-				return f.newShadowInstance()
-			},
-		},
 	}
 
-	// initShadow(ctx, &f.shadows)
+	initShadow(ctx, &f.shadows)
 	f.startInstanceProducer()
 
 	return f

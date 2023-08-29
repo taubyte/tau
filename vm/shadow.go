@@ -10,48 +10,86 @@ import (
 
 type shadows struct {
 	instances chan *instanceShadow
+	gcLock    sync.RWMutex
 
 	more chan struct{}
 }
+
+var i sync.Pool
 
 func initShadow(ctx context.Context, s *shadows) {
 	s.instances = make(chan *instanceShadow, 1024)
 	s.more = make(chan struct{})
 	go func() {
+		errCount := 0
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-s.more:
-				var wg sync.WaitGroup
-				wg.Add(10)
-				for i := 0; i < 10; i++ {
-					go func() {
-						inst, err := s.newInstance()
-						if err == nil {
-							s.instances <- inst
+				if errCount < 10 {
+					var wg sync.WaitGroup
+					for i := 0; i < 10; i++ {
+						if errCount > 10 {
+							break
 						}
-					}()
+						wg.Add(1)
+						go func() {
+							defer wg.Done()
+							inst, err := s.newInstance()
+							if err == nil {
+								s.instances <- inst
+							} else {
+								// log the error
+								errCount++
+							}
+						}()
+					}
+					wg.Wait()
 				}
 			case <-time.After(5 * time.Minute):
+				// cleanup
+				s.gcLock.Lock()
+				insts := s.instances
+				close(insts)
+				s.instances = make(chan *instanceShadow, cap(insts))
+				s.gcLock.Unlock()
+
+				for inst := range insts {
+					// check ttl of inst
+					s.instances <- inst
+				}
+
+				errCount /= 2
+			case <-time.After(10 * time.Minute):
+				errCount = 0
 			}
 		}
 	}()
 }
 
 func (s *shadows) get(ctx commonIface.FunctionContext, branch, commit string) (*instanceShadow, error) {
-	defer s.keep()
+	s.gcLock.RLock()
+	defer s.gcLock.RUnlock()
 
 	select {
 	case next := <-s.instances:
+		defer s.keep()
 		return next, nil
 	default:
-		return s.newInstance(ctx, branch, commit)
+		i, err := s.newInstance(ctx, branch, commit)
+		if err == nil {
+			s.keep()
+		}
+		return i, err
 	}
 }
 
 func (s *shadows) keep() {
-	s.more <- struct{}{}
+	select {
+	case s.more <- struct{}{}:
+	default:
+	}
 }
 
 func (s *shadows) newInstance(ctx commonIface.FunctionContext, branch, commit string) (*instanceShadow, error) {

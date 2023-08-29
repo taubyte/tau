@@ -2,7 +2,6 @@ package tvm
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
@@ -27,8 +26,7 @@ type Function struct {
 
 	instanceRequest chan instanceRequest
 
-	//shadows shadows
-	shadows *sync.Pool
+	shadows shadows
 
 	// metrics -- helps keep a buffer
 	instanceReqCount   uint64
