@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ipfs/go-cid"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
-	spec "github.com/taubyte/go-specs/common"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/p2p/streams/command"
@@ -19,8 +17,8 @@ func (f *Function) Commit() string {
 	return f.commit
 }
 
-func (f *Function) Project() (cid.Cid, error) {
-	return cid.Decode(f.matcher.Project)
+func (f *Function) Project() string {
+	return f.matcher.Project
 }
 
 func (f *Function) Close() {
@@ -28,23 +26,15 @@ func (f *Function) Close() {
 }
 
 func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Response, err error) {
-	instance, runtime, plugin, err := f.function.Instantiate(
-		commonIface.FunctionContext{
-			Config:      f.config,
-			Project:     f.matcher.Project,
-			Application: f.matcher.Application,
-		},
-		spec.DefaultBranch,
-		f.commit,
-	)
+	runtime, pluginApi, err := f.module.Instantiate()
 	if err != nil {
 		return t, nil, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %s", f.config.Name, f.matcher.Project, f.matcher.Application, err)
 	}
 	defer runtime.Close()
 
-	sdk, ok := plugin.(plugins.Instance)
+	sdk, ok := pluginApi.(plugins.Instance)
 	if !ok {
-		return t, nil, fmt.Errorf("taubyte Plugin is not a plugin instance `%T`", plugin)
+		return t, nil, fmt.Errorf("taubyte Plugin is not a plugin instance `%T`", pluginApi)
 	}
 
 	res = make(response.Response)
@@ -61,7 +51,7 @@ func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Respo
 		}
 	}
 
-	return time.Now(), res, instance.Call(runtime, ev.Id)
+	return time.Now(), res, f.module.Call(runtime, ev.Id)
 }
 
 func (f *Function) Match(matcher commonIface.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
@@ -111,7 +101,7 @@ func (f *Function) Application() string {
 	return f.matcher.Application
 }
 
-func (f *Function) Config() *structureSpec.Function {
+func (f *Function) Structure() *structureSpec.Function {
 	return &f.config
 }
 

@@ -11,40 +11,24 @@ import (
 
 var MaxInstanceRequest = 1024 * 64
 var ShadowBuff uint64 = 10
-var ShadowTTL time.Duration = 15 * time.Minute
 
-var (
-	_ commonIface.Function         = &Function{}
-	_ commonIface.FunctionInstance = &FunctionInstance{}
-)
-
-// This guy should be cached
-type Function struct {
-	ctx context.Context
-
+type WasmModule struct {
 	serviceable commonIface.Serviceable
+	ctx         context.Context
+	structure   *structureSpec.Function
+	branch      string
+	commit      string
 
-	instanceRequest chan instanceRequest
-
-	shadows shadows
-
-	// metrics -- helps keep a buffer
-	instanceReqCount   uint64
-	runtimeCount       uint64
-	runtimeClosedCount uint64
+	// shadows shadows
 }
 
 type instanceRequest struct {
-	ctx    commonIface.FunctionContext
-	branch string
-	commit string
-
 	response chan<- instanceRequestResponse
 }
 
 type instanceShadow struct {
 	creation time.Time
-	fI       commonIface.FunctionInstance
+	fI       WasmModule
 	runtime  vm.Runtime
 	plugin   interface{}
 }
@@ -54,19 +38,7 @@ type instanceRequestResponse struct {
 	err error
 }
 
-type FunctionInstance struct {
-	parent      *Function
-	path        string
-	project     string
-	application string
-	config      structureSpec.Function
-}
-
 type metricRuntime struct {
 	vm.Runtime
-	f *Function
-}
-
-func (f *FunctionInstance) Function() commonIface.Function {
-	return f.parent
+	wm *WasmModule
 }

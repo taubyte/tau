@@ -13,67 +13,70 @@ import (
 	librarySpec "github.com/taubyte/go-specs/library"
 )
 
-func (f *FunctionInstance) moduleName() (string, error) {
-	source := f.config.Source
-	switch source {
-	case ".", "":
-		return functionSpec.ModuleName(f.config.Name), nil
-	default:
-		if strings.HasPrefix(source, librarySpec.PathVariable.String()) {
-			libId := strings.TrimPrefix(source, librarySpec.PathVariable.String()+"/")
-
-			_library, err := f.parent.serviceable.Service().Tns().Fetch(librarySpec.Tns().NameIndex(libId))
-			if err != nil {
-				return "", fmt.Errorf("fetching library name for libraryId: `%s` failed with: %s", libId, err)
-			}
-
-			library, ok := _library.Interface().(string)
-			if !ok {
-				return "", fmt.Errorf("expected string for library `%s` interface `%v`, got `%T`", libId, _library.Interface(), _library.Interface())
-			}
-
-			return librarySpec.ModuleName(library), nil
-		}
-
-		return source, nil
-	}
-}
-
 // Call takes instance and id, then calls the moduled function. Returns an error.
-func (f *FunctionInstance) Call(runtime vm.Runtime, id interface{}) error {
-	moduleName, err := f.moduleName()
+func (w *WasmModule) Call(runtime vm.Runtime, id interface{}) error {
+	moduleName, err := w.moduleName()
 	if err != nil {
-		return fmt.Errorf("getting module name for source `%s` failed with: %s", f.config.Source, err)
+		return fmt.Errorf("getting module name for resource `%s` failed with: %w", w.serviceable.Id(), err)
 	}
 
 	module, err := runtime.Module(moduleName)
 	if err != nil {
-		return fmt.Errorf("creating module instance for function `%s` failed with: %s", f.config.Name, err)
+		return fmt.Errorf("creating module instance failed with: %w", err)
 	}
 
-	fx, err := module.Function(f.config.Call)
+	fx, err := module.Function(w.structure.Call)
 	if err != nil {
-		return fmt.Errorf("calling function `%s` for function `%s` failed with: %s", f.config.Call, f.config.Name, err.Error())
+		return fmt.Errorf("getting wasm function instance failed with: %w", err)
 	}
 
-	ctx, ctxC := context.WithTimeout(f.parent.serviceable.Service().Context(), time.Duration(time.Nanosecond*time.Duration(f.config.Timeout)))
-
+	ctx, ctxC := context.WithTimeout(w.ctx, time.Duration(time.Nanosecond*time.Duration(w.structure.Timeout)))
 	defer ctxC()
 
 	ret := fx.Call(ctx, id)
-	if f.parent.serviceable.Service().Verbose() {
-		defer func() {
-			fmt.Println("\n\nERROR: ")
-			io.Copy(os.Stdout, runtime.Stderr())
-			fmt.Println("\n\nOUT: ")
-			io.Copy(os.Stdout, runtime.Stdout())
-			fmt.Println("\n\nExtra out: ")
-			fmt.Printf("RET: %v\n", ret.Error())
-		}()
+	if w.serviceable.Service().Verbose() {
+		defer w.printRuntimeStack(runtime, ret)
 	}
 	if ret.Error() != nil {
 		return fmt.Errorf("calling function for event %d failed with: %s", id, ret.Error())
 	}
 
 	return nil
+}
+
+func (w *WasmModule) moduleName() (string, error) {
+	source := w.structure.Source
+	switch source {
+	case ".", "":
+		return functionSpec.ModuleName(w.structure.Name), nil
+	default:
+		if strings.HasPrefix(source, librarySpec.PathVariable.String()) {
+			libId := strings.TrimPrefix(source, librarySpec.PathVariable.String()+"/")
+			_library, err := w.serviceable.Service().Tns().Fetch(librarySpec.Tns().NameIndex(libId))
+			if err != nil {
+				return "", fmt.Errorf("fetching library name for resource: `%s` failed with: %w", libId, err)
+			}
+
+			library, ok := _library.Interface().(string)
+			if !ok {
+				return "", fmt.Errorf("got tns object for library index %#v, expected string value ", _library.Interface())
+			}
+
+			return librarySpec.ModuleName(library), nil
+		}
+	}
+
+	return source, nil
+}
+
+func (w *WasmModule) printRuntimeStack(runtime vm.Runtime, ret vm.Return) {
+	if runtime != nil {
+		fmt.Println("\n\nERROR: ")
+		io.Copy(os.Stdout, runtime.Stderr())
+		fmt.Println("\n\nOUT: ")
+		io.Copy(os.Stdout, runtime.Stdout())
+	}
+	if ret != nil {
+		fmt.Printf("\n\nExtra out:\nRET:%v\n", ret.Error())
+	}
 }

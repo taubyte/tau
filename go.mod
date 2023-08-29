@@ -3,6 +3,7 @@ module github.com/taubyte/tau
 go 1.19
 
 replace github.com/taubyte/go-interfaces => ../go-interfaces
+replace github.com/taubyte/vm-core-plugins => ../vm-core-plugins
 
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137

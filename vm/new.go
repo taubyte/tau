@@ -2,71 +2,67 @@ package tvm
 
 import (
 	"context"
-	"sync/atomic"
-	"time"
+	"fmt"
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 )
 
-func (mr *metricRuntime) Close() error {
-	mr.f.closedRuntime()
-	return mr.Runtime.Close()
-}
+func New(ctx context.Context, serviceable commonIface.Serviceable, branch, commit string) (*WasmModule, error) {
+	if structure := serviceable.Structure(); structure != nil {
+		w := &WasmModule{
+			serviceable: serviceable,
+			ctx:         ctx,
+			structure:   structure,
+			branch:      branch,
+			commit:      commit,
+		}
 
-func (f *Function) closedRuntime() {
-	atomic.AddUint64(&f.runtimeClosedCount, 1)
-}
+		// // w.initShadow
+		// initShadow(ctx, &w.shadows)
+		// w.startInstanceProducer()
 
-func New(ctx context.Context, serviceable commonIface.Serviceable) commonIface.Function {
-	f := &Function{
-		ctx:             ctx,
-		serviceable:     serviceable,
-		instanceRequest: make(chan instanceRequest, MaxInstanceRequest),
+		return w, nil
 	}
 
-	initShadow(ctx, &f.shadows)
-	f.startInstanceProducer()
-
-	return f
+	return nil, fmt.Errorf("serviceable `%s` function structure is nil", serviceable.Id())
 }
 
-func (f *Function) startInstanceProducer() {
-	go func() {
-		shadows := make(chan instanceShadow, 1000)
-		var head *instanceShadow
+// func (f *WasmModule) startInstanceProducer() {
+// 	go func() {
+// 		shadows := make(chan instanceShadow, 1000)
+// 		var head *instanceShadow
 
-		for {
-			select {
-			case <-f.ctx.Done():
-				for req := range f.instanceRequest {
-					if req.response != nil {
-						req.response <- instanceRequestResponse{
-							err: f.ctx.Err(),
-						}
-					}
-				}
-			case <-time.After(5 * time.Minute):
-			case req := <-f.instanceRequest:
-				// ALL THIS should now use shadow
-				atomic.AddUint64(&f.instanceReqCount, 1)
-				res := instanceRequestResponse{}
-				if head != nil {
-					res.instanceShadow = *head
-					select {
-					case next := <-shadows:
-						head = &next
-					default:
+// 		for {
+// 			select {
+// 			case <-f.ctx.Done():
+// 				for req := range f.instanceRequest {
+// 					if req.response != nil {
+// 						req.response <- instanceRequestResponse{
+// 							err: f.ctx.Err(),
+// 						}
+// 					}
+// 				}
+// 			case <-time.After(5 * time.Minute):
+// 			case req := <-f.instanceRequest:
+// 				// ALL THIS should now use shadow
+// 				atomic.AddUint64(&f.instanceReqCount, 1)
+// 				res := instanceRequestResponse{}
+// 				if head != nil {
+// 					res.instanceShadow = *head
+// 					select {
+// 					case next := <-shadows:
+// 						head = &next
+// 					default:
 
-						head = nil
-					}
-				}
+// 						head = nil
+// 					}
+// 				}
 
-				res.fI, res.runtime, res.plugin, res.err = f.instantiate(req.ctx, req.branch, req.commit)
-				res.creation = time.Now()
+// 				res.fI, res.runtime, res.plugin, res.err = f.instantiate(req.ctx, req.branch, req.commit)
+// 				res.creation = time.Now()
 
-				atomic.AddUint64(&f.runtimeCount, 1)
-				req.response <- res
-			}
-		}
-	}()
-}
+// 				req.response <- res
+// 			}
+// 		}
+// 	}()
+// }

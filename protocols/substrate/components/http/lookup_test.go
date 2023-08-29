@@ -116,8 +116,8 @@ func checkFunction(s *Service, id string, matcher commonIface.MatchDefinition) e
 		return errors.New("Not ok")
 	}
 
-	if reflect.DeepEqual(functions[id], *f.Config()) == false {
-		return fmt.Errorf("Expected: %#v, got: %#v", functions[id], f.Config())
+	if reflect.DeepEqual(functions[id], *f.Structure()) == false {
+		return fmt.Errorf("Expected: %#v, got: %#v", functions[id], f.Structure())
 	}
 
 	return nil

@@ -41,6 +41,10 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 		f.readyCtxC()
 	}()
 
+	if f.module, err = tvm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
+		return nil, fmt.Errorf("initializing wasm module failed with: %w", err)
+	}
+
 	_f, err := srv.Cache().Add(f, spec.DefaultBranch)
 	if err != nil {
 		return nil, fmt.Errorf("adding http function serviceable failed with: %s", err)
@@ -48,9 +52,6 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 	if f != _f {
 		return _f, nil
 	}
-
-	// TODO: Shouldn't be .function
-	f.function = tvm.New(f.instanceCtx, f)
 
 	return f, nil
 }

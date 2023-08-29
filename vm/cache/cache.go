@@ -54,7 +54,7 @@ func (c *Cache) Add(serviceable iface.Serviceable, branch string) (iface.Service
 		return nil, fmt.Errorf("validating serviceable failed with: %s", err)
 	}
 
-	cid, err := computeServiceableCid(serviceable, "", branch)
+	cid, err := computeServiceableCid(serviceable, branch)
 	if err != nil {
 		return nil, fmt.Errorf("getting cid for serviceable `%s` failed with: %w", serviceable.Id(), err)
 	}
@@ -111,15 +111,10 @@ func (c *Cache) Remove(serviceable iface.Serviceable) {
 
 // validate method checks to see if the serviceable commit matches the current commit.
 func (c *Cache) validate(cacheItem cacheItem, branch string) error {
-	project, err := cacheItem.serviceable.Project()
-	if err != nil {
-		return fmt.Errorf("validating cached pick project id failed with: %s", err)
-	}
-
 	serviceable := cacheItem.serviceable
 	tnsClient := serviceable.Service().Tns()
-	projectCid := project.String()
-	commit, err := tnsClient.Simple().Commit(projectCid, branch)
+	projectId := serviceable.Project()
+	commit, err := tnsClient.Simple().Commit(projectId, branch)
 	if err != nil {
 		return fmt.Errorf("getting serviceable `%s` commit failed with: %w", serviceable.Id(), err)
 	}
@@ -128,7 +123,7 @@ func (c *Cache) validate(cacheItem cacheItem, branch string) error {
 		return fmt.Errorf("cached pick commit `%s` is outdated, latest commit is `%s`", serviceable.Commit(), commit)
 	}
 
-	cid, err := computeServiceableCid(serviceable, projectCid, branch)
+	cid, err := computeServiceableCid(serviceable, branch)
 	if err != nil {
 		return fmt.Errorf("getting cached serviceable `%s` cid failed with: %w", serviceable.Id(), err)
 	}

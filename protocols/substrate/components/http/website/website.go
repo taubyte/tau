@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ipfs/go-cid"
 	"github.com/spf13/afero/zipfs"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
@@ -21,8 +20,13 @@ import (
 	"go4.org/readerutil"
 )
 
-func (w *Website) Project() (cid.Cid, error) {
-	return cid.Decode(w.project)
+func (w *Website) Project() string {
+	return w.project
+}
+
+// Fulfill Serviceable interface, used to ensure TVM.New() fails if using a website
+func (w *Website) Structure() *structureSpec.Function {
+	return nil
 }
 
 func (w *Website) Handle(_w goHttp.ResponseWriter, r *goHttp.Request, matcher commonIface.MatchDefinition) (t time.Time, err error) {

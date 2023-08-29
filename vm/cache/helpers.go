@@ -7,17 +7,8 @@ import (
 	"github.com/taubyte/go-specs/methods"
 )
 
-func computeServiceableCid(serviceable iface.Serviceable, projectCid, branch string) (string, error) {
-	if len(projectCid) < 1 {
-		project, err := serviceable.Project()
-		if err != nil {
-			return "", fmt.Errorf("getting project id failed with: %w", err)
-		}
-
-		projectCid = project.String()
-	}
-
-	assetPath, err := methods.GetTNSAssetPath(projectCid, serviceable.Id(), branch)
+func computeServiceableCid(serviceable iface.Serviceable, branch string) (string, error) {
+	assetPath, err := methods.GetTNSAssetPath(serviceable.Project(), serviceable.Id(), branch)
 	if err != nil {
 		return "", fmt.Errorf("getting tns asset path failed with: %w", err)
 	}

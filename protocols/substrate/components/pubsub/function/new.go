@@ -30,6 +30,10 @@ func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Fu
 		f.readyCtxC()
 	}()
 
+	if f.module, err = tvm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
+		return nil, fmt.Errorf("initializing vm module failed with: %w", err)
+	}
+
 	_f, err := srv.Cache().Add(f, spec.DefaultBranch)
 	if err != nil {
 		return nil, fmt.Errorf("adding pubsub function serviceable failed with: %s", err)
@@ -38,11 +42,9 @@ func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Fu
 		return _f, nil
 	}
 
-	err = f.Validate(matcher)
-	if err != nil {
+	if err = f.Validate(matcher); err != nil {
 		return nil, fmt.Errorf("validating function with id: `%s` failed with: %s", f.config.Id, err)
 	}
 
-	f.function = tvm.New(f.instanceCtx, f)
 	return f, nil
 }

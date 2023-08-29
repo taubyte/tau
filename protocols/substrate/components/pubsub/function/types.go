@@ -7,15 +7,15 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
+	tvm "github.com/taubyte/tau/vm"
 )
 
 var _ commonIface.Serviceable = &Function{}
 var _ iface.Serviceable = &Function{}
 
 type Function struct {
-	srv      iface.Service
-	config   structureSpec.Function
-	function commonIface.Function
+	srv    iface.Service
+	config structureSpec.Function
 
 	matcher *common.MatchDefinition
 	commit  string
@@ -29,6 +29,8 @@ type Function struct {
 
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
+
+	module *tvm.WasmModule
 }
 
 func (f *Function) Close() {

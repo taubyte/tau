@@ -3,14 +3,11 @@ package function
 import (
 	"context"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	tvm "github.com/taubyte/tau/vm"
 )
-
-var _ iface.Serviceable = &Function{}
-var _ iface.Function = &Function{}
 
 type Function struct {
 	srv iface.Service
@@ -21,8 +18,6 @@ type Function struct {
 	application string
 	commit      string
 
-	function commonIface.Function
-
 	readyDone  bool
 	readyCtx   context.Context
 	readyCtxC  context.CancelFunc
@@ -30,6 +25,8 @@ type Function struct {
 
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
+
+	module *tvm.WasmModule
 }
 
 func (f *Function) Close() {

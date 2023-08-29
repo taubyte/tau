@@ -1,7 +1,6 @@
 package counter
 
 import (
-	"fmt"
 	"path"
 	"time"
 
@@ -26,10 +25,7 @@ func ErrorWrapper(serviceable components.Serviceable, startTime time.Time, coldS
 			if serviceable != nil {
 				doneTime := time.Now()
 				var skipExecution bool
-				basePath, err := newPathFromServiceable(serviceable)
-				if err != nil {
-					return
-				}
+				basePath := counters.NewPath(path.Join(serviceable.Project(), serviceable.Id()))
 
 				totalTime := doneTime.Sub(startTime).Nanoseconds()
 
@@ -86,13 +82,4 @@ func ErrorWrapper(serviceable components.Serviceable, startTime time.Time, coldS
 	}
 
 	return gerr
-}
-
-func newPathFromServiceable(serv components.Serviceable) (counters.Path, error) {
-	project, err := serv.Project()
-	if err != nil {
-		return nil, fmt.Errorf("getting project cid from serviceable failed with: %s", err)
-	}
-
-	return counters.NewPath(path.Join(project.String(), serv.Id())), nil
 }

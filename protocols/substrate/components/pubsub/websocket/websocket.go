@@ -4,7 +4,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ipfs/go-cid"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
@@ -12,8 +11,12 @@ import (
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
 )
 
-func (ws *WebSocket) Project() (cid.Cid, error) {
-	return cid.Decode(ws.project)
+func (ws *WebSocket) Project() string {
+	return ws.project
+}
+
+func (ws *WebSocket) Application() string {
+	return ws.matcher.Application
 }
 
 func (ws *WebSocket) HandleMessage(msg *pubsub.Message) (t time.Time, err error) {
@@ -79,6 +82,6 @@ func (ws *WebSocket) Service() components.ServiceComponent {
 }
 
 // TODO: Fix this
-func (ws *WebSocket) Config() *structureSpec.Function {
+func (ws *WebSocket) Structure() *structureSpec.Function {
 	return nil
 }
