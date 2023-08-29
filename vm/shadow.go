@@ -15,8 +15,6 @@ type shadows struct {
 	more chan struct{}
 }
 
-var i sync.Pool
-
 func initShadow(ctx context.Context, s *shadows) {
 	s.instances = make(chan *instanceShadow, 1024)
 	s.more = make(chan struct{})
