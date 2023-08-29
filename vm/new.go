@@ -2,6 +2,7 @@ package tvm
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -19,35 +20,58 @@ func (f *Function) closedRuntime() {
 
 func New(ctx context.Context, serviceable commonIface.Serviceable) commonIface.Function {
 	f := &Function{
+		ctx:             ctx,
 		serviceable:     serviceable,
 		instanceRequest: make(chan instanceRequest, MaxInstanceRequest),
+		shadows: &sync.Pool{
+			New: func() any {
+				return f.newShadowInstance()
+			},
+		},
 	}
 
+	// initShadow(ctx, &f.shadows)
+	f.startInstanceProducer()
+
+	return f
+}
+
+func (f *Function) startInstanceProducer() {
 	go func() {
-		// method
+		shadows := make(chan instanceShadow, 1000)
+		var head *instanceShadow
+
 		for {
 			select {
-			case <-ctx.Done():
+			case <-f.ctx.Done():
 				for req := range f.instanceRequest {
 					if req.response != nil {
 						req.response <- instanceRequestResponse{
-							err: ctx.Err(),
+							err: f.ctx.Err(),
 						}
 					}
 				}
+			case <-time.After(5 * time.Minute):
 			case req := <-f.instanceRequest:
 				atomic.AddUint64(&f.instanceReqCount, 1)
 				res := instanceRequestResponse{}
+				if head != nil {
+					res.instanceShadow = *head
+					select {
+					case next := <-shadows:
+						head = &next
+					default:
+
+						head = nil
+					}
+				}
+
 				res.fI, res.runtime, res.plugin, res.err = f.instantiate(req.ctx, req.branch, req.commit)
-				go func() {
-					<-time.After(ShadowTTL)
-					res.runtime.Close()
-				}()
+				res.creation = time.Now()
+
 				atomic.AddUint64(&f.runtimeCount, 1)
 				req.response <- res
 			}
 		}
 	}()
-
-	return f
 }

@@ -1,8 +1,8 @@
 module github.com/taubyte/tau
 
-replace github.com/taubyte/go-interfaces => ../go-interfaces
-
 go 1.19
+
+replace github.com/taubyte/go-interfaces => ../go-interfaces
 
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137

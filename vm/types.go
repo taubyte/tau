@@ -1,6 +1,8 @@
 package tvm
 
 import (
+	"context"
+	"sync"
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
@@ -19,11 +21,14 @@ var (
 
 // This guy should be cached
 type Function struct {
+	ctx context.Context
+
 	serviceable commonIface.Serviceable
 
 	instanceRequest chan instanceRequest
 
-	instanceBuff chan *instanceShadow
+	//shadows shadows
+	shadows *sync.Pool
 
 	// metrics -- helps keep a buffer
 	instanceReqCount   uint64
@@ -40,9 +45,10 @@ type instanceRequest struct {
 }
 
 type instanceShadow struct {
-	fI      commonIface.FunctionInstance
-	runtime vm.Runtime
-	plugin  interface{}
+	creation time.Time
+	fI       commonIface.FunctionInstance
+	runtime  vm.Runtime
+	plugin   interface{}
 }
 
 type instanceRequestResponse struct {
