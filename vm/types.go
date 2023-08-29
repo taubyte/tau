@@ -1,14 +1,16 @@
 package tvm
 
 import (
-	"github.com/taubyte/go-interfaces/services/substrate"
+	"time"
+
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/vm"
 	structureSpec "github.com/taubyte/go-specs/structure"
 )
 
-var MaxIntanceRequest = 1024 * 64
+var MaxInstanceRequest = 1024 * 64
 var ShadowBuff uint64 = 10
+var ShadowTTL time.Duration = 15 * time.Minute
 
 var (
 	_ commonIface.Function         = &Function{}
@@ -17,12 +19,11 @@ var (
 
 // This guy should be cached
 type Function struct {
-	srv         substrate.Service
 	serviceable commonIface.Serviceable
 
-	intanceRequest chan instanceRequest
+	instanceRequest chan instanceRequest
 
-	intanceBuff chan *instanceShadow
+	instanceBuff chan *instanceShadow
 
 	// metrics -- helps keep a buffer
 	instanceReqCount   uint64
@@ -55,6 +56,11 @@ type FunctionInstance struct {
 	project     string
 	application string
 	config      structureSpec.Function
+}
+
+type metricRuntime struct {
+	vm.Runtime
+	f *Function
 }
 
 func (f *FunctionInstance) Function() commonIface.Function {

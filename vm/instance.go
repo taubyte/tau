@@ -23,11 +23,20 @@ func roundedUpDivWithUpperLimit(val, chunkSize, limit uint64) uint64 {
 }
 
 func (f *Function) Instantiate(ctx commonIface.FunctionContext, branch, commit string) (commonIface.FunctionInstance, vm.Runtime, interface{}, error) {
-	return f.instantiate(ctx, branch, commit)
+	resChan := make(chan instanceRequestResponse)
+	f.instanceRequest <- instanceRequest{
+		ctx:      ctx,
+		branch:   branch,
+		commit:   commit,
+		response: resChan,
+	}
+
+	shadow := <-resChan
+	return shadow.fI, shadow.runtime, shadow.plugin, shadow.err
 }
 
 // Instantiate method returns a Function instance with channels for getting a runtime, and plugin.
-func (f *Function) instantiate(ctx commonIface.FunctionContext, branch, commit string) (commonIface.FunctionInstance, vm.Runtime, interface{}, error) {
+func (f *Function) instantiate(ctx commonIface.FunctionContext, branch, commit string) (*FunctionInstance, *metricRuntime, interface{}, error) {
 	fI := &FunctionInstance{
 		project:     ctx.Project,
 		application: ctx.Application,
@@ -36,8 +45,9 @@ func (f *Function) instantiate(ctx commonIface.FunctionContext, branch, commit s
 		path:        path.Join(ctx.Project, ctx.Config.Id),
 	}
 
+	service := f.serviceable.Service()
 	_context, err := vmContext.New(
-		f.srv.Context(),
+		service.Context(),
 		vmContext.Project(ctx.Project),
 		vmContext.Application(ctx.Application),
 		vmContext.Resource(fI.config.Id),
@@ -57,11 +67,11 @@ func (f *Function) instantiate(ctx commonIface.FunctionContext, branch, commit s
 			)),
 	}
 
-	if f.srv.Verbose() {
+	if service.Verbose() {
 		config.Output = vm.Buffer
 	}
 
-	instance, err := f.srv.Vm().New(_context, config)
+	instance, err := service.Vm().New(_context, config)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("creating new vm instance failed with: %s", err)
 	}
@@ -72,7 +82,7 @@ func (f *Function) instantiate(ctx commonIface.FunctionContext, branch, commit s
 
 	}
 
-	for _, plug := range f.srv.Orbitals() {
+	for _, plug := range service.Orbitals() {
 		if _, _, err = runtime.Attach(plug); err != nil {
 			return nil, nil, nil, fmt.Errorf("attaching plugin %s failed with: %w", plug.Name(), err)
 		}
@@ -88,5 +98,5 @@ func (f *Function) instantiate(ctx commonIface.FunctionContext, branch, commit s
 		return nil, nil, nil, fmt.Errorf("attaching plugins failed with: %s", err)
 	}
 
-	return fI, runtime, plugin, nil
+	return fI, &metricRuntime{Runtime: runtime, f: f}, plugin, nil
 }

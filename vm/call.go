@@ -22,7 +22,7 @@ func (f *FunctionInstance) moduleName() (string, error) {
 		if strings.HasPrefix(source, librarySpec.PathVariable.String()) {
 			libId := strings.TrimPrefix(source, librarySpec.PathVariable.String()+"/")
 
-			_library, err := f.parent.srv.Tns().Fetch(librarySpec.Tns().NameIndex(libId))
+			_library, err := f.parent.serviceable.Service().Tns().Fetch(librarySpec.Tns().NameIndex(libId))
 			if err != nil {
 				return "", fmt.Errorf("fetching library name for libraryId: `%s` failed with: %s", libId, err)
 			}
@@ -56,12 +56,12 @@ func (f *FunctionInstance) Call(runtime vm.Runtime, id interface{}) error {
 		return fmt.Errorf("calling function `%s` for function `%s` failed with: %s", f.config.Call, f.config.Name, err.Error())
 	}
 
-	ctx, ctxC := context.WithTimeout(f.parent.srv.Context(), time.Duration(time.Nanosecond*time.Duration(f.config.Timeout)))
+	ctx, ctxC := context.WithTimeout(f.parent.serviceable.Service().Context(), time.Duration(time.Nanosecond*time.Duration(f.config.Timeout)))
 
 	defer ctxC()
 
 	ret := fx.Call(ctx, id)
-	if f.parent.srv.Verbose() {
+	if f.parent.serviceable.Service().Verbose() {
 		defer func() {
 			fmt.Println("\n\nERROR: ")
 			io.Copy(os.Stdout, runtime.Stderr())

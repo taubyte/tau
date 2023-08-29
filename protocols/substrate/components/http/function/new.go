@@ -50,7 +50,7 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 	}
 
 	// TODO: Shouldn't be .function
-	f.function = tvm.New(f.srv, f)
+	f.function = tvm.New(f.instanceCtx, f)
 
 	return f, nil
 }

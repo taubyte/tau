@@ -3,31 +3,24 @@ package tvm
 import (
 	"context"
 	"sync/atomic"
+	"time"
 
-	"github.com/taubyte/go-interfaces/services/substrate"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
-	"github.com/taubyte/go-interfaces/vm"
 )
 
-type metricRuntime struct {
-	vm.Runtime
-	f *Function
-}
-
-func (mr *metricRuntime) Close() {
+func (mr *metricRuntime) Close() error {
 	mr.f.closedRuntime()
-	mr.Runtime.Close()
+	return mr.Runtime.Close()
 }
 
 func (f *Function) closedRuntime() {
 	atomic.AddUint64(&f.runtimeClosedCount, 1)
 }
 
-func New(ctx context.Context, srv substrate.Service, serviceable commonIface.Serviceable) commonIface.Function {
+func New(ctx context.Context, serviceable commonIface.Serviceable) commonIface.Function {
 	f := &Function{
-		srv:            srv,
-		serviceable:    serviceable,
-		intanceRequest: make(chan instanceRequest, MaxIntanceRequest),
+		serviceable:     serviceable,
+		instanceRequest: make(chan instanceRequest, MaxInstanceRequest),
 	}
 
 	go func() {
@@ -35,20 +28,26 @@ func New(ctx context.Context, srv substrate.Service, serviceable commonIface.Ser
 		for {
 			select {
 			case <-ctx.Done():
-				for req := range f.intanceRequest {
+				for req := range f.instanceRequest {
 					if req.response != nil {
 						req.response <- instanceRequestResponse{
 							err: ctx.Err(),
 						}
 					}
 				}
-			case req := <-f.intanceRequest:
+			case req := <-f.instanceRequest:
 				atomic.AddUint64(&f.instanceReqCount, 1)
 				res := instanceRequestResponse{}
 				res.fI, res.runtime, res.plugin, res.err = f.instantiate(req.ctx, req.branch, req.commit)
+				go func() {
+					<-time.After(ShadowTTL)
+					res.runtime.Close()
+				}()
 				atomic.AddUint64(&f.runtimeCount, 1)
 				req.response <- res
 			}
 		}
 	}()
+
+	return f
 }

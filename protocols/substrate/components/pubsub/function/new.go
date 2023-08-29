@@ -43,6 +43,6 @@ func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Fu
 		return nil, fmt.Errorf("validating function with id: `%s` failed with: %s", f.config.Id, err)
 	}
 
-	f.function = tvm.New(srv, f)
+	f.function = tvm.New(f.instanceCtx, f)
 	return f, nil
 }

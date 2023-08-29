@@ -46,6 +46,6 @@ func New(srv iface.Service, config structureSpec.Function, matcher *iface.MatchD
 		return nil, fmt.Errorf("getting service for p2p function with id: `%s` failed with: %s", f.config.Id, err)
 	}
 
-	f.function = tvm.New(srv, f)
+	f.function = tvm.New(f.instanceCtx, f)
 	return f, nil
 }
