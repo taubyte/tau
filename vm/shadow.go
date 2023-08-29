@@ -46,7 +46,7 @@ func initShadow(ctx context.Context, s *shadows) {
 					wg.Wait()
 				}
 				// cool off
-				time.Sleep(time.Second)
+				time.Sleep(10 * time.Second)
 
 			case <-time.After(5 * time.Minute):
 				// cleanup
