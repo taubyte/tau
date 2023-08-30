@@ -9,18 +9,9 @@ import (
 	vmContext "github.com/taubyte/vm/context"
 )
 
-func roundedUpDivWithUpperLimit(val, chunkSize, limit uint64) uint64 {
-	count := val / chunkSize
-	if val%chunkSize != 0 {
-		count++
-	}
-	if count > limit {
-		count = limit
-	}
-
-	return count
-}
-
+/*
+Instantiate returns a runtime, plugin api, and error
+*/
 func (w *WasmModule) Instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
 	shadow, err := w.shadows.get()
 	if err != nil {
@@ -31,7 +22,7 @@ func (w *WasmModule) Instantiate() (runtime vm.Runtime, pluginApi interface{}, e
 }
 
 /*
-Instantiate method initializes the wasm runtime and attaches plugins.
+instantiate method initializes the wasm runtime and attaches plugins.
 Returns the runtime, plugin api, and error
 */
 func (w *WasmModule) instantiate() (runtime *metricRuntime, pluginApi interface{}, err error) {

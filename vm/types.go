@@ -10,12 +10,11 @@ import (
 	structureSpec "github.com/taubyte/go-specs/structure"
 )
 
-var MaxInstanceRequest = 1024 * 64
-var ShadowBuff uint64 = 10
-
 type shadows struct {
+	ctx       context.Context
+	ctxC      context.CancelFunc
 	parent    *WasmModule
-	instances chan *instanceShadow
+	instances chan *shadowInstance
 	gcLock    sync.RWMutex
 
 	more chan struct{}
@@ -31,7 +30,7 @@ type WasmModule struct {
 	shadows shadows
 }
 
-type instanceShadow struct {
+type shadowInstance struct {
 	creation  time.Time
 	runtime   vm.Runtime
 	pluginApi interface{}
@@ -42,12 +41,3 @@ type metricRuntime struct {
 	vm.Runtime
 	wm *WasmModule
 }
-
-// type instanceRequest struct {
-// 	response chan<- instanceRequestResponse
-// }
-
-// type instanceRequestResponse struct {
-// 	instanceShadow
-// 	err error
-// }

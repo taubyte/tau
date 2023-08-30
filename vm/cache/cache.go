@@ -106,6 +106,7 @@ func (c *Cache) Get(matcher iface.MatchDefinition, ops iface.GetOptions) ([]ifac
 func (c *Cache) Remove(serviceable iface.Serviceable) {
 	c.locker.Lock()
 	delete(c.cacheMap[serviceable.Matcher().CachePrefix()], serviceable.Id())
+	serviceable.Close()
 	c.locker.Unlock()
 }
 

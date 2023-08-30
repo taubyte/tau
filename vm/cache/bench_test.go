@@ -18,14 +18,22 @@ dream inject importProdProject \
 Then run this test
 */
 
-var testIterations = 1000
+var (
+	testIterations = 1000
+	domain         = "http://hal.computers.com:9630"
+	path           = "ping"
+)
+
+func init() {
+	domain = "https://fto71a120.g.noose.ink"
+}
 
 func TestParallelismBasic(t *testing.T) {
 	t.Skip("need to run as a dreamland test")
 	err := ParallelGetWithBodyCheck(
 		testIterations,
-		GetTester{Url: "http://hal.computers.com:9630", FailingResponse: &ResponseCheck{Body: []byte("pong")}},
-		GetTester{Url: "http://hal.computers.com:9630/ping", PassingResponse: &ResponseCheck{Body: []byte("pong")}},
+		GetTester{Url: domain, FailingResponse: &ResponseCheck{Body: []byte("pong")}},
+		GetTester{Url: domain + "/" + path, PassingResponse: &ResponseCheck{Body: []byte("pong")}},
 	)
 	if err != nil {
 		t.Error(err)
@@ -36,7 +44,7 @@ func TestParallelismBasic(t *testing.T) {
 func TestParallelismWeb(t *testing.T) {
 	t.Skip("need to run as a dreamland test")
 	now := time.Now()
-	err := ParallelGetWithBodyCheck(testIterations, GetTester{Url: "http://hal.computers.com:9630", FailingResponse: &ResponseCheck{Body: []byte("pong")}})
+	err := ParallelGetWithBodyCheck(testIterations, GetTester{Url: domain, FailingResponse: &ResponseCheck{Body: []byte("pong")}})
 	if err != nil {
 		t.Error(err)
 		return
@@ -46,9 +54,8 @@ func TestParallelismWeb(t *testing.T) {
 }
 
 func TestParallelismFunc(t *testing.T) {
-	t.Skip("need to run as a dreamland test")
 	now := time.Now()
-	err := ParallelGetWithBodyCheck(testIterations, GetTester{Url: "http://hal.computers.com:9630/ping", PassingResponse: &ResponseCheck{Body: []byte("pong")}})
+	err := ParallelGetWithBodyCheck(testIterations, GetTester{Url: domain + "/" + path, PassingResponse: &ResponseCheck{Body: []byte("pong0")}})
 	if err != nil {
 		t.Error(err)
 		return
