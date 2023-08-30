@@ -21,9 +21,13 @@ func roundedUpDivWithUpperLimit(val, chunkSize, limit uint64) uint64 {
 	return count
 }
 
-func (w *WasmModule) Instantiate() (runtime *metricRuntime, pluginApi interface{}, err error) {
-	// send stuff to channel instead
-	return w.instantiate()
+func (w *WasmModule) Instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
+	shadow, err := w.shadows.get()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return shadow.runtime, shadow.pluginApi, nil
 }
 
 /*

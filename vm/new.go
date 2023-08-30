@@ -3,6 +3,7 @@ package tvm
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 )
@@ -17,14 +18,55 @@ func New(ctx context.Context, serviceable commonIface.Serviceable, branch, commi
 			commit:      commit,
 		}
 
-		// // w.initShadow
-		// initShadow(ctx, &w.shadows)
+		// w.initShadow
+		w.initShadow()
 		// w.startInstanceProducer()
 
 		return w, nil
 	}
 
 	return nil, fmt.Errorf("serviceable `%s` function structure is nil", serviceable.Id())
+}
+
+// maybe export check and see
+func (w *WasmModule) initShadow() {
+	w.shadows = shadows{
+		instances: make(chan *instanceShadow, 1024),
+		more:      make(chan struct{}),
+		parent:    w,
+	}
+
+	go func() {
+		// defer clean up
+		var errCount int
+		for {
+			select {
+			case <-w.ctx.Done():
+				return
+			case <-w.shadows.more:
+				if errCount < 10 {
+					var wg sync.WaitGroup
+					for i := 0; i < 10; i++ {
+						if errCount > 10 {
+							break
+						}
+						wg.Add(1)
+						go func() {
+							defer wg.Done()
+							shadow, err := w.shadows.newInstance()
+							if err != nil {
+								// log
+								errCount++
+								return
+							}
+							w.shadows.instances <- shadow
+						}()
+					}
+					wg.Wait()
+				}
+			}
+		}
+	}()
 }
 
 // func (f *WasmModule) startInstanceProducer() {

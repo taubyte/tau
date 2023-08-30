@@ -2,6 +2,7 @@ package tvm
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
@@ -12,6 +13,14 @@ import (
 var MaxInstanceRequest = 1024 * 64
 var ShadowBuff uint64 = 10
 
+type shadows struct {
+	parent    *WasmModule
+	instances chan *instanceShadow
+	gcLock    sync.RWMutex
+
+	more chan struct{}
+}
+
 type WasmModule struct {
 	serviceable commonIface.Serviceable
 	ctx         context.Context
@@ -19,26 +28,26 @@ type WasmModule struct {
 	branch      string
 	commit      string
 
-	// shadows shadows
-}
-
-type instanceRequest struct {
-	response chan<- instanceRequestResponse
+	shadows shadows
 }
 
 type instanceShadow struct {
-	creation time.Time
-	fI       WasmModule
-	runtime  vm.Runtime
-	plugin   interface{}
+	creation  time.Time
+	runtime   vm.Runtime
+	pluginApi interface{}
 }
 
-type instanceRequestResponse struct {
-	instanceShadow
-	err error
-}
-
+// Might just remove this for now, not really using this functionality
 type metricRuntime struct {
 	vm.Runtime
 	wm *WasmModule
 }
+
+// type instanceRequest struct {
+// 	response chan<- instanceRequestResponse
+// }
+
+// type instanceRequestResponse struct {
+// 	instanceShadow
+// 	err error
+// }
