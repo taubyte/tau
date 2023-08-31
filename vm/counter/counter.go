@@ -26,7 +26,6 @@ func ErrorWrapper(serviceable components.Serviceable, startTime time.Time, coldS
 				doneTime := time.Now()
 				var skipExecution bool
 				basePath := counters.NewPath(path.Join(serviceable.Project(), serviceable.Id()))
-
 				totalTime := doneTime.Sub(startTime).Nanoseconds()
 
 				if gerr != nil {
