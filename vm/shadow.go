@@ -4,7 +4,11 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/ipfs/go-log/v2"
 )
+
+var logger = log.Logger("substrate.service.vm")
 
 func (w *WasmModule) initShadow() {
 	w.shadows = shadows{
@@ -35,7 +39,7 @@ func (w *WasmModule) initShadow() {
 						defer wg.Done()
 						shadow, err := w.shadows.newInstance()
 						if err != nil {
-							// log
+							logger.Errorf("creating new shadow instance failed with: %s", err.Error())
 							errCount++
 							return
 						}
