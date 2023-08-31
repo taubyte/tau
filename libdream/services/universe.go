@@ -116,12 +116,17 @@ func (u *Universe) RunFixture(name string, params ...interface{}) error {
 func (u *Universe) StartWithConfig(mainConfig *common.Config) error {
 	errChan := make(chan error)
 	var gErr error
-	go func() {
-		gErr = <-errChan
-		logger.Errorf("Error in start with config: %v", gErr)
-	}()
 
-	var wg sync.WaitGroup
+	var errWg sync.WaitGroup
+	errWg.Add(1)
+	go func() {
+		defer errWg.Done()
+		for err := range errChan {
+			if err != nil {
+				gErr = err
+			}
+		}
+	}()
 
 	privKey, pubKey, err := generateDVKeys()
 	if err != nil {
@@ -133,6 +138,7 @@ func (u *Universe) StartWithConfig(mainConfig *common.Config) error {
 		return err
 	}
 
+	var wg sync.WaitGroup
 	for service, config := range mainConfig.Services {
 		logger.Infof("Service %s with config:%#v\n", service, config)
 
@@ -165,6 +171,9 @@ func (u *Universe) StartWithConfig(mainConfig *common.Config) error {
 	}
 
 	wg.Wait()
+	close(errChan)
+
+	errWg.Wait()
 	return gErr
 }
 
