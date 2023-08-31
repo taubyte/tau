@@ -1,4 +1,4 @@
-package tvm
+package vm
 
 func roundedUpDivWithUpperLimit(val, chunkSize, limit uint64) uint64 {
 	count := val / chunkSize
