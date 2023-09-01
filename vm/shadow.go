@@ -18,11 +18,22 @@ func (w *WasmModule) initShadow() {
 	}
 	w.shadows.ctx, w.shadows.ctxC = context.WithCancel(w.ctx)
 	ticker := time.NewTicker(ShadowCleanInterval)
+	coolDown := time.NewTicker(InstanceErrorCoolDown)
 	go func() {
-		defer w.shadows.close()
+		defer func() {
+			w.shadows.ctxC()
+			close(w.shadows.instances)
+			close(w.shadows.more)
+
+			w.serviceable.Service().Cache().Remove(w.serviceable)
+		}()
 		var errCount uint64
 		for {
 			select {
+			case <-coolDown.C:
+				if errCount > 0 {
+					errCount = errCount / 2
+				}
 			case <-ticker.C:
 				w.shadows.gc()
 			case <-w.shadows.ctx.Done():
@@ -30,13 +41,13 @@ func (w *WasmModule) initShadow() {
 			case <-w.shadows.more:
 				var wg sync.WaitGroup
 				for i := 0; i < ShadowBuff; i++ {
-					if errCount >= InstanceMaxError {
-						w.shadows.close()
-						return
-					}
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
+						if errCount >= InstanceMaxError {
+							return
+						}
+
 						shadow, err := w.shadows.newInstance()
 						if err != nil {
 							logger.Errorf("creating new shadow instance failed with: %s", err.Error())
@@ -51,6 +62,9 @@ func (w *WasmModule) initShadow() {
 					}()
 				}
 				wg.Wait()
+				if errCount >= InstanceMaxError {
+					return
+				}
 			}
 		}
 	}()
@@ -72,7 +86,7 @@ func (s *shadows) get() (*shadowInstance, error) {
 
 func (s *shadows) gc() {
 	now := time.Now()
-	shadowInstances := make([]*shadowInstance, len(s.instances), InstanceMaxRequests)
+	shadowInstances := make([]*shadowInstance, 0, InstanceMaxRequests)
 	defer func() {
 		for _, instance := range shadowInstances {
 			s.instances <- instance
@@ -82,20 +96,13 @@ func (s *shadows) gc() {
 	for {
 		select {
 		case instance := <-s.instances:
-			if instance != nil && instance.creation.Sub(now) < ShadowMaxAge {
+			if instance != nil && now.Sub(instance.creation) < ShadowMaxAge {
 				shadowInstances = append(shadowInstances, instance)
 			}
 		default:
 			return
 		}
 	}
-}
-
-func (s *shadows) close() {
-	close(s.instances)
-	close(s.more)
-
-	s.parent.serviceable.Service().Cache().Remove(s.parent.serviceable)
 }
 
 func (s *shadows) keep() {

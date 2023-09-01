@@ -5,12 +5,17 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/utils/id"
 	"gotest.tools/v3/assert"
 )
 
+func init() {
+	log.SetAllLoggers(log.LevelDPanic)
+}
+
 func TestInstantiate(t *testing.T) {
-	vmModule, err := New(context.Background(), &mockServiceable{}, "master", id.Generate())
+	vmModule, err := New(context.Background(), newMockServiceable(), "master", id.Generate())
 	assert.NilError(t, err)
 
 	rt, _, err := vmModule.Instantiate()
@@ -35,22 +40,9 @@ func TestInstantiate(t *testing.T) {
 	}
 }
 
-func TestShadowClose(t *testing.T) {
-	vmModule, err := New(context.Background(), &mockServiceable{}, "master", id.Generate())
-	assert.NilError(t, err)
-
-	vmModule.shadows.close()
-
-	_, ok := <-vmModule.shadows.instances
-	assert.Equal(t, ok, false)
-
-	_, ok = <-vmModule.shadows.more
-	assert.Equal(t, ok, false)
-}
-
 func TestShadowContextCancel(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
-	vmModule, err := New(ctx, &mockServiceable{}, "master", id.Generate())
+	vmModule, err := New(ctx, newMockServiceable(), "master", id.Generate())
 	assert.NilError(t, err)
 
 	ctxC()
@@ -66,15 +58,31 @@ func TestShadowGC(t *testing.T) {
 	cleanInterval := ShadowCleanInterval
 	maxAge := ShadowMaxAge
 
-	ShadowCleanInterval = 250 * time.Millisecond
-	ShadowMaxAge = 100 * time.Millisecond
+	ShadowCleanInterval = 500 * time.Millisecond
+	ShadowMaxAge = 750 * time.Millisecond
 	defer func() {
 		ShadowCleanInterval = cleanInterval
 		ShadowMaxAge = maxAge
 	}()
 
-	vmModule, err := New(context.Background(), &mockServiceable{}, "master", id.Generate())
+	vmModule, err := New(context.Background(), newMockServiceable(), "master", id.Generate())
 	assert.NilError(t, err)
+
+	vmModule.shadows.more <- struct{}{}
+	<-time.After(550 * time.Millisecond)
+
+	var shadowCount int
+	for shadowCount < ShadowBuff {
+		select {
+		case <-vmModule.shadows.instances:
+			shadowCount++
+		case <-time.After(1 * time.Second):
+			if shadowCount != ShadowBuff {
+				t.Errorf("expected %d shadows got %d", shadowCount, ShadowBuff)
+				return
+			}
+		}
+	}
 
 	vmModule.shadows.more <- struct{}{}
 	<-time.After(1 * time.Second)
@@ -85,5 +93,67 @@ func TestShadowGC(t *testing.T) {
 		return
 	case <-time.After(1 * time.Second):
 	}
+}
 
+func TestMaxError(t *testing.T) {
+	serviceable := newMockServiceable()
+	serviceable.service.vm.failInstance = true
+
+	vmModule, err := New(context.Background(), serviceable, "master", id.Generate())
+	assert.NilError(t, err)
+
+	_, _, err = vmModule.Instantiate()
+	assert.ErrorIs(t, err, errorTest)
+
+	vmModule.shadows.more <- struct{}{}
+	if _, ok := <-vmModule.shadows.instances; ok {
+		t.Error("expected expected instances to close upon max errors")
+		return
+	}
+
+	vmModule.initShadow()
+	maxErrors := InstanceMaxError
+	InstanceMaxError = 5
+	defer func() {
+		InstanceMaxError = maxErrors
+	}()
+
+	vmModule.shadows.more <- struct{}{}
+	if _, ok := <-vmModule.shadows.instances; ok {
+		t.Error("expected expected instances to close upon max errors")
+		return
+	}
+}
+
+func TestCoolDown(t *testing.T) {
+	serviceable := newMockServiceable()
+	serviceable.service.vm.failInstance = true
+	InstanceErrorCoolDown = 750 * time.Millisecond
+
+	vmModule, err := New(context.Background(), serviceable, "master", id.Generate())
+	assert.NilError(t, err)
+	maxErrors := InstanceMaxError
+	InstanceMaxError = 19
+	defer func() {
+		InstanceMaxError = maxErrors
+	}()
+
+	vmModule.shadows.more <- struct{}{}
+	select {
+	case _, ok := <-vmModule.shadows.instances:
+		if !ok {
+			t.Error("expected open channel")
+			return
+		}
+	case <-time.After(1 * time.Second):
+		vmModule.shadows.more <- struct{}{}
+		select {
+		case _, ok := <-vmModule.shadows.instances:
+			if !ok {
+				t.Error("expected open channel")
+				return
+			}
+		case <-time.After(1 * time.Second):
+		}
+	}
 }
