@@ -114,19 +114,7 @@ func (u *Universe) RunFixture(name string, params ...interface{}) error {
 
 // Start universe based on config
 func (u *Universe) StartWithConfig(mainConfig *common.Config) error {
-	errChan := make(chan error)
-	var gErr error
-
-	var errWg sync.WaitGroup
-	errWg.Add(1)
-	go func() {
-		defer errWg.Done()
-		for err := range errChan {
-			if err != nil {
-				gErr = err
-			}
-		}
-	}()
+	errChan := make(chan error, len(mainConfig.Services)+len(mainConfig.Simples))
 
 	privKey, pubKey, err := generateDVKeys()
 	if err != nil {
@@ -161,20 +149,30 @@ func (u *Universe) StartWithConfig(mainConfig *common.Config) error {
 		if !config.Disabled {
 			wg.Add(1)
 			go func(name string, config common.SimpleConfig) {
+				defer wg.Done()
 				_, err := u.CreateSimpleNode(name, &config)
 				if err != nil {
 					errChan <- fmt.Errorf("starting simple `%s` failed with: %s", name, err)
 				}
-				wg.Done()
 			}(name, config)
 		}
 	}
 
 	wg.Wait()
+
 	close(errChan)
 
-	errWg.Wait()
-	return gErr
+	if len(errChan) > 0 {
+		var errString string
+		for _err := range errChan {
+			if err != nil {
+				errString += "\n" + _err.Error()
+			}
+		}
+		return errors.New(errString)
+	}
+
+	return nil
 }
 
 // compatibility
