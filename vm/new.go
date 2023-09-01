@@ -4,15 +4,15 @@ import (
 	"context"
 	"fmt"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	components "github.com/taubyte/go-interfaces/services/substrate/components"
 )
 
-func New(ctx context.Context, serviceable commonIface.Serviceable, branch, commit string) (*WasmModule, error) {
-	if structure := serviceable.Structure(); structure != nil {
+func New(ctx context.Context, serviceable components.FunctionServiceable, branch, commit string) (*WasmModule, error) {
+	if config := serviceable.Config(); config != nil {
 		w := &WasmModule{
 			serviceable: serviceable,
 			ctx:         ctx,
-			structure:   structure,
+			structure:   config,
 			branch:      branch,
 			commit:      commit,
 		}

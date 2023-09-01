@@ -88,7 +88,7 @@ func (f *Function) Ready() error {
 	return f.readyError
 }
 
-func (f *Function) Structure() *structureSpec.Function {
+func (f *Function) Config() *structureSpec.Function {
 	return &f.config
 }
 

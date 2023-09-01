@@ -78,7 +78,7 @@ func (f *Function) Service() commonIface.ServiceComponent {
 	return f.srv
 }
 
-func (f *Function) Structure() *structureSpec.Function {
+func (f *Function) Config() *structureSpec.Function {
 	return &f.config
 }
 

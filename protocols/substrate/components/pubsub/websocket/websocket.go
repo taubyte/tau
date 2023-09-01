@@ -82,6 +82,6 @@ func (ws *WebSocket) Service() components.ServiceComponent {
 }
 
 // TODO: Fix this
-func (ws *WebSocket) Structure() *structureSpec.Function {
+func (ws *WebSocket) Config() *structureSpec.Function {
 	return nil
 }

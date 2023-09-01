@@ -101,7 +101,7 @@ func (f *Function) Application() string {
 	return f.matcher.Application
 }
 
-func (f *Function) Structure() *structureSpec.Function {
+func (f *Function) Config() *structureSpec.Function {
 	return &f.config
 }
 

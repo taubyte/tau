@@ -57,7 +57,7 @@ type mockCache struct {
 func (*mockServiceable) Project() string                        { return "" }
 func (*mockServiceable) Application() string                    { return "" }
 func (*mockServiceable) Id() string                             { return "" }
-func (*mockServiceable) Structure() *structureSpec.Function     { return &structureSpec.Function{} }
+func (*mockServiceable) Config() *structureSpec.Function        { return &structureSpec.Function{} }
 func (m *mockServiceable) Service() components.ServiceComponent { return m.service }
 func (*mockServiceable) Close()                                 {}
 
