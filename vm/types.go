@@ -2,7 +2,6 @@ package vm
 
 import (
 	"context"
-	"sync"
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
@@ -15,7 +14,7 @@ type shadows struct {
 	ctxC      context.CancelFunc
 	parent    *WasmModule
 	instances chan *shadowInstance
-	gcLock    sync.RWMutex
+	//gcLock    sync.RWMutex
 
 	more chan struct{}
 }

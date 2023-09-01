@@ -53,9 +53,6 @@ func (w *WasmModule) initShadow() {
 }
 
 func (s *shadows) get() (*shadowInstance, error) {
-	s.gcLock.RLock()
-	defer s.gcLock.RUnlock()
-
 	select {
 	case next := <-s.instances:
 		defer s.keep()
@@ -70,24 +67,27 @@ func (s *shadows) get() (*shadowInstance, error) {
 }
 
 func (s *shadows) gc() {
-	s.gcLock.Lock()
-	defer s.gcLock.Unlock()
-	close(s.instances)
-
 	now := time.Now()
-	shadowInstances := make(chan *shadowInstance, InstanceMaxRequests)
-	for instance := range s.instances {
-		if instance != nil && instance.creation.Sub(now) < ShadowMaxAge {
-			shadowInstances <- instance
+	shadowInstances := make([]*shadowInstance, len(s.instances), InstanceMaxRequests)
+	defer func() {
+		for _, instance := range shadowInstances {
+			s.instances <- instance
+		}
+	}()
+
+	for {
+		select {
+		case instance := <-s.instances:
+			if instance != nil && instance.creation.Sub(now) < ShadowMaxAge {
+				shadowInstances = append(shadowInstances, instance)
+			}
+		default:
+			return
 		}
 	}
-
-	s.instances = shadowInstances
 }
 
 func (s *shadows) close() {
-	s.gcLock.Lock()
-	defer s.gcLock.Unlock()
 	close(s.instances)
 	close(s.more)
 
