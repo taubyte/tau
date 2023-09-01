@@ -44,20 +44,18 @@ func (w *WasmModule) initShadow() {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						if errCount >= InstanceMaxError {
-							return
-						}
-
-						shadow, err := w.shadows.newInstance()
-						if err != nil {
-							logger.Errorf("creating new shadow instance failed with: %s", err.Error())
-							errCount++
-							return
-						}
-						select {
-						case <-w.shadows.ctx.Done():
-							return
-						case w.shadows.instances <- shadow:
+						if errCount < InstanceMaxError && len(w.shadows.instances) < InstanceMaxRequests {
+							shadow, err := w.shadows.newInstance()
+							if err != nil {
+								logger.Errorf("creating new shadow instance failed with: %s", err.Error())
+								errCount++
+								return
+							}
+							select {
+							case <-w.shadows.ctx.Done():
+								return
+							case w.shadows.instances <- shadow:
+							}
 						}
 					}()
 				}
