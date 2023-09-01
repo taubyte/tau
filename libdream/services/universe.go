@@ -165,9 +165,7 @@ func (u *Universe) StartWithConfig(mainConfig *common.Config) error {
 	if len(errChan) > 0 {
 		var errString string
 		for _err := range errChan {
-			if err != nil {
-				errString += "\n" + _err.Error()
-			}
+			errString += "\n" + _err.Error()
 		}
 		return errors.New(errString)
 	}
