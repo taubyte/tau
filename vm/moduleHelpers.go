@@ -11,7 +11,7 @@ import (
 	librarySpec "github.com/taubyte/go-specs/library"
 )
 
-func (w *WasmModule) moduleName() (string, error) {
+func (w *DFunc) moduleName() (string, error) {
 	source := w.structure.Source
 	switch source {
 	case ".", "":
@@ -36,7 +36,7 @@ func (w *WasmModule) moduleName() (string, error) {
 	return source, nil
 }
 
-func (w *WasmModule) printRuntimeStack(runtime vm.Runtime, ret vm.Return) {
+func (d *DFunc) printRuntimeStack(runtime vm.Runtime, ret vm.Return) {
 	if runtime != nil {
 		fmt.Println("\n\nERROR: ")
 		io.Copy(os.Stdout, runtime.Stderr())

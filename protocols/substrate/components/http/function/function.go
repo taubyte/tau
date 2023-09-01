@@ -19,7 +19,7 @@ func (f *Function) Project() string {
 }
 
 func (f *Function) Handle(w goHttp.ResponseWriter, r *goHttp.Request, matcher commonIface.MatchDefinition) (t time.Time, err error) {
-	runtime, pluginApi, err := f.module.Instantiate()
+	runtime, pluginApi, err := f.dFunc.Instantiate()
 	if err != nil {
 		return t, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %w", f.config.Name, f.project, f.application, err)
 	}
@@ -40,7 +40,7 @@ func (f *Function) Handle(w goHttp.ResponseWriter, r *goHttp.Request, matcher co
 		return t, fmt.Errorf("exited: %d", val)
 	}
 
-	return time.Now(), f.module.Call(runtime, ev.Id)
+	return time.Now(), f.dFunc.Call(runtime, ev.Id)
 }
 
 func (f *Function) Match(matcher commonIface.MatchDefinition) (currentMatchIndex matcherSpec.Index) {

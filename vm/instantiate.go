@@ -12,8 +12,8 @@ import (
 /*
 Instantiate returns a runtime, plugin api, and error
 */
-func (w *WasmModule) Instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
-	shadow, err := w.shadows.get()
+func (d *DFunc) Instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
+	shadow, err := d.shadows.get()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -25,15 +25,15 @@ func (w *WasmModule) Instantiate() (runtime vm.Runtime, pluginApi interface{}, e
 instantiate method initializes the wasm runtime and attaches plugins.
 Returns the runtime, plugin api, and error
 */
-func (w *WasmModule) instantiate() (runtime *metricRuntime, pluginApi interface{}, err error) {
-	serviceable := w.serviceable
+func (d *DFunc) instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
+	serviceable := d.serviceable
 	context, err := vmContext.New(
-		w.ctx,
+		d.ctx,
 		vmContext.Project(serviceable.Project()),
 		vmContext.Application(serviceable.Application()),
 		vmContext.Resource(serviceable.Id()),
-		vmContext.Commit(w.commit),
-		vmContext.Branch(w.branch),
+		vmContext.Commit(d.commit),
+		vmContext.Branch(d.branch),
 	)
 	if err != nil {
 		err = fmt.Errorf("creating vm context failed with: %w", err)
@@ -43,7 +43,7 @@ func (w *WasmModule) instantiate() (runtime *metricRuntime, pluginApi interface{
 	config := vm.Config{
 		MemoryLimitPages: uint32(
 			roundedUpDivWithUpperLimit(
-				w.structure.Memory,
+				d.structure.Memory,
 				uint64(vm.MemoryPageSize),
 				uint64(vm.MemoryLimitPages),
 			),
@@ -70,21 +70,21 @@ func (w *WasmModule) instantiate() (runtime *metricRuntime, pluginApi interface{
 	}()
 	toCloseIfErr = append(toCloseIfErr, instance)
 
-	rt, err := instance.Runtime(nil)
+	runtime, err = instance.Runtime(nil)
 	if err != nil {
 		err = fmt.Errorf("creating new runtime failed with: %w", err)
 		return
 	}
-	toCloseIfErr = append(toCloseIfErr, rt)
+	toCloseIfErr = append(toCloseIfErr, runtime)
 
 	for _, plugIn := range serviceable.Service().Orbitals() {
-		if _, _, err = rt.Attach(plugIn); err != nil {
+		if _, _, err = runtime.Attach(plugIn); err != nil {
 			err = fmt.Errorf("attaching satellite plugin `%s` to runtime failed with: %w", plugIn.Name(), err)
 			return
 		}
 	}
 
-	sdkPi, _, err := rt.Attach(plugins.Plugin())
+	sdkPi, _, err := runtime.Attach(plugins.Plugin())
 	if err != nil {
 		err = fmt.Errorf("attaching core plugins to runtime failed with: %w", err)
 		return
@@ -94,8 +94,6 @@ func (w *WasmModule) instantiate() (runtime *metricRuntime, pluginApi interface{
 		err = fmt.Errorf("loading plugin api failed with: %w", err)
 		return
 	}
-
-	runtime = &metricRuntime{Runtime: rt, wm: w}
 
 	return
 }

@@ -30,7 +30,7 @@ type Function struct {
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
 
-	module *vm.WasmModule
+	dFunc *vm.DFunc
 }
 
 func (f *Function) Close() {

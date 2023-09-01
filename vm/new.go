@@ -7,9 +7,9 @@ import (
 	components "github.com/taubyte/go-interfaces/services/substrate/components"
 )
 
-func New(ctx context.Context, serviceable components.FunctionServiceable, branch, commit string) (*WasmModule, error) {
+func New(ctx context.Context, serviceable components.FunctionServiceable, branch, commit string) (*DFunc, error) {
 	if config := serviceable.Config(); config != nil {
-		w := &WasmModule{
+		dFunc := &DFunc{
 			serviceable: serviceable,
 			ctx:         ctx,
 			structure:   config,
@@ -17,9 +17,9 @@ func New(ctx context.Context, serviceable components.FunctionServiceable, branch
 			commit:      commit,
 		}
 
-		w.initShadow()
+		dFunc.initShadow()
 
-		return w, nil
+		return dFunc, nil
 	}
 
 	return nil, fmt.Errorf("serviceable `%s` function structure is nil", serviceable.Id())

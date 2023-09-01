@@ -12,14 +12,14 @@ import (
 type shadows struct {
 	ctx       context.Context
 	ctxC      context.CancelFunc
-	parent    *WasmModule
+	parent    *DFunc
 	instances chan *shadowInstance
 	//gcLock    sync.RWMutex
 
 	more chan struct{}
 }
 
-type WasmModule struct {
+type DFunc struct {
 	serviceable commonIface.Serviceable
 	ctx         context.Context
 	structure   *structureSpec.Function
@@ -33,10 +33,4 @@ type shadowInstance struct {
 	creation  time.Time
 	runtime   vm.Runtime
 	pluginApi interface{}
-}
-
-// Might just remove this for now, not really using this functionality
-type metricRuntime struct {
-	vm.Runtime
-	wm *WasmModule
 }
