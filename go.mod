@@ -2,8 +2,6 @@ module github.com/taubyte/tau
 
 go 1.19
 
-replace github.com/taubyte/go-interfaces => ../go-interfaces
-
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -37,7 +35,7 @@ require (
 	github.com/taubyte/cli-common v0.1.1
 	github.com/taubyte/config-compiler v0.4.6
 	github.com/taubyte/domain-validation v1.0.1
-	github.com/taubyte/go-interfaces v0.2.13
+	github.com/taubyte/go-interfaces v0.2.14-0.20230901215338-f4991db4f44d
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
