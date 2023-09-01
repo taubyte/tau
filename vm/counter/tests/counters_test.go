@@ -125,5 +125,5 @@ func TestCounters(t *testing.T) {
 		return
 	}
 
-	fmt.Printf("Ran ping function %d times with an average execution time of %s", iterations, report.Success.Execution.Average())
+	fmt.Printf("Ran ping function %d times with an average execution time of %s\n", iterations, report.Success.Execution.Average())
 }
