@@ -6,9 +6,11 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
+	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
-	tvm "github.com/taubyte/tau/vm"
+	"github.com/taubyte/tau/vm"
+	"github.com/taubyte/tau/vm/cache"
 )
 
 func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Function, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {
@@ -29,7 +31,16 @@ func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Fu
 		f.readyCtxC()
 	}()
 
-	_f, err := srv.Cache().Add(f)
+	if f.Function, err = vm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
+		return nil, fmt.Errorf("initializing vm module failed with: %w", err)
+	}
+
+	f.assetId, err = cache.ResolveAssetCid(f, spec.DefaultBranch)
+	if err != nil {
+		return nil, fmt.Errorf("getting asset id failed with: %w", err)
+	}
+
+	_f, err := srv.Cache().Add(f, spec.DefaultBranch)
 	if err != nil {
 		return nil, fmt.Errorf("adding pubsub function serviceable failed with: %s", err)
 	}
@@ -37,11 +48,9 @@ func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Fu
 		return _f, nil
 	}
 
-	err = f.Validate(matcher)
-	if err != nil {
+	if err = f.Validate(matcher); err != nil {
 		return nil, fmt.Errorf("validating function with id: `%s` failed with: %s", f.config.Id, err)
 	}
 
-	f.function = tvm.New(srv, f)
 	return f, nil
 }

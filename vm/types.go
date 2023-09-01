@@ -1,29 +1,38 @@
-package tvm
+package vm
 
 import (
-	"github.com/taubyte/go-interfaces/services/substrate"
+	"context"
+	"time"
+
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	"github.com/taubyte/go-interfaces/vm"
 	structureSpec "github.com/taubyte/go-specs/structure"
 )
 
-var (
-	_ commonIface.Function         = &Function{}
-	_ commonIface.FunctionInstance = &FunctionInstance{}
-)
+type shadows struct {
+	ctx       context.Context
+	ctxC      context.CancelFunc
+	parent    *Function
+	instances chan *shadowInstance
+	//gcLock    sync.RWMutex
+
+	more chan struct{}
+}
 
 type Function struct {
-	srv         substrate.Service
 	serviceable commonIface.Serviceable
+	ctx         context.Context
+	config      *structureSpec.Function
+	branch      string
+	commit      string
+	vmConfig    *vm.Config
+	vmContext   vm.Context
+
+	shadows shadows
 }
 
-type FunctionInstance struct {
-	parent      *Function
-	path        string
-	project     string
-	application string
-	config      structureSpec.Function
-}
-
-func (f *FunctionInstance) Function() commonIface.Function {
-	return f.parent
+type shadowInstance struct {
+	creation  time.Time
+	runtime   vm.Runtime
+	pluginApi interface{}
 }

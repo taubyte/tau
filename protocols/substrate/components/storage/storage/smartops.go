@@ -3,7 +3,6 @@ package storage
 import (
 	"context"
 
-	"github.com/ipfs/go-cid"
 	"github.com/taubyte/go-interfaces/services/substrate/smartops"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 )
@@ -32,6 +31,6 @@ func (s *Store) Application() string {
 	return s.context.ApplicationId
 }
 
-func (s *Store) Project() (cid.Cid, error) {
-	return cid.Decode(s.context.ProjectId)
+func (s *Store) Project() string {
+	return s.context.ProjectId
 }

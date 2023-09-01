@@ -7,37 +7,27 @@ import (
 
 	goHttp "net/http"
 
-	"github.com/ipfs/go-cid"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
-	spec "github.com/taubyte/go-specs/common"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	plugins "github.com/taubyte/vm-core-plugins/taubyte"
 )
 
-func (f *Function) Project() (cid.Cid, error) {
-	return cid.Decode(f.project)
+func (f *Function) Project() string {
+	return f.project
 }
 
 func (f *Function) Handle(w goHttp.ResponseWriter, r *goHttp.Request, matcher commonIface.MatchDefinition) (t time.Time, err error) {
-	instance, runtime, plugin, err := f.function.Instantiate(
-		commonIface.FunctionContext{
-			Config:      f.config,
-			Project:     f.project,
-			Application: f.application,
-		},
-		spec.DefaultBranch,
-		f.commit,
-	)
+	runtime, pluginApi, err := f.Instantiate()
 	if err != nil {
-		return t, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %s", f.config.Name, f.project, f.application, err)
+		return t, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %w", f.config.Name, f.project, f.application, err)
 	}
 	defer runtime.Close()
 
-	sdk, ok := plugin.(plugins.Instance)
+	sdk, ok := pluginApi.(plugins.Instance)
 	if !ok {
-		return t, fmt.Errorf("taubyte Plugin is not a plugin instance `%T`", plugin)
+		return t, fmt.Errorf("taubyte Plugin is not a plugin instance `%T`", pluginApi)
 	}
 
 	ev := sdk.CreateHttpEvent(w, r)
@@ -50,7 +40,7 @@ func (f *Function) Handle(w goHttp.ResponseWriter, r *goHttp.Request, matcher co
 		return t, fmt.Errorf("exited: %d", val)
 	}
 
-	return time.Now(), instance.Call(runtime, ev.Id)
+	return time.Now(), f.Call(runtime, ev.Id)
 }
 
 func (f *Function) Match(matcher commonIface.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
@@ -118,4 +108,8 @@ func (f *Function) CachePrefix() string {
 
 func (f *Function) Application() string {
 	return f.application
+}
+
+func (f *Function) AssetId() string {
+	return f.assetId
 }

@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 
-	"github.com/ipfs/go-cid"
 	"github.com/taubyte/go-interfaces/services/substrate/smartops"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 )
@@ -28,6 +27,6 @@ func (f *Database) Application() string {
 	return f.dbContext.ApplicationId
 }
 
-func (f *Database) Project() (cid.Cid, error) {
-	return cid.Decode(f.dbContext.ProjectId)
+func (f *Database) Project() string {
+	return f.dbContext.ProjectId
 }

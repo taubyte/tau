@@ -20,13 +20,14 @@ type Website struct {
 	config        structureSpec.Website
 	computedPaths map[string][]string
 	root          afero.Fs
-	fileId        string
 
 	matcher     *common.MatchDefinition
 	project     string
 	application string
 	branch      string
 	commit      string
+
+	assetId string
 
 	ctx  context.Context
 	ctxC context.CancelFunc

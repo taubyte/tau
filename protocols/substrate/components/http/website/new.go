@@ -9,6 +9,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-specs/extract"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/vm/cache"
 )
 
 func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) (serviceable commonIface.Serviceable, err error) {
@@ -41,7 +42,12 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 		w.readyCtxC()
 	}()
 
-	_w, err := srv.Cache().Add(w)
+	w.assetId, err = cache.ResolveAssetCid(w, w.branch)
+	if err != nil {
+		return nil, fmt.Errorf("getting asset id failed with: %w", err)
+	}
+
+	_w, err := srv.Cache().Add(w, w.branch)
 	if err != nil {
 		return nil, fmt.Errorf("adding website serviceable failed with: %s", err)
 	}
@@ -49,15 +55,7 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 	w.ctx, w.ctxC = context.WithCancel(w.srv.Context())
 
 	if w != _w {
-		web, ok := _w.(*Website)
-		if ok {
-			err = web.validateAsset()
-			if err != nil {
-				web.ctxC()
-			}
-
-			return _w, nil
-		}
+		return _w, nil
 	}
 
 	err = w.getAsset()

@@ -2,18 +2,11 @@ package cache
 
 import (
 	"fmt"
-	"sync"
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components"
-	"github.com/taubyte/go-interfaces/services/tns"
+	spec "github.com/taubyte/go-specs/common"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 )
-
-// The Cache struct wraps cache methods for use by node-services.
-type Cache struct {
-	cacheMap map[string]map[string]iface.Serviceable
-	locker   sync.RWMutex
-}
 
 // Close safely clears the cache and releases resources.
 //
@@ -37,17 +30,18 @@ func New() *Cache {
 }
 
 // Add method adds the serviceable to the given Cache object.
-func (c *Cache) Add(serviceable iface.Serviceable) (iface.Serviceable, error) {
+func (c *Cache) Add(serviceable iface.Serviceable, branch string) (iface.Serviceable, error) {
 	prefix := serviceable.Matcher().CachePrefix()
 
 	c.locker.RLock()
 	servList, ok := c.cacheMap[prefix]
 	c.locker.RUnlock()
 	if ok {
-		serv, ok := servList[serviceable.Id()]
+		serviceable, ok := servList[serviceable.Id()]
 		if ok {
-			if serv.Match(serviceable.Matcher()) == matcherSpec.HighMatch {
-				return serv, nil
+			if serviceable.Match(serviceable.Matcher()) == matcherSpec.HighMatch {
+
+				return serviceable, nil
 			}
 		}
 	} else {
@@ -68,15 +62,29 @@ func (c *Cache) Add(serviceable iface.Serviceable) (iface.Serviceable, error) {
 }
 
 // Get method gets the list of serviceables from the cache map, where the serviceables that are returned are those with a high match for given match definition.
-func (c *Cache) Get(matcher iface.MatchDefinition) ([]iface.Serviceable, error) {
+func (c *Cache) Get(matcher iface.MatchDefinition, ops iface.GetOptions) ([]iface.Serviceable, error) {
 	var serviceables []iface.Serviceable
 
 	c.locker.RLock()
 	servList, ok := c.cacheMap[matcher.CachePrefix()]
 	c.locker.RUnlock()
 	if ok {
+		matchIndex := matcherSpec.HighMatch
+		if ops.MatchIndex != nil {
+			matchIndex = *ops.MatchIndex
+		}
+		branch := ops.Branch
+		if len(branch) < 1 {
+			branch = spec.DefaultBranch
+		}
+
 		for _, serviceable := range servList {
-			if serviceable.Match(matcher) == matcherSpec.HighMatch {
+			if serviceable.Match(matcher) == matchIndex {
+				if ops.Validation {
+					if err := c.validate(serviceable, branch); err != nil {
+						continue
+					}
+				}
 				serviceables = append(serviceables, serviceable)
 			}
 		}
@@ -93,29 +101,30 @@ func (c *Cache) Get(matcher iface.MatchDefinition) ([]iface.Serviceable, error) 
 func (c *Cache) Remove(serviceable iface.Serviceable) {
 	c.locker.Lock()
 	delete(c.cacheMap[serviceable.Matcher().CachePrefix()], serviceable.Id())
+	serviceable.Close()
 	c.locker.Unlock()
 }
 
-// Validate method checks to see if the serviceable commit matches the current commit.
-func (c *Cache) Validate(serviceables []iface.Serviceable, branch string, tns tns.Client) error {
-	if len(serviceables) > 0 {
-		project, err := serviceables[0].Project()
-		if err != nil {
-			return fmt.Errorf("validating cached pick project id failed with: %s", err)
-		}
+// validate method checks to see if the serviceable commit matches the current commit.
+func (c *Cache) validate(serviceable iface.Serviceable, branch string) error {
+	tnsClient := serviceable.Service().Tns()
+	projectId := serviceable.Project()
+	commit, err := tnsClient.Simple().Commit(projectId, branch)
+	if err != nil {
+		return fmt.Errorf("getting serviceable `%s` commit failed with: %w", serviceable.Id(), err)
+	}
 
-		commit, err := tns.Simple().Commit(project.String(), branch)
-		if err != nil {
-			return err
-		}
+	if serviceable.Commit() != commit {
+		return fmt.Errorf("cached pick commit `%s` is outdated, latest commit is `%s`", serviceable.Commit(), commit)
+	}
 
-		for _, serviceable := range serviceables {
-			if serviceable.Commit() != commit {
-				return fmt.Errorf("cached pick commit `%s` is outdated, latest commit is `%s`", serviceable.Commit(), commit)
-			}
+	cid, err := ResolveAssetCid(serviceable, branch)
+	if err != nil {
+		return fmt.Errorf("getting cached serviceable `%s` cid failed with: %w", serviceable.Id(), err)
+	}
 
-		}
-
+	if serviceable.AssetId() != cid {
+		return fmt.Errorf("serviceable `%s` asset is outdated", serviceable.Id())
 	}
 
 	return nil

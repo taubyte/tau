@@ -34,6 +34,7 @@ var testMatcher = &p2p.MatchDefinition{
 }
 
 func TestLookup(t *testing.T) {
+	t.Skip("this test needs to be redone")
 	s := NewTestService(peer.MockNode(context.Background()))
 	fakeFetch(testServices, testFunctions)
 

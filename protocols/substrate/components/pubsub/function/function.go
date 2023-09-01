@@ -5,11 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ipfs/go-cid"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 
-	spec "github.com/taubyte/go-specs/common"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
@@ -20,28 +18,20 @@ func (f *Function) Commit() string {
 	return f.commit
 }
 
-func (f *Function) Project() (cid.Cid, error) {
-	return cid.Decode(f.matcher.Project)
+func (f *Function) Project() string {
+	return f.matcher.Project
 }
 
 func (f *Function) HandleMessage(msg *pubsub.Message) (t time.Time, err error) {
-	instance, runtime, plugin, err := f.function.Instantiate(
-		components.FunctionContext{
-			Config:      f.config,
-			Project:     f.matcher.Project,
-			Application: f.matcher.Application,
-		},
-		spec.DefaultBranch,
-		f.commit,
-	)
+	runtime, pluginApi, err := f.Instantiate()
 	if err != nil {
 		return t, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %s", f.config.Name, f.matcher.Project, f.matcher.Application, err)
 	}
 	defer runtime.Close()
 
-	sdk, ok := plugin.(plugins.Instance)
+	sdk, ok := pluginApi.(plugins.Instance)
 	if !ok {
-		return t, fmt.Errorf("taubyte Plugin is not a plugin instance `%T`", plugin)
+		return t, fmt.Errorf("taubyte Plugin is not a plugin instance `%T`", pluginApi)
 	}
 
 	ev := sdk.CreatePubsubEvent(msg)
@@ -53,7 +43,7 @@ func (f *Function) HandleMessage(msg *pubsub.Message) (t time.Time, err error) {
 		return t, fmt.Errorf("exited: %d", val)
 	}
 
-	return time.Now(), instance.Call(runtime, ev.Id)
+	return time.Now(), f.Call(runtime, ev.Id)
 }
 
 func (f *Function) Match(matcher components.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
@@ -108,4 +98,8 @@ func (f *Function) MMI() common.MessagingMapItem {
 
 func (f *Function) Service() components.ServiceComponent {
 	return f.srv
+}
+
+func (f *Function) AssetId() string {
+	return f.assetId
 }

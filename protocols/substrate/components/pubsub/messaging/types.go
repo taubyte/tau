@@ -21,6 +21,7 @@ var _ smartops.EventCaller = &Channel{}
 var _ iface.Channel = &Channel{}
 
 func (c *Channel) Type() uint32 {
+	c.Project()
 	return c._type
 }
 

@@ -3,9 +3,9 @@ package function
 import (
 	"context"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/tau/vm"
 )
 
 var _ iface.Serviceable = &Function{}
@@ -17,7 +17,7 @@ type Function struct {
 	serviceConfig      *structureSpec.Service
 	serviceApplication string
 
-	function commonIface.Function
+	assetId string
 
 	matcher *iface.MatchDefinition
 	commit  string
@@ -29,4 +29,6 @@ type Function struct {
 
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
+
+	*vm.Function
 }

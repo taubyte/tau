@@ -91,6 +91,7 @@ func ParallelGetWithBodyCheck(iterations int, toTest ...GetTester) error {
 
 						if code := passingResponse.Code; code != 0 && code != res.StatusCode {
 							errChan <- fmt.Errorf("response status code `%d` does not match expected status code `%d`", res.StatusCode, passingResponse.Code)
+							return
 						}
 					}
 
