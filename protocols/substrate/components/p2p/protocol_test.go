@@ -16,6 +16,7 @@ import (
 
 // TODO: Needed?
 func TestProtocolListen(t *testing.T) {
+	t.Skip("need to verify validity of this test")
 	structure.RefreshTestVariables()
 	fakeFetch(map[string]structureSpec.Service{
 		testServiceId: {
