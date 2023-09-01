@@ -9,7 +9,7 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
-	tvm "github.com/taubyte/tau/vm"
+	"github.com/taubyte/tau/vm"
 )
 
 func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Function, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {
@@ -30,7 +30,7 @@ func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Fu
 		f.readyCtxC()
 	}()
 
-	if f.module, err = tvm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
+	if f.module, err = vm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
 		return nil, fmt.Errorf("initializing vm module failed with: %w", err)
 	}
 

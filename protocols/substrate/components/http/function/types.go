@@ -6,7 +6,7 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
-	tvm "github.com/taubyte/tau/vm"
+	"github.com/taubyte/tau/vm"
 )
 
 type Function struct {
@@ -26,7 +26,7 @@ type Function struct {
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
 
-	module *tvm.WasmModule
+	module *vm.WasmModule
 }
 
 func (f *Function) Close() {

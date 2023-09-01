@@ -5,7 +5,7 @@ import (
 
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	tvm "github.com/taubyte/tau/vm"
+	"github.com/taubyte/tau/vm"
 )
 
 var _ iface.Serviceable = &Function{}
@@ -28,5 +28,5 @@ type Function struct {
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
 
-	module *tvm.WasmModule
+	module *vm.WasmModule
 }

@@ -8,7 +8,7 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	tvm "github.com/taubyte/tau/vm"
+	"github.com/taubyte/tau/vm"
 )
 
 func New(srv iface.Service, config structureSpec.Function, matcher *iface.MatchDefinition) (commonIface.Serviceable, error) {
@@ -28,7 +28,7 @@ func New(srv iface.Service, config structureSpec.Function, matcher *iface.MatchD
 		f.readyCtxC()
 	}()
 
-	if f.module, err = tvm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
+	if f.module, err = vm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
 		return nil, fmt.Errorf("initializing vm module failed with: %w", err)
 	}
 

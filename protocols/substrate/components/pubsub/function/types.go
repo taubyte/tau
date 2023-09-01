@@ -7,7 +7,7 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/pubsub/common"
-	tvm "github.com/taubyte/tau/vm"
+	"github.com/taubyte/tau/vm"
 )
 
 var _ commonIface.Serviceable = &Function{}
@@ -30,7 +30,7 @@ type Function struct {
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
 
-	module *tvm.WasmModule
+	module *vm.WasmModule
 }
 
 func (f *Function) Close() {
