@@ -3,8 +3,8 @@ package vm
 import "time"
 
 var (
-	InstanceMaxRequests   uint64        = 1024 * 64
-	InstanceMaxError      uint64        = 10
+	InstanceMaxRequests   int           = 1024 * 64
+	InstanceMaxError      int           = 10
 	InstanceErrorCoolDown time.Duration = 30 * time.Minute
 
 	ShadowBuff                        = 10

@@ -27,7 +27,7 @@ func (w *WasmModule) initShadow() {
 
 			w.serviceable.Service().Cache().Remove(w.serviceable)
 		}()
-		var errCount uint64
+		var errCount int
 		for {
 			select {
 			case <-coolDown.C:
