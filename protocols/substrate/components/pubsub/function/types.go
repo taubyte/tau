@@ -20,6 +20,8 @@ type Function struct {
 	matcher *common.MatchDefinition
 	commit  string
 
+	assetId string
+
 	mmi common.MessagingMapItem
 
 	readyCtx   context.Context

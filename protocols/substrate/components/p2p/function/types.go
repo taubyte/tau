@@ -17,6 +17,8 @@ type Function struct {
 	serviceConfig      *structureSpec.Service
 	serviceApplication string
 
+	assetId string
+
 	matcher *iface.MatchDefinition
 	commit  string
 

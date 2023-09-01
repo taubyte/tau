@@ -109,3 +109,7 @@ func (f *Function) CachePrefix() string {
 func (f *Function) Application() string {
 	return f.application
 }
+
+func (f *Function) AssetId() string {
+	return f.assetId
+}

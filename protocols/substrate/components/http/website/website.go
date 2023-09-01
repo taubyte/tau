@@ -13,7 +13,6 @@ import (
 	"github.com/spf13/afero/zipfs"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
-	"github.com/taubyte/go-specs/methods"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
@@ -152,32 +151,12 @@ func (w *Website) Matcher() commonIface.MatchDefinition {
 	return w.matcher
 }
 
-func (w *Website) getFileId() (string, error) {
-	assetHash, err := methods.GetTNSAssetPath(w.project, w.config.Id, w.branch)
-	if err != nil {
-		return "", fmt.Errorf("getting website asset path failed with: %s", err)
-	}
-
-	assetHashObject, err := w.srv.Tns().Fetch(assetHash)
-	if err != nil {
-		return "", fmt.Errorf("fetching asset hash for project: `%s` website: `%s`, branch: `%s` failed with: %w", w.project, w.config.Id, w.branch, err)
-	}
-
-	fileId, ok := assetHashObject.Interface().(string)
-	if !ok {
-		return "", fmt.Errorf("could not resolve asset ID for given website on projectID: `%s`, websiteId `%s`, branch`%s` ", w.project, w.config.Id, w.branch)
-	}
-
-	return fileId, nil
+func (w *Website) AssetId() string {
+	return w.assetId
 }
 
 func (w *Website) getAsset() error {
-	fileId, err := w.getFileId()
-	if err != nil {
-		return fmt.Errorf("getting website asset failed with: %s", err)
-	}
-
-	dagReader, err := w.srv.Node().GetFile(w.ctx, fileId)
+	dagReader, err := w.srv.Node().GetFile(w.ctx, w.assetId)
 	if err != nil {
 		return fmt.Errorf("getting build zip failed with: %w", err)
 	}

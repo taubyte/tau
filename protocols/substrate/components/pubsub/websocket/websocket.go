@@ -85,3 +85,7 @@ func (ws *WebSocket) Service() components.ServiceComponent {
 func (ws *WebSocket) Config() *structureSpec.Function {
 	return nil
 }
+
+func (ws *WebSocket) AssetId() string {
+	return ""
+}

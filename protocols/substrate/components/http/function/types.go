@@ -17,6 +17,9 @@ type Function struct {
 	project     string
 	application string
 	commit      string
+	branch      string
+
+	assetId string
 
 	readyDone  bool
 	readyCtx   context.Context

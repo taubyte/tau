@@ -7,10 +7,10 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	"github.com/taubyte/go-interfaces/services/tns"
-	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/extract"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"github.com/taubyte/tau/vm"
+	"github.com/taubyte/tau/vm/cache"
 )
 
 func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {
@@ -26,6 +26,7 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 		matcher:     matcher,
 		application: parser.Application(),
 		commit:      parser.Commit(),
+		branch:      parser.Branch(),
 	}
 
 	if err = object.Bind(&f.config); err != nil {
@@ -41,11 +42,16 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 		f.readyCtxC()
 	}()
 
-	if f.dFunc, err = vm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
+	f.assetId, err = cache.ComputeServiceableCid(f, f.branch)
+	if err != nil {
+		return nil, fmt.Errorf("getting asset id failed with: %w", err)
+	}
+
+	if f.dFunc, err = vm.New(f.instanceCtx, f, f.branch, f.commit); err != nil {
 		return nil, fmt.Errorf("initializing wasm module failed with: %w", err)
 	}
 
-	_f, err := srv.Cache().Add(f, spec.DefaultBranch)
+	_f, err := srv.Cache().Add(f, f.branch)
 	if err != nil {
 		return nil, fmt.Errorf("adding http function serviceable failed with: %s", err)
 	}

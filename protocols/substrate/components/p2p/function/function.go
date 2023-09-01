@@ -108,3 +108,7 @@ func (f *Function) Config() *structureSpec.Function {
 func (f *Function) Service() commonIface.ServiceComponent {
 	return f.srv
 }
+
+func (f *Function) AssetId() string {
+	return f.assetId
+}

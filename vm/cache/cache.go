@@ -25,7 +25,7 @@ func (c *Cache) Close() {
 // The serviceable itself is stored by the id of the serviceable.
 func New() *Cache {
 	return &Cache{
-		cacheMap: make(map[string]map[string]cacheItem, 0),
+		cacheMap: make(map[string]map[string]iface.Serviceable, 0),
 	}
 }
 
@@ -37,16 +37,16 @@ func (c *Cache) Add(serviceable iface.Serviceable, branch string) (iface.Service
 	servList, ok := c.cacheMap[prefix]
 	c.locker.RUnlock()
 	if ok {
-		cacheItem, ok := servList[serviceable.Id()]
+		serviceable, ok := servList[serviceable.Id()]
 		if ok {
-			if cacheItem.serviceable.Match(serviceable.Matcher()) == matcherSpec.HighMatch {
+			if serviceable.Match(serviceable.Matcher()) == matcherSpec.HighMatch {
 
-				return cacheItem.serviceable, nil
+				return serviceable, nil
 			}
 		}
 	} else {
 		c.locker.Lock()
-		c.cacheMap[prefix] = make(map[string]cacheItem)
+		c.cacheMap[prefix] = make(map[string]iface.Serviceable)
 		c.locker.Unlock()
 	}
 
@@ -54,13 +54,8 @@ func (c *Cache) Add(serviceable iface.Serviceable, branch string) (iface.Service
 		return nil, fmt.Errorf("validating serviceable failed with: %s", err)
 	}
 
-	cid, err := computeServiceableCid(serviceable, branch)
-	if err != nil {
-		return nil, fmt.Errorf("getting cid for serviceable `%s` failed with: %w", serviceable.Id(), err)
-	}
-
 	c.locker.Lock()
-	c.cacheMap[prefix][serviceable.Id()] = cacheItem{serviceable: serviceable, assetCid: cid}
+	c.cacheMap[prefix][serviceable.Id()] = serviceable
 	c.locker.Unlock()
 
 	return serviceable, nil
@@ -83,14 +78,14 @@ func (c *Cache) Get(matcher iface.MatchDefinition, ops iface.GetOptions) ([]ifac
 			branch = spec.DefaultBranch
 		}
 
-		for _, cacheItem := range servList {
-			if cacheItem.serviceable.Match(matcher) == matchIndex {
+		for _, serviceable := range servList {
+			if serviceable.Match(matcher) == matchIndex {
 				if ops.Validation {
-					if err := c.validate(cacheItem, branch); err != nil {
+					if err := c.validate(serviceable, branch); err != nil {
 						continue
 					}
 				}
-				serviceables = append(serviceables, cacheItem.serviceable)
+				serviceables = append(serviceables, serviceable)
 			}
 		}
 	}
@@ -111,8 +106,7 @@ func (c *Cache) Remove(serviceable iface.Serviceable) {
 }
 
 // validate method checks to see if the serviceable commit matches the current commit.
-func (c *Cache) validate(cacheItem cacheItem, branch string) error {
-	serviceable := cacheItem.serviceable
+func (c *Cache) validate(serviceable iface.Serviceable, branch string) error {
 	tnsClient := serviceable.Service().Tns()
 	projectId := serviceable.Project()
 	commit, err := tnsClient.Simple().Commit(projectId, branch)
@@ -124,12 +118,12 @@ func (c *Cache) validate(cacheItem cacheItem, branch string) error {
 		return fmt.Errorf("cached pick commit `%s` is outdated, latest commit is `%s`", serviceable.Commit(), commit)
 	}
 
-	cid, err := computeServiceableCid(serviceable, branch)
+	cid, err := ComputeServiceableCid(serviceable, branch)
 	if err != nil {
 		return fmt.Errorf("getting cached serviceable `%s` cid failed with: %w", serviceable.Id(), err)
 	}
 
-	if cacheItem.assetCid != cid {
+	if serviceable.AssetId() != cid {
 		return fmt.Errorf("serviceable `%s` asset is outdated", serviceable.Id())
 	}
 

@@ -9,6 +9,7 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/vm"
+	"github.com/taubyte/tau/vm/cache"
 )
 
 func New(srv iface.Service, config structureSpec.Function, matcher *iface.MatchDefinition) (commonIface.Serviceable, error) {
@@ -30,6 +31,11 @@ func New(srv iface.Service, config structureSpec.Function, matcher *iface.MatchD
 
 	if f.dFunc, err = vm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
 		return nil, fmt.Errorf("initializing vm module failed with: %w", err)
+	}
+
+	f.assetId, err = cache.ComputeServiceableCid(f, spec.DefaultBranch)
+	if err != nil {
+		return nil, fmt.Errorf("getting asset id failed with: %w", err)
 	}
 
 	_f, err := srv.Cache().Add(f, spec.DefaultBranch)

@@ -99,3 +99,7 @@ func (f *Function) MMI() common.MessagingMapItem {
 func (f *Function) Service() components.ServiceComponent {
 	return f.srv
 }
+
+func (f *Function) AssetId() string {
+	return f.assetId
+}

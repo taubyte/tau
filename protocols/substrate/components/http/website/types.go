@@ -27,6 +27,8 @@ type Website struct {
 	branch      string
 	commit      string
 
+	assetId string
+
 	ctx  context.Context
 	ctxC context.CancelFunc
 

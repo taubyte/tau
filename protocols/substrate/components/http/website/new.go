@@ -7,9 +7,9 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	"github.com/taubyte/go-interfaces/services/tns"
-	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/extract"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/vm/cache"
 )
 
 func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) (serviceable commonIface.Serviceable, err error) {
@@ -42,7 +42,12 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 		w.readyCtxC()
 	}()
 
-	_w, err := srv.Cache().Add(w, spec.DefaultBranch)
+	w.assetId, err = cache.ComputeServiceableCid(w, w.branch)
+	if err != nil {
+		return nil, fmt.Errorf("getting asset id failed with: %w", err)
+	}
+
+	_w, err := srv.Cache().Add(w, w.branch)
 	if err != nil {
 		return nil, fmt.Errorf("adding website serviceable failed with: %s", err)
 	}
