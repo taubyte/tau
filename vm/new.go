@@ -7,12 +7,12 @@ import (
 	components "github.com/taubyte/go-interfaces/services/substrate/components"
 )
 
-func New(ctx context.Context, serviceable components.FunctionServiceable, branch, commit string) (*DFunc, error) {
+func New(ctx context.Context, serviceable components.FunctionServiceable, branch, commit string) (*Function, error) {
 	if config := serviceable.Config(); config != nil {
-		dFunc := &DFunc{
+		dFunc := &Function{
 			serviceable: serviceable,
 			ctx:         ctx,
-			structure:   config,
+			config:      config,
 			branch:      branch,
 			commit:      commit,
 		}

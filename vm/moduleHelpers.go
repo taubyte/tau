@@ -11,15 +11,15 @@ import (
 	librarySpec "github.com/taubyte/go-specs/library"
 )
 
-func (w *DFunc) moduleName() (string, error) {
-	source := w.structure.Source
+func (f *Function) moduleName() (string, error) {
+	source := f.config.Source
 	switch source {
 	case ".", "":
-		return functionSpec.ModuleName(w.structure.Name), nil
+		return functionSpec.ModuleName(f.config.Name), nil
 	default:
 		if strings.HasPrefix(source, librarySpec.PathVariable.String()) {
 			libId := strings.TrimPrefix(source, librarySpec.PathVariable.String()+"/")
-			_library, err := w.serviceable.Service().Tns().Fetch(librarySpec.Tns().NameIndex(libId))
+			_library, err := f.serviceable.Service().Tns().Fetch(librarySpec.Tns().NameIndex(libId))
 			if err != nil {
 				return "", fmt.Errorf("fetching library name for resource: `%s` failed with: %w", libId, err)
 			}
@@ -36,7 +36,7 @@ func (w *DFunc) moduleName() (string, error) {
 	return source, nil
 }
 
-func (d *DFunc) printRuntimeStack(runtime vm.Runtime, err error) {
+func (*Function) printRuntimeStack(runtime vm.Runtime, err error) {
 	if runtime != nil {
 		fmt.Println("\n\nERROR: ")
 		io.Copy(os.Stdout, runtime.Stderr())

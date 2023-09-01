@@ -9,10 +9,10 @@ import (
 )
 
 // Call takes instance and id, then calls the moduled function. Returns an error.
-func (d *DFunc) Call(runtime vm.Runtime, id uint32) error {
-	moduleName, err := d.moduleName()
+func (f *Function) Call(runtime vm.Runtime, id uint32) error {
+	moduleName, err := f.moduleName()
 	if err != nil {
-		return fmt.Errorf("getting module name for resource `%s` failed with: %w", d.serviceable.Id(), err)
+		return fmt.Errorf("getting module name for resource `%s` failed with: %w", f.serviceable.Id(), err)
 	}
 
 	module, err := runtime.Module(moduleName)
@@ -20,17 +20,17 @@ func (d *DFunc) Call(runtime vm.Runtime, id uint32) error {
 		return fmt.Errorf("creating module instance failed with: %w", err)
 	}
 
-	fx, err := module.Function(d.structure.Call)
+	fx, err := module.Function(f.config.Call)
 	if err != nil {
 		return fmt.Errorf("getting wasm function instance failed with: %w", err)
 	}
 
-	ctx, ctxC := context.WithTimeout(d.ctx, time.Duration(time.Nanosecond*time.Duration(d.structure.Timeout)))
+	ctx, ctxC := context.WithTimeout(f.ctx, time.Duration(time.Nanosecond*time.Duration(f.config.Timeout)))
 	defer ctxC()
 
 	_, err = fx.RawCall(ctx, uint64(id))
-	if d.serviceable.Service().Verbose() {
-		defer d.printRuntimeStack(runtime, err)
+	if f.serviceable.Service().Verbose() {
+		defer f.printRuntimeStack(runtime, err)
 	}
 	if err != nil {
 		return fmt.Errorf("calling function for event %d failed with: %w", id, err)

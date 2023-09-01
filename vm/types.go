@@ -12,19 +12,21 @@ import (
 type shadows struct {
 	ctx       context.Context
 	ctxC      context.CancelFunc
-	parent    *DFunc
+	parent    *Function
 	instances chan *shadowInstance
 	//gcLock    sync.RWMutex
 
 	more chan struct{}
 }
 
-type DFunc struct {
+type Function struct {
 	serviceable commonIface.Serviceable
 	ctx         context.Context
-	structure   *structureSpec.Function
+	config      *structureSpec.Function
 	branch      string
 	commit      string
+	vmConfig    *vm.Config
+	vmContext   vm.Context
 
 	shadows shadows
 }

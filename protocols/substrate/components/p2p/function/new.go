@@ -29,7 +29,7 @@ func New(srv iface.Service, config structureSpec.Function, matcher *iface.MatchD
 		f.readyCtxC()
 	}()
 
-	if f.dFunc, err = vm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
+	if f.Function, err = vm.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
 		return nil, fmt.Errorf("initializing vm module failed with: %w", err)
 	}
 

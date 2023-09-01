@@ -118,7 +118,7 @@ func (c *Cache) validate(serviceable iface.Serviceable, branch string) error {
 		return fmt.Errorf("cached pick commit `%s` is outdated, latest commit is `%s`", serviceable.Commit(), commit)
 	}
 
-	cid, err := ComputeServiceableCid(serviceable, branch)
+	cid, err := ResolveAssetCid(serviceable, branch)
 	if err != nil {
 		return fmt.Errorf("getting cached serviceable `%s` cid failed with: %w", serviceable.Id(), err)
 	}

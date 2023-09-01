@@ -10,22 +10,22 @@ import (
 
 var logger = log.Logger("substrate.service.vm")
 
-func (d *DFunc) initShadow() {
-	d.shadows = shadows{
+func (f *Function) initShadow() {
+	f.shadows = shadows{
 		instances: make(chan *shadowInstance, InstanceMaxRequests),
 		more:      make(chan struct{}, 1),
-		parent:    d,
+		parent:    f,
 	}
-	d.shadows.ctx, d.shadows.ctxC = context.WithCancel(d.ctx)
+	f.shadows.ctx, f.shadows.ctxC = context.WithCancel(f.ctx)
 	ticker := time.NewTicker(ShadowCleanInterval)
 	coolDown := time.NewTicker(InstanceErrorCoolDown)
 	go func() {
 		defer func() {
-			d.shadows.ctxC()
-			close(d.shadows.instances)
-			close(d.shadows.more)
+			f.shadows.ctxC()
+			close(f.shadows.instances)
+			close(f.shadows.more)
 
-			d.serviceable.Service().Cache().Remove(d.serviceable)
+			f.serviceable.Service().Cache().Remove(f.serviceable)
 		}()
 		var errCount int
 		for {
@@ -35,26 +35,26 @@ func (d *DFunc) initShadow() {
 					errCount = errCount / 2
 				}
 			case <-ticker.C:
-				d.shadows.gc()
-			case <-d.shadows.ctx.Done():
+				f.shadows.gc()
+			case <-f.shadows.ctx.Done():
 				return
-			case <-d.shadows.more:
+			case <-f.shadows.more:
 				var wg sync.WaitGroup
 				for i := 0; i < ShadowBuff; i++ {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						if errCount < InstanceMaxError && len(d.shadows.instances) < InstanceMaxRequests {
-							shadow, err := d.shadows.newInstance()
+						if errCount < InstanceMaxError && len(f.shadows.instances) < InstanceMaxRequests {
+							shadow, err := f.shadows.newInstance()
 							if err != nil {
 								logger.Errorf("creating new shadow instance failed with: %s", err.Error())
 								errCount++
 								return
 							}
 							select {
-							case <-d.shadows.ctx.Done():
+							case <-f.shadows.ctx.Done():
 								return
-							case d.shadows.instances <- shadow:
+							case f.shadows.instances <- shadow:
 							}
 						}
 					}()

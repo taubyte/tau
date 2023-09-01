@@ -32,7 +32,7 @@ type Function struct {
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
 
-	dFunc *vm.DFunc
+	*vm.Function
 }
 
 func (f *Function) Close() {

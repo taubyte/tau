@@ -12,8 +12,8 @@ import (
 /*
 Instantiate returns a runtime, plugin api, and error
 */
-func (d *DFunc) Instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
-	shadow, err := d.shadows.get()
+func (f *Function) Instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
+	shadow, err := f.shadows.get()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -25,36 +25,39 @@ func (d *DFunc) Instantiate() (runtime vm.Runtime, pluginApi interface{}, err er
 instantiate method initializes the wasm runtime and attaches plugins.
 Returns the runtime, plugin api, and error
 */
-func (d *DFunc) instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
-	serviceable := d.serviceable
-	context, err := vmContext.New(
-		d.ctx,
-		vmContext.Project(serviceable.Project()),
-		vmContext.Application(serviceable.Application()),
-		vmContext.Resource(serviceable.Id()),
-		vmContext.Commit(d.commit),
-		vmContext.Branch(d.branch),
-	)
-	if err != nil {
-		err = fmt.Errorf("creating vm context failed with: %w", err)
-		return
+func (f *Function) instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
+	if f.vmContext == nil {
+		f.vmContext, err = vmContext.New(
+			f.ctx,
+			vmContext.Project(f.serviceable.Project()),
+			vmContext.Application(f.serviceable.Application()),
+			vmContext.Resource(f.serviceable.Id()),
+			vmContext.Commit(f.commit),
+			vmContext.Branch(f.branch),
+		)
+		if err != nil {
+			err = fmt.Errorf("creating vm context failed with: %w", err)
+			return
+		}
 	}
 
-	config := vm.Config{
-		MemoryLimitPages: uint32(
-			roundedUpDivWithUpperLimit(
-				d.structure.Memory,
-				uint64(vm.MemoryPageSize),
-				uint64(vm.MemoryLimitPages),
+	if f.vmConfig == nil {
+		f.vmConfig = &vm.Config{
+			MemoryLimitPages: uint32(
+				roundedUpDivWithUpperLimit(
+					f.config.Memory,
+					uint64(vm.MemoryPageSize),
+					uint64(vm.MemoryLimitPages),
+				),
 			),
-		),
+		}
 	}
 
-	if serviceable.Service().Verbose() {
-		config.Output = vm.Buffer
+	if f.serviceable.Service().Verbose() {
+		f.vmConfig.Output = vm.Buffer
 	}
 
-	instance, err := serviceable.Service().Vm().New(context, config)
+	instance, err := f.serviceable.Service().Vm().New(f.vmContext, *f.vmConfig)
 	if err != nil {
 		err = fmt.Errorf("creating new instance failed with: %w", err)
 		return
@@ -77,7 +80,7 @@ func (d *DFunc) instantiate() (runtime vm.Runtime, pluginApi interface{}, err er
 	}
 	toCloseIfErr = append(toCloseIfErr, runtime)
 
-	for _, plugIn := range serviceable.Service().Orbitals() {
+	for _, plugIn := range f.serviceable.Service().Orbitals() {
 		if _, _, err = runtime.Attach(plugIn); err != nil {
 			err = fmt.Errorf("attaching satellite plugin `%s` to runtime failed with: %w", plugIn.Name(), err)
 			return

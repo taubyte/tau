@@ -23,7 +23,7 @@ func (f *Function) Project() string {
 }
 
 func (f *Function) HandleMessage(msg *pubsub.Message) (t time.Time, err error) {
-	runtime, pluginApi, err := f.dFunc.Instantiate()
+	runtime, pluginApi, err := f.Function.Instantiate()
 	if err != nil {
 		return t, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %s", f.config.Name, f.matcher.Project, f.matcher.Application, err)
 	}
@@ -43,7 +43,7 @@ func (f *Function) HandleMessage(msg *pubsub.Message) (t time.Time, err error) {
 		return t, fmt.Errorf("exited: %d", val)
 	}
 
-	return time.Now(), f.dFunc.Call(runtime, ev.Id)
+	return time.Now(), f.Function.Call(runtime, ev.Id)
 }
 
 func (f *Function) Match(matcher components.MatchDefinition) (currentMatchIndex matcherSpec.Index) {

@@ -47,7 +47,7 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 		return nil, fmt.Errorf("getting asset id failed with: %w", err)
 	}
 
-	if f.dFunc, err = vm.New(f.instanceCtx, f, f.branch, f.commit); err != nil {
+	if f.Function, err = vm.New(f.instanceCtx, f, f.branch, f.commit); err != nil {
 		return nil, fmt.Errorf("initializing wasm module failed with: %w", err)
 	}
 

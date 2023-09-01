@@ -26,7 +26,7 @@ func (f *Function) Close() {
 }
 
 func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Response, err error) {
-	runtime, pluginApi, err := f.dFunc.Instantiate()
+	runtime, pluginApi, err := f.Function.Instantiate()
 	if err != nil {
 		return t, nil, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %s", f.config.Name, f.matcher.Project, f.matcher.Application, err)
 	}
@@ -51,7 +51,7 @@ func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Respo
 		}
 	}
 
-	return time.Now(), res, f.dFunc.Call(runtime, ev.Id)
+	return time.Now(), res, f.Function.Call(runtime, ev.Id)
 }
 
 func (f *Function) Match(matcher commonIface.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
