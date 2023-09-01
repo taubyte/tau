@@ -9,7 +9,7 @@ import (
 )
 
 // Call takes instance and id, then calls the moduled function. Returns an error.
-func (d *DFunc) Call(runtime vm.Runtime, id interface{}) error {
+func (d *DFunc) Call(runtime vm.Runtime, id uint32) error {
 	moduleName, err := d.moduleName()
 	if err != nil {
 		return fmt.Errorf("getting module name for resource `%s` failed with: %w", d.serviceable.Id(), err)
@@ -28,12 +28,12 @@ func (d *DFunc) Call(runtime vm.Runtime, id interface{}) error {
 	ctx, ctxC := context.WithTimeout(d.ctx, time.Duration(time.Nanosecond*time.Duration(d.structure.Timeout)))
 	defer ctxC()
 
-	ret := fx.Call(ctx, id)
+	_, err = fx.RawCall(ctx, uint64(id))
 	if d.serviceable.Service().Verbose() {
-		defer d.printRuntimeStack(runtime, ret)
+		defer d.printRuntimeStack(runtime, err)
 	}
-	if ret.Error() != nil {
-		return fmt.Errorf("calling function for event %d failed with: %s", id, ret.Error())
+	if err != nil {
+		return fmt.Errorf("calling function for event %d failed with: %w", id, err)
 	}
 
 	return nil

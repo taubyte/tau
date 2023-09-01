@@ -36,14 +36,14 @@ func (w *DFunc) moduleName() (string, error) {
 	return source, nil
 }
 
-func (d *DFunc) printRuntimeStack(runtime vm.Runtime, ret vm.Return) {
+func (d *DFunc) printRuntimeStack(runtime vm.Runtime, err error) {
 	if runtime != nil {
 		fmt.Println("\n\nERROR: ")
 		io.Copy(os.Stdout, runtime.Stderr())
 		fmt.Println("\n\nOUT: ")
 		io.Copy(os.Stdout, runtime.Stdout())
 	}
-	if ret != nil {
-		fmt.Printf("\n\nExtra out:\nRET:%v\n", ret.Error())
+	if err != nil {
+		fmt.Printf("\n\nExtra out:\nRET:%s\n", err.Error())
 	}
 }
