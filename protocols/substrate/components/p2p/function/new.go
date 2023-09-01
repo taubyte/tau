@@ -33,7 +33,7 @@ func New(srv iface.Service, config structureSpec.Function, matcher *iface.MatchD
 		return nil, fmt.Errorf("initializing vm module failed with: %w", err)
 	}
 
-	f.assetId, err = cache.ComputeServiceableCid(f, spec.DefaultBranch)
+	f.assetId, err = cache.ResolveAssetCid(f, spec.DefaultBranch)
 	if err != nil {
 		return nil, fmt.Errorf("getting asset id failed with: %w", err)
 	}

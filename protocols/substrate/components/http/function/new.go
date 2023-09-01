@@ -42,7 +42,7 @@ func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) 
 		f.readyCtxC()
 	}()
 
-	f.assetId, err = cache.ComputeServiceableCid(f, f.branch)
+	f.assetId, err = cache.ResolveAssetCid(f, f.branch)
 	if err != nil {
 		return nil, fmt.Errorf("getting asset id failed with: %w", err)
 	}
