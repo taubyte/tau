@@ -13,13 +13,13 @@ var logger = log.Logger("substrate.service.vm")
 func (w *WasmModule) initShadow() {
 	w.shadows = shadows{
 		instances: make(chan *shadowInstance, InstanceMaxRequests),
-		more:      make(chan struct{}),
+		more:      make(chan struct{}, 1),
 		parent:    w,
 	}
 	w.shadows.ctx, w.shadows.ctxC = context.WithCancel(w.ctx)
 	ticker := time.NewTicker(ShadowCleanInterval)
 	go func() {
-		// defer clean up
+		defer w.shadows.close()
 		var errCount uint64
 		for {
 			select {
@@ -29,7 +29,7 @@ func (w *WasmModule) initShadow() {
 				return
 			case <-w.shadows.more:
 				var wg sync.WaitGroup
-				for i := 0; i < 5; i++ {
+				for i := 0; i < ShadowBuff; i++ {
 					if errCount >= InstanceMaxError {
 						w.shadows.close()
 						return
@@ -43,7 +43,11 @@ func (w *WasmModule) initShadow() {
 							errCount++
 							return
 						}
-						w.shadows.instances <- shadow
+						select {
+						case <-w.shadows.ctx.Done():
+							return
+						case w.shadows.instances <- shadow:
+						}
 					}()
 				}
 				wg.Wait()
@@ -92,7 +96,6 @@ func (s *shadows) close() {
 	close(s.more)
 
 	s.parent.serviceable.Service().Cache().Remove(s.parent.serviceable)
-	s.ctxC()
 }
 
 func (s *shadows) keep() {
