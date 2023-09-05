@@ -7,7 +7,12 @@ import (
 	"github.com/taubyte/go-interfaces/services/tns"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/p2p/streams/client"
 	httpServ "github.com/taubyte/tau/protocols/substrate/components/http/common"
+)
+
+var (
+	SubstrateThresholdRatio = 3
 )
 
 type Gateway struct {
@@ -17,7 +22,12 @@ type Gateway struct {
 	http         http.Service
 	matchTimeout time.Duration
 
-	dev bool
+	p2pClient *client.Client
+
+	substrateCount int
+
+	dev     bool
+	verbose bool
 }
 
 func (g *Gateway) Context() context.Context {
@@ -44,5 +54,5 @@ type Matcher struct {
 	httpServ.MatchDefinition        // maybe move this matcher type to here
 	GeoLoc                   string // maybe use some sort of geo package
 	Age                      time.Time
-	SmartOps                 smartopsServiceable
+	// SmartOps                 smartopsServiceable
 }

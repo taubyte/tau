@@ -1,79 +1,79 @@
 package gateway
 
 import (
-	"context"
-	"errors"
-	"time"
-
-	"github.com/taubyte/go-interfaces/services/substrate"
+	"github.com/libp2p/go-libp2p/core/peer"
+	matcherSpec "github.com/taubyte/go-specs/matcher"
+	"github.com/taubyte/p2p/streams/command/response"
 )
 
-func (g *Gateway) discover() []substrate.Service {
-	// find connected substrates over p2p
+func (g *Gateway) discover(projectId, resourceId string) (map[peer.ID]response.Response, map[peer.ID]error, error) {
+	body := make(map[string]interface{}, 2)
+	body["project"], body["resource"] = projectId, resourceId
+
+	// P2P needs a time out, can update SendToPeerTimeout, but would rather not update global var
+	return g.p2pClient.MultiSend("has", body, g.substrateCount/SubstrateThresholdRatio)
 }
 
-var timeScoreFactor = int(20 * time.Second) // wipName
+// var timeScoreFactor = int(20 * time.Second) // wipName
 
-func (g *Gateway) match(node substrate.Service, matcher Matcher) (score int) {
-	var (
-		age    int
-		exists bool
-	)
-	age, exists := node.Has(matcher.MatchDefinition)
-	if exists {
-		score += 10
-		score += timeScoreFactor / age
-		score += score / matcher.GeoLoc.ParseDistance()
-	}
-}
-
-type nodeWithScore struct { // wipName
-	score int
-	node  substrate.Service
-}
-
-func (g *Gateway) Match(matcher Matcher) (substrate.Service, error) {
-	var highMatch int = -1
-	var match substrate.Service
-	ctx, ctxC := context.WithTimeout(g.ctx, g.matchTimeout)
-	nodeChan := make(chan nodeWithScore, 1)
-	doneChan := make(chan struct{})
-
-	go func() {
-		for _, node := range g.discover() {
-			select {
-			case <-ctx.Done():
-				return
-			default:
-				if score := g.match(node, matcher); score > highMatch {
-					highMatch, match = score, node
-				}
-			}
-		}
-	}()
-
-	var done bool
-	for !done {
-		select {
-		case <-ctx.Done():
-			done = true
+func (g *Gateway) match(matcher Matcher) (project, resource string, err error) {
+	score := matcherSpec.DefaultMatch
+	for {
+		// loop through find match
+		if score == matcherSpec.HighMatch {
 			break
-		case <-doneChan:
-			done = true
-			break
-		case nodeScore := <-nodeChan:
-			if nodeScore.score > highMatch {
-				highMatch, match = nodeScore.score, nodeScore.node
-			}
 		}
 	}
-
-	ctxC()
-
-	if match == nil {
-		return nil, errors.New("no substrate match found")
-	}
-
-	return match, nil
-
+	return
 }
+
+// type nodeWithScore struct { // wipName
+// 	score int
+// 	node  substrate.Service
+// }
+
+// func (g *Gateway) Match(matcher Matcher) (substrate.Service, error) {
+// 	var highMatch int = -1
+// 	var match substrate.Service
+// 	ctx, ctxC := context.WithTimeout(g.ctx, g.matchTimeout)
+// 	nodeChan := make(chan nodeWithScore, 1)
+// 	doneChan := make(chan struct{})
+
+// 	go func() {
+// 		for _, node := range g.discover() {
+// 			select {
+// 			case <-ctx.Done():
+// 				return
+// 			default:
+// 				if score := g.match(node, matcher); score > highMatch {
+// 					highMatch, match = score, node
+// 				}
+// 			}
+// 		}
+// 	}()
+
+// 	var done bool
+// 	for !done {
+// 		select {
+// 		case <-ctx.Done():
+// 			done = true
+// 			break
+// 		case <-doneChan:
+// 			done = true
+// 			break
+// 		case nodeScore := <-nodeChan:
+// 			if nodeScore.score > highMatch {
+// 				highMatch, match = nodeScore.score, nodeScore.node
+// 			}
+// 		}
+// 	}
+
+// 	ctxC()
+
+// 	if match == nil {
+// 		return nil, errors.New("no substrate match found")
+// 	}
+
+// 	return match, nil
+
+// }
