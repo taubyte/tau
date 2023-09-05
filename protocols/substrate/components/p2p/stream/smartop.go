@@ -3,7 +3,6 @@ package stream
 import (
 	"context"
 
-	"github.com/ipfs/go-cid"
 	"github.com/taubyte/go-interfaces/services/substrate/smartops"
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 )
@@ -32,6 +31,6 @@ func (f *Stream) Application() string {
 	return f.matcher.Application
 }
 
-func (f *Stream) Project() (cid.Cid, error) {
-	return cid.Decode(f.matcher.Project)
+func (f *Stream) Project() string {
+	return f.matcher.Project
 }

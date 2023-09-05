@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 
-	"github.com/ipfs/go-cid"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	"github.com/taubyte/go-interfaces/services/substrate/smartops"
 	structureSpec "github.com/taubyte/go-specs/structure"
@@ -38,8 +37,8 @@ func (s *Service) Application() string {
 	return s.application
 }
 
-func (s *Service) Project() (cid.Cid, error) {
-	return cid.Decode(s.project)
+func (s *Service) Project() string {
+	return s.project
 }
 
 func (s *Service) Config() *structureSpec.Service {

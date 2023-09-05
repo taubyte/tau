@@ -3,7 +3,6 @@ package common
 import (
 	"regexp"
 
-	"github.com/ipfs/go-cid"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
 	structureSpec "github.com/taubyte/go-specs/structure"
 )
@@ -16,8 +15,8 @@ type MessagingItem struct {
 	config      *structureSpec.Messaging
 }
 
-func (i *MessagingItem) Project() (cid.Cid, error) {
-	return cid.Decode(i.project)
+func (i *MessagingItem) Project() string {
+	return i.project
 }
 
 func (i *MessagingItem) Application() string {

@@ -50,11 +50,6 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 	}
 
 	if pick := s.getPick(matcher, candidates); pick != nil {
-		project, err := pick.Project()
-		if err != nil {
-			return nil, fmt.Errorf("checking serviceable pick's project ID failed with: %s", err)
-		}
-
 		var publicKey []byte
 		if s.Dev() {
 			publicKey = domainValPublicKeyData
@@ -62,7 +57,7 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 			publicKey = s.dvPublicKey
 		}
 
-		if err = domainSpec.ValidateDNS(project.String(), matcher.Host, s.Dev(), dv.PublicKey(publicKey)); err != nil {
+		if err := domainSpec.ValidateDNS(pick.Project(), matcher.Host, s.Dev(), dv.PublicKey(publicKey)); err != nil {
 			return nil, fmt.Errorf("validating dns failed for match definition `%v` failed with: %s", *matcher, err)
 		}
 

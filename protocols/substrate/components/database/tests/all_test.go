@@ -48,8 +48,8 @@ var (
 	expectedMap     = map[string][]byte{"test": expected, "/expect/1": expected2}
 )
 
-// TODO: Redo This Test, this test repo doesnt exist?
 func TestAll(t *testing.T) {
+	t.Skip("Redo This Test, this test repo doesnt exist?")
 	meta := patrick.Meta{}
 	meta.Repository.ID = 1234567890
 	meta.Repository.Branch = "master"

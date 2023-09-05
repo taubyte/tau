@@ -10,29 +10,25 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ipfs/go-cid"
 	"github.com/spf13/afero/zipfs"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
-	"github.com/taubyte/go-specs/methods"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"go4.org/readerutil"
 )
 
-func (w *Website) Project() (cid.Cid, error) {
-	return cid.Decode(w.project)
+func (w *Website) Project() string {
+	return w.project
+}
+
+// Fulfill Serviceable interface, used to ensure TVM.New() fails if using a website
+func (w *Website) Structure() *structureSpec.Function {
+	return nil
 }
 
 func (w *Website) Handle(_w goHttp.ResponseWriter, r *goHttp.Request, matcher commonIface.MatchDefinition) (t time.Time, err error) {
-	err = w.validateAsset()
-	if err != nil {
-		if err = w.getAsset(); err != nil {
-			return t, fmt.Errorf("attempting to get new asset after stored validation failed, failed with: %s", err)
-		}
-	}
-
 	_matcher, ok := matcher.(*common.MatchDefinition)
 	if !ok {
 		return t, fmt.Errorf("typecasting matcher iface to http-matcher failed with: %s", err)
@@ -155,32 +151,12 @@ func (w *Website) Matcher() commonIface.MatchDefinition {
 	return w.matcher
 }
 
-func (w *Website) getFileId() (string, error) {
-	assetHash, err := methods.GetTNSAssetPath(w.project, w.config.Id, w.branch)
-	if err != nil {
-		return "", fmt.Errorf("getting website asset path failed with: %s", err)
-	}
-
-	assetHashObject, err := w.srv.Tns().Fetch(assetHash)
-	if err != nil {
-		return "", fmt.Errorf("fetching asset hash for project: `%s` website: `%s`, branch: `%s` failed with: %w", w.project, w.config.Id, w.branch, err)
-	}
-
-	fileId, ok := assetHashObject.Interface().(string)
-	if !ok {
-		return "", fmt.Errorf("could not resolve asset ID for given website on projectID: `%s`, websiteId `%s`, branch`%s` ", w.project, w.config.Id, w.branch)
-	}
-
-	return fileId, nil
+func (w *Website) AssetId() string {
+	return w.assetId
 }
 
-func (w *Website) getAsset() (err error) {
-	w.fileId, err = w.getFileId()
-	if err != nil {
-		return fmt.Errorf("getting website asset failed with: %s", err)
-	}
-
-	dagReader, err := w.srv.Node().GetFile(w.ctx, w.fileId)
+func (w *Website) getAsset() error {
+	dagReader, err := w.srv.Node().GetFile(w.ctx, w.assetId)
 	if err != nil {
 		return fmt.Errorf("getting build zip failed with: %w", err)
 	}
@@ -216,19 +192,6 @@ func (w *Website) getAsset() (err error) {
 
 func (w *Website) Id() string {
 	return w.config.Id
-}
-
-func (w *Website) validateAsset() error {
-	fileId, err := w.getFileId()
-	if err != nil {
-		return fmt.Errorf("unable to get most recent ass id with: %s", err)
-	}
-
-	if w.fileId != fileId {
-		return fmt.Errorf("validating cached asset failed with: asset is outdated")
-	}
-
-	return nil
 }
 
 func (w *Website) CachePrefix() string {

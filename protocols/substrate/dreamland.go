@@ -8,6 +8,7 @@ import (
 	tauConfig "github.com/taubyte/tau/config"
 	dreamlandCommon "github.com/taubyte/tau/libdream/common"
 	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
+	"github.com/taubyte/tau/protocols/substrate/mocks/counters"
 )
 
 func init() {
@@ -38,6 +39,12 @@ func createNodeService(ctx context.Context, config *iface.ServiceConfig) (iface.
 	}
 
 	serviceConfig.DomainValidation.PublicKey = config.PublicKey
+	service, err := New(ctx, serviceConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	return New(ctx, serviceConfig)
+	service.nodeCounters = counters.New(service)
+
+	return service, nil
 }

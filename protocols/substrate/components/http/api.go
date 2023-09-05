@@ -23,6 +23,10 @@ func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 		return fmt.Errorf("http serviceable lookup failed with: %s", err)
 	}
 
+	if len(pickServiceables) != 1 {
+		return fmt.Errorf("lookup returned %d serviceables, expected 1", len(pickServiceables))
+	}
+
 	pick, ok := pickServiceables[0].(iface.Serviceable)
 	if !ok {
 		return fmt.Errorf("matched serviceable is not a http serviceable")
