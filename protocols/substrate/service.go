@@ -12,6 +12,7 @@ import (
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
+	streams "github.com/taubyte/p2p/streams/service"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/pkgs/kvdb"
@@ -45,8 +46,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	srv.verbose = config.Verbose
 
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, protocolCommon.Substrate))
-		if err != nil {
+		if srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, protocolCommon.Substrate)); err != nil {
 			return nil, fmt.Errorf("creating new lite node failed with: %w", err)
 		}
 	} else {
@@ -56,6 +56,10 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	srv.databases = config.Databases
 	if srv.databases == nil {
 		srv.databases = kvdb.New(srv.node)
+	}
+
+	if srv.stream, err = streams.New(srv.node, protocolCommon.Substrate, protocolCommon.SubstrateProtocol); err != nil {
+		return nil, fmt.Errorf("creating streams service failed with: %w", err)
 	}
 
 	// For Odo
@@ -70,13 +74,11 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	// HTTP
-	err = srv.startHttp(config)
-	if err != nil {
+	if err = srv.startHttp(config); err != nil {
 		return nil, fmt.Errorf("starting http service failed with %w", err)
 	}
 
-	srv.tns, err = tnsClient.New(ctx, clientNode)
-	if err != nil {
+	if srv.tns, err = tnsClient.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("creating tns client failed with %w", err)
 	}
 
