@@ -65,6 +65,8 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway *Gateway, err err
 		return nil, fmt.Errorf("new streams client failed with: %w", err)
 	}
 
+	g.attach()
+
 	return g, nil
 }
 

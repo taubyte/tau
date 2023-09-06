@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"github.com/libp2p/go-libp2p/core/peer"
-	matcherSpec "github.com/taubyte/go-specs/matcher"
 	"github.com/taubyte/p2p/streams/command/response"
 )
 
@@ -18,16 +17,16 @@ func (g *Gateway) discover(r *http.Request) (map[peer.ID]response.Response, map[
 
 // var timeScoreFactor = int(20 * time.Second) // wipName
 
-func (g *Gateway) match(matcher Matcher) (project, resource string, err error) {
-	score := matcherSpec.DefaultMatch
-	for {
-		// loop through find match
-		if score == matcherSpec.HighMatch {
-			break
-		}
-	}
-	return
-}
+// func (g *Gateway) match(matcher Matcher) (project, resource string, err error) {
+// 	score := matcherSpec.DefaultMatch
+// 	for {
+// 		// loop through find match
+// 		if score == matcherSpec.HighMatch {
+// 			break
+// 		}
+// 	}
+// 	return
+// }
 
 // type nodeWithScore struct { // wipName
 // 	score int
