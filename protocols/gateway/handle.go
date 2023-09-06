@@ -4,23 +4,24 @@ import (
 	"errors"
 	"fmt"
 
+	goHttp "net/http"
+
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
+	http "github.com/taubyte/http"
 )
 
-type handleRequest struct {
-	requestMethod string // specific type
-	// matchDefs...
+func (g *Gateway) attach() {
+	g.http.LowLevel(&http.LowLevelDefinition{
+		PathPrefix: "/",
+		Handler: func(w goHttp.ResponseWriter, r *goHttp.Request) {
+
+		},
+	})
 }
 
-func (g *Gateway) handle(req handleRequest) error {
-	project, resource, err := g.match(Matcher{})
-	if err != nil {
-		return err
-	}
-
-	// need better names
-	peersHave, others, err := g.discover(project, resource)
+func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
+	peersHave, peersDont, err := g.discover(r)
 	if err != nil {
 		return err
 	}
@@ -29,9 +30,20 @@ func (g *Gateway) handle(req handleRequest) error {
 	var bestScore int
 	for peer, res := range peersHave {
 		// get res data compare against last best
-		res.Get("")
+		isCached, err := res.Get("cached")
+		if err != nil {
+			logger.Errorf("getting `cached` response from peer failed with: %s", err.Error())
+			continue
+		}
+
+		cached,ok := isCached.(bool)
+		if  
+		
 		var score int
 		if score > bestScore {
+			/*
+				res for now will just say cached = true
+			*/
 			bestScore = score
 			bestPeer = peer
 		}
@@ -69,8 +81,4 @@ func (g *Gateway) handle(req handleRequest) error {
 
 	return nil
 
-}
-
-func (g *Gateway) handleHttp() error {
-	return g.handle()
 }

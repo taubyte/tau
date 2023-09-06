@@ -1,14 +1,16 @@
 package gateway
 
 import (
+	"net/http"
+
 	"github.com/libp2p/go-libp2p/core/peer"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	"github.com/taubyte/p2p/streams/command/response"
 )
 
-func (g *Gateway) discover(projectId, resourceId string) (map[peer.ID]response.Response, map[peer.ID]error, error) {
-	body := make(map[string]interface{}, 2)
-	body["project"], body["resource"] = projectId, resourceId
+func (g *Gateway) discover(r *http.Request) (map[peer.ID]response.Response, map[peer.ID]error, error) {
+	body := make(map[string]interface{}, 3)
+	body["host"], body["path"], body["method"] = r.Host, r.URL.Path, r.Method
 
 	// P2P needs a time out, can update SendToPeerTimeout, but would rather not update global var
 	return g.p2pClient.MultiSend("has", body, g.substrateCount/SubstrateThresholdRatio)
