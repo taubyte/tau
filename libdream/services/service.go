@@ -58,6 +58,7 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 		"seer":      u.CreateSeerService,
 		"tns":       u.CreateTNSService,
 		"substrate": u.CreateSubstrateService,
+		"gateway":   u.CreateGatewayService,
 	}
 
 	handle, ok := all[name]
@@ -144,6 +145,8 @@ func getHttpPort(name string) int {
 		return common.DefaultSeerHttpPort
 	case "tns":
 		return common.DefaultTNSHttpPort
+	case "gateway":
+		return common.DefaultGatewayHttpPort
 	}
 	return 0
 }
@@ -164,6 +167,8 @@ func getP2pPort(name string) int {
 		return common.DefaultSeerPort
 	case "tns":
 		return common.DefaultTNSPort
+	case "gateway":
+		return common.DefaultGatewayPort
 	}
 	return 0
 }

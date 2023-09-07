@@ -6,6 +6,7 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/auth"
+	"github.com/taubyte/go-interfaces/services/gateway"
 	"github.com/taubyte/go-interfaces/services/hoarder"
 	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
@@ -135,6 +136,15 @@ func (u *Universe) HoarderByPid(pid string) (hoarder.Service, bool) {
 	return byId[hoarder.Service](u, u.service["hoarder"].nodes, pid)
 }
 
+func (u *Universe) Gateway() gateway.Service {
+	ret, ok := first[gateway.Service](u, u.service["gateway"].nodes)
+	if !ok {
+		return nil
+	}
+
+	return ret
+}
+
 func (u *Universe) Substrate() substrate.Service {
 	ret, ok := first[substrate.Service](u, u.service["substrate"].nodes)
 	if !ok {
@@ -145,6 +155,10 @@ func (u *Universe) Substrate() substrate.Service {
 
 func (u *Universe) SubstrateByPid(pid string) (substrate.Service, bool) {
 	return byId[substrate.Service](u, u.service["substrate"].nodes, pid)
+}
+
+func (u *Universe) GatewayByPid(pid string) (gateway.Service, bool) {
+	return byId[gateway.Service](u, u.service["gateway"].nodes, pid)
 }
 
 func byId[T any](u *Universe, i map[string]commonIface.Service, pid string) (T, bool) {

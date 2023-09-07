@@ -9,14 +9,15 @@ var (
 	DefaultTNSPort       = 226
 	DefaultSubstratePort = 282
 	DefaultDnsPort       = 304
+	DefaultGatewayPort   = 326
 
 	DefaultSeerHttpPort      = 403
 	DefaultPatrickHttpPort   = 424
 	DefaultAuthHttpPort      = 445
 	DefaultTNSHttpPort       = 466
 	DefaultSubstrateHttpPort = 529
-
-	DreamlandApiListen = DefaultHost + ":1421"
+	DefaultGatewayHttpPort   = 541
+	DreamlandApiListen       = DefaultHost + ":1421"
 )
 
 var (

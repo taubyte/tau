@@ -13,8 +13,7 @@ var (
 	Substrate         = "substrate"
 	SubstrateProtocol = "/substrate/v1"
 
-	Gateway         = "gateway"
-	GatewayProtocol = "/gateway/v1"
+	Gateway = "gateway"
 
 	Patrick         = "patrick"
 	PatrickProtocol = "/patrick/v1"

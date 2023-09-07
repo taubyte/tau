@@ -6,7 +6,6 @@ import (
 
 	goHttp "net/http"
 
-	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/streams/command"
@@ -46,17 +45,11 @@ func (g *Gateway) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 			bestPeer = peer
 		}
 	}
-
 	if len(bestPeer) < 1 {
 		return errors.New("no available peers")
 	}
 
-	_cid, err := cid.Decode(bestPeer.String())
-	if err != nil {
-		return fmt.Errorf("decoding peer ID failed with: %w", err)
-	}
-
-	res, err := g.p2pClient.SendTo(_cid, "handle", command.Body{})
+	res, err := g.substrateClient.SendToPID(bestPeer, "handle", command.Body{})
 	if err != nil {
 		return fmt.Errorf("send to peer failed with: %w", err)
 	}
@@ -76,7 +69,7 @@ func (g *Gateway) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 		return fmt.Errorf("expected send and retrieve peer to be same")
 	}
 
-	w.Write([]byte("We made it"))
+	w.Write([]byte(peer))
 	w.WriteHeader(200)
 
 	return nil

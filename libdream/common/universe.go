@@ -6,6 +6,7 @@ import (
 	"github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/kvdb"
 	"github.com/taubyte/go-interfaces/services/auth"
+	"github.com/taubyte/go-interfaces/services/gateway"
 	"github.com/taubyte/go-interfaces/services/hoarder"
 	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
@@ -37,6 +38,7 @@ type SimpleConfigClients struct {
 	Monkey    *common.ClientConfig
 	Hoarder   *common.ClientConfig
 	Substrate *common.ClientConfig
+	Gateway   *common.ClientConfig
 }
 
 type Config struct {
@@ -55,6 +57,7 @@ type Universe interface {
 	Monkey() monkey.Service
 	Hoarder() hoarder.Service
 	Substrate() substrate.Service
+	Gateway() gateway.Service
 	Context() context.Context
 	Stop()
 	// If no simple defined, starts one named StartAllDefaultSimple.
@@ -82,6 +85,7 @@ type Universe interface {
 	MonkeyByPid(pid string) (monkey.Service, bool)
 	HoarderByPid(pid string) (hoarder.Service, bool)
 	SubstrateByPid(pid string) (substrate.Service, bool)
+	GatewayByPid(pid string) (gateway.Service, bool)
 	ListNumber(name string) int
 	GetServicePids(name string) ([]string, error)
 	//

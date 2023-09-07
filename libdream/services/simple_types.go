@@ -8,6 +8,7 @@ import (
 	monkeyIface "github.com/taubyte/go-interfaces/services/monkey"
 	patrickIface "github.com/taubyte/go-interfaces/services/patrick"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
+	substrateIface "github.com/taubyte/go-interfaces/services/substrate"
 	tnsIface "github.com/taubyte/go-interfaces/services/tns"
 	p2p "github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/libdream/common"
@@ -16,12 +17,13 @@ import (
 type Simple struct {
 	p2p.Node
 	Clients struct {
-		seer    seerIface.Client
-		auth    authIface.Client
-		patrick patrickIface.Client
-		tns     tnsIface.Client
-		monkey  monkeyIface.Client
-		hoarder hoarderIface.Client
+		seer      seerIface.Client
+		auth      authIface.Client
+		patrick   patrickIface.Client
+		tns       tnsIface.Client
+		monkey    monkeyIface.Client
+		hoarder   hoarderIface.Client
+		substrate substrateIface.Client
 	}
 }
 
@@ -60,4 +62,8 @@ func (s *Simple) Monkey() monkeyIface.Client {
 
 func (s *Simple) Hoarder() hoarderIface.Client {
 	return s.Clients.hoarder
+}
+
+func (s *Simple) Substrate() substrateIface.Client {
+	return s.Clients.substrate
 }

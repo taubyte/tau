@@ -23,6 +23,7 @@ var Registry = struct {
 	Seer      Handlers
 	TNS       Handlers
 	Substrate Handlers
+	Gateway   Handlers
 }{}
 
 // Order of params important!

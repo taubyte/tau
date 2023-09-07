@@ -62,7 +62,9 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		return nil, fmt.Errorf("creating streams service failed with: %w", err)
 	}
 
-	srv.setupStreamRoutes()
+	if err = srv.setupStreamRoutes(); err != nil {
+		return nil, fmt.Errorf("setting up p2p stream routes failed with: %w", err)
+	}
 
 	// For Odo
 	clientNode := srv.node

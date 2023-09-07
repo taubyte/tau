@@ -41,6 +41,8 @@ func (u *Universe) provided(_service string) bool {
 		s = u.TNS()
 	case "substrate":
 		s = u.Substrate()
+	case "gateway":
+		s = u.Gateway()
 	default:
 		return false
 	}
@@ -70,7 +72,7 @@ func (s *Simple) Provides(clients ...string) error {
 
 func (s *Simple) provided(client string) bool {
 	switch client {
-	case "auth", "hoarder", "monkey", "patrick", "seer", "tns":
+	case "auth", "hoarder", "monkey", "patrick", "seer", "tns", "substrate":
 		return true
 	default:
 		return false

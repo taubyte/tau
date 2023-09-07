@@ -5,17 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"path"
+	"sync/atomic"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
+	iface "github.com/taubyte/go-interfaces/services/gateway"
 	"github.com/taubyte/p2p/streams/client"
-	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
 var logger = log.Logger("gateway.service")
 
-func New(ctx context.Context, config *tauConfig.Node) (gateway *Gateway, err error) {
+func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, err error) {
 	g := &Gateway{
 		ctx: ctx,
 	}
@@ -32,7 +34,7 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway *Gateway, err err
 
 	if config.Node == nil {
 		if g.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolCommon.Gateway)); err != nil {
-			return nil, fmt.Errorf("new lite node failed with: %w", err)
+			return nil, fmt.Errorf("new node failed with: %w", err)
 		}
 	} else {
 		g.node = config.Node
@@ -48,10 +50,6 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway *Gateway, err err
 		return nil, fmt.Errorf("starting http failed with: %w", err)
 	}
 
-	if g.tns, err = tnsClient.New(ctx, clientNode); err != nil {
-		return nil, fmt.Errorf("new tns client failed with: %w", err)
-	}
-
 	if config.Http == nil {
 		g.http.Start()
 	}
@@ -61,18 +59,56 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway *Gateway, err err
 		return nil, errors.New("P2P Announce is empty")
 	}
 
-	if g.p2pClient, err = client.New(ctx, g.node, nil, protocolCommon.GatewayProtocol, MinPeers, MaxPeers); err != nil {
+	if g.substrateClient, err = client.New(ctx, clientNode, nil, protocolCommon.SubstrateProtocol, 1, 5); err != nil {
 		return nil, fmt.Errorf("new streams client failed with: %w", err)
 	}
+
+	// run once before go routine to verify FindPeers does not error
+	if err = g.updatePeerCount(); err != nil {
+		return nil, fmt.Errorf("update peer count failed with: %w", err)
+	}
+
+	// go func() {
+	// 	ticker := time.NewTicker(UpdatePeerCountInterval)
+	// 	for {
+	// 		select {
+	// 		case <-g.ctx.Done():
+	// 			return
+	// 		case <-ticker.C:
+	// 			if err := g.updatePeerCount(); err != nil {
+	// 				logger.Errorf("updating peer count failed with: %s", err.Error())
+	// 			}
+	// 		}
+	// 	}
+	// }()
+
+	// above is not working
+	g.connectedSubstrate = 4
 
 	g.attach()
 
 	return g, nil
 }
 
-// This is how we are doing it for clients/p2p/tns
-// But shouldnt we parsing from config how many tns there are?
-var (
-	MinPeers = 0
-	MaxPeers = 4
-)
+var UpdatePeerCountInterval time.Duration = time.Hour
+
+// This isnt even working
+func (g *Gateway) updatePeerCount() error {
+	peerDiscover, err := g.Node().Discovery().FindPeers(g.ctx, protocolCommon.SubstrateProtocol)
+	if err != nil {
+		return fmt.Errorf("finding substrate peers failed with: %w", err)
+	}
+
+	var count uint64
+	for {
+		_, ok := <-peerDiscover
+		if ok {
+			count++
+		} else {
+			break
+		}
+	}
+
+	atomic.SwapUint64(&g.connectedSubstrate, count)
+	return nil
+}

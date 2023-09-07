@@ -3,6 +3,7 @@ package substrate
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/p2p/streams"
@@ -12,9 +13,16 @@ import (
 	"github.com/taubyte/tau/vm/helpers"
 )
 
-func (s *Service) setupStreamRoutes() {
-	s.stream.Router().AddStatic("has", s.hasHandler)
-	s.stream.Router().AddStatic("handle", s.handleHandler)
+func (s *Service) setupStreamRoutes() error {
+	if err := s.stream.Router().AddStatic("has", s.hasHandler); err != nil {
+		return fmt.Errorf("setting up `has` route failed with: %w", err)
+	}
+
+	if err := s.stream.Router().AddStatic("handle", s.handleHandler); err != nil {
+		return fmt.Errorf("setting up `handle` route failed with: %w", err)
+	}
+
+	return nil
 }
 
 func (s *Service) hasHandler(ctx context.Context, con streams.Connection, body command.Body) (cr.Response, error) {
@@ -47,7 +55,6 @@ func (s *Service) hasHandler(ctx context.Context, con streams.Connection, body c
 
 	response := make(map[string]interface{}, 1)
 	response["cached"] = false
-
 	matcher := common.New(helpers.ExtractHost(host), path, method)
 	servs, err := s.nodeHttp.Cache().Get(matcher, components.GetOptions{Validation: true})
 	if err == nil && len(servs) == 1 {
@@ -59,7 +66,6 @@ func (s *Service) hasHandler(ctx context.Context, con streams.Connection, body c
 
 func (s *Service) handleHandler(ctx context.Context, con streams.Connection, body command.Body) (cr.Response, error) {
 	peer := con.LocalPeer()
-
 	response := make(map[string]interface{}, 1)
 	response["peer"] = peer.String()
 	return response, nil
