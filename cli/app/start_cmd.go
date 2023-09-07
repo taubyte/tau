@@ -10,10 +10,14 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// Function startCommand() defines a CLI command named "start"
+// It returns a pointer to a cli.Command struct that defines the behavior of this command
 func startCommand() *cli.Command {
 	return &cli.Command{
 		Name:        "start",
 		Description: "start a shape",
+		// defines the command-line flags
+		// can be used with the "start" command
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "shape",
@@ -30,9 +34,17 @@ func startCommand() *cli.Command {
 			},
 		},
 
+		// Action function that will be exected 
+		// when the "start" command is invoked
+		// It taks a "cli.Context" as a parameter, 
+		// which provides access to the command-line argument and flags
 		Action: func(ctx *cli.Context) error {
+			// retrieves the value of the "shape" flag 
+			// from the command-line arguments and assigns it to the shape variable.
 			shape := ctx.String("shape")
 			_, protocolConfig, sourceConfig, err := parseSourceConfig(ctx, shape)
+
+			// If an error occurred, returns an error message containing the error.
 			if err != nil {
 				return fmt.Errorf("parsing config failed with: %s", err)
 			}
