@@ -36,12 +36,12 @@ func Zeno() {
 	multiverseCtxC()
 }
 
-func NewMultiVerse() *multiverse {
-	return &multiverse{}
+func NewMultiVerse() *Multiverse {
+	return &Multiverse{}
 }
 
 // create or fetch a universe
-func Multiverse(config UniverseConfig) *Universe {
+func NewUniverse(config UniverseConfig) *Universe {
 	// see if we have a ticket
 	id := id.Generate()
 	if len(config.Id) > 0 {

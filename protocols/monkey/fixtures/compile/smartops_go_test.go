@@ -21,7 +21,7 @@ import (
 // TODO: FIXME
 func TestGoSmartOp(t *testing.T) {
 	t.Skip("smart op is broken currently")
-	u := dreamland.Multiverse(dreamland.UniverseConfig{
+	u := dreamland.NewUniverse(dreamland.UniverseConfig{
 		Name: "MonkeyFixtureTestSmartOp",
 		Id:   "MonkeyFixtureTestSmartOp",
 	})

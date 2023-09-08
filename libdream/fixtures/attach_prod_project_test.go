@@ -19,7 +19,7 @@ func TestAttachProdProject(t *testing.T) {
 	log.SetLogLevel("seer.p2p.client", "PANIC")
 	t.Skip("this project is not on prod anymore")
 
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamland.Config{

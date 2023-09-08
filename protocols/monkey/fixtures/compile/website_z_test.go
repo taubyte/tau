@@ -18,7 +18,7 @@ import (
 )
 
 func TestZipWebsite(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{
+	u := dreamland.NewUniverse(dreamland.UniverseConfig{
 		Name: t.Name(),
 		Id:   t.Name(),
 	})

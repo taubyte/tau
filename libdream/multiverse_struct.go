@@ -4,14 +4,14 @@ import (
 	"context"
 )
 
-type multiverse struct{}
+type Multiverse struct{}
 
-func (m *multiverse) Context() context.Context {
+func (m *Multiverse) Context() context.Context {
 	return multiverseCtx
 }
 
-func (m *multiverse) Universe(name string) *Universe {
-	return Multiverse(UniverseConfig{Name: name})
+func (m *Multiverse) Universe(name string) *Universe {
+	return NewUniverse(UniverseConfig{Name: name})
 }
 
 type UniverseConfig struct {
@@ -25,7 +25,7 @@ type serviceStatus struct {
 	Copies int    `json:"copies"`
 }
 
-func (m *multiverse) Status() interface{} {
+func (m *Multiverse) Status() interface{} {
 	status := make(map[string]interface{})
 	for _, u := range universes {
 		u.lock.RLock()

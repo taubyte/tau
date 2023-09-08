@@ -18,7 +18,7 @@ import (
 )
 
 func TestWebsite(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{
+	u := dreamland.NewUniverse(dreamland.UniverseConfig{
 		Name: "MonkeyFixtureTestWebsite",
 		Id:   "MonkeyFixtureTestWebsite",
 	})

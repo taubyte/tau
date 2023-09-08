@@ -17,7 +17,7 @@ import (
 )
 
 func TestFixtureProvidesClients(t *testing.T) {
-	u := libdream.Multiverse(libdream.UniverseConfig{Name: "fixtureProvidesClients"})
+	u := libdream.NewUniverse(libdream.UniverseConfig{Name: "fixtureProvidesClients"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&libdream.Config{
@@ -48,7 +48,7 @@ func TestFixtureProvidesClients(t *testing.T) {
 }
 
 func TestFixtureProvidesServices(t *testing.T) {
-	u := libdream.Multiverse(libdream.UniverseConfig{Name: "fixtureProvidesServices"})
+	u := libdream.NewUniverse(libdream.UniverseConfig{Name: "fixtureProvidesServices"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamland.Config{
@@ -77,7 +77,7 @@ func TestFixtureProvidesServices(t *testing.T) {
 }
 
 func TestDreamlandFixture(t *testing.T) {
-	u := libdream.Multiverse(libdream.UniverseConfig{Name: "fixtureTest"})
+	u := libdream.NewUniverse(libdream.UniverseConfig{Name: "fixtureTest"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamland.Config{

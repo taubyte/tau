@@ -31,7 +31,7 @@ func createDnsClient(net string) *dns.Client {
 }
 
 func TestDns(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	dnsPort := u.PortFor("seer", "dns")

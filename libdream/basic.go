@@ -28,7 +28,7 @@ func BasicMultiverse(name string) *basicMultiverse {
 	}
 
 	return &basicMultiverse{
-		multiverse: Multiverse(UniverseConfig{Name: name}),
+		multiverse: NewUniverse(UniverseConfig{Name: name}),
 		clients:    SimpleConfigClients{},
 		config:     config,
 	}

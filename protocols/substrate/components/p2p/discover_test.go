@@ -12,7 +12,7 @@ import (
 )
 
 func TestService_Discover(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
 
 	defer u.Stop()
 
