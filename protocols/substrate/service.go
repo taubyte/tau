@@ -26,6 +26,10 @@ var (
 	logger = log.Logger("node.service")
 )
 
+//create new node with substrate protocol!
+//check config and then create p2p lite node
+//add key value store db
+//then initate some node and try to start beacon,tns and then start the vm and attach to other nodes and then return the service
 func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	srv := &Service{
 		ctx:      ctx,
