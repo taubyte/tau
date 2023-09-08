@@ -6,12 +6,12 @@ import (
 
 	iface "github.com/taubyte/go-interfaces/common"
 	tauConfig "github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/libdream"
 	"github.com/taubyte/tau/libdream/common"
-	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 )
 
 func init() {
-	dreamlandRegistry.Registry.TNS.Service = createTNSService
+	libdream.Registry.TNS.Service = createTNSService
 }
 
 func createTNSService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {

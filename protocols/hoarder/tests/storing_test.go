@@ -13,10 +13,9 @@ import (
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/go-interfaces/services/substrate/components/database"
 	"github.com/taubyte/go-interfaces/services/substrate/components/storage"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
 	gitTest "github.com/taubyte/tau/libdream/helpers/git"
-	dreamland "github.com/taubyte/tau/libdream/services"
 
 	projectLib "github.com/taubyte/go-project-schema/project"
 	_ "github.com/taubyte/tau/clients/p2p/hoarder"
@@ -47,15 +46,15 @@ func TestStoring(t *testing.T) {
 	t.Skip("hoarder needs to be fixed")
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"hoarder":   {Others: map[string]int{"copies": copies}},
 			"tns":       {},
 			"substrate": {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Hoarder: &commonIface.ClientConfig{},
 					TNS:     &commonIface.ClientConfig{},
 				},

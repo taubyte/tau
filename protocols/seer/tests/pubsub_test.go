@@ -5,8 +5,7 @@ import (
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 )
 
 var (
@@ -18,13 +17,13 @@ func TestPubsub(t *testing.T) {
 	t.Skip("this test needs to be redone")
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer": {Others: map[string]int{"copies": 3}},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 				},
 			},

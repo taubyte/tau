@@ -9,9 +9,8 @@ import (
 	"time"
 
 	spec "github.com/taubyte/go-specs/common"
-	"github.com/taubyte/tau/libdream/common"
+	"github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
-	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/utils/maps"
 
@@ -22,15 +21,15 @@ import (
 )
 
 func init() {
-	dreamlandRegistry.Fixture("pushConfig", pushConfig)
-	dreamlandRegistry.Fixture("pushCode", pushCode)
-	dreamlandRegistry.Fixture("pushWebsite", pushWebsite)
-	dreamlandRegistry.Fixture("pushLibrary", pushLibrary)
-	dreamlandRegistry.Fixture("pushSpecific", pushSpecific)
-	dreamlandRegistry.Fixture("pushAll", pushAll)
+	libdream.RegisterFixture("pushConfig", pushConfig)
+	libdream.RegisterFixture("pushCode", pushCode)
+	libdream.RegisterFixture("pushWebsite", pushWebsite)
+	libdream.RegisterFixture("pushLibrary", pushLibrary)
+	libdream.RegisterFixture("pushSpecific", pushSpecific)
+	libdream.RegisterFixture("pushAll", pushAll)
 }
 
-func pushAll(u common.Universe, params ...interface{}) error {
+func pushAll(u *libdream.Universe, params ...interface{}) error {
 	simple, err := u.Simple("client")
 	if err != nil {
 		return fmt.Errorf("failed getting simple with error: %v", err)
@@ -75,7 +74,7 @@ func pushAll(u common.Universe, params ...interface{}) error {
 
 	return nil
 }
-func pushSpecific(u common.Universe, params ...interface{}) error {
+func pushSpecific(u *libdream.Universe, params ...interface{}) error {
 	simple, err := u.Simple("client")
 	if err != nil {
 		return fmt.Errorf("failed getting client with: %v", err)
@@ -150,15 +149,15 @@ func pushSpecific(u common.Universe, params ...interface{}) error {
 	return pushWrapper(u, newPayload, commonTest.Repository{ID: intRepoId})
 }
 
-func pushConfig(u common.Universe, params ...interface{}) error {
+func pushConfig(u *libdream.Universe, params ...interface{}) error {
 	return pushWrapper(u, commonTest.ConfigPayload, commonTest.ConfigRepo)
 }
 
-func pushCode(u common.Universe, params ...interface{}) error {
+func pushCode(u *libdream.Universe, params ...interface{}) error {
 	return pushWrapper(u, commonTest.CodePayload, commonTest.CodeRepo)
 }
 
-func pushWebsite(u common.Universe, params ...interface{}) error {
+func pushWebsite(u *libdream.Universe, params ...interface{}) error {
 
 	mockAuthURL, err := u.GetURLHttp(u.Auth().Node())
 	if err != nil {
@@ -176,7 +175,7 @@ func pushWebsite(u common.Universe, params ...interface{}) error {
 	return nil
 }
 
-func pushLibrary(u common.Universe, params ...interface{}) error {
+func pushLibrary(u *libdream.Universe, params ...interface{}) error {
 
 	mockAuthURL, err := u.GetURLHttp(u.Auth().Node())
 	if err != nil {
@@ -194,7 +193,7 @@ func pushLibrary(u common.Universe, params ...interface{}) error {
 	return nil
 }
 
-func pushWrapper(u common.Universe, gitPayload []byte, repo commonTest.Repository) error {
+func pushWrapper(u *libdream.Universe, gitPayload []byte, repo commonTest.Repository) error {
 	err := u.Provides(
 		"auth",
 		"patrick",

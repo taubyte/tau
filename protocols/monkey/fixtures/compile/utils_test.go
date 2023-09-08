@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	"github.com/taubyte/tau/libdream/common"
+	"github.com/taubyte/tau/libdream"
 )
 
 var (
@@ -17,7 +17,7 @@ var (
 	testWebsiteId   = "QmcrzjxwbqERscawQcXW4e5jyNBNoxLsUYatn63E8XPQq2"
 )
 
-func callHal(u common.Universe, path string) ([]byte, error) {
+func callHal(u *libdream.Universe, path string) ([]byte, error) {
 	nodePort, err := u.GetPortHttp(u.Substrate().Node())
 	if err != nil {
 		return nil, err

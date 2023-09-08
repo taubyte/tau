@@ -7,9 +7,8 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	"github.com/taubyte/tau/libdream/services"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	"github.com/taubyte/tau/libdream"
+	dreamland "github.com/taubyte/tau/libdream"
 	_ "github.com/taubyte/tau/protocols/auth"
 
 	"github.com/taubyte/go-interfaces/services/patrick"
@@ -21,10 +20,10 @@ import (
 )
 
 func TestReportSsh(t *testing.T) {
-	u := services.Multiverse(dreamland.UniverseConfig{Name: "ReportSsh"})
+	u := libdream.Multiverse(dreamland.UniverseConfig{Name: "ReportSsh"})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},
@@ -32,9 +31,9 @@ func TestReportSsh(t *testing.T) {
 			"patrick": {},
 			"auth":    {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS:     &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
 				},

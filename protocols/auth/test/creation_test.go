@@ -6,8 +6,7 @@ import (
 	"testing"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	_ "github.com/taubyte/tau/protocols/auth"
 
 	_ "github.com/taubyte/tau/clients/p2p/monkey"
@@ -24,15 +23,15 @@ func TestAuth(t *testing.T) {
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"hoarder": {},
 			"tns":     {},
 			"auth":    {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
 				},
 			},

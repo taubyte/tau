@@ -6,13 +6,13 @@ import (
 
 	iface "github.com/taubyte/go-interfaces/common"
 	tauConfig "github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/libdream"
 	dreamlandCommon "github.com/taubyte/tau/libdream/common"
-	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 )
 
 func init() {
-	dreamlandRegistry.Registry.Patrick.Service = createPatrickService
+	libdream.Registry.Patrick.Service = createPatrickService
 }
 
 func createPatrickService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {

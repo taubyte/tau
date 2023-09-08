@@ -3,10 +3,10 @@ package counters
 import (
 	"errors"
 
-	commonDreamland "github.com/taubyte/tau/libdream/common"
+	"github.com/taubyte/tau/libdream"
 )
 
-func FromDreamland(u commonDreamland.Universe) (*counter, error) {
+func FromDreamland(u *libdream.Universe) (*counter, error) {
 	if substrate := u.Substrate(); substrate != nil {
 		if _counter := substrate.Counter(); _counter != nil {
 			if mockCounter, ok := _counter.(*counter); ok {

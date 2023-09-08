@@ -6,12 +6,11 @@ import (
 	"strconv"
 
 	spec "github.com/taubyte/go-specs/common"
-	"github.com/taubyte/tau/libdream/common"
-	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
+	"github.com/taubyte/tau/libdream"
 )
 
 func init() {
-	dreamlandRegistry.Fixture("buildLocalProject", Build)
+	libdream.RegisterFixture("buildLocalProject", Build)
 }
 
 type buildFixtureValues struct {
@@ -51,7 +50,7 @@ Example
 		--branch master \
 		--path '/home/sam/projects/P2PProject`
 */
-func Build(u common.Universe, params ...interface{}) error {
+func Build(u *libdream.Universe, params ...interface{}) error {
 	simple, err := u.Simple("client")
 	if err != nil {
 		return fmt.Errorf("failed getting simple with error: %v", err)

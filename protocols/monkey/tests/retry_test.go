@@ -12,9 +12,8 @@ import (
 	"github.com/taubyte/go-specs/methods"
 	"github.com/taubyte/p2p/peer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
-	dreamland "github.com/taubyte/tau/libdream/services"
 	service "github.com/taubyte/tau/protocols/patrick"
 
 	_ "github.com/taubyte/tau/clients/p2p/monkey"
@@ -34,7 +33,7 @@ func TestRunWasmRetry(t *testing.T) {
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},
@@ -42,9 +41,9 @@ func TestRunWasmRetry(t *testing.T) {
 			"patrick": {},
 			"auth":    {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
 				},
 			},

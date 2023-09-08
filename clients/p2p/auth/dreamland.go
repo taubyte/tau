@@ -3,11 +3,11 @@ package auth
 import (
 	"github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/p2p/peer"
-	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
+	"github.com/taubyte/tau/libdream"
 )
 
 func init() {
-	dreamlandRegistry.Registry.Auth.Client = createAuthClient
+	libdream.Registry.Auth.Client = createAuthClient
 }
 
 func createAuthClient(node peer.Node, config *common.ClientConfig) (common.Client, error) {

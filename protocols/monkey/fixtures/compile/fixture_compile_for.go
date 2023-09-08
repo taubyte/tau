@@ -9,12 +9,11 @@ import (
 	tauTemplates "github.com/taubyte/cli-common/singletons/templates"
 	spec "github.com/taubyte/go-specs/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/tau/libdream/common"
-	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
+	"github.com/taubyte/tau/libdream"
 )
 
 func init() {
-	dreamlandRegistry.Fixture("compileFor", CompileFor)
+	libdream.RegisterFixture("compileFor", CompileFor)
 }
 
 type BasicCompileFor struct {
@@ -87,7 +86,7 @@ dream inject compileFor \
 	--path '/home/sam/Downloads/bafybeibnkp6wrfjcepptbnxbxy6j7l3rcgxjwur5tr7crmjj5pt5a4lca4.wasm,/home/sam/Downloads/bafybeibnkp6wrfjcepptbnxbxy6j7l3rcgxjwur5tr7crmjj5pt5a4lca4.wasm'
 */
 
-func CompileFor(u common.Universe, params ...interface{}) error {
+func CompileFor(u *libdream.Universe, params ...interface{}) error {
 	simple, err := u.Simple("client")
 	if err != nil {
 		return fmt.Errorf("failed getting simple with error: %v", err)

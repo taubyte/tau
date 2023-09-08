@@ -7,27 +7,26 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	"github.com/taubyte/tau/libdream/services"
+	"github.com/taubyte/tau/libdream"
 )
 
 func TestDreamlandDoubleClient(t *testing.T) {
-	u := services.Multiverse(services.UniverseConfig{Name: "single"})
-	defer services.Zeno()
+	u := libdream.Multiverse(libdream.UniverseConfig{Name: "single"})
+	defer libdream.Zeno()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&libdream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
 
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]libdream.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: libdream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
 				},
 			},
 			"client2": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: libdream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
 				},
 			},

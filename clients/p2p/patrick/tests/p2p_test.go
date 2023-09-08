@@ -6,9 +6,8 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	_ "github.com/taubyte/tau/clients/p2p/patrick"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
-	dreamland "github.com/taubyte/tau/libdream/services"
 	_ "github.com/taubyte/tau/protocols/auth"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 
@@ -26,16 +25,16 @@ func TestClientWithUniverse(t *testing.T) {
 	patrickHttpPort := 4443
 	authHttpPort := 4445
 
-	err := u.StartWithConfig(&dreamlandCommon.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"patrick": {Others: map[string]int{"http": patrickHttpPort}},
 			"auth":    {Others: map[string]int{"http": authHttpPort, "secure": 1}},
 			"hoarder": {},
 			"tns":     {},
 		},
-		Simples: map[string]dreamlandCommon.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: dreamlandCommon.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Patrick: &commonIface.ClientConfig{},
 				},
 			},

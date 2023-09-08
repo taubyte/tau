@@ -8,12 +8,12 @@ import (
 	iface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/seer"
 	tauConfig "github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/libdream"
 	dreamlandCommon "github.com/taubyte/tau/libdream/common"
-	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 )
 
 func init() {
-	dreamlandRegistry.Registry.Seer.Service = createService
+	libdream.Registry.Seer.Service = createService
 }
 
 func createService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {

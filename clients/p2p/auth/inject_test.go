@@ -8,8 +8,7 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/http/helpers"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	"github.com/taubyte/tau/protocols/auth/acme/store"
 )
 
@@ -21,14 +20,14 @@ func TestInject(t *testing.T) {
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&dreamlandCommon.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth": {},
 			"tns":  {},
 		},
-		Simples: map[string]dreamlandCommon.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: dreamlandCommon.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Auth: &commonIface.ClientConfig{},
 				},
 			},

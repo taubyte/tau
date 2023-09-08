@@ -9,15 +9,14 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	"github.com/taubyte/tau/vm/cache"
 	"github.com/taubyte/utils/id"
 	"gotest.tools/v3/assert"
 
 	"github.com/taubyte/config-compiler/decompile"
 	_ "github.com/taubyte/config-compiler/fixtures"
-	_ "github.com/taubyte/tau/libdream/common/fixtures"
+	_ "github.com/taubyte/tau/libdream/fixtures"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 	"github.com/taubyte/tau/protocols/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/protocols/seer"
@@ -52,16 +51,16 @@ func TestCounters(t *testing.T) {
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
 			"substrate": {},
 			"hoarder":   {},
 			"seer":      {Others: map[string]int{"copies": 2}},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
 				},
 			},

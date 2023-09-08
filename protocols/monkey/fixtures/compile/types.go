@@ -4,12 +4,12 @@ import (
 	"fmt"
 
 	git "github.com/taubyte/go-simple-git"
-	"github.com/taubyte/tau/libdream/common"
+	"github.com/taubyte/tau/libdream"
 )
 
 type resourceContext struct {
-	universe      common.Universe
-	simple        common.Simple
+	universe      *libdream.Universe
+	simple        *libdream.Simple
 	projectId     string
 	applicationId string
 	resourceId    string

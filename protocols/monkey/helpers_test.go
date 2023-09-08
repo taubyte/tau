@@ -9,11 +9,11 @@ import (
 	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/p2p/peer"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
+	"github.com/taubyte/tau/libdream"
 )
 
 type MonkeyTestContext struct {
-	universe     commonDreamland.Universe
+	universe     *libdream.Universe
 	client       monkey.Client
 	jid          string
 	expectStatus patrick.JobStatus

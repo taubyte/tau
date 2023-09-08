@@ -5,8 +5,7 @@ import (
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
@@ -15,7 +14,7 @@ func TestTimeout(t *testing.T) {
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&dreamlandCommon.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},
@@ -23,9 +22,9 @@ func TestTimeout(t *testing.T) {
 			"patrick": {Others: map[string]int{"delay": 1}},
 			"auth":    {},
 		},
-		Simples: map[string]dreamlandCommon.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: dreamlandCommon.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Patrick: &commonIface.ClientConfig{},
 					Monkey:  &commonIface.ClientConfig{},
 					TNS:     &commonIface.ClientConfig{},

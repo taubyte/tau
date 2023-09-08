@@ -10,9 +10,8 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/patrick"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
-	dreamland "github.com/taubyte/tau/libdream/services"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
 	_ "github.com/taubyte/tau/protocols/auth"
@@ -22,7 +21,7 @@ func TestPatrick(t *testing.T) {
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&dreamlandCommon.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":     {},
 			"patrick": {},

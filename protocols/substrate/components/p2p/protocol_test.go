@@ -8,8 +8,7 @@ import (
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
 	"github.com/taubyte/tau/protocols/substrate/components/structure"
 )
@@ -33,13 +32,13 @@ func TestProtocolListen(t *testing.T) {
 	})
 
 	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
-	err := u.StartWithConfig(&commonDreamland.Config{
-		Simples: map[string]commonDreamland.SimpleConfig{
+	err := u.StartWithConfig(&dreamland.Config{
+		Simples: map[string]dreamland.SimpleConfig{
 			"sender": {
-				Clients: commonDreamland.SimpleConfigClients{},
+				Clients: dreamland.SimpleConfigClients{},
 			},
 			"receiver": {
-				Clients: commonDreamland.SimpleConfigClients{},
+				Clients: dreamland.SimpleConfigClients{},
 			},
 		},
 	})
