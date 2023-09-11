@@ -5,7 +5,6 @@ import (
 	"sync"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
-	ifaceCommon "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/kvdb"
 	"github.com/taubyte/p2p/peer"
 )
@@ -31,20 +30,20 @@ type serviceInfo struct {
 	nodes map[string]commonIface.Service
 }
 
-type Handlers struct {
-	Service func(context.Context, *commonIface.ServiceConfig) (commonIface.Service, error)
-	Client  func(peer.Node, *commonIface.ClientConfig) (commonIface.Client, error)
+type handlers struct {
+	service ServiceCreate
+	client  ClientCreate
 }
 
-var Registry = struct {
-	Auth      Handlers
-	Hoarder   Handlers
-	Monkey    Handlers
-	Patrick   Handlers
-	Seer      Handlers
-	TNS       Handlers
-	Substrate Handlers
-}{}
+type ServiceCreate func(context.Context, *commonIface.ServiceConfig) (commonIface.Service, error)
+type ClientCreate func(peer.Node, *commonIface.ClientConfig) (commonIface.Client, error)
+
+var Registry *handlerRegistry
+
+type handlerRegistry struct {
+	registry map[string]*handlers
+	lock     sync.RWMutex
+}
 
 // Order of params important!
 type FixtureHandler func(universe *Universe, params ...interface{}) error
@@ -64,11 +63,11 @@ type FixtureDefinition struct {
 	Internal    bool
 }
 
-type ClientCreationMethod func(*ifaceCommon.ClientConfig) error
+type ClientCreationMethod func(*commonIface.ClientConfig) error
 
 type SimpleConfig struct {
-	ifaceCommon.CommonConfig
-	Clients SimpleConfigClients
+	commonIface.CommonConfig
+	Clients map[string]*commonIface.ClientConfig
 }
 
 type NodeInfo struct {
@@ -78,18 +77,21 @@ type NodeInfo struct {
 	Ports     map[string]int
 }
 
-type SimpleConfigClients struct {
-	Seer      *ifaceCommon.ClientConfig
-	Auth      *ifaceCommon.ClientConfig
-	Patrick   *ifaceCommon.ClientConfig
-	TNS       *ifaceCommon.ClientConfig
-	Monkey    *ifaceCommon.ClientConfig
-	Hoarder   *ifaceCommon.ClientConfig
-	Substrate *ifaceCommon.ClientConfig
-}
-
 type Config struct {
-	Services map[string]ifaceCommon.ServiceConfig
-	Clients  map[string]ifaceCommon.ClientConfig
+	Services map[string]commonIface.ServiceConfig
+	Clients  map[string]commonIface.ClientConfig
 	Simples  map[string]SimpleConfig
 }
+
+type UniverseConfig struct {
+	Name     string
+	Id       string
+	KeepRoot bool
+}
+
+type serviceStatus struct {
+	Name   string `json:"name"`
+	Copies int    `json:"copies"`
+}
+
+type Multiverse struct{}

@@ -6,11 +6,10 @@ import (
 
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	peer "github.com/taubyte/p2p/peer"
-	"github.com/taubyte/tau/libdream/common"
 )
 
 func (u *Universe) Mesh(newNodes ...peer.Node) {
-	ctx, ctxC := context.WithTimeout(u.ctx, common.MeshTimeout)
+	ctx, ctxC := context.WithTimeout(u.ctx, MeshTimeout)
 	defer ctxC()
 
 	u.lock.RLock()

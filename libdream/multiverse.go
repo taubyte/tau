@@ -2,27 +2,12 @@ package libdream
 
 import (
 	"context"
-	"fmt"
-	"os"
-	"path"
-	"sync"
 
-	commonIface "github.com/taubyte/go-interfaces/common"
-	peerIface "github.com/taubyte/p2p/peer"
-	"github.com/taubyte/tau/libdream/common"
-	"github.com/taubyte/utils/id"
+	commonSpecs "github.com/taubyte/go-specs/common"
 )
 
-var (
-	universes      map[string]*Universe
-	universesLock  sync.RWMutex
-	multiverseCtx  context.Context
-	multiverseCtxC context.CancelFunc
-)
-
-func init() {
-	universes = make(map[string]*Universe)
-	multiverseCtx, multiverseCtxC = context.WithCancel(context.Background())
+func NewMultiVerse() *Multiverse {
+	return &Multiverse{}
 }
 
 // kill them all
@@ -36,80 +21,51 @@ func Zeno() {
 	multiverseCtxC()
 }
 
-func NewMultiVerse() *Multiverse {
-	return &Multiverse{}
+func (m *Multiverse) Context() context.Context {
+	return multiverseCtx
 }
 
-// create or fetch a universe
-func NewUniverse(config UniverseConfig) *Universe {
-	// see if we have a ticket
-	id := id.Generate()
-	if len(config.Id) > 0 {
-		id = config.Id
-	}
+func (m *Multiverse) Universe(name string) *Universe {
+	return NewUniverse(UniverseConfig{Name: name})
+}
 
-	universesLock.Lock()
-	defer universesLock.Unlock()
-
-	u, exists := universes[config.Name]
-	if exists {
-		return u
-	}
-
-	u = &Universe{
-		name:      config.Name,
-		id:        id,
-		all:       make([]peerIface.Node, 0),
-		closables: make([]commonIface.Service, 0),
-		simples:   make(map[string]*Simple),
-		lookups:   make(map[string]*NodeInfo),
-		portShift: LastUniversePortShift(),
-		keepRoot:  config.KeepRoot,
-		service: func() map[string]*serviceInfo {
-			s := make(map[string]*serviceInfo)
-			for _, srvt := range ValidServices() {
-				s[srvt] = new(serviceInfo)
-				s[srvt].nodes = make(map[string]commonIface.Service)
-			}
-			return s
-		}(),
-	}
-	u.ctx, u.ctxC = context.WithCancel(multiverseCtx)
-
-	if config.KeepRoot {
-		cacheFolder, err := common.GetCacheFolder()
-		if err != nil {
-			return nil
+func (m *Multiverse) Status() interface{} {
+	status := make(map[string]interface{})
+	for _, u := range universes {
+		u.lock.RLock()
+		status[u.name] = map[string]interface{}{
+			"root":       u.root,
+			"node-count": len(u.all),
+			"simples": func() []string {
+				_simples := make([]string, 0)
+				for s := range u.simples {
+					_simples = append(_simples, s)
+				}
+				return _simples
+			}(),
+			"nodes": func() map[string][]string {
+				_nodes := make(map[string][]string)
+				for _, s := range u.all {
+					addrs := make([]string, 0)
+					for _, addr := range s.Peer().Addrs() {
+						addrs = append(addrs, addr.String())
+					}
+					_nodes[s.ID().Pretty()] = addrs
+				}
+				return _nodes
+			}(),
+			"services": func() []serviceStatus {
+				_services := make([]serviceStatus, 0)
+				for _, name := range commonSpecs.Protocols {
+					nodes := u.service[name].nodes
+					if nodes != nil {
+						_services = append(_services, serviceStatus{Name: name, Copies: len(nodes)})
+					}
+				}
+				return _services
+			}(),
 		}
-
-		u.root = path.Join(cacheFolder, "universe-"+u.id)
-	} else {
-		u.root = "/tmp/universe-" + u.id
+		u.lock.RUnlock()
 	}
-
-	err := os.MkdirAll(u.root, 0755)
-	if err != nil {
-		return nil
-	}
-
-	universes[config.Name] = u
-
-	// add an elder node
-	elderConfig := struct {
-		Config SimpleConfig
-	}{}
-
-	_, err = u.CreateSimpleNode("elder", &elderConfig.Config)
-	if err != nil {
-		fmt.Println("Create simple failed", err)
-	}
-
-	return u
-}
-
-func Exist(name string) bool {
-	universesLock.RLock()
-	defer universesLock.RUnlock()
-	_, exists := universes[name]
-	return exists
+	return status
 }

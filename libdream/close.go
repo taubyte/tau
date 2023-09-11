@@ -3,12 +3,13 @@ package libdream
 import (
 	"fmt"
 
+	commonSpecs "github.com/taubyte/go-specs/common"
 	peer "github.com/taubyte/p2p/peer"
 )
 
 func (u *Universe) Kill(name string) error {
 	var isService bool
-	for _, service := range ValidServices() {
+	for _, service := range commonSpecs.Protocols {
 		if name == service {
 			isService = true
 			break

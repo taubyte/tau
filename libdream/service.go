@@ -8,21 +8,27 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	peer "github.com/taubyte/p2p/peer"
-	"github.com/taubyte/tau/libdream/common"
 	"github.com/taubyte/tau/pkgs/kvdb"
 )
 
-func (u *Universe) PortFor(proto, _type string) int {
+func (u *Universe) PortFor(proto, _type string) (int, error) {
 	serviceCount := len(u.service[proto].nodes)
+	var mapPath string
 	switch _type {
-	case "http":
-		return u.portShift + getHttpPort(proto) + serviceCount
-	case "p2p":
-		return u.portShift + getP2pPort(proto) + serviceCount
-	case "dns":
-		return u.portShift + common.DefaultDnsPort + serviceCount
+	case "http", "p2p":
+		mapPath = _type + "/" + proto
+	case DNSPathVar:
+		mapPath = _type
+	default:
+		return 0, fmt.Errorf("invalid type `%s`", _type)
 	}
-	return -1
+
+	port, ok := Ports[mapPath]
+	if !ok {
+		return 0, fmt.Errorf("no port set for type `%s` protocol `%s`", _type, proto)
+	}
+
+	return u.portShift + port + serviceCount, nil
 }
 
 func (u *Universe) createService(name string, config *commonIface.ServiceConfig) error {
@@ -41,35 +47,23 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 		config.Others = make(map[string]int)
 	}
 
+	var err error
 	for _, k := range []string{"http", "p2p", "dns"} {
 		if _, ok := config.Others[k]; !ok {
-			config.Others[k] = u.PortFor(name, k)
+			if config.Others[k], err = u.PortFor(name, k); err != nil {
+				return err
+			}
 			if k == "p2p" {
 				config.Port = config.Others[k]
 			}
 		}
 	}
 
-	all := map[string]func(*commonIface.ServiceConfig) (peer.Node, error){
-		"auth":      u.CreateAuthService,
-		"hoarder":   u.CreateHoarderService,
-		"monkey":    u.CreateMonkeyService,
-		"patrick":   u.CreatePatrickService,
-		"seer":      u.CreateSeerService,
-		"tns":       u.CreateTNSService,
-		"substrate": u.CreateSubstrateService,
-	}
-
-	handle, ok := all[name]
-	if !ok {
-		return fmt.Errorf("service `%s` does not exist", name)
-	}
-
 	if config.Disabled {
 		return nil
 	}
 
-	node, err := handle(config)
+	node, err := u.startService(name, config)
 	if err != nil {
 		return err
 	}
@@ -79,10 +73,10 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 	// we mesh first
 	u.Mesh(node)
 	// wait till we're connected to others
-	node.WaitForSwarm(common.AfterStartDelay())
+	node.WaitForSwarm(afterStartDelay())
 	// register so others can mesh with it
 	u.Register(node, name, config.Others)
-	time.Sleep(common.AfterStartDelay())
+	time.Sleep(afterStartDelay())
 
 	return nil
 }
@@ -132,38 +126,58 @@ func (u *Universe) GetServicePids(name string) ([]string, error) {
 	return pids, nil
 }
 
-func getHttpPort(name string) int {
-	switch name {
-	case "auth":
-		return common.DefaultAuthHttpPort
-	case "substrate":
-		return common.DefaultSubstrateHttpPort
-	case "patrick":
-		return common.DefaultPatrickHttpPort
-	case "seer":
-		return common.DefaultSeerHttpPort
-	case "tns":
-		return common.DefaultTNSHttpPort
+func (h *handlerRegistry) Set(protocol string, service ServiceCreate, client ClientCreate) error {
+	handlers, err := h.handlers(protocol)
+	if err != nil {
+		return err
 	}
-	return 0
+
+	h.lock.Lock()
+	defer h.lock.Unlock()
+	if service != nil {
+		handlers.service = service
+	}
+
+	if client != nil {
+		handlers.client = client
+	}
+
+	return nil
 }
 
-func getP2pPort(name string) int {
-	switch name {
-	case "auth":
-		return common.DefaultAuthPort
-	case "hoarder":
-		return common.DefaultHoarderPort
-	case "monkey":
-		return common.DefaultMonkeyPort
-	case "substrate":
-		return common.DefaultSubstratePort
-	case "patrick":
-		return common.DefaultPatrickPort
-	case "seer":
-		return common.DefaultSeerPort
-	case "tns":
-		return common.DefaultTNSPort
+func (h *handlerRegistry) client(protocol string) (ClientCreate, error) {
+	handlers, err := h.handlers(protocol)
+	if err != nil {
+		return nil, err
 	}
-	return 0
+
+	if handlers.client == nil {
+		return nil, fmt.Errorf("client creation method is nil have you imported _ \"github.com/taubyte/tau/protocols/%s\"", protocol)
+	}
+
+	return handlers.client, nil
+}
+
+func (h *handlerRegistry) service(protocol string) (ServiceCreate, error) {
+	handlers, err := h.handlers(protocol)
+	if err != nil {
+		return nil, err
+	}
+
+	if handlers.service == nil {
+		return nil, fmt.Errorf("Service creation method is nil have you imported _ \"github.com/taubyte/tau/protocols/%s\"", protocol)
+	}
+
+	return handlers.service, nil
+}
+
+func (h *handlerRegistry) handlers(protocol string) (*handlers, error) {
+	h.lock.RLock()
+	handlers, ok := h.registry[protocol]
+	h.lock.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("protocol `%s` does not exist", protocol)
+	}
+
+	return handlers, nil
 }

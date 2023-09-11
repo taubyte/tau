@@ -1,67 +1,131 @@
 package libdream
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"sync"
 
-	logging "github.com/ipfs/go-log/v2"
-	ifaceCommon "github.com/taubyte/go-interfaces/common"
+	commonIface "github.com/taubyte/go-interfaces/common"
+	commonSpecs "github.com/taubyte/go-specs/common"
 	peer "github.com/taubyte/p2p/peer"
-	"github.com/taubyte/tau/libdream/common"
+
 	protocols "github.com/taubyte/tau/protocols/common"
+	"github.com/taubyte/utils/id"
 )
 
-var (
-	logger = logging.Logger("dreamland")
-)
+// create or fetch a universe
+func NewUniverse(config UniverseConfig) *Universe {
+	// see if we have a ticket
+	id := id.Generate()
+	if len(config.Id) > 0 {
+		id = config.Id
+	}
 
-func ValidServices() []string {
-	return []string{"seer", "auth", "patrick", "tns", "monkey", "hoarder", "substrate"}
+	universesLock.Lock()
+	defer universesLock.Unlock()
+
+	u, exists := universes[config.Name]
+	if exists {
+		return u
+	}
+
+	u = &Universe{
+		name:      config.Name,
+		id:        id,
+		all:       make([]peer.Node, 0),
+		closables: make([]commonIface.Service, 0),
+		simples:   make(map[string]*Simple),
+		lookups:   make(map[string]*NodeInfo),
+		portShift: LastUniversePortShift(),
+		keepRoot:  config.KeepRoot,
+		service: func() map[string]*serviceInfo {
+			s := make(map[string]*serviceInfo)
+			for _, srvt := range commonSpecs.Protocols {
+				s[srvt] = new(serviceInfo)
+				s[srvt].nodes = make(map[string]commonIface.Service)
+			}
+			return s
+		}(),
+	}
+	u.ctx, u.ctxC = context.WithCancel(multiverseCtx)
+
+	if config.KeepRoot {
+		cacheFolder, err := GetCacheFolder()
+		if err != nil {
+			return nil
+		}
+
+		u.root = path.Join(cacheFolder, "universe-"+u.id)
+	} else {
+		u.root = "/tmp/universe-" + u.id
+	}
+
+	err := os.MkdirAll(u.root, 0755)
+	if err != nil {
+		return nil
+	}
+
+	universes[config.Name] = u
+
+	// add an elder node
+	elderConfig := struct {
+		Config SimpleConfig
+	}{}
+
+	_, err = u.CreateSimpleNode("elder", &elderConfig.Config)
+	if err != nil {
+		fmt.Println("Create simple failed", err)
+	}
+
+	return u
 }
 
-func ValidClients() []string {
-	return []string{"seer", "auth", "patrick", "tns", "monkey", "hoarder"}
+func GetUniverse(name string) (*Universe, error) {
+	universesLock.RLock()
+	defer universesLock.RUnlock()
+	universe, ok := universes[name]
+	if !ok {
+		return nil, fmt.Errorf("universe `%s` does not exist", name)
+	}
+
+	return universe, nil
 }
 
-func (u *Universe) toClose(c ifaceCommon.Service) {
+func (u *Universe) toClose(c commonIface.Service) {
 	u.lock.Lock()
 	defer u.lock.Unlock()
 	u.closables = append(u.closables, c)
 }
 
 func (u *Universe) StartAll(simples ...string) error {
-	_services := ValidServices()
-	serviceMap := make(map[string]ifaceCommon.ServiceConfig, len(_services))
-	for _, s := range _services {
-		serviceMap[s] = ifaceCommon.ServiceConfig{}
+	serviceMap := make(map[string]commonIface.ServiceConfig, len(commonSpecs.Protocols))
+	for _, s := range commonSpecs.Protocols {
+		serviceMap[s] = commonIface.ServiceConfig{}
 	}
 
-	if len(simples) == 0 {
-		simples = []string{common.StartAllDefaultSimple}
+	if len(simples) < 1 {
+		simples = append(simples, startAllDefaultSimple)
 	}
 
 	simplesDef := make(map[string]SimpleConfig)
 	u.lock.Lock()
 	for _, name := range simples {
 		simplesDef[name] = SimpleConfig{
-			Clients: ClientsWithDefaults(ValidClients()...),
+			Clients: u.defaultClients(),
 		}
 	}
 	u.lock.Unlock()
 
-	err := u.StartWithConfig(&Config{
-		Services: serviceMap,
-		Simples:  simplesDef,
-	})
-	if err != nil {
-		return err
-	}
-
-	return nil
-
+	return u.StartWithConfig(
+		&Config{
+			Services: serviceMap,
+			Simples:  simplesDef,
+		},
+	)
 }
 
 func (u *Universe) GetPortHttp(node peer.Node) (int, error) {
@@ -80,22 +144,20 @@ func (u *Universe) GetPortHttp(node peer.Node) (int, error) {
 	return port, nil
 }
 
-func (u *Universe) GetURLHttp(node peer.Node) (url string, err error) {
-	port, err := u.GetPortHttp(node)
-	if err != nil {
-		return
+func (u *Universe) getHttpUrl(node peer.Node, scheme string) (string, error) {
+	if port, err := u.GetPortHttp(node); err != nil {
+		return "", err
+	} else {
+		return fmt.Sprintf(DefaultHTTPListenFormat, scheme, port), nil
 	}
-
-	return fmt.Sprintf(common.DefaultHTTPListenFormat, "http", port), nil
 }
 
-func (u *Universe) GetURLHttps(node peer.Node) (url string, err error) {
-	port, err := u.GetPortHttp(node)
-	if err != nil {
-		return
-	}
+func (u *Universe) GetURLHttp(node peer.Node) (string, error) {
+	return u.getHttpUrl(node, "http")
+}
 
-	return fmt.Sprintf(common.DefaultHTTPListenFormat, "https", port), nil
+func (u *Universe) GetURLHttps(node peer.Node) (string, error) {
+	return u.getHttpUrl(node, "https")
 }
 
 func (u *Universe) RunFixture(name string, params ...interface{}) error {
@@ -140,7 +202,7 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 		config.SwarmKey = protocols.SwarmKey()
 
 		wg.Add(1)
-		go func(service string, config ifaceCommon.ServiceConfig) {
+		go func(service string, config commonIface.ServiceConfig) {
 			defer wg.Done()
 			err := u.Service(service, &config)
 			if err != nil {
@@ -208,7 +270,7 @@ func (u *Universe) Cleanup() {
 
 	closeableWg.Add(len(u.closables))
 	for _, c := range u.closables {
-		go func(_c ifaceCommon.Service) {
+		go func(_c commonIface.Service) {
 			_c.Close()
 			_c.Node().Close()
 			closeableWg.Done()

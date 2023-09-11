@@ -2,15 +2,55 @@ package libdream
 
 import (
 	"fmt"
+	"math/rand"
+	"os"
+	"path"
 	"sync"
+	"time"
 
 	commonSpec "github.com/taubyte/go-specs/common"
 )
 
+// TODO: Need to verify which vars need to be exported
 var (
 	fixtures     map[string]FixtureHandler
 	fixturesLock sync.RWMutex
+
+	//buffer between protocol ports
+	portBuffer    = 21
+	portStart     = 100
+	httpPortStart = 403
+	DNSPathVar    = "dns"
+	Ports         map[string]int
+
+	DreamlandApiListen = DefaultHost + ":1421"
+
+	DefaultHost             string = "127.0.0.1"
+	DefaultP2PListenFormat  string = "/ip4/" + DefaultHost + "/tcp/%d"
+	DefaultHTTPListenFormat string = "%s://" + DefaultHost + ":%d"
+
+	BaseAfterStartDelay = 100 // Millisecond
+	MaxAfterStartDelay  = 500 // Millisecond
+	MeshTimeout         = 5 * time.Second
+
+	startAllDefaultSimple = "client"
 )
+
+func afterStartDelay() time.Duration {
+	rand.Seed(time.Now().UnixNano())
+	return time.Duration(BaseAfterStartDelay+rand.Intn(MaxAfterStartDelay-BaseAfterStartDelay)) * time.Millisecond
+}
+
+func GetCacheFolder() (string, error) {
+	cacheFolder := ".cache/dreamland"
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	return path.Join(home, cacheFolder), nil
+}
 
 // TODO: This should be generated
 var FixtureMap = map[string]FixtureDefinition{

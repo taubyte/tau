@@ -3,6 +3,7 @@ package libdream
 import (
 	"fmt"
 
+	commonSpecs "github.com/taubyte/go-specs/common"
 	"golang.org/x/exp/slices"
 )
 
@@ -44,7 +45,7 @@ func (u *Universe) killSimpleByNameId(name, id string) error {
 }
 
 func (u *Universe) KillNodeByNameID(name, id string) error {
-	if slices.Contains(ValidServices(), name) {
+	if slices.Contains(commonSpecs.Protocols, name) {
 		return u.killServiceByNameId(name, id)
 	} else {
 		return u.killSimpleByNameId(name, id)

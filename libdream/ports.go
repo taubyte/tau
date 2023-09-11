@@ -6,8 +6,6 @@ import (
 	"net"
 	"sync"
 	"time"
-
-	"github.com/taubyte/tau/libdream/common"
 )
 
 var (
@@ -33,7 +31,7 @@ func LastUniversePortShift() int {
 	defer lastUniversePortShiftLock.Unlock()
 	for {
 		lastUniversePortShift += int(rand.NewSource(time.Now().UnixNano()).Int63()%int64(maxUniverses)) * portsPerUniverse
-		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", common.DefaultHost, lastUniversePortShift))
+		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", DefaultHost, lastUniversePortShift))
 		if err == nil {
 			l.Close()
 			break

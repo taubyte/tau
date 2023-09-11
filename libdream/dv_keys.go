@@ -10,7 +10,6 @@ import (
 	"fmt"
 )
 
-// TODO: find a spot for this same thing in spore-drive
 func generateDVKeys() ([]byte, []byte, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
