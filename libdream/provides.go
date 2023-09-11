@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"unicode"
 
 	servicesIface "github.com/taubyte/go-interfaces/services"
 	commonSpecs "github.com/taubyte/go-specs/common"
@@ -34,8 +35,10 @@ func (u *Universe) provided(_service string) bool {
 			s = u.TNS()
 		default:
 			ru := reflect.ValueOf(u)
-			serviceMethod := ru.MethodByName(strings.ToTitle(_service))
-			_s := serviceMethod.Call([]reflect.Value{})
+			runes := []rune(_service)
+			runes[0] = unicode.ToUpper(runes[0])
+			serviceMethod := ru.MethodByName(string(runes))
+			_s := serviceMethod.Call(nil)
 			var ok bool
 			if s, ok = _s[0].Interface().(servicesIface.Service); !ok {
 				return ok

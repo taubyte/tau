@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	if err := libdream.Registry.Set(commonSpecs.Hoarder, createNodeService, nil); err != nil {
+	if err := libdream.Registry.Set(commonSpecs.Substrate, createNodeService, nil); err != nil {
 		panic(err)
 	}
 }
