@@ -96,7 +96,11 @@ func importProdProject(u *libdream.Universe, params ...interface{}) error {
 		return err
 	}
 
-	tnsClient := simple.TNS()
+	tnsClient, err := simple.TNS()
+	if err != nil {
+		return err
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -114,7 +118,11 @@ func importProdProject(u *libdream.Universe, params ...interface{}) error {
 		return err
 	}
 
-	patrickClient := simple.Patrick()
+	patrickClient, err := simple.Patrick()
+	if err != nil {
+		return err
+	}
+
 	jobs, err := patrickClient.List()
 	if err != nil {
 		return err

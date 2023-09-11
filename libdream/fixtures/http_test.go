@@ -13,6 +13,7 @@ import (
 	commonTest "github.com/taubyte/tau/libdream/helpers"
 	gitTest "github.com/taubyte/tau/libdream/helpers/git"
 	_ "github.com/taubyte/tau/protocols/tns"
+	"gotest.tools/v3/assert"
 )
 
 func TestHttp(t *testing.T) {
@@ -27,7 +28,7 @@ func TestHttp(t *testing.T) {
 			"me": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -41,7 +42,8 @@ func TestHttp(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	tns := simple.TNS()
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
 
 	gitRoot := "./testGIT"
 	gitRootConfig := gitRoot + "/prodConfig"

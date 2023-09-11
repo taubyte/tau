@@ -16,6 +16,7 @@ import (
 	gitTest "github.com/taubyte/tau/libdream/helpers/git"
 	_ "github.com/taubyte/tau/protocols/tns"
 	"github.com/taubyte/utils/maps"
+	"gotest.tools/v3/assert"
 )
 
 func TestDecompileProd(t *testing.T) {
@@ -30,7 +31,7 @@ func TestDecompileProd(t *testing.T) {
 			"me": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -44,7 +45,8 @@ func TestDecompileProd(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	tns := simple.TNS()
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
 
 	gitRoot := "./testGIT"
 	gitRootConfig := gitRoot + "/prodConfigDreamland"

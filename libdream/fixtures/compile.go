@@ -28,8 +28,13 @@ func inject(project project.Project, simple *libdream.Simple) error {
 		return err
 	}
 
+	tns, err := simple.TNS()
+	if err != nil {
+		return err
+	}
+
 	// publish ( compile & send to TNS )
-	err = compiler.Publish(simple.TNS())
+	err = compiler.Publish(tns)
 	if err != nil {
 		return err
 	}

@@ -139,4 +139,6 @@ func (s SimpleConfigClients) Conform() map[string]*commonIface.ClientConfig {
 	if s.Hoarder != nil {
 		newClientConfig[commonSpecs.Hoarder] = s.Hoarder
 	}
+
+	return newClientConfig
 }

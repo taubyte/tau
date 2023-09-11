@@ -10,6 +10,7 @@ import (
 	projectSchema "github.com/taubyte/go-project-schema/project"
 	dreamland "github.com/taubyte/tau/libdream"
 	maps "github.com/taubyte/utils/maps"
+	"gotest.tools/v3/assert"
 )
 
 func TestIndexer(t *testing.T) {
@@ -24,7 +25,7 @@ func TestIndexer(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -69,13 +70,16 @@ func TestIndexer(t *testing.T) {
 		return
 	}
 
-	err = compiler.Publish(simple.TNS())
+	tnsClient, err := simple.TNS()
+	assert.NilError(t, err)
+
+	err = compiler.Publish(tnsClient)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	resp, err := simple.TNS().Lookup(tns.Query{Prefix: []string{"domains"}, RegEx: false})
+	resp, err := tnsClient.Lookup(tns.Query{Prefix: []string{"domains"}, RegEx: false})
 	if err != nil {
 		t.Error(err)
 		return

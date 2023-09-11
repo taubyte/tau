@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/config-compiler/decompile"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
 	gitTest "github.com/taubyte/tau/libdream/helpers/git"
+	"gotest.tools/v3/assert"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	dreamland "github.com/taubyte/tau/libdream"
@@ -26,7 +27,6 @@ import (
 )
 
 func TestE2E(t *testing.T) {
-	// TNS magic
 	u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&dreamland.Config{
@@ -37,7 +37,7 @@ func TestE2E(t *testing.T) {
 			"me": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -51,7 +51,8 @@ func TestE2E(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	tns := simple.TNS()
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
 
 	gitRoot := "./testGIT"
 	gitRootConfig := gitRoot + "/config"

@@ -36,7 +36,7 @@ func TestAttachProdProject(t *testing.T) {
 					TNS:     &commonIface.ClientConfig{},
 					Auth:    &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})

@@ -9,6 +9,7 @@ import (
 	projectSchema "github.com/taubyte/go-project-schema/project"
 	specs "github.com/taubyte/go-specs/methods"
 	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/protocols/tns"
 )
@@ -26,7 +27,7 @@ func TestUpdate(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -40,7 +41,8 @@ func TestUpdate(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	tns := simple.TNS()
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
 
 	fs, err := testFixtures.VirtualFSWithBuiltProject()
 	if err != nil {
