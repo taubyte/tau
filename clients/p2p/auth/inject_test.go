@@ -18,7 +18,7 @@ var testDir = "testdir"
 func TestInject(t *testing.T) {
 	defer os.Remove(testDir)
 
-	u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamland.Config{

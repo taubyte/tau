@@ -17,7 +17,7 @@ var client_count = 64
 
 func TestHeartbeat(t *testing.T) {
 	t.Skip("More of a benchmark than a test")
-	u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	simConf := make(map[string]dreamland.SimpleConfig)

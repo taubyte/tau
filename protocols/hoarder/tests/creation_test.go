@@ -16,7 +16,7 @@ import (
 
 func TestService(t *testing.T) {
 	t.Skip()
-	u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{

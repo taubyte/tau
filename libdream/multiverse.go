@@ -6,7 +6,7 @@ import (
 	commonSpecs "github.com/taubyte/go-specs/common"
 )
 
-func NewMultiVerse() *Multiverse {
+func MultiVerse() *Multiverse {
 	return &Multiverse{}
 }
 
@@ -26,7 +26,7 @@ func (m *Multiverse) Context() context.Context {
 }
 
 func (m *Multiverse) Universe(name string) *Universe {
-	return NewUniverse(UniverseConfig{Name: name})
+	return New(UniverseConfig{Name: name})
 }
 
 func (m *Multiverse) Status() interface{} {

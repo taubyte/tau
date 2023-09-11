@@ -55,6 +55,7 @@ func (u *Universe) Mesh(newNodes ...peer.Node) {
 			if n0 != n1 {
 				wg.Add(1)
 				go func(n0, n1 peer.Node) {
+					defer wg.Done()
 					n0.Peer().Connect(
 						ctx,
 						peercore.AddrInfo{
@@ -62,7 +63,6 @@ func (u *Universe) Mesh(newNodes ...peer.Node) {
 							Addrs: n1.Peer().Addrs(),
 						},
 					)
-					wg.Done()
 				}(n0, n1)
 			}
 		}

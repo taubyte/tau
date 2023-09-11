@@ -12,7 +12,7 @@ import (
 )
 
 func TestDreamlandDoubleClient(t *testing.T) {
-	u := libdream.NewUniverse(libdream.UniverseConfig{Name: "single"})
+	u := libdream.New(libdream.UniverseConfig{Name: "single"})
 	defer libdream.Zeno()
 
 	err := u.StartWithConfig(&libdream.Config{

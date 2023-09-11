@@ -14,7 +14,7 @@ import (
 
 func TestRSFunction(t *testing.T) {
 	t.Skip("takes forever...")
-	u := dreamland.NewUniverse(dreamland.UniverseConfig{
+	u := dreamland.New(dreamland.UniverseConfig{
 		Name: "TestRSFunction",
 		Id:   "TestRSFunction",
 	})

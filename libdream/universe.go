@@ -19,7 +19,7 @@ import (
 )
 
 // create or fetch a universe
-func NewUniverse(config UniverseConfig) *Universe {
+func New(config UniverseConfig) *Universe {
 	// see if we have a ticket
 	id := id.Generate()
 	if len(config.Id) > 0 {

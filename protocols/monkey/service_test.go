@@ -22,7 +22,7 @@ func init() {
 
 func TestService(t *testing.T) {
 	protocolCommon.LocalPatrick = true
-	u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamland.Config{

@@ -21,7 +21,7 @@ import (
 )
 
 func TestReportSsh(t *testing.T) {
-	u := libdream.NewUniverse(dreamland.UniverseConfig{Name: "ReportSsh"})
+	u := libdream.New(dreamland.UniverseConfig{Name: "ReportSsh"})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dreamland.Config{

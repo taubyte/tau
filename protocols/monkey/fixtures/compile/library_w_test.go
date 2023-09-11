@@ -18,7 +18,7 @@ import (
 
 func TestWasmLibrary(t *testing.T) {
 	t.Skip("Needs to be redone")
-	u := dreamland.NewUniverse(dreamland.UniverseConfig{
+	u := dreamland.New(dreamland.UniverseConfig{
 		Name: "MonkeyFixtureTestWasmLibrary",
 		Id:   "MonkeyFixtureTestWasmLibrary",
 	})

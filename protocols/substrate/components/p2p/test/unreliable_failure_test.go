@@ -60,7 +60,7 @@ func TestFail(t *testing.T) {
 	var mostRecentError error
 	for attempts < maxAttempts {
 		attempts++
-		u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
+		u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 		err := u.StartWithConfig(&dreamland.Config{
 			Services: map[string]commonIface.ServiceConfig{
 				"tns":       {},
