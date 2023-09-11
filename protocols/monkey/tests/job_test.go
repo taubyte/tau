@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/p2p/peer"
 	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/v3/assert"
 
 	projectLib "github.com/taubyte/go-project-schema/project"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
@@ -48,7 +49,7 @@ func TestConfigJob(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					TNS:    &commonIface.ClientConfig{},
 					Monkey: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -66,8 +67,11 @@ func TestConfigJob(t *testing.T) {
 		return
 	}
 
-	tnsClient := simple.TNS()
-	monkeyClient := simple.Monkey()
+	tnsClient, err := simple.TNS()
+	assert.NilError(t, err)
+
+	monkeyClient, err := simple.Monkey()
+	assert.NilError(t, err)
 
 	// Override auth method so that projectID is not changed
 	protocolCommon.GetNewProjectID = func(args ...interface{}) string {

@@ -51,8 +51,12 @@ func pushAll(u *libdream.Universe, params ...interface{}) error {
 	}
 
 	projectId := ""
+	tns, err := simple.TNS()
+	if err != nil {
+		return err
+	}
 
-	resp, err := simple.TNS().Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github"}))
+	resp, err := tns.Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github"}))
 	if err != nil {
 		return fmt.Errorf("failed calling tns fetch with error: %v", err)
 	}
@@ -127,9 +131,14 @@ func pushSpecific(u *libdream.Universe, params ...interface{}) error {
 		return fmt.Errorf("make template failed with: %v", err)
 	}
 
+	auth, err := simple.Auth()
+	if err != nil {
+		return err
+	}
+
 	// Try to get projectId from repo
 	if len(projectId) == 0 {
-		_repo, err := simple.Auth().Repositories().Github().Get(intRepoId)
+		_repo, err := auth.Repositories().Github().Get(intRepoId)
 		if err != nil {
 			return fmt.Errorf("failed Making Repo: %v", err)
 		}

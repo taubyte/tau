@@ -15,6 +15,7 @@ import (
 	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
 	service "github.com/taubyte/tau/protocols/patrick"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/monkey"
 	_ "github.com/taubyte/tau/protocols/auth"
@@ -45,7 +46,7 @@ func TestRunWasmRetry(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -74,7 +75,10 @@ func TestRunWasmRetry(t *testing.T) {
 		return
 	}
 
-	tnsClient := simple.TNS().(*tnsClient.Client)
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
+	tnsClient := tns.(*tnsClient.Client)
 	err = u.RunFixture("pushCode")
 	if err != nil {
 		t.Error(err)

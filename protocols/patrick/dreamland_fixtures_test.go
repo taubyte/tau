@@ -31,7 +31,7 @@ func TestFixtureProvidesClients(t *testing.T) {
 		},
 		Simples: map[string]libdream.SimpleConfig{
 			"client": {
-				Clients: libdream.SimpleConfigClients{},
+				Clients: libdream.SimpleConfigClients{}.Conform(),
 			},
 		},
 	})
@@ -60,7 +60,7 @@ func TestFixtureProvidesServices(t *testing.T) {
 					Patrick: &commonIface.ClientConfig{},
 					Auth:    &commonIface.ClientConfig{},
 					Seer:    &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -93,7 +93,7 @@ func TestDreamlandFixture(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					TNS:     &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -119,11 +119,13 @@ func TestDreamlandFixture(t *testing.T) {
 	for {
 		attempts += 1
 
-		jobs, err := simple.Patrick().List()
-		if len(jobs) != 2 {
-			err = fmt.Errorf("Expected 2 jobs got %d", len(jobs))
+		patrick, err := simple.Patrick()
+		if err != nil {
+			jobs, err := patrick.List()
+			if err == nil && len(jobs) != 2 {
+				err = fmt.Errorf("Expected 2 jobs got %d", len(jobs))
+			}
 		}
-
 		if err == nil {
 			break
 		}

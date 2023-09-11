@@ -8,9 +8,11 @@ import (
 )
 
 func init() {
-	libdream.Registry.Set(commonSpecs.Seer, nil,
-		func(n peer.Node, cc *common.ClientConfig) (common.Client, error) {
-			return New(n.Context(), n)
-		},
-	)
+	if err := libdream.Registry.Set(commonSpecs.Seer, nil, createSeerClient); err != nil {
+		panic(err)
+	}
+}
+
+func createSeerClient(node peer.Node, config *common.ClientConfig) (common.Client, error) {
+	return New(node.Context(), node)
 }

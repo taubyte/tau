@@ -29,22 +29,27 @@ func (c resourceContext) display() string {
 }
 
 func (c resourceContext) get() (resource interface{}, err error) {
-	resource, err = c.simple.TNS().Function().Relative(c.projectId, c.applicationId, c.branch).GetById(c.resourceId)
+	tns, err := c.simple.TNS()
+	if err != nil {
+		return nil, err
+	}
+
+	resource, err = tns.Function().Relative(c.projectId, c.applicationId, c.branch).GetById(c.resourceId)
 	if err == nil {
 		return
 	}
 
-	resource, err = c.simple.TNS().Library().Relative(c.projectId, c.applicationId, c.branch).GetById(c.resourceId)
+	resource, err = tns.Library().Relative(c.projectId, c.applicationId, c.branch).GetById(c.resourceId)
 	if err == nil {
 		return
 	}
 
-	resource, err = c.simple.TNS().Website().Relative(c.projectId, c.applicationId, c.branch).GetById(c.resourceId)
+	resource, err = tns.Website().Relative(c.projectId, c.applicationId, c.branch).GetById(c.resourceId)
 	if err == nil {
 		return
 	}
 
-	resource, err = c.simple.TNS().SmartOp().Relative(c.projectId, c.applicationId, c.branch).GetById(c.resourceId)
+	resource, err = tns.SmartOp().Relative(c.projectId, c.applicationId, c.branch).GetById(c.resourceId)
 	if err == nil {
 		return
 	}

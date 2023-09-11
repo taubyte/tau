@@ -8,8 +8,12 @@ import (
 )
 
 func init() {
-	libdream.Registry.Set(commonSpecs.Auth, nil,
-		func(n peer.Node, cc *common.ClientConfig) (common.Client, error) {
-			return New(n.Context(), n)
-		})
+	if err := libdream.Registry.Set(commonSpecs.Auth, nil, createAuthClient); err != nil {
+		panic(err)
+	}
+
+}
+
+func createAuthClient(node peer.Node, config *common.ClientConfig) (common.Client, error) {
+	return New(node.Context(), node)
 }

@@ -16,6 +16,7 @@ import (
 	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
 	gitTest "github.com/taubyte/tau/libdream/helpers/git"
+	"gotest.tools/v3/assert"
 
 	projectLib "github.com/taubyte/go-project-schema/project"
 	_ "github.com/taubyte/tau/clients/p2p/hoarder"
@@ -57,7 +58,7 @@ func TestStoring(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					Hoarder: &commonIface.ClientConfig{},
 					TNS:     &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -118,7 +119,10 @@ func TestStoring(t *testing.T) {
 		return
 	}
 
-	err = compiler.Publish(simple.TNS())
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
+	err = compiler.Publish(tns)
 	if err != nil {
 		t.Error(err)
 		return

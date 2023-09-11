@@ -7,6 +7,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/monkey"
 	_ "github.com/taubyte/tau/clients/p2p/patrick"
@@ -31,7 +32,7 @@ func TestReAnnounce(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					Patrick: &commonIface.ClientConfig{},
 					Monkey:  &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -71,13 +72,16 @@ func TestReAnnounce(t *testing.T) {
 		return
 	}
 
-	jobs, err := simples.Patrick().List()
+	patrick, err := simples.Patrick()
+	assert.NilError(t, err)
+
+	jobs, err := patrick.List()
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	job_byte, err := simples.Patrick().Get(jobs[0])
+	job_byte, err := patrick.Get(jobs[0])
 	if err != nil {
 		t.Error(err)
 		return
@@ -100,7 +104,7 @@ func TestReAnnounce(t *testing.T) {
 	// Wait for reannounce to update attempts to 1 and send back to /jobs
 	time.Sleep(10 * time.Second)
 
-	retry_job, err := simples.Patrick().Get(job_byte.Id)
+	retry_job, err := patrick.Get(job_byte.Id)
 	if err != nil {
 		t.Error(err)
 		return
@@ -120,7 +124,7 @@ func TestReAnnounce(t *testing.T) {
 	// Wait for reannounce to update attempts to 2 and send back to /jobs
 	time.Sleep(10 * time.Second)
 
-	retry_job, err = simples.Patrick().Get(retry_job.Id)
+	retry_job, err = patrick.Get(retry_job.Id)
 	if err != nil {
 		t.Error(err)
 		return
@@ -136,7 +140,7 @@ func TestReAnnounce(t *testing.T) {
 		return
 	}
 
-	retry_job, err = simples.Patrick().Get(retry_job.Id)
+	retry_job, err = patrick.Get(retry_job.Id)
 	if err != nil {
 		t.Error(err)
 		return

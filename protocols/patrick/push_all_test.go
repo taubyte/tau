@@ -25,7 +25,7 @@ func TestPushAll(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					TNS:  &commonIface.ClientConfig{},
 					Auth: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})

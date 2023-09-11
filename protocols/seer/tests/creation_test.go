@@ -8,6 +8,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/protocols/seer"
 )
@@ -25,7 +26,7 @@ func TestService(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 					TNS:  &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -43,13 +44,16 @@ func TestService(t *testing.T) {
 		return
 	}
 
-	err = simple.Seer().Geo().Set(fake_location)
+	seer, err := simple.Seer()
+	assert.NilError(t, err)
+
+	err = seer.Geo().Set(fake_location)
 	if err != nil {
 		t.Error("Returned Error ", err)
 		return
 	}
 
-	resp, err := simple.Seer().Geo().All()
+	resp, err := seer.Geo().All()
 	if err != nil {
 		t.Error("Returned Error ", err)
 		return

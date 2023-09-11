@@ -26,7 +26,7 @@ func TestHeartbeat(t *testing.T) {
 			Clients: dreamland.SimpleConfigClients{
 				Seer: &commonIface.ClientConfig{},
 				TNS:  &commonIface.ClientConfig{},
-			},
+			}.Conform(),
 		}
 	}
 
@@ -72,8 +72,10 @@ func TestHeartbeat(t *testing.T) {
 				<-poolChan
 				heartbeatWG.Done()
 			}()
+			seer, err := simples[i%len(simConf)].Seer()
+			assert.NilError(t, err)
 
-			_, err := simples[i%len(simConf)].Seer().Usage().Heartbeat(&iface.UsageData{
+			_, err = seer.Usage().Heartbeat(&iface.UsageData{
 				Memory: iface.Memory{
 					Used:  10,
 					Total: 50,

@@ -8,9 +8,12 @@ import (
 )
 
 func init() {
-	libdream.Registry.Set(commonSpecs.Patrick, nil,
-		func(n peer.Node, cc *common.ClientConfig) (common.Client, error) {
-			return New(n.Context(), n)
-		},
-	)
+	if err := libdream.Registry.Set(commonSpecs.Patrick, nil, createPatrickClient); err != nil {
+		panic(err)
+	}
+
+}
+
+func createPatrickClient(node peer.Node, config *common.ClientConfig) (common.Client, error) {
+	return New(node.Context(), node)
 }

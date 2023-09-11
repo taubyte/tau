@@ -35,10 +35,10 @@ func TestProtocolListen(t *testing.T) {
 	err := u.StartWithConfig(&dreamland.Config{
 		Simples: map[string]dreamland.SimpleConfig{
 			"sender": {
-				Clients: dreamland.SimpleConfigClients{},
+				Clients: dreamland.SimpleConfigClients{}.Conform(),
 			},
 			"receiver": {
-				Clients: dreamland.SimpleConfigClients{},
+				Clients: dreamland.SimpleConfigClients{}.Conform(),
 			},
 		},
 	})

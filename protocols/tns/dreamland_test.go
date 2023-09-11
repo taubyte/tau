@@ -8,6 +8,7 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
 	"github.com/taubyte/tau/libdream"
+	"gotest.tools/v3/assert"
 )
 
 func TestDreamlandDoubleClient(t *testing.T) {
@@ -23,12 +24,12 @@ func TestDreamlandDoubleClient(t *testing.T) {
 			"client": {
 				Clients: libdream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 			"client2": {
 				Clients: libdream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -53,14 +54,18 @@ func TestDreamlandDoubleClient(t *testing.T) {
 		return
 	}
 
-	tnsClient := simple.TNS()
+	tnsClient, err := simple.TNS()
+	assert.NilError(t, err)
+
 	err = tnsClient.Push(testKey, testValue)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	tnsClient2 := simple2.TNS()
+	tnsClient2, err := simple2.TNS()
+	assert.NilError(t, err)
+
 	val, err := tnsClient2.Fetch(spec.NewTnsPath(testKey))
 	if err != nil {
 		t.Error(err)

@@ -66,7 +66,7 @@ func TestAll(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -97,7 +97,10 @@ func TestAll(t *testing.T) {
 	err = compiler.Build()
 	assert.NilError(t, err)
 
-	err = compiler.Publish(simple.TNS())
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
+	err = compiler.Publish(tns)
 	assert.NilError(t, err)
 
 	context := db.Context{
@@ -278,10 +281,10 @@ func TestAll(t *testing.T) {
 	err = compiler.Build()
 	assert.NilError(t, err)
 
-	err = compiler.Publish(simple.TNS())
+	err = compiler.Publish(tns)
 	assert.NilError(t, err)
 
-	commitId, err := simple.TNS().Simple().Commit(projectString, "master")
+	commitId, err := tns.Simple().Commit(projectString, "master")
 	assert.NilError(t, err)
 
 	if commitId != expectedCommitId {

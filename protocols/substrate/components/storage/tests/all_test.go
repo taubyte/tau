@@ -90,7 +90,7 @@ func TestAll(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -105,7 +105,9 @@ func TestAll(t *testing.T) {
 		return
 	}
 
-	tnsClient := simple.TNS()
+	tnsClient, err := simple.TNS()
+	assert.NilError(t, err)
+
 	dbFactory := kvdb.New(u.Substrate().Node())
 	service, err := storages.New(u.Substrate(), dbFactory)
 	if err != nil {
@@ -550,10 +552,10 @@ func TestAll(t *testing.T) {
 	err = compiler.Build()
 	assert.NilError(t, err)
 
-	err = compiler.Publish(simple.TNS())
+	err = compiler.Publish(tnsClient)
 	assert.NilError(t, err)
 
-	commitId, err := simple.TNS().Simple().Commit(projectString, "master")
+	commitId, err := tnsClient.Simple().Commit(projectString, "master")
 	assert.NilError(t, err)
 
 	if commitId != expectedCommitId {

@@ -11,6 +11,7 @@ import (
 	dreamland "github.com/taubyte/tau/libdream"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	_ "github.com/taubyte/tau/protocols/hoarder"
+	"gotest.tools/v3/assert"
 )
 
 func init() {
@@ -33,7 +34,7 @@ func TestService(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Monkey: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -74,9 +75,12 @@ func TestService(t *testing.T) {
 	}
 
 	// Test successful job
+	monkey, err := simple.Monkey()
+	assert.NilError(t, err)
+
 	if err = (&MonkeyTestContext{
 		universe:     u,
-		client:       simple.Monkey(),
+		client:       monkey,
 		jid:          successful_job.Id,
 		expectStatus: patrick.JobStatusSuccess,
 		expectLog:    "Running job `fake_jid_success` was successful",
@@ -88,7 +92,7 @@ func TestService(t *testing.T) {
 	// Test failed job
 	if err = (&MonkeyTestContext{
 		universe:     u,
-		client:       simple.Monkey(),
+		client:       monkey,
 		jid:          failed_job.Id,
 		expectStatus: patrick.JobStatusFailed,
 		expectLog:    "Running job `fake_jid_failed` was successful",
@@ -97,7 +101,7 @@ func TestService(t *testing.T) {
 		return
 	}
 
-	ids, err := simple.Monkey().List()
+	ids, err := monkey.List()
 	if err != nil {
 		t.Error(err)
 		return

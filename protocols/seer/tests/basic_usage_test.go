@@ -7,6 +7,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/v3/assert"
 )
 
 func TestBasicUsage(t *testing.T) {
@@ -27,12 +28,12 @@ func TestBasicUsage(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 					TNS:  &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 			"clientD": {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -61,7 +62,10 @@ func TestBasicUsage(t *testing.T) {
 
 	// Testing Hearbeat and Announce
 	/* Client Heartbeat */
-	_, err = simple.Seer().Usage().Heartbeat(&iface.UsageData{
+
+	seer, err := simple.Seer()
+	assert.NilError(t, err)
+	_, err = seer.Usage().Heartbeat(&iface.UsageData{
 		Memory: iface.Memory{
 			Used:  10,
 			Total: 50,
@@ -89,7 +93,7 @@ func TestBasicUsage(t *testing.T) {
 	}
 
 	/* Client Heartbeat */
-	_, err = simple.Seer().Usage().Heartbeat(&iface.UsageData{
+	_, err = seer.Usage().Heartbeat(&iface.UsageData{
 		Memory: iface.Memory{
 			Used:  20,
 			Total: 100,
@@ -117,7 +121,10 @@ func TestBasicUsage(t *testing.T) {
 	}
 
 	/* ClientD Heartbeat*/
-	_, err = simpleD.Seer().Usage().Heartbeat(&iface.UsageData{
+	dSeer, err := simpleD.Seer()
+	assert.NilError(t, err)
+
+	_, err = dSeer.Usage().Heartbeat(&iface.UsageData{
 		Memory: iface.Memory{
 			Used:  40,
 			Total: 200,

@@ -7,6 +7,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	dreamland "github.com/taubyte/tau/libdream"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
+	"gotest.tools/v3/assert"
 )
 
 func TestTimeout(t *testing.T) {
@@ -28,7 +29,7 @@ func TestTimeout(t *testing.T) {
 					Patrick: &commonIface.ClientConfig{},
 					Monkey:  &commonIface.ClientConfig{},
 					TNS:     &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -57,12 +58,15 @@ func TestTimeout(t *testing.T) {
 	// Make sure both jobs are registered
 	attemptsList := 0
 	var jobs []string
+	patrick, err := simple.Patrick()
+	assert.NilError(t, err)
+
 	for {
 		if attemptsList == 10 {
 			t.Error("Max attempts for list reached")
 			return
 		}
-		jobs, _ = simple.Patrick().List()
+		jobs, _ = patrick.List()
 		if len(jobs) == 2 {
 			break
 		}
@@ -80,7 +84,7 @@ func TestTimeout(t *testing.T) {
 		}
 		lockCounter := 0
 		for _, id := range jobs {
-			locked, _ := simple.Patrick().IsLocked(id)
+			locked, _ := patrick.IsLocked(id)
 
 			if locked == true {
 				lockCounter++
@@ -97,7 +101,7 @@ func TestTimeout(t *testing.T) {
 	time.Sleep(30 * time.Second)
 
 	for _, id := range jobs {
-		job, err := simple.Patrick().Get(id)
+		job, err := patrick.Get(id)
 		if err != nil {
 			t.Error(err)
 			return

@@ -22,7 +22,12 @@ import (
 )
 
 func newTestContext(ctx context.Context, simple *libdream.Simple, logFile *os.File) testContext {
-	tnsClient := simple.TNS().(*tnsClient.Client)
+	_tns, err := simple.TNS()
+	if err != nil {
+		panic(err)
+	}
+
+	tnsClient := _tns.(*tnsClient.Client)
 	ctx, ctxC := context.WithCancel(ctx)
 	return testContext{
 		Context: Context{
@@ -152,7 +157,7 @@ func startDreamland(name string) (u *libdream.Universe, err error) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})

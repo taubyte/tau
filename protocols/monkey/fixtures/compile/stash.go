@@ -17,8 +17,13 @@ func (ctx resourceContext) stashAndPush(id string, file io.ReadSeekCloser) error
 		return errors.New("file is nil")
 	}
 
+	_tns, err := ctx.simple.TNS()
+	if err != nil {
+		return err
+	}
+
 	c := jobs.Context{
-		Tns:  ctx.simple.TNS().(*tns.Client),
+		Tns:  _tns.(*tns.Client),
 		Node: ctx.universe.TNS().Node(),
 	}
 	c.ForceContext(ctx.universe.Context())
