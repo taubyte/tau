@@ -21,12 +21,12 @@ func TestSeerClient(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 			"clientD": {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

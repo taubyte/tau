@@ -80,7 +80,6 @@ type NodeInfo struct {
 
 type Config struct {
 	Services map[string]commonIface.ServiceConfig
-	Clients  map[string]*commonIface.ClientConfig
 	Simples  map[string]SimpleConfig
 }
 
@@ -113,7 +112,7 @@ type SimpleConfigClients struct {
 	Hoarder *commonIface.ClientConfig
 }
 
-func (s SimpleConfigClients) Conform() map[string]*commonIface.ClientConfig {
+func (s SimpleConfigClients) Compat() map[string]*commonIface.ClientConfig {
 	newClientConfig := make(map[string]*commonIface.ClientConfig)
 
 	if s.TNS != nil {

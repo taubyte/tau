@@ -24,12 +24,12 @@ func TestDreamlandDoubleClient(t *testing.T) {
 			"client": {
 				Clients: libdream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 			"client2": {
 				Clients: libdream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

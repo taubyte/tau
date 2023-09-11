@@ -37,7 +37,7 @@ func TestClientWithUniverse(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Patrick: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

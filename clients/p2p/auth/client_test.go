@@ -30,7 +30,7 @@ func TestAuthClient(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Auth: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

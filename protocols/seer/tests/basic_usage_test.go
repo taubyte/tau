@@ -28,12 +28,12 @@ func TestBasicUsage(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 					TNS:  &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 			"clientD": {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

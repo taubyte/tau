@@ -28,7 +28,7 @@ func TestService(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					Seer:    &commonIface.ClientConfig{},
 					Hoarder: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

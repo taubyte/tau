@@ -25,7 +25,7 @@ func TestPubsub(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

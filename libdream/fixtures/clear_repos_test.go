@@ -16,7 +16,7 @@ func TestClearRepos(t *testing.T) {
 		Services: map[string]commonIface.ServiceConfig{},
 		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{}.Conform(),
+				Clients: dreamland.SimpleConfigClients{}.Compat(),
 			},
 		},
 	})

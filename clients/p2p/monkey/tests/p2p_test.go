@@ -35,7 +35,7 @@ func TestMonkeyClient(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Monkey: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

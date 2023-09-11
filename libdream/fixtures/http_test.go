@@ -28,7 +28,7 @@ func TestHttp(t *testing.T) {
 			"me": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

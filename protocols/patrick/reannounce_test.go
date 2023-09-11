@@ -32,7 +32,7 @@ func TestReAnnounce(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					Patrick: &commonIface.ClientConfig{},
 					Monkey:  &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

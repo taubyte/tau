@@ -29,7 +29,7 @@ func TestTimeout(t *testing.T) {
 					Patrick: &commonIface.ClientConfig{},
 					Monkey:  &commonIface.ClientConfig{},
 					TNS:     &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

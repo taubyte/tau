@@ -50,7 +50,7 @@ func TestConfigJob(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					TNS:    &commonIface.ClientConfig{},
 					Monkey: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

@@ -15,25 +15,23 @@ import (
 	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/go-specs/methods"
 	"github.com/taubyte/p2p/peer"
-	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	"github.com/taubyte/tau/libdream"
 	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
 )
 
 func newTestContext(ctx context.Context, simple *libdream.Simple, logFile *os.File) testContext {
-	_tns, err := simple.TNS()
+	tns, err := simple.TNS()
 	if err != nil {
 		panic(err)
 	}
 
-	tnsClient := _tns.(*tnsClient.Client)
 	ctx, ctxC := context.WithCancel(ctx)
 	return testContext{
 		Context: Context{
 			ctx:           ctx,
 			ctxC:          ctxC,
-			Tns:           tnsClient,
+			Tns:           tns,
 			Node:          simple.PeerNode(),
 			LogFile:       logFile,
 			Monkey:        &mockMonkey{},
@@ -157,7 +155,7 @@ func startDreamland(name string) (u *libdream.Universe, err error) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

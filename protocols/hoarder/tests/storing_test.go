@@ -58,7 +58,7 @@ func TestStoring(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					Hoarder: &commonIface.ClientConfig{},
 					TNS:     &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})

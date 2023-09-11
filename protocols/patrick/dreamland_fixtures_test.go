@@ -31,7 +31,7 @@ func TestFixtureProvidesClients(t *testing.T) {
 		},
 		Simples: map[string]libdream.SimpleConfig{
 			"client": {
-				Clients: libdream.SimpleConfigClients{}.Conform(),
+				Clients: libdream.SimpleConfigClients{}.Compat(),
 			},
 		},
 	})
@@ -60,7 +60,7 @@ func TestFixtureProvidesServices(t *testing.T) {
 					Patrick: &commonIface.ClientConfig{},
 					Auth:    &commonIface.ClientConfig{},
 					Seer:    &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})
@@ -93,7 +93,7 @@ func TestDreamlandFixture(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					TNS:     &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
-				}.Conform(),
+				}.Compat(),
 			},
 		},
 	})
