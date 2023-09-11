@@ -115,10 +115,6 @@ func (s *Simple) startClient(name string, config *commonIface.ClientConfig) erro
 		return err
 	}
 
-	if _, err := s.getClient(name); err != nil {
-		return err
-	}
-
 	client, err := creationMethod(s.Node, config)
 	if err != nil {
 		return err
@@ -127,6 +123,10 @@ func (s *Simple) startClient(name string, config *commonIface.ClientConfig) erro
 	s.lock.Lock()
 	s.clients[name] = client
 	s.lock.Unlock()
+
+	if _, err := s.getClient(name); err != nil {
+		return err
+	}
 
 	return nil
 }

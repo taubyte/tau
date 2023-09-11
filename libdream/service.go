@@ -50,9 +50,8 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 	var err error
 	for _, k := range []string{"http", "p2p", "dns"} {
 		if _, ok := config.Others[k]; !ok {
-			if config.Others[k], err = u.PortFor(name, k); err != nil {
-				return err
-			}
+			config.Others[k], _ = u.PortFor(name, k)
+
 			if k == "p2p" {
 				config.Port = config.Others[k]
 			}

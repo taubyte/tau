@@ -155,7 +155,7 @@ func (u *Universe) CreateSimpleNode(name string, config *SimpleConfig) (peer.Nod
 	simple := &Simple{Node: simpleNode, clients: make(map[string]commonIface.Client)}
 	for name, clientCfg := range config.Clients {
 		if err = simple.startClient(name, clientCfg); err != nil {
-			return nil, fmt.Errorf("starting clinet `%s` failed with: %w", name, err)
+			return nil, fmt.Errorf("starting client `%s` failed with: %w", name, err)
 		}
 	}
 

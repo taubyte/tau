@@ -13,6 +13,7 @@ import (
 	commonSpecs "github.com/taubyte/go-specs/common"
 	peer "github.com/taubyte/p2p/peer"
 
+	"github.com/taubyte/tau/pkgs/kvdb"
 	protocols "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/utils/id"
 )
@@ -99,6 +100,17 @@ func (u *Universe) toClose(c commonIface.Service) {
 	u.lock.Lock()
 	defer u.lock.Unlock()
 	u.closables = append(u.closables, c)
+}
+
+func (u *Universe) Register(node peer.Node, name string, ports map[string]int) {
+	u.lock.Lock()
+	defer u.lock.Unlock()
+	u.lookups[node.ID().Pretty()] = &NodeInfo{
+		DbFactory: kvdb.New(node),
+		Node:      node,
+		Name:      name,
+		Ports:     ports,
+	}
 }
 
 func (u *Universe) StartAll(simples ...string) error {
