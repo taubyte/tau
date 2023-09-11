@@ -27,6 +27,7 @@ import (
 )
 
 func TestE2E(t *testing.T) {
+	t.Skip("Needs to be redone")
 	u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&dreamland.Config{

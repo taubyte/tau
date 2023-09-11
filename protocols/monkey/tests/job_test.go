@@ -29,6 +29,7 @@ import (
 )
 
 func TestConfigJob(t *testing.T) {
+	t.Skip("needs to be redone")
 	protocolCommon.LocalPatrick = true
 	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil

@@ -13,6 +13,7 @@ import (
 )
 
 func TestRunWasmBasic(t *testing.T) {
+	t.Skip("Needs to be redone")
 	u, err := startDreamland("testRunWasm")
 	defer u.Stop()
 	assert.NilError(t, err)

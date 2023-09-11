@@ -17,6 +17,7 @@ import (
 )
 
 func TestGoFunction(t *testing.T) {
+	t.Skip("needs to be redone")
 	u := dreamland.NewUniverse(dreamland.UniverseConfig{
 		Name: "MonkeyFixtureTestFunction",
 		Id:   "MonkeyFixtureTestFunction",

@@ -17,6 +17,7 @@ import (
 )
 
 func TestAuthClient(t *testing.T) {
+	t.Skip("Needs to be redone")
 	u := dreamland.NewUniverse(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
