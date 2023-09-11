@@ -10,6 +10,7 @@ import (
 	"github.com/taubyte/http/helpers"
 	dreamland "github.com/taubyte/tau/libdream"
 	"github.com/taubyte/tau/protocols/auth/acme/store"
+	"gotest.tools/v3/assert"
 )
 
 var testDir = "testdir"
@@ -29,7 +30,7 @@ func TestInject(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Auth: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -69,7 +70,10 @@ func TestInject(t *testing.T) {
 		return
 	}
 
-	err = simple.Auth().InjectStaticCertificate("*.pass.com", []byte(cert))
+	auth, err := simple.Auth()
+	assert.NilError(t, err)
+
+	err = auth.InjectStaticCertificate("*.pass.com", []byte(cert))
 	if err != nil {
 		t.Error(err)
 		return

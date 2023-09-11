@@ -40,7 +40,7 @@ func NewUniverse(config UniverseConfig) *Universe {
 		closables: make([]commonIface.Service, 0),
 		simples:   make(map[string]*Simple),
 		lookups:   make(map[string]*NodeInfo),
-		portShift: LastUniversePortShift(),
+		portShift: lastPortShift(),
 		keepRoot:  config.KeepRoot,
 		service: func() map[string]*serviceInfo {
 			s := make(map[string]*serviceInfo)
@@ -54,7 +54,7 @@ func NewUniverse(config UniverseConfig) *Universe {
 	u.ctx, u.ctxC = context.WithCancel(multiverseCtx)
 
 	if config.KeepRoot {
-		cacheFolder, err := GetCacheFolder()
+		cacheFolder, err := getCacheFolder()
 		if err != nil {
 			return nil
 		}

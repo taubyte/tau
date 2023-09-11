@@ -7,6 +7,7 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	dreamland "github.com/taubyte/tau/libdream"
 	_ "github.com/taubyte/tau/protocols/seer"
+	"gotest.tools/v3/assert"
 )
 
 func TestSeerClient(t *testing.T) {
@@ -20,12 +21,12 @@ func TestSeerClient(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 			"clientD": {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -41,7 +42,10 @@ func TestSeerClient(t *testing.T) {
 	}
 
 	// Error reporting no peers providing but we are checking if its 0 so just not returning
-	resp, err := simple.Seer().Geo().All()
+	seer, err := simple.Seer()
+	assert.NilError(t, err)
+
+	resp, err := seer.Geo().All()
 	if err != nil {
 		t.Error("Seer geo all err: ", err)
 	}
@@ -55,7 +59,7 @@ func TestSeerClient(t *testing.T) {
 
 	// location of office in 12100 Ford Rd
 	fake_location := iface.Location{Latitude: 32.91264411258042, Longitude: -96.8907727708027}
-	err = simple.Seer().Geo().Set(fake_location)
+	err = seer.Geo().Set(fake_location)
 	if err != nil {
 		t.Error("Geo set: ", err)
 		return
@@ -63,7 +67,7 @@ func TestSeerClient(t *testing.T) {
 
 	/***** ALL *****/
 
-	resp, err = simple.Seer().Geo().All()
+	resp, err = seer.Geo().All()
 	if err != nil {
 		t.Error("Returned Error ", err)
 		return
@@ -87,13 +91,13 @@ func TestSeerClient(t *testing.T) {
 	// DFW airport
 	fake_now_location := iface.Location{Latitude: 32.900211956131386, Longitude: -97.04029425876429}
 
-	_, err = simple.Seer().Geo().Distance(fake_now_location, 15*1000)
+	_, err = seer.Geo().Distance(fake_now_location, 15*1000)
 	if err != nil {
 		t.Error("Returned Error ", err)
 		return
 	}
 
-	_, err = simple.Seer().Geo().Distance(fake_now_location, 5*1000)
+	_, err = seer.Geo().Distance(fake_now_location, 5*1000)
 	if err != nil {
 		t.Error("Returned Error ", err)
 		return

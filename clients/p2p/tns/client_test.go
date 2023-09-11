@@ -10,6 +10,7 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	p2p "github.com/taubyte/tau/clients/p2p/tns"
 	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/assert"
 )
 
 var _ iface.Client = &p2p.Client{}
@@ -24,7 +25,7 @@ func TestTNSClient(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -48,7 +49,10 @@ func TestTNSClient(t *testing.T) {
 		},
 	}
 
-	err = simple.TNS().Push([]string{"/t2"}, fixture["/t2"])
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
+	err = tns.Push([]string{"/t2"}, fixture["/t2"])
 	if err != nil {
 		t.Error(err)
 		return
@@ -56,7 +60,7 @@ func TestTNSClient(t *testing.T) {
 
 	time.Sleep(3 * time.Second)
 
-	new_obj, err := simple.TNS().Fetch(spec.NewTnsPath([]string{"t2"}))
+	new_obj, err := tns.Fetch(spec.NewTnsPath([]string{"t2"}))
 	if err != nil {
 		t.Error(err)
 		return
@@ -72,7 +76,7 @@ func TestTNSClient(t *testing.T) {
 	// Give time to clean up context.
 	time.Sleep(10 * time.Second)
 
-	keys, err := simple.TNS().List(1)
+	keys, err := tns.List(1)
 	if err != nil {
 		t.Error(err)
 		return

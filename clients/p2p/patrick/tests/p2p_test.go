@@ -10,6 +10,7 @@ import (
 	commonTest "github.com/taubyte/tau/libdream/helpers"
 	_ "github.com/taubyte/tau/protocols/auth"
 	_ "github.com/taubyte/tau/protocols/hoarder"
+	"gotest.tools/v3/assert"
 
 	"github.com/fxamacker/cbor/v2"
 	iface "github.com/taubyte/go-interfaces/services/patrick"
@@ -36,7 +37,7 @@ func TestClientWithUniverse(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Patrick: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -78,7 +79,11 @@ func TestClientWithUniverse(t *testing.T) {
 
 	srv := u.Patrick()
 	db := srv.KV()
-	jobs, err := simple.Patrick().List()
+
+	patrickClient, err := simple.Patrick()
+	assert.NilError(t, err)
+
+	jobs, err := patrickClient.List()
 	if err != nil {
 		t.Error("Failed calling list after error: ", err)
 		return
@@ -86,7 +91,7 @@ func TestClientWithUniverse(t *testing.T) {
 
 	var job *iface.Job
 
-	job, err = simple.Patrick().Get(jobs[0])
+	job, err = patrickClient.Get(jobs[0])
 	if err != nil {
 		t.Error(err)
 		return
@@ -98,13 +103,13 @@ func TestClientWithUniverse(t *testing.T) {
 		return
 	}
 
-	err = simple.Patrick().Lock(job.Id, 5)
+	err = patrickClient.Lock(job.Id, 5)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	islocked, err := simple.Patrick().IsLocked(job.Id)
+	islocked, err := patrickClient.IsLocked(job.Id)
 	if err != nil {
 		t.Error(err)
 		return
@@ -115,7 +120,7 @@ func TestClientWithUniverse(t *testing.T) {
 		return
 	}
 
-	err = simple.Patrick().Unlock(job.Id)
+	err = patrickClient.Unlock(job.Id)
 	if err != nil {
 		t.Error(err)
 		return
@@ -151,13 +156,13 @@ func TestClientWithUniverse(t *testing.T) {
 	testAssets["asset3"] = "assetCID3"
 
 	// Testing with /archive/jobs/
-	err = simple.Patrick().Failed(job.Id, testLogs, testAssets)
+	err = patrickClient.Failed(job.Id, testLogs, testAssets)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	jobs, err = simple.Patrick().List()
+	jobs, err = patrickClient.List()
 	if err != nil {
 		t.Error("Failed calling list after error: ", err)
 		return
@@ -168,7 +173,7 @@ func TestClientWithUniverse(t *testing.T) {
 		return
 	}
 
-	testJob, err := simple.Patrick().Get(job.Id)
+	testJob, err := patrickClient.Get(job.Id)
 	if err != nil {
 		t.Errorf("Failed getting job %s with %v", job.Id, err)
 	}

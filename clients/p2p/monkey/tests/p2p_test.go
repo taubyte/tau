@@ -13,6 +13,7 @@ import (
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 	"github.com/taubyte/tau/protocols/monkey"
+	"gotest.tools/v3/assert"
 )
 
 func TestMonkeyClient(t *testing.T) {
@@ -34,7 +35,7 @@ func TestMonkeyClient(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Monkey: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -64,7 +65,10 @@ func TestMonkeyClient(t *testing.T) {
 
 	time.Sleep(8 * time.Second)
 
-	client := simple.Monkey().(*p2p.Client)
+	monkey, err := simple.Monkey()
+	assert.NilError(t, err)
+
+	client := monkey.(*p2p.Client)
 
 	resp, err := client.Status(fakJob.Id)
 	if err != nil {

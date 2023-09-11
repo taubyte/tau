@@ -9,6 +9,7 @@ import (
 	p2p "github.com/taubyte/tau/clients/p2p/tns"
 	"github.com/taubyte/tau/clients/p2p/tns/common"
 	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/assert"
 )
 
 func TestCache(t *testing.T) {
@@ -21,7 +22,7 @@ func TestCache(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -39,13 +40,16 @@ func TestCache(t *testing.T) {
 
 	common.ClientKeyCacheLifetime = 2 * time.Second
 
-	_, err = simple.TNS().Fetch(spec.NewTnsPath([]string{"test"}))
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
+	_, err = tns.Fetch(spec.NewTnsPath([]string{"test"}))
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	_, err = simple.TNS().Fetch(spec.NewTnsPath([]string{"test"}))
+	_, err = tns.Fetch(spec.NewTnsPath([]string{"test"}))
 	if err != nil {
 		t.Error(err)
 		return
@@ -65,7 +69,7 @@ func TestCache(t *testing.T) {
 		}
 	}
 
-	obj, err := simple.TNS().Fetch(spec.NewTnsPath([]string{"test"}))
+	obj, err := tns.Fetch(spec.NewTnsPath([]string{"test"}))
 	if err != nil {
 		t.Error(err)
 		return

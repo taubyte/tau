@@ -2,7 +2,10 @@ package libdream
 
 import (
 	"context"
+	"fmt"
+	"sync"
 
+	peercore "github.com/libp2p/go-libp2p/core/peer"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/go-interfaces/services/hoarder"
@@ -11,6 +14,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/go-interfaces/services/tns"
+	commonSpecs "github.com/taubyte/go-specs/common"
 	peer "github.com/taubyte/p2p/peer"
 )
 
@@ -38,6 +42,37 @@ func (u *Universe) Root() string {
 
 func (u *Universe) Context() context.Context {
 	return u.ctx
+}
+
+func (u *Universe) Mesh(newNodes ...peer.Node) {
+	ctx, ctxC := context.WithTimeout(u.ctx, MeshTimeout)
+	defer ctxC()
+
+	u.lock.RLock()
+	var wg sync.WaitGroup
+	for _, n0 := range newNodes {
+		for _, n1 := range u.all {
+			if n0 != n1 {
+				wg.Add(1)
+				go func(n0, n1 peer.Node) {
+					n0.Peer().Connect(
+						ctx,
+						peercore.AddrInfo{
+							ID:    n1.ID(),
+							Addrs: n1.Peer().Addrs(),
+						},
+					)
+					wg.Done()
+				}(n0, n1)
+			}
+		}
+	}
+	wg.Wait()
+	u.lock.RUnlock()
+
+	u.lock.Lock()
+	u.all = append(u.all, newNodes...)
+	u.lock.Unlock()
 }
 
 func (u *Universe) Seer() seer.Service {
@@ -152,4 +187,36 @@ func first[T any](u *Universe, i map[string]commonIface.Service) (T, bool) {
 
 func (u *Universe) ListNumber(name string) int {
 	return len(u.service[name].nodes)
+}
+
+func (u *Universe) Kill(name string) error {
+	var isService bool
+	for _, service := range commonSpecs.Protocols {
+		if name == service {
+			isService = true
+			break
+		}
+	}
+
+	if isService {
+		ids, err := u.GetServicePids(name)
+		if err != nil {
+			return err
+		}
+		if len(ids) == 0 {
+			return fmt.Errorf("killing %s failed with: does not exist", name)
+		}
+
+		return u.killServiceByNameId(name, ids[0])
+
+	} else {
+		u.lock.RLock()
+		simple, exist := u.simples[name]
+		u.lock.RUnlock()
+		if !exist {
+			return fmt.Errorf("killing %s failed with: does not exist", name)
+		}
+
+		return u.killSimpleByNameId(name, simple.ID().Pretty())
+	}
 }

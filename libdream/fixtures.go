@@ -1,9 +1,5 @@
 package libdream
 
-func init() {
-	fixtures = make(map[string]FixtureHandler)
-}
-
 // Register a fixture
 func RegisterFixture(name string, handler FixtureHandler) {
 	fixturesLock.Lock()

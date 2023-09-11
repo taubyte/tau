@@ -44,7 +44,7 @@ func Start(ctx context.Context, protocolConfig *config.Node) error {
 	// Create httpNode if needed
 	var httpNode httpService.Service
 	for _, srv := range protocolConfig.Protocols {
-		if slices.Contains(commonSpecs.HttpProtocols, srv) {
+		if slices.Contains(commonSpecs.HTTPProtocols, srv) {
 			httpNode, err = auto.NewAuto(ctx, protocolConfig.Node, protocolConfig)
 			if err != nil {
 				return fmt.Errorf("new autoHttp failed with: %s", err)

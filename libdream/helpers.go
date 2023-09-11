@@ -8,7 +8,49 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	mrand "math/rand"
+	"net"
+	"os"
+	"path"
+	"time"
 )
+
+func lastSimplePort() int {
+	lastSimplePortAllocatedLock.Lock()
+	defer lastSimplePortAllocatedLock.Unlock()
+	lastSimplePortAllocated++
+	return lastSimplePortAllocated
+}
+
+func lastPortShift() int {
+	lastUniversePortShiftLock.Lock()
+	defer lastUniversePortShiftLock.Unlock()
+	for {
+		lastUniversePortShift += int(mrand.NewSource(time.Now().UnixNano()).Int63()%int64(maxUniverses)) * portsPerUniverse
+		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", DefaultHost, lastUniversePortShift))
+		if err == nil {
+			l.Close()
+			break
+		}
+	}
+	return lastUniversePortShift
+}
+
+func afterStartDelay() time.Duration {
+	mrand.Seed(time.Now().UnixNano())
+	return time.Duration(BaseAfterStartDelay+mrand.Intn(MaxAfterStartDelay-BaseAfterStartDelay)) * time.Millisecond
+}
+
+func getCacheFolder() (string, error) {
+	cacheFolder := ".cache/dreamland"
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+
+	return path.Join(home, cacheFolder), nil
+}
 
 func generateDVKeys() ([]byte, []byte, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

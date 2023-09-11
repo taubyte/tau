@@ -2,40 +2,28 @@ package libdream
 
 import (
 	"context"
-	"sync"
 
-	"github.com/ipfs/go-log/v2"
 	commonSpecs "github.com/taubyte/go-specs/common"
-)
-
-var (
-	logger = log.Logger("dreamland")
-
-	universes      map[string]*Universe
-	universesLock  sync.RWMutex
-	multiverseCtx  context.Context
-	multiverseCtxC context.CancelFunc
 )
 
 func init() {
 	// Universes
 	universes = make(map[string]*Universe)
 	multiverseCtx, multiverseCtxC = context.WithCancel(context.Background())
+	fixtures = make(map[string]FixtureHandler)
 
 	// Protocols and P2P Client Registry
 	Registry = &handlerRegistry{
 		registry: make(map[string]*handlers),
 	}
 
-	for _, protocol := range commonSpecs.Protocols {
-		Registry.registry[protocol] = &handlers{}
-	}
-
 	Ports = make(map[string]int)
 	lastPort := portStart
-	for _, name := range commonSpecs.Protocols {
+	for _, protocol := range commonSpecs.Protocols {
+		Registry.registry[protocol] = &handlers{}
+
 		port := lastPort + portBuffer
-		Ports["p2p/"+name] = port
+		Ports["p2p/"+protocol] = port
 		lastPort = port
 	}
 

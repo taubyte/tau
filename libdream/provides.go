@@ -2,9 +2,12 @@ package libdream
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 
 	servicesIface "github.com/taubyte/go-interfaces/services"
+	commonSpecs "github.com/taubyte/go-specs/common"
+	"golang.org/x/exp/slices"
 )
 
 func (u *Universe) Provides(services ...string) error {
@@ -25,38 +28,29 @@ func (u *Universe) Provides(services ...string) error {
 
 func (u *Universe) provided(_service string) bool {
 	var s servicesIface.Service
-
-	switch _service {
-	case "auth":
-		s = u.Auth()
-	case "hoarder":
-		s = u.Hoarder()
-	case "monkey":
-		s = u.Monkey()
-	case "patrick":
-		s = u.Patrick()
-	case "seer":
-		s = u.Seer()
-	case "tns":
-		s = u.TNS()
-	case "substrate":
-		s = u.Substrate()
-	default:
-		return false
+	if slices.Contains(commonSpecs.Protocols, _service) {
+		switch _service {
+		case commonSpecs.TNS:
+			s = u.TNS()
+		default:
+			ru := reflect.ValueOf(u)
+			serviceMethod := ru.MethodByName(strings.ToTitle(_service))
+			_s := serviceMethod.Call([]reflect.Value{})
+			var ok bool
+			if s, ok = _s[0].Interface().(servicesIface.Service); !ok {
+				return ok
+			}
+		}
 	}
 
-	if s == nil || s.Node() == nil {
-		return false
-	}
-
-	return true
+	return s != nil && s.Node() != nil
 }
 
 func (s *Simple) Provides(clients ...string) error {
 	notProvided := make([]string, 0)
 
 	for _, client := range clients {
-		if !s.provided(client) {
+		if !slices.Contains(commonSpecs.P2PStreamProtocols, client) {
 			notProvided = append(notProvided, client)
 		}
 	}
@@ -66,13 +60,4 @@ func (s *Simple) Provides(clients ...string) error {
 	}
 
 	return nil
-}
-
-func (s *Simple) provided(client string) bool {
-	switch client {
-	case "auth", "hoarder", "monkey", "patrick", "seer", "tns":
-		return true
-	default:
-		return false
-	}
 }

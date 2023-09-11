@@ -1,13 +1,12 @@
 package libdream
 
 import (
+	"context"
 	"fmt"
-	"math/rand"
-	"os"
-	"path"
 	"sync"
 	"time"
 
+	"github.com/ipfs/go-log/v2"
 	commonSpec "github.com/taubyte/go-specs/common"
 )
 
@@ -34,23 +33,23 @@ var (
 	MeshTimeout         = 5 * time.Second
 
 	startAllDefaultSimple = "client"
+
+	lastSimplePortAllocated     = 50
+	lastSimplePortAllocatedLock sync.Mutex
+
+	lastUniversePortShift     = 9000
+	lastUniversePortShiftLock sync.Mutex
+
+	maxUniverses     = 100
+	portsPerUniverse = 100
+
+	logger = log.Logger("dreamland")
+
+	universes      map[string]*Universe
+	universesLock  sync.RWMutex
+	multiverseCtx  context.Context
+	multiverseCtxC context.CancelFunc
 )
-
-func afterStartDelay() time.Duration {
-	rand.Seed(time.Now().UnixNano())
-	return time.Duration(BaseAfterStartDelay+rand.Intn(MaxAfterStartDelay-BaseAfterStartDelay)) * time.Millisecond
-}
-
-func GetCacheFolder() (string, error) {
-	cacheFolder := ".cache/dreamland"
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-
-	return path.Join(home, cacheFolder), nil
-}
 
 // TODO: This should be generated
 var FixtureMap = map[string]FixtureDefinition{

@@ -2,14 +2,15 @@ package monkey
 
 import (
 	"github.com/taubyte/go-interfaces/common"
+	commonSpecs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/libdream"
 )
 
 func init() {
-	libdream.Registry.Monkey.Client = createMonkeyClient
-}
-
-func createMonkeyClient(node peer.Node, config *common.ClientConfig) (common.Client, error) {
-	return New(node.Context(), node)
+	libdream.Registry.Set(commonSpecs.Monkey, nil,
+		func(n peer.Node, cc *common.ClientConfig) (common.Client, error) {
+			return New(n.Context(), n)
+		},
+	)
 }

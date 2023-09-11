@@ -8,6 +8,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/protocols/seer"
 	_ "github.com/taubyte/tau/protocols/substrate"
@@ -32,7 +33,7 @@ func TestHeartBeat(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -48,8 +49,10 @@ func TestHeartBeat(t *testing.T) {
 	}
 
 	time.Sleep(5 * time.Second)
+	seer, err := simple.Seer()
+	assert.NilError(t, err)
 
-	ids, err := simple.Seer().Usage().List()
+	ids, err := seer.Usage().List()
 	if err != nil {
 		t.Error(err)
 		return
@@ -60,7 +63,7 @@ func TestHeartBeat(t *testing.T) {
 		return
 	}
 
-	serviceInfo, err := simple.Seer().Usage().Get(ids[0])
+	serviceInfo, err := seer.Usage().Get(ids[0])
 	if err != nil {
 		t.Error(err)
 		return

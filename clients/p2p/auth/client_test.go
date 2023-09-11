@@ -29,7 +29,7 @@ func TestAuthClient(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					Auth: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -56,7 +56,10 @@ func TestAuthClient(t *testing.T) {
 		return
 	}
 
-	hkNil, err := simple.Auth().Hooks().Get("")
+	auth, err := simple.Auth()
+	assert.NilError(t, err)
+
+	hkNil, err := auth.Hooks().Get("")
 	assert.Assert(t, err != nil)
 	if hkNil != nil {
 		t.Error("Returned Hook for empty id: ", hkNil)
@@ -104,7 +107,7 @@ func TestAuthClient(t *testing.T) {
 		return
 	}
 
-	hk0, err := simple.Auth().Hooks().Get(hook_id)
+	hk0, err := auth.Hooks().Get(hook_id)
 	if err != nil {
 		t.Error("Get Hook error: ", err)
 	}
@@ -113,7 +116,7 @@ func TestAuthClient(t *testing.T) {
 		t.Error("Can't get hook")
 	}
 
-	hids, err := simple.Auth().Hooks().List()
+	hids, err := auth.Hooks().List()
 	if err != nil {
 		t.Error(err)
 		return
@@ -134,7 +137,7 @@ func TestAuthClient(t *testing.T) {
 
 	/***** REPOS *****/
 
-	repo0, err := simple.Auth().Repositories().Github().Get(1)
+	repo0, err := auth.Repositories().Github().Get(1)
 	if err != nil {
 		t.Error("Get Repository error: ", err)
 	}
@@ -143,7 +146,7 @@ func TestAuthClient(t *testing.T) {
 		t.Error("Can't get Repository")
 	}
 
-	ids, err := simple.Auth().Repositories().Github().List()
+	ids, err := auth.Repositories().Github().List()
 	if err != nil {
 		t.Error(err)
 		return
@@ -167,13 +170,13 @@ func TestAuthClient(t *testing.T) {
 		return
 	}
 
-	_, err = simple.Auth().Hooks().Get(hook_id)
+	_, err = auth.Hooks().Get(hook_id)
 	if err == nil {
 		t.Error("Delete Repo did not delete hooks!")
 		return
 	}
 
-	pids, err := simple.Auth().Projects().List()
+	pids, err := auth.Projects().List()
 	if err != nil {
 		t.Error(err)
 		return

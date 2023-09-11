@@ -8,6 +8,7 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	dreamland "github.com/taubyte/tau/libdream"
 	_ "github.com/taubyte/tau/protocols/tns"
+	"gotest.tools/assert"
 )
 
 func TestFetch(t *testing.T) {
@@ -20,7 +21,7 @@ func TestFetch(t *testing.T) {
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -51,8 +52,11 @@ func TestFetch(t *testing.T) {
 		},
 	}
 
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
 	push := func(id string) error {
-		err = simple.TNS().Push([]string{id}, fixture[id])
+		err = tns.Push([]string{id}, fixture[id])
 		if err != nil {
 			t.Error(err)
 			return err
@@ -69,7 +73,7 @@ func TestFetch(t *testing.T) {
 
 	fetchAndCheck := func(id string) error {
 		_id := id[1:]
-		resp, err := simple.TNS().Fetch(spec.NewTnsPath([]string{_id}))
+		resp, err := tns.Fetch(spec.NewTnsPath([]string{_id}))
 		if err != nil {
 			t.Error(err)
 			return err

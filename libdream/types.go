@@ -6,6 +6,7 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/kvdb"
+	commonSpecs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/p2p/peer"
 )
 
@@ -79,7 +80,7 @@ type NodeInfo struct {
 
 type Config struct {
 	Services map[string]commonIface.ServiceConfig
-	Clients  map[string]commonIface.ClientConfig
+	Clients  map[string]*commonIface.ClientConfig
 	Simples  map[string]SimpleConfig
 }
 
@@ -95,3 +96,47 @@ type serviceStatus struct {
 }
 
 type Multiverse struct{}
+
+type Simple struct {
+	peer.Node
+	clients map[string]commonIface.Client
+	lock    sync.RWMutex
+}
+
+// Deprecated use Map[string]*commonIface.ClientConfig{}
+type SimpleConfigClients struct {
+	TNS     *commonIface.ClientConfig
+	Auth    *commonIface.ClientConfig
+	Seer    *commonIface.ClientConfig
+	Patrick *commonIface.ClientConfig
+	Monkey  *commonIface.ClientConfig
+	Hoarder *commonIface.ClientConfig
+}
+
+func (s SimpleConfigClients) Conform() map[string]*commonIface.ClientConfig {
+	newClientConfig := make(map[string]*commonIface.ClientConfig)
+
+	if s.TNS != nil {
+		newClientConfig[commonSpecs.TNS] = s.TNS
+	}
+
+	if s.Auth != nil {
+		newClientConfig[commonSpecs.Auth] = s.Auth
+	}
+
+	if s.Seer != nil {
+		newClientConfig[commonSpecs.Seer] = s.Seer
+	}
+
+	if s.Patrick != nil {
+		newClientConfig[commonSpecs.Patrick] = s.Patrick
+	}
+
+	if s.Monkey != nil {
+		newClientConfig[commonSpecs.Monkey] = s.Monkey
+	}
+
+	if s.Hoarder != nil {
+		newClientConfig[commonSpecs.Hoarder] = s.Hoarder
+	}
+}

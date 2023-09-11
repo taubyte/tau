@@ -31,7 +31,7 @@ func TestCalls(t *testing.T) {
 				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 					TNS:  &commonIface.ClientConfig{},
-				},
+				}.Conform(),
 			},
 		},
 	})
@@ -48,7 +48,8 @@ func TestCalls(t *testing.T) {
 
 	time.Sleep(10 * time.Second)
 
-	ids, err := simple.Seer().Usage().ListServiceId("substrate")
+	seerClient, err := simple.Seer()
+	ids, err := seerClient.Usage().ListServiceId("substrate")
 	if err != nil {
 		t.Error(err)
 		return
