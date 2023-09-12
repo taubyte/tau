@@ -8,19 +8,18 @@ import (
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
-	dreamland "github.com/taubyte/tau/libdream/services"
 	_ "github.com/taubyte/tau/protocols/substrate"
 )
 
 // TODO: Could shorten test doing a tns lookup or looking at patrick to see if jobs are done instead of sleep.
 func TestDevRetry(t *testing.T) {
 	t.Skip("Needs to be updated post code clone config for itself")
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":     {},
 			"patrick": {},
@@ -31,12 +30,12 @@ func TestDevRetry(t *testing.T) {
 				Others: map[string]int{"verbose": 1},
 			},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS:  &commonIface.ClientConfig{},
 					Auth: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})

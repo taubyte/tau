@@ -2,12 +2,16 @@ package auth
 
 import (
 	"github.com/taubyte/go-interfaces/common"
+	commonSpecs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/p2p/peer"
-	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
+	"github.com/taubyte/tau/libdream"
 )
 
 func init() {
-	dreamlandRegistry.Registry.Auth.Client = createAuthClient
+	if err := libdream.Registry.Set(commonSpecs.Auth, nil, createAuthClient); err != nil {
+		panic(err)
+	}
+
 }
 
 func createAuthClient(node peer.Node, config *common.ClientConfig) (common.Client, error) {

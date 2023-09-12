@@ -5,9 +5,9 @@ import (
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/monkey"
 	_ "github.com/taubyte/tau/clients/p2p/patrick"
@@ -16,10 +16,10 @@ import (
 
 func TestReAnnounce(t *testing.T) {
 	t.Skip("Needs to be refactored properly into wait for job to fail then do a sleep")
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&dreamlandCommon.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"patrick": {},
 			"monkey":  {},
@@ -27,12 +27,12 @@ func TestReAnnounce(t *testing.T) {
 			"tns":     {},
 			"auth":    {Others: map[string]int{"secure": 1}},
 		},
-		Simples: map[string]dreamlandCommon.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: dreamlandCommon.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Patrick: &commonIface.ClientConfig{},
 					Monkey:  &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -72,13 +72,16 @@ func TestReAnnounce(t *testing.T) {
 		return
 	}
 
-	jobs, err := simples.Patrick().List()
+	patrick, err := simples.Patrick()
+	assert.NilError(t, err)
+
+	jobs, err := patrick.List()
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	job_byte, err := simples.Patrick().Get(jobs[0])
+	job_byte, err := patrick.Get(jobs[0])
 	if err != nil {
 		t.Error(err)
 		return
@@ -101,7 +104,7 @@ func TestReAnnounce(t *testing.T) {
 	// Wait for reannounce to update attempts to 1 and send back to /jobs
 	time.Sleep(10 * time.Second)
 
-	retry_job, err := simples.Patrick().Get(job_byte.Id)
+	retry_job, err := patrick.Get(job_byte.Id)
 	if err != nil {
 		t.Error(err)
 		return
@@ -121,7 +124,7 @@ func TestReAnnounce(t *testing.T) {
 	// Wait for reannounce to update attempts to 2 and send back to /jobs
 	time.Sleep(10 * time.Second)
 
-	retry_job, err = simples.Patrick().Get(retry_job.Id)
+	retry_job, err = patrick.Get(retry_job.Id)
 	if err != nil {
 		t.Error(err)
 		return
@@ -137,7 +140,7 @@ func TestReAnnounce(t *testing.T) {
 		return
 	}
 
-	retry_job, err = simples.Patrick().Get(retry_job.Id)
+	retry_job, err = patrick.Get(retry_job.Id)
 	if err != nil {
 		t.Error(err)
 		return

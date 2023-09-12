@@ -6,14 +6,14 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/v3/assert"
 )
 
 func TestBasicUsage(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer":      {Others: map[string]int{"mock": 1}},
 			"tns":       {},
@@ -23,17 +23,17 @@ func TestBasicUsage(t *testing.T) {
 			"hoarder":   {},
 			"substrate": {Others: map[string]int{"copies": 2}},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 					TNS:  &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 			"clientD": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -62,7 +62,10 @@ func TestBasicUsage(t *testing.T) {
 
 	// Testing Hearbeat and Announce
 	/* Client Heartbeat */
-	_, err = simple.Seer().Usage().Heartbeat(&iface.UsageData{
+
+	seer, err := simple.Seer()
+	assert.NilError(t, err)
+	_, err = seer.Usage().Heartbeat(&iface.UsageData{
 		Memory: iface.Memory{
 			Used:  10,
 			Total: 50,
@@ -90,7 +93,7 @@ func TestBasicUsage(t *testing.T) {
 	}
 
 	/* Client Heartbeat */
-	_, err = simple.Seer().Usage().Heartbeat(&iface.UsageData{
+	_, err = seer.Usage().Heartbeat(&iface.UsageData{
 		Memory: iface.Memory{
 			Used:  20,
 			Total: 100,
@@ -118,7 +121,10 @@ func TestBasicUsage(t *testing.T) {
 	}
 
 	/* ClientD Heartbeat*/
-	_, err = simpleD.Seer().Usage().Heartbeat(&iface.UsageData{
+	dSeer, err := simpleD.Seer()
+	assert.NilError(t, err)
+
+	_, err = dSeer.Usage().Heartbeat(&iface.UsageData{
 		Memory: iface.Memory{
 			Used:  40,
 			Total: 200,

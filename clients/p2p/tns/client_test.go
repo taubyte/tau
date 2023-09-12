@@ -9,23 +9,23 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/tns"
 	spec "github.com/taubyte/go-specs/common"
 	p2p "github.com/taubyte/tau/clients/p2p/tns"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/assert"
 )
 
 var _ iface.Client = &p2p.Client{}
 
 func TestTNSClient(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
-	err := u.StartWithConfig(&commonDreamland.Config{
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -49,7 +49,10 @@ func TestTNSClient(t *testing.T) {
 		},
 	}
 
-	err = simple.TNS().Push([]string{"/t2"}, fixture["/t2"])
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
+	err = tns.Push([]string{"/t2"}, fixture["/t2"])
 	if err != nil {
 		t.Error(err)
 		return
@@ -57,7 +60,7 @@ func TestTNSClient(t *testing.T) {
 
 	time.Sleep(3 * time.Second)
 
-	new_obj, err := simple.TNS().Fetch(spec.NewTnsPath([]string{"t2"}))
+	new_obj, err := tns.Fetch(spec.NewTnsPath([]string{"t2"}))
 	if err != nil {
 		t.Error(err)
 		return
@@ -73,7 +76,7 @@ func TestTNSClient(t *testing.T) {
 	// Give time to clean up context.
 	time.Sleep(10 * time.Second)
 
-	keys, err := simple.TNS().List(1)
+	keys, err := tns.List(1)
 	if err != nil {
 		t.Error(err)
 		return

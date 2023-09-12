@@ -8,9 +8,9 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/http/helpers"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	"github.com/taubyte/tau/protocols/auth/acme/store"
+	"gotest.tools/v3/assert"
 )
 
 var testDir = "testdir"
@@ -18,19 +18,19 @@ var testDir = "testdir"
 func TestInject(t *testing.T) {
 	defer os.Remove(testDir)
 
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&dreamlandCommon.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth": {},
 			"tns":  {},
 		},
-		Simples: map[string]dreamlandCommon.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: dreamlandCommon.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Auth: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -70,7 +70,10 @@ func TestInject(t *testing.T) {
 		return
 	}
 
-	err = simple.Auth().InjectStaticCertificate("*.pass.com", []byte(cert))
+	auth, err := simple.Auth()
+	assert.NilError(t, err)
+
+	err = auth.InjectStaticCertificate("*.pass.com", []byte(cert))
 	if err != nil {
 		t.Error(err)
 		return

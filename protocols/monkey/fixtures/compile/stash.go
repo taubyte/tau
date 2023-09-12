@@ -8,7 +8,6 @@ import (
 	"github.com/pterm/pterm"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
-	tns "github.com/taubyte/tau/clients/p2p/tns"
 	"github.com/taubyte/tau/protocols/monkey/jobs"
 )
 
@@ -17,8 +16,13 @@ func (ctx resourceContext) stashAndPush(id string, file io.ReadSeekCloser) error
 		return errors.New("file is nil")
 	}
 
+	tnsClient, err := ctx.simple.TNS()
+	if err != nil {
+		return err
+	}
+
 	c := jobs.Context{
-		Tns:  ctx.simple.TNS().(*tns.Client),
+		Tns:  tnsClient,
 		Node: ctx.universe.TNS().Node(),
 	}
 	c.ForceContext(ctx.universe.Context())

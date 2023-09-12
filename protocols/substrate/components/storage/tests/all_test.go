@@ -20,8 +20,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	projectLib "github.com/taubyte/go-project-schema/project"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	"github.com/taubyte/tau/pkgs/kvdb"
 	_ "github.com/taubyte/tau/protocols/substrate"
 	storages "github.com/taubyte/tau/protocols/substrate/components/storage"
@@ -79,19 +78,19 @@ func TestAll(t *testing.T) {
 	meta.HeadCommit.ID = "commitID"
 	meta.Repository.Provider = "github"
 
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
 			"substrate": {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -106,7 +105,9 @@ func TestAll(t *testing.T) {
 		return
 	}
 
-	tnsClient := simple.TNS()
+	tnsClient, err := simple.TNS()
+	assert.NilError(t, err)
+
 	dbFactory := kvdb.New(u.Substrate().Node())
 	service, err := storages.New(u.Substrate(), dbFactory)
 	if err != nil {
@@ -551,10 +552,10 @@ func TestAll(t *testing.T) {
 	err = compiler.Build()
 	assert.NilError(t, err)
 
-	err = compiler.Publish(simple.TNS())
+	err = compiler.Publish(tnsClient)
 	assert.NilError(t, err)
 
-	commitId, err := simple.TNS().Simple().Commit(projectString, "master")
+	commitId, err := tnsClient.Simple().Commit(projectString, "master")
 	assert.NilError(t, err)
 
 	if commitId != expectedCommitId {

@@ -9,11 +9,11 @@ import (
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/p2p/peer"
 	p2p "github.com/taubyte/tau/clients/p2p/monkey"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 	"github.com/taubyte/tau/protocols/monkey"
+	"gotest.tools/v3/assert"
 )
 
 func TestMonkeyClient(t *testing.T) {
@@ -23,19 +23,19 @@ func TestMonkeyClient(t *testing.T) {
 
 	protocolCommon.LocalPatrick = true
 
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Monkey: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -65,7 +65,10 @@ func TestMonkeyClient(t *testing.T) {
 
 	time.Sleep(8 * time.Second)
 
-	client := simple.Monkey().(*p2p.Client)
+	monkey, err := simple.Monkey()
+	assert.NilError(t, err)
+
+	client := monkey.(*p2p.Client)
 
 	resp, err := client.Status(fakJob.Id)
 	if err != nil {

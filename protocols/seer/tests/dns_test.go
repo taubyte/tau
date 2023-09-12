@@ -6,8 +6,8 @@ import (
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/v3/assert"
 
 	dns "github.com/miekg/dns"
 
@@ -32,13 +32,14 @@ func createDnsClient(net string) *dns.Client {
 }
 
 func TestDns(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	dnsPort := u.PortFor("seer", "dns")
+	dnsPort, err := u.PortFor("seer", "dns")
+	assert.NilError(t, err)
 	defaultTestPort := fmt.Sprintf("127.0.0.1:%d", dnsPort)
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err = u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer":      {Others: map[string]int{"dns": dnsPort, "mock": 1}},
 			"tns":       {},

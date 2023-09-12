@@ -4,25 +4,41 @@ import (
 	"testing"
 
 	_ "github.com/taubyte/config-compiler/fixtures"
+	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	_ "github.com/taubyte/tau/protocols/tns"
+	"gotest.tools/v3/assert"
 )
 
 func TestList(t *testing.T) {
-	u, tns, err := dreamland.BasicMultiverse("TestList").Tns()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
+	u.StartWithConfig(&dreamland.Config{
+		Services: map[string]commonIface.ServiceConfig{
+			"tns": {},
+		},
+		Simples: map[string]dreamland.SimpleConfig{
+			"client": {
+				Clients: dreamland.SimpleConfigClients{
+					TNS: &commonIface.ClientConfig{},
+				}.Compat(),
+			},
+		},
+	})
 
-	err = u.RunFixture("fakeProject")
+	err := u.RunFixture("fakeProject")
 	if err != nil {
 		t.Error(err)
 		return
 	}
+
+	simple, err := u.Simple("client")
+	assert.NilError(t, err)
+
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
 
 	if (testStructure[*structureSpec.Database]{
 		t:                t,

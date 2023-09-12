@@ -8,21 +8,21 @@ import (
 	spec "github.com/taubyte/go-specs/common"
 	p2p "github.com/taubyte/tau/clients/p2p/tns"
 	"github.com/taubyte/tau/clients/p2p/tns/common"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/assert"
 )
 
 func TestCache(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
-	err := u.StartWithConfig(&commonDreamland.Config{
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -40,13 +40,16 @@ func TestCache(t *testing.T) {
 
 	common.ClientKeyCacheLifetime = 2 * time.Second
 
-	_, err = simple.TNS().Fetch(spec.NewTnsPath([]string{"test"}))
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
+	_, err = tns.Fetch(spec.NewTnsPath([]string{"test"}))
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	_, err = simple.TNS().Fetch(spec.NewTnsPath([]string{"test"}))
+	_, err = tns.Fetch(spec.NewTnsPath([]string{"test"}))
 	if err != nil {
 		t.Error(err)
 		return
@@ -66,7 +69,7 @@ func TestCache(t *testing.T) {
 		}
 	}
 
-	obj, err := simple.TNS().Fetch(spec.NewTnsPath([]string{"test"}))
+	obj, err := tns.Fetch(spec.NewTnsPath([]string{"test"}))
 	if err != nil {
 		t.Error(err)
 		return

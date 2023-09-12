@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/tau/libdream/common"
+	"github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
-	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
 	_ "github.com/taubyte/tau/protocols/auth"
@@ -17,11 +16,11 @@ import (
 )
 
 func init() {
-	dreamlandRegistry.Fixture("attachDomain", pushDomain)
-	dreamlandRegistry.Fixture("attachPlugin", injectPlugin)
+	libdream.RegisterFixture("attachDomain", pushDomain)
+	libdream.RegisterFixture("attachPlugin", injectPlugin)
 }
 
-func pushDomain(u common.Universe, params ...interface{}) error {
+func pushDomain(u *libdream.Universe, params ...interface{}) error {
 	err := u.Provides(
 		"auth",
 		"patrick",
@@ -56,7 +55,7 @@ func pushDomain(u common.Universe, params ...interface{}) error {
 	return nil
 }
 
-func injectPlugin(u common.Universe, params ...interface{}) error {
+func injectPlugin(u *libdream.Universe, params ...interface{}) error {
 	if err := u.Provides(
 		"auth",
 		"patrick",

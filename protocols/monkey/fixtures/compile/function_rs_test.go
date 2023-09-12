@@ -8,30 +8,29 @@ import (
 	"github.com/taubyte/config-compiler/decompile"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	"github.com/taubyte/tau/protocols/monkey/fixtures/compile"
 )
 
 func TestRSFunction(t *testing.T) {
 	t.Skip("takes forever...")
-	u := dreamland.Multiverse(dreamland.UniverseConfig{
+	u := dreamland.New(dreamland.UniverseConfig{
 		Name: "TestRSFunction",
 		Id:   "TestRSFunction",
 	})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
 			"substrate": {},
 			"hoarder":   {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})

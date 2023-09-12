@@ -6,11 +6,11 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	_ "github.com/taubyte/tau/clients/p2p/patrick"
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
-	dreamland "github.com/taubyte/tau/libdream/services"
 	_ "github.com/taubyte/tau/protocols/auth"
 	_ "github.com/taubyte/tau/protocols/hoarder"
+	"gotest.tools/v3/assert"
 
 	"github.com/fxamacker/cbor/v2"
 	iface "github.com/taubyte/go-interfaces/services/patrick"
@@ -20,24 +20,24 @@ import (
 )
 
 func TestClientWithUniverse(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	patrickHttpPort := 4443
 	authHttpPort := 4445
 
-	err := u.StartWithConfig(&dreamlandCommon.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"patrick": {Others: map[string]int{"http": patrickHttpPort}},
 			"auth":    {Others: map[string]int{"http": authHttpPort, "secure": 1}},
 			"hoarder": {},
 			"tns":     {},
 		},
-		Simples: map[string]dreamlandCommon.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: dreamlandCommon.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Patrick: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -79,7 +79,11 @@ func TestClientWithUniverse(t *testing.T) {
 
 	srv := u.Patrick()
 	db := srv.KV()
-	jobs, err := simple.Patrick().List()
+
+	patrickClient, err := simple.Patrick()
+	assert.NilError(t, err)
+
+	jobs, err := patrickClient.List()
 	if err != nil {
 		t.Error("Failed calling list after error: ", err)
 		return
@@ -87,7 +91,7 @@ func TestClientWithUniverse(t *testing.T) {
 
 	var job *iface.Job
 
-	job, err = simple.Patrick().Get(jobs[0])
+	job, err = patrickClient.Get(jobs[0])
 	if err != nil {
 		t.Error(err)
 		return
@@ -99,13 +103,13 @@ func TestClientWithUniverse(t *testing.T) {
 		return
 	}
 
-	err = simple.Patrick().Lock(job.Id, 5)
+	err = patrickClient.Lock(job.Id, 5)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	islocked, err := simple.Patrick().IsLocked(job.Id)
+	islocked, err := patrickClient.IsLocked(job.Id)
 	if err != nil {
 		t.Error(err)
 		return
@@ -116,7 +120,7 @@ func TestClientWithUniverse(t *testing.T) {
 		return
 	}
 
-	err = simple.Patrick().Unlock(job.Id)
+	err = patrickClient.Unlock(job.Id)
 	if err != nil {
 		t.Error(err)
 		return
@@ -152,13 +156,13 @@ func TestClientWithUniverse(t *testing.T) {
 	testAssets["asset3"] = "assetCID3"
 
 	// Testing with /archive/jobs/
-	err = simple.Patrick().Failed(job.Id, testLogs, testAssets)
+	err = patrickClient.Failed(job.Id, testLogs, testAssets)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	jobs, err = simple.Patrick().List()
+	jobs, err = patrickClient.List()
 	if err != nil {
 		t.Error("Failed calling list after error: ", err)
 		return
@@ -169,7 +173,7 @@ func TestClientWithUniverse(t *testing.T) {
 		return
 	}
 
-	testJob, err := simple.Patrick().Get(job.Id)
+	testJob, err := patrickClient.Get(job.Id)
 	if err != nil {
 		t.Errorf("Failed getting job %s with %v", job.Id, err)
 	}

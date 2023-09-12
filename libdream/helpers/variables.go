@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	dreamlandCommon "github.com/taubyte/tau/libdream/common"
+	dreamlandCommon "github.com/taubyte/tau/libdream"
 )
 
 var UrlPrefix = "http://" + dreamlandCommon.DefaultHost

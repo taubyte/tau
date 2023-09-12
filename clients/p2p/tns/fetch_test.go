@@ -6,22 +6,22 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	_ "github.com/taubyte/tau/protocols/tns"
+	"gotest.tools/assert"
 )
 
 func TestFetch(t *testing.T) {
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
-	err := u.StartWithConfig(&commonDreamland.Config{
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -52,8 +52,11 @@ func TestFetch(t *testing.T) {
 		},
 	}
 
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
 	push := func(id string) error {
-		err = simple.TNS().Push([]string{id}, fixture[id])
+		err = tns.Push([]string{id}, fixture[id])
 		if err != nil {
 			t.Error(err)
 			return err
@@ -70,7 +73,7 @@ func TestFetch(t *testing.T) {
 
 	fetchAndCheck := func(id string) error {
 		_id := id[1:]
-		resp, err := simple.TNS().Fetch(spec.NewTnsPath([]string{_id}))
+		resp, err := tns.Fetch(spec.NewTnsPath([]string{_id}))
 		if err != nil {
 			t.Error(err)
 			return err

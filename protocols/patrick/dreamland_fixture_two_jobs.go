@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/tau/libdream/common"
+	"github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
 
 	"github.com/taubyte/go-interfaces/services/tns"
 	spec "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
-	dreamlandRegistry "github.com/taubyte/tau/libdream/registry"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
 	_ "github.com/taubyte/tau/protocols/auth"
@@ -21,10 +20,10 @@ import (
 )
 
 func init() {
-	dreamlandRegistry.Fixture("createProjectWithJobs", fixture)
+	libdream.RegisterFixture("createProjectWithJobs", fixture)
 }
 
-func fixture(u common.Universe, params ...interface{}) error {
+func fixture(u *libdream.Universe, params ...interface{}) error {
 	simple, err := u.Simple("client")
 	if err != nil {
 		return err
@@ -76,12 +75,17 @@ func fixture(u common.Universe, params ...interface{}) error {
 
 	attempts := 0
 	var tnsClient tns.Client
+	// TODO: Why 50 attempts, might be better to sleep
 	for tnsClient == nil {
 		if attempts == 50 {
 			return fmt.Errorf("unable to get tns client after 50 attempts")
 		}
-		tnsClient = simple.TNS()
+
+		tnsClient, err = simple.TNS()
 		attempts++
+	}
+	if err != nil {
+		return fmt.Errorf("getting tns client failed with: %w", err)
 	}
 
 	attempts = 0

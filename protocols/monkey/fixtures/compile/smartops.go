@@ -126,7 +126,12 @@ func (f smartopsContext) codeFile(language wasmSpec.SupportedLanguage) error {
 
 // Overrides smartops "Call" in config
 func (f smartopsContext) overrideConfigCall() error {
-	commit, err := f.ctx.simple.TNS().Simple().Commit(f.ctx.projectId, f.ctx.branch)
+	tns, err := f.ctx.simple.TNS()
+	if err != nil {
+		return err
+	}
+
+	commit, err := tns.Simple().Commit(f.ctx.projectId, f.ctx.branch)
 	if err != nil {
 		return err
 	}
@@ -136,7 +141,7 @@ func (f smartopsContext) overrideConfigCall() error {
 		return err
 	}
 
-	err = f.ctx.simple.TNS().Push(append(path.Slice(), "call"), f.ctx.call)
+	err = tns.Push(append(path.Slice(), "call"), f.ctx.call)
 	if err != nil {
 		return err
 	}

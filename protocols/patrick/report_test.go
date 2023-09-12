@@ -7,10 +7,10 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	"github.com/taubyte/tau/libdream/services"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	"github.com/taubyte/tau/libdream"
+	dreamland "github.com/taubyte/tau/libdream"
 	_ "github.com/taubyte/tau/protocols/auth"
+	"gotest.tools/v3/assert"
 
 	"github.com/taubyte/go-interfaces/services/patrick"
 	_ "github.com/taubyte/tau/clients/p2p/patrick"
@@ -21,10 +21,10 @@ import (
 )
 
 func TestReportSsh(t *testing.T) {
-	u := services.Multiverse(dreamland.UniverseConfig{Name: "ReportSsh"})
+	u := libdream.New(dreamland.UniverseConfig{Name: "ReportSsh"})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},
@@ -32,12 +32,12 @@ func TestReportSsh(t *testing.T) {
 			"patrick": {},
 			"auth":    {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS:     &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -61,16 +61,19 @@ func TestReportSsh(t *testing.T) {
 	// Check for 20 seconds after fixture is ran for the jobs
 	attempts := 0
 	var job *patrick.Job
+	patrick, err := simple.Patrick()
+	assert.NilError(t, err)
+
 	for {
 		attempts += 1
 
-		jobs, err := simple.Patrick().List()
+		jobs, err := patrick.List()
 		if len(jobs) != 2 {
 			err = fmt.Errorf("Expected 2 jobs got %d", len(jobs))
 		}
 
 		if err == nil {
-			job, err = simple.Patrick().Get(jobs[0])
+			job, err = patrick.Get(jobs[0])
 			if err != nil {
 				t.Error(err)
 				return
@@ -86,8 +89,11 @@ func TestReportSsh(t *testing.T) {
 		time.Sleep(1 * time.Second)
 	}
 
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
 	// TODO use go-spec
-	resp, err := simple.TNS().Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github", fmt.Sprintf("%d", job.Meta.Repository.ID), "ssh"}))
+	resp, err := tns.Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github", fmt.Sprintf("%d", job.Meta.Repository.ID), "ssh"}))
 	if err != nil {
 		t.Error(err)
 		return

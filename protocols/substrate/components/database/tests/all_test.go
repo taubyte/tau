@@ -15,10 +15,9 @@ import (
 	projectLib "github.com/taubyte/go-project-schema/project"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
+	dreamland "github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
 	gitTest "github.com/taubyte/tau/libdream/helpers/git"
-	dreamland "github.com/taubyte/tau/libdream/services"
 	"github.com/taubyte/tau/pkgs/kvdb"
 	_ "github.com/taubyte/tau/protocols/substrate"
 	service "github.com/taubyte/tau/protocols/substrate/components/database"
@@ -56,18 +55,18 @@ func TestAll(t *testing.T) {
 	meta.HeadCommit.ID = "commitID"
 	meta.Repository.Provider = "github"
 
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
 			"substrate": {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -98,7 +97,10 @@ func TestAll(t *testing.T) {
 	err = compiler.Build()
 	assert.NilError(t, err)
 
-	err = compiler.Publish(simple.TNS())
+	tns, err := simple.TNS()
+	assert.NilError(t, err)
+
+	err = compiler.Publish(tns)
 	assert.NilError(t, err)
 
 	context := db.Context{
@@ -279,10 +281,10 @@ func TestAll(t *testing.T) {
 	err = compiler.Build()
 	assert.NilError(t, err)
 
-	err = compiler.Publish(simple.TNS())
+	err = compiler.Publish(tns)
 	assert.NilError(t, err)
 
-	commitId, err := simple.TNS().Simple().Commit(projectString, "master")
+	commitId, err := tns.Simple().Commit(projectString, "master")
 	assert.NilError(t, err)
 
 	if commitId != expectedCommitId {

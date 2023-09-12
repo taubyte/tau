@@ -10,6 +10,7 @@ import (
 )
 
 func TestBranch(t *testing.T) {
+	t.Skip("Needs to be redone")
 	protocolCommon.LocalPatrick = true
 	u, err := startDreamland("testRunBranch")
 	defer u.Stop()

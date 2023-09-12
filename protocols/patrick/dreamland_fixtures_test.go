@@ -7,8 +7,8 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	_ "github.com/taubyte/tau/clients/p2p/patrick"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	"github.com/taubyte/tau/libdream/services"
+	"github.com/taubyte/tau/libdream"
+	dreamland "github.com/taubyte/tau/libdream"
 	_ "github.com/taubyte/tau/protocols/auth"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 	_ "github.com/taubyte/tau/protocols/monkey"
@@ -17,10 +17,10 @@ import (
 )
 
 func TestFixtureProvidesClients(t *testing.T) {
-	u := services.Multiverse(services.UniverseConfig{Name: "fixtureProvidesClients"})
+	u := libdream.New(libdream.UniverseConfig{Name: "fixtureProvidesClients"})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&libdream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},
@@ -29,9 +29,9 @@ func TestFixtureProvidesClients(t *testing.T) {
 			"seer":    {},
 			"patrick": {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]libdream.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{},
+				Clients: libdream.SimpleConfigClients{}.Compat(),
 			},
 		},
 	})
@@ -48,19 +48,19 @@ func TestFixtureProvidesClients(t *testing.T) {
 }
 
 func TestFixtureProvidesServices(t *testing.T) {
-	u := services.Multiverse(services.UniverseConfig{Name: "fixtureProvidesServices"})
+	u := libdream.New(libdream.UniverseConfig{Name: "fixtureProvidesServices"})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS:     &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
 					Auth:    &commonIface.ClientConfig{},
 					Seer:    &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -77,10 +77,10 @@ func TestFixtureProvidesServices(t *testing.T) {
 }
 
 func TestDreamlandFixture(t *testing.T) {
-	u := services.Multiverse(services.UniverseConfig{Name: "fixtureTest"})
+	u := libdream.New(libdream.UniverseConfig{Name: "fixtureTest"})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},
@@ -88,12 +88,12 @@ func TestDreamlandFixture(t *testing.T) {
 			"patrick": {},
 			"auth":    {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					TNS:     &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -119,11 +119,13 @@ func TestDreamlandFixture(t *testing.T) {
 	for {
 		attempts += 1
 
-		jobs, err := simple.Patrick().List()
-		if len(jobs) != 2 {
-			err = fmt.Errorf("Expected 2 jobs got %d", len(jobs))
+		patrick, err := simple.Patrick()
+		if err != nil {
+			jobs, err := patrick.List()
+			if err == nil && len(jobs) != 2 {
+				err = fmt.Errorf("Expected 2 jobs got %d", len(jobs))
+			}
 		}
-
 		if err == nil {
 			break
 		}

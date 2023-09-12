@@ -7,26 +7,26 @@ import (
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/protocols/seer"
 )
 
 func TestService(t *testing.T) {
 	fake_location := iface.Location{Latitude: 32.91264411258042, Longitude: -96.8907727708027}
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer": {Others: map[string]int{"dns": 8999}},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 					TNS:  &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -44,13 +44,16 @@ func TestService(t *testing.T) {
 		return
 	}
 
-	err = simple.Seer().Geo().Set(fake_location)
+	seer, err := simple.Seer()
+	assert.NilError(t, err)
+
+	err = seer.Geo().Set(fake_location)
 	if err != nil {
 		t.Error("Returned Error ", err)
 		return
 	}
 
-	resp, err := simple.Seer().Geo().All()
+	resp, err := seer.Geo().All()
 	if err != nil {
 		t.Error("Returned Error ", err)
 		return

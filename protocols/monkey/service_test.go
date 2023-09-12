@@ -8,10 +8,10 @@ import (
 	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/p2p/peer"
 	_ "github.com/taubyte/tau/clients/p2p/monkey"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	dreamland "github.com/taubyte/tau/libdream/services"
+	dreamland "github.com/taubyte/tau/libdream"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	_ "github.com/taubyte/tau/protocols/hoarder"
+	"gotest.tools/v3/assert"
 )
 
 func init() {
@@ -22,19 +22,19 @@ func init() {
 
 func TestService(t *testing.T) {
 	protocolCommon.LocalPatrick = true
-	u := dreamland.Multiverse(dreamland.UniverseConfig{Name: t.Name()})
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},
 		},
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: dreamland.SimpleConfigClients{
 					Monkey: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -75,9 +75,12 @@ func TestService(t *testing.T) {
 	}
 
 	// Test successful job
+	monkey, err := simple.Monkey()
+	assert.NilError(t, err)
+
 	if err = (&MonkeyTestContext{
 		universe:     u,
-		client:       simple.Monkey(),
+		client:       monkey,
 		jid:          successful_job.Id,
 		expectStatus: patrick.JobStatusSuccess,
 		expectLog:    "Running job `fake_jid_success` was successful",
@@ -89,7 +92,7 @@ func TestService(t *testing.T) {
 	// Test failed job
 	if err = (&MonkeyTestContext{
 		universe:     u,
-		client:       simple.Monkey(),
+		client:       monkey,
 		jid:          failed_job.Id,
 		expectStatus: patrick.JobStatusFailed,
 		expectLog:    "Running job `fake_jid_failed` was successful",
@@ -98,7 +101,7 @@ func TestService(t *testing.T) {
 		return
 	}
 
-	ids, err := simple.Monkey().List()
+	ids, err := monkey.List()
 	if err != nil {
 		t.Error(err)
 		return

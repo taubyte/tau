@@ -7,29 +7,29 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	spec "github.com/taubyte/go-specs/common"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
-	commonDreamland "github.com/taubyte/tau/libdream/common"
-	"github.com/taubyte/tau/libdream/services"
+	"github.com/taubyte/tau/libdream"
+	"gotest.tools/v3/assert"
 )
 
 func TestDreamlandDoubleClient(t *testing.T) {
-	u := services.Multiverse(services.UniverseConfig{Name: "single"})
-	defer services.Zeno()
+	u := libdream.New(libdream.UniverseConfig{Name: "single"})
+	defer libdream.Zeno()
 
-	err := u.StartWithConfig(&commonDreamland.Config{
+	err := u.StartWithConfig(&libdream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
 
-		Simples: map[string]commonDreamland.SimpleConfig{
+		Simples: map[string]libdream.SimpleConfig{
 			"client": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: libdream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 			"client2": {
-				Clients: commonDreamland.SimpleConfigClients{
+				Clients: libdream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
-				},
+				}.Compat(),
 			},
 		},
 	})
@@ -54,14 +54,18 @@ func TestDreamlandDoubleClient(t *testing.T) {
 		return
 	}
 
-	tnsClient := simple.TNS()
+	tnsClient, err := simple.TNS()
+	assert.NilError(t, err)
+
 	err = tnsClient.Push(testKey, testValue)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	tnsClient2 := simple2.TNS()
+	tnsClient2, err := simple2.TNS()
+	assert.NilError(t, err)
+
 	val, err := tnsClient2.Fetch(spec.NewTnsPath(testKey))
 	if err != nil {
 		t.Error(err)
