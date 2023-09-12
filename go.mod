@@ -42,7 +42,7 @@ require (
 	github.com/taubyte/go-seer v1.0.6
 	github.com/taubyte/go-simple-container v0.4.3
 	github.com/taubyte/go-simple-git v0.2.5
-	github.com/taubyte/go-specs v0.10.8-0.20230911214943-6865f118bf7c
+	github.com/taubyte/go-specs v0.10.8-0.20230912140105-e8d804edc77c
 	github.com/taubyte/http v0.10.5
 	github.com/taubyte/p2p v0.9.1
 	github.com/taubyte/utils v0.1.7
