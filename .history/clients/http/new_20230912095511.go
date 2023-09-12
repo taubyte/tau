@@ -40,6 +40,6 @@ func New(ctx context.Context, options ...Option) (*Client, error) {
 	}
 	// Set the authorization header for the HTTP client.
 	c.auth_header = fmt.Sprintf("%s %s", c.provider, c.token)
-	// Return the client pointer on success or nothing on error.
+	// Return the client or nothing.
 	return c, nil
 }
