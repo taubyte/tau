@@ -17,6 +17,7 @@ import (
 	"github.com/taubyte/tau/pkgs/kvdb"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
+	streams "github.com/taubyte/p2p/streams/service"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	smartopsPlugins "github.com/taubyte/vm-core-plugins/smartops"
 	tbPlugins "github.com/taubyte/vm-core-plugins/taubyte"
@@ -45,8 +46,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	srv.verbose = config.Verbose
 
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, protocolCommon.Substrate))
-		if err != nil {
+		if srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, protocolCommon.Substrate)); err != nil {
 			return nil, fmt.Errorf("creating new lite node failed with: %w", err)
 		}
 	} else {
@@ -56,6 +56,14 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	srv.databases = config.Databases
 	if srv.databases == nil {
 		srv.databases = kvdb.New(srv.node)
+	}
+
+	if srv.stream, err = streams.New(srv.node, protocolCommon.Substrate, protocolCommon.SubstrateProtocol); err != nil {
+		return nil, fmt.Errorf("creating streams service failed with: %w", err)
+	}
+
+	if err = srv.setupStreamRoutes(); err != nil {
+		return nil, fmt.Errorf("setting up p2p stream routes failed with: %w", err)
 	}
 
 	// For Odo
@@ -69,14 +77,12 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		return nil, fmt.Errorf("starting beacon failed with: %w", err)
 	}
 
-	// HTTP
-	err = srv.startHttp(config)
-	if err != nil {
+	//TODO: This should not be needed
+	if err = srv.startHttp(config); err != nil {
 		return nil, fmt.Errorf("starting http service failed with %w", err)
 	}
 
-	srv.tns, err = tnsClient.New(ctx, clientNode)
-	if err != nil {
+	if srv.tns, err = tnsClient.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("creating tns client failed with %w", err)
 	}
 

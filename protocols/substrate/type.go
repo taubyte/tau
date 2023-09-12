@@ -13,6 +13,7 @@ import (
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-interfaces/vm"
+	streams "github.com/taubyte/p2p/streams/service"
 
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/peer"
@@ -45,6 +46,9 @@ type Service struct {
 
 	tns      tns.Client
 	orbitals []vm.Plugin
+
+	// for gateway
+	stream *streams.CommandService
 }
 
 func (n *Service) Context() context.Context {
