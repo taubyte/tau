@@ -10,7 +10,10 @@ var (
 	Monkey         = "monkey"
 	MonkeyProtocol = "/monkey/v1"
 
-	Substrate = "substrate"
+	Substrate         = "substrate"
+	SubstrateProtocol = "/substrate/v1"
+
+	Gateway = "gateway"
 
 	Patrick         = "patrick"
 	PatrickProtocol = "/patrick/v1"
