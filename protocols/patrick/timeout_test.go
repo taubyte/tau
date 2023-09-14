@@ -11,6 +11,7 @@ import (
 )
 
 func TestTimeout(t *testing.T) {
+	t.Skip("Using an old token/project")
 	protocolCommon.TimeoutTest = true
 	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
