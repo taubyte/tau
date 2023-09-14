@@ -20,6 +20,7 @@ import (
 )
 
 func TestClientWithUniverse(t *testing.T) {
+	t.Skip("Using an old token/project")
 	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 

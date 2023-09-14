@@ -73,7 +73,6 @@ func TestHoarderClient(t *testing.T) {
 	time.Sleep(1 * time.Second)
 
 	// No peer
-	hoarder_client.MinPeers = 1
 	_, err = hoarder_client.New(ctx, peerC)
 	if err != nil {
 		t.Error(err)

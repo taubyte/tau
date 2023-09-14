@@ -7,8 +7,6 @@ import "github.com/ipfs/go-log/v2"
 const (
 	ServiceName = "substrate"
 	Protocol    = "/substrate/v1"
-	MinPeers    = 0
-	MaxPeers    = 4
 )
 
 var Logger = log.Logger("substrate.service.p2p")

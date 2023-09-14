@@ -39,7 +39,7 @@ func (srv *Service) StartStream(name, protocol string, handler iface.StreamHandl
 		return nil, errors.New("not able to create service")
 	}
 
-	cs.router = router.New(cs.stream, nil)
+	cs.router = router.New(cs.stream)
 	if cs.router == nil {
 		return nil, errors.New("not able to create command router")
 	}

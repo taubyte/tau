@@ -10,12 +10,12 @@ import (
 )
 
 func (srv *AuthService) setupStreamRoutes() {
-	srv.stream.Router().AddStatic("ping", func(context.Context, streams.Connection, command.Body) (cr.Response, error) {
+	srv.stream.Define("ping", func(context.Context, streams.Connection, command.Body) (cr.Response, error) {
 		return cr.Response{"time": int(time.Now().Unix())}, nil
 	})
 
-	srv.stream.Router().AddStatic("acme", srv.acmeServiceHandler)
-	srv.stream.Router().AddStatic("hooks", srv.apiHookServiceHandler)
-	srv.stream.Router().AddStatic("repositories", srv.apiGitRepositoryServiceHandler)
-	srv.stream.Router().AddStatic("projects", srv.apiProjectsServiceHandler)
+	srv.stream.Define("acme", srv.acmeServiceHandler)
+	srv.stream.Define("hooks", srv.apiHookServiceHandler)
+	srv.stream.Define("repositories", srv.apiGitRepositoryServiceHandler)
+	srv.stream.Define("projects", srv.apiProjectsServiceHandler)
 }

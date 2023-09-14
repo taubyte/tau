@@ -77,6 +77,7 @@ func TestFixtureProvidesServices(t *testing.T) {
 }
 
 func TestDreamlandFixture(t *testing.T) {
+	t.Skip("Using an old token/project")
 	u := libdream.New(libdream.UniverseConfig{Name: "fixtureTest"})
 	defer u.Stop()
 

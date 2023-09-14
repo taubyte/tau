@@ -44,7 +44,7 @@ require (
 	github.com/taubyte/go-simple-git v0.2.5
 	github.com/taubyte/go-specs v0.10.8-0.20230912140105-e8d804edc77c
 	github.com/taubyte/http v0.10.5
-	github.com/taubyte/p2p v0.9.1
+	github.com/taubyte/p2p v0.10.1-0.20230914155618-623503a3bc05
 	github.com/taubyte/utils v0.1.7
 	github.com/taubyte/vm v1.0.3
 	github.com/taubyte/vm-core-plugins v0.3.4

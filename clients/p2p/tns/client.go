@@ -25,7 +25,7 @@ func New(ctx context.Context, node peer.Node) (tns.Client, error) {
 
 	c.cache = newCache(node)
 	c.node = node
-	c.client, err = client.New(ctx, node, nil, spec.TnsProtocol, MinPeers, MaxPeers)
+	c.client, err = client.New(node, spec.TnsProtocol)
 	if err != nil {
 		logger.Error("API client creation failed:", err)
 		return nil, err
