@@ -2,7 +2,6 @@ package monkey
 
 import (
 	"context"
-	"time"
 
 	"github.com/ipfs/go-log/v2"
 	iface "github.com/taubyte/go-interfaces/services/monkey"
@@ -12,12 +11,7 @@ import (
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
-var (
-	MinPeers                 = 0
-	MaxPeers                 = 2
-	DefaultGeoBeaconInterval = 5 * time.Minute
-	logger                   = log.Logger("monkey.p2p.client")
-)
+var logger = log.Logger("monkey.p2p.client")
 
 var _ iface.Client = &Client{}
 
@@ -35,7 +29,7 @@ func New(ctx context.Context, node peer.Node) (*Client, error) {
 		err error
 	)
 
-	c.client, err = client.New(ctx, node, nil, protocolCommon.MonkeyProtocol, MinPeers, MaxPeers)
+	c.client, err = client.New(node, protocolCommon.MonkeyProtocol)
 	if err != nil {
 		logger.Error("API client creation failed:", err)
 		return nil, err

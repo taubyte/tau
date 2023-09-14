@@ -14,11 +14,11 @@ import (
 )
 
 func (s *Service) setupStreamRoutes() error {
-	if err := s.stream.Router().AddStatic("has", s.hasHandler); err != nil {
+	if err := s.stream.Define("has", s.hasHandler); err != nil {
 		return fmt.Errorf("setting up `has` route failed with: %w", err)
 	}
 
-	if err := s.stream.Router().AddStatic("handle", s.handleHandler); err != nil {
+	if err := s.stream.Define("handle", s.handleHandler); err != nil {
 		return fmt.Errorf("setting up `handle` route failed with: %w", err)
 	}
 

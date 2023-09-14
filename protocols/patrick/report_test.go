@@ -21,6 +21,7 @@ import (
 )
 
 func TestReportSsh(t *testing.T) {
+	t.Skip("Using an old token/project")
 	u := libdream.New(dreamland.UniverseConfig{Name: "ReportSsh"})
 	defer u.Stop()
 

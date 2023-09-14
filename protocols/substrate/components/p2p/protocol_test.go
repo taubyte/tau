@@ -83,7 +83,7 @@ func TestProtocolListen(t *testing.T) {
 		"someotherData": "Hello from the other side",
 	}
 
-	p2pClient, err := client.New(context.Background(), sender.PeerNode(), nil, protocolToUse, common.MinPeers, common.MaxPeers)
+	p2pClient, err := client.New(sender.PeerNode(), protocolToUse)
 	if err != nil {
 		t.Error(err)
 		return

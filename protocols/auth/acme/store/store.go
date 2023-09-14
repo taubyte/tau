@@ -14,11 +14,7 @@ import (
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
-var (
-	MinPeers = 0
-	MaxPeers = 4
-	logger   = log.Logger("auth.acme.store")
-)
+var logger = log.Logger("auth.acme.store")
 
 // Store implements Store and Cache using taubyte acme service
 // NOTE: Must periodically chewck the validity of the certificate by a go-routine. If
@@ -45,7 +41,7 @@ func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss erro
 	}
 
 	c.errCacheMiss = errCacheMiss
-	c.client, err = client.New(ctx, node, nil, protocolCommon.AuthProtocol, MinPeers, MaxPeers)
+	c.client, err = client.New(node, protocolCommon.AuthProtocol)
 	if err != nil {
 		logger.Error("ACME Store creation failed:", err.Error())
 		return nil, err
@@ -73,7 +69,7 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 		dataKey = "certificate"
 	}
 
-	res, err := d.client.TrySend("acme", *body)
+	res, err := d.client.Send("acme", *body)
 	if err != nil {
 		if d.errCacheMiss != nil && err.Error() == d.errCacheMiss.Error() {
 			logger.Debugf("Cache miss for `%s` returning ErrCacheMiss", name)
@@ -109,7 +105,7 @@ func (d *Store) Put(ctx context.Context, name string, data []byte) error {
 	}
 
 	// write file to DB by sending command
-	_, err := d.client.TrySend("acme", *body)
+	_, err := d.client.Send("acme", *body)
 	if err != nil {
 		logger.Errorf("Storing `%s` error: %s", name, err.Error())
 	}
