@@ -14,7 +14,7 @@ func New(ctx context.Context, node peer.Node) (*Client, error) {
 		c   Client
 		err error
 	)
-	c.client, err = client.New(ctx, node, nil, protocolCommon.AuthProtocol, MinPeers, MaxPeers)
+	c.client, err = client.New(node, protocolCommon.AuthProtocol)
 	if err != nil {
 		logger.Error("API client creation failed:", err.Error())
 		return nil, err

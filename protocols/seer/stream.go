@@ -10,11 +10,11 @@ import (
 )
 
 func (srv *Service) setupStreamRoutes() {
-	srv.stream.Router().AddStatic("ping", func(context.Context, streams.Connection, command.Body) (cr.Response, error) {
+	srv.stream.Define("ping", func(context.Context, streams.Connection, command.Body) (cr.Response, error) {
 		return cr.Response{"time": int(time.Now().Unix())}, nil
 	})
 
-	srv.stream.Router().AddStatic("geo", srv.geo.locationServiceHandler)
-	srv.stream.Router().AddStatic("heartbeat", srv.oracle.heartbeatServiceHandler)
-	srv.stream.Router().AddStatic("announce", srv.oracle.announceServiceHandler)
+	srv.stream.Define("geo", srv.geo.locationServiceHandler)
+	srv.stream.Define("heartbeat", srv.oracle.heartbeatServiceHandler)
+	srv.stream.Define("announce", srv.oracle.announceServiceHandler)
 }

@@ -14,7 +14,7 @@ func New(ctx context.Context, node peer.Node) (iface.Client, error) {
 		c   Client
 		err error
 	)
-	if c.client, err = client.New(ctx, node, nil, protocolsCommon.PatrickProtocol, MinPeers, MaxPeers); err != nil {
+	if c.client, err = client.New(node, protocolsCommon.PatrickProtocol); err != nil {
 		logger.Error("API client creation failed:", err)
 		return nil, err
 	}

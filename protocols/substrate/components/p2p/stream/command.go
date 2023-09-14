@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/ipfs/go-cid"
+	"github.com/libp2p/go-libp2p/core/peer"
 	iface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
@@ -31,7 +32,7 @@ func (st *Stream) Command(command string) (iface.Command, error) {
 }
 
 func (c *Command) beforeSend(ctx context.Context, body command.Body) (*client.Client, command.Body, error) {
-	p2pClient, err := client.New(ctx, c.srv.Node(), nil, common.Protocol, common.MinPeers, common.MaxPeers)
+	p2pClient, err := client.New(c.srv.Node(), common.Protocol)
 	if err != nil {
 		return nil, nil, fmt.Errorf("New p2p client failed with: %s", err)
 	}
@@ -61,10 +62,15 @@ func (c *Command) Send(ctx context.Context, body map[string]interface{}) (respon
 	return resp, err
 }
 
-func (c *Command) SendTo(ctx context.Context, pid cid.Cid, body map[string]interface{}) (response.Response, error) {
+func (c *Command) SendTo(ctx context.Context, cid cid.Cid, body map[string]interface{}) (response.Response, error) {
 	p2pClient, body, err := c.beforeSend(ctx, body)
 	if err != nil {
 		return nil, err
+	}
+
+	pid, err := peer.FromCid(cid)
+	if err != nil {
+		return nil, fmt.Errorf("cid to pid failed with: %w", err)
 	}
 
 	resp, err := p2pClient.SendTo(pid, c.matcher.Command, body)
