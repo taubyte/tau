@@ -65,12 +65,17 @@ func (g *Gateway) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	if err != nil {
 		return fmt.Errorf("substrate client Handle failed with: %w", err)
 	}
-	defer res.Close()
+	// defer res.Close()
+	if err := r.WriteProxy(res); err != nil {
+		return err
+	}
 
 	data, err := io.ReadAll(res)
 	if err != nil {
 		return err
 	}
+
+	fmt.Println(string(data))
 
 	// // This below is all just for proof of concept, not used for real
 	// peerIface, err := res.Get("peer")
@@ -87,8 +92,8 @@ func (g *Gateway) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	// 	return fmt.Errorf("expected send and retrieve peer to be same")
 	// }
 
-	w.Write(data)
-	w.WriteHeader(200)
+	// w.Write(data)
+	// w.WriteHeader(200)
 
 	return nil
 }

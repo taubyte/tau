@@ -111,5 +111,5 @@ func TestGatewayBasic(t *testing.T) {
 	assert.NilError(t, err)
 
 	assert.Equal(t, res.StatusCode, 200, "Gateway Response:", string(data))
-	assert.Equal(t, firstSubstrate.Node().ID().String(), string(data))
+	assert.Equal(t, "hello world", string(data))
 }
