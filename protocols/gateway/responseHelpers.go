@@ -1,17 +1,19 @@
 package gateway
 
-import "github.com/taubyte/p2p/streams/command/response"
+import (
+	"github.com/taubyte/p2p/streams/client"
+)
 
 type responseGetter struct {
-	res response.Response
+	*client.Response
 }
 
-func (g *Gateway) Get(res response.Response) responseGetter {
+func (g *Gateway) Get(res *client.Response) responseGetter {
 	return responseGetter{res}
 }
 
 func (r responseGetter) Cached() (cached bool) {
-	cachedIface, err := r.res.Get("cached")
+	cachedIface, err := r.Get("cached")
 	if err != nil {
 		logger.Errorf("getting `cached` value from p2p response failed with: %s", err.Error())
 		return

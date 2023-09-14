@@ -2,23 +2,24 @@ package substrate
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"io"
 
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	cr "github.com/taubyte/p2p/streams/command/response"
+	"github.com/taubyte/p2p/streams/command/router"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"github.com/taubyte/tau/vm/helpers"
+	"github.com/taubyte/utils/maps"
 )
 
 func (s *Service) setupStreamRoutes() error {
 	if err := s.stream.Define("has", s.hasHandler); err != nil {
 		return fmt.Errorf("setting up `has` route failed with: %w", err)
 	}
-
-	if err := s.stream.Define("handle", s.handleHandler); err != nil {
+	if err := s.stream.DefineStream("tunnel", router.NoOpCommandHandler, s.tunnel); err != nil {
 		return fmt.Errorf("setting up `handle` route failed with: %w", err)
 	}
 
@@ -26,31 +27,19 @@ func (s *Service) setupStreamRoutes() error {
 }
 
 func (s *Service) hasHandler(ctx context.Context, con streams.Connection, body command.Body) (cr.Response, error) {
-	hostIface, ok := body["host"]
-	if !ok {
-		return nil, errors.New("no host set")
-	}
-	host, ok := hostIface.(string)
-	if !ok {
-		return nil, errors.New("host is not a string")
+	host, err := maps.String(body, "host")
+	if err != nil {
+		return nil, err
 	}
 
-	pathIface, ok := body["path"]
-	if !ok {
-		return nil, errors.New("no path set")
-	}
-	path, ok := pathIface.(string)
-	if !ok {
-		return nil, errors.New("path is not a string")
+	path, err := maps.String(body, "path")
+	if err != nil {
+		return nil, err
 	}
 
-	methodIface, ok := body["method"]
-	if !ok {
-		return nil, errors.New("no method set")
-	}
-	method, ok := methodIface.(string)
-	if !ok {
-		return nil, errors.New("method is not a string")
+	method, err := maps.String(body, "method")
+	if err != nil {
+		return nil, err
 	}
 
 	response := make(map[string]interface{}, 1)
@@ -62,6 +51,10 @@ func (s *Service) hasHandler(ctx context.Context, con streams.Connection, body c
 	}
 
 	return response, nil
+}
+
+func (s *Service) tunnel(ctx context.Context, rw io.ReadWriter) {
+	rw.Write([]byte("hello world"))
 }
 
 func (s *Service) handleHandler(ctx context.Context, con streams.Connection, body command.Body) (cr.Response, error) {

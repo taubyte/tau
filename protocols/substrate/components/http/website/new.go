@@ -5,14 +5,13 @@ import (
 	"fmt"
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
-	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-specs/extract"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"github.com/taubyte/tau/vm/cache"
 )
 
-func New(srv iface.Service, object tns.Object, matcher *common.MatchDefinition) (serviceable commonIface.Serviceable, err error) {
+func New(srv commonIface.ServiceComponent, object tns.Object, matcher *common.MatchDefinition) (serviceable commonIface.Serviceable, err error) {
 	parser, err := extract.Tns().BasicPath(object.Path().String())
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse tns path `%s` with: %w", object.Path().String(), err)

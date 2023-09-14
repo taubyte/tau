@@ -6,7 +6,6 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 	iface "github.com/taubyte/go-interfaces/services/substrate"
 	databaseIface "github.com/taubyte/go-interfaces/services/substrate/components/database"
-	httpIface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	ipfsIface "github.com/taubyte/go-interfaces/services/substrate/components/ipfs"
 	p2pIface "github.com/taubyte/go-interfaces/services/substrate/components/p2p"
 	pubSubIface "github.com/taubyte/go-interfaces/services/substrate/components/pubsub"
@@ -14,6 +13,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-interfaces/vm"
 	streams "github.com/taubyte/p2p/streams/service"
+	httpIface "github.com/taubyte/tau/protocols/substrate/components/http"
 
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/peer"
@@ -32,7 +32,7 @@ type Service struct {
 	node         peer.Node
 	http         http.Service
 	vm           vm.Service
-	nodeHttp     httpIface.Service
+	nodeHttp     *httpIface.Service
 	nodePubSub   pubSubIface.Service
 	nodeIpfs     ipfsIface.Service
 	nodeDatabase databaseIface.Service

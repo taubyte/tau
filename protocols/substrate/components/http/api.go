@@ -14,7 +14,7 @@ import (
 	"github.com/taubyte/tau/vm/lookup"
 )
 
-func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
+func (s *Service) Handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	startTime := time.Now()
 	matcher := common.New(helpers.ExtractHost(r.Host), r.URL.Path, r.Method)
 
@@ -45,7 +45,7 @@ func (s *Service) attach() {
 	s.Http().LowLevel(&http.LowLevelDefinition{
 		PathPrefix: "/",
 		Handler: func(w goHttp.ResponseWriter, r *goHttp.Request) {
-			err := s.handle(w, r)
+			err := s.Handle(w, r)
 			if err != nil {
 				w.Write([]byte(err.Error()))
 				w.WriteHeader(500)

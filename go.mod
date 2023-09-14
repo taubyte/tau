@@ -3,6 +3,7 @@ module github.com/taubyte/tau
 go 1.19
 
 replace github.com/taubyte/go-interfaces => ../go-interfaces
+replace github.com/taubyte/p2p => ../p2p
 
 
 

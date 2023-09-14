@@ -3,14 +3,14 @@ package function
 import (
 	"context"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
+	iface "github.com/taubyte/go-interfaces/services/substrate/components"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"github.com/taubyte/tau/vm"
 )
 
 type Function struct {
-	srv iface.Service
+	srv iface.ServiceComponent
 
 	config      structureSpec.Function
 	matcher     *common.MatchDefinition
