@@ -112,8 +112,7 @@ func (srv *Service) Close() error {
 		srv.db.Close()
 	}
 
-	srv.auctionHistory, srv.auctions, srv.lotteryPool = nil, nil, nil
-
+	*srv = Service{}
 	return nil
 }
 

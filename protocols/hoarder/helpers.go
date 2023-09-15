@@ -15,21 +15,27 @@ import (
 	storageSpec "github.com/taubyte/go-specs/storage"
 )
 
-func checkMatch(regex bool, match, toMatch, name string) error {
-	// Check that the match from config works
-	if regex {
-		matched, err := regexp.Match(toMatch, []byte(match))
-		if err != nil {
-			return fmt.Errorf("matching regex `%s` with `%s` failed with: %w", match, toMatch, err)
-		}
-
-		if !matched {
-			return fmt.Errorf("`%s` did not match regex `%s` from config `%s`", match, toMatch, name)
-		}
-	} else if match != toMatch {
-		return fmt.Errorf("`%s` did not match string `%s` from config `%s`", match, toMatch, name)
+func handleRegex(pattern, match string) error {
+	matched, err := regexp.Match(pattern, []byte(match))
+	if err != nil {
+		return fmt.Errorf("parsing regex pattern `%s` failed with: %w", pattern, err)
 	}
 
+	if !matched {
+		return fmt.Errorf("`%s` does not match regex pattern `%s`", match, pattern)
+	}
+
+	return nil
+}
+
+func checkMatch(regex bool, match, toMatch, name string) error {
+	if regex {
+		return handleRegex(toMatch, match)
+	}
+
+	if match != toMatch {
+		return fmt.Errorf("no match %s != %s", match, toMatch)
+	}
 	return nil
 }
 
@@ -147,19 +153,13 @@ func (srv *Service) storeAuction(ctx context.Context, auction *hoarderIface.Auct
 		auction.Meta.Match = "/" + auction.Meta.Match
 	}
 
-	if err = srv.putIntoDb(ctx, datastore.NewKey(fmt.Sprintf("/hoarder/%s/%s%s", metaType, auction.Meta.ConfigId, auction.Meta.Match)), configBytes); err != nil {
-		err = fmt.Errorf("putting config into db failed with: %w", err)
+	srv.regLock.Lock()
+	defer srv.regLock.Unlock()
+
+	key := datastore.NewKey(fmt.Sprintf("/hoarder/%s/%s%s", metaType, auction.Meta.ConfigId, auction.Meta.Match))
+	if err := srv.db.Put(ctx, key.String(), configBytes); err != nil {
+		return fmt.Errorf("put failed with: %w", err)
 	}
 
 	return err
-
-}
-
-func (srv *Service) putIntoDb(ctx context.Context, key datastore.Key, data []byte) error {
-	srv.regLock.Lock()
-	defer srv.regLock.Unlock()
-	if err := srv.db.Put(ctx, key.String(), data); err != nil {
-		return fmt.Errorf("put failed with: %w", err)
-	}
-	return nil
 }
