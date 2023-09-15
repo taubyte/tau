@@ -18,6 +18,7 @@ var (
 func formatSwarmKey(key string) (pnet.PSK, error) {
 	_key := strings.Split(key, "/")							//Split key by '/' delim and convert to array representation
 	_key = deleteEmpty(_key)							//remove "" characters from key array (Further filter array)
+												// example: foo//bar/ ---> [foo,"",bar]
 		
 	if len(_key) != expectedKeyLength {						//if len of key array!=6, throw error
 		return nil, errors.New("swarm key is not correctly formatted")
@@ -56,8 +57,13 @@ func setNetworkDomains(conf *config.Source) {
 //
 func convertToServiceRegex(url string) string {
 	urls := strings.Split(url, ".")						//split url by '.' delim, and store as array repersentation
-	serviceRegex := `^[^.]+\.tau`						//root path?
+	serviceRegex := `^[^.]+\.tau`						//root path which match domain names ending with ".tau".
 	var network string	
+
+	///
+	// This could be improved using .Join() instead as creating a string like this is expensive. 
+	// Strings a not maulable so a new string is created each time.
+	///
 	for _, _url := range urls {
 		network += fmt.Sprintf(`\.%s`, _url)				//create network path
 	}
