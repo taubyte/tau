@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"time"
-
-	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 )
 
 func (c Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {
@@ -15,6 +13,8 @@ func (c Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {
 		err = fmt.Errorf("adding build file to node failed with: %s", err)
 		return
 	}
+
+	_, err = c.Monkey.Hoarder().Stash(cid)
 
 	go func() {
 		ctx, ctxC := context.WithTimeout(c.ctx, 10*time.Minute)
@@ -25,16 +25,14 @@ func (c Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {
 			case <-ctx.Done():
 				return
 			case <-time.After(10 * time.Second):
-				hoarder, err := hoarderClient.New(ctx, c.OdoClientNode)
-				if err != nil {
-					logger.Error("creating hoarder client failed with:", err.Error())
-					continue
-				}
 
-				_, err = hoarder.Stash(cid)
+				_, err = c.Monkey.Hoarder().Stash(cid)
 				if err != nil {
 					logger.Errorf("stashing `%s` failed with: %s", cid, err.Error())
 					continue
+				} else {
+					logger.Infof("stashing `%s` suceeded", cid)
+					return
 				}
 			}
 		}

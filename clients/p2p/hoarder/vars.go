@@ -1,4 +1,4 @@
-package p2p
+package hoarder
 
 import (
 	"github.com/ipfs/go-log/v2"

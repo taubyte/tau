@@ -12,7 +12,6 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/go-interfaces/services/patrick"
-	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	chidori "github.com/taubyte/utils/logger/zap"
 )
@@ -66,13 +65,8 @@ func (m *Monkey) Run() {
 		}
 	}
 
-	hoarder, err := hoarderClient.New(m.Service.ctx, m.Service.node)
-	if err != nil {
-		logger.Error(err.Error())
-	}
-
 	// Stash the logs
-	if _, err = hoarder.Stash(cid); err != nil {
+	if _, err = m.Service.hoarderClient.Stash(cid); err != nil {
 		logger.Errorf("Hoarding cid `%s` of job `%s` failed: %s", cid, m.Id, err.Error())
 	}
 

@@ -2,20 +2,22 @@ package tests
 
 import (
 	"bytes"
-	"reflect"
+	"crypto/rand"
+	"fmt"
 	"testing"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	dreamland "github.com/taubyte/tau/libdream"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 	_ "github.com/taubyte/tau/protocols/seer"
+	slices "github.com/taubyte/utils/slices/string"
 	"gotest.tools/v3/assert"
 
+	"github.com/taubyte/go-interfaces/services/hoarder"
 	_ "github.com/taubyte/tau/clients/p2p/hoarder"
 )
 
 func TestService(t *testing.T) {
-	t.Skip()
 	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&dreamland.Config{
@@ -32,105 +34,71 @@ func TestService(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	// Pass in a file here
-	var file bytes.Buffer
-	file.Write([]byte("Some crap here!"))
-
-	cid, err := u.Hoarder().Node().AddFile(&file)
-	if err != nil {
-		t.Error("Failed calling add file with error: ", err)
-		return
-	}
-
-	hoarder, err := simple.Hoarder()
 	assert.NilError(t, err)
 
-	// Stash first file
-	resp, err := hoarder.Stash(cid) //-> should stash return this cid
+	simple, err := u.Simple("client")
+	assert.NilError(t, err)
+
+	hoarderClient, err := simple.Hoarder()
+	assert.NilError(t, err)
+
+	cid1, err := addAndStashNewFile(u, hoarderClient)
+	assert.NilError(t, err)
+
+	cid2, err := addAndStashNewFile(u, hoarderClient)
+	assert.NilError(t, err)
+
+	// stash should not fail, but should only stash unique
+	_, err = hoarderClient.Stash(cid2)
+	assert.NilError(t, err)
+
+	rareCids, err := hoarderClient.Rare()
+	assert.NilError(t, err)
+	assert.Equal(t, len(rareCids), 2)
+	assert.Equal(t, slices.Contains(rareCids, cid1), true)
+	assert.Equal(t, slices.Contains(rareCids, cid2), true)
+
+	stashedCids, err := hoarderClient.List()
+	assert.NilError(t, err)
+	assert.Equal(t, len(stashedCids), 2)
+	assert.Equal(t, slices.Contains(stashedCids, cid1), true)
+	assert.Equal(t, slices.Contains(stashedCids, cid2), true)
+}
+
+func addAndStashNewFile(u *dreamland.Universe, hoarderClient hoarder.Client) (cid string, err error) {
+	var file bytes.Buffer
+	data := make([]byte, 8)
+
+	if _, err = rand.Read(data); err != nil {
+		return
+	}
+
+	if _, err = file.Write(data); err != nil {
+		return
+	}
+
+	if cid, err = u.Hoarder().Node().AddFile(&file); err != nil {
+		return
+	}
+
+	res, err := hoarderClient.Stash(cid)
 	if err != nil {
-		t.Error("Failed calling stash with error: ", err)
 		return
 	}
 
-	_cid, err := resp.Get("cid")
+	stashedCidIface, err := res.Get("cid")
 	if err != nil {
-		t.Error(err)
 		return
 	}
 
-	__cid := _cid.(string)
-	if cid != __cid {
-		t.Errorf("First add/stash cid are not matching")
-		return
+	stashedCid, ok := stashedCidIface.(string)
+	if !ok {
+		err = fmt.Errorf("stashed cid is %T not string", stashedCidIface)
 	}
 
-	var file2 bytes.Buffer
-	file2.Write([]byte("Some crap here as well!"))
-
-	cid, err = u.Hoarder().Node().AddFile(&file2)
-	if err != nil {
-		t.Error("Failed calling add second file with error: ", err)
-		return
+	if cid != stashedCid {
+		err = fmt.Errorf("cid from add:%s stashedCid:%s", cid, stashedCid)
 	}
 
-	// Stash second file
-	resp, err = hoarder.Stash(cid) //-> should stash return this cid
-	if err != nil {
-		t.Error("Failed calling stash with error: ", err)
-		return
-	}
-
-	_cid, err = resp.Get("cid")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	__cid = _cid.(string)
-
-	if cid != __cid {
-		t.Errorf("Second add/stash cid are not matching")
-		return
-	}
-
-	// Calling stash on second file again to make sure that it doesn't stash another copy of it
-	_, err = hoarder.Stash(cid)
-	if err != nil {
-		t.Error("Failed calling stash again on second file with error: ", err)
-		return
-	}
-
-	// Should only return 2 even if calling stash 3 times
-	rareCID, err := hoarder.Rare() // -> a list containing the cid
-	if err != nil {
-		t.Error("Failed calling rare with error: ", err)
-		return
-	}
-
-	if len(rareCID) != 2 {
-		t.Error("Expected 2 rare cids got ", reflect.ValueOf(rareCID).Len())
-		return
-	}
-
-	cids, err := hoarder.List()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	if len(cids) != 2 {
-		t.Errorf("Expecting 2 cids got %d", len(cids))
-		return
-	}
+	return
 }

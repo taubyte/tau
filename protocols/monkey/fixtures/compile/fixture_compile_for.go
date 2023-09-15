@@ -92,7 +92,7 @@ func CompileFor(u *libdream.Universe, params ...interface{}) error {
 		return fmt.Errorf("failed getting simple with error: %v", err)
 	}
 
-	err = simple.Provides("tns")
+	err = simple.Provides("tns", "hoarder")
 	if err != nil {
 		return err
 	}
@@ -121,6 +121,11 @@ func CompileFor(u *libdream.Universe, params ...interface{}) error {
 		}
 	}
 
+	hoarder, err := simple.Hoarder()
+	if err != nil {
+		return err
+	}
+
 	ctx := resourceContext{
 		universe:      u,
 		simple:        simple,
@@ -131,6 +136,7 @@ func CompileFor(u *libdream.Universe, params ...interface{}) error {
 		paths:         b.Paths,
 		call:          b.Call,
 		templateRepo:  tauTemplates.Repository(),
+		hoarderClient: hoarder,
 	}
 
 	resourceIface, err := ctx.get()

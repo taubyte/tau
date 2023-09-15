@@ -24,6 +24,9 @@ func (ctx resourceContext) stashAndPush(id string, file io.ReadSeekCloser) error
 	c := jobs.Context{
 		Tns:  tnsClient,
 		Node: ctx.universe.TNS().Node(),
+		Monkey: fakeMonkey{
+			hoarderClient: ctx.hoarderClient,
+		},
 	}
 	c.ForceContext(ctx.universe.Context())
 

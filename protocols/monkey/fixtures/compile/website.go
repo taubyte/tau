@@ -68,6 +68,9 @@ func (w websiteContext) directory() error {
 		Node:    w.ctx.universe.TNS().Node(),
 		LogFile: nil,
 		WorkDir: root,
+		Monkey: fakeMonkey{
+			hoarderClient: w.ctx.hoarderClient,
+		},
 	}
 
 	c.ForceGitDir(w.ctx.paths[0])

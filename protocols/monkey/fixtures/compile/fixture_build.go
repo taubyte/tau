@@ -55,7 +55,7 @@ func Build(u *libdream.Universe, params ...interface{}) error {
 	if err != nil {
 		return fmt.Errorf("failed getting simple with error: %v", err)
 	}
-	err = simple.Provides("tns")
+	err = simple.Provides("tns", "hoarder")
 	if err != nil {
 		return err
 	}

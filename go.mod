@@ -35,7 +35,7 @@ require (
 	github.com/taubyte/cli-common v0.1.1
 	github.com/taubyte/config-compiler v0.4.6
 	github.com/taubyte/domain-validation v1.0.1
-	github.com/taubyte/go-interfaces v0.2.14-0.20230901215338-f4991db4f44d
+	github.com/taubyte/go-interfaces v0.2.14-0.20230915215111-efb603e01e6a
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3

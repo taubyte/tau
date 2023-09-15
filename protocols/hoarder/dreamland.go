@@ -17,6 +17,7 @@ func init() {
 }
 
 func createService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {
+	// TODO: This can be generic
 	return New(ctx, &tauConfig.Node{
 		Root:        config.Root,
 		P2PListen:   []string{fmt.Sprintf(libdream.DefaultP2PListenFormat, config.Port)},

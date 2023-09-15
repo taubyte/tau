@@ -104,6 +104,7 @@ func (m *Monkey) RunJob() (err error) {
 		return errors.New("getting deploy key failed")
 	}
 
+	fmt.Println("MONKEY:", m.Service)
 	c := jobs.Context{
 		Patrick:       m.Service.patrickClient,
 		Monkey:        m.Service,

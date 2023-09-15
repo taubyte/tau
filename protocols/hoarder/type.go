@@ -1,7 +1,6 @@
 package hoarder
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/taubyte/go-interfaces/kvdb"
@@ -9,7 +8,6 @@ import (
 	ifaceTns "github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/p2p/peer"
 	streams "github.com/taubyte/p2p/streams/service"
-	"github.com/taubyte/tau/config"
 )
 
 var _ hoarderIface.Service = &Service{}
@@ -28,14 +26,6 @@ type Service struct {
 
 func (s *Service) Node() peer.Node {
 	return s.node
-}
-
-type Config struct {
-	config.Node `yaml:"z,omitempty"`
-}
-
-func (c *Config) String() string {
-	return fmt.Sprintf("Hoarder config:\n\tRoot:%s\n", c.Root)
 }
 
 type registryItem struct {

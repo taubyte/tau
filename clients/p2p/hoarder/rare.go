@@ -1,4 +1,4 @@
-package p2p
+package hoarder
 
 import (
 	"fmt"
@@ -7,6 +7,7 @@ import (
 	"github.com/taubyte/utils/maps"
 )
 
+// TODO: Add cids to dht
 func (c *Client) Rare() ([]string, error) {
 	// looks for items that only have one copy in the network
 	resp, err := c.client.Send("hoarder", command.Body{"action": "rare"})
