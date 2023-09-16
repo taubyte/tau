@@ -13,6 +13,8 @@ type FilterKeyRegEx struct {
 	re []*regexp.Regexp
 }
 
+// Filter applies the regular expression filters to the entry's key.
+// It returns true if any of the regular expressions match the key.
 func (f *FilterKeyRegEx) Filter(e query.Entry) bool {
 	for _, r := range f.re {
 		if r == nil {
@@ -26,6 +28,8 @@ func (f *FilterKeyRegEx) Filter(e query.Entry) bool {
 	return false
 }
 
+// NewFilterKeyRegEx creates a new FilterKeyRegEx with the given regular expressions.
+// It compiles each regular expression and returns an error if any of them fails to compile.
 func NewFilterKeyRegEx(regexs ...string) (*FilterKeyRegEx, error) {
 	f := &FilterKeyRegEx{
 		re: make([]*regexp.Regexp, 0, len(regexs)),
@@ -42,6 +46,7 @@ func NewFilterKeyRegEx(regexs ...string) (*FilterKeyRegEx, error) {
 	return f, nil
 }
 
+// ListRegEx retrieves keys from the key-value database that match the given prefix and regular expressions.
 func (kvd *kvDatabase) ListRegEx(ctx context.Context, prefix string, regexs ...string) ([]string, error) {
 	result, err := kvd.listRegEx(ctx, prefix, regexs...)
 	if err != nil {
@@ -61,6 +66,8 @@ func (kvd *kvDatabase) ListRegEx(ctx context.Context, prefix string, regexs ...s
 	return keys, nil
 }
 
+
+// ListRegExAsync retrieves keys asynchronously from the key-value database that match the given prefix and regular expressions.
 func (kvd *kvDatabase) ListRegExAsync(ctx context.Context, prefix string, regexs ...string) (chan string, error) {
 	result, err := kvd.listRegEx(ctx, prefix, regexs...)
 	if err != nil {
@@ -91,6 +98,8 @@ func (kvd *kvDatabase) ListRegExAsync(ctx context.Context, prefix string, regexs
 	return c, nil
 }
 
+
+// listRegEx performs a query on the key-value database using regular expressions for filtering.
 func (kvd *kvDatabase) listRegEx(ctx context.Context, prefix string, regexs ...string) (query.Results, error) {
 	filter, err := NewFilterKeyRegEx(regexs...)
 	if err != nil {
