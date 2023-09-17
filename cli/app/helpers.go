@@ -15,6 +15,10 @@ var (
 	expectedKeyLength = 6
 )
 
+// formatSwarmKey formats the given key into a pnet.PSK type.
+// It splits the key by "/" and removes any empty elements.
+// If the key length is not equal to expectedKeyLength, it returns an error.
+// Otherwise, it formats the key into a specific format and returns it as a byte slice.
 func formatSwarmKey(key string) (pnet.PSK, error) {
 	_key := strings.Split(key, "/")
 	_key = deleteEmpty(_key)
@@ -30,6 +34,7 @@ func formatSwarmKey(key string) (pnet.PSK, error) {
 	return []byte(format), nil
 }
 
+// deleteEmpty removes any empty elements from the given string slice.
 func deleteEmpty(s []string) []string {
 	if len(s) == 0 {
 		return nil
@@ -44,6 +49,8 @@ func deleteEmpty(s []string) []string {
 	return r
 }
 
+// setNetworkDomains sets the network domains based on the provided configuration.
+// It updates the domainSpecs package variables with the appropriate values.
 func setNetworkDomains(conf *config.Source) {
 	domainSpecs.WhiteListedDomains = conf.Domains.Whitelist.Postfix
 	domainSpecs.TaubyteServiceDomain = regexp.MustCompile(convertToServiceRegex(conf.NetworkFqdn))
@@ -51,6 +58,9 @@ func setNetworkDomains(conf *config.Source) {
 	domainSpecs.TaubyteHooksDomain = regexp.MustCompile(fmt.Sprintf(`https://patrick.tau.%s`, conf.NetworkFqdn))
 }
 
+// convertToServiceRegex converts the given URL to a service regex pattern.
+// It splits the URL by ".", and constructs a regex pattern using the network domain.
+// The resulting regex pattern is returned as a string.
 func convertToServiceRegex(url string) string {
 	urls := strings.Split(url, ".")
 	serviceRegex := `^[^.]+\.tau`

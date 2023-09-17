@@ -100,7 +100,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
-	github.com/emirpasic/gods v1.18.1 // indirect
+	github.com/emirpasic/gods v1.19.1 // indirect
 	github.com/ethereum/go-ethereum v1.12.0 // indirect
 	github.com/fatih/color v1.14.1 // indirect
 	github.com/flynn/noise v1.0.0 // indirect

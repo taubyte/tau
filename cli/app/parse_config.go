@@ -109,6 +109,7 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 	return pid.Pretty(), protocol, src, nil
 }
 
+// parseSwarmKey reads and parses the swarm key file
 func parseSwarmKey(filepath string) (pnet.PSK, error) {
 	if len(filepath) > 0 {
 		data, err := os.ReadFile(filepath)
@@ -122,6 +123,7 @@ func parseSwarmKey(filepath string) (pnet.PSK, error) {
 	return nil, nil
 }
 
+// parseValidationKey reads and parses the domain validation key files
 func parseValidationKey(key *config.DVKey) (config.DomainValidation, error) {
 	// Private Key
 	privateKey, err := os.ReadFile(key.Private)

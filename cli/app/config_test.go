@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	_ "embed"
+	_ "embed" // Not used
 
 	"github.com/taubyte/tau/config"
 	"gotest.tools/v3/assert"
@@ -20,9 +20,9 @@ func TestConfig(t *testing.T) {
 	ctx, ctxC := context.WithTimeout(context.Background(), time.Second*15)
 	defer ctxC()
 
-	root, err := os.MkdirTemp("/tmp", "tau-test")
+	root, err := os.MkdirTemp("/tmp", "tau-test") // t.Fatal("/tmp", "tau-test")
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal(err) // t.Fatal(err)
 	}
 	defer os.RemoveAll(root)
 

@@ -1,11 +1,18 @@
+/* 
+The code defines a function named configCommand that returns a new CLI command for configuration utilities. 
+The command has a name "config" and aliases "cnf" and "conf". 
+It also has a description "configuration utils".
+*/
+
 package app
 
 import (
-	"github.com/pterm/pterm"
+	"github.com/pterm/pterm" // Importing the pterm package for terminal styling
 	"github.com/taubyte/tau/config"
 	"github.com/urfave/cli/v2"
 )
 
+// configCommand returns a new CLI command for configuration utils
 func configCommand() *cli.Command {
 	return &cli.Command{
 		Name:        "config",

@@ -1,4 +1,4 @@
-package patrick
+package patrick // Consider using a more descriptive name that represents the domain or service being interacted with.
 
 import (
 	"context"
@@ -13,5 +13,5 @@ func New(ctx context.Context, options ...http.Option) (*Client, error) {
 		return nil, fmt.Errorf("new patrick client failed with: %w", err)
 	}
 
-	return &Client{c}, nil
+	return &Client{c}, nil 
 }

@@ -1,4 +1,4 @@
-package patrick
+package patrick   Consider using a more descriptive name that represents the domain or service being interacted with.
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	patrickIface "github.com/taubyte/go-interfaces/services/patrick"
 )
 
-type data struct {
+type data struct { // Not clear the purpose
 	ProjectId string
 	JobIds    []string
 }
@@ -18,7 +18,7 @@ func (c *Client) Jobs(projectId string) (jobList []string, err error) {
 	url := "/jobs/" + projectId
 	if err = c.http.Get(url, &jobs); err != nil {
 		err = fmt.Errorf("failed getting jobs for project `%s` with: %w", projectId, err)
-		return
+		return // It's recommended to handle the error returned by c.http.Get explicitly instead of reassigning it to the err variable. This will help in preserving the original error stack trace.
 	}
 
 	return jobs.JobIds, nil
@@ -31,7 +31,7 @@ func (c *Client) Job(jid string) (job *patrickIface.Job, err error) {
 	url := "/job/" + jid
 	if err = c.http.Get(url, &receive); err != nil {
 		err = fmt.Errorf("failed getting job `%s` with: %w", jid, err)
-		return
+		return // Same as `Jobs` method
 	}
 
 	return &receive.Job, nil
