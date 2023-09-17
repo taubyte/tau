@@ -12,6 +12,7 @@ import (
 )
 
 func TestConfig(t *testing.T) {
+	app := newApp()
 	t.Run("GenerateConfig", func(t *testing.T) {
 		ctx, ctxC := context.WithTimeout(context.Background(), time.Second*15)
 		defer ctxC()

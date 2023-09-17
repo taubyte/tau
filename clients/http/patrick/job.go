@@ -1,4 +1,4 @@
-package patrick   Consider using a more descriptive name that represents the domain or service being interacted with.
+package patrick //Consider using a more descriptive name that represents the domain or service being interacted with.
 
 import (
 	"fmt"
