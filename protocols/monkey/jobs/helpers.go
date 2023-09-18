@@ -14,7 +14,6 @@ import (
 	git "github.com/taubyte/go-simple-git"
 	specs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/go-specs/methods"
-	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	chidori "github.com/taubyte/utils/logger/zap"
 	"github.com/taubyte/utils/maps"
 )
@@ -25,13 +24,11 @@ func (c Context) storeLogFile(file *os.File) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("adding logs to node failed with: %w", err)
 	} else {
-		hoarder, err := hoarderClient.New(c.OdoClientNode.Context(), c.OdoClientNode)
-		if err != nil {
-			chidori.Format(logger, log.LevelError, "new hoarder client failed with: %s", err)
-		}
 
-		if _, err = hoarder.Stash(cid); err != nil {
+		if _, err = c.Monkey.Hoarder().Stash(cid); err != nil {
 			chidori.Format(logger, log.LevelError, "hoarding log cid `%s` of job `%s` failed with: %s", cid, c.Job.Id, err.Error())
+		} else {
+			chidori.Format(logger, log.LevelInfo, "hoarded `%s`", cid)
 		}
 	}
 

@@ -87,6 +87,9 @@ func (f functionContext) codeFile(language wasmSpec.SupportedLanguage) error {
 		LogFile:  nil,
 		WorkDir:  root,
 		RepoType: common.CodeRepository,
+		Monkey: fakeMonkey{
+			hoarderClient: f.ctx.hoarderClient,
+		},
 	}
 
 	copyPath := path.Join(root, functionSpec.PathVariable.String(), f.config.Name)

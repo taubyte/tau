@@ -3,6 +3,8 @@ package compile
 import (
 	"fmt"
 
+	"github.com/taubyte/go-interfaces/services/hoarder"
+	"github.com/taubyte/go-interfaces/services/monkey"
 	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/tau/libdream"
 )
@@ -17,6 +19,7 @@ type resourceContext struct {
 	paths         []string
 	call          string
 	templateRepo  *git.Repository
+	hoarderClient hoarder.Client
 }
 
 func (c resourceContext) display() string {
@@ -55,4 +58,13 @@ func (c resourceContext) get() (resource interface{}, err error) {
 	}
 
 	return
+}
+
+type fakeMonkey struct {
+	monkey.Service
+	hoarderClient hoarder.Client
+}
+
+func (f fakeMonkey) Hoarder() hoarder.Client {
+	return f.hoarderClient
 }
