@@ -8,11 +8,13 @@ import (
 	"github.com/taubyte/go-interfaces/kvdb"
 )
 
+// retrieves a value from the database
 func (kvd *kvDatabase) Get(ctx context.Context, key string) ([]byte, error) {
 	k := ds.NewKey(key)
 	return kvd.datastore.Get(ctx, k)
 }
 
+// inserts or updates a value in the database
 func (kvd *kvDatabase) Put(ctx context.Context, key string, v []byte) error {
 	k := ds.NewKey(key)
 	return kvd.datastore.Put(ctx, k, v)
@@ -22,7 +24,7 @@ func (kvd *kvDatabase) Delete(ctx context.Context, key string) error {
 	k := ds.NewKey(key)
 	return kvd.datastore.Delete(ctx, k)
 }
-
+// returns a list of keys in the database that have the given prefix
 func (kvd *kvDatabase) List(ctx context.Context, prefix string) ([]string, error) {
 	result, err := kvd.list(ctx, prefix)
 	if err != nil {
@@ -41,7 +43,7 @@ func (kvd *kvDatabase) ListAsync(ctx context.Context, prefix string) (chan strin
 	if err != nil {
 		return nil, err
 	}
-
+	// iterate over the query results and send the keys to the string channel.
 	c := make(chan string, QueryBufferSize)
 	go func() {
 		defer close(c)
@@ -64,6 +66,7 @@ func (kvd *kvDatabase) ListAsync(ctx context.Context, prefix string) (chan strin
 	return c, nil
 }
 
+// list queries the underlying data store with the provided context and prefix to retrieve results matching the prefix.
 func (kvd *kvDatabase) list(ctx context.Context, prefix string) (query.Results, error) {
 	return kvd.datastore.Query(ctx, query.Query{
 		Prefix:   prefix,
@@ -71,6 +74,7 @@ func (kvd *kvDatabase) list(ctx context.Context, prefix string) (query.Results, 
 	})
 }
 
+// Batch creates a new Batch object that allows for batch operations on the key-value database.
 func (kvd *kvDatabase) Batch(ctx context.Context) (kvdb.Batch, error) {
 	b, err := kvd.datastore.Batch(ctx)
 	if err != nil {
