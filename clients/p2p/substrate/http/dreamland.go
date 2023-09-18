@@ -1,4 +1,4 @@
-package substrate
+package http
 
 import (
 	"github.com/taubyte/go-interfaces/common"

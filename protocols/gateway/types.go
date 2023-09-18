@@ -3,22 +3,17 @@ package gateway
 import (
 	"context"
 
-	//"github.com/taubyte/go-interfaces/services/substrate"
+	substrate "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/peer"
-	"github.com/taubyte/tau/clients/p2p/substrate"
 )
 
 type Gateway struct {
 	ctx  context.Context
 	node peer.Node
-	// tns  tns.Client
 	http http.Service
-	// matchTimeout time.Duration
 
-	substrateClient *substrate.Client
-
-	connectedSubstrate uint64
+	substrateClient substrate.Client
 
 	dev     bool
 	verbose bool

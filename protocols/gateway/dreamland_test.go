@@ -7,7 +7,9 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
+	"github.com/pterm/pterm"
 	"github.com/taubyte/config-compiler/decompile"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
@@ -41,7 +43,8 @@ func TestGatewayBasic(t *testing.T) {
 		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
-					TNS: &commonIface.ClientConfig{},
+					TNS:     &commonIface.ClientConfig{},
+					Hoarder: &commonIface.ClientConfig{},
 				}.Compat(),
 			},
 		},
@@ -102,14 +105,17 @@ func TestGatewayBasic(t *testing.T) {
 	data, err := io.ReadAll(res.Body)
 	assert.NilError(t, err)
 	assert.Equal(t, "PONG", string(data))
-
+	now := time.Now()
 	url = fmt.Sprintf("http://%s:%d/%s", fqdn, gateWayHttpPort, _path)
 	res, err = http.DefaultClient.Get(url)
+	fmt.Println(time.Since(now))
 	assert.NilError(t, err)
 
 	data, err = io.ReadAll(res.Body)
 	assert.NilError(t, err)
 
 	assert.Equal(t, res.StatusCode, 200, "Gateway Response:", string(data))
-	assert.Equal(t, "hello world", string(data))
+	assert.Equal(t, "PONG", string(data))
+
+	pterm.Success.Printfln("Gateway Response: %s", string(data))
 }

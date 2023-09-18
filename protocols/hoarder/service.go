@@ -112,7 +112,7 @@ func (srv *Service) Close() error {
 		srv.db.Close()
 	}
 
-	*srv = Service{}
+	*srv = Service{node: srv.node}
 	return nil
 }
 

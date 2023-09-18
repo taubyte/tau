@@ -58,7 +58,7 @@ func TestFunction(t *testing.T) {
 		Method: "GET",
 	}
 
-	err = s.Handle(w, r)
+	err = s.handle(w, r)
 	if err != nil {
 		t.Error(err)
 		return

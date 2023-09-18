@@ -17,7 +17,6 @@ import (
 	"github.com/taubyte/tau/pkgs/kvdb"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
-	streams "github.com/taubyte/p2p/streams/service"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	smartopsPlugins "github.com/taubyte/vm-core-plugins/smartops"
 	tbPlugins "github.com/taubyte/vm-core-plugins/taubyte"
@@ -58,15 +57,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		srv.databases = kvdb.New(srv.node)
 	}
 
-	if srv.stream, err = streams.New(srv.node, protocolCommon.Substrate, protocolCommon.SubstrateProtocol); err != nil {
-		return nil, fmt.Errorf("creating streams service failed with: %w", err)
-	}
-
-	if err = srv.setupStreamRoutes(); err != nil {
-		return nil, fmt.Errorf("setting up p2p stream routes failed with: %w", err)
-	}
-
-	// For Odo
 	clientNode := srv.node
 	if config.ClientNode != nil {
 		clientNode = config.ClientNode
