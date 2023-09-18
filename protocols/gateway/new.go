@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"path"
-	"time"
 
 	"github.com/ipfs/go-log/v2"
 	iface "github.com/taubyte/go-interfaces/services/gateway"
@@ -16,6 +15,7 @@ import (
 
 var logger = log.Logger("gateway.service")
 
+// TODO: Substrate Nodes should ping Gateway that they are alive, threshold should
 func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, err error) {
 	g := &Gateway{
 		ctx: ctx,
@@ -52,7 +52,6 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, er
 		g.http.Start()
 	}
 
-	// ???
 	if len(config.P2PAnnounce) < 1 {
 		return nil, errors.New("P2P Announce is empty")
 	}
@@ -61,10 +60,6 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, er
 		return nil, fmt.Errorf("new streams client failed with: %w", err)
 	}
 
-	// TODO: Substrate Nodes should ping Gateway that they are alive, threshold should
-
 	g.attach()
 	return g, nil
 }
-
-var UpdatePeerCountInterval time.Duration = time.Hour

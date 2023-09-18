@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"testing"
-	"time"
 
 	"github.com/pterm/pterm"
 	"github.com/taubyte/config-compiler/decompile"
@@ -105,10 +104,9 @@ func TestGatewayBasic(t *testing.T) {
 	data, err := io.ReadAll(res.Body)
 	assert.NilError(t, err)
 	assert.Equal(t, "PONG", string(data))
-	now := time.Now()
+
 	url = fmt.Sprintf("http://%s:%d/%s", fqdn, gateWayHttpPort, _path)
 	res, err = http.DefaultClient.Get(url)
-	fmt.Println(time.Since(now))
 	assert.NilError(t, err)
 
 	data, err = io.ReadAll(res.Body)
