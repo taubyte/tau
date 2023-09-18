@@ -6,16 +6,19 @@ import (
 	"os"
 
 	"github.com/ipfs/go-log/v2"
+	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
 	iface "github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	tnsClient "github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/p2p/peer"
 	streams "github.com/taubyte/p2p/streams/service"
+	"github.com/taubyte/tau/clients/p2p/hoarder"
 	patrickClient "github.com/taubyte/tau/clients/p2p/patrick"
 	"github.com/taubyte/tau/config"
 	chidori "github.com/taubyte/utils/logger/zap"
 )
 
+// TODO: This sucks
 /* This is a variable so that it can be overridden in tests */
 var NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 	return patrickClient.New(ctx, node)
@@ -42,9 +45,14 @@ type Service struct {
 	patrickClient patrick.Client
 	tnsClient     tnsClient.Client
 	odoClientNode peer.Node
+	hoarderClient *hoarder.Client
 
 	dev         bool
 	dvPublicKey []byte
+}
+
+func (s *Service) Hoarder() hoarderIface.Client {
+	return s.hoarderClient
 }
 
 func (s *Service) Patrick() patrick.Client {

@@ -1,4 +1,4 @@
-package p2p
+package hoarder
 
 import (
 	iface "github.com/taubyte/go-interfaces/services/hoarder"

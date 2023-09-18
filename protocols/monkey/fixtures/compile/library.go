@@ -55,6 +55,9 @@ func (l libraryContext) directory() error {
 		Node:    l.ctx.universe.TNS().Node(),
 		LogFile: os.Stdout,
 		WorkDir: root,
+		Monkey: fakeMonkey{
+			hoarderClient: l.ctx.hoarderClient,
+		},
 	}
 
 	var language *wasmSpec.SupportedLanguage

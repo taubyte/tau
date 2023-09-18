@@ -9,6 +9,7 @@ import (
 	"github.com/ipfs/go-log/v2"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	ci "github.com/taubyte/go-simple-container/gc"
+	"github.com/taubyte/tau/clients/p2p/hoarder"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -113,6 +114,11 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	srv.tnsClient, err = tnsClient.New(ctx, srv.odoClientNode)
+	if err != nil {
+		return nil, err
+	}
+
+	srv.hoarderClient, err = hoarder.New(ctx, srv.odoClientNode)
 	if err != nil {
 		return nil, err
 	}

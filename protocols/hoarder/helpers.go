@@ -2,16 +2,42 @@ package hoarder
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-datastore"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
+	databaseSpec "github.com/taubyte/go-specs/database"
 	hoarderSpecs "github.com/taubyte/go-specs/hoarder"
+	storageSpec "github.com/taubyte/go-specs/storage"
 )
+
+func handleRegex(pattern, match string) error {
+	matched, err := regexp.Match(pattern, []byte(match))
+	if err != nil {
+		return fmt.Errorf("parsing regex pattern `%s` failed with: %w", pattern, err)
+	}
+
+	if !matched {
+		return fmt.Errorf("`%s` does not match regex pattern `%s`", match, pattern)
+	}
+
+	return nil
+}
+
+func checkMatch(regex bool, match, toMatch, name string) error {
+	if regex {
+		return handleRegex(toMatch, match)
+	}
+
+	if match != toMatch {
+		return fmt.Errorf("no match %s != %s", match, toMatch)
+	}
+	return nil
+}
 
 func (srv *Service) validateMsg(auction *hoarderIface.Auction, msg *pubsub.Message) bool {
 	// If we get a message from ourselves and its not a timeout/end/failed we ignore
@@ -77,78 +103,63 @@ func (srv *Service) publishAction(ctx context.Context, action *hoarderIface.Auct
 	action.Type = actionType
 	actionBytes, err := cbor.Marshal(action)
 	if err != nil {
-		return fmt.Errorf("failed marshalling action with %v", err)
+		return fmt.Errorf("failed marshalling action with %w", err)
 	}
 
 	if err = srv.node.PubSubPublish(ctx, hoarderSpecs.PubSubIdent, actionBytes); err != nil {
-		return fmt.Errorf("publish to `%s` failed with: %s", hoarderSpecs.PubSubIdent, err)
+		return fmt.Errorf("publish to `%s` failed with: %w", hoarderSpecs.PubSubIdent, err)
 	}
 
 	return nil
 }
 
 func (srv *Service) storeAuction(ctx context.Context, auction *hoarderIface.Auction) error {
+	var (
+		metaType string
+		config   any
+		match    string
+		name     string
+		regex    bool
+	)
+
 	switch auction.MetaType {
 	case hoarderIface.Database:
-		config, err := srv.tnsClient.Database().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, auction.Meta.Branch).GetById(auction.Meta.ConfigId)
+		db, err := srv.tnsClient.Database().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, auction.Meta.Branch).GetById(auction.Meta.ConfigId)
 		if err != nil {
-			return fmt.Errorf("getting database with id `%s` failed with: %s", auction.Meta.ConfigId, err)
+			return fmt.Errorf("getting database with id `%s` failed with: %w", auction.Meta.ConfigId, err)
 		}
-
-		if err = checkMatch(config.Regex, auction.Meta.Match, config.Match, config.Name); err != nil {
-			return err
-		}
-
-		configBytes, err := cbor.Marshal(config)
-		if err != nil {
-			return err
-		}
-
-		if !strings.HasPrefix(auction.Meta.Match, "/") {
-			auction.Meta.Match = "/" + auction.Meta.Match
-		}
-
-		if err = srv.putIntoDb(ctx, datastore.NewKey(fmt.Sprintf("/hoarder/databases/%s%s", auction.Meta.ConfigId, auction.Meta.Match)), configBytes); err != nil {
-			return err
-		}
-
-		return nil
-
+		config, match, name, regex, metaType = db, db.Match, db.Name, db.Regex, databaseSpec.PathVariable.String()
 	case hoarderIface.Storage:
-		config, err := srv.tnsClient.Storage().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, auction.Meta.Branch).GetById(auction.Meta.ConfigId)
+		stor, err := srv.tnsClient.Storage().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, auction.Meta.Branch).GetById(auction.Meta.ConfigId)
 		if err != nil {
-			return err
+			return fmt.Errorf("getting storage with id `%s` failed with: %w", auction.Meta.ConfigId, err)
 		}
 
-		if err = checkMatch(config.Regex, auction.Meta.Match, config.Match, config.Name); err != nil {
-			return err
-		}
-
-		configBytes, err := cbor.Marshal(config)
-		if err != nil {
-			return err
-		}
-
-		if !strings.HasPrefix(auction.Meta.Match, "/") {
-			auction.Meta.Match = "/" + auction.Meta.Match
-		}
-
-		if err = srv.putIntoDb(ctx, datastore.NewKey(fmt.Sprintf("/hoarder/storages/%s%s", auction.Meta.ConfigId, auction.Meta.Match)), configBytes); err != nil {
-			return err
-		}
-
-		return nil
-
+		config, match, name, regex, metaType = stor, stor.Match, stor.Name, stor.Regex, storageSpec.PathVariable.String()
+	default:
+		return fmt.Errorf("invalid meta type %d", auction.MetaType)
 	}
 
-	return errors.New("auction item was neither a storage or database")
-}
+	if err := checkMatch(regex, auction.Meta.Match, match, name); err != nil {
+		return fmt.Errorf("checking auction match failed with: %w", err)
+	}
 
-func (srv *Service) putIntoDb(ctx context.Context, key datastore.Key, data []byte) error {
+	configBytes, err := cbor.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("cbor marshal of config failed with: %w", err)
+	}
+
+	if !strings.HasPrefix(auction.Meta.Match, "/") {
+		auction.Meta.Match = "/" + auction.Meta.Match
+	}
+
 	srv.regLock.Lock()
 	defer srv.regLock.Unlock()
-	if err := srv.db.Put(ctx, key.String(), data); err != nil {
-		return err
+
+	key := datastore.NewKey(fmt.Sprintf("/hoarder/%s/%s%s", metaType, auction.Meta.ConfigId, auction.Meta.Match))
+	if err := srv.db.Put(ctx, key.String(), configBytes); err != nil {
+		return fmt.Errorf("put failed with: %w", err)
 	}
-	return nil
+
+	return err
 }

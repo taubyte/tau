@@ -85,6 +85,9 @@ func (f smartopsContext) codeFile(language wasmSpec.SupportedLanguage) error {
 		Node:    f.ctx.universe.TNS().Node(),
 		LogFile: nil,
 		WorkDir: root,
+		Monkey: fakeMonkey{
+			hoarderClient: f.ctx.hoarderClient,
+		},
 	}
 
 	copyPath := path.Join(root, smartopsSpec.PathVariable.String(), f.config.Name)
