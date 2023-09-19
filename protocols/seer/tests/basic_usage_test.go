@@ -7,6 +7,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	dreamland "github.com/taubyte/tau/libdream"
+	_ "github.com/taubyte/tau/protocols/gateway"
 	"gotest.tools/v3/assert"
 )
 
@@ -22,6 +23,7 @@ func TestBasicUsage(t *testing.T) {
 			"auth":      {},
 			"hoarder":   {},
 			"substrate": {Others: map[string]int{"copies": 2}},
+			"gateway":   {},
 		},
 		Simples: map[string]dreamland.SimpleConfig{
 			"client": {

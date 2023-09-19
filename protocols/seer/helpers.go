@@ -8,8 +8,9 @@ import (
 	"github.com/taubyte/utils/maps"
 )
 
+// TODO: This name and function is incorrect/unintuitive
 func (srv *Service) ListNodes() ([]string, error) {
-	resp, err := srv.oracle.listServiceIds("node")
+	resp, err := srv.oracle.listServiceIds("substrate")
 	if err != nil {
 		return nil, fmt.Errorf("failed ListNodes with %v", err)
 	}

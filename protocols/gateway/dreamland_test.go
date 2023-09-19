@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"strings"
 	"testing"
 
 	"github.com/taubyte/config-compiler/decompile"
@@ -55,8 +56,8 @@ func TestGatewayBasic(t *testing.T) {
 			Name:    id.Generate(),
 			Type:    "http",
 			Call:    "toUpper",
-			Memory:  100000,
-			Timeout: 1000000000,
+			Memory:  100000000,
+			Timeout: 1000000000000,
 			Method:  "POST",
 			Source:  ".",
 			Domains: []string{"someDomain"},
@@ -105,15 +106,16 @@ func TestGatewayBasic(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, "PONG", string(data))
 
+	body := "hello_world"
 	url = fmt.Sprintf("http://%s:%d/%s", fqdn, substrateHttpPort, upperPath)
-	buf := bytes.NewBuffer([]byte("hello world"))
+	buf := bytes.NewBuffer([]byte(body))
 
 	res, err = http.DefaultClient.Post(url, "text/plain", buf)
 	assert.NilError(t, err)
 
 	data, err = io.ReadAll(res.Body)
 	assert.NilError(t, err)
-	assert.Equal(t, "HELLO WORLD", string(data))
+	assert.Equal(t, strings.ToUpper(body), string(data))
 
 	url = fmt.Sprintf("http://%s:%d/%s", fqdn, gateWayHttpPort, pingPath)
 	res, err = http.DefaultClient.Get(url)

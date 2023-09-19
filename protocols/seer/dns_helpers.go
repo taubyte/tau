@@ -1,6 +1,7 @@
 package seer
 
 import (
+	"fmt"
 	"net"
 	"time"
 
@@ -31,10 +32,10 @@ func (h *dnsHandler) replyFallback(w dns.ResponseWriter, r *dns.Msg, errMsg *dns
 func (h *dnsHandler) reply(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
 	nodeIps, err := h.getNodeIp()
 	if err != nil || len(nodeIps) == 0 {
+		fmt.Println(nodeIps, err)
 		h.replyFallback(w, r, errMsg, msg)
 		return
 	}
-
 	switch r.Question[0].Qtype {
 	case dns.TypeA:
 		for _, ip := range nodeIps {
