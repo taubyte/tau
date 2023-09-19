@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,7 +9,6 @@ import (
 	"path"
 	"testing"
 
-	"github.com/pterm/pterm"
 	"github.com/taubyte/config-compiler/decompile"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	structureSpec "github.com/taubyte/go-specs/structure"
@@ -26,9 +26,108 @@ import (
 )
 
 func TestGatewayBasic(t *testing.T) {
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	u := startDreamland(t)
 	defer u.Stop()
 
+	projectId := id.Generate()
+	pingId := id.Generate()
+	upperId := id.Generate()
+
+	fqdn := "hal.computers.com"
+	pingPath := "ping"
+	upperPath := "upper"
+
+	project, err := decompile.MockBuild(projectId, "",
+		&structureSpec.Function{
+			Id:      pingId,
+			Name:    id.Generate(),
+			Type:    "http",
+			Call:    "ping",
+			Memory:  100000,
+			Timeout: 1000000000,
+			Method:  "GET",
+			Source:  ".",
+			Domains: []string{"someDomain"},
+			Paths:   []string{"/" + pingPath},
+		},
+		&structureSpec.Function{
+			Id:      upperId,
+			Name:    id.Generate(),
+			Type:    "http",
+			Call:    "toUpper",
+			Memory:  100000,
+			Timeout: 1000000000,
+			Method:  "POST",
+			Source:  ".",
+			Domains: []string{"someDomain"},
+			Paths:   []string{"/" + upperPath},
+		},
+		&structureSpec.Domain{
+			Name: "someDomain",
+			Fqdn: fqdn,
+		},
+	)
+	assert.NilError(t, err)
+
+	err = u.RunFixture("injectProject", project)
+	assert.NilError(t, err)
+
+	wd, err := os.Getwd()
+	assert.NilError(t, err)
+
+	err = u.RunFixture("compileFor", compile.BasicCompileFor{
+		ProjectId:  projectId,
+		ResourceId: pingId,
+		Paths:      []string{path.Join(wd, "fixtures", "ping.zwasm")},
+	})
+	assert.NilError(t, err)
+
+	err = u.RunFixture("compileFor", compile.BasicCompileFor{
+		ProjectId:  projectId,
+		ResourceId: upperId,
+		Paths:      []string{path.Join(wd, "fixtures", "toupper.zwasm")},
+	})
+	assert.NilError(t, err)
+
+	gateway := u.Gateway()
+	gateWayHttpPort, err := u.GetPortHttp(gateway.Node())
+	assert.NilError(t, err)
+
+	firstSubstrate := u.Substrate()
+	substrateHttpPort, err := u.GetPortHttp(firstSubstrate.Node())
+	assert.NilError(t, err)
+
+	url := fmt.Sprintf("http://%s:%d/%s", fqdn, substrateHttpPort, pingPath)
+	res, err := http.DefaultClient.Get(url)
+	assert.NilError(t, err)
+
+	data, err := io.ReadAll(res.Body)
+	assert.NilError(t, err)
+	assert.Equal(t, "PONG", string(data))
+
+	url = fmt.Sprintf("http://%s:%d/%s", fqdn, substrateHttpPort, upperPath)
+	buf := bytes.NewBuffer([]byte("hello world"))
+
+	res, err = http.DefaultClient.Post(url, "text/plain", buf)
+	assert.NilError(t, err)
+
+	data, err = io.ReadAll(res.Body)
+	assert.NilError(t, err)
+	assert.Equal(t, "HELLO WORLD", string(data))
+
+	url = fmt.Sprintf("http://%s:%d/%s", fqdn, gateWayHttpPort, pingPath)
+	res, err = http.DefaultClient.Get(url)
+	assert.NilError(t, err)
+
+	data, err = io.ReadAll(res.Body)
+	assert.NilError(t, err)
+
+	assert.Equal(t, res.StatusCode, 200, "Gateway Response:", string(data))
+	assert.Equal(t, "PONG", string(data))
+}
+
+func startDreamland(t *testing.T) *dreamland.Universe {
+	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer":      {},
@@ -50,70 +149,5 @@ func TestGatewayBasic(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	projectId := id.Generate()
-	functionId := id.Generate()
-
-	fqdn := "hal.computers.com"
-	_path := "ping"
-
-	project, err := decompile.MockBuild(projectId, "",
-		&structureSpec.Function{
-			Id:      functionId,
-			Name:    "someFunc",
-			Type:    "http",
-			Call:    "ping",
-			Memory:  100000,
-			Timeout: 1000000000,
-			Method:  "GET",
-			Source:  ".",
-			Domains: []string{"someDomain"},
-			Paths:   []string{"/" + _path},
-		},
-		&structureSpec.Domain{
-			Name: "someDomain",
-			Fqdn: fqdn,
-		},
-	)
-	assert.NilError(t, err)
-
-	err = u.RunFixture("injectProject", project)
-	assert.NilError(t, err)
-
-	wd, err := os.Getwd()
-	assert.NilError(t, err)
-
-	err = u.RunFixture("compileFor", compile.BasicCompileFor{
-		ProjectId:  projectId,
-		ResourceId: functionId,
-		Paths:      []string{path.Join(wd, "fixtures", "ping.zwasm")},
-	})
-	assert.NilError(t, err)
-
-	gateway := u.Gateway()
-	gateWayHttpPort, err := u.GetPortHttp(gateway.Node())
-	assert.NilError(t, err)
-
-	firstSubstrate := u.Substrate()
-	substrateHttpPort, err := u.GetPortHttp(firstSubstrate.Node())
-	assert.NilError(t, err)
-
-	url := fmt.Sprintf("http://%s:%d/%s", fqdn, substrateHttpPort, _path)
-	res, err := http.DefaultClient.Get(url)
-	assert.NilError(t, err)
-
-	data, err := io.ReadAll(res.Body)
-	assert.NilError(t, err)
-	assert.Equal(t, "PONG", string(data))
-
-	url = fmt.Sprintf("http://%s:%d/%s", fqdn, gateWayHttpPort, _path)
-	res, err = http.DefaultClient.Get(url)
-	assert.NilError(t, err)
-
-	data, err = io.ReadAll(res.Body)
-	assert.NilError(t, err)
-
-	assert.Equal(t, res.StatusCode, 200, "Gateway Response:", string(data))
-	assert.Equal(t, "PONG", string(data))
-
-	pterm.Success.Printfln("Gateway Response: %s", string(data))
+	return u
 }
