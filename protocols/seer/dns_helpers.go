@@ -29,8 +29,8 @@ func (h *dnsHandler) replyFallback(w dns.ResponseWriter, r *dns.Msg, errMsg *dns
 	}
 }
 
-func (h *dnsHandler) reply(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
-	nodeIps, err := h.getNodeIp()
+func (h *dnsHandler) replyWithHTTPServicingNodes(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
+	nodeIps, err := h.getNodeIp("gateway") // TODO: made this configurable ... or marge look ar ip/cidr and reply with public only
 	if err != nil || len(nodeIps) == 0 {
 		fmt.Println(nodeIps, err)
 		h.replyFallback(w, r, errMsg, msg)

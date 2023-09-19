@@ -29,7 +29,7 @@ type Node struct {
 	NetworkFqdn     string
 	HttpListen      string
 	GeneratedDomain string
-	ServicesDomain  string
+	ServicesDomain  string //TODO: delete if not useful
 
 	Node       peer.Node
 	PrivateKey []byte

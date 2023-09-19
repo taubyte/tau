@@ -57,21 +57,18 @@ func (seer *Service) newDnsServer(devMode bool, port int) error {
 	// Create TCP and UDP
 	var s *dnsServer
 	validate.UseResolver(seer.dnsResolver)
-	if devMode {
-		s = &dnsServer{
-			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(port), Net: "tcp"},
-			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(port), Net: "udp"},
-			Seer: seer,
-		}
-	} else {
-		s = &dnsServer{
-			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(protocolsCommon.DefaultDnsPort), Net: "tcp"},
-			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(protocolsCommon.DefaultDnsPort), Net: "udp"},
-			Seer: seer,
-		}
+	if !devMode {
+		port = protocolsCommon.DefaultDnsPort
 	}
 
-	seer.dns = s
+	listen := ":" + strconv.Itoa(port)
+
+	seer.dns = &dnsServer{
+		Tcp:  &dns.Server{Addr: listen, Net: "tcp"},
+		Udp:  &dns.Server{Addr: listen, Net: "udp"},
+		Seer: seer,
+	}
+
 	s.Tcp.Handler = &dnsHandler{seer: seer, cache: seer.positiveCache, negativeCache: seer.negativeCache}
 	s.Udp.Handler = &dnsHandler{seer: seer, cache: seer.positiveCache, negativeCache: seer.negativeCache}
 
@@ -124,26 +121,18 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		name = strings.TrimSuffix(msg.Question[0].Name, ".")
 	}
 	name = strings.ToLower(name)
-	// First Case -> check if it matches .g.tau.link generated domain
+	//  check if it matches .g.tau.link generated domain
 	if domainSpecs.SpecialDomain.MatchString(name) {
 		h.reply(w, r, errMsg, msg)
 		return
 	}
 
-	// Second Case -> check if domain is under our white listed domain
-	for _, domain := range domainSpecs.WhiteListedDomains {
-		if name == domain {
-			h.reply(w, r, errMsg, msg)
-			return
-		}
-	}
-
-	if domainSpecs.TaubyteServiceDomain.MatchString(name) || h.seer.caaRecordBypass.MatchString(name) {
+	if h.seer.protocolRecordBypass.MatchString(name) {
 		h.tauDnsResolve(name, w, r, errMsg, msg)
 		return
 	}
 
-	// Third case ->  check if domain exist in tns
+	//   check if domain exist in tns
 	tnsPathSlice, err := h.createDomainTnsPathSlice(name)
 	if err != nil {
 		logger.Errorf("createDomainTnsPathSlice for %s with: %s", name, err.Error())

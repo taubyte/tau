@@ -45,10 +45,7 @@ func deleteEmpty(s []string) []string {
 }
 
 func setNetworkDomains(conf *config.Source) {
-	domainSpecs.WhiteListedDomains = conf.Domains.Whitelist.Postfix
-	domainSpecs.TaubyteServiceDomain = regexp.MustCompile(convertToServiceRegex(conf.NetworkFqdn))
 	domainSpecs.SpecialDomain = regexp.MustCompile(conf.Domains.Generated)
-	domainSpecs.TaubyteHooksDomain = regexp.MustCompile(fmt.Sprintf(`https://patrick.tau.%s`, conf.NetworkFqdn))
 }
 
 func convertToServiceRegex(url string) string {

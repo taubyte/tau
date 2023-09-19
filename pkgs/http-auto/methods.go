@@ -113,8 +113,7 @@ func (s *Service) Start() {
 					if !s.customDomainChecker(hello) {
 						return nil, fmt.Errorf("customDomainChecker for %s was false", hello.ServerName)
 					}
-				} else if !domainSpecs.TaubyteServiceDomain.MatchString(hello.ServerName) &&
-					!domainSpecs.TaubyteHooksDomain.MatchString(hello.ServerName) {
+				} else {
 					projectId, err := s.validateFromTns(hello.ServerName)
 					if err != nil {
 						return nil, fmt.Errorf("failed validateFromTns for %s with %v", hello.ServerName, err)
@@ -131,7 +130,6 @@ func (s *Service) Start() {
 							return nil, fmt.Errorf("failed txt lookup on %s with %v", hello.ServerName, err)
 						}
 					}
-
 				}
 
 				cert, err = s.authClient.GetStaticCertificate(hello.ServerName)
