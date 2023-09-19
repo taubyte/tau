@@ -1,7 +1,6 @@
 package seer
 
 import (
-	"fmt"
 	"net"
 	"time"
 
@@ -32,7 +31,6 @@ func (h *dnsHandler) replyFallback(w dns.ResponseWriter, r *dns.Msg, errMsg *dns
 func (h *dnsHandler) replyWithHTTPServicingNodes(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
 	nodeIps, err := h.getNodeIp("gateway") // TODO: made this configurable ... or marge look ar ip/cidr and reply with public only
 	if err != nil || len(nodeIps) == 0 {
-		fmt.Println(nodeIps, err)
 		h.replyFallback(w, r, errMsg, msg)
 		return
 	}
@@ -58,14 +56,14 @@ func (h *dnsHandler) replyWithHTTPServicingNodes(w dns.ResponseWriter, r *dns.Ms
 }
 
 func (h *dnsHandler) createDomainTnsPathSlice(fqdn string) ([]string, error) {
-	tnsPath := h.cache.Get("/tns/" + fqdn)
+	tnsPath := h.seer.positiveCache.Get("/tns/" + fqdn)
 	if tnsPath == nil {
 		_tnsPath, err := domainSpecs.Tns().BasicPath(fqdn)
 		if err != nil {
 			return nil, err
 		}
 
-		h.cache.Set("/tns/"+fqdn, _tnsPath.Slice(), 5*time.Minute)
+		h.seer.positiveCache.Set("/tns/"+fqdn, _tnsPath.Slice(), 5*time.Minute)
 		return _tnsPath.Slice(), nil
 	}
 

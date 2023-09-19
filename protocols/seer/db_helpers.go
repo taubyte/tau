@@ -80,7 +80,7 @@ func (h *dnsHandler) getNodeIp(proto string) ([]string, error) {
 	var ips []string
 
 	// Check cache for node ips
-	nodeIps := h.cache.Get(proto)
+	nodeIps := h.seer.positiveCache.Get(proto)
 	if nodeIps != nil {
 		return nodeIps.Value(), nil
 	}
@@ -107,7 +107,7 @@ func (h *dnsHandler) getNodeIp(proto string) ([]string, error) {
 	}
 
 	// Cache ips
-	h.cache.Set(proto, ips, 5*time.Minute)
+	h.seer.positiveCache.Set(proto, ips, 5*time.Minute)
 
 	return ips, nil
 }

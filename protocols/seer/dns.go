@@ -19,9 +19,7 @@ import (
 
 // TODO: Implement a spam cache that blocks spam dns request
 type dnsHandler struct {
-	seer          *Service
-	cache         *ttlcache.Cache[string, []string]
-	negativeCache *ttlcache.Cache[string, bool]
+	seer *Service
 }
 
 func (srv *dnsServer) Start(ctx context.Context) {
@@ -49,13 +47,21 @@ func (srv *dnsServer) Stop() {
 	}
 }
 
+// TODO:  Why does handler point to positiveCache and negativeCache when already points to seer?
+func (s *Service) server(listen, net string) *dns.Server {
+	return &dns.Server{
+		Addr:    listen,
+		Net:     net,
+		Handler: &dnsHandler{seer: s},
+	}
+}
+
 func (seer *Service) newDnsServer(devMode bool, port int) error {
 	//Create cache nodes and spam requests
 	seer.positiveCache = ttlcache.New(ttlcache.WithTTL[string, []string](5*time.Minute), ttlcache.WithDisableTouchOnHit[string, []string]())
 	seer.negativeCache = ttlcache.New(ttlcache.WithTTL[string, bool](DefaultBlockTime), ttlcache.WithDisableTouchOnHit[string, bool]())
 
 	// Create TCP and UDP
-	var s *dnsServer
 	validate.UseResolver(seer.dnsResolver)
 	if !devMode {
 		port = protocolsCommon.DefaultDnsPort
@@ -64,13 +70,10 @@ func (seer *Service) newDnsServer(devMode bool, port int) error {
 	listen := ":" + strconv.Itoa(port)
 
 	seer.dns = &dnsServer{
-		Tcp:  &dns.Server{Addr: listen, Net: "tcp"},
-		Udp:  &dns.Server{Addr: listen, Net: "udp"},
+		Tcp:  seer.server(listen, "tcp"),
+		Udp:  seer.server(listen, "udp"),
 		Seer: seer,
 	}
-
-	s.Tcp.Handler = &dnsHandler{seer: seer, cache: seer.positiveCache, negativeCache: seer.negativeCache}
-	s.Udp.Handler = &dnsHandler{seer: seer, cache: seer.positiveCache, negativeCache: seer.negativeCache}
 
 	go seer.positiveCache.Start()
 	go seer.negativeCache.Start()
@@ -91,7 +94,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if len(msg.Question) < 1 {
 		logger.Error("msg question is empty")
 	}
-	if spam := h.negativeCache.Get(msg.Question[0].Name); spam != nil {
+	if spam := h.seer.negativeCache.Get(msg.Question[0].Name); spam != nil {
 		logger.Errorf("%s is currently blocked", msg.Question[0].Name)
 		if err := w.WriteMsg(errMsg); err != nil {
 			logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
@@ -132,7 +135,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	//   check if domain exist in tns
+	// check if domain exist in tns
 	tnsPathSlice, err := h.createDomainTnsPathSlice(name)
 	if err != nil {
 		logger.Errorf("createDomainTnsPathSlice for %s with: %s", name, err.Error())
@@ -162,7 +165,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	logger.Errorf("%s is not registered in taubyte", name)
 
 	// Store in negative cache as spam
-	h.negativeCache.Set(msg.Question[0].Name, true, DefaultBlockTime)
+	h.seer.negativeCache.Set(msg.Question[0].Name, true, DefaultBlockTime)
 
 	err = w.WriteMsg(errMsg)
 	if err != nil {

@@ -42,13 +42,13 @@ func TestDns(t *testing.T) {
 
 	err = u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":    {Others: map[string]int{"dns": dnsPort, "mock": 1}},
-			"tns":     {},
-			"monkey":  {},
-			"patrick": {},
-			"auth":    {},
-			// "substrate": {},
-			"gateway": {},
+			"seer":      {Others: map[string]int{"dns": dnsPort, "mock": 1}},
+			"tns":       {},
+			"monkey":    {},
+			"patrick":   {},
+			"auth":      {},
+			"substrate": {},
+			"gateway":   {},
 		},
 	})
 	if err != nil {
