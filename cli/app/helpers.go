@@ -38,7 +38,7 @@ func deleteEmpty(s []string) []string {
 	}
 
 	r := make([]string, 0, len(s))
-	for _, str := range s {							//I think this is similer to python enumerate, where we ignore the index using place holder _
+	for _, str := range s {							//I think this is similar to python enumerate, where we ignore the index using place holder _
 		if str != "" {
 			r = append(r, str)
 		}
@@ -56,13 +56,23 @@ func setNetworkDomains(conf *config.Source) {
 
 //
 func convertToServiceRegex(url string) string {
-	urls := strings.Split(url, ".")						//split url by '.' delim, and store as array repersentation
-	serviceRegex := `^[^.]+\.tau`						//root path which match domain names ending with ".tau".
+	urls := strings.Split(url, ".")						//split url by '.' delim, and store as array representation
+	serviceRegex := `^[^.]+\.tau`						//root path which matches domain names ending with ".tau".
 	var network string	
 
 	///
+	//
 	// This could be improved using .Join() instead as creating a string like this is expensive. 
-	// Strings a not maulable so a new string is created each time.
+	// Strings are immutable so a new string & address is created each time.
+	//
+	// Possible alternative:
+	//
+	// var network = new ArrayList();
+	// for _, _url := range urls {
+	//	network.Add(fmt.Sprintf(`\.%s`, _url))
+	// }
+	// serviceRegex+=String.Join(",", network.ToArray())
+	//
 	///
 	for _, _url := range urls {
 		network += fmt.Sprintf(`\.%s`, _url)				//create network path
