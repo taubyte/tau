@@ -885,8 +885,6 @@ github.com/taubyte/config-compiler v0.4.6 h1:9s3xn955imE7gAyVFpcsBEkowhCir78b1HP
 github.com/taubyte/config-compiler v0.4.6/go.mod h1:gaohk1BSknIudo16QSgeQqVWVGLyusPPdLn+wQ+xAmY=
 github.com/taubyte/domain-validation v1.0.1 h1:T1iRls4p5+uJLR8R/wf+dBt9Rlahg9BcCtBVbkoD0Ik=
 github.com/taubyte/domain-validation v1.0.1/go.mod h1:/X3yd7sBjnE323rA8I9PiUt5+NlKU4I02nQik25Vqe8=
-github.com/taubyte/go-interfaces v0.2.14-0.20230918220312-63b14518d0e0 h1:YlniSqGlf+3Pl0FB+OZhSwm7OlViTkjH3JlN25nCfOA=
-github.com/taubyte/go-interfaces v0.2.14-0.20230918220312-63b14518d0e0/go.mod h1:Cypt3d9FJdRYPXWydPkZb20b7rICAvQu+gI7lMrcfnQ=
 github.com/taubyte/go-project-schema v0.9.3 h1:2H0ClUZq7f97OgtL0FUe9tv2v12wOmnTAIiJGLei/gU=
 github.com/taubyte/go-project-schema v0.9.3/go.mod h1:8Rt5zsVfj8qbYCT+7++oax/nFVKvVfAepzVkqXrNTs8=
 github.com/taubyte/go-sdk v0.3.9 h1:mwwjiub/Jc987kfWvVfAcx63fMRAYB9cj4yhJq+CSyo=
@@ -897,12 +895,10 @@ github.com/taubyte/go-sdk-symbols v0.2.7 h1:bNOAXcRmO3GVOMDuRsznWZTsvRE2vjN+AObK
 github.com/taubyte/go-sdk-symbols v0.2.7/go.mod h1:/yk+BzZAWZ2t5FU2VwTGbetffh89jz3GiOShqsOeuD4=
 github.com/taubyte/go-seer v1.0.6 h1:7T6rUTlnQDsON/eUQBTgsmAzpP7gE2SFcBsgsQr9bZc=
 github.com/taubyte/go-seer v1.0.6/go.mod h1:eei5Dvqusx9VPQXPMBBmxhjxODL9FNPOpe6U89GUtQ4=
-github.com/taubyte/go-simple-container v0.4.3 h1:TWG/Wc7rXLJu1Sh1rn3gsF8iEFTigRPHWrfpeay2N9k=
-github.com/taubyte/go-simple-container v0.4.3/go.mod h1:7nFas4yr17+jFUWmQLBNZ//s40Y+7/iiJhJkXAJDGiY=
+github.com/taubyte/go-simple-container v0.4.4 h1:YtC9034CYPHUxj0jcQ80NMldMgDAnxIVPNJH6v0MwlU=
+github.com/taubyte/go-simple-container v0.4.4/go.mod h1:7nFas4yr17+jFUWmQLBNZ//s40Y+7/iiJhJkXAJDGiY=
 github.com/taubyte/go-simple-git v0.2.5 h1:ESwhDVHGF0oVPFtZvCS5SzrugjCpK0KKaQIQC6AxzDE=
 github.com/taubyte/go-simple-git v0.2.5/go.mod h1:tPUTQo7GPNEYOV1kRMqWLv3cihLN4MKyK1kW36xr9wk=
-github.com/taubyte/go-specs v0.10.8-0.20230912140105-e8d804edc77c h1:OZcagAWXDR1ecUtlsEilbeaco0587H1/mIV1XaZ0PTQ=
-github.com/taubyte/go-specs v0.10.8-0.20230912140105-e8d804edc77c/go.mod h1:lhCi7imHROEiX8yhSSByxDX0DkqcgPX7QMaXs5XrZJ0=
 github.com/taubyte/http v0.10.5 h1:0dpSYi1XvryxO7U1Df5cgh+6LWKtaMypILQjgfJdExw=
 github.com/taubyte/http v0.10.5/go.mod h1:hSJYC7/yqRkrsZYe1Q0c194GKkVD0KGWDzw0sC+SAiU=
 github.com/taubyte/odo v0.0.0-20230726203810-bdae9f37e8f8 h1:+r57pU7UW1DZkBgOUsBh0zmRSg77sz+bJ3DaybLR3z0=

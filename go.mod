@@ -1,6 +1,7 @@
 module github.com/taubyte/tau
 
 replace github.com/taubyte/go-interfaces => ../go-interfaces
+
 replace github.com/taubyte/go-specs => ../go-specs
 
 go 1.19
@@ -43,7 +44,7 @@ require (
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
 	github.com/taubyte/go-seer v1.0.6
-	github.com/taubyte/go-simple-container v0.4.3
+	github.com/taubyte/go-simple-container v0.4.4
 	github.com/taubyte/go-simple-git v0.2.5
 	github.com/taubyte/go-specs v0.10.8-0.20230912140105-e8d804edc77c
 	github.com/taubyte/http v0.10.5
