@@ -123,7 +123,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	name = strings.ToLower(name)
 	//  check if it matches .g.tau.link generated domain
 	if domainSpecs.SpecialDomain.MatchString(name) {
-		h.reply(w, r, errMsg, msg)
+		h.replyWithHTTPServicingNodes(w, r, errMsg, msg)
 		return
 	}
 
@@ -154,7 +154,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 
 		if len(domPath) != 0 {
-			h.reply(w, r, errMsg, msg)
+			h.replyWithHTTPServicingNodes(w, r, errMsg, msg)
 			return
 		}
 	}
