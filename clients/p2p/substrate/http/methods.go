@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/p2p/streams/client"
 )
 
-func (c *Client) CheckCache(host, path, method string) (map[peer.ID]*client.Response, map[peer.ID]error, error) {
+func (c *Client) ProxyStreams(host, path, method string) (map[peer.ID]*client.Response, map[peer.ID]error, error) {
 	body := map[string]interface{}{
 		"host":   host,
 		"path":   path,

@@ -25,7 +25,7 @@ func (g *Gateway) attach() {
 }
 
 func (g *Gateway) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
-	peerResponses, _, err := g.substrateClient.CheckCache(r.Host, r.URL.Path, r.Method)
+	peerResponses, _, err := g.substrateClient.ProxyStreams(r.Host, r.URL.Path, r.Method)
 	if err != nil {
 		return fmt.Errorf("substrate client Has failed with: %w", err)
 	}
@@ -34,6 +34,8 @@ func (g *Gateway) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	if err != nil {
 		return fmt.Errorf("matching substrate peers to handle request failed with: %w", err)
 	}
+
+	w.Header().Add("X-Substrate-Peer", match.PID().Pretty())
 
 	if err := tunnel.Frontend(w, r, match); err != nil {
 		return err
