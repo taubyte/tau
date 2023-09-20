@@ -1,9 +1,5 @@
 module github.com/taubyte/tau
 
-replace github.com/taubyte/go-interfaces => ../go-interfaces
-
-replace github.com/taubyte/go-specs => ../go-specs
-
 go 1.19
 
 require (
@@ -39,14 +35,14 @@ require (
 	github.com/taubyte/cli-common v0.1.1
 	github.com/taubyte/config-compiler v0.4.6
 	github.com/taubyte/domain-validation v1.0.1
-	github.com/taubyte/go-interfaces v0.2.14-0.20230920145250-3d28c0e127de
+	github.com/taubyte/go-interfaces v0.2.14-0.20230920193244-e13d2c9a67c7
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
 	github.com/taubyte/go-seer v1.0.6
 	github.com/taubyte/go-simple-container v0.4.4
 	github.com/taubyte/go-simple-git v0.2.5
-	github.com/taubyte/go-specs v0.10.8-0.20230912140105-e8d804edc77c
+	github.com/taubyte/go-specs v0.10.8-0.20230920000406-4d29b0a97a31
 	github.com/taubyte/http v0.10.5
 	github.com/taubyte/p2p v0.10.1-0.20230919152907-f26fd82a39d3
 	github.com/taubyte/utils v0.1.7
