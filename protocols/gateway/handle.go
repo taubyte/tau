@@ -36,8 +36,8 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 		if !ok {
 			break
 		}
-		if score := g.match(response); score > highScore {
-			highScore = score
+		if g.Get(response).Cached() {
+			highScore = MaxScore
 			match = response
 		}
 	}
@@ -52,12 +52,4 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	}
 
 	return nil
-}
-
-func (g *Gateway) match(response *client.Response) (score int) {
-	if cached := g.Get(response).Cached(); cached {
-		score += MaxScore
-	}
-
-	return
 }
