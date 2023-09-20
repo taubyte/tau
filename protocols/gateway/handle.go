@@ -55,8 +55,7 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 }
 
 func (g *Gateway) match(response *client.Response) (score int) {
-	responseGetter := g.Get(response)
-	if responseGetter.Cached() {
+	if cached := g.Get(response).Cached(); cached {
 		score += MaxScore
 	}
 

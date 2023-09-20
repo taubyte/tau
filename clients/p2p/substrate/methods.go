@@ -11,12 +11,12 @@ func (c *Client) ProxyHTTP(host, path, method string, ops ...client.Option) (<-c
 		BodyMethod: method,
 	}
 
-	ops = append(ops, c.options(body)...)
-	return c.client.New(CommandHTTP, ops...).Do()
+	mainOptions := append(c.defaultOptions(), client.Body(body))
+	return c.client.New(CommandHTTP, append(mainOptions, ops...)...).Do()
 }
 
-func (c *Client) options(body map[string]interface{}) []client.Option {
-	options := []client.Option{client.Body(body)}
+func (c *Client) defaultOptions() []client.Option {
+	options := make([]client.Option, 0, 10)
 	params := c.defaults
 	if c.callback != nil {
 		params = c.callback()
