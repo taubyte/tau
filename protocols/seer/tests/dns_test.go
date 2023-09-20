@@ -11,7 +11,6 @@ import (
 
 	dns "github.com/miekg/dns"
 
-	"github.com/ipfs/go-log/v2"
 	_ "github.com/taubyte/tau/protocols/auth"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 	_ "github.com/taubyte/tau/protocols/monkey"
@@ -57,7 +56,7 @@ func TestDns(t *testing.T) {
 	}
 
 	time.Sleep(5 * time.Second)
-	log.SetAllLoggers(log.LevelInfo)
+
 	// Create Tcp Client
 	tcpClient := createDnsClient("tcp")
 	m := new(dns.Msg)
