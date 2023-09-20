@@ -1,12 +1,12 @@
 package gateway
 
 import (
+	"context"
 	"errors"
 	"fmt"
 
 	goHttp "net/http"
 
-	"github.com/libp2p/go-libp2p/core/peer"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/streams/client"
 	tunnel "github.com/taubyte/p2p/streams/tunnels/http"
@@ -16,7 +16,7 @@ func (g *Gateway) attach() {
 	g.http.LowLevel(&http.LowLevelDefinition{
 		PathPrefix: "/",
 		Handler: func(w goHttp.ResponseWriter, r *goHttp.Request) {
-			if err := g.handle(w, r); err != nil {
+			if err := g.handleHttp(w, r); err != nil {
 				w.Write([]byte(err.Error()))
 				w.WriteHeader(500)
 			}
@@ -24,18 +24,38 @@ func (g *Gateway) attach() {
 	})
 }
 
-func (g *Gateway) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
-	peerResponses, _, err := g.substrateClient.ProxyStreams(r.Host, r.URL.Path, r.Method)
+func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
+	resCh, err := g.substrateClient.ProxyHTTP(r.Host, r.URL.Path, r.Method)
 	if err != nil {
-		return fmt.Errorf("substrate client Has failed with: %w", err)
+		return fmt.Errorf("substrate client proxyHttp failed with: %w", err)
 	}
 
-	match, err := g.match(peerResponses)
+	responses := make([]*client.Response, 0)
+	var done bool
+	ctx, ctxC := context.WithTimeout(g.ctx, ChannelTimeout)
+	for !done {
+		select {
+		case <-ctx.Done():
+			done = true
+		case response, ok := <-resCh:
+			if !ok {
+				done = true
+				break
+			}
+
+			if err := response.Error(); err == nil {
+				responses = append(responses, response)
+			}
+		}
+	}
+	ctxC()
+
+	match, err := g.match(responses)
 	if err != nil {
 		return fmt.Errorf("matching substrate peers to handle request failed with: %w", err)
 	}
 
-	w.Header().Add("X-Substrate-Peer", match.PID().Pretty())
+	w.Header().Add(ProxyHeader, match.PID().Pretty())
 
 	if err := tunnel.Frontend(w, r, match); err != nil {
 		return err
@@ -44,7 +64,7 @@ func (g *Gateway) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	return nil
 }
 
-func (g *Gateway) match(responses map[peer.ID]*client.Response) (match *client.Response, err error) {
+func (g *Gateway) match(responses []*client.Response) (match *client.Response, err error) {
 	// even if all peers have a 0 score, a peer will be selected
 	bestScore := -1
 	defer func() {

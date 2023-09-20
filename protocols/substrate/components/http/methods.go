@@ -9,10 +9,6 @@ func (s *Service) Close() error {
 		s.cache.Close()
 	}
 
-	if s.stream != nil {
-		s.stream.Stop()
-	}
-
 	return nil
 }
 

@@ -10,12 +10,11 @@ var (
 	Monkey         = "monkey"
 	MonkeyProtocol = "/monkey/v1"
 
-	Substrate = "substrate"
+	Substrate         = "substrate"
+	SubstrateProtocol = "/substrate/v1"
 
-	SubstrateHttp         = "substrate_http"
-	SubstrateHttpProtocol = "/substrate/http/v1"
-
-	SubstrateP2P         = "substrate_p2p"
+	// TODO: Merge with substrate
+	SubstrateP2P         = "substrate-p2p"
 	SubstrateP2PProtocol = "/substrate/p2p/v1"
 
 	Gateway = "gateway"

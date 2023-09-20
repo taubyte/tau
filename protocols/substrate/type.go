@@ -12,6 +12,7 @@ import (
 	storageIface "github.com/taubyte/go-interfaces/services/substrate/components/storage"
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/go-interfaces/vm"
+	streams "github.com/taubyte/p2p/streams/service"
 	httpIface "github.com/taubyte/tau/protocols/substrate/components/http"
 
 	http "github.com/taubyte/http"
@@ -42,6 +43,7 @@ type Service struct {
 	dev          bool
 	verbose      bool
 	databases    kvdb.Factory
+	stream       *streams.CommandService
 
 	tns      tns.Client
 	orbitals []vm.Plugin

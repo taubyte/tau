@@ -1,18 +1,18 @@
-package http
+package substrate
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/taubyte/go-interfaces/services/substrate/components/http"
+	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/p2p/peer"
 	streamClient "github.com/taubyte/p2p/streams/client"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
-func New(ctx context.Context, node peer.Node, ops ...Option) (client http.Client, err error) {
+func New(ctx context.Context, node peer.Node, ops ...Option) (client substrate.ProxyClient, err error) {
 	c := &Client{}
-	if c.client, err = streamClient.New(node, protocolCommon.SubstrateHttpProtocol); err != nil {
+	if c.client, err = streamClient.New(node, protocolCommon.SubstrateProtocol); err != nil {
 		return nil, fmt.Errorf("creating new stream client failed with: %w", err)
 	}
 

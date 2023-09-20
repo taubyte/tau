@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 
-	substrate "github.com/taubyte/go-interfaces/services/substrate/components/http"
+	"github.com/taubyte/go-interfaces/services/substrate"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/peer"
 )
@@ -13,7 +13,7 @@ type Gateway struct {
 	node peer.Node
 	http http.Service
 
-	substrateClient substrate.Client
+	substrateClient substrate.ProxyClient
 
 	dev     bool
 	verbose bool

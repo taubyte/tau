@@ -10,7 +10,7 @@ import (
 	iface "github.com/taubyte/go-interfaces/services/gateway"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/tau/clients/p2p/seer"
-	substrate "github.com/taubyte/tau/clients/p2p/substrate/http"
+	substrate "github.com/taubyte/tau/clients/p2p/substrate"
 	tauConfig "github.com/taubyte/tau/config"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
