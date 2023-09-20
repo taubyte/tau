@@ -137,7 +137,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 				srv.orbitals = append(srv.orbitals, plugin)
 			}
 		}
-
 	}
 
 	if config.Http == nil {
@@ -193,7 +192,7 @@ func (s *Service) proxyTunnel(ctx context.Context, rw io.ReadWriter) {
 		return
 	}
 
-	s.nodeHttp.Handler()(w, r)
+	s.nodeHttp.Handler(w, r)
 }
 
 func (s *Service) proxyHttp(body command.Body) (response.Response, error) {
