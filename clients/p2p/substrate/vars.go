@@ -8,13 +8,8 @@ var (
 )
 
 const (
-	Command = "proxy"
+	CommandHTTP = "proxy-http"
 
-	ProxyHTTP   = "http"
-	ProxyP2P    = "p2p"
-	ProxyPubsub = "pubsub"
-
-	BodyType   = "type"
 	BodyHost   = "host"
 	BodyPath   = "path"
 	BodyMethod = "method"

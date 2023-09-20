@@ -6,14 +6,13 @@ import (
 
 func (c *Client) ProxyHTTP(host, path, method string, ops ...client.Option) (<-chan *client.Response, error) {
 	body := map[string]interface{}{
-		BodyType:   ProxyHTTP,
 		BodyHost:   host,
 		BodyPath:   path,
 		BodyMethod: method,
 	}
 
 	ops = append(ops, c.options(body)...)
-	return c.client.New(Command, ops...).Do()
+	return c.client.New(CommandHTTP, ops...).Do()
 }
 
 func (c *Client) options(body map[string]interface{}) []client.Option {

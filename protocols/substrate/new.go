@@ -164,28 +164,14 @@ func (s *Service) startStream() (err error) {
 		return fmt.Errorf("new stream failed with: %w", err)
 	}
 
-	if err := s.stream.DefineStream(substrate.Command, s.proxyHandler, s.proxyTunnel); err != nil {
-		return fmt.Errorf("defining command `%s` failed with: %w", substrate.Command, err)
+	if err := s.stream.DefineStream(substrate.CommandHTTP, s.proxyHttp, s.tunnelHttp); err != nil {
+		return fmt.Errorf("defining command `%s` failed with: %w", substrate.CommandHTTP, err)
 	}
 
 	return
 }
 
-func (s *Service) proxyHandler(ctx context.Context, con con.Connection, body command.Body) (response.Response, error) {
-	proxyType, err := maps.String(body, substrate.BodyType)
-	if err != nil {
-		return nil, err
-	}
-
-	switch proxyType {
-	case substrate.ProxyHTTP:
-		return s.proxyHttp(body)
-	default:
-		return nil, fmt.Errorf("proxy type `%s` not supported", proxyType)
-	}
-}
-
-func (s *Service) proxyTunnel(ctx context.Context, rw io.ReadWriter) {
+func (s *Service) tunnelHttp(ctx context.Context, rw io.ReadWriter) {
 	w, r, err := httptun.Backend(rw)
 	if err != nil {
 		fmt.Fprintf(rw, "Status: %d\nerror: %s", 500, err.Error())
@@ -195,7 +181,7 @@ func (s *Service) proxyTunnel(ctx context.Context, rw io.ReadWriter) {
 	s.nodeHttp.Handler(w, r)
 }
 
-func (s *Service) proxyHttp(body command.Body) (response.Response, error) {
+func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body command.Body) (response.Response, error) {
 	host, err := maps.String(body, substrate.BodyHost)
 	if err != nil {
 		return nil, err

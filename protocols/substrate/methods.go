@@ -5,6 +5,7 @@ import (
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
+// TODO: Rename to Satellites
 func (srv *Service) Orbitals() []vm.Plugin {
 	return srv.orbitals
 }
