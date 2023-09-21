@@ -32,3 +32,9 @@ func (c *Client) defaultOptions() []client.Option {
 
 	return options
 }
+
+func (c *Client) Close() error {
+	c.callback = nil
+	c.client.Close()
+	return nil
+}

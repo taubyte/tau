@@ -29,51 +29,30 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 		return fmt.Errorf("substrate client proxyHttp failed with: %w", err)
 	}
 
-	var match *client.Response
-	doneChan := make(chan struct{}, 1)
-	var clearMode bool
-	go func() {
-		for response := range resCh {
-			if clearMode {
-				response.Close()
-				continue
-			}
-
-			if err := response.Error(); err != nil {
-				logger.Errorf("peer `%s` response for proxy failed with: %w", response.PID().Pretty(), err)
-				continue
-			}
-
-			var skipClose bool
-			if match == nil {
-				match = response
-				skipClose = true
-			}
-
-			if g.Get(response).Cached() {
-				if !skipClose {
-					match.Close()
-				}
-
-				match = response
-				clearMode = true
-				doneChan <- struct{}{}
-			}
-
+	matches := make([]*client.Response, 0)
+	for response := range resCh {
+		err := response.Error()
+		if err != nil {
+			logger.Debugf("response from node `%s` failed with: %s", response.PID().Pretty(), err.Error())
 		}
-
-		close(doneChan)
-	}()
-	<-doneChan
-
-	if match == nil {
+		if err == nil && g.Get(response).Cached() {
+			matches = append([]*client.Response{response}, matches...)
+		} else {
+			matches = append(matches, response)
+		}
+	}
+	if len(matches) < 1 {
 		return errors.New("no substrate match found")
 	}
-	defer match.Close()
+	defer func() {
+		for _, match := range matches {
+			match.Close()
+		}
+	}()
 
-	w.Header().Add(ProxyHeader, match.PID().Pretty())
+	w.Header().Add(ProxyHeader, matches[0].PID().Pretty())
 
-	if err := tunnel.Frontend(w, r, match); err != nil {
+	if err := tunnel.Frontend(w, r, matches[0]); err != nil {
 		return fmt.Errorf("tunneling Frontend failed with: %w", err)
 	}
 
