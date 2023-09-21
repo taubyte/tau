@@ -6,18 +6,29 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 
 	"github.com/ipfs/go-log/v2"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
+	"github.com/taubyte/tau/clients/p2p/substrate"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/pkgs/kvdb"
+	"github.com/taubyte/tau/vm/helpers"
+	"github.com/taubyte/utils/maps"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
+	con "github.com/taubyte/p2p/streams"
+	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/p2p/streams/command/response"
+	streams "github.com/taubyte/p2p/streams/service"
+	httptun "github.com/taubyte/p2p/streams/tunnels/http"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
+	http "github.com/taubyte/tau/protocols/substrate/components/http/common"
 	smartopsPlugins "github.com/taubyte/vm-core-plugins/smartops"
 	tbPlugins "github.com/taubyte/vm-core-plugins/taubyte"
 )
@@ -26,6 +37,7 @@ var (
 	logger = log.Logger("node.service")
 )
 
+// TODO: close on error
 func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	srv := &Service{
 		ctx:      ctx,
@@ -45,8 +57,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	srv.verbose = config.Verbose
 
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, protocolCommon.Substrate))
-		if err != nil {
+		if srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, protocolCommon.Substrate)); err != nil {
 			return nil, fmt.Errorf("creating new lite node failed with: %w", err)
 		}
 	} else {
@@ -58,7 +69,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		srv.databases = kvdb.New(srv.node)
 	}
 
-	// For Odo
 	clientNode := srv.node
 	if config.ClientNode != nil {
 		clientNode = config.ClientNode
@@ -69,14 +79,12 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		return nil, fmt.Errorf("starting beacon failed with: %w", err)
 	}
 
-	// HTTP
-	err = srv.startHttp(config)
-	if err != nil {
+	//TODO: This should not be needed
+	if err = srv.startHttp(config); err != nil {
 		return nil, fmt.Errorf("starting http service failed with %w", err)
 	}
 
-	srv.tns, err = tnsClient.New(ctx, clientNode)
-	if err != nil {
+	if srv.tns, err = tnsClient.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("creating tns client failed with %w", err)
 	}
 
@@ -129,7 +137,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 				srv.orbitals = append(srv.orbitals, plugin)
 			}
 		}
-
 	}
 
 	if config.Http == nil {
@@ -145,39 +152,59 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		return nil, fmt.Errorf("setting beacon hostname failed with: %w", err)
 	}
 
+	if err = srv.startStream(); err != nil {
+		return nil, fmt.Errorf("starting p2p stream failed with: %w", err)
+	}
+
 	return srv, nil
 }
 
-func (srv *Service) Orbitals() []vm.Plugin {
-	return srv.orbitals
-}
-
-func (srv *Service) Close() error {
-	logger.Info("Closing", protocolCommon.Substrate)
-	defer logger.Info(protocolCommon.Substrate, "closed")
-
-	for _, orbitals := range srv.orbitals {
-		if err := orbitals.Close(); err != nil {
-			logger.Errorf("Failed to close orbital `%s`", orbitals.Name())
-		}
+func (s *Service) startStream() (err error) {
+	if s.stream, err = streams.New(s.node, protocolCommon.Substrate, protocolCommon.SubstrateProtocol); err != nil {
+		return fmt.Errorf("new stream failed with: %w", err)
 	}
 
-	srv.tns.Close()
+	if err := s.stream.DefineStream(substrate.CommandHTTP, s.proxyHttp, s.tunnelHttp); err != nil {
+		return fmt.Errorf("defining command `%s` failed with: %w", substrate.CommandHTTP, err)
+	}
 
-	srv.nodeHttp.Close()
-	srv.nodePubSub.Close()
-	srv.nodeIpfs.Close()
-	srv.nodeDatabase.Close()
-	srv.nodeStorage.Close()
-	srv.nodeP2P.Close()
-	srv.nodeCounters.Close()
-	srv.nodeSmartOps.Close()
-
-	srv.vm.Close()
-
-	return nil
+	return
 }
 
-func (srv *Service) Dev() bool {
-	return srv.dev
+func (s *Service) tunnelHttp(ctx context.Context, rw io.ReadWriter) {
+	w, r, err := httptun.Backend(rw)
+	if err != nil {
+		fmt.Fprintf(rw, "Status: %d\nerror: %s", 500, err.Error())
+		return
+	}
+
+	s.nodeHttp.Handler(w, r)
+}
+
+func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body command.Body) (response.Response, error) {
+	host, err := maps.String(body, substrate.BodyHost)
+	if err != nil {
+		return nil, err
+	}
+
+	path, err := maps.String(body, substrate.BodyPath)
+	if err != nil {
+		return nil, err
+	}
+
+	method, err := maps.String(body, substrate.BodyMethod)
+	if err != nil {
+		return nil, err
+	}
+
+	response := make(map[string]interface{})
+	response[substrate.ResponseCached] = false
+
+	matcher := http.New(helpers.ExtractHost(host), path, method)
+	servs, err := s.nodeHttp.Cache().Get(matcher, components.GetOptions{Validation: true})
+	if err == nil && len(servs) > 0 {
+		response[substrate.ResponseCached] = true
+	}
+
+	return response, nil
 }

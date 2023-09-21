@@ -2,8 +2,6 @@ package seer
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net"
 	"strconv"
 	"strings"
@@ -21,25 +19,21 @@ import (
 
 // TODO: Implement a spam cache that blocks spam dns request
 type dnsHandler struct {
-	seer          *Service
-	cache         *ttlcache.Cache[string, []string]
-	negativeCache *ttlcache.Cache[string, bool]
+	seer *Service
 }
 
 func (srv *dnsServer) Start(ctx context.Context) {
 	go func() {
 		logger.Info("Starting DNS Server on UDP")
 		if err := srv.Udp.ListenAndServe(); err != nil {
-			errorMsg := fmt.Sprintf("failed starting UPD Server error: %v", err)
-			panic(errors.New(errorMsg))
+			panic("failed starting UDP Server error: " + err.Error())
 		}
 	}()
 
 	go func() {
 		logger.Info("Starting DNS Server on TCP")
 		if err := srv.Tcp.ListenAndServe(); err != nil {
-			errorMsg := fmt.Sprintf("failed starting TCP Server error: %v", err)
-			panic(errors.New(errorMsg))
+			panic("failed starting TCP Server error: " + err.Error())
 		}
 	}()
 }
@@ -53,31 +47,33 @@ func (srv *dnsServer) Stop() {
 	}
 }
 
+// TODO:  Why does handler point to positiveCache and negativeCache when already points to seer?
+func (s *Service) server(listen, net string) *dns.Server {
+	return &dns.Server{
+		Addr:    listen,
+		Net:     net,
+		Handler: &dnsHandler{seer: s},
+	}
+}
+
 func (seer *Service) newDnsServer(devMode bool, port int) error {
 	//Create cache nodes and spam requests
 	seer.positiveCache = ttlcache.New(ttlcache.WithTTL[string, []string](5*time.Minute), ttlcache.WithDisableTouchOnHit[string, []string]())
 	seer.negativeCache = ttlcache.New(ttlcache.WithTTL[string, bool](DefaultBlockTime), ttlcache.WithDisableTouchOnHit[string, bool]())
 
 	// Create TCP and UDP
-	var s *dnsServer
 	validate.UseResolver(seer.dnsResolver)
-	if devMode {
-		s = &dnsServer{
-			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(port), Net: "tcp"},
-			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(port), Net: "udp"},
-			Seer: seer,
-		}
-	} else {
-		s = &dnsServer{
-			Tcp:  &dns.Server{Addr: ":" + strconv.Itoa(protocolsCommon.DefaultDnsPort), Net: "tcp"},
-			Udp:  &dns.Server{Addr: ":" + strconv.Itoa(protocolsCommon.DefaultDnsPort), Net: "udp"},
-			Seer: seer,
-		}
+	if !devMode {
+		port = protocolsCommon.DefaultDnsPort
 	}
 
-	seer.dns = s
-	s.Tcp.Handler = &dnsHandler{seer: seer, cache: seer.positiveCache, negativeCache: seer.negativeCache}
-	s.Udp.Handler = &dnsHandler{seer: seer, cache: seer.positiveCache, negativeCache: seer.negativeCache}
+	listen := ":" + strconv.Itoa(port)
+
+	seer.dns = &dnsServer{
+		Tcp:  seer.server(listen, "tcp"),
+		Udp:  seer.server(listen, "udp"),
+		Seer: seer,
+	}
 
 	go seer.positiveCache.Start()
 	go seer.negativeCache.Start()
@@ -98,7 +94,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if len(msg.Question) < 1 {
 		logger.Error("msg question is empty")
 	}
-	if spam := h.negativeCache.Get(msg.Question[0].Name); spam != nil {
+	if spam := h.seer.negativeCache.Get(msg.Question[0].Name); spam != nil {
 		logger.Errorf("%s is currently blocked", msg.Question[0].Name)
 		if err := w.WriteMsg(errMsg); err != nil {
 			logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
@@ -128,27 +124,26 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		name = strings.TrimSuffix(msg.Question[0].Name, ".")
 	}
 	name = strings.ToLower(name)
-
-	// First Case -> check if it matches .g.tau.link generated domain
+	//  check if it matches .g.tau.link generated domain
 	if domainSpecs.SpecialDomain.MatchString(name) {
-		h.reply(w, r, errMsg, msg)
+		h.replyWithHTTPServicingNodes(w, r, errMsg, msg)
 		return
 	}
 
 	// Second Case -> check if domain is under our white listed domain
 	for _, domain := range domainSpecs.WhiteListedDomains {
 		if name == domain {
-			h.reply(w, r, errMsg, msg)
+			h.replyWithHTTPServicingNodes(w, r, errMsg, msg)
 			return
 		}
 	}
 
-	if domainSpecs.TaubyteServiceDomain.MatchString(name) || h.seer.caaRecordBypass.MatchString(name) {
+	if domainSpecs.TaubyteServiceDomain.MatchString(name) || h.seer.protocolRecordBypass.MatchString(name) {
 		h.tauDnsResolve(name, w, r, errMsg, msg)
 		return
 	}
 
-	// Third case ->  check if domain exist in tns
+	// check if domain exist in tns
 	tnsPathSlice, err := h.createDomainTnsPathSlice(name)
 	if err != nil {
 		logger.Errorf("createDomainTnsPathSlice for %s with: %s", name, err.Error())
@@ -170,7 +165,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 
 		if len(domPath) != 0 {
-			h.reply(w, r, errMsg, msg)
+			h.replyWithHTTPServicingNodes(w, r, errMsg, msg)
 			return
 		}
 	}
@@ -178,7 +173,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	logger.Errorf("%s is not registered in taubyte", name)
 
 	// Store in negative cache as spam
-	h.negativeCache.Set(msg.Question[0].Name, true, DefaultBlockTime)
+	h.seer.negativeCache.Set(msg.Question[0].Name, true, DefaultBlockTime)
 
 	err = w.WriteMsg(errMsg)
 	if err != nil {
@@ -190,9 +185,9 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 func (h *dnsHandler) tauDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
 	protocol := strings.Split(name, ".")[0]
 	if err := common.ValidateProtocols([]string{protocol}); err != nil {
-		logger.Errorf("validating protocol `%s` failed with: %w", protocol, err)
+		logger.Errorf("validating protocol `%s` failed with: %s", protocol, err.Error())
 		if err := w.WriteMsg(errMsg); err != nil {
-			logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
+			logger.Errorf("writing error message `%s` failed with: %s", errMsg, err.Error())
 		}
 
 		return

@@ -8,6 +8,7 @@ import (
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/go-interfaces/services/auth"
+	"github.com/taubyte/go-interfaces/services/gateway"
 	"github.com/taubyte/go-interfaces/services/hoarder"
 	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/go-interfaces/services/patrick"
@@ -125,6 +126,14 @@ func (u *Universe) TnsByPid(pid string) (tns.Service, bool) {
 
 func (u *Universe) Monkey() monkey.Service {
 	ret, ok := first[monkey.Service](u, u.service["monkey"].nodes)
+	if !ok {
+		return nil
+	}
+	return ret
+}
+
+func (u *Universe) Gateway() gateway.Service {
+	ret, ok := first[gateway.Service](u, u.service["gateway"].nodes)
 	if !ok {
 		return nil
 	}

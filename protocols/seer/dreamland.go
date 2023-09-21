@@ -41,7 +41,7 @@ func createService(ctx context.Context, config *iface.ServiceConfig) (iface.Serv
 		// NOTE: have to keep entry lowercase since package searches through lowercase
 		mockServer, err := mockdns.NewServer(map[string]mockdns.Zone{
 			"testing_website_builder.com.": {
-				CNAME: "nodes.taubyte.com.",
+				CNAME: "substrate.tau.taubyte.com.",
 				A:     []string{"192.168.0.1", "10.0.0.1"},
 				TXT:   []string{"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZGRyZXNzIjoiNWRydTFFR1Iza0hyWHJzTWI3TDNpTEpTQm51c01KIn0.jUcMqKyHb_IBvdjObb_sggv9mfrix18FJyZpAxWdkVIoqO9kEAcpQzU675jm7n5qZDbzfzS-dmmHsUOuA54OJQ"},
 			},

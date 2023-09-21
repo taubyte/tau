@@ -5,17 +5,7 @@ import (
 
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/utils/maps"
 )
-
-func (srv *Service) ListNodes() ([]string, error) {
-	resp, err := srv.oracle.listServiceIds("node")
-	if err != nil {
-		return nil, fmt.Errorf("failed ListNodes with %v", err)
-	}
-
-	return maps.StringArray(resp, "ids")
-}
 
 func validateSignature(body command.Body) (string, bool, error) {
 	// Grab Id's and Signature from body

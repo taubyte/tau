@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/p2p/streams/command/response"
+	protocolCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
 )
 
@@ -32,7 +33,7 @@ func (st *Stream) Command(command string) (iface.Command, error) {
 }
 
 func (c *Command) beforeSend(ctx context.Context, body command.Body) (*client.Client, command.Body, error) {
-	p2pClient, err := client.New(c.srv.Node(), common.Protocol)
+	p2pClient, err := client.New(c.srv.Node(), protocolCommon.SubstrateP2PProtocol)
 	if err != nil {
 		return nil, nil, fmt.Errorf("New p2p client failed with: %s", err)
 	}

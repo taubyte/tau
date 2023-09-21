@@ -18,6 +18,7 @@ type serviceBeacon struct {
 	seerClient *seerClient.Client
 }
 
+// TODO: REMOVE
 func (srv *Service) startBeacon(config *config.Node) (beacon *serviceBeacon, err error) {
 	beacon = &serviceBeacon{Service: srv, config: config}
 

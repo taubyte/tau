@@ -59,11 +59,11 @@ type Service struct {
 
 	hostUrl string
 
-	generatedDomain string
-	caaRecordBypass *regexp.Regexp // TOOD: move this into go-specs
-	shape           string
-	odo             bool
-	devMode         bool
+	generatedDomain      string
+	protocolRecordBypass *regexp.Regexp // TOOD: move this into go-specs
+	shape                string
+	odo                  bool
+	devMode              bool
 }
 
 func (s *Service) Node() peer.Node {

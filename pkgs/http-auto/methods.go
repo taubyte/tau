@@ -131,7 +131,6 @@ func (s *Service) Start() {
 							return nil, fmt.Errorf("failed txt lookup on %s with %v", hello.ServerName, err)
 						}
 					}
-
 				}
 
 				cert, err = s.authClient.GetStaticCertificate(hello.ServerName)

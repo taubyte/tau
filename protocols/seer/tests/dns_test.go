@@ -47,6 +47,7 @@ func TestDns(t *testing.T) {
 			"patrick":   {},
 			"auth":      {},
 			"substrate": {},
+			"gateway":   {},
 		},
 	})
 	if err != nil {

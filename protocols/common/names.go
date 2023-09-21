@@ -10,7 +10,14 @@ var (
 	Monkey         = "monkey"
 	MonkeyProtocol = "/monkey/v1"
 
-	Substrate = "substrate"
+	Substrate         = "substrate"
+	SubstrateProtocol = "/substrate/v1"
+
+	// TODO: Merge with substrate
+	SubstrateP2P         = "substrate-p2p"
+	SubstrateP2PProtocol = "/substrate/p2p/v1"
+
+	Gateway = "gateway"
 
 	Patrick         = "patrick"
 	PatrickProtocol = "/patrick/v1"

@@ -9,7 +9,7 @@ import (
 
 var maxGoRoutines = 12
 var fqdn = "nodes.taubyte.com."
-var blockedFqdn = "poop.com."
+var blockedFqdn = "blocked.com."
 var targetSeer = "45.159.97.245"
 
 // This is used to stress test certain seers

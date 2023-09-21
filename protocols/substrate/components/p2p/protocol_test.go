@@ -9,7 +9,7 @@ import (
 	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
 	dreamland "github.com/taubyte/tau/libdream"
-	"github.com/taubyte/tau/protocols/substrate/components/p2p/common"
+	"github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/tau/protocols/substrate/components/structure"
 )
 
@@ -60,7 +60,7 @@ func TestProtocolListen(t *testing.T) {
 	}
 
 	receiverService := NewTestService(receiver.PeerNode())
-	receiverService.stream, err = receiverService.StartStream(common.ServiceName, common.Protocol, receiverService.Handle)
+	receiverService.stream, err = receiverService.StartStream(common.SubstrateP2P, common.SubstrateP2P, receiverService.Handle)
 	if err != nil {
 		t.Error(err)
 		return

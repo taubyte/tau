@@ -76,11 +76,11 @@ func (h *dnsHandler) getServiceIp(service string) ([]string, error) {
 
 }
 
-func (h *dnsHandler) getNodeIp() ([]string, error) {
+func (h *dnsHandler) getNodeIp(proto string) ([]string, error) {
 	var ips []string
 
 	// Check cache for node ips
-	nodeIps := h.cache.Get("substrate")
+	nodeIps := h.seer.positiveCache.Get(proto)
 	if nodeIps != nil {
 		return nodeIps.Value(), nil
 	}
@@ -88,7 +88,7 @@ func (h *dnsHandler) getNodeIp() ([]string, error) {
 	unique := make(map[string]bool, 0)
 	// Query for nodes that have responded in the last 5 minutes
 	h.seer.nodeDBMutex.RLock()
-	rows, err := h.seer.nodeDB.Query(GetStableNodeIps, time.Now().UnixNano()-ValidServiceResponseTime.Nanoseconds())
+	rows, err := h.seer.nodeDB.Query(GetHTTPSServicingNodeIps(proto), time.Now().UnixNano()-ValidServiceResponseTime.Nanoseconds())
 	h.seer.nodeDBMutex.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("getNodeIp query failed with: %s", err)
@@ -106,8 +106,8 @@ func (h *dnsHandler) getNodeIp() ([]string, error) {
 		}
 	}
 
-	// Cache substrate ips
-	h.cache.Set("substrate", ips, 5*time.Minute)
+	// Cache ips
+	h.seer.positiveCache.Set(proto, ips, 5*time.Minute)
 
 	return ips, nil
 }

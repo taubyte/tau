@@ -60,6 +60,10 @@ const (
 	  );`
 
 	// TODO: Combine these two Statements
-	GetStableNodeIps = `SELECT Value from Meta, Usage WHERE Meta.Id = Usage.Id AND Usage.Timestamp > ? AND Key="IP" AND Type="substrate";`
-	GetServiceIp     = `SELECT Value from Meta, Usage WHERE Meta.Id = Usage.Id AND Usage.Timestamp > ? AND Key="IP" AND  Type=?;`
+
+	GetServiceIp = `SELECT Value from Meta, Usage WHERE Meta.Id = Usage.Id AND Usage.Timestamp > ? AND Key="IP" AND  Type=?;`
 )
+
+func GetHTTPSServicingNodeIps(proto string) string {
+	return `SELECT Value from Meta, Usage WHERE Meta.Id = Usage.Id AND Usage.Timestamp > ? AND Key="IP" AND Type="` + proto + `";`
+}

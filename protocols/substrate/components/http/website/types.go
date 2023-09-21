@@ -12,10 +12,9 @@ import (
 
 var _ commonIface.Serviceable = &Website{}
 var _ iface.Serviceable = &Website{}
-var _ iface.Website = &Website{}
 
 type Website struct {
-	srv iface.Service
+	srv commonIface.ServiceComponent
 
 	config        structureSpec.Website
 	computedPaths map[string][]string

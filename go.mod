@@ -35,16 +35,16 @@ require (
 	github.com/taubyte/cli-common v0.1.1
 	github.com/taubyte/config-compiler v0.4.6
 	github.com/taubyte/domain-validation v1.0.1
-	github.com/taubyte/go-interfaces v0.2.14-0.20230918143025-f035534c6a59
+	github.com/taubyte/go-interfaces v0.2.14-0.20230921175616-0dd966927da2
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
 	github.com/taubyte/go-seer v1.0.6
-	github.com/taubyte/go-simple-container v0.4.3
+	github.com/taubyte/go-simple-container v0.4.4
 	github.com/taubyte/go-simple-git v0.2.5
 	github.com/taubyte/go-specs v0.10.8-0.20230912140105-e8d804edc77c
 	github.com/taubyte/http v0.10.5
-	github.com/taubyte/p2p v0.10.1-0.20230914155618-623503a3bc05
+	github.com/taubyte/p2p v0.10.1-0.20230919152907-f26fd82a39d3
 	github.com/taubyte/utils v0.1.7
 	github.com/taubyte/vm v1.0.3
 	github.com/taubyte/vm-core-plugins v0.3.4

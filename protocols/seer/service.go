@@ -46,7 +46,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 
 	srv.dnsResolver = net.DefaultResolver
 	srv.generatedDomain = config.GeneratedDomain
-	srv.caaRecordBypass = regexp.MustCompile(fmt.Sprintf("tau.%s", config.NetworkFqdn))
+	srv.protocolRecordBypass = regexp.MustCompile(fmt.Sprintf("tau.%s", config.NetworkFqdn))
 
 	for _, op := range opts {
 		err = op(srv)
