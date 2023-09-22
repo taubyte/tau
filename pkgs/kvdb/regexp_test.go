@@ -92,7 +92,7 @@ func TestAsyncRegExp(t *testing.T) {
 		"/b",
 	}
 
-	if equalStringSlices(res, correctRes) == false {
+	if !equalStringSlices(res, correctRes) {
 		fmt.Println(res)
 		fmt.Println(correctRes)
 		t.Error("Regex list return wrong result")
@@ -115,7 +115,7 @@ func TestAsyncRegExp(t *testing.T) {
 		"/Z/m/1/2",
 	}
 
-	if equalStringSlices(prefix_res, prefix_correctRes) == false {
+	if !equalStringSlices(prefix_res, prefix_correctRes) {
 		fmt.Println(prefix_res)
 		fmt.Println(prefix_correctRes)
 		t.Error("Regex list return wrong result")

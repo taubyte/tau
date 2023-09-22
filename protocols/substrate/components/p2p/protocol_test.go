@@ -95,7 +95,7 @@ func TestProtocolListen(t *testing.T) {
 		return
 	}
 
-	if reflect.DeepEqual(structure.CalledTestFunctionsP2P[0], sendData) == false {
+	if !reflect.DeepEqual(structure.CalledTestFunctionsP2P[0], sendData) {
 		t.Errorf("Got: %#v\nexpected: %#v", structure.CalledTestFunctionsP2P[0], sendData)
 		return
 	}

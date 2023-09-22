@@ -43,84 +43,84 @@ func TestGetById(t *testing.T) {
 	tns, err := simple.TNS()
 	assert.NilError(t, err)
 
-	if (testStructure[*structureSpec.Database]{
+	if !(testStructure[*structureSpec.Database]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Database(),
-	}).runGetIdTest() == false {
+	}).runGetIdTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Domain]{
+	if !(testStructure[*structureSpec.Domain]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Domain(),
-	}).runGetIdTest() == false {
+	}).runGetIdTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Function]{
+	if !(testStructure[*structureSpec.Function]{
 		t:                t,
 		expectedGlobal:   3,
 		expectedRelative: 1,
 		iface:            tns.Function(),
-	}).runGetIdTest() == false {
+	}).runGetIdTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Library]{
+	if !(testStructure[*structureSpec.Library]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Library(),
-	}).runGetIdTest() == false {
+	}).runGetIdTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Messaging]{
+	if !(testStructure[*structureSpec.Messaging]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Messaging(),
-	}).runGetIdTest() == false {
+	}).runGetIdTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Service]{
+	if !(testStructure[*structureSpec.Service]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Service(),
-	}).runGetIdTest() == false {
+	}).runGetIdTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.SmartOp]{
+	if !(testStructure[*structureSpec.SmartOp]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.SmartOp(),
-	}).runGetIdTest() == false {
+	}).runGetIdTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Storage]{
+	if !(testStructure[*structureSpec.Storage]{
 		t:                t,
 		expectedGlobal:   2,
 		expectedRelative: 1,
 		iface:            tns.Storage(),
-	}).runGetIdTest() == false {
+	}).runGetIdTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Website]{
+	if !(testStructure[*structureSpec.Website]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Website(),
-	}).runGetIdTest() == false {
+	}).runGetIdTest() {
 		return
 	}
 }
@@ -140,7 +140,7 @@ func (s testStructure[T]) runGetIdTest() bool {
 				return false
 			}
 
-			if reflect.DeepEqual(resource, _resource) == false {
+			if !reflect.DeepEqual(resource, _resource) {
 				s.t.Errorf("(%T) Expected %v, got %v", new(T), resource, _resource)
 				return false
 			}
@@ -150,12 +150,12 @@ func (s testStructure[T]) runGetIdTest() bool {
 	}
 
 	allIface := s.iface.All(testProjectId, testAppId, testBranch)
-	if test(allIface) == false {
+	if !test(allIface) {
 		return false
 	}
 
 	globalIface := s.iface.Global(testProjectId, testBranch)
-	if test(globalIface) == false {
+	if !test(globalIface) {
 		return false
 	}
 

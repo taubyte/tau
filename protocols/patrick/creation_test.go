@@ -117,7 +117,7 @@ func compareJobToPayload(meta patrick.Meta, payload []byte) (err error) {
 	}
 
 	compare := func(c *comparison) error {
-		if reflect.DeepEqual(c.Before, c.After) == false {
+		if !reflect.DeepEqual(c.Before, c.After) {
 			return fmt.Errorf("%s doesn't match got %v expected %v", c.msg, c.Before, c.After)
 		}
 
