@@ -116,7 +116,7 @@ func TestClientWithUniverse(t *testing.T) {
 		return
 	}
 
-	if islocked == false {
+	if !islocked {
 		t.Error("Job not locked")
 		return
 	}

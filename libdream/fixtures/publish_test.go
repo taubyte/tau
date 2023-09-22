@@ -89,7 +89,7 @@ func TestUpdate(t *testing.T) {
 
 	// TODO: Need to reimplement this check
 
-	// if reflect.DeepEqual(new_obj.Interface(), cc.CreatedProjectObject) == false {
+	// if !reflect.DeepEqual(new_obj.Interface(), cc.CreatedProjectObject)  {
 	// 	maps.Display("", new_obj.Interface())
 	// 	fmt.Print("\n\n\n\n\n\n")
 	// 	maps.Display("", createdProjectObject)

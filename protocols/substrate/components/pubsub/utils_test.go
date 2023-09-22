@@ -16,7 +16,7 @@ import (
 func init() {
 	websocket.AttachWebSocket = func(f *websocket.WebSocket) error {
 		v, ok := attachedTestWebSockets[f.Name()]
-		if ok == false {
+		if !ok {
 			attachedTestWebSockets[f.Name()] = 1
 		} else {
 			attachedTestWebSockets[f.Name()] = v + 1

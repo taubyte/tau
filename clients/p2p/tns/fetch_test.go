@@ -79,7 +79,7 @@ func TestFetch(t *testing.T) {
 			return err
 		}
 
-		if reflect.DeepEqual(resp.Interface(), fixture[id]) == false {
+		if !reflect.DeepEqual(resp.Interface(), fixture[id]) {
 			t.Errorf("Objects not equal %v != %v", resp, fixture[id])
 			return err
 		}

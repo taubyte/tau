@@ -40,84 +40,84 @@ func TestList(t *testing.T) {
 	tns, err := simple.TNS()
 	assert.NilError(t, err)
 
-	if (testStructure[*structureSpec.Database]{
+	if !(testStructure[*structureSpec.Database]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Database(),
-	}).runListTest() == false {
+	}).runListTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Domain]{
+	if !(testStructure[*structureSpec.Domain]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Domain(),
-	}).runListTest() == false {
+	}).runListTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Function]{
+	if !(testStructure[*structureSpec.Function]{
 		t:                t,
 		expectedGlobal:   3,
 		expectedRelative: 1,
 		iface:            tns.Function(),
-	}).runListTest() == false {
+	}).runListTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Library]{
+	if !(testStructure[*structureSpec.Library]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Library(),
-	}).runListTest() == false {
+	}).runListTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Messaging]{
+	if !(testStructure[*structureSpec.Messaging]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Messaging(),
-	}).runListTest() == false {
+	}).runListTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Service]{
+	if !(testStructure[*structureSpec.Service]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Service(),
-	}).runListTest() == false {
+	}).runListTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.SmartOp]{
+	if !(testStructure[*structureSpec.SmartOp]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.SmartOp(),
-	}).runListTest() == false {
+	}).runListTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Storage]{
+	if !(testStructure[*structureSpec.Storage]{
 		t:                t,
 		expectedGlobal:   2,
 		expectedRelative: 1,
 		iface:            tns.Storage(),
-	}).runListTest() == false {
+	}).runListTest() {
 		return
 	}
 
-	if (testStructure[*structureSpec.Website]{
+	if !(testStructure[*structureSpec.Website]{
 		t:                t,
 		expectedGlobal:   1,
 		expectedRelative: 1,
 		iface:            tns.Website(),
-	}).runListTest() == false {
+	}).runListTest() {
 		return
 	}
 }

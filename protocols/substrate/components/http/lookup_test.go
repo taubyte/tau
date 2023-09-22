@@ -113,11 +113,11 @@ func checkFunction(s *Service, id string, matcher commonIface.MatchDefinition) e
 	}
 
 	f, ok := picks[0].(*function.Function)
-	if ok == false {
+	if !ok {
 		return errors.New("Not ok")
 	}
 
-	if reflect.DeepEqual(functions[id], *f.Config()) == false {
+	if !reflect.DeepEqual(functions[id], *f.Config()) {
 		return fmt.Errorf("Expected: %#v, got: %#v", functions[id], f.Config())
 	}
 
@@ -132,11 +132,11 @@ func checkWebsite(s *Service, id string, matcher *common.MatchDefinition) error 
 	}
 
 	w, ok := picks[0].(*website.Website)
-	if ok == false {
+	if !ok {
 		return errors.New("Not ok")
 	}
 
-	if reflect.DeepEqual(websites[id], *w.Config()) == false {
+	if !reflect.DeepEqual(websites[id], *w.Config()) {
 		return fmt.Errorf("Expected: %#v, got: %#v", websites[id], *w.Config())
 	}
 

@@ -87,12 +87,12 @@ func TestFail(t *testing.T) {
 		}
 
 		node1, ok := u.SubstrateByPid(pids[0])
-		if ok == false {
+		if !ok {
 			mostRecentError = errors.New("Node1 not found")
 			return
 		}
 		node2, ok := u.SubstrateByPid(pids[1])
-		if ok == false {
+		if !ok {
 			mostRecentError = errors.New("Node2 not found")
 			return
 		}

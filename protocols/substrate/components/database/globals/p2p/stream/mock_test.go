@@ -88,7 +88,7 @@ func (s *mockService) Global(projectID string) (database.Database, error) {
 	s.Databases()
 
 	hash := mh.Hash(projectID)
-	if db, ok := s.databases[hash]; ok == true {
+	if db, ok := s.databases[hash]; ok {
 		return db, nil
 	}
 
@@ -141,7 +141,7 @@ type mockKV struct {
 
 func (k *mockKV) Get(ctx context.Context, key string) ([]byte, error) {
 	v, ok := k.data[key]
-	if ok == false {
+	if !ok {
 		return nil, fmt.Errorf("not found")
 	}
 

@@ -68,7 +68,7 @@ func TestService(t *testing.T) {
 			}
 		}
 	}
-	if found_match == false {
+	if !found_match {
 		t.Error("Can't find peer location in All() query")
 		return
 	}

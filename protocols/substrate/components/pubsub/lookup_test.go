@@ -57,12 +57,12 @@ func TestLookup(t *testing.T) {
 
 	for _, serv := range matches {
 		match, ok := serv.Matcher().(*common.MatchDefinition)
-		if ok == false {
+		if !ok {
 			t.Error("Serviceable matcher is not a pubsub match definition")
 			return
 		}
 
-		if reflect.DeepEqual(match, matcher) == false {
+		if !reflect.DeepEqual(match, matcher) {
 			t.Error("Serviceable matcher is not equal to given matcher")
 			return
 		}

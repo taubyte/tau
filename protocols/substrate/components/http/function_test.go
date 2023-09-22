@@ -64,9 +64,9 @@ func TestFunction(t *testing.T) {
 		return
 	}
 
-	if structure.CheckAttached(t, map[string]int{
+	if !structure.CheckAttached(t, map[string]int{
 		"functions/" + testFunctionName: 1,
-	}) == false {
+	}) {
 		return
 	}
 

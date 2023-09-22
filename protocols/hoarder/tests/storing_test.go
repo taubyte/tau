@@ -177,17 +177,17 @@ func TestStoring(t *testing.T) {
 	var databases, storages int
 
 	// Incase anyone changes test match to not have /
-	if strings.HasPrefix(storageMatch, "/") == false {
+	if !strings.HasPrefix(storageMatch, "/") {
 		storageMatch = "/" + storageMatch
 	}
 
-	if strings.HasPrefix(databaseMatch, "/") == false {
+	if !strings.HasPrefix(databaseMatch, "/") {
 		databaseMatch = "/" + databaseMatch
 	}
 
 	for _, pid := range pids {
 		service, found := u.HoarderByPid(pid)
-		if found == false {
+		if !found {
 			t.Errorf("Hoarder %s not found", pid)
 		}
 

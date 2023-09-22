@@ -131,7 +131,7 @@ func TestAuthClient(t *testing.T) {
 		}
 	}
 
-	if found == false {
+	if !found {
 		t.Errorf("%s was not found in hook id list", hook_id)
 		return
 	}

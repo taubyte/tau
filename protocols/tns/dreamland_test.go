@@ -72,7 +72,7 @@ func TestDreamlandDoubleClient(t *testing.T) {
 		return
 	}
 
-	if reflect.DeepEqual(val.Interface(), testValue) == false {
+	if !reflect.DeepEqual(val.Interface(), testValue) {
 		t.Errorf("Values not equal `%s` != `%s`", val, testValue)
 		return
 	}

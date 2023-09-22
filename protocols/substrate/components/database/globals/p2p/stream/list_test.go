@@ -41,7 +41,7 @@ func TestListHandler(t *testing.T) {
 
 	expectedKeys := []string{"/key1", "/key2", "/key3"}
 	for _, key := range expectedKeys {
-		if slices.Contains(resp["keys"].([]string), key) == false {
+		if !slices.Contains(resp["keys"].([]string), key) {
 			t.Errorf("expected key %s to be in %s", key, resp["keys"].([]string))
 			return
 		}

@@ -123,7 +123,7 @@ func TestGoSmartOp(t *testing.T) {
 	body, err = callHal(u, "/pingFail")
 	assert.NilError(t, err)
 
-	if strings.Contains(string(body), "If you can see this text, it was not blocked by any filter!") == false {
+	if !strings.Contains(string(body), "If you can see this text, it was not blocked by any filter!") {
 		t.Error("Expected PONG2 got", string(body))
 		return
 	}

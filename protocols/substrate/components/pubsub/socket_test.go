@@ -57,7 +57,7 @@ func TestSocketLookup(t *testing.T) {
 	}
 
 	attachments, ok := attachedTestWebSockets[testMessagingName]
-	if ok == false {
+	if !ok {
 		t.Errorf("messaging `%s` was not attached", testMessagingName)
 		return
 	}

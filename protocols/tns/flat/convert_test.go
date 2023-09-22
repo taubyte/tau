@@ -23,7 +23,7 @@ func TestConvert(t *testing.T) {
 		return
 	}
 
-	if reflect.DeepEqual(obj, flatObj.Interface()) == false {
+	if !reflect.DeepEqual(obj, flatObj.Interface()) {
 		t.Error("Objects do not match")
 	}
 

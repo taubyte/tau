@@ -50,12 +50,12 @@ func TestLookup(t *testing.T) {
 	}
 
 	matcher, ok := matches[0].Matcher().(*p2p.MatchDefinition)
-	if ok == false {
+	if !ok {
 		t.Errorf("Received matcher is wrong type: got `%v` expected `%v`", matches[0].Matcher(), testMatcher)
 		return
 	}
 
-	if reflect.DeepEqual(matcher, testMatcher) == false {
+	if !reflect.DeepEqual(matcher, testMatcher) {
 		t.Errorf("Expected received matcher and test matcher to be identical")
 		return
 	}

@@ -149,7 +149,7 @@ func TestBasicWithLibrary(t *testing.T) {
 	// }
 
 	// expectedToContain := "<title>Welcome</title>"
-	// if strings.Contains(string(body), expectedToContain) == false {
+	// if !strings.Contains(string(body), expectedToContain)  {
 	// 	t.Errorf("Expected %s to be in %s", expectedToContain, string(body))
 	// 	return
 	// }

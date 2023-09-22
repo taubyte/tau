@@ -87,7 +87,7 @@ func TestTimeout(t *testing.T) {
 		for _, id := range jobs {
 			locked, _ := patrick.IsLocked(id)
 
-			if locked == true {
+			if locked {
 				lockCounter++
 			}
 		}

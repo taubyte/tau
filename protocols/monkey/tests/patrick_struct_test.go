@@ -34,7 +34,7 @@ func (s *starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error
 
 func (s *starfish) Lock(jid string, eta uint32) error {
 	job, ok := s.Jobs[jid]
-	if ok == false {
+	if !ok {
 		return fmt.Errorf("Can't find job %s", jid)
 	}
 
