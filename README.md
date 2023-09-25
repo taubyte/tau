@@ -6,14 +6,23 @@
 [![GoDoc](https://godoc.org/github.com/taubyte/tau?status.svg)](https://pkg.go.dev/github.com/taubyte/tau)
 [![Discord](https://img.shields.io/discord/973677117722202152?color=%235865f2&label=discord)](https://discord.gg/taubyte)
 
-`tau` is the mainstream implementation of a Taubyte Node. When interconnected, these nodes form a network that's cloud computing-ready, offering features such as:
- - Serverless WebAssembly Functions
- - Website/Frontend Hosting
- - Object Storage
- - K/V Database
- - Pub-Sub Messaging
+`tau` represents the core implementation of a Taubyte Node. Once interconnected, these nodes forge a robust network optimized for cloud computing, offering features like:
 
-For detailed documentation, visit [https://tau.how](https://tau.how).
+- 🚀 Serverless WebAssembly Functions
+- 🌍 Website/Frontend Hosting
+- 📦 Object Storage
+- 🗂 K/V Database
+- 📢 Pub-Sub Messaging
+
+![](images/tb_mesh_topology_v3_opt.png)
+
+## Documentation
+
+Dive deep into the nuances and specifics by exploring our [comprehensive documentation](https://tau.how).
+
+## Local Testing
+
+Keen on taking `tau` for a spin right on your laptop? Begin with [dreamland](https://github.com/taubyte/dreamland) for a seamless local testing experience.
 
 ## Getting started
 
