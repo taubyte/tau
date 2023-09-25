@@ -4,19 +4,20 @@ import (
 	"context"
 	"sync"
 	"time"
-
-	"github.com/ipfs/go-log/v2"
 )
 
-var logger = log.Logger("substrate.service.vm")
+func (f *Function) Shadows() *Shadows {
+	return f.shadows
+}
 
 func (f *Function) initShadow() {
-	f.shadows = shadows{
+	f.shadows = &Shadows{
 		instances: make(chan *shadowInstance, InstanceMaxRequests),
 		more:      make(chan struct{}, 1),
 		parent:    f,
 	}
 	f.shadows.ctx, f.shadows.ctxC = context.WithCancel(f.ctx)
+
 	ticker := time.NewTicker(ShadowCleanInterval)
 	coolDown := time.NewTicker(InstanceErrorCoolDown)
 	go func() {
@@ -27,6 +28,7 @@ func (f *Function) initShadow() {
 
 			f.serviceable.Service().Cache().Remove(f.serviceable)
 		}()
+
 		var errCount int
 		for {
 			select {
@@ -55,6 +57,7 @@ func (f *Function) initShadow() {
 							case <-f.shadows.ctx.Done():
 								return
 							case f.shadows.instances <- shadow:
+								f.shadows.count.Add(1)
 							}
 						}
 					}()
@@ -68,10 +71,11 @@ func (f *Function) initShadow() {
 	}()
 }
 
-func (s *shadows) get() (*shadowInstance, error) {
+func (s *Shadows) get() (*shadowInstance, error) {
 	select {
 	case next := <-s.instances:
 		defer s.keep()
+		s.count.Add(-1)
 		return next, nil
 	default:
 		i, err := s.newInstance()
@@ -82,12 +86,14 @@ func (s *shadows) get() (*shadowInstance, error) {
 	}
 }
 
-func (s *shadows) gc() {
+func (s *Shadows) gc() {
 	now := time.Now()
 	shadowInstances := make([]*shadowInstance, 0, InstanceMaxRequests)
 	defer func() {
+		s.count.Swap(0)
 		for _, instance := range shadowInstances {
 			s.instances <- instance
+			s.count.Add(1)
 		}
 	}()
 
@@ -103,14 +109,14 @@ func (s *shadows) gc() {
 	}
 }
 
-func (s *shadows) keep() {
+func (s *Shadows) keep() {
 	select {
 	case s.more <- struct{}{}: // Send if not blocking
 	default:
 	}
 }
 
-func (s *shadows) newInstance() (*shadowInstance, error) {
+func (s *Shadows) newInstance() (*shadowInstance, error) {
 	runtime, pluginApi, err := s.parent.instantiate()
 	if err != nil {
 		return nil, err
@@ -121,4 +127,8 @@ func (s *shadows) newInstance() (*shadowInstance, error) {
 		runtime:   runtime,
 		pluginApi: pluginApi,
 	}, nil
+}
+
+func (s *Shadows) Count() int64 {
+	return s.count.Load()
 }

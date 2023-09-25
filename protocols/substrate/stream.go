@@ -68,7 +68,7 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 
 	matcher := http.New(helpers.ExtractHost(host), path, method)
 	servs, _ := s.nodeHttp.Cache().Get(matcher, components.GetOptions{Validation: true})
-	// ignoring error as the only way we get an error if is we have no servisable
+	// ignoring error as the only way we get an error if is we have no serviceable
 	if len(servs) == 0 {
 		// not cached
 		// ---> look up with tns and get config
@@ -77,25 +77,25 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 	} else {
 		// cached
 		// note: in http there's only one possible servisable so we pick [0]
-		switch servisable := servs[0].(type) {
+		switch serviceable := servs[0].(type) {
 		case *function.Function:
-			//servisable := servs[0].(*function.Function)
-			cnf := servisable.Config()
+			//serviceable := servs[0].(*function.Function)
+			cnf := serviceable.Config()
 
 			_mem := cnf.Memory
-			if servisable.MemoryMax() < cnf.Memory {
-				_mem = servisable.MemoryMax()
+			if serviceable.MemoryMax() < cnf.Memory {
+				_mem = serviceable.MemoryMax()
 			}
 			response["mem"] = float64(mem.Free) / float64(_mem)
 
-			if servisable.Shadows().Count() > 1 {
+			if serviceable.Shadows().Count() > 1 {
 				response["cold-start"] = 0
 			} else {
-				response["cold-start"] = servisable.ColdStartAverage()
+				response["cold-start"] = serviceable.ColdStartAverage()
 			}
 
-			response["cpu-usage"] = 0.5                            // os cpu usage
-			response["average-run"] = servisable.CallTimeAverage() // how long it takes to run on average
+			response["cpu-usage"] = 0.5                             // os cpu usage
+			response["average-run"] = serviceable.CallTimeAverage() // how long it takes to run on average
 		case *website.Website:
 			// TODO
 		}

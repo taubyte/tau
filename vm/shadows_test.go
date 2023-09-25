@@ -182,3 +182,84 @@ func TestCoolDown(t *testing.T) {
 		}
 	}
 }
+
+func TestShadowCountBasic(t *testing.T) {
+	vmModule, err := New(context.Background(), newMockServiceable(), "master", id.Generate())
+	assert.NilError(t, err)
+
+	count := vmModule.shadows.Count()
+	// expected 0 shadows as more has not been requested yet
+	assert.Equal(t, count, int64(0), "init expected 0")
+
+	// request more shadows
+	vmModule.shadows.more <- struct{}{}
+	// wait for all shadows to be created
+	<-time.After(250 * time.Millisecond)
+	count = vmModule.shadows.Count()
+	// ShadowBuff # of shadows should be created, none consumed
+	assert.Equal(t, count, int64(ShadowBuff), "expected one set created, no shadows consumed or collected")
+
+	// consume half the shadows
+	for i := 0; i < ShadowBuff/2; i++ {
+		_, err := vmModule.shadows.get()
+		assert.NilError(t, err)
+	}
+
+	count = vmModule.shadows.Count()
+	// expect count to be half the size of ShadowBuff, as half were expected to be consumed
+	assert.Equal(t, count, int64(ShadowBuff)/2)
+
+	var shadowCount int
+	// manually consume shadows till none are left
+	for {
+		select {
+		case <-vmModule.shadows.instances:
+			shadowCount++
+		default:
+			// expect half the size of ShadowBuff to be manually consumed, as that is what
+			// internal count says is left
+			assert.Equal(t, shadowCount, ShadowBuff/2)
+			return
+		}
+	}
+}
+
+func TestShadowCountWithGC(t *testing.T) {
+	ShadowMaxAge = 700 * time.Millisecond
+	ShadowCleanInterval = 250 * time.Millisecond
+
+	vmModule, err := New(context.Background(), newMockServiceable(), "master", id.Generate())
+	assert.NilError(t, err)
+
+	count := vmModule.shadows.Count()
+	// expected 0 shadows as more has not been requested yet
+	assert.Equal(t, count, int64(0), "init expected 0")
+
+	// request more shadows
+	vmModule.shadows.more <- struct{}{}
+	// wait for all shadows to be created and one cleanup interval
+	// none should be cleaned or consumed
+	<-time.After(ShadowCleanInterval)
+	count = vmModule.shadows.Count()
+	// ShadowBuff # of shadows should be created, none consumed
+	assert.Equal(t, count, int64(ShadowBuff), "expected one set created, no shadows consumed or collected")
+
+	vmModule.shadows.more <- struct{}{}
+	// 2nd cleanup interval
+	// none should be cleaned or consumed
+	<-time.After(ShadowCleanInterval)
+	count = vmModule.shadows.Count()
+	assert.Equal(t, count, int64(ShadowBuff)*2, "expected 2 sets created, no shadows consumed or collected")
+
+	// 3rd cleanup interval
+	// first shadows created should be cleaned up by now
+	<-time.After(ShadowCleanInterval)
+	count = vmModule.shadows.Count()
+	assert.Equal(t, count, int64(ShadowBuff), "expected  1 set garbage collected, 1 set kept")
+
+	// 4th cleanup interval
+	// all shadows should be cleaned up by now
+	<-time.After(ShadowCleanInterval)
+	count = vmModule.shadows.Count()
+	assert.Equal(t, count, int64(0), "expected all sets garbage collected")
+}
