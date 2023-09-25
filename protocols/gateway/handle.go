@@ -35,6 +35,19 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 		if err != nil {
 			logger.Debugf("response from node `%s` failed with: %s", response.PID().Pretty(), err.Error())
 		}
+
+		used, _ := response.Get("used")
+		free, _ := response.Get("free")
+		total, _ := response.Get("total")
+		required, _ := response.Get("required")
+		u, _ := used.(uint64)
+		f, _ := free.(uint64)
+		t, _ := total.(uint64)
+		r, _ := required.(uint64)
+		c := g.Get(response).Cached()
+
+		fmt.Printf("Peer: %s\nCached: %v\nTotal: %d\nUsed: %d\nFree: %d\nRequired: %d\n----------------------------------\n", response.PID().Pretty(), c, t, u, f, r)
+
 		if err == nil && g.Get(response).Cached() {
 			matches = append([]*client.Response{response}, matches...)
 		} else {
