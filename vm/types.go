@@ -16,17 +16,7 @@ type Shadows struct {
 	parent    *Function
 	instances chan *shadowInstance
 	more      chan struct{}
-	errors    atomic.Int64
 	available atomic.Int64
-
-	coldStart *Metrics
-	calls     *Metrics
-}
-
-type Metrics struct {
-	totalCount atomic.Int64
-	maxMemory  atomic.Int64
-	totalTime  atomic.Int64
 }
 
 type Function struct {
@@ -38,7 +28,16 @@ type Function struct {
 	vmConfig    *vm.Config
 	vmContext   vm.Context
 
-	shadows *Shadows
+	shadows    *Shadows
+	errorCount atomic.Int64
+
+	// gateway metrics
+	coldStarts     *atomic.Int64
+	totalColdStart *atomic.Int64
+
+	calls         *atomic.Int64
+	totalCallTime *atomic.Int64
+	maxMemory     *atomic.Int64
 }
 
 type shadowInstance struct {

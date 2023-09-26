@@ -3,6 +3,7 @@ package vm
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/taubyte/go-interfaces/vm"
 	plugins "github.com/taubyte/vm-core-plugins/taubyte"
@@ -26,68 +27,44 @@ instantiate method initializes the wasm runtime and attaches plugins.
 Returns the runtime, plugin api, and error
 */
 func (f *Function) instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
-	metric := f.shadows.startMetric(f.ctx)
+	// add cold start metrics if instantiate is successful
+	start := time.Now()
 	defer func() {
-		if dur, maxAlloc := metric.stop(); err == nil {
-			f.shadows.coldStart.totalCount.Add(1)
-			f.shadows.coldStart.maxMemory.Store(maxAlloc)
-			f.shadows.coldStart.totalTime.Add(int64(dur))
+		if err == nil {
+			f.coldStarts.Add(1)
+			f.totalColdStart.Add(int64(time.Since(start)))
 		}
 	}()
 
-	if f.vmContext == nil {
-		f.vmContext, err = vmContext.New(
-			f.ctx,
-			vmContext.Project(f.serviceable.Project()),
-			vmContext.Application(f.serviceable.Application()),
-			vmContext.Resource(f.serviceable.Id()),
-			vmContext.Commit(f.commit),
-			vmContext.Branch(f.branch),
-		)
-		if err != nil {
-			err = fmt.Errorf("creating vm context failed with: %w", err)
-			return
-		}
+	// sets vmContext and vmConfig if not already set
+	if err = f.configureVM(); err != nil {
+		return
 	}
 
-	if f.vmConfig == nil {
-		f.vmConfig = &vm.Config{
-			MemoryLimitPages: uint32(
-				roundedUpDivWithUpperLimit(
-					f.config.Memory,
-					uint64(vm.MemoryPageSize),
-					uint64(vm.MemoryLimitPages),
-				),
-			),
-		}
-	}
-
-	if f.serviceable.Service().Verbose() {
-		f.vmConfig.Output = vm.Buffer
-	}
-
+	// create vm instance
 	instance, err := f.serviceable.Service().Vm().New(f.vmContext, *f.vmConfig)
 	if err != nil {
 		err = fmt.Errorf("creating new instance failed with: %w", err)
 		return
 	}
 
-	var toCloseIfErr []io.Closer
+	// if error, make sure to close all
+	var closers []io.Closer
 	defer func() {
 		if err != nil {
-			for _, toClose := range toCloseIfErr {
+			for _, toClose := range closers {
 				toClose.Close()
 			}
 		}
 	}()
-	toCloseIfErr = append(toCloseIfErr, instance)
+	closers = append(closers, instance)
 
 	runtime, err = instance.Runtime(nil)
 	if err != nil {
 		err = fmt.Errorf("creating new runtime failed with: %w", err)
 		return
 	}
-	toCloseIfErr = append(toCloseIfErr, runtime)
+	closers = append(closers, runtime)
 
 	for _, plugIn := range f.serviceable.Service().Orbitals() {
 		if _, _, err = runtime.Attach(plugIn); err != nil {
@@ -101,6 +78,7 @@ func (f *Function) instantiate() (runtime vm.Runtime, pluginApi interface{}, err
 		err = fmt.Errorf("attaching core plugins to runtime failed with: %w", err)
 		return
 	}
+	closers = append(closers, sdkPi)
 
 	if pluginApi, err = plugins.With(sdkPi); err != nil {
 		err = fmt.Errorf("loading plugin api failed with: %w", err)
@@ -108,4 +86,39 @@ func (f *Function) instantiate() (runtime vm.Runtime, pluginApi interface{}, err
 	}
 
 	return
+}
+
+func (f *Function) configureVM() error {
+	if f.vmContext == nil {
+		var err error
+		f.vmContext, err = vmContext.New(
+			f.ctx,
+			vmContext.Project(f.serviceable.Project()),
+			vmContext.Application(f.serviceable.Application()),
+			vmContext.Resource(f.serviceable.Id()),
+			vmContext.Commit(f.commit),
+			vmContext.Branch(f.branch),
+		)
+		if err != nil {
+			return fmt.Errorf("creating vm context failed with: %w", err)
+		}
+	}
+
+	if f.vmConfig == nil {
+		f.vmConfig = &vm.Config{
+			MemoryLimitPages: uint32(
+				roundedUpDivWithUpperLimit(
+					f.config.Memory,
+					uint64(vm.MemoryPageSize),
+					uint64(vm.MemoryLimitPages),
+				),
+			),
+		}
+
+		if f.serviceable.Service().Verbose() {
+			f.vmConfig.Output = vm.Buffer
+		}
+	}
+
+	return nil
 }

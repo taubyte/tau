@@ -273,12 +273,8 @@ func TestMetrics(t *testing.T) {
 	vmModule, err := New(context.Background(), serviceable, "master", id.Generate())
 	assert.NilError(t, err)
 
-	shadows := vmModule.Shadows()
-	coldStartMetrics := shadows.ColdStart()
-
-	// all metrics should be 0 at this point
-	assert.Equal(t, coldStartMetrics.DurationAverage(), time.Duration(0))
-	assert.Equal(t, coldStartMetrics.MemoryMax(), int64(0))
+	assert.Equal(t, vmModule.ColdStart(), time.Duration(0))
+	assert.Equal(t, vmModule.MemoryMax(), int64(0))
 
 	_, _, err = vmModule.Instantiate()
 	assert.NilError(t, err)
@@ -286,11 +282,10 @@ func TestMetrics(t *testing.T) {
 	// wait for all shadows to be created
 	<-time.After(runtimeCreationDelay * time.Duration(ShadowBuff))
 
-	// total time should be greater than or equal to created shadows * delay we set
-	assert.Assert(t, coldStartMetrics.totalTime.Load() >= int64(int(runtimeCreationDelay)*ShadowBuff))
-	// the average duration should be greater than or equal to the delay we set
-	assert.Assert(t, coldStartMetrics.DurationAverage() >= runtimeCreationDelay)
-
-	// max memory should be greater than 0 always, as there should be some allocations even for the mocks
-	assert.Assert(t, coldStartMetrics.MemoryMax() > 0)
+	// total time should be greater than or equal to created runtimes (shadows + instantiate request) * delay we set
+	assert.Assert(t, vmModule.totalColdStart.Load() >= int64(int(runtimeCreationDelay)*(ShadowBuff+1)))
+	// average cold start should be at least as long as delay
+	assert.Assert(t, vmModule.ColdStart() >= runtimeCreationDelay)
+	// # of cold starts should be equal to shadowBuff(shadows created) +1 (instantiate request)
+	assert.Equal(t, vmModule.coldStarts.Load(), int64(ShadowBuff)+1)
 }

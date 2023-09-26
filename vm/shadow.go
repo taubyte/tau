@@ -2,7 +2,6 @@ package vm
 
 import (
 	"context"
-	"runtime"
 	"sync"
 	"time"
 )
@@ -16,8 +15,6 @@ func (f *Function) initShadow() {
 		instances: make(chan *shadowInstance, InstanceMaxRequests),
 		more:      make(chan struct{}, 1),
 		parent:    f,
-		coldStart: &Metrics{},
-		calls:     &Metrics{},
 	}
 	f.shadows.ctx, f.shadows.ctxC = context.WithCancel(f.ctx)
 
@@ -35,8 +32,8 @@ func (f *Function) initShadow() {
 		for {
 			select {
 			case <-coolDown.C:
-				if errCount := f.shadows.errors.Load(); errCount > 0 {
-					f.shadows.errors.Store(errCount / 2)
+				if errCount := f.errorCount.Load(); errCount > 0 {
+					f.errorCount.Store(errCount / 2)
 				}
 			case <-ticker.C:
 				f.shadows.gc()
@@ -48,11 +45,11 @@ func (f *Function) initShadow() {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						if f.shadows.errors.Load() < InstanceMaxError && len(f.shadows.instances) < InstanceMaxRequests {
+						if f.errorCount.Load() < InstanceMaxError && len(f.shadows.instances) < InstanceMaxRequests {
 							shadow, err := f.shadows.newInstance()
 							if err != nil {
 								logger.Errorf("creating new shadow instance failed with: %s", err.Error())
-								f.shadows.errors.Add(1)
+								f.errorCount.Add(1)
 								return
 							}
 							select {
@@ -65,7 +62,7 @@ func (f *Function) initShadow() {
 					}()
 				}
 				wg.Wait()
-				if f.shadows.errors.Load() >= InstanceMaxError {
+				if f.errorCount.Load() >= InstanceMaxError {
 					return
 				}
 			}
@@ -133,70 +130,4 @@ func (s *Shadows) newInstance() (*shadowInstance, error) {
 
 func (s *Shadows) Count() int64 {
 	return s.available.Load()
-}
-
-type runtimeMetric struct {
-	startTime time.Time
-	initAlloc uint64
-	maxAlloc  uint64
-	ctx       context.Context
-	ctxC      context.CancelFunc
-}
-
-func (s *Shadows) startMetric(ctx context.Context) *runtimeMetric {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-	metric := &runtimeMetric{
-		startTime: time.Now(),
-		initAlloc: m.Alloc,
-	}
-	metric.ctx, metric.ctxC = context.WithCancel(ctx)
-
-	go func() {
-		ticker := time.NewTicker(10 * time.Millisecond)
-		defer ticker.Stop()
-
-		for {
-			select {
-			case <-ticker.C:
-				runtime.ReadMemStats(&m)
-				if m.Alloc > metric.maxAlloc {
-					metric.maxAlloc = m.Alloc
-				}
-			case <-metric.ctx.Done():
-				return
-			}
-		}
-	}()
-
-	return metric
-}
-
-func (m *runtimeMetric) stop() (time.Duration, int64) {
-	m.ctxC()
-	return time.Since(m.startTime), int64(m.maxAlloc - m.initAlloc)
-}
-
-func (s *Shadows) ColdStart() *Metrics {
-	return s.coldStart
-}
-
-func (s *Shadows) Calls() *Metrics {
-	return s.calls
-}
-
-func (m *Metrics) DurationAverage() time.Duration {
-	if totalCount := m.totalCount.Load(); totalCount > 0 {
-		return time.Duration(m.totalTime.Load() / totalCount)
-	}
-
-	return 0
-}
-
-func (m *Metrics) MemoryMax() int64 {
-	return m.maxMemory.Load()
-}
-
-func (s *Shadows) Errors() int64 {
-	return s.errors.Load()
 }

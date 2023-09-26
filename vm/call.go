@@ -10,12 +10,11 @@ import (
 
 // Call takes instance and id, then calls the moduled function. Returns an error.
 func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
-	metric := f.shadows.startMetric(f.ctx)
+	startTime := time.Now()
 	defer func() {
-		if dur, maxAlloc := metric.stop(); err == nil {
-			f.shadows.calls.totalCount.Add(1)
-			f.shadows.calls.maxMemory.Store(maxAlloc)
-			f.shadows.calls.totalTime.Add(int64(dur))
+		if err == nil {
+			f.calls.Add(1)
+			f.totalCallTime.Add(int64(time.Since(startTime)))
 		}
 	}()
 
@@ -40,6 +39,9 @@ func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
 	_, err = fx.RawCall(ctx, uint64(id))
 	if f.serviceable.Service().Verbose() {
 		defer f.printRuntimeStack(runtime, err)
+	}
+	if mem := int64(module.Memory().Size()); mem > f.maxMemory.Load() {
+		f.maxMemory.Store(mem)
 	}
 	if err != nil {
 		return fmt.Errorf("calling function for event %d failed with: %w", id, err)

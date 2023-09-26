@@ -67,55 +67,38 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 	response := map[string]interface{}{substrate.ResponseCached: false}
 
 	matcher := http.New(helpers.ExtractHost(host), path, method)
+	// ignoring error, only care if there are serviceables or not
 	servs, _ := s.nodeHttp.Cache().Get(matcher, components.GetOptions{Validation: true})
-	// ignoring error as the only way we get an error if is we have no serviceable
-	if len(servs) == 0 {
-		// not cached
+	// cached float
+
+	// not cached
+	if len(servs) < 1 {
 		// ---> look up with tns and get config
 		response["cold-start"] = -1
 		response["average-run"] = -1
 	} else {
-		// cached
-		// note: in http there's only one possible servisable so we pick [0]
 		switch serviceable := servs[0].(type) {
 		case *function.Function:
-			//serviceable := servs[0].(*function.Function)
-			cnf := serviceable.Config()
 			shadows := serviceable.Shadows()
-
+			// Serviceable.ColdStart()
+			maxMemory := shadows.Calls().MemoryMax() // only need this from wazero
 			if serviceable.Shadows().Count() > 1 {
 				response["cold-start"] = 0
 			} else {
-				response["cold-start"] = shadows.ColdStartAverage()
-				response["cold-start-mem"] = shadows
+				response["cold-start"] = shadows.ColdStart().DurationAverage().Nanoseconds()
+				if csMemory := shadows.ColdStart().MemoryMax(); csMemory > maxMemory {
+					maxMemory = csMemory
+				}
 			}
 
-			_mem := cnf.Memory
-
-			if maxMem := uint64(shadows.MemoryMax()); maxMem < cnf.Memory {
-				_mem = maxMem
-			}
-			response["mem"] = float64(mem.Free) / float64(_mem)
-
-			response["cpu-usage"] = 0.5                             // os cpu usage
-			response["average-run"] = serviceable.CallTimeAverage() // how long it takes to run on average
+			response["mem"] = float64(mem.Free) / float64(maxMemory)
+			response["cpu-usage"] = 0.5 // os cpu usage
+			response["average-run"] = shadows.Calls().DurationAverage().Nanoseconds()
 		case *website.Website:
 			// TODO
 		}
 
 	}
-	// if err == nil && len(servs) == 1 {
-	// 	response[substrate.ResponseCached] = true
-	// 	if fServ, ok := servs[0].(*function.Function); ok {
-	// 		response["required"] = fServ.Config().Memory
-	// 	} else {
-	// 		// figure out memory required for website
-	// 	}
-	// }
-
-	// response["used"] = mem.Used
-	// response["total"] = mem.Total
-	// response["free"] = mem.Free
 
 	return response, nil
 }
