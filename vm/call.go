@@ -14,7 +14,7 @@ func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
 	defer func() {
 		if dur, maxAlloc := metric.stop(); err == nil {
 			f.shadows.calls.totalCount.Add(1)
-			f.shadows.calls.maxMemory.Swap(maxAlloc)
+			f.shadows.calls.maxMemory.Store(maxAlloc)
 			f.shadows.calls.totalTime.Add(int64(dur))
 		}
 	}()

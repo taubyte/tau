@@ -30,7 +30,7 @@ func (f *Function) instantiate() (runtime vm.Runtime, pluginApi interface{}, err
 	defer func() {
 		if dur, maxAlloc := metric.stop(); err == nil {
 			f.shadows.coldStart.totalCount.Add(1)
-			f.shadows.coldStart.maxMemory.Swap(maxAlloc)
+			f.shadows.coldStart.maxMemory.Store(maxAlloc)
 			f.shadows.coldStart.totalTime.Add(int64(dur))
 		}
 	}()

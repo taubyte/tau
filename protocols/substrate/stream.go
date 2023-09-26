@@ -81,19 +81,21 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 		case *function.Function:
 			//serviceable := servs[0].(*function.Function)
 			cnf := serviceable.Config()
-
-			_mem := cnf.Memory
 			shadows := serviceable.Shadows()
-			if maxMem := uint64(shadows.MemoryMax()); maxMem < cnf.Memory {
-				_mem = maxMem
-			}
-			response["mem"] = float64(mem.Free) / float64(_mem)
 
 			if serviceable.Shadows().Count() > 1 {
 				response["cold-start"] = 0
 			} else {
 				response["cold-start"] = shadows.ColdStartAverage()
+				response["cold-start-mem"] = shadows
 			}
+
+			_mem := cnf.Memory
+
+			if maxMem := uint64(shadows.MemoryMax()); maxMem < cnf.Memory {
+				_mem = maxMem
+			}
+			response["mem"] = float64(mem.Free) / float64(_mem)
 
 			response["cpu-usage"] = 0.5                             // os cpu usage
 			response["average-run"] = serviceable.CallTimeAverage() // how long it takes to run on average

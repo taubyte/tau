@@ -36,7 +36,7 @@ func (f *Function) initShadow() {
 			select {
 			case <-coolDown.C:
 				if errCount := f.shadows.errors.Load(); errCount > 0 {
-					f.shadows.errors.Swap(errCount / 2)
+					f.shadows.errors.Store(errCount / 2)
 				}
 			case <-ticker.C:
 				f.shadows.gc()
@@ -92,7 +92,7 @@ func (s *Shadows) gc() {
 	now := time.Now()
 	shadowInstances := make([]*shadowInstance, 0, InstanceMaxRequests)
 	defer func() {
-		s.available.Swap(0)
+		s.available.Store(0)
 		for _, instance := range shadowInstances {
 			s.instances <- instance
 			s.available.Add(1)
@@ -195,4 +195,8 @@ func (m *Metrics) DurationAverage() time.Duration {
 
 func (m *Metrics) MemoryMax() int64 {
 	return m.maxMemory.Load()
+}
+
+func (s *Shadows) Errors() int64 {
+	return s.errors.Load()
 }
