@@ -26,6 +26,15 @@ instantiate method initializes the wasm runtime and attaches plugins.
 Returns the runtime, plugin api, and error
 */
 func (f *Function) instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
+	metric := f.shadows.startMetric(f.ctx)
+	defer func() {
+		if dur, maxAlloc := metric.stop(); err == nil {
+			f.shadows.coldStart.totalCount.Add(1)
+			f.shadows.coldStart.maxMemory.Swap(maxAlloc)
+			f.shadows.coldStart.totalTime.Add(int64(dur))
+		}
+	}()
+
 	if f.vmContext == nil {
 		f.vmContext, err = vmContext.New(
 			f.ctx,

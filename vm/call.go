@@ -9,7 +9,16 @@ import (
 )
 
 // Call takes instance and id, then calls the moduled function. Returns an error.
-func (f *Function) Call(runtime vm.Runtime, id uint32) error {
+func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
+	metric := f.shadows.startMetric(f.ctx)
+	defer func() {
+		if dur, maxAlloc := metric.stop(); err == nil {
+			f.shadows.calls.totalCount.Add(1)
+			f.shadows.calls.maxMemory.Swap(maxAlloc)
+			f.shadows.calls.totalTime.Add(int64(dur))
+		}
+	}()
+
 	moduleName, err := f.moduleName()
 	if err != nil {
 		return fmt.Errorf("getting module name for resource `%s` failed with: %w", f.serviceable.Id(), err)

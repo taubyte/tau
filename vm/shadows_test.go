@@ -263,3 +263,34 @@ func TestShadowCountWithGC(t *testing.T) {
 	count = vmModule.shadows.Count()
 	assert.Equal(t, count, int64(0), "expected all sets garbage collected")
 }
+
+func TestMetrics(t *testing.T) {
+	// Create some delay on mocked runtime creation to log some metrics
+	runtimeCreationDelay := 50 * time.Millisecond
+	serviceable := newMockServiceable()
+	serviceable.service.vm.runtimeDelay = runtimeCreationDelay
+
+	vmModule, err := New(context.Background(), serviceable, "master", id.Generate())
+	assert.NilError(t, err)
+
+	shadows := vmModule.Shadows()
+	coldStartMetrics := shadows.ColdStart()
+
+	// all metrics should be 0 at this point
+	assert.Equal(t, coldStartMetrics.DurationAverage(), time.Duration(0))
+	assert.Equal(t, coldStartMetrics.MemoryMax(), int64(0))
+
+	_, _, err = vmModule.Instantiate()
+	assert.NilError(t, err)
+
+	// wait for all shadows to be created
+	<-time.After(runtimeCreationDelay * time.Duration(ShadowBuff))
+
+	// total time should be greater than or equal to created shadows * delay we set
+	assert.Assert(t, coldStartMetrics.totalTime.Load() >= int64(int(runtimeCreationDelay)*ShadowBuff))
+	// the average duration should be greater than or equal to the delay we set
+	assert.Assert(t, coldStartMetrics.DurationAverage() >= runtimeCreationDelay)
+
+	// max memory should be greater than 0 always, as there should be some allocations even for the mocks
+	assert.Assert(t, coldStartMetrics.MemoryMax() > 0)
+}

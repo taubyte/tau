@@ -15,9 +15,18 @@ type Shadows struct {
 	ctxC      context.CancelFunc
 	parent    *Function
 	instances chan *shadowInstance
-	count     atomic.Int64
+	more      chan struct{}
+	errors    atomic.Int64
+	available atomic.Int64
 
-	more chan struct{}
+	coldStart *Metrics
+	calls     *Metrics
+}
+
+type Metrics struct {
+	totalCount atomic.Int64
+	maxMemory  atomic.Int64
+	totalTime  atomic.Int64
 }
 
 type Function struct {

@@ -2,6 +2,7 @@ package vm
 
 import (
 	"errors"
+	"time"
 
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/vm"
@@ -40,6 +41,7 @@ func newMockVm() *mockVm {
 type mockVm struct {
 	vm.Service
 	failInstance bool
+	runtimeDelay time.Duration
 }
 
 type mockInstance struct {
@@ -71,6 +73,9 @@ func (*mockCache) Remove(components.Serviceable) {}
 var errorTest = errors.New("test fail")
 
 func (m *mockVm) New(context vm.Context, config vm.Config) (vm.Instance, error) {
+	if m.runtimeDelay > 0 {
+		<-time.After(m.runtimeDelay)
+	}
 	if m.failInstance {
 		return nil, errorTest
 	}

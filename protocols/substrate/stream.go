@@ -83,15 +83,16 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 			cnf := serviceable.Config()
 
 			_mem := cnf.Memory
-			if serviceable.MemoryMax() < cnf.Memory {
-				_mem = serviceable.MemoryMax()
+			shadows := serviceable.Shadows()
+			if maxMem := uint64(shadows.MemoryMax()); maxMem < cnf.Memory {
+				_mem = maxMem
 			}
 			response["mem"] = float64(mem.Free) / float64(_mem)
 
 			if serviceable.Shadows().Count() > 1 {
 				response["cold-start"] = 0
 			} else {
-				response["cold-start"] = serviceable.ColdStartAverage()
+				response["cold-start"] = shadows.ColdStartAverage()
 			}
 
 			response["cpu-usage"] = 0.5                             // os cpu usage
