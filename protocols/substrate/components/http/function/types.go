@@ -3,14 +3,15 @@ package function
 import (
 	"context"
 
-	iface "github.com/taubyte/go-interfaces/services/substrate/components"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
 	structureSpec "github.com/taubyte/go-specs/structure"
+	compCommon "github.com/taubyte/tau/protocols/substrate/components/common"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"github.com/taubyte/tau/vm"
 )
 
 type Function struct {
-	srv iface.ServiceComponent
+	srv components.ServiceComponent
 
 	config      structureSpec.Function
 	matcher     *common.MatchDefinition
@@ -31,7 +32,7 @@ type Function struct {
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
 
-	metrics Metrics
+	metrics compCommon.Metrics
 
 	*vm.Function
 }

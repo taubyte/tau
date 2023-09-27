@@ -38,8 +38,8 @@ func New(srv components.ServiceComponent, object tns.Object, matcher *common.Mat
 		return nil, fmt.Errorf("getting asset id failed with: %w", err)
 	}
 
-	assetCid, _ := cid.Decode(match.AssetId())
-	if exists, _ := s.node.DAG().HasBlock(s.ctx, assetCid); exists {
+	assetCid, _ := cid.Decode(f.assetId)
+	if exists, _ := srv.Node().DAG().HasBlock(srv.Context(), assetCid); exists {
 		f.metrics.Cached += 0.3
 	}
 

@@ -19,12 +19,14 @@ func New(ctx context.Context, serviceable components.FunctionServiceable, branch
 			config:         config,
 			branch:         branch,
 			commit:         commit,
-			coldStarts:     new(atomic.Int64),
+			coldStarts:     new(atomic.Uint64),
 			totalColdStart: new(atomic.Int64),
-			calls:          new(atomic.Int64),
+			calls:          new(atomic.Uint64),
 			totalCallTime:  new(atomic.Int64),
-			maxMemory:      new(atomic.Int64),
+			maxMemory:      new(atomic.Uint64),
 		}
+
+		dFunc.maxMemory.Store(uint64(serviceable.Config().Memory))
 
 		dFunc.initShadow()
 

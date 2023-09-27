@@ -6,7 +6,6 @@ import (
 	"io"
 
 	compIface "github.com/taubyte/go-interfaces/services/substrate/components"
-	httpComp "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	con "github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/p2p/streams/command/response"
@@ -16,6 +15,7 @@ import (
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	http "github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"github.com/taubyte/tau/protocols/substrate/components/http/function"
+	"github.com/taubyte/tau/protocols/substrate/components/http/website"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -70,95 +70,39 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 		return nil, fmt.Errorf("parsing matcher failed with: %w", err)
 	}
 
-	// mem, err := usage.GetMemoryUsage()
-	// if err != nil {
-	// 	return nil, fmt.Errorf("getting memory usage failed with: %w", err)
-	// }
-
 	response := make(map[string]interface{})
-	// var (
-	// 	cached    float64 // 0-1
-	// 	coldStart int64   // nanoseconds
-	// 	runTime   int64   // nanosecond
-	// 	maxMemory int64   //retrieved from cached serviceable or config
-	// )
 
 	httpComponent := s.components.http
-	serviceables, _ := httpComponent.Cache().Get(
+
+	var pick compIface.Serviceable
+	if serviceables, _ := httpComponent.Cache().Get(
 		&http.MatchDefinition{Request: request},
 		compIface.GetOptions{Validation: true},
-	)
-
-	var pick httpComp.Serviceable
-
-	if len(serviceables) == 0 {
+	); len(serviceables) < 1 {
 		pick, err = s.components.http.Lookup(&http.MatchDefinition{Request: request})
 		if err != nil {
 			return nil, fmt.Errorf("lookup failed with: %w", err)
 		}
 	} else {
+		// lookup should always return 0 or 1 serviceable
 		pick = serviceables[0]
 	}
 
-	// case http.NoMatch: // serviceable not cached
-	// 	coldStart = -1
-	// 	runTime = -1
-	// 	match, err := s.components.http.Lookup(&http.MatchDefinition{Request: request})
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("lookup failed with: %w", err)
-	// 	}
-
-	// 	switch serviceable := match.(type) {
-	// 	case *function.Function:
-	// 		maxMemory = int64(serviceable.Config().Memory)
-	// 	case httpComp.Website:
-	// 	default:
-	// 		return nil, fmt.Errorf("unknown serviceable type")
-	// 	}
-
-	// 	assetCid, _ := cid.Decode(match.AssetId())
-	// 	if exists, _ := s.node.DAG().HasBlock(s.ctx, assetCid); exists {
-	// 		cached += 0.3
-	// 	}
-
-	// 	// TODO: look up dht
-
-	// case http.ValidMatch: // serviceable is cached
-	// 	cached = 1
-	// 	switch serviceable := serviceables[0].(type) {
-	// 	case *function.Function:
-	// 		struct{cs,ct,mem} := serviceable.Metrics()
-	// 		// // ShadowCount()
-	// 		// if serviceable.Shadows().Count() < 1 {
-	// 		// 	coldStart = serviceable.ColdStart().Nanoseconds()
-	// 		// }
-	// 		// cached = 1
-	// 		// maxMemory = serviceable.MemoryMax()
-	// 		// runTime = serviceable.CallTime().Nanoseconds()
-	// 	case *website.Website:
-	// 		// TODO
-	// 	}
-
-	// default: // internal error
-	// 	return nil, fmt.Errorf("invalid # of matches: %d", len(serviceables))
-	// }
-
-	// response[substrate.ResponseCached] = cached
-	// response[substrate.ResponseAverageRun] = runTime
-	// response[substrate.ResponseColdStart] = coldStart
-	// response[substrate.ResponseMemory] = float64(mem.Free) / float64(maxMemory)
 	// response[substrate.ResponseCpuCount] = s.cpuCount
 	// response[substrate.ResponseAverageCpu] = s.cpuAverage
 
 	switch serviceable := pick.(type) {
 	case *function.Function:
-		response["metrics"] = serviceables.Metrics()
-	case httpComp.Website:
+		response["metrics"], err = serviceable.Metrics()
+	case *website.Website:
+		response["metrics"], err = serviceable.Metrics()
 	default:
 		return nil, fmt.Errorf("unknown serviceable type")
 	}
 
-	response[substrate.ResponseMemory] = float64(mem.Free) / float64(maxMemory)
+	if err != nil {
+		return nil, fmt.Errorf("getting serviceable metrics failed with: %w", err)
+	}
 
 	return response, nil
 }

@@ -32,12 +32,12 @@ type Function struct {
 	errorCount atomic.Int64
 
 	// gateway metrics
-	coldStarts     *atomic.Int64
+	coldStarts     *atomic.Uint64
 	totalColdStart *atomic.Int64
 
-	calls         *atomic.Int64
+	calls         *atomic.Uint64
 	totalCallTime *atomic.Int64
-	maxMemory     *atomic.Int64
+	maxMemory     *atomic.Uint64
 }
 
 type shadowInstance struct {

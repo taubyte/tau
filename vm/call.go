@@ -40,7 +40,7 @@ func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
 	if f.serviceable.Service().Verbose() {
 		defer f.printRuntimeStack(runtime, err)
 	}
-	if mem := int64(module.Memory().Size()); mem > f.maxMemory.Load() {
+	if mem := uint64(module.Memory().Size()); mem > f.maxMemory.Load() {
 		f.maxMemory.Store(mem)
 	}
 	if err != nil {
