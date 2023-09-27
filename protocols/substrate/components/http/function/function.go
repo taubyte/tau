@@ -1,49 +1,68 @@
 package function
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"time"
 
 	goHttp "net/http"
 
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
+	httpComp "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
-	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/vm"
 	plugins "github.com/taubyte/vm-core-plugins/taubyte"
 )
 
-func (f *Function) Project() string {
-	return f.project
+func (f *Function) Provision() (function httpComp.Serviceable, err error) {
+	f.instanceCtx, f.instanceCtxC = context.WithCancel(f.srv.Context())
+	f.readyCtx, f.readyCtxC = context.WithCancel(f.srv.Context())
+	defer func() {
+		f.readyError = err
+		f.readyDone = true
+		f.readyCtxC()
+	}()
+
+	if f.Function, err = vm.New(f.instanceCtx, f, f.branch, f.commit); err != nil {
+		return nil, fmt.Errorf("initializing wasm module failed with: %w", err)
+	}
+
+	cachedFunc, err := f.srv.Cache().Add(f, f.branch)
+	if err != nil {
+		return nil, fmt.Errorf("adding function to cache failed with: %w", err)
+	}
+	if f != cachedFunc {
+		_f, ok := cachedFunc.(httpComp.Function)
+		if ok {
+			return _f, nil
+		}
+
+		// TODO: Debug Logger if this case is met
+	}
+
+	f.provisioned = true
+	return f, nil
 }
 
-func (f *Function) Handle(w goHttp.ResponseWriter, r *goHttp.Request, matcher commonIface.MatchDefinition) (t time.Time, err error) {
+func (f *Function) Handle(w goHttp.ResponseWriter, r *goHttp.Request, matcher components.MatchDefinition) (t time.Time, err error) {
 	runtime, pluginApi, err := f.Instantiate()
 	if err != nil {
-		return t, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %w", f.config.Name, f.project, f.application, err)
+		return t, fmt.Errorf("instantiate failed with: %w", err)
 	}
 	defer runtime.Close()
 
 	sdk, ok := pluginApi.(plugins.Instance)
 	if !ok {
-		return t, fmt.Errorf("taubyte Plugin is not a plugin instance `%T`", pluginApi)
+		return t, errors.New("internal: taubyte Plugin is not a plugin instance")
 	}
 
 	ev := sdk.CreateHttpEvent(w, r)
-
-	val, err := f.SmartOps()
-	if err != nil || val > 0 {
-		if err != nil {
-			return t, fmt.Errorf("running smart ops failed with: %s", err)
-		}
-		return t, fmt.Errorf("exited: %d", val)
-	}
-
 	return time.Now(), f.Call(runtime, ev.Id)
 }
 
-func (f *Function) Match(matcher commonIface.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
+func (f *Function) Match(matcher components.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
 	currentMatch := matcherSpec.NoMatch
 	_matcher, ok := matcher.(*common.MatchDefinition)
 	if !ok {
@@ -61,55 +80,10 @@ func (f *Function) Match(matcher commonIface.MatchDefinition) (currentMatchIndex
 	return currentMatch
 }
 
-func (f *Function) Validate(matcher commonIface.MatchDefinition) error {
+func (f *Function) Validate(matcher components.MatchDefinition) error {
 	if f.Match(matcher) == matcherSpec.NoMatch {
-		return fmt.Errorf("function method or paths do not match: %v != %v || %v != %v", f.config.Method, f.matcher.Method, f.matcher.Path, f.config.Paths)
-	}
-
-	if len(f.config.Domains) == 0 {
-		return errors.New("non-http function")
+		return errors.New("no match")
 	}
 
 	return nil
-}
-
-// TODO the below are generic
-func (f *Function) Service() commonIface.ServiceComponent {
-	return f.srv
-}
-
-func (f *Function) Config() *structureSpec.Function {
-	return &f.config
-}
-
-func (f *Function) Commit() string {
-	return f.commit
-}
-
-func (f *Function) Matcher() commonIface.MatchDefinition {
-	return f.matcher
-}
-
-func (f *Function) Id() string {
-	return f.config.Id
-}
-
-func (f *Function) Ready() error {
-	if !f.readyDone {
-		<-f.readyCtx.Done()
-	}
-
-	return f.readyError
-}
-
-func (f *Function) CachePrefix() string {
-	return f.matcher.Host
-}
-
-func (f *Function) Application() string {
-	return f.application
-}
-
-func (f *Function) AssetId() string {
-	return f.assetId
 }

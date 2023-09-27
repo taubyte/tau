@@ -14,22 +14,38 @@ import (
 	"github.com/taubyte/tau/vm/lookup"
 )
 
-func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
-	startTime := time.Now()
-	matcher := common.New(helpers.ExtractHost(r.Host), r.URL.Path, r.Method)
-
+func (s *Service) Lookup(matcher *common.MatchDefinition) (iface.Serviceable, error) {
 	servs, err := lookup.Lookup(s, matcher)
 	if err != nil {
-		return fmt.Errorf("http serviceable lookup failed with: %s", err)
+		return nil, fmt.Errorf("http serviceable lookup failed with: %w", err)
 	}
 
 	if len(servs) != 1 {
-		return fmt.Errorf("lookup returned %d serviceables, expected 1", len(servs))
+		return nil, fmt.Errorf("lookup returned %d serviceables, expected 1", len(servs))
 	}
 
 	pick, ok := servs[0].(iface.Serviceable)
 	if !ok {
-		return fmt.Errorf("matched serviceable is not a http serviceable")
+		return nil, fmt.Errorf("matched serviceable is not a http serviceable")
+	}
+
+	return pick, nil
+}
+
+func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
+	startTime := time.Now()
+	matcher := common.New(helpers.ExtractHost(r.Host), r.URL.Path, r.Method)
+
+	pick, err := s.Lookup(matcher)
+	if err != nil {
+		return fmt.Errorf("looking up serviceable failed with: %w", err)
+	}
+
+	if !pick.IsProvisioned() {
+		pick, err = pick.Provision()
+		if err != nil {
+			return fmt.Errorf("provisioning serviceable failed with: %w", err)
+		}
 	}
 
 	if err := pick.Ready(); err != nil {

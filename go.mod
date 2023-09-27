@@ -2,6 +2,8 @@ module github.com/taubyte/tau
 
 go 1.19
 
+replace github.com/taubyte/go-interfaces => ../go-interfaces
+
 require (
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -30,6 +32,7 @@ require (
 	github.com/otiai10/copy v1.12.0
 	github.com/pkg/errors v0.9.1
 	github.com/pterm/pterm v0.12.65
+	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/spf13/afero v1.9.5
 	github.com/taubyte/builder v0.2.1
 	github.com/taubyte/cli-common v0.1.1
@@ -226,7 +229,6 @@ require (
 	github.com/rs/cors v1.8.3 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/sergi/go-diff v1.2.0 // indirect
-	github.com/shirou/gopsutil v3.21.11+incompatible // indirect
 	github.com/sirupsen/logrus v1.9.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/taubyte/go-sdk-symbols v0.2.7 // indirect

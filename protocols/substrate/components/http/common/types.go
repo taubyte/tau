@@ -8,18 +8,24 @@ var _ commonIface.MatchDefinition = &MatchDefinition{}
 
 func New(host, path, method string) *MatchDefinition {
 	return &MatchDefinition{
-		Host:   host,
-		Path:   path,
-		Method: method,
+		Request: &Request{
+			Host:   host,
+			Path:   path,
+			Method: method,
+		},
 		params: make(map[string]string, 0),
 	}
 }
 
-// TODO: Maybe move this to interfaces?
-type MatchDefinition struct {
+type Request struct {
 	Host   string
 	Path   string
 	Method string
+}
+
+// TODO: Maybe move this to interfaces?
+type MatchDefinition struct {
+	*Request
 	params map[string]string
 }
 

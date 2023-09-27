@@ -26,6 +26,8 @@ type Function struct {
 	readyCtxC  context.CancelFunc
 	readyError error
 
+	provisioned bool
+
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
 

@@ -2,6 +2,7 @@ package website
 
 import (
 	"archive/zip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,27 +12,49 @@ import (
 	"time"
 
 	"github.com/spf13/afero/zipfs"
-	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	"github.com/taubyte/go-interfaces/services/substrate/components"
+	httpComp "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
-	structureSpec "github.com/taubyte/go-specs/structure"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"go4.org/readerutil"
 )
 
-func (w *Website) Project() string {
-	return w.project
+func (w *Website) Provision() (web httpComp.Serviceable, err error) {
+	w.instanceCtx, w.instanceCtxC = context.WithCancel(w.srv.Context())
+	w.readyCtx, w.readyCtxC = context.WithCancel(w.srv.Context())
+	defer func() {
+		w.readyDone = true
+		w.readyError = err
+		w.readyCtxC()
+	}()
+
+	cachedWeb, err := w.srv.Cache().Add(w, w.branch)
+	if err != nil {
+		return nil, fmt.Errorf("adding website to cache failed with: %w", err)
+	}
+
+	if w != cachedWeb {
+		_w, ok := cachedWeb.(httpComp.Website)
+		if ok {
+			return _w, nil
+		}
+
+		// TODO: Debug Logger if this case is met
+	}
+
+	if err = w.getAsset(); err != nil {
+		return nil, fmt.Errorf("getting website `%s`assets failed with: %w", w.config.Name, err)
+	}
+
+	w.provisioned = true
+	return w, nil
 }
 
-// Fulfill Serviceable interface, used to ensure TVM.New() fails if using a website
-func (w *Website) Structure() *structureSpec.Function {
-	return nil
-}
-
-func (w *Website) Handle(_w goHttp.ResponseWriter, r *goHttp.Request, matcher commonIface.MatchDefinition) (t time.Time, err error) {
+func (w *Website) Handle(_w goHttp.ResponseWriter, r *goHttp.Request, matcher components.MatchDefinition) (t time.Time, err error) {
 	_matcher, ok := matcher.(*common.MatchDefinition)
 	if !ok {
-		return t, fmt.Errorf("typecasting matcher iface to http-matcher failed with: %s", err)
+		return t, errors.New("invalid match definition")
 	}
 
 	pathMatch := _matcher.Get(common.PathMatch)
@@ -41,24 +64,57 @@ func (w *Website) Handle(_w goHttp.ResponseWriter, r *goHttp.Request, matcher co
 	}
 
 	r.URL.Path = _path
-	val, err := w.SmartOps()
-	if err != nil || val > 0 {
-		if err != nil {
-			return t, fmt.Errorf("running smart ops failed with: %s", err)
-		}
-		return t, fmt.Errorf("exited: %d", val)
-	}
-
 	err = w.srv.Http().LowLevelAssetHandler(&http.HeadlessAssetsDefinition{
 		FileSystem:            w.root,
 		SinglePageApplication: true,
 		Directory:             "/",
 	}, _w, r)
-
 	return time.Now(), err
 }
 
-func (w *Website) Match(matcher commonIface.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
+func (w *Website) Validate(matcher components.MatchDefinition) error {
+	if w.Match(matcher) == matcherSpec.NoMatch {
+		return errors.New("no match")
+	}
+
+	return nil
+}
+
+func (w *Website) getAsset() error {
+	dagReader, err := w.srv.Node().GetFile(w.srv.Context(), w.assetId)
+	if err != nil {
+		return fmt.Errorf("getting build zip failed with: %w", err)
+	}
+
+	size, _ := readerutil.Size(dagReader)
+	if _, err = dagReader.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("seek start of build zip failed with: %w", err)
+	}
+
+	zipReader, err := zip.NewReader(
+		readerutil.NewBufferingReaderAt(dagReader),
+		size,
+	)
+	if err != nil {
+		return fmt.Errorf("reading build zip failed with: %w", err)
+	}
+
+	var computedPaths []string
+
+	for _, file := range zipReader.File {
+		if !file.FileInfo().IsDir() {
+			computedPaths = append(computedPaths, file.Name)
+		}
+	}
+
+	w.computedPaths[w.matcher.Path] = computedPaths
+	w.root = zipfs.New(zipReader)
+	dagReader.Close()
+
+	return nil
+}
+
+func (w *Website) Match(matcher components.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
 	currentMatch := matcherSpec.NoMatch
 	var pathMatch string
 	_matcher, ok := matcher.(*common.MatchDefinition)
@@ -93,14 +149,6 @@ func (w *Website) Match(matcher commonIface.MatchDefinition) (currentMatchIndex 
 	return currentMatch
 }
 
-func (w *Website) Validate(matcher commonIface.MatchDefinition) error {
-	if w.Match(matcher) == matcherSpec.NoMatch {
-		return errors.New("Website paths or method does not match")
-	}
-
-	return nil
-}
-
 func pathContains(path, requestPath string) matcherSpec.Index {
 	pathLen := len(path)
 	reqLen := len(requestPath)
@@ -133,67 +181,4 @@ func pathContains(path, requestPath string) matcherSpec.Index {
 	score += matcherSpec.Index(i)
 
 	return score
-}
-
-func (w *Website) Service() commonIface.ServiceComponent {
-	return w.srv
-}
-
-func (w *Website) Config() *structureSpec.Website {
-	return &w.config
-}
-
-func (w *Website) Commit() string {
-	return w.commit
-}
-
-func (w *Website) Matcher() commonIface.MatchDefinition {
-	return w.matcher
-}
-
-func (w *Website) AssetId() string {
-	return w.assetId
-}
-
-func (w *Website) getAsset() error {
-	dagReader, err := w.srv.Node().GetFile(w.ctx, w.assetId)
-	if err != nil {
-		return fmt.Errorf("getting build zip failed with: %w", err)
-	}
-
-	size, _ := readerutil.Size(dagReader)
-	if _, err = dagReader.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("seeking start in build zip failed with: %w", err)
-	}
-
-	zipReader, err := zip.NewReader(
-		readerutil.NewBufferingReaderAt(dagReader),
-		size,
-	)
-	if err != nil {
-		return fmt.Errorf("reading build zip failed with: %w", err)
-	}
-
-	var computedPaths []string
-
-	for _, file := range zipReader.File {
-		if !file.FileInfo().IsDir() {
-			computedPaths = append(computedPaths, file.Name)
-		}
-	}
-
-	w.computedPaths[w.matcher.Path] = computedPaths
-
-	w.root = zipfs.New(zipReader)
-	dagReader.Close()
-
-	return nil
-}
-
-func (w *Website) Id() string {
-	return w.config.Id
-}
-
-func (w *Website) CachePrefix() string {
-	return w.matcher.Host
 }

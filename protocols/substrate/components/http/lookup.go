@@ -20,32 +20,13 @@ import (
 	"github.com/taubyte/tau/vm/helpers"
 )
 
-// TODO: Debug loggers should be added all over
+// TODO: Debug loggers
 
 var (
 	//go:embed domain_public.key
 	domainValPublicKeyData []byte
-	TheServiceables        = []spec.PathVariable{websiteSpec.PathVariable, functionSpec.PathVariable}
+	ValidResources         = []spec.PathVariable{websiteSpec.PathVariable, functionSpec.PathVariable}
 )
-
-func (s *Service) CurrentTnsPath(resourceType spec.PathVariable, host string) ([]tns.Path, error) {
-	servKey, err := methods.HttpPath(host, resourceType)
-	if err != nil {
-		return nil, fmt.Errorf("creating new tns path for serviceable type `%s` on host `%s` failed with: %s", resourceType, host, err)
-	}
-
-	indexObject, err := s.Tns().Fetch(servKey.Versioning().Links())
-	if err != nil {
-		return nil, fmt.Errorf("fetching versioning links failed with: %w", err)
-	}
-
-	pathList, err := indexObject.Current(spec.DefaultBranch)
-	if err != nil {
-		return nil, fmt.Errorf("getting `current` paths failed with: %w", err)
-	}
-
-	return pathList, nil
-}
 
 func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIface.Serviceable, error) {
 	matcher, ok := matcherIface.(*common.MatchDefinition)
@@ -55,9 +36,18 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 
 	host := helpers.ExtractHost(matcher.Host)
 	var candidates []commonIface.Serviceable
-	for _, stype := range TheServiceables {
-		if paths, err := s.CurrentTnsPath(stype, host); err == nil {
-			candidates = append(candidates, s.handleTNSPaths(stype, matcher, paths)...)
+	for _, rtype := range ValidResources {
+		servKey, err := methods.HttpPath(host, rtype)
+		if err != nil {
+			return nil, fmt.Errorf("creating new tns path for serviceable type `%s` on host `%s` failed with: %w", rtype, host, err)
+		}
+
+		indexObject, err := s.Tns().Fetch(servKey.Versioning().Links())
+		if err == nil {
+			pathList, err := indexObject.Current(spec.DefaultBranch)
+			if err == nil {
+				candidates = append(candidates, s.handleTNSPaths(rtype, matcher, pathList)...)
+			}
 		}
 	}
 
@@ -70,7 +60,7 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 		}
 
 		if err := domainSpec.ValidateDNS(pick.Project(), matcher.Host, s.Dev(), dv.PublicKey(publicKey)); err != nil {
-			return nil, fmt.Errorf("validating dns failed for match definition `%v` failed with: %s", *matcher, err)
+			return nil, fmt.Errorf("validating dns failed for match definition `%v` failed with: %w", *matcher, err)
 		}
 
 		return []commonIface.Serviceable{pick}, nil

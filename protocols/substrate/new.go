@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
+	"github.com/shirou/gopsutil/cpu"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
@@ -86,18 +88,18 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	if err = tbPlugins.Initialize(ctx,
-		tbPlugins.PubsubNode(srv.nodePubSub),
-		tbPlugins.IpfsNode(srv.nodeIpfs),
-		tbPlugins.DatabaseNode(srv.nodeDatabase),
-		tbPlugins.StorageNode(srv.nodeStorage),
-		tbPlugins.P2PNode(srv.nodeP2P),
+		tbPlugins.PubsubNode(srv.components.pubsub),
+		tbPlugins.IpfsNode(srv.components.ipfs),
+		tbPlugins.DatabaseNode(srv.components.database),
+		tbPlugins.StorageNode(srv.components.storage),
+		tbPlugins.P2PNode(srv.components.p2p),
 	); err != nil {
 		return nil, fmt.Errorf("initializing Taubyte plugins failed with: %w", err)
 	}
 
 	if err = smartopsPlugins.Initialize(
 		ctx,
-		smartopsPlugins.SmartOpNode(srv.nodeSmartOps),
+		smartopsPlugins.SmartOpNode(srv.components.smartops),
 	); err != nil {
 		return nil, fmt.Errorf("initializing Taubyte smartops-plugins failed with: %w", err)
 	}
@@ -145,5 +147,50 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		return nil, fmt.Errorf("starting p2p stream failed with: %w", err)
 	}
 
+	if err = srv.startCheckCpu(); err != nil {
+		return nil, fmt.Errorf("starting cpu check failed with: %w", err)
+	}
+
 	return srv, nil
+}
+
+var (
+	CPUCheckInterval = time.Second
+)
+
+func (s *Service) startCheckCpu() error {
+	// First run to check if call is successful
+	cpuUsage, err := cpu.Percent(0, true)
+	if err != nil {
+		return err
+	}
+
+	// cache the cpu count, this shouldnt change
+	s.cpuCount = len(cpuUsage)
+	var cpuSum float64
+	// manually calculate  average, skips 1 extra call of cpu.Percent
+	for _, usage := range cpuUsage {
+		cpuSum += usage
+	}
+	s.cpuAverage = cpuSum / float64(s.cpuCount)
+
+	go func() {
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			default:
+				// setting perCpu param to false returns a single average
+				// setting interval to greater than 0 will sleep for given interval duration
+				cpuUsage, err := cpu.Percent(CPUCheckInterval, false)
+				if err != nil {
+					logger.Errorf("checking cpu usage failed with: %w", err)
+				}
+
+				s.cpuAverage = cpuUsage[0]
+			}
+		}
+	}()
+
+	return nil
 }

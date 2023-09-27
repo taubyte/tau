@@ -1,0 +1,54 @@
+package function
+
+import (
+	"github.com/taubyte/go-interfaces/services/substrate/components"
+	structureSpec "github.com/taubyte/go-specs/structure"
+)
+
+func (f *Function) Service() components.ServiceComponent {
+	return f.srv
+}
+
+func (f *Function) Config() *structureSpec.Function {
+	return &f.config
+}
+
+func (f *Function) Commit() string {
+	return f.commit
+}
+
+func (f *Function) Matcher() components.MatchDefinition {
+	return f.matcher
+}
+
+func (f *Function) Id() string {
+	return f.config.Id
+}
+
+func (f *Function) Ready() error {
+	if !f.readyDone {
+		<-f.readyCtx.Done()
+	}
+
+	return f.readyError
+}
+
+func (f *Function) CachePrefix() string {
+	return f.matcher.Host
+}
+
+func (f *Function) Application() string {
+	return f.application
+}
+
+func (f *Function) AssetId() string {
+	return f.assetId
+}
+
+func (f *Function) Project() string {
+	return f.project
+}
+
+func (f *Function) IsProvisioned() bool {
+	return f.provisioned
+}

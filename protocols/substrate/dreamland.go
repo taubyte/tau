@@ -46,7 +46,7 @@ func createNodeService(ctx context.Context, config *iface.ServiceConfig) (iface.
 		return nil, err
 	}
 
-	service.nodeCounters = counters.New(service)
+	service.components.counters = counters.New(service)
 
 	return service, nil
 }

@@ -14,5 +14,10 @@ const (
 	BodyPath   = "path"
 	BodyMethod = "method"
 
-	ResponseCached = "cached"
+	ResponseCached     = "cached"
+	ResponseAverageRun = "average-run"
+	ResponseColdStart  = "cold-start"
+	ResponseMemory     = "memory"
+	ResponseCpuCount   = "cpus"
+	ResponseAverageCpu = "average-cpu"
 )

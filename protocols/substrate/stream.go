@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/taubyte/go-interfaces/services/substrate/components"
+	"github.com/ipfs/go-cid"
+	compIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	httpComp "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	con "github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/p2p/streams/command/response"
@@ -17,7 +19,6 @@ import (
 	http "github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"github.com/taubyte/tau/protocols/substrate/components/http/function"
 	"github.com/taubyte/tau/protocols/substrate/components/http/website"
-	"github.com/taubyte/tau/vm/helpers"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -40,10 +41,10 @@ func (s *Service) tunnelHttp(ctx context.Context, rw io.ReadWriter) {
 		return
 	}
 
-	s.nodeHttp.Handler(w, r)
+	s.components.http.Handler(w, r)
 }
 
-func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body command.Body) (response.Response, error) {
+func (s *Service) parseHttpRequest(body command.Body) (*http.Request, error) {
 	host, err := maps.String(body, substrate.BodyHost)
 	if err != nil {
 		return nil, err
@@ -59,46 +60,86 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 		return nil, err
 	}
 
+	return &http.Request{
+		Host:   host,
+		Path:   path,
+		Method: method,
+	}, nil
+}
+
+func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body command.Body) (response.Response, error) {
+	request, err := s.parseHttpRequest(body)
+	if err != nil {
+		return nil, fmt.Errorf("parsing matcher failed with: %w", err)
+	}
+
 	mem, err := usage.GetMemoryUsage()
 	if err != nil {
 		return nil, fmt.Errorf("getting memory usage failed with: %w", err)
 	}
 
-	response := map[string]interface{}{substrate.ResponseCached: false}
+	response := make(map[string]interface{})
+	var (
+		cached    float64 // 0-1
+		coldStart int64   // nanoseconds
+		runTime   int64   // nanosecond
+		maxMemory int64   //retrieved from cached serviceable or config
+	)
 
-	matcher := http.New(helpers.ExtractHost(host), path, method)
-	// ignoring error, only care if there are serviceables or not
-	servs, _ := s.nodeHttp.Cache().Get(matcher, components.GetOptions{Validation: true})
-	// cached float
+	httpComponent := s.components.http
+	matches, _ := httpComponent.Cache().Get(
+		&http.MatchDefinition{Request: request},
+		compIface.GetOptions{Validation: true},
+	)
 
-	// not cached
-	if len(servs) < 1 {
-		// ---> look up with tns and get config
-		response["cold-start"] = -1
-		response["average-run"] = -1
-	} else {
-		switch serviceable := servs[0].(type) {
+	switch len(matches) {
+	case http.NoMatch: // serviceable not cached
+		coldStart = -1
+		runTime = -1
+		match, err := s.components.http.Lookup(&http.MatchDefinition{Request: request})
+		if err != nil {
+			return nil, fmt.Errorf("lookup failed with: %w", err)
+		}
+
+		switch serviceable := match.(type) {
+		case httpComp.Function:
+			maxMemory = int64(serviceable.Config().Memory)
+		case httpComp.Website:
+		default:
+			return nil, fmt.Errorf("unknown serviceable type")
+		}
+
+		assetCid, _ := cid.Decode(match.AssetId())
+		if exists, _ := s.node.DAG().HasBlock(s.ctx, assetCid); exists {
+			cached += 0.3
+		}
+
+		// TODO: look up dht
+
+	case http.ValidMatch: // serviceable is cached
+		cached = 1
+		switch match := matches[0].(type) {
 		case *function.Function:
-			shadows := serviceable.Shadows()
-			// Serviceable.ColdStart()
-			maxMemory := shadows.Calls().MemoryMax() // only need this from wazero
-			if serviceable.Shadows().Count() > 1 {
-				response["cold-start"] = 0
-			} else {
-				response["cold-start"] = shadows.ColdStart().DurationAverage().Nanoseconds()
-				if csMemory := shadows.ColdStart().MemoryMax(); csMemory > maxMemory {
-					maxMemory = csMemory
-				}
+			if match.Shadows().Count() < 1 {
+				coldStart = match.ColdStart().Nanoseconds()
 			}
-
-			response["mem"] = float64(mem.Free) / float64(maxMemory)
-			response["cpu-usage"] = 0.5 // os cpu usage
-			response["average-run"] = shadows.Calls().DurationAverage().Nanoseconds()
+			cached = 1
+			maxMemory = match.MemoryMax()
+			runTime = match.CallTime().Nanoseconds()
 		case *website.Website:
 			// TODO
 		}
 
+	default: // internal error
+		return nil, fmt.Errorf("invalid # of matches: %d", len(matches))
 	}
+
+	response[substrate.ResponseCached] = cached
+	response[substrate.ResponseAverageRun] = runTime
+	response[substrate.ResponseColdStart] = coldStart
+	response[substrate.ResponseMemory] = float64(mem.Free) / float64(maxMemory)
+	response[substrate.ResponseCpuCount] = s.cpuCount
+	response[substrate.ResponseAverageCpu] = s.cpuAverage
 
 	return response, nil
 }
