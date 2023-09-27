@@ -25,24 +25,26 @@ func (f *Function) Provision() (function httpComp.Serviceable, err error) {
 		f.readyCtxC()
 	}()
 
-	if f.Function, err = vm.New(f.instanceCtx, f, f.branch, f.commit); err != nil {
-		return nil, fmt.Errorf("initializing wasm module failed with: %w", err)
-	}
-
 	cachedFunc, err := f.srv.Cache().Add(f, f.branch)
 	if err != nil {
 		return nil, fmt.Errorf("adding function to cache failed with: %w", err)
 	}
+
 	if f != cachedFunc {
 		_f, ok := cachedFunc.(httpComp.Function)
 		if ok {
 			return _f, nil
 		}
-
-		// TODO: Debug Logger if this case is met
 	}
 
+	if f.Function, err = vm.New(f.instanceCtx, f, f.branch, f.commit); err != nil {
+		return nil, fmt.Errorf("initializing wasm module failed with: %w", err)
+	}
+
+	f.metrics.Cached = 1
+
 	f.provisioned = true
+
 	return f, nil
 }
 

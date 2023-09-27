@@ -31,6 +31,8 @@ type Function struct {
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
 
+	metrics Metrics
+
 	*vm.Function
 }
 

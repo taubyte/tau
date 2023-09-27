@@ -3,6 +3,7 @@ package function
 import (
 	"fmt"
 
+	"github.com/ipfs/go-cid"
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/services/substrate/components/http"
 	"github.com/taubyte/go-interfaces/services/tns"
@@ -35,6 +36,11 @@ func New(srv components.ServiceComponent, object tns.Object, matcher *common.Mat
 	f.assetId, err = cache.ResolveAssetCid(f, f.branch)
 	if err != nil {
 		return nil, fmt.Errorf("getting asset id failed with: %w", err)
+	}
+
+	assetCid, _ := cid.Decode(match.AssetId())
+	if exists, _ := s.node.DAG().HasBlock(s.ctx, assetCid); exists {
+		f.metrics.Cached += 0.3
 	}
 
 	return f, nil
