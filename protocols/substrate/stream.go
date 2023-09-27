@@ -87,12 +87,12 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 	)
 
 	httpComponent := s.components.http
-	matches, _ := httpComponent.Cache().Get(
+	serviceables, _ := httpComponent.Cache().Get(
 		&http.MatchDefinition{Request: request},
 		compIface.GetOptions{Validation: true},
 	)
 
-	switch len(matches) {
+	switch len(serviceables) {
 	case http.NoMatch: // serviceable not cached
 		coldStart = -1
 		runTime = -1
@@ -118,20 +118,22 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 
 	case http.ValidMatch: // serviceable is cached
 		cached = 1
-		switch match := matches[0].(type) {
+		switch serviceable := serviceables[0].(type) {
 		case *function.Function:
-			if match.Shadows().Count() < 1 {
-				coldStart = match.ColdStart().Nanoseconds()
-			}
-			cached = 1
-			maxMemory = match.MemoryMax()
-			runTime = match.CallTime().Nanoseconds()
+			struct{cs,ct,mem} := serviceable.Metrics()
+			// // ShadowCount()
+			// if serviceable.Shadows().Count() < 1 {
+			// 	coldStart = serviceable.ColdStart().Nanoseconds()
+			// }
+			// cached = 1
+			// maxMemory = serviceable.MemoryMax()
+			// runTime = serviceable.CallTime().Nanoseconds()
 		case *website.Website:
 			// TODO
 		}
 
 	default: // internal error
-		return nil, fmt.Errorf("invalid # of matches: %d", len(matches))
+		return nil, fmt.Errorf("invalid # of matches: %d", len(serviceables))
 	}
 
 	response[substrate.ResponseCached] = cached
