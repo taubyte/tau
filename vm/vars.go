@@ -4,7 +4,7 @@ import "time"
 
 var (
 	InstanceMaxRequests   int           = 1024 * 64
-	InstanceMaxError      int           = 10
+	InstanceMaxError      int64         = 10
 	InstanceErrorCoolDown time.Duration = 30 * time.Minute
 
 	ShadowBuff                        = 10

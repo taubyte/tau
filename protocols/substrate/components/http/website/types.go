@@ -5,13 +5,10 @@ import (
 
 	"github.com/spf13/afero"
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
-	iface "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/metrics"
 )
-
-var _ commonIface.Serviceable = &Website{}
-var _ iface.Serviceable = &Website{}
 
 type Website struct {
 	srv commonIface.ServiceComponent
@@ -28,18 +25,14 @@ type Website struct {
 
 	assetId string
 
-	ctx  context.Context
-	ctxC context.CancelFunc
-
 	readyCtx   context.Context
 	readyCtxC  context.CancelFunc
 	readyError error
 	readyDone  bool
 
+	provisioned bool
+	metrics     metrics.Website
+
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
-}
-
-func (w *Website) Close() {
-	w.instanceCtxC()
 }

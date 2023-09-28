@@ -64,12 +64,12 @@ func (srv *Service) attachNodes(config *config.Node) (err error) {
 }
 
 func (srv *Service) attachNodeHttp(config *config.Node) (err error) {
-	srv.nodeHttp, err = http.New(srv, http.DvKey(config.DomainValidation.PublicKey))
+	srv.components.http, err = http.New(srv, http.DvKey(config.DomainValidation.PublicKey))
 	return
 }
 
 func (srv *Service) attachNodePubSub() (err error) {
-	srv.nodePubSub, err = pubSub.New(srv)
+	srv.components.pubsub, err = pubSub.New(srv)
 	return
 }
 
@@ -81,31 +81,31 @@ func (srv *Service) attachNodeIpfs(config *config.Node) (err error) {
 
 	}
 
-	srv.nodeIpfs, err = ipfs.New(srv.node.Context(), ipfs.Public(), ipfs.Listen([]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", ipfsPort)}))
+	srv.components.ipfs, err = ipfs.New(srv.node.Context(), ipfs.Public(), ipfs.Listen([]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", ipfsPort)}))
 	return
 }
 
 func (srv *Service) attachNodeDatabase() (err error) {
-	srv.nodeDatabase, err = database.New(srv, srv.databases)
+	srv.components.database, err = database.New(srv, srv.databases)
 	return
 }
 
 func (srv *Service) attachNodeStorage() (err error) {
-	srv.nodeStorage, err = storage.New(srv, srv.databases)
+	srv.components.storage, err = storage.New(srv, srv.databases)
 	return
 }
 
 func (srv *Service) attachNodeP2P() (err error) {
-	srv.nodeP2P, err = p2p.New(srv)
+	srv.components.p2p, err = p2p.New(srv)
 	return
 }
 
 func (srv *Service) attachNodeCounters() (err error) {
-	srv.nodeCounters, err = counters.New(srv)
+	srv.components.counters, err = counters.New(srv)
 	return
 }
 
 func (srv *Service) attachNodeSmartOps() (err error) {
-	srv.nodeSmartOps, err = smartOps.New(srv)
+	srv.components.smartops, err = smartOps.New(srv)
 	return
 }

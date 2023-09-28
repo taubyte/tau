@@ -6,29 +6,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/taubyte/go-interfaces/services/substrate/components"
+	"github.com/shirou/gopsutil/cpu"
 	"github.com/taubyte/go-interfaces/vm"
 	"github.com/taubyte/go-seer"
-	"github.com/taubyte/tau/clients/p2p/substrate"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/pkgs/kvdb"
-	"github.com/taubyte/tau/vm/helpers"
-	"github.com/taubyte/utils/maps"
 	orbit "github.com/taubyte/vm-orbit/plugin/vm"
 
-	con "github.com/taubyte/p2p/streams"
-	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/p2p/streams/command/response"
-	streams "github.com/taubyte/p2p/streams/service"
-	httptun "github.com/taubyte/p2p/streams/tunnels/http"
 	protocolCommon "github.com/taubyte/tau/protocols/common"
-	http "github.com/taubyte/tau/protocols/substrate/components/http/common"
 	smartopsPlugins "github.com/taubyte/vm-core-plugins/smartops"
 	tbPlugins "github.com/taubyte/vm-core-plugins/taubyte"
 )
@@ -97,18 +88,18 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	if err = tbPlugins.Initialize(ctx,
-		tbPlugins.PubsubNode(srv.nodePubSub),
-		tbPlugins.IpfsNode(srv.nodeIpfs),
-		tbPlugins.DatabaseNode(srv.nodeDatabase),
-		tbPlugins.StorageNode(srv.nodeStorage),
-		tbPlugins.P2PNode(srv.nodeP2P),
+		tbPlugins.PubsubNode(srv.components.pubsub),
+		tbPlugins.IpfsNode(srv.components.ipfs),
+		tbPlugins.DatabaseNode(srv.components.database),
+		tbPlugins.StorageNode(srv.components.storage),
+		tbPlugins.P2PNode(srv.components.p2p),
 	); err != nil {
 		return nil, fmt.Errorf("initializing Taubyte plugins failed with: %w", err)
 	}
 
 	if err = smartopsPlugins.Initialize(
 		ctx,
-		smartopsPlugins.SmartOpNode(srv.nodeSmartOps),
+		smartopsPlugins.SmartOpNode(srv.components.smartops),
 	); err != nil {
 		return nil, fmt.Errorf("initializing Taubyte smartops-plugins failed with: %w", err)
 	}
@@ -156,55 +147,50 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		return nil, fmt.Errorf("starting p2p stream failed with: %w", err)
 	}
 
+	if err = srv.startCheckCpu(); err != nil {
+		return nil, fmt.Errorf("starting cpu check failed with: %w", err)
+	}
+
 	return srv, nil
 }
 
-func (s *Service) startStream() (err error) {
-	if s.stream, err = streams.New(s.node, protocolCommon.Substrate, protocolCommon.SubstrateProtocol); err != nil {
-		return fmt.Errorf("new stream failed with: %w", err)
-	}
+var (
+	CPUCheckInterval = time.Second
+)
 
-	if err := s.stream.DefineStream(substrate.CommandHTTP, s.proxyHttp, s.tunnelHttp); err != nil {
-		return fmt.Errorf("defining command `%s` failed with: %w", substrate.CommandHTTP, err)
-	}
-
-	return
-}
-
-func (s *Service) tunnelHttp(ctx context.Context, rw io.ReadWriter) {
-	w, r, err := httptun.Backend(rw)
+func (s *Service) startCheckCpu() error {
+	// First run to check if call is successful
+	cpuUsage, err := cpu.Percent(0, true)
 	if err != nil {
-		fmt.Fprintf(rw, "Status: %d\nerror: %s", 500, err.Error())
-		return
+		return err
 	}
 
-	s.nodeHttp.Handler(w, r)
-}
-
-func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body command.Body) (response.Response, error) {
-	host, err := maps.String(body, substrate.BodyHost)
-	if err != nil {
-		return nil, err
+	// cache the cpu count, this shouldnt change
+	s.cpuCount = len(cpuUsage)
+	var cpuSum float64
+	// manually calculate  average, skips 1 extra call of cpu.Percent
+	for _, usage := range cpuUsage {
+		cpuSum += usage
 	}
+	s.cpuAverage = cpuSum / float64(s.cpuCount)
 
-	path, err := maps.String(body, substrate.BodyPath)
-	if err != nil {
-		return nil, err
-	}
+	go func() {
+		for {
+			select {
+			case <-s.ctx.Done():
+				return
+			default:
+				// setting perCpu param to false returns a single average
+				// setting interval to greater than 0 will sleep for given interval duration
+				cpuUsage, err := cpu.Percent(CPUCheckInterval, false)
+				if err != nil {
+					logger.Errorf("checking cpu usage failed with: %w", err)
+				}
 
-	method, err := maps.String(body, substrate.BodyMethod)
-	if err != nil {
-		return nil, err
-	}
+				s.cpuAverage = cpuUsage[0]
+			}
+		}
+	}()
 
-	response := make(map[string]interface{})
-	response[substrate.ResponseCached] = false
-
-	matcher := http.New(helpers.ExtractHost(host), path, method)
-	servs, err := s.nodeHttp.Cache().Get(matcher, components.GetOptions{Validation: true})
-	if err == nil && len(servs) > 0 {
-		response[substrate.ResponseCached] = true
-	}
-
-	return response, nil
+	return nil
 }

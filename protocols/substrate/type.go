@@ -26,27 +26,36 @@ type Config struct {
 	config.Node `yaml:"z,omitempty"`
 }
 
-// TODO: Node shouldn't have to have all components
+// TODO: Node shouldn't have to have all
 type Service struct {
-	ctx          context.Context
-	node         peer.Node
-	http         http.Service
-	vm           vm.Service
-	nodeHttp     *httpIface.Service
-	nodePubSub   pubSubIface.Service
-	nodeIpfs     ipfsIface.Service
-	nodeDatabase databaseIface.Service
-	nodeStorage  storageIface.Service
-	nodeP2P      p2pIface.Service
-	nodeCounters iface.CounterService
-	nodeSmartOps iface.SmartOpsService
-	dev          bool
-	verbose      bool
-	databases    kvdb.Factory
-	stream       *streams.CommandService
+	ctx        context.Context
+	node       peer.Node
+	http       http.Service
+	vm         vm.Service
+	components components
+
+	dev       bool
+	verbose   bool
+	databases kvdb.Factory
+	stream    *streams.CommandService
 
 	tns      tns.Client
 	orbitals []vm.Plugin
+
+	cpuCount   int
+	cpuAverage float64
+}
+
+// TODO: All of these components interfaces can be removed
+type components struct {
+	http     *httpIface.Service
+	pubsub   pubSubIface.Service
+	ipfs     ipfsIface.Service
+	database databaseIface.Service
+	storage  storageIface.Service
+	p2p      p2pIface.Service
+	counters iface.CounterService
+	smartops iface.SmartOpsService
 }
 
 func (n *Service) Context() context.Context {
@@ -66,11 +75,11 @@ func (s *Service) Http() http.Service {
 }
 
 func (s *Service) Counter() iface.CounterService {
-	return s.nodeCounters
+	return s.components.counters
 }
 
 func (s *Service) SmartOps() iface.SmartOpsService {
-	return s.nodeSmartOps
+	return s.components.smartops
 }
 
 func (s *Service) Tns() tns.Client {
@@ -78,5 +87,5 @@ func (s *Service) Tns() tns.Client {
 }
 
 func (s *Service) P2P() p2pIface.Service {
-	return s.nodeP2P
+	return s.components.p2p
 }

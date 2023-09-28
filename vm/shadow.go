@@ -4,19 +4,20 @@ import (
 	"context"
 	"sync"
 	"time"
-
-	"github.com/ipfs/go-log/v2"
 )
 
-var logger = log.Logger("substrate.service.vm")
+func (f *Function) Shadows() *Shadows {
+	return f.shadows
+}
 
 func (f *Function) initShadow() {
-	f.shadows = shadows{
+	f.shadows = &Shadows{
 		instances: make(chan *shadowInstance, InstanceMaxRequests),
 		more:      make(chan struct{}, 1),
 		parent:    f,
 	}
 	f.shadows.ctx, f.shadows.ctxC = context.WithCancel(f.ctx)
+
 	ticker := time.NewTicker(ShadowCleanInterval)
 	coolDown := time.NewTicker(InstanceErrorCoolDown)
 	go func() {
@@ -27,12 +28,12 @@ func (f *Function) initShadow() {
 
 			f.serviceable.Service().Cache().Remove(f.serviceable)
 		}()
-		var errCount int
+
 		for {
 			select {
 			case <-coolDown.C:
-				if errCount > 0 {
-					errCount = errCount / 2
+				if errCount := f.errorCount.Load(); errCount > 0 {
+					f.errorCount.Store(errCount / 2)
 				}
 			case <-ticker.C:
 				f.shadows.gc()
@@ -44,23 +45,24 @@ func (f *Function) initShadow() {
 					wg.Add(1)
 					go func() {
 						defer wg.Done()
-						if errCount < InstanceMaxError && len(f.shadows.instances) < InstanceMaxRequests {
+						if f.errorCount.Load() < InstanceMaxError && len(f.shadows.instances) < InstanceMaxRequests {
 							shadow, err := f.shadows.newInstance()
 							if err != nil {
 								logger.Errorf("creating new shadow instance failed with: %s", err.Error())
-								errCount++
+								f.errorCount.Add(1)
 								return
 							}
 							select {
 							case <-f.shadows.ctx.Done():
 								return
 							case f.shadows.instances <- shadow:
+								f.shadows.available.Add(1)
 							}
 						}
 					}()
 				}
 				wg.Wait()
-				if errCount >= InstanceMaxError {
+				if f.errorCount.Load() >= InstanceMaxError {
 					return
 				}
 			}
@@ -68,10 +70,11 @@ func (f *Function) initShadow() {
 	}()
 }
 
-func (s *shadows) get() (*shadowInstance, error) {
+func (s *Shadows) get() (*shadowInstance, error) {
 	select {
 	case next := <-s.instances:
 		defer s.keep()
+		s.available.Add(-1)
 		return next, nil
 	default:
 		i, err := s.newInstance()
@@ -82,12 +85,14 @@ func (s *shadows) get() (*shadowInstance, error) {
 	}
 }
 
-func (s *shadows) gc() {
+func (s *Shadows) gc() {
 	now := time.Now()
 	shadowInstances := make([]*shadowInstance, 0, InstanceMaxRequests)
 	defer func() {
+		s.available.Store(0)
 		for _, instance := range shadowInstances {
 			s.instances <- instance
+			s.available.Add(1)
 		}
 	}()
 
@@ -103,14 +108,14 @@ func (s *shadows) gc() {
 	}
 }
 
-func (s *shadows) keep() {
+func (s *Shadows) keep() {
 	select {
 	case s.more <- struct{}{}: // Send if not blocking
 	default:
 	}
 }
 
-func (s *shadows) newInstance() (*shadowInstance, error) {
+func (s *Shadows) newInstance() (*shadowInstance, error) {
 	runtime, pluginApi, err := s.parent.instantiate()
 	if err != nil {
 		return nil, err
@@ -121,4 +126,8 @@ func (s *shadows) newInstance() (*shadowInstance, error) {
 		runtime:   runtime,
 		pluginApi: pluginApi,
 	}, nil
+}
+
+func (s *Shadows) Count() int64 {
+	return s.available.Load()
 }

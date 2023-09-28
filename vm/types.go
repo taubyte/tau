@@ -2,6 +2,7 @@ package vm
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
@@ -9,14 +10,13 @@ import (
 	structureSpec "github.com/taubyte/go-specs/structure"
 )
 
-type shadows struct {
+type Shadows struct {
 	ctx       context.Context
 	ctxC      context.CancelFunc
 	parent    *Function
 	instances chan *shadowInstance
-	//gcLock    sync.RWMutex
-
-	more chan struct{}
+	more      chan struct{}
+	available atomic.Int64
 }
 
 type Function struct {
@@ -28,7 +28,16 @@ type Function struct {
 	vmConfig    *vm.Config
 	vmContext   vm.Context
 
-	shadows shadows
+	shadows    *Shadows
+	errorCount atomic.Int64
+
+	// metrics
+	coldStarts     *atomic.Uint64
+	totalColdStart *atomic.Int64
+
+	calls         *atomic.Uint64
+	totalCallTime *atomic.Int64
+	maxMemory     *atomic.Uint64
 }
 
 type shadowInstance struct {

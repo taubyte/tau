@@ -4,7 +4,7 @@ import "time"
 
 var (
 	DefaultTimeOut   = 10 * time.Millisecond
-	DefaultThreshold = 5
+	DefaultThreshold = 3
 )
 
 const (
@@ -13,6 +13,4 @@ const (
 	BodyHost   = "host"
 	BodyPath   = "path"
 	BodyMethod = "method"
-
-	ResponseCached = "cached"
 )

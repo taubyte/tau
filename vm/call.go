@@ -9,7 +9,15 @@ import (
 )
 
 // Call takes instance and id, then calls the moduled function. Returns an error.
-func (f *Function) Call(runtime vm.Runtime, id uint32) error {
+func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
+	startTime := time.Now()
+	defer func() {
+		if err == nil {
+			f.calls.Add(1)
+			f.totalCallTime.Add(int64(time.Since(startTime)))
+		}
+	}()
+
 	moduleName, err := f.moduleName()
 	if err != nil {
 		return fmt.Errorf("getting module name for resource `%s` failed with: %w", f.serviceable.Id(), err)
@@ -31,6 +39,9 @@ func (f *Function) Call(runtime vm.Runtime, id uint32) error {
 	_, err = fx.RawCall(ctx, uint64(id))
 	if f.serviceable.Service().Verbose() {
 		defer f.printRuntimeStack(runtime, err)
+	}
+	if mem := uint64(module.Memory().Size()); mem > f.maxMemory.Load() {
+		f.maxMemory.Store(mem)
 	}
 	if err != nil {
 		return fmt.Errorf("calling function for event %d failed with: %w", id, err)

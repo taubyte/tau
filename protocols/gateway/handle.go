@@ -3,12 +3,16 @@ package gateway
 import (
 	"errors"
 	"fmt"
+	"sort"
 
 	goHttp "net/http"
 
+	functionSpec "github.com/taubyte/go-specs/function"
+	websiteSpec "github.com/taubyte/go-specs/website"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/streams/client"
 	tunnel "github.com/taubyte/p2p/streams/tunnels/http"
+	"github.com/taubyte/tau/protocols/substrate/components/metrics"
 )
 
 func (g *Gateway) attach() {
@@ -23,36 +27,75 @@ func (g *Gateway) attach() {
 	})
 }
 
+func (wr wrappedResponse) Decode(data interface{}) (err error) {
+	switch metricsData := data.(type) {
+	case []byte:
+		return wr.metrics.Decode(metricsData)
+	default:
+		return errors.New("metrics data not []byte")
+	}
+}
+
 func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	resCh, err := g.substrateClient.ProxyHTTP(r.Host, r.URL.Path, r.Method)
 	if err != nil {
 		return fmt.Errorf("substrate client proxyHttp failed with: %w", err)
 	}
 
-	matches := make([]*client.Response, 0)
+	websiteMatches := make([]wrappedResponse, 0)
+	funcMatches := make([]wrappedResponse, 0)
+	discard := make([]*client.Response, 0)
 	for response := range resCh {
-		err := response.Error()
-		if err != nil {
+		if err := response.Error(); err != nil {
 			logger.Debugf("response from node `%s` failed with: %s", response.PID().Pretty(), err.Error())
 		}
-		if err == nil && g.Get(response).Cached() {
-			matches = append([]*client.Response{response}, matches...)
-		} else {
-			matches = append(matches, response)
+
+		if _metrics, err := response.Get(websiteSpec.PathVariable.String()); err == nil {
+			wres := wrappedResponse{Response: response, metrics: new(metrics.Website)}
+			if err = wres.Decode(_metrics); err == nil {
+				websiteMatches = append(websiteMatches, wres)
+				continue
+			}
 		}
-	}
-	if len(matches) < 1 {
-		return errors.New("no substrate match found")
+
+		if _metrics, err := response.Get(functionSpec.PathVariable.String()); err == nil {
+			wres := wrappedResponse{Response: response, metrics: new(metrics.Function)}
+			if err = wres.Decode(_metrics); err == nil {
+				funcMatches = append(funcMatches, wres)
+				continue
+			}
+		}
+
+		// all else
+		discard = append(discard, response)
 	}
 	defer func() {
-		for _, match := range matches {
-			match.Close()
+		for _, res := range discard {
+			res.Close()
+		}
+		for _, res := range websiteMatches {
+			res.Close()
+		}
+		for _, res := range funcMatches {
+			res.Close()
 		}
 	}()
+	if len(websiteMatches)+len(funcMatches) < 1 {
+		return errors.New("no substrate match found")
+	}
 
-	w.Header().Add(ProxyHeader, matches[0].PID().Pretty())
+	var pick *client.Response
+	if len(websiteMatches) > len(funcMatches) {
+		sort.Slice(websiteMatches, func(i, j int) bool { return websiteMatches[j].metrics.Less(websiteMatches[i].metrics) })
+		pick = websiteMatches[0].Response
+	} else {
+		sort.Slice(funcMatches, func(i, j int) bool { return funcMatches[j].metrics.Less(funcMatches[i].metrics) })
+		pick = funcMatches[0].Response
+	}
 
-	if err := tunnel.Frontend(w, r, matches[0]); err != nil {
+	w.Header().Add(ProxyHeader, pick.PID().Pretty())
+
+	if err := tunnel.Frontend(w, r, pick); err != nil {
 		return fmt.Errorf("tunneling Frontend failed with: %w", err)
 	}
 

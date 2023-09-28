@@ -6,6 +6,8 @@ import (
 	"github.com/taubyte/go-interfaces/services/substrate"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/tau/protocols/substrate/components/metrics"
 )
 
 type Gateway struct {
@@ -19,14 +21,7 @@ type Gateway struct {
 	verbose bool
 }
 
-func (g *Gateway) Node() peer.Node {
-	return g.node
-}
-
-func (g *Gateway) Http() http.Service {
-	return g.http
-}
-
-func (g *Gateway) Close() error {
-	return nil
+type wrappedResponse struct {
+	metrics metrics.Iface
+	*client.Response
 }
