@@ -67,7 +67,7 @@ func (m Website) Decode(b []byte) error {
 func (m Function) Less(comp Iface) bool {
 	switch n := comp.(type) {
 	case Function:
-		return (m.Memory == 0 && n.Memory > 0) || (m.Cached < n.Cached) || (m.ColdStart < n.ColdStart) || (m.AvgRunTime > n.AvgRunTime) || (m.Memory < n.Memory)
+		return (m.Memory < 1 && n.Memory >= 1) || (m.Cached < n.Cached) || (m.ColdStart < n.ColdStart) || (m.AvgRunTime > n.AvgRunTime) || (m.Memory < n.Memory)
 
 	default:
 		return false
