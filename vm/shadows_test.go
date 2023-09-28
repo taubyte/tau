@@ -274,7 +274,7 @@ func TestMetrics(t *testing.T) {
 	assert.NilError(t, err)
 
 	assert.Equal(t, vmModule.ColdStart(), time.Duration(0))
-	assert.Equal(t, vmModule.MemoryMax(), int64(0))
+	assert.Equal(t, vmModule.MemoryMax(), uint64(0))
 
 	_, _, err = vmModule.Instantiate()
 	assert.NilError(t, err)
@@ -287,5 +287,5 @@ func TestMetrics(t *testing.T) {
 	// average cold start should be at least as long as delay
 	assert.Assert(t, vmModule.ColdStart() >= runtimeCreationDelay)
 	// # of cold starts should be equal to shadowBuff(shadows created) +1 (instantiate request)
-	assert.Equal(t, vmModule.coldStarts.Load(), int64(ShadowBuff)+1)
+	assert.Equal(t, vmModule.coldStarts.Load(), uint64(ShadowBuff)+1)
 }
