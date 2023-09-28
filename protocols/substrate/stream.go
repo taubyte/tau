@@ -6,6 +6,8 @@ import (
 	"io"
 
 	compIface "github.com/taubyte/go-interfaces/services/substrate/components"
+	functionSpec "github.com/taubyte/go-specs/function"
+	websiteSpec "github.com/taubyte/go-specs/website"
 	con "github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/p2p/streams/command/response"
@@ -90,9 +92,9 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 
 	switch serviceable := pick.(type) {
 	case *function.Function:
-		response["function"] = serviceable.Metrics().Encode()
+		response[functionSpec.PathVariable.String()] = serviceable.Metrics().Encode()
 	case *website.Website:
-		response["website"] = serviceable.Metrics().Encode()
+		response[websiteSpec.PathVariable.String()] = serviceable.Metrics().Encode()
 	default:
 		return nil, fmt.Errorf("unknown serviceable type")
 	}

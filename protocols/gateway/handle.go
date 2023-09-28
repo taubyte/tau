@@ -7,6 +7,8 @@ import (
 
 	goHttp "net/http"
 
+	functionSpec "github.com/taubyte/go-specs/function"
+	websiteSpec "github.com/taubyte/go-specs/website"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/p2p/streams/client"
 	tunnel "github.com/taubyte/p2p/streams/tunnels/http"
@@ -48,7 +50,7 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 			logger.Debugf("response from node `%s` failed with: %s", response.PID().Pretty(), err.Error())
 		}
 
-		if _metrics, err := response.Get("website"); err == nil {
+		if _metrics, err := response.Get(websiteSpec.PathVariable.String()); err == nil {
 			wres := wrappedResponse{Response: response, metrics: new(metrics.Website)}
 			if err = wres.Decode(_metrics); err == nil {
 				websiteMatches = append(websiteMatches, wres)
@@ -56,7 +58,7 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 			}
 		}
 
-		if _metrics, err := response.Get("function"); err == nil {
+		if _metrics, err := response.Get(functionSpec.PathVariable.String()); err == nil {
 			wres := wrappedResponse{Response: response, metrics: new(metrics.Function)}
 			if err = wres.Decode(_metrics); err == nil {
 				funcMatches = append(funcMatches, wres)
@@ -67,21 +69,6 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 		// all else
 		discard = append(discard, response)
 	}
-
-	if len(websiteMatches)+len(funcMatches) < 1 {
-		return errors.New("no substrate match found")
-	}
-
-	var pick *client.Response
-
-	if len(websiteMatches) > len(funcMatches) {
-		sort.Slice(websiteMatches, func(i, j int) bool { return websiteMatches[j].metrics.Less(websiteMatches[i].metrics) })
-		pick = websiteMatches[0].Response
-	} else {
-		sort.Slice(funcMatches, func(i, j int) bool { return funcMatches[j].metrics.Less(funcMatches[i].metrics) })
-		pick = funcMatches[0].Response
-	}
-
 	defer func() {
 		for _, res := range discard {
 			res.Close()
@@ -93,6 +80,18 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 			res.Close()
 		}
 	}()
+	if len(websiteMatches)+len(funcMatches) < 1 {
+		return errors.New("no substrate match found")
+	}
+
+	var pick *client.Response
+	if len(websiteMatches) > len(funcMatches) {
+		sort.Slice(websiteMatches, func(i, j int) bool { return websiteMatches[j].metrics.Less(websiteMatches[i].metrics) })
+		pick = websiteMatches[0].Response
+	} else {
+		sort.Slice(funcMatches, func(i, j int) bool { return funcMatches[j].metrics.Less(funcMatches[i].metrics) })
+		pick = funcMatches[0].Response
+	}
 
 	w.Header().Add(ProxyHeader, pick.PID().Pretty())
 
