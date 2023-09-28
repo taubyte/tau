@@ -3,6 +3,7 @@ package website
 import (
 	"fmt"
 
+	"github.com/ipfs/go-cid"
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/services/substrate/components/http"
 	"github.com/taubyte/go-interfaces/services/tns"
@@ -36,6 +37,11 @@ func New(srv components.ServiceComponent, object tns.Object, matcher *common.Mat
 	w.assetId, err = cache.ResolveAssetCid(w, w.branch)
 	if err != nil {
 		return nil, fmt.Errorf("getting website asset id failed with: %w", err)
+	}
+
+	assetCid, _ := cid.Decode(w.assetId)
+	if exists, _ := srv.Node().DAG().HasBlock(srv.Context(), assetCid); exists {
+		w.metrics.Cached += 0.3
 	}
 
 	return w, nil

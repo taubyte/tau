@@ -17,6 +17,7 @@ import (
 	matcherSpec "github.com/taubyte/go-specs/matcher"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/metrics"
 	"go4.org/readerutil"
 )
 
@@ -39,7 +40,6 @@ func (w *Website) Provision() (web httpComp.Serviceable, err error) {
 		if ok {
 			return _w, nil
 		}
-
 		// TODO: Debug Logger if this case is met
 	}
 
@@ -47,8 +47,14 @@ func (w *Website) Provision() (web httpComp.Serviceable, err error) {
 		return nil, fmt.Errorf("getting website `%s`assets failed with: %w", w.config.Name, err)
 	}
 
+	w.metrics.Cached = 1
 	w.provisioned = true
+
 	return w, nil
+}
+
+func (w *Website) Metrics() *metrics.Website {
+	return &w.metrics
 }
 
 func (w *Website) Handle(_w goHttp.ResponseWriter, r *goHttp.Request, matcher components.MatchDefinition) (t time.Time, err error) {

@@ -7,6 +7,7 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/services/substrate/components"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/metrics"
 )
 
 type Website struct {
@@ -30,6 +31,7 @@ type Website struct {
 	readyDone  bool
 
 	provisioned bool
+	metrics     metrics.Website
 
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc

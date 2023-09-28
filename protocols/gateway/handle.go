@@ -25,16 +25,10 @@ func (g *Gateway) attach() {
 	})
 }
 
-type wrappedResponse[T metrics.Function | metrics.Website] struct {
-	metrics T
-	*client.Response
-}
-
-func (wr wrappedResponse[T]) Decode(data interface{}) error {
+func (wr wrappedResponse) Decode(data interface{}) (err error) {
 	switch metricsData := data.(type) {
 	case []byte:
-		var m T
-		return metrics.Iface(m).Decode(metricsData)
+		return wr.metrics.Decode(metricsData)
 	default:
 		return errors.New("metrics data not []byte")
 	}
@@ -46,29 +40,26 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 		return fmt.Errorf("substrate client proxyHttp failed with: %w", err)
 	}
 
-	websiteMatches := make([]wrappedResponse[metrics.Website], 0)
-	funcMatches := make([]wrappedResponse[metrics.Function], 0)
+	websiteMatches := make([]wrappedResponse, 0)
+	funcMatches := make([]wrappedResponse, 0)
 	discard := make([]*client.Response, 0)
 	for response := range resCh {
-		err := response.Error()
-		if err != nil {
+		if err := response.Error(); err != nil {
 			logger.Debugf("response from node `%s` failed with: %s", response.PID().Pretty(), err.Error())
 		}
 
 		if _metrics, err := response.Get("website"); err == nil {
-			wres := wrappedResponse[metrics.Website]{Response: response}
-			err = wres.Decode(_metrics)
-			if err == nil {
-				websiteMatches = append([]wrappedResponse[metrics.Website]{wres}, websiteMatches...)
+			wres := wrappedResponse{Response: response, metrics: new(metrics.Website)}
+			if err = wres.Decode(_metrics); err == nil {
+				websiteMatches = append(websiteMatches, wres)
 				continue
 			}
 		}
 
 		if _metrics, err := response.Get("function"); err == nil {
-			wres := wrappedResponse[metrics.Function]{Response: response}
-			err = wres.Decode(_metrics)
-			if err == nil {
-				funcMatches = append([]wrappedResponse[metrics.Function]{wres}, funcMatches...)
+			wres := wrappedResponse{Response: response, metrics: new(metrics.Function)}
+			if err = wres.Decode(_metrics); err == nil {
+				funcMatches = append(funcMatches, wres)
 				continue
 			}
 		}
@@ -77,7 +68,7 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 		discard = append(discard, response)
 	}
 
-	if len(websiteMatches) == 0 && len(funcMatches) == 0 {
+	if len(websiteMatches)+len(funcMatches) < 1 {
 		return errors.New("no substrate match found")
 	}
 

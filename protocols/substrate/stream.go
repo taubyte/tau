@@ -16,7 +16,6 @@ import (
 	http "github.com/taubyte/tau/protocols/substrate/components/http/common"
 	"github.com/taubyte/tau/protocols/substrate/components/http/function"
 	"github.com/taubyte/tau/protocols/substrate/components/http/website"
-	"github.com/taubyte/tau/protocols/substrate/components/metrics"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -89,15 +88,11 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 		pick = serviceables[0]
 	}
 
-	// response[substrate.ResponseCpuCount] = s.cpuCount
-	// response[substrate.ResponseAverageCpu] = s.cpuAverage
-
 	switch serviceable := pick.(type) {
 	case *function.Function:
 		response["function"] = serviceable.Metrics().Encode()
 	case *website.Website:
-		// TODO
-		response["website"] = metrics.Website{}.Encode()
+		response["website"] = serviceable.Metrics().Encode()
 	default:
 		return nil, fmt.Errorf("unknown serviceable type")
 	}

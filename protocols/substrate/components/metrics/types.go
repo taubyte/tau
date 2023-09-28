@@ -17,10 +17,10 @@ type Function struct {
 	AvgRunTime int64
 }
 
-type Iface interface {
+type Metric interface {
 	Encode() []byte
 	Decode(b []byte) error
-	Less(Iface) bool
+	Less(Metric) bool
 }
 
 // Encoding/Decoding
@@ -29,22 +29,23 @@ type Iface interface {
 
 var EncodingVersion uint8 = 1
 
-func (m Website) Less(comp Iface) bool {
+func (m *Website) Less(comp Metric) bool {
 	switch n := comp.(type) {
-	case Website:
+	case *Website:
 		return m.Cached < n.Cached
 	default:
 		return false
 	}
 }
 
-func (m Website) Encode() []byte {
+func (w *Website) Encode() []byte {
 	var buf bytes.Buffer
 	binary.Write(&buf, binary.LittleEndian, EncodingVersion)
+	binary.Write(&buf, binary.LittleEndian, w.Cached)
 	return buf.Bytes()
 }
 
-func (m Website) Decode(b []byte) error {
+func (w *Website) Decode(b []byte) error {
 	buf := bytes.NewBuffer(b)
 
 	var encodingVersion uint8
@@ -57,24 +58,24 @@ func (m Website) Decode(b []byte) error {
 		return errors.New("version mismatch")
 	}
 
-	if err := binary.Read(buf, binary.LittleEndian, &m.Cached); err != nil {
+	if err := binary.Read(buf, binary.LittleEndian, &w.Cached); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (m Function) Less(comp Iface) bool {
+func (m *Function) Less(comp Metric) bool {
 	switch n := comp.(type) {
-	case Function:
-		return (m.Memory < 1 && n.Memory >= 1) || (m.Cached < n.Cached) || (m.ColdStart < n.ColdStart) || (m.AvgRunTime > n.AvgRunTime) || (m.Memory < n.Memory)
+	case *Function:
+		return (m.Memory == 0 && n.Memory > 0) || (m.Cached < n.Cached) || (m.ColdStart < n.ColdStart) || (m.AvgRunTime > n.AvgRunTime) || (m.Memory < n.Memory)
 
 	default:
 		return false
 	}
 }
 
-func (m Function) Encode() []byte {
+func (m *Function) Encode() []byte {
 	var buf bytes.Buffer
 	binary.Write(&buf, binary.LittleEndian, EncodingVersion)
 	binary.Write(&buf, binary.LittleEndian, m.Cached)
@@ -84,7 +85,7 @@ func (m Function) Encode() []byte {
 	return buf.Bytes()
 }
 
-func (m Function) Decode(b []byte) error {
+func (m *Function) Decode(b []byte) error {
 	buf := bytes.NewBuffer(b)
 
 	var encodingVersion uint8

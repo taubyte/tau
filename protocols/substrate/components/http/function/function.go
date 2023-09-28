@@ -11,7 +11,9 @@ import (
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	httpComp "github.com/taubyte/go-interfaces/services/substrate/components/http"
 	matcherSpec "github.com/taubyte/go-specs/matcher"
+	"github.com/taubyte/tau/clients/p2p/seer/usage"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/metrics"
 	"github.com/taubyte/tau/vm"
 	plugins "github.com/taubyte/vm-core-plugins/taubyte"
 )
@@ -42,7 +44,6 @@ func (f *Function) Provision() (function httpComp.Serviceable, err error) {
 	}
 
 	f.metrics.Cached = 1
-
 	f.provisioned = true
 
 	return f, nil
@@ -62,6 +63,31 @@ func (f *Function) Handle(w goHttp.ResponseWriter, r *goHttp.Request, matcher co
 
 	ev := sdk.CreateHttpEvent(w, r)
 	return time.Now(), f.Call(runtime, ev.Id)
+}
+
+func (f *Function) Metrics() *metrics.Function {
+	m := f.metrics
+	mem, err := usage.GetMemoryUsage()
+	if err != nil {
+		// panic as this is unlikely
+		panic(err)
+	}
+
+	maxMemory := f.config.Memory
+	if f.provisioned {
+		m.AvgRunTime = f.CallTime().Nanoseconds()
+		m.ColdStart = f.ColdStart().Nanoseconds()
+		maxMemory = f.MemoryMax()
+	}
+
+	// Memory == 0 no memory limit
+	if maxMemory <= 0 {
+		maxMemory = WasmMemorySizeLimit
+	}
+
+	m.Memory = float64(mem.Free) / float64(maxMemory)
+
+	return &m
 }
 
 func (f *Function) Match(matcher components.MatchDefinition) (currentMatchIndex matcherSpec.Index) {

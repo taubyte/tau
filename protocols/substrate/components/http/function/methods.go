@@ -4,8 +4,6 @@ import (
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/vm"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/tau/clients/p2p/seer/usage"
-	"github.com/taubyte/tau/protocols/substrate/components/metrics"
 )
 
 const WasmMemorySizeLimit = uint64(vm.MemoryPageSize) * uint64(vm.MemoryLimitPages)
@@ -16,30 +14,6 @@ func (f *Function) Service() components.ServiceComponent {
 
 func (f *Function) Config() *structureSpec.Function {
 	return &f.config
-}
-
-func (f *Function) Metrics() metrics.Function {
-	m := f.metrics
-	mem, err := usage.GetMemoryUsage()
-	if err != nil {
-		panic(err)
-	}
-
-	maxMemory := f.config.Memory
-	if f.provisioned {
-		m.AvgRunTime = f.CallTime().Nanoseconds()
-		m.ColdStart = f.ColdStart().Nanoseconds()
-		maxMemory = f.MemoryMax()
-	}
-
-	// Memory == 0 no memory limit
-	if maxMemory <= 0 {
-		maxMemory = WasmMemorySizeLimit
-	}
-
-	m.Memory = float64(mem.Free) / float64(maxMemory)
-
-	return m
 }
 
 func (f *Function) Commit() string {
