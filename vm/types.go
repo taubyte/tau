@@ -31,7 +31,7 @@ type Function struct {
 	shadows    *Shadows
 	errorCount atomic.Int64
 
-	// gateway metrics
+	// metrics
 	coldStarts     *atomic.Uint64
 	totalColdStart *atomic.Int64
 
