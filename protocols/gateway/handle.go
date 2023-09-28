@@ -84,10 +84,10 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	var pick *client.Response
 
 	if len(websiteMatches) > len(funcMatches) {
-		sort.Slice(websiteMatches, func(i, j int) bool { return websiteMatches[i].metrics.Less(websiteMatches[j].metrics) })
+		sort.Slice(websiteMatches, func(i, j int) bool { return websiteMatches[j].metrics.Less(websiteMatches[i].metrics) })
 		pick = websiteMatches[0].Response
 	} else {
-		sort.Slice(funcMatches, func(i, j int) bool { return funcMatches[i].metrics.Less(funcMatches[j].metrics) })
+		sort.Slice(funcMatches, func(i, j int) bool { return funcMatches[j].metrics.Less(funcMatches[i].metrics) })
 		pick = funcMatches[0].Response
 	}
 
