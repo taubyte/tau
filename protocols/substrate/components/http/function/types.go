@@ -5,8 +5,8 @@ import (
 
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	compCommon "github.com/taubyte/tau/protocols/substrate/components/common"
 	"github.com/taubyte/tau/protocols/substrate/components/http/common"
+	"github.com/taubyte/tau/protocols/substrate/components/metrics"
 	"github.com/taubyte/tau/vm"
 )
 
@@ -32,7 +32,7 @@ type Function struct {
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
 
-	metrics compCommon.Metrics
+	metrics metrics.Function
 
 	*vm.Function
 }

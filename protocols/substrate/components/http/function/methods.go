@@ -1,13 +1,11 @@
 package function
 
 import (
-	"fmt"
-
 	"github.com/taubyte/go-interfaces/services/substrate/components"
 	"github.com/taubyte/go-interfaces/vm"
 	structureSpec "github.com/taubyte/go-specs/structure"
 	"github.com/taubyte/tau/clients/p2p/seer/usage"
-	"github.com/taubyte/tau/protocols/substrate/components/common"
+	"github.com/taubyte/tau/protocols/substrate/components/metrics"
 )
 
 const WasmMemorySizeLimit = uint64(vm.MemoryPageSize) * uint64(vm.MemoryLimitPages)
@@ -20,11 +18,11 @@ func (f *Function) Config() *structureSpec.Function {
 	return &f.config
 }
 
-func (f *Function) Metrics() (common.Metrics, error) {
+func (f *Function) Metrics() metrics.Function {
 	m := f.metrics
 	mem, err := usage.GetMemoryUsage()
 	if err != nil {
-		return common.Metrics{}, fmt.Errorf("getting memory stats failed with: %w", err)
+		panic(err)
 	}
 
 	maxMemory := f.config.Memory
@@ -41,7 +39,7 @@ func (f *Function) Metrics() (common.Metrics, error) {
 
 	m.Memory = float64(mem.Free) / float64(maxMemory)
 
-	return m, nil
+	return m
 }
 
 func (f *Function) Commit() string {
