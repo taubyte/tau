@@ -38,7 +38,6 @@ func (wr wrappedResponse[T]) Decode(data interface{}) error {
 	default:
 		return errors.New("metrics data not []byte")
 	}
-
 }
 
 func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {

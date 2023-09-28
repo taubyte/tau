@@ -4,7 +4,7 @@ import "time"
 
 var (
 	DefaultTimeOut   = 10 * time.Millisecond
-	DefaultThreshold = 5
+	DefaultThreshold = 3
 )
 
 const (
