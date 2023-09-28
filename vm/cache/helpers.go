@@ -7,6 +7,7 @@ import (
 	"github.com/taubyte/go-specs/methods"
 )
 
+// TODO: This should return a cid.Cid
 func ResolveAssetCid(serviceable iface.Serviceable, branch string) (string, error) {
 	assetPath, err := methods.GetTNSAssetPath(serviceable.Project(), serviceable.Id(), branch)
 	if err != nil {
