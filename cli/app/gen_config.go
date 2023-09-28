@@ -28,29 +28,36 @@ import (
 
 // TODO: move to config as a methods
 
+// Generate the source configuration based on the provided CLI context.
 func generateSourceConfig(ctx *cli.Context) (string, error) {
+	// Get the root folder path
 	root := ctx.Path("root")
 	if !filepath.IsAbs(root) {
 		return "", fmt.Errorf("root folder `%s` is not absolute", root)
 	}
 
+	// Generate a node key and ID
 	nodeID, nodeKey, err := generateNodeKeyAndID()
 	if err != nil {
 		return "", err
 	}
 
+	// Get the main P2P port
 	mainP2pPort := ctx.Int("p2p-port")
 
+	// Get the IP addresses
 	ips := ctx.StringSlice("ip")
 	if len(ips) == 0 {
 		ips = append(ips, "127.0.0.1")
 	}
 
+	// Create the P2P announce addresses based on the IP addresses and main P2P port
 	announce := make([]string, len(ips))
 	for i, ip := range ips {
 		announce[i] = fmt.Sprintf("/ip4/%s/tcp/%d", ip, mainP2pPort)
 	}
 
+	// Create the source configuration struct
 	configStruct := &config.Source{
 		Privatekey:  nodeKey,
 		Swarmkey:    path.Join("keys", "swarm.key"),
@@ -77,7 +84,10 @@ func generateSourceConfig(ctx *cli.Context) (string, error) {
 		},
 	}
 
+	// Create the config root folder path
 	configRoot := root + "/config"
+
+	// Generate and write the swarm key if specified in the CLI context
 	if ctx.Bool("swarm-key") {
 		swarmkey, err := generateSwarmKey()
 		if err != nil {
@@ -89,6 +99,7 @@ func generateSourceConfig(ctx *cli.Context) (string, error) {
 		}
 	}
 
+	// Generate and write the DV keys if specified in the CLI context
 	if ctx.Bool("dv-keys") {
 		priv, pub, err := generateDVKeys()
 		if err != nil {
@@ -104,6 +115,7 @@ func generateSourceConfig(ctx *cli.Context) (string, error) {
 		}
 	}
 
+	// Create the config file path
 	configPath := path.Join(configRoot, ctx.String("shape")+".yaml")
 	f, err := os.Create(configPath)
 	if err != nil {
@@ -111,6 +123,7 @@ func generateSourceConfig(ctx *cli.Context) (string, error) {
 	}
 	defer f.Close()
 
+	// Encode the config struct as YAML and write it to the file
 	yamlEnc := yaml.NewEncoder(f)
 	if err = yamlEnc.Encode(configStruct); err != nil {
 		return "", err
