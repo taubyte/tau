@@ -22,6 +22,6 @@ type Gateway struct {
 }
 
 type wrappedResponse struct {
-	metrics metrics.Metric
+	metrics metrics.Iface
 	*client.Response
 }

@@ -17,8 +17,8 @@ type Function struct {
 	AvgRunTime int64
 }
 
-type Metric interface {
+type Iface interface {
 	Encode() []byte
 	Decode(b []byte) error
-	Less(Metric) bool
+	Less(Iface) bool
 }

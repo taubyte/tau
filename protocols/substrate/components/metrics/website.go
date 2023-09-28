@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-func (m *Website) Less(comp Metric) bool {
+func (m *Website) Less(comp Iface) bool {
 	switch n := comp.(type) {
 	case *Website:
 		return m.Cached < n.Cached
