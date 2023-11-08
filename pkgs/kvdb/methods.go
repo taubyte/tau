@@ -2,6 +2,7 @@ package kvdb
 
 import (
 	"context"
+	"errors"
 
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
@@ -14,6 +15,10 @@ func (kvd *kvDatabase) Get(ctx context.Context, key string) ([]byte, error) {
 }
 
 func (kvd *kvDatabase) Put(ctx context.Context, key string, v []byte) error {
+	if key == "" {
+		return errors.New("key cannot be empty")
+	}
+
 	k := ds.NewKey(key)
 	return kvd.datastore.Put(ctx, k, v)
 }

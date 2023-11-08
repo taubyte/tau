@@ -10,7 +10,7 @@ type kvDatabase struct {
 	closeCtx    context.Context
 	closeCtxC   context.CancelFunc
 	factory     *factory
-	broadcaster *(crdt.PubSubBroadcaster)
+	broadcaster *(PubSubBroadcaster)
 	datastore   *(crdt.Datastore)
 	closed      bool
 	path        string

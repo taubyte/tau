@@ -72,9 +72,7 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 		return nil, fmt.Errorf("creating database failed with: %w", err)
 	}
 
-	if err = s.setupStreamRoutes(); err != nil {
-		return nil, fmt.Errorf("setting up stream routes failed with: %w", err)
-	}
+	s.setupStreamRoutes()
 
 	if err = s.subscribe(ctx); err != nil {
 		return nil, fmt.Errorf("pubsub subscribe failed with: %w", err)

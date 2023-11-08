@@ -32,7 +32,8 @@ func TestZWasmFunction(t *testing.T) {
 		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
 				Clients: dreamland.SimpleConfigClients{
-					TNS: &commonIface.ClientConfig{},
+					TNS:     &commonIface.ClientConfig{},
+					Hoarder: &commonIface.ClientConfig{},
 				}.Compat(),
 			},
 		},
