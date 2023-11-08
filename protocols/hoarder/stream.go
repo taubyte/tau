@@ -15,16 +15,11 @@ import (
 	"github.com/taubyte/utils/maps"
 )
 
-func (s *Service) setupStreamRoutes() error {
-	if err := s.stream.Define("ping", s.ping); err != nil {
-		return fmt.Errorf("defining `ping` command failed with: %w", err)
-	}
-
-	if err := s.stream.Define("hoarder", s.ServiceHandler); err != nil {
-		return fmt.Errorf("defining `hoarder` command failed with: %w", err)
-	}
-
-	return nil
+func (srv *Service) setupStreamRoutes() {
+	srv.stream.Define("ping", func(context.Context, streams.Connection, command.Body) (cr.Response, error) {
+		return cr.Response{"time": int(time.Now().Unix())}, nil
+	})
+	srv.stream.Define("hoarder", srv.ServiceHandler)
 }
 
 // TODO: This can be made generic

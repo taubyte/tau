@@ -33,22 +33,39 @@ func (f *factory) Close() {
 	for _, k := range f.dbs {
 		k.Close()
 	}
-
-	f.wg.Wait()
 }
 
 type factory struct {
 	dbs     map[string]*kvDatabase
-	wg      sync.WaitGroup
 	dbsLock sync.RWMutex
 	node    peer.Node
 }
 
+var slogger = logging.Logger("kvdb")
+
 func New(node peer.Node) kvdb.Factory {
-	return &factory{
+	f := &factory{
 		dbs:  make(map[string]*kvDatabase),
 		node: node,
 	}
+
+	go func() {
+		for {
+			select {
+			case <-f.node.Context().Done():
+				return
+			case <-time.After(3 * time.Second):
+				f.dbsLock.Lock()
+				for path, s := range f.dbs {
+					slogger.Debug("KVDB ", path, "HEADS -> ", s.datastore.InternalStats().Heads)
+				}
+				f.dbsLock.Unlock()
+			}
+		}
+	}()
+
+	return f
+
 }
 
 func (f *factory) getDB(path string) *kvDatabase {
@@ -78,10 +95,10 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 
 	var err error
 	s.closeCtx, s.closeCtxC = f.node.NewChildContextWithCancel()
-	s.broadcaster, err = crdt.NewPubSubBroadcaster(s.closeCtx, f.node.Messaging(), path+"/broadcast")
+	s.broadcaster, err = NewPubSubBroadcaster(s.closeCtx, f.node.Messaging(), path+"/broadcast")
 	if err != nil {
 		s.closeCtxC()
-		logger.Fatal(err)
+		slogger.Fatal(err)
 		return nil, err
 	}
 
@@ -94,7 +111,6 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 	opts.RebroadcastInterval = time.Duration(rebroadcastIntervalSec * int(time.Second))
 	opts.PutHook = func(k ds.Key, v []byte) {
 		logger.Infof("Added: [%s] -> %s\n", k, string(v))
-
 	}
 
 	opts.DeleteHook = func(k ds.Key) {
@@ -103,23 +119,10 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 
 	s.datastore, err = crdt.New(f.node.Store(), ds.NewKey("crdt/"+path), f.node.DAG(), s.broadcaster, opts)
 	if err != nil {
-		logger.Error("kvdb.New failed with ", err)
+		slogger.Error("kvdb.New failed with ", err)
 		s.closeCtxC()
 		return nil, err
 	}
-
-	f.wg.Add(1)
-	go func() {
-		defer f.wg.Done()
-		for {
-			select {
-			case <-time.After(3 * time.Second):
-				logger.Debug("KVDB ", path, "HEADS -> ", s.datastore.InternalStats().Heads)
-			case <-s.closeCtx.Done():
-				return
-			}
-		}
-	}()
 
 	f.dbsLock.Lock()
 	defer f.dbsLock.Unlock()
