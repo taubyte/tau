@@ -8,32 +8,20 @@ import (
 	domainSpecs "github.com/taubyte/go-specs/domain"
 )
 
-const defaultFallback string = "__"
-
-func (h *dnsHandler) replyFallback(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
-	logger.Infof("HITTING FALLBACK FOR %s", msg.Question[0].Name)
-	msg.Answer = append(msg.Answer, &dns.CNAME{
-		Hdr: dns.RR_Header{
-			Name:   r.Question[0].Name,
-			Rrtype: dns.TypeCNAME,
-			Class:  dns.ClassINET,
-			Ttl:    60,
-		},
-		Target: defaultFallback + r.Question[0].Name,
-	})
-
-	err := w.WriteMsg(&msg)
-	if err != nil {
-		logger.Error("writing fallback msg failed with:", err.Error())
-	}
-}
-
 func (h *dnsHandler) replyWithHTTPServicingNodes(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
-	nodeIps, err := h.getNodeIp("gateway") // TODO: made this configurable ... or marge look ar ip/cidr and reply with public only
+	// TODO: Find a smart way to determine what to provide. For example if Seer IP is public, theres no gateways but there're substrates with private ips, return []
+	nodeIps, err := h.getNodeIp("gateway")
 	if err != nil || len(nodeIps) == 0 {
-		h.replyFallback(w, r, errMsg, msg)
-		return
+		nodeIps, err = h.getNodeIp("substrate")
+		if err != nil || len(nodeIps) == 0 {
+			err = w.WriteMsg(errMsg)
+			if err != nil {
+				logger.Error("writing error message for WriteMsg failed with:", err.Error())
+			}
+			return
+		}
 	}
+
 	switch r.Question[0].Qtype {
 	case dns.TypeA:
 		for _, ip := range nodeIps {
