@@ -138,7 +138,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 	}
 
-	if domainSpecs.TaubyteServiceDomain.MatchString(name) || h.seer.protocolRecordBypass.MatchString(name) {
+	if h.seer.protocolRecordBypass.MatchString(name) {
 		h.tauDnsResolve(name, w, r, errMsg, msg)
 		return
 	}
