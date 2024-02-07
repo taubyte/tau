@@ -3,6 +3,7 @@ package tns
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/p2p/peer"
@@ -16,11 +17,13 @@ type Client struct {
 }
 
 type subscription struct {
-	ctx  context.Context
-	ctxC context.CancelFunc
-
-	virtualCtx  context.Context
-	virtualCtxC context.CancelFunc
+	ctx      context.Context
+	ctxC     context.CancelFunc
+	cache    *cache
+	topic    string
+	key      chan string
+	keys     []string
+	deadline time.Time
 }
 
 type cache struct {

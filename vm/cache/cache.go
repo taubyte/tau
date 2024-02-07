@@ -82,6 +82,8 @@ func (c *Cache) Get(matcher iface.MatchDefinition, ops iface.GetOptions) ([]ifac
 			if serviceable.Match(matcher) == matchIndex {
 				if ops.Validation {
 					if err := c.validate(serviceable, branch); err != nil {
+						// remove serviceable from cache & continue
+						c.Remove(serviceable)
 						continue
 					}
 				}

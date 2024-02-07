@@ -33,11 +33,14 @@ func New(srv components.ServiceComponent, object tns.Object, matcher *common.Mat
 	}
 
 	f.config.Id = id
-	f.assetId, err = cache.ResolveAssetCid(f, f.branch)
-	if err != nil {
-		return nil, fmt.Errorf("getting asset id failed with: %w", err)
+	if f.config.Source == "." { //TODO: eveywhere
+		f.assetId, err = cache.ResolveAssetCid(f, f.branch)
+		if err != nil {
+			return nil, fmt.Errorf("getting asset id failed with: %w", err)
+		}
 	}
 
+	//TODO: account for library! better is moved to Runtime creation anyways
 	assetCid, _ := cid.Decode(f.assetId)
 	if exists, _ := srv.Node().DAG().HasBlock(srv.Context(), assetCid); exists {
 		f.metrics.Cached += 0.3

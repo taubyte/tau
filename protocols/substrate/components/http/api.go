@@ -15,13 +15,24 @@ import (
 )
 
 func (s *Service) Lookup(matcher *common.MatchDefinition) (iface.Serviceable, error) {
+	// TODO: Lookup should not be in vm/
 	servs, err := lookup.Lookup(s, matcher)
 	if err != nil {
 		return nil, fmt.Errorf("http serviceable lookup failed with: %w", err)
 	}
 
 	if len(servs) != 1 {
-		return nil, fmt.Errorf("lookup returned %d serviceables, expected 1", len(servs))
+		// probably we got old entries in cache. let's purge them and try again
+		for _, srv := range servs {
+			s.Cache().Remove(srv)
+		}
+
+		servs, err = lookup.Lookup(s, matcher)
+		if err != nil {
+			return nil, fmt.Errorf("http serviceable lookup failed with: %w", err)
+		} else if len(servs) != 1 {
+			return nil, fmt.Errorf("lookup returned %d serviceables, expected 1", len(servs))
+		}
 	}
 
 	pick, ok := servs[0].(iface.Serviceable)

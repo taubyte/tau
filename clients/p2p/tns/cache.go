@@ -3,6 +3,7 @@ package tns
 import (
 	"context"
 	"fmt"
+	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/go-interfaces/services/tns"
@@ -26,45 +27,42 @@ func (c *cache) close() {
 }
 
 func (c *cache) put(key tns.Path, value interface{}) {
-	c.lock.Lock()
-	defer c.lock.Unlock()
 
-	sub, err := c.listen(key)
+	_, err := c.listen(key)
 	if err != nil {
 		logger.Error(err)
 		return
 	}
 
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	c.data[key.String()] = value
-
-	go func() {
-		ctx, ctxC := context.WithTimeout(sub.virtualCtx, common.ClientKeyCacheLifetime)
-		defer ctxC()
-
-		<-ctx.Done()
-		c.lock.Lock()
-		delete(c.data, key.String())
-		c.lock.Unlock()
-	}()
 }
 
 func (c *cache) listen(key tns.Path) (*subscription, error) {
 	topic := common.GetChannelFor(key.Slice()...)
 
-	// Locked by the caller
+	c.lock.RLock()
 	sub, ok := c.subscriptions[topic]
+	c.lock.RUnlock()
 	if ok {
-		// TODO: Update timeout
+		sub.key <- key.String()
 		return sub, nil
 	}
 
-	sub = &subscription{}
+	sub = &subscription{
+		cache:    c,
+		topic:    topic,
+		key:      make(chan string, 8),
+		keys:     make([]string, 0),
+		deadline: time.Now().Add(common.ClientKeyCacheLifetime),
+	}
 	sub.ctx, sub.ctxC = context.WithCancel(c.node.Context())
-	sub.virtualCtx, sub.virtualCtxC = context.WithCancel(sub.ctx)
 
 	err := c.node.PubSubSubscribeContext(sub.ctx, topic, func(msg *pubsub.Message) {
-		sub.virtualCtxC()
-		sub.virtualCtx, sub.virtualCtxC = context.WithCancel(sub.ctx)
+		// TODO: implement tns Publish and optimize this
+		sub.deadline = sub.deadline.Add(common.ClientKeyCacheLifetime)
+		sub.key <- "" // TODO: do better later but for now "" mean drop all the keys
 	}, func(err error) {
 		sub.ctxC()
 	})
@@ -72,16 +70,55 @@ func (c *cache) listen(key tns.Path) (*subscription, error) {
 		return sub, fmt.Errorf("subscription to key `%s`||`%s` failed to initialize with: %s", key.String(), topic, err.Error())
 	}
 
+	c.lock.Lock()
 	c.subscriptions[topic] = sub
+	c.lock.Unlock()
 
-	go func() {
-		<-sub.ctx.Done()
-		c.lock.Lock()
-		delete(c.subscriptions, topic)
-		c.lock.Unlock()
-	}()
+	sub.key <- key.String()
+
+	sub.watch()
 
 	return sub, nil
+}
+
+func (sub *subscription) watch() {
+	go func() {
+		for {
+			select {
+			case k := <-sub.key:
+				if k == "" {
+					for _, k := range sub.keys {
+						sub.cache.lock.Lock()
+						delete(sub.cache.data, k)
+						sub.cache.lock.Unlock()
+					}
+					sub.keys = make([]string, 0) // TODO: maybe use reflect to just adjust the size so we don't have to reallocate
+				} else {
+					sub.keys = append(sub.keys, k)
+				}
+			case cur := <-time.After(time.Until(sub.deadline)):
+				if cur.After(sub.deadline) {
+					sub.close()
+					return
+				}
+			case <-sub.ctx.Done():
+				sub.close()
+				return
+			}
+		}
+	}()
+}
+
+func (sub *subscription) close() {
+	sub.ctxC()
+	sub.cache.lock.Lock()
+	delete(sub.cache.subscriptions, sub.topic)
+	for _, k := range sub.keys {
+		delete(sub.cache.data, k)
+	}
+	close(sub.key)
+	sub.keys = nil
+	sub.cache.lock.Unlock()
 }
 
 func (c *cache) get(key tns.Path) (value interface{}) {
