@@ -2,4 +2,4 @@ package common
 
 import "time"
 
-var ClientKeyCacheLifetime = 60 * time.Second
+var ClientKeyCacheLifetime = 120 * time.Second

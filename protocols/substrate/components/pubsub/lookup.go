@@ -68,7 +68,7 @@ func (s *Service) CheckTns(_matcher commonIface.MatchDefinition) ([]commonIface.
 
 	functions, err := s.Tns().Function().All(matcher.Project, matcher.Application, spec.DefaultBranch).List()
 	if err != nil {
-		common.Logger.Error("Fetching functions list interface failed with:", err.Error())
+		common.Logger.Error("fetching functions list interface failed with:", err.Error())
 		return nil, err
 	}
 
