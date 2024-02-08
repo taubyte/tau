@@ -116,6 +116,8 @@ func generateSourceConfig(ctx *cli.Context) error {
 
 	var ports config.Ports
 	ports.Main = ctx.Int("p2p-port")
+	ports.Lite = ports.Main + 5
+	ports.Ipfs = ports.Main + 10
 
 	if bundle != nil && ports.Main != 4242 {
 		ports.Main = bundle.Ports.Main
@@ -196,14 +198,19 @@ func generateSourceConfig(ctx *cli.Context) error {
 	}
 
 	configRoot := root + "/config"
+
+	if err = os.MkdirAll(path.Join(configRoot, "keys"), 0750); err != nil {
+		return err
+	}
+
 	if ctx.Bool("swarm-key") || len(skdata) > 0 {
 		swarmkey, err := generateSwarmKey(skdata)
 		if err != nil {
 			return err
 		}
 
-		if err = os.WriteFile(path.Join(configRoot, "keys", "swarm.key"), []byte(swarmkey), 0440); err != nil {
-			return err
+		if err = os.WriteFile(path.Join(configRoot, "keys", "swarm.key"), []byte(swarmkey), 0640); err != nil {
+			return fmt.Errorf("failed to write config file with %w", err)
 		}
 	}
 
@@ -213,11 +220,11 @@ func generateSourceConfig(ctx *cli.Context) error {
 			return err
 		}
 
-		if err = os.WriteFile(path.Join(configRoot, "keys", "dv_private.pem"), priv, 0440); err != nil {
+		if err = os.WriteFile(path.Join(configRoot, "keys", "dv_private.pem"), priv, 0640); err != nil {
 			return err
 		}
 
-		if err = os.WriteFile(path.Join(configRoot, "keys", "dv_public.pem"), pub, 0440); err != nil {
+		if err = os.WriteFile(path.Join(configRoot, "keys", "dv_public.pem"), pub, 0640); err != nil {
 			return err
 		}
 	}
@@ -240,6 +247,10 @@ func generateSourceConfig(ctx *cli.Context) error {
 }
 
 func getProtocols(s string) []string {
+	if s == "all" {
+		return append([]string{}, commonSpecs.Protocols...)
+	}
+
 	protos := make(map[string]bool)
 	for _, p := range commonSpecs.Protocols {
 		protos[p] = false
