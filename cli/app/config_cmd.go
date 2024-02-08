@@ -1,8 +1,6 @@
 package app
 
 import (
-	"github.com/pterm/pterm"
-	"github.com/taubyte/tau/config"
 	"github.com/urfave/cli/v2"
 )
 
@@ -19,10 +17,6 @@ func configCommand() *cli.Command {
 					&cli.StringFlag{
 						Name:    "shape",
 						Aliases: []string{"s"},
-					},
-					&cli.PathFlag{
-						Name:        "root",
-						DefaultText: config.DefaultRoot,
 					},
 					&cli.PathFlag{
 						Name:    "path",
@@ -43,10 +37,6 @@ func configCommand() *cli.Command {
 						Aliases: []string{"s"},
 					},
 					&cli.PathFlag{
-						Name:        "root",
-						DefaultText: config.DefaultRoot,
-					},
-					&cli.PathFlag{
 						Name:    "path",
 						Aliases: []string{"p"},
 					},
@@ -60,6 +50,29 @@ func configCommand() *cli.Command {
 				},
 			},
 			{
+				Name:  "export",
+				Usage: "export a configuration bundle",
+				Flags: []cli.Flag{
+					&cli.BoolFlag{
+						Name:  "unsafe",
+						Usage: "export node private key (Only use to restore a node).",
+					},
+					&cli.StringFlag{
+						Name:    "shape",
+						Aliases: []string{"s"},
+					},
+					&cli.BoolFlag{
+						Name:    "protect",
+						Aliases: []string{"p"},
+					},
+					&cli.StringFlag{
+						Name:    "out",
+						Aliases: []string{"o"},
+					},
+				},
+				Action: exportConfig,
+			},
+			{
 				Name:    "generate",
 				Aliases: []string{"gen"},
 				Flags: []cli.Flag{
@@ -67,17 +80,14 @@ func configCommand() *cli.Command {
 						Name:    "shape",
 						Aliases: []string{"s"},
 					},
-					&cli.PathFlag{
-						Name:  "root",
-						Value: config.DefaultRoot,
-					},
 					&cli.StringFlag{
 						Name:    "protocols",
 						Aliases: []string{"proto", "protos"},
+						Usage:   "Protocols to enable. Use `all` to enable them all.",
 					},
 					&cli.StringFlag{
 						Name:    "network",
-						Aliases: []string{"fqdn"},
+						Aliases: []string{"n", "fqdn"},
 						Value:   "example.com",
 					},
 					&cli.IntFlag{
@@ -87,7 +97,8 @@ func configCommand() *cli.Command {
 					},
 					&cli.StringSliceFlag{
 						Name:    "ip",
-						Aliases: []string{"address", "addr"},
+						Aliases: []string{"announce"},
+						Usage:   "IP address to announce.",
 					},
 					&cli.StringSliceFlag{
 						Name: "bootstrap",
@@ -100,14 +111,12 @@ func configCommand() *cli.Command {
 						Name:    "dv-keys",
 						Aliases: []string{"dv"},
 					},
+					&cli.PathFlag{
+						Name:  "use",
+						Usage: "use a configuration template",
+					},
 				},
-				Action: func(ctx *cli.Context) error {
-					id, err := generateSourceConfig(ctx)
-					if id != "" {
-						pterm.Info.Println("ID:", id)
-					}
-					return err
-				},
+				Action: generateSourceConfig,
 			},
 		},
 	}
