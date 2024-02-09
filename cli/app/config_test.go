@@ -15,8 +15,6 @@ import (
 )
 
 func TestConfig(t *testing.T) {
-	app := newApp()
-
 	ctx, ctxC := context.WithTimeout(context.Background(), time.Second*15)
 	defer ctxC()
 
@@ -32,16 +30,16 @@ func TestConfig(t *testing.T) {
 	os.Mkdir(root+"/config", 0750)
 	os.Mkdir(root+"/config/keys", 0750)
 
-	err = app.RunContext(ctx, []string{os.Args[0], "cnf", "gen", "-s", "test", "--root", root, "--protos", "auth,seer,monkey", "--swarm-key", "--dv-keys"})
+	err = newApp().RunContext(ctx, []string{os.Args[0], "--root", root, "cnf", "gen", "-s", "test", "--protos", "auth,seer,monkey", "--swarm-key", "--dv-keys"})
 	assert.NilError(t, err)
 
-	err = app.RunContext(ctx, []string{os.Args[0], "cnf", "ok?", "-s", "test", "--root", root})
+	err = newApp().RunContext(ctx, []string{os.Args[0], "--root", root, "cnf", "ok?", "-s", "test"})
 	assert.NilError(t, err)
 
-	err = app.RunContext(ctx, []string{os.Args[0], "cnf", "show", "-s", "test", "--root", root})
+	err = newApp().RunContext(ctx, []string{os.Args[0], "--root", root, "cnf", "show", "-s", "test"})
 	assert.NilError(t, err)
 
 	config.DefaultRoot = root
-	err = app.RunContext(ctx, []string{os.Args[0], "cnf", "show", "-s", "test"})
+	err = newApp().RunContext(ctx, []string{os.Args[0], "cnf", "show", "-s", "test"})
 	assert.NilError(t, err)
 }

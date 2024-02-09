@@ -24,102 +24,233 @@ import (
 	"gopkg.in/yaml.v3"
 
 	commonSpecs "github.com/taubyte/go-specs/common"
+
+	"github.com/pterm/pterm"
+
+	jwt "github.com/dgrijalva/jwt-go"
 )
 
 // TODO: move to config as a methods
 
-func generateSourceConfig(ctx *cli.Context) (string, error) {
+func generateSourceConfig(ctx *cli.Context) error {
 	root := ctx.Path("root")
 	if !filepath.IsAbs(root) {
-		return "", fmt.Errorf("root folder `%s` is not absolute", root)
+		return fmt.Errorf("root folder `%s` is not absolute", root)
 	}
 
-	nodeID, nodeKey, err := generateNodeKeyAndID()
+	shape := ctx.String("shape")
+
+	var (
+		passwd string
+		err    error
+
+		skdata  []byte
+		dvsdata []byte
+		dvpdata []byte
+		pkey    string
+	)
+
+	templatePath := ctx.Path("use")
+	var bundle *config.Bundle
+	if templatePath != "" {
+		if f, err := os.Open(templatePath); err != nil {
+			return fmt.Errorf("failed to read template %s with %w", templatePath, err)
+		} else {
+			ydec := yaml.NewDecoder(f)
+			bundle = &config.Bundle{}
+			err = ydec.Decode(bundle)
+			f.Close()
+			if err != nil {
+				return fmt.Errorf("failed to parse template %s with %w", templatePath, err)
+			}
+
+			pkey = bundle.Privatekey
+		}
+	}
+
+	if shape == "" && bundle != nil {
+		shape = bundle.Origin.Shape
+	}
+
+	if bundle != nil && bundle.Origin.Protected {
+		if passwd, err = promptPassword("Password?"); err != nil {
+			return fmt.Errorf("faild to read password with %w", err)
+		} else {
+
+			if pkey != "" {
+				if pkdata, err := base64.StdEncoding.DecodeString(pkey); err != nil {
+					return fmt.Errorf("faild to read encrypted private key with %w", err)
+				} else if pkdata, err = decrypt(pkdata, passwd); err != nil {
+					return fmt.Errorf("faild to decrypt private key with %w", err)
+				} else {
+					pkey = string(pkdata)
+				}
+			}
+
+			if skdata, err = base64.StdEncoding.DecodeString(bundle.Swarmkey); err != nil {
+				return fmt.Errorf("faild to read encrypted swarm key with %w", err)
+			} else if skdata, err = decrypt(skdata, passwd); err != nil {
+				return fmt.Errorf("faild to encrypt swarm key with %w", err)
+			}
+
+			if dvsdata, err = base64.StdEncoding.DecodeString(bundle.Domains.Key.Private); err != nil {
+				return fmt.Errorf("faild to read encrypted domain key with %w", err)
+			} else if dvsdata, err = decrypt(dvsdata, passwd); err != nil {
+				return fmt.Errorf("faild to encrypt domain key with %w", err)
+			}
+
+			if bundle.Domains.Key.Public != "" {
+				if dvpdata, err = base64.StdEncoding.DecodeString(bundle.Domains.Key.Public); err != nil {
+					return fmt.Errorf("faild to read encrypted domain public key with %w", err)
+				} else if dvpdata, err = decrypt(dvpdata, passwd); err != nil {
+					return fmt.Errorf("faild to encrypt domain public key with %w", err)
+				}
+			}
+		}
+	}
+
+	nodeID, nodeKey, err := generateNodeKeyAndID(pkey)
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	mainP2pPort := ctx.Int("p2p-port")
+	var ports config.Ports
+	ports.Main = ctx.Int("p2p-port")
+	ports.Lite = ports.Main + 5
+	ports.Ipfs = ports.Main + 10
 
+	if bundle != nil && ports.Main != 4242 {
+		ports.Main = bundle.Ports.Main
+		if bundle.Ports.Lite != 0 {
+			ports.Lite = bundle.Ports.Lite
+		} else {
+			ports.Lite = ports.Main + 5
+		}
+		if bundle.Ports.Ipfs != 0 {
+			ports.Ipfs = bundle.Ports.Ipfs
+		} else {
+			ports.Ipfs = ports.Main + 10
+		}
+	}
+
+	var announce []string
 	ips := ctx.StringSlice("ip")
-	if len(ips) == 0 {
-		ips = append(ips, "127.0.0.1")
+	if len(ips) > 0 {
+		announce = make([]string, len(ips))
+		for i, ip := range ips {
+			announce[i] = fmt.Sprintf("/ip4/%s/tcp/%d", ip, ports.Main)
+		}
+	} else if bundle != nil {
+		announce = bundle.P2PAnnounce
+	} else {
+		announce = []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", ports.Main)}
 	}
 
-	announce := make([]string, len(ips))
-	for i, ip := range ips {
-		announce[i] = fmt.Sprintf("/ip4/%s/tcp/%d", ip, mainP2pPort)
+	protocols := getProtocols(ctx.String("protocols"))
+	if len(protocols) == 0 && bundle != nil {
+		protocols = bundle.Protocols
+	}
+
+	p2pListen := []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", ports.Main)}
+	if bundle != nil && len(bundle.P2PListen) > 0 {
+		p2pListen = bundle.P2PListen
+	}
+
+	var location *seer.Location
+	if bundle != nil {
+		location = bundle.Location
+	} else {
+		location, err = estimateGPSLocation()
+		if err != nil {
+			return fmt.Errorf("extimating GPS location failed with %w", err)
+		}
+	}
+
+	peers := ctx.StringSlice("bootstrap")
+	if len(peers) == 0 && bundle != nil {
+		peers = bundle.Peers
+	}
+
+	fqdn := ctx.String("network")
+	genfqdn := fmt.Sprintf("g.%s", ctx.String("network"))
+	if len(fqdn) == 0 && bundle != nil {
+		fqdn = bundle.NetworkFqdn
+		genfqdn = bundle.Domains.Generated
 	}
 
 	configStruct := &config.Source{
 		Privatekey:  nodeKey,
 		Swarmkey:    path.Join("keys", "swarm.key"),
-		Protocols:   getProtocols(ctx.String("protocols")),
-		P2PListen:   []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", mainP2pPort)},
+		Protocols:   protocols,
+		P2PListen:   p2pListen,
 		P2PAnnounce: announce,
-		Ports: config.Ports{
-			Main: mainP2pPort,
-			Lite: mainP2pPort + 5,
-			Ipfs: mainP2pPort + 10,
-		},
-		Location: &seer.Location{
-			Latitude:  32.78306,
-			Longitude: -96.80667,
-		},
-		Peers:       ctx.StringSlice("bootstrap"),
-		NetworkFqdn: ctx.String("network"),
+		Ports:       ports,
+		Location:    location,
+		Peers:       peers,
+		NetworkFqdn: fqdn,
 		Domains: config.Domains{
 			Key: config.DVKey{
 				Private: path.Join("keys", "dv_private.pem"),
 				Public:  path.Join("keys", "dv_public.pem"),
 			},
-			Generated: fmt.Sprintf("g.%s", ctx.String("network")),
+			Generated: genfqdn,
 		},
 	}
 
 	configRoot := root + "/config"
-	if ctx.Bool("swarm-key") {
-		swarmkey, err := generateSwarmKey()
+
+	if err = os.MkdirAll(path.Join(configRoot, "keys"), 0750); err != nil {
+		return err
+	}
+
+	if ctx.Bool("swarm-key") || len(skdata) > 0 {
+		swarmkey, err := generateSwarmKey(skdata)
 		if err != nil {
-			return "", err
+			return err
 		}
 
-		if err = os.WriteFile(path.Join(configRoot, "keys", "swarm.key"), []byte(swarmkey), 0440); err != nil {
-			return "", err
+		if err = os.WriteFile(path.Join(configRoot, "keys", "swarm.key"), []byte(swarmkey), 0640); err != nil {
+			return fmt.Errorf("failed to write config file with %w", err)
 		}
 	}
 
-	if ctx.Bool("dv-keys") {
-		priv, pub, err := generateDVKeys()
+	if ctx.Bool("dv-keys") || len(dvsdata) > 0 {
+		priv, pub, err := generateDVKeys(dvsdata, dvpdata)
 		if err != nil {
-			return "", err
+			return err
 		}
 
-		if err = os.WriteFile(path.Join(configRoot, "keys", "dv_private.pem"), priv, 0440); err != nil {
-			return "", err
+		if err = os.WriteFile(path.Join(configRoot, "keys", "dv_private.pem"), priv, 0640); err != nil {
+			return err
 		}
 
-		if err = os.WriteFile(path.Join(configRoot, "keys", "dv_public.pem"), pub, 0440); err != nil {
-			return "", err
+		if err = os.WriteFile(path.Join(configRoot, "keys", "dv_public.pem"), pub, 0640); err != nil {
+			return err
 		}
 	}
 
-	configPath := path.Join(configRoot, ctx.String("shape")+".yaml")
+	configPath := path.Join(configRoot, shape+".yaml")
 	f, err := os.Create(configPath)
 	if err != nil {
-		return "", err
+		return err
 	}
 	defer f.Close()
 
 	yamlEnc := yaml.NewEncoder(f)
 	if err = yamlEnc.Encode(configStruct); err != nil {
-		return "", err
+		return err
 	}
 
-	return nodeID, nil
+	pterm.Info.Println("ID:", nodeID)
+
+	return nil
 }
 
 func getProtocols(s string) []string {
+	if s == "all" {
+		return append([]string{}, commonSpecs.Protocols...)
+	}
+
 	protos := make(map[string]bool)
 	for _, p := range commonSpecs.Protocols {
 		protos[p] = false
@@ -138,7 +269,11 @@ func getProtocols(s string) []string {
 	return ret
 }
 
-func generateSwarmKey() (string, error) {
+func generateSwarmKey(data []byte) (string, error) {
+	if len(data) > 0 {
+		return string(data), nil
+	}
+
 	key := make([]byte, 32)
 	_, err := rand.Read(key)
 	if err != nil {
@@ -148,12 +283,28 @@ func generateSwarmKey() (string, error) {
 	return "/key/swarm/psk/1.0.0//base16/" + hex.EncodeToString(key), nil
 }
 
-func generateNodeKeyAndID() (string, string, error) {
-	key := keypair.New()
+func generateNodeKeyAndID(pkey string) (string, string, error) {
+	var (
+		key     crypto.PrivKey
+		keyData []byte
+		err     error
+	)
+	if pkey == "" {
+		key = keypair.New()
+		keyData, err = crypto.MarshalPrivateKey(key)
+		if err != nil {
+			return "", "", fmt.Errorf("marshal private key failed with %w", err)
+		}
+	} else {
+		keyData, err = base64.StdEncoding.DecodeString(pkey)
+		if err != nil {
+			return "", "", fmt.Errorf("decode private key failed with %w", err)
+		}
 
-	keyData, err := crypto.MarshalPrivateKey(key)
-	if err != nil {
-		return "", "", fmt.Errorf("marshal private key failed with %w", err)
+		key, err = crypto.UnmarshalPrivateKey(keyData)
+		if err != nil {
+			return "", "", fmt.Errorf("read private key failed with %w", err)
+		}
 	}
 
 	id, err := peer.IDFromPublicKey(key.GetPublic())
@@ -164,23 +315,38 @@ func generateNodeKeyAndID() (string, string, error) {
 	return id.String(), base64.StdEncoding.EncodeToString(keyData), nil
 }
 
-func generateDVKeys() ([]byte, []byte, error) {
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, nil, fmt.Errorf("generate ecdsa key failed with %w", err)
+func generateDVKeys(private, public []byte) ([]byte, []byte, error) {
+	var (
+		priv *ecdsa.PrivateKey
+		err  error
+	)
+	if len(private) > 0 {
+		if len(public) > 0 {
+			return private, public, nil
+		}
+
+		priv, err = jwt.ParseECPrivateKeyFromPEM(private)
+		if err != nil {
+			return nil, nil, fmt.Errorf("open ecdsa key failed with %w", err)
+		}
+	} else {
+		priv, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		if err != nil {
+			return nil, nil, fmt.Errorf("generate ecdsa key failed with %w", err)
+		}
+
+		private, err = pemEncodePrivKey(priv)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 
-	privBytes, err := pemEncodePrivKey(priv)
+	public, err = pemEncodePubKey(priv)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	pubBytes, err := pemEncodePubKey(priv)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return privBytes, pubBytes, nil
+	return private, public, nil
 }
 
 func pemEncodePrivKey(priv *ecdsa.PrivateKey) ([]byte, error) {
