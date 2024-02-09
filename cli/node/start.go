@@ -8,8 +8,6 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ipfs/go-log/v2"
-
 	"github.com/taubyte/go-interfaces/services"
 	commonSpecs "github.com/taubyte/go-specs/common"
 	httpService "github.com/taubyte/http"
@@ -20,7 +18,7 @@ import (
 )
 
 func Start(ctx context.Context, protocolConfig *config.Node) error {
-	log.SetAllLoggers(log.LevelFatal)
+	setLevel()
 
 	ctx, ctx_cancel := context.WithCancel(ctx)
 	sigkill := make(chan os.Signal, 1)
