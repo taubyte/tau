@@ -65,10 +65,6 @@ func configCommand() *cli.Command {
 						Name:    "protect",
 						Aliases: []string{"p"},
 					},
-					&cli.StringFlag{
-						Name:    "out",
-						Aliases: []string{"o"},
-					},
 				},
 				Action: exportConfig,
 			},
