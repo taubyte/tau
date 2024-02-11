@@ -138,7 +138,7 @@ func (s *Service) Start() {
 					cert, err = m.GetCertificate(hello)
 					if err != nil {
 						logger.Errorf("autocert getting certificate for `%s` failed: %s", hello.ServerName, err.Error())
-						return nil, err //fmt.Errorf("failed autocert manager get certificate with %v", err)
+						return nil, err
 					}
 					logger.Debugf("autocert got certificate for `%s` %v", hello.ServerName, cert)
 				} else {

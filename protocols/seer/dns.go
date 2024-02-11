@@ -128,11 +128,6 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if name == h.seer.protocolDomain { // TODO: add generated here
 		w.WriteMsg(&msg)
 		return
-		// switch msg.Question[0].Qtype {
-		// case dns.TypeCAA:
-		// 	w.WriteMsg(&msg)
-		// 	return
-		// }
 	}
 
 	//  check if it matches .g.tau.link generated domain
