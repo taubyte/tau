@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	logger = log.Logger("auth.service")
+	logger = log.Logger("tau.auth.service")
 )
 
 func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {

@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	logger = log.Logger("node.service")
+	logger = log.Logger("tau.node.service")
 )
 
 // TODO: close on error

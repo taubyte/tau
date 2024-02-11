@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	logger = log.Logger("monkey.jobs.client")
+	logger = log.Logger("tau.monkey.jobs.client")
 )
 
 func (c *Context) Run(ctx context.Context, ctxC context.CancelFunc) (err error) {

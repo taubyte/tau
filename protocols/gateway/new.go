@@ -15,7 +15,7 @@ import (
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
-var logger = log.Logger("gateway.service")
+var logger = log.Logger("tau.gateway.service")
 
 // TODO: Substrate Nodes should ping Gateway that they are alive, threshold should
 func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, err error) {

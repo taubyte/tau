@@ -53,12 +53,12 @@ func setNetworkDomains(conf *config.Source) {
 
 func convertToServiceRegex(url string) string {
 	urls := strings.Split(url, ".")
-	serviceRegex := `^[^.]+\.tau`
+	serviceRegex := `^([^.]+\.)?tau`
 	var network string
 	for _, _url := range urls {
 		network += fmt.Sprintf(`\.%s`, _url)
 	}
 
-	serviceRegex += network
+	serviceRegex += network + "$"
 	return serviceRegex
 }

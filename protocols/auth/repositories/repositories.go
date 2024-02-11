@@ -14,7 +14,7 @@ import (
 
 var (
 	GitProviders = []string{"github"}
-	logger       = log.Logger("auth.service.api.repositories")
+	logger       = log.Logger("tau.auth.service.api.repositories")
 )
 
 func (r *GithubRepository) Serialize() Data {

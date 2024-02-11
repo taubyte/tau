@@ -9,7 +9,7 @@ import (
 	components "github.com/taubyte/go-interfaces/services/substrate/components"
 )
 
-var logger = log.Logger("substrate.service.vm")
+var logger = log.Logger("tau.substrate.service.vm")
 
 func New(ctx context.Context, serviceable components.FunctionServiceable, branch, commit string) (*Function, error) {
 	if config := serviceable.Config(); config != nil {

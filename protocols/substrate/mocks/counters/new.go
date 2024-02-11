@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/go-interfaces/services/substrate/counters"
 )
 
-var logger = log.Logger("counter.mocks.service")
+var logger = log.Logger("tau.counter.mocks.service")
 
 func New(srv substrate.Service) substrate.CounterService {
 	c := &counter{

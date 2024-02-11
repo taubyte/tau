@@ -14,7 +14,7 @@ import (
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
-var logger = log.Logger("auth.acme.store")
+var logger = log.Logger("tau.auth.acme.store")
 
 // Store implements Store and Cache using taubyte acme service
 // NOTE: Must periodically chewck the validity of the certificate by a go-routine. If

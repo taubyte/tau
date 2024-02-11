@@ -9,6 +9,6 @@ import (
 const maxWaitTime = 15 * time.Second
 
 var (
-	logger              = log.Logger("hoarder.service")
+	logger              = log.Logger("tau.hoarder.service")
 	RebroadCastInterval = 5
 )

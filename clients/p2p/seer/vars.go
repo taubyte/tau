@@ -10,5 +10,5 @@ import (
 var (
 	DefaultGeoBeaconInterval = 5 * time.Minute
 	ErrorGeoBeaconStopped    = errors.New("geoBeacon Stopped")
-	logger                   = log.Logger("seer.p2p.client")
+	logger                   = log.Logger("tau.seer.p2p.client")
 )

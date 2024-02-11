@@ -43,7 +43,7 @@ var (
 	maxUniverses     = 100
 	portsPerUniverse = 100
 
-	logger = log.Logger("dreamland")
+	logger = log.Logger("tau.dreamland")
 
 	universes      map[string]*Universe
 	universesLock  sync.RWMutex
