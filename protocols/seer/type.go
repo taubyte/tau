@@ -60,6 +60,7 @@ type Service struct {
 	hostUrl string
 
 	generatedDomain      string
+	protocolDomain       string
 	protocolRecordBypass *regexp.Regexp // TOOD: move this into go-specs
 	shape                string
 	odo                  bool

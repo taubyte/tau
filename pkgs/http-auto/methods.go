@@ -95,7 +95,6 @@ func New(node, clientNode peer.Node, opts ...options.Option) (*Service, error) {
 // TODO: do a domain validation
 func (s *Service) Start() {
 	go func() {
-		// TODO: run a go-routine that restart the service if certificate expires
 		m := &autocert.Manager{
 			Prompt: autocert.AcceptTOS,
 			Cache:  s.certStore,
@@ -103,7 +102,7 @@ func (s *Service) Start() {
 
 		cfg := &tls.Config{
 			GetCertificate: func(hello *tls.ClientHelloInfo) (cert *tls.Certificate, err error) {
-				logger.Debugf("Looking for a static certificate for %s", hello.ServerName)
+				logger.Debugf("GetCertificate for %s from %s %v", hello.ServerName, hello.Conn.RemoteAddr(), hello.SupportedProtos)
 				hello.ServerName = strings.ToLower(hello.ServerName)
 
 				// Make sure its registered inside tns first and get projectID
@@ -113,8 +112,7 @@ func (s *Service) Start() {
 					if !s.customDomainChecker(hello) {
 						return nil, fmt.Errorf("customDomainChecker for %s was false", hello.ServerName)
 					}
-				} else if !domainSpecs.TaubyteServiceDomain.MatchString(hello.ServerName) &&
-					!domainSpecs.TaubyteHooksDomain.MatchString(hello.ServerName) {
+				} else if !domainSpecs.TaubyteServiceDomain.MatchString(hello.ServerName) {
 					projectId, err := s.validateFromTns(hello.ServerName)
 					if err != nil {
 						return nil, fmt.Errorf("failed validateFromTns for %s with %v", hello.ServerName, err)
@@ -133,14 +131,18 @@ func (s *Service) Start() {
 					}
 				}
 
+				logger.Debugf("looking for certificate for %s", hello.ServerName)
 				cert, err = s.authClient.GetStaticCertificate(hello.ServerName)
 				if err != nil {
-					logger.Debugf("Getting certificate for `%s` predefined", hello.ServerName)
+					logger.Debugf("autocert will handle certificate for `%s`", hello.ServerName)
 					cert, err = m.GetCertificate(hello)
 					if err != nil {
-						logger.Errorf("Getting certificate for `%s` failed: %s", hello.ServerName, err.Error())
-						return nil, fmt.Errorf("failed autocert manager get certificate with %v", err)
+						logger.Errorf("autocert getting certificate for `%s` failed: %s", hello.ServerName, err.Error())
+						return nil, err //fmt.Errorf("failed autocert manager get certificate with %v", err)
 					}
+					logger.Debugf("autocert got certificate for `%s` %v", hello.ServerName, cert)
+				} else {
+					logger.Debugf("got certificate for `%s` %v", hello.ServerName, hello.SupportedProtos)
 				}
 
 				return cert, nil

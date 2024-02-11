@@ -22,7 +22,7 @@ import (
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
-var logger = log.Logger("monkey.service")
+var logger = log.Logger("tau.monkey.service")
 
 func (srv *Service) subscribe() error {
 	return srv.node.PubSubSubscribe(

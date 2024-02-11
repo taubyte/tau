@@ -17,7 +17,7 @@ import (
 )
 
 func TestEncode(t *testing.T) {
-	logger := log.Logger("tns.service.testing")
+	logger := log.Logger("tau.tns.service.testing")
 	testCtx, testCtxC := context.WithCancel(context.Background())
 	defer func() {
 		s := (3 * time.Second)

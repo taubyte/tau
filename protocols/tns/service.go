@@ -18,7 +18,7 @@ import (
 )
 
 var (
-	logger = log.Logger("tns.service")
+	logger = log.Logger("tau.tns.service")
 )
 
 func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {

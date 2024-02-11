@@ -124,6 +124,17 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		name = strings.TrimSuffix(msg.Question[0].Name, ".")
 	}
 	name = strings.ToLower(name)
+
+	if name == h.seer.protocolDomain { // TODO: add generated here
+		w.WriteMsg(&msg)
+		return
+		// switch msg.Question[0].Qtype {
+		// case dns.TypeCAA:
+		// 	w.WriteMsg(&msg)
+		// 	return
+		// }
+	}
+
 	//  check if it matches .g.tau.link generated domain
 	if domainSpecs.SpecialDomain.MatchString(name) {
 		h.replyWithHTTPServicingNodes(w, r, errMsg, msg)
@@ -170,14 +181,14 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 	}
 
-	logger.Errorf("%s is not registered in taubyte", name)
+	logger.Errorf("%s (type: %d) is not registered", name, msg.Question[0].Qtype)
 
 	// Store in negative cache as spam
 	h.seer.negativeCache.Set(msg.Question[0].Name, true, DefaultBlockTime)
 
 	err = w.WriteMsg(errMsg)
 	if err != nil {
-		logger.Errorf("writing error msg in ServeDns failed with: %s", err.Error())
+		logger.Errorf("sending reply failed with: %s", err.Error())
 	}
 }
 

@@ -11,7 +11,7 @@ import (
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 )
 
-var logger = log.Logger("monkey.p2p.client")
+var logger = log.Logger("tau.monkey.p2p.client")
 
 var _ iface.Client = &Client{}
 

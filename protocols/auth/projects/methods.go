@@ -9,7 +9,7 @@ import (
 )
 
 var (
-	logger = log.Logger("auth.service.api.projects")
+	logger = log.Logger("tau.auth.service.api.projects")
 )
 
 func (r *ProjectObject) Serialize() Data {

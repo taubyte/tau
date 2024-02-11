@@ -22,7 +22,7 @@ import (
 
 var (
 	BootstrapTime                   = 10 * time.Second
-	logger                          = log.Logger("patrick.Service")
+	logger                          = log.Logger("tau.patrick.Service")
 	DefaultReAnnounceJobTime        = 7 * time.Minute
 	DefaultReAnnounceFailedJobsTime = 7 * time.Minute
 )

@@ -14,7 +14,7 @@ import (
 
 type Data map[string]interface{}
 
-var logger = log.Logger("auth.hooks")
+var logger = log.Logger("tau.auth.hooks")
 
 type Hook interface {
 	Register(ctx context.Context) error

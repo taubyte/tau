@@ -11,25 +11,23 @@ import (
 	"github.com/taubyte/p2p/streams/command"
 	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/utils/maps"
+	"golang.org/x/crypto/acme/autocert"
 )
-
-// ErrCacheMiss is returned when a certificate is not found in cache.
-var ErrCacheMiss = errors.New("acme/autocert: certificate cache miss")
 
 // https://golang.org/pkg/crypto/x509/#example_Certificate_Verify
 
 // TODO: validate fqdn
 func (srv *AuthService) setACMECertificate(ctx context.Context, fqdn string, certificate []byte) error {
-	logger.Debugf("Set certificate for `%s`", fqdn)
-	defer logger.Debugf("Set certificate for `%s` done", fqdn)
+	logger.Debugf("Set acme certificate for `%s`", fqdn)
+	defer logger.Debugf("Set acme certificate for `%s` done", fqdn)
 
 	err := srv.db.Put(ctx, "/acme/"+base64.StdEncoding.EncodeToString([]byte(fqdn))+"/certificate/pem", certificate)
 	if err != nil {
-		logger.Errorf("Set certificate for `%s` failed with: %s", fqdn, err.Error())
+		logger.Errorf("Set acme certificate for `%s` failed with: %s", fqdn, err.Error())
 		return err
 	}
 
-	logger.Debugf("Set certificate for `%s` = %v", fqdn, certificate)
+	logger.Debugf("Set acme certificate for `%s` = %v", fqdn, certificate)
 
 	return nil
 }
@@ -52,27 +50,24 @@ func (srv *AuthService) setACMEStaticCertificate(ctx context.Context, fqdn strin
 // TODO: validate fqdn
 // LATER: validate peer has access to it
 func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]byte, error) {
-	logger.Debugf("Get certificate for `%s`", fqdn)
-	defer logger.Debugf("Get certificate for `%s` done", fqdn)
+	logger.Debugf("Get acme certificate for `%s`", fqdn)
+	defer logger.Debugf("Get acme certificate for `%s` done", fqdn)
 
 	key := "/acme/" + base64.StdEncoding.EncodeToString([]byte(fqdn)) + "/certificate/pem"
 	certificate, err := srv.db.Get(ctx, key)
 	if err != nil {
-		certificate, err = srv.getACMEStaticCertificate(ctx, fqdn)
-		if err != nil {
-			logger.Error("Get certificate for " + fqdn + " returned " + err.Error())
-			return nil, ErrCacheMiss
-		}
+		logger.Error("Get acme certificate for " + fqdn + " returned " + err.Error())
+		return nil, autocert.ErrCacheMiss
 	}
 
 	if certificate == nil {
 		// cleanup entry
 		logger.Error(fqdn + " : Found empty certificate!")
 		srv.db.Delete(ctx, key)
-		return nil, ErrCacheMiss
+		return nil, autocert.ErrCacheMiss
 	}
 
-	logger.Debugf("Get certificate for `%s`: %v", fqdn, certificate)
+	logger.Debugf("Get acme certificate for `%s`: %v", fqdn, certificate)
 
 	return certificate, nil
 }
@@ -89,7 +84,7 @@ func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn strin
 		certificate, err = srv.db.Get(ctx, key)
 		if err != nil {
 			logger.Error("Get certificate for " + fqdn + " returned " + err.Error())
-			return nil, ErrCacheMiss
+			return nil, autocert.ErrCacheMiss
 		}
 	}
 
@@ -97,7 +92,7 @@ func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn strin
 		// cleanup entry
 		logger.Error(fqdn + " : Found empty certificate!")
 		srv.db.Delete(ctx, key)
-		return nil, ErrCacheMiss
+		return nil, autocert.ErrCacheMiss
 	}
 
 	logger.Debugf("Get certificate for `%s`: %v", fqdn, certificate)
@@ -113,14 +108,14 @@ func (srv *AuthService) getACMECache(ctx context.Context, key string) ([]byte, e
 	key_base := "/acme/cache/" + base64.StdEncoding.EncodeToString([]byte(key))
 	data, err := srv.db.Get(ctx, key_base+"/data")
 	if err != nil {
-		return nil, ErrCacheMiss
+		return nil, autocert.ErrCacheMiss
 	}
 
 	if data == nil {
 		logger.Error(key + " : Found empty !")
 		srv.db.Delete(ctx, key_base+"/data")
 		srv.db.Delete(ctx, key_base+"/timestamp")
-		return nil, ErrCacheMiss
+		return nil, autocert.ErrCacheMiss
 	}
 
 	logger.Debugf("Get acme cache for `%s`: %v", key, data)

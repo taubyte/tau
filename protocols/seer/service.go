@@ -25,7 +25,7 @@ import (
 )
 
 var (
-	logger = log.Logger("seer.service")
+	logger = log.Logger("tau.seer.service")
 )
 
 func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service, error) {
@@ -47,6 +47,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	srv.dnsResolver = net.DefaultResolver
 	srv.generatedDomain = config.GeneratedDomain
 	srv.protocolRecordBypass = regexp.MustCompile(fmt.Sprintf(`^[^.]+\.tau\.%s$`, regexp.QuoteMeta(config.NetworkFqdn)))
+	srv.protocolDomain = "tau." + config.NetworkFqdn
 
 	for _, op := range opts {
 		err = op(srv)
