@@ -3,12 +3,9 @@ package app
 import (
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/libp2p/go-libp2p/core/pnet"
-	domainSpecs "github.com/taubyte/go-specs/domain"
-	"github.com/taubyte/tau/config"
 )
 
 var (
@@ -44,21 +41,26 @@ func deleteEmpty(s []string) []string {
 	return r
 }
 
-func setNetworkDomains(conf *config.Source) {
-	domainSpecs.WhiteListedDomains = conf.Domains.Whitelist.Postfix
-	domainSpecs.TaubyteServiceDomain = regexp.MustCompile(convertToServiceRegex(conf.NetworkFqdn))
-	domainSpecs.SpecialDomain = regexp.MustCompile(conf.Domains.Generated)
-	domainSpecs.TaubyteHooksDomain = regexp.MustCompile(fmt.Sprintf(`https://patrick.tau.%s`, conf.NetworkFqdn))
-}
-
-func convertToServiceRegex(url string) string {
+func convertToPostfixRegex(url string) string {
 	urls := strings.Split(url, ".")
-	serviceRegex := `^([^.]+\.)?tau`
+	pRegex := `^([^.]+\.)?`
 	var network string
 	for _, _url := range urls {
 		network += fmt.Sprintf(`\.%s`, _url)
 	}
 
-	serviceRegex += network + "$"
-	return serviceRegex
+	pRegex += network[2:] + "$" // skip the first "\."
+	return pRegex
+}
+
+func convertToProtocolsRegex(url string) string {
+	urls := strings.Split(url, ".")
+	pRegex := `^([^.]+\.)?tau`
+	var network string
+	for _, _url := range urls {
+		network += fmt.Sprintf(`\.%s`, _url)
+	}
+
+	pRegex += network + "$"
+	return pRegex
 }

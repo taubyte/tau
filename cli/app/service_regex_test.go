@@ -8,11 +8,11 @@ import (
 
 var (
 	testUrl       = "example.test.com"
-	expectedRegex = `^[^.]+\.tau\.example\.test\.com`
+	expectedRegex = `^([^.]+\.)?tau\.example\.test\.com$`
 )
 
-func TestServiceRegex(t *testing.T) {
-	url := convertToServiceRegex(testUrl)
+func TestProtocolsRegex(t *testing.T) {
+	url := convertToProtocolsRegex(testUrl)
 	assert.Equal(t, url, expectedRegex)
 
 }

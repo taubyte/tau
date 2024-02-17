@@ -119,7 +119,7 @@ func generateSourceConfig(ctx *cli.Context) error {
 	ports.Lite = ports.Main + 5
 	ports.Ipfs = ports.Main + 10
 
-	if bundle != nil && ports.Main != 4242 {
+	if bundle != nil && ports.Main == 4242 {
 		ports.Main = bundle.Ports.Main
 		if bundle.Ports.Lite != 0 {
 			ports.Lite = bundle.Ports.Lite
@@ -157,7 +157,7 @@ func generateSourceConfig(ctx *cli.Context) error {
 	}
 
 	var location *seer.Location
-	if bundle != nil {
+	if bundle != nil && bundle.Location != nil {
 		location = bundle.Location
 	} else {
 		location, err = estimateGPSLocation()

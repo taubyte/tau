@@ -58,6 +58,7 @@ func (l libraryContext) directory() error {
 		Monkey: fakeMonkey{
 			hoarderClient: l.ctx.hoarderClient,
 		},
+		GeneratedDomainRegExp: generatedDomainRegExp,
 	}
 
 	var language *wasmSpec.SupportedLanguage

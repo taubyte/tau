@@ -21,7 +21,7 @@ func (c config) handle() error {
 		return fmt.Errorf("project ids not equal `%s` != `%s`", c.ProjectID, project.Get().Id())
 	}
 
-	rc, err := compile.CompilerConfig(project, c.Job.Meta)
+	rc, err := compile.CompilerConfig(project, c.Job.Meta, c.GeneratedDomainRegExp)
 	if err != nil {
 		return fmt.Errorf("compiling project failed with: %s", err.Error())
 	}

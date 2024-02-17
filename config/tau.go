@@ -54,9 +54,9 @@ type Plugins struct {
 }
 
 type Domains struct {
-	Key       DVKey            `yaml:"key"`
-	Whitelist DomainsWhiteList `yaml:"whitelist"`
-	Generated string           `yaml:"generated"`
+	Key       DVKey    `yaml:"key"`
+	Aliases   []string `yaml:"aliases"`
+	Generated string   `yaml:"generated"`
 }
 
 type DomainsWhiteList struct {

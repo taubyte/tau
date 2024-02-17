@@ -2,7 +2,6 @@ package seer
 
 import (
 	"database/sql"
-	"regexp"
 	"sync"
 
 	"github.com/jellydator/ttlcache/v3"
@@ -51,6 +50,8 @@ type Service struct {
 	positiveCache *ttlcache.Cache[string, []string]
 	negativeCache *ttlcache.Cache[string, bool]
 
+	config *config.Node
+
 	nodeDBMutex sync.RWMutex
 	nodeDB      *sql.DB
 
@@ -59,12 +60,9 @@ type Service struct {
 
 	hostUrl string
 
-	generatedDomain      string
-	protocolDomain       string
-	protocolRecordBypass *regexp.Regexp // TOOD: move this into go-specs
-	shape                string
-	odo                  bool
-	devMode              bool
+	shape   string
+	odo     bool
+	devMode bool
 }
 
 func (s *Service) Node() peer.Node {

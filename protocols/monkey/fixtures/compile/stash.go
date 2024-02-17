@@ -27,6 +27,7 @@ func (ctx resourceContext) stashAndPush(id string, file io.ReadSeekCloser) error
 		Monkey: fakeMonkey{
 			hoarderClient: ctx.hoarderClient,
 		},
+		GeneratedDomainRegExp: generatedDomainRegExp,
 	}
 	c.ForceContext(ctx.universe.Context())
 

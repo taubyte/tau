@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	_ "embed"
 	"os"
+	"regexp"
 	"testing"
 
 	"github.com/taubyte/config-compiler/compile"
@@ -47,6 +48,8 @@ var (
 	expectedMap     = map[string][]byte{"test": expected, "/expect/1": expected2}
 )
 
+var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
+
 func TestAll(t *testing.T) {
 	t.Skip("Redo This Test, this test repo doesnt exist?")
 	meta := patrick.Meta{}
@@ -87,7 +90,7 @@ func TestAll(t *testing.T) {
 	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
 	assert.NilError(t, err)
 
-	rc, err := compile.CompilerConfig(projectIface, meta)
+	rc, err := compile.CompilerConfig(projectIface, meta, generatedDomainRegExp)
 	assert.NilError(t, err)
 
 	compiler, err := compile.New(rc, compile.Dev())
@@ -271,7 +274,7 @@ func TestAll(t *testing.T) {
 
 	meta.HeadCommit.ID = expectedCommitId
 
-	rc, err = compile.CompilerConfig(project, meta)
+	rc, err = compile.CompilerConfig(project, meta, generatedDomainRegExp)
 	assert.NilError(t, err)
 
 	compiler, err = compile.New(rc, compile.Dev())

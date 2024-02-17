@@ -58,15 +58,16 @@ func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams
 
 		return p.lockHandler(ctx, jid, int64(eta), conn)
 	case "isLocked":
-		return p.isLockedHandler(ctx, jid)
+		return p.isLockedHandler(ctx, jid, conn)
 	case "unlock":
+		// TODO: delete
 		return p.unlockHandler(ctx, jid)
 	case "cancel":
 		return cr.Response{"cancelled": jid}, p.cancelHandler(ctx, jid, cidMap)
 	case "done":
-		return nil, p.doneHandler(ctx, jid, cidMap, assetMap)
+		return nil, p.doneHandler(ctx, jid, cidMap, assetMap, conn)
 	case "failed":
-		return nil, p.failedHandler(ctx, jid, cidMap, assetMap)
+		return nil, p.failedHandler(ctx, jid, cidMap, assetMap, conn)
 	case "timeout":
 		return nil, p.timeoutHandler(ctx, jid, cidMap)
 	}
@@ -124,22 +125,9 @@ func (p *PatrickService) lockHandler(ctx context.Context, jid string, eta int64,
 	var lockData []byte
 	lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
 	if err != nil {
-		lockData, err = cbor.Marshal(Lock{
-			Pid:       conn.RemotePeer(), // monkey ID
-			Timestamp: time.Now().Unix(),
-			Eta:       eta,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed cbor marshal with error: %v", err)
-		}
-
-		if err = p.db.Put(ctx, ("/locked/jobs/" + jid), lockData); err != nil {
-			return nil, fmt.Errorf("locking `%s` failed with: %v", jid, err)
-		}
-
-		return nil, nil
+		return p.tryLock(ctx, conn.RemotePeer(), jid, time.Now().Unix(), eta)
 	} else {
-		resp, err := p.lockHelper(lockData, jid, true)
+		resp, err := p.lockHelper(ctx, conn.RemotePeer(), lockData, jid, eta, true)
 		if err != nil {
 			return nil, fmt.Errorf("error in lockHandler %w", err)
 		}
@@ -149,10 +137,10 @@ func (p *PatrickService) lockHandler(ctx context.Context, jid string, eta int64,
 
 }
 
-func (p *PatrickService) isLockedHandler(ctx context.Context, jid string) (cr.Response, error) {
+func (p *PatrickService) isLockedHandler(ctx context.Context, jid string, conn streams.Connection) (cr.Response, error) {
 	lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
 	if err == nil {
-		resp, err := p.lockHelper(lockData, jid, false)
+		resp, err := p.lockHelper(ctx, conn.RemotePeer(), lockData, jid, 0, false)
 		if resp != nil {
 			return resp, err
 		}
@@ -247,16 +235,16 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 	return fmt.Errorf("%s already finished", jid)
 }
 
-func (p *PatrickService) doneHandler(ctx context.Context, jid string, cid_log map[string]string, assetCid map[string]string) error {
-	return p.updateStatus(ctx, jid, cid_log, commonIface.JobStatusSuccess, assetCid)
+func (p *PatrickService) doneHandler(ctx context.Context, jid string, cid_log map[string]string, assetCid map[string]string, conn streams.Connection) error {
+	return p.updateStatus(ctx, conn.RemotePeer(), jid, cid_log, commonIface.JobStatusSuccess, assetCid)
 }
 
-func (p *PatrickService) failedHandler(ctx context.Context, jid string, cid_log map[string]string, assetCid map[string]string) error {
-	return p.updateStatus(ctx, jid, cid_log, commonIface.JobStatusFailed, assetCid)
+func (p *PatrickService) failedHandler(ctx context.Context, jid string, cid_log map[string]string, assetCid map[string]string, conn streams.Connection) error {
+	return p.updateStatus(ctx, conn.RemotePeer(), jid, cid_log, commonIface.JobStatusFailed, assetCid)
 }
 
 func (p *PatrickService) cancelHandler(ctx context.Context, jid string, cid_log map[string]string) error {
-	return p.updateStatus(ctx, jid, cid_log, commonIface.JobStatusCancelled, nil)
+	return p.updateStatus(ctx, "", jid, cid_log, commonIface.JobStatusCancelled, nil)
 }
 
 func (p *PatrickService) deleteJob(ctx context.Context, loc []string, jid string) error {

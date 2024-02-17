@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"time"
 
 	"github.com/taubyte/config-compiler/compile"
@@ -28,9 +29,11 @@ import (
 	"testing"
 )
 
+var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
+
 func TestConfigJob(t *testing.T) {
 	t.Skip("needs to be redone")
-	protocolCommon.LocalPatrick = true
+	protocolCommon.MockedPatrick = true
 	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
@@ -119,7 +122,7 @@ func TestConfigJob(t *testing.T) {
 	fakJob.Meta.Repository.Branch = "master"
 	fakJob.Meta.HeadCommit.ID = "QmaskdjfziUJHJjYfhaysgYGYyA"
 	fakJob.Id = "jobforjob_test"
-	rc, err := compile.CompilerConfig(projectIface, fakJob.Meta)
+	rc, err := compile.CompilerConfig(projectIface, fakJob.Meta, generatedDomainRegExp)
 	if err != nil {
 		t.Error(err)
 		return

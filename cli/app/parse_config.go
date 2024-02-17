@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -61,20 +62,26 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 	}
 
 	protocol := &config.Node{
-		Root:            root,
-		Shape:           shape,
-		P2PAnnounce:     src.P2PAnnounce,
-		P2PListen:       src.P2PListen,
-		Ports:           src.Ports.ToMap(),
-		Location:        src.Location,
-		NetworkFqdn:     src.NetworkFqdn,
-		GeneratedDomain: src.Domains.Generated,
-		ServicesDomain:  convertToServiceRegex(src.NetworkFqdn),
-		HttpListen:      "0.0.0.0:443",
-		Protocols:       src.Protocols,
-		Plugins:         src.Plugins,
-		Peers:           src.Peers,
-		DevMode:         ctx.Bool("dev-mode"),
+		Root:                  root,
+		Shape:                 shape,
+		P2PAnnounce:           src.P2PAnnounce,
+		P2PListen:             src.P2PListen,
+		Ports:                 src.Ports.ToMap(),
+		Location:              src.Location,
+		NetworkFqdn:           src.NetworkFqdn,
+		GeneratedDomain:       src.Domains.Generated,
+		GeneratedDomainRegExp: regexp.MustCompile(convertToPostfixRegex(src.Domains.Generated)),
+		ProtocolsDomainRegExp: regexp.MustCompile(convertToProtocolsRegex(src.NetworkFqdn)),
+		AliasDomainsRegExp:    make([]*regexp.Regexp, 0),
+		HttpListen:            "0.0.0.0:443",
+		Protocols:             src.Protocols,
+		Plugins:               src.Plugins,
+		Peers:                 src.Peers,
+		DevMode:               ctx.Bool("dev-mode"),
+	}
+
+	for _, d := range src.Domains.Aliases {
+		protocol.AliasDomainsRegExp = append(protocol.AliasDomainsRegExp, regexp.MustCompile(convertToPostfixRegex(d)))
 	}
 
 	if len(src.Privatekey) == 0 {

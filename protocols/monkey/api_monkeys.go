@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/utils/maps"
 )
 
-func (bob *Service) ServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+func (m *Service) ServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err
@@ -25,35 +25,44 @@ func (bob *Service) ServiceHandler(ctx context.Context, conn streams.Connection,
 	}
 	switch action {
 	case "update":
-		return bob.updateHandler(ctx, jid)
+		return m.updateHandler(ctx, jid)
 	case "status":
-		return bob.statusHandler(ctx, jid)
+		return m.statusHandler(ctx, jid)
 	case "list":
-		return bob.listHandler()
+		return m.listHandler()
 	case "cancel":
-		return bob.cancelHandler(jid)
+		return m.cancelHandler(jid)
 	}
 
 	return nil, nil
 }
 
-func (bob *Service) listHandler() (cr.Response, error) {
+func (m *Service) listHandler() (cr.Response, error) {
+	m.monkeysLock.RLock()
+	defer m.monkeysLock.RUnlock()
+
 	ids := make([]string, 0)
-	for id := range bob.monkeys {
+	for id := range m.monkeys {
 		ids = append(ids, id)
 	}
 	return cr.Response{"ids": ids}, nil
 }
 
-func (bob *Service) cancelHandler(jid string) (cr.Response, error) {
-	monkey, ok := bob.monkeys[jid]
+func (m *Service) cancelHandler(jid string) (cr.Response, error) {
+	m.monkeysLock.RLock()
+	monkey, ok := m.monkeys[jid]
+	m.monkeysLock.RUnlock()
 	if !ok {
 		return nil, fmt.Errorf("Monkey %s does not exist", jid)
 	}
 
 	monkey.ctxC()
-	delete(bob.monkeys, jid)
-	_, err := bob.patrickClient.Cancel(jid, monkey.Job.Logs)
+
+	m.monkeysLock.Lock()
+	delete(m.monkeys, jid)
+	m.monkeysLock.Unlock()
+
+	_, err := m.patrickClient.Cancel(jid, monkey.Job.Logs)
 	if err != nil {
 		return nil, fmt.Errorf("failed patrick client cancel with %w", err)
 	}
@@ -62,18 +71,26 @@ func (bob *Service) cancelHandler(jid string) (cr.Response, error) {
 }
 
 // TODO: implement, does nothing...
-func (bob *Service) updateHandler(ctx context.Context, jid string) (cr.Response, error) {
-	monkey, ok := bob.monkeys[jid]
+func (m *Service) updateHandler(ctx context.Context, jid string) (cr.Response, error) {
+	m.monkeysLock.RLock()
+	defer m.monkeysLock.RUnlock()
+	monkey, ok := m.monkeys[jid]
 	if !ok {
 		return nil, fmt.Errorf("job `%s` not found", jid)
 	}
+
 	return cr.Response{"jid": jid, "status": monkey.Status, "logs": monkey.LogCID}, nil
 }
 
-func (bob *Service) statusHandler(ctx context.Context, jid string) (cr.Response, error) {
-	monkey, ok := bob.monkeys[jid]
+func (m *Service) statusHandler(ctx context.Context, jid string) (cr.Response, error) {
+	m.monkeysLock.RLock()
+	defer m.monkeysLock.RUnlock()
+
+	fmt.Println(m.monkeys)
+	monkey, ok := m.monkeys[jid]
 	if !ok {
 		return nil, fmt.Errorf("job `%s` not found", jid)
 	}
+
 	return cr.Response{"jid": jid, "status": monkey.Status, "logs": monkey.LogCID}, nil
 }

@@ -25,7 +25,7 @@ func NewAuto(ctx context.Context, node peer.Node, config *config.Node, ops ...op
 	if config.DevMode {
 		return devHttp(ctx, config.EnableHTTPS, ops...)
 	} else {
-		return New(node, config.ClientNode, ops...)
+		return New(node, config.ClientNode, config, ops...)
 	}
 }
 

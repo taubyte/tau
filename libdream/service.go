@@ -15,10 +15,8 @@ func (u *Universe) PortFor(proto, _type string) (int, error) {
 	serviceCount := len(u.service[proto].nodes)
 	var mapPath string
 	switch _type {
-	case "http", "p2p":
+	case "http", "p2p", "ipfs", "dns":
 		mapPath = _type + "/" + proto
-	case DNSPathVar:
-		mapPath = _type
 	default:
 		return 0, fmt.Errorf("invalid type `%s`", _type)
 	}
@@ -48,7 +46,7 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 	}
 
 	var err error
-	for _, k := range []string{"http", "p2p", "dns"} {
+	for _, k := range []string{"http", "p2p", "dns", "ipfs"} {
 		if _, ok := config.Others[k]; !ok {
 			config.Others[k], _ = u.PortFor(name, k)
 

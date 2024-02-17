@@ -84,7 +84,6 @@ func configCommand() *cli.Command {
 					&cli.StringFlag{
 						Name:    "network",
 						Aliases: []string{"n", "fqdn"},
-						Value:   "example.com",
 					},
 					&cli.IntFlag{
 						Name:    "p2p-port",

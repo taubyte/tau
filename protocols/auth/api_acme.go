@@ -57,7 +57,7 @@ func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]
 	certificate, err := srv.db.Get(ctx, key)
 	if err != nil {
 		logger.Error("Get acme certificate for " + fqdn + " returned " + err.Error())
-		return nil, autocert.ErrCacheMiss
+		return srv.getACMEStaticCertificate(ctx, fqdn)
 	}
 
 	if certificate == nil {

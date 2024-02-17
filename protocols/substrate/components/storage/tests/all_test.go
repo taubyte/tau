@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io/ioutil"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -69,6 +70,8 @@ const (
 )
 
 // TODO: FIX TESTS
+
+var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
 func TestAll(t *testing.T) {
 	t.Skip("this is a broken project")
@@ -162,7 +165,7 @@ func TestAll(t *testing.T) {
 		return
 	}
 
-	rc, err := compile.CompilerConfig(projectIface, meta)
+	rc, err := compile.CompilerConfig(projectIface, meta, generatedDomainRegExp)
 	if err != nil {
 		t.Error(err)
 		return
@@ -542,7 +545,7 @@ func TestAll(t *testing.T) {
 
 	meta.HeadCommit.ID = expectedCommitId
 
-	rc, err = compile.CompilerConfig(project, meta)
+	rc, err = compile.CompilerConfig(project, meta, generatedDomainRegExp)
 	assert.NilError(t, err)
 
 	compiler, err = compile.New(rc, compile.Dev())

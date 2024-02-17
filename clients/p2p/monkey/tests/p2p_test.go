@@ -21,7 +21,7 @@ func TestMonkeyClient(t *testing.T) {
 		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 
-	protocolCommon.LocalPatrick = true
+	protocolCommon.MockedPatrick = true
 
 	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()

@@ -2,6 +2,7 @@ package config
 
 import (
 	"errors"
+	"regexp"
 
 	"github.com/taubyte/go-interfaces/kvdb"
 	"github.com/taubyte/go-interfaces/p2p/keypair"
@@ -27,9 +28,14 @@ type Node struct {
 	Ports           map[string]int // TODO: use a struct
 	Location        *seerIface.Location
 	NetworkFqdn     string
-	HttpListen      string
 	GeneratedDomain string
-	ServicesDomain  string //TODO: delete if not useful
+	AliasDomains    []string
+
+	HttpListen string
+
+	AliasDomainsRegExp    []*regexp.Regexp
+	GeneratedDomainRegExp *regexp.Regexp
+	ProtocolsDomainRegExp *regexp.Regexp
 
 	Node       peer.Node
 	PrivateKey []byte

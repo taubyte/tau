@@ -23,13 +23,10 @@ func init() {
 		Registry.registry[protocol] = &handlers{}
 
 		port := lastPort + portBuffer
-		Ports["p2p/"+protocol] = port
-		lastPort = port
-	}
-
-	Ports[DNSPathVar] = lastPort + portBuffer
-
-	for idx, name := range commonSpecs.HTTPProtocols {
-		Ports["http/"+name] = httpPortStart + idx*portBuffer
+		Ports["http/"+protocol] = port
+		Ports["p2p/"+protocol] = port + 2
+		Ports["ipfs/"+protocol] = port + 4
+		Ports["dns/"+protocol] = port + 8
+		lastPort = port + portBuffer
 	}
 }

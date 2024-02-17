@@ -10,7 +10,7 @@ import (
 )
 
 func (client *Client) Lock(jid string, eta uint32) error {
-	if _, err := client.client.Send("patrick", command.Body{"action": "lock", "jid": jid, "eta": eta}); err != nil {
+	if _, err := client.Send("patrick", command.Body{"action": "lock", "jid": jid, "eta": eta}); err != nil {
 		return fmt.Errorf("failed send lock with error: %w", err)
 	}
 
@@ -18,7 +18,7 @@ func (client *Client) Lock(jid string, eta uint32) error {
 }
 
 func (client *Client) IsLocked(jid string) (bool, error) {
-	resp, err := client.client.Send("patrick", command.Body{"action": "isLocked", "jid": jid})
+	resp, err := client.Send("patrick", command.Body{"action": "isLocked", "jid": jid})
 	if err != nil {
 		return false, fmt.Errorf("failed send isLocked with error: %w", err)
 	}
@@ -28,11 +28,17 @@ func (client *Client) IsLocked(jid string) (bool, error) {
 		return false, err
 	}
 
-	return locked, nil
+	by, err := maps.String(resp, "locked-by")
+	if err != nil {
+		return false, err
+	}
+
+	return locked && (by == client.node.ID().String()), nil
 }
 
+// TODO: delete
 func (client *Client) Unlock(jid string) error {
-	if _, err := client.client.Send("patrick", command.Body{"action": "unlock", "jid": jid}); err != nil {
+	if _, err := client.Send("patrick", command.Body{"action": "unlock", "jid": jid}); err != nil {
 		return fmt.Errorf("failed send unlock with error: %w", err)
 	}
 
@@ -40,7 +46,7 @@ func (client *Client) Unlock(jid string) error {
 }
 
 func (client *Client) Done(jid string, cid_log map[string]string, assetCid map[string]string) error {
-	if _, err := client.client.Send("patrick", command.Body{"action": "done", "jid": jid, "cid": cid_log, "assetCid": assetCid}); err != nil {
+	if _, err := client.Send("patrick", command.Body{"action": "done", "jid": jid, "cid": cid_log, "assetCid": assetCid}); err != nil {
 		return fmt.Errorf("failed sending done with error: %w", err)
 	}
 
@@ -48,7 +54,7 @@ func (client *Client) Done(jid string, cid_log map[string]string, assetCid map[s
 }
 
 func (client *Client) Failed(jid string, cid_log map[string]string, assetCid map[string]string) error {
-	if _, err := client.client.Send("patrick", command.Body{"action": "failed", "jid": jid, "cid": cid_log, "assetCid": assetCid}); err != nil {
+	if _, err := client.Send("patrick", command.Body{"action": "failed", "jid": jid, "cid": cid_log, "assetCid": assetCid}); err != nil {
 		return fmt.Errorf("failed sending failed with error: %w", err)
 	}
 
@@ -56,7 +62,7 @@ func (client *Client) Failed(jid string, cid_log map[string]string, assetCid map
 }
 
 func (client *Client) Cancel(jid string, cid_log map[string]string) (interface{}, error) {
-	resp, err := client.client.Send("patrick", command.Body{"action": "cancel", "jid": jid, "cid": cid_log})
+	resp, err := client.Send("patrick", command.Body{"action": "cancel", "jid": jid, "cid": cid_log})
 	if err != nil {
 		return nil, fmt.Errorf("failed sending cancel with error: %w", err)
 	}
@@ -65,7 +71,7 @@ func (client *Client) Cancel(jid string, cid_log map[string]string) (interface{}
 }
 
 func (client *Client) List() ([]string, error) {
-	resp, err := client.client.Send("patrick", command.Body{"action": "list", "jid": ""})
+	resp, err := client.Send("patrick", command.Body{"action": "list", "jid": ""})
 	if err != nil {
 		return nil, fmt.Errorf("failed sending list with error: %w", err)
 	}
@@ -79,7 +85,7 @@ func (client *Client) List() ([]string, error) {
 }
 
 func (client *Client) Timeout(jid string) error {
-	if _, err := client.client.Send("patrick", command.Body{"action": "timeout", "jid": jid}); err != nil {
+	if _, err := client.Send("patrick", command.Body{"action": "timeout", "jid": jid}); err != nil {
 		return fmt.Errorf("failed sending timeout with error: %w", err)
 	}
 
@@ -88,7 +94,7 @@ func (client *Client) Timeout(jid string) error {
 
 func (client *Client) Get(jid string) (*iface.Job, error) {
 	var job iface.Job
-	resp, err := client.client.Send("patrick", command.Body{"action": "info", "jid": jid})
+	resp, err := client.Send("patrick", command.Body{"action": "info", "jid": jid})
 	if err != nil {
 		return nil, fmt.Errorf("failed sending list with error: %w", err)
 	}

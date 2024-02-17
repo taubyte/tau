@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"path"
-	"regexp"
 
 	"github.com/ipfs/go-log/v2"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
@@ -13,7 +12,6 @@ import (
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	domainSpecs "github.com/taubyte/go-specs/domain"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tauConfig "github.com/taubyte/tau/config"
@@ -53,12 +51,9 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	srv := &Service{
-		ctx: ctx,
-		dev: config.DevMode,
-	}
-
-	if !config.DevMode {
-		domainSpecs.SpecialDomain = regexp.MustCompile(config.GeneratedDomain)
+		ctx:    ctx,
+		dev:    config.DevMode,
+		config: config,
 	}
 
 	err = ci.Start(ctx, ci.Interval(ci.DefaultInterval), ci.MaxAge(ci.DefaultMaxAge))

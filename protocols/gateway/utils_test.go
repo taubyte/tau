@@ -34,7 +34,7 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 			"seer":      {},
 			"hoarder":   {},
 			"tns":       {},
-			"substrate": {Others: map[string]int{"copies": 2}},
+			"substrate": {Others: map[string]int{"copies": 1}},
 			"patrick":   {},
 			"monkey":    {},
 			"gateway":   {},

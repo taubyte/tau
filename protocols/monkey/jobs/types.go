@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 
 	compilerCommon "github.com/taubyte/config-compiler/common"
 	"github.com/taubyte/go-interfaces/services/monkey"
@@ -31,6 +32,8 @@ type Context struct {
 	ConfigPrivateKey string
 	ConfigRepoRoot   string
 	Monkey           monkey.Service
+
+	GeneratedDomainRegExp *regexp.Regexp
 
 	OdoClientNode peer.Node
 

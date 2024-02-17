@@ -22,9 +22,9 @@ import (
 
 var (
 	BootstrapTime                   = 10 * time.Second
-	logger                          = log.Logger("tau.patrick.Service")
-	DefaultReAnnounceJobTime        = 7 * time.Minute
-	DefaultReAnnounceFailedJobsTime = 7 * time.Minute
+	logger                          = log.Logger("tau.patrick.service")
+	DefaultReAnnounceJobTime        = 5 * time.Minute
+	DefaultReAnnounceFailedJobsTime = 5 * time.Minute
 )
 
 func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
@@ -40,8 +40,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 	}
 
 	srv.devMode = config.DevMode
-
-	logger.Info(config)
 
 	if config.Node == nil {
 		srv.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolsCommon.Patrick))
@@ -123,20 +121,12 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 	go func() {
 		if srv.devMode {
 			DefaultReAnnounceJobTime = 5 * time.Second
-			DefaultReAnnounceFailedJobsTime = 7 * time.Second
 		}
 		for {
 			select {
 			case <-time.After(DefaultReAnnounceJobTime):
 				_ctx, cancel := context.WithTimeout(ctx, DefaultReAnnounceJobTime)
 				err := srv.ReannounceJobs(_ctx)
-				cancel()
-				if err != nil {
-					logger.Error(err)
-				}
-			case <-time.After(DefaultReAnnounceFailedJobsTime):
-				_ctx, cancel := context.WithTimeout(ctx, DefaultReAnnounceFailedJobsTime)
-				err := srv.ReannounceFailedJobs(_ctx)
 				cancel()
 				if err != nil {
 					logger.Error(err)

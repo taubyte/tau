@@ -10,15 +10,17 @@ import (
 
 	"crypto/tls"
 
-	domainSpecs "github.com/taubyte/go-specs/domain"
 	basicHttp "github.com/taubyte/http/basic"
 	"github.com/taubyte/http/options"
 	"github.com/taubyte/p2p/peer"
 	authP2P "github.com/taubyte/tau/clients/p2p/auth"
 	tnsP2P "github.com/taubyte/tau/clients/p2p/tns"
+	"github.com/taubyte/tau/config"
 	autoOptions "github.com/taubyte/tau/pkgs/http-auto/options"
 
 	acmeStore "github.com/taubyte/tau/protocols/auth/acme/store"
+
+	commonSpecs "github.com/taubyte/go-specs/common"
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
@@ -37,7 +39,7 @@ func (s *Service) SetOption(opt interface{}) error {
 }
 
 // Must listen on port 443
-func New(node, clientNode peer.Node, opts ...options.Option) (*Service, error) {
+func New(node, clientNode peer.Node, config *config.Node, opts ...options.Option) (*Service, error) {
 	logger.Debug("New Auto HTTP")
 	defer logger.Debug("New Auto HTTP -> done")
 	_s, err := basicHttp.New(node.Context(), opts...)
@@ -65,7 +67,8 @@ func New(node, clientNode peer.Node, opts ...options.Option) (*Service, error) {
 
 	var s Service
 	s.Service = _s
-	_s = nil
+
+	s.config = config
 
 	err = options.Parse(&s, opts)
 	if err != nil {
@@ -82,7 +85,12 @@ func New(node, clientNode peer.Node, opts ...options.Option) (*Service, error) {
 		return nil, fmt.Errorf("failed creating tns client with %v", err)
 	}
 
-	cacheDir, _ := clientNode.NewFolder("acme")
+	cacheDir, err := clientNode.NewFolder("acme")
+	if err != nil {
+		logger.Error("creating acme cache foler failed with ", err)
+		return nil, err
+	}
+
 	s.certStore, err = acmeStore.New(clientNode.Context(), clientNode, cacheDir.Path(), autocert.ErrCacheMiss)
 	if err != nil {
 		logger.Error("new Auto HTTP: ", err)
@@ -90,6 +98,18 @@ func New(node, clientNode peer.Node, opts ...options.Option) (*Service, error) {
 	}
 
 	return &s, nil
+}
+
+func (s *Service) isProtocolOrAliasDomain(dom string) bool {
+	if s.config.ProtocolsDomainRegExp.MatchString(dom) {
+		return true
+	}
+	for _, r := range s.config.AliasDomainsRegExp {
+		if r.MatchString(dom) {
+			return true
+		}
+	}
+	return false
 }
 
 // TODO: do a domain validation
@@ -112,14 +132,14 @@ func (s *Service) Start() {
 					if !s.customDomainChecker(hello) {
 						return nil, fmt.Errorf("customDomainChecker for %s was false", hello.ServerName)
 					}
-				} else if !domainSpecs.TaubyteServiceDomain.MatchString(hello.ServerName) {
+				} else if !s.isProtocolOrAliasDomain(hello.ServerName) {
 					projectId, err := s.validateFromTns(hello.ServerName)
 					if err != nil {
 						return nil, fmt.Errorf("failed validateFromTns for %s with %v", hello.ServerName, err)
 					}
 
 					// Skips txt check if its using g.tau.link
-					if !domainSpecs.SpecialDomain.MatchString(hello.ServerName) {
+					if !s.config.GeneratedDomainRegExp.MatchString(hello.ServerName) {
 						if projectId == "" {
 							return nil, fmt.Errorf("project ID is empty")
 						}
@@ -128,6 +148,17 @@ func (s *Service) Start() {
 						if err != nil {
 							return nil, fmt.Errorf("failed txt lookup on %s with %v", hello.ServerName, err)
 						}
+					}
+				} else {
+					valid := false
+					for _, proto := range commonSpecs.Protocols {
+						if strings.HasPrefix(hello.ServerName, proto+".") {
+							valid = true
+							break
+						}
+					}
+					if !valid {
+						return nil, fmt.Errorf("invalid protocol in `%s`", hello.ServerName)
 					}
 				}
 

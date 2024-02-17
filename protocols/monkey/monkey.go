@@ -17,31 +17,66 @@ import (
 )
 
 func (m *Monkey) Run() {
-	errors := new(errorsLog)
+
+	defer func() {
+		// Free the jobID from monkey
+		if !protocolCommon.MockedPatrick {
+			m.Service.monkeysLock.Lock()
+			defer m.Service.monkeysLock.Unlock()
+			delete(m.Service.monkeys, m.Job.Id)
+		}
+	}()
+
+	errs := make([]error, 0)
+	gotIt := true
 
 	m.Status = patrick.JobStatusLocked
 	isLocked, err := m.Service.patrickClient.IsLocked(m.Id)
 	if !isLocked {
-		errors.appendAndLog("Locking job %s failed", m.Id)
+		appendAndLog(errs, "Locking job %s failed", m.Id)
+		gotIt = false
 	}
 	if err != nil {
-		errors.appendAndLog("Checking if locked job %s failed with: %s", m.Id, err.Error())
+		appendAndLog(errs, "Checking if locked job %s failed with: %s", m.Id, err.Error())
+		gotIt = false
 	}
 
-	if err = m.RunJob(); err != nil {
-		errors.appendAndLog("Running job `%s` failed with error: %s", m.Id, err.Error())
-	} else {
-		m.logFile.Seek(0, io.SeekEnd)
-		m.logFile.WriteString(chidori.Format(logger, log.LevelInfo, "\nRunning job `%s` was successful\n", m.Id))
+	if !gotIt {
+		return
 	}
 
-	m.appendErrors(m.logFile, *errors...)
-	cid, err0 := m.storeLogs(m.logFile, *errors...)
+	ctx, ctxC := context.WithCancel(m.ctx)
+
+	go func() {
+		m.run(errs)
+		ctxC()
+	}()
+
+	go func() {
+		for {
+			select {
+			case <-time.After(protocolCommon.DefaultRefreshLockTime):
+
+				eta := time.Since(m.start) + protocolCommon.DefaultLockTime
+
+				// TODO: handle error. Cancel context if fails multiple times
+				// IDEA: have a Refresh call that actually can update logs
+				m.Service.patrickClient.Lock(m.Id, uint32(eta/time.Second))
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	<-ctx.Done()
+
+	m.appendErrors(m.logFile, errs...)
+	cid, err0 := m.storeLogs(m.logFile, errs...)
 	if err0 != nil {
 		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err0.Error())
 	}
 
-	m.Job.Logs[m.Job.Id] = cid
+	m.Job.Logs[m.Job.Id] = cid //FIXME: maybe have some other kind of index for m.Job.Logs, like Timestamp
 	m.LogCID = cid
 	if err != nil {
 		if strings.Contains(err.Error(), protocolCommon.RetryErrorString) {
@@ -70,20 +105,28 @@ func (m *Monkey) Run() {
 		logger.Errorf("Hoarding cid `%s` of job `%s` failed: %s", cid, m.Id, err.Error())
 	}
 
-	// Free the jobID from monkey
-	if !protocolCommon.LocalPatrick {
-		delete(m.Service.monkeys, m.Job.Id)
+}
+
+func (m *Monkey) run(errs []error) {
+	if err := m.RunJob(); err != nil {
+		appendAndLog(errs, "Running job `%s` failed with error: %s", m.Id, err.Error())
+	} else {
+		m.logFile.Seek(0, io.SeekEnd)
+		m.logFile.WriteString(chidori.Format(logger, log.LevelInfo, "\nRunning job `%s` was successful\n", m.Id))
 	}
 }
 
 func (s *Service) newMonkey(job *patrick.Job) (*Monkey, error) {
 	jid := job.Id
-	err := s.patrickClient.Lock(jid, uint32(protocolCommon.DefaultLockTime)) //5 minutes to complete a job
+	err := s.patrickClient.Lock(jid, uint32(protocolCommon.DefaultLockTime/time.Second))
 	if err != nil {
 		return nil, err
 	}
 
-	randSleep()
+	if !protocolCommon.MockedPatrick {
+		randSleep()
+	}
+
 	locked, err := s.patrickClient.IsLocked(jid)
 	if err != nil {
 		return nil, err
@@ -96,15 +139,21 @@ func (s *Service) newMonkey(job *patrick.Job) (*Monkey, error) {
 		}
 
 		m := &Monkey{
-			Id:      jid,
-			Status:  patrick.JobStatusOpen,
-			Service: s,
-			Job:     job,
-			logFile: logFile,
+			Id:                    jid,
+			Status:                patrick.JobStatusOpen,
+			Service:               s,
+			Job:                   job,
+			logFile:               logFile,
+			generatedDomainRegExp: s.config.GeneratedDomainRegExp,
+			start:                 time.Now(),
 		}
 
 		m.ctx, m.ctxC = context.WithCancel(s.ctx)
+
+		m.Service.monkeysLock.Lock()
 		s.monkeys[jid] = m
+		m.Service.monkeysLock.Unlock()
+
 		return m, nil
 	}
 
@@ -112,14 +161,15 @@ func (s *Service) newMonkey(job *patrick.Job) (*Monkey, error) {
 }
 
 // Random sleep so job is unlocked randomly.
-func randSleep() error {
+func randSleep() {
 	// Using int 1<<53 as per math/rand documentation for 53 bit int.
 	n, err := rand.Int(rand.Reader, big.NewInt(1<<53))
 	if err != nil {
-		return fmt.Errorf("generating random int failed with: %s", err)
+		time.Sleep(protocolCommon.DefaultLockMinWaitTime)
+		return
 	}
 
-	// Convert to random value between 0 and 1 nanoseconds to value between 0 and 10 seconds
-	time.Sleep(time.Duration(float64(n.Int64()) / float64(1<<53) * 10000000000))
-	return nil
+	// Convert to random value between 0 and 1 nanoseconds to value between 30 and 60 seconds
+	duration := protocolCommon.DefaultLockMinWaitTime + time.Duration(float64(n.Int64())/float64(1<<53))*protocolCommon.DefaultLockMinWaitTime
+	time.Sleep(duration)
 }

@@ -52,7 +52,7 @@ func TestIndexer(t *testing.T) {
 		return
 	}
 
-	rc, err := compile.CompilerConfig(project, fakeMeta)
+	rc, err := compile.CompilerConfig(project, fakeMeta, generatedDomainRegExp)
 	if err != nil {
 		t.Error(err)
 		return
