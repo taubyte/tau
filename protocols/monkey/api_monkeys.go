@@ -86,7 +86,6 @@ func (m *Service) statusHandler(ctx context.Context, jid string) (cr.Response, e
 	m.monkeysLock.RLock()
 	defer m.monkeysLock.RUnlock()
 
-	fmt.Println(m.monkeys)
 	monkey, ok := m.monkeys[jid]
 	if !ok {
 		return nil, fmt.Errorf("job `%s` not found", jid)

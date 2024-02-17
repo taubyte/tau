@@ -38,7 +38,6 @@ func (p *PatrickService) lockHelper(ctx context.Context, pid peer.ID, lockData [
 	}
 
 	if method {
-		fmt.Printf("Locking expired job `%s` by %s\n", jid, pid)
 		return p.tryLock(ctx, pid, jid, jobLock.Timestamp, eta)
 	}
 
