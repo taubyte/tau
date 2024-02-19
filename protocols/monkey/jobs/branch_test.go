@@ -11,7 +11,7 @@ import (
 
 func TestBranch(t *testing.T) {
 	t.Skip("Needs to be redone")
-	protocolCommon.LocalPatrick = true
+	protocolCommon.MockedPatrick = true
 	u, err := startDreamland("testRunBranch")
 	defer u.Stop()
 	assert.NilError(t, err)

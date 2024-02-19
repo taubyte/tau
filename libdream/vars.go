@@ -16,11 +16,10 @@ var (
 	fixturesLock sync.RWMutex
 
 	//buffer between protocol ports
-	portBuffer    = 21
-	portStart     = 100
-	httpPortStart = 403
-	DNSPathVar    = "dns"
-	Ports         map[string]int
+	portBuffer = 21
+	portStart  = 100
+
+	Ports map[string]int
 
 	DreamlandApiListen = DefaultHost + ":1421"
 

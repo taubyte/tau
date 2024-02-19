@@ -22,7 +22,9 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 		receivedJob.Logs = make(map[string]string)
 		receivedJob.AssetCid = make(map[string]string)
 
+		srv.monkeysLock.RLock()
 		_, ok := srv.monkeys[receivedJob.Id]
+		srv.monkeysLock.RUnlock()
 		if ok {
 			logger.Debugf("Already processing job: `%s`", receivedJob.Id)
 			return

@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"os"
+	"regexp"
+	"sync"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
 	hoarderIface "github.com/taubyte/go-interfaces/services/hoarder"
@@ -15,6 +18,7 @@ import (
 	"github.com/taubyte/tau/clients/p2p/hoarder"
 	patrickClient "github.com/taubyte/tau/clients/p2p/patrick"
 	"github.com/taubyte/tau/config"
+	tauConfig "github.com/taubyte/tau/config"
 	chidori "github.com/taubyte/utils/logger/zap"
 )
 
@@ -35,17 +39,26 @@ type Monkey struct {
 	Service *Service
 	Job     *patrick.Job
 	logFile *os.File
+
+	start time.Time
+
+	generatedDomainRegExp *regexp.Regexp
 }
 
 type Service struct {
-	ctx           context.Context
-	node          peer.Node
-	stream        *streams.CommandService
-	monkeys       map[string]*Monkey
+	ctx    context.Context
+	node   peer.Node
+	stream *streams.CommandService
+
 	patrickClient patrick.Client
 	tnsClient     tnsClient.Client
 	odoClientNode peer.Node
 	hoarderClient *hoarder.Client
+
+	config *tauConfig.Node
+
+	monkeys     map[string]*Monkey
+	monkeysLock sync.RWMutex
 
 	dev         bool
 	dvPublicKey []byte
@@ -60,6 +73,8 @@ func (s *Service) Patrick() patrick.Client {
 }
 
 func (s *Service) Delete(jid string) {
+	s.monkeysLock.Lock()
+	defer s.monkeysLock.Unlock()
 	delete(s.monkeys, jid)
 }
 
@@ -73,28 +88,10 @@ func (s *Service) Dev() bool {
 
 type Config config.Node
 
-const errorsCap = 50
-
-type errorsLog []error
-
-func (e errorsLog) append(err error) errorsLog {
-	if e == nil {
-		e = make(errorsLog, 0, errorsCap)
-	}
-	if err != nil {
-		e = append(e, err)
-	}
-
-	return e
-}
-
-func (e *errorsLog) appendAndLog(format string, args ...any) error {
+func appendAndLog(e []error, format string, args ...any) {
 	if errString := chidori.Format(logger, log.LevelError, format, args...); len(errString) > 0 {
 		err := errors.New(errString)
 
-		*e = e.append(err)
-		return err
+		e = append(e, err)
 	}
-
-	return nil
 }

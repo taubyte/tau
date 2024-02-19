@@ -88,6 +88,7 @@ func (f smartopsContext) codeFile(language wasmSpec.SupportedLanguage) error {
 		Monkey: fakeMonkey{
 			hoarderClient: f.ctx.hoarderClient,
 		},
+		GeneratedDomainRegExp: generatedDomainRegExp,
 	}
 
 	copyPath := path.Join(root, smartopsSpec.PathVariable.String(), f.config.Name)

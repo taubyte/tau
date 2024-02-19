@@ -59,7 +59,7 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 			publicKey = s.dvPublicKey
 		}
 
-		if err := domainSpec.ValidateDNS(pick.Project(), matcher.Host, s.Dev(), dv.PublicKey(publicKey)); err != nil {
+		if err := domainSpec.ValidateDNS(s.config.GeneratedDomainRegExp, pick.Project(), matcher.Host, s.Dev(), dv.PublicKey(publicKey)); err != nil {
 			return nil, fmt.Errorf("validating dns failed for match definition `%v` failed with: %w", *matcher, err)
 		}
 

@@ -29,7 +29,7 @@ var (
 	projectId  string
 	functionId string
 
-	fqdn         = "dreamland.test" // make sure to add this to /etc/hosts
+	fqdn         = "hal.computers.com" // make sure to add this to /etc/hosts
 	functionPath = "ping"
 
 	iterations = 300

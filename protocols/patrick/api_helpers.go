@@ -6,32 +6,77 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/go-interfaces/services/patrick"
 	patrickSpecs "github.com/taubyte/go-specs/patrick"
 	cr "github.com/taubyte/p2p/streams/command/response"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 )
 
 // Helper just to check if a job is already registered as lock
-func (p *PatrickService) lockHelper(lockData []byte, jid string, method bool) (cr.Response, error) {
+func (p *PatrickService) lockHelper(ctx context.Context, pid peer.ID, lockData []byte, jid string, eta int64, method bool) (cr.Response, error) {
 	var jobLock Lock
-	if err := cbor.Unmarshal(lockData, &jobLock); err != nil {
+	err := cbor.Unmarshal(lockData, &jobLock)
+	if err != nil {
 		logger.Errorf("Reading lock for `%s` failed with: %s", jid, err.Error())
-		// continue assuming another patrick crashed when trying to lock
+		// TODO: probably return an error so monkey reties
+		return nil, err
 	} else if jobLock.Timestamp+jobLock.Eta > time.Now().Unix() {
 		if method {
-			return cr.Response{
-				"locked-by": jobLock.Pid,
-				"till":      jobLock.Timestamp + jobLock.Eta,
-			}, fmt.Errorf("job is locked by `%s`", jobLock.Pid)
+			if jobLock.Pid == pid {
+				return p.tryLock(ctx, pid, jid, jobLock.Timestamp, eta)
+			} else {
+				return cr.Response{
+					"locked":    true,
+					"locked-by": jobLock.Pid.String(),
+					"till":      jobLock.Timestamp + jobLock.Eta,
+				}, fmt.Errorf("job is locked by `%s`", jobLock.Pid)
+			}
 		}
 
-		return cr.Response{"locked": true, "locked-by": jobLock.Pid}, nil
+		return cr.Response{"locked": true, "locked-by": jobLock.Pid.String()}, nil
 	}
+
+	if method {
+		return p.tryLock(ctx, pid, jid, jobLock.Timestamp, eta)
+	}
+
+	return cr.Response{"locked": false}, nil
+}
+
+// Helper just to check if a job is already registered as lock
+func (p *PatrickService) tryLock(ctx context.Context, pid peer.ID, jid string, timestamp, eta int64) (cr.Response, error) {
+	lockData, err := cbor.Marshal(Lock{
+		Pid:       pid, // monkey ID
+		Timestamp: timestamp,
+		Eta:       eta,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed cbor marshal with error: %v", err)
+	}
+
+	if err = p.db.Put(ctx, ("/locked/jobs/" + jid), lockData); err != nil {
+		return nil, fmt.Errorf("locking `%s` failed with: %v", jid, err)
+	}
+
 	return nil, nil
 }
 
 // Helper for done/failed/cancel Handler
-func (p *PatrickService) updateStatus(ctx context.Context, jid string, cid_log map[string]string, status patrick.JobStatus, assetCid map[string]string) error {
+func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid string, cid_log map[string]string, status patrick.JobStatus, assetCid map[string]string) error {
+
+	if pid != "" {
+		lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
+		if err == nil {
+			var jobLock Lock
+			if err := cbor.Unmarshal(lockData, &jobLock); err == nil {
+				if pid != peer.ID(jobLock.Pid) {
+					return fmt.Errorf("failed to update job %s, %s is not the owner", jid, pid)
+				}
+			}
+		}
+	}
+
 	var job patrick.Job
 	// Grab job and move it to /archive/jobs/{jid}
 	getJob, err := p.db.Get(ctx, "/jobs/"+jid)
@@ -47,15 +92,22 @@ func (p *PatrickService) updateStatus(ctx context.Context, jid string, cid_log m
 	job.Status = status
 	job.Logs = cid_log
 	job.AssetCid = assetCid
+	job.Attempt++
 
 	// TODO: Un-export job locks, and create methods
-	jobData, err := cbor.Marshal(job)
+	jobData, err := cbor.Marshal(&job)
 	if err != nil {
 		return fmt.Errorf("marshal in updateStatus error: %w", err)
 	}
 
-	if err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData); err != nil {
-		return fmt.Errorf("updateStatus put failed with error: %w", err)
+	if job.Status == patrick.JobStatusSuccess || job.Status == patrick.JobStatusCancelled || job.Attempt > protocolsCommon.MaxJobAttempts {
+		if err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData); err != nil {
+			return fmt.Errorf("updateStatus put failed with error: %w", err)
+		}
+	} else {
+		if err = p.db.Put(ctx, "/jobs/"+jid, jobData); err != nil {
+			return fmt.Errorf("updateStatus put failed with error: %w", err)
+		}
 	}
 
 	if err = p.deleteJob(ctx, []string{"/locked/jobs/", "/jobs/"}, jid); err != nil {

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"path"
-	"regexp"
 	"time"
 
 	_ "embed"
@@ -34,7 +33,8 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	}
 
 	srv := &Service{
-		shape: config.Shape,
+		config: config,
+		shape:  config.Shape,
 	}
 
 	err := config.Validate()
@@ -42,12 +42,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		return nil, fmt.Errorf("building config failed with: %s", err)
 	}
 
-	logger.Infof("Config: %#v", config)
-
 	srv.dnsResolver = net.DefaultResolver
-	srv.generatedDomain = config.GeneratedDomain
-	srv.protocolRecordBypass = regexp.MustCompile(fmt.Sprintf(`^[^.]+\.tau\.%s$`, regexp.QuoteMeta(config.NetworkFqdn)))
-	srv.protocolDomain = "tau." + config.NetworkFqdn
 
 	for _, op := range opts {
 		err = op(srv)

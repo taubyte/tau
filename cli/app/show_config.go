@@ -35,8 +35,8 @@ func displayConfig(pid string, config *config.Node) error {
 
 	domt := table.NewWriter()
 	domt.AppendRows([]table.Row{
-		{"Generated", fmt.Sprintf("Match(`%s`)", config.GeneratedDomain)},
-		{"Services/Protocols", fmt.Sprintf("Match(`%s`)", config.ServicesDomain)},
+		{"Generated", config.GeneratedDomain},
+		{"Aliases", fmt.Sprint(config.AliasDomains)},
 	})
 	domt.SetStyle(table.StyleLight)
 

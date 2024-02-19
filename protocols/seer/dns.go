@@ -9,7 +9,6 @@ import (
 
 	validate "github.com/taubyte/domain-validation"
 	"github.com/taubyte/go-interfaces/services/tns"
-	domainSpecs "github.com/taubyte/go-specs/domain"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
 	"github.com/jellydator/ttlcache/v3"
@@ -81,6 +80,20 @@ func (seer *Service) newDnsServer(devMode bool, port int) error {
 	return nil
 }
 
+func (s *Service) isProtocolOrAliasDomain(dom string) bool {
+	logger.Debugf("Checking %s against %s", dom, s.config.ProtocolsDomainRegExp.String())
+	if s.config.ProtocolsDomainRegExp.MatchString(dom) {
+		return true
+	}
+	for _, r := range s.config.AliasDomainsRegExp {
+		logger.Debugf("Checking %s against %s", dom, r.String())
+		if r.MatchString(dom) {
+			return true
+		}
+	}
+	return false
+}
+
 // Real DNS Handler
 func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	msg := dns.Msg{}
@@ -94,6 +107,9 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if len(msg.Question) < 1 {
 		logger.Error("msg question is empty")
 	}
+
+	logger.Debugf("request for %s", msg.Question[0].Name)
+
 	if spam := h.seer.negativeCache.Get(msg.Question[0].Name); spam != nil {
 		logger.Errorf("%s is currently blocked", msg.Question[0].Name)
 		if err := w.WriteMsg(errMsg); err != nil {
@@ -125,26 +141,14 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 	name = strings.ToLower(name)
 
-	if name == h.seer.protocolDomain { // TODO: add generated here
-		w.WriteMsg(&msg)
-		return
-	}
-
-	//  check if it matches .g.tau.link generated domain
-	if domainSpecs.SpecialDomain.MatchString(name) {
+	logger.Debugf("Checking %s against %s", name, h.seer.config.GeneratedDomainRegExp.String())
+	if h.seer.config.GeneratedDomainRegExp.MatchString(name) {
 		h.replyWithHTTPServicingNodes(w, r, errMsg, msg)
 		return
 	}
 
-	// Second Case -> check if domain is under our white listed domain
-	for _, domain := range domainSpecs.WhiteListedDomains {
-		if name == domain {
-			h.replyWithHTTPServicingNodes(w, r, errMsg, msg)
-			return
-		}
-	}
-
-	if h.seer.protocolRecordBypass.MatchString(name) {
+	if h.seer.isProtocolOrAliasDomain(name) {
+		logger.Debugf("Looks like %s is a ProtocolOrAliasDomain", name)
 		h.tauDnsResolve(name, w, r, errMsg, msg)
 		return
 	}
@@ -189,27 +193,27 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 // TODO: Clean this up, repetitive code
 func (h *dnsHandler) tauDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
-	protocol := strings.Split(name, ".")[0]
-	if err := common.ValidateProtocols([]string{protocol}); err != nil {
-		logger.Errorf("validating protocol `%s` failed with: %s", protocol, err.Error())
-		if err := w.WriteMsg(errMsg); err != nil {
-			logger.Errorf("writing error message `%s` failed with: %s", errMsg, err.Error())
-		}
-
-		return
-	}
-
-	ips, err := h.getServiceIp(protocol)
-	if err != nil {
-		logger.Errorf("getting ip for %s failed with %s", protocol, err.Error())
-		if err := w.WriteMsg(errMsg); err != nil {
-			logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
-		}
-		return
-	}
-
 	switch r.Question[0].Qtype {
 	case dns.TypeA:
+		protocol := strings.Split(name, ".")[0]
+		if err := common.ValidateProtocols([]string{protocol}); err != nil {
+			logger.Errorf("validating protocol `%s` failed with: %s", protocol, err.Error())
+			if err := w.WriteMsg(errMsg); err != nil {
+				logger.Errorf("writing error message `%s` failed with: %s", errMsg, err.Error())
+			}
+
+			return
+		}
+
+		ips, err := h.getServiceIp(protocol)
+		if err != nil {
+			logger.Errorf("getting ip for %s failed with %s", protocol, err.Error())
+			if err := w.WriteMsg(errMsg); err != nil {
+				logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
+			}
+			return
+		}
+
 		for _, ip := range ips {
 			msg.Answer = append(msg.Answer, &dns.A{
 				Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
@@ -219,9 +223,10 @@ func (h *dnsHandler) tauDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg
 		}
 	}
 
-	err = w.WriteMsg(&msg)
+	err := w.WriteMsg(&msg)
 	if err != nil {
 		logger.Errorf("writing msg for url `%s` failed with: %s", name, err.Error())
 		w.WriteMsg(errMsg)
 	}
+
 }

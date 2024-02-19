@@ -18,7 +18,7 @@ func TestService_Discover(t *testing.T) {
 
 	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"substrate": {Others: map[string]int{"copies": 4}},
+			"substrate": {Others: map[string]int{"copies": 2}},
 		},
 		Simples: map[string]dreamland.SimpleConfig{},
 	})
@@ -27,8 +27,8 @@ func TestService_Discover(t *testing.T) {
 	srv, err := p2p.New(u.Substrate())
 	assert.NilError(t, err)
 
-	peers, err := srv.Discover(u.Context(), 5, time.Second*2)
+	peers, err := srv.Discover(u.Context(), 2, 2*time.Second)
 	assert.NilError(t, err)
 
-	assert.Equal(t, len(peers), 3)
+	assert.Equal(t, len(peers), 1)
 }

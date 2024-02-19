@@ -3,6 +3,7 @@ package tests
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -41,6 +42,8 @@ var (
 	storageMatch  = "/test/hoarder"
 	databaseMatch = "/test/database"
 )
+
+var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
 // TODO: Fix Hoarder and tests
 func TestStoring(t *testing.T) {
@@ -99,7 +102,7 @@ func TestStoring(t *testing.T) {
 	fakJob.Meta.HeadCommit.ID = "QmaskdjfziUJHJjYfhaysgYGYyA"
 	fakJob.Id = "jobforjob_test"
 
-	rc, err := compile.CompilerConfig(projectIface, fakJob.Meta)
+	rc, err := compile.CompilerConfig(projectIface, fakJob.Meta, generatedDomainRegExp)
 	if err != nil {
 		t.Error(err)
 		return

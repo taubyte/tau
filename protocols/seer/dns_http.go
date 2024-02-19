@@ -115,5 +115,5 @@ func (srv *Service) getDnsService(ctx http.Context) (interface{}, error) {
 }
 
 func (srv *Service) getGeneratedDomain(ctx http.Context) (interface{}, error) {
-	return srv.generatedDomain, nil
+	return srv.config.GeneratedDomain, nil
 }

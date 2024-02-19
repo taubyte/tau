@@ -104,19 +104,19 @@ func (m *Monkey) RunJob() (err error) {
 		return errors.New("getting deploy key failed")
 	}
 
-	fmt.Println("MONKEY:", m.Service)
 	c := jobs.Context{
-		Patrick:       m.Service.patrickClient,
-		Monkey:        m.Service,
-		Tns:           m.Service.tnsClient,
-		RepoType:      repoType,
-		ProjectID:     projectId,
-		DeployKey:     gitRepo.PrivateKey(),
-		Job:           m.Job,
-		Node:          m.Service.node,
-		LogFile:       m.logFile,
-		OdoClientNode: node,                  // Odo specific
-		DVPublicKey:   m.Service.dvPublicKey, // For Domain Validation
+		Patrick:               m.Service.patrickClient,
+		Monkey:                m.Service,
+		Tns:                   m.Service.tnsClient,
+		RepoType:              repoType,
+		ProjectID:             projectId,
+		DeployKey:             gitRepo.PrivateKey(),
+		Job:                   m.Job,
+		Node:                  m.Service.node,
+		LogFile:               m.logFile,
+		OdoClientNode:         node,                  // Odo specific
+		DVPublicKey:           m.Service.dvPublicKey, // For Domain Validation
+		GeneratedDomainRegExp: m.generatedDomainRegExp,
 	}
 	if repoType == compilerCommon.CodeRepository {
 		c.ConfigRepoId = p.Git.Config.Id()

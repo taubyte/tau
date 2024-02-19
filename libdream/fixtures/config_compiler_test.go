@@ -73,7 +73,7 @@ func TestE2E(t *testing.T) {
 		return
 	}
 
-	rc, err := compile.CompilerConfig(projectIface, fakeMeta)
+	rc, err := compile.CompilerConfig(projectIface, fakeMeta, generatedDomainRegExp)
 	if err != nil {
 		t.Error(err)
 		return
@@ -189,7 +189,7 @@ func TestE2E(t *testing.T) {
 		return
 	}
 
-	rc, err = compile.CompilerConfig(projectIface, fakeMeta)
+	rc, err = compile.CompilerConfig(projectIface, fakeMeta, generatedDomainRegExp)
 	if err != nil {
 		t.Error(err)
 		return
@@ -211,7 +211,7 @@ func TestE2E(t *testing.T) {
 
 	_map := compiler.Object()
 
-	rc, err = compile.CompilerConfig(fetchedProjectIface, fakeMeta)
+	rc, err = compile.CompilerConfig(fetchedProjectIface, fakeMeta, generatedDomainRegExp)
 	if err != nil {
 		t.Error(err)
 		return

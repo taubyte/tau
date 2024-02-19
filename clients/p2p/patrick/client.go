@@ -10,18 +10,19 @@ import (
 )
 
 func New(ctx context.Context, node peer.Node) (iface.Client, error) {
-	var (
-		c   Client
-		err error
-	)
-	if c.client, err = client.New(node, protocolsCommon.PatrickProtocol); err != nil {
+	c := &Client{
+		node: node,
+	}
+
+	var err error
+	if c.Client, err = client.New(c.node, protocolsCommon.PatrickProtocol); err != nil {
 		logger.Error("API client creation failed:", err)
 		return nil, err
 	}
 
-	return &c, nil
+	return c, nil
 }
 
 func (c *Client) Close() {
-	c.client.Close()
+	c.Client.Close()
 }

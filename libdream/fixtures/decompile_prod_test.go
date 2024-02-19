@@ -74,7 +74,7 @@ func TestDecompileProd(t *testing.T) {
 		return
 	}
 
-	rc, err := compile.CompilerConfig(projectIface, fakeMeta)
+	rc, err := compile.CompilerConfig(projectIface, fakeMeta, generatedDomainRegExp)
 	if err != nil {
 		t.Error(err)
 		return

@@ -64,7 +64,7 @@ func (srv *Service) attachNodes(config *config.Node) (err error) {
 }
 
 func (srv *Service) attachNodeHttp(config *config.Node) (err error) {
-	srv.components.http, err = http.New(srv, http.DvKey(config.DomainValidation.PublicKey))
+	srv.components.http, err = http.New(srv, config, http.DvKey(config.DomainValidation.PublicKey))
 	return
 }
 

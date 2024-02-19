@@ -3,14 +3,16 @@ package http
 import (
 	"fmt"
 
+	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/vm/cache"
 
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 )
 
-func New(srv nodeIface.Service, options ...Option) (*Service, error) {
+func New(srv nodeIface.Service, config *config.Node, options ...Option) (*Service, error) {
 	s := &Service{
 		Service: srv,
+		config:  config,
 		cache:   cache.New(),
 	}
 

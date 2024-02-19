@@ -32,7 +32,7 @@ func startCommand() *cli.Command {
 
 		Action: func(ctx *cli.Context) error {
 			shape := ctx.String("shape")
-			_, protocolConfig, sourceConfig, err := parseSourceConfig(ctx, shape)
+			_, protocolConfig, _, err := parseSourceConfig(ctx, shape)
 			if err != nil {
 				return fmt.Errorf("parsing config failed with: %s", err)
 			}
@@ -52,7 +52,6 @@ func startCommand() *cli.Command {
 				cmd.CombinedOutput()
 			}
 
-			setNetworkDomains(sourceConfig)
 			return node.Start(ctx.Context, protocolConfig)
 		},
 	}

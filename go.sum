@@ -881,8 +881,8 @@ github.com/taubyte/builder v0.2.1 h1:2NGWJr42hQaAQa10+sZiH1iTBXCyrAELUM6BVHBEh2U
 github.com/taubyte/builder v0.2.1/go.mod h1:k2AEW0pndt3e69zZLZgG2eAXZIzfzKzy3vrsUo+B+AQ=
 github.com/taubyte/cli-common v0.1.1 h1:cWgk/MABhKMoeLOJ1rQXg7mqrMhjBIHZmDJv0ewl4dY=
 github.com/taubyte/cli-common v0.1.1/go.mod h1:jsKlKVPrpZLhV6QyhQ5b7XdJJEpwX5oEx1C1DsN0f4Y=
-github.com/taubyte/config-compiler v0.4.6 h1:9s3xn955imE7gAyVFpcsBEkowhCir78b1HPWLcDAl38=
-github.com/taubyte/config-compiler v0.4.6/go.mod h1:gaohk1BSknIudo16QSgeQqVWVGLyusPPdLn+wQ+xAmY=
+github.com/taubyte/config-compiler v0.4.7 h1:5Ox3M5xYVdKxMMem6W8Fp+5wOV6fMpgX+0cFm7Gev0A=
+github.com/taubyte/config-compiler v0.4.7/go.mod h1:FUAFxbeBe9b7QRnUQAy33Y1HaBif5eZX2ENylL0EW7U=
 github.com/taubyte/domain-validation v1.0.1 h1:T1iRls4p5+uJLR8R/wf+dBt9Rlahg9BcCtBVbkoD0Ik=
 github.com/taubyte/domain-validation v1.0.1/go.mod h1:/X3yd7sBjnE323rA8I9PiUt5+NlKU4I02nQik25Vqe8=
 github.com/taubyte/go-interfaces v0.2.14-0.20230928164739-cb43412ebf90 h1:vs5vfSUD6enNlvMB0XjRtTm0b9ze+PYaQ7MJEA6k6W4=
@@ -901,8 +901,8 @@ github.com/taubyte/go-simple-container v0.4.4 h1:YtC9034CYPHUxj0jcQ80NMldMgDAnxI
 github.com/taubyte/go-simple-container v0.4.4/go.mod h1:7nFas4yr17+jFUWmQLBNZ//s40Y+7/iiJhJkXAJDGiY=
 github.com/taubyte/go-simple-git v0.2.5 h1:ESwhDVHGF0oVPFtZvCS5SzrugjCpK0KKaQIQC6AxzDE=
 github.com/taubyte/go-simple-git v0.2.5/go.mod h1:tPUTQo7GPNEYOV1kRMqWLv3cihLN4MKyK1kW36xr9wk=
-github.com/taubyte/go-specs v0.10.8-0.20230912140105-e8d804edc77c h1:OZcagAWXDR1ecUtlsEilbeaco0587H1/mIV1XaZ0PTQ=
-github.com/taubyte/go-specs v0.10.8-0.20230912140105-e8d804edc77c/go.mod h1:lhCi7imHROEiX8yhSSByxDX0DkqcgPX7QMaXs5XrZJ0=
+github.com/taubyte/go-specs v0.10.8 h1:Lh0x0eoxqvijXivoSCp9Fg8P/qW5ak71SCd2Chabm18=
+github.com/taubyte/go-specs v0.10.8/go.mod h1:lhCi7imHROEiX8yhSSByxDX0DkqcgPX7QMaXs5XrZJ0=
 github.com/taubyte/http v0.10.5 h1:0dpSYi1XvryxO7U1Df5cgh+6LWKtaMypILQjgfJdExw=
 github.com/taubyte/http v0.10.5/go.mod h1:hSJYC7/yqRkrsZYe1Q0c194GKkVD0KGWDzw0sC+SAiU=
 github.com/taubyte/odo v0.0.0-20230726203810-bdae9f37e8f8 h1:+r57pU7UW1DZkBgOUsBh0zmRSg77sz+bJ3DaybLR3z0=

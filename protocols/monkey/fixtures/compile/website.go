@@ -71,6 +71,7 @@ func (w websiteContext) directory() error {
 		Monkey: fakeMonkey{
 			hoarderClient: w.ctx.hoarderClient,
 		},
+		GeneratedDomainRegExp: generatedDomainRegExp,
 	}
 
 	c.ForceGitDir(w.ctx.paths[0])

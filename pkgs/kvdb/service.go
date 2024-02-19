@@ -7,6 +7,7 @@ import (
 	crdt "github.com/ipfs/go-ds-crdt"
 	"github.com/taubyte/go-interfaces/kvdb"
 	"github.com/taubyte/p2p/peer"
+	"go.uber.org/zap/zapcore"
 
 	logging "github.com/ipfs/go-log/v2"
 
@@ -49,20 +50,22 @@ func New(node peer.Node) kvdb.Factory {
 		node: node,
 	}
 
-	go func() {
-		for {
-			select {
-			case <-f.node.Context().Done():
-				return
-			case <-time.After(3 * time.Second):
-				f.dbsLock.Lock()
-				for path, s := range f.dbs {
-					slogger.Debug("KVDB ", path, "HEADS -> ", s.datastore.InternalStats().Heads)
+	if slogger.Level() <= zapcore.DebugLevel {
+		go func() {
+			for {
+				select {
+				case <-f.node.Context().Done():
+					return
+				case <-time.After(10 * time.Second):
+					f.dbsLock.RLock()
+					for path, s := range f.dbs {
+						slogger.Debug("KVDB ", path, "HEADS -> ", s.datastore.InternalStats().Heads)
+					}
+					f.dbsLock.RUnlock()
 				}
-				f.dbsLock.Unlock()
 			}
-		}
-	}()
+		}()
+	}
 
 	return f
 

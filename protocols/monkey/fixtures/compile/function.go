@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/otiai10/copy"
@@ -19,6 +20,8 @@ import (
 	"github.com/taubyte/tau/protocols/monkey/jobs"
 	"github.com/taubyte/utils/bundle"
 )
+
+var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
 type functionContext struct {
 	ctx    resourceContext
@@ -90,6 +93,7 @@ func (f functionContext) codeFile(language wasmSpec.SupportedLanguage) error {
 		Monkey: fakeMonkey{
 			hoarderClient: f.ctx.hoarderClient,
 		},
+		GeneratedDomainRegExp: generatedDomainRegExp,
 	}
 
 	copyPath := path.Join(root, functionSpec.PathVariable.String(), f.config.Name)
