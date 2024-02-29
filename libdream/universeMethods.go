@@ -226,6 +226,6 @@ func (u *Universe) Kill(name string) error {
 			return fmt.Errorf("killing %s failed with: does not exist", name)
 		}
 
-		return u.killSimpleByNameId(name, simple.ID().Pretty())
+		return u.killSimpleByNameId(name, simple.ID().String())
 	}
 }

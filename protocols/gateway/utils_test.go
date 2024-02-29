@@ -119,7 +119,7 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 	}
 
 	proxyPid := res.Header.Get(ProxyHeader)
-	assert.Equal(t, proxyPid, firstSubstrate.Node().ID().Pretty())
+	assert.Equal(t, proxyPid, firstSubstrate.Node().ID().String())
 
 	return
 }

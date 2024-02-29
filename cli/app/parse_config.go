@@ -113,7 +113,7 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 		return "", nil, nil, err
 	}
 
-	return pid.Pretty(), protocol, src, nil
+	return pid.String(), protocol, src, nil
 }
 
 func parseSwarmKey(filepath string) (pnet.PSK, error) {

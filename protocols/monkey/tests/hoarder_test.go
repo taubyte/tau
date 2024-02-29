@@ -30,12 +30,11 @@ func TestHoarder(t *testing.T) {
 
 	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":      {},
-			"hoarder":   {},
-			"tns":       {},
-			"substrate": {},
-			"patrick":   {},
-			"monkey":    {},
+			"seer":    {},
+			"hoarder": {},
+			"tns":     {},
+			"patrick": {},
+			"monkey":  {},
 		},
 		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
@@ -87,6 +86,8 @@ func TestHoarder(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
+	u.Mesh(u.Monkey().Node(), u.Hoarder().Node())
+
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)
 
@@ -104,6 +105,8 @@ func TestHoarder(t *testing.T) {
 
 	hoarderC, err := simple.Hoarder()
 	assert.NilError(t, err)
+
+	// time.Sleep(5 * time.Minute)
 
 	list, err := hoarderC.List()
 	assert.NilError(t, err)

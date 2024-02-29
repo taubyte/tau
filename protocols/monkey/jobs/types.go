@@ -35,7 +35,7 @@ type Context struct {
 
 	GeneratedDomainRegExp *regexp.Regexp
 
-	OdoClientNode peer.Node
+	ClientNode peer.Node
 
 	DVPublicKey []byte
 }

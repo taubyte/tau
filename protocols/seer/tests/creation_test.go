@@ -61,7 +61,7 @@ func TestService(t *testing.T) {
 
 	found_match := false
 	for _, p := range resp {
-		if p.Id == simple.PeerNode().ID().Pretty() {
+		if p.Id == simple.PeerNode().ID().String() {
 			fmt.Println(p.Location.Location)
 			if p.Location.Location == fake_location {
 				found_match = true

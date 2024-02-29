@@ -17,7 +17,7 @@ import (
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/pkgs/kvdb"
-	orbit "github.com/taubyte/vm-orbit/plugin/vm"
+	orbit "github.com/taubyte/vm-orbit/satellite/vm"
 
 	protocolCommon "github.com/taubyte/tau/protocols/common"
 	smartopsPlugins "github.com/taubyte/vm-core-plugins/smartops"

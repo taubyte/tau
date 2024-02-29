@@ -7,7 +7,7 @@ import (
 
 	"github.com/taubyte/tau/libdream"
 	commonTest "github.com/taubyte/tau/libdream/helpers"
-	orbit "github.com/taubyte/vm-orbit/plugin/vm"
+	orbit "github.com/taubyte/vm-orbit/satellite/vm"
 
 	_ "github.com/taubyte/tau/protocols/auth"
 	_ "github.com/taubyte/tau/protocols/hoarder"

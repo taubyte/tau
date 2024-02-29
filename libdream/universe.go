@@ -105,7 +105,7 @@ func (u *Universe) toClose(c commonIface.Service) {
 func (u *Universe) Register(node peer.Node, name string, ports map[string]int) {
 	u.lock.Lock()
 	defer u.lock.Unlock()
-	u.lookups[node.ID().Pretty()] = &NodeInfo{
+	u.lookups[node.ID().String()] = &NodeInfo{
 		DbFactory: kvdb.New(node),
 		Node:      node,
 		Name:      name,
@@ -142,7 +142,7 @@ func (u *Universe) StartAll(simples ...string) error {
 
 func (u *Universe) GetPortHttp(node peer.Node) (int, error) {
 	u.lock.RLock()
-	info, ok := u.lookups[node.ID().Pretty()]
+	info, ok := u.lookups[node.ID().String()]
 	u.lock.RUnlock()
 	if !ok {
 		return 0, errors.New("node does not exist")

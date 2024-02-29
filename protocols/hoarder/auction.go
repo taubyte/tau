@@ -16,9 +16,9 @@ func (srv *Service) auctionNew(ctx context.Context, auction *hoarderIface.Auctio
 	srv.startAuction(ctx, auction)
 
 	// Check if we have that actionId stored with the action
-	if found := srv.checkValidAction(auction.Meta.Match, hoarderIface.AuctionNew, msg.ReceivedFrom.Pretty()); !found {
+	if found := srv.checkValidAction(auction.Meta.Match, hoarderIface.AuctionNew, msg.ReceivedFrom.String()); !found {
 		// Generate Lottery number and publish our intent to join the lottery
-		auction.Lottery.HoarderId = srv.node.ID().Pretty()
+		auction.Lottery.HoarderId = srv.node.ID().String()
 
 		arr := make([]byte, 8)
 		if _, err := rand.Read(arr); err != nil {
@@ -68,7 +68,7 @@ func (srv *Service) auctionEnd(ctx context.Context, auction *hoarderIface.Auctio
 	}
 
 	// Self evaluate to check if we won or not
-	if winner.Lottery.HoarderId == srv.node.Peer().ID().Pretty() {
+	if winner.Lottery.HoarderId == srv.node.Peer().ID().String() {
 		err := srv.storeAuction(ctx, auction)
 		if err != nil {
 			return err
@@ -82,8 +82,8 @@ func (srv *Service) auctionEnd(ctx context.Context, auction *hoarderIface.Auctio
 
 func (srv *Service) auctionIntent(auction *hoarderIface.Auction, msg *pubsub.Message) error {
 	// If we see that the node already reported intent to stash on action Id we ignore it
-	if found := srv.checkValidAction(auction.Meta.Match, hoarderIface.AuctionIntent, msg.ReceivedFrom.Pretty()); found {
-		return fmt.Errorf("%s already reported an intent", msg.ReceivedFrom.Pretty())
+	if found := srv.checkValidAction(auction.Meta.Match, hoarderIface.AuctionIntent, msg.ReceivedFrom.String()); found {
+		return fmt.Errorf("%s already reported an intent", msg.ReceivedFrom.String())
 	}
 
 	// Generate lottery pool

@@ -8,7 +8,7 @@ import (
 )
 
 func (c *Client) List() ([]string, error) {
-	resp, err := c.client.Send("hoarder", command.Body{"action": "list"})
+	resp, err := c.Send("hoarder", command.Body{"action": "list"})
 	if err != nil {
 		logger.Error("Failed listing cids with error:", err.Error())
 		return nil, fmt.Errorf("failed calling send with error: %w", err)

@@ -48,13 +48,15 @@ func generateKey() (string, string, string, error) {
 }
 
 func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *github.Client, repoID string) (map[string]interface{}, error) {
-	err := client.GetByID(repoID)
-	if err != nil {
-		return nil, fmt.Errorf("fetch repository failed with %w", err)
+	if !srv.devMode {
+		err := client.GetByID(repoID)
+		if err != nil {
+			return nil, fmt.Errorf("fetch repository failed with %w", err)
+		}
 	}
 
 	repoKey := fmt.Sprintf("/repositories/github/%s/key", repoID)
-	_, err = srv.db.Get(ctx, repoKey)
+	_, err := srv.db.Get(ctx, repoKey)
 	if err == nil {
 		return nil, fmt.Errorf("repository `%s` already registered", repoID)
 	}
@@ -62,15 +64,17 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *gi
 	hook_id := id.Generate(repoKey)
 	defaultHookName := "taubyte_push_hook"
 	var defaultGithubHookUrl string
-	if srv.devMode {
-		defaultGithubHookUrl = "https://hooks.git.taubyte.com/github/" + hook_id
-	} else {
-		defaultGithubHookUrl = srv.webHookUrl + "/github/" + hook_id
-	}
+	defaultGithubHookUrl = srv.webHookUrl + "/github/" + hook_id
 
-	hook_githubid, secret, err := client.CreatePushHook(&defaultHookName, &defaultGithubHookUrl, srv.devMode)
-	if err != nil {
-		return nil, fmt.Errorf("create push hook failed with: %s", err)
+	var (
+		hook_githubid int64
+		secret        string
+	)
+	if !srv.devMode {
+		hook_githubid, secret, err = client.CreatePushHook(&defaultHookName, &defaultGithubHookUrl, srv.devMode)
+		if err != nil {
+			return nil, fmt.Errorf("create push hook failed with: %s", err)
+		}
 	}
 
 	kname, kpub, kpriv, err := generateKey()
@@ -78,9 +82,11 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *gi
 		return nil, fmt.Errorf("generate key failed with: %s", err)
 	}
 
-	err = client.CreateDeployKey(&kname, &kpub)
-	if err != nil {
-		return nil, fmt.Errorf("create deploy key failed with: %s", err)
+	if !srv.devMode {
+		err = client.CreateDeployKey(&kname, &kpub)
+		if err != nil {
+			return nil, fmt.Errorf("create deploy key failed with: %s", err)
+		}
 	}
 
 	_repo_id, err := strconv.ParseInt(repoID, 10, 64)
