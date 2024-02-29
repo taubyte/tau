@@ -2,7 +2,6 @@ package engine
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/taubyte/tau/pkgs/kvdb"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/tau/protocols/tns/flat"
+	"gotest.tools/v3/assert"
 )
 
 func TestEncode(t *testing.T) {
@@ -57,7 +57,7 @@ func TestEncode(t *testing.T) {
 	}
 
 	data := map[string]interface{}{
-		"a": 1,
+		"a": uint64(1),
 		"b": "string",
 	}
 
@@ -79,22 +79,5 @@ func TestEncode(t *testing.T) {
 		return
 	}
 
-	// Convert to json and compare sent and received objects
-	jsonData, err := json.Marshal(object.Data)
-	if err != nil {
-		t.Errorf("Marshal failed with err: %v", err)
-		return
-	}
-
-	jsonData2, err := json.Marshal(object2.Data)
-	if err != nil {
-		t.Errorf("Marshal failed with err: %v", err)
-		return
-	}
-
-	if string(jsonData) != string(jsonData2) {
-		t.Error("JSON data not equal")
-		return
-	}
-
+	assert.DeepEqual(t, object.Data, object2.Data)
 }

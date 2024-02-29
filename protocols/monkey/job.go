@@ -25,8 +25,8 @@ func (m *Monkey) RunJob() (err error) {
 	}
 
 	node := m.Service.node
-	if m.Service.odoClientNode != nil {
-		node = m.Service.odoClientNode
+	if m.Service.clientNode != nil {
+		node = m.Service.clientNode
 	}
 
 	ac, err := authClient.New(m.ctx, node)
@@ -114,7 +114,7 @@ func (m *Monkey) RunJob() (err error) {
 		Job:                   m.Job,
 		Node:                  m.Service.node,
 		LogFile:               m.logFile,
-		OdoClientNode:         node,                  // Odo specific
+		ClientNode:            node,
 		DVPublicKey:           m.Service.dvPublicKey, // For Domain Validation
 		GeneratedDomainRegExp: m.generatedDomainRegExp,
 	}

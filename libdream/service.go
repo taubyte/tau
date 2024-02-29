@@ -105,7 +105,7 @@ func (u *Universe) registerService(name string, srv commonIface.Service) peer.No
 			nodes: make(map[string]commonIface.Service),
 		}
 	}
-	registered.nodes[srv.Node().ID().Pretty()] = srv
+	registered.nodes[srv.Node().ID().String()] = srv
 	return srv.Node()
 }
 

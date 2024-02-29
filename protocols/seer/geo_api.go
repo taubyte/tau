@@ -76,7 +76,7 @@ func (geo *geoService) setNode(ctx context.Context, conn streams.Connection, loc
 		return nil, err
 	}
 
-	err = geo.seer.db.Put(ctx, "/geo/"+conn.RemotePeer().Pretty(), _loc)
+	err = geo.seer.db.Put(ctx, "/geo/"+conn.RemotePeer().String(), _loc)
 	if err != nil {
 		return nil, err
 	}

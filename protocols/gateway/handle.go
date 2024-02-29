@@ -47,7 +47,7 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	discard := make([]*client.Response, 0)
 	for response := range resCh {
 		if err := response.Error(); err != nil {
-			logger.Debugf("response from node `%s` failed with: %s", response.PID().Pretty(), err.Error())
+			logger.Debugf("response from node `%s` failed with: %s", response.PID().String(), err.Error())
 		}
 
 		if _metrics, err := response.Get(websiteSpec.PathVariable.String()); err == nil {
@@ -93,7 +93,7 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 		pick = funcMatches[0].Response
 	}
 
-	w.Header().Add(ProxyHeader, pick.PID().Pretty())
+	w.Header().Add(ProxyHeader, pick.PID().String())
 
 	if err := tunnel.Frontend(w, r, pick); err != nil {
 		return fmt.Errorf("tunneling Frontend failed with: %w", err)

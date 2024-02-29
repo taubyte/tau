@@ -14,7 +14,7 @@ func New(ctx context.Context, node peer.Node) (*Client, error) {
 		err error
 	)
 
-	if c.client, err = client.New(node, protocolCommon.HoarderProtocol); err != nil {
+	if c.Client, err = client.New(node, protocolCommon.HoarderProtocol); err != nil {
 		logger.Error("API client creation failed:", err.Error())
 		return nil, err
 	}
@@ -22,5 +22,5 @@ func New(ctx context.Context, node peer.Node) (*Client, error) {
 }
 
 func (c *Client) Close() {
-	c.client.Close()
+	c.Client.Close()
 }

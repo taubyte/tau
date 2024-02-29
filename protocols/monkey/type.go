@@ -52,7 +52,7 @@ type Service struct {
 
 	patrickClient patrick.Client
 	tnsClient     tnsClient.Client
-	odoClientNode peer.Node
+	clientNode    peer.Node
 	hoarderClient *hoarder.Client
 
 	config *tauConfig.Node

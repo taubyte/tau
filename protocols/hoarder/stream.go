@@ -61,32 +61,73 @@ func (srv *Service) listHandler(ctx context.Context) (cr.Response, error) {
 	return cr.Response{"ids": cids}, nil
 }
 
-func (srv *Service) stashHandler(ctx context.Context, cid string) (cr.Response, error) {
-	key := datastore.NewKey(hoarderSpecs.CreateStashPath(cid))
+func (srv *Service) stashHandler(ctx context.Context, id string) (cr.Response, error) {
+	key := datastore.NewKey(hoarderSpecs.CreateStashPath(id))
 	if data, _ := srv.db.Get(ctx, key.String()); data == nil {
-		logger.Infof("file with cid:%s not in database", cid)
-		file, err := srv.node.GetFile(ctx, cid)
+		registryBytes, err := cbor.Marshal(&registryItem{Replicas: 0})
 		if err != nil {
-			return nil, fmt.Errorf("get failed with: %w", err)
+			logger.Errorf("cbor marshal of registry failed with: %w", err)
+			return nil, err
 		}
 
-		if _, err = srv.node.AddFile(file); err != nil {
-			return nil, fmt.Errorf("adding file to node failed with:: %w", err)
+		key := datastore.NewKey(hoarderSpecs.CreateStashPath(id))
+		if err = srv.db.Put(srv.node.Context(), key.String(), registryBytes); err != nil {
+			logger.Errorf("put of registry in kvdb failed with: %w", err)
+			return nil, err
 		}
 
-		registryBytes, err := cbor.Marshal(&registryItem{Replicas: 1})
-		if err != nil {
-			return nil, fmt.Errorf("cbor marshal of registry failed with: %w", err)
-		}
+		//TODO: start worker that does the stash
+		// go func() {
+		// 	logger.Infof("file with cid:%s not in database", id)
 
-		srv.regLock.Lock()
-		defer srv.regLock.Unlock()
-		key := datastore.NewKey(hoarderSpecs.CreateStashPath(cid))
-		if err = srv.db.Put(ctx, key.String(), registryBytes); err != nil {
-			return nil, fmt.Errorf("put of registry in kvdb failed with: %w", err)
-		}
+		// 	_cid, err := cid.Decode(id)
+		// 	if err != nil {
+		// 		logger.Errorf("failed parsing cid with: %w", err)
+		// 		return
+		// 	}
 
-		return cr.Response{"cid": cid}, nil
+		// 	var n format.Node
+		// 	tctx, tctxC := context.WithTimeout(srv.node.Context(), 10*time.Minute)
+		// 	for {
+		// 		_ctx, _ctxC := context.WithTimeout(tctx, 30*time.Second)
+		// 		n, err = srv.node.DAG().Get(_ctx, _cid)
+		// 		_ctxC()
+		// 		if err == nil {
+		// 			break
+		// 		}
+		// 	}
+		// 	tctxC()
+		// 	if err != nil {
+		// 		logger.Errorf("failed to fetch cid: %w", err)
+		// 		return
+		// 	}
+
+		// 	file, err := ufsio.NewDagReader(srv.node.Context(), n, srv.node.DAG())
+
+		// 	if err != nil {
+		// 		logger.Errorf("get failed with: %w", err)
+		// 		return
+		// 	}
+
+		// 	if _, err = srv.node.AddFile(file); err != nil {
+		// 		logger.Errorf("adding file to node failed with:: %w", err)
+		// 		return
+		// 	}
+
+		// 	registryBytes, err := cbor.Marshal(&registryItem{Replicas: 1})
+		// 	if err != nil {
+		// 		logger.Errorf("cbor marshal of registry failed with: %w", err)
+		// 		return
+		// 	}
+
+		// 	key := datastore.NewKey(hoarderSpecs.CreateStashPath(id))
+		// 	if err = srv.db.Put(srv.node.Context(), key.String(), registryBytes); err != nil {
+		// 		logger.Errorf("put of registry in kvdb failed with: %w", err)
+		// 		return
+		// 	}
+		// }()
+
+		return cr.Response{"cid": id}, nil
 	}
 
 	return nil, nil
@@ -111,7 +152,7 @@ func (srv *Service) rareHandler(ctx context.Context) (cr.Response, error) {
 		}
 
 		id = strings.TrimPrefix(id, hoarderSpecs.StashPath)
-		if replicaData.Replicas == 1 {
+		if replicaData.Replicas <= 1 {
 			rareCID = append(rareCID, id)
 		}
 

@@ -41,7 +41,7 @@ func (ctx resourceContext) stashAndPush(id string, file io.ReadSeekCloser) error
 		return err
 	}
 
-	pterm.Info.Printf("Stashing file to: %s => %s\n", assetKey.String(), cid)
+	pterm.Info.Printf("Stashing %s asset as %s\n", assetKey.String(), cid)
 
 	err = c.Tns.Push(assetKey.Slice(), cid)
 	if err != nil {

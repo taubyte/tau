@@ -73,9 +73,9 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 
 	// For Odo
 	if config.ClientNode != nil {
-		srv.odoClientNode = config.ClientNode
+		srv.clientNode = config.ClientNode
 	} else {
-		srv.odoClientNode = srv.node
+		srv.clientNode = srv.node
 	}
 
 	// should end if any of the two contexts ends
@@ -91,7 +91,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 
 	srv.setupStreamRoutes()
 
-	sc, err := seerClient.New(ctx, srv.odoClientNode)
+	sc, err := seerClient.New(ctx, srv.clientNode)
 	if err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
@@ -103,17 +103,17 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 
 	srv.monkeys = make(map[string]*Monkey, 0)
 
-	srv.patrickClient, err = NewPatrick(ctx, srv.odoClientNode)
+	srv.patrickClient, err = NewPatrick(ctx, srv.clientNode)
 	if err != nil {
 		return nil, err
 	}
 
-	srv.tnsClient, err = tnsClient.New(ctx, srv.odoClientNode)
+	srv.tnsClient, err = tnsClient.New(ctx, srv.clientNode)
 	if err != nil {
 		return nil, err
 	}
 
-	srv.hoarderClient, err = hoarder.New(ctx, srv.odoClientNode)
+	srv.hoarderClient, err = hoarder.New(ctx, srv.clientNode)
 	if err != nil {
 		return nil, err
 	}

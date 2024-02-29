@@ -50,7 +50,7 @@ func (m *Multiverse) Status() interface{} {
 					for _, addr := range s.Peer().Addrs() {
 						addrs = append(addrs, addr.String())
 					}
-					_nodes[s.ID().Pretty()] = addrs
+					_nodes[s.ID().String()] = addrs
 				}
 				return _nodes
 			}(),

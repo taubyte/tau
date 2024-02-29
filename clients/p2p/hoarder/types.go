@@ -8,7 +8,7 @@ import (
 var _ iface.Client = &Client{}
 
 type Client struct {
-	client *client.Client
+	*client.Client
 }
 
 type Peer struct {

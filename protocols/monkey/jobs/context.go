@@ -10,8 +10,8 @@ import (
 // Used in tests for setting the unexported contexts
 func (c *Context) ForceContext(ctx context.Context) {
 	c.ctx, c.ctxC = context.WithCancel(ctx)
-	if c.Node != nil && c.OdoClientNode == nil {
-		c.OdoClientNode = c.Node
+	if c.Node != nil && c.ClientNode == nil {
+		c.ClientNode = c.Node
 	}
 }
 

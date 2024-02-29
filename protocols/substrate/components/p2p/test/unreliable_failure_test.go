@@ -16,7 +16,6 @@ import (
 	commonIface "github.com/taubyte/go-interfaces/common"
 	nodeIface "github.com/taubyte/go-interfaces/services/substrate"
 	structureSpec "github.com/taubyte/go-specs/structure"
-	"github.com/taubyte/p2p/streams/client"
 	dreamland "github.com/taubyte/tau/libdream"
 	_ "github.com/taubyte/tau/protocols/hoarder"
 	"github.com/taubyte/tau/protocols/monkey/fixtures/compile"
@@ -45,13 +44,7 @@ func (t *testContext) Context() context.Context {
 	return t.ctx
 }
 
-// This test is unreliable, if you cannot get it to pass, close everything and run this in the terminal
 func TestFail(t *testing.T) {
-	t.Skip("this is a really bad test")
-	client.SendTimeout = time.Second * 10
-	client.SendToPeerTimeout = time.Second * 20
-	client.RecvTimeout = time.Second * 10
-	client.EstablishStreamTimeout = time.Second * 10
 	maxAttempts := 5
 	commandsTested := 2
 

@@ -3,6 +3,7 @@ package auth_test
 import (
 	"strconv"
 	"testing"
+	"time"
 
 	commonIface "github.com/taubyte/go-interfaces/common"
 	dreamland "github.com/taubyte/tau/libdream"
@@ -38,6 +39,8 @@ func TestAuthClient(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	time.Sleep(5 * time.Second)
 
 	simple, err := u.Simple("client")
 	if err != nil {

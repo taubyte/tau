@@ -29,14 +29,14 @@ func newTestContext(ctx context.Context, simple *libdream.Simple, logFile *os.Fi
 	ctx, ctxC := context.WithCancel(ctx)
 	return testContext{
 		Context: Context{
-			ctx:           ctx,
-			ctxC:          ctxC,
-			Tns:           tns,
-			Node:          simple.PeerNode(),
-			LogFile:       logFile,
-			Monkey:        &mockMonkey{},
-			ProjectID:     commonTest.ProjectID,
-			OdoClientNode: simple.PeerNode(),
+			ctx:        ctx,
+			ctxC:       ctxC,
+			Tns:        tns,
+			Node:       simple.PeerNode(),
+			LogFile:    logFile,
+			Monkey:     &mockMonkey{},
+			ProjectID:  commonTest.ProjectID,
+			ClientNode: simple.PeerNode(),
 		},
 	}
 }
