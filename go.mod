@@ -14,11 +14,9 @@ require (
 	github.com/gorilla/websocket v1.5.1
 	github.com/h2non/filetype v1.1.3
 	github.com/hsanjuan/ipfs-lite v1.8.2
-	github.com/ipfs/boxo v0.17.0
 	github.com/ipfs/go-cid v0.4.1
 	github.com/ipfs/go-datastore v0.6.0
 	github.com/ipfs/go-ds-crdt v0.5.2
-	github.com/ipfs/go-ipld-format v0.6.0
 	github.com/ipfs/go-log/v2 v2.5.1
 	github.com/jedib0t/go-pretty/v6 v6.4.6
 	github.com/jellydator/ttlcache/v3 v3.0.1
@@ -50,9 +48,9 @@ require (
 	github.com/taubyte/http v0.10.5
 	github.com/taubyte/p2p v0.11.1
 	github.com/taubyte/utils v0.1.7
-	github.com/taubyte/vm v1.0.5-0.20240228223105-36b36bf603c4
+	github.com/taubyte/vm v1.0.5
 	github.com/taubyte/vm-core-plugins v0.3.4
-	github.com/taubyte/vm-orbit v1.0.2-0.20240228225034-c12ffe84fb90
+	github.com/taubyte/vm-orbit v1.0.2
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/zap v1.27.0
 	go4.org v0.0.0-20230225012048-214862532bf5
@@ -143,6 +141,7 @@ require (
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/imdario/mergo v0.3.15 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect
+	github.com/ipfs/boxo v0.17.0 // indirect
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
 	github.com/ipfs/go-block-format v0.2.0 // indirect
 	github.com/ipfs/go-cidutil v0.1.0 // indirect
@@ -150,6 +149,7 @@ require (
 	github.com/ipfs/go-ipfs-delay v0.0.1 // indirect
 	github.com/ipfs/go-ipfs-pq v0.0.3 // indirect
 	github.com/ipfs/go-ipfs-util v0.0.3 // indirect
+	github.com/ipfs/go-ipld-format v0.6.0 // indirect
 	github.com/ipfs/go-ipld-legacy v0.2.1 // indirect
 	github.com/ipfs/go-log v1.0.5 // indirect
 	github.com/ipfs/go-metrics-interface v0.0.1 // indirect
