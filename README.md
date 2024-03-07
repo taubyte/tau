@@ -70,7 +70,7 @@ For comprehensive documentation, visit our [documentation site](https://tau.how)
 
 ## 💡 Running Tau Locally
 
-If you're focused on building your project, Dreamland ([github.com/taubyte/dreamland](https://github.com/taubyte/dreamland)) is the perfect companion. Dreamland, which utilizes libdream (see the libread folder in this repo), allows for local development and testing, including writing E2E tests. When you're ready, you can deploy your project to any Tau-based cloud—be it public, private, or a client-specific environment. This flexibility ensures that you can concentrate on creating amazing applications with the confidence that they will work seamlessly at scale when deployed.
+If you're focused on building your project, Dreamland ([github.com/taubyte/dreamland](https://github.com/taubyte/dreamland)) is the perfect companion. Dreamland, which utilizes libdream (see the libdream folder in this repo), allows for local development and testing, including writing E2E tests. When you're ready, you can deploy your project to any Tau-based cloud—be it public, private, or a client-specific environment. This flexibility ensures that you can concentrate on creating amazing applications with the confidence that they will work seamlessly at scale when deployed.
 
 ## 🤝 Get Involved
 
