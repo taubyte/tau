@@ -30,6 +30,7 @@ As of today, Tau comes out of the box with:
 - 📦 Object Storage
 - 🗂 K/V Database
 - 📢 Pub-Sub Messaging
+- 💻 CI/CD Integration for streamlined development and deployment workflows
 
 ## 🔮 What's Next
 Next, we're working to add JavaScript and Python interpreters, container support, and more. Stay engaged and [contribute](https://github.com/taubyte/tau/issues) to the future of Tau.
