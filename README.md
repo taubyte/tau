@@ -24,13 +24,13 @@
 
 
 ## What's Included
-As of today, Tau comes out of the box with:
+**Tau is a platform, so no need to build one!** As of today, this is what it's capable of:
 - 🚀 Serverless WebAssembly Functions
 - 🌍 Website/Frontend Hosting
 - 📦 Object Storage
 - 🗂 K/V Database
 - 📢 Pub-Sub Messaging
-- 💻 CI/CD Integration for streamlined development and deployment workflows
+- 💻 CI/CD
 
 ## 🔮 What's Next
 Next, we're working to add JavaScript and Python interpreters, container support, and more. Stay engaged and [contribute](https://github.com/taubyte/tau/issues) to the future of Tau.
