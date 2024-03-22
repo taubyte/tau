@@ -1,8 +1,6 @@
 package hoarder
 
 import (
-	"context"
-
 	iface "github.com/taubyte/go-interfaces/common"
 	commonSpecs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/tau/libdream"
@@ -15,6 +13,6 @@ func init() {
 	}
 }
 
-func createService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {
-	return New(ctx, common.NewDreamlandConfig(config))
+func createService(u *libdream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
+	return New(u.Context(), common.NewDreamlandConfig(u, config))
 }

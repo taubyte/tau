@@ -62,7 +62,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	srv.dvPrivateKey = config.DomainValidation.PrivateKey
 	srv.dvPublicKey = config.DomainValidation.PublicKey
 
-	// For Odo
 	clientNode := srv.node
 	if config.ClientNode != nil {
 		clientNode = config.ClientNode

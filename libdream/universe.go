@@ -140,12 +140,20 @@ func (u *Universe) StartAll(simples ...string) error {
 	)
 }
 
-func (u *Universe) GetPortHttp(node peer.Node) (int, error) {
+func (u *Universe) GetInfo(node peer.Node) (*NodeInfo, error) {
 	u.lock.RLock()
+	defer u.lock.RUnlock()
 	info, ok := u.lookups[node.ID().String()]
-	u.lock.RUnlock()
 	if !ok {
-		return 0, errors.New("node does not exist")
+		return nil, errors.New("node does not exist")
+	}
+	return info, nil
+}
+
+func (u *Universe) GetPortHttp(node peer.Node) (int, error) {
+	info, err := u.GetInfo(node)
+	if err != nil {
+		return 0, err
 	}
 
 	port, ok := info.Ports["http"]

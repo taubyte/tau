@@ -27,8 +27,8 @@ var (
 	DefaultP2PListenFormat  string = "/ip4/" + DefaultHost + "/tcp/%d"
 	DefaultHTTPListenFormat string = "%s://" + DefaultHost + ":%d"
 
-	BaseAfterStartDelay = 100 // Millisecond
-	MaxAfterStartDelay  = 500 // Millisecond
+	BaseAfterStartDelay = 500  // Millisecond
+	MaxAfterStartDelay  = 1000 // Millisecond
 	MeshTimeout         = 5 * time.Second
 
 	startAllDefaultSimple = "client"

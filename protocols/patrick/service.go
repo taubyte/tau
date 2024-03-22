@@ -55,7 +55,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 		srv.dbFactory = kvdb.New(srv.node)
 	}
 
-	// For odo
 	clientNode := srv.node
 	if config.ClientNode != nil {
 		clientNode = config.ClientNode

@@ -1,8 +1,6 @@
 package service
 
 import (
-	"context"
-
 	iface "github.com/taubyte/go-interfaces/common"
 	commonSpecs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/tau/libdream"
@@ -16,7 +14,7 @@ func init() {
 	}
 }
 
-func createPatrickService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {
+func createPatrickService(u *libdream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
 	// Used to test cancel job on go-patrick-http
 	if result, ok := config.Others["delay"]; ok {
 		if result == 1 {
@@ -31,5 +29,5 @@ func createPatrickService(ctx context.Context, config *iface.ServiceConfig) (ifa
 		}
 	}
 
-	return New(ctx, common.NewDreamlandConfig(config))
+	return New(u.Context(), common.NewDreamlandConfig(u, config))
 }

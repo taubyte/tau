@@ -53,7 +53,6 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 		s.node = config.Node
 	}
 
-	// For Odo
 	clientNode := s.node
 	if config.ClientNode != nil {
 		clientNode = config.ClientNode

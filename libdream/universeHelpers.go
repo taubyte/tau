@@ -98,7 +98,7 @@ func (u *Universe) startService(protocol string, config *commonIface.ServiceConf
 		return nil, err
 	}
 
-	service, err := creationMethod(u.ctx, config)
+	service, err := creationMethod(u, config)
 	if err != nil {
 		return nil, err
 	}
