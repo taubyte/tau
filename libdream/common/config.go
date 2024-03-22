@@ -9,7 +9,7 @@ import (
 	"github.com/taubyte/tau/libdream"
 )
 
-func NewDreamlandConfig(config *iface.ServiceConfig) *tauConfig.Node {
+func NewDreamlandConfig(u *libdream.Universe, config *iface.ServiceConfig) *tauConfig.Node {
 	serviceConfig := &tauConfig.Node{}
 
 	serviceConfig.Ports = make(map[string]int)

@@ -71,11 +71,9 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		srv.dvPublicKey = config.DomainValidation.PublicKey
 	}
 
-	// For Odo
+	srv.clientNode = srv.node
 	if config.ClientNode != nil {
 		srv.clientNode = config.ClientNode
-	} else {
-		srv.clientNode = srv.node
 	}
 
 	// should end if any of the two contexts ends

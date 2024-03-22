@@ -67,7 +67,6 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		srv.dbFactory = kvdb.New(srv.node)
 	}
 
-	// For odo
 	clientNode := srv.node
 	if config.ClientNode != nil {
 		clientNode = config.ClientNode

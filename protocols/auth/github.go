@@ -48,23 +48,17 @@ func generateKey() (string, string, string, error) {
 }
 
 func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *github.Client, repoID string) (map[string]interface{}, error) {
-	if !srv.devMode {
-		err := client.GetByID(repoID)
-		if err != nil {
-			return nil, fmt.Errorf("fetch repository failed with %w", err)
-		}
+	err := client.GetByID(repoID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch repository failed with %w", err)
 	}
 
 	repoKey := fmt.Sprintf("/repositories/github/%s/key", repoID)
-	_, err := srv.db.Get(ctx, repoKey)
-	if err == nil {
-		return nil, fmt.Errorf("repository `%s` already registered", repoID)
-	}
+	// Re-register a repo should be fine. Could be needed if deploy keys were deleted for example
 
 	hook_id := id.Generate(repoKey)
 	defaultHookName := "taubyte_push_hook"
-	var defaultGithubHookUrl string
-	defaultGithubHookUrl = srv.webHookUrl + "/github/" + hook_id
+	defaultGithubHookUrl := srv.webHookUrl + "/github/" + hook_id
 
 	var (
 		hook_githubid int64
@@ -82,11 +76,10 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *gi
 		return nil, fmt.Errorf("generate key failed with: %s", err)
 	}
 
-	if !srv.devMode {
-		err = client.CreateDeployKey(&kname, &kpub)
-		if err != nil {
-			return nil, fmt.Errorf("create deploy key failed with: %s", err)
-		}
+	// Dreamland also needs to create a deplyment key. TODO: use a pre-set key
+	err = client.CreateDeployKey(&kname, &kpub)
+	if err != nil {
+		return nil, fmt.Errorf("create deploy key failed with: %s", err)
 	}
 
 	_repo_id, err := strconv.ParseInt(repoID, 10, 64)

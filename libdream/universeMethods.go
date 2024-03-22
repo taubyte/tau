@@ -51,7 +51,7 @@ func (u *Universe) Mesh(newNodes ...peer.Node) {
 
 	u.lock.RLock()
 	var wg sync.WaitGroup
-	for _, n0 := range newNodes {
+	for _, n0 := range append(u.all, newNodes...) {
 		for _, n1 := range u.all {
 			if n0 != n1 {
 				wg.Add(1)

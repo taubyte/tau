@@ -1,7 +1,6 @@
 package seer
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/foxcpp/go-mockdns"
@@ -18,7 +17,7 @@ func init() {
 	}
 }
 
-func createService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {
+func createService(u *libdream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
 
 	var mockResolver seer.Resolver
 	if config.Others["mock"] == 1 {
@@ -36,5 +35,5 @@ func createService(ctx context.Context, config *iface.ServiceConfig) (iface.Serv
 		mockResolver = mockServer.Resolver()
 	}
 
-	return New(ctx, common.NewDreamlandConfig(config), Resolver(mockResolver))
+	return New(u.Context(), common.NewDreamlandConfig(u, config), Resolver(mockResolver))
 }

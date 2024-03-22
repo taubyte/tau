@@ -1,8 +1,6 @@
 package substrate
 
 import (
-	"context"
-
 	iface "github.com/taubyte/go-interfaces/common"
 	commonSpecs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/tau/libdream"
@@ -16,8 +14,8 @@ func init() {
 	}
 }
 
-func createNodeService(ctx context.Context, config *iface.ServiceConfig) (iface.Service, error) {
-	service, err := New(ctx, common.NewDreamlandConfig(config))
+func createNodeService(u *libdream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
+	service, err := New(u.Context(), common.NewDreamlandConfig(u, config))
 	if err != nil {
 		return nil, err
 	}

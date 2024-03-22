@@ -36,7 +36,7 @@ type handlers struct {
 	client  ClientCreate
 }
 
-type ServiceCreate func(context.Context, *commonIface.ServiceConfig) (commonIface.Service, error)
+type ServiceCreate func(*Universe, *commonIface.ServiceConfig) (commonIface.Service, error)
 type ClientCreate func(peer.Node, *commonIface.ClientConfig) (commonIface.Client, error)
 
 var Registry *handlerRegistry

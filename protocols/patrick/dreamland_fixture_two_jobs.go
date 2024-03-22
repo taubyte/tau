@@ -81,11 +81,8 @@ func fixture(u *libdream.Universe, params ...interface{}) error {
 			return fmt.Errorf("unable to get tns client after 50 attempts")
 		}
 
-		tnsClient, err = simple.TNS()
+		tnsClient, _ = simple.TNS()
 		attempts++
-	}
-	if err != nil {
-		return fmt.Errorf("getting tns client failed with: %w", err)
 	}
 
 	attempts = 0

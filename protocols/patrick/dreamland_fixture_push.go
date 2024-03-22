@@ -140,7 +140,7 @@ func pushSpecific(u *libdream.Universe, params ...interface{}) error {
 	if len(projectId) == 0 {
 		_repo, err := auth.Repositories().Github().Get(intRepoId)
 		if err != nil {
-			return fmt.Errorf("failed Making Repo: %v", err)
+			return fmt.Errorf("failed to fetch Repo: %v", err)
 		}
 		projectId = _repo.Project()
 	}
