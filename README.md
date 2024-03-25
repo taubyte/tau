@@ -1,43 +1,35 @@
-<h1 align="center">
+<h2 align="center">
   <a href="https://taubyte.com" target="_blank" rel="noopener noreferrer">
     <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="images/logo-cubic-2.png">
-      <img width="80" src="images/logo-light.svg" alt="Tau logo">
+      <source media="(prefers-color-scheme: dark)" srcset="images/tau-logo-box-v2.png">
+      <img width="80" src="images/tau-logo-box-v2.png" alt="Tau">
     </picture>
   </a>
   <br />
-  Tau
-</h1>
+  Tau - Infrastructure's Autopilot
+  
+  ***Local Coding Equals Global Production***
+</h2>
 <div align="center">
 
 [![Release](https://img.shields.io/github/release/taubyte/tau.svg)](https://github.com/taubyte/tau/releases)
 [![License](https://img.shields.io/github/license/taubyte/tau)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/taubyte/tau)](https://goreportcard.com/report/taubyte/tau)
 [![GoDoc](https://godoc.org/github.com/taubyte/tau?status.svg)](https://pkg.go.dev/github.com/taubyte/tau)
-[![Discord](https://img.shields.io/discord/973677117722202152?color=%235865f2&label=discord)](https://discord.gg/NFhh5X3V)
+[![Discord](https://img.shields.io/discord/973677117722202152?color=%235865f2&label=discord)](https://discord.gg/wM8mdskh)
 
 </div>
 
 <br />
 
-**Tau** democratizes cloud computing by providing a straightforward platform for deploying serverless functions, web applications, and managing storage, making cloud services accessible for all developers. **Support Tau by turning ★ to ⭐!**
 
 
-## What's Included
-**Tau is a platform, so no need to build one!** As of today, this is what it's capable of:
-- 🚀 Serverless WebAssembly Functions
-- 🌍 Website/Frontend Hosting
-- 📦 Object Storage
-- 🗂 K/V Database
-- 📢 Pub-Sub Messaging
-- 💻 CI/CD
+Tau, implentation of [Taubyte](https://github.com/taubyte), elevates cloud infrastructure to autonomous operation, seamlessly bridging local development and global production. Embrace the freedom of coding without boundaries, where your infrastructure intelligently adapts and scales on its own.
 
-## 🔮 What's Next
-Next, we're working to add JavaScript and Python interpreters, container support, and more. Stay engaged and [contribute](https://github.com/taubyte/tau/issues) to the future of Tau.
+![](images/graphic.png)
 
 ## 🚀 Quick Start
-
-Getting started with Tau is as simple as 1-2-3:
+Deploy `tau` in three simple steps:
 
 1. **Install Tau**
    ```sh
@@ -54,30 +46,40 @@ Getting started with Tau is as simple as 1-2-3:
    tau start -s compute
    ```
 
+## 🧪 E2E Testing for Your Project
 
-## 🌌 Use Cases
+`libdream`, a sub-package within `tau`, is a powerful tool for creating end-to-end (E2E) unit tests for your projects. By simulating real-world cloud behavior in a controlled local environment, libdream enables comprehensive testing scenarios that mimic production environments. This ensures your applications perform reliably under real-world conditions before global deployment.
 
-- **Public Clouds**: Expand the decentralized web by hosting scalable, serverless applications.
-- **Private Clouds**: Secure and control your organizational data and applications with ease.
-- **Project Focus**: Eliminate infrastructure and scalability concerns, letting you concentrate on development.
+## 💡 Running a Local Cloud
+
+Dreamland ([github.com/taubyte/dreamland](https://github.com/taubyte/dreamland)) is a CLI tool that creates local cloud environments mirroring production settings. It offers an API for real-time configuration and testing, powered by libdream. Dreamland ensures developers can simulate and interact with their applications in a production-like environment, streamlining the path from development to deployment.
+
+## ✨ Core Principles of Tau
+
+- **Embracing Best Practices:** `tau` integrates automation with DevOps, GitOps, and SRE best practices, ensuring projects are reliable, efficient, and secure.
+
+- **Elevating Platform Engineering:** For platform engineers, `tau` provides tools and autonomy to customize and perfect the cloud environment, enhancing infrastructure effectively.
+
+- **A Developer-Centric Experience:** `tau` prioritizes developers, ensuring seamless scalability from local development to global production.
+
+- **Focus on Edge Computing & Distributed Systems:** `tau` leverages peer-to-peer network techniques for advanced edge computing and distributed systems, ensuring resilience and scalability.
 
 ## 📖 Dive Deeper
 
-Learn more about Tau and its capabilities:
+Learn more about Taubyte and its capabilities:
 - [Introduction to Taubyte](https://taubyte.com/blog/introduction-to-taubyte/)
 - [Be Competitive in a Few Minutes: Deployment Guide](https://taubyte.com/blog/be-competitive-in-few-minutes/)
 
 For comprehensive documentation, visit our [documentation site](https://tau.how).
 
-## 💡 Running Tau Locally
+## 🌌 Expanding Possibilities
 
-If you're focused on building your project, Dreamland ([github.com/taubyte/dreamland](https://github.com/taubyte/dreamland)) is the perfect companion. Dreamland, which utilizes libdream (see the libdream folder in this repo), allows for local development and testing, including writing E2E tests. When you're ready, you can deploy your project to any Tau-based cloud—be it public, private, or a client-specific environment. This flexibility ensures that you can concentrate on creating amazing applications with the confidence that they will work seamlessly at scale when deployed.
+Explore Tau's capabilities with projects like [ollama-cloud](https://github.com/ollama-cloud), demonstrating how Tau's infrastructure supports advanced applications, from AI to beyond.
 
-## 🤝 Get Involved
+## 🔮 What's Next
 
-Join the Tau community! Whether contributing code, improving documentation, or sharing ideas, your participation is warmly welcomed.
+Tau is continuously evolving, with plans to introduce JavaScript and Python support, container capabilities, and more. Your contributions are welcome to shape Tau's future.
 
-## 📬 Need Help?
+## 📬 Support
 
-For questions or support, join our [Discord server](https://discord.gg/NFhh5X3V).
-
+Questions or need assistance? Our [Discord server](https://discord.gg/wM8mdskh) offers support and a community for discussion.
