@@ -60,15 +60,6 @@ type DomainValidation struct {
 	PublicKey  []byte
 }
 
-type ConfigBuilder struct {
-	// generic
-	DefaultP2PListenPort int
-	DevP2PListenFormat   string
-
-	// http
-	DevHttpListenPort int
-}
-
 func (config *Node) Validate() error {
 	if config == nil {
 		config = &Node{}
