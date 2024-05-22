@@ -2,8 +2,6 @@ package app
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 
 	"github.com/taubyte/tau/cli/node"
 	"github.com/taubyte/tau/config"
@@ -36,22 +34,6 @@ func startCommand() *cli.Command {
 			if err != nil {
 				return fmt.Errorf("parsing config failed with: %s", err)
 			}
-
-			// Migration Start (from odo to tau)
-			// TODO: Delete this after a few releases
-			if _, err := os.Stat(fmt.Sprintf("/tb/storage/databases/%s", shape)); !os.IsNotExist(err) {
-				err = migrateDatabase(ctx.Context, shape, len(protocolConfig.Protocols) == 0)
-				if err != nil {
-					return fmt.Errorf("migrating shape %s failed with: %w", shape, err)
-				}
-
-				cmd := exec.Command("sudo", "systemctl", "stop", fmt.Sprintf("odo@%s.service", shape))
-				cmd.CombinedOutput()
-
-				cmd = exec.Command("sudo", "systemctl", "disable", fmt.Sprintf("odo@%s.service", shape))
-				cmd.CombinedOutput()
-			}
-
 			return node.Start(ctx.Context, protocolConfig)
 		},
 	}
