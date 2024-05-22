@@ -34,6 +34,7 @@ func startCommand() *cli.Command {
 			if err != nil {
 				return fmt.Errorf("parsing config failed with: %s", err)
 			}
+
 			return node.Start(ctx.Context, protocolConfig)
 		},
 	}
