@@ -26,7 +26,7 @@ func Start(ctx context.Context, protocolConfig *config.Node) error {
 
 	go func() {
 		<-sigkill
-		logger.Info("Exiting... Odo")
+		logger.Info("Exiting... Tau")
 		ctx_cancel()
 	}()
 
