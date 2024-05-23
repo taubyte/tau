@@ -20,9 +20,8 @@ func (c *Context) Run(ctx context.Context, ctxC context.CancelFunc) (err error) 
 	if c.Job.Delay != nil {
 		select {
 		case <-time.After(time.Duration(c.Job.Delay.Time) * time.Second):
-
 		case <-c.ctx.Done():
-			return errors.New("context cancel ")
+			return errors.New("context cancel")
 		}
 
 	}
