@@ -2,13 +2,15 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
 )
 
 var (
-	logger = log.Logger("tau.monkey.jobs.client")
+	logger               = log.Logger("tau.monkey.jobs.client")
+	ErrorContextCanceled = errors.New("context cancel")
 )
 
 func (c *Context) Run(ctx context.Context, ctxC context.CancelFunc) (err error) {
@@ -17,7 +19,11 @@ func (c *Context) Run(ctx context.Context, ctxC context.CancelFunc) (err error) 
 	defer ctxC()
 
 	if c.Job.Delay != nil {
-		<-time.After(time.Duration(c.Job.Delay.Time) * time.Second)
+		select {
+		case <-time.After(time.Duration(c.Job.Delay.Time) * time.Second):
+		case <-c.ctx.Done():
+			return ErrorContextCanceled
+		}
 	}
 
 	if err = c.cloneAndSet(); err != nil {
