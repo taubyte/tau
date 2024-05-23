@@ -9,7 +9,8 @@ import (
 )
 
 var (
-	logger = log.Logger("tau.monkey.jobs.client")
+	logger               = log.Logger("tau.monkey.jobs.client")
+	ErrorContextCanceled = errors.New("context cancel")
 )
 
 func (c *Context) Run(ctx context.Context, ctxC context.CancelFunc) (err error) {
@@ -21,9 +22,8 @@ func (c *Context) Run(ctx context.Context, ctxC context.CancelFunc) (err error) 
 		select {
 		case <-time.After(time.Duration(c.Job.Delay.Time) * time.Second):
 		case <-c.ctx.Done():
-			return errors.New("context cancel")
+			return ErrorContextCanceled
 		}
-
 	}
 
 	if err = c.cloneAndSet(); err != nil {
