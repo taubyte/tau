@@ -13,10 +13,9 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-var client_count = 64
+var client_count = 16
 
 func TestHeartbeat(t *testing.T) {
-	t.Skip("More of a benchmark than a test")
 	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -59,7 +58,7 @@ func TestHeartbeat(t *testing.T) {
 		return
 	}
 
-	iterations := 42000
+	iterations := 256
 	poolChan := make(chan bool, client_count)
 	var heartbeatWG sync.WaitGroup
 	heartbeatWG.Add(iterations)

@@ -134,12 +134,12 @@ func (srv *Service) stashHandler(ctx context.Context, id string) (cr.Response, e
 }
 
 func (srv *Service) rareHandler(ctx context.Context) (cr.Response, error) {
-	var rareCID []string
 	entries, err := srv.db.List(ctx, hoarderSpecs.StashPath)
 	if err != nil {
 		return nil, fmt.Errorf("list failed with: %w", err)
 	}
 
+	rareCID := make([]string, 0)
 	for _, id := range entries {
 		var replicaData *registryItem
 		respBytes, err := srv.db.Get(ctx, id)

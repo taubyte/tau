@@ -58,7 +58,7 @@ func (srv *oracleService) announceServiceHandler(ctx context.Context, conn strea
 		id = conn.RemotePeer().String()
 	}
 
-	registered, err := srv.insertHandler(id, allServices)
+	registered, err := srv.insertHandler(ctx, id, allServices)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (srv *oracleService) announceServiceHandler(ctx context.Context, conn strea
 	// Send ip's of services to all seer to store
 	nodeData := &nodeData{
 		Cid:      id,
-		Services: allServices,
+		Services: &allServices,
 	}
 
 	nodeBytes, err := cbor.Marshal(nodeData)

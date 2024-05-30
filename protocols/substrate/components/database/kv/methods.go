@@ -66,7 +66,7 @@ func (kv *kv) List(ctx context.Context, prefix string) ([]string, error) {
 			return nil, fmt.Errorf("listing with empty prefix failed wit: %s", err)
 		}
 
-		var newList []string
+		newList := make([]string, 0)
 
 		for _, entry := range entries {
 			if !strings.HasPrefix(entry, "/size") {

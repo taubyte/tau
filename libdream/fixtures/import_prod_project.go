@@ -168,7 +168,7 @@ func importProdProject(u *libdream.Universe, params ...interface{}) error {
 		}
 	}
 
-	var patrickJobs []string
+	patrickJobs := make([]string, 0)
 
 	// Wait for all jobs to be on patrick
 	maxAttempts = 30

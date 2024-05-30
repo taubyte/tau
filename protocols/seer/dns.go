@@ -16,6 +16,8 @@ import (
 	"github.com/taubyte/go-specs/common"
 )
 
+var MaxDnsResponseTime = 3 * time.Second
+
 // TODO: Implement a spam cache that blocks spam dns request
 type dnsHandler struct {
 	seer *Service
@@ -96,6 +98,9 @@ func (s *Service) isProtocolOrAliasDomain(dom string) bool {
 
 // Real DNS Handler
 func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
+	ctx, ctxC := context.WithTimeout(h.seer.Node().Context(), MaxDnsResponseTime)
+	defer ctxC()
+
 	msg := dns.Msg{}
 	msg.SetReply(r)
 	msg.Authoritative = true
@@ -143,13 +148,13 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 	logger.Debugf("Checking %s against %s", name, h.seer.config.GeneratedDomainRegExp.String())
 	if h.seer.config.GeneratedDomainRegExp.MatchString(name) {
-		h.replyWithHTTPServicingNodes(w, r, errMsg, msg)
+		h.replyWithHTTPServicingNodes(ctx, w, r, errMsg, msg)
 		return
 	}
 
 	if h.seer.isProtocolOrAliasDomain(name) {
 		logger.Debugf("Looks like %s is a ProtocolOrAliasDomain", name)
-		h.tauDnsResolve(name, w, r, errMsg, msg)
+		h.tauDnsResolve(ctx, name, w, r, errMsg, msg)
 		return
 	}
 
@@ -175,7 +180,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		}
 
 		if len(domPath) != 0 {
-			h.replyWithHTTPServicingNodes(w, r, errMsg, msg)
+			h.replyWithHTTPServicingNodes(ctx, w, r, errMsg, msg)
 			return
 		}
 	}
@@ -192,7 +197,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 }
 
 // TODO: Clean this up, repetitive code
-func (h *dnsHandler) tauDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
+func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
 	switch r.Question[0].Qtype {
 	case dns.TypeA:
 		protocol := strings.Split(name, ".")[0]
@@ -205,7 +210,7 @@ func (h *dnsHandler) tauDnsResolve(name string, w dns.ResponseWriter, r *dns.Msg
 			return
 		}
 
-		ips, err := h.getServiceIp(protocol)
+		ips, err := h.getServiceIp(ctx, protocol)
 		if err != nil {
 			logger.Errorf("getting ip for %s failed with %s", protocol, err.Error())
 			if err := w.WriteMsg(errMsg); err != nil {

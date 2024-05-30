@@ -49,7 +49,7 @@ func (s *Store) List(ctx context.Context, prefix string) ([]string, error) {
 			return nil, fmt.Errorf("listing with empty prefix failed wit: %s", err)
 		}
 
-		var newList []string
+		newList := make([]string, 0)
 
 		for _, entry := range entries {
 			if !strings.HasPrefix(entry, "/s/") {
@@ -290,7 +290,7 @@ func (s *Store) ListVersions(ctx context.Context, name string) ([]string, error)
 		return nil, fmt.Errorf("listing versions failed with: %s", err)
 	}
 
-	var versions []string
+	versions := make([]string, 0)
 	for _, _path := range paths {
 		_split := pathUtil.Split(_path)
 		splitLength := len(_split)

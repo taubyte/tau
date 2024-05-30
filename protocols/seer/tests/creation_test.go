@@ -1,7 +1,6 @@
 package tests
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -19,7 +18,7 @@ func TestService(t *testing.T) {
 	defer u.Stop()
 	err := u.StartWithConfig(&dreamland.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer": {Others: map[string]int{"dns": 8999}},
+			"seer": {Others: map[string]int{"copies": 2}},
 		},
 		Simples: map[string]dreamland.SimpleConfig{
 			"client": {
@@ -53,6 +52,8 @@ func TestService(t *testing.T) {
 		return
 	}
 
+	time.Sleep(1 * time.Second)
+
 	resp, err := seer.Geo().All()
 	if err != nil {
 		t.Error("Returned Error ", err)
@@ -62,7 +63,6 @@ func TestService(t *testing.T) {
 	found_match := false
 	for _, p := range resp {
 		if p.Id == simple.PeerNode().ID().String() {
-			fmt.Println(p.Location.Location)
 			if p.Location.Location == fake_location {
 				found_match = true
 			}
