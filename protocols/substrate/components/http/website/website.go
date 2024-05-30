@@ -105,7 +105,7 @@ func (w *Website) getAsset() error {
 		return fmt.Errorf("reading build zip failed with: %w", err)
 	}
 
-	var computedPaths []string
+	computedPaths := make([]string, 0)
 
 	for _, file := range zipReader.File {
 		if !file.FileInfo().IsDir() {

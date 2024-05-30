@@ -1,6 +1,7 @@
 package seer
 
 import (
+	"context"
 	"net"
 	"time"
 
@@ -8,11 +9,11 @@ import (
 	domainSpecs "github.com/taubyte/go-specs/domain"
 )
 
-func (h *dnsHandler) replyWithHTTPServicingNodes(w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
+func (h *dnsHandler) replyWithHTTPServicingNodes(ctx context.Context, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
 	// TODO: Find a smart way to determine what to provide. For example if Seer IP is public, theres no gateways but there're substrates with private ips, return []
-	nodeIps, err := h.getNodeIp("gateway")
+	nodeIps, err := h.getServiceIp(ctx, "gateway")
 	if err != nil || len(nodeIps) == 0 {
-		nodeIps, err = h.getNodeIp("substrate")
+		nodeIps, err = h.getServiceIp(ctx, "substrate")
 		if err != nil || len(nodeIps) == 0 {
 			err = w.WriteMsg(errMsg)
 			if err != nil {

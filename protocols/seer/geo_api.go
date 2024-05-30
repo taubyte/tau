@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/query"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	cr "github.com/taubyte/p2p/streams/command/response"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -63,93 +65,108 @@ func (geo *geoService) locationServiceHandler(ctx context.Context, conn streams.
 			return nil, err
 		}
 
-		return geo.setNode(ctx, conn, loc)
+		id := conn.RemotePeer().String()
+
+		ploc, err := geo.setNode(ctx, id, loc)
+		if err != nil {
+			return nil, err
+		}
+
+		// Send ip's of services to all seer to store
+		nodeData := &nodeData{
+			Cid: id,
+			Geo: ploc,
+		}
+
+		nodeBytes, err := cbor.Marshal(nodeData)
+		if err != nil {
+			return nil, fmt.Errorf("failed marshalling node %s with %v", id, err)
+		}
+
+		err = geo.seer.node.PubSubPublish(ctx, protocolsCommon.OraclePubSubPath, nodeBytes)
+		if err != nil {
+			return nil, fmt.Errorf("sending node `%s` from seer `%s` over pubsub failed with: %s", id, geo.seer.node.ID(), err)
+		}
+
+		return cr.Response{}, nil
 	default:
 		return nil, errors.New("Geo action `" + action + "` not reconized.")
 	}
 }
 
-func (geo *geoService) setNode(ctx context.Context, conn streams.Connection, location iface.Location) (cr.Response, error) {
+func (geo *geoService) setNode(ctx context.Context, id string, location iface.Location) (*iface.PeerLocation, error) {
 	loc := iface.PeerLocation{Timestamp: time.Now().Unix(), Location: location}
 	_loc, err := cbor.Marshal(&loc)
 	if err != nil {
 		return nil, err
 	}
 
-	err = geo.seer.db.Put(ctx, "/geo/"+conn.RemotePeer().String(), _loc)
+	err = geo.seer.ds.Put(ctx, datastore.NewKey("/geo/node/id").Instance(id), _loc)
 	if err != nil {
 		return nil, err
 	}
 
-	return cr.Response{}, nil
+	return &loc, nil
 }
 
 func (geo *geoService) getAllNodes(ctx context.Context) (cr.Response, error) {
-	// FIXME: Use Async. Looks like Async does not work well when there is no result
-	//        probably kvdb needs to close the chan
-	resp, err := geo.seer.db.List(ctx, "/geo/")
+	result, err := geo.seer.ds.Query(
+		ctx,
+		query.Query{Prefix: "/geo/node", KeysOnly: false},
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	peers := make(map[string]iface.PeerLocation)
-	for _, path := range resp {
-		_loc, err := geo.seer.db.Get(ctx, path)
-		if err != nil {
+	for entry := range result.Next() {
+		key := datastore.NewKey(entry.Key)
+		if key.Type() != "id" {
 			continue
 		}
 
 		loc := iface.PeerLocation{}
-		err = cbor.Unmarshal(_loc, &loc)
+		err := cbor.Unmarshal(entry.Value, &loc)
 		if err != nil {
 			continue
 		}
 
-		peers[strings.TrimPrefix(path, "/geo/")] = loc
+		peers[key.Name()] = loc
 	}
 
 	response := make(cr.Response)
 	response["peers"] = peers
+
 	return response, nil
 }
 
 // distance in meters
 func (geo *geoService) getNodes(ctx context.Context, from iface.Location, distance float32) (cr.Response, error) {
-	// FIXME: Use Async. Looks like Async does not work well when there is no result
-	//        probably kvdb needs to close the chan
-	resp, err := geo.seer.db.List(ctx, "/geo/")
+	result, err := geo.seer.ds.Query(
+		ctx,
+		query.Query{Prefix: "/geo/node", KeysOnly: false},
+	)
 	if err != nil {
 		return nil, err
 	}
 
 	peers := make(map[string]iface.PeerLocation)
-	for _, path := range resp {
-		_loc, err := geo.seer.db.Get(ctx, path)
-		if err != nil {
-			continue
-		}
-
+	for entry := range result.Next() {
 		loc := iface.PeerLocation{}
-		err = cbor.Unmarshal(_loc, &loc)
+		err := cbor.Unmarshal(entry.Value, loc)
 		if err != nil {
 			continue
 		}
 
-		_distance := computeDistance(from.Latitude, from.Longitude, loc.Location.Latitude, loc.Location.Longitude)
+		_distance := computeDistance(
+			from.Latitude,
+			from.Longitude,
+			loc.Location.Latitude,
+			loc.Location.Longitude,
+		)
 
 		if _distance <= distance {
-			_loc, err := geo.seer.db.Get(ctx, path)
-			if err != nil {
-				continue
-			}
-
-			loc := iface.PeerLocation{}
-			err = cbor.Unmarshal(_loc, &loc)
-			if err != nil {
-				continue
-			}
-
-			peers[strings.TrimPrefix(path, "/geo/")] = loc
+			peers[datastore.NewKey(entry.Key).Name()] = loc
 		}
 	}
 

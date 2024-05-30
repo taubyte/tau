@@ -110,12 +110,12 @@ func (u *Universe) registerService(name string, srv commonIface.Service) peer.No
 }
 
 func (u *Universe) GetServicePids(name string) ([]string, error) {
-	var pids []string
 	nodes, ok := u.service[name]
 	if !ok {
 		return nil, fmt.Errorf("%s was not found", name)
 	}
 
+	pids := make([]string, 0)
 	for pid := range nodes.nodes {
 		pids = append(pids, pid)
 	}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/fxamacker/cbor/v2"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/p2p/streams/command/response"
@@ -11,7 +12,12 @@ import (
 )
 
 func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId string, signature []byte) (response.Response, error) {
-	resp, err := u.client.Send("heartbeat", command.Body{"usage": usage, "hostname": hostname, "id": nodeId, "client": clientNodeId, "signature": signature})
+	usageData, err := cbor.Marshal(usage)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := u.client.Send("heartbeat", command.Body{"usage": usageData, "hostname": hostname, "id": nodeId, "client": clientNodeId, "signature": signature})
 	if err != nil {
 		logger.Error("Heartbeat failed with:", err.Error())
 		return nil, fmt.Errorf("calling heartbeat send failed with: %w", err)

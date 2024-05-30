@@ -9,6 +9,7 @@ import (
 
 	_ "embed"
 
+	pebbleds "github.com/ipfs/go-ds-pebble"
 	"github.com/ipfs/go-log/v2"
 	seerIface "github.com/taubyte/go-interfaces/services/seer"
 	commonSpec "github.com/taubyte/go-specs/common"
@@ -17,7 +18,6 @@ import (
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	auto "github.com/taubyte/tau/pkgs/http-auto"
-	"github.com/taubyte/tau/pkgs/kvdb"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
 	_ "modernc.org/sqlite"
@@ -62,19 +62,10 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	}
 
 	srv.devMode = config.DevMode
-	srv.dbFactory = config.Databases
-	if srv.dbFactory == nil {
-		srv.dbFactory = kvdb.New(srv.node)
-	}
 
 	clientNode := srv.node
 	if config.ClientNode != nil {
 		clientNode = config.ClientNode
-	}
-
-	srv.db, err = srv.dbFactory.New(logger, protocolsCommon.Seer, 5)
-	if err != nil {
-		return nil, fmt.Errorf("new key-value store failed with: %s", err)
 	}
 
 	// Setup/Start DNS service
@@ -101,7 +92,10 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 
 	srv.oracle = &oracleService{seer: srv}
 
-	err = initializeDB(srv, config)
+	srv.ds, err = pebbleds.NewDatastore(
+		path.Join(config.Root, "storage", srv.shape, "seer"),
+		nil,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("initialize database failed with: %s", err)
 	}
@@ -155,7 +149,9 @@ func (srv *Service) Close() error {
 
 	srv.stream.Stop()
 	srv.tns.Close()
-	srv.db.Close()
+
+	srv.ds.Close()
+
 	srv.dns.Stop()
 
 	srv.positiveCache.Stop()

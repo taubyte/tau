@@ -58,9 +58,10 @@ func TestTimeout(t *testing.T) {
 
 	// Make sure both jobs are registered
 	attemptsList := 0
-	var jobs []string
 	patrick, err := simple.Patrick()
 	assert.NilError(t, err)
+
+	jobs := make([]string, 0)
 
 	for {
 		if attemptsList == 10 {

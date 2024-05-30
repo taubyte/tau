@@ -2,6 +2,7 @@ package seer
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,32 +10,57 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	"github.com/ipfs/go-datastore"
+	"github.com/ipfs/go-datastore/query"
 	iface "github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	cr "github.com/taubyte/p2p/streams/command/response"
+	protocolsCommon "github.com/taubyte/tau/protocols/common"
 	"github.com/taubyte/utils/maps"
 )
 
-func parseUsageFromBody(body command.Body) (iface.UsageData, error) {
-	var usage iface.UsageData
-	data, ok := body["usage"]
-	if !ok {
-		return usage, errors.New("failed getting usage from body")
+func int64ToBytes(i int64) []byte {
+	bs := make([]byte, 8)
+	binary.BigEndian.PutUint64(bs, uint64(i)) // BigEndian just like TCP/IP
+	return bs
+}
+
+func bytesToInt64(data []byte) int64 {
+	if data == nil || len(data) != 8 {
+		return 0
 	}
 
-	// hack: marshal then unmarshal to get it into a struct
-	bloc, err := cbor.Marshal(data)
+	return int64(binary.BigEndian.Uint64(data))
+}
+
+func (srv *oracleService) insertUsage(ctx context.Context, id, hostname, ip string, usage *iface.UsageData) error {
+	usageData, err := cbor.Marshal(usage)
 	if err != nil {
-		return usage, fmt.Errorf("marshalling usage data failed with %s", err)
+		return fmt.Errorf("marshalling usage data failed with %s", err)
 	}
 
-	err = cbor.Unmarshal(bloc, &usage)
+	b, err := srv.seer.ds.Batch(ctx)
 	if err != nil {
-		return usage, fmt.Errorf("un-marshalling usage data failed with %s", err)
+		return fmt.Errorf("failed to update usage with %w", err)
 	}
 
-	return usage, nil
+	b.Put(ctx, datastore.NewKey("/hb/ts").Instance(id), int64ToBytes(time.Now().UnixNano()))
+	b.Put(ctx, datastore.NewKey("/hb/usage").Instance(id), usageData)
+	if hostname != "" {
+		b.Put(ctx, datastore.NewKey("/hostname").Instance(id), []byte(hostname))
+	}
+
+	if ip != "" {
+		b.Put(ctx, datastore.NewKey("/ip").Instance(id), []byte(ip))
+	}
+
+	err = b.Commit(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to commit usage update with %w", err)
+	}
+
+	return nil
 }
 
 // store usage
@@ -44,28 +70,28 @@ func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn stre
 		action = ""
 	}
 
-	if action != "" {
-		switch action {
-		case "list":
-			return srv.listIds()
-		case "listService":
-			name, err := maps.String(body, "name")
-			if err != nil {
-				return nil, err
-			}
-
-			if name == "" {
-				return nil, errors.New(("name cannot be empty"))
-			}
-
-			return srv.listServiceIds(name)
-		case "info":
-			id, err := maps.String(body, "id")
-			if err != nil || id == "" {
-				return nil, fmt.Errorf("id cannot be empty")
-			}
-			return srv.getInfo(id)
+	switch action {
+	case "list":
+		return srv.listIds()
+	case "listService":
+		name, err := maps.String(body, "name")
+		if err != nil {
+			return nil, err
 		}
+
+		if name == "" {
+			return nil, errors.New(("name cannot be empty"))
+		}
+
+		return srv.listServiceIds(name)
+	case "info":
+		id, err := maps.String(body, "id")
+		if err != nil || id == "" {
+			return nil, fmt.Errorf("id cannot be empty")
+		}
+		return srv.getInfo(ctx, id)
+	default:
+
 	}
 
 	//TODO: move this into default above
@@ -87,9 +113,15 @@ func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn stre
 		id = conn.RemotePeer().String()
 	}
 
-	usage, err := parseUsageFromBody(body)
+	usageData, err := maps.ByteArray(body, "usage")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("getting usage from body failed with %w", err)
+	}
+
+	var usage iface.UsageData
+	err = cbor.Unmarshal(usageData, &usage)
+	if err != nil {
+		return nil, fmt.Errorf("un-marshalling usage data failed with %s", err)
 	}
 
 	hostname, err := maps.String(body, "hostname")
@@ -99,167 +131,145 @@ func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn stre
 
 	address := conn.RemoteMultiaddr().String()
 	addr := strings.Split(address, "/")
+	if len(addr) < 3 {
+		return nil, errors.New("malformed address")
+	}
+	ip := addr[2]
 
-	statement, err := srv.seer.nodeDB.Prepare(UsageStatement)
+	err = srv.insertUsage(ctx, id, hostname, ip, &usage)
 	if err != nil {
-		return nil, fmt.Errorf("failed heartbeat insert prepare with: %w", err)
+		return nil, err
 	}
 
-	defer statement.Close()
-
-	srv.seer.nodeDBMutex.Lock()
-	defer srv.seer.nodeDBMutex.Unlock()
-
-	_, err = statement.Exec(
-		id,
-		hostname,
-		time.Now().UnixNano(),
-		int(usage.Memory.Used),
-		int(usage.Memory.Total),
-		int(usage.Memory.Free),
-		int(usage.Cpu.Total),
-		usage.Cpu.Count,
-		usage.Cpu.User,
-		usage.Cpu.Nice,
-		usage.Cpu.System,
-		usage.Cpu.Idle,
-		usage.Cpu.Iowait,
-		usage.Cpu.Irq,
-		usage.Cpu.Softirq,
-		usage.Cpu.Steal,
-		usage.Cpu.Guest,
-		usage.Cpu.GuestNice,
-		usage.Cpu.StatCount,
-		addr[2],
-		usage.Disk.Total,
-		usage.Disk.Free,
-		usage.Disk.Used,
-		usage.Disk.Available,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("heartbeat insert exec for hostname: `%s` failed with: %s", hostname, err)
+	// Send ip's of services to all seer to store
+	nodeData := &nodeData{
+		Cid:   id,
+		Usage: &usage,
 	}
 
-	logger.Infof("Inserted/Updated %s in Usage", id)
+	nodeBytes, err := cbor.Marshal(nodeData)
+	if err != nil {
+		return nil, fmt.Errorf("failed marshalling node %s with %v", id, err)
+	}
+
+	err = srv.seer.node.PubSubPublish(ctx, protocolsCommon.OraclePubSubPath, nodeBytes)
+	if err != nil {
+		return nil, fmt.Errorf("sending node `%s` from seer `%s` over pubsub failed with: %s", id, srv.seer.node.ID(), err)
+	}
 
 	return cr.Response{"Updated Usage": id}, nil
 }
 
 func (srv *oracleService) listIds() (cr.Response, error) {
-	var ids []string
-
-	srv.seer.nodeDBMutex.RLock()
-	row, err := srv.seer.nodeDB.Query("SELECT Id FROM Usage")
-	srv.seer.nodeDBMutex.RUnlock()
+	result, err := srv.seer.ds.Query(
+		srv.seer.node.Context(),
+		query.Query{Prefix: "/hostname:", KeysOnly: true},
+	)
 	if err != nil {
-		logger.Error("listIds query failed with:", err.Error())
-		return nil, fmt.Errorf("failed listIds query error: %w", err)
+		return nil, err
 	}
-	defer row.Close()
 
-	for row.Next() {
-		var id string
-		err = row.Scan(&id)
-		if err != nil {
-			return nil, fmt.Errorf("scanning row for id failed with: %s", err)
-		}
-		ids = append(ids, id)
+	ids := make([]string, 0)
+	for entry := range result.Next() {
+		ids = append(ids, datastore.NewKey(entry.Key).Name())
 	}
 
 	return cr.Response{"ids": ids}, nil
 }
 
 func (srv *oracleService) listServiceIds(name string) (cr.Response, error) {
-	var ids []string
-	statement := fmt.Sprintf("SELECT * FROM Meta WHERE Type='%s'", name)
-
-	srv.seer.nodeDBMutex.RLock()
-	row, err := srv.seer.nodeDB.Query(statement)
-	srv.seer.nodeDBMutex.RUnlock()
+	result, err := srv.seer.ds.Query(
+		srv.seer.node.Context(),
+		query.Query{
+			Prefix:   datastore.NewKey("/proto").ChildString(name).String(),
+			KeysOnly: true,
+		},
+	)
 	if err != nil {
-		logger.Errorf("Failed listServiceIds query error: %w", err)
-		return nil, fmt.Errorf("failed listServiceIds query error: %w", err)
+		return nil, err
 	}
-	defer row.Close()
 
-	for row.Next() {
-		var (
-			id    string
-			_type string
-			key   string
-			value string
-		)
-		// TODO only using id here, need a better select `SELECT id from...`
-		row.Scan(&id, &_type, &key, &value)
-		ids = append(ids, id)
+	ids := make([]string, 0)
+	for entry := range result.Next() {
+		ids = append(ids, datastore.NewKey(entry.Key).Name())
 	}
 
 	return cr.Response{"ids": ids}, nil
 }
 
-func (srv *oracleService) getInfo(id string) (cr.Response, error) {
-	var service iface.UsageReturn
-	statement := fmt.Sprintf("SELECT * FROM Usage WHERE Id=\"%s\"", id)
-
-	srv.seer.nodeDBMutex.RLock()
-	row, err := srv.seer.nodeDB.Query(statement)
-	srv.seer.nodeDBMutex.RUnlock()
+func (srv *oracleService) getInfo(ctx context.Context, id string) (cr.Response, error) {
+	usageData, err := srv.seer.ds.Get(ctx, datastore.NewKey("/hb/usage").Instance(id))
 	if err != nil {
-		logger.Errorf("query from usage for %s failed with with: %s", id, err.Error())
-		return nil, fmt.Errorf("failed info query error: %w", err)
-	}
-	defer row.Close()
-
-	for row.Next() {
-		err = row.Scan(&service.Id,
-			&service.Name,
-			&service.Timestamp,
-			&service.UsedMem,
-			&service.TotalMem,
-			&service.FreeMem,
-			&service.TotalCpu,
-			&service.CpuCount,
-			&service.CpuUser,
-			&service.CpuNice,
-			&service.CpuSystem,
-			&service.CpuIdle,
-			&service.CpuIowait,
-			&service.CpuIrq,
-			&service.CpuSoftirq,
-			&service.CpuSteal,
-			&service.CpuGuest,
-			&service.CpuGuestNice,
-			&service.CpuStatCount,
-			&service.Address,
-			&service.TotalDisk,
-			&service.FreeDisk,
-			&service.UsedDisk,
-			&service.AvailableDisk,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("rowscan in getInfo failed with: %s", err)
-		}
+		return nil, err
 	}
 
-	// Grab type from Services Table
-	getType := fmt.Sprintf("SELECT Type FROM Services WHERE Id=\"%s\"", service.Id)
-
-	srv.seer.nodeDBMutex.RLock()
-	row2, err := srv.seer.nodeDB.Query(getType)
-	srv.seer.nodeDBMutex.RUnlock()
+	var usage iface.UsageData
+	err = cbor.Unmarshal(usageData, &usage)
 	if err != nil {
-		logger.Errorf("getting type from services for %s failed with: %s", service.Id, err.Error())
-		return nil, fmt.Errorf("failed getting types query error: %w", err)
+		return nil, fmt.Errorf("un-marshalling usage data failed with %s", err)
 	}
-	defer row2.Close()
 
-	for row2.Next() {
-		var stype string
-		err = row2.Scan(&stype)
-		if err != nil {
-			return nil, fmt.Errorf("failed row2 scan error: %w", err)
-		}
-		service.Type = append(service.Type, stype)
+	tsBytes, err := srv.seer.ds.Get(ctx, datastore.NewKey("/hb/ts").Instance(id))
+	if err != nil {
+		return nil, err
+	}
+
+	ts := bytesToInt64(tsBytes)
+
+	hnameBytes, err := srv.seer.ds.Get(ctx, datastore.NewKey("/hostname").Instance(id))
+	if err != nil {
+		return nil, err
+	}
+
+	hostname := string(hnameBytes)
+
+	protosResult, err := srv.seer.ds.Query(
+		ctx,
+		query.Query{
+			Prefix:   datastore.NewKey("/node/proto").ChildString(id).String(),
+			KeysOnly: true,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	types := make([]string, 0)
+	for entry := range protosResult.Next() {
+		types = append(types, datastore.NewKey(entry.Key).Name())
+	}
+
+	ipBytes, err := srv.seer.ds.Get(ctx, datastore.NewKey("/ip").Instance(id))
+	if err != nil {
+		return nil, err
+	}
+
+	service := iface.UsageReturn{
+		Id:            id,
+		Name:          hostname,
+		Type:          types,
+		Timestamp:     int(ts),
+		UsedMem:       int(usage.Memory.Used),
+		TotalMem:      int(usage.Memory.Total),
+		FreeMem:       int(usage.Memory.Free),
+		TotalCpu:      int(usage.Cpu.Total),
+		CpuCount:      int(usage.Cpu.Count),
+		CpuUser:       int(usage.Cpu.User),
+		CpuNice:       int(usage.Cpu.Nice),
+		CpuSystem:     int(usage.Cpu.System),
+		CpuIdle:       int(usage.Cpu.Idle),
+		CpuIowait:     int(usage.Cpu.Iowait),
+		CpuIrq:        int(usage.Cpu.Irq),
+		CpuSoftirq:    int(usage.Cpu.Softirq),
+		CpuSteal:      int(usage.Cpu.Steal),
+		CpuGuest:      int(usage.Cpu.Guest),
+		CpuGuestNice:  int(usage.Cpu.Guest),
+		CpuStatCount:  int(usage.Cpu.StatCount),
+		Address:       string(ipBytes),
+		TotalDisk:     int(usage.Disk.Total),
+		FreeDisk:      int(usage.Disk.Free),
+		UsedDisk:      int(usage.Disk.Used),
+		AvailableDisk: int(usage.Disk.Available),
 	}
 
 	serviceBytes, err := json.Marshal(service)

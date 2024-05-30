@@ -1,8 +1,7 @@
 package seer
 
 import (
-	"database/sql"
-	"sync"
+	"time"
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/miekg/dns"
@@ -14,9 +13,15 @@ import (
 	tnsClient "github.com/taubyte/go-interfaces/services/tns"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/config"
+
+	"github.com/ipfs/go-datastore"
 )
 
-type Data map[string]interface{}
+var (
+	DefaultBlockTime         = 60 * time.Second
+	ValidServiceResponseTime = 5 * time.Minute
+)
+
 type dnsServer struct {
 	Tcp  *dns.Server
 	Udp  *dns.Server
@@ -24,15 +29,18 @@ type dnsServer struct {
 }
 
 type nodeData struct {
-	Cid      string
-	Services iface.Services
+	Cid string `cbor:"1,keyasint,omitempty"`
+
+	Hostname string `cbor:"2,keyasint"`
+
+	Services *iface.Services     `cbor:"8,keyasint,omitempty"`
+	Usage    *iface.UsageData    `cbor:"9,keyasint,omitempty"`
+	Geo      *iface.PeerLocation `cbor:"10,keyasint,omitempty"`
 }
 
 type oracleService struct {
 	seer *Service
 }
-
-var _ iface.Service = &Service{}
 
 type geoService struct {
 	seer *Service
@@ -40,8 +48,6 @@ type geoService struct {
 
 type Service struct {
 	node          peer.Node
-	db            kvdb.KVDB
-	dbFactory     kvdb.Factory
 	http          http.Service
 	stream        *streams.CommandService
 	geo           *geoService
@@ -52,8 +58,7 @@ type Service struct {
 
 	config *config.Node
 
-	nodeDBMutex sync.RWMutex
-	nodeDB      *sql.DB
+	ds datastore.Batching
 
 	tns         tnsClient.Client
 	dnsResolver iface.Resolver
@@ -70,7 +75,7 @@ func (s *Service) Node() peer.Node {
 }
 
 func (s *Service) KV() kvdb.KVDB {
-	return s.db
+	return nil
 }
 
 func (s *Service) Resolver() iface.Resolver {
