@@ -35,8 +35,6 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 			return
 		}
 
-		//logger.Error("pubsubMsgHandler>>>", node)
-
 		if node.Services != nil {
 			_, err = srv.oracle.insertHandler(srv.node.Context(), node.Cid, *node.Services)
 			if err != nil {
