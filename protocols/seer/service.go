@@ -20,7 +20,6 @@ import (
 	"github.com/taubyte/tau/pkgs/kvdb"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
-	_ "modernc.org/sqlite"
 )
 
 var (
