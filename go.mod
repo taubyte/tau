@@ -65,7 +65,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools v2.2.0+incompatible
 	gotest.tools/v3 v3.5.1
-	modernc.org/sqlite v1.23.1
 )
 
 require (

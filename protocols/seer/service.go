@@ -20,7 +20,6 @@ import (
 	auto "github.com/taubyte/tau/pkgs/http-auto"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
 
-	_ "modernc.org/sqlite"
 )
 
 var (
