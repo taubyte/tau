@@ -19,7 +19,6 @@ import (
 	tauConfig "github.com/taubyte/tau/config"
 	auto "github.com/taubyte/tau/pkgs/http-auto"
 	protocolsCommon "github.com/taubyte/tau/protocols/common"
-
 )
 
 var (
@@ -87,9 +86,9 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	}
 
 	// Setup geo and oracle
-	srv.geo = &geoService{seer: srv}
+	srv.geo = &geoService{srv}
 
-	srv.oracle = &oracleService{seer: srv}
+	srv.oracle = &oracleService{srv}
 
 	srv.ds, err = pebbleds.NewDatastore(
 		path.Join(config.Root, "storage", srv.shape, "seer"),

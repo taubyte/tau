@@ -45,7 +45,7 @@ func (srv *oracleService) announceServiceHandler(ctx context.Context, conn strea
 		valid bool
 	)
 
-	if srv.seer.odo {
+	if srv.odo {
 		id, valid, err = validateSignature(body)
 		if err != nil {
 			return nil, err
@@ -74,9 +74,9 @@ func (srv *oracleService) announceServiceHandler(ctx context.Context, conn strea
 		return nil, fmt.Errorf("failed marshalling node %s with %v", id, err)
 	}
 
-	err = srv.seer.node.PubSubPublish(ctx, protocolsCommon.OraclePubSubPath, nodeBytes)
+	err = srv.node.PubSubPublish(ctx, protocolsCommon.OraclePubSubPath, nodeBytes)
 	if err != nil {
-		return nil, fmt.Errorf("sending node `%s` from seer `%s` over pubsub failed with: %s", id, srv.seer.node.ID(), err)
+		return nil, fmt.Errorf("sending node `%s` from seer `%s` over pubsub failed with: %s", id, srv.node.ID(), err)
 	}
 
 	return cr.Response{"Registered": registered}, nil

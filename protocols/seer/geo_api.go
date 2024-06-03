@@ -83,9 +83,9 @@ func (geo *geoService) locationServiceHandler(ctx context.Context, conn streams.
 			return nil, fmt.Errorf("failed marshalling node %s with %v", id, err)
 		}
 
-		err = geo.seer.node.PubSubPublish(ctx, protocolsCommon.OraclePubSubPath, nodeBytes)
+		err = geo.node.PubSubPublish(ctx, protocolsCommon.OraclePubSubPath, nodeBytes)
 		if err != nil {
-			return nil, fmt.Errorf("sending node `%s` from seer `%s` over pubsub failed with: %s", id, geo.seer.node.ID(), err)
+			return nil, fmt.Errorf("sending node `%s` from seer `%s` over pubsub failed with: %s", id, geo.node.ID(), err)
 		}
 
 		return cr.Response{}, nil
@@ -101,7 +101,7 @@ func (geo *geoService) setNode(ctx context.Context, id string, location iface.Lo
 		return nil, err
 	}
 
-	err = geo.seer.ds.Put(ctx, datastore.NewKey("/geo/node/id").Instance(id), _loc)
+	err = geo.ds.Put(ctx, datastore.NewKey("/geo/node/id").Instance(id), _loc)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +110,7 @@ func (geo *geoService) setNode(ctx context.Context, id string, location iface.Lo
 }
 
 func (geo *geoService) getAllNodes(ctx context.Context) (cr.Response, error) {
-	result, err := geo.seer.ds.Query(
+	result, err := geo.ds.Query(
 		ctx,
 		query.Query{Prefix: "/geo/node", KeysOnly: false},
 	)
@@ -142,7 +142,7 @@ func (geo *geoService) getAllNodes(ctx context.Context) (cr.Response, error) {
 
 // distance in meters
 func (geo *geoService) getNodes(ctx context.Context, from iface.Location, distance float32) (cr.Response, error) {
-	result, err := geo.seer.ds.Query(
+	result, err := geo.ds.Query(
 		ctx,
 		query.Query{Prefix: "/geo/node", KeysOnly: false},
 	)

@@ -39,11 +39,11 @@ type nodeData struct {
 }
 
 type oracleService struct {
-	seer *Service
+	*Service
 }
 
 type geoService struct {
-	seer *Service
+	*Service
 }
 
 type Service struct {
