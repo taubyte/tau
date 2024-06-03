@@ -42,7 +42,7 @@ func (h *dnsHandler) getServiceIp(ctx context.Context, proto string) ([]string, 
 func (srv *oracleService) insertHandler(ctx context.Context, id string, services iface.Services) ([]string, error) {
 	logger.Infof("Inserting service: %s, for id: %s", services, id)
 
-	b, err := srv.seer.ds.Batch(ctx)
+	b, err := srv.ds.Batch(ctx)
 	if err != nil {
 		return nil, err
 	}
