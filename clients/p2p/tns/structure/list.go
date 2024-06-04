@@ -3,7 +3,7 @@ package structure
 import (
 	"fmt"
 
-	"github.com/taubyte/go-specs/methods"
+	"github.com/taubyte/tau/pkg/specs/methods"
 )
 
 func (c *Structure[T]) list(branch, commit, projectId, appId string) (map[string]T, error) {

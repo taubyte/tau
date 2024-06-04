@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
-	iface "github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/p2p/streams/command/response"
+	iface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/utils/maps"
 )
 

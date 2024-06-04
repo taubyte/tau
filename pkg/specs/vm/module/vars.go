@@ -1,0 +1,5 @@
+package module
+
+const (
+	LocalSource = "."
+)

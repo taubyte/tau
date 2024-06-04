@@ -1,0 +1,10 @@
+id: smartops1ID
+description: verifies node has GPU
+tags:
+    - smart_tag_1
+    - smart_tag_2
+source: .
+execution:
+    timeout: 6m40s
+    memory: 16MB
+    call: ping1

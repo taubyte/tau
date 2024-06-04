@@ -1,6 +1,6 @@
 package structure
 
-import "github.com/taubyte/go-interfaces/services/tns"
+import "github.com/taubyte/tau/core/services/tns"
 
 /*
 Search globally

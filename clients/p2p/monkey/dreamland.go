@@ -1,14 +1,14 @@
 package monkey
 
 import (
-	"github.com/taubyte/go-interfaces/common"
-	commonSpecs "github.com/taubyte/go-specs/common"
 	"github.com/taubyte/p2p/peer"
-	"github.com/taubyte/tau/libdream"
+	"github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/dream"
+	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
 func init() {
-	if err := libdream.Registry.Set(commonSpecs.Monkey, nil, createMonkeyClient); err != nil {
+	if err := dream.Registry.Set(commonSpecs.Monkey, nil, createMonkeyClient); err != nil {
 		panic(err)
 	}
 

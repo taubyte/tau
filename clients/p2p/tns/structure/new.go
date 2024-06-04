@@ -1,9 +1,9 @@
 package structure
 
 import (
-	"github.com/taubyte/go-interfaces/services/tns"
-	commonSpec "github.com/taubyte/go-specs/common"
-	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/tau/core/services/tns"
+	commonSpec "github.com/taubyte/tau/pkg/specs/common"
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
 func New[T structureSpec.Structure](tns tns.Client, variable commonSpec.PathVariable) tns.StructureIface[T] {

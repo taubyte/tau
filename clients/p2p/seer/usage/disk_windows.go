@@ -3,7 +3,7 @@
 package usage
 
 import (
-	iface "github.com/taubyte/go-interfaces/services/seer"
+	iface "github.com/taubyte/tau/core/services/seer"
 )
 
 func GetDiskUsage() (iface.Disk, error) {

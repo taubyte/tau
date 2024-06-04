@@ -5,7 +5,7 @@ import (
 	"io"
 	"net/http"
 
-	patrickIface "github.com/taubyte/go-interfaces/services/patrick"
+	patrickIface "github.com/taubyte/tau/core/services/patrick"
 )
 
 type data struct {

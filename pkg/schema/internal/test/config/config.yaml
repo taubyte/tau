@@ -1,0 +1,8 @@
+id: projectID1
+name: TrueTest
+description: a simple test project
+tags: # optional
+    - tag1
+    - tag2
+notification:
+    email: "cto@taubyte.com"

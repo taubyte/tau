@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/taubyte/go-interfaces/services/substrate"
 	"github.com/taubyte/p2p/peer"
 	streamClient "github.com/taubyte/p2p/streams/client"
-	protocolCommon "github.com/taubyte/tau/protocols/common"
+	"github.com/taubyte/tau/core/services/substrate"
+	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
 func New(ctx context.Context, node peer.Node, ops ...Option) (client substrate.ProxyClient, err error) {

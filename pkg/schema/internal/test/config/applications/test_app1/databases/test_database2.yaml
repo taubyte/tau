@@ -1,0 +1,14 @@
+id: database2ID
+description: a profiles database
+tags:
+    - database_tag_3
+    - database_tag_4
+match: profiles
+useRegex: false
+access:
+    network: host
+replicas:
+    min: 42
+    max: 601
+storage:
+    size: 45GB

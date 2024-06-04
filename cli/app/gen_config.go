@@ -17,13 +17,13 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/p2p/keypair"
 	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/core/services/seer"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
-	commonSpecs "github.com/taubyte/go-specs/common"
+	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 
 	"github.com/pterm/pterm"
 
@@ -146,9 +146,9 @@ func generateSourceConfig(ctx *cli.Context) error {
 		announce = []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", ports.Main)}
 	}
 
-	protocols := getProtocols(ctx.String("protocols"))
-	if len(protocols) == 0 && bundle != nil {
-		protocols = bundle.Protocols
+	Services := getServices(ctx.String("Services"))
+	if len(Services) == 0 && bundle != nil {
+		Services = bundle.Services
 	}
 
 	p2pListen := []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", ports.Main)}
@@ -181,7 +181,7 @@ func generateSourceConfig(ctx *cli.Context) error {
 	configStruct := &config.Source{
 		Privatekey:  nodeKey,
 		Swarmkey:    path.Join("keys", "swarm.key"),
-		Protocols:   protocols,
+		Services:    Services,
 		P2PListen:   p2pListen,
 		P2PAnnounce: announce,
 		Ports:       ports,
@@ -246,13 +246,13 @@ func generateSourceConfig(ctx *cli.Context) error {
 	return nil
 }
 
-func getProtocols(s string) []string {
+func getServices(s string) []string {
 	if s == "all" {
-		return append([]string{}, commonSpecs.Protocols...)
+		return append([]string{}, commonSpecs.Services...)
 	}
 
 	protos := make(map[string]bool)
-	for _, p := range commonSpecs.Protocols {
+	for _, p := range commonSpecs.Services {
 		protos[p] = false
 	}
 	for _, p := range strings.Split(s, ",") {
@@ -260,7 +260,7 @@ func getProtocols(s string) []string {
 			protos[p] = true
 		}
 	}
-	ret := make([]string, 0, len(commonSpecs.Protocols))
+	ret := make([]string, 0, len(commonSpecs.Services))
 	for p, on := range protos {
 		if on {
 			ret = append(ret, p)

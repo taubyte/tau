@@ -1,0 +1,6 @@
+id: domain2ID
+description: a domain for app computers
+tags: # optional
+    - domain_tag_3
+    - domain_tag_4
+fqdn: app.computers.com

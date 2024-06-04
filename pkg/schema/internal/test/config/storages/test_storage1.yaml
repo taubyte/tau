@@ -1,0 +1,12 @@
+id: storage1ID
+description: a streaming storage
+tags:
+    - storage_tag_1
+    - storage_tag_2
+match: photos
+useRegex: true
+access:
+    network: host
+streaming:
+    ttl: 5m
+    size: 30GB

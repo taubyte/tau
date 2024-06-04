@@ -3,8 +3,8 @@ package structure_test
 import (
 	"testing"
 
-	"github.com/taubyte/go-interfaces/services/tns"
-	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/tau/core/services/tns"
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
 var (

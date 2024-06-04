@@ -3,7 +3,7 @@
 package app
 
 import (
-	"github.com/taubyte/go-interfaces/services/seer"
+	"github.com/taubyte/tau/core/services/seer"
 )
 
 func estimateGPSLocation() (*seer.Location, error) {

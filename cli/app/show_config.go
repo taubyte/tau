@@ -27,7 +27,7 @@ func displayConfig(pid string, config *config.Node) error {
 
 	announce := strings.Join(config.P2PAnnounce, "\n")
 
-	protocols := strings.Join(config.Protocols, "\n")
+	services := strings.Join(config.Services, "\n")
 
 	peers := strings.Join(config.Peers, "\n")
 
@@ -55,7 +55,7 @@ func displayConfig(pid string, config *config.Node) error {
 		{"Shape", config.Shape},
 		{"Network", config.NetworkFqdn},
 		{"Domain", domt.Render()},
-		{"Protocols", protocols},
+		{"Services", services},
 		{"Peers", peers},
 		{"P2PListen", listen},
 		{"P2PAnnounce", announce},

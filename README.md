@@ -52,7 +52,7 @@ To us, solving this problem means:
 2. **Configure**
 
    ```sh
-   tau config generate -n yourdomain.com -s compute --protos all --ip your_public_ip
+   tau config generate -n yourdomain.com -s compute --services all --ip your_public_ip
    ```
 
 3. **Launch**
@@ -71,7 +71,7 @@ Just like a self-driving car gathering information through sensors, `tau` will g
 
 That said, some configuration like bootstrap peers is necessary. Unless you're running a single-node cloud, each node will need to know at least one other peer.
 
-A Cloud built with `tau` is very dynamic; at a low level, nodes communicate assets, routes, and services, and they also exchange information about other peers. Enriched by protocols (distributed services) like `seer` and `gateway`, the cloud can load-balance incoming requests to ensure optimal performance and reliability.
+A Cloud built with `tau` is very dynamic; at a low level, nodes communicate assets, routes, and services, and they also exchange information about other peers. Enriched by distributed services like `seer` and `gateway`, the cloud can load-balance incoming requests to ensure optimal performance and reliability.
 
 This behavior is built into cloud resources as well. For example, a protocol we call `hoarder` ensures object storages and databases are replicated; all you need to do is enable it on a few nodes.
 
@@ -98,7 +98,7 @@ In addition to the nodes being on a branch, the application registry, managed by
 
 ### Networking
 Internally, `tau`, using [libp2p](https://github.com/libp2p/go-libp2p), builds an overlay peer-to-peer network between the nodes, enabling some pretty cool features like:
-- Automatic node and protocol discovery & routing. If, for example, a node is down, changes its IP address/port, or the protocols it supports, other nodes will update the info automatically.
+- Automatic node and protocol discovery & routing. If, for example, a node is down, changes its IP address/port, or the services it supports, other nodes will update the info automatically.
 - Transport independent. Nodes can use any combination of TCP/IP, WebSocket, QUIC, and more.
 - NAT Traversal & Circuit Relay, which allow nodes that are not public to be part of the cloud.
 
@@ -125,7 +125,7 @@ Code, binary, images, along with any attached assets, are stored and retrieved u
 
 ## E2E Testing
 
-If you're looking to create E2E tests for projects hosted on `tau`, you can use `libdream`, a sub-package within `tau`. We don't have documentation for it yet, but you can quickly learn from tests like [protocols/seer/tests/dns_test.go](https://github.com/taubyte/tau/blob/main/protocols/seer/tests/dns_test.go#L35).
+If you're looking to create E2E tests for projects hosted on `tau`, you can use `libdream`, a sub-package within `tau`. We don't have documentation for it yet, but you can quickly learn from tests like [services/seer/tests/dns_test.go](https://github.com/taubyte/tau/blob/main/services/seer/tests/dns_test.go#L35).
 
 ## Running a Local Cloud
 
@@ -133,7 +133,7 @@ While you can't practically run `tau` on your local machine, you can do so using
 
 ## Extending Tau
 
-`tau` can be extended using a plugin system we call [orbit](https://github.com/taubyte/vm-orbit). An open-source example is [ollama-cloud](https://github.com/ollama-cloud), which demonstrates how to add LLM capabilities to your cloud.
+`tau` can be extended using a plugin system we call [orbit](https://github.com/taubyte/tau/pkg/vm-orbit). An open-source example is [ollama-cloud](https://github.com/ollama-cloud), which demonstrates how to add LLM capabilities to your cloud.
 
 ## Features
 This is a list of current features and what we intend to implement soon. If you'd like to propose more, please open an issue.

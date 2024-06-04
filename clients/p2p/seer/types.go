@@ -3,8 +3,8 @@ package seer
 import (
 	"context"
 
-	iface "github.com/taubyte/go-interfaces/services/seer"
 	client "github.com/taubyte/p2p/streams/client"
+	iface "github.com/taubyte/tau/core/services/seer"
 )
 
 var _ iface.Client = &Client{}

@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	commonIface "github.com/taubyte/go-interfaces/common"
-	dreamland "github.com/taubyte/tau/libdream"
-	commonTest "github.com/taubyte/tau/libdream/helpers"
-	_ "github.com/taubyte/tau/protocols/auth"
-	"github.com/taubyte/tau/protocols/auth/hooks"
-	"github.com/taubyte/tau/protocols/auth/repositories"
-	_ "github.com/taubyte/tau/protocols/tns"
+	commonIface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/dream"
+	commonTest "github.com/taubyte/tau/dream/helpers"
+	_ "github.com/taubyte/tau/services/auth"
+	"github.com/taubyte/tau/services/auth/hooks"
+	"github.com/taubyte/tau/services/auth/repositories"
+	_ "github.com/taubyte/tau/services/tns"
 	"gotest.tools/v3/assert"
 
 	"github.com/taubyte/utils/id"
@@ -19,17 +19,17 @@ import (
 
 func TestAuthClient(t *testing.T) {
 	t.Skip("Needs to be redone")
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&dreamland.Config{
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth": {},
 			"tns":  {},
 		},
-		Simples: map[string]dreamland.SimpleConfig{
+		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					Auth: &commonIface.ClientConfig{},
 				}.Compat(),
 			},

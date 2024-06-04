@@ -1,0 +1,10 @@
+id: smartops2ID
+description: verifies user is on a specific continent
+tags:
+    - smart_tag_3
+    - smart_tag_4
+source: library/test_library2
+execution:
+    timeout: 5m
+    memory: 64MB
+    call: ping2

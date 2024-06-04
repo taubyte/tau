@@ -3,10 +3,10 @@ package patrick
 import (
 	"context"
 
-	iface "github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/p2p/peer"
 	client "github.com/taubyte/p2p/streams/client"
-	protocolsCommon "github.com/taubyte/tau/protocols/common"
+	iface "github.com/taubyte/tau/core/services/patrick"
+	servicesCommon "github.com/taubyte/tau/services/common"
 )
 
 func New(ctx context.Context, node peer.Node) (iface.Client, error) {
@@ -15,7 +15,7 @@ func New(ctx context.Context, node peer.Node) (iface.Client, error) {
 	}
 
 	var err error
-	if c.Client, err = client.New(c.node, protocolsCommon.PatrickProtocol); err != nil {
+	if c.Client, err = client.New(c.node, servicesCommon.PatrickProtocol); err != nil {
 		logger.Error("API client creation failed:", err)
 		return nil, err
 	}

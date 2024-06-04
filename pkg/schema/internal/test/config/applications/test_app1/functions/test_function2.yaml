@@ -1,0 +1,14 @@
+id: function2ID
+description: a pubsub function on channel 2 with a call to a library
+tags:
+    - function_tag_3
+    - function_tag_4
+trigger:
+    type: pubsub
+    local: true
+    channel: channel2
+source: "library/test_library2"
+execution:
+    timeout: 23s
+    memory: 23MB
+    call: ping2

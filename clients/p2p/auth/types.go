@@ -1,8 +1,8 @@
 package auth
 
 import (
-	iface "github.com/taubyte/go-interfaces/services/auth"
 	client "github.com/taubyte/p2p/streams/client"
+	iface "github.com/taubyte/tau/core/services/auth"
 )
 
 var _ iface.Client = &Client{}

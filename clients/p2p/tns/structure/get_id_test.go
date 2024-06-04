@@ -4,27 +4,27 @@ import (
 	"reflect"
 	"testing"
 
-	_ "github.com/taubyte/config-compiler/fixtures"
-	commonIface "github.com/taubyte/go-interfaces/common"
-	"github.com/taubyte/go-interfaces/services/tns"
-	structureSpec "github.com/taubyte/go-specs/structure"
 	_ "github.com/taubyte/tau/clients/p2p/tns"
-	dreamland "github.com/taubyte/tau/libdream"
-	_ "github.com/taubyte/tau/libdream/fixtures"
-	_ "github.com/taubyte/tau/protocols/tns"
+	commonIface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/dream"
+	_ "github.com/taubyte/tau/dream/fixtures"
+	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	_ "github.com/taubyte/tau/services/tns"
 	"gotest.tools/v3/assert"
 )
 
 func TestGetById(t *testing.T) {
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
-	u.StartWithConfig(&dreamland.Config{
+	u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
-		Simples: map[string]dreamland.SimpleConfig{
+		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
 				}.Compat(),
 			},

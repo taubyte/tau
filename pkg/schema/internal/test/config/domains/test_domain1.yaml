@@ -1,0 +1,10 @@
+id: domain1ID
+description: a domain for hal computers
+tags: # optional
+    - domain_tag_1
+    - domain_tag_2
+fqdn: hal.computers.com
+certificate:
+    type: inline
+    key: testKey
+    cert: testCert

@@ -5,30 +5,36 @@ import (
 	"testing"
 	"time"
 
-	commonIface "github.com/taubyte/go-interfaces/common"
-	dreamland "github.com/taubyte/tau/libdream"
+	commonIface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/dream"
 
-	_ "github.com/taubyte/tau/clients/p2p/seer"
-	_ "github.com/taubyte/tau/clients/p2p/tns"
-	_ "github.com/taubyte/tau/protocols/auth"
-	_ "github.com/taubyte/tau/protocols/hoarder"
-	_ "github.com/taubyte/tau/protocols/monkey"
-	_ "github.com/taubyte/tau/protocols/patrick"
-	_ "github.com/taubyte/tau/protocols/substrate"
-	_ "github.com/taubyte/tau/protocols/tns"
+	_ "github.com/taubyte/tau/services/auth"
+	_ "github.com/taubyte/tau/services/hoarder"
+	_ "github.com/taubyte/tau/services/monkey"
+	_ "github.com/taubyte/tau/services/patrick"
+	_ "github.com/taubyte/tau/services/substrate"
+	_ "github.com/taubyte/tau/services/tns"
+
+	seer "github.com/taubyte/tau/clients/p2p/seer"
 )
 
 func TestCalls(t *testing.T) {
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	defaultInterval := seer.DefaultUsageBeaconInterval
+	seer.DefaultUsageBeaconInterval = time.Second
+	defer func() {
+		seer.DefaultUsageBeaconInterval = defaultInterval
+	}()
+
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
-	err := u.StartWithConfig(&dreamland.Config{
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":      {Others: map[string]int{"mock": 1}},
-			"substrate": {Others: map[string]int{"copies": 2}},
+			"seer": {Others: map[string]int{"mock": 1}},
+			"auth": {Others: map[string]int{"copies": 2}},
 		},
-		Simples: map[string]dreamland.SimpleConfig{
+		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 					TNS:  &commonIface.ClientConfig{},
 				}.Compat(),
@@ -49,7 +55,12 @@ func TestCalls(t *testing.T) {
 	time.Sleep(10 * time.Second)
 
 	seerClient, err := simple.Seer()
-	ids, err := seerClient.Usage().ListServiceId("substrate")
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	ids, err := seerClient.Usage().ListServiceId("auth")
 	if err != nil {
 		t.Error(err)
 		return

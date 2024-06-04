@@ -1,14 +1,14 @@
 package node
 
 import (
-	authService "github.com/taubyte/tau/protocols/auth"
-	"github.com/taubyte/tau/protocols/gateway"
-	hoarderService "github.com/taubyte/tau/protocols/hoarder"
-	monkeyService "github.com/taubyte/tau/protocols/monkey"
-	patrickService "github.com/taubyte/tau/protocols/patrick"
-	seerService "github.com/taubyte/tau/protocols/seer"
-	nodeService "github.com/taubyte/tau/protocols/substrate"
-	tnsService "github.com/taubyte/tau/protocols/tns"
+	authService "github.com/taubyte/tau/services/auth"
+	"github.com/taubyte/tau/services/gateway"
+	hoarderService "github.com/taubyte/tau/services/hoarder"
+	monkeyService "github.com/taubyte/tau/services/monkey"
+	patrickService "github.com/taubyte/tau/services/patrick"
+	seerService "github.com/taubyte/tau/services/seer"
+	nodeService "github.com/taubyte/tau/services/substrate"
+	tnsService "github.com/taubyte/tau/services/tns"
 
 	"github.com/taubyte/tau/config"
 )

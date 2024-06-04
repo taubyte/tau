@@ -4,22 +4,22 @@ import (
 	"reflect"
 	"testing"
 
-	commonIface "github.com/taubyte/go-interfaces/common"
-	spec "github.com/taubyte/go-specs/common"
-	dreamland "github.com/taubyte/tau/libdream"
-	_ "github.com/taubyte/tau/protocols/tns"
+	commonIface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/dream"
+	spec "github.com/taubyte/tau/pkg/specs/common"
+	_ "github.com/taubyte/tau/services/tns"
 	"gotest.tools/assert"
 )
 
 func TestFetch(t *testing.T) {
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
-	err := u.StartWithConfig(&dreamland.Config{
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
-		Simples: map[string]dreamland.SimpleConfig{
+		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
 				}.Compat(),
 			},

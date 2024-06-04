@@ -9,7 +9,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/taubyte/go-interfaces/services/seer"
+	"github.com/taubyte/tau/core/services/seer"
 )
 
 // Structs to parse responses from the APIs

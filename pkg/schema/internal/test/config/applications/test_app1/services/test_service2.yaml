@@ -1,0 +1,6 @@
+id: service2ID
+description: a simple protocol
+tags:
+    - service_tag_3
+    - service_tag_4
+protocol: /simple/v2

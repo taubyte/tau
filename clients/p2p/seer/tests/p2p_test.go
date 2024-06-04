@@ -3,28 +3,28 @@ package tests
 import (
 	"testing"
 
-	commonIface "github.com/taubyte/go-interfaces/common"
-	iface "github.com/taubyte/go-interfaces/services/seer"
-	dreamland "github.com/taubyte/tau/libdream"
-	_ "github.com/taubyte/tau/protocols/seer"
+	commonIface "github.com/taubyte/tau/core/common"
+	iface "github.com/taubyte/tau/core/services/seer"
+	"github.com/taubyte/tau/dream"
+	_ "github.com/taubyte/tau/services/seer"
 	"gotest.tools/v3/assert"
 )
 
 func TestSeerClient(t *testing.T) {
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
-	err := u.StartWithConfig(&dreamland.Config{
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer": {Others: map[string]int{"dns": 8988}},
 		},
-		Simples: map[string]dreamland.SimpleConfig{
+		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 				}.Compat(),
 			},
 			"clientD": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 				}.Compat(),
 			},

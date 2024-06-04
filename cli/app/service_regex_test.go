@@ -11,8 +11,8 @@ var (
 	expectedRegex = `^([^.]+\.)?tau\.example\.test\.com$`
 )
 
-func TestProtocolsRegex(t *testing.T) {
-	url := convertToProtocolsRegex(testUrl)
+func TestServicesRegex(t *testing.T) {
+	url := convertToServicesRegex(testUrl)
 	assert.Equal(t, url, expectedRegex)
 
 }

@@ -5,15 +5,15 @@ import (
 	"fmt"
 
 	"github.com/mitchellh/mapstructure"
-	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/tau/clients/p2p/tns/common"
+	"github.com/taubyte/tau/core/services/tns"
 
-	spec "github.com/taubyte/go-specs/common"
-	"github.com/taubyte/go-specs/extract"
-	"github.com/taubyte/go-specs/methods"
+	spec "github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/pkg/specs/extract"
+	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/utils/maps"
 )
 

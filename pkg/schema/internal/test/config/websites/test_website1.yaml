@@ -1,0 +1,15 @@
+id: website1ID
+description: a simple photo booth
+tags:
+    - website_tag_1
+    - website_tag_2
+domains:
+    # hal.computers.com
+    - test_domain1
+source:
+    paths:
+        - /photos
+    branch: main
+    github:
+        id: "111111111"
+        fullname: taubyte-test/photo_booth

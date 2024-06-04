@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	iface "github.com/taubyte/go-interfaces/services/seer"
 	"github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/tau/clients/p2p/seer/usage"
+	iface "github.com/taubyte/tau/core/services/seer"
 )
 
 var (

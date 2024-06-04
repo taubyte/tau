@@ -12,8 +12,8 @@ import (
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/utils"
 
-	"github.com/taubyte/go-interfaces/p2p/keypair"
 	odo "github.com/taubyte/tau/cli"
+	"github.com/taubyte/tau/core/p2p/keypair"
 )
 
 func createLiteNode(ctx context.Context, conf *config.Node, shape, storagePath string) (peer.Node, error) {
@@ -59,7 +59,7 @@ func createLiteNode(ctx context.Context, conf *config.Node, shape, storagePath s
 
 func createNodes(ctx context.Context, storagePath, shape string, conf *config.Node) error {
 	var err error
-	if len(conf.Protocols) < 1 { // For elder nodes
+	if len(conf.Services) < 1 { // For elder nodes
 		peerInfo, err := utils.ConvertToAddrInfo(conf.Peers)
 		if err != nil {
 			return err
