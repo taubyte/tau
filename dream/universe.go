@@ -3,8 +3,6 @@ package dream
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -14,6 +12,7 @@ import (
 	peer "github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/common"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/utils"
 
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/utils/id"
@@ -35,10 +34,13 @@ func New(config UniverseConfig) *Universe {
 		return u
 	}
 
+	// needs to be predictable for when KeepRoot==true
+	swarmKey, _ := utils.FormatSwarmKey(utils.GenerateSwarmKeyFromString(id))
+
 	u = &Universe{
 		name:      config.Name,
 		id:        id,
-		swarmKey:  generateSwarmKey(id),
+		swarmKey:  swarmKey,
 		all:       make([]peer.Node, 0),
 		closables: make([]commonIface.Service, 0),
 		simples:   make(map[string]*Simple),
@@ -321,9 +323,4 @@ func (u *Universe) Cleanup() {
 
 func (u *Universe) Id() string {
 	return u.id
-}
-
-func generateSwarmKey(id string) []byte {
-	hash := sha256.Sum256([]byte(id))
-	return []byte("/key/swarm/psk/1.0.0//base16/" + hex.EncodeToString(hash[:]))
 }

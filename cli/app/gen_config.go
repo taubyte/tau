@@ -7,7 +7,6 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/pem"
 	"fmt"
 	"os"
@@ -20,6 +19,7 @@ import (
 	"github.com/taubyte/p2p/keypair"
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/services/seer"
+	"github.com/taubyte/tau/utils"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"
 
@@ -274,13 +274,7 @@ func generateSwarmKey(data []byte) (string, error) {
 		return string(data), nil
 	}
 
-	key := make([]byte, 32)
-	_, err := rand.Read(key)
-	if err != nil {
-		return "", fmt.Errorf("rand read failed with: %w", err)
-	}
-
-	return "/key/swarm/psk/1.0.0//base16/" + hex.EncodeToString(key), nil
+	return utils.GenerateSwarmKey()
 }
 
 func generateNodeKeyAndID(pkey string) (string, string, error) {
