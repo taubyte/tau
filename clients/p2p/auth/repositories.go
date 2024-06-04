@@ -3,8 +3,8 @@ package auth
 import (
 	"fmt"
 
-	iface "github.com/taubyte/go-interfaces/services/auth"
 	"github.com/taubyte/p2p/streams/command"
+	iface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/utils/maps"
 )
 

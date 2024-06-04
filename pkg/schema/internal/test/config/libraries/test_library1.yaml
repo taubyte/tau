@@ -1,0 +1,11 @@
+id: library1ID
+description: just a library
+tags:
+    - library_tag_1
+    - library_tag_2
+source:
+    path: /
+    branch: main
+    github:
+        id: "111111111"
+        fullname: taubyte-test/library1

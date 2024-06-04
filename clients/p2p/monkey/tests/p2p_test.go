@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	commonIface "github.com/taubyte/go-interfaces/common"
-	"github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/p2p/peer"
 	p2p "github.com/taubyte/tau/clients/p2p/monkey"
-	dreamland "github.com/taubyte/tau/libdream"
-	protocolCommon "github.com/taubyte/tau/protocols/common"
-	_ "github.com/taubyte/tau/protocols/hoarder"
-	"github.com/taubyte/tau/protocols/monkey"
+	commonIface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/dream"
+	protocolCommon "github.com/taubyte/tau/services/common"
+	_ "github.com/taubyte/tau/services/hoarder"
+	"github.com/taubyte/tau/services/monkey"
 	"gotest.tools/v3/assert"
 )
 
@@ -23,17 +23,17 @@ func TestMonkeyClient(t *testing.T) {
 
 	protocolCommon.MockedPatrick = true
 
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&dreamland.Config{
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},
 		},
-		Simples: map[string]dreamland.SimpleConfig{
+		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					Monkey: &commonIface.ClientConfig{},
 				}.Compat(),
 			},

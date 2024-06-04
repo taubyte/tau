@@ -56,7 +56,7 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 	}
 	src.Swarmkey = path.Join(configRoot, src.Swarmkey)
 
-	err = validateKeys(src.Protocols, src.Domains.Key.Private, src.Domains.Key.Public)
+	err = validateKeys(src.Services, src.Domains.Key.Private, src.Domains.Key.Public)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -71,10 +71,10 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 		NetworkFqdn:           src.NetworkFqdn,
 		GeneratedDomain:       src.Domains.Generated,
 		GeneratedDomainRegExp: regexp.MustCompile(convertToPostfixRegex(src.Domains.Generated)),
-		ProtocolsDomainRegExp: regexp.MustCompile(convertToProtocolsRegex(src.NetworkFqdn)),
+		ServicesDomainRegExp:  regexp.MustCompile(convertToServicesRegex(src.NetworkFqdn)),
 		AliasDomainsRegExp:    make([]*regexp.Regexp, 0),
 		HttpListen:            "0.0.0.0:443",
-		Protocols:             src.Protocols,
+		Services:              src.Services,
 		Plugins:               src.Plugins,
 		Peers:                 src.Peers,
 		DevMode:               ctx.Bool("dev-mode"),
@@ -157,12 +157,12 @@ func parseValidationKey(key *config.DVKey) (config.DomainValidation, error) {
 1. Auth needs private key to start properly
 2. Monkey/Substrate either need a public key or a private key to generate a public key from
 */
-func validateKeys(protocols []string, privateKey, publicKey string) error {
-	if slices.Contains(protocols, "auth") && privateKey == "" {
+func validateKeys(services []string, privateKey, publicKey string) error {
+	if slices.Contains(services, "auth") && privateKey == "" {
 		return errors.New("domains private key cannot be empty when running auth")
 	}
 
-	for _, srv := range protocols {
+	for _, srv := range services {
 		if (srv == "monkey" || srv == "substrate") && (privateKey == "" && publicKey == "") {
 			return errors.New("domains public key cannot be empty when running monkey or node")
 		}

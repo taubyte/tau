@@ -1,9 +1,9 @@
 package patrick
 
 import (
-	iface "github.com/taubyte/go-interfaces/services/patrick"
 	"github.com/taubyte/p2p/peer"
 	client "github.com/taubyte/p2p/streams/client"
+	iface "github.com/taubyte/tau/core/services/patrick"
 )
 
 var _ iface.Client = &Client{}

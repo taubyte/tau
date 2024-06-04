@@ -5,7 +5,7 @@ import (
 
 	"github.com/taubyte/p2p/peer"
 	client "github.com/taubyte/p2p/streams/client"
-	protocolCommon "github.com/taubyte/tau/protocols/common"
+	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
 func New(ctx context.Context, node peer.Node) (*Client, error) {

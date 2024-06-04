@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/mackerelio/go-osstat/cpu"
-	iface "github.com/taubyte/go-interfaces/services/seer"
+	iface "github.com/taubyte/tau/core/services/seer"
 )
 
 func GetCPUUsage() (cpuData iface.Cpu, err error) {

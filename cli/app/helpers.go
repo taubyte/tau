@@ -53,7 +53,7 @@ func convertToPostfixRegex(url string) string {
 	return pRegex
 }
 
-func convertToProtocolsRegex(url string) string {
+func convertToServicesRegex(url string) string {
 	urls := strings.Split(url, ".")
 	pRegex := `^([^.]+\.)?tau`
 	var network string

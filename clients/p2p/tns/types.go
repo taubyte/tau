@@ -5,9 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/taubyte/go-interfaces/services/tns"
 	"github.com/taubyte/p2p/peer"
 	client "github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/tau/core/services/tns"
 )
 
 type Client struct {

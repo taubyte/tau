@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
-	commonIface "github.com/taubyte/go-interfaces/common"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
-	dreamland "github.com/taubyte/tau/libdream"
+	commonIface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/dream"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/protocols/seer"
-	_ "github.com/taubyte/tau/protocols/substrate"
+	_ "github.com/taubyte/tau/services/auth"
+	_ "github.com/taubyte/tau/services/seer"
 )
 
 func TestHeartBeat(t *testing.T) {
@@ -21,17 +21,17 @@ func TestHeartBeat(t *testing.T) {
 		seerClient.DefaultUsageBeaconInterval = defaultInterval
 	}()
 
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&dreamland.Config{
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":      {},
-			"substrate": {},
+			"seer": {},
+			"auth": {},
 		},
-		Simples: map[string]dreamland.SimpleConfig{
+		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
 				}.Compat(),
 			},
@@ -48,7 +48,7 @@ func TestHeartBeat(t *testing.T) {
 		return
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(3 * time.Second)
 	seer, err := simple.Seer()
 	assert.NilError(t, err)
 

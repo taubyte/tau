@@ -4,39 +4,39 @@ import (
 	_ "embed"
 	"testing"
 
-	commonIface "github.com/taubyte/go-interfaces/common"
 	_ "github.com/taubyte/tau/clients/p2p/patrick"
-	dreamland "github.com/taubyte/tau/libdream"
-	commonTest "github.com/taubyte/tau/libdream/helpers"
-	_ "github.com/taubyte/tau/protocols/auth"
-	_ "github.com/taubyte/tau/protocols/hoarder"
+	commonIface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/dream"
+	commonTest "github.com/taubyte/tau/dream/helpers"
+	_ "github.com/taubyte/tau/services/auth"
+	_ "github.com/taubyte/tau/services/hoarder"
 	"gotest.tools/v3/assert"
 
 	"github.com/fxamacker/cbor/v2"
-	iface "github.com/taubyte/go-interfaces/services/patrick"
-	protocolsCommon "github.com/taubyte/tau/protocols/common"
-	service "github.com/taubyte/tau/protocols/patrick"
-	_ "github.com/taubyte/tau/protocols/tns"
+	iface "github.com/taubyte/tau/core/services/patrick"
+	servicesCommon "github.com/taubyte/tau/services/common"
+	service "github.com/taubyte/tau/services/patrick"
+	_ "github.com/taubyte/tau/services/tns"
 )
 
 func TestClientWithUniverse(t *testing.T) {
 	t.Skip("Using an old token/project")
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	patrickHttpPort := 4443
 	authHttpPort := 4445
 
-	err := u.StartWithConfig(&dreamland.Config{
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"patrick": {Others: map[string]int{"http": patrickHttpPort}},
 			"auth":    {Others: map[string]int{"http": authHttpPort, "secure": 1}},
 			"hoarder": {},
 			"tns":     {},
 		},
-		Simples: map[string]dreamland.SimpleConfig{
+		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					Patrick: &commonIface.ClientConfig{},
 				}.Compat(),
 			},
@@ -71,7 +71,7 @@ func TestClientWithUniverse(t *testing.T) {
 		return
 	}
 
-	protocolsCommon.FakeSecret = true
+	servicesCommon.FakeSecret = true
 	err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
 	if err != nil {
 		t.Error(err)

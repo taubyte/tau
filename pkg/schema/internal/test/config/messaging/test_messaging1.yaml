@@ -1,0 +1,14 @@
+id: messaging1ID
+description: a messaging channel
+tags:
+    - messaging_tag_1
+    - messaging_tag_2
+local: false
+channel:
+    regex: false
+    match: simple1
+bridges:
+    mqtt:
+        enable: false
+    websocket:
+        enable: true

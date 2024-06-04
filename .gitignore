@@ -3,15 +3,15 @@
 # Learn more about .gitignore:
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
-./protocols/hoarder/testGIT
-./protocols/monkey/build/
-./protocols/auth/build/
-./protocols/seer/build/
-./protocols/patrick/build/
-./protocols/patrick/.patrick/
+./services/hoarder/testGIT
+./services/monkey/build/
+./services/auth/build/
+./services/seer/build/
+./services/patrick/build/
+./services/patrick/.patrick/
 **fakeroot/
-./protocols/node/.node/
-./protocols/tns/storage
+./services/node/.node/
+./services/tns/storage
 **/testGIT
 **/cover.out
 tau

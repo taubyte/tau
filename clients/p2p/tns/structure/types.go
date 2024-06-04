@@ -3,9 +3,9 @@ package structure
 // TODO: This needs to be refactored with the tns/mocks
 
 import (
-	"github.com/taubyte/go-interfaces/services/tns"
-	commonSpec "github.com/taubyte/go-specs/common"
-	structureSpec "github.com/taubyte/go-specs/structure"
+	"github.com/taubyte/tau/core/services/tns"
+	commonSpec "github.com/taubyte/tau/pkg/specs/common"
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
 type Structure[T structureSpec.Structure] struct {

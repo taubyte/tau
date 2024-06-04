@@ -5,7 +5,7 @@ import (
 	"runtime"
 
 	"github.com/mackerelio/go-osstat/memory"
-	iface "github.com/taubyte/go-interfaces/services/seer"
+	iface "github.com/taubyte/tau/core/services/seer"
 )
 
 func GetMemoryUsage() (memData iface.Memory, err error) {

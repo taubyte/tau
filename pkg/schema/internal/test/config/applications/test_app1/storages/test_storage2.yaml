@@ -1,0 +1,12 @@
+id: storage2ID
+description: an object storage
+tags:
+    - storage_tag_3
+    - storage_tag_4
+match: users
+useRegex: false
+access:
+    network: all
+object:
+    versioning: true
+    size: 50GB

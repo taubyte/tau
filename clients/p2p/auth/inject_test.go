@@ -6,10 +6,10 @@ import (
 	"os"
 	"testing"
 
-	commonIface "github.com/taubyte/go-interfaces/common"
 	"github.com/taubyte/http/helpers"
-	dreamland "github.com/taubyte/tau/libdream"
-	"github.com/taubyte/tau/protocols/auth/acme/store"
+	commonIface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/services/auth/acme/store"
 	"gotest.tools/v3/assert"
 )
 
@@ -18,17 +18,17 @@ var testDir = "testdir"
 func TestInject(t *testing.T) {
 	defer os.Remove(testDir)
 
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&dreamland.Config{
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth": {},
 			"tns":  {},
 		},
-		Simples: map[string]dreamland.SimpleConfig{
+		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					Auth: &commonIface.ClientConfig{},
 				}.Compat(),
 			},

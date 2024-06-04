@@ -3,7 +3,7 @@ package config
 import (
 	"time"
 
-	seerIface "github.com/taubyte/go-interfaces/services/seer"
+	seerIface "github.com/taubyte/tau/core/services/seer"
 )
 
 type Ports struct {
@@ -23,7 +23,7 @@ func (p Ports) ToMap() map[string]int {
 type Source struct {
 	Privatekey  string              `yaml:"privatekey"`
 	Swarmkey    string              `yaml:"swarmkey"`
-	Protocols   []string            `yaml:"protocols,omitempty"`
+	Services    []string            `yaml:"services,omitempty"`
 	P2PListen   []string            `yaml:"p2p-listen"`
 	P2PAnnounce []string            `yaml:"p2p-announce"`
 	Ports       Ports               `yaml:"ports"`

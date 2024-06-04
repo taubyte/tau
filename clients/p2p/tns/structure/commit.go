@@ -3,7 +3,7 @@ package structure
 import (
 	"fmt"
 
-	"github.com/taubyte/go-specs/common"
+	"github.com/taubyte/tau/pkg/specs/common"
 )
 
 func (c *Structure[T]) Commit(projectId, branch string) (string, error) {

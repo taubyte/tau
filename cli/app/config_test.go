@@ -30,7 +30,7 @@ func TestConfig(t *testing.T) {
 	os.Mkdir(root+"/config", 0750)
 	os.Mkdir(root+"/config/keys", 0750)
 
-	err = newApp().RunContext(ctx, []string{os.Args[0], "--root", root, "cnf", "gen", "-s", "test", "--protos", "auth,seer,monkey", "--swarm-key", "--dv-keys"})
+	err = newApp().RunContext(ctx, []string{os.Args[0], "--root", root, "cnf", "gen", "-s", "test", "--services", "auth,seer,monkey", "--swarm-key", "--dv-keys"})
 	assert.NilError(t, err)
 
 	err = newApp().RunContext(ctx, []string{os.Args[0], "--root", root, "cnf", "ok?", "-s", "test"})

@@ -8,12 +8,12 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/taubyte/go-interfaces/services"
-	commonSpecs "github.com/taubyte/go-specs/common"
 	httpService "github.com/taubyte/http"
 	"github.com/taubyte/tau/config"
-	auto "github.com/taubyte/tau/pkgs/http-auto"
-	"github.com/taubyte/tau/pkgs/kvdb"
+	"github.com/taubyte/tau/core/services"
+	auto "github.com/taubyte/tau/pkg/http-auto"
+	"github.com/taubyte/tau/pkg/kvdb"
+	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	slices "github.com/taubyte/utils/slices/string"
 )
 
@@ -41,8 +41,8 @@ func Start(ctx context.Context, protocolConfig *config.Node) error {
 
 	// Create httpNode if needed
 	var httpNode httpService.Service
-	for _, srv := range protocolConfig.Protocols {
-		if slices.Contains(commonSpecs.HTTPProtocols, srv) {
+	for _, srv := range protocolConfig.Services {
+		if slices.Contains(commonSpecs.HTTPServices, srv) {
 			httpNode, err = auto.NewAuto(ctx, protocolConfig.Node, protocolConfig)
 			if err != nil {
 				return fmt.Errorf("new autoHttp failed with: %s", err)
@@ -56,7 +56,7 @@ func Start(ctx context.Context, protocolConfig *config.Node) error {
 	// Attach any p2p/http endpoints
 	var includesNode bool
 	services := make([]services.Service, 0)
-	for _, srv := range protocolConfig.Protocols {
+	for _, srv := range protocolConfig.Services {
 		if srv == "substrate" {
 			includesNode = true
 			continue

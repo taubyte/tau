@@ -1,0 +1,85 @@
+syntax = "proto3";
+package proto;
+option go_package = "/proto";
+
+enum Type {
+    unknown=0x00;
+    i32=0x7f;
+    i64=0x7e;
+    f32=0x7d;
+    f64=0x7c;
+}
+
+
+enum IOError {
+    none = 0x00;
+    shortWrite = 0x10; 
+    invalidWrite = 0x11;
+    shortBuffer = 0x12;
+    eof = 0x13;
+    noProgress = 0x14;
+}
+
+message FunctionDefinition {
+    string name = 1;
+    repeated Type args =2;
+    repeated Type rets =3;
+}
+
+message FunctionDefinitions {
+    repeated FunctionDefinition functions = 1;
+}
+
+// comes from main
+message CallRequest {
+    uint32 broker =1;
+    string function = 4;
+    repeated uint64 inputs =16;
+}
+
+message Empty {
+    uint32 broker =1;
+} 
+
+
+message Metadata {
+    string name =1;
+}
+
+// comes from plugin
+message ReadRequest{
+    uint32 offset = 16;
+    uint32 size = 17;
+}
+
+// comes from plugin
+message WriteRequest{
+    uint32 offset = 16; 
+    bytes data = 17;
+}
+
+message ReadReturn {
+    bytes data = 1;
+    IOError error = 2;
+}
+
+message WriteReturn {
+    uint32 written = 1;
+    IOError error = 2;
+}
+
+message CallReturn {
+    repeated uint64 rets =1;
+}
+
+service Plugin {
+    rpc Meta(Empty) returns (Metadata);
+    rpc Symbols(Empty) returns (FunctionDefinitions);
+    rpc Call(CallRequest) returns(CallReturn);
+}
+
+
+service Module {
+    rpc MemoryRead(ReadRequest) returns (ReadReturn);
+    rpc MemoryWrite(WriteRequest) returns (WriteReturn);
+}

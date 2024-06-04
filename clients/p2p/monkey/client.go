@@ -4,11 +4,11 @@ import (
 	"context"
 
 	"github.com/ipfs/go-log/v2"
-	iface "github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/p2p/peer"
 	client "github.com/taubyte/p2p/streams/client"
+	iface "github.com/taubyte/tau/core/services/monkey"
 
-	protocolCommon "github.com/taubyte/tau/protocols/common"
+	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
 var logger = log.Logger("tau.monkey.p2p.client")

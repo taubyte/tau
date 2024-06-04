@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/mitchellh/mapstructure"
-	"github.com/taubyte/go-interfaces/services/monkey"
 	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/core/services/monkey"
 )
 
 func (c *Client) Status(jid string) (*monkey.StatusResponse, error) {

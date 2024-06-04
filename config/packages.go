@@ -3,7 +3,7 @@ package config
 import (
 	"context"
 
-	serviceIface "github.com/taubyte/go-interfaces/services"
+	serviceIface "github.com/taubyte/tau/core/services"
 )
 
 type ProtoCommandIface interface {

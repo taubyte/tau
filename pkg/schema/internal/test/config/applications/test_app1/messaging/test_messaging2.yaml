@@ -1,0 +1,14 @@
+id: messaging2ID
+description: another messaging channel
+tags:
+    - messaging_tag_3
+    - messaging_tag_4
+local: true
+channel:
+    regex: true
+    match: simple2
+bridges:
+    mqtt:
+        enable: true
+    websocket:
+        enable: false

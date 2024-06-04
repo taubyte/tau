@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/go-interfaces/services/tns"
-	"github.com/taubyte/go-specs/methods"
+	"github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/pkg/specs/methods"
 )
 
 func (s *simpleClient) Project(projectID, branch string) (interface{}, error) {

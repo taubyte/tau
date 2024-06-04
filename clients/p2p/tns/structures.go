@@ -1,18 +1,18 @@
 package tns
 
 import (
-	"github.com/taubyte/go-interfaces/services/tns"
-	databaseSpec "github.com/taubyte/go-specs/database"
-	domainSpec "github.com/taubyte/go-specs/domain"
-	functionSpec "github.com/taubyte/go-specs/function"
-	librarySpec "github.com/taubyte/go-specs/library"
-	messagingSpec "github.com/taubyte/go-specs/messaging"
-	serviceSpec "github.com/taubyte/go-specs/service"
-	smartOpSpec "github.com/taubyte/go-specs/smartops"
-	storageSpec "github.com/taubyte/go-specs/storage"
-	structureSpec "github.com/taubyte/go-specs/structure"
-	websiteSpec "github.com/taubyte/go-specs/website"
 	"github.com/taubyte/tau/clients/p2p/tns/structure"
+	"github.com/taubyte/tau/core/services/tns"
+	databaseSpec "github.com/taubyte/tau/pkg/specs/database"
+	domainSpec "github.com/taubyte/tau/pkg/specs/domain"
+	functionSpec "github.com/taubyte/tau/pkg/specs/function"
+	librarySpec "github.com/taubyte/tau/pkg/specs/library"
+	messagingSpec "github.com/taubyte/tau/pkg/specs/messaging"
+	serviceSpec "github.com/taubyte/tau/pkg/specs/service"
+	smartOpSpec "github.com/taubyte/tau/pkg/specs/smartops"
+	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
 )
 
 func (c *Client) Simple() tns.SimpleIface {

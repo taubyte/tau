@@ -1,8 +1,8 @@
 package hoarder
 
 import (
-	iface "github.com/taubyte/go-interfaces/services/hoarder"
 	client "github.com/taubyte/p2p/streams/client"
+	iface "github.com/taubyte/tau/core/services/hoarder"
 )
 
 var _ iface.Client = &Client{}

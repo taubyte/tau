@@ -1,0 +1,17 @@
+id: function1ID
+description: an http function for a simple ping
+tags:
+    - function_tag_1
+    - function_tag_2
+trigger:
+    type: http
+    method: get
+    paths:
+        - /ping1
+domains:
+    - test_domain1
+source: .
+execution:
+    timeout: 20s
+    memory: 32GB
+    call: ping1

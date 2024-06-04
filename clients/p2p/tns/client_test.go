@@ -5,25 +5,25 @@ import (
 	"testing"
 	"time"
 
-	commonIface "github.com/taubyte/go-interfaces/common"
-	iface "github.com/taubyte/go-interfaces/services/tns"
-	spec "github.com/taubyte/go-specs/common"
 	p2p "github.com/taubyte/tau/clients/p2p/tns"
-	dreamland "github.com/taubyte/tau/libdream"
+	commonIface "github.com/taubyte/tau/core/common"
+	iface "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/dream"
+	spec "github.com/taubyte/tau/pkg/specs/common"
 	"gotest.tools/assert"
 )
 
 var _ iface.Client = &p2p.Client{}
 
 func TestTNSClient(t *testing.T) {
-	u := dreamland.New(dreamland.UniverseConfig{Name: t.Name()})
-	err := u.StartWithConfig(&dreamland.Config{
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
-		Simples: map[string]dreamland.SimpleConfig{
+		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dreamland.SimpleConfigClients{
+				Clients: dream.SimpleConfigClients{
 					TNS: &commonIface.ClientConfig{},
 				}.Compat(),
 			},
