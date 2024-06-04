@@ -17,6 +17,7 @@ type Universe struct {
 	name      string
 	root      string
 	id        string
+	swarmKey  []byte
 	all       []peer.Node
 	closables []commonIface.Service
 	lookups   map[string]*NodeInfo

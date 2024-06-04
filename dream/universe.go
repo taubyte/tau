@@ -3,6 +3,8 @@ package dream
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -14,7 +16,6 @@ import (
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 
 	"github.com/taubyte/tau/pkg/kvdb"
-	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/utils/id"
 )
 
@@ -37,6 +38,7 @@ func New(config UniverseConfig) *Universe {
 	u = &Universe{
 		name:      config.Name,
 		id:        id,
+		swarmKey:  generateSwarmKey(id),
 		all:       make([]peer.Node, 0),
 		closables: make([]commonIface.Service, 0),
 		simples:   make(map[string]*Simple),
@@ -219,7 +221,7 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 
 		config.PrivateKey = privKey
 		config.PublicKey = pubKey
-		config.SwarmKey = servicesCommon.SwarmKey()
+		config.SwarmKey = u.swarmKey
 
 		wg.Add(1)
 		go func(service string, config commonIface.ServiceConfig) {
@@ -319,4 +321,9 @@ func (u *Universe) Cleanup() {
 
 func (u *Universe) Id() string {
 	return u.id
+}
+
+func generateSwarmKey(id string) []byte {
+	hash := sha256.Sum256([]byte(id))
+	return []byte("/key/swarm/psk/1.0.0//base16/" + hex.EncodeToString(hash[:]))
 }
