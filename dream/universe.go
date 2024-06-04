@@ -12,9 +12,9 @@ import (
 	peer "github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/common"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/utils"
 
 	"github.com/taubyte/tau/pkg/kvdb"
-	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/utils/id"
 )
 
@@ -34,9 +34,13 @@ func New(config UniverseConfig) *Universe {
 		return u
 	}
 
+	// needs to be predictable for when KeepRoot==true
+	swarmKey, _ := utils.FormatSwarmKey(utils.GenerateSwarmKeyFromString(id))
+
 	u = &Universe{
 		name:      config.Name,
 		id:        id,
+		swarmKey:  swarmKey,
 		all:       make([]peer.Node, 0),
 		closables: make([]commonIface.Service, 0),
 		simples:   make(map[string]*Simple),
@@ -219,7 +223,7 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 
 		config.PrivateKey = privKey
 		config.PublicKey = pubKey
-		config.SwarmKey = servicesCommon.SwarmKey()
+		config.SwarmKey = u.swarmKey
 
 		wg.Add(1)
 		go func(service string, config commonIface.ServiceConfig) {

@@ -16,7 +16,6 @@ import (
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 
 	peer "github.com/taubyte/p2p/peer"
-	servicesCommon "github.com/taubyte/tau/services/common"
 )
 
 func (s *Simple) getClient(name string) (commonIface.Client, error) {
@@ -142,7 +141,7 @@ func (u *Universe) CreateSimpleNode(name string, config *SimpleConfig) (peer.Nod
 		u.ctx,
 		fmt.Sprintf("%s/simple-%s-%d", u.root, name, config.Port),
 		keypair.NewRaw(),
-		servicesCommon.SwarmKey(),
+		u.swarmKey,
 		[]string{fmt.Sprintf(DefaultP2PListenFormat, config.Port)},
 		[]string{fmt.Sprintf(DefaultP2PListenFormat, config.Port)},
 		false,

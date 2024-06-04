@@ -20,6 +20,8 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/taubyte/go-seer"
+
+	"github.com/taubyte/tau/utils"
 )
 
 // TODO: move to config as a methods
@@ -130,7 +132,7 @@ func parseSwarmKey(filepath string) (pnet.PSK, error) {
 			return nil, fmt.Errorf("reading %s failed with: %w", filepath, err)
 		}
 
-		return formatSwarmKey(string(data))
+		return utils.FormatSwarmKey(string(data))
 	}
 
 	return nil, nil
