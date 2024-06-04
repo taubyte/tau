@@ -11,7 +11,7 @@ import (
 
 	"github.com/taubyte/tau/config"
 	"github.com/urfave/cli/v2"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 func exportConfig(ctx *cli.Context) error {
