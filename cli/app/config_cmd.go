@@ -78,7 +78,7 @@ func configCommand() *cli.Command {
 					},
 					&cli.StringFlag{
 						Name:    "services",
-						Aliases: []string{"serv"},
+						Aliases: []string{"serv", "protos", "protocols", "proto"}, // TODO: "protos", "protocols", "proto" to be removed after two releases
 						Usage:   "Services to enable. Use `all` to enable them all.",
 					},
 					&cli.StringFlag{
