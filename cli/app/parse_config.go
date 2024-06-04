@@ -17,7 +17,9 @@ import (
 	"github.com/taubyte/tau/config"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/exp/slices"
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
+
+	"github.com/taubyte/go-seer"
 )
 
 // TODO: move to config as a methods
@@ -37,6 +39,11 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 	configPath := ctx.Path("path")
 	if configPath == "" {
 		configPath = path.Join(configRoot, shape+".yaml")
+	}
+
+	err := configMigration(seer.SystemFS(configRoot), shape)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("migration of `%s` failed with: %w", configPath, err)
 	}
 
 	data, err := os.ReadFile(configPath)
