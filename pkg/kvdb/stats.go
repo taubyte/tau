@@ -1,6 +1,8 @@
 package kvdb
 
 import (
+	"fmt"
+
 	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-cid"
 	"github.com/taubyte/tau/core/kvdb"
@@ -47,7 +49,7 @@ func (s *stats) Decode(data []byte) error {
 	var decoded statsCbor
 	err := cbor.Unmarshal(data, &decoded)
 	if err != nil {
-		return err
+		return fmt.Errorf("decoding stats data failed with %w", err)
 	}
 
 	s.maxHeight = decoded.MaxHeight
@@ -57,7 +59,7 @@ func (s *stats) Decode(data []byte) error {
 	for i, headBytes := range decoded.Heads {
 		c, err := cid.Cast(headBytes)
 		if err != nil {
-			return err
+			return fmt.Errorf("parsing cid failed with %w", err)
 		}
 		s.heads[i] = c
 	}
