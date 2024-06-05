@@ -32,7 +32,6 @@ var (
 )
 
 func TestBasicWithLibrary(t *testing.T) {
-	t.Skip("Needs to be redone")
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -48,7 +47,8 @@ func TestBasicWithLibrary(t *testing.T) {
 		Simples: map[string]dream.SimpleConfig{
 			"client": {
 				Clients: dream.SimpleConfigClients{
-					TNS: &commonIface.ClientConfig{},
+					TNS:     &commonIface.ClientConfig{},
+					Hoarder: &commonIface.ClientConfig{},
 				}.Compat(),
 			},
 		},

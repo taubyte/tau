@@ -221,7 +221,7 @@ require (
 	github.com/smartystreets/assertions v1.13.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/taubyte/go-sdk-symbols v0.2.7 // indirect
-	github.com/taubyte/go-specs v0.10.8 // indirect
+	github.com/taubyte/go-specs v0.10.6 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.0 // indirect
 	github.com/unrolled/secure v1.0.9 // indirect
