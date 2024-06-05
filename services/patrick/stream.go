@@ -14,4 +14,5 @@ func (srv *PatrickService) setupStreamRoutes() {
 		return cr.Response{"time": int(time.Now().Unix())}, nil
 	})
 	srv.stream.Define("patrick", srv.requestServiceHandler)
+	srv.stream.Define("stats", srv.statsServiceHandler)
 }

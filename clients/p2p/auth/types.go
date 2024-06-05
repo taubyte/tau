@@ -11,6 +11,8 @@ type Client struct {
 	client *client.Client
 }
 
+type Stats Client
+
 type Hooks Client
 
 type Projects Client

@@ -3,6 +3,8 @@ package auth
 import (
 	"crypto/tls"
 	"errors"
+
+	"github.com/taubyte/tau/core/kvdb"
 )
 
 type Client interface {
@@ -12,6 +14,11 @@ type Client interface {
 	Hooks() Hooks
 	Projects() Projects
 	Repositories() Repositories
+	Stats() Stats
+}
+
+type Stats interface {
+	Database() (kvdb.Stats, error)
 }
 
 type Hook interface {

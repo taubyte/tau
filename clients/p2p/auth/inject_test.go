@@ -8,12 +8,36 @@ import (
 
 	"github.com/taubyte/http/helpers"
 	commonIface "github.com/taubyte/tau/core/common"
+	authIface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/services/auth/acme/store"
 	"gotest.tools/v3/assert"
 )
 
-var testDir = "testdir"
+var testDir = "testdir" // TODO: use temp
+
+func injectCert(t *testing.T, client authIface.Client) []byte {
+	cert, key, err := helpers.GenerateCert("*.pass.com")
+	assert.NilError(t, err)
+
+	var p bytes.Buffer
+	err = pem.Encode(&p, &pem.Block{
+		Type:  "PRIVATE KEY",
+		Bytes: key,
+	})
+	assert.NilError(t, err)
+
+	err = pem.Encode(&p, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: cert,
+	})
+	assert.NilError(t, err)
+
+	err = client.InjectStaticCertificate("*.pass.com", []byte(cert))
+	assert.NilError(t, err)
+
+	return cert
+}
 
 func TestInject(t *testing.T) {
 	defer os.Remove(testDir)
@@ -45,39 +69,10 @@ func TestInject(t *testing.T) {
 		return
 	}
 
-	cert, key, err := helpers.GenerateCert("*.pass.com")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	var p bytes.Buffer
-	err = pem.Encode(&p, &pem.Block{
-		Type:  "PRIVATE KEY",
-		Bytes: key,
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	err = pem.Encode(&p, &pem.Block{
-		Type:  "CERTIFICATE",
-		Bytes: cert,
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
 	auth, err := simple.Auth()
 	assert.NilError(t, err)
 
-	err = auth.InjectStaticCertificate("*.pass.com", []byte(cert))
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	cert := injectCert(t, auth)
 
 	newStore, err := store.New(u.Context(), simple.PeerNode(), testDir, err)
 	if err != nil {
