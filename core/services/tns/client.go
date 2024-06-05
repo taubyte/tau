@@ -1,6 +1,7 @@
 package tns
 
 import (
+	"github.com/taubyte/tau/core/kvdb"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
@@ -39,6 +40,12 @@ type Client interface {
 	SmartOp() StructureIface[*structureSpec.SmartOp]
 	Storage() StructureIface[*structureSpec.Storage]
 	Website() StructureIface[*structureSpec.Website]
+
+	Stats() Stats
+}
+
+type Stats interface {
+	Database() (kvdb.Stats, error)
 }
 
 type SimpleIface interface {

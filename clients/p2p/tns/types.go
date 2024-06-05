@@ -16,6 +16,8 @@ type Client struct {
 	cache  *cache
 }
 
+type Stats Client
+
 type subscription struct {
 	ctx      context.Context
 	ctxC     context.CancelFunc

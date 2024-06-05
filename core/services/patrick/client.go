@@ -1,5 +1,7 @@
 package patrick
 
+import "github.com/taubyte/tau/core/kvdb"
+
 type Client interface {
 	Lock(jid string, eta uint32) error
 	IsLocked(jid string) (bool, error)
@@ -10,5 +12,6 @@ type Client interface {
 	Get(jid string) (*Job, error)
 	Timeout(jid string) error
 	Cancel(jid string, cid_log map[string]string) (interface{}, error)
+	DatabaseStats() (kvdb.Stats, error)
 	Close()
 }

@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/ipfs/go-log/v2"
+
+	cid "github.com/ipfs/go-cid"
 )
 
 type Factory interface {
@@ -41,6 +43,8 @@ type KVDB interface {
 
 	Factory() Factory
 
+	Stats() Stats
+
 	// Closes the KVDB
 	Close()
 }
@@ -49,4 +53,17 @@ type Batch interface {
 	Put(key string, value []byte) error
 	Delete(key string) error
 	Commit() error
+}
+
+type Type uint
+
+const (
+	TypeCRDT Type = iota
+)
+
+type Stats interface {
+	Type() Type
+	Heads() []cid.Cid
+	Encode() []byte // CBOR encoding
+	Decode(data []byte) error
 }
