@@ -42,9 +42,10 @@ func fakeFetch(messagings map[string]structureSpec.Messaging, functions map[stri
 			return structure.ResponseObject{Object: testCommit}, nil
 		}
 
-		if path.Slice()[6] == "messaging" {
+		p := path.Slice()
+		if len(p) >= 6 && p[6] == "messaging" {
 			return structure.ResponseObject{Object: messagings}, nil
-		} else if path.Slice()[6] == "functions" {
+		} else if len(p) >= 6 && p[6] == "functions" {
 			return structure.ResponseObject{Object: functions}, nil
 		}
 

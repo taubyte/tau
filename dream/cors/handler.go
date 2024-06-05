@@ -29,6 +29,7 @@ func cors(w http.ResponseWriter, r *http.Request) (_break bool) {
 		}
 		return true
 	}
+
 	return
 }
 

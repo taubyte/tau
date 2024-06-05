@@ -42,5 +42,6 @@ func (srv *multiverseService) apiHandlerUniverse(ctx httpIface.Context) (interfa
 	u := dream.New(dream.UniverseConfig{
 		Name: name,
 	})
+
 	return nil, u.StartWithConfig(config.Config)
 }

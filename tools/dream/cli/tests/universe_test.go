@@ -18,7 +18,6 @@ import (
 var services = []string{"seer", "auth", "patrick", "tns", "monkey", "hoarder", "substrate"}
 
 func TestKillService(t *testing.T) {
-	t.Skip("this test needs to be redone")
 	api.BigBang()
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	err := u.StartWithConfig(&dream.Config{
@@ -68,7 +67,7 @@ func TestKillService(t *testing.T) {
 		return
 	}
 
-	resp, err := multiverse.Universe("KillService").Status()
+	resp, err := multiverse.Universe(t.Name()).Status()
 	if err != nil {
 		t.Error(err)
 		return
@@ -177,7 +176,6 @@ func TestKillSimple(t *testing.T) {
 		t.Errorf("Couldn't find simple %s after recreating", testSimpleName)
 		return
 	}
-
 }
 
 func TestMultipleServices(t *testing.T) {

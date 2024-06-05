@@ -11,7 +11,6 @@ import (
 )
 
 func Universe(c *cli.Command) {
-
 	c.Flags = append(c.Flags, &flags.Universe)
 
 	if len(c.ArgsUsage) == 0 {

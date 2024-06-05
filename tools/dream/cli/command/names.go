@@ -28,5 +28,4 @@ func attachNames(c *cli.Command, flag cli.Flag) {
 		ctx.Set("names", names)
 		return action(ctx)
 	}
-
 }

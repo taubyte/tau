@@ -12,7 +12,7 @@ import (
 
 // TODO move to github.com/taubyte/domain-validation
 func ValidateDNS(generatedRegex *regexp.Regexp, _project, host string, dev bool, options ...dv.Option) error {
-	if generatedRegex.MatchString(host) {
+	if generatedRegex != nil && generatedRegex.MatchString(host) {
 		if dev {
 			// For dev mode Pad project string with 0s to be at least 8 characters, otherwise the check below will panic
 			if len(_project) < 8 {

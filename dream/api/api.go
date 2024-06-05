@@ -19,13 +19,16 @@ type multiverseService struct {
 }
 
 func BigBang() error {
-	var err error
-
 	srv := &multiverseService{
 		Multiverse: dream.MultiVerse(),
 	}
 
-	srv.rest, err = http.New(srv.Context(), options.Listen(dream.DreamlandApiListen), options.AllowedOrigins(true, []string{".*"}))
+	var err error
+	srv.rest, err = http.New(
+		srv.Context(),
+		options.Listen(dream.DreamlandApiListen),
+		options.AllowedOrigins(true, []string{".*"}),
+	)
 	if err != nil {
 		return err
 	}

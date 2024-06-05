@@ -13,12 +13,14 @@ func getURL(r *http.Request) (URL string, err error) {
 		err = fmt.Errorf("URL is missing")
 		return
 	}
+
 	URL = "https:/" + u[0]
 	_, err = url.ParseRequestURI(string(URL))
 	if err != nil {
 		err = fmt.Errorf("400 - bad URL")
 		return
 	}
+
 	return
 }
 

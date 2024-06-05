@@ -13,7 +13,6 @@ type errorResponse struct {
 }
 
 func (c *Client) do(path, method string, data interface{}, ret interface{}) error {
-
 	req, err := http.NewRequestWithContext(c.ctx, method, c.url+path, nil)
 	if err != nil {
 		return fmt.Errorf("%s -- `%s` failed with: %s", method, path, err.Error())
