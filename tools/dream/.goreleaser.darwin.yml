@@ -1,3 +1,4 @@
+project_name: dream
 release:
   # Repo in which the release will be created.
   github:
