@@ -102,7 +102,7 @@ builds:
       - windows 
 
 changelog:
-  skip: true
+  disable: true
 
 checksum:
   disable: true
