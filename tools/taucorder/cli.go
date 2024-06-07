@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/exp/maps"
 
-	dreamlandHttp "github.com/taubyte/tau/clients/http/dream"
+	dreamApi "github.com/taubyte/tau/clients/http/dream"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 
@@ -26,8 +26,6 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/sec"
 	"github.com/libp2p/go-libp2p/p2p/net/swarm"
-
-	proto "github.com/taubyte/tau/services/common"
 
 	"github.com/miekg/dns"
 
@@ -171,10 +169,10 @@ func defineCLI(app *cli.App) {
 							return errors.New("provide the name of universe to connect to")
 						}
 
-						client, err := dreamlandHttp.New(
+						client, err := dreamApi.New(
 							common.GlobalContext,
-							dreamlandHttp.Unsecure(),
-							dreamlandHttp.URL("http://127.0.0.1:1421"),
+							dreamApi.Unsecure(),
+							dreamApi.URL("http://127.0.0.1:1421"),
 						)
 						if err != nil {
 							return fmt.Errorf("failed creating dreamland http client with error: %v", err)
@@ -185,8 +183,17 @@ func defineCLI(app *cli.App) {
 							return fmt.Errorf("failed client status with error: %v", err)
 						}
 
+						info, err := client.Universes()
+						if err != nil {
+							return fmt.Errorf("failed client status with error: %v", err)
+						}
+
 						if _, ok := stats[universe]; !ok {
 							return fmt.Errorf("universe %s does not exist", universe)
+						}
+
+						if _, ok := info[universe]; !ok {
+							return fmt.Errorf("failed to fetch info for universe %s", universe)
 						}
 
 						// List for bootstrapping
@@ -205,7 +212,7 @@ func defineCLI(app *cli.App) {
 							_nodes = append(_nodes, node)
 						}
 
-						node, err = p2p.New(common.GlobalContext, _nodes, proto.SwarmKey()) // NEED FIX FOR DREAM LAND AS NOW WE HAVE EACH U WITH A KEY
+						node, err = p2p.New(common.GlobalContext, _nodes, info[universe].SwarmKey)
 						if err != nil {
 							return fmt.Errorf("failed new with bootstrap list with error: %v", err)
 						}
@@ -216,10 +223,10 @@ func defineCLI(app *cli.App) {
 					Name:    "list",
 					Aliases: []string{"l"},
 					Action: func(c *cli.Context) error {
-						client, err := dreamlandHttp.New(
+						client, err := dreamApi.New(
 							common.GlobalContext,
-							dreamlandHttp.Unsecure(),
-							dreamlandHttp.URL("http://127.0.0.1:1421"),
+							dreamApi.Unsecure(),
+							dreamApi.URL("http://127.0.0.1:1421"),
 						)
 						if err != nil {
 							return fmt.Errorf("failed creating dreamland http client with error: %v", err)
