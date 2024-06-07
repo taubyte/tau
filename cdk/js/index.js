@@ -5,8 +5,9 @@ const plugin = await createPlugin(
 	'./core.wasm',
     { 
 		useWasi: true,
-		fsAccess: true,
-		allowedPaths: {  '/tmp':'root' },
+		// fsAccess: true,
+		// supportsWasiPreview1: true,
+		allowedPaths: {  '/mnt':'/home/samy/Documents/taubyte/github/tau/cdk/js/test' },
 	}
 );
 
