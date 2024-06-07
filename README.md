@@ -92,7 +92,7 @@ As a result, `tau` has no API calls to create a serverless function, for example
 ### Versioning
 Git being core to `tau` means that nodes in the cloud do tune to a specific branch, by default main or master. Among what it enables is an easy way to set up development environments, for example.
 
-A specific use case is local development in which case [dreamland](https://github.com/taubyte/dreamland) nodes can also be tuned to the current branch.
+A specific use case is local development in which case [dreamland](https://github.com/taubyte/tau/clients/http/dream) nodes can also be tuned to the current branch.
 
 In addition to the nodes being on a branch, the application registry, managed by the 'tns' protocol, uses commit ids to version entries, allowing nodes serving the assets to detect new versions, or a roll-back for that matter.
 
@@ -129,7 +129,7 @@ If you're looking to create E2E tests for projects hosted on `tau`, you can use 
 
 ## Running a Local Cloud
 
-While you can't practically run `tau` on your local machine, you can do so using [dreamland](https://github.com/taubyte/dreamland), which is a CLI wrapper around `libdream`. It creates local cloud environments mirroring production settings. Unlike `tau`, it offers an API for real-time configuration and testing.
+While you can't practically run `tau` on your local machine, you can do so using [dreamland](https://github.com/taubyte/tau/clients/http/dream), which is a CLI wrapper around `libdream`. It creates local cloud environments mirroring production settings. Unlike `tau`, it offers an API for real-time configuration and testing.
 
 ## Extending Tau
 

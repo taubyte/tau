@@ -324,3 +324,7 @@ func (u *Universe) Cleanup() {
 func (u *Universe) Id() string {
 	return u.id
 }
+
+func (u *Universe) SwarmKey() []byte {
+	return u.swarmKey
+}

@@ -69,3 +69,16 @@ func (m *Multiverse) Status() interface{} {
 	}
 	return status
 }
+
+func (m *Multiverse) Universes() interface{} {
+	status := make(map[string]interface{})
+	for _, u := range universes {
+		u.lock.RLock()
+		status[u.name] = map[string]interface{}{
+			"swarm":      u.swarmKey,
+			"node-count": len(u.all),
+		}
+		u.lock.RUnlock()
+	}
+	return status
+}

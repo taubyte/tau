@@ -6,6 +6,7 @@ func (srv *multiverseService) setUpHttpRoutes() httpIface.Service {
 	srv.corsHttp()
 
 	srv.statusHttp()
+	srv.universesHttp()
 	srv.lesMiesrablesHttp()
 	srv.fixtureHttp()
 	srv.idHttp()
