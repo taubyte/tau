@@ -21,7 +21,3 @@ func New(ctx context.Context, nodes []corePeer.AddrInfo, swarmKey []byte) (peer.
 		nodes,
 	)
 }
-
-// func (n *node) Peer() peer.Node {
-// 	return n.Node
-// }

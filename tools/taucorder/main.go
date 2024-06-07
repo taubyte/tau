@@ -36,7 +36,6 @@ func main() {
 		fmt.Println("Running prompt failed with error:", err)
 		return
 	}
-
 }
 
 func banner() {

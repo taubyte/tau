@@ -77,22 +77,6 @@ var mainTree = &tctree{
 				return nil
 			},
 		},
-		// {
-		// 	validator: stringValidator("billing"),
-		// 	ret: []goPrompt.Suggest{
-		// 		{
-		// 			Text:        "billing",
-		// 			Description: "billing client",
-		// 		},
-		// 	},
-		// 	jump: func(p Prompt) string {
-		// 		return "/billing"
-		// 	},
-		// 	handler: func(p Prompt, args []string) error {
-		// 		p.SetPath("/billing")
-		// 		return nil
-		// 	},
-		// },
 		{
 			validator: stringValidator("hoarder"),
 			ret: []goPrompt.Suggest{
@@ -194,5 +178,3 @@ var mainTree = &tctree{
 		},
 	},
 }
-
-//p.TaubyteAuthClient().Repositories().Github().Get(1)
