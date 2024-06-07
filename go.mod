@@ -1,6 +1,6 @@
 module github.com/taubyte/tau
 
-go 1.21.0
+go 1.21.1
 
 toolchain go1.22.0
 
@@ -63,6 +63,7 @@ require (
 require (
 	github.com/ethereum/go-ethereum v1.12.0
 	github.com/extism/go-pdk v1.0.2
+	github.com/extism/go-pdk/wasi-reactor v0.0.0-20240408161339-095ac11ddc4e
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/hashicorp/go-plugin v1.4.10
 	github.com/ipfs/go-ds-pebble v0.3.1
