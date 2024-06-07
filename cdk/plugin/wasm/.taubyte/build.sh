@@ -105,7 +105,7 @@ EOF
 . /utils/wasm.sh
 
 
-build prod "${FILENAME}"
+build debug "${FILENAME}"
 ret=$?
 echo -n $ret > /out/ret-code
 exit $ret
