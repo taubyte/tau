@@ -17,7 +17,8 @@ release:
   
 builds:
   - id: "darwin"
-    main: "./tools/taucorder/main.go"
+    dir: "tools/taucorder"
+    main: .
     binary: "taucorder"
     goos:
       - darwin
