@@ -1,0 +1,36 @@
+{
+  "name": "@taubyte/dream",
+  "version": "1.2.0",
+  "dream": "1.2.0",
+  "description": "Node wrapper for taubyte/dream",
+  "bin": {
+    "dream": "./index.js"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taubyte/tau.git"
+  },
+  "keywords": [
+    "serverless",
+    "cloud",
+    "hosting",
+    "webassembly",
+    "wasm"
+  ],
+  "author": "Taubyte",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/taubyte/tau/issues"
+  },
+  "homepage": "https://github.com/taubyte/tau#readme",
+  "dependencies": {
+    "@taubyte/dream": "^0.1.7",
+    "axios": "^1.6.5",
+    "progress": "^2.0.3",
+    "tar": "^6.2.0"
+  }
+}
