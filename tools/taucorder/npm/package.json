@@ -1,7 +1,7 @@
 {
   "name": "@taubyte/taucorder",
-  "version": "1.2.0-pre",
-  "taucorder": "1.2.0-pre",
+  "version": "1.2.0",
+  "taucorder": "1.2.0",
   "description": "Node wrapper for taubyte/taucorder",
   "bin": {
     "dream": "./index.js"
