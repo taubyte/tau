@@ -259,81 +259,6 @@ func defineCLI(app *cli.App) {
 					Aliases: []string{"swarm", "key"},
 				},
 			},
-			// Action: func(c *cli.Context) error {
-			// 	fqdn := c.Args().First()
-			// 	if fqdn == "" {
-			// 		return errors.New("provide the fqdn of cloud to connect to")
-			// 	}
-
-			// 	swarmKey, err := os.ReadFile(c.String("swarm-key"))
-			// 	if err != nil {
-			// 		return fmt.Errorf("failed to open swarm file `%s` with %w", c.String("swarm-key"), err)
-			// 	}
-
-			// 	swarmKey, err = formatSwarmKey(swarmKey)
-			// 	if err != nil {
-			// 		return fmt.Errorf("failed to format swarm key with %w", err)
-			// 	}
-
-			// 	// spinner here
-			// 	ips, err := getDNSRecords("seer.tau."+fqdn, "8.8.8.8")
-			// 	if err != nil {
-			// 		return fmt.Errorf("failed to find seer nodes with %w", err)
-			// 	}
-
-			// 	tmpCtx, tmpCtxC := context.WithCancel(common.GlobalContext)
-			// 	node, err = p2p.New(tmpCtx, nil, swarmKey)
-			// 	if err != nil {
-			// 		tmpCtxC()
-			// 		return fmt.Errorf("creating temporary node failed with %w", err)
-			// 	}
-
-			// 	// progress bar group like mpb.New(mpb.WithWidth(60),mpb.WithRefreshRate(300*time.Millisecond))
-			// 	peers := make([]peer.AddrInfo, 0, len(ips))
-			// 	for _, ip := range ips {
-			// 		/*
-			// 		p.AddBar spinner
-			// 		make this for loop start go routines so we do up to count=4 in parallell
-			// 		*/
-			// 		pid, _, _ := generateNodeKeyAndID("")
-			// 		for _, port := range c.Uint64Slice("port") {
-			// 			peerAddrStr := fmt.Sprintf("/ip4/%s/tcp/%d/p2p/%s", ip.String(), port, pid)
-			// 			ma, err := multiaddr.NewMultiaddr(peerAddrStr)
-			// 			if err != nil {
-			// 				continue
-			// 			}
-
-			// 			addrInfo, err := peer.AddrInfoFromP2pAddr(ma)
-			// 			if err != nil {
-			// 				continue
-			// 			}
-
-			// 			err = node.Peer().Connect(context.Background(), *addrInfo)
-			// 			secerr := AsErrPeerIDMismatch(err)
-			// 			if secerr == nil {
-			// 				continue
-			// 			}
-
-			// 			addrInfo.ID = secerr.Actual
-
-			// 			fmt.Printf("Found %s\n", ip.String())
-			// 			peers = append(peers, *addrInfo)
-			// 			break
-			// 		}
-			// 	}
-
-			// 	node.Close()
-			// 	tmpCtxC()
-
-			// 	node, err = p2p.New(common.GlobalContext, peers, swarmKey)
-			// 	if err != nil {
-			// 		return fmt.Errorf("failed new with bootstrap list with error: %v", err)
-			// 	}
-
-			// 	node.WaitForSwarm(10 * time.Second)
-
-			// 	return nil
-			// },
 			Action: func(c *cli.Context) error {
 				fqdn := c.Args().First()
 				if fqdn == "" {
@@ -359,7 +284,6 @@ func defineCLI(app *cli.App) {
 					mpb.BarFillerTrim(),
 					mpb.PrependDecorators(
 						decor.Name(name),
-						//decor.OnComplete(decor.Name(name), ""),
 					),
 				)
 
@@ -370,7 +294,7 @@ func defineCLI(app *cli.App) {
 						ips[ip.String()] = ip
 					}
 				}
-				//ips, err := getDNSRecords("seer.tau."+fqdn, "8.8.8.8")
+
 				dnsBar.Increment()
 				dnsBar.Wait()
 
@@ -379,10 +303,6 @@ func defineCLI(app *cli.App) {
 				if len(ips) == 0 {
 					return errors.New("no peer were found")
 				}
-
-				// if err != nil {
-				// 	return fmt.Errorf("failed to find seer nodes with %w", err)
-				// }
 
 				tmpCtx, tmpCtxC := context.WithCancel(context.Background())
 				node, err = p2p.New(tmpCtx, nil, swarmKey)

@@ -171,7 +171,7 @@ var mainTree = &tctree{
 			},
 			handler: func(p Prompt, args []string) error {
 				fmt.Println("BYE")
-				p.Done()
+				handleExit()
 				os.Exit(0)
 				return nil
 			},
