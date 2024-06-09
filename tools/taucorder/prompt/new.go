@@ -10,8 +10,6 @@ import (
 	"github.com/taubyte/p2p/peer"
 	auth "github.com/taubyte/tau/clients/p2p/auth"
 
-	//billingApi "bitbucket.org/taubyte/billing/api/p2p"
-
 	goPrompt "github.com/c-bata/go-prompt"
 	"github.com/google/shlex"
 	dreamland "github.com/taubyte/tau/clients/http/dream"
@@ -25,17 +23,16 @@ import (
 )
 
 type tcprompt struct {
-	ctx           context.Context
-	ctxC          context.CancelFunc
-	engine        *goPrompt.Prompt
-	path          string
-	node          peer.Node
-	authClient    *auth.Client
-	seerClient    *seer.Client
-	hoarderClient *hoarder.Client
-	monkeyClient  *monkey.Client
-	tnsClient     tnsIface.Client
-	//billingClient   billingiFace.Client
+	ctx             context.Context
+	ctxC            context.CancelFunc
+	engine          *goPrompt.Prompt
+	path            string
+	node            peer.Node
+	authClient      *auth.Client
+	seerClient      *seer.Client
+	hoarderClient   *hoarder.Client
+	monkeyClient    *monkey.Client
+	tnsClient       tnsIface.Client
 	patrickClient   *patrick.Client
 	dreamlandClient *dreamland.Client
 }
@@ -67,7 +64,7 @@ func New(ctx context.Context) (Prompt, error) {
 			ret := forest.Complete(prompt, in)
 			return ret
 		},
-		//goPrompt.OptionPrefix("tau> "),
+
 		goPrompt.OptionLivePrefix(func() (prefix string, useLivePrefix bool) {
 			return prompt.CurrentPath() + "> ", true
 		}),
