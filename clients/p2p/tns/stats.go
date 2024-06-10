@@ -15,7 +15,7 @@ func (c *Client) Stats() iface.Stats {
 }
 
 func (h *Stats) Database() (kvdbIface.Stats, error) {
-	response, err := h.client.Send("stats", command.Body{"action": "db"})
+	response, err := h.client.Send("stats", command.Body{"action": "db"}, h.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("sending stats.db request failed with %w", err)
 	}

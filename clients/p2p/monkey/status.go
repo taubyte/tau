@@ -9,7 +9,7 @@ import (
 )
 
 func (c *Client) Status(jid string) (*monkey.StatusResponse, error) {
-	resp, err := c.client.Send("job", command.Body{"jid": jid, "action": "status"})
+	resp, err := c.client.Send("job", command.Body{"jid": jid, "action": "status"}, c.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("failed calling job with error: %w", err)
 	}

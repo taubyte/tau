@@ -73,7 +73,7 @@ func (g *Geo) newPeerList(response response.Response) ([]*iface.Peer, error) {
 }
 
 func (g *Geo) All() ([]*iface.Peer, error) {
-	response, err := g.client.Send("geo", command.Body{"action": "query-all"})
+	response, err := g.client.Send("geo", command.Body{"action": "query-all"}, g.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("provider replied with %s", err)
 	}
@@ -83,7 +83,7 @@ func (g *Geo) All() ([]*iface.Peer, error) {
 
 // distance is in meter
 func (g *Geo) Distance(from iface.Location, distance float32) ([]*iface.Peer, error) {
-	response, err := g.client.Send("geo", command.Body{"action": "query", "from": from, "distance": distance})
+	response, err := g.client.Send("geo", command.Body{"action": "query", "from": from, "distance": distance}, g.peers...)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ func (g *Geo) Distance(from iface.Location, distance float32) ([]*iface.Peer, er
 }
 
 func (g *Geo) Set(location iface.Location) (err error) {
-	_, err = g.client.Send("geo", command.Body{"action": "set", "location": location})
+	_, err = g.client.Send("geo", command.Body{"action": "set", "location": location}, g.peers...)
 	return err
 }
 

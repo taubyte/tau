@@ -108,6 +108,10 @@ func TestClientSend(t *testing.T) {
 			return
 		} else {
 			res := <-resCh
+			if res == nil {
+				t.Error("Command timed out")
+				return
+			}
 			defer res.Close()
 			if err := res.Error(); err != nil {
 				t.Errorf("error %s", err.Error())
@@ -126,6 +130,10 @@ func TestClientSend(t *testing.T) {
 			return
 		} else {
 			res := <-resCh
+			if res == nil {
+				t.Error("Command timed out")
+				return
+			}
 			defer res.Close()
 			if err := res.Error(); err != nil {
 				t.Errorf("error %s", err.Error())
@@ -151,7 +159,12 @@ func TestClientSend(t *testing.T) {
 			return
 		} else {
 			res := <-resCh
+			if res == nil {
+				t.Error("Command timed out")
+				return
+			}
 			defer res.Close()
+
 			if err := res.Error(); err != nil {
 				t.Errorf("error %s", err.Error())
 				return
@@ -185,6 +198,10 @@ func TestClientSend(t *testing.T) {
 			return
 		} else {
 			res := <-resCh
+			if res == nil {
+				t.Error("Command timed out")
+				return
+			}
 			defer res.Close()
 			if err := res.Error(); err != nil {
 				t.Errorf("error %s", err.Error())
@@ -392,7 +409,7 @@ func TestClientUpgrade(t *testing.T) {
 		}
 
 		res2 := <-respCh
-		if res == nil {
+		if res2 == nil {
 			t.Error("Command timed out")
 			return
 		}
@@ -433,7 +450,7 @@ func TestClientUpgrade(t *testing.T) {
 		}
 
 		res3 := <-respCh
-		if res == nil {
+		if res3 == nil {
 			t.Error("Command timed out")
 			return
 		}
@@ -531,7 +548,7 @@ func TestClientMultiSend(t *testing.T) {
 		nil,
 		keypair.NewRaw(),
 		nil,
-		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n)},
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n+200)},
 		nil,
 		true,
 		false,
@@ -562,7 +579,7 @@ func TestClientMultiSend(t *testing.T) {
 		nil,
 		keypair.NewRaw(),
 		nil,
-		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n+1)},
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n+300)},
 		nil,
 		true,
 		false,
