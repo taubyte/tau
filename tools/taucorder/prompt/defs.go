@@ -35,6 +35,7 @@ var forest = tcforest{
 	"/auth/project": projectTree,
 	"/auth/repo":    repoTree,
 	"/auth/acme":    acmeTree,
+	"/auth/status":  authStatusTree,
 	"/auth/hook":    hooksTree,
 	"/hoarder":      hoarderTree,
 	"/patrick":      patrickTree,

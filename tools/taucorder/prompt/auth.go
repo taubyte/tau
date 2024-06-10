@@ -71,5 +71,21 @@ var authTree = &tctree{
 				return nil
 			},
 		},
+		{
+			validator: stringValidator("status"),
+			ret: []goPrompt.Suggest{
+				{
+					Text:        "status",
+					Description: "request status",
+				},
+			},
+			jump: func(p Prompt) string {
+				return "/auth/status"
+			},
+			handler: func(p Prompt, args []string) error {
+				p.SetPath("/auth/status")
+				return nil
+			},
+		},
 	},
 }
