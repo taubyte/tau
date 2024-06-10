@@ -42,7 +42,7 @@ func (c *Client) Close() {
 
 /****** LIST *******/
 func (c *Client) List(depth int) ([]string, error) {
-	response, err := c.client.Send("list", command.Body{"depth": depth})
+	response, err := c.client.Send("list", command.Body{"depth": depth}, c.peers...)
 	if err != nil {
 		logger.Error(err)
 		return nil, err
@@ -97,7 +97,7 @@ func (c *Client) Push(path []string, data interface{}) error {
 	response, err := c.client.Send("push", command.Body{
 		"path": path,
 		"data": data,
-	})
+	}, c.peers...)
 	if err != nil {
 		logger.Error("push failed with:", err)
 		return err
@@ -120,7 +120,7 @@ func (c *Client) Push(path []string, data interface{}) error {
 /****** COMMON *******/
 
 func (c *Client) fetch(path []string) (interface{}, error) {
-	response, err := c.client.Send("fetch", command.Body{"path": path})
+	response, err := c.client.Send("fetch", command.Body{"path": path}, c.peers...)
 	if err != nil {
 		logger.Error("fetch failed with:", err)
 		return nil, err
@@ -135,7 +135,7 @@ func (c *Client) fetch(path []string) (interface{}, error) {
 }
 
 func (c *Client) lookup(query tns.Query) ([]string, error) {
-	response, err := c.client.Send("lookup", command.Body{"prefix": query.Prefix, "regex": query.RegEx})
+	response, err := c.client.Send("lookup", command.Body{"prefix": query.Prefix, "regex": query.RegEx}, c.peers...)
 	if err != nil {
 		logger.Error("lookup failed with:", err)
 		return nil, err

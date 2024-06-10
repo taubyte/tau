@@ -13,7 +13,7 @@ func (c *Client) Projects() iface.Projects {
 }
 
 func (p *Projects) Hooks() iface.Hooks {
-	return &Hooks{p.client}
+	return (*Hooks)(p)
 }
 
 func (p *Projects) New(obj map[string]interface{}) *iface.Project {
@@ -48,7 +48,7 @@ func (p *Projects) Get(project_id string) *iface.Project {
 	logger.Debugf("Getting project `%s`", project_id)
 	defer logger.Debugf("Getting project `%s` done", project_id)
 
-	response, err := p.client.Send("projects", command.Body{"action": "get", "id": project_id})
+	response, err := p.client.Send("projects", command.Body{"action": "get", "id": project_id}, p.peers...)
 	if err != nil {
 		return nil
 	}
@@ -57,7 +57,7 @@ func (p *Projects) Get(project_id string) *iface.Project {
 }
 
 func (p *Projects) List() ([]string, error) {
-	response, err := p.client.Send("projects", command.Body{"action": "list"})
+	response, err := p.client.Send("projects", command.Body{"action": "list"}, p.peers...)
 	if err != nil {
 		return nil, err
 	}

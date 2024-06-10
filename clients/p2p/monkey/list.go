@@ -8,7 +8,7 @@ import (
 )
 
 func (c *Client) List() ([]string, error) {
-	resp, err := c.client.Send("job", command.Body{"action": "list"})
+	resp, err := c.client.Send("job", command.Body{"action": "list"}, c.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("failed calling job with error: %w", err)
 	}

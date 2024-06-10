@@ -168,8 +168,8 @@ func (r *Request) Do() (<-chan *Response, error) {
 		return nil, r.err
 	}
 
-	strms := make([]stream, 0, r.threshold)
 	if len(r.to) > 0 {
+		strms := make([]stream, 0, r.threshold)
 		for _, pid := range r.to {
 			if len(strms) >= r.threshold {
 				break
@@ -180,9 +180,11 @@ func (r *Request) Do() (<-chan *Response, error) {
 			}
 			strms = append(strms, strm)
 		}
+
+		return r.client.send(r.cmd, r.body, strms, r.threshold, r.cmdTimeout)
 	}
 
-	return r.client.send(r.cmd, r.body, strms, r.threshold, r.cmdTimeout)
+	return r.client.send(r.cmd, r.body, nil, r.threshold, r.cmdTimeout)
 }
 
 func (r *Response) CloseRead() {
@@ -341,25 +343,25 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 	}
 }
 
-func (c *Client) send(cmdName string, body command.Body, streams []stream, minStreams int, timeout time.Duration) (<-chan *Response, error) {
+func (c *Client) send(cmdName string, body command.Body, streams []stream, threshold int, timeout time.Duration) (<-chan *Response, error) {
 	if timeout == 0 {
 		timeout = SendToPeerTimeout
 	}
 
-	if minStreams > MaxStreamsPerSend {
-		return nil, fmt.Errorf("threashold %d exceeds MaxStreamsPerSend", minStreams)
+	if threshold > MaxStreamsPerSend {
+		return nil, fmt.Errorf("threshold %d exceeds MaxStreamsPerSend", threshold)
 	}
 
 	ctx, ctxC := context.WithTimeout(c.ctx, timeout)
 	cmdDD, _ := ctx.Deadline()
 
-	discPeers := c.discover(ctx)
-
 	strms := make(chan stream, MaxStreamsPerSend)
 	strmsCount := 0
 
-	if len(streams) > minStreams {
-		streams = streams[:minStreams]
+	needMoreStreams := true
+	if len(streams) > threshold {
+		streams = streams[:threshold]
+		needMoreStreams = false
 	}
 
 	for _, strm := range streams {
@@ -367,35 +369,40 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, minSt
 		strms <- strm
 	}
 
-	go func() {
-		defer close(strms)
+	if needMoreStreams {
+		discPeers := c.discover(ctx)
+		go func() {
+			defer close(strms)
 
-		peers := make(chan peerCore.AddrInfo, MaxStreamsPerSend)
-		defer close(peers)
+			peers := make(chan peerCore.AddrInfo, MaxStreamsPerSend)
+			defer close(peers)
 
-		for {
-			if strmsCount >= minStreams {
-				return
+			for {
+				if strmsCount >= threshold {
+					return
+				}
+				select {
+				case peer, ok := <-discPeers:
+					if ok {
+						peers <- peer
+					}
+				case peer := <-peers:
+					strm, repush, _ := c.connect(peer)
+					if strm != nil && strmsCount < threshold {
+						strmsCount++
+						strms <- stream{Stream: strm, ID: peer.ID}
+					}
+					if repush {
+						peers <- peer
+					}
+				case <-ctx.Done():
+					return
+				}
 			}
-			select {
-			case peer, ok := <-discPeers:
-				if ok {
-					peers <- peer
-				}
-			case peer := <-peers:
-				strm, repush, _ := c.connect(peer)
-				if strm != nil && strmsCount < minStreams {
-					strmsCount++
-					strms <- stream{Stream: strm, ID: peer.ID}
-				}
-				if repush {
-					peers <- peer
-				}
-			case <-ctx.Done():
-				return
-			}
-		}
-	}()
+		}()
+	} else {
+		close(strms)
+	}
 
 	responses := make(chan *Response, MaxStreamsPerSend)
 	go func() {
@@ -440,18 +447,22 @@ func (c *Client) syncSend(cmd string, opts ...Option) (cr.Response, error) {
 	return res.Response, nil
 }
 
-func (c *Client) Send(cmd string, body command.Body) (cr.Response, error) {
-	return c.syncSend(cmd, Body(body))
+func (c *Client) Send(cmd string, body command.Body, peers ...peerCore.ID) (cr.Response, error) {
+	if len(peers) > 0 {
+		return c.syncSend(cmd, Body(body), To(peers...), Threshold(len(peers)))
+	} else {
+		return c.syncSend(cmd, Body(body))
+	}
 }
 
-func (c *Client) SendTo(pid peerCore.ID, cmd string, body command.Body) (cr.Response, error) {
-	return c.syncSend(cmd, Body(body), To(pid))
-}
+// func (c *Client) SendTo(pid peerCore.ID, cmd string, body command.Body) (cr.Response, error) {
+// 	return c.syncSend(cmd, Body(body), To(pid), Threshold(1))
+// }
 
-func (c *Client) SendWithTimeout(cmd string, body command.Body, timeout time.Duration) (cr.Response, error) {
-	return c.syncSend(cmd, Body(body), Timeout(timeout))
-}
+// func (c *Client) SendWithTimeout(cmd string, body command.Body, timeout time.Duration) (cr.Response, error) {
+// 	return c.syncSend(cmd, Body(body), Timeout(timeout))
+// }
 
-func (c *Client) SendToWithTimeout(pid peerCore.ID, cmd string, body command.Body, timeout time.Duration) (cr.Response, error) {
-	return c.syncSend(cmd, Body(body), To(pid), Timeout(timeout))
-}
+// func (c *Client) SendToWithTimeout(pid peerCore.ID, cmd string, body command.Body, timeout time.Duration) (cr.Response, error) {
+// 	return c.syncSend(cmd, Body(body), To(pid), Timeout(timeout))
+// }
