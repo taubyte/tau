@@ -2,9 +2,9 @@ package service
 
 import (
 	http "github.com/taubyte/http"
-	"github.com/taubyte/p2p/peer"
-	streams "github.com/taubyte/p2p/streams/service"
 	iface "github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/p2p/peer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 
 	auth "github.com/taubyte/tau/clients/p2p/auth"
 	monkey "github.com/taubyte/tau/clients/p2p/monkey"

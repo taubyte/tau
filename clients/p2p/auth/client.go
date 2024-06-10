@@ -3,8 +3,8 @@ package auth
 import (
 	"context"
 
-	peer "github.com/taubyte/p2p/peer"
-	client "github.com/taubyte/p2p/streams/client"
+	peer "github.com/taubyte/tau/p2p/peer"
+	client "github.com/taubyte/tau/p2p/streams/client"
 
 	protocolCommon "github.com/taubyte/tau/services/common"
 )

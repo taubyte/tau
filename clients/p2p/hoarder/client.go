@@ -3,8 +3,8 @@ package hoarder
 import (
 	"context"
 
-	"github.com/taubyte/p2p/peer"
-	client "github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/tau/p2p/peer"
+	client "github.com/taubyte/tau/p2p/streams/client"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 

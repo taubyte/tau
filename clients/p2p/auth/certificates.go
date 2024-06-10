@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 

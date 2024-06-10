@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/taubyte/go-sdk/errno"
-	res "github.com/taubyte/p2p/streams/command/response"
 	common "github.com/taubyte/tau/core/vm"
+	res "github.com/taubyte/tau/p2p/streams/command/response"
 )
 
 func (f *Factory) W_sendCommand(ctx context.Context, module common.Module,

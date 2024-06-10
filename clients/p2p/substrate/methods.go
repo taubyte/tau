@@ -1,7 +1,7 @@
 package substrate
 
 import (
-	"github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/tau/p2p/streams/client"
 )
 
 func (c *Client) ProxyHTTP(host, path, method string, ops ...client.Option) (<-chan *client.Response, error) {

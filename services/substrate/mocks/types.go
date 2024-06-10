@@ -4,10 +4,10 @@ import (
 	"context"
 
 	httpSrv "github.com/taubyte/http"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 type MockedSubstrate interface {

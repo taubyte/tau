@@ -5,10 +5,10 @@ import (
 
 	http "github.com/taubyte/http"
 	httpMock "github.com/taubyte/http/mocks"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/substrate/components/counters"
 )
 

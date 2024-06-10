@@ -6,10 +6,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 type MonkeyTestContext struct {

@@ -7,10 +7,10 @@ import (
 	"regexp"
 
 	ci "github.com/taubyte/go-simple-container"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/peer"
 	compilerCommon "github.com/taubyte/tau/pkg/config-compiler/common"
 )
 

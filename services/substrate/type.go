@@ -3,7 +3,6 @@ package substrate
 import (
 	"context"
 
-	streams "github.com/taubyte/p2p/streams/service"
 	"github.com/taubyte/tau/core/kvdb"
 	iface "github.com/taubyte/tau/core/services/substrate"
 	databaseIface "github.com/taubyte/tau/core/services/substrate/components/database"
@@ -13,11 +12,12 @@ import (
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 	httpIface "github.com/taubyte/tau/services/substrate/components/http"
 
 	http "github.com/taubyte/http"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 var _ iface.Service = &Service{}

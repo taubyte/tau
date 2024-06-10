@@ -3,11 +3,11 @@ package hoarder
 import (
 	"sync"
 
-	"github.com/taubyte/p2p/peer"
-	streams "github.com/taubyte/p2p/streams/service"
 	"github.com/taubyte/tau/core/kvdb"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	ifaceTns "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/peer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 )
 
 var _ hoarderIface.Service = &Service{}

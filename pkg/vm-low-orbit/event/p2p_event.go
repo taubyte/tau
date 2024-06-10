@@ -5,9 +5,9 @@ import (
 
 	sdkCommon "github.com/taubyte/go-sdk/common"
 	"github.com/taubyte/go-sdk/errno"
-	"github.com/taubyte/p2p/streams/command"
-	res "github.com/taubyte/p2p/streams/command/response"
 	common "github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/p2p/streams/command"
+	res "github.com/taubyte/tau/p2p/streams/command/response"
 )
 
 type P2PData struct {

@@ -7,10 +7,10 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	"gotest.tools/v3/assert"
 

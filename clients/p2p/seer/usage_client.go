@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/tau/clients/p2p/seer/usage"
 	iface "github.com/taubyte/tau/core/services/seer"
+	"github.com/taubyte/tau/p2p/streams/command/response"
 )
 
 var (

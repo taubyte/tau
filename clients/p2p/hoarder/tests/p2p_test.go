@@ -10,12 +10,12 @@ import (
 
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 
-	keypair "github.com/taubyte/p2p/keypair"
+	keypair "github.com/taubyte/tau/p2p/keypair"
 
 	hoarder_client "github.com/taubyte/tau/clients/p2p/hoarder"
 	"github.com/taubyte/tau/config"
 
-	peer "github.com/taubyte/p2p/peer"
+	peer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/common"
 	service "github.com/taubyte/tau/services/hoarder"
 )

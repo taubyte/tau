@@ -1,8 +1,8 @@
 package api
 
 import (
-	streams "github.com/taubyte/p2p/streams/service"
 	"github.com/taubyte/tau/core/services/substrate/components/database"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 )
 
 type StreamHandler struct {

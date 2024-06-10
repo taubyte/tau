@@ -7,11 +7,11 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 
-	"github.com/taubyte/p2p/peer"
-	streamClient "github.com/taubyte/p2p/streams/client"
-	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/p2p/streams/command/response"
 	iface "github.com/taubyte/tau/core/services/seer"
+	"github.com/taubyte/tau/p2p/peer"
+	streamClient "github.com/taubyte/tau/p2p/streams/client"
+	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command/response"
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/utils/maps"
 )

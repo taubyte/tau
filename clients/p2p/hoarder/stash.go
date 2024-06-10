@@ -3,8 +3,8 @@ package hoarder
 import (
 	"fmt"
 
-	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/p2p/streams/command/response"
+	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command/response"
 )
 
 func (c *Client) Stash(cid string) (response.Response, error) {

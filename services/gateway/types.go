@@ -4,9 +4,9 @@ import (
 	"context"
 
 	http "github.com/taubyte/http"
-	"github.com/taubyte/p2p/peer"
-	"github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/tau/core/services/substrate"
+	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
 )
 
