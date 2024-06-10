@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command"
 )
 
 type httpEvent struct {

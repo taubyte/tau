@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	http "github.com/taubyte/http"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/services/substrate/components/database"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/p2p/peer"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	mh "github.com/taubyte/utils/multihash"
 )

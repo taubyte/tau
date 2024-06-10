@@ -16,7 +16,7 @@ import (
 	tauConfig "github.com/taubyte/tau/config"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 
-	streams "github.com/taubyte/p2p/streams/service"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 

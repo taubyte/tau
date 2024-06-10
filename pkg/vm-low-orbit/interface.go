@@ -7,8 +7,8 @@ import (
 	"runtime/debug"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/taubyte/p2p/streams/command"
-	res "github.com/taubyte/p2p/streams/command/response"
+	"github.com/taubyte/tau/p2p/streams/command"
+	res "github.com/taubyte/tau/p2p/streams/command/response"
 
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/event"

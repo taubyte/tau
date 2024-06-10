@@ -3,8 +3,8 @@ package auth
 import (
 	"fmt"
 
-	"github.com/taubyte/p2p/streams/command"
 	iface "github.com/taubyte/tau/core/services/auth"
+	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 

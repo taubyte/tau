@@ -1,11 +1,11 @@
 package tns
 
 import (
-	"github.com/taubyte/p2p/peer"
-	streams "github.com/taubyte/p2p/streams/service"
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/kvdb"
 	iface "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/peer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 	"github.com/taubyte/tau/services/tns/engine"
 )
 

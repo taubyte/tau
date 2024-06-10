@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/common-nighthawk/go-figure"
-	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/tools/taucorder/common"
 	"github.com/taubyte/tau/tools/taucorder/prompt"
 )

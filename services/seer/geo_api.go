@@ -9,10 +9,10 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-datastore"
 	"github.com/ipfs/go-datastore/query"
-	"github.com/taubyte/p2p/streams"
-	"github.com/taubyte/p2p/streams/command"
-	cr "github.com/taubyte/p2p/streams/command/response"
 	iface "github.com/taubyte/tau/core/services/seer"
+	"github.com/taubyte/tau/p2p/streams"
+	"github.com/taubyte/tau/p2p/streams/command"
+	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/utils/maps"
 )

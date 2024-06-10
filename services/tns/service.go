@@ -6,9 +6,9 @@ import (
 	"path"
 
 	"github.com/ipfs/go-log/v2"
-	streams "github.com/taubyte/p2p/streams/service"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	"github.com/taubyte/tau/core/services/seer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 	"github.com/taubyte/tau/pkg/kvdb"
 
 	tauConfig "github.com/taubyte/tau/config"

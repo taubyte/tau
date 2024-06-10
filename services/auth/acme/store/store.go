@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/taubyte/p2p/peer"
-	client "github.com/taubyte/p2p/streams/client"
-	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/peer"
+	client "github.com/taubyte/tau/p2p/streams/client"
+	"github.com/taubyte/tau/p2p/streams/command"
 	dirs "github.com/taubyte/utils/fs/dir"
 	maps "github.com/taubyte/utils/maps"
 

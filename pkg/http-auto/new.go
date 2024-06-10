@@ -7,8 +7,8 @@ import (
 	basicHttp "github.com/taubyte/http/basic"
 	basicHttpSecure "github.com/taubyte/http/basic/secure"
 	"github.com/taubyte/http/options"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 func opsFromConfig(config *config.Node) []options.Option {

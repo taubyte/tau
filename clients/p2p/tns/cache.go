@@ -6,9 +6,9 @@ import (
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/clients/p2p/tns/common"
 	"github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 func newCache(node peer.Node) *cache {

@@ -29,7 +29,7 @@ import (
 
 	"github.com/miekg/dns"
 
-	"github.com/taubyte/p2p/keypair"
+	"github.com/taubyte/tau/p2p/keypair"
 
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )

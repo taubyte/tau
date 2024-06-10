@@ -6,8 +6,8 @@ import (
 	"path"
 	"time"
 
-	peer "github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/common"
+	peer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
 )
 

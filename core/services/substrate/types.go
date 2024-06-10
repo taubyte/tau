@@ -4,12 +4,12 @@ import (
 	"context"
 	"io"
 
-	"github.com/taubyte/p2p/streams/client"
 	services "github.com/taubyte/tau/core/services"
 	"github.com/taubyte/tau/core/services/substrate/counters"
 	"github.com/taubyte/tau/core/services/substrate/smartops"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/p2p/streams/client"
 )
 
 type Service interface {

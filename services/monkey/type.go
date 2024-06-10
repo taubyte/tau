@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/taubyte/p2p/peer"
-	streams "github.com/taubyte/p2p/streams/service"
 	"github.com/taubyte/tau/clients/p2p/hoarder"
 	patrickClient "github.com/taubyte/tau/clients/p2p/patrick"
 	"github.com/taubyte/tau/config"
@@ -19,6 +17,8 @@ import (
 	iface "github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"
 	tnsClient "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/peer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 	chidori "github.com/taubyte/utils/logger/zap"
 )
 

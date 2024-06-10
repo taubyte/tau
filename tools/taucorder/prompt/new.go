@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/taubyte/p2p/peer"
 	auth "github.com/taubyte/tau/clients/p2p/auth"
+	"github.com/taubyte/tau/p2p/peer"
 
 	goPrompt "github.com/c-bata/go-prompt"
 	"github.com/google/shlex"

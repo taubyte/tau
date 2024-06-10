@@ -1,7 +1,7 @@
 package hoarder
 
 import (
-	"github.com/taubyte/p2p/streams/command/response"
+	"github.com/taubyte/tau/p2p/streams/command/response"
 )
 
 type Client interface {

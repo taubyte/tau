@@ -3,8 +3,8 @@ package dream
 import (
 	"fmt"
 
-	peer "github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/common"
+	peer "github.com/taubyte/tau/p2p/peer"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	"golang.org/x/exp/slices"
 )

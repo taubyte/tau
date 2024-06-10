@@ -1,6 +1,6 @@
 package seer
 
-import "github.com/taubyte/p2p/streams/command/response"
+import "github.com/taubyte/tau/p2p/streams/command/response"
 
 type Usage interface {
 	Beacon(hostname, nodeId, clientNodeId string, signature []byte) UsageBeacon

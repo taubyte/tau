@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/tau/core/services/substrate/components/database"
+	"github.com/taubyte/tau/p2p/streams/command"
 	mh "github.com/taubyte/utils/multihash"
 	"golang.org/x/exp/slices"
 )

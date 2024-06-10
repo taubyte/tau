@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/taubyte/p2p/peer"
-	streamClient "github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/tau/core/services/substrate"
+	"github.com/taubyte/tau/p2p/peer"
+	streamClient "github.com/taubyte/tau/p2p/streams/client"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 

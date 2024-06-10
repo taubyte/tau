@@ -2,13 +2,13 @@ package prompt
 
 import (
 	goPrompt "github.com/c-bata/go-prompt"
-	"github.com/taubyte/p2p/peer"
 	auth "github.com/taubyte/tau/clients/p2p/auth"
 	hoarder "github.com/taubyte/tau/clients/p2p/hoarder"
 	monkey "github.com/taubyte/tau/clients/p2p/monkey"
 	patrick "github.com/taubyte/tau/clients/p2p/patrick"
 	seer "github.com/taubyte/tau/clients/p2p/seer"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 type Prompt interface {

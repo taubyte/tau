@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"testing"
 
-	keypair "github.com/taubyte/p2p/keypair"
 	"github.com/taubyte/tau/core/kvdb"
+	keypair "github.com/taubyte/tau/p2p/keypair"
 
-	peer "github.com/taubyte/p2p/peer"
+	peer "github.com/taubyte/tau/p2p/peer"
 
 	logging "github.com/ipfs/go-log/v2"
 )

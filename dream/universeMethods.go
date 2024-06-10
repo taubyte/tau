@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	peercore "github.com/libp2p/go-libp2p/core/peer"
-	peer "github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/core/services/gateway"
@@ -16,6 +15,7 @@ import (
 	"github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/core/services/tns"
+	peer "github.com/taubyte/tau/p2p/peer"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 

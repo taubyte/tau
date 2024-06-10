@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/peer"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"

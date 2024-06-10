@@ -7,11 +7,11 @@ import (
 	"path"
 
 	"github.com/ipfs/go-log/v2"
-	streams "github.com/taubyte/p2p/streams/service"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	seerIface "github.com/taubyte/tau/core/services/seer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 	auto "github.com/taubyte/tau/pkg/http-auto"
 	"github.com/taubyte/tau/pkg/kvdb"
 	protocolCommon "github.com/taubyte/tau/services/common"

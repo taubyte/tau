@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/taubyte/p2p/peer"
 	kvdbIface "github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 )

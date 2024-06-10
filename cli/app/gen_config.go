@@ -16,9 +16,9 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/taubyte/p2p/keypair"
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/services/seer"
+	"github.com/taubyte/tau/p2p/keypair"
 	"github.com/taubyte/tau/utils"
 	"github.com/urfave/cli/v2"
 	"gopkg.in/yaml.v3"

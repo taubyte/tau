@@ -5,8 +5,8 @@ import (
 
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/p2p/streams/command/response"
+	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command/response"
 )
 
 func (c *Client) Cancel(cid cid.Cid, jid string) (response.Response, error) {

@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command"
 
 	kvdbIface "github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/pkg/kvdb"
