@@ -17,7 +17,7 @@ func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId
 		return nil, err
 	}
 
-	resp, err := u.client.Send("heartbeat", command.Body{"usage": usageData, "hostname": hostname, "id": nodeId, "client": clientNodeId, "signature": signature})
+	resp, err := u.client.Send("heartbeat", command.Body{"usage": usageData, "hostname": hostname, "id": nodeId, "client": clientNodeId, "signature": signature}, u.peers...)
 	if err != nil {
 		logger.Error("Heartbeat failed with:", err.Error())
 		return nil, fmt.Errorf("calling heartbeat send failed with: %w", err)
@@ -26,7 +26,7 @@ func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId
 }
 
 func (u *Usage) List() ([]string, error) {
-	resp, err := u.client.Send("heartbeat", command.Body{"action": "list"})
+	resp, err := u.client.Send("heartbeat", command.Body{"action": "list"}, u.peers...)
 	if err != nil {
 		logger.Error("Listing ids failed with:", err.Error())
 		return nil, fmt.Errorf("calling list send failed with: %w", err)
@@ -46,7 +46,7 @@ func (u *Usage) List() ([]string, error) {
 }
 
 func (u *Usage) Get(id string) (*iface.UsageReturn, error) {
-	resp, err := u.client.Send("heartbeat", command.Body{"action": "info", "id": id})
+	resp, err := u.client.Send("heartbeat", command.Body{"action": "info", "id": id}, u.peers...)
 	if err != nil {
 		logger.Error(fmt.Sprintf("Getting usage %s failed with: %s", id, err.Error()))
 		return &iface.UsageReturn{}, fmt.Errorf("calling info send failed with: %s", err)

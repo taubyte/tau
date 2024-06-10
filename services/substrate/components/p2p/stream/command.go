@@ -74,7 +74,7 @@ func (c *Command) SendTo(ctx context.Context, cid cid.Cid, body map[string]inter
 		return nil, fmt.Errorf("cid to pid failed with: %w", err)
 	}
 
-	resp, err := p2pClient.SendTo(pid, c.matcher.Command, body)
+	resp, err := p2pClient.Send(c.matcher.Command, body, pid)
 	if err != nil {
 		common.Logger.Errorf("sending command %s to %s failed with: %s", c.matcher.Command, pid, err.Error())
 	}

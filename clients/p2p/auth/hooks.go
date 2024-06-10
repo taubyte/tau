@@ -52,7 +52,7 @@ func (h *Hooks) Get(hook_id string) (iface.Hook, error) {
 	logger.Debugf("Getting hook `%s`", hook_id)
 	defer logger.Debugf("Getting hook `%s` done", hook_id)
 
-	response, err := h.client.Send("hooks", command.Body{"action": "get", "id": hook_id})
+	response, err := h.client.Send("hooks", command.Body{"action": "get", "id": hook_id}, h.peers...)
 	if err != nil {
 		logger.Error(err)
 		return nil, err
@@ -62,7 +62,7 @@ func (h *Hooks) Get(hook_id string) (iface.Hook, error) {
 }
 
 func (h *Hooks) List() ([]string, error) {
-	response, err := h.client.Send("hooks", command.Body{"action": "list"})
+	response, err := h.client.Send("hooks", command.Body{"action": "list"}, h.peers...)
 	if err != nil {
 		return nil, err
 	}

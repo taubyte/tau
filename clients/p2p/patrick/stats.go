@@ -10,8 +10,8 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 )
 
-func (client *Client) DatabaseStats() (kvdbIface.Stats, error) {
-	response, err := client.Send("stats", command.Body{"action": "db"})
+func (c *Client) DatabaseStats() (kvdbIface.Stats, error) {
+	response, err := c.Send("stats", command.Body{"action": "db"}, c.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("sending stats.db request failed with %w", err)
 	}
