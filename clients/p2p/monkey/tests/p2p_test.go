@@ -5,11 +5,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/p2p/peer"
 	p2p "github.com/taubyte/tau/clients/p2p/monkey"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/p2p/peer"
 	protocolCommon "github.com/taubyte/tau/services/common"
 	_ "github.com/taubyte/tau/services/hoarder"
 	"github.com/taubyte/tau/services/monkey"

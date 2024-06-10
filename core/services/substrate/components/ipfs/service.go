@@ -5,7 +5,7 @@ import (
 	"io"
 
 	"github.com/ipfs/go-cid"
-	peer "github.com/taubyte/p2p/peer"
+	peer "github.com/taubyte/tau/p2p/peer"
 )
 
 type Service interface {

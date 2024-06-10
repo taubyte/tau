@@ -3,8 +3,8 @@ package test_utils
 import (
 	"io"
 
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/p2p/peer"
 	loaders "github.com/taubyte/tau/pkg/vm/loaders/wazero"
 	tns "github.com/taubyte/tau/services/tns/mocks"
 )

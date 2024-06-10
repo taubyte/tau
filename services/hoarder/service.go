@@ -8,12 +8,12 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	streams "github.com/taubyte/p2p/streams/service"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	seerIface "github.com/taubyte/tau/core/services/seer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 	"github.com/taubyte/tau/pkg/kvdb"
 	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	protocolCommon "github.com/taubyte/tau/services/common"

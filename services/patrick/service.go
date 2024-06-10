@@ -17,7 +17,7 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 	servicesCommon "github.com/taubyte/tau/services/common"
 
-	streams "github.com/taubyte/p2p/streams/service"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 )
 
 var (

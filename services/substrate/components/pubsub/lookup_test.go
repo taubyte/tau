@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"github.com/taubyte/tau/services/substrate/components/structure"

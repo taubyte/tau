@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/p2p/streams/command/response"
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
+	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command/response"
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"

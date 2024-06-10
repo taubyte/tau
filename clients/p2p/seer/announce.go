@@ -3,9 +3,9 @@ package seer
 import (
 	"fmt"
 
-	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/p2p/streams/command/response"
 	iface "github.com/taubyte/tau/core/services/seer"
+	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command/response"
 )
 
 func (u *Usage) Announce(services iface.Services, nodeId, clientNodeId string, signature []byte) (response.Response, error) {

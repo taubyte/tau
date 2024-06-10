@@ -5,7 +5,7 @@ import (
 
 	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 func ConvertBootstrap(peers []string, devMode bool) (peer.BootstrapParams, error) {

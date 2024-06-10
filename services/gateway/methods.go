@@ -2,7 +2,7 @@ package gateway
 
 import (
 	http "github.com/taubyte/http"
-	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 func (g *Gateway) Node() peer.Node {

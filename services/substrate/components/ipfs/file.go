@@ -5,7 +5,7 @@ import (
 	"io"
 
 	"github.com/ipfs/go-cid"
-	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 func (s *Service) AddFile(r io.Reader) (cid.Cid, error) {

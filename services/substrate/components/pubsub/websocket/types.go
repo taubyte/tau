@@ -5,8 +5,8 @@ import (
 	"io"
 	"sync"
 
-	p2p "github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
+	p2p "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 

@@ -7,8 +7,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
+	"github.com/taubyte/tau/p2p/peer"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/http/function"

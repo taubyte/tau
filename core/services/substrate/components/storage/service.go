@@ -5,9 +5,9 @@ import (
 	"io"
 
 	"github.com/ipfs/go-cid"
-	peer "github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/services/substrate/components"
+	peer "github.com/taubyte/tau/p2p/peer"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 

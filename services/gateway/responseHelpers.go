@@ -1,7 +1,7 @@
 package gateway
 
 import (
-	"github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/tau/p2p/streams/client"
 )
 
 type responseGetter struct {

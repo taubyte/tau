@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	peercore "github.com/libp2p/go-libp2p/core/peer"
-	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command"
 )
 
 func validateSignature(body command.Body) (string, bool, error) {

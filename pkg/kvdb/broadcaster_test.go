@@ -8,7 +8,7 @@ import (
 	"time"
 
 	crdt "github.com/ipfs/go-ds-crdt"
-	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 // TestNewPubSubBroadcaster tests the creation of a new PubSubBroadcaster.

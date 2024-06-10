@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/p2p/streams/command/response"
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
+	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command/response"
 	counter "github.com/taubyte/tau/services/substrate/runtime/counter"
 	"github.com/taubyte/tau/services/substrate/runtime/lookup"
 	"github.com/taubyte/utils/multihash"

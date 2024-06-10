@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/p2p/peer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
+	"github.com/taubyte/tau/p2p/peer"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	service "github.com/taubyte/tau/services/patrick"

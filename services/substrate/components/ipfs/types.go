@@ -1,6 +1,6 @@
 package ipfs
 
-import "github.com/taubyte/p2p/peer"
+import "github.com/taubyte/tau/p2p/peer"
 
 type Option func(*Service) error
 

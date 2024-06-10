@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/ipfs/go-cid"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/kvdb"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
+	"github.com/taubyte/tau/p2p/peer"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 

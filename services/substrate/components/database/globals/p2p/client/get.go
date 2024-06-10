@@ -3,7 +3,7 @@ package client
 import (
 	"errors"
 
-	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command"
 )
 
 func (c *Client) Get(projectID, key, _type string) (interface{}, error) {

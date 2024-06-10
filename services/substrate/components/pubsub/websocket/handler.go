@@ -10,7 +10,7 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
 	service "github.com/taubyte/http"
-	p2p "github.com/taubyte/p2p/peer"
+	p2p "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/specs/extract"
 	messagingSpec "github.com/taubyte/tau/pkg/specs/messaging"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
