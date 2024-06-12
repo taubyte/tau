@@ -2,17 +2,32 @@ package main
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/common-nighthawk/go-figure"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/tools/taucorder/common"
 	"github.com/taubyte/tau/tools/taucorder/prompt"
+	"github.com/urfave/cli/v2"
 )
 
-var node peer.Node
+var (
+	node    peer.Node
+	scanner prompt.ScannerHandler
+)
+
+var app = &cli.App{
+	UseShortOptionHandling: true,
+	EnableBashCompletion:   true,
+	Action:                 func(ctx *cli.Context) error { return nil },
+	Commands: []*cli.Command{
+		dreamCmd,
+		prodCmd,
+	},
+}
 
 func main() {
-	err := ParseCommandLine()
+	err := app.RunContext(common.GlobalContext, os.Args)
 	if err != nil {
 		fmt.Println("Parsing command line failed with error:", err)
 		return
@@ -25,13 +40,14 @@ func main() {
 	}
 
 	banner()
+
 	p, err := prompt.New(common.GlobalContext)
 	if err != nil {
 		fmt.Println("Prompt new failed with error:", err)
 		return
 	}
 
-	err = p.Run(node)
+	err = p.Run(prompt.Node(node), prompt.Scanner(scanner))
 	if err != nil {
 		fmt.Println("Running prompt failed with error:", err)
 		return

@@ -24,7 +24,7 @@ var hoarderTree = &tctree{
 }
 
 func listCids(p Prompt, args []string) error {
-	ids, err := p.TaubyteHoarderClient().List()
+	ids, err := p.HoarderClient().List()
 	if err != nil {
 		return fmt.Errorf("failed listing hoarder cids with error: %w", err)
 	}

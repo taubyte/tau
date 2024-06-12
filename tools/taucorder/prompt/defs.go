@@ -27,20 +27,26 @@ var stringValidator = func(strs ...string) func(Prompt, string, bool) bool {
 }
 
 var forest = tcforest{
-	"/":             mainTree,
-	"/p2p":          p2pTree,
-	"/p2p/swarm":    swarmTree,
-	"/p2p/discover": discoverTree,
-	"/auth":         authTree,
-	"/auth/project": projectTree,
-	"/auth/repo":    repoTree,
-	"/auth/acme":    acmeTree,
-	"/auth/hook":    hooksTree,
-	"/hoarder":      hoarderTree,
-	"/patrick":      patrickTree,
-	"/seer":         seerTree,
-	"/monkey":       monkeyTree,
-	"/tns":          tnsTree,
+	"/":                  mainTree,
+	"/p2p":               p2pTree,
+	"/p2p/swarm":         swarmTree,
+	"/p2p/discover":      discoverTree,
+	"/auth":              authTree,
+	"/auth/project":      projectTree,
+	"/auth/repo":         repoTree,
+	"/auth/acme":         acmeTree,
+	"/auth/status":       authStatusTree,
+	"/auth/status/db":    authStatusDbTree,
+	"/auth/hook":         hooksTree,
+	"/hoarder":           hoarderTree,
+	"/patrick":           patrickTree,
+	"/patrick/status":    patrickStatusTree,
+	"/patrick/status/db": patrickStatusDbTree,
+	"/seer":              seerTree,
+	"/monkey":            monkeyTree,
+	"/tns":               tnsTree,
+	"/tns/status":        tnsStatusTree,
+	"/tns/status/db":     tnsStatusDbTree,
 }
 
 var mainTree = &tctree{
@@ -154,6 +160,33 @@ var mainTree = &tctree{
 			},
 			handler: func(p Prompt, args []string) error {
 				p.SetPath("/tns")
+				return nil
+			},
+		},
+		{
+			validator: stringValidator("rescan", "refresh"),
+			ret: []goPrompt.Suggest{
+				{
+					Text:        "rescan",
+					Description: "rescan for nodes",
+				},
+				{
+					Text:        "refresh",
+					Description: "rescan for nodes",
+				},
+			},
+			handler: func(p Prompt, args []string) error {
+				switch _p := p.(type) {
+				case *tcprompt:
+					if _p.scanner == nil {
+						panic("no scanner!")
+					}
+					if err := _p.scanner(_p.ctx, _p.node); err != nil {
+						fmt.Println(err)
+					}
+				default:
+					panic("unknown prompt type")
+				}
 				return nil
 			},
 		},

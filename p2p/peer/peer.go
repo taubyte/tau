@@ -122,7 +122,7 @@ func New(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 	opts := make([]libp2p.Option, len(helpers.Libp2pSimpleNodeOptions))
 	copy(opts, helpers.Libp2pSimpleNodeOptions)
 	if notPublic {
-		opts = append(opts, libp2p.ForceReachabilityPrivate())
+		opts = append(opts, libp2p.ForceReachabilityPrivate(), libp2p.EnableRelay())
 	}
 
 	return new(ctx, repoPath, privateKey, swarmKey, swarmListen, swarmAnnounce, BootstrapParams{Enable: bootstrap}, false, opts...)
@@ -132,7 +132,7 @@ func NewClientNode(ctx context.Context, repoPath interface{}, privateKey []byte,
 	opts := make([]libp2p.Option, len(helpers.Libp2pLitePrivateNodeOptions))
 	copy(opts, helpers.Libp2pLitePrivateNodeOptions)
 	if notPublic {
-		opts = append(opts, libp2p.ForceReachabilityPrivate())
+		opts = append(opts, libp2p.ForceReachabilityPrivate(), libp2p.EnableRelay())
 	}
 
 	return new(ctx, repoPath, privateKey, swarmKey, swarmListen, swarmAnnounce, BootstrapParams{Enable: true, Peers: bootstrapers}, false, opts...)
@@ -142,7 +142,7 @@ func NewWithBootstrapList(ctx context.Context, repoPath interface{}, privateKey 
 	opts := make([]libp2p.Option, len(helpers.Libp2pSimpleNodeOptions))
 	copy(opts, helpers.Libp2pSimpleNodeOptions)
 	if notPublic {
-		opts = append(opts, libp2p.ForceReachabilityPrivate())
+		opts = append(opts, libp2p.ForceReachabilityPrivate(), libp2p.EnableRelay())
 	}
 
 	return new(ctx, repoPath, privateKey, swarmKey, swarmListen, swarmAnnounce, BootstrapParams{Enable: true, Peers: bootstrapers}, false, opts...)
@@ -152,7 +152,7 @@ func NewFull(ctx context.Context, repoPath interface{}, privateKey []byte, swarm
 	opts := make([]libp2p.Option, len(helpers.Libp2pOptionsFullNode))
 	copy(opts, helpers.Libp2pOptionsFullNode)
 	if isPublic {
-		opts = append(opts, libp2p.ForceReachabilityPublic())
+		opts = append(opts, libp2p.ForceReachabilityPublic(), libp2p.EnableRelay())
 	}
 
 	return new(ctx, repoPath, privateKey, swarmKey, swarmListen, swarmAnnounce, bootstrap, true, opts...)

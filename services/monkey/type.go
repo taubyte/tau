@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/taubyte/tau/clients/p2p/hoarder"
 	patrickClient "github.com/taubyte/tau/clients/p2p/patrick"
 	"github.com/taubyte/tau/config"
 	tauConfig "github.com/taubyte/tau/config"
@@ -53,7 +52,7 @@ type Service struct {
 	patrickClient patrick.Client
 	tnsClient     tnsClient.Client
 	clientNode    peer.Node
-	hoarderClient *hoarder.Client
+	hoarderClient hoarderIface.Client
 
 	config *tauConfig.Node
 

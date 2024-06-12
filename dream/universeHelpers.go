@@ -65,6 +65,8 @@ func (u *Universe) killServiceByNameId(name, id string) error {
 	delete(u.lookups, id)
 	u.discardNode(node.Node(), false)
 
+	node.Node().Close()
+
 	return nil
 }
 

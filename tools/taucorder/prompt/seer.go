@@ -49,7 +49,7 @@ var seerTree = &tctree{
 }
 
 func listUsage(p Prompt, args []string) error {
-	ids, err := p.TaubyteSeerClient().Usage().List()
+	ids, err := p.SeerClient().Usage().List()
 	if err != nil {
 		return fmt.Errorf("failed listing usage ids with error: %w", err)
 	}
@@ -70,7 +70,7 @@ func listServiceId(p Prompt, args []string) error {
 		return errors.New("must provide service name")
 	}
 
-	ids, err := p.TaubyteSeerClient().Usage().ListServiceId(args[1])
+	ids, err := p.SeerClient().Usage().ListServiceId(args[1])
 	if err != nil {
 		return fmt.Errorf("failed listing usage ids with error: %w", err)
 	}
@@ -99,7 +99,7 @@ func getUsage(p Prompt, args []string) error {
 		return errors.New("must provide node ID")
 	}
 	id := args[1]
-	usg, err := p.TaubyteSeerClient().Usage().Get(id)
+	usg, err := p.SeerClient().Usage().Get(id)
 	freemem := usg.FreeMem / 1073741824
 	totalmem := usg.TotalMem / 1073741824
 	usedmem := usg.UsedMem / 1048576

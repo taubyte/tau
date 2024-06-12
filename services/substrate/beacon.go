@@ -15,7 +15,7 @@ import (
 type serviceBeacon struct {
 	*Service
 	config     *config.Node
-	seerClient *seerClient.Client
+	seerClient seerIface.Client
 }
 
 // TODO: REMOVE

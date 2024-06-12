@@ -36,7 +36,7 @@ var repoTree = &tctree{
 }
 
 func listRepo(p Prompt, args []string) error {
-	repo, err := p.TaubyteAuthClient().Repositories().Github().List()
+	repo, err := p.AuthClient().Repositories().Github().List()
 	if err != nil {
 		return fmt.Errorf("failed listing repos with error: %v", err)
 	}
@@ -56,7 +56,7 @@ func getRepo(p Prompt, args []string) error {
 		return fmt.Errorf("failed converting %d to int with error: %v", rid, err)
 	}
 
-	repo, err := p.TaubyteAuthClient().Repositories().Github().Get(rid)
+	repo, err := p.AuthClient().Repositories().Github().Get(rid)
 	if err != nil {
 		return fmt.Errorf("failed getting repo %d with error: %v", rid, err)
 	}

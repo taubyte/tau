@@ -17,7 +17,6 @@ import (
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	auto "github.com/taubyte/tau/pkg/http-auto"
-	commonSpec "github.com/taubyte/tau/pkg/specs/common"
 	servicesCommon "github.com/taubyte/tau/services/common"
 )
 
@@ -99,7 +98,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	}
 
 	// Stream
-	srv.stream, err = streams.New(srv.node, servicesCommon.Seer, commonSpec.SeerProtocol)
+	srv.stream, err = streams.New(srv.node, servicesCommon.Seer, servicesCommon.SeerProtocol)
 	if err != nil {
 		return nil, fmt.Errorf("new p2p stream failed with: %w", err)
 	}

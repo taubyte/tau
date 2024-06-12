@@ -19,7 +19,6 @@ func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId
 
 	resp, err := u.client.Send("heartbeat", command.Body{"usage": usageData, "hostname": hostname, "id": nodeId, "client": clientNodeId, "signature": signature}, u.peers...)
 	if err != nil {
-		logger.Error("Heartbeat failed with:", err.Error())
 		return nil, fmt.Errorf("calling heartbeat send failed with: %w", err)
 	}
 	return resp, nil

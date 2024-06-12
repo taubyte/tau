@@ -36,7 +36,7 @@ var projectTree = &tctree{
 }
 
 func listProjects(p Prompt, args []string) error {
-	prj, err := p.TaubyteAuthClient().Projects().List()
+	prj, err := p.AuthClient().Projects().List()
 	if err != nil {
 		return fmt.Errorf("failed listing repos with error: %v", err)
 	}
@@ -61,7 +61,7 @@ func getProject(p Prompt, args []string) error {
 		return fmt.Errorf("project id `%s` is invalid", pid)
 	}
 
-	prj := p.TaubyteAuthClient().Projects().Get(pid)
+	prj := p.AuthClient().Projects().Get(pid)
 	if prj == nil {
 		return fmt.Errorf("failed fetching project `%s`", pid)
 	}

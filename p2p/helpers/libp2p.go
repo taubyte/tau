@@ -51,7 +51,6 @@ func init() {
 
 var Libp2pOptionsBase = []libp2p.Option{
 	libp2p.Ping(true),
-	libp2p.EnableRelay(),
 	libp2p.Security(libp2ptls.ID, libp2ptls.New),
 	libp2p.NoTransports,
 	libp2p.Transport(tcp.NewTCPTransport),

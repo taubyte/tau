@@ -34,11 +34,27 @@ var patrickTree = &tctree{
 			},
 			handler: getJobs,
 		},
+		{
+			validator: stringValidator("status"),
+			ret: []goPrompt.Suggest{
+				{
+					Text:        "status",
+					Description: "request status",
+				},
+			},
+			jump: func(p Prompt) string {
+				return "/patrick/status"
+			},
+			handler: func(p Prompt, args []string) error {
+				p.SetPath("/patrick/status")
+				return nil
+			},
+		},
 	},
 }
 
 func listJobs(p Prompt, args []string) error {
-	ids, err := p.TaubytePatrickClient().List()
+	ids, err := p.PatrickClient().List()
 	if err != nil {
 		return fmt.Errorf("failed listing jobs cids with error: %w", err)
 	}
@@ -61,7 +77,7 @@ func getJobs(p Prompt, args []string) error {
 		return errors.New("must provide job ID")
 	}
 	jid := args[1]
-	job, err := p.TaubytePatrickClient().Get(jid)
+	job, err := p.PatrickClient().Get(jid)
 	if err != nil {
 		t.AppendRows([]table.Row{{"--"}},
 			table.RowConfig{})

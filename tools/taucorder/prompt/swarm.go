@@ -41,8 +41,13 @@ func swarmList(p Prompt, args []string) error {
 	t.SetStyle(table.StyleLight)
 	for _, pid := range prompt.Node().Peer().Peerstore().Peers() {
 		peerInfo := prompt.Node().Peer().Peerstore().PeerInfo(pid)
-		t.AppendRows([]table.Row{{pid.String(), peerInfo.Addrs[0].String()}},
-			table.RowConfig{})
+		if len(peerInfo.Addrs) > 0 {
+			t.AppendRows([]table.Row{{pid.String(), peerInfo.Addrs[0].String()}},
+				table.RowConfig{})
+		} else {
+			t.AppendRows([]table.Row{{pid.String(), "-"}},
+				table.RowConfig{})
+		}
 		t.AppendSeparator()
 	}
 
