@@ -10,7 +10,6 @@ import (
 
 	patrick "github.com/taubyte/tau/core/services/patrick"
 
-	//seer "github.com/taubyte/tau/clients/p2p/seer"
 	seer "github.com/taubyte/tau/core/services/seer"
 
 	tns "github.com/taubyte/tau/core/services/tns"
