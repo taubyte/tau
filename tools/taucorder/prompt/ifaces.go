@@ -1,26 +1,36 @@
 package prompt
 
 import (
+	"context"
+
 	goPrompt "github.com/c-bata/go-prompt"
-	auth "github.com/taubyte/tau/clients/p2p/auth"
-	hoarder "github.com/taubyte/tau/clients/p2p/hoarder"
-	monkey "github.com/taubyte/tau/clients/p2p/monkey"
-	patrick "github.com/taubyte/tau/clients/p2p/patrick"
-	seer "github.com/taubyte/tau/clients/p2p/seer"
-	tnsIface "github.com/taubyte/tau/core/services/tns"
+	auth "github.com/taubyte/tau/core/services/auth"
+	hoarder "github.com/taubyte/tau/core/services/hoarder"
+	monkey "github.com/taubyte/tau/core/services/monkey"
+
+	patrick "github.com/taubyte/tau/core/services/patrick"
+
+	//seer "github.com/taubyte/tau/clients/p2p/seer"
+	seer "github.com/taubyte/tau/core/services/seer"
+
+	tns "github.com/taubyte/tau/core/services/tns"
+
 	"github.com/taubyte/tau/p2p/peer"
 )
 
+type Option func(Prompt) error
+
 type Prompt interface {
-	Run(peer.Node) error
+	Run(...Option) error
 	Done()
+	Context() context.Context
 	Node() peer.Node
-	TaubyteAuthClient() *auth.Client
-	TaubyteSeerClient() *seer.Client
-	TaubytePatrickClient() *patrick.Client
-	TaubyteHoarderClient() *hoarder.Client
-	TaubyteMonkeyClient() *monkey.Client
-	TaubyteTnsClient() tnsIface.Client
+	AuthClient() auth.Client
+	SeerClient() seer.Client
+	PatrickClient() patrick.Client
+	HoarderClient() hoarder.Client
+	MonkeyClient() monkey.Client
+	TnsClient() tns.Client
 	CurrentPath() string
 	SetPath(string)
 }

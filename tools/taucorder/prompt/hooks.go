@@ -36,7 +36,7 @@ var hooksTree = &tctree{
 }
 
 func hookList(p Prompt, args []string) error {
-	hooks, err := p.TaubyteAuthClient().Hooks().List()
+	hooks, err := p.AuthClient().Hooks().List()
 	if err != nil {
 		return fmt.Errorf("failed fetching hooks with error: %v", err)
 	}
@@ -62,7 +62,7 @@ func getHook(p Prompt, args []string) error {
 		return fmt.Errorf("project id `%s` is invalid", pid)
 	}
 
-	hook, err := p.TaubyteAuthClient().Hooks().Get(pid)
+	hook, err := p.AuthClient().Hooks().Get(pid)
 	if err != nil {
 		return fmt.Errorf("failed fetching hook `%s` with error: %v", pid, err)
 	}

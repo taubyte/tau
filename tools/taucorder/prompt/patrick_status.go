@@ -14,7 +14,7 @@ import (
 	"github.com/taubyte/tau/services/common"
 )
 
-var authStatusTree = &tctree{
+var patrickStatusTree = &tctree{
 	leafs: []*leaf{
 		exitLeaf,
 		{
@@ -26,10 +26,10 @@ var authStatusTree = &tctree{
 				},
 			},
 			jump: func(p Prompt) string {
-				return "/auth/status/db"
+				return "/patrick/status/db"
 			},
 			handler: func(p Prompt, args []string) error {
-				s, err := p.AuthClient().Stats().Database()
+				s, err := p.PatrickClient().DatabaseStats()
 				if err != nil {
 					return err
 				}
@@ -59,7 +59,7 @@ var authStatusTree = &tctree{
 	},
 }
 
-var authStatusDbTree = &tctree{
+var patrickStatusDbTree = &tctree{
 	leafs: []*leaf{
 		{
 			validator: stringValidator("all", "*"),
@@ -77,9 +77,9 @@ var authStatusDbTree = &tctree{
 				ctx, ctxC := context.WithTimeout(context.Background(), 60*time.Second)
 				defer ctxC()
 
-				peers, err := prompt.Node().Discovery().FindPeers(ctx, common.AuthProtocol, discovery.Limit(1024))
+				peers, err := prompt.Node().Discovery().FindPeers(ctx, common.PatrickProtocol, discovery.Limit(1024))
 				if err != nil {
-					fmt.Printf("Failed to discover `auth` with %s\n", err.Error())
+					fmt.Printf("Failed to discover `patrick` with %s\n", err.Error())
 					return err
 				}
 
@@ -89,7 +89,7 @@ var authStatusDbTree = &tctree{
 				t.AppendHeader(table.Row{"Node", "Heads"})
 
 				for peer := range peers {
-					s, err := p.AuthClient().Peers(peer.ID).Stats().Database()
+					s, err := p.PatrickClient().Peers(peer.ID).DatabaseStats()
 					if err != nil {
 						t.AppendRows([]table.Row{
 							{peer.ID.String(), err.Error()},
@@ -137,7 +137,7 @@ var authStatusDbTree = &tctree{
 					return err
 				}
 
-				s, err := p.AuthClient().Peers(pid).Stats().Database()
+				s, err := p.PatrickClient().Peers(pid).DatabaseStats()
 				if err != nil {
 					fmt.Println(err)
 					return err

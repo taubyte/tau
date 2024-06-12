@@ -15,6 +15,8 @@ import (
 	"github.com/taubyte/tau/pkg/specs/extract"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/utils/maps"
+
+	srvCommon "github.com/taubyte/tau/services/common"
 )
 
 func New(ctx context.Context, node peer.Node) (tns.Client, error) {
@@ -25,7 +27,7 @@ func New(ctx context.Context, node peer.Node) (tns.Client, error) {
 
 	c.cache = newCache(node)
 	c.node = node
-	c.client, err = client.New(node, spec.TnsProtocol)
+	c.client, err = client.New(node, srvCommon.TnsProtocol)
 	if err != nil {
 		logger.Error("API client creation failed:", err)
 		return nil, err

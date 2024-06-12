@@ -12,13 +12,14 @@ import (
 	streamClient "github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/p2p/streams/command/response"
-	commonSpec "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/utils/maps"
+
+	"github.com/taubyte/tau/services/common"
 )
 
-func New(ctx context.Context, node peer.Node) (client *Client, err error) {
+func New(ctx context.Context, node peer.Node) (client iface.Client, err error) {
 	c := &Client{}
-	c.client, err = streamClient.New(node, commonSpec.SeerProtocol)
+	c.client, err = streamClient.New(node, common.SeerProtocol)
 	if err != nil {
 		logger.Error("API client creation failed: %s", err)
 		return

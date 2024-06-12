@@ -20,6 +20,12 @@ import (
 	tns "github.com/taubyte/tau/clients/p2p/tns"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/tools/taucorder/common"
+
+	authIface "github.com/taubyte/tau/core/services/auth"
+	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
+	monkeyIface "github.com/taubyte/tau/core/services/monkey"
+	patrickIface "github.com/taubyte/tau/core/services/patrick"
+	seerIface "github.com/taubyte/tau/core/services/seer"
 )
 
 type tcprompt struct {
@@ -28,12 +34,13 @@ type tcprompt struct {
 	engine          *goPrompt.Prompt
 	path            string
 	node            peer.Node
-	authClient      *auth.Client
-	seerClient      *seer.Client
-	hoarderClient   *hoarder.Client
-	monkeyClient    *monkey.Client
+	scanner         ScannerHandler
+	authClient      authIface.Client
+	seerClient      seerIface.Client
+	hoarderClient   hoarderIface.Client
+	monkeyClient    monkeyIface.Client
 	tnsClient       tnsIface.Client
-	patrickClient   *patrick.Client
+	patrickClient   patrickIface.Client
 	dreamlandClient *dreamland.Client
 }
 
@@ -75,12 +82,17 @@ func New(ctx context.Context) (Prompt, error) {
 	return prompt, nil
 }
 
-func (p *tcprompt) Run(node peer.Node) error {
-	if node == nil {
-		return errors.New("you need to select a cloud")
+func (p *tcprompt) Run(options ...Option) error {
+
+	for _, opt := range options {
+		if err := opt(p); err != nil {
+			return err
+		}
 	}
 
-	p.node = node
+	if p.node == nil {
+		return errors.New("you need to select a cloud")
+	}
 
 	err := p.node.WaitForSwarm(10 * time.Second)
 	if err != nil {
@@ -134,6 +146,10 @@ func (p *tcprompt) Done() {
 	p.ctxC()
 }
 
+func (p *tcprompt) Context() context.Context {
+	return p.ctx
+}
+
 func (p *tcprompt) Node() peer.Node {
 	return p.node
 }
@@ -146,26 +162,26 @@ func (p *tcprompt) SetPath(path string) {
 	p.path = path
 }
 
-func (p *tcprompt) TaubyteAuthClient() *auth.Client {
+func (p *tcprompt) AuthClient() authIface.Client {
 	return p.authClient
 }
 
-func (p *tcprompt) TaubyteSeerClient() *seer.Client {
+func (p *tcprompt) SeerClient() seerIface.Client {
 	return p.seerClient
 }
 
-func (p *tcprompt) TaubytePatrickClient() *patrick.Client {
+func (p *tcprompt) PatrickClient() patrickIface.Client {
 	return p.patrickClient
 }
 
-func (p *tcprompt) TaubyteHoarderClient() *hoarder.Client {
+func (p *tcprompt) HoarderClient() hoarderIface.Client {
 	return p.hoarderClient
 }
 
-func (p *tcprompt) TaubyteMonkeyClient() *monkey.Client {
+func (p *tcprompt) MonkeyClient() monkeyIface.Client {
 	return p.monkeyClient
 }
 
-func (p *tcprompt) TaubyteTnsClient() tnsIface.Client {
+func (p *tcprompt) TnsClient() tnsIface.Client {
 	return p.tnsClient
 }

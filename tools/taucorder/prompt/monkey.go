@@ -38,7 +38,7 @@ var monkeyTree = &tctree{
 }
 
 func listMonkeyJobs(p Prompt, args []string) error {
-	ids, err := p.TaubyteMonkeyClient().List()
+	ids, err := p.MonkeyClient().List()
 	if err != nil {
 		return fmt.Errorf("failed listing jobs cids with error: %w", err)
 	}
@@ -62,7 +62,7 @@ func getMonkeyJobs(p Prompt, args []string) error {
 		return errors.New("must provide job ID")
 	}
 	jid := args[1]
-	resp, err := p.TaubyteMonkeyClient().Status(jid)
+	resp, err := p.MonkeyClient().Status(jid)
 	if err != nil {
 		return fmt.Errorf("failed listing jobs cids with error: %w", err)
 	}

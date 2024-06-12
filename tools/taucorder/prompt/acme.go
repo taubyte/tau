@@ -56,7 +56,7 @@ func injectStaticCert(p Prompt, args []string) error {
 		return fmt.Errorf("failed reading file with %v", err)
 	}
 
-	err = p.TaubyteAuthClient().InjectStaticCertificate(args[1], fileBytes)
+	err = p.AuthClient().InjectStaticCertificate(args[1], fileBytes)
 	if err != nil {
 		fmt.Printf("Failed injecting certificate for %s with %v\n", args[1], err)
 		return fmt.Errorf(" Failed injecting certificate for %s with %v", args[1], err)
@@ -72,7 +72,7 @@ func getCertificate(p Prompt, args []string) error {
 		return errors.New("must provide an domain and key file")
 	}
 
-	_pem, err := p.TaubyteAuthClient().GetCertificate(args[1])
+	_pem, err := p.AuthClient().GetCertificate(args[1])
 	if err != nil {
 		fmt.Printf("Failed getting certificate for %s with %v\n", args[1], err)
 		return fmt.Errorf(" Failed getting certificate for %s with %v", args[1], err)
@@ -88,7 +88,7 @@ func getStaticCertificate(p Prompt, args []string) error {
 		return errors.New("must provide an domain and key file")
 	}
 
-	cert, err := p.TaubyteAuthClient().GetStaticCertificate(args[1])
+	cert, err := p.AuthClient().GetStaticCertificate(args[1])
 	if err != nil {
 		fmt.Printf("Failed getting certificate for %s with %v\n", args[1], err)
 		return fmt.Errorf(" Failed getting certificate for %s with %v", args[1], err)

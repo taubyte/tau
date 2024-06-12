@@ -46,11 +46,27 @@ var tnsTree = &tctree{
 			},
 			handler: lookupValue,
 		},
+		{
+			validator: stringValidator("status"),
+			ret: []goPrompt.Suggest{
+				{
+					Text:        "status",
+					Description: "request status",
+				},
+			},
+			jump: func(p Prompt) string {
+				return "/tns/status"
+			},
+			handler: func(p Prompt, args []string) error {
+				p.SetPath("/tns/status")
+				return nil
+			},
+		},
 	},
 }
 
 func listKeys(p Prompt, args []string) error {
-	keys, err := p.TaubyteTnsClient().List(1)
+	keys, err := p.TnsClient().List(1)
 	if err != nil {
 		return fmt.Errorf("failed listing tns keys with error: %w", err)
 	}
@@ -70,7 +86,7 @@ func fetchValue(p Prompt, args []string) error {
 		return errors.New("no arguments provided to fetch")
 	}
 
-	iface, err := p.TaubyteTnsClient().Fetch(spec.NewTnsPath([]string{args[1]}))
+	iface, err := p.TnsClient().Fetch(spec.NewTnsPath([]string{args[1]}))
 	if err != nil {
 		return fmt.Errorf("failed listing tns keys with error: %w", err)
 	}
@@ -83,7 +99,7 @@ func lookupValue(p Prompt, args []string) error {
 		return errors.New("no arguments provided to lookup")
 	}
 
-	iface, err := p.TaubyteTnsClient().Lookup(tns.Query{Prefix: args[1:]})
+	iface, err := p.TnsClient().Lookup(tns.Query{Prefix: args[1:]})
 	if err != nil {
 		return fmt.Errorf("failed listing tns keys with error: %w", err)
 	}

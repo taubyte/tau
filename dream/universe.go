@@ -223,7 +223,6 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 
 		config.PrivateKey = privKey
 		config.PublicKey = pubKey
-		config.SwarmKey = u.swarmKey
 
 		wg.Add(1)
 		go func(service string, config commonIface.ServiceConfig) {
