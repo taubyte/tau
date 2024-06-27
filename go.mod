@@ -73,8 +73,9 @@ require (
 	github.com/tetratelabs/wazero v1.6.0
 	github.com/vbauerster/mpb/v8 v8.7.3
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7
+	go.starlark.net v0.0.0-20240520160348-046347dcd104
 	google.golang.org/grpc v1.60.1
-	google.golang.org/protobuf v1.32.0
+	google.golang.org/protobuf v1.33.0
 )
 
 require (
