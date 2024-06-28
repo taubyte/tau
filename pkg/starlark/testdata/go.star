@@ -3,6 +3,9 @@ load("test.star", "test")
 def Add2(x,y):
     return test.add2(x, y)
 
+def Div(x,y):
+    return test.div(x, y)
+
 def Hello():
     return test.hello()
 

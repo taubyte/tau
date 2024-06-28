@@ -7,26 +7,47 @@ import (
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
+	"golang.org/x/exp/maps"
 )
 
 // Builtin registers methods from a given struct that have names starting with 'E_'
 // will override an existing module with the same name
 // E_ followed by a capital letter export a function with native go types
-func (v *vm) Module(mod Module) {
-	v.builtins[mod.Name()] = starlark.StringDict{
-		mod.Name(): starlarkstruct.FromStringDict(starlarkstruct.Default, registerMethods(mod)),
+func (v *vm) Module(mod Module) error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	if dict, err := registerMethods(mod); err == nil {
+		v.builtins[mod.Name()] = starlark.StringDict{
+			mod.Name(): starlarkstruct.FromStringDict(starlarkstruct.Default, dict),
+		}
+
+		return nil
+	} else {
+		return fmt.Errorf("failed to add module `%s` with %w", mod.Name(), err)
 	}
 }
 
-func (v *vm) Modules(mods ...Module) {
+func (v *vm) Modules(mods ...Module) error {
+	v.lock.Lock()
+	defer v.lock.Unlock()
+
+	builtins := make(map[string]starlark.StringDict)
 	for _, mod := range mods {
-		v.builtins[mod.Name()] = starlark.StringDict{
-			mod.Name(): starlarkstruct.FromStringDict(starlarkstruct.Default, registerMethods(mod)),
+		if dict, err := registerMethods(mod); err != nil {
+			return fmt.Errorf("adding modules failed on module `%s` with %w", mod.Name(), err)
+		} else {
+			builtins[mod.Name()] = starlark.StringDict{
+				mod.Name(): starlarkstruct.FromStringDict(starlarkstruct.Default, dict),
+			}
 		}
 	}
+
+	maps.Copy(v.builtins, builtins)
+	return nil
 }
 
-func registerMethods(obj interface{}) starlark.StringDict {
+func registerMethods(obj interface{}) (starlark.StringDict, error) {
 	methods := make(starlark.StringDict)
 	val := reflect.ValueOf(obj)
 	typ := val.Type()
@@ -40,14 +61,22 @@ func registerMethods(obj interface{}) starlark.StringDict {
 
 			if strings.ToUpper(string(methodName[2])) == string(methodName[2]) {
 				starlarkName = strings.ToLower(string(starlarkName[0])) + starlarkName[1:]
-				methods[starlarkName] = makeGoFunc(method)
+				if dict, err := makeGoFunc(method); err == nil {
+					methods[starlarkName] = dict
+				} else {
+					return nil, err
+				}
 			} else if validateMethodSignature(method.Type()) {
-				methods[starlarkName] = makeStarlarkFunc(method)
+				if dict, err := makeStarlarkFunc(method); err == nil {
+					methods[starlarkName] = dict
+				} else {
+					return nil, err
+				}
 			}
 		}
 	}
 
-	return methods
+	return methods, nil
 }
 
 func validateMethodSignature(t reflect.Type) bool {
@@ -61,7 +90,7 @@ func validateMethodSignature(t reflect.Type) bool {
 		t.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem())
 }
 
-func makeStarlarkFunc(method reflect.Value) *starlark.Builtin {
+func makeStarlarkFunc(method reflect.Value) (*starlark.Builtin, error) {
 	return starlark.NewBuiltin(method.Type().Name(), func(thread *starlark.Thread, builtin *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		retValues := method.Call([]reflect.Value{
 			reflect.ValueOf(thread),
@@ -75,11 +104,36 @@ func makeStarlarkFunc(method reflect.Value) *starlark.Builtin {
 			return nil, err.(error)
 		}
 		return result.(starlark.Value), nil
-	})
+	}), nil
 }
 
-func makeGoFunc(method reflect.Value) *starlark.Builtin {
-	return starlark.NewBuiltin(method.Type().Name(), func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, _ []starlark.Tuple) (starlark.Value, error) {
+var errorInterface = reflect.TypeOf((*error)(nil)).Elem()
+
+// Check if the type is supported
+func isSupportedType(t reflect.Type) bool {
+	switch t.Kind() {
+	case reflect.Int, reflect.Float64, reflect.String, reflect.Bool, reflect.Interface:
+		return true
+	case reflect.Slice:
+		return isSupportedType(t.Elem())
+	case reflect.Map:
+		return isSupportedType(t.Key()) && isSupportedType(t.Elem())
+	default:
+		return false
+	}
+}
+
+func makeGoFunc(method reflect.Value) (*starlark.Builtin, error) {
+	// Check for unsupported argument types
+	methodType := method.Type()
+	for i := 0; i < methodType.NumIn(); i++ {
+		argType := methodType.In(i)
+		if !isSupportedType(argType) {
+			return nil, fmt.Errorf("unsupported argument type: %s", argType)
+		}
+	}
+
+	wfunc := func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, _ []starlark.Tuple) (starlark.Value, error) {
 		methodType := method.Type()
 		if args.Len() != methodType.NumIn() {
 			return nil, fmt.Errorf("expected %d arguments, got %d", methodType.NumIn(), args.Len())
@@ -88,14 +142,32 @@ func makeGoFunc(method reflect.Value) *starlark.Builtin {
 		in := make([]reflect.Value, args.Len())
 		for i := 0; i < args.Len(); i++ {
 			arg := args.Index(i)
-			in[i] = reflect.ValueOf(convertFromStarlark(arg, methodType.In(i)))
+			val, err := convertFromStarlark(arg, methodType.In(i))
+			if err != nil {
+				return nil, err
+			}
+
+			in[i] = reflect.ValueOf(val)
 		}
 
 		retValues := method.Call(in)
+
+		if len(retValues) > 0 && retValues[len(retValues)-1].Type().Implements(errorInterface) {
+			if err, _ := retValues[len(retValues)-1].Interface().(error); err != nil {
+				return nil, err
+			} else {
+				retValues = retValues[:len(retValues)-1]
+			}
+		}
+
 		starlarkRet := make(starlark.Tuple, 0, len(retValues))
 
 		for _, ret := range retValues {
-			starlarkRet = append(starlarkRet, convertToStarlark(ret.Interface()))
+			val, err := convertToStarlark(ret.Interface())
+			if err != nil {
+				return nil, err
+			}
+			starlarkRet = append(starlarkRet, val)
 		}
 
 		if len(starlarkRet) == 0 {
@@ -105,5 +177,7 @@ func makeGoFunc(method reflect.Value) *starlark.Builtin {
 		}
 
 		return starlarkRet, nil
-	})
+	}
+
+	return starlark.NewBuiltin(method.Type().Name(), wfunc), nil
 }

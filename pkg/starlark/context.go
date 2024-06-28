@@ -27,7 +27,11 @@ func (c *ctx) CallWithNative(functionName string, args ...any) (any, error) {
 	// Convert native Go arguments to Starlark values
 	starlarkArgs := make([]starlark.Value, len(args))
 	for i, arg := range args {
-		starlarkArgs[i] = convertToStarlark(arg)
+		val, err := convertToStarlark(arg)
+		if err != nil {
+			return nil, err
+		}
+		starlarkArgs[i] = val
 	}
 
 	// Call the Starlark function
