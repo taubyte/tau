@@ -7,8 +7,8 @@ type Module interface {
 }
 
 type VM interface {
-	Module(mod Module)
-	Modules(mod ...Module)
+	Module(mod Module) error
+	Modules(mod ...Module) error
 	File(module string) (Context, error)
 }
 

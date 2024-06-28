@@ -11,6 +11,9 @@ import (
 
 func makeLoadFunc(v *vm) func(thread *starlark.Thread, module string) (starlark.StringDict, error) {
 	return func(thread *starlark.Thread, module string) (starlark.StringDict, error) {
+		v.lock.RLock()
+		defer v.lock.RUnlock()
+
 		for name, dict := range v.builtins {
 			if module == name+".star" {
 				return dict, nil

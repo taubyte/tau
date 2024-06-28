@@ -34,6 +34,13 @@ func (tm *testModule) E_Add2(x int, y int) int {
 	return x + y
 }
 
+func (tm *testModule) E_Div(x int, y int) (int, error) {
+	if y == 0 {
+		return 0, fmt.Errorf("second argument cannot be zero")
+	}
+	return x / y, nil
+}
+
 func (tm *testModule) E_hello(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 	return starlark.String("Hello, Starlark!"), nil
 }
@@ -62,6 +69,12 @@ func (tm *testModule) E_Nothing() interface{} {
 	return nil
 }
 
+type testModuleWithUnsupportedType struct{ testModule }
+
+func (tm *testModuleWithUnsupportedType) E_UnsupportedType(x complex128) complex128 {
+	return x
+}
+
 type printer struct{}
 
 func (c *printer) Name() string {
@@ -85,7 +98,7 @@ func TestBuiltInFunction(t *testing.T) {
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its Add function as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load and execute the script that uses the Add function.
 	ctx, err := vm.File("testdata/add.star")
@@ -109,7 +122,7 @@ func TestMulBuiltInFunction(t *testing.T) {
 	vm, err := New(fs.FS(testFiles))
 	assert.NilError(t, err, "Failed to create VM")
 
-	vm.Modules(new(testModule), new(printer))
+	assert.NilError(t, vm.Modules(new(testModule), new(printer)))
 
 	// Load and execute the script that uses the Add function.
 	ctx, err := vm.File("testdata/add_echo.star")
@@ -134,7 +147,7 @@ func TestAddNativeGoFunction(t *testing.T) {
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its native Go Add function as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load the context to call functions.
 	ctx, err := vm.File("testdata/go.star")
@@ -153,13 +166,41 @@ func TestAddNativeGoFunction(t *testing.T) {
 	}
 }
 
+func TestDivNativeGoWithErrorFunction(t *testing.T) {
+	// Create a VM with the embedded file system.
+	vm, err := New(testFiles)
+	assert.NilError(t, err, "Failed to create VM")
+
+	// Register the testModule with its AddWithError function as a built-in.
+	assert.NilError(t, vm.Module(new(testModule)))
+
+	// Load the context to call functions.
+	ctx, err := vm.File("testdata/go.star")
+	assert.NilError(t, err, "Failed to load go.star")
+
+	// Call the AddWithError function with valid arguments.
+	_, err = ctx.CallWithNative("Div", 15, 0)
+	assert.Error(t, err, "failed to call function Div: second argument cannot be zero")
+
+	// Call the AddWithError function with valid arguments.
+	result, err := ctx.CallWithNative("Div", 15, 3)
+	assert.NilError(t, err, "Failed to call Div function with valid arguments")
+
+	// Check the result.
+	if intValue, ok := result.(int64); ok {
+		assert.Equal(t, intValue, int64(5), "Expected 5 as the result, got %d", intValue)
+	} else {
+		t.Errorf("Expected result to be an int, got %T", result)
+	}
+}
+
 func TestAddNativeGoFunctionWithNative(t *testing.T) {
 	// Create a VM with the embedded file system.
 	vm, err := New(testFiles)
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its native Go Add function as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load the context to call functions.
 	ctx, err := vm.File("testdata/go.star")
@@ -183,7 +224,7 @@ func TestHelloFunctionWithNative(t *testing.T) {
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its Hello function as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load the context to call functions.
 	ctx, err := vm.File("testdata/go.star")
@@ -207,7 +248,7 @@ func TestHelloFunction(t *testing.T) {
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its Hello function as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load the context to call functions.
 	ctx, err := vm.File("testdata/go.star")
@@ -231,7 +272,7 @@ func TestConcatenateFunction(t *testing.T) {
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its functions as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load the context to call functions.
 	ctx, err := vm.File("testdata/go.star")
@@ -255,7 +296,7 @@ func TestSumFloatFunction(t *testing.T) {
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its functions as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load the context to call functions.
 	ctx, err := vm.File("testdata/go.star")
@@ -279,7 +320,7 @@ func TestAndFunction(t *testing.T) {
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its functions as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load the context to call functions.
 	ctx, err := vm.File("testdata/go.star")
@@ -303,7 +344,7 @@ func TestListLengthFunction(t *testing.T) {
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its functions as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load the context to call functions.
 	ctx, err := vm.File("testdata/go.star")
@@ -333,7 +374,7 @@ func TestDictSizeFunction(t *testing.T) {
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its functions as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load the context to call functions.
 	ctx, err := vm.File("testdata/go.star")
@@ -362,7 +403,7 @@ func TestNothingFunction(t *testing.T) {
 	assert.NilError(t, err, "Failed to create VM")
 
 	// Register the testModule with its functions as a built-in.
-	vm.Module(new(testModule))
+	assert.NilError(t, vm.Module(new(testModule)))
 
 	// Load the context to call functions.
 	ctx, err := vm.File("testdata/go.star")
@@ -374,4 +415,13 @@ func TestNothingFunction(t *testing.T) {
 
 	// Check the result.
 	assert.Equal(t, result, starlark.None, "Expected None as the result, got %v", result)
+}
+
+func TestUnsupportedTypeFunction(t *testing.T) {
+	// Create a VM with the embedded file system.
+	vm, err := New(testFiles)
+	assert.NilError(t, err, "Failed to create VM")
+
+	// Register the testModule with its functions as a built-in.
+	assert.Error(t, vm.Module(new(testModuleWithUnsupportedType)), "failed to add module `test` with unsupported argument type: complex128")
 }
