@@ -1,0 +1,8 @@
+id: fakeid
+name: testProject
+description: fakedesc
+notification:
+  email: fake@email.com
+tags: # optional
+    - tag1
+    - tag2

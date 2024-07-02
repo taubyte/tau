@@ -31,12 +31,6 @@ func prepSource() (tempDir string, err error) {
 		utils.Replace("github.com/taubyte/tau", "/tau"),
 	)
 
-	// cmd := exec.Command("go", "mod", "tidy")
-	// cmd.Dir = tempDir
-	// if err = cmd.Run(); err != nil {
-	// 	err = fmt.Errorf("un-tar fixture.tar failed with: %w", err)
-	// }
-
 	return
 }
 
@@ -50,7 +44,6 @@ func Wasm(ctx context.Context, buildDir string) (wasmFile string, err error) {
 
 	out, err := builder.Build(
 		containers.Volume(utils.SafeAbs("../.."), "/tau"),
-		//containers.Volume(utils.SafeAbs("/home/samy/Documents/taubyte/RD/afero"), "/afero"),
 	)
 
 	out.Logs().CopyTo(os.Stdout)
