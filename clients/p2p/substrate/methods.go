@@ -1,7 +1,7 @@
 package substrate
 
 import (
-	"github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/tau/p2p/streams/client"
 )
 
 func (c *Client) ProxyHTTP(host, path, method string, ops ...client.Option) (<-chan *client.Response, error) {
@@ -12,6 +12,7 @@ func (c *Client) ProxyHTTP(host, path, method string, ops ...client.Option) (<-c
 	}
 
 	mainOptions := append(c.defaultOptions(), client.Body(body))
+
 	return c.client.New(CommandHTTP, append(mainOptions, ops...)...).Do()
 }
 
@@ -28,6 +29,10 @@ func (c *Client) defaultOptions() []client.Option {
 
 	if params.Threshold > 0 {
 		options = append(options, client.Threshold(params.Threshold))
+	}
+
+	if len(c.peers) > 0 {
+		options = append(options, client.To(c.peers...))
 	}
 
 	return options

@@ -7,9 +7,9 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-cid"
-	"github.com/taubyte/p2p/peer"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
+	"github.com/taubyte/tau/p2p/peer"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	"github.com/taubyte/tau/services/substrate/components/storage/common"

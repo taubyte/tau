@@ -3,10 +3,10 @@ package auth
 import (
 	"context"
 
-	"github.com/taubyte/p2p/peer"
-	streams "github.com/taubyte/p2p/streams/service"
 	"github.com/taubyte/tau/config"
 	kv "github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/p2p/peer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 
 	http "github.com/taubyte/http"
 

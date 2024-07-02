@@ -3,8 +3,9 @@ package seer
 import (
 	"context"
 
-	client "github.com/taubyte/p2p/streams/client"
+	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	iface "github.com/taubyte/tau/core/services/seer"
+	client "github.com/taubyte/tau/p2p/streams/client"
 )
 
 var _ iface.Client = &Client{}
@@ -12,6 +13,7 @@ var _ iface.Client = &Client{}
 type Client struct {
 	client   *client.Client
 	services iface.Services
+	peers    []peerCore.ID
 }
 
 type Peer struct {

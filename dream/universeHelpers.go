@@ -3,8 +3,8 @@ package dream
 import (
 	"fmt"
 
-	peer "github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/common"
+	peer "github.com/taubyte/tau/p2p/peer"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	"golang.org/x/exp/slices"
 )
@@ -64,6 +64,8 @@ func (u *Universe) killServiceByNameId(name, id string) error {
 	delete(serviceInfo.nodes, id)
 	delete(u.lookups, id)
 	u.discardNode(node.Node(), false)
+
+	node.Node().Close()
 
 	return nil
 }

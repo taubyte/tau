@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"errors"
 
+	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/core/kvdb"
 )
 
@@ -15,6 +16,8 @@ type Client interface {
 	Projects() Projects
 	Repositories() Repositories
 	Stats() Stats
+	Peers(...peerCore.ID) Client
+	Close()
 }
 
 type Stats interface {

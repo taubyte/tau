@@ -10,7 +10,6 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/h2non/filetype"
 	"github.com/h2non/filetype/matchers"
-	"github.com/libp2p/go-libp2p/core/peer"
 	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/core/services/patrick"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
@@ -123,7 +122,7 @@ func (srv *PatrickService) cancelJob(ctx http.Context) (iface interface{}, err e
 	}
 
 	// Send directly to that monkey to cancel the job
-	_, err = srv.monkeyClient.Cancel(peer.ToCid(jobLock.Pid), jid)
+	_, err = srv.monkeyClient.Peers(jobLock.Pid).Cancel(jid)
 	if err != nil {
 		return nil, fmt.Errorf("failed cancelling job %s on monkey with %w", jid, err)
 	}

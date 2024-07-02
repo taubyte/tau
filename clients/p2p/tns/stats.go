@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/taubyte/p2p/streams/command"
 	kvdbIface "github.com/taubyte/tau/core/kvdb"
 	iface "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/pkg/kvdb"
 )
 
@@ -15,7 +15,7 @@ func (c *Client) Stats() iface.Stats {
 }
 
 func (h *Stats) Database() (kvdbIface.Stats, error) {
-	response, err := h.client.Send("stats", command.Body{"action": "db"})
+	response, err := h.client.Send("stats", command.Body{"action": "db"}, h.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("sending stats.db request failed with %w", err)
 	}

@@ -12,10 +12,10 @@ import (
 
 	basicHttp "github.com/taubyte/http/basic"
 	"github.com/taubyte/http/options"
-	"github.com/taubyte/p2p/peer"
 	authP2P "github.com/taubyte/tau/clients/p2p/auth"
 	tnsP2P "github.com/taubyte/tau/clients/p2p/tns"
 	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/p2p/peer"
 	autoOptions "github.com/taubyte/tau/pkg/http-auto/options"
 
 	acmeStore "github.com/taubyte/tau/services/auth/acme/store"

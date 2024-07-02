@@ -5,10 +5,10 @@ import (
 
 	"github.com/jellydator/ttlcache/v3"
 	"github.com/miekg/dns"
-	"github.com/taubyte/p2p/peer"
-	streams "github.com/taubyte/p2p/streams/service"
 	"github.com/taubyte/tau/core/kvdb"
 	iface "github.com/taubyte/tau/core/services/seer"
+	"github.com/taubyte/tau/p2p/peer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 
 	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/config"

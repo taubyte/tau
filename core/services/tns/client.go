@@ -1,6 +1,7 @@
 package tns
 
 import (
+	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/core/kvdb"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
@@ -42,6 +43,8 @@ type Client interface {
 	Website() StructureIface[*structureSpec.Website]
 
 	Stats() Stats
+
+	Peers(...peerCore.ID) Client
 }
 
 type Stats interface {

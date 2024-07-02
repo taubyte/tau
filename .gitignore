@@ -6,6 +6,8 @@
 pkg/vm-orbit/tests/e2e/go/fixtures/*.wasm
 pkg/vm-orbit/tests/e2e/go/fixtures/testPlugin*
 
+npm/bin
+
 ./services/hoarder/testGIT
 ./services/monkey/build/
 ./services/auth/build/

@@ -6,11 +6,6 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-const (
-	TnsProtocol  = "/tns/v1"
-	SeerProtocol = "/seer/v1"
-)
-
 type ValidateOption func(string) error
 
 func ValidateServices(services []string, ops ...ValidateOption) error {

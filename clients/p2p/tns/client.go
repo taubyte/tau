@@ -5,16 +5,18 @@ import (
 	"fmt"
 
 	"github.com/mitchellh/mapstructure"
-	"github.com/taubyte/p2p/peer"
-	"github.com/taubyte/p2p/streams/client"
-	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/tau/clients/p2p/tns/common"
 	"github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/streams/client"
+	"github.com/taubyte/tau/p2p/streams/command"
 
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/extract"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/utils/maps"
+
+	srvCommon "github.com/taubyte/tau/services/common"
 )
 
 func New(ctx context.Context, node peer.Node) (tns.Client, error) {
@@ -25,7 +27,7 @@ func New(ctx context.Context, node peer.Node) (tns.Client, error) {
 
 	c.cache = newCache(node)
 	c.node = node
-	c.client, err = client.New(node, spec.TnsProtocol)
+	c.client, err = client.New(node, srvCommon.TnsProtocol)
 	if err != nil {
 		logger.Error("API client creation failed:", err)
 		return nil, err
@@ -42,7 +44,7 @@ func (c *Client) Close() {
 
 /****** LIST *******/
 func (c *Client) List(depth int) ([]string, error) {
-	response, err := c.client.Send("list", command.Body{"depth": depth})
+	response, err := c.client.Send("list", command.Body{"depth": depth}, c.peers...)
 	if err != nil {
 		logger.Error(err)
 		return nil, err
@@ -97,7 +99,7 @@ func (c *Client) Push(path []string, data interface{}) error {
 	response, err := c.client.Send("push", command.Body{
 		"path": path,
 		"data": data,
-	})
+	}, c.peers...)
 	if err != nil {
 		logger.Error("push failed with:", err)
 		return err
@@ -120,7 +122,7 @@ func (c *Client) Push(path []string, data interface{}) error {
 /****** COMMON *******/
 
 func (c *Client) fetch(path []string) (interface{}, error) {
-	response, err := c.client.Send("fetch", command.Body{"path": path})
+	response, err := c.client.Send("fetch", command.Body{"path": path}, c.peers...)
 	if err != nil {
 		logger.Error("fetch failed with:", err)
 		return nil, err
@@ -135,7 +137,7 @@ func (c *Client) fetch(path []string) (interface{}, error) {
 }
 
 func (c *Client) lookup(query tns.Query) ([]string, error) {
-	response, err := c.client.Send("lookup", command.Body{"prefix": query.Prefix, "regex": query.RegEx})
+	response, err := c.client.Send("lookup", command.Body{"prefix": query.Prefix, "regex": query.RegEx}, c.peers...)
 	if err != nil {
 		logger.Error("lookup failed with:", err)
 		return nil, err

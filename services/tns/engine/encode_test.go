@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/taubyte/p2p/keypair"
-	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/p2p/keypair"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/tns/flat"

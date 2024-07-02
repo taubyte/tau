@@ -7,7 +7,7 @@ import (
 
 	ds "github.com/ipfs/go-datastore"
 	logging "github.com/ipfs/go-log/v2"
-	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 func TestFactory_New(t *testing.T) {

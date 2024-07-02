@@ -5,14 +5,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/taubyte/p2p/peer"
-	client "github.com/taubyte/p2p/streams/client"
 	"github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/peer"
+	client "github.com/taubyte/tau/p2p/streams/client"
+
+	peerCore "github.com/libp2p/go-libp2p/core/peer"
 )
 
 type Client struct {
 	node   peer.Node
 	client *client.Client
+	peers  []peerCore.ID
 	cache  *cache
 }
 

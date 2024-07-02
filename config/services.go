@@ -5,10 +5,10 @@ import (
 	"regexp"
 
 	http "github.com/taubyte/http"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/p2p/keypair"
 	seerIface "github.com/taubyte/tau/core/services/seer"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 var (

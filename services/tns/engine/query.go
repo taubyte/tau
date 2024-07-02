@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	iface "github.com/taubyte/tau/core/services/tns"
-	commonSpec "github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/services/common"
 )
 
 func (e *Engine) Lookup(ctx context.Context, ops ...iface.Query) (keys []string, err error) {
@@ -28,7 +28,7 @@ func (e *Engine) Lookup(ctx context.Context, ops ...iface.Query) (keys []string,
 	}
 	returnKeys := make([]string, 0)
 	for _, k := range keys {
-		returnKeys = append(returnKeys, strings.TrimPrefix(k, commonSpec.TnsProtocol))
+		returnKeys = append(returnKeys, strings.TrimPrefix(k, common.TnsProtocol))
 	}
 	return returnKeys, nil
 }

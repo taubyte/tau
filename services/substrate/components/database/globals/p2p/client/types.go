@@ -1,7 +1,7 @@
 package client
 
 import (
-	streamClient "github.com/taubyte/p2p/streams/client"
+	streamClient "github.com/taubyte/tau/p2p/streams/client"
 )
 
 type Client struct {

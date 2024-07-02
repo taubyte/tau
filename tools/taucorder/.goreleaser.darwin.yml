@@ -1,0 +1,44 @@
+project_name: taucorder
+release:
+  # Repo in which the release will be created.
+  github:
+    owner: taubyte
+    name: tau
+
+  # Control the draft and prerelease settings
+  draft: false
+  replace_existing_draft: false
+  prerelease: auto
+
+  # Release naming and SCM interaction
+  name_template: ""
+  disable: false
+  skip_upload: false
+  
+builds:
+  - id: "darwin"
+    dir: "tools/taucorder"
+    main: .
+    binary: "taucorder"
+    goos:
+      - darwin
+    goarch:
+      - arm64
+      - amd64
+    env:
+      - CGO_ENABLED=1
+    flags:
+      - -trimpath
+    tags:
+      - darwin
+      - odo
+
+changelog:
+  disable: true
+
+checksum:
+  disable: true
+
+archives:
+  - files:
+    - none*

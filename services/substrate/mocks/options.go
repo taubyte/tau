@@ -2,9 +2,9 @@ package mocks
 
 import (
 	httpSrv "github.com/taubyte/http"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 func Node(node peer.Node) option {

@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/p2p/peer"
-	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/p2p/streams/command"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/p2p/common"
 	"github.com/taubyte/tau/services/substrate/components/structure"
