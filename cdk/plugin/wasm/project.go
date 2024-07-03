@@ -12,7 +12,7 @@ func openProject() int32 {
 	var err error
 	project, err = proj.Open(proj.SystemFS("/mnt"))
 	if err != nil {
-		pdk.OutputString(err.Error()) // find a way to read this on extism side
+		pdk.SetError(err)
 		return 1
 	}
 
@@ -29,7 +29,7 @@ func projectGetName() int32 {
 func projectSetName() int32 {
 	name := pdk.InputString()
 	if err := project.Set(true, proj.Name(name)); err != nil {
-		pdk.OutputString(err.Error())
+		pdk.SetError(err)
 		return 1
 	}
 	return 0
@@ -45,7 +45,7 @@ func projectGetId() int32 {
 func projectSetId() int32 {
 	id := pdk.InputString()
 	if err := project.Set(true, proj.Id(id)); err != nil {
-		pdk.OutputString(err.Error())
+		pdk.SetError(err)
 		return 1
 	}
 	return 0
@@ -61,7 +61,7 @@ func projectGetDescription() int32 {
 func projectSetDescription() int32 {
 	id := pdk.InputString()
 	if err := project.Set(true, proj.Description(id)); err != nil {
-		pdk.OutputString(err.Error())
+		pdk.SetError(err)
 		return 1
 	}
 	return 0
@@ -77,7 +77,7 @@ func projectGetEmail() int32 {
 func projectSetEmail() int32 {
 	email := pdk.InputString()
 	if err := project.Set(true, proj.Email(email)); err != nil {
-		pdk.OutputString(err.Error())
+		pdk.SetError(err)
 		return 1
 	}
 	return 0
@@ -91,6 +91,6 @@ func projectGetTags() int32 {
 
 //export projectSetTags
 func projectSetTags() int32 {
-	pdk.OutputString("not implemented")
+	pdk.SetErrorString("not implemented")
 	return 1
 }

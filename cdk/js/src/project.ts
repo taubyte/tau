@@ -68,6 +68,10 @@ export class Project {
         return out.json();
     }
 
+    async setTags(): Promise<void> {
+        await this.plugin.call('projectSetTags');
+    }
+
     async close(): Promise<void> {
         await this.plugin.close()
     }
