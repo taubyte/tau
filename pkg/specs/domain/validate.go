@@ -1,3 +1,6 @@
+//go:build !wasi && !wasm
+// +build !wasi,!wasm
+
 package domainSpec
 
 import (

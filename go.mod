@@ -1,6 +1,8 @@
 module github.com/taubyte/tau
 
-go 1.21
+go 1.21.1
+
+toolchain go1.22.0
 
 require (
 	github.com/alecthomas/units v0.0.0-20231202071711-9a357b53e9c9
@@ -61,6 +63,8 @@ require (
 	github.com/c-bata/go-prompt v0.2.6
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/ethereum/go-ethereum v1.12.0
+	github.com/extism/go-pdk v1.0.2
+	github.com/extism/go-pdk/wasi-reactor v0.0.0-20240408161339-095ac11ddc4e
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/hashicorp/go-plugin v1.4.10
@@ -74,6 +78,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.7.3
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7
 	go.starlark.net v0.0.0-20240520160348-046347dcd104
+	golang.org/x/mod v0.15.0
 	google.golang.org/grpc v1.60.1
 	google.golang.org/protobuf v1.33.0
 )
@@ -250,7 +255,6 @@ require (
 	go.uber.org/fx v1.20.1 // indirect
 	go.uber.org/mock v0.4.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/mod v0.15.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/tools v0.18.0 // indirect
