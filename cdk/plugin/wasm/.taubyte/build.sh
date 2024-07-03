@@ -6,7 +6,6 @@ export GOPROXY=https://proxy.golang.org,direct
 export GOSUMDB=sum.golang.org
 export GOTOOLCHAIN=auto
 
-
 mkdir /afero
 git clone --branch v1.9.5 --single-branch https://github.com/spf13/afero.git /afero
 cd /afero
@@ -101,9 +100,7 @@ EOF
     go mod tidy
 )
 
-
 . /utils/wasm.sh
-
 
 build debug "${FILENAME}"
 ret=$?
