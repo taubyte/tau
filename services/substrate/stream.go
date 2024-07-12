@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	con "github.com/taubyte/p2p/streams"
 	"github.com/taubyte/p2p/streams/command"
 	"github.com/taubyte/p2p/streams/command/response"
+	cr "github.com/taubyte/p2p/streams/command/response"
 	streams "github.com/taubyte/p2p/streams/service"
 	httptun "github.com/taubyte/p2p/streams/tunnels/http"
 	"github.com/taubyte/tau/clients/p2p/substrate"
@@ -26,14 +28,14 @@ func (s *Service) startStream() (err error) {
 		return fmt.Errorf("new stream failed with: %w", err)
 	}
 
+	s.stream.Define("ping", func(context.Context, con.Connection, command.Body) (cr.Response, error) {
+		return cr.Response{"time": int(time.Now().Unix())}, nil
+	})
+
 	if err := s.stream.DefineStream(substrate.CommandHTTP, s.proxyHttp, s.tunnelHttp); err != nil {
 		return fmt.Errorf("defining command `%s` failed with: %w", substrate.CommandHTTP, err)
 	}
-	
-	srv.stream.Define("ping", func(context.Context, streams.Connection, command.Body) (cr.Response, error) {
-		return cr.Response{"time": int(time.Now().Unix())}, nil
-	})
-	
+
 	return
 }
 
