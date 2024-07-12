@@ -29,7 +29,10 @@ func (s *Service) startStream() (err error) {
 	if err := s.stream.DefineStream(substrate.CommandHTTP, s.proxyHttp, s.tunnelHttp); err != nil {
 		return fmt.Errorf("defining command `%s` failed with: %w", substrate.CommandHTTP, err)
 	}
-
+	
+	srv.stream.Define("ping", func(context.Context, streams.Connection, command.Body) (cr.Response, error) {
+		return cr.Response{"time": int(time.Now().Unix())}, nil
+	})
 	return
 }
 
