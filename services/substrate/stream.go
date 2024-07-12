@@ -33,6 +33,7 @@ func (s *Service) startStream() (err error) {
 	srv.stream.Define("ping", func(context.Context, streams.Connection, command.Body) (cr.Response, error) {
 		return cr.Response{"time": int(time.Now().Unix())}, nil
 	})
+	
 	return
 }
 
