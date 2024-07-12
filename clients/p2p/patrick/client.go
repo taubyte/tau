@@ -3,9 +3,9 @@ package patrick
 import (
 	"context"
 
-	"github.com/taubyte/p2p/peer"
-	client "github.com/taubyte/p2p/streams/client"
 	iface "github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/p2p/peer"
+	client "github.com/taubyte/tau/p2p/streams/client"
 	servicesCommon "github.com/taubyte/tau/services/common"
 )
 

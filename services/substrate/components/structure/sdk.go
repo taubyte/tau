@@ -5,9 +5,9 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/pterm/pterm"
-	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command/response"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/event"
 )

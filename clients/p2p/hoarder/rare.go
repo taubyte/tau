@@ -3,14 +3,14 @@ package hoarder
 import (
 	"fmt"
 
-	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 
 // TODO: Add cids to dht
 func (c *Client) Rare() ([]string, error) {
 	// looks for items that only have one copy in the network
-	resp, err := c.Send("hoarder", command.Body{"action": "rare"})
+	resp, err := c.Send("hoarder", command.Body{"action": "rare"}, c.peers...)
 	if err != nil {
 		logger.Error("Failed getting rare cids with:", err.Error())
 		return nil, fmt.Errorf("failed calling send with: %w", err)

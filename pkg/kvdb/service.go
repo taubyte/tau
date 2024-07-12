@@ -5,8 +5,8 @@ import (
 	"time"
 
 	crdt "github.com/ipfs/go-ds-crdt"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/kvdb"
+	"github.com/taubyte/tau/p2p/peer"
 	"go.uber.org/zap/zapcore"
 
 	logging "github.com/ipfs/go-log/v2"

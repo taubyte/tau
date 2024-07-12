@@ -3,8 +3,8 @@ package auth
 import (
 	"fmt"
 
-	"github.com/taubyte/p2p/streams/command"
 	iface "github.com/taubyte/tau/core/services/auth"
+	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -54,7 +54,7 @@ func (r *GithubRepositories) Get(id int) (iface.GithubRepository, error) {
 	logger.Debugf("Getting Github Repository `%d`", id)
 	defer logger.Debugf("Getting Github Repository `%d` done", id)
 
-	response, err := r.client.Send("repositories", command.Body{"action": "get", "provider": "github", "id": id})
+	response, err := r.client.Send("repositories", command.Body{"action": "get", "provider": "github", "id": id}, r.peers...)
 	if err != nil {
 		return nil, err
 	}
@@ -63,7 +63,7 @@ func (r *GithubRepositories) Get(id int) (iface.GithubRepository, error) {
 }
 
 func (r *GithubRepositories) List() ([]string, error) {
-	response, err := r.client.Send("repositories", command.Body{"action": "list"})
+	response, err := r.client.Send("repositories", command.Body{"action": "list"}, r.peers...)
 	if err != nil {
 		return nil, err
 	}

@@ -6,13 +6,12 @@ import (
 	"path"
 
 	"github.com/ipfs/go-log/v2"
-	streams "github.com/taubyte/p2p/streams/service"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	"github.com/taubyte/tau/core/services/seer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 	"github.com/taubyte/tau/pkg/kvdb"
 
 	tauConfig "github.com/taubyte/tau/config"
-	commonSpec "github.com/taubyte/tau/pkg/specs/common"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/tns/engine"
 )
@@ -58,7 +57,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	// P2P
-	srv.stream, err = streams.New(srv.node, servicesCommon.Tns, commonSpec.TnsProtocol)
+	srv.stream, err = streams.New(srv.node, servicesCommon.Tns, servicesCommon.TnsProtocol)
 	if err != nil {
 		return nil, err
 	}

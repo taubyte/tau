@@ -2,14 +2,15 @@ package service
 
 import (
 	http "github.com/taubyte/http"
-	"github.com/taubyte/p2p/peer"
-	streams "github.com/taubyte/p2p/streams/service"
 	iface "github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/p2p/peer"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 
-	auth "github.com/taubyte/tau/clients/p2p/auth"
-	monkey "github.com/taubyte/tau/clients/p2p/monkey"
+	auth "github.com/taubyte/tau/core/services/auth"
+
 	"github.com/taubyte/tau/config"
-	ifaceTns "github.com/taubyte/tau/core/services/tns"
+	monkey "github.com/taubyte/tau/core/services/monkey"
+	tns "github.com/taubyte/tau/core/services/tns"
 
 	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/core/kvdb"
@@ -18,12 +19,12 @@ import (
 var _ iface.Service = &PatrickService{}
 
 type PatrickService struct {
-	monkeyClient *monkey.Client
+	monkeyClient monkey.Client
 	node         peer.Node
 	http         http.Service
 	stream       *streams.CommandService
-	authClient   *auth.Client
-	tnsClient    ifaceTns.Client
+	authClient   auth.Client
+	tnsClient    tns.Client
 	db           kvdb.KVDB
 	dbFactory    kvdb.Factory
 	devMode      bool

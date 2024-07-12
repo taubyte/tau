@@ -7,8 +7,8 @@ import (
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
-	cr "github.com/taubyte/p2p/streams/command/response"
 	"github.com/taubyte/tau/core/services/patrick"
+	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
 )

@@ -3,8 +3,10 @@
 # Learn more about .gitignore:
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
-./pkg/vm-orbit/tests/e2e/go/fixtures/*.wasm
-./pkg/vm-orbit/tests/e2e/go/fixtures/testPlugin*
+pkg/vm-orbit/tests/e2e/go/fixtures/*.wasm
+pkg/vm-orbit/tests/e2e/go/fixtures/testPlugin*
+
+npm/bin
 
 ./services/hoarder/testGIT
 ./services/monkey/build/

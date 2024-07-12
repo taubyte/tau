@@ -13,6 +13,12 @@ var (
 	Substrate         = "substrate"
 	SubstrateProtocol = "/substrate/v1"
 
+	Tns         = "tns"
+	TnsProtocol = "/tns/v1"
+
+	Seer         = "seer"
+	SeerProtocol = "/seer/v1"
+
 	// TODO: Merge with substrate
 	SubstrateP2P         = "substrate-p2p"
 	SubstrateP2PProtocol = "/substrate/p2p/v1"
@@ -22,8 +28,5 @@ var (
 	Patrick         = "patrick"
 	PatrickProtocol = "/patrick/v1"
 
-	Seer             = "seer"
 	OraclePubSubPath = "/seer/oracle/v1"
-
-	Tns = "tns"
 )

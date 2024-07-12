@@ -3,7 +3,7 @@ package monkey
 import (
 	"fmt"
 
-	"github.com/taubyte/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -20,7 +20,7 @@ func mergeMaps(maps ...map[string]interface{}) map[string]interface{} {
 
 func (c *Client) Update(jid string, body map[string]interface{}) (string, error) {
 	// check this job again
-	resp, err := c.client.Send("job", mergeMaps(command.Body{"action": "update", "jid": jid}, body))
+	resp, err := c.client.Send("job", mergeMaps(command.Body{"action": "update", "jid": jid}, body), c.peers...)
 	if err != nil {
 		return jid, fmt.Errorf("failed calling send with error: %w", err)
 	}

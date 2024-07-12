@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	ipfsLite "github.com/hsanjuan/ipfs-lite"
-	"github.com/taubyte/p2p/keypair"
-	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/p2p/keypair"
+	"github.com/taubyte/tau/p2p/peer"
 )
 
 func New(ctx context.Context, options ...Option) (*Service, error) {

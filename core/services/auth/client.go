@@ -3,6 +3,9 @@ package auth
 import (
 	"crypto/tls"
 	"errors"
+
+	peerCore "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/taubyte/tau/core/kvdb"
 )
 
 type Client interface {
@@ -12,6 +15,13 @@ type Client interface {
 	Hooks() Hooks
 	Projects() Projects
 	Repositories() Repositories
+	Stats() Stats
+	Peers(...peerCore.ID) Client
+	Close()
+}
+
+type Stats interface {
+	Database() (kvdb.Stats, error)
 }
 
 type Hook interface {

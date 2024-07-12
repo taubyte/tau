@@ -59,11 +59,6 @@ type Domains struct {
 	Generated string   `yaml:"generated"`
 }
 
-type DomainsWhiteList struct {
-	Postfix []string
-	Regex   []string
-}
-
 type DVKey struct {
 	Private string `yaml:"private"`
 	Public  string `yaml:"public"`

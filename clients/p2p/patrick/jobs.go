@@ -4,21 +4,21 @@ import (
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/taubyte/p2p/streams/command"
 	iface "github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/utils/maps"
 )
 
-func (client *Client) Lock(jid string, eta uint32) error {
-	if _, err := client.Send("patrick", command.Body{"action": "lock", "jid": jid, "eta": eta}); err != nil {
+func (c *Client) Lock(jid string, eta uint32) error {
+	if _, err := c.Send("patrick", command.Body{"action": "lock", "jid": jid, "eta": eta}, c.peers...); err != nil {
 		return fmt.Errorf("failed send lock with error: %w", err)
 	}
 
 	return nil
 }
 
-func (client *Client) IsLocked(jid string) (bool, error) {
-	resp, err := client.Send("patrick", command.Body{"action": "isLocked", "jid": jid})
+func (c *Client) IsLocked(jid string) (bool, error) {
+	resp, err := c.Send("patrick", command.Body{"action": "isLocked", "jid": jid}, c.peers...)
 	if err != nil {
 		return false, fmt.Errorf("failed send isLocked with error: %w", err)
 	}
@@ -33,36 +33,36 @@ func (client *Client) IsLocked(jid string) (bool, error) {
 		return false, err
 	}
 
-	return locked && (by == client.node.ID().String()), nil
+	return locked && (by == c.node.ID().String()), nil
 }
 
 // TODO: delete
-func (client *Client) Unlock(jid string) error {
-	if _, err := client.Send("patrick", command.Body{"action": "unlock", "jid": jid}); err != nil {
+func (c *Client) Unlock(jid string) error {
+	if _, err := c.Send("patrick", command.Body{"action": "unlock", "jid": jid}, c.peers...); err != nil {
 		return fmt.Errorf("failed send unlock with error: %w", err)
 	}
 
 	return nil
 }
 
-func (client *Client) Done(jid string, cid_log map[string]string, assetCid map[string]string) error {
-	if _, err := client.Send("patrick", command.Body{"action": "done", "jid": jid, "cid": cid_log, "assetCid": assetCid}); err != nil {
+func (c *Client) Done(jid string, cid_log map[string]string, assetCid map[string]string) error {
+	if _, err := c.Send("patrick", command.Body{"action": "done", "jid": jid, "cid": cid_log, "assetCid": assetCid}, c.peers...); err != nil {
 		return fmt.Errorf("failed sending done with error: %w", err)
 	}
 
 	return nil
 }
 
-func (client *Client) Failed(jid string, cid_log map[string]string, assetCid map[string]string) error {
-	if _, err := client.Send("patrick", command.Body{"action": "failed", "jid": jid, "cid": cid_log, "assetCid": assetCid}); err != nil {
+func (c *Client) Failed(jid string, cid_log map[string]string, assetCid map[string]string) error {
+	if _, err := c.Send("patrick", command.Body{"action": "failed", "jid": jid, "cid": cid_log, "assetCid": assetCid}, c.peers...); err != nil {
 		return fmt.Errorf("failed sending failed with error: %w", err)
 	}
 
 	return nil
 }
 
-func (client *Client) Cancel(jid string, cid_log map[string]string) (interface{}, error) {
-	resp, err := client.Send("patrick", command.Body{"action": "cancel", "jid": jid, "cid": cid_log})
+func (c *Client) Cancel(jid string, cid_log map[string]string) (interface{}, error) {
+	resp, err := c.Send("patrick", command.Body{"action": "cancel", "jid": jid, "cid": cid_log}, c.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("failed sending cancel with error: %w", err)
 	}
@@ -70,8 +70,8 @@ func (client *Client) Cancel(jid string, cid_log map[string]string) (interface{}
 	return resp, nil
 }
 
-func (client *Client) List() ([]string, error) {
-	resp, err := client.Send("patrick", command.Body{"action": "list", "jid": ""})
+func (c *Client) List() ([]string, error) {
+	resp, err := c.Send("patrick", command.Body{"action": "list", "jid": ""}, c.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("failed sending list with error: %w", err)
 	}
@@ -84,17 +84,17 @@ func (client *Client) List() ([]string, error) {
 	return ids, nil
 }
 
-func (client *Client) Timeout(jid string) error {
-	if _, err := client.Send("patrick", command.Body{"action": "timeout", "jid": jid}); err != nil {
+func (c *Client) Timeout(jid string) error {
+	if _, err := c.Send("patrick", command.Body{"action": "timeout", "jid": jid}, c.peers...); err != nil {
 		return fmt.Errorf("failed sending timeout with error: %w", err)
 	}
 
 	return nil
 }
 
-func (client *Client) Get(jid string) (*iface.Job, error) {
+func (c *Client) Get(jid string) (*iface.Job, error) {
 	var job iface.Job
-	resp, err := client.Send("patrick", command.Body{"action": "info", "jid": jid})
+	resp, err := c.Send("patrick", command.Body{"action": "info", "jid": jid}, c.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("failed sending list with error: %w", err)
 	}

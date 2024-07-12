@@ -7,10 +7,10 @@ import (
 
 	"github.com/ipfs/go-cid"
 	"github.com/libp2p/go-libp2p/core/peer"
-	"github.com/taubyte/p2p/streams/client"
-	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/p2p/streams/command/response"
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
+	"github.com/taubyte/tau/p2p/streams/client"
+	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command/response"
 	protocolCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/substrate/components/p2p/common"
 )
@@ -74,7 +74,7 @@ func (c *Command) SendTo(ctx context.Context, cid cid.Cid, body map[string]inter
 		return nil, fmt.Errorf("cid to pid failed with: %w", err)
 	}
 
-	resp, err := p2pClient.SendTo(pid, c.matcher.Command, body)
+	resp, err := p2pClient.Send(c.matcher.Command, body, pid)
 	if err != nil {
 		common.Logger.Errorf("sending command %s to %s failed with: %s", c.matcher.Command, pid, err.Error())
 	}

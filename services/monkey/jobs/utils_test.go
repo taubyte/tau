@@ -9,12 +9,12 @@ import (
 	"time"
 
 	git "github.com/taubyte/go-simple-git"
-	"github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
+	"github.com/taubyte/tau/p2p/peer"
 	compilerCommon "github.com/taubyte/tau/pkg/config-compiler/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
 )

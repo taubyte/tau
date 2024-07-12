@@ -9,8 +9,8 @@ import (
 
 	"github.com/ipfs/go-cid"
 	ma "github.com/multiformats/go-multiaddr"
-	peer "github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/vm"
+	peer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	"github.com/taubyte/tau/pkg/vm/backend/errors"
 	resolv "github.com/taubyte/tau/pkg/vm/resolvers/taubyte"

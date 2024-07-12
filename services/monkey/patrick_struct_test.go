@@ -5,8 +5,11 @@ import (
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/taubyte/p2p/peer"
+	peerCore "github.com/libp2p/go-libp2p/core/peer"
+	kvdbIface "github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/kvdb"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 )
 
@@ -16,6 +19,14 @@ type starfish struct {
 
 func (s *starfish) Close() {
 	s.Jobs = nil
+}
+
+func (s *starfish) Peers(...peerCore.ID) patrick.Client {
+	return s
+}
+
+func (s *starfish) DatabaseStats() (kvdbIface.Stats, error) {
+	return kvdb.NewStats(), nil
 }
 
 func (s *starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error {

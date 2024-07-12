@@ -3,13 +3,14 @@ package auth
 import (
 	"context"
 
-	peer "github.com/taubyte/p2p/peer"
-	client "github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/tau/core/services/auth"
+	peer "github.com/taubyte/tau/p2p/peer"
+	client "github.com/taubyte/tau/p2p/streams/client"
 
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
-func New(ctx context.Context, node peer.Node) (*Client, error) {
+func New(ctx context.Context, node peer.Node) (auth.Client, error) {
 	var (
 		c   Client
 		err error

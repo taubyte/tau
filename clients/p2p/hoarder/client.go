@@ -3,12 +3,13 @@ package hoarder
 import (
 	"context"
 
-	"github.com/taubyte/p2p/peer"
-	client "github.com/taubyte/p2p/streams/client"
+	hoarder "github.com/taubyte/tau/core/services/hoarder"
+	"github.com/taubyte/tau/p2p/peer"
+	client "github.com/taubyte/tau/p2p/streams/client"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
-func New(ctx context.Context, node peer.Node) (*Client, error) {
+func New(ctx context.Context, node peer.Node) (hoarder.Client, error) {
 	var (
 		c   Client
 		err error

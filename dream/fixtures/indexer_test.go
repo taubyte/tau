@@ -14,7 +14,6 @@ import (
 )
 
 func TestIndexer(t *testing.T) {
-	t.Skip("needs to be reimplemented")
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 	err := u.StartWithConfig(&dream.Config{

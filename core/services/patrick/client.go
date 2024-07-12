@@ -1,5 +1,10 @@
 package patrick
 
+import (
+	peerCore "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/taubyte/tau/core/kvdb"
+)
+
 type Client interface {
 	Lock(jid string, eta uint32) error
 	IsLocked(jid string) (bool, error)
@@ -10,5 +15,7 @@ type Client interface {
 	Get(jid string) (*Job, error)
 	Timeout(jid string) error
 	Cancel(jid string, cid_log map[string]string) (interface{}, error)
+	DatabaseStats() (kvdb.Stats, error)
+	Peers(...peerCore.ID) Client
 	Close()
 }

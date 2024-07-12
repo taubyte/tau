@@ -6,8 +6,8 @@ import (
 	"path"
 	"time"
 
-	peer "github.com/taubyte/p2p/peer"
 	commonIface "github.com/taubyte/tau/core/common"
+	peer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
 )
 
@@ -30,8 +30,9 @@ func (u *Universe) PortFor(proto, _type string) (int, error) {
 }
 
 func (u *Universe) createService(name string, config *commonIface.ServiceConfig) error {
+
 	if config.Root == "" {
-		config.Root = u.root
+		config.Root = path.Clean(fmt.Sprintf("%s/%s/%d", u.root, name, len(u.service[name].nodes)))
 	}
 
 	serviceCount := len(u.service[name].nodes)
@@ -47,7 +48,7 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 
 	var err error
 	for _, k := range []string{"http", "p2p", "dns", "ipfs"} {
-		if _, ok := config.Others[k]; !ok {
+		if prt, ok := config.Others[k]; !ok || prt == 0 {
 			config.Others[k], _ = u.PortFor(name, k)
 
 			if k == "p2p" {
@@ -69,8 +70,10 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 
 	// we mesh first
 	u.Mesh(node)
+
 	// wait till we're connected to others
 	node.WaitForSwarm(afterStartDelay())
+
 	// register so others can mesh with it
 	u.Register(node, name, config.Others)
 	time.Sleep(afterStartDelay())
@@ -79,6 +82,9 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 }
 
 func (u *Universe) Service(name string, config *commonIface.ServiceConfig) error {
+	//make sure we have swarm key
+	config.SwarmKey = u.swarmKey
+
 	if config.Others == nil {
 		config.Others = make(map[string]int)
 	}
@@ -93,6 +99,7 @@ func (u *Universe) Service(name string, config *commonIface.ServiceConfig) error
 			return err
 		}
 	}
+
 	return nil
 }
 

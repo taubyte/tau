@@ -2,8 +2,8 @@ package services
 
 import (
 	http "github.com/taubyte/http"
-	peer "github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/core/kvdb"
+	peer "github.com/taubyte/tau/p2p/peer"
 )
 
 type Service interface {

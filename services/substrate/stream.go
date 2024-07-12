@@ -6,14 +6,13 @@ import (
 	"io"
 	"time"
 
-	con "github.com/taubyte/p2p/streams"
-	"github.com/taubyte/p2p/streams/command"
-	"github.com/taubyte/p2p/streams/command/response"
-	cr "github.com/taubyte/p2p/streams/command/response"
-	streams "github.com/taubyte/p2p/streams/service"
-	httptun "github.com/taubyte/p2p/streams/tunnels/http"
 	"github.com/taubyte/tau/clients/p2p/substrate"
 	compIface "github.com/taubyte/tau/core/services/substrate/components"
+	con "github.com/taubyte/tau/p2p/streams"
+	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/p2p/streams/command/response"
+	streams "github.com/taubyte/tau/p2p/streams/service"
+	httptun "github.com/taubyte/tau/p2p/streams/tunnels/http"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
 	protocolCommon "github.com/taubyte/tau/services/common"
@@ -28,7 +27,7 @@ func (s *Service) startStream() (err error) {
 		return fmt.Errorf("new stream failed with: %w", err)
 	}
 
-	s.stream.Define("ping", func(context.Context, con.Connection, command.Body) (cr.Response, error) {
+	s.stream.Define("ping", func(context.Context, con.Connection, command.Body) (response.Response, error) {
 		return cr.Response{"time": int(time.Now().Unix())}, nil
 	})
 

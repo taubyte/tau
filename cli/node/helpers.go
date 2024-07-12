@@ -8,8 +8,8 @@ import (
 
 	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
-	"github.com/taubyte/p2p/peer"
 	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/utils"
 
 	odo "github.com/taubyte/tau/cli"

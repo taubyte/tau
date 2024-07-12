@@ -3,8 +3,8 @@ package api
 import (
 	"fmt"
 
-	streams "github.com/taubyte/p2p/streams/service"
 	"github.com/taubyte/tau/core/services/substrate/components/database"
+	streams "github.com/taubyte/tau/p2p/streams/service"
 	"github.com/taubyte/tau/services/substrate/components/database/globals/p2p/common"
 )
 

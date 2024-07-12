@@ -4,14 +4,13 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/p2p/peer"
+	"github.com/taubyte/tau/p2p/peer"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"github.com/taubyte/tau/services/substrate/components/structure"
 )
 
 func TestLookupRegex(t *testing.T) {
-	t.Skip("Need to update this test")
 	s := NewTestService(peer.MockNode(context.Background()))
 	msg := map[string]structureSpec.Messaging{
 		"someMessagingId": {

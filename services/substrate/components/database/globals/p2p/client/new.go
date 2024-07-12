@@ -3,8 +3,8 @@ package client
 import (
 	"context"
 
-	"github.com/taubyte/p2p/peer"
-	streamClient "github.com/taubyte/p2p/streams/client"
+	"github.com/taubyte/tau/p2p/peer"
+	streamClient "github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/services/substrate/components/database/globals/p2p/common"
 )
 

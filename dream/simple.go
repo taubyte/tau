@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/p2p/keypair"
 	commonIface "github.com/taubyte/tau/core/common"
 	authIface "github.com/taubyte/tau/core/services/auth"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
@@ -13,9 +12,10 @@ import (
 	patrickIface "github.com/taubyte/tau/core/services/patrick"
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/p2p/keypair"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 
-	peer "github.com/taubyte/p2p/peer"
+	peer "github.com/taubyte/tau/p2p/peer"
 )
 
 func (s *Simple) getClient(name string) (commonIface.Client, error) {
