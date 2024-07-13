@@ -28,7 +28,7 @@ func (s *Service) startStream() (err error) {
 	}
 
 	s.stream.Define("ping", func(context.Context, con.Connection, command.Body) (response.Response, error) {
-		return cr.Response{"time": int(time.Now().Unix())}, nil
+		return response.Response{"time": int(time.Now().Unix())}, nil
 	})
 
 	if err := s.stream.DefineStream(substrate.CommandHTTP, s.proxyHttp, s.tunnelHttp); err != nil {
