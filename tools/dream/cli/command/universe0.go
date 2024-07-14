@@ -38,7 +38,7 @@ func getUniverse0(c *cli.Context) (universe string, err error) {
 		if len(args1) != 0 {
 			universe = c.Args().First()
 			if strings.HasPrefix(universe, "-") {
-				err = errors.New("Parse arguments failed: write [arguments] after -flags")
+				err = errors.New("parse arguments failed: write [arguments] after -flags")
 				return
 			}
 

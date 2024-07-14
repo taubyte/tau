@@ -11,7 +11,6 @@ import (
 	"github.com/ipfs/go-log/v2"
 	patrickClient "github.com/taubyte/tau/clients/p2p/patrick"
 	"github.com/taubyte/tau/config"
-	tauConfig "github.com/taubyte/tau/config"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	iface "github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"
@@ -54,7 +53,7 @@ type Service struct {
 	clientNode    peer.Node
 	hoarderClient hoarderIface.Client
 
-	config *tauConfig.Node
+	config *config.Node
 
 	monkeys     map[string]*Monkey
 	monkeysLock sync.RWMutex
@@ -87,10 +86,8 @@ func (s *Service) Dev() bool {
 
 type Config config.Node
 
-func appendAndLog(e []error, format string, args ...any) {
+func appendAndLog(e chan error, format string, args ...any) {
 	if errString := chidori.Format(logger, log.LevelError, format, args...); len(errString) > 0 {
-		err := errors.New(errString)
-
-		e = append(e, err)
+		e <- errors.New(errString)
 	}
 }

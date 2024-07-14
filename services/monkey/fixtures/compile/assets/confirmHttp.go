@@ -5,6 +5,7 @@ import (
 	httpEvent "github.com/taubyte/go-sdk/http/event"
 )
 
+//lint:ignore U1000 wasm export
 //export confirmHttp
 func confirmHttp(r resource.Resource) uint32 {
 	function, err := r.Function().Http()

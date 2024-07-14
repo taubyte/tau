@@ -15,7 +15,6 @@ type brokenIface struct {
 }
 
 func (brokenIface) SetName(name string) {
-	return
 }
 
 func (brokenIface) WrapError(format string, i ...any) error {

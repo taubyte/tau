@@ -10,7 +10,7 @@ func (m Mapper) Run(obj interface{}) (err error) {
 
 	switch rValue.Kind() {
 	case reflect.Pointer:
-		if rValue.IsNil() == true {
+		if rValue.IsNil() {
 			return fmt.Errorf("nil pointer")
 		}
 
@@ -28,8 +28,8 @@ func (m Mapper) Run(obj interface{}) (err error) {
 		rField := rValue.FieldByName(mItem.Field)
 
 		// only set if not empty
-		if mItem.IfNotEmpty == true {
-			if rField.IsValid() == false || rField.IsZero() == false {
+		if mItem.IfNotEmpty {
+			if !rField.IsValid() || !rField.IsZero() {
 				err = mItem.Callback()
 			}
 		} else {

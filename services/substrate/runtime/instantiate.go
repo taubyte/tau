@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/core/vm"
-	vmContext "github.com/taubyte/tau/pkg/vm/context"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
+	vmContext "github.com/taubyte/tau/pkg/vm/context"
 )
 
 /*

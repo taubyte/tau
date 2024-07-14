@@ -7,15 +7,11 @@ import (
 )
 
 var (
-	projectId      = "123456"
-	appId          = "someApp1234"
-	libId          = "someLib123456"
-	commit         = "someCommit"
-	domainName     = "taubyte"
-	topLevelDomain = "com"
-	rootDomain     = domainName + "." + topLevelDomain
-	resourceName   = "someLib"
-	branch         = "Master"
+	projectId = "123456"
+	appId     = "someApp1234"
+	libId     = "someLib123456"
+	commit    = "someCommit"
+	branch    = "Master"
 )
 
 func TestLibraryBasicKey(t *testing.T) {

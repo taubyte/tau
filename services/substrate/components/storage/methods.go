@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-cid"
@@ -101,16 +102,16 @@ func (s *Service) GetFile(ctx context.Context, cid cid.Cid) (peer.ReadSeekCloser
 
 	return file, nil
 }
-func (s *Service) pubsubStorage(context storageIface.Context, branch string) error {
+func (s *Service) pubsubStorage(ctx storageIface.Context, branch string) error {
 	auction := &hoarderIface.Auction{
 		Type:     hoarderIface.AuctionNew,
 		MetaType: hoarderIface.Storage,
 		Meta: hoarderIface.MetaData{
-			ConfigId:      context.Config.Id,
-			ApplicationId: context.ApplicationId,
-			ProjectId:     context.ProjectId,
-			Match:         context.Matcher,
-			Branch:        spec.DefaultBranch,
+			ConfigId:      ctx.Config.Id,
+			ApplicationId: ctx.ApplicationId,
+			ProjectId:     ctx.ProjectId,
+			Match:         ctx.Matcher,
+			Branch:        branch,
 		},
 	}
 
@@ -119,8 +120,11 @@ func (s *Service) pubsubStorage(context storageIface.Context, branch string) err
 		return fmt.Errorf("marshalling auction failed with %w", err)
 	}
 
-	if err = s.Node().Messaging().Publish(hoarderSpecs.PubSubIdent, dataBytes); err != nil {
-		return fmt.Errorf("failed publishing storage %s with %w", context.Matcher, err)
+	pubsubCtx, pubsubCtxC := context.WithTimeout(s.Node().Context(), 10*time.Second)
+	defer pubsubCtxC()
+
+	if err = s.Node().PubSubPublish(pubsubCtx, hoarderSpecs.PubSubIdent, dataBytes); err != nil {
+		return fmt.Errorf("failed publishing storage %s with %w", ctx.Matcher, err)
 	}
 
 	return nil

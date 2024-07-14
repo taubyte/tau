@@ -37,8 +37,8 @@ func lastPortShift() int {
 }
 
 func afterStartDelay() time.Duration {
-	mrand.Seed(time.Now().UnixNano())
-	return time.Duration(BaseAfterStartDelay+mrand.Intn(MaxAfterStartDelay-BaseAfterStartDelay)) * time.Millisecond
+	rnd := mrand.New(mrand.NewSource(time.Now().UnixNano()))
+	return time.Duration(BaseAfterStartDelay+rnd.Intn(MaxAfterStartDelay-BaseAfterStartDelay)) * time.Millisecond
 }
 
 func getCacheFolder() (string, error) {

@@ -12,10 +12,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-var (
-	shape = "test"
-)
-
 //go:embed fixtures/testConfig.yaml
 var testConfig []byte
 

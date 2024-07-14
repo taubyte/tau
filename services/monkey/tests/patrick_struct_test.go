@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -37,7 +38,8 @@ func (s *starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error
 	}
 
 	s.Jobs[job.Id] = job
-	err = peerC.Messaging().Publish(patrickSpecs.PubSubIdent, job_bytes)
+
+	err = peerC.PubSubPublish(context.TODO(), patrickSpecs.PubSubIdent, job_bytes)
 	if err != nil {
 		return fmt.Errorf("Publish job failed: %w", err)
 	}

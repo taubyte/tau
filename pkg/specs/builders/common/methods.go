@@ -105,7 +105,7 @@ func ExtraVolumes(wd string, volumes ...ExtraVolume) ([]ci.ContainerOption, erro
 			return nil, errors.New("attempting to parse an empty volume")
 		}
 
-		if volume.SourceIsRelativeToBuildDirectory == true {
+		if volume.SourceIsRelativeToBuildDirectory {
 			volume.SourcePath = path.Join(wd, volume.SourcePath)
 		}
 

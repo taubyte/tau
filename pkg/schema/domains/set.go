@@ -24,7 +24,7 @@ func FQDN(value string) basic.Op {
 func UseCertificate(value bool) basic.Op {
 	return func(ci basic.ConfigIface) []*seer.Query {
 		var val struct{}
-		if value == true && ci.Config().Get("certificate").Value(val) != nil {
+		if value && ci.Config().Get("certificate").Value(val) != nil {
 			return basic.Set("certificate", nil)(ci)
 		}
 
