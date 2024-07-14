@@ -10,8 +10,6 @@ import (
 	"testing"
 	"time"
 
-	_ "embed"
-
 	"gotest.tools/v3/assert"
 )
 
