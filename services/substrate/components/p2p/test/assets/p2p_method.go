@@ -34,10 +34,10 @@ func RunTestP2P(p p2pEvent.Event) error {
 	}
 
 	if string(data) != "Hello, world" {
-		return errors.New("Didn't get expected data")
+		return errors.New("didn't get expected data")
 	}
 
-	err = p.Write([]byte("Hello from the other side"))
+	err = p.Write([]byte("hello from the other side"))
 	if err != nil {
 		return err
 	}

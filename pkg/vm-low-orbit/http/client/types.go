@@ -30,7 +30,5 @@ type Client struct {
 
 type Request struct {
 	*http.Request
-	Id       uint32
-	dataPtr  uint32
-	dataSize uint32
+	Id uint32
 }

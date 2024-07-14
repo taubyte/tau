@@ -93,7 +93,7 @@ func (p *project) Prettify(prettifier pretty.Prettier) map[string]interface{} {
 	for _, appName := range apps {
 		app, err := p.Application(appName)
 		if err != nil {
-			errors = append(errors, fmt.Errorf("Getting Application `%s` failed with: %s", appName, err))
+			errors = append(errors, fmt.Errorf("getting Application `%s` failed with: %s", appName, err))
 			continue
 		}
 
@@ -111,7 +111,7 @@ func (p *project) Prettify(prettifier pretty.Prettier) map[string]interface{} {
 		for _, name := range globalNames {
 			resourceObj, err := resource.Get(name, "")
 			if err != nil {
-				errors = append(errors, fmt.Errorf("Getting %s `%s` failed with: %s", resource.Type, name, err))
+				errors = append(errors, fmt.Errorf("getting %s `%s` failed with: %s", resource.Type, name, err))
 				continue
 			}
 

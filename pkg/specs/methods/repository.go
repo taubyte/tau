@@ -8,7 +8,7 @@ import (
 
 func GetRepositoryPath(gitProvider, repoId, projectId string) (*RepositoryPath, error) {
 	if len(projectId) == 0 {
-		return nil, errors.New("Project id is required for creating a repository path")
+		return nil, errors.New("project id is required for creating a repository path")
 	}
 
 	return &RepositoryPath{

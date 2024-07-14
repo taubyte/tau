@@ -27,6 +27,7 @@ func generatePrivateKey(t *testing.T, passphrase string) (string, ssh.Signer) {
 			Type:  "RSA PRIVATE KEY",
 			Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
 		}
+		//lint:ignore SA1019 simplest way, it's just for test
 		encryptedPEMBlock, err := x509.EncryptPEMBlock(rand.Reader, privateKeyPEMBlock.Type, privateKeyPEMBlock.Bytes, []byte(passphrase), x509.PEMCipherAES256)
 		assert.NilError(t, err, "Failed to encrypt private key with passphrase")
 		privateKeyPEM = pem.EncodeToMemory(encryptedPEMBlock)

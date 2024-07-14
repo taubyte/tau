@@ -12,10 +12,10 @@ import (
 	"github.com/taubyte/tau/core/services/substrate/components"
 	httpComp "github.com/taubyte/tau/core/services/substrate/components/http"
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
+	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
 	"github.com/taubyte/tau/services/substrate/runtime"
-	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 )
 
 func (f *Function) Provision() (function httpComp.Serviceable, err error) {

@@ -2,32 +2,7 @@ package helpers
 
 import (
 	"encoding/json"
-
-	"github.com/jedib0t/go-pretty/v6/table"
 )
-
-// https://github.com/go-testfixtures/testfixtures/blob/master/json.go
-func appendMapInterface(t table.Writer, iface interface{}, level int, key string) {
-	switch iface.(type) {
-	case map[interface{}]interface{}:
-		for _key, _iface := range iface.(map[interface{}]interface{}) {
-			t.AppendRow([]interface{}{_key})
-			appendMapInterface(t, _iface, level+1, _key.(string))
-		}
-	case interface{}:
-		empty := make([]interface{}, level)
-		for idx := range empty {
-			empty[idx] = ""
-			if idx == level {
-				break
-			}
-		}
-		empty = append(empty, key)
-		empty = append(empty, iface)
-		t.AppendRow(empty)
-		t.AppendSeparator()
-	}
-}
 
 type jsonArray []interface{}
 type jsonMap map[string]interface{}

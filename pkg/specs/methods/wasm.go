@@ -8,7 +8,7 @@ import (
 
 func WasmModulePath(projectId, appId, name string, resourceType common.PathVariable) (*common.TnsPath, error) {
 	if len(projectId) == 0 {
-		return nil, errors.New("Project id is required for creating a Wasm path")
+		return nil, errors.New("project id is required for creating a Wasm path")
 	}
 
 	if len(appId) == 0 {
@@ -20,7 +20,7 @@ func WasmModulePath(projectId, appId, name string, resourceType common.PathVaria
 
 func WasmModulePathFromModule(projectId, appId, moduleType string, name string) (*common.TnsPath, error) {
 	if len(projectId) == 0 {
-		return nil, errors.New("Project id is required for creating a Wasm path")
+		return nil, errors.New("project id is required for creating a Wasm path")
 	}
 
 	if len(appId) == 0 {

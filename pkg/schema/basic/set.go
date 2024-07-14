@@ -16,7 +16,7 @@ func (r Resource) Set(sync bool, ops ...Op) (err error) {
 		return r.WrapError("commit failed with: %s", err)
 	}
 
-	if sync == true {
+	if sync {
 		err = r.seer.Sync()
 		if err != nil {
 			return r.WrapError("sync failed with: %s", err)

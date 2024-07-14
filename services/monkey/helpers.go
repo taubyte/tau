@@ -17,17 +17,17 @@ func ToNumber(in interface{}) int {
 	return 0
 }
 
-func (m *Monkey) appendErrors(r io.WriteSeeker, errors ...error) {
+func (m *Monkey) appendErrors(r io.WriteSeeker, errors chan error) {
 	if len(errors) > 0 {
 		r.Seek(0, io.SeekEnd)
 		r.Write([]byte("\nCI/CD Errors:\n\n"))
-		for _, err := range errors {
+		for err := range errors {
 			r.Write([]byte(err.Error() + "\n"))
 		}
 	}
 }
 
-func (m *Monkey) storeLogs(r io.ReadSeeker, errors ...error) (string, error) {
+func (m *Monkey) storeLogs(r io.ReadSeeker) (string, error) {
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return "", fmt.Errorf("logs seek start failed with: %w", err)
 	}

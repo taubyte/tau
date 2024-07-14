@@ -71,6 +71,8 @@ func TestPrettyBasic(t *testing.T) {
 
 	// Add a domain
 	domain, err := project.Domain(domainName, name)
+	assert.NilError(t, err)
+
 	err = domain.Set(true,
 		domains.Id(domainId),
 		domains.Description(domainDescription),
@@ -131,6 +133,6 @@ func TestPrettyErrors(t *testing.T) {
 			},
 		},
 	})
-	assert.ErrorContains(t, pretty["Errors"].([]error)[0], "Getting testApp/broken_resource failed with: test error")
+	assert.ErrorContains(t, pretty["Errors"].([]error)[0], "getting testApp/broken_resource failed with: test error")
 
 }

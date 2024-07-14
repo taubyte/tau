@@ -2,7 +2,6 @@ package decompile
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 
 	"github.com/taubyte/tau/pkg/schema/project"
@@ -42,7 +41,7 @@ func MockBuild(projectId string, dir string, ifaces ...interface{}) (project.Pro
 
 func (ctx *buildContext) newProject() (err error) {
 	if ctx.dir == "" {
-		ctx.dir, err = ioutil.TempDir(os.TempDir(), "project-*")
+		ctx.dir, err = os.MkdirTemp(os.TempDir(), "project-*")
 		if err != nil {
 			return
 		}

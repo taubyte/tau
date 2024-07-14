@@ -8,7 +8,7 @@ import (
 
 func ServicePath(projectId, appId, serviceId, command string) (*common.TnsPath, error) {
 	if len(projectId) == 0 {
-		return nil, errors.New("Project id is required for creating a Wasm path")
+		return nil, errors.New("project id is required for creating a Wasm path")
 	}
 
 	var path *common.TnsPath
