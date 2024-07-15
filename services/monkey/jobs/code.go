@@ -7,9 +7,9 @@ import (
 	"path"
 	"sync"
 
-	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/tau/core/builders"
 	build "github.com/taubyte/tau/pkg/builder"
+	"github.com/taubyte/tau/pkg/git"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 )
 

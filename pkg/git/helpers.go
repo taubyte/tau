@@ -1,4 +1,4 @@
-package helpers
+package git
 
 import (
 	"bytes"
@@ -9,54 +9,17 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
+	"strings"
 
-	"github.com/google/go-github/github"
-	"github.com/taubyte/tau/dream/helpers"
-	"github.com/taubyte/tau/pkg/git"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/google/go-github/v32/github"
 	"golang.org/x/oauth2"
 )
 
-func CloneToDirSSH(ctx context.Context, dir string, _repo helpers.Repository) (err error) {
-	pubKey, secKey, err := generateDeployKey()
-	if err != nil {
-		return
-	}
-
-	githubClient := githubApiClient(ctx, helpers.GitToken)
-
-	err = injectDeploymentKey(ctx, githubClient, helpers.GitUser, _repo.Name, "go-simple-git-clone-with-deploy-key", pubKey)
-	if err != nil {
-		return
-	}
-
-	gitOptions := []git.Option{
-		git.URL(_repo.HookInfo.Repository.SSHURL),
-		git.SSHKey(secKey),
-		git.Root(dir),
-	}
-
-	if _repo.HookInfo.Repository.Branch != "" {
-		gitOptions = append(gitOptions, git.Branch(_repo.HookInfo.Repository.Branch))
-	}
-
-	// clone repo
-	_, err = git.New(ctx, gitOptions...)
-	if err != nil {
-		return
-	}
-
-	repo, _, err := githubClient.Repositories.Get(ctx, helpers.GitUser, _repo.Name)
-	if err != nil {
-		return
-	}
-	if repo.ID == nil {
-		err = fmt.Errorf("repo ID not found")
-		return
-	}
-	return
-}
-
+// ref: https://github.com/keybase/bot-sshca/blob/master/src/keybaseca/sshutils/generate.go#L53
 func generateDeployKey() (string, string, error) {
 	_privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -109,4 +72,18 @@ func injectDeploymentKey(ctx context.Context, client *github.Client, user, repoN
 		Key:   &key,
 	})
 	return err
+}
+
+// TODO support other git providers
+func embedGitToken(url string, auth transport.AuthMethod) (string, error) {
+	if strings.Contains(url, "github.com") {
+		basic, ok := auth.(*http.BasicAuth)
+		if !ok {
+			return "", fmt.Errorf("unsupported auth method: %T", auth)
+		}
+
+		return strings.Replace(url, "github.com", fmt.Sprintf("%s@github.com", basic.Password), 1), nil
+	}
+
+	return "", fmt.Errorf("unsupported url: %s", url)
 }
