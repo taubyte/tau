@@ -46,7 +46,7 @@ func TestListBranches(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	if fetchErr != nil && strings.Contains(fetchErr.Error(), "already up-to-date") == false {
+	if fetchErr != nil && !strings.Contains(fetchErr.Error(), "already up-to-date") {
 		t.Error(fetchErr)
 		return
 	}
@@ -57,7 +57,7 @@ func TestListBranches(t *testing.T) {
 	}
 
 	testBranch := "dreamland"
-	if slices.Contains(branches, testBranch) == false {
+	if !slices.Contains(branches, testBranch) {
 		t.Errorf("expected branch `%s` to be in list of branches", testBranch)
 		return
 	}

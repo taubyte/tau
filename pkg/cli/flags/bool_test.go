@@ -21,12 +21,12 @@ func TestBoolWithInverse(t *testing.T) {
 	app := cli.NewApp()
 	app.Flags = Combine(newBoolFlag())
 	app.Action = func(ctx *cli.Context) error {
-		if ctx.IsSet(testFlagName) == false {
-			return errors.New("Expected flag to be set")
+		if !ctx.IsSet(testFlagName) {
+			return errors.New("expected flag to be set")
 		}
 
-		if ctx.Bool(testFlagName) == false {
-			return errors.New("Expected flag to be true")
+		if !ctx.Bool(testFlagName) {
+			return errors.New("expected flag to be true")
 		}
 		return nil
 	}
@@ -38,12 +38,12 @@ func TestBoolWithInverse(t *testing.T) {
 
 	app.Flags = Combine(newBoolFlag())
 	app.Action = func(ctx *cli.Context) error {
-		if ctx.IsSet(testFlagName) == false {
-			return errors.New("Expected flag to be set")
+		if !ctx.IsSet(testFlagName) {
+			return errors.New("expected flag to be set")
 		}
 
-		if ctx.Bool(testFlagName) == true {
-			return errors.New("Expected flag to be false")
+		if ctx.Bool(testFlagName) {
+			return errors.New("expected flag to be false")
 		}
 		return nil
 	}
@@ -55,8 +55,8 @@ func TestBoolWithInverse(t *testing.T) {
 
 	app.Flags = Combine(newBoolFlag())
 	app.Action = func(ctx *cli.Context) error {
-		if ctx.IsSet(testFlagName) == true {
-			return errors.New("Expected flag to not be set")
+		if ctx.IsSet(testFlagName) {
+			return errors.New("expected flag to not be set")
 		}
 
 		return nil
