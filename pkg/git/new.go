@@ -78,58 +78,57 @@ func (c *Repository) open_or_clone() error {
 	return nil
 }
 
-func (c *Repository) clone() error {
+func (c *Repository) clone() (err error) {
 	Info("Cloning from " + c.url + " on branch " + c.branches[0] + " into " + c.root + "\n")
 
 	cloneURL := c.url
 	if c.embedToken {
-		var err error
 		cloneURL, err = embedGitToken(cloneURL, c.auth)
 		if err != nil {
 			return fmt.Errorf("embedding token failed with: %s", err)
 		}
 	}
 
-	var err0 error
-	c.repo, err0 = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+	c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
 		URL:      cloneURL,
 		Progress: os.Stdout,
 		Auth:     c.auth,
 	})
 
-	// original from here: https://github.com/jmalloc/grit/pull/80/files
-	switch err0 {
-	case git.ErrRepositoryAlreadyExists:
-		err0 = nil
+	if err == git.ErrRepositoryAlreadyExists {
+		err = nil
+	} else if err == plumbing.ErrReferenceNotFound || err == transport.ErrEmptyRemoteRepository {
+		defer func() {
+			if err != nil {
+				_ = os.RemoveAll(c.root)
+			}
+		}()
 
-	case transport.ErrEmptyRemoteRepository:
-		r, err := git.PlainInit(c.root, false /* isBare */)
+		var r *git.Repository
+		r, err = git.PlainInit(c.root, false /* isBare */)
 		if err != nil {
-			_ = os.RemoveAll(c.root)
 			return err
 		}
 
-		if _, err := r.CreateRemote(&config.RemoteConfig{Name: git.DefaultRemoteName, URLs: []string{c.url}}); err != nil {
-			_ = os.RemoveAll(c.root)
+		if _, err = r.CreateRemote(&config.RemoteConfig{Name: git.DefaultRemoteName, URLs: []string{c.url}}); err != nil {
 			return err
 		}
 
 		for _, branch := range c.branches {
 			merge := plumbing.ReferenceName("refs/heads/" + branch)
-			if err = r.CreateBranch(&config.Branch{Name: branch, Remote: git.DefaultRemoteName, Merge: merge}); err != nil {
-				_ = os.RemoveAll(c.root)
-				return err
+			if err = r.CreateBranch(&config.Branch{Name: branch, Remote: git.DefaultRemoteName, Merge: merge}); err == nil {
+				break
 			}
 		}
-		err0 = nil
 	}
 
-	if err0 != nil {
-		pterm.Error.Printf("Cloning %s failed with %s", c.url, err0.Error())
-		return err0
+	if err != nil {
+		pterm.Error.Printf("Cloning %s failed with %s", c.url, err.Error())
+		return err
 	}
+
 	pterm.Success.Printf("Cloning %s complete\n", c.url)
-
 	c.i_cloned_it = true
+
 	return nil
 }

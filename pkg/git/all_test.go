@@ -7,22 +7,21 @@ import (
 	"path"
 	"testing"
 	"time"
+
+	"gotest.tools/v3/assert"
 )
 
 var (
-	testRepoGitUrl  = "git@github.com:taubyte-test/tb_testproject"
-	testRepoHTTPUrl = "https://github.com/taubyte-test/tb_testproject"
+	testRepoGitUrl  = "git@github.com:taubyte-test/for-tests.git"
+	testRepoHTTPUrl = "https://github.com/taubyte-test/for-tests.git"
 	testRepoToken   string
 	testRepoUser    = "taubyte-test"
-	testRepoName    = "tb_testproject"
+	testRepoName    = "for-tests"
 	testRepoEmail   = "taubytetest@gmail.com"
 )
 
 func init() {
 	testRepoToken = os.Getenv("TEST_GIT_TOKEN")
-	if len(testRepoToken) == 0 {
-		panic("TEST_GIT_TOKEN is not defined")
-	}
 }
 
 func TestNew(t *testing.T) {
@@ -178,33 +177,19 @@ func TestClone(t *testing.T) {
 }
 
 func TestCloneFail(t *testing.T) {
-
-	var tn = time.Now()
-	var timenow = tn.String()
-
-	err := os.Mkdir("/tmp/"+timenow, 0755)
-	if err != nil {
-		t.Errorf("Failed to create new directory with error: %s", err.Error())
-		return
-	}
+	dir, err := os.MkdirTemp("/tmp", t.Name())
+	assert.NilError(t, err)
 
 	_, err = New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
 		Token("wrongauth"),
-		Root("/tmp/"+timenow),
+		Root(dir),
 		Author(testRepoUser, testRepoEmail),
 	)
-	if err == nil {
-		t.Errorf("Testing cloning with wrong auth failed with error: %s", err.Error())
-		return
-	}
+	assert.Error(t, err, "authentication required")
 
-	err = os.RemoveAll("/tmp/" + timenow)
-	if err != nil {
-		t.Errorf("Failed to delete directory %s with %s", timenow, err.Error())
-		return
-	}
+	assert.NilError(t, os.RemoveAll(dir))
 }
 
 func TestCloneWithDeployKey(t *testing.T) {

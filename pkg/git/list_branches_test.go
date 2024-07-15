@@ -51,8 +51,8 @@ func TestListBranches(t *testing.T) {
 		return
 	}
 
-	if len(branches) < 3 {
-		t.Errorf("expected at least 3 branches, got %d", len(branches))
+	if len(branches) < 2 {
+		t.Errorf("expected at least 2 branches, got %d", len(branches))
 		return
 	}
 
