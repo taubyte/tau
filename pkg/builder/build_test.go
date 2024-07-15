@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/otiai10/copy"
-	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/tau/core/builders"
+	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	"gotest.tools/v3/assert"
 )

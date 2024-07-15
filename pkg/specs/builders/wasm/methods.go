@@ -6,7 +6,7 @@ import (
 	"path"
 
 	"github.com/otiai10/copy"
-	git "github.com/taubyte/go-simple-git"
+	"github.com/taubyte/tau/pkg/git"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 )
 

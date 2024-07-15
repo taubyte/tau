@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/tau/core/builders"
+	"github.com/taubyte/tau/pkg/git"
 	specs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	chidori "github.com/taubyte/utils/logger/zap"

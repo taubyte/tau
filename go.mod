@@ -35,13 +35,12 @@ require (
 	github.com/pterm/pterm v0.12.65
 	github.com/shirou/gopsutil v3.21.11+incompatible
 	github.com/spf13/afero v1.9.5
-	github.com/taubyte/cli-common v0.1.1
 	github.com/taubyte/domain-validation v1.0.1
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
 	github.com/taubyte/go-seer v1.0.6
 	github.com/taubyte/go-simple-container v0.4.5
-	github.com/taubyte/go-simple-git v0.2.5
+	github.com/taubyte/go-simple-git v0.2.5 // indirect
 	github.com/taubyte/http v0.10.5
 	github.com/taubyte/utils v0.1.7
 	github.com/urfave/cli/v2 v2.25.7
@@ -60,6 +59,9 @@ require (
 )
 
 require (
+	github.com/AlecAivazis/survey/v2 v2.3.7
+	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
+	github.com/briandowns/spinner v1.23.0
 	github.com/c-bata/go-prompt v0.2.6
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/ethereum/go-ethereum v1.12.0
@@ -67,15 +69,21 @@ require (
 	github.com/extism/go-pdk/wasi-reactor v0.0.0-20240408161339-095ac11ddc4e
 	github.com/fsnotify/fsnotify v1.6.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
+	github.com/gookit/config/v2 v2.2.3
 	github.com/hashicorp/go-plugin v1.4.10
 	github.com/ipfs/boxo v0.17.0
 	github.com/ipfs/go-ds-pebble v0.3.1
 	github.com/ipfs/go-ipld-format v0.6.0
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
 	github.com/libp2p/go-libp2p-record v0.2.0
+	github.com/mattn/go-runewidth v0.0.15
 	github.com/multiformats/go-multihash v0.2.3
+	github.com/olekukonko/ts v0.0.0-20171002115256-78ecb04241c0
 	github.com/pkg/sftp v1.13.1
 	github.com/stretchr/testify v1.8.4
+	github.com/taubyte/go-project-schema v0.9.3
+	github.com/taubyte/go-specs v0.10.6
+	github.com/taubyte/tau-cli v0.1.8
 	github.com/tetratelabs/wazero v1.6.0
 	github.com/vbauerster/mpb/v8 v8.7.3
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7
@@ -135,6 +143,7 @@ require (
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-stack/stack v1.8.1 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
+	github.com/goccy/go-yaml v1.11.0 // indirect
 	github.com/godbus/dbus/v5 v5.1.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/protobuf v1.5.3 // indirect
@@ -145,6 +154,7 @@ require (
 	github.com/google/pprof v0.0.0-20240207164012-fb44976bdcd5 // indirect
 	github.com/google/uuid v1.5.0 // indirect
 	github.com/gookit/color v1.5.3 // indirect
+	github.com/gookit/goutil v0.6.10 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gxed/hashland/keccakpg v0.0.1 // indirect
@@ -176,6 +186,7 @@ require (
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
 	github.com/jbenet/goprocess v0.1.4 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
+	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.17.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.7 // indirect
@@ -199,8 +210,8 @@ require (
 	github.com/marten-seemann/tcp v0.0.0-20210406111302-dfbc87cc63fd // indirect
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/mattn/go-runewidth v0.0.15 // indirect
 	github.com/mattn/go-tty v0.0.3 // indirect
+	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/mikioh/tcpinfo v0.0.0-20190314235526-30a79bb1804b // indirect
 	github.com/mikioh/tcpopt v0.0.0-20190314235656-172688c1accc // indirect
 	github.com/minio/blake2b-simd v0.0.0-20160723061019-3f5f724cb5b1 // indirect
@@ -241,7 +252,6 @@ require (
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 	github.com/taubyte/go-sdk-symbols v0.2.7 // indirect
-	github.com/taubyte/go-specs v0.10.6 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.0 // indirect
 	github.com/unrolled/secure v1.0.9 // indirect
@@ -264,6 +274,7 @@ require (
 	golang.org/x/sync v0.6.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/tools v0.18.0 // indirect
+	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	gonum.org/v1/gonum v0.14.0 // indirect
 	google.golang.org/appengine v1.6.8 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240108191215-35c7eff3a6b1 // indirect
