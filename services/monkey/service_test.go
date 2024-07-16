@@ -59,7 +59,7 @@ func TestService(t *testing.T) {
 		AssetCid: make(map[string]string),
 	}
 	successful_job.Meta.Repository.ID = 1
-	if err = u.Monkey().Patrick().(*starfish).AddJob(t, u.Monkey().Node(), successful_job); err != nil {
+	if err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), successful_job); err != nil {
 		t.Error(err)
 		return
 	}
@@ -71,7 +71,7 @@ func TestService(t *testing.T) {
 		AssetCid: make(map[string]string),
 	}
 	failed_job.Meta.Repository.ID = 1
-	if err = u.Monkey().Patrick().(*starfish).AddJob(t, u.Monkey().Node(), failed_job); err != nil {
+	if err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), failed_job); err != nil {
 		t.Error(err)
 		return
 	}
