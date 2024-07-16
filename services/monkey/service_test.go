@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	_ "github.com/taubyte/tau/clients/p2p/monkey"
+	"github.com/taubyte/tau/clients/p2p/patrick/mock"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
@@ -16,7 +17,7 @@ import (
 
 func init() {
 	NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
-		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
+		return &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 }
 
@@ -58,7 +59,7 @@ func TestService(t *testing.T) {
 		AssetCid: make(map[string]string),
 	}
 	successful_job.Meta.Repository.ID = 1
-	if err = u.Monkey().Patrick().(*starfish).AddJob(t, u.Monkey().Node(), successful_job); err != nil {
+	if err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), successful_job); err != nil {
 		t.Error(err)
 		return
 	}
@@ -70,7 +71,7 @@ func TestService(t *testing.T) {
 		AssetCid: make(map[string]string),
 	}
 	failed_job.Meta.Repository.ID = 1
-	if err = u.Monkey().Patrick().(*starfish).AddJob(t, u.Monkey().Node(), failed_job); err != nil {
+	if err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), failed_job); err != nil {
 		t.Error(err)
 		return
 	}
