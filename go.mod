@@ -4,7 +4,9 @@ go 1.21.1
 
 toolchain go1.22.0
 
+
 require (
+	github.com/Qu-Ack/tau/clients/p2p/patrick/mock v0.0.0
 	github.com/alecthomas/units v0.0.0-20231202071711-9a357b53e9c9
 	github.com/avast/retry-go v3.0.0+incompatible
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible

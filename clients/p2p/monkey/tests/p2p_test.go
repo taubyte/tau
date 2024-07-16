@@ -2,10 +2,8 @@ package tests
 
 import (
 	"context"
-	"testing"
-	"time"
-
 	p2p "github.com/taubyte/tau/clients/p2p/monkey"
+
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
@@ -14,6 +12,8 @@ import (
 	_ "github.com/taubyte/tau/services/hoarder"
 	"github.com/taubyte/tau/services/monkey"
 	"gotest.tools/v3/assert"
+	"testing"
+	"time"
 )
 
 func TestMonkeyClient(t *testing.T) {
@@ -57,7 +57,7 @@ func TestMonkeyClient(t *testing.T) {
 	fakJob.Meta.Repository.SSHURL = ""
 	fakJob.Meta.Repository.Provider = "github"
 
-	err = u.Monkey().Patrick().(*starfish).AddJob(t, u.Monkey().Node(), fakJob)
+	err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), fakJob)
 	if err != nil {
 		t.Error(err)
 		return
