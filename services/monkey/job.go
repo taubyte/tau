@@ -1,7 +1,6 @@
 package monkey
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -50,6 +49,12 @@ func (m *Monkey) RunJob() (err error) {
 				repoType = compilerCommon.ConfigRepository
 			}
 		}
+
+		// @TODO: read maxRetries & waitBeforeRetry from global variables
+		_, err = m.getGithubDeploymentKeyWithRetry(2, 5*time.Second, &gitRepo, ac, repo.ID)
+		if err != nil {
+			return fmt.Errorf("auth github get failed with: %w", err)
+		}
 	}
 
 	repo.Provider = strings.ToLower(repo.Provider)
@@ -83,25 +88,11 @@ func (m *Monkey) RunJob() (err error) {
 			return fmt.Errorf("auth github get failed with: %w", err)
 		}
 
-	}
-
-	// TODO: This is tempororary, let mechanism retry this, if len() == 0 fail
-	var deployKey string
-	for i := 1; i < 3; i++ {
-		deployKey = gitRepo.PrivateKey()
-		if len(deployKey) != 0 {
-			break
-		}
-
-		logger.Debug("Deploy key is empty, retrying")
-		time.Sleep(5 * time.Second)
-		gitRepo, err = ac.Repositories().Github().Get(repo.ID)
+		// @TODO: read maxRetries & waitBeforeRetry from global variables
+		_, err = m.getGithubDeploymentKeyWithRetry(2, 5*time.Second, &gitRepo, ac, repo.ID)
 		if err != nil {
 			return fmt.Errorf("auth github get failed with: %w", err)
 		}
-	}
-	if len(deployKey) < 1 {
-		return errors.New("getting deploy key failed")
 	}
 
 	c := jobs.Context{
