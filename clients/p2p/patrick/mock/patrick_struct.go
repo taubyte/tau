@@ -40,7 +40,7 @@ func (s *Starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error
 
 	err = peerC.PubSubPublish(context.TODO(), patrickSpecs.PubSubIdent, job_bytes)
 	if err != nil {
-		return fmt.Errorf("Publish job failed: %w", err)
+		return fmt.Errorf("publish job failed: %w", err)
 	}
 
 	return nil
@@ -49,11 +49,11 @@ func (s *Starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error
 func (s *Starfish) Lock(jid string, eta uint32) error {
 	job, ok := s.Jobs[jid]
 	if !ok {
-		return fmt.Errorf("Can't find job %s", jid)
+		return fmt.Errorf("can't find job %s", jid)
 	}
 
 	if job.Status != 0 {
-		return fmt.Errorf("Job `%s` already locked", jid)
+		return fmt.Errorf("job `%s` already locked", jid)
 	}
 	job.Status = patrick.JobStatusLocked
 	return nil
@@ -79,25 +79,25 @@ func (s *Starfish) Failed(jid string, cid_log map[string]string, assetCid map[st
 
 // added to satisfy the patrick interface
 func (s *Starfish) Get(jid string) (*patrick.Job, error) {
-	return nil, fmt.Errorf("Get Not Implemented")
+	return nil, fmt.Errorf("get not implemented")
 }
 
 // added to satisfy the patrick interface
 func (s *Starfish) List() ([]string, error) {
-	return nil, fmt.Errorf("List Not Implemented")
+	return nil, fmt.Errorf("list not implemented")
 }
 
 // added to satisfy the patrick interface
 func (s *Starfish) Unlock(jid string) error {
-	return fmt.Errorf("Not implemented")
+	return fmt.Errorf("not implemented")
 }
 
 // added to satisfy the patrick interface
 func (s *Starfish) Timeout(jid string) error {
-	return fmt.Errorf("Not implemented")
+	return fmt.Errorf("not implemented")
 }
 
 // added to satisfy the patrick interface
 func (s *Starfish) Cancel(jid string, cid_log map[string]string) (interface{}, error) {
-	return nil, fmt.Errorf("Not implemented")
+	return nil, fmt.Errorf("not implemented")
 }
