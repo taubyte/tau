@@ -2,6 +2,9 @@ package tests
 
 import (
 	"context"
+	"testing"
+	"time"
+
 	p2p "github.com/taubyte/tau/clients/p2p/monkey"
 	"github.com/taubyte/tau/clients/p2p/patrick/mock"
 	commonIface "github.com/taubyte/tau/core/common"
@@ -12,8 +15,6 @@ import (
 	_ "github.com/taubyte/tau/services/hoarder"
 	"github.com/taubyte/tau/services/monkey"
 	"gotest.tools/v3/assert"
-	"testing"
-	"time"
 )
 
 func TestMonkeyClient(t *testing.T) {
