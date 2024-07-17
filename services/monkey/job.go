@@ -3,7 +3,6 @@ package monkey
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	authClient "github.com/taubyte/tau/clients/p2p/auth"
 	"github.com/taubyte/tau/core/services/auth"
@@ -37,23 +36,20 @@ func (m *Monkey) RunJob() (err error) {
 	var p *auth.Project
 	repoType := compilerCommon.UnknownRepository
 
-	gitRepo, _ := ac.Repositories().Github().Get(repo.ID)
-	if gitRepo != nil {
-		projectId = gitRepo.Project()
-		if projectId != "" {
-			p = ac.Projects().Get(projectId)
-			switch repo.ID {
-			case p.Git.Code.Id():
-				repoType = compilerCommon.CodeRepository
-			case p.Git.Config.Id():
-				repoType = compilerCommon.ConfigRepository
-			}
-		}
+	gitRepo, err := m.tryGetGitRepo(ac, repo.ID)
 
-		// @TODO: read maxRetries & waitBeforeRetry from global variables
-		_, err = m.getGithubDeploymentKeyWithRetry(2, 5*time.Second, gitRepo, ac, repo.ID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch deployment key: %w", err)
+	if err != nil {
+		return fmt.Errorf("run job failed during fetching with %w", err)
+	}
+
+	projectId = gitRepo.Project()
+	if projectId != "" {
+		p = ac.Projects().Get(projectId)
+		switch repo.ID {
+		case p.Git.Code.Id():
+			repoType = compilerCommon.CodeRepository
+		case p.Git.Config.Id():
+			repoType = compilerCommon.ConfigRepository
 		}
 	}
 
@@ -82,18 +78,7 @@ func (m *Monkey) RunJob() (err error) {
 			return fmt.Errorf("fetch project failed with: %w", err)
 		}
 
-		repoType = compilerCommon.RepositoryType(ToNumber(repoTypeResponse.Interface()))
-		gitRepo, err = ac.Repositories().Github().Get(repo.ID)
-		if err != nil {
-			return fmt.Errorf("auth github get failed with: %w", err)
-		}
-
-		// Retry again because gitRepo might have changed
-		// @TODO: read maxRetries & waitBeforeRetry from global variables
-		_, err = m.getGithubDeploymentKeyWithRetry(2, 5*time.Second, gitRepo, ac, repo.ID)
-		if err != nil {
-			return fmt.Errorf("failed to fetch deployment key: %w", err)
-		}
+		repoType = compilerCommon.RepositoryType(toNumber(repoTypeResponse.Interface()))
 	}
 
 	c := jobs.Context{
@@ -110,6 +95,7 @@ func (m *Monkey) RunJob() (err error) {
 		DVPublicKey:           m.Service.dvPublicKey, // For Domain Validation
 		GeneratedDomainRegExp: m.generatedDomainRegExp,
 	}
+
 	if repoType == compilerCommon.CodeRepository {
 		c.ConfigRepoId = p.Git.Config.Id()
 

@@ -1,7 +1,6 @@
 package monkey
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"reflect"
@@ -10,7 +9,7 @@ import (
 	"github.com/taubyte/tau/core/services/auth"
 )
 
-func ToNumber(in interface{}) int {
+func toNumber(in interface{}) int {
 	i := reflect.ValueOf(in)
 	switch i.Kind() {
 	case reflect.Int64:
@@ -44,25 +43,30 @@ func (m *Monkey) storeLogs(r io.ReadSeeker) (string, error) {
 	return cid, nil
 }
 
-func (m *Monkey) getGithubDeploymentKeyWithRetry(
-	maxRetries int,
-	waitBeforeRetry time.Duration,
-	gitRepo auth.GithubRepository,
+var (
+	GetGitRepoMaxRetries      = 3
+	GetGitRepoWaitBeforeRetry = 5 * time.Second
+)
+
+func (m *Monkey) tryGetGitRepo(
 	ac auth.Client,
 	repoID int,
-) (deployKey string, err error) {
-	for i := 0; i < maxRetries; i++ {
-		deployKey = gitRepo.PrivateKey()
-		if len(deployKey) != 0 {
-			return
-		}
-
-		logger.Debug("Deploy key is empty, retrying")
-		time.Sleep(waitBeforeRetry)
+) (gitRepo auth.GithubRepository, err error) {
+	for i := 0; i < GetGitRepoMaxRetries; i++ {
 		gitRepo, err = ac.Repositories().Github().Get(repoID)
 		if err != nil {
-			return deployKey, fmt.Errorf("auth github get failed with: %w", err)
+			return gitRepo, fmt.Errorf("fetching repository %d from auth failed with %w", repoID, err)
+		}
+
+		deployKey := gitRepo.PrivateKey()
+		if len(deployKey) != 0 {
+			break
+		}
+
+		if i < GetGitRepoMaxRetries-1 {
+			time.Sleep(GetGitRepoWaitBeforeRetry)
 		}
 	}
-	return deployKey, errors.New("getting deploy key failed")
+
+	return gitRepo, nil
 }
