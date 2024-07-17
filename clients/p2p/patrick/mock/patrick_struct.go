@@ -1,4 +1,4 @@
-package tests
+package mock
 
 import (
 	"context"
@@ -14,23 +14,23 @@ import (
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 )
 
-type starfish struct {
+type Starfish struct {
 	Jobs map[string]*patrick.Job
 }
 
-func (s *starfish) Close() {
+func (s *Starfish) Close() {
 	s.Jobs = nil
 }
 
-func (s *starfish) Peers(...peerCore.ID) patrick.Client {
+func (s *Starfish) Peers(...peerCore.ID) patrick.Client {
 	return s
 }
 
-func (s *starfish) DatabaseStats() (kvdbIface.Stats, error) {
+func (s *Starfish) DatabaseStats() (kvdbIface.Stats, error) {
 	return kvdb.NewStats(), nil
 }
 
-func (s *starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error {
+func (s *Starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error {
 	job_bytes, err := cbor.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("marshal job to add failed: %w", err)
@@ -40,37 +40,37 @@ func (s *starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error
 
 	err = peerC.PubSubPublish(context.TODO(), patrickSpecs.PubSubIdent, job_bytes)
 	if err != nil {
-		return fmt.Errorf("Publish job failed: %w", err)
+		return fmt.Errorf("publish job failed: %w", err)
 	}
 
 	return nil
 }
 
-func (s *starfish) Lock(jid string, eta uint32) error {
+func (s *Starfish) Lock(jid string, eta uint32) error {
 	job, ok := s.Jobs[jid]
 	if !ok {
-		return fmt.Errorf("Can't find job %s", jid)
+		return fmt.Errorf("can't find job %s", jid)
 	}
 
 	if job.Status != 0 {
-		return fmt.Errorf("Job `%s` already locked", jid)
+		return fmt.Errorf("job `%s` already locked", jid)
 	}
 	job.Status = patrick.JobStatusLocked
 	return nil
 }
 
-func (s *starfish) IsLocked(jid string) (bool, error) {
+func (s *Starfish) IsLocked(jid string) (bool, error) {
 	return (s.Jobs[jid].Status != 0), nil
 }
 
-func (s *starfish) Done(jid string, cid_log map[string]string, assetCid map[string]string) error {
+func (s *Starfish) Done(jid string, cid_log map[string]string, assetCid map[string]string) error {
 	job := s.Jobs[jid]
 	job.Logs = cid_log
 	job.Status = patrick.JobStatusSuccess
 	return nil
 }
 
-func (s *starfish) Failed(jid string, cid_log map[string]string, assetCid map[string]string) error {
+func (s *Starfish) Failed(jid string, cid_log map[string]string, assetCid map[string]string) error {
 	job := s.Jobs[jid]
 	job.Logs = cid_log
 	job.Status = patrick.JobStatusFailed
@@ -78,26 +78,26 @@ func (s *starfish) Failed(jid string, cid_log map[string]string, assetCid map[st
 }
 
 // added to satisfy the patrick interface
-func (s *starfish) Get(jid string) (*patrick.Job, error) {
-	return nil, fmt.Errorf("Get Not Implemented")
+func (s *Starfish) Get(jid string) (*patrick.Job, error) {
+	return nil, fmt.Errorf("get not implemented")
 }
 
 // added to satisfy the patrick interface
-func (s *starfish) List() ([]string, error) {
-	return nil, fmt.Errorf("List Not Implemented")
+func (s *Starfish) List() ([]string, error) {
+	return nil, fmt.Errorf("list not implemented")
 }
 
 // added to satisfy the patrick interface
-func (s *starfish) Unlock(jid string) error {
-	return fmt.Errorf("Not implemented")
+func (s *Starfish) Unlock(jid string) error {
+	return fmt.Errorf("not implemented")
 }
 
 // added to satisfy the patrick interface
-func (s *starfish) Timeout(jid string) error {
-	return fmt.Errorf("Not implemented")
+func (s *Starfish) Timeout(jid string) error {
+	return fmt.Errorf("not implemented")
 }
 
 // added to satisfy the patrick interface
-func (s *starfish) Cancel(jid string, cid_log map[string]string) (interface{}, error) {
-	return nil, fmt.Errorf("Not implemented")
+func (s *Starfish) Cancel(jid string, cid_log map[string]string) (interface{}, error) {
+	return nil, fmt.Errorf("not implemented")
 }
