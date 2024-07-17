@@ -14,7 +14,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-var testDir = "testdir" // TODO: use temp
+var testDir, _ = os.MkdirTemp("", "testdir")
 
 func injectCert(t *testing.T, client authIface.Client) []byte {
 	cert, key, err := helpers.GenerateCert("*.pass.com")
