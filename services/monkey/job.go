@@ -51,9 +51,9 @@ func (m *Monkey) RunJob() (err error) {
 		}
 
 		// @TODO: read maxRetries & waitBeforeRetry from global variables
-		_, err = m.getGithubDeploymentKeyWithRetry(2, 5*time.Second, &gitRepo, ac, repo.ID)
+		_, err = m.getGithubDeploymentKeyWithRetry(2, 5*time.Second, gitRepo, ac, repo.ID)
 		if err != nil {
-			return fmt.Errorf("auth github get failed with: %w", err)
+			return fmt.Errorf("failed to fetch deployment key: %w", err)
 		}
 	}
 
@@ -88,10 +88,11 @@ func (m *Monkey) RunJob() (err error) {
 			return fmt.Errorf("auth github get failed with: %w", err)
 		}
 
+		// Retry again because gitRepo might have changed
 		// @TODO: read maxRetries & waitBeforeRetry from global variables
-		_, err = m.getGithubDeploymentKeyWithRetry(2, 5*time.Second, &gitRepo, ac, repo.ID)
+		_, err = m.getGithubDeploymentKeyWithRetry(2, 5*time.Second, gitRepo, ac, repo.ID)
 		if err != nil {
-			return fmt.Errorf("auth github get failed with: %w", err)
+			return fmt.Errorf("failed to fetch deployment key: %w", err)
 		}
 	}
 

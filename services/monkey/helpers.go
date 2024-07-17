@@ -44,78 +44,25 @@ func (m *Monkey) storeLogs(r io.ReadSeeker) (string, error) {
 	return cid, nil
 }
 
-// Retry function with a custom condition
-func Retry(maxRetries int, waitBeforeRetry time.Duration, operation interface{}, condition interface{}, args ...interface{}) ([]interface{}, error) {
-	opVal := reflect.ValueOf(operation)
-	condVal := reflect.ValueOf(condition)
-
-	if opVal.Kind() != reflect.Func {
-		return nil, fmt.Errorf("operation must be a function")
-	}
-
-	if condVal.Kind() != reflect.Func {
-		return nil, fmt.Errorf("condition must be a function")
-	}
-
+func (m *Monkey) getGithubDeploymentKeyWithRetry(
+	maxRetries int,
+	waitBeforeRetry time.Duration,
+	gitRepo auth.GithubRepository,
+	ac auth.Client,
+	repoID int,
+) (deployKey string, err error) {
 	for i := 0; i < maxRetries; i++ {
-		in := make([]reflect.Value, len(args))
-		for j, arg := range args {
-			in[j] = reflect.ValueOf(arg)
-		}
-
-		// Call the operation function
-		out := opVal.Call(in)
-		outSlice := make([]interface{}, len(out))
-		for i, v := range out {
-			outSlice[i] = v.Interface()
-		}
-
-		// Apply the condition function
-		condIn := make([]reflect.Value, len(outSlice))
-		for j, arg := range outSlice {
-			condIn[j] = reflect.ValueOf(arg)
-		}
-
-		condResult := condVal.Call(condIn)
-		shouldRetry := condResult[0].Bool()
-
-		if !shouldRetry {
-			return outSlice, nil
-		}
-
-		time.Sleep(waitBeforeRetry)
-	}
-	return nil, errors.New("operation failed after max retries")
-}
-
-func (m *Monkey) getGithubDeploymentKeyWithRetry(maxRetries int, waitBeforeRetry time.Duration, gitRepo *auth.GithubRepository, ac auth.Client, repoID int) (string, error) {
-	operation := func(gitRepo *auth.GithubRepository, ac auth.Client, repoID int) (string, error) {
-		deployKey := (*gitRepo).PrivateKey()
+		deployKey = gitRepo.PrivateKey()
 		if len(deployKey) != 0 {
-			return deployKey, nil
+			return
 		}
-		fmt.Println("Deploy key is empty, retrying...")
-		updatedRepo, err := ac.Repositories().Github().Get(repoID)
-		if err != nil {
-			return "", err
-		}
-		*gitRepo = updatedRepo
-		return updatedRepo.PrivateKey(), nil
-	}
 
-	condition := func(deployKey string, err error) bool {
-		if deployKey == "" {
-			return true // Retry if the result is an empty string
-		}
+		logger.Debug("Deploy key is empty, retrying")
+		time.Sleep(waitBeforeRetry)
+		gitRepo, err = ac.Repositories().Github().Get(repoID)
 		if err != nil {
-			return false // Don't retry if there is an error
+			return deployKey, fmt.Errorf("auth github get failed with: %w", err)
 		}
-		return false // Do not retry if there is no error and result is non-empty
 	}
-
-	result, err := Retry(maxRetries, waitBeforeRetry, operation, condition, gitRepo, ac, repoID)
-	if err != nil {
-		return "", err
-	}
-	return result[0].(string), nil
+	return deployKey, errors.New("getting deploy key failed")
 }
