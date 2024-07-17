@@ -11,12 +11,14 @@ import (
 )
 
 func TestStats(t *testing.T) {
+	testDir, err := os.MkdirTemp("", "testdir")
+	assert.NilError(t, err)
 	defer os.Remove(testDir)
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth": {},
 		},
