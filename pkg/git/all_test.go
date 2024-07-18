@@ -14,21 +14,23 @@ import (
 var (
 	testRepoGitUrl  = "git@github.com:taubyte-test/for-tests.git"
 	testRepoHTTPUrl = "https://github.com/taubyte-test/for-tests.git"
-	testRepoToken   string
 	testRepoUser    = "taubyte-test"
 	testRepoName    = "for-tests"
 	testRepoEmail   = "taubytetest@gmail.com"
 )
 
-func init() {
-	testRepoToken = os.Getenv("TEST_GIT_TOKEN")
+func testRepoToken(t *testing.T) (tkn string) {
+	if tkn := os.Getenv("TEST_GIT_TOKEN"); tkn == "" {
+		t.SkipNow()
+	}
+	return
 }
 
 func TestNew(t *testing.T) {
 	_, err := New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
-		Token(testRepoToken),
+		Token(testRepoToken(t)),
 		Root("/tmp/taf"),
 		Author(testRepoUser, testRepoEmail),
 	)
@@ -44,7 +46,7 @@ func TestTempWithRoot(t *testing.T) {
 	repo, err := New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
-		Token(testRepoToken),
+		Token(testRepoToken(t)),
 		Root(testRoot),
 		Temporary(),
 		Author(testRepoUser, testRepoEmail),
@@ -75,7 +77,7 @@ func TestTempWithNoRoot(t *testing.T) {
 	repo, err := New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
-		Token(testRepoToken),
+		Token(testRepoToken(t)),
 		Temporary(),
 		Author(testRepoUser, testRepoEmail),
 	)
@@ -106,7 +108,7 @@ func TestCommit(t *testing.T) {
 	c, err := New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
-		Token(testRepoToken),
+		Token(testRepoToken(t)),
 		Root("/tmp/taf"),
 		Author(testRepoUser, testRepoEmail),
 	)
@@ -131,7 +133,7 @@ func TestPush(t *testing.T) {
 	c, err := New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
-		Token(testRepoToken),
+		Token(testRepoToken(t)),
 		Root("/tmp/taf"),
 		Author(testRepoUser, testRepoEmail),
 	)
@@ -160,7 +162,7 @@ func TestClone(t *testing.T) {
 	_, err = New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
-		Token(testRepoToken),
+		Token(testRepoToken(t)),
 		Root("/tmp/"+timenow),
 		Author(testRepoUser, testRepoEmail),
 	)
@@ -201,7 +203,7 @@ func TestCloneWithDeployKey(t *testing.T) {
 	ctx, ctxC := context.WithTimeout(context.Background(), 10*time.Second)
 	defer ctxC()
 
-	githubClient := githubApiClient(ctx, testRepoToken)
+	githubClient := githubApiClient(ctx, testRepoToken(t))
 
 	err = injectDeploymentKey(ctx, githubClient, testRepoUser, testRepoName, "go-simple-git-clone-with-deploy-key", pubKey)
 	if err != nil {

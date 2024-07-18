@@ -10,7 +10,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func openTestRepository(ops ...Option) (repo *Repository, deferment func(), err error) {
+func openTestRepository(t *testing.T, ops ...Option) (repo *Repository, deferment func(), err error) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	deferment = func() {
 		ctxC()
@@ -20,7 +20,7 @@ func openTestRepository(ops ...Option) (repo *Repository, deferment func(), err 
 
 	repo, err = New(ctx, append([]Option{
 		URL(fmt.Sprintf("https://github.com/%s/%s.git", testRepoUser, testRepoName)),
-		Token(testRepoToken),
+		Token(testRepoToken(t)),
 		Author(testRepoUser, testRepoEmail),
 		Temporary(),
 
@@ -34,7 +34,7 @@ func openTestRepository(ops ...Option) (repo *Repository, deferment func(), err 
 }
 
 func TestListBranches(t *testing.T) {
-	repo, deferment, err := openTestRepository()
+	repo, deferment, err := openTestRepository(t)
 	if err != nil {
 		t.Error(err)
 		return
