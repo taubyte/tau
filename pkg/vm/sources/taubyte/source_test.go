@@ -2,6 +2,7 @@ package source
 
 import (
 	"bytes"
+	"context"
 	"testing"
 
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
@@ -13,15 +14,18 @@ import (
 func TestSource(t *testing.T) {
 	test_utils.ResetVars()
 
-	_, loader, _, _, _, err := test_utils.Loader(bytes.NewReader(fixtures.Recursive))
+	ctx, ctxC := context.WithCancel(context.Background())
+	defer ctxC()
+
+	_, loader, _, _, _, err := test_utils.Loader(ctx, bytes.NewReader(fixtures.Recursive))
 	assert.NilError(t, err)
 
 	source := New(loader)
 
-	ctx, err := test_utils.Context()
+	tctx, err := test_utils.Context()
 	assert.NilError(t, err)
 
-	sourceModule, err := source.Module(ctx, functionSpec.ModuleName(test_utils.TestFunc.Name))
+	sourceModule, err := source.Module(tctx, functionSpec.ModuleName(test_utils.TestFunc.Name))
 	assert.NilError(t, err)
 
 	sourceData := []byte(sourceModule)
@@ -30,7 +34,7 @@ func TestSource(t *testing.T) {
 	// Test Failures
 
 	// Load Failure: invalid module name does not follow convention <type>/<name>
-	if _, err = source.Module(ctx, test_utils.TestFunc.Name); err == nil {
+	if _, err = source.Module(tctx, test_utils.TestFunc.Name); err == nil {
 		t.Error("expected error")
 	}
 }
