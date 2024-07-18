@@ -12,20 +12,13 @@ import (
 // TODO: use dreamland instead of a deployed auth
 var (
 	authNodeUrl = "https://auth.tau.sandbox.taubyte.com"
-	testToken   = testGitToken()
+	testToken   = os.Getenv("TEST_GIT_TOKEN")
 )
 
-func testGitToken() string {
-	token := os.Getenv("TEST_GIT_TOKEN")
-
-	if token == "" {
-		panic("TEST_GIT_TOKEN not set")
+func newTestClient(t *testing.T) (*Client, error) {
+	if testToken == "" {
+		t.SkipNow()
 	}
-
-	return token
-}
-
-func newTestClient() (*Client, error) {
 	ctx := context.Background()
 	client, err := New(ctx, http.URL(authNodeUrl), http.Auth(testToken), http.Provider(http.Github))
 	if err != nil {
@@ -34,7 +27,10 @@ func newTestClient() (*Client, error) {
 	return client, nil
 }
 
-func newTestUnsecureClient() (*Client, error) {
+func newTestUnsecureClient(t *testing.T) (*Client, error) {
+	if testToken == "" {
+		t.SkipNow()
+	}
 	ctx := context.Background()
 	client, err := New(ctx, http.URL(authNodeUrl), http.Auth(testToken), http.Provider(http.Github), http.Unsecure())
 	if err != nil {
@@ -45,7 +41,7 @@ func newTestUnsecureClient() (*Client, error) {
 
 func TestConnectionToProdNodeWithoutCheckingCertificates(t *testing.T) {
 	t.Run("Given an Unsecure Client with a valid token", func(t *testing.T) {
-		client, err := newTestUnsecureClient()
+		client, err := newTestUnsecureClient(t)
 		assert.NilError(t, err)
 
 		t.Run("Getting /me", func(t *testing.T) {
@@ -58,7 +54,7 @@ func TestConnectionToProdNodeWithoutCheckingCertificates(t *testing.T) {
 
 func TestConnectionToProdNode(t *testing.T) {
 	t.Run("Given a Client with a valid token", func(t *testing.T) {
-		client, err := newTestClient()
+		client, err := newTestClient(t)
 		assert.NilError(t, err)
 
 		t.Run("Getting /me", func(t *testing.T) {
