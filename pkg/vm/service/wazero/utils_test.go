@@ -51,18 +51,22 @@ var (
 
 func newService() (vm.Context, vm.Service, error) {
 	test_utils.ResetVars()
-	_, loader, _, _, _, err := test_utils.Loader(bytes.NewReader(fixtures.Artifact))
+
+	ctx, ctxC := context.WithCancel(context.Background())
+	defer ctxC()
+
+	_, loader, _, _, _, err := test_utils.Loader(ctx, bytes.NewReader(fixtures.Artifact))
 	if err != nil {
 		return nil, nil, err
 	}
 
 	source := sources.New(loader)
-	ctx, err := test_utils.Context()
+	tctx, err := test_utils.Context()
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return ctx, New(ctx.Context(), source), nil
+	return tctx, New(tctx.Context(), source), nil
 }
 
 func newInstance() (vm.Instance, error) {

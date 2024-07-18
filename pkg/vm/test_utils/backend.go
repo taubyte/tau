@@ -2,10 +2,15 @@ package test_utils
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/p2p/keypair"
 	peer "github.com/taubyte/tau/p2p/peer"
+
+	"github.com/taubyte/tau/services/common"
+
 	"github.com/taubyte/tau/pkg/vm/backend/dfs"
 	"github.com/taubyte/tau/pkg/vm/backend/file"
 	"github.com/taubyte/tau/pkg/vm/backend/url"
@@ -17,8 +22,29 @@ type testBackend struct {
 	Cid    string
 }
 
-func DFSBackend() *testBackend {
-	simpleNode := peer.MockNode(context.Background())
+func DFSBackend(ctx context.Context) *testBackend {
+	simpleNode := peer.MockNode(ctx)
+
+	return &testBackend{
+		Backend: dfs.New(simpleNode),
+		simple:  simpleNode,
+	}
+}
+
+func DFSBackendWithNode(ctx context.Context) *testBackend {
+	simpleNode, err := peer.New( // consumer
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		common.SwarmKey(),
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11912)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		panic(err)
+	}
 
 	return &testBackend{
 		Backend: dfs.New(simpleNode),
@@ -40,8 +66,8 @@ func HTTPBackend() vm.Backend {
 	return url.New()
 }
 
-func AllBackends(injectReader io.Reader) (cid string, simpleNode peer.Node, backends []vm.Backend, err error) {
-	dfsBe := DFSBackend()
+func AllBackends(ctx context.Context, injectReader io.Reader) (cid string, simpleNode peer.Node, backends []vm.Backend, err error) {
+	dfsBe := DFSBackendWithNode(ctx)
 	if injectReader != nil {
 		if dfsBe, err = dfsBe.Inject(injectReader); err != nil {
 			return

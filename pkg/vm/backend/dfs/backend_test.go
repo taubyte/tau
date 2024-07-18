@@ -3,6 +3,7 @@ package dfs_test
 import (
 	"bytes"
 	"compress/lzw"
+	"context"
 	"io"
 	"testing"
 
@@ -14,7 +15,10 @@ import (
 )
 
 func TestBackEnd(t *testing.T) {
-	backend, err := test_utils.DFSBackend().Inject(bytes.NewReader(fixtures.Recursive))
+	ctx, ctxC := context.WithCancel(context.Background())
+	defer ctxC()
+
+	backend, err := test_utils.DFSBackend(ctx).Inject(bytes.NewReader(fixtures.Recursive))
 	assert.NilError(t, err)
 	assert.Equal(t, backend.Scheme(), dfs.Scheme)
 
