@@ -17,8 +17,8 @@ type testBackend struct {
 	Cid    string
 }
 
-func DFSBackend() *testBackend {
-	simpleNode := peer.MockNode(context.Background())
+func DFSBackend(ctx context.Context) *testBackend {
+	simpleNode := peer.MockNode(ctx)
 
 	return &testBackend{
 		Backend: dfs.New(simpleNode),
@@ -40,8 +40,8 @@ func HTTPBackend() vm.Backend {
 	return url.New()
 }
 
-func AllBackends(injectReader io.Reader) (cid string, simpleNode peer.Node, backends []vm.Backend, err error) {
-	dfsBe := DFSBackend()
+func AllBackends(ctx context.Context, injectReader io.Reader) (cid string, simpleNode peer.Node, backends []vm.Backend, err error) {
+	dfsBe := DFSBackend(ctx)
 	if injectReader != nil {
 		if dfsBe, err = dfsBe.Inject(injectReader); err != nil {
 			return
