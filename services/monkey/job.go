@@ -37,7 +37,6 @@ func (m *Monkey) RunJob() (err error) {
 	repoType := compilerCommon.UnknownRepository
 
 	gitRepo, err := m.tryGetGitRepo(ac, repo.ID)
-
 	if err != nil {
 		return fmt.Errorf("run job failed during fetching with %w", err)
 	}
