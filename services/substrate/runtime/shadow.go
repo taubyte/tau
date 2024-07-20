@@ -43,7 +43,7 @@ func (f *Function) initShadow() {
 				var wg sync.WaitGroup
 				for i := 0; i < ShadowBuff; i++ {
 					wg.Add(1)
-					go func() {
+					go func() { // too much go routines
 						defer wg.Done()
 						if f.errorCount.Load() < InstanceMaxError && len(f.shadows.instances) < InstanceMaxRequests {
 							shadow, err := f.shadows.newInstance()

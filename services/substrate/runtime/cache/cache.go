@@ -37,7 +37,9 @@ func (c *Cache) Add(serviceable iface.Serviceable, branch string) (iface.Service
 	servList, ok := c.cacheMap[prefix]
 	c.locker.RUnlock()
 	if ok {
+		c.locker.RLock()
 		serviceable, ok := servList[serviceable.Id()]
+		c.locker.RUnlock()
 		if ok {
 			if serviceable.Match(serviceable.Matcher()) == matcherSpec.HighMatch {
 
@@ -103,8 +105,8 @@ func (c *Cache) Get(matcher iface.MatchDefinition, ops iface.GetOptions) ([]ifac
 func (c *Cache) Remove(serviceable iface.Serviceable) {
 	c.locker.Lock()
 	delete(c.cacheMap[serviceable.Matcher().CachePrefix()], serviceable.Id())
-	serviceable.Close()
 	c.locker.Unlock()
+	serviceable.Close()
 }
 
 // validate method checks to see if the serviceable commit matches the current commit.

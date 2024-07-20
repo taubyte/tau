@@ -26,10 +26,14 @@ import (
 )
 
 type Client struct {
-	ctx  context.Context
-	ctxC context.CancelFunc
-	node peer.Node
-	path string
+	ctx         context.Context
+	ctxC        context.CancelFunc
+	node        peer.Node
+	path        string
+	activePeers []peerCore.AddrInfo
+	maxPeers    int
+	morePeers   chan struct{}
+	feedPeers   chan chan peerCore.AddrInfo
 }
 
 type Request struct {
@@ -136,9 +140,14 @@ func (c *Client) Context() context.Context {
 
 func New(node peer.Node, path string) (*Client, error) {
 	c := &Client{
-		node: node,
-		path: path,
+		node:      node,
+		path:      path,
+		maxPeers:  64,
+		morePeers: make(chan struct{}),
+		feedPeers: make(chan chan peerCore.AddrInfo, 64),
 	}
+
+	c.activePeers = make([]peerCore.AddrInfo, 0, c.maxPeers)
 
 	c.ctx, c.ctxC = context.WithCancel(node.Context())
 
@@ -160,8 +169,62 @@ func (c *Client) New(cmd string, opts ...Option) *Request {
 		}
 	}
 
+	go c.discover()
+
 	return r
 }
+
+func (c *Client) refreshFromPeerStore() {}
+func (c *Client) discPeers() <-chan peerCore.AddrInfo {
+	discPeers, err := c.node.Discovery().FindPeers(c.ctx, c.path, discovery.Limit(DiscoveryLimit))
+	if err != nil || discPeers == nil {
+		emptyChan := make(chan peerCore.AddrInfo)
+		close(emptyChan)
+		return emptyChan
+	}
+	return discPeers
+}
+
+func (c *Client) discoverMore() {
+	select {
+	case c.morePeers <- struct{}{}:
+	default:
+	}
+}
+
+func (c *Client) addPeer(any) {
+}
+
+func (c *Client) discover() {
+	c.refreshFromPeerStore()
+	dpeers := c.discPeers()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-time.After(30 * time.Second):
+			c.refreshFromPeerStore()
+		case p, ok := <-dpeers:
+			if !ok {
+				c.discoverMore()
+			}
+			c.addPeer(p)
+		case <-c.morePeers:
+			dpeers = c.discPeers()
+		case ch := <-c.feedPeers:
+			for _, p := range c.activePeers {
+				ch <- p
+			}
+			close(ch)
+		}
+	}
+}
+
+// func (c *Client) peers() <-chan peerCore.AddrInfo {
+// 	ret := make(chan peerCore.AddrInfo, c.maxPeers)
+// 	c.feedPeers <- ret
+// 	return ret
+// }
 
 func (r *Request) Do() (<-chan *Response, error) {
 	if r.err != nil {
@@ -208,7 +271,7 @@ func (c *Client) openStream(pid peerCore.ID) (stream, error) {
 	return stream{Stream: strm, ID: pid}, nil
 }
 
-func (c *Client) discover(ctx context.Context) <-chan peerCore.AddrInfo {
+func (c *Client) discoverO(ctx context.Context) <-chan peerCore.AddrInfo {
 	storedPeers := c.node.Peer().Peerstore().Peers()
 	cap := 32
 	if len(storedPeers) > cap {
@@ -370,7 +433,7 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 	}
 
 	if needMoreStreams {
-		discPeers := c.discover(ctx)
+		discPeers := c.discoverO(ctx)
 		go func() {
 			defer close(strms)
 
@@ -454,15 +517,3 @@ func (c *Client) Send(cmd string, body command.Body, peers ...peerCore.ID) (cr.R
 		return c.syncSend(cmd, Body(body))
 	}
 }
-
-// func (c *Client) SendTo(pid peerCore.ID, cmd string, body command.Body) (cr.Response, error) {
-// 	return c.syncSend(cmd, Body(body), To(pid), Threshold(1))
-// }
-
-// func (c *Client) SendWithTimeout(cmd string, body command.Body, timeout time.Duration) (cr.Response, error) {
-// 	return c.syncSend(cmd, Body(body), Timeout(timeout))
-// }
-
-// func (c *Client) SendToWithTimeout(pid peerCore.ID, cmd string, body command.Body, timeout time.Duration) (cr.Response, error) {
-// 	return c.syncSend(cmd, Body(body), To(pid), Timeout(timeout))
-// }
