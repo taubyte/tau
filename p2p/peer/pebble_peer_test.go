@@ -11,7 +11,7 @@ import (
 
 func TestNewPebblePeer(t *testing.T) {
 	ctx := context.Background()
-	dir, err := os.MkdirTemp("", "peerRoot")
+	dir, err := t.TempDir("", "peerRoot")
 	if err != nil {
 		t.Error(err)
 		return

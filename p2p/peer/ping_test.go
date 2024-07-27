@@ -13,14 +13,14 @@ import (
 func TestPingPeer(t *testing.T) {
 	ctx := context.Background()
 
-	dir1, err := os.MkdirTemp("", "peerRoot1")
+	dir1, err := t.TempDir("", "peerRoot1")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 	defer os.RemoveAll(dir1)
 
-	dir2, err := os.MkdirTemp("", "peerRoot2")
+	dir2, err := t.TempDir("", "peerRoot2")
 	if err != nil {
 		t.Error(err)
 		return

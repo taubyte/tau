@@ -23,7 +23,7 @@ import (
 func TestHoarderClient(t *testing.T) {
 	ctx := context.Background()
 
-	srvRoot, err := os.MkdirTemp("/tmp", "clientSrvRoot")
+	srvRoot, err := t.TempDir("/tmp", "clientSrvRoot")
 	if err != nil {
 		t.Error(err)
 		return

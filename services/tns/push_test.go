@@ -24,7 +24,7 @@ func TestPush(t *testing.T) {
 		time.Sleep(s)
 	}()
 
-	srvRoot, err := os.MkdirTemp("", "srvRoot")
+	srvRoot, err := t.TempDir("", "srvRoot")
 	if err != nil {
 		t.Error(err)
 		return

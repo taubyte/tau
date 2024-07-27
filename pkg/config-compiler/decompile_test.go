@@ -16,7 +16,7 @@ func TestDecompileBasic(t *testing.T) {
 	var gitRoot string
 
 	if runInTemp {
-		gitRoot, err = os.MkdirTemp("", "gitTestRoot")
+		gitRoot, err = t.TempDir("", "gitTestRoot")
 		if err != nil {
 			t.Error(err)
 			return

@@ -226,7 +226,7 @@ func TestHostFs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	tempDir, err := os.MkdirTemp("/tmp", "tau-test")
+	tempDir, err := t.TempDir("/tmp", "tau-test")
 	if err != nil {
 		assert.NilError(t, err)
 	}

@@ -38,7 +38,7 @@ func injectCert(t *testing.T, client authIface.Client) []byte {
 }
 
 func TestInject(t *testing.T) {
-	testDir, err := os.MkdirTemp("", "testdir")
+	testDir, err := t.TempDir("", "testdir")
 	assert.NilError(t, err)
 	defer os.Remove(testDir)
 

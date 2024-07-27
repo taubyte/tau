@@ -29,7 +29,7 @@ func TestStart(t *testing.T) {
 	ctx, ctxC := context.WithTimeout(context.Background(), time.Second*15)
 	defer ctxC()
 
-	root, err := os.MkdirTemp("/tmp", "tau-test")
+	root, err := t.TempDir("/tmp", "tau-test")
 	if err != nil {
 		log.Fatal(err)
 	}
