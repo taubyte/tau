@@ -179,7 +179,7 @@ func TestClone(t *testing.T) {
 }
 
 func TestCloneFail(t *testing.T) {
-	dir, err := t.TempDir("/tmp", t.Name())
+	dir, err := os.MkdirTemp("/tmp", t.Name())
 	assert.NilError(t, err)
 
 	_, err = New(

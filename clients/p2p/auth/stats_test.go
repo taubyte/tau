@@ -11,7 +11,7 @@ import (
 )
 
 func TestStats(t *testing.T) {
-	testDir, err := t.TempDir("", "testdir")
+	testDir, err := os.MkdirTemp("", "testdir")
 	assert.NilError(t, err)
 	defer os.Remove(testDir)
 

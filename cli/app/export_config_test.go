@@ -14,7 +14,7 @@ import (
 )
 
 func setupTestEnvironmentWithKeys(t *testing.T) (string, func()) {
-	root, err := t.TempDir("", "tau-test")
+	root, err := os.MkdirTemp("", "tau-test")
 	if err != nil {
 		t.Fatalf("Failed to create temp directory: %v", err)
 	}
