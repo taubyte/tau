@@ -14,11 +14,8 @@ import (
 )
 
 func setupTestEnvironmentWithKeys(t *testing.T) (string, func()) {
-	root, err := os.MkdirTemp("", "tau-test")
-	if err != nil {
-		t.Fatalf("Failed to create temp directory: %v", err)
-	}
-	cleanup := func() { os.RemoveAll(root) }
+	root := t.TempDir()
+	cleanup := func() {}
 
 	// Creating necessary directories
 	os.MkdirAll(root+"/config/keys", 0750)

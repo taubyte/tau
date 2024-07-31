@@ -3,7 +3,6 @@ package auth_test
 import (
 	"bytes"
 	"encoding/pem"
-	"os"
 	"testing"
 
 	"github.com/taubyte/http/helpers"
@@ -38,14 +37,12 @@ func injectCert(t *testing.T, client authIface.Client) []byte {
 }
 
 func TestInject(t *testing.T) {
-	testDir, err := os.MkdirTemp("", "testdir")
-	assert.NilError(t, err)
-	defer os.Remove(testDir)
+	testDir := t.TempDir()
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err = u.StartWithConfig(&dream.Config{
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth": {},
 			"tns":  {},

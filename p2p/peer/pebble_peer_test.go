@@ -3,7 +3,6 @@ package peer
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 
 	keypair "github.com/taubyte/tau/p2p/keypair"
@@ -11,12 +10,7 @@ import (
 
 func TestNewPebblePeer(t *testing.T) {
 	ctx := context.Background()
-	dir, err := os.MkdirTemp("", "peerRoot")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	defer os.RemoveAll(dir)
+	dir := t.TempDir()
 
 	p1, _ := New(
 		ctx,
