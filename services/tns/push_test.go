@@ -3,7 +3,6 @@ package tns
 import (
 	"context"
 	"fmt"
-	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -24,12 +23,7 @@ func TestPush(t *testing.T) {
 		time.Sleep(s)
 	}()
 
-	srvRoot, err := os.MkdirTemp("", "srvRoot")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	defer os.RemoveAll(srvRoot)
+	srvRoot := t.TempDir()
 
 	srv, err := New(testCtx, &config.Node{
 		Root:        srvRoot,
