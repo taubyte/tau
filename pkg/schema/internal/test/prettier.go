@@ -7,27 +7,28 @@ import (
 
 type PrettierFetchMethod func(path *commonSpec.TnsPath) (pretty.Object, error)
 type PrettierStringMethod func() string
+type PrettierStringSliceMethod func() []string
 
 type Setter interface {
 	Fetch(PrettierFetchMethod)
 	Project(PrettierStringMethod)
-	Branch(PrettierStringMethod)
+	Branches(PrettierStringSliceMethod)
 	AssetCID(cid string)
 }
 
 type Prettier interface {
 	Fetch(path *commonSpec.TnsPath) (pretty.Object, error)
 	Project() string
-	Branch() string
+	Branches() []string
 
 	Set() Setter
 }
 
 type prettier struct {
-	cid     string
-	fetch   PrettierFetchMethod
-	project PrettierStringMethod
-	branch  PrettierStringMethod
+	cid      string
+	fetch    PrettierFetchMethod
+	project  PrettierStringMethod
+	branches PrettierStringSliceMethod
 }
 
 func (p *prettier) Fetch(path *commonSpec.TnsPath) (pretty.Object, error) {
@@ -38,8 +39,8 @@ func (p *prettier) Project() string {
 	return p.project()
 }
 
-func (p *prettier) Branch() string {
-	return p.branch()
+func (p *prettier) Branches() []string {
+	return p.branches()
 }
 
 type setter struct {
@@ -54,8 +55,8 @@ func (s *setter) Project(method PrettierStringMethod) {
 	s.project = method
 }
 
-func (s *setter) Branch(method PrettierStringMethod) {
-	s.branch = method
+func (s *setter) Branches(method PrettierStringSliceMethod) {
+	s.branches = method
 }
 
 func (s *setter) AssetCID(cid string) {
@@ -80,8 +81,8 @@ func NewMockPrettier() Prettier {
 		project: func() string {
 			return "test_project_id"
 		},
-		branch: func() string {
-			return "main"
+		branches: func() []string {
+			return []string{"main"}
 		},
 	}
 

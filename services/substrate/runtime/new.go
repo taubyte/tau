@@ -11,14 +11,14 @@ import (
 
 var logger = log.Logger("tau.substrate.service.vm")
 
-func New(ctx context.Context, serviceable components.FunctionServiceable, branch, commit string) (*Function, error) {
+func New(ctx context.Context, serviceable components.FunctionServiceable) (*Function, error) {
 	if config := serviceable.Config(); config != nil {
 		dFunc := &Function{
 			serviceable:    serviceable,
 			ctx:            ctx,
 			config:         config,
-			branch:         branch,
-			commit:         commit,
+			branch:         serviceable.Branch(),
+			commit:         serviceable.Commit(),
 			coldStarts:     new(atomic.Uint64),
 			totalColdStart: new(atomic.Int64),
 			calls:          new(atomic.Uint64),

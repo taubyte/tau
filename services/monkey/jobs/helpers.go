@@ -114,7 +114,7 @@ func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 
 	c.Job.SetCid(id, cid)
 
-	assetKey, err := methods.GetTNSAssetPath(c.ProjectID, id, specs.DefaultBranch)
+	assetKey, err := methods.GetTNSAssetPath(c.ProjectID, id, c.Job.Meta.Repository.Branch)
 	if err != nil {
 		return err
 	}

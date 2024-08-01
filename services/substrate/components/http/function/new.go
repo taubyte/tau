@@ -34,7 +34,7 @@ func New(srv components.ServiceComponent, object tns.Object, matcher *common.Mat
 
 	f.config.Id = id
 	if f.config.Source == "." { //TODO: eveywhere
-		f.assetId, err = cache.ResolveAssetCid(f, f.branch)
+		f.assetId, err = cache.ResolveAssetCid(f)
 		if err != nil {
 			return nil, fmt.Errorf("getting asset id failed with: %w", err)
 		}

@@ -30,7 +30,7 @@ func New() *Cache {
 }
 
 // Add method adds the serviceable to the given Cache object.
-func (c *Cache) Add(serviceable iface.Serviceable, branch string) (iface.Serviceable, error) {
+func (c *Cache) Add(serviceable iface.Serviceable) (iface.Serviceable, error) {
 	prefix := serviceable.Matcher().CachePrefix()
 
 	c.locker.RLock()
@@ -73,9 +73,9 @@ func (c *Cache) Get(matcher iface.MatchDefinition, ops iface.GetOptions) ([]ifac
 		if ops.MatchIndex != nil {
 			matchIndex = *ops.MatchIndex
 		}
-		branch := ops.Branch
+		branch := ops.Branches
 		if len(branch) < 1 {
-			branch = spec.DefaultBranch
+			branch = spec.DefaultBranches
 		}
 
 		for _, serviceable := range servList {
@@ -108,10 +108,10 @@ func (c *Cache) Remove(serviceable iface.Serviceable) {
 }
 
 // validate method checks to see if the serviceable commit matches the current commit.
-func (c *Cache) validate(serviceable iface.Serviceable, branch string) error {
+func (c *Cache) validate(serviceable iface.Serviceable, branches []string) error {
 	tnsClient := serviceable.Service().Tns()
 	projectId := serviceable.Project()
-	commit, err := tnsClient.Simple().Commit(projectId, branch)
+	commit, _, err := tnsClient.Simple().Commit(projectId, branches...)
 	if err != nil {
 		return fmt.Errorf("getting serviceable `%s` commit failed with: %w", serviceable.Id(), err)
 	}
@@ -120,7 +120,7 @@ func (c *Cache) validate(serviceable iface.Serviceable, branch string) error {
 		return fmt.Errorf("cached pick commit `%s` is outdated, latest commit is `%s`", serviceable.Commit(), commit)
 	}
 
-	cid, err := ResolveAssetCid(serviceable, branch)
+	cid, err := ResolveAssetCid(serviceable)
 	if err != nil {
 		return fmt.Errorf("getting cached serviceable `%s` cid failed with: %w", serviceable.Id(), err)
 	}

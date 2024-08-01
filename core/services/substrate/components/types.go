@@ -25,12 +25,12 @@ if not set then matcherSpec.HighMatch is used
 */
 type GetOptions struct {
 	Validation bool
-	Branch     string
+	Branches   []string
 	MatchIndex *matcherSpec.Index
 }
 
 type Cache interface {
-	Add(serviceable Serviceable, branch string) (Serviceable, error)
+	Add(serviceable Serviceable) (Serviceable, error)
 	Get(MatchDefinition, GetOptions) ([]Serviceable, error)
 	Remove(Serviceable)
 	Close()
@@ -47,6 +47,8 @@ type Serviceable interface {
 	Id() string
 
 	Commit() string
+	Branch() string
+
 	AssetId() string
 
 	Service() ServiceComponent

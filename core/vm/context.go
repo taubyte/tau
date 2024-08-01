@@ -15,8 +15,8 @@ type Context interface {
 	// Resource returns the id of the resource being used.
 	Resource() string
 
-	// Branch returns the branch name used by this resource execution pipeline.
-	Branch() string
+	// Branches returns the branch name used by this resource execution pipeline.
+	Branches() []string
 
 	// Commit returns the commit id used by this resource execution pipeline.
 	Commit() string

@@ -30,7 +30,7 @@ func (w *Website) Provision() (web httpComp.Serviceable, err error) {
 		w.readyCtxC()
 	}()
 
-	cachedWeb, err := w.srv.Cache().Add(w, w.branch)
+	cachedWeb, err := w.srv.Cache().Add(w)
 	if err != nil {
 		return nil, fmt.Errorf("adding website to cache failed with: %w", err)
 	}

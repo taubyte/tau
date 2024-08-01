@@ -2,6 +2,7 @@ package service
 
 import (
 	"testing"
+	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
@@ -9,7 +10,7 @@ import (
 )
 
 func TestPushAll(t *testing.T) {
-	t.Skip("Using an old token/project")
+	//t.Skip("Using an old token/project")
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -46,6 +47,8 @@ func TestPushAll(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	time.Sleep(5 * time.Second)
 
 	err = u.RunFixture("pushAll")
 	if err != nil {

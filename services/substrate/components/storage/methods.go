@@ -11,7 +11,6 @@ import (
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
 	"github.com/taubyte/tau/p2p/peer"
-	spec "github.com/taubyte/tau/pkg/specs/common"
 	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	"github.com/taubyte/tau/services/substrate/components/storage/common"
 )
@@ -26,8 +25,10 @@ func (s *Service) Storage(context storageIface.Context) (storageIface.Storage, e
 	s.storagesLock.RLock()
 	storage, ok := s.storages[hash]
 	s.storagesLock.RLocker().Unlock()
+
 	if !ok {
-		context.Config, err = s.getStoreConfig(context.ProjectId, context.ApplicationId, context.Matcher)
+		var commit, branch string
+		context.Config, commit, branch, err = s.getStoreConfig(context.ProjectId, context.ApplicationId, context.Matcher)
 		if err != nil {
 			return nil, err
 		}
@@ -41,40 +42,35 @@ func (s *Service) Storage(context storageIface.Context) (storageIface.Storage, e
 		s.storages[hash] = storage
 		s.storagesLock.Unlock()
 
-		err = s.pubsubStorage(context, spec.DefaultBranch)
+		err = s.pubsubStorage(context, branch)
 		if err != nil {
 			return nil, fmt.Errorf("pubsub storage `%s` failed with: %s", context.Matcher, err)
-		}
-
-		commit, err := s.Tns().Simple().Commit(context.ProjectId, spec.DefaultBranch)
-		if err != nil {
-			return nil, fmt.Errorf("getting commit for project id `%s` and branch `%s` failed with: %s", context.ProjectId, spec.DefaultBranch, err)
 		}
 
 		s.commitLock.Lock()
 		s.commits[hash] = commit
 		s.commitLock.Unlock()
-	}
-
-	valid, newCommitId, err := s.validateCommit(hash, context.ProjectId, spec.DefaultBranch)
-	if err != nil {
-		return nil, err
-	}
-
-	if !valid {
-		s.storagesLock.Lock()
-		s.commitLock.Lock()
-
-		defer s.storagesLock.Unlock()
-		defer s.commitLock.Unlock()
-
-		storage, err = s.updateStorage(storage)
+	} else {
+		valid, newCommitId, branch, err := s.validateCommit(hash, context.ProjectId) // TODO: is the commit on the same branch?
 		if err != nil {
 			return nil, err
 		}
 
-		s.storages[hash] = storage
-		s.commits[hash] = newCommitId
+		if !valid {
+			s.storagesLock.Lock()
+			s.commitLock.Lock()
+
+			defer s.storagesLock.Unlock()
+			defer s.commitLock.Unlock()
+
+			storage, err = s.updateStorage(storage, branch)
+			if err != nil {
+				return nil, err
+			}
+
+			s.storages[hash] = storage
+			s.commits[hash] = newCommitId
+		}
 	}
 
 	return storage, nil

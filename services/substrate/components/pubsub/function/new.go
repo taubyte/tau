@@ -6,19 +6,20 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
-	spec "github.com/taubyte/tau/pkg/specs/common"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"github.com/taubyte/tau/services/substrate/runtime"
 	"github.com/taubyte/tau/services/substrate/runtime/cache"
 )
 
-func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Function, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {
+func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Function, commit, branch string, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {
 	f := &Function{
 		srv:     srv,
 		config:  config,
 		mmi:     mmi,
 		matcher: matcher,
+		commit:  commit,
+		branch:  branch,
 	}
 
 	f.instanceCtx, f.instanceCtxC = context.WithCancel(srv.Context())
@@ -31,20 +32,20 @@ func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Fu
 		f.readyCtxC()
 	}()
 
-	if f.Function, err = runtime.New(f.instanceCtx, f, spec.DefaultBranch, f.commit); err != nil {
+	if f.Function, err = runtime.New(f.instanceCtx, f); err != nil {
 		return nil, fmt.Errorf("initializing vm module failed with: %w", err)
 	}
 
-	f.assetId, err = cache.ResolveAssetCid(f, spec.DefaultBranch)
+	f.assetId, err = cache.ResolveAssetCid(f)
 	if err != nil {
 		return nil, fmt.Errorf("getting asset id failed with: %w", err)
 	}
 
-	_f, err := srv.Cache().Add(f, spec.DefaultBranch)
+	_f, err := srv.Cache().Add(f)
 	if err != nil {
 		return nil, fmt.Errorf("adding pubsub function serviceable failed with: %s", err)
 	}
-	if f != _f {
+	if f.assetId != _f.AssetId() {
 		return _f, nil
 	}
 

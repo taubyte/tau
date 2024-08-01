@@ -19,6 +19,7 @@ type Function struct {
 
 	matcher *common.MatchDefinition
 	commit  string
+	branch  string
 
 	assetId string
 

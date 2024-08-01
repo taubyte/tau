@@ -8,8 +8,8 @@ import (
 	"github.com/taubyte/tau/pkg/specs/methods"
 )
 
-func (s *simpleClient) Project(projectID, branch string) (interface{}, error) {
-	commit, err := s.Commit(projectID, branch)
+func (s *simpleClient) Project(projectID string, branches ...string) (interface{}, error) {
+	commit, branch, err := s.Commit(projectID, branches...)
 	if err != nil {
 		return nil, err
 	}

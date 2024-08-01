@@ -10,12 +10,15 @@ import (
 func New(ctx gocontext.Context, options ...Option) (vm.Context, error) {
 	c := &vmContext{}
 	c.ctx, c.ctxC = gocontext.WithCancel(ctx)
-	c.branch = spec.DefaultBranch
 
 	for _, opt := range options {
 		if err := opt(c); err != nil {
 			return nil, err
 		}
+	}
+
+	if len(c.branches) == 0 {
+		c.branches = spec.DefaultBranches
 	}
 
 	return c, nil

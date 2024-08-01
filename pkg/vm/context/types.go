@@ -9,6 +9,6 @@ type vmContext struct {
 	projectId     string
 	applicationId string
 	resourceId    string
-	branch        string
+	branches      []string
 	commit        string
 }

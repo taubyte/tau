@@ -20,7 +20,7 @@ var FakeFetchMethod = func(tns.Path) (tns.Object, error) {
 	return nil, nil
 }
 
-var FakeCurrentMethod = func(r tns.Object, branch string) ([]tns.Path, error) {
+var FakeCurrentMethod = func(r tns.Object, branches []string) ([]tns.Path, error) {
 	return nil, nil
 }
 
@@ -50,8 +50,8 @@ func (f ResponseObject) Path() tns.Path {
 	return f.InnerPath
 }
 
-func (f ResponseObject) Current(branch string) ([]tns.Path, error) {
-	return FakeCurrentMethod(f, branch)
+func (f ResponseObject) Current(branches []string) ([]tns.Path, error) {
+	return FakeCurrentMethod(f, branches)
 }
 
 func (tc *TestClient) Simple() tns.SimpleIface {

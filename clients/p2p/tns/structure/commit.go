@@ -3,20 +3,32 @@ package structure
 import (
 	"fmt"
 
+	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/pkg/specs/common"
 )
 
-func (c *Structure[T]) Commit(projectId, branch string) (string, error) {
-	commitObj, err := c.tns.Fetch(common.Current(projectId, branch))
-	if err != nil {
-		return "", err
+func (c *Structure[T]) Commit(projectId string, branches ...string) (commit, branch string, err error) {
+	var (
+		commitObj tns.Object
+		ok        bool
+	)
+
+	for _, b := range branches {
+		commitObj, err = c.tns.Fetch(common.Current(projectId, b))
+		if err != nil {
+			continue
+		}
+
+		iface := commitObj.Interface()
+		if commit, ok = iface.(string); ok {
+			branch = b
+			break
+		}
 	}
 
-	iface := commitObj.Interface()
-	commit, ok := iface.(string)
-	if !ok {
-		return "", fmt.Errorf("Commit not found for %s/%s: %v", branch, projectId, iface)
+	if commit == "" {
+		err = fmt.Errorf("commit not found for %s in %v", projectId, branches)
 	}
 
-	return commit, nil
+	return
 }

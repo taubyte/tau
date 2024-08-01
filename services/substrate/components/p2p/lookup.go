@@ -18,14 +18,14 @@ func (s *Service) CheckTns(matcherIface commonIface.MatchDefinition) ([]commonIf
 		return nil, fmt.Errorf("matcher not correct type expected (%T) got (%T)", new(common.MatchDefinition), matcherIface)
 	}
 
-	functions, err := s.Tns().Function().All(matcher.Project, matcher.Application, spec.DefaultBranch).List()
+	functions, commit, branch, err := s.Tns().Function().All(matcher.Project, matcher.Application, spec.DefaultBranches...).List()
 	if err != nil {
 		return nil, err
 	}
 
 	for _, objectPathIface := range functions {
 		var serv commonIface.Serviceable
-		if serv, err = function.New(s, *objectPathIface, matcher); err != nil {
+		if serv, err = function.New(s, *objectPathIface, commit, branch, matcher); err != nil {
 			common.Logger.Error("Getting Serviceable function failed with:", err.Error())
 			continue
 		}

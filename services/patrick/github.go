@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +18,8 @@ import (
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/utils/id"
 	"gopkg.in/go-playground/webhooks.v5/github"
+
+	commonSpec "github.com/taubyte/tau/pkg/specs/common"
 )
 
 func (srv *PatrickService) githubCheckHookAndExtractSecret(ctx http.Context) (interface{}, error) {
@@ -67,6 +70,7 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 	if err != nil {
 		return nil, fmt.Errorf("creating hook failed with %w", err)
 	}
+
 	// FIXME: move this logic to taubyte/http
 	req := ctx.Request()
 	req.Body = io.NopCloser(bytes.NewReader(ctx.Body()))
@@ -79,6 +83,7 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 		}
 		return nil, fmt.Errorf("parsing hook failed with %w", err)
 	}
+
 	switch payload.(type) {
 	case github.PushPayload:
 		logger.Debugf("Hook triggred. Push: %v", payload)
@@ -99,17 +104,10 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 		newJob.Meta.Repository.Provider = "github"
 		newJob.Id = job_id
 
-		logger.Info("payload", string(pl))
-		logger.Info("job:", newJob.Meta)
-
-		// Setting current branch and main branch
-		if newJob.Meta.Repository.MainBranch == "" {
-			newJob.Meta.Repository.MainBranch = newJob.Meta.Repository.Branch
-		}
 		newJob.Meta.Repository.Branch = strings.Replace(newJob.Meta.Ref, "refs/heads/", "", 1)
 
-		if newJob.Meta.Repository.MainBranch != newJob.Meta.Repository.Branch && !srv.devMode {
-			return nil, fmt.Errorf("only builds main branch `%s` got `%s`", newJob.Meta.Repository.MainBranch, newJob.Meta.Repository.Branch)
+		if !slices.Contains(commonSpec.DefaultBranches, newJob.Meta.Repository.Branch) && !srv.devMode {
+			return nil, fmt.Errorf("only builds main branches %v got `%s`", commonSpec.DefaultBranches, newJob.Meta.Repository.Branch)
 		}
 
 		err = srv.RegisterJob(ctx.Request().Context(), newJob)
@@ -117,7 +115,7 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 			return nil, err
 		}
 
-		// Pushing useful information to tns for auth
+		// Pushing useful information to tns
 		repoInfo := map[string]string{
 			"id":  fmt.Sprintf("%d", newJob.Meta.Repository.ID),
 			"ssh": newJob.Meta.Repository.SSHURL,
@@ -127,6 +125,8 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 		if err != nil {
 			return nil, fmt.Errorf("failed registering new job repo %d into tns with error: %v", newJob.Meta.Repository.ID, err)
 		}
+
+		logger.Error("job full:", newJob)
 
 		return newJob, nil
 	default:

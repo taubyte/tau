@@ -8,15 +8,15 @@ import (
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 
-func (s *Service) GetMessagingsMap(matcher *common.MatchDefinition) (messagingsMap *common.MessagingMap, err error) {
-	messagingsMap = new(common.MessagingMap)
+func (s *Service) getMessagingsMap(matcher *common.MatchDefinition) (*common.MessagingMap, string, string, error) {
+	messagingsMap := new(common.MessagingMap)
 
-	globalMessaging, err := s.Tns().Messaging().Global(matcher.Project, spec.DefaultBranch).List()
+	globalMessaging, commit, branch, err := s.Tns().Messaging().Global(matcher.Project, spec.DefaultBranches...).List()
 	if err != nil {
-		return nil, err
+		return nil, commit, branch, err
 	}
 
-	matchMethod := func(m *structureSpec.Messaging, application string) {
+	matchMethod := func(m *structureSpec.Messaging) {
 		var foundMatch bool
 		if m.Match == matcher.Channel {
 			foundMatch = true
@@ -37,19 +37,17 @@ func (s *Service) GetMessagingsMap(matcher *common.MatchDefinition) (messagingsM
 	}
 
 	for _, m := range globalMessaging {
-		matchMethod(m, "")
+		matchMethod(m)
 	}
 
 	if len(matcher.Application) > 0 {
-		relativeMessaging, err := s.Tns().Messaging().Relative(matcher.Project, matcher.Application, spec.DefaultBranch).List()
-		if err != nil {
-			return nil, err
-		}
-
-		for _, m := range relativeMessaging {
-			matchMethod(m, matcher.Application)
+		relativeMessaging, _, _, err := s.Tns().Messaging().Relative(matcher.Project, matcher.Application, branch).List()
+		if err == nil {
+			for _, m := range relativeMessaging {
+				matchMethod(m)
+			}
 		}
 	}
 
-	return
+	return messagingsMap, commit, branch, nil
 }
