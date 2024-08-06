@@ -126,10 +126,9 @@ func TestPush(t *testing.T) {
 }
 
 func TestCloneFail(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", t.Name())
-	assert.NilError(t, err)
+	dir := t.TempDir()
 
-	_, err = New(
+	_, err := New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
 		Token("wrongauth"),

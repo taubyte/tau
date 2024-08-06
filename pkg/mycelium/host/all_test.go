@@ -2,7 +2,6 @@ package host
 
 import (
 	"context"
-	"os"
 	"path"
 	"strings"
 	"testing"
@@ -226,11 +225,7 @@ func TestHostFs(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
-	tempDir, err := os.MkdirTemp("/tmp", "tau-test")
-	if err != nil {
-		assert.NilError(t, err)
-	}
-	defer os.RemoveAll(tempDir)
+	tempDir := t.TempDir()
 
 	fs, err := h.Fs(ctx)
 	assert.NilError(t, err, "Filesystem creation failed")

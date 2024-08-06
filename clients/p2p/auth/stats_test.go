@@ -1,7 +1,6 @@
 package auth_test
 
 import (
-	"os"
 	"testing"
 
 	commonIface "github.com/taubyte/tau/core/common"
@@ -11,14 +10,12 @@ import (
 )
 
 func TestStats(t *testing.T) {
-	testDir, err := os.MkdirTemp("", "testdir")
-	assert.NilError(t, err)
-	defer os.Remove(testDir)
+	t.TempDir()
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	err = u.StartWithConfig(&dream.Config{
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth": {},
 		},
