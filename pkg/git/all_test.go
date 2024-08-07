@@ -99,7 +99,7 @@ func TestCommit(t *testing.T) {
 	)
 	assert.NilError(t, err)
 
-	err = os.WriteFile(root+"/plain.txt", []byte(fmt.Sprint("Some shit", time.Now())), 0755)
+	err = os.WriteFile(root+"/plain.txt", []byte(fmt.Sprint("hello world", time.Now())), 0755)
 	assert.NilError(t, err)
 
 	err = c.Commit("Adding plain file", "plain.txt")

@@ -14,7 +14,7 @@ func init() {
 }
 
 func TestInstantiate(t *testing.T) {
-	vmModule, err := New(context.Background(), newMockServiceable()) ///[]string{"master"}, id.Generate()
+	vmModule, err := New(context.Background(), newMockServiceable())
 	assert.NilError(t, err)
 
 	rt, _, err := vmModule.Instantiate()
