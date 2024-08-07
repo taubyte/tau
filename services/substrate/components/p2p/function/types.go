@@ -21,6 +21,7 @@ type Function struct {
 
 	matcher *iface.MatchDefinition
 	commit  string
+	branch  string
 
 	readyCtx   context.Context
 	readyCtxC  context.CancelFunc

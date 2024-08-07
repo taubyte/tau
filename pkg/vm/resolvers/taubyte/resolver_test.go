@@ -90,7 +90,7 @@ func TestResolverDFSFailures(t *testing.T) {
 
 	tns, resolver, ctx := basicLookUp(t, false, "", "")
 
-	assetHash, err := methods.GetTNSAssetPath(ctx.Project(), ctx.Resource(), ctx.Branch())
+	assetHash, err := methods.GetTNSAssetPath(ctx.Project(), ctx.Resource(), ctx.Branches()[0])
 	assert.NilError(t, err)
 
 	// Replace asset index with nil value

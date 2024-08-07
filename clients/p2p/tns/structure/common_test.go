@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	testBranch    = "master"
+	testBranches  = []string{"master", "main"}
 	testProjectId = "testid"
 	testAppId     = "someappID"
 )

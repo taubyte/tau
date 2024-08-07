@@ -3,7 +3,6 @@ package peer
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -13,19 +12,9 @@ import (
 func TestPingPeer(t *testing.T) {
 	ctx := context.Background()
 
-	dir1, err := os.MkdirTemp("", "peerRoot1")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	defer os.RemoveAll(dir1)
+	dir1 := t.TempDir()
 
-	dir2, err := os.MkdirTemp("", "peerRoot2")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	defer os.RemoveAll(dir2)
+	dir2 := t.TempDir()
 
 	p1, err := New(
 		ctx,

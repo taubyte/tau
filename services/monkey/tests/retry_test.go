@@ -92,21 +92,30 @@ func TestRunWasmRetry(t *testing.T) {
 	}
 	// FIXME, reduce this time to 5 seconds and patrick will throw a dead pool error
 	time.Sleep(60 * time.Second)
-	err = checkAsset(u.Context(), "2463235f-54ad-43bc-b5ad-e466c194de12", spec.DefaultBranch, simple.PeerNode(), tnsClient)
+	err = checkAsset(u.Context(), "2463235f-54ad-43bc-b5ad-e466c194de12", spec.DefaultBranches, simple.PeerNode(), tnsClient)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	err = checkAsset(u.Context(), "3a1d6781-4a74-42c2-81e0-221f32041825", spec.DefaultBranch, simple.PeerNode(), tnsClient)
+	err = checkAsset(u.Context(), "3a1d6781-4a74-42c2-81e0-221f32041825", spec.DefaultBranches, simple.PeerNode(), tnsClient)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 }
 
-func checkAsset(ctx context.Context, resId, commit string, node peer.Node, tnsClient *tnsClient.Client) error {
-	assetHash, err := methods.GetTNSAssetPath(commonTest.ProjectID, resId, commit)
+func checkAsset(ctx context.Context, resId string, branches []string, node peer.Node, tnsClient *tnsClient.Client) (err error) {
+	for _, branch := range branches {
+		if err = checkAssetOnBranch(ctx, resId, branch, node, tnsClient); err == nil {
+			return
+		}
+	}
+	return
+}
+
+func checkAssetOnBranch(ctx context.Context, resId, branch string, node peer.Node, tnsClient *tnsClient.Client) error {
+	assetHash, err := methods.GetTNSAssetPath(commonTest.ProjectID, resId, branch)
 	if err != nil {
 		return err
 	}

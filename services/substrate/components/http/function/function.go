@@ -27,7 +27,7 @@ func (f *Function) Provision() (function httpComp.Serviceable, err error) {
 		f.readyCtxC()
 	}()
 
-	cachedFunc, err := f.srv.Cache().Add(f, f.branch)
+	cachedFunc, err := f.srv.Cache().Add(f)
 	if err != nil {
 		return nil, fmt.Errorf("adding function to cache failed with: %w", err)
 	}
@@ -39,7 +39,7 @@ func (f *Function) Provision() (function httpComp.Serviceable, err error) {
 		}
 	}
 
-	if f.Function, err = runtime.New(f.instanceCtx, f, f.branch, f.commit); err != nil {
+	if f.Function, err = runtime.New(f.instanceCtx, f); err != nil {
 		return nil, fmt.Errorf("initializing wasm module failed with: %w", err)
 	}
 

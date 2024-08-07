@@ -23,15 +23,18 @@ func Simple(tns tns.Client) tns.SimpleIface {
 
 type AllClient[T structureSpec.Structure] struct {
 	*Structure[T]
-	projectId, appId, branch string
+	projectId, appId string
+	branches         []string
 }
 
 type RelativeClient[T structureSpec.Structure] struct {
 	*Structure[T]
-	projectId, appId, branch string
+	projectId, appId string
+	branches         []string
 }
 
 type GlobalClient[T structureSpec.Structure] struct {
 	*Structure[T]
-	projectId, branch string
+	projectId string
+	branches  []string
 }

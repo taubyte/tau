@@ -20,6 +20,10 @@ func (f *Function) Commit() string {
 	return f.commit
 }
 
+func (f *Function) Branch() string {
+	return f.branch
+}
+
 func (f *Function) Matcher() components.MatchDefinition {
 	return f.matcher
 }

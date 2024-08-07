@@ -58,7 +58,7 @@ func fakeFetch(client tns.Client, websites map[string]structureSpec.Website, fun
 
 		return false
 	}
-	structure.FakeCurrentMethod = func(r tns.Object, branch string) ([]tns.Path, error) {
+	structure.FakeCurrentMethod = func(r tns.Object, branches []string) ([]tns.Path, error) {
 
 		tnsPaths := make([]tns.Path, 0)
 		slice := r.Path().Slice()

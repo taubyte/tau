@@ -20,7 +20,7 @@ var (
 )
 
 func testRepoToken(t *testing.T) (tkn string) {
-	if tkn := os.Getenv("TEST_GIT_TOKEN"); tkn == "" {
+	if tkn = os.Getenv("TEST_GIT_TOKEN"); tkn == "" {
 		t.SkipNow()
 	}
 	return
@@ -31,17 +31,14 @@ func TestNew(t *testing.T) {
 		context.Background(),
 		URL(testRepoHTTPUrl),
 		Token(testRepoToken(t)),
-		Root("/tmp/taf"),
+		Root(t.TempDir()),
 		Author(testRepoUser, testRepoEmail),
 	)
-	if err != nil {
-		t.Errorf("Testing New failed with error: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 }
 
 func TestTempWithRoot(t *testing.T) {
-	testRoot := "someRoot"
+	testRoot := "repo"
 
 	repo, err := New(
 		context.Background(),
@@ -51,10 +48,7 @@ func TestTempWithRoot(t *testing.T) {
 		Temporary(),
 		Author(testRepoUser, testRepoEmail),
 	)
-	if err != nil {
-		t.Errorf("Testing New failed with error: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	if len(repo.Root()) == 0 {
 		t.Errorf("repo.Root() got nothing")
@@ -62,10 +56,7 @@ func TestTempWithRoot(t *testing.T) {
 	}
 
 	_, err = os.Stat(repo.workDir)
-	if err != nil {
-		t.Errorf("Testing New failed with error: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	if path.Join(repo.workDir, testRoot) != repo.root {
 		t.Errorf("Wrong workdir got `%s` expected `%s`", path.Join(repo.workDir, testRoot), repo.root)
@@ -81,10 +72,7 @@ func TestTempWithNoRoot(t *testing.T) {
 		Temporary(),
 		Author(testRepoUser, testRepoEmail),
 	)
-	if err != nil {
-		t.Errorf("Testing New failed with error: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	if len(repo.Root()) == 0 {
 		t.Errorf("repo.Root() got nothing")
@@ -92,10 +80,7 @@ func TestTempWithNoRoot(t *testing.T) {
 	}
 
 	_, err = os.Stat(repo.root)
-	if err != nil {
-		t.Errorf("Testing New failed with error: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	if repo.root != repo.workDir {
 		t.Errorf("No root provided workdir `%s`should be the same as repo root `%s`", repo.workDir, repo.root)
@@ -104,85 +89,46 @@ func TestTempWithNoRoot(t *testing.T) {
 }
 
 func TestCommit(t *testing.T) {
-
+	root := t.TempDir()
 	c, err := New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
 		Token(testRepoToken(t)),
-		Root("/tmp/taf"),
+		Root(root),
 		Author(testRepoUser, testRepoEmail),
 	)
-	if err != nil {
-		t.Errorf("Testing New failed with error: %s", err.Error())
-		return
-	}
-	err = os.WriteFile("/tmp/taf/plain.txt", []byte(fmt.Sprint("Some shit", time.Now())), 0755)
-	if err != nil {
-		t.Errorf("Unable to write file: %v", err)
-		return
-	}
+	assert.NilError(t, err)
+
+	err = os.WriteFile(root+"/plain.txt", []byte(fmt.Sprint("hello world", time.Now())), 0755)
+	assert.NilError(t, err)
 
 	err = c.Commit("Adding plain file", "plain.txt")
-	if err != nil {
-		t.Errorf("Testing commit failed")
-		return
-	}
+	assert.NilError(t, err)
 }
 
 func TestPush(t *testing.T) {
+	root := t.TempDir()
+
 	c, err := New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
 		Token(testRepoToken(t)),
-		Root("/tmp/taf"),
+		Root(root),
 		Author(testRepoUser, testRepoEmail),
 	)
-	if err != nil {
-		t.Errorf("Testing New failed")
-		return
-	}
-	err = c.Push()
-	if err != nil {
-		t.Errorf("Testing push failed")
-		return
-	}
-}
+	assert.NilError(t, err)
 
-func TestClone(t *testing.T) {
+	assert.NilError(t, os.WriteFile(root+"/timestamp.txt", []byte(time.Now().String()), 0640))
 
-	var tn = time.Now()
-	var timenow = tn.String()
+	assert.NilError(t, c.Commit(t.Name(), "."))
 
-	err := os.Mkdir("/tmp/"+timenow, 0755)
-	if err != nil {
-		t.Errorf("Failed to create new directory with %s", err.Error())
-		return
-	}
-
-	_, err = New(
-		context.Background(),
-		URL(testRepoHTTPUrl),
-		Token(testRepoToken(t)),
-		Root("/tmp/"+timenow),
-		Author(testRepoUser, testRepoEmail),
-	)
-	if err != nil {
-		t.Errorf("Testing New failed with error: %s", err.Error())
-		return
-	}
-
-	err = os.RemoveAll("/tmp/" + timenow)
-	if err != nil {
-		t.Errorf("Failed to delete directory %s with %s", timenow, err.Error())
-		return
-	}
+	assert.NilError(t, c.Push())
 }
 
 func TestCloneFail(t *testing.T) {
-	dir, err := os.MkdirTemp("/tmp", t.Name())
-	assert.NilError(t, err)
+	dir := t.TempDir()
 
-	_, err = New(
+	_, err := New(
 		context.Background(),
 		URL(testRepoHTTPUrl),
 		Token("wrongauth"),
@@ -196,9 +142,7 @@ func TestCloneFail(t *testing.T) {
 
 func TestCloneWithDeployKey(t *testing.T) {
 	pubKey, secKey, err := generateDeployKey()
-	if err != nil {
-		t.Error(err)
-	}
+	assert.NilError(t, err)
 
 	ctx, ctxC := context.WithTimeout(context.Background(), 10*time.Second)
 	defer ctxC()
@@ -210,30 +154,13 @@ func TestCloneWithDeployKey(t *testing.T) {
 		t.Error(err)
 	}
 
-	var tn = time.Now()
-	var timenow = tn.String()
-
-	err = os.Mkdir("/tmp/"+timenow, 0755)
-	if err != nil {
-		t.Errorf("Failed to create new directory with %s", err.Error())
-		return
-	}
-
 	_, err = New(
 		context.Background(),
 		URL(testRepoGitUrl),
 		SSHKey(secKey),
-		Root("/tmp/"+timenow),
+		Root(t.TempDir()),
 		Author(testRepoUser, testRepoEmail),
 	)
-	if err != nil {
-		t.Errorf("Testing New failed with error: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
-	err = os.RemoveAll("/tmp/" + timenow)
-	if err != nil {
-		t.Errorf("Failed to delete directory %s with %s", timenow, err.Error())
-		return
-	}
 }

@@ -29,6 +29,7 @@ func (srv *PatrickService) getProjectIDFromJob(job *patrick.Job) (projectID stri
 	if repo != nil {
 		projectID = repo.Project()
 	}
+
 	if len(projectID) == 0 {
 		repo := job.Meta.Repository
 		queryKey := []string{"repositories", strings.ToLower(repo.Provider), fmt.Sprintf("%d", repo.ID)}

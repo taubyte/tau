@@ -46,8 +46,8 @@ func (m *mockedObject) Interface() interface{} {
 	return m.value
 }
 
-func (m *mockedObject) Current(branch string) ([]tns.Path, error) {
-	if len(branch) < 1 {
+func (m *mockedObject) Current(branches []string) ([]tns.Path, error) {
+	if len(branches) == 0 {
 		return nil, errors.New("unknown branch")
 	}
 
@@ -80,7 +80,7 @@ func (m *mockTns) Inject(structure interface{}, config InjectConfig) error {
 		config.Commit = "head_commit"
 	}
 	if len(config.Branch) == 0 {
-		config.Branch = common.DefaultBranch
+		config.Branch = common.DefaultBranches[0]
 	}
 	if len(config.Project) == 0 {
 		config.Project = "test_project"

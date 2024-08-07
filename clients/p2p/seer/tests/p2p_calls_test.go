@@ -71,7 +71,7 @@ func TestCalls(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	fmt.Println("IDSSS ", serviceIds)
+	fmt.Println("serviceIds: ", serviceIds)
 
 	serviceIds2, ok := serviceIds.([]interface{})
 	if !ok {

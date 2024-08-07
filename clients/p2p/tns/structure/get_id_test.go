@@ -127,7 +127,7 @@ func TestGetById(t *testing.T) {
 
 func (s testStructure[T]) runGetIdTest() bool {
 	test := func(g tns.StructureGetter[T]) bool {
-		resourceMap, err := g.List()
+		resourceMap, _, _, err := g.List()
 		if err != nil {
 			s.t.Error(err)
 			return false
@@ -149,16 +149,16 @@ func (s testStructure[T]) runGetIdTest() bool {
 		return true
 	}
 
-	allIface := s.iface.All(testProjectId, testAppId, testBranch)
+	allIface := s.iface.All(testProjectId, testAppId, testBranches...)
 	if !test(allIface) {
 		return false
 	}
 
-	globalIface := s.iface.Global(testProjectId, testBranch)
+	globalIface := s.iface.Global(testProjectId, testBranches...)
 	if !test(globalIface) {
 		return false
 	}
 
-	relativeIface := s.iface.Relative(testProjectId, testAppId, testBranch)
+	relativeIface := s.iface.Relative(testProjectId, testAppId, testBranches...)
 	return test(relativeIface)
 }

@@ -1,15 +1,25 @@
 package service
 
 import (
+	"os"
 	"testing"
+	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	commonTest "github.com/taubyte/tau/dream/helpers"
+	"github.com/taubyte/tau/dream/helpers"
 )
 
+func testRepoToken(t *testing.T) (tkn string) {
+	if tkn = os.Getenv("TEST_GIT_TOKEN"); tkn == "" {
+		t.SkipNow()
+	}
+	return
+}
+
 func TestPushAll(t *testing.T) {
-	t.Skip("Using an old token/project")
+	helpers.GitToken = testRepoToken(t)
+
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -41,11 +51,13 @@ func TestPushAll(t *testing.T) {
 		return
 	}
 
-	err = commonTest.RegisterTestRepositories(u.Context(), mockAuthURL, commonTest.ConfigRepo, commonTest.CodeRepo, commonTest.LibraryRepo)
+	err = helpers.RegisterTestRepositories(u.Context(), mockAuthURL, helpers.ConfigRepo, helpers.CodeRepo, helpers.LibraryRepo)
 	if err != nil {
 		t.Error(err)
 		return
 	}
+
+	time.Sleep(5 * time.Second)
 
 	err = u.RunFixture("pushAll")
 	if err != nil {

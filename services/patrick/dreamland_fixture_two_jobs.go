@@ -21,10 +21,10 @@ import (
 )
 
 func init() {
-	dream.RegisterFixture("createProjectWithJobs", fixture)
+	dream.RegisterFixture("createProjectWithJobs", createProjectWithJobs)
 }
 
-func fixture(u *dream.Universe, params ...interface{}) error {
+func createProjectWithJobs(u *dream.Universe, params ...interface{}) error {
 	simple, err := u.Simple("client")
 	if err != nil {
 		return err
@@ -90,7 +90,7 @@ func fixture(u *dream.Universe, params ...interface{}) error {
 	var response tns.Object
 	response = newEmptyObject()
 	for {
-		commitObj, err := tnsClient.Fetch(spec.Current(commonTest.ProjectID, spec.DefaultBranch))
+		commitObj, err := tnsClient.Fetch(spec.Current(commonTest.ProjectID, spec.DefaultBranches[0]))
 		if err != nil {
 			fmt.Printf("Getting current commit failed with: %s\n", err)
 		} else {
@@ -98,7 +98,7 @@ func fixture(u *dream.Universe, params ...interface{}) error {
 			if !ok {
 				fmt.Printf("Cannot convert commit interface{} `%v` to string\n", commitObj.Interface())
 			} else {
-				response, err = tnsClient.Fetch(methods.ProjectPrefix(commonTest.ProjectID, spec.DefaultBranch, commit))
+				response, err = tnsClient.Fetch(methods.ProjectPrefix(commonTest.ProjectID, spec.DefaultBranches[0], commit))
 				if err != nil {
 					fmt.Printf("Fetching project from prefix failed with: %v\n", err)
 				}

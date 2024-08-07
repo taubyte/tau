@@ -34,7 +34,7 @@ func New(srv components.ServiceComponent, object tns.Object, matcher *common.Mat
 	}
 	w.config.Id = id
 
-	w.assetId, err = cache.ResolveAssetCid(w, w.branch)
+	w.assetId, err = cache.ResolveAssetCid(w)
 	if err != nil {
 		return nil, fmt.Errorf("getting website asset id failed with: %w", err)
 	}

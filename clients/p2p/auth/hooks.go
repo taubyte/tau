@@ -24,8 +24,6 @@ func (h *Hooks) New(obj map[string]interface{}) (iface.Hook, error) {
 		return nil, errors.New("Creating hook: " + err.Error())
 	}
 
-	logger.Error(obj)
-
 	switch provider {
 	case "github":
 		github_id, err := maps.Int(obj, "github_id")

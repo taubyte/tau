@@ -28,10 +28,10 @@ func (s *Service) Get(context storageIface.Context) (storageIface.Storage, error
 	return storage, nil
 }
 
-func (s *Service) getStoreConfig(project, application, matcher string) (*structureSpec.Storage, error) {
-	storages, err := s.Tns().Storage().All(project, application, spec.DefaultBranch).List()
+func (s *Service) getStoreConfig(project, application, matcher string) (*structureSpec.Storage, string, string, error) {
+	storages, commit, branch, err := s.Tns().Storage().All(project, application, spec.DefaultBranches...).List()
 	if err != nil {
-		return nil, fmt.Errorf("listing storage configs failed with: %s", err)
+		return nil, commit, branch, fmt.Errorf("listing storage configs failed with: %s", err)
 	}
 
 	// Find the config that matches the inputted match
@@ -39,18 +39,18 @@ func (s *Service) getStoreConfig(project, application, matcher string) (*structu
 		if storageConfig.Regex {
 			matched, err := regexp.Match(storageConfig.Match, []byte(matcher))
 			if err != nil {
-				return nil, fmt.Errorf("matching regex `%s` with `%s` failed with: %s", matcher, storageConfig.Match, err)
+				return nil, commit, branch, fmt.Errorf("matching regex `%s` with `%s` failed with: %s", matcher, storageConfig.Match, err)
 			}
 
 			if matched {
-				return storageConfig, nil
+				return storageConfig, commit, branch, nil
 			}
 		} else if !storageConfig.Regex {
 			if matcher == storageConfig.Match {
-				return storageConfig, nil
+				return storageConfig, commit, branch, nil
 			}
 		}
 	}
 
-	return nil, fmt.Errorf("`%s` did not match with any storages", matcher)
+	return nil, commit, branch, fmt.Errorf("`%s` did not match with any storages", matcher)
 }

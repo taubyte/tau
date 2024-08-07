@@ -32,12 +32,14 @@ func (f *Factory) W_selfId(ctx context.Context, module vm.Module, functionPtr ui
 	return f.WriteString(module, functionPtr, f.parent.Context().Resource())
 }
 
-func (f *Factory) W_selfBranchSize(ctx context.Context, module vm.Module, branchSizePtr uint32) errno.Error {
-	return f.WriteStringSize(module, branchSizePtr, spec.DefaultBranch)
+// TODO: update SDK
+func (f *Factory) W_selfBranchesSize(ctx context.Context, module vm.Module, branchSizePtr uint32) errno.Error {
+	return f.WriteStringSliceSize(module, branchSizePtr, spec.DefaultBranches)
 }
 
-func (f *Factory) W_selfBranch(ctx context.Context, module vm.Module, branchPtr uint32) errno.Error {
-	return f.WriteString(module, branchPtr, spec.DefaultBranch)
+// TODO: update SDK
+func (f *Factory) W_selfBranches(ctx context.Context, module vm.Module, branchPtr uint32) errno.Error {
+	return f.WriteStringSlice(module, branchPtr, spec.DefaultBranches)
 }
 
 func (f *Factory) W_selfCommitSize(ctx context.Context, module vm.Module, branchSizePtr uint32) errno.Error {
