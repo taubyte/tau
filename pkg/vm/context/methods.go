@@ -27,8 +27,8 @@ func (c *vmContext) Resource() string {
 	return c.resourceId
 }
 
-func (c *vmContext) Branch() string {
-	return c.branch
+func (c *vmContext) Branches() []string {
+	return c.branches
 }
 
 func (c *vmContext) Commit() string {

@@ -25,7 +25,14 @@ func Resource(resourceId string) Option {
 
 func Branch(branch string) Option {
 	return func(ctx *vmContext) error {
-		ctx.branch = branch
+		ctx.branches = append(ctx.branches, branch)
+		return nil
+	}
+}
+
+func Branches(branches ...string) Option {
+	return func(ctx *vmContext) error {
+		ctx.branches = branches
 		return nil
 	}
 }

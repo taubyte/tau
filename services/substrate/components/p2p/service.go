@@ -12,7 +12,7 @@ import (
 )
 
 func (srv *Service) LookupService(matcher *iface.MatchDefinition) (*structureSpec.Service, string, error) {
-	serviceMap, err := srv.Tns().Service().Global(matcher.Project, spec.DefaultBranch).List()
+	serviceMap, _, branch, err := srv.Tns().Service().Global(matcher.Project, spec.DefaultBranches...).List()
 	if err != nil {
 		return nil, "", fmt.Errorf("fetching services for protocol `%s` failed with: %v", matcher.Protocol, err)
 	}
@@ -28,7 +28,7 @@ func (srv *Service) LookupService(matcher *iface.MatchDefinition) (*structureSpe
 
 	if len(matcher.Application) > 0 {
 		if foundService == nil || len(foundService.Id) == 0 {
-			serviceMap, err = srv.Tns().Service().Relative(matcher.Project, matcher.Application, spec.DefaultBranch).List()
+			serviceMap, _, _, err = srv.Tns().Service().Relative(matcher.Project, matcher.Application, branch).List()
 			if err != nil {
 				return nil, "", fmt.Errorf("fetching services for protocol `%s` failed with: %v", matcher.Protocol, err)
 			}

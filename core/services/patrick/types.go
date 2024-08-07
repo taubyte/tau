@@ -29,11 +29,10 @@ type HeadCommit struct {
 }
 
 type Repository struct {
-	ID         int    `json:"id" cbor:"65,keyasint"`
-	Provider   string `json:"provider" cbor:"66,keyasint"`
-	SSHURL     string `json:"ssh_url" cbor:"67,keyasint"`
-	Branch     string `json:"default_branch" cbor:"68,keyasint"`
-	MainBranch string `json:"master_branch" cbor:"69,keyasint"`
+	ID       int    `json:"id" cbor:"65,keyasint"`
+	Provider string `json:"provider" cbor:"66,keyasint"`
+	SSHURL   string `json:"ssh_url" cbor:"67,keyasint"`
+	Branch   string `json:"default_branch" cbor:"68,keyasint"`
 }
 
 type DelayConfig struct {

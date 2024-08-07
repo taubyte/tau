@@ -71,7 +71,7 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 			return fmt.Errorf("fullname does not exist for repo : %s", repoId)
 		}
 
-		err := pushSpecific(u, repoId, fullName, projectId, spec.DefaultBranch)
+		err := pushSpecific(u, repoId, fullName, projectId, spec.DefaultBranches[0]) // TODO: add param to provide branch
 		if err != nil {
 			return err
 		}
@@ -127,7 +127,7 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 	})
 	time.Sleep(1 * time.Second)
 
-	newPayload, err := commonTest.MakeTemplate(intRepoId, fullname, spec.DefaultBranch)
+	newPayload, err := commonTest.MakeTemplate(intRepoId, fullname, spec.DefaultBranches[0]) // TODO: add param to provide branch
 	if err != nil {
 		return fmt.Errorf("make template failed with: %v", err)
 	}

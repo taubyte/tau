@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/pterm/pterm"
-	spec "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/tau/services/monkey/jobs"
 )
@@ -36,7 +35,7 @@ func (ctx resourceContext) stashAndPush(id string, file io.ReadSeekCloser) error
 		return fmt.Errorf("stash failed with: %s", err)
 	}
 
-	assetKey, err := methods.GetTNSAssetPath(ctx.projectId, id, spec.DefaultBranch)
+	assetKey, err := methods.GetTNSAssetPath(ctx.projectId, id, ctx.branch)
 	if err != nil {
 		return err
 	}

@@ -17,6 +17,6 @@ func setBranch(u *dream.Universe, args ...interface{}) error {
 		return errors.New("expected branch argument to be string")
 	}
 
-	spec.DefaultBranch = branch
+	spec.DefaultBranches = []string{branch}
 	return nil
 }

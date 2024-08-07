@@ -67,8 +67,8 @@ func multiverse(multiverse *client.Client) *cli.Command {
 			&cli.StringFlag{
 				Name:        "branch",
 				Usage:       "Set branch",
-				DefaultText: spec.DefaultBranch,
-				Value:       spec.DefaultBranch,
+				DefaultText: spec.DefaultBranches[0],
+				Value:       spec.DefaultBranches[0],
 				Aliases:     []string{"b"},
 			},
 		},
@@ -79,7 +79,7 @@ func multiverse(multiverse *client.Client) *cli.Command {
 func runMultiverse(multiverse *client.Client) cli.ActionFunc {
 	return func(c *cli.Context) (err error) {
 		// TODO this is ugly, and we should be able to start a universe on a specific branch
-		spec.DefaultBranch = c.String("branch")
+		spec.DefaultBranches = []string{c.String("branch")}
 
 		if c.Bool("listen-on-all") {
 			dream.DefaultHost = "0.0.0.0"

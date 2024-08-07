@@ -18,6 +18,10 @@ func (f *Function) Commit() string {
 	return f.commit
 }
 
+func (f *Function) Branch() string {
+	return f.branch
+}
+
 func (f *Function) Project() string {
 	return f.matcher.Project
 }

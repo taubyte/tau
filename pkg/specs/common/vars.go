@@ -14,7 +14,7 @@ const (
 )
 
 // TODO remove this and iterate, default branch should be gathered from a given repository
-var DefaultBranch = "master"
+var DefaultBranches = []string{"main", "master"}
 
 const (
 	Auth      = "auth"

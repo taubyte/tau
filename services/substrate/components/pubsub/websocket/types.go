@@ -20,6 +20,9 @@ type WebSocket struct {
 	project   string
 	mmi       common.MessagingMapItem
 	matcher   *common.MatchDefinition
+
+	commit string
+	branch string
 }
 
 func (w *WebSocket) Close() {

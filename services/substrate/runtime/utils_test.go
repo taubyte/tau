@@ -63,6 +63,13 @@ func (*mockServiceable) Config() *structureSpec.Function        { return &struct
 func (m *mockServiceable) Service() components.ServiceComponent { return m.service }
 func (*mockServiceable) Close()                                 {}
 
+func (*mockServiceable) Commit() string { return "2224d3f23b7689c81f0aec961e17ca5ffc85df7e" }
+func (*mockServiceable) Branch() string { return "main" }
+
+func (*mockServiceable) AssetId() string {
+	return "baguqeerasords4njcts6vs7qvdjfcvgnume4hqohf65zsfguprqphs3icwea"
+}
+
 func (*mockService) Verbose() bool           { return false }
 func (m *mockService) Vm() vm.Service        { return m.vm }
 func (*mockService) Orbitals() []vm.Plugin   { return nil }

@@ -40,7 +40,11 @@ func (ws *WebSocket) Match(matcher components.MatchDefinition) (currentMatchInde
 }
 
 func (ws *WebSocket) Commit() string {
-	return ws.matcher.Commit
+	return ws.commit
+}
+
+func (ws *WebSocket) Branch() string {
+	return ws.branch
 }
 
 func (ws *WebSocket) Validate(matcher components.MatchDefinition) error {

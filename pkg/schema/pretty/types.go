@@ -11,7 +11,7 @@ type Object interface {
 type Prettier interface {
 	Fetch(path *commonSpec.TnsPath) (Object, error)
 	Project() string
-	Branch() string
+	Branches() []string
 }
 
 type PrettyResource interface {

@@ -17,6 +17,10 @@ func (w *Website) Commit() string {
 	return w.commit
 }
 
+func (w *Website) Branch() string {
+	return w.branch
+}
+
 func (w *Website) Matcher() commonIface.MatchDefinition {
 	return w.matcher
 }

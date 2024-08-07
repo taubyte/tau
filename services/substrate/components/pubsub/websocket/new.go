@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 
-func New(srv common.LocalService, mmi common.MessagingMapItem, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {
+func New(srv common.LocalService, mmi common.MessagingMapItem, commit, branch string, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {
 	ctx, ctxC := context.WithCancel(srv.Context())
 	ws := &WebSocket{
 		ctx:     ctx,
@@ -15,13 +15,18 @@ func New(srv common.LocalService, mmi common.MessagingMapItem, matcher *common.M
 		srv:     srv,
 		mmi:     mmi,
 		matcher: matcher,
+		commit:  commit,
+		branch:  branch,
 	}
+
 	ws.project = matcher.Project
 
 	err := AttachWebSocket(ws)
 	if err != nil {
 		return nil, err
 	}
+
+	ws.Commit()
 
 	return ws, nil
 }

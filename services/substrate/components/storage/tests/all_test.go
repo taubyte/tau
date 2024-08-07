@@ -538,7 +538,7 @@ func TestAll(t *testing.T) {
 	err = compiler.Publish(tnsClient)
 	assert.NilError(t, err)
 
-	commitId, err := tnsClient.Simple().Commit(projectString, "master")
+	commitId, _, err := tnsClient.Simple().Commit(projectString, "master")
 	assert.NilError(t, err)
 
 	if commitId != expectedCommitId {

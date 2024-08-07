@@ -41,18 +41,22 @@ func (f *function) Prettify(p pretty.Prettier) map[string]interface{} {
 		return obj
 	}
 
-	tnsPath, err := methods.GetTNSAssetPath(p.Project(), id, p.Branch())
-	if err != nil {
-		obj["Error"] = err
-		return obj
+	for _, branch := range p.Branches() {
+		tnsPath, err := methods.GetTNSAssetPath(p.Project(), id, branch)
+		if err != nil {
+			obj["Error"] = err
+			continue
+		}
+
+		assetCid, err := p.Fetch(tnsPath)
+		if err != nil {
+			obj["Error"] = err
+			continue
+		}
+
+		obj["Asset"] = assetCid.Interface()
+		delete(obj, "Error")
 	}
 
-	assetCid, err := p.Fetch(tnsPath)
-	if err != nil {
-		obj["Error"] = err
-		return obj
-	}
-
-	obj["Asset"] = assetCid.Interface()
 	return obj
 }

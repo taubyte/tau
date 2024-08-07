@@ -66,17 +66,17 @@ func (s *resolver) Lookup(ctx vm.Context, name string) (ma.Multiaddr, error) {
 func projectRelativeToCid(ctx vm.Context, tns tns.Client, moduleType string, moduleName string) (ma.Multiaddr, error) {
 	project := ctx.Project()
 	application := ctx.Application()
-	branch := ctx.Branch()
+	branches := ctx.Branches()
 
 	// Get current commit index with function context Application
-	currentPaths, err := currentWasmModule(tns, moduleType, moduleName, project, application, branch)
+	currentPaths, err := currentWasmModule(tns, moduleType, moduleName, project, application, branches...)
 	if err != nil {
 		if len(application) < 1 {
 			return nil, err
 		}
 
 		// If no current commit index found, with a non empty application try global
-		currentPaths, err = currentWasmModule(tns, moduleType, moduleName, project, "", branch)
+		currentPaths, err = currentWasmModule(tns, moduleType, moduleName, project, "", branches...)
 		if err != nil {
 			return nil, fmt.Errorf("looking up global and local modules failed with: %s", err)
 		}
@@ -90,7 +90,7 @@ func projectRelativeToCid(ctx vm.Context, tns tns.Client, moduleType string, mod
 	return ma.NewMultiaddr("/dfs/" + assetCid)
 }
 
-func currentWasmModule(tns tns.Client, moduleType, moduleName, project, application, branch string) ([]tns.Path, error) {
+func currentWasmModule(tns tns.Client, moduleType, moduleName, project, application string, branches ...string) ([]tns.Path, error) {
 	wasmModulePath, err := methods.WasmModulePathFromModule(project, application, moduleType, moduleName)
 	if err != nil {
 		return nil, err
@@ -101,7 +101,7 @@ func currentWasmModule(tns tns.Client, moduleType, moduleName, project, applicat
 		return nil, fmt.Errorf("looking up module `%s/%s` with app: `%s` in project `%s` failed with: %s", moduleType, moduleName, application, project, err)
 	}
 
-	currentPath, err := wasmIndex.Current(branch)
+	currentPath, err := wasmIndex.Current(branches)
 	if err != nil {
 		return nil, fmt.Errorf("looking up current commit for module `%s/%s` with app: `%s` in project `%s` failed with: %s", moduleType, moduleName, application, project, err)
 	}
