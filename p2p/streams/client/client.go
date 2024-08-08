@@ -510,7 +510,6 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 				case <-ctx.Done():
 					return
 				case peer := <-discPeers:
-					fmt.Println("dico>", peer)
 					if peer == nil {
 						break morePeersLoop
 					}
