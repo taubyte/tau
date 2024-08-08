@@ -4,7 +4,7 @@ import (
 	"github.com/taubyte/tau/p2p/streams/client"
 )
 
-func (c *Client) ProxyHTTP(host, path, method string, ops ...client.Option) (<-chan *client.Response, error) {
+func (c *Client) ProxyHTTP(host, path, method string, ops ...client.Option[client.Request]) (<-chan *client.Response, error) {
 	body := map[string]interface{}{
 		BodyHost:   host,
 		BodyPath:   path,
@@ -16,8 +16,8 @@ func (c *Client) ProxyHTTP(host, path, method string, ops ...client.Option) (<-c
 	return c.client.New(CommandHTTP, append(mainOptions, ops...)...).Do()
 }
 
-func (c *Client) defaultOptions() []client.Option {
-	options := make([]client.Option, 0, 10)
+func (c *Client) defaultOptions() []client.Option[client.Request] {
+	options := make([]client.Option[client.Request], 0, 10)
 	params := c.defaults
 	if c.callback != nil {
 		params = c.callback()
