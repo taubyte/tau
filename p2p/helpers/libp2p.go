@@ -244,9 +244,9 @@ func newPeerSource(hostGetter func() host.Host, dhtGetter func() *dual.DHT) auto
 			// Attempt to put peers on r if we have space,
 			// otherwise return (we reached numPeers)
 			select {
-			case r <- dhtPeer:
 			case <-ctx.Done():
 				return r
+			case r <- dhtPeer:
 			default:
 				return r
 			}

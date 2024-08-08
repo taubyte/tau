@@ -31,19 +31,19 @@ func (f *Function) initShadow() {
 
 		for {
 			select {
+			case <-f.shadows.ctx.Done():
+				return
 			case <-coolDown.C:
 				if errCount := f.errorCount.Load(); errCount > 0 {
 					f.errorCount.Store(errCount / 2)
 				}
 			case <-ticker.C:
 				f.shadows.gc()
-			case <-f.shadows.ctx.Done():
-				return
 			case <-f.shadows.more:
 				var wg sync.WaitGroup
 				for i := 0; i < ShadowBuff; i++ {
 					wg.Add(1)
-					go func() {
+					go func() { // too much go routines
 						defer wg.Done()
 						if f.errorCount.Load() < InstanceMaxError && len(f.shadows.instances) < InstanceMaxRequests {
 							shadow, err := f.shadows.newInstance()

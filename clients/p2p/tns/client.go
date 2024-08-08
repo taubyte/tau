@@ -71,7 +71,7 @@ func (c *Client) Fetch(path tns.Path) (tns.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		c.cache.put(path, object)
+		c.cache.put(path, object) // this will start a go func to watch FIX
 	}
 
 	return &responseObject{

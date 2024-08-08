@@ -74,14 +74,14 @@ func (kvd *kvDatabase) ListRegExAsync(ctx context.Context, prefix string, regexs
 		source := result.Next()
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case entry, ok := <-source:
 				if !ok || entry.Error != nil {
 					return
 				}
 
 				c <- entry.Key
-			case <-ctx.Done():
-				return
 			case <-time.After(ReadQueryResultTimeout):
 				return
 			}
