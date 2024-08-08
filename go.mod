@@ -84,7 +84,7 @@ require (
 	github.com/taubyte/go-project-schema v0.9.3
 	github.com/taubyte/go-specs v0.10.6
 	github.com/taubyte/tau-cli v0.1.8
-	github.com/tetratelabs/wazero v1.6.0
+	github.com/tetratelabs/wazero v1.7.2
 	github.com/vbauerster/mpb/v8 v8.7.3
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7
 	go.starlark.net v0.0.0-20240520160348-046347dcd104
