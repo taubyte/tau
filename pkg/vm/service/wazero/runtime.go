@@ -168,8 +168,8 @@ func (r *runtime) defaultModuleFunctions() []*vm.HostModuleFunctionDefinition {
 			Name: "_sleep",
 			Handler: func(ctx context.Context, dur int64) {
 				select {
-				case <-time.After(time.Duration(dur)):
 				case <-ctx.Done():
+				case <-time.After(time.Duration(dur)):
 				}
 			},
 		},

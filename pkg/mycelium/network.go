@@ -80,9 +80,9 @@ func (n *Network) Run(ctx context.Context, concurrency uint16, handler func(host
 					defer func() { <-sem }()
 					if err := handler(host); err != nil {
 						select {
-						case ch <- err:
 						case <-ctx.Done():
 							return
+						case ch <- err:
 						}
 					}
 				}(h)

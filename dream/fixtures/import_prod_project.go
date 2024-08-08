@@ -107,14 +107,14 @@ func importProdProject(u *dream.Universe, params ...interface{}) error {
 waitingForProject:
 	for {
 		select {
+		case <-ctx.Done():
+			return ctx.Err()
 		case <-time.After(time.Second):
 			for _, branch := range spec.DefaultBranches {
 				if _, err := tnsClient.Fetch(spec.Current(projectId, branch)); err != nil {
 					break waitingForProject
 				}
 			}
-		case <-ctx.Done():
-			return ctx.Err()
 		}
 	}
 

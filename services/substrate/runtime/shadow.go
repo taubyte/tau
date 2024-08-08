@@ -31,14 +31,14 @@ func (f *Function) initShadow() {
 
 		for {
 			select {
+			case <-f.shadows.ctx.Done():
+				return
 			case <-coolDown.C:
 				if errCount := f.errorCount.Load(); errCount > 0 {
 					f.errorCount.Store(errCount / 2)
 				}
 			case <-ticker.C:
 				f.shadows.gc()
-			case <-f.shadows.ctx.Done():
-				return
 			case <-f.shadows.more:
 				var wg sync.WaitGroup
 				for i := 0; i < ShadowBuff; i++ {

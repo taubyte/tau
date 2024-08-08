@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"sync"
 	"time"
 
 	"errors"
-
-	"golang.org/x/exp/slices"
 
 	"github.com/taubyte/tau/p2p/peer"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
@@ -24,17 +23,24 @@ import (
 )
 
 type Client struct {
-	ctx         context.Context
-	ctxC        context.CancelFunc
-	node        peer.Node
-	path        string
-	tag         string
-	activePeers map[peerCore.ID]*peerCore.AddrInfo
-	maxPeers    int
-	maxParallel int
-	morePeers   chan int
-	cleanPeers  chan peerCore.ID
-	feedPeers   chan chan *peerCore.AddrInfo
+	ctx          context.Context
+	ctxC         context.CancelFunc
+	node         peer.Node
+	path         string
+	tag          string
+	activePeers  map[peerCore.ID]*peerCore.AddrInfo
+	maxPeers     int
+	maxParallel  int
+	cleanPeers   chan peerCore.ID
+	peerRequests chan *peerRequest
+	peerFeeds    []*peerRequest
+	requestsWg   sync.WaitGroup
+}
+
+type peerRequest struct {
+	ch   chan *peerCore.AddrInfo
+	ctx  context.Context
+	need int
 }
 
 type Request struct {
@@ -137,6 +143,8 @@ func (rw streamAsReadWriter) Write(p []byte) (int, error) {
 }
 
 var (
+	DiscoveryLimit int = 512
+
 	DefaultMaxPeers    int = 16
 	DefaultMaxParallel int = 64
 	MaxStreamsPerSend  int = 16
@@ -145,13 +153,7 @@ var (
 
 	SendToPeerTimeout time.Duration = 10 * time.Second
 	ConnectTimeout    time.Duration = 500 * time.Millisecond
-
-	//logger log.StandardLogger
 )
-
-// func init() {
-// 	logger = log.Logger("p2p.streams.client")
-// }
 
 func (c *Client) Context() context.Context {
 	return c.ctx
@@ -176,7 +178,7 @@ func New(node peer.Node, path string, opts ...Option[Client]) (*Client, error) {
 		}
 	}
 
-	c.morePeers, c.feedPeers, c.cleanPeers = make(chan int, c.maxParallel), make(chan chan *peerCore.AddrInfo, c.maxParallel), make(chan peerCore.ID, c.maxParallel)
+	c.peerRequests, c.cleanPeers = make(chan *peerRequest, c.maxParallel), make(chan peerCore.ID, c.maxParallel)
 
 	c.ctx, c.ctxC = context.WithCancel(node.Context())
 
@@ -230,22 +232,29 @@ func (c *Client) refreshFromPeerStore() {
 }
 
 func (c *Client) discPeers() <-chan peerCore.AddrInfo {
-	discPeers, err := c.node.Discovery().FindPeers(c.ctx, c.path, discovery.Limit(c.maxPeers))
+	discPeers, err := c.node.Discovery().FindPeers(c.ctx, c.path, discovery.Limit(DiscoveryLimit))
 	if err != nil || discPeers == nil {
 		emptyChan := make(chan peerCore.AddrInfo)
 		close(emptyChan)
 		return emptyChan
 	}
+
 	return discPeers
 }
 
 func (c *Client) close() {
-	time.Sleep(SendToPeerTimeout) // give time for all requests to be done
 	for pid := range c.activePeers {
 		c.cleanPeer(pid)
 	}
-	close(c.feedPeers)
-	close(c.morePeers)
+
+	for _, pr := range c.peerFeeds {
+		close(pr.ch)
+	}
+
+	c.requestsWg.Wait()
+
+	close(c.peerRequests)
+	close(c.cleanPeers)
 }
 
 func (c *Client) cleanPeer(peer peerCore.ID) {
@@ -256,21 +265,30 @@ func (c *Client) cleanPeer(peer peerCore.ID) {
 func (c *Client) addPeer(peer *peerCore.AddrInfo) {
 	c.activePeers[peer.ID] = peer
 	c.node.Peer().ConnManager().Protect(peer.ID, c.tag)
+	feed := make([]*peerRequest, 0, len(c.peerFeeds))
+	for _, pr := range c.peerFeeds {
+		select {
+		case <-pr.ctx.Done():
+			close(pr.ch)
+		default:
+			feed = append(feed, pr)
+			pr.ch <- peer
+		}
+	}
+	c.peerFeeds = feed
 }
 
 func (c *Client) discover() {
-	c.refreshFromPeerStore()
+	defer c.close()
 	dpeersWait := make(chan peerCore.AddrInfo)
 	defer close(dpeersWait)
+	c.refreshFromPeerStore()
 	dpeers := c.discPeers()
 	discoverDone := false
 	for {
 		select {
 		case <-c.ctx.Done():
-			c.close()
 			return
-		case <-time.After(RefreshPeersInterval):
-			c.refreshFromPeerStore()
 		case p, ok := <-dpeers:
 			if !ok {
 				discoverDone = true
@@ -278,17 +296,22 @@ func (c *Client) discover() {
 			} else {
 				c.addPeer(&p)
 			}
-		case need := <-c.morePeers:
-			if need > len(c.activePeers) && discoverDone {
-				dpeers = c.discPeers()
-			}
 		case peer := <-c.cleanPeers:
 			c.cleanPeer(peer)
-		case ch := <-c.feedPeers:
+		case pr := <-c.peerRequests:
 			for _, p := range c.activePeers {
-				ch <- p
+				pr.ch <- p
 			}
-			close(ch)
+
+			c.peerFeeds = append(c.peerFeeds, pr)
+
+			if pr.need > len(c.activePeers) {
+				c.refreshFromPeerStore()
+				if pr.need > len(c.activePeers) && discoverDone {
+					dpeers = c.discPeers()
+					discoverDone = false
+				}
+			}
 		}
 	}
 }
@@ -340,25 +363,14 @@ func (c *Client) openStream(pid peerCore.ID) (stream, error) {
 
 func (c *Client) peers(ctx context.Context, needs int) <-chan *peerCore.AddrInfo {
 	ch := make(chan *peerCore.AddrInfo, c.maxPeers)
-	select {
-	case c.morePeers <- needs:
-		fmt.Println("ok 1")
-	case <-ctx.Done():
-		fmt.Println("Woops 1")
-		close(ch)
-		return ch
-	}
 
 	select {
-	case c.feedPeers <- ch:
-		fmt.Println("ok 2")
 	case <-ctx.Done():
-		fmt.Println("Woops 2")
 		close(ch)
 		return ch
+	case c.peerRequests <- &peerRequest{ch: ch, ctx: ctx, need: needs}:
 	}
 
-	fmt.Println("go")
 	return ch
 }
 
@@ -446,12 +458,21 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 }
 
 func (c *Client) send(cmdName string, body command.Body, streams []stream, threshold int, timeout time.Duration) (<-chan *Response, error) {
+	c.requestsWg.Add(1)
+	defer c.requestsWg.Done()
+
 	if timeout == 0 {
 		timeout = SendToPeerTimeout
 	}
 
 	if threshold > MaxStreamsPerSend {
 		return nil, fmt.Errorf("threshold %d exceeds MaxStreamsPerSend", threshold)
+	}
+
+	select {
+	case <-c.ctx.Done():
+		return nil, os.ErrDeadlineExceeded
+	default:
 	}
 
 	ctx, ctxC := context.WithTimeout(c.ctx, timeout)
@@ -473,9 +494,12 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 	}
 
 	if needMoreStreams {
-		discPeers := c.peers(ctx, threshold)
+		c.requestsWg.Add(1)
 		go func() {
+			defer c.requestsWg.Done()
 			defer close(strms)
+
+			discPeers := c.peers(ctx, threshold)
 
 		morePeersLoop:
 			for {
@@ -483,18 +507,20 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 					return
 				}
 				select {
+				case <-ctx.Done():
+					return
 				case peer := <-discPeers:
 					fmt.Println("dico>", peer)
 					if peer == nil {
 						break morePeersLoop
 					}
-					strm, _ := c.connect(peer)
-					if strm != nil && strmsCount < threshold {
+					strm, err := c.connect(peer)
+					if err != nil {
+						c.cleanPeers <- peer.ID
+					} else if strmsCount < threshold {
 						strmsCount++
 						strms <- stream{Stream: strm, ID: peer.ID}
 					}
-				case <-ctx.Done():
-					return
 				}
 			}
 		}()
@@ -503,13 +529,14 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 	}
 
 	responses := make(chan *Response, MaxStreamsPerSend)
+	c.requestsWg.Add(1)
 	go func() {
+		defer c.requestsWg.Done()
 		var wg sync.WaitGroup
 		defer close(responses)
 		defer wg.Wait()
 		defer ctxC()
 		for strm := range strms {
-			fmt.Println("stream:", strm)
 			wg.Add(1)
 			go func(_strm stream) {
 				defer wg.Done()
