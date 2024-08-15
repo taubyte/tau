@@ -77,6 +77,7 @@ require (
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
 	github.com/libp2p/go-libp2p-record v0.2.0
 	github.com/mattn/go-runewidth v0.0.15
+	github.com/moby/moby v27.1.1+incompatible
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/olekukonko/ts v0.0.0-20171002115256-78ecb04241c0
 	github.com/pkg/sftp v1.13.1
