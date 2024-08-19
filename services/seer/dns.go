@@ -123,7 +123,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 		return
 	}
 
-	if msg.Question == nil || len(msg.Question) == 0 {
+	if len(msg.Question) == 0 {
 		w.Close()
 		return
 	}
