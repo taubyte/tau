@@ -15,3 +15,5 @@ repos:
       - id: go-imports
         files: '.*\.go$'
         exclude: '.*\.pb\.go$'
+      - id: go-staticcheck-mod
+        files: '.*\.go$'
