@@ -4,7 +4,6 @@ import (
 	"archive/zip"
 	"bytes"
 	_ "embed"
-	"fmt"
 	"io"
 	"sync"
 
@@ -13,96 +12,74 @@ import (
 
 var (
 	//go:embed assets/runtimes.zip
-	runtimesData []byte
+	runtimesData    []byte
+	runtimesArchive = mustModulesArchive(runtimesData)
 
 	//go:embed assets/tools.zip
-	//toolsData []byte
-
-	runtimeADM64   []byte
-	runtimeRISCV64 []byte
-
-	runtimeLock sync.RWMutex
+	toolsData    []byte
+	toolsArchive = mustModulesArchive(toolsData)
 )
 
-func readZipFile(f *zip.File) ([]byte, error) {
-	zipFileReader, err := f.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer zipFileReader.Close()
-
-	buf, err := io.ReadAll(zipFileReader)
-	if err != nil {
-		return nil, err
-	}
-
-	return buf, nil
+type modulesArchive struct {
+	zip     *zip.Reader
+	lock    sync.Mutex
+	sources map[string][]byte
 }
 
-func extractRuntimes() error {
-	runtimeLock.Lock()
-	defer runtimeLock.Unlock()
-
-	// another reuqest did it already
-	if runtimeADM64 != nil && runtimeRISCV64 != nil {
-		return nil
-	}
-
+func newModulesArchive(data []byte) (*modulesArchive, error) {
 	zipReader, err := zip.NewReader(
-		readerutil.NewBufferingReaderAt(bytes.NewBuffer(runtimesData)),
-		int64(len(runtimesData)),
+		readerutil.NewBufferingReaderAt(bytes.NewBuffer(data)),
+		int64(len(data)),
 	)
 	if err != nil {
-		return err
+		return nil, err
+	}
+	return &modulesArchive{
+		zip:     zipReader,
+		sources: make(map[string][]byte),
+	}, nil
+}
+
+func mustModulesArchive(data []byte) *modulesArchive {
+	m, err := newModulesArchive(data)
+	if err != nil {
+		panic(err)
+	}
+	return m
+}
+
+func (m *modulesArchive) Module(name string) ([]byte, error) {
+	m.lock.Lock()
+	defer m.lock.Unlock()
+
+	if src, ok := m.sources[name]; ok {
+		return src, nil
 	}
 
-	for _, file := range zipReader.File {
-		fmt.Println(file.Name)
-		var err error
-		switch file.Name {
-		case "amd64.wasm":
-			runtimeADM64, err = readZipFile(file)
-		case "riscv64.wasm":
-			runtimeRISCV64, err = readZipFile(file)
-		}
-		if err != nil {
-			return err
-		}
+	f, err := m.zip.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	src, err := io.ReadAll(f)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil
+	m.sources[name] = src
+
+	return src, nil
 }
 
 func RuntimeADM64() ([]byte, error) {
-	var data []byte
-	runtimeLock.RLock()
-	data = runtimeADM64
-	runtimeLock.RUnlock()
-	if data == nil {
-		extractRuntimes()
-		runtimeLock.RLock()
-		data = runtimeADM64
-		runtimeLock.RUnlock()
-	}
-	return data, nil
+	return runtimesArchive.Module("amd64.wasm")
 }
 
 func RuntimeRISCV64() ([]byte, error) {
-	var data []byte
-	runtimeLock.RLock()
-	data = runtimeRISCV64
-	runtimeLock.RUnlock()
-	if data == nil {
-		extractRuntimes()
-		runtimeLock.RLock()
-		data = runtimeRISCV64
-		runtimeLock.RUnlock()
-	}
-	return data, nil
+	return runtimesArchive.Module("riscv64.wasm")
 }
 
-func init() {
-	if err := extractRuntimes(); err != nil {
-		panic(err)
-	}
+func toolsSquashFS() ([]byte, error) {
+	return toolsArchive.Module("squashfs.wasm")
 }
