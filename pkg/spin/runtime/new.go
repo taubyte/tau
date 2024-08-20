@@ -1,4 +1,4 @@
-package spin
+package runtime
 
 import (
 	"context"
@@ -10,6 +10,11 @@ import (
 	"github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 
 	helpers "github.com/taubyte/tau/pkg/vm/helpers/wazero"
+
+	"github.com/taubyte/tau/pkg/spin/embed"
+
+	//lint:ignore ST1001 ignore
+	. "github.com/taubyte/tau/pkg/spin"
 )
 
 type spin struct {
@@ -18,12 +23,12 @@ type spin struct {
 
 	lock sync.RWMutex
 
+	registry Registry
+
 	source    []byte
 	isRuntime bool
 
 	containers map[string]*container
-
-	registries []string
 
 	module wazero.CompiledModule
 
@@ -33,15 +38,16 @@ type spin struct {
 type AMD64 struct{}
 type RISCV64 struct{}
 
-func Runtime[arch AMD64 | RISCV64]() Option[Spin] {
+func Runtime[arch AMD64 | RISCV64](registry Registry) Option[Spin] {
 	return func(si Spin) (err error) {
 		s := si.(*spin)
 		switch any(arch{}).(type) {
 		case AMD64:
-			s.source, err = RuntimeADM64()
+			s.source, err = embed.RuntimeADM64()
 		case RISCV64:
-			s.source, err = RuntimeRISCV64()
+			s.source, err = embed.RuntimeRISCV64()
 		}
+		s.registry = registry
 		s.isRuntime = true
 
 		return
@@ -66,26 +72,10 @@ func ModuleOpen(path string) Option[Spin] {
 	}
 }
 
-func Registry(r string) Option[Spin] {
-	return func(si Spin) error {
-		s := si.(*spin)
-		s.registries = append(s.registries, r)
-		return nil
-	}
-}
-
-func Registries(registries ...string) Option[Spin] {
-	return func(si Spin) error {
-		si.(*spin).registries = registries
-		return nil
-	}
-}
-
 func New(ctx context.Context, options ...Option[Spin]) (Spin, error) {
 	s := &spin{
 		isRuntime:  true,
 		containers: make(map[string]*container),
-		registries: []string{"registry.hub.docker.com"},
 	}
 
 	for _, opt := range options {
@@ -97,7 +87,7 @@ func New(ctx context.Context, options ...Option[Spin]) (Spin, error) {
 	var err error
 
 	if s.source == nil {
-		s.source, err = RuntimeADM64()
+		s.source, err = embed.RuntimeADM64()
 		if err != nil {
 			return nil, err
 		}

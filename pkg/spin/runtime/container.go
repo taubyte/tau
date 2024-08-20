@@ -1,4 +1,4 @@
-package spin
+package runtime
 
 import (
 	"archive/zip"
@@ -23,6 +23,9 @@ import (
 	crand "crypto/rand"
 
 	"github.com/moby/moby/pkg/namesgenerator"
+
+	//lint:ignore ST1001 ignore
+	. "github.com/taubyte/tau/pkg/spin"
 )
 
 type mountPoint string
@@ -79,13 +82,32 @@ func Mount(hostDir, wasmDir string) Option[Container] {
 	}
 }
 
-func Bundle(path string) Option[Container] {
+func ImageFile(path string) Option[Container] {
 	return func(ci Container) error {
 		c := ci.(*container)
 		if !c.parent.isRuntime {
 			return errors.New("only runtimes can use bundles")
 		}
 		c.bundle = path
+		return nil
+	}
+}
+
+func Image(name string) Option[Container] {
+	return func(ci Container) error {
+		c := ci.(*container)
+		if !c.parent.isRuntime {
+			return errors.New("only runtimes can use bundles")
+		}
+		if c.parent.registry == nil {
+			return errors.New("no registry")
+		}
+		imagePath, err := c.parent.registry.Path(name)
+		if err != nil {
+			return os.ErrNotExist // need to pull first
+		}
+		c.bundle = imagePath
+
 		return nil
 	}
 }

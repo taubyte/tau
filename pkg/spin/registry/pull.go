@@ -1,4 +1,4 @@
-package spin
+package registry
 
 import (
 	"archive/tar"
@@ -20,6 +20,8 @@ import (
 	"oras.land/oras-go/v2/registry/remote"
 
 	"github.com/containerd/containerd/archive"
+	"github.com/taubyte/tau/pkg/spin/embed"
+	"github.com/taubyte/tau/pkg/spin/runtime"
 
 	"github.com/containerd/containerd/archive/compression"
 	"github.com/containerd/containerd/images"
@@ -37,19 +39,177 @@ import (
 	"github.com/CalebQ42/squashfs"
 )
 
-func (s *spin) Pull(ctx context.Context, imageName, workPath, outputFilename string) (err error) {
-	for _, registry := range s.registries {
-		if err = pullFromRegistry(ctx, fmt.Sprintf("%s/%s", registry, imageName), workPath); err == nil {
-			break
+func (r *registry) Pull(ctx context.Context, image string) error {
+	pCtx, pCtxC := context.WithCancel(r.ctx)
+	defer pCtxC()
+
+	go func() {
+		select {
+		case <-ctx.Done():
+			pCtxC()
+		case <-pCtx.Done():
+			return
+		}
+	}()
+
+	retChan := make(chan error, 1)
+
+	r.pullRequest <- &pullRequest{
+		ctx:        pCtx,
+		image:      image,
+		registries: r.registries,
+		ret:        retChan,
+	}
+
+	select {
+	case <-pCtx.Done():
+		return pCtx.Err()
+	case ret := <-retChan:
+		return ret
+	}
+
+}
+
+func (r *registry) imageFilePath(imageDigest string) string {
+	return path.Join(r.root, "images", imageDigest)
+}
+
+func (r *registry) cacheGet(image string) (digest.Digest, bool) {
+	r.lock.RLock()
+	defer r.lock.RUnlock()
+
+	item := r.imageToDigestCache.Get(image)
+
+	if item != nil {
+		return item.Value(), !item.IsExpired()
+	}
+
+	return digest.Digest(""), false
+}
+
+func (r *registry) hasImageOf(imageDigest string) bool {
+	fi, err := os.Stat(r.imageFilePath(imageDigest))
+	return err == nil && !fi.IsDir()
+}
+
+func (r *registry) addToCach(image string, imageDigest digest.Digest) {
+	r.imageToDigestCache.Set(image, imageDigest, DigestResolvCacheTTL)
+}
+
+func (r *registry) pullRequestHandler() {
+	imagesChan := make(map[string][]chan error)
+	type pullRet struct {
+		image string
+		err   error
+	}
+	runningPull := make(chan struct{}, 16)
+	donePull := make(chan pullRet, 16)
+
+	// clean shutdown
+	defer func() {
+		close(runningPull)
+		for range runningPull {
+		}
+		close(donePull)
+		for range donePull {
+		}
+		r.wg.Done()
+	}()
+
+	for {
+		select {
+		case <-r.ctx.Done():
+			return
+		case reqChan := <-r.pullRequest:
+			if _, hit := r.cacheGet(reqChan.image); hit {
+				continue
+			}
+
+			imagesChan[reqChan.image] = append(imagesChan[reqChan.image], reqChan.ret)
+			if len(imagesChan[reqChan.image]) == 1 { // we're first, start pulling
+				go func() {
+					select {
+					case <-reqChan.ctx.Done():
+						return
+					case runningPull <- struct{}{}:
+					}
+
+					var err error
+					defer func() {
+						donePull <- pullRet{image: reqChan.image, err: err}
+					}()
+
+					var (
+						imageRef string
+						repo     *remote.Repository
+					)
+					for _, registry := range r.registries {
+						imageRef = fmt.Sprintf("%s/%s", registry, reqChan.image)
+						if repo, err = remote.NewRepository(imageRef); err == nil {
+							break
+						}
+					}
+
+					if repo == nil {
+						err = fmt.Errorf("failed to fetch image %s", reqChan.image)
+						return
+					}
+
+					// Resolve the image reference to a descriptor, which includes the digest
+					repoDesc, err := repo.Resolve(context.Background(), repo.Reference.Reference)
+					if err != nil {
+						err = fmt.Errorf("failed to resolve reference for %s: %w", reqChan.image, err)
+						return
+					}
+
+					imageDigest := repoDesc.Digest.Encoded()
+
+					if !r.hasImageOf(imageDigest) {
+						var workPath string
+						workPath, err = os.MkdirTemp("", "spin")
+						if err != nil {
+							err = fmt.Errorf("creating temporary pull folder failed with %w", err)
+							return
+						}
+						defer os.RemoveAll(workPath)
+
+						if err = r.pullFromRegistry(reqChan.ctx, repo, imageRef, workPath); err != nil {
+							return
+						}
+
+						if err != nil {
+							err = fmt.Errorf("pulling image %s failed with %w", reqChan.image, err)
+							return
+						}
+
+						err = convImage(reqChan.ctx, workPath, r.imageFilePath(imageDigest))
+					}
+
+					r.addToCach(reqChan.image, repoDesc.Digest)
+
+					select {
+					case <-runningPull:
+					default:
+					}
+
+				}()
+			}
+		case pRet := <-donePull:
+			if pRet.err == nil {
+				for _, rc := range imagesChan[pRet.image] {
+					rc <- pRet.err
+					close(rc)
+				}
+				delete(imagesChan, pRet.image)
+			} else { // let other requests try
+				rc := imagesChan[pRet.image][0]
+				imagesChan[pRet.image] = imagesChan[pRet.image][1:]
+				rc <- pRet.err
+				close(rc)
+			}
+
 		}
 	}
-
-	if err != nil {
-		return fmt.Errorf("failed to pull image '%s' from any specified registry: %w", imageName, err)
-	}
-
-	return convImage(ctx, workPath, outputFilename)
-
 }
 
 func convImage(ctx context.Context, workPath, outputFilename string) (err error) {
@@ -146,17 +306,17 @@ func convImage(ctx context.Context, workPath, outputFilename string) (err error)
 		return fmt.Errorf("failed to create tarball of rootfs at '%s': %w", rootfs+".tar", err)
 	}
 
-	squashSrc, err := toolsSquashFS()
+	squashSrc, err := embed.ToolsSquashFS()
 	if err != nil {
 		return fmt.Errorf("failed to load squashFS tools: %w", err)
 	}
 
-	s, err := New(ctx, Module(squashSrc))
+	s, err := runtime.New(ctx, runtime.Module(squashSrc))
 	if err != nil {
 		return fmt.Errorf("failed to initialize squashFS spin: %w", err)
 	}
 
-	sqfstar, err := s.New(Mount(workPath, "/mnt"), Command("/bin/sh", "-c", "/bin/sqfstar -quiet -no-progress -Xcompression-level 1 -Xstrategy fixed -mem 512M /mnt/rootfs.bin < /mnt/rootfs.tar"))
+	sqfstar, err := s.New(runtime.Mount(workPath, "/mnt"), runtime.Command("/bin/sh", "-c", "/bin/sqfstar -quiet -no-progress -Xcompression-level 1 -Xstrategy fixed -mem 512M /mnt/rootfs.bin < /mnt/rootfs.tar"))
 	if err != nil {
 		return fmt.Errorf("failed to create squashFS container: %w", err)
 	}
@@ -186,15 +346,10 @@ func convImage(ctx context.Context, workPath, outputFilename string) (err error)
 	return zipIt(ctx, workPath, outputFilename, "/rootfs.bin", "/index.json", "/config/config.json", "/config/imageconfig.json")
 }
 
-func pullFromRegistry(ctx context.Context, imageRef string, dstPath string) error {
+func (r *registry) pullFromRegistry(ctx context.Context, repo *remote.Repository, imageRef, dstPath string) error {
 	store, err := oci.New(dstPath)
 	if err != nil {
 		return err
-	}
-
-	repo, err := remote.NewRepository(imageRef)
-	if err != nil {
-		return fmt.Errorf("failed to create remote repository: %w", err)
 	}
 
 	_, err = oras.Copy(ctx, repo, imageRef, store, imageRef, oras.DefaultCopyOptions)

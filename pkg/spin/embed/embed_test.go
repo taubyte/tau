@@ -1,4 +1,4 @@
-package spin
+package embed
 
 import (
 	"archive/zip"

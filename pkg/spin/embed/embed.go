@@ -1,4 +1,4 @@
-package spin
+package embed
 
 import (
 	"archive/zip"
@@ -80,6 +80,6 @@ func RuntimeRISCV64() ([]byte, error) {
 	return runtimesArchive.Module("riscv64.wasm")
 }
 
-func toolsSquashFS() ([]byte, error) {
+func ToolsSquashFS() ([]byte, error) {
 	return toolsArchive.Module("squashfs.wasm")
 }
