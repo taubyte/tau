@@ -51,7 +51,13 @@ func New(ctx context.Context, root string, options ...Option[Registry]) (Registr
 		),
 	}
 
-	if err := os.Mkdir(path.Join(root, "images"), 0750); err != nil {
+	for _, opt := range options {
+		if err := opt(r); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := os.MkdirAll(path.Join(root, "images"), 0750); err != nil {
 		return nil, fmt.Errorf("populating root folder failed with %w", err)
 	}
 

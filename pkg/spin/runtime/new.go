@@ -11,6 +11,7 @@ import (
 
 	helpers "github.com/taubyte/tau/pkg/vm/helpers/wazero"
 
+	"github.com/taubyte/tau/pkg/spin/archive"
 	"github.com/taubyte/tau/pkg/spin/embed"
 
 	//lint:ignore ST1001 ignore
@@ -68,6 +69,30 @@ func ModuleOpen(path string) Option[Spin] {
 		s := si.(*spin)
 		s.source, err = os.ReadFile(path)
 		s.isRuntime = false
+		return
+	}
+}
+
+func ModuleZip(path string, filename string) Option[Spin] {
+	return func(si Spin) (err error) {
+		zipSource, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("opening archive file failed with %w", err)
+		}
+
+		ar, err := archive.New(zipSource)
+		if err != nil {
+			return fmt.Errorf("parsing archive file failed with %w", err)
+		}
+
+		s := si.(*spin)
+		s.source, err = ar.Module(filename)
+		if err != nil {
+			return fmt.Errorf("extracting module from archive failed with %w. Available %v", err, ar.List())
+		}
+
+		s.isRuntime = false
+
 		return
 	}
 }

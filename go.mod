@@ -66,6 +66,7 @@ require (
 	github.com/c-bata/go-prompt v0.2.6
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/containerd/containerd v1.7.18
+	github.com/containers/gvisor-tap-vsock v0.7.4
 	github.com/ethereum/go-ethereum v1.12.0
 	github.com/extism/go-pdk v1.0.2
 	github.com/extism/go-pdk/wasi-reactor v0.0.0-20240408161339-095ac11ddc4e
@@ -114,6 +115,7 @@ require (
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/acomagu/bufpipe v1.0.3 // indirect
 	github.com/andybalholm/brotli v1.0.4 // indirect
+	github.com/apparentlymart/go-cidr v1.1.0 // indirect
 	github.com/benbjohnson/clock v1.3.5 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
@@ -164,6 +166,7 @@ require (
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v0.0.5-0.20220116011046-fa5810519dcb // indirect
+	github.com/google/btree v1.1.2 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
@@ -184,6 +187,8 @@ require (
 	github.com/holiman/uint256 v1.2.2-0.20230321075855-87b91420868c // indirect
 	github.com/huin/goupnp v1.3.0 // indirect
 	github.com/imdario/mergo v0.3.15 // indirect
+	github.com/inetaf/tcpproxy v0.0.0-20240214030015-3ce58045626c // indirect
+	github.com/insomniacslk/dhcp v0.0.0-20240710054256-ddd8a41251c9 // indirect
 	github.com/ipfs/bbloom v0.0.4 // indirect
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
 	github.com/ipfs/go-block-format v0.2.0 // indirect
@@ -247,7 +252,6 @@ require (
 	github.com/multiformats/go-multistream v0.5.0 // indirect
 	github.com/oklog/run v1.0.0 // indirect
 	github.com/onsi/ginkgo/v2 v2.17.2 // indirect
-	github.com/onsi/gomega v1.33.1 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
 	github.com/pierrec/lz4/v4 v4.1.21 // indirect
@@ -277,6 +281,7 @@ require (
 	github.com/therootcompany/xz v1.0.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.0 // indirect
+	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/ulikunitz/xz v0.5.12 // indirect
 	github.com/unrolled/secure v1.0.9 // indirect
 	github.com/whyrusleeping/chunker v0.0.0-20181014151217-fe64bd25879f // indirect
@@ -298,11 +303,13 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/text v0.17.0 // indirect
+	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.22.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	gonum.org/v1/gonum v0.14.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
 	gopkg.in/natefinch/npipe.v2 v2.0.0-20160621034901-c1b8fa8bdcce // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
+	gvisor.dev/gvisor v0.0.0-20231023213702-2691a8f9b1cf // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 )

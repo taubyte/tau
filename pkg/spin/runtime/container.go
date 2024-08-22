@@ -6,8 +6,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"path"
+	"strconv"
+	"time"
 
 	"archive/tar"
 
@@ -18,11 +21,14 @@ import (
 	"github.com/spf13/afero/zipfs"
 	"github.com/tetratelabs/wazero"
 	"github.com/tetratelabs/wazero/api"
+	"github.com/tetratelabs/wazero/experimental/sock"
 	"github.com/tetratelabs/wazero/sys"
 
 	crand "crypto/rand"
 
 	"github.com/moby/moby/pkg/namesgenerator"
+
+	gvnvirtualnetwork "github.com/containers/gvisor-tap-vsock/pkg/virtualnetwork"
 
 	//lint:ignore ST1001 ignore
 	. "github.com/taubyte/tau/pkg/spin"
@@ -49,6 +55,11 @@ type container struct {
 	done chan struct{}
 
 	mounts map[mountPoint]mountSource
+
+	networking *networkConfig
+	vn         *gvnvirtualnetwork.VirtualNetwork
+	port       int
+	sockCfg    sock.Config
 
 	bundle string
 
@@ -104,7 +115,7 @@ func Image(name string) Option[Container] {
 		}
 		imagePath, err := c.parent.registry.Path(name)
 		if err != nil {
-			return os.ErrNotExist // need to pull first
+			return errors.New("need to pull first")
 		}
 		c.bundle = imagePath
 
@@ -133,12 +144,95 @@ func Stderr(w io.Writer) Option[Container] {
 	}
 }
 
+func Subnet(n string) Option[*networkConfig] {
+	return func(nc *networkConfig) error {
+		ip, ipNet, err := net.ParseCIDR("192.168.1.0/24")
+		if err != nil {
+			return err
+		}
+		if ip.To4() == nil {
+			return errors.New("container network is not IPv4")
+		}
+		nc.network = ipNet
+		return nil
+	}
+}
+
+func GuestAddress(i string) Option[*networkConfig] {
+	return func(nc *networkConfig) error {
+		parsedIP := net.ParseIP(i)
+		if parsedIP == nil || parsedIP.To4() == nil {
+			return errors.New("container address is not IPv4")
+		}
+		nc.ip = parsedIP
+		return nil
+	}
+}
+
+func GuestMAC(mac string) Option[*networkConfig] {
+	return func(nc *networkConfig) (err error) {
+		nc.mac, err = net.ParseMAC(mac)
+		return
+	}
+}
+
+func Forward(host, guest string) Option[*networkConfig] {
+	return func(nc *networkConfig) error {
+		var (
+			hIP   = "0.0.0.0"
+			hPort string
+		)
+		_, err := strconv.Atoi(host)
+		if err != nil {
+			hIP, hPort, err = net.SplitHostPort(host)
+			if err != nil {
+				return err
+			}
+		} else {
+			hPort = host
+		}
+
+		if _, err = strconv.Atoi(guest); err != nil {
+			return errors.New("guest must be a valid port number")
+		}
+
+		nc.forwards[hIP+":"+hPort] = guest // will need a second pass
+
+		return nil
+	}
+}
+
+func Networking(options ...Option[*networkConfig]) Option[Container] {
+	return func(ci Container) error {
+		nc := &networkConfig{
+			network:  DefaultNetwork,
+			ip:       DefaultIPAddress,
+			mac:      DefaultContainerMacAddress,
+			forwards: make(map[string]string),
+		}
+
+		for _, opt := range options {
+			if err := opt(nc); err != nil {
+				return nil
+			}
+		}
+
+		for k, v := range nc.forwards {
+			nc.forwards[k] = nc.ip.String() + ":" + v
+		}
+
+		ci.(*container).networking = nc
+
+		return nil
+	}
+}
+
 func (s *spin) New(options ...Option[Container]) (Container, error) {
 	c := &container{
 		parent:  s,
 		mounts:  make(map[mountPoint]mountSource),
 		closers: make(chan io.Closer, 128),
-		stdin:   NoStdin, // images need an stdin to boot
+		stdin:   nil,
 		stdout:  os.Stdout,
 		stderr:  os.Stderr,
 		done:    make(chan struct{}, 1),
@@ -227,6 +321,15 @@ func (s *spin) init(c *container) (err error) {
 		fsConfig = fsConfig.WithFSMount(afero.NewIOFS(zipfs.New(&zipReader.Reader)), "/ext/bundle")
 	}
 
+	cmd := []string{"vm"}
+	if c.stdin == nil {
+		cmd = append(cmd, "-no-stdin")
+	}
+	if c.networking != nil {
+		cmd = append(cmd, "-net=socket", "-mac", c.networking.mac.String())
+	}
+	cmd = append(cmd, c.cmd...)
+
 	config := wazero.
 		NewModuleConfig().
 		WithStdin(c.stdin).
@@ -234,15 +337,52 @@ func (s *spin) init(c *container) (err error) {
 		WithStderr(c.stderr).
 		WithName(c.name).
 		WithFSConfig(fsConfig).
-		WithArgs(append([]string{"module"}, c.cmd...)...).
+		WithArgs(cmd...).
+		//WithEnv("LISTEN_FDS", "0").
 		WithSysWalltime().
 		WithSysNanotime().
 		WithSysNanosleep().
 		WithRandSource(crand.Reader).
 		WithStartFunctions() // don't start yet
 
+	if c.networking != nil {
+		if err = c.initNetwork(c.ctx); err != nil {
+			return err
+		}
+		c.ctx = sock.WithConfig(c.ctx, c.sockCfg)
+	}
+
 	if c.module, err = s.runtime.InstantiateModule(c.ctx, s.module, config); err != nil {
 		return fmt.Errorf("instantiate module %s failed with %w", c.name, err)
+	}
+
+	if c.networking != nil {
+		var conn net.Conn
+		addr := fmt.Sprintf("127.0.0.1:%d", c.port)
+	tryConnect:
+		for i := 0; i < 100; i++ {
+			select {
+			case <-c.ctx.Done():
+				return c.ctx.Err()
+			case <-time.After(100 * time.Millisecond):
+				conn, err = net.Dial("tcp", addr)
+				if err == nil {
+					break tryConnect
+				}
+			}
+		}
+
+		if conn == nil {
+			return errors.New("failed to establish connection")
+		}
+
+		// We register our VM network as a qemu "-netdev socket".
+		go func() {
+			if err := c.vn.AcceptQemu(c.ctx, conn); err != nil {
+				c.ctxC()
+				fmt.Fprintf(os.Stderr, "failed AcceptQemu: %v\n", err)
+			}
+		}()
 	}
 
 	return nil
@@ -251,7 +391,6 @@ func (s *spin) init(c *container) (err error) {
 func (c *container) Run() error {
 	defer func() {
 		c.done <- struct{}{}
-
 	}()
 
 	main := c.module.ExportedFunction("_start")
@@ -260,7 +399,9 @@ func (c *container) Run() error {
 	}
 
 	if _, err := main.Call(c.ctx); err != nil {
-		if se, ok := err.(*sys.ExitError); ok {
+		if err.Error() == "module closed with context canceled" {
+			return nil
+		} else if se, ok := err.(*sys.ExitError); ok {
 			if se.ExitCode() == 0 { // Don't err on success.
 				err = nil
 			}
@@ -268,7 +409,6 @@ func (c *container) Run() error {
 		} else {
 			return fmt.Errorf("executing %s failed with %w", main.Definition().Name(), err)
 		}
-
 	}
 
 	return nil
