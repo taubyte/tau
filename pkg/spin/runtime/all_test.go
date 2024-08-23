@@ -73,7 +73,7 @@ func TestPreBuiltContainer(t *testing.T) {
 
 type mockReg struct{}
 
-func (r *mockReg) Pull(ctx context.Context, image string) error {
+func (r *mockReg) Pull(ctx context.Context, image string, _ chan<- PullProgress) error {
 	if !slices.Contains([]string{"riscv64/hello-world:latest", "amd64/hello-world:latest"}, image) {
 		return errors.New("invalid image name")
 	}

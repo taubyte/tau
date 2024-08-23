@@ -37,11 +37,39 @@ import (
 	ctdcontainers "github.com/containerd/containerd/containers"
 
 	"github.com/CalebQ42/squashfs"
+
+	//lint:ignore ST1001 ignore
+	. "github.com/taubyte/tau/pkg/spin"
 )
 
-func (r *registry) Pull(ctx context.Context, image string) error {
+type pullProgress struct {
+	err        error
+	completion int
+}
+
+func (p pullProgress) Error() error {
+	return p.err
+}
+
+func (p pullProgress) Completion() int {
+	return p.completion
+}
+
+func pushProgress(progress chan<- PullProgress, prog pullProgress) {
+	if progress != nil {
+		select {
+		case progress <- prog:
+		default:
+		}
+	}
+}
+
+func (r *registry) Pull(ctx context.Context, image string, progress chan<- PullProgress) error {
 	pCtx, pCtxC := context.WithCancel(r.ctx)
 	defer pCtxC()
+
+	pushProgress(progress, pullProgress{})
+	defer pushProgress(progress, pullProgress{err: io.EOF})
 
 	go func() {
 		select {
@@ -59,6 +87,7 @@ func (r *registry) Pull(ctx context.Context, image string) error {
 		image:      image,
 		registries: r.registries,
 		ret:        retChan,
+		progress:   progress,
 	}
 
 	select {
@@ -121,15 +150,20 @@ func (r *registry) pullRequestHandler() {
 		case <-r.ctx.Done():
 			return
 		case reqChan := <-r.pullRequest:
+			pushProgress(reqChan.progress, pullProgress{})
 			if _, hit := r.cacheGet(reqChan.image); hit {
+				pushProgress(reqChan.progress, pullProgress{completion: 100})
 				continue
 			}
+			pushProgress(reqChan.progress, pullProgress{completion: 1, err: errors.New("not cached")})
 
 			imagesChan[reqChan.image] = append(imagesChan[reqChan.image], reqChan.ret)
 			if len(imagesChan[reqChan.image]) == 1 { // we're first, start pulling
 				go func() {
+					pushProgress(reqChan.progress, pullProgress{completion: 2})
 					select {
 					case <-reqChan.ctx.Done():
+						pushProgress(reqChan.progress, pullProgress{completion: 100, err: reqChan.ctx.Err()})
 						return
 					case runningPull <- struct{}{}:
 					}
@@ -137,15 +171,24 @@ func (r *registry) pullRequestHandler() {
 					var err error
 					defer func() {
 						donePull <- pullRet{image: reqChan.image, err: err}
+						pushProgress(reqChan.progress, pullProgress{completion: 100, err: err})
 					}()
 
+					pushProgress(reqChan.progress, pullProgress{completion: 3, err: err})
 					var (
 						imageRef string
 						repo     *remote.Repository
+						repoDesc spec.Descriptor
 					)
 					for _, registry := range r.registries {
 						imageRef = fmt.Sprintf("%s/%s", registry, reqChan.image)
-						if repo, err = remote.NewRepository(imageRef); err == nil {
+						if repo, err = remote.NewRepository(imageRef); err != nil {
+							continue
+						}
+
+						if repoDesc, err = repo.Resolve(context.Background(), repo.Reference.Reference); err != nil {
+							repo = nil
+						} else {
 							break
 						}
 					}
@@ -155,12 +198,7 @@ func (r *registry) pullRequestHandler() {
 						return
 					}
 
-					// Resolve the image reference to a descriptor, which includes the digest
-					repoDesc, err := repo.Resolve(context.Background(), repo.Reference.Reference)
-					if err != nil {
-						err = fmt.Errorf("failed to resolve reference for %s: %w", reqChan.image, err)
-						return
-					}
+					pushProgress(reqChan.progress, pullProgress{completion: 10, err: err})
 
 					imageDigest := repoDesc.Digest.Encoded()
 
@@ -173,7 +211,7 @@ func (r *registry) pullRequestHandler() {
 						}
 						defer os.RemoveAll(workPath)
 
-						if err = r.pullFromRegistry(reqChan.ctx, repo, imageRef, workPath); err != nil {
+						if err = r.pullFromRegistry(reqChan.ctx, repo, imageRef, workPath, reqChan.progress); err != nil {
 							return
 						}
 
@@ -182,8 +220,10 @@ func (r *registry) pullRequestHandler() {
 							return
 						}
 
-						err = convImage(reqChan.ctx, workPath, r.imageFilePath(imageDigest))
+						err = convImage(reqChan.ctx, workPath, r.imageFilePath(imageDigest), reqChan.progress)
 					}
+
+					pushProgress(reqChan.progress, pullProgress{completion: 99, err: err})
 
 					r.addToCach(reqChan.image, repoDesc.Digest)
 
@@ -212,7 +252,7 @@ func (r *registry) pullRequestHandler() {
 	}
 }
 
-func convImage(ctx context.Context, workPath, outputFilename string) (err error) {
+func convImage(ctx context.Context, workPath, outputFilename string, progress chan<- PullProgress) (err error) {
 	rootfs := path.Join(workPath, "rootfs")
 
 	if err := os.Mkdir(rootfs, 0755); err != nil {
@@ -298,13 +338,19 @@ func convImage(ctx context.Context, workPath, outputFilename string) (err error)
 		return fmt.Errorf("failed to write runtime spec to '%s': %w", path.Join(workPath, "config/config.json"), err)
 	}
 
+	pushProgress(progress, pullProgress{completion: 55})
+
 	if _, err = unpackOCI(ctx, workPath, rootfs, idx.Manifests); err != nil {
 		return fmt.Errorf("failed to unpack OCI image to '%s': %w", rootfs, err)
 	}
 
+	pushProgress(progress, pullProgress{completion: 65})
+
 	if err = tarIt(ctx, rootfs, rootfs+".tar"); err != nil {
 		return fmt.Errorf("failed to create tarball of rootfs at '%s': %w", rootfs+".tar", err)
 	}
+
+	pushProgress(progress, pullProgress{completion: 70})
 
 	squashSrc, err := embed.ToolsSquashFS()
 	if err != nil {
@@ -316,6 +362,8 @@ func convImage(ctx context.Context, workPath, outputFilename string) (err error)
 		return fmt.Errorf("failed to initialize squashFS spin: %w", err)
 	}
 
+	pushProgress(progress, pullProgress{completion: 73})
+
 	sqfstar, err := s.New(runtime.Mount(workPath, "/mnt"), runtime.Command("/bin/sh", "-c", "/bin/sqfstar -quiet -no-progress -Xcompression-level 1 -Xstrategy fixed -mem 512M /mnt/rootfs.bin < /mnt/rootfs.tar"))
 	if err != nil {
 		return fmt.Errorf("failed to create squashFS container: %w", err)
@@ -324,6 +372,8 @@ func convImage(ctx context.Context, workPath, outputFilename string) (err error)
 	if err = sqfstar.Run(); err != nil {
 		return fmt.Errorf("failed to execute sqfstar command: %w", err)
 	}
+
+	pushProgress(progress, pullProgress{completion: 90})
 
 	sqf, err := os.Open(rootfs + ".bin")
 	if err != nil {
@@ -343,14 +393,20 @@ func convImage(ctx context.Context, workPath, outputFilename string) (err error)
 		return errors.New("bad compression type")
 	}
 
+	defer pushProgress(progress, pullProgress{completion: 98})
+
 	return zipIt(ctx, workPath, outputFilename, "/rootfs.bin", "/index.json", "/config/config.json", "/config/imageconfig.json")
 }
 
-func (r *registry) pullFromRegistry(ctx context.Context, repo *remote.Repository, imageRef, dstPath string) error {
+func (r *registry) pullFromRegistry(ctx context.Context, repo *remote.Repository, imageRef, dstPath string, progress chan<- PullProgress) error {
+
 	store, err := oci.New(dstPath)
 	if err != nil {
 		return err
 	}
+
+	// TODO: add a go routine that estimates the progress
+	defer pushProgress(progress, pullProgress{completion: 50, err: err})
 
 	_, err = oras.Copy(ctx, repo, imageRef, store, imageRef, oras.DefaultCopyOptions)
 	if err != nil {
@@ -520,12 +576,13 @@ func tarIt(ctx context.Context, rootfsDir, outputTarball string) error {
 			return ctx.Err()
 		default:
 
-			header, err := tar.FileInfoHeader(fi, fi.Name())
+			linkname, _ := os.Readlink(file)
+			header, err := tar.FileInfoHeader(fi, filepath.Clean("/"+linkname))
 			if err != nil {
 				return fmt.Errorf("failed to create tar header: %w", err)
 			}
 
-			header.Name = filepath.ToSlash("/" + relFile)
+			header.Name = filepath.Clean(filepath.ToSlash("/" + relFile))
 
 			if fname := path.Base(header.Name); fname == ".." || fname == "." {
 				return nil

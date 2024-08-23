@@ -20,6 +20,7 @@ type pullRequest struct {
 	image      string
 	registries []string
 	ret        chan error
+	progress   chan<- PullProgress
 }
 
 type registry struct {
@@ -43,7 +44,7 @@ var DigestResolvCacheTTL = 120 * time.Second
 
 func New(ctx context.Context, root string, options ...Option[Registry]) (Registry, error) {
 	r := &registry{
-		registries:  []string{"registry.hub.docker.com"},
+		registries:  []string{"registry.hub.docker.com", "registry.hub.docker.com/library"},
 		root:        root,
 		pullRequest: make(chan *pullRequest, 16),
 		imageToDigestCache: ttlcache.New(

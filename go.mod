@@ -79,6 +79,7 @@ require (
 	github.com/ipfs/go-ipld-format v0.6.0
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
 	github.com/libp2p/go-libp2p-record v0.2.0
+	github.com/mattn/go-colorable v0.1.13
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/moby/moby v27.1.1+incompatible
 	github.com/multiformats/go-multihash v0.2.3
@@ -230,7 +231,6 @@ require (
 	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/marten-seemann/tcp v0.0.0-20210406111302-dfbc87cc63fd // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-tty v0.0.3 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect

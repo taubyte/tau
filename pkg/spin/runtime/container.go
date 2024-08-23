@@ -56,12 +56,14 @@ type container struct {
 
 	mounts map[mountPoint]mountSource
 
-	networking *networkConfig
+	networking *NetworkConfig
 	vn         *gvnvirtualnetwork.VirtualNetwork
 	port       int
 	sockCfg    sock.Config
 
 	bundle string
+
+	env map[string]string
 
 	module api.Module
 }
@@ -144,8 +146,15 @@ func Stderr(w io.Writer) Option[Container] {
 	}
 }
 
-func Subnet(n string) Option[*networkConfig] {
-	return func(nc *networkConfig) error {
+func Env(k, v string) Option[Container] {
+	return func(ci Container) error {
+		ci.(*container).env[k] = v
+		return nil
+	}
+}
+
+func Subnet(n string) Option[*NetworkConfig] {
+	return func(nc *NetworkConfig) error {
 		ip, ipNet, err := net.ParseCIDR("192.168.1.0/24")
 		if err != nil {
 			return err
@@ -158,8 +167,8 @@ func Subnet(n string) Option[*networkConfig] {
 	}
 }
 
-func GuestAddress(i string) Option[*networkConfig] {
-	return func(nc *networkConfig) error {
+func GuestAddress(i string) Option[*NetworkConfig] {
+	return func(nc *NetworkConfig) error {
 		parsedIP := net.ParseIP(i)
 		if parsedIP == nil || parsedIP.To4() == nil {
 			return errors.New("container address is not IPv4")
@@ -169,15 +178,15 @@ func GuestAddress(i string) Option[*networkConfig] {
 	}
 }
 
-func GuestMAC(mac string) Option[*networkConfig] {
-	return func(nc *networkConfig) (err error) {
+func GuestMAC(mac string) Option[*NetworkConfig] {
+	return func(nc *NetworkConfig) (err error) {
 		nc.mac, err = net.ParseMAC(mac)
 		return
 	}
 }
 
-func Forward(host, guest string) Option[*networkConfig] {
-	return func(nc *networkConfig) error {
+func Forward(host, guest string) Option[*NetworkConfig] {
+	return func(nc *NetworkConfig) error {
 		var (
 			hIP   = "0.0.0.0"
 			hPort string
@@ -202,9 +211,9 @@ func Forward(host, guest string) Option[*networkConfig] {
 	}
 }
 
-func Networking(options ...Option[*networkConfig]) Option[Container] {
+func Networking(options ...Option[*NetworkConfig]) Option[Container] {
 	return func(ci Container) error {
-		nc := &networkConfig{
+		nc := &NetworkConfig{
 			network:  DefaultNetwork,
 			ip:       DefaultIPAddress,
 			mac:      DefaultContainerMacAddress,
@@ -236,6 +245,7 @@ func (s *spin) New(options ...Option[Container]) (Container, error) {
 		stdout:  os.Stdout,
 		stderr:  os.Stderr,
 		done:    make(chan struct{}, 1),
+		env:     make(map[string]string),
 	}
 
 	for _, opt := range options {
@@ -326,7 +336,7 @@ func (s *spin) init(c *container) (err error) {
 		cmd = append(cmd, "-no-stdin")
 	}
 	if c.networking != nil {
-		cmd = append(cmd, "-net=socket", "-mac", c.networking.mac.String())
+		cmd = append(cmd, "-net=socket")
 	}
 	cmd = append(cmd, c.cmd...)
 
@@ -338,12 +348,16 @@ func (s *spin) init(c *container) (err error) {
 		WithName(c.name).
 		WithFSConfig(fsConfig).
 		WithArgs(cmd...).
-		//WithEnv("LISTEN_FDS", "0").
 		WithSysWalltime().
 		WithSysNanotime().
 		WithSysNanosleep().
 		WithRandSource(crand.Reader).
 		WithStartFunctions() // don't start yet
+
+	// Environment
+	for k, v := range c.env {
+		config = config.WithEnv(k, v)
+	}
 
 	if c.networking != nil {
 		if err = c.initNetwork(c.ctx); err != nil {

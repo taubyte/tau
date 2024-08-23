@@ -30,7 +30,7 @@ func init() {
 	DefaultContainerMacAddress, _ = net.ParseMAC("02:00:00:00:00:01")
 }
 
-type networkConfig struct {
+type NetworkConfig struct {
 	network  *net.IPNet
 	ip       net.IP
 	mac      net.HardwareAddr

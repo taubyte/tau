@@ -18,7 +18,7 @@ func TestPullImage(t *testing.T) {
 
 	imageName := "riscv64/hello-world:latest"
 
-	err = r.Pull(context.TODO(), imageName)
+	err = r.Pull(context.TODO(), imageName, nil)
 	assert.NilError(t, err)
 
 	s, err := runtime.New(context.TODO(), runtime.Runtime[runtime.RISCV64](r))
