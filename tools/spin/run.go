@@ -149,7 +149,7 @@ var runCommand = &cli.Command{
 			}
 			containerOpts = append(containerOpts, Image(image), Command(ctx.Args().Slice()[1:]...))
 			// start pulling
-			pull(cCtx, reg, image, pbar, pullChan)
+			pull(cCtx, reg, image, pbar, pullChan, true)
 		} else {
 			containerOpts = append(containerOpts, Command(ctx.Args().Slice()...))
 			pullChan <- nil

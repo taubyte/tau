@@ -577,7 +577,7 @@ func tarIt(ctx context.Context, rootfsDir, outputTarball string) error {
 		default:
 
 			linkname, _ := os.Readlink(file)
-			header, err := tar.FileInfoHeader(fi, filepath.Clean("/"+linkname))
+			header, err := tar.FileInfoHeader(fi, filepath.Clean(linkname))
 			if err != nil {
 				return fmt.Errorf("failed to create tar header: %w", err)
 			}
