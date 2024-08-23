@@ -6,7 +6,7 @@ import (
 	"github.com/tetratelabs/wazero"
 )
 
-var cache wazero.CompilationCache
+var Cache wazero.CompilationCache
 
 func init() {
 	cacheDir, err := os.MkdirTemp("", "wazero")
@@ -14,7 +14,7 @@ func init() {
 		panic(err)
 	}
 
-	cache, err = wazero.NewCompilationCacheWithDir(cacheDir)
+	Cache, err = wazero.NewCompilationCacheWithDir(cacheDir)
 	if err != nil {
 		panic(err)
 	}
