@@ -32,7 +32,7 @@ var pullCommand = &cli.Command{
 		pbar := mpb.New(mpb.WithWidth(60), mpb.WithRefreshRate(100*time.Millisecond), mpb.WithOutput(os.Stderr))
 		pullChan := make(chan error, 1)
 
-		pull(ctx.Context, reg, image, pbar, pullChan)
+		pull(ctx.Context, reg, image, pbar, pullChan, false)
 
 		err = <-pullChan
 		if err != nil {
@@ -45,16 +45,22 @@ var pullCommand = &cli.Command{
 	},
 }
 
-func pull(ctx context.Context, reg spin.Registry, image string, pbar *mpb.Progress, pullChan chan<- error) {
+func pull(ctx context.Context, reg spin.Registry, image string, pbar *mpb.Progress, pullChan chan<- error, remove bool) {
 	progress := make(chan spin.PullProgress, 1024)
 	var pullErr error
 	go func() {
-		pullBar, _ := pbar.Add(100,
-			mpb.BarStyle().Build(),
+		opts := []mpb.BarOption{
 			mpb.AppendDecorators(decor.Percentage()),
 			mpb.PrependDecorators(
 				decor.Name("Pulling "),
 			),
+		}
+		if remove {
+			opts = append(opts, mpb.BarRemoveOnComplete())
+		}
+		pullBar, _ := pbar.Add(100,
+			mpb.BarStyle().Build(),
+			opts...,
 		)
 		for pr := range progress {
 			if pr.Error() != io.EOF {
