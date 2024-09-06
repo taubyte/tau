@@ -25,12 +25,12 @@ fi
 docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
 
 # build squashfs tools
-docker buildx build --platform linux/riscv64 -f squashfs.Dockerfile -t spin-squashfs .
+docker buildx build --platform linux/riscv64 -f squashfs.Dockerfile -t spin-squashfs . || exit 1
 
 # Create a temporary directory for storing WASM bundles
 TEMP_DIR=$(mktemp -d)
 
-if ! $C2W_COMMAND --target-arch=riscv64 --assets /tmp/container2wasm --build-arg VM_MEMORY_SIZE_MB="$MAX_MEMORY_SIZE" spin-squashfs "${TEMP_DIR}/squashfs.wasm"; then
+if ! $C2W_COMMAND --target-arch=riscv64 --assets /tmp/container2wasm --build-arg FILESYSTEM=squash --build-arg VM_MEMORY_SIZE_MB="$MAX_MEMORY_SIZE" spin-squashfs "${TEMP_DIR}/squashfs.wasm"; then
     echo "Failed to create bundle for squashfs"
     exit 1
 fi
