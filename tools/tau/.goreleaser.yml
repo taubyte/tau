@@ -1,0 +1,109 @@
+# .goreleaser.yaml
+version: 2
+release:
+  # Repo in which the release will be created.
+  # Default is extracted from the origin remote URL or empty if its private hosted.
+  github:
+    owner: taubyte
+    name: tau-cli
+
+  # If set to true, will not auto-publish the release.
+  # Available only for GitHub and Gitea.
+  #
+  # Default is false.
+  draft: false
+
+  # Whether to remove existing draft releases with the same name before creating
+  # a new one.
+  # Only effective if `draft` is set to true.
+  # Available only for GitHub.
+  #
+  # Default: false.
+  # Since: v1.11.
+  replace_existing_draft: false
+
+  # If set to auto, will mark the release as not ready for production
+  # in case there is an indicator for this in the tag e.g. v1.0.0-rc1
+  # If set to true, will mark the release as not ready for production.
+  # Default is false.
+  prerelease: auto
+
+  # You can change the name of the release.
+  # Default is `{{.Tag}}` on OSS and `{{.PrefixedTag}}` on Pro.
+  name_template: ""
+
+  # You can disable this pipe in order to not create the release on any SCM.
+  # Keep in mind that this might also break things that depend on the release
+  # URL, for instance, homebrew taps.
+  #
+  # Defaults to false.
+  # Templateable since: v1.15.
+  disable: false
+
+  # Set this to true if you want to disable just the artifact upload to the SCM.
+  # If this is true, GoReleaser will still create the release with the
+  # changelog, but won't upload anything to it.
+  #
+  # Default: false.
+  # Since: v1.11.
+  # Templateable since: v1.15.
+  skip_upload: false
+
+# builds:
+#   -
+#     ignore:
+#     - goos: darwin
+#     # - goos: windows
+#     env:
+#       - CGO_ENABLED=0
+#       - GOAMD64=v2
+#     tags:
+#       - odo
+#     # goarch:
+#     #   - amd64
+#     #   - arm
+#     #   - arm64
+
+builds:
+  - main: "main.go"
+    id: linux
+    binary: "tau"
+    goos: 
+      - linux
+    goarch: 
+      - amd64
+      - arm64
+    env:
+      - CGO_ENABLED=0
+      - GOAMD64=v2
+    tags:
+      - odo
+  - main: "main.go"
+    id: darwin
+    binary: "tau"
+    goos: 
+      - darwin
+    env:
+      - CGO_ENABLED=0
+      - GOAMD64=v2
+    tags:
+      - darwin
+      - odo
+  - main: "main.go"
+    id: windows
+    binary: "tau"
+    goos: 
+      - windows
+    goarch: 
+      - amd64
+    env:
+      - CGO_ENABLED=0
+      - GOAMD64=v2
+
+checksum:
+  disable: true
+  
+# Archives files to attach: https://goreleaser.com/customization/archive/?h=readme
+archives:
+- files:
+  - none*

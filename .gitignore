@@ -19,7 +19,7 @@ npm/bin
 ./services/tns/storage
 **/testGIT
 **/cover.out
-tau
+./tau
 
 # Node artifact files
 node_modules/

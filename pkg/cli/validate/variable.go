@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/asaskevich/govalidator"
-	"github.com/taubyte/tau-cli/common"
-	"github.com/taubyte/tau-cli/constants"
+	"github.com/taubyte/tau/pkg/cli/common"
+	"github.com/taubyte/tau/tools/tau/constants"
 )
 
 func SliceContains(slice []string, str string) bool {
@@ -159,31 +159,11 @@ func ApiMethodValidator(val string) error {
 	return nil
 }
 
-func MethodTypeValidator(val string) error {
-	if val != "" {
-		if !SliceContains(common.FunctionTypes, strings.ToLower(val)) {
-			return fmt.Errorf(InvalidApiMethodType, val, common.FunctionTypes)
-		}
-	}
-
-	return nil
-}
-
 func CodeTypeValidator(val string) error {
 	var types = constants.CodeTypes
 	if val != "" {
 		if !SliceContains(types, strings.ToLower(val)) {
 			return fmt.Errorf(InvalidCodeType, val, types)
-		}
-	}
-
-	return nil
-}
-
-func BucketTypeValidator(val string) error {
-	if val != "" {
-		if !SliceContains(common.BucketTypes, val) {
-			return fmt.Errorf(InvalidBucketType, val, common.BucketTypes)
 		}
 	}
 
