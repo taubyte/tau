@@ -56,12 +56,6 @@ func FlagPathsValidator(name string) Validator {
 	}
 }
 
-func FlagEntryPointValidator(name string) Validator {
-	return func(c *cli.Context) error {
-		return VariableNameValidator(c.String(name))
-	}
-}
-
 func FlagBoolValidator(name string) Validator {
 	return func(c *cli.Context) error {
 		return VariableBool(c.String(name))
@@ -107,35 +101,5 @@ func FlagFQDNValidator(name string) Validator {
 func FlagBasicNoCharLimit(name string) Validator {
 	return func(c *cli.Context) error {
 		return RequiredNoCharLimit(c.String(name))
-	}
-}
-
-func FlagMethodTypeValidator(name string) Validator {
-	return func(c *cli.Context) error {
-		return MethodTypeValidator(c.String(name))
-	}
-}
-
-func FlagApiMethodValidator(name string) Validator {
-	return func(c *cli.Context) error {
-		return ApiMethodValidator(c.String(name))
-	}
-}
-
-func FlagCodeTypeValidator(name string) Validator {
-	return func(c *cli.Context) error {
-		return CodeTypeValidator(c.String(name))
-	}
-}
-
-func FlagTimeValidator(name string) Validator {
-	return func(c *cli.Context) error {
-		return VariableTime(c.String(name))
-	}
-}
-
-func FlagBucketValidator(name string) Validator {
-	return func(c *cli.Context) error {
-		return BucketTypeValidator(c.String(name))
 	}
 }

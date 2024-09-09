@@ -1,0 +1,36 @@
+{
+  "name": "@taubyte/cli",
+  "version": "0.1.14",
+  "tau": "0.1.13",
+  "dream": "1.0.4",
+  "description": "Node wrapper for taubyte/tau-cli",
+  "bin": {
+    "tau": "./index.js"
+  },
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/taubyte/dreamland.git"
+  },
+  "keywords": [
+    "serverless",
+    "cloud",
+    "hosting",
+    "webassembly",
+    "wasm"
+  ],
+  "author": "Taubyte",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/taubyte/dreamland/issues"
+  },
+  "homepage": "https://github.com/taubyte/dreamland#readme",
+  "dependencies": {
+    "axios": "^1.6.5",
+    "progress": "^2.0.3",
+    "tar": "^6.2.0"
+  }
+}

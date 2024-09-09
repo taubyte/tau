@@ -71,6 +71,7 @@ require (
 	github.com/extism/go-pdk v1.0.2
 	github.com/extism/go-pdk/wasi-reactor v0.0.0-20240408161339-095ac11ddc4e
 	github.com/fsnotify/fsnotify v1.7.0
+	github.com/google/go-github/v53 v53.2.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
 	github.com/gookit/config/v2 v2.2.3
 	github.com/hashicorp/go-plugin v1.4.10
@@ -79,8 +80,8 @@ require (
 	github.com/ipfs/go-ipld-format v0.6.0
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
 	github.com/libp2p/go-libp2p-record v0.2.0
-	github.com/mattn/go-colorable v0.1.13
 	github.com/mattn/go-runewidth v0.0.16
+	github.com/mitchellh/go-ps v1.0.0
 	github.com/moby/moby v27.1.1+incompatible
 	github.com/multiformats/go-multihash v0.2.3
 	github.com/olekukonko/ts v0.0.0-20171002115256-78ecb04241c0
@@ -89,14 +90,12 @@ require (
 	github.com/opencontainers/runtime-spec v1.2.0
 	github.com/pkg/sftp v1.13.6
 	github.com/stretchr/testify v1.9.0
-	github.com/taubyte/go-project-schema v0.9.3
-	github.com/taubyte/go-specs v0.10.6
-	github.com/taubyte/tau-cli v0.1.8
 	github.com/tetratelabs/wazero v1.7.2
 	github.com/vbauerster/mpb/v8 v8.7.5
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7
 	go.starlark.net v0.0.0-20240520160348-046347dcd104
 	golang.org/x/mod v0.18.0
+	golang.org/x/text v0.17.0
 	google.golang.org/grpc v1.64.1
 	google.golang.org/protobuf v1.33.0
 	oras.land/oras-go/v2 v2.5.0
@@ -111,7 +110,7 @@ require (
 	github.com/Jorropo/jsync v1.0.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/Microsoft/hcsshim v0.11.5 // indirect
-	github.com/ProtonMail/go-crypto v0.0.0-20220407094043-a94812496cf5 // indirect
+	github.com/ProtonMail/go-crypto v0.0.0-20230217124315-7d5c6f04bbb8 // indirect
 	github.com/VividCortex/ewma v1.2.0 // indirect
 	github.com/acarl005/stripansi v0.0.0-20180116102854-5a71ef0e047d // indirect
 	github.com/acomagu/bufpipe v1.0.3 // indirect
@@ -121,6 +120,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
+	github.com/cloudflare/circl v1.3.3 // indirect
 	github.com/cockroachdb/errors v1.11.1 // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
 	github.com/cockroachdb/pebble v0.0.0-20231218155426-48b54c29d8fe // indirect
@@ -231,6 +231,7 @@ require (
 	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/marten-seemann/tcp v0.0.0-20210406111302-dfbc87cc63fd // indirect
+	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-tty v0.0.3 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
@@ -278,6 +279,7 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
 	github.com/taubyte/go-sdk-symbols v0.2.7 // indirect
+	github.com/taubyte/go-specs v0.10.5 // indirect
 	github.com/therootcompany/xz v1.0.1 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.0 // indirect
@@ -302,7 +304,6 @@ require (
 	go.uber.org/mock v0.4.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
-	golang.org/x/text v0.17.0 // indirect
 	golang.org/x/time v0.5.0 // indirect
 	golang.org/x/tools v0.22.0 // indirect
 	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
