@@ -1,6 +1,7 @@
 package singletonsI18n
 
 import (
+	"errors"
 	"fmt"
 )
 
@@ -44,7 +45,7 @@ func CreatingSeerAtLocFailed(loc string, err error) error {
 }
 
 func SessionFileLocationEmpty() error {
-	return fmt.Errorf(sessionFileLocationEmpty)
+	return errors.New(sessionFileLocationEmpty)
 }
 
 func SessionSettingKeyFailed(key string, value interface{}, err error) error {
@@ -64,7 +65,7 @@ func SessionListFailed(err error) error {
 }
 
 func SessionNotFound() error {
-	return fmt.Errorf(sessionNotFound)
+	return errors.New(sessionNotFound)
 }
 
 func SessionCreateFailed(loc string, err error) error {
@@ -112,7 +113,7 @@ func ProjectAlreadyCloned(project, loc string) error {
 }
 
 func ProfileDoesNotExist() error {
-	return fmt.Errorf(profileDoesNotExist)
+	return errors.New(profileDoesNotExist)
 }
 
 func CreatingAuthClientFailed(err error) error {
@@ -132,5 +133,5 @@ func LoadingPatrickClientFailed(err error) error {
 }
 
 func NoNetworkSelected() error {
-	return fmt.Errorf(noNetworkSelected)
+	return errors.New(noNetworkSelected)
 }
