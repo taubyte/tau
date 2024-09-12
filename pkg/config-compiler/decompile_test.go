@@ -1,7 +1,6 @@
 package compiler
 
 import (
-	"io/ioutil"
 	"os"
 	"testing"
 
@@ -17,12 +16,7 @@ func TestDecompileBasic(t *testing.T) {
 	var gitRoot string
 
 	if runInTemp {
-		gitRoot, err = ioutil.TempDir("", "gitTestRoot")
-		if err != nil {
-			t.Error(err)
-			return
-		}
-		defer os.RemoveAll(gitRoot)
+		gitRoot = t.TempDir()
 	} else {
 		gitRoot = "./testdata"
 		os.RemoveAll(gitRoot)

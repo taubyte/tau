@@ -43,6 +43,8 @@ func (p *vmPlugin) waitTillCopyIsDone() error {
 	var size int64 = -1
 	for {
 		select {
+		case <-p.ctx.Done():
+			return errors.New("context done")
 		case <-time.After(3 * time.Second):
 			info, err := os.Stat(p.origin)
 			if err == nil {
@@ -52,8 +54,6 @@ func (p *vmPlugin) waitTillCopyIsDone() error {
 					return nil
 				}
 			}
-		case <-p.ctx.Done():
-			return errors.New("context done")
 		}
 	}
 }
@@ -70,6 +70,8 @@ func (p *vmPlugin) watch() error {
 		defer watcher.Close()
 		for {
 			select {
+			case <-p.ctx.Done():
+				return
 			case <-time.After(ProcWatchInterval):
 				if p.proc.Exited() {
 					if err := p.reload(); err != nil {
@@ -91,8 +93,6 @@ func (p *vmPlugin) watch() error {
 				}
 			case err := <-watcher.Errors:
 				log.Println("error:", err)
-			case <-p.ctx.Done():
-				return
 			}
 		}
 	}()

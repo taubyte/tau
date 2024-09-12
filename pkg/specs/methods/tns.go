@@ -8,7 +8,7 @@ import (
 
 func IndexValue(branch, projectId, appId, resourceId string, resourceType common.PathVariable) (*common.TnsPath, error) {
 	if len(projectId) == 0 {
-		return nil, errors.New("Project id is required for creating a TNS key")
+		return nil, errors.New("project id is required for creating a TNS key")
 	}
 
 	if len(resourceId) == 0 {
@@ -32,7 +32,7 @@ func IndexValue(branch, projectId, appId, resourceId string, resourceType common
 
 func GetBasicTNSKey(branch, commit, projectId, appId, resourceId string, resourceType common.PathVariable) (*common.TnsPath, error) {
 	if len(projectId) == 0 {
-		return nil, errors.New("Project id is required for creating a TNS key")
+		return nil, errors.New("project id is required for creating a TNS key")
 	}
 
 	if len(resourceId) == 0 {
@@ -60,7 +60,7 @@ func GetBasicTNSKey(branch, commit, projectId, appId, resourceId string, resourc
 
 func GetEmptyTNSKey(branch, commit, projectId, appId string, resourceType common.PathVariable) (*common.TnsPath, error) {
 	if len(projectId) == 0 {
-		return nil, errors.New("Project id is required for creating a TNS key")
+		return nil, errors.New("project id is required for creating a TNS key")
 	}
 
 	var value []string

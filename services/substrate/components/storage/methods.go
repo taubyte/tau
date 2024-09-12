@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-cid"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
 	"github.com/taubyte/tau/p2p/peer"
-	spec "github.com/taubyte/tau/pkg/specs/common"
 	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	"github.com/taubyte/tau/services/substrate/components/storage/common"
 )
@@ -25,8 +25,10 @@ func (s *Service) Storage(context storageIface.Context) (storageIface.Storage, e
 	s.storagesLock.RLock()
 	storage, ok := s.storages[hash]
 	s.storagesLock.RLocker().Unlock()
+
 	if !ok {
-		context.Config, err = s.getStoreConfig(context.ProjectId, context.ApplicationId, context.Matcher)
+		var commit, branch string
+		context.Config, commit, branch, err = s.getStoreConfig(context.ProjectId, context.ApplicationId, context.Matcher)
 		if err != nil {
 			return nil, err
 		}
@@ -40,40 +42,35 @@ func (s *Service) Storage(context storageIface.Context) (storageIface.Storage, e
 		s.storages[hash] = storage
 		s.storagesLock.Unlock()
 
-		err = s.pubsubStorage(context, spec.DefaultBranch)
+		err = s.pubsubStorage(context, branch)
 		if err != nil {
 			return nil, fmt.Errorf("pubsub storage `%s` failed with: %s", context.Matcher, err)
-		}
-
-		commit, err := s.Tns().Simple().Commit(context.ProjectId, spec.DefaultBranch)
-		if err != nil {
-			return nil, fmt.Errorf("getting commit for project id `%s` and branch `%s` failed with: %s", context.ProjectId, spec.DefaultBranch, err)
 		}
 
 		s.commitLock.Lock()
 		s.commits[hash] = commit
 		s.commitLock.Unlock()
-	}
-
-	valid, newCommitId, err := s.validateCommit(hash, context.ProjectId, spec.DefaultBranch)
-	if err != nil {
-		return nil, err
-	}
-
-	if !valid {
-		s.storagesLock.Lock()
-		s.commitLock.Lock()
-
-		defer s.storagesLock.Unlock()
-		defer s.commitLock.Unlock()
-
-		storage, err = s.updateStorage(storage)
+	} else {
+		valid, newCommitId, branch, err := s.validateCommit(hash, context.ProjectId) // TODO: is the commit on the same branch?
 		if err != nil {
 			return nil, err
 		}
 
-		s.storages[hash] = storage
-		s.commits[hash] = newCommitId
+		if !valid {
+			s.storagesLock.Lock()
+			s.commitLock.Lock()
+
+			defer s.storagesLock.Unlock()
+			defer s.commitLock.Unlock()
+
+			storage, err = s.updateStorage(storage, branch)
+			if err != nil {
+				return nil, err
+			}
+
+			s.storages[hash] = storage
+			s.commits[hash] = newCommitId
+		}
 	}
 
 	return storage, nil
@@ -101,16 +98,16 @@ func (s *Service) GetFile(ctx context.Context, cid cid.Cid) (peer.ReadSeekCloser
 
 	return file, nil
 }
-func (s *Service) pubsubStorage(context storageIface.Context, branch string) error {
+func (s *Service) pubsubStorage(ctx storageIface.Context, branch string) error {
 	auction := &hoarderIface.Auction{
 		Type:     hoarderIface.AuctionNew,
 		MetaType: hoarderIface.Storage,
 		Meta: hoarderIface.MetaData{
-			ConfigId:      context.Config.Id,
-			ApplicationId: context.ApplicationId,
-			ProjectId:     context.ProjectId,
-			Match:         context.Matcher,
-			Branch:        spec.DefaultBranch,
+			ConfigId:      ctx.Config.Id,
+			ApplicationId: ctx.ApplicationId,
+			ProjectId:     ctx.ProjectId,
+			Match:         ctx.Matcher,
+			Branch:        branch,
 		},
 	}
 
@@ -119,8 +116,11 @@ func (s *Service) pubsubStorage(context storageIface.Context, branch string) err
 		return fmt.Errorf("marshalling auction failed with %w", err)
 	}
 
-	if err = s.Node().Messaging().Publish(hoarderSpecs.PubSubIdent, dataBytes); err != nil {
-		return fmt.Errorf("failed publishing storage %s with %w", context.Matcher, err)
+	pubsubCtx, pubsubCtxC := context.WithTimeout(s.Node().Context(), 10*time.Second)
+	defer pubsubCtxC()
+
+	if err = s.Node().PubSubPublish(pubsubCtx, hoarderSpecs.PubSubIdent, dataBytes); err != nil {
+		return fmt.Errorf("failed publishing storage %s with %w", ctx.Matcher, err)
 	}
 
 	return nil

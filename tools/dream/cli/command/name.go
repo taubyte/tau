@@ -49,12 +49,12 @@ func getName(c *cli.Context) (name string, err error) {
 	if len(name) == 0 {
 		name = c.String("name")
 		if len(name) == 0 {
-			err = errors.New("Please provide a name")
+			err = errors.New("please provide a name")
 			return
 		}
 	} else {
 		if strings.HasPrefix(c.Args().Get(1), "-") {
-			err = errors.New("Parse arguments failed: write [arguments] after -flags")
+			err = errors.New("parse arguments failed: write [arguments] after -flags")
 			return
 		}
 	}

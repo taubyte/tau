@@ -32,7 +32,7 @@ func (s *application) Prettify(p pretty.Prettier, resources []pretty.PrettyResou
 		for _, name := range local {
 			resourceObject, err := resource.Get(name, appName)
 			if err != nil {
-				errors = append(errors, fmt.Errorf("Getting %s/%s failed with: %s", appName, name, err))
+				errors = append(errors, fmt.Errorf("getting %s/%s failed with: %s", appName, name, err))
 				continue
 			}
 

@@ -25,12 +25,18 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 		return nil, fmt.Errorf("getting database hash for `%s` failed with: %s", context.Matcher, err)
 	}
 
-	var ok bool
+	var (
+		ok     bool
+		branch string
+		commit string
+	)
+
 	s.databasesLock.RLock()
 	database, ok = s.databases[hash]
 	s.databasesLock.RUnlock()
 	if !ok {
-		if context.Config, err = s.fetchConfig(context.ProjectId, context.ApplicationId, context.Matcher); err != nil {
+		context.Config, commit, branch, err = s.fetchConfig(context.ProjectId, context.ApplicationId, context.Matcher)
+		if err != nil {
 			return nil, fmt.Errorf("getting config for match `%s` failed with: %s", context.Matcher, err)
 		}
 
@@ -43,14 +49,8 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 		s.databases[hash] = database
 		s.databasesLock.Unlock()
 
-		if err = s.pubsubDatabase(context, spec.DefaultBranch); err != nil {
+		if err = s.pubsubDatabase(context, branch); err != nil {
 			return nil, fmt.Errorf("pubsubDatabase failed with: %w", err)
-		}
-
-		var commit string
-		commit, err = s.Tns().Simple().Commit(context.ProjectId, spec.DefaultBranch)
-		if err != nil {
-			return nil, fmt.Errorf("getting commit for project id `%s` and branch `%s` failed with: %s", context.ProjectId, spec.DefaultBranch, err)
 		}
 
 		s.commitLock.Lock()
@@ -60,7 +60,7 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 		return
 	}
 
-	valid, newCommitId, err := s.validateCommit(hash, context.ProjectId, spec.DefaultBranch)
+	valid, newCommitId, err := s.validateCommit(hash, context.ProjectId, spec.DefaultBranches)
 	if err != nil {
 		return nil, fmt.Errorf("validating commit failed with: %w", err)
 	}
@@ -72,7 +72,7 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 		defer s.databasesLock.Unlock()
 		defer s.commitLock.Unlock()
 
-		database, err = s.updateDatabase(database)
+		database, err = s.updateDatabase(database, spec.DefaultBranches)
 		if err != nil {
 			return nil, fmt.Errorf("updating database failed with: %w", err)
 		}

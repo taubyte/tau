@@ -72,7 +72,7 @@ Tau is a framework for building low maintenance & highly scalable cloud computin
 2. **Configure**
 
    ```sh
-   tau config generate -n yourdomain.com -s compute --services all --ip your_public_ip
+   tau config generate -n yourdomain.com -s compute --services all --ip your_public_ip --dv --swarm
    ```
 
 3. **Launch**

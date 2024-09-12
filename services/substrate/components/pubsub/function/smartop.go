@@ -5,8 +5,8 @@ import (
 
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 	"github.com/taubyte/tau/core/services/substrate/smartops"
-	"github.com/taubyte/tau/services/substrate/components/pubsub/messaging"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/event"
+	"github.com/taubyte/tau/services/substrate/components/pubsub/messaging"
 )
 
 var _ smartops.EventCaller = &Function{}

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/tau/core/builders"
+	"github.com/taubyte/tau/pkg/git"
 	specs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	chidori "github.com/taubyte/utils/logger/zap"
@@ -114,7 +114,7 @@ func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 
 	c.Job.SetCid(id, cid)
 
-	assetKey, err := methods.GetTNSAssetPath(c.ProjectID, id, specs.DefaultBranch)
+	assetKey, err := methods.GetTNSAssetPath(c.ProjectID, id, c.Job.Meta.Repository.Branch)
 	if err != nil {
 		return err
 	}

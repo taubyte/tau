@@ -11,8 +11,8 @@ import (
 	"fmt"
 
 	"github.com/google/go-github/github"
-	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/tau/dream/helpers"
+	"github.com/taubyte/tau/pkg/git"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/oauth2"
 )

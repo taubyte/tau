@@ -3,10 +3,10 @@ package compile
 import (
 	"fmt"
 
-	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/tau/core/services/hoarder"
 	"github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/pkg/git"
 )
 
 type resourceContext struct {

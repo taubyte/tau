@@ -2,17 +2,16 @@ package helpers
 
 import (
 	"context"
-	"sync"
 
 	"github.com/taubyte/tau/core/vm"
 	"github.com/tetratelabs/wazero"
 )
 
-var lock sync.Mutex
-
 func NewRuntime(ctx context.Context, config *vm.Config) wazero.Runtime {
-	lock.Lock()
-	defer lock.Unlock()
+	if config == nil {
+		config = &vm.Config{}
+	}
+
 	if config.MemoryLimitPages == 0 {
 		config.MemoryLimitPages = vm.MemoryLimitPages
 	}
@@ -23,6 +22,6 @@ func NewRuntime(ctx context.Context, config *vm.Config) wazero.Runtime {
 			WithCloseOnContextDone(true).
 			WithDebugInfoEnabled(true).
 			WithMemoryLimitPages(config.MemoryLimitPages).
-			WithCompilationCache(cache),
+			WithCompilationCache(Cache),
 	)
 }

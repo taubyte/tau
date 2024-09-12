@@ -10,6 +10,8 @@ import (
 	"github.com/taubyte/tau/core/vm"
 	"github.com/tetratelabs/wazero"
 	api "github.com/tetratelabs/wazero/api"
+
+	crand "crypto/rand"
 )
 
 func (r *runtime) Close() error {
@@ -131,7 +133,9 @@ func (r *runtime) instantiate(name string, compiled wazero.CompiledModule, hasRe
 		WithStderr(r.instance.outputErr).
 		WithArgs(name).
 		WithSysWalltime().
-		WithSysNanotime()
+		WithSysNanotime().
+		WithSysNanosleep().
+		WithRandSource(crand.Reader)
 
 	m, err := r.runtime.InstantiateModule(r.instance.ctx.Context(), compiled, config)
 	if err != nil {
@@ -168,8 +172,8 @@ func (r *runtime) defaultModuleFunctions() []*vm.HostModuleFunctionDefinition {
 			Name: "_sleep",
 			Handler: func(ctx context.Context, dur int64) {
 				select {
-				case <-time.After(time.Duration(dur)):
 				case <-ctx.Done():
+				case <-time.After(time.Duration(dur)):
 				}
 			},
 		},

@@ -10,8 +10,6 @@ import (
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	protocolCommon "github.com/taubyte/tau/services/common"
-
-	monkeyIface "github.com/taubyte/tau/core/services/monkey"
 )
 
 var logger = log.Logger("tau.monkey.p2p.client")
@@ -27,7 +25,7 @@ func (c *Client) Close() {
 	c.client.Close()
 }
 
-func New(ctx context.Context, node peer.Node) (monkeyIface.Client, error) {
+func New(ctx context.Context, node peer.Node) (iface.Client, error) {
 	var (
 		c   Client
 		err error

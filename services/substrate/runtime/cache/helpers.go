@@ -8,8 +8,8 @@ import (
 )
 
 // TODO: This should return a cid.Cid
-func ResolveAssetCid(serviceable iface.Serviceable, branch string) (string, error) {
-	assetPath, err := methods.GetTNSAssetPath(serviceable.Project(), serviceable.Id(), branch)
+func ResolveAssetCid(serviceable iface.Serviceable) (string, error) {
+	assetPath, err := methods.GetTNSAssetPath(serviceable.Project(), serviceable.Id(), serviceable.Branch())
 	if err != nil {
 		return "", fmt.Errorf("getting tns asset path failed with: %w", err)
 	}

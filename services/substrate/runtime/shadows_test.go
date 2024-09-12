@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/taubyte/utils/id"
 	"gotest.tools/v3/assert"
 )
 
@@ -15,7 +14,7 @@ func init() {
 }
 
 func TestInstantiate(t *testing.T) {
-	vmModule, err := New(context.Background(), newMockServiceable(), "master", id.Generate())
+	vmModule, err := New(context.Background(), newMockServiceable())
 	assert.NilError(t, err)
 
 	rt, _, err := vmModule.Instantiate()
@@ -42,7 +41,7 @@ func TestInstantiate(t *testing.T) {
 
 func TestShadowContextCancel(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
-	vmModule, err := New(ctx, newMockServiceable(), "master", id.Generate())
+	vmModule, err := New(ctx, newMockServiceable())
 	assert.NilError(t, err)
 
 	ctxC()
@@ -67,7 +66,7 @@ func TestShadowGC(t *testing.T) {
 		ShadowMaxAge = maxAge
 	}()
 
-	vmModule, err := New(context.Background(), newMockServiceable(), "master", id.Generate())
+	vmModule, err := New(context.Background(), newMockServiceable())
 	assert.NilError(t, err)
 
 	// trigger shadow creation
@@ -108,7 +107,7 @@ func TestMaxError(t *testing.T) {
 	serviceable := newMockServiceable()
 	serviceable.service.vm.failInstance = true // creating an instance will always fail
 
-	vmModule, err := New(context.Background(), serviceable, "master", id.Generate())
+	vmModule, err := New(context.Background(), serviceable)
 	assert.NilError(t, err)
 
 	// Instantiate will check channel for shadows
@@ -144,7 +143,7 @@ func TestCoolDown(t *testing.T) {
 	serviceable.service.vm.failInstance = true // creating an instance will always fail
 	InstanceErrorCoolDown = 750 * time.Millisecond
 
-	vmModule, err := New(context.Background(), serviceable, "master", id.Generate())
+	vmModule, err := New(context.Background(), serviceable)
 	assert.NilError(t, err)
 
 	maxErrors := InstanceMaxError
@@ -184,7 +183,7 @@ func TestCoolDown(t *testing.T) {
 }
 
 func TestShadowCountBasic(t *testing.T) {
-	vmModule, err := New(context.Background(), newMockServiceable(), "master", id.Generate())
+	vmModule, err := New(context.Background(), newMockServiceable())
 	assert.NilError(t, err)
 
 	count := vmModule.shadows.Count()
@@ -227,8 +226,9 @@ func TestShadowCountBasic(t *testing.T) {
 func TestShadowCountWithGC(t *testing.T) {
 	ShadowMaxAge = 700 * time.Millisecond
 	ShadowCleanInterval = 250 * time.Millisecond
+	buffer := 100 * time.Millisecond
 
-	vmModule, err := New(context.Background(), newMockServiceable(), "master", id.Generate())
+	vmModule, err := New(context.Background(), newMockServiceable())
 	assert.NilError(t, err)
 
 	count := vmModule.shadows.Count()
@@ -239,7 +239,7 @@ func TestShadowCountWithGC(t *testing.T) {
 	vmModule.shadows.more <- struct{}{}
 	// wait for all shadows to be created and one cleanup interval
 	// none should be cleaned or consumed
-	<-time.After(ShadowCleanInterval)
+	<-time.After(ShadowCleanInterval + buffer)
 	count = vmModule.shadows.Count()
 	// ShadowBuff # of shadows should be created, none consumed
 	assert.Equal(t, count, int64(ShadowBuff), "expected one set created, no shadows consumed or collected")
@@ -247,19 +247,19 @@ func TestShadowCountWithGC(t *testing.T) {
 	vmModule.shadows.more <- struct{}{}
 	// 2nd cleanup interval
 	// none should be cleaned or consumed
-	<-time.After(ShadowCleanInterval)
+	<-time.After(ShadowCleanInterval + buffer)
 	count = vmModule.shadows.Count()
 	assert.Equal(t, count, int64(ShadowBuff)*2, "expected 2 sets created, no shadows consumed or collected")
 
 	// 3rd cleanup interval
 	// first shadows created should be cleaned up by now
-	<-time.After(ShadowCleanInterval)
+	<-time.After(ShadowCleanInterval + buffer)
 	count = vmModule.shadows.Count()
 	assert.Equal(t, count, int64(ShadowBuff), "expected  1 set garbage collected, 1 set kept")
 
 	// 4th cleanup interval
 	// all shadows should be cleaned up by now
-	<-time.After(ShadowCleanInterval)
+	<-time.After(ShadowCleanInterval + buffer)
 	count = vmModule.shadows.Count()
 	assert.Equal(t, count, int64(0), "expected all sets garbage collected")
 }
@@ -270,7 +270,7 @@ func TestMetrics(t *testing.T) {
 	serviceable := newMockServiceable()
 	serviceable.service.vm.runtimeDelay = runtimeCreationDelay
 
-	vmModule, err := New(context.Background(), serviceable, "master", id.Generate())
+	vmModule, err := New(context.Background(), serviceable)
 	assert.NilError(t, err)
 
 	assert.Equal(t, vmModule.ColdStart(), time.Duration(0))

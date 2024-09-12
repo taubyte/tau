@@ -123,6 +123,8 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 		}
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-time.After(DefaultReAnnounceJobTime):
 				_ctx, cancel := context.WithTimeout(ctx, DefaultReAnnounceJobTime)
 				err := srv.ReannounceJobs(_ctx)
@@ -130,8 +132,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 				if err != nil {
 					logger.Error(err)
 				}
-			case <-ctx.Done():
-				return
 			}
 		}
 	}()

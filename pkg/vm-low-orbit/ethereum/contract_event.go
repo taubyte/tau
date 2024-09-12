@@ -257,6 +257,11 @@ func handleLogChannels(vmCtx vm.Context, ctx context.Context, ttl int64 /*second
 
 	for {
 		select {
+		case <-logCtx.Done():
+			ce.watcher.lock.Lock()
+			delete(ce.watcher.published, channel)
+			ce.watcher.lock.Unlock()
+			return nil
 		case err := <-errChan:
 			if err != nil {
 				sub.Unsubscribe()
@@ -300,12 +305,6 @@ func handleLogChannels(vmCtx vm.Context, ctx context.Context, ttl int64 /*second
 					publish(vmCtx, ctx, pubsubNode, ce, channel, channelType, fmt.Errorf("publishing log failed with: %w", err), nil)
 				}
 			}
-
-		case <-logCtx.Done():
-			ce.watcher.lock.Lock()
-			delete(ce.watcher.published, channel)
-			ce.watcher.lock.Unlock()
-			return nil
 		}
 	}
 }

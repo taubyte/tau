@@ -83,6 +83,7 @@ func TestHoarder(t *testing.T) {
 		ProjectId:  projectId,
 		ResourceId: functionId,
 		Paths:      []string{path.Join(wd, "fixtures", "ping.zwasm")},
+		Branch:     specs.DefaultBranches[0],
 	})
 	assert.NilError(t, err)
 
@@ -94,7 +95,7 @@ func TestHoarder(t *testing.T) {
 	tns, err := simple.TNS()
 	assert.NilError(t, err)
 
-	assetKey, err := methods.GetTNSAssetPath(projectId, functionId, specs.DefaultBranch)
+	assetKey, err := methods.GetTNSAssetPath(projectId, functionId, specs.DefaultBranches[0])
 	assert.NilError(t, err)
 
 	obj, err := tns.Fetch(assetKey)

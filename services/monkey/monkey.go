@@ -27,7 +27,7 @@ func (m *Monkey) Run() {
 		}
 	}()
 
-	errs := make([]error, 0)
+	errs := make(chan error, 1024)
 	gotIt := true
 
 	m.Status = patrick.JobStatusLocked
@@ -55,6 +55,8 @@ func (m *Monkey) Run() {
 	go func() {
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case <-time.After(protocolCommon.DefaultRefreshLockTime):
 
 				eta := time.Since(m.start) + protocolCommon.DefaultLockTime
@@ -62,16 +64,14 @@ func (m *Monkey) Run() {
 				// TODO: handle error. Cancel context if fails multiple times
 				// IDEA: have a Refresh call that actually can update logs
 				m.Service.patrickClient.Lock(m.Id, uint32(eta/time.Second))
-			case <-ctx.Done():
-				return
 			}
 		}
 	}()
 
 	<-ctx.Done()
 
-	m.appendErrors(m.logFile, errs...)
-	cid, err0 := m.storeLogs(m.logFile, errs...)
+	m.appendErrors(m.logFile, errs)
+	cid, err0 := m.storeLogs(m.logFile)
 	if err0 != nil {
 		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err0.Error())
 	}
@@ -107,7 +107,7 @@ func (m *Monkey) Run() {
 
 }
 
-func (m *Monkey) run(errs []error) {
+func (m *Monkey) run(errs chan error) {
 	if err := m.RunJob(); err != nil {
 		appendAndLog(errs, "Running job `%s` failed with error: %s", m.Id, err.Error())
 	} else {

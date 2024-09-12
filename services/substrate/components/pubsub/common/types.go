@@ -12,7 +12,6 @@ type MatchDefinition struct {
 	Project     string
 	Application string
 	WebSocket   bool
-	Commit      string
 }
 
 func (m *MatchDefinition) String() string {

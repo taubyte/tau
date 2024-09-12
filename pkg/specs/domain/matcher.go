@@ -12,7 +12,7 @@ func (p PrefixMatcher) MatchString(s string) bool {
 
 func (p MatchableDomains) MatchString(s string) bool {
 	for _, p0 := range p {
-		if p0.MatchString(s) == true {
+		if p0.MatchString(s) {
 			return true
 		}
 	}

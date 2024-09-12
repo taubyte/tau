@@ -54,14 +54,14 @@ func (kvd *kvDatabase) ListAsync(ctx context.Context, prefix string) (chan strin
 		source := result.Next()
 		for {
 			select {
+			case <-ctx.Done():
+				return
 			case entry, ok := <-source:
 				if !ok || entry.Error != nil {
 					return
 				}
 
 				c <- entry.Key
-			case <-ctx.Done():
-				return
 			}
 		}
 	}()

@@ -8,8 +8,7 @@ import (
 )
 
 func main() {
-	err := cli.Run(os.Args...)
-	if err != nil {
+	if err := cli.Run(os.Args...); err != nil {
 		log.Fatal(err)
 	}
 }

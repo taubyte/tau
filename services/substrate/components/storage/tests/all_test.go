@@ -2,7 +2,7 @@ package tests
 
 import (
 	"bytes"
-	"io/ioutil"
+	"io"
 	"os"
 	"regexp"
 	"strings"
@@ -33,28 +33,8 @@ import (
 //go:embed assets/test.webm
 var sampleVideo []byte
 
-// TODO Unused?
-//
-//go:embed assets/test.png
-var sampleImage []byte
-
-// TODO Unused?
-//
-//go:embed assets/test.txt
-var sampleText []byte
-
 //go:embed assets/test2.webm
 var sampleVideo2 []byte
-
-// TODO Unused?
-//
-//go:embed assets/test2.png
-var sampleImage2 []byte
-
-// TODO Unused?
-//
-//go:embed assets/test2.txt
-var sampleText2 []byte
 
 const (
 	projectString = "Qmc3WjpDvCaVY3jWmxranUY7roFhRj66SNqstiRbKxDbU4"
@@ -137,7 +117,7 @@ func TestAll(t *testing.T) {
 		return
 	}
 
-	data, err := ioutil.ReadAll(file)
+	data, err := io.ReadAll(file)
 	if err != nil {
 		t.Error(err)
 		return
@@ -286,7 +266,7 @@ func TestAll(t *testing.T) {
 		return
 	}
 
-	outVideoBytes, err := ioutil.ReadAll(outVideoFile)
+	outVideoBytes, err := io.ReadAll(outVideoFile)
 	if err != nil {
 		t.Error(err)
 		return
@@ -330,7 +310,7 @@ func TestAll(t *testing.T) {
 		return
 	}
 
-	outVideoBytes, err = ioutil.ReadAll(outVideoFile)
+	outVideoBytes, err = io.ReadAll(outVideoFile)
 	if err != nil {
 		t.Error(err)
 		return
@@ -369,7 +349,7 @@ func TestAll(t *testing.T) {
 		return
 	}
 
-	outVideoBytes, err = ioutil.ReadAll(outVideoFile)
+	outVideoBytes, err = io.ReadAll(outVideoFile)
 	if err != nil {
 		t.Error(err)
 		return
@@ -438,7 +418,7 @@ func TestAll(t *testing.T) {
 	}
 
 	// Read "video" version 2
-	outVideoBytes, err = ioutil.ReadAll(outVideoFile)
+	outVideoBytes, err = io.ReadAll(outVideoFile)
 	if err != nil {
 		t.Error(err)
 		return
@@ -481,7 +461,7 @@ func TestAll(t *testing.T) {
 	}
 
 	// Read "video" version 3
-	outVideoBytes, err = ioutil.ReadAll(outVideoFile)
+	outVideoBytes, err = io.ReadAll(outVideoFile)
 	if err != nil {
 		t.Error(err)
 		return
@@ -558,7 +538,7 @@ func TestAll(t *testing.T) {
 	err = compiler.Publish(tnsClient)
 	assert.NilError(t, err)
 
-	commitId, err := tnsClient.Simple().Commit(projectString, "master")
+	commitId, _, err := tnsClient.Simple().Commit(projectString, "master")
 	assert.NilError(t, err)
 
 	if commitId != expectedCommitId {

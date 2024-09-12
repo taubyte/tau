@@ -140,12 +140,12 @@ func (f functionContext) overrideConfigCall() error {
 		return err
 	}
 
-	commit, err := tns.Simple().Commit(f.ctx.projectId, f.ctx.branch)
+	commit, branch, err := tns.Simple().Commit(f.ctx.projectId, f.ctx.branch)
 	if err != nil {
 		return err
 	}
 
-	path, err := functionSpec.Tns().BasicPath(f.ctx.branch, commit, f.ctx.projectId, f.ctx.applicationId, f.config.Id)
+	path, err := functionSpec.Tns().BasicPath(branch, commit, f.ctx.projectId, f.ctx.applicationId, f.config.Id)
 	if err != nil {
 		return err
 	}

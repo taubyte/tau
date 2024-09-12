@@ -1,0 +1,26 @@
+package validate
+
+const (
+	GreaterThan250                                   = "must be less than 250 characters"
+	Between0And250                                   = "must be between 0 and 250 characters"
+	InvalidInput                                     = "invalid input"
+	InvalidMinValue                                  = "invalid `%s` min value: %s"
+	InvalidMaxValue                                  = "invalid `%s` max value: %s"
+	MustStartWithALetter                             = "Must start with a letter"
+	CanOnlyContainLettersNumbersAndUnderscores       = "Can only contain letters, numbers, underscores, and dashes"
+	CanOnlyContainLettersNumbersSpacesAndUnderscores = "Can only contain letters, numbers, spaces, and underscores"
+	PathMustStartWithSlash                           = "path `%s` is not valid, should start with /"
+	InvalidTimeInput                                 = "`%s` is an invalid time input: %s"
+	InvalidBoolInput                                 = "`%s` is an invalid boolean input: %s"
+	ProviderNotSupported                             = "provider `%s` not supported"
+	InvalidIntegerValue                              = "invalid integer value: `%s`, conversion failed with: %s"
+	InvalidSizeUnit                                  = "invalid size unit: `%s` must be one of: %v"
+	InvalidFqdn                                      = "invalid Fqdn: `%s`"
+	NoEmpty                                          = "cannot be empty"
+	InvalidMethodType                                = "invalid method type: `%s` must be one of: %v"
+	InvalidApiMethodType                             = "invalid api method type: `%s` must be one of: %v"
+	InvalidCodeType                                  = "invalid code type: `%s` must be one of: %v"
+	InvalidBucketType                                = "invalid bucket type: `%s` must be one of: %v"
+	InvalidSize                                      = "invalid size: `%s` Ex:(10, 10GB, 10PB)"
+	NotAValidFQDN                                    = "`%s` is not a valid fqdn"
+)

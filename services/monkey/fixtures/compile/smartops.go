@@ -135,12 +135,12 @@ func (f smartopsContext) overrideConfigCall() error {
 		return err
 	}
 
-	commit, err := tns.Simple().Commit(f.ctx.projectId, f.ctx.branch)
+	commit, branch, err := tns.Simple().Commit(f.ctx.projectId, f.ctx.branch)
 	if err != nil {
 		return err
 	}
 
-	path, err := smartopsSpec.Tns().BasicPath(f.ctx.branch, commit, f.ctx.projectId, f.ctx.applicationId, f.config.Id)
+	path, err := smartopsSpec.Tns().BasicPath(branch, commit, f.ctx.projectId, f.ctx.applicationId, f.config.Id)
 	if err != nil {
 		return err
 	}

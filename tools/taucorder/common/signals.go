@@ -14,10 +14,8 @@ func init() {
 	GlobalContext, GlobalContextCancel = context.WithCancel(context.Background())
 
 	go func() {
-		select {
-		case <-GlobalContext.Done():
-			os.Exit(3)
-		}
+		<-GlobalContext.Done()
+		os.Exit(3)
 	}()
 }
 

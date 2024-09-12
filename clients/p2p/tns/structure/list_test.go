@@ -123,7 +123,7 @@ func TestList(t *testing.T) {
 }
 
 func (s testStructure[T]) runListTest() bool {
-	all, err := s.iface.All(testProjectId, testAppId, testBranch).List()
+	all, _, _, err := s.iface.All(testProjectId, testAppId, testBranches...).List()
 	if err != nil {
 		s.t.Error(err)
 		return false
@@ -133,7 +133,7 @@ func (s testStructure[T]) runListTest() bool {
 		return false
 	}
 
-	global, err := s.iface.Global(testProjectId, testBranch).List()
+	global, _, _, err := s.iface.Global(testProjectId, testBranches...).List()
 	if err != nil {
 		s.t.Error(err)
 		return false
@@ -143,7 +143,7 @@ func (s testStructure[T]) runListTest() bool {
 		return false
 	}
 
-	relative, err := s.iface.Relative(testProjectId, testAppId, testBranch).List()
+	relative, _, _, err := s.iface.Relative(testProjectId, testAppId, testBranches...).List()
 	if err != nil {
 		s.t.Error(err)
 		return false

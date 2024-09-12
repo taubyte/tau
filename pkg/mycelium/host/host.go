@@ -108,9 +108,9 @@ func (h *host) newSession(ctx context.Context) (*ssh.Session, error) {
 
 			// cool down
 			select {
-			case <-time.After(500 * time.Millisecond):
 			case <-cCtx.Done():
 				return nil, cCtx.Err()
+			case <-time.After(500 * time.Millisecond):
 			}
 		}
 	}
@@ -179,9 +179,9 @@ func (h *host) Fs(ctx context.Context, opts ...sftp.ClientOption) (afero.Fs, err
 
 			// cool down
 			select {
-			case <-time.After(500 * time.Millisecond):
 			case <-cCtx.Done():
 				return nil, cCtx.Err()
+			case <-time.After(500 * time.Millisecond):
 			}
 		}
 	}

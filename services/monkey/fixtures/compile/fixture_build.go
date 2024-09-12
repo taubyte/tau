@@ -14,10 +14,10 @@ func init() {
 }
 
 type buildFixtureValues struct {
-	config bool
-	code   bool
-	path   string
-	branch string
+	config   bool
+	code     bool
+	path     string
+	branches []string
 }
 
 func (v *buildFixtureValues) parse(params []interface{}) error {
@@ -36,7 +36,7 @@ func (v *buildFixtureValues) parse(params []interface{}) error {
 	if !ok {
 		return errors.New("path(string) is required")
 	}
-	v.branch = spec.DefaultBranch
+	v.branches = spec.DefaultBranches
 
 	return nil
 }

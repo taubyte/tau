@@ -28,11 +28,11 @@ func TestClientSend(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 
-	rand.Seed(time.Now().UnixNano())
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	var n int
 	for n < 25565 || n > 40000 {
-		n = rand.Intn(100000)
+		n = rnd.Intn(100000)
 	}
 
 	p1, err := peer.New( // provider
@@ -224,11 +224,11 @@ func TestClientUpgrade(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 
-	rand.Seed(time.Now().UnixNano())
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	var n int
 	for n < 25565 || n > 40000 {
-		n = rand.Intn(100000)
+		n = rnd.Intn(100000)
 	}
 
 	p1, err := peer.New( // provider
@@ -505,11 +505,11 @@ func TestClientMultiSend(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 
-	rand.Seed(time.Now().UnixNano())
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	var n int
 	for n < 25565 || n > 40000 {
-		n = rand.Intn(100000)
+		n = rnd.Intn(100000)
 	}
 
 	p1, err := peer.New( // provider

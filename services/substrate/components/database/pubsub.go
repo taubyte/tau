@@ -2,24 +2,26 @@ package database
 
 import (
 	"fmt"
+	"time"
+
+	"context"
 
 	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/tau/core/services/hoarder"
 	iface "github.com/taubyte/tau/core/services/substrate/components/database"
-	spec "github.com/taubyte/tau/pkg/specs/common"
 	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 )
 
-func (s *Service) pubsubDatabase(context iface.Context, branch string) error {
+func (s *Service) pubsubDatabase(ctx iface.Context, branch string) error {
 	auction := &hoarder.Auction{
 		Type:     hoarder.AuctionNew,
 		MetaType: hoarder.Database,
 		Meta: hoarder.MetaData{
-			ConfigId:      context.Config.Id,
-			ApplicationId: context.ApplicationId,
-			ProjectId:     context.ProjectId,
-			Match:         context.Matcher,
-			Branch:        spec.DefaultBranch,
+			ConfigId:      ctx.Config.Id,
+			ApplicationId: ctx.ApplicationId,
+			ProjectId:     ctx.ProjectId,
+			Match:         ctx.Matcher,
+			Branch:        branch,
 		},
 	}
 
@@ -28,8 +30,11 @@ func (s *Service) pubsubDatabase(context iface.Context, branch string) error {
 		return fmt.Errorf("marshalling auction failed with %w", err)
 	}
 
-	if err := s.Node().Messaging().Publish(hoarderSpecs.PubSubIdent, dataBytes); err != nil {
-		return fmt.Errorf("publishing database `%s` failed with %w", context.Matcher, err)
+	pubsubCtx, pubsubCtxC := context.WithTimeout(s.Node().Context(), 10*time.Second)
+	defer pubsubCtxC()
+
+	if err := s.Node().PubSubPublish(pubsubCtx, hoarderSpecs.PubSubIdent, dataBytes); err != nil {
+		return fmt.Errorf("publishing database `%s` failed with %w", ctx.Matcher, err)
 	}
 
 	return nil

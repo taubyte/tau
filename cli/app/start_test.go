@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"log"
 	"os"
 	"testing"
 	"time"
@@ -10,10 +9,6 @@ import (
 	_ "embed"
 
 	"gotest.tools/v3/assert"
-)
-
-var (
-	shape = "test"
 )
 
 //go:embed fixtures/testConfig.yaml
@@ -33,11 +28,7 @@ func TestStart(t *testing.T) {
 	ctx, ctxC := context.WithTimeout(context.Background(), time.Second*15)
 	defer ctxC()
 
-	root, err := os.MkdirTemp("/tmp", "tau-test")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
 
 	os.Mkdir(root+"/storage", 0750)
 	os.Mkdir(root+"/storage/test", 0750)
@@ -48,6 +39,6 @@ func TestStart(t *testing.T) {
 	os.WriteFile(root+"/config/keys/test_swarm.key", testSwarmKey, 0640)
 	os.WriteFile(root+"/config/keys/test.key", testKey, 0640)
 
-	err = app.RunContext(ctx, []string{os.Args[0], "start", "-s", "test", "--root", root, "--dev"})
+	err := app.RunContext(ctx, []string{os.Args[0], "start", "-s", "test", "--root", root, "--dev"})
 	assert.NilError(t, err)
 }

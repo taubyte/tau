@@ -38,13 +38,13 @@ func CreateTableInterface(title string, iface interface{}) error {
 	js := recursiveToJSON(iface)
 	marshalled, err := json.Marshal(js)
 	if err != nil {
-		return fmt.Errorf("Failed marshall with %v", err)
+		return fmt.Errorf("failed marshall with %v", err)
 	}
 
 	var buf bytes.Buffer
 	err = json.Indent(&buf, marshalled, "", "    ")
 	if err != nil {
-		return fmt.Errorf("Failed json indent with %v", err)
+		return fmt.Errorf("failed json indent with %v", err)
 	}
 
 	_, err = io.Copy(os.Stdout, &buf)

@@ -3,7 +3,6 @@ package auth_test
 import (
 	"bytes"
 	"encoding/pem"
-	"os"
 	"testing"
 
 	"github.com/taubyte/http/helpers"
@@ -13,8 +12,6 @@ import (
 	"github.com/taubyte/tau/services/auth/acme/store"
 	"gotest.tools/v3/assert"
 )
-
-var testDir = "testdir" // TODO: use temp
 
 func injectCert(t *testing.T, client authIface.Client) []byte {
 	cert, key, err := helpers.GenerateCert("*.pass.com")
@@ -40,7 +37,7 @@ func injectCert(t *testing.T, client authIface.Client) []byte {
 }
 
 func TestInject(t *testing.T) {
-	defer os.Remove(testDir)
+	testDir := t.TempDir()
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
@@ -58,16 +55,10 @@ func TestInject(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	auth, err := simple.Auth()
 	assert.NilError(t, err)
@@ -75,10 +66,7 @@ func TestInject(t *testing.T) {
 	cert := injectCert(t, auth)
 
 	newStore, err := store.New(u.Context(), simple.PeerNode(), testDir, err)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Shoud Fail
 	_, err = newStore.Get(u.Context(), "test.fail.com")
@@ -89,10 +77,7 @@ func TestInject(t *testing.T) {
 
 	// Should Pass
 	data, err := newStore.Get(u.Context(), "test.pass.com")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	if !bytes.Equal(data, cert) {
 		t.Error("Expected key to match")

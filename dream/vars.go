@@ -148,9 +148,9 @@ var FixtureMap = map[string]FixtureDefinition{
 				Required:    false,
 			},
 			{
-				Name:        "branch",
+				Name:        "branch", // TODO : make this variable a slice
 				Alias:       "b",
-				Description: fmt.Sprintf("Defaults to %s", commonSpec.DefaultBranch),
+				Description: fmt.Sprintf("Defaults to %v", commonSpec.DefaultBranches),
 				Required:    false,
 			},
 		},
@@ -194,7 +194,7 @@ var FixtureMap = map[string]FixtureDefinition{
 			{
 				Name:        "branch",
 				Alias:       "b",
-				Description: fmt.Sprintf("Defaults to %s", commonSpec.DefaultBranch),
+				Description: fmt.Sprintf("Defaults to %v", commonSpec.DefaultBranches),
 				Required:    false,
 			},
 		},
@@ -236,7 +236,7 @@ var FixtureMap = map[string]FixtureDefinition{
 			{
 				Name:        "branch",
 				Alias:       "b",
-				Description: fmt.Sprintf("Defaults to %s", commonSpec.DefaultBranch),
+				Description: fmt.Sprintf("Defaults to %v", commonSpec.DefaultBranches),
 				Required:    false,
 			},
 			{
@@ -277,7 +277,7 @@ var FixtureMap = map[string]FixtureDefinition{
 			{
 				Name:        "branch",
 				Alias:       "b",
-				Description: fmt.Sprintf("Defaults to %s", commonSpec.DefaultBranch),
+				Description: fmt.Sprintf("Defaults to %v", commonSpec.DefaultBranches),
 				Required:    false,
 			},
 		},

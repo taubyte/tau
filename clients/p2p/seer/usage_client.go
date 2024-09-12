@@ -110,6 +110,10 @@ func (u *UsageBeacon) Start() {
 
 		for {
 			select {
+			case <-u.ctx.Done():
+				u.cleanStatus()
+				u.status = ErrorUsageBeaconStopped
+				return
 			case <-time.After(DefaultAnnounceBeaconInterval):
 				_, err := u.usage.updateAnnounce(u.nodeId, u.clientNodeId, u.signature)
 				if err != nil {
@@ -122,10 +126,6 @@ func (u *UsageBeacon) Start() {
 				}
 			case err = <-u._status:
 				u.status = err
-			case <-u.ctx.Done():
-				u.cleanStatus()
-				u.status = ErrorUsageBeaconStopped
-				return
 			}
 		}
 	}()

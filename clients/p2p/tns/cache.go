@@ -85,6 +85,9 @@ func (sub *subscription) watch() {
 	go func() {
 		for {
 			select {
+			case <-sub.ctx.Done():
+				sub.close()
+				return
 			case k := <-sub.key:
 				if k == "" {
 					for _, k := range sub.keys {
@@ -101,9 +104,6 @@ func (sub *subscription) watch() {
 					sub.close()
 					return
 				}
-			case <-sub.ctx.Done():
-				sub.close()
-				return
 			}
 		}
 	}()

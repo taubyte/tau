@@ -149,13 +149,13 @@ func (m *module) Debug() {
 func (m *module) AssetOutput(t *testing.T, value string) {
 	var b bytes.Buffer
 	io.Copy(&b, m.suite.instance.Stdout())
-	assert.Equal(t, value, string(b.Bytes()))
+	assert.Equal(t, value, b.String())
 }
 
 func (m *module) AssetErrorOutput(t *testing.T, value string) {
 	var b bytes.Buffer
 	io.Copy(&b, m.suite.instance.Stderr())
-	assert.Equal(t, value, string(b.Bytes()))
+	assert.Equal(t, value, b.String())
 }
 
 // Returns arguments to be appended to a builder.Plugin call for adding build tags

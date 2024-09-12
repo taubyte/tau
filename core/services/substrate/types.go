@@ -30,7 +30,7 @@ type Service interface {
 }
 
 type ProxyClient interface {
-	ProxyHTTP(host string, path string, method string, ops ...client.Option) (<-chan *client.Response, error)
+	ProxyHTTP(host string, path string, method string, ops ...client.Option[client.Request]) (<-chan *client.Response, error)
 	io.Closer
 }
 

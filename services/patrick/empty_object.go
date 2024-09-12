@@ -19,7 +19,7 @@ func (e *emptyObject) Interface() interface{} {
 	return nil
 }
 
-func (e *emptyObject) Current(branch string) ([]tns.Path, error) {
+func (e *emptyObject) Current(branch []string) ([]tns.Path, error) {
 	return nil, nil
 }
 

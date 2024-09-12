@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/taubyte/tau/clients/p2p/patrick/mock"
+
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
@@ -35,7 +37,7 @@ func TestConfigJob(t *testing.T) {
 	t.Skip("needs to be redone")
 	protocolCommon.MockedPatrick = true
 	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
-		return &starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
+		return &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
@@ -147,7 +149,7 @@ func TestConfigJob(t *testing.T) {
 		return
 	}
 
-	err = u.Monkey().Patrick().(*starfish).AddJob(t, u.Monkey().Node(), fakJob)
+	err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), fakJob)
 	if err != nil {
 		t.Error(err)
 		return

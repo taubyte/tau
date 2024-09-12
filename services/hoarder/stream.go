@@ -160,7 +160,3 @@ func (srv *Service) rareHandler(ctx context.Context) (cr.Response, error) {
 
 	return cr.Response{"rare": rareCID}, nil
 }
-
-func (s *Service) ping(context.Context, streams.Connection, command.Body) (cr.Response, error) {
-	return cr.Response{"time": int(time.Now().Unix())}, nil
-}

@@ -12,10 +12,10 @@ import (
 	"github.com/taubyte/tau/core/services/substrate/components"
 	httpComp "github.com/taubyte/tau/core/services/substrate/components/http"
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
+	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
 	"github.com/taubyte/tau/services/substrate/runtime"
-	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 )
 
 func (f *Function) Provision() (function httpComp.Serviceable, err error) {
@@ -27,7 +27,7 @@ func (f *Function) Provision() (function httpComp.Serviceable, err error) {
 		f.readyCtxC()
 	}()
 
-	cachedFunc, err := f.srv.Cache().Add(f, f.branch)
+	cachedFunc, err := f.srv.Cache().Add(f)
 	if err != nil {
 		return nil, fmt.Errorf("adding function to cache failed with: %w", err)
 	}
@@ -39,7 +39,7 @@ func (f *Function) Provision() (function httpComp.Serviceable, err error) {
 		}
 	}
 
-	if f.Function, err = runtime.New(f.instanceCtx, f, f.branch, f.commit); err != nil {
+	if f.Function, err = runtime.New(f.instanceCtx, f); err != nil {
 		return nil, fmt.Errorf("initializing wasm module failed with: %w", err)
 	}
 

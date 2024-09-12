@@ -71,7 +71,7 @@ func (c *Client) Fetch(path tns.Path) (tns.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		c.cache.put(path, object)
+		c.cache.put(path, object) // this will start a go func to watch FIX
 	}
 
 	return &responseObject{
@@ -147,13 +147,27 @@ func (c *Client) lookup(query tns.Query) ([]string, error) {
 }
 
 // Use for indexed object links
-func (r *responseObject) Current(branch string) ([]tns.Path, error) {
-	// Grab Interface and convert to list
+func (r *responseObject) Current(branches []string) (paths []tns.Path, err error) {
 	ifaceList, ok := r.Interface().([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("cannot convert paths iface `%v` to []interface{}", r.Interface())
 	}
 
+	for _, branch := range branches {
+		paths, err = r.current(ifaceList, branch)
+		if err == nil && len(paths) != 0 {
+			break
+		}
+	}
+
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no paths returned from current for branches %s", branches)
+	}
+
+	return
+}
+
+func (r *responseObject) current(ifaceList []interface{}, branch string) ([]tns.Path, error) {
 	paths := make([]tns.Path, 0)
 	var projectId string
 	var commit string
@@ -190,10 +204,6 @@ func (r *responseObject) Current(branch string) ([]tns.Path, error) {
 		}
 
 		paths = append(paths, currentPath)
-	}
-
-	if len(paths) < 1 {
-		return nil, fmt.Errorf("no paths returned from current for branch %s", branch)
 	}
 
 	return paths, nil

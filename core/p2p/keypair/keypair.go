@@ -2,7 +2,6 @@ package keypair
 
 import (
 	"encoding/base64"
-	"io/ioutil"
 	"os"
 
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
@@ -52,7 +51,7 @@ func LoadRaw(keyPath string) ([]byte, error) {
 func Save(priv crypto.PrivKey, keyPath string) error {
 	data, err := crypto.MarshalPrivateKey(priv)
 	if err == nil {
-		err = ioutil.WriteFile(keyPath, data, 0400)
+		err = os.WriteFile(keyPath, data, 0400)
 	}
 
 	return err
@@ -61,7 +60,7 @@ func Save(priv crypto.PrivKey, keyPath string) error {
 func Load(keyPath string) (crypto.PrivKey, error) {
 	_, err := os.Stat(keyPath)
 	if err == nil {
-		key, err := ioutil.ReadFile(keyPath)
+		key, err := os.ReadFile(keyPath)
 		if err != nil {
 			return nil, err
 		} else {

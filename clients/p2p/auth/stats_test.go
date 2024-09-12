@@ -1,7 +1,6 @@
 package auth_test
 
 import (
-	"os"
 	"testing"
 
 	commonIface "github.com/taubyte/tau/core/common"
@@ -11,7 +10,7 @@ import (
 )
 
 func TestStats(t *testing.T) {
-	defer os.Remove(testDir)
+	t.TempDir()
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()

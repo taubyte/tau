@@ -11,11 +11,11 @@ import (
 	"time"
 
 	"github.com/spf13/afero"
-	git "github.com/taubyte/go-simple-git"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	"github.com/taubyte/tau/pkg/config-compiler/fixtures"
+	"github.com/taubyte/tau/pkg/git"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	"github.com/taubyte/utils/maps"
 	"gotest.tools/v3/assert"

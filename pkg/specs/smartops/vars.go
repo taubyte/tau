@@ -4,5 +4,5 @@ import "github.com/taubyte/tau/pkg/specs/common"
 
 const (
 	PathVariable common.PathVariable = "smartops"
-	TagPrefix                        = "smartops:"
+	TagPrefix    string              = "smartops:"
 )

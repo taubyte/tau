@@ -31,7 +31,7 @@ func TestContext(t *testing.T) {
 	assert.NilError(t, err)
 
 	assert.Equal(t, ctx.Application(), applicationId)
-	assert.Equal(t, ctx.Branch(), spec.DefaultBranch)
+	assert.DeepEqual(t, ctx.Branches(), spec.DefaultBranches)
 	assert.Equal(t, ctx.Commit(), commit)
 	assert.Equal(t, ctx.Project(), projectId)
 	assert.Equal(t, ctx.Resource(), resourceId)
@@ -39,7 +39,7 @@ func TestContext(t *testing.T) {
 	ctx, err = New(baseContext, Branch(branch))
 	assert.NilError(t, err)
 
-	assert.Equal(t, ctx.Branch(), branch)
+	assert.DeepEqual(t, ctx.Branches(), []string{branch})
 
 	// Options error: errOption always returns error, when applying options New will fail
 	_, err = New(baseContext, errOption())

@@ -4,7 +4,6 @@ package tests
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -23,12 +22,7 @@ import (
 func TestHoarderClient(t *testing.T) {
 	ctx := context.Background()
 
-	srvRoot, err := os.MkdirTemp("/tmp", "clientSrvRoot")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	defer os.RemoveAll(srvRoot)
+	srvRoot := t.TempDir()
 
 	srv, err := service.New(ctx, &config.Node{
 		Root:        srvRoot,

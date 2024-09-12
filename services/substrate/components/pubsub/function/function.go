@@ -10,12 +10,16 @@ import (
 
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
+	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 
 func (f *Function) Commit() string {
 	return f.commit
+}
+
+func (f *Function) Branch() string {
+	return f.branch
 }
 
 func (f *Function) Project() string {

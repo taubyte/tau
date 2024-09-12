@@ -136,16 +136,16 @@ func (b *GeoBeacon) Start() {
 
 		for {
 			select {
+			case <-b.ctx.Done():
+				b.cleanStatus()
+				b.status = ErrorGeoBeaconStopped
+				return
 			case <-time.After(DefaultGeoBeaconInterval):
 				if err = b.updateLocation(); err != nil {
 					b._status <- err
 				}
 			case err = <-b._status:
 				b.status = err
-			case <-b.ctx.Done():
-				b.cleanStatus()
-				b.status = ErrorGeoBeaconStopped
-				return
 			}
 		}
 	}()

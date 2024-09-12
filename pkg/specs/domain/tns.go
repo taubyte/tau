@@ -16,7 +16,7 @@ func Tns() *tnsHelper {
 
 func (t *tnsHelper) BasicPath(fqdn string) (*common.TnsPath, error) {
 	if fqdn == "" {
-		return nil, errors.New("Fqdn is empty")
+		return nil, errors.New("fqdn is empty")
 	}
 
 	array_to_reverse := strings.Split(fqdn, ".")

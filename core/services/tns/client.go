@@ -16,7 +16,7 @@ type Object interface {
 	Bind(interface{}) error
 	Interface() interface{}
 	// Expected to use with links index
-	Current(branch string) ([]Path, error)
+	Current(branch []string) ([]Path, error)
 }
 
 type Path interface {
@@ -52,21 +52,21 @@ type Stats interface {
 }
 
 type SimpleIface interface {
-	Commit(projectId, branch string) (string, error)
-	Project(projectID, branch string) (interface{}, error)
+	Commit(projectId string, branches ...string) (commit string, branch string, err error)
+	Project(projectID string, branches ...string) (interface{}, error)
 	GetRepositoryProjectId(gitProvider, repoId string) (projectId string, err error)
 }
 
 type StructureGetter[T structureSpec.Structure] interface {
-	Commit(projectId, branch string) (string, error)
-	List() (map[string]T, error)
+	Commit(projectId string) (commit string, branch string, err error)
+	List() (o map[string]T, commit string, branch string, err error)
 	GetById(resourceId string) (T, error)
-	GetByIdCommit(projectId, branch string) (resource T, err error)
+	GetByIdCommit(projectId, commit string) (resource T, err error)
 	GetByName(resourceName string) (resource T, err error)
 }
 
 type StructureIface[T structureSpec.Structure] interface {
-	Relative(projectId, appId, branch string) StructureGetter[T]
-	All(projectId, appId, branch string) StructureGetter[T]
-	Global(projectId, branch string) StructureGetter[T]
+	Relative(projectId, appId string, branches ...string) StructureGetter[T]
+	All(projectId, appId string, branches ...string) StructureGetter[T]
+	Global(projectId string, branches ...string) StructureGetter[T]
 }

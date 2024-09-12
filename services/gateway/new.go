@@ -46,7 +46,7 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, er
 		clientNode = config.ClientNode
 	}
 
-	if err = g.startHttp(config); err != nil {
+	if err = g.startHttp(config); err != nil { // should start at the end
 		return nil, fmt.Errorf("starting http failed with: %w", err)
 	}
 

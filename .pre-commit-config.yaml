@@ -1,0 +1,19 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+    -   id: check-yaml
+    -   id: check-added-large-files
+        args: ["--maxkb=100000"]
+-   repo: https://github.com/TekWizely/pre-commit-golang
+    rev: v1.0.0-rc.1
+    hooks:
+      - id: go-fmt
+        files: '.*\.go$'
+      - id: go-imports
+        files: '.*\.go$'
+        exclude: '.*\.pb\.go$'
+      - id: go-staticcheck-mod
+        files: '.*\.go$'

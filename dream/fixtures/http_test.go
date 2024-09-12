@@ -124,7 +124,7 @@ func TestHttp(t *testing.T) {
 		return
 	}
 
-	currentPaths, err := test_obj.Current(fakeMeta.Repository.Branch)
+	currentPaths, err := test_obj.Current([]string{fakeMeta.Repository.Branch})
 	if err != nil || len(currentPaths) < 1 {
 		t.Error("No paths found", err)
 		return

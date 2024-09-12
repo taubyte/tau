@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"testing"
 	"time"
@@ -18,11 +17,7 @@ func TestConfig(t *testing.T) {
 	ctx, ctxC := context.WithTimeout(context.Background(), time.Second*15)
 	defer ctxC()
 
-	root, err := os.MkdirTemp("/tmp", "tau-test")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer os.RemoveAll(root)
+	root := t.TempDir()
 
 	fmt.Println("ROOT ", root)
 	os.Mkdir(root+"/storage", 0750)
@@ -30,7 +25,7 @@ func TestConfig(t *testing.T) {
 	os.Mkdir(root+"/config", 0750)
 	os.Mkdir(root+"/config/keys", 0750)
 
-	err = newApp().RunContext(ctx, []string{os.Args[0], "--root", root, "cnf", "gen", "-s", "test", "--services", "auth,seer,monkey", "--swarm-key", "--dv-keys"})
+	err := newApp().RunContext(ctx, []string{os.Args[0], "--root", root, "cnf", "gen", "-s", "test", "--services", "auth,seer,monkey", "--swarm-key", "--dv-keys"})
 	assert.NilError(t, err)
 
 	err = newApp().RunContext(ctx, []string{os.Args[0], "--root", root, "cnf", "ok?", "-s", "test"})

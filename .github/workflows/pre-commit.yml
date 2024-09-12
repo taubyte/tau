@@ -1,0 +1,65 @@
+name: pre-commit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22.0'
+    - name: Install Go tools
+      run: |
+        go install golang.org/x/tools/cmd/goimports@latest
+        go install honnef.co/go/tools/cmd/staticcheck@latest
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+    - uses: pre-commit/action@v3.0.1
+
+  tests:
+    runs-on: ubuntu-latest
+    needs: pre-commit
+    services:
+      docker:
+        image: docker:19.03.12
+        options: --privileged # required for nested containers
+        ports:
+          - 2375:2375
+        volumes:
+          - /var/lib/docker
+    steps:
+    - name: Set up Docker environment
+      run: |
+        docker info
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22.0'
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Add entry to /etc/hosts
+      run: |
+        echo "127.0.0.1 hal.computers.com" | sudo tee -a /etc/hosts
+    - name: Run Go tests with retries
+      env:
+        TEST_GIT_TOKEN: ${{ secrets.TEST_GIT_TOKEN }}
+      run: |
+        max_attempts=3
+        attempt_num=1
+        until [ $attempt_num -gt $max_attempts ]
+        do
+          echo "Attempt $attempt_num of $max_attempts"
+          go test -p 1 ./... && break || echo "Test failed. Retrying..."
+          attempt_num=$((attempt_num + 1))
+          if [ $attempt_num -gt $max_attempts ]
+          then
+            echo "All test attempts failed."
+            exit 1
+          fi
+          sleep 5
+        done
