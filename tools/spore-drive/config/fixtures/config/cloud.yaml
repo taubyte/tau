@@ -8,3 +8,10 @@ domain:
 p2p:
     swarm:
         key: keys/swarm.key
+    bootstrap:
+        shape1:
+            - host2
+            - host1
+        shape2:
+            - host2
+            - host1

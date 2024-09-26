@@ -6,42 +6,36 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
+	"fmt"
 	"io"
 
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/tools/spore-drive/config"
+	"golang.org/x/crypto/ssh"
 )
 
-func generateSSHKeyPair(bits int) (privateKey []byte, publicKey []byte, err error) {
-	// Generate an RSA private key
+func generateSSHKeyPair(bits int) ([]byte, []byte, error) {
 	priv, err := rsa.GenerateKey(rand.Reader, bits)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to generate private key: %w", err)
 	}
 
-	// Encode the private key to PEM format
-	privPEM := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "RSA PRIVATE KEY",
-			Bytes: x509.MarshalPKCS1PrivateKey(priv),
-		},
-	)
+	privPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(priv),
+	})
+	if privPEM == nil {
+		return nil, nil, errors.New("failed to encode private key to PEM format")
+	}
 
-	// Generate the public key
-	pub, err := x509.MarshalPKIXPublicKey(&priv.PublicKey)
+	pub, err := ssh.NewPublicKey(&priv.PublicKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to generate SSH public key: %w", err)
 	}
+	pubSSH := ssh.MarshalAuthorizedKey(pub)
 
-	// Encode the public key to PEM format
-	pubPEM := pem.EncodeToMemory(
-		&pem.Block{
-			Type:  "PUBLIC KEY",
-			Bytes: pub,
-		},
-	)
-
-	return privPEM, pubPEM, nil
+	return privPEM, pubSSH, nil
 }
 
 func main() {
@@ -90,18 +84,18 @@ func main() {
 		panic(err)
 	}
 
-	_, pubKeyData, err := generateSSHKeyPair(256)
+	privKeyData, _, err := generateSSHKeyPair(256)
 	if err != nil {
 		panic(err)
 	}
 
-	pubKeyFile, err := p.Auth().Add("withkey").Open()
+	privKeyFile, err := p.Auth().Add("withkey").Open()
 	if err != nil {
 		panic(err)
 	}
-	defer pubKeyFile.Close()
+	defer privKeyFile.Close()
 
-	_, err = io.Copy(pubKeyFile, bytes.NewBuffer(pubKeyData))
+	_, err = io.Copy(privKeyFile, bytes.NewBuffer(privKeyData))
 	if err != nil {
 		panic(err)
 	}
@@ -209,6 +203,16 @@ func main() {
 	}
 
 	err = host2.Shapes().Add("shape2").SetKey("CAESQIA03gtBTeL8eYNQKcJ+VqKLgarHfofd5I/CV/zEsxHiqfihV9ZXjl0qtaTPEWExBgqRn+w2YLD6FQy8zBdEabI=")
+	if err != nil {
+		panic(err)
+	}
+
+	err = p.Cloud().P2P().Bootstrap().Append("shape1", "host2", "host1")
+	if err != nil {
+		panic(err)
+	}
+
+	err = p.Cloud().P2P().Bootstrap().Append("shape2", "host2", "host1")
 	if err != nil {
 		panic(err)
 	}

@@ -5,11 +5,18 @@ import (
 	"encoding/hex"
 	"io"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/spf13/afero"
 	"gotest.tools/v3/assert"
 )
+
+func assertDeepEqualSortedStrings(t *testing.T, a, b []string) {
+	slices.Sort(a)
+	slices.Sort(b)
+	assert.DeepEqual(t, a, b)
+}
 
 func TestParserEdit(t *testing.T) {
 	p, err := New(afero.NewMemMapFs(), "/")
@@ -55,6 +62,9 @@ func TestParserEdit(t *testing.T) {
 	assert.NilError(t, host2.SetLocation(1.25, 25.1))
 	assert.NilError(t, host2.Shapes().Add("shape1").GenerateKey())
 	assert.NilError(t, host2.Shapes().Add("shape2").GenerateKey())
+
+	assert.NilError(t, p.Cloud().P2P().Bootstrap().Append("shape1", host2.Shapes().Get("shape1").Id(), host1.Shapes().Get("shape1").Id()))
+	assert.NilError(t, p.Cloud().P2P().Bootstrap().Append("shape2", host2.Shapes().Get("shape2").Id(), host1.Shapes().Get("shape2").Id()))
 
 	p.Sync()
 
@@ -121,13 +131,13 @@ func TestParserSchema(t *testing.T) {
 
 	assert.Equal(t, hashFile(sshKeyFile), hashFile(oSshKeyFile))
 
-	assert.DeepEqual(t, p.Shapes().List(), []string{"shape1", "shape2"})
+	assertDeepEqualSortedStrings(t, p.Shapes().List(), []string{"shape1", "shape2"})
 
 	assert.DeepEqual(t, p.Shapes().Get("shape1").Services().List(), []string{"auth", "seer"})
 	assert.Equal(t, p.Shapes().Get("shape1").Ports().Get("main"), uint16(4242))
 	assert.Equal(t, p.Shapes().Get("shape1").Ports().Get("lite"), uint16(4262))
 
-	assert.DeepEqual(t, p.Shapes().Get("shape1").Ports().List(), []string{"main", "lite"})
+	assertDeepEqualSortedStrings(t, p.Shapes().Get("shape1").Ports().List(), []string{"main", "lite"})
 
 	assert.DeepEqual(t, p.Shapes().Get("shape2").Services().List(), []string{"gateway", "patrick", "monkey"})
 	assert.Equal(t, p.Shapes().Get("shape2").Ports().Get("main"), uint16(6242))
@@ -135,7 +145,7 @@ func TestParserSchema(t *testing.T) {
 	assert.DeepEqual(t, p.Shapes().Get("shape2").Plugins().List(), []string{"plugin1@v0.1"})
 
 	host1 := p.Hosts().Get("host1")
-	assert.DeepEqual(t, host1.Addresses().List(), []string{"1.2.3.4/24", "4.3.2.1/24"})
+	assertDeepEqualSortedStrings(t, host1.Addresses().List(), []string{"1.2.3.4/24", "4.3.2.1/24"})
 	assert.Equal(t, host1.SSH().Address(), "1.2.3.4")
 	assert.Equal(t, host1.SSH().Port(), uint16(4242))
 	assert.DeepEqual(t, host1.SSH().Auth().List(), []string{"main"})
@@ -153,7 +163,7 @@ func TestParserSchema(t *testing.T) {
 	assert.Equal(t, host1.Shapes().Add("shape2").Id(), "12D3KooWG2eK9dVPazdxSF6eDS1ESgD5N3n2xfsGDKaZuifuE57t")
 
 	host2 := p.Hosts().Get("host2")
-	assert.DeepEqual(t, host2.Addresses().List(), []string{"8.2.3.4/24", "4.3.2.8/24"})
+	assertDeepEqualSortedStrings(t, host2.Addresses().List(), []string{"8.2.3.4/24", "4.3.2.8/24"})
 	assert.Equal(t, host2.SSH().Address(), "8.2.3.4")
 	assert.Equal(t, host2.SSH().Port(), uint16(4242))
 	assert.DeepEqual(t, host2.SSH().Auth().List(), []string{"main"})
@@ -162,18 +172,18 @@ func TestParserSchema(t *testing.T) {
 	assert.Equal(t, lat, float32(1.25))
 	assert.Equal(t, lng, float32(25.1))
 
-	assert.Equal(t, host2.Shapes().Add("shape1").Key(), "CAESQDpF3eQuEbGsjSRkf3uE6E4SV3dvwSSMUcNJkimOUc0hO6gPoZjsq/NO/FwVz8FoZ4LG/5DSF2B/Rl+vJCNLlUI=")
-	assert.Equal(t, host2.Shapes().Add("shape1").Id(), "12D3KooWDqErfJk5kUTfpAcYSPwr4nztSHkDqVZjC1wpkJ9EDsDK")
+	assert.Equal(t, host2.Shapes().Get("shape1").Key(), "CAESQDpF3eQuEbGsjSRkf3uE6E4SV3dvwSSMUcNJkimOUc0hO6gPoZjsq/NO/FwVz8FoZ4LG/5DSF2B/Rl+vJCNLlUI=")
+	assert.Equal(t, host2.Shapes().Get("shape1").Id(), "12D3KooWDqErfJk5kUTfpAcYSPwr4nztSHkDqVZjC1wpkJ9EDsDK")
 
-	assert.Equal(t, host2.Shapes().Add("shape2").Key(), "CAESQIA03gtBTeL8eYNQKcJ+VqKLgarHfofd5I/CV/zEsxHiqfihV9ZXjl0qtaTPEWExBgqRn+w2YLD6FQy8zBdEabI=")
-	assert.Equal(t, host2.Shapes().Add("shape2").Id(), "12D3KooWMFrxcHhw2gvnp8iBVTcqZ3f1B4m5W1vpGoi6q5jxv1Ms")
+	assert.Equal(t, host2.Shapes().Get("shape2").Key(), "CAESQIA03gtBTeL8eYNQKcJ+VqKLgarHfofd5I/CV/zEsxHiqfihV9ZXjl0qtaTPEWExBgqRn+w2YLD6FQy8zBdEabI=")
+	assert.Equal(t, host2.Shapes().Get("shape2").Id(), "12D3KooWMFrxcHhw2gvnp8iBVTcqZ3f1B4m5W1vpGoi6q5jxv1Ms")
 }
 
 func TestParserDelAppendClear(t *testing.T) {
 	p, err := New(afero.NewBasePathFs(afero.NewOsFs(), "fixtures"), "/config")
 	assert.NilError(t, err)
 
-	assert.DeepEqual(t, p.Auth().List(), []string{"main", "withkey"})
+	assertDeepEqualSortedStrings(t, p.Auth().List(), []string{"main", "withkey"})
 	assert.NilError(t, p.Auth().Delete("main"))
 	assert.DeepEqual(t, p.Auth().List(), []string{"withkey"})
 

@@ -23,7 +23,9 @@ type BootstrapParser interface {
 	Get(shape string) []string
 
 	Set(shape string, hosts []string) error
-	Append(shape string, hosts []string) error
+	Append(shape string, hosts ...string) error
+
+	List() []string
 }
 
 type SwarmKeyParser interface {
@@ -177,7 +179,12 @@ func (b *bootstrap) Set(shape string, hosts []string) error {
 	return b.Fork().Get(shape).Set(hosts).Commit()
 }
 
-func (b *bootstrap) Append(shape string, hosts []string) error {
+func (b *bootstrap) List() (l []string) {
+	l, _ = b.Fork().List()
+	return
+}
+
+func (b *bootstrap) Append(shape string, hosts ...string) error {
 	return b.Fork().Get(shape).Set(appendNew(b.Get(shape), hosts...)).Commit()
 }
 
