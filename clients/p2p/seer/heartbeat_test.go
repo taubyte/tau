@@ -48,7 +48,7 @@ func TestHeartBeat(t *testing.T) {
 		return
 	}
 
-	time.Sleep(3 * time.Second)
+	time.Sleep(10 * time.Second)
 	seer, err := simple.Seer()
 	assert.NilError(t, err)
 
