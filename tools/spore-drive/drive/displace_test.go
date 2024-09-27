@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -39,11 +40,14 @@ func testDisplace(t *testing.T, sd Spore) {
 	updatingTau := (sdrive.tauBinary != nil)
 
 	fses := make(map[host.Host]afero.Fs)
+	var fsesLock sync.Mutex
 
 	sdrive.hostWrapper = func(ctx context.Context, h host.Host) (remoteHost, error) {
 		rh := mocks.NewRemoteHost(t)
 		rh.On("Host").Return(h)
+		fsesLock.Lock()
 		fses[h] = afero.NewMemMapFs()
+		fsesLock.Unlock()
 		// deps
 		rh.On("Execute", ctx, "command", "-v", "systemctl").Once().Return(nil, nil)
 		rh.On("Execute", ctx, "command", "-v", "apt").Once().Return(nil, nil)

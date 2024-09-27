@@ -31,8 +31,14 @@ func TestReader_WithReader(t *testing.T) {
 
 	for {
 		n, readErr := pr.Read(readBuf[totalRead:])
-		totalRead += n
+		if n > 0 {
+			totalRead += n
+		}
 		if readErr == io.EOF {
+			break
+		}
+		if n == 0 && readErr == nil {
+			// No more data to read and no error; break the loop.
 			break
 		}
 		assert.NilError(t, readErr)

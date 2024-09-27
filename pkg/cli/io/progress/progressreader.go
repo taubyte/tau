@@ -92,22 +92,15 @@ func (pr *Reader) sendProgress(p int) {
 	}
 }
 
-func (pr *Reader) Close() {
-	if pr.ch != nil {
-		close(pr.ch)
-		pr.ch = nil
-	}
+func (pr *Reader) close() {
+	close(pr.ch)
 }
 
 func (pr *Reader) Read(p []byte) (n int, err error) {
-	if pr.ch == nil {
-		return 0, io.ErrUnexpectedEOF
-	}
-
 	if pr.ctx != nil {
 		select {
 		case <-pr.ctx.Done():
-			pr.Close()
+			pr.close()
 			return 0, pr.ctx.Err()
 		default:
 		}
@@ -136,7 +129,7 @@ func (pr *Reader) Read(p []byte) (n int, err error) {
 				pr.sendProgress(pr.bytesRead)
 			}
 		}
-		pr.Close()
+		pr.close()
 	}
 
 	return

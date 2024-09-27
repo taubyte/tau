@@ -128,7 +128,6 @@ func (d *sporedrive) uploadTau(ctx context.Context, h remoteHost, path string) (
 	eCh := make(chan error, 1)
 
 	go func() {
-		defer rdr.Close()
 		defer f.Close()
 		defer close(eCh)
 		_, err = io.Copy(f, rdr)
