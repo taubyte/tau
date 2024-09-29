@@ -1,0 +1,304 @@
+syntax = "proto3";
+
+package config;
+
+option go_package = ".";
+
+// Data Structures
+message Empty {}
+
+message Source {
+    string root = 1;
+    string path = 2;
+}
+
+message SourceUpload {
+    oneof data {
+        bytes chunk = 1;
+        string path = 2;
+    }
+}
+
+message Config {
+    string id = 1; 
+}
+
+message Bundle {
+    oneof data {
+        BundleType type = 1;
+        bytes chunk = 2;
+    }
+}
+
+message StringOp {
+    oneof op {
+        string set = 1;
+        bool get = 2; 
+    }
+}
+
+message BytesOp {
+    oneof op {
+        bytes set = 1;
+        bool get = 2; 
+    }
+}
+
+message StringSliceOp {
+    oneof op {
+        StringSlice set = 1;
+        StringSlice add = 2;
+        StringSlice delete = 3;
+        bool clear = 4;
+        bool list = 5; 
+    }
+}
+
+message ReturnValue {
+    oneof return {
+        StringOp value=1;
+        BytesOp data=2;
+    }
+}
+
+message StringSlice {
+    repeated string value=1;
+}
+
+message Error {
+    int64 code = 1;
+    string message = 2;
+}
+
+enum BundleType {
+    BUNDLE_ZIP = 0;
+    BUNDLE_TAR = 1;
+}
+
+message BundleConfig {
+    Config id = 1;
+    BundleType type = 2;
+} 
+
+// Return
+message Return {
+    oneof return {
+        string string=1;
+        StringSlice slice=2;
+        bytes bytes=3;
+        uint64 uint64=4;
+        int64 int64=5;
+        float float=6;
+        Error error=7;
+    }
+}
+
+// Op
+message Op {
+    Config config = 1;
+    oneof op {
+        Cloud cloud = 2;
+        Hosts hosts = 3;
+        Auth auth = 4;
+        Shapes shapes = 5;
+    }
+}
+
+// Cloud
+message Cloud {
+    oneof op {
+        Domain domain = 2;
+        P2P p2p = 3;
+    }
+}
+
+message Domain {
+    oneof op {
+        StringOp root = 1;
+        StringOp generated = 2;
+        Validation validation = 3;
+    }
+}
+
+message Validation {
+    oneof op {
+        ValidationKeys keys = 1;
+        bool generate = 2;
+    }
+}
+
+message ValidationKeys {
+    oneof op {
+        ValidationKeysPath path = 1;
+        ValidationKeysData data = 2;
+    }
+}
+
+message ValidationKeysPath {
+    oneof op {
+        StringOp private_key = 1;
+        StringOp public_key = 2;
+    }
+}
+
+message ValidationKeysData {
+    oneof op {
+        BytesOp private_key = 1;
+        BytesOp public_key = 2;
+    }
+}
+
+message P2P {
+    oneof op {
+        Bootstrap bootstrap = 1;
+        Swarm swarm = 2;
+    }
+}
+
+message Bootstrap {
+    oneof op {
+        BootstrapShape select = 1;
+        bool list = 2;
+    }
+}
+
+message BootstrapShape {
+    string shape = 1;
+    oneof op {
+        StringSliceOp nodes = 2;
+        bool delete = 3;
+    }
+}
+
+message Swarm {
+    oneof op {
+        SwarmKey key = 1;
+        bool generate = 2;
+    }
+}
+
+message SwarmKey {
+    oneof op {
+        StringOp path = 1;
+        BytesOp data = 2;
+    }
+}
+
+// Hosts
+message Hosts {
+    oneof op {
+        Host select = 1;
+        bool list = 2;
+    }
+}
+
+message Host {
+    string name = 1;
+    oneof op {
+        StringSliceOp addresses = 2;
+        SSH ssh = 3;
+        StringOp location = 4; // comma separated
+        HostShapes shapes = 5;
+        bool delete = 6;
+    }
+}
+
+message SSH {
+    oneof op {
+        StringOp address = 1; // addr:port
+        StringSliceOp auth = 2;
+    }
+}
+
+message HostShapes {
+    oneof op {
+        HostShape select = 1;
+        bool list = 2;
+    }
+}
+
+message HostShape {
+    string name = 1;
+    oneof op {
+        HostInstance select = 2;
+        bool delete = 3;
+    }
+}
+
+message HostInstance {
+    oneof op {
+        bool id = 1;
+        StringOp key = 2;
+        bool generate = 3;
+    }
+}
+
+// Auth
+message Auth {
+    oneof op {
+        Signer select = 1;
+        bool list = 2;
+    }
+}
+
+message Signer {
+    string name = 1;
+    oneof op {
+        StringOp username = 2;
+        StringOp password = 3;
+        SSHKey key = 4;
+        bool delete = 5;
+    }
+}
+
+message SSHKey {
+    oneof op {
+        StringOp path = 1;
+        BytesOp data = 2;
+    }
+}
+
+// Shapes
+message Shapes {
+    oneof op {
+        Shape select = 1;
+        bool list = 2;
+    }
+}
+
+message Shape {
+    string name = 1;
+    oneof op {
+        StringSliceOp services = 2;
+        Ports ports = 3;
+        StringSliceOp plugins = 4;
+        bool delete = 5;
+    }
+}
+
+message Ports {
+    oneof op {
+        Port select = 1;
+        bool list = 2;
+    }
+}
+
+message Port {
+    string name = 1;
+    oneof op {
+        uint64 set = 2;
+        bool get = 3;
+        bool delete = 4;
+    }
+}
+
+// Service
+service ConfigService {
+  rpc Load(Source) returns (Config);
+  rpc Upload(stream SourceUpload) returns (Config);
+  rpc Download(BundleConfig) returns (stream Bundle);
+  rpc Commit(BundleConfig) returns (Empty);
+  rpc Free(Config) returns (Empty);
+
+  rpc Do(Op) returns (Return);
+}

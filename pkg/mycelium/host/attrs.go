@@ -76,6 +76,38 @@ func Auth(a *auth.Auth) Attribute {
 	}
 }
 
+func Auths(a ...*auth.Auth) Attribute {
+	return func(hi Host) error {
+		h := hi.(*host)
+		h.auth = a
+		return nil
+	}
+}
+
+func Name(name string) Attribute {
+	return func(hi Host) error {
+		h := hi.(*host)
+		h.name = name
+		return nil
+	}
+}
+
+func Tag(tag string) Attribute {
+	return func(hi Host) error {
+		h := hi.(*host)
+		h.tags = append(h.tags, tag)
+		return nil
+	}
+}
+
+func Tags(tags ...string) Attribute {
+	return func(hi Host) error {
+		h := hi.(*host)
+		h.tags = tags
+		return nil
+	}
+}
+
 func Password(username, password string) Attribute {
 	return func(hi Host) error {
 		h := hi.(*host)

@@ -1,0 +1,6 @@
+main:
+    username: tau
+    password: testtest
+withkey:
+    username: tau
+    key: keys/test.pem

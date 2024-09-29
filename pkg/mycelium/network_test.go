@@ -6,40 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pkg/sftp"
-	"github.com/spf13/afero"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/taubyte/tau/pkg/mycelium/command"
 	"github.com/taubyte/tau/pkg/mycelium/host"
+	"github.com/taubyte/tau/pkg/mycelium/host/mocks"
 )
 
-type mockHost struct {
-	mock.Mock
-}
-
-func (m *mockHost) Clone(attributes ...host.Attribute) (host.Host, error) {
-	args := m.Called(attributes)
-	return m, args.Error(1)
-}
-
-func (m *mockHost) Command(ctx context.Context, name string, options ...command.Option) (*command.Command, error) {
-	args := m.Called(ctx, name, options)
-	return args.Get(0).(*command.Command), args.Error(1)
-}
-
-func (m *mockHost) Fs(ctx context.Context, opts ...sftp.ClientOption) (afero.Fs, error) {
-	args := m.Called(ctx, opts)
-	return args.Get(0).(afero.Fs), args.Error(1)
-}
-
-func (m *mockHost) String() string {
-	args := m.Called()
-	return args.String(0)
-}
-
 func TestNetwork_AddWithCloneError(t *testing.T) {
-	h1 := new(mockHost)
+	h1 := new(mocks.Host)
 	h1.On("String").Return("host1")
 	h1.On("Clone", mock.Anything).Return(nil, errors.New("clone error"))
 
@@ -61,11 +35,11 @@ func TestNetwork_AddWithOptions(t *testing.T) {
 }
 
 func TestNetwork_RunWithConcurrency1(t *testing.T) {
-	h1 := new(mockHost)
+	h1 := new(mocks.Host)
 	h1.On("String").Return("host1")
 	h1.On("Clone", mock.Anything).Return(h1, nil)
 
-	h2 := new(mockHost)
+	h2 := new(mocks.Host)
 	h2.On("String").Return("host2")
 	h2.On("Clone", mock.Anything).Return(h2, nil)
 
@@ -78,7 +52,7 @@ func TestNetwork_RunWithConcurrency1(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	handler := func(h host.Host) error {
+	handler := func(ctx context.Context, h host.Host) error {
 		if h.String() == "host2" {
 			return errors.New("error on host2")
 		}
@@ -89,7 +63,7 @@ func TestNetwork_RunWithConcurrency1(t *testing.T) {
 
 	var errList []error
 	for err := range errs {
-		errList = append(errList, err)
+		errList = append(errList, err.Error)
 	}
 
 	assert.Len(t, errList, 1)
@@ -97,7 +71,7 @@ func TestNetwork_RunWithConcurrency1(t *testing.T) {
 }
 
 func TestNetwork_HostsContextCancellation(t *testing.T) {
-	h1 := new(mockHost)
+	h1 := new(mocks.Host)
 	h1.On("String").Return("host1")
 	h1.On("Clone", mock.Anything).Return(h1, nil)
 
@@ -110,7 +84,7 @@ func TestNetwork_HostsContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	ch := network.Hosts(ctx)
+	ch := network.StreamHosts(ctx)
 	var hosts []host.Host
 	for h := range ch {
 		hosts = append(hosts, h)
@@ -120,11 +94,11 @@ func TestNetwork_HostsContextCancellation(t *testing.T) {
 }
 
 func TestNetwork_RunContextCancellation(t *testing.T) {
-	h1 := new(mockHost)
+	h1 := new(mocks.Host)
 	h1.On("String").Return("host1")
 	h1.On("Clone", mock.Anything).Return(h1, nil)
 
-	h2 := new(mockHost)
+	h2 := new(mocks.Host)
 	h2.On("String").Return("host2")
 	h2.On("Clone", mock.Anything).Return(h2, nil)
 
@@ -137,7 +111,7 @@ func TestNetwork_RunContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
-	handler := func(h host.Host) error {
+	handler := func(ctx context.Context, h host.Host) error {
 		time.Sleep(2 * time.Second) // Simulate long processing
 		return nil
 	}
@@ -146,21 +120,21 @@ func TestNetwork_RunContextCancellation(t *testing.T) {
 
 	var errList []error
 	for err := range errs {
-		errList = append(errList, err)
+		errList = append(errList, err.Error)
 	}
 
 	assert.Len(t, errList, 0)
 }
 
 func TestHost_String(t *testing.T) {
-	h1 := new(mockHost)
+	h1 := new(mocks.Host)
 	h1.On("String").Return("host1")
 
 	assert.Equal(t, "host1", h1.String())
 }
 
 func TestHost_Clone(t *testing.T) {
-	h1 := new(mockHost)
+	h1 := new(mocks.Host)
 	h1.On("String").Return("host1")
 	h1.On("Clone", mock.Anything).Return(h1, nil)
 

@@ -11,10 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"golang.org/x/crypto/ssh"
+
+	"github.com/taubyte/tau/pkg/mycelium/command/mocks"
 )
 
 func TestNewCommand(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 
 	mockSession.On("Setenv", mock.Anything, mock.Anything).Return(nil).Once()
@@ -27,7 +29,7 @@ func TestNewCommand(t *testing.T) {
 }
 
 func TestCommandRun(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 
 	mockSession.On("Setenv", mock.Anything, mock.Anything).Return(nil).Once()
@@ -44,7 +46,7 @@ func TestCommandRun(t *testing.T) {
 }
 
 func TestCommandCombinedOutput(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "ls")
 
@@ -62,11 +64,11 @@ func TestCommandCombinedOutput(t *testing.T) {
 }
 
 func TestCommandPipes(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "ls")
 
-	mockWriteCloser := new(mockWriteCloser)
+	mockWriteCloser := new(mocks.WriteCloser)
 	mockWriteCloser.On("Write", mock.Anything).Return(0, nil)
 	mockWriteCloser.On("Close").Return(nil)
 
@@ -90,7 +92,7 @@ func TestCommandPipes(t *testing.T) {
 }
 
 func TestCommandSessionClosed(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "ls")
 
@@ -106,7 +108,7 @@ func TestCommandSessionClosed(t *testing.T) {
 }
 
 func TestCommandsessionWrap(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "ls")
 
@@ -119,7 +121,7 @@ func TestCommandsessionWrap(t *testing.T) {
 	assert.Contains(t, err.Error(), "command failed", "Error should propagate from Run")
 }
 func TestCommandContextTimeout(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
@@ -140,7 +142,7 @@ func TestCommandContextTimeout(t *testing.T) {
 }
 
 func TestCommandStartAndWait(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 
 	mockSession.On("Start", mock.Anything).Return(nil).Once()
@@ -156,7 +158,7 @@ func TestCommandStartAndWait(t *testing.T) {
 }
 
 func TestCommandPipeStdout(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "pipe-test")
 
@@ -169,7 +171,7 @@ func TestCommandPipeStdout(t *testing.T) {
 }
 
 func TestCommandPipeStderr(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "pipe-test")
 
@@ -182,7 +184,7 @@ func TestCommandPipeStderr(t *testing.T) {
 }
 
 func TestCommandSingleExecution(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 
 	cmd, _ := New(ctx, mockSession, "echo", Args("hello"))
@@ -198,7 +200,7 @@ func TestCommandSingleExecution(t *testing.T) {
 }
 
 func TestCommandsessionWrapContextCancellation(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd, _ := New(ctx, mockSession, "ls")
 
@@ -219,7 +221,7 @@ func TestCommandsessionWrapContextCancellation(t *testing.T) {
 }
 
 func TestCommandsessionWrapContextCancellationFailedInt(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd, _ := New(ctx, mockSession, "ls")
 
@@ -241,7 +243,7 @@ func TestCommandsessionWrapContextCancellationFailedInt(t *testing.T) {
 }
 
 func TestCommandStartAndWaitErrorHandling(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "long-process")
 
@@ -257,7 +259,7 @@ func TestCommandStartAndWaitErrorHandling(t *testing.T) {
 }
 
 func TestCommandStdinPipesErrorHandling(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "pipe-test")
 
@@ -268,7 +270,7 @@ func TestCommandStdinPipesErrorHandling(t *testing.T) {
 }
 
 func TestCommandStdoutPipesErrorHandling(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "pipe-test")
 
@@ -280,7 +282,7 @@ func TestCommandStdoutPipesErrorHandling(t *testing.T) {
 }
 
 func TestCommandStderrPipesErrorHandling(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 	cmd, _ := New(ctx, mockSession, "pipe-test")
 
@@ -292,7 +294,7 @@ func TestCommandStderrPipesErrorHandling(t *testing.T) {
 }
 
 func TestCommand_ArgumentsHandling(t *testing.T) {
-	mockSession := new(MockRemoteSession)
+	mockSession := new(mocks.RemoteSession)
 	ctx := context.Background()
 
 	args := []string{"a rg1", "arg2"}

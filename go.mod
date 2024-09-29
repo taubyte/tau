@@ -98,6 +98,7 @@ require (
 	golang.org/x/text v0.17.0
 	google.golang.org/grpc v1.64.1
 	google.golang.org/protobuf v1.33.0
+	gopkg.in/ini.v1 v1.67.0
 	oras.land/oras-go/v2 v2.5.0
 )
 
