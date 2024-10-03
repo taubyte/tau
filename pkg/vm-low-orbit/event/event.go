@@ -30,12 +30,12 @@ func (f *Factory) CreatePubsubEvent(msg *pubsub.Message) *Event {
 
 func (f *Factory) CreateHttpEvent(w http.ResponseWriter, r *http.Request) *Event {
 	q := r.URL.Query()
-	qKeys := make([]string, len(q))
+	qKeys := make([]string, 0, len(q))
 	for k := range q {
 		qKeys = append(qKeys, k)
 	}
 
-	hKeys := make([]string, len(r.Header))
+	hKeys := make([]string, 0, len(r.Header))
 	for k := range r.Header {
 		hKeys = append(hKeys, k)
 	}
