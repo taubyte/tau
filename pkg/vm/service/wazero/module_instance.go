@@ -28,7 +28,7 @@ func (m *moduleInstance) Memory() vm.Memory {
 
 func (m *moduleInstance) Functions() []vm.FunctionDefinition {
 	defMap := m.module.ExportedFunctionDefinitions()
-	defs := make([]vm.FunctionDefinition, len(defMap))
+	defs := make([]vm.FunctionDefinition, 0, len(defMap))
 	for _, def := range defMap {
 		defs = append(defs, def)
 	}
