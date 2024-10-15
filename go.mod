@@ -4,6 +4,8 @@ go 1.22.5
 
 toolchain go1.22.6
 
+replace github.com/taubyte/go-seer => ../go-seer
+
 require (
 	github.com/alecthomas/units v0.0.0-20231202071711-9a357b53e9c9
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -38,7 +40,7 @@ require (
 	github.com/taubyte/domain-validation v1.0.1
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
-	github.com/taubyte/go-seer v1.0.6
+	github.com/taubyte/go-seer v1.0.7
 	github.com/taubyte/go-simple-container v0.4.5
 	github.com/taubyte/go-simple-git v0.2.5 // indirect
 	github.com/taubyte/http v0.10.5
@@ -59,6 +61,7 @@ require (
 )
 
 require (
+	connectrpc.com/connect v1.17.0
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/CalebQ42/squashfs v1.0.1
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
@@ -97,7 +100,7 @@ require (
 	golang.org/x/mod v0.18.0
 	golang.org/x/text v0.17.0
 	google.golang.org/grpc v1.64.1
-	google.golang.org/protobuf v1.33.0
+	google.golang.org/protobuf v1.34.2
 	gopkg.in/ini.v1 v1.67.0
 	oras.land/oras-go/v2 v2.5.0
 )

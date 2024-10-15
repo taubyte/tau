@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"io"
 
-	pb "github.com/taubyte/tau/pkg/spore-drive/config/proto/go"
+	"connectrpc.com/connect"
+	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
 
 	"github.com/taubyte/tau/pkg/spore-drive/config"
 )
 
-func (s *Service) doAuth(in *pb.Auth, p config.Parser) (*pb.Return, error) {
+func (s *Service) doAuth(in *pb.Auth, p config.Parser) (*connect.Response[pb.Return], error) {
 	if in.GetList() {
 		return returnStringSlice(p.Auth().List()), nil
 	}
@@ -23,7 +24,7 @@ func (s *Service) doAuth(in *pb.Auth, p config.Parser) (*pb.Return, error) {
 		}
 
 		if a.GetDelete() {
-			return nil, p.Auth().Delete(name)
+			return returnEmpty(p.Auth().Delete(name))
 		}
 
 		// Get
@@ -55,16 +56,16 @@ func (s *Service) doAuth(in *pb.Auth, p config.Parser) (*pb.Return, error) {
 
 		// Set
 		if x := a.GetUsername(); x != nil && (!x.GetGet() || x.GetSet() != "") {
-			return nil, p.Auth().Get(name).SetUsername(x.GetSet())
+			return returnEmpty(p.Auth().Get(name).SetUsername(x.GetSet()))
 		}
 
 		if x := a.GetPassword(); x != nil && (!x.GetGet() || x.GetSet() != "") {
-			return nil, p.Auth().Get(name).SetPassword(x.GetSet())
+			return returnEmpty(p.Auth().Get(name).SetPassword(x.GetSet()))
 		}
 
 		if x := a.GetKey(); x != nil {
 			if z := x.GetPath(); z != nil && (!z.GetGet() || z.GetSet() != "") {
-				return nil, p.Auth().Get(name).SetKey(z.GetSet())
+				return returnEmpty(p.Auth().Get(name).SetKey(z.GetSet()))
 			} else if z := x.GetData(); z != nil && (!z.GetGet() || z.GetSet() != nil) {
 				kw, err := p.Auth().Get(name).Create()
 				if err != nil {
@@ -77,7 +78,7 @@ func (s *Service) doAuth(in *pb.Auth, p config.Parser) (*pb.Return, error) {
 					return nil, fmt.Errorf("failed to write ssh key: %w", err)
 				}
 
-				return nil, nil
+				return connect.NewResponse[pb.Return](nil), nil
 			} else {
 				return nil, errors.New("failed to set undefined ssh key")
 			}

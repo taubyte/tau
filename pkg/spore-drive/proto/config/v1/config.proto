@@ -1,11 +1,10 @@
 syntax = "proto3";
 
-package config;
+package config.v1;
 
 option go_package = ".";
 
 // Data Structures
-message Empty {}
 
 message Source {
     string root = 1;
@@ -20,7 +19,7 @@ message SourceUpload {
 }
 
 message Config {
-    string id = 1; 
+    string id = 1;
 }
 
 message Bundle {
@@ -33,14 +32,14 @@ message Bundle {
 message StringOp {
     oneof op {
         string set = 1;
-        bool get = 2; 
+        bool get = 2;
     }
 }
 
 message BytesOp {
     oneof op {
         bytes set = 1;
-        bool get = 2; 
+        bool get = 2;
     }
 }
 
@@ -50,19 +49,19 @@ message StringSliceOp {
         StringSlice add = 2;
         StringSlice delete = 3;
         bool clear = 4;
-        bool list = 5; 
+        bool list = 5;
     }
 }
 
 message ReturnValue {
     oneof return {
-        StringOp value=1;
-        BytesOp data=2;
+        StringOp value = 1;
+        BytesOp data = 2;
     }
 }
 
 message StringSlice {
-    repeated string value=1;
+    repeated string value = 1;
 }
 
 message Error {
@@ -78,18 +77,21 @@ enum BundleType {
 message BundleConfig {
     Config id = 1;
     BundleType type = 2;
-} 
+}
+
+message Empty {}
 
 // Return
 message Return {
     oneof return {
-        string string=1;
-        StringSlice slice=2;
-        bytes bytes=3;
-        uint64 uint64=4;
-        int64 int64=5;
-        float float=6;
-        Error error=7;
+        Empty empty = 1;
+        string string = 2;
+        StringSlice slice = 3;
+        bytes bytes = 4;
+        uint64 uint64 = 5;
+        int64 int64 = 6;
+        float float = 7;
+        Error error = 8;
     }
 }
 
@@ -197,7 +199,7 @@ message Host {
     oneof op {
         StringSliceOp addresses = 2;
         SSH ssh = 3;
-        StringOp location = 4; // comma separated
+        StringOp location = 4;  // comma separated
         HostShapes shapes = 5;
         bool delete = 6;
     }
@@ -205,7 +207,7 @@ message Host {
 
 message SSH {
     oneof op {
-        StringOp address = 1; // addr:port
+        StringOp address = 1;  // addr:port
         StringSliceOp auth = 2;
     }
 }
@@ -294,11 +296,11 @@ message Port {
 
 // Service
 service ConfigService {
-  rpc Load(Source) returns (Config);
-  rpc Upload(stream SourceUpload) returns (Config);
-  rpc Download(BundleConfig) returns (stream Bundle);
-  rpc Commit(BundleConfig) returns (Empty);
-  rpc Free(Config) returns (Empty);
+    rpc Load(Source) returns (Config);
+    rpc Upload(stream SourceUpload) returns (Config);
+    rpc Download(BundleConfig) returns (stream Bundle);
+    rpc Commit(Config) returns (Empty);
+    rpc Free(Config) returns (Empty);
 
-  rpc Do(Op) returns (Return);
+    rpc Do(Op) returns (Return);
 }

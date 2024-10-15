@@ -1,312 +1,181 @@
 package service
 
 import (
+	"archive/zip"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
+	"sync"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"connectrpc.com/connect"
+	"github.com/spf13/afero/zipfs"
+	"github.com/taubyte/tau/pkg/spore-drive/config"
 	"github.com/taubyte/tau/pkg/spore-drive/config/fixtures"
-	pb "github.com/taubyte/tau/pkg/spore-drive/config/proto/go"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
+	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
+	pbconnect "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1/configv1connect"
+	"go4.org/readerutil"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"gotest.tools/v3/assert"
 )
 
 func TestFilesystemFromBundle_InvalidType(t *testing.T) {
 	bundle := []byte("invalid data")
 	_, err := filesystemFromBundle(bundle, "/")
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "bundle format unsupported")
+	assert.ErrorContains(t, err, "bundle format unsupported")
 }
 
 func TestFilesystemFromBundle_ValidZip(t *testing.T) {
 	fs, _ := fixtures.VirtConfig()
 	var buf bytes.Buffer
-	err := zipFilesystem(fs, &buf)
-	assert.NoError(t, err)
+	err := zipFilesystem(context.Background(), fs, &buf)
+	assert.NilError(t, err)
 	bundleData := buf.Bytes()
 
 	fsResult, err := filesystemFromBundle(bundleData, "/")
-	assert.NoError(t, err)
-	assert.NotNil(t, fsResult)
+	assert.NilError(t, err)
+	assert.Equal(t, fsResult != nil, true)
 }
 
 func TestFilesystemFromBundle_ValidTar(t *testing.T) {
 	fs, _ := fixtures.VirtConfig()
 	var buf bytes.Buffer
-	err := tarFilesystem(fs, &buf)
-	assert.NoError(t, err)
+	err := tarFilesystem(context.Background(), fs, &buf)
+	assert.NilError(t, err)
 	bundleData := buf.Bytes()
 
 	fsResult, err := filesystemFromBundle(bundleData, "/")
-	assert.NoError(t, err)
-	assert.NotNil(t, fsResult)
+	assert.NilError(t, err)
+	assert.Equal(t, fsResult != nil, true)
 }
 
-func TestUpload_ValidBundle(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	fs, _ := fixtures.VirtConfig()
-	var buf bytes.Buffer
-	err := zipFilesystem(fs, &buf)
-	assert.NoError(t, err)
-	bundleData := buf.Bytes()
+func newTestServer(t *testing.T) (*Service, string) {
+	// Create a new listener on a dynamic port (":0" means any available port)
+	listener, err := net.Listen("tcp", ":0")
+	assert.NilError(t, err)
 
-	stream := &MockUploadStream{
-		RecvFunc: func() (*pb.SourceUpload, error) {
-			if len(bundleData) == 0 {
-				return nil, io.EOF
-			}
-			chunkSize := 1024
-			if len(bundleData) < chunkSize {
-				chunkSize = len(bundleData)
-			}
-			chunk := bundleData[:chunkSize]
-			bundleData = bundleData[chunkSize:]
-			return &pb.SourceUpload{Data: &pb.SourceUpload_Chunk{Chunk: chunk}}, nil
+	// Get the dynamically assigned port
+	port := listener.Addr().(*net.TCPAddr).Port
+
+	svr, err := Serve()
+	assert.NilError(t, err)
+
+	mux := http.NewServeMux()
+	mux.Handle(svr.path, svr.handler)
+	go func() {
+		defer listener.Close()
+		http.Serve(
+			listener,
+			// Use h2c so we can serve HTTP/2 without TLS.
+			h2c.NewHandler(mux, &http2.Server{}),
+		)
+	}()
+
+	return svr, fmt.Sprintf("http://localhost:%d/", port)
+}
+
+func findGoModDir(t *testing.T) string {
+	_, filename, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("could not get the caller information")
+	}
+
+	// Start from the directory of the current file
+	dir := filepath.Dir(filename)
+
+	// Walk up the directory structure until we find go.mod
+	for {
+		modPath := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(modPath); err == nil {
+			// go.mod file found
+			return dir
+		}
+
+		// Move one level up
+		parentDir := filepath.Dir(dir)
+		if parentDir == dir {
+			// We've reached the root without finding go.mod
+			break
+		}
+		dir = parentDir
+	}
+
+	t.Fatal("go.mod file not found")
+	return ""
+}
+
+func copyToTmpDir(t *testing.T, src string) string {
+	tmpDir, err := os.MkdirTemp("", t.Name()+"_cnf")
+	assert.NilError(t, err, "failed to create temp directory")
+
+	err = filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		dstPath := filepath.Join(tmpDir, relPath)
+
+		if info.IsDir() {
+			return os.MkdirAll(dstPath, info.Mode())
+		}
+
+		srcFile, err := os.Open(path)
+		if err != nil {
+			return err
+		}
+		defer srcFile.Close()
+
+		dstFile, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, info.Mode())
+		if err != nil {
+			return err
+		}
+		defer dstFile.Close()
+
+		_, err = io.Copy(dstFile, srcFile)
+		return err
+	})
+
+	assert.NilError(t, err, "failed to copy directory")
+
+	return tmpDir
+}
+
+func TestServerLoadAndDo(t *testing.T) {
+	svr, addr := newTestServer(t)
+	client := pbconnect.NewConfigServiceClient(http.DefaultClient, addr)
+
+	cnfDir := copyToTmpDir(t, findGoModDir(t)+"/pkg/spore-drive/config/fixtures/config")
+	defer os.RemoveAll(cnfDir)
+
+	res, err := client.Load(context.Background(), connect.NewRequest[pb.Source](
+		&pb.Source{
+			Root: cnfDir,
+			Path: "/",
 		},
-		SendAndCloseFunc: func(cfg *pb.Config) error {
-			assert.NotEmpty(t, cfg.GetId())
-			return nil
+	))
+
+	assert.NilError(t, err)
+
+	confId := res.Msg.GetId()
+
+	assert.Equal(t, svr.configs[confId] != nil, true)
+
+	req := connect.NewRequest(&pb.Op{
+		Config: &pb.Config{
+			Id: confId,
 		},
-	}
-
-	err = service.Upload(stream)
-	assert.NoError(t, err)
-}
-
-func TestUpload_InvalidPayload(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	stream := &MockUploadStream{
-		RecvFunc: func() (*pb.SourceUpload, error) {
-			return &pb.SourceUpload{}, nil
-		},
-		SendAndCloseFunc: func(cfg *pb.Config) error {
-			return nil
-		},
-	}
-
-	err := service.Upload(stream)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unexpected payload")
-}
-
-func TestUpload_InvalidBundleData(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	invalidBundleData := []byte("invalid data")
-	stream := &MockUploadStream{
-		RecvFunc: func() (*pb.SourceUpload, error) {
-			if len(invalidBundleData) == 0 {
-				return nil, io.EOF
-			}
-			chunkSize := 1024
-			if len(invalidBundleData) < chunkSize {
-				chunkSize = len(invalidBundleData)
-			}
-			chunk := invalidBundleData[:chunkSize]
-			invalidBundleData = invalidBundleData[chunkSize:]
-			return &pb.SourceUpload{Data: &pb.SourceUpload_Chunk{Chunk: chunk}}, nil
-		},
-		SendAndCloseFunc: func(cfg *pb.Config) error {
-			return nil
-		},
-	}
-
-	err := service.Upload(stream)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "mouting filesystem failed")
-}
-
-func TestUpload_RecvError(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	stream := &MockUploadStream{
-		RecvFunc: func() (*pb.SourceUpload, error) {
-			return nil, io.ErrUnexpectedEOF
-		},
-		SendAndCloseFunc: func(cfg *pb.Config) error {
-			return nil
-		},
-	}
-
-	err := service.Upload(stream)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "upload failed with unexpected EOF")
-}
-
-func TestLoad_EmptyRoot(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	in := &pb.Source{
-		Root: "",
-		Path: "/config",
-	}
-	_, err := service.Load(context.Background(), in)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "must provide root")
-}
-
-func TestLoad_RelativePath(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	in := &pb.Source{
-		Root: "/some/root",
-		Path: "relative/path",
-	}
-	_, err := service.Load(context.Background(), in)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "path must be absolute")
-}
-
-func TestLoad_InvalidRoot(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	in := &pb.Source{
-		Root: "/invalid/root",
-		Path: "/config",
-	}
-	_, err := service.Load(context.Background(), in)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to open root")
-}
-
-func TestLoad_ValidBundle(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	// Create a zip bundle of the virtual config
-	fs, _ := fixtures.VirtConfig()
-	var buf bytes.Buffer
-	err := zipFilesystem(fs, &buf)
-	assert.NoError(t, err)
-	// Write bundle to a temporary file
-	tempFile, err := os.CreateTemp("", "bundle.zip")
-	assert.NoError(t, err)
-	defer os.Remove(tempFile.Name())
-	_, err = tempFile.Write(buf.Bytes())
-	assert.NoError(t, err)
-	tempFile.Close()
-	in := &pb.Source{
-		Root: tempFile.Name(),
-		Path: "/",
-	}
-	cfg, err := service.Load(context.Background(), in)
-	assert.NoError(t, err)
-	assert.NotNil(t, cfg)
-	assert.NotEmpty(t, cfg.GetId())
-}
-
-func TestDownload_InvalidConfigID(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	in := &pb.BundleConfig{
-		Id:   &pb.Config{Id: "invalid-id"},
-		Type: pb.BundleType_BUNDLE_ZIP,
-	}
-	stream := &MockDownloadStream{}
-	err := service.Download(in, stream)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "config not found")
-}
-
-func TestDownload_ValidConfig(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	fs, _ := fixtures.VirtConfig()
-	configInst, err := service.newConfig(fs, "")
-	assert.NoError(t, err)
-	in := &pb.BundleConfig{
-		Id:   &pb.Config{Id: configInst.id},
-		Type: pb.BundleType_BUNDLE_ZIP,
-	}
-	stream := &MockDownloadStream{}
-	err = service.Download(in, stream)
-	assert.NoError(t, err)
-	// Check that data was sent
-	assert.NotEmpty(t, stream.SentMessages)
-	// First message should be the type
-	firstMessage := stream.SentMessages[0]
-	assert.Equal(t, pb.BundleType_BUNDLE_ZIP, firstMessage.GetType())
-	// Subsequent messages should be chunks
-	for _, msg := range stream.SentMessages[1:] {
-		assert.NotNil(t, msg.GetChunk())
-	}
-}
-
-func TestDownload_UnknownBundleType(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	fs, _ := fixtures.VirtConfig()
-	configInst, err := service.newConfig(fs, "")
-	assert.NoError(t, err)
-	in := &pb.BundleConfig{
-		Id:   &pb.Config{Id: configInst.id},
-		Type: pb.BundleType(999), // Unknown type
-	}
-	stream := &MockDownloadStream{}
-	err = service.Download(in, stream)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "unknown type")
-}
-
-func TestDownload_NoConfigID(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	in := &pb.BundleConfig{
-		Type: pb.BundleType_BUNDLE_ZIP,
-	}
-	stream := &MockDownloadStream{}
-	err := service.Download(in, stream)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "must provide config id")
-}
-
-func TestDownload_SendError(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	fs, _ := fixtures.VirtConfig()
-	configInst, err := service.newConfig(fs, "")
-	assert.NoError(t, err)
-	in := &pb.BundleConfig{
-		Id:   &pb.Config{Id: configInst.id},
-		Type: pb.BundleType_BUNDLE_ZIP,
-	}
-	stream := &MockDownloadStream{
-		SendError: io.ErrUnexpectedEOF,
-	}
-	err = service.Download(in, stream)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "failed to communicate type")
-}
-
-func TestFree(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	fs, _ := fixtures.VirtConfig()
-	configInst, err := service.newConfig(fs, "")
-	assert.NoError(t, err)
-	assert.NotNil(t, configInst)
-	cfg := &pb.Config{Id: configInst.id}
-	_, err = service.Free(context.Background(), cfg)
-	assert.NoError(t, err)
-	// Ensure that the config is removed
-	assert.Nil(t, service.getConfig(configInst.id))
-}
-
-func TestDo_NoConfig(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	in := &pb.Op{}
-	_, err := service.Do(context.Background(), in)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "you must provide a configuration id")
-}
-
-func TestDo_ConfigNotFound(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	in := &pb.Op{
-		Config: &pb.Config{Id: "invalid-id"},
-	}
-	_, err := service.Do(context.Background(), in)
-	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "configuration instance not found")
-}
-
-func TestDo_ValidCloudOperation(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	fs, _ := fixtures.VirtConfig()
-	configInst, err := service.newConfig(fs, "")
-	assert.NoError(t, err)
-	in := &pb.Op{
-		Config: &pb.Config{Id: configInst.id},
 		Op: &pb.Op_Cloud{
 			Cloud: &pb.Cloud{
 				Op: &pb.Cloud_Domain{
@@ -320,52 +189,190 @@ func TestDo_ValidCloudOperation(t *testing.T) {
 				},
 			},
 		},
+	})
+
+	cres, err := client.Do(context.Background(), req)
+	assert.NilError(t, err)
+	assert.Equal(t, cres.Msg.GetString_(), "test.com")
+
+	_, err = client.Do(context.Background(), connect.NewRequest(&pb.Op{
+		Config: &pb.Config{
+			Id: confId,
+		},
+		Op: &pb.Op_Cloud{
+			Cloud: &pb.Cloud{
+				Op: &pb.Cloud_Domain{
+					Domain: &pb.Domain{
+						Op: &pb.Domain_Root{
+							Root: &pb.StringOp{
+								Op: &pb.StringOp_Set{
+									Set: "test2.com",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}))
+	assert.NilError(t, err)
+
+	cres, err = client.Do(context.Background(), req)
+	assert.NilError(t, err)
+	assert.Equal(t, cres.Msg.GetString_(), "test2.com")
+}
+
+func TestServerUploadAndDoThenCommit(t *testing.T) {
+	fs, _ := fixtures.VirtConfig()
+	var tarCnf bytes.Buffer
+	err := tarFilesystem(context.Background(), fs, &tarCnf)
+	assert.NilError(t, err)
+
+	svr, addr := newTestServer(t)
+	client := pbconnect.NewConfigServiceClient(http.DefaultClient, addr)
+
+	stream := client.Upload(context.Background())
+
+	buf := make([]byte, 1024)
+	for {
+		n, err := tarCnf.Read(buf)
+		if n > 0 {
+			assert.NilError(t, stream.Send(&pb.SourceUpload{Data: &pb.SourceUpload_Chunk{Chunk: buf[:n]}}))
+		}
+		if err == io.EOF {
+			break
+		}
+		assert.NilError(t, err)
 	}
-	resp, err := service.Do(context.Background(), in)
-	assert.NoError(t, err)
-	assert.Equal(t, "test.com", resp.GetString_())
-}
+	assert.NilError(t, stream.Send(&pb.SourceUpload{Data: &pb.SourceUpload_Path{Path: "/"}}))
 
-func TestCommit(t *testing.T) {
-	service := &Service{configs: make(map[string]*configInstance)}
-	in := &pb.BundleConfig{}
-	resp, err := service.Commit(context.Background(), in)
-	assert.Nil(t, resp)
-	assert.NoError(t, err)
-}
+	res, err := stream.CloseAndReceive()
+	assert.NilError(t, err)
 
-type MockUploadStream struct {
-	grpc.ServerStream
-	RecvFunc         func() (*pb.SourceUpload, error)
-	SendAndCloseFunc func(*pb.Config) error
-}
+	confId := res.Msg.GetId()
+	cnf := svr.configs[confId]
 
-func (m *MockUploadStream) Recv() (*pb.SourceUpload, error) {
-	return m.RecvFunc()
-}
+	assert.Equal(t, cnf != nil, true)
 
-func (m *MockUploadStream) SendAndClose(cfg *pb.Config) error {
-	return m.SendAndCloseFunc(cfg)
-}
+	req := connect.NewRequest(&pb.Op{
+		Config: &pb.Config{
+			Id: confId,
+		},
+		Op: &pb.Op_Cloud{
+			Cloud: &pb.Cloud{
+				Op: &pb.Cloud_Domain{
+					Domain: &pb.Domain{
+						Op: &pb.Domain_Root{
+							Root: &pb.StringOp{
+								Op: &pb.StringOp_Get{Get: true},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
 
-func (m *MockUploadStream) Context() context.Context {
-	return metadata.NewIncomingContext(context.Background(), metadata.MD{})
-}
+	cres, err := client.Do(context.Background(), req)
+	assert.NilError(t, err)
+	assert.Equal(t, cres.Msg.GetString_(), "test.com")
 
-type MockDownloadStream struct {
-	grpc.ServerStream
-	SentMessages []*pb.Bundle
-	SendError    error
-}
+	_, err = client.Do(context.Background(), connect.NewRequest(&pb.Op{
+		Config: &pb.Config{
+			Id: confId,
+		},
+		Op: &pb.Op_Cloud{
+			Cloud: &pb.Cloud{
+				Op: &pb.Cloud_Domain{
+					Domain: &pb.Domain{
+						Op: &pb.Domain_Root{
+							Root: &pb.StringOp{
+								Op: &pb.StringOp_Set{
+									Set: "test2.com",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}))
+	assert.NilError(t, err)
 
-func (m *MockDownloadStream) Send(bundle *pb.Bundle) error {
-	if m.SendError != nil {
-		return m.SendError
+	cres, err = client.Do(context.Background(), req)
+	assert.NilError(t, err)
+	assert.Equal(t, cres.Msg.GetString_(), "test2.com")
+
+	_, err = client.Commit(context.Background(), connect.NewRequest(&pb.Config{Id: confId}))
+	assert.NilError(t, err)
+
+	dstream, err := client.Download(context.Background(), connect.NewRequest(&pb.BundleConfig{Id: &pb.Config{Id: confId}, Type: pb.BundleType_BUNDLE_ZIP}))
+	assert.NilError(t, err)
+
+	var dbuf bytes.Buffer
+
+	for dstream.Receive() {
+		chunk := dstream.Msg().GetChunk()
+		if chunk != nil {
+			dbuf.Write(chunk)
+		} else {
+			assert.Equal(t, dstream.Msg().GetType(), pb.BundleType_BUNDLE_ZIP)
+		}
 	}
-	m.SentMessages = append(m.SentMessages, bundle)
-	return nil
+
+	assert.Equal(t, dbuf.Len() > 2500, true)
+
+	zbun, err := zip.NewReader(readerutil.NewBufferingReaderAt(&dbuf), int64(dbuf.Len()))
+	assert.NilError(t, err)
+	zfs := zipfs.New(zbun)
+
+	p, err := config.New(zfs, "/")
+	assert.NilError(t, err)
+
+	assert.Equal(t, p.Cloud().Domain().Root(), "test2.com")
 }
 
-func (m *MockDownloadStream) Context() context.Context {
-	return metadata.NewIncomingContext(context.Background(), metadata.MD{})
+func TestDoConcurrentAccess(t *testing.T) {
+	_, addr := newTestServer(t)
+	client := pbconnect.NewConfigServiceClient(http.DefaultClient, addr)
+
+	// Load configuration
+	cnfDir := copyToTmpDir(t, findGoModDir(t)+"/pkg/spore-drive/config/fixtures/config")
+	defer os.RemoveAll(cnfDir)
+
+	res, err := client.Load(context.Background(), connect.NewRequest[pb.Source](
+		&pb.Source{
+			Root: cnfDir,
+			Path: "/",
+		},
+	))
+	assert.NilError(t, err)
+	confId := res.Msg.GetId()
+
+	var wg sync.WaitGroup
+	for i := 0; i < 100; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			req := connect.NewRequest(&pb.Op{
+				Config: &pb.Config{Id: confId},
+				Op: &pb.Op_Cloud{
+					Cloud: &pb.Cloud{
+						Op: &pb.Cloud_Domain{
+							Domain: &pb.Domain{
+								Op: &pb.Domain_Root{
+									Root: &pb.StringOp{
+										Op: &pb.StringOp_Get{Get: true},
+									},
+								},
+							},
+						},
+					},
+				},
+			})
+			_, err := client.Do(context.Background(), req)
+			assert.NilError(t, err)
+		}()
+	}
+	wg.Wait()
 }

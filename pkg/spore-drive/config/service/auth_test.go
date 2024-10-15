@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/taubyte/tau/pkg/spore-drive/config/fixtures"
-	pb "github.com/taubyte/tau/pkg/spore-drive/config/proto/go"
+	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
 )
 
 func TestDoAuth_List(t *testing.T) {
@@ -15,7 +15,7 @@ func TestDoAuth_List(t *testing.T) {
 	in := &pb.Auth{Op: &pb.Auth_List{List: true}}
 	resp, err := service.doAuth(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"main", "withkey"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"main", "withkey"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoAuth_GetUsername(t *testing.T) {
@@ -36,7 +36,7 @@ func TestDoAuth_GetUsername(t *testing.T) {
 	}
 	resp, err := service.doAuth(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "tau1", resp.GetString_())
+	assert.Equal(t, "tau1", resp.Msg.GetString_())
 }
 
 func TestDoAuth_SetUsername(t *testing.T) {
@@ -73,7 +73,7 @@ func TestDoAuth_SetUsername(t *testing.T) {
 	}
 	resp, err := service.doAuth(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "newuser", resp.GetString_())
+	assert.Equal(t, "newuser", resp.Msg.GetString_())
 }
 
 func TestDoAuth_GetPassword(t *testing.T) {
@@ -94,7 +94,7 @@ func TestDoAuth_GetPassword(t *testing.T) {
 	}
 	resp, err := service.doAuth(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "testtest", resp.GetString_())
+	assert.Equal(t, "testtest", resp.Msg.GetString_())
 }
 
 func TestDoAuth_SetPassword(t *testing.T) {
@@ -131,7 +131,7 @@ func TestDoAuth_SetPassword(t *testing.T) {
 	}
 	resp, err := service.doAuth(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "newpassword", resp.GetString_())
+	assert.Equal(t, "newpassword", resp.Msg.GetString_())
 }
 
 func TestDoAuth_GetKeyPath(t *testing.T) {
@@ -156,7 +156,7 @@ func TestDoAuth_GetKeyPath(t *testing.T) {
 	}
 	resp, err := service.doAuth(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "/keys/test.pem", resp.GetString_())
+	assert.Equal(t, "/keys/test.pem", resp.Msg.GetString_())
 }
 
 func TestDoAuth_SetKeyPath(t *testing.T) {
@@ -202,7 +202,7 @@ func TestDoAuth_SetKeyPath(t *testing.T) {
 	}
 	resp, err := service.doAuth(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "/new/key/path.pem", resp.GetString_())
+	assert.Equal(t, "/new/key/path.pem", resp.Msg.GetString_())
 }
 
 func TestDoAuth_SetKeyData(t *testing.T) {
@@ -249,7 +249,7 @@ func TestDoAuth_SetKeyData(t *testing.T) {
 	}
 	resp, err := service.doAuth(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, newKeyData, resp.GetBytes())
+	assert.Equal(t, newKeyData, resp.Msg.GetBytes())
 }
 
 func TestDoAuth_DeleteSigner(t *testing.T) {
@@ -260,7 +260,7 @@ func TestDoAuth_DeleteSigner(t *testing.T) {
 	in := &pb.Auth{Op: &pb.Auth_List{List: true}}
 	resp, err := service.doAuth(in, parser)
 	assert.NoError(t, err)
-	assert.Contains(t, resp.GetSlice().GetValue(), "main")
+	assert.Contains(t, resp.Msg.GetSlice().GetValue(), "main")
 
 	// Delete the "main" signer
 	in = &pb.Auth{
@@ -278,7 +278,7 @@ func TestDoAuth_DeleteSigner(t *testing.T) {
 	in = &pb.Auth{Op: &pb.Auth_List{List: true}}
 	resp, err = service.doAuth(in, parser)
 	assert.NoError(t, err)
-	assert.NotContains(t, resp.GetSlice().GetValue(), "main")
+	assert.NotContains(t, resp.Msg.GetSlice().GetValue(), "main")
 }
 
 func TestDoAuth_SelectNoName(t *testing.T) {

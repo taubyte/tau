@@ -1,0 +1,39 @@
+{
+  "name": "js",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "client": "tsx src/index.ts",
+    "test": "jest --detectOpenHandles"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@bufbuild/buf": "^1.39.0",
+    "@bufbuild/protoc-gen-es": "^1.10.0",
+    "@connectrpc/protoc-gen-connect-es": "1.4.0",
+    "@types/jest": "^29.5.13",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.5.2",
+    "@types/unzipper": "^0.10.10",
+    "jest": "^29.7.0",
+    "js-yaml": "^4.1.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.1",
+    "unzipper": "^0.12.3"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "1.4.2",
+    "@connectrpc/connect": "1.4.0",
+    "@connectrpc/connect-node": "1.4.0"
+  }
+}

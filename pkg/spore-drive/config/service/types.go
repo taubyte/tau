@@ -1,21 +1,23 @@
 package service
 
 import (
+	"net/http"
 	"sync"
 
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/spore-drive/config"
-	pb "github.com/taubyte/tau/pkg/spore-drive/config/proto/go"
+	pbconnect "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1/configv1connect"
 )
-
-//go:generate protoc --proto_path=. --go_out=go --go-grpc_out=go config.proto
 
 // server is used to implement pb.ConfigServiceServer.
 type Service struct {
-	pb.UnimplementedConfigServiceServer
+	pbconnect.UnimplementedConfigServiceHandler
 
 	lock    sync.RWMutex
 	configs map[string]*configInstance
+
+	path    string
+	handler http.Handler
 }
 
 type configInstance struct {

@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/taubyte/tau/pkg/spore-drive/config/fixtures"
-	pb "github.com/taubyte/tau/pkg/spore-drive/config/proto/go"
+	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
 )
 
 func TestDoShapes_List(t *testing.T) {
@@ -15,7 +15,7 @@ func TestDoShapes_List(t *testing.T) {
 	in := &pb.Shapes{Op: &pb.Shapes_List{List: true}}
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"shape1", "shape2"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"shape1", "shape2"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoShapes_GetServices(t *testing.T) {
@@ -34,9 +34,10 @@ func TestDoShapes_GetServices(t *testing.T) {
 			},
 		},
 	}
+
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"auth", "seer"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"auth", "seer"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoShapes_SetServices(t *testing.T) {
@@ -57,6 +58,7 @@ func TestDoShapes_SetServices(t *testing.T) {
 			},
 		},
 	}
+
 	_, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
 
@@ -73,9 +75,10 @@ func TestDoShapes_SetServices(t *testing.T) {
 			},
 		},
 	}
+
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"service1", "service2"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"service1", "service2"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoShapes_GetPorts(t *testing.T) {
@@ -94,9 +97,10 @@ func TestDoShapes_GetPorts(t *testing.T) {
 			},
 		},
 	}
+
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"main", "lite"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"main", "lite"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoShapes_GetPortValue(t *testing.T) {
@@ -121,9 +125,10 @@ func TestDoShapes_GetPortValue(t *testing.T) {
 			},
 		},
 	}
+
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, uint64(4242), resp.GetUint64())
+	assert.Equal(t, uint64(4242), resp.Msg.GetUint64())
 }
 
 func TestDoShapes_SetPortValue(t *testing.T) {
@@ -148,6 +153,7 @@ func TestDoShapes_SetPortValue(t *testing.T) {
 			},
 		},
 	}
+
 	_, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
 
@@ -169,9 +175,10 @@ func TestDoShapes_SetPortValue(t *testing.T) {
 			},
 		},
 	}
+
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, uint64(8080), resp.GetUint64())
+	assert.Equal(t, uint64(8080), resp.Msg.GetUint64())
 }
 
 func TestDoShapes_DeletePort(t *testing.T) {
@@ -198,6 +205,7 @@ func TestDoShapes_DeletePort(t *testing.T) {
 			},
 		},
 	}
+
 	_, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
 
@@ -214,9 +222,10 @@ func TestDoShapes_DeletePort(t *testing.T) {
 			},
 		},
 	}
+
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.NotContains(t, resp.GetSlice().GetValue(), "lite")
+	assert.NotContains(t, resp.Msg.GetSlice().GetValue(), "lite")
 }
 
 func TestDoShapes_GetPlugins(t *testing.T) {
@@ -235,9 +244,10 @@ func TestDoShapes_GetPlugins(t *testing.T) {
 			},
 		},
 	}
+
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"plugin1@v0.1"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"plugin1@v0.1"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoShapes_SetPlugins(t *testing.T) {
@@ -259,6 +269,7 @@ func TestDoShapes_SetPlugins(t *testing.T) {
 			},
 		},
 	}
+
 	_, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
 
@@ -275,9 +286,10 @@ func TestDoShapes_SetPlugins(t *testing.T) {
 			},
 		},
 	}
+
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"plugin2@v0.2", "plugin3@v0.3"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"plugin2@v0.2", "plugin3@v0.3"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoShapes_DeletePlugin(t *testing.T) {
@@ -299,6 +311,7 @@ func TestDoShapes_DeletePlugin(t *testing.T) {
 			},
 		},
 	}
+
 	_, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
 
@@ -315,9 +328,10 @@ func TestDoShapes_DeletePlugin(t *testing.T) {
 			},
 		},
 	}
+
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.NotContains(t, resp.GetSlice().GetValue(), "plugin1@v0.1")
+	assert.NotContains(t, resp.Msg.GetSlice().GetValue(), "plugin1@v0.1")
 }
 
 func TestDoShapes_DeleteShape(t *testing.T) {
@@ -335,6 +349,7 @@ func TestDoShapes_DeleteShape(t *testing.T) {
 			},
 		},
 	}
+
 	_, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
 
@@ -342,7 +357,7 @@ func TestDoShapes_DeleteShape(t *testing.T) {
 	in = &pb.Shapes{Op: &pb.Shapes_List{List: true}}
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.NotContains(t, resp.GetSlice().GetValue(), "shape2")
+	assert.NotContains(t, resp.Msg.GetSlice().GetValue(), "shape2")
 }
 
 func TestDoShapes_InvalidShapeOperation(t *testing.T) {
@@ -357,6 +372,7 @@ func TestDoShapes_InvalidShapeOperation(t *testing.T) {
 			},
 		},
 	}
+
 	_, err := service.doShapes(in, parser)
 	assert.Error(t, err)
 	assert.Equal(t, "invalid shapes operation", err.Error())
@@ -374,6 +390,7 @@ func TestDoShapes_SelectNoName(t *testing.T) {
 			},
 		},
 	}
+
 	_, err := service.doShapes(in, parser)
 	assert.Error(t, err)
 	assert.Equal(t, "shape must have a name", err.Error())

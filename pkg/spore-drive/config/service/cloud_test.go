@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/taubyte/tau/pkg/spore-drive/config/fixtures"
-	pb "github.com/taubyte/tau/pkg/spore-drive/config/proto/go"
+	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
 )
 
 func TestDoCloud_GetRootDomain(t *testing.T) {
@@ -25,7 +25,7 @@ func TestDoCloud_GetRootDomain(t *testing.T) {
 	}
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "test.com", resp.GetString_())
+	assert.Equal(t, "test.com", resp.Msg.GetString_())
 }
 
 func TestDoCloud_SetRootDomain(t *testing.T) {
@@ -61,7 +61,7 @@ func TestDoCloud_SetRootDomain(t *testing.T) {
 	}
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "newroot.com", resp.GetString_())
+	assert.Equal(t, "newroot.com", resp.Msg.GetString_())
 }
 
 func TestDoCloud_GetGeneratedDomain(t *testing.T) {
@@ -81,7 +81,7 @@ func TestDoCloud_GetGeneratedDomain(t *testing.T) {
 	}
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "gtest.com", resp.GetString_())
+	assert.Equal(t, "gtest.com", resp.Msg.GetString_())
 }
 
 func TestDoCloud_SetGeneratedDomain(t *testing.T) {
@@ -116,7 +116,7 @@ func TestDoCloud_SetGeneratedDomain(t *testing.T) {
 	}
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "newgenerated.com", resp.GetString_())
+	assert.Equal(t, "newgenerated.com", resp.Msg.GetString_())
 }
 
 func TestDoCloud_DomainValidation_GenerateKeys(t *testing.T) {
@@ -168,7 +168,7 @@ func TestDoCloud_DomainValidation_GetPrivateKeyPath(t *testing.T) {
 
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, resp.GetString_())
+	assert.NotEmpty(t, resp.Msg.GetString_())
 }
 
 func TestDoCloud_DomainValidation_SetPrivateKeyPath(t *testing.T) {
@@ -230,7 +230,7 @@ func TestDoCloud_DomainValidation_SetPrivateKeyPath(t *testing.T) {
 
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, newPath, resp.GetString_())
+	assert.Equal(t, newPath, resp.Msg.GetString_())
 }
 
 func TestDoCloud_DomainValidation_GetPrivateKeyData(t *testing.T) {
@@ -264,7 +264,7 @@ func TestDoCloud_DomainValidation_GetPrivateKeyData(t *testing.T) {
 
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, resp.GetBytes())
+	assert.NotEmpty(t, resp.Msg.GetBytes())
 }
 
 func TestDoCloud_DomainValidation_SetPrivateKeyData(t *testing.T) {
@@ -328,7 +328,7 @@ func TestDoCloud_DomainValidation_SetPrivateKeyData(t *testing.T) {
 
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, newKeyData, resp.GetBytes())
+	assert.Equal(t, newKeyData, resp.Msg.GetBytes())
 }
 
 func TestDoCloud_P2P_Bootstrap_List(t *testing.T) {
@@ -349,7 +349,7 @@ func TestDoCloud_P2P_Bootstrap_List(t *testing.T) {
 
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"shape1", "shape2"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"shape1", "shape2"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoCloud_P2P_Bootstrap_Select_ListNodes(t *testing.T) {
@@ -379,7 +379,7 @@ func TestDoCloud_P2P_Bootstrap_Select_ListNodes(t *testing.T) {
 
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"host2", "host1"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"host2", "host1"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoCloud_P2P_Bootstrap_Select_SetNodes(t *testing.T) {
@@ -438,7 +438,7 @@ func TestDoCloud_P2P_Bootstrap_Select_SetNodes(t *testing.T) {
 
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, newNodes, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, newNodes, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoCloud_P2P_Swarm_Generate(t *testing.T) {
@@ -489,7 +489,7 @@ func TestDoCloud_P2P_Swarm_GetKeyPath(t *testing.T) {
 
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.NotEmpty(t, resp.GetString_())
+	assert.NotEmpty(t, resp.Msg.GetString_())
 }
 
 func TestDoCloud_P2P_Swarm_SetKeyPath(t *testing.T) {
@@ -543,7 +543,7 @@ func TestDoCloud_P2P_Swarm_SetKeyPath(t *testing.T) {
 
 	resp, err := service.doCloud(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, newPath, resp.GetString_())
+	assert.Equal(t, newPath, resp.Msg.GetString_())
 }
 
 func TestDoCloud_InvalidOperation(t *testing.T) {

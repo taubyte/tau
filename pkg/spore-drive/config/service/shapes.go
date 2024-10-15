@@ -3,12 +3,13 @@ package service
 import (
 	"errors"
 
-	pb "github.com/taubyte/tau/pkg/spore-drive/config/proto/go"
+	"connectrpc.com/connect"
+	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
 
 	"github.com/taubyte/tau/pkg/spore-drive/config"
 )
 
-func (s *Service) doShapes(in *pb.Shapes, p config.Parser) (*pb.Return, error) {
+func (s *Service) doShapes(in *pb.Shapes, p config.Parser) (*connect.Response[pb.Return], error) {
 	if in.GetList() {
 		return returnStringSlice(p.Shapes().List()), nil
 	}
@@ -28,11 +29,11 @@ func (s *Service) doShapes(in *pb.Shapes, p config.Parser) (*pb.Return, error) {
 
 			// set
 			if l := n.GetSet(); l != nil {
-				return nil, p.Shapes().Shape(name).Services().Set(l.GetValue()...)
+				return returnEmpty(p.Shapes().Shape(name).Services().Set(l.GetValue()...))
 			}
 
 			if l := n.GetAdd(); l != nil {
-				return nil, p.Shapes().Shape(name).Services().Append(l.GetValue()...)
+				return returnEmpty(p.Shapes().Shape(name).Services().Append(l.GetValue()...))
 			}
 
 			if l := n.GetDelete(); l != nil {
@@ -42,7 +43,7 @@ func (s *Service) doShapes(in *pb.Shapes, p config.Parser) (*pb.Return, error) {
 					}
 				}
 
-				return nil, nil
+				return returnEmpty(nil)
 			}
 
 			if n.GetClear() {
@@ -52,7 +53,7 @@ func (s *Service) doShapes(in *pb.Shapes, p config.Parser) (*pb.Return, error) {
 					}
 				}
 
-				return nil, nil
+				return returnEmpty(nil)
 			}
 		}
 
@@ -69,11 +70,11 @@ func (s *Service) doShapes(in *pb.Shapes, p config.Parser) (*pb.Return, error) {
 				}
 
 				if k.GetDelete() {
-					return nil, p.Shapes().Shape(name).Ports().Delete(portName)
+					return returnEmpty(p.Shapes().Shape(name).Ports().Delete(portName))
 				}
 
 				if pval := k.GetSet(); pval != 0 {
-					return nil, p.Shapes().Shape(name).Ports().Set(portName, uint16(pval))
+					return returnEmpty(p.Shapes().Shape(name).Ports().Set(portName, uint16(pval)))
 				}
 			}
 		}
@@ -87,11 +88,11 @@ func (s *Service) doShapes(in *pb.Shapes, p config.Parser) (*pb.Return, error) {
 
 			// set
 			if l := n.GetSet(); l != nil {
-				return nil, p.Shapes().Shape(name).Plugins().Set(l.GetValue()...)
+				return returnEmpty(p.Shapes().Shape(name).Plugins().Set(l.GetValue()...))
 			}
 
 			if l := n.GetAdd(); l != nil {
-				return nil, p.Shapes().Shape(name).Plugins().Append(l.GetValue()...)
+				return returnEmpty(p.Shapes().Shape(name).Plugins().Append(l.GetValue()...))
 			}
 
 			if l := n.GetDelete(); l != nil {
@@ -101,7 +102,7 @@ func (s *Service) doShapes(in *pb.Shapes, p config.Parser) (*pb.Return, error) {
 					}
 				}
 
-				return nil, nil
+				return returnEmpty(nil)
 			}
 
 			if n.GetClear() {
@@ -111,13 +112,13 @@ func (s *Service) doShapes(in *pb.Shapes, p config.Parser) (*pb.Return, error) {
 					}
 				}
 
-				return nil, nil
+				return returnEmpty(nil)
 			}
 		}
 
 		// delete
 		if x.GetDelete() {
-			return nil, p.Shapes().Delete(name)
+			return returnEmpty(p.Shapes().Delete(name))
 		}
 	}
 

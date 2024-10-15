@@ -123,7 +123,7 @@ func (s *ssh) SetFullAddress(faddr string) error {
 		return err
 	}
 
-	prt, err := strconv.ParseInt(port, 10, 16)
+	prt, err := strconv.ParseUint(port, 10, 16)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -10,6 +11,14 @@ import (
 	"github.com/taubyte/utils/id"
 )
 
+func (s *Service) Lookup(id string) (config.Parser, error) {
+	cnf := s.getConfig(id)
+	if cnf == nil {
+		return nil, errors.New("not found")
+	}
+	return cnf.parser, nil
+}
+
 func (s *Service) newConfig(fs afero.Fs, dir string) (*configInstance, error) {
 	parser, err := config.New(fs, "/")
 	if err != nil {
@@ -17,7 +26,7 @@ func (s *Service) newConfig(fs afero.Fs, dir string) (*configInstance, error) {
 	}
 
 	c := &configInstance{
-		id:     id.Generate(fmt.Sprint(parser)),
+		id:     id.Generate(fmt.Sprintf("%p", parser)),
 		fs:     fs,
 		parser: parser,
 	}

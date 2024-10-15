@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	pb "github.com/taubyte/tau/pkg/spore-drive/config/proto/go"
+	"connectrpc.com/connect"
+	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
 
 	"github.com/taubyte/tau/pkg/spore-drive/config"
 )
 
-func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*pb.Return, error) {
+func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*connect.Response[pb.Return], error) {
 	// get
 	if in.GetList() {
 		return returnStringSlice(p.Hosts().List()), nil
@@ -28,11 +29,11 @@ func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*pb.Return, error) {
 
 			// set
 			if l := n.GetSet(); l != nil {
-				return nil, p.Hosts().Host(name).Addresses().Set(l.GetValue()...)
+				return returnEmpty(p.Hosts().Host(name).Addresses().Set(l.GetValue()...))
 			}
 
 			if l := n.GetAdd(); l != nil {
-				return nil, p.Hosts().Host(name).Addresses().Append(l.GetValue()...)
+				return returnEmpty(p.Hosts().Host(name).Addresses().Append(l.GetValue()...))
 			}
 
 			if l := n.GetDelete(); l != nil {
@@ -42,7 +43,7 @@ func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*pb.Return, error) {
 					}
 				}
 
-				return nil, nil
+				return returnEmpty(nil)
 			}
 
 			if n.GetClear() {
@@ -52,7 +53,7 @@ func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*pb.Return, error) {
 					}
 				}
 
-				return nil, nil
+				return returnEmpty(nil)
 			}
 		}
 
@@ -72,7 +73,7 @@ func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*pb.Return, error) {
 				}
 
 				if y := n.GetSet(); y != "" {
-					return nil, p.Hosts().Host(name).SSH().SetFullAddress(y)
+					return returnEmpty(p.Hosts().Host(name).SSH().SetFullAddress(y))
 				}
 			}
 
@@ -84,11 +85,11 @@ func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*pb.Return, error) {
 
 				// set
 				if l := n.GetSet(); l != nil {
-					return nil, p.Hosts().Host(name).SSH().Auth().Set(l.GetValue()...)
+					return returnEmpty(p.Hosts().Host(name).SSH().Auth().Set(l.GetValue()...))
 				}
 
 				if l := n.GetAdd(); l != nil {
-					return nil, p.Hosts().Host(name).SSH().Auth().Append(l.GetValue()...)
+					return returnEmpty(p.Hosts().Host(name).SSH().Auth().Append(l.GetValue()...))
 				}
 
 				if l := n.GetDelete(); l != nil {
@@ -98,7 +99,7 @@ func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*pb.Return, error) {
 						}
 					}
 
-					return nil, nil
+					return returnEmpty(nil)
 				}
 
 				if n.GetClear() {
@@ -108,7 +109,7 @@ func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*pb.Return, error) {
 						}
 					}
 
-					return nil, nil
+					return returnEmpty(nil)
 				}
 			}
 		}
@@ -127,7 +128,7 @@ func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*pb.Return, error) {
 					return nil, errors.New("invalid location format: expected `latitude,longitude`")
 				}
 
-				return nil, p.Hosts().Host(name).SetLocation(lat, lng)
+				return returnEmpty(p.Hosts().Host(name).SetLocation(lat, lng))
 			}
 		}
 
@@ -152,24 +153,24 @@ func (s *Service) doHosts(in *pb.Hosts, p config.Parser) (*pb.Return, error) {
 
 					// set
 					if l := y.GetKey(); l != nil && (!l.GetGet() || l.GetSet() != "") {
-						return nil, p.Hosts().Host(name).Shapes().Instance(shape).SetKey(l.GetSet())
+						return returnEmpty(p.Hosts().Host(name).Shapes().Instance(shape).SetKey(l.GetSet()))
 					}
 
 					// generate
 					if y.GetGenerate() {
-						return nil, p.Hosts().Host(name).Shapes().Instance(shape).GenerateKey()
+						return returnEmpty(p.Hosts().Host(name).Shapes().Instance(shape).GenerateKey())
 					}
 				}
 
 				if n.GetDelete() {
-					return nil, p.Hosts().Host(name).Shapes().Delete(shape)
+					return returnEmpty(p.Hosts().Host(name).Shapes().Delete(shape))
 				}
 			}
 		}
 
 		// delete
 		if x.GetDelete() {
-			return nil, p.Hosts().Delete(name)
+			return returnEmpty(p.Hosts().Delete(name))
 		}
 
 	}

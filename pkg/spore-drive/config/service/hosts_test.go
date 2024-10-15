@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/taubyte/tau/pkg/spore-drive/config/fixtures"
-	pb "github.com/taubyte/tau/pkg/spore-drive/config/proto/go"
+	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
 )
 
 func TestDoHosts_List(t *testing.T) {
@@ -15,7 +15,7 @@ func TestDoHosts_List(t *testing.T) {
 	in := &pb.Hosts{Op: &pb.Hosts_List{List: true}}
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"host1", "host2"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"host1", "host2"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoHosts_GetSSHAddress(t *testing.T) {
@@ -40,7 +40,7 @@ func TestDoHosts_GetSSHAddress(t *testing.T) {
 	}
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "1.2.3.4:4242", resp.GetString_())
+	assert.Equal(t, "1.2.3.4:4242", resp.Msg.GetString_())
 }
 
 func TestDoHosts_SetSSHAddress(t *testing.T) {
@@ -86,7 +86,7 @@ func TestDoHosts_SetSSHAddress(t *testing.T) {
 	}
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "5.6.7.8:2222", resp.GetString_())
+	assert.Equal(t, "5.6.7.8:2222", resp.Msg.GetString_())
 }
 
 func TestDoHosts_GetAddresses(t *testing.T) {
@@ -109,7 +109,7 @@ func TestDoHosts_GetAddresses(t *testing.T) {
 
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"1.2.3.4/24", "4.3.2.1/24"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"1.2.3.4/24", "4.3.2.1/24"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoHosts_SetAddresses(t *testing.T) {
@@ -152,7 +152,7 @@ func TestDoHosts_SetAddresses(t *testing.T) {
 
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, newAddresses, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, newAddresses, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoHosts_AddAddresses(t *testing.T) {
@@ -196,7 +196,7 @@ func TestDoHosts_AddAddresses(t *testing.T) {
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
 	expectedAddresses := []string{"1.2.3.4/24", "4.3.2.1/24", "10.0.0.3/24"}
-	assert.ElementsMatch(t, expectedAddresses, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, expectedAddresses, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoHosts_DeleteAddresses(t *testing.T) {
@@ -240,7 +240,7 @@ func TestDoHosts_DeleteAddresses(t *testing.T) {
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
 	expectedAddresses := []string{"4.3.2.1/24"}
-	assert.ElementsMatch(t, expectedAddresses, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, expectedAddresses, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoHosts_ClearAddresses(t *testing.T) {
@@ -280,7 +280,7 @@ func TestDoHosts_ClearAddresses(t *testing.T) {
 
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.Empty(t, resp.GetSlice().GetValue())
+	assert.Empty(t, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoHosts_GetSSHAuthList(t *testing.T) {
@@ -307,7 +307,7 @@ func TestDoHosts_GetSSHAuthList(t *testing.T) {
 
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"main"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"main"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoHosts_SetSSHAuth(t *testing.T) {
@@ -358,7 +358,7 @@ func TestDoHosts_SetSSHAuth(t *testing.T) {
 
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, newAuth, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, newAuth, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoHosts_GetLocation(t *testing.T) {
@@ -381,7 +381,7 @@ func TestDoHosts_GetLocation(t *testing.T) {
 
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "1.250000,25.100000", resp.GetString_())
+	assert.Equal(t, "1.250000,25.100000", resp.Msg.GetString_())
 }
 
 func TestDoHosts_SetLocation(t *testing.T) {
@@ -422,7 +422,7 @@ func TestDoHosts_SetLocation(t *testing.T) {
 
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.Equal(t, "2.500000,30.000000", resp.GetString_())
+	assert.Equal(t, "2.500000,30.000000", resp.Msg.GetString_())
 }
 
 func TestDoHosts_GetShapes(t *testing.T) {
@@ -445,7 +445,7 @@ func TestDoHosts_GetShapes(t *testing.T) {
 
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"shape1", "shape2"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"shape1", "shape2"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoHosts_DeleteShape(t *testing.T) {
@@ -492,7 +492,7 @@ func TestDoHosts_DeleteShape(t *testing.T) {
 
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"shape2"}, resp.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"shape2"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoHosts_DeleteHost(t *testing.T) {
@@ -518,7 +518,7 @@ func TestDoHosts_DeleteHost(t *testing.T) {
 	in = &pb.Hosts{Op: &pb.Hosts_List{List: true}}
 	resp, err := service.doHosts(in, parser)
 	assert.NoError(t, err)
-	assert.NotContains(t, resp.GetSlice().GetValue(), "host1")
+	assert.NotContains(t, resp.Msg.GetSlice().GetValue(), "host1")
 }
 
 func TestDoHosts_InvalidOperation(t *testing.T) {
@@ -611,6 +611,7 @@ func TestDoHosts_GetNonExistentHost(t *testing.T) {
 		},
 	}
 
-	ret, _ := service.doHosts(in, parser)
-	assert.Equal(t, ret.GetString_(), "")
+	_, err := service.doHosts(in, parser)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "host not found")
 }
