@@ -4,8 +4,6 @@ go 1.22.5
 
 toolchain go1.22.6
 
-replace github.com/taubyte/go-seer => ../go-seer
-
 require (
 	github.com/alecthomas/units v0.0.0-20231202071711-9a357b53e9c9
 	github.com/avast/retry-go v3.0.0+incompatible
@@ -40,7 +38,7 @@ require (
 	github.com/taubyte/domain-validation v1.0.1
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
-	github.com/taubyte/go-seer v1.0.7
+	github.com/taubyte/go-seer v1.0.8
 	github.com/taubyte/go-simple-container v0.4.5
 	github.com/taubyte/go-simple-git v0.2.5 // indirect
 	github.com/taubyte/http v0.10.5

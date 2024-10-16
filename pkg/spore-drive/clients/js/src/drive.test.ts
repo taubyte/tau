@@ -11,13 +11,11 @@ import { DisplacementProgress } from "../gen/drive/v1/drive_pb";
 
 import { Source } from "../gen/config/v1/config_pb";
 import { exec, ChildProcess } from "child_process";
-// import * as fs from "fs";
+
 import * as path from "path";
 import * as os from "os";
 import { mkdtemp, rm } from "fs/promises";
 import { HostConfig, Host as Hostname, Query } from "../gen/mock/v1/ssh_pb";
-// import * as unzipper from "unzipper";
-// import * as yaml from "js-yaml";
 
 export const createConfig = async (
   mock_client: PromiseClient<typeof MockSSHService>,
@@ -141,7 +139,6 @@ describe("Drive Class Integration Tests", () => {
     const transport = createConnectTransport({
       baseUrl: rpcUrl,
       httpVersion: "1.1",
-      defaultTimeoutMs: 3000,
     });
 
     mock_client = createPromiseClient(MockSSHService, transport);
