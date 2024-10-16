@@ -28,8 +28,6 @@ func (s *Service) New(_ context.Context, in *connect.Request[pb.DriveRequest]) (
 		opts = append(opts, drive.WithTauUrl(v.Url))
 	case *pb.DriveRequest_Path:
 		opts = append(opts, drive.WithTauPath(v.Path))
-	default:
-		return nil, errors.New("no tau binary")
 	}
 
 	sd, err := s.newDrive(in.Msg.GetConfig().GetId(), opts)

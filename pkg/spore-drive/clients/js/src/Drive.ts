@@ -45,7 +45,7 @@ export class Drive {
     this.client = client;
   }
 
-  async init(config: Config, tau: TauBinarySource): Promise<void> {
+  async init(config: Config, tau?: TauBinarySource): Promise<void> {
     this.drive = await this.client.new(
       new DriveRequest({
         config: new ConfigMessage({ id: config.id() }),
