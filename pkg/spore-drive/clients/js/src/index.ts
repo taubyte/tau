@@ -1,9 +1,21 @@
-import {Config} from "./Config"
-import {Drive, CourseConfig} from "./Drive"
+import { Config } from "./Config";
+import {
+  Drive,
+  CourseConfig,
+  TauBinarySource,
+  TauLatest,
+  TauVersion,
+  TauUrl,
+  TauPath,
+} from "./Drive";
 
 export {
   Config,
   Drive,
-  CourseConfig
-}
-
+  CourseConfig,
+  TauBinarySource,
+  TauLatest,
+  TauVersion,
+  TauUrl,
+  TauPath,
+};
