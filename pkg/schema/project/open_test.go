@@ -11,7 +11,7 @@ import (
 
 func TestOpenError(t *testing.T) {
 	_, err := project.Open(project.VirtualFS(afero.NewMemMapFs(), "invalid"))
-	assert.ErrorContains(t, err, "Opening repository failed with open invalid: file does not exist")
+	assert.ErrorContains(t, err, "opening repository failed with open invalid: file does not exist")
 }
 
 func TestOpenSystemFS(t *testing.T) {
