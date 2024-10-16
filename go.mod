@@ -79,6 +79,7 @@ require (
 	github.com/ipfs/boxo v0.17.0
 	github.com/ipfs/go-ds-pebble v0.3.1
 	github.com/ipfs/go-ipld-format v0.6.0
+	github.com/jarcoal/httpmock v1.3.1
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
 	github.com/libp2p/go-libp2p-record v0.2.0
 	github.com/mattn/go-runewidth v0.0.16
