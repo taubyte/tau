@@ -20,7 +20,7 @@ func TestSetErrors(t *testing.T) {
 	err = r.Set(true, func(ci basic.ConfigIface) []*seer.Query {
 		return []*seer.Query{_seer.Get("test").Set(0)}
 	})
-	assert.ErrorContains(t, err, "committing failed with Failed to call Set() outside a document")
+	assert.ErrorContains(t, err, "committing failed with failed to call Set() outside a document")
 
 	// Set a value
 	err = r.Set(true, func(ci basic.ConfigIface) []*seer.Query {
@@ -39,5 +39,5 @@ func TestSetErrors(t *testing.T) {
 	err = r.Set(true, func(ci basic.ConfigIface) []*seer.Query {
 		return []*seer.Query{_seer.Get("test").Document().Get("value").Set(1)}
 	})
-	assert.ErrorContains(t, err, "sync failed with: Opening /test.yaml failed with operation not permitted")
+	assert.ErrorContains(t, err, "sync failed with: opening /test.yaml failed with operation not permitted")
 }

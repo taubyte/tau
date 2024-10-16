@@ -3,6 +3,8 @@
 # Learn more about .gitignore:
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
+.vscode/
+
 pkg/vm-orbit/tests/e2e/go/fixtures/*.wasm
 pkg/vm-orbit/tests/e2e/go/fixtures/testPlugin*
 

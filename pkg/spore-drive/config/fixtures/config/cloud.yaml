@@ -1,0 +1,17 @@
+domain:
+    root: test.com
+    generated: gtest.com
+    validation:
+        key:
+            private: keys/dv_private.key
+            public: keys/dv_public.key
+p2p:
+    swarm:
+        key: keys/swarm.key
+    bootstrap:
+        shape1:
+            - host2
+            - host1
+        shape2:
+            - host2
+            - host1

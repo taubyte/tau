@@ -21,17 +21,21 @@ type Host interface {
 	Clone(attributes ...Attribute) (Host, error)
 	Command(ctx context.Context, name string, options ...command.Option) (*command.Command, error)
 	Fs(ctx context.Context, opts ...sftp.ClientOption) (afero.Fs, error)
+	Tags() []string
 	String() string
+	Name() string
 }
 
 type host struct {
 	lock    sync.Mutex
 	client  *ssh.Client
+	name    string
 	addr    string
 	port    uint64
 	timeout time.Duration
 	auth    []*auth.Auth
 	key     ssh.PublicKey
+	tags    []string
 }
 
 func New(attributes ...Attribute) (Host, error) {
@@ -49,6 +53,7 @@ func New(attributes ...Attribute) (Host, error) {
 
 func (h *host) Clone(attributes ...Attribute) (Host, error) {
 	hc := &host{
+		name:    h.name,
 		addr:    h.addr,
 		port:    h.port,
 		timeout: h.timeout,
@@ -59,6 +64,8 @@ func (h *host) Clone(attributes ...Attribute) (Host, error) {
 	}
 
 	hc.auth = append(hc.auth, h.auth...)
+
+	hc.tags = append(hc.tags, h.tags...)
 
 	for _, attr := range attributes {
 		if err := attr(hc); err != nil {
@@ -118,6 +125,14 @@ func (h *host) newSession(ctx context.Context) (*ssh.Session, error) {
 
 func (h *host) String() string {
 	return net.JoinHostPort(h.addr, strconv.FormatUint(h.port, 10))
+}
+
+func (h *host) Name() string {
+	return h.name
+}
+
+func (h *host) Tags() []string {
+	return h.tags
 }
 
 func (h *host) tryInit() (err error) {

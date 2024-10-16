@@ -20,7 +20,7 @@ import (
 
 func TestCalls(t *testing.T) {
 	defaultInterval := seer.DefaultUsageBeaconInterval
-	seer.DefaultUsageBeaconInterval = time.Second
+	seer.DefaultUsageBeaconInterval = time.Millisecond * 100
 	defer func() {
 		seer.DefaultUsageBeaconInterval = defaultInterval
 	}()

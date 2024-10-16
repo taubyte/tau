@@ -1,0 +1,54 @@
+syntax = "proto3";
+
+package drive.v1;
+
+import "config/v1/config.proto";
+
+option go_package = ".";
+
+
+
+message DriveRequest {
+    config.v1.Config config = 1;
+    oneof tau {
+        bool latest=2;
+        string version=3;
+        string url=4;
+        string path=5;
+    };
+}
+
+message PlotRequest {
+    Drive drive = 1;
+
+    // params
+    repeated string shapes = 2;
+    int32 concurrency = 3;
+}
+
+message Drive {
+    string id = 1;
+}
+
+message Course {
+    string id = 1;
+}
+
+message DisplacementProgress {
+    string path = 1;
+    string name = 2;
+    int32 progress = 3;
+    string error = 4;
+}
+
+message Empty {}
+
+// Service
+service DriveService {
+    rpc New(DriveRequest) returns (Drive);
+    rpc Plot(PlotRequest) returns (Course);
+    rpc Displace(Course) returns (Empty);
+    rpc Progress(Course) returns (stream DisplacementProgress);
+    rpc Abort(Course) returns (Empty);
+    rpc Free(Drive) returns (Empty);
+}

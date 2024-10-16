@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package mock.v1;
+
+option go_package = ".";
+
+message Command {
+    int32 index = 1;
+    string command = 3;
+}
+
+message Host {
+    string name = 1;
+}
+
+message HostConfig {
+    Host host = 1;
+    int32 port = 2;
+    string workdir = 3;
+    string passphrase = 4;
+    bytes private_key = 5;
+    string auth_username = 6;
+    string auth_password = 7;
+    bytes auth_privkey = 8;
+}
+
+message Query {
+    oneof eq {
+        string name = 1;
+        int32 port = 2;
+    };
+}
+
+message BundleChunk {
+    bytes data = 1;
+}
+
+message Empty {}
+
+// Service
+service MockSSHService {
+    rpc New(HostConfig) returns (HostConfig);
+    rpc Lookup(Query) returns (HostConfig);
+    rpc Commands(Host) returns (stream Command);
+    rpc Filesystem(Host) returns (stream BundleChunk);
+    rpc Free(Host) returns (Empty);
+}

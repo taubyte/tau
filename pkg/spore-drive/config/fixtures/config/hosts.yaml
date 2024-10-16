@@ -1,0 +1,38 @@
+host1:
+    addr:
+        - 1.2.3.4/24
+        - 4.3.2.1/24
+    ssh:
+        addr: 1.2.3.4
+        port: 4242
+        auth:
+            - main
+    location:
+        lat: 1.25
+        long: 25.1
+    shapes:
+        shape1:
+            key: CAESQIWC2KRhsEexLpN4DsJwki4S56IN5IreCANf89+F+OpTWn7Tf+RwZnUbiZYdxsTFrbBJQ9S+A0oFp8a1SSAN2EE=
+            id: 12D3KooWFud2Y9UuRW6Si2whRoyu9AXJLEgFed6xhabsyVe8pHck
+        shape2:
+            key: CAESQHLGyFbnI2GP7e3Gib9ut7IFDxrkbTbs7LFAJYhe0w0LXEtYrH7HyODglOFY3oXQ+kCfoFcvqvZnAD6K5UavO2c=
+            id: 12D3KooWG2eK9dVPazdxSF6eDS1ESgD5N3n2xfsGDKaZuifuE57t
+host2:
+    addr:
+        - 8.2.3.4/24
+        - 4.3.2.8/24
+    ssh:
+        addr: 8.2.3.4
+        port: 4242
+        auth:
+            - main
+    location:
+        lat: 1.25
+        long: 25.1
+    shapes:
+        shape1:
+            key: CAESQDpF3eQuEbGsjSRkf3uE6E4SV3dvwSSMUcNJkimOUc0hO6gPoZjsq/NO/FwVz8FoZ4LG/5DSF2B/Rl+vJCNLlUI=
+            id: 12D3KooWDqErfJk5kUTfpAcYSPwr4nztSHkDqVZjC1wpkJ9EDsDK
+        shape2:
+            key: CAESQIA03gtBTeL8eYNQKcJ+VqKLgarHfofd5I/CV/zEsxHiqfihV9ZXjl0qtaTPEWExBgqRn+w2YLD6FQy8zBdEabI=
+            id: 12D3KooWMFrxcHhw2gvnp8iBVTcqZ3f1B4m5W1vpGoi6q5jxv1Ms

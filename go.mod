@@ -38,7 +38,7 @@ require (
 	github.com/taubyte/domain-validation v1.0.1
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
-	github.com/taubyte/go-seer v1.0.6
+	github.com/taubyte/go-seer v1.0.8
 	github.com/taubyte/go-simple-container v0.4.5
 	github.com/taubyte/go-simple-git v0.2.5 // indirect
 	github.com/taubyte/http v0.10.5
@@ -59,6 +59,7 @@ require (
 )
 
 require (
+	connectrpc.com/connect v1.17.0
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/CalebQ42/squashfs v1.0.1
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
@@ -78,6 +79,7 @@ require (
 	github.com/ipfs/boxo v0.17.0
 	github.com/ipfs/go-ds-pebble v0.3.1
 	github.com/ipfs/go-ipld-format v0.6.0
+	github.com/jarcoal/httpmock v1.3.1
 	github.com/libp2p/go-libp2p-kad-dht v0.25.2
 	github.com/libp2p/go-libp2p-record v0.2.0
 	github.com/mattn/go-runewidth v0.0.16
@@ -97,7 +99,8 @@ require (
 	golang.org/x/mod v0.18.0
 	golang.org/x/text v0.17.0
 	google.golang.org/grpc v1.64.1
-	google.golang.org/protobuf v1.33.0
+	google.golang.org/protobuf v1.34.2
+	gopkg.in/ini.v1 v1.67.0
 	oras.land/oras-go/v2 v2.5.0
 )
 

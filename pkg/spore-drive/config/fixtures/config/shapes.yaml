@@ -1,0 +1,17 @@
+shape1:
+    services:
+        - auth
+        - seer
+    ports:
+        main: 4242
+        lite: 4262
+shape2:
+    services:
+        - gateway
+        - patrick
+        - monkey
+    ports:
+        main: 6242
+        lite: 6262
+    plugins:
+        - plugin1@v0.1
