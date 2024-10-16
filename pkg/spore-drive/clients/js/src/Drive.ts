@@ -12,6 +12,31 @@ import { RPCClient } from "./DriveClient";
 
 import { Config } from "./Config";
 
+type TauBinarySource =
+  | {
+      value: boolean;
+      case: "latest";
+    }
+  | {
+      value: string;
+      case: "version";
+    }
+  | {
+      value: string;
+      case: "url";
+    }
+  | {
+      value: string;
+      case: "path";
+    };
+
+const TauLatest:TauBinarySource = { value: true, case: "latest" };
+const TauVersion = (version: string):TauBinarySource => ({ value: version, case: "version" });
+const TauUrl = (url: string):TauBinarySource => ({ value: url, case: "url" });
+const TauPath = (path: string):TauBinarySource => ({ value: path, case: "path" });
+
+export { TauBinarySource, TauLatest, TauVersion, TauUrl, TauPath };
+
 export class Drive {
   private client: RPCClient;
   private drive?: DriveMessage;
@@ -20,9 +45,12 @@ export class Drive {
     this.client = client;
   }
 
-  async init(config: Config): Promise<void> {
+  async init(config: Config, tau: TauBinarySource): Promise<void> {
     this.drive = await this.client.new(
-      new DriveRequest({ config: new ConfigMessage({ id: config.id() }) })
+      new DriveRequest({
+        config: new ConfigMessage({ id: config.id() }),
+        tau: tau,
+      })
     );
   }
 
@@ -42,11 +70,11 @@ export class Drive {
 
 export class CourseConfig {
   shapes: string[] = [];
-  concurrency:number = 0;
+  concurrency: number = 0;
 
-  constructor(shapes:string[], concurrency?:number) {
+  constructor(shapes: string[], concurrency?: number) {
     this.shapes = shapes;
-    if (concurrency) this.concurrency = concurrency
+    if (concurrency) this.concurrency = concurrency;
   }
 }
 

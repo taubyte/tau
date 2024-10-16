@@ -7,6 +7,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/taubyte/tau/pkg/spore-drive/course"
+	"github.com/taubyte/tau/pkg/spore-drive/drive"
 	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/drive/v1"
 	pbconnect "github.com/taubyte/tau/pkg/spore-drive/proto/gen/drive/v1/drivev1connect"
 )
@@ -16,7 +17,22 @@ func (s *Service) New(_ context.Context, in *connect.Request[pb.DriveRequest]) (
 		return nil, errors.New("you need to provide config id")
 	}
 
-	sd, err := s.newDrive(in.Msg.GetConfig().GetId())
+	opts := make([]drive.Option, 0)
+
+	switch v := in.Msg.GetTau().(type) {
+	case *pb.DriveRequest_Latest:
+		opts = append(opts, drive.WithTauLatest())
+	case *pb.DriveRequest_Version:
+		opts = append(opts, drive.WithTauVersion(v.Version))
+	case *pb.DriveRequest_Url:
+		opts = append(opts, drive.WithTauUrl(v.Url))
+	case *pb.DriveRequest_Path:
+		opts = append(opts, drive.WithTauPath(v.Path))
+	default:
+		return nil, errors.New("no tau binary")
+	}
+
+	sd, err := s.newDrive(in.Msg.GetConfig().GetId(), opts)
 	if err != nil {
 		return nil, err
 	}

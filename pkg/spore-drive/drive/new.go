@@ -8,17 +8,25 @@ import (
 	myceliumUtils "github.com/taubyte/tau/pkg/spore-drive/mycelium"
 )
 
-func New(cnf config.Parser) (Spore, error) {
+func New(cnf config.Parser, options ...Option) (Spore, error) {
 	n, err := myceliumUtils.Map(cnf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create a sporedrive with %w", err)
 	}
 
-	return &sporedrive{
+	s := &sporedrive{
 		parser:      cnf,
 		network:     n,
 		hostWrapper: newRemote,
-	}, nil
+	}
+
+	for _, opt := range options {
+		if err := opt(s); err != nil {
+			return nil, err
+		}
+	}
+
+	return s, nil
 }
 
 func (s *sporedrive) Network() *mycelium.Network {

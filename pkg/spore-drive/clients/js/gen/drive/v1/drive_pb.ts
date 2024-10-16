@@ -16,6 +16,35 @@ export class DriveRequest extends Message<DriveRequest> {
    */
   config?: Config;
 
+  /**
+   * @generated from oneof drive.v1.DriveRequest.tau
+   */
+  tau: {
+    /**
+     * @generated from field: bool latest = 2;
+     */
+    value: boolean;
+    case: "latest";
+  } | {
+    /**
+     * @generated from field: string version = 3;
+     */
+    value: string;
+    case: "version";
+  } | {
+    /**
+     * @generated from field: string url = 4;
+     */
+    value: string;
+    case: "url";
+  } | {
+    /**
+     * @generated from field: string path = 5;
+     */
+    value: string;
+    case: "path";
+  } | { case: undefined; value?: undefined } = { case: undefined };
+
   constructor(data?: PartialMessage<DriveRequest>) {
     super();
     proto3.util.initPartial(data, this);
@@ -25,6 +54,10 @@ export class DriveRequest extends Message<DriveRequest> {
   static readonly typeName = "drive.v1.DriveRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "config", kind: "message", T: Config },
+    { no: 2, name: "latest", kind: "scalar", T: 8 /* ScalarType.BOOL */, oneof: "tau" },
+    { no: 3, name: "version", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "tau" },
+    { no: 4, name: "url", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "tau" },
+    { no: 5, name: "path", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "tau" },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DriveRequest {

@@ -7,13 +7,13 @@ import (
 	"github.com/taubyte/utils/id"
 )
 
-func (s *Service) newDrive(configId string) (*driveInstance, error) {
+func (s *Service) newDrive(configId string, opts []drive.Option) (*driveInstance, error) {
 	cnf, err := s.resolver.Lookup(configId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup config by id with %w", err)
 	}
 
-	sd, err := drive.New(cnf)
+	sd, err := drive.New(cnf, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create drive with %w", err)
 	}

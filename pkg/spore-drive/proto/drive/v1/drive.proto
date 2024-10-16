@@ -6,8 +6,16 @@ import "config/v1/config.proto";
 
 option go_package = ".";
 
+
+
 message DriveRequest {
     config.v1.Config config = 1;
+    oneof tau {
+        bool latest=2;
+        string version=3;
+        string url=4;
+        string path=5;
+    };
 }
 
 message PlotRequest {

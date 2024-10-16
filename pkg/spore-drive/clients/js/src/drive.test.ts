@@ -1,5 +1,5 @@
 import { Config } from "./Config";
-import { CourseConfig, Drive } from "./Drive";
+import { CourseConfig, Drive, TauBinarySource, TauPath, TauUrl } from "./Drive";
 import { RPCClient as DriveClient } from "./DriveClient";
 import { RPCClient as ConfigClient } from "./ConfigClient";
 
@@ -12,10 +12,15 @@ import { DisplacementProgress } from "../gen/drive/v1/drive_pb";
 import { Source } from "../gen/config/v1/config_pb";
 import { exec, ChildProcess } from "child_process";
 
+import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import { mkdtemp, rm } from "fs/promises";
 import { HostConfig, Host as Hostname, Query } from "../gen/mock/v1/ssh_pb";
+
+async function touchFile(filePath: string): Promise<void> {
+  await fs.promises.writeFile(filePath, "");
+}
 
 export const createConfig = async (
   mock_client: PromiseClient<typeof MockSSHService>,
@@ -144,6 +149,8 @@ describe("Drive Class Integration Tests", () => {
     mock_client = createPromiseClient(MockSSHService, transport);
     config_client = new ConfigClient(rpcUrl);
     drive_client = new DriveClient(rpcUrl);
+
+    touchFile("/tmp/faketau")
   });
 
   afterAll(async () => {
@@ -160,7 +167,7 @@ describe("Drive Class Integration Tests", () => {
     drive = new Drive(drive_client);
     await config.load();
     await createConfig(mock_client, config);
-    await drive.init(config);
+    await drive.init(config, TauPath("/tmp/faketau"));
     await config.free();
   });
 
