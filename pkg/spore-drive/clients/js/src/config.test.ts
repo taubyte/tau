@@ -8,6 +8,8 @@ import * as os from "os";
 import { mkdtemp, rm } from "fs/promises";
 import * as unzipper from "unzipper";
 import * as yaml from "js-yaml";
+import { Readable } from 'stream';
+
 
 export const createConfig = async (config: Config) => {
   // Set Cloud Domain
@@ -78,7 +80,6 @@ export const createConfig = async (config: Config) => {
 describe("Config Class Integration Tests", () => {
   let client: RPCClient;
   let config: Config;
-  let source: Source;
   let rpcUrl: string;
   let mockServerProcess: ChildProcess;
   let tempDir: string;
@@ -117,9 +118,8 @@ describe("Config Class Integration Tests", () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "cloud-")); // Create a temporary directory
-    source = new Source({ root: tempDir, path: "/" });
-    config = new Config(client, source);
-    await config.load();
+    config = new Config(rpcUrl, tempDir);
+    await config.init();
   });
 
   afterEach(async () => {
@@ -174,7 +174,7 @@ describe("Config Class Integration Tests", () => {
     expect(result).toBeDefined();
   });
 
-  it("should download configuration bundle and verify it", async () => {
+  it("should download configuration bundle and verify it locally and through upload", async () => {
     await createConfig(config);
 
     const bundleIterator = await config.Download();
@@ -219,6 +219,11 @@ describe("Config Class Integration Tests", () => {
     const yamlObject: any = yaml.load(yamlContent.toString());
 
     expect(yamlObject.domain.root).toBe("test.com");
+
+    const config_from_zip = new Config(rpcUrl, Readable.toWeb(fs.createReadStream(zipPath)));
+    await config_from_zip.init();
+    expect(await config_from_zip.Cloud().Domain().Root().Get()).toBe("test.com");
+    await config_from_zip.free()
   });
 
   it("should set and get Swarm Key", async () => {

@@ -7,23 +7,38 @@ import {
   StringSlice,
   BundleConfig,
   Bundle,
+  SourceUpload
 } from "../gen/config/v1/config_pb";
 
 import { RPCClient } from "./ConfigClient";
 
+async function* uploadAsyncIterator(stream: ReadableStream<Uint8Array>): AsyncIterable<SourceUpload> {
+  yield new SourceUpload({data:{case:"path", value:"/"}});
+
+  for await (const chunk of stream) {
+    yield new SourceUpload({data: {case:"chunk", value:chunk}});
+  }
+}
+
 // Main Config class
 export class Config {
   private client: RPCClient;
-  private source: Source;
+  private source?: string | ReadableStream<Uint8Array>;
   private config?: ConfigMessage;
 
-  constructor(client: RPCClient, source: Source) {
-    this.client = client;
+  constructor(url: string, source?: string | ReadableStream<Uint8Array>) {
+    this.client = new RPCClient(url);
     this.source = source;
   }
 
-  async load(): Promise<void> {
-    this.config = await this.client.load(this.source);
+  async init(): Promise<void> {
+    if (typeof this.source === 'string') {
+      this.config = await this.client.load(new Source({ root: this.source, path: "/" }))
+    } else if (this.source instanceof ReadableStream) {
+      this.config = await this.client.upload(uploadAsyncIterator(this.source))
+    } else {
+      this.config = await this.client.new();
+    }
   }
 
   async free(): Promise<void> {

@@ -40,16 +40,20 @@ export { TauBinarySource, TauLatest, TauVersion, TauUrl, TauPath };
 export class Drive {
   private client: RPCClient;
   private drive?: DriveMessage;
+  private config: Config;
+  private tau?: TauBinarySource;
 
-  constructor(client: RPCClient) {
-    this.client = client;
+  constructor(url: string,config: Config,tau?: TauBinarySource) {
+    this.client = new RPCClient(url);
+    this.config = config;
+    this.tau = tau;
   }
 
-  async init(config: Config, tau?: TauBinarySource): Promise<void> {
+  async init(): Promise<void> {
     this.drive = await this.client.new(
       new DriveRequest({
-        config: new ConfigMessage({ id: config.id() }),
-        tau: tau,
+        config: new ConfigMessage({ id: this.config.id() }),
+        tau: this.tau,
       })
     );
   }

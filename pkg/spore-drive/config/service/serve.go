@@ -127,6 +127,15 @@ func (s *Service) Upload(ctx context.Context, stream *connect.ClientStream[pb.So
 	return connect.NewResponse(&pb.Config{Id: c.id}), nil
 }
 
+func (s *Service) New(context.Context, *connect.Request[pb.Empty]) (*connect.Response[pb.Config], error) {
+	cnf, err := s.newConfig(afero.NewMemMapFs(), "")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create config: %w", err)
+	}
+
+	return connect.NewResponse(&pb.Config{Id: cnf.id}), nil
+}
+
 func (s *Service) Load(ctx context.Context, req *connect.Request[pb.Source]) (*connect.Response[pb.Config], error) {
 	root := req.Msg.GetRoot()
 	if root == "" {

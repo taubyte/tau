@@ -15,6 +15,15 @@ export const ConfigService = {
   typeName: "config.v1.ConfigService",
   methods: {
     /**
+     * @generated from rpc config.v1.ConfigService.New
+     */
+    new: {
+      name: "New",
+      I: Empty,
+      O: Config,
+      kind: MethodKind.Unary,
+    },
+    /**
      * @generated from rpc config.v1.ConfigService.Load
      */
     load: {

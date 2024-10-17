@@ -296,6 +296,7 @@ message Port {
 
 // Service
 service ConfigService {
+    rpc New(Empty) returns (Config);
     rpc Load(Source) returns (Config);
     rpc Upload(stream SourceUpload) returns (Config);
     rpc Download(BundleConfig) returns (stream Bundle);
