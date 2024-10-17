@@ -111,10 +111,8 @@ export const createConfig = async (
 
 describe("Drive Class Integration Tests", () => {
   let mock_client: PromiseClient<typeof MockSSHService>;
-  let config_client: ConfigClient;
-  let drive_client: DriveClient;
   let drive: Drive;
-  let source: Source;
+  let config :Config;
   let rpcUrl: string;
   let mockServerProcess: ChildProcess;
   let tempDir: string;
@@ -147,8 +145,6 @@ describe("Drive Class Integration Tests", () => {
     });
 
     mock_client = createPromiseClient(MockSSHService, transport);
-    config_client = new ConfigClient(rpcUrl);
-    drive_client = new DriveClient(rpcUrl);
 
     touchFile("/tmp/faketau")
   });
@@ -162,18 +158,20 @@ describe("Drive Class Integration Tests", () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "cloud-")); // Create a temporary directory
-    source = new Source({ root: tempDir, path: "/" });
-    const config = new Config(config_client, source);
-    drive = new Drive(drive_client);
-    await config.load();
+    config = new Config(rpcUrl, tempDir);
+    await config.init();
     await createConfig(mock_client, config);
-    await drive.init(config, TauPath("/tmp/faketau"));
-    await config.free();
+
+    drive = new Drive(rpcUrl,config, TauPath("/tmp/faketau"));
+    await drive.init();
   });
 
   afterEach(async () => {
     await mock_client.free(new Hostname({ name: "host1" }));
     await mock_client.free(new Hostname({ name: "host2" }));
+
+    await config.free();
+    await drive.free();
 
     if (tempDir) {
       await rm(tempDir, { recursive: true, force: true });

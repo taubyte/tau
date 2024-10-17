@@ -33,6 +33,8 @@ const (
 // reflection-formatted method names, remove the leading slash and convert the remaining slash to a
 // period.
 const (
+	// ConfigServiceNewProcedure is the fully-qualified name of the ConfigService's New RPC.
+	ConfigServiceNewProcedure = "/config.v1.ConfigService/New"
 	// ConfigServiceLoadProcedure is the fully-qualified name of the ConfigService's Load RPC.
 	ConfigServiceLoadProcedure = "/config.v1.ConfigService/Load"
 	// ConfigServiceUploadProcedure is the fully-qualified name of the ConfigService's Upload RPC.
@@ -50,6 +52,7 @@ const (
 // These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
 var (
 	configServiceServiceDescriptor        = v1.File_config_v1_config_proto.Services().ByName("ConfigService")
+	configServiceNewMethodDescriptor      = configServiceServiceDescriptor.Methods().ByName("New")
 	configServiceLoadMethodDescriptor     = configServiceServiceDescriptor.Methods().ByName("Load")
 	configServiceUploadMethodDescriptor   = configServiceServiceDescriptor.Methods().ByName("Upload")
 	configServiceDownloadMethodDescriptor = configServiceServiceDescriptor.Methods().ByName("Download")
@@ -60,6 +63,7 @@ var (
 
 // ConfigServiceClient is a client for the config.v1.ConfigService service.
 type ConfigServiceClient interface {
+	New(context.Context, *connect.Request[v1.Empty]) (*connect.Response[v1.Config], error)
 	Load(context.Context, *connect.Request[v1.Source]) (*connect.Response[v1.Config], error)
 	Upload(context.Context) *connect.ClientStreamForClient[v1.SourceUpload, v1.Config]
 	Download(context.Context, *connect.Request[v1.BundleConfig]) (*connect.ServerStreamForClient[v1.Bundle], error)
@@ -78,6 +82,12 @@ type ConfigServiceClient interface {
 func NewConfigServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ConfigServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
 	return &configServiceClient{
+		new: connect.NewClient[v1.Empty, v1.Config](
+			httpClient,
+			baseURL+ConfigServiceNewProcedure,
+			connect.WithSchema(configServiceNewMethodDescriptor),
+			connect.WithClientOptions(opts...),
+		),
 		load: connect.NewClient[v1.Source, v1.Config](
 			httpClient,
 			baseURL+ConfigServiceLoadProcedure,
@@ -119,12 +129,18 @@ func NewConfigServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // configServiceClient implements ConfigServiceClient.
 type configServiceClient struct {
+	new      *connect.Client[v1.Empty, v1.Config]
 	load     *connect.Client[v1.Source, v1.Config]
 	upload   *connect.Client[v1.SourceUpload, v1.Config]
 	download *connect.Client[v1.BundleConfig, v1.Bundle]
 	commit   *connect.Client[v1.Config, v1.Empty]
 	free     *connect.Client[v1.Config, v1.Empty]
 	do       *connect.Client[v1.Op, v1.Return]
+}
+
+// New calls config.v1.ConfigService.New.
+func (c *configServiceClient) New(ctx context.Context, req *connect.Request[v1.Empty]) (*connect.Response[v1.Config], error) {
+	return c.new.CallUnary(ctx, req)
 }
 
 // Load calls config.v1.ConfigService.Load.
@@ -159,6 +175,7 @@ func (c *configServiceClient) Do(ctx context.Context, req *connect.Request[v1.Op
 
 // ConfigServiceHandler is an implementation of the config.v1.ConfigService service.
 type ConfigServiceHandler interface {
+	New(context.Context, *connect.Request[v1.Empty]) (*connect.Response[v1.Config], error)
 	Load(context.Context, *connect.Request[v1.Source]) (*connect.Response[v1.Config], error)
 	Upload(context.Context, *connect.ClientStream[v1.SourceUpload]) (*connect.Response[v1.Config], error)
 	Download(context.Context, *connect.Request[v1.BundleConfig], *connect.ServerStream[v1.Bundle]) error
@@ -173,6 +190,12 @@ type ConfigServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewConfigServiceHandler(svc ConfigServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	configServiceNewHandler := connect.NewUnaryHandler(
+		ConfigServiceNewProcedure,
+		svc.New,
+		connect.WithSchema(configServiceNewMethodDescriptor),
+		connect.WithHandlerOptions(opts...),
+	)
 	configServiceLoadHandler := connect.NewUnaryHandler(
 		ConfigServiceLoadProcedure,
 		svc.Load,
@@ -211,6 +234,8 @@ func NewConfigServiceHandler(svc ConfigServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/config.v1.ConfigService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ConfigServiceNewProcedure:
+			configServiceNewHandler.ServeHTTP(w, r)
 		case ConfigServiceLoadProcedure:
 			configServiceLoadHandler.ServeHTTP(w, r)
 		case ConfigServiceUploadProcedure:
@@ -231,6 +256,10 @@ func NewConfigServiceHandler(svc ConfigServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedConfigServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedConfigServiceHandler struct{}
+
+func (UnimplementedConfigServiceHandler) New(context.Context, *connect.Request[v1.Empty]) (*connect.Response[v1.Config], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("config.v1.ConfigService.New is not implemented"))
+}
 
 func (UnimplementedConfigServiceHandler) Load(context.Context, *connect.Request[v1.Source]) (*connect.Response[v1.Config], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("config.v1.ConfigService.Load is not implemented"))

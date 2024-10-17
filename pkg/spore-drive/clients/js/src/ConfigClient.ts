@@ -25,6 +25,10 @@ export class RPCClient {
     this.client = createPromiseClient(ConfigService, transport);
   }
 
+  async new(): Promise<Config> {
+    return await this.client.new(new Empty());
+  }
+
   async load(source: Source): Promise<Config> {
     return await this.client.load(source);
   }
