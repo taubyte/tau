@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"net"
 	"net/http"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"syscall"
 	"time"
 
-	sshSrv "github.com/taubyte/tau/pkg/spore-drive/clients/mock/ssh"
 	confSrv "github.com/taubyte/tau/pkg/spore-drive/config/service"
 	driveSrv "github.com/taubyte/tau/pkg/spore-drive/drive/service"
 	"golang.org/x/net/http2"
@@ -18,13 +16,22 @@ import (
 )
 
 func main() {
+	runData, err := NewRunFile()
+	if err != nil {
+		panic(err)
+	}
+	defer runData.Remove()
+
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		panic(err)
 	}
 	defer listener.Close()
 
-	port := listener.Addr().(*net.TCPAddr).Port
+	err = runData.Save(listener)
+	if err != nil {
+		panic(err)
+	}
 
 	csvr, err := confSrv.Serve()
 	if err != nil {
@@ -36,36 +43,30 @@ func main() {
 		panic(err)
 	}
 
-	ssrv, err := sshSrv.Serve(context.Background())
-	if err != nil {
-		panic(err)
-	}
-
 	mux := http.NewServeMux()
 	csvr.Attach(mux)
 	dsvr.Attach(mux)
-	ssrv.Attach(mux)
 
-	httpServer := &http.Server{
+	server := &http.Server{
 		Handler: h2c.NewHandler(mux, &http2.Server{}),
 	}
 
 	signalChan := make(chan os.Signal, 1)
 	signal.Notify(signalChan, os.Interrupt, syscall.SIGTERM)
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	shutdownChan := make(chan struct{})
 
 	go func() {
 		<-signalChan
-		shutdownCtx, shutdownCancel := context.WithTimeout(ctx, 5*time.Second)
-		defer shutdownCancel()
-		httpServer.Shutdown(shutdownCtx)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		server.Shutdown(ctx)
+		close(shutdownChan)
 	}()
 
-	fmt.Printf("http://localhost:%d/\n", port)
-
-	if err := httpServer.Serve(listener); err != nil && err != http.ErrServerClosed {
+	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		panic(err)
 	}
+
+	<-shutdownChan
 }
