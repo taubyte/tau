@@ -188,25 +188,22 @@ export class Service {
 
     return new Promise<void>((resolve, reject) => {
       const child = spawn(this.binaryPath, process.argv.slice(2), {
-        detached: true, // Run the process independently
-        stdio: "ignore", // Ignore stdio to prevent keeping the parent process alive
+        detached: true,
+        stdio: "ignore",
       });
 
-      child.unref(); // Allow the parent process to exit independently of the child
+      child.unref();
 
-      // Listen for any error event in the child process
       child.on("error", (err) => {
         console.error("Failed to start binary:", err);
-        reject(err); // Reject the promise if an error occurs
+        reject(err);
       });
 
-      // Wait for the child process to spawn successfully
       child.on("spawn", () => {
         console.log("Binary started successfully.");
-        resolve(); // Resolve the promise when the binary starts successfully
+        resolve();
       });
 
-      // Listen for the child process to exit in case it fails immediately
       child.on("exit", (code, signal) => {
         if (code !== 0) {
           console.error(`Binary exited with code ${code} and signal ${signal}`);
@@ -222,8 +219,8 @@ export class Service {
       try {
         await new Promise<void>((resolve, reject) => {
           try {
-            process.kill(runFile.pid); // Kill the process
-            fs.unlinkSync(this.runFilePath); // Remove the run file
+            process.kill(runFile.pid);
+            fs.unlinkSync(this.runFilePath);
             console.log(
               `Service running on port ${runFile.port} has been stopped.`
             );
