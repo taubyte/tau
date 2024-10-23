@@ -7,6 +7,10 @@ import * as tar from "tar";
 import packageJson from "../package.json";
 import { homedir } from "os";
 
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 interface RunFile {
   port: number;
   pid: number;
@@ -172,7 +176,6 @@ export class Service {
   public getPort(): number | null {
     const runFile = this.loadRunFile();
     if (runFile && this.isProcessRunning(runFile.pid)) {
-      console.log(`Service is running on port ${runFile.port}`);
       return runFile.port;
     } else {
       console.log("Service is not running.");

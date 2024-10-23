@@ -1,0 +1,22 @@
+{
+  "name": "basic-example",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "run": "tsx src/index.ts"
+  },
+  "keywords": [],
+  "author": "taubyte",
+  "license": "BSD-3-Clause",
+  "devDependencies": {
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "@taubyte/spore-drive": "^0.1.1"
+  }
+}

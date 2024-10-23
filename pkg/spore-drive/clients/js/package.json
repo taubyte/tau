@@ -1,6 +1,6 @@
 {
   "name": "@taubyte/spore-drive",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "service": "0.1.0",
   "description": "",
   "type": "module",
@@ -10,8 +10,8 @@
     "dist/**/*"
   ],
   "scripts": {
-    "build": "tsc",
-    "client": "tsx src/index.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build",
     "test": "jest --detectOpenHandles"
   },
   "keywords": [],
