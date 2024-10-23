@@ -8,6 +8,7 @@
     "rootDir": ".",
     "strict": true,
     "esModuleInterop": true,
+    "resolveJsonModule": true,
     "skipLibCheck": true,
     "lib": ["ES2019"]
   },
