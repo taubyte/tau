@@ -158,12 +158,12 @@ describe("Drive Class Integration Tests", () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "cloud-")); // Create a temporary directory
-    config = new Config(rpcUrl, tempDir);
-    await config.init();
+    config = new Config(tempDir);
+    await config.init(rpcUrl);
     await createConfig(mock_client, config);
 
-    drive = new Drive(rpcUrl,config, TauPath("/tmp/faketau"));
-    await drive.init();
+    drive = new Drive(config, TauPath("/tmp/faketau"));
+    await drive.init(rpcUrl);
   });
 
   afterEach(async () => {
