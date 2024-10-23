@@ -78,7 +78,6 @@ export const createConfig = async (config: Config) => {
 };
 
 describe("Config Class Integration Tests", () => {
-  let client: RPCClient;
   let config: Config;
   let rpcUrl: string;
   let mockServerProcess: ChildProcess;
@@ -105,8 +104,6 @@ describe("Config Class Integration Tests", () => {
       console.error("Failed to start mock server:", error);
       throw error;
     }
-
-    client = new RPCClient(rpcUrl);
   });
 
   afterAll(async () => {
@@ -118,8 +115,8 @@ describe("Config Class Integration Tests", () => {
 
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), "cloud-")); // Create a temporary directory
-    config = new Config(rpcUrl, tempDir);
-    await config.init();
+    config = new Config(tempDir);
+    await config.init(rpcUrl);
   });
 
   afterEach(async () => {
@@ -220,8 +217,8 @@ describe("Config Class Integration Tests", () => {
 
     expect(yamlObject.domain.root).toBe("test.com");
 
-    const config_from_zip = new Config(rpcUrl, Readable.toWeb(fs.createReadStream(zipPath)));
-    await config_from_zip.init();
+    const config_from_zip = new Config(Readable.toWeb(fs.createReadStream(zipPath)));
+    await config_from_zip.init(rpcUrl);
     expect(await config_from_zip.Cloud().Domain().Root().Get()).toBe("test.com");
     await config_from_zip.free()
   });

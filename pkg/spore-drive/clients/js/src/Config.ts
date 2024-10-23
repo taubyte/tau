@@ -20,18 +20,17 @@ async function* uploadAsyncIterator(stream: ReadableStream<Uint8Array>): AsyncIt
   }
 }
 
-// Main Config class
 export class Config {
-  private client: RPCClient;
+  private client!: RPCClient;
   private source?: string | ReadableStream<Uint8Array>;
   private config?: ConfigMessage;
 
-  constructor(url: string, source?: string | ReadableStream<Uint8Array>) {
-    this.client = new RPCClient(url);
+  constructor(source?: string | ReadableStream<Uint8Array>) {
     this.source = source;
   }
 
-  async init(): Promise<void> {
+  async init(url: string): Promise<void> {
+    this.client = new RPCClient(url);
     if (typeof this.source === 'string') {
       this.config = await this.client.load(new Source({ root: this.source, path: "/" }))
     } else if (this.source instanceof ReadableStream) {

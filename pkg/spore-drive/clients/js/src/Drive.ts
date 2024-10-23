@@ -38,18 +38,18 @@ const TauPath = (path: string):TauBinarySource => ({ value: path, case: "path" }
 export { TauBinarySource, TauLatest, TauVersion, TauUrl, TauPath };
 
 export class Drive {
-  private client: RPCClient;
+  private client!: RPCClient;
   private drive?: DriveMessage;
   private config: Config;
   private tau?: TauBinarySource;
 
-  constructor(url: string,config: Config,tau?: TauBinarySource) {
-    this.client = new RPCClient(url);
+  constructor(config: Config,tau?: TauBinarySource) {
     this.config = config;
     this.tau = tau;
   }
 
-  async init(): Promise<void> {
+  async init(url: string): Promise<void> {
+    this.client = new RPCClient(url);
     this.drive = await this.client.new(
       new DriveRequest({
         config: new ConfigMessage({ id: this.config.id() }),
