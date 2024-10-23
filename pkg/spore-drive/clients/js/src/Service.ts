@@ -145,7 +145,7 @@ export class Service {
 
     data.on("data", (chunk: any) => {
       downloadedLength += chunk.length;
-      progressBar.update(downloadedLength); // Update the cli-progress bar
+      progressBar.update(downloadedLength);
     });
 
     data.pipe(writer);
@@ -158,8 +158,8 @@ export class Service {
           file: tarPath,
           C: this.binaryDir,
         });
-        fs.unlinkSync(tarPath); // Remove the tarball after extraction
-        fs.writeFileSync(this.versionFilePath, version); // Save the version to a file
+        fs.unlinkSync(tarPath);
+        fs.writeFileSync(this.versionFilePath, version);
         resolve();
       });
       writer.on("error", (err) => {
