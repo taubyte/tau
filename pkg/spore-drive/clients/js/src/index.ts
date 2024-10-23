@@ -47,4 +47,5 @@ export {
   TauVersion,
   TauUrl,
   TauPath,
+  Service
 };

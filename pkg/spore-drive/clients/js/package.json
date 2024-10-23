@@ -1,5 +1,5 @@
 {
-  "name": "spore-drive",
+  "name": "@taubyte/spore-drive",
   "version": "0.1.0",
   "service": "0.1.0",
   "description": "",
@@ -15,8 +15,8 @@
     "test": "jest --detectOpenHandles"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "author": "taubyte",
+  "license": "BSD-3-Clause",
   "devDependencies": {
     "@bufbuild/buf": "^1.39.0",
     "@bufbuild/protoc-gen-es": "^1.10.0",
