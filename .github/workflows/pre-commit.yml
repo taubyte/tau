@@ -90,6 +90,7 @@ jobs:
         echo "127.0.0.1 hal.computers.com" | sudo tee -a /etc/hosts
     - name: Run JS/TS tests with retries
       run: |
+        go mod tidy
         max_attempts=5
         attempt_num=1
         cd pkg/spore-drive/clients/js
