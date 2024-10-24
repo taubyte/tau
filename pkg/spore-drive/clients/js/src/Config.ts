@@ -1,3 +1,4 @@
+import { stringify } from "querystring";
 import {
   Source,
   Op,
@@ -101,9 +102,14 @@ class BaseOperation {
       const pathItem = this.path[i];
       const caseName = pathItem.case;
       const messageValue: any = { op };
+
       if (pathItem.name) {
         messageValue.name = pathItem.name;
       }
+      if (pathItem.shape) {
+        messageValue.shape = pathItem.shape;
+      }
+
       op = { case: caseName, value: messageValue };
     }
     return op;
@@ -258,9 +264,9 @@ class Bootstrap extends BaseOperation {
   }
 
   Shape(shapeName: string) {
-    return new BootstrapShape(this.client, this.config, [
+    return new BootstrapShape(this.client,this.config, [
       ...this.path,
-      { case: "select", name: shapeName },
+      { case: "select", shape: shapeName},
     ]);
   }
 

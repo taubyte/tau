@@ -8,6 +8,7 @@ import {
   TauVersion,
   TauUrl,
   TauPath,
+  Course,
 } from "./src/Drive";
 
 class Config extends BaseConfig {
@@ -27,8 +28,8 @@ class Config extends BaseConfig {
 class Drive extends BaseDrive {
   private service: Service;
 
-  constructor(config: Config) {
-    super(config);
+  constructor(config: Config, tau?: TauBinarySource) {
+    super(config, tau);
     this.service = new Service();
   }
 
@@ -41,11 +42,12 @@ class Drive extends BaseDrive {
 export {
   Config,
   Drive,
+  Course,
   CourseConfig,
   TauBinarySource,
   TauLatest,
   TauVersion,
   TauUrl,
   TauPath,
-  Service
+  Service,
 };

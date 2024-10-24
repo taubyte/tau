@@ -1,4 +1,4 @@
-import {Config,CourseConfig,Drive} from "@taubyte/spore-drive";
+import {Config,CourseConfig,Drive,TauLatest} from "@taubyte/spore-drive";
 
 export const createConfig = async (config: Config) => {
     // Set Cloud Domain
@@ -60,7 +60,7 @@ await config.init()
 
 await createConfig(config)
 
-const drive:Drive = new Drive(config)
+const drive:Drive = new Drive(config,TauLatest)
 
 await drive.init()
 
@@ -72,3 +72,6 @@ console.log("displacement...")
 for await (const prg of await course.progress()) {
     console.log(prg)
 }
+
+
+console.log("done")
