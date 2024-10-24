@@ -1,5 +1,5 @@
-import { Service } from "./Service";
-import { Config as BaseConfig } from "./Config";
+import { Service } from "./src/Service";
+import { Config as BaseConfig } from "./src/Config";
 import {
   Drive as BaseDrive,
   CourseConfig,
@@ -8,7 +8,7 @@ import {
   TauVersion,
   TauUrl,
   TauPath,
-} from "./Drive";
+} from "./src/Drive";
 
 class Config extends BaseConfig {
   private service: Service;
@@ -47,4 +47,5 @@ export {
   TauVersion,
   TauUrl,
   TauPath,
+  Service
 };
