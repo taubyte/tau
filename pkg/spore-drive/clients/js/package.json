@@ -12,12 +12,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run build",
-    "test": "jest --detectOpenHandles"
+    "test": "NODE_OPTIONS=\"$NODE_OPTIONS --experimental-vm-modules\" jest --detectOpenHandles"
   },
   "keywords": [],
   "author": "taubyte",
   "license": "BSD-3-Clause",
   "devDependencies": {
+    "@babel/preset-env": "^7.25.9",
+    "@babel/preset-typescript": "^7.25.9",
     "@bufbuild/buf": "^1.39.0",
     "@bufbuild/protoc-gen-es": "^1.10.0",
     "@connectrpc/protoc-gen-connect-es": "1.4.0",
