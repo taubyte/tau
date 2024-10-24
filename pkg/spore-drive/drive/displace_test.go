@@ -85,7 +85,22 @@ func testDisplace(t *testing.T, sd Spore) {
 			rh.On("Sudo", ctx, "cp", "-f", "/tmp/tau@.service", "/lib/systemd/system/tau@.service").Return(nil, nil)
 		}
 
+		rh.On("Sudo", ctx, "bash", "-c", "mkdir -p /tb/{bin,scripts,priv,cache,logs,storage,config/keys,plugins}").Return(nil, nil)
+
 		// setup tau
+		swarmk, _ := fses[h].OpenFile("/tmp/swarm.key", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
+		rh.On("OpenFile", "/tmp/swarm.key", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0600)).Once().Return(swarmk, nil)
+
+		dprivk, _ := fses[h].OpenFile("/tmp/dv_private.key", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
+		rh.On("OpenFile", "/tmp/dv_private.key", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0600)).Once().Return(dprivk, nil)
+
+		dpubk, _ := fses[h].OpenFile("/tmp/dv_public.key", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
+		rh.On("OpenFile", "/tmp/dv_public.key", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0600)).Once().Return(dpubk, nil)
+
+		rh.On("Sudo", ctx, "cp", "-f", "/tmp/swarm.key", "/tb/config/keys/").Return(nil, nil)
+		rh.On("Sudo", ctx, "cp", "-f", "/tmp/dv_private.key", "/tb/config/keys/").Return(nil, nil)
+		rh.On("Sudo", ctx, "cp", "-f", "/tmp/dv_public.key", "/tb/config/keys/").Return(nil, nil)
+
 		sh1cf, _ := fses[h].OpenFile("/tmp/shape1.yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0750)
 		rh.On("OpenFile", "/tmp/shape1.yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0750)).Once().Return(sh1cf, nil)
 		rh.On("Sudo", ctx, "cp", "-f", "/tmp/shape1.yaml", "/tb/config/").Return(nil, nil)
@@ -143,9 +158,9 @@ func testDisplace(t *testing.T, sd Spore) {
 	}
 
 	if updatingTau {
-		assert.Equal(t, len(steps), 52)
+		assert.Equal(t, len(steps), 50)
 	} else {
-		assert.Equal(t, len(steps), 42)
+		assert.Equal(t, len(steps), 44)
 	}
 
 	for h, mfs := range fses {

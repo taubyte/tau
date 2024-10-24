@@ -82,7 +82,7 @@ export class CourseConfig {
   }
 }
 
-class Course {
+export class Course {
   private client: RPCClient;
   private drive: DriveMessage;
   private course?: CourseMessage;

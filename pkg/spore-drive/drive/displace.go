@@ -24,7 +24,7 @@ func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan 
 
 	hyphae := course.Hyphae()
 
-	pCh := make(chan Progress, hyphae.Size()*64)
+	pCh := make(chan Progress, hyphae.Size()*1024)
 
 	if cap(pCh) == 0 { // course is empty
 		close(pCh)
@@ -144,8 +144,61 @@ func (d *sporedrive) uploadPlugins(ctx context.Context, h remoteHost, dir string
 	return nil
 }
 
+func (d *sporedrive) writeSwarmKeyToTmp(h remoteHost) error {
+	skr, err := d.parser.Cloud().P2P().Swarm().Open()
+	if err != nil {
+		return fmt.Errorf("failed to open swarm key: %w", err)
+	}
+	defer skr.Close()
+
+	skf, err := h.OpenFile("/tmp/swarm.key", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to open /tmp/swarm.key: %w", err)
+	}
+	defer skf.Close()
+
+	_, err = io.Copy(skf, skr)
+
+	return err
+}
+
+func (d *sporedrive) writeDomainPrivKeyToTmp(h remoteHost) error {
+	pkr, err := d.parser.Cloud().Domain().Validation().OpenPrivateKey()
+	if err != nil {
+		return fmt.Errorf("failed to open private domain key: %w", err)
+	}
+	defer pkr.Close()
+
+	pkf, err := h.OpenFile("/tmp/dv_private.key", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to open /tmp/dv_private.key: %w", err)
+	}
+	defer pkf.Close()
+
+	_, err = io.Copy(pkf, pkr)
+
+	return err
+}
+
+func (d *sporedrive) writeDomainPubKeyToTmp(h remoteHost) error {
+	pkr, err := d.parser.Cloud().Domain().Validation().OpenPrivateKey()
+	if err != nil {
+		return fmt.Errorf("failed to open private domain key: %w", err)
+	}
+	defer pkr.Close()
+
+	pkf, err := h.OpenFile("/tmp/dv_public.key", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
+	if err != nil {
+		return fmt.Errorf("failed to open /tmp/dv_public.key: %w", err)
+	}
+	defer pkf.Close()
+
+	_, err = io.Copy(pkf, pkr)
+
+	return err
+}
+
 func (d *sporedrive) writeConfig(h remoteHost, shape string, w io.Writer) error {
-	// TODO
 	hc := d.parser.Hosts().Host(h.Host().Name())
 	hshape := hc.Shapes().Instance(shape)
 	sc := d.parser.Shapes().Shape(shape)
@@ -185,7 +238,7 @@ func (d *sporedrive) writeConfig(h remoteHost, shape string, w io.Writer) error 
 						return fmt.Errorf("`%s` is not valid IP or CIDR", addr)
 					}
 				}
-				bootstrap = append(bootstrap, fmt.Sprintf("/ip4/%s/tcp/%d/%s", ip.String(), shMainPort, shid))
+				bootstrap = append(bootstrap, fmt.Sprintf("/ip4/%s/tcp/%d/p2p/%s", ip.String(), shMainPort, shid))
 			}
 		}
 
@@ -235,6 +288,18 @@ func (d *sporedrive) uploadConfig(h remoteHost, shape string) error {
 	defer f.Close()
 
 	if err = d.writeConfig(h, shape, f); err != nil {
+		return err
+	}
+
+	if err = d.writeSwarmKeyToTmp(h); err != nil {
+		return err
+	}
+
+	if err = d.writeDomainPrivKeyToTmp(h); err != nil {
+		return err
+	}
+
+	if err = d.writeDomainPubKeyToTmp(h); err != nil {
 		return err
 	}
 
@@ -457,20 +522,6 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 			pushProgress("upload tau", 100)
 		}
 
-		if updatingTau {
-			pushProgress("upload tau files", 0)
-			// upload systemd and other files
-			if err = d.uploadSystemdFile(r); err != nil {
-				return pushError("upload tau files", fmt.Errorf("failed to upload tau files to /tmp: %w", err))
-			}
-
-			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/tau@.service", "/lib/systemd/system/tau@.service"); err != nil {
-				return pushError("upload tau files", fmt.Errorf("failed to copy tau@.servicee: %w", err))
-			}
-
-			pushProgress("upload tau files", 100)
-		}
-
 		pushProgress("upload plugins", 0)
 		if err = d.uploadPlugins(ctx, r, "/tmp/tau-plugins"); err != nil {
 			return pushError("upload plugins", fmt.Errorf("failed to upload tau plugins to /tmp: %w", err))
@@ -502,19 +553,51 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 		}
 		pushProgress("setup tau", 20)
 
+		if updatingTau {
+			// upload systemd and other files
+			if err = d.uploadSystemdFile(r); err != nil {
+				return pushError("upload tau files", fmt.Errorf("failed to upload tau files to /tmp: %w", err))
+			}
+
+			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/tau@.service", "/lib/systemd/system/tau@.service"); err != nil {
+				return pushError("upload tau files", fmt.Errorf("failed to copy tau@.servicee: %w", err))
+			}
+		}
+
+		if _, err = r.Sudo(ctx, "bash", "-c", "mkdir -p /tb/{bin,scripts,priv,cache,logs,storage,config/keys,plugins}"); err != nil {
+			return pushError("setup tau", fmt.Errorf("failed create fs structure: %w", err))
+		}
+
+		pushProgress("setup tau", 25)
+
 		for _, shape := range hypha.Shapes {
 			if !slices.Contains(hshapes, shape) {
 				continue
 			}
 
 			// upload config
-			d.uploadConfig(r, shape)
+			if err := d.uploadConfig(r, shape); err != nil {
+				return pushError("setup tau", fmt.Errorf("failed to create %s.yaml: %w", shape, err))
+			}
 
 			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/"+shape+".yaml", "/tb/config/"); err != nil {
 				return pushError("setup tau", fmt.Errorf("failed to copy %s.yaml: %w", shape, err))
 			}
+
+			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/swarm.key", "/tb/config/keys/"); err != nil {
+				return pushError("setup tau", fmt.Errorf("failed to copy swarm.key: %w", err))
+			}
+
+			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/dv_private.key", "/tb/config/keys/"); err != nil {
+				return pushError("setup tau", fmt.Errorf("failed to copy dv_private.key: %w", err))
+			}
+
+			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/dv_public.key", "/tb/config/keys/"); err != nil {
+				return pushError("setup tau", fmt.Errorf("failed to copy dv_public.key: %w", err))
+			}
 		}
 		pushProgress("setup tau", 30)
+
 		if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/tau", "/tb/bin/"); err != nil {
 			return pushError("setup tau", fmt.Errorf("failed to copy tau: %w", err))
 		}

@@ -5,6 +5,7 @@ describe("Service", () => {
 
   beforeAll(() => {
     service = new Service();
+    service["packageVersion"]="0.1.0" // override to a published version
   });
 
   afterAll(async () => {
