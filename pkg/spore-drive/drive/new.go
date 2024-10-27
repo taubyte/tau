@@ -1,6 +1,8 @@
 package drive
 
 import (
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 
 	"github.com/taubyte/tau/pkg/mycelium"
@@ -24,6 +26,12 @@ func New(cnf config.Parser, options ...Option) (Spore, error) {
 		if err := opt(s); err != nil {
 			return nil, err
 		}
+	}
+
+	if s.tauBinary != nil {
+		hasher := md5.New()
+		hasher.Write(s.tauBinary)
+		s.tauBinaryHash = hex.EncodeToString(hasher.Sum(nil))
 	}
 
 	return s, nil

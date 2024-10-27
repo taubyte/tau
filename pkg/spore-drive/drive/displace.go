@@ -181,7 +181,7 @@ func (d *sporedrive) writeDomainPrivKeyToTmp(h remoteHost) error {
 }
 
 func (d *sporedrive) writeDomainPubKeyToTmp(h remoteHost) error {
-	pkr, err := d.parser.Cloud().Domain().Validation().OpenPrivateKey()
+	pkr, err := d.parser.Cloud().Domain().Validation().OpenPublicKey()
 	if err != nil {
 		return fmt.Errorf("failed to open private domain key: %w", err)
 	}
@@ -381,6 +381,17 @@ func listTauInstances(ctx context.Context, h remoteHost) ([]string, error) {
 	return instances, nil
 }
 
+func (d *sporedrive) isSameTau(ctx context.Context, h remoteHost) bool {
+	output, err := h.Execute(ctx, "md5sum", "-bz", "/tb/bin/tau")
+	if err == nil && output != nil {
+		fields := strings.Fields(string(output))
+		if len(fields) > 1 && fields[0] == d.tauBinaryHash {
+			return true
+		}
+	}
+	return false
+}
+
 func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Progress) func(context.Context, host.Host) error {
 	updatingTau := (d.tauBinary != nil)
 	return func(ctx context.Context, h host.Host) error {
@@ -495,6 +506,14 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 		}
 		pushProgress("dependencies", 100)
 
+		pushProgress("checking state", 0)
+		updatingTau = updatingTau && !d.isSameTau(ctx, r)
+		pushProgress("checking state", 50)
+
+		// TODO: check config changes
+
+		pushProgress("checking state", 100)
+
 		// Upload to /tmp
 		if updatingTau {
 			pushProgress("upload tau", 0)
@@ -560,7 +579,11 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 			}
 
 			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/tau@.service", "/lib/systemd/system/tau@.service"); err != nil {
-				return pushError("upload tau files", fmt.Errorf("failed to copy tau@.servicee: %w", err))
+				return pushError("upload tau files", fmt.Errorf("failed to copy tau@.service: %w", err))
+			}
+
+			if _, err = r.Sudo(ctx, "systemctl", "daemon-reload"); err != nil {
+				return pushError("upload tau files", fmt.Errorf("failed to daemon-reload: %w", err))
 			}
 		}
 
@@ -598,8 +621,10 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 		}
 		pushProgress("setup tau", 30)
 
-		if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/tau", "/tb/bin/"); err != nil {
-			return pushError("setup tau", fmt.Errorf("failed to copy tau: %w", err))
+		if updatingTau {
+			if _, err = r.Sudo(ctx, "cp", "-f", "/tmp/tau", "/tb/bin/"); err != nil {
+				return pushError("setup tau", fmt.Errorf("failed to copy tau: %w", err))
+			}
 		}
 
 		pushProgress("setup plugins", 0)

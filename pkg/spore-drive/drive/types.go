@@ -13,7 +13,8 @@ type sporedrive struct {
 	parser  config.Parser
 	network *mycelium.Network
 
-	tauBinary []byte
+	tauBinary     []byte
+	tauBinaryHash string
 
 	hostWrapper func(ctx context.Context, h host.Host) (remoteHost, error)
 }
