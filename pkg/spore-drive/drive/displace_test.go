@@ -71,6 +71,10 @@ func testDisplace(t *testing.T, sd Spore) {
 142.250.115.139
 		`), nil)
 
+		if updatingTau {
+			rh.On("Execute", ctx, "md5sum", "-bz", "/tb/bin/tau").Once().Return(nil, nil)
+		}
+
 		// upload tau
 		if updatingTau {
 			tauf, _ := fses[h].OpenFile("/tmp/tau", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0750)
@@ -83,6 +87,7 @@ func testDisplace(t *testing.T, sd Spore) {
 			sdcf, _ := fses[h].OpenFile("/tmp/tau@.service", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0644)
 			rh.On("OpenFile", "/tmp/tau@.service", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0644)).Once().Return(sdcf, nil)
 			rh.On("Sudo", ctx, "cp", "-f", "/tmp/tau@.service", "/lib/systemd/system/tau@.service").Return(nil, nil)
+			rh.On("Sudo", ctx, "systemctl", "daemon-reload").Return(nil, nil)
 		}
 
 		rh.On("Sudo", ctx, "bash", "-c", "mkdir -p /tb/{bin,scripts,priv,cache,logs,storage,config/keys,plugins}").Return(nil, nil)
@@ -104,7 +109,9 @@ func testDisplace(t *testing.T, sd Spore) {
 		sh1cf, _ := fses[h].OpenFile("/tmp/shape1.yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0750)
 		rh.On("OpenFile", "/tmp/shape1.yaml", os.O_CREATE|os.O_RDWR|os.O_TRUNC, fs.FileMode(0750)).Once().Return(sh1cf, nil)
 		rh.On("Sudo", ctx, "cp", "-f", "/tmp/shape1.yaml", "/tb/config/").Return(nil, nil)
-		rh.On("Sudo", ctx, "cp", "-f", "/tmp/tau", "/tb/bin/").Return(nil, nil)
+		if updatingTau {
+			rh.On("Sudo", ctx, "cp", "-f", "/tmp/tau", "/tb/bin/").Return(nil, nil)
+		}
 
 		rh.On("Sudo", ctx, "systemctl", "list-units", "--type=service", "--quiet", "--no-pager", "--all", "tau@*.service").Once().Return([]byte(`  tau@compute.service   loaded inactive dead Description of compute
   tau@storage.service   loaded inactive dead Description of storage
@@ -158,9 +165,9 @@ func testDisplace(t *testing.T, sd Spore) {
 	}
 
 	if updatingTau {
-		assert.Equal(t, len(steps), 50)
+		assert.Equal(t, len(steps), 56)
 	} else {
-		assert.Equal(t, len(steps), 44)
+		assert.Equal(t, len(steps), 50)
 	}
 
 	for h, mfs := range fses {
