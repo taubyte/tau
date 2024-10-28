@@ -2,7 +2,7 @@
 
 Gone are the days of relying on third parties to build and maintain cloud infrastructure for your software. **spore-drive** empowers you to deploy, scale, and manage your [Tau](https://github.com/taubyte/tau) cloud infrastructure with code!
 
-<img src="assets/preview.gif"/>
+<img src="https://github.com/taubyte/tau/raw/main/pkg/spore-drive/clients/js/assets/preview.gif"/>
 
 ## Installation
 
