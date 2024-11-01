@@ -64,7 +64,7 @@ func createServiceMonkey() *testSpider {
 				"--tags", "tag1, tag2,   tag3",
 				"--protocol", "/testprotocol/v1",
 			},
-			exitCode: 1,
+			exitCode: 2,
 			errOut:   []string{"EOF"},
 		},
 		{
@@ -87,7 +87,7 @@ func createServiceMonkey() *testSpider {
 				"--tags", "tag1, tag2,   tag3",
 				"--protocol", "/testprotocol/v1",
 			},
-			exitCode: 1,
+			exitCode: 2,
 			errOut:   []string{"EOF"},
 		},
 		{

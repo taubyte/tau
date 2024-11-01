@@ -56,7 +56,7 @@ func createSmartopsMonkey() *testSpider {
 			args: []string{"query", command, testName},
 			wantOut: []string{
 				"tag1", "tag2", "tag3", testName,
-				"Source      │ inline",
+				"Source      │ .",
 				"Call        │ ping",
 			},
 			wantDir: []string{
@@ -74,7 +74,7 @@ func createSmartopsMonkey() *testSpider {
 			args: []string{"query", command, testName},
 			wantOut: []string{
 				"tag1", "tag2", "tag3", testName,
-				"Source      │ inline",
+				"Source      │ .",
 				"Call        │ confirmHttp",
 			},
 			wantDir: []string{

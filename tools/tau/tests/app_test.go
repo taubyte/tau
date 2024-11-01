@@ -57,7 +57,7 @@ func createApplicationMonkey() *testSpider {
 		{
 			name:     "New Basic no -y",
 			args:     []string{"new", command, "--name", testApplicationName, "--description", "some app desc", "--tags", "some, other, tags"},
-			exitCode: 1,
+			exitCode: 2,
 			errOut:   []string{"EOF"},
 		},
 		{
@@ -81,7 +81,7 @@ func createApplicationMonkey() *testSpider {
 		{
 			name:     "Edit Basic no -y",
 			args:     []string{"edit", command, "--name", testApplicationName, "--description", "some nedwdadda", "--tags", "some, dsadsad, tags"},
-			exitCode: 1,
+			exitCode: 2,
 			errOut:   []string{"EOF"},
 			preRun: [][]string{
 				basicNew(testApplicationName),
@@ -114,7 +114,7 @@ func createApplicationMonkey() *testSpider {
 			children: []testMonkey{
 				{
 					args:     []string{"delete", command, "--name", testApplicationName},
-					exitCode: 1,
+					exitCode: 2,
 					errOut:   []string{"EOF"},
 				},
 			},
