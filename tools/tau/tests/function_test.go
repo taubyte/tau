@@ -91,7 +91,7 @@ func createFunctionMonkey() *testSpider {
 			wantOut: []string{
 				"tag1", "tag2", "tag3", testName, testDomain, "GET",
 				"Paths       │ /",
-				"Source      │ inline",
+				"Source      │ .",
 				"Call        │ ping",
 				"test_domain_1",
 			},
@@ -117,7 +117,7 @@ func createFunctionMonkey() *testSpider {
 			wantOut: []string{
 				"tag1", "tag2", "tag3", testName, testDomain, "GET",
 				"Paths       │ /",
-				"Source      │ inline",
+				"Source      │ .",
 				"Call        │ ping",
 				"test_domain_1",
 			},
@@ -190,7 +190,7 @@ func createFunctionMonkey() *testSpider {
 			wantOut: []string{
 				"tag1", "tag2", "tag3", testName, testDomain, "GET",
 				"Paths       │ /",
-				"Source      │ inline",
+				"Source      │ .",
 				"Call        │ ping",
 				"test_domain_1",
 			},
@@ -303,7 +303,7 @@ func createFunctionMonkey() *testSpider {
 			wantOut: []string{
 				"tag1", "tag2", "tag3", testName,
 				"Command     │ doPing",
-				"Source      │ inline",
+				"Source      │ .",
 				"Call        │ ping",
 				"Protocol    │ test_service_1",
 			},
@@ -340,7 +340,7 @@ func createFunctionMonkey() *testSpider {
 			wantOut: []string{
 				"tag1", "tag2", "tag3", testName,
 				"Channel     │ doPing",
-				"Source      │ inline",
+				"Source      │ .",
 				"Call        │ ping",
 			},
 			wantDir: []string{
@@ -373,7 +373,7 @@ func createFunctionMonkey() *testSpider {
 			wantOut: []string{
 				"tag1", "tag2", "tag3", testName,
 				"Command     │ doPing",
-				"Source      │ inline",
+				"Source      │ .",
 				"Call        │ ping",
 			},
 			mock: true,

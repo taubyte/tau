@@ -2,6 +2,7 @@ package prompts
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/taubyte/tau/tools/tau/common"
@@ -19,7 +20,7 @@ func GetOrRequireACall(c *cli.Context, source common.Source, prev ...string) str
 		validator: func(s string) error {
 			err := validate.VariableDescriptionValidator(s)
 			if err != nil {
-				return err
+				return fmt.Errorf("validate `%s` failed with %w", s, err)
 			}
 
 			// TODO REGEX

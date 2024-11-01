@@ -60,6 +60,7 @@ func New(ctx *cli.Context) (function *structureSpec.Function, templateURL string
 	if err != nil {
 		return
 	}
+
 	function.Source = source.String()
 
 	function.Call = prompts.GetOrRequireACall(ctx, source, function.Call)
