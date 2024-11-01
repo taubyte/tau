@@ -1,7 +1,6 @@
 package prompts
 
 import (
-	"log"
 	"os"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -13,7 +12,7 @@ func handleError(err error) {
 	if err != nil {
 		states.ContextC()
 		if err != terminal.InterruptErr {
-			log.Fatal(err)
+			panic(err)
 		}
 		os.Exit(1)
 	}

@@ -33,8 +33,7 @@ const (
 	WebsiteRepoDir = "websites"
 	LibraryRepoDir = "libraries"
 
-	SelectionInline = Source("inline")
-	SelectionDot    = Source(".")
+	SelectionInline = Source(".")
 )
 
 var (
