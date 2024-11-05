@@ -1,0 +1,45 @@
+syntax = "proto3";
+
+package taucorder.v1;
+
+option go_package = ".";
+
+import "taucorder/v1/common.proto";
+
+// Data Structures
+
+message Link {
+    string url = 1;
+    bool auto = 2;  // falls back to auto if true
+}
+
+message SporeDrive {
+    string config_id = 1;
+    Link connect = 2;
+}
+
+message Dream {
+    string universe = 1;
+    Link connect = 2;
+    string swarm_key = 3;
+}
+
+message Raw {
+    string swarm_key = 1;
+    repeated string peer = 2;
+}
+
+message Config {
+    oneof source {
+        SporeDrive cloud = 1;
+        Dream universe = 2;
+        Raw raw = 3;
+    }
+    bytes private_key = 4;
+}
+
+// Service
+service NodeService {
+    rpc New(Config) returns (Node);
+    rpc Free(Node) returns (Empty);
+}

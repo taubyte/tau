@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package taucorder.v1;
+
+option go_package = ".";
+
+message Empty {}
+
+message Node {
+    string id = 1;
+}
+
+message Peer {
+    string id = 1;
+    string address = 2;
+    bool up = 3;  // did it respond to ping
+}
+
+message DiscoverServiceRequest {
+    Node node = 1;
+    int64 timeout = 2;
+    int64 count = 3;  // max count
+}
+
+message ConsensusStateRequest {
+    Node node = 1;
+    Peer peer = 2;
+}
+
+message CRDTState {
+    repeated string head_cid = 1;
+}
+
+message ConsensusState {
+    Peer member = 1;
+    oneof consensus {
+        CRDTState crdt = 2;
+    }
+}
