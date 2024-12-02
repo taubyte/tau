@@ -59,7 +59,7 @@ var (
 type SwarmServiceClient interface {
 	Wait(context.Context, *connect.Request[v1.WaitRequest]) (*connect.Response[v1.Empty], error)
 	List(context.Context, *connect.Request[v1.ListRequest]) (*connect.ServerStreamForClient[v1.Peer], error)
-	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.Empty], error)
+	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.Peer], error)
 	Connect(context.Context, *connect.Request[v1.ConnectRequest]) (*connect.Response[v1.Peer], error)
 	Discover(context.Context, *connect.Request[v1.DiscoverRequest]) (*connect.ServerStreamForClient[v1.Peer], error)
 }
@@ -86,7 +86,7 @@ func NewSwarmServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 			connect.WithSchema(swarmServiceListMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
-		ping: connect.NewClient[v1.PingRequest, v1.Empty](
+		ping: connect.NewClient[v1.PingRequest, v1.Peer](
 			httpClient,
 			baseURL+SwarmServicePingProcedure,
 			connect.WithSchema(swarmServicePingMethodDescriptor),
@@ -111,7 +111,7 @@ func NewSwarmServiceClient(httpClient connect.HTTPClient, baseURL string, opts .
 type swarmServiceClient struct {
 	wait     *connect.Client[v1.WaitRequest, v1.Empty]
 	list     *connect.Client[v1.ListRequest, v1.Peer]
-	ping     *connect.Client[v1.PingRequest, v1.Empty]
+	ping     *connect.Client[v1.PingRequest, v1.Peer]
 	connect  *connect.Client[v1.ConnectRequest, v1.Peer]
 	discover *connect.Client[v1.DiscoverRequest, v1.Peer]
 }
@@ -127,7 +127,7 @@ func (c *swarmServiceClient) List(ctx context.Context, req *connect.Request[v1.L
 }
 
 // Ping calls taucorder.v1.SwarmService.Ping.
-func (c *swarmServiceClient) Ping(ctx context.Context, req *connect.Request[v1.PingRequest]) (*connect.Response[v1.Empty], error) {
+func (c *swarmServiceClient) Ping(ctx context.Context, req *connect.Request[v1.PingRequest]) (*connect.Response[v1.Peer], error) {
 	return c.ping.CallUnary(ctx, req)
 }
 
@@ -145,7 +145,7 @@ func (c *swarmServiceClient) Discover(ctx context.Context, req *connect.Request[
 type SwarmServiceHandler interface {
 	Wait(context.Context, *connect.Request[v1.WaitRequest]) (*connect.Response[v1.Empty], error)
 	List(context.Context, *connect.Request[v1.ListRequest], *connect.ServerStream[v1.Peer]) error
-	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.Empty], error)
+	Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.Peer], error)
 	Connect(context.Context, *connect.Request[v1.ConnectRequest]) (*connect.Response[v1.Peer], error)
 	Discover(context.Context, *connect.Request[v1.DiscoverRequest], *connect.ServerStream[v1.Peer]) error
 }
@@ -215,7 +215,7 @@ func (UnimplementedSwarmServiceHandler) List(context.Context, *connect.Request[v
 	return connect.NewError(connect.CodeUnimplemented, errors.New("taucorder.v1.SwarmService.List is not implemented"))
 }
 
-func (UnimplementedSwarmServiceHandler) Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.Empty], error) {
+func (UnimplementedSwarmServiceHandler) Ping(context.Context, *connect.Request[v1.PingRequest]) (*connect.Response[v1.Peer], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("taucorder.v1.SwarmService.Ping is not implemented"))
 }
 

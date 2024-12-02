@@ -2,6 +2,7 @@ package dream
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -57,13 +58,19 @@ func (u *Universe) Mesh(newNodes ...peer.Node) {
 				wg.Add(1)
 				go func(n0, n1 peer.Node) {
 					defer wg.Done()
-					n0.Peer().Connect(
+					err := n0.Peer().Connect(
 						ctx,
 						peercore.AddrInfo{
 							ID:    n1.ID(),
 							Addrs: n1.Peer().Addrs(),
 						},
 					)
+					if err != nil {
+						n0.Peering().AddPeer(peercore.AddrInfo{
+							ID:    n1.ID(),
+							Addrs: n1.Peer().Addrs(),
+						})
+					}
 				}(n0, n1)
 			}
 		}
@@ -96,6 +103,11 @@ func (u *Universe) Auth() auth.Service {
 	return ret
 }
 
+func (u *Universe) AllAuth() (ret []auth.Service) {
+	ret, _ = sliceT2V[auth.Service](u.service["auth"].nodes)
+	return
+}
+
 func (u *Universe) AuthByPid(pid string) (auth.Service, bool) {
 	return byId[auth.Service](u, u.service["auth"].nodes, pid)
 }
@@ -106,6 +118,11 @@ func (u *Universe) Patrick() patrick.Service {
 		return nil
 	}
 	return ret
+}
+
+func (u *Universe) AllPatrick() (ret []patrick.Service) {
+	ret, _ = sliceT2V[patrick.Service](u.service["patrick"].nodes)
+	return
 }
 
 func (u *Universe) PatrickByPid(pid string) (patrick.Service, bool) {
@@ -120,6 +137,11 @@ func (u *Universe) TNS() tns.Service {
 	return ret
 }
 
+func (u *Universe) AllTNS() (ret []tns.Service) {
+	ret, _ = sliceT2V[tns.Service](u.service["tns"].nodes)
+	return
+}
+
 func (u *Universe) TnsByPid(pid string) (tns.Service, bool) {
 	return byId[tns.Service](u, u.service["tns"].nodes, pid)
 }
@@ -132,6 +154,15 @@ func (u *Universe) Monkey() monkey.Service {
 	return ret
 }
 
+func (u *Universe) AllMonkey() (ret []monkey.Service) {
+	ret, _ = sliceT2V[monkey.Service](u.service["monkey"].nodes)
+	return
+}
+
+func (u *Universe) MonkeyByPid(pid string) (monkey.Service, bool) {
+	return byId[monkey.Service](u, u.service["monkey"].nodes, pid)
+}
+
 func (u *Universe) Gateway() gateway.Service {
 	ret, ok := first[gateway.Service](u, u.service["gateway"].nodes)
 	if !ok {
@@ -140,8 +171,13 @@ func (u *Universe) Gateway() gateway.Service {
 	return ret
 }
 
-func (u *Universe) MonkeyByPid(pid string) (monkey.Service, bool) {
-	return byId[monkey.Service](u, u.service["monkey"].nodes, pid)
+func (u *Universe) AllGateway() (ret []gateway.Service) {
+	ret, _ = sliceT2V[gateway.Service](u.service["gateway"].nodes)
+	return
+}
+
+func (u *Universe) GatewayByPid(pid string) (gateway.Service, bool) {
+	return byId[gateway.Service](u, u.service["gateway"].nodes, pid)
 }
 
 func (u *Universe) Hoarder() hoarder.Service {
@@ -150,6 +186,11 @@ func (u *Universe) Hoarder() hoarder.Service {
 		return nil
 	}
 	return ret
+}
+
+func (u *Universe) AllHoarder() (ret []hoarder.Service) {
+	ret, _ = sliceT2V[hoarder.Service](u.service["hoarder"].nodes)
+	return
 }
 
 func (u *Universe) HoarderByPid(pid string) (hoarder.Service, bool) {
@@ -164,8 +205,25 @@ func (u *Universe) Substrate() substrate.Service {
 	return ret
 }
 
+func (u *Universe) AllSubstrate() (ret []substrate.Service) {
+	ret, _ = sliceT2V[substrate.Service](u.service["substrate"].nodes)
+	return
+}
+
 func (u *Universe) SubstrateByPid(pid string) (substrate.Service, bool) {
 	return byId[substrate.Service](u, u.service["substrate"].nodes, pid)
+}
+
+func sliceT2V[T any](a map[string]commonIface.Service) ([]T, error) {
+	ret := make([]T, 0, len(a))
+	for _, i := range a {
+		x, ok := i.(T)
+		if !ok {
+			return nil, errors.New("failed to convert")
+		}
+		ret = append(ret, x)
+	}
+	return ret, nil
 }
 
 func byId[T any](u *Universe, i map[string]commonIface.Service, pid string) (T, bool) {

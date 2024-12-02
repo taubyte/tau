@@ -34,7 +34,7 @@ func Status(ctx context.Context) (echart api.Echart, err error) {
 
 	selectedUniverse, _ := env.GetCustomNetworkUrl()
 	universe := dreamClient.Universe(selectedUniverse)
-	echart, err = universe.Status()
+	echart, err = universe.Chart()
 	return
 }
 

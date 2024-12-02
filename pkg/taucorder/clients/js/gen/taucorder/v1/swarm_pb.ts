@@ -17,6 +17,8 @@ export class WaitRequest extends Message<WaitRequest> {
   node?: Node;
 
   /**
+   * nanoseconds
+   *
    * @generated from field: int64 timeout = 2;
    */
   timeout = protoInt64.zero;
@@ -51,6 +53,51 @@ export class WaitRequest extends Message<WaitRequest> {
 }
 
 /**
+ * @generated from message taucorder.v1.ListPingRequest
+ */
+export class ListPingRequest extends Message<ListPingRequest> {
+  /**
+   * @generated from field: int32 count = 1;
+   */
+  count = 0;
+
+  /**
+   * just a suggestion, service can change value
+   *
+   * @generated from field: int32 concurrency = 2;
+   */
+  concurrency = 0;
+
+  constructor(data?: PartialMessage<ListPingRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "taucorder.v1.ListPingRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "count", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 2, name: "concurrency", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListPingRequest {
+    return new ListPingRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ListPingRequest {
+    return new ListPingRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ListPingRequest {
+    return new ListPingRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ListPingRequest | PlainMessage<ListPingRequest> | undefined, b: ListPingRequest | PlainMessage<ListPingRequest> | undefined): boolean {
+    return proto3.util.equals(ListPingRequest, a, b);
+  }
+}
+
+/**
  * @generated from message taucorder.v1.ListRequest
  */
 export class ListRequest extends Message<ListRequest> {
@@ -60,14 +107,16 @@ export class ListRequest extends Message<ListRequest> {
   node?: Node;
 
   /**
+   * nanoseconds
+   *
    * @generated from field: int64 timeout = 2;
    */
   timeout = protoInt64.zero;
 
   /**
-   * @generated from field: bool ping = 3;
+   * @generated from field: taucorder.v1.ListPingRequest ping = 3;
    */
-  ping = false;
+  ping?: ListPingRequest;
 
   constructor(data?: PartialMessage<ListRequest>) {
     super();
@@ -79,7 +128,7 @@ export class ListRequest extends Message<ListRequest> {
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "node", kind: "message", T: Node },
     { no: 2, name: "timeout", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
-    { no: 3, name: "ping", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 3, name: "ping", kind: "message", T: ListPingRequest },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ListRequest {
@@ -104,38 +153,28 @@ export class ListRequest extends Message<ListRequest> {
  */
 export class PingRequest extends Message<PingRequest> {
   /**
-   * @generated from oneof taucorder.v1.PingRequest.peer
+   * @generated from field: taucorder.v1.Node node = 1;
    */
-  peer: {
-    /**
-     * @generated from field: string id = 1;
-     */
-    value: string;
-    case: "id";
-  } | {
-    /**
-     * @generated from field: string address = 2;
-     */
-    value: string;
-    case: "address";
-  } | { case: undefined; value?: undefined } = { case: undefined };
+  node?: Node;
 
   /**
-   * @generated from oneof taucorder.v1.PingRequest.params
+   * must be connected to peer
+   *
+   * @generated from field: string pid = 2;
    */
-  params: {
-    /**
-     * @generated from field: int64 timeout = 3;
-     */
-    value: bigint;
-    case: "timeout";
-  } | {
-    /**
-     * @generated from field: int64 count = 4;
-     */
-    value: bigint;
-    case: "count";
-  } | { case: undefined; value?: undefined } = { case: undefined };
+  pid = "";
+
+  /**
+   * nanoseconds
+   *
+   * @generated from field: int64 timeout = 3;
+   */
+  timeout = protoInt64.zero;
+
+  /**
+   * @generated from field: int32 count = 4;
+   */
+  count = 0;
 
   constructor(data?: PartialMessage<PingRequest>) {
     super();
@@ -145,10 +184,10 @@ export class PingRequest extends Message<PingRequest> {
   static readonly runtime: typeof proto3 = proto3;
   static readonly typeName = "taucorder.v1.PingRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "peer" },
-    { no: 2, name: "address", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "peer" },
-    { no: 3, name: "timeout", kind: "scalar", T: 3 /* ScalarType.INT64 */, oneof: "params" },
-    { no: 4, name: "count", kind: "scalar", T: 3 /* ScalarType.INT64 */, oneof: "params" },
+    { no: 1, name: "node", kind: "message", T: Node },
+    { no: 2, name: "pid", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "timeout", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "count", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PingRequest {
@@ -173,12 +212,19 @@ export class PingRequest extends Message<PingRequest> {
  */
 export class ConnectRequest extends Message<ConnectRequest> {
   /**
-   * @generated from field: string address = 1;
+   * @generated from field: taucorder.v1.Node node = 1;
+   */
+  node?: Node;
+
+  /**
+   * @generated from field: string address = 2;
    */
   address = "";
 
   /**
-   * @generated from field: int64 timeout = 2;
+   * nanoseconds
+   *
+   * @generated from field: int64 timeout = 3;
    */
   timeout = protoInt64.zero;
 
@@ -190,8 +236,9 @@ export class ConnectRequest extends Message<ConnectRequest> {
   static readonly runtime: typeof proto3 = proto3;
   static readonly typeName = "taucorder.v1.ConnectRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "address", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 2, name: "timeout", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 1, name: "node", kind: "message", T: Node },
+    { no: 2, name: "address", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "timeout", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ConnectRequest {
@@ -216,21 +263,28 @@ export class ConnectRequest extends Message<ConnectRequest> {
  */
 export class DiscoverRequest extends Message<DiscoverRequest> {
   /**
-   * @generated from field: string service = 1;
+   * @generated from field: taucorder.v1.Node node = 1;
+   */
+  node?: Node;
+
+  /**
+   * @generated from field: string service = 2;
    */
   service = "";
 
   /**
-   * @generated from field: int64 timeout = 2;
+   * nanoseconds
+   *
+   * @generated from field: int64 timeout = 3;
    */
   timeout = protoInt64.zero;
 
   /**
    * max count
    *
-   * @generated from field: int64 count = 3;
+   * @generated from field: int32 count = 4;
    */
-  count = protoInt64.zero;
+  count = 0;
 
   constructor(data?: PartialMessage<DiscoverRequest>) {
     super();
@@ -240,9 +294,10 @@ export class DiscoverRequest extends Message<DiscoverRequest> {
   static readonly runtime: typeof proto3 = proto3;
   static readonly typeName = "taucorder.v1.DiscoverRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 2, name: "timeout", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
-    { no: 3, name: "count", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 1, name: "node", kind: "message", T: Node },
+    { no: 2, name: "service", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "timeout", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+    { no: 4, name: "count", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DiscoverRequest {

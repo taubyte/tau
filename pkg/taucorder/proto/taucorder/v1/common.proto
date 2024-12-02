@@ -10,10 +10,21 @@ message Node {
     string id = 1;
 }
 
+message Addresses {
+    repeated string multiaddr = 1;
+}
+
+message PingStatus {
+    bool up = 1;
+    int32 count = 2;
+    int32 count_total = 3;
+    int64 latency = 4;
+}
+
 message Peer {
     string id = 1;
-    string address = 2;
-    bool up = 3;  // did it respond to ping
+    repeated string addresses = 2;
+    PingStatus ping_status = 3;  // did it respond to ping
 }
 
 message DiscoverServiceRequest {
@@ -24,11 +35,11 @@ message DiscoverServiceRequest {
 
 message ConsensusStateRequest {
     Node node = 1;
-    Peer peer = 2;
+    string pid = 2;
 }
 
 message CRDTState {
-    repeated string head_cid = 1;
+    repeated string heads = 1;  // cids
 }
 
 message ConsensusState {

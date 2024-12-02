@@ -11,7 +11,7 @@ import (
 
 var PingTimeout = time.Second * 4
 
-func (p *node) Ping(pid string, count int) (healthy int, rtt time.Duration, err error) {
+func (p *node) Ping(ctx context.Context, pid string, count int) (healthy int, rtt time.Duration, err error) {
 	if !p.closed {
 		if count <= 0 {
 			return 0, 0, errors.New("ping count must be positive")
@@ -40,6 +40,9 @@ func (p *node) Ping(pid string, count int) (healthy int, rtt time.Duration, err 
 				healthy++
 			case <-time.After(PingTimeout):
 				err = errors.New("took too long to ping")
+			case <-ctx.Done():
+				err = ctx.Err()
+				return
 			}
 		}
 

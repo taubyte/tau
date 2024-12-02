@@ -28,9 +28,8 @@ const (
 	// RepositoriesInAuthServiceName is the fully-qualified name of the RepositoriesInAuthService
 	// service.
 	RepositoriesInAuthServiceName = "taucorder.v1.RepositoriesInAuthService"
-	// GitEventsHooksInAuthServiceName is the fully-qualified name of the GitEventsHooksInAuthService
-	// service.
-	GitEventsHooksInAuthServiceName = "taucorder.v1.GitEventsHooksInAuthService"
+	// GitHooksInAuthServiceName is the fully-qualified name of the GitHooksInAuthService service.
+	GitHooksInAuthServiceName = "taucorder.v1.GitHooksInAuthService"
 	// X509InAuthServiceName is the fully-qualified name of the X509InAuthService service.
 	X509InAuthServiceName = "taucorder.v1.X509InAuthService"
 )
@@ -63,12 +62,12 @@ const (
 	// RepositoriesInAuthServiceGetProcedure is the fully-qualified name of the
 	// RepositoriesInAuthService's Get RPC.
 	RepositoriesInAuthServiceGetProcedure = "/taucorder.v1.RepositoriesInAuthService/Get"
-	// GitEventsHooksInAuthServiceListProcedure is the fully-qualified name of the
-	// GitEventsHooksInAuthService's List RPC.
-	GitEventsHooksInAuthServiceListProcedure = "/taucorder.v1.GitEventsHooksInAuthService/List"
-	// GitEventsHooksInAuthServiceGetProcedure is the fully-qualified name of the
-	// GitEventsHooksInAuthService's Get RPC.
-	GitEventsHooksInAuthServiceGetProcedure = "/taucorder.v1.GitEventsHooksInAuthService/Get"
+	// GitHooksInAuthServiceListProcedure is the fully-qualified name of the GitHooksInAuthService's
+	// List RPC.
+	GitHooksInAuthServiceListProcedure = "/taucorder.v1.GitHooksInAuthService/List"
+	// GitHooksInAuthServiceGetProcedure is the fully-qualified name of the GitHooksInAuthService's Get
+	// RPC.
+	GitHooksInAuthServiceGetProcedure = "/taucorder.v1.GitHooksInAuthService/Get"
 	// X509InAuthServiceListProcedure is the fully-qualified name of the X509InAuthService's List RPC.
 	X509InAuthServiceListProcedure = "/taucorder.v1.X509InAuthService/List"
 	// X509InAuthServiceGetProcedure is the fully-qualified name of the X509InAuthService's Get RPC.
@@ -82,25 +81,25 @@ const (
 
 // These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
 var (
-	authServiceServiceDescriptor                    = v1.File_taucorder_v1_auth_proto.Services().ByName("AuthService")
-	authServiceListMethodDescriptor                 = authServiceServiceDescriptor.Methods().ByName("List")
-	authServiceDiscoverMethodDescriptor             = authServiceServiceDescriptor.Methods().ByName("Discover")
-	authServiceStateMethodDescriptor                = authServiceServiceDescriptor.Methods().ByName("State")
-	authServiceStatesMethodDescriptor               = authServiceServiceDescriptor.Methods().ByName("States")
-	projectsInAuthServiceServiceDescriptor          = v1.File_taucorder_v1_auth_proto.Services().ByName("ProjectsInAuthService")
-	projectsInAuthServiceListMethodDescriptor       = projectsInAuthServiceServiceDescriptor.Methods().ByName("List")
-	projectsInAuthServiceGetMethodDescriptor        = projectsInAuthServiceServiceDescriptor.Methods().ByName("Get")
-	repositoriesInAuthServiceServiceDescriptor      = v1.File_taucorder_v1_auth_proto.Services().ByName("RepositoriesInAuthService")
-	repositoriesInAuthServiceListMethodDescriptor   = repositoriesInAuthServiceServiceDescriptor.Methods().ByName("List")
-	repositoriesInAuthServiceGetMethodDescriptor    = repositoriesInAuthServiceServiceDescriptor.Methods().ByName("Get")
-	gitEventsHooksInAuthServiceServiceDescriptor    = v1.File_taucorder_v1_auth_proto.Services().ByName("GitEventsHooksInAuthService")
-	gitEventsHooksInAuthServiceListMethodDescriptor = gitEventsHooksInAuthServiceServiceDescriptor.Methods().ByName("List")
-	gitEventsHooksInAuthServiceGetMethodDescriptor  = gitEventsHooksInAuthServiceServiceDescriptor.Methods().ByName("Get")
-	x509InAuthServiceServiceDescriptor              = v1.File_taucorder_v1_auth_proto.Services().ByName("X509InAuthService")
-	x509InAuthServiceListMethodDescriptor           = x509InAuthServiceServiceDescriptor.Methods().ByName("List")
-	x509InAuthServiceGetMethodDescriptor            = x509InAuthServiceServiceDescriptor.Methods().ByName("Get")
-	x509InAuthServiceSetMethodDescriptor            = x509InAuthServiceServiceDescriptor.Methods().ByName("Set")
-	x509InAuthServiceDeleteMethodDescriptor         = x509InAuthServiceServiceDescriptor.Methods().ByName("Delete")
+	authServiceServiceDescriptor                  = v1.File_taucorder_v1_auth_proto.Services().ByName("AuthService")
+	authServiceListMethodDescriptor               = authServiceServiceDescriptor.Methods().ByName("List")
+	authServiceDiscoverMethodDescriptor           = authServiceServiceDescriptor.Methods().ByName("Discover")
+	authServiceStateMethodDescriptor              = authServiceServiceDescriptor.Methods().ByName("State")
+	authServiceStatesMethodDescriptor             = authServiceServiceDescriptor.Methods().ByName("States")
+	projectsInAuthServiceServiceDescriptor        = v1.File_taucorder_v1_auth_proto.Services().ByName("ProjectsInAuthService")
+	projectsInAuthServiceListMethodDescriptor     = projectsInAuthServiceServiceDescriptor.Methods().ByName("List")
+	projectsInAuthServiceGetMethodDescriptor      = projectsInAuthServiceServiceDescriptor.Methods().ByName("Get")
+	repositoriesInAuthServiceServiceDescriptor    = v1.File_taucorder_v1_auth_proto.Services().ByName("RepositoriesInAuthService")
+	repositoriesInAuthServiceListMethodDescriptor = repositoriesInAuthServiceServiceDescriptor.Methods().ByName("List")
+	repositoriesInAuthServiceGetMethodDescriptor  = repositoriesInAuthServiceServiceDescriptor.Methods().ByName("Get")
+	gitHooksInAuthServiceServiceDescriptor        = v1.File_taucorder_v1_auth_proto.Services().ByName("GitHooksInAuthService")
+	gitHooksInAuthServiceListMethodDescriptor     = gitHooksInAuthServiceServiceDescriptor.Methods().ByName("List")
+	gitHooksInAuthServiceGetMethodDescriptor      = gitHooksInAuthServiceServiceDescriptor.Methods().ByName("Get")
+	x509InAuthServiceServiceDescriptor            = v1.File_taucorder_v1_auth_proto.Services().ByName("X509InAuthService")
+	x509InAuthServiceListMethodDescriptor         = x509InAuthServiceServiceDescriptor.Methods().ByName("List")
+	x509InAuthServiceGetMethodDescriptor          = x509InAuthServiceServiceDescriptor.Methods().ByName("Get")
+	x509InAuthServiceSetMethodDescriptor          = x509InAuthServiceServiceDescriptor.Methods().ByName("Set")
+	x509InAuthServiceDeleteMethodDescriptor       = x509InAuthServiceServiceDescriptor.Methods().ByName("Delete")
 )
 
 // AuthServiceClient is a client for the taucorder.v1.AuthService service.
@@ -348,7 +347,7 @@ func (UnimplementedProjectsInAuthServiceHandler) Get(context.Context, *connect.R
 // service.
 type RepositoriesInAuthServiceClient interface {
 	List(context.Context, *connect.Request[v1.Node]) (*connect.ServerStreamForClient[v1.ProjectRepo], error)
-	Get(context.Context, *connect.Request[v1.ByProjectRequest]) (*connect.Response[v1.ProjectRepo], error)
+	Get(context.Context, *connect.Request[v1.ByRepositoryRequest]) (*connect.Response[v1.ProjectRepo], error)
 }
 
 // NewRepositoriesInAuthServiceClient constructs a client for the
@@ -367,7 +366,7 @@ func NewRepositoriesInAuthServiceClient(httpClient connect.HTTPClient, baseURL s
 			connect.WithSchema(repositoriesInAuthServiceListMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
-		get: connect.NewClient[v1.ByProjectRequest, v1.ProjectRepo](
+		get: connect.NewClient[v1.ByRepositoryRequest, v1.ProjectRepo](
 			httpClient,
 			baseURL+RepositoriesInAuthServiceGetProcedure,
 			connect.WithSchema(repositoriesInAuthServiceGetMethodDescriptor),
@@ -379,7 +378,7 @@ func NewRepositoriesInAuthServiceClient(httpClient connect.HTTPClient, baseURL s
 // repositoriesInAuthServiceClient implements RepositoriesInAuthServiceClient.
 type repositoriesInAuthServiceClient struct {
 	list *connect.Client[v1.Node, v1.ProjectRepo]
-	get  *connect.Client[v1.ByProjectRequest, v1.ProjectRepo]
+	get  *connect.Client[v1.ByRepositoryRequest, v1.ProjectRepo]
 }
 
 // List calls taucorder.v1.RepositoriesInAuthService.List.
@@ -388,7 +387,7 @@ func (c *repositoriesInAuthServiceClient) List(ctx context.Context, req *connect
 }
 
 // Get calls taucorder.v1.RepositoriesInAuthService.Get.
-func (c *repositoriesInAuthServiceClient) Get(ctx context.Context, req *connect.Request[v1.ByProjectRequest]) (*connect.Response[v1.ProjectRepo], error) {
+func (c *repositoriesInAuthServiceClient) Get(ctx context.Context, req *connect.Request[v1.ByRepositoryRequest]) (*connect.Response[v1.ProjectRepo], error) {
 	return c.get.CallUnary(ctx, req)
 }
 
@@ -396,7 +395,7 @@ func (c *repositoriesInAuthServiceClient) Get(ctx context.Context, req *connect.
 // taucorder.v1.RepositoriesInAuthService service.
 type RepositoriesInAuthServiceHandler interface {
 	List(context.Context, *connect.Request[v1.Node], *connect.ServerStream[v1.ProjectRepo]) error
-	Get(context.Context, *connect.Request[v1.ByProjectRequest]) (*connect.Response[v1.ProjectRepo], error)
+	Get(context.Context, *connect.Request[v1.ByRepositoryRequest]) (*connect.Response[v1.ProjectRepo], error)
 }
 
 // NewRepositoriesInAuthServiceHandler builds an HTTP handler from the service implementation. It
@@ -436,104 +435,103 @@ func (UnimplementedRepositoriesInAuthServiceHandler) List(context.Context, *conn
 	return connect.NewError(connect.CodeUnimplemented, errors.New("taucorder.v1.RepositoriesInAuthService.List is not implemented"))
 }
 
-func (UnimplementedRepositoriesInAuthServiceHandler) Get(context.Context, *connect.Request[v1.ByProjectRequest]) (*connect.Response[v1.ProjectRepo], error) {
+func (UnimplementedRepositoriesInAuthServiceHandler) Get(context.Context, *connect.Request[v1.ByRepositoryRequest]) (*connect.Response[v1.ProjectRepo], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("taucorder.v1.RepositoriesInAuthService.Get is not implemented"))
 }
 
-// GitEventsHooksInAuthServiceClient is a client for the taucorder.v1.GitEventsHooksInAuthService
-// service.
-type GitEventsHooksInAuthServiceClient interface {
+// GitHooksInAuthServiceClient is a client for the taucorder.v1.GitHooksInAuthService service.
+type GitHooksInAuthServiceClient interface {
 	List(context.Context, *connect.Request[v1.Node]) (*connect.ServerStreamForClient[v1.Hook], error)
-	Get(context.Context, *connect.Request[v1.ByProjectRequest]) (*connect.Response[v1.Hook], error)
+	Get(context.Context, *connect.Request[v1.ByHookRequest]) (*connect.Response[v1.Hook], error)
 }
 
-// NewGitEventsHooksInAuthServiceClient constructs a client for the
-// taucorder.v1.GitEventsHooksInAuthService service. By default, it uses the Connect protocol with
-// the binary Protobuf Codec, asks for gzipped responses, and sends uncompressed requests. To use
-// the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or connect.WithGRPCWeb() options.
+// NewGitHooksInAuthServiceClient constructs a client for the taucorder.v1.GitHooksInAuthService
+// service. By default, it uses the Connect protocol with the binary Protobuf Codec, asks for
+// gzipped responses, and sends uncompressed requests. To use the gRPC or gRPC-Web protocols, supply
+// the connect.WithGRPC() or connect.WithGRPCWeb() options.
 //
 // The URL supplied here should be the base URL for the Connect or gRPC server (for example,
 // http://api.acme.com or https://acme.com/grpc).
-func NewGitEventsHooksInAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) GitEventsHooksInAuthServiceClient {
+func NewGitHooksInAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) GitHooksInAuthServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
-	return &gitEventsHooksInAuthServiceClient{
+	return &gitHooksInAuthServiceClient{
 		list: connect.NewClient[v1.Node, v1.Hook](
 			httpClient,
-			baseURL+GitEventsHooksInAuthServiceListProcedure,
-			connect.WithSchema(gitEventsHooksInAuthServiceListMethodDescriptor),
+			baseURL+GitHooksInAuthServiceListProcedure,
+			connect.WithSchema(gitHooksInAuthServiceListMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
-		get: connect.NewClient[v1.ByProjectRequest, v1.Hook](
+		get: connect.NewClient[v1.ByHookRequest, v1.Hook](
 			httpClient,
-			baseURL+GitEventsHooksInAuthServiceGetProcedure,
-			connect.WithSchema(gitEventsHooksInAuthServiceGetMethodDescriptor),
+			baseURL+GitHooksInAuthServiceGetProcedure,
+			connect.WithSchema(gitHooksInAuthServiceGetMethodDescriptor),
 			connect.WithClientOptions(opts...),
 		),
 	}
 }
 
-// gitEventsHooksInAuthServiceClient implements GitEventsHooksInAuthServiceClient.
-type gitEventsHooksInAuthServiceClient struct {
+// gitHooksInAuthServiceClient implements GitHooksInAuthServiceClient.
+type gitHooksInAuthServiceClient struct {
 	list *connect.Client[v1.Node, v1.Hook]
-	get  *connect.Client[v1.ByProjectRequest, v1.Hook]
+	get  *connect.Client[v1.ByHookRequest, v1.Hook]
 }
 
-// List calls taucorder.v1.GitEventsHooksInAuthService.List.
-func (c *gitEventsHooksInAuthServiceClient) List(ctx context.Context, req *connect.Request[v1.Node]) (*connect.ServerStreamForClient[v1.Hook], error) {
+// List calls taucorder.v1.GitHooksInAuthService.List.
+func (c *gitHooksInAuthServiceClient) List(ctx context.Context, req *connect.Request[v1.Node]) (*connect.ServerStreamForClient[v1.Hook], error) {
 	return c.list.CallServerStream(ctx, req)
 }
 
-// Get calls taucorder.v1.GitEventsHooksInAuthService.Get.
-func (c *gitEventsHooksInAuthServiceClient) Get(ctx context.Context, req *connect.Request[v1.ByProjectRequest]) (*connect.Response[v1.Hook], error) {
+// Get calls taucorder.v1.GitHooksInAuthService.Get.
+func (c *gitHooksInAuthServiceClient) Get(ctx context.Context, req *connect.Request[v1.ByHookRequest]) (*connect.Response[v1.Hook], error) {
 	return c.get.CallUnary(ctx, req)
 }
 
-// GitEventsHooksInAuthServiceHandler is an implementation of the
-// taucorder.v1.GitEventsHooksInAuthService service.
-type GitEventsHooksInAuthServiceHandler interface {
+// GitHooksInAuthServiceHandler is an implementation of the taucorder.v1.GitHooksInAuthService
+// service.
+type GitHooksInAuthServiceHandler interface {
 	List(context.Context, *connect.Request[v1.Node], *connect.ServerStream[v1.Hook]) error
-	Get(context.Context, *connect.Request[v1.ByProjectRequest]) (*connect.Response[v1.Hook], error)
+	Get(context.Context, *connect.Request[v1.ByHookRequest]) (*connect.Response[v1.Hook], error)
 }
 
-// NewGitEventsHooksInAuthServiceHandler builds an HTTP handler from the service implementation. It
+// NewGitHooksInAuthServiceHandler builds an HTTP handler from the service implementation. It
 // returns the path on which to mount the handler and the handler itself.
 //
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
-func NewGitEventsHooksInAuthServiceHandler(svc GitEventsHooksInAuthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
-	gitEventsHooksInAuthServiceListHandler := connect.NewServerStreamHandler(
-		GitEventsHooksInAuthServiceListProcedure,
+func NewGitHooksInAuthServiceHandler(svc GitHooksInAuthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	gitHooksInAuthServiceListHandler := connect.NewServerStreamHandler(
+		GitHooksInAuthServiceListProcedure,
 		svc.List,
-		connect.WithSchema(gitEventsHooksInAuthServiceListMethodDescriptor),
+		connect.WithSchema(gitHooksInAuthServiceListMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
-	gitEventsHooksInAuthServiceGetHandler := connect.NewUnaryHandler(
-		GitEventsHooksInAuthServiceGetProcedure,
+	gitHooksInAuthServiceGetHandler := connect.NewUnaryHandler(
+		GitHooksInAuthServiceGetProcedure,
 		svc.Get,
-		connect.WithSchema(gitEventsHooksInAuthServiceGetMethodDescriptor),
+		connect.WithSchema(gitHooksInAuthServiceGetMethodDescriptor),
 		connect.WithHandlerOptions(opts...),
 	)
-	return "/taucorder.v1.GitEventsHooksInAuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	return "/taucorder.v1.GitHooksInAuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case GitEventsHooksInAuthServiceListProcedure:
-			gitEventsHooksInAuthServiceListHandler.ServeHTTP(w, r)
-		case GitEventsHooksInAuthServiceGetProcedure:
-			gitEventsHooksInAuthServiceGetHandler.ServeHTTP(w, r)
+		case GitHooksInAuthServiceListProcedure:
+			gitHooksInAuthServiceListHandler.ServeHTTP(w, r)
+		case GitHooksInAuthServiceGetProcedure:
+			gitHooksInAuthServiceGetHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
 	})
 }
 
-// UnimplementedGitEventsHooksInAuthServiceHandler returns CodeUnimplemented from all methods.
-type UnimplementedGitEventsHooksInAuthServiceHandler struct{}
+// UnimplementedGitHooksInAuthServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedGitHooksInAuthServiceHandler struct{}
 
-func (UnimplementedGitEventsHooksInAuthServiceHandler) List(context.Context, *connect.Request[v1.Node], *connect.ServerStream[v1.Hook]) error {
-	return connect.NewError(connect.CodeUnimplemented, errors.New("taucorder.v1.GitEventsHooksInAuthService.List is not implemented"))
+func (UnimplementedGitHooksInAuthServiceHandler) List(context.Context, *connect.Request[v1.Node], *connect.ServerStream[v1.Hook]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("taucorder.v1.GitHooksInAuthService.List is not implemented"))
 }
 
-func (UnimplementedGitEventsHooksInAuthServiceHandler) Get(context.Context, *connect.Request[v1.ByProjectRequest]) (*connect.Response[v1.Hook], error) {
-	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("taucorder.v1.GitEventsHooksInAuthService.Get is not implemented"))
+func (UnimplementedGitHooksInAuthServiceHandler) Get(context.Context, *connect.Request[v1.ByHookRequest]) (*connect.Response[v1.Hook], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("taucorder.v1.GitHooksInAuthService.Get is not implemented"))
 }
 
 // X509InAuthServiceClient is a client for the taucorder.v1.X509InAuthService service.

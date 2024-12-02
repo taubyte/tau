@@ -5,6 +5,7 @@
 
 import type { BinaryReadOptions, FieldList, JsonReadOptions, JsonValue, PartialMessage, PlainMessage } from "@bufbuild/protobuf";
 import { Message, proto3 } from "@bufbuild/protobuf";
+import { Addresses } from "./common_pb.js";
 
 /**
  * @generated from message taucorder.v1.Link
@@ -109,9 +110,42 @@ export class Dream extends Message<Dream> {
   connect?: Link;
 
   /**
-   * @generated from field: string swarm_key = 3;
+   * @generated from field: bytes swarm_key = 3;
    */
-  swarmKey = "";
+  swarmKey = new Uint8Array(0);
+
+  /**
+   * @generated from oneof taucorder.v1.Dream.bootstrap
+   */
+  bootstrap: {
+    /**
+     * @generated from field: bool disable = 4;
+     */
+    value: boolean;
+    case: "disable";
+  } | {
+    /**
+     * @generated from field: taucorder.v1.Addresses addresses = 5;
+     */
+    value: Addresses;
+    case: "addresses";
+  } | {
+    /**
+     * [0,1] subset of nodes when connecting
+     *
+     * @generated from field: float subset_percentage = 6;
+     */
+    value: number;
+    case: "subsetPercentage";
+  } | {
+    /**
+     * subset of nodes when connecting
+     *
+     * @generated from field: int32 subset_count = 7;
+     */
+    value: number;
+    case: "subsetCount";
+  } | { case: undefined; value?: undefined } = { case: undefined };
 
   constructor(data?: PartialMessage<Dream>) {
     super();
@@ -123,7 +157,11 @@ export class Dream extends Message<Dream> {
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "universe", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 2, name: "connect", kind: "message", T: Link },
-    { no: 3, name: "swarm_key", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "swarm_key", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+    { no: 4, name: "disable", kind: "scalar", T: 8 /* ScalarType.BOOL */, oneof: "bootstrap" },
+    { no: 5, name: "addresses", kind: "message", T: Addresses, oneof: "bootstrap" },
+    { no: 6, name: "subset_percentage", kind: "scalar", T: 2 /* ScalarType.FLOAT */, oneof: "bootstrap" },
+    { no: 7, name: "subset_count", kind: "scalar", T: 5 /* ScalarType.INT32 */, oneof: "bootstrap" },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Dream {
@@ -148,14 +186,14 @@ export class Dream extends Message<Dream> {
  */
 export class Raw extends Message<Raw> {
   /**
-   * @generated from field: string swarm_key = 1;
+   * @generated from field: bytes swarm_key = 1;
    */
-  swarmKey = "";
+  swarmKey = new Uint8Array(0);
 
   /**
-   * @generated from field: repeated string peer = 2;
+   * @generated from field: repeated string peers = 2;
    */
-  peer: string[] = [];
+  peers: string[] = [];
 
   constructor(data?: PartialMessage<Raw>) {
     super();
@@ -165,8 +203,8 @@ export class Raw extends Message<Raw> {
   static readonly runtime: typeof proto3 = proto3;
   static readonly typeName = "taucorder.v1.Raw";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "swarm_key", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 2, name: "peer", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 1, name: "swarm_key", kind: "scalar", T: 12 /* ScalarType.BYTES */ },
+    { no: 2, name: "peers", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Raw {

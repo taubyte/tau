@@ -21,12 +21,18 @@ message SporeDrive {
 message Dream {
     string universe = 1;
     Link connect = 2;
-    string swarm_key = 3;
+    bytes swarm_key = 3;
+    oneof bootstrap {
+        bool disable = 4;
+        Addresses addresses = 5;
+        float subset_percentage = 6;  // [0,1] subset of nodes when connecting
+        int32 subset_count = 7;       // subset of nodes when connecting
+    }
 }
 
 message Raw {
-    string swarm_key = 1;
-    repeated string peer = 2;
+    bytes swarm_key = 1;
+    repeated string peers = 2;
 }
 
 message Config {

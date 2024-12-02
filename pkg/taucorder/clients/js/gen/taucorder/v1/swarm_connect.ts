@@ -39,7 +39,7 @@ export const SwarmService = {
     ping: {
       name: "Ping",
       I: PingRequest,
-      O: Empty,
+      O: Peer,
       kind: MethodKind.Unary,
     },
     /**

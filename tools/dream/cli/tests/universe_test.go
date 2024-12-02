@@ -67,7 +67,7 @@ func TestKillService(t *testing.T) {
 		return
 	}
 
-	resp, err := multiverse.Universe(t.Name()).Status()
+	resp, err := multiverse.Universe(t.Name()).Chart()
 	if err != nil {
 		t.Error(err)
 		return
@@ -108,7 +108,7 @@ func TestKillSimple(t *testing.T) {
 		return
 	}
 
-	resp, err := universeAPI.Status()
+	resp, err := universeAPI.Chart()
 	if err != nil {
 		t.Error(err)
 		return
@@ -136,7 +136,7 @@ func TestKillSimple(t *testing.T) {
 		return
 	}
 
-	resp, err = universeAPI.Status()
+	resp, err = universeAPI.Chart()
 	if err != nil {
 		t.Error(err)
 		return
@@ -161,7 +161,7 @@ func TestKillSimple(t *testing.T) {
 		return
 	}
 
-	resp, err = universeAPI.Status()
+	resp, err = universeAPI.Chart()
 	if err != nil {
 		t.Error(err)
 		return

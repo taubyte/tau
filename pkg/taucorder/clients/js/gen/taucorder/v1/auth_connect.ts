@@ -5,7 +5,7 @@
 
 import { ConsensusState, ConsensusStateRequest, DiscoverServiceRequest, Empty, Node, Peer } from "./common_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
-import { ByProjectRequest, Hook, Project, ProjectRepo, X509Certificate, X509CertificateRequest } from "./auth_pb.js";
+import { ByHookRequest, ByProjectRequest, ByRepositoryRequest, Hook, Project, ProjectRepo, X509Certificate, X509CertificateRequest } from "./auth_pb.js";
 
 /**
  * Service
@@ -101,7 +101,7 @@ export const RepositoriesInAuthService = {
      */
     get: {
       name: "Get",
-      I: ByProjectRequest,
+      I: ByRepositoryRequest,
       O: ProjectRepo,
       kind: MethodKind.Unary,
     },
@@ -109,13 +109,13 @@ export const RepositoriesInAuthService = {
 } as const;
 
 /**
- * @generated from service taucorder.v1.GitEventsHooksInAuthService
+ * @generated from service taucorder.v1.GitHooksInAuthService
  */
-export const GitEventsHooksInAuthService = {
-  typeName: "taucorder.v1.GitEventsHooksInAuthService",
+export const GitHooksInAuthService = {
+  typeName: "taucorder.v1.GitHooksInAuthService",
   methods: {
     /**
-     * @generated from rpc taucorder.v1.GitEventsHooksInAuthService.List
+     * @generated from rpc taucorder.v1.GitHooksInAuthService.List
      */
     list: {
       name: "List",
@@ -124,11 +124,11 @@ export const GitEventsHooksInAuthService = {
       kind: MethodKind.ServerStreaming,
     },
     /**
-     * @generated from rpc taucorder.v1.GitEventsHooksInAuthService.Get
+     * @generated from rpc taucorder.v1.GitHooksInAuthService.Get
      */
     get: {
       name: "Get",
-      I: ByProjectRequest,
+      I: ByHookRequest,
       O: Hook,
       kind: MethodKind.Unary,
     },

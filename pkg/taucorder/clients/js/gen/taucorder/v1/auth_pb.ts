@@ -63,11 +63,11 @@ export class Project extends Message<Project> {
 }
 
 /**
- * @generated from message taucorder.v1.ProjectRepo
+ * @generated from message taucorder.v1.RepositoryId
  */
-export class ProjectRepo extends Message<ProjectRepo> {
+export class RepositoryId extends Message<RepositoryId> {
   /**
-   * @generated from oneof taucorder.v1.ProjectRepo.id
+   * @generated from oneof taucorder.v1.RepositoryId.id
    */
   id: {
     /**
@@ -83,13 +83,51 @@ export class ProjectRepo extends Message<ProjectRepo> {
     case: "bitbucket";
   } | { case: undefined; value?: undefined } = { case: undefined };
 
+  constructor(data?: PartialMessage<RepositoryId>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "taucorder.v1.RepositoryId";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "github", kind: "scalar", T: 3 /* ScalarType.INT64 */, oneof: "id" },
+    { no: 2, name: "bitbucket", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "id" },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RepositoryId {
+    return new RepositoryId().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RepositoryId {
+    return new RepositoryId().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RepositoryId {
+    return new RepositoryId().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: RepositoryId | PlainMessage<RepositoryId> | undefined, b: RepositoryId | PlainMessage<RepositoryId> | undefined): boolean {
+    return proto3.util.equals(RepositoryId, a, b);
+  }
+}
+
+/**
+ * @generated from message taucorder.v1.ProjectRepo
+ */
+export class ProjectRepo extends Message<ProjectRepo> {
   /**
-   * @generated from field: string project_id = 8;
+   * @generated from field: taucorder.v1.RepositoryId id = 1;
+   */
+  id?: RepositoryId;
+
+  /**
+   * @generated from field: string project_id = 2;
    */
   projectId = "";
 
   /**
-   * @generated from field: string deploy_key_private = 9;
+   * @generated from field: string deploy_key_private = 3;
    */
   deployKeyPrivate = "";
 
@@ -101,10 +139,9 @@ export class ProjectRepo extends Message<ProjectRepo> {
   static readonly runtime: typeof proto3 = proto3;
   static readonly typeName = "taucorder.v1.ProjectRepo";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "github", kind: "scalar", T: 3 /* ScalarType.INT64 */, oneof: "id" },
-    { no: 2, name: "bitbucket", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "id" },
-    { no: 8, name: "project_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 9, name: "deploy_key_private", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 1, name: "id", kind: "message", T: RepositoryId },
+    { no: 2, name: "project_id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 3, name: "deploy_key_private", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ProjectRepo {
@@ -207,6 +244,92 @@ export class ByProjectRequest extends Message<ByProjectRequest> {
 
   static equals(a: ByProjectRequest | PlainMessage<ByProjectRequest> | undefined, b: ByProjectRequest | PlainMessage<ByProjectRequest> | undefined): boolean {
     return proto3.util.equals(ByProjectRequest, a, b);
+  }
+}
+
+/**
+ * @generated from message taucorder.v1.ByRepositoryRequest
+ */
+export class ByRepositoryRequest extends Message<ByRepositoryRequest> {
+  /**
+   * @generated from field: taucorder.v1.Node node = 1;
+   */
+  node?: Node;
+
+  /**
+   * @generated from field: taucorder.v1.RepositoryId id = 2;
+   */
+  id?: RepositoryId;
+
+  constructor(data?: PartialMessage<ByRepositoryRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "taucorder.v1.ByRepositoryRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "node", kind: "message", T: Node },
+    { no: 2, name: "id", kind: "message", T: RepositoryId },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ByRepositoryRequest {
+    return new ByRepositoryRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ByRepositoryRequest {
+    return new ByRepositoryRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ByRepositoryRequest {
+    return new ByRepositoryRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ByRepositoryRequest | PlainMessage<ByRepositoryRequest> | undefined, b: ByRepositoryRequest | PlainMessage<ByRepositoryRequest> | undefined): boolean {
+    return proto3.util.equals(ByRepositoryRequest, a, b);
+  }
+}
+
+/**
+ * @generated from message taucorder.v1.ByHookRequest
+ */
+export class ByHookRequest extends Message<ByHookRequest> {
+  /**
+   * @generated from field: taucorder.v1.Node node = 1;
+   */
+  node?: Node;
+
+  /**
+   * @generated from field: string id = 2;
+   */
+  id = "";
+
+  constructor(data?: PartialMessage<ByHookRequest>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "taucorder.v1.ByHookRequest";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "node", kind: "message", T: Node },
+    { no: 2, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ByHookRequest {
+    return new ByHookRequest().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): ByHookRequest {
+    return new ByHookRequest().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): ByHookRequest {
+    return new ByHookRequest().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: ByHookRequest | PlainMessage<ByHookRequest> | undefined, b: ByHookRequest | PlainMessage<ByHookRequest> | undefined): boolean {
+    return proto3.util.equals(ByHookRequest, a, b);
   }
 }
 

@@ -75,6 +75,98 @@ export class Node extends Message<Node> {
 }
 
 /**
+ * @generated from message taucorder.v1.Addresses
+ */
+export class Addresses extends Message<Addresses> {
+  /**
+   * @generated from field: repeated string multiaddr = 1;
+   */
+  multiaddr: string[] = [];
+
+  constructor(data?: PartialMessage<Addresses>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "taucorder.v1.Addresses";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "multiaddr", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Addresses {
+    return new Addresses().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Addresses {
+    return new Addresses().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Addresses {
+    return new Addresses().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: Addresses | PlainMessage<Addresses> | undefined, b: Addresses | PlainMessage<Addresses> | undefined): boolean {
+    return proto3.util.equals(Addresses, a, b);
+  }
+}
+
+/**
+ * @generated from message taucorder.v1.PingStatus
+ */
+export class PingStatus extends Message<PingStatus> {
+  /**
+   * @generated from field: bool up = 1;
+   */
+  up = false;
+
+  /**
+   * @generated from field: int32 count = 2;
+   */
+  count = 0;
+
+  /**
+   * @generated from field: int32 count_total = 3;
+   */
+  countTotal = 0;
+
+  /**
+   * @generated from field: int64 latency = 4;
+   */
+  latency = protoInt64.zero;
+
+  constructor(data?: PartialMessage<PingStatus>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "taucorder.v1.PingStatus";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "up", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 2, name: "count", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 3, name: "count_total", kind: "scalar", T: 5 /* ScalarType.INT32 */ },
+    { no: 4, name: "latency", kind: "scalar", T: 3 /* ScalarType.INT64 */ },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): PingStatus {
+    return new PingStatus().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): PingStatus {
+    return new PingStatus().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): PingStatus {
+    return new PingStatus().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: PingStatus | PlainMessage<PingStatus> | undefined, b: PingStatus | PlainMessage<PingStatus> | undefined): boolean {
+    return proto3.util.equals(PingStatus, a, b);
+  }
+}
+
+/**
  * @generated from message taucorder.v1.Peer
  */
 export class Peer extends Message<Peer> {
@@ -84,16 +176,16 @@ export class Peer extends Message<Peer> {
   id = "";
 
   /**
-   * @generated from field: string address = 2;
+   * @generated from field: repeated string addresses = 2;
    */
-  address = "";
+  addresses: string[] = [];
 
   /**
    * did it respond to ping
    *
-   * @generated from field: bool up = 3;
+   * @generated from field: taucorder.v1.PingStatus ping_status = 3;
    */
-  up = false;
+  pingStatus?: PingStatus;
 
   constructor(data?: PartialMessage<Peer>) {
     super();
@@ -104,8 +196,8 @@ export class Peer extends Message<Peer> {
   static readonly typeName = "taucorder.v1.Peer";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "id", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 2, name: "address", kind: "scalar", T: 9 /* ScalarType.STRING */ },
-    { no: 3, name: "up", kind: "scalar", T: 8 /* ScalarType.BOOL */ },
+    { no: 2, name: "addresses", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 3, name: "ping_status", kind: "message", T: PingStatus },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Peer {
@@ -186,9 +278,9 @@ export class ConsensusStateRequest extends Message<ConsensusStateRequest> {
   node?: Node;
 
   /**
-   * @generated from field: taucorder.v1.Peer peer = 2;
+   * @generated from field: string pid = 2;
    */
-  peer?: Peer;
+  pid = "";
 
   constructor(data?: PartialMessage<ConsensusStateRequest>) {
     super();
@@ -199,7 +291,7 @@ export class ConsensusStateRequest extends Message<ConsensusStateRequest> {
   static readonly typeName = "taucorder.v1.ConsensusStateRequest";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
     { no: 1, name: "node", kind: "message", T: Node },
-    { no: 2, name: "peer", kind: "message", T: Peer },
+    { no: 2, name: "pid", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): ConsensusStateRequest {
@@ -224,9 +316,11 @@ export class ConsensusStateRequest extends Message<ConsensusStateRequest> {
  */
 export class CRDTState extends Message<CRDTState> {
   /**
-   * @generated from field: repeated string head_cid = 1;
+   * cids
+   *
+   * @generated from field: repeated string heads = 1;
    */
-  headCid: string[] = [];
+  heads: string[] = [];
 
   constructor(data?: PartialMessage<CRDTState>) {
     super();
@@ -236,7 +330,7 @@ export class CRDTState extends Message<CRDTState> {
   static readonly runtime: typeof proto3 = proto3;
   static readonly typeName = "taucorder.v1.CRDTState";
   static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "head_cid", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+    { no: 1, name: "heads", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): CRDTState {
