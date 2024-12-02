@@ -1,7 +1,7 @@
 package http
 
 type UniverseInfo struct {
-	SwarmKey  []byte `json:"swarm"`
+	SwarmKey  []byte `json:"swarm-key"`
 	NodeCount int    `json:"node-count"`
 }
 
