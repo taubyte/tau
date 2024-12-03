@@ -40,6 +40,7 @@ func Serve(ctx context.Context, resolver ConfigResolver) (*Service, error) {
 	s.addHandler(pbconnect.NewRepositoriesInAuthServiceHandler(&reposService{Service: s}))
 	s.addHandler(pbconnect.NewGitHooksInAuthServiceHandler(&hooksService{Service: s}))
 	s.addHandler(pbconnect.NewX509InAuthServiceHandler(&x509Service{Service: s}))
+	s.addHandler(pbconnect.NewSeerServiceHandler(&seerService{Service: s}))
 
 	return s, nil
 }

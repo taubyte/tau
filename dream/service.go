@@ -30,7 +30,6 @@ func (u *Universe) PortFor(proto, _type string) (int, error) {
 }
 
 func (u *Universe) createService(name string, config *commonIface.ServiceConfig) error {
-
 	if config.Root == "" {
 		config.Root = path.Clean(fmt.Sprintf("%s/%s/%d", u.root, name, len(u.service[name].nodes)))
 	}

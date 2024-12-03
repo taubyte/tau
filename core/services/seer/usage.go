@@ -8,7 +8,7 @@ type Usage interface {
 	Announce(services Services, nodeId, clientNodeId string, signature []byte) (response.Response, error)
 	AddService(svrType ServiceType, meta map[string]string)
 	List() ([]string, error)
-	ListServiceId(name string) (response.Response, error)
+	ListServiceId(name string) ([]string, error)
 	Get(id string) (*UsageReturn, error)
 }
 

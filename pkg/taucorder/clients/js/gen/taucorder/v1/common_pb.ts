@@ -218,6 +218,43 @@ export class Peer extends Message<Peer> {
 }
 
 /**
+ * @generated from message taucorder.v1.Peers
+ */
+export class Peers extends Message<Peers> {
+  /**
+   * @generated from field: repeated string pids = 1;
+   */
+  pids: string[] = [];
+
+  constructor(data?: PartialMessage<Peers>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "taucorder.v1.Peers";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "pids", kind: "scalar", T: 9 /* ScalarType.STRING */, repeated: true },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Peers {
+    return new Peers().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Peers {
+    return new Peers().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Peers {
+    return new Peers().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: Peers | PlainMessage<Peers> | undefined, b: Peers | PlainMessage<Peers> | undefined): boolean {
+    return proto3.util.equals(Peers, a, b);
+  }
+}
+
+/**
  * @generated from message taucorder.v1.DiscoverServiceRequest
  */
 export class DiscoverServiceRequest extends Message<DiscoverServiceRequest> {

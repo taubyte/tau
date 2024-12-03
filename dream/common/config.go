@@ -53,5 +53,7 @@ func NewDreamlandConfig(u *dream.Universe, config *iface.ServiceConfig) *tauConf
 	}
 	serviceConfig.Peers = bpeers
 
+	serviceConfig.Location = &config.Location
+
 	return serviceConfig
 }

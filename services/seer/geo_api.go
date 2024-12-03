@@ -153,7 +153,8 @@ func (geo *geoService) getNodes(ctx context.Context, from iface.Location, distan
 	peers := make(map[string]iface.PeerLocation)
 	for entry := range result.Next() {
 		loc := iface.PeerLocation{}
-		err := cbor.Unmarshal(entry.Value, loc)
+		fmt.Println(entry.Key, entry.Value)
+		err := cbor.Unmarshal(entry.Value, &loc)
 		if err != nil {
 			continue
 		}

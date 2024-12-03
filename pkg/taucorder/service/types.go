@@ -53,6 +53,11 @@ type x509Service struct {
 	*Service
 }
 
+type seerService struct {
+	pbconnect.UnimplementedSeerServiceHandler
+	*Service
+}
+
 type instance struct {
 	ctx  context.Context
 	ctxC context.CancelFunc
