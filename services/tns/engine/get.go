@@ -20,6 +20,7 @@ func (e *Engine) match(ctx context.Context, path ...string) ([]string, error) {
 			keys = append(keys, p)
 		}
 	}
+
 	return keys, nil
 }
 

@@ -28,7 +28,7 @@ type Client interface {
 	Fetch(path Path) (Object, error)
 	Lookup(query Query) (interface{}, error)
 	Push(path []string, data interface{}) error
-	List(depth int) ([]string, error)
+	List(depth int) ([][]string, error)
 	Close()
 
 	Simple() SimpleIface

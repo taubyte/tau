@@ -69,12 +69,17 @@ func (u *Usage) Get(id string) (*iface.UsageReturn, error) {
 	return usage, nil
 }
 
-func (u *Usage) ListServiceId(name string) (response.Response, error) {
+func (u *Usage) ListServiceId(name string) ([]string, error) {
 	resp, err := u.client.Send("heartbeat", command.Body{"action": "listService", "name": name})
 	if err != nil {
 		logger.Error(fmt.Sprintf("List Specific for %s failed with: %s", name, err.Error()))
 		return nil, fmt.Errorf("calling heartbeat listService send failed with: %s", err)
 	}
 
-	return resp, nil
+	ret, ok := resp["ids"].([]string)
+	if !ok {
+		return nil, fmt.Errorf("calling heartbeat listService for `%s` returned wrong data type", name)
+	}
+
+	return ret, nil
 }

@@ -7,7 +7,7 @@ import (
 
 type Client interface {
 	Rare() ([]string, error)
-	Stash(cid string) (response.Response, error)
+	Stash(cid string, peers ...string) (response.Response, error)
 	List() ([]string, error)
 	Peers(...peerCore.ID) Client
 	Close()

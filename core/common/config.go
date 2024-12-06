@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/taubyte/tau/core/kvdb"
+	seerIface "github.com/taubyte/tau/core/services/seer"
 )
 
 type CommonConfig struct {
@@ -20,6 +21,7 @@ type ServiceConfig struct {
 	PrivateKey []byte
 	SwarmKey   []byte
 	Databases  kvdb.Factory
+	Location   seerIface.Location
 }
 
 type SimpleConfig struct {
@@ -35,6 +37,7 @@ func (c *ServiceConfig) Clone() *ServiceConfig {
 		PrivateKey:   c.PrivateKey,
 		PublicKey:    c.PublicKey,
 		SwarmKey:     c.SwarmKey,
+		Location:     c.Location,
 	}
 
 	for key, value := range c.Others {

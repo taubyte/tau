@@ -1,0 +1,48 @@
+syntax = "proto3";
+
+package taucorder.v1;
+
+option go_package = ".";
+
+import "taucorder/v1/common.proto";
+
+// Data Structures
+message TNSListRequest {
+    Node node = 1;
+    int32 depth = 2;
+}
+
+message TNSFetchRequest {
+    Node node = 1;
+    TNSPath path = 2;
+}
+
+message TNSLookupRequest {
+    Node node = 1;
+    oneof match {
+        TNSPath prefix = 2;
+        TNSPath regex = 3;
+    }
+}
+
+message TNSPath {
+    repeated string leafs = 1;
+}
+
+message TNSObject {
+    TNSPath path = 1;
+    string json = 2;
+}
+
+message TNSPaths {
+    repeated TNSPath paths = 1;
+}
+
+// Service
+service TNSService {
+    rpc List(TNSListRequest) returns (stream TNSPath);
+    rpc Fetch(TNSFetchRequest) returns (TNSObject);
+    rpc Lookup(TNSLookupRequest) returns (TNSPaths);
+    rpc State(ConsensusStateRequest) returns (ConsensusState);
+    rpc States(Node) returns (stream ConsensusState);
+}

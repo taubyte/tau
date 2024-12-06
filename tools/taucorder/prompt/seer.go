@@ -9,7 +9,6 @@ import (
 
 	goPrompt "github.com/c-bata/go-prompt"
 	list "github.com/taubyte/tau/tools/taucorder/helpers"
-	"github.com/taubyte/utils/maps"
 )
 
 var seerTree = &tctree{
@@ -70,14 +69,9 @@ func listServiceId(p Prompt, args []string) error {
 		return errors.New("must provide service name")
 	}
 
-	ids, err := p.SeerClient().Usage().ListServiceId(args[1])
+	serviceIds, err := p.SeerClient().Usage().ListServiceId(args[1])
 	if err != nil {
 		return fmt.Errorf("failed listing usage ids with error: %w", err)
-	}
-
-	serviceIds, err := maps.StringArray(ids, "ids")
-	if err != nil {
-		return fmt.Errorf("failed map string aray ids with error: %w", err)
 	}
 
 	if len(serviceIds) == 0 {

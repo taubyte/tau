@@ -45,5 +45,15 @@ func NewDreamlandConfig(u *dream.Universe, config *iface.ServiceConfig) *tauConf
 
 	serviceConfig.Databases = config.Databases
 
+	// build bootstrap
+	upeers := u.Peers()
+	bpeers := make([]string, 0, len(upeers))
+	for _, n := range upeers {
+		bpeers = append(bpeers, n.Peer().Addrs()[0].String()+"/p2p/"+n.ID().String())
+	}
+	serviceConfig.Peers = bpeers
+
+	serviceConfig.Location = &config.Location
+
 	return serviceConfig
 }

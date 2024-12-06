@@ -20,6 +20,7 @@ type Hook interface {
 	Register(ctx context.Context) error
 	Delete(ctx context.Context) error
 	Serialize() Data
+	ProviderID() string
 	ID() string
 }
 
@@ -38,7 +39,7 @@ func (h *HookCommon) Delete(ctx context.Context) error {
 }
 
 func (h *HookCommon) ID() string {
-	return ""
+	return h.Id
 }
 
 type GithubHook struct {
@@ -58,7 +59,7 @@ func (h *GithubHook) Serialize() Data {
 	}
 }
 
-func (h *GithubHook) ID() string {
+func (h *GithubHook) ProviderID() string {
 	return strconv.Itoa(h.GithubId)
 }
 

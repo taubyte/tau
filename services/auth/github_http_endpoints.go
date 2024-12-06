@@ -134,7 +134,7 @@ func (srv *AuthService) getGitHubUserRepositoryHTTPHandler(ctx http.Context) (in
 
 	hks := make([]string, 0)
 	for _, h := range repo.Hooks(requestCtx) {
-		hks = append(hks, h.ID())
+		hks = append(hks, h.ProviderID())
 	}
 
 	return map[string]interface{}{"hooks": hks}, err

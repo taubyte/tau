@@ -14,10 +14,11 @@ var (
 
 func (r *ProjectObject) Serialize() Data {
 	return Data{
-		"id":     r.Id,
-		"name":   r.Name,
-		"code":   r.Code,
-		"config": r.Config,
+		"id":       r.Id,
+		"name":     r.Name,
+		"provider": r.Provider,
+		"code":     r.Code,
+		"config":   r.Config,
 	}
 }
 
@@ -41,6 +42,12 @@ func Fetch(ctx context.Context, kv kvdb.KVDB, id string) (Project, error) {
 		return nil, fmt.Errorf("project `%s` not found", id)
 	}
 
+	provider, err := kv.Get(ctx, "/projects/"+id+"/repositories/provider")
+	if err != nil {
+		logger.Debugf("Project.Fetch (%s) -> key=%s (not found)", id, proj_name_key)
+		return nil, fmt.Errorf("project `%s` not found", id)
+	}
+
 	configRepo, err := kv.Get(ctx, fmt.Sprintf("/projects/%s/repositories/config", id))
 	if err != nil {
 		logger.Debugf("Project.Fetch (%s) -> key=%s (not found)", id, proj_name_key)
@@ -55,9 +62,10 @@ func Fetch(ctx context.Context, kv kvdb.KVDB, id string) (Project, error) {
 
 	logger.Debugf("Project.Fetch (%s) -> FOUND", id)
 	return New(kv, Data{
-		"id":     id,
-		"name":   string(name),
-		"code":   string(codeRepo),
-		"config": string(configRepo),
+		"id":       id,
+		"name":     string(name),
+		"provider": provider,
+		"code":     string(codeRepo),
+		"config":   string(configRepo),
 	})
 }

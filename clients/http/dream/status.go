@@ -1,25 +1,34 @@
 package http
 
-import "github.com/taubyte/tau/dream/api"
+import (
+	"fmt"
 
-type Status map[string]UniverseStatus
+	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/dream/api"
+)
 
-type UniverseStatus struct {
-	NodeCount int `json:"node-count"`
-	Nodes     map[string][]string
+func (c *Client) Status() (resp dream.Status, err error) {
+	err = c.get("/status", &resp)
+	if err != nil {
+		return
+	}
+	return
 }
 
-func (c *Client) Status() (Status, error) {
-	resp := make(Status)
-	err := c.get("/status", &resp)
+func (u *Universe) Status() (resp *dream.UniverseStatus, err error) {
+	s, err := u.client.Status()
 	if err != nil {
 		return nil, err
 	}
 
-	return resp, nil
+	if us, ok := s[u.Name]; ok {
+		return &us, nil
+	}
+
+	return nil, fmt.Errorf("universe `%s` not found", u.Name)
 }
 
-func (u *Universe) Status() (resp api.Echart, err error) {
+func (u *Universe) Chart() (resp api.Echart, err error) {
 	err = u.client.get("/les/miserables/"+u.Name, &resp)
 	return
 }

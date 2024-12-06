@@ -90,7 +90,18 @@ type UniverseConfig struct {
 	KeepRoot bool
 }
 
-type serviceStatus struct {
+type Status map[string]UniverseStatus
+
+type UniverseStatus struct {
+	Root      string              `json:"root"`
+	SwarmKey  []byte              `json:"swarm-key"`
+	NodeCount int                 `json:"node-count"`
+	Simples   []string            `json:"simples"`
+	Nodes     map[string][]string `json:"nodes"`
+	Services  []ServiceStatus     `json:"services"`
+}
+
+type ServiceStatus struct {
 	Name   string `json:"name"`
 	Copies int    `json:"copies"`
 }

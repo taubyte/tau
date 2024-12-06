@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/ipfs/go-datastore"
 	"github.com/taubyte/tau/p2p/streams"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
@@ -36,7 +35,8 @@ func (srv *Service) ServiceHandler(ctx context.Context, conn streams.Connection,
 
 	switch action {
 	case "stash":
-		return srv.stashHandler(ctx, cid)
+		peers, _ := maps.StringArray(body, "peers")
+		return srv.stashHandler(ctx, cid, peers)
 	case "rare":
 		return srv.rareHandler(ctx)
 	case "list":
@@ -61,17 +61,16 @@ func (srv *Service) listHandler(ctx context.Context) (cr.Response, error) {
 	return cr.Response{"ids": cids}, nil
 }
 
-func (srv *Service) stashHandler(ctx context.Context, id string) (cr.Response, error) {
-	key := datastore.NewKey(hoarderSpecs.CreateStashPath(id))
-	if data, _ := srv.db.Get(ctx, key.String()); data == nil {
+func (srv *Service) stashHandler(ctx context.Context, id string, peers []string) (cr.Response, error) {
+	key := hoarderSpecs.CreateStashPath(id)
+	if data, _ := srv.db.Get(ctx, key); data == nil {
 		registryBytes, err := cbor.Marshal(&registryItem{Replicas: 0})
 		if err != nil {
 			logger.Errorf("cbor marshal of registry failed with: %w", err)
 			return nil, err
 		}
 
-		key := datastore.NewKey(hoarderSpecs.CreateStashPath(id))
-		if err = srv.db.Put(srv.node.Context(), key.String(), registryBytes); err != nil {
+		if err = srv.db.Put(srv.node.Context(), key, registryBytes); err != nil {
 			logger.Errorf("put of registry in kvdb failed with: %w", err)
 			return nil, err
 		}

@@ -28,9 +28,15 @@ func New(kv kvdb.KVDB, data Data) (Project, error) {
 		return nil, err
 	}
 
+	provider, err := maps.String(data, "provider")
+	if err != nil {
+		provider = "github"
+	}
+
 	project := &ProjectObject{
-		Id:   id,
-		Name: name,
+		Id:       id,
+		Name:     name,
+		Provider: provider,
 	}
 
 	codeId, _ := maps.String(data, "code")

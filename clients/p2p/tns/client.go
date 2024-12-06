@@ -2,6 +2,7 @@ package tns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/mitchellh/mapstructure"
@@ -43,16 +44,40 @@ func (c *Client) Close() {
 }
 
 /****** LIST *******/
-func (c *Client) List(depth int) ([]string, error) {
+func (c *Client) List(depth int) ([][]string, error) {
 	response, err := c.client.Send("list", command.Body{"depth": depth}, c.peers...)
 	if err != nil {
 		logger.Error(err)
 		return nil, err
 	}
 
-	keys, err := maps.StringArray(response, "keys")
-	if err != nil {
-		return nil, fmt.Errorf("failed string array in list with error: %v", err)
+	keysIface, ok := response["keys"]
+	if !ok {
+		return nil, errors.New("no keys found")
+	}
+
+	// TODO: Use generics so streams client Do() can unmarshal directly to needed type
+	keysCont, ok := keysIface.([]any)
+	if !ok {
+		return nil, errors.New("returned keys have wrong type")
+	}
+
+	keys := make([][]string, 0, len(keysCont))
+	for _, k := range keysCont {
+		kc, ok := k.([]any)
+		if !ok {
+			return nil, errors.New("returned key have wrong type")
+		}
+
+		key := make([]string, 0, len(kc))
+		for _, vc := range kc {
+			v, ok := vc.(string)
+			if !ok {
+				return nil, errors.New("returned leaf have wrong type")
+			}
+			key = append(key, v)
+		}
+		keys = append(keys, key)
 	}
 
 	return keys, nil

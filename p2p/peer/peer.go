@@ -242,7 +242,7 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 	}
 
 	// Create ipfs node
-	p.ipfs, err = ipfslite.New(p.ctx, p.store, nil, p.host, p.dht, nil)
+	p.ipfs, err = ipfslite.New(p.ctx, p.store, nil, p.host, p.dht, &ipfslite.Config{})
 	if err != nil {
 		return nil, err
 	}

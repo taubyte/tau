@@ -2,12 +2,17 @@ package engine
 
 import (
 	"fmt"
+	"strings"
 
 	pathUtils "github.com/taubyte/utils/path"
 )
 
 func keyFromPath(path []string) string {
 	return "/" + pathUtils.Join(append(Prefix, path...))
+}
+
+func regExkeyFromPath(path []string) string {
+	return "\\/" + strings.Join(append(Prefix, path...), "\\/")
 }
 
 func pathFromKey(key string) ([]string, error) {
@@ -21,6 +26,7 @@ func pathFromKey(key string) ([]string, error) {
 		}
 		_path = _path[1:]
 	}
+
 	return _path, nil
 }
 

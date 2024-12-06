@@ -13,9 +13,10 @@ type Project interface {
 }
 
 type ProjectObject struct {
-	KV     kvdb.KVDB
-	Id     string
-	Name   string
-	Config int
-	Code   int
+	KV       kvdb.KVDB
+	Id       string
+	Name     string
+	Provider string
+	Config   int
+	Code     int
 }

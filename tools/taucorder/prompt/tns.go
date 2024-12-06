@@ -76,7 +76,13 @@ func listKeys(p Prompt, args []string) error {
 		return nil
 	}
 
-	list.CreateTableIds(keys, "Keys List")
+	ks := make([]string, 0, len(keys))
+
+	for _, k := range keys {
+		ks = append(ks, "/"+path.Join(k...))
+	}
+
+	list.CreateTableIds(ks, "Keys List")
 
 	return nil
 }

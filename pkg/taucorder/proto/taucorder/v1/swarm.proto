@@ -1,0 +1,53 @@
+syntax = "proto3";
+
+package taucorder.v1;
+
+option go_package = ".";
+
+import "taucorder/v1/common.proto";
+
+// Data Structures
+message WaitRequest {
+    Node node = 1;
+    int64 timeout = 2;  // nanoseconds
+}
+
+message ListPingRequest {
+    int32 count = 1;
+    int32 concurrency = 2;  // just a suggestion, service can change value
+}
+
+message ListRequest {
+    Node node = 1;
+    int64 timeout = 2;  // nanoseconds
+    ListPingRequest ping = 3;
+}
+
+message PingRequest {
+    Node node = 1;
+    string pid = 2;     // must be connected to peer
+    int64 timeout = 3;  // nanoseconds
+    int32 count = 4;
+}
+
+message ConnectRequest {
+    Node node = 1;
+    string address = 2;
+    int64 timeout = 3;  // nanoseconds
+}
+
+message DiscoverRequest {
+    Node node = 1;
+    string service = 2;
+    int64 timeout = 3;  // nanoseconds
+    int32 count = 4;    // max count
+}
+
+// Service
+service SwarmService {
+    rpc Wait(WaitRequest) returns (Empty);
+    rpc List(ListRequest) returns (stream Peer);
+    rpc Ping(PingRequest) returns (Peer);
+    rpc Connect(ConnectRequest) returns (Peer);
+    rpc Discover(DiscoverRequest) returns (stream Peer);
+}

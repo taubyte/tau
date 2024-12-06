@@ -60,27 +60,16 @@ func TestCalls(t *testing.T) {
 		return
 	}
 
-	ids, err := seerClient.Usage().ListServiceId("auth")
+	serviceIds, err := seerClient.Usage().ListServiceId("auth")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	serviceIds, err := ids.Get("ids")
-	if err != nil {
-		t.Error(err)
-		return
-	}
 	fmt.Println("serviceIds: ", serviceIds)
 
-	serviceIds2, ok := serviceIds.([]interface{})
-	if !ok {
-		t.Errorf("serviceIds %#v is not []interface{}", nil)
-		return
-	}
-
-	if len(serviceIds2) != 2 {
-		t.Errorf("Expected 2 nodes got %d", len(serviceIds2))
+	if len(serviceIds) != 2 {
+		t.Errorf("Expected 2 nodes got %d", len(serviceIds))
 	}
 
 }

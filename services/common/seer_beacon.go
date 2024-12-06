@@ -55,7 +55,6 @@ func StartSeerBeacon(config *config.Node, sc seer.Client, serviceType seer.Servi
 	var nodeId, clientNodeId string
 	var signature []byte
 
-	// ---- FOR ODO
 	if config.ClientNode != nil && config.Node != nil {
 		nodeId = config.Node.ID().String()
 		clientNodeId = config.ClientNode.ID().String()

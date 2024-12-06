@@ -23,6 +23,7 @@ func (p *Projects) New(obj map[string]interface{}) *iface.Project {
 	if err != nil {
 		return nil
 	}
+
 	configID, _ := maps.Int(obj, "config")
 	codeID, _ := maps.Int(obj, "code")
 	prj.Git.Config = &GithubRepository{
@@ -39,6 +40,11 @@ func (p *Projects) New(obj map[string]interface{}) *iface.Project {
 	prj.Name, err = maps.String(obj, "name")
 	if err != nil {
 		return nil
+	}
+
+	prj.Provider, err = maps.String(obj, "provider")
+	if err != nil {
+		prj.Provider = "github"
 	}
 
 	return &prj

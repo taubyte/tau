@@ -1,8 +1,15 @@
 package prompt
 
 import (
+	"crypto/ecdsa"
+	"crypto/ed25519"
+	"crypto/rsa"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 
 	goPrompt "github.com/c-bata/go-prompt"
@@ -78,7 +85,7 @@ func getCertificate(p Prompt, args []string) error {
 		return fmt.Errorf(" Failed getting certificate for %s with %v", args[1], err)
 	}
 
-	fmt.Println(string(_pem))
+	fmt.Println(_pem)
 	return nil
 }
 
@@ -94,6 +101,72 @@ func getStaticCertificate(p Prompt, args []string) error {
 		return fmt.Errorf(" Failed getting certificate for %s with %v", args[1], err)
 	}
 
-	fmt.Printf("\nCertificate:\n%#v", cert)
+	prettyPrintTLSCertificate(cert)
+
 	return nil
+}
+
+func prettyPrintTLSCertificate(cert *tls.Certificate) {
+	fmt.Println("TLS Certificate Details:")
+
+	for i, certData := range cert.Certificate {
+		fmt.Printf("\nCertificate %d:\n", i+1)
+		block := &pem.Block{
+			Type:  "CERTIFICATE",
+			Bytes: certData,
+		}
+		fmt.Println(string(pem.EncodeToMemory(block)))
+
+		parsedCert, err := x509.ParseCertificate(certData)
+		if err != nil {
+			log.Printf("Error parsing certificate %d: %v", i+1, err)
+			continue
+		}
+		fmt.Printf("  Subject: %s\n", parsedCert.Subject)
+		fmt.Printf("  Issuer: %s\n", parsedCert.Issuer)
+		fmt.Printf("  Valid From: %s\n", parsedCert.NotBefore)
+		fmt.Printf("  Valid Until: %s\n", parsedCert.NotAfter)
+		if len(parsedCert.DNSNames) > 0 {
+			fmt.Printf("  DNS Names: %v\n", parsedCert.DNSNames)
+		}
+	}
+
+	if cert.PrivateKey != nil {
+		fmt.Println("\nPrivate Key:")
+		switch key := cert.PrivateKey.(type) {
+		case *rsa.PrivateKey:
+			privKeyBytes := x509.MarshalPKCS1PrivateKey(key)
+			privKeyPem := pem.EncodeToMemory(&pem.Block{
+				Type:  "RSA PRIVATE KEY",
+				Bytes: privKeyBytes,
+			})
+			fmt.Println(string(privKeyPem))
+		case *ecdsa.PrivateKey:
+			privKeyBytes, err := x509.MarshalECPrivateKey(key)
+			if err != nil {
+				log.Printf("Failed to marshal ECDSA private key: %v", err)
+				return
+			}
+			privKeyPem := pem.EncodeToMemory(&pem.Block{
+				Type:  "EC PRIVATE KEY",
+				Bytes: privKeyBytes,
+			})
+			fmt.Println(string(privKeyPem))
+		case ed25519.PrivateKey:
+			privKeyBytes, err := x509.MarshalPKCS8PrivateKey(key)
+			if err != nil {
+				log.Printf("Failed to marshal Ed25519 private key: %v", err)
+				return
+			}
+			privKeyPem := pem.EncodeToMemory(&pem.Block{
+				Type:  "PRIVATE KEY",
+				Bytes: privKeyBytes,
+			})
+			fmt.Println(string(privKeyPem))
+		default:
+			fmt.Println("Unknown private key type.")
+		}
+	} else {
+		fmt.Println("\nNo private key found in the TLS certificate.")
+	}
 }

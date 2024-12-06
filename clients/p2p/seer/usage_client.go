@@ -95,9 +95,6 @@ func (u *UsageBeacon) Start() {
 	go func() {
 		var err error
 
-		// First update as soon as we start
-		time.Sleep(3 * time.Second)
-
 		_, err = u.usage.updateUsage(u.hostname, u.nodeId, u.clientNodeId, u.signature)
 		if err != nil {
 			u._status <- err

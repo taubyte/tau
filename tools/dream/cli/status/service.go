@@ -30,7 +30,7 @@ func service(multiverse *client.Client) []*cli.Command {
 }
 func runService(name string, multiverse *client.Client) cli.ActionFunc {
 	return func(c *cli.Context) (err error) {
-		chart, err := multiverse.Universe(c.String("universe")).Status()
+		chart, err := multiverse.Universe(c.String("universe")).Chart()
 		if err != nil {
 			return
 		}

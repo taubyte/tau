@@ -77,11 +77,7 @@ func New(config UniverseConfig) *Universe {
 	universes[config.Name] = u
 
 	// add an elder node
-	elderConfig := struct {
-		Config SimpleConfig
-	}{}
-
-	_, err = u.CreateSimpleNode("elder", &elderConfig.Config)
+	_, err = u.CreateSimpleNode("elder", &SimpleConfig{})
 	if err != nil {
 		fmt.Println("Create simple failed", err)
 	}
@@ -142,6 +138,18 @@ func (u *Universe) StartAll(simples ...string) error {
 			Simples:  simplesDef,
 		},
 	)
+}
+
+func (u *Universe) Peers() []peer.Node {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+
+	nodes := make([]peer.Node, 0, len(u.lookups))
+	for _, ni := range u.lookups {
+		nodes = append(nodes, ni.Node)
+	}
+
+	return nodes
 }
 
 func (u *Universe) GetInfo(node peer.Node) (*NodeInfo, error) {
