@@ -20,6 +20,7 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// Data Structures
 type Project struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache

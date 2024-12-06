@@ -13,8 +13,6 @@ import (
 )
 
 func (srv *Service) listHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	keys := make([]string, 0)
-	unique := make(map[string]bool)
 	depth, err := maps.Int(body, "depth")
 	if err != nil {
 		return nil, err
@@ -25,17 +23,23 @@ func (srv *Service) listHandler(ctx context.Context, conn streams.Connection, bo
 		return nil, fmt.Errorf("failed list with error: %v", err)
 	}
 
+	uniq := make(map[string][]string)
 	for _, key := range _keys {
-		_key := strings.Split(key, "/")
-		if len(_key)-1 < depth {
-			logger.Errorf("Depth of %d is longer than key: %s", depth, key)
-			continue
-		} else {
-			if _, ok := unique[_key[depth]]; !ok {
-				unique[_key[depth]] = true
-				keys = append(keys, _key[depth])
-			}
+		_key := strings.Split(key, "/")[1:]
+
+		d := depth
+		if d > len(_key) {
+			d = len(_key)
 		}
+		for i := 1; i <= d; i++ {
+			k := _key[:i]
+			uniq[strings.Join(k, "/")] = k
+		}
+	}
+
+	keys := make([][]string, 0, len(uniq))
+	for _, v := range uniq {
+		keys = append(keys, v)
 	}
 
 	return cr.Response{"keys": keys}, nil

@@ -7,7 +7,6 @@ option go_package = ".";
 import "taucorder/v1/common.proto";
 
 // Data Structures
-
 message NodesListRequest {
     Node node = 1;
     string service = 2;

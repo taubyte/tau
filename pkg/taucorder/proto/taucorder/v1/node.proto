@@ -7,7 +7,6 @@ option go_package = ".";
 import "taucorder/v1/common.proto";
 
 // Data Structures
-
 message Link {
     string url = 1;
     bool auto = 2;  // falls back to auto if true

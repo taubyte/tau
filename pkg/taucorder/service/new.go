@@ -41,6 +41,8 @@ func Serve(ctx context.Context, resolver ConfigResolver) (*Service, error) {
 	s.addHandler(pbconnect.NewGitHooksInAuthServiceHandler(&hooksService{Service: s}))
 	s.addHandler(pbconnect.NewX509InAuthServiceHandler(&x509Service{Service: s}))
 	s.addHandler(pbconnect.NewSeerServiceHandler(&seerService{Service: s}))
+	s.addHandler(pbconnect.NewHoarderServiceHandler(&hoarderService{Service: s}))
+	s.addHandler(pbconnect.NewTNSServiceHandler(&tnsService{Service: s}))
 
 	return s, nil
 }

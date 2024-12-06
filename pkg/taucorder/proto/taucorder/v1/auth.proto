@@ -7,7 +7,6 @@ option go_package = ".";
 import "taucorder/v1/common.proto";
 
 // Data Structures
-
 message Project {
     string id = 1;
     string name = 2;

@@ -13,7 +13,7 @@ func (e *Engine) Lookup(ctx context.Context, ops ...iface.Query) (keys []string,
 	var temp []string
 	for _, q := range ops {
 		if q.RegEx {
-			temp, err = e.db.ListRegEx(ctx, "", keyFromPath(q.Prefix))
+			temp, err = e.db.ListRegEx(ctx, "", regExkeyFromPath(q.Prefix))
 			if err != nil {
 				return
 			}

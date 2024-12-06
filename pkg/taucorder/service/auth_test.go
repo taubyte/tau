@@ -160,5 +160,4 @@ func TestAuth(t *testing.T) {
 
 		assert.Equal(t, count, len(allAuth))
 	})
-
 }

@@ -8,6 +8,8 @@ import { Message, proto3, protoInt64 } from "@bufbuild/protobuf";
 import { Node } from "./common_pb.js";
 
 /**
+ * Data Structures
+ *
  * @generated from message taucorder.v1.WaitRequest
  */
 export class WaitRequest extends Message<WaitRequest> {

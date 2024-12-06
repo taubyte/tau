@@ -111,6 +111,7 @@ func TestSeer(t *testing.T) {
 		known := []string{u.Auth().Node().ID().String(), u.TNS().Node().ID().String()}
 		all := make([]string, 0)
 		for stream.Receive() {
+			assert.NilError(t, stream.Err())
 			pid := stream.Msg().Id
 			all = append(all, pid)
 			assert.Equal(t, slices.Contains(known, pid), true)
@@ -149,6 +150,7 @@ func TestSeer(t *testing.T) {
 		}
 		all := make([]string, 0)
 		for stream.Receive() {
+			assert.NilError(t, stream.Err())
 			pid := stream.Msg().GetPeer().GetId()
 			all = append(all, pid)
 			loc := stream.Msg().Location
@@ -181,6 +183,7 @@ func TestSeer(t *testing.T) {
 		}
 		all := make([]string, 0)
 		for stream.Receive() {
+			assert.NilError(t, stream.Err())
 			pid := stream.Msg().GetPeer().GetId()
 			all = append(all, pid)
 			loc := stream.Msg().Location
@@ -209,6 +212,7 @@ func TestSeer(t *testing.T) {
 		}
 		all := make([]string, 0)
 		for stream.Receive() {
+			assert.NilError(t, stream.Err())
 			pid := stream.Msg().GetPeer().GetId()
 			all = append(all, pid)
 			loc := stream.Msg().Location

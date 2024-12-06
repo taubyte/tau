@@ -7,7 +7,6 @@ option go_package = ".";
 import "taucorder/v1/common.proto";
 
 // Data Structures
-
 message WaitRequest {
     Node node = 1;
     int64 timeout = 2;  // nanoseconds

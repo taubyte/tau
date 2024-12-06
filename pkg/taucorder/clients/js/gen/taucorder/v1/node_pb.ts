@@ -8,6 +8,8 @@ import { Message, proto3 } from "@bufbuild/protobuf";
 import { Addresses } from "./common_pb.js";
 
 /**
+ * Data Structures
+ *
  * @generated from message taucorder.v1.Link
  */
 export class Link extends Message<Link> {

@@ -58,6 +58,16 @@ type seerService struct {
 	*Service
 }
 
+type hoarderService struct {
+	pbconnect.UnimplementedHoarderServiceHandler
+	*Service
+}
+
+type tnsService struct {
+	pbconnect.UnimplementedTNSServiceHandler
+	*Service
+}
+
 type instance struct {
 	ctx  context.Context
 	ctxC context.CancelFunc
