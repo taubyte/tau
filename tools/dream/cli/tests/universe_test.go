@@ -12,7 +12,7 @@ import (
 	client "github.com/taubyte/tau/clients/http/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 
-	_ "github.com/taubyte/tau/utils/dreamland"
+	_ "github.com/taubyte/tau/utils/dream"
 )
 
 var services = []string{"seer", "auth", "patrick", "tns", "monkey", "hoarder", "substrate"}

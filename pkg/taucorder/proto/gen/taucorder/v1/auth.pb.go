@@ -92,87 +92,6 @@ func (x *Project) GetRepositories() *ProjectRepos {
 	return nil
 }
 
-type RepositoryId struct {
-	state         protoimpl.MessageState
-	sizeCache     protoimpl.SizeCache
-	unknownFields protoimpl.UnknownFields
-
-	// Types that are assignable to Id:
-	//
-	//	*RepositoryId_Github
-	//	*RepositoryId_Bitbucket
-	Id isRepositoryId_Id `protobuf_oneof:"id"`
-}
-
-func (x *RepositoryId) Reset() {
-	*x = RepositoryId{}
-	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[1]
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		ms.StoreMessageInfo(mi)
-	}
-}
-
-func (x *RepositoryId) String() string {
-	return protoimpl.X.MessageStringOf(x)
-}
-
-func (*RepositoryId) ProtoMessage() {}
-
-func (x *RepositoryId) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[1]
-	if protoimpl.UnsafeEnabled && x != nil {
-		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
-		if ms.LoadMessageInfo() == nil {
-			ms.StoreMessageInfo(mi)
-		}
-		return ms
-	}
-	return mi.MessageOf(x)
-}
-
-// Deprecated: Use RepositoryId.ProtoReflect.Descriptor instead.
-func (*RepositoryId) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{1}
-}
-
-func (m *RepositoryId) GetId() isRepositoryId_Id {
-	if m != nil {
-		return m.Id
-	}
-	return nil
-}
-
-func (x *RepositoryId) GetGithub() int64 {
-	if x, ok := x.GetId().(*RepositoryId_Github); ok {
-		return x.Github
-	}
-	return 0
-}
-
-func (x *RepositoryId) GetBitbucket() string {
-	if x, ok := x.GetId().(*RepositoryId_Bitbucket); ok {
-		return x.Bitbucket
-	}
-	return ""
-}
-
-type isRepositoryId_Id interface {
-	isRepositoryId_Id()
-}
-
-type RepositoryId_Github struct {
-	Github int64 `protobuf:"varint,1,opt,name=github,proto3,oneof"`
-}
-
-type RepositoryId_Bitbucket struct {
-	Bitbucket string `protobuf:"bytes,2,opt,name=bitbucket,proto3,oneof"`
-}
-
-func (*RepositoryId_Github) isRepositoryId_Id() {}
-
-func (*RepositoryId_Bitbucket) isRepositoryId_Id() {}
-
 type ProjectRepo struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -186,7 +105,7 @@ type ProjectRepo struct {
 func (x *ProjectRepo) Reset() {
 	*x = ProjectRepo{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[2]
+		mi := &file_taucorder_v1_auth_proto_msgTypes[1]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -199,7 +118,7 @@ func (x *ProjectRepo) String() string {
 func (*ProjectRepo) ProtoMessage() {}
 
 func (x *ProjectRepo) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[2]
+	mi := &file_taucorder_v1_auth_proto_msgTypes[1]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -212,7 +131,7 @@ func (x *ProjectRepo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectRepo.ProtoReflect.Descriptor instead.
 func (*ProjectRepo) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{2}
+	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *ProjectRepo) GetId() *RepositoryId {
@@ -248,7 +167,7 @@ type ProjectRepos struct {
 func (x *ProjectRepos) Reset() {
 	*x = ProjectRepos{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[3]
+		mi := &file_taucorder_v1_auth_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -261,7 +180,7 @@ func (x *ProjectRepos) String() string {
 func (*ProjectRepos) ProtoMessage() {}
 
 func (x *ProjectRepos) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[3]
+	mi := &file_taucorder_v1_auth_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -274,7 +193,7 @@ func (x *ProjectRepos) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectRepos.ProtoReflect.Descriptor instead.
 func (*ProjectRepos) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{3}
+	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ProjectRepos) GetConfig() *ProjectRepo {
@@ -303,7 +222,7 @@ type ByProjectRequest struct {
 func (x *ByProjectRequest) Reset() {
 	*x = ByProjectRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[4]
+		mi := &file_taucorder_v1_auth_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -316,7 +235,7 @@ func (x *ByProjectRequest) String() string {
 func (*ByProjectRequest) ProtoMessage() {}
 
 func (x *ByProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[4]
+	mi := &file_taucorder_v1_auth_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -329,7 +248,7 @@ func (x *ByProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ByProjectRequest.ProtoReflect.Descriptor instead.
 func (*ByProjectRequest) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{4}
+	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ByProjectRequest) GetNode() *Node {
@@ -358,7 +277,7 @@ type ByRepositoryRequest struct {
 func (x *ByRepositoryRequest) Reset() {
 	*x = ByRepositoryRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[5]
+		mi := &file_taucorder_v1_auth_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -371,7 +290,7 @@ func (x *ByRepositoryRequest) String() string {
 func (*ByRepositoryRequest) ProtoMessage() {}
 
 func (x *ByRepositoryRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[5]
+	mi := &file_taucorder_v1_auth_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -384,7 +303,7 @@ func (x *ByRepositoryRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ByRepositoryRequest.ProtoReflect.Descriptor instead.
 func (*ByRepositoryRequest) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{5}
+	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ByRepositoryRequest) GetNode() *Node {
@@ -413,7 +332,7 @@ type ByHookRequest struct {
 func (x *ByHookRequest) Reset() {
 	*x = ByHookRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[6]
+		mi := &file_taucorder_v1_auth_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -426,7 +345,7 @@ func (x *ByHookRequest) String() string {
 func (*ByHookRequest) ProtoMessage() {}
 
 func (x *ByHookRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[6]
+	mi := &file_taucorder_v1_auth_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -439,7 +358,7 @@ func (x *ByHookRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ByHookRequest.ProtoReflect.Descriptor instead.
 func (*ByHookRequest) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{6}
+	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ByHookRequest) GetNode() *Node {
@@ -469,7 +388,7 @@ type GithubHook struct {
 func (x *GithubHook) Reset() {
 	*x = GithubHook{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[7]
+		mi := &file_taucorder_v1_auth_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -482,7 +401,7 @@ func (x *GithubHook) String() string {
 func (*GithubHook) ProtoMessage() {}
 
 func (x *GithubHook) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[7]
+	mi := &file_taucorder_v1_auth_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -495,7 +414,7 @@ func (x *GithubHook) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GithubHook.ProtoReflect.Descriptor instead.
 func (*GithubHook) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{7}
+	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GithubHook) GetId() string {
@@ -530,7 +449,7 @@ type BitbucketHook struct {
 func (x *BitbucketHook) Reset() {
 	*x = BitbucketHook{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[8]
+		mi := &file_taucorder_v1_auth_proto_msgTypes[7]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -543,7 +462,7 @@ func (x *BitbucketHook) String() string {
 func (*BitbucketHook) ProtoMessage() {}
 
 func (x *BitbucketHook) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[8]
+	mi := &file_taucorder_v1_auth_proto_msgTypes[7]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -556,7 +475,7 @@ func (x *BitbucketHook) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BitbucketHook.ProtoReflect.Descriptor instead.
 func (*BitbucketHook) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{8}
+	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *BitbucketHook) GetId() string {
@@ -582,7 +501,7 @@ type Hook struct {
 func (x *Hook) Reset() {
 	*x = Hook{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[9]
+		mi := &file_taucorder_v1_auth_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -595,7 +514,7 @@ func (x *Hook) String() string {
 func (*Hook) ProtoMessage() {}
 
 func (x *Hook) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[9]
+	mi := &file_taucorder_v1_auth_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -608,7 +527,7 @@ func (x *Hook) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hook.ProtoReflect.Descriptor instead.
 func (*Hook) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{9}
+	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Hook) GetId() string {
@@ -667,7 +586,7 @@ type X509Certificate struct {
 func (x *X509Certificate) Reset() {
 	*x = X509Certificate{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[10]
+		mi := &file_taucorder_v1_auth_proto_msgTypes[9]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -680,7 +599,7 @@ func (x *X509Certificate) String() string {
 func (*X509Certificate) ProtoMessage() {}
 
 func (x *X509Certificate) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[10]
+	mi := &file_taucorder_v1_auth_proto_msgTypes[9]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -693,7 +612,7 @@ func (x *X509Certificate) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use X509Certificate.ProtoReflect.Descriptor instead.
 func (*X509Certificate) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{10}
+	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *X509Certificate) GetData() []byte {
@@ -723,7 +642,7 @@ type X509CertificateRequest struct {
 func (x *X509CertificateRequest) Reset() {
 	*x = X509CertificateRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_auth_proto_msgTypes[11]
+		mi := &file_taucorder_v1_auth_proto_msgTypes[10]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -736,7 +655,7 @@ func (x *X509CertificateRequest) String() string {
 func (*X509CertificateRequest) ProtoMessage() {}
 
 func (x *X509CertificateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_auth_proto_msgTypes[11]
+	mi := &file_taucorder_v1_auth_proto_msgTypes[10]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -749,7 +668,7 @@ func (x *X509CertificateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use X509CertificateRequest.ProtoReflect.Descriptor instead.
 func (*X509CertificateRequest) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{11}
+	return file_taucorder_v1_auth_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *X509CertificateRequest) GetNode() *Node {
@@ -788,12 +707,7 @@ var file_taucorder_v1_auth_proto_rawDesc = []byte{
 	0x0a, 0x0c, 0x72, 0x65, 0x70, 0x6f, 0x73, 0x69, 0x74, 0x6f, 0x72, 0x69, 0x65, 0x73, 0x18, 0x04,
 	0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x74, 0x61, 0x75, 0x63, 0x6f, 0x72, 0x64, 0x65, 0x72,
 	0x2e, 0x76, 0x31, 0x2e, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x52, 0x65, 0x70, 0x6f, 0x73,
-	0x52, 0x0c, 0x72, 0x65, 0x70, 0x6f, 0x73, 0x69, 0x74, 0x6f, 0x72, 0x69, 0x65, 0x73, 0x22, 0x4e,
-	0x0a, 0x0c, 0x52, 0x65, 0x70, 0x6f, 0x73, 0x69, 0x74, 0x6f, 0x72, 0x79, 0x49, 0x64, 0x12, 0x18,
-	0x0a, 0x06, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x18, 0x01, 0x20, 0x01, 0x28, 0x03, 0x48, 0x00,
-	0x52, 0x06, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x12, 0x1e, 0x0a, 0x09, 0x62, 0x69, 0x74, 0x62,
-	0x75, 0x63, 0x6b, 0x65, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x48, 0x00, 0x52, 0x09, 0x62,
-	0x69, 0x74, 0x62, 0x75, 0x63, 0x6b, 0x65, 0x74, 0x42, 0x04, 0x0a, 0x02, 0x69, 0x64, 0x22, 0x86,
+	0x52, 0x0c, 0x72, 0x65, 0x70, 0x6f, 0x73, 0x69, 0x74, 0x6f, 0x72, 0x69, 0x65, 0x73, 0x22, 0x86,
 	0x01, 0x0a, 0x0b, 0x50, 0x72, 0x6f, 0x6a, 0x65, 0x63, 0x74, 0x52, 0x65, 0x70, 0x6f, 0x12, 0x2a,
 	0x0a, 0x02, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x1a, 0x2e, 0x74, 0x61, 0x75,
 	0x63, 0x6f, 0x72, 0x64, 0x65, 0x72, 0x2e, 0x76, 0x31, 0x2e, 0x52, 0x65, 0x70, 0x6f, 0x73, 0x69,
@@ -942,20 +856,20 @@ func file_taucorder_v1_auth_proto_rawDescGZIP() []byte {
 	return file_taucorder_v1_auth_proto_rawDescData
 }
 
-var file_taucorder_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_taucorder_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_taucorder_v1_auth_proto_goTypes = []any{
 	(*Project)(nil),                // 0: taucorder.v1.Project
-	(*RepositoryId)(nil),           // 1: taucorder.v1.RepositoryId
-	(*ProjectRepo)(nil),            // 2: taucorder.v1.ProjectRepo
-	(*ProjectRepos)(nil),           // 3: taucorder.v1.ProjectRepos
-	(*ByProjectRequest)(nil),       // 4: taucorder.v1.ByProjectRequest
-	(*ByRepositoryRequest)(nil),    // 5: taucorder.v1.ByRepositoryRequest
-	(*ByHookRequest)(nil),          // 6: taucorder.v1.ByHookRequest
-	(*GithubHook)(nil),             // 7: taucorder.v1.GithubHook
-	(*BitbucketHook)(nil),          // 8: taucorder.v1.BitbucketHook
-	(*Hook)(nil),                   // 9: taucorder.v1.Hook
-	(*X509Certificate)(nil),        // 10: taucorder.v1.X509Certificate
-	(*X509CertificateRequest)(nil), // 11: taucorder.v1.X509CertificateRequest
+	(*ProjectRepo)(nil),            // 1: taucorder.v1.ProjectRepo
+	(*ProjectRepos)(nil),           // 2: taucorder.v1.ProjectRepos
+	(*ByProjectRequest)(nil),       // 3: taucorder.v1.ByProjectRequest
+	(*ByRepositoryRequest)(nil),    // 4: taucorder.v1.ByRepositoryRequest
+	(*ByHookRequest)(nil),          // 5: taucorder.v1.ByHookRequest
+	(*GithubHook)(nil),             // 6: taucorder.v1.GithubHook
+	(*BitbucketHook)(nil),          // 7: taucorder.v1.BitbucketHook
+	(*Hook)(nil),                   // 8: taucorder.v1.Hook
+	(*X509Certificate)(nil),        // 9: taucorder.v1.X509Certificate
+	(*X509CertificateRequest)(nil), // 10: taucorder.v1.X509CertificateRequest
+	(*RepositoryId)(nil),           // 11: taucorder.v1.RepositoryId
 	(*Node)(nil),                   // 12: taucorder.v1.Node
 	(*DiscoverServiceRequest)(nil), // 13: taucorder.v1.DiscoverServiceRequest
 	(*ConsensusStateRequest)(nil),  // 14: taucorder.v1.ConsensusStateRequest
@@ -964,43 +878,43 @@ var file_taucorder_v1_auth_proto_goTypes = []any{
 	(*Empty)(nil),                  // 17: taucorder.v1.Empty
 }
 var file_taucorder_v1_auth_proto_depIdxs = []int32{
-	3,  // 0: taucorder.v1.Project.repositories:type_name -> taucorder.v1.ProjectRepos
-	1,  // 1: taucorder.v1.ProjectRepo.id:type_name -> taucorder.v1.RepositoryId
-	2,  // 2: taucorder.v1.ProjectRepos.config:type_name -> taucorder.v1.ProjectRepo
-	2,  // 3: taucorder.v1.ProjectRepos.code:type_name -> taucorder.v1.ProjectRepo
+	2,  // 0: taucorder.v1.Project.repositories:type_name -> taucorder.v1.ProjectRepos
+	11, // 1: taucorder.v1.ProjectRepo.id:type_name -> taucorder.v1.RepositoryId
+	1,  // 2: taucorder.v1.ProjectRepos.config:type_name -> taucorder.v1.ProjectRepo
+	1,  // 3: taucorder.v1.ProjectRepos.code:type_name -> taucorder.v1.ProjectRepo
 	12, // 4: taucorder.v1.ByProjectRequest.node:type_name -> taucorder.v1.Node
 	12, // 5: taucorder.v1.ByRepositoryRequest.node:type_name -> taucorder.v1.Node
-	1,  // 6: taucorder.v1.ByRepositoryRequest.id:type_name -> taucorder.v1.RepositoryId
+	11, // 6: taucorder.v1.ByRepositoryRequest.id:type_name -> taucorder.v1.RepositoryId
 	12, // 7: taucorder.v1.ByHookRequest.node:type_name -> taucorder.v1.Node
-	7,  // 8: taucorder.v1.Hook.github:type_name -> taucorder.v1.GithubHook
-	8,  // 9: taucorder.v1.Hook.bitbucket:type_name -> taucorder.v1.BitbucketHook
+	6,  // 8: taucorder.v1.Hook.github:type_name -> taucorder.v1.GithubHook
+	7,  // 9: taucorder.v1.Hook.bitbucket:type_name -> taucorder.v1.BitbucketHook
 	12, // 10: taucorder.v1.X509CertificateRequest.node:type_name -> taucorder.v1.Node
 	12, // 11: taucorder.v1.AuthService.List:input_type -> taucorder.v1.Node
 	13, // 12: taucorder.v1.AuthService.Discover:input_type -> taucorder.v1.DiscoverServiceRequest
 	14, // 13: taucorder.v1.AuthService.State:input_type -> taucorder.v1.ConsensusStateRequest
 	12, // 14: taucorder.v1.AuthService.States:input_type -> taucorder.v1.Node
 	12, // 15: taucorder.v1.ProjectsInAuthService.List:input_type -> taucorder.v1.Node
-	4,  // 16: taucorder.v1.ProjectsInAuthService.Get:input_type -> taucorder.v1.ByProjectRequest
+	3,  // 16: taucorder.v1.ProjectsInAuthService.Get:input_type -> taucorder.v1.ByProjectRequest
 	12, // 17: taucorder.v1.RepositoriesInAuthService.List:input_type -> taucorder.v1.Node
-	5,  // 18: taucorder.v1.RepositoriesInAuthService.Get:input_type -> taucorder.v1.ByRepositoryRequest
+	4,  // 18: taucorder.v1.RepositoriesInAuthService.Get:input_type -> taucorder.v1.ByRepositoryRequest
 	12, // 19: taucorder.v1.GitHooksInAuthService.List:input_type -> taucorder.v1.Node
-	6,  // 20: taucorder.v1.GitHooksInAuthService.Get:input_type -> taucorder.v1.ByHookRequest
+	5,  // 20: taucorder.v1.GitHooksInAuthService.Get:input_type -> taucorder.v1.ByHookRequest
 	12, // 21: taucorder.v1.X509InAuthService.List:input_type -> taucorder.v1.Node
-	11, // 22: taucorder.v1.X509InAuthService.Get:input_type -> taucorder.v1.X509CertificateRequest
-	11, // 23: taucorder.v1.X509InAuthService.Set:input_type -> taucorder.v1.X509CertificateRequest
-	11, // 24: taucorder.v1.X509InAuthService.Delete:input_type -> taucorder.v1.X509CertificateRequest
+	10, // 22: taucorder.v1.X509InAuthService.Get:input_type -> taucorder.v1.X509CertificateRequest
+	10, // 23: taucorder.v1.X509InAuthService.Set:input_type -> taucorder.v1.X509CertificateRequest
+	10, // 24: taucorder.v1.X509InAuthService.Delete:input_type -> taucorder.v1.X509CertificateRequest
 	15, // 25: taucorder.v1.AuthService.List:output_type -> taucorder.v1.Peer
 	15, // 26: taucorder.v1.AuthService.Discover:output_type -> taucorder.v1.Peer
 	16, // 27: taucorder.v1.AuthService.State:output_type -> taucorder.v1.ConsensusState
 	16, // 28: taucorder.v1.AuthService.States:output_type -> taucorder.v1.ConsensusState
 	0,  // 29: taucorder.v1.ProjectsInAuthService.List:output_type -> taucorder.v1.Project
 	0,  // 30: taucorder.v1.ProjectsInAuthService.Get:output_type -> taucorder.v1.Project
-	2,  // 31: taucorder.v1.RepositoriesInAuthService.List:output_type -> taucorder.v1.ProjectRepo
-	2,  // 32: taucorder.v1.RepositoriesInAuthService.Get:output_type -> taucorder.v1.ProjectRepo
-	9,  // 33: taucorder.v1.GitHooksInAuthService.List:output_type -> taucorder.v1.Hook
-	9,  // 34: taucorder.v1.GitHooksInAuthService.Get:output_type -> taucorder.v1.Hook
-	10, // 35: taucorder.v1.X509InAuthService.List:output_type -> taucorder.v1.X509Certificate
-	10, // 36: taucorder.v1.X509InAuthService.Get:output_type -> taucorder.v1.X509Certificate
+	1,  // 31: taucorder.v1.RepositoriesInAuthService.List:output_type -> taucorder.v1.ProjectRepo
+	1,  // 32: taucorder.v1.RepositoriesInAuthService.Get:output_type -> taucorder.v1.ProjectRepo
+	8,  // 33: taucorder.v1.GitHooksInAuthService.List:output_type -> taucorder.v1.Hook
+	8,  // 34: taucorder.v1.GitHooksInAuthService.Get:output_type -> taucorder.v1.Hook
+	9,  // 35: taucorder.v1.X509InAuthService.List:output_type -> taucorder.v1.X509Certificate
+	9,  // 36: taucorder.v1.X509InAuthService.Get:output_type -> taucorder.v1.X509Certificate
 	17, // 37: taucorder.v1.X509InAuthService.Set:output_type -> taucorder.v1.Empty
 	17, // 38: taucorder.v1.X509InAuthService.Delete:output_type -> taucorder.v1.Empty
 	25, // [25:39] is the sub-list for method output_type
@@ -1030,18 +944,6 @@ func file_taucorder_v1_auth_proto_init() {
 			}
 		}
 		file_taucorder_v1_auth_proto_msgTypes[1].Exporter = func(v any, i int) any {
-			switch v := v.(*RepositoryId); i {
-			case 0:
-				return &v.state
-			case 1:
-				return &v.sizeCache
-			case 2:
-				return &v.unknownFields
-			default:
-				return nil
-			}
-		}
-		file_taucorder_v1_auth_proto_msgTypes[2].Exporter = func(v any, i int) any {
 			switch v := v.(*ProjectRepo); i {
 			case 0:
 				return &v.state
@@ -1053,7 +955,7 @@ func file_taucorder_v1_auth_proto_init() {
 				return nil
 			}
 		}
-		file_taucorder_v1_auth_proto_msgTypes[3].Exporter = func(v any, i int) any {
+		file_taucorder_v1_auth_proto_msgTypes[2].Exporter = func(v any, i int) any {
 			switch v := v.(*ProjectRepos); i {
 			case 0:
 				return &v.state
@@ -1065,7 +967,7 @@ func file_taucorder_v1_auth_proto_init() {
 				return nil
 			}
 		}
-		file_taucorder_v1_auth_proto_msgTypes[4].Exporter = func(v any, i int) any {
+		file_taucorder_v1_auth_proto_msgTypes[3].Exporter = func(v any, i int) any {
 			switch v := v.(*ByProjectRequest); i {
 			case 0:
 				return &v.state
@@ -1077,7 +979,7 @@ func file_taucorder_v1_auth_proto_init() {
 				return nil
 			}
 		}
-		file_taucorder_v1_auth_proto_msgTypes[5].Exporter = func(v any, i int) any {
+		file_taucorder_v1_auth_proto_msgTypes[4].Exporter = func(v any, i int) any {
 			switch v := v.(*ByRepositoryRequest); i {
 			case 0:
 				return &v.state
@@ -1089,7 +991,7 @@ func file_taucorder_v1_auth_proto_init() {
 				return nil
 			}
 		}
-		file_taucorder_v1_auth_proto_msgTypes[6].Exporter = func(v any, i int) any {
+		file_taucorder_v1_auth_proto_msgTypes[5].Exporter = func(v any, i int) any {
 			switch v := v.(*ByHookRequest); i {
 			case 0:
 				return &v.state
@@ -1101,7 +1003,7 @@ func file_taucorder_v1_auth_proto_init() {
 				return nil
 			}
 		}
-		file_taucorder_v1_auth_proto_msgTypes[7].Exporter = func(v any, i int) any {
+		file_taucorder_v1_auth_proto_msgTypes[6].Exporter = func(v any, i int) any {
 			switch v := v.(*GithubHook); i {
 			case 0:
 				return &v.state
@@ -1113,7 +1015,7 @@ func file_taucorder_v1_auth_proto_init() {
 				return nil
 			}
 		}
-		file_taucorder_v1_auth_proto_msgTypes[8].Exporter = func(v any, i int) any {
+		file_taucorder_v1_auth_proto_msgTypes[7].Exporter = func(v any, i int) any {
 			switch v := v.(*BitbucketHook); i {
 			case 0:
 				return &v.state
@@ -1125,7 +1027,7 @@ func file_taucorder_v1_auth_proto_init() {
 				return nil
 			}
 		}
-		file_taucorder_v1_auth_proto_msgTypes[9].Exporter = func(v any, i int) any {
+		file_taucorder_v1_auth_proto_msgTypes[8].Exporter = func(v any, i int) any {
 			switch v := v.(*Hook); i {
 			case 0:
 				return &v.state
@@ -1137,7 +1039,7 @@ func file_taucorder_v1_auth_proto_init() {
 				return nil
 			}
 		}
-		file_taucorder_v1_auth_proto_msgTypes[10].Exporter = func(v any, i int) any {
+		file_taucorder_v1_auth_proto_msgTypes[9].Exporter = func(v any, i int) any {
 			switch v := v.(*X509Certificate); i {
 			case 0:
 				return &v.state
@@ -1149,7 +1051,7 @@ func file_taucorder_v1_auth_proto_init() {
 				return nil
 			}
 		}
-		file_taucorder_v1_auth_proto_msgTypes[11].Exporter = func(v any, i int) any {
+		file_taucorder_v1_auth_proto_msgTypes[10].Exporter = func(v any, i int) any {
 			switch v := v.(*X509CertificateRequest); i {
 			case 0:
 				return &v.state
@@ -1162,11 +1064,7 @@ func file_taucorder_v1_auth_proto_init() {
 			}
 		}
 	}
-	file_taucorder_v1_auth_proto_msgTypes[1].OneofWrappers = []any{
-		(*RepositoryId_Github)(nil),
-		(*RepositoryId_Bitbucket)(nil),
-	}
-	file_taucorder_v1_auth_proto_msgTypes[9].OneofWrappers = []any{
+	file_taucorder_v1_auth_proto_msgTypes[8].OneofWrappers = []any{
 		(*Hook_Github)(nil),
 		(*Hook_Bitbucket)(nil),
 	}
@@ -1176,7 +1074,7 @@ func file_taucorder_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_taucorder_v1_auth_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   5,
 		},

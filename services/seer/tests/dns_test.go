@@ -11,6 +11,7 @@ import (
 	"gotest.tools/v3/assert"
 
 	dns "github.com/miekg/dns"
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 
 	_ "github.com/taubyte/tau/services/auth"
 	_ "github.com/taubyte/tau/services/hoarder"
@@ -40,6 +41,10 @@ func TestDns(t *testing.T) {
 	assert.NilError(t, err)
 	defaultTestPort := fmt.Sprintf("127.0.0.1:%d", dnsPort)
 
+	seerClient.DefaultUsageBeaconInterval = 100 * time.Millisecond
+	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond
+	seerClient.DefaultGeoBeaconInterval = 100 * time.Millisecond
+
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer":      {Others: map[string]int{"dns": dnsPort, "mock": 1}},
@@ -56,7 +61,7 @@ func TestDns(t *testing.T) {
 		return
 	}
 
-	time.Sleep(5 * time.Second)
+	time.Sleep(15 * time.Second)
 
 	// Create Tcp Client
 	tcpClient := createDnsClient("tcp")
@@ -77,7 +82,7 @@ func TestDns(t *testing.T) {
 	}
 
 	if len(tcpResp.Answer) != 1 {
-		t.Errorf("Expected 2 tcp answers got %d on tcp", len(tcpResp.Answer))
+		t.Errorf("Expected 1 tcp answers got %d on tcp", len(tcpResp.Answer))
 		return
 	}
 

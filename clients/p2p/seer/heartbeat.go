@@ -73,12 +73,12 @@ func (u *Usage) ListServiceId(name string) ([]string, error) {
 	resp, err := u.client.Send("heartbeat", command.Body{"action": "listService", "name": name})
 	if err != nil {
 		logger.Error(fmt.Sprintf("List Specific for %s failed with: %s", name, err.Error()))
-		return nil, fmt.Errorf("calling heartbeat listService send failed with: %s", err)
+		return nil, fmt.Errorf("calling heartbeat listService send failed with: %w", err)
 	}
 
-	ret, ok := resp["ids"].([]string)
-	if !ok {
-		return nil, fmt.Errorf("calling heartbeat listService for `%s` returned wrong data type", name)
+	ret, err := maps.StringArray(resp, "ids")
+	if err != nil {
+		return nil, fmt.Errorf("calling heartbeat listService failed with: %w", err)
 	}
 
 	return ret, nil

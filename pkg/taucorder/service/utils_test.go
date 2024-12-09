@@ -19,6 +19,14 @@ import (
 	"gotest.tools/v3/assert"
 )
 
+var (
+	testProjectId  = "QmegMKBQmDTU9FUGKdhPFn1ZEtwcNaCA2wmyLW8vJn7wZN"
+	testFunctionId = "QmZY4u91d1YALDN2LTbpVtgwW8iT5cK9PE1bHZqX9J51Tv"
+	testLibraryId  = "QmP6qBNyoLeMLiwk8uYZ8xoT4CnDspYntcY4oCkpVG1byt"
+	testWebsiteId  = "QmcrzjxwbqERscawQcXW4e5jyNBNoxLsUYatn63E8XPQq2"
+	testDomainId   = "QmNxpVc6DnbR3MKuvb3xw8Jzb8pfJTSRWJEdBMsb8AXFEX"
+)
+
 func init() {
 	dreamApi.BigBang()
 }

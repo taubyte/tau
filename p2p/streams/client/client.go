@@ -251,10 +251,10 @@ func (c *Client) close() {
 		close(pr.ch)
 	}
 
-	c.requestsWg.Wait()
-
 	close(c.peerRequests)
 	close(c.cleanPeers)
+
+	c.requestsWg.Wait()
 }
 
 func (c *Client) cleanPeer(peer peerCore.ID) {

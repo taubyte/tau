@@ -43,6 +43,7 @@ func Serve(ctx context.Context, resolver ConfigResolver) (*Service, error) {
 	s.addHandler(pbconnect.NewSeerServiceHandler(&seerService{Service: s}))
 	s.addHandler(pbconnect.NewHoarderServiceHandler(&hoarderService{Service: s}))
 	s.addHandler(pbconnect.NewTNSServiceHandler(&tnsService{Service: s}))
+	s.addHandler(pbconnect.NewPatrickServiceHandler(&patrickService{Service: s}))
 
 	return s, nil
 }

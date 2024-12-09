@@ -15,15 +15,13 @@ import (
 	_ "github.com/taubyte/tau/services/substrate"
 	_ "github.com/taubyte/tau/services/tns"
 
-	seer "github.com/taubyte/tau/clients/p2p/seer"
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 )
 
 func TestCalls(t *testing.T) {
-	defaultInterval := seer.DefaultUsageBeaconInterval
-	seer.DefaultUsageBeaconInterval = time.Millisecond * 100
-	defer func() {
-		seer.DefaultUsageBeaconInterval = defaultInterval
-	}()
+	seerClient.DefaultUsageBeaconInterval = 100 * time.Millisecond
+	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond
+	seerClient.DefaultGeoBeaconInterval = 100 * time.Millisecond
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()

@@ -14,13 +14,6 @@ message Project {
     ProjectRepos repositories = 4;
 }
 
-message RepositoryId {
-    oneof id {
-        int64 github = 1;
-        string bitbucket = 2;
-    }
-}
-
 message ProjectRepo {
     RepositoryId id = 1;
     string project_id = 2;

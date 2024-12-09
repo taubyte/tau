@@ -5,7 +5,7 @@
 
 import type { BinaryReadOptions, FieldList, JsonReadOptions, JsonValue, PartialMessage, PlainMessage } from "@bufbuild/protobuf";
 import { Message, proto3, protoInt64 } from "@bufbuild/protobuf";
-import { Node } from "./common_pb.js";
+import { Node, RepositoryId } from "./common_pb.js";
 
 /**
  * Data Structures
@@ -61,56 +61,6 @@ export class Project extends Message<Project> {
 
   static equals(a: Project | PlainMessage<Project> | undefined, b: Project | PlainMessage<Project> | undefined): boolean {
     return proto3.util.equals(Project, a, b);
-  }
-}
-
-/**
- * @generated from message taucorder.v1.RepositoryId
- */
-export class RepositoryId extends Message<RepositoryId> {
-  /**
-   * @generated from oneof taucorder.v1.RepositoryId.id
-   */
-  id: {
-    /**
-     * @generated from field: int64 github = 1;
-     */
-    value: bigint;
-    case: "github";
-  } | {
-    /**
-     * @generated from field: string bitbucket = 2;
-     */
-    value: string;
-    case: "bitbucket";
-  } | { case: undefined; value?: undefined } = { case: undefined };
-
-  constructor(data?: PartialMessage<RepositoryId>) {
-    super();
-    proto3.util.initPartial(data, this);
-  }
-
-  static readonly runtime: typeof proto3 = proto3;
-  static readonly typeName = "taucorder.v1.RepositoryId";
-  static readonly fields: FieldList = proto3.util.newFieldList(() => [
-    { no: 1, name: "github", kind: "scalar", T: 3 /* ScalarType.INT64 */, oneof: "id" },
-    { no: 2, name: "bitbucket", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "id" },
-  ]);
-
-  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): RepositoryId {
-    return new RepositoryId().fromBinary(bytes, options);
-  }
-
-  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): RepositoryId {
-    return new RepositoryId().fromJson(jsonValue, options);
-  }
-
-  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): RepositoryId {
-    return new RepositoryId().fromJsonString(jsonString, options);
-  }
-
-  static equals(a: RepositoryId | PlainMessage<RepositoryId> | undefined, b: RepositoryId | PlainMessage<RepositoryId> | undefined): boolean {
-    return proto3.util.equals(RepositoryId, a, b);
   }
 }
 

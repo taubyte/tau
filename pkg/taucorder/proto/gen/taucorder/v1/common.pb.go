@@ -58,6 +58,87 @@ func (*Empty) Descriptor() ([]byte, []int) {
 	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{0}
 }
 
+type RepositoryId struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+
+	// Types that are assignable to Id:
+	//
+	//	*RepositoryId_Github
+	//	*RepositoryId_Bitbucket
+	Id isRepositoryId_Id `protobuf_oneof:"id"`
+}
+
+func (x *RepositoryId) Reset() {
+	*x = RepositoryId{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_taucorder_v1_common_proto_msgTypes[1]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *RepositoryId) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RepositoryId) ProtoMessage() {}
+
+func (x *RepositoryId) ProtoReflect() protoreflect.Message {
+	mi := &file_taucorder_v1_common_proto_msgTypes[1]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RepositoryId.ProtoReflect.Descriptor instead.
+func (*RepositoryId) Descriptor() ([]byte, []int) {
+	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{1}
+}
+
+func (m *RepositoryId) GetId() isRepositoryId_Id {
+	if m != nil {
+		return m.Id
+	}
+	return nil
+}
+
+func (x *RepositoryId) GetGithub() int64 {
+	if x, ok := x.GetId().(*RepositoryId_Github); ok {
+		return x.Github
+	}
+	return 0
+}
+
+func (x *RepositoryId) GetBitbucket() string {
+	if x, ok := x.GetId().(*RepositoryId_Bitbucket); ok {
+		return x.Bitbucket
+	}
+	return ""
+}
+
+type isRepositoryId_Id interface {
+	isRepositoryId_Id()
+}
+
+type RepositoryId_Github struct {
+	Github int64 `protobuf:"varint,1,opt,name=github,proto3,oneof"`
+}
+
+type RepositoryId_Bitbucket struct {
+	Bitbucket string `protobuf:"bytes,2,opt,name=bitbucket,proto3,oneof"`
+}
+
+func (*RepositoryId_Github) isRepositoryId_Id() {}
+
+func (*RepositoryId_Bitbucket) isRepositoryId_Id() {}
+
 type Node struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
@@ -69,7 +150,7 @@ type Node struct {
 func (x *Node) Reset() {
 	*x = Node{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_common_proto_msgTypes[1]
+		mi := &file_taucorder_v1_common_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -82,7 +163,7 @@ func (x *Node) String() string {
 func (*Node) ProtoMessage() {}
 
 func (x *Node) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_common_proto_msgTypes[1]
+	mi := &file_taucorder_v1_common_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -95,7 +176,7 @@ func (x *Node) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Node.ProtoReflect.Descriptor instead.
 func (*Node) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{1}
+	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *Node) GetId() string {
@@ -116,7 +197,7 @@ type Addresses struct {
 func (x *Addresses) Reset() {
 	*x = Addresses{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_common_proto_msgTypes[2]
+		mi := &file_taucorder_v1_common_proto_msgTypes[3]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -129,7 +210,7 @@ func (x *Addresses) String() string {
 func (*Addresses) ProtoMessage() {}
 
 func (x *Addresses) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_common_proto_msgTypes[2]
+	mi := &file_taucorder_v1_common_proto_msgTypes[3]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -142,7 +223,7 @@ func (x *Addresses) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Addresses.ProtoReflect.Descriptor instead.
 func (*Addresses) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{2}
+	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Addresses) GetMultiaddr() []string {
@@ -166,7 +247,7 @@ type PingStatus struct {
 func (x *PingStatus) Reset() {
 	*x = PingStatus{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_common_proto_msgTypes[3]
+		mi := &file_taucorder_v1_common_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -179,7 +260,7 @@ func (x *PingStatus) String() string {
 func (*PingStatus) ProtoMessage() {}
 
 func (x *PingStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_common_proto_msgTypes[3]
+	mi := &file_taucorder_v1_common_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -192,7 +273,7 @@ func (x *PingStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PingStatus.ProtoReflect.Descriptor instead.
 func (*PingStatus) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{3}
+	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *PingStatus) GetUp() bool {
@@ -236,7 +317,7 @@ type Peer struct {
 func (x *Peer) Reset() {
 	*x = Peer{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_common_proto_msgTypes[4]
+		mi := &file_taucorder_v1_common_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -249,7 +330,7 @@ func (x *Peer) String() string {
 func (*Peer) ProtoMessage() {}
 
 func (x *Peer) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_common_proto_msgTypes[4]
+	mi := &file_taucorder_v1_common_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -262,7 +343,7 @@ func (x *Peer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Peer.ProtoReflect.Descriptor instead.
 func (*Peer) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{4}
+	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *Peer) GetId() string {
@@ -297,7 +378,7 @@ type Peers struct {
 func (x *Peers) Reset() {
 	*x = Peers{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_common_proto_msgTypes[5]
+		mi := &file_taucorder_v1_common_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -310,7 +391,7 @@ func (x *Peers) String() string {
 func (*Peers) ProtoMessage() {}
 
 func (x *Peers) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_common_proto_msgTypes[5]
+	mi := &file_taucorder_v1_common_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -323,7 +404,7 @@ func (x *Peers) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Peers.ProtoReflect.Descriptor instead.
 func (*Peers) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{5}
+	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Peers) GetPids() []string {
@@ -346,7 +427,7 @@ type DiscoverServiceRequest struct {
 func (x *DiscoverServiceRequest) Reset() {
 	*x = DiscoverServiceRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_common_proto_msgTypes[6]
+		mi := &file_taucorder_v1_common_proto_msgTypes[7]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -359,7 +440,7 @@ func (x *DiscoverServiceRequest) String() string {
 func (*DiscoverServiceRequest) ProtoMessage() {}
 
 func (x *DiscoverServiceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_common_proto_msgTypes[6]
+	mi := &file_taucorder_v1_common_proto_msgTypes[7]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -372,7 +453,7 @@ func (x *DiscoverServiceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscoverServiceRequest.ProtoReflect.Descriptor instead.
 func (*DiscoverServiceRequest) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{6}
+	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *DiscoverServiceRequest) GetNode() *Node {
@@ -408,7 +489,7 @@ type ConsensusStateRequest struct {
 func (x *ConsensusStateRequest) Reset() {
 	*x = ConsensusStateRequest{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_common_proto_msgTypes[7]
+		mi := &file_taucorder_v1_common_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -421,7 +502,7 @@ func (x *ConsensusStateRequest) String() string {
 func (*ConsensusStateRequest) ProtoMessage() {}
 
 func (x *ConsensusStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_common_proto_msgTypes[7]
+	mi := &file_taucorder_v1_common_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -434,7 +515,7 @@ func (x *ConsensusStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsensusStateRequest.ProtoReflect.Descriptor instead.
 func (*ConsensusStateRequest) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{7}
+	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ConsensusStateRequest) GetNode() *Node {
@@ -462,7 +543,7 @@ type CRDTState struct {
 func (x *CRDTState) Reset() {
 	*x = CRDTState{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_common_proto_msgTypes[8]
+		mi := &file_taucorder_v1_common_proto_msgTypes[9]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -475,7 +556,7 @@ func (x *CRDTState) String() string {
 func (*CRDTState) ProtoMessage() {}
 
 func (x *CRDTState) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_common_proto_msgTypes[8]
+	mi := &file_taucorder_v1_common_proto_msgTypes[9]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -488,7 +569,7 @@ func (x *CRDTState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CRDTState.ProtoReflect.Descriptor instead.
 func (*CRDTState) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{8}
+	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CRDTState) GetHeads() []string {
@@ -513,7 +594,7 @@ type ConsensusState struct {
 func (x *ConsensusState) Reset() {
 	*x = ConsensusState{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_taucorder_v1_common_proto_msgTypes[9]
+		mi := &file_taucorder_v1_common_proto_msgTypes[10]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -526,7 +607,7 @@ func (x *ConsensusState) String() string {
 func (*ConsensusState) ProtoMessage() {}
 
 func (x *ConsensusState) ProtoReflect() protoreflect.Message {
-	mi := &file_taucorder_v1_common_proto_msgTypes[9]
+	mi := &file_taucorder_v1_common_proto_msgTypes[10]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -539,7 +620,7 @@ func (x *ConsensusState) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConsensusState.ProtoReflect.Descriptor instead.
 func (*ConsensusState) Descriptor() ([]byte, []int) {
-	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{9}
+	return file_taucorder_v1_common_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ConsensusState) GetMember() *Peer {
@@ -579,7 +660,12 @@ var file_taucorder_v1_common_proto_rawDesc = []byte{
 	0x0a, 0x19, 0x74, 0x61, 0x75, 0x63, 0x6f, 0x72, 0x64, 0x65, 0x72, 0x2f, 0x76, 0x31, 0x2f, 0x63,
 	0x6f, 0x6d, 0x6d, 0x6f, 0x6e, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x12, 0x0c, 0x74, 0x61, 0x75,
 	0x63, 0x6f, 0x72, 0x64, 0x65, 0x72, 0x2e, 0x76, 0x31, 0x22, 0x07, 0x0a, 0x05, 0x45, 0x6d, 0x70,
-	0x74, 0x79, 0x22, 0x16, 0x0a, 0x04, 0x4e, 0x6f, 0x64, 0x65, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64,
+	0x74, 0x79, 0x22, 0x4e, 0x0a, 0x0c, 0x52, 0x65, 0x70, 0x6f, 0x73, 0x69, 0x74, 0x6f, 0x72, 0x79,
+	0x49, 0x64, 0x12, 0x18, 0x0a, 0x06, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x18, 0x01, 0x20, 0x01,
+	0x28, 0x03, 0x48, 0x00, 0x52, 0x06, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x12, 0x1e, 0x0a, 0x09,
+	0x62, 0x69, 0x74, 0x62, 0x75, 0x63, 0x6b, 0x65, 0x74, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x48,
+	0x00, 0x52, 0x09, 0x62, 0x69, 0x74, 0x62, 0x75, 0x63, 0x6b, 0x65, 0x74, 0x42, 0x04, 0x0a, 0x02,
+	0x69, 0x64, 0x22, 0x16, 0x0a, 0x04, 0x4e, 0x6f, 0x64, 0x65, 0x12, 0x0e, 0x0a, 0x02, 0x69, 0x64,
 	0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x02, 0x69, 0x64, 0x22, 0x29, 0x0a, 0x09, 0x41, 0x64,
 	0x64, 0x72, 0x65, 0x73, 0x73, 0x65, 0x73, 0x12, 0x1c, 0x0a, 0x09, 0x6d, 0x75, 0x6c, 0x74, 0x69,
 	0x61, 0x64, 0x64, 0x72, 0x18, 0x01, 0x20, 0x03, 0x28, 0x09, 0x52, 0x09, 0x6d, 0x75, 0x6c, 0x74,
@@ -648,25 +734,26 @@ func file_taucorder_v1_common_proto_rawDescGZIP() []byte {
 	return file_taucorder_v1_common_proto_rawDescData
 }
 
-var file_taucorder_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
+var file_taucorder_v1_common_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_taucorder_v1_common_proto_goTypes = []any{
 	(*Empty)(nil),                  // 0: taucorder.v1.Empty
-	(*Node)(nil),                   // 1: taucorder.v1.Node
-	(*Addresses)(nil),              // 2: taucorder.v1.Addresses
-	(*PingStatus)(nil),             // 3: taucorder.v1.PingStatus
-	(*Peer)(nil),                   // 4: taucorder.v1.Peer
-	(*Peers)(nil),                  // 5: taucorder.v1.Peers
-	(*DiscoverServiceRequest)(nil), // 6: taucorder.v1.DiscoverServiceRequest
-	(*ConsensusStateRequest)(nil),  // 7: taucorder.v1.ConsensusStateRequest
-	(*CRDTState)(nil),              // 8: taucorder.v1.CRDTState
-	(*ConsensusState)(nil),         // 9: taucorder.v1.ConsensusState
+	(*RepositoryId)(nil),           // 1: taucorder.v1.RepositoryId
+	(*Node)(nil),                   // 2: taucorder.v1.Node
+	(*Addresses)(nil),              // 3: taucorder.v1.Addresses
+	(*PingStatus)(nil),             // 4: taucorder.v1.PingStatus
+	(*Peer)(nil),                   // 5: taucorder.v1.Peer
+	(*Peers)(nil),                  // 6: taucorder.v1.Peers
+	(*DiscoverServiceRequest)(nil), // 7: taucorder.v1.DiscoverServiceRequest
+	(*ConsensusStateRequest)(nil),  // 8: taucorder.v1.ConsensusStateRequest
+	(*CRDTState)(nil),              // 9: taucorder.v1.CRDTState
+	(*ConsensusState)(nil),         // 10: taucorder.v1.ConsensusState
 }
 var file_taucorder_v1_common_proto_depIdxs = []int32{
-	3, // 0: taucorder.v1.Peer.ping_status:type_name -> taucorder.v1.PingStatus
-	1, // 1: taucorder.v1.DiscoverServiceRequest.node:type_name -> taucorder.v1.Node
-	1, // 2: taucorder.v1.ConsensusStateRequest.node:type_name -> taucorder.v1.Node
-	4, // 3: taucorder.v1.ConsensusState.member:type_name -> taucorder.v1.Peer
-	8, // 4: taucorder.v1.ConsensusState.crdt:type_name -> taucorder.v1.CRDTState
+	4, // 0: taucorder.v1.Peer.ping_status:type_name -> taucorder.v1.PingStatus
+	2, // 1: taucorder.v1.DiscoverServiceRequest.node:type_name -> taucorder.v1.Node
+	2, // 2: taucorder.v1.ConsensusStateRequest.node:type_name -> taucorder.v1.Node
+	5, // 3: taucorder.v1.ConsensusState.member:type_name -> taucorder.v1.Peer
+	9, // 4: taucorder.v1.ConsensusState.crdt:type_name -> taucorder.v1.CRDTState
 	5, // [5:5] is the sub-list for method output_type
 	5, // [5:5] is the sub-list for method input_type
 	5, // [5:5] is the sub-list for extension type_name
@@ -693,7 +780,7 @@ func file_taucorder_v1_common_proto_init() {
 			}
 		}
 		file_taucorder_v1_common_proto_msgTypes[1].Exporter = func(v any, i int) any {
-			switch v := v.(*Node); i {
+			switch v := v.(*RepositoryId); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -705,7 +792,7 @@ func file_taucorder_v1_common_proto_init() {
 			}
 		}
 		file_taucorder_v1_common_proto_msgTypes[2].Exporter = func(v any, i int) any {
-			switch v := v.(*Addresses); i {
+			switch v := v.(*Node); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -717,7 +804,7 @@ func file_taucorder_v1_common_proto_init() {
 			}
 		}
 		file_taucorder_v1_common_proto_msgTypes[3].Exporter = func(v any, i int) any {
-			switch v := v.(*PingStatus); i {
+			switch v := v.(*Addresses); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -729,7 +816,7 @@ func file_taucorder_v1_common_proto_init() {
 			}
 		}
 		file_taucorder_v1_common_proto_msgTypes[4].Exporter = func(v any, i int) any {
-			switch v := v.(*Peer); i {
+			switch v := v.(*PingStatus); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -741,7 +828,7 @@ func file_taucorder_v1_common_proto_init() {
 			}
 		}
 		file_taucorder_v1_common_proto_msgTypes[5].Exporter = func(v any, i int) any {
-			switch v := v.(*Peers); i {
+			switch v := v.(*Peer); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -753,7 +840,7 @@ func file_taucorder_v1_common_proto_init() {
 			}
 		}
 		file_taucorder_v1_common_proto_msgTypes[6].Exporter = func(v any, i int) any {
-			switch v := v.(*DiscoverServiceRequest); i {
+			switch v := v.(*Peers); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -765,7 +852,7 @@ func file_taucorder_v1_common_proto_init() {
 			}
 		}
 		file_taucorder_v1_common_proto_msgTypes[7].Exporter = func(v any, i int) any {
-			switch v := v.(*ConsensusStateRequest); i {
+			switch v := v.(*DiscoverServiceRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -777,7 +864,7 @@ func file_taucorder_v1_common_proto_init() {
 			}
 		}
 		file_taucorder_v1_common_proto_msgTypes[8].Exporter = func(v any, i int) any {
-			switch v := v.(*CRDTState); i {
+			switch v := v.(*ConsensusStateRequest); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -789,6 +876,18 @@ func file_taucorder_v1_common_proto_init() {
 			}
 		}
 		file_taucorder_v1_common_proto_msgTypes[9].Exporter = func(v any, i int) any {
+			switch v := v.(*CRDTState); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_taucorder_v1_common_proto_msgTypes[10].Exporter = func(v any, i int) any {
 			switch v := v.(*ConsensusState); i {
 			case 0:
 				return &v.state
@@ -801,7 +900,11 @@ func file_taucorder_v1_common_proto_init() {
 			}
 		}
 	}
-	file_taucorder_v1_common_proto_msgTypes[9].OneofWrappers = []any{
+	file_taucorder_v1_common_proto_msgTypes[1].OneofWrappers = []any{
+		(*RepositoryId_Github)(nil),
+		(*RepositoryId_Bitbucket)(nil),
+	}
+	file_taucorder_v1_common_proto_msgTypes[10].OneofWrappers = []any{
 		(*ConsensusState_Crdt)(nil),
 	}
 	type x struct{}
@@ -810,7 +913,7 @@ func file_taucorder_v1_common_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_taucorder_v1_common_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   10,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

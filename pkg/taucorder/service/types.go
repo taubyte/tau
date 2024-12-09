@@ -68,6 +68,11 @@ type tnsService struct {
 	*Service
 }
 
+type patrickService struct {
+	pbconnect.UnimplementedPatrickServiceHandler
+	*Service
+}
+
 type instance struct {
 	ctx  context.Context
 	ctxC context.CancelFunc

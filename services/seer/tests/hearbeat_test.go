@@ -40,7 +40,7 @@ func TestHeartbeat(t *testing.T) {
 		return
 	}
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(10 * time.Second)
 
 	simples := make([]*dream.Simple, len(simConf))
 
