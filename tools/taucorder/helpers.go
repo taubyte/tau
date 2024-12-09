@@ -31,7 +31,7 @@ var (
 )
 
 func formatSwarmKey(key []byte) (pnet.PSK, error) {
-	_key := strings.Split(string(key), "/")
+	_key := strings.Split(strings.ReplaceAll(string(key), "\n", ""), "/")
 	_key = deleteEmpty(_key)
 
 	if len(_key) != expectedKeyLength {

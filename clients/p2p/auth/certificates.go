@@ -31,18 +31,32 @@ func (c *Client) InjectKey(domain string, data []byte) error {
 	return nil
 }
 
-// Getting from /acme
-func (c *Client) GetCertificate(domain string) ([]byte, error) {
+func (c *Client) GetRawCertificate(domain string) ([]byte, error) {
 	resp, err := c.client.Send("acme", command.Body{"action": "get", "fqdn": domain}, c.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("failed get certificate for %s with %v", domain, err)
 	}
 
-	return maps.ByteArray(resp, "certificate")
+	certData, err := maps.ByteArray(resp, "certificate")
+	if err != nil {
+		return nil, fmt.Errorf("failed finding certificate with %v", err)
+	}
+
+	return certData, nil
+}
+
+// Getting from /acme
+func (c *Client) GetCertificate(domain string) (*tls.Certificate, error) {
+	certData, err := c.GetRawCertificate(domain)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeX509(certData)
 }
 
 // Getting from /static
-func (c *Client) GetStaticCertificate(domain string) (*tls.Certificate, error) {
+func (c *Client) GetRawStaticCertificate(domain string) ([]byte, error) {
 	var err error
 	if !strings.Contains(strings.Trim(domain, "."), ".") {
 		return nil, errors.New("acme/autocert: server name component count invalid")
@@ -58,7 +72,20 @@ func (c *Client) GetStaticCertificate(domain string) (*tls.Certificate, error) {
 		return nil, fmt.Errorf("failed finding certificate with %v", err)
 	}
 
-	cert := &tls.Certificate{}
+	return certData, nil
+}
+
+func (c *Client) GetStaticCertificate(domain string) (*tls.Certificate, error) {
+	certData, err := c.GetRawStaticCertificate(domain)
+	if err != nil {
+		return nil, err
+	}
+
+	return decodeX509(certData)
+}
+
+func decodeX509(certData []byte) (cert *tls.Certificate, err error) {
+	cert = &tls.Certificate{}
 	for {
 		block, rest := pem.Decode(certData)
 		if block == nil {
@@ -77,6 +104,5 @@ func (c *Client) GetStaticCertificate(domain string) (*tls.Certificate, error) {
 		}
 		certData = rest
 	}
-
-	return cert, nil
+	return
 }

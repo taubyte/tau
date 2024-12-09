@@ -201,12 +201,12 @@ var FixtureMap = map[string]FixtureDefinition{
 	},
 	"fakeProject": {
 		Description: "Pushes the internal project to tns",
-		ImportRef:   "tau/dream/common/fixtures",
+		ImportRef:   "tau/dream/fixtures",
 		Internal:    true,
 	},
 	"injectProject": {
 		Description: "Pass in a *projectSchema.Project to inject it into tns",
-		ImportRef:   "tau/dream/common/fixtures",
+		ImportRef:   "tau/dream/fixtures",
 		BlockCLI:    true,
 		Internal:    true,
 	},

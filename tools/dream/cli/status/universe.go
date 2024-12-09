@@ -23,7 +23,7 @@ func universe(multiverse *client.Client) *cli.Command {
 
 func universeStatus(multiverse *client.Client) cli.ActionFunc {
 	return func(c *cli.Context) (err error) {
-		chart, err := multiverse.Universe(c.String("name")).Status()
+		chart, err := multiverse.Universe(c.String("name")).Chart()
 		if err != nil {
 			return
 		}

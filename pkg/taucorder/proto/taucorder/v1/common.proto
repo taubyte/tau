@@ -1,0 +1,96 @@
+syntax = "proto3";
+
+package taucorder.v1;
+
+option go_package = ".";
+
+message Empty {}
+
+message RepositoryId {
+    oneof id {
+        int64 github = 1;
+        string bitbucket = 2;
+    }
+}
+
+message Node {
+    string id = 1;
+}
+
+message Addresses {
+    repeated string multiaddr = 1;
+}
+
+message PingStatus {
+    bool up = 1;
+    int32 count = 2;
+    int32 count_total = 3;
+    int64 latency = 4;
+}
+
+message Peer {
+    string id = 1;
+    repeated string addresses = 2;
+    PingStatus ping_status = 3;  // did it respond to ping
+}
+
+message Peers {
+    repeated string pids = 1;
+}
+
+message DiscoverServiceRequest {
+    Node node = 1;
+    int64 timeout = 2;
+    int64 count = 3;  // max count
+}
+
+message ConsensusStateRequest {
+    Node node = 1;
+    string pid = 2;
+}
+
+message CRDTState {
+    repeated string heads = 1;  // cids
+}
+
+message ConsensusState {
+    Peer member = 1;
+    oneof consensus {
+        CRDTState crdt = 2;
+    }
+}
+
+message Job {
+    string id = 1;
+    int64 timestamp = 2;
+    int32 status = 3;
+    repeated JobLog logs = 4;
+    JobMeta meta = 5;
+    repeated JobAsset assets = 6;
+    int32 attempt = 7;
+    int64 delay = 8;
+}
+
+message JobLog {
+    int64 timestamp=1;
+    string cid=2;
+}
+
+message JobMeta {
+    string ref=1;
+    string before=2;
+    string after=3;
+    string head_commit=4;
+    JobRepository repository=5;
+}
+
+message JobRepository {
+    RepositoryId id=1;
+    string ssh_url=2;
+    string branch=3;
+}
+
+message JobAsset {
+    string ressource_id=1;
+    string cid=2;
+}

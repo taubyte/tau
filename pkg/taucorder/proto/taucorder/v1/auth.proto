@@ -1,0 +1,100 @@
+syntax = "proto3";
+
+package taucorder.v1;
+
+option go_package = ".";
+
+import "taucorder/v1/common.proto";
+
+// Data Structures
+message Project {
+    string id = 1;
+    string name = 2;
+    string provider = 3;
+    ProjectRepos repositories = 4;
+}
+
+message ProjectRepo {
+    RepositoryId id = 1;
+    string project_id = 2;
+    string deploy_key_private = 3;
+}
+
+message ProjectRepos {
+    ProjectRepo config = 1;
+    ProjectRepo code = 2;
+}
+
+message ByProjectRequest {
+    Node node = 1;
+    string id = 2;
+}
+
+message ByRepositoryRequest {
+    Node node = 1;
+    RepositoryId id = 2;
+}
+
+message ByHookRequest {
+    Node node = 1;
+    string id = 2;
+}
+
+message GithubHook {
+    string id = 1;
+    int64 repository_id = 2;
+    string secret = 3;
+}
+
+message BitbucketHook {
+    string id = 1;
+}
+
+message Hook {
+    string id = 1;
+    oneof provider {
+        GithubHook github = 2;
+        BitbucketHook bitbucket = 3;
+    }
+}
+
+message X509Certificate {
+    bytes data = 1;
+    bool acme = 2;
+}
+
+message X509CertificateRequest {
+    Node node = 1;
+    string domain = 2;
+    bytes data = 3;
+}
+
+// Service
+service AuthService {
+    rpc List(Node) returns (stream Peer);
+    rpc Discover(DiscoverServiceRequest) returns (stream Peer);
+    rpc State(ConsensusStateRequest) returns (ConsensusState);
+    rpc States(Node) returns (stream ConsensusState);
+}
+
+service ProjectsInAuthService {
+    rpc List(Node) returns (stream Project);
+    rpc Get(ByProjectRequest) returns (Project);
+}
+
+service RepositoriesInAuthService {
+    rpc List(Node) returns (stream ProjectRepo);
+    rpc Get(ByRepositoryRequest) returns (ProjectRepo);
+}
+
+service GitHooksInAuthService {
+    rpc List(Node) returns (stream Hook);
+    rpc Get(ByHookRequest) returns (Hook);
+}
+
+service X509InAuthService {
+    rpc List(Node) returns (stream X509Certificate);
+    rpc Get(X509CertificateRequest) returns (X509Certificate);
+    rpc Set(X509CertificateRequest) returns (Empty);
+    rpc Delete(X509CertificateRequest) returns (Empty);
+}

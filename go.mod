@@ -41,7 +41,7 @@ require (
 	github.com/taubyte/go-seer v1.0.8
 	github.com/taubyte/go-simple-container v0.4.5
 	github.com/taubyte/go-simple-git v0.2.5 // indirect
-	github.com/taubyte/http v0.10.5
+	github.com/taubyte/http v0.11.0
 	github.com/taubyte/utils v0.1.7
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/zap v1.27.0

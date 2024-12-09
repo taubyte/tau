@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -20,7 +21,7 @@ func pingCMD(p Prompt, args []string) error {
 		return fmt.Errorf("peer id `%s` is invalid", pid)
 	}
 
-	count, time, err := prompt.Node().Ping(pid, 3)
+	count, time, err := prompt.Node().Ping(context.TODO(), pid, 3)
 
 	t := table.NewWriter()
 	t.SetStyle(table.StyleLight)

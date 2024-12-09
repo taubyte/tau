@@ -169,9 +169,8 @@ func SetupLibp2p(
 		libp2p.PrivateNetwork(secret),
 		libp2p.Routing(func(h host.Host) (routing.PeerRouting, error) {
 			extraopts := make([]dual.Option, 0)
-			bpeer := bootstrapPeerFunc()
-			if len(bpeer) != 0 {
-				extraopts = append(extraopts, dual.WanDHTOption(dht.BootstrapPeers(bpeer...)))
+			if bootstrapPeerFunc != nil {
+				extraopts = append(extraopts, dual.WanDHTOption(dht.BootstrapPeersFunc(bootstrapPeerFunc)))
 			}
 			idht, err = newDHT(ctx, h, ds, extraopts...)
 			return idht, err

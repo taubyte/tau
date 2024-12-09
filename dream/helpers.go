@@ -26,7 +26,7 @@ func lastPortShift() int {
 	lastUniversePortShiftLock.Lock()
 	defer lastUniversePortShiftLock.Unlock()
 	for {
-		lastUniversePortShift += int(mrand.NewSource(time.Now().UnixNano()).Int63()%int64(maxUniverses)) * portsPerUniverse
+		lastUniversePortShift += (int(mrand.NewSource(time.Now().UnixNano()).Int63()%int64(maxUniverses)) * portsPerUniverse) % 6000
 		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", DefaultHost, lastUniversePortShift))
 		if err == nil {
 			l.Close()

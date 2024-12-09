@@ -10,12 +10,14 @@ import (
 
 type Client interface {
 	InjectStaticCertificate(domain string, data []byte) error
-	GetCertificate(domain string) ([]byte, error)
+	GetCertificate(domain string) (*tls.Certificate, error)
 	GetStaticCertificate(domain string) (*tls.Certificate, error)
+	GetRawCertificate(domain string) ([]byte, error)
+	GetRawStaticCertificate(domain string) ([]byte, error)
 	Hooks() Hooks
 	Projects() Projects
 	Repositories() Repositories
-	Stats() Stats
+	Stats() Stats // TODO: rename State
 	Peers(...peerCore.ID) Client
 	Close()
 }

@@ -46,7 +46,7 @@ func TestPingPeer(t *testing.T) {
 		t.Errorf("Ping test returned error `%s`", err.Error())
 	}
 
-	_, _, err = p1.Ping(p2.ID().String(), 1)
+	_, _, err = p1.Ping(ctx, p2.ID().String(), 1)
 	if err != nil {
 		t.Errorf("Ping test returned error `%s`", err.Error())
 	}

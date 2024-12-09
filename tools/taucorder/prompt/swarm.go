@@ -1,6 +1,7 @@
 package prompt
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -67,7 +68,7 @@ func swarmHealth(p Prompt, args []string) error {
 		wg.Add(1)
 		go func(_pid peer.ID) {
 			peerInfo := prompt.Node().Peer().Peerstore().PeerInfo(_pid)
-			count, time, err := prompt.Node().Ping(_pid.String(), 3)
+			count, time, err := prompt.Node().Ping(context.TODO(), _pid.String(), 3)
 			pid := _pid.String()
 			addr := peerInfo.Addrs[0].String()
 			lock.Lock()

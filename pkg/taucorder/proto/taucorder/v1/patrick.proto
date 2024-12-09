@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+package taucorder.v1;
+
+option go_package = ".";
+
+import "taucorder/v1/common.proto";
+
+// Data Structures
+message GetJobRequest {
+    Node node = 1;
+    string id = 2;
+}
+
+// Service
+service PatrickService {
+    rpc List(Node) returns (stream Job);
+    rpc Get(GetJobRequest) returns (Job);
+    rpc State(ConsensusStateRequest) returns (ConsensusState);
+    rpc States(Node) returns (stream ConsensusState);
+}

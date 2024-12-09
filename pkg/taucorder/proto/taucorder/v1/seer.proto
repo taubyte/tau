@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package taucorder.v1;
+
+option go_package = ".";
+
+import "taucorder/v1/common.proto";
+
+// Data Structures
+message NodesListRequest {
+    Node node = 1;
+    string service = 2;
+}
+
+message NodesUsageRequest {
+    Node node = 1;
+    string peer = 2;
+}
+
+message LocationArea {
+    Location location = 1;
+    float distance = 2;
+}
+
+message Location {
+    float latitude = 1;
+    float longitude = 2;
+}
+
+message PeerLocation {
+    Peer peer = 1;
+    Location location = 2;
+}
+
+message LocationRequest {
+    Node node = 1;
+    oneof filter {
+        bool all = 2;
+        LocationArea area = 3;
+        Peers peers = 4;
+    }
+}
+
+message PeerUsage {
+    Peer peer = 1;
+    string name = 2;
+    repeated string types = 3;
+    string address = 4;
+    int64 timestamp = 5;
+    int64 used_mem = 6;
+    int64 total_mem = 7;
+    int64 free_mem = 8;
+    int64 total_cpu = 9;
+    int64 cpu_count = 10;
+    int64 cpu_user = 11;
+    int64 cpu_nice = 12;
+    int64 cpu_system = 13;
+    int64 cpu_idle = 14;
+    int64 cpu_iowait = 15;
+    int64 cpu_irq = 16;
+    int64 cpu_softirq = 17;
+    int64 cpu_steal = 18;
+    int64 cpu_guest = 19;
+    int64 cpu_guest_nice = 20;
+    int64 cpu_stat_count = 21;
+    int64 total_disk = 22;
+    int64 free_disk = 23;
+    int64 used_disk = 24;
+    int64 available_disk = 25;
+}
+
+// Service
+service SeerService {
+    rpc List(NodesListRequest) returns (stream Peer);
+    rpc Usage(NodesUsageRequest) returns (PeerUsage);
+    rpc Location(LocationRequest) returns (stream PeerLocation);
+}

@@ -2,6 +2,7 @@ package mock
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 
@@ -65,8 +66,10 @@ func (s *Starfish) IsLocked(jid string) (bool, error) {
 
 func (s *Starfish) Done(jid string, cid_log map[string]string, assetCid map[string]string) error {
 	job := s.Jobs[jid]
-	job.Logs = cid_log
-	job.Status = patrick.JobStatusSuccess
+	if job != nil {
+		job.Logs = cid_log
+		job.Status = patrick.JobStatusSuccess
+	}
 	return nil
 }
 
@@ -79,12 +82,19 @@ func (s *Starfish) Failed(jid string, cid_log map[string]string, assetCid map[st
 
 // added to satisfy the patrick interface
 func (s *Starfish) Get(jid string) (*patrick.Job, error) {
-	return nil, fmt.Errorf("get not implemented")
+	job, ok := s.Jobs[jid]
+	if !ok {
+		return nil, errors.New("job not found")
+	}
+	return job, nil
 }
 
 // added to satisfy the patrick interface
-func (s *Starfish) List() ([]string, error) {
-	return nil, fmt.Errorf("list not implemented")
+func (s *Starfish) List() (ret []string, err error) {
+	for k := range s.Jobs {
+		ret = append(ret, k)
+	}
+	return
 }
 
 // added to satisfy the patrick interface

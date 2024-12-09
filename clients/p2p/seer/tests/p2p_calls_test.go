@@ -15,15 +15,13 @@ import (
 	_ "github.com/taubyte/tau/services/substrate"
 	_ "github.com/taubyte/tau/services/tns"
 
-	seer "github.com/taubyte/tau/clients/p2p/seer"
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 )
 
 func TestCalls(t *testing.T) {
-	defaultInterval := seer.DefaultUsageBeaconInterval
-	seer.DefaultUsageBeaconInterval = time.Millisecond * 100
-	defer func() {
-		seer.DefaultUsageBeaconInterval = defaultInterval
-	}()
+	seerClient.DefaultUsageBeaconInterval = 100 * time.Millisecond
+	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond
+	seerClient.DefaultGeoBeaconInterval = 100 * time.Millisecond
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
@@ -60,27 +58,16 @@ func TestCalls(t *testing.T) {
 		return
 	}
 
-	ids, err := seerClient.Usage().ListServiceId("auth")
+	serviceIds, err := seerClient.Usage().ListServiceId("auth")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	serviceIds, err := ids.Get("ids")
-	if err != nil {
-		t.Error(err)
-		return
-	}
 	fmt.Println("serviceIds: ", serviceIds)
 
-	serviceIds2, ok := serviceIds.([]interface{})
-	if !ok {
-		t.Errorf("serviceIds %#v is not []interface{}", nil)
-		return
-	}
-
-	if len(serviceIds2) != 2 {
-		t.Errorf("Expected 2 nodes got %d", len(serviceIds2))
+	if len(serviceIds) != 2 {
+		t.Errorf("Expected 2 nodes got %d", len(serviceIds))
 	}
 
 }

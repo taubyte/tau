@@ -15,6 +15,8 @@ import (
 	"github.com/taubyte/tau/p2p/keypair"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 
+	peerCore "github.com/libp2p/go-libp2p/core/peer"
+
 	peer "github.com/taubyte/tau/p2p/peer"
 )
 
@@ -137,15 +139,22 @@ func (u *Universe) CreateSimpleNode(name string, config *SimpleConfig) (peer.Nod
 		config.Port = u.portShift + lastSimplePort()
 	}
 
-	simpleNode, err := peer.New(
+	upeers := u.Peers()
+	bpeers := make([]peerCore.AddrInfo, 0, len(upeers))
+	for _, n := range upeers {
+		if pi, err := peerCore.AddrInfoFromP2pAddr(n.Peer().Addrs()[0]); err == nil {
+			bpeers = append(bpeers, *pi)
+		}
+	}
+
+	simpleNode, err := peer.NewLitePublic(
 		u.ctx,
 		fmt.Sprintf("%s/simple-%s-%d", u.root, name, config.Port),
 		keypair.NewRaw(),
 		u.swarmKey,
 		[]string{fmt.Sprintf(DefaultP2PListenFormat, config.Port)},
 		[]string{fmt.Sprintf(DefaultP2PListenFormat, config.Port)},
-		false,
-		false,
+		peer.BootstrapParams{Enable: len(bpeers) > 0, Peers: bpeers},
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating me error: %v", err)

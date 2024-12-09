@@ -15,11 +15,9 @@ import (
 )
 
 func TestHeartBeat(t *testing.T) {
-	defaultInterval := seerClient.DefaultUsageBeaconInterval
-	seerClient.DefaultUsageBeaconInterval = time.Second
-	defer func() {
-		seerClient.DefaultUsageBeaconInterval = defaultInterval
-	}()
+	seerClient.DefaultUsageBeaconInterval = 100 * time.Millisecond
+	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond
+	seerClient.DefaultGeoBeaconInterval = 100 * time.Millisecond
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
