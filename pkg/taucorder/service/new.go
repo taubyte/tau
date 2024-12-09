@@ -2,12 +2,7 @@ package service
 
 import (
 	"context"
-	//"errors"
 	"net/http"
-
-	// "connectrpc.com/connect"
-	// "github.com/taubyte/tau/pkg/taucorder/node"
-	// pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 
 	pbconnect "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1/taucorderv1connect"
 )
@@ -44,6 +39,7 @@ func Serve(ctx context.Context, resolver ConfigResolver) (*Service, error) {
 	s.addHandler(pbconnect.NewHoarderServiceHandler(&hoarderService{Service: s}))
 	s.addHandler(pbconnect.NewTNSServiceHandler(&tnsService{Service: s}))
 	s.addHandler(pbconnect.NewPatrickServiceHandler(&patrickService{Service: s}))
+	s.addHandler(pbconnect.NewMonkeyServiceHandler(&monkeyService{Service: s}))
 
 	return s, nil
 }

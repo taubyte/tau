@@ -73,6 +73,11 @@ type patrickService struct {
 	*Service
 }
 
+type monkeyService struct {
+	pbconnect.UnimplementedMonkeyServiceHandler
+	*Service
+}
+
 type instance struct {
 	ctx  context.Context
 	ctxC context.CancelFunc

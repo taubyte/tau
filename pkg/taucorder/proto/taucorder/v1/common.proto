@@ -59,3 +59,38 @@ message ConsensusState {
         CRDTState crdt = 2;
     }
 }
+
+message Job {
+    string id = 1;
+    int64 timestamp = 2;
+    int32 status = 3;
+    repeated JobLog logs = 4;
+    JobMeta meta = 5;
+    repeated JobAsset assets = 6;
+    int32 attempt = 7;
+    int64 delay = 8;
+}
+
+message JobLog {
+    int64 timestamp=1;
+    string cid=2;
+}
+
+message JobMeta {
+    string ref=1;
+    string before=2;
+    string after=3;
+    string head_commit=4;
+    JobRepository repository=5;
+}
+
+message JobRepository {
+    RepositoryId id=1;
+    string ssh_url=2;
+    string branch=3;
+}
+
+message JobAsset {
+    string ressource_id=1;
+    string cid=2;
+}

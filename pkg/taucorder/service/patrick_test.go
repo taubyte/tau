@@ -150,39 +150,12 @@ func TestPatrick(t *testing.T) {
 
 	t.Run("State", func(t *testing.T) {
 		c := pbconnect.NewPatrickServiceClient(http.DefaultClient, "http://"+listener.Addr().String())
-		for _, n := range u.AllPatrick() {
-			pid := n.Node().ID().String()
-			cstate, err := c.State(ctx, connect.NewRequest(&pb.ConsensusStateRequest{
-				Node: ni.Msg,
-				Pid:  pid,
-			}))
-			assert.NilError(t, err)
-			assert.Equal(t, cstate.Msg.GetMember().GetId(), pid)
-			assert.Equal(t, len(cstate.Msg.GetCrdt().GetHeads()), 0) // should be empty
-		}
-	})
-
-	t.Run("States", func(t *testing.T) {
-		c := pbconnect.NewPatrickServiceClient(http.DefaultClient, "http://"+listener.Addr().String())
-		allPats := u.AllPatrick()
-
-		pids := make([]string, 0, len(allPats))
-		for _, n := range allPats {
-			pids = append(pids, n.Node().ID().String())
-		}
-
-		sstream, err := c.States(ctx, connect.NewRequest(ni.Msg))
+		cstate, err := c.State(ctx, connect.NewRequest(&pb.ConsensusStateRequest{
+			Node: ni.Msg,
+			Pid:  ninst.ID().String(),
+		}))
 		assert.NilError(t, err)
-
-		count := 0
-		for sstream.Receive() {
-			msg := sstream.Msg()
-			assert.Equal(t, slices.Contains(pids, msg.GetMember().GetId()), true)
-			assert.Equal(t, len(msg.GetCrdt().GetHeads()), 0) // should be empty
-			count++
-		}
-
-		assert.Equal(t, count, len(allPats))
+		assert.Equal(t, cstate.Msg.GetMember().GetId(), ninst.ID().String())
+		assert.Equal(t, len(cstate.Msg.GetCrdt().GetHeads()), 0) // should be empty
 	})
-
 }

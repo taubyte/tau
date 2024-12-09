@@ -66,8 +66,10 @@ func (s *Starfish) IsLocked(jid string) (bool, error) {
 
 func (s *Starfish) Done(jid string, cid_log map[string]string, assetCid map[string]string) error {
 	job := s.Jobs[jid]
-	job.Logs = cid_log
-	job.Status = patrick.JobStatusSuccess
+	if job != nil {
+		job.Logs = cid_log
+		job.Status = patrick.JobStatusSuccess
+	}
 	return nil
 }
 

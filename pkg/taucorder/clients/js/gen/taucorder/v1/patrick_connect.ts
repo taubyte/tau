@@ -3,9 +3,9 @@
 /* eslint-disable */
 // @ts-nocheck
 
-import { ConsensusState, ConsensusStateRequest, Node } from "./common_pb.js";
-import { GetJobRequest, Job } from "./patrick_pb.js";
+import { ConsensusState, ConsensusStateRequest, Job, Node } from "./common_pb.js";
 import { MethodKind } from "@bufbuild/protobuf";
+import { GetJobRequest } from "./patrick_pb.js";
 
 /**
  * Service
