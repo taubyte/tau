@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/taubyte/tau/tools/tau/prompts/internal/mock"
 	"github.com/urfave/cli/v2"
+	"gotest.tools/v3/assert"
 )
 
 type boolTest struct {
@@ -33,10 +34,7 @@ func (m boolTest) run(t *testing.T) {
 	ctx, err := mock.CLI{
 		Flags: flags.Combine(getTestFlag()),
 	}.Run(arg)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	value := prompts.GetOrAskForBool(ctx, getTestFlag().Name, "")
 	if value != (strings.ToLower(m.value) == "true") {

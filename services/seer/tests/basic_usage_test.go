@@ -39,28 +39,16 @@ func TestBasicUsage(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	simpleD, err := u.Simple("clientD")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	hostname, err := os.Hostname()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Testing Hearbeat and Announce
 	/* Client Heartbeat */
@@ -89,10 +77,7 @@ func TestBasicUsage(t *testing.T) {
 			StatCount: 11100,
 		},
 	}, hostname, "", "", nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	/* Client Heartbeat */
 	_, err = seer.Usage().Heartbeat(&iface.UsageData{
@@ -117,10 +102,7 @@ func TestBasicUsage(t *testing.T) {
 			StatCount: 111,
 		},
 	}, hostname, "", "", nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	/* ClientD Heartbeat*/
 	dSeer, err := simpleD.Seer()
@@ -148,8 +130,5 @@ func TestBasicUsage(t *testing.T) {
 			StatCount: 11,
 		},
 	}, hostname, "", "", nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 }

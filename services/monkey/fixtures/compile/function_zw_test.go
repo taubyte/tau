@@ -14,6 +14,7 @@ import (
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/services/substrate"
 	_ "github.com/taubyte/tau/services/tns"
+	"gotest.tools/v3/assert"
 )
 
 func TestZWasmFunction(t *testing.T) {
@@ -61,41 +62,23 @@ func TestZWasmFunction(t *testing.T) {
 			Fqdn: "hal.computers.com",
 		},
 	)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = u.RunFixture("injectProject", project)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	wd, err := os.Getwd()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = u.RunFixture("compileFor", compile.BasicCompileFor{
 		ProjectId:  testProjectId,
 		ResourceId: testFunctionId,
 		Paths:      []string{path.Join(wd, "assets", "ping.zwasm")},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	body, err := callHal(u, "/ping")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if string(body) != "PONG" {
-		t.Error("Expected PONG got", string(body))
-		return
-	}
+	assert.Equal(t, string(body), "PONG")
 }

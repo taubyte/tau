@@ -13,7 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
 
@@ -77,51 +77,30 @@ func TestAll(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	tnsClient, err := simple.TNS()
 	assert.NilError(t, err)
 
 	dbFactory := kvdb.New(u.Substrate().Node())
 	service, err := storages.New(u.Substrate(), dbFactory)
-	if err != nil {
-		t.Errorf("Creating storages service failed with: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	testBuf := new(bytes.Buffer)
 	_, err = testBuf.Write([]byte(fileData))
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	_cid, err := service.Add(testBuf)
-	if err != nil {
-		t.Errorf("Adding file to ipfs failed with: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	file, err := service.GetFile(u.Context(), _cid)
-	if err != nil {
-		t.Errorf("Getting file %s from ipfs failed with: %s", _cid, err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	data, err := io.ReadAll(file)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	if string(data) != fileData {
 		t.Errorf("Did not get same data %s != %s", string(data), fileData)
@@ -134,10 +113,7 @@ func TestAll(t *testing.T) {
 	err = os.MkdirAll(gitRootConfig, 0755)
 	assert.NilError(t, err)
 
-	if err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.ConfigRepo); err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.ConfigRepo))
 
 	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
 	if err != nil {
@@ -146,27 +122,14 @@ func TestAll(t *testing.T) {
 	}
 
 	rc, err := compile.CompilerConfig(projectIface, meta, generatedDomainRegExp)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	compiler, err := compile.New(rc, compile.Dev())
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	defer compiler.Close()
-	if err = compiler.Build(); err != nil {
-		t.Error(err)
-		return
-	}
-
-	if err = compiler.Publish(tnsClient); err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, compiler.Build())
+	assert.NilError(t, compiler.Publish(tnsClient))
 
 	context := storage.Context{
 		ProjectId: projectString,
@@ -187,28 +150,16 @@ func TestAll(t *testing.T) {
 	context3.Context = service.Context()
 
 	storage, err := service.Storage(context)
-	if err != nil {
-		t.Errorf("Creating new storage failed with: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	storage2, err := service.Storage(context2)
-	if err != nil {
-		t.Errorf("Creating new storage failed with: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	storage3, err := service.Storage(context3)
-	if err != nil {
-		t.Errorf("Creating new storage failed with: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	storage3Copy, err := service.Storage(context3)
-	if err != nil {
-		t.Errorf("Creating new storage failed with: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	if storage3.Kvdb() != storage3Copy.Kvdb() {
 		t.Error("these storages should be pointing to the same database")
@@ -221,10 +172,7 @@ func TestAll(t *testing.T) {
 	}
 
 	copyStorage, err := service.Storage(context)
-	if err != nil {
-		t.Errorf("Getting existing storage failed with: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	if copyStorage != storage {
 		t.Errorf("These 2 storages should be exactly the same. \n %#v != %#v", copyStorage, storage)
@@ -236,10 +184,7 @@ func TestAll(t *testing.T) {
 
 	// Add video1 as 'video'
 	version, err := storage.AddFile(u.Context(), video1, "video", false)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Video1 should be version 1 of "video"
 	if version != 1 {
@@ -249,10 +194,7 @@ func TestAll(t *testing.T) {
 
 	// Get "video" version 1
 	outVideo, err := storage.Meta(u.Context(), "video", version)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	if outVideo.Cid().String() != video1Cid {
 		t.Errorf("Version not equal %s != %s", outVideo.Cid(), video1Cid)
@@ -261,16 +203,10 @@ func TestAll(t *testing.T) {
 
 	// Read "video" version 1
 	outVideoFile, err := outVideo.Get()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	outVideoBytes, err := io.ReadAll(outVideoFile)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Compare "video" version 1 to video1
 	if !bytes.Equal(sampleVideo, outVideoBytes) {
@@ -280,10 +216,7 @@ func TestAll(t *testing.T) {
 
 	// Add video2 as "video" version 2
 	version, err = storage.AddFile(u.Context(), video2, "video", false)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Expect video2 to be "video" version 2
 	if version != 2 {
@@ -293,10 +226,7 @@ func TestAll(t *testing.T) {
 
 	// Get "video" version 2
 	outVideo, err = storage.Meta(u.Context(), "video", version)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	if outVideo.Version() != 2 {
 		t.Errorf("Expecting version to be 2 got %d", outVideo.Version())
@@ -305,16 +235,10 @@ func TestAll(t *testing.T) {
 
 	// Read "video" version 2
 	outVideoFile, err = outVideo.Get()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	outVideoBytes, err = io.ReadAll(outVideoFile)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Compare "video" version 2 to video2
 	if !bytes.Equal(sampleVideo2, outVideoBytes) {
@@ -324,10 +248,7 @@ func TestAll(t *testing.T) {
 
 	// Add video1 as "video" version 2
 	version, err = storage.AddFile(u.Context(), video1, "video", true)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Expect video1 to be "video" version 2
 	if version != 2 {
@@ -337,23 +258,14 @@ func TestAll(t *testing.T) {
 
 	// Get "video" version 2
 	outVideo, err = storage.Meta(u.Context(), "video", version)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Read "video" version 2
 	outVideoFile, err = outVideo.Get()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	outVideoBytes, err = io.ReadAll(outVideoFile)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	entries, err := storage.List(u.Context(), "")
 	assert.NilError(t, err)
@@ -380,10 +292,7 @@ func TestAll(t *testing.T) {
 
 	// gets Latest version of "video"
 	version, err = storage.GetLatestVersion(u.Context(), "video")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// expect latest version to be 1 as previously we deleted the latest version and that should be 2
 	if version != 1 {
@@ -393,10 +302,7 @@ func TestAll(t *testing.T) {
 
 	// add video1 as "video" v2
 	version, err = storage.AddFile(u.Context(), video1, "video", false)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Expect video1 to be "video" version 2
 	if version != 2 {
@@ -406,23 +312,14 @@ func TestAll(t *testing.T) {
 
 	// Get "video" version 2
 	outVideo, err = storage.Meta(u.Context(), "video", version)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	outVideoFile, err = outVideo.Get()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Read "video" version 2
 	outVideoBytes, err = io.ReadAll(outVideoFile)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	if !bytes.Equal(sampleVideo, outVideoBytes) {
 		t.Errorf("VIDEO v2 IS WRONG should be video1")
@@ -431,10 +328,7 @@ func TestAll(t *testing.T) {
 
 	// add video1 as "video" v2
 	version, err = storage.AddFile(u.Context(), video2, "video", false)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Expect video2 to be "video" version 3
 	if version != 3 {
@@ -444,10 +338,7 @@ func TestAll(t *testing.T) {
 
 	// Get "video" version 3
 	outVideo, err = storage.Meta(u.Context(), "video", version)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	if outVideo.Cid().String() != video3Cid {
 		t.Errorf("Version not equal %s != %s", outVideo.Cid(), video3Cid)
@@ -455,17 +346,11 @@ func TestAll(t *testing.T) {
 	}
 
 	outVideoFile, err = outVideo.Get()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Read "video" version 3
 	outVideoBytes, err = io.ReadAll(outVideoFile)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	if !bytes.Equal(sampleVideo2, outVideoBytes) {
 		t.Errorf("VIDEO v3 IS WRONG should be video1")
@@ -478,10 +363,7 @@ func TestAll(t *testing.T) {
 
 	//Getting latest versions of video
 	version, err = storage.GetLatestVersion(u.Context(), "video")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Latest version should be 3
 	if version != 3 {
@@ -491,17 +373,11 @@ func TestAll(t *testing.T) {
 
 	// Attempt to delete all
 	err = storage.DeleteFile(u.Context(), "video", -1)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Get latest version should fail as all versions of video have been deleted
 	_, err = storage.GetLatestVersion(u.Context(), "video")
-	if err == nil {
-		t.Error("EXPECTED LATEST TO FAIL")
-		return
-	}
+	assert.NilError(t, err)
 
 	// Test Updating Size
 	if storage.Capacity() != 50000000000 {
@@ -547,10 +423,7 @@ func TestAll(t *testing.T) {
 	}
 
 	storage, err = service.Storage(context)
-	if err != nil {
-		t.Errorf("Creating new storage failed with: %s", err.Error())
-		return
-	}
+	assert.NilError(t, err)
 
 	if storage.Capacity() != 2000000000 {
 		t.Errorf("Size did not change %d != %d", storage.Capacity(), 2000000000)

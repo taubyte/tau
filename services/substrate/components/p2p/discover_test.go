@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	_ "github.com/taubyte/tau/services/substrate"
 	"github.com/taubyte/tau/services/substrate/components/p2p"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 )
 
 func TestService_Discover(t *testing.T) {

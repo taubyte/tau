@@ -41,10 +41,8 @@ func TestDecompileProd(t *testing.T) {
 	}
 
 	simple, err := u.Simple("me")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
+
 	tns, err := simple.TNS()
 	assert.NilError(t, err)
 
@@ -62,41 +60,23 @@ func TestDecompileProd(t *testing.T) {
 		Name:     "tb_prodproject",
 		HookInfo: fakeMeta,
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// read with seer
 	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	rc, err := compile.CompilerConfig(projectIface, fakeMeta, generatedDomainRegExp)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	compiler, err := compile.New(rc, compile.Dev())
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = compiler.Build()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = compiler.Publish(tns)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	test_obj, err := tns.Fetch(specs.ProjectPrefix(projectIface.Get().Id(), fakeMeta.Repository.Branch, fakeMeta.HeadCommit.ID))
 	if test_obj.Interface() == nil {

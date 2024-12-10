@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 )
 
 func TestRunLibraryBasic(t *testing.T) {

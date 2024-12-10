@@ -14,6 +14,7 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/dream/fixtures"
 	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
@@ -53,10 +54,7 @@ func TestBasicWithLibrary(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	project, err := decompile.MockBuild(testProjectId, "",
 		&structureSpec.Library{
@@ -87,10 +85,7 @@ func TestBasicWithLibrary(t *testing.T) {
 			Paths:   []string{"/"},
 		},
 	)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = u.RunFixture("injectProject", project)
 	if err != nil {
@@ -99,10 +94,7 @@ func TestBasicWithLibrary(t *testing.T) {
 	}
 
 	wd, err := os.Getwd()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = u.RunFixture("compileFor", compile.BasicCompileFor{
 		ProjectId:  testProjectId,
@@ -112,16 +104,10 @@ func TestBasicWithLibrary(t *testing.T) {
 		// Uncomment and change directory to use cached build
 		// Path: "/tmp/QmP6qBNyoLeMLiwk8uYZ8xoT4CnDspYntcY4oCkpVG1byt-556050950/artifact.zwasm",
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	body, err := callHal(u, "/ping")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	if string(body) != "PONG" {
 		t.Error("Expected PONG got", string(body))

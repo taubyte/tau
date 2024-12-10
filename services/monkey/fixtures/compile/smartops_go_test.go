@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/services/substrate"
 	_ "github.com/taubyte/tau/services/tns"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 )
 
 // TODO: FIXME
@@ -115,16 +115,10 @@ func TestGoSmartOp(t *testing.T) {
 	body, err := callHal(u, "/pingSuccess")
 	assert.NilError(t, err)
 
-	if string(body) != "Hello, world!" {
-		t.Error("Expected PONG2 got", string(body))
-		return
-	}
+	assert.Equal(t, string(body), "Hello, world!")
 
 	body, err = callHal(u, "/pingFail")
 	assert.NilError(t, err)
 
-	if !strings.Contains(string(body), "If you can see this text, it was not blocked by any filter!") {
-		t.Error("Expected PONG2 got", string(body))
-		return
-	}
+	assert.Assert(t, strings.Contains(string(body), "If you can see this text, it was not blocked by any filter!"))
 }

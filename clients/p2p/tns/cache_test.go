@@ -9,7 +9,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	spec "github.com/taubyte/tau/pkg/specs/common"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 )
 
 func TestCache(t *testing.T) {

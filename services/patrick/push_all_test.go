@@ -8,6 +8,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/helpers"
+	"gotest.tools/v3/assert"
 )
 
 func testRepoToken(t *testing.T) (tkn string) {
@@ -60,8 +61,5 @@ func TestPushAll(t *testing.T) {
 	time.Sleep(5 * time.Second)
 
 	err = u.RunFixture("pushAll")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 }
