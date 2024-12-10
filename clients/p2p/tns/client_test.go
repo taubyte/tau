@@ -10,7 +10,7 @@ import (
 	iface "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
 	spec "github.com/taubyte/tau/pkg/specs/common"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 )
 
 var _ iface.Client = &p2p.Client{}

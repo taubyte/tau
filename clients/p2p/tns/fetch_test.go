@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	_ "github.com/taubyte/tau/services/tns"
-	"gotest.tools/assert"
+	"gotest.tools/v3/assert"
 )
 
 func TestFetch(t *testing.T) {

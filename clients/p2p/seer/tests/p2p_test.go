@@ -30,25 +30,17 @@ func TestSeerClient(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Error reporting no peers providing but we are checking if its 0 so just not returning
 	seer, err := simple.Seer()
 	assert.NilError(t, err)
 
 	resp, err := seer.Geo().All()
-	if err != nil {
-		t.Error("Seer geo all err: ", err)
-	}
+	assert.NilError(t, err)
 
 	if len(resp) != 0 {
 		t.Error("Should return empty! returned:", resp)
@@ -60,18 +52,12 @@ func TestSeerClient(t *testing.T) {
 	// location of office in 12100 Ford Rd
 	fake_location := iface.Location{Latitude: 32.91264411258042, Longitude: -96.8907727708027}
 	err = seer.Geo().Set(fake_location)
-	if err != nil {
-		t.Error("Geo set: ", err)
-		return
-	}
+	assert.NilError(t, err)
 
 	/***** ALL *****/
 
 	resp, err = seer.Geo().All()
-	if err != nil {
-		t.Error("Returned Error ", err)
-		return
-	}
+	assert.NilError(t, err)
 
 	found_match := false
 	for _, p := range resp {
@@ -92,15 +78,8 @@ func TestSeerClient(t *testing.T) {
 	fake_now_location := iface.Location{Latitude: 32.900211956131386, Longitude: -97.04029425876429}
 
 	_, err = seer.Geo().Distance(fake_now_location, 15*1000)
-	if err != nil {
-		t.Error("Returned Error ", err)
-		return
-	}
+	assert.NilError(t, err)
 
 	_, err = seer.Geo().Distance(fake_now_location, 5*1000)
-	if err != nil {
-		t.Error("Returned Error ", err)
-		return
-	}
-
+	assert.NilError(t, err)
 }

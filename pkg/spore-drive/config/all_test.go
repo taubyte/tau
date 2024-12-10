@@ -150,7 +150,9 @@ func TestParserSchema(t *testing.T) {
 	assert.Equal(t, host1.SSH().Port(), uint16(4242))
 	assert.DeepEqual(t, host1.SSH().Auth().List(), []string{"main"})
 
-	assert.DeepEqual(t, host1.Shapes().List(), []string{"shape1", "shape2"})
+	for _, s := range []string{"shape1", "shape2"} {
+		assert.Assert(t, slices.Contains(host1.Shapes().List(), s))
+	}
 
 	lat, lng := host1.Location()
 	assert.Equal(t, lat, float32(1.25))

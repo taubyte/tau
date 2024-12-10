@@ -1,7 +1,6 @@
 package tns
 
 import (
-	"reflect"
 	"testing"
 
 	_ "github.com/taubyte/tau/clients/p2p/tns"
@@ -43,37 +42,22 @@ func TestDreamlandDoubleClient(t *testing.T) {
 	testValue := "someOrange"
 
 	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	simple2, err := u.Simple("client2")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	tnsClient, err := simple.TNS()
 	assert.NilError(t, err)
 
 	err = tnsClient.Push(testKey, testValue)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	tnsClient2, err := simple2.TNS()
 	assert.NilError(t, err)
 
 	val, err := tnsClient2.Fetch(spec.NewTnsPath(testKey))
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if !reflect.DeepEqual(val.Interface(), testValue) {
-		t.Errorf("Values not equal `%s` != `%s`", val, testValue)
-		return
-	}
+	assert.DeepEqual(t, val.Interface(), testValue)
 }

@@ -1,7 +1,6 @@
 package service
 
 import (
-	"fmt"
 	"testing"
 	"time"
 
@@ -122,13 +121,19 @@ func TestDreamlandFixture(t *testing.T) {
 
 		patrick, err := simple.Patrick()
 		if err != nil {
-			jobs, err := patrick.List()
-			if err == nil && len(jobs) != 2 {
-				err = fmt.Errorf("Expected 2 jobs got %d", len(jobs))
-			}
+			t.Error(err)
+			return
 		}
-		if err == nil {
-			break
+
+		jobs, err := patrick.List()
+		if err != nil {
+			t.Error(err)
+			return
+		}
+
+		if len(jobs) != 2 {
+			t.Errorf("Expected 2 jobs got %d", len(jobs))
+			return
 		}
 
 		if attempts == 20 {

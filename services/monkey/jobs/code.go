@@ -42,49 +42,40 @@ func (c code) handleOps(ops []Op) error {
 	}
 
 	var (
-		mainHandleErr error
-		errLock       sync.Mutex
-		doneCount     int
-
-		errChan  = make(chan error, 1)
-		doneChan = make(chan bool, 1)
+		wg      sync.WaitGroup
+		errChan = make(chan error, len(ops))
 	)
 
 	for _, op := range ops {
-		logFile, err := os.CreateTemp("/tmp", fmt.Sprintf("log-%s", op.id))
+		log, err := os.CreateTemp("/tmp", fmt.Sprintf("log-%s", op.id))
 		if err != nil {
 			return fmt.Errorf("creating log temp-file failed with: %s", err)
 		}
-
-		go func(_op Op, log *os.File) {
-			if handleErr := c.handleOp(_op, log); handleErr != nil {
+		wg.Add(1)
+		go func(op Op, log *os.File) {
+			defer wg.Done()
+			defer log.Close()
+			if handleErr := c.handleOp(op, log); handleErr != nil {
 				errChan <- handleErr
 			}
-
-			doneChan <- true
-			log.Close()
-		}(op, logFile)
+		}(op, log)
 	}
 
-	for {
-		select {
-		case err := <-errChan:
-			if err != nil {
-				errLock.Lock()
-				if mainHandleErr != nil {
-					mainHandleErr = fmt.Errorf("%s && %s", mainHandleErr, err)
-				} else {
-					mainHandleErr = err
-				}
-				errLock.Unlock()
-			}
-		case <-doneChan:
-			doneCount++
-			if doneCount == len(ops) {
-				return mainHandleErr
-			}
+	wg.Wait()
+	close(errChan)
+
+	var errors []error
+	for err := range errChan {
+		if err != nil {
+			errors = append(errors, err)
 		}
 	}
+
+	if len(errors) > 0 {
+		return fmt.Errorf("multiple errors: %v", errors)
+	}
+
+	return nil
 }
 
 func (c code) handleOp(op Op, logFile *os.File) error {

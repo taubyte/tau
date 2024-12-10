@@ -117,7 +117,7 @@ func (p *PatrickService) infoHandler(ctx context.Context, jid string) (cr.Respon
 		return nil, fmt.Errorf("unmarshal job %s failed with %w", jid, err)
 	}
 
-	return cr.Response{"job": job}, nil
+	return cr.Response{"job": &job}, nil
 }
 
 func (p *PatrickService) lockHandler(ctx context.Context, jid string, eta int64, conn streams.Connection) (cr.Response, error) {

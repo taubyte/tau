@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/urfave/cli/v2"
+	"gotest.tools/v3/assert"
 )
 
 var testFlagName = "env"
@@ -31,10 +32,7 @@ func TestBoolWithInverse(t *testing.T) {
 		return nil
 	}
 	err := app.Run([]string{"app", "--env"})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	app.Flags = Combine(newBoolFlag())
 	app.Action = func(ctx *cli.Context) error {
@@ -48,10 +46,7 @@ func TestBoolWithInverse(t *testing.T) {
 		return nil
 	}
 	err = app.Run([]string{"app", "--no-env"})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	app.Flags = Combine(newBoolFlag())
 	app.Action = func(ctx *cli.Context) error {
@@ -62,8 +57,5 @@ func TestBoolWithInverse(t *testing.T) {
 		return nil
 	}
 	err = app.Run([]string{"app"})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 }
