@@ -1,0 +1,47 @@
+{
+  "name": "@taubyte/taucorder",
+  "version": "0.1.4",
+  "service": "0.1.2",
+  "description": "",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist/**/*"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "npm run build",
+    "test": "NODE_OPTIONS=\"$NODE_OPTIONS --experimental-vm-modules\" jest --detectOpenHandles"
+  },
+  "keywords": [],
+  "author": "taubyte",
+  "license": "BSD-3-Clause",
+  "devDependencies": {
+    "@babel/preset-env": "^7.25.9",
+    "@babel/preset-typescript": "^7.25.9",
+    "@bufbuild/buf": "^1.39.0",
+    "@bufbuild/protoc-gen-es": "^1.10.0",
+    "@connectrpc/protoc-gen-connect-es": "1.4.0",
+    "@types/jest": "^29.5.13",
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^22.5.2",
+    "@types/unzipper": "^0.10.10",
+    "jest": "^29.7.0",
+    "js-yaml": "^4.1.0",
+    "ts-jest": "^29.2.5",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.19.1",
+    "unzipper": "^0.12.3"
+  },
+  "dependencies": {
+    "@bufbuild/protobuf": "1.4.2",
+    "@connectrpc/connect": "1.4.0",
+    "@connectrpc/connect-node": "1.4.0",
+    "@types/cli-progress": "^3.11.6",
+    "@types/tar": "^6.1.13",
+    "axios": "^1.7.7",
+    "cli-progress": "^3.12.0",
+    "tar": "^7.4.3"
+  }
+}

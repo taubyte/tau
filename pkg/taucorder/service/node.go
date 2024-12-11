@@ -70,6 +70,10 @@ func (ns *nodeService) New(ctx context.Context, req *connect.Request[pb.Config])
 				return nil, errors.New("config id can not be empty")
 			}
 
+			if ns.resolver == nil {
+				return nil, errors.New("failed to lookup config: no resolver")
+			}
+
 			if ni.config, err = ns.resolver.Lookup(cid); err != nil {
 				return nil, fmt.Errorf("look up configuration id `%s`: %w", cid, err)
 			}
