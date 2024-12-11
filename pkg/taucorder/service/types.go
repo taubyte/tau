@@ -78,6 +78,11 @@ type monkeyService struct {
 	*Service
 }
 
+type healthService struct {
+	pbconnect.UnimplementedHealthServiceHandler
+	*Service
+}
+
 type instance struct {
 	ctx  context.Context
 	ctxC context.CancelFunc
