@@ -14,6 +14,7 @@ import { Seer } from "./Seer";
 import { Swarm } from "./Swarm";
 import { TNS } from "./TNS";
 import { X509 } from "./X509";
+import { Health } from "./Health";
 
 class ExtendedAuth extends Auth {
   private wrappers: {
@@ -73,6 +74,7 @@ export class Taucorder {
     seer?: Seer;
     swarm?: Swarm;
     tns?: TNS;
+    health?: Health;
   } = {};
 
   constructor(rpcUrl: string, config: Config) {
@@ -150,5 +152,43 @@ export class Taucorder {
       this.wrappers.tns = new TNS(this.transport, this.node);
     }
     return this.wrappers.tns;
+  }
+
+  Health() {
+    if (!this.wrappers.health) {
+      this.wrappers.health = new Health(this.transport);
+    }
+    return this.wrappers.health;
+  }
+}
+
+export class TaucorderService extends Health {
+  constructor(rpcUrl: string) {
+    const transport = createConnectTransport({
+      baseUrl: rpcUrl,
+      httpVersion: "1.1",
+    });
+    super(transport);
+  }
+
+  /**
+   * Wait for the service to become available by pinging until success or timeout
+   * @param timeoutSeconds Maximum time to wait in seconds
+   * @throws Error if service does not become available within timeout
+   */
+  async wait(timeoutSeconds: number): Promise<void> {
+    const start = Date.now();
+    const timeoutMs = timeoutSeconds * 1000;
+    
+    while (Date.now() - start < timeoutMs) {
+      try {
+        await this.ping();
+        return;
+      } catch (err) {
+        // Wait 100ms before retrying
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+    throw new Error(`Service did not become available within ${timeoutSeconds} seconds`);
   }
 }

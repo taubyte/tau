@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package taucorder.v1;
+
+option go_package = ".";
+
+import "taucorder/v1/common.proto";
+
+// Data Structures
+
+// Service
+service HealthService {
+    rpc Ping(Empty) returns (Empty);
+}

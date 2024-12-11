@@ -40,6 +40,7 @@ func Serve(ctx context.Context, resolver ConfigResolver) (*Service, error) {
 	s.addHandler(pbconnect.NewTNSServiceHandler(&tnsService{Service: s}))
 	s.addHandler(pbconnect.NewPatrickServiceHandler(&patrickService{Service: s}))
 	s.addHandler(pbconnect.NewMonkeyServiceHandler(&monkeyService{Service: s}))
+	s.addHandler(pbconnect.NewHealthServiceHandler(&healthService{Service: s}))
 
 	return s, nil
 }

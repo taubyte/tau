@@ -1,5 +1,5 @@
 import { exec, ChildProcess } from "child_process";
-import { Taucorder } from "./Taucorder";
+import { Taucorder, TaucorderService } from "./Taucorder";
 import { Config } from "../gen/taucorder/v1/node_pb";
 import { Peer } from "../gen/taucorder/v1/common_pb";
 
@@ -26,7 +26,7 @@ describe("Taucorder test", () => {
           }
         });
         mockServerProcess.stderr?.on("data", (data: string) => {
-          console.error("Mock server error:", data);
+          console.log("Mock server error:", data);
           reject(data);
         });
       });
@@ -34,6 +34,9 @@ describe("Taucorder test", () => {
       console.error("Failed to start mock server:", error);
       throw error;
     }
+
+    let tch = new TaucorderService(universeConfig.url);
+    await tch.wait(10);
 
     taucorder = new Taucorder(
       universeConfig.url,
