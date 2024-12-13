@@ -1,7 +1,7 @@
 {
   "name": "@taubyte/taucorder",
-  "version": "0.1.4",
-  "service": "0.1.2",
+  "version": "0.1.0",
+  "service": "0.2.0",
   "description": "",
   "type": "module",
   "main": "dist/index.js",

@@ -6,6 +6,7 @@ import { spawn } from "child_process";
 import * as tar from "tar";
 import packageJson from "../package.json";
 import { homedir } from "os";
+import { TaucorderService } from "./Taucorder";
 
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
@@ -25,7 +26,7 @@ export class Service {
 
   constructor() {
     this.binaryDir = path.join(__dirname, "bin");
-    this.binaryPath = path.join(this.binaryDir, "drive");
+    this.binaryPath = path.join(this.binaryDir, "taucorder");
     this.versionFilePath = path.join(this.binaryDir, "version.txt");
     this.packageVersion = packageJson.service;
     this.runFilePath = path.join(this.getConfigDir(), ".taucorder.run");
@@ -93,6 +94,16 @@ export class Service {
   private isProcessRunning(pid: number): boolean {
     try {
       process.kill(pid, 0);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  private async isServiceUp(port: number): Promise<boolean> {
+    try {
+      const service = new TaucorderService(`http://localhost:${port}`);
+      await service.ping();
       return true;
     } catch (e) {
       return false;
@@ -173,9 +184,9 @@ export class Service {
     });
   }
 
-  public getPort(): number | null {
+  public async getPort(): Promise<number | null> {
     const runFile = this.loadRunFile();
-    if (runFile && this.isProcessRunning(runFile.pid)) {
+    if (runFile && this.isProcessRunning(runFile.pid) && await this.isServiceUp(runFile.port)) {
       return runFile.port;
     } else {
       console.log("Service is not running.");
@@ -243,7 +254,7 @@ export class Service {
 
   public async run(): Promise<void> {
     await this.downloadAndExtractBinary();
-    const port = this.getPort();
+    const port = await this.getPort();
     if (port === null) {
       await this.executeBinary();
     }
