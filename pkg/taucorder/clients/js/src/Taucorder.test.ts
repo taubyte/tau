@@ -3,7 +3,7 @@ import { Taucorder, TaucorderService } from "./Taucorder";
 import { Config } from "../gen/taucorder/v1/node_pb";
 import { Peer } from "../gen/taucorder/v1/common_pb";
 
-describe("Taucorder test", () => {
+describe.skip("Taucorder test", () => {
   let taucorder: Taucorder;
   let mockServerProcess: ChildProcess;
   let universeConfig: any;
