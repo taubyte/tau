@@ -5,10 +5,10 @@ import cliProgress from "cli-progress";
 import { spawn } from "child_process";
 import * as tar from "tar";
 import packageJson from "../package.json";
-import { homedir } from "os";
+import { homedir, platform } from "os";
 import { TaucorderService } from "./Taucorder";
 
-import { fileURLToPath } from 'url';
+import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -33,11 +33,14 @@ export class Service {
   }
 
   private getConfigDir(): string {
-    const configDir = path.join(homedir(), ".config");
-    if (!fs.existsSync(configDir)) {
-      fs.mkdirSync(configDir);
+    const plt = platform();
+    if (plt === "win32") {
+      return process.env.APPDATA || path.join(homedir(), "AppData", "Roaming");
+    } else if (plt === "darwin") {
+      return path.join(homedir(), "Library", "Application Support");
+    } else {
+      return process.env.XDG_CONFIG_HOME || path.join(homedir(), ".config");
     }
-    return configDir;
   }
 
   private binaryExists(): boolean {
@@ -186,7 +189,11 @@ export class Service {
 
   public async getPort(): Promise<number | null> {
     const runFile = this.loadRunFile();
-    if (runFile && this.isProcessRunning(runFile.pid) && await this.isServiceUp(runFile.port)) {
+    if (
+      runFile &&
+      this.isProcessRunning(runFile.pid) &&
+      (await this.isServiceUp(runFile.port))
+    ) {
       return runFile.port;
     } else {
       console.log("Service is not running.");
