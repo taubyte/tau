@@ -1,6 +1,5 @@
 import { Config } from "./Config";
-import { RPCClient } from "./ConfigClient";
-import { BundleType, Source } from "../gen/config/v1/config_pb";
+import { BundleType } from "../gen/config/v1/config_pb";
 import { exec, ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as path from "path";

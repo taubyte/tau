@@ -187,18 +187,22 @@ export class Service {
     });
   }
 
-  public async getPort(): Promise<number | null> {
-    const runFile = this.loadRunFile();
-    if (
-      runFile &&
-      this.isProcessRunning(runFile.pid) &&
-      (await this.isServiceUp(runFile.port))
-    ) {
-      return runFile.port;
-    } else {
-      console.log("Service is not running.");
-      return null;
+  public async getPort(timeout: number = 3000): Promise<number | null> {
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeout) {
+      const runFile = this.loadRunFile();
+      if (
+        runFile &&
+        this.isProcessRunning(runFile.pid) &&
+        (await this.isServiceUp(runFile.port))
+      ) {
+        return runFile.port;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
+
+    return null;
   }
 
   private async executeBinary(): Promise<void> {
@@ -260,10 +264,14 @@ export class Service {
   }
 
   public async run(): Promise<void> {
-    await this.downloadAndExtractBinary();
-    const port = await this.getPort();
+    let port = await this.getPort();
     if (port === null) {
+      await this.downloadAndExtractBinary();
       await this.executeBinary();
+      port = await this.getPort();
+      if (port === null) {
+        throw new Error("Failed to start service");
+      }
     }
   }
 }

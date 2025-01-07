@@ -21,7 +21,7 @@ class Config extends BaseConfig {
 
   public async init(): Promise<void> {
     await this.service.run();
-    await super.init(`http://localhost:${this.service.getPort()}/`);
+    await super.init(`http://localhost:${await this.service.getPort()}/`);
   }
 }
 
@@ -35,7 +35,7 @@ class Drive extends BaseDrive {
 
   public async init(): Promise<void> {
     await this.service.run();
-    await super.init(`http://localhost:${this.service.getPort()}/`);
+    await super.init(`http://localhost:${await this.service.getPort()}/`);
   }
 }
 

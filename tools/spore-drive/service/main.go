@@ -11,11 +11,17 @@ import (
 
 	confSrv "github.com/taubyte/tau/pkg/spore-drive/config/service"
 	driveSrv "github.com/taubyte/tau/pkg/spore-drive/drive/service"
+	healthSrv "github.com/taubyte/tau/pkg/spore-drive/health"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
+
+	sporedrive "github.com/taubyte/tau/pkg/spore-drive"
 )
 
 func main() {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	runData, err := NewRunFile()
 	if err != nil {
 		panic(err)
@@ -38,7 +44,12 @@ func main() {
 		panic(err)
 	}
 
-	dsvr, err := driveSrv.Serve(context.Background(), csvr)
+	dsvr, err := driveSrv.Serve(ctx, csvr)
+	if err != nil {
+		panic(err)
+	}
+
+	hsvr, err := healthSrv.Serve(ctx, sporedrive.Version)
 	if err != nil {
 		panic(err)
 	}
@@ -46,6 +57,7 @@ func main() {
 	mux := http.NewServeMux()
 	csvr.Attach(mux)
 	dsvr.Attach(mux)
+	hsvr.Attach(mux)
 
 	server := &http.Server{
 		Handler: h2c.NewHandler(mux, &http2.Server{}),
