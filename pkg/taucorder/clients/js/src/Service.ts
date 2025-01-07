@@ -202,7 +202,6 @@ export class Service {
       await new Promise((resolve) => setTimeout(resolve, 500));
     }
 
-    console.log("Service is not running.");
     return null;
   }
 
@@ -270,9 +269,9 @@ export class Service {
       await this.downloadAndExtractBinary();
       await this.executeBinary();
       port = await this.getPort();
-    if (port === null) {
-      throw new Error("Failed to start service");
-    }
+      if (port === null) {
+        throw new Error("Failed to start service");
+      }
     }
   }
 }
