@@ -54,7 +54,6 @@ require (
 	golang.org/x/term v0.23.0
 	gopkg.in/go-playground/webhooks.v5 v5.17.0
 	gopkg.in/yaml.v3 v3.0.1
-	gotest.tools v2.2.0+incompatible
 	gotest.tools/v3 v3.5.1
 )
 
@@ -62,6 +61,7 @@ require (
 	connectrpc.com/connect v1.17.0
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/CalebQ42/squashfs v1.0.1
+	github.com/Masterminds/semver v1.5.0
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/briandowns/spinner v1.23.0
 	github.com/c-bata/go-prompt v0.2.6

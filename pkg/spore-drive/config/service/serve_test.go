@@ -68,7 +68,7 @@ func newTestServer(t *testing.T) (*Service, string) {
 	assert.NilError(t, err)
 
 	mux := http.NewServeMux()
-	mux.Handle(svr.path, svr.handler)
+	svr.Attach(mux)
 	go func() {
 		defer listener.Close()
 		http.Serve(

@@ -234,11 +234,13 @@ func (s *Service) Download(ctx context.Context, req *connect.Request[pb.BundleCo
 					return
 				}
 
-				err = stream.Send(&pb.Bundle{Data: &pb.Bundle_Chunk{Chunk: buf[:n]}})
-				if err != nil {
-					rerr = fmt.Errorf("failed to send data with %w", err)
-					dctxC()
-					return
+				if n > 0 {
+					err = stream.Send(&pb.Bundle{Data: &pb.Bundle_Chunk{Chunk: buf[:n]}})
+					if err != nil {
+						rerr = fmt.Errorf("failed to send data with %w", err)
+						dctxC()
+						return
+					}
 				}
 			}
 		}
@@ -324,11 +326,11 @@ func (s *Service) Attach(mux *http.ServeMux) {
 }
 
 func Serve() (*Service, error) {
-	srv := &Service{
+	s := &Service{
 		configs: make(map[string]*configInstance),
 	}
 
-	srv.path, srv.handler = pbconnect.NewConfigServiceHandler(srv)
+	s.path, s.handler = pbconnect.NewConfigServiceHandler(s)
 
-	return srv, nil
+	return s, nil
 }

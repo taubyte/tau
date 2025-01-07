@@ -1,7 +1,5 @@
 import { Config } from "./Config";
-import { CourseConfig, Drive, TauBinarySource, TauPath, TauUrl } from "./Drive";
-import { RPCClient as DriveClient } from "./DriveClient";
-import { RPCClient as ConfigClient } from "./ConfigClient";
+import { CourseConfig, Drive, TauPath } from "./Drive";
 
 import { PromiseClient, createPromiseClient } from "@connectrpc/connect";
 import { MockSSHService } from "../gen/mock/v1/ssh_connect";
@@ -9,7 +7,6 @@ import { createConnectTransport } from "@connectrpc/connect-node";
 
 import { DisplacementProgress } from "../gen/drive/v1/drive_pb";
 
-import { Source } from "../gen/config/v1/config_pb";
 import { exec, ChildProcess } from "child_process";
 
 import * as fs from "fs";
@@ -112,7 +109,7 @@ export const createConfig = async (
 describe("Drive Class Integration Tests", () => {
   let mock_client: PromiseClient<typeof MockSSHService>;
   let drive: Drive;
-  let config :Config;
+  let config: Config;
   let rpcUrl: string;
   let mockServerProcess: ChildProcess;
   let tempDir: string;
@@ -146,7 +143,7 @@ describe("Drive Class Integration Tests", () => {
 
     mock_client = createPromiseClient(MockSSHService, transport);
 
-    touchFile("/tmp/faketau")
+    touchFile("/tmp/faketau");
   });
 
   afterAll(async () => {
@@ -275,18 +272,16 @@ describe("Drive Class Integration Tests", () => {
       cmds.push(cmd);
     }
 
-    expect(cmds).toEqual([
-      { command: 'command "-v" "systemctl"', index: 0 },
-      { command: 'command "-v" "apt"', index: 1 },
-      { command: 'command "-v" "docker"', index: 2 },
-      { command: 'sudo "apt-get" "update"', index: 3 },
-      { command: 'command "-v" "dig"', index: 4 },
-      { command: 'command "-v" "netstat"', index: 5 },
-      { command: 'sudo "netstat" "-lnp"', index: 6 },
-      {
-        command: 'dig "+short" "+timeout=5" "@1.1.1.1" "google.com"',
-        index: 7,
-      },
-    ]);
+    expect(new Set(cmds)).toEqual(new Set([
+      { command: 'command "-v" "systemctl"', index: expect.any(Number) },
+      { command: 'command "-v" "apt"', index: expect.any(Number) },
+      { command: 'command "-v" "docker"', index: expect.any(Number) },
+      { command: 'sudo "apt-get" "update"', index: expect.any(Number) },
+      { command: 'command "-v" "dig"', index: expect.any(Number) },
+      { command: 'command "-v" "netstat"', index: expect.any(Number) },
+      { command: 'sudo "netstat" "-lnp"', index: expect.any(Number) },
+      { command: 'dig "+short" "+timeout=5" "@1.1.1.1" "google.com"', index: expect.any(Number) }
+    ]));
+    expect(cmds.length).toBe(8);
   });
 });

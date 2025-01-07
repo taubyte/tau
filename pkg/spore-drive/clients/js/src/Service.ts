@@ -7,6 +7,10 @@ import * as tar from "tar";
 import packageJson from "../package.json";
 import { homedir, platform } from "os";
 
+import { Health } from "./Health";
+
+import { createConnectTransport } from "@connectrpc/connect-node";
+
 import { fileURLToPath } from "url";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -102,6 +106,20 @@ export class Service {
     }
   }
 
+  private async isServiceUp(port: number): Promise<boolean> {
+    const transport = createConnectTransport({
+      baseUrl: `http://localhost:${port}`,
+      httpVersion: "1.1",
+    });
+    try {
+      const hc = new Health(transport);
+      await hc.ping();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   private async downloadAndExtractBinary(): Promise<void> {
     if (this.binaryExists() && this.versionMatches()) {
       return;
@@ -176,14 +194,22 @@ export class Service {
     });
   }
 
-  public getPort(): number | null {
-    const runFile = this.loadRunFile();
-    if (runFile && this.isProcessRunning(runFile.pid)) {
-      return runFile.port;
-    } else {
-      console.log("Service is not running.");
-      return null;
+  public async getPort(timeout: number = 3500): Promise<number | null> {
+    const startTime = Date.now();
+
+    while (Date.now() - startTime < timeout) {
+      const runFile = this.loadRunFile();
+      if (
+        runFile &&
+        this.isProcessRunning(runFile.pid) &&
+        (await this.isServiceUp(runFile.port))
+      ) {
+        return runFile.port;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
     }
+
+    return null;
   }
 
   private async executeBinary(): Promise<void> {
@@ -201,18 +227,15 @@ export class Service {
       child.unref();
 
       child.on("error", (err) => {
-        console.error("Failed to start binary:", err);
         reject(err);
       });
 
       child.on("spawn", () => {
-        console.log("Binary started successfully.");
         resolve();
       });
 
       child.on("exit", (code, signal) => {
         if (code !== 0) {
-          console.error(`Binary exited with code ${code} and signal ${signal}`);
           reject(new Error(`Binary exited with code ${code}`));
         }
       });
@@ -245,10 +268,14 @@ export class Service {
   }
 
   public async run(): Promise<void> {
-    await this.downloadAndExtractBinary();
-    const port = this.getPort();
+    let port = await this.getPort();
     if (port === null) {
+      await this.downloadAndExtractBinary();
       await this.executeBinary();
+      port = await this.getPort();
+      if (port === null) {
+        throw new Error("Failed to start service");
+      }
     }
   }
 }

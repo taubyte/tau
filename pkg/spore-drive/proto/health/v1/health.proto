@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package health.v1;
+
+option go_package = ".";
+
+// Data Structures
+message SupportsRequest {
+    string version = 1;
+}
+
+message Empty {}
+
+// Service
+service HealthService {
+    rpc Ping(Empty) returns (Empty);
+    rpc Supports(SupportsRequest) returns (Empty);
+}

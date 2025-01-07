@@ -119,14 +119,11 @@ func testDisplace(t *testing.T, sd Spore) {
   tau@gpu.service       loaded inactive dead Description of gpu`), nil)
 
 		if updatingTau {
-			for _, shape := range []string{"shape1", "shape2", "compute", "storage", "gpu"} {
-				rh.On("Sudo", ctx, "systemctl", "stop", "tau@"+shape).Return(nil, nil)
-			}
-		} else {
-			for _, shape := range []string{"shape1", "compute", "storage", "gpu"} {
+			for _, shape := range []string{"shape2", "compute", "storage", "gpu"} {
 				rh.On("Sudo", ctx, "systemctl", "stop", "tau@"+shape).Return(nil, nil)
 			}
 		}
+
 		for _, shape := range []string{"compute", "storage", "gpu"} {
 			rh.On("Sudo", ctx, "systemctl", "disable", "tau@"+shape).Return(nil, nil)
 		}
@@ -134,6 +131,7 @@ func testDisplace(t *testing.T, sd Spore) {
 		for _, shape := range []string{"shape1"} {
 			rh.On("Sudo", ctx, "systemctl", "enable", "tau@"+shape).Return(nil, nil)
 		}
+
 		if updatingTau {
 			for _, shape := range []string{"shape1", "shape2"} {
 				rh.On("Sudo", ctx, "systemctl", "start", "tau@"+shape).Return(nil, nil)

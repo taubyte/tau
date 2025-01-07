@@ -557,12 +557,13 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 
 		// stop tau instances and disable shapes that should be on the instance
 		for _, shape := range append(allShapes, hypha.Shapes...) {
-			if updatingTau || slices.Contains(hypha.Shapes, shape) || (slices.Contains(allShapes, shape) && !slices.Contains(hshapes, shape)) {
+			if slices.Contains(allShapes, shape) && (updatingTau || slices.Contains(hypha.Shapes, shape)) {
 				if _, err := r.Sudo(ctx, "systemctl", "stop", "tau@"+shape); err != nil {
 					return pushError("setup tau", fmt.Errorf("failed to stop tau@%s: %w", shape, err))
 				}
 			}
 
+			// cleanup: disable shapes that should not be on the instance
 			if slices.Contains(allShapes, shape) && !slices.Contains(hshapes, shape) {
 				if _, err := r.Sudo(ctx, "systemctl", "disable", "tau@"+shape); err != nil {
 					return pushError("setup tau", fmt.Errorf("failed to disable tau@%s: %w", shape, err))
