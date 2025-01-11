@@ -29,6 +29,11 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		config = &tauConfig.Node{}
 	}
 
+	// Beacon
+	if config.DevMode {
+		seerClient.DefaultAnnounceBeaconInterval = 30 * time.Second // To help with testing dns
+	}
+
 	srv := &Service{
 		config: config,
 		shape:  config.Shape,
@@ -40,6 +45,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	}
 
 	srv.dnsResolver = net.DefaultResolver
+	srv.hostUrl = config.NetworkFqdn
 
 	for _, op := range opts {
 		err = op(srv)
@@ -65,29 +71,10 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		clientNode = config.ClientNode
 	}
 
-	// Setup/Start DNS service
-	err = srv.newDnsServer(config.DevMode, config.Ports["dns"])
-	if err != nil {
-		logger.Error("creating Dns server failed with:", err.Error())
-		return nil, fmt.Errorf("new dns server failed with: %s", err)
-	}
-
 	srv.tns, err = tnsClient.New(ctx, clientNode)
 	if err != nil {
 		return nil, fmt.Errorf("new tns api failed with: %s", err)
 	}
-
-	// will panic if fails
-	srv.dns.Start(ctx)
-	err = srv.subscribe()
-	if err != nil {
-		return nil, fmt.Errorf("pubsub subscribe failed with: %s", err)
-	}
-
-	// Setup geo and oracle
-	srv.geo = &geoService{srv}
-
-	srv.oracle = &oracleService{srv}
 
 	srv.ds, err = pebbleds.NewDatastore(
 		path.Join(config.Root, "storage", srv.shape, "seer"),
@@ -97,18 +84,19 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		return nil, fmt.Errorf("initialize database failed with: %s", err)
 	}
 
-	// Stream
+	srv.geo = &geoService{srv}
+	srv.oracle = &oracleService{srv}
+
 	srv.stream, err = streams.New(srv.node, servicesCommon.Seer, servicesCommon.SeerProtocol)
 	if err != nil {
 		return nil, fmt.Errorf("new p2p stream failed with: %w", err)
 	}
 
-	srv.hostUrl = config.NetworkFqdn
 	srv.setupStreamRoutes()
 
-	// Beacon
-	if config.DevMode {
-		seerClient.DefaultAnnounceBeaconInterval = 30 * time.Second // To help with testing dns
+	err = srv.subscribe()
+	if err != nil {
+		return nil, fmt.Errorf("pubsub subscribe failed with: %s", err)
 	}
 
 	sc, err := seerClient.New(ctx, clientNode)
@@ -120,6 +108,15 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	if err != nil {
 		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
+
+	// Start DNS: will panic if fails
+	err = srv.newDnsServer(config.DevMode, config.Ports["dns"])
+	if err != nil {
+		logger.Error("creating Dns server failed with:", err.Error())
+		return nil, fmt.Errorf("new dns server failed with: %s", err)
+	}
+
+	srv.dns.Start(ctx)
 
 	// HTTP
 	if config.Http == nil {

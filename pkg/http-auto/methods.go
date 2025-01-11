@@ -10,6 +10,7 @@ import (
 
 	"crypto/tls"
 
+	"github.com/jellydator/ttlcache/v3"
 	basicHttp "github.com/taubyte/http/basic"
 	"github.com/taubyte/http/options"
 	authP2P "github.com/taubyte/tau/clients/p2p/auth"
@@ -97,6 +98,9 @@ func New(node, clientNode peer.Node, config *config.Node, opts ...options.Option
 		return nil, err
 	}
 
+	s.positiveCache = ttlcache.New[string, bool](ttlcache.WithTTL[string, bool](PositiveTTL))
+	s.negativeCache = ttlcache.New[string, bool](ttlcache.WithTTL[string, bool](NegativeTTL))
+
 	return &s, nil
 }
 
@@ -112,8 +116,44 @@ func (s *Service) isProtocolOrAliasDomain(dom string) bool {
 	return false
 }
 
+func (s *Service) validateFQDN(hello *tls.ClientHelloInfo) error {
+	if item := s.negativeCache.Get(hello.ServerName); item != nil && item.Value() {
+		return fmt.Errorf("cached as invalid: %s", hello.ServerName)
+	}
+
+	if item := s.positiveCache.Get(hello.ServerName); item != nil && item.Value() {
+		return nil
+	}
+
+	projectId, err := s.validateFromTns(hello.ServerName)
+	if err != nil {
+		s.negativeCache.Set(hello.ServerName, true, NegativeTTL)
+		return fmt.Errorf("failed validateFromTns for %s with %v", hello.ServerName, err) // Validation failed, return error
+	}
+
+	// Check txt if it not using generated domain
+	if !s.config.GeneratedDomainRegExp.MatchString(hello.ServerName) {
+		if projectId == "" {
+			s.negativeCache.Set(hello.ServerName, true, NegativeTTL)
+			return fmt.Errorf("project ID is empty") // Project ID is empty, return error
+		}
+
+		_, err = net.DefaultResolver.LookupTXT(s.Context(), projectId[:8]+"."+hello.ServerName)
+		if err != nil {
+			s.negativeCache.Set(hello.ServerName, true, NegativeTTL)
+			return fmt.Errorf("failed txt lookup on %s with %v", hello.ServerName, err) // TXT lookup failed, return error
+		}
+	}
+
+	s.positiveCache.Set(hello.ServerName, true, PositiveTTL)
+	return nil
+}
+
 // TODO: do a domain validation
 func (s *Service) Start() {
+	go s.positiveCache.Start()
+	go s.negativeCache.Start()
+
 	go func() {
 		m := &autocert.Manager{
 			Prompt: autocert.AcceptTOS,
@@ -125,31 +165,11 @@ func (s *Service) Start() {
 				logger.Debugf("GetCertificate for %s from %s %v", hello.ServerName, hello.Conn.RemoteAddr(), hello.SupportedProtos)
 				hello.ServerName = strings.ToLower(hello.ServerName)
 
-				// Make sure its registered inside tns first and get projectID
-				// Allow our services and our webhooks to bypass these checks but still check for everything else
-				//TODO: better check later on but for now to not block our own console
 				if s.customDomainChecker != nil {
 					if !s.customDomainChecker(hello) {
 						return nil, fmt.Errorf("customDomainChecker for %s was false", hello.ServerName)
 					}
-				} else if !s.isProtocolOrAliasDomain(hello.ServerName) {
-					projectId, err := s.validateFromTns(hello.ServerName)
-					if err != nil {
-						return nil, fmt.Errorf("failed validateFromTns for %s with %v", hello.ServerName, err)
-					}
-
-					// Skips txt check if its using g.tau.link
-					if !s.config.GeneratedDomainRegExp.MatchString(hello.ServerName) {
-						if projectId == "" {
-							return nil, fmt.Errorf("project ID is empty")
-						}
-
-						_, err = net.DefaultResolver.LookupTXT(s.Context(), projectId[:8]+"."+hello.ServerName)
-						if err != nil {
-							return nil, fmt.Errorf("failed txt lookup on %s with %v", hello.ServerName, err)
-						}
-					}
-				} else {
+				} else if s.isProtocolOrAliasDomain(hello.ServerName) {
 					valid := false
 					for _, proto := range commonSpecs.Services {
 						if strings.HasPrefix(hello.ServerName, proto+".") {
@@ -160,23 +180,13 @@ func (s *Service) Start() {
 					if !valid {
 						return nil, fmt.Errorf("invalid protocol in `%s`", hello.ServerName)
 					}
-				}
-
-				logger.Debugf("looking for certificate for %s", hello.ServerName)
-				cert, err = s.authClient.GetStaticCertificate(hello.ServerName)
-				if err != nil {
-					logger.Debugf("autocert will handle certificate for `%s`", hello.ServerName)
-					cert, err = m.GetCertificate(hello)
-					if err != nil {
-						logger.Errorf("autocert getting certificate for `%s` failed: %s", hello.ServerName, err.Error())
+				} else {
+					if err := s.validateFQDN(hello); err != nil {
 						return nil, err
 					}
-					logger.Debugf("autocert got certificate for `%s` %v", hello.ServerName, cert)
-				} else {
-					logger.Debugf("got certificate for `%s` %v", hello.ServerName, hello.SupportedProtos)
 				}
 
-				return cert, nil
+				return m.GetCertificate(hello)
 			},
 			NextProtos: []string{
 				"http/1.1", acme.ALPNProto,
@@ -198,6 +208,18 @@ func (s *Service) Start() {
 			s.Kill()
 		}
 	}()
+}
+
+func (s *Service) Kill() {
+	s.positiveCache.Stop()
+	s.negativeCache.Stop()
+	s.Service.Kill()
+}
+
+func (s *Service) Stop() {
+	s.positiveCache.Stop()
+	s.negativeCache.Stop()
+	s.Service.Stop()
 }
 
 func (s *Service) GetListenAddress() (*url.URL, error) {

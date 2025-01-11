@@ -65,8 +65,7 @@ type runtime struct {
 	instance *instance
 	runtime  wazero.Runtime
 
-	wasiStartError error
-	wasiStartDone  chan bool
+	wasiStartDone chan bool
 }
 
 /*************** Service ***************/

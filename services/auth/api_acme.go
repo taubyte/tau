@@ -73,8 +73,8 @@ func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]
 }
 
 func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn string) ([]byte, error) {
-	logger.Debugf("Get certificate for `%s`", fqdn)
-	defer logger.Debugf("Get certificate for `%s` done", fqdn)
+	logger.Debugf("Get static certificate for `%s`", fqdn)
+	defer logger.Debugf("Get static certificate for `%s` done", fqdn)
 
 	key := "/static/" + base64.StdEncoding.EncodeToString([]byte(fqdn)) + "/certificate/pem"
 	certificate, err := srv.db.Get(ctx, key)
@@ -95,7 +95,7 @@ func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn strin
 		return nil, autocert.ErrCacheMiss
 	}
 
-	logger.Debugf("Get certificate for `%s`: %v", fqdn, certificate)
+	logger.Debugf("Get static certificate for `%s`: %v", fqdn, certificate)
 
 	return certificate, nil
 }
