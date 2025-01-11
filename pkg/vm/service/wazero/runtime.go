@@ -137,7 +137,8 @@ func (r *runtime) instantiate(name string, compiled wazero.CompiledModule, hasRe
 		WithSysNanosleep().
 		WithRandSource(crand.Reader)
 
-	m, err := r.runtime.InstantiateModule(r.instance.ctx.Context(), compiled, config)
+	ctx := r.instance.ctx.Context()
+	m, err := r.runtime.InstantiateModule(ctx, compiled, config)
 	if err != nil {
 		return nil, fmt.Errorf("instantiating compiled module `%s` failed with: %s", name, err)
 	}
@@ -145,15 +146,15 @@ func (r *runtime) instantiate(name string, compiled wazero.CompiledModule, hasRe
 	if _start := m.ExportedFunction("_start"); _start != nil {
 		if hasReady {
 			go func() {
-				_, r.wasiStartError = _start.Call(r.instance.ctx.Context())
-				if r.wasiStartError != nil {
-					r.wasiStartDone <- false
-				}
+				_start.Call(ctx)
 			}()
 
-			<-r.wasiStartDone
+			select {
+			case <-ctx.Done():
+			case <-r.wasiStartDone:
+			}
 		} else {
-			_start.Call(r.instance.ctx.Context())
+			_start.Call(ctx)
 		}
 	}
 

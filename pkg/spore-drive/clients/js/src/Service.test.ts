@@ -5,7 +5,7 @@ describe("Service", () => {
 
   beforeAll(() => {
     service = new Service();
-    service["packageVersion"] = "0.1.0"; // override to a published version
+    service["packageVersion"] = "0.1.3"; // override to a published version
   });
 
   afterAll(async () => {
@@ -13,13 +13,14 @@ describe("Service", () => {
   });
 
   it("should return null when service is not running", async () => {
+    await service.kill();
     const port = await service.getPort();
     expect(port).toBe(null);
   });
 
   // TODO: re-enable once we release a spore-drive binary that supports healthcheck
   // Need to set the right version in line 8
-  it.skip("should run the full workflow", async () => {
+  it("should run the full workflow", async () => {
     console.log("Running the full workflow...");
 
     await service.run();

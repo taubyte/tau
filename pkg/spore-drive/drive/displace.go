@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -19,6 +20,8 @@ import (
 	"gopkg.in/ini.v1"
 	"gopkg.in/yaml.v3"
 )
+
+var systemdResolvedRegexp = regexp.MustCompile(`.*:53[\s\t].*systemd-resolv.*`)
 
 func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan Progress {
 
@@ -476,7 +479,8 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 			return pushError("dependencies", fmt.Errorf("failed to run netstat: %w", err))
 		}
 
-		if bytes.Contains(netstatOutput, []byte(":53 ")) && bytes.Contains(netstatOutput, []byte("systemd-resolve")) {
+		netstatStr := string(netstatOutput)
+		if systemdResolvedRegexp.MatchString(netstatStr) {
 			// systemd-resolved is using port 53, updating DNS settings using ini package
 			if err := updateResolvedConf(ctx, r); err != nil {
 				return pushError("dependencies", fmt.Errorf("failed to update /etc/systemd/resolved.conf: %w", err))

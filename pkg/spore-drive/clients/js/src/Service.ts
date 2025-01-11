@@ -114,8 +114,10 @@ export class Service {
     try {
       const hc = new Health(transport);
       await hc.ping();
+      console.log("Service is up on port", port);
       return true;
     } catch (e) {
+      console.log("Service is not up on port", port, e);
       return false;
     }
   }

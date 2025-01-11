@@ -110,7 +110,9 @@ func (s *Shadows) gc() {
 
 func (s *Shadows) keep() {
 	select {
-	case s.more <- struct{}{}: // Send if not blocking
+	case <-s.ctx.Done():
+		return
+	case s.more <- struct{}{}:
 	default:
 	}
 }

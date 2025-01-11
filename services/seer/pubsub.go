@@ -48,7 +48,7 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 			}
 		}
 		if node.Geo != nil {
-			srv.geo.setNode(srv.node.Context(), node.Cid, node.Geo.Location)
+			_, err = srv.geo.setNode(srv.node.Context(), node.Cid, node.Geo.Location)
 			if err != nil {
 				logger.Error("Failed inserting node geo with: %s", err.Error())
 			}
