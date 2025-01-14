@@ -69,8 +69,8 @@ func (s *Service) handle(w goHttp.ResponseWriter, r *goHttp.Request) error {
 
 func (s *Service) Handler(w goHttp.ResponseWriter, r *goHttp.Request) {
 	if err := s.handle(w, r); err != nil {
-		w.Write([]byte(err.Error()))
 		w.WriteHeader(500)
+		w.Write([]byte(err.Error()))
 	}
 }
 

@@ -20,8 +20,8 @@ func (g *Gateway) attach() {
 		PathPrefix: "/",
 		Handler: func(w goHttp.ResponseWriter, r *goHttp.Request) {
 			if err := g.handleHttp(w, r); err != nil {
-				w.Write([]byte(err.Error()))
 				w.WriteHeader(500)
+				w.Write([]byte(err.Error()))
 			}
 		},
 	})
