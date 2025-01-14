@@ -6,8 +6,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/mackerelio/go-osstat/memory"
 )
 
 var globalInstanceCount int64
@@ -61,14 +59,12 @@ func (f *Function) initShadow() {
 						}
 					}
 
-					mem, err := memory.Get()
+					totalMemAndSwap, usedMemAndSwap, memTotal, memUsed, err := getTotalAndUsedMemory()
 					if err != nil {
 						logger.Errorf("failed to get memory stats: %s", err.Error())
 						continue
 					}
 
-					totalMemAndSwap := mem.Total + mem.SwapTotal
-					usedMemAndSwap := mem.Used + mem.SwapUsed
 					usedMemoryPercentage := (usedMemAndSwap * 100) / totalMemAndSwap
 					if usedMemoryPercentage < MemoryThreshold {
 						maxMemory := f.config.Memory
@@ -76,7 +72,7 @@ func (f *Function) initShadow() {
 							maxMemory = DefaultWasmMemory
 						}
 
-						if mem.Used+maxMemory <= mem.Total {
+						if memUsed+maxMemory <= memTotal {
 							shadow, err := f.shadows.newInstance()
 							if err != nil {
 								logger.Errorf("creating new shadow instance failed with: %s", err.Error())
