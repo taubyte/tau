@@ -26,8 +26,6 @@ func New(ctx context.Context, serviceable components.FunctionServiceable) (*Func
 			maxMemory:      new(atomic.Uint64),
 		}
 
-		dFunc.maxMemory.Store(uint64(serviceable.Config().Memory))
-
 		dFunc.initShadow()
 
 		return dFunc, nil

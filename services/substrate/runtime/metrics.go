@@ -18,7 +18,6 @@ func (f *Function) ColdStart() time.Duration {
 }
 
 func (f *Function) MemoryMax() uint64 {
-
 	return uint64(f.maxMemory.Load())
 }
 

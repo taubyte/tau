@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -11,12 +12,16 @@ import (
 )
 
 type Shadows struct {
-	ctx       context.Context
-	ctxC      context.CancelFunc
-	parent    *Function
-	instances chan *shadowInstance
-	more      chan struct{}
-	available atomic.Int64
+	ctx          context.Context
+	ctxC         context.CancelFunc
+	parent       *Function
+	instances    chan *shadowInstance
+	more         chan int
+	available    atomic.Int64
+	requestCount int64      // total number of requests
+	lastCheck    time.Time  // last time we calculated RPS
+	currentRPS   float64    // current requests per second
+	mu           sync.Mutex // mutex for RPS calculations
 }
 
 type Function struct {
