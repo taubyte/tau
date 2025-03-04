@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command"
 	dirs "github.com/taubyte/utils/fs/dir"
 	maps "github.com/taubyte/utils/maps"
+	"golang.org/x/crypto/acme/autocert"
 
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
@@ -21,19 +22,18 @@ var logger = log.Logger("tau.auth.acme.store")
 var certFileRegexp = regexp.MustCompile(`(\+token|\+rsa|\+key|\.key)$`)
 
 // Store implements Store and Cache using taubyte acme service
-// NOTE: Must periodically chewck the validity of the certificate by a go-routine. If
+// NOTE: Must periodically check the validity of the certificate by a go-routine. If
 //
 //	the certififcate is not valid restart the service after a random sleep.
 type Store struct {
-	node         peer.Node
-	client       *client.Client
-	cacheDir     dirs.Directory
-	errCacheMiss error
-	closed       bool
-	mu           sync.Mutex
+	node     peer.Node
+	client   *client.Client
+	cacheDir dirs.Directory
+	closed   bool
+	mu       sync.Mutex
 }
 
-func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss error) (*Store, error) {
+func New(ctx context.Context, node peer.Node, cacheDir string) (*Store, error) {
 	var (
 		c   Store
 		err error
@@ -46,7 +46,6 @@ func New(ctx context.Context, node peer.Node, cacheDir string, errCacheMiss erro
 		return nil, err
 	}
 
-	c.errCacheMiss = errCacheMiss
 	c.client, err = client.New(node, protocolCommon.AuthProtocol)
 	if err != nil {
 		logger.Error("ACME Store creation failed:", err.Error())
@@ -71,21 +70,21 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 	pem, err := d.getDynamicCertificate(name, isCert)
 	if err != nil {
 		if !isCert {
-			if d.errCacheMiss != nil && (err.Error() == d.errCacheMiss.Error()) {
+			if err.Error() == autocert.ErrCacheMiss.Error() {
 				logger.Debugf("Cache miss for `%s` returning ErrCacheMiss", name)
-				return nil, d.errCacheMiss
+				return nil, autocert.ErrCacheMiss
 			}
 			logger.Debugf("Getting `%s` failed: %w", name, err)
 			return nil, err
 		}
 
+		// TODO: move logic to "GetCertificate:" in http-auto/methods.go
+		// Should check auth (for set using taucorder) and TNS for user set.
+		// And cache both separately.
 		pem, err = d.getStaticCertificate(name)
-		if d.errCacheMiss != nil && err.Error() == d.errCacheMiss.Error() {
-			logger.Debugf("Cache miss for static `%s` returning ErrCacheMiss", name)
-			return nil, d.errCacheMiss
-		} else if err != nil {
-			logger.Debugf("Getting static `%s` failed: %w", name, err)
-			return nil, err
+		if err != nil {
+			logger.Debugf("Not found in acme cache... trying to get a static certificate for `%s` failed: %w", name, err)
+			return nil, autocert.ErrCacheMiss
 		}
 	}
 
