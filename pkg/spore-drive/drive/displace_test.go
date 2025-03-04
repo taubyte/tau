@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+	"github.com/stretchr/testify/mock"
 	"github.com/taubyte/tau/config"
 	host "github.com/taubyte/tau/pkg/mycelium/host"
 	"gopkg.in/yaml.v3"
@@ -147,6 +148,12 @@ func testDisplace(t *testing.T, sd Spore) {
 		rh.On("Remove", "/tmp/tau@.service").Return(nil)
 		rh.On("Remove", "/tmp/shape1.yaml").Return(nil)
 
+		// firewall
+		rh.On("Execute", ctx, "command", "-v", "ufw").Once().Return(nil, nil)
+		rh.On("Sudo", ctx, "ufw", "status", "numbered").Return(nil, nil)
+		rh.On("Sudo", ctx, "ufw", "status", "|", "grep", mock.Anything).Return(nil, errors.New("not found"))
+		rh.On("Sudo", ctx, "ufw", "allow", mock.Anything).Return(nil, nil)
+
 		return rh, nil
 	}
 
@@ -163,9 +170,9 @@ func testDisplace(t *testing.T, sd Spore) {
 	}
 
 	if updatingTau {
-		assert.Equal(t, len(steps), 56)
+		assert.Equal(t, len(steps), 70)
 	} else {
-		assert.Equal(t, len(steps), 50)
+		assert.Equal(t, len(steps), 64)
 	}
 
 	for h, mfs := range fses {
