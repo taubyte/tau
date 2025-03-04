@@ -92,14 +92,14 @@ func New(node, clientNode peer.Node, config *config.Node, opts ...options.Option
 		return nil, err
 	}
 
-	s.certStore, err = acmeStore.New(clientNode.Context(), clientNode, cacheDir.Path(), autocert.ErrCacheMiss)
+	s.certStore, err = acmeStore.New(clientNode.Context(), clientNode, cacheDir.Path())
 	if err != nil {
 		logger.Error("new Auto HTTP: ", err)
 		return nil, err
 	}
 
-	s.positiveCache = ttlcache.New[string, bool](ttlcache.WithTTL[string, bool](PositiveTTL))
-	s.negativeCache = ttlcache.New[string, bool](ttlcache.WithTTL[string, bool](NegativeTTL))
+	s.positiveCache = ttlcache.New(ttlcache.WithTTL[string, bool](PositiveTTL))
+	s.negativeCache = ttlcache.New(ttlcache.WithTTL[string, bool](NegativeTTL))
 
 	return &s, nil
 }

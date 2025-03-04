@@ -65,7 +65,7 @@ func TestInject(t *testing.T) {
 
 	cert := injectCert(t, auth)
 
-	newStore, err := store.New(u.Context(), simple.PeerNode(), testDir, err)
+	newStore, err := store.New(u.Context(), simple.PeerNode(), testDir)
 	assert.NilError(t, err)
 
 	// Shoud Fail
