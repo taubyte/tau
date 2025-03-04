@@ -21,7 +21,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var systemdResolvedRegexp = regexp.MustCompile(`.*:53[\s\t].*systemd-resolv.*`)
+var systemdResolvedRegexp = regexp.MustCompile(`.*:53[\s\t].*systemd-.*`)
 
 func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan Progress {
 
@@ -395,6 +395,15 @@ func (d *sporedrive) isSameTau(ctx context.Context, h remoteHost) bool {
 	return false
 }
 
+func defaultPortsToOpen() map[int]struct{} {
+	return map[int]struct{}{
+		53:  {},
+		953: {},
+		80:  {},
+		443: {},
+	}
+}
+
 func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Progress) func(context.Context, host.Host) error {
 	updatingTau := (d.tauBinary != nil)
 	return func(ctx context.Context, h host.Host) error {
@@ -669,6 +678,46 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 		}
 
 		pushProgress("clean up", 100)
+
+		// Check if ufw is installed
+		if _, err := r.Execute(ctx, "command", "-v", "ufw"); err == nil {
+			pushProgress("firewall", 10)
+
+			portsToCheck := defaultPortsToOpen()
+
+			// Add the main port to the list of ports to check
+			for _, shape := range hypha.Shapes {
+				if !slices.Contains(hshapes, shape) {
+					continue
+				}
+
+				mainPort := int(d.parser.Shapes().Shape(shape).Ports().Get("main"))
+				portsToCheck[mainPort] = struct{}{}
+			}
+
+			// Calculate progress increment
+			totalPorts := len(portsToCheck)
+			progressIncrement := 90 / totalPorts // 90 because we start at 10
+
+			// Check and open each port if necessary
+			currentProgress := 10
+			for port := range portsToCheck {
+				if _, err := r.Sudo(ctx, "ufw", "status", "numbered"); err == nil {
+					if _, err := r.Sudo(ctx, "ufw", "status", "|", "grep", fmt.Sprintf("%d", port)); err != nil {
+						if _, err := r.Sudo(ctx, "ufw", "allow", fmt.Sprintf("%d", port)); err != nil {
+							return pushError("firewall", fmt.Errorf("failed to open port %d: %w", port, err))
+						}
+					}
+				} else {
+					return pushError("firewall", fmt.Errorf("failed to check ufw status: %w", err))
+				}
+
+				// Update progress
+				currentProgress += progressIncrement
+				pushProgress("firewall", currentProgress)
+			}
+			pushProgress("firewall", 100)
+		}
 
 		return nil
 	}
