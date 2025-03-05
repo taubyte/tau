@@ -6,6 +6,7 @@ import { spawn } from "child_process";
 import * as tar from "tar";
 import packageJson from "../package.json";
 import { homedir, platform } from "os";
+import * as os from 'os';
 
 import { Health } from "./Health";
 
@@ -26,10 +27,12 @@ export class Service {
   private versionFilePath: string;
   private packageVersion: string;
   private runFilePath: string;
+  private binaryName: string;
 
   constructor() {
     this.binaryDir = path.join(__dirname, "bin");
-    this.binaryPath = path.join(this.binaryDir, "drive");
+    this.binaryName = os.platform() === 'win32' ? "drive.exe" : "drive";
+    this.binaryPath = path.join(this.binaryDir, this.binaryName);
     this.versionFilePath = path.join(this.binaryDir, "version.txt");
     this.packageVersion = packageJson.service;
     this.runFilePath = path.join(this.getConfigDir(), ".spore-drive.run");
