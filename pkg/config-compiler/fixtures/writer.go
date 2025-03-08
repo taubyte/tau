@@ -26,7 +26,7 @@ func writeFixture(fs afero.Fs, folder string, toWrite map[string]map[string]stri
 			return nil, err
 		}
 
-		if f.Close() != nil {
+		if err = f.Close(); err != nil {
 			return nil, err
 		}
 	}
