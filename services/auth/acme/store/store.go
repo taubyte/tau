@@ -11,7 +11,6 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	client "github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
-	dirs "github.com/taubyte/utils/fs/dir"
 	maps "github.com/taubyte/utils/maps"
 	"golang.org/x/crypto/acme/autocert"
 
@@ -28,7 +27,7 @@ var certFileRegexp = regexp.MustCompile(`(\+token|\+rsa|\+key|\.key)$`)
 type Store struct {
 	node     peer.Node
 	client   *client.Client
-	cacheDir dirs.Directory
+	cacheDir autocert.DirCache
 	closed   bool
 	mu       sync.Mutex
 }
@@ -41,10 +40,7 @@ func New(ctx context.Context, node peer.Node, cacheDir string) (*Store, error) {
 
 	logger.Debug("ACME Distributed Store Creation...")
 	c.node = node
-	c.cacheDir, err = dirs.New(cacheDir)
-	if err != nil {
-		return nil, err
-	}
+	c.cacheDir = autocert.DirCache(cacheDir)
 
 	c.client, err = client.New(node, protocolCommon.AuthProtocol)
 	if err != nil {
@@ -67,7 +63,14 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 
 	isCert := !certFileRegexp.MatchString(name)
 
-	pem, err := d.getDynamicCertificate(name, isCert)
+	// check local cache
+	pem, err := d.cacheDir.Get(ctx, name)
+	if err == nil {
+		return pem, nil
+	}
+
+	// check remote cache
+	pem, err = d.getDynamicCertificate(name, isCert)
 	if err != nil {
 		if !isCert {
 			if err.Error() == autocert.ErrCacheMiss.Error() {
@@ -87,6 +90,9 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 			return nil, autocert.ErrCacheMiss
 		}
 	}
+
+	// cache locally
+	d.cacheDir.Put(ctx, name, pem)
 
 	return pem, nil
 }
@@ -160,24 +166,31 @@ func (d *Store) Put(ctx context.Context, name string, data []byte) error {
 	_, err := d.client.Send("acme", *body)
 	if err != nil {
 		logger.Errorf("Storing `%s` error: %s", name, err.Error())
+		return err
 	}
-	return err
+
+	// cache locally
+	d.cacheDir.Put(ctx, name, data)
+
+	return nil
 }
 
 // Delete removes the specified certificate or tokens (cached data).
 func (d *Store) Delete(ctx context.Context, name string) error {
 	logger.Debugf("Deleting `%s`", name)
 	defer logger.Debugf("Deleting `%s` done", name)
-	// client can not delete
-	// certificate life cycle is handled by the Auth peers
 
 	// token or any cached data can be deleted
 	if !certFileRegexp.MatchString(name) {
+		// (deferred) delete locally
+		defer d.cacheDir.Delete(ctx, name)
+
+		// delete remotely
 		_, err := d.client.Send("acme", command.Body{"action": "cache-delete", "key": name})
 		if err != nil {
 			logger.Errorf("Deleting `%s` error: %s", name, err.Error())
+			return err
 		}
-		return err
 	}
 
 	return nil

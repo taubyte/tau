@@ -7,9 +7,9 @@ import (
 
 	goHttp "net/http"
 
-	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/p2p/streams/client"
 	tunnel "github.com/taubyte/tau/p2p/streams/tunnels/http"
+	http "github.com/taubyte/tau/pkg/http"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
 	"github.com/taubyte/tau/services/substrate/components/metrics"

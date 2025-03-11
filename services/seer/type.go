@@ -10,9 +10,9 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 
-	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/config"
 	tnsClient "github.com/taubyte/tau/core/services/tns"
+	http "github.com/taubyte/tau/pkg/http"
 
 	"github.com/ipfs/go-datastore"
 )

@@ -7,10 +7,10 @@ import (
 	goHttp "net/http"
 
 	"github.com/pterm/pterm"
-	httpIface "github.com/taubyte/http"
-	http "github.com/taubyte/http/basic"
-	"github.com/taubyte/http/options"
 	"github.com/taubyte/tau/dream"
+	httpIface "github.com/taubyte/tau/pkg/http"
+	http "github.com/taubyte/tau/pkg/http/basic"
+	"github.com/taubyte/tau/pkg/http/options"
 )
 
 type multiverseService struct {

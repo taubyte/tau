@@ -1,7 +1,7 @@
 package seer
 
 import (
-	http "github.com/taubyte/http"
+	http "github.com/taubyte/tau/pkg/http"
 )
 
 func (srv *Service) setupDnsHTTPRoutes() {

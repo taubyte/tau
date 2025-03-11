@@ -7,8 +7,8 @@ import (
 
 	"github.com/taubyte/tau/services/auth/github"
 
-	http "github.com/taubyte/http"
-	httpAuth "github.com/taubyte/http/auth"
+	http "github.com/taubyte/tau/pkg/http"
+	httpAuth "github.com/taubyte/tau/pkg/http/auth"
 )
 
 func (srv *AuthService) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, error) {

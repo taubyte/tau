@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/spf13/afero/zipfs"
-	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/core/services/substrate/components"
 	httpComp "github.com/taubyte/tau/core/services/substrate/components/http"
+	http "github.com/taubyte/tau/pkg/http"
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/metrics"

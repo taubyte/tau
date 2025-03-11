@@ -3,7 +3,7 @@ package options
 import (
 	"crypto/tls"
 
-	"github.com/taubyte/http/options"
+	"github.com/taubyte/tau/pkg/http/options"
 )
 
 type OptionChecker struct {

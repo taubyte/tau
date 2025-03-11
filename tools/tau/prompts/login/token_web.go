@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/pterm/pterm"
-	http "github.com/taubyte/http"
-	basicHttp "github.com/taubyte/http/basic"
-	"github.com/taubyte/http/options"
+	http "github.com/taubyte/tau/pkg/http"
+	basicHttp "github.com/taubyte/tau/pkg/http/basic"
+	"github.com/taubyte/tau/pkg/http/options"
 	"github.com/urfave/cli/v2"
 )
 

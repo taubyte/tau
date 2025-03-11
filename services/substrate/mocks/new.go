@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	httpMock "github.com/taubyte/http/mocks"
 	"github.com/taubyte/tau/core/vm"
+	httpMock "github.com/taubyte/tau/pkg/http/mocks"
 	"github.com/taubyte/tau/pkg/vm/backend/dfs"
 	"github.com/taubyte/tau/pkg/vm/backend/file"
 	"github.com/taubyte/tau/pkg/vm/backend/url"

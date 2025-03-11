@@ -4,7 +4,7 @@ import (
 	"crypto/tls"
 	"testing"
 
-	"github.com/taubyte/http/options"
+	"github.com/taubyte/tau/pkg/http/options"
 )
 
 type MockConfigurable struct {

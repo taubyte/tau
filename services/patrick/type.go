@@ -1,10 +1,10 @@
 package service
 
 import (
-	http "github.com/taubyte/http"
 	iface "github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
+	http "github.com/taubyte/tau/pkg/http"
 
 	auth "github.com/taubyte/tau/core/services/auth"
 
