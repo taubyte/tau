@@ -11,13 +11,13 @@ import (
 	"crypto/tls"
 
 	"github.com/jellydator/ttlcache/v3"
-	basicHttp "github.com/taubyte/http/basic"
-	"github.com/taubyte/http/options"
 	authP2P "github.com/taubyte/tau/clients/p2p/auth"
 	tnsP2P "github.com/taubyte/tau/clients/p2p/tns"
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/peer"
 	autoOptions "github.com/taubyte/tau/pkg/http-auto/options"
+	basicHttp "github.com/taubyte/tau/pkg/http/basic"
+	"github.com/taubyte/tau/pkg/http/options"
 
 	acmeStore "github.com/taubyte/tau/services/auth/acme/store"
 
@@ -31,9 +31,11 @@ func (s *Service) SetOption(opt interface{}) error {
 	if opt == nil {
 		return errors.New("`nil` option")
 	}
-	switch checker := opt.(type) {
+	switch opt := opt.(type) {
 	case autoOptions.OptionChecker:
-		s.customDomainChecker = checker.Checker
+		s.customDomainChecker = opt.Checker
+	case options.OptionACME:
+		s.acme = &opt
 	}
 	// default: we ignore option we do not know so other modules can process them
 	return nil
@@ -149,77 +151,73 @@ func (s *Service) validateFQDN(hello *tls.ClientHelloInfo) error {
 	return nil
 }
 
-// TODO: do a domain validation
 func (s *Service) Start() {
 	go s.positiveCache.Start()
 	go s.negativeCache.Start()
 
-	go func() {
-		m := &autocert.Manager{
-			Prompt: autocert.AcceptTOS,
-			Cache:  s.certStore,
+	m := &autocert.Manager{
+		Prompt: autocert.AcceptTOS,
+		Cache:  s.certStore,
+	}
+
+	if s.acme != nil {
+		m.Client = &acme.Client{
+			DirectoryURL: s.acme.DirectoryURL,
+			Key:          s.acme.Key,
 		}
+	}
 
-		cfg := &tls.Config{
-			GetCertificate: func(hello *tls.ClientHelloInfo) (cert *tls.Certificate, err error) {
-				logger.Debugf("GetCertificate for %s from %s %v", hello.ServerName, hello.Conn.RemoteAddr(), hello.SupportedProtos)
-				hello.ServerName = strings.ToLower(hello.ServerName)
+	cfg := &tls.Config{
+		GetCertificate: func(hello *tls.ClientHelloInfo) (cert *tls.Certificate, err error) {
+			logger.Debugf("GetCertificate for %s from %s %v", hello.ServerName, hello.Conn.RemoteAddr(), hello.SupportedProtos)
+			hello.ServerName = strings.ToLower(hello.ServerName)
 
-				if s.customDomainChecker != nil {
-					if !s.customDomainChecker(hello) {
-						return nil, fmt.Errorf("customDomainChecker for %s was false", hello.ServerName)
-					}
-				} else if s.isProtocolOrAliasDomain(hello.ServerName) {
-					valid := false
-					for _, proto := range commonSpecs.Services {
-						if strings.HasPrefix(hello.ServerName, proto+".") {
-							valid = true
-							break
-						}
-					}
-					if !valid {
-						return nil, fmt.Errorf("invalid protocol in `%s`", hello.ServerName)
-					}
-				} else {
-					if err := s.validateFQDN(hello); err != nil {
-						return nil, err
+			if s.customDomainChecker != nil {
+				if !s.customDomainChecker(hello) {
+					return nil, fmt.Errorf("customDomainChecker for %s was false", hello.ServerName)
+				}
+			} else if s.isProtocolOrAliasDomain(hello.ServerName) {
+				valid := false
+				for _, proto := range commonSpecs.Services {
+					if strings.HasPrefix(hello.ServerName, proto+".") {
+						valid = true
+						break
 					}
 				}
+				if !valid {
+					return nil, fmt.Errorf("invalid protocol in `%s`", hello.ServerName)
+				}
+			} else {
+				if err := s.validateFQDN(hello); err != nil {
+					return nil, err
+				}
+			}
 
-				return m.GetCertificate(hello)
-			},
-			NextProtos: []string{
-				"http/1.1", acme.ALPNProto,
-			},
-		}
+			return m.GetCertificate(hello)
+		},
+		NextProtos: []string{
+			"http/1.1", acme.ALPNProto,
+		},
+	}
 
-		// Let's Encrypt tls-alpn-01 only works on port 443.
-		ln, err := net.Listen("tcp4", s.ListenAddress) /* #nosec G102 */
-		if err != nil {
-			s.err = fmt.Errorf("creating TLS listener failed with %w", err)
-			s.Kill()
-			return
-		}
+	// Let's Encrypt tls-alpn-01 only works on port 443.
+	ln, err := net.Listen("tcp4", s.ListenAddress) /* #nosec G102 */
+	if err != nil {
+		s.err = fmt.Errorf("creating TLS listener failed with %w", err)
+		s.Kill()
+		return
+	}
 
-		lnTls := tls.NewListener(ln, cfg)
+	lnTls := tls.NewListener(ln, cfg)
 
+	go func() {
 		s.err = s.Server.Serve(lnTls)
 		if s.err != http.ErrServerClosed {
 			s.Kill()
 		}
+		s.positiveCache.Stop()
+		s.negativeCache.Stop()
 	}()
-}
-
-func (s *Service) Kill() {
-	s.positiveCache.Stop()
-	s.negativeCache.Stop()
-	s.Service.Kill()
-}
-
-func (s *Service) Stop() {
-	s.positiveCache.Stop()
-	s.negativeCache.Stop()
-	s.Service.Stop()
 }
 
 func (s *Service) GetListenAddress() (*url.URL, error) {

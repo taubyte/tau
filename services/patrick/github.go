@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/core/services/patrick"
+	http "github.com/taubyte/tau/pkg/http"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/utils/id"

@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"strings"
 
-	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/services/substrate/components/database"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/p2p/peer"
+	http "github.com/taubyte/tau/pkg/http"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	mh "github.com/taubyte/utils/multihash"
 )

@@ -5,10 +5,10 @@ import (
 	"encoding/pem"
 	"testing"
 
-	"github.com/taubyte/http/helpers"
 	commonIface "github.com/taubyte/tau/core/common"
 	authIface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/pkg/http/helpers"
 	"github.com/taubyte/tau/services/auth/acme/store"
 	"gotest.tools/v3/assert"
 )

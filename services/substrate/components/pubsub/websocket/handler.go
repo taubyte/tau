@@ -9,8 +9,8 @@ import (
 	"github.com/gorilla/websocket"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
-	service "github.com/taubyte/http"
 	p2p "github.com/taubyte/tau/p2p/peer"
+	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/specs/extract"
 	messagingSpec "github.com/taubyte/tau/pkg/specs/messaging"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"

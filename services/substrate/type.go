@@ -15,9 +15,9 @@ import (
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	httpIface "github.com/taubyte/tau/services/substrate/components/http"
 
-	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/peer"
+	http "github.com/taubyte/tau/pkg/http"
 )
 
 var _ iface.Service = &Service{}

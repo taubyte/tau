@@ -3,11 +3,11 @@ package mocks
 import (
 	"context"
 
-	httpSrv "github.com/taubyte/http"
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/p2p/peer"
+	httpSrv "github.com/taubyte/tau/pkg/http"
 )
 
 type MockedSubstrate interface {

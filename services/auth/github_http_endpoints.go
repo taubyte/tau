@@ -6,7 +6,7 @@ import (
 	"math/rand"
 	"time"
 
-	http "github.com/taubyte/http"
+	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/auth/github"
 	"github.com/taubyte/tau/services/auth/repositories"
 	protocolCommon "github.com/taubyte/tau/services/common"

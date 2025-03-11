@@ -7,7 +7,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	dv "github.com/taubyte/domain-validation"
-	http "github.com/taubyte/http"
+	http "github.com/taubyte/tau/pkg/http"
 )
 
 func (srv *AuthService) tokenDomainHTTPHandler(ctx http.Context) (interface{}, error) {

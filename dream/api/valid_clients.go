@@ -1,7 +1,7 @@
 package api
 
 import (
-	httpIface "github.com/taubyte/http"
+	httpIface "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/specs/common"
 )
 

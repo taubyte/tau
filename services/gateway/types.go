@@ -3,10 +3,10 @@ package gateway
 import (
 	"context"
 
-	http "github.com/taubyte/http"
 	"github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/streams/client"
+	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
 )
 

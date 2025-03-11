@@ -3,8 +3,8 @@ package seer
 import (
 	"strconv"
 
-	http "github.com/taubyte/http"
 	iface "github.com/taubyte/tau/core/services/seer"
+	http "github.com/taubyte/tau/pkg/http"
 )
 
 func (srv *Service) getGeoAllHTTPHandler(ctx http.Context) (interface{}, error) {

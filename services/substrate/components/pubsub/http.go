@@ -2,7 +2,7 @@ package pubsub
 
 import (
 	"github.com/gorilla/websocket"
-	service "github.com/taubyte/http"
+	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	_websocket "github.com/taubyte/tau/services/substrate/components/pubsub/websocket"
 )

@@ -3,12 +3,12 @@ package auto
 import (
 	"context"
 
-	service "github.com/taubyte/http"
-	basicHttp "github.com/taubyte/http/basic"
-	basicHttpSecure "github.com/taubyte/http/basic/secure"
-	"github.com/taubyte/http/options"
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/peer"
+	service "github.com/taubyte/tau/pkg/http"
+	basicHttp "github.com/taubyte/tau/pkg/http/basic"
+	basicHttpSecure "github.com/taubyte/tau/pkg/http/basic/secure"
+	"github.com/taubyte/tau/pkg/http/options"
 )
 
 func opsFromConfig(config *config.Node) []options.Option {

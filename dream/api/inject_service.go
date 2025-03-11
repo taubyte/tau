@@ -3,8 +3,8 @@ package api
 import (
 	"fmt"
 
-	httpIface "github.com/taubyte/http"
 	commonIface "github.com/taubyte/tau/core/common"
+	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
 func (srv *multiverseService) injectServiceHttp() {

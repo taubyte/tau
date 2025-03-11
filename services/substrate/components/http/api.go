@@ -6,8 +6,8 @@ import (
 
 	goHttp "net/http"
 
-	http "github.com/taubyte/http"
 	iface "github.com/taubyte/tau/core/services/substrate/components/http"
+	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/runtime/counter"
 	"github.com/taubyte/tau/services/substrate/runtime/helpers"

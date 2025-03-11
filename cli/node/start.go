@@ -8,9 +8,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	httpService "github.com/taubyte/http"
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/services"
+	httpService "github.com/taubyte/tau/pkg/http"
 	auto "github.com/taubyte/tau/pkg/http-auto"
 	"github.com/taubyte/tau/pkg/kvdb"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
