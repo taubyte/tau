@@ -13,6 +13,9 @@ import (
 
 func opsFromConfig(config *config.Node) []options.Option {
 	ops := []options.Option{options.Listen(config.HttpListen)}
+	if config.CustomAcme {
+		ops = append(ops, options.ACMEWithKey(config.AcmeUrl, config.AcmeKey))
+	}
 	if config.Verbose {
 		ops = append(ops, options.Debug())
 	}
@@ -20,23 +23,13 @@ func opsFromConfig(config *config.Node) []options.Option {
 	return ops
 }
 
-func NewAuto(ctx context.Context, node peer.Node, config *config.Node, ops ...options.Option) (http service.Service, err error) {
+func New(ctx context.Context, node peer.Node, config *config.Node, ops ...options.Option) (http service.Service, err error) {
 	ops = append(ops, opsFromConfig(config)...)
 	if config.DevMode {
 		return devHttp(ctx, config.EnableHTTPS, ops...)
 	} else {
-		return New(node, config.ClientNode, config, ops...)
+		return new(node, config.ClientNode, config, ops...)
 	}
-}
-
-func NewBasic(ctx context.Context, config *config.Node, ops ...options.Option) (http service.Service, err error) {
-	ops = append(ops, opsFromConfig(config)...)
-	if config.DevMode {
-		return devHttp(ctx, config.EnableHTTPS, ops...)
-	} else {
-		return basicHttpSecure.New(ctx, ops...)
-	}
-
 }
 
 func devHttp(ctx context.Context, enableHttps bool, ops ...options.Option) (service.Service, error) {

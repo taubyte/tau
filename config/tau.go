@@ -54,9 +54,15 @@ type Plugins struct {
 }
 
 type Domains struct {
-	Key       DVKey    `yaml:"key"`
-	Aliases   []string `yaml:"aliases"`
-	Generated string   `yaml:"generated"`
+	Key       DVKey       `yaml:"key"`
+	Acme      *AcmeConfig `yaml:"acme,omitempty"`
+	Aliases   []string    `yaml:"aliases"`
+	Generated string      `yaml:"generated"`
+}
+
+type AcmeConfig struct {
+	Url string `yaml:"url"`
+	Key string `yaml:"key"`
 }
 
 type DVKey struct {

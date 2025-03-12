@@ -30,12 +30,12 @@ func startCommand() *cli.Command {
 
 		Action: func(ctx *cli.Context) error {
 			shape := ctx.String("shape")
-			_, protocolConfig, _, err := parseSourceConfig(ctx, shape)
+			_, serviceConfig, _, err := parseSourceConfig(ctx, shape)
 			if err != nil {
 				return fmt.Errorf("parsing config failed with: %s", err)
 			}
 
-			return node.Start(ctx.Context, protocolConfig)
+			return node.Start(ctx.Context, serviceConfig)
 		},
 	}
 }

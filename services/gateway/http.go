@@ -14,7 +14,7 @@ func (g *Gateway) startHttp(config *config.Node) (err error) {
 	listen := config.HttpListen
 
 	if config.Http == nil {
-		if g.http, err = auto.NewAuto(g.ctx, g.node, config); err != nil {
+		if g.http, err = auto.New(g.ctx, g.node, config); err != nil {
 			return
 		}
 	} else {

@@ -17,7 +17,7 @@ import (
 	slices "github.com/taubyte/utils/slices/string"
 )
 
-func Start(ctx context.Context, protocolConfig *config.Node) error {
+func Start(ctx context.Context, serviceConfig *config.Node) error {
 	setLevel()
 
 	ctx, ctx_cancel := context.WithCancel(ctx)
@@ -30,25 +30,25 @@ func Start(ctx context.Context, protocolConfig *config.Node) error {
 		ctx_cancel()
 	}()
 
-	storagePath := protocolConfig.Root + "/storage/" + protocolConfig.Shape
+	storagePath := serviceConfig.Root + "/storage/" + serviceConfig.Shape
 
-	err := createNodes(ctx, storagePath, protocolConfig.Shape, protocolConfig)
+	err := createNodes(ctx, storagePath, serviceConfig.Shape, serviceConfig)
 	if err != nil {
 		return err
 	}
 
-	protocolConfig.Databases = kvdb.New(protocolConfig.Node)
+	serviceConfig.Databases = kvdb.New(serviceConfig.Node)
 
 	// Create httpNode if needed
 	var httpNode httpService.Service
-	for _, srv := range protocolConfig.Services {
+	for _, srv := range serviceConfig.Services {
 		if slices.Contains(commonSpecs.HTTPServices, srv) {
-			httpNode, err = auto.NewAuto(ctx, protocolConfig.Node, protocolConfig)
+			httpNode, err = auto.New(ctx, serviceConfig.Node, serviceConfig)
 			if err != nil {
 				return fmt.Errorf("new autoHttp failed with: %s", err)
 			}
 
-			protocolConfig.Http = httpNode
+			serviceConfig.Http = httpNode
 			break
 		}
 	}
@@ -56,7 +56,7 @@ func Start(ctx context.Context, protocolConfig *config.Node) error {
 	// Attach any p2p/http endpoints
 	var includesNode bool
 	services := make([]services.Service, 0)
-	for _, srv := range protocolConfig.Services {
+	for _, srv := range serviceConfig.Services {
 		if srv == "substrate" {
 			includesNode = true
 			continue
@@ -67,7 +67,7 @@ func Start(ctx context.Context, protocolConfig *config.Node) error {
 			return fmt.Errorf("services `%s` does not exist ", srv)
 		}
 
-		_srv, err := srvPkg.New(ctx, protocolConfig)
+		_srv, err := srvPkg.New(ctx, serviceConfig)
 		if err != nil {
 			return fmt.Errorf("new for service `%s` failed with: %s", srv, err)
 		}
@@ -82,7 +82,7 @@ func Start(ctx context.Context, protocolConfig *config.Node) error {
 			return errors.New("node was not found in available packages")
 		}
 
-		_srv, err := srvPkg.New(ctx, protocolConfig)
+		_srv, err := srvPkg.New(ctx, serviceConfig)
 		if err != nil {
 			return fmt.Errorf("new for node failed with: %s", err)
 		}
@@ -94,27 +94,27 @@ func Start(ctx context.Context, protocolConfig *config.Node) error {
 		httpNode.Start()
 	}
 
-	logger.Infof("%s started! with id: %s", protocolConfig.Shape, protocolConfig.Node.ID())
+	logger.Infof("%s started! with id: %s", serviceConfig.Shape, serviceConfig.Node.ID())
 
 	<-ctx.Done()
 	for _, srv := range services {
 		srv.Close()
 	}
 
-	if protocolConfig.ClientNode != nil {
-		protocolConfig.ClientNode.Close()
+	if serviceConfig.ClientNode != nil {
+		serviceConfig.ClientNode.Close()
 	}
 
-	if protocolConfig.Databases != nil {
-		protocolConfig.Databases.Close()
+	if serviceConfig.Databases != nil {
+		serviceConfig.Databases.Close()
 	}
 
-	if protocolConfig.Node != nil {
-		protocolConfig.Node.Close()
+	if serviceConfig.Node != nil {
+		serviceConfig.Node.Close()
 	}
 
-	if protocolConfig.Http != nil {
-		protocolConfig.Http.Stop()
+	if serviceConfig.Http != nil {
+		serviceConfig.Http.Stop()
 	}
 
 	return nil

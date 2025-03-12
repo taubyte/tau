@@ -1,6 +1,7 @@
 package config
 
 import (
+	"crypto"
 	"errors"
 	"regexp"
 
@@ -36,6 +37,10 @@ type Node struct {
 	AliasDomainsRegExp    []*regexp.Regexp
 	GeneratedDomainRegExp *regexp.Regexp
 	ServicesDomainRegExp  *regexp.Regexp
+
+	CustomAcme bool
+	AcmeUrl    string
+	AcmeKey    crypto.Signer
 
 	Node       peer.Node
 	PrivateKey []byte
