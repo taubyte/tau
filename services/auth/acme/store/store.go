@@ -21,10 +21,6 @@ import (
 var logger = log.Logger("tau.auth.acme.store")
 var certFileRegexp = regexp.MustCompile(`(\+token|\+rsa|\+key|\.key)$`)
 
-// Store implements Store and Cache using taubyte acme service
-// NOTE: Must periodically check the validity of the certificate by a go-routine. If
-//
-//	the certififcate is not valid restart the service after a random sleep.
 type Store struct {
 	node     peer.Node
 	client   *client.Client
