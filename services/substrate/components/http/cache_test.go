@@ -14,7 +14,7 @@ import (
 // TODO: Revisit cache clearing
 func TestCache(t *testing.T) {
 	t.Skip("cache needs to updated")
-	s := NewTestService(peer.MockNode(context.Background()))
+	s := NewTestService(peer.Mock(context.Background()))
 	testDomainName := "someDomain"
 	testFunctionId := "someFuncId"
 	domains = map[string]structureSpec.Domain{

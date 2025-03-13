@@ -25,6 +25,7 @@ import (
 
 	"golang.org/x/crypto/acme"
 	"golang.org/x/crypto/acme/autocert"
+	"golang.org/x/exp/slices"
 )
 
 func (s *Service) SetOption(opt interface{}) error {
@@ -106,16 +107,22 @@ func new(node, clientNode peer.Node, config *config.Node, opts ...options.Option
 	return &s, nil
 }
 
-func (s *Service) isProtocolOrAliasDomain(dom string) bool {
-	if s.config.ServicesDomainRegExp.MatchString(dom) {
+func (s *Service) isServiceOrAliasDomain(dom string) bool {
+	dom = strings.TrimSuffix(dom, ".")
+
+	if slices.ContainsFunc(commonSpecs.Services, func(srv string) bool {
+		return dom == srv+"."+s.config.NetworkFqdn
+	}) {
 		return true
 	}
+
 	for _, r := range s.config.AliasDomainsRegExp {
 		if r.MatchString(dom) {
 			return true
 		}
 	}
-	return false
+
+	return s.config.ServicesDomainRegExp.MatchString(dom)
 }
 
 func (s *Service) validateFQDN(hello *tls.ClientHelloInfo) error {
@@ -176,18 +183,7 @@ func (s *Service) Start() {
 				if !s.customDomainChecker(hello) {
 					return nil, fmt.Errorf("customDomainChecker for %s was false", hello.ServerName)
 				}
-			} else if s.isProtocolOrAliasDomain(hello.ServerName) {
-				valid := false
-				for _, proto := range commonSpecs.Services {
-					if strings.HasPrefix(hello.ServerName, proto+".") {
-						valid = true
-						break
-					}
-				}
-				if !valid {
-					return nil, fmt.Errorf("invalid protocol in `%s`", hello.ServerName)
-				}
-			} else {
+			} else if !s.isServiceOrAliasDomain(hello.ServerName) {
 				if err := s.validateFQDN(hello); err != nil {
 					return nil, err
 				}

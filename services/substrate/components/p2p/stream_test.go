@@ -18,7 +18,7 @@ var (
 
 func TestHandleForMatcher(t *testing.T) {
 	t.Skip("need to redo this test")
-	s := NewTestService(peer.MockNode(context.Background()))
+	s := NewTestService(peer.Mock(context.Background()))
 
 	structure.RefreshTestVariables()
 	fakeFetch(map[string]structureSpec.Service{

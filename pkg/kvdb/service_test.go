@@ -13,7 +13,7 @@ import (
 func TestFactory_New(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	f := New(mockNode)
 
 	// Test creating a new database
@@ -34,7 +34,7 @@ func TestFactory_New(t *testing.T) {
 func TestFactory_getDB(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	f := New(mockNode)
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -56,7 +56,7 @@ func TestFactory_getDB(t *testing.T) {
 func TestFactory_deleteDB(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	f := New(mockNode)
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -76,7 +76,7 @@ func TestFactory_deleteDB(t *testing.T) {
 func TestKVDatabase_Close(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	factory := New(mockNode)
 	db, _ := factory.New(logger, "testpath", 10)
 
@@ -94,7 +94,7 @@ func TestKVDatabase_Close(t *testing.T) {
 func TestFactory_NewDatabaseExists(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	f := New(mockNode)
 
 	// Test creating a new database
@@ -124,7 +124,7 @@ func TestFactory_NewDatabaseExists(t *testing.T) {
 func TestFactory_ConcurrentAccess(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	f := New(mockNode)
 
 	// Test concurrent creation of databases
@@ -157,7 +157,7 @@ func TestFactory_ConcurrentAccess(t *testing.T) {
 func TestFactory_CloseAll(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	f := New(mockNode)
 
 	// Create multiple databases
@@ -179,7 +179,7 @@ func TestFactory_CloseAll(t *testing.T) {
 func TestKVDatabase_ReopenClosedDatabase(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	f := New(mockNode)
 
 	// Create a database and close it
@@ -207,7 +207,7 @@ func TestKVDatabase_ReopenClosedDatabase(t *testing.T) {
 func TestKVDatabase_ListAsync(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	f := New(mockNode)
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -246,7 +246,7 @@ func TestKVDatabase_ListAsync(t *testing.T) {
 func TestKVDatabase_Batch_MixedOperations(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	f := New(mockNode)
 	db, _ := f.New(logger, "testpath", 10)
 
@@ -297,7 +297,7 @@ func TestKVDatabase_Batch_MixedOperations(t *testing.T) {
 func TestKVDatabase_Sync(t *testing.T) {
 	// Setup
 	logger := logging.Logger("test")
-	mockNode := peer.MockNode(context.Background())
+	mockNode := peer.Mock(context.Background())
 	f := New(mockNode)
 	db, _ := f.New(logger, "testpath", 10)
 

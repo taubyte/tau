@@ -13,7 +13,7 @@ import (
 
 func TestLookup(t *testing.T) {
 	t.Skip("Need to update this test")
-	s := NewTestService(peer.MockNode(context.Background()))
+	s := NewTestService(peer.Mock(context.Background()))
 	msg := map[string]structureSpec.Messaging{
 		"someMessagingId": {
 			Name:  "Somemessaging",

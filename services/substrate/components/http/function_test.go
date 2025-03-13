@@ -13,7 +13,7 @@ import (
 
 func TestFunction(t *testing.T) {
 	t.Skip("This test needs to be updated")
-	s := NewTestService(peer.MockNode(context.Background()))
+	s := NewTestService(peer.Mock(context.Background()))
 	testDomainName := "someDomain"
 	testFunctionId := "someFuncId"
 	testFunctionName := "someFunctionName"
