@@ -59,11 +59,20 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 	d.mu.Unlock()
 
 	isCert := !certFileRegexp.MatchString(name)
+	wildcardName := "*." + strings.Join(strings.Split(name, ".")[1:], ".")
 
 	// check local cache
 	pem, err := d.cacheDir.Get(ctx, name)
 	if err == nil {
 		return pem, nil
+	} else {
+		// try wildcard
+		if isCert {
+			pem, err = d.cacheDir.Get(ctx, wildcardName)
+			if err == nil {
+				return pem, nil
+			}
+		}
 	}
 
 	// check remote cache
@@ -79,7 +88,6 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 		}
 
 		// try wildcard
-		wildcardName := "*." + strings.Join(strings.Split(name, ".")[1:], ".")
 		pem, err = d.getDynamicCertificate(wildcardName, true)
 		if err != nil {
 			// Try static
