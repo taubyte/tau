@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/ipfs/go-log/v2"
@@ -81,13 +82,20 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 			return nil, err
 		}
 
-		// TODO: move logic to "GetCertificate:" in http-auto/methods.go
-		// Should check auth (for set using taucorder) and TNS for user set.
-		// And cache both separately.
-		pem, err = d.getStaticCertificate(name)
+		// try wildcard
+		wildcardName := "*." + strings.Join(strings.Split(name, ".")[1:], ".")
+		pem, err = d.getDynamicCertificate(wildcardName, true)
 		if err != nil {
-			logger.Debugf("Not found in acme cache... trying to get a static certificate for `%s` failed: %w", name, err)
-			return nil, autocert.ErrCacheMiss
+			// Try static
+			pem, err = d.getStaticCertificate(name)
+			if err != nil {
+				// check if wildcard is set
+				pem, err = d.getStaticCertificate(wildcardName)
+				if err != nil {
+					logger.Debugf("Not found in acme cache... trying to get a static certificate for `%s` failed: %w", name, err)
+					return nil, autocert.ErrCacheMiss
+				}
+			}
 		}
 	}
 
