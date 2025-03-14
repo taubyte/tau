@@ -172,10 +172,25 @@ func (s *Service) Start() {
 			DirectoryURL: s.acme.DirectoryURL,
 			Key:          s.acme.Key,
 		}
+
+		if s.config.AcmeCAInsecureSkipVerify || s.config.AcmeRootCA != nil {
+			m.Client.HTTPClient = &http.Client{
+				Transport: &http.Transport{
+					TLSClientConfig: &tls.Config{
+						InsecureSkipVerify: s.config.AcmeCAInsecureSkipVerify,
+						RootCAs:            s.config.AcmeRootCA,
+					},
+				},
+			}
+		}
 	}
 
 	cfg := &tls.Config{
 		GetCertificate: func(hello *tls.ClientHelloInfo) (cert *tls.Certificate, err error) {
+			if hello.ServerName == "" {
+				return nil, fmt.Errorf("server name is empty")
+			}
+
 			logger.Debugf("GetCertificate for %s from %s %v", hello.ServerName, hello.Conn.RemoteAddr(), hello.SupportedProtos)
 			hello.ServerName = strings.ToLower(hello.ServerName)
 

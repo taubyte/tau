@@ -92,6 +92,21 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 	if src.Domains.Acme != nil && src.Domains.Acme.Url != "" {
 		cnf.CustomAcme = true
 		cnf.AcmeUrl = src.Domains.Acme.Url
+
+		if src.Domains.Acme.CA != nil {
+			cnf.AcmeCAInsecureSkipVerify = src.Domains.Acme.CA.SkipVerify
+			if src.Domains.Acme.CA.RootCA != "" {
+				caData, err := os.ReadFile(src.Domains.Acme.CA.RootCA)
+				if err != nil {
+					return "", nil, nil, fmt.Errorf("reading acme ca file failed with: %w", err)
+				}
+				cnf.AcmeRootCA = x509.NewCertPool()
+				if !cnf.AcmeRootCA.AppendCertsFromPEM(caData) {
+					return "", nil, nil, fmt.Errorf("failed to append acme ca")
+				}
+			}
+		}
+
 		if src.Domains.Acme.Key != "" {
 			keyData, err := os.ReadFile(src.Domains.Acme.Key)
 			if err != nil {
