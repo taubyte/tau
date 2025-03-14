@@ -1,7 +1,6 @@
 package options
 
 import (
-	"crypto/tls"
 	"testing"
 
 	"github.com/taubyte/tau/pkg/http/options"
@@ -23,7 +22,7 @@ func (m *MockConfigurable) SetOption(o interface{}) error {
 func TestCustomDomainChecker(t *testing.T) {
 	mc := newMockConfigurable()
 
-	testChecker := func(hello *tls.ClientHelloInfo) bool {
+	testChecker := func(host string) bool {
 		return true
 	}
 
@@ -33,7 +32,7 @@ func TestCustomDomainChecker(t *testing.T) {
 		return
 	}
 	for _, o := range mc.values {
-		if _o, ok := o.(OptionChecker); ok && _o.Checker != nil && _o.Checker(nil) {
+		if _o, ok := o.(OptionChecker); ok && _o.Checker != nil && _o.Checker("") {
 			return
 		}
 	}

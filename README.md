@@ -112,7 +112,7 @@ That said, some configuration like bootstrap peers is necessary. Unless you're r
 
 A Cloud built with `tau` is very dynamic; at a low level, nodes communicate assets, routes, and services, and they also exchange information about other peers. Enriched by distributed services like `seer` and `gateway`, the cloud can load-balance incoming requests to ensure optimal performance and reliability.
 
-This behavior is built into cloud resources as well. For example, a protocol we call `hoarder` ensures object storages and databases are replicated; all you need to do is enable it on a few nodes.
+This behavior is built into cloud resources as well. For example, a service we call `hoarder` ensures object storages and databases are replicated; all you need to do is enable it on a few nodes.
 
 ## Local Coding Equals Global Production
 
@@ -134,13 +134,13 @@ Also, git being core to `tau` means that nodes in the cloud do tune to a specifi
 
 A specific use case is local development in which case [dream-cli](https://github.com/taubyte/tau/tree/main/tools/dream) nodes can also be tuned to the current branch.
 
-In addition to the nodes being on a branch, the application registry, managed by the 'tns' protocol, uses commit ids to version entries, allowing nodes serving the assets to detect new versions, or a roll-back for that matter.
+In addition to the nodes being on a branch, the application registry, managed by the 'tns' service, uses commit ids to version entries, allowing nodes serving the assets to detect new versions, or a roll-back for that matter.
 
 ## Networking
 
 Internally, `tau`, using [libp2p](https://github.com/libp2p/go-libp2p), builds an overlay peer-to-peer network between the nodes, enabling some pretty cool features like:
 
-- Automatic node and protocol discovery & routing. If, for example, a node is down, changes its IP address/port, or the services it supports, other nodes will update the info automatically.
+- Automatic node and service discovery & routing. If, for example, a node is down, changes its IP address/port, or the services it supports, other nodes will update the info automatically.
 - Transport independent. Nodes can use any combination of TCP/IP, WebSocket, QUIC, and more.
 - NAT Traversal & Circuit Relay, which allow nodes that are not public to be part of the cloud.
 

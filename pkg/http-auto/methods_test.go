@@ -3,7 +3,6 @@ package auto
 import (
 	"crypto"
 	"crypto/rsa"
-	"crypto/tls"
 	"fmt"
 	"io"
 	"regexp"
@@ -111,8 +110,7 @@ func TestValidateFQDN(t *testing.T) {
 		tnsClient:     &MockTNSClient{}, // Use the mock TNS client
 	}
 
-	hello := &tls.ClientHelloInfo{ServerName: "generated.com"}
-	err := s.validateFQDN(hello)
+	err := s.validateFQDN("generated.com")
 	assert.NilError(t, err)
 }
 
@@ -120,18 +118,16 @@ func TestCustomDomainChecker(t *testing.T) {
 	s := &Service{}
 
 	// Mock customDomainChecker function
-	mockChecker := func(hello *tls.ClientHelloInfo) bool {
-		return hello.ServerName == "valid.example.com"
+	mockChecker := func(host string) bool {
+		return host == "valid.example.com"
 	}
 
 	// Set the mock checker
 	s.customDomainChecker = mockChecker
 
 	// Test with a valid domain
-	hello := &tls.ClientHelloInfo{ServerName: "valid.example.com"}
-	assert.Assert(t, s.customDomainChecker(hello))
+	assert.Assert(t, s.customDomainChecker("valid.example.com"))
 
 	// Test with an invalid domain
-	hello.ServerName = "invalid.example.com"
-	assert.Assert(t, !s.customDomainChecker(hello))
+	assert.Assert(t, !s.customDomainChecker("invalid.example.com"))
 }

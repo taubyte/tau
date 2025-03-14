@@ -1,6 +1,7 @@
 package auto
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -125,36 +126,36 @@ func (s *Service) isServiceOrAliasDomain(dom string) bool {
 	return s.config.ServicesDomainRegExp.MatchString(dom)
 }
 
-func (s *Service) validateFQDN(hello *tls.ClientHelloInfo) error {
-	if item := s.negativeCache.Get(hello.ServerName); item != nil && item.Value() {
-		return fmt.Errorf("cached as invalid: %s", hello.ServerName)
+func (s *Service) validateFQDN(host string) error {
+	if item := s.negativeCache.Get(host); item != nil && item.Value() {
+		return fmt.Errorf("cached as invalid: %s", host)
 	}
 
-	if item := s.positiveCache.Get(hello.ServerName); item != nil && item.Value() {
+	if item := s.positiveCache.Get(host); item != nil && item.Value() {
 		return nil
 	}
 
-	projectId, err := s.validateFromTns(hello.ServerName)
+	projectId, err := s.validateFromTns(host)
 	if err != nil {
-		s.negativeCache.Set(hello.ServerName, true, NegativeTTL)
-		return fmt.Errorf("failed validateFromTns for %s with %v", hello.ServerName, err) // Validation failed, return error
+		s.negativeCache.Set(host, true, NegativeTTL)
+		return fmt.Errorf("failed validateFromTns for %s with %v", host, err) // Validation failed, return error
 	}
 
 	// Check txt if it not using generated domain
-	if !s.config.GeneratedDomainRegExp.MatchString(hello.ServerName) {
+	if !s.config.GeneratedDomainRegExp.MatchString(host) {
 		if projectId == "" {
-			s.negativeCache.Set(hello.ServerName, true, NegativeTTL)
+			s.negativeCache.Set(host, true, NegativeTTL)
 			return fmt.Errorf("project ID is empty") // Project ID is empty, return error
 		}
 
-		_, err = net.DefaultResolver.LookupTXT(s.Context(), projectId[:8]+"."+hello.ServerName)
+		_, err = net.DefaultResolver.LookupTXT(s.Context(), projectId[:8]+"."+host)
 		if err != nil {
-			s.negativeCache.Set(hello.ServerName, true, NegativeTTL)
-			return fmt.Errorf("failed txt lookup on %s with %v", hello.ServerName, err) // TXT lookup failed, return error
+			s.negativeCache.Set(host, true, NegativeTTL)
+			return fmt.Errorf("failed txt lookup on %s with %v", host, err) // TXT lookup failed, return error
 		}
 	}
 
-	s.positiveCache.Set(hello.ServerName, true, PositiveTTL)
+	s.positiveCache.Set(host, true, PositiveTTL)
 	return nil
 }
 
@@ -165,6 +166,26 @@ func (s *Service) Start() {
 	m := &autocert.Manager{
 		Prompt: autocert.AcceptTOS,
 		Cache:  s.certStore,
+		HostPolicy: func(ctx context.Context, host string) error {
+			if host == "" {
+				return fmt.Errorf("server name is empty")
+			}
+
+			logger.Debugf("HostPolicy for %s", host)
+			host = strings.ToLower(host)
+
+			if s.customDomainChecker != nil {
+				if !s.customDomainChecker(host) {
+					return fmt.Errorf("customDomainChecker for %s was false", host)
+				}
+			} else if !s.isServiceOrAliasDomain(host) {
+				if err := s.validateFQDN(host); err != nil {
+					return err
+				}
+			}
+
+			return nil
+		},
 	}
 
 	if s.acme != nil {
@@ -186,26 +207,7 @@ func (s *Service) Start() {
 	}
 
 	cfg := &tls.Config{
-		GetCertificate: func(hello *tls.ClientHelloInfo) (cert *tls.Certificate, err error) {
-			if hello.ServerName == "" {
-				return nil, fmt.Errorf("server name is empty")
-			}
-
-			logger.Debugf("GetCertificate for %s from %s %v", hello.ServerName, hello.Conn.RemoteAddr(), hello.SupportedProtos)
-			hello.ServerName = strings.ToLower(hello.ServerName)
-
-			if s.customDomainChecker != nil {
-				if !s.customDomainChecker(hello) {
-					return nil, fmt.Errorf("customDomainChecker for %s was false", hello.ServerName)
-				}
-			} else if !s.isServiceOrAliasDomain(hello.ServerName) {
-				if err := s.validateFQDN(hello); err != nil {
-					return nil, err
-				}
-			}
-
-			return m.GetCertificate(hello)
-		},
+		GetCertificate: m.GetCertificate,
 		NextProtos: []string{
 			"http/1.1", acme.ALPNProto,
 		},

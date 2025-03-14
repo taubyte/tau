@@ -202,7 +202,7 @@ func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.Respo
 	case dns.TypeA:
 		service := strings.Split(name, ".")[0]
 		if err := common.ValidateServices([]string{service}); err != nil {
-			logger.Errorf("validating protocol `%s` failed with: %s", service, err.Error())
+			logger.Errorf("validating service `%s` failed with: %s", service, err.Error())
 			if err := w.WriteMsg(errMsg); err != nil {
 				logger.Errorf("writing error message `%s` failed with: %s", errMsg, err.Error())
 			}

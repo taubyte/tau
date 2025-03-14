@@ -1,16 +1,14 @@
 package options
 
 import (
-	"crypto/tls"
-
 	"github.com/taubyte/tau/pkg/http/options"
 )
 
 type OptionChecker struct {
-	Checker func(hello *tls.ClientHelloInfo) bool
+	Checker func(host string) bool
 }
 
-func CustomDomainChecker(checker func(hello *tls.ClientHelloInfo) bool) options.Option {
+func CustomDomainChecker(checker func(host string) bool) options.Option {
 	return func(s options.Configurable) error {
 		return s.SetOption(OptionChecker{Checker: checker})
 	}
