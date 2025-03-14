@@ -56,7 +56,7 @@ func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]
 	key := "/acme/" + base64.StdEncoding.EncodeToString([]byte(fqdn)) + "/certificate/pem"
 	certificate, err := srv.db.Get(ctx, key)
 	if err != nil {
-		logger.Error("Get acme certificate for " + fqdn + " returned " + err.Error())
+		logger.Debugf("Get acme certificate for %s returned %w", fqdn, err)
 		return srv.getACMEStaticCertificate(ctx, fqdn)
 	}
 
@@ -83,14 +83,14 @@ func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn strin
 		key := "/static/" + base64.StdEncoding.EncodeToString([]byte(wildCard)) + "/certificate/pem"
 		certificate, err = srv.db.Get(ctx, key)
 		if err != nil {
-			logger.Error("Get certificate for " + fqdn + " returned " + err.Error())
+			logger.Debugf("Get certificate for %s returned %w", fqdn, err)
 			return nil, autocert.ErrCacheMiss
 		}
 	}
 
 	if certificate == nil {
 		// cleanup entry
-		logger.Error(fqdn + " : Found empty certificate!")
+		logger.Debugf("Get static certificate for %s returned empty certificate!", fqdn)
 		srv.db.Delete(ctx, key)
 		return nil, autocert.ErrCacheMiss
 	}

@@ -14,7 +14,7 @@ import (
 // TestNewPubSubBroadcaster tests the creation of a new PubSubBroadcaster.
 func TestNewPubSubBroadcaster(t *testing.T) {
 	ctx := context.Background()
-	mockNode := peer.MockNode(ctx)
+	mockNode := peer.Mock(ctx)
 	psub := mockNode.Messaging()
 
 	// Test successful creation
@@ -41,7 +41,7 @@ func TestPubSubBroadcaster_Broadcast(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peer.MockNode(ctx)
+	mockNode := peer.Mock(ctx)
 	psub := mockNode.Messaging()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
@@ -59,7 +59,7 @@ func TestPubSubBroadcaster_Next(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peer.MockNode(ctx)
+	mockNode := peer.Mock(ctx)
 	psub := mockNode.Messaging()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
@@ -85,7 +85,7 @@ func TestPubSubBroadcaster_Next(t *testing.T) {
 func TestPubSubBroadcaster_ContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	mockNode := peer.MockNode(ctx)
+	mockNode := peer.Mock(ctx)
 	psub := mockNode.Messaging()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic-2")
@@ -108,7 +108,7 @@ func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peer.MockNode(ctx)
+	mockNode := peer.Mock(ctx)
 	psub := mockNode.Messaging()
 
 	broadcaster, _ := NewPubSubBroadcaster(ctx, psub, "test-topic")
@@ -142,7 +142,7 @@ func TestPubSubBroadcaster_BroadcastAndReceive(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peer.MockNode(ctx)
+	mockNode := peer.Mock(ctx)
 	psub := mockNode.Messaging()
 
 	topic := "testTopic"
@@ -178,7 +178,7 @@ func TestPubSubBroadcaster_TopicRegistrationAndUnregistration(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	mockNode := peer.MockNode(ctx)
+	mockNode := peer.Mock(ctx)
 	psub := mockNode.Messaging()
 
 	topic := "testTopicRegistration"

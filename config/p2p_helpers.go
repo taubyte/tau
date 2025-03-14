@@ -18,7 +18,7 @@ func NewNode(ctx context.Context, config *Node, storagePath string) (peer.Node, 
 
 	bootstrapParam, err := utils.ConvertBootstrap(config.Peers, config.DevMode)
 	if err != nil {
-		return nil, fmt.Errorf("getting bootstrap perms in NewNode failed with: %s", err)
+		return nil, fmt.Errorf("getting bootstrap params in NewNode failed with: %s", err)
 	}
 
 	peerNode, err := peer.NewPublic(

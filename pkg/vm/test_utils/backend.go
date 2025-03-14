@@ -23,7 +23,7 @@ type testBackend struct {
 }
 
 func DFSBackend(ctx context.Context) *testBackend {
-	simpleNode := peer.MockNode(ctx)
+	simpleNode := peer.Mock(ctx)
 
 	return &testBackend{
 		Backend: dfs.New(simpleNode),

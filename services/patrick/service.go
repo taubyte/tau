@@ -92,7 +92,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 
 	// HTTP
 	if config.Http == nil {
-		srv.http, err = auto.NewAuto(ctx, srv.node, config)
+		srv.http, err = auto.New(ctx, srv.node, config)
 		if err != nil {
 			return nil, err
 		}

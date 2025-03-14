@@ -14,7 +14,7 @@ func (srv *Service) startHttp(config *config.Node) (err error) {
 	listen := config.HttpListen
 
 	if config.Http == nil {
-		srv.http, err = auto.NewAuto(srv.ctx, srv.node, config)
+		srv.http, err = auto.New(srv.ctx, srv.node, config)
 		if err != nil {
 			return err
 		}

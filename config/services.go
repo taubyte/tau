@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto"
+	"crypto/x509"
 	"errors"
 	"regexp"
 
@@ -36,6 +38,12 @@ type Node struct {
 	AliasDomainsRegExp    []*regexp.Regexp
 	GeneratedDomainRegExp *regexp.Regexp
 	ServicesDomainRegExp  *regexp.Regexp
+
+	CustomAcme               bool
+	AcmeUrl                  string
+	AcmeKey                  crypto.Signer
+	AcmeCAInsecureSkipVerify bool
+	AcmeRootCA               *x509.CertPool
 
 	Node       peer.Node
 	PrivateKey []byte

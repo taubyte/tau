@@ -17,7 +17,7 @@ import (
 )
 
 func TestLookup(t *testing.T) {
-	s := NewTestService(peer.MockNode(context.Background()))
+	s := NewTestService(peer.Mock(context.Background()))
 	testDomainName := "someDomain"
 	testFunctionId := "someFuncId"
 	testWebsiteId := "someWebId"

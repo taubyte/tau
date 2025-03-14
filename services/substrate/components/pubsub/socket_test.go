@@ -15,7 +15,7 @@ import (
 
 func TestSocketLookup(t *testing.T) {
 	testMessagingName := "someMessaging"
-	s := NewTestService(peer.MockNode(context.Background()))
+	s := NewTestService(peer.Mock(context.Background()))
 
 	structure.RefreshTestVariables()
 	refreshTestVariables()

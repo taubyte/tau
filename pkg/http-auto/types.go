@@ -1,8 +1,6 @@
 package auto
 
 import (
-	"crypto/tls"
-
 	"time"
 
 	"github.com/jellydator/ttlcache/v3"
@@ -21,7 +19,7 @@ type Service struct {
 	authClient          auth.Client
 	tnsClient           ifaceTns.Client
 	config              *config.Node
-	customDomainChecker func(hello *tls.ClientHelloInfo) bool
+	customDomainChecker func(host string) bool
 	acme                *options.OptionACME
 
 	positiveCache *ttlcache.Cache[string, bool]

@@ -70,7 +70,7 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 		return "", nil, nil, err
 	}
 
-	protocol := &config.Node{
+	cnf := &config.Node{
 		Root:                  root,
 		Shape:                 shape,
 		P2PAnnounce:           src.P2PAnnounce,
@@ -89,8 +89,54 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 		DevMode:               ctx.Bool("dev-mode"),
 	}
 
+	if src.Domains.Acme != nil && src.Domains.Acme.Url != "" {
+		cnf.CustomAcme = true
+		cnf.AcmeUrl = src.Domains.Acme.Url
+
+		if src.Domains.Acme.CA != nil {
+			cnf.AcmeCAInsecureSkipVerify = src.Domains.Acme.CA.SkipVerify
+			if src.Domains.Acme.CA.RootCA != "" {
+				caData, err := os.ReadFile(src.Domains.Acme.CA.RootCA)
+				if err != nil {
+					return "", nil, nil, fmt.Errorf("reading acme ca file failed with: %w", err)
+				}
+				cnf.AcmeRootCA = x509.NewCertPool()
+				if !cnf.AcmeRootCA.AppendCertsFromPEM(caData) {
+					return "", nil, nil, fmt.Errorf("failed to append acme ca")
+				}
+			}
+		}
+
+		if src.Domains.Acme.Key != "" {
+			keyData, err := os.ReadFile(src.Domains.Acme.Key)
+			if err != nil {
+				return "", nil, nil, fmt.Errorf("reading acme key file failed with: %w", err)
+			}
+
+			keyBlock, _ := pem.Decode(keyData)
+			if keyBlock == nil {
+				return "", nil, nil, fmt.Errorf("failed to decode PEM block containing the key")
+			}
+
+			switch keyBlock.Type {
+			case "RSA PRIVATE KEY":
+				cnf.AcmeKey, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
+				if err != nil {
+					return "", nil, nil, fmt.Errorf("parsing RSA private key failed with: %w", err)
+				}
+			case "EC PRIVATE KEY":
+				cnf.AcmeKey, err = x509.ParseECPrivateKey(keyBlock.Bytes)
+				if err != nil {
+					return "", nil, nil, fmt.Errorf("parsing EC private key failed with: %w", err)
+				}
+			default:
+				return "", nil, nil, fmt.Errorf("unsupported key type: %s", keyBlock.Type)
+			}
+		}
+	}
+
 	for _, d := range src.Domains.Aliases {
-		protocol.AliasDomainsRegExp = append(protocol.AliasDomainsRegExp, regexp.MustCompile(convertToPostfixRegex(d)))
+		cnf.AliasDomainsRegExp = append(cnf.AliasDomainsRegExp, regexp.MustCompile(convertToPostfixRegex(d)))
 	}
 
 	if len(src.Privatekey) == 0 {
@@ -102,17 +148,17 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 		return "", nil, nil, fmt.Errorf("converting private key to base 64 failed with: %s", err)
 	}
 
-	protocol.PrivateKey = []byte(base64Key)
+	cnf.PrivateKey = []byte(base64Key)
 
-	if protocol.SwarmKey, err = parseSwarmKey(src.Swarmkey); err != nil {
+	if cnf.SwarmKey, err = parseSwarmKey(src.Swarmkey); err != nil {
 		return "", nil, nil, err
 	}
 
-	if protocol.DomainValidation, err = parseValidationKey(&src.Domains.Key); err != nil {
+	if cnf.DomainValidation, err = parseValidationKey(&src.Domains.Key); err != nil {
 		return "", nil, nil, err
 	}
 
-	pkey, err := crypto.UnmarshalPrivateKey(protocol.PrivateKey)
+	pkey, err := crypto.UnmarshalPrivateKey(cnf.PrivateKey)
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -122,7 +168,7 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 		return "", nil, nil, err
 	}
 
-	return pid.String(), protocol, src, nil
+	return pid.String(), cnf, src, nil
 }
 
 func parseSwarmKey(filepath string) (pnet.PSK, error) {

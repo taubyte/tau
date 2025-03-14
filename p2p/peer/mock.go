@@ -2,6 +2,8 @@ package peer
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"sync"
 
 	ipfslite "github.com/hsanjuan/ipfs-lite"
@@ -17,7 +19,7 @@ var (
 	mocknetLock sync.Mutex
 )
 
-func MockNode(ctx context.Context) Node {
+func Mock(ctx context.Context) Node {
 	mocknetLock.Lock()
 	if mocknet == nil {
 		mocknet = netmock.New()
@@ -62,6 +64,15 @@ func MockNode(ctx context.Context) Node {
 	}
 
 	p.topics = make(map[string]*pubsub.Topic)
+
+	repoPath, err := os.MkdirTemp("", "tb-node-*")
+	if err != nil {
+		panic(err)
+	}
+
+	p.ephemeral_repo_path = true
+
+	p.repo_path = fmt.Sprint(repoPath)
 
 	return &p
 }

@@ -100,7 +100,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	}
 
 	if config.Http == nil {
-		srv.http, err = auto.NewBasic(ctx, config)
+		srv.http, err = auto.New(ctx, srv.node, config)
 		if err != nil {
 			return nil, fmt.Errorf("new http failed with: %s", err)
 		}

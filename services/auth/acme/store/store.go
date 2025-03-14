@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/ipfs/go-log/v2"
@@ -20,10 +21,6 @@ import (
 var logger = log.Logger("tau.auth.acme.store")
 var certFileRegexp = regexp.MustCompile(`(\+token|\+rsa|\+key|\.key)$`)
 
-// Store implements Store and Cache using taubyte acme service
-// NOTE: Must periodically check the validity of the certificate by a go-routine. If
-//
-//	the certififcate is not valid restart the service after a random sleep.
 type Store struct {
 	node     peer.Node
 	client   *client.Client
@@ -62,11 +59,20 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 	d.mu.Unlock()
 
 	isCert := !certFileRegexp.MatchString(name)
+	wildcardName := "*." + strings.Join(strings.Split(name, ".")[1:], ".")
 
 	// check local cache
 	pem, err := d.cacheDir.Get(ctx, name)
 	if err == nil {
 		return pem, nil
+	} else {
+		// try wildcard
+		if isCert {
+			pem, err = d.cacheDir.Get(ctx, wildcardName)
+			if err == nil {
+				return pem, nil
+			}
+		}
 	}
 
 	// check remote cache
@@ -81,13 +87,19 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 			return nil, err
 		}
 
-		// TODO: move logic to "GetCertificate:" in http-auto/methods.go
-		// Should check auth (for set using taucorder) and TNS for user set.
-		// And cache both separately.
-		pem, err = d.getStaticCertificate(name)
+		// try wildcard
+		pem, err = d.getDynamicCertificate(wildcardName, true)
 		if err != nil {
-			logger.Debugf("Not found in acme cache... trying to get a static certificate for `%s` failed: %w", name, err)
-			return nil, autocert.ErrCacheMiss
+			// Try static
+			pem, err = d.getStaticCertificate(name)
+			if err != nil {
+				// check if wildcard is set
+				pem, err = d.getStaticCertificate(wildcardName)
+				if err != nil {
+					logger.Debugf("Not found in acme cache... trying to get a static certificate for `%s` failed: %w", name, err)
+					return nil, autocert.ErrCacheMiss
+				}
+			}
 		}
 	}
 
