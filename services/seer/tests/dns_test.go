@@ -56,10 +56,7 @@ func TestDns(t *testing.T) {
 			"gateway":   {},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	time.Sleep(15 * time.Second)
 
@@ -68,48 +65,27 @@ func TestDns(t *testing.T) {
 	m := new(dns.Msg)
 	resolver := u.Seer().Resolver()
 	cname, err := resolver.LookupCNAME(u.Context(), fqdn)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	m.SetQuestion(cname, dns.TypeA)
 
 	tcpResp, _, err := tcpClient.Exchange(m, defaultTestPort)
-	if err != nil {
-		t.Errorf("Failed tcp exchange error: %v", err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if len(tcpResp.Answer) != 1 {
-		t.Errorf("Expected 1 tcp answers got %d on tcp", len(tcpResp.Answer))
-		return
-	}
+	assert.Assert(t, len(tcpResp.Answer) == 1, "Expected 1 tcp answers got %d on tcp", len(tcpResp.Answer))
 
 	m.SetQuestion(regexFqdn, dns.TypeA)
 	tcpResp, _, err = tcpClient.Exchange(m, defaultTestPort)
-	if err != nil {
-		t.Errorf("Failed tcp exchange error: %v", err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if len(tcpResp.Answer) != 1 {
-		t.Errorf("Expected 1 tcp for domain regex answers got %d on tcp", len(tcpResp.Answer))
-		return
-	}
+	assert.Assert(t, len(tcpResp.Answer) == 1, "Expected 1 tcp for domain regex answers got %d on tcp", len(tcpResp.Answer))
 
 	// Expected to Fail
 	m.SetQuestion(failedFqdn, dns.TypeA)
 	tcpResp, _, err = tcpClient.Exchange(m, defaultTestPort)
-	if err != nil {
-		t.Errorf("Failed tcp exchange error: %v", err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if len(tcpResp.Answer) > 0 {
-		t.Errorf("The domain %s should have 0 answer reponse on tcp", failedFqdn)
-		return
-	}
+	assert.Assert(t, len(tcpResp.Answer) == 0, "The domain %s should have 0 answer response on tcp", failedFqdn)
 
 	// Create Udp client
 	udpClient := createDnsClient("udp")
@@ -117,38 +93,50 @@ func TestDns(t *testing.T) {
 	m.SetQuestion(cname, dns.TypeA)
 
 	udpResp, _, err := udpClient.Exchange(m, defaultTestPort)
-	if err != nil {
-		t.Errorf("Failed udp exchange error: %v", err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if len(udpResp.Answer) != 1 {
-		t.Errorf("Expected 2 upd answers got %d on udp", len(udpResp.Answer))
-		return
-	}
+	assert.Assert(t, len(udpResp.Answer) == 1, "Expected 2 udp answers got %d on udp", len(udpResp.Answer))
 
 	m.SetQuestion(regexFqdn, dns.TypeA)
 	udpResp, _, err = udpClient.Exchange(m, defaultTestPort)
-	if err != nil {
-		t.Errorf("Failed udp exchange error: %v", err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if len(udpResp.Answer) != 1 {
-		t.Errorf("Expected 2 upd for domain regex answers got %d on udp", len(udpResp.Answer))
-		return
-	}
+	assert.Assert(t, len(udpResp.Answer) == 1, "Expected 2 udp for domain regex answers got %d on udp", len(udpResp.Answer))
 
 	// Expected to fail
 	m.SetQuestion(failedFqdn, dns.TypeA)
 	udpResp, _, err = udpClient.Exchange(m, defaultTestPort)
-	if err != nil {
-		t.Errorf("Failed udp exchange error: %v", err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if len(udpResp.Answer) > 0 {
-		t.Errorf("The domain %s should have 0 answer reponse on udp", failedFqdn)
-		return
+	assert.Assert(t, len(udpResp.Answer) == 0, "The domain %s should have 0 answer response on udp", failedFqdn)
+
+	// add test here for txt records
+	m.SetQuestion(cname, dns.TypeTXT)
+	txtResp, _, err := udpClient.Exchange(m, defaultTestPort)
+	assert.NilError(t, err)
+
+	assert.Assert(t, len(txtResp.Answer) == 1, "Expected 1 txt answers got %d on txt", len(txtResp.Answer))
+
+	// Get TXT record from response
+	txtRecord, ok := txtResp.Answer[0].(*dns.TXT)
+	assert.Assert(t, ok, "Expected TXT record")
+	assert.Assert(t, len(txtRecord.Txt) > 0, "Expected non-empty TXT record")
+
+	// Get node's multiaddrs
+	nodeAddrs := u.Substrate().Node().Peer().Addrs()
+	nodeID := u.Substrate().Node().ID().String()
+
+	// Check that response matches one of the node's multiaddrs
+	found := false
+	for _, addr := range nodeAddrs {
+		expected := addr.String() + "/p2p/" + nodeID
+		for _, txt := range txtRecord.Txt {
+			if txt == expected {
+				found = true
+				break
+			}
+		}
 	}
+	assert.Assert(t, found, "TXT record should match one of node's multiaddrs")
+
 }
