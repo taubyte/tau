@@ -405,8 +405,9 @@ func defaultPortsToOpen() map[int]struct{} {
 }
 
 func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Progress) func(context.Context, host.Host) error {
-	updatingTau := (d.tauBinary != nil)
 	return func(ctx context.Context, h host.Host) error {
+		updatingTau := (d.tauBinary != nil)
+
 		pushProgress := func(name string, p int) {
 			progressCh <- &progress{
 				hypha:    hypha,
