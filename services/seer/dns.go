@@ -196,20 +196,18 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	}
 }
 
-// TODO: Clean this up, repetitive code
 func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
+	service := strings.Split(name, ".")[0]
+	if err := common.ValidateServices([]string{service}); err != nil {
+		logger.Errorf("validating service `%s` failed with: %s", service, err.Error())
+		if err := w.WriteMsg(errMsg); err != nil {
+			logger.Errorf("writing error message `%s` failed with: %s", errMsg, err.Error())
+		}
+		return
+	}
+
 	switch r.Question[0].Qtype {
 	case dns.TypeA:
-		service := strings.Split(name, ".")[0]
-		if err := common.ValidateServices([]string{service}); err != nil {
-			logger.Errorf("validating service `%s` failed with: %s", service, err.Error())
-			if err := w.WriteMsg(errMsg); err != nil {
-				logger.Errorf("writing error message `%s` failed with: %s", errMsg, err.Error())
-			}
-
-			return
-		}
-
 		ips, err := h.getServiceIp(ctx, service)
 		if err != nil {
 			logger.Errorf("getting ip for %s failed with %s", service, err.Error())
@@ -221,11 +219,25 @@ func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.Respo
 
 		for _, ip := range ips {
 			msg.Answer = append(msg.Answer, &dns.A{
-				Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 60},
+				Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: uint32(ValidServiceResponseTime.Seconds())},
 				A:   net.ParseIP(ip),
 			})
 
 		}
+	case dns.TypeTXT:
+		txt, err := h.getServiceMultiAddr(ctx, service)
+		if err != nil {
+			logger.Errorf("getting txt for %s failed with %s", name, err.Error())
+			if err := w.WriteMsg(errMsg); err != nil {
+				logger.Errorf("writing error message `%s` failed with %s", errMsg, err.Error())
+			}
+			return
+		}
+
+		msg.Answer = append(msg.Answer, &dns.TXT{
+			Hdr: dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeTXT, Class: dns.ClassINET, Ttl: uint32(ValidServiceResponseTime.Seconds())},
+			Txt: txt,
+		})
 	}
 
 	err := w.WriteMsg(&msg)
@@ -233,5 +245,4 @@ func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.Respo
 		logger.Errorf("writing msg for url `%s` failed with: %s", name, err.Error())
 		w.WriteMsg(errMsg)
 	}
-
 }
