@@ -12,68 +12,68 @@ import { Readable } from 'stream';
 
 export const createConfig = async (config: Config) => {
   // Set Cloud Domain
-  await config.Cloud().Domain().Root().Set("test.com");
-  await config.Cloud().Domain().Generated().Set("gtest.com");
-  await config.Cloud().Domain().Validation().Generate();
+  await config.cloud.domain.root.set("test.com");
+  await config.cloud.domain.generated.set("gtest.com");
+  await config.cloud.domain.validation.generate();
 
   // Generate P2P Swarm keys
-  await config.Cloud().P2P().Swarm().Generate();
+  await config.cloud.p2p.swarm.generate();
 
   // Set Auth configurations
-  const mainAuth = config.Auth().Signer("main");
-  await mainAuth.Username().Set("tau1");
-  await mainAuth.Password().Set("testtest");
+  const mainAuth = config.auth.signer["main"];
+  await mainAuth.username.set("tau1");
+  await mainAuth.password.set("testtest");
 
-  const withKeyAuth = config.Auth().Signer("withkey");
-  await withKeyAuth.Username().Set("tau2");
-  await withKeyAuth.Key().Path().Set("/keys/test.pem");
+  const withKeyAuth = config.auth.signer["withkey"];
+  await withKeyAuth.username.set("tau2");
+  await withKeyAuth.key.path.set("/keys/test.pem");
 
   // Set Shapes configurations
-  const shape1 = config.Shapes().Shape("shape1");
-  await shape1.Services().Set(["auth", "seer"]);
-  await shape1.Ports().Port("main").Set(BigInt(4242));
-  await shape1.Ports().Port("lite").Set(BigInt(4262));
+  const shape1 = config.shape["shape1"];
+  await shape1.services.set(["auth", "seer"]);
+  await shape1.ports.port["main"].set(BigInt(4242));
+  await shape1.ports.port["lite"].set(BigInt(4262));
 
-  const shape2 = config.Shapes().Shape("shape2");
-  await shape2.Services().Set(["gateway", "patrick", "monkey"]);
-  await shape2.Ports().Port("main").Set(BigInt(6242));
-  await shape2.Ports().Port("lite").Set(BigInt(6262));
-  await shape2.Plugins().Set(["plugin1@v0.1"]);
+  const shape2 = config.shape["shape2"];
+  await shape2.services.set(["gateway", "patrick", "monkey"]);
+  await shape2.ports.port["main"].set(BigInt(6242));
+  await shape2.ports.port["lite"].set(BigInt(6262));
+  await shape2.plugins.set(["plugin1@v0.1"]);
 
   // Set Hosts
-  const host1 = config.Hosts().Host("host1");
-  await host1.Addresses().Add(["1.2.3.4/24", "4.3.2.1/24"]);
-  await host1.SSH().Address().Set("1.2.3.4:4242");
-  await host1.SSH().Auth().Add(["main"]);
-  await host1.Location().Set("1.25, 25.1");
-  await host1.Shapes().Shape("shape1").Instance().Generate();
-  await host1.Shapes().Shape("shape2").Instance().Generate();
+  const host1 = config.host["host1"];
+  await host1.addresses.add(["1.2.3.4/24", "4.3.2.1/24"]);
+  await host1.ssh.address.set("1.2.3.4:4242");
+  await host1.ssh.auth.add(["main"]);
+  await host1.location.set("1.25, 25.1");
+  await host1.shape["shape1"].instance.generate();
+  await host1.shape["shape2"].instance.generate();
 
-  const host2 = config.Hosts().Host("host2");
-  await host2.Addresses().Add(["8.2.3.4/24", "4.3.2.8/24"]);
-  await host2.SSH().Address().Set("8.2.3.4:4242");
-  await host2.SSH().Auth().Add(["withkey"]);
-  await host2.Location().Set("1.25, 25.1");
-  await host2.Shapes().Shape("shape1").Instance().Generate();
-  await host2.Shapes().Shape("shape2").Instance().Generate();
+  const host2 = config.host["host2"];
+  await host2.addresses.add(["8.2.3.4/24", "4.3.2.8/24"]);
+  await host2.ssh.address.set("8.2.3.4:4242");
+  await host2.ssh.auth.add(["withkey"]);
+  await host2.location.set("1.25, 25.1");
+  await host2.shape["shape1"].instance.generate();
+  await host2.shape["shape2"].instance.generate();
 
   // Set P2P Bootstrap
   await config
-    .Cloud()
-    .P2P()
-    .Bootstrap()
-    .Shape("shape1")
-    .Nodes()
-    .Add(["host2", "host1"]);
+    .cloud
+    .p2p
+    .bootstrap
+    .shape["shape1"]
+    .nodes
+    .add(["host2", "host1"]);
   await config
-    .Cloud()
-    .P2P()
-    .Bootstrap()
-    .Shape("shape2")
-    .Nodes()
-    .Add(["host2", "host1"]);
+    .cloud
+    .p2p
+    .bootstrap
+    .shape["shape2"]
+    .nodes
+    .add(["host2", "host1"]);
 
-  await config.Commit();
+  await config.commit();
 };
 
 describe("Config Class Integration Tests", () => {
@@ -125,55 +125,55 @@ describe("Config Class Integration Tests", () => {
   });
 
   it("should set and get Cloud Domain Root", async () => {
-    await config.Cloud().Domain().Root().Set("the.cloud");
-    const domainRoot = await config.Cloud().Domain().Root().Get();
+    await config.cloud.domain.root.set("the.cloud");
+    const domainRoot = await config.cloud.domain.root.get();
     expect(domainRoot).toBe("the.cloud");
   });
 
   it("should generate validation keys", async () => {
-    await config.Cloud().Domain().Validation().Generate();
+    await config.cloud.domain.validation.generate();
 
-    const pathBase = config.Cloud().Domain().Validation().Keys().Path();
-    expect(await pathBase.PrivateKey().Get()).toBe("keys/dv_private.key");
-    expect(await pathBase.PublicKey().Get()).toBe("keys/dv_public.key");
+    const pathBase = config.cloud.domain.validation.keys.path;
+    expect(await pathBase.privateKey.get()).toBe("keys/dv_private.key");
+    expect(await pathBase.publicKey.get()).toBe("keys/dv_public.key");
 
-    const dataBase = config.Cloud().Domain().Validation().Keys().Data();
-    expect((await dataBase.PrivateKey().Get()).length).toBeGreaterThan(128);
-    expect((await dataBase.PublicKey().Get()).length).toBeGreaterThan(128);
+    const dataBase = config.cloud.domain.validation.keys.data;
+    expect((await dataBase.privateKey.get()).length).toBeGreaterThan(128);
+    expect((await dataBase.publicKey.get()).length).toBeGreaterThan(128);
   });
 
   it("should create a valid configuration", async () => {
     await createConfig(config);
 
     // Verify parts of the configuration
-    const rootDomain = await config.Cloud().Domain().Root().Get();
+    const rootDomain = await config.cloud.domain.root.get();
     expect(rootDomain).toBe("test.com");
-    const generatedDomain = await config.Cloud().Domain().Generated().Get();
+    const generatedDomain = await config.cloud.domain.generated.get();
     expect(generatedDomain).toBe("gtest.com");
-    const hostsList = await config.Hosts().List();
+    const hostsList = await config.hosts.list();
     expect(hostsList).toEqual(expect.arrayContaining(["host1", "host2"]));
   });
 
   it("should list hosts", async () => {
-    const hostA = config.Hosts().Host("hostA");
-    await hostA.Addresses().Set(["1.1.1.1", "2.2.2.1"]);
-    await hostA.SSH().Address().Set("1.1.1.1:22");
-    await hostA.SSH().Auth().Set(["user1"]);
+    const hostA = config.host["hostA"];
+    await hostA.addresses.set(["1.1.1.1", "2.2.2.1"]);
+    await hostA.ssh.address.set("1.1.1.1:22");
+    await hostA.ssh.auth.set(["user1"]);
 
-    const hosts = await config.Hosts().List();
+    const hosts = await config.hosts.list();
     expect(Array.isArray(hosts)).toBe(true);
     expect(hosts.length).toBe(1);
   });
 
   it("should commit changes", async () => {
-    const result = await config.Commit();
+    const result = await config.commit();
     expect(result).toBeDefined();
   });
 
   it("should download configuration bundle and verify it locally and through upload", async () => {
     await createConfig(config);
 
-    const bundleIterator = await config.Download();
+    const bundleIterator = await config.download();
     const zipPath = path.join(tempDir, "config_bundle.zip");
     const writeStream = fs.createWriteStream(zipPath);
 
@@ -218,26 +218,26 @@ describe("Config Class Integration Tests", () => {
 
     const config_from_zip = new Config(Readable.toWeb(fs.createReadStream(zipPath)));
     await config_from_zip.init(rpcUrl);
-    expect(await config_from_zip.Cloud().Domain().Root().Get()).toBe("test.com");
+    expect(await config_from_zip.cloud.domain.root.get()).toBe("test.com");
     await config_from_zip.free()
   });
 
   it("should set and get Swarm Key", async () => {
-    await config.Cloud().P2P().Swarm().Generate();
-    const swarmKeyPath = await config.Cloud().P2P().Swarm().Key().Path().Get();
+    await config.cloud.p2p.swarm.generate();
+    const swarmKeyPath = await config.cloud.p2p.swarm.key.path.get();
     expect(swarmKeyPath).toBeDefined();
-    const swarmKeyData = await config.Cloud().P2P().Swarm().Key().Data().Get();
+    const swarmKeyData = await config.cloud.p2p.swarm.key.data.get();
     expect(swarmKeyData.length).toBeGreaterThan(0);
   });
 
   it("should add, list, and delete an auth signer", async () => {
-    const signer = config.Auth().Signer("testSigner");
-    await signer.Username().Set("testUser");
-    await signer.Password().Set("testPass");
-    const signersListBeforeDelete = await config.Auth().List();
+    const signer = config.auth.signer["testSigner"];
+    await signer.username.set("testUser");
+    await signer.password.set("testPass");
+    const signersListBeforeDelete = await config.auth.list();
     expect(signersListBeforeDelete).toContain("testSigner");
-    await signer.Delete();
-    const signersListAfterDelete = await config.Auth().List();
+    await signer.delete();
+    const signersListAfterDelete = await config.auth.list();
     expect(signersListAfterDelete).not.toContain("testSigner");
   });
 });

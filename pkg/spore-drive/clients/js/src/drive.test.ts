@@ -24,29 +24,29 @@ export const createConfig = async (
   config: Config
 ) => {
   // Set Cloud Domain
-  await config.Cloud().Domain().Root().Set("test.com");
-  await config.Cloud().Domain().Generated().Set("gtest.com");
-  await config.Cloud().Domain().Validation().Generate();
+  await config.cloud.domain.root.set("test.com");
+  await config.cloud.domain.generated.set("gtest.com");
+  await config.cloud.domain.validation.generate();
 
   // Generate P2P Swarm keys
-  await config.Cloud().P2P().Swarm().Generate();
+  await config.cloud.p2p.swarm.generate();
 
   // Set Auth configurations
-  const mainAuth = config.Auth().Signer("main");
-  await mainAuth.Username().Set("tau1");
-  await mainAuth.Password().Set("testtest");
+  const mainAuth = config.auth.signer["main"];
+  await mainAuth.username.set("tau1");
+  await mainAuth.password.set("testtest");
 
   // Set Shapes configurations
-  const shape1 = config.Shapes().Shape("shape1");
-  await shape1.Services().Set(["auth", "seer"]);
-  await shape1.Ports().Port("main").Set(BigInt(4242));
-  await shape1.Ports().Port("lite").Set(BigInt(4262));
+  const shape1 = config.shape["shape1"];
+  await shape1.services.set(["auth", "seer"]);
+  await shape1.ports.port["main"].set(BigInt(4242));
+  await shape1.ports.port["lite"].set(BigInt(4262));
 
-  const shape2 = config.Shapes().Shape("shape2");
-  await shape2.Services().Set(["gateway", "patrick", "monkey"]);
-  await shape2.Ports().Port("main").Set(BigInt(6242));
-  await shape2.Ports().Port("lite").Set(BigInt(6262));
-  await shape2.Plugins().Set(["plugin1@v0.1"]);
+  const shape2 = config.shape["shape2"];
+  await shape2.services.set(["gateway", "patrick", "monkey"]);
+  await shape2.ports.port["main"].set(BigInt(6242));
+  await shape2.ports.port["lite"].set(BigInt(6262));
+  await shape2.plugins.set(["plugin1@v0.1"]);
 
   // Set Hosts
   const host1Inst = await mock_client.new(
@@ -57,16 +57,13 @@ export const createConfig = async (
     })
   );
 
-  const host1 = config.Hosts().Host("host1");
-  await host1.Addresses().Add(["127.0.0.1/32"]);
-  await host1
-    .SSH()
-    .Address()
-    .Set("127.0.0.1:" + host1Inst.port);
-  await host1.SSH().Auth().Add(["main"]);
-  await host1.Location().Set("1.25, 25.1");
-  await host1.Shapes().Shape("shape1").Instance().Generate();
-  await host1.Shapes().Shape("shape2").Instance().Generate();
+  const host1 = config.host["host1"];
+  await host1.addresses.add(["127.0.0.1/32"]);
+  await host1.ssh.address.set("127.0.0.1:" + host1Inst.port);
+  await host1.ssh.auth.add(["main"]);
+  await host1.location.set("1.25, 25.1");
+  await host1.shape["shape1"].instance.generate();
+  await host1.shape["shape2"].instance.generate();
 
   const host2Inst = await mock_client.new(
     new HostConfig({
@@ -76,34 +73,19 @@ export const createConfig = async (
     })
   );
 
-  const host2 = config.Hosts().Host("host2");
-  await host2.Addresses().Add(["127.0.0.1/32"]);
-  await host2
-    .SSH()
-    .Address()
-    .Set("127.0.0.1:" + host2Inst.port);
-  await host2.SSH().Auth().Add(["main"]);
-  await host2.Location().Set("1.25, 25.1");
-  await host2.Shapes().Shape("shape1").Instance().Generate();
-  await host2.Shapes().Shape("shape2").Instance().Generate();
+  const host2 = config.host["host2"];
+  await host2.addresses.add(["127.0.0.1/32"]);
+  await host2.ssh.address.set("127.0.0.1:" + host2Inst.port);
+  await host2.ssh.auth.add(["main"]);
+  await host2.location.set("1.25, 25.1");
+  await host2.shape["shape1"].instance.generate();
+  await host2.shape["shape2"].instance.generate();
 
   // Set P2P Bootstrap
-  await config
-    .Cloud()
-    .P2P()
-    .Bootstrap()
-    .Shape("shape1")
-    .Nodes()
-    .Add(["host2", "host1"]);
-  await config
-    .Cloud()
-    .P2P()
-    .Bootstrap()
-    .Shape("shape2")
-    .Nodes()
-    .Add(["host2", "host1"]);
+  await config.cloud.p2p.bootstrap.shape["shape1"].nodes.add(["host2", "host1"]);
+  await config.cloud.p2p.bootstrap.shape["shape2"].nodes.add(["host2", "host1"]);
 
-  await config.Commit();
+  await config.commit();
 };
 
 describe("Drive Class Integration Tests", () => {

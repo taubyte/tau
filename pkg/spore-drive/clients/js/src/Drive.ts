@@ -52,7 +52,7 @@ export class Drive {
     this.client = new RPCClient(url);
     this.drive = await this.client.new(
       new DriveRequest({
-        config: new ConfigMessage({ id: this.config.id() }),
+        config: new ConfigMessage({ id: this.config.id }),
         tau: this.tau,
       })
     );
