@@ -566,7 +566,19 @@ class HostShape extends BaseOperation {
     super(client, config, path);
   }
 
-  get instance(): HostInstance {
+  async id(): Promise<string> {
+    return this.instance.id();
+  }
+
+  get key(): StringOperation {
+    return this.instance.key;
+  }
+
+  async generate(): Promise<void> {
+    await this.instance.generate();
+  }
+
+  private get instance(): HostInstance {
     return new HostInstance(this.client, this.config, [
       ...this.opPath,
       { case: "select" },

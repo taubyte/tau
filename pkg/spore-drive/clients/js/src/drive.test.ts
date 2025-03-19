@@ -62,8 +62,8 @@ export const createConfig = async (
   await host1.ssh.address.set("127.0.0.1:" + host1Inst.port);
   await host1.ssh.auth.add(["main"]);
   await host1.location.set("1.25, 25.1");
-  await host1.shape["shape1"].instance.generate();
-  await host1.shape["shape2"].instance.generate();
+  await host1.shape["shape1"].generate();
+  await host1.shape["shape2"].generate();
 
   const host2Inst = await mock_client.new(
     new HostConfig({
@@ -78,8 +78,8 @@ export const createConfig = async (
   await host2.ssh.address.set("127.0.0.1:" + host2Inst.port);
   await host2.ssh.auth.add(["main"]);
   await host2.location.set("1.25, 25.1");
-  await host2.shape["shape1"].instance.generate();
-  await host2.shape["shape2"].instance.generate();
+  await host2.shape["shape1"].generate();
+  await host2.shape["shape2"].generate();
 
   // Set P2P Bootstrap
   await config.cloud.p2p.bootstrap.shape["shape1"].nodes.add([

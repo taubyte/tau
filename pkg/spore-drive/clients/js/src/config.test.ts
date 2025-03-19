@@ -45,16 +45,16 @@ export const createConfig = async (config: Config) => {
   await host1.ssh.address.set("1.2.3.4:4242");
   await host1.ssh.auth.add(["main"]);
   await host1.location.set("1.25, 25.1");
-  await host1.shape["shape1"].instance.generate();
-  await host1.shape["shape2"].instance.generate();
+  await host1.shape["shape1"].generate();
+  await host1.shape["shape2"].generate();
 
   const host2 = config.host["host2"];
   await host2.addresses.add(["8.2.3.4/24", "4.3.2.8/24"]);
   await host2.ssh.address.set("8.2.3.4:4242");
   await host2.ssh.auth.add(["withkey"]);
   await host2.location.set("1.25, 25.1");
-  await host2.shape["shape1"].instance.generate();
-  await host2.shape["shape2"].instance.generate();
+  await host2.shape["shape1"].generate();
+  await host2.shape["shape2"].generate();
 
   // Set P2P Bootstrap
   await config.cloud.p2p.bootstrap.shape["shape1"].nodes.add([
@@ -142,11 +142,11 @@ export const createConfigWithSet = async (config: Config) => {
     },
   });
 
-  // Generate host shapes
-  await config.host["host1"].shape["shape1"].instance.generate();
-  await config.host["host1"].shape["shape2"].instance.generate();
-  await config.host["host2"].shape["shape1"].instance.generate();
-  await config.host["host2"].shape["shape2"].instance.generate();
+  // Generate host instances key/id
+  await config.host["host1"].shape["shape1"].generate();
+  await config.host["host1"].shape["shape2"].generate();
+  await config.host["host2"].shape["shape1"].generate();
+  await config.host["host2"].shape["shape2"].generate();
 
   // Set P2P Bootstrap
   await config.cloud.p2p.set({
