@@ -1,5 +1,5 @@
 import { Config } from "./Config";
-import { BundleType } from "../gen/config/v1/config_pb";
+import { Bundle, BundleType } from "../gen/config/v1/config_pb";
 import { exec, ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
@@ -7,8 +7,7 @@ import * as os from "os";
 import { mkdtemp, rm } from "fs/promises";
 import * as unzipper from "unzipper";
 import * as yaml from "js-yaml";
-import { Readable } from 'stream';
-
+import { Readable } from "stream";
 
 export const createConfig = async (config: Config) => {
   // Set Cloud Domain
@@ -31,13 +30,13 @@ export const createConfig = async (config: Config) => {
   // Set Shapes configurations
   const shape1 = config.shape["shape1"];
   await shape1.services.set(["auth", "seer"]);
-  await shape1.ports.port["main"].set(BigInt(4242));
-  await shape1.ports.port["lite"].set(BigInt(4262));
+  await shape1.ports.port["main"].set(4242);
+  await shape1.ports.port["lite"].set(4262);
 
   const shape2 = config.shape["shape2"];
   await shape2.services.set(["gateway", "patrick", "monkey"]);
-  await shape2.ports.port["main"].set(BigInt(6242));
-  await shape2.ports.port["lite"].set(BigInt(6262));
+  await shape2.ports.port["main"].set(6242);
+  await shape2.ports.port["lite"].set(6262);
   await shape2.plugins.set(["plugin1@v0.1"]);
 
   // Set Hosts
@@ -58,23 +57,149 @@ export const createConfig = async (config: Config) => {
   await host2.shape["shape2"].instance.generate();
 
   // Set P2P Bootstrap
-  await config
-    .cloud
-    .p2p
-    .bootstrap
-    .shape["shape1"]
-    .nodes
-    .add(["host2", "host1"]);
-  await config
-    .cloud
-    .p2p
-    .bootstrap
-    .shape["shape2"]
-    .nodes
-    .add(["host2", "host1"]);
+  await config.cloud.p2p.bootstrap.shape["shape1"].nodes.add([
+    "host2",
+    "host1",
+  ]);
+  await config.cloud.p2p.bootstrap.shape["shape2"].nodes.add([
+    "host2",
+    "host1",
+  ]);
 
   await config.commit();
 };
+
+export const createConfigWithSet = async (config: Config) => {
+  // Set Cloud configuration
+  await config.cloud.set({
+    domain: {
+      root: "test.com",
+      generated: "gtest.com",
+    },
+  });
+  await config.cloud.domain.validation.generate();
+  await config.cloud.p2p.swarm.generate();
+
+  // Generate P2P Swarm keys
+  await config.cloud.p2p.swarm.generate();
+
+  // Set Auth configurations
+  await config.auth.set({
+    main: {
+      username: "tau1",
+      password: "testtest",
+    },
+    withkey: {
+      username: "tau2",
+      key: "/keys/test.pem",
+    },
+  });
+
+  // Set Shapes configurations
+  await config.shapes.set({
+    shape1: {
+      services: ["auth", "seer"],
+      ports: {
+        main: 4242,
+        lite: 4262,
+      },
+    },
+    shape2: {
+      services: ["gateway", "patrick", "monkey"],
+      ports: {
+        main: 6242,
+        lite: 6262,
+      },
+      plugins: ["plugin1@v0.1"],
+    },
+  });
+
+  // Set Hosts
+  await config.hosts.set({
+    host1: {
+      addr: ["1.2.3.4/24", "4.3.2.1/24"],
+      ssh: {
+        addr: "1.2.3.4",
+        port: 4242,
+        auth: ["main"],
+      },
+      location: {
+        lat: 1.25,
+        long: 25.1,
+      },
+    },
+    host2: {
+      addr: ["8.2.3.4/24", "4.3.2.8/24"],
+      ssh: {
+        addr: "8.2.3.4",
+        port: 4242,
+        auth: ["withkey"],
+      },
+      location: {
+        lat: 1.25,
+        long: 25.1,
+      },
+    },
+  });
+
+  // Generate host shapes
+  await config.host["host1"].shape["shape1"].instance.generate();
+  await config.host["host1"].shape["shape2"].instance.generate();
+  await config.host["host2"].shape["shape1"].instance.generate();
+  await config.host["host2"].shape["shape2"].instance.generate();
+
+  // Set P2P Bootstrap
+  await config.cloud.p2p.set({
+    bootstrap: {
+      shape1: ["host2", "host1"],
+      shape2: ["host2", "host1"],
+    },
+  });
+
+  await config.commit();
+};
+
+async function extractConfigData(bundle: AsyncIterable<Bundle>): Promise<any> {
+  const configData: any = {};
+  const chunks: Uint8Array[] = [];
+
+  // Collect all chunks
+  for await (const chunk of bundle) {
+    if (chunk.data?.case === "chunk") {
+      chunks.push(chunk.data.value);
+    }
+  }
+
+  // Combine chunks into a single buffer
+  const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+  const combinedBuffer = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of chunks) {
+    combinedBuffer.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  // Write to temporary file
+  const zipPath = path.join(os.tmpdir(), "config_bundle.zip");
+  await fs.promises.writeFile(zipPath, combinedBuffer);
+
+  try {
+    // Extract and read YAML files
+    const directory = await unzipper.Open.file(zipPath);
+    for (const file of directory.files) {
+      if (file.path.endsWith(".yaml")) {
+        const content = await file.buffer();
+        const yamlData = yaml.load(content.toString());
+        Object.assign(configData, yamlData);
+      }
+    }
+  } finally {
+    // Cleanup
+    await fs.promises.unlink(zipPath).catch(() => {});
+  }
+
+  return configData;
+}
 
 describe("Config Class Integration Tests", () => {
   let config: Config;
@@ -91,7 +216,10 @@ describe("Config Class Integration Tests", () => {
         });
         mockServerProcess.stdout?.on("data", (data: string) => {
           if (!rpcUrl) {
-            resolve(data.trim());
+            // Wait 3 seconds before resolving to ensure server is ready
+            setTimeout(() => {
+              resolve(data.trim());
+            }, 3000);
           }
         });
         mockServerProcess.stderr?.on("data", (data: string) => {
@@ -107,6 +235,7 @@ describe("Config Class Integration Tests", () => {
 
   afterAll(async () => {
     if (mockServerProcess) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       controller.abort();
       await new Promise((resolve) => mockServerProcess.on("close", resolve));
     }
@@ -216,10 +345,12 @@ describe("Config Class Integration Tests", () => {
 
     expect(yamlObject.domain.root).toBe("test.com");
 
-    const config_from_zip = new Config(Readable.toWeb(fs.createReadStream(zipPath)));
+    const config_from_zip = new Config(
+      Readable.toWeb(fs.createReadStream(zipPath))
+    );
     await config_from_zip.init(rpcUrl);
     expect(await config_from_zip.cloud.domain.root.get()).toBe("test.com");
-    await config_from_zip.free()
+    await config_from_zip.free();
   });
 
   it("should set and get Swarm Key", async () => {
@@ -239,5 +370,43 @@ describe("Config Class Integration Tests", () => {
     await signer.delete();
     const signersListAfterDelete = await config.auth.list();
     expect(signersListAfterDelete).not.toContain("testSigner");
+  });
+
+  it("should generate same config with createConfig and createConfigWithSet", async () => {
+    // Create first config using createConfig
+    const config1 = new Config();
+    await config1.init(rpcUrl);
+    await createConfig(config1);
+    const bundle1 = await config1.download();
+    const config1Data = await extractConfigData(bundle1);
+
+    // Create second config using createConfigWithSet
+    const config2 = new Config();
+    await config2.init(rpcUrl);
+    await createConfigWithSet(config2);
+    const bundle2 = await config2.download();
+    const config2Data = await extractConfigData(bundle2);
+
+    // Recursively remove id and key from any object within the configuration data
+    const removeShapeIds = (obj: any) => {
+      if (typeof obj !== "object" || obj === null) return;
+
+      // Remove id and key if present
+      if ("id" in obj) delete obj.id;
+      if ("key" in obj) delete obj.key;
+
+      // Recursively apply to all nested objects
+      for (const key in obj) {
+        if (obj.hasOwnProperty(key)) {
+          removeShapeIds(obj[key]);
+        }
+      }
+    };
+
+    removeShapeIds(config1Data);
+    removeShapeIds(config2Data);
+
+    // Compare the configs
+    expect(config1Data).toEqual(config2Data);
   });
 });

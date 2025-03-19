@@ -39,13 +39,13 @@ export const createConfig = async (
   // Set Shapes configurations
   const shape1 = config.shape["shape1"];
   await shape1.services.set(["auth", "seer"]);
-  await shape1.ports.port["main"].set(BigInt(4242));
-  await shape1.ports.port["lite"].set(BigInt(4262));
+  await shape1.ports.port["main"].set(4242);
+  await shape1.ports.port["lite"].set(4262);
 
   const shape2 = config.shape["shape2"];
   await shape2.services.set(["gateway", "patrick", "monkey"]);
-  await shape2.ports.port["main"].set(BigInt(6242));
-  await shape2.ports.port["lite"].set(BigInt(6262));
+  await shape2.ports.port["main"].set(6242);
+  await shape2.ports.port["lite"].set(6262);
   await shape2.plugins.set(["plugin1@v0.1"]);
 
   // Set Hosts
@@ -82,8 +82,14 @@ export const createConfig = async (
   await host2.shape["shape2"].instance.generate();
 
   // Set P2P Bootstrap
-  await config.cloud.p2p.bootstrap.shape["shape1"].nodes.add(["host2", "host1"]);
-  await config.cloud.p2p.bootstrap.shape["shape2"].nodes.add(["host2", "host1"]);
+  await config.cloud.p2p.bootstrap.shape["shape1"].nodes.add([
+    "host2",
+    "host1",
+  ]);
+  await config.cloud.p2p.bootstrap.shape["shape2"].nodes.add([
+    "host2",
+    "host1",
+  ]);
 
   await config.commit();
 };
@@ -105,7 +111,10 @@ describe("Drive Class Integration Tests", () => {
         });
         mockServerProcess.stdout?.on("data", (data: string) => {
           if (!rpcUrl) {
-            resolve(data.trim());
+            // Wait 3 seconds before resolving to ensure server is ready
+            setTimeout(() => {
+              resolve(data.trim());
+            }, 3000);
           }
         });
         mockServerProcess.stderr?.on("data", (data: string) => {
@@ -130,6 +139,7 @@ describe("Drive Class Integration Tests", () => {
 
   afterAll(async () => {
     if (mockServerProcess) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
       controller.abort();
       await new Promise((resolve) => mockServerProcess.on("close", resolve));
     }
@@ -254,16 +264,21 @@ describe("Drive Class Integration Tests", () => {
       cmds.push(cmd);
     }
 
-    expect(new Set(cmds)).toEqual(new Set([
-      { command: 'command "-v" "systemctl"', index: expect.any(Number) },
-      { command: 'command "-v" "apt"', index: expect.any(Number) },
-      { command: 'command "-v" "docker"', index: expect.any(Number) },
-      { command: 'sudo "apt-get" "update"', index: expect.any(Number) },
-      { command: 'command "-v" "dig"', index: expect.any(Number) },
-      { command: 'command "-v" "netstat"', index: expect.any(Number) },
-      { command: 'sudo "netstat" "-lnp"', index: expect.any(Number) },
-      { command: 'dig "+short" "+timeout=5" "@1.1.1.1" "google.com"', index: expect.any(Number) }
-    ]));
+    expect(new Set(cmds)).toEqual(
+      new Set([
+        { command: 'command "-v" "systemctl"', index: expect.any(Number) },
+        { command: 'command "-v" "apt"', index: expect.any(Number) },
+        { command: 'command "-v" "docker"', index: expect.any(Number) },
+        { command: 'sudo "apt-get" "update"', index: expect.any(Number) },
+        { command: 'command "-v" "dig"', index: expect.any(Number) },
+        { command: 'command "-v" "netstat"', index: expect.any(Number) },
+        { command: 'sudo "netstat" "-lnp"', index: expect.any(Number) },
+        {
+          command: 'dig "+short" "+timeout=5" "@1.1.1.1" "google.com"',
+          index: expect.any(Number),
+        },
+      ])
+    );
     expect(cmds.length).toBe(8);
   });
 });

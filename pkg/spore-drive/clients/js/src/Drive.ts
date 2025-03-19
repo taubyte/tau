@@ -30,10 +30,16 @@ type TauBinarySource =
       case: "path";
     };
 
-const TauLatest:TauBinarySource = { value: true, case: "latest" };
-const TauVersion = (version: string):TauBinarySource => ({ value: version, case: "version" });
-const TauUrl = (url: string):TauBinarySource => ({ value: url, case: "url" });
-const TauPath = (path: string):TauBinarySource => ({ value: path, case: "path" });
+const TauLatest: TauBinarySource = { value: true, case: "latest" };
+const TauVersion = (version: string): TauBinarySource => ({
+  value: version,
+  case: "version",
+});
+const TauUrl = (url: string): TauBinarySource => ({ value: url, case: "url" });
+const TauPath = (path: string): TauBinarySource => ({
+  value: path,
+  case: "path",
+});
 
 export { TauBinarySource, TauLatest, TauVersion, TauUrl, TauPath };
 
@@ -43,7 +49,7 @@ export class Drive {
   private config: Config;
   private tau?: TauBinarySource;
 
-  constructor(config: Config,tau?: TauBinarySource) {
+  constructor(config: Config, tau?: TauBinarySource) {
     this.config = config;
     this.tau = tau;
   }

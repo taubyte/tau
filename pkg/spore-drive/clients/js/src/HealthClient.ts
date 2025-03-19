@@ -1,4 +1,8 @@
-import { PromiseClient, createPromiseClient, Transport } from "@connectrpc/connect";
+import {
+  PromiseClient,
+  createPromiseClient,
+  Transport,
+} from "@connectrpc/connect";
 import { HealthService } from "../gen/health/v1/health_connect";
 import { SupportsRequest, Empty } from "../gen/health/v1/health_pb";
 
@@ -16,4 +20,4 @@ export class RPCClient {
   async supports(req: SupportsRequest): Promise<Empty> {
     return this.client.supports(req);
   }
-} 
+}

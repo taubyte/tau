@@ -8,16 +8,18 @@ import {
   StringSlice,
   BundleConfig,
   Bundle,
-  SourceUpload
+  SourceUpload,
 } from "../gen/config/v1/config_pb";
 
 import { RPCClient } from "./ConfigClient";
 
-async function* uploadAsyncIterator(stream: ReadableStream<Uint8Array>): AsyncIterable<SourceUpload> {
-  yield new SourceUpload({data:{case:"path", value:"/"}});
+async function* uploadAsyncIterator(
+  stream: ReadableStream<Uint8Array>
+): AsyncIterable<SourceUpload> {
+  yield new SourceUpload({ data: { case: "path", value: "/" } });
 
   for await (const chunk of stream) {
-    yield new SourceUpload({data: {case:"chunk", value:chunk}});
+    yield new SourceUpload({ data: { case: "chunk", value: chunk } });
   }
 }
 
@@ -32,10 +34,12 @@ export class Config {
 
   async init(url: string): Promise<void> {
     this.client = new RPCClient(url);
-    if (typeof this.source === 'string') {
-      this.config = await this.client.load(new Source({ root: this.source, path: "/" }))
+    if (typeof this.source === "string") {
+      this.config = await this.client.load(
+        new Source({ root: this.source, path: "/" })
+      );
     } else if (this.source instanceof ReadableStream) {
-      this.config = await this.client.upload(uploadAsyncIterator(this.source))
+      this.config = await this.client.upload(uploadAsyncIterator(this.source));
     } else {
       this.config = await this.client.new();
     }
@@ -46,10 +50,10 @@ export class Config {
   }
 
   get id(): string | undefined {
-    return this.config?.id
+    return this.config?.id;
   }
 
-  get cloud() : Cloud {
+  get cloud(): Cloud {
     return new Cloud(this.client, this.config!);
   }
 
@@ -58,32 +62,43 @@ export class Config {
   }
 
   get host(): Record<string, Host> {
-    return new Proxy({}, {
-      get: (target, name: string): Host => {
-        return new Hosts(this.client, this.config!).get(name);
-      },
-    });
+    return new Proxy(
+      {},
+      {
+        get: (target, name: string): Host => {
+          return new Hosts(this.client, this.config!).get(name);
+        },
+      }
+    );
   }
 
   get auth(): Auth {
     return new Auth(this.client, this.config!);
   }
 
-  async shapes(): Promise<string[]> {
-    return await new Shapes(this.client, this.config!).list();
+  get shapes(): Shapes {
+    return new Shapes(this.client, this.config!);
   }
 
   get shape(): Record<string, Shape> {
-    return new Proxy({}, {
-      get: (target, name: string): Shape => {
-        return new Shapes(this.client, this.config!).get(name);
-      },
-    });
+    return new Proxy(
+      {},
+      {
+        get: (target, name: string): Shape => {
+          return new Shapes(this.client, this.config!).get(name);
+        },
+      }
+    );
   }
 
   async commit(): Promise<Empty> {
     if (!this.config) throw new Error("Config not loaded.");
     return await this.client.commit(this.config);
+  }
+
+  // alias to commit
+  async save(): Promise<void> {
+    await this.commit();
   }
 
   async download(): Promise<AsyncIterable<Bundle>> {
@@ -114,7 +129,7 @@ class BaseOperation {
 
   private buildOp(operation: any): any {
     let op = operation;
-      for (let i = this.opPath.length - 1; i >= 0; i--) {
+    for (let i = this.opPath.length - 1; i >= 0; i--) {
       const pathItem = this.opPath[i];
       const caseName = pathItem.case;
       const messageValue: any = { op };
@@ -133,20 +148,41 @@ class BaseOperation {
 }
 
 // Cloud Operations
+export interface DomainConfig {
+  root?: string;
+  generated?: string;
+}
+
+export interface P2PConfig {
+  bootstrap?: {
+    [key: string]: string[];
+  };
+}
+
+export interface CloudConfig {
+  domain?: DomainConfig;
+  p2p?: P2PConfig;
+}
+
 class Cloud extends BaseOperation {
   constructor(client: RPCClient, config: ConfigMessage) {
     super(client, config, [{ case: "cloud" }]);
   }
 
-  get domain() : Domain {
+  get domain(): Domain {
     return new Domain(this.client, this.config, [
       ...this.opPath,
       { case: "domain" },
     ]);
   }
 
-  get p2p() : P2P {
+  get p2p(): P2P {
     return new P2P(this.client, this.config, [...this.opPath, { case: "p2p" }]);
+  }
+
+  async set(value: CloudConfig) {
+    if (value.domain) await this.domain.set(value.domain);
+    if (value.p2p) await this.p2p.set(value.p2p);
   }
 }
 
@@ -162,18 +198,23 @@ class Domain extends BaseOperation {
     ]);
   }
 
-  get generated() : StringOperation {
+  get generated(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "generated" },
     ]);
   }
 
-  get validation() : Validation {
+  get validation(): Validation {
     return new Validation(this.client, this.config, [
       ...this.opPath,
       { case: "validation" },
     ]);
+  }
+
+  async set(value: DomainConfig) {
+    if (value.root) await this.root.set(value.root);
+    if (value.generated) await this.generated.set(value.generated);
   }
 }
 
@@ -182,7 +223,7 @@ class Validation extends BaseOperation {
     super(client, config, path);
   }
 
-  get keys() : ValidationKeys {
+  get keys(): ValidationKeys {
     return new ValidationKeys(this.client, this.config, [
       ...this.opPath,
       { case: "keys" },
@@ -199,14 +240,14 @@ class ValidationKeys extends BaseOperation {
     super(client, config, path);
   }
 
-  get path() : ValidationKeysPath {
+  get path(): ValidationKeysPath {
     return new ValidationKeysPath(this.client, this.config, [
       ...this.opPath,
       { case: "path" },
     ]);
   }
 
-  get data() : ValidationKeysData {
+  get data(): ValidationKeysData {
     return new ValidationKeysData(this.client, this.config, [
       ...this.opPath,
       { case: "data" },
@@ -217,16 +258,16 @@ class ValidationKeys extends BaseOperation {
 class ValidationKeysPath extends BaseOperation {
   constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
-  } 
+  }
 
-  get privateKey() : StringOperation {
+  get privateKey(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "privateKey" },
     ]);
   }
 
-  get publicKey() : StringOperation {
+  get publicKey(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "publicKey" },
@@ -239,14 +280,14 @@ class ValidationKeysData extends BaseOperation {
     super(client, config, path);
   }
 
-  get privateKey() : BytesOperation {
+  get privateKey(): BytesOperation {
     return new BytesOperation(this.client, this.config, [
       ...this.opPath,
       { case: "privateKey" },
     ]);
   }
 
-  get publicKey() : BytesOperation {
+  get publicKey(): BytesOperation {
     return new BytesOperation(this.client, this.config, [
       ...this.opPath,
       { case: "publicKey" },
@@ -259,18 +300,28 @@ class P2P extends BaseOperation {
     super(client, config, path);
   }
 
-  get bootstrap() : Bootstrap {
+  get bootstrap(): Bootstrap {
     return new Bootstrap(this.client, this.config, [
       ...this.opPath,
       { case: "bootstrap" },
     ]);
   }
 
-  get swarm() : Swarm {
+  get swarm(): Swarm {
     return new Swarm(this.client, this.config, [
       ...this.opPath,
       { case: "swarm" },
     ]);
+  }
+
+  async set(value: P2PConfig) {
+    if (value.bootstrap) {
+      for (const [shapeName, nodes] of Object.entries(value.bootstrap)) {
+        if (nodes && nodes.length > 0) {
+          await this.bootstrap.shape[shapeName].nodes.set(nodes);
+        }
+      }
+    }
   }
 }
 
@@ -280,14 +331,17 @@ class Bootstrap extends BaseOperation {
   }
 
   get shape(): Record<string, BootstrapShape> {
-    return new Proxy({}, {
-      get: (target, shapeName: string): BootstrapShape => {
-        return new BootstrapShape(this.client, this.config, [
-          ...this.opPath,
-          { case: "select", shape: shapeName },
-        ]);
-      },
-    });
+    return new Proxy(
+      {},
+      {
+        get: (target, shapeName: string): BootstrapShape => {
+          return new BootstrapShape(this.client, this.config, [
+            ...this.opPath,
+            { case: "select", shape: shapeName },
+          ]);
+        },
+      }
+    );
   }
 
   async list(): Promise<string[]> {
@@ -304,7 +358,7 @@ class BootstrapShape extends BaseOperation {
     super(client, config, path);
   }
 
-  get nodes() : StringSliceOperation {
+  get nodes(): StringSliceOperation {
     return new StringSliceOperation(this.client, this.config, [
       ...this.opPath,
       { case: "nodes" },
@@ -321,7 +375,7 @@ class Swarm extends BaseOperation {
     super(client, config, path);
   }
 
-  get key() : SwarmKey {
+  get key(): SwarmKey {
     return new SwarmKey(this.client, this.config, [
       ...this.opPath,
       { case: "key" },
@@ -338,14 +392,14 @@ class SwarmKey extends BaseOperation {
     super(client, config, path);
   }
 
-  get path() : StringOperation {
+  get path(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "path" },
     ]);
   }
 
-  get data() : BytesOperation {
+  get data(): BytesOperation {
     return new BytesOperation(this.client, this.config, [
       ...this.opPath,
       { case: "data" },
@@ -354,6 +408,27 @@ class SwarmKey extends BaseOperation {
 }
 
 // Hosts Operations
+export interface SSHConfig {
+  addr?: string;
+  port?: number;
+  auth?: string[];
+}
+
+export interface LocationConfig {
+  lat: number;
+  long: number;
+}
+
+export interface HostConfig {
+  addr?: string[];
+  ssh?: SSHConfig;
+  location?: LocationConfig;
+}
+
+export interface HostsConfig {
+  [key: string]: HostConfig;
+}
+
 class Hosts extends BaseOperation {
   constructor(client: RPCClient, config: ConfigMessage) {
     super(client, config, [{ case: "hosts" }]);
@@ -361,7 +436,7 @@ class Hosts extends BaseOperation {
 
   get(name: string): Host {
     return new Host(this.client, this.config, [
-          ...this.opPath,
+      ...this.opPath,
       { case: "select", name },
     ]);
   }
@@ -373,6 +448,12 @@ class Hosts extends BaseOperation {
     }
     return [];
   }
+
+  async set(value: HostsConfig) {
+    for (const [name, config] of Object.entries(value)) {
+      await this.get(name).set(config);
+    }
+  }
 }
 
 class Host extends BaseOperation {
@@ -380,25 +461,25 @@ class Host extends BaseOperation {
     super(client, config, path);
   }
 
-  get addresses() : StringSliceOperation {
+  get addresses(): StringSliceOperation {
     return new StringSliceOperation(this.client, this.config, [
       ...this.opPath,
       { case: "addresses" },
     ]);
   }
 
-  get ssh() : SSH {
+  get ssh(): SSH {
     return new SSH(this.client, this.config, [...this.opPath, { case: "ssh" }]);
   }
 
-  get location() : StringOperation {
+  get location(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "location" },
     ]);
   }
 
-  get shapes() : HostShapes {
+  get shapes(): HostShapes {
     return new HostShapes(this.client, this.config, [
       ...this.opPath,
       { case: "shapes" },
@@ -406,18 +487,28 @@ class Host extends BaseOperation {
   }
 
   get shape(): Record<string, HostShape> {
-    return new Proxy({}, {
-      get: (target, shapeName: string): HostShape => {
-        return new HostShapes(this.client, this.config, [
-          ...this.opPath,
-          { case: "shapes" },
-        ]).get(shapeName);
-      },
-    });
+    return new Proxy(
+      {},
+      {
+        get: (target, shapeName: string): HostShape => {
+          return new HostShapes(this.client, this.config, [
+            ...this.opPath,
+            { case: "shapes" },
+          ]).get(shapeName);
+        },
+      }
+    );
   }
 
   async delete(): Promise<void> {
     await this.doRequest({ case: "delete", value: true });
+  }
+
+  async set(value: HostConfig) {
+    if (value.addr) await this.addresses.set(value.addr);
+    if (value.ssh) await this.ssh.set(value.ssh);
+    if (value.location)
+      await this.location.set(`${value.location.lat},${value.location.long}`);
   }
 }
 
@@ -426,18 +517,26 @@ class SSH extends BaseOperation {
     super(client, config, path);
   }
 
-  get address() : StringOperation {
+  get address(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "address" },
     ]);
   }
 
-  get auth() : StringSliceOperation {
+  get auth(): StringSliceOperation {
     return new StringSliceOperation(this.client, this.config, [
       ...this.opPath,
       { case: "auth" },
     ]);
+  }
+
+  async set(value: SSHConfig) {
+    if (value.addr)
+      await this.address.set(
+        value.addr + (value.port && value.port > 0 ? `:${value.port}` : "")
+      );
+    if (value.auth) await this.auth.set(value.auth);
   }
 }
 
@@ -467,7 +566,7 @@ class HostShape extends BaseOperation {
     super(client, config, path);
   }
 
-  get instance() : HostInstance {
+  get instance(): HostInstance {
     return new HostInstance(this.client, this.config, [
       ...this.opPath,
       { case: "select" },
@@ -492,7 +591,7 @@ class HostInstance extends BaseOperation {
     return "";
   }
 
-  get key() : StringOperation {
+  get key(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "key" },
@@ -505,20 +604,33 @@ class HostInstance extends BaseOperation {
 }
 
 // Auth Operations
+export interface SignerConfig {
+  username?: string;
+  password?: string;
+  key?: string;
+}
+
+export interface AuthConfig {
+  [key: string]: SignerConfig;
+}
+
 class Auth extends BaseOperation {
   constructor(client: RPCClient, config: ConfigMessage) {
     super(client, config, [{ case: "auth" }]);
   }
 
   get signer(): Record<string, Signer> {
-    return new Proxy({}, {
-      get: (target, name: string): Signer => {
-        return new Signer(this.client, this.config, [
-          ...this.opPath,
-          { case: "select", name },
-        ]);
-      },
-    });
+    return new Proxy(
+      {},
+      {
+        get: (target, name: string): Signer => {
+          return new Signer(this.client, this.config, [
+            ...this.opPath,
+            { case: "select", name },
+          ]);
+        },
+      }
+    );
   }
 
   async list(): Promise<string[]> {
@@ -528,6 +640,12 @@ class Auth extends BaseOperation {
     }
     return [];
   }
+
+  async set(value: AuthConfig) {
+    for (const [name, config] of Object.entries(value)) {
+      await this.signer[name].set(config);
+    }
+  }
 }
 
 class Signer extends BaseOperation {
@@ -535,21 +653,21 @@ class Signer extends BaseOperation {
     super(client, config, path);
   }
 
-  get username() : StringOperation {
+  get username(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "username" },
     ]);
   }
 
-  get password() : StringOperation {
+  get password(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "password" },
     ]);
   }
 
-  get key() : SSHKey {
+  get key(): SSHKey {
     return new SSHKey(this.client, this.config, [
       ...this.opPath,
       { case: "key" },
@@ -559,6 +677,14 @@ class Signer extends BaseOperation {
   async delete(): Promise<void> {
     await this.doRequest({ case: "delete", value: true });
   }
+
+  async set(value: SignerConfig) {
+    if (value.username) await this.username.set(value.username);
+    if (value.key && value.password)
+      throw new Error("Cannot set both key and password for a signer.");
+    if (value.password) await this.password.set(value.password);
+    if (value.key) await this.key.path.set(value.key);
+  }
 }
 
 class SSHKey extends BaseOperation {
@@ -566,14 +692,14 @@ class SSHKey extends BaseOperation {
     super(client, config, path);
   }
 
-  get path() : StringOperation {
+  get path(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "path" },
     ]);
   }
 
-  get data() : BytesOperation {
+  get data(): BytesOperation {
     return new BytesOperation(this.client, this.config, [
       ...this.opPath,
       { case: "data" },
@@ -582,6 +708,21 @@ class SSHKey extends BaseOperation {
 }
 
 // Shapes Operations
+
+export interface PortsConfig {
+  [key: string]: number;
+}
+
+export interface ShapeConfig {
+  services?: string[];
+  ports?: PortsConfig;
+  plugins?: string[];
+}
+
+export interface ShapesConfig {
+  [key: string]: ShapeConfig;
+}
+
 class Shapes extends BaseOperation {
   constructor(client: RPCClient, config: ConfigMessage) {
     super(client, config, [{ case: "shapes" }]);
@@ -601,6 +742,12 @@ class Shapes extends BaseOperation {
     }
     return [];
   }
+
+  async set(value: ShapesConfig) {
+    for (const [name, config] of Object.entries(value)) {
+      await this.get(name).set(config);
+    }
+  }
 }
 
 class Shape extends BaseOperation {
@@ -608,21 +755,21 @@ class Shape extends BaseOperation {
     super(client, config, path);
   }
 
-  get services() : StringSliceOperation {
+  get services(): StringSliceOperation {
     return new StringSliceOperation(this.client, this.config, [
       ...this.opPath,
       { case: "services" },
     ]);
   }
 
-  get ports() : Ports {
+  get ports(): Ports {
     return new Ports(this.client, this.config, [
       ...this.opPath,
       { case: "ports" },
     ]);
   }
 
-  get plugins() : StringSliceOperation {
+  get plugins(): StringSliceOperation {
     return new StringSliceOperation(this.client, this.config, [
       ...this.opPath,
       { case: "plugins" },
@@ -632,6 +779,12 @@ class Shape extends BaseOperation {
   async delete(): Promise<void> {
     await this.doRequest({ case: "delete", value: true });
   }
+
+  async set(value: ShapeConfig) {
+    if (value.services) await this.services.set(value.services);
+    if (value.ports) await this.ports.set(value.ports);
+    if (value.plugins) await this.plugins.set(value.plugins);
+  }
 }
 
 class Ports extends BaseOperation {
@@ -640,14 +793,17 @@ class Ports extends BaseOperation {
   }
 
   get port(): Record<string, Port> {
-    return new Proxy({}, {
-      get: (target, portName: string): Port => {
-        return new Port(this.client, this.config, [
-          ...this.opPath,
-          { case: "select", name: portName },
-        ]);
-      },
-    });
+    return new Proxy(
+      {},
+      {
+        get: (target, portName: string): Port => {
+          return new Port(this.client, this.config, [
+            ...this.opPath,
+            { case: "select", name: portName },
+          ]);
+        },
+      }
+    );
   }
 
   async list(): Promise<string[]> {
@@ -657,6 +813,12 @@ class Ports extends BaseOperation {
     }
     return [];
   }
+
+  async set(value: PortsConfig) {
+    for (const [name, port] of Object.entries(value)) {
+      await this.port[name].set(port);
+    }
+  }
 }
 
 class Port extends BaseOperation {
@@ -664,16 +826,16 @@ class Port extends BaseOperation {
     super(client, config, path);
   }
 
-  async set(value: bigint): Promise<void> {
-    await this.doRequest({ case: "set", value });
+  async set(value: number): Promise<void> {
+    await this.doRequest({ case: "set", value: BigInt(value) });
   }
 
-  async get(): Promise<bigint> {
+  async get(): Promise<number> {
     const result = await this.doRequest({ case: "get", value: true });
     if (result.return.case === "uint64") {
-      return result.return.value;
+      return Number(result.return.value);
     }
-    return BigInt(0);
+    return 0;
   }
 
   async delete(): Promise<void> {
