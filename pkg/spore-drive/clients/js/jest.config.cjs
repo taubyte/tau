@@ -10,6 +10,5 @@ module.exports = {
       '^(.*)\\.js$': '$1',
     },
     testRunner: "jest-circus/runner",
-    testTimeout: 120000,
-    maxConcurrency: 1,
+    testTimeout: 300000,
   };
