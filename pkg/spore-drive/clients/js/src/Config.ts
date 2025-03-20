@@ -193,7 +193,7 @@ class Domain extends BaseOperation {
     super(client, config, path);
   }
 
-  get root() {
+  get root(): StringOperation {
     return new StringOperation(this.client, this.config, [
       ...this.opPath,
       { case: "root" },
@@ -214,7 +214,7 @@ class Domain extends BaseOperation {
     ]);
   }
 
-  async set(value: DomainConfig) {
+  async set(value: DomainConfig): Promise<void> {
     if (value.root) await this.root.set(value.root);
     if (value.generated) await this.generated.set(value.generated);
   }
@@ -316,7 +316,7 @@ class P2P extends BaseOperation {
     ]);
   }
 
-  async set(value: P2PConfig) {
+  async set(value: P2PConfig): Promise<void> {
     if (value.bootstrap) {
       await this.bootstrap.set(value.bootstrap);
     }
@@ -342,7 +342,7 @@ class Bootstrap extends BaseOperation {
     );
   }
 
-  async set(value: BootstrapConfig) {
+  async set(value: BootstrapConfig): Promise<void> {
     for (const [shapeName, nodes] of Object.entries(value)) {
       if (nodes && nodes.length > 0) {
         await this.shape[shapeName].nodes.set(nodes);
@@ -455,7 +455,7 @@ class Hosts extends BaseOperation {
     return [];
   }
 
-  async set(value: HostsConfig) {
+  async set(value: HostsConfig): Promise<void> {
     for (const [name, config] of Object.entries(value)) {
       await this.get(name).set(config);
     }
@@ -510,7 +510,7 @@ class Host extends BaseOperation {
     await this.doRequest({ case: "delete", value: true });
   }
 
-  async set(value: HostConfig) {
+  async set(value: HostConfig): Promise<void> {
     if (value.addr) await this.addresses.set(value.addr);
     if (value.ssh) await this.ssh.set(value.ssh);
     if (value.location)
@@ -537,7 +537,7 @@ class SSH extends BaseOperation {
     ]);
   }
 
-  async set(value: SSHConfig) {
+  async set(value: SSHConfig): Promise<void> {
     if (value.addr)
       await this.address.set(
         value.addr + (value.port && value.port > 0 ? `:${value.port}` : "")
@@ -601,7 +601,7 @@ class HostInstance extends BaseOperation {
     super(client, config, path);
   }
 
-  async id() {
+  async id(): Promise<string> {
     const result = await this.doRequest({ case: "id", value: true });
     if (result.return.case === "string") {
       return result.return.value;
@@ -659,7 +659,7 @@ class Auth extends BaseOperation {
     return [];
   }
 
-  async set(value: AuthConfig) {
+  async set(value: AuthConfig): Promise<void> {
     for (const [name, config] of Object.entries(value)) {
       await this.signer[name].set(config);
     }
@@ -696,7 +696,7 @@ class Signer extends BaseOperation {
     await this.doRequest({ case: "delete", value: true });
   }
 
-  async set(value: SignerConfig) {
+  async set(value: SignerConfig): Promise<void> {
     if (value.username) await this.username.set(value.username);
     if (value.key && value.password)
       throw new Error("Cannot set both key and password for a signer.");
@@ -761,7 +761,7 @@ class Shapes extends BaseOperation {
     return [];
   }
 
-  async set(value: ShapesConfig) {
+  async set(value: ShapesConfig): Promise<void> {
     for (const [name, config] of Object.entries(value)) {
       await this.get(name).set(config);
     }
@@ -798,7 +798,7 @@ class Shape extends BaseOperation {
     await this.doRequest({ case: "delete", value: true });
   }
 
-  async set(value: ShapeConfig) {
+  async set(value: ShapeConfig): Promise<void> {
     if (value.services) await this.services.set(value.services);
     if (value.ports) await this.ports.set(value.ports);
     if (value.plugins) await this.plugins.set(value.plugins);
@@ -832,7 +832,7 @@ class Ports extends BaseOperation {
     return [];
   }
 
-  async set(value: PortsConfig) {
+  async set(value: PortsConfig): Promise<void> {
     for (const [name, port] of Object.entries(value)) {
       await this.port[name].set(port);
     }
