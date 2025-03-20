@@ -161,30 +161,22 @@ export const createConfigWithSet = async (config: Config) => {
 
 async function extractConfigData(bundle: AsyncIterable<Bundle>): Promise<any> {
   const configData: any = {};
-  const chunks: Uint8Array[] = [];
-
-  // Collect all chunks
-  for await (const chunk of bundle) {
-    if (chunk.data?.case === "chunk") {
-      chunks.push(chunk.data.value);
-    }
-  }
-
-  // Combine chunks into a single buffer
-  const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
-  const combinedBuffer = new Uint8Array(totalLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    combinedBuffer.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  // Write to temporary file
   const zipPath = path.join(os.tmpdir(), "config_bundle.zip");
-  await fs.promises.writeFile(zipPath, combinedBuffer);
+  const writeStream = fs.createWriteStream(zipPath);
 
   try {
-    // Extract and read YAML files
+    for await (const chunk of bundle) {
+      if (chunk.data?.case === "chunk") {
+        writeStream.write(chunk.data.value);
+      }
+    }
+ 
+    await new Promise((resolve, reject) => {
+      writeStream.end();
+      writeStream.on("finish", resolve);
+      writeStream.on("error", reject);
+    });
+
     const directory = await unzipper.Open.file(zipPath);
     for (const file of directory.files) {
       if (file.path.endsWith(".yaml")) {
@@ -194,7 +186,6 @@ async function extractConfigData(bundle: AsyncIterable<Bundle>): Promise<any> {
       }
     }
   } finally {
-    // Cleanup
     await fs.promises.unlink(zipPath).catch(() => {});
   }
 
@@ -216,7 +207,6 @@ describe("Config Class Integration Tests", () => {
         });
         mockServerProcess.stdout?.on("data", (data: string) => {
           if (!rpcUrl) {
-            // Wait 3 seconds before resolving to ensure server is ready
             setTimeout(() => {
               resolve(data.trim());
             }, 3000);
