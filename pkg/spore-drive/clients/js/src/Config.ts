@@ -153,10 +153,12 @@ export interface DomainConfig {
   generated?: string;
 }
 
+export interface BootstrapConfig {
+  [key: string]: string[];
+}
+
 export interface P2PConfig {
-  bootstrap?: {
-    [key: string]: string[];
-  };
+  bootstrap?: BootstrapConfig;
 }
 
 export interface CloudConfig {
@@ -316,11 +318,7 @@ class P2P extends BaseOperation {
 
   async set(value: P2PConfig) {
     if (value.bootstrap) {
-      for (const [shapeName, nodes] of Object.entries(value.bootstrap)) {
-        if (nodes && nodes.length > 0) {
-          await this.bootstrap.shape[shapeName].nodes.set(nodes);
-        }
-      }
+      await this.bootstrap.set(value.bootstrap);
     }
   }
 }
@@ -342,6 +340,14 @@ class Bootstrap extends BaseOperation {
         },
       }
     );
+  }
+
+  async set(value: BootstrapConfig) {
+    for (const [shapeName, nodes] of Object.entries(value)) {
+      if (nodes && nodes.length > 0) {
+        await this.shape[shapeName].nodes.set(nodes);
+      }
+    }
   }
 
   async list(): Promise<string[]> {
