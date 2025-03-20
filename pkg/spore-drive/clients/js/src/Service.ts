@@ -6,7 +6,7 @@ import { spawn } from "child_process";
 import * as tar from "tar";
 import packageJson from "../package.json";
 import { homedir, platform } from "os";
-import * as os from 'os';
+import * as os from "os";
 
 import { Health } from "./Health";
 
@@ -31,7 +31,7 @@ export class Service {
 
   constructor() {
     this.binaryDir = path.join(__dirname, "bin");
-    this.binaryName = os.platform() === 'win32' ? "drive.exe" : "drive";
+    this.binaryName = os.platform() === "win32" ? "drive.exe" : "drive";
     this.binaryPath = path.join(this.binaryDir, this.binaryName);
     this.versionFilePath = path.join(this.binaryDir, "version.txt");
     this.packageVersion = packageJson.service;
@@ -117,7 +117,6 @@ export class Service {
     try {
       const hc = new Health(transport);
       await hc.ping();
-      console.log("Service is up on port", port);
       return true;
     } catch (e) {
       console.log("Service is not up on port", port, e);

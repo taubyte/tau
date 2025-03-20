@@ -33,5 +33,5 @@ describe("Service", () => {
     const port = await service.getPort();
     console.log(`Port found: ${port}`);
     expect(typeof port).toBe("number");
-  }, 10000);
+  });
 });

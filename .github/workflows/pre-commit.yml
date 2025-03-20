@@ -117,5 +117,7 @@ jobs:
               fi
               sleep 5
             done
+            # clean-up mock servers
+            kill $(pgrep -f "mock")
           ) || exit 1
         done

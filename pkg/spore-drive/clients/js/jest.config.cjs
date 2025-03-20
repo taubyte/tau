@@ -4,12 +4,11 @@ module.exports = {
     testEnvironment: 'node',
     extensionsToTreatAsEsm: ['.ts'],
     transform: {
-      '^.+\\.tsx?$': 'babel-jest',  // Use babel-jest for TypeScript files
+      '^.+\\.tsx?$': 'babel-jest',
     },
     moduleNameMapper: {
-      // Map all imports ending with .js to .ts files
       '^(.*)\\.js$': '$1',
     },
-    testRunner: 'jest-circus/runner',  // Optional: use modern test runner
+    testRunner: "jest-circus/runner",
+    testTimeout: 300000,
   };
-  

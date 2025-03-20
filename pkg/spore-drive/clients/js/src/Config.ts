@@ -8,16 +8,18 @@ import {
   StringSlice,
   BundleConfig,
   Bundle,
-  SourceUpload
+  SourceUpload,
 } from "../gen/config/v1/config_pb";
 
 import { RPCClient } from "./ConfigClient";
 
-async function* uploadAsyncIterator(stream: ReadableStream<Uint8Array>): AsyncIterable<SourceUpload> {
-  yield new SourceUpload({data:{case:"path", value:"/"}});
+async function* uploadAsyncIterator(
+  stream: ReadableStream<Uint8Array>
+): AsyncIterable<SourceUpload> {
+  yield new SourceUpload({ data: { case: "path", value: "/" } });
 
   for await (const chunk of stream) {
-    yield new SourceUpload({data: {case:"chunk", value:chunk}});
+    yield new SourceUpload({ data: { case: "chunk", value: chunk } });
   }
 }
 
@@ -32,10 +34,12 @@ export class Config {
 
   async init(url: string): Promise<void> {
     this.client = new RPCClient(url);
-    if (typeof this.source === 'string') {
-      this.config = await this.client.load(new Source({ root: this.source, path: "/" }))
+    if (typeof this.source === "string") {
+      this.config = await this.client.load(
+        new Source({ root: this.source, path: "/" })
+      );
     } else if (this.source instanceof ReadableStream) {
-      this.config = await this.client.upload(uploadAsyncIterator(this.source))
+      this.config = await this.client.upload(uploadAsyncIterator(this.source));
     } else {
       this.config = await this.client.new();
     }
@@ -45,32 +49,59 @@ export class Config {
     if (this.config) await this.client.free(this.config);
   }
 
-  id(): string | undefined {
-    return this.config?.id
+  get id(): string | undefined {
+    return this.config?.id;
   }
 
-  Cloud() {
+  get cloud(): Cloud {
     return new Cloud(this.client, this.config!);
   }
 
-  Hosts() {
+  get hosts(): Hosts {
     return new Hosts(this.client, this.config!);
   }
 
-  Auth() {
+  get host(): Record<string, Host> {
+    return new Proxy(
+      {},
+      {
+        get: (target, name: string): Host => {
+          return new Hosts(this.client, this.config!).get(name);
+        },
+      }
+    );
+  }
+
+  get auth(): Auth {
     return new Auth(this.client, this.config!);
   }
 
-  Shapes() {
+  get shapes(): Shapes {
     return new Shapes(this.client, this.config!);
   }
 
-  async Commit(): Promise<Empty> {
+  get shape(): Record<string, Shape> {
+    return new Proxy(
+      {},
+      {
+        get: (target, name: string): Shape => {
+          return new Shapes(this.client, this.config!).get(name);
+        },
+      }
+    );
+  }
+
+  async commit(): Promise<Empty> {
     if (!this.config) throw new Error("Config not loaded.");
     return await this.client.commit(this.config);
   }
 
-  async Download(): Promise<AsyncIterable<Bundle>> {
+  // alias to commit
+  async save(): Promise<void> {
+    await this.commit();
+  }
+
+  async download(): Promise<AsyncIterable<Bundle>> {
     return await this.client.download(new BundleConfig({ id: this.config }));
   }
 }
@@ -79,12 +110,12 @@ export class Config {
 class BaseOperation {
   protected client: RPCClient;
   protected config: ConfigMessage;
-  protected path: any[];
+  protected opPath: any[];
 
   constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
     this.client = client;
     this.config = config;
-    this.path = path;
+    this.opPath = path;
   }
 
   protected async doRequest(operation: any): Promise<Return> {
@@ -98,8 +129,8 @@ class BaseOperation {
 
   private buildOp(operation: any): any {
     let op = operation;
-    for (let i = this.path.length - 1; i >= 0; i--) {
-      const pathItem = this.path[i];
+    for (let i = this.opPath.length - 1; i >= 0; i--) {
+      const pathItem = this.opPath[i];
       const caseName = pathItem.case;
       const messageValue: any = { op };
 
@@ -117,20 +148,43 @@ class BaseOperation {
 }
 
 // Cloud Operations
+export interface DomainConfig {
+  root?: string;
+  generated?: string;
+}
+
+export interface BootstrapConfig {
+  [key: string]: string[];
+}
+
+export interface P2PConfig {
+  bootstrap?: BootstrapConfig;
+}
+
+export interface CloudConfig {
+  domain?: DomainConfig;
+  p2p?: P2PConfig;
+}
+
 class Cloud extends BaseOperation {
   constructor(client: RPCClient, config: ConfigMessage) {
     super(client, config, [{ case: "cloud" }]);
   }
 
-  Domain() {
+  get domain(): Domain {
     return new Domain(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "domain" },
     ]);
   }
 
-  P2P() {
-    return new P2P(this.client, this.config, [...this.path, { case: "p2p" }]);
+  get p2p(): P2P {
+    return new P2P(this.client, this.config, [...this.opPath, { case: "p2p" }]);
+  }
+
+  async set(value: CloudConfig) {
+    if (value.domain) await this.domain.set(value.domain);
+    if (value.p2p) await this.p2p.set(value.p2p);
   }
 }
 
@@ -139,25 +193,30 @@ class Domain extends BaseOperation {
     super(client, config, path);
   }
 
-  Root() {
+  get root(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "root" },
     ]);
   }
 
-  Generated() {
+  get generated(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "generated" },
     ]);
   }
 
-  Validation() {
+  get validation(): Validation {
     return new Validation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "validation" },
     ]);
+  }
+
+  async set(value: DomainConfig): Promise<void> {
+    if (value.root) await this.root.set(value.root);
+    if (value.generated) await this.generated.set(value.generated);
   }
 }
 
@@ -166,14 +225,14 @@ class Validation extends BaseOperation {
     super(client, config, path);
   }
 
-  Keys() {
+  get keys(): ValidationKeys {
     return new ValidationKeys(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "keys" },
     ]);
   }
 
-  async Generate(): Promise<void> {
+  async generate(): Promise<void> {
     await this.doRequest({ case: "generate", value: true });
   }
 }
@@ -183,16 +242,16 @@ class ValidationKeys extends BaseOperation {
     super(client, config, path);
   }
 
-  Path() {
+  get path(): ValidationKeysPath {
     return new ValidationKeysPath(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "path" },
     ]);
   }
 
-  Data() {
+  get data(): ValidationKeysData {
     return new ValidationKeysData(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "data" },
     ]);
   }
@@ -203,16 +262,16 @@ class ValidationKeysPath extends BaseOperation {
     super(client, config, path);
   }
 
-  PrivateKey() {
+  get privateKey(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "privateKey" },
     ]);
   }
 
-  PublicKey() {
+  get publicKey(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "publicKey" },
     ]);
   }
@@ -223,16 +282,16 @@ class ValidationKeysData extends BaseOperation {
     super(client, config, path);
   }
 
-  PrivateKey() {
+  get privateKey(): BytesOperation {
     return new BytesOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "privateKey" },
     ]);
   }
 
-  PublicKey() {
+  get publicKey(): BytesOperation {
     return new BytesOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "publicKey" },
     ]);
   }
@@ -243,18 +302,24 @@ class P2P extends BaseOperation {
     super(client, config, path);
   }
 
-  Bootstrap() {
+  get bootstrap(): Bootstrap {
     return new Bootstrap(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "bootstrap" },
     ]);
   }
 
-  Swarm() {
+  get swarm(): Swarm {
     return new Swarm(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "swarm" },
     ]);
+  }
+
+  async set(value: P2PConfig): Promise<void> {
+    if (value.bootstrap) {
+      await this.bootstrap.set(value.bootstrap);
+    }
   }
 }
 
@@ -263,14 +328,29 @@ class Bootstrap extends BaseOperation {
     super(client, config, path);
   }
 
-  Shape(shapeName: string) {
-    return new BootstrapShape(this.client,this.config, [
-      ...this.path,
-      { case: "select", shape: shapeName},
-    ]);
+  get shape(): Record<string, BootstrapShape> {
+    return new Proxy(
+      {},
+      {
+        get: (target, shapeName: string): BootstrapShape => {
+          return new BootstrapShape(this.client, this.config, [
+            ...this.opPath,
+            { case: "select", shape: shapeName },
+          ]);
+        },
+      }
+    );
   }
 
-  async List(): Promise<string[]> {
+  async set(value: BootstrapConfig): Promise<void> {
+    for (const [shapeName, nodes] of Object.entries(value)) {
+      if (nodes && nodes.length > 0) {
+        await this.shape[shapeName].nodes.set(nodes);
+      }
+    }
+  }
+
+  async list(): Promise<string[]> {
     const result = await this.doRequest({ case: "list", value: true });
     if (result.return.case === "slice") {
       return result.return.value.value;
@@ -284,14 +364,14 @@ class BootstrapShape extends BaseOperation {
     super(client, config, path);
   }
 
-  Nodes() {
+  get nodes(): StringSliceOperation {
     return new StringSliceOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "nodes" },
     ]);
   }
 
-  async Delete(): Promise<void> {
+  async delete(): Promise<void> {
     await this.doRequest({ case: "delete", value: true });
   }
 }
@@ -301,14 +381,14 @@ class Swarm extends BaseOperation {
     super(client, config, path);
   }
 
-  Key() {
+  get key(): SwarmKey {
     return new SwarmKey(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "key" },
     ]);
   }
 
-  async Generate(): Promise<void> {
+  async generate(): Promise<void> {
     await this.doRequest({ case: "generate", value: true });
   }
 }
@@ -318,40 +398,67 @@ class SwarmKey extends BaseOperation {
     super(client, config, path);
   }
 
-  Path() {
+  get path(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "path" },
     ]);
   }
 
-  Data() {
+  get data(): BytesOperation {
     return new BytesOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "data" },
     ]);
   }
 }
 
 // Hosts Operations
+export interface SSHConfig {
+  addr?: string;
+  port?: number;
+  auth?: string[];
+}
+
+export interface LocationConfig {
+  lat: number;
+  long: number;
+}
+
+export interface HostConfig {
+  addr?: string[];
+  ssh?: SSHConfig;
+  location?: LocationConfig;
+}
+
+export interface HostsConfig {
+  [key: string]: HostConfig;
+}
+
 class Hosts extends BaseOperation {
   constructor(client: RPCClient, config: ConfigMessage) {
     super(client, config, [{ case: "hosts" }]);
   }
 
-  Host(name: string) {
+  get(name: string): Host {
     return new Host(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "select", name },
     ]);
   }
 
-  async List(): Promise<string[]> {
+  async list(): Promise<string[]> {
     const result = await this.doRequest({ case: "list", value: true });
     if (result.return.case === "slice") {
       return result.return.value.value;
     }
     return [];
+  }
+
+  async set(value: HostsConfig): Promise<void> {
+    for (const [name, config] of Object.entries(value)) {
+      await this.get(name).set(config);
+    }
   }
 }
 
@@ -360,33 +467,54 @@ class Host extends BaseOperation {
     super(client, config, path);
   }
 
-  Addresses() {
+  get addresses(): StringSliceOperation {
     return new StringSliceOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "addresses" },
     ]);
   }
 
-  SSH() {
-    return new SSH(this.client, this.config, [...this.path, { case: "ssh" }]);
+  get ssh(): SSH {
+    return new SSH(this.client, this.config, [...this.opPath, { case: "ssh" }]);
   }
 
-  Location() {
+  get location(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "location" },
     ]);
   }
 
-  Shapes() {
+  get shapes(): HostShapes {
     return new HostShapes(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "shapes" },
     ]);
   }
 
-  async Delete(): Promise<void> {
+  get shape(): Record<string, HostShape> {
+    return new Proxy(
+      {},
+      {
+        get: (target, shapeName: string): HostShape => {
+          return new HostShapes(this.client, this.config, [
+            ...this.opPath,
+            { case: "shapes" },
+          ]).get(shapeName);
+        },
+      }
+    );
+  }
+
+  async delete(): Promise<void> {
     await this.doRequest({ case: "delete", value: true });
+  }
+
+  async set(value: HostConfig): Promise<void> {
+    if (value.addr) await this.addresses.set(value.addr);
+    if (value.ssh) await this.ssh.set(value.ssh);
+    if (value.location)
+      await this.location.set(`${value.location.lat},${value.location.long}`);
   }
 }
 
@@ -395,18 +523,26 @@ class SSH extends BaseOperation {
     super(client, config, path);
   }
 
-  Address() {
+  get address(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "address" },
     ]);
   }
 
-  Auth() {
+  get auth(): StringSliceOperation {
     return new StringSliceOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "auth" },
     ]);
+  }
+
+  async set(value: SSHConfig): Promise<void> {
+    if (value.addr)
+      await this.address.set(
+        value.addr + (value.port && value.port > 0 ? `:${value.port}` : "")
+      );
+    if (value.auth) await this.auth.set(value.auth);
   }
 }
 
@@ -415,14 +551,14 @@ class HostShapes extends BaseOperation {
     super(client, config, path);
   }
 
-  Shape(shapeName: string) {
+  get(name: string): HostShape {
     return new HostShape(this.client, this.config, [
-      ...this.path,
-      { case: "select", name: shapeName },
+      ...this.opPath,
+      { case: "select", name },
     ]);
   }
 
-  async List(): Promise<string[]> {
+  async list(): Promise<string[]> {
     const result = await this.doRequest({ case: "list", value: true });
     if (result.return.case === "slice") {
       return result.return.value.value;
@@ -436,14 +572,26 @@ class HostShape extends BaseOperation {
     super(client, config, path);
   }
 
-  Instance() {
+  async id(): Promise<string> {
+    return this.instance.id();
+  }
+
+  get key(): StringOperation {
+    return this.instance.key;
+  }
+
+  async generate(): Promise<void> {
+    await this.instance.generate();
+  }
+
+  private get instance(): HostInstance {
     return new HostInstance(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "select" },
     ]);
   }
 
-  async Delete(): Promise<void> {
+  async delete(): Promise<void> {
     await this.doRequest({ case: "delete", value: true });
   }
 }
@@ -453,7 +601,7 @@ class HostInstance extends BaseOperation {
     super(client, config, path);
   }
 
-  async Id(): Promise<string> {
+  async id(): Promise<string> {
     const result = await this.doRequest({ case: "id", value: true });
     if (result.return.case === "string") {
       return result.return.value;
@@ -461,37 +609,60 @@ class HostInstance extends BaseOperation {
     return "";
   }
 
-  Key() {
+  get key(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "key" },
     ]);
   }
 
-  async Generate(): Promise<void> {
+  async generate(): Promise<void> {
     await this.doRequest({ case: "generate", value: true });
   }
 }
 
 // Auth Operations
+export interface SignerConfig {
+  username?: string;
+  password?: string;
+  key?: string;
+}
+
+export interface AuthConfig {
+  [key: string]: SignerConfig;
+}
+
 class Auth extends BaseOperation {
   constructor(client: RPCClient, config: ConfigMessage) {
     super(client, config, [{ case: "auth" }]);
   }
 
-  Signer(name: string) {
-    return new Signer(this.client, this.config, [
-      ...this.path,
-      { case: "select", name },
-    ]);
+  get signer(): Record<string, Signer> {
+    return new Proxy(
+      {},
+      {
+        get: (target, name: string): Signer => {
+          return new Signer(this.client, this.config, [
+            ...this.opPath,
+            { case: "select", name },
+          ]);
+        },
+      }
+    );
   }
 
-  async List(): Promise<string[]> {
+  async list(): Promise<string[]> {
     const result = await this.doRequest({ case: "list", value: true });
     if (result.return.case === "slice") {
       return result.return.value.value;
     }
     return [];
+  }
+
+  async set(value: AuthConfig): Promise<void> {
+    for (const [name, config] of Object.entries(value)) {
+      await this.signer[name].set(config);
+    }
   }
 }
 
@@ -500,29 +671,37 @@ class Signer extends BaseOperation {
     super(client, config, path);
   }
 
-  Username() {
+  get username(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "username" },
     ]);
   }
 
-  Password() {
+  get password(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "password" },
     ]);
   }
 
-  Key() {
+  get key(): SSHKey {
     return new SSHKey(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "key" },
     ]);
   }
 
-  async Delete(): Promise<void> {
+  async delete(): Promise<void> {
     await this.doRequest({ case: "delete", value: true });
+  }
+
+  async set(value: SignerConfig): Promise<void> {
+    if (value.username) await this.username.set(value.username);
+    if (value.key && value.password)
+      throw new Error("Cannot set both key and password for a signer.");
+    if (value.password) await this.password.set(value.password);
+    if (value.key) await this.key.path.set(value.key);
   }
 }
 
@@ -531,40 +710,61 @@ class SSHKey extends BaseOperation {
     super(client, config, path);
   }
 
-  Path() {
+  get path(): StringOperation {
     return new StringOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "path" },
     ]);
   }
 
-  Data() {
+  get data(): BytesOperation {
     return new BytesOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "data" },
     ]);
   }
 }
 
 // Shapes Operations
+
+export interface PortsConfig {
+  [key: string]: number;
+}
+
+export interface ShapeConfig {
+  services?: string[];
+  ports?: PortsConfig;
+  plugins?: string[];
+}
+
+export interface ShapesConfig {
+  [key: string]: ShapeConfig;
+}
+
 class Shapes extends BaseOperation {
   constructor(client: RPCClient, config: ConfigMessage) {
     super(client, config, [{ case: "shapes" }]);
   }
 
-  Shape(name: string) {
+  get(name: string): Shape {
     return new Shape(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "select", name },
     ]);
   }
 
-  async List(): Promise<string[]> {
+  async list(): Promise<string[]> {
     const result = await this.doRequest({ case: "list", value: true });
     if (result.return.case === "slice") {
       return result.return.value.value;
     }
     return [];
+  }
+
+  async set(value: ShapesConfig): Promise<void> {
+    for (const [name, config] of Object.entries(value)) {
+      await this.get(name).set(config);
+    }
   }
 }
 
@@ -573,29 +773,35 @@ class Shape extends BaseOperation {
     super(client, config, path);
   }
 
-  Services() {
+  get services(): StringSliceOperation {
     return new StringSliceOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "services" },
     ]);
   }
 
-  Ports() {
+  get ports(): Ports {
     return new Ports(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "ports" },
     ]);
   }
 
-  Plugins() {
+  get plugins(): StringSliceOperation {
     return new StringSliceOperation(this.client, this.config, [
-      ...this.path,
+      ...this.opPath,
       { case: "plugins" },
     ]);
   }
 
-  async Delete(): Promise<void> {
+  async delete(): Promise<void> {
     await this.doRequest({ case: "delete", value: true });
+  }
+
+  async set(value: ShapeConfig): Promise<void> {
+    if (value.services) await this.services.set(value.services);
+    if (value.ports) await this.ports.set(value.ports);
+    if (value.plugins) await this.plugins.set(value.plugins);
   }
 }
 
@@ -604,19 +810,32 @@ class Ports extends BaseOperation {
     super(client, config, path);
   }
 
-  Port(portName: string) {
-    return new Port(this.client, this.config, [
-      ...this.path,
-      { case: "select", name: portName },
-    ]);
+  get port(): Record<string, Port> {
+    return new Proxy(
+      {},
+      {
+        get: (target, portName: string): Port => {
+          return new Port(this.client, this.config, [
+            ...this.opPath,
+            { case: "select", name: portName },
+          ]);
+        },
+      }
+    );
   }
 
-  async List(): Promise<string[]> {
+  async list(): Promise<string[]> {
     const result = await this.doRequest({ case: "list", value: true });
     if (result.return.case === "slice") {
       return result.return.value.value;
     }
     return [];
+  }
+
+  async set(value: PortsConfig): Promise<void> {
+    for (const [name, port] of Object.entries(value)) {
+      await this.port[name].set(port);
+    }
   }
 }
 
@@ -625,19 +844,19 @@ class Port extends BaseOperation {
     super(client, config, path);
   }
 
-  async Set(value: bigint): Promise<void> {
-    await this.doRequest({ case: "set", value });
+  async set(value: number): Promise<void> {
+    await this.doRequest({ case: "set", value: BigInt(value) });
   }
 
-  async Get(): Promise<bigint> {
+  async get(): Promise<number> {
     const result = await this.doRequest({ case: "get", value: true });
     if (result.return.case === "uint64") {
-      return result.return.value;
+      return Number(result.return.value);
     }
-    return BigInt(0);
+    return 0;
   }
 
-  async Delete(): Promise<void> {
+  async delete(): Promise<void> {
     await this.doRequest({ case: "delete", value: true });
   }
 }
@@ -648,11 +867,11 @@ class StringOperation extends BaseOperation {
     super(client, config, path);
   }
 
-  async Set(value: string): Promise<void> {
+  async set(value: string): Promise<void> {
     await this.doRequest({ case: "set", value });
   }
 
-  async Get(): Promise<string> {
+  async get(): Promise<string> {
     const result = await this.doRequest({ case: "get", value: true });
     if (result.return.case === "string") {
       return result.return.value;
@@ -666,11 +885,11 @@ class BytesOperation extends BaseOperation {
     super(client, config, path);
   }
 
-  async Set(value: Uint8Array): Promise<void> {
+  async set(value: Uint8Array): Promise<void> {
     await this.doRequest({ case: "set", value });
   }
 
-  async Get(): Promise<Uint8Array> {
+  async get(): Promise<Uint8Array> {
     const result = await this.doRequest({ case: "get", value: true });
     if (result.return.case === "bytes") {
       return result.return.value;
@@ -684,32 +903,32 @@ class StringSliceOperation extends BaseOperation {
     super(client, config, path);
   }
 
-  async Set(values: string[]): Promise<void> {
+  async set(values: string[]): Promise<void> {
     await this.doRequest({
       case: "set",
       value: new StringSlice({ value: values }),
     });
   }
 
-  async Add(values: string[]): Promise<void> {
+  async add(values: string[]): Promise<void> {
     await this.doRequest({
       case: "add",
       value: new StringSlice({ value: values }),
     });
   }
 
-  async Delete(values: string[]): Promise<void> {
+  async delete(values: string[]): Promise<void> {
     await this.doRequest({
       case: "delete",
       value: new StringSlice({ value: values }),
     });
   }
 
-  async Clear(): Promise<void> {
+  async clear(): Promise<void> {
     await this.doRequest({ case: "clear", value: true });
   }
 
-  async List(): Promise<string[]> {
+  async list(): Promise<string[]> {
     const result = await this.doRequest({ case: "list", value: true });
     if (result.return.case === "slice") {
       return result.return.value.value;

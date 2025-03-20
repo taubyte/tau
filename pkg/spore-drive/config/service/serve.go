@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path"
+	"sync"
 
 	"connectrpc.com/connect"
 	"github.com/h2non/filetype"
@@ -99,14 +100,19 @@ func (s *Service) Upload(ctx context.Context, stream *connect.ClientStream[pb.So
 	)
 
 	for stream.Receive() {
-		req := stream.Msg()
+		select {
+		case <-ctx.Done():
+			return nil, connect.NewError(connect.CodeCanceled, errors.New("upload canceled"))
+		default:
+			req := stream.Msg()
 
-		if x := req.GetPath(); x != "" {
-			p = x
-		} else if x := req.GetChunk(); x != nil {
-			bundle = append(bundle, x...)
-		} else {
-			return nil, connect.NewError(connect.CodeUnknown, errors.New("unexpected payload"))
+			if x := req.GetPath(); x != "" {
+				p = x
+			} else if x := req.GetChunk(); x != nil {
+				bundle = append(bundle, x...)
+			} else {
+				return nil, connect.NewError(connect.CodeUnknown, errors.New("unexpected payload"))
+			}
 		}
 	}
 
@@ -210,13 +216,21 @@ func (s *Service) Download(ctx context.Context, req *connect.Request[pb.BundleCo
 		return status.Error(codes.Aborted, "failed to communicate type")
 	}
 
+	var wg sync.WaitGroup
+
 	r, w := io.Pipe()
-	defer w.Close()
+	defer func() {
+		w.Close()
+		wg.Wait()
+	}()
 
 	dctx, dctxC := context.WithCancel(ctx)
-	defer dctxC()
 
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
+		defer dctxC()
+
 		buf := make([]byte, 1024*32) // 32 KB buffer size
 		for {
 			select {
@@ -226,11 +240,14 @@ func (s *Service) Download(ctx context.Context, req *connect.Request[pb.BundleCo
 				n, err := r.Read(buf)
 				if err != nil {
 					if err == io.EOF {
-						break
+						err = stream.Send(&pb.Bundle{Data: &pb.Bundle_Chunk{Chunk: buf[:n]}})
+						if err != nil {
+							rerr = fmt.Errorf("failed to send data with %w", err)
+						}
+						return
 					}
 
 					rerr = fmt.Errorf("failed to read data with %w", err)
-					dctxC()
 					return
 				}
 
@@ -238,7 +255,6 @@ func (s *Service) Download(ctx context.Context, req *connect.Request[pb.BundleCo
 					err = stream.Send(&pb.Bundle{Data: &pb.Bundle_Chunk{Chunk: buf[:n]}})
 					if err != nil {
 						rerr = fmt.Errorf("failed to send data with %w", err)
-						dctxC()
 						return
 					}
 				}
@@ -250,13 +266,16 @@ func (s *Service) Download(ctx context.Context, req *connect.Request[pb.BundleCo
 	switch bundleType {
 	case pb.BundleType_BUNDLE_TAR:
 		if err := tarFilesystem(dctx, cnf.fs, w); err != nil {
+			dctxC()
 			return fmt.Errorf("failed to generate tar with %w", err)
 		}
 	case pb.BundleType_BUNDLE_ZIP:
 		if err := zipFilesystem(dctx, cnf.fs, w); err != nil {
+			dctxC()
 			return fmt.Errorf("failed to generate zip with %w", err)
 		}
 	default:
+		dctxC()
 		return status.Error(codes.Unknown, "unknown type")
 	}
 
