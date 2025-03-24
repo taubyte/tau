@@ -28,7 +28,7 @@ const config = new Config();
 await config.init();
 ```
 
-Or load a configuration from a source, for example, the local file system:
+Alternatively, load a configuration from a source, such as the local file system:
 ```ts
 const config = new Config(`/absolute/path/to/config`);
 await config.init();
@@ -38,13 +38,145 @@ await config.init();
 
 You can define your cloud infrastructure as follows:
 ```ts
-const cloudDomain = await config.Cloud().Domain();
-await cloudDomain.Root().Set("test.com");
-await cloudDomain.Generated().Set("gtest.com");
-await cloudDomain.Validation().Generate();
+await config.cloud.set({
+  domain: {
+    root: "test.com",
+    generated: "gtest.com",
+  },
+});
+await config.cloud.domain.validation.generate();
+await config.cloud.p2p.swarm.generate();
 ```
 
-For a complete example, see the `example` folder in the `pkg/spore-drive` directory.
+Or for more granular control:
+```ts
+await config.cloud.domain.root.set("test.com");
+await config.cloud.domain.generated.set("gtest.com");
+await config.cloud.domain.validation.generate();
+await config.cloud.p2p.swarm.generate();
+```
+
+### Set Auth Configurations
+```ts
+await config.auth.set({
+  main: {
+    username: "tau1",
+    password: "testtest",
+  },
+  withkey: {
+    username: "tau2",
+    key: "/keys/test.pem",
+  },
+});
+```
+
+Or
+```ts
+const mainAuth = config.auth.signer["main"];
+await mainAuth.username.set("tau1");
+await mainAuth.password.set("testtest");
+
+const withKeyAuth = config.auth.signer["withkey"];
+await withKeyAuth.username.set("tau2");
+await withKeyAuth.key.path.set("/keys/test.pem");
+```
+
+### Set Shapes Configurations
+```ts
+await config.shapes.set({
+  shape1: {
+    services: ["auth", "seer"],
+    ports: {
+      main: 4242,
+      lite: 4262,
+    },
+  },
+  shape2: {
+    services: ["gateway", "patrick", "monkey"],
+    ports: {
+      main: 6242,
+      lite: 6262,
+    },
+    plugins: ["plugin1@v0.1"],
+  },
+});
+```
+
+Or
+```ts
+const shape1 = config.shape["shape1"];
+await shape1.services.set(["auth", "seer"]);
+await shape1.ports.port["main"].set(4242);
+await shape1.ports.port["lite"].set(4262);
+```
+
+### Set Hosts
+```ts
+await config.hosts.set({
+  host1: {
+    addr: ["1.2.3.4/24", "4.3.2.1/24"],
+    ssh: {
+      addr: "1.2.3.4",
+      port: 4242,
+      auth: ["main"],
+    },
+    location: {
+      lat: 1.25,
+      long: 25.1,
+    },
+  },
+  host2: {
+    addr: ["8.2.3.4/24", "4.3.2.8/24"],
+    ssh: {
+      addr: "8.2.3.4",
+      port: 4242,
+      auth: ["withkey"],
+    },
+    location: {
+      lat: 1.25,
+      long: 25.1,
+    },
+  },
+});
+
+// Generate host instances key/id
+await config.host["host1"].shape["shape1"].generate();
+await config.host["host1"].shape["shape2"].generate();
+await config.host["host2"].shape["shape1"].generate();
+await config.host["host2"].shape["shape2"].generate();
+```
+
+Or
+```ts
+const host1 = config.host["host1"];
+await host1.addresses.add(["1.2.3.4/24", "4.3.2.1/24"]);
+await host1.ssh.address.set("1.2.3.4:4242");
+await host1.ssh.auth.add(["main"]);
+await host1.location.set("1.25, 25.1");
+await host1.shape["shape1"].generate();
+await host1.shape["shape2"].generate();
+```
+
+
+### Set P2P Bootstrap
+
+```ts
+await config.cloud.p2p.set({
+  bootstrap: {
+    shape1: ["host2", "host1"],
+    shape2: ["host2", "host1"],
+  },
+});
+```
+
+Or
+```ts
+await config.cloud.p2p.bootstrap.shape["shape1"].nodes.add([
+  "host2",
+  "host1",
+]);
+```
+
 
 ### Instantiate a Drive
 
@@ -82,11 +214,13 @@ You can visualize the deployment progress using progress bars:
 ```ts
 import { ProgressBar } from "@opentf/cli-pbar";
 
+// Extracts the host from the given path
 function extractHost(path: string): string {
   const match = path.match(/\/([^\/]+):\d+/);
   return match ? match[1] : "unknown-host";
 }
 
+// Extracts the task from the given path
 function extractTask(path: string): string {
   const parts = path.split("/");
   return parts[parts.length - 1] || "unknown-task";
