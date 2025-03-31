@@ -4,11 +4,9 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ipfs/go-log/v2"
 	_ "github.com/taubyte/tau/pkg/builder"
 	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	chidori "github.com/taubyte/utils/logger/zap"
 )
 
 func (c config) handle() error {
@@ -40,6 +38,11 @@ func (c config) handle() error {
 	}
 
 	defer compiler.Close()
+	defer func() {
+		compiler.Logs().Seek(0, io.SeekStart)
+		io.Copy(c.LogFile, compiler.Logs())
+	}()
+
 	if err = compiler.Build(); err != nil {
 		return fmt.Errorf("config compiler build failed with: %s", err.Error())
 	}
@@ -47,11 +50,6 @@ func (c config) handle() error {
 	if err = compiler.Publish(c.Tns); err != nil {
 		return fmt.Errorf("publishing compiled config failed with: %s", err.Error())
 	}
-
-	c.LogFile.Seek(0, io.SeekEnd)
-	c.LogFile.WriteString(
-		chidori.Format(logger, log.LevelInfo, "Successfully written config to tns:\n%v\n", compiler.Object()),
-	)
 
 	return nil
 }

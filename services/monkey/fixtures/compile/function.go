@@ -87,7 +87,7 @@ func (f functionContext) codeFile(language wasmSpec.SupportedLanguage) error {
 
 	c := jobs.Context{
 		Node:     f.ctx.universe.TNS().Node(),
-		LogFile:  nil,
+		LogFile:  os.Stdout,
 		WorkDir:  root,
 		RepoType: common.CodeRepository,
 		Monkey: fakeMonkey{
@@ -125,7 +125,7 @@ func (f functionContext) codeFile(language wasmSpec.SupportedLanguage) error {
 	}
 	function.Set(true, functions.Id(f.ctx.resourceId))
 
-	moduleReader, err := c.HandleOp(jobs.ToOp(function), os.Stdout)
+	moduleReader, err := c.HandleOp(jobs.ToOp(function))
 	if err != nil {
 		return err
 	}

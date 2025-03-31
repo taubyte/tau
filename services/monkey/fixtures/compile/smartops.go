@@ -83,7 +83,7 @@ func (f smartopsContext) codeFile(language wasmSpec.SupportedLanguage) error {
 
 	c := jobs.Context{
 		Node:    f.ctx.universe.TNS().Node(),
-		LogFile: nil,
+		LogFile: os.Stdout,
 		WorkDir: root,
 		Monkey: fakeMonkey{
 			hoarderClient: f.ctx.hoarderClient,
@@ -120,7 +120,7 @@ func (f smartopsContext) codeFile(language wasmSpec.SupportedLanguage) error {
 	}
 	smartops.Set(true, smartopsLib.Id(f.ctx.resourceId))
 
-	moduleReader, err := c.HandleOp(jobs.ToOp(smartops), os.Stdout)
+	moduleReader, err := c.HandleOp(jobs.ToOp(smartops))
 	if err != nil {
 		return err
 	}

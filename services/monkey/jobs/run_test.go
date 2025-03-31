@@ -19,6 +19,7 @@ func TestRunDelay(t *testing.T) {
 	}
 
 	ctx, ctxC := context.WithTimeout(context.Background(), 1*time.Second)
-	err := c.Run(ctx, ctxC)
+	defer ctxC()
+	err := c.Run(ctx)
 	assert.Equal(t, err, ErrorContextCanceled)
 }

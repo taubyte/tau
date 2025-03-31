@@ -85,8 +85,6 @@ func (b *builder) Close() error {
 		return fmt.Errorf("closing container client failed with: %w", err)
 	}
 
-	b = nil
-
 	return nil
 }
 

@@ -45,6 +45,7 @@ type Op struct {
 	name         string
 	application  string
 	pathVariable string
+	err          error
 }
 
 type code struct{ Context }
