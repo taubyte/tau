@@ -119,7 +119,7 @@ func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 	return err
 }
 
-func (c Context) handleLog(id string /*, logs *os.File*/) error {
+func (c Context) handleLog(id string) error {
 	logCid, err := c.storeLogFile(c.LogFile)
 	if err != nil {
 		return fmt.Errorf("storing log file for job `%s` failed with: %s", c.Job.Id, err)

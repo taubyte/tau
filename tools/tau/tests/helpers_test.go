@@ -148,23 +148,6 @@ func expectedSelectedNetwork(expected string) func(g session.Getter) error {
 	}
 }
 
-// evaluateSession helper
-func expectedSelectedCustomNetwork(expectedNetwork, expectedFQDN string) func(g session.Getter) error {
-	return func(g session.Getter) error {
-		fqdn, _ := g.CustomNetworkUrl()
-		if expectedFQDN != fqdn {
-			return fmt.Errorf("FQDN does not match, %s != %s", expectedFQDN, fqdn)
-		}
-
-		network, _ := g.SelectedNetwork()
-		if expectedNetwork != network {
-			return fmt.Errorf("Network does not match, %s != %s", expectedNetwork, network)
-		}
-
-		return nil
-	}
-}
-
 func isEmpty(val interface{}) bool {
 	switch v := val.(type) {
 	case string:

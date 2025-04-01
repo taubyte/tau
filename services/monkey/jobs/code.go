@@ -42,7 +42,7 @@ func (c code) handleOps(ops []Op) error {
 	for _, op := range ops {
 		op.err = c.handleOp(op)
 		if op.err != nil {
-			fmt.Fprintf(c.LogFile, "Error building %s: %w\n", op.name, op.err)
+			fmt.Fprintf(c.LogFile, "Error building %s: %s\n", op.name, op.err.Error())
 			return op.err
 		}
 	}
