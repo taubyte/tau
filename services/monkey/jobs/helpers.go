@@ -60,27 +60,14 @@ func (c Context) fetchConfigSshUrl() (sshString string, err error) {
 }
 
 // for singular resource repositories(not code repo), error should be nil, the monkey will be handling this logic
-func handleAsset(asset *builders.Output, logFile *os.File, err *error) {
-	if asset != nil {
-		_output := *asset
-		logs := _output.Logs()
-		if _, _err := logs.CopyTo(logFile); _err != nil {
-			_err = fmt.Errorf("copying build logs failed with: %w", _err)
-			if err != nil {
-				*err = fmt.Errorf("%s:%w", *err, _err)
-			} else {
-				*err = _err
-			}
-		}
-
-		if err != nil && *err != nil {
-			logFile.Seek(0, io.SeekEnd)
-			logFile.WriteString("\nMonkey Error:\n" + (*err).Error())
-		}
-
-		_output.Close()
+func (c Context) mergeBuildLogs(logs builders.Logs) {
+	if logs == nil {
+		return
 	}
 
+	if _, err := logs.CopyTo(c.LogFile); err != nil {
+		c.LogFile.WriteString("\nMonkey Error:\n" + err.Error())
+	}
 }
 
 func (c Context) getResourceRepositoryId() (id string, err error) {
@@ -107,6 +94,10 @@ func (c Context) getResourceRepositoryId() (id string, err error) {
 }
 
 func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
+	if rsk == nil {
+		return nil
+	}
+
 	cid, err := c.StashBuildFile(rsk)
 	if err != nil {
 		return fmt.Errorf("stashing build failed with: %s", err)
@@ -128,29 +119,13 @@ func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 	return err
 }
 
-func (c Context) handleLog(id string, logs *os.File) error {
-	logCid, err := c.storeLogFile(logs)
+func (c Context) handleLog(id string) error {
+	logCid, err := c.storeLogFile(c.LogFile)
 	if err != nil {
 		return fmt.Errorf("storing log file for job `%s` failed with: %s", c.Job.Id, err)
 	}
 
 	c.Job.SetLog(id, logCid)
-	return nil
-}
-
-func (c Context) handleBuildDetails(id string, compressedBuild io.ReadSeekCloser, logs *os.File) error {
-	if logs != nil {
-		if err := c.handleLog(id, logs); err != nil {
-			return err
-		}
-	}
-
-	if compressedBuild != nil {
-		if err := c.handleCompressedBuild(id, compressedBuild); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -161,8 +136,6 @@ func (c *Context) cloneAndSet() error {
 		git.SSHKey(c.DeployKey),
 		git.Temporary(),
 		git.Branch(c.Job.Meta.Repository.Branch),
-		// uncomment to keep directory
-		// git.Preserve(),
 	)
 	if err != nil {
 		return fmt.Errorf("new git repo failed with: %s", err)

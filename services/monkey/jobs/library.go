@@ -30,10 +30,10 @@ func (l library) handle() (err error) {
 		compressedAsset io.ReadSeekCloser
 	)
 	defer func() {
-		handleAsset(&asset, l.LogFile, nil)
+		l.mergeBuildLogs(asset.Logs())
 		if compressedAsset != nil {
 			if err == nil {
-				if _err := l.handleBuildDetails(id, compressedAsset, nil); _err != nil {
+				if _err := l.handleCompressedBuild(id, compressedAsset); _err != nil {
 					_err = fmt.Errorf("handling library build details failed with: %s", err)
 					if err != nil {
 						err = fmt.Errorf("%s:%w", err, _err)

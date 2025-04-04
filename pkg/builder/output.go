@@ -67,20 +67,28 @@ func (o *output) Compress(method builders.CompressionMethod) (io.ReadSeekCloser,
 		return nil, fmt.Errorf("compression method `%d` not supported", method)
 	}
 
-	return handleRSC(zippedFile, err, "zipping bundle failed with: %w")
+	return rewindAndHandleError(zippedFile, "zipping bundle failed with: %w", err)
 }
 
 // Close will Close logs
 func (o *output) Close() error {
 	if o.logs.File != nil {
-		return o.logs.Close()
+		err := o.logs.Close()
+		if err != nil {
+			return fmt.Errorf("closing logs failed with: %w", err)
+		}
+
+		// according to doc, it's safe to call after close
+		err = os.Remove(o.logs.File.Name())
+		if err != nil {
+			return fmt.Errorf("removing logs file failed with: %w", err)
+		}
 	}
 
 	return nil
 }
 
-// handleRSC is a an error wrapper, which will seek the given ReadSeekCloser to start if error is nil
-func handleRSC(rsc io.ReadSeekCloser, err error, errFormat string) (io.ReadSeekCloser, error) {
+func rewindAndHandleError(rsc io.ReadSeekCloser, errFormat string, err error) (io.ReadSeekCloser, error) {
 	if err != nil {
 		return nil, fmt.Errorf(errFormat, err)
 	}
@@ -93,7 +101,7 @@ func handleRSC(rsc io.ReadSeekCloser, err error, errFormat string) (io.ReadSeekC
 		return rsc, nil
 	}
 
-	return nil, fmt.Errorf("ReadSeekCloser is nil")
+	return nil, fmt.Errorf("nil ReadSeekCloser")
 }
 
 func (o *output) handleDeprecated() (io.ReadSeekCloser, error) {
@@ -102,5 +110,5 @@ func (o *output) handleDeprecated() (io.ReadSeekCloser, error) {
 		return nil, err
 	}
 
-	return handleRSC(compressedWasm, err, "compressing wasm failed with: %w")
+	return rewindAndHandleError(compressedWasm, "compressing wasm failed with: %w", err)
 }

@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
@@ -13,10 +14,13 @@ var (
 	ErrorContextCanceled = errors.New("context cancel")
 )
 
-func (c *Context) Run(ctx context.Context, ctxC context.CancelFunc) (err error) {
-	c.ctx, c.ctxC = ctx, ctxC
-	go c.startTimeout(ctx, ctxC)
-	defer ctxC()
+func (c *Context) Run(ctx context.Context) (err error) {
+	defer c.handleLog(c.Job.Id)
+
+	c.ctx, c.ctxC = context.WithCancel(ctx)
+
+	go c.startTimeout(ctx, c.ctxC)
+	defer c.ctxC()
 
 	if c.Job.Delay != nil {
 		select {
@@ -35,5 +39,10 @@ func (c *Context) Run(ctx context.Context, ctxC context.CancelFunc) (err error) 
 		return err
 	}
 
-	return contextHandler.handle()
+	err = contextHandler.handle()
+	if err != nil {
+		fmt.Fprintf(c.LogFile, "Error handling job: %s\n", err)
+	}
+
+	return err
 }
