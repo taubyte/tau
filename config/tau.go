@@ -62,14 +62,14 @@ type Domains struct {
 
 type AcmeCAConfig struct {
 	RootCA     string `yaml:"root-ca"`
+	CAARecord  string `yaml:"caa-record"`
 	SkipVerify bool   `yaml:"skip"`
 }
 
 type AcmeConfig struct {
-	Url        string        `yaml:"url"`
-	CA         *AcmeCAConfig `yaml:"ca,omitempty"`
-	SkipVerify bool          `yaml:"skip-verify"`
-	Key        string        `yaml:"key"`
+	Url string        `yaml:"url"`
+	CA  *AcmeCAConfig `yaml:"ca,omitempty"`
+	Key string        `yaml:"key"`
 }
 
 type DVKey struct {

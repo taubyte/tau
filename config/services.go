@@ -41,6 +41,7 @@ type Node struct {
 
 	CustomAcme               bool
 	AcmeUrl                  string
+	AcmeCAARecord            string
 	AcmeKey                  crypto.Signer
 	AcmeCAInsecureSkipVerify bool
 	AcmeRootCA               *x509.CertPool

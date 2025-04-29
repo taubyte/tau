@@ -75,4 +75,5 @@ domains:
         url: https://localhost:9000/acme/acme/directory
         ca:
             root-ca: "/path/to/root/ca/file"
+            caa-record: "myca.org"
 ```

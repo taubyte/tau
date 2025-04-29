@@ -11,6 +11,22 @@ import (
 	"github.com/taubyte/utils/maps"
 )
 
+func (h *dnsHandler) getServiceIpWithCache(ctx context.Context, proto string) ([]string, error) {
+	it := h.serverIPCache.Get(proto)
+	if it != nil {
+		return it.Value(), nil
+	}
+
+	ip, err := h.getServiceIp(ctx, proto)
+	if err != nil {
+		return nil, err
+	}
+
+	h.serverIPCache.Set(proto, ip, ServerIpCacheTTL)
+
+	return ip, nil
+}
+
 func (h *dnsHandler) getServiceIp(ctx context.Context, proto string) ([]string, error) {
 	result, err := h.seer.ds.Query(
 		ctx, query.Query{

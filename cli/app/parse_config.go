@@ -24,6 +24,8 @@ import (
 	"github.com/taubyte/tau/utils"
 )
 
+var DefaultCAARecord = "letsencrypt.org"
+
 // TODO: move to config as a methods
 
 // Parse from yaml
@@ -86,6 +88,7 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 		Services:              src.Services,
 		Plugins:               src.Plugins,
 		Peers:                 src.Peers,
+		AcmeCAARecord:         DefaultCAARecord,
 		DevMode:               ctx.Bool("dev-mode"),
 	}
 
@@ -104,6 +107,10 @@ func parseSourceConfig(ctx *cli.Context, shape string) (string, *config.Node, *c
 				if !cnf.AcmeRootCA.AppendCertsFromPEM(caData) {
 					return "", nil, nil, fmt.Errorf("failed to append acme ca")
 				}
+			}
+
+			if src.Domains.Acme.CA.CAARecord != "" {
+				cnf.AcmeCAARecord = src.Domains.Acme.CA.CAARecord
 			}
 		}
 

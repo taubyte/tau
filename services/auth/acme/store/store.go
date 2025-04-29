@@ -35,9 +35,10 @@ func New(ctx context.Context, node peer.Node, cacheDir string) (*Store, error) {
 		err error
 	)
 
-	logger.Debug("ACME Distributed Store Creation...")
 	c.node = node
 	c.cacheDir = autocert.DirCache(cacheDir)
+
+	logger.Debugf("ACME Distributed Store Creation... (node: %s, cacheDir: %s)", node.ID().ShortString(), cacheDir)
 
 	c.client, err = client.New(node, protocolCommon.AuthProtocol)
 	if err != nil {
@@ -61,6 +62,8 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 	isCert := !certFileRegexp.MatchString(name)
 	wildcardName := "*." + strings.Join(strings.Split(name, ".")[1:], ".")
 
+	logger.Debugf("Get called with name: %s (isCert: %v)", name, isCert)
+
 	// check local cache
 	pem, err := d.cacheDir.Get(ctx, name)
 	if err == nil {
@@ -78,6 +81,7 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 	// check remote cache
 	pem, err = d.getDynamicCertificate(name, isCert)
 	if err != nil {
+		logger.Debugf("Error getting dynamic certificate for `%s`: %s", name, err.Error())
 		if !isCert {
 			if err.Error() == autocert.ErrCacheMiss.Error() {
 				logger.Debugf("Cache miss for `%s` returning ErrCacheMiss", name)
@@ -90,19 +94,22 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 		// try wildcard
 		pem, err = d.getDynamicCertificate(wildcardName, true)
 		if err != nil {
+			logger.Debugf("Error getting dynamic certificate for `%s`: %s", wildcardName, err.Error())
 			// Try static
 			pem, err = d.getStaticCertificate(name)
 			if err != nil {
+				logger.Debugf("Error getting static certificate for `%s`: %s", name, err.Error())
 				// check if wildcard is set
 				pem, err = d.getStaticCertificate(wildcardName)
 				if err != nil {
-					logger.Debugf("Not found in acme cache... trying to get a static certificate for `%s` failed: %w", name, err)
+					logger.Debugf("Not found in acme cache... trying to get a static certificate for `%s` failed: %s", name, err.Error())
 					return nil, autocert.ErrCacheMiss
 				}
 			}
 		}
 	}
 
+	logger.Debugf("Caching locally `%s`", name)
 	// cache locally
 	d.cacheDir.Put(ctx, name, pem)
 
@@ -168,7 +175,7 @@ func (d *Store) Put(ctx context.Context, name string, data []byte) error {
 
 	var body *command.Body
 
-	if certFileRegexp.MatchString(name) {
+	if !certFileRegexp.MatchString(name) {
 		body = &command.Body{"action": "set", "fqdn": name, "certificate": data}
 	} else {
 		body = &command.Body{"action": "cache-set", "key": name, "data": data}
