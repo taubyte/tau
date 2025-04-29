@@ -1,23 +1,28 @@
 package node
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/ipfs/go-log/v2"
 )
 
-func setLevel() {
+func setLogLevel() {
 	lvlstr, ok := os.LookupEnv("LOG_LEVEL")
-	// LOG_LEVEL not set, let's default to debug
+	// LOG_LEVEL not set, let's default to info
+	var source string
 	if !ok {
-		lvlstr = "error"
+		lvlstr = "info"
+		source = "default"
+	} else {
+		source = "env"
 	}
 
-	lvl, err := log.LevelFromString(lvlstr)
-	if err != nil {
+	fmt.Printf("[LOG] Log level set to: %s (source: %s)\n", lvlstr, source)
+
+	if _, err := log.LevelFromString(lvlstr); err != nil {
 		panic(err)
 	}
 
-	// set global log level
-	log.SetAllLoggers(lvl)
+	log.SetLogLevelRegex("tau\\..*", lvlstr)
 }

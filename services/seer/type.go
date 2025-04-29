@@ -18,7 +18,10 @@ import (
 )
 
 var (
-	DefaultBlockTime         = 60 * time.Second
+	MaxDnsResponseTime       = 3 * time.Second
+	ServerIpCacheTTL         = 30 * time.Second
+	PositiveCacheTTL         = 5 * time.Minute
+	DefaultBlockTime         = 1 * time.Minute
 	ValidServiceResponseTime = 5 * time.Minute
 )
 

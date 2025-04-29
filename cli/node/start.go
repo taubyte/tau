@@ -18,7 +18,7 @@ import (
 )
 
 func Start(ctx context.Context, serviceConfig *config.Node) error {
-	setLevel()
+	setLogLevel()
 
 	ctx, ctx_cancel := context.WithCancel(ctx)
 	sigkill := make(chan os.Signal, 1)

@@ -8,7 +8,7 @@ import (
 
 var (
 	testUrl       = "example.test.com"
-	expectedRegex = `^([^.]+\.)?tau\.example\.test\.com$`
+	expectedRegex = `^[^.]+\.tau\.example\.test\.com$`
 )
 
 func TestServicesRegex(t *testing.T) {

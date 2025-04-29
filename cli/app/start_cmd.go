@@ -3,10 +3,13 @@ package app
 import (
 	"fmt"
 
+	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/cli/node"
 	"github.com/taubyte/tau/config"
 	"github.com/urfave/cli/v2"
 )
+
+var logger = log.Logger("tau")
 
 func startCommand() *cli.Command {
 	return &cli.Command{
@@ -34,6 +37,8 @@ func startCommand() *cli.Command {
 			if err != nil {
 				return fmt.Errorf("parsing config failed with: %s", err)
 			}
+
+			logger.Info("🚀 Starting Tau (shape: ", shape, ")")
 
 			return node.Start(ctx.Context, serviceConfig)
 		},
