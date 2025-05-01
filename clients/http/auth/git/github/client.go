@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/google/go-github/v32/github"
+	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/clients/http/auth/git/common"
 	"golang.org/x/oauth2"
 	"gopkg.in/yaml.v3"
@@ -79,13 +79,13 @@ func (c *client) GetByName(owner, name string) (common.Repository, error) {
 // ListRepositories lists all repositories of the current user
 // returning a slice of common.Repository and an error
 func (c *client) ListRepositories() ([]common.Repository, error) {
-	opt := &github.RepositoryListOptions{
+	opt := &github.RepositoryListByAuthenticatedUserOptions{
 		ListOptions: github.ListOptions{PerPage: 100},
 	}
 
 	var allRepos []*github.Repository
 	for {
-		repos, resp, err := c.Repositories.List(c.ctx, "", opt)
+		repos, resp, err := c.Repositories.ListByAuthenticatedUser(c.ctx, opt)
 		if err != nil {
 			return nil, err
 		}

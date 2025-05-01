@@ -84,7 +84,7 @@ func main() {
 		panic(err)
 	}
 
-	privKeyData, _, err := generateSSHKeyPair(256)
+	privKeyData, _, err := generateSSHKeyPair(1024)
 	if err != nil {
 		panic(err)
 	}

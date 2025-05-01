@@ -27,7 +27,7 @@ import (
 
 	"github.com/pterm/pterm"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt/v5"
 )
 
 // TODO: move to config as a methods

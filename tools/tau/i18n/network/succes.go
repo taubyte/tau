@@ -5,6 +5,6 @@ import (
 )
 
 func Success(name string) {
-	pterm.Success.Printfln("Connected to %s", pterm.FgCyan.Sprintf(name))
+	pterm.Success.Printfln("Connected to %s", pterm.FgCyan.Sprint(name))
 
 }

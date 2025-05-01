@@ -3,7 +3,7 @@ package git
 import (
 	"fmt"
 
-	"github.com/google/go-github/v32/github"
+	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/clients/http/auth/git/common"
 )
 

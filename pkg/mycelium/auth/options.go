@@ -24,7 +24,6 @@ func Key(r io.Reader) Option {
 		}
 		signer, err := ssh.ParsePrivateKey(privateKey)
 		if err != nil {
-			fmt.Println(string(privateKey))
 			return fmt.Errorf("parsing private key: %w", err)
 		}
 		a.Auth = append(a.Auth, ssh.PublicKeys(signer))

@@ -1,6 +1,6 @@
 package common
 
-import "github.com/google/go-github/v32/github"
+import "github.com/google/go-github/v71/github"
 
 // The following interfaces are used to abstract from the underlying git provider
 // Currently only github is supported, but in the future we plan to support more

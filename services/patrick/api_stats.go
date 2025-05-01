@@ -18,7 +18,7 @@ func (p *PatrickService) statsServiceHandler(ctx context.Context, conn streams.C
 
 	switch action {
 	case "db":
-		return cr.Response{"stats": p.db.Stats().Encode()}, nil
+		return cr.Response{"stats": p.db.Stats(ctx).Encode()}, nil
 	default:
 		return nil, errors.New("stats action `" + action + "` not recognized")
 	}

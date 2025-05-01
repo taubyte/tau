@@ -92,14 +92,14 @@ func (pbc *PubSubBroadcaster) ensureSubscribed() (err error) {
 }
 
 // Broadcast publishes some data.
-func (pbc *PubSubBroadcaster) Broadcast(data []byte) error {
-	return pbc.topic.Publish(pbc.ctx, data)
+func (pbc *PubSubBroadcaster) Broadcast(ctx context.Context, data []byte) error {
+	return pbc.topic.Publish(ctx, data)
 }
 
 // Next returns published data.
-func (pbc *PubSubBroadcaster) Next() ([]byte, error) {
+func (pbc *PubSubBroadcaster) Next(ctx context.Context) ([]byte, error) {
 	for try := 3; try > 0; try-- {
-		msg, err := pbc.next()
+		msg, err := pbc.next(ctx)
 		if err != crdt.ErrNoMoreBroadcast {
 			return msg, err
 		}
@@ -113,12 +113,14 @@ func (pbc *PubSubBroadcaster) Next() ([]byte, error) {
 	return nil, crdt.ErrNoMoreBroadcast
 }
 
-func (pbc *PubSubBroadcaster) next() ([]byte, error) {
+func (pbc *PubSubBroadcaster) next(ctx context.Context) ([]byte, error) {
 	var msg *pubsub.Message
 	var err error
 
 	select {
 	case <-pbc.ctx.Done():
+		return nil, crdt.ErrNoMoreBroadcast
+	case <-ctx.Done():
 		return nil, crdt.ErrNoMoreBroadcast
 	default:
 	}

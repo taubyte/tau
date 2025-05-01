@@ -14,7 +14,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestBackEnd(t *testing.T) {
+func TestBackend(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 

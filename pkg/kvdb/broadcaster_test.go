@@ -48,7 +48,7 @@ func TestPubSubBroadcaster_Broadcast(t *testing.T) {
 	defer broadcaster.topic.Close()
 
 	// Test broadcasting a message
-	err := broadcaster.Broadcast([]byte("test message"))
+	err := broadcaster.Broadcast(ctx, []byte("test message"))
 	if err != nil {
 		t.Fatalf("Failed to broadcast message: %v", err)
 	}
@@ -68,11 +68,11 @@ func TestPubSubBroadcaster_Next(t *testing.T) {
 	// Start a goroutine to broadcast a message after a delay
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		broadcaster.Broadcast([]byte("test message"))
+		broadcaster.Broadcast(ctx, []byte("test message"))
 	}()
 
 	// Test receiving a message
-	msg, err := broadcaster.Next()
+	msg, err := broadcaster.Next(ctx)
 	if err != nil {
 		t.Fatalf("Failed to receive message: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestPubSubBroadcaster_ContextCancellation(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Test that Next returns an error after context cancellation
-	_, err := broadcaster.Next()
+	_, err := broadcaster.Next(ctx)
 	if !errors.Is(err, crdt.ErrNoMoreBroadcast) {
 		t.Fatalf("Expected ErrNoMoreBroadcast after context cancellation, got %v", err)
 	}
@@ -120,7 +120,7 @@ func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
 	// Start a goroutine to receive a message
 	go func() {
 		defer wg.Done()
-		msg, err := broadcaster.Next()
+		msg, err := broadcaster.Next(ctx)
 		if err != nil {
 			t.Errorf("Failed to receive message: %v", err)
 		}
@@ -130,7 +130,7 @@ func TestPubSubBroadcaster_ConcurrentOperations(t *testing.T) {
 	}()
 
 	// Broadcast a message
-	err := broadcaster.Broadcast([]byte("test message"))
+	err := broadcaster.Broadcast(ctx, []byte("test message"))
 	if err != nil {
 		t.Fatalf("Failed to broadcast message: %v", err)
 	}
@@ -156,7 +156,7 @@ func TestPubSubBroadcaster_BroadcastAndReceive(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		data, err := broadcaster.Next()
+		data, err := broadcaster.Next(ctx)
 		if err != nil {
 			t.Errorf("Failed to receive broadcast: %v", err)
 			return
@@ -166,7 +166,7 @@ func TestPubSubBroadcaster_BroadcastAndReceive(t *testing.T) {
 		}
 	}()
 
-	err = broadcaster.Broadcast([]byte("testMessage"))
+	err = broadcaster.Broadcast(ctx, []byte("testMessage"))
 	if err != nil {
 		t.Fatalf("Failed to broadcast message: %v", err)
 	}

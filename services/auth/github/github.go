@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/google/go-github/v32/github"
+	"github.com/google/go-github/v71/github"
 	cu "github.com/taubyte/tau/services/auth/crypto"
 	"golang.org/x/oauth2"
 )
@@ -106,13 +106,13 @@ func (client *Client) CreatePushHook(name *string, url *string, devMode bool) (i
 		Events: []string{
 			"push",
 		},
-		Config: map[string]interface{}{
-			"content_type": "json",
-			"secret":       secret,
-			"insecure_ssl": 0,
-			"url":          url,
+		Config: &github.HookConfig{
+			ContentType: github.Ptr("json"),
+			Secret:      github.Ptr(secret),
+			InsecureSSL: github.Ptr("0"),
+			URL:         url,
 		},
-		Active: github.Bool(true),
+		Active: github.Ptr(true),
 	})
 
 	if err != nil {
@@ -125,9 +125,9 @@ func (client *Client) CreatePushHook(name *string, url *string, devMode bool) (i
 func (client *Client) ListMyRepos() map[string]interface{} {
 	repos := make(map[string]interface{})
 	for i := 1; ; i++ {
-		rlo := github.RepositoryListOptions{ListOptions: github.ListOptions{Page: i, PerPage: 100}, Sort: "created"} //Visibility: "all", Type: "all"}
+		rlo := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: i, PerPage: 100}, Sort: "created"}
 
-		_repos, _, err := client.Repositories.List(client.ctx, "", &rlo)
+		_repos, _, err := client.Repositories.ListByAuthenticatedUser(client.ctx, &rlo)
 		// TODO: Simplify this logic
 		if err == nil && len(_repos) > 0 {
 			for _, v := range _repos {
