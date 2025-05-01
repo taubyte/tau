@@ -10,7 +10,7 @@ import (
 	"encoding/pem"
 	"fmt"
 
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/dream/helpers"
 	"github.com/taubyte/tau/pkg/git"
 	"golang.org/x/crypto/ssh"

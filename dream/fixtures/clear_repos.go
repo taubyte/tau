@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	"golang.org/x/oauth2"
@@ -22,14 +22,14 @@ func clearRepos(u *dream.Universe, params ...interface{}) error {
 		return errors.New("parameters are unused")
 	}
 	client := githubApiClient(u, commonTest.GitToken)
-	repos, _, err := client.Repositories.List(u.Context(), "", &github.RepositoryListOptions{
+	repos, _, err := client.Repositories.ListByAuthenticatedUser(u.Context(), &github.RepositoryListByAuthenticatedUserOptions{
 		ListOptions: github.ListOptions{PerPage: 1000},
 	})
 	if err != nil {
 		return fmt.Errorf("listing repositories failed with")
 	}
 
-	res, err := client.Repositories.DownloadContents(context.Background(), commonTest.GitUser, "tb_testProject", "keep_repos.txt", nil)
+	res, _, err := client.Repositories.DownloadContents(context.Background(), commonTest.GitUser, "tb_testProject", "keep_repos.txt", nil)
 	if err != nil {
 		fmt.Println("failed with:", err)
 	}

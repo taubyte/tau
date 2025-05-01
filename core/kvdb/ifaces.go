@@ -43,7 +43,7 @@ type KVDB interface {
 
 	Factory() Factory
 
-	Stats() Stats
+	Stats(ctx context.Context) Stats
 
 	// Closes the KVDB
 	Close()

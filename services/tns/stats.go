@@ -19,7 +19,7 @@ func (srv *Service) statsHandler(ctx context.Context, conn streams.Connection, b
 
 	switch action {
 	case "db":
-		return cr.Response{"stats": srv.db.Stats().Encode()}, nil
+		return cr.Response{"stats": srv.db.Stats(ctx).Encode()}, nil
 	default:
 		return nil, errors.New("stats action `" + action + "` not recognized")
 	}

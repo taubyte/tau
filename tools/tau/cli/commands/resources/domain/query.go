@@ -31,7 +31,7 @@ func (link) Query() common.Command {
 
 			isGeneratedFqdn, err := domainLib.IsAGeneratedFQDN(domain.Fqdn)
 			if err != nil {
-				pterm.Error.Printfln(domainI18n.IsGeneratedFQDNFailed(domain.Fqdn, err).Error())
+				pterm.Error.Println(domainI18n.IsGeneratedFQDNFailed(domain.Fqdn, err).Error())
 				return
 			}
 			if isGeneratedFqdn {

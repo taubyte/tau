@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/avast/retry-go"
+	"github.com/avast/retry-go/v4"
 	git "github.com/taubyte/tau/clients/http/auth/git"
 	"github.com/taubyte/tau/clients/http/auth/git/common"
 )

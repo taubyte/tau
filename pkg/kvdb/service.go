@@ -59,7 +59,7 @@ func New(node peer.Node) kvdb.Factory {
 				case <-time.After(10 * time.Second):
 					f.dbsLock.RLock()
 					for path, s := range f.dbs {
-						slogger.Debug("KVDB ", path, "HEADS -> ", s.datastore.InternalStats().Heads)
+						slogger.Debug("KVDB ", path, "HEADS -> ", s.datastore.InternalStats(f.node.Context()).Heads)
 					}
 					f.dbsLock.RUnlock()
 				}

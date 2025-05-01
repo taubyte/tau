@@ -377,7 +377,7 @@ func (c *Client) peers(ctx context.Context, needs int) <-chan *peerCore.AddrInfo
 func (c *Client) connect(peer *peerCore.AddrInfo) (network.Stream, error) {
 	switch c.node.Peer().Network().Connectedness(peer.ID) {
 	case network.Connected:
-	case network.CanConnect, network.NotConnected:
+	case network.NotConnected:
 		err := c.node.Peer().Connect(
 			network.WithDialPeerTimeout(c.ctx, ConnectTimeout),
 			*peer,
@@ -385,8 +385,6 @@ func (c *Client) connect(peer *peerCore.AddrInfo) (network.Stream, error) {
 		if err != nil {
 			return nil, fmt.Errorf("connecting to %s failed with %w", peer.ID.String(), err)
 		}
-	case network.CannotConnect:
-		return nil, errors.New("can't connect")
 	default:
 		return nil, errors.New("unknown connection status")
 	}

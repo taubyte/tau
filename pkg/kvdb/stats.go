@@ -1,6 +1,7 @@
 package kvdb
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
@@ -8,8 +9,8 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 )
 
-func (kvd *kvDatabase) Stats() kvdb.Stats {
-	s := kvd.datastore.InternalStats()
+func (kvd *kvDatabase) Stats(ctx context.Context) kvdb.Stats {
+	s := kvd.datastore.InternalStats(ctx)
 	return &stats{
 		heads:      s.Heads,
 		maxHeight:  s.MaxHeight,

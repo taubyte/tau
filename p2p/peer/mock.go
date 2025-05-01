@@ -11,7 +11,8 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	discovery "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 	netmock "github.com/libp2p/go-libp2p/p2p/net/mock"
-	"github.com/taubyte/tau/p2p/datastores/mem"
+
+	helpers "github.com/taubyte/tau/p2p/helpers"
 )
 
 var (
@@ -33,14 +34,26 @@ func Mock(ctx context.Context) Node {
 
 	p.ctx, p.ctx_cancel = context.WithCancel(ctx)
 
-	p.store = mem.New()
-
 	p.host, err = mocknet.GenPeer()
 	if err != nil {
 		panic(err)
 	}
 
 	p.dht, err = dht.New(p.ctx, p.host)
+	if err != nil {
+		panic(err)
+	}
+
+	repoPath, err := os.MkdirTemp("", "tb-node-*")
+	if err != nil {
+		panic(err)
+	}
+
+	p.ephemeral_repo_path = true
+
+	p.repo_path = fmt.Sprint(repoPath)
+
+	p.store, err = helpers.NewDatastore(p.repo_path)
 	if err != nil {
 		panic(err)
 	}
@@ -53,6 +66,8 @@ func Mock(ctx context.Context) Node {
 
 	p.drouter = discovery.NewRoutingDiscovery(p.dht)
 
+	p.topics = make(map[string]*pubsub.Topic)
+
 	// Prep messaging PUBSUB
 	p.messaging, err = pubsub.NewGossipSub(
 		p.ctx,
@@ -62,17 +77,6 @@ func Mock(ctx context.Context) Node {
 	if err != nil {
 		panic(err)
 	}
-
-	p.topics = make(map[string]*pubsub.Topic)
-
-	repoPath, err := os.MkdirTemp("", "tb-node-*")
-	if err != nil {
-		panic(err)
-	}
-
-	p.ephemeral_repo_path = true
-
-	p.repo_path = fmt.Sprint(repoPath)
 
 	return &p
 }

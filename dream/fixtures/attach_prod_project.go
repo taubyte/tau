@@ -7,7 +7,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/google/go-github/github"
+	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/clients/http"
 	httpAuthClient "github.com/taubyte/tau/clients/http/auth"
 	"github.com/taubyte/tau/dream"

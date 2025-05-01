@@ -17,9 +17,9 @@ import (
  * format: The format to use.
  * args: The arguments to use.
  */
-func Info(format string, args ...interface{}) {
+func Info(args ...interface{}) {
 	pterm.EnableDebugMessages()
-	pterm.Info.Printfln(format, args...)
+	pterm.Info.Println(args...)
 }
 
 /*

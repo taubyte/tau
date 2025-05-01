@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -55,8 +56,14 @@ func createConfig() (afero.Fs, config.Parser) {
 	p.Auth().Add("withkey").SetUsername("tau2")
 
 	p.Auth().Add("withkey").SetKey("/keys/test.pem")
-	privKeyData, _, _ := generateSSHKeyPair(256)
-	privKeyFile, _ := p.Auth().Get("withkey").Create()
+	privKeyData, _, err := generateSSHKeyPair(1024)
+	if err != nil {
+		panic(err)
+	}
+	privKeyFile, err := p.Auth().Get("withkey").Create()
+	if err != nil {
+		panic(err)
+	}
 	io.Copy(privKeyFile, bytes.NewBuffer(privKeyData))
 	privKeyFile.Close()
 
@@ -101,6 +108,10 @@ func TestMap(t *testing.T) {
 	_, p := createConfig()
 	n, err := Map(p)
 	assert.NilError(t, err)
-	assert.DeepEqual(t, p.Hosts().List(), []string{"host1", "host2"})
+	hosts := p.Hosts().List()
+	expectedHosts := []string{"host1", "host2"}
+	sort.Strings(hosts)
+	sort.Strings(expectedHosts)
+	assert.DeepEqual(t, hosts, expectedHosts)
 	assert.Equal(t, n.Size(), 2)
 }

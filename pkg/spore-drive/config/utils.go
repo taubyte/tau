@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"slices"
 
-	jwt "github.com/dgrijalva/jwt-go"
+	jwt "github.com/golang-jwt/jwt/v5"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/p2p/keypair"

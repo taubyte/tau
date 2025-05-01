@@ -23,8 +23,14 @@ func VirtConfig() (afero.Fs, config.Parser) {
 	p.Auth().Add("withkey").SetUsername("tau2")
 
 	p.Auth().Add("withkey").SetKey("/keys/test.pem")
-	privKeyData, _, _ := GenerateSSHKeyPair(256)
-	privKeyFile, _ := p.Auth().Get("withkey").Create()
+	privKeyData, _, err := GenerateSSHKeyPair(1024)
+	if err != nil {
+		panic(err)
+	}
+	privKeyFile, err := p.Auth().Get("withkey").Create()
+	if err != nil {
+		panic(err)
+	}
 	io.Copy(privKeyFile, bytes.NewBuffer(privKeyData))
 	privKeyFile.Close()
 
