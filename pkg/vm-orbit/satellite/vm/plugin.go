@@ -34,7 +34,11 @@ func Load(filename string, ctx context.Context) (vm.Plugin, error) {
 
 	p.ctx, p.ctxC = context.WithCancel(ctx)
 
-	p.connect()
+	if err := p.connect(); err != nil {
+		p.ctxC()
+		return nil, fmt.Errorf("connecting to plugin `%s` failed with: %w", p.name, err)
+	}
+
 	if err := p.watch(); err != nil {
 		p.ctxC()
 		return nil, fmt.Errorf("watch on file `%s` failed with: %w", p.filename, err)
