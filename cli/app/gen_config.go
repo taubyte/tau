@@ -146,7 +146,7 @@ func generateSourceConfig(ctx *cli.Context) error {
 		announce = []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", ports.Main)}
 	}
 
-	Services := getServices(ctx.String("Services"))
+	Services := getServices(ctx.String("services"))
 	if len(Services) == 0 && bundle != nil {
 		Services = bundle.Services
 	}
