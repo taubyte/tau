@@ -145,7 +145,24 @@ func (m *module) Debug() {
 	io.Copy(os.Stderr, m.suite.instance.Stderr())
 }
 
-// Debug is intended to be used after Call() has been invoked, used to copy the wasm runtime stdOut and stdErr
+// Output returns the output of the wasm runtime stdOut
+// NOTE: resets output after each call
+func (m *module) Output() string {
+	var b bytes.Buffer
+	io.Copy(&b, m.suite.instance.Stdout())
+	return b.String()
+}
+
+// ErrorOutput returns the error output of the wasm runtime stdErr
+// NOTE: resets output after each call
+func (m *module) ErrorOutput() string {
+	var b bytes.Buffer
+	io.Copy(&b, m.suite.instance.Stderr())
+	return b.String()
+}
+
+// AssetOutput is intended to be used after Call() has been invoked, used to assert the output of the wasm runtime stdOut
+// NOTE: resets output after each call
 func (m *module) AssetOutput(t *testing.T, value string) {
 	var b bytes.Buffer
 	io.Copy(&b, m.suite.instance.Stdout())
