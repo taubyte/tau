@@ -61,7 +61,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		}
 	} else {
 		srv.node = config.Node
-		srv.odo = true
+		srv.devMode = false
 	}
 
 	srv.devMode = config.DevMode
