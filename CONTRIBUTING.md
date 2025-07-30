@@ -64,6 +64,30 @@ GitHub will suggest a branch name when you start working on an issue. Use the su
 
 Implement your feature or bugfix following existing code conventions.
 
+## 🧪 Running Automated Tests
+
+If you are contributing to Go or JavaScript/TypeScript components, please run automated tests before pushing your changes:
+
+**Go Tests:**
+
+- From the root or any Go package directory:
+  ```bash
+  go test -p 1 ./...
+  ```
+  - `-p 1` runs tests serially (one package at a time).
+  - `./...` runs all tests recursively in the current directory and subdirectories.
+
+**JavaScript/TypeScript Tests:**
+
+- From the relevant client directory (e.g., `pkg/spore-drive/clients/js` or `pkg/taucorder/clients/js`):
+  ```bash
+  npm run test
+  ```
+  - Make sure you are in the directory containing the `package.json` file for the client you want to test.
+
+---
+
+
 ### 5. Commit Message Guidelines
 
 Use the same format as issue naming:
