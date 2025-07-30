@@ -12,7 +12,7 @@ Before you start contributing, make sure you have the following prerequisites in
 - **Go** 1.21 or later ([install guide](https://golang.org/doc/install))
 - **Git** for version control
 - **Node.js** 18+ and **npm** (for JavaScript/TypeScript components)
-- **Docker** (needed for Dreamland testing)
+- **Docker** (needed for dream testing)
 
 For detailed setup instructions, see our [README](README.md) or visit [tau.how](https://tau.how) for comprehensive documentation.
 
@@ -95,12 +95,12 @@ Use the same format as issue naming:
 ```bash
 git commit -m "[bug] fix memory leak in request handler"
 git commit -m "[feature] add OAuth2 integration"
-git commit -m "[dreamland] add new testing scenarios"
+git commit -m "[dream] add new testing scenarios"
 ```
 
 ### 6. Testing
 
-You can test your changes using **Dreamland**, our local cloud environment. See the [Dreamland documentation](https://tau.how/01-dev-getting-started/01-local-cloud/) for setup and usage details.
+You can test your changes using **dream**, our local cloud environment. See the [dream documentation](https://tau.how/01-dev-getting-started/01-local-cloud/) for setup and usage details.
 
 ### 7. Push to Your Fork
 
