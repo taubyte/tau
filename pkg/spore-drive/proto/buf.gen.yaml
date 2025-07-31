@@ -17,3 +17,5 @@ plugins:
   - local: protoc-gen-connect-es
     out: ../clients/js/gen
     opt: target=ts
+  - remote: buf.build/protocolbuffers/python:v31.1
+    out: ../clients/py/spore_drive/proto
