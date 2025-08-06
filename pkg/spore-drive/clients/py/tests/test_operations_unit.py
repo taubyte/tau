@@ -209,13 +209,13 @@ class TestStringOperation:
 
     @pytest.mark.asyncio
     async def test_get_empty_string_return(self):
-        """Test get method returning empty string when result doesn't match - covers line 228."""
+        """Test get method raising exception when result doesn't match - covers line 215."""
         mock_return = MagicMock(spec=config_pb2.Return)
         mock_return.WhichOneof.return_value = 'bytes'  # Not 'string'
         
         with patch.object(self.string_op, '_do_request', return_value=mock_return):
-            result = await self.string_op.get()
-            assert result == ''
+            with pytest.raises(ValueError, match="String value does not exist"):
+                await self.string_op.get()
 
 
 class TestBytesOperation:
@@ -238,13 +238,13 @@ class TestBytesOperation:
 
     @pytest.mark.asyncio
     async def test_get_empty_bytes_return(self):
-        """Test get method returning empty bytes when result doesn't match - covers line 243."""
+        """Test get method raising exception when result doesn't match - covers line 230."""
         mock_return = MagicMock(spec=config_pb2.Return)
         mock_return.WhichOneof.return_value = 'string'  # Not 'bytes'
         
         with patch.object(self.bytes_op, '_do_request', return_value=mock_return):
-            result = await self.bytes_op.get()
-            assert result == b''
+            with pytest.raises(ValueError, match="Bytes value does not exist"):
+                await self.bytes_op.get()
 
 
 class TestStringSliceOperation:
