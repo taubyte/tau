@@ -121,3 +121,55 @@ jobs:
             kill $(pgrep -f "mock")
           ) || exit 1
         done
+
+  py-tests:
+    runs-on: ubuntu-latest
+    needs: pre-commit
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.22.0'
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Build mock servers
+      run: |
+        for project in "spore-drive" "taucorder"; do
+          (
+            cd pkg/$project/clients/mock
+            go build .
+          ) || exit 1
+        done
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Run Python tests with retries
+      run: |
+        max_attempts=5
+        attempt_num=1
+        (
+          cd pkg/spore-drive/clients/py
+          echo "Creating Python virtual environment"
+          python -m venv venv
+          source venv/bin/activate
+          echo "Installing Python dependencies"
+          pip install --upgrade pip
+          pip install -e .[dev]
+          pip install -r example/requirements.txt
+          echo "Running Python tests for spore-drive"
+          until [ $attempt_num -gt $max_attempts ]
+          do
+            echo "Attempt $attempt_num of $max_attempts"
+            python -m pytest tests/ -v --cov=spore_drive --cov-report=term-missing && break || echo "Test failed. Retrying..."
+            attempt_num=$((attempt_num + 1))
+            if [ $attempt_num -gt $max_attempts ]
+            then
+              echo "All test attempts failed for Python spore-drive"
+              exit 1
+            fi
+            sleep 5
+          done
+          # clean-up mock servers
+          kill $(pgrep -f "mock")
+        ) || exit 1
