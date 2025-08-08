@@ -5,8 +5,8 @@ package common
 const (
 	PythonTestNetwork = "Test"
 
-	RemoteNetwork    = "Remote"
-	DreamNetwork = "Dream"
+	RemoteNetwork = "Remote"
+	DreamNetwork  = "Dream"
 )
 
 var (
