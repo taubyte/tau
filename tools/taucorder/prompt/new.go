@@ -29,19 +29,19 @@ import (
 )
 
 type tcprompt struct {
-	ctx             context.Context
-	ctxC            context.CancelFunc
-	engine          *goPrompt.Prompt
-	path            string
-	node            peer.Node
-	scanner         ScannerHandler
-	authClient      authIface.Client
-	seerClient      seerIface.Client
-	hoarderClient   hoarderIface.Client
-	monkeyClient    monkeyIface.Client
-	tnsClient       tnsIface.Client
-	patrickClient   patrickIface.Client
-	dreamClient *dream.Client
+	ctx           context.Context
+	ctxC          context.CancelFunc
+	engine        *goPrompt.Prompt
+	path          string
+	node          peer.Node
+	scanner       ScannerHandler
+	authClient    authIface.Client
+	seerClient    seerIface.Client
+	hoarderClient hoarderIface.Client
+	monkeyClient  monkeyIface.Client
+	tnsClient     tnsIface.Client
+	patrickClient patrickIface.Client
+	dreamClient   *dream.Client
 }
 
 var prompt Prompt
