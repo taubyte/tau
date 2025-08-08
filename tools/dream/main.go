@@ -63,13 +63,13 @@ func main() {
 
 	multiverse, err := client.New(
 		ctx,
-		client.URL(common.DefaultDreamlandURL),
+		client.URL(common.DefaultDreamURL),
 		// Give time for fixtures to execute
 		// We should maybe use WebSocket later
 		client.Timeout(300*time.Second),
 	)
 	if err != nil {
-		log.Fatalf("Starting new dreamland client failed with: %s", err.Error())
+		log.Fatalf("Starting new dream client failed with: %s", err.Error())
 	}
 
 	err = defineCLI(&common.Context{Ctx: ctx, Multiverse: multiverse}).RunContext(ctx, os.Args)

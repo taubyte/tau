@@ -151,7 +151,7 @@ func TestPrettyBasic(t *testing.T) {
 						"GitFullName": "taubyte-test/library2",
 						"Tags":        []string{"library_tag_3", "library_tag_4"},
 						"Path":        "/src",
-						"Branch":      "dreamland",
+						"Branch":      "dream",
 						"GitId":       "222222222",
 					},
 				},

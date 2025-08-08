@@ -20,14 +20,14 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 )
 
-func getDreamlandPeers(universe string) ([]peerCore.AddrInfo, []byte, error) {
+func getDreamPeers(universe string) ([]peerCore.AddrInfo, []byte, error) {
 	client, err := dreamApi.New(
 		common.GlobalContext,
 		dreamApi.Unsecure(),
 		dreamApi.URL("http://127.0.0.1:1421"),
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed creating dreamland http client with error: %v", err)
+		return nil, nil, fmt.Errorf("failed creating dream http client with error: %v", err)
 	}
 
 	stats, err := client.Status()
@@ -69,7 +69,7 @@ func getDreamlandPeers(universe string) ([]peerCore.AddrInfo, []byte, error) {
 var dreamCmd = &cli.Command{
 	Name:    "dream",
 	Aliases: []string{"local"},
-	Usage:   "Run using local dreamland",
+	Usage:   "Run using local dream",
 	Subcommands: []*cli.Command{
 		{
 			Name:    "with",
@@ -80,13 +80,13 @@ var dreamCmd = &cli.Command{
 					return errors.New("provide the name of universe to connect to")
 				}
 
-				nodes, swarmKey, err := getDreamlandPeers(universe)
+				nodes, swarmKey, err := getDreamPeers(universe)
 				if err != nil {
 					return err
 				}
 
 				scanner = func(ctx context.Context, n peer.Node) error {
-					nodes, _, err := getDreamlandPeers(universe)
+					nodes, _, err := getDreamPeers(universe)
 					if err != nil {
 						return err
 					}
@@ -131,7 +131,7 @@ var dreamCmd = &cli.Command{
 					dreamApi.URL("http://127.0.0.1:1421"),
 				)
 				if err != nil {
-					return fmt.Errorf("failed creating dreamland http client with error: %v", err)
+					return fmt.Errorf("failed creating dream http client with error: %v", err)
 				}
 
 				stats, err := client.Status()

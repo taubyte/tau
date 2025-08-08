@@ -19,7 +19,7 @@ func TestBranch(t *testing.T) {
 		URL(fmt.Sprintf("https://github.com/%s/%s.git", testRepoUser, testRepoName)),
 		Token(testRepoToken(t)),
 		Author(testRepoUser, ""),
-		Branch("dreamland"),
+		Branch("dream"),
 		Temporary(),
 	)
 	if err != nil {

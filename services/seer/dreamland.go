@@ -35,5 +35,5 @@ func createService(u *dream.Universe, config *iface.ServiceConfig) (iface.Servic
 		mockResolver = mockServer.Resolver()
 	}
 
-	return New(u.Context(), common.NewDreamlandConfig(u, config), Resolver(mockResolver))
+	return New(u.Context(), common.NewDreamConfig(u, config), Resolver(mockResolver))
 }

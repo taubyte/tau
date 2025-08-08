@@ -38,7 +38,7 @@ func TestStructBasic(t *testing.T) {
 		Description: "just another library",
 		Tags:        []string{"library_tag_3", "library_tag_4"},
 		Path:        "/src",
-		Branch:      "dreamland",
+		Branch:      "dream",
 		Provider:    "github",
 		RepoID:      "222222222",
 		RepoName:    "taubyte-test/library2",

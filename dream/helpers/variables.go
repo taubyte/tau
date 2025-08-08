@@ -5,10 +5,10 @@ import (
 	"fmt"
 	"os"
 
-	dreamlandCommon "github.com/taubyte/tau/dream"
+	dreamCommon "github.com/taubyte/tau/dream"
 )
 
-var UrlPrefix = "http://" + dreamlandCommon.DefaultHost
+var UrlPrefix = "http://" + dreamCommon.DefaultHost
 
 //go:embed payloads/config-payload.json
 var ConfigPayload []byte

@@ -12,7 +12,7 @@ import (
 
 	goPrompt "github.com/c-bata/go-prompt"
 	"github.com/google/shlex"
-	dreamland "github.com/taubyte/tau/clients/http/dream"
+	dream "github.com/taubyte/tau/clients/http/dream"
 	hoarder "github.com/taubyte/tau/clients/p2p/hoarder"
 	monkey "github.com/taubyte/tau/clients/p2p/monkey"
 	patrick "github.com/taubyte/tau/clients/p2p/patrick"
@@ -41,7 +41,7 @@ type tcprompt struct {
 	monkeyClient    monkeyIface.Client
 	tnsClient       tnsIface.Client
 	patrickClient   patrickIface.Client
-	dreamlandClient *dreamland.Client
+	dreamClient *dream.Client
 }
 
 var prompt Prompt
@@ -130,7 +130,7 @@ func (p *tcprompt) Run(options ...Option) error {
 		return err
 	}
 
-	p.dreamlandClient, err = dreamland.New(p.ctx)
+	p.dreamClient, err = dream.New(p.ctx)
 	if err != nil {
 		return err
 	}

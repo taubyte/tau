@@ -121,7 +121,7 @@ func (ns *nodeService) New(ctx context.Context, req *connect.Request[pb.Config])
 		if con := source.GetConnect(); con != nil && con.GetUrl() != "" {
 			ni.dream, err = dream.New(ns.ctx, dream.URL(con.GetUrl()))
 		} else {
-			ni.dream, err = dream.New(ns.ctx, dream.URL("http://"+dreamCore.DreamlandApiListen))
+			ni.dream, err = dream.New(ns.ctx, dream.URL("http://"+dreamCore.DreamApiListen))
 		}
 		if err != nil {
 			return nil, fmt.Errorf("connecting to dream: %w", err)

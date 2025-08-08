@@ -18,7 +18,7 @@ func TestRunDelay(t *testing.T) {
 	assert.NilError(t, err)
 	defer logFile.Close()
 
-	u, err := startDreamland(t.Name())
+	u, err := startDream(t.Name())
 	assert.NilError(t, err)
 	defer u.Stop()
 

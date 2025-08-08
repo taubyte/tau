@@ -8,8 +8,8 @@ import (
 
 func executeConfigCode(config bool, code bool) error {
 	if !dreamLib.IsRunning() {
-		dreamI18n.Help().IsDreamlandRunning()
-		return dreamI18n.ErrorDreamlandNotStarted
+		dreamI18n.Help().IsDreamRunning()
+		return dreamI18n.ErrorDreamNotStarted
 	}
 
 	builder, err := initBuild()

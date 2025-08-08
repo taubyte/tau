@@ -42,7 +42,7 @@ func TestAttachProdProject(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	err = u.RunFixture("setBranch", "dreamland")
+	err = u.RunFixture("setBranch", "dream")
 	assert.NilError(t, err)
 
 	err = u.RunFixture("attachProdProject", helpers.ProjectID, helpers.GitToken)

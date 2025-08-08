@@ -21,7 +21,7 @@ var (
 
 	Ports map[string]int
 
-	DreamlandApiListen = DefaultHost + ":1421"
+	DreamApiListen = DefaultHost + ":1421"
 
 	DefaultHost             string = "127.0.0.1"
 	DefaultP2PListenFormat  string = "/ip4/" + DefaultHost + "/tcp/%d"
@@ -42,7 +42,7 @@ var (
 	maxUniverses     = 100
 	portsPerUniverse = 100
 
-	logger = log.Logger("tau.dreamland")
+	logger = log.Logger("tau.dream")
 
 	universes      map[string]*Universe
 	universesLock  sync.RWMutex
@@ -111,7 +111,7 @@ var FixtureMap = map[string]FixtureDefinition{
 	},
 	"clearRepos": {
 		Description: "delete all unused repos",
-		ImportRef:   "dreamland-test/fixtures",
+		ImportRef:   "dream-test/fixtures",
 		Internal:    true,
 	},
 	"attachPlugin": {
@@ -156,8 +156,8 @@ var FixtureMap = map[string]FixtureDefinition{
 		},
 	},
 	"attachProdProject": {
-		Description: "Attach a production project to dreamland",
-		ImportRef:   "dreamland-test/fixtures", // TODO should this fixture be in tns?
+		Description: "Attach a production project to dream",
+		ImportRef:   "dream-test/fixtures", // TODO should this fixture be in tns?
 		Internal:    true,
 		Variables: []FixtureVariable{
 			{
@@ -175,8 +175,8 @@ var FixtureMap = map[string]FixtureDefinition{
 		},
 	},
 	"importProdProject": {
-		Description: "Import a production project to dreamland and push all the repos",
-		ImportRef:   "dreamland-test/fixtures", // TODO should this fixture be in tns?
+		Description: "Import a production project to dream and push all the repos",
+		ImportRef:   "dream-test/fixtures", // TODO should this fixture be in tns?
 		Internal:    true,
 		Variables: []FixtureVariable{
 			{

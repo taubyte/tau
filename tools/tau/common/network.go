@@ -1,12 +1,12 @@
 package common
 
-// TODO: Add dreamland connection
+// TODO: Add dream connection
 // TODO: Move to specs
 const (
 	PythonTestNetwork = "Test"
 
 	RemoteNetwork    = "Remote"
-	DreamlandNetwork = "Dreamland"
+	DreamNetwork = "Dream"
 )
 
 var (

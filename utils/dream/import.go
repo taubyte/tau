@@ -1,4 +1,4 @@
-package dreamland
+package dream
 
 import (
 	_ "github.com/taubyte/tau/clients/p2p/auth"

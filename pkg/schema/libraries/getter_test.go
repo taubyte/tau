@@ -49,7 +49,7 @@ func assertLibrary2(t *testing.T, getter libraries.Getter) {
 		{getter.Description(), "just another library"},
 		{getter.Tags(), []string{"library_tag_3", "library_tag_4"}},
 		{getter.Path(), "/src"},
-		{getter.Branch(), "dreamland"},
+		{getter.Branch(), "dream"},
 		{provider, "github"},
 		{id, "222222222"},
 		{fullname, "taubyte-test/library2"},
