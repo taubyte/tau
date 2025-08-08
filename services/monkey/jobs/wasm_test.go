@@ -14,7 +14,7 @@ import (
 
 func TestRunWasmBasic(t *testing.T) {
 	t.Skip("Needs to be redone")
-	u, err := startDreamland("testRunWasm")
+	u, err := startDream("testRunWasm")
 	defer u.Stop()
 	assert.NilError(t, err)
 

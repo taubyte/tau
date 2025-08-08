@@ -3,5 +3,5 @@ package dreamI18n
 import "errors"
 
 var (
-	ErrorDreamlandNotStarted = errors.New("dreamland not started")
+	ErrorDreamNotStarted = errors.New("dream not started")
 )

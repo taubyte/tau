@@ -25,7 +25,7 @@ func createNetworkMonkey() *testSpider {
 		return nil
 	}
 
-	// TODO: Add a dreamland test that starts and stop a dreamland instance
+	// TODO: Add a dream test that starts and stop a dream instance
 	tests := []testMonkey{
 		{
 			name:            "Select login with network saved",

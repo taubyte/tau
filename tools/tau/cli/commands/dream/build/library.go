@@ -16,8 +16,8 @@ import (
 
 func buildLibrary(ctx *cli.Context) error {
 	if !dreamLib.IsRunning() {
-		dreamI18n.Help().IsDreamlandRunning()
-		return dreamI18n.ErrorDreamlandNotStarted
+		dreamI18n.Help().IsDreamRunning()
+		return dreamI18n.ErrorDreamNotStarted
 	}
 
 	library, err := libraryPrompts.GetOrSelect(ctx)

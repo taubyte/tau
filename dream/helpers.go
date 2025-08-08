@@ -42,7 +42,7 @@ func afterStartDelay() time.Duration {
 }
 
 func getCacheFolder() (string, error) {
-	cacheFolder := ".cache/dreamland"
+	cacheFolder := ".cache/dream"
 
 	home, err := os.UserHomeDir()
 	if err != nil {

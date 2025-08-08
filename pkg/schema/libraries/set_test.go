@@ -23,7 +23,7 @@ func TestSetBasic(t *testing.T) {
 		description        = "this is test lib 3"
 		tags               = []string{"lib_tag_5", "lib_tag_6"}
 		path               = "/main"
-		branch             = "dreamland"
+		branch             = "dream"
 		gitProvider        = "github"
 		repositoryID       = "444444444"
 		repositoryFullName = "taubyte_test/forty_four"
@@ -77,7 +77,7 @@ func TestSetInApp(t *testing.T) {
 		description        = "this is test lib 3"
 		tags               = []string{"lib_tag_5", "lib_tag_6"}
 		path               = "/main"
-		branch             = "dreamland"
+		branch             = "dream"
 		gitProvider        = "github"
 		repositoryID       = "444444444"
 		repositoryFullName = "taubyte_test/forty_four"

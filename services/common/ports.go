@@ -1,20 +1,20 @@
 package common
 
-// TODO: These ports are tied to generic config/dreamland and will need looked at moving generic config
+// TODO: These ports are tied to generic config/dream and will need looked at moving generic config
 var (
 	// 	AuthDefaultP2PListenPort = 4221
-	// 	AuthDevHttpListenPort    = 9000 + dreamlandCommon.DefaultAuthHttpPort
+	// 	AuthDevHttpListenPort    = 9000 + dreamCommon.DefaultAuthHttpPort
 
 	// 	HoarderDefaultP2PListenPort = 4260
 
 	// 	NodeDefaultP2PListenPort = 4242
-	// 	NodeDevHttpListenPort    = 9000 + dreamlandCommon.DefaultSubstrateHttpPort
+	// 	NodeDevHttpListenPort    = 9000 + dreamCommon.DefaultSubstrateHttpPort
 
 	// 	PatrickDefaultP2PListenPort = 4222
-	// 	PatrickDevHttpListenPort    = 9000 + dreamlandCommon.DefaultPatrickHttpPort
+	// 	PatrickDevHttpListenPort    = 9000 + dreamCommon.DefaultPatrickHttpPort
 
 	// 	SeerDefaultP2PListenPort = 4299
-	// 	SeerDevHttpListenPort    = 9000 + dreamlandCommon.DefaultSeerHttpPort
+	// 	SeerDevHttpListenPort    = 9000 + dreamCommon.DefaultSeerHttpPort
 
 	DefaultDnsPort = 53
 

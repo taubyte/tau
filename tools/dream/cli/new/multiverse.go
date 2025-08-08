@@ -30,7 +30,7 @@ func multiverse(multiverse *client.Client) *cli.Command {
 			},
 			&cli.BoolFlag{
 				Name:        "keep",
-				DefaultText: "If set will store the universe in $HOME/.cache/dreamland rather than /tmp",
+				DefaultText: "If set will store the universe in $HOME/.cache/dream rather than /tmp",
 			},
 
 			// Relative to the universes
@@ -41,7 +41,7 @@ func multiverse(multiverse *client.Client) *cli.Command {
 			&cli.BoolFlag{
 				Name:    "listen-on-all",
 				Aliases: []string{"L"},
-				Usage:   "hosts dreamland http clients on 0.0.0.0 rather than 127.0.0.1",
+				Usage:   "hosts dream http clients on 0.0.0.0 rather than 127.0.0.1",
 			},
 			&cli.StringSliceFlag{
 				Name:  "enable",

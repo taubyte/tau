@@ -15,7 +15,7 @@ func init() {
 }
 
 func createNodeService(u *dream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
-	service, err := New(u.Context(), common.NewDreamlandConfig(u, config))
+	service, err := New(u.Context(), common.NewDreamConfig(u, config))
 	if err != nil {
 		return nil, err
 	}

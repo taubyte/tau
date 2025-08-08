@@ -14,5 +14,5 @@ func init() {
 }
 
 func createAuthService(u *dream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
-	return New(u.Context(), common.NewDreamlandConfig(u, config))
+	return New(u.Context(), common.NewDreamConfig(u, config))
 }

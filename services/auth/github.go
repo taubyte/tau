@@ -76,7 +76,7 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *gi
 		return nil, fmt.Errorf("generate key failed with: %s", err)
 	}
 
-	// Dreamland also needs to create a deplyment key. TODO: use a pre-set key
+	// Dream also needs to create a deplyment key. TODO: use a pre-set key
 	err = client.CreateDeployKey(&kname, &kpub)
 	if err != nil {
 		return nil, fmt.Errorf("create deploy key failed with: %s", err)

@@ -13,7 +13,7 @@ import (
 	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/singletons"
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
 	"github.com/taubyte/tau/tools/tau/singletons/config"
-	"github.com/taubyte/tau/tools/tau/singletons/dreamland"
+	"github.com/taubyte/tau/tools/tau/singletons/dream"
 	"github.com/taubyte/tau/tools/tau/singletons/session"
 	"github.com/taubyte/tau/tools/tau/states"
 )
@@ -31,8 +31,8 @@ func getClientUrl() (url string, err error) {
 	}
 
 	switch profile.NetworkType {
-	case common.DreamlandNetwork:
-		port, err := dreamland.HTTPPort(context.TODO(), "patrick")
+	case common.DreamNetwork:
+		port, err := dream.HTTPPort(context.TODO(), "patrick")
 		if err != nil {
 			return "", err
 		}

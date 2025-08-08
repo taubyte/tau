@@ -61,7 +61,7 @@ func TestKillService(t *testing.T) {
 		return
 	}
 
-	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamlandURL), client.Timeout(300*time.Second))
+	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamURL), client.Timeout(300*time.Second))
 	if err != nil {
 		t.Error(err)
 		return
@@ -95,7 +95,7 @@ func TestKillSimple(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamlandURL), client.Timeout(1000*time.Second))
+	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamURL), client.Timeout(1000*time.Second))
 	if err != nil {
 		t.Error(err)
 		return

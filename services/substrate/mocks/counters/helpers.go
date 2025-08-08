@@ -6,7 +6,7 @@ import (
 	"github.com/taubyte/tau/dream"
 )
 
-func FromDreamland(u *dream.Universe) (*counter, error) {
+func FromDream(u *dream.Universe) (*counter, error) {
 	if substrate := u.Substrate(); substrate != nil {
 		if _counter := substrate.Counter(); _counter != nil {
 			if mockCounter, ok := _counter.(*counter); ok {
@@ -15,5 +15,5 @@ func FromDreamland(u *dream.Universe) (*counter, error) {
 		}
 	}
 
-	return nil, errors.New("did you start dreamland with substrate?")
+	return nil, errors.New("did you start dream with substrate?")
 }

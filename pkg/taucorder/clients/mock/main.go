@@ -23,7 +23,7 @@ import (
 )
 
 func main() {
-	dream.DreamlandApiListen = "localhost:2442" // diffrent port than the default
+	dream.DreamApiListen = "localhost:2442" // diffrent port than the default
 
 	dreamApi.BigBang()
 

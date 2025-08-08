@@ -10,7 +10,7 @@ import (
 
 func TestRunWebsiteBasic(t *testing.T) {
 	t.Skip("Needs to be redone")
-	u, err := startDreamland("testRunWebsite")
+	u, err := startDream("testRunWebsite")
 	defer u.Stop()
 	assert.NilError(t, err)
 

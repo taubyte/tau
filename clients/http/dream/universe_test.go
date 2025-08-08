@@ -24,7 +24,7 @@ import (
 )
 
 func TestRoutes(t *testing.T) {
-	univerName := "dreamland-http"
+	univerName := "dream-http"
 	// start multiverse
 	err := api.BigBang()
 	assert.NilError(t, err)
