@@ -115,7 +115,7 @@ func TestCounters(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	counter, err := mockCounter.FromDreamland(u)
+	counter, err := mockCounter.FromDream(u)
 	assert.NilError(t, err)
 
 	metrics := counter.Dump()

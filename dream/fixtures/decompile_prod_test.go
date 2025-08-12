@@ -47,12 +47,12 @@ func TestDecompileProd(t *testing.T) {
 	assert.NilError(t, err)
 
 	gitRoot := "./testGIT"
-	gitRootConfig := gitRoot + "/prodConfigDreamland"
+	gitRootConfig := gitRoot + "/prodConfigDream"
 	os.MkdirAll(gitRootConfig, 0755)
 
 	fakeMeta := commonTest.ConfigRepo.HookInfo
 	fakeMeta.Repository.SSHURL = "git@github.com:taubyte-test/tb_prodproject.git"
-	fakeMeta.Repository.Branch = "dreamland"
+	fakeMeta.Repository.Branch = "dream"
 	fakeMeta.Repository.Provider = "github"
 
 	err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.Repository{

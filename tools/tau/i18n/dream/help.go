@@ -12,6 +12,6 @@ func (helper) IsAValidBinary() {
 	pterm.Info.Printfln("command `dream` failed, do you have a valid binary? <insert docs link>")
 }
 
-func (helper) IsDreamlandRunning() {
-	pterm.Info.Printfln("Have you started dreamland? ( $tau dream )")
+func (helper) IsDreamRunning() {
+	pterm.Info.Printfln("Have you started dream? ( $tau dream )")
 }

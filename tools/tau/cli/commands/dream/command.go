@@ -11,7 +11,7 @@ import (
 
 const (
 	defaultBind        = "node@1/verbose,seer@2/copies,node@2/copies"
-	dreamCacheLocation = "~/.cache/dreamland/universe-tau"
+	dreamCacheLocation = "~/.cache/dream/universe-tau"
 )
 
 var (
@@ -20,7 +20,7 @@ var (
 
 var Command = &cli.Command{
 	Name:  "dream",
-	Usage: "Starts and interfaces with a local taubyte network.  All leading arguments to `tau dream ...` are passed to dreamland",
+	Usage: "Starts and interfaces with a local taubyte network.  All leading arguments to `tau dream ...` are passed to dream",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:  "cache",

@@ -1,4 +1,4 @@
-package dreamland
+package dream
 
 import (
 	"context"
@@ -6,17 +6,17 @@ import (
 	"strings"
 	"time"
 
-	dreamland "github.com/taubyte/tau/clients/http/dream"
+	dream "github.com/taubyte/tau/clients/http/dream"
 	"github.com/taubyte/tau/dream/api"
 	"github.com/taubyte/tau/tools/tau/env"
 )
 
-var dream_client *dreamland.Client
+var dream_client *dream.Client
 
-func Client(ctx context.Context) (*dreamland.Client, error) {
+func Client(ctx context.Context) (*dream.Client, error) {
 	if dream_client == nil {
 		var err error
-		dream_client, err = dreamland.New(ctx, dreamland.URL("http://127.0.0.1:1421"), dreamland.Timeout(15*time.Second))
+		dream_client, err = dream.New(ctx, dream.URL("http://127.0.0.1:1421"), dream.Timeout(15*time.Second))
 		if err != nil {
 			return nil, err
 		}
@@ -26,7 +26,7 @@ func Client(ctx context.Context) (*dreamland.Client, error) {
 }
 
 func Status(ctx context.Context) (echart api.Echart, err error) {
-	var dreamClient *dreamland.Client
+	var dreamClient *dream.Client
 	dreamClient, err = Client(ctx)
 	if err != nil {
 		return

@@ -152,7 +152,7 @@ func cloneRepo(ctx context.Context, url string, preserve bool) (*git.Repository,
 	return repo, nil
 }
 
-func startDreamland(name string) (u *dream.Universe, err error) {
+func startDream(name string) (u *dream.Universe, err error) {
 	u = dream.New(dream.UniverseConfig{Name: name})
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{

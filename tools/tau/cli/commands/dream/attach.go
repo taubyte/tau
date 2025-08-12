@@ -15,8 +15,8 @@ var attachCommand = &cli.Command{
 			Name: "project",
 			Action: func(ctx *cli.Context) error {
 				if !dreamLib.IsRunning() {
-					dreamI18n.Help().IsDreamlandRunning()
-					return dreamI18n.ErrorDreamlandNotStarted
+					dreamI18n.Help().IsDreamRunning()
+					return dreamI18n.ErrorDreamNotStarted
 				}
 
 				project, err := projectLib.SelectedProjectInterface()

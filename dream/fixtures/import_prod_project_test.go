@@ -14,7 +14,7 @@ import (
 )
 
 func TestImportProdProject(t *testing.T) {
-	t.Skip("currently custom domains do not work on dreamland")
+	t.Skip("currently custom domains do not work on dream")
 
 	spec.DefaultBranches = []string{"master_test"}
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})

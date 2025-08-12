@@ -10,7 +10,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestDreamlandDoubleClient(t *testing.T) {
+func TestDreamDoubleClient(t *testing.T) {
 	u := dream.New(dream.UniverseConfig{Name: "single"})
 	defer dream.Zeno()
 
