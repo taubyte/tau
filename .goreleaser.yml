@@ -49,20 +49,7 @@ release:
   # Templateable since: v1.15.
   skip_upload: false
 
-# builds:
-#   -
-#     ignore:
-#     - goos: darwin
-#     # - goos: windows
-#     env:
-#       - CGO_ENABLED=0
-#       - GOAMD64=v2
-#     tags:
-#       - odo
-#     # goarch:
-#     #   - amd64
-#     #   - arm
-#     #   - arm64
+
 
 builds:
   - main: "main.go"
@@ -78,6 +65,12 @@ builds:
       - GOAMD64=v2
     tags:
       - odo
+    ldflags:
+      - |
+        -s -w \
+        -X github.com/taubyte/tau/cli/app.Version={{ .Version }} \
+        -X github.com/taubyte/tau/cli/app.Commit={{ .ShortCommit }} \
+        -X github.com/taubyte/tau/cli/app.BuildDate={{ .Date }}
   - main: "main.go"
     id: darwin
     binary: "tau"
@@ -89,6 +82,12 @@ builds:
     tags:
       - darwin
       - odo
+    ldflags:
+      - |
+        -s -w \
+        -X github.com/taubyte/tau/cli/app.Version={{ .Version }} \
+        -X github.com/taubyte/tau/cli/app.Commit={{ .ShortCommit }} \
+        -X github.com/taubyte/tau/cli/app.BuildDate={{ .Date }}
   - main: "main.go"
     id: windows
     binary: "tau"
@@ -101,6 +100,12 @@ builds:
       - GOAMD64=v2
     tags:
       - windows 
+    ldflags:
+      - |
+        -s -w \
+        -X github.com/taubyte/tau/cli/app.Version={{ .Version }} \
+        -X github.com/taubyte/tau/cli/app.Commit={{ .ShortCommit }} \
+        -X github.com/taubyte/tau/cli/app.BuildDate={{ .Date }}
 
 changelog:
   disable: true
