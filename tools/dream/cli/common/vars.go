@@ -3,7 +3,7 @@ package common
 import "github.com/taubyte/tau/dream"
 
 var (
-	DefaultDreamURL = "http://" + dream.DreamApiListen
+	DefaultDreamURL     = "http://" + dream.DreamApiListen
 	DefaultUniverseName = "blackhole"
 	DefaultClientName   = "client"
 	DoDaemon            = false
