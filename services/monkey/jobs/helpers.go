@@ -9,12 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/core/builders"
 	"github.com/taubyte/tau/pkg/git"
 	specs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
-	chidori "github.com/taubyte/utils/logger/zap"
 	"github.com/taubyte/utils/maps"
 )
 
@@ -26,9 +24,9 @@ func (c Context) storeLogFile(file *os.File) (string, error) {
 	} else {
 
 		if _, err = c.Monkey.Hoarder().Stash(cid); err != nil {
-			chidori.Format(logger, log.LevelError, "hoarding log cid `%s` of job `%s` failed with: %s", cid, c.Job.Id, err.Error())
+			logger.Error("hoarding log cid `%s` of job `%s` failed with: %s", cid, c.Job.Id, err.Error())
 		} else {
-			chidori.Format(logger, log.LevelInfo, "hoarded `%s`", cid)
+			logger.Info("hoarded `%s`", cid)
 		}
 	}
 

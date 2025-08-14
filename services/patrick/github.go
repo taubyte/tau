@@ -126,7 +126,7 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 			return nil, fmt.Errorf("failed registering new job repo %d into tns with error: %v", newJob.Meta.Repository.ID, err)
 		}
 
-		logger.Debugf("job full: %#v", newJob)
+		logger.Debugf("Got job: %#v", newJob)
 
 		return newJob, nil
 	default:

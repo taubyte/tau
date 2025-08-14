@@ -7,13 +7,10 @@ import (
 	"io"
 	"math/big"
 	"os"
-	"strings"
 	"time"
 
-	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/core/services/patrick"
 	protocolCommon "github.com/taubyte/tau/services/common"
-	chidori "github.com/taubyte/utils/logger/zap"
 )
 
 func (m *Monkey) Run() {
@@ -33,11 +30,11 @@ func (m *Monkey) Run() {
 	m.Status = patrick.JobStatusLocked
 	isLocked, err := m.Service.patrickClient.IsLocked(m.Id)
 	if !isLocked {
-		appendAndLog(errs, "Locking job %s failed", m.Id)
+		appendAndLogError(errs, "Locking job %s failed", m.Id)
 		gotIt = false
 	}
 	if err != nil {
-		appendAndLog(errs, "Checking if locked job %s failed with: %s", m.Id, err.Error())
+		appendAndLogError(errs, "Checking if locked job %s failed with: %s", m.Id, err.Error())
 		gotIt = false
 	}
 
@@ -79,18 +76,10 @@ func (m *Monkey) Run() {
 	m.Job.Logs[m.Job.Id] = cid //FIXME: maybe have some other kind of index for m.Job.Logs, like Timestamp
 	m.LogCID = cid
 	if err != nil {
-		if strings.Contains(err.Error(), protocolCommon.RetryErrorString) {
-			delete(m.Service.monkeys, m.Job.Id)
-
-			if err = m.Service.patrickClient.Unlock(m.Id); err != nil {
-				logger.Errorf("Unlocking job failed `%s` failed with: %s", m.Id, err.Error())
-			}
-		} else {
-			if err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid); err != nil {
-				logger.Errorf("Marking job failed `%s` failed with: %s", m.Id, err.Error())
-			}
-			m.Status = patrick.JobStatusFailed
+		if err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid); err != nil {
+			logger.Errorf("Marking job failed `%s` failed with: %s", m.Id, err.Error())
 		}
+		m.Status = patrick.JobStatusFailed
 	} else {
 		if err = m.Service.patrickClient.Done(m.Id, m.Job.Logs, m.Job.AssetCid); err != nil {
 			logger.Errorf("Marking job done `%s` failed: %s", m.Id, err.Error())
@@ -109,10 +98,10 @@ func (m *Monkey) Run() {
 
 func (m *Monkey) run(errs chan error) {
 	if err := m.RunJob(); err != nil {
-		appendAndLog(errs, "Running job `%s` failed with error: %s", m.Id, err.Error())
+		appendAndLogError(errs, "Running job `%s` failed with error: %s", m.Id, err.Error())
 	} else {
 		m.logFile.Seek(0, io.SeekEnd)
-		m.logFile.WriteString(chidori.Format(logger, log.LevelInfo, "\nRunning job `%s` was successful\n", m.Id))
+		fmt.Fprintf(m.logFile, "\nRunning job `%s` was successful\n", m.Id)
 	}
 }
 

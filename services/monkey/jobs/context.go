@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	protocolCommon "github.com/taubyte/tau/services/common"
@@ -19,18 +20,22 @@ func (c *Context) ForceGitDir(dir string) {
 	c.gitDir = dir
 }
 
-func (c *Context) startTimeout(ctx context.Context, ctxC context.CancelFunc) {
+func (c *Context) startTimeout() {
 	defaultWaitTime := protocolCommon.DefaultLockTime
 	if protocolCommon.TimeoutTest {
 		defaultWaitTime = 5 * time.Second
 	}
 
-	<-time.After(defaultWaitTime)
-	err := c.Patrick.Timeout(c.Job.Id)
-	if err != nil {
-		logger.Errorf("Sending timeout for job %s failed with %s", c.Job.Id, err.Error())
+	select {
+	case <-c.ctx.Done():
 		return
+	case <-time.After(defaultWaitTime):
+		err := c.Patrick.Timeout(c.Job.Id)
+		if err != nil && !strings.Contains(err.Error(), "finished") {
+			logger.Errorf("Sending timeout for job %s failed with %s", c.Job.Id, err.Error())
+			return
+		}
+		c.ctxC()
 	}
 
-	c.Monkey.Delete(c.Job.Id)
 }
