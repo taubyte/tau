@@ -9,6 +9,8 @@ import (
 
 	"github.com/taubyte/tau/core/services/patrick"
 	"gotest.tools/v3/assert"
+
+	"github.com/taubyte/tau/clients/p2p/patrick/mock"
 )
 
 func TestRunDelay(t *testing.T) {
@@ -38,6 +40,7 @@ func TestRunDelay(t *testing.T) {
 		LogFile: logFile,
 		Node:    simple,
 		Monkey:  &mockMonkey{hoarder: hoarderClient},
+		Patrick: &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)},
 	}
 
 	ctx, ctxC := context.WithTimeout(context.Background(), 1*time.Second)

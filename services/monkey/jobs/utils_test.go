@@ -115,6 +115,9 @@ func (m *mockMonkey) Dev() bool {
 	return true
 }
 
+func (m *mockMonkey) Delete(jid string) {
+}
+
 func (m *mockMonkey) Hoarder() hoarder.Client {
 	return m.hoarder
 }
