@@ -7,7 +7,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	iface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/dream"
-	_ "github.com/taubyte/tau/services/gateway"
+	_ "github.com/taubyte/tau/services/gateway/dream"
 	"gotest.tools/v3/assert"
 )
 

@@ -7,6 +7,9 @@ import (
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/dream"
 	"gotest.tools/v3/assert"
+
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestStats(t *testing.T) {

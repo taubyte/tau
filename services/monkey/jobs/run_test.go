@@ -11,6 +11,8 @@ import (
 	"gotest.tools/v3/assert"
 
 	"github.com/taubyte/tau/clients/p2p/patrick/mock"
+
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
 
 func TestRunDelay(t *testing.T) {

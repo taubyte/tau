@@ -9,7 +9,7 @@ import (
 	"connectrpc.com/connect"
 	pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 	pbconnect "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1/taucorderv1connect"
-	_ "github.com/taubyte/tau/services/seer"
+	_ "github.com/taubyte/tau/services/seer/dream"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"gotest.tools/v3/assert"

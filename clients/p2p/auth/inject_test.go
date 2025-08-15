@@ -11,6 +11,10 @@ import (
 	"github.com/taubyte/tau/pkg/http/helpers"
 	"github.com/taubyte/tau/services/auth/acme/store"
 	"gotest.tools/v3/assert"
+
+	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func injectCert(t *testing.T, client authIface.Client) []byte {

@@ -18,11 +18,14 @@ import (
 
 	_ "github.com/taubyte/tau/dream/fixtures"
 	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/patrick"
-	_ "github.com/taubyte/tau/services/substrate"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/patrick/dream"
+	_ "github.com/taubyte/tau/services/substrate/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
+
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
 
 var (

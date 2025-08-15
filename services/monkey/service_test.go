@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	_ "github.com/taubyte/tau/clients/p2p/monkey"
+	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
 	"github.com/taubyte/tau/clients/p2p/patrick/mock"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/p2p/peer"
 	protocolCommon "github.com/taubyte/tau/services/common"
-	_ "github.com/taubyte/tau/services/hoarder"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
 	"gotest.tools/v3/assert"
 )
 

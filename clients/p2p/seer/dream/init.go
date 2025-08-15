@@ -1,6 +1,7 @@
-package seer
+package dream
 
 import (
+	"github.com/taubyte/tau/clients/p2p/seer"
 	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/p2p/peer"
@@ -14,5 +15,5 @@ func init() {
 }
 
 func createSeerClient(node peer.Node, config *common.ClientConfig) (common.Client, error) {
-	return New(node.Context(), node)
+	return seer.New(node.Context(), node)
 }

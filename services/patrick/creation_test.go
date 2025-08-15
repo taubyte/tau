@@ -1,4 +1,4 @@
-package service
+package service_test
 
 import (
 	_ "embed"
@@ -15,7 +15,7 @@ import (
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/auth"
+	_ "github.com/taubyte/tau/services/auth/dream"
 )
 
 func TestPatrick(t *testing.T) {

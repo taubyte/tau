@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
@@ -14,7 +14,7 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 	"github.com/taubyte/utils/maps"
 	"gotest.tools/v3/assert"
 )

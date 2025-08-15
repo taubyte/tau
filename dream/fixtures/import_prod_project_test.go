@@ -7,10 +7,10 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/pkg/specs/common"
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/monkey"
-	_ "github.com/taubyte/tau/services/patrick"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/monkey/dream"
+	_ "github.com/taubyte/tau/services/patrick/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestImportProdProject(t *testing.T) {

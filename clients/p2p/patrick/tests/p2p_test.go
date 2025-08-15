@@ -8,15 +8,15 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/hoarder"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
 	"gotest.tools/v3/assert"
 
 	"github.com/fxamacker/cbor/v2"
 	iface "github.com/taubyte/tau/core/services/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	service "github.com/taubyte/tau/services/patrick"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestClientWithUniverse(t *testing.T) {

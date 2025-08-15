@@ -5,15 +5,15 @@ import (
 	"path"
 	"testing"
 
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
-	_ "github.com/taubyte/tau/services/substrate"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/substrate/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestGoFunction(t *testing.T) {

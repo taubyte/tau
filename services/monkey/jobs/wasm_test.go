@@ -7,9 +7,9 @@ import (
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/hoarder"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
 
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestRunWasmBasic(t *testing.T) {

@@ -9,7 +9,8 @@ import (
 	"github.com/taubyte/tau/dream"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/seer"
+	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
 )
 
 func TestService(t *testing.T) {
@@ -24,7 +25,6 @@ func TestService(t *testing.T) {
 			"client": {
 				Clients: dream.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-					TNS:  &commonIface.ClientConfig{},
 				}.Compat(),
 			},
 		},

@@ -17,12 +17,12 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	_ "github.com/taubyte/tau/services/hoarder"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
-	_ "github.com/taubyte/tau/services/seer"
-	_ "github.com/taubyte/tau/services/substrate"
+	_ "github.com/taubyte/tau/services/seer/dream"
 	"github.com/taubyte/tau/services/substrate/components/p2p"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/substrate/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 	"github.com/taubyte/utils/id"
 )
 

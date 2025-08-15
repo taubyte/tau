@@ -17,7 +17,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 
 	"github.com/spf13/afero"
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"

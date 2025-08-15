@@ -19,9 +19,9 @@ import (
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/pkg/specs/methods"
 
-	_ "github.com/taubyte/tau/clients/p2p/hoarder"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func newTestContext(ctx context.Context, simple *dream.Simple, logFile *os.File) testContext {

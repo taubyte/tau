@@ -17,15 +17,15 @@ import (
 
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
 
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/core/services/substrate/components/storage"
 	"github.com/taubyte/tau/pkg/kvdb"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	_ "github.com/taubyte/tau/services/substrate"
 	storages "github.com/taubyte/tau/services/substrate/components/storage"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/substrate/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 
 	_ "embed"
 )

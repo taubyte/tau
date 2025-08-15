@@ -20,10 +20,11 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"gotest.tools/v3/assert"
 
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestTNS(t *testing.T) {

@@ -10,8 +10,9 @@ import (
 	"github.com/taubyte/tau/dream"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/seer"
+	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
 )
 
 func TestHeartBeat(t *testing.T) {
