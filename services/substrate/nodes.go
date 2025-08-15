@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/core/services/substrate"
 	counters "github.com/taubyte/tau/services/substrate/components/counters"
 	database "github.com/taubyte/tau/services/substrate/components/database"
 	http "github.com/taubyte/tau/services/substrate/components/http"
@@ -23,6 +24,10 @@ func attachNodesError(name string, err error) error {
 
 func (srv *Service) Verbose() bool {
 	return srv.verbose
+}
+
+func (srv *Service) AttachCounters(counter substrate.CounterService) {
+	srv.components.counters = counter
 }
 
 func (srv *Service) attachNodes(config *config.Node) (err error) {

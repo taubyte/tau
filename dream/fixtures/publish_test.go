@@ -11,7 +11,7 @@ import (
 	specs "github.com/taubyte/tau/pkg/specs/methods"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestUpdate(t *testing.T) {

@@ -17,8 +17,8 @@ func (srv *Service) setupStreamRoutes() {
 	srv.stream.Define("stats", srv.statsHandler)
 
 	// TODO: requires secret + maybe a handshare using project PSK
-	srv.stream.Define("push", srv.pushHandler)
-	srv.stream.Define("fetch", srv.fetchHandler)
+	srv.stream.Define("push", srv.PushHandler)
+	srv.stream.Define("fetch", srv.FetchHandler)
 	srv.stream.Define("lookup", srv.lookupHandler)
 	srv.stream.Define("list", srv.listHandler)
 }

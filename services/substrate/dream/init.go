@@ -5,6 +5,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/common"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/services/substrate"
 	"github.com/taubyte/tau/services/substrate/mocks/counters"
 )
 
@@ -15,12 +16,12 @@ func init() {
 }
 
 func createNodeService(u *dream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
-	service, err := New(u.Context(), common.NewDreamConfig(u, config))
+	service, err := substrate.New(u.Context(), common.NewDreamConfig(u, config))
 	if err != nil {
 		return nil, err
 	}
 
-	service.components.counters = counters.New(service)
+	service.AttachCounters(counters.New(service))
 
 	return service, nil
 }

@@ -5,6 +5,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/common"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/services/auth"
 )
 
 func init() {
@@ -14,5 +15,5 @@ func init() {
 }
 
 func createAuthService(u *dream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
-	return New(u.Context(), common.NewDreamConfig(u, config))
+	return auth.New(u.Context(), common.NewDreamConfig(u, config))
 }

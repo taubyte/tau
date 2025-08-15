@@ -1,6 +1,7 @@
-package auth
+package dream
 
 import (
+	"github.com/taubyte/tau/clients/p2p/auth"
 	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/p2p/peer"
@@ -15,5 +16,5 @@ func init() {
 }
 
 func createAuthClient(node peer.Node, config *common.ClientConfig) (common.Client, error) {
-	return New(node.Context(), node)
+	return auth.New(node.Context(), node)
 }

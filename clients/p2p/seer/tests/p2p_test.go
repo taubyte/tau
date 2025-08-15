@@ -6,8 +6,10 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	iface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/dream"
-	_ "github.com/taubyte/tau/services/seer"
+	_ "github.com/taubyte/tau/services/seer/dream"
 	"gotest.tools/v3/assert"
+
+	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
 )
 
 func TestSeerClient(t *testing.T) {

@@ -20,8 +20,9 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestSeer(t *testing.T) {

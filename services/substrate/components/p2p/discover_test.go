@@ -6,8 +6,8 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	_ "github.com/taubyte/tau/services/substrate"
 	"github.com/taubyte/tau/services/substrate/components/p2p"
+	_ "github.com/taubyte/tau/services/substrate/dream"
 	"gotest.tools/v3/assert"
 )
 

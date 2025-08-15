@@ -1,4 +1,4 @@
-package gateway
+package gateway_test
 
 import (
 	"bytes"
@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	"github.com/taubyte/utils/id"
 	"gotest.tools/v3/assert"
@@ -118,7 +119,7 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 		t.FailNow()
 	}
 
-	proxyPid := res.Header.Get(ProxyHeader)
+	proxyPid := res.Header.Get(gateway.ProxyHeader)
 	assert.Equal(t, proxyPid, firstSubstrate.Node().ID().String())
 
 	return

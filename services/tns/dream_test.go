@@ -1,4 +1,4 @@
-package tns
+package tns_test
 
 import (
 	"testing"
@@ -8,6 +8,9 @@ import (
 	"github.com/taubyte/tau/dream"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	"gotest.tools/v3/assert"
+
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestDreamDoubleClient(t *testing.T) {

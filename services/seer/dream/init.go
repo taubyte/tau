@@ -1,4 +1,4 @@
-package seer
+package dream
 
 import (
 	"fmt"
@@ -9,6 +9,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/common"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	seerSvr "github.com/taubyte/tau/services/seer"
 )
 
 func init() {
@@ -35,5 +36,5 @@ func createService(u *dream.Universe, config *iface.ServiceConfig) (iface.Servic
 		mockResolver = mockServer.Resolver()
 	}
 
-	return New(u.Context(), common.NewDreamConfig(u, config), Resolver(mockResolver))
+	return seerSvr.New(u.Context(), common.NewDreamConfig(u, config), seerSvr.Resolver(mockResolver))
 }

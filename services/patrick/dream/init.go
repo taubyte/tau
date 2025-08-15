@@ -1,4 +1,4 @@
-package service
+package dream
 
 import (
 	iface "github.com/taubyte/tau/core/common"
@@ -6,6 +6,7 @@ import (
 	"github.com/taubyte/tau/dream/common"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	servicesCommon "github.com/taubyte/tau/services/common"
+	patrick "github.com/taubyte/tau/services/patrick"
 )
 
 func init() {
@@ -29,5 +30,5 @@ func createPatrickService(u *dream.Universe, config *iface.ServiceConfig) (iface
 		}
 	}
 
-	return New(u.Context(), common.NewDreamConfig(u, config))
+	return patrick.New(u.Context(), common.NewDreamConfig(u, config))
 }

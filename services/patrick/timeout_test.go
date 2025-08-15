@@ -1,4 +1,4 @@
-package service
+package service_test
 
 import (
 	"testing"
@@ -7,6 +7,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	protocolCommon "github.com/taubyte/tau/services/common"
+	patrick "github.com/taubyte/tau/services/patrick"
 	"gotest.tools/v3/assert"
 )
 
@@ -39,8 +40,8 @@ func TestTimeout(t *testing.T) {
 		return
 	}
 
-	DefaultReAnnounceJobTime = 60 * time.Second
-	DefaultReAnnounceFailedJobsTime = 60 * time.Second
+	patrick.DefaultReAnnounceJobTime = 60 * time.Second
+	patrick.DefaultReAnnounceFailedJobsTime = 60 * time.Second
 
 	simple, err := u.Simple("client")
 	if err != nil {

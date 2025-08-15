@@ -1,6 +1,7 @@
-package patrick
+package dream
 
 import (
+	"github.com/taubyte/tau/clients/p2p/patrick"
 	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/p2p/peer"
@@ -15,5 +16,5 @@ func init() {
 }
 
 func createPatrickClient(node peer.Node, config *common.ClientConfig) (common.Client, error) {
-	return New(node.Context(), node)
+	return patrick.New(node.Context(), node)
 }

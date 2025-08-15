@@ -17,6 +17,8 @@ import (
 	peer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/common"
 	service "github.com/taubyte/tau/services/hoarder"
+
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 )
 
 func TestHoarderClient(t *testing.T) {
