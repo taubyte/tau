@@ -69,7 +69,6 @@ type Service struct {
 	hostUrl string
 
 	shape   string
-	odo     bool
 	devMode bool
 }
 

@@ -45,7 +45,7 @@ func (srv *oracleService) announceServiceHandler(ctx context.Context, conn strea
 		valid bool
 	)
 
-	if srv.odo {
+	if !srv.devMode {
 		id, valid, err = validateSignature(body)
 		if err != nil {
 			return nil, err
