@@ -30,8 +30,6 @@ type Client struct {
 	path string
 	tag  string
 
-	// Peer management is single-threaded inside discover() goroutine;
-	// other goroutines communicate via channels only.
 	activePeers map[peerCore.ID]*peerCore.AddrInfo
 
 	maxPeers    int
@@ -124,24 +122,6 @@ type stream struct {
 	peerCore.ID
 }
 
-type streamAsReadWriter struct{ io.ReadWriter }
-
-func (rw streamAsReadWriter) Read(p []byte) (int, error) {
-	n, err := rw.ReadWriter.Read(p)
-	if err == network.ErrReset {
-		err = io.EOF
-	}
-	return n, err
-}
-
-func (rw streamAsReadWriter) Write(p []byte) (int, error) {
-	n, err := rw.ReadWriter.Write(p)
-	if err == network.ErrReset {
-		err = io.ErrClosedPipe
-	}
-	return n, err
-}
-
 var (
 	DiscoveryLimit int = 512
 
@@ -159,8 +139,6 @@ var (
 
 func (c *Client) Context() context.Context { return c.ctx }
 
-// Close cancels the client context. The discover() goroutine will naturally exit
-// when the context is cancelled, so no explicit waiting is needed.
 func (c *Client) Close() {
 	c.ctxC()
 }
@@ -168,15 +146,13 @@ func (c *Client) Close() {
 func New(node peer.Node, path string, opts ...Option[Client]) (*Client, error) {
 	ctx, cancel := context.WithCancel(node.Context())
 	c := &Client{
-		ctx:          ctx,
-		ctxC:         cancel,
-		node:         node,
-		path:         path,
-		maxPeers:     DefaultMaxPeers,
-		maxParallel:  DefaultMaxParallel,
-		activePeers:  make(map[peerCore.ID]*peerCore.AddrInfo),
-		peerRequests: make(chan *peerRequest, DefaultMaxParallel),
-		cleanPeers:   make(chan peerCore.ID, DefaultMaxParallel),
+		ctx:         ctx,
+		ctxC:        cancel,
+		node:        node,
+		path:        path,
+		maxPeers:    DefaultMaxPeers,
+		maxParallel: DefaultMaxParallel,
+		activePeers: make(map[peerCore.ID]*peerCore.AddrInfo),
 	}
 
 	for _, opt := range opts {
@@ -185,6 +161,10 @@ func New(node peer.Node, path string, opts ...Option[Client]) (*Client, error) {
 			return nil, err
 		}
 	}
+
+	// Size internal queues based on configured parallelism
+	c.peerRequests = make(chan *peerRequest, c.maxParallel)
+	c.cleanPeers = make(chan peerCore.ID, c.maxParallel)
 
 	c.tag = fmt.Sprintf("/client/%p/%s", c, c.path)
 
@@ -255,7 +235,6 @@ func (c *Client) addPeer(p *peerCore.AddrInfo) {
 	c.activePeers[p.ID] = p
 	c.node.Peer().ConnManager().Protect(p.ID, c.tag)
 
-	// Fan-out to current pending peer requests without blocking.
 	kept := make([]*peerRequest, 0, len(c.peerFeeds))
 	for _, pr := range c.peerFeeds {
 		select {
@@ -270,7 +249,6 @@ func (c *Client) addPeer(p *peerCore.AddrInfo) {
 		case <-pr.ctx.Done():
 			close(pr.ch)
 		default:
-			// keep it; it might still need more later
 			kept = append(kept, pr)
 		}
 	}
@@ -278,7 +256,6 @@ func (c *Client) addPeer(p *peerCore.AddrInfo) {
 }
 
 func (c *Client) discover() {
-	// On exit, clean up protections and close any pending feed channels.
 	defer func() {
 		for pid := range c.activePeers {
 			c.cleanPeer(pid)
@@ -292,6 +269,8 @@ func (c *Client) discover() {
 	c.refreshFromPeerStore()
 	dpeers := c.discPeers()
 	discoverDone := false
+	// a never-ready channel to disable the discovery case when exhausted
+	dpeersWait := make(chan peerCore.AddrInfo)
 
 	for {
 		select {
@@ -301,10 +280,8 @@ func (c *Client) discover() {
 		case p, ok := <-dpeers:
 			if !ok {
 				discoverDone = true
-				// replace with inert channel so the select case doesn't spin
-				noop := make(chan peerCore.AddrInfo)
-				close(noop)
-				dpeers = noop
+				// replace with a never-ready channel so the select case doesn't spin
+				dpeers = dpeersWait
 				continue
 			}
 			c.addPeer(&p)
@@ -356,8 +333,6 @@ func (c *Client) openStream(pid peerCore.ID) (stream, error) {
 // or closed early if ctx/c.ctx is done.
 func (c *Client) peers(ctx context.Context, needs int) <-chan *peerCore.AddrInfo {
 	ch := make(chan *peerCore.AddrInfo, c.maxPeers)
-
-	// Never try to enqueue a peerRequest after client shutdown.
 	select {
 	case <-ctx.Done():
 		close(ch)
@@ -438,24 +413,23 @@ func (r *Request) Do() (<-chan *Response, error) {
 }
 
 func (r *Response) CloseRead() {
-	r.ReadWriter.(streamAsReadWriter).ReadWriter.(network.Stream).CloseRead()
+	r.ReadWriter.(network.Stream).CloseRead()
 }
 
 func (r *Response) CloseWrite() {
-	r.ReadWriter.(streamAsReadWriter).ReadWriter.(network.Stream).CloseWrite()
+	r.ReadWriter.(network.Stream).CloseWrite()
 }
 
 func (r *Response) Close() {
-	r.ReadWriter.(streamAsReadWriter).ReadWriter.(network.Stream).Reset()
+	r.ReadWriter.(network.Stream).Reset()
 }
 
 func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body command.Body) *Response {
 	cmd := command.New(cmdName, body)
-	rw := streamAsReadWriter{strm.Stream}
 
 	if err := strm.SetWriteDeadline(deadline); err != nil {
 		return &Response{
-			ReadWriter: rw,
+			ReadWriter: strm.Stream,
 			pid:        strm.ID,
 			err:        fmt.Errorf("setting write deadline failed with: %w", err),
 		}
@@ -464,7 +438,7 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 
 	if err := cmd.Encode(strm); err != nil {
 		return &Response{
-			ReadWriter: rw,
+			ReadWriter: strm.Stream,
 			pid:        strm.ID,
 			err:        fmt.Errorf("sending command `%s(%s)` failed with: %w", cmd.Command, c.path, err),
 		}
@@ -472,7 +446,7 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 
 	if err := strm.SetReadDeadline(deadline); err != nil {
 		return &Response{
-			ReadWriter: rw,
+			ReadWriter: strm.Stream,
 			pid:        strm.ID,
 			err:        fmt.Errorf("setting read deadline failed with: %w", err),
 		}
@@ -482,7 +456,7 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 	resp, err := cr.Decode(strm)
 	if err != nil {
 		return &Response{
-			ReadWriter: rw,
+			ReadWriter: strm.Stream,
 			pid:        strm.ID,
 			err:        fmt.Errorf("receive response of `%s(%s)` failed with: %w", cmd.Command, c.path, err),
 		}
@@ -490,21 +464,20 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 
 	if v, k := resp["error"]; k {
 		return &Response{
-			ReadWriter: rw,
+			ReadWriter: strm.Stream,
 			pid:        strm.ID,
 			err:        errors.New(fmt.Sprint(v)),
 		}
 	}
 
 	return &Response{
-		ReadWriter: rw,
+		ReadWriter: strm.Stream,
 		pid:        strm.ID,
 		Response:   resp,
 	}
 }
 
 func (c *Client) send(cmdName string, body command.Body, streams []stream, threshold int, timeout time.Duration) (<-chan *Response, error) {
-	// Check if client is closed using context
 	select {
 	case <-c.ctx.Done():
 		return nil, os.ErrClosed
@@ -586,9 +559,13 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 			go func(_strm stream) {
 				defer wg.Done()
 				select {
-				case responses <- c.sendTo(_strm, cmdDD, cmdName, body):
 				case <-ctx.Done():
-					// Context cancelled, don't send response
+					responses <- &Response{
+						ReadWriter: strm,
+						pid:        _strm.ID,
+						err:        ctx.Err(),
+					}
+				case responses <- c.sendTo(_strm, cmdDD, cmdName, body):
 				}
 			}(strm)
 		}
