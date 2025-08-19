@@ -214,10 +214,6 @@ github.com/envoyproxy/go-control-plane v0.9.1-0.20191026205805-5f8ba28d4473/go.m
 github.com/envoyproxy/protoc-gen-validate v0.1.0/go.mod h1:iSmxcyjqTsJpI2R4NaDN7+kN2VEUnK/pcBlmesArF7c=
 github.com/ethereum/go-ethereum v1.12.0 h1:bdnhLPtqETd4m3mS8BGMNvBTf36bO5bx/hxE2zljOa0=
 github.com/ethereum/go-ethereum v1.12.0/go.mod h1:/oo2X/dZLJjf2mJ6YT9wcWxa4nNJDBKDBU6sFIpx1Gs=
-github.com/extism/go-pdk v1.0.2 h1:UB7oTW3tw2zoMlsUdBEDAAbhQg9OudzgNeyCwQYZ730=
-github.com/extism/go-pdk v1.0.2/go.mod h1:Gz+LIU/YCKnKXhgge8yo5Yu1F/lbv7KtKFkiCSzW/P4=
-github.com/extism/go-pdk/wasi-reactor v0.0.0-20240408161339-095ac11ddc4e h1:4l5icoU4LgswJ213Q2rlo5Ue2LmEObKBrv6P8/dGhTE=
-github.com/extism/go-pdk/wasi-reactor v0.0.0-20240408161339-095ac11ddc4e/go.mod h1:WDu1fWWoFToXBPq+vRAnfFROFFdPayxGbiXf8ysq+no=
 github.com/fatih/color v1.13.0/go.mod h1:kLAiJbzzSOZDVNGyDpeOxJ47H46qBXwg5ILebYFFOfk=
 github.com/fatih/color v1.16.0 h1:zmkK9Ngbjj+K0yRhTVONQh1p/HknKYSlNT+vZCzyokM=
 github.com/fatih/color v1.16.0/go.mod h1:fL2Sau1YI5c0pdGEVCbKQbLXB6edEj1ZgiY4NijnWvE=
