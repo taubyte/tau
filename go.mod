@@ -61,11 +61,10 @@ require (
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2
 	github.com/briandowns/spinner v1.23.0
 	github.com/c-bata/go-prompt v0.2.6
+	github.com/cockroachdb/pebble v0.0.0-20231218155426-48b54c29d8fe
 	github.com/cockroachdb/pebble/v2 v2.0.3
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/ethereum/go-ethereum v1.12.0
-	github.com/extism/go-pdk v1.0.2
-	github.com/extism/go-pdk/wasi-reactor v0.0.0-20240408161339-095ac11ddc4e
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/google/go-github/v53 v53.2.0
 	github.com/google/go-github/v71 v71.0.0
@@ -120,7 +119,6 @@ require (
 	github.com/cockroachdb/errors v1.11.3 // indirect
 	github.com/cockroachdb/fifo v0.0.0-20240606204812-0bbfbd93a7ce // indirect
 	github.com/cockroachdb/logtags v0.0.0-20230118201751-21c54148d20b // indirect
-	github.com/cockroachdb/pebble v0.0.0-20231218155426-48b54c29d8fe // indirect
 	github.com/cockroachdb/redact v1.1.5 // indirect
 	github.com/cockroachdb/swiss v0.0.0-20250327203710-2932b022f6df // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
