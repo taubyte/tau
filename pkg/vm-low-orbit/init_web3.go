@@ -23,6 +23,9 @@ import (
 	"github.com/taubyte/tau/pkg/vm-low-orbit/helpers"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/http/client"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/i2mv/fifo"
+	vmpubsub "github.com/taubyte/tau/pkg/vm-low-orbit/pubsub"
+	vmstorage "github.com/taubyte/tau/pkg/vm-low-orbit/storage"
+
 	"github.com/taubyte/tau/pkg/vm-low-orbit/i2mv/memoryView"
 	ipfsClient "github.com/taubyte/tau/pkg/vm-low-orbit/ipfs/client"
 	p2pClient "github.com/taubyte/tau/pkg/vm-low-orbit/p2p"
@@ -91,8 +94,8 @@ func (p *plugin) New(instance vm.Instance) (vm.PluginInstance, error) {
 			ethereum.New(instance, p.pubsubNode, helperMethods),
 			client.New(instance, helperMethods),
 			ipfsClient.New(instance, p.ipfsNode, helperMethods),
-			pubsub.New(instance, p.pubsubNode, helperMethods),
-			storage.New(instance, p.storageNode, helperMethods),
+			vmpubsub.New(instance, p.pubsubNode, helperMethods),
+			vmstorage.New(instance, p.storageNode, helperMethods),
 			kvdb.New(instance, p.databaseNode, helperMethods),
 			p2pClient.New(instance, p.p2pNode, helperMethods),
 			dns.New(instance, helperMethods),
