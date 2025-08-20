@@ -5,15 +5,10 @@ import (
 
 	"github.com/taubyte/tau/core/kvdb"
 	iface "github.com/taubyte/tau/core/services/substrate"
-	databaseIface "github.com/taubyte/tau/core/services/substrate/components/database"
-	ipfsIface "github.com/taubyte/tau/core/services/substrate/components/ipfs"
 	p2pIface "github.com/taubyte/tau/core/services/substrate/components/p2p"
-	pubSubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
-	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/core/vm"
 	streams "github.com/taubyte/tau/p2p/streams/service"
-	httpIface "github.com/taubyte/tau/services/substrate/components/http"
 
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/peer"
@@ -47,16 +42,6 @@ type Service struct {
 }
 
 // TODO: All of these components interfaces can be removed
-type components struct {
-	http     *httpIface.Service
-	pubsub   pubSubIface.Service
-	ipfs     ipfsIface.Service
-	database databaseIface.Service
-	storage  storageIface.Service
-	p2p      p2pIface.Service
-	counters iface.CounterService
-	smartops iface.SmartOpsService
-}
 
 func (n *Service) Context() context.Context {
 	return n.ctx

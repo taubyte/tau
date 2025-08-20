@@ -86,13 +86,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		return nil, fmt.Errorf("attaching node services failed with: %w", err)
 	}
 
-	if err = tbPlugins.Initialize(ctx,
-		tbPlugins.PubsubNode(srv.components.pubsub),
-		tbPlugins.IpfsNode(srv.components.ipfs),
-		tbPlugins.DatabaseNode(srv.components.database),
-		tbPlugins.StorageNode(srv.components.storage),
-		tbPlugins.P2PNode(srv.components.p2p),
-	); err != nil {
+	if err = tbPlugins.Initialize(ctx, srv.components.config()...); err != nil {
 		return nil, fmt.Errorf("initializing Taubyte plugins failed with: %w", err)
 	}
 

@@ -561,7 +561,7 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 				select {
 				case <-ctx.Done():
 					responses <- &Response{
-						ReadWriter: strm,
+						ReadWriter: strm.Stream,
 						pid:        _strm.ID,
 						err:        ctx.Err(),
 					}
