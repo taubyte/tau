@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/config"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 	"gopkg.in/yaml.v3"
 	"gotest.tools/v3/assert"
 )

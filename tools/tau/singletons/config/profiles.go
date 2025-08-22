@@ -1,7 +1,7 @@
 package config
 
 import (
-	"github.com/taubyte/go-seer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 	"github.com/taubyte/tau/tools/tau/i18n"
 	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/singletons"
 )

@@ -1,8 +1,8 @@
 package basic
 
 import (
-	"github.com/taubyte/go-seer"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 // Getter represents the methods which are common to all resources

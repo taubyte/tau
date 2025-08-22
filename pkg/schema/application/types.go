@@ -1,9 +1,9 @@
 package application
 
 import (
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/pkg/schema/basic"
 	"github.com/taubyte/tau/pkg/schema/pretty"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 type Application interface {

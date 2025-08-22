@@ -3,8 +3,8 @@ package project
 import (
 	"fmt"
 
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/pkg/schema/common"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 func (p *project) WrapError(format string, i ...any) error {

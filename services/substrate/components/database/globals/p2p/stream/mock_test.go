@@ -13,7 +13,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	http "github.com/taubyte/tau/pkg/http"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	mh "github.com/taubyte/utils/multihash"
+	mh "github.com/taubyte/tau/utils/multihash"
 )
 
 // TODO: Needs to create real mocks

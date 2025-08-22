@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/p2p/streams/command"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 // https://stackoverflow.com/questions/39391437/merge-two-or-more-mapstringinterface-types-into-one-in-golang

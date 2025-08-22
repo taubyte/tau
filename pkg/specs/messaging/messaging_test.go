@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/taubyte/tau/pkg/specs/common"
-	multihash "github.com/taubyte/utils/multihash"
+	multihash "github.com/taubyte/tau/utils/multihash"
 )
 
 var (

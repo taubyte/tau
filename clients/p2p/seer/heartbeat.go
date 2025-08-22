@@ -8,7 +8,7 @@ import (
 	iface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/p2p/streams/command/response"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId string, signature []byte) (response.Response, error) {

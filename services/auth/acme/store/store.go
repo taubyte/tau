@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	client "github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
-	maps "github.com/taubyte/utils/maps"
+	maps "github.com/taubyte/tau/utils/maps"
 	"golang.org/x/crypto/acme/autocert"
 
 	protocolCommon "github.com/taubyte/tau/services/common"

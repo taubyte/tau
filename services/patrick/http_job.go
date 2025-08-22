@@ -14,7 +14,7 @@ import (
 	http "github.com/taubyte/tau/pkg/http"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 type project struct {

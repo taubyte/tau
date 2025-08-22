@@ -9,7 +9,7 @@ import (
 
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/tools/tau/constants"
-	"github.com/taubyte/utils/uri"
+	"github.com/taubyte/tau/utils/uri"
 )
 
 func ValidateCertificateKeyPairAndHostname(domain *structureSpec.Domain) ([]byte, []byte, error) {

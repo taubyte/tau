@@ -16,7 +16,7 @@ import (
 	http "github.com/taubyte/tau/pkg/http"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"gopkg.in/go-playground/webhooks.v5/github"
 
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"

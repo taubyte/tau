@@ -1,7 +1,7 @@
 package basic
 
 import (
-	"github.com/taubyte/go-seer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 // Resource contains the default methods, they can be overridden on the resource itself or

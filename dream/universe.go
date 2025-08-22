@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/utils"
 
 	"github.com/taubyte/tau/pkg/kvdb"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 // create or fetch a universe

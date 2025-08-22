@@ -1,7 +1,6 @@
 package project
 
 import (
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/pkg/schema/application"
 	"github.com/taubyte/tau/pkg/schema/basic"
 	"github.com/taubyte/tau/pkg/schema/databases"
@@ -14,6 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/schema/smartops"
 	"github.com/taubyte/tau/pkg/schema/storages"
 	"github.com/taubyte/tau/pkg/schema/website"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 type Project interface {

@@ -16,7 +16,7 @@ import (
 	resolver "github.com/taubyte/tau/pkg/vm/resolvers/taubyte"
 	service "github.com/taubyte/tau/pkg/vm/service/wazero"
 	source "github.com/taubyte/tau/pkg/vm/sources/taubyte"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"gotest.tools/v3/assert"
 )
 

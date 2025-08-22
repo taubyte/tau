@@ -1,6 +1,6 @@
 package config
 
-import seer "github.com/taubyte/go-seer"
+import seer "github.com/taubyte/tau/pkg/yaseer"
 
 type tauConfig struct {
 	root *seer.Seer

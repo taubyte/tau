@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	"github.com/taubyte/tau/pkg/specs/common"
-	multihash "github.com/taubyte/utils/multihash"
+	multihash "github.com/taubyte/tau/utils/multihash"
 )
 
 func GetTNSAssetPath(projectId, resourceId, branch string) (*common.TnsPath, error) {

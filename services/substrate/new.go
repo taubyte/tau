@@ -12,7 +12,6 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/shirou/gopsutil/cpu"
-	"github.com/taubyte/go-seer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/vm"
@@ -20,6 +19,7 @@ import (
 	tbPlugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	smartopsPlugins "github.com/taubyte/tau/pkg/vm-ops-orbit"
 	orbit "github.com/taubyte/tau/pkg/vm-orbit/satellite/vm"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 

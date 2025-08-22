@@ -11,7 +11,7 @@ import (
 
 	commonTest "github.com/taubyte/tau/tools/tau/common/test"
 	"github.com/taubyte/tau/tools/tau/singletons/session"
-	"github.com/taubyte/utils/x509"
+	"github.com/taubyte/tau/utils/x509"
 )
 
 func basicGetConfigString(profileName string, projectName string) func(dir string) []byte {

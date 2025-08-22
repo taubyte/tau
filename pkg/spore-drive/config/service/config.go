@@ -8,7 +8,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/spore-drive/config"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 func (s *Service) Lookup(id string) (config.Parser, error) {

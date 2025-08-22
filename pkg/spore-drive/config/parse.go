@@ -2,7 +2,7 @@ package config
 
 import (
 	"github.com/spf13/afero"
-	"github.com/taubyte/go-seer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 type Parser interface {

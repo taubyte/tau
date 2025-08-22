@@ -6,7 +6,7 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	iface "github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/p2p/streams/command"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func (c *Client) Lock(jid string, eta uint32) error {
@@ -28,10 +28,7 @@ func (c *Client) IsLocked(jid string) (bool, error) {
 		return false, err
 	}
 
-	by, err := maps.String(resp, "locked-by")
-	if err != nil {
-		return false, err
-	}
+	by, _ := maps.String(resp, "locked-by")
 
 	return locked && (by == c.node.ID().String()), nil
 }

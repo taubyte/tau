@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 	_ "github.com/taubyte/tau/services/seer/dream"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"

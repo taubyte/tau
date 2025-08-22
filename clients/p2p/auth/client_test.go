@@ -14,7 +14,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 	"gotest.tools/v3/assert"
 
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 func TestAuthClient(t *testing.T) {

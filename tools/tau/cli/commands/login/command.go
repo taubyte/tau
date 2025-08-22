@@ -9,7 +9,7 @@ import (
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	loginPrompts "github.com/taubyte/tau/tools/tau/prompts/login"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 	"github.com/urfave/cli/v2"
 )
 

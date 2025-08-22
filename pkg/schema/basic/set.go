@@ -1,8 +1,6 @@
 package basic
 
-import (
-	"github.com/taubyte/go-seer"
-)
+import seer "github.com/taubyte/tau/pkg/yaseer"
 
 // Set runs provided ops and writes the the config if sync is true, returns an error
 func (r Resource) Set(sync bool, ops ...Op) (err error) {

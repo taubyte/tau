@@ -1,6 +1,6 @@
 package common
 
-import "github.com/taubyte/utils/path"
+import "github.com/taubyte/tau/utils/path"
 
 func NewTnsPath(value []string) *TnsPath {
 	return &TnsPath{value: value}

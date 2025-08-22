@@ -12,7 +12,7 @@ import (
 	authClient "github.com/taubyte/tau/clients/p2p/auth"
 	authIface "github.com/taubyte/tau/core/services/auth"
 	iface "github.com/taubyte/tau/core/services/patrick"
-	"github.com/taubyte/utils/fs/dir"
+	"github.com/taubyte/tau/utils/fs/dir"
 	"golang.org/x/net/context"
 )
 

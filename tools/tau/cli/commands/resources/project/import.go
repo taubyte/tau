@@ -17,7 +17,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/prompts"
 	authClient "github.com/taubyte/tau/tools/tau/singletons/auth_client"
 	"github.com/taubyte/tau/tools/tau/singletons/session"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 	"github.com/urfave/cli/v2"
 )
 

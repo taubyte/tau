@@ -11,7 +11,7 @@ import (
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	servicesCommon "github.com/taubyte/tau/services/common"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 
 	"github.com/taubyte/tau/dream"
 
