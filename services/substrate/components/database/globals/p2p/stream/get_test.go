@@ -6,7 +6,7 @@ import (
 
 	"github.com/taubyte/tau/core/services/substrate/components/database"
 	"github.com/taubyte/tau/p2p/streams/command"
-	mh "github.com/taubyte/utils/multihash"
+	mh "github.com/taubyte/tau/utils/multihash"
 )
 
 func TestGetHandler(t *testing.T) {

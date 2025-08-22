@@ -21,7 +21,7 @@ import (
 	_ "github.com/taubyte/tau/services/seer/dream"
 	_ "github.com/taubyte/tau/services/substrate/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"gotest.tools/v3/assert"
 )
 

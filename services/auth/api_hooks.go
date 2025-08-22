@@ -11,7 +11,7 @@ import (
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/auth/repositories"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 /******* HOOKS ********/

@@ -3,7 +3,7 @@ package common
 import (
 	"fmt"
 
-	multihash "github.com/taubyte/utils/multihash"
+	multihash "github.com/taubyte/tau/utils/multihash"
 )
 
 func (m *MatchDefinition) Path() string {

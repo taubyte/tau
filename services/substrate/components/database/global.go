@@ -4,7 +4,7 @@ import (
 	iface "github.com/taubyte/tau/core/services/substrate/components/database"
 	"github.com/taubyte/tau/services/substrate/components/database/common"
 	globals "github.com/taubyte/tau/services/substrate/components/database/globals"
-	mh "github.com/taubyte/utils/multihash"
+	mh "github.com/taubyte/tau/utils/multihash"
 )
 
 func (s *Service) Global(projectID string) (db iface.Database, err error) {

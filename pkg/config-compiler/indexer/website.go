@@ -8,7 +8,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/specs/methods"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func Websites(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

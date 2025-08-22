@@ -11,7 +11,7 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func (srv *Service) setupStreamRoutes() {

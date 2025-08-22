@@ -5,7 +5,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
-	multihash "github.com/taubyte/utils/multihash"
+	multihash "github.com/taubyte/tau/utils/multihash"
 )
 
 func Tns() *tnsHelper {

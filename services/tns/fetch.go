@@ -7,7 +7,7 @@ import (
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 
 	"github.com/taubyte/tau/p2p/streams"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 	// TODO: use https://github.com/polydawn/refmt/cbor to minimize size (used by github.com/ipfs/go-ipld-cbor
 )
 

@@ -15,7 +15,7 @@ import (
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/extract"
 	"github.com/taubyte/tau/pkg/specs/methods"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 
 	srvCommon "github.com/taubyte/tau/services/common"
 )

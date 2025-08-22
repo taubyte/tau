@@ -11,7 +11,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	"github.com/taubyte/tau/services/substrate/components/storage/common"
-	pathUtil "github.com/taubyte/utils/path"
+	pathUtil "github.com/taubyte/tau/utils/path"
 
 	"github.com/alecthomas/units"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"

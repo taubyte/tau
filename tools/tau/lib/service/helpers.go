@@ -5,7 +5,7 @@ import (
 	"github.com/taubyte/tau/pkg/schema/services"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	applicationLib "github.com/taubyte/tau/tools/tau/lib/application"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 type getter struct {

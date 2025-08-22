@@ -17,7 +17,7 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	"github.com/taubyte/tau/pkg/git"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 	"gotest.tools/v3/assert"
 )
 

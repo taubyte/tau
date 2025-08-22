@@ -15,7 +15,7 @@ import (
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
 	_ "github.com/taubyte/tau/services/tns/dream"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 	"gotest.tools/v3/assert"
 )
 

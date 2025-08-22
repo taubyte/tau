@@ -14,7 +14,7 @@ import (
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"gotest.tools/v3/assert"
 )
 

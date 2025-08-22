@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/pkg/spore-drive/drive"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 func (s *Service) newDrive(configId string, opts []drive.Option) (*driveInstance, error) {

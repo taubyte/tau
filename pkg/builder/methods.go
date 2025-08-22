@@ -11,7 +11,7 @@ import (
 	ci "github.com/taubyte/go-simple-container"
 	"github.com/taubyte/tau/core/builders"
 	specs "github.com/taubyte/tau/pkg/specs/builders"
-	"github.com/taubyte/utils/multihash"
+	"github.com/taubyte/tau/utils/multihash"
 )
 
 // setTarball will check if a docker dir exists, and if so tarball the dockerDir

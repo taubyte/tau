@@ -9,7 +9,6 @@ require (
 	github.com/fxamacker/cbor/v2 v2.8.0
 	github.com/go-git/go-git/v5 v5.4.2
 	github.com/golang-jwt/jwt/v5 v5.2.2
-	github.com/google/go-github/v32 v32.1.0 // indirect
 	github.com/gorilla/websocket v1.5.3
 	github.com/h2non/filetype v1.1.3
 	github.com/hsanjuan/ipfs-lite v1.8.4
@@ -35,10 +34,7 @@ require (
 	github.com/taubyte/domain-validation v1.0.1
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
-	github.com/taubyte/go-seer v1.0.8
 	github.com/taubyte/go-simple-container v0.4.5
-	github.com/taubyte/go-simple-git v0.2.5 // indirect
-	github.com/taubyte/utils v0.1.7
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/zap v1.27.0
 	go4.org v0.0.0-20230225012048-214862532bf5
@@ -69,12 +65,14 @@ require (
 	github.com/google/go-github/v53 v53.2.0
 	github.com/google/go-github/v71 v71.0.0
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
+	github.com/google/uuid v1.6.0
 	github.com/gookit/config/v2 v2.2.3
 	github.com/gorilla/mux v1.8.1
 	github.com/hashicorp/go-plugin v1.4.10
 	github.com/ipfs/boxo v0.29.1
 	github.com/ipfs/go-ds-pebble v0.5.0
 	github.com/ipfs/go-ipld-format v0.6.0
+	github.com/ipsn/go-ipfs v0.0.0-20190407150747-8b9b72514244
 	github.com/jarcoal/httpmock v1.3.1
 	github.com/libp2p/go-libp2p-kad-dht v0.30.2
 	github.com/libp2p/go-libp2p-record v0.3.1
@@ -102,6 +100,7 @@ require (
 	atomicgo.dev/cursor v0.2.0 // indirect
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	atomicgo.dev/schedule v0.0.2 // indirect
+	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/DataDog/zstd v1.5.6-0.20230824185856-869dae002e5e // indirect
 	github.com/Jorropo/jsync v1.0.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -166,7 +165,6 @@ require (
 	github.com/google/go-querystring v1.1.0 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
 	github.com/google/pprof v0.0.0-20250208200701-d0013a598941 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gookit/color v1.5.3 // indirect
 	github.com/gookit/goutil v0.6.10 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
@@ -191,7 +189,6 @@ require (
 	github.com/ipfs/go-peertaskqueue v0.8.2 // indirect
 	github.com/ipld/go-codec-dagpb v1.6.0 // indirect
 	github.com/ipld/go-ipld-prime v0.21.0 // indirect
-	github.com/ipsn/go-ipfs v0.0.0-20190407150747-8b9b72514244 // indirect
 	github.com/jackpal/go-nat-pmp v1.0.2 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/jbenet/go-temp-err-catcher v0.1.0 // indirect
@@ -282,7 +279,6 @@ require (
 	github.com/stretchr/objx v0.5.2 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20220721030215-126854af5e6d // indirect
 	github.com/taubyte/go-sdk-symbols v0.2.7 // indirect
-	github.com/taubyte/go-specs v0.10.5 // indirect
 	github.com/tklauser/go-sysconf v0.3.11 // indirect
 	github.com/tklauser/numcpus v0.6.0 // indirect
 	github.com/whyrusleeping/chunker v0.0.0-20181014151217-fe64bd25879f // indirect

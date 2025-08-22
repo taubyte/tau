@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/structure"
 	"github.com/taubyte/tau/services/substrate/runtime/cache"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 )
 
 var (

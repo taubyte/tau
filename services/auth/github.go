@@ -18,7 +18,7 @@ import (
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/repositories"
 
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 // ref: https://github.com/keybase/bot-sshca/blob/master/src/keybaseca/sshutils/generate.go#L53

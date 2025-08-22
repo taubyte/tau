@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	specs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/tools/dream/cli/common"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 	"github.com/urfave/cli/v2"
 )
 

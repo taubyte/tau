@@ -8,8 +8,8 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/core/kvdb"
-	"github.com/taubyte/utils/maps"
-	"github.com/taubyte/utils/network"
+	"github.com/taubyte/tau/utils/maps"
+	"github.com/taubyte/tau/utils/network"
 )
 
 type Data map[string]interface{}

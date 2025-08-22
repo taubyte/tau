@@ -4,7 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	seer "github.com/taubyte/go-seer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 	"github.com/taubyte/tau/tools/tau/constants"
 
 	// Importing to run the common initialization

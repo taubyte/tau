@@ -19,7 +19,7 @@ import (
 	http "github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/http/function"
 	"github.com/taubyte/tau/services/substrate/components/http/website"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func (s *Service) startStream() (err error) {

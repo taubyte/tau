@@ -14,7 +14,7 @@ import (
 	domainLib "github.com/taubyte/tau/tools/tau/lib/domain"
 
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"github.com/urfave/cli/v2"
 )
 

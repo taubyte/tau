@@ -13,7 +13,7 @@ import (
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {

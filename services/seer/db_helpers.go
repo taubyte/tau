@@ -8,7 +8,7 @@ import (
 	"github.com/ipfs/go-datastore/query"
 	"github.com/libp2p/go-libp2p/core/peer"
 	iface "github.com/taubyte/tau/core/services/seer"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func (h *dnsHandler) getServiceIpWithCache(ctx context.Context, proto string) ([]string, error) {

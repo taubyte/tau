@@ -8,7 +8,7 @@ import (
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 
 	"github.com/taubyte/tau/p2p/streams"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func (srv *Service) statsHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {

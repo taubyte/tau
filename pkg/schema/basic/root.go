@@ -1,8 +1,6 @@
 package basic
 
-import (
-	"github.com/taubyte/go-seer"
-)
+import seer "github.com/taubyte/tau/pkg/yaseer"
 
 // Can be overridden
 func (r Resource) config() *seer.Query {

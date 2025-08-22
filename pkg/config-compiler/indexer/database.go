@@ -6,7 +6,7 @@ import (
 
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	databaseSpec "github.com/taubyte/tau/pkg/specs/database"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func Databases(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

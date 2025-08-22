@@ -11,7 +11,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/runtime/cache"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"

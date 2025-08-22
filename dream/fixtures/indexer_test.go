@@ -9,7 +9,7 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	testFixtures "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	maps "github.com/taubyte/utils/maps"
+	maps "github.com/taubyte/tau/utils/maps"
 	"gotest.tools/v3/assert"
 )
 

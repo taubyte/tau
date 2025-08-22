@@ -3,8 +3,8 @@ package website
 import (
 	"fmt"
 
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/pkg/schema/common"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 func (w *website) WrapError(format string, i ...any) error {

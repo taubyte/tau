@@ -18,7 +18,7 @@ import (
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/jobs"
-	"github.com/taubyte/utils/bundle"
+	"github.com/taubyte/tau/utils/bundle"
 )
 
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)

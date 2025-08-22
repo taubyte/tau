@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/services/substrate/components/structure"
 
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
-	multihash "github.com/taubyte/utils/multihash"
+	multihash "github.com/taubyte/tau/utils/multihash"
 )
 
 func TestSocketLookup(t *testing.T) {

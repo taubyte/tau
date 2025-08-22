@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/specs/common"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 )
 
 func HttpPath(fqdn string, resourceType common.PathVariable) (*common.TnsPath, error) {

@@ -7,7 +7,7 @@ import (
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
 	"github.com/taubyte/tau/pkg/specs/methods"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func Libraries(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {
