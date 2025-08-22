@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/mitchellh/mapstructure"
 	appLib "github.com/taubyte/tau/pkg/schema/application"
+	"github.com/taubyte/tau/utils/mapstructure"
 )
 
 type AppStruct struct {

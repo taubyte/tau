@@ -6,9 +6,6 @@ import (
 
 	seer "github.com/taubyte/tau/pkg/yaseer"
 	"github.com/taubyte/tau/tools/tau/constants"
-
-	// Importing to run the common initialization
-	_ "github.com/taubyte/tau/tools/tau/singletons/common"
 )
 
 var _config *tauConfig

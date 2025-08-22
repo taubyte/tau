@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/mitchellh/mapstructure"
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/streams"
@@ -16,6 +15,7 @@ import (
 	"github.com/taubyte/tau/services/substrate/components/p2p/common"
 	counter "github.com/taubyte/tau/services/substrate/runtime/counter"
 	"github.com/taubyte/tau/services/substrate/runtime/lookup"
+	"github.com/taubyte/tau/utils/mapstructure"
 )
 
 type commandService struct {

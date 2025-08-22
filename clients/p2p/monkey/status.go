@@ -3,9 +3,9 @@ package monkey
 import (
 	"fmt"
 
-	"github.com/mitchellh/mapstructure"
 	"github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/utils/mapstructure"
 )
 
 func (c *Client) Status(jid string) (*monkey.StatusResponse, error) {

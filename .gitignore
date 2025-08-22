@@ -177,11 +177,8 @@ celerybeat.pid
 # Environments
 .env
 .venv
-env/
 venv/
 ENV/
-env.bak/
-venv.bak/
 
 # Spyder project settings
 .spyderproject
@@ -206,3 +203,4 @@ pkg/spore-drive/clients/py/example/config/
 pkg/spore-drive/clients/py/example/hosts.csv
 pkg/spore-drive/clients/py/spore_drive/bin/
 tools/spore-drive/service/service
+

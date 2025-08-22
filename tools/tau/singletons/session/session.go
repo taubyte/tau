@@ -5,7 +5,6 @@ import (
 
 	// Importing to run the common initialization
 	seer "github.com/taubyte/tau/pkg/yaseer"
-	_ "github.com/taubyte/tau/tools/tau/singletons/common"
 )
 
 func getOrCreateSession() *tauSession {
