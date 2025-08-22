@@ -14,7 +14,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	"github.com/taubyte/tau/pkg/vm/backend/errors"
 	resolv "github.com/taubyte/tau/pkg/vm/resolvers/taubyte"
-	"go4.org/readerutil"
+	"github.com/taubyte/tau/utils/readerutil"
 )
 
 func New(node peer.Node) vm.Backend {

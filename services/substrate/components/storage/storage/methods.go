@@ -16,7 +16,7 @@ import (
 	"github.com/alecthomas/units"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
 	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
-	readerUtils "go4.org/readerutil"
+	readerUtils "github.com/taubyte/tau/utils/readerutil"
 )
 
 func (s *Store) Used(ctx context.Context) (used int, err error) {

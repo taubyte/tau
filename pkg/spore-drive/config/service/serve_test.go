@@ -20,7 +20,7 @@ import (
 	"github.com/taubyte/tau/pkg/spore-drive/config/fixtures"
 	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
 	pbconnect "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1/configv1connect"
-	"go4.org/readerutil"
+	"github.com/taubyte/tau/utils/readerutil"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 	"gotest.tools/v3/assert"

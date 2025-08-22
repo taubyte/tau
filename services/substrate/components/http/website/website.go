@@ -18,7 +18,7 @@ import (
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
-	"go4.org/readerutil"
+	"github.com/taubyte/tau/utils/readerutil"
 )
 
 func (w *Website) Provision() (web httpComp.Serviceable, err error) {

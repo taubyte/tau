@@ -21,7 +21,7 @@ import (
 	"github.com/spf13/afero/zipfs"
 	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
 	pbconnect "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1/configv1connect"
-	"go4.org/readerutil"
+	"github.com/taubyte/tau/utils/readerutil"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
