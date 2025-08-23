@@ -1,7 +1,6 @@
 package basic
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -30,7 +29,7 @@ func (s *Service) handleRequest(req *request.Request, vars *service.Variables, s
 	}()
 
 	if err = ctx.HandleWith(handler); err != nil {
-		logger.Error(fmt.Errorf("calling %s failed with %v", req.HttpRequest.URL, err))
+		logger.Errorf("calling %s failed with %v", req.HttpRequest.URL, err)
 	}
 
 	logger.Debugf("%s | %v", string(req.HttpRequest.RequestURI), ctx.Variables())

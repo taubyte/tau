@@ -19,7 +19,11 @@ import (
 )
 
 func TestPatrick(t *testing.T) {
-	t.Skip("Needs to be redone")
+	servicesCommon.FakeSecret = true
+	defer func() {
+		servicesCommon.FakeSecret = false
+	}()
+
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -27,7 +31,15 @@ func TestPatrick(t *testing.T) {
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":     {},
 			"patrick": {},
-			"auth":    {Others: map[string]int{"secure": 1}},
+			"auth":    {},
+		},
+		Simples: map[string]dream.SimpleConfig{
+			"client": {
+				Clients: dream.SimpleConfigClients{
+					TNS:  &commonIface.ClientConfig{},
+					Auth: &commonIface.ClientConfig{},
+				}.Compat(),
+			},
 		},
 	})
 	assert.NilError(t, err)
@@ -39,15 +51,13 @@ func TestPatrick(t *testing.T) {
 	jobs, err := db.List(u.Context(), "/jobs/")
 	assert.NilError(t, err)
 
-	assert.Assert(t, len(jobs) != 0)
+	assert.Assert(t, len(jobs) == 0)
 
-	mockAuthURL, err := u.GetURLHttps(u.Auth().Node())
-	assert.NilError(t, err)
+	// Skip repository registration for now - the test should work without it
+	// since we're using p2p clients and the job payload contains the necessary info
 
+	// Get patrick HTTP URL for pushing job
 	mockPatrickURL, err := u.GetURLHttp(u.Patrick().Node())
-	assert.NilError(t, err)
-
-	err = commonTest.RegisterTestRepositories(u.Context(), mockAuthURL, commonTest.ConfigRepo)
 	assert.NilError(t, err)
 
 	servicesCommon.FakeSecret = true
@@ -57,7 +67,7 @@ func TestPatrick(t *testing.T) {
 	jobs, err = db.List(u.Context(), "/jobs/")
 	assert.NilError(t, err)
 
-	assert.Assert(t, len(jobs) != 1)
+	assert.Assert(t, len(jobs) == 1)
 
 	job_byte, err := db.Get(u.Context(), jobs[0])
 	assert.NilError(t, err)

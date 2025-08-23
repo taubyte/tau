@@ -202,6 +202,10 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 	return nil, nil
 }
 
+// getJob retrieves a job from a specific location.
+// Note: Due to the CRDT nature of the KV store, clients should check all locations
+// (/jobs/, /archive/jobs/, /locked/jobs/) to get the complete picture of a job's state.
+// The monkey's random sleep before confirming jobs provides time for CRDT convergence.
 func (srv *PatrickService) getJob(ctx context.Context, loc string, jid string) (job *patrick.Job, err error) {
 	jobByte, err := srv.db.Get(ctx, loc+jid)
 	if err != nil {

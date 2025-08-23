@@ -177,49 +177,43 @@ func (p *PatrickService) unlockHandler(ctx context.Context, jid string) (cr.Resp
 
 func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log map[string]string) error {
 	// Check if job was moved to archive jobs
-	if _, err := p.getJob(ctx, "/archive/jobs/", jid); err != nil {
-		job, err := p.getJob(ctx, "/jobs/", jid)
+	if _, err := p.getJob(ctx, "/archive/jobs/", jid); err == nil {
+		// Job is already archived, nothing to do
+		return nil
+	}
+
+	// Job is not archived, get it from active jobs
+	job, err := p.getJob(ctx, "/jobs/", jid)
+	if err != nil {
+		return fmt.Errorf("failed finding job %s in timeoutHandler with %v", jid, err)
+	}
+
+	if job.Attempt == servicesCommon.MaxJobAttempts {
+		// Job has exceeded max attempts - mark as failed and archive
+		job.Status = commonIface.JobStatusFailed
+		job.Logs = cid_log
+
+		jobData, err := cbor.Marshal(job)
 		if err != nil {
-			return fmt.Errorf("failed finding job %s in timeoutHandler with %v", jid, err)
+			return fmt.Errorf("marshal in timeoutHandler error: %w", err)
 		}
 
-		if job.Attempt == servicesCommon.MaxJobAttempts {
-			job.Status = commonIface.JobStatusFailed
-			job.Logs = cid_log
-
-			jobData, err := cbor.Marshal(job)
-			if err != nil {
-				return fmt.Errorf("marshal in updateStatus error: %w", err)
-			}
-
-			err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData)
-			if err != nil {
-				return fmt.Errorf("failed put in timeoutHandler with %w", err)
-			}
-
-			err = p.deleteJob(ctx, []string{"/locked/jobs/", "/jobs/"}, jid)
-			if err != nil {
-				return fmt.Errorf("failed delete in timeoutHandler with %w", err)
-			}
-
-			return nil
+		// Put in archive - CRDT will handle consistency
+		if err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData); err != nil {
+			return fmt.Errorf("failed put in timeoutHandler with %w", err)
 		}
-
-		// Update attempt and timestamp and status
+	} else {
+		// Job can be retried - update attempt and timestamp and status
 		job.Attempt++
 		job.Timestamp = time.Now().Unix()
 		job.Status = commonIface.JobStatusOpen
-
-		// remove it from the locked list
-		if err = p.db.Delete(ctx, "/locked/jobs/"+jid); err != nil {
-			return fmt.Errorf("failed deleting job %s in /locked/jobs/ with error: %w", jid, err)
-		}
 
 		job_bytes, err := cbor.Marshal(job)
 		if err != nil {
 			return fmt.Errorf("failed to marshal job %s with error: %w", jid, err)
 		}
 
+		// Update in place - CRDT will handle consistency
 		if err = p.db.Put(ctx, "/jobs/"+jid, job_bytes); err != nil {
 			return err
 		}
@@ -228,11 +222,9 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 		if err = p.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job_bytes); err != nil {
 			return fmt.Errorf("failed to send over pubsub error: %w", err)
 		}
-
-		return nil
 	}
 
-	return fmt.Errorf("%s already finished", jid)
+	return nil
 }
 
 func (p *PatrickService) doneHandler(ctx context.Context, jid string, cid_log map[string]string, assetCid map[string]string, conn streams.Connection) error {

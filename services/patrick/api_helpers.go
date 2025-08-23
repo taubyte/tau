@@ -78,7 +78,7 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 	}
 
 	var job patrick.Job
-	// Grab job and move it to /archive/jobs/{jid}
+	// Grab job from active jobs
 	getJob, err := p.db.Get(ctx, "/jobs/"+jid)
 	if err != nil {
 		return fmt.Errorf("failed getting job in updateStatus %s with error: %w", jid, err)
@@ -94,24 +94,29 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 	job.AssetCid = assetCid
 	job.Attempt++
 
-	// TODO: Un-export job locks, and create methods
+	// Marshal the updated job
 	jobData, err := cbor.Marshal(&job)
 	if err != nil {
 		return fmt.Errorf("marshal in updateStatus error: %w", err)
 	}
 
+	// Since KV store is CRDT, we can just put the job in the appropriate location
+	// The CRDT will handle consistency, and clients will check all locations
 	if job.Status == patrick.JobStatusSuccess || job.Status == patrick.JobStatusCancelled || job.Attempt > servicesCommon.MaxJobAttempts {
+		// Job is finished - put in archive
 		if err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData); err != nil {
-			return fmt.Errorf("updateStatus put failed with error: %w", err)
+			return fmt.Errorf("failed to archive job %s: %w", jid, err)
 		}
 	} else {
+		// Job needs retry - update in place
 		if err = p.db.Put(ctx, "/jobs/"+jid, jobData); err != nil {
-			return fmt.Errorf("updateStatus put failed with error: %w", err)
+			return fmt.Errorf("failed to update job %s: %w", jid, err)
 		}
 	}
 
-	if err = p.deleteJob(ctx, []string{"/locked/jobs/", "/jobs/"}, jid); err != nil {
-		return fmt.Errorf("failed delete in timeoutHandler with %w", err)
+	// Clean up the lock - this is best effort since the job state is already updated
+	if err := p.db.Delete(ctx, "/locked/jobs/"+jid); err != nil {
+		logger.Warnf("Failed to delete lock for job %s: %v", jid, err)
 	}
 
 	return nil
@@ -119,32 +124,37 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 
 func (p *PatrickService) republishJob(ctx context.Context, jid string) error {
 	// Check if job is done otherwise delete entries and send it out again
-	if _, err := p.getJob(ctx, "/archive/jobs/", jid); err != nil {
-		job, err := p.getJob(ctx, "/jobs/", jid)
-		if err != nil {
-			return fmt.Errorf("could not find job %s with %w", jid, err)
-		}
+	if _, err := p.getJob(ctx, "/archive/jobs/", jid); err == nil {
+		// Job is already archived, nothing to republish
+		return nil
+	}
 
-		// remove it from the locked list
-		if err = p.db.Delete(ctx, "/locked/jobs/"+jid); err != nil {
-			return fmt.Errorf("failed deleting job %s at /locked/jobs/ with error in republishJob: %w", jid, err)
-		}
+	// Job is not archived, get it from active jobs
+	job, err := p.getJob(ctx, "/jobs/", jid)
+	if err != nil {
+		return fmt.Errorf("could not find job %s with %w", jid, err)
+	}
 
-		job.Timestamp = time.Now().Unix()
-		job_bytes, err := cbor.Marshal(job)
-		if err != nil {
-			return fmt.Errorf("failed to marshal job %s with error: %w", jid, err)
-		}
+	// Update timestamp for republishing
+	job.Timestamp = time.Now().Unix()
+	job_bytes, err := cbor.Marshal(job)
+	if err != nil {
+		return fmt.Errorf("failed to marshal job %s with error: %w", jid, err)
+	}
 
-		if err = p.db.Put(ctx, "/jobs/"+jid, job_bytes); err != nil {
-			return fmt.Errorf("failed putting %s in /jobs/ inside republishJob with %w", jid, err)
-		}
+	// Update the job in place - CRDT will handle consistency
+	if err := p.db.Put(ctx, "/jobs/"+jid, job_bytes); err != nil {
+		return fmt.Errorf("failed putting %s in /jobs/ inside republishJob with %w", jid, err)
+	}
 
-		// Send the job over again to run again
+	// Clean up the lock - best effort
+	if err := p.db.Delete(ctx, "/locked/jobs/"+jid); err != nil {
+		logger.Warnf("Failed to delete lock for job %s: %v", jid, err)
+	}
 
-		if err = p.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job_bytes); err != nil {
-			return fmt.Errorf("failed to send over in republishJob pubsub error: %w", err)
-		}
+	// Send the job over again to run again
+	if err = p.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job_bytes); err != nil {
+		return fmt.Errorf("failed to send over in republishJob pubsub error: %w", err)
 	}
 
 	return nil
