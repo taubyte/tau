@@ -22,6 +22,11 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command"
 )
 
+// SendOnlyClient defines the minimal interface needed for sending commands
+type SendOnlyClient interface {
+	Send(cmd string, body command.Body, peers ...peerCore.ID) (cr.Response, error)
+}
+
 type Client struct {
 	ctx  context.Context
 	ctxC context.CancelFunc

@@ -27,14 +27,14 @@ func New(kv kvdb.KVDB, data Data) (Repository, error) {
 			return nil, err
 		}
 
-		return &GithubRepository{
-			RepositoryCommon: RepositoryCommon{
-				KV:       kv,
-				Provider: provider,
-				Project:  project,
+		return &githubRepository{
+			repositoryCommon: repositoryCommon{
+				kv:       kv,
+				provider: provider,
+				project:  project,
 			},
-			Id:  id,
-			Key: key,
+			id:  id,
+			key: key,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown repo type `%s` ", provider)

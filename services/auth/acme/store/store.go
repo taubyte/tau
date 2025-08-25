@@ -23,7 +23,7 @@ var certFileRegexp = regexp.MustCompile(`(\+token|\+rsa|\+key|\.key)$`)
 
 type Store struct {
 	node     peer.Node
-	client   *client.Client
+	client   client.SendOnlyClient
 	cacheDir autocert.DirCache
 	closed   bool
 	mu       sync.Mutex

@@ -1,4 +1,4 @@
-package github
+package auth
 
 import (
 	"context"
@@ -11,7 +11,20 @@ import (
 	"golang.org/x/oauth2"
 )
 
-type Client struct {
+// GitHubClient defines the interface for GitHub operations
+type GitHubClient interface {
+	Cur() *github.Repository
+	Me() *github.User
+	GetByID(id string) error
+	GetCurrentRepository() (*github.Repository, error)
+	CreateRepository(name *string, description *string, private *bool) error
+	CreateDeployKey(name *string, key *string) error
+	CreatePushHook(name *string, url *string, devMode bool) (int64, string, error)
+	ListMyRepos() map[string]RepositoryBasicInfo
+	ShortRepositoryInfo(id string) RepositoryShortInfo
+}
+
+type githubClient struct {
 	*github.Client
 	Token              string
 	ctx                context.Context
@@ -21,7 +34,22 @@ type Client struct {
 
 type RepositoryListOptions github.RepositoryListOptions
 
-func New(ctx context.Context, token string) (*Client, error) {
+// RepositoryShortInfo represents basic repository information
+type RepositoryShortInfo struct {
+	Name     string `json:"name"`
+	FullName string `json:"fullname"`
+	URL      string `json:"url"`
+	ID       string `json:"id"`
+	Error    string `json:"error,omitempty"`
+}
+
+// RepositoryBasicInfo represents basic repository information for listing
+type RepositoryBasicInfo struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
+}
+
+func NewGitHubClient(ctx context.Context, token string) (GitHubClient, error) {
 
 	ts := oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
@@ -35,18 +63,18 @@ func New(ctx context.Context, token string) (*Client, error) {
 		return nil, err
 	}
 
-	return &Client{client, token, ctx, user, nil}, nil
+	return &githubClient{client, token, ctx, user, nil}, nil
 }
 
-func (client *Client) Cur() *github.Repository {
+func (client *githubClient) Cur() *github.Repository {
 	return client.current_repository
 }
 
-func (client *Client) Me() *github.User {
+func (client *githubClient) Me() *github.User {
 	return client.user
 }
 
-func (client *Client) GetByID(id string) error {
+func (client *githubClient) GetByID(id string) error {
 	_id, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
 		return err
@@ -55,7 +83,7 @@ func (client *Client) GetByID(id string) error {
 	return err
 }
 
-func (client *Client) GetCurrentRepository() (*github.Repository, error) {
+func (client *githubClient) GetCurrentRepository() (*github.Repository, error) {
 	if client.current_repository == nil {
 		return nil, errors.New("Client has no current repository")
 	}
@@ -63,7 +91,7 @@ func (client *Client) GetCurrentRepository() (*github.Repository, error) {
 	return client.current_repository, nil
 }
 
-func (client *Client) CreateRepository(name *string, description *string, private *bool) (err error) {
+func (client *githubClient) CreateRepository(name *string, description *string, private *bool) (err error) {
 	client.current_repository, _, err = client.Repositories.Create(client.ctx, "", &github.Repository{
 		Name:        name,
 		Private:     private,
@@ -73,7 +101,7 @@ func (client *Client) CreateRepository(name *string, description *string, privat
 	return
 }
 
-func (client *Client) CreateDeployKey(name *string, key *string) error {
+func (client *githubClient) CreateDeployKey(name *string, key *string) error {
 	if client.current_repository == nil {
 		// TODO: Make this a standard error
 		return errors.New("no repository selected")
@@ -87,7 +115,7 @@ func (client *Client) CreateDeployKey(name *string, key *string) error {
 	return err
 }
 
-func (client *Client) CreatePushHook(name *string, url *string, devMode bool) (int64, string, error) {
+func (client *githubClient) CreatePushHook(name *string, url *string, devMode bool) (int64, string, error) {
 	if client.current_repository == nil {
 		return 0, "", errors.New("no repository selected")
 	}
@@ -122,8 +150,8 @@ func (client *Client) CreatePushHook(name *string, url *string, devMode bool) (i
 	return *(hk.ID), secret, err
 }
 
-func (client *Client) ListMyRepos() map[string]interface{} {
-	repos := make(map[string]interface{})
+func (client *githubClient) ListMyRepos() map[string]RepositoryBasicInfo {
+	repos := make(map[string]RepositoryBasicInfo)
 	for i := 1; ; i++ {
 		rlo := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: i, PerPage: 100}, Sort: "created"}
 
@@ -131,9 +159,9 @@ func (client *Client) ListMyRepos() map[string]interface{} {
 		// TODO: Simplify this logic
 		if err == nil && len(_repos) > 0 {
 			for _, v := range _repos {
-				repos[fmt.Sprintf("%d", *(v.ID))] = map[string]string{
-					"name": *(v.FullName),
-					"url":  *(v.URL),
+				repos[fmt.Sprintf("%d", *(v.ID))] = RepositoryBasicInfo{
+					Name: *(v.FullName),
+					URL:  *(v.URL),
 				}
 			}
 		} else {
@@ -143,25 +171,25 @@ func (client *Client) ListMyRepos() map[string]interface{} {
 	return repos
 }
 
-func (client *Client) ShortRepositoryInfo(id string) map[string]interface{} {
-	repoInfo := make(map[string]interface{})
-
+func (client *githubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
 	_id, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
-		repoInfo["error"] = "Incorrect repository ID"
-		return repoInfo
+		return RepositoryShortInfo{
+			Error: "Incorrect repository ID",
+		}
 	}
 
 	_repoInfo, _, err := client.Repositories.GetByID(client.ctx, _id)
 	if err != nil {
-		repoInfo["error"] = fmt.Sprintf("Error %s", err)
-		return repoInfo
+		return RepositoryShortInfo{
+			Error: fmt.Sprintf("Error %s", err),
+		}
 	}
 
-	repoInfo["name"] = *(_repoInfo.Name)
-	repoInfo["fullname"] = *(_repoInfo.FullName)
-	repoInfo["url"] = *(_repoInfo.URL)
-	repoInfo["id"] = id
-
-	return repoInfo
+	return RepositoryShortInfo{
+		Name:     *(_repoInfo.Name),
+		FullName: *(_repoInfo.FullName),
+		URL:      *(_repoInfo.URL),
+		ID:       id,
+	}
 }

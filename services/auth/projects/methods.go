@@ -12,19 +12,93 @@ var (
 	logger = log.Logger("tau.auth.service.api.projects")
 )
 
-func (r *ProjectObject) Serialize() Data {
+func (r *projectObject) Serialize() Data {
 	return Data{
-		"id":       r.Id,
-		"name":     r.Name,
-		"provider": r.Provider,
-		"code":     r.Code,
-		"config":   r.Config,
+		"id":       r.id,
+		"name":     r.name,
+		"provider": r.provider,
+		"code":     r.code,
+		"config":   r.config,
 	}
 }
 
-func (r *ProjectObject) Delete() error { return nil }
+func (r *projectObject) Delete() error {
+	ctx := context.Background()
 
-func (r *ProjectObject) Register() error { return nil }
+	// Create a batch for atomic operations
+	batch, err := r.kv.Batch(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create batch: %w", err)
+	}
+
+	// Batch all project deletion operations
+	err = batch.Delete(fmt.Sprintf("/projects/%s/name", r.id))
+	if err != nil {
+		return fmt.Errorf("failed to batch delete project name: %w", err)
+	}
+
+	err = batch.Delete(fmt.Sprintf("/projects/%s/repositories/provider", r.id))
+	if err != nil {
+		return fmt.Errorf("failed to batch delete project provider: %w", err)
+	}
+
+	err = batch.Delete(fmt.Sprintf("/projects/%s/repositories/config", r.id))
+	if err != nil {
+		return fmt.Errorf("failed to batch delete project config repository: %w", err)
+	}
+
+	err = batch.Delete(fmt.Sprintf("/projects/%s/repositories/code", r.id))
+	if err != nil {
+		return fmt.Errorf("failed to batch delete project code repository: %w", err)
+	}
+
+	// Commit all deletions atomically
+	err = batch.Commit()
+	if err != nil {
+		return fmt.Errorf("failed to commit project deletion batch: %w", err)
+	}
+
+	return nil
+}
+
+func (r *projectObject) Register() error {
+	ctx := context.Background()
+
+	// Create a batch for atomic operations
+	batch, err := r.kv.Batch(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create batch: %w", err)
+	}
+
+	// Batch all project data operations
+	err = batch.Put(fmt.Sprintf("/projects/%s/name", r.id), []byte(r.name))
+	if err != nil {
+		return fmt.Errorf("failed to batch project name: %w", err)
+	}
+
+	err = batch.Put(fmt.Sprintf("/projects/%s/repositories/provider", r.id), []byte(r.provider))
+	if err != nil {
+		return fmt.Errorf("failed to batch project provider: %w", err)
+	}
+
+	err = batch.Put(fmt.Sprintf("/projects/%s/repositories/config", r.id), []byte(r.config))
+	if err != nil {
+		return fmt.Errorf("failed to batch project config repository: %w", err)
+	}
+
+	err = batch.Put(fmt.Sprintf("/projects/%s/repositories/code", r.id), []byte(r.code))
+	if err != nil {
+		return fmt.Errorf("failed to batch project code repository: %w", err)
+	}
+
+	// Commit all operations atomically
+	err = batch.Commit()
+	if err != nil {
+		return fmt.Errorf("failed to commit project registration batch: %w", err)
+	}
+
+	return nil
+}
 
 func Exist(ctx context.Context, kv kvdb.KVDB, id string) bool {
 	proj_name_key := fmt.Sprintf("/projects/%s/name", id)

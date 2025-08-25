@@ -64,68 +64,98 @@ func (h *GithubHook) ProviderID() string {
 }
 
 func (h *GithubHook) Delete(ctx context.Context) error {
+	// Delete common hook data first
 	err := h.HookCommon.Delete(ctx)
 	if err != nil {
 		return err
 	}
-	// TODO: Make common vars
+
+	// Create a batch for atomic GitHub hook deletion
+	batch, err := h.KV.Batch(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create batch: %w", err)
+	}
+
 	root := "/hooks/" + h.Id
 
-	var lerror error
-	err = h.KV.Delete(ctx, root+"/github/id")
+	// Batch all GitHub hook deletion operations
+	err = batch.Delete(root + "/github/id")
 	if err != nil {
-		lerror = err
-		logger.Error(err)
-	}
-	err = h.KV.Delete(ctx, root+"/github/secret")
-	if err != nil {
-		lerror = err
-		logger.Error(err)
-	}
-	err = h.KV.Delete(ctx, root+"/github/repository")
-	if err != nil {
-		lerror = err
-		logger.Error(err)
-	}
-	err = h.KV.Delete(ctx, fmt.Sprintf("/repositories/github/%d/hooks/%s", h.Repository, h.Id))
-	if err != nil {
-		lerror = err
-		logger.Error(err)
+		return fmt.Errorf("failed to batch delete hook ID: %w", err)
 	}
 
-	return lerror
+	err = batch.Delete(root + "/github/secret")
+	if err != nil {
+		return fmt.Errorf("failed to batch delete hook secret: %w", err)
+	}
+
+	err = batch.Delete(root + "/github/repository")
+	if err != nil {
+		return fmt.Errorf("failed to batch delete hook repository: %w", err)
+	}
+
+	err = batch.Delete(fmt.Sprintf("/repositories/github/%d/hooks/%s", h.Repository, h.Id))
+	if err != nil {
+		return fmt.Errorf("failed to batch delete repository hook reference: %w", err)
+	}
+
+	// Commit all deletions atomically
+	err = batch.Commit()
+	if err != nil {
+		return fmt.Errorf("failed to commit hook deletion batch: %w", err)
+	}
+
+	return nil
 }
 
 func (h *GithubHook) Register(ctx context.Context) error {
+	// Register common hook data first
 	err := h.HookCommon.Register(ctx)
 	if err != nil {
 		return err
 	}
 
+	// Create a batch for atomic GitHub hook registration
+	batch, err := h.KV.Batch(ctx)
+	if err != nil {
+		h.Delete(ctx)
+		return fmt.Errorf("failed to create batch: %w", err)
+	}
+
 	root := "/hooks/" + h.Id
 
-	err = h.KV.Put(ctx, fmt.Sprintf("/repositories/github/%d/hooks/%s", h.Repository, h.Id), nil)
+	// Batch all GitHub hook registration operations
+	err = batch.Put(fmt.Sprintf("/repositories/github/%d/hooks/%s", h.Repository, h.Id), nil)
 	if err != nil {
 		h.Delete(ctx)
-		return err
+		return fmt.Errorf("failed to batch repository hook reference: %w", err)
 	}
 
-	err = h.KV.Put(ctx, root+"/github/id", network.UInt64ToBytes(uint64(h.GithubId)))
+	err = batch.Put(root+"/github/id", network.UInt64ToBytes(uint64(h.GithubId)))
 	if err != nil {
 		h.Delete(ctx)
-		return err
-	}
-	err = h.KV.Put(ctx, root+"/github/secret", []byte(h.Secret))
-	if err != nil {
-		h.Delete(ctx)
-		return err
+		return fmt.Errorf("failed to batch hook ID: %w", err)
 	}
 
-	err = h.KV.Put(ctx, root+"/github/repository", network.UInt64ToBytes(uint64(h.Repository)))
+	err = batch.Put(root+"/github/secret", []byte(h.Secret))
 	if err != nil {
 		h.Delete(ctx)
-		return err
+		return fmt.Errorf("failed to batch hook secret: %w", err)
 	}
+
+	err = batch.Put(root+"/github/repository", network.UInt64ToBytes(uint64(h.Repository)))
+	if err != nil {
+		h.Delete(ctx)
+		return fmt.Errorf("failed to batch hook repository: %w", err)
+	}
+
+	// Commit all operations atomically
+	err = batch.Commit()
+	if err != nil {
+		h.Delete(ctx)
+		return fmt.Errorf("failed to commit hook registration batch: %w", err)
+	}
+
 	return nil
 }
 

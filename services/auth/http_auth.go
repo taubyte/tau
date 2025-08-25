@@ -5,8 +5,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/taubyte/tau/services/auth/github"
-
 	http "github.com/taubyte/tau/pkg/http"
 	httpAuth "github.com/taubyte/tau/pkg/http/auth"
 )
@@ -17,7 +15,7 @@ func (srv *AuthService) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, erro
 
 		rctx, rctx_cancel := context.WithTimeout(srv.ctx, time.Duration(30)*time.Second)
 
-		client, err := github.New(rctx, auth.Token)
+		client, err := srv.newGitHubClient(rctx, auth.Token)
 		if err != nil {
 			rctx_cancel()
 			return nil, errors.New("invalid Github token")

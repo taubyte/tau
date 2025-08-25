@@ -5,6 +5,9 @@
 
 .vscode/
 
+coverage.html
+coverage.out
+
 pkg/vm-orbit/tests/e2e/go/fixtures/*.wasm
 pkg/vm-orbit/tests/e2e/go/fixtures/testPlugin*
 

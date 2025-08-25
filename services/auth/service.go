@@ -29,6 +29,8 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 		config = &tauConfig.Node{}
 	}
 
+	srv.newGitHubClient = NewGitHubClient
+
 	srv.webHookUrl = fmt.Sprintf(`https://patrick.tau.%s`, config.NetworkFqdn)
 
 	err := config.Validate()

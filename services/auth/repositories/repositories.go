@@ -17,49 +17,74 @@ var (
 	logger       = log.Logger("tau.auth.service.api.repositories")
 )
 
-func (r *GithubRepository) Serialize() Data {
+func (r *githubRepository) Serialize() Data {
 	return Data{
-		"id":       r.Id,
-		"provider": r.Provider,
-		"project":  r.Project,
-		"key":      r.Key,
+		"id":       r.id,
+		"provider": r.provider,
+		"project":  r.project,
+		"key":      r.key,
 	}
 }
 
-func (r *GithubRepository) Delete(ctx context.Context) (err error) {
-	var lError error
-
-	// let's clear the hooks first
+func (r *githubRepository) Delete(ctx context.Context) (err error) {
+	// Clear the hooks first (hooks have their own complex deletion logic)
 	for _, h := range r.Hooks(ctx) {
 		err = h.Delete(ctx)
 		if err != nil {
-			lError = err
+			// Log error but continue with repository deletion
+			logger.Errorf("Failed to delete hook %s: %v", h.ID(), err)
 		}
 	}
 
-	// TODO: This can be a common method
-	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.Id)
-	err = r.KV.Delete(ctx, repo_key)
+	// Create a batch for atomic repository deletion
+	batch, err := r.kv.Batch(ctx)
 	if err != nil {
-		lError = err
+		return fmt.Errorf("failed to create batch: %w", err)
 	}
 
-	return lError
-}
-
-func (r *GithubRepository) Register(ctx context.Context) (err error) {
-	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.Id)
-	err = r.KV.Put(ctx, repo_key, []byte(r.Key))
+	// Batch repository key deletion
+	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.id)
+	err = batch.Delete(repo_key)
 	if err != nil {
-		r.Delete(ctx)
-		return err
+		return fmt.Errorf("failed to batch delete repository key: %w", err)
+	}
+
+	// Commit the batch
+	err = batch.Commit()
+	if err != nil {
+		return fmt.Errorf("failed to commit repository deletion batch: %w", err)
 	}
 
 	return nil
 }
 
-func (r *GithubRepository) Hooks(ctx context.Context) []hooks.Hook {
-	keys, err := r.KV.List(ctx, fmt.Sprintf("/repositories/github/%d/hooks/", r.Id))
+func (r *githubRepository) Register(ctx context.Context) (err error) {
+	// Create a batch for atomic repository registration
+	batch, err := r.kv.Batch(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to create batch: %w", err)
+	}
+
+	// Batch repository key registration
+	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.id)
+	err = batch.Put(repo_key, []byte(r.key))
+	if err != nil {
+		return fmt.Errorf("failed to batch repository key: %w", err)
+	}
+
+	// Commit the batch
+	err = batch.Commit()
+	if err != nil {
+		// If commit fails, try to clean up
+		r.Delete(ctx)
+		return fmt.Errorf("failed to commit repository registration batch: %w", err)
+	}
+
+	return nil
+}
+
+func (r *githubRepository) Hooks(ctx context.Context) []hooks.Hook {
+	keys, err := r.kv.List(ctx, fmt.Sprintf("/repositories/github/%d/hooks/", r.id))
 	if err != nil {
 		return nil
 	}
@@ -71,7 +96,7 @@ func (r *GithubRepository) Hooks(ctx context.Context) []hooks.Hook {
 		logger.Debugf("repo.Hooks match:%s", m)
 		if len(m) > 1 {
 			hook_id := m[1]
-			h, err := hooks.Fetch(ctx, r.KV, hook_id)
+			h, err := hooks.Fetch(ctx, r.kv, hook_id)
 			if err == nil {
 				hks = append(hks, h)
 			} else {

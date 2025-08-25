@@ -72,8 +72,6 @@ func New(node peer.Node) kvdb.Factory {
 }
 
 func (f *factory) getDB(path string) *kvDatabase {
-	f.dbsLock.RLock()
-	defer f.dbsLock.RUnlock()
 	return f.dbs[path]
 }
 
@@ -86,6 +84,9 @@ func (f *factory) deleteDB(path string) {
 
 // TODO: This should be Time.Duration
 func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastIntervalSec int) (kvdb.KVDB, error) {
+	f.dbsLock.Lock()
+	defer f.dbsLock.Unlock()
+
 	cachedDB := f.getDB(path)
 	if cachedDB != nil {
 		return cachedDB, nil
@@ -127,8 +128,6 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 		return nil, err
 	}
 
-	f.dbsLock.Lock()
-	defer f.dbsLock.Unlock()
 	f.dbs[path] = s
 
 	return s, nil

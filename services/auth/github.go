@@ -13,13 +13,79 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/taubyte/tau/services/auth/github"
-
 	"github.com/taubyte/tau/services/auth/hooks"
+	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/auth/repositories"
 
 	"github.com/taubyte/tau/utils/id"
 )
+
+// Response structs for better type safety
+type RepositoryRegistrationResponse struct {
+	Key string `json:"key"`
+}
+
+type ProjectResponse struct {
+	Project ProjectInfo `json:"project"`
+}
+
+type ProjectInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type ProjectCreateResponse struct {
+	Project ProjectInfo `json:"project"`
+}
+
+type RepositoryInfo struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type UserRepositoriesResponse struct {
+	Repositories map[string]RepositoryInfo `json:"repositories"`
+}
+
+type UserProjectsResponse struct {
+	Projects []ProjectInfo `json:"projects"`
+}
+
+type RepositoryDetails struct {
+	Provider      string              `json:"provider"`
+	Configuration RepositoryShortInfo `json:"configuration"`
+	Code          RepositoryShortInfo `json:"code"`
+}
+
+type ProjectInfoResponse struct {
+	Project ProjectDetails `json:"project"`
+}
+
+type ProjectDetails struct {
+	ID           string            `json:"id"`
+	Name         string            `json:"name"`
+	Repositories RepositoryDetails `json:"repositories"`
+}
+
+type ProjectDeleteResponse struct {
+	Project ProjectDeleteInfo `json:"project"`
+}
+
+type ProjectDeleteInfo struct {
+	ID     string `json:"id"`
+	Status string `json:"status"`
+}
+
+type UserInfo struct {
+	Name    string `json:"name"`
+	Company string `json:"company"`
+	Email   string `json:"email"`
+	Login   string `json:"login"`
+}
+
+type UserResponse struct {
+	User UserInfo `json:"user"`
+}
 
 // ref: https://github.com/keybase/bot-sshca/blob/master/src/keybaseca/sshutils/generate.go#L53
 func generateKey() (string, string, string, error) {
@@ -47,7 +113,7 @@ func generateKey() (string, string, string, error) {
 	return deployKeyName, string(ssh.MarshalAuthorizedKey(pub)), private.String(), nil
 }
 
-func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *github.Client, repoID string) (map[string]interface{}, error) {
+func (srv *AuthService) registerGitHubRepository(ctx context.Context, client GitHubClient, repoID string) (*RepositoryRegistrationResponse, error) {
 	err := client.GetByID(repoID)
 	if err != nil {
 		return nil, fmt.Errorf("fetch repository failed with %w", err)
@@ -137,27 +203,27 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client *gi
 		return nil, fmt.Errorf("failed registering new job repo %d into tns with error: %v", _repo_id, err)
 	}
 
-	return map[string]interface{}{
-		"key": repoKey,
+	return &RepositoryRegistrationResponse{
+		Key: repoKey,
 	}, nil
 }
 
-func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client *github.Client, repoID string) (map[string]interface{}, error) {
+func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client GitHubClient, repoID string) error {
 	// select repo
 	err := client.GetByID(repoID)
 	if err != nil {
-		return nil, fmt.Errorf("fetch repository failed with %w", err)
+		return fmt.Errorf("fetch repository failed with %w", err)
 	}
 
 	repoKey := fmt.Sprintf("/repositories/github/%s/key", repoID)
 	kpriv, err := srv.db.Get(ctx, repoKey)
 	if err != nil {
-		return nil, fmt.Errorf("repository `%s` (%s) not registred! err = %w", repoID, repoKey, err)
+		return fmt.Errorf("repository `%s` (%s) not registred! err = %w", repoID, repoKey, err)
 	}
 
 	_repo_id, err := strconv.ParseInt(repoID, 10, 64)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	repo, err := repositories.New(srv.KV(), repositories.Data{
@@ -166,7 +232,7 @@ func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client *
 		"key":      string(kpriv),
 	})
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	for _, hook := range repo.Hooks(ctx) {
@@ -176,47 +242,46 @@ func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client *
 
 	repo.Delete(ctx)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return nil, nil
+	return nil
 }
 
-func (srv *AuthService) newGitHubProject(ctx context.Context, client *github.Client, projectID, projectName, configID, codeID string) (map[string]interface{}, error) {
-	response := make(map[string]interface{})
+func (srv *AuthService) newGitHubProject(ctx context.Context, client GitHubClient, projectID, projectName, configID, codeID string) (*ProjectCreateResponse, error) {
 	logger.Debug("Creating project " + projectName)
 
 	logger.Debug("Project ID=" + projectID)
-	response["project"] = map[string]string{"id": projectID, "name": projectName}
 
 	gituser := client.Me()
-	project_key := "/projects/" + projectID
-	err := srv.db.Put(ctx, project_key+"/name", []byte(projectName))
+
+	// Use projects helper instead of direct database manipulation
+	project, err := projects.New(srv.KV(), projects.Data{
+		"id":       projectID,
+		"name":     projectName,
+		"provider": "github",
+		"config":   configID,
+		"code":     codeID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create project object: %w", err)
+	}
+
+	// Register the project
+	err = project.Register()
+	if err != nil {
+		return nil, fmt.Errorf("failed to register project: %w", err)
+	}
+
+	// Add owner information
+	err = srv.db.Put(ctx, "/projects/"+projectID+"/owners/"+fmt.Sprintf("%d", *(gituser.ID)), []byte(gituser.GetLogin()))
 	if err != nil {
 		return nil, err
 	}
 
-	if err = srv.db.Put(ctx, project_key+"/repositories/provider", []byte("github")); err != nil {
-		return nil, err
-	}
-
-	err = srv.db.Put(ctx, project_key+"/owners/"+fmt.Sprintf("%d", *(gituser.ID)), []byte(gituser.GetLogin()))
-	if err != nil {
-		return nil, err
-	}
-
-	err = srv.db.Put(ctx, "/projects/"+projectID+"/repositories/config", []byte(configID))
-	if err != nil {
-		return nil, err
-	}
-
+	// Link repositories to project
 	repo_key := fmt.Sprintf("/repositories/github/%s", configID)
 	if err = srv.db.Put(ctx, repo_key+"/project", []byte(projectID)); err != nil {
-		return nil, err
-	}
-
-	err = srv.db.Put(ctx, "/projects/"+projectID+"/repositories/code", []byte(codeID))
-	if err != nil {
 		return nil, err
 	}
 
@@ -225,51 +290,55 @@ func (srv *AuthService) newGitHubProject(ctx context.Context, client *github.Cli
 		return nil, err
 	}
 
-	logger.Debugf("Project Add returned %v", response)
+	logger.Debugf("Project Add returned project ID=%s, name=%s", projectID, projectName)
 
-	return response, nil
+	return &ProjectCreateResponse{
+		Project: ProjectInfo{
+			ID:   projectID,
+			Name: projectName,
+		},
+	}, nil
 }
 
-func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client *github.Client) (map[string]interface{}, error) {
-	response := make(map[string]interface{})
+func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client GitHubClient) (*UserRepositoriesResponse, error) {
 	repos := client.ListMyRepos()
 	logger.Debugf("User repos:%v", repos)
 
-	user_repos := make(map[string]interface{}, 0)
+	user_repos := make(map[string]RepositoryInfo, 0)
 	for repo_id := range repos {
-		repo_key := fmt.Sprintf("/repositories/github/%s/name", repo_id)
-		v, err := srv.db.Get(ctx, repo_key)
-		if err == nil && len(v) > 0 {
-			logger.Debugf("Check %s got %s", repo_key, string(v))
-			user_repos[repo_id] = map[string]interface{}{
-				"id":   repo_id,
-				"name": string(v),
+		// Use repositories helper to check if repository exists
+		if repositories.Exist(ctx, srv.KV(), repo_id) {
+			// Get repository name from GitHub API or use ID as fallback
+			repo_name := repo_id // fallback to ID if name not available
+			user_repos[repo_id] = RepositoryInfo{
+				ID:   repo_id,
+				Name: repo_name,
 			}
 		}
 	}
 
 	logger.Debugf("getGitHubProjects: extracted %s", user_repos)
 
-	response["repositories"] = user_repos
-
-	return response, nil
+	return &UserRepositoriesResponse{
+		Repositories: user_repos,
+	}, nil
 }
 
-func (srv *AuthService) getGitHubUserProjects(ctx context.Context, client *github.Client) (map[string]interface{}, error) {
-	response := make(map[string]interface{})
-	user_projects := make(map[string]interface{}, 0)
+func (srv *AuthService) getGitHubUserProjects(ctx context.Context, client GitHubClient) (*UserProjectsResponse, error) {
+	user_projects := make(map[string]ProjectInfo, 0)
 	for repo_id := range client.ListMyRepos() {
 		repo_key := fmt.Sprintf("/repositories/github/%s/project", repo_id)
 		v, err := srv.db.Get(ctx, repo_key)
 		if err == nil && len(v) > 0 {
 			project_id := string(v)
-			proj_name_key := fmt.Sprintf("/projects/%s/name", project_id)
-			proj_name, err := srv.db.Get(ctx, proj_name_key)
+
+			// Use projects helper instead of direct database query
+			project, err := projects.Fetch(ctx, srv.KV(), project_id)
 			if err == nil {
 				if _, ok := user_projects[project_id]; !ok {
-					user_projects[project_id] = map[string]interface{}{
-						"id":   project_id,
-						"name": string(proj_name),
+					user_projects[project_id] = ProjectInfo{
+						ID:   project_id,
+						Name: project.Name(),
 					}
 				}
 			}
@@ -278,86 +347,66 @@ func (srv *AuthService) getGitHubUserProjects(ctx context.Context, client *githu
 
 	logger.Debug(user_projects)
 
-	response["projects"] = getMapValues(user_projects)
+	// Convert map values to slice
+	projects := make([]ProjectInfo, 0, len(user_projects))
+	for _, project := range user_projects {
+		projects = append(projects, project)
+	}
 
-	return response, nil
+	return &UserProjectsResponse{
+		Projects: projects,
+	}, nil
 }
 
-func (srv *AuthService) getGitHubProjectInfo(ctx context.Context, client *github.Client, projectid string) (map[string]interface{}, error) {
-	response := make(map[string]interface{})
-
-	proj_prefix_key := fmt.Sprintf("/projects/%s/", projectid)
-
-	proj_name, err := srv.db.Get(ctx, proj_prefix_key+"name")
+func (srv *AuthService) getGitHubProjectInfo(ctx context.Context, client GitHubClient, projectid string) (*ProjectInfoResponse, error) {
+	// Use projects helper instead of direct database queries
+	project, err := projects.Fetch(ctx, srv.KV(), projectid)
 	if err != nil {
-		response["error"] = "Retreiving project error: " + err.Error()
-		return response, nil
+		return nil, fmt.Errorf("retrieving project error: %w", err)
 	}
 
-	proj_gitprovider, err := srv.db.Get(ctx, proj_prefix_key+"repositories/provider")
-	if err != nil {
-		response["error"] = "Retreiving project error: " + err.Error()
-		return response, nil
-	}
-
-	proj_config_repo, err := srv.db.Get(ctx, proj_prefix_key+"repositories/config")
-	if err != nil {
-		response["error"] = "Retreiving project error: " + err.Error()
-		return response, nil
-	}
-
-	proj_code_repo, err := srv.db.Get(ctx, proj_prefix_key+"repositories/code")
-	if err != nil {
-		response["error"] = "Retreiving project error: " + err.Error()
-		return response, nil
-	}
-
-	response["project"] = map[string]interface{}{
-		"id":   projectid,
-		"name": string(proj_name),
-		"repositories": map[string]interface{}{
-			"provider":      string(proj_gitprovider),
-			"configuration": client.ShortRepositoryInfo(string(proj_config_repo)),
-			"code":          client.ShortRepositoryInfo(string(proj_code_repo)),
+	return &ProjectInfoResponse{
+		Project: ProjectDetails{
+			ID:   projectid,
+			Name: project.Name(),
+			Repositories: RepositoryDetails{
+				Provider:      project.Provider(),
+				Configuration: client.ShortRepositoryInfo(project.Config()),
+				Code:          client.ShortRepositoryInfo(project.Code()),
+			},
 		},
-	}
-
-	return response, nil
+	}, nil
 }
 
-func (srv *AuthService) deleteGitHubUserProject(ctx context.Context, client *github.Client, projectid string) (map[string]interface{}, error) {
-	response := make(map[string]interface{})
-
-	proj_prefix_key := fmt.Sprintf("/projects/%s/", projectid)
-
-	c, err := srv.db.ListAsync(ctx, proj_prefix_key)
+func (srv *AuthService) deleteGitHubUserProject(ctx context.Context, client GitHubClient, projectid string) (*ProjectDeleteResponse, error) {
+	// Use projects helper to fetch and delete the project
+	project, err := projects.Fetch(ctx, srv.KV(), projectid)
 	if err != nil {
-		response["error"] = "Retreiving project error: " + err.Error()
-		return response, nil
+		return nil, fmt.Errorf("failed to fetch project: %w", err)
 	}
 
-	for entry := range c {
-		srv.db.Delete(ctx, entry)
+	// Delete the project using the helper
+	err = project.Delete()
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete project: %w", err)
 	}
 
-	response["project"] = map[string]interface{}{
-		"id":     projectid,
-		"status": "deleted",
-	}
-
-	return response, nil
+	return &ProjectDeleteResponse{
+		Project: ProjectDeleteInfo{
+			ID:     projectid,
+			Status: "deleted",
+		},
+	}, nil
 }
 
-func (srv *AuthService) getGitHubUser(client *github.Client) (map[string]interface{}, error) {
-	response := make(map[string]interface{})
-
+func (srv *AuthService) getGitHubUser(client GitHubClient) (*UserResponse, error) {
 	gituser := client.Me()
-	response["user"] = map[string]interface{}{
-		"name":    gituser.GetName(),
-		"company": gituser.GetCompany(),
-		"email":   gituser.GetEmail(),
-		"login":   gituser.GetLogin(),
-	}
-
-	return response, nil
+	return &UserResponse{
+		User: UserInfo{
+			Name:    gituser.GetName(),
+			Company: gituser.GetCompany(),
+			Email:   gituser.GetEmail(),
+			Login:   gituser.GetLogin(),
+		},
+	}, nil
 }
