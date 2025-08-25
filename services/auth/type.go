@@ -3,7 +3,6 @@ package auth
 import (
 	"context"
 
-	"github.com/taubyte/tau/config"
 	kv "github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
@@ -33,6 +32,8 @@ type AuthService struct {
 	dvPublicKey  []byte
 
 	hostUrl string
+
+	newGitHubClient func(context.Context, string) (GitHubClient, error)
 }
 
 func (s *AuthService) Node() peer.Node {
@@ -41,8 +42,4 @@ func (s *AuthService) Node() peer.Node {
 
 func (s *AuthService) KV() kv.KVDB {
 	return s.db
-}
-
-type Config struct {
-	config.Node `yaml:"z,omitempty"`
 }

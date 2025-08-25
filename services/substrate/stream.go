@@ -91,7 +91,6 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 			return nil, fmt.Errorf("lookup failed with: %w", err)
 		}
 	} else {
-		// lookup should always return 0 or 1 serviceable
 		pick = serviceables[0]
 	}
 

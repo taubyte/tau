@@ -7,7 +7,7 @@ import (
 
 	http "github.com/taubyte/tau/pkg/http"
 	httpAuth "github.com/taubyte/tau/pkg/http/auth"
-	"github.com/taubyte/tau/services/auth/github"
+	authService "github.com/taubyte/tau/services/auth"
 )
 
 func (srv *PatrickService) setupGithubRoutes() {
@@ -126,7 +126,7 @@ func (srv *PatrickService) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, e
 	auth := httpAuth.GetAuthorization(ctx)
 	if auth != nil && (auth.Type == "oauth" || auth.Type == "github") {
 		rctx, rctx_cancel := context.WithTimeout(ctx.Request().Context(), time.Duration(30)*time.Second)
-		client, err := github.New(rctx, auth.Token)
+		client, err := authService.NewGitHubClient(rctx, auth.Token)
 		if err != nil {
 			rctx_cancel()
 			return nil, errors.New("invalid Github token")

@@ -66,7 +66,6 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 			}
 		}
 
-		// all else
 		discard = append(discard, response)
 	}
 	defer func() {

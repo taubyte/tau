@@ -14,16 +14,26 @@ type Repository interface {
 	Delete(ctx context.Context) error
 	Serialize() Data
 	Hooks(ctx context.Context) []hooks.Hook
+	ID() int
+	Provider() string
 }
 
-type RepositoryCommon struct {
-	KV       kvdb.KVDB
-	Provider string
-	Project  string
+type repositoryCommon struct {
+	kv       kvdb.KVDB
+	provider string
+	project  string
 }
 
-type GithubRepository struct {
-	RepositoryCommon
-	Id  int
-	Key string
+type githubRepository struct {
+	repositoryCommon
+	id  int
+	key string
+}
+
+func (r *githubRepository) ID() int {
+	return r.id
+}
+
+func (r *githubRepository) Provider() string {
+	return r.provider
 }

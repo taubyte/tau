@@ -36,10 +36,6 @@ func (srv *AuthService) listHooks(ctx context.Context) (cr.Response, error) {
 }
 
 func (srv *AuthService) apiHookServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	// params:
-	//  TODO: add encrption key to service library
-	//  action: get/set
-	//  fqdn: domain name
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err
@@ -81,11 +77,6 @@ func (srv *AuthService) listRepo(ctx context.Context) (cr.Response, error) {
 }
 
 func (srv *AuthService) apiGitRepositoryServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	// params:
-	//  TODO: add encrption key to service library
-	//  action: get/set
-	//  provider: github/...
-	//  id
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err
@@ -137,11 +128,6 @@ func (srv *AuthService) listProjects(ctx context.Context) (cr.Response, error) {
 }
 
 func (srv *AuthService) apiProjectsServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	// params:
-	//  TODO: add encrption key to service library
-	//  action: get/set
-	//  provider: github/...
-	//  id
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err

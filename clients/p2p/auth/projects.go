@@ -2,6 +2,7 @@ package auth
 
 import (
 	"fmt"
+	"strconv"
 
 	iface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/p2p/streams/command"
@@ -24,8 +25,33 @@ func (p *Projects) New(obj map[string]interface{}) *iface.Project {
 		return nil
 	}
 
-	configID, _ := maps.Int(obj, "config")
-	codeID, _ := maps.Int(obj, "code")
+	var configID, codeID int
+	if configIDStr, ok := obj["config"].(string); ok {
+		configID, err = strconv.Atoi(configIDStr)
+		if err != nil {
+			if configIDInt, ok := obj["config"].(int); ok {
+				configID = configIDInt
+			} else {
+				configID = 0
+			}
+		}
+	} else {
+		configID, _ = maps.Int(obj, "config")
+	}
+
+	if codeIDStr, ok := obj["code"].(string); ok {
+		codeID, err = strconv.Atoi(codeIDStr)
+		if err != nil {
+			if codeIDInt, ok := obj["code"].(int); ok {
+				codeID = codeIDInt
+			} else {
+				codeID = 0
+			}
+		}
+	} else {
+		codeID, _ = maps.Int(obj, "code")
+	}
+
 	prj.Git.Config = &GithubRepository{
 		RepositoryCommon: RepositoryCommon{
 			id: configID,
