@@ -150,8 +150,8 @@ func TestP2PStreamEndpointsWithFixtures(t *testing.T) {
 	assert.DeepEqual(t, specificCert, wildcardCertData)
 }
 
-// Test statsServiceHandler with different action scenarios
-func TestStatsServiceHandlerScenarios(t *testing.T) {
+// Test statsServiceHandler with different input validation scenarios
+func TestStatsServiceHandlerInputValidation(t *testing.T) {
 	ctx := context.Background()
 	mockFactory := mock.New()
 	cfg := &config.Node{

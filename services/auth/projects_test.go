@@ -60,8 +60,8 @@ func TestProjectsEndpointsWithFixtures(t *testing.T) {
 	assert.Assert(t, err != nil, "Expected error for invalid action type")
 }
 
-// Test project business logic functions
-func TestProjectBusinessLogic(t *testing.T) {
+// Test project error handling and edge cases
+func TestProjectErrorHandling(t *testing.T) {
 	ctx := context.Background()
 	mockFactory := mock.New()
 	cfg := &config.Node{
@@ -99,8 +99,8 @@ func TestProjectBusinessLogic(t *testing.T) {
 	assert.Assert(t, err != nil, "Expected error for invalid project action")
 }
 
-// Test apiProjectsServiceHandler with different action scenarios
-func TestApiProjectsServiceHandlerScenarios(t *testing.T) {
+// Test apiProjectsServiceHandler with different input validation scenarios
+func TestApiProjectsServiceHandlerInputValidation(t *testing.T) {
 	ctx := context.Background()
 	mockFactory := mock.New()
 	cfg := &config.Node{
@@ -136,8 +136,8 @@ func TestApiProjectsServiceHandlerScenarios(t *testing.T) {
 	assert.Assert(t, listResp != nil)
 }
 
-// Test project and repository API functions
-func TestProjectAndRepositoryAPIFunctions(t *testing.T) {
+// Test project and repository API operations with sub-tests
+func TestProjectAndRepositoryAPIOperationsWithSubTests(t *testing.T) {
 	ctx := context.Background()
 	mockFactory := mock.New()
 	cfg := &config.Node{

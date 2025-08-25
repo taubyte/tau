@@ -116,8 +116,8 @@ func TestRepositoriesEndpointsWithFixtures(t *testing.T) {
 	assert.Assert(t, err != nil, "Expected error for invalid action type")
 }
 
-// Test repository hook business logic functions
-func TestRepositoryHookBusinessLogic(t *testing.T) {
+// Test repository hook error handling and edge cases
+func TestRepositoryHookErrorHandling(t *testing.T) {
 	ctx := context.Background()
 	mockFactory := mock.New()
 	cfg := &config.Node{
@@ -152,8 +152,8 @@ func TestRepositoryHookBusinessLogic(t *testing.T) {
 	assert.Assert(t, err != nil, "Expected error for unsupported provider")
 }
 
-// Test repository hook functions
-func TestRepositoryHookFunctions(t *testing.T) {
+// Test repository hook error handling for non-existent entities
+func TestRepositoryHookErrorHandlingForNonExistentEntities(t *testing.T) {
 	ctx := context.Background()
 	mockFactory := mock.New()
 	cfg := &config.Node{
@@ -176,8 +176,8 @@ func TestRepositoryHookFunctions(t *testing.T) {
 	assert.Assert(t, err != nil, "Expected error for non-existent repository")
 }
 
-// Test hook and repository API functions
-func TestHookAndRepositoryFunctions(t *testing.T) {
+// Test hook and repository list operations and invalid action handling
+func TestHookAndRepositoryListOperationsAndInvalidActions(t *testing.T) {
 	ctx := context.Background()
 	mockFactory := mock.New()
 	cfg := &config.Node{
@@ -220,8 +220,8 @@ func TestHookAndRepositoryFunctions(t *testing.T) {
 	assert.Assert(t, err != nil, "Expected error for invalid repository action")
 }
 
-// Test apiHookServiceHandler with different action scenarios
-func TestApiHookServiceHandlerScenarios(t *testing.T) {
+// Test apiHookServiceHandler with different input validation scenarios
+func TestApiHookServiceHandlerInputValidation(t *testing.T) {
 	ctx := context.Background()
 	mockFactory := mock.New()
 	cfg := &config.Node{
@@ -257,8 +257,8 @@ func TestApiHookServiceHandlerScenarios(t *testing.T) {
 	assert.Assert(t, listResp != nil)
 }
 
-// Test apiGitRepositoryServiceHandler with different action scenarios
-func TestApiGitRepositoryServiceHandlerScenarios(t *testing.T) {
+// Test apiGitRepositoryServiceHandler with different input validation scenarios
+func TestApiGitRepositoryServiceHandlerInputValidation(t *testing.T) {
 	ctx := context.Background()
 	mockFactory := mock.New()
 	cfg := &config.Node{

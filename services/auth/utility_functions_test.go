@@ -125,8 +125,8 @@ func TestDeployKeyConstants(t *testing.T) {
 	}
 }
 
-// Test utility functions
-func TestUtilityFunctions(t *testing.T) {
+// Test key generation and validation utility functions
+func TestKeyGenerationAndValidation(t *testing.T) {
 	// Test extractProjectVariables with mock context
 	// This would require mocking the http.Context interface
 	// For now, let's test the function logic directly

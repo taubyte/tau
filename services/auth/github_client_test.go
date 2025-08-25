@@ -177,8 +177,8 @@ func TestMockDatabaseIntegration(t *testing.T) {
 	})
 }
 
-// Test GitHub client methods using gock to mock API responses
-func TestGitHubClientMethodsWithGock(t *testing.T) {
+// Test GitHub client error handling and edge cases
+func TestGitHubClientErrorHandling(t *testing.T) {
 	defer gock.Off()
 
 	t.Run("test GetByID with invalid ID", func(t *testing.T) {

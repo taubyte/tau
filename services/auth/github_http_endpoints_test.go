@@ -117,7 +117,7 @@ func TestGitHubClientMock(t *testing.T) {
 	})
 }
 
-func TestHelperFunctions(t *testing.T) {
+func TestContextVariableExtractionAndGitHubClientHelpers(t *testing.T) {
 	t.Run("extract project variables logic", func(t *testing.T) {
 		// Test the logic that would be used in the HTTP handlers
 		ctxVars := map[string]interface{}{
