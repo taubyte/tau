@@ -1902,7 +1902,7 @@ func (m *mockGitHubClient) Me() *github.User {
 		// Create a mock user if none exists
 		m.user = &github.User{
 			ID:    github.Int64(12345),
-			Login: github.String("testuser"),
+			Login: github.Ptr("testuser"),
 		}
 	}
 	return m.user
@@ -1912,8 +1912,8 @@ func (m *mockGitHubClient) GetByID(id string) error {
 	// Create a mock repository when GetByID is called
 	m.currentRepo = &github.Repository{
 		ID:       github.Int64(12345),
-		SSHURL:   github.String("git@github.com:test/test-repo.git"),
-		FullName: github.String("test/test-repo"),
+		SSHURL:   github.Ptr("git@github.com:test/test-repo.git"),
+		FullName: github.Ptr("test/test-repo"),
 	}
 	return nil
 }

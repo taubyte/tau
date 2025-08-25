@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/google/go-github/v71/github"
 	"github.com/h2non/gock"
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/peer"
@@ -224,4 +225,200 @@ func TestGitHubClientMethodsWithGock(t *testing.T) {
 
 	// Note: ShortRepositoryInfo requires a real GitHub client to test properly
 	// We'll skip testing it for now since it requires complex mocking
+}
+
+// Test GitHub client methods for comprehensive coverage
+func TestGitHubClientComprehensiveCoverage(t *testing.T) {
+	defer gock.Off()
+	ctx := context.Background()
+
+	// Test CreateRepository with gock
+	t.Run("CreateRepository", func(t *testing.T) {
+		// Mock GitHub API response for repository creation
+		gock.New("https://api.github.com").
+			Post("/user/repos").
+			Reply(201).
+			JSON(map[string]interface{}{
+				"id":        12345,
+				"name":      "test-repo",
+				"full_name": "testuser/test-repo",
+				"private":   true,
+			})
+
+		// Create a real GitHub client that gock can intercept
+		ghClient := github.NewClient(nil) // nil transport will use gock
+		client := &githubClient{
+			Client: ghClient,
+			ctx:    ctx,
+		}
+
+		// Test with valid parameters
+		name := "test-repo"
+		description := "Test repository"
+		private := true
+
+		err := client.CreateRepository(&name, &description, &private)
+		assert.NilError(t, err)
+		assert.Assert(t, client.current_repository != nil)
+		assert.Equal(t, client.current_repository.GetName(), "test-repo")
+
+		assert.Assert(t, gock.IsDone())
+	})
+
+	// Test CreateDeployKey with gock
+	t.Run("CreateDeployKey", func(t *testing.T) {
+		// Mock GitHub API response for deploy key creation
+		gock.New("https://api.github.com").
+			Post("/repos/testuser/test-repo/keys").
+			Reply(201).
+			JSON(map[string]interface{}{
+				"id":    12345,
+				"key":   "ssh-rsa test-key-content",
+				"title": "test-key",
+			})
+
+		// Create a real GitHub client that gock can intercept
+		ghClient := github.NewClient(nil) // nil transport will use gock
+		client := &githubClient{
+			Client: ghClient,
+			ctx:    ctx,
+		}
+
+		// Test with nil repository (error path)
+		name := "test-key"
+		key := "test-key-content"
+		err := client.CreateDeployKey(&name, &key)
+		assert.Assert(t, err != nil, "Expected error for no repository selected")
+		assert.Equal(t, err.Error(), "no repository selected")
+
+		// Test with valid repository
+		client.current_repository = &github.Repository{
+			Name: github.Ptr("test-repo"),
+		}
+		client.user = &github.User{
+			Login: github.Ptr("testuser"),
+		}
+
+		err = client.CreateDeployKey(&name, &key)
+		assert.NilError(t, err)
+
+		assert.Assert(t, gock.IsDone())
+	})
+
+	// Test CreatePushHook with gock
+	t.Run("CreatePushHook", func(t *testing.T) {
+		// Mock GitHub API response for webhook creation
+		gock.New("https://api.github.com").
+			Post("/repos/testuser/test-repo/hooks").
+			Reply(201).
+			JSON(map[string]interface{}{
+				"id":     12345,
+				"name":   "web",
+				"active": true,
+				"config": map[string]interface{}{
+					"url": "https://test.com/webhook",
+				},
+			})
+
+		// Create a real GitHub client that gock can intercept
+		ghClient := github.NewClient(nil) // nil transport will use gock
+		client := &githubClient{
+			Client: ghClient,
+			ctx:    ctx,
+		}
+
+		// Test with nil repository (error path)
+		name := "test-hook"
+		url := "https://test.com/webhook"
+		_, _, err := client.CreatePushHook(&name, &url, false)
+		assert.Assert(t, err != nil, "Expected error for no repository selected")
+		assert.Equal(t, err.Error(), "no repository selected")
+
+		// Set repository for dev mode test
+		client.current_repository = &github.Repository{
+			Name: github.Ptr("test-repo"),
+		}
+		client.user = &github.User{
+			Login: github.Ptr("testuser"),
+		}
+
+		// Test devMode = true (should return success without API call)
+		_, secret, err := client.CreatePushHook(&name, &url, true)
+		assert.NilError(t, err)
+		assert.Assert(t, secret != "")
+
+		// Now test with repository set (this will use the gock mock)
+		_, _, err = client.CreatePushHook(&name, &url, false)
+		assert.NilError(t, err)
+
+		assert.Assert(t, gock.IsDone())
+	})
+
+	// Test ListMyRepos with gock
+	t.Run("ListMyRepos", func(t *testing.T) {
+		// Mock GitHub API response for user repositories
+		gock.New("https://api.github.com").
+			Get("/user/repos").
+			Reply(200).
+			JSON([]map[string]interface{}{
+				{
+					"id":        111,
+					"name":      "repo1",
+					"full_name": "testuser/repo1",
+					"url":       "https://api.github.com/repos/testuser/repo1",
+				},
+				{
+					"id":        222,
+					"name":      "repo2",
+					"full_name": "testuser/repo2",
+					"url":       "https://api.github.com/repos/testuser/repo2",
+				},
+			})
+
+		// Create a real GitHub client that gock can intercept
+		ghClient := github.NewClient(nil) // nil transport will use gock
+		client := &githubClient{
+			Client: ghClient,
+			ctx:    ctx,
+		}
+
+		repos := client.ListMyRepos()
+		assert.Assert(t, repos != nil)
+		assert.Equal(t, len(repos), 2)
+
+		assert.Assert(t, gock.IsDone())
+	})
+
+	// Test ShortRepositoryInfo with gock
+	t.Run("ShortRepositoryInfo", func(t *testing.T) {
+		// Mock GitHub API response for repository by ID
+		gock.New("https://api.github.com").
+			Get("/repositories/12345").
+			Reply(200).
+			JSON(map[string]interface{}{
+				"id":        12345,
+				"name":      "test-repo",
+				"full_name": "testuser/test-repo",
+				"url":       "https://api.github.com/repos/testuser/test-repo",
+			})
+
+		// Create a real GitHub client that gock can intercept
+		ghClient := github.NewClient(nil) // nil transport will use gock
+		client := &githubClient{
+			Client: ghClient,
+			ctx:    ctx,
+		}
+
+		// Test with invalid ID
+		info := client.ShortRepositoryInfo("invalid-id")
+		assert.Equal(t, info.Error, "Incorrect repository ID")
+
+		// Test with valid ID
+		info = client.ShortRepositoryInfo("12345")
+		assert.Equal(t, info.ID, "12345")
+		assert.Equal(t, info.Name, "test-repo")
+		assert.Equal(t, info.FullName, "testuser/test-repo")
+
+		assert.Assert(t, gock.IsDone())
+	})
 }

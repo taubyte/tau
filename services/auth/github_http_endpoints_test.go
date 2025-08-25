@@ -9,6 +9,7 @@ import (
 
 	"github.com/h2non/gock"
 	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/p2p/keypair"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
 	"gotest.tools/v3/assert"
@@ -198,5 +199,140 @@ func TestHelperFunctions(t *testing.T) {
 		client, exists := ctxVars["GithubClient"]
 		assert.Assert(t, exists)
 		assert.Assert(t, client != nil)
+	})
+}
+
+// Test GitHub HTTP endpoint handlers with comprehensive scenarios
+func TestGitHubHTTPEndpointsWithFixtures(t *testing.T) {
+	ctx := context.Background()
+	mockFactory := mock.New()
+	cfg := &config.Node{
+		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12385"},
+		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12385"},
+		PrivateKey:  keypair.NewRaw(),
+		Databases:   mockFactory,
+		Root:        t.TempDir(),
+	}
+	svc, err := New(ctx, cfg)
+	assert.NilError(t, err)
+	defer svc.Close()
+
+	// Replace the newGitHubClient function with a mock
+	mockGitHubClient := &mockGitHubClient{}
+	svc.newGitHubClient = func(ctx context.Context, token string) (GitHubClient, error) {
+		return mockGitHubClient, nil
+	}
+
+	// Test 1: Extract project variables
+	t.Run("extractProjectVariables", func(t *testing.T) {
+		// Create a mock context with the expected variable structure
+		mockCtx := &mockHTTPContextWithComplexVars{
+			variables: map[string]interface{}{
+				"config": map[string]interface{}{
+					"id": "test-config-id",
+				},
+				"code": map[string]interface{}{
+					"id": "test-code-id",
+				},
+				"project": "test-project-name",
+			},
+		}
+
+		configID, codeID, projectName, err := extractProjectVariables(mockCtx)
+		assert.NilError(t, err)
+		assert.Equal(t, configID, "test-config-id")
+		assert.Equal(t, codeID, "test-code-id")
+		assert.Equal(t, projectName, "test-project-name")
+	})
+
+	// Test 2: New GitHub project HTTP handler
+	t.Run("newGitHubProjectHTTPHandler", func(t *testing.T) {
+		mockCtx := &mockHTTPContext{
+			variables: map[string]string{
+				"project": "test-project",
+				"config":  "test-config",
+				"code":    "test-code",
+			},
+		}
+
+		// This will fail because getGithubClientFromContext expects a real GitHub client
+		// but we're testing the handler logic, not the actual GitHub API calls
+		_, err := svc.newGitHubProjectHTTPHandler(mockCtx)
+		assert.Assert(t, err != nil, "Expected error for missing GitHub client")
+	})
+
+	// Test 3: Import GitHub project HTTP handler
+	t.Run("importGitHubProjectHTTPHandler", func(t *testing.T) {
+		mockCtx := &mockHTTPContext{
+			variables: map[string]string{
+				"project":    "test-project",
+				"config":     "test-config",
+				"code":       "test-code",
+				"project-id": "test-project-id",
+			},
+		}
+
+		_, err := svc.importGitHubProjectHTTPHandler(mockCtx)
+		assert.Assert(t, err != nil, "Expected error for missing GitHub client")
+	})
+
+	// Test 4: Register GitHub user repository HTTP handler
+	t.Run("registerGitHubUserRepositoryHTTPHandler", func(t *testing.T) {
+		mockCtx := &mockHTTPContext{
+			variables: map[string]string{
+				"provider": "github",
+				"id":       "test-repo-id",
+			},
+		}
+
+		_, err := svc.registerGitHubUserRepositoryHTTPHandler(mockCtx)
+		assert.Assert(t, err != nil, "Expected error for missing GitHub client")
+	})
+
+	// Test 5: Get GitHub user repository HTTP handler
+	t.Run("getGitHubUserRepositoryHTTPHandler", func(t *testing.T) {
+		// Test case 1: Missing GitHub client (existing test)
+		mockCtx := &mockHTTPContext{
+			variables: map[string]string{
+				"provider": "github",
+				"id":       "test-repo-id",
+			},
+		}
+
+		_, err := svc.getGitHubUserRepositoryHTTPHandler(mockCtx)
+		assert.Assert(t, err != nil, "Expected error for missing GitHub client")
+
+		// Test case 2: Missing provider variable
+		mockCtxMissingProvider := &mockHTTPContext{
+			variables: map[string]string{
+				"id": "test-repo-id",
+			},
+		}
+
+		_, err = svc.getGitHubUserRepositoryHTTPHandler(mockCtxMissingProvider)
+		assert.Assert(t, err != nil, "Expected error for missing provider")
+
+		// Test case 3: Missing id variable
+		mockCtxMissingID := &mockHTTPContext{
+			variables: map[string]string{
+				"provider": "github",
+			},
+		}
+
+		_, err = svc.getGitHubUserRepositoryHTTPHandler(mockCtxMissingID)
+		assert.Assert(t, err != nil, "Expected error for missing id")
+	})
+
+	// Test 6: Unregister GitHub user repository HTTP handler
+	t.Run("unregisterGitHubUserRepositoryHTTPHandler", func(t *testing.T) {
+		mockCtx := &mockHTTPContext{
+			variables: map[string]string{
+				"provider": "github",
+				"id":       "test-repo-id",
+			},
+		}
+
+		_, err := svc.unregisterGitHubUserRepositoryHTTPHandler(mockCtx)
+		assert.Assert(t, err != nil, "Expected error for missing GitHub client")
 	})
 }
