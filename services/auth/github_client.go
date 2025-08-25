@@ -85,7 +85,7 @@ func (client *githubClient) GetByID(id string) error {
 
 func (client *githubClient) GetCurrentRepository() (*github.Repository, error) {
 	if client.current_repository == nil {
-		return nil, errors.New("Client has no current repository")
+		return nil, errors.New("client has no current repository")
 	}
 
 	return client.current_repository, nil
@@ -175,14 +175,14 @@ func (client *githubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
 	_id, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
 		return RepositoryShortInfo{
-			Error: "Incorrect repository ID",
+			Error: "incorrect repository ID",
 		}
 	}
 
 	_repoInfo, _, err := client.Repositories.GetByID(client.ctx, _id)
 	if err != nil {
 		return RepositoryShortInfo{
-			Error: fmt.Sprintf("Error %s", err),
+			Error: fmt.Sprintf("error: %s", err),
 		}
 	}
 

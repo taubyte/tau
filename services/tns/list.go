@@ -20,7 +20,7 @@ func (srv *Service) listHandler(ctx context.Context, conn streams.Connection, bo
 
 	_keys, err := srv.engine.Lookup(ctx, iface.Query{Prefix: []string{}, RegEx: false})
 	if err != nil {
-		return nil, fmt.Errorf("failed list with error: %v", err)
+		return nil, fmt.Errorf("failed to list: %v", err)
 	}
 
 	uniq := make(map[string][]string)

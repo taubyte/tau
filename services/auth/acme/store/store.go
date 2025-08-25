@@ -149,12 +149,12 @@ func (d *Store) getStaticCertificate(name string) ([]byte, error) {
 
 	resp, err := d.client.Send("acme", command.Body{"action": "get-static", "fqdn": name})
 	if err != nil {
-		return nil, fmt.Errorf("failed get certificate for %s with %v", name, err)
+		return nil, fmt.Errorf("failed to get certificate for %s: %v", name, err)
 	}
 
 	certData, err := maps.ByteArray(resp, "certificate")
 	if err != nil {
-		return nil, fmt.Errorf("failed finding certificate with %v", err)
+		return nil, fmt.Errorf("failed to find certificate: %v", err)
 	}
 
 	return certData, nil

@@ -25,7 +25,7 @@ func (srv *Service) setupStreamRoutes() {
 func (srv *Service) ServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	action, err := maps.String(body, "action")
 	if err != nil {
-		return nil, fmt.Errorf("getting action failed with: %w", err)
+		return nil, fmt.Errorf("failed to get action: %w", err)
 	}
 
 	cid, err := maps.String(body, "cid")
@@ -50,7 +50,7 @@ func (srv *Service) listHandler(ctx context.Context) (cr.Response, error) {
 	cids := make([]string, 0)
 	entries, err := srv.db.List(ctx, hoarderSpecs.StashPath)
 	if err != nil {
-		return nil, fmt.Errorf("list failed with: %w", err)
+		return nil, fmt.Errorf("failed to list: %w", err)
 	}
 
 	for _, ids := range entries {
@@ -135,7 +135,7 @@ func (srv *Service) stashHandler(ctx context.Context, id string, peers []string)
 func (srv *Service) rareHandler(ctx context.Context) (cr.Response, error) {
 	entries, err := srv.db.List(ctx, hoarderSpecs.StashPath)
 	if err != nil {
-		return nil, fmt.Errorf("list failed with: %w", err)
+		return nil, fmt.Errorf("failed to list: %w", err)
 	}
 
 	rareCID := make([]string, 0)
@@ -143,11 +143,11 @@ func (srv *Service) rareHandler(ctx context.Context) (cr.Response, error) {
 		var replicaData *registryItem
 		respBytes, err := srv.db.Get(ctx, id)
 		if err != nil {
-			return nil, fmt.Errorf("getting kvdb item failed with: %w", err)
+			return nil, fmt.Errorf("failed to get kvdb item: %w", err)
 		}
 
 		if err = cbor.Unmarshal(respBytes, &replicaData); err != nil {
-			return nil, fmt.Errorf("cbor unmarshal of replica failed with: %w", err)
+			return nil, fmt.Errorf("failed to unmarshal replica: %w", err)
 		}
 
 		id = strings.TrimPrefix(id, hoarderSpecs.StashPath)

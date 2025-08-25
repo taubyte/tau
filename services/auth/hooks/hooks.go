@@ -81,28 +81,28 @@ func (h *GithubHook) Delete(ctx context.Context) error {
 	// Batch all GitHub hook deletion operations
 	err = batch.Delete(root + "/github/id")
 	if err != nil {
-		return fmt.Errorf("failed to batch delete hook ID: %w", err)
+		return fmt.Errorf("failed to delete hook ID: %w", err)
 	}
 
 	err = batch.Delete(root + "/github/secret")
 	if err != nil {
-		return fmt.Errorf("failed to batch delete hook secret: %w", err)
+		return fmt.Errorf("failed to delete hook secret: %w", err)
 	}
 
 	err = batch.Delete(root + "/github/repository")
 	if err != nil {
-		return fmt.Errorf("failed to batch delete hook repository: %w", err)
+		return fmt.Errorf("failed to delete hook repository: %w", err)
 	}
 
 	err = batch.Delete(fmt.Sprintf("/repositories/github/%d/hooks/%s", h.Repository, h.Id))
 	if err != nil {
-		return fmt.Errorf("failed to batch delete repository hook reference: %w", err)
+		return fmt.Errorf("failed to delete repository hook reference: %w", err)
 	}
 
 	// Commit all deletions atomically
 	err = batch.Commit()
 	if err != nil {
-		return fmt.Errorf("failed to commit hook deletion batch: %w", err)
+		return fmt.Errorf("failed to commit deletion batch: %w", err)
 	}
 
 	return nil
@@ -128,32 +128,32 @@ func (h *GithubHook) Register(ctx context.Context) error {
 	err = batch.Put(fmt.Sprintf("/repositories/github/%d/hooks/%s", h.Repository, h.Id), nil)
 	if err != nil {
 		h.Delete(ctx)
-		return fmt.Errorf("failed to batch repository hook reference: %w", err)
+		return fmt.Errorf("failed to put repository hook reference: %w", err)
 	}
 
 	err = batch.Put(root+"/github/id", network.UInt64ToBytes(uint64(h.GithubId)))
 	if err != nil {
 		h.Delete(ctx)
-		return fmt.Errorf("failed to batch hook ID: %w", err)
+		return fmt.Errorf("failed to put hook ID: %w", err)
 	}
 
 	err = batch.Put(root+"/github/secret", []byte(h.Secret))
 	if err != nil {
 		h.Delete(ctx)
-		return fmt.Errorf("failed to batch hook secret: %w", err)
+		return fmt.Errorf("failed to put hook secret: %w", err)
 	}
 
 	err = batch.Put(root+"/github/repository", network.UInt64ToBytes(uint64(h.Repository)))
 	if err != nil {
 		h.Delete(ctx)
-		return fmt.Errorf("failed to batch hook repository: %w", err)
+		return fmt.Errorf("failed to put hook repository: %w", err)
 	}
 
 	// Commit all operations atomically
 	err = batch.Commit()
 	if err != nil {
 		h.Delete(ctx)
-		return fmt.Errorf("failed to commit hook registration batch: %w", err)
+		return fmt.Errorf("failed to commit registration batch: %w", err)
 	}
 
 	return nil
@@ -186,7 +186,7 @@ func Fetch(ctx context.Context, kv kvdb.KVDB, hook_id string) (Hook, error) {
 		}
 		id, err := network.BytesToUInt64(_id)
 		if err != nil {
-			return nil, errors.New("Repository ID for Hook `" + hook_id + "` is not an `int`")
+			return nil, errors.New("repository ID for hook `" + hook_id + "` is not an `int`")
 		}
 
 		data["github_id"] = int(id)
@@ -203,7 +203,7 @@ func Fetch(ctx context.Context, kv kvdb.KVDB, hook_id string) (Hook, error) {
 		}
 		repository, err := network.BytesToUInt64(_repository)
 		if err != nil {
-			return nil, errors.New("Repository ID for Hook `" + hook_id + "` is not an `int`")
+			return nil, errors.New("repository ID for hook `" + hook_id + "` is not an `int`")
 		}
 
 		data["repository"] = int(repository)
@@ -251,6 +251,6 @@ func New(kv kvdb.KVDB, data Data) (Hook, error) {
 			Repository: repository,
 		}, nil
 	default:
-		return nil, fmt.Errorf("unknown hook type `%s` ", provider)
+		return nil, fmt.Errorf("unknown hook type `%s`", provider)
 	}
 }

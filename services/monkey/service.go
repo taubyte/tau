@@ -33,7 +33,7 @@ func (srv *Service) subscribe() error {
 			if err.Error() != "context canceled" {
 				logger.Error("Subscription had an error:", err.Error())
 				if err := srv.subscribe(); err != nil {
-					logger.Error("resubscribe failed with:", err.Error())
+					logger.Error("failed to resubscribe:", err.Error())
 				}
 			}
 		},
@@ -91,12 +91,12 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 
 	sc, err := seerClient.New(ctx, srv.clientNode)
 	if err != nil {
-		return nil, fmt.Errorf("creating seer client failed with %s", err)
+		return nil, fmt.Errorf("failed to create seer client: %s", err)
 	}
 
 	err = protocolCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeMonkey)
 	if err != nil {
-		return nil, fmt.Errorf("starting seer beacon failed with %s", err)
+		return nil, fmt.Errorf("failed to start seer beacon: %s", err)
 	}
 
 	srv.monkeys = make(map[string]*Monkey, 0)

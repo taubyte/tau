@@ -18,7 +18,7 @@ import (
 func handleRegex(pattern, match string) error {
 	matched, err := regexp.Match(pattern, []byte(match))
 	if err != nil {
-		return fmt.Errorf("parsing regex pattern `%s` failed with: %w", pattern, err)
+		return fmt.Errorf("failed to parse regex pattern `%s`: %w", pattern, err)
 	}
 
 	if !matched {
@@ -103,11 +103,11 @@ func (srv *Service) publishAction(ctx context.Context, action *hoarderIface.Auct
 	action.Type = actionType
 	actionBytes, err := cbor.Marshal(action)
 	if err != nil {
-		return fmt.Errorf("failed marshalling action with %w", err)
+		return fmt.Errorf("failed to marshal action: %w", err)
 	}
 
 	if err = srv.node.PubSubPublish(ctx, hoarderSpecs.PubSubIdent, actionBytes); err != nil {
-		return fmt.Errorf("publish to `%s` failed with: %w", hoarderSpecs.PubSubIdent, err)
+		return fmt.Errorf("failed to publish to `%s`: %w", hoarderSpecs.PubSubIdent, err)
 	}
 
 	return nil
@@ -126,13 +126,13 @@ func (srv *Service) storeAuction(ctx context.Context, auction *hoarderIface.Auct
 	case hoarderIface.Database:
 		db, err := srv.tnsClient.Database().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, auction.Meta.Branch).GetById(auction.Meta.ConfigId)
 		if err != nil {
-			return fmt.Errorf("getting database with id `%s` failed with: %w", auction.Meta.ConfigId, err)
+			return fmt.Errorf("failed to get database with id `%s`: %w", auction.Meta.ConfigId, err)
 		}
 		config, match, name, regex, metaType = db, db.Match, db.Name, db.Regex, databaseSpec.PathVariable.String()
 	case hoarderIface.Storage:
 		stor, err := srv.tnsClient.Storage().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, auction.Meta.Branch).GetById(auction.Meta.ConfigId)
 		if err != nil {
-			return fmt.Errorf("getting storage with id `%s` failed with: %w", auction.Meta.ConfigId, err)
+			return fmt.Errorf("failed to get storage with id `%s`: %w", auction.Meta.ConfigId, err)
 		}
 
 		config, match, name, regex, metaType = stor, stor.Match, stor.Name, stor.Regex, storageSpec.PathVariable.String()
@@ -141,12 +141,12 @@ func (srv *Service) storeAuction(ctx context.Context, auction *hoarderIface.Auct
 	}
 
 	if err := checkMatch(regex, auction.Meta.Match, match, name); err != nil {
-		return fmt.Errorf("checking auction match failed with: %w", err)
+		return fmt.Errorf("failed to check auction match: %w", err)
 	}
 
 	configBytes, err := cbor.Marshal(config)
 	if err != nil {
-		return fmt.Errorf("cbor marshal of config failed with: %w", err)
+		return fmt.Errorf("failed to marshal config: %w", err)
 	}
 
 	if !strings.HasPrefix(auction.Meta.Match, "/") {
@@ -158,7 +158,7 @@ func (srv *Service) storeAuction(ctx context.Context, auction *hoarderIface.Auct
 
 	key := datastore.NewKey(fmt.Sprintf("/hoarder/%s/%s%s", metaType, auction.Meta.ConfigId, auction.Meta.Match))
 	if err := srv.db.Put(ctx, key.String(), configBytes); err != nil {
-		return fmt.Errorf("put failed with: %w", err)
+		return fmt.Errorf("failed to put: %w", err)
 	}
 
 	return err

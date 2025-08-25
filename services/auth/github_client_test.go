@@ -411,7 +411,7 @@ func TestGitHubClientComprehensiveCoverage(t *testing.T) {
 
 		// Test with invalid ID
 		info := client.ShortRepositoryInfo("invalid-id")
-		assert.Equal(t, info.Error, "Incorrect repository ID")
+		assert.Equal(t, info.Error, "incorrect repository ID")
 
 		// Test with valid ID
 		info = client.ShortRepositoryInfo("12345")

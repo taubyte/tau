@@ -98,7 +98,7 @@ func (p *Projects) List() ([]string, error) {
 	}
 	ids, err := maps.StringArray(response, "ids")
 	if err != nil {
-		return nil, fmt.Errorf("failed map string array on list error: %v", err)
+		return nil, fmt.Errorf("failed to get ids from response: %v", err)
 	}
 	return ids, nil
 }

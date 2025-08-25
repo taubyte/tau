@@ -30,11 +30,11 @@ func (m *Monkey) Run() {
 	m.Status = patrick.JobStatusLocked
 	isLocked, err := m.Service.patrickClient.IsLocked(m.Id)
 	if !isLocked {
-		appendAndLogError(errs, "Locking job %s failed", m.Id)
+		appendAndLogError(errs, "failed to lock job %s", m.Id)
 		gotIt = false
 	}
 	if err != nil {
-		appendAndLogError(errs, "Checking if locked job %s failed with: %s", m.Id, err.Error())
+		appendAndLogError(errs, "failed to check if job %s is locked: %s", m.Id, err.Error())
 		gotIt = false
 	}
 
@@ -70,14 +70,14 @@ func (m *Monkey) Run() {
 	m.appendErrors(m.logFile, errs)
 	cid, err0 := m.storeLogs(m.logFile)
 	if err0 != nil {
-		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err0.Error())
+		logger.Errorf("failed to write cid of job `%s`: %s", m.Id, err0.Error())
 	}
 
 	m.Job.Logs[m.Job.Id] = cid //FIXME: maybe have some other kind of index for m.Job.Logs, like Timestamp
 	m.LogCID = cid
 	if err != nil {
 		if err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid); err != nil {
-			logger.Errorf("Marking job failed `%s` failed with: %s", m.Id, err.Error())
+			logger.Errorf("failed to mark job `%s` as failed: %s", m.Id, err.Error())
 		}
 		m.Status = patrick.JobStatusFailed
 	} else {
@@ -91,14 +91,14 @@ func (m *Monkey) Run() {
 
 	// Stash the logs
 	if _, err = m.Service.hoarderClient.Stash(cid); err != nil {
-		logger.Errorf("Hoarding cid `%s` of job `%s` failed: %s", cid, m.Id, err.Error())
+		logger.Errorf("failed to hoard cid `%s` of job `%s`: %s", cid, m.Id, err.Error())
 	}
 
 }
 
 func (m *Monkey) run(errs chan error) {
 	if err := m.RunJob(); err != nil {
-		appendAndLogError(errs, "Running job `%s` failed with error: %s", m.Id, err.Error())
+		appendAndLogError(errs, "failed to run job `%s`: %s", m.Id, err.Error())
 	} else {
 		m.logFile.Seek(0, io.SeekEnd)
 		fmt.Fprintf(m.logFile, "\nRunning job `%s` was successful\n", m.Id)

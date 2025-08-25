@@ -25,7 +25,7 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 	}
 
 	if err = config.Validate(); err != nil {
-		err = fmt.Errorf("validating node config failed with: %w", err)
+		err = fmt.Errorf("failed to validate node config: %w", err)
 		return
 	}
 
@@ -37,7 +37,7 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 
 	defer func() {
 		if err != nil {
-			logger.Errorf("starting hoarder service failed with: %s", err.Error())
+			logger.Errorf("failed to start hoarder service: %s", err.Error())
 			s.Close()
 		}
 	}()
@@ -46,7 +46,7 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 	if config.Node == nil {
 		s.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolCommon.Hoarder))
 		if err != nil {
-			return nil, fmt.Errorf("new peer node failed with: %w", err)
+			return nil, fmt.Errorf("failed to create peer node: %w", err)
 
 		}
 	} else {
@@ -59,7 +59,7 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 	}
 
 	if s.stream, err = streams.New(s.node, protocolCommon.Hoarder, protocolCommon.HoarderProtocol); err != nil {
-		return nil, fmt.Errorf("new command service failed with: %w", err)
+		return nil, fmt.Errorf("failed to create command service: %w", err)
 	}
 
 	s.dbFactory = config.Databases
@@ -68,27 +68,27 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 	}
 
 	if s.db, err = s.dbFactory.New(logger, protocolCommon.Hoarder, 5); err != nil {
-		return nil, fmt.Errorf("creating database failed with: %w", err)
+		return nil, fmt.Errorf("failed to create database: %w", err)
 	}
 
 	s.setupStreamRoutes()
 
 	if err = s.subscribe(ctx); err != nil {
-		return nil, fmt.Errorf("pubsub subscribe failed with: %w", err)
+		return nil, fmt.Errorf("failed to subscribe to pubsub: %w", err)
 	}
 
 	if s.tnsClient, err = tnsApi.New(ctx, clientNode); err != nil {
-		return nil, fmt.Errorf("creating new tns client failed with: %w", err)
+		return nil, fmt.Errorf("failed to create tns client: %w", err)
 	}
 
 	// TODO: caching this why? StartSeerBeacon should handle this
 	sc, err := seerClient.New(ctx, clientNode)
 	if err != nil {
-		return nil, fmt.Errorf("new seer client failed with: %w", err)
+		return nil, fmt.Errorf("failed to create seer client: %w", err)
 	}
 
 	if err = protocolCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeHoarder); err != nil {
-		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
+		return nil, fmt.Errorf("failed to start seer beacon: %s", err)
 	}
 
 	service = s
@@ -122,11 +122,11 @@ func (srv *Service) subscribe(ctx context.Context) error {
 			var err error
 			defer func() {
 				if err != nil {
-					logger.Error("handling auction failed with: ", err.Error())
+					logger.Error("failed to handle auction: ", err.Error())
 				}
 			}()
 			if err = cbor.Unmarshal(msg.Data, auction); err != nil {
-				err = fmt.Errorf("unmarshal failed with: %w", err)
+				err = fmt.Errorf("failed to unmarshal: %w", err)
 				return
 			}
 
@@ -149,7 +149,7 @@ func (srv *Service) subscribe(ctx context.Context) error {
 				logger.Error("subscription ended with error:", err.Error())
 				logger.Info("re-establishing subscription")
 				if err := srv.subscribe(ctx); err != nil {
-					logger.Error("resubscribe failed with:", err.Error())
+					logger.Error("failed to resubscribe:", err.Error())
 				}
 			}
 		},

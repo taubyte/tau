@@ -24,7 +24,7 @@ import (
 
 func (s *Service) startStream() (err error) {
 	if s.stream, err = streams.New(s.node, protocolCommon.Substrate, protocolCommon.SubstrateProtocol); err != nil {
-		return fmt.Errorf("new stream failed with: %w", err)
+		return fmt.Errorf("failed to create stream: %w", err)
 	}
 
 	s.stream.Define("ping", func(context.Context, con.Connection, command.Body) (response.Response, error) {
@@ -32,7 +32,7 @@ func (s *Service) startStream() (err error) {
 	})
 
 	if err := s.stream.DefineStream(substrate.CommandHTTP, s.proxyHttp, s.tunnelHttp); err != nil {
-		return fmt.Errorf("defining command `%s` failed with: %w", substrate.CommandHTTP, err)
+		return fmt.Errorf("failed to define command `%s`: %w", substrate.CommandHTTP, err)
 	}
 
 	return
@@ -74,7 +74,7 @@ func (s *Service) parseHttpRequest(body command.Body) (*http.Request, error) {
 func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body command.Body) (response.Response, error) {
 	request, err := s.parseHttpRequest(body)
 	if err != nil {
-		return nil, fmt.Errorf("parsing matcher failed with: %w", err)
+		return nil, fmt.Errorf("failed to parse request: %w", err)
 	}
 
 	response := make(map[string]interface{})
@@ -88,7 +88,7 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 	); len(serviceables) < 1 {
 		pick, err = s.components.http.Lookup(&http.MatchDefinition{Request: request})
 		if err != nil {
-			return nil, fmt.Errorf("lookup failed with: %w", err)
+			return nil, fmt.Errorf("failed to lookup service: %w", err)
 		}
 	} else {
 		// lookup should always return 0 or 1 serviceable
@@ -105,7 +105,7 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 	}
 
 	if err != nil {
-		return nil, fmt.Errorf("getting serviceable metrics failed with: %w", err)
+		return nil, fmt.Errorf("failed to get serviceable metrics: %w", err)
 	}
 
 	return response, nil

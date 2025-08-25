@@ -46,13 +46,13 @@ func (r *githubRepository) Delete(ctx context.Context) (err error) {
 	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.id)
 	err = batch.Delete(repo_key)
 	if err != nil {
-		return fmt.Errorf("failed to batch delete repository key: %w", err)
+		return fmt.Errorf("failed to delete repository key: %w", err)
 	}
 
 	// Commit the batch
 	err = batch.Commit()
 	if err != nil {
-		return fmt.Errorf("failed to commit repository deletion batch: %w", err)
+		return fmt.Errorf("failed to commit deletion batch: %w", err)
 	}
 
 	return nil
@@ -69,7 +69,7 @@ func (r *githubRepository) Register(ctx context.Context) (err error) {
 	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.id)
 	err = batch.Put(repo_key, []byte(r.key))
 	if err != nil {
-		return fmt.Errorf("failed to batch repository key: %w", err)
+		return fmt.Errorf("failed to put repository key: %w", err)
 	}
 
 	// Commit the batch
@@ -77,7 +77,7 @@ func (r *githubRepository) Register(ctx context.Context) (err error) {
 	if err != nil {
 		// If commit fails, try to clean up
 		r.Delete(ctx)
-		return fmt.Errorf("failed to commit repository registration batch: %w", err)
+		return fmt.Errorf("failed to commit registration batch: %w", err)
 	}
 
 	return nil
@@ -131,7 +131,7 @@ func Provider(ctx context.Context, kv kvdb.KVDB, id string) (string, error) {
 			return p, nil
 		}
 	}
-	return "", fmt.Errorf("Repository with ID = `%s` does not exist! error: %w", id, err)
+	return "", fmt.Errorf("repository with ID `%s` does not exist: %w", id, err)
 }
 
 func fetchGithub(ctx context.Context, kv kvdb.KVDB, id int) (Repository, error) {
@@ -167,11 +167,11 @@ func Fetch(ctx context.Context, kv kvdb.KVDB, id string) (Repository, error) {
 	case "github":
 		_id, err := strconv.Atoi(id)
 		if err != nil {
-			return nil, errors.New("Github repository id must be an int. Parsing returned: " + err.Error())
+			return nil, errors.New("github repository id must be an int: " + err.Error())
 		}
 		repo, err := fetchGithub(ctx, kv, _id)
 		if err != nil {
-			return nil, errors.New("Failed fetching github with: " + err.Error())
+			return nil, errors.New("failed to fetch github repository: " + err.Error())
 		}
 		return repo, nil
 	}

@@ -22,7 +22,7 @@ func (srv *Service) auctionNew(ctx context.Context, auction *hoarderIface.Auctio
 
 		arr := make([]byte, 8)
 		if _, err := rand.Read(arr); err != nil {
-			return fmt.Errorf("auctionNew rand read failed with: %s", err)
+			return fmt.Errorf("failed to read random bytes: %s", err)
 		}
 
 		num := *(*uint64)(unsafe.Pointer(&arr[0]))
@@ -47,7 +47,7 @@ func (srv *Service) startAuction(ctx context.Context, action *hoarderIface.Aucti
 
 		case <-time.After(maxWaitTime):
 			if err := srv.publishAction(ctx, action, hoarderIface.AuctionEnd); err != nil {
-				logger.Error("action publish failed with:", err.Error())
+				logger.Error("failed to publish action:", err.Error())
 			}
 		}
 	}()

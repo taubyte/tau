@@ -27,19 +27,19 @@ func (srv *AuthService) tokenDomainHTTPHandler(ctx http.Context) (interface{}, e
 
 	project, err := cid.Decode(_project)
 	if err != nil {
-		return nil, fmt.Errorf("decode project id  failed with %w", err)
+		return nil, fmt.Errorf("failed to decode project id: %w", err)
 	}
 
 	var claim *dv.Claims
 
 	claim, err = domainValidationNew(fqdn, project, srv.dvPrivateKey, srv.dvPublicKey)
 	if err != nil {
-		return nil, fmt.Errorf("new domain validation failed with: %s", err)
+		return nil, fmt.Errorf("failed to create domain validation: %s", err)
 	}
 
 	token, err := claim.Sign()
 	if err != nil {
-		return nil, fmt.Errorf("signing claim failed with: %s", err)
+		return nil, fmt.Errorf("failed to sign claim: %s", err)
 	}
 
 	return map[string]string{

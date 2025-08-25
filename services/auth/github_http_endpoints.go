@@ -103,7 +103,7 @@ func (srv *AuthService) registerGitHubUserRepositoryHTTPHandler(ctx http.Context
 	}
 	repoId, err := maps.String(ctxVars, "id")
 	if err != nil {
-		return nil, fmt.Errorf("parsing github repository ID failed with %w", err)
+		return nil, fmt.Errorf("failed to parse github repository ID: %w", err)
 	}
 	response, err := srv.registerGitHubRepository(ctx.Request().Context(), client, repoId)
 	return response, err
@@ -118,7 +118,7 @@ func (srv *AuthService) getGitHubUserRepositoryHTTPHandler(ctx http.Context) (in
 
 	repoId, err := maps.String(ctxVars, "id")
 	if err != nil {
-		return nil, fmt.Errorf("parsing github repository ID failed with %w", err)
+		return nil, fmt.Errorf("failed to parse github repository ID: %w", err)
 	}
 
 	requestCtx := ctx.Request().Context()
@@ -128,7 +128,7 @@ func (srv *AuthService) getGitHubUserRepositoryHTTPHandler(ctx http.Context) (in
 
 	repo, err := repositories.Fetch(requestCtx, srv.db, repoId)
 	if err != nil {
-		return nil, fmt.Errorf("fetching repository %s failed with %w", repoId, err)
+		return nil, fmt.Errorf("failed to fetch repository %s: %w", repoId, err)
 	}
 
 	hks := make([]string, 0)
@@ -155,7 +155,7 @@ func (srv *AuthService) unregisterGitHubUserRepositoryHTTPHandler(ctx http.Conte
 
 	repoId, err := maps.String(ctxVars, "id")
 	if err != nil {
-		return nil, fmt.Errorf("parsing github repository ID failed with %w", err)
+		return nil, fmt.Errorf("failed to parse github repository ID: %w", err)
 	}
 
 	err = srv.unregisterGitHubRepository(ctx.Request().Context(), client, repoId)

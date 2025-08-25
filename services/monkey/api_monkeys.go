@@ -21,7 +21,7 @@ func (m *Service) ServiceHandler(ctx context.Context, conn streams.Connection, b
 		jid = ""
 	}
 	if len(jid) == 0 && action != "list" {
-		return nil, fmt.Errorf("jid:(Job Id) not provided")
+		return nil, fmt.Errorf("jid not provided")
 	}
 	switch action {
 	case "update":
@@ -53,7 +53,7 @@ func (m *Service) cancelHandler(jid string) (cr.Response, error) {
 	monkey, ok := m.monkeys[jid]
 	m.monkeysLock.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("Monkey %s does not exist", jid)
+		return nil, fmt.Errorf("monkey %s does not exist", jid)
 	}
 
 	monkey.ctxC()
@@ -64,7 +64,7 @@ func (m *Service) cancelHandler(jid string) (cr.Response, error) {
 
 	_, err := m.patrickClient.Cancel(jid, monkey.Job.Logs)
 	if err != nil {
-		return nil, fmt.Errorf("failed patrick client cancel with %w", err)
+		return nil, fmt.Errorf("failed to cancel job: %w", err)
 	}
 
 	return nil, nil

@@ -39,7 +39,7 @@ func (srv *AuthService) setACMEStaticCertificate(ctx context.Context, fqdn strin
 	err := srv.db.Put(ctx, "/static/"+base64.StdEncoding.EncodeToString([]byte(fqdn))+"/certificate/pem", certificate)
 	if err != nil {
 		logger.Errorf("Set certificate for `%s` failed with: %s", fqdn, err.Error())
-		return fmt.Errorf("failed setting static certificate with %v", err)
+		return fmt.Errorf("failed to set static certificate: %v", err)
 	}
 
 	logger.Debugf("Set certificate for `%s` = %v", fqdn, certificate)
@@ -181,11 +181,11 @@ func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Conne
 	case "get-static":
 		fqdn, err := maps.String(body, "fqdn")
 		if err != nil {
-			return nil, fmt.Errorf("failed maps string in get-static %v", err)
+			return nil, fmt.Errorf("failed to get fqdn: %v", err)
 		}
 		certificate, err := srv.getACMEStaticCertificate(ctx, fqdn)
 		if err != nil {
-			return nil, fmt.Errorf("failed getACMEStaticCertificate with %v", err)
+			return nil, fmt.Errorf("failed to get static certificate: %v", err)
 		}
 		return cr.Response{"certificate": certificate}, nil
 	case "set":
@@ -201,11 +201,11 @@ func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Conne
 	case "set-static":
 		fqdn, err := maps.String(body, "fqdn")
 		if err != nil {
-			return nil, fmt.Errorf("failed maps string in set-static %v", err)
+			return nil, fmt.Errorf("failed to get fqdn: %v", err)
 		}
 		certificate, err := maps.ByteArray(body, "certificate")
 		if err != nil {
-			return nil, fmt.Errorf("failed maps ByteArray in set-static with %v", err)
+			return nil, fmt.Errorf("failed to get certificate: %v", err)
 		}
 		return nil, srv.setACMEStaticCertificate(ctx, fqdn, certificate)
 	case "cache-get":
@@ -239,6 +239,6 @@ func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Conne
 		}
 		return nil, nil
 	default:
-		return nil, errors.New("Acme action `" + action + "` not recognized")
+		return nil, errors.New("acme action `" + action + "` not recognized")
 	}
 }
