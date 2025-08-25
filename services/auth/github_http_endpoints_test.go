@@ -2,7 +2,6 @@ package auth
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -14,51 +13,6 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb/mock"
 	"gotest.tools/v3/assert"
 )
-
-// MockHTTPContext implements the http.Context interface for testing
-type MockHTTPContext struct {
-	request   *http.Request
-	writer    http.ResponseWriter
-	variables map[string]interface{}
-	body      []byte
-}
-
-func (m *MockHTTPContext) HandleWith(handler http.Handler) error    { return nil }
-func (m *MockHTTPContext) HandleAuth(handler http.Handler) error    { return nil }
-func (m *MockHTTPContext) HandleCleanup(handler http.Handler) error { return nil }
-func (m *MockHTTPContext) Request() *http.Request                   { return m.request }
-func (m *MockHTTPContext) Writer() http.ResponseWriter              { return m.writer }
-func (m *MockHTTPContext) ParseBody(obj interface{}) error          { return nil }
-func (m *MockHTTPContext) RawResponse() bool                        { return false }
-func (m *MockHTTPContext) SetRawResponse(val bool)                  {}
-func (m *MockHTTPContext) Variables() map[string]interface{}        { return m.variables }
-func (m *MockHTTPContext) SetVariable(key string, val interface{})  { m.variables[key] = val }
-func (m *MockHTTPContext) Body() []byte                             { return m.body }
-func (m *MockHTTPContext) SetBody(body []byte)                      { m.body = body }
-func (m *MockHTTPContext) GetStringVariable(key string) (string, error) {
-	if v, ok := m.variables[key].(string); ok {
-		return v, nil
-	}
-	return "", fmt.Errorf("variable not found or not a string")
-}
-func (m *MockHTTPContext) GetStringArrayVariable(key string) ([]string, error) {
-	if v, ok := m.variables[key].([]string); ok {
-		return v, nil
-	}
-	return nil, fmt.Errorf("variable not found or not a string array")
-}
-func (m *MockHTTPContext) GetStringMapVariable(key string) (map[string]interface{}, error) {
-	if v, ok := m.variables[key].(map[string]interface{}); ok {
-		return v, nil
-	}
-	return nil, fmt.Errorf("variable not found or not a string map")
-}
-func (m *MockHTTPContext) GetIntVariable(key string) (int, error) {
-	if v, ok := m.variables[key].(int); ok {
-		return v, nil
-	}
-	return 0, fmt.Errorf("variable not found or not an int")
-}
 
 func TestAuthServiceWithMocks(t *testing.T) {
 	defer gock.Off()
