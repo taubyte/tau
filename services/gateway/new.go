@@ -17,7 +17,6 @@ import (
 
 var logger = log.Logger("tau.gateway.service")
 
-// TODO: Substrate Nodes should ping Gateway that they are alive, threshold should
 func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, err error) {
 	g := &Gateway{
 		ctx: ctx,
@@ -35,7 +34,7 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, er
 
 	if config.Node == nil {
 		if g.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolCommon.Gateway)); err != nil {
-			return nil, fmt.Errorf("failed to create node: %w", err)
+			return nil, fmt.Errorf("new node failed with: %w", err)
 		}
 	} else {
 		g.node = config.Node
@@ -46,8 +45,8 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, er
 		clientNode = config.ClientNode
 	}
 
-	if err = g.startHttp(config); err != nil { // should start at the end
-		return nil, fmt.Errorf("failed to start HTTP: %w", err)
+	if err = g.startHttp(config); err != nil {
+		return nil, fmt.Errorf("starting http failed with: %w", err)
 	}
 
 	if config.Http == nil {
@@ -59,16 +58,16 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, er
 	}
 
 	if g.substrateClient, err = substrate.New(ctx, clientNode); err != nil {
-		return nil, fmt.Errorf("failed to create streams client: %w", err)
+		return nil, fmt.Errorf("new streams client failed with: %w", err)
 	}
 
 	sc, err := seer.New(ctx, clientNode)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create seer client: %w", err)
+		return nil, fmt.Errorf("new seer client failed with: %w", err)
 	}
 
 	if err = protocolCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeGateway); err != nil {
-		return nil, fmt.Errorf("failed to start seer beacon: %s", err)
+		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
 
 	g.attach()

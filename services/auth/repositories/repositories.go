@@ -27,57 +27,48 @@ func (r *githubRepository) Serialize() Data {
 }
 
 func (r *githubRepository) Delete(ctx context.Context) (err error) {
-	// Clear the hooks first (hooks have their own complex deletion logic)
 	for _, h := range r.Hooks(ctx) {
 		err = h.Delete(ctx)
 		if err != nil {
-			// Log error but continue with repository deletion
 			logger.Errorf("Failed to delete hook %s: %v", h.ID(), err)
 		}
 	}
 
-	// Create a batch for atomic repository deletion
 	batch, err := r.kv.Batch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create batch: %w", err)
 	}
 
-	// Batch repository key deletion
 	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.id)
 	err = batch.Delete(repo_key)
 	if err != nil {
-		return fmt.Errorf("failed to delete repository key: %w", err)
+		return fmt.Errorf("failed to batch delete repository key: %w", err)
 	}
 
-	// Commit the batch
 	err = batch.Commit()
 	if err != nil {
-		return fmt.Errorf("failed to commit deletion batch: %w", err)
+		return fmt.Errorf("failed to commit repository deletion batch: %w", err)
 	}
 
 	return nil
 }
 
 func (r *githubRepository) Register(ctx context.Context) (err error) {
-	// Create a batch for atomic repository registration
 	batch, err := r.kv.Batch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create batch: %w", err)
 	}
 
-	// Batch repository key registration
 	repo_key := fmt.Sprintf("/repositories/github/%d/key", r.id)
 	err = batch.Put(repo_key, []byte(r.key))
 	if err != nil {
-		return fmt.Errorf("failed to put repository key: %w", err)
+		return fmt.Errorf("failed to batch repository key: %w", err)
 	}
 
-	// Commit the batch
 	err = batch.Commit()
 	if err != nil {
-		// If commit fails, try to clean up
 		r.Delete(ctx)
-		return fmt.Errorf("failed to commit registration batch: %w", err)
+		return fmt.Errorf("failed to commit repository registration batch: %w", err)
 	}
 
 	return nil
@@ -131,7 +122,7 @@ func Provider(ctx context.Context, kv kvdb.KVDB, id string) (string, error) {
 			return p, nil
 		}
 	}
-	return "", fmt.Errorf("repository with ID `%s` does not exist: %w", id, err)
+	return "", fmt.Errorf("Repository with ID = `%s` does not exist! error: %w", id, err)
 }
 
 func fetchGithub(ctx context.Context, kv kvdb.KVDB, id int) (Repository, error) {
@@ -142,8 +133,6 @@ func fetchGithub(ctx context.Context, kv kvdb.KVDB, id int) (Repository, error) 
 		return nil, err
 	}
 
-	// Ignoring the error here because not all repositories
-	// have a project
 	projectId, _ := kv.Get(ctx, repo_key+"/project")
 	return New(kv, Data{
 		"id":       id,
@@ -154,10 +143,7 @@ func fetchGithub(ctx context.Context, kv kvdb.KVDB, id int) (Repository, error) 
 
 }
 
-// TODO: ask for provider
-// id: provided as string even if it's an int
 func Fetch(ctx context.Context, kv kvdb.KVDB, id string) (Repository, error) {
-	// figure out the provider
 	provider, err := Provider(ctx, kv, id)
 	if err != nil {
 		return nil, err
@@ -167,11 +153,11 @@ func Fetch(ctx context.Context, kv kvdb.KVDB, id string) (Repository, error) {
 	case "github":
 		_id, err := strconv.Atoi(id)
 		if err != nil {
-			return nil, errors.New("github repository id must be an int: " + err.Error())
+			return nil, errors.New("Github repository id must be an int. Parsing returned: " + err.Error())
 		}
 		repo, err := fetchGithub(ctx, kv, _id)
 		if err != nil {
-			return nil, errors.New("failed to fetch github repository: " + err.Error())
+			return nil, errors.New("Failed fetching github with: " + err.Error())
 		}
 		return repo, nil
 	}

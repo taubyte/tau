@@ -36,10 +36,6 @@ func (srv *AuthService) listHooks(ctx context.Context) (cr.Response, error) {
 }
 
 func (srv *AuthService) apiHookServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	// params:
-	//  TODO: add encrption key to service library
-	//  action: get/set
-	//  fqdn: domain name
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err
@@ -55,7 +51,7 @@ func (srv *AuthService) apiHookServiceHandler(ctx context.Context, st streams.Co
 	case "list":
 		return srv.listHooks(ctx)
 	default:
-		return nil, errors.New("hook action `" + action + "` not recognized")
+		return nil, errors.New("Hook action `" + action + "` not reconized.")
 	}
 }
 
@@ -72,7 +68,7 @@ func (srv *AuthService) getGithubRepositoryByID(ctx context.Context, id int) (cr
 func (srv *AuthService) listRepo(ctx context.Context) (cr.Response, error) {
 	repoList, err := srv.db.List(ctx, "/repositories/github/")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get repos: %w", err)
+		return nil, fmt.Errorf("failed gettting repo with error: %w", err)
 	}
 
 	ids := extractIdFromKey(repoList, "/", 3)
@@ -81,11 +77,6 @@ func (srv *AuthService) listRepo(ctx context.Context) (cr.Response, error) {
 }
 
 func (srv *AuthService) apiGitRepositoryServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	// params:
-	//  TODO: add encrption key to service library
-	//  action: get/set
-	//  provider: github/...
-	//  id
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err
@@ -105,12 +96,12 @@ func (srv *AuthService) apiGitRepositoryServiceHandler(ctx context.Context, st s
 			}
 			return srv.getGithubRepositoryByID(ctx, hook_id)
 		default:
-			return nil, errors.New("repository provider `" + provider + "` not supported")
+			return nil, errors.New("Repository provider `" + provider + "` not supported.")
 		}
 	case "list":
 		return srv.listRepo(ctx)
 	default:
-		return nil, errors.New("repository action `" + action + "` not recognized")
+		return nil, errors.New("Repository action `" + action + "` not reconized.")
 	}
 }
 
@@ -137,11 +128,6 @@ func (srv *AuthService) listProjects(ctx context.Context) (cr.Response, error) {
 }
 
 func (srv *AuthService) apiProjectsServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	// params:
-	//  TODO: add encrption key to service library
-	//  action: get/set
-	//  provider: github/...
-	//  id
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err
@@ -157,6 +143,6 @@ func (srv *AuthService) apiProjectsServiceHandler(ctx context.Context, st stream
 	case "list":
 		return srv.listProjects(ctx)
 	default:
-		return nil, errors.New("project action `" + action + "` not recognized")
+		return nil, errors.New("Project action `" + action + "` not reconized.")
 	}
 }

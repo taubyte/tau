@@ -85,7 +85,7 @@ func (client *githubClient) GetByID(id string) error {
 
 func (client *githubClient) GetCurrentRepository() (*github.Repository, error) {
 	if client.current_repository == nil {
-		return nil, errors.New("client has no current repository")
+		return nil, errors.New("Client has no current repository")
 	}
 
 	return client.current_repository, nil
@@ -103,7 +103,6 @@ func (client *githubClient) CreateRepository(name *string, description *string, 
 
 func (client *githubClient) CreateDeployKey(name *string, key *string) error {
 	if client.current_repository == nil {
-		// TODO: Make this a standard error
 		return errors.New("no repository selected")
 	}
 
@@ -156,7 +155,6 @@ func (client *githubClient) ListMyRepos() map[string]RepositoryBasicInfo {
 		rlo := github.RepositoryListByAuthenticatedUserOptions{ListOptions: github.ListOptions{Page: i, PerPage: 100}, Sort: "created"}
 
 		_repos, _, err := client.Repositories.ListByAuthenticatedUser(client.ctx, &rlo)
-		// TODO: Simplify this logic
 		if err == nil && len(_repos) > 0 {
 			for _, v := range _repos {
 				repos[fmt.Sprintf("%d", *(v.ID))] = RepositoryBasicInfo{
@@ -175,14 +173,14 @@ func (client *githubClient) ShortRepositoryInfo(id string) RepositoryShortInfo {
 	_id, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
 		return RepositoryShortInfo{
-			Error: "incorrect repository ID",
+			Error: "Incorrect repository ID",
 		}
 	}
 
 	_repoInfo, _, err := client.Repositories.GetByID(client.ctx, _id)
 	if err != nil {
 		return RepositoryShortInfo{
-			Error: fmt.Sprintf("error: %s", err),
+			Error: fmt.Sprintf("Error %s", err),
 		}
 	}
 

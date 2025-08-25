@@ -20,7 +20,6 @@ import (
 	"github.com/taubyte/tau/utils/id"
 )
 
-// Response structs for better type safety
 type RepositoryRegistrationResponse struct {
 	Key string `json:"key"`
 }
@@ -87,7 +86,6 @@ type UserResponse struct {
 	User UserInfo `json:"user"`
 }
 
-// ref: https://github.com/keybase/bot-sshca/blob/master/src/keybaseca/sshutils/generate.go#L53
 func generateKey() (string, string, string, error) {
 	_privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -116,11 +114,10 @@ func generateKey() (string, string, string, error) {
 func (srv *AuthService) registerGitHubRepository(ctx context.Context, client GitHubClient, repoID string) (*RepositoryRegistrationResponse, error) {
 	err := client.GetByID(repoID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch repository: %w", err)
+		return nil, fmt.Errorf("fetch repository failed with %w", err)
 	}
 
 	repoKey := fmt.Sprintf("/repositories/github/%s/key", repoID)
-	// Re-register a repo should be fine. Could be needed if deploy keys were deleted for example
 
 	hook_id := id.Generate(repoKey)
 	defaultHookName := "taubyte_push_hook"
@@ -133,24 +130,23 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 	if !srv.devMode {
 		hook_githubid, secret, err = client.CreatePushHook(&defaultHookName, &defaultGithubHookUrl, srv.devMode)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create push hook: %s", err)
+			return nil, fmt.Errorf("create push hook failed with: %s", err)
 		}
 	}
 
 	kname, kpub, kpriv, err := generateKey()
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate key: %s", err)
+		return nil, fmt.Errorf("generate key failed with: %s", err)
 	}
 
-	// Dream also needs to create a deplyment key. TODO: use a pre-set key
 	err = client.CreateDeployKey(&kname, &kpub)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create deploy key: %s", err)
+		return nil, fmt.Errorf("create deploy key failed with: %s", err)
 	}
 
 	_repo_id, err := strconv.ParseInt(repoID, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse repoId: %s", err)
+		return nil, fmt.Errorf("parse repoId failed with: %s", err)
 	}
 
 	repo, err := repositories.New(srv.KV(), repositories.Data{
@@ -159,7 +155,7 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		"key":      kpriv,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create repository: %s", err)
+		return nil, fmt.Errorf("new repository failed with %s", err)
 	}
 
 	err = repo.Register(ctx)
@@ -175,17 +171,17 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		"secret":     secret,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create hook: %s", err)
+		return nil, fmt.Errorf("hooks new failed with: %s", err)
 	}
 
 	err = hook.Register(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to register hook: %s", err)
+		return nil, fmt.Errorf("hooks register failed with: %s", err)
 	}
 
 	_repo, err := client.GetCurrentRepository()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get current repository: %s", err)
+		return nil, fmt.Errorf("get current repository failed with: %s", err)
 	}
 	repoInfo := make(map[string]string, 0)
 
@@ -196,11 +192,9 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 	if _repo.FullName != nil {
 		repoInfo["fullname"] = *_repo.FullName
 	}
-	//TODO add more items to the repoInfo that we are pushing to tns
-
 	err = srv.tnsClient.Push([]string{"resolve", "repo", "github", fmt.Sprintf("%d", _repo_id)}, repoInfo)
 	if err != nil {
-		return nil, fmt.Errorf("failed to register repo %d in tns: %v", _repo_id, err)
+		return nil, fmt.Errorf("failed registering new job repo %d into tns with error: %v", _repo_id, err)
 	}
 
 	return &RepositoryRegistrationResponse{
@@ -209,16 +203,15 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 }
 
 func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client GitHubClient, repoID string) error {
-	// select repo
 	err := client.GetByID(repoID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch repository: %w", err)
+		return fmt.Errorf("fetch repository failed with %w", err)
 	}
 
 	repoKey := fmt.Sprintf("/repositories/github/%s/key", repoID)
 	kpriv, err := srv.db.Get(ctx, repoKey)
 	if err != nil {
-		return fmt.Errorf("repository `%s` (%s) not registered: %w", repoID, repoKey, err)
+		return fmt.Errorf("repository `%s` (%s) not registred! err = %w", repoID, repoKey, err)
 	}
 
 	_repo_id, err := strconv.ParseInt(repoID, 10, 64)
@@ -236,7 +229,6 @@ func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client G
 	}
 
 	for _, hook := range repo.Hooks(ctx) {
-		// skip any error trying to delete the hook for now
 		hook.Delete(ctx)
 	}
 
@@ -255,7 +247,6 @@ func (srv *AuthService) newGitHubProject(ctx context.Context, client GitHubClien
 
 	gituser := client.Me()
 
-	// Use projects helper instead of direct database manipulation
 	project, err := projects.New(srv.KV(), projects.Data{
 		"id":       projectID,
 		"name":     projectName,
@@ -264,22 +255,19 @@ func (srv *AuthService) newGitHubProject(ctx context.Context, client GitHubClien
 		"code":     codeID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create project: %w", err)
+		return nil, fmt.Errorf("failed to create project object: %w", err)
 	}
 
-	// Register the project
 	err = project.Register()
 	if err != nil {
 		return nil, fmt.Errorf("failed to register project: %w", err)
 	}
 
-	// Add owner information
 	err = srv.db.Put(ctx, "/projects/"+projectID+"/owners/"+fmt.Sprintf("%d", *(gituser.ID)), []byte(gituser.GetLogin()))
 	if err != nil {
 		return nil, err
 	}
 
-	// Link repositories to project
 	repo_key := fmt.Sprintf("/repositories/github/%s", configID)
 	if err = srv.db.Put(ctx, repo_key+"/project", []byte(projectID)); err != nil {
 		return nil, err
@@ -306,10 +294,8 @@ func (srv *AuthService) getGitHubUserRepositories(ctx context.Context, client Gi
 
 	user_repos := make(map[string]RepositoryInfo, 0)
 	for repo_id := range repos {
-		// Use repositories helper to check if repository exists
 		if repositories.Exist(ctx, srv.KV(), repo_id) {
-			// Get repository name from GitHub API or use ID as fallback
-			repo_name := repo_id // fallback to ID if name not available
+			repo_name := repo_id
 			user_repos[repo_id] = RepositoryInfo{
 				ID:   repo_id,
 				Name: repo_name,
@@ -332,7 +318,6 @@ func (srv *AuthService) getGitHubUserProjects(ctx context.Context, client GitHub
 		if err == nil && len(v) > 0 {
 			project_id := string(v)
 
-			// Use projects helper instead of direct database query
 			project, err := projects.Fetch(ctx, srv.KV(), project_id)
 			if err == nil {
 				if _, ok := user_projects[project_id]; !ok {
@@ -347,7 +332,6 @@ func (srv *AuthService) getGitHubUserProjects(ctx context.Context, client GitHub
 
 	logger.Debug(user_projects)
 
-	// Convert map values to slice
 	projects := make([]ProjectInfo, 0, len(user_projects))
 	for _, project := range user_projects {
 		projects = append(projects, project)
@@ -359,10 +343,9 @@ func (srv *AuthService) getGitHubUserProjects(ctx context.Context, client GitHub
 }
 
 func (srv *AuthService) getGitHubProjectInfo(ctx context.Context, client GitHubClient, projectid string) (*ProjectInfoResponse, error) {
-	// Use projects helper instead of direct database queries
 	project, err := projects.Fetch(ctx, srv.KV(), projectid)
 	if err != nil {
-		return nil, fmt.Errorf("failed to retrieve project: %w", err)
+		return nil, fmt.Errorf("retrieving project error: %w", err)
 	}
 
 	return &ProjectInfoResponse{
@@ -379,13 +362,11 @@ func (srv *AuthService) getGitHubProjectInfo(ctx context.Context, client GitHubC
 }
 
 func (srv *AuthService) deleteGitHubUserProject(ctx context.Context, client GitHubClient, projectid string) (*ProjectDeleteResponse, error) {
-	// Use projects helper to fetch and delete the project
 	project, err := projects.Fetch(ctx, srv.KV(), projectid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch project: %w", err)
 	}
 
-	// Delete the project using the helper
 	err = project.Delete()
 	if err != nil {
 		return nil, fmt.Errorf("failed to delete project: %w", err)

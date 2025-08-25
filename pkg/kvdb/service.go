@@ -82,7 +82,6 @@ func (f *factory) deleteDB(path string) {
 	delete(f.dbs, path)
 }
 
-// TODO: This should be Time.Duration
 func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastIntervalSec int) (kvdb.KVDB, error) {
 	f.dbsLock.Lock()
 	defer f.dbsLock.Unlock()

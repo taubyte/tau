@@ -63,7 +63,6 @@ type Request struct {
 
 type Option[T Client | Request] func(r *T) error
 
-// Client options
 func Peers(max int) Option[Client] {
 	return func(c *Client) error {
 		c.maxPeers = max
@@ -78,7 +77,6 @@ func Parallel(max int) Option[Client] {
 	}
 }
 
-// Request options
 func Timeout(timeout time.Duration) Option[Request] {
 	return func(s *Request) error {
 		s.cmdTimeout = timeout
@@ -138,7 +136,6 @@ var (
 	ConnectTimeout    time.Duration = 500 * time.Millisecond
 )
 
-// Lifecycle methods
 func (c *Client) Context() context.Context { return c.ctx }
 
 func (c *Client) Close() {
@@ -164,19 +161,16 @@ func New(node peer.Node, path string, opts ...Option[Client]) (*Client, error) {
 		}
 	}
 
-	// Size internal queues based on configured parallelism
 	c.peerRequests = make(chan *peerRequest, c.maxParallel)
 	c.cleanPeers = make(chan peerCore.ID, c.maxParallel)
 
 	c.tag = fmt.Sprintf("/client/%p/%s", c, c.path)
 
-	// Start peer discovery / brokering
 	go c.discover()
 
 	return c, nil
 }
 
-// Request builder
 func (c *Client) New(cmd string, opts ...Option[Request]) *Request {
 	r := &Request{
 		client:    c,
@@ -193,7 +187,6 @@ func (c *Client) New(cmd string, opts ...Option[Request]) *Request {
 	return r
 }
 
-// Peer discovery / brokering (single goroutine)
 func (c *Client) refreshFromPeerStore() {
 	if len(c.activePeers) >= c.maxPeers {
 		return
@@ -263,13 +256,11 @@ func (c *Client) discover() {
 		for _, pr := range c.peerFeeds {
 			close(pr.ch)
 		}
-		// Do NOT close c.peerRequests or c.cleanPeers to avoid panics from concurrent senders
 	}()
 
 	c.refreshFromPeerStore()
 	dpeers := c.discPeers()
 	discoverDone := false
-	// a never-ready channel to disable the discovery case when exhausted
 	dpeersWait := make(chan peerCore.AddrInfo)
 
 	for {
@@ -280,7 +271,6 @@ func (c *Client) discover() {
 		case p, ok := <-dpeers:
 			if !ok {
 				discoverDone = true
-				// replace with a never-ready channel so the select case doesn't spin
 				dpeers = dpeersWait
 				continue
 			}
@@ -290,7 +280,6 @@ func (c *Client) discover() {
 			c.cleanPeer(pid)
 
 		case pr := <-c.peerRequests:
-			// Feed existing peers immediately
 		peerLoop:
 			for _, info := range c.activePeers {
 				select {
@@ -307,7 +296,6 @@ func (c *Client) discover() {
 			}
 			c.peerFeeds = append(c.peerFeeds, pr)
 
-			// If request needs more peers than we have, try to source more
 			if pr.need > len(c.activePeers) {
 				c.refreshFromPeerStore()
 				if pr.need > len(c.activePeers) && discoverDone {
@@ -319,17 +307,14 @@ func (c *Client) discover() {
 	}
 }
 
-// Peer access helpers
 func (c *Client) openStream(pid peerCore.ID) (stream, error) {
 	strm, err := c.node.Peer().NewStream(c.ctx, pid, protocol.ID(c.path))
 	if err != nil {
-		return stream{}, fmt.Errorf("failed to create stream: %w", err)
+		return stream{}, fmt.Errorf("peer new stream failed: %w", err)
 	}
 	return stream{Stream: strm, ID: pid}, nil
 }
 
-// peers returns a channel that will be fed with up to "needs" peer infos,
-// or closed early if ctx/c.ctx is done
 func (c *Client) peers(ctx context.Context, needs int) <-chan *peerCore.AddrInfo {
 	ch := make(chan *peerCore.AddrInfo, c.maxPeers)
 	select {
@@ -362,7 +347,7 @@ func (c *Client) connect(p *peerCore.AddrInfo) (network.Stream, error) {
 			network.WithDialPeerTimeout(c.ctx, ConnectTimeout),
 			*p,
 		); err != nil {
-			return nil, fmt.Errorf("failed to connect to %s: %w", p.ID, err)
+			return nil, fmt.Errorf("connecting to %s failed: %w", p.ID, err)
 		}
 	default:
 		return nil, errors.New("unknown connection status")
@@ -374,18 +359,16 @@ func (c *Client) connect(p *peerCore.AddrInfo) (network.Stream, error) {
 		protocol.ID(c.path),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create stream to %s: %w", p.ID, err)
+		return nil, fmt.Errorf("new stream to %s failed: %w", p.ID, err)
 	}
 	return strm, nil
 }
 
-// Sending methods
 func (r *Request) Do() (<-chan *Response, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
 
-	// Check if client is closed using context
 	select {
 	case <-r.client.ctx.Done():
 		return nil, os.ErrClosed
@@ -429,7 +412,7 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 		return &Response{
 			ReadWriter: strm.Stream,
 			pid:        strm.ID,
-			err:        fmt.Errorf("failed to set write deadline: %w", err),
+			err:        fmt.Errorf("setting write deadline failed with: %w", err),
 		}
 	}
 	defer strm.SetWriteDeadline(time.Time{})
@@ -438,7 +421,7 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 		return &Response{
 			ReadWriter: strm.Stream,
 			pid:        strm.ID,
-			err:        fmt.Errorf("failed to send command `%s`: %w", cmd.Command, err),
+			err:        fmt.Errorf("sending command `%s(%s)` failed with: %w", cmd.Command, c.path, err),
 		}
 	}
 
@@ -446,7 +429,7 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 		return &Response{
 			ReadWriter: strm.Stream,
 			pid:        strm.ID,
-			err:        fmt.Errorf("failed to set read deadline: %w", err),
+			err:        fmt.Errorf("setting read deadline failed with: %w", err),
 		}
 	}
 	defer strm.SetReadDeadline(time.Time{})
@@ -456,7 +439,7 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 		return &Response{
 			ReadWriter: strm.Stream,
 			pid:        strm.ID,
-			err:        fmt.Errorf("failed to receive response: %w", err),
+			err:        fmt.Errorf("receive response of `%s(%s)` failed with: %w", cmd.Command, c.path, err),
 		}
 	}
 

@@ -29,7 +29,7 @@ func (m *Monkey) RunJob() (err error) {
 
 	ac, err := authClient.New(m.ctx, node)
 	if err != nil {
-		return fmt.Errorf("failed to create auth client: %w", err)
+		return fmt.Errorf("auth client new failed with: %w", err)
 	}
 
 	var projectId string
@@ -38,7 +38,7 @@ func (m *Monkey) RunJob() (err error) {
 
 	gitRepo, err := m.tryGetGitRepo(ac, repo.ID)
 	if err != nil {
-		return fmt.Errorf("failed to fetch git repo: %w", err)
+		return fmt.Errorf("run job failed during fetching with %w", err)
 	}
 
 	projectId = gitRepo.Project()
@@ -74,7 +74,7 @@ func (m *Monkey) RunJob() (err error) {
 
 		repoTypeResponse, err := m.Service.tnsClient.Fetch(_repoPathKey.Type())
 		if err != nil {
-			return fmt.Errorf("failed to fetch project: %w", err)
+			return fmt.Errorf("fetch project failed with: %w", err)
 		}
 
 		repoType = compilerCommon.RepositoryType(toNumber(repoTypeResponse.Interface()))
@@ -91,7 +91,7 @@ func (m *Monkey) RunJob() (err error) {
 		Node:                  m.Service.node,
 		LogFile:               m.logFile,
 		ClientNode:            node,
-		DVPublicKey:           m.Service.dvPublicKey, // For Domain Validation
+		DVPublicKey:           m.Service.dvPublicKey,
 		GeneratedDomainRegExp: m.generatedDomainRegExp,
 	}
 
@@ -100,13 +100,13 @@ func (m *Monkey) RunJob() (err error) {
 
 		configRepo, err := ac.Repositories().Github().Get(p.Git.Config.Id())
 		if err != nil {
-			return fmt.Errorf("failed to get github repo: %w", err)
+			return fmt.Errorf("auth github get failed with: %w", err)
 		}
 		c.ConfigPrivateKey = configRepo.PrivateKey()
 	}
 
 	if err = c.Run(m.ctx); err != nil {
-		return fmt.Errorf("failed to run job for type: %d on repo: %d: %s", repoType, m.Job.Meta.Repository.ID, err.Error())
+		return fmt.Errorf("running job for type: %d on repo: %d failed with: %s", repoType, m.Job.Meta.Repository.ID, err.Error())
 	}
 
 	return nil

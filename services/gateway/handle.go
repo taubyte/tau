@@ -39,7 +39,7 @@ func (wr wrappedResponse) Decode(data interface{}) (err error) {
 func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	resCh, err := g.substrateClient.ProxyHTTP(r.Host, r.URL.Path, r.Method)
 	if err != nil {
-		return fmt.Errorf("failed to proxy HTTP: %w", err)
+		return fmt.Errorf("substrate client proxyHttp failed with: %w", err)
 	}
 
 	websiteMatches := make([]wrappedResponse, 0)
@@ -66,7 +66,6 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 			}
 		}
 
-		// all else
 		discard = append(discard, response)
 	}
 	defer func() {
@@ -96,7 +95,7 @@ func (g *Gateway) handleHttp(w goHttp.ResponseWriter, r *goHttp.Request) error {
 	w.Header().Add(ProxyHeader, pick.PID().String())
 
 	if err := tunnel.Frontend(w, r, pick); err != nil {
-		return fmt.Errorf("failed to tunnel frontend: %w", err)
+		return fmt.Errorf("tunneling Frontend failed with: %w", err)
 	}
 
 	return nil

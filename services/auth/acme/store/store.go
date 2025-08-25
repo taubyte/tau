@@ -64,12 +64,10 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 
 	logger.Debugf("Get called with name: %s (isCert: %v)", name, isCert)
 
-	// check local cache
 	pem, err := d.cacheDir.Get(ctx, name)
 	if err == nil {
 		return pem, nil
 	} else {
-		// try wildcard
 		if isCert {
 			pem, err = d.cacheDir.Get(ctx, wildcardName)
 			if err == nil {
@@ -78,7 +76,6 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 		}
 	}
 
-	// check remote cache
 	pem, err = d.getDynamicCertificate(name, isCert)
 	if err != nil {
 		logger.Debugf("Error getting dynamic certificate for `%s`: %s", name, err.Error())
@@ -91,15 +88,12 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 			return nil, err
 		}
 
-		// try wildcard
 		pem, err = d.getDynamicCertificate(wildcardName, true)
 		if err != nil {
 			logger.Debugf("Error getting dynamic certificate for `%s`: %s", wildcardName, err.Error())
-			// Try static
 			pem, err = d.getStaticCertificate(name)
 			if err != nil {
 				logger.Debugf("Error getting static certificate for `%s`: %s", name, err.Error())
-				// check if wildcard is set
 				pem, err = d.getStaticCertificate(wildcardName)
 				if err != nil {
 					logger.Debugf("Not found in acme cache... trying to get a static certificate for `%s` failed: %s", name, err.Error())
@@ -110,7 +104,6 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 	}
 
 	logger.Debugf("Caching locally `%s`", name)
-	// cache locally
 	d.cacheDir.Put(ctx, name, pem)
 
 	return pem, nil
@@ -149,12 +142,12 @@ func (d *Store) getStaticCertificate(name string) ([]byte, error) {
 
 	resp, err := d.client.Send("acme", command.Body{"action": "get-static", "fqdn": name})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get certificate for %s: %v", name, err)
+		return nil, fmt.Errorf("failed get certificate for %s with %v", name, err)
 	}
 
 	certData, err := maps.ByteArray(resp, "certificate")
 	if err != nil {
-		return nil, fmt.Errorf("failed to find certificate: %v", err)
+		return nil, fmt.Errorf("failed finding certificate with %v", err)
 	}
 
 	return certData, nil
@@ -181,14 +174,12 @@ func (d *Store) Put(ctx context.Context, name string, data []byte) error {
 		body = &command.Body{"action": "cache-set", "key": name, "data": data}
 	}
 
-	// write file to DB by sending command
 	_, err := d.client.Send("acme", *body)
 	if err != nil {
 		logger.Errorf("Storing `%s` error: %s", name, err.Error())
 		return err
 	}
 
-	// cache locally
 	d.cacheDir.Put(ctx, name, data)
 
 	return nil
@@ -199,12 +190,9 @@ func (d *Store) Delete(ctx context.Context, name string) error {
 	logger.Debugf("Deleting `%s`", name)
 	defer logger.Debugf("Deleting `%s` done", name)
 
-	// token or any cached data can be deleted
 	if !certFileRegexp.MatchString(name) {
-		// (deferred) delete locally
 		defer d.cacheDir.Delete(ctx, name)
 
-		// delete remotely
 		_, err := d.client.Send("acme", command.Body{"action": "cache-delete", "key": name})
 		if err != nil {
 			logger.Errorf("Deleting `%s` error: %s", name, err.Error())

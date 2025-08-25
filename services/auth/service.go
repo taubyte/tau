@@ -78,11 +78,9 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	if err != nil {
 		return nil, err
 	}
-	// should end if any of the two contexts ends
 
 	srv.rootDomain = config.NetworkFqdn
 
-	// P2P
 	srv.stream, err = streams.New(srv.node, protocolCommon.Auth, protocolCommon.AuthProtocol)
 	if err != nil {
 		return nil, err
@@ -93,7 +91,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 
 	sc, err := seerClient.New(ctx, clientNode)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create seer client: %s", err)
+		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
 
 	err = protocolCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeAuth)
@@ -104,7 +102,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	if config.Http == nil {
 		srv.http, err = auto.New(ctx, srv.node, config)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create http service: %s", err)
+			return nil, fmt.Errorf("new http failed with: %s", err)
 		}
 	} else {
 		srv.http = config.Http

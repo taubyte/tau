@@ -25,37 +25,34 @@ func (r *projectObject) Serialize() Data {
 func (r *projectObject) Delete() error {
 	ctx := context.Background()
 
-	// Create a batch for atomic operations
 	batch, err := r.kv.Batch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create batch: %w", err)
 	}
 
-	// Batch all project deletion operations
 	err = batch.Delete(fmt.Sprintf("/projects/%s/name", r.id))
 	if err != nil {
-		return fmt.Errorf("failed to delete project name: %w", err)
+		return fmt.Errorf("failed to batch delete project name: %w", err)
 	}
 
 	err = batch.Delete(fmt.Sprintf("/projects/%s/repositories/provider", r.id))
 	if err != nil {
-		return fmt.Errorf("failed to delete project provider: %w", err)
+		return fmt.Errorf("failed to batch delete project provider: %w", err)
 	}
 
 	err = batch.Delete(fmt.Sprintf("/projects/%s/repositories/config", r.id))
 	if err != nil {
-		return fmt.Errorf("failed to delete project config repository: %w", err)
+		return fmt.Errorf("failed to batch delete project config repository: %w", err)
 	}
 
 	err = batch.Delete(fmt.Sprintf("/projects/%s/repositories/code", r.id))
 	if err != nil {
-		return fmt.Errorf("failed to delete project code repository: %w", err)
+		return fmt.Errorf("failed to batch delete project code repository: %w", err)
 	}
 
-	// Commit all deletions atomically
 	err = batch.Commit()
 	if err != nil {
-		return fmt.Errorf("failed to commit deletion batch: %w", err)
+		return fmt.Errorf("failed to commit project deletion batch: %w", err)
 	}
 
 	return nil
@@ -64,37 +61,34 @@ func (r *projectObject) Delete() error {
 func (r *projectObject) Register() error {
 	ctx := context.Background()
 
-	// Create a batch for atomic operations
 	batch, err := r.kv.Batch(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to create batch: %w", err)
 	}
 
-	// Batch all project data operations
 	err = batch.Put(fmt.Sprintf("/projects/%s/name", r.id), []byte(r.name))
 	if err != nil {
-		return fmt.Errorf("failed to put project name: %w", err)
+		return fmt.Errorf("failed to batch project name: %w", err)
 	}
 
 	err = batch.Put(fmt.Sprintf("/projects/%s/repositories/provider", r.id), []byte(r.provider))
 	if err != nil {
-		return fmt.Errorf("failed to put project provider: %w", err)
+		return fmt.Errorf("failed to batch project provider: %w", err)
 	}
 
 	err = batch.Put(fmt.Sprintf("/projects/%s/repositories/config", r.id), []byte(r.config))
 	if err != nil {
-		return fmt.Errorf("failed to put project config repository: %w", err)
+		return fmt.Errorf("failed to batch project config repository: %w", err)
 	}
 
 	err = batch.Put(fmt.Sprintf("/projects/%s/repositories/code", r.id), []byte(r.code))
 	if err != nil {
-		return fmt.Errorf("failed to put project code repository: %w", err)
+		return fmt.Errorf("failed to batch project code repository: %w", err)
 	}
 
-	// Commit all operations atomically
 	err = batch.Commit()
 	if err != nil {
-		return fmt.Errorf("failed to commit registration batch: %w", err)
+		return fmt.Errorf("failed to commit project registration batch: %w", err)
 	}
 
 	return nil

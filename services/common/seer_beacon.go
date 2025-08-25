@@ -49,7 +49,7 @@ func StartSeerBeacon(config *config.Node, sc seer.Client, serviceType seer.Servi
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		return fmt.Errorf("failed to find hostname for %s: %s", serviceType, err)
+		return fmt.Errorf("failed finding hostname on `%s` with: %s", serviceType, err)
 	}
 
 	var nodeId, clientNodeId string
@@ -62,12 +62,12 @@ func StartSeerBeacon(config *config.Node, sc seer.Client, serviceType seer.Servi
 		// Get signature from private key
 		privKey, err := crypto.UnmarshalPrivateKey(config.PrivateKey)
 		if err != nil {
-			return fmt.Errorf("failed to unmarshal private key: %s", err)
+			return fmt.Errorf("unmarshal private key failed with: %s", err)
 		}
 
 		signature, err = privKey.Sign([]byte(config.Node.ID().String() + config.ClientNode.ID().String()))
 		if err != nil {
-			return fmt.Errorf("failed to sign private key: %s", err)
+			return fmt.Errorf("signing private key failed with: %s", err)
 		}
 	}
 

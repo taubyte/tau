@@ -25,12 +25,10 @@ func (p *Projects) New(obj map[string]interface{}) *iface.Project {
 		return nil
 	}
 
-	// Handle repository IDs that might be stored as strings in the database
 	var configID, codeID int
 	if configIDStr, ok := obj["config"].(string); ok {
 		configID, err = strconv.Atoi(configIDStr)
 		if err != nil {
-			// If string conversion fails, try to get as int directly
 			if configIDInt, ok := obj["config"].(int); ok {
 				configID = configIDInt
 			} else {
@@ -44,7 +42,6 @@ func (p *Projects) New(obj map[string]interface{}) *iface.Project {
 	if codeIDStr, ok := obj["code"].(string); ok {
 		codeID, err = strconv.Atoi(codeIDStr)
 		if err != nil {
-			// If string conversion fails, try to get as int directly
 			if codeIDInt, ok := obj["code"].(int); ok {
 				codeID = codeIDInt
 			} else {
@@ -98,7 +95,7 @@ func (p *Projects) List() ([]string, error) {
 	}
 	ids, err := maps.StringArray(response, "ids")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get ids from response: %v", err)
+		return nil, fmt.Errorf("failed map string array on list error: %v", err)
 	}
 	return ids, nil
 }
