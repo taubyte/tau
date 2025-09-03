@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to **Taubyte/Tau**, our open source distributed Platform as a Service (PaaS). Every contribution helps us build a better, more open cloud for everyone!
 
-# ⚡ Quick Start **(Short Version)**
+# ⚡Quick Start **(Short Version)**
 
 For contributors who don't want to read the full guide:
 
