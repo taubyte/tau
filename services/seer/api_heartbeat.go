@@ -100,7 +100,7 @@ func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn stre
 		valid bool
 	)
 
-	if srv.odo {
+	if !srv.devMode {
 		id, valid, err = validateSignature(body)
 		if err != nil {
 			return nil, err
