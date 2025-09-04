@@ -19,9 +19,9 @@ import (
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/pkg/specs/methods"
 
-	_ "github.com/taubyte/tau/clients/p2p/hoarder"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func newTestContext(ctx context.Context, simple *dream.Simple, logFile *os.File) testContext {
@@ -115,6 +115,9 @@ func (m *mockMonkey) Dev() bool {
 	return true
 }
 
+func (m *mockMonkey) Delete(jid string) {
+}
+
 func (m *mockMonkey) Hoarder() hoarder.Client {
 	return m.hoarder
 }
@@ -152,7 +155,7 @@ func cloneRepo(ctx context.Context, url string, preserve bool) (*git.Repository,
 	return repo, nil
 }
 
-func startDreamland(name string) (u *dream.Universe, err error) {
+func startDream(name string) (u *dream.Universe, err error) {
 	u = dream.New(dream.UniverseConfig{Name: name})
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{

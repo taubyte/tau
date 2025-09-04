@@ -155,7 +155,7 @@ func (h *handlerRegistry) client(protocol string) (ClientCreate, error) {
 	}
 
 	if handlers.client == nil {
-		return nil, fmt.Errorf("client creation method is nil have you imported _ \"github.com/taubyte/tau/services/%s\"", protocol)
+		return nil, fmt.Errorf("client creation method is nil have you imported _ \"github.com/taubyte/tau/clients/p2p/%s/dream\"", protocol)
 	}
 
 	return handlers.client, nil
@@ -168,7 +168,7 @@ func (h *handlerRegistry) service(protocol string) (ServiceCreate, error) {
 	}
 
 	if handlers.service == nil {
-		return nil, fmt.Errorf("Service creation method is nil have you imported _ \"github.com/taubyte/tau/services/%s\"", protocol)
+		return nil, fmt.Errorf("Service creation method is nil have you imported _ \"github.com/taubyte/tau/services/%s/dream\"", protocol)
 	}
 
 	return handlers.service, nil

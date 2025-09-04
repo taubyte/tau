@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	pathUtils "github.com/taubyte/utils/path"
+	pathUtils "github.com/taubyte/tau/utils/path"
 )
 
 func keyFromPath(path []string) string {

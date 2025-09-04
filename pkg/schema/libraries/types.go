@@ -1,10 +1,10 @@
 package libraries
 
 import (
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/pkg/schema/basic"
 	"github.com/taubyte/tau/pkg/schema/common"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 type Library interface {

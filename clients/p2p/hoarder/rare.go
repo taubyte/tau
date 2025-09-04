@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/p2p/streams/command"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 // TODO: Add cids to dht

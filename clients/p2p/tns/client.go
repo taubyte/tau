@@ -5,17 +5,17 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/mitchellh/mapstructure"
 	"github.com/taubyte/tau/clients/p2p/tns/common"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/utils/mapstructure"
 
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/extract"
 	"github.com/taubyte/tau/pkg/specs/methods"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 
 	srvCommon "github.com/taubyte/tau/services/common"
 )

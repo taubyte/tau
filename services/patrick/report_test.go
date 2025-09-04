@@ -1,4 +1,4 @@
-package service
+package service_test
 
 import (
 	"fmt"
@@ -11,12 +11,12 @@ import (
 	_ "github.com/taubyte/tau/services/auth"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/clients/p2p/patrick"
+	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
 	"github.com/taubyte/tau/core/services/patrick"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/monkey"
-	_ "github.com/taubyte/tau/services/seer"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/monkey/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestReportSsh(t *testing.T) {

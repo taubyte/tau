@@ -8,13 +8,13 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	_ "github.com/taubyte/tau/services/auth"
+	_ "github.com/taubyte/tau/services/auth/dream"
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/repositories"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 	"gotest.tools/v3/assert"
 
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 func TestAuthClient(t *testing.T) {

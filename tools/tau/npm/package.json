@@ -13,7 +13,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/taubyte/dreamland.git"
+    "url": "git+https://github.com/taubyte/dream.git"
   },
   "keywords": [
     "serverless",
@@ -25,9 +25,9 @@
   "author": "Taubyte",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/taubyte/dreamland/issues"
+    "url": "https://github.com/taubyte/dream/issues"
   },
-  "homepage": "https://github.com/taubyte/dreamland#readme",
+  "homepage": "https://github.com/taubyte/dream#readme",
   "dependencies": {
     "axios": "^1.6.5",
     "progress": "^2.0.3",

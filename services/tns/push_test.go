@@ -1,4 +1,4 @@
-package tns
+package tns_test
 
 import (
 	"context"
@@ -9,7 +9,10 @@ import (
 
 	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/services/common"
+	"github.com/taubyte/tau/services/tns"
 	"github.com/taubyte/tau/services/tns/flat"
+
+	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
 )
 
 func TestPush(t *testing.T) {
@@ -25,7 +28,7 @@ func TestPush(t *testing.T) {
 
 	srvRoot := t.TempDir()
 
-	srv, err := New(testCtx, &config.Node{
+	srv, err := tns.New(testCtx, &config.Node{
 		Root:        srvRoot,
 		P2PListen:   []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11001)},
 		P2PAnnounce: []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", 11001)},
@@ -43,13 +46,13 @@ func TestPush(t *testing.T) {
 	sendMap := map[string]interface{}{"a": "apple"}
 	sendData := map[string]interface{}{"path": []string{"/t1"}, "data": sendMap}
 
-	_, err = srv.pushHandler(testCtx, nil, sendData)
+	_, err = srv.PushHandler(testCtx, nil, sendData)
 	if err != nil {
 		t.Errorf("push err: %v", err)
 		return
 	}
 
-	resp, err := srv.fetchHandler(testCtx, nil, map[string]interface{}{"path": []string{"/t1"}})
+	resp, err := srv.FetchHandler(testCtx, nil, map[string]interface{}{"path": []string{"/t1"}})
 	if err != nil {
 		t.Errorf("fetch err: %v", err)
 		return

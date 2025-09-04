@@ -1,0 +1,8 @@
+# Spore Drive Python client
+spore-drive>=0.1.0
+
+# Optional dependencies for enhanced functionality
+python-dotenv>=1.0.0  # For .env file loading
+pyyaml>=6.0           # For YAML configuration support
+aiohttp>=3.8.0        # For async HTTP requests (Namecheap API)
+rich>=13.0.0          # For beautiful progress bars and terminal formatting 

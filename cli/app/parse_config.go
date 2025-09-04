@@ -19,7 +19,7 @@ import (
 	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 
-	"github.com/taubyte/go-seer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 
 	"github.com/taubyte/tau/utils"
 )

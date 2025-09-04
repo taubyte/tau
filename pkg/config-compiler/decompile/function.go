@@ -3,12 +3,12 @@ package decompile
 import (
 	"fmt"
 
-	"github.com/mitchellh/mapstructure"
 	"github.com/taubyte/tau/pkg/config-compiler/common"
 	lib "github.com/taubyte/tau/pkg/schema/functions"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	"github.com/taubyte/tau/utils/mapstructure"
 )
 
 func function(project projectLib.Project, _id string, obj interface{}, appName string) error {

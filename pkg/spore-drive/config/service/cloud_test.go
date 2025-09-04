@@ -441,6 +441,68 @@ func TestDoCloud_P2P_Bootstrap_Select_SetNodes(t *testing.T) {
 	assert.ElementsMatch(t, newNodes, resp.Msg.GetSlice().GetValue())
 }
 
+func TestDoCloud_P2P_Bootstrap_DeleteShape(t *testing.T) {
+	service := &Service{}
+	_, parser := fixtures.VirtConfig()
+
+	// First verify that shape1 exists in the bootstrap list
+	in := &pb.Cloud{
+		Op: &pb.Cloud_P2P{
+			P2P: &pb.P2P{
+				Op: &pb.P2P_Bootstrap{
+					Bootstrap: &pb.Bootstrap{
+						Op: &pb.Bootstrap_List{List: true},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err := service.doCloud(in, parser)
+	assert.NoError(t, err)
+	assert.Contains(t, resp.Msg.GetSlice().GetValue(), "shape1")
+	assert.Contains(t, resp.Msg.GetSlice().GetValue(), "shape2")
+
+	// Delete shape1 from bootstrap
+	in = &pb.Cloud{
+		Op: &pb.Cloud_P2P{
+			P2P: &pb.P2P{
+				Op: &pb.P2P_Bootstrap{
+					Bootstrap: &pb.Bootstrap{
+						Op: &pb.Bootstrap_Select{
+							Select: &pb.BootstrapShape{
+								Shape: "shape1",
+								Op:    &pb.BootstrapShape_Delete{Delete: true},
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	_, err = service.doCloud(in, parser)
+	assert.NoError(t, err)
+
+	// Verify that shape1 is no longer in the bootstrap list
+	in = &pb.Cloud{
+		Op: &pb.Cloud_P2P{
+			P2P: &pb.P2P{
+				Op: &pb.P2P_Bootstrap{
+					Bootstrap: &pb.Bootstrap{
+						Op: &pb.Bootstrap_List{List: true},
+					},
+				},
+			},
+		},
+	}
+
+	resp, err = service.doCloud(in, parser)
+	assert.NoError(t, err)
+	assert.NotContains(t, resp.Msg.GetSlice().GetValue(), "shape1")
+	assert.Contains(t, resp.Msg.GetSlice().GetValue(), "shape2") // shape2 should still exist
+}
+
 func TestDoCloud_P2P_Swarm_Generate(t *testing.T) {
 	service := &Service{}
 	_, parser := fixtures.VirtConfig()

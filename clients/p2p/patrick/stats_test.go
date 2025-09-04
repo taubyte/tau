@@ -8,7 +8,8 @@ import (
 	"github.com/taubyte/tau/dream"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/patrick"
+	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
+	_ "github.com/taubyte/tau/services/patrick/dream"
 )
 
 func TestStats(t *testing.T) {

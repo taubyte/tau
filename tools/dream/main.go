@@ -22,22 +22,22 @@ import (
 	"github.com/urfave/cli/v2"
 
 	// Empty imports for initializing fixtures, and client/service run methods"
-	_ "github.com/taubyte/tau/clients/p2p/auth"
-	_ "github.com/taubyte/tau/clients/p2p/hoarder"
-	_ "github.com/taubyte/tau/clients/p2p/monkey"
-	_ "github.com/taubyte/tau/clients/p2p/patrick"
-	_ "github.com/taubyte/tau/clients/p2p/seer"
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
+	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
+	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
+	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/gateway"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/monkey"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/gateway/dream"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/monkey/dream"
 	_ "github.com/taubyte/tau/services/monkey/fixtures/compile"
-	_ "github.com/taubyte/tau/services/patrick"
-	_ "github.com/taubyte/tau/services/seer"
-	_ "github.com/taubyte/tau/services/substrate"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/patrick/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
+	_ "github.com/taubyte/tau/services/substrate/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func main() {
@@ -63,13 +63,13 @@ func main() {
 
 	multiverse, err := client.New(
 		ctx,
-		client.URL(common.DefaultDreamlandURL),
+		client.URL(common.DefaultDreamURL),
 		// Give time for fixtures to execute
 		// We should maybe use WebSocket later
 		client.Timeout(300*time.Second),
 	)
 	if err != nil {
-		log.Fatalf("Starting new dreamland client failed with: %s", err.Error())
+		log.Fatalf("Starting new dream client failed with: %s", err.Error())
 	}
 
 	err = defineCLI(&common.Context{Ctx: ctx, Multiverse: multiverse}).RunContext(ctx, os.Args)

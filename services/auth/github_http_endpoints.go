@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/services/auth/github"
 	"github.com/taubyte/tau/services/auth/repositories"
 	protocolCommon "github.com/taubyte/tau/services/common"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func getGithubClientFromContext(ctx http.Context) (*github.Client, error) {

@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/pkg/spore-drive/config/fixtures"
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/repositories"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"gotest.tools/v3/assert"
 )
 
@@ -28,7 +28,7 @@ var (
 )
 
 func init() {
-	dream.DreamlandApiListen = "localhost:4224" // diffrent port than the default
+	dream.DreamApiListen = "localhost:4224" // diffrent port than the default
 	dreamApi.BigBang()
 }
 

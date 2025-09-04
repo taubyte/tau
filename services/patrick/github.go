@@ -16,7 +16,7 @@ import (
 	http "github.com/taubyte/tau/pkg/http"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"gopkg.in/go-playground/webhooks.v5/github"
 
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
@@ -126,7 +126,7 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 			return nil, fmt.Errorf("failed registering new job repo %d into tns with error: %v", newJob.Meta.Repository.ID, err)
 		}
 
-		logger.Debugf("job full: %#v", newJob)
+		logger.Debugf("Got job: %#v", newJob)
 
 		return newJob, nil
 	default:

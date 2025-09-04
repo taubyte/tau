@@ -15,7 +15,7 @@ import (
 	"github.com/taubyte/tau/utils"
 
 	"github.com/taubyte/tau/pkg/kvdb"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 // create or fetch a universe
@@ -201,7 +201,7 @@ func (u *Universe) RunFixture(name string, params ...interface{}) error {
 		if !ok {
 			return fmt.Errorf("fixture %s does not exist", name)
 		}
-		return fmt.Errorf("fixture `%s` is nil, have you imported _ \"github.com/taubyte/%s\"", name, importRequired.ImportRef)
+		return fmt.Errorf("fixture `%s` is nil, have you imported `%s`", name, importRequired.ImportRef)
 	}
 
 	if err := fixtureHandler(u, params...); err != nil {

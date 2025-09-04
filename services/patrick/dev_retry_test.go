@@ -1,4 +1,4 @@
-package service
+package service_test
 
 import (
 	"fmt"
@@ -10,7 +10,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	_ "github.com/taubyte/tau/services/substrate"
+	_ "github.com/taubyte/tau/services/substrate/dream"
 )
 
 // TODO: Could shorten test doing a tns lookup or looking at patrick to see if jobs are done instead of sleep.

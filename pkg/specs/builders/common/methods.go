@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs/builders"
 	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	"github.com/taubyte/tau/pkg/specs/builders/website"
-	"github.com/taubyte/utils/bundle"
+	"github.com/taubyte/tau/utils/bundle"
 )
 
 func Wd(workDir string) (*dir, error) {

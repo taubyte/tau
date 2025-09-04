@@ -16,7 +16,9 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/hoarder"
+	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
 )
 
 func TestHoarder(t *testing.T) {

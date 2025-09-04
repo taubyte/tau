@@ -16,7 +16,7 @@ import (
 	smartopsSpec "github.com/taubyte/tau/pkg/specs/smartops"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/jobs"
-	"github.com/taubyte/utils/bundle"
+	"github.com/taubyte/tau/utils/bundle"
 )
 
 type smartopsContext struct {

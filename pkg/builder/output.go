@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/core/builders"
 	spec "github.com/taubyte/tau/pkg/specs/builders"
 	"github.com/taubyte/tau/pkg/specs/builders/wasm"
-	"github.com/taubyte/utils/bundle"
+	"github.com/taubyte/tau/utils/bundle"
 )
 
 var DeprecatedWasmBuild bool

@@ -4,7 +4,7 @@ import (
 	"errors"
 
 	iface "github.com/taubyte/tau/core/services/substrate/components/database"
-	mh "github.com/taubyte/utils/multihash"
+	mh "github.com/taubyte/tau/utils/multihash"
 )
 
 func GetDatabaseHash(c iface.Context) (string, error) {

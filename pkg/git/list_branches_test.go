@@ -56,7 +56,7 @@ func TestListBranches(t *testing.T) {
 		return
 	}
 
-	testBranch := "dreamland"
+	testBranch := "dream"
 	if !slices.Contains(branches, testBranch) {
 		t.Errorf("expected branch `%s` to be in list of branches", testBranch)
 		return

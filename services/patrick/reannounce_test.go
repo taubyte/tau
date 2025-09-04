@@ -1,4 +1,4 @@
-package service
+package service_test
 
 import (
 	"testing"
@@ -9,8 +9,8 @@ import (
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/clients/p2p/monkey"
-	_ "github.com/taubyte/tau/clients/p2p/patrick"
+	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
+	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
 	servicesCommon "github.com/taubyte/tau/services/common"
 )
 

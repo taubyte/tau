@@ -3,10 +3,10 @@ package fixtures
 import (
 	"testing"
 
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestFakeProject(t *testing.T) {

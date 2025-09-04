@@ -6,7 +6,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/schema/project"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 type buildContext struct {

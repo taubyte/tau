@@ -22,11 +22,11 @@ import (
 	protocolCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/monkey"
 
-	_ "github.com/taubyte/tau/clients/p2p/monkey"
-	_ "github.com/taubyte/tau/clients/p2p/tns"
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 
 	"testing"
 )

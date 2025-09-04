@@ -5,7 +5,7 @@ import (
 
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	messagingSpec "github.com/taubyte/tau/pkg/specs/messaging"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func Messaging(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

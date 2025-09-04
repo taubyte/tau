@@ -174,6 +174,11 @@ func (s *Service) doCloud(in *pb.Cloud, p config.Parser) (*connect.Response[pb.R
 						return returnEmpty(nil)
 					}
 				}
+
+				// delete the entire bootstrap shape
+				if z.GetDelete() {
+					return returnEmpty(p.Cloud().P2P().Bootstrap().Delete(shape))
+				}
 			}
 
 			// set

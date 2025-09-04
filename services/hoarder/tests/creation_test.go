@@ -8,12 +8,13 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/seer"
-	slices "github.com/taubyte/utils/slices/string"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
+	slices "github.com/taubyte/tau/utils/slices/string"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/clients/p2p/hoarder"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
+	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
 	"github.com/taubyte/tau/core/services/hoarder"
 )
 

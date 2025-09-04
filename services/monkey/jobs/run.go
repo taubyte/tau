@@ -15,11 +15,13 @@ var (
 )
 
 func (c *Context) Run(ctx context.Context) (err error) {
+	defer c.Monkey.Delete(c.Job.Id)
+	defer c.Patrick.Unlock(c.Job.Id)
 	defer c.handleLog(c.Job.Id)
 
 	c.ctx, c.ctxC = context.WithCancel(ctx)
 
-	go c.startTimeout(ctx, c.ctxC)
+	go c.startTimeout()
 	defer c.ctxC()
 
 	if c.Job.Delay != nil {

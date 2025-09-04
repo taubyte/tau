@@ -12,19 +12,19 @@ import (
 	_ "github.com/taubyte/tau/services/auth"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/monkey"
-	_ "github.com/taubyte/tau/services/patrick"
-	_ "github.com/taubyte/tau/services/seer"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/monkey/dream"
+	_ "github.com/taubyte/tau/services/patrick/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 
-	_ "github.com/taubyte/tau/clients/p2p/monkey"
-	_ "github.com/taubyte/tau/clients/p2p/patrick"
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
+	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
 
 func TestRoutes(t *testing.T) {
-	univerName := "dreamland-http"
+	univerName := "dream-http"
 	// start multiverse
 	err := api.BigBang()
 	assert.NilError(t, err)

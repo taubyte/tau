@@ -7,7 +7,7 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
 	pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 )
 
 func (hs *hoarderService) List(ctx context.Context, req *connect.Request[pb.Node], stream *connect.ServerStream[pb.StashedItem]) error {

@@ -272,7 +272,7 @@ func Bootstrap(ctx context.Context, h host.Host, dht routing.Routing, peers []pe
 			if err != nil {
 				return
 			}
-			h.ConnManager().TagPeer(pinfo.ID, "bootstrap", 42)
+			h.ConnManager().Protect(pinfo.ID, "bootstrap")
 
 			connected <- struct{}{}
 		}(pinfo)

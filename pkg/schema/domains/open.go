@@ -1,8 +1,8 @@
 package domains
 
 import (
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/pkg/schema/basic"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 func Open(seer *seer.Seer, name, application string) (Domain, error) {

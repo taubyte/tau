@@ -12,7 +12,7 @@ import (
 	streamClient "github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/p2p/streams/command/response"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 
 	"github.com/taubyte/tau/services/common"
 )

@@ -1,10 +1,12 @@
 # Cloud Development Kit
 
-To re-build cdk/js/core.wasm, run:
-```
-cd plugin/
-go run .
-```
+## Ops & Platform Engineering
+Deploying and operating a Taubyte Cloud, you should use:
+ - spore-drive:
+  - TypeScript: https://www.npmjs.com/package/@taubyte/spore-drive
+  - Python: https://pypi.org/project/spore-drive/
 
-# Idea
-The cdk/js (many other languages later - this is why we're using extism!) for example will expose the cloned config repository to the wasm module so it can be manipulated: creating funtions, storage, etc.
+ - taucorder
+
+## Development
+TODO

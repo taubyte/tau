@@ -24,7 +24,7 @@ func TestSetBasic(t *testing.T) {
 		tags               = []string{"web_tag_5", "web_tag_6"}
 		domains            = []string{"otherTestDomain"}
 		paths              = []string{"/"}
-		branch             = "dreamland"
+		branch             = "dream"
 		gitProvider        = "github"
 		repositoryID       = "444444444"
 		repositoryFullName = "taubyte_test/forty_four"
@@ -81,7 +81,7 @@ func TestSetInApp(t *testing.T) {
 		tags               = []string{"web_tag_5", "web_tag_6"}
 		domains            = []string{"otherTestDomain"}
 		paths              = []string{"/"}
-		branch             = "dreamland"
+		branch             = "dream"
 		gitProvider        = "github"
 		repositoryID       = "444444444"
 		repositoryFullName = "taubyte_test/forty_four"

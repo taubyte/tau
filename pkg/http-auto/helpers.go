@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs/extract"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func (s *Service) validateFromTns(hostname string) (string, error) {

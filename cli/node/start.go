@@ -14,7 +14,7 @@ import (
 	auto "github.com/taubyte/tau/pkg/http-auto"
 	"github.com/taubyte/tau/pkg/kvdb"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 )
 
 func Start(ctx context.Context, serviceConfig *config.Node) error {

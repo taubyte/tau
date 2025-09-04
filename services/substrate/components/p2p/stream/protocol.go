@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command/response"
 	counter "github.com/taubyte/tau/services/substrate/runtime/counter"
 	"github.com/taubyte/tau/services/substrate/runtime/lookup"
-	"github.com/taubyte/utils/multihash"
+	"github.com/taubyte/tau/utils/multihash"
 )
 
 func (st *Stream) ProtocolHash() (protocol string, err error) {

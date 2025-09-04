@@ -9,6 +9,10 @@ import (
 
 	"github.com/taubyte/tau/core/services/patrick"
 	"gotest.tools/v3/assert"
+
+	"github.com/taubyte/tau/clients/p2p/patrick/mock"
+
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
 
 func TestRunDelay(t *testing.T) {
@@ -18,7 +22,7 @@ func TestRunDelay(t *testing.T) {
 	assert.NilError(t, err)
 	defer logFile.Close()
 
-	u, err := startDreamland(t.Name())
+	u, err := startDream(t.Name())
 	assert.NilError(t, err)
 	defer u.Stop()
 
@@ -38,6 +42,7 @@ func TestRunDelay(t *testing.T) {
 		LogFile: logFile,
 		Node:    simple,
 		Monkey:  &mockMonkey{hoarder: hoarderClient},
+		Patrick: &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)},
 	}
 
 	ctx, ctxC := context.WithTimeout(context.Background(), 1*time.Second)

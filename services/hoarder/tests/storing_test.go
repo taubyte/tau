@@ -19,15 +19,15 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/clients/p2p/hoarder"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	"github.com/taubyte/tau/pkg/kvdb"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/seer"
-	_ "github.com/taubyte/tau/services/substrate"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
 	dbApi "github.com/taubyte/tau/services/substrate/components/database"
 	storageApi "github.com/taubyte/tau/services/substrate/components/storage"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/substrate/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 const (

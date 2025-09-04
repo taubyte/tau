@@ -12,7 +12,7 @@ import (
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 	"gotest.tools/v3/assert"
 )
 

@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/env"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/taubyte/tau/tools/tau/singletons/session"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"github.com/urfave/cli/v2"
 )
 
