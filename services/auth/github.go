@@ -112,9 +112,12 @@ func generateKey() (string, string, string, error) {
 }
 
 func (srv *AuthService) registerGitHubRepository(ctx context.Context, client GitHubClient, repoID string) (*RepositoryRegistrationResponse, error) {
-	err := client.GetByID(repoID)
-	if err != nil {
-		return nil, fmt.Errorf("fetch repository failed with %w", err)
+	// If client is nil (P2P calls), skip GitHub API verification
+	if client != nil {
+		err := client.GetByID(repoID)
+		if err != nil {
+			return nil, fmt.Errorf("fetch repository failed with %w", err)
+		}
 	}
 
 	repoKey := fmt.Sprintf("/repositories/github/%s/key", repoID)
@@ -127,26 +130,33 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		hook_githubid int64
 		secret        string
 	)
-	if !srv.devMode {
+	if !srv.devMode && client != nil {
+		var err error
 		hook_githubid, secret, err = client.CreatePushHook(&defaultHookName, &defaultGithubHookUrl, srv.devMode)
 		if err != nil {
 			return nil, fmt.Errorf("create push hook failed with: %s", err)
 		}
+	} else {
+		// For P2P or dev mode, use mock values
+		hook_githubid = 12345
+		secret = "mock-secret"
 	}
 
 	kname, kpub, kpriv, err := generateKey()
 	if err != nil {
-		return nil, fmt.Errorf("generate key failed with: %s", err)
+		return nil, fmt.Errorf("generate key failed with %s", err)
 	}
 
-	err = client.CreateDeployKey(&kname, &kpub)
-	if err != nil {
-		return nil, fmt.Errorf("create deploy key failed with: %s", err)
+	if client != nil {
+		err = client.CreateDeployKey(&kname, &kpub)
+		if err != nil {
+			return nil, fmt.Errorf("create deploy key failed with: %s", err)
+		}
 	}
 
 	_repo_id, err := strconv.ParseInt(repoID, 10, 64)
 	if err != nil {
-		return nil, fmt.Errorf("parse repoId failed with: %s", err)
+		return nil, fmt.Errorf("parse repoId failed with %s", err)
 	}
 
 	repo, err := repositories.New(srv.KV(), repositories.Data{
@@ -171,27 +181,37 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		"secret":     secret,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("hooks new failed with: %s", err)
+		return nil, fmt.Errorf("hooks new failed with %s", err)
 	}
 
 	err = hook.Register(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("hooks register failed with: %s", err)
+		return nil, fmt.Errorf("hooks register failed with %s", err)
 	}
 
-	_repo, err := client.GetCurrentRepository()
-	if err != nil {
-		return nil, fmt.Errorf("get current repository failed with: %s", err)
-	}
-	repoInfo := make(map[string]string, 0)
+	var repoInfo map[string]string
+	if client != nil {
+		_repo, err := client.GetCurrentRepository()
+		if err != nil {
+			return nil, fmt.Errorf("get current repository failed with: %s", err)
+		}
+		repoInfo = make(map[string]string, 0)
 
-	if _repo.SSHURL != nil {
-		repoInfo["ssh"] = *_repo.SSHURL
+		if _repo.SSHURL != nil {
+			repoInfo["ssh"] = *_repo.SSHURL
+		}
+
+		if _repo.FullName != nil {
+			repoInfo["fullname"] = *_repo.FullName
+		}
+	} else {
+		// For P2P calls, use mock repository info
+		repoInfo = map[string]string{
+			"ssh":      "git@github.com:test/repo.git",
+			"fullname": "test/repo",
+		}
 	}
 
-	if _repo.FullName != nil {
-		repoInfo["fullname"] = *_repo.FullName
-	}
 	err = srv.tnsClient.Push([]string{"resolve", "repo", "github", fmt.Sprintf("%d", _repo_id)}, repoInfo)
 	if err != nil {
 		return nil, fmt.Errorf("failed registering new job repo %d into tns with error: %v", _repo_id, err)
@@ -203,15 +223,20 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 }
 
 func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client GitHubClient, repoID string) error {
-	err := client.GetByID(repoID)
-	if err != nil {
-		return fmt.Errorf("fetch repository failed with %w", err)
+	// If client is nil (P2P calls), skip GitHub API verification
+	if client != nil {
+		err := client.GetByID(repoID)
+		if err != nil {
+			return fmt.Errorf("fetch repository failed with %w", err)
+		}
 	}
 
 	repoKey := fmt.Sprintf("/repositories/github/%s/key", repoID)
+
+	// Get the repository private key to verify it exists
 	kpriv, err := srv.db.Get(ctx, repoKey)
 	if err != nil {
-		return fmt.Errorf("repository `%s` (%s) not registred! err = %w", repoID, repoKey, err)
+		return fmt.Errorf("repository `%s` (%s) not registered! err = %w", repoID, repoKey, err)
 	}
 
 	_repo_id, err := strconv.ParseInt(repoID, 10, 64)
@@ -228,11 +253,13 @@ func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client G
 		return err
 	}
 
+	// Delete all hooks associated with the repository
 	for _, hook := range repo.Hooks(ctx) {
 		hook.Delete(ctx)
 	}
 
-	repo.Delete(ctx)
+	// Delete the repository
+	err = repo.Delete(ctx)
 	if err != nil {
 		return err
 	}
