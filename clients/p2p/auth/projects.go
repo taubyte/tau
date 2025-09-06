@@ -99,3 +99,21 @@ func (p *Projects) List() ([]string, error) {
 	}
 	return ids, nil
 }
+
+// Create creates a new project with the given name and repository IDs
+func (p *Projects) Create(name, configRepoID, codeRepoID string) error {
+	logger.Debugf("Creating project `%s` with config repo `%s` and code repo `%s`", name, configRepoID, codeRepoID)
+	defer logger.Debugf("Creating project `%s` done", name)
+
+	_, err := p.client.Send("projects", command.Body{
+		"action": "create",
+		"name":   name,
+		"config": configRepoID,
+		"code":   codeRepoID,
+	}, p.peers...)
+	if err != nil {
+		return fmt.Errorf("failed to create project: %w", err)
+	}
+
+	return nil
+}

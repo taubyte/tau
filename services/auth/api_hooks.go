@@ -12,6 +12,7 @@ import (
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/auth/repositories"
+	"github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/utils/maps"
 )
 
@@ -132,6 +133,60 @@ func (srv *AuthService) listProjects(ctx context.Context) (cr.Response, error) {
 	return cr.Response{"ids": ids}, nil
 }
 
+// createProjectStream handles project creation over p2p streams
+func (srv *AuthService) createProjectStream(ctx context.Context, body command.Body) (cr.Response, error) {
+	name, err := maps.String(body, "name")
+	if err != nil {
+		return nil, fmt.Errorf("missing name parameter: %w", err)
+	}
+
+	configRepoID, err := maps.String(body, "config")
+	if err != nil {
+		return nil, fmt.Errorf("missing config repository ID parameter: %w", err)
+	}
+
+	codeRepoID, err := maps.String(body, "code")
+	if err != nil {
+		return nil, fmt.Errorf("missing code repository ID parameter: %w", err)
+	}
+
+	// Generate a new project ID
+	projectID := common.GetNewProjectID()
+
+	// Create the project using the internal project creation logic
+	project, err := projects.New(srv.KV(), projects.Data{
+		"id":       projectID,
+		"name":     name,
+		"provider": "github",
+		"config":   configRepoID,
+		"code":     codeRepoID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create project object: %w", err)
+	}
+
+	err = project.Register()
+	if err != nil {
+		return nil, fmt.Errorf("failed to register project: %w", err)
+	}
+
+	// Link repositories to project
+	repo_key := fmt.Sprintf("/repositories/github/%s", configRepoID)
+	if err = srv.db.Put(ctx, repo_key+"/project", []byte(projectID)); err != nil {
+		return nil, err
+	}
+
+	repo_key = fmt.Sprintf("/repositories/github/%s", codeRepoID)
+	if err = srv.db.Put(ctx, repo_key+"/project", []byte(projectID)); err != nil {
+		return nil, err
+	}
+
+	return cr.Response{
+		"id":   projectID,
+		"name": name,
+	}, nil
+}
+
 func (srv *AuthService) apiProjectsServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
 	action, err := maps.String(body, "action")
 	if err != nil {
@@ -147,6 +202,8 @@ func (srv *AuthService) apiProjectsServiceHandler(ctx context.Context, st stream
 		return srv.getProjectByID(ctx, project_id)
 	case "list":
 		return srv.listProjects(ctx)
+	case "create":
+		return srv.createProjectStream(ctx, body)
 	default:
 		return nil, errors.New("Project action `" + action + "` not reconized.")
 	}

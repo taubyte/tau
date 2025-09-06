@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	commonIface "github.com/taubyte/tau/core/common"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	servicesCommon "github.com/taubyte/tau/services/common"
@@ -115,13 +116,13 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 		return fmt.Errorf("failed getting repo ID: %v", err)
 	}
 
-	mockAuthURL, err := u.GetURLHttp(u.Auth().Node())
+	auth, err := simple.Auth()
 	if err != nil {
 		return err
 	}
 
 	// Try to register
-	commonTest.RegisterTestRepositories(u.Context(), mockAuthURL, commonTest.Repository{
+	commonTest.RegisterTestRepositories(u.Context(), auth, commonTest.Repository{
 		ID:   intRepoId,
 		Name: strings.Split(fullname, "/")[1],
 	})
@@ -130,11 +131,6 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 	newPayload, err := commonTest.MakeTemplate(intRepoId, fullname, spec.DefaultBranches[0]) // TODO: add param to provide branch
 	if err != nil {
 		return fmt.Errorf("make template failed with: %v", err)
-	}
-
-	auth, err := simple.Auth()
-	if err != nil {
-		return err
 	}
 
 	// Try to get projectId from repo
@@ -168,14 +164,35 @@ func pushCode(u *dream.Universe, params ...interface{}) error {
 }
 
 func pushWebsite(u *dream.Universe, params ...interface{}) error {
+	// Create a simple to get the auth client
+	simple, err := u.Simple("client")
+	if err != nil {
+		// If simple doesn't exist, create it
+		err = u.StartWithConfig(&dream.Config{
+			Simples: map[string]dream.SimpleConfig{
+				"client": {
+					Clients: dream.SimpleConfigClients{
+						Auth: &commonIface.ClientConfig{},
+					}.Compat(),
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		simple, err = u.Simple("client")
+		if err != nil {
+			return err
+		}
+	}
 
-	mockAuthURL, err := u.GetURLHttp(u.Auth().Node())
+	auth, err := simple.Auth()
 	if err != nil {
 		return err
 	}
 
 	// Try to register
-	commonTest.RegisterTestRepositories(u.Context(), mockAuthURL, commonTest.WebsiteRepo)
+	commonTest.RegisterTestRepositories(u.Context(), auth, commonTest.WebsiteRepo)
 
 	err = pushWrapper(u, commonTest.WebsitePayload, commonTest.WebsiteRepo)
 	if err != nil {
@@ -186,14 +203,35 @@ func pushWebsite(u *dream.Universe, params ...interface{}) error {
 }
 
 func pushLibrary(u *dream.Universe, params ...interface{}) error {
+	// Create a simple to get the auth client
+	simple, err := u.Simple("client")
+	if err != nil {
+		// If simple doesn't exist, create it
+		err = u.StartWithConfig(&dream.Config{
+			Simples: map[string]dream.SimpleConfig{
+				"client": {
+					Clients: dream.SimpleConfigClients{
+						Auth: &commonIface.ClientConfig{},
+					}.Compat(),
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		simple, err = u.Simple("client")
+		if err != nil {
+			return err
+		}
+	}
 
-	mockAuthURL, err := u.GetURLHttp(u.Auth().Node())
+	auth, err := simple.Auth()
 	if err != nil {
 		return err
 	}
 
 	// Try to register
-	commonTest.RegisterTestRepositories(u.Context(), mockAuthURL, commonTest.LibraryRepo)
+	commonTest.RegisterTestRepositories(u.Context(), auth, commonTest.LibraryRepo)
 
 	err = pushWrapper(u, commonTest.LibraryPayload, commonTest.LibraryRepo)
 	if err != nil {
@@ -221,9 +259,8 @@ func pushWrapper(u *dream.Universe, gitPayload []byte, repo commonTest.Repositor
 	}
 
 	servicesCommon.FakeSecret = true
-	fmt.Printf("Pushing job to repo %v  projectID: %s\n", repo, commonTest.ProjectID)
-	err = commonTest.PushJob(gitPayload, mockPatrickURL, repo)
-	if err != nil {
+	fmt.Printf("Pushing job to from repo %s. ProjectID: %s\n", repo.Name, commonTest.ProjectID)
+	if err := commonTest.PushJob(gitPayload, mockPatrickURL, repo); err != nil {
 		return err
 	}
 

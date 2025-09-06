@@ -6,6 +6,7 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
@@ -80,7 +81,7 @@ func TestFixtureProvidesServices(t *testing.T) {
 }
 
 func TestDreamFixture(t *testing.T) {
-	t.Skip("Using an old token/project")
+	//t.Skip("Using an old token/project")
 	u := dream.New(dream.UniverseConfig{Name: "fixtureTest"})
 	defer u.Stop()
 
@@ -97,6 +98,7 @@ func TestDreamFixture(t *testing.T) {
 				Clients: dream.SimpleConfigClients{
 					TNS:     &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
+					Auth:    &commonIface.ClientConfig{},
 				}.Compat(),
 			},
 		},
@@ -124,26 +126,16 @@ func TestDreamFixture(t *testing.T) {
 		attempts += 1
 
 		patrick, err := simple.Patrick()
-		if err != nil {
-			t.Error(err)
-			return
-		}
+		assert.NilError(t, err)
 
 		jobs, err := patrick.List()
-		if err != nil {
-			t.Error(err)
-			return
+		assert.NilError(t, err)
+
+		if len(jobs) >= 2 {
+			break
 		}
 
-		if len(jobs) != 2 {
-			t.Errorf("Expected 2 jobs got %d", len(jobs))
-			return
-		}
-
-		if attempts == 20 {
-			t.Error(err)
-			return
-		}
+		assert.Assert(t, attempts < 20)
 
 		time.Sleep(1 * time.Second)
 	}

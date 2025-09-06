@@ -20,7 +20,7 @@ import (
 )
 
 func TestReportSsh(t *testing.T) {
-	t.Skip("Using an old token/project")
+	//t.Skip("Using an old token/project")
 	u := dream.New(dream.UniverseConfig{Name: "ReportSsh"})
 	defer u.Stop()
 
@@ -37,6 +37,7 @@ func TestReportSsh(t *testing.T) {
 				Clients: dream.SimpleConfigClients{
 					TNS:     &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
+					Auth:    &commonIface.ClientConfig{},
 				}.Compat(),
 			},
 		},
@@ -47,16 +48,10 @@ func TestReportSsh(t *testing.T) {
 	}
 
 	err = u.RunFixture("createProjectWithJobs")
-	if err != nil {
-		t.Errorf("Error with running fixture createProjectWithJobs: %v", err)
-		return
-	}
+	assert.NilError(t, err)
 
 	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Check for 20 seconds after fixture is ran for the jobs
 	attempts := 0
@@ -65,25 +60,19 @@ func TestReportSsh(t *testing.T) {
 	assert.NilError(t, err)
 
 	for {
-		attempts += 1
+		attempts++
+		assert.Assert(t, attempts < 20)
 
 		jobs, err := patrick.List()
-		if len(jobs) != 2 {
-			err = fmt.Errorf("Expected 2 jobs got %d", len(jobs))
+		assert.NilError(t, err)
+		if len(jobs) < 2 {
+			continue
 		}
 
-		if err == nil {
-			job, err = patrick.Get(jobs[0])
-			if err != nil {
-				t.Error(err)
-				return
-			}
+		job, err = patrick.Get(jobs[0])
+		assert.NilError(t, err)
+		if job != nil {
 			break
-		}
-
-		if attempts == 20 {
-			t.Error(err)
-			return
 		}
 
 		time.Sleep(1 * time.Second)

@@ -120,6 +120,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 	go func() {
 		if srv.devMode {
 			DefaultReAnnounceJobTime = 5 * time.Second
+			fmt.Printf("Dev mode, setting DefaultReAnnounceJobTime to %s seconds\n", DefaultReAnnounceJobTime)
 		}
 		for {
 			select {
@@ -128,10 +129,10 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 			case <-time.After(DefaultReAnnounceJobTime):
 				_ctx, cancel := context.WithTimeout(ctx, DefaultReAnnounceJobTime)
 				err := srv.ReannounceJobs(_ctx)
-				cancel()
 				if err != nil {
 					logger.Error(err)
 				}
+				cancel()
 			}
 		}
 	}()

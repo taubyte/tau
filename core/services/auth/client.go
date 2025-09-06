@@ -14,6 +14,7 @@ type Client interface {
 	GetStaticCertificate(domain string) (*tls.Certificate, error)
 	GetRawCertificate(domain string) ([]byte, error)
 	GetRawStaticCertificate(domain string) ([]byte, error)
+	RegisterDomain(fqdn, projectID string) (map[string]string, error)
 	Hooks() Hooks
 	Projects() Projects
 	Repositories() Repositories
@@ -41,6 +42,7 @@ type Projects interface {
 	New(obj map[string]interface{}) *Project
 	Get(project_id string) *Project
 	List() ([]string, error)
+	Create(name, configRepoID, codeRepoID string) error
 }
 
 type Project struct {
@@ -61,6 +63,7 @@ type GithubRepositories interface {
 	New(obj map[string]interface{}) (GithubRepository, error)
 	Get(id int) (GithubRepository, error)
 	List() ([]string, error)
+	Register(repoID string) (string, error)
 }
 
 type Repository interface {

@@ -10,38 +10,31 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"text/template"
 
-	httpClient "github.com/taubyte/tau/clients/http"
-
-	httpAuthClient "github.com/taubyte/tau/clients/http/auth"
+	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/core/services/patrick"
 	commonAuth "github.com/taubyte/tau/services/common"
 )
 
-var ac *httpAuthClient.Client
+var ac auth.Client
 
-func RegisterTestProject(ctx context.Context, mockAuthURL string) (err error) {
+func RegisterTestProject(ctx context.Context, authClient auth.Client) (err error) {
 	// override ID of project generated so that it matches id in config
 	commonAuth.GetNewProjectID = func(args ...interface{}) string { return ProjectID }
 
-	ac, err = httpAuthClient.New(ctx, httpClient.URL(mockAuthURL), httpClient.Auth(GitToken), httpClient.Unsecure())
-	if err != nil {
-		return err
-	}
+	ac = authClient
 	// Generate config, code repositories
-	err = RegisterTestRepositories(ctx, "", ConfigRepo, CodeRepo)
+	err = RegisterTestRepositories(ctx, authClient, ConfigRepo, CodeRepo)
 	if err != nil {
 		return err
 	}
-
-	// Register project (
-	p := httpAuthClient.Project{Name: ProjectName}
 
 	// Register project with auth
-	err = p.Create(ac, fmt.Sprintf("%d", ConfigRepo.ID), fmt.Sprintf("%d", CodeRepo.ID))
+	err = ac.Projects().Create(ProjectName, fmt.Sprintf("%d", ConfigRepo.ID), fmt.Sprintf("%d", CodeRepo.ID))
 	if err != nil {
 		return err
 	}
@@ -49,27 +42,18 @@ func RegisterTestProject(ctx context.Context, mockAuthURL string) (err error) {
 	return nil
 }
 
-func RegisterTestDomain(ctx context.Context, mockAuthURL string) (err error) {
-	ac, err = httpAuthClient.New(ctx, httpClient.URL(mockAuthURL), httpClient.Auth(GitToken), httpClient.Unsecure())
-	if err != nil {
-		return err
-	}
+func RegisterTestDomain(ctx context.Context, authClient auth.Client) (err error) {
+	ac = authClient
 
 	_, err = ac.RegisterDomain(TestFQDN, ProjectID)
 
 	return err
 }
 
-func RegisterTestRepositories(ctx context.Context, mockAuthURL string, repos ...Repository) (err error) {
-	if len(mockAuthURL) != 0 {
-		ac, err = httpAuthClient.New(ctx, httpClient.URL(mockAuthURL), httpClient.Auth(GitToken), httpClient.Unsecure())
-		if err != nil {
-			return err
-		}
-	}
-
+func RegisterTestRepositories(ctx context.Context, authClient auth.Client, repos ...Repository) (err error) {
+	ac = authClient
 	for _, repo := range repos {
-		err = ac.RegisterRepository(fmt.Sprintf("%d", repo.ID))
+		_, err = ac.Repositories().Github().Register(fmt.Sprintf("%d", repo.ID))
 		if err != nil {
 			break
 		}
@@ -120,6 +104,25 @@ func PushJob(gitPayload []byte, patrickURL string, repo Repository) error {
 func CreateHttpClient() *http.Client {
 	tr := &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			// Override DNS resolution for test domains
+			host, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return nil, err
+			}
+
+			// Map test domains to localhost
+			if host == "hal.computers.com" || host == "testing_website_builder.com" {
+				host = "127.0.0.1"
+			}
+
+			// Reconstruct the address
+			newAddr := net.JoinHostPort(host, port)
+
+			// Use the default dialer
+			d := net.Dialer{}
+			return d.DialContext(ctx, network, newAddr)
+		},
 	}
 	return &http.Client{Transport: tr}
 }

@@ -73,3 +73,25 @@ func (r *GithubRepositories) List() ([]string, error) {
 	}
 	return ids, nil
 }
+
+// Register registers a GitHub repository and returns the deployment key
+func (r *GithubRepositories) Register(repoID string) (string, error) {
+	logger.Debugf("Registering GitHub repository `%s`", repoID)
+	defer logger.Debugf("Registering GitHub repository `%s` done", repoID)
+
+	response, err := r.client.Send("repositories", command.Body{
+		"action":   "register",
+		"provider": "github",
+		"id":       repoID,
+	}, r.peers...)
+	if err != nil {
+		return "", fmt.Errorf("failed to register repository: %w", err)
+	}
+
+	key, err := maps.String(response, "key")
+	if err != nil {
+		return "", fmt.Errorf("failed to get repository key: %w", err)
+	}
+
+	return key, nil
+}

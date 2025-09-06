@@ -15,7 +15,7 @@ import (
 
 // TODO: Could shorten test doing a tns lookup or looking at patrick to see if jobs are done instead of sleep.
 func TestDevRetry(t *testing.T) {
-	t.Skip("Needs to be updated post code clone config for itself")
+	//t.Skip("Needs to be updated post code clone config for itself")
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -44,13 +44,19 @@ func TestDevRetry(t *testing.T) {
 		return
 	}
 
-	mockAuthURL, err := u.GetURLHttp(u.Auth().Node())
+	simple, err := u.Simple("client")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	err = commonTest.RegisterTestProject(u.Context(), mockAuthURL)
+	auth, err := simple.Auth()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = commonTest.RegisterTestProject(u.Context(), auth)
 	if err != nil {
 		t.Error(err)
 		return
@@ -82,7 +88,7 @@ func TestDevRetry(t *testing.T) {
 		t.Error("Failed new request error: ", err)
 		return
 	}
-	client := &http.Client{}
+	client := commonTest.CreateHttpClient()
 	response, err := client.Do(req)
 	if err != nil {
 		t.Error("Failed to do client request error: ", err)
