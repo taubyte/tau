@@ -81,7 +81,6 @@ func TestFixtureProvidesServices(t *testing.T) {
 }
 
 func TestDreamFixture(t *testing.T) {
-	//t.Skip("Using an old token/project")
 	u := dream.New(dream.UniverseConfig{Name: "fixtureTest"})
 	defer u.Stop()
 

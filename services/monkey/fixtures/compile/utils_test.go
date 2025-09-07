@@ -3,9 +3,9 @@ package compile_test
 import (
 	"fmt"
 	"io"
-	"net/http"
 
 	"github.com/taubyte/tau/dream"
+	commonTest "github.com/taubyte/tau/dream/helpers"
 )
 
 var (
@@ -25,7 +25,7 @@ func callHal(u *dream.Universe, path string) ([]byte, error) {
 
 	host := fmt.Sprintf("hal.computers.com:%d", nodePort)
 
-	ret, err := http.DefaultClient.Get(fmt.Sprintf("http://%s%s", host, path))
+	ret, err := commonTest.CreateHttpClient().Get(fmt.Sprintf("http://%s%s", host, path))
 	if err != nil {
 		return nil, err
 	}

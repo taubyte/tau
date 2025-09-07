@@ -20,7 +20,6 @@ import (
 )
 
 func TestReportSsh(t *testing.T) {
-	//t.Skip("Using an old token/project")
 	u := dream.New(dream.UniverseConfig{Name: "ReportSsh"})
 	defer u.Stop()
 

@@ -8,25 +8,24 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/core/services/patrick"
 	commonAuth "github.com/taubyte/tau/services/common"
 )
 
-var ac auth.Client
-
 func RegisterTestProject(ctx context.Context, authClient auth.Client) (err error) {
 	// override ID of project generated so that it matches id in config
 	commonAuth.GetNewProjectID = func(args ...interface{}) string { return ProjectID }
 
-	ac = authClient
 	// Generate config, code repositories
 	err = RegisterTestRepositories(ctx, authClient, ConfigRepo, CodeRepo)
 	if err != nil {
@@ -34,7 +33,7 @@ func RegisterTestProject(ctx context.Context, authClient auth.Client) (err error
 	}
 
 	// Register project with auth
-	err = ac.Projects().Create(ProjectName, fmt.Sprintf("%d", ConfigRepo.ID), fmt.Sprintf("%d", CodeRepo.ID))
+	err = authClient.Projects().Create(ProjectName, fmt.Sprintf("%d", ConfigRepo.ID), fmt.Sprintf("%d", CodeRepo.ID))
 	if err != nil {
 		return err
 	}
@@ -43,23 +42,36 @@ func RegisterTestProject(ctx context.Context, authClient auth.Client) (err error
 }
 
 func RegisterTestDomain(ctx context.Context, authClient auth.Client) (err error) {
-	ac = authClient
-
-	_, err = ac.RegisterDomain(TestFQDN, ProjectID)
+	_, err = authClient.RegisterDomain(TestFQDN, ProjectID)
 
 	return err
 }
 
 func RegisterTestRepositories(ctx context.Context, authClient auth.Client, repos ...Repository) (err error) {
-	ac = authClient
 	for _, repo := range repos {
-		_, err = ac.Repositories().Github().Register(fmt.Sprintf("%d", repo.ID))
-		if err != nil {
+		for attempts := 0; attempts < 3; attempts++ {
+			_, err = authClient.Repositories().Github().Register(fmt.Sprintf("%d", repo.ID))
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) {
+					// service probably not ready yet
+					select {
+					case <-ctx.Done():
+						return ctx.Err()
+					case <-time.After(3 * time.Second):
+						// try again
+						continue
+					}
+				}
+				// else retry imidiatly
+			}
 			break
+		}
+		if err != nil {
+			return err
 		}
 	}
 
-	return err
+	return nil
 }
 
 func createStruct(payload []byte) (patrick.Meta, error) {

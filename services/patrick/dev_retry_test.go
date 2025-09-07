@@ -15,7 +15,6 @@ import (
 
 // TODO: Could shorten test doing a tns lookup or looking at patrick to see if jobs are done instead of sleep.
 func TestDevRetry(t *testing.T) {
-	//t.Skip("Needs to be updated post code clone config for itself")
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 

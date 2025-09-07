@@ -4,7 +4,6 @@ import (
 	_ "embed"
 	"testing"
 
-	_ "github.com/taubyte/tau/clients/p2p/patrick"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
@@ -13,14 +12,16 @@ import (
 	"gotest.tools/v3/assert"
 
 	"github.com/fxamacker/cbor/v2"
+	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
+	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
 	iface "github.com/taubyte/tau/core/services/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	service "github.com/taubyte/tau/services/patrick"
+	_ "github.com/taubyte/tau/services/patrick/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestClientWithUniverse(t *testing.T) {
-	t.Skip("Using an old token/project")
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -38,45 +39,28 @@ func TestClientWithUniverse(t *testing.T) {
 			"client": {
 				Clients: dream.SimpleConfigClients{
 					Patrick: &commonIface.ClientConfig{},
+					Auth:    &commonIface.ClientConfig{},
 				}.Compat(),
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	mockPatrickURL, err := u.GetURLHttp(u.Patrick().Node())
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	mockAuthURL, err := u.GetURLHttps(u.Auth().Node())
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	mockAuth, err := simple.Auth()
+	assert.NilError(t, err)
 
-	err = commonTest.RegisterTestRepositories(u.Context(), mockAuthURL, commonTest.ConfigRepo, commonTest.CodeRepo)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	err = commonTest.RegisterTestRepositories(u.Context(), mockAuth, commonTest.ConfigRepo, commonTest.CodeRepo)
+	assert.NilError(t, err)
 
 	servicesCommon.FakeSecret = true
 	err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	srv := u.Patrick()
 	db := srv.KV()
@@ -85,65 +69,35 @@ func TestClientWithUniverse(t *testing.T) {
 	assert.NilError(t, err)
 
 	jobs, err := patrickClient.List()
-	if err != nil {
-		t.Error("Failed calling list after error: ", err)
-		return
-	}
+	assert.NilError(t, err)
 
 	var job *iface.Job
 
 	job, err = patrickClient.Get(jobs[0])
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// Testing on /jobs/
-	if jobs[0] != job.Id {
-		t.Errorf("Should have matching job ids. %s != %s", jobs[0], job.Id)
-		return
-	}
+	assert.Equal(t, jobs[0], job.Id)
 
 	err = patrickClient.Lock(job.Id, 5)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	islocked, err := patrickClient.IsLocked(job.Id)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	if !islocked {
-		t.Error("Job not locked")
-		return
-	}
+	assert.NilError(t, err)
+	assert.Equal(t, islocked, true)
 
 	err = patrickClient.Unlock(job.Id)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	var lock service.Lock
 	data, err := db.Get(u.Context(), "/locked/jobs/"+job.Id)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = cbor.Unmarshal(data, &lock)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if lock.Eta != 0 && lock.Timestamp != 0 {
-		t.Errorf("Expected eta and timestamp to be 0 to unlock got %d %d", lock.Eta, lock.Timestamp)
-		return
-	}
+	assert.Equal(t, lock.Eta, int64(0))
+	assert.Equal(t, lock.Timestamp, int64(0))
 
 	testLogs := make(map[string]string, 0)
 	testAssets := make(map[string]string, 0)
@@ -158,28 +112,16 @@ func TestClientWithUniverse(t *testing.T) {
 
 	// Testing with /archive/jobs/
 	err = patrickClient.Failed(job.Id, testLogs, testAssets)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	jobs, err = patrickClient.List()
-	if err != nil {
-		t.Error("Failed calling list after error: ", err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if jobs[0] != job.Id {
-		t.Error("Should have matching job ids")
-		return
-	}
+	assert.Equal(t, jobs[0], job.Id)
 
 	testJob, err := patrickClient.Get(job.Id)
-	if err != nil {
-		t.Errorf("Failed getting job %s with %v", job.Id, err)
-	}
+	assert.NilError(t, err)
 
-	if len(testJob.AssetCid) != 3 && len(testJob.Logs) != 3 {
-		t.Errorf("Did not get length 3 for asset and logs got Assets: %d, Logs: %d", len(testJob.Logs), len(testJob.AssetCid))
-	}
+	assert.Equal(t, len(testJob.AssetCid), 3)
+	assert.Equal(t, len(testJob.Logs), 3)
 }

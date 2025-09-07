@@ -50,40 +50,25 @@ func TestRunWasmRetry(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	authHttpURL, err := u.GetURLHttp(u.Auth().Node())
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	simple, err := u.Simple("client")
+	assert.NilError(t, err)
+
+	mockAuth, err := simple.Auth()
+	assert.NilError(t, err)
 
 	// override ID of project generated so that it matches id in config
 	protocolCommon.GetNewProjectID = func(args ...interface{}) string { return commonTest.ProjectID }
-	err = commonTest.RegisterTestProject(u.Context(), authHttpURL)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	err = commonTest.RegisterTestProject(u.Context(), mockAuth)
+	assert.NilError(t, err)
 
 	tns, err := simple.TNS()
 	assert.NilError(t, err)
 
 	tnsClient := tns.(*tnsClient.Client)
 	err = u.RunFixture("pushCode")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = u.RunFixture("pushConfig")
 	assert.NilError(t, err)

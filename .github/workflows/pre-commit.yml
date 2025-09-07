@@ -42,9 +42,6 @@ jobs:
         go-version: '1.25.0'
     - name: Checkout code
       uses: actions/checkout@v3
-    - name: Add entry to /etc/hosts
-      run: |
-        echo "127.0.0.1 hal.computers.com" | sudo tee -a /etc/hosts
     - name: Run Go tests with retries
       env:
         TEST_GIT_TOKEN: ${{ secrets.TEST_GIT_TOKEN }}
@@ -86,9 +83,6 @@ jobs:
         go-version: '1.25.0'
     - name: Checkout code
       uses: actions/checkout@v3
-    - name: Add entry to /etc/hosts
-      run: |
-        echo "127.0.0.1 hal.computers.com" | sudo tee -a /etc/hosts
     - name: Build mock servers
       run: |
         for project in "spore-drive" "taucorder"; do

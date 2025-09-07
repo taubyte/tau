@@ -10,6 +10,7 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
+	commonTest "github.com/taubyte/tau/dream/helpers"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	gateway "github.com/taubyte/tau/services/gateway"
@@ -93,7 +94,7 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 	substratePort, err := u.GetPortHttp(firstSubstrate.Node())
 	assert.NilError(t, err)
 
-	httpClient := http.DefaultClient
+	httpClient := commonTest.CreateHttpClient()
 
 	substrateUrl := fmt.Sprintf("http://%s:%d/%s", fqdn, substratePort, requestPath)
 	gatewayUrl := fmt.Sprintf("http://%s:%d/%s", fqdn, gatewayPort, requestPath)
@@ -108,11 +109,11 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 
 	case "POST":
 		buffer := bytes.NewBuffer(body)
-		_, err = http.Post(substrateUrl, "text/plain", buffer)
+		_, err = httpClient.Post(substrateUrl, "text/plain", buffer)
 		assert.NilError(t, err)
 
 		buffer = bytes.NewBuffer(body)
-		res, err = http.Post(gatewayUrl, "text/plain", buffer)
+		res, err = httpClient.Post(gatewayUrl, "text/plain", buffer)
 		assert.NilError(t, err)
 	default:
 		t.Errorf("method `%s` not supported", method)

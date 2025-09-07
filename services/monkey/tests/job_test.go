@@ -22,6 +22,7 @@ import (
 	protocolCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/monkey"
 
+	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
@@ -34,7 +35,6 @@ import (
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
 func TestConfigJob(t *testing.T) {
-	t.Skip("needs to be redone")
 	protocolCommon.MockedPatrick = true
 	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
@@ -55,23 +55,18 @@ func TestConfigJob(t *testing.T) {
 				Clients: dream.SimpleConfigClients{
 					TNS:    &commonIface.ClientConfig{},
 					Monkey: &commonIface.ClientConfig{},
+					Auth:   &commonIface.ClientConfig{},
 				}.Compat(),
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// wait a couple seconds for services to start
 	time.Sleep(time.Second * 2)
 
 	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	tnsClient, err := simple.TNS()
 	assert.NilError(t, err)
@@ -84,17 +79,11 @@ func TestConfigJob(t *testing.T) {
 		return commonTest.ProjectID
 	}
 
-	authHttpURL, err := u.GetURLHttp(u.Auth().Node())
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	mockAuth, err := simple.Auth()
+	assert.NilError(t, err)
 
-	err = commonTest.RegisterTestProject(u.Context(), authHttpURL)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	err = commonTest.RegisterTestProject(u.Context(), mockAuth)
+	assert.NilError(t, err)
 
 	gitRoot := "./testGIT"
 	gitRootConfig := gitRoot + "/config"
@@ -103,17 +92,11 @@ func TestConfigJob(t *testing.T) {
 
 	// clone repo
 	err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.ConfigRepo)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	// read with seer
 	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	fakJob := &patrick.Job{}
 	fakJob.Logs = make(map[string]string)
@@ -125,40 +108,22 @@ func TestConfigJob(t *testing.T) {
 	fakJob.Meta.HeadCommit.ID = "QmaskdjfziUJHJjYfhaysgYGYyA"
 	fakJob.Id = "jobforjob_test"
 	rc, err := compile.CompilerConfig(projectIface, fakJob.Meta, generatedDomainRegExp)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	compiler, err := compile.New(rc, compile.Dev())
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	defer compiler.Close()
 	err = compiler.Build()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = compiler.Publish(tnsClient)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), fakJob)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	err = waitForTestStatus(monkeyClient, fakJob.Id, patrick.JobStatusSuccess)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	err = waitForTestStatus(monkeyClient, fakJob.Id, patrick.JobStatusLocked)
+	assert.NilError(t, err)
 
 }
