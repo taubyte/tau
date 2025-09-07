@@ -3,11 +3,13 @@ package auth
 import (
 	"fmt"
 
+	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 // RegisterDomain registers a domain for a project and returns domain validation information
-func (c *Client) RegisterDomain(fqdn, projectID string) (map[string]string, error) {
+func (c *Client) RegisterDomain(fqdn, projectID string) (*auth.DomainRegistration, error) {
 	logger.Debugf("Registering domain `%s` for project `%s`", fqdn, projectID)
 	defer logger.Debugf("Registering domain `%s` for project `%s` done", fqdn, projectID)
 
@@ -21,16 +23,9 @@ func (c *Client) RegisterDomain(fqdn, projectID string) (map[string]string, erro
 	}
 
 	// Extract the response fields
-	result := make(map[string]string)
-	if token, ok := response["token"].(string); ok {
-		result["token"] = token
-	}
-	if entry, ok := response["entry"].(string); ok {
-		result["entry"] = entry
-	}
-	if domainType, ok := response["type"].(string); ok {
-		result["type"] = domainType
-	}
-
-	return result, nil
+	return &auth.DomainRegistration{
+		Token: maps.TryString(response, "token"),
+		Entry: maps.TryString(response, "entry"),
+		Type:  maps.TryString(response, "type"),
+	}, nil
 }

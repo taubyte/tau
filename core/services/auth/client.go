@@ -14,13 +14,19 @@ type Client interface {
 	GetStaticCertificate(domain string) (*tls.Certificate, error)
 	GetRawCertificate(domain string) ([]byte, error)
 	GetRawStaticCertificate(domain string) ([]byte, error)
-	RegisterDomain(fqdn, projectID string) (map[string]string, error)
+	RegisterDomain(fqdn, projectID string) (*DomainRegistration, error)
 	Hooks() Hooks
 	Projects() Projects
 	Repositories() Repositories
 	Stats() Stats // TODO: rename State
 	Peers(...peerCore.ID) Client
 	Close()
+}
+
+type DomainRegistration struct {
+	Token string `json:"token"`
+	Entry string `json:"entry"`
+	Type  string `json:"type"`
 }
 
 type Stats interface {

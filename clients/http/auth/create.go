@@ -4,11 +4,6 @@ import (
 	"fmt"
 )
 
-// Create creates the given CanBeCreated object with the current client
-func (c *Client) Create(object CanBeCreated) error {
-	return object.Create(c)
-}
-
 // Create creates a new project with the registered config and code repository ids
 func (p *Project) Create(c *Client, configRepoId string, codeRepoId string) error {
 	// Affix client to project

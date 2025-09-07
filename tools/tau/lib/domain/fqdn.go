@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	client "github.com/taubyte/tau/clients/http/auth"
+	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/tools/tau/common"
 	"github.com/taubyte/tau/tools/tau/env"
 	domainI18n "github.com/taubyte/tau/tools/tau/i18n/domain"
@@ -33,7 +33,7 @@ func newValidator(info getter) Validator {
 	return &validator{info}
 }
 
-func (r *validator) ValidateFQDN(fqdn string) (response client.DomainResponse, err error) {
+func (r *validator) ValidateFQDN(fqdn string) (response auth.DomainRegistration, err error) {
 	client, err := authClient.Load()
 	if err != nil {
 		return
