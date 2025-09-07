@@ -51,6 +51,7 @@ jobs:
         TEST_GIT_TOKEN: ${{ secrets.TEST_GIT_TOKEN }}
       run: |
         eval $(ssh-agent -s)
+        export SSH_AUTH_SOCK
         max_attempts=5
         attempt_num=1
         until [ $attempt_num -gt $max_attempts ]
