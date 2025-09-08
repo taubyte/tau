@@ -46,13 +46,19 @@ func TestPushAll(t *testing.T) {
 		return
 	}
 
-	mockAuthURL, err := u.GetURLHttp(u.Auth().Node())
+	simple, err := u.Simple("client")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	err = helpers.RegisterTestRepositories(u.Context(), mockAuthURL, helpers.ConfigRepo, helpers.CodeRepo, helpers.LibraryRepo)
+	auth, err := simple.Auth()
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	err = helpers.RegisterTestRepositories(u.Context(), auth, helpers.ConfigRepo, helpers.CodeRepo, helpers.LibraryRepo)
 	if err != nil {
 		t.Error(err)
 		return

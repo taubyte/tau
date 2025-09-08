@@ -14,9 +14,6 @@ import (
 	"golang.org/x/crypto/acme/autocert"
 )
 
-// https://golang.org/pkg/crypto/x509/#example_Certificate_Verify
-
-// TODO: validate fqdn
 func (srv *AuthService) setACMECertificate(ctx context.Context, fqdn string, certificate []byte) error {
 	logger.Debugf("Set acme certificate for `%s`", fqdn)
 	defer logger.Debugf("Set acme certificate for `%s` done", fqdn)
@@ -47,8 +44,6 @@ func (srv *AuthService) setACMEStaticCertificate(ctx context.Context, fqdn strin
 	return nil
 }
 
-// TODO: validate fqdn
-// LATER: validate peer has access to it
 func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]byte, error) {
 	logger.Debugf("Get acme certificate for `%s`", fqdn)
 	defer logger.Debugf("Get acme certificate for `%s` done", fqdn)
@@ -61,7 +56,6 @@ func (srv *AuthService) getACMECertificate(ctx context.Context, fqdn string) ([]
 	}
 
 	if certificate == nil {
-		// cleanup entry
 		logger.Error(fqdn + " : Found empty certificate!")
 		srv.db.Delete(ctx, key)
 		return nil, autocert.ErrCacheMiss
@@ -89,7 +83,6 @@ func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn strin
 	}
 
 	if certificate == nil {
-		// cleanup entry
 		logger.Debugf("Get static certificate for %s returned empty certificate!", fqdn)
 		srv.db.Delete(ctx, key)
 		return nil, autocert.ErrCacheMiss
@@ -100,7 +93,6 @@ func (srv *AuthService) getACMEStaticCertificate(ctx context.Context, fqdn strin
 	return certificate, nil
 }
 
-// add a process to clean-up
 func (srv *AuthService) getACMECache(ctx context.Context, key string) ([]byte, error) {
 	logger.Debugf("Get acme cache for `%s`", key)
 	defer logger.Debugf("Get acme cache for `%s` done", key)
@@ -123,7 +115,6 @@ func (srv *AuthService) getACMECache(ctx context.Context, key string) ([]byte, e
 	return data, nil
 }
 
-// add a GC to clean up data
 func (srv *AuthService) setACMECache(ctx context.Context, key string, data []byte) error {
 	logger.Debugf("Set acme cache for `%s`", key)
 	defer logger.Debugf("Set acme cache for `%s` done", key)
@@ -159,9 +150,6 @@ func (srv *AuthService) deleteACMECache(ctx context.Context, key string) error {
 }
 
 func (srv *AuthService) acmeServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	//  TODO: add encrption key to service library
-	//  action: get/set
-	//  fqdn: domain name
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err

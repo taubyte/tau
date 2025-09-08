@@ -6,15 +6,15 @@ import (
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/pterm/pterm"
-	client "github.com/taubyte/tau/clients/http/auth"
+	"github.com/taubyte/tau/core/services/auth"
 )
 
-func Registered(fqdn string, resp client.DomainResponse) {
+func Registered(fqdn string, resp auth.DomainRegistration) {
 	pterm.Info.Printfln("Be sure to the following entries of `%s` to your DNS zone:", fqdn)
 	fmt.Println(GetRegisterTable(resp))
 }
 
-func GetRegisterTable(response client.DomainResponse) string {
+func GetRegisterTable(response auth.DomainRegistration) string {
 	t := table.NewWriter()
 	t.SetColumnConfigs([]table.ColumnConfig{
 		{

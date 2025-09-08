@@ -42,7 +42,6 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 		}
 	}()
 
-	// TODO move database root to new
 	if config.Node == nil {
 		s.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolCommon.Hoarder))
 		if err != nil {
@@ -81,7 +80,6 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 		return nil, fmt.Errorf("creating new tns client failed with: %w", err)
 	}
 
-	// TODO: caching this why? StartSeerBeacon should handle this
 	sc, err := seerClient.New(ctx, clientNode)
 	if err != nil {
 		return nil, fmt.Errorf("new seer client failed with: %w", err)
@@ -113,7 +111,6 @@ func (srv *Service) Close() error {
 	return nil
 }
 
-// This only handles incoming new request for orders
 func (srv *Service) subscribe(ctx context.Context) error {
 	return srv.node.PubSubSubscribe(
 		hoarderSpecs.PubSubIdent,

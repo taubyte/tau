@@ -24,7 +24,6 @@ func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams
 		return nil, fmt.Errorf("failed getting aciton from body with error: %v", err)
 	}
 
-	// Ignoring ok since we want it to either exist or just be an empty
 	logCid := body["cid"]
 	assetCid := body["assetCid"]
 
@@ -60,7 +59,6 @@ func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams
 	case "isLocked":
 		return p.isLockedHandler(ctx, jid, conn)
 	case "unlock":
-		// TODO: delete
 		return p.unlockHandler(ctx, jid)
 	case "cancel":
 		return cr.Response{"cancelled": jid}, p.cancelHandler(ctx, jid, cidMap)
@@ -103,7 +101,6 @@ func (p *PatrickService) listHandler(ctx context.Context) (cr.Response, error) {
 
 func (p *PatrickService) infoHandler(ctx context.Context, jid string) (cr.Response, error) {
 	var job commonIface.Job
-	// Try getting from /archive/jobs/ if not found try  /jobs/
 	jobByte, err := p.db.Get(ctx, "/jobs/"+jid)
 	if err != nil {
 		jobByte, err = p.db.Get(ctx, "/archive/jobs/"+jid)
@@ -121,7 +118,6 @@ func (p *PatrickService) infoHandler(ctx context.Context, jid string) (cr.Respon
 }
 
 func (p *PatrickService) lockHandler(ctx context.Context, jid string, eta int64, conn streams.Connection) (cr.Response, error) {
-	// Check if job is already registered in the lock
 	var lockData []byte
 	lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
 	if err != nil {
@@ -149,7 +145,6 @@ func (p *PatrickService) isLockedHandler(ctx context.Context, jid string, conn s
 	return cr.Response{"locked": false}, nil
 }
 
-// TODO: Check if there is a reason why we do not return errors
 func (p *PatrickService) unlockHandler(ctx context.Context, jid string) (cr.Response, error) {
 	lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
 	if err != nil {
@@ -176,7 +171,6 @@ func (p *PatrickService) unlockHandler(ctx context.Context, jid string) (cr.Resp
 }
 
 func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log map[string]string) error {
-	// Check if job was moved to archive jobs
 	if _, err := p.getJob(ctx, "/archive/jobs/", jid); err != nil {
 		job, err := p.getJob(ctx, "/jobs/", jid)
 		if err != nil {
@@ -205,12 +199,10 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 			return nil
 		}
 
-		// Update attempt and timestamp and status
 		job.Attempt++
 		job.Timestamp = time.Now().Unix()
 		job.Status = commonIface.JobStatusOpen
 
-		// remove it from the locked list
 		if err = p.db.Delete(ctx, "/locked/jobs/"+jid); err != nil {
 			return fmt.Errorf("failed deleting job %s in /locked/jobs/ with error: %w", jid, err)
 		}
@@ -224,7 +216,6 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 			return err
 		}
 
-		// Send the job over again to run again
 		if err = p.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job_bytes); err != nil {
 			return fmt.Errorf("failed to send over pubsub error: %w", err)
 		}

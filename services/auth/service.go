@@ -29,6 +29,8 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 		config = &tauConfig.Node{}
 	}
 
+	srv.newGitHubClient = NewGitHubClient
+
 	srv.webHookUrl = fmt.Sprintf(`https://patrick.tau.%s`, config.NetworkFqdn)
 
 	err := config.Validate()
@@ -76,11 +78,9 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	if err != nil {
 		return nil, err
 	}
-	// should end if any of the two contexts ends
 
 	srv.rootDomain = config.NetworkFqdn
 
-	// P2P
 	srv.stream, err = streams.New(srv.node, protocolCommon.Auth, protocolCommon.AuthProtocol)
 	if err != nil {
 		return nil, err

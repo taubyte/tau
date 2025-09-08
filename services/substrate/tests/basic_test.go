@@ -4,13 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"path"
 	"testing"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
+	commonTest "github.com/taubyte/tau/dream/helpers"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
@@ -154,7 +154,7 @@ func callHal(u *dream.Universe, path string) ([]byte, error) {
 	}
 
 	host := fmt.Sprintf("hal.computers.com:%d", nodePort)
-	ret, err := http.DefaultClient.Get(fmt.Sprintf("http://%s%s", host, path))
+	ret, err := commonTest.CreateHttpClient().Get(fmt.Sprintf("http://%s%s", host, path))
 	if err != nil {
 		return nil, err
 	}

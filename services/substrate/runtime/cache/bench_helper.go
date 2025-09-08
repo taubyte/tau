@@ -6,6 +6,8 @@ import (
 	"io"
 	"net/http"
 	"sync"
+
+	commonTest "github.com/taubyte/tau/dream/helpers"
 )
 
 type GetTester struct {
@@ -69,7 +71,7 @@ func ParallelGetWithBodyCheck(iterations int, toTest ...GetTester) error {
 				go func(_wg *sync.WaitGroup, _tester GetTester) {
 					defer _wg.Done()
 
-					res, err := http.Get(_tester.Url)
+					res, err := commonTest.CreateHttpClient().Get(_tester.Url)
 					if err != nil {
 						errChan <- err
 						return

@@ -91,7 +91,7 @@ func (m *Monkey) RunJob() (err error) {
 		Node:                  m.Service.node,
 		LogFile:               m.logFile,
 		ClientNode:            node,
-		DVPublicKey:           m.Service.dvPublicKey, // For Domain Validation
+		DVPublicKey:           m.Service.dvPublicKey,
 		GeneratedDomainRegExp: m.generatedDomainRegExp,
 	}
 

@@ -5,12 +5,14 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/ipfs/go-cid"
 	"github.com/taubyte/tau/p2p/streams"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/projects"
 	"github.com/taubyte/tau/services/auth/repositories"
+	"github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/utils/maps"
 )
 
@@ -36,10 +38,6 @@ func (srv *AuthService) listHooks(ctx context.Context) (cr.Response, error) {
 }
 
 func (srv *AuthService) apiHookServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	// params:
-	//  TODO: add encrption key to service library
-	//  action: get/set
-	//  fqdn: domain name
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err
@@ -81,11 +79,6 @@ func (srv *AuthService) listRepo(ctx context.Context) (cr.Response, error) {
 }
 
 func (srv *AuthService) apiGitRepositoryServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	// params:
-	//  TODO: add encrption key to service library
-	//  action: get/set
-	//  provider: github/...
-	//  id
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err
@@ -109,6 +102,10 @@ func (srv *AuthService) apiGitRepositoryServiceHandler(ctx context.Context, st s
 		}
 	case "list":
 		return srv.listRepo(ctx)
+	case "register":
+		return srv.registerRepositoryStream(ctx, body)
+	case "unregister":
+		return srv.unregisterRepositoryStream(ctx, body)
 	default:
 		return nil, errors.New("Repository action `" + action + "` not reconized.")
 	}
@@ -136,12 +133,61 @@ func (srv *AuthService) listProjects(ctx context.Context) (cr.Response, error) {
 	return cr.Response{"ids": ids}, nil
 }
 
+// createProjectStream handles project creation over p2p streams
+func (srv *AuthService) createProjectStream(ctx context.Context, body command.Body) (cr.Response, error) {
+	name, err := maps.String(body, "name")
+	if err != nil {
+		return nil, fmt.Errorf("missing name parameter: %w", err)
+	}
+
+	configRepoID, err := maps.String(body, "config")
+	if err != nil {
+		return nil, fmt.Errorf("missing config repository ID parameter: %w", err)
+	}
+
+	codeRepoID, err := maps.String(body, "code")
+	if err != nil {
+		return nil, fmt.Errorf("missing code repository ID parameter: %w", err)
+	}
+
+	// Generate a new project ID
+	projectID := common.GetNewProjectID()
+
+	// Create the project using the internal project creation logic
+	project, err := projects.New(srv.KV(), projects.Data{
+		"id":       projectID,
+		"name":     name,
+		"provider": "github",
+		"config":   configRepoID,
+		"code":     codeRepoID,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create project object: %w", err)
+	}
+
+	err = project.Register()
+	if err != nil {
+		return nil, fmt.Errorf("failed to register project: %w", err)
+	}
+
+	// Link repositories to project
+	repo_key := fmt.Sprintf("/repositories/github/%s", configRepoID)
+	if err = srv.db.Put(ctx, repo_key+"/project", []byte(projectID)); err != nil {
+		return nil, err
+	}
+
+	repo_key = fmt.Sprintf("/repositories/github/%s", codeRepoID)
+	if err = srv.db.Put(ctx, repo_key+"/project", []byte(projectID)); err != nil {
+		return nil, err
+	}
+
+	return cr.Response{
+		"id":   projectID,
+		"name": name,
+	}, nil
+}
+
 func (srv *AuthService) apiProjectsServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
-	// params:
-	//  TODO: add encrption key to service library
-	//  action: get/set
-	//  provider: github/...
-	//  id
 	action, err := maps.String(body, "action")
 	if err != nil {
 		return nil, err
@@ -156,7 +202,118 @@ func (srv *AuthService) apiProjectsServiceHandler(ctx context.Context, st stream
 		return srv.getProjectByID(ctx, project_id)
 	case "list":
 		return srv.listProjects(ctx)
+	case "create":
+		return srv.createProjectStream(ctx, body)
 	default:
 		return nil, errors.New("Project action `" + action + "` not reconized.")
 	}
+}
+
+// registerRepositoryStream handles repository registration over p2p streams
+func (srv *AuthService) registerRepositoryStream(ctx context.Context, body command.Body) (cr.Response, error) {
+	provider, err := maps.String(body, "provider")
+	if err != nil {
+		return nil, fmt.Errorf("missing provider parameter: %w", err)
+	}
+
+	if provider != "github" {
+		return nil, fmt.Errorf("provider `%s` is not supported", provider)
+	}
+
+	repoID, err := maps.String(body, "id")
+	if err != nil {
+		return nil, fmt.Errorf("missing repository ID parameter: %w", err)
+	}
+
+	// For p2p streams (internal service communication), we can register repositories
+	// without external GitHub API calls since services trust each other
+	// Use the main function with nil client to skip GitHub API verification
+	response, err := srv.registerGitHubRepository(ctx, nil, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("repository registration failed: %w", err)
+	}
+
+	return cr.Response{
+		"key": response.Key,
+	}, nil
+}
+
+// unregisterRepositoryStream handles repository unregistration over p2p streams
+func (srv *AuthService) unregisterRepositoryStream(ctx context.Context, body command.Body) (cr.Response, error) {
+	provider, err := maps.String(body, "provider")
+	if err != nil {
+		return nil, fmt.Errorf("missing provider parameter: %w", err)
+	}
+
+	if provider != "github" {
+		return nil, fmt.Errorf("provider `%s` is not supported", provider)
+	}
+
+	repoID, err := maps.String(body, "id")
+	if err != nil {
+		return nil, fmt.Errorf("missing repository ID parameter: %w", err)
+	}
+
+	// For p2p streams (internal service communication), we can unregister repositories
+	// without external GitHub API calls
+	// Use the main function with nil client to skip GitHub API verification
+	err = srv.unregisterGitHubRepository(ctx, nil, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("repository unregistration failed: %w", err)
+	}
+
+	return cr.Response{"status": "success"}, nil
+}
+
+/******* DOMAIN ********/
+// ApiDomainServiceHandler handles domain-related p2p stream requests
+func (srv *AuthService) ApiDomainServiceHandler(ctx context.Context, st streams.Connection, body command.Body) (cr.Response, error) {
+	action, err := maps.String(body, "action")
+	if err != nil {
+		return nil, err
+	}
+	switch action {
+	case "register":
+		return srv.registerDomainStream(ctx, body)
+	default:
+		return nil, errors.New("Domain action `" + action + "` not recognized.")
+	}
+}
+
+// registerDomainStream handles domain registration over p2p streams
+func (srv *AuthService) registerDomainStream(_ context.Context, body command.Body) (cr.Response, error) {
+	fqdn, err := maps.String(body, "fqdn")
+	if err != nil {
+		return nil, fmt.Errorf("missing fqdn parameter: %w", err)
+	}
+
+	projectID, err := maps.String(body, "project")
+	if err != nil {
+		return nil, fmt.Errorf("missing project parameter: %w", err)
+	}
+
+	if len(projectID) < 8 {
+		return nil, errors.New("project ID is too short")
+	}
+
+	project, err := cid.Decode(projectID)
+	if err != nil {
+		return nil, fmt.Errorf("decode project ID failed with %w", err)
+	}
+
+	claim, err := domainValidationNew(fqdn, project, srv.dvPrivateKey, srv.dvPublicKey)
+	if err != nil {
+		return nil, fmt.Errorf("new domain validation failed with: %s", err)
+	}
+
+	token, err := claim.Sign()
+	if err != nil {
+		return nil, fmt.Errorf("signing claim failed with: %s", err)
+	}
+
+	return cr.Response{
+		"token": string(token),
+		"entry": fmt.Sprintf("%s.%s", projectID[:8], fqdn),
+		"type":  "txt",
+	}, nil
 }

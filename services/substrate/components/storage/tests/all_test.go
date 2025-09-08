@@ -113,7 +113,7 @@ func TestAll(t *testing.T) {
 	err = os.MkdirAll(gitRootConfig, 0755)
 	assert.NilError(t, err)
 
-	assert.NilError(t, gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.ConfigRepo))
+	assert.NilError(t, gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo))
 
 	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
 	if err != nil {

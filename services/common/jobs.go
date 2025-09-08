@@ -12,7 +12,6 @@ var (
 	MaxJobAttempts    = 2
 
 	// From Monkey
-	RetryErrorString       = "Retry this job"
 	MockedPatrick          = false
 	TimeoutTest            = false
 	DefaultLockTime        = 600 * time.Second

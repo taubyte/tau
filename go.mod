@@ -160,6 +160,8 @@ require (
 	github.com/gookit/color v1.5.3 // indirect
 	github.com/gopherjs/gopherjs v1.17.2 // indirect
 	github.com/gxed/hashland/keccakpg v0.0.1 // indirect
+	github.com/h2non/gock v1.2.0 // indirect
+	github.com/h2non/parth v0.0.0-20190131123155-b4df798d6542 // indirect
 	github.com/hashicorp/go-hclog v1.6.3 // indirect
 	github.com/hashicorp/golang-lru v1.0.2 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect

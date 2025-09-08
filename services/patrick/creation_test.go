@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"reflect"
 	"testing"
 
@@ -19,7 +20,9 @@ import (
 )
 
 func TestPatrick(t *testing.T) {
-	t.Skip("Needs to be redone")
+	// Override default HTTP client to resolve test domains locally
+	http.DefaultClient = commonTest.CreateHttpClient()
+
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -29,7 +32,20 @@ func TestPatrick(t *testing.T) {
 			"patrick": {},
 			"auth":    {Others: map[string]int{"secure": 1}},
 		},
+		Simples: map[string]dream.SimpleConfig{
+			"client": {
+				Clients: dream.SimpleConfigClients{
+					Auth: &commonIface.ClientConfig{},
+				}.Compat(),
+			},
+		},
 	})
+	assert.NilError(t, err)
+
+	simple, err := u.Simple("client")
+	assert.NilError(t, err)
+
+	auth, err := simple.Auth()
 	assert.NilError(t, err)
 
 	_patrick := u.Patrick()
@@ -39,15 +55,12 @@ func TestPatrick(t *testing.T) {
 	jobs, err := db.List(u.Context(), "/jobs/")
 	assert.NilError(t, err)
 
-	assert.Assert(t, len(jobs) != 0)
-
-	mockAuthURL, err := u.GetURLHttps(u.Auth().Node())
-	assert.NilError(t, err)
+	assert.Equal(t, len(jobs), 0)
 
 	mockPatrickURL, err := u.GetURLHttp(u.Patrick().Node())
 	assert.NilError(t, err)
 
-	err = commonTest.RegisterTestRepositories(u.Context(), mockAuthURL, commonTest.ConfigRepo)
+	err = commonTest.RegisterTestRepositories(u.Context(), auth, commonTest.ConfigRepo)
 	assert.NilError(t, err)
 
 	servicesCommon.FakeSecret = true
@@ -57,7 +70,7 @@ func TestPatrick(t *testing.T) {
 	jobs, err = db.List(u.Context(), "/jobs/")
 	assert.NilError(t, err)
 
-	assert.Assert(t, len(jobs) != 1)
+	assert.Equal(t, len(jobs), 1)
 
 	job_byte, err := db.Get(u.Context(), jobs[0])
 	assert.NilError(t, err)

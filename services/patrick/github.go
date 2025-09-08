@@ -110,11 +110,6 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 			return nil, fmt.Errorf("only builds main branches %v got `%s`", commonSpec.DefaultBranches, newJob.Meta.Repository.Branch)
 		}
 
-		err = srv.RegisterJob(ctx.Request().Context(), newJob)
-		if err != nil {
-			return nil, err
-		}
-
 		// Pushing useful information to tns
 		repoInfo := map[string]string{
 			"id":  fmt.Sprintf("%d", newJob.Meta.Repository.ID),
@@ -124,6 +119,11 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 		err = srv.tnsClient.Push([]string{"resolve", "repo", "github", fmt.Sprintf("%d", newJob.Meta.Repository.ID)}, repoInfo)
 		if err != nil {
 			return nil, fmt.Errorf("failed registering new job repo %d into tns with error: %v", newJob.Meta.Repository.ID, err)
+		}
+
+		err = srv.RegisterJob(ctx.Request().Context(), newJob)
+		if err != nil {
+			return nil, fmt.Errorf("failed registering job with error: %w", err)
 		}
 
 		logger.Debugf("Got job: %#v", newJob)

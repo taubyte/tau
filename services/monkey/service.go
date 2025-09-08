@@ -29,7 +29,6 @@ func (srv *Service) subscribe() error {
 			go srv.pubsubMsgHandler(msg)
 		},
 		func(err error) {
-			// re-establish if fails
 			if err.Error() != "context canceled" {
 				logger.Error("Subscription had an error:", err.Error())
 				if err := srv.subscribe(); err != nil {
@@ -76,7 +75,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		srv.clientNode = config.ClientNode
 	}
 
-	// should end if any of the two contexts ends
 	err = srv.subscribe()
 	if err != nil {
 		return nil, err

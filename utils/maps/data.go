@@ -122,27 +122,31 @@ func Vector(config map[string]interface{}, key string) ([]float32, error) {
 
 // String retrieves interface{} value from map and returns a string value.
 func String(config map[string]interface{}, key string) (string, error) {
-	var ok bool
-	var ret string
-	if _, ok = config[key]; ok == false {
-		return ret, errors.New("You must define `" + key + "`")
+	if _, ok := config[key]; !ok {
+		return "", errors.New("you must define `" + key + "`")
 	} else {
 		switch config[key].(type) {
 		case string:
-			ret = config[key].(string)
+			return config[key].(string), nil
 		default:
-			return ret, errors.New("`" + key + "` needs to be a String")
+			return "", errors.New("`" + key + "` needs to be a String")
 		}
 	}
-	return ret, nil
+}
+
+func TryString(config map[string]interface{}, key string) string {
+	str, err := String(config, key)
+	if err != nil {
+		return ""
+	}
+	return str
 }
 
 // ByteArray retrieves the interface{} value from the map and returns a byte array.
 func ByteArray(config map[string]interface{}, key string) ([]byte, error) {
-	var ok bool
 	var ret []byte
-	if _, ok = config[key]; ok == false {
-		return ret, errors.New("You must define `" + key + "`")
+	if _, ok := config[key]; !ok {
+		return ret, errors.New("you must define `" + key + "`")
 	} else {
 		switch config[key].(type) {
 		case []byte:
@@ -158,7 +162,7 @@ func ByteArray(config map[string]interface{}, key string) ([]byte, error) {
 func StringArray(config map[string]interface{}, key string) ([]string, error) {
 	var ok bool
 	var ret []string
-	if _, ok = config[key]; ok == false {
+	if _, ok = config[key]; !ok {
 		return ret, errors.New("You must define `" + key + "`")
 	} else {
 		switch config[key].(type) {

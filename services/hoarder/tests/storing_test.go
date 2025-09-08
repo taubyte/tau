@@ -83,7 +83,7 @@ func TestStoring(t *testing.T) {
 	defer os.RemoveAll(gitRoot)
 	gitRootConfig := gitRoot + "/config"
 	os.MkdirAll(gitRootConfig, 0755)
-	err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.ConfigRepo)
+	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
 	if err != nil {
 		t.Error(err)
 		return

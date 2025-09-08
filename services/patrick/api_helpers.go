@@ -88,11 +88,13 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		return fmt.Errorf("failed unmarshalling job with error: %w", err)
 	}
 
-	// Assign values
 	job.Status = status
-	job.Logs = cid_log
-	job.AssetCid = assetCid
-	job.Attempt++
+
+	if job.Status != patrick.JobStatusCancelled {
+		job.Logs = cid_log
+		job.AssetCid = assetCid
+		job.Attempt++
+	}
 
 	// TODO: Un-export job locks, and create methods
 	jobData, err := cbor.Marshal(&job)
@@ -100,7 +102,7 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		return fmt.Errorf("marshal in updateStatus error: %w", err)
 	}
 
-	if job.Status == patrick.JobStatusSuccess || job.Status == patrick.JobStatusCancelled || job.Attempt > servicesCommon.MaxJobAttempts {
+	if job.Status == patrick.JobStatusSuccess || job.Status == patrick.JobStatusCancelled || job.Attempt >= servicesCommon.MaxJobAttempts {
 		if err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData); err != nil {
 			return fmt.Errorf("updateStatus put failed with error: %w", err)
 		}
@@ -110,7 +112,7 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		}
 	}
 
-	if err = p.deleteJob(ctx, []string{"/locked/jobs/", "/jobs/"}, jid); err != nil {
+	if err = p.deleteJob(ctx, []string{"/locked/jobs/"}, jid); err != nil {
 		return fmt.Errorf("failed delete in timeoutHandler with %w", err)
 	}
 

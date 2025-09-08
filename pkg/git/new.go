@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -94,6 +95,15 @@ func (c *Repository) clone() (err error) {
 		Progress: os.Stdout,
 		Auth:     c.auth,
 	})
+
+	if err != nil && strings.Contains(err.Error(), "ssh: unable to authenticate") {
+
+		// repository might be public, try to clone without auth
+		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+			URL:      convertSSHToHTTPS(c.url),
+			Progress: os.Stdout,
+		})
+	}
 
 	if err == git.ErrRepositoryAlreadyExists {
 		err = nil

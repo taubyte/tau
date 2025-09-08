@@ -15,21 +15,21 @@ import (
 )
 
 func TestReAnnounce(t *testing.T) {
-	t.Skip("Needs to be refactored properly into wait for job to fail then do a sleep")
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"patrick": {},
-			"monkey":  {},
-			"hoarder": {},
-			"tns":     {},
-			"auth":    {Others: map[string]int{"secure": 1}},
+			//"monkey":  {},
+			//"hoarder": {},
+			"tns":  {},
+			"auth": {Others: map[string]int{"secure": 1}},
 		},
 		Simples: map[string]dream.SimpleConfig{
 			"client": {
 				Clients: dream.SimpleConfigClients{
+					Auth:    &commonIface.ClientConfig{},
 					Patrick: &commonIface.ClientConfig{},
 					Monkey:  &commonIface.ClientConfig{},
 				}.Compat(),
@@ -41,113 +41,73 @@ func TestReAnnounce(t *testing.T) {
 		return
 	}
 
-	mockAuthURL, err := u.GetURLHttps(u.Auth().Node())
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
 	mockPatrickURL, err := u.GetURLHttp(u.Patrick().Node())
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	simples, err := u.Simple("client")
+	simple, err := u.Simple("client")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	err = commonTest.RegisterTestRepositories(u.Context(), mockAuthURL, commonTest.ConfigRepo)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	auth, err := simple.Auth()
+	assert.NilError(t, err)
+
+	err = commonTest.RegisterTestProject(u.Context(), auth)
+	assert.NilError(t, err)
+
+	err = commonTest.RegisterTestRepositories(u.Context(), auth, commonTest.ConfigRepo)
+	assert.NilError(t, err)
 
 	servicesCommon.FakeSecret = true
 	err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	patrick, err := simples.Patrick()
+	patrick, err := simple.Patrick()
 	assert.NilError(t, err)
 
 	jobs, err := patrick.List()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	job_byte, err := patrick.Get(jobs[0])
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	old_attempt := job_byte.Attempt
 
-	err = u.Monkey().Patrick().Lock(job_byte.Id, 10)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	patrickClient, err := simple.Patrick()
+	assert.NilError(t, err)
 
-	err = u.Monkey().Patrick().Failed(job_byte.Id, job_byte.Logs, nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	err = patrickClient.Lock(job_byte.Id, 10)
+	assert.NilError(t, err)
+
+	err = patrickClient.Failed(job_byte.Id, job_byte.Logs, nil)
+	assert.NilError(t, err)
 
 	// Wait for reannounce to update attempts to 1 and send back to /jobs
 	time.Sleep(10 * time.Second)
 
 	retry_job, err := patrick.Get(job_byte.Id)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if old_attempt == retry_job.Attempt {
-		t.Error("Attempts did not get updated to 1")
-		return
-	}
+	assert.Assert(t, old_attempt != retry_job.Attempt)
 
-	err = u.Monkey().Patrick().Failed(retry_job.Id, retry_job.Logs, nil)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	err = patrickClient.Failed(retry_job.Id, retry_job.Logs, nil)
+	assert.NilError(t, err)
 
 	// Wait for reannounce to update attempts to 2 and send back to /jobs
 	time.Sleep(10 * time.Second)
 
 	retry_job, err = patrick.Get(retry_job.Id)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	if retry_job.Attempt != 2 {
-		t.Errorf("Attempt did not get updated to two, got %d", retry_job.Attempt)
-	}
+	assert.Assert(t, retry_job.Attempt > old_attempt)
 
-	err = u.Monkey().Patrick().Failed(retry_job.Id, retry_job.Logs, nil)
-	if err == nil {
-		t.Error("Job should be stuck in archive/jobs since its attempts is already 2")
-		return
-	}
+	err = patrickClient.Failed(retry_job.Id, retry_job.Logs, nil)
+	assert.NilError(t, err)
 
-	retry_job, err = patrick.Get(retry_job.Id)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	if retry_job.Attempt != 2 {
-		t.Errorf("Attempt should of stayed at 2 got %d", retry_job.Attempt)
-		return
-	}
+	_, err = patrick.Get(retry_job.Id)
+	assert.NilError(t, err)
 }

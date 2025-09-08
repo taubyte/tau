@@ -22,6 +22,11 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command"
 )
 
+// SendOnlyClient defines the minimal interface needed for sending commands
+type SendOnlyClient interface {
+	Send(cmd string, body command.Body, peers ...peerCore.ID) (cr.Response, error)
+}
+
 type Client struct {
 	ctx  context.Context
 	ctxC context.CancelFunc
@@ -58,8 +63,6 @@ type Request struct {
 
 type Option[T Client | Request] func(r *T) error
 
-// ---------- client options ----------
-
 func Peers(max int) Option[Client] {
 	return func(c *Client) error {
 		c.maxPeers = max
@@ -73,8 +76,6 @@ func Parallel(max int) Option[Client] {
 		return nil
 	}
 }
-
-// ---------- request options ----------
 
 func Timeout(timeout time.Duration) Option[Request] {
 	return func(s *Request) error {
@@ -135,8 +136,6 @@ var (
 	ConnectTimeout    time.Duration = 500 * time.Millisecond
 )
 
-// ---------- lifecycle ----------
-
 func (c *Client) Context() context.Context { return c.ctx }
 
 func (c *Client) Close() {
@@ -162,19 +161,15 @@ func New(node peer.Node, path string, opts ...Option[Client]) (*Client, error) {
 		}
 	}
 
-	// Size internal queues based on configured parallelism
 	c.peerRequests = make(chan *peerRequest, c.maxParallel)
 	c.cleanPeers = make(chan peerCore.ID, c.maxParallel)
 
 	c.tag = fmt.Sprintf("/client/%p/%s", c, c.path)
 
-	// Start peer discovery / brokering.
 	go c.discover()
 
 	return c, nil
 }
-
-// ---------- request builder ----------
 
 func (c *Client) New(cmd string, opts ...Option[Request]) *Request {
 	r := &Request{
@@ -191,8 +186,6 @@ func (c *Client) New(cmd string, opts ...Option[Request]) *Request {
 	}
 	return r
 }
-
-// ---------- peer discovery / brokering (single goroutine) ----------
 
 func (c *Client) refreshFromPeerStore() {
 	if len(c.activePeers) >= c.maxPeers {
@@ -263,13 +256,11 @@ func (c *Client) discover() {
 		for _, pr := range c.peerFeeds {
 			close(pr.ch)
 		}
-		// Do NOT close c.peerRequests or c.cleanPeers to avoid panics from concurrent senders.
 	}()
 
 	c.refreshFromPeerStore()
 	dpeers := c.discPeers()
 	discoverDone := false
-	// a never-ready channel to disable the discovery case when exhausted
 	dpeersWait := make(chan peerCore.AddrInfo)
 
 	for {
@@ -280,7 +271,6 @@ func (c *Client) discover() {
 		case p, ok := <-dpeers:
 			if !ok {
 				discoverDone = true
-				// replace with a never-ready channel so the select case doesn't spin
 				dpeers = dpeersWait
 				continue
 			}
@@ -290,7 +280,6 @@ func (c *Client) discover() {
 			c.cleanPeer(pid)
 
 		case pr := <-c.peerRequests:
-			// Feed existing peers immediately.
 		peerLoop:
 			for _, info := range c.activePeers {
 				select {
@@ -307,7 +296,6 @@ func (c *Client) discover() {
 			}
 			c.peerFeeds = append(c.peerFeeds, pr)
 
-			// If request needs more peers than we have, try to source more.
 			if pr.need > len(c.activePeers) {
 				c.refreshFromPeerStore()
 				if pr.need > len(c.activePeers) && discoverDone {
@@ -319,8 +307,6 @@ func (c *Client) discover() {
 	}
 }
 
-// ---------- peer access helpers ----------
-
 func (c *Client) openStream(pid peerCore.ID) (stream, error) {
 	strm, err := c.node.Peer().NewStream(c.ctx, pid, protocol.ID(c.path))
 	if err != nil {
@@ -329,8 +315,6 @@ func (c *Client) openStream(pid peerCore.ID) (stream, error) {
 	return stream{Stream: strm, ID: pid}, nil
 }
 
-// peers returns a channel that will be fed with up to "needs" peer infos,
-// or closed early if ctx/c.ctx is done.
 func (c *Client) peers(ctx context.Context, needs int) <-chan *peerCore.AddrInfo {
 	ch := make(chan *peerCore.AddrInfo, c.maxPeers)
 	select {
@@ -380,14 +364,11 @@ func (c *Client) connect(p *peerCore.AddrInfo) (network.Stream, error) {
 	return strm, nil
 }
 
-// ---------- sending ----------
-
 func (r *Request) Do() (<-chan *Response, error) {
 	if r.err != nil {
 		return nil, r.err
 	}
 
-	// Check if client is closed using context
 	select {
 	case <-r.client.ctx.Done():
 		return nil, os.ErrClosed

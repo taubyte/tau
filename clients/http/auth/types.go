@@ -14,13 +14,3 @@ type User struct {
 	client   *Client
 	userData *UserData
 }
-
-type DomainResponse struct {
-	Token string `json:"token"`
-	Entry string `json:"entry"`
-	Type  string `json:"type"`
-}
-
-type CanBeCreated interface {
-	Create(c *Client) error
-}

@@ -60,7 +60,7 @@ func TestE2E(t *testing.T) {
 	os.MkdirAll(gitRootConfig, 0755)
 	fakeMeta.Repository.Provider = "github"
 
-	err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.ConfigRepo)
+	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
 	if err != nil {
 		t.Error(err)
 		return

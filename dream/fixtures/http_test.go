@@ -52,7 +52,7 @@ func TestHttp(t *testing.T) {
 	fakeMeta.Repository.SSHURL = "git@github.com:taubyte-test/tb_prodproject.git"
 	fakeMeta.Repository.Provider = "github"
 
-	err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.Repository{
+	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.Repository{
 		ID:       517160737,
 		Name:     "tb_prodproject",
 		HookInfo: fakeMeta,

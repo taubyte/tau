@@ -18,7 +18,6 @@ import (
 )
 
 func TestAuthClient(t *testing.T) {
-	t.Skip("Needs to be redone")
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -48,20 +47,14 @@ func TestAuthClient(t *testing.T) {
 		return
 	}
 
-	mockAuthURL, err := u.GetURLHttp(u.Auth().Node())
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	err = commonTest.RegisterTestProject(u.Context(), mockAuthURL)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
 	auth, err := simple.Auth()
 	assert.NilError(t, err)
+
+	err = commonTest.RegisterTestProject(u.Context(), auth)
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
 	hkNil, err := auth.Hooks().Get("")
 	assert.Assert(t, err != nil)
