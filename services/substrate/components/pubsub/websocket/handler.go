@@ -16,12 +16,8 @@ import (
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 
-var subs *subsViewer
-
-func init() {
-	subs = &subsViewer{
-		subscriptions: make(map[string]*subViewer),
-	}
+var subs = &subsViewer{
+	subscriptions: make(map[string]*subViewer),
 }
 
 func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn) service.WebSocketHandler {
@@ -37,11 +33,14 @@ func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn)
 	}
 
 	id, err := AddSubscription(srv, handler.matcher.Path(), func(msg *pubsub.Message) {
-		handler.ch <- msg.GetData()
+		select {
+		case <-handler.ctx.Done():
+		case handler.ch <- msg.GetData():
+		}
 	}, func(err error) {
 		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher.Path(), err.Error())
 		if handler.ctx.Err() == nil {
-			handler.ch <- []byte(err.Error())
+			handler.errCh <- err
 		}
 	})
 	if err != nil {
@@ -51,7 +50,7 @@ func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn)
 
 	conn.SetCloseHandler(func(code int, text string) error {
 		removeSubscription(handler.matcher.Path(), id)
-
+		handler.Close()
 		return nil
 	})
 
@@ -199,6 +198,7 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn *websock
 	handler.matcher = matcher
 	handler.srv = srv
 	handler.ch = make(chan []byte, 1024)
+	handler.errCh = make(chan error)
 	handler.picks = picks
 
 	if err = handler.SmartOps(); err != nil {

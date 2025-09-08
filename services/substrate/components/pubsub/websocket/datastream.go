@@ -14,6 +14,7 @@ type dataStreamHandler struct {
 	ctxC    context.CancelFunc
 	conn    *websocket.Conn
 	ch      chan []byte
+	errCh   chan error
 	srv     common.LocalService
 	matcher *common.MatchDefinition
 
@@ -21,10 +22,16 @@ type dataStreamHandler struct {
 }
 
 func (h *dataStreamHandler) Close() {
-	if h.ctx.Err() == nil {
-		h.ctxC()
-	}
+	h.ctxC()
 	close(h.ch)
+	close(h.errCh)
+}
+
+func (h *dataStreamHandler) Error(err error) {
+	select {
+	case h.errCh <- err:
+	default:
+	}
 }
 
 func (h *dataStreamHandler) In() {
@@ -35,19 +42,13 @@ func (h *dataStreamHandler) In() {
 		default:
 			_, msg, err := h.conn.ReadMessage()
 			if err != nil {
-				h.conn.WriteJSON(WrappedMessage{
-					Error: fmt.Sprintf("reading data In on `%s` failed with: %s", h.matcher.Path(), err),
-				})
-				h.conn.Close()
+				h.Error(fmt.Errorf("reading data In on `%s` failed with: %s", h.matcher.Path(), err))
 				return
 			}
 
 			err = h.srv.Node().PubSubPublish(h.ctx, h.matcher.Path(), msg)
 			if err != nil {
-				h.conn.WriteJSON(WrappedMessage{
-					Error: fmt.Sprintf("reading data In then Publish failed with: %v", err),
-				})
-				h.conn.Close()
+				h.Error(fmt.Errorf("reading data In then Publish failed with: %v", err))
 				return
 			}
 		}
@@ -59,14 +60,16 @@ func (h *dataStreamHandler) Out() {
 		select {
 		case <-h.ctx.Done():
 			return
+		case err := <-h.errCh:
+			h.conn.WriteJSON(WrappedMessage{
+				Error: fmt.Sprintf("Writing data out failed with %v closing connection", err),
+			})
+			h.conn.Close()
+			return
 		case data := <-h.ch:
 			err := h.conn.WriteMessage(websocket.BinaryMessage, data)
 			if err != nil {
-				h.conn.WriteJSON(WrappedMessage{
-					Error: fmt.Sprintf("Writing data out failed with %v closing connection", err),
-				})
-				h.conn.Close()
-				h.ctxC()
+				h.Error(fmt.Errorf("writing data out failed with %v closing connection", err))
 				return
 			}
 		}
