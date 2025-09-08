@@ -45,6 +45,7 @@ func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn)
 	})
 	if err != nil {
 		conn.Close()
+		handler.Close()
 		return nil
 	}
 
