@@ -32,13 +32,13 @@ func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn)
 		return nil
 	}
 
-	id, err := AddSubscription(srv, handler.matcher.Path(), func(msg *pubsub.Message) {
+	id, err := AddSubscription(srv, handler.matcher.String(), func(msg *pubsub.Message) {
 		select {
 		case <-handler.ctx.Done():
 		case handler.ch <- msg.GetData():
 		}
 	}, func(err error) {
-		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher.Path(), err.Error())
+		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher, err.Error())
 		if handler.ctx.Err() == nil {
 			handler.errCh <- err
 		}
@@ -50,7 +50,7 @@ func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn)
 	}
 
 	conn.SetCloseHandler(func(code int, text string) error {
-		removeSubscription(handler.matcher.Path(), id)
+		removeSubscription(handler.matcher.String(), id)
 		handler.Close()
 		return nil
 	})
@@ -151,7 +151,7 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn *websock
 
 	ifacePaths, err := srv.Tns().Fetch(webSocketPath)
 	if err != nil {
-		return nil, fmt.Errorf("fetching web socket path `%s` failed with: %w", webSocketPath.String(), err)
+		return nil, fmt.Errorf("fetching web socket path `%s` failed with: %w", webSocketPath, err)
 	}
 
 	fetchPaths, ok := ifacePaths.Interface().([]interface{})
@@ -186,6 +186,7 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn *websock
 		Application: applicationId,
 		WebSocket:   true,
 	}
+
 	picks, err := srv.Lookup(matcher)
 	if err != nil {
 		return nil, err

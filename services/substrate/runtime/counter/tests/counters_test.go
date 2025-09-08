@@ -10,7 +10,6 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"github.com/taubyte/tau/services/substrate/runtime/cache"
 	"github.com/taubyte/tau/utils/id"
 	"gotest.tools/v3/assert"
 
@@ -108,9 +107,9 @@ func TestCounters(t *testing.T) {
 	assert.NilError(t, err)
 
 	url := fmt.Sprintf("http://%s:%d/%s", fqdn, httpPort, functionPath)
-	err = cache.ParallelGetWithBodyCheck(iterations, cache.GetTester{
+	err = ParallelGetWithBodyCheck(iterations, GetTester{
 		Url: url,
-		PassingResponse: &cache.ResponseCheck{
+		PassingResponse: &ResponseCheck{
 			Body: []byte("PONG"),
 			Code: 200,
 		},

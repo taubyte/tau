@@ -5,18 +5,26 @@ import (
 	"fmt"
 
 	"github.com/gorilla/websocket"
+	"github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 
+type WebSocketConnection interface {
+	ReadMessage() (messageType int, p []byte, err error)
+	WriteJSON(v interface{}) error
+	WriteMessage(messageType int, data []byte) error
+	Close() error
+}
+
 type dataStreamHandler struct {
 	ctx     context.Context
 	ctxC    context.CancelFunc
-	conn    *websocket.Conn
+	conn    WebSocketConnection //*websocket.Conn
 	ch      chan []byte
 	errCh   chan error
 	srv     common.LocalService
-	matcher *common.MatchDefinition
+	matcher components.MatchDefinition // *common.MatchDefinition
 
 	picks []iface.Serviceable
 }
@@ -42,11 +50,11 @@ func (h *dataStreamHandler) In() {
 		default:
 			_, msg, err := h.conn.ReadMessage()
 			if err != nil {
-				h.Error(fmt.Errorf("reading data In on `%s` failed with: %s", h.matcher.Path(), err))
+				h.Error(fmt.Errorf("reading data In on `%s` failed with: %s", h.matcher, err))
 				return
 			}
 
-			err = h.srv.Node().PubSubPublish(h.ctx, h.matcher.Path(), msg)
+			err = h.srv.Node().PubSubPublish(h.ctx, h.matcher.String(), msg)
 			if err != nil {
 				h.Error(fmt.Errorf("reading data In then Publish failed with: %v", err))
 				return

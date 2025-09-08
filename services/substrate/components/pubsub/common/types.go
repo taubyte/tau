@@ -2,9 +2,10 @@ package common
 
 import (
 	"context"
-	"strconv"
+	"fmt"
 
 	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
+	multihash "github.com/taubyte/tau/utils/multihash"
 )
 
 type MatchDefinition struct {
@@ -15,7 +16,8 @@ type MatchDefinition struct {
 }
 
 func (m *MatchDefinition) String() string {
-	return m.Channel + m.Project + m.Application + strconv.FormatBool(m.WebSocket)
+	return fmt.Sprintf("%s/%s", multihash.Hash(m.Project+m.Application), m.Channel)
+	// return m.Channel + m.Project + m.Application + strconv.FormatBool(m.WebSocket)
 }
 
 func (m *MatchDefinition) CachePrefix() string {

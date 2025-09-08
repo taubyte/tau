@@ -58,7 +58,7 @@ func (s *Service) Subscribe(projectId, appId, path string) error {
 		matcher.Channel = matcher.Channel[1:]
 	}
 
-	_, err := websocket.AddSubscription(s, matcher.Path(), func(msg *pubsub.Message) {
+	_, err := websocket.AddSubscription(s, matcher.String(), func(msg *pubsub.Message) {
 		s.handle(start, matcher, handleTypeMessage, msg)
 	}, func(err error) {
 		s.handle(start, matcher, handleTypeError, err)
