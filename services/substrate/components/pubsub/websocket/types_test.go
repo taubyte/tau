@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"gotest.tools/v3/assert"
 )
 
 func TestWebSocket_Close(t *testing.T) {
@@ -56,13 +57,8 @@ func TestWrappedMessage(t *testing.T) {
 			Error:   "",
 		}
 
-		if string(msg.Message) != "test message" {
-			t.Errorf("Expected message 'test message', got '%s'", string(msg.Message))
-		}
-
-		if msg.Error != "" {
-			t.Errorf("Expected empty error, got '%s'", msg.Error)
-		}
+		assert.Equal(t, string(msg.Message), "test message")
+		assert.Equal(t, msg.Error, "")
 	})
 
 	t.Run("create wrapped message with error", func(t *testing.T) {
@@ -71,13 +67,8 @@ func TestWrappedMessage(t *testing.T) {
 			Error:   "test error",
 		}
 
-		if len(msg.Message) != 0 {
-			t.Errorf("Expected empty message, got '%s'", string(msg.Message))
-		}
-
-		if msg.Error != "test error" {
-			t.Errorf("Expected error 'test error', got '%s'", msg.Error)
-		}
+		assert.Equal(t, len(msg.Message), 0)
+		assert.Equal(t, msg.Error, "test error")
 	})
 }
 
@@ -91,15 +82,11 @@ func TestSubViewer(t *testing.T) {
 		// Test multiple calls to getNextId
 		for i := 0; i < 5; i++ {
 			id := sv.getNextId()
-			if id != i {
-				t.Errorf("Expected id %d, got %d", i, id)
-			}
+			assert.Equal(t, id, i)
 		}
 
 		// Verify nextId was incremented
-		if sv.nextId != 5 {
-			t.Errorf("Expected nextId to be 5, got %d", sv.nextId)
-		}
+		assert.Equal(t, sv.nextId, 5)
 	})
 
 	t.Run("handler with multiple subscriptions", func(t *testing.T) {
@@ -127,12 +114,8 @@ func TestSubViewer(t *testing.T) {
 		// Call handler
 		sv.handler(&pubsub.Message{})
 
-		if !handler1Called {
-			t.Error("Expected handler1 to be called")
-		}
-		if !handler2Called {
-			t.Error("Expected handler2 to be called")
-		}
+		assert.Assert(t, handler1Called, "Expected handler1 to be called")
+		assert.Assert(t, handler2Called, "Expected handler2 to be called")
 	})
 
 	t.Run("err_handler with multiple subscriptions", func(t *testing.T) {
@@ -160,12 +143,8 @@ func TestSubViewer(t *testing.T) {
 		// Call err_handler
 		sv.err_handler(nil)
 
-		if !errHandler1Called {
-			t.Error("Expected errHandler1 to be called")
-		}
-		if !errHandler2Called {
-			t.Error("Expected errHandler2 to be called")
-		}
+		assert.Assert(t, errHandler1Called, "Expected errHandler1 to be called")
+		assert.Assert(t, errHandler2Called, "Expected errHandler2 to be called")
 	})
 }
 
@@ -175,12 +154,7 @@ func TestSubsViewer(t *testing.T) {
 			subscriptions: make(map[string]*subViewer),
 		}
 
-		if sv.subscriptions == nil {
-			t.Error("Expected subscriptions map to be initialized")
-		}
-
-		if len(sv.subscriptions) != 0 {
-			t.Errorf("Expected empty subscriptions map, got %d items", len(sv.subscriptions))
-		}
+		assert.Assert(t, sv.subscriptions != nil, "Expected subscriptions map to be initialized")
+		assert.Equal(t, len(sv.subscriptions), 0)
 	})
 }

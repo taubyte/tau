@@ -10,6 +10,7 @@ import (
 	"github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	"gotest.tools/v3/assert"
 )
 
 // Mock serviceable for testing
@@ -97,9 +98,7 @@ func TestDataStreamHandler_SmartOps(t *testing.T) {
 		err := handler.SmartOps()
 
 		// Should succeed with empty picks
-		if err != nil {
-			t.Errorf("Expected no error with empty picks, got %v", err)
-		}
+		assert.NilError(t, err)
 	})
 
 	t.Run("nil picks", func(t *testing.T) {
@@ -123,9 +122,7 @@ func TestDataStreamHandler_SmartOps(t *testing.T) {
 		err := handler.SmartOps()
 
 		// Should succeed with nil picks
-		if err != nil {
-			t.Errorf("Expected no error with nil picks, got %v", err)
-		}
+		assert.NilError(t, err)
 	})
 
 	t.Run("non-websocket pick", func(t *testing.T) {
@@ -152,13 +149,6 @@ func TestDataStreamHandler_SmartOps(t *testing.T) {
 		err := handler.SmartOps()
 
 		// Should return error for non-WebSocket pick
-		if err == nil {
-			t.Error("Expected error for non-WebSocket pick, but got nil")
-		}
-
-		expectedErr := "tried to run a smartOp on a websocket that was not a websocket"
-		if err.Error() != expectedErr {
-			t.Errorf("Expected error '%s', got '%s'", expectedErr, err.Error())
-		}
+		assert.Error(t, err, "tried to run a smartOp on a websocket that was not a websocket")
 	})
 }

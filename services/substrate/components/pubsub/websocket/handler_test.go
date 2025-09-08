@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	pubsubMsg "github.com/libp2p/go-libp2p-pubsub"
+	"gotest.tools/v3/assert"
 )
 
 func TestSubViewer_getNextId(t *testing.T) {
@@ -16,15 +17,11 @@ func TestSubViewer_getNextId(t *testing.T) {
 		// Test multiple calls to getNextId
 		for i := 0; i < 5; i++ {
 			id := sv.getNextId()
-			if id != i {
-				t.Errorf("Expected id %d, got %d", i, id)
-			}
+			assert.Equal(t, id, i)
 		}
 
 		// Verify nextId was incremented
-		if sv.nextId != 5 {
-			t.Errorf("Expected nextId to be 5, got %d", sv.nextId)
-		}
+		assert.Equal(t, sv.nextId, 5)
 	})
 }
 
@@ -54,12 +51,8 @@ func TestSubViewer_handler(t *testing.T) {
 		// Call handler
 		sv.handler(&pubsubMsg.Message{})
 
-		if !handler1Called {
-			t.Error("Expected handler1 to be called")
-		}
-		if !handler2Called {
-			t.Error("Expected handler2 to be called")
-		}
+		assert.Assert(t, handler1Called, "Expected handler1 to be called")
+		assert.Assert(t, handler2Called, "Expected handler2 to be called")
 	})
 
 	t.Run("handles empty subscriptions", func(t *testing.T) {
@@ -101,12 +94,8 @@ func TestSubViewer_err_handler(t *testing.T) {
 		// Call err_handler
 		sv.err_handler(nil)
 
-		if !errHandler1Called {
-			t.Error("Expected errHandler1 to be called")
-		}
-		if !errHandler2Called {
-			t.Error("Expected errHandler2 to be called")
-		}
+		assert.Assert(t, errHandler1Called, "Expected errHandler1 to be called")
+		assert.Assert(t, errHandler2Called, "Expected errHandler2 to be called")
 	})
 
 	t.Run("handles empty subscriptions", func(t *testing.T) {
@@ -141,9 +130,8 @@ func TestRemoveSubscription(t *testing.T) {
 		removeSubscription("test-topic", 1)
 
 		// Verify subscription was removed
-		if _, exists := sv.subs[1]; exists {
-			t.Error("Expected subscription to be removed")
-		}
+		_, exists := sv.subs[1]
+		assert.Assert(t, !exists, "Expected subscription to be removed")
 	})
 
 	t.Run("handles non-existent topic", func(t *testing.T) {

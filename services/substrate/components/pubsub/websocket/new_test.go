@@ -7,6 +7,7 @@ import (
 
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
+	"gotest.tools/v3/assert"
 )
 
 // We'll use the actual MessagingMapItem with made-up values
@@ -196,20 +197,12 @@ func TestNew(t *testing.T) {
 
 		result, err := New(srv, mmi, "commit", "branch", matcher)
 
-		if err != nil {
-			t.Errorf("Expected no error, got %v", err)
-		}
-
-		if result == nil {
-			t.Error("Expected result to not be nil")
-		}
+		assert.NilError(t, err)
+		assert.Assert(t, result != nil, "Expected result to not be nil")
 
 		// Verify the context is cancelled
 		ws, ok := result.(*WebSocket)
-		if !ok {
-			t.Error("Expected result to be *WebSocket")
-			return
-		}
+		assert.Assert(t, ok, "Expected result to be *WebSocket")
 
 		select {
 		case <-ws.ctx.Done():

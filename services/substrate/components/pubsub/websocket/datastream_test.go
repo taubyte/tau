@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
+	"gotest.tools/v3/assert"
 )
 
 // Mock implementations for testing
@@ -228,9 +229,7 @@ func TestDataStreamHandler_In(t *testing.T) {
 		mu.Lock()
 		called := publishCalled
 		mu.Unlock()
-		if !called {
-			t.Error("Expected PubSubPublish to be called")
-		}
+		assert.Assert(t, called, "Expected PubSubPublish to be called")
 	})
 
 	t.Run("publish error", func(t *testing.T) {
@@ -283,9 +282,7 @@ func TestDataStreamHandler_In(t *testing.T) {
 		mu.Lock()
 		sent := errorSent
 		mu.Unlock()
-		if !sent {
-			t.Error("Expected error to be sent to error channel")
-		}
+		assert.Assert(t, sent, "Expected error to be sent to error channel")
 	})
 
 	t.Run("read message error", func(t *testing.T) {
@@ -404,9 +401,7 @@ func TestDataStreamHandler_Out(t *testing.T) {
 		mu.Lock()
 		called := writeCalled
 		mu.Unlock()
-		if !called {
-			t.Error("Expected WriteMessage to be called")
-		}
+		assert.Assert(t, called, "Expected WriteMessage to be called")
 	})
 
 	t.Run("error handling", func(t *testing.T) {
@@ -461,12 +456,8 @@ func TestDataStreamHandler_Out(t *testing.T) {
 		jsonCalled := writeJSONCalled
 		closeCalledVal := closeCalled
 		mu.Unlock()
-		if !jsonCalled {
-			t.Error("Expected WriteJSON to be called")
-		}
-		if !closeCalledVal {
-			t.Error("Expected Close to be called")
-		}
+		assert.Assert(t, jsonCalled, "Expected WriteJSON to be called")
+		assert.Assert(t, closeCalledVal, "Expected Close to be called")
 	})
 
 	t.Run("write message error", func(t *testing.T) {
