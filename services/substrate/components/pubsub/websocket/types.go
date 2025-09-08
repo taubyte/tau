@@ -32,10 +32,6 @@ type WebSocket struct {
 	branch string
 }
 
-func (w *WebSocket) Close() {
-	w.ctxC()
-}
-
 type WrappedMessage struct {
 	Message []byte `json:"message"`
 	Error   string `json:"error"`

@@ -86,3 +86,7 @@ func (ws *WebSocket) Config() *structureSpec.Function {
 func (ws *WebSocket) AssetId() string {
 	return ""
 }
+
+func (w *WebSocket) Close() {
+	w.ctxC()
+}

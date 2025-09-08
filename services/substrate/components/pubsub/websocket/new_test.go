@@ -10,8 +10,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// We'll use the actual MessagingMapItem with made-up values
-
 func TestNew(t *testing.T) {
 	t.Run("successful creation", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())

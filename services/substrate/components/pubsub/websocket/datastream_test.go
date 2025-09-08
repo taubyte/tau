@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/taubyte/tau/p2p/peer"
+	p2p "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"gotest.tools/v3/assert"
 )
@@ -66,13 +66,15 @@ func (m *mockMatchDefinition) CachePrefix() string {
 
 type mockLocalService struct {
 	common.LocalService
-	pubSubPublishFunc func(ctx context.Context, topic string, data []byte) error
-	contextFunc       func() context.Context
+	pubSubPublishFunc   func(ctx context.Context, topic string, data []byte) error
+	pubSubSubscribeFunc func(topic string, handler p2p.PubSubConsumerHandler, errHandler p2p.PubSubConsumerErrorHandler) error
+	contextFunc         func() context.Context
 }
 
-func (m *mockLocalService) Node() peer.Node {
+func (m *mockLocalService) Node() p2p.Node {
 	return &mockNode{
-		pubSubPublishFunc: m.pubSubPublishFunc,
+		pubSubPublishFunc:   m.pubSubPublishFunc,
+		pubSubSubscribeFunc: m.pubSubSubscribeFunc,
 	}
 }
 
@@ -81,13 +83,21 @@ func (m *mockLocalService) Context() context.Context {
 }
 
 type mockNode struct {
-	peer.Node
-	pubSubPublishFunc func(ctx context.Context, topic string, data []byte) error
+	p2p.Node
+	pubSubPublishFunc   func(ctx context.Context, topic string, data []byte) error
+	pubSubSubscribeFunc func(topic string, handler p2p.PubSubConsumerHandler, errHandler p2p.PubSubConsumerErrorHandler) error
 }
 
 func (m *mockNode) PubSubPublish(ctx context.Context, topic string, data []byte) error {
 	if m.pubSubPublishFunc != nil {
 		return m.pubSubPublishFunc(ctx, topic, data)
+	}
+	return nil
+}
+
+func (m *mockNode) PubSubSubscribe(topic string, handler p2p.PubSubConsumerHandler, errHandler p2p.PubSubConsumerErrorHandler) error {
+	if m.pubSubSubscribeFunc != nil {
+		return m.pubSubSubscribeFunc(topic, handler, errHandler)
 	}
 	return nil
 }

@@ -1,9 +1,12 @@
 package websocket
 
 import (
+	"context"
+	"errors"
 	"testing"
 
 	pubsubMsg "github.com/libp2p/go-libp2p-pubsub"
+	p2p "github.com/taubyte/tau/p2p/peer"
 	"gotest.tools/v3/assert"
 )
 
@@ -166,5 +169,93 @@ func TestRemoveSubscription(t *testing.T) {
 	})
 }
 
-// Note: AddSubscription tests are complex due to dependencies on pubsub subscription
-// For now, we'll test the simpler functions that don't require complex mocking
+func TestAddSubscription(t *testing.T) {
+	t.Run("creates new subscription", func(t *testing.T) {
+		// Reset global subs for testing
+		subs = &subsViewer{
+			subscriptions: make(map[string]*subViewer),
+		}
+
+		// Create mock service
+		mockSrv := &mockLocalService{
+			contextFunc: func() context.Context {
+				return context.Background()
+			},
+			pubSubSubscribeFunc: func(topic string, handler p2p.PubSubConsumerHandler, errHandler p2p.PubSubConsumerErrorHandler) error {
+				return nil
+			},
+		}
+
+		// Add subscription
+		id, err := AddSubscription(mockSrv, "test-topic", func(msg *pubsubMsg.Message) {}, func(err error) {})
+
+		assert.NilError(t, err)
+		assert.Equal(t, id, 0)
+
+		// Verify subscription was added
+		subset, exists := subs.subscriptions["test-topic"]
+		assert.Assert(t, exists, "Expected subscription to be created")
+		assert.Equal(t, len(subset.subs), 1)
+	})
+
+	t.Run("adds to existing subscription", func(t *testing.T) {
+		// Reset global subs for testing
+		subs = &subsViewer{
+			subscriptions: make(map[string]*subViewer),
+		}
+
+		// Create existing subscription
+		sv := &subViewer{
+			subs:   make(map[int]*sub),
+			nextId: 1, // Start from 1 since we already have one subscription
+		}
+		sv.subs[0] = &sub{}
+		subs.subscriptions["test-topic"] = sv
+
+		// Create mock service
+		mockSrv := &mockLocalService{
+			contextFunc: func() context.Context {
+				return context.Background()
+			},
+		}
+
+		// Add another subscription
+		id, err := AddSubscription(mockSrv, "test-topic", func(msg *pubsubMsg.Message) {}, func(err error) {})
+
+		assert.NilError(t, err)
+		assert.Equal(t, id, 1)
+
+		// Verify subscription was added
+		assert.Equal(t, len(sv.subs), 2)
+	})
+
+	t.Run("handles pubsub subscribe error", func(t *testing.T) {
+		// Reset global subs for testing
+		subs = &subsViewer{
+			subscriptions: make(map[string]*subViewer),
+		}
+
+		// Create mock service that returns error
+		mockSrv := &mockLocalService{
+			contextFunc: func() context.Context {
+				return context.Background()
+			},
+			pubSubSubscribeFunc: func(topic string, handler p2p.PubSubConsumerHandler, errHandler p2p.PubSubConsumerErrorHandler) error {
+				return errors.New("pubsub error")
+			},
+		}
+
+		// Add subscription
+		_, err := AddSubscription(mockSrv, "test-topic", func(msg *pubsubMsg.Message) {}, func(err error) {})
+
+		assert.Error(t, err, "pubsub subscribe failed with: pubsub error")
+	})
+}
+
+func TestHandler(t *testing.T) {
+	t.Run("handles createWsHandler error", func(t *testing.T) {
+		// This test is complex due to dependencies, but we can test the basic structure
+		// For now, we'll focus on other functions that are easier to test
+		t.Skip("Handler function requires complex mocking of service.Context and websocket.Conn")
+	})
+}
