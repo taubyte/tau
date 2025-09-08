@@ -42,16 +42,10 @@ jobs:
         go-version: '1.25.0'
     - name: Checkout code
       uses: actions/checkout@v3
-    - name: Set up SSH agent
-      run: |
-        mkdir -p ~/.ssh
-        ssh-keyscan github.com >> ~/.ssh/known_hosts
     - name: Run Go tests with retries
       env:
         TEST_GIT_TOKEN: ${{ secrets.TEST_GIT_TOKEN }}
       run: |
-        eval $(ssh-agent -s)
-        export SSH_AUTH_SOCK
         max_attempts=5
         attempt_num=1
         until [ $attempt_num -gt $max_attempts ]

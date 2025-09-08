@@ -164,3 +164,44 @@ func TestCloneWithDeployKey(t *testing.T) {
 	assert.NilError(t, err)
 
 }
+
+func TestConvertSSHToHTTPS(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "GitHub SSH URL",
+			input:    "git@github.com:user/repo.git",
+			expected: "https://github.com/user/repo.git",
+		},
+		{
+			name:     "GitHub SSH URL without .git suffix",
+			input:    "git@github.com:user/repo",
+			expected: "https://github.com/user/repo.git",
+		},
+		{
+			name:     "GitLab SSH URL",
+			input:    "git@gitlab.com:user/repo.git",
+			expected: "https://gitlab.com/user/repo.git",
+		},
+		{
+			name:     "HTTPS URL (should remain unchanged)",
+			input:    "https://github.com/user/repo.git",
+			expected: "https://github.com/user/repo.git",
+		},
+		{
+			name:     "Non-SSH URL (should remain unchanged)",
+			input:    "http://github.com/user/repo.git",
+			expected: "http://github.com/user/repo.git",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := convertSSHToHTTPS(tt.input)
+			assert.Equal(t, tt.expected, result)
+		})
+	}
+}

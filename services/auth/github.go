@@ -189,13 +189,12 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		return nil, fmt.Errorf("hooks register failed with %s", err)
 	}
 
-	var repoInfo map[string]string
+	repoInfo := make(map[string]string, 2)
 	if client != nil {
 		_repo, err := client.GetCurrentRepository()
 		if err != nil {
 			return nil, fmt.Errorf("get current repository failed with: %s", err)
 		}
-		repoInfo = make(map[string]string, 0)
 
 		if _repo.SSHURL != nil {
 			repoInfo["ssh"] = *_repo.SSHURL
@@ -205,10 +204,18 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 			repoInfo["fullname"] = *_repo.FullName
 		}
 	} else {
-		// For P2P calls, use mock repository info
-		repoInfo = map[string]string{
-			"ssh":      "git@github.com:test/repo.git",
-			"fullname": "test/repo",
+		// this is p2p, maybe repository is public, try to get info using a client
+		if client, err := srv.newGitHubClient(ctx, ""); err == nil {
+			if err = client.GetByID(repoID); err == nil {
+				if _repo, err := client.GetCurrentRepository(); err != nil {
+					if _repo.SSHURL != nil {
+						repoInfo["ssh"] = *_repo.SSHURL
+					}
+					if _repo.FullName != nil {
+						repoInfo["fullname"] = *_repo.FullName
+					}
+				}
+			}
 		}
 	}
 

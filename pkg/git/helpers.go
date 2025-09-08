@@ -74,6 +74,19 @@ func injectDeploymentKey(ctx context.Context, client *github.Client, user, repoN
 	return err
 }
 
+// convertSSHToHTTPS converts SSH URLs to HTTPS URLs for public access
+func convertSSHToHTTPS(url string) string {
+	if strings.HasPrefix(url, "git@") && strings.Contains(url, ":") {
+		parts := strings.SplitN(url, ":", 2)
+		if len(parts) == 2 {
+			host := strings.TrimPrefix(parts[0], "git@")
+			path := strings.TrimSuffix(parts[1], ".git")
+			return fmt.Sprintf("https://%s/%s.git", host, path)
+		}
+	}
+	return url
+}
+
 // TODO support other git providers
 func embedGitToken(url string, auth transport.AuthMethod) (string, error) {
 	if strings.Contains(url, "github.com") {

@@ -91,7 +91,7 @@ func TestConfigJob(t *testing.T) {
 	defer os.RemoveAll(gitRootConfig)
 
 	// clone repo
-	err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.ConfigRepo)
+	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
 	assert.NilError(t, err)
 
 	// read with seer

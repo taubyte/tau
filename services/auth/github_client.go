@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strconv"
 
 	"github.com/google/go-github/v71/github"
@@ -50,13 +51,13 @@ type RepositoryBasicInfo struct {
 }
 
 func NewGitHubClient(ctx context.Context, token string) (GitHubClient, error) {
+	if token == "" {
+		return &githubClient{Client: github.NewClient(http.DefaultClient), ctx: ctx}, nil
+	}
 
-	ts := oauth2.StaticTokenSource(
+	client := github.NewClient(oauth2.NewClient(ctx, oauth2.StaticTokenSource(
 		&oauth2.Token{AccessToken: token},
-	)
-	tc := oauth2.NewClient(ctx, ts)
-
-	client := github.NewClient(tc)
+	)))
 
 	user, _, err := client.Users.Get(ctx, "")
 	if err != nil {
