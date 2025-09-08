@@ -10,13 +10,6 @@ import (
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 
-type WebSocketConnection interface {
-	ReadMessage() (messageType int, p []byte, err error)
-	WriteJSON(v interface{}) error
-	WriteMessage(messageType int, data []byte) error
-	Close() error
-}
-
 type dataStreamHandler struct {
 	ctx     context.Context
 	ctxC    context.CancelFunc
