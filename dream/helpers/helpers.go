@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -50,21 +49,29 @@ func RegisterTestDomain(ctx context.Context, authClient auth.Client) (err error)
 func RegisterTestRepositories(ctx context.Context, authClient auth.Client, repos ...Repository) (err error) {
 	for _, repo := range repos {
 		for attempts := 0; attempts < 3; attempts++ {
-			_, err = authClient.Repositories().Github().Register(fmt.Sprintf("%d", repo.ID))
+			_, err = authClient.Stats().Database()
 			if err != nil {
-				if errors.Is(err, context.DeadlineExceeded) {
-					// service probably not ready yet
-					select {
-					case <-ctx.Done():
-						return ctx.Err()
-					case <-time.After(3 * time.Second):
-						// try again
-						continue
-					}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(3 * time.Second):
+					// try again
+					continue
 				}
-				// else retry imidiatly
 			}
-			break
+
+			_, err = authClient.Repositories().Github().Get(repo.ID)
+			if err == nil {
+				// repository already registered
+				break
+			}
+
+			// try to register
+			_, err = authClient.Repositories().Github().Register(fmt.Sprintf("%d", repo.ID))
+			if err == nil {
+				break
+			}
+
 		}
 		if err != nil {
 			return err
