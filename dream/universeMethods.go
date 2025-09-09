@@ -25,6 +25,8 @@ func (u *Universe) Name() string {
 }
 
 func (u *Universe) All() []peer.Node {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
 	return u.all
 }
 

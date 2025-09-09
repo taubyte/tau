@@ -72,7 +72,8 @@ func TestSocketLookup(t *testing.T) {
 		return
 	}
 	projectHash := multihash.Hash(testProject)
-	expectedURL := fmt.Sprintf(common.WebSocketFormat, projectHash, testChannel)
+	webSocketFormat := "ws-%s/%s"
+	expectedURL := fmt.Sprintf(webSocketFormat, projectHash, testChannel)
 	if url != expectedURL {
 		t.Errorf("Expected url `%s` got `%s`", expectedURL, url)
 		return

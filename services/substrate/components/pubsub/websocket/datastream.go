@@ -13,11 +13,11 @@ import (
 type dataStreamHandler struct {
 	ctx     context.Context
 	ctxC    context.CancelFunc
-	conn    WebSocketConnection //*websocket.Conn
+	conn    WebSocketConnection
 	ch      chan []byte
 	errCh   chan error
 	srv     common.LocalService
-	matcher components.MatchDefinition // *common.MatchDefinition
+	matcher components.MatchDefinition
 
 	picks []iface.Serviceable
 }

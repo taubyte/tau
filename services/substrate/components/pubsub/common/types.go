@@ -2,7 +2,6 @@ package common
 
 import (
 	"context"
-	"fmt"
 
 	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	multihash "github.com/taubyte/tau/utils/multihash"
@@ -16,12 +15,15 @@ type MatchDefinition struct {
 }
 
 func (m *MatchDefinition) String() string {
-	return fmt.Sprintf("%s/%s", multihash.Hash(m.Project+m.Application), m.Channel)
-	// return m.Channel + m.Project + m.Application + strconv.FormatBool(m.WebSocket)
+	return multihash.Hash(m.Project+m.Application) + "/" + m.Channel
 }
 
 func (m *MatchDefinition) CachePrefix() string {
 	return m.Project
+}
+
+func (m *MatchDefinition) GenerateSocketURL() string {
+	return "ws-" + m.String()
 }
 
 type LocalService interface {

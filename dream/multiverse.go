@@ -48,6 +48,8 @@ func (m *Multiverse) Status() Status {
 			}(),
 			Nodes: func() map[string][]string {
 				_nodes := make(map[string][]string)
+				u.lock.RLock()
+				defer u.lock.RUnlock()
 				for _, s := range u.all {
 					paddrs := s.Peer().Addrs()
 					addrs := make([]string, 0, len(paddrs))
