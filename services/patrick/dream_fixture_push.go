@@ -67,14 +67,11 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 
 	for repoId, repoInfo := range _map {
 		_repoInfo := maps.SafeInterfaceToStringKeys(repoInfo)
-		fullName, ok := _repoInfo["fullname"]
-		if !ok {
-			return fmt.Errorf("fullname does not exist for repo : %s", repoId)
-		}
-
-		err := pushSpecific(u, repoId, fullName, projectId, spec.DefaultBranches[0]) // TODO: add param to provide branch
-		if err != nil {
-			return err
+		if fullName, ok := _repoInfo["fullname"]; ok {
+			err := pushSpecific(u, repoId, fullName, projectId, spec.DefaultBranches[0]) // TODO: add param to provide branch
+			if err != nil {
+				return err
+			}
 		}
 	}
 

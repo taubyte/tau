@@ -75,7 +75,7 @@ func injectDeploymentKey(ctx context.Context, client *github.Client, user, repoN
 }
 
 // convertSSHToHTTPS converts SSH URLs to HTTPS URLs for public access
-func convertSSHToHTTPS(url string) string {
+func ConvertSSHToHTTPS(url string) string {
 	if strings.HasPrefix(url, "git@") && strings.Contains(url, ":") {
 		parts := strings.SplitN(url, ":", 2)
 		if len(parts) == 2 {

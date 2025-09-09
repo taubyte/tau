@@ -82,25 +82,34 @@ func (c *Repository) open_or_clone() error {
 func (c *Repository) clone() (err error) {
 	Info("Cloning from " + c.url + " on branch " + c.branches[0] + " into " + c.root + "\n")
 
-	cloneURL := c.url
 	if c.embedToken {
-		cloneURL, err = embedGitToken(cloneURL, c.auth)
+		var cloneURL string
+		cloneURL, err = embedGitToken(c.url, c.auth)
 		if err != nil {
 			return fmt.Errorf("embedding token failed with: %s", err)
 		}
+
+		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+			URL:      cloneURL,
+			Progress: os.Stdout,
+		})
+	} else if c.auth != nil {
+		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+			URL:      c.url,
+			Progress: os.Stdout,
+			Auth:     c.auth,
+		})
+	} else {
+		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+			URL:      c.url,
+			Progress: os.Stdout,
+		})
 	}
 
-	c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
-		URL:      cloneURL,
-		Progress: os.Stdout,
-		Auth:     c.auth,
-	})
-
 	if err != nil && strings.Contains(err.Error(), "ssh: unable to authenticate") {
-
-		// repository might be public, try to clone without auth
+		// repo might be public or we're in dev/test mode. try to clone with https
 		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
-			URL:      convertSSHToHTTPS(c.url),
+			URL:      ConvertSSHToHTTPS(c.url),
 			Progress: os.Stdout,
 		})
 	}
