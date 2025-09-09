@@ -29,5 +29,5 @@ func (s *Service) Publish(ctx context.Context, projectId, appId, channel string,
 	}
 
 	// TODO smartops for the messaging channel
-	return s.Node().PubSubPublish(ctx, matcher.Path(), data)
+	return s.Node().PubSubPublish(ctx, matcher.String(), data)
 }

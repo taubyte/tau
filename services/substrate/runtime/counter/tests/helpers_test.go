@@ -1,10 +1,9 @@
-package cache
+package tests
 
 import (
 	"bytes"
 	"fmt"
 	"io"
-	"net/http"
 	"sync"
 
 	commonTest "github.com/taubyte/tau/dream/helpers"
@@ -19,42 +18,6 @@ type GetTester struct {
 type ResponseCheck struct {
 	Body []byte
 	Code int
-}
-
-// Parallel get will perform a get request on the given urls.
-// Does not check response code or body, simply checks if the request received a response
-func ParallelGet(iterations int, urls ...string) error {
-	errChan := make(chan error, 1)
-
-	go func(it int, _urls ...string) {
-		var iterationWG sync.WaitGroup
-		iterationWG.Add(iterations)
-		for i := 0; i < iterations; i++ {
-			var wg sync.WaitGroup
-			wg.Add(len(urls))
-			for _, url := range _urls {
-				go func(_wg *sync.WaitGroup, _url string) {
-					defer _wg.Done()
-
-					_, err := http.Get(_url)
-					if err != nil {
-						errChan <- err
-						return
-					}
-
-				}(&wg, url)
-
-			}
-			wg.Wait()
-			iterationWG.Done()
-
-		}
-		iterationWG.Wait()
-		errChan <- nil
-	}(iterations, urls...)
-
-	err := <-errChan
-	return err
 }
 
 // ParallelGetWithBodyCheck is the same as ParallelGet, but will check body for expected response, and failure response if given.

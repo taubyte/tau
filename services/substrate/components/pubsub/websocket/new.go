@@ -2,13 +2,19 @@ package websocket
 
 import (
 	"context"
+	"fmt"
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 
 func New(srv common.LocalService, mmi common.MessagingMapItem, commit, branch string, matcher *common.MatchDefinition) (commonIface.Serviceable, error) {
+	if matcher == nil {
+		return nil, fmt.Errorf("matcher is nil")
+	}
+
 	ctx, ctxC := context.WithCancel(srv.Context())
+
 	ws := &WebSocket{
 		ctx:     ctx,
 		ctxC:    ctxC,

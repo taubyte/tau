@@ -2,6 +2,7 @@ package websocket
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -19,10 +20,8 @@ func (ws *WebSocket) Application() string {
 	return ws.matcher.Application
 }
 
-func (ws *WebSocket) HandleMessage(msg *pubsub.Message) (t time.Time, err error) {
-	t = time.Now()
-	// handled by ch in ./handler.go, here to fulfill the struct
-	return
+func (ws *WebSocket) HandleMessage(msg *pubsub.Message) (time.Time, error) {
+	return time.Now(), nil
 }
 
 func (ws *WebSocket) Match(matcher components.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
@@ -67,13 +66,7 @@ func (ws *WebSocket) Clean() {
 }
 
 func (ws *WebSocket) Name() string {
-	var name string
-	for _, _name := range ws.mmi.Names() {
-		name += _name + ","
-	}
-
-	// Remove the trailing comma
-	return name[0 : len(name)-1]
+	return strings.Join(ws.mmi.Names(), ",")
 }
 
 var AttachWebSocket = func(ws *WebSocket) error {
@@ -92,4 +85,8 @@ func (ws *WebSocket) Config() *structureSpec.Function {
 
 func (ws *WebSocket) AssetId() string {
 	return ""
+}
+
+func (w *WebSocket) Close() {
+	w.ctxC()
 }

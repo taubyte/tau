@@ -12,6 +12,13 @@ import (
 
 var _ commonIface.Serviceable = &WebSocket{}
 
+type WebSocketConnection interface {
+	ReadMessage() (messageType int, p []byte, err error)
+	WriteJSON(v interface{}) error
+	WriteMessage(messageType int, data []byte) error
+	Close() error
+}
+
 type WebSocket struct {
 	ctx       context.Context
 	ctxC      context.CancelFunc
@@ -23,10 +30,6 @@ type WebSocket struct {
 
 	commit string
 	branch string
-}
-
-func (w *WebSocket) Close() {
-	w.ctxC()
 }
 
 type WrappedMessage struct {

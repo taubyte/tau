@@ -16,12 +16,8 @@ import (
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 
-var subs *subsViewer
-
-func init() {
-	subs = &subsViewer{
-		subscriptions: make(map[string]*subViewer),
-	}
+var subs = &subsViewer{
+	subscriptions: make(map[string]*subViewer),
 }
 
 func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn) service.WebSocketHandler {
@@ -36,22 +32,26 @@ func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn)
 		return nil
 	}
 
-	id, err := AddSubscription(srv, handler.matcher.Path(), func(msg *pubsub.Message) {
-		handler.ch <- msg.GetData()
+	id, err := AddSubscription(srv, handler.matcher.String(), func(msg *pubsub.Message) {
+		select {
+		case <-handler.ctx.Done():
+		case handler.ch <- msg.GetData():
+		}
 	}, func(err error) {
-		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher.Path(), err.Error())
+		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher, err.Error())
 		if handler.ctx.Err() == nil {
-			handler.ch <- []byte(err.Error())
+			handler.errCh <- err
 		}
 	})
 	if err != nil {
 		conn.Close()
+		handler.Close()
 		return nil
 	}
 
 	conn.SetCloseHandler(func(code int, text string) error {
-		removeSubscription(handler.matcher.Path(), id)
-
+		removeSubscription(handler.matcher.String(), id)
+		handler.Close()
 		return nil
 	})
 
@@ -151,7 +151,7 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn *websock
 
 	ifacePaths, err := srv.Tns().Fetch(webSocketPath)
 	if err != nil {
-		return nil, fmt.Errorf("fetching web socket path `%s` failed with: %w", webSocketPath.String(), err)
+		return nil, fmt.Errorf("fetching web socket path `%s` failed with: %w", webSocketPath, err)
 	}
 
 	fetchPaths, ok := ifacePaths.Interface().([]interface{})
@@ -186,6 +186,7 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn *websock
 		Application: applicationId,
 		WebSocket:   true,
 	}
+
 	picks, err := srv.Lookup(matcher)
 	if err != nil {
 		return nil, err
@@ -199,6 +200,7 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn *websock
 	handler.matcher = matcher
 	handler.srv = srv
 	handler.ch = make(chan []byte, 1024)
+	handler.errCh = make(chan error)
 	handler.picks = picks
 
 	if err = handler.SmartOps(); err != nil {
