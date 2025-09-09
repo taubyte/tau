@@ -102,56 +102,99 @@ func (m *mockNode) PubSubSubscribe(topic string, handler p2p.PubSubConsumerHandl
 	return nil
 }
 
-func TestDataStreamHandler_Close(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	handler := &dataStreamHandler{
-		ctx:   ctx,
-		ctxC:  cancel,
-		ch:    make(chan []byte, 1),
-		errCh: make(chan error, 1),
+// Helper functions to reduce test duplication
+func createTestHandler(ctx context.Context, cancel context.CancelFunc, conn WebSocketConnection, srv common.LocalService) *dataStreamHandler {
+	return &dataStreamHandler{
+		ctx:     ctx,
+		ctxC:    cancel,
+		conn:    conn,
+		ch:      make(chan []byte, 1),
+		errCh:   make(chan error, 1),
+		matcher: &mockMatchDefinition{},
+		srv:     srv,
 	}
+}
 
-	// Test that Close cancels context and closes channels
-	handler.Close()
+func createMockService(publishFunc func(ctx context.Context, topic string, data []byte) error) *mockLocalService {
+	return &mockLocalService{
+		pubSubPublishFunc: publishFunc,
+	}
+}
 
-	// Verify context is cancelled
+func createMockConnection(readFunc func() (int, []byte, error), writeFunc func(messageType int, data []byte) error) *mockWebSocketConnection {
+	return &mockWebSocketConnection{
+		readMessageFunc:  readFunc,
+		writeMessageFunc: writeFunc,
+	}
+}
+
+func verifyChannelsClosed(t *testing.T, handler *dataStreamHandler) {
+	assert.Assert(t, handler.ch == nil, "Expected ch to be nil")
+	assert.Assert(t, handler.errCh == nil, "Expected errCh to be nil")
+}
+
+func verifyContextCancelled(t *testing.T, handler *dataStreamHandler) {
 	select {
 	case <-handler.ctx.Done():
 		// Expected
 	default:
 		t.Error("Expected context to be cancelled")
 	}
+}
 
-	// Verify channels are closed
-	select {
-	case _, ok := <-handler.ch:
-		if ok {
-			t.Error("Expected ch channel to be closed")
-		}
-	default:
-		t.Error("Expected ch channel to be closed")
-	}
+// Helper function to run a test with proper setup and cleanup
+func runTestWithHandler(t *testing.T, testName string, testFunc func(t *testing.T, handler *dataStreamHandler, conn *mockWebSocketConnection)) {
+	t.Run(testName, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
-	select {
-	case _, ok := <-handler.errCh:
-		if ok {
-			t.Error("Expected errCh channel to be closed")
+		conn := &mockWebSocketConnection{}
+		handler := createTestHandler(ctx, cancel, conn, createMockService(nil))
+
+		testFunc(t, handler, conn)
+	})
+}
+
+// Helper function for error scenarios
+func runErrorTest(t *testing.T, testName string, setupFunc func(conn *mockWebSocketConnection, srv *mockLocalService), testFunc func(t *testing.T, handler *dataStreamHandler)) {
+	t.Run(testName, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		conn := &mockWebSocketConnection{}
+		srv := createMockService(nil)
+
+		if setupFunc != nil {
+			setupFunc(conn, srv)
 		}
-	default:
-		t.Error("Expected errCh channel to be closed")
-	}
+
+		handler := createTestHandler(ctx, cancel, conn, srv)
+		testFunc(t, handler)
+	})
+}
+
+func TestDataStreamHandler_Close(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	handler := createTestHandler(ctx, cancel, &mockWebSocketConnection{}, createMockService(nil))
+
+	// Test that Close cancels context and closes channels
+	handler.Close()
+
+	verifyContextCancelled(t, handler)
+	verifyChannelsClosed(t, handler)
 }
 
 func TestDataStreamHandler_Error(t *testing.T) {
 	t.Run("successful error sending", func(t *testing.T) {
-		handler := &dataStreamHandler{
-			errCh: make(chan error, 1),
-		}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		handler := createTestHandler(ctx, cancel, &mockWebSocketConnection{}, createMockService(nil))
 
 		testErr := errors.New("test error")
-		handler.Error(testErr)
+		handler.error(testErr)
 
 		select {
 		case err := <-handler.errCh:
@@ -164,15 +207,20 @@ func TestDataStreamHandler_Error(t *testing.T) {
 	})
 
 	t.Run("blocked error channel", func(t *testing.T) {
-		// Create a channel with no buffer to simulate blocking
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Create handler with unbuffered error channel
 		handler := &dataStreamHandler{
-			errCh: make(chan error),
+			ctx:   ctx,
+			ctxC:  cancel,
+			errCh: make(chan error), // No buffer
 		}
 
 		testErr := errors.New("test error")
 
-		// This should not block or panic
-		handler.Error(testErr)
+		// This should not block or panic due to select with default
+		handler.error(testErr)
 
 		// Verify the error was not sent (channel is blocked)
 		select {
@@ -194,11 +242,12 @@ func TestDataStreamHandler_In(t *testing.T) {
 		var publishCalled bool
 		var mu sync.Mutex
 
-		conn := &mockWebSocketConnection{
-			readMessageFunc: func() (int, []byte, error) {
+		conn := createMockConnection(
+			func() (int, []byte, error) {
 				return websocket.TextMessage, expectedData, nil
 			},
-		}
+			nil,
+		)
 
 		matcher := &mockMatchDefinition{
 			stringFunc: func() string {
@@ -206,29 +255,21 @@ func TestDataStreamHandler_In(t *testing.T) {
 			},
 		}
 
-		// Create a mock service that implements the required interface
-		mockSrv := &mockLocalService{
-			pubSubPublishFunc: func(ctx context.Context, topic string, data []byte) error {
-				mu.Lock()
-				publishCalled = true
-				mu.Unlock()
-				if topic != expectedTopic {
-					t.Errorf("Expected topic %s, got %s", expectedTopic, topic)
-				}
-				if string(data) != string(expectedData) {
-					t.Errorf("Expected data %s, got %s", string(expectedData), string(data))
-				}
-				return nil
-			},
-		}
+		mockSrv := createMockService(func(ctx context.Context, topic string, data []byte) error {
+			mu.Lock()
+			publishCalled = true
+			mu.Unlock()
+			if topic != expectedTopic {
+				t.Errorf("Expected topic %s, got %s", expectedTopic, topic)
+			}
+			if string(data) != string(expectedData) {
+				t.Errorf("Expected data %s, got %s", string(expectedData), string(data))
+			}
+			return nil
+		})
 
-		handler := &dataStreamHandler{
-			ctx:     ctx,
-			ctxC:    cancel,
-			conn:    conn,
-			srv:     mockSrv,
-			matcher: matcher,
-		}
+		handler := createTestHandler(ctx, cancel, conn, mockSrv)
+		handler.matcher = matcher
 
 		// Start the In goroutine
 		go handler.In()
@@ -251,27 +292,18 @@ func TestDataStreamHandler_In(t *testing.T) {
 		var errorSent bool
 		var mu sync.Mutex
 
-		conn := &mockWebSocketConnection{
-			readMessageFunc: func() (int, []byte, error) {
+		conn := createMockConnection(
+			func() (int, []byte, error) {
 				return websocket.TextMessage, expectedData, nil
 			},
-		}
+			nil,
+		)
 
-		// Create a mock service that returns an error
-		mockSrv := &mockLocalService{
-			pubSubPublishFunc: func(ctx context.Context, topic string, data []byte) error {
-				return publishErr
-			},
-		}
+		mockSrv := createMockService(func(ctx context.Context, topic string, data []byte) error {
+			return publishErr
+		})
 
-		handler := &dataStreamHandler{
-			ctx:     ctx,
-			ctxC:    cancel,
-			conn:    conn,
-			srv:     mockSrv,
-			errCh:   make(chan error, 1),
-			matcher: &mockMatchDefinition{},
-		}
+		handler := createTestHandler(ctx, cancel, conn, mockSrv)
 
 		// Start the In goroutine
 		go handler.In()
@@ -302,19 +334,14 @@ func TestDataStreamHandler_In(t *testing.T) {
 		readErr := errors.New("read error")
 		errorSent := false
 
-		conn := &mockWebSocketConnection{
-			readMessageFunc: func() (int, []byte, error) {
+		conn := createMockConnection(
+			func() (int, []byte, error) {
 				return 0, nil, readErr
 			},
-		}
+			nil,
+		)
 
-		handler := &dataStreamHandler{
-			ctx:     ctx,
-			ctxC:    cancel,
-			conn:    conn,
-			errCh:   make(chan error, 1),
-			matcher: &mockMatchDefinition{},
-		}
+		handler := createTestHandler(ctx, cancel, conn, createMockService(nil))
 
 		// Start the In goroutine
 		go handler.In()
@@ -338,20 +365,16 @@ func TestDataStreamHandler_In(t *testing.T) {
 	t.Run("context cancellation", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 
-		conn := &mockWebSocketConnection{
-			readMessageFunc: func() (int, []byte, error) {
+		conn := createMockConnection(
+			func() (int, []byte, error) {
 				// Simulate blocking read
 				time.Sleep(100 * time.Millisecond)
 				return websocket.TextMessage, []byte("test"), nil
 			},
-		}
+			nil,
+		)
 
-		handler := &dataStreamHandler{
-			ctx:     ctx,
-			ctxC:    cancel,
-			conn:    conn,
-			matcher: &mockMatchDefinition{},
-		}
+		handler := createTestHandler(ctx, cancel, conn, createMockService(nil))
 
 		// Start the In goroutine
 		go handler.In()
@@ -376,8 +399,9 @@ func TestDataStreamHandler_Out(t *testing.T) {
 		var writeCalled bool
 		var mu sync.Mutex
 
-		conn := &mockWebSocketConnection{
-			writeMessageFunc: func(messageType int, data []byte) error {
+		conn := createMockConnection(
+			nil,
+			func(messageType int, data []byte) error {
 				mu.Lock()
 				writeCalled = true
 				mu.Unlock()
@@ -389,15 +413,9 @@ func TestDataStreamHandler_Out(t *testing.T) {
 				}
 				return nil
 			},
-		}
+		)
 
-		handler := &dataStreamHandler{
-			ctx:   ctx,
-			ctxC:  cancel,
-			conn:  conn,
-			ch:    make(chan []byte, 1),
-			errCh: make(chan error, 1),
-		}
+		handler := createTestHandler(ctx, cancel, conn, createMockService(nil))
 
 		// Send data to channel
 		handler.ch <- expectedData
@@ -600,4 +618,291 @@ func TestDataStreamHandler_Out_DefaultCase(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// The goroutine should have exited due to context cancellation
+}
+
+// Test for race conditions and closed channel writes
+func TestDataStreamHandler_RaceConditions(t *testing.T) {
+	t.Run("concurrent close and channel operations", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Create handler with small buffer to increase chance of race conditions
+		handler := &dataStreamHandler{
+			ctx:   ctx,
+			ctxC:  cancel,
+			ch:    make(chan []byte, 1),
+			errCh: make(chan error, 1),
+			conn:  &mockWebSocketConnection{},
+		}
+
+		// Start In and Out goroutines
+		go handler.In()
+		go handler.Out()
+
+		// Try to close while goroutines are running
+		// This should not panic or cause issues
+		handler.Close()
+
+		// Verify channels are closed
+		verifyChannelsClosed(t, handler)
+	})
+
+	t.Run("write to closed channel after close", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Create a connection that will return an error on read
+		conn := &mockWebSocketConnection{
+			readMessageFunc: func() (int, []byte, error) {
+				return 0, nil, errors.New("connection error")
+			},
+		}
+
+		handler := &dataStreamHandler{
+			ctx:     ctx,
+			ctxC:    cancel,
+			conn:    conn,
+			ch:      make(chan []byte, 1),
+			errCh:   make(chan error, 1),
+			matcher: &mockMatchDefinition{},
+			srv: &mockLocalService{
+				pubSubPublishFunc: func(ctx context.Context, topic string, data []byte) error {
+					return nil
+				},
+			},
+		}
+
+		// Start In goroutine - it should handle the error gracefully
+		go handler.In()
+
+		// Wait a bit for the error to be processed
+		time.Sleep(10 * time.Millisecond)
+
+		// Close the handler
+		handler.Close()
+
+		// This should not panic
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Unexpected panic when closing handler: %v", r)
+			}
+		}()
+	})
+
+	t.Run("concurrent multiple close calls", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		handler := &dataStreamHandler{
+			ctx:   ctx,
+			ctxC:  cancel,
+			ch:    make(chan []byte, 1),
+			errCh: make(chan error, 1),
+		}
+
+		// Call Close multiple times concurrently
+		var wg sync.WaitGroup
+		for i := 0; i < 10; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				handler.Close()
+			}()
+		}
+
+		wg.Wait()
+
+		verifyChannelsClosed(t, handler)
+	})
+
+	t.Run("error channel blocking behavior", func(t *testing.T) {
+		// Test that error handling doesn't block when error channel is full
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Create a connection that will cause an error
+		conn := &mockWebSocketConnection{
+			readMessageFunc: func() (int, []byte, error) {
+				return 0, nil, errors.New("read error")
+			},
+		}
+
+		handler := &dataStreamHandler{
+			ctx:     ctx,
+			ctxC:    cancel,
+			conn:    conn,
+			ch:      make(chan []byte, 1),
+			errCh:   make(chan error, 1), // Small buffer
+			matcher: &mockMatchDefinition{},
+			srv: &mockLocalService{
+				pubSubPublishFunc: func(ctx context.Context, topic string, data []byte) error {
+					return nil
+				},
+			},
+		}
+
+		// Fill the error channel first
+		handler.errCh <- errors.New("first error")
+
+		// Start In goroutine - it should handle the read error gracefully
+		// even when error channel is full
+		go handler.In()
+
+		// Wait a bit for processing
+		time.Sleep(10 * time.Millisecond)
+
+		// Verify only one error was in the channel (the first one)
+		errorCount := 0
+		select {
+		case <-handler.errCh:
+			errorCount++
+		default:
+		}
+
+		if errorCount != 1 {
+			t.Errorf("Expected 1 error in channel, got %d", errorCount)
+		}
+	})
+}
+
+// Test specific scenarios that could cause closed channel writes
+func TestDataStreamHandler_ClosedChannelWrites(t *testing.T) {
+	t.Run("In method with publish errors", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Create a mock connection that will read successfully
+		conn := &mockWebSocketConnection{
+			readMessageFunc: func() (int, []byte, error) {
+				return websocket.TextMessage, []byte("test"), nil
+			},
+		}
+
+		// Create a service that will return an error on publish
+		handler := &dataStreamHandler{
+			ctx:     ctx,
+			ctxC:    cancel,
+			conn:    conn,
+			ch:      make(chan []byte, 1),
+			errCh:   make(chan error, 1),
+			matcher: &mockMatchDefinition{},
+			srv: &mockLocalService{
+				pubSubPublishFunc: func(ctx context.Context, topic string, data []byte) error {
+					return errors.New("publish error")
+				},
+			},
+		}
+
+		// Start In goroutine - it should handle the publish error gracefully
+		go handler.In()
+
+		// Wait for error to be processed
+		time.Sleep(10 * time.Millisecond)
+
+		// This should not panic
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Unexpected panic in In method with publish errors: %v", r)
+			}
+		}()
+
+		// Close the handler
+		handler.Close()
+	})
+
+	t.Run("Out method with write errors", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Create a connection that will return an error on write
+		conn := &mockWebSocketConnection{
+			writeMessageFunc: func(messageType int, data []byte) error {
+				return errors.New("write error")
+			},
+		}
+
+		handler := &dataStreamHandler{
+			ctx:   ctx,
+			ctxC:  cancel,
+			conn:  conn,
+			ch:    make(chan []byte, 1),
+			errCh: make(chan error, 1),
+		}
+
+		// Send some data to trigger a write
+		handler.ch <- []byte("test data")
+
+		// Start Out goroutine - it should handle the write error gracefully
+		go handler.Out()
+
+		// Wait for error to be processed
+		time.Sleep(10 * time.Millisecond)
+
+		// This should not panic
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Unexpected panic in Out method with write errors: %v", r)
+			}
+		}()
+
+		// Close the handler
+		handler.Close()
+	})
+
+	t.Run("rapid close and restart", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		conn := &mockWebSocketConnection{
+			readMessageFunc: func() (int, []byte, error) {
+				time.Sleep(5 * time.Millisecond) // Small delay to allow close to happen
+				return websocket.TextMessage, []byte("test"), nil
+			},
+		}
+
+		handler := &dataStreamHandler{
+			ctx:     ctx,
+			ctxC:    cancel,
+			conn:    conn,
+			ch:      make(chan []byte, 1),
+			errCh:   make(chan error, 1),
+			matcher: &mockMatchDefinition{},
+			srv: &mockLocalService{
+				pubSubPublishFunc: func(ctx context.Context, topic string, data []byte) error {
+					return nil
+				},
+			},
+		}
+
+		// Start goroutines
+		go handler.In()
+		go handler.Out()
+
+		// Close quickly
+		handler.Close()
+
+		// Try to start again (this should be safe)
+		handler2 := &dataStreamHandler{
+			ctx:     ctx,
+			ctxC:    cancel,
+			conn:    conn,
+			ch:      make(chan []byte, 1),
+			errCh:   make(chan error, 1),
+			matcher: &mockMatchDefinition{},
+			srv: &mockLocalService{
+				pubSubPublishFunc: func(ctx context.Context, topic string, data []byte) error {
+					return nil
+				},
+			},
+		}
+
+		defer func() {
+			if r := recover(); r != nil {
+				t.Errorf("Unexpected panic during rapid close/restart: %v", r)
+			}
+		}()
+
+		// This should be safe
+		handler2.Close()
+	})
 }

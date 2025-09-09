@@ -3,6 +3,7 @@ package websocket
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"github.com/gorilla/websocket"
 	"github.com/taubyte/tau/core/services/substrate/components"
@@ -20,15 +21,25 @@ type dataStreamHandler struct {
 	matcher components.MatchDefinition
 
 	picks []iface.Serviceable
+
+	mu sync.RWMutex
 }
 
 func (h *dataStreamHandler) Close() {
 	h.ctxC()
-	close(h.ch)
-	close(h.errCh)
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.ch != nil {
+		close(h.ch)
+		h.ch = nil
+	}
+	if h.errCh != nil {
+		close(h.errCh)
+		h.errCh = nil
+	}
 }
 
-func (h *dataStreamHandler) Error(err error) {
+func (h *dataStreamHandler) error(err error) {
 	select {
 	case h.errCh <- err:
 	default:
@@ -36,6 +47,8 @@ func (h *dataStreamHandler) Error(err error) {
 }
 
 func (h *dataStreamHandler) In() {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	for {
 		select {
 		case <-h.ctx.Done():
@@ -43,13 +56,13 @@ func (h *dataStreamHandler) In() {
 		default:
 			_, msg, err := h.conn.ReadMessage()
 			if err != nil {
-				h.Error(fmt.Errorf("reading data In on `%s` failed with: %s", h.matcher, err))
+				h.error(fmt.Errorf("reading data In on `%s` failed with: %s", h.matcher, err))
 				return
 			}
 
 			err = h.srv.Node().PubSubPublish(h.ctx, h.matcher.String(), msg)
 			if err != nil {
-				h.Error(fmt.Errorf("reading data In then Publish failed with: %v", err))
+				h.error(fmt.Errorf("reading data In then Publish failed with: %v", err))
 				return
 			}
 		}
@@ -57,6 +70,8 @@ func (h *dataStreamHandler) In() {
 }
 
 func (h *dataStreamHandler) Out() {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
 	for {
 		select {
 		case <-h.ctx.Done():
@@ -70,7 +85,7 @@ func (h *dataStreamHandler) Out() {
 		case data := <-h.ch:
 			err := h.conn.WriteMessage(websocket.BinaryMessage, data)
 			if err != nil {
-				h.Error(fmt.Errorf("writing data out failed with %v closing connection", err))
+				h.error(fmt.Errorf("writing data out failed with %v closing connection", err))
 				return
 			}
 		}
