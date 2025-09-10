@@ -49,13 +49,8 @@ func TestNew(t *testing.T) {
 
 		result, err := New(srv, mmi, commit, branch, matcher)
 
-		if err != nil {
-			t.Errorf("Expected no error, got %v", err)
-		}
-
-		if result == nil {
-			t.Error("Expected result to not be nil")
-		}
+		assert.NilError(t, err)
+		assert.Assert(t, result != nil, "Expected result to not be nil")
 
 		// Verify the returned WebSocket has correct values
 		ws, ok := result.(*WebSocket)
@@ -64,38 +59,22 @@ func TestNew(t *testing.T) {
 			return
 		}
 
-		if ws.srv != srv {
-			t.Error("Expected srv to be set correctly")
-		}
+		assert.Equal(t, ws.srv, srv)
 
 		// Check that mmi was set (we can't easily compare structs with slices)
-		if ws.mmi.Len() != mmi.Len() {
-			t.Errorf("Expected mmi length %d, got %d", mmi.Len(), ws.mmi.Len())
-		}
+		assert.Equal(t, ws.mmi.Len(), mmi.Len())
 
-		if ws.matcher != matcher {
-			t.Error("Expected matcher to be set correctly")
-		}
+		assert.Equal(t, ws.matcher, matcher)
 
-		if ws.commit != commit {
-			t.Errorf("Expected commit to be %s, got %s", commit, ws.commit)
-		}
+		assert.Equal(t, ws.commit, commit)
 
-		if ws.branch != branch {
-			t.Errorf("Expected branch to be %s, got %s", branch, ws.branch)
-		}
+		assert.Equal(t, ws.branch, branch)
 
-		if ws.project != matcher.Project {
-			t.Errorf("Expected project to be %s, got %s", matcher.Project, ws.project)
-		}
+		assert.Equal(t, ws.project, matcher.Project)
 
-		if ws.ctx == nil {
-			t.Error("Expected ctx to be set")
-		}
+		assert.Assert(t, ws.ctx != nil, "Expected ctx to be set")
 
-		if ws.ctxC == nil {
-			t.Error("Expected ctxC to be set")
-		}
+		assert.Assert(t, ws.ctxC != nil, "Expected ctxC to be set")
 	})
 
 	t.Run("AttachWebSocket error", func(t *testing.T) {
@@ -129,13 +108,9 @@ func TestNew(t *testing.T) {
 
 		result, err := New(srv, mmi, "commit", "branch", matcher)
 
-		if err != attachError {
-			t.Errorf("Expected error %v, got %v", attachError, err)
-		}
+		assert.Equal(t, err, attachError)
 
-		if result != nil {
-			t.Error("Expected result to be nil when AttachWebSocket fails")
-		}
+		assert.Assert(t, result == nil, "Expected result to be nil when AttachWebSocket fails")
 	})
 
 	t.Run("nil matcher", func(t *testing.T) {
@@ -152,18 +127,11 @@ func TestNew(t *testing.T) {
 
 		result, err := New(srv, mmi, "commit", "branch", nil)
 
-		if err == nil {
-			t.Error("Expected error for nil matcher")
-		}
+		assert.Assert(t, err != nil, "Expected error for nil matcher")
 
-		if result != nil {
-			t.Error("Expected result to be nil when matcher is nil")
-		}
+		assert.Assert(t, result == nil, "Expected result to be nil when matcher is nil")
 
-		expectedErr := "matcher is nil"
-		if err.Error() != expectedErr {
-			t.Errorf("Expected error '%s', got '%s'", expectedErr, err.Error())
-		}
+		assert.Error(t, err, "matcher is nil")
 	})
 
 	t.Run("context cancellation", func(t *testing.T) {
@@ -217,9 +185,7 @@ func TestWebSocket_Id(t *testing.T) {
 	id := ws.Id()
 
 	// The Id method returns an empty string by default
-	if id != "" {
-		t.Errorf("Expected empty string, got %s", id)
-	}
+	assert.Equal(t, id, "")
 }
 
 func TestWebSocket_Ready(t *testing.T) {
@@ -228,7 +194,5 @@ func TestWebSocket_Ready(t *testing.T) {
 	err := ws.Ready()
 
 	// The Ready method should return nil
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
-	}
+	assert.NilError(t, err)
 }

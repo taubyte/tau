@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/gorilla/websocket"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
 	p2p "github.com/taubyte/tau/p2p/peer"
@@ -20,7 +19,7 @@ var subs = &subsViewer{
 	subscriptions: make(map[string]*subViewer),
 }
 
-func Handler(srv common.LocalService, ctx service.Context, conn *websocket.Conn) service.WebSocketHandler {
+func Handler(srv common.LocalService, ctx service.Context, conn service.WebSocketConnection) service.WebSocketHandler {
 	conn.EnableWriteCompression(true)
 	handler, err := createWsHandler(srv, ctx, conn)
 	if err != nil {
@@ -138,7 +137,7 @@ func AddSubscription(srv common.LocalService, name string, handler p2p.PubSubCon
 	return newId, nil
 }
 
-func createWsHandler(srv common.LocalService, ctx service.Context, conn *websocket.Conn) (*dataStreamHandler, error) {
+func createWsHandler(srv common.LocalService, ctx service.Context, conn service.WebSocketConnection) (*dataStreamHandler, error) {
 	hash, err := ctx.GetStringVariable("hash")
 	if err != nil {
 		return nil, fmt.Errorf("getting string variable `hash` failed with %w", err)

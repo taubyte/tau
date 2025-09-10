@@ -153,12 +153,6 @@ func TestDataStreamHandler_SmartOps(t *testing.T) {
 		assert.Error(t, err, "tried to run a smartOp on a websocket that was not a websocket")
 	})
 
-	t.Run("websocket with smart ops", func(t *testing.T) {
-		// This test is complex due to dependencies on messaging.New
-		// For now, we'll skip it and focus on simpler test cases
-		t.Skip("SmartOps with messaging dependencies requires complex mocking")
-	})
-
 	t.Run("websocket with empty smart ops", func(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()

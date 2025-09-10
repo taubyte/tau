@@ -28,7 +28,7 @@ func (ws *WebSocket) Match(matcher components.MatchDefinition) (currentMatchInde
 	currentMatch := matcherSpec.NoMatch
 	_matcher, ok := matcher.(*common.MatchDefinition)
 	if !ok {
-		return
+		return matcherSpec.NoMatch
 	}
 
 	if len(ws.mmi.Matches(_matcher.Channel)) > 0 {
