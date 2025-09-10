@@ -190,26 +190,6 @@ func createReadErrorConnection(err error) *mockWebSocketConnection {
 	)
 }
 
-// Helper function to create a mock connection that writes successfully
-func createSuccessfulWriteConnection() *mockWebSocketConnection {
-	return createMockConnection(
-		nil,
-		func(messageType int, data []byte) error {
-			return nil
-		},
-	)
-}
-
-// Helper function to create a mock connection that returns write error
-func createWriteErrorConnection(err error) *mockWebSocketConnection {
-	return createMockConnection(
-		nil,
-		func(messageType int, data []byte) error {
-			return err
-		},
-	)
-}
-
 func verifyChannelsClosed(t *testing.T, handler *dataStreamHandler) {
 	assert.Assert(t, handler.ch == nil, "Expected ch to be nil")
 	assert.Assert(t, handler.errCh == nil, "Expected errCh to be nil")
@@ -222,19 +202,6 @@ func verifyContextCancelled(t *testing.T, handler *dataStreamHandler) {
 	default:
 		t.Error("Expected context to be cancelled")
 	}
-}
-
-// Helper function to run a test with proper setup and cleanup
-func runTestWithHandler(t *testing.T, testName string, testFunc func(t *testing.T, handler *dataStreamHandler, conn *mockWebSocketConnection)) {
-	t.Run(testName, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		conn := &mockWebSocketConnection{}
-		handler := createTestHandler(ctx, cancel, conn, createMockService(nil))
-
-		testFunc(t, handler, conn)
-	})
 }
 
 func TestDataStreamHandler_Close(t *testing.T) {
