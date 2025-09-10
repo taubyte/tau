@@ -8,13 +8,14 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
+	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 
 type dataStreamHandler struct {
 	ctx     context.Context
 	ctxC    context.CancelFunc
-	conn    WebSocketConnection
+	conn    service.WebSocketConnection
 	ch      chan []byte
 	errCh   chan error
 	srv     common.LocalService

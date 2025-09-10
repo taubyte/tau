@@ -39,10 +39,7 @@ func TestWebSocket_Project(t *testing.T) {
 	}
 
 	result := ws.Project()
-
-	if result != "test-project" {
-		t.Errorf("Expected 'test-project', got '%s'", result)
-	}
+	assert.Equal(t, result, "test-project")
 }
 
 func TestWebSocket_Application(t *testing.T) {
@@ -55,29 +52,20 @@ func TestWebSocket_Application(t *testing.T) {
 	}
 
 	result := ws.Application()
-
-	if result != "test-app" {
-		t.Errorf("Expected 'test-app', got '%s'", result)
-	}
+	assert.Equal(t, result, "test-app")
 }
 
 func TestWebSocket_HandleMessage(t *testing.T) {
 	ws := &WebSocket{}
-
 	msg := &pubsub.Message{}
 
 	startTime := time.Now()
 	timestamp, err := ws.HandleMessage(msg)
 	endTime := time.Now()
 
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
-	}
-
-	// Check that timestamp is between start and end time
-	if timestamp.Before(startTime) || timestamp.After(endTime) {
-		t.Errorf("Expected timestamp to be between %v and %v, got %v", startTime, endTime, timestamp)
-	}
+	assert.NilError(t, err)
+	assert.Assert(t, !timestamp.Before(startTime), "Expected timestamp to be after start time")
+	assert.Assert(t, !timestamp.After(endTime), "Expected timestamp to be before end time")
 }
 
 func TestWebSocket_Match(t *testing.T) {
@@ -98,10 +86,7 @@ func TestWebSocket_Match(t *testing.T) {
 		}
 
 		result := ws.Match(matcher)
-
-		if result != matcherSpec.HighMatch {
-			t.Errorf("Expected HighMatch, got %v", result)
-		}
+		assert.Equal(t, result, matcherSpec.HighMatch)
 	})
 
 	t.Run("no match", func(t *testing.T) {
@@ -121,10 +106,7 @@ func TestWebSocket_Match(t *testing.T) {
 		}
 
 		result := ws.Match(matcher)
-
-		if result != matcherSpec.NoMatch {
-			t.Errorf("Expected NoMatch, got %v", result)
-		}
+		assert.Equal(t, result, matcherSpec.NoMatch)
 	})
 
 	t.Run("invalid matcher type", func(t *testing.T) {
@@ -132,10 +114,7 @@ func TestWebSocket_Match(t *testing.T) {
 
 		// Pass a different type that doesn't implement the interface
 		result := ws.Match(nil)
-
-		if result != 0 { // matcherSpec.NoMatch is 0
-			t.Errorf("Expected NoMatch (0) for invalid matcher type, got %v", result)
-		}
+		assert.Equal(t, result, matcherSpec.NoMatch)
 	})
 }
 
@@ -145,10 +124,7 @@ func TestWebSocket_Commit(t *testing.T) {
 	}
 
 	result := ws.Commit()
-
-	if result != "test-commit" {
-		t.Errorf("Expected 'test-commit', got '%s'", result)
-	}
+	assert.Equal(t, result, "test-commit")
 }
 
 func TestWebSocket_Branch(t *testing.T) {
@@ -157,10 +133,7 @@ func TestWebSocket_Branch(t *testing.T) {
 	}
 
 	result := ws.Branch()
-
-	if result != "test-branch" {
-		t.Errorf("Expected 'test-branch', got '%s'", result)
-	}
+	assert.Equal(t, result, "test-branch")
 }
 
 func TestWebSocket_Validate(t *testing.T) {
@@ -181,10 +154,7 @@ func TestWebSocket_Validate(t *testing.T) {
 		}
 
 		err := ws.Validate(matcher)
-
-		if err != nil {
-			t.Errorf("Expected no error, got %v", err)
-		}
+		assert.NilError(t, err)
 	})
 
 	t.Run("no match", func(t *testing.T) {
@@ -204,15 +174,7 @@ func TestWebSocket_Validate(t *testing.T) {
 		}
 
 		err := ws.Validate(matcher)
-
-		if err == nil {
-			t.Error("Expected error for no match")
-		}
-
-		expectedErr := "websocket channels do not match"
-		if err.Error() != expectedErr {
-			t.Errorf("Expected error '%s', got '%s'", expectedErr, err.Error())
-		}
+		assert.Error(t, err, "websocket channels do not match")
 	})
 }
 
@@ -226,10 +188,7 @@ func TestWebSocket_Matcher(t *testing.T) {
 	}
 
 	result := ws.Matcher()
-
-	if result != matcher {
-		t.Error("Expected matcher to be returned")
-	}
+	assert.Equal(t, result, matcher)
 }
 
 func TestWebSocket_Clean(t *testing.T) {
@@ -252,10 +211,7 @@ func TestWebSocket_Clean(t *testing.T) {
 		}
 
 		ws.Clean()
-
-		if !closeCalled {
-			t.Error("Expected dagReader.Close() to be called")
-		}
+		assert.Assert(t, closeCalled, "Expected dagReader.Close() to be called")
 	})
 
 	t.Run("without dagReader", func(t *testing.T) {
@@ -289,11 +245,7 @@ func TestWebSocket_Name(t *testing.T) {
 		}
 
 		result := ws.Name()
-
-		expected := "test-name-1,test-name-2"
-		if result != expected {
-			t.Errorf("Expected '%s', got '%s'", expected, result)
-		}
+		assert.Equal(t, result, "test-name-1,test-name-2")
 	})
 
 	t.Run("single name", func(t *testing.T) {
@@ -308,11 +260,7 @@ func TestWebSocket_Name(t *testing.T) {
 		}
 
 		result := ws.Name()
-
-		expected := "single-name"
-		if result != expected {
-			t.Errorf("Expected '%s', got '%s'", expected, result)
-		}
+		assert.Equal(t, result, "single-name")
 	})
 }
 
@@ -324,40 +272,28 @@ func TestWebSocket_Service(t *testing.T) {
 	}
 
 	result := ws.Service()
-
-	if result != srv {
-		t.Error("Expected service to be returned")
-	}
+	assert.Equal(t, result, srv)
 }
 
 func TestWebSocket_Config(t *testing.T) {
 	ws := &WebSocket{}
 
 	result := ws.Config()
-
-	if result != nil {
-		t.Error("Expected Config to return nil")
-	}
+	assert.Assert(t, result == nil, "Expected Config to return nil")
 }
 
 func TestWebSocket_AssetId(t *testing.T) {
 	ws := &WebSocket{}
 
 	result := ws.AssetId()
-
-	if result != "" {
-		t.Errorf("Expected empty string, got '%s'", result)
-	}
+	assert.Equal(t, result, "")
 }
 
 func TestAttachWebSocket(t *testing.T) {
 	ws := &WebSocket{}
 
 	err := AttachWebSocket(ws)
-
-	if err != nil {
-		t.Errorf("Expected no error, got %v", err)
-	}
+	assert.NilError(t, err)
 }
 
 func TestWebSocket_Close(t *testing.T) {
@@ -383,7 +319,8 @@ func TestWebSocket_Close(t *testing.T) {
 	})
 
 	t.Run("close with nil cancel function", func(t *testing.T) {
-		ctx, _ := context.WithCancel(context.Background())
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 
 		ws := &WebSocket{
 			ctx:  ctx,

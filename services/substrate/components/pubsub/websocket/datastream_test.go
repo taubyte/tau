@@ -9,16 +9,19 @@ import (
 
 	"github.com/gorilla/websocket"
 	p2p "github.com/taubyte/tau/p2p/peer"
+	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"gotest.tools/v3/assert"
 )
 
 // Mock implementations for testing
 type mockWebSocketConnection struct {
-	readMessageFunc  func() (int, []byte, error)
-	writeJSONFunc    func(v interface{}) error
-	writeMessageFunc func(messageType int, data []byte) error
-	closeFunc        func() error
+	readMessageFunc            func() (int, []byte, error)
+	writeJSONFunc              func(v interface{}) error
+	writeMessageFunc           func(messageType int, data []byte) error
+	closeFunc                  func() error
+	enableWriteCompressionFunc func(enable bool)
+	setCloseHandlerFunc        func(handler func(code int, text string) error)
 }
 
 func (m *mockWebSocketConnection) ReadMessage() (int, []byte, error) {
@@ -47,6 +50,18 @@ func (m *mockWebSocketConnection) Close() error {
 		return m.closeFunc()
 	}
 	return nil
+}
+
+func (m *mockWebSocketConnection) EnableWriteCompression(enable bool) {
+	if m.enableWriteCompressionFunc != nil {
+		m.enableWriteCompressionFunc(enable)
+	}
+}
+
+func (m *mockWebSocketConnection) SetCloseHandler(handler func(code int, text string) error) {
+	if m.setCloseHandlerFunc != nil {
+		m.setCloseHandlerFunc(handler)
+	}
 }
 
 type mockMatchDefinition struct {
@@ -103,7 +118,7 @@ func (m *mockNode) PubSubSubscribe(topic string, handler p2p.PubSubConsumerHandl
 }
 
 // Helper functions to reduce test duplication
-func createTestHandler(ctx context.Context, cancel context.CancelFunc, conn WebSocketConnection, srv common.LocalService) *dataStreamHandler {
+func createTestHandler(ctx context.Context, cancel context.CancelFunc, conn service.WebSocketConnection, srv common.LocalService) *dataStreamHandler {
 	return &dataStreamHandler{
 		ctx:     ctx,
 		ctxC:    cancel,
@@ -126,6 +141,46 @@ func createMockConnection(readFunc func() (int, []byte, error), writeFunc func(m
 		readMessageFunc:  readFunc,
 		writeMessageFunc: writeFunc,
 	}
+}
+
+// Helper function to create a mock connection that reads successfully
+func createSuccessfulReadConnection(data []byte) *mockWebSocketConnection {
+	return createMockConnection(
+		func() (int, []byte, error) {
+			return websocket.TextMessage, data, nil
+		},
+		nil,
+	)
+}
+
+// Helper function to create a mock connection that returns read error
+func createReadErrorConnection(err error) *mockWebSocketConnection {
+	return createMockConnection(
+		func() (int, []byte, error) {
+			return 0, nil, err
+		},
+		nil,
+	)
+}
+
+// Helper function to create a mock connection that writes successfully
+func createSuccessfulWriteConnection() *mockWebSocketConnection {
+	return createMockConnection(
+		nil,
+		func(messageType int, data []byte) error {
+			return nil
+		},
+	)
+}
+
+// Helper function to create a mock connection that returns write error
+func createWriteErrorConnection(err error) *mockWebSocketConnection {
+	return createMockConnection(
+		nil,
+		func(messageType int, data []byte) error {
+			return err
+		},
+	)
 }
 
 func verifyChannelsClosed(t *testing.T, handler *dataStreamHandler) {
@@ -155,24 +210,6 @@ func runTestWithHandler(t *testing.T, testName string, testFunc func(t *testing.
 	})
 }
 
-// Helper function for error scenarios
-func runErrorTest(t *testing.T, testName string, setupFunc func(conn *mockWebSocketConnection, srv *mockLocalService), testFunc func(t *testing.T, handler *dataStreamHandler)) {
-	t.Run(testName, func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		conn := &mockWebSocketConnection{}
-		srv := createMockService(nil)
-
-		if setupFunc != nil {
-			setupFunc(conn, srv)
-		}
-
-		handler := createTestHandler(ctx, cancel, conn, srv)
-		testFunc(t, handler)
-	})
-}
-
 func TestDataStreamHandler_Close(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -198,9 +235,7 @@ func TestDataStreamHandler_Error(t *testing.T) {
 
 		select {
 		case err := <-handler.errCh:
-			if err != testErr {
-				t.Errorf("Expected error %v, got %v", testErr, err)
-			}
+			assert.Equal(t, err, testErr)
 		default:
 			t.Error("Expected error to be sent to channel")
 		}
@@ -259,12 +294,8 @@ func TestDataStreamHandler_In(t *testing.T) {
 			mu.Lock()
 			publishCalled = true
 			mu.Unlock()
-			if topic != expectedTopic {
-				t.Errorf("Expected topic %s, got %s", expectedTopic, topic)
-			}
-			if string(data) != string(expectedData) {
-				t.Errorf("Expected data %s, got %s", string(expectedData), string(data))
-			}
+			assert.Equal(t, topic, expectedTopic)
+			assert.Equal(t, string(data), string(expectedData))
 			return nil
 		})
 
@@ -292,12 +323,7 @@ func TestDataStreamHandler_In(t *testing.T) {
 		var errorSent bool
 		var mu sync.Mutex
 
-		conn := createMockConnection(
-			func() (int, []byte, error) {
-				return websocket.TextMessage, expectedData, nil
-			},
-			nil,
-		)
+		conn := createSuccessfulReadConnection(expectedData)
 
 		mockSrv := createMockService(func(ctx context.Context, topic string, data []byte) error {
 			return publishErr
@@ -314,9 +340,7 @@ func TestDataStreamHandler_In(t *testing.T) {
 			mu.Lock()
 			errorSent = true
 			mu.Unlock()
-			if err == nil {
-				t.Error("Expected error to be sent")
-			}
+			assert.Assert(t, err != nil, "Expected error to be sent")
 		case <-time.After(100 * time.Millisecond):
 			t.Error("Expected error to be sent within timeout")
 		}
@@ -334,12 +358,7 @@ func TestDataStreamHandler_In(t *testing.T) {
 		readErr := errors.New("read error")
 		errorSent := false
 
-		conn := createMockConnection(
-			func() (int, []byte, error) {
-				return 0, nil, readErr
-			},
-			nil,
-		)
+		conn := createReadErrorConnection(readErr)
 
 		handler := createTestHandler(ctx, cancel, conn, createMockService(nil))
 
@@ -350,16 +369,12 @@ func TestDataStreamHandler_In(t *testing.T) {
 		select {
 		case err := <-handler.errCh:
 			errorSent = true
-			if err == nil {
-				t.Error("Expected error to be sent")
-			}
+			assert.Assert(t, err != nil, "Expected error to be sent")
 		case <-time.After(100 * time.Millisecond):
 			t.Error("Expected error to be sent within timeout")
 		}
 
-		if !errorSent {
-			t.Error("Expected error to be sent to error channel")
-		}
+		assert.Assert(t, errorSent, "Expected error to be sent to error channel")
 	})
 
 	t.Run("context cancellation", func(t *testing.T) {
@@ -405,12 +420,8 @@ func TestDataStreamHandler_Out(t *testing.T) {
 				mu.Lock()
 				writeCalled = true
 				mu.Unlock()
-				if messageType != websocket.BinaryMessage {
-					t.Errorf("Expected BinaryMessage, got %d", messageType)
-				}
-				if string(data) != string(expectedData) {
-					t.Errorf("Expected data %s, got %s", string(expectedData), string(data))
-				}
+				assert.Equal(t, messageType, websocket.BinaryMessage)
+				assert.Equal(t, string(data), string(expectedData))
 				return nil
 			},
 		)
@@ -447,12 +458,8 @@ func TestDataStreamHandler_Out(t *testing.T) {
 				writeJSONCalled = true
 				mu.Unlock()
 				wrappedMsg, ok := v.(WrappedMessage)
-				if !ok {
-					t.Error("Expected WrappedMessage type")
-				}
-				if wrappedMsg.Error == "" {
-					t.Error("Expected error message in WrappedMessage")
-				}
+				assert.Assert(t, ok, "Expected WrappedMessage type")
+				assert.Assert(t, wrappedMsg.Error != "", "Expected error message in WrappedMessage")
 				return nil
 			},
 			closeFunc: func() error {
@@ -520,9 +527,7 @@ func TestDataStreamHandler_Out(t *testing.T) {
 		select {
 		case err := <-handler.errCh:
 			errorSent = true
-			if err == nil {
-				t.Error("Expected error to be sent")
-			}
+			assert.Assert(t, err != nil, "Expected error to be sent")
 		case <-time.After(100 * time.Millisecond):
 			t.Error("Expected error to be sent within timeout")
 		}
@@ -633,6 +638,7 @@ func TestDataStreamHandler_RaceConditions(t *testing.T) {
 			ch:    make(chan []byte, 1),
 			errCh: make(chan error, 1),
 			conn:  &mockWebSocketConnection{},
+			srv:   &mockLocalService{},
 		}
 
 		// Start In and Out goroutines
@@ -759,9 +765,7 @@ func TestDataStreamHandler_RaceConditions(t *testing.T) {
 		default:
 		}
 
-		if errorCount != 1 {
-			t.Errorf("Expected 1 error in channel, got %d", errorCount)
-		}
+		assert.Equal(t, errorCount, 1)
 	})
 }
 

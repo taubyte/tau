@@ -70,6 +70,7 @@ func TestClientWithUniverse(t *testing.T) {
 
 	jobs, err := patrickClient.List()
 	assert.NilError(t, err)
+	assert.Assert(t, len(jobs) > 0, "No jobs found")
 
 	var job *iface.Job
 
