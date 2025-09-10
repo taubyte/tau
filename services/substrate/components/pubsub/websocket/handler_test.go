@@ -5,12 +5,16 @@ import (
 	"errors"
 	"net/http"
 	"testing"
+	"time"
 
 	pubsubMsg "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/core/services/tns"
 	p2p "github.com/taubyte/tau/p2p/peer"
 	service "github.com/taubyte/tau/pkg/http"
+	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"gotest.tools/v3/assert"
 )
@@ -44,26 +48,57 @@ func (m *mockServiceContext) GetStringMapVariable(key string) (map[string]interf
 }
 func (m *mockServiceContext) GetIntVariable(key string) (int, error) { return 0, nil }
 
-// Create a separate mock for Handler tests that includes Tns and Lookup methods
-type mockLocalServiceForHandler struct {
-	common.LocalService
+// Helper function to create a mock service for handler tests
+func createMockServiceForHandler() *mockLocalService {
+	return &mockLocalService{
+		contextFunc:   func() context.Context { return context.Background() },
+		tnsClientFunc: func() tns.Client { return &mockTnsClient{} },
+		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+			return nil, errors.New("lookup failed")
+		},
+	}
 }
 
-func (m *mockLocalServiceForHandler) Tns() tns.Client {
-	return &mockTnsClient{}
+// Helper function to create a mock service for AddSubscription error tests
+func createMockServiceForAddSubscriptionError() *mockLocalService {
+	return &mockLocalService{
+		contextFunc:   func() context.Context { return context.Background() },
+		tnsClientFunc: func() tns.Client { return &mockTnsClientWithValidPath{} },
+		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+			return []iface.Serviceable{&mockWebSocket{
+				project: "test-project",
+				matcher: matcher,
+				mmi:     common.MessagingMapItem{},
+				commit:  "mock-commit",
+				branch:  "mock-branch",
+			}}, nil
+		},
+		pubSubSubscribeFunc: func(topic string, handler p2p.PubSubConsumerHandler, errHandler p2p.PubSubConsumerErrorHandler) error {
+			return errors.New("pubsub subscribe failed")
+		},
+	}
 }
 
-func (m *mockLocalServiceForHandler) Lookup(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
-	return nil, errors.New("lookup failed")
+// Helper function to create a mock service for lookup error tests
+func createMockServiceForLookupError() *mockLocalService {
+	return &mockLocalService{
+		contextFunc:   func() context.Context { return context.Background() },
+		tnsClientFunc: func() tns.Client { return &mockTnsClientWithValidPath{} },
+		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+			return nil, errors.New("lookup failed")
+		},
+	}
 }
 
-// Simple mock TNS client - only implement what's actually called
-type mockTnsClient struct {
-	tns.Client
-}
-
-func (m *mockTnsClient) Fetch(path tns.Path) (tns.Object, error) {
-	return nil, errors.New("TNS fetch failed")
+// Helper function to create a mock service for empty picks tests
+func createMockServiceForEmptyPicks() *mockLocalService {
+	return &mockLocalService{
+		contextFunc:   func() context.Context { return context.Background() },
+		tnsClientFunc: func() tns.Client { return &mockTnsClientWithValidPath{} },
+		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+			return []iface.Serviceable{}, nil // Empty picks
+		},
+	}
 }
 
 func TestSubViewer_getNextId(t *testing.T) {
@@ -309,217 +344,97 @@ func TestAddSubscription(t *testing.T) {
 }
 
 func TestHandler(t *testing.T) {
-	t.Run("handles createWsHandler error", func(t *testing.T) {
-		// Create mock context that returns error for hash
-		ctx := &mockServiceContext{
-			getStringVariableFunc: func(key string) (string, error) {
-				return "", errors.New("hash not found")
-			},
+	runHandlerTest(t, "handles createWsHandler error",
+		createMockServiceContext("", "", errors.New("hash not found"), nil),
+		createMockServiceForHandler(),
+		true, "Expected handler to be nil due to error")
+}
+
+// Helper function to create a mock service context
+func createMockServiceContext(hash, channel string, hashErr, channelErr error) *mockServiceContext {
+	return &mockServiceContext{
+		getStringVariableFunc: func(key string) (string, error) {
+			switch key {
+			case "hash":
+				return hash, hashErr
+			case "channel":
+				return channel, channelErr
+			default:
+				return "", errors.New("unknown key")
+			}
+		},
+	}
+}
+
+// Helper function to create a mock websocket connection
+func createMockWebSocketConnection() *mockWebSocketConnection {
+	return &mockWebSocketConnection{
+		writeJSONFunc: func(v interface{}) error { return nil },
+		closeFunc:     func() error { return nil },
+	}
+}
+
+// Helper function to run a handler test with common setup
+func runHandlerTest(t *testing.T, testName string, ctx *mockServiceContext, srv common.LocalService, expectedNil bool, expectedMsg string) {
+	t.Run(testName, func(t *testing.T) {
+		conn := createMockWebSocketConnection()
+		result := Handler(srv, ctx, conn)
+
+		if expectedNil {
+			assert.Assert(t, result == nil, expectedMsg)
+		} else {
+			assert.Assert(t, result != nil, expectedMsg)
 		}
-
-		// Create mock connection
-		conn := &mockWebSocketConnection{
-			writeJSONFunc: func(v interface{}) error {
-				return nil
-			},
-			closeFunc: func() error {
-				return nil
-			},
-		}
-
-		// Create mock service
-		mockSrv := &mockLocalServiceForHandler{}
-
-		// Call Handler function
-		result := Handler(mockSrv, ctx, conn)
-
-		// Should return nil due to error
-		assert.Assert(t, result == nil, "Expected handler to be nil due to error")
 	})
 }
 
 func TestHandler_CreateWsHandlerErrorPaths(t *testing.T) {
-	t.Run("missing hash variable", func(t *testing.T) {
-		ctx := &mockServiceContext{
-			getStringVariableFunc: func(key string) (string, error) {
-				if key == "hash" {
-					return "", errors.New("hash not found")
-				}
-				return "", errors.New("unknown key")
-			},
-		}
+	// Reset global subs for testing
+	subs = &subsViewer{
+		subscriptions: make(map[string]*subViewer),
+	}
 
-		conn := &mockWebSocketConnection{
-			writeJSONFunc: func(v interface{}) error { return nil },
-			closeFunc:     func() error { return nil },
-		}
-		mockSrv := &mockLocalServiceForHandler{}
+	runHandlerTest(t, "missing hash variable",
+		createMockServiceContext("", "", errors.New("hash not found"), nil),
+		createMockServiceForHandler(),
+		true, "Expected handler to be nil due to hash error")
 
-		result := Handler(mockSrv, ctx, conn)
-		assert.Assert(t, result == nil, "Expected handler to be nil due to hash error")
-	})
+	runHandlerTest(t, "missing channel variable",
+		createMockServiceContext("test-hash", "", nil, errors.New("channel not found")),
+		createMockServiceForHandler(),
+		true, "Expected handler to be nil due to channel error")
 
-	t.Run("missing channel variable", func(t *testing.T) {
-		ctx := &mockServiceContext{
-			getStringVariableFunc: func(key string) (string, error) {
-				if key == "hash" {
-					return "test-hash", nil
-				}
-				if key == "channel" {
-					return "", errors.New("channel not found")
-				}
-				return "", errors.New("unknown key")
-			},
-		}
+	runHandlerTest(t, "messagingSpec.Tns().WebSocketPath error",
+		createMockServiceContext("", "test-channel", nil, nil), // Empty hash causes WebSocketPath to fail
+		createMockServiceForHandler(),
+		true, "Expected handler to be nil due to WebSocketPath error")
 
-		conn := &mockWebSocketConnection{
-			writeJSONFunc: func(v interface{}) error { return nil },
-			closeFunc:     func() error { return nil },
-		}
-		mockSrv := &mockLocalServiceForHandler{}
+	runHandlerTest(t, "TNS fetch error",
+		createMockServiceContext("test-hash", "test-channel", nil, nil),
+		createMockServiceForHandler(),
+		true, "Expected handler to be nil due to TNS fetch error")
 
-		result := Handler(mockSrv, ctx, conn)
-		assert.Assert(t, result == nil, "Expected handler to be nil due to channel error")
-	})
-
-	t.Run("messagingSpec.Tns().WebSocketPath error", func(t *testing.T) {
-		ctx := &mockServiceContext{
-			getStringVariableFunc: func(key string) (string, error) {
-				if key == "hash" {
-					return "", nil // Empty hash will cause messagingSpec.Tns().WebSocketPath() to fail
-				}
-				if key == "channel" {
-					return "test-channel", nil
-				}
-				return "", errors.New("unknown key")
-			},
-		}
-
-		conn := &mockWebSocketConnection{
-			writeJSONFunc: func(v interface{}) error { return nil },
-			closeFunc:     func() error { return nil },
-		}
-		mockSrv := &mockLocalServiceForHandler{}
-
-		result := Handler(mockSrv, ctx, conn)
-		assert.Assert(t, result == nil, "Expected handler to be nil due to WebSocketPath error")
-	})
-
-	t.Run("TNS fetch error", func(t *testing.T) {
-		ctx := &mockServiceContext{
-			getStringVariableFunc: func(key string) (string, error) {
-				if key == "hash" {
-					return "test-hash", nil
-				}
-				if key == "channel" {
-					return "test-channel", nil
-				}
-				return "", errors.New("unknown key")
-			},
-		}
-
-		conn := &mockWebSocketConnection{
-			writeJSONFunc: func(v interface{}) error { return nil },
-			closeFunc:     func() error { return nil },
-		}
-		mockSrv := &mockLocalServiceForHandler{}
-
-		result := Handler(mockSrv, ctx, conn)
-		assert.Assert(t, result == nil, "Expected handler to be nil due to TNS fetch error")
-	})
-
-	t.Run("AddSubscription error", func(t *testing.T) {
-		// This test would require mocking the success path of createWsHandler
-		// but then failing AddSubscription. This is complex due to dependencies.
-		t.Skip("AddSubscription error test requires complex success path mocking")
-	})
-
-	t.Run("Handler success path", func(t *testing.T) {
-		// This test would require mocking the entire success path through createWsHandler
-		// and AddSubscription. This is complex due to TNS and messaging dependencies.
-		t.Skip("Handler success path test requires complex end-to-end mocking")
-	})
+	runHandlerTest(t, "AddSubscription error",
+		createMockServiceContext("valid-hash", "test-channel", nil, nil),
+		createMockServiceForAddSubscriptionError(),
+		true, "Expected handler to be nil due to AddSubscription error")
 }
 
 func TestCreateWsHandler_AdditionalErrorPaths(t *testing.T) {
 	// messagingSpec.Tns().WebSocketPath error is already tested above with empty hash
 
-	t.Run("lookup error", func(t *testing.T) {
-		ctx := &mockServiceContext{
-			getStringVariableFunc: func(key string) (string, error) {
-				if key == "hash" {
-					return "valid-hash", nil
-				}
-				if key == "channel" {
-					return "test-channel", nil
-				}
-				return "", errors.New("unknown key")
-			},
-		}
+	runHandlerTest(t, "lookup error",
+		createMockServiceContext("valid-hash", "test-channel", nil, nil),
+		createMockServiceForLookupError(),
+		true, "Expected handler to be nil due to lookup error")
 
-		conn := &mockWebSocketConnection{
-			writeJSONFunc: func(v interface{}) error { return nil },
-			closeFunc:     func() error { return nil },
-		}
-
-		// Create a mock service that succeeds up to lookup then fails
-		mockSrv := &mockLocalServiceForHandlerWithLookupError{}
-
-		result := Handler(mockSrv, ctx, conn)
-		assert.Assert(t, result == nil, "Expected handler to be nil due to lookup error")
-	})
-
-	t.Run("empty picks from lookup", func(t *testing.T) {
-		ctx := &mockServiceContext{
-			getStringVariableFunc: func(key string) (string, error) {
-				if key == "hash" {
-					return "valid-hash", nil
-				}
-				if key == "channel" {
-					return "test-channel", nil
-				}
-				return "", errors.New("unknown key")
-			},
-		}
-
-		conn := &mockWebSocketConnection{
-			writeJSONFunc: func(v interface{}) error { return nil },
-			closeFunc:     func() error { return nil },
-		}
-
-		// Create a mock service that succeeds up to lookup then returns empty picks
-		mockSrv := &mockLocalServiceForHandlerWithEmptyPicks{}
-
-		result := Handler(mockSrv, ctx, conn)
-		assert.Assert(t, result == nil, "Expected handler to be nil due to empty picks")
-	})
+	runHandlerTest(t, "empty picks from lookup",
+		createMockServiceContext("valid-hash", "test-channel", nil, nil),
+		createMockServiceForEmptyPicks(),
+		true, "Expected handler to be nil due to empty picks")
 }
 
-// Simple mock services for the remaining error paths
-type mockLocalServiceForHandlerWithLookupError struct {
-	common.LocalService
-}
-
-func (m *mockLocalServiceForHandlerWithLookupError) Tns() tns.Client {
-	return &mockTnsClientWithValidPath{}
-}
-
-func (m *mockLocalServiceForHandlerWithLookupError) Lookup(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
-	return nil, errors.New("lookup failed")
-}
-
-type mockLocalServiceForHandlerWithEmptyPicks struct {
-	common.LocalService
-}
-
-func (m *mockLocalServiceForHandlerWithEmptyPicks) Tns() tns.Client {
-	return &mockTnsClientWithValidPath{}
-}
-
-func (m *mockLocalServiceForHandlerWithEmptyPicks) Lookup(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
-	return []iface.Serviceable{}, nil // Empty picks
-}
-
+// Mock TNS client with valid path for tests that need to succeed up to lookup
 type mockTnsClientWithValidPath struct {
 	tns.Client
 }
@@ -531,8 +446,8 @@ func (m *mockTnsClientWithValidPath) Fetch(path tns.Path) (tns.Object, error) {
 type mockTnsObjectWithValidPath struct{}
 
 func (m *mockTnsObjectWithValidPath) Interface() interface{} {
-	// Return []interface{} with valid string paths
-	return []interface{}{"valid/project/application/path"}
+	// Return []interface{} with valid string paths that match the expected format for extract.Tns().BasicPath
+	return []interface{}{"branches/master/projects/test-project/applications/test-app/messaging/test-message"}
 }
 
 func (m *mockTnsObjectWithValidPath) Bind(interface{}) error               { return nil }
@@ -543,3 +458,80 @@ type mockTnsPath struct{}
 
 func (m *mockTnsPath) String() string  { return "test-path" }
 func (m *mockTnsPath) Slice() []string { return []string{"test", "path"} }
+
+// Mock WebSocket for testing
+type mockWebSocket struct {
+	project string
+	matcher *common.MatchDefinition
+	mmi     common.MessagingMapItem
+	commit  string
+	branch  string
+	ctxC    context.CancelFunc
+	srv     common.LocalService
+}
+
+func (m *mockWebSocket) HandleMessage(msg *pubsubMsg.Message) (time.Time, error) {
+	return time.Now(), nil
+}
+
+func (m *mockWebSocket) Name() string {
+	return "mock-websocket"
+}
+
+func (m *mockWebSocket) Project() string {
+	return m.project
+}
+
+func (m *mockWebSocket) Application() string {
+	return m.matcher.Application
+}
+
+func (m *mockWebSocket) Config() *structureSpec.Function {
+	return &structureSpec.Function{}
+}
+
+func (m *mockWebSocket) Match(def components.MatchDefinition) matcherSpec.Index {
+	return 0
+}
+
+func (m *mockWebSocket) Validate(def components.MatchDefinition) error {
+	return nil
+}
+
+func (m *mockWebSocket) Matcher() components.MatchDefinition {
+	return m.matcher
+}
+
+func (m *mockWebSocket) Ready() error {
+	return nil
+}
+
+func (m *mockWebSocket) Id() string {
+	return "mock-websocket-id"
+}
+
+func (m *mockWebSocket) Commit() string {
+	return m.commit
+}
+
+func (m *mockWebSocket) Branch() string {
+	return m.branch
+}
+
+func (m *mockWebSocket) AssetId() string {
+	return "mock-asset-id"
+}
+
+func (m *mockWebSocket) Service() components.ServiceComponent {
+	return m.srv
+}
+
+func (m *mockWebSocket) Close() {
+	if m.ctxC != nil {
+		m.ctxC()
+	}
+}
+
+func (m *mockWebSocket) Clean() {
+	m.Close()
+}

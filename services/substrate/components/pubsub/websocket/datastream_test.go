@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
+	"github.com/taubyte/tau/core/services/tns"
 	p2p "github.com/taubyte/tau/p2p/peer"
 	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
@@ -84,6 +86,8 @@ type mockLocalService struct {
 	pubSubPublishFunc   func(ctx context.Context, topic string, data []byte) error
 	pubSubSubscribeFunc func(topic string, handler p2p.PubSubConsumerHandler, errHandler p2p.PubSubConsumerErrorHandler) error
 	contextFunc         func() context.Context
+	tnsClientFunc       func() tns.Client
+	lookupFunc          func(matcher *common.MatchDefinition) ([]iface.Serviceable, error)
 }
 
 func (m *mockLocalService) Node() p2p.Node {
@@ -95,6 +99,20 @@ func (m *mockLocalService) Node() p2p.Node {
 
 func (m *mockLocalService) Context() context.Context {
 	return m.contextFunc()
+}
+
+func (m *mockLocalService) Tns() tns.Client {
+	if m.tnsClientFunc != nil {
+		return m.tnsClientFunc()
+	}
+	return &mockTnsClient{}
+}
+
+func (m *mockLocalService) Lookup(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+	if m.lookupFunc != nil {
+		return m.lookupFunc(matcher)
+	}
+	return nil, errors.New("lookup not implemented")
 }
 
 type mockNode struct {
@@ -115,6 +133,15 @@ func (m *mockNode) PubSubSubscribe(topic string, handler p2p.PubSubConsumerHandl
 		return m.pubSubSubscribeFunc(topic, handler, errHandler)
 	}
 	return nil
+}
+
+// Mock TNS client
+type mockTnsClient struct {
+	tns.Client
+}
+
+func (m *mockTnsClient) Fetch(path tns.Path) (tns.Object, error) {
+	return nil, errors.New("TNS fetch failed")
 }
 
 // Helper functions to reduce test duplication
