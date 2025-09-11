@@ -8,7 +8,13 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command/router"
 )
 
-type CommandService struct {
+type CommandService interface {
+	Define(command string, handler router.CommandHandler) error
+	DefineStream(command string, std router.CommandHandler, stream router.StreamHandler) error
+	Stop()
+	Router() *(router.Router)
+}
+type commandService struct {
 	//ctx    context.Context
 	name   string
 	peer   peer.Node
@@ -16,8 +22,8 @@ type CommandService struct {
 	stream *(streams.StreamManger)
 }
 
-func New(peer peer.Node, name string, path string) (*CommandService, error) {
-	var cs CommandService
+func New(peer peer.Node, name string, path string) (*commandService, error) {
+	var cs commandService
 
 	cs.name = name
 	cs.peer = peer
@@ -36,18 +42,18 @@ func New(peer peer.Node, name string, path string) (*CommandService, error) {
 	return &cs, nil
 }
 
-func (cs *CommandService) Stop() {
+func (cs *commandService) Stop() {
 	cs.stream.Stop()
 }
 
-func (cs *CommandService) Router() *(router.Router) {
+func (cs *commandService) Router() *(router.Router) {
 	return cs.router
 }
 
-func (cs *CommandService) Define(command string, handler router.CommandHandler) error {
+func (cs *commandService) Define(command string, handler router.CommandHandler) error {
 	return cs.router.AddStatic(command, handler, nil)
 }
 
-func (cs *CommandService) DefineStream(command string, std router.CommandHandler, stream router.StreamHandler) error {
+func (cs *commandService) DefineStream(command string, std router.CommandHandler, stream router.StreamHandler) error {
 	return cs.router.AddStatic(command, std, stream)
 }

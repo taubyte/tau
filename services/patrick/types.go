@@ -27,7 +27,7 @@ type PatrickService struct {
 	monkeyClient monkey.Client
 	node         peer.Node
 	http         http.Service
-	stream       *streams.CommandService
+	stream       streams.CommandService
 	authClient   auth.Client
 	tnsClient    tns.Client
 	db           kvdb.KVDB

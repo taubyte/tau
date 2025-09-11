@@ -52,7 +52,7 @@ type geoService struct {
 type Service struct {
 	node          peer.Node
 	http          http.Service
-	stream        *streams.CommandService
+	stream        streams.CommandService
 	geo           *geoService
 	oracle        *oracleService
 	dns           *dnsServer

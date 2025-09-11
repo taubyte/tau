@@ -20,7 +20,7 @@ type AuthService struct {
 	node      peer.Node
 	db        kv.KVDB
 	http      http.Service
-	stream    *streams.CommandService
+	stream    streams.CommandService
 	tnsClient tns.Client
 	dbFactory kv.Factory
 

@@ -15,7 +15,7 @@ type Service struct {
 	node      peer.Node
 	db        kvdb.KVDB
 	dbFactory kvdb.Factory
-	stream    *streams.CommandService
+	stream    streams.CommandService
 	engine    *engine.Engine
 }
 
