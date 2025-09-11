@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+
 	iface "github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
@@ -9,6 +11,7 @@ import (
 	auth "github.com/taubyte/tau/core/services/auth"
 
 	"github.com/taubyte/tau/config"
+	serviceIface "github.com/taubyte/tau/core/services"
 	monkey "github.com/taubyte/tau/core/services/monkey"
 	tns "github.com/taubyte/tau/core/services/tns"
 
@@ -49,4 +52,15 @@ type Lock struct {
 	Pid       libp2p.ID `cbor:"4,keyasint"`
 	Timestamp int64     `cbor:"8,keyasint"`
 	Eta       int64     `cbor:"16,keyasint"`
+}
+
+// Package interface implementation
+type protoCommandIface struct{}
+
+func (protoCommandIface) New(ctx context.Context, cnf *config.Node) (serviceIface.Service, error) {
+	return New(ctx, cnf)
+}
+
+func Package() config.ProtoCommandIface {
+	return protoCommandIface{}
 }

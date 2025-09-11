@@ -1,4 +1,4 @@
-package service
+package dream
 
 import (
 	_ "embed"
@@ -45,7 +45,6 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	err = u.Provides(
 		"auth",
 		"patrick",
-		"monkey",
 		"tns",
 	)
 	if err != nil {

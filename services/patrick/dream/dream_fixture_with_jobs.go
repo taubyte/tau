@@ -1,4 +1,4 @@
-package service
+package dream
 
 import (
 	_ "embed"
@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonTest "github.com/taubyte/tau/dream/helpers"
+	"github.com/taubyte/tau/utils/maps"
 
 	"github.com/taubyte/tau/core/services/tns"
 	spec "github.com/taubyte/tau/pkg/specs/common"
@@ -14,13 +15,62 @@ import (
 	"github.com/taubyte/tau/dream"
 
 	_ "github.com/taubyte/tau/services/auth/dream"
-	_ "github.com/taubyte/tau/services/hoarder/dream"
-	_ "github.com/taubyte/tau/services/monkey/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func init() {
 	dream.RegisterFixture("createProjectWithJobs", createProjectWithJobs)
+}
+
+// waitForTNSObjects waits for multiple TNS objects to be available with the specified IDs
+func waitForTNSObjects(tnsClient tns.Client, repoIDs []int, maxAttempts int, retryDelay time.Duration) error {
+	if len(repoIDs) == 0 {
+		return nil
+	}
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		allFound := true
+		var lastErr error
+
+		for _, repoID := range repoIDs {
+			expectedID := fmt.Sprintf("%d", repoID)
+			tnsPath := spec.NewTnsPath([]string{"resolve", "repo", "github", expectedID})
+
+			obj, err := tnsClient.Fetch(tnsPath)
+			if err != nil {
+				allFound = false
+				lastErr = err
+				break
+			}
+
+			// Check if the object contains the expected ID
+			if objMap, ok := obj.Interface().(map[interface{}]interface{}); ok {
+				id, _ := maps.String(maps.SafeInterfaceToStringKeys(objMap), "id")
+				sshUrl, _ := maps.String(maps.SafeInterfaceToStringKeys(objMap), "ssh")
+				if id == expectedID && sshUrl != "" {
+					continue // This repo is found, check the next one
+				}
+			}
+
+			allFound = false
+			break
+		}
+
+		if allFound {
+			return nil
+		}
+
+		if attempt == maxAttempts {
+			if lastErr != nil {
+				return fmt.Errorf("failed to fetch from TNS after %d attempts: %w", maxAttempts, lastErr)
+			}
+			return fmt.Errorf("not all repositories found in TNS after %d attempts", maxAttempts)
+		}
+
+		time.Sleep(retryDelay)
+	}
+
+	return fmt.Errorf("unexpected error: exceeded max attempts without returning")
 }
 
 func createProjectWithJobs(u *dream.Universe, params ...interface{}) error {
@@ -37,8 +87,6 @@ func createProjectWithJobs(u *dream.Universe, params ...interface{}) error {
 	err = u.Provides(
 		"auth",
 		"patrick",
-		"monkey",
-		"hoarder",
 		"tns",
 	)
 	if err != nil {
@@ -54,12 +102,13 @@ func createProjectWithJobs(u *dream.Universe, params ...interface{}) error {
 	var tnsClient tns.Client
 	// TODO: Why 50 attempts, might be better to sleep
 	for tnsClient == nil {
-		if attempts == 50 {
+		if attempts == 3 {
 			return fmt.Errorf("unable to get tns client after 50 attempts")
 		}
 
 		tnsClient, _ = simple.TNS()
 		attempts++
+		time.Sleep(1 * time.Second)
 	}
 
 	mockPatrickURL, err := u.GetURLHttp(u.Patrick().Node())
@@ -93,21 +142,9 @@ func createProjectWithJobs(u *dream.Universe, params ...interface{}) error {
 		return fmt.Errorf("pushing code job failed with %w", err)
 	}
 
-	attempts = 0
-	for {
-		commitObj, err := tnsClient.Fetch(spec.Current(commonTest.ProjectID, spec.DefaultBranches[1]))
-		if err == nil {
-			if _, ok := commitObj.Interface().(string); ok {
-				break
-			}
-		}
-
-		attempts++
-		if attempts > 50 {
-			return fmt.Errorf("failed fetching from tns after %d attempts", attempts)
-		}
-
-		time.Sleep(3 * time.Second)
+	// Wait for both repositories to be available in TNS
+	if err := waitForTNSObjects(tnsClient, []int{commonTest.ConfigRepo.ID, commonTest.CodeRepo.ID}, 10, 3*time.Second); err != nil {
+		return fmt.Errorf("waiting for repositories in TNS failed: %w", err)
 	}
 
 	return nil
