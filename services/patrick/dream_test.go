@@ -78,6 +78,8 @@ func TestDream(t *testing.T) {
 		err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
 		assert.NilError(t, err)
 
+		time.Sleep(1 * time.Second)
+
 		jobs, err = db.List(u.Context(), "/jobs/")
 		assert.NilError(t, err)
 		assert.Equal(t, len(jobs), 1)

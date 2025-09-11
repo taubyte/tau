@@ -35,6 +35,7 @@ func (m *mockNode) PubSubPublish(ctx context.Context, topic string, data []byte)
 type mockAuthClient struct {
 	auth.Client
 	repos map[int]mockRepo
+	hooks mockHooks
 }
 
 type mockRepo struct {
@@ -56,6 +57,35 @@ func (r mockRepo) Id() int {
 
 func (m *mockAuthClient) Repositories() auth.Repositories {
 	return mockRepositories{repos: m.repos}
+}
+
+func (m *mockAuthClient) Hooks() auth.Hooks {
+	return m.hooks
+}
+
+type mockHooks struct {
+	auth.Hooks
+	hooks map[string]mockAuthHook
+}
+
+func (m mockHooks) Get(hookid string) (auth.Hook, error) {
+	if hook, exists := m.hooks[hookid]; exists {
+		return &hook, nil
+	}
+	return nil, errors.New("hook not found")
+}
+
+type mockAuthHook struct {
+	auth.Hook
+	secret string
+}
+
+func (m *mockAuthHook) Github() (*auth.GithubHook, error) {
+	return &auth.GithubHook{Secret: m.secret}, nil
+}
+
+func (m *mockAuthHook) Bitbucket() (*auth.BitbucketHook, error) {
+	return nil, errors.New("not implemented")
 }
 
 type mockRepositories struct {
@@ -97,10 +127,15 @@ type mockTNSClient struct {
 	tns.Client
 	lookupResponse interface{}
 	lookupError    error
+	pushError      error
 }
 
 func (m *mockTNSClient) Lookup(query tns.Query) (interface{}, error) {
 	return m.lookupResponse, m.lookupError
+}
+
+func (m *mockTNSClient) Push(path []string, data interface{}) error {
+	return m.pushError
 }
 
 // Helper functions

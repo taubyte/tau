@@ -22,6 +22,8 @@ import (
 var _ iface.Service = &PatrickService{}
 
 type PatrickService struct {
+	ctx          context.Context
+	cancel       context.CancelFunc
 	monkeyClient monkey.Client
 	node         peer.Node
 	http         http.Service
@@ -33,14 +35,6 @@ type PatrickService struct {
 	devMode      bool
 
 	hostUrl string
-}
-
-func (s *PatrickService) KV() kvdb.KVDB {
-	return s.db
-}
-
-func (s *PatrickService) Node() peer.Node {
-	return s.node
 }
 
 type Config struct {

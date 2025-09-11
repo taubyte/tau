@@ -17,6 +17,9 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 	servicesCommon "github.com/taubyte/tau/services/common"
 
+	kvdbIface "github.com/taubyte/tau/core/kvdb"
+
+	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 )
 
@@ -30,6 +33,8 @@ var (
 func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 	var srv PatrickService
 
+	srv.ctx, srv.cancel = context.WithCancel(ctx)
+
 	if config == nil {
 		config = &tauConfig.Node{}
 	}
@@ -42,7 +47,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 	srv.devMode = config.DevMode
 
 	if config.Node == nil {
-		srv.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, servicesCommon.Patrick))
+		srv.node, err = tauConfig.NewNode(srv.ctx, config, path.Join(config.Root, servicesCommon.Patrick))
 		if err != nil {
 			return nil, err
 		}
@@ -61,7 +66,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 	}
 
 	// Auth Consumer/Client
-	srv.authClient, err = authAPI.New(ctx, clientNode)
+	srv.authClient, err = authAPI.New(srv.ctx, clientNode)
 	if err != nil {
 		return nil, fmt.Errorf("failed auth api new with error: %w", err)
 	}
@@ -71,7 +76,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 		return nil, err
 	}
 
-	srv.monkeyClient, err = monkeyApi.New(ctx, clientNode)
+	srv.monkeyClient, err = monkeyApi.New(srv.ctx, clientNode)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +97,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 
 	// HTTP
 	if config.Http == nil {
-		srv.http, err = auto.New(ctx, srv.node, config)
+		srv.http, err = auto.New(srv.ctx, srv.node, config)
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +111,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 		srv.http.Start()
 	}
 
-	sc, err := seerClient.New(ctx, clientNode)
+	sc, err := seerClient.New(srv.ctx, clientNode)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating seer client %v", err)
 	}
@@ -120,7 +125,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 	go func() {
 		if srv.devMode {
 			DefaultReAnnounceJobTime = 5 * time.Second
-			fmt.Printf("Dev mode, setting DefaultReAnnounceJobTime to %s seconds\n", DefaultReAnnounceJobTime)
 		}
 		for {
 			select {
@@ -140,14 +144,21 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 	return &srv, nil
 }
 
+func (s *PatrickService) KV() kvdbIface.KVDB {
+	return s.db
+}
+
+func (s *PatrickService) Node() peer.Node {
+	return s.node
+}
+
 func (srv *PatrickService) Close() error {
 	logger.Info("Closing", servicesCommon.Patrick)
 	defer logger.Info(servicesCommon.Patrick, "closed")
 
+	srv.cancel()
+
 	srv.stream.Stop()
-	srv.tnsClient.Close()
-	srv.authClient.Close()
-	srv.monkeyClient.Close()
 	srv.db.Close()
 
 	return nil
