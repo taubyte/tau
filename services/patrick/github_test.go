@@ -19,14 +19,12 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// generateHMAC generates HMAC signature for GitHub webhook verification
 func generateHMAC(body []byte, secret string) string {
 	mac := hmac.New(sha1.New, []byte(secret))
 	_, _ = mac.Write(body)
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-// testSetup contains all the mock objects needed for testing
 type testSetup struct {
 	ctx        *mockHTTPContext
 	authClient *mockAuthClient
@@ -36,12 +34,9 @@ type testSetup struct {
 	service    *PatrickService
 }
 
-// createTestSetup creates a complete test setup with all necessary mocks
 func createTestSetup(devMode bool) *testSetup {
-	// Create mock HTTP context
 	ctx := newMockHTTPContext()
 
-	// Create mock auth client
 	authClient := &mockAuthClient{
 		repos: map[int]mockRepo{
 			12345: {projectID: "project-456"},
@@ -49,19 +44,15 @@ func createTestSetup(devMode bool) *testSetup {
 		hooks: mockHooks{hooks: make(map[string]mockAuthHook)},
 	}
 
-	// Create mock TNS client
 	tnsClient := &mockTNSClient{
 		lookupResponse: []string{"repositories/github/12345/extra/project-456"},
 	}
 
-	// Create mock database
 	mockFactory := mock.New()
 	mockDB, _ := mockFactory.New(nil, "/test", 0)
 
-	// Create mock node
 	mockNode := &mockNode{}
 
-	// Create service
 	service := &PatrickService{
 		authClient: authClient,
 		tnsClient:  tnsClient,
@@ -80,7 +71,6 @@ func createTestSetup(devMode bool) *testSetup {
 	}
 }
 
-// setupGitHubWebhook sets up the context for GitHub webhook testing
 func (ts *testSetup) setupGitHubWebhook(body []byte, secret string) {
 	ts.ctx.SetHeaders(map[string]string{
 		"X-GitHub-Event":    "push",
@@ -91,20 +81,17 @@ func (ts *testSetup) setupGitHubWebhook(body []byte, secret string) {
 	ts.ctx.SetBody(body)
 }
 
-// setupHookInAuth sets up a hook in the auth client
 func (ts *testSetup) setupHookInAuth(hookID, secret string) {
 	ts.authClient.hooks.hooks[hookID] = mockAuthHook{secret: secret}
 	ts.ctx.SetVariable("hook", hookID)
 }
 
-// setupSecretInContext sets up the GitHub secret in the context
 func (ts *testSetup) setupSecretInContext(secret string) {
 	ts.ctx.SetVariables(map[string]interface{}{
 		"GithubSecret": secret,
 	})
 }
 
-// createGitHubTestJob creates a test job with the given ID
 func createGitHubTestJob(id string) *patrick.Job {
 	return &patrick.Job{
 		Id:     id,
@@ -120,7 +107,6 @@ func createGitHubTestJob(id string) *patrick.Job {
 	}
 }
 
-// assertJobResult validates that the result is a valid Job
 func assertJobResult(t *testing.T, result interface{}) {
 	job, ok := result.(*patrick.Job)
 	assert.Assert(t, ok, "Result should be a Job")
@@ -129,7 +115,6 @@ func assertJobResult(t *testing.T, result interface{}) {
 	assert.Equal(t, job.Meta.Repository.Provider, "github")
 }
 
-// MockHTTPContext implements the http.Context interface for testing
 type mockHTTPContext struct {
 	request   *http.Request
 	writer    http.ResponseWriter
@@ -138,7 +123,6 @@ type mockHTTPContext struct {
 	headers   map[string]string
 }
 
-// NewMockHTTPContext creates a new mockHTTPContext for testing
 func newMockHTTPContext() *mockHTTPContext {
 	return &mockHTTPContext{
 		variables: make(map[string]interface{}),
@@ -146,41 +130,34 @@ func newMockHTTPContext() *mockHTTPContext {
 	}
 }
 
-// SetRequest sets the HTTP request for the mock context
 func (m *mockHTTPContext) SetRequest(req *http.Request) {
 	m.request = req
 }
 
-// SetWriter sets the HTTP response writer for the mock context
 func (m *mockHTTPContext) SetWriter(w http.ResponseWriter) {
 	m.writer = w
 }
 
-// SetVariables sets multiple variables at once
 func (m *mockHTTPContext) SetVariables(vars map[string]interface{}) {
 	for k, v := range vars {
 		m.variables[k] = v
 	}
 }
 
-// SetBody sets the request body for the mock context
 func (m *mockHTTPContext) SetBody(body []byte) {
 	m.body = body
 }
 
-// SetHeader sets a header for the mock context
 func (m *mockHTTPContext) SetHeader(key, value string) {
 	m.headers[key] = value
 }
 
-// SetHeaders sets multiple headers at once
 func (m *mockHTTPContext) SetHeaders(headers map[string]string) {
 	for k, v := range headers {
 		m.headers[k] = v
 	}
 }
 
-// HTTPContext interface methods
 func (m *mockHTTPContext) HandleWith(handler httpPkg.Handler) error    { return nil }
 func (m *mockHTTPContext) HandleAuth(handler httpPkg.Handler) error    { return nil }
 func (m *mockHTTPContext) HandleCleanup(handler httpPkg.Handler) error { return nil }
@@ -188,7 +165,6 @@ func (m *mockHTTPContext) Request() *http.Request {
 	if m.request != nil {
 		return m.request
 	}
-	// Create a request with headers
 	req, _ := http.NewRequest("POST", "http://localhost:8080/github", bytes.NewReader(m.body))
 	for k, v := range m.headers {
 		req.Header.Set(k, v)

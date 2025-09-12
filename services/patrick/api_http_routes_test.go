@@ -11,7 +11,6 @@ import (
 	httpPkg "github.com/taubyte/tau/pkg/http"
 )
 
-// mockHTTPService is a simple mock for testing route registration
 type mockHTTPService struct {
 	mock.Mock
 }
@@ -42,28 +41,23 @@ func (m *mockHTTPService) GetListenAddress() (*url.URL, error) { return nil, nil
 func TestSetupGithubRoutes(t *testing.T) {
 	mockHTTP := &mockHTTPService{}
 
-	// Expect the routes to be registered
 	mockHTTP.On("POST", "/github/{hook}").Return()
 	mockHTTP.On("GET", "/ping").Return()
 
-	// Create a simple test service
 	srv := &PatrickService{
 		http:    mockHTTP,
 		devMode: true,
 		hostUrl: "",
 	}
 
-	// Call the method
 	srv.setupGithubRoutes()
 
-	// Verify
 	mockHTTP.AssertExpectations(t)
 }
 
 func TestSetupGithubRoutesInProduction(t *testing.T) {
 	mockHTTP := &mockHTTPService{}
 
-	// Expect the routes to be registered with production host
 	mockHTTP.On("POST", "/github/{hook}").Return()
 	mockHTTP.On("GET", "/ping").Return()
 
@@ -74,17 +68,14 @@ func TestSetupGithubRoutesInProduction(t *testing.T) {
 		hostUrl: "example.com",
 	}
 
-	// Call the method
 	srv.setupGithubRoutes()
 
-	// Verify
 	mockHTTP.AssertExpectations(t)
 }
 
 func TestSetupJobRoutes(t *testing.T) {
 	mockHTTP := &mockHTTPService{}
 
-	// Expect all job routes
 	mockHTTP.On("GET", "/jobs/{projectId}").Return()
 	mockHTTP.On("GET", "/job/{jid}").Return()
 	mockHTTP.On("GET", "/download/{jobId}/{resourceId}").Return()
@@ -92,24 +83,20 @@ func TestSetupJobRoutes(t *testing.T) {
 	mockHTTP.On("POST", "/cancel/{jid}").Return()
 	mockHTTP.On("POST", "/retry/{jid}").Return()
 
-	// Create a simple test service
 	srv := &PatrickService{
 		http:    mockHTTP,
 		devMode: true,
 		hostUrl: "",
 	}
 
-	// Call the method
 	srv.setupJobRoutes()
 
-	// Verify
 	mockHTTP.AssertExpectations(t)
 }
 
 func TestSetupJobRoutesInProduction(t *testing.T) {
 	mockHTTP := &mockHTTPService{}
 
-	// Expect all job routes with production host
 	mockHTTP.On("GET", "/jobs/{projectId}").Return()
 	mockHTTP.On("GET", "/job/{jid}").Return()
 	mockHTTP.On("GET", "/download/{jobId}/{resourceId}").Return()
@@ -124,9 +111,7 @@ func TestSetupJobRoutesInProduction(t *testing.T) {
 		hostUrl: "example.com",
 	}
 
-	// Call the method
 	srv.setupJobRoutes()
 
-	// Verify
 	mockHTTP.AssertExpectations(t)
 }

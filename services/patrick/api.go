@@ -63,7 +63,7 @@ func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams
 	assetMap := make(map[string]string, 0)
 	action, err := maps.String(body, "action")
 	if err != nil {
-		return nil, fmt.Errorf("failed getting aciton from body with error: %v", err)
+		return nil, fmt.Errorf("failed getting action from body with error: %v", err)
 	}
 
 	logCid := body["cid"]
@@ -199,7 +199,8 @@ func (p *PatrickService) unlockHandler(ctx context.Context, jid string) (cr.Resp
 	}
 	var jobLock Lock
 	if err = cbor.Unmarshal(lockData, &jobLock); err != nil {
-		logger.Errorf("Unamrshal for `%s` failed with: %s", jid, err.Error())
+		logger.Errorf("Unmarshal for `%s` failed with: %s", jid, err.Error())
+		// fine, something might've happended. we can auto-heal -> locking the job will write correct data
 	}
 
 	jobLock.Eta = 0
@@ -207,11 +208,13 @@ func (p *PatrickService) unlockHandler(ctx context.Context, jid string) (cr.Resp
 	lockBytes, err := cbor.Marshal(jobLock)
 	if err != nil {
 		logger.Errorf("Marshal for `%s` failed with: %s", jid, err.Error())
+		return nil, fmt.Errorf("marshal for `%s` failed with: %w", jid, err)
 	}
 
 	err = p.db.Put(ctx, "/locked/jobs/"+jid, lockBytes)
 	if err != nil {
 		logger.Errorf("Putting locked job for `%s` failed with: %s", jid, err.Error())
+		return nil, fmt.Errorf("putting locked job for `%s` failed with: %w", jid, err)
 	}
 
 	return cr.Response{"unlocked": jid}, nil
@@ -239,7 +242,7 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 				return fmt.Errorf("failed put in timeoutHandler with %w", err)
 			}
 
-			err = p.deleteJob(ctx, []string{"/locked/jobs/", "/jobs/"}, jid)
+			err = p.deleteJob(ctx, jid, "/locked/jobs/", "/jobs/")
 			if err != nil {
 				return fmt.Errorf("failed delete in timeoutHandler with %w", err)
 			}
@@ -290,7 +293,7 @@ func (p *PatrickService) cancelHandler(ctx context.Context, jid string, cid_log 
 }
 
 // Delete job helper
-func (p *PatrickService) deleteJob(ctx context.Context, loc []string, jid string) error {
+func (p *PatrickService) deleteJob(ctx context.Context, jid string, loc ...string) error {
 	for _, _loc := range loc {
 		if err := p.db.Delete(ctx, _loc+jid); err != nil {
 			return fmt.Errorf("failed deleting %s at %s with %v", jid, _loc, err)
@@ -306,7 +309,6 @@ func (p *PatrickService) lockHelper(ctx context.Context, pid peer.ID, lockData [
 	err := cbor.Unmarshal(lockData, &jobLock)
 	if err != nil {
 		logger.Errorf("Reading lock for `%s` failed with: %s", jid, err.Error())
-		// TODO: probably return an error so monkey reties
 		return nil, err
 	} else if jobLock.Timestamp+jobLock.Eta > time.Now().Unix() {
 		if method {
@@ -399,8 +401,8 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		}
 	}
 
-	if err = p.deleteJob(ctx, []string{"/locked/jobs/"}, jid); err != nil {
-		return fmt.Errorf("failed delete in timeoutHandler with %w", err)
+	if err = p.deleteJob(ctx, jid, "/locked/jobs/"); err != nil {
+		return fmt.Errorf("failed delete in updateStatus with %w", err)
 	}
 
 	return nil
@@ -512,16 +514,20 @@ func (srv *PatrickService) cancelJob(ctx http.Context) (iface interface{}, err e
 		// We create a timer that keeps until a monkey gets the job.
 		var attempts int
 		for {
-
 			lockBytes, err = srv.db.Get(requestCtx, "/locked/jobs/"+jid)
-			if err != nil {
-				attempts++
-				if attempts == servicesCommon.MaxCancelAttempts {
-					return nil, fmt.Errorf("failed cancelling job %s max attempts exceeded", jid)
-				}
-				time.Sleep(2 * time.Second)
-			} else {
+			if err == nil {
 				break
+			}
+
+			attempts++
+			if attempts == servicesCommon.MaxCancelAttempts {
+				return nil, fmt.Errorf("failed cancelling job %s max attempts exceeded", jid)
+			}
+
+			select {
+			case <-requestCtx.Done():
+				return nil, fmt.Errorf("cancelled while waiting for job %s to be locked: %w", jid, requestCtx.Err())
+			case <-time.After(2 * time.Second):
 			}
 		}
 
@@ -530,7 +536,7 @@ func (srv *PatrickService) cancelJob(ctx http.Context) (iface interface{}, err e
 	var jobLock Lock
 	err = cbor.Unmarshal(lockBytes, &jobLock)
 	if err != nil {
-		return nil, fmt.Errorf("failed unmarshall job %s with %w", jid, err)
+		return nil, fmt.Errorf("failed unmarshal job %s with %w", jid, err)
 	}
 
 	// Send directly to that monkey to cancel the job
@@ -616,20 +622,19 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 }
 
 // Get job helper
-func (srv *PatrickService) getJob(ctx context.Context, loc string, jid string) (job *commonIface.Job, err error) {
+func (srv *PatrickService) getJob(ctx context.Context, loc string, jid string) (*commonIface.Job, error) {
 	jobByte, err := srv.db.Get(ctx, loc+jid)
 	if err != nil {
-		err = fmt.Errorf("get job %s failed with: %w", jid, err)
-		return
+		return nil, fmt.Errorf("get job %s failed with: %w", jid, err)
 	}
 
+	var job commonIface.Job
 	err = cbor.Unmarshal(jobByte, &job)
 	if err != nil {
-		err = fmt.Errorf("unmarshal job %s failed with %w", jid, err)
-		return
+		return nil, fmt.Errorf("unmarshal job %s failed with %w", jid, err)
 	}
 
-	return
+	return &job, nil
 }
 
 // CID handler
@@ -639,6 +644,7 @@ func (srv *PatrickService) cidHandler(ctx http.Context) (interface{}, error) {
 		return nil, err
 	}
 
+	// use request context so there's no leak
 	f, err := srv.node.GetFile(ctx.Request().Context(), cid)
 	if err != nil {
 		return nil, err
@@ -682,6 +688,11 @@ func (srv *PatrickService) downloadAsset(ctx http.Context) (interface{}, error) 
 		return nil, fmt.Errorf("rewinding asset file %s failed with %s", assetCid, err)
 	}
 
+	contentType, err := filetype.Match(typeBuff)
+	if err != nil {
+		return nil, fmt.Errorf("failed filetype match for asset %s with %v", assetCid, err)
+	}
+
 	if _, err := file.Seek(0, 0); err != nil {
 		return nil, fmt.Errorf("rewinding asset file %s failed with %s", assetCid, err)
 	}
@@ -689,11 +700,6 @@ func (srv *PatrickService) downloadAsset(ctx http.Context) (interface{}, error) 
 	fileData, err := io.ReadAll(file)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading asset file %s with %v", assetCid, err)
-	}
-
-	contentType, err := filetype.Match(typeBuff)
-	if err != nil {
-		return nil, fmt.Errorf("failed filetype match for asset %s wtih %v", assetCid, err)
 	}
 
 	if contentType == matchers.TypeZip {
@@ -821,14 +827,14 @@ func (srv *PatrickService) setupJobRoutes() {
 func (srv *PatrickService) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, error) {
 	auth := httpAuth.GetAuthorization(ctx)
 	if auth != nil && (auth.Type == "oauth" || auth.Type == "github") {
-		rctx, rctx_cancel := context.WithTimeout(ctx.Request().Context(), time.Duration(30)*time.Second)
+		rctx, rctx_cancel := context.WithTimeout(ctx.Request().Context(), time.Second*30)
 		client, err := authService.NewGitHubClient(rctx, auth.Token)
 		if err != nil {
 			rctx_cancel()
 			return nil, errors.New("invalid Github token")
 		}
 		ctx.SetVariable("GithubClient", client)
-		ctx.SetVariable("GithubClientDone", rctx_cancel)
+		ctx.SetVariable("GithubClientDone", rctx_cancel) // for GitHubTokenHTTPAuthCleanup to call so there's no leak
 		logger.Debugf("[GitHubTokenHTTPAuth] ctx=%v", ctx.Variables())
 		return nil, nil
 	}

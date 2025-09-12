@@ -74,36 +74,30 @@ func waitForTNSObjects(tnsClient tns.Client, repoIDs []int, maxAttempts int, ret
 }
 
 func createProjectWithJobs(u *dream.Universe, params ...interface{}) error {
+	if err := u.Provides("auth", "patrick", "tns"); err != nil {
+		return err
+	}
+
 	simple, err := u.Simple("client")
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to get simple client: %w", err)
 	}
 
-	err = simple.Provides("tns")
-	if err != nil {
-		return err
-	}
-
-	err = u.Provides(
-		"auth",
-		"patrick",
-		"tns",
-	)
-	if err != nil {
-		return err
+	if err := simple.Provides("tns"); err != nil {
+		return fmt.Errorf("unable to get tns: %w", err)
 	}
 
 	auth, err := simple.Auth()
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to get auth: %w", err)
 	}
 
 	attempts := 0
 	var tnsClient tns.Client
-	// TODO: Why 50 attempts, might be better to sleep
+	// TODO: Why 3 attempts, might be better to sleep
 	for tnsClient == nil {
 		if attempts == 3 {
-			return fmt.Errorf("unable to get tns client after 50 attempts")
+			return fmt.Errorf("unable to get tns client after 3 attempts")
 		}
 
 		tnsClient, _ = simple.TNS()
@@ -113,7 +107,7 @@ func createProjectWithJobs(u *dream.Universe, params ...interface{}) error {
 
 	mockPatrickURL, err := u.GetURLHttp(u.Patrick().Node())
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to get url http: %w", err)
 	}
 
 	// override ID of project generated so that it matches id in config
@@ -128,7 +122,7 @@ func createProjectWithJobs(u *dream.Universe, params ...interface{}) error {
 	}
 
 	if err = commonTest.RegisterTestDomain(u.Context(), auth); err != nil {
-		return err
+		return fmt.Errorf("registering test domain failed with %w", err)
 	}
 
 	servicesCommon.FakeSecret = true
@@ -143,7 +137,7 @@ func createProjectWithJobs(u *dream.Universe, params ...interface{}) error {
 	}
 
 	// Wait for both repositories to be available in TNS
-	if err := waitForTNSObjects(tnsClient, []int{commonTest.ConfigRepo.ID, commonTest.CodeRepo.ID}, 10, 3*time.Second); err != nil {
+	if err := waitForTNSObjects(tnsClient, []int{commonTest.ConfigRepo.ID, commonTest.CodeRepo.ID}, 20, 500*time.Millisecond); err != nil {
 		return fmt.Errorf("waiting for repositories in TNS failed: %w", err)
 	}
 

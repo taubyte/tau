@@ -13,14 +13,12 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// Helper function to create unique test directory
 func createTestDir(t *testing.T) string {
 	dir, err := os.MkdirTemp("", "patrick-test-*")
 	assert.NilError(t, err)
 	return dir
 }
 
-// Helper function to create test config with private key
 func createTestConfig(t *testing.T) *config.Node {
 	return &config.Node{
 		Root:        createTestDir(t),
@@ -75,7 +73,6 @@ func TestNew(t *testing.T) {
 				assert.NilError(t, err)
 				assert.Assert(t, srv != nil)
 
-				// Clean up
 				if srv != nil {
 					srv.Close()
 				}
@@ -141,7 +138,6 @@ func TestPatrickServiceDevMode(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
-	// Verify dev mode is set
 	assert.Assert(t, srv.devMode == true)
 
 	// Clean up
@@ -152,9 +148,8 @@ func TestPatrickServiceWithCustomHTTP(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Create service with custom HTTP (nil means use auto)
 	config := createTestConfig(t)
-	config.Http = nil // This should trigger auto.New
+	config.Http = nil
 
 	srv, err := New(ctx, config)
 	assert.NilError(t, err)
@@ -175,7 +170,6 @@ func TestPatrickServiceInitialization(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
-	// Verify all components are initialized
 	assert.Assert(t, srv.node != nil)
 	assert.Assert(t, srv.db != nil)
 	assert.Assert(t, srv.authClient != nil)
@@ -192,7 +186,6 @@ func TestPatrickServiceReannounceJobsGoroutine(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
-	// Create service in dev mode (shorter reannounce time)
 	config := createTestConfig(t)
 	config.DevMode = true
 
@@ -200,12 +193,8 @@ func TestPatrickServiceReannounceJobsGoroutine(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
-	// Wait a bit to let the goroutine run
 	time.Sleep(2 * time.Second)
 
-	// The goroutine should be running and calling ReannounceJobs
-	// We can't easily test the goroutine directly, but we can verify
-	// the service is still running and hasn't crashed
 	assert.Assert(t, srv != nil)
 
 	// Clean up
@@ -216,7 +205,6 @@ func TestPatrickServiceReannounceJobsAfterClose(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Create service in dev mode (shorter reannounce time)
 	config := createTestConfig(t)
 	config.DevMode = true
 
@@ -224,26 +212,18 @@ func TestPatrickServiceReannounceJobsAfterClose(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
-	// Close the service first
 	err = srv.Close()
 	assert.NilError(t, err)
 
-	// Now try to call ReannounceJobs after close
-	// This should handle gracefully without crashing
 	err = srv.ReannounceJobs(context.Background())
 
-	// The function might return an error or succeed depending on implementation
-	// The key is that it doesn't panic or crash
-	// We don't assert a specific error since the behavior might vary
 	t.Logf("ReannounceJobs after close returned: %v", err)
 }
 
 func TestPatrickServiceGoroutineStopsOnContextCancel(t *testing.T) {
-	// Create a context that we can cancel
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	// Create service in dev mode (shorter reannounce time)
 	config := createTestConfig(t)
 	config.DevMode = true
 
@@ -251,16 +231,12 @@ func TestPatrickServiceGoroutineStopsOnContextCancel(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
-	// Wait a bit to let the goroutine start
 	time.Sleep(1 * time.Second)
 
-	// Cancel the context - this should stop the goroutine
 	cancel()
 
-	// Wait a bit more to see if the goroutine stops
 	time.Sleep(1 * time.Second)
 
-	// The service should still be valid but the goroutine should have stopped
 	assert.Assert(t, srv != nil)
 
 	// Clean up
@@ -277,7 +253,6 @@ func TestPatrickServiceKV(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
-	// Test KV() method
 	db := srv.KV()
 	assert.Assert(t, db != nil)
 
@@ -295,7 +270,6 @@ func TestPatrickServiceNode(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
-	// Test Node() method
 	node := srv.Node()
 	assert.Assert(t, node != nil)
 
@@ -307,7 +281,6 @@ func TestPatrickServiceWithCustomNode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Create a mock node
 	mockNode := peer.Mock(ctx)
 
 	config := createTestConfig(t)
@@ -317,7 +290,6 @@ func TestPatrickServiceWithCustomNode(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
-	// Verify the custom node is used
 	assert.Assert(t, srv.node == mockNode)
 
 	// Clean up
@@ -328,7 +300,6 @@ func TestPatrickServiceWithCustomClientNode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Create a mock client node
 	mockClientNode := peer.Mock(ctx)
 
 	config := createTestConfig(t)

@@ -28,7 +28,6 @@ import (
 )
 
 func TestDream(t *testing.T) {
-	// Override default HTTP client to resolve test domains locally
 	http.DefaultClient = commonTest.CreateHttpClient()
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
@@ -60,7 +59,6 @@ func TestDream(t *testing.T) {
 
 	_patrick := u.Patrick()
 
-	// Make sure no jobs are stored already
 	db := _patrick.KV()
 	jobs, err := db.List(u.Context(), "/jobs/")
 	assert.NilError(t, err)
@@ -99,7 +97,6 @@ func TestDream(t *testing.T) {
 		err = u.RunFixture("createProjectWithJobs")
 		assert.NilError(t, err)
 
-		// Check for 20 seconds after fixture is ran for the jobs
 		attempts := 0
 		var job *patrick.Job
 		patrick, err := simple.Patrick()
@@ -127,7 +124,6 @@ func TestDream(t *testing.T) {
 		tns, err := simple.TNS()
 		assert.NilError(t, err)
 
-		// TODO use go-spec
 		resp, err := tns.Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github", fmt.Sprintf("%d", job.Meta.Repository.ID), "ssh"}))
 		if err != nil {
 			t.Error(err)
@@ -162,7 +158,6 @@ func TestDream(t *testing.T) {
 		err = patrickClient.Failed(job_byte.Id, job_byte.Logs, nil)
 		assert.NilError(t, err)
 
-		// Wait for reannounce to update attempts to 1 and send back to /jobs
 		time.Sleep(10 * time.Second)
 
 		retry_job, err := patrick.Get(job_byte.Id)
@@ -173,7 +168,6 @@ func TestDream(t *testing.T) {
 		err = patrickClient.Failed(retry_job.Id, retry_job.Logs, nil)
 		assert.NilError(t, err)
 
-		// Wait for reannounce to update attempts to 2 and send back to /jobs
 		time.Sleep(10 * time.Second)
 
 		retry_job, err = patrick.Get(retry_job.Id)

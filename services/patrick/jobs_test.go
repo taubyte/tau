@@ -16,7 +16,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// Mock node that embeds the interface like in websocket tests
 type mockNode struct {
 	p2p.Node
 	pubsubError error
@@ -31,7 +30,6 @@ func (m *mockNode) PubSubPublish(ctx context.Context, topic string, data []byte)
 	return m.pubsubError
 }
 
-// Mock auth client
 type mockAuthClient struct {
 	auth.Client
 	repos map[int]mockRepo
@@ -122,7 +120,6 @@ func (m mockGithubRepos) Register(repoID string) (string, error) {
 	return "", errors.New("not implemented")
 }
 
-// Mock TNS client
 type mockTNSClient struct {
 	tns.Client
 	lookupResponse interface{}
@@ -138,7 +135,6 @@ func (m *mockTNSClient) Push(path []string, data interface{}) error {
 	return m.pushError
 }
 
-// Helper functions
 func createTestJob(id string) *patrick.Job {
 	return &patrick.Job{
 		Id:        id,

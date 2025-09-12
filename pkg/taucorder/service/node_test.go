@@ -30,7 +30,7 @@ func TestNode(t *testing.T) {
 	})
 	defer u.Stop()
 
-	assert.NilError(t, u.StartWithConfig(&dream.Config{}))
+	assert.NilError(t, u.StartWithConfig(&dream.Config{Simples: map[string]dream.SimpleConfig{"elder": {}}}))
 
 	t.Run("New node from config", func(t *testing.T) {
 		n, err := ns.New(ctx, connect.NewRequest(&taucorderv1.Config{
