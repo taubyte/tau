@@ -1,6 +1,8 @@
 package service
 
 import (
+	"context"
+
 	iface "github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
@@ -19,10 +21,12 @@ import (
 var _ iface.Service = &PatrickService{}
 
 type PatrickService struct {
+	ctx          context.Context
+	cancel       context.CancelFunc
 	monkeyClient monkey.Client
 	node         peer.Node
 	http         http.Service
-	stream       *streams.CommandService
+	stream       streams.CommandService
 	authClient   auth.Client
 	tnsClient    tns.Client
 	db           kvdb.KVDB
@@ -30,14 +34,6 @@ type PatrickService struct {
 	devMode      bool
 
 	hostUrl string
-}
-
-func (s *PatrickService) KV() kvdb.KVDB {
-	return s.db
-}
-
-func (s *PatrickService) Node() peer.Node {
-	return s.node
 }
 
 type Config struct {

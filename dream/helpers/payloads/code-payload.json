@@ -1,5 +1,5 @@
 {
-    "ref": "refs/heads/master",
+    "ref": "refs/heads/main",
     "before": "0000000000000000000000000000000000000000",
     "after": "0f4cf056ceaa9f9164bb17f392eea5d041bc8e73",
     "repository": {
@@ -102,9 +102,9 @@
       "forks": 0,
       "open_issues": 0,
       "watchers": 0,
-      "default_branch": "master",
+      "default_branch": "main",
       "stargazers": 0,
-      "master_branch": "master"
+      "master_branch": "main"
     },
     "pusher": {
       "name": "taubyte-test",

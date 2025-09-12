@@ -12,7 +12,8 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	"github.com/taubyte/tau/core/services/patrick"
+	authIface "github.com/taubyte/tau/core/services/auth"
+	iface "github.com/taubyte/tau/core/services/patrick"
 	http "github.com/taubyte/tau/pkg/http"
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
@@ -21,6 +22,8 @@ import (
 
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
 )
+
+// GitHub webhook handlers
 
 func (srv *PatrickService) githubCheckHookAndExtractSecret(ctx http.Context) (interface{}, error) {
 	if servicesCommon.FakeSecret && srv.devMode {
@@ -47,8 +50,8 @@ func (srv *PatrickService) githubCheckHookAndExtractSecret(ctx http.Context) (in
 }
 
 func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, error) {
-	newJob := &patrick.Job{
-		Status:    patrick.JobStatusOpen,
+	newJob := &iface.Job{
+		Status:    iface.JobStatusOpen,
 		Timestamp: time.Now().Unix(),
 		Logs:      make(map[string]string),
 		AssetCid:  make(map[string]string),
@@ -61,7 +64,7 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 	}
 
 	if servicesCommon.DelayJob {
-		newJob.Delay = &patrick.DelayConfig{
+		newJob.Delay = &iface.DelayConfig{
 			Time: int(servicesCommon.DelayJobTime),
 		}
 	}
@@ -134,7 +137,7 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 	}
 }
 
-func (srv *PatrickService) RegisterJob(ctx context.Context, newJob *patrick.Job) error {
+func (srv *PatrickService) RegisterJob(ctx context.Context, newJob *iface.Job) error {
 	job_byte, err := cbor.Marshal(newJob)
 	if err != nil {
 		return fmt.Errorf("failed cbor marshall on job structure with err: %w", err)
@@ -158,4 +161,9 @@ func (srv *PatrickService) RegisterJob(ctx context.Context, newJob *patrick.Job)
 	}
 
 	return nil
+}
+
+// Hook management
+func (srv *PatrickService) getHook(hookid string) (authIface.Hook, error) {
+	return srv.authClient.Hooks().Get(hookid)
 }

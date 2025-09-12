@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/api"
 	cliCommon "github.com/taubyte/tau/tools/dream/cli/common"
+	"gotest.tools/v3/assert"
 
 	client "github.com/taubyte/tau/clients/http/dream"
 	commonIface "github.com/taubyte/tau/core/common"
@@ -37,46 +38,24 @@ func TestKillService(t *testing.T) {
 	}
 
 	tnsIds, err := u.GetServicePids("tns")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
+	assert.Assert(t, len(tnsIds) > 0)
 	idToDelete := tnsIds[0]
 
 	err = u.KillNodeByNameID("tns", idToDelete)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	tnsIds, err = u.GetServicePids("tns")
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	result := len(tnsIds)
-	if result == 1 || result > 1 {
-		t.Errorf("Service was not deleted with id: %s", idToDelete)
-		return
-	}
+	assert.NilError(t, err)
+	assert.Equal(t, len(tnsIds), 0)
 
 	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamURL), client.Timeout(300*time.Second))
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	resp, err := multiverse.Universe(t.Name()).Chart()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
+	assert.Equal(t, len(resp.Nodes), 0)
 
-	if len(resp.Nodes) != 1 {
-		t.Errorf("Service was not deleted with id: %s", idToDelete)
-		return
-	}
 }
 
 func TestKillSimple(t *testing.T) {

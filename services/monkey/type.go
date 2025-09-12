@@ -44,7 +44,7 @@ type Monkey struct {
 type Service struct {
 	ctx    context.Context
 	node   peer.Node
-	stream *streams.CommandService
+	stream streams.CommandService
 
 	patrickClient patrick.Client
 	tnsClient     tnsClient.Client

@@ -1,4 +1,4 @@
-package service
+package dream
 
 import (
 	_ "embed"
@@ -32,22 +32,16 @@ func init() {
 }
 
 func pushAll(u *dream.Universe, params ...interface{}) error {
+	if err := u.Provides("auth", "patrick", "tns"); err != nil {
+		return err
+	}
+
 	simple, err := u.Simple("client")
 	if err != nil {
 		return fmt.Errorf("failed getting simple with error: %v", err)
 	}
 
 	err = simple.Provides("auth", "tns")
-	if err != nil {
-		return err
-	}
-
-	err = u.Provides(
-		"auth",
-		"patrick",
-		"monkey",
-		"tns",
-	)
 	if err != nil {
 		return err
 	}
@@ -78,22 +72,16 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	return nil
 }
 func pushSpecific(u *dream.Universe, params ...interface{}) error {
+	if err := u.Provides("auth", "patrick", "tns"); err != nil {
+		return err
+	}
+
 	simple, err := u.Simple("client")
 	if err != nil {
 		return fmt.Errorf("failed getting client with: %v", err)
 	}
 
 	err = simple.Provides("auth", "tns")
-	if err != nil {
-		return err
-	}
-
-	err = u.Provides(
-		"auth",
-		"patrick",
-		"monkey",
-		"tns",
-	)
 	if err != nil {
 		return err
 	}
@@ -204,7 +192,7 @@ func pushLibrary(u *dream.Universe, params ...interface{}) error {
 	simple, err := u.Simple("client")
 	if err != nil {
 		// If simple doesn't exist, create it
-		err = u.StartWithConfig(&dream.Config{
+		if err = u.StartWithConfig(&dream.Config{
 			Simples: map[string]dream.SimpleConfig{
 				"client": {
 					Clients: dream.SimpleConfigClients{
@@ -212,19 +200,18 @@ func pushLibrary(u *dream.Universe, params ...interface{}) error {
 					}.Compat(),
 				},
 			},
-		})
-		if err != nil {
-			return err
+		}); err != nil {
+			return fmt.Errorf("unable to start with config: %w", err)
 		}
-		simple, err = u.Simple("client")
-		if err != nil {
-			return err
+
+		if simple, err = u.Simple("client"); err != nil {
+			return fmt.Errorf("unable to get simple client: %w", err)
 		}
 	}
 
 	auth, err := simple.Auth()
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to get auth: %w", err)
 	}
 
 	// Try to register
@@ -232,33 +219,27 @@ func pushLibrary(u *dream.Universe, params ...interface{}) error {
 
 	err = pushWrapper(u, commonTest.LibraryPayload, commonTest.LibraryRepo)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to push library: %w", err)
 	}
 
 	return nil
 }
 
 func pushWrapper(u *dream.Universe, gitPayload []byte, repo commonTest.Repository) error {
-	err := u.Provides(
-		"auth",
-		"patrick",
-		"monkey",
-		"hoarder",
-		"tns",
-	)
-	if err != nil {
-		return err
+	if err := u.Provides("auth", "patrick", "tns"); err != nil {
+		return fmt.Errorf("unable to provide: %w", err)
 	}
 
 	mockPatrickURL, err := u.GetURLHttp(u.Patrick().Node())
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to get url http: %w", err)
 	}
 
 	servicesCommon.FakeSecret = true
 	fmt.Printf("Pushing job to from repo %s. ProjectID: %s\n", repo.Name, commonTest.ProjectID)
+
 	if err := commonTest.PushJob(gitPayload, mockPatrickURL, repo); err != nil {
-		return err
+		return fmt.Errorf("unable to push job: %w", err)
 	}
 
 	return nil

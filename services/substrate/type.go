@@ -32,7 +32,7 @@ type Service struct {
 	dev       bool
 	verbose   bool
 	databases kvdb.Factory
-	stream    *streams.CommandService
+	stream    streams.CommandService
 
 	tns      tns.Client
 	orbitals []vm.Plugin

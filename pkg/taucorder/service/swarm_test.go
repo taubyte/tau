@@ -37,7 +37,7 @@ func TestSwarm(t *testing.T) {
 	})
 	defer u.Stop()
 
-	assert.NilError(t, u.StartWithConfig(&dream.Config{Services: map[string]common.ServiceConfig{"seer": {}}}))
+	assert.NilError(t, u.StartWithConfig(&dream.Config{Services: map[string]common.ServiceConfig{"seer": {}}, Simples: map[string]dream.SimpleConfig{"client": {}}}))
 
 	ni, err := ns.New(ctx, connect.NewRequest(&pb.Config{
 		Source: &pb.Config_Universe{

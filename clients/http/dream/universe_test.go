@@ -65,7 +65,7 @@ func TestRoutes(t *testing.T) {
 
 	assert.DeepEqual(t, univs[univerName].SwarmKey, u.SwarmKey())
 
-	assert.Equal(t, univs[univerName].NodeCount, 8)
+	assert.Equal(t, univs[univerName].NodeCount, 7)
 
 	universe := client.Universe(univerName)
 

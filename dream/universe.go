@@ -76,12 +76,6 @@ func New(config UniverseConfig) *Universe {
 
 	universes[config.Name] = u
 
-	// add an elder node
-	_, err = u.CreateSimpleNode("elder", &SimpleConfig{})
-	if err != nil {
-		fmt.Println("Create simple failed", err)
-	}
-
 	return u
 }
 
@@ -192,16 +186,25 @@ func (u *Universe) GetURLHttps(node peer.Node) (string, error) {
 	return u.getHttpUrl(node, "https")
 }
 
-func (u *Universe) RunFixture(name string, params ...interface{}) error {
+func (u *Universe) getFixture(name string) (FixtureHandler, error) {
 	fixturesLock.RLock()
 	defer fixturesLock.RUnlock()
 	fixtureHandler, exist := fixtures[name]
 	if !exist {
 		importRequired, ok := FixtureMap[name]
 		if !ok {
-			return fmt.Errorf("fixture %s does not exist", name)
+			return nil, fmt.Errorf("fixture %s does not exist", name)
 		}
-		return fmt.Errorf("fixture `%s` is nil, have you imported `%s`", name, importRequired.ImportRef)
+		return nil, fmt.Errorf("fixture `%s` is nil, have you imported `%s`", name, importRequired.ImportRef)
+	}
+
+	return fixtureHandler, nil
+}
+
+func (u *Universe) RunFixture(name string, params ...interface{}) error {
+	fixtureHandler, err := u.getFixture(name)
+	if err != nil {
+		return fmt.Errorf("failed getting fixture %s error: %w", name, err)
 	}
 
 	if err := fixtureHandler(u, params...); err != nil {

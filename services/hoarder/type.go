@@ -17,7 +17,7 @@ type Service struct {
 	tnsClient      ifaceTns.Client
 	db             kvdb.KVDB
 	dbFactory      kvdb.Factory
-	stream         *streams.CommandService
+	stream         streams.CommandService
 	regLock        sync.RWMutex
 	auctions       auctionStore
 	auctionHistory auctionHistory
