@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"sync"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -27,8 +28,12 @@ func (s *Service) handle(startTime time.Time, matcher *common.MatchDefinition, _
 		common.Logger.Error("lookup returned no picks")
 
 	}
+
+	var waitGroup sync.WaitGroup
+	waitGroup.Add(len(picks))
 	for _, pick := range picks {
 		go func(_pick iface.Serviceable) {
+			defer waitGroup.Done()
 			var err error
 			var coldStartDone time.Time
 			switch _type {
@@ -43,6 +48,7 @@ func (s *Service) handle(startTime time.Time, matcher *common.MatchDefinition, _
 			}
 		}(pick)
 	}
+	waitGroup.Wait()
 }
 
 // TODO smartops and cache the serviceable
