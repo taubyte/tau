@@ -34,10 +34,10 @@ func (i *instance) SDK() plugins.Instance {
 }
 
 func (i *instance) Ready() (Instance, error) {
-	if i.prevMemSize > 0 {
-		i.runtime.Module()
-		memUsage := i.runtime.Module(i.parent.config.Name).Memory().Size() - i.prevMemSize
-	}
+	// if i.prevMemSize > 0 {
+	// 	i.runtime.Module()
+	// 	memUsage := i.runtime.Module(i.parent.config.Name).Memory().Size() - i.prevMemSize
+	// }
 	return i, nil
 }
 
