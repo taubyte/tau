@@ -74,6 +74,14 @@ func (r *runtime) Module(name string) (vm.ModuleInstance, error) {
 	return r.module(name)
 }
 
+func (r *runtime) Modules() []string {
+	modules := make([]string, 0, len(r.modules))
+	for name := range r.modules {
+		modules = append(modules, name)
+	}
+	return modules
+}
+
 func (r *runtime) module(name string) (vm.ModuleInstance, error) {
 	modInst := r.runtime.Module(name)
 	if modInst == nil {
@@ -123,6 +131,9 @@ func (r *runtime) module(name string) (vm.ModuleInstance, error) {
 }
 
 func (r *runtime) instantiate(name string, compiled wazero.CompiledModule, hasReady bool) (api.Module, error) {
+	if _, ok := r.modules[name]; ok {
+		return r.modules[name], nil
+	}
 
 	config := wazero.
 		NewModuleConfig().
@@ -157,6 +168,8 @@ func (r *runtime) instantiate(name string, compiled wazero.CompiledModule, hasRe
 			_start.Call(ctx)
 		}
 	}
+
+	r.modules[name] = m
 
 	return m, nil
 }

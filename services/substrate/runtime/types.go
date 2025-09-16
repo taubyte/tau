@@ -56,10 +56,12 @@ type Function struct {
 // }
 
 type instance struct {
-	creation time.Time
-	runtime  vm.Runtime
-	sdk      plugins.Instance // interface{}
-	parent   *Function
+	creation    time.Time
+	runtime     vm.Runtime
+	prevMemSize uint32
+	memUsages   []uint32
+	sdk         plugins.Instance // interface{}
+	parent      *Function
 }
 
 type instanceRequest struct {
@@ -72,4 +74,5 @@ type Instance interface {
 	Free() error
 	Module(name string) (vm.ModuleInstance, error)
 	SDK() plugins.Instance
+	Ready() (Instance, error)
 }

@@ -12,6 +12,15 @@ import (
 )
 
 func (i *instance) Free() error {
+	mod, err := i.runtime.Module(i.parent.config.Name)
+	if err != nil {
+		return err
+	}
+
+	if mod.Memory().Size() > uint32(i.parent.config.Memory*4/5) {
+
+	}
+
 	i.parent.availableInstances <- i
 	return nil
 }
@@ -22,6 +31,11 @@ func (i *instance) Module(name string) (vm.ModuleInstance, error) {
 
 func (i *instance) SDK() plugins.Instance {
 	return i.sdk
+}
+
+func (i *instance) Ready() (Instance, error) {
+
+	return i, nil
 }
 
 /*
@@ -37,7 +51,10 @@ func (f *Function) Instantiate(ctx context.Context) (Instance, error) { //} (run
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case instance := <-instCh.ch:
-		return instance, instCh.err
+		if instCh.err != nil {
+			return nil, instCh.err
+		}
+		return instance.Ready()
 	}
 }
 

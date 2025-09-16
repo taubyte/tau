@@ -29,6 +29,7 @@ type Instance interface {
 }
 
 type Runtime interface {
+	Modules() []string
 	Module(name string) (ModuleInstance, error)
 	Expose(name string) (HostModule, error)
 	Attach(plugin Plugin) (PluginInstance, ModuleInstance, error)

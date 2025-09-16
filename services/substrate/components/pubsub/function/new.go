@@ -36,17 +36,16 @@ func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Fu
 		return nil, fmt.Errorf("initializing vm module failed with: %w", err)
 	}
 
-	f.assetId, err = cache.ResolveAssetCid(f)
-	if err != nil {
-		return nil, fmt.Errorf("getting asset id failed with: %w", err)
+	if f.config.Source == "." { //TODO: eveywhere
+		f.assetId, err = cache.ResolveAssetCid(f)
+		if err != nil {
+			return nil, fmt.Errorf("getting asset id failed with: %w", err)
+		}
 	}
 
-	_f, err := srv.Cache().Add(f)
+	_, err = srv.Cache().Add(f)
 	if err != nil {
 		return nil, fmt.Errorf("adding pubsub function serviceable failed with: %s", err)
-	}
-	if f.assetId != _f.AssetId() {
-		return _f, nil
 	}
 
 	if err = f.Validate(matcher); err != nil {
