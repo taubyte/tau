@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"time"
-
-	"github.com/taubyte/tau/core/vm"
 )
 
 // Call takes instance and id, then calls the moduled function. Returns an error.
-func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
+func (f *Function) Call(inst Instance, id uint32) (err error) {
 	startTime := time.Now()
 	defer func() {
 		if err == nil {
@@ -23,7 +21,7 @@ func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
 		return fmt.Errorf("getting module name for resource `%s` failed with: %w", f.serviceable.Id(), err)
 	}
 
-	module, err := runtime.Module(moduleName)
+	module, err := inst.Module(moduleName)
 	if err != nil {
 		return fmt.Errorf("creating module instance failed with: %w", err)
 	}
@@ -38,7 +36,11 @@ func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
 
 	_, err = fx.RawCall(ctx, uint64(id))
 	if f.serviceable.Service().Verbose() {
-		defer f.printRuntimeStack(runtime, err)
+		defer func() {
+			if internalInst, ok := inst.(*instance); ok {
+				f.printRuntimeStack(internalInst.runtime, err)
+			}
+		}()
 	}
 	if mem := uint64(module.Memory().Size()); mem > f.maxMemory.Load() {
 		f.maxMemory.Store(mem)

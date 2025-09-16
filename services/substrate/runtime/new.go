@@ -24,9 +24,12 @@ func New(ctx context.Context, serviceable components.FunctionServiceable) (*Func
 			calls:          new(atomic.Uint64),
 			totalCallTime:  new(atomic.Int64),
 			maxMemory:      new(atomic.Uint64),
+
+			instanceReqs:       make(chan *instanceRequest, InstanceMaxRequests),
+			availableInstances: make(chan Instance, InstanceMaxRequests),
 		}
 
-		dFunc.initShadow()
+		go dFunc.intanceManager()
 
 		return dFunc, nil
 	}

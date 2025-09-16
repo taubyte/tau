@@ -1,6 +1,7 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"time"
@@ -10,23 +11,75 @@ import (
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
 )
 
+func (i *instance) Free() error {
+	i.parent.availableInstances <- i
+	return nil
+}
+
+func (i *instance) Module(name string) (vm.ModuleInstance, error) {
+	return i.runtime.Module(name)
+}
+
+func (i *instance) SDK() plugins.Instance {
+	return i.sdk
+}
+
 /*
 Instantiate returns a runtime, plugin api, and error
 */
-func (f *Function) Instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
-	shadow, err := f.shadows.get()
-	if err != nil {
-		return nil, nil, err
-	}
+func (f *Function) Instantiate(ctx context.Context) (Instance, error) { //} (runtime vm.Runtime, pluginApi interface{}, err error) {
+	instCh := &instanceRequest{ch: make(chan Instance, 1)}
+	f.instanceReqs <- instCh
 
-	return shadow.runtime, shadow.pluginApi, nil
+	select {
+	case <-f.ctx.Done():
+		return nil, f.ctx.Err()
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case instance := <-instCh.ch:
+		return instance, instCh.err
+	}
+}
+
+func (f *Function) intanceManager() {
+	for {
+		select {
+		case <-f.ctx.Done():
+			return
+		case reqCh := <-f.instanceReqs:
+			select {
+			case instance := <-f.availableInstances:
+				reqCh.ch <- instance
+			default:
+				// we need to instantiate a new instance
+				// hoever if that does not work we need to repush the request in a way that is it first in line
+				runtime, sdk, err := f.instantiate()
+				if err == nil {
+					reqCh.ch <- &instance{runtime: runtime, sdk: sdk, parent: f}
+				} else {
+					logger.Errorf("creating new instance failed with: %s", err.Error())
+					// we reached some sort of limit
+					// wait for an instance to be available
+					select {
+					case <-reqCh.ctx.Done():
+						reqCh.err = reqCh.ctx.Err()
+						reqCh.ch <- nil
+					case instance := <-f.availableInstances:
+						reqCh.ch <- instance
+					case <-f.ctx.Done():
+						return
+					}
+				}
+			}
+		}
+	}
 }
 
 /*
 instantiate method initializes the wasm runtime and attaches plugins.
 Returns the runtime, plugin api, and error
 */
-func (f *Function) instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
+func (f *Function) instantiate() (runtime vm.Runtime, sdk plugins.Instance, err error) {
 	// add cold start metrics if instantiate is successful
 	start := time.Now()
 	defer func() {
@@ -80,7 +133,7 @@ func (f *Function) instantiate() (runtime vm.Runtime, pluginApi interface{}, err
 	}
 	closers = append(closers, sdkPi)
 
-	if pluginApi, err = plugins.With(sdkPi); err != nil {
+	if sdk, err = plugins.With(sdkPi); err != nil {
 		err = fmt.Errorf("loading plugin api failed with: %w", err)
 		return
 	}
