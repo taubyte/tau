@@ -34,7 +34,10 @@ func (i *instance) SDK() plugins.Instance {
 }
 
 func (i *instance) Ready() (Instance, error) {
-
+	if i.prevMemSize > 0 {
+		i.runtime.Module()
+		memUsage := i.runtime.Module(i.parent.config.Name).Memory().Size() - i.prevMemSize
+	}
 	return i, nil
 }
 
@@ -47,9 +50,9 @@ func (f *Function) Instantiate(ctx context.Context) (Instance, error) { //} (run
 
 	select {
 	case <-f.ctx.Done():
-		return nil, f.ctx.Err()
+		return nil, fmt.Errorf("function context done with: %w", f.ctx.Err())
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return nil, fmt.Errorf("instance request not sent: %w", ctx.Err())
 	case instance := <-instCh.ch:
 		if instCh.err != nil {
 			return nil, instCh.err
@@ -79,7 +82,7 @@ func (f *Function) intanceManager() {
 					// wait for an instance to be available
 					select {
 					case <-reqCh.ctx.Done():
-						reqCh.err = reqCh.ctx.Err()
+						reqCh.err = fmt.Errorf("instance request context done with: %w", reqCh.ctx.Err())
 						reqCh.ch <- nil
 					case instance := <-f.availableInstances:
 						reqCh.ch <- instance
