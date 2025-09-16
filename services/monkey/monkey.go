@@ -2,25 +2,19 @@ package monkey
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"io"
-	"math/big"
-	"os"
 	"time"
 
 	"github.com/taubyte/tau/core/services/patrick"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
-func (m *Monkey) Run() {
-
+func (m *worker) Run() {
 	defer func() {
-		if !protocolCommon.MockedPatrick {
-			m.Service.monkeysLock.Lock()
-			defer m.Service.monkeysLock.Unlock()
-			delete(m.Service.monkeys, m.Job.Id)
-		}
+		m.Service.monkeysLock.Lock()
+		defer m.Service.monkeysLock.Unlock()
+		delete(m.Service.monkeys, m.Job.Id)
 	}()
 
 	errs := make(chan error, 1024)
@@ -54,9 +48,7 @@ func (m *Monkey) Run() {
 			case <-ctx.Done():
 				return
 			case <-time.After(protocolCommon.DefaultRefreshLockTime):
-
 				eta := time.Since(m.start) + protocolCommon.DefaultLockTime
-
 				m.Service.patrickClient.Lock(m.Id, uint32(eta/time.Second))
 			}
 		}
@@ -92,66 +84,11 @@ func (m *Monkey) Run() {
 
 }
 
-func (m *Monkey) run(errs chan error) {
+func (m *worker) run(errs chan error) {
 	if err := m.RunJob(); err != nil {
 		appendAndLogError(errs, "Running job `%s` failed with error: %s", m.Id, err.Error())
 	} else {
 		m.logFile.Seek(0, io.SeekEnd)
 		fmt.Fprintf(m.logFile, "\nRunning job `%s` was successful\n", m.Id)
 	}
-}
-
-func (s *Service) newMonkey(job *patrick.Job) (*Monkey, error) {
-	jid := job.Id
-	err := s.patrickClient.Lock(jid, uint32(protocolCommon.DefaultLockTime/time.Second))
-	if err != nil {
-		return nil, err
-	}
-
-	if !protocolCommon.MockedPatrick {
-		randSleep()
-	}
-
-	locked, err := s.patrickClient.IsLocked(jid)
-	if err != nil {
-		return nil, err
-	}
-
-	if locked {
-		logFile, err := os.CreateTemp("/tmp", fmt.Sprintf("log-%s", jid))
-		if err != nil {
-			return nil, err
-		}
-
-		m := &Monkey{
-			Id:                    jid,
-			Status:                patrick.JobStatusOpen,
-			Service:               s,
-			Job:                   job,
-			logFile:               logFile,
-			generatedDomainRegExp: s.config.GeneratedDomainRegExp,
-			start:                 time.Now(),
-		}
-
-		m.ctx, m.ctxC = context.WithCancel(s.ctx)
-
-		m.Service.monkeysLock.Lock()
-		s.monkeys[jid] = m
-		m.Service.monkeysLock.Unlock()
-
-		return m, nil
-	}
-
-	return nil, fmt.Errorf("didn't actually lock")
-}
-
-func randSleep() {
-	n, err := rand.Int(rand.Reader, big.NewInt(1<<53))
-	if err != nil {
-		time.Sleep(protocolCommon.DefaultLockMinWaitTime)
-		return
-	}
-
-	duration := protocolCommon.DefaultLockMinWaitTime + time.Duration(float64(n.Int64())/float64(1<<53))*protocolCommon.DefaultLockMinWaitTime
-	time.Sleep(duration)
 }

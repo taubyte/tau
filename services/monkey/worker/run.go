@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"context"
@@ -14,7 +14,7 @@ var (
 	ErrorContextCanceled = errors.New("context cancel")
 )
 
-func (c *Context) Run(ctx context.Context) (err error) {
+func (c *instance) Run(ctx context.Context) (err error) {
 	defer c.Monkey.Delete(c.Job.Id)
 	defer c.Patrick.Unlock(c.Job.Id)
 	defer c.handleLog(c.Job.Id)

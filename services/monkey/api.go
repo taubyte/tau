@@ -3,12 +3,20 @@ package monkey
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/taubyte/tau/p2p/streams"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	"github.com/taubyte/tau/utils/maps"
 )
+
+func (srv *Service) setupStreamRoutes() {
+	srv.stream.Define("ping", func(context.Context, streams.Connection, command.Body) (cr.Response, error) {
+		return cr.Response{"time": int(time.Now().Unix())}, nil
+	})
+	srv.stream.Define("job", srv.ServiceHandler)
+}
 
 func (m *Service) ServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	action, err := maps.String(body, "action")
@@ -50,19 +58,19 @@ func (m *Service) listHandler() (cr.Response, error) {
 
 func (m *Service) cancelHandler(jid string) (cr.Response, error) {
 	m.monkeysLock.RLock()
-	monkey, ok := m.monkeys[jid]
+	worker, ok := m.monkeys[jid]
 	m.monkeysLock.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("Monkey %s does not exist", jid)
+		return nil, fmt.Errorf("worker %s does not exist", jid)
 	}
 
-	monkey.ctxC()
+	worker.ctxC()
 
 	m.monkeysLock.Lock()
 	delete(m.monkeys, jid)
 	m.monkeysLock.Unlock()
 
-	_, err := m.patrickClient.Cancel(jid, monkey.Job.Logs)
+	_, err := m.patrickClient.Cancel(jid, worker.Job.Logs)
 	if err != nil {
 		return nil, fmt.Errorf("failed patrick client cancel with %w", err)
 	}
@@ -74,22 +82,22 @@ func (m *Service) cancelHandler(jid string) (cr.Response, error) {
 func (m *Service) updateHandler(ctx context.Context, jid string) (cr.Response, error) {
 	m.monkeysLock.RLock()
 	defer m.monkeysLock.RUnlock()
-	monkey, ok := m.monkeys[jid]
+	worker, ok := m.monkeys[jid]
 	if !ok {
 		return nil, fmt.Errorf("job `%s` not found", jid)
 	}
 
-	return cr.Response{"jid": jid, "status": monkey.Status, "logs": monkey.LogCID}, nil
+	return cr.Response{"jid": jid, "status": worker.Status, "logs": worker.LogCID}, nil
 }
 
 func (m *Service) statusHandler(ctx context.Context, jid string) (cr.Response, error) {
 	m.monkeysLock.RLock()
 	defer m.monkeysLock.RUnlock()
 
-	monkey, ok := m.monkeys[jid]
+	worker, ok := m.monkeys[jid]
 	if !ok {
 		return nil, fmt.Errorf("job `%s` not found", jid)
 	}
 
-	return cr.Response{"jid": jid, "status": monkey.Status, "logs": monkey.LogCID}, nil
+	return cr.Response{"jid": jid, "status": worker.Status, "logs": worker.LogCID}, nil
 }

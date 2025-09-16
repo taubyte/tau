@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"context"
@@ -32,7 +32,7 @@ func newTestContext(ctx context.Context, simple *dream.Simple, logFile *os.File)
 
 	ctx, ctxC := context.WithCancel(ctx)
 	return testContext{
-		Context: Context{
+		instance: instance{
 			ctx:        ctx,
 			ctxC:       ctxC,
 			Tns:        tns,

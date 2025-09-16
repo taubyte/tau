@@ -51,7 +51,7 @@ func TestMonkey(t *testing.T) {
 	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return mockPatrick, nil
 	}
-	protocolCommon.MockedPatrick = true
+	protocolCommon.DefaultLockMinWaitTime = 50 * time.Millisecond
 
 	fjob1 := &patrick.Job{
 		Id:        "jobforjob_test",

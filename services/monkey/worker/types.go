@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	compilerCommon "github.com/taubyte/tau/pkg/config-compiler/common"
 )
 
-type Context struct {
+type instance struct {
 	ctx              context.Context
 	ctxC             context.CancelFunc
 	Node             peer.Node
@@ -40,6 +40,12 @@ type Context struct {
 	DVPublicKey []byte
 }
 
+type Worker interface {
+	Run(ctx context.Context) error
+	Kill() error
+	Terminate() error
+}
+
 type Op struct {
 	id           string
 	name         string
@@ -48,16 +54,16 @@ type Op struct {
 	err          error
 }
 
-type code struct{ Context }
-type website struct{ Context }
-type library struct{ Context }
-type config struct{ Context }
+type code struct{ instance }
+type website struct{ instance }
+type library struct{ instance }
+type config struct{ instance }
 
 type repo interface {
 	handle() error
 }
 
-func (c Context) Handler() (repo, error) {
+func (c instance) Handler() (repo, error) {
 	switch c.RepoType {
 	case compilerCommon.ConfigRepository:
 		return &config{c}, nil

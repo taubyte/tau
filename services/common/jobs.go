@@ -12,10 +12,10 @@ var (
 	MaxJobAttempts    = 2
 
 	// From Monkey
-	MockedPatrick          = false
-	TimeoutTest            = false
-	DefaultLockTime        = 600 * time.Second
-	DefaultLockMinWaitTime = 10 * time.Second
-	DefaultRefreshLockTime = 60 * time.Second
-	DefaultTestTimeOut     = 5 * time.Second
+	TimeoutTest              = false
+	DefaultLockTime          = 600 * time.Second
+	DefaultLockMinWaitTime   = 10 * time.Second
+	DefaultLockCheckAttempts = 3
+	DefaultRefreshLockTime   = 60 * time.Second
+	DefaultTestTimeOut       = 5 * time.Second
 )

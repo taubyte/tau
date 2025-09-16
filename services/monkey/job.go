@@ -11,7 +11,7 @@ import (
 	"github.com/taubyte/tau/services/monkey/jobs"
 )
 
-func (m *Monkey) RunJob() (err error) {
+func (m *worker) RunJob() (err error) {
 	repo := m.Job.Meta.Repository
 	repoID := fmt.Sprintf("%d", repo.ID)
 	if repo.ID <= 1 {

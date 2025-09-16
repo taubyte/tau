@@ -1,29 +1,34 @@
-package monkey
+package monkey_test
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"testing"
+	"time"
 
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
 	"github.com/taubyte/tau/clients/p2p/patrick/mock"
 	commonIface "github.com/taubyte/tau/core/common"
+	iface "github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/p2p/peer"
 	protocolCommon "github.com/taubyte/tau/services/common"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
+	"github.com/taubyte/tau/services/monkey"
+	_ "github.com/taubyte/tau/services/monkey/dream"
 	"gotest.tools/v3/assert"
 )
 
 func init() {
-	NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
+	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
+	protocolCommon.DefaultLockMinWaitTime = 50 * time.Millisecond
 }
 
 func TestService(t *testing.T) {
-	t.Skip("Times out, needs to be relooked at")
-	protocolCommon.MockedPatrick = true
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
@@ -113,4 +118,85 @@ func TestService(t *testing.T) {
 		t.Errorf("Expected two job ids got %d", len(ids))
 		return
 	}
+}
+
+type MonkeyTestContext struct {
+	universe     *dream.Universe
+	client       iface.Client
+	jid          string
+	expectStatus patrick.JobStatus
+	expectLog    string
+}
+
+func (c *MonkeyTestContext) waitForStatus() error {
+	test := func() error {
+		response, err := c.client.Status(c.jid)
+		if err != nil {
+			return err
+		}
+
+		// Read logs
+		err = readLogsTestHelper(c.universe.Context(), response, c.universe.Monkey().Node(), c.expectLog)
+		if err != nil {
+			return err
+		}
+
+		// Check status
+		if response.Status != c.expectStatus {
+			return fmt.Errorf("job was not successful `%v != %v`", response.Status, c.expectStatus)
+		}
+
+		return nil
+	}
+
+	attempts := 0
+	maxAttempts := 3
+	cont := func() {
+		attempts += 1
+		time.Sleep(time.Second)
+	}
+
+	// ==== Wait for job ====
+	for {
+		err := test()
+		if err != nil && attempts >= maxAttempts {
+			return fmt.Errorf("test failed after %d attempts with: %s", attempts, err.Error())
+		} else if err == nil {
+			break
+		}
+		cont()
+	}
+
+	return nil
+}
+
+func readLogsTestHelper(testCtx context.Context, response *iface.StatusResponse, peerC peer.Node, expected_logs string) error {
+	cid_of_logs := response.Logs
+	if len(cid_of_logs) == 0 {
+		return fmt.Errorf("logs cid not found")
+	}
+
+	// Delete locally
+	err := peerC.DeleteFile(cid_of_logs)
+	if err != nil {
+		return fmt.Errorf("Deleting logs `%s` failed with: %s", cid_of_logs, err.Error())
+	}
+	// Also checked with 15 second sleep
+	time.Sleep(3 * time.Second)
+
+	rs, err := peerC.GetFile(testCtx, cid_of_logs)
+	if err != nil {
+		return fmt.Errorf("Getting log filed failed with %s", err.Error())
+	}
+	// Read the logs
+	logs, err := io.ReadAll(rs)
+	if err != nil {
+		return fmt.Errorf("Reading log file failed with %s", err.Error())
+	}
+
+	if expected_logs != string(logs) {
+		return fmt.Errorf("Logs CID(`%s`)don't match, expected `%s` got `%s`", cid_of_logs, expected_logs, logs)
+	}
+
+	return nil
 }

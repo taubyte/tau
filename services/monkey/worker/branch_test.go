@@ -1,17 +1,21 @@
-package jobs
+package worker
 
 import (
 	"os"
 	"testing"
+	"time"
 
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	protocolCommon "github.com/taubyte/tau/services/common"
 	"gotest.tools/v3/assert"
 )
 
+func init() {
+	protocolCommon.DefaultLockMinWaitTime = 50 * time.Millisecond
+}
+
 func TestBranch(t *testing.T) {
 	t.Skip("Needs to be redone")
-	protocolCommon.MockedPatrick = true
 	u, err := startDream("testRunBranch")
 	defer u.Stop()
 	assert.NilError(t, err)

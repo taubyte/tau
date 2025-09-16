@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 	build "github.com/taubyte/tau/pkg/builder"
 )
 
-func (c Context) HandleLibrary() (builders.Output, error) {
+func (c instance) HandleLibrary() (builders.Output, error) {
 	builder, err := build.New(c.ctx, c.WorkDir)
 	if err != nil {
 		return nil, fmt.Errorf("creating new builder for git library repo `%d` failed with: %w", c.Job.Meta.Repository.ID, err)

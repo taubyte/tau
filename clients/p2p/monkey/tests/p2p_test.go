@@ -24,7 +24,7 @@ func TestMonkeyClient(t *testing.T) {
 		return &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 
-	protocolCommon.MockedPatrick = true
+	protocolCommon.DefaultLockMinWaitTime = 50 * time.Millisecond
 
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()

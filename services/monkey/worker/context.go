@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"context"
@@ -9,18 +9,18 @@ import (
 )
 
 // Used in tests for setting the unexported contexts
-func (c *Context) ForceContext(ctx context.Context) {
+func (c *instance) ForceContext(ctx context.Context) {
 	c.ctx, c.ctxC = context.WithCancel(ctx)
 	if c.Node != nil && c.ClientNode == nil {
 		c.ClientNode = c.Node
 	}
 }
 
-func (c *Context) ForceGitDir(dir string) {
+func (c *instance) ForceGitDir(dir string) {
 	c.gitDir = dir
 }
 
-func (c *Context) startTimeout() {
+func (c *instance) startTimeout() {
 	defaultWaitTime := protocolCommon.DefaultLockTime
 	if protocolCommon.TimeoutTest {
 		defaultWaitTime = 5 * time.Second

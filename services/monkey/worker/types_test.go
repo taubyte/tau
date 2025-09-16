@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"github.com/taubyte/tau/core/services/hoarder"
@@ -11,5 +11,5 @@ type mockMonkey struct {
 }
 
 type testContext struct {
-	Context
+	instance
 }

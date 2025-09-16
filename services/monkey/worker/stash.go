@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func (c Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {
+func (c instance) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {
 	cid, err = c.Node.AddFile(zip)
 	if err != nil {
 		err = fmt.Errorf("adding build file to node failed with: %s", err)

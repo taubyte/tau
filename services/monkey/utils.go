@@ -20,7 +20,7 @@ func toNumber(in interface{}) int {
 	return 0
 }
 
-func (m *Monkey) appendErrors(r io.WriteSeeker, errors chan error) {
+func (m *worker) appendErrors(r io.WriteSeeker, errors chan error) {
 	if len(errors) > 0 {
 		r.Seek(0, io.SeekEnd)
 		r.Write([]byte("\nCI/CD Errors:\n\n"))
@@ -30,7 +30,7 @@ func (m *Monkey) appendErrors(r io.WriteSeeker, errors chan error) {
 	}
 }
 
-func (m *Monkey) storeLogs(r io.ReadSeeker) (string, error) {
+func (m *worker) storeLogs(r io.ReadSeeker) (string, error) {
 	if _, err := r.Seek(0, io.SeekStart); err != nil {
 		return "", fmt.Errorf("logs seek start failed with: %w", err)
 	}
@@ -48,7 +48,7 @@ var (
 	GetGitRepoWaitBeforeRetry = 5 * time.Second
 )
 
-func (m *Monkey) tryGetGitRepo(
+func (m *worker) tryGetGitRepo(
 	ac auth.Client,
 	repoID int,
 ) (gitRepo auth.GithubRepository, err error) {

@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"context"
@@ -32,7 +32,7 @@ func TestRunDelay(t *testing.T) {
 	hoarderClient, err := simple.Hoarder()
 	assert.NilError(t, err)
 
-	c := &Context{
+	c := &instance{
 		Job: &patrick.Job{
 			Delay: &patrick.DelayConfig{
 				Time: 300,

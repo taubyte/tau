@@ -34,8 +34,11 @@ import (
 
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
+func init() {
+	protocolCommon.DefaultLockMinWaitTime = 50 * time.Millisecond
+}
+
 func TestConfigJob(t *testing.T) {
-	protocolCommon.MockedPatrick = true
 	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}

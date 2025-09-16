@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"errors"
@@ -16,7 +16,7 @@ import (
 	"github.com/taubyte/tau/utils/maps"
 )
 
-func (c Context) storeLogFile(file *os.File) (string, error) {
+func (c instance) storeLogFile(file *os.File) (string, error) {
 	file.Seek(0, io.SeekStart)
 	cid, err := c.Node.AddFile(file)
 	if err != nil {
@@ -33,7 +33,7 @@ func (c Context) storeLogFile(file *os.File) (string, error) {
 	return cid, nil
 }
 
-func (c Context) fetchConfigSshUrl() (sshString string, err error) {
+func (c instance) fetchConfigSshUrl() (sshString string, err error) {
 	tnsPath := specs.NewTnsPath([]string{"resolve", "repo", "github", strconv.Itoa(c.ConfigRepoId)})
 	tnsObj, err := c.Tns.Fetch(tnsPath)
 	// TODO: This should return
@@ -58,17 +58,17 @@ func (c Context) fetchConfigSshUrl() (sshString string, err error) {
 }
 
 // for singular resource repositories(not code repo), error should be nil, the monkey will be handling this logic
-func (c Context) mergeBuildLogs(logs builders.Logs) {
+func (c instance) mergeBuildLogs(logs builders.Logs) {
 	if logs == nil {
 		return
 	}
 
 	if _, err := logs.CopyTo(c.LogFile); err != nil {
-		c.LogFile.WriteString("\nMonkey Error:\n" + err.Error())
+		c.LogFile.WriteString("\nWorker Error:\n" + err.Error())
 	}
 }
 
-func (c Context) getResourceRepositoryId() (id string, err error) {
+func (c instance) getResourceRepositoryId() (id string, err error) {
 	gitRepoId := strconv.Itoa(c.Job.Meta.Repository.ID)
 	repoPath, err := methods.GetRepositoryPath(strings.ToLower(c.Job.Meta.Repository.Provider), gitRepoId, c.ProjectID)
 	if err != nil {
@@ -91,7 +91,7 @@ func (c Context) getResourceRepositoryId() (id string, err error) {
 	return
 }
 
-func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
+func (c instance) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 	if rsk == nil {
 		return nil
 	}
@@ -117,7 +117,7 @@ func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 	return err
 }
 
-func (c Context) handleLog(id string) error {
+func (c instance) handleLog(id string) error {
 	logCid, err := c.storeLogFile(c.LogFile)
 	if err != nil {
 		return fmt.Errorf("storing log file for job `%s` failed with: %s", c.Job.Id, err)
@@ -127,7 +127,7 @@ func (c Context) handleLog(id string) error {
 	return nil
 }
 
-func (c *Context) cloneAndSet() error {
+func (c *instance) cloneAndSet() error {
 	repo, err := git.New(
 		c.ctx,
 		git.URL(c.Job.Meta.Repository.SSHURL),

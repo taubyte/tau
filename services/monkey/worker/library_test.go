@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"os"
@@ -8,9 +8,9 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestRunWebsiteBasic(t *testing.T) {
+func TestRunLibraryBasic(t *testing.T) {
 	t.Skip("Needs to be redone")
-	u, err := startDream("testRunWebsite")
+	u, err := startDream("testRunLibrary")
 	defer u.Stop()
 	assert.NilError(t, err)
 
@@ -26,16 +26,16 @@ func TestRunWebsiteBasic(t *testing.T) {
 	err = jobContext.config(job)()
 	assert.NilError(t, err)
 
-	logFile, err = os.CreateTemp("/tmp", "website_log.text")
+	logFile, err = os.CreateTemp("/tmp", "library_log.text")
 	assert.NilError(t, err)
 
-	job = newJob(commonTest.WebsiteRepo, "job_for_website")
+	job = newJob(commonTest.LibraryRepo, "job_for_library")
 
 	jobContext = newTestContext(u.Context(), simple, logFile)
 	jobContext.ConfigRepoRoot = configRepoRoot
-	err = jobContext.website(job)()
+	err = jobContext.library(job)()
 	assert.NilError(t, err)
 
-	err = checkAsset(jobContext.Node, jobContext.Tns, "2a547229-190d-412b-b13a-a4fb5306dec9")
+	err = checkAsset(jobContext.Node, jobContext.Tns, "Qmedz7rR2DgTapzUfK9yMHw8p9iW8wo9UjHAi6KkPZxxEu")
 	assert.NilError(t, err)
 }

@@ -30,12 +30,12 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 			return
 		}
 
-		monkey, err := srv.newMonkey(&receivedJob)
+		worker, err := srv.newMonkey(&receivedJob)
 		if err != nil {
-			logger.Error("New monkey had an error:", err.Error())
+			logger.Error("New worker had an error:", err.Error())
 			return
 		}
 
-		go monkey.Run()
+		go worker.Run()
 	}
 }

@@ -1,4 +1,4 @@
-package jobs
+package worker
 
 import (
 	"github.com/taubyte/tau/pkg/schema/functions"
