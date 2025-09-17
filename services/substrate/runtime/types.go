@@ -3,7 +3,6 @@ package runtime
 import (
 	"context"
 	"sync/atomic"
-	"time"
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/vm"
@@ -56,7 +55,6 @@ type Function struct {
 // }
 
 type instance struct {
-	creation    time.Time
 	runtime     vm.Runtime
 	prevMemSize uint32
 	memUsages   []uint32
@@ -75,4 +73,5 @@ type Instance interface {
 	Module(name string) (vm.ModuleInstance, error)
 	SDK() plugins.Instance
 	Ready() (Instance, error)
+	Close() error
 }

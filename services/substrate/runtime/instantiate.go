@@ -51,6 +51,10 @@ func (i *instance) Ready() (Instance, error) {
 	return i, nil
 }
 
+func (i *instance) Close() error {
+	return i.runtime.Close()
+}
+
 /*
 Instantiate returns a runtime, plugin api, and error
 */
