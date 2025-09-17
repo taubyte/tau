@@ -72,21 +72,22 @@ func (f *Function) intanceManager() {
 		case <-f.ctx.Done():
 			return
 		case reqCh := <-f.instanceReqs:
-			fmt.Printf("instance request received - available instances: %d\n", len(f.availableInstances))
+			fmt.Printf("[func/%s] instance request received - available instances: %d\n", f.config.Name, len(f.availableInstances))
 			select {
 			case instance := <-f.availableInstances:
-				fmt.Printf("instance available\n")
+				fmt.Printf("[func/%s] instance available\n", f.config.Name)
 				reqCh.ch <- instance
 			default:
-				fmt.Printf("instance not available\n")
+				fmt.Printf("[func/%s] instance not available\n", f.config.Name)
 				// we need to instantiate a new instance
 				// hoever if that does not work we need to repush the request in a way that is it first in line
-				fmt.Printf("instantiating new instance\n")
+				fmt.Printf("[func/%s] instantiating new instance\n", f.config.Name)
 				runtime, sdk, err := f.instantiate()
 				if err == nil {
-					fmt.Printf("new instance created\n")
+					fmt.Printf("[func/%s] new instance created\n", f.config.Name)
 					reqCh.ch <- &instance{runtime: runtime, sdk: sdk, parent: f}
 				} else {
+					fmt.Printf("[func/%s] creating new instance failed with: %s\n", f.config.Name, err.Error())
 					logger.Errorf("creating new instance failed with: %s", err.Error())
 					// we reached some sort of limit
 					// wait for an instance to be available
@@ -95,7 +96,7 @@ func (f *Function) intanceManager() {
 						reqCh.err = fmt.Errorf("instance request context done with: %w", reqCh.ctx.Err())
 						reqCh.ch <- nil
 					case instance := <-f.availableInstances:
-						fmt.Printf("instance available after failed instantiation\n")
+						fmt.Printf("[func/%s] instance available after failed instantiation\n", f.config.Name)
 						reqCh.ch <- instance
 					case <-f.ctx.Done():
 						return
