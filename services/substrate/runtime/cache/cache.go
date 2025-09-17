@@ -94,7 +94,7 @@ func (c *Cache) Get(matcher iface.MatchDefinition, ops iface.GetOptions) ([]ifac
 				fmt.Printf("[cache] validating serviceable %s\n", serviceable.Id())
 				if err := c.validate(serviceable, branch); err != nil {
 					// remove serviceable from cache & continue
-					fmt.Printf("[cache] removing serviceable %s from cache due to validation failure\n", serviceable.Id())
+					fmt.Printf("[cache] removing serviceable %s from cache due to validation failure: %s\n", serviceable.Id(), err)
 					c.Remove(serviceable)
 					continue
 				}
