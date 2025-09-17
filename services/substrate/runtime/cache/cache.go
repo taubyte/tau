@@ -132,11 +132,7 @@ func (c *Cache) validate(serviceable iface.Serviceable, branches []string) error
 	}
 
 	cid, err := ResolveAssetCid(serviceable)
-	if err != nil {
-		return fmt.Errorf("getting cached serviceable `%s` cid failed with: %w", serviceable.Id(), err)
-	}
-
-	if serviceable.AssetId() != cid {
+	if err == nil && serviceable.AssetId() != cid {
 		return fmt.Errorf("serviceable `%s` asset is outdated", serviceable.Id())
 	}
 
