@@ -24,9 +24,9 @@ func (i *instance) Free() error {
 	}
 
 	fmt.Printf("used memory: %v\n", useMem)
-	if useMem > uint32(i.parent.config.Memory*4/5) {
-		fmt.Printf("instance %p used memory is (%d) greater than 80%% of the memory limit\n", i, useMem)
-		return fmt.Errorf("used memory limit exceeded")
+	if useMem > uint32(i.parent.config.Memory*2/3) {
+		fmt.Printf("instance %p used memory is (%d) greater than %d of the memory limit\n", i, useMem, i.parent.config.Memory*2/3)
+		return fmt.Errorf("used memory limit exceeded") //TODO: cleanup instance
 	}
 
 	fmt.Printf("pushing instance to available instances %p\n", i)
