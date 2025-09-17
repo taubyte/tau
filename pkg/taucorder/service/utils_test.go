@@ -28,7 +28,7 @@ var (
 )
 
 func init() {
-	dream.DreamApiListen = "localhost:4224" // diffrent port than the default
+	dream.DreamApiPort = 4224 // diffrent port than the default
 	dreamApi.BigBang()
 }
 

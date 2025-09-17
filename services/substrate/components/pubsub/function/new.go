@@ -36,7 +36,7 @@ func New(srv iface.Service, mmi common.MessagingMapItem, config structureSpec.Fu
 		return nil, fmt.Errorf("initializing vm module failed with: %w", err)
 	}
 
-	if f.config.Source == "." { //TODO: eveywhere
+	if f.config.Source == "." {
 		f.assetId, err = cache.ResolveAssetCid(f)
 		if err != nil {
 			return nil, fmt.Errorf("getting asset id failed with: %w", err)

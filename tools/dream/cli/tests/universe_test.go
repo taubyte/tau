@@ -18,6 +18,10 @@ import (
 
 var services = []string{"seer", "auth", "patrick", "tns", "monkey", "hoarder", "substrate"}
 
+func init() {
+	dream.DreamApiPort = 41421 // don't conflict with default port
+}
+
 func TestKillService(t *testing.T) {
 	api.BigBang()
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
@@ -49,7 +53,7 @@ func TestKillService(t *testing.T) {
 	assert.NilError(t, err)
 	assert.Equal(t, len(tnsIds), 0)
 
-	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamURL), client.Timeout(300*time.Second))
+	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamURL()), client.Timeout(300*time.Second))
 	assert.NilError(t, err)
 
 	resp, err := multiverse.Universe(t.Name()).Chart()
@@ -74,7 +78,7 @@ func TestKillSimple(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamURL), client.Timeout(1000*time.Second))
+	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamURL()), client.Timeout(1000*time.Second))
 	if err != nil {
 		t.Error(err)
 		return

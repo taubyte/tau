@@ -12,16 +12,21 @@ import (
 )
 
 func (i *instance) Free() error {
-	mod, err := i.runtime.Module(i.parent.config.Name)
-	if err != nil {
-		return err
-	}
+	fmt.Printf("freeing instance\n")
+	mods := i.runtime.Modules()
+	fmt.Printf("modules: %v\n", mods)
+	// if err != nil {
+	// 	fmt.Printf("error getting module: %v\n", err)
+	// 	return err
+	// }
 
-	if mod.Memory().Size() > uint32(i.parent.config.Memory*4/5) {
+	// if mod.Memory().Size() > uint32(i.parent.config.Memory*4/5) {
 
-	}
+	// }
 
+	fmt.Printf("pushing instance to available instances\n")
 	i.parent.availableInstances <- i
+	fmt.Printf("instance pushed to available instances - available instances: %d\n", len(i.parent.availableInstances))
 	return nil
 }
 
@@ -67,14 +72,19 @@ func (f *Function) intanceManager() {
 		case <-f.ctx.Done():
 			return
 		case reqCh := <-f.instanceReqs:
+			fmt.Printf("instance request received - available instances: %d\n", len(f.availableInstances))
 			select {
 			case instance := <-f.availableInstances:
+				fmt.Printf("instance available\n")
 				reqCh.ch <- instance
 			default:
+				fmt.Printf("instance not available\n")
 				// we need to instantiate a new instance
 				// hoever if that does not work we need to repush the request in a way that is it first in line
+				fmt.Printf("instantiating new instance\n")
 				runtime, sdk, err := f.instantiate()
 				if err == nil {
+					fmt.Printf("new instance created\n")
 					reqCh.ch <- &instance{runtime: runtime, sdk: sdk, parent: f}
 				} else {
 					logger.Errorf("creating new instance failed with: %s", err.Error())
@@ -85,6 +95,7 @@ func (f *Function) intanceManager() {
 						reqCh.err = fmt.Errorf("instance request context done with: %w", reqCh.ctx.Err())
 						reqCh.ch <- nil
 					case instance := <-f.availableInstances:
+						fmt.Printf("instance available after failed instantiation\n")
 						reqCh.ch <- instance
 					case <-f.ctx.Done():
 						return

@@ -21,7 +21,8 @@ var (
 
 	Ports map[string]int
 
-	DreamApiListen = DefaultHost + ":1421"
+	DreamApiPort   = 1421
+	DreamApiListen = func() string { return fmt.Sprintf("%s:%d", DefaultHost, DreamApiPort) }
 
 	DefaultHost             string = "127.0.0.1"
 	DefaultP2PListenFormat  string = "/ip4/" + DefaultHost + "/tcp/%d"
