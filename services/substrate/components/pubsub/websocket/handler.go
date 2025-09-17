@@ -110,13 +110,14 @@ func removeSubscription(name string, subIdx int) {
 func AddSubscription(srv common.LocalService, name string, handler p2p.PubSubConsumerHandler, err_handler p2p.PubSubConsumerErrorHandler) (subIdex int, err error) {
 	// TODO: this block should be its own function for lock/unlock
 	subs.Lock()
+	defer subs.Unlock()
 	subset, ok := subs.subscriptions[name]
 	if !ok {
 		subset = new(subViewer)
 		subset.subs = make(map[int]*sub, 0)
 		err = srv.Node().PubSubSubscribe(name, subset.handler, subset.err_handler)
 	}
-	subs.Unlock()
+
 	// Catching error outside so the unlock can happen right away for the inner lock
 	// to take over.
 	if err != nil {
@@ -186,11 +187,9 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn service.
 		WebSocket:   true,
 	}
 
-	picks, err := srv.Lookup(matcher)
+	_, err = srv.Lookup(matcher)
 	if err != nil {
 		return nil, err
-	} else if len(picks) == 0 {
-		return nil, fmt.Errorf("no valid connections found for channel: `%s`", channel)
 	}
 
 	handler := new(dataStreamHandler)
@@ -198,13 +197,8 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn service.
 	handler.conn = conn
 	handler.matcher = matcher
 	handler.srv = srv
-	handler.ch = make(chan []byte, 1024)
+	handler.ch = make(chan []byte, 1024*1024)
 	handler.errCh = make(chan error)
-	handler.picks = picks
-
-	if err = handler.SmartOps(); err != nil {
-		return nil, err
-	}
 
 	return handler, nil
 }

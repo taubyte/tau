@@ -7,7 +7,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/taubyte/tau/core/services/substrate/components"
-	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
@@ -20,8 +19,6 @@ type dataStreamHandler struct {
 	errCh   chan error
 	srv     common.LocalService
 	matcher components.MatchDefinition
-
-	picks []iface.Serviceable
 
 	mu sync.RWMutex
 }

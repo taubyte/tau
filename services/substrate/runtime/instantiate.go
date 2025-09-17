@@ -12,7 +12,7 @@ import (
 )
 
 func (i *instance) Free() error {
-	fmt.Printf("freeing instance\n")
+	fmt.Printf("freeing instance %p\n", i)
 	mods := i.runtime.Modules()
 	fmt.Printf("modules: %v\n", mods)
 	// if err != nil {
@@ -24,9 +24,9 @@ func (i *instance) Free() error {
 
 	// }
 
-	fmt.Printf("pushing instance to available instances\n")
+	fmt.Printf("pushing instance to available instances %p\n", i)
 	i.parent.availableInstances <- i
-	fmt.Printf("instance pushed to available instances - available instances: %d\n", len(i.parent.availableInstances))
+	fmt.Printf("instance %p pushed to available instances - available instances: %d\n", i, len(i.parent.availableInstances))
 	return nil
 }
 
@@ -75,7 +75,7 @@ func (f *Function) intanceManager() {
 			fmt.Printf("[func/%s] instance request received - available instances: %d\n", f.config.Name, len(f.availableInstances))
 			select {
 			case instance := <-f.availableInstances:
-				fmt.Printf("[func/%s] instance available\n", f.config.Name)
+				fmt.Printf("[func/%s] instance available %p\n", f.config.Name, instance)
 				reqCh.ch <- instance
 			default:
 				fmt.Printf("[func/%s] instance not available\n", f.config.Name)

@@ -91,8 +91,10 @@ func (c *Cache) Get(matcher iface.MatchDefinition, ops iface.GetOptions) ([]ifac
 	for _, serviceable := range servList {
 		if serviceable.Match(matcher) == matchIndex {
 			if ops.Validation {
+				fmt.Printf("[cache] validating serviceable %s\n", serviceable.Id())
 				if err := c.validate(serviceable, branch); err != nil {
 					// remove serviceable from cache & continue
+					fmt.Printf("[cache] removing serviceable %s from cache due to validation failure\n", serviceable.Id())
 					c.Remove(serviceable)
 					continue
 				}
