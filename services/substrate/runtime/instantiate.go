@@ -13,16 +13,21 @@ import (
 
 func (i *instance) Free() error {
 	fmt.Printf("freeing instance %p\n", i)
-	mods := i.runtime.Modules()
-	fmt.Printf("modules: %v\n", mods)
-	// if err != nil {
-	// 	fmt.Printf("error getting module: %v\n", err)
-	// 	return err
-	// }
+	var useMem uint32
+	for _, name := range i.runtime.Modules() {
+		mod, err := i.runtime.Module(name)
+		if err != nil {
+			fmt.Printf("error getting module: %v\n", err)
+			return err
+		}
+		useMem += mod.Memory().Size()
+	}
 
-	// if mod.Memory().Size() > uint32(i.parent.config.Memory*4/5) {
-
-	// }
+	fmt.Printf("used memory: %v\n", useMem)
+	if useMem > uint32(i.parent.config.Memory*4/5) {
+		fmt.Printf("instance %p used memory is (%d) greater than 80%% of the memory limit\n", i, useMem)
+		return fmt.Errorf("used memory limit exceeded")
+	}
 
 	fmt.Printf("pushing instance to available instances %p\n", i)
 	i.parent.availableInstances <- i
