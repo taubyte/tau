@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"io"
 	"sync/atomic"
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
@@ -50,6 +51,8 @@ type Instance interface {
 	Free() error
 	Module(name string) (vm.ModuleInstance, error)
 	SDK() plugins.Instance
+	Stdout() io.Reader
+	Stderr() io.Reader
 	Ready() (Instance, error)
 	Close() error
 }

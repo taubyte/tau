@@ -58,6 +58,14 @@ func (i *instance) Close() error {
 	return i.runtime.Close()
 }
 
+func (i *instance) Stdout() io.Reader {
+	return i.runtime.Stdout()
+}
+
+func (i *instance) Stderr() io.Reader {
+	return i.runtime.Stderr()
+}
+
 /*
 Instantiate returns a runtime, plugin api, and error
 */

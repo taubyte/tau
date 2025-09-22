@@ -3,6 +3,8 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"time"
 )
 
@@ -14,6 +16,9 @@ func (f *Function) Call(inst Instance, id uint32) (err error) {
 			f.calls.Add(1)
 			f.totalCallTime.Add(int64(time.Since(startTime)))
 		}
+
+		io.Copy(os.Stdout, inst.Stdout())
+		io.Copy(os.Stdout, inst.Stderr())
 	}()
 
 	moduleName, err := f.moduleName()

@@ -1,6 +1,7 @@
 package pubsub
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -50,7 +51,15 @@ func (s *Service) Subscribe(projectId, appId, path string) error {
 		matcher.Channel = matcher.Channel[1:]
 	}
 
-	_, err := websocket.AddSubscription(s, matcher.String(), func(msg *pubsub.Message) {
+	picks, err := s.Lookup(matcher)
+	if err != nil {
+		return fmt.Errorf("lookup failed with: %s", err.Error())
+	}
+	if len(picks) == 0 {
+		return fmt.Errorf("lookup returned no picks")
+	}
+
+	_, err = websocket.AddSubscription(s, matcher.String(), func(msg *pubsub.Message) {
 		s.handle(start, matcher, msg)
 	}, func(err error) {
 		common.Logger.Error("handle error with:", err.Error())
