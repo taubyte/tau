@@ -3,7 +3,6 @@ package websocket
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/gorilla/websocket"
 	"github.com/taubyte/tau/core/services/substrate/components"
@@ -19,29 +18,11 @@ type dataStreamHandler struct {
 	errCh   chan error
 	srv     common.LocalService
 	matcher components.MatchDefinition
-
-	mu sync.RWMutex
 }
 
 func (h *dataStreamHandler) Close() {
 	h.ctxC()
-	h.mu.Lock()
-	defer h.mu.Unlock()
-
-	// Close WebSocket connection
-	if h.conn != nil {
-		h.conn.Close()
-	}
-
-	// Close and clear channels
-	if h.ch != nil {
-		close(h.ch)
-		h.ch = nil
-	}
-	if h.errCh != nil {
-		close(h.errCh)
-		h.errCh = nil
-	}
+	h.conn.Close()
 }
 
 func (h *dataStreamHandler) error(err error) {
@@ -52,8 +33,6 @@ func (h *dataStreamHandler) error(err error) {
 }
 
 func (h *dataStreamHandler) In() {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
 
 	for {
 		select {
@@ -78,8 +57,7 @@ func (h *dataStreamHandler) In() {
 }
 
 func (h *dataStreamHandler) Out() {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	defer h.Close()
 	for {
 		select {
 		case <-h.ctx.Done():
@@ -88,7 +66,6 @@ func (h *dataStreamHandler) Out() {
 			h.conn.WriteJSON(WrappedMessage{
 				Error: fmt.Sprintf("Writing data out failed with %v closing connection", err),
 			})
-			h.conn.Close()
 			return
 		case data := <-h.ch:
 			err := h.conn.WriteMessage(websocket.BinaryMessage, data)

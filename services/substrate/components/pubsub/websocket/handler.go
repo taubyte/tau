@@ -34,7 +34,6 @@ func Handler(srv common.LocalService, ctx service.Context, conn service.WebSocke
 		select {
 		case <-handler.ctx.Done():
 		case handler.ch <- msg.GetData():
-		default:
 		}
 	}, func(err error) {
 		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher, err.Error())
@@ -42,7 +41,6 @@ func Handler(srv common.LocalService, ctx service.Context, conn service.WebSocke
 			select {
 			case <-handler.ctx.Done():
 			case handler.errCh <- err:
-			default:
 			}
 		}
 	})
@@ -88,28 +86,19 @@ func (sv *subViewer) err_handler(err error) {
 func removeSubscription(name string, subIdx int) {
 	subs.Lock()
 	defer subs.Unlock()
-	subset, ok := subs.subscriptions[name]
-	if !ok {
-		return
+	if subset, ok := subs.subscriptions[name]; ok {
+		delete(subset.subs, subIdx)
 	}
-
-	_, ok = subset.subs[subIdx]
-	if !ok {
-		return
-	}
-
-	delete(subset.subs, subIdx)
 }
 
 func AddSubscription(srv common.LocalService, name string, handler p2p.PubSubConsumerHandler, err_handler p2p.PubSubConsumerErrorHandler) (subIdex int, err error) {
-	// TODO: this block should be its own function for lock/unlock
 	subs.Lock()
 	defer subs.Unlock()
 	subset, ok := subs.subscriptions[name]
 	if !ok {
 		subset = new(subViewer)
 		subset.subs = make(map[int]*sub, 0)
-		err = srv.Node().PubSubSubscribe(name, subset.handler, subset.err_handler)
+		err = srv.Node().PubSubSubscribe(name, subset.handler, subset.err_handler) // TODO: unsubscribe when no more subscriptions
 	}
 
 	// Catching error outside so the unlock can happen right away for the inner lock
@@ -123,8 +112,11 @@ func AddSubscription(srv common.LocalService, name string, handler p2p.PubSubCon
 
 	newId := subset.getNextId()
 	subset.subs[newId] = &sub{
-		handler:     handler,
-		err_handler: err_handler,
+		handler: handler,
+		err_handler: func(err error) {
+			err_handler(err)
+			removeSubscription(name, newId)
+		},
 	}
 
 	subs.subscriptions[name] = subset

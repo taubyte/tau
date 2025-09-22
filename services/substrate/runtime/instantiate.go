@@ -32,7 +32,7 @@ func (i *instance) Free() error {
 		return fmt.Errorf("used memory limit exceeded") //TODO: cleanup instance
 	}
 
-	fmt.Printf("pushing instance to available instances %p\n", i)
+	fmt.Printf("pushing instance to available instances %p - total calls: %d\n", i, i.parent.calls.Load())
 	i.parent.availableInstances <- i
 	fmt.Printf("instance %p pushed to available instances - available instances: %d\n", i, len(i.parent.availableInstances))
 	return nil

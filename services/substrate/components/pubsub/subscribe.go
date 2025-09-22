@@ -11,22 +11,15 @@ import (
 	counter "github.com/taubyte/tau/services/substrate/runtime/counter"
 )
 
-type handleType int
-
-const (
-	handleTypeUnkown handleType = iota
-	handleTypeMessage
-	handleTypeError
-)
-
-func (s *Service) handle(startTime time.Time, matcher *common.MatchDefinition, _type handleType, data interface{}) {
+func (s *Service) handle(startTime time.Time, matcher *common.MatchDefinition, data interface{}) {
 	picks, err := s.Lookup(matcher)
 	if err != nil {
 		common.Logger.Error("lookup failed with:", err.Error())
+		return
 	}
 	if len(picks) == 0 {
 		common.Logger.Error("lookup returned no picks")
-
+		return
 	}
 
 	var waitGroup sync.WaitGroup
@@ -34,14 +27,7 @@ func (s *Service) handle(startTime time.Time, matcher *common.MatchDefinition, _
 	for _, pick := range picks {
 		go func(_pick iface.Serviceable) {
 			defer waitGroup.Done()
-			var err error
-			var coldStartDone time.Time
-			switch _type {
-			case handleTypeMessage:
-				coldStartDone, err = _pick.HandleMessage(data.(*pubsub.Message))
-			case handleTypeError:
-				err = data.(error)
-			}
+			coldStartDone, err := _pick.HandleMessage(data.(*pubsub.Message))
 			if err != nil {
 				counter.ErrorWrapper(_pick, startTime, coldStartDone, err)
 				common.Logger.Error("Handling message failed with:", err.Error())
@@ -65,9 +51,9 @@ func (s *Service) Subscribe(projectId, appId, path string) error {
 	}
 
 	_, err := websocket.AddSubscription(s, matcher.String(), func(msg *pubsub.Message) {
-		s.handle(start, matcher, handleTypeMessage, msg)
+		s.handle(start, matcher, msg)
 	}, func(err error) {
-		s.handle(start, matcher, handleTypeError, err)
+		common.Logger.Error("handle error with:", err.Error())
 	})
 
 	if err != nil {
