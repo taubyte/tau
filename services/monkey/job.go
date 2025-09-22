@@ -44,6 +44,10 @@ func (m *Monkey) RunJob() (err error) {
 	projectId = gitRepo.Project()
 	if projectId != "" {
 		p = ac.Projects().Get(projectId)
+		if p == nil {
+			return fmt.Errorf("project not found: %s", projectId)
+		}
+
 		switch repo.ID {
 		case p.Git.Code.Id():
 			repoType = compilerCommon.CodeRepository

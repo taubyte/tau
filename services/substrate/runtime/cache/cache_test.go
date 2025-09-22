@@ -1115,20 +1115,23 @@ func TestValidationWithCidMismatch(t *testing.T) {
 		t.Fatalf("Add() failed: %v", err)
 	}
 
-	// Get with validation enabled - should remove serviceable due to CID mismatch
+	// Get with validation enabled - should succeed since CID validation is no longer performed
 	matcher := &mockMatchDefinition{cachePrefix: "test-prefix", stringVal: "test-matcher"}
 	options := components.GetOptions{
 		Validation: true,
 		Branches:   []string{"main"},
 	}
-	_, err = cache.Get(matcher, options)
-	if err == nil {
-		t.Fatal("Expected error for CID mismatch")
+	results, err := cache.Get(matcher, options)
+	if err != nil {
+		t.Fatalf("Get() failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
 	}
 
-	// Verify serviceable was removed and closed
-	if !serviceable.IsClosed() {
-		t.Fatal("Expected serviceable to be closed after CID mismatch")
+	// Verify serviceable was not closed since CID validation is no longer performed
+	if serviceable.IsClosed() {
+		t.Fatal("Expected serviceable to remain open since CID validation is no longer performed")
 	}
 }
 
@@ -1413,20 +1416,23 @@ func TestValidateWithNonStringCid(t *testing.T) {
 		cid:    123, // Non-string CID
 	}
 
-	// Get with validation enabled - should remove serviceable due to non-string CID
+	// Get with validation enabled - should succeed since CID validation is no longer performed
 	matcher := &mockMatchDefinition{cachePrefix: "test-prefix", stringVal: "test-matcher"}
 	options := components.GetOptions{
 		Validation: true,
 		Branches:   []string{"main"},
 	}
-	_, err = cache.Get(matcher, options)
-	if err == nil {
-		t.Fatal("Expected error for non-string CID")
+	results, err := cache.Get(matcher, options)
+	if err != nil {
+		t.Fatalf("Get() failed: %v", err)
+	}
+	if len(results) != 1 {
+		t.Fatalf("Expected 1 result, got %d", len(results))
 	}
 
-	// Verify serviceable was removed and closed
-	if !serviceable.IsClosed() {
-		t.Fatal("Expected serviceable to be closed after non-string CID error")
+	// Verify serviceable was not closed since CID validation is no longer performed
+	if serviceable.IsClosed() {
+		t.Fatal("Expected serviceable to remain open since CID validation is no longer performed")
 	}
 
 	// Restore original TNS client

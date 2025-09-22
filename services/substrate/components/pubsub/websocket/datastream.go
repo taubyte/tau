@@ -27,6 +27,13 @@ func (h *dataStreamHandler) Close() {
 	h.ctxC()
 	h.mu.Lock()
 	defer h.mu.Unlock()
+
+	// Close WebSocket connection
+	if h.conn != nil {
+		h.conn.Close()
+	}
+
+	// Close and clear channels
 	if h.ch != nil {
 		close(h.ch)
 		h.ch = nil
@@ -47,11 +54,14 @@ func (h *dataStreamHandler) error(err error) {
 func (h *dataStreamHandler) In() {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
+
 	for {
 		select {
 		case <-h.ctx.Done():
 			return
 		default:
+			// ReadMessage blocks until a message is received
+			// This is better than a busy loop as it actually blocks
 			_, msg, err := h.conn.ReadMessage()
 			if err != nil {
 				h.error(fmt.Errorf("reading data In on `%s` failed with: %s", h.matcher, err))

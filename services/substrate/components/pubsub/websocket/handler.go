@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
@@ -35,11 +34,16 @@ func Handler(srv common.LocalService, ctx service.Context, conn service.WebSocke
 		select {
 		case <-handler.ctx.Done():
 		case handler.ch <- msg.GetData():
+		default:
 		}
 	}, func(err error) {
 		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher, err.Error())
 		if handler.ctx.Err() == nil {
-			handler.errCh <- err
+			select {
+			case <-handler.ctx.Done():
+			case handler.errCh <- err:
+			default:
+			}
 		}
 	})
 	if err != nil {
@@ -66,29 +70,19 @@ func (sv *subViewer) getNextId() int {
 func (sv *subViewer) handler(msg *pubsub.Message) {
 	sv.Lock()
 	defer sv.Unlock()
-	var wg sync.WaitGroup
-	wg.Add(len(sv.subs))
+	// Process subscriptions sequentially to avoid goroutine explosion
 	for _, subscription := range sv.subs {
-		go func(_sub *sub) {
-			_sub.handler(msg)
-			wg.Done()
-		}(subscription)
+		subscription.handler(msg)
 	}
-	wg.Wait()
 }
 
 func (sv *subViewer) err_handler(err error) {
 	sv.Lock()
 	defer sv.Unlock()
-	var wg sync.WaitGroup
-	wg.Add(len(sv.subs))
+	// Process subscriptions sequentially to avoid goroutine explosion
 	for _, subscription := range sv.subs {
-		go func(_sub *sub) {
-			_sub.err_handler(err)
-			wg.Done()
-		}(subscription)
+		subscription.err_handler(err)
 	}
-	wg.Wait()
 }
 
 func removeSubscription(name string, subIdx int) {
@@ -187,9 +181,12 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn service.
 		WebSocket:   true,
 	}
 
-	_, err = srv.Lookup(matcher)
+	serviceables, err := srv.Lookup(matcher)
 	if err != nil {
 		return nil, err
+	}
+	if len(serviceables) == 0 {
+		return nil, errors.New("no serviceables found")
 	}
 
 	handler := new(dataStreamHandler)
@@ -197,7 +194,7 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn service.
 	handler.conn = conn
 	handler.matcher = matcher
 	handler.srv = srv
-	handler.ch = make(chan []byte, 1024*1024)
+	handler.ch = make(chan []byte)
 	handler.errCh = make(chan error)
 
 	return handler, nil

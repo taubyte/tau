@@ -11,19 +11,6 @@ import (
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 )
 
-// type shadows struct {
-// 	ctx          context.Context
-// 	ctxC         context.CancelFunc
-// 	parent       *Function
-// 	instances    chan *shadowInstance
-// 	more         chan int
-// 	available    atomic.Int64
-// 	requestCount int64      // total number of requests
-// 	lastCheck    time.Time  // last time we calculated RPS
-// 	currentRPS   float64    // current requests per second
-// 	mu           sync.Mutex // mutex for RPS calculations
-// }
-
 type Function struct {
 	serviceable commonIface.Serviceable
 	ctx         context.Context
@@ -32,9 +19,6 @@ type Function struct {
 	commit      string
 	vmConfig    *vm.Config
 	vmContext   vm.Context
-
-	// shadows    *shadows
-	// errorCount atomic.Int64
 
 	instanceReqs       chan *instanceRequest
 	availableInstances chan Instance
@@ -48,17 +32,11 @@ type Function struct {
 	maxMemory     *atomic.Uint64
 }
 
-// type shadowInstance struct {
-// 	creation  time.Time
-// 	runtime   vm.Runtime
-// 	pluginApi interface{}
-// }
-
 type instance struct {
 	runtime     vm.Runtime
 	prevMemSize uint32
 	memUsages   []uint32
-	sdk         plugins.Instance // interface{}
+	sdk         plugins.Instance
 	parent      *Function
 }
 

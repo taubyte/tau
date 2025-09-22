@@ -4,8 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/cpu"
+	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/taubyte/tau/core/vm"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
@@ -59,8 +62,13 @@ func (i *instance) Close() error {
 Instantiate returns a runtime, plugin api, and error
 */
 func (f *Function) Instantiate(ctx context.Context) (Instance, error) { //} (runtime vm.Runtime, pluginApi interface{}, err error) {
-	instCh := &instanceRequest{ch: make(chan Instance, 1)}
-	f.instanceReqs <- instCh
+	instCh := &instanceRequest{ctx: ctx, ch: make(chan Instance, 1)}
+
+	select {
+	case f.instanceReqs <- instCh:
+	default:
+		return nil, fmt.Errorf("instance request channel is full")
+	}
 
 	select {
 	case <-f.ctx.Done():
@@ -120,7 +128,35 @@ func (f *Function) intanceManager() {
 instantiate method initializes the wasm runtime and attaches plugins.
 Returns the runtime, plugin api, and error
 */
-func (f *Function) instantiate() (runtime vm.Runtime, sdk plugins.Instance, err error) {
+func (f *Function) instantiate() (rt vm.Runtime, sdk plugins.Instance, err error) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	goMemory := m.HeapReleased + m.HeapIdle
+
+	// we need to do some resource availability checks
+	// get system memory
+	if f.config.Memory > goMemory {
+		vmStat, err := mem.VirtualMemory()
+		if err != nil {
+			return nil, nil, fmt.Errorf("getting system memory failed with: %w", err)
+		}
+
+		availableMemory := goMemory + (vmStat.Total - vmStat.Used)
+		if availableMemory*2/3 < f.config.Memory {
+			return nil, nil, fmt.Errorf("insufficient system memory available: %d bytes", availableMemory)
+		}
+	}
+
+	// check cpu usage
+	cpuUsage, err := cpu.Percent(0, true)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getting cpu usage failed with: %w", err)
+	}
+	if cpuUsage[0] > 80 {
+		return nil, nil, fmt.Errorf("cpu usage is too high: %.1f%%", cpuUsage[0])
+	}
+
 	// add cold start metrics if instantiate is successful
 	start := time.Now()
 	defer func() {
@@ -153,21 +189,21 @@ func (f *Function) instantiate() (runtime vm.Runtime, sdk plugins.Instance, err 
 	}()
 	closers = append(closers, instance)
 
-	runtime, err = instance.Runtime(nil)
+	rt, err = instance.Runtime(nil)
 	if err != nil {
 		err = fmt.Errorf("creating new runtime failed with: %w", err)
 		return
 	}
-	closers = append(closers, runtime)
+	closers = append(closers, rt)
 
 	for _, plugIn := range f.serviceable.Service().Orbitals() {
-		if _, _, err = runtime.Attach(plugIn); err != nil {
+		if _, _, err = rt.Attach(plugIn); err != nil {
 			err = fmt.Errorf("attaching satellite plugin `%s` to runtime failed with: %w", plugIn.Name(), err)
 			return
 		}
 	}
 
-	sdkPi, _, err := runtime.Attach(plugins.Plugin())
+	sdkPi, _, err := rt.Attach(plugins.Plugin())
 	if err != nil {
 		err = fmt.Errorf("attaching core plugins to runtime failed with: %w", err)
 		return
