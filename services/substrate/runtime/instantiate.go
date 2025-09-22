@@ -7,7 +7,6 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/taubyte/tau/core/vm"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
@@ -154,15 +153,6 @@ func (f *Function) instantiate() (rt vm.Runtime, sdk plugins.Instance, err error
 		if availableMemory*2/3 < f.config.Memory {
 			return nil, nil, fmt.Errorf("insufficient system memory available: %d bytes", availableMemory)
 		}
-	}
-
-	// check cpu usage
-	cpuUsage, err := cpu.Percent(0, true)
-	if err != nil {
-		return nil, nil, fmt.Errorf("getting cpu usage failed with: %w", err)
-	}
-	if cpuUsage[0] > 80 {
-		return nil, nil, fmt.Errorf("cpu usage is too high: %.1f%%", cpuUsage[0])
 	}
 
 	// add cold start metrics if instantiate is successful
