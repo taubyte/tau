@@ -6,6 +6,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/taubyte/tau/core/services/substrate/components"
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
@@ -14,9 +15,10 @@ type dataStreamHandler struct {
 	ctx     context.Context
 	ctxC    context.CancelFunc
 	conn    service.WebSocketConnection
-	ch      chan []byte
+	id      string
+	ch      chan pubsubIface.Message
 	errCh   chan error
-	srv     common.LocalService
+	srv     pubsubIface.ServiceWithLookup
 	matcher components.MatchDefinition
 }
 
@@ -39,13 +41,25 @@ func (h *dataStreamHandler) In() {
 		case <-h.ctx.Done():
 			return
 		default:
-			// ReadMessage blocks until a message is received
-			// This is better than a busy loop as it actually blocks
 			_, msg, err := h.conn.ReadMessage()
 			if err != nil {
 				h.error(fmt.Errorf("reading data In on `%s` failed with: %s", h.matcher, err))
 				return
 			}
+
+			message, err := common.NewMessage(msg, h.id)
+			if err != nil {
+				h.error(fmt.Errorf("creating message failed with: %w", err))
+				return
+			}
+			msg, err = message.Marshal()
+			if err != nil {
+				h.error(fmt.Errorf("marshalling message failed with: %w", err))
+				return
+			}
+
+			fmt.Println("WEBSOKCET IN message source >>>>>", message.GetSource())
+			fmt.Println("WEBSOKCET IN message >>>>>", string(msg))
 
 			err = h.srv.Node().PubSubPublish(h.ctx, h.matcher.String(), msg)
 			if err != nil {
@@ -68,7 +82,17 @@ func (h *dataStreamHandler) Out() {
 			})
 			return
 		case data := <-h.ch:
-			err := h.conn.WriteMessage(websocket.BinaryMessage, data)
+			fmt.Println("PUBSUB to WEBSOKCET OUT message>>>>>", string(data.GetData()))
+			fmt.Println("WEBSOKCET OUT message source>>>>>", data.GetSource())
+			if data.GetSource() == h.id {
+				fmt.Println("WEBSOKCET OUT message source is self>>>>>", data.GetSource())
+				// ignore the message - comes from self
+				continue
+			}
+
+			fmt.Println("WEBSOKCET OUT message>>>>>", string(data.GetData()))
+
+			err := h.conn.WriteMessage(websocket.BinaryMessage, data.GetData())
 			if err != nil {
 				h.error(fmt.Errorf("writing data out failed with %v closing connection", err))
 				return

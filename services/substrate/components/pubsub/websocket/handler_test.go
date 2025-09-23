@@ -10,6 +10,7 @@ import (
 	pubsubMsg "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/core/services/tns"
 	p2p "github.com/taubyte/tau/p2p/peer"
 	service "github.com/taubyte/tau/pkg/http"
@@ -53,7 +54,7 @@ func createMockServiceForHandler() *mockLocalService {
 	return &mockLocalService{
 		contextFunc:   func() context.Context { return context.Background() },
 		tnsClientFunc: func() tns.Client { return &mockTnsClient{} },
-		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+		lookupFunc: func(matcher pubsubIface.MatchDefinition) ([]iface.Serviceable, error) {
 			return nil, errors.New("lookup failed")
 		},
 	}
@@ -64,10 +65,10 @@ func createMockServiceForAddSubscriptionError() *mockLocalService {
 	return &mockLocalService{
 		contextFunc:   func() context.Context { return context.Background() },
 		tnsClientFunc: func() tns.Client { return &mockTnsClientWithValidPath{} },
-		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+		lookupFunc: func(matcher pubsubIface.MatchDefinition) ([]iface.Serviceable, error) {
 			return []iface.Serviceable{&mockWebSocket{
 				project: "test-project",
-				matcher: matcher,
+				matcher: matcher.(*common.MatchDefinition),
 				mmi:     common.MessagingMapItem{},
 				commit:  "mock-commit",
 				branch:  "mock-branch",
@@ -84,7 +85,7 @@ func createMockServiceForLookupError() *mockLocalService {
 	return &mockLocalService{
 		contextFunc:   func() context.Context { return context.Background() },
 		tnsClientFunc: func() tns.Client { return &mockTnsClientWithValidPath{} },
-		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+		lookupFunc: func(matcher pubsubIface.MatchDefinition) ([]iface.Serviceable, error) {
 			return nil, errors.New("lookup failed")
 		},
 	}
@@ -95,7 +96,7 @@ func createMockServiceForEmptyPicks() *mockLocalService {
 	return &mockLocalService{
 		contextFunc:   func() context.Context { return context.Background() },
 		tnsClientFunc: func() tns.Client { return &mockTnsClientWithValidPath{} },
-		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+		lookupFunc: func(matcher pubsubIface.MatchDefinition) ([]iface.Serviceable, error) {
 			return []iface.Serviceable{}, nil // Empty picks
 		},
 	}
@@ -375,7 +376,7 @@ func createMockWebSocketConnection() *mockWebSocketConnection {
 }
 
 // Helper function to run a handler test with common setup
-func runHandlerTest(t *testing.T, testName string, ctx *mockServiceContext, srv common.LocalService, expectedNil bool, expectedMsg string) {
+func runHandlerTest(t *testing.T, testName string, ctx *mockServiceContext, srv pubsubIface.ServiceWithLookup, expectedNil bool, expectedMsg string) {
 	t.Run(testName, func(t *testing.T) {
 		conn := createMockWebSocketConnection()
 		result := Handler(srv, ctx, conn)
@@ -467,10 +468,10 @@ type mockWebSocket struct {
 	commit  string
 	branch  string
 	ctxC    context.CancelFunc
-	srv     common.LocalService
+	srv     pubsubIface.ServiceWithLookup
 }
 
-func (m *mockWebSocket) HandleMessage(msg *pubsubMsg.Message) (time.Time, error) {
+func (m *mockWebSocket) HandleMessage(msg pubsubIface.Message) (time.Time, error) {
 	return time.Now(), nil
 }
 

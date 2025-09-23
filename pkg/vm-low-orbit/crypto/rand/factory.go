@@ -16,7 +16,3 @@ func (f *Factory) Name() string {
 func (f *Factory) Close() error {
 	return nil
 }
-
-func (f *Factory) Load(hm vm.HostModule) (err error) {
-	return nil
-}

@@ -8,22 +8,21 @@ import (
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/p2p/peer"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"github.com/taubyte/tau/services/substrate/components/pubsub/websocket"
 	"github.com/taubyte/tau/services/substrate/components/structure"
 	"github.com/taubyte/tau/services/substrate/runtime/cache"
 )
 
-func init() {
-	websocket.AttachWebSocket = func(f *websocket.WebSocket) error {
-		v, ok := attachedTestWebSockets[f.Name()]
-		if !ok {
-			attachedTestWebSockets[f.Name()] = 1
-		} else {
-			attachedTestWebSockets[f.Name()] = v + 1
-		}
-		return nil
-	}
-}
+// func init() {
+// 	websocket.AttachWebSocket = func(f *websocket.WebSocket) error {
+// 		v, ok := attachedTestWebSockets[f.Name()]
+// 		if !ok {
+// 			attachedTestWebSockets[f.Name()] = 1
+// 		} else {
+// 			attachedTestWebSockets[f.Name()] = v + 1
+// 		}
+// 		return nil
+// 	}
+// }
 
 var (
 	testProject            = "Qmc3WjpDvCaVY3jWmxranUY7roFhRj66SNqstiRbKxDbU4"

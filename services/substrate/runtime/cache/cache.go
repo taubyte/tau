@@ -130,5 +130,12 @@ func (c *Cache) validate(serviceable iface.Serviceable, branches []string) error
 	if serviceable.Commit() != commit {
 		return fmt.Errorf("cached pick commit `%s` is outdated, latest commit is `%s`", serviceable.Commit(), commit)
 	}
+
+	// if we have an asset ID, check if it is up to date
+	assetId, err := ResolveAssetCid(serviceable)
+	if err == nil && serviceable.AssetId() != assetId {
+		return fmt.Errorf("cached pick assetId `%s` is outdated, latest assetId is `%s`", serviceable.AssetId(), assetId)
+	}
+
 	return nil
 }

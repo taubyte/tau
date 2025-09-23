@@ -7,18 +7,20 @@ import (
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	p2p "github.com/taubyte/tau/p2p/peer"
 	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/specs/extract"
 	messagingSpec "github.com/taubyte/tau/pkg/specs/messaging"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/utils/id"
 )
 
 var subs = &subsViewer{
 	subscriptions: make(map[string]*subViewer),
 }
 
-func Handler(srv common.LocalService, ctx service.Context, conn service.WebSocketConnection) service.WebSocketHandler {
+func Handler(srv pubsubIface.ServiceWithLookup, ctx service.Context, conn service.WebSocketConnection) service.WebSocketHandler {
 	conn.EnableWriteCompression(true)
 	handler, err := createWsHandler(srv, ctx, conn)
 	if err != nil {
@@ -31,9 +33,17 @@ func Handler(srv common.LocalService, ctx service.Context, conn service.WebSocke
 	}
 
 	id, err := AddSubscription(srv, handler.matcher.String(), func(msg *pubsub.Message) {
+		fmt.Printf("PUBSUB IN message %p >>>>> %s\n", msg, string(msg.GetData()))
 		select {
 		case <-handler.ctx.Done():
-		case handler.ch <- msg.GetData():
+		case handler.ch <- func() pubsubIface.Message {
+			message, err := common.NewMessage(msg, "")
+			if err != nil {
+				common.Logger.Errorf("Creating message failed with: %v", err)
+				return nil
+			}
+			return message
+		}():
 		}
 	}, func(err error) {
 		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher, err.Error())
@@ -91,7 +101,7 @@ func removeSubscription(name string, subIdx int) {
 	}
 }
 
-func AddSubscription(srv common.LocalService, name string, handler p2p.PubSubConsumerHandler, err_handler p2p.PubSubConsumerErrorHandler) (subIdex int, err error) {
+func AddSubscription(srv pubsubIface.ServiceWithLookup, name string, handler p2p.PubSubConsumerHandler, err_handler p2p.PubSubConsumerErrorHandler) (subIdex int, err error) {
 	subs.Lock()
 	defer subs.Unlock()
 	subset, ok := subs.subscriptions[name]
@@ -124,7 +134,7 @@ func AddSubscription(srv common.LocalService, name string, handler p2p.PubSubCon
 	return newId, nil
 }
 
-func createWsHandler(srv common.LocalService, ctx service.Context, conn service.WebSocketConnection) (*dataStreamHandler, error) {
+func createWsHandler(srv pubsubIface.ServiceWithLookup, ctx service.Context, conn service.WebSocketConnection) (*dataStreamHandler, error) {
 	hash, err := ctx.GetStringVariable("hash")
 	if err != nil {
 		return nil, fmt.Errorf("getting string variable `hash` failed with %w", err)
@@ -182,11 +192,12 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn service.
 	}
 
 	handler := new(dataStreamHandler)
+	handler.id = id.Generate(srv.Node().ID(), handler)
 	handler.ctx, handler.ctxC = context.WithCancel(srv.Context())
 	handler.conn = conn
 	handler.matcher = matcher
 	handler.srv = srv
-	handler.ch = make(chan []byte)
+	handler.ch = make(chan pubsubIface.Message)
 	handler.errCh = make(chan error)
 
 	return handler, nil

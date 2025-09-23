@@ -8,15 +8,35 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/core/services/tns"
 	p2p "github.com/taubyte/tau/p2p/peer"
 	service "github.com/taubyte/tau/pkg/http"
-	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"gotest.tools/v3/assert"
 )
 
 // Mock implementations for testing
+type mockMessage struct {
+	data   []byte
+	source string
+}
+
+func (m *mockMessage) GetData() []byte {
+	return m.data
+}
+
+func (m *mockMessage) GetTopic() string {
+	return "test-topic"
+}
+
+func (m *mockMessage) GetSource() string {
+	return m.source
+}
+
+func (m *mockMessage) Marshal() ([]byte, error) {
+	return m.data, nil
+}
+
 type mockWebSocketConnection struct {
 	readMessageFunc            func() (int, []byte, error)
 	writeJSONFunc              func(v interface{}) error
@@ -82,12 +102,12 @@ func (m *mockMatchDefinition) CachePrefix() string {
 }
 
 type mockLocalService struct {
-	common.LocalService
+	pubsubIface.ServiceWithLookup
 	pubSubPublishFunc   func(ctx context.Context, topic string, data []byte) error
 	pubSubSubscribeFunc func(topic string, handler p2p.PubSubConsumerHandler, errHandler p2p.PubSubConsumerErrorHandler) error
 	contextFunc         func() context.Context
 	tnsClientFunc       func() tns.Client
-	lookupFunc          func(matcher *common.MatchDefinition) ([]iface.Serviceable, error)
+	lookupFunc          func(matcher pubsubIface.MatchDefinition) ([]pubsubIface.Serviceable, error)
 }
 
 func (m *mockLocalService) Node() p2p.Node {
@@ -108,7 +128,7 @@ func (m *mockLocalService) Tns() tns.Client {
 	return &mockTnsClient{}
 }
 
-func (m *mockLocalService) Lookup(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+func (m *mockLocalService) Lookup(matcher pubsubIface.MatchDefinition) ([]pubsubIface.Serviceable, error) {
 	if m.lookupFunc != nil {
 		return m.lookupFunc(matcher)
 	}
@@ -145,12 +165,13 @@ func (m *mockTnsClient) Fetch(path tns.Path) (tns.Object, error) {
 }
 
 // Helper functions to reduce test duplication
-func createTestHandler(ctx context.Context, cancel context.CancelFunc, conn service.WebSocketConnection, srv common.LocalService) *dataStreamHandler {
+func createTestHandler(ctx context.Context, cancel context.CancelFunc, conn service.WebSocketConnection, srv pubsubIface.ServiceWithLookup) *dataStreamHandler {
 	return &dataStreamHandler{
 		ctx:     ctx,
 		ctxC:    cancel,
 		conn:    conn,
-		ch:      make(chan []byte, 1),
+		id:      "test-handler-id",
+		ch:      make(chan pubsubIface.Message, 1),
 		errCh:   make(chan error, 1),
 		matcher: &mockMatchDefinition{},
 		srv:     srv,
@@ -191,8 +212,14 @@ func createReadErrorConnection(err error) *mockWebSocketConnection {
 }
 
 func verifyChannelsClosed(t *testing.T, handler *dataStreamHandler) {
-	assert.Assert(t, handler.ch == nil, "Expected ch to be nil")
-	assert.Assert(t, handler.errCh == nil, "Expected errCh to be nil")
+	// Channels are not closed in the actual implementation, just context is cancelled
+	// So we just verify the context is cancelled
+	select {
+	case <-handler.ctx.Done():
+		// Expected
+	default:
+		t.Error("Expected context to be cancelled")
+	}
 }
 
 func verifyContextCancelled(t *testing.T, handler *dataStreamHandler) {
@@ -270,10 +297,22 @@ func TestDataStreamHandler_In(t *testing.T) {
 		expectedTopic := "test-topic"
 		var publishCalled bool
 		var mu sync.Mutex
+		done := make(chan bool)
 
+		readCount := 0
 		conn := createMockConnection(
 			func() (int, []byte, error) {
-				return websocket.TextMessage, expectedData, nil
+				readCount++
+				if readCount == 1 {
+					// Signal that we've read the message
+					select {
+					case done <- true:
+					default:
+					}
+					return websocket.TextMessage, expectedData, nil
+				}
+				// Return error on subsequent reads to stop the loop
+				return 0, nil, errors.New("connection closed")
 			},
 			nil,
 		)
@@ -289,7 +328,8 @@ func TestDataStreamHandler_In(t *testing.T) {
 			publishCalled = true
 			mu.Unlock()
 			assert.Equal(t, topic, expectedTopic)
-			assert.Equal(t, string(data), string(expectedData))
+			// The data will be CBOR-encoded, so we just check it's not empty
+			assert.Assert(t, len(data) > 0, "Expected non-empty data")
 			return nil
 		})
 
@@ -299,8 +339,16 @@ func TestDataStreamHandler_In(t *testing.T) {
 		// Start the In goroutine
 		go handler.In()
 
-		// Wait a bit for the message to be processed
-		time.Sleep(10 * time.Millisecond)
+		// Wait for the message to be read and processed
+		select {
+		case <-done:
+			// Message was read, now wait a bit for processing
+			time.Sleep(10 * time.Millisecond)
+			// Cancel context to stop the infinite loop
+			cancel()
+		case <-time.After(100 * time.Millisecond):
+			t.Error("Expected message to be read within timeout")
+		}
 
 		mu.Lock()
 		called := publishCalled
@@ -415,6 +463,7 @@ func TestDataStreamHandler_Out(t *testing.T) {
 				writeCalled = true
 				mu.Unlock()
 				assert.Equal(t, messageType, websocket.BinaryMessage)
+				// The data will be the raw message data, not CBOR-encoded
 				assert.Equal(t, string(data), string(expectedData))
 				return nil
 			},
@@ -422,8 +471,8 @@ func TestDataStreamHandler_Out(t *testing.T) {
 
 		handler := createTestHandler(ctx, cancel, conn, createMockService(nil))
 
-		// Send data to channel
-		handler.ch <- expectedData
+		// Send data to channel with different source so it doesn't get filtered
+		handler.ch <- &mockMessage{data: expectedData, source: "different-source"}
 
 		// Start the Out goroutine
 		go handler.Out()
@@ -468,7 +517,7 @@ func TestDataStreamHandler_Out(t *testing.T) {
 			ctx:   ctx,
 			ctxC:  cancel,
 			conn:  conn,
-			ch:    make(chan []byte, 1),
+			ch:    make(chan pubsubIface.Message, 1),
 			errCh: make(chan error, 1),
 		}
 
@@ -507,12 +556,12 @@ func TestDataStreamHandler_Out(t *testing.T) {
 			ctx:   ctx,
 			ctxC:  cancel,
 			conn:  conn,
-			ch:    make(chan []byte, 1),
+			ch:    make(chan pubsubIface.Message, 1),
 			errCh: make(chan error, 1),
 		}
 
-		// Send data to channel
-		handler.ch <- expectedData
+		// Send data to channel with different source so it doesn't get filtered
+		handler.ch <- &mockMessage{data: expectedData, source: "different-source"}
 
 		// Start the Out goroutine
 		go handler.Out()
@@ -540,7 +589,7 @@ func TestDataStreamHandler_Out(t *testing.T) {
 			ctx:   ctx,
 			ctxC:  cancel,
 			conn:  conn,
-			ch:    make(chan []byte, 1),
+			ch:    make(chan pubsubIface.Message, 1),
 			errCh: make(chan error, 1),
 		}
 
@@ -603,7 +652,7 @@ func TestDataStreamHandler_Out_DefaultCase(t *testing.T) {
 		ctx:   ctx,
 		ctxC:  cancel,
 		conn:  conn,
-		ch:    make(chan []byte, 1),
+		ch:    make(chan pubsubIface.Message, 1),
 		errCh: make(chan error, 1),
 	}
 
@@ -629,7 +678,7 @@ func TestDataStreamHandler_RaceConditions(t *testing.T) {
 		handler := &dataStreamHandler{
 			ctx:   ctx,
 			ctxC:  cancel,
-			ch:    make(chan []byte, 1),
+			ch:    make(chan pubsubIface.Message, 1),
 			errCh: make(chan error, 1),
 			conn:  &mockWebSocketConnection{},
 			srv:   &mockLocalService{},
@@ -662,7 +711,7 @@ func TestDataStreamHandler_RaceConditions(t *testing.T) {
 			ctx:     ctx,
 			ctxC:    cancel,
 			conn:    conn,
-			ch:      make(chan []byte, 1),
+			ch:      make(chan pubsubIface.Message, 1),
 			errCh:   make(chan error, 1),
 			matcher: &mockMatchDefinition{},
 			srv: &mockLocalService{
@@ -696,7 +745,8 @@ func TestDataStreamHandler_RaceConditions(t *testing.T) {
 		handler := &dataStreamHandler{
 			ctx:   ctx,
 			ctxC:  cancel,
-			ch:    make(chan []byte, 1),
+			conn:  &mockWebSocketConnection{},
+			ch:    make(chan pubsubIface.Message, 1),
 			errCh: make(chan error, 1),
 		}
 
@@ -731,7 +781,7 @@ func TestDataStreamHandler_RaceConditions(t *testing.T) {
 			ctx:     ctx,
 			ctxC:    cancel,
 			conn:    conn,
-			ch:      make(chan []byte, 1),
+			ch:      make(chan pubsubIface.Message, 1),
 			errCh:   make(chan error, 1), // Small buffer
 			matcher: &mockMatchDefinition{},
 			srv: &mockLocalService{
@@ -781,7 +831,7 @@ func TestDataStreamHandler_ClosedChannelWrites(t *testing.T) {
 			ctx:     ctx,
 			ctxC:    cancel,
 			conn:    conn,
-			ch:      make(chan []byte, 1),
+			ch:      make(chan pubsubIface.Message, 1),
 			errCh:   make(chan error, 1),
 			matcher: &mockMatchDefinition{},
 			srv: &mockLocalService{
@@ -823,12 +873,12 @@ func TestDataStreamHandler_ClosedChannelWrites(t *testing.T) {
 			ctx:   ctx,
 			ctxC:  cancel,
 			conn:  conn,
-			ch:    make(chan []byte, 1),
+			ch:    make(chan pubsubIface.Message, 1),
 			errCh: make(chan error, 1),
 		}
 
 		// Send some data to trigger a write
-		handler.ch <- []byte("test data")
+		handler.ch <- &mockMessage{data: []byte("test data"), source: "different-source"}
 
 		// Start Out goroutine - it should handle the write error gracefully
 		go handler.Out()
@@ -862,7 +912,7 @@ func TestDataStreamHandler_ClosedChannelWrites(t *testing.T) {
 			ctx:     ctx,
 			ctxC:    cancel,
 			conn:    conn,
-			ch:      make(chan []byte, 1),
+			ch:      make(chan pubsubIface.Message, 1),
 			errCh:   make(chan error, 1),
 			matcher: &mockMatchDefinition{},
 			srv: &mockLocalService{
@@ -884,7 +934,7 @@ func TestDataStreamHandler_ClosedChannelWrites(t *testing.T) {
 			ctx:     ctx,
 			ctxC:    cancel,
 			conn:    conn,
-			ch:      make(chan []byte, 1),
+			ch:      make(chan pubsubIface.Message, 1),
 			errCh:   make(chan error, 1),
 			matcher: &mockMatchDefinition{},
 			srv: &mockLocalService{

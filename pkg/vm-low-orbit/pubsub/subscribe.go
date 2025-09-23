@@ -17,7 +17,7 @@ func (f *Factory) W_setSubscriptionChannel(ctx context.Context, module common.Mo
 
 	_ctx := f.parent.Context()
 
-	err0 := f.pubsubNode.Subscribe(_ctx.Project(), _ctx.Application(), channel)
+	err0 := f.pubsubNode.Subscribe(_ctx.Project(), _ctx.Application(), _ctx.Resource(), channel)
 	if err0 != nil {
 		return errno.ErrorSubscribeFailed
 	}

@@ -17,8 +17,10 @@ func (f *Function) Call(inst Instance, id uint32) (err error) {
 			f.totalCallTime.Add(int64(time.Since(startTime)))
 		}
 
+		fmt.Println("\n\nCALL OUT:")
 		io.Copy(os.Stdout, inst.Stdout())
 		io.Copy(os.Stdout, inst.Stderr())
+		fmt.Println("CALL OUT END\n\n")
 	}()
 
 	moduleName, err := f.moduleName()
@@ -50,6 +52,8 @@ func (f *Function) Call(inst Instance, id uint32) (err error) {
 	if mem := uint64(module.Memory().Size()); mem > f.maxMemory.Load() {
 		f.maxMemory.Store(mem)
 	}
+
+	fmt.Println("CALL ERROR:", err)
 	if err != nil {
 		return fmt.Errorf("calling function for event %d failed with: %w", id, err)
 	}

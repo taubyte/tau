@@ -16,10 +16,6 @@ type pluginInstance struct {
 }
 
 func (i *pluginInstance) LoadFactory(factory vm.Factory, hm vm.HostModule) error {
-	if err := factory.Load(hm); err != nil {
-		return err
-	}
-
 	defs := make([]*vm.HostModuleFunctionDefinition, 0)
 	m := reflect.ValueOf(factory)
 	mT := reflect.TypeOf(factory)
