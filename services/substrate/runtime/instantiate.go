@@ -64,6 +64,11 @@ func (i *instance) Stderr() io.Reader {
 Instantiate returns a runtime, plugin api, and error
 */
 func (f *Function) Instantiate(ctx context.Context) (Instance, error) { //} (runtime vm.Runtime, pluginApi interface{}, err error) {
+	// Check if shutdown is in progress
+	if f.shutdown.Load() {
+		return nil, fmt.Errorf("function is shutting down")
+	}
+
 	instCh := &instanceRequest{ctx: ctx, ch: make(chan Instance, 1)}
 
 	select {
@@ -86,40 +91,54 @@ func (f *Function) Instantiate(ctx context.Context) (Instance, error) { //} (run
 }
 
 func (f *Function) intanceManager() {
+	defer close(f.shutdownDone)
+
 	for {
 		select {
 		case <-f.ctx.Done():
 			return
-		case reqCh := <-f.instanceReqs:
-			fmt.Println("instance request received - available instances = ", len(f.availableInstances))
+		case reqCh, ok := <-f.instanceReqs:
+			if !ok {
+				// instanceReqs channel is closed, shutdown initiated
+				// Process any remaining requests in the channel
+				for reqCh := range f.instanceReqs {
+					f.processRequest(reqCh)
+				}
+				return
+			}
+			f.processRequest(reqCh)
+		}
+	}
+}
+
+func (f *Function) processRequest(reqCh *instanceRequest) {
+	fmt.Println("instance request received - available instances = ", len(f.availableInstances))
+	select {
+	case instance := <-f.availableInstances:
+		fmt.Println("instance available - sending instance")
+		reqCh.ch <- instance
+	default:
+		// we need to instantiate a new instance
+		// hoever if that does not work we need to repush the request in a way that is it first in line
+		fmt.Println("instantiating new instance")
+		runtime, sdk, err := f.instantiate()
+		if err == nil {
+			fmt.Println("instance instantiated - sending instance")
+			reqCh.ch <- &instance{runtime: runtime, sdk: sdk, parent: f}
+		} else {
+			logger.Errorf("creating new instance failed with: %s", err.Error())
+			fmt.Println("creating new instance failed - wait for an instance to be available - available instances = ", len(f.availableInstances))
+			// we reached some sort of limit
+			// wait for an instance to be available
 			select {
+			case <-reqCh.ctx.Done():
+				reqCh.err = fmt.Errorf("instance request context done with: %w", reqCh.ctx.Err())
+				reqCh.ch <- nil
 			case instance := <-f.availableInstances:
 				fmt.Println("instance available - sending instance")
 				reqCh.ch <- instance
-			default:
-				// we need to instantiate a new instance
-				// hoever if that does not work we need to repush the request in a way that is it first in line
-				fmt.Println("instantiating new instance")
-				runtime, sdk, err := f.instantiate()
-				if err == nil {
-					fmt.Println("instance instantiated - sending instance")
-					reqCh.ch <- &instance{runtime: runtime, sdk: sdk, parent: f}
-				} else {
-					logger.Errorf("creating new instance failed with: %s", err.Error())
-					fmt.Println("creating new instance failed - wait for an instance to be available - available instances = ", len(f.availableInstances))
-					// we reached some sort of limit
-					// wait for an instance to be available
-					select {
-					case <-reqCh.ctx.Done():
-						reqCh.err = fmt.Errorf("instance request context done with: %w", reqCh.ctx.Err())
-						reqCh.ch <- nil
-					case instance := <-f.availableInstances:
-						fmt.Println("instance available - sending instance")
-						reqCh.ch <- instance
-					case <-f.ctx.Done():
-						return
-					}
-				}
+			case <-f.ctx.Done():
+				return
 			}
 		}
 	}

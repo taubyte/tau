@@ -111,7 +111,7 @@ func AddSubscription(srv pubsubIface.ServiceWithLookup, name string, handler p2p
 	if !ok {
 		subset = new(subViewer)
 		subset.subs = make(map[int]*sub, 0)
-		ch := make(chan *pubsub.Message, 64)
+		ch := make(chan *pubsub.Message, 1024*1024)
 		go func() {
 			for {
 				select {

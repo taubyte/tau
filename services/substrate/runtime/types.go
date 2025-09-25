@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"io"
+	"sync"
 	"sync/atomic"
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
@@ -23,6 +24,11 @@ type Function struct {
 
 	instanceReqs       chan *instanceRequest
 	availableInstances chan Instance
+
+	// shutdown tracking
+	shutdown     *atomic.Bool
+	shutdownDone chan struct{}
+	shutdownMu   sync.RWMutex
 
 	// metrics
 	coldStarts     *atomic.Uint64

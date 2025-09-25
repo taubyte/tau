@@ -25,7 +25,16 @@ func (f *Function) Project() string {
 }
 
 func (f *Function) Close() {
-	f.instanceCtxC()
+	f.closeOnce.Do(func() {
+		f.close()
+	})
+}
+
+func (f *Function) close() {
+	go func() {
+		f.Shutdown()
+		f.instanceCtxC()
+	}()
 }
 
 func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Response, err error) {
