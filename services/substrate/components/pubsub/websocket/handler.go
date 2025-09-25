@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
@@ -74,7 +75,10 @@ func (sv *subViewer) getNextId() int {
 	return ret
 }
 
+var msgCount = new(atomic.Int64)
+
 func (sv *subViewer) handler(msg *pubsub.Message) {
+	fmt.Println("subsub message handler called #", msgCount.Add(1), "==", string(msg.GetData()))
 	sv.Lock()
 	defer sv.Unlock()
 	// Process subscriptions sequentially to avoid goroutine explosion
@@ -107,7 +111,20 @@ func AddSubscription(srv pubsubIface.ServiceWithLookup, name string, handler p2p
 	if !ok {
 		subset = new(subViewer)
 		subset.subs = make(map[int]*sub, 0)
-		err = srv.Node().PubSubSubscribe(name, subset.handler, subset.err_handler) // TODO: unsubscribe when no more subscriptions
+		ch := make(chan *pubsub.Message, 64)
+		go func() {
+			for {
+				select {
+				case <-srv.Context().Done():
+					return
+				case msg := <-ch:
+					subset.handler(msg)
+				}
+			}
+		}()
+		err = srv.Node().PubSubSubscribe(name, func(msg *pubsub.Message) {
+			ch <- msg
+		}, subset.err_handler) // TODO: unsubscribe when no more subscriptions
 	}
 
 	// Catching error outside so the unlock can happen right away for the inner lock

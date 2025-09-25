@@ -1,8 +1,10 @@
 package pubsub
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -38,7 +40,6 @@ func (s *Service) handle(startTime time.Time, matcher *common.MatchDefinition, m
 	waitGroup.Wait()
 }
 
-// TODO smartops and cache the serviceable
 func (s *Service) Subscribe(projectId, appId, resource, path string) error {
 	start := time.Now()
 	matcher := &common.MatchDefinition{
@@ -59,6 +60,14 @@ func (s *Service) Subscribe(projectId, appId, resource, path string) error {
 		return fmt.Errorf("lookup returned no picks")
 	}
 
+	ctx, ctxC := context.WithCancel(s.Context())
+	workers := make(chan struct{}, 64)
+	for range 64 {
+		workers <- struct{}{}
+	}
+
+	messageCount := new(atomic.Int64)
+
 	_, err = websocket.AddSubscription(s, matcher.String(), func(msg *pubsub.Message) {
 		// unwarp the message first
 		message, err := common.NewMessage(msg, "")
@@ -71,15 +80,29 @@ func (s *Service) Subscribe(projectId, appId, resource, path string) error {
 			return
 		}
 
-		// the try to handle the message
-		s.handle(start, matcher, message)
+		go func() {
+			defer func() {
+				workers <- struct{}{}
+			}()
+			select {
+			case <-workers:
+				fmt.Println("handling message #", messageCount.Add(1))
+				s.handle(start, matcher, message)
+				fmt.Println("messages handled = ", string(message.GetData()))
+			case <-ctx.Done():
+				return
+			}
+		}()
 	}, func(err error) {
 		common.Logger.Error("handle error with:", err.Error())
+		ctxC()
 	})
 
 	if err != nil {
 		common.Logger.Error("subscribe failed with:", err.Error())
+		ctxC()
+		return err
 	}
 
-	return err
+	return nil
 }

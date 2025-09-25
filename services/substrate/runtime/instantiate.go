@@ -91,17 +91,22 @@ func (f *Function) intanceManager() {
 		case <-f.ctx.Done():
 			return
 		case reqCh := <-f.instanceReqs:
+			fmt.Println("instance request received - available instances = ", len(f.availableInstances))
 			select {
 			case instance := <-f.availableInstances:
+				fmt.Println("instance available - sending instance")
 				reqCh.ch <- instance
 			default:
 				// we need to instantiate a new instance
 				// hoever if that does not work we need to repush the request in a way that is it first in line
+				fmt.Println("instantiating new instance")
 				runtime, sdk, err := f.instantiate()
 				if err == nil {
+					fmt.Println("instance instantiated - sending instance")
 					reqCh.ch <- &instance{runtime: runtime, sdk: sdk, parent: f}
 				} else {
 					logger.Errorf("creating new instance failed with: %s", err.Error())
+					fmt.Println("creating new instance failed - wait for an instance to be available - available instances = ", len(f.availableInstances))
 					// we reached some sort of limit
 					// wait for an instance to be available
 					select {
@@ -109,6 +114,7 @@ func (f *Function) intanceManager() {
 						reqCh.err = fmt.Errorf("instance request context done with: %w", reqCh.ctx.Err())
 						reqCh.ch <- nil
 					case instance := <-f.availableInstances:
+						fmt.Println("instance available - sending instance")
 						reqCh.ch <- instance
 					case <-f.ctx.Done():
 						return

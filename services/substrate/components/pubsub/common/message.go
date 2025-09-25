@@ -2,6 +2,7 @@ package common
 
 import (
 	"errors"
+	"sync/atomic"
 
 	"github.com/fxamacker/cbor/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -12,9 +13,12 @@ import (
 type message struct {
 	from   peer.ID
 	topic  string
+	Seq    uint64 `cbor:"0"`
 	Source string `cbor:"1"`
 	Data   []byte `cbor:"2"`
 }
+
+var msgSeq = new(atomic.Uint64)
 
 func NewMessage[T *pubsub.Message | []byte](in T, source string) (pubsubIface.Message, error) {
 	switch in := any(in).(type) {
@@ -24,6 +28,7 @@ func NewMessage[T *pubsub.Message | []byte](in T, source string) (pubsubIface.Me
 		if err != nil {
 			return nil, err
 		}
+		msg.Seq = msgSeq.Add(1)
 		msg.from = in.GetFrom()
 		msg.topic = in.GetTopic()
 		if source != "" {
@@ -32,6 +37,7 @@ func NewMessage[T *pubsub.Message | []byte](in T, source string) (pubsubIface.Me
 		return &msg, nil
 	case []byte:
 		return &message{
+			Seq:    msgSeq.Add(1),
 			Source: source,
 			Data:   in,
 		}, nil
