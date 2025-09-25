@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/libp2p/go-libp2p/core/peer"
 	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/core/services/tns"
 	p2p "github.com/taubyte/tau/p2p/peer"
@@ -139,6 +140,14 @@ type mockNode struct {
 	p2p.Node
 	pubSubPublishFunc   func(ctx context.Context, topic string, data []byte) error
 	pubSubSubscribeFunc func(topic string, handler p2p.PubSubConsumerHandler, errHandler p2p.PubSubConsumerErrorHandler) error
+}
+
+func (m *mockNode) ID() peer.ID {
+	id, err := peer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
+	if err != nil {
+		panic(err)
+	}
+	return id
 }
 
 func (m *mockNode) PubSubPublish(ctx context.Context, topic string, data []byte) error {

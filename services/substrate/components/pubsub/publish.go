@@ -40,8 +40,6 @@ func (s *Service) Publish(ctx context.Context, projectId, appId, resource, chann
 		return fmt.Errorf("marshalling message failed with: %w", err)
 	}
 
-	fmt.Println("PUBLISH message>>>>>", string(data))
-
 	// TODO smartops for the messaging channel
 	return s.Node().PubSubPublish(ctx, matcher.String(), data)
 }

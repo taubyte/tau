@@ -12,28 +12,11 @@ import (
 	"github.com/taubyte/tau/services/substrate/runtime/cache"
 )
 
-// func init() {
-// 	websocket.AttachWebSocket = func(f *websocket.WebSocket) error {
-// 		v, ok := attachedTestWebSockets[f.Name()]
-// 		if !ok {
-// 			attachedTestWebSockets[f.Name()] = 1
-// 		} else {
-// 			attachedTestWebSockets[f.Name()] = v + 1
-// 		}
-// 		return nil
-// 	}
-// }
-
 var (
-	testProject            = "Qmc3WjpDvCaVY3jWmxranUY7roFhRj66SNqstiRbKxDbU4"
-	testChannel            = "someChannel"
-	testCommit             = "qwertyuiop"
-	attachedTestWebSockets = make(map[string]int)
+	testProject = "Qmc3WjpDvCaVY3jWmxranUY7roFhRj66SNqstiRbKxDbU4"
+	testChannel = "someChannel"
+	testCommit  = "qwertyuiop"
 )
-
-func refreshTestVariables() {
-	attachedTestWebSockets = make(map[string]int)
-}
 
 func fakeFetch(messagings map[string]structureSpec.Messaging, functions map[string]structureSpec.Function) {
 	structure.FakeFetchMethod = func(path tns.Path) (tns.Object, error) {

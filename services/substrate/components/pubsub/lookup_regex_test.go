@@ -23,12 +23,12 @@ func TestLookupRegex(t *testing.T) {
 	}
 
 	function := map[string]structureSpec.Function{"someFuncId": {
+		Type:    "pubsub",
 		Name:    "someFunc",
 		Channel: testChannel,
 	}}
 
 	structure.RefreshTestVariables()
-	refreshTestVariables()
 	fakeFetch(msg, function)
 
 	ret, err := s.Lookup(
@@ -37,9 +37,7 @@ func TestLookupRegex(t *testing.T) {
 			Project: testProject,
 		})
 	assert.NilError(t, err)
-	assert.Assert(t, len(ret) > 0)
-
-	assert.Equal(t, attachedTestWebSockets["Somemessaging"], 1)
+	assert.Equal(t, len(ret), 1)
 
 	ret, err = s.Lookup(
 		&common.MatchDefinition{
@@ -47,7 +45,6 @@ func TestLookupRegex(t *testing.T) {
 			Project: testProject,
 		})
 	assert.NilError(t, err)
-	assert.Assert(t, len(ret) > 0)
+	assert.Equal(t, len(ret), 1)
 
-	assert.Equal(t, attachedTestWebSockets["Somemessaging"], 1)
 }

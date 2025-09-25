@@ -58,9 +58,6 @@ func (h *dataStreamHandler) In() {
 				return
 			}
 
-			fmt.Println("WEBSOKCET IN message source >>>>>", message.GetSource())
-			fmt.Println("WEBSOKCET IN message >>>>>", string(msg))
-
 			err = h.srv.Node().PubSubPublish(h.ctx, h.matcher.String(), msg)
 			if err != nil {
 				h.error(fmt.Errorf("reading data In then Publish failed with: %v", err))
@@ -82,15 +79,10 @@ func (h *dataStreamHandler) Out() {
 			})
 			return
 		case data := <-h.ch:
-			fmt.Println("PUBSUB to WEBSOKCET OUT message>>>>>", string(data.GetData()))
-			fmt.Println("WEBSOKCET OUT message source>>>>>", data.GetSource())
 			if data.GetSource() == h.id {
-				fmt.Println("WEBSOKCET OUT message source is self>>>>>", data.GetSource())
 				// ignore the message - comes from self
 				continue
 			}
-
-			fmt.Println("WEBSOKCET OUT message>>>>>", string(data.GetData()))
 
 			err := h.conn.WriteMessage(websocket.BinaryMessage, data.GetData())
 			if err != nil {

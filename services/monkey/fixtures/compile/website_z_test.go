@@ -5,6 +5,7 @@ import (
 	"path"
 	"strings"
 	"testing"
+	"time"
 
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
@@ -84,7 +85,8 @@ func TestZipWebsite(t *testing.T) {
 		return
 	}
 
-	body, err := callHal(u, "/")
+	// Wait for website to be available before making HTTP request
+	body, err := callHalWithRetry(u, "/", 10, 500*time.Millisecond)
 	if err != nil {
 		t.Error(err)
 		return

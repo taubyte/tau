@@ -33,7 +33,6 @@ func Handler(srv pubsubIface.ServiceWithLookup, ctx service.Context, conn servic
 	}
 
 	id, err := AddSubscription(srv, handler.matcher.String(), func(msg *pubsub.Message) {
-		fmt.Printf("PUBSUB IN message %p >>>>> %s\n", msg, string(msg.GetData()))
 		select {
 		case <-handler.ctx.Done():
 		case handler.ch <- func() pubsubIface.Message {

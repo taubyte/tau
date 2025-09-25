@@ -14,26 +14,20 @@ import (
 )
 
 func (i *instance) Free() error {
-	fmt.Printf("freeing instance %p\n", i)
 	var useMem uint32
 	for _, name := range i.runtime.Modules() {
 		mod, err := i.runtime.Module(name)
 		if err != nil {
-			fmt.Printf("error getting module: %v\n", err)
 			return err
 		}
 		useMem += mod.Memory().Size()
 	}
 
-	fmt.Printf("used memory: %v\n", useMem)
 	if useMem > uint32(i.parent.config.Memory*2/3) {
-		fmt.Printf("instance %p used memory is (%d) greater than %d of the memory limit\n", i, useMem, i.parent.config.Memory*2/3)
 		return fmt.Errorf("used memory limit exceeded") //TODO: cleanup instance
 	}
 
-	fmt.Printf("pushing instance to available instances %p - total calls: %d\n", i, i.parent.calls.Load())
 	i.parent.availableInstances <- i
-	fmt.Printf("instance %p pushed to available instances - available instances: %d\n", i, len(i.parent.availableInstances))
 	return nil
 }
 
@@ -46,6 +40,7 @@ func (i *instance) SDK() plugins.Instance {
 }
 
 func (i *instance) Ready() (Instance, error) {
+	// TODO: track memory usage of each call so we can estimate of future calls - lowering the chance of a future call failing and eliminating the static 2/3 memory limit
 	// if i.prevMemSize > 0 {
 	// 	i.runtime.Module()
 	// 	memUsage := i.runtime.Module(i.parent.config.Name).Memory().Size() - i.prevMemSize
@@ -96,22 +91,16 @@ func (f *Function) intanceManager() {
 		case <-f.ctx.Done():
 			return
 		case reqCh := <-f.instanceReqs:
-			fmt.Printf("[func/%s] instance request received - available instances: %d\n", f.config.Name, len(f.availableInstances))
 			select {
 			case instance := <-f.availableInstances:
-				fmt.Printf("[func/%s] instance available %p\n", f.config.Name, instance)
 				reqCh.ch <- instance
 			default:
-				fmt.Printf("[func/%s] instance not available\n", f.config.Name)
 				// we need to instantiate a new instance
 				// hoever if that does not work we need to repush the request in a way that is it first in line
-				fmt.Printf("[func/%s] instantiating new instance\n", f.config.Name)
 				runtime, sdk, err := f.instantiate()
 				if err == nil {
-					fmt.Printf("[func/%s] new instance created\n", f.config.Name)
 					reqCh.ch <- &instance{runtime: runtime, sdk: sdk, parent: f}
 				} else {
-					fmt.Printf("[func/%s] creating new instance failed with: %s\n", f.config.Name, err.Error())
 					logger.Errorf("creating new instance failed with: %s", err.Error())
 					// we reached some sort of limit
 					// wait for an instance to be available
@@ -120,7 +109,6 @@ func (f *Function) intanceManager() {
 						reqCh.err = fmt.Errorf("instance request context done with: %w", reqCh.ctx.Err())
 						reqCh.ch <- nil
 					case instance := <-f.availableInstances:
-						fmt.Printf("[func/%s] instance available after failed instantiation\n", f.config.Name)
 						reqCh.ch <- instance
 					case <-f.ctx.Done():
 						return

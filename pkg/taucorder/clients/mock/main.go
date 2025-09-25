@@ -96,7 +96,6 @@ func main() {
 	printOut, err := json.Marshal(data)
 	if err != nil {
 		panic(err)
-
 	}
 	fmt.Printf("@@%s@@\n", printOut)
 

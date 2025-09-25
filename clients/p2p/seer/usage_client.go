@@ -94,14 +94,15 @@ func (u *Usage) Beacon(hostname, nodeId, clientNodeId string, signature []byte) 
 func (u *UsageBeacon) Start() {
 	go func() {
 		var err error
-
 		_, err = u.usage.updateUsage(u.hostname, u.nodeId, u.clientNodeId, u.signature)
 		if err != nil {
+			logger.Errorf("updateUsage failed: %v", err)
 			u._status <- err
 		}
 
 		_, err = u.usage.updateAnnounce(u.nodeId, u.clientNodeId, u.signature)
 		if err != nil {
+			logger.Errorf("updateAnnounce failed: %v", err)
 			u._status <- err
 		}
 

@@ -1115,23 +1115,20 @@ func TestValidationWithCidMismatch(t *testing.T) {
 		t.Fatalf("Add() failed: %v", err)
 	}
 
-	// Get with validation enabled - should succeed since CID validation is no longer performed
+	// Get with validation enabled - should remove serviceable due to CID mismatch
 	matcher := &mockMatchDefinition{cachePrefix: "test-prefix", stringVal: "test-matcher"}
 	options := components.GetOptions{
 		Validation: true,
 		Branches:   []string{"main"},
 	}
-	results, err := cache.Get(matcher, options)
-	if err != nil {
-		t.Fatalf("Get() failed: %v", err)
-	}
-	if len(results) != 1 {
-		t.Fatalf("Expected 1 result, got %d", len(results))
+	_, err = cache.Get(matcher, options)
+	if err == nil {
+		t.Fatal("Expected error for CID mismatch")
 	}
 
-	// Verify serviceable was not closed since CID validation is no longer performed
-	if serviceable.IsClosed() {
-		t.Fatal("Expected serviceable to remain open since CID validation is no longer performed")
+	// Verify serviceable was removed and closed due to CID mismatch
+	if !serviceable.IsClosed() {
+		t.Fatal("Expected serviceable to be closed after CID mismatch")
 	}
 }
 

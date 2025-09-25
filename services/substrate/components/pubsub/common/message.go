@@ -2,7 +2,6 @@ package common
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/fxamacker/cbor/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -25,7 +24,6 @@ func NewMessage[T *pubsub.Message | []byte](in T, source string) (pubsubIface.Me
 		if err != nil {
 			return nil, err
 		}
-		fmt.Println("UNMARSHALLED message>>>>>", msg)
 		msg.from = in.GetFrom()
 		msg.topic = in.GetTopic()
 		if source != "" {

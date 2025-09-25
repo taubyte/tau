@@ -25,7 +25,6 @@ func (s *Service) Lookup(matcher iface.MatchDefinition) ([]iface.Serviceable, er
 
 	var picks []iface.Serviceable
 	for _, serviceable := range serviceables {
-		fmt.Printf("SERVICEABLE>>>>> (%T) %v\n", serviceable, serviceable)
 		serv, ok := serviceable.(iface.Serviceable)
 		if !ok {
 			return nil, errors.New("converting serviceable to pubsub serviceable failed")

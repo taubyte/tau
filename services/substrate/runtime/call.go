@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+var DebugFunctionCalls = false
+
 // Call takes instance and id, then calls the moduled function. Returns an error.
 func (f *Function) Call(inst Instance, id uint32) (err error) {
 	startTime := time.Now()
@@ -17,10 +19,12 @@ func (f *Function) Call(inst Instance, id uint32) (err error) {
 			f.totalCallTime.Add(int64(time.Since(startTime)))
 		}
 
-		fmt.Println("\n\nCALL OUT:")
-		io.Copy(os.Stdout, inst.Stdout())
-		io.Copy(os.Stdout, inst.Stderr())
-		fmt.Println("CALL OUT END\n\n")
+		if DebugFunctionCalls {
+			fmt.Println("Calling function", f.config.Name, "output:")
+			io.Copy(os.Stdout, inst.Stdout())
+			io.Copy(os.Stdout, inst.Stderr())
+			fmt.Printf("\n\n")
+		}
 	}()
 
 	moduleName, err := f.moduleName()
@@ -53,7 +57,6 @@ func (f *Function) Call(inst Instance, id uint32) (err error) {
 		f.maxMemory.Store(mem)
 	}
 
-	fmt.Println("CALL ERROR:", err)
 	if err != nil {
 		return fmt.Errorf("calling function for event %d failed with: %w", id, err)
 	}

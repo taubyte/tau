@@ -6,21 +6,6 @@ import (
 	p2p "github.com/taubyte/tau/p2p/peer"
 )
 
-// var _ commonIface.Serviceable = &WebSocket{}
-
-// type WebSocket struct {
-// 	ctx       context.Context
-// 	ctxC      context.CancelFunc
-// 	srv       pubsubIface.ServiceWithLookup
-// 	dagReader io.ReadSeekCloser
-// 	project   string
-// 	mmi       common.MessagingMapItem
-// 	matcher   *common.MatchDefinition
-
-// 	commit string
-// 	branch string
-// }
-
 type WrappedMessage struct {
 	Message []byte `json:"message"`
 	Error   string `json:"error"`
