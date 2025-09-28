@@ -3,7 +3,6 @@ package websocket
 import (
 	"context"
 	"fmt"
-	"sync/atomic"
 
 	"github.com/gorilla/websocket"
 	"github.com/taubyte/tau/core/services/substrate/components"
@@ -35,8 +34,6 @@ func (h *dataStreamHandler) error(err error) {
 	}
 }
 
-var msgOutCount = new(atomic.Int64)
-
 func (h *dataStreamHandler) In() {
 
 	for {
@@ -49,7 +46,6 @@ func (h *dataStreamHandler) In() {
 				h.error(fmt.Errorf("reading data In on `%s` failed with: %s", h.matcher, err))
 				return
 			}
-			fmt.Println("publishing message #", msgOutCount.Add(1), "==", string(msg))
 
 			message, err := common.NewMessage(msg, h.id)
 			if err != nil {
@@ -64,7 +60,6 @@ func (h *dataStreamHandler) In() {
 
 			err = h.srv.Node().PubSubPublish(h.ctx, h.matcher.String(), msg)
 			if err != nil {
-				fmt.Println("error publishing message #", msgOutCount.Load(), "with error", err)
 				h.error(fmt.Errorf("reading data In then Publish failed with: %v", err))
 				return
 			}

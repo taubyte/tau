@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync/atomic"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
@@ -75,10 +74,7 @@ func (sv *subViewer) getNextId() int {
 	return ret
 }
 
-var msgCount = new(atomic.Int64)
-
 func (sv *subViewer) handler(msg *pubsub.Message) {
-	fmt.Println("subsub message handler called #", msgCount.Add(1), "==", string(msg.GetData()))
 	sv.Lock()
 	defer sv.Unlock()
 	// Process subscriptions sequentially to avoid goroutine explosion

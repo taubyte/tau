@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -66,8 +65,6 @@ func (s *Service) Subscribe(projectId, appId, resource, path string) error {
 		workers <- struct{}{}
 	}
 
-	messageCount := new(atomic.Int64)
-
 	_, err = websocket.AddSubscription(s, matcher.String(), func(msg *pubsub.Message) {
 		// unwarp the message first
 		message, err := common.NewMessage(msg, "")
@@ -86,9 +83,7 @@ func (s *Service) Subscribe(projectId, appId, resource, path string) error {
 			}()
 			select {
 			case <-workers:
-				fmt.Println("handling message #", messageCount.Add(1))
 				s.handle(start, matcher, message)
-				fmt.Println("messages handled = ", string(message.GetData()))
 			case <-ctx.Done():
 				return
 			}
