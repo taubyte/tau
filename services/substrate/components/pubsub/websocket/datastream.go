@@ -3,11 +3,10 @@ package websocket
 import (
 	"context"
 	"fmt"
-	"sync"
 
 	"github.com/gorilla/websocket"
 	"github.com/taubyte/tau/core/services/substrate/components"
-	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
@@ -16,28 +15,16 @@ type dataStreamHandler struct {
 	ctx     context.Context
 	ctxC    context.CancelFunc
 	conn    service.WebSocketConnection
-	ch      chan []byte
+	id      string
+	ch      chan pubsubIface.Message
 	errCh   chan error
-	srv     common.LocalService
+	srv     pubsubIface.ServiceWithLookup
 	matcher components.MatchDefinition
-
-	picks []iface.Serviceable
-
-	mu sync.RWMutex
 }
 
 func (h *dataStreamHandler) Close() {
 	h.ctxC()
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.ch != nil {
-		close(h.ch)
-		h.ch = nil
-	}
-	if h.errCh != nil {
-		close(h.errCh)
-		h.errCh = nil
-	}
+	h.conn.Close()
 }
 
 func (h *dataStreamHandler) error(err error) {
@@ -48,16 +35,26 @@ func (h *dataStreamHandler) error(err error) {
 }
 
 func (h *dataStreamHandler) In() {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+
 	for {
 		select {
 		case <-h.ctx.Done():
 			return
-		default:
+		default: //TODO: when connections has multiple messages, handle them together and send batch over pubsub
 			_, msg, err := h.conn.ReadMessage()
 			if err != nil {
 				h.error(fmt.Errorf("reading data In on `%s` failed with: %s", h.matcher, err))
+				return
+			}
+
+			message, err := common.NewMessage(msg, h.id)
+			if err != nil {
+				h.error(fmt.Errorf("creating message failed with: %w", err))
+				return
+			}
+			msg, err = message.Marshal()
+			if err != nil {
+				h.error(fmt.Errorf("marshalling message failed with: %w", err))
 				return
 			}
 
@@ -71,8 +68,7 @@ func (h *dataStreamHandler) In() {
 }
 
 func (h *dataStreamHandler) Out() {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
+	defer h.Close()
 	for {
 		select {
 		case <-h.ctx.Done():
@@ -81,10 +77,14 @@ func (h *dataStreamHandler) Out() {
 			h.conn.WriteJSON(WrappedMessage{
 				Error: fmt.Sprintf("Writing data out failed with %v closing connection", err),
 			})
-			h.conn.Close()
 			return
 		case data := <-h.ch:
-			err := h.conn.WriteMessage(websocket.BinaryMessage, data)
+			if data.GetSource() == h.id {
+				// ignore the message - comes from self
+				continue
+			}
+
+			err := h.conn.WriteMessage(websocket.BinaryMessage, data.GetData())
 			if err != nil {
 				h.error(fmt.Errorf("writing data out failed with %v closing connection", err))
 				return

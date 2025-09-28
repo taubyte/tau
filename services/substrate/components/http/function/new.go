@@ -33,17 +33,17 @@ func New(srv components.ServiceComponent, object tns.Object, matcher *common.Mat
 	}
 
 	f.config.Id = id
-	if f.config.Source == "." { //TODO: eveywhere
+
+	if f.config.Source == "." {
 		f.assetId, err = cache.ResolveAssetCid(f)
 		if err != nil {
 			return nil, fmt.Errorf("getting asset id failed with: %w", err)
 		}
-	}
-
-	//TODO: account for library! better is moved to Runtime creation anyways
-	assetCid, _ := cid.Decode(f.assetId)
-	if exists, _ := srv.Node().DAG().HasBlock(srv.Context(), assetCid); exists {
-		f.metrics.Cached += 0.3
+		//TODO: account for library! better is moved to Runtime creation anyways
+		assetCid, _ := cid.Decode(f.assetId)
+		if exists, _ := srv.Node().DAG().HasBlock(srv.Context(), assetCid); exists {
+			f.metrics.Cached += 0.3
+		}
 	}
 
 	return f, nil

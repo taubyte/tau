@@ -3,6 +3,7 @@ package new
 import (
 	client "github.com/taubyte/tau/clients/http/dream"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/services/substrate/runtime"
 	"github.com/taubyte/tau/tools/dream/cli/command"
 	"github.com/taubyte/tau/tools/dream/cli/common"
 	"github.com/urfave/cli/v2"
@@ -12,6 +13,10 @@ func universe(multiverse *client.Client) *cli.Command {
 	c := &cli.Command{
 		Name: "universe",
 		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "debug",
+				Usage: "Output for function calls",
+			},
 			&cli.BoolFlag{
 				Name:  "empty",
 				Usage: "Create an empty universe (Overrides the below)",
@@ -49,6 +54,8 @@ func universe(multiverse *client.Client) *cli.Command {
 
 func runUniverse(multiverse *client.Client) cli.ActionFunc {
 	return func(c *cli.Context) (err error) {
+		runtime.DebugFunctionCalls = c.Bool("debug")
+
 		if c.Bool("empty") {
 			err = multiverse.StartUniverseWithConfig(c.String("name"), &dream.Config{})
 			if err != nil {

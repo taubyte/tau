@@ -48,17 +48,3 @@ func (f *Factory) generateResourceId() uint32 {
 	}()
 	return f.resourceIdToGrab
 }
-
-func (f *Factory) Load(hm vm.HostModule) (err error) {
-	f.resources = map[uint32]*common.Resource{}
-	f.Database = database.New(f)
-	f.FunctionHttp = functionHttp.New(f)
-	f.FunctionP2P = functionP2P.New(f)
-	f.FunctionPubSub = functionPubSub.New(f)
-	f.MessagingPubSub = messagingPubSub.New(f)
-	f.MessagingWebSocket = messagingWebSocket.New(f)
-	f.Service = service.New(f)
-	f.Storage = storage.New(f)
-	f.Website = website.New(f)
-	return nil
-}

@@ -3,18 +3,27 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"time"
-
-	"github.com/taubyte/tau/core/vm"
 )
 
+var DebugFunctionCalls = false
+
 // Call takes instance and id, then calls the moduled function. Returns an error.
-func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
+func (f *Function) Call(inst Instance, id uint32) (err error) {
 	startTime := time.Now()
 	defer func() {
 		if err == nil {
 			f.calls.Add(1)
 			f.totalCallTime.Add(int64(time.Since(startTime)))
+		}
+
+		if DebugFunctionCalls {
+			fmt.Println("Calling function", f.config.Name, "output:")
+			io.Copy(os.Stdout, inst.Stdout())
+			io.Copy(os.Stdout, inst.Stderr())
+			fmt.Printf("\n\n")
 		}
 	}()
 
@@ -23,7 +32,7 @@ func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
 		return fmt.Errorf("getting module name for resource `%s` failed with: %w", f.serviceable.Id(), err)
 	}
 
-	module, err := runtime.Module(moduleName)
+	module, err := inst.Module(moduleName)
 	if err != nil {
 		return fmt.Errorf("creating module instance failed with: %w", err)
 	}
@@ -38,11 +47,16 @@ func (f *Function) Call(runtime vm.Runtime, id uint32) (err error) {
 
 	_, err = fx.RawCall(ctx, uint64(id))
 	if f.serviceable.Service().Verbose() {
-		defer f.printRuntimeStack(runtime, err)
+		defer func() {
+			if internalInst, ok := inst.(*instance); ok {
+				f.printRuntimeStack(internalInst.runtime, err)
+			}
+		}()
 	}
 	if mem := uint64(module.Memory().Size()); mem > f.maxMemory.Load() {
 		f.maxMemory.Store(mem)
 	}
+
 	if err != nil {
 		return fmt.Errorf("calling function for event %d failed with: %w", id, err)
 	}

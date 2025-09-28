@@ -6,6 +6,7 @@ import (
 
 	tauConfig "github.com/taubyte/tau/config"
 	iface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/p2p/keypair"
 	"github.com/taubyte/tau/dream"
 )
 
@@ -22,6 +23,8 @@ func NewDreamConfig(u *dream.Universe, config *iface.ServiceConfig) *tauConfig.N
 	serviceConfig.P2PAnnounce = []string{fmt.Sprintf(dream.DefaultP2PListenFormat, config.Port)}
 	serviceConfig.DevMode = true
 	serviceConfig.SwarmKey = config.SwarmKey
+
+	serviceConfig.PrivateKey, _, _ = keypair.GenerateDeterministicKey(config.Root)
 
 	serviceConfig.HttpListen = fmt.Sprintf("%s:%d", dream.DefaultHost, config.Others["http"])
 

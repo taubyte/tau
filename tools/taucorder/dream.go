@@ -10,6 +10,7 @@ import (
 	"golang.org/x/exp/maps"
 
 	dreamApi "github.com/taubyte/tau/clients/http/dream"
+	"github.com/taubyte/tau/dream"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/multiformats/go-multiaddr"
@@ -24,7 +25,7 @@ func getDreamPeers(universe string) ([]peerCore.AddrInfo, []byte, error) {
 	client, err := dreamApi.New(
 		common.GlobalContext,
 		dreamApi.Unsecure(),
-		dreamApi.URL("http://127.0.0.1:1421"),
+		dreamApi.URL(fmt.Sprintf("http://127.0.0.1:%d", dream.DreamApiPort)),
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed creating dream http client with error: %v", err)
@@ -128,7 +129,7 @@ var dreamCmd = &cli.Command{
 				client, err := dreamApi.New(
 					common.GlobalContext,
 					dreamApi.Unsecure(),
-					dreamApi.URL("http://127.0.0.1:1421"),
+					dreamApi.URL(fmt.Sprintf("http://127.0.0.1:%d", dream.DreamApiPort)),
 				)
 				if err != nil {
 					return fmt.Errorf("failed creating dream http client with error: %v", err)

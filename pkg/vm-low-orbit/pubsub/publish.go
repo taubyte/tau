@@ -27,7 +27,7 @@ func (f *Factory) W_publishToChannel(ctx context.Context, module common.Module,
 		return errno.ErrorEOF
 	}
 
-	err0 = f.pubsubNode.Publish(ctx, _ctx.Project(), _ctx.Application(), channel, data)
+	err0 = f.pubsubNode.Publish(ctx, _ctx.Project(), _ctx.Application(), _ctx.Resource(), channel, data)
 	if err0 != nil {
 		return errno.ErrorPublishFailed
 	}

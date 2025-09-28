@@ -29,9 +29,9 @@ func (s *Service) getMessagingsMap(matcher *common.MatchDefinition) (*common.Mes
 
 		if foundMatch {
 			messagingsMap.HasAny = true
-			if m.WebSocket {
-				messagingsMap.WebSocket.Push(matcher.Project, "", m)
-			}
+			// if m.WebSocket {
+			// 	messagingsMap.WebSocket.Push(matcher.Project, "", m)
+			// }
 			messagingsMap.Function.Push(matcher.Project, "", m)
 		}
 	}

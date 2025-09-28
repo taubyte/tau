@@ -4,8 +4,9 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/pem"
 	"fmt"
 	mrand "math/rand"
@@ -52,8 +53,15 @@ func getCacheFolder() (string, error) {
 	return path.Join(home, cacheFolder), nil
 }
 
-func generateDVKeys() ([]byte, []byte, error) {
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+func generateDeterministicDVKeys(input string) ([]byte, []byte, error) {
+	// Create deterministic seed from input string
+	hash := sha256.Sum256([]byte(input))
+	seed := hash[:]
+
+	// Create deterministic random source
+	randSource := mrand.New(mrand.NewSource(int64(binary.BigEndian.Uint64(seed[:8]))))
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), randSource)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate ecdsa key failed with: %s", err)
 	}

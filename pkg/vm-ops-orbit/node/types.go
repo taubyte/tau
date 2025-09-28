@@ -17,7 +17,3 @@ type Factory struct {
 }
 
 var _ vm.Factory = &Factory{}
-
-func (f *Factory) Load(hm vm.HostModule) (err error) {
-	return nil
-}

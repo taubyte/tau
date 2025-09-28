@@ -2,27 +2,16 @@ package runtime
 
 import (
 	"context"
+	"io"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/vm"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-)
 
-type Shadows struct {
-	ctx          context.Context
-	ctxC         context.CancelFunc
-	parent       *Function
-	instances    chan *shadowInstance
-	more         chan int
-	available    atomic.Int64
-	requestCount int64      // total number of requests
-	lastCheck    time.Time  // last time we calculated RPS
-	currentRPS   float64    // current requests per second
-	mu           sync.Mutex // mutex for RPS calculations
-}
+	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
+)
 
 type Function struct {
 	serviceable commonIface.Serviceable
@@ -33,8 +22,13 @@ type Function struct {
 	vmConfig    *vm.Config
 	vmContext   vm.Context
 
-	shadows    *Shadows
-	errorCount atomic.Int64
+	instanceReqs       chan *instanceRequest
+	availableInstances chan Instance
+
+	// shutdown tracking
+	shutdown     *atomic.Bool
+	shutdownDone chan struct{}
+	shutdownMu   sync.RWMutex
 
 	// metrics
 	coldStarts     *atomic.Uint64
@@ -45,8 +39,26 @@ type Function struct {
 	maxMemory     *atomic.Uint64
 }
 
-type shadowInstance struct {
-	creation  time.Time
-	runtime   vm.Runtime
-	pluginApi interface{}
+type instance struct {
+	runtime     vm.Runtime
+	prevMemSize uint32
+	memUsages   []uint32
+	sdk         plugins.Instance
+	parent      *Function
+}
+
+type instanceRequest struct {
+	ctx context.Context
+	ch  chan Instance
+	err error
+}
+
+type Instance interface {
+	Free() error
+	Module(name string) (vm.ModuleInstance, error)
+	SDK() plugins.Instance
+	Stdout() io.Reader
+	Stderr() io.Reader
+	Ready() (Instance, error)
+	Close() error
 }

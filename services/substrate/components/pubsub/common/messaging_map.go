@@ -3,11 +3,8 @@ package common
 import (
 	"regexp"
 
-	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
-
-var _ iface.Messaging = &MessagingItem{}
 
 type MessagingItem struct {
 	project     string
@@ -32,9 +29,9 @@ type MessagingMapItem struct {
 }
 
 type MessagingMap struct {
-	Function  MessagingMapItem
-	WebSocket MessagingMapItem
-	HasAny    bool
+	Function MessagingMapItem
+	//WebSocket MessagingMapItem
+	HasAny bool
 }
 
 func (mmi *MessagingMapItem) Len() int {

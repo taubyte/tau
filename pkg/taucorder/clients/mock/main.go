@@ -23,7 +23,7 @@ import (
 )
 
 func main() {
-	dream.DreamApiListen = "localhost:2442" // diffrent port than the default
+	dream.DreamApiPort = 2442 // diffrent port than the default
 
 	dreamApi.BigBang()
 
@@ -96,7 +96,6 @@ func main() {
 	printOut, err := json.Marshal(data)
 	if err != nil {
 		panic(err)
-
 	}
 	fmt.Printf("@@%s@@\n", printOut)
 

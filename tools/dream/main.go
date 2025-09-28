@@ -63,7 +63,7 @@ func main() {
 
 	multiverse, err := client.New(
 		ctx,
-		client.URL(common.DefaultDreamURL),
+		client.URL(common.DefaultDreamURL()),
 		// Give time for fixtures to execute
 		// We should maybe use WebSocket later
 		client.Timeout(300*time.Second),

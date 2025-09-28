@@ -24,12 +24,56 @@ func New(ctx context.Context, serviceable components.FunctionServiceable) (*Func
 			calls:          new(atomic.Uint64),
 			totalCallTime:  new(atomic.Int64),
 			maxMemory:      new(atomic.Uint64),
+
+			instanceReqs:       make(chan *instanceRequest, InstanceMaxRequests),
+			availableInstances: make(chan Instance, InstanceMaxRequests),
+			shutdown:           new(atomic.Bool),
+			shutdownDone:       make(chan struct{}),
 		}
 
-		dFunc.initShadow()
+		go dFunc.intanceManager()
 
 		return dFunc, nil
 	}
 
 	return nil, fmt.Errorf("serviceable `%s` function structure is nil", serviceable.Id())
+}
+
+func (f *Function) Shutdown() {
+	// Check if shutdown is already in progress or completed
+	if f.shutdown.Load() {
+		// Wait for shutdown to complete if it's already in progress
+		<-f.shutdownDone
+		return
+	}
+
+	// Set shutdown flag to prevent new requests
+	f.shutdown.Store(true)
+
+	// Close the instanceReqs channel to signal no more requests will be accepted
+	// Use a select to avoid panicking if channel is already closed
+	select {
+	case <-f.instanceReqs:
+		// Channel is already closed, do nothing
+	default:
+		close(f.instanceReqs)
+	}
+
+	// Wait for all pending requests to be processed
+	<-f.shutdownDone
+
+	// Close all available instances
+	f.shutdownMu.Lock()
+	defer f.shutdownMu.Unlock()
+
+	// Use a select to avoid panicking if channel is already closed
+	select {
+	case <-f.availableInstances:
+		// Channel is already closed, do nothing
+	default:
+		close(f.availableInstances)
+		for instance := range f.availableInstances {
+			instance.Close()
+		}
+	}
 }

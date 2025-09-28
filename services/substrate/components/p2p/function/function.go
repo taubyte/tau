@@ -10,7 +10,6 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command/response"
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 )
 
 func (f *Function) Commit() string {
@@ -26,23 +25,27 @@ func (f *Function) Project() string {
 }
 
 func (f *Function) Close() {
-	f.instanceCtxC()
+	f.closeOnce.Do(func() {
+		f.close()
+	})
+}
+
+func (f *Function) close() {
+	go func() {
+		f.Shutdown()
+		f.instanceCtxC()
+	}()
 }
 
 func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Response, err error) {
-	runtime, pluginApi, err := f.Instantiate()
+	instance, err := f.Instantiate(f.instanceCtx)
 	if err != nil {
 		return t, nil, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %s", f.config.Name, f.matcher.Project, f.matcher.Application, err)
 	}
-	defer runtime.Close()
-
-	sdk, ok := pluginApi.(plugins.Instance)
-	if !ok {
-		return t, nil, fmt.Errorf("taubyte Plugin is not a plugin instance `%T`", pluginApi)
-	}
+	defer instance.Free()
 
 	res = make(response.Response)
-	ev := sdk.CreateP2PEvent(cmd, res)
+	ev := instance.SDK().CreateP2PEvent(cmd, res)
 	if len(f.config.SmartOps) > 0 {
 		val, err := f.SmartOps()
 		if err != nil || val > 0 {
@@ -55,7 +58,7 @@ func (f *Function) Handle(cmd *command.Command) (t time.Time, res response.Respo
 		}
 	}
 
-	return time.Now(), res, f.Call(runtime, ev.Id)
+	return time.Now(), res, f.Call(instance, ev.Id)
 }
 
 func (f *Function) Match(matcher commonIface.MatchDefinition) (currentMatchIndex matcherSpec.Index) {

@@ -3,8 +3,8 @@ package structure
 import (
 	"net/http"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/pterm/pterm"
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/p2p/streams/command/response"
@@ -27,7 +27,7 @@ func (ts *TestSdk) CreateHttpEvent(w http.ResponseWriter, r *http.Request) *even
 	return &event.Event{}
 }
 
-func (ts *TestSdk) CreatePubsubEvent(msg *pubsub.Message) *event.Event {
+func (ts *TestSdk) CreatePubsubEvent(msg pubsubIface.Message) *event.Event {
 	CalledTestFunctionsPubsub = append(CalledTestFunctionsPubsub, msg)
 	return &event.Event{}
 }

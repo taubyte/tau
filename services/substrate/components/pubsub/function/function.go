@@ -5,12 +5,11 @@ import (
 	"fmt"
 	"time"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/tau/core/services/substrate/components"
+	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
 
@@ -26,28 +25,17 @@ func (f *Function) Project() string {
 	return f.matcher.Project
 }
 
-func (f *Function) HandleMessage(msg *pubsub.Message) (t time.Time, err error) {
-	runtime, pluginApi, err := f.Instantiate()
+func (f *Function) HandleMessage(msg iface.Message) (t time.Time, err error) {
+	instance, err := f.Instantiate(f.instanceCtx)
 	if err != nil {
 		return t, fmt.Errorf("instantiating function `%s` on project `%s` on application `%s` failed with: %s", f.config.Name, f.matcher.Project, f.matcher.Application, err)
 	}
-	defer runtime.Close()
+	defer instance.Free()
 
-	sdk, ok := pluginApi.(plugins.Instance)
-	if !ok {
-		return t, fmt.Errorf("taubyte Plugin is not a plugin instance `%T`", pluginApi)
-	}
+	// Pass the interface message directly to the SDK
+	ev := instance.SDK().CreatePubsubEvent(msg)
 
-	ev := sdk.CreatePubsubEvent(msg)
-	val, err := f.SmartOps(ev)
-	if err != nil {
-		return t, fmt.Errorf("running smart ops failed with: %s", err)
-	}
-	if val > 0 {
-		return t, fmt.Errorf("exited: %d", val)
-	}
-
-	return time.Now(), f.Call(runtime, ev.Id)
+	return time.Now(), f.Call(instance, ev.Id)
 }
 
 func (f *Function) Match(matcher components.MatchDefinition) (currentMatchIndex matcherSpec.Index) {

@@ -64,7 +64,7 @@ func New(config UniverseConfig) *Universe {
 			return nil
 		}
 
-		u.root = path.Join(cacheFolder, "universe-"+u.id)
+		u.root = path.Join(cacheFolder, "universe-"+u.name)
 	} else {
 		u.root = "/tmp/universe-" + u.id
 	}
@@ -218,7 +218,7 @@ func (u *Universe) RunFixture(name string, params ...interface{}) error {
 func (u *Universe) StartWithConfig(mainConfig *Config) error {
 	errChan := make(chan error, len(mainConfig.Services)+len(mainConfig.Simples))
 
-	privKey, pubKey, err := generateDVKeys()
+	privKey, pubKey, err := generateDeterministicDVKeys(u.name)
 	if err != nil {
 		return err
 	}
@@ -232,6 +232,7 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 	for service, config := range mainConfig.Services {
 		logger.Infof("Service %s with config:%#v\n", service, config)
 
+		// domain validation keys
 		config.PrivateKey = privKey
 		config.PublicKey = pubKey
 

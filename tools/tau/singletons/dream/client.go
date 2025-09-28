@@ -7,6 +7,7 @@ import (
 	"time"
 
 	dream "github.com/taubyte/tau/clients/http/dream"
+	dreamLib "github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/api"
 	"github.com/taubyte/tau/tools/tau/env"
 )
@@ -16,7 +17,7 @@ var dream_client *dream.Client
 func Client(ctx context.Context) (*dream.Client, error) {
 	if dream_client == nil {
 		var err error
-		dream_client, err = dream.New(ctx, dream.URL("http://127.0.0.1:1421"), dream.Timeout(15*time.Second))
+		dream_client, err = dream.New(ctx, dream.URL(fmt.Sprintf("http://127.0.0.1:%d", dreamLib.DreamApiPort)), dream.Timeout(15*time.Second))
 		if err != nil {
 			return nil, err
 		}

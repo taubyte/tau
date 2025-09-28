@@ -4,22 +4,23 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	p2p "github.com/taubyte/tau/p2p/peer"
 	service "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/specs/extract"
 	messagingSpec "github.com/taubyte/tau/pkg/specs/messaging"
 	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
+	"github.com/taubyte/tau/utils/id"
 )
 
 var subs = &subsViewer{
 	subscriptions: make(map[string]*subViewer),
 }
 
-func Handler(srv common.LocalService, ctx service.Context, conn service.WebSocketConnection) service.WebSocketHandler {
+func Handler(srv pubsubIface.ServiceWithLookup, ctx service.Context, conn service.WebSocketConnection) service.WebSocketHandler {
 	conn.EnableWriteCompression(true)
 	handler, err := createWsHandler(srv, ctx, conn)
 	if err != nil {
@@ -34,12 +35,22 @@ func Handler(srv common.LocalService, ctx service.Context, conn service.WebSocke
 	id, err := AddSubscription(srv, handler.matcher.String(), func(msg *pubsub.Message) {
 		select {
 		case <-handler.ctx.Done():
-		case handler.ch <- msg.GetData():
+		case handler.ch <- func() pubsubIface.Message {
+			message, err := common.NewMessage(msg, "")
+			if err != nil {
+				common.Logger.Errorf("Creating message failed with: %v", err)
+				return nil
+			}
+			return message
+		}():
 		}
 	}, func(err error) {
 		common.Logger.Errorf("Add subscription to `%s` failed with %s", handler.matcher, err.Error())
 		if handler.ctx.Err() == nil {
-			handler.errCh <- err
+			select {
+			case <-handler.ctx.Done():
+			case handler.errCh <- err:
+			}
 		}
 	})
 	if err != nil {
@@ -66,57 +77,52 @@ func (sv *subViewer) getNextId() int {
 func (sv *subViewer) handler(msg *pubsub.Message) {
 	sv.Lock()
 	defer sv.Unlock()
-	var wg sync.WaitGroup
-	wg.Add(len(sv.subs))
+	// Process subscriptions sequentially to avoid goroutine explosion
 	for _, subscription := range sv.subs {
-		go func(_sub *sub) {
-			_sub.handler(msg)
-			wg.Done()
-		}(subscription)
+		subscription.handler(msg)
 	}
-	wg.Wait()
 }
 
 func (sv *subViewer) err_handler(err error) {
 	sv.Lock()
 	defer sv.Unlock()
-	var wg sync.WaitGroup
-	wg.Add(len(sv.subs))
+	// Process subscriptions sequentially to avoid goroutine explosion
 	for _, subscription := range sv.subs {
-		go func(_sub *sub) {
-			_sub.err_handler(err)
-			wg.Done()
-		}(subscription)
+		subscription.err_handler(err)
 	}
-	wg.Wait()
 }
 
 func removeSubscription(name string, subIdx int) {
 	subs.Lock()
 	defer subs.Unlock()
-	subset, ok := subs.subscriptions[name]
-	if !ok {
-		return
+	if subset, ok := subs.subscriptions[name]; ok {
+		delete(subset.subs, subIdx)
 	}
-
-	_, ok = subset.subs[subIdx]
-	if !ok {
-		return
-	}
-
-	delete(subset.subs, subIdx)
 }
 
-func AddSubscription(srv common.LocalService, name string, handler p2p.PubSubConsumerHandler, err_handler p2p.PubSubConsumerErrorHandler) (subIdex int, err error) {
-	// TODO: this block should be its own function for lock/unlock
+func AddSubscription(srv pubsubIface.ServiceWithLookup, name string, handler p2p.PubSubConsumerHandler, err_handler p2p.PubSubConsumerErrorHandler) (subIdex int, err error) {
 	subs.Lock()
+	defer subs.Unlock()
 	subset, ok := subs.subscriptions[name]
 	if !ok {
 		subset = new(subViewer)
 		subset.subs = make(map[int]*sub, 0)
-		err = srv.Node().PubSubSubscribe(name, subset.handler, subset.err_handler)
+		ch := make(chan *pubsub.Message, 1024*1024) // TODO: find a way to start small and grow
+		go func() {
+			for {
+				select {
+				case <-srv.Context().Done():
+					return
+				case msg := <-ch:
+					subset.handler(msg)
+				}
+			}
+		}()
+		err = srv.Node().PubSubSubscribe(name, func(msg *pubsub.Message) {
+			ch <- msg
+		}, subset.err_handler) // TODO: unsubscribe when no more subscriptions
 	}
-	subs.Unlock()
+
 	// Catching error outside so the unlock can happen right away for the inner lock
 	// to take over.
 	if err != nil {
@@ -128,8 +134,11 @@ func AddSubscription(srv common.LocalService, name string, handler p2p.PubSubCon
 
 	newId := subset.getNextId()
 	subset.subs[newId] = &sub{
-		handler:     handler,
-		err_handler: err_handler,
+		handler: handler,
+		err_handler: func(err error) {
+			err_handler(err)
+			removeSubscription(name, newId)
+		},
 	}
 
 	subs.subscriptions[name] = subset
@@ -137,7 +146,7 @@ func AddSubscription(srv common.LocalService, name string, handler p2p.PubSubCon
 	return newId, nil
 }
 
-func createWsHandler(srv common.LocalService, ctx service.Context, conn service.WebSocketConnection) (*dataStreamHandler, error) {
+func createWsHandler(srv pubsubIface.ServiceWithLookup, ctx service.Context, conn service.WebSocketConnection) (*dataStreamHandler, error) {
 	hash, err := ctx.GetStringVariable("hash")
 	if err != nil {
 		return nil, fmt.Errorf("getting string variable `hash` failed with %w", err)
@@ -186,25 +195,22 @@ func createWsHandler(srv common.LocalService, ctx service.Context, conn service.
 		WebSocket:   true,
 	}
 
-	picks, err := srv.Lookup(matcher)
+	serviceables, err := srv.Lookup(matcher)
 	if err != nil {
 		return nil, err
-	} else if len(picks) == 0 {
-		return nil, fmt.Errorf("no valid connections found for channel: `%s`", channel)
+	}
+	if len(serviceables) == 0 {
+		return nil, errors.New("no serviceables found")
 	}
 
 	handler := new(dataStreamHandler)
+	handler.id = id.Generate(srv.Node().ID(), handler)
 	handler.ctx, handler.ctxC = context.WithCancel(srv.Context())
 	handler.conn = conn
 	handler.matcher = matcher
 	handler.srv = srv
-	handler.ch = make(chan []byte, 1024)
+	handler.ch = make(chan pubsubIface.Message)
 	handler.errCh = make(chan error)
-	handler.picks = picks
-
-	if err = handler.SmartOps(); err != nil {
-		return nil, err
-	}
 
 	return handler, nil
 }

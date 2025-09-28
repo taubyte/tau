@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 
 	"gotest.tools/v3/assert"
 
 	dns "github.com/miekg/dns"
-	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
@@ -58,7 +58,8 @@ func TestDns(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	time.Sleep(15 * time.Second)
+	// Wait for services to start and register
+	time.Sleep(10 * time.Second)
 
 	// Create Tcp Client
 	tcpClient := createDnsClient("tcp")

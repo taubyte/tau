@@ -3,7 +3,7 @@ package runtime
 import "time"
 
 var (
-	InstanceMaxRequests   int           = 1024 * 64
+	InstanceMaxRequests   int           = 64
 	InstanceMaxError      int64         = 5
 	InstanceErrorCoolDown time.Duration = 30 * time.Minute
 
