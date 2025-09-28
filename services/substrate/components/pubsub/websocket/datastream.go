@@ -43,7 +43,7 @@ func (h *dataStreamHandler) In() {
 		select {
 		case <-h.ctx.Done():
 			return
-		default:
+		default: //TODO: when connections has multiple messages, handle them together and send batch over pubsub
 			_, msg, err := h.conn.ReadMessage()
 			if err != nil {
 				h.error(fmt.Errorf("reading data In on `%s` failed with: %s", h.matcher, err))
