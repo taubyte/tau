@@ -18,7 +18,7 @@ func (f *Factory) W_getMessageData(ctx context.Context, module common.Module, ev
 		return errno.ErrorNilAddress
 	}
 
-	return f.WriteBytes(module, bufPtr, e.pubsub.Data)
+	return f.WriteBytes(module, bufPtr, e.pubsub.GetData())
 }
 
 func (f *Factory) W_getMessageDataSize(ctx context.Context, module common.Module, eventId uint32, sizePtr uint32) errno.Error {
@@ -31,7 +31,7 @@ func (f *Factory) W_getMessageDataSize(ctx context.Context, module common.Module
 		return errno.ErrorNilAddress
 	}
 
-	return f.WriteBytesSize(module, sizePtr, e.pubsub.Data)
+	return f.WriteBytesSize(module, sizePtr, e.pubsub.GetData())
 }
 
 func (f *Factory) W_getMessageChannel(ctx context.Context, module common.Module, eventId, channelPtr uint32) errno.Error {

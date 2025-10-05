@@ -3,6 +3,7 @@ package dream
 import (
 	"fmt"
 
+	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/tools/tau/cli/commands/dream/build"
 	dreamLib "github.com/taubyte/tau/tools/tau/lib/dream"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
@@ -10,8 +11,7 @@ import (
 )
 
 const (
-	defaultBind        = "node@1/verbose,seer@2/copies,node@2/copies"
-	dreamCacheLocation = "~/.cache/dream/universe-tau"
+	defaultBind = "node@1/verbose,seer@2/copies,node@2/copies"
 )
 
 var (
@@ -24,7 +24,7 @@ var Command = &cli.Command{
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:  "cache",
-			Usage: fmt.Sprintf("caches the universe in `%s` keeping data for subsequent restarts", dreamCacheLocation),
+			Usage: fmt.Sprintf("caches the universe in `%s` keeping data for subsequent restarts", dream.TryGetCacheFolder()),
 		},
 	},
 	Action: func(c *cli.Context) error {

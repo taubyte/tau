@@ -18,15 +18,15 @@ type multiverseService struct {
 	*dream.Multiverse
 }
 
-func BigBang() error {
+func BigBang(m *dream.Multiverse) error {
 	srv := &multiverseService{
-		Multiverse: dream.MultiVerse(),
+		Multiverse: m,
 	}
 
 	var err error
 	srv.rest, err = http.New(
 		srv.Context(),
-		options.Listen(dream.DreamApiListen),
+		options.Listen(dream.DreamApiListen()),
 		options.AllowedOrigins(true, []string{".*"}),
 	)
 	if err != nil {
@@ -47,7 +47,7 @@ func BigBang() error {
 				pterm.Error.Println("Dream failed to start")
 				return srv.rest.Error()
 			}
-			_, err := goHttp.Get("http://" + dream.DreamApiListen)
+			_, err := goHttp.Get("http://" + dream.DreamApiListen())
 			if err == nil {
 				pterm.Info.Println("Dream ready")
 				return nil

@@ -1,9 +1,6 @@
 package common
 
 import (
-	"context"
-
-	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	multihash "github.com/taubyte/tau/utils/multihash"
 )
 
@@ -24,10 +21,4 @@ func (m *MatchDefinition) CachePrefix() string {
 
 func (m *MatchDefinition) GenerateSocketURL() string {
 	return "ws-" + m.String()
-}
-
-type LocalService interface {
-	iface.Service
-	Lookup(matcher *MatchDefinition) (picks []iface.Serviceable, err error)
-	Context() context.Context
 }

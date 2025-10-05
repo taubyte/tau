@@ -174,11 +174,11 @@ func StringArray(config map[string]interface{}, key string) ([]string, error) {
 				case string:
 					ret = append(ret, v.(string))
 				default:
-					return ret, errors.New(fmt.Sprintf("`%s` with element %T can not be converted to []string", key, config[key]))
+					return ret, fmt.Errorf("`%s` with element %T can not be converted to []string", key, config[key])
 				}
 			}
 		default:
-			return ret, errors.New(fmt.Sprintf("`%s` needs to be a []string not %T", key, config[key]))
+			return ret, fmt.Errorf("`%s` needs to be a []string not %T", key, config[key])
 		}
 	}
 	return ret, nil
@@ -221,7 +221,7 @@ func Int(config map[string]interface{}, key string) (int, error) {
 		case int8:
 			ret = int(config[key].(int8))
 		default:
-			return ret, errors.New(fmt.Sprintf("`%s` needs to be a Int not a %T. Provided: %v", key, config[key], config[key]))
+			return ret, fmt.Errorf("`%s` needs to be a Int not a %T. Provided: %v", key, config[key], config[key])
 		}
 	}
 	return ret, nil
@@ -238,7 +238,7 @@ func Bool(config map[string]interface{}, key string) (bool, error) {
 		case bool:
 			ret = config[key].(bool)
 		default:
-			return ret, errors.New(fmt.Sprintf("`%s` needs to be a Int. Provided: %v", key, config[key]))
+			return ret, fmt.Errorf("`%s` needs to be a Int. Provided: %v", key, config[key])
 		}
 	}
 	return ret, nil
@@ -305,7 +305,7 @@ func ToStringKeys(m map[interface{}]interface{}) (map[string]interface{}, error)
 		case string:
 			r[k.(string)] = v
 		default:
-			return nil, errors.New(fmt.Sprintf("Can't convert key `%v` of type %T intro string", k, k))
+			return nil, fmt.Errorf("can't convert key `%v` of type %T intro string", k, k)
 		}
 	}
 
@@ -326,7 +326,7 @@ func InterfaceToStringKeys(m interface{}) (map[string]interface{}, error) {
 	if m0, ok := m.(map[interface{}]interface{}); ok == true {
 		return ToStringKeys(m0)
 	} else {
-		return nil, errors.New(fmt.Sprintf("Can't convet %T to a map", m))
+		return nil, fmt.Errorf("can't convet %T to a map", m)
 	}
 }
 
@@ -346,4 +346,28 @@ func SafeInterfaceToStringKeys(m interface{}) map[string]interface{} {
 	} else {
 		return nil
 	}
+}
+
+func SafeInterfaceToString[V any](m interface{}) map[string]V {
+	if m == nil {
+		return nil
+	}
+
+	anyanymap, ok := m.(map[any]any)
+	if !ok {
+		return nil
+	}
+
+	newMap := make(map[string]V)
+
+	for k, v := range anyanymap {
+		key, ok := k.(string)
+		if !ok {
+			continue
+		}
+
+		newMap[key] = v.(V)
+	}
+
+	return newMap
 }

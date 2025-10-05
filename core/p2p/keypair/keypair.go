@@ -1,8 +1,12 @@
 package keypair
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"os"
+
+	mrand "math/rand"
 
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
 )
@@ -97,4 +101,30 @@ func LoadRawFromString(key64 string) []byte {
 	}
 
 	return nil
+}
+
+func GenerateDeterministicKey(name string) ([]byte, []byte, error) {
+	// Create deterministic seed from name string
+	hash := sha256.Sum256([]byte(name))
+	seed := hash[:]
+
+	// Create deterministic random source
+	randSource := mrand.New(mrand.NewSource(int64(binary.BigEndian.Uint64(seed[:8]))))
+
+	priv, pub, err := crypto.GenerateKeyPairWithReader(crypto.Ed25519, 1, randSource)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	privBytes, err := crypto.MarshalPrivateKey(priv)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	pubBytes, err := crypto.MarshalPublicKey(pub)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return privBytes, pubBytes, nil
 }

@@ -5,17 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"testing"
-	"time"
 
 	pubsubMsg "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/taubyte/tau/core/services/substrate/components"
 	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/core/services/tns"
 	p2p "github.com/taubyte/tau/p2p/peer"
 	service "github.com/taubyte/tau/pkg/http"
-	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 	"gotest.tools/v3/assert"
 )
 
@@ -53,28 +49,8 @@ func createMockServiceForHandler() *mockLocalService {
 	return &mockLocalService{
 		contextFunc:   func() context.Context { return context.Background() },
 		tnsClientFunc: func() tns.Client { return &mockTnsClient{} },
-		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+		lookupFunc: func(matcher pubsubIface.MatchDefinition) ([]iface.Serviceable, error) {
 			return nil, errors.New("lookup failed")
-		},
-	}
-}
-
-// Helper function to create a mock service for AddSubscription error tests
-func createMockServiceForAddSubscriptionError() *mockLocalService {
-	return &mockLocalService{
-		contextFunc:   func() context.Context { return context.Background() },
-		tnsClientFunc: func() tns.Client { return &mockTnsClientWithValidPath{} },
-		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
-			return []iface.Serviceable{&mockWebSocket{
-				project: "test-project",
-				matcher: matcher,
-				mmi:     common.MessagingMapItem{},
-				commit:  "mock-commit",
-				branch:  "mock-branch",
-			}}, nil
-		},
-		pubSubSubscribeFunc: func(topic string, handler p2p.PubSubConsumerHandler, errHandler p2p.PubSubConsumerErrorHandler) error {
-			return errors.New("pubsub subscribe failed")
 		},
 	}
 }
@@ -84,7 +60,7 @@ func createMockServiceForLookupError() *mockLocalService {
 	return &mockLocalService{
 		contextFunc:   func() context.Context { return context.Background() },
 		tnsClientFunc: func() tns.Client { return &mockTnsClientWithValidPath{} },
-		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+		lookupFunc: func(matcher pubsubIface.MatchDefinition) ([]iface.Serviceable, error) {
 			return nil, errors.New("lookup failed")
 		},
 	}
@@ -95,7 +71,7 @@ func createMockServiceForEmptyPicks() *mockLocalService {
 	return &mockLocalService{
 		contextFunc:   func() context.Context { return context.Background() },
 		tnsClientFunc: func() tns.Client { return &mockTnsClientWithValidPath{} },
-		lookupFunc: func(matcher *common.MatchDefinition) ([]iface.Serviceable, error) {
+		lookupFunc: func(matcher pubsubIface.MatchDefinition) ([]iface.Serviceable, error) {
 			return []iface.Serviceable{}, nil // Empty picks
 		},
 	}
@@ -375,7 +351,7 @@ func createMockWebSocketConnection() *mockWebSocketConnection {
 }
 
 // Helper function to run a handler test with common setup
-func runHandlerTest(t *testing.T, testName string, ctx *mockServiceContext, srv common.LocalService, expectedNil bool, expectedMsg string) {
+func runHandlerTest(t *testing.T, testName string, ctx *mockServiceContext, srv pubsubIface.ServiceWithLookup, expectedNil bool, expectedMsg string) {
 	t.Run(testName, func(t *testing.T) {
 		conn := createMockWebSocketConnection()
 		result := Handler(srv, ctx, conn)
@@ -416,7 +392,7 @@ func TestHandler_CreateWsHandlerErrorPaths(t *testing.T) {
 
 	runHandlerTest(t, "AddSubscription error",
 		createMockServiceContext("valid-hash", "test-channel", nil, nil),
-		createMockServiceForAddSubscriptionError(),
+		createMockServiceForHandler(),
 		true, "Expected handler to be nil due to AddSubscription error")
 }
 
@@ -458,80 +434,3 @@ type mockTnsPath struct{}
 
 func (m *mockTnsPath) String() string  { return "test-path" }
 func (m *mockTnsPath) Slice() []string { return []string{"test", "path"} }
-
-// Mock WebSocket for testing
-type mockWebSocket struct {
-	project string
-	matcher *common.MatchDefinition
-	mmi     common.MessagingMapItem
-	commit  string
-	branch  string
-	ctxC    context.CancelFunc
-	srv     common.LocalService
-}
-
-func (m *mockWebSocket) HandleMessage(msg *pubsubMsg.Message) (time.Time, error) {
-	return time.Now(), nil
-}
-
-func (m *mockWebSocket) Name() string {
-	return "mock-websocket"
-}
-
-func (m *mockWebSocket) Project() string {
-	return m.project
-}
-
-func (m *mockWebSocket) Application() string {
-	return m.matcher.Application
-}
-
-func (m *mockWebSocket) Config() *structureSpec.Function {
-	return &structureSpec.Function{}
-}
-
-func (m *mockWebSocket) Match(def components.MatchDefinition) matcherSpec.Index {
-	return 0
-}
-
-func (m *mockWebSocket) Validate(def components.MatchDefinition) error {
-	return nil
-}
-
-func (m *mockWebSocket) Matcher() components.MatchDefinition {
-	return m.matcher
-}
-
-func (m *mockWebSocket) Ready() error {
-	return nil
-}
-
-func (m *mockWebSocket) Id() string {
-	return "mock-websocket-id"
-}
-
-func (m *mockWebSocket) Commit() string {
-	return m.commit
-}
-
-func (m *mockWebSocket) Branch() string {
-	return m.branch
-}
-
-func (m *mockWebSocket) AssetId() string {
-	return "mock-asset-id"
-}
-
-func (m *mockWebSocket) Service() components.ServiceComponent {
-	return m.srv
-}
-
-func (m *mockWebSocket) Close() {
-	if m.ctxC != nil {
-		m.ctxC()
-	}
-}
-
-func (m *mockWebSocket) Clean() {
-	m.Close()
-}

@@ -63,7 +63,9 @@ type moduleInstance struct {
 
 type runtime struct {
 	instance *instance
-	runtime  wazero.Runtime
+	modules  map[string]api.Module
+
+	runtime wazero.Runtime
 
 	wasiStartDone chan bool
 }

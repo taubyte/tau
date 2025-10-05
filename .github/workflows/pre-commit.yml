@@ -119,7 +119,7 @@ jobs:
               sleep 5
             done
             # clean-up mock servers
-            kill $(pgrep -f "mock")
+            kill $(pgrep -f "mock") || true
           ) || exit 1
         done
 
@@ -172,5 +172,5 @@ jobs:
             sleep 5
           done
           # clean-up mock servers
-          kill $(pgrep -f "mock")
+          kill $(pgrep -f "mock") || true
         ) || exit 1

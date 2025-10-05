@@ -2,11 +2,11 @@ package pubsub
 
 import (
 	nodeIface "github.com/taubyte/tau/core/services/substrate"
-	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/services/substrate/runtime/cache"
 )
 
-var _ common.LocalService = &Service{}
+var _ pubsubIface.ServiceWithLookup = &Service{}
 
 type Service struct {
 	nodeIface.Service

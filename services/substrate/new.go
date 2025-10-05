@@ -1,5 +1,3 @@
-//go:build !dev
-
 package substrate
 
 import (
@@ -11,7 +9,7 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/shirou/gopsutil/cpu"
+	"github.com/shirou/gopsutil/v4/cpu"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/vm"

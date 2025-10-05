@@ -28,8 +28,8 @@ var (
 )
 
 func init() {
-	dream.DreamApiListen = "localhost:4224" // diffrent port than the default
-	dreamApi.BigBang()
+	dream.DreamApiPort = 4224 // diffrent port than the default
+	dreamApi.BigBang(dream.MultiVerse())
 }
 
 type MockConfigResolver struct {

@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/p2p/streams/command"
 )
 
@@ -16,14 +16,14 @@ type httpEvent struct {
 
 var (
 	AttachedTestFunctions     = make(map[string]int)
-	CalledTestFunctionsPubsub = make([]*pubsub.Message, 0)
+	CalledTestFunctionsPubsub = make([]pubsubIface.Message, 0)
 	CalledTestFunctionsP2P    = make([]command.Body, 0)
 	CalledTestFunctionsHttp   = make([]httpEvent, 0)
 )
 
 func RefreshTestVariables() {
 	AttachedTestFunctions = make(map[string]int)
-	CalledTestFunctionsPubsub = make([]*pubsub.Message, 0)
+	CalledTestFunctionsPubsub = make([]pubsubIface.Message, 0)
 	CalledTestFunctionsP2P = make([]command.Body, 0)
 	CalledTestFunctionsHttp = make([]httpEvent, 0)
 }

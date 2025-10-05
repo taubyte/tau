@@ -6,6 +6,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/api"
 	spec "github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/services/substrate/runtime"
 	"github.com/taubyte/tau/tools/dream/cli/common"
 	"github.com/urfave/cli/v2"
 )
@@ -14,6 +15,10 @@ func multiverse(multiverse *client.Client) *cli.Command {
 	return &cli.Command{
 		Name: "multiverse",
 		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "debug",
+				Usage: "Output for function calls",
+			},
 			&cli.BoolFlag{
 				Name:  "daemon",
 				Usage: "Runs multiverse in background",
@@ -30,7 +35,7 @@ func multiverse(multiverse *client.Client) *cli.Command {
 			},
 			&cli.BoolFlag{
 				Name:        "keep",
-				DefaultText: "If set will store the universe in $HOME/.cache/dream rather than /tmp",
+				DefaultText: "If set will store the universe in " + dream.TryGetCacheFolder() + " rather than /tmp",
 			},
 
 			// Relative to the universes
@@ -78,6 +83,8 @@ func multiverse(multiverse *client.Client) *cli.Command {
 
 func runMultiverse(multiverse *client.Client) cli.ActionFunc {
 	return func(c *cli.Context) (err error) {
+		runtime.DebugFunctionCalls = c.Bool("debug")
+
 		// TODO this is ugly, and we should be able to start a universe on a specific branch
 		spec.DefaultBranches = []string{c.String("branch")}
 
@@ -95,7 +102,7 @@ func runMultiverse(multiverse *client.Client) cli.ActionFunc {
 		}
 
 		if c.Bool("empty") {
-			err = api.BigBang()
+			err = api.BigBang(dream.MultiVerse())
 			if err != nil {
 				return err
 			}
@@ -125,7 +132,7 @@ func runMultiverse(multiverse *client.Client) cli.ActionFunc {
 		}
 
 		// Start API
-		err = api.BigBang()
+		err = api.BigBang(dream.MultiVerse())
 		if err != nil {
 			return err
 		}
