@@ -18,9 +18,9 @@ type multiverseService struct {
 	*dream.Multiverse
 }
 
-func BigBang() error {
+func BigBang(m *dream.Multiverse) error {
 	srv := &multiverseService{
-		Multiverse: dream.MultiVerse(),
+		Multiverse: m,
 	}
 
 	var err error

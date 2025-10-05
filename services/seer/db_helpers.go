@@ -13,7 +13,7 @@ import (
 
 func (h *dnsHandler) getServiceIpWithCache(ctx context.Context, proto string) ([]string, error) {
 	it := h.serverIPCache.Get(proto)
-	if it != nil {
+	if it != nil && len(it.Value()) > 0 {
 		return it.Value(), nil
 	}
 

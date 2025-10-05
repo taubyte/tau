@@ -3,6 +3,7 @@ package common
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	tauConfig "github.com/taubyte/tau/config"
 	iface "github.com/taubyte/tau/core/common"
@@ -41,9 +42,9 @@ func NewDreamConfig(u *dream.Universe, config *iface.ServiceConfig) *tauConfig.N
 	serviceConfig.DomainValidation.PrivateKey = config.PrivateKey
 	serviceConfig.DomainValidation.PublicKey = config.PublicKey
 
-	serviceConfig.NetworkFqdn = "cloud"
-	serviceConfig.GeneratedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
-	serviceConfig.ServicesDomainRegExp = regexp.MustCompile(`^([^.]+\.)?tau\.cloud$`)
+	serviceConfig.NetworkFqdn = strings.ToLower(u.Name()) + ".localtau"
+	serviceConfig.GeneratedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.` + strings.ToLower(u.Name()) + `.localtau$`)
+	serviceConfig.ServicesDomainRegExp = regexp.MustCompile(`^([^.]+\.)?tau\.` + strings.ToLower(u.Name()) + `.localtau$`)
 	serviceConfig.AliasDomainsRegExp = make([]*regexp.Regexp, 0)
 
 	serviceConfig.Databases = config.Databases

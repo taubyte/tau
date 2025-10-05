@@ -25,7 +25,7 @@ import (
 func main() {
 	dream.DreamApiPort = 2442 // diffrent port than the default
 
-	dreamApi.BigBang()
+	dreamApi.BigBang(dream.MultiVerse())
 
 	uname := "mock_universe"
 

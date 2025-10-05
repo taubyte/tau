@@ -23,7 +23,7 @@ func init() {
 }
 
 func TestKillService(t *testing.T) {
-	api.BigBang()
+	api.BigBang(dream.MultiVerse())
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{},
@@ -67,7 +67,7 @@ func TestKillSimple(t *testing.T) {
 	universeName := "KillSimple"
 	statusName := fmt.Sprintf("%s@%s", testSimpleName, universeName)
 
-	api.BigBang()
+	api.BigBang(dream.MultiVerse())
 	u := dream.New(dream.UniverseConfig{Name: universeName})
 	err := u.StartWithConfig(&dream.Config{
 		Simples: map[string]dream.SimpleConfig{

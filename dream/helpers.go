@@ -42,7 +42,7 @@ func afterStartDelay() time.Duration {
 	return time.Duration(BaseAfterStartDelay+rnd.Intn(MaxAfterStartDelay-BaseAfterStartDelay)) * time.Millisecond
 }
 
-func getCacheFolder() (string, error) {
+func GetCacheFolder() (string, error) {
 	cacheFolder := ".cache/dream"
 
 	home, err := os.UserHomeDir()
@@ -51,6 +51,15 @@ func getCacheFolder() (string, error) {
 	}
 
 	return path.Join(home, cacheFolder), nil
+}
+
+func TryGetCacheFolder() string {
+	cacheFolder, err := GetCacheFolder()
+	if err != nil {
+		return ".cache/dream"
+	}
+
+	return cacheFolder
 }
 
 func generateDeterministicDVKeys(input string) ([]byte, []byte, error) {

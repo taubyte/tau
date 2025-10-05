@@ -29,7 +29,7 @@ var (
 
 func init() {
 	dream.DreamApiPort = 4224 // diffrent port than the default
-	dreamApi.BigBang()
+	dreamApi.BigBang(dream.MultiVerse())
 }
 
 type MockConfigResolver struct {

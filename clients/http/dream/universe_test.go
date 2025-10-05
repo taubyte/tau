@@ -29,7 +29,7 @@ func TestRoutes(t *testing.T) {
 
 	univerName := "dream-http"
 	// start multiverse
-	err := api.BigBang()
+	err := api.BigBang(dream.MultiVerse())
 	assert.NilError(t, err)
 
 	u := dream.New(dream.UniverseConfig{Name: univerName})

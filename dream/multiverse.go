@@ -2,12 +2,15 @@ package dream
 
 import (
 	"context"
+	"fmt"
 
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
+var multiverse Multiverse
+
 func MultiVerse() *Multiverse {
-	return &Multiverse{}
+	return &multiverse
 }
 
 // kill them all
@@ -25,8 +28,27 @@ func (m *Multiverse) Context() context.Context {
 	return multiverseCtx
 }
 
-func (m *Multiverse) Universe(name string) *Universe {
-	return New(UniverseConfig{Name: name})
+func (m *Multiverse) Universe(name string) (*Universe, error) {
+	universesLock.RLock()
+	defer universesLock.RUnlock()
+	u, exists := universes[name]
+	if !exists {
+		return nil, fmt.Errorf("universe not found")
+	}
+	return u, nil
+}
+
+func (m *Multiverse) Delete(name string) error {
+	universesLock.RLock()
+	defer universesLock.RUnlock()
+
+	if _, exists := universes[name]; !exists {
+		return fmt.Errorf("universe not found")
+	}
+
+	delete(universes, name)
+
+	return nil
 }
 
 func (m *Multiverse) Status() Status {

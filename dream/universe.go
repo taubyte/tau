@@ -59,7 +59,7 @@ func New(config UniverseConfig) *Universe {
 	u.ctx, u.ctxC = context.WithCancel(multiverseCtx)
 
 	if config.KeepRoot {
-		cacheFolder, err := getCacheFolder()
+		cacheFolder, err := GetCacheFolder()
 		if err != nil {
 			return nil
 		}
@@ -165,6 +165,20 @@ func (u *Universe) GetPortHttp(node peer.Node) (int, error) {
 	port, ok := info.Ports["http"]
 	if !ok {
 		return 0, errors.New("http field does not exist")
+	}
+
+	return port, nil
+}
+
+func (u *Universe) GetPort(node peer.Node, proto string) (int, error) {
+	info, err := u.GetInfo(node)
+	if err != nil {
+		return 0, err
+	}
+
+	port, ok := info.Ports[proto]
+	if !ok {
+		return 0, errors.New(proto + " field does not exist")
 	}
 
 	return port, nil
@@ -334,6 +348,14 @@ func (u *Universe) Cleanup() {
 
 func (u *Universe) Id() string {
 	return u.id
+}
+
+func (u *Universe) Root() string {
+	return u.root
+}
+
+func (u *Universe) Persistent() bool {
+	return u.keepRoot
 }
 
 func (u *Universe) SwarmKey() []byte {

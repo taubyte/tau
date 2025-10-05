@@ -35,7 +35,7 @@ func multiverse(multiverse *client.Client) *cli.Command {
 			},
 			&cli.BoolFlag{
 				Name:        "keep",
-				DefaultText: "If set will store the universe in $HOME/.cache/dream rather than /tmp",
+				DefaultText: "If set will store the universe in " + dream.TryGetCacheFolder() + " rather than /tmp",
 			},
 
 			// Relative to the universes
@@ -102,7 +102,7 @@ func runMultiverse(multiverse *client.Client) cli.ActionFunc {
 		}
 
 		if c.Bool("empty") {
-			err = api.BigBang()
+			err = api.BigBang(dream.MultiVerse())
 			if err != nil {
 				return err
 			}
@@ -132,7 +132,7 @@ func runMultiverse(multiverse *client.Client) cli.ActionFunc {
 		}
 
 		// Start API
-		err = api.BigBang()
+		err = api.BigBang(dream.MultiVerse())
 		if err != nil {
 			return err
 		}
