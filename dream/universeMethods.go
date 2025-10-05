@@ -40,10 +40,6 @@ func (u *Universe) Lookup(id string) (*NodeInfo, bool) {
 	return node, true
 }
 
-func (u *Universe) Root() string {
-	return u.root
-}
-
 func (u *Universe) Context() context.Context {
 	return u.ctx
 }

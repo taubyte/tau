@@ -2,6 +2,7 @@ package function
 
 import (
 	"context"
+	"sync"
 
 	"github.com/taubyte/tau/core/services/substrate/components"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
@@ -32,11 +33,22 @@ type Function struct {
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
 
+	closeOnce sync.Once
+
 	metrics metrics.Function
 
 	*runtime.Function
 }
 
 func (f *Function) Close() {
-	f.instanceCtxC()
+	f.closeOnce.Do(func() {
+		f.close()
+	})
+}
+
+func (f *Function) close() {
+	go func() {
+		f.Shutdown()
+		f.instanceCtxC()
+	}()
 }

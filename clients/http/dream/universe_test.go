@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -24,9 +25,11 @@ import (
 )
 
 func TestRoutes(t *testing.T) {
+	dream.DreamApiPort = 31421 // don't conflict with default port
+
 	univerName := "dream-http"
 	// start multiverse
-	err := api.BigBang()
+	err := api.BigBang(dream.MultiVerse())
 	assert.NilError(t, err)
 
 	u := dream.New(dream.UniverseConfig{Name: univerName})
@@ -57,7 +60,7 @@ func TestRoutes(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
-	client, err := New(ctx, URL("http://localhost:1421"), Timeout(60*time.Second))
+	client, err := New(ctx, URL(fmt.Sprintf("http://localhost:%d", dream.DreamApiPort)), Timeout(60*time.Second))
 	assert.NilError(t, err)
 
 	univs, err := client.Universes()

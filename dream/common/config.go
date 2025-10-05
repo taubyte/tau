@@ -3,9 +3,11 @@ package common
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	tauConfig "github.com/taubyte/tau/config"
 	iface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/p2p/keypair"
 	"github.com/taubyte/tau/dream"
 )
 
@@ -23,6 +25,8 @@ func NewDreamConfig(u *dream.Universe, config *iface.ServiceConfig) *tauConfig.N
 	serviceConfig.DevMode = true
 	serviceConfig.SwarmKey = config.SwarmKey
 
+	serviceConfig.PrivateKey, _, _ = keypair.GenerateDeterministicKey(config.Root)
+
 	serviceConfig.HttpListen = fmt.Sprintf("%s:%d", dream.DefaultHost, config.Others["http"])
 
 	if config.Others["verbose"] != 0 {
@@ -38,9 +42,9 @@ func NewDreamConfig(u *dream.Universe, config *iface.ServiceConfig) *tauConfig.N
 	serviceConfig.DomainValidation.PrivateKey = config.PrivateKey
 	serviceConfig.DomainValidation.PublicKey = config.PublicKey
 
-	serviceConfig.NetworkFqdn = "cloud"
-	serviceConfig.GeneratedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
-	serviceConfig.ServicesDomainRegExp = regexp.MustCompile(`^([^.]+\.)?tau\.cloud$`)
+	serviceConfig.NetworkFqdn = strings.ToLower(u.Name()) + ".localtau"
+	serviceConfig.GeneratedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.` + strings.ToLower(u.Name()) + `.localtau$`)
+	serviceConfig.ServicesDomainRegExp = regexp.MustCompile(`^([^.]+\.)?tau\.` + strings.ToLower(u.Name()) + `.localtau$`)
 	serviceConfig.AliasDomainsRegExp = make([]*regexp.Regexp, 0)
 
 	serviceConfig.Databases = config.Databases

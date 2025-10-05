@@ -1,32 +1,167 @@
 package runtime
 
 import (
+	"context"
 	"fmt"
 	"io"
+	"runtime"
 	"time"
 
+	"github.com/shirou/gopsutil/v4/mem"
 	"github.com/taubyte/tau/core/vm"
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
 )
 
+func (i *instance) Free() error {
+	var useMem uint32
+	for _, name := range i.runtime.Modules() {
+		mod, err := i.runtime.Module(name)
+		if err != nil {
+			return err
+		}
+		useMem += mod.Memory().Size()
+	}
+
+	if useMem > uint32(i.parent.config.Memory*2/3) {
+		return fmt.Errorf("used memory limit exceeded") //TODO: cleanup instance
+	}
+
+	i.parent.availableInstances <- i
+	return nil
+}
+
+func (i *instance) Module(name string) (vm.ModuleInstance, error) {
+	return i.runtime.Module(name)
+}
+
+func (i *instance) SDK() plugins.Instance {
+	return i.sdk
+}
+
+func (i *instance) Ready() (Instance, error) {
+	// TODO: track memory usage of each call so we can estimate of future calls - lowering the chance of a future call failing and eliminating the static 2/3 memory limit
+	// if i.prevMemSize > 0 {
+	// 	i.runtime.Module()
+	// 	memUsage := i.runtime.Module(i.parent.config.Name).Memory().Size() - i.prevMemSize
+	// }
+	return i, nil
+}
+
+func (i *instance) Close() error {
+	return i.runtime.Close()
+}
+
+func (i *instance) Stdout() io.Reader {
+	return i.runtime.Stdout()
+}
+
+func (i *instance) Stderr() io.Reader {
+	return i.runtime.Stderr()
+}
+
 /*
 Instantiate returns a runtime, plugin api, and error
 */
-func (f *Function) Instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
-	shadow, err := f.shadows.get()
-	if err != nil {
-		return nil, nil, err
+func (f *Function) Instantiate(ctx context.Context) (Instance, error) { //} (runtime vm.Runtime, pluginApi interface{}, err error) {
+	// Check if shutdown is in progress
+	if f.shutdown.Load() {
+		return nil, fmt.Errorf("function is shutting down")
 	}
 
-	return shadow.runtime, shadow.pluginApi, nil
+	instCh := &instanceRequest{ctx: ctx, ch: make(chan Instance, 1)}
+
+	select {
+	case f.instanceReqs <- instCh:
+	default:
+		return nil, fmt.Errorf("instance request channel is full")
+	}
+
+	select {
+	case <-f.ctx.Done():
+		return nil, fmt.Errorf("function context done with: %w", f.ctx.Err())
+	case <-ctx.Done():
+		return nil, fmt.Errorf("instance request not sent: %w", ctx.Err())
+	case instance := <-instCh.ch:
+		if instCh.err != nil {
+			return nil, instCh.err
+		}
+		return instance.Ready()
+	}
+}
+
+func (f *Function) intanceManager() {
+	defer close(f.shutdownDone)
+
+	for {
+		select {
+		case <-f.ctx.Done():
+			return
+		case reqCh, ok := <-f.instanceReqs:
+			if !ok {
+				// instanceReqs channel is closed, shutdown initiated
+				// Process any remaining requests in the channel
+				for reqCh := range f.instanceReqs {
+					f.processRequest(reqCh)
+				}
+				return
+			}
+			f.processRequest(reqCh)
+		}
+	}
+}
+
+func (f *Function) processRequest(reqCh *instanceRequest) {
+	select {
+	case instance := <-f.availableInstances:
+		reqCh.ch <- instance
+	default:
+		// we need to instantiate a new instance
+		// hoever if that does not work we need to repush the request in a way that is it first in line
+		runtime, sdk, err := f.instantiate()
+		if err == nil {
+			reqCh.ch <- &instance{runtime: runtime, sdk: sdk, parent: f}
+		} else {
+			logger.Errorf("creating new instance failed with: %s", err.Error())
+			// we reached some sort of limit
+			// wait for an instance to be available
+			select {
+			case <-reqCh.ctx.Done():
+				reqCh.err = fmt.Errorf("instance request context done with: %w", reqCh.ctx.Err())
+				reqCh.ch <- nil
+			case instance := <-f.availableInstances:
+				reqCh.ch <- instance
+			case <-f.ctx.Done():
+				return
+			}
+		}
+	}
 }
 
 /*
 instantiate method initializes the wasm runtime and attaches plugins.
 Returns the runtime, plugin api, and error
 */
-func (f *Function) instantiate() (runtime vm.Runtime, pluginApi interface{}, err error) {
+func (f *Function) instantiate() (rt vm.Runtime, sdk plugins.Instance, err error) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	goMemory := m.HeapReleased + m.HeapIdle
+
+	// we need to do some resource availability checks
+	// get system memory
+	if f.config.Memory > goMemory {
+		vmStat, err := mem.VirtualMemory()
+		if err != nil {
+			return nil, nil, fmt.Errorf("getting system memory failed with: %w", err)
+		}
+
+		availableMemory := goMemory + (vmStat.Total - vmStat.Used)
+		if availableMemory*2/3 < f.config.Memory {
+			return nil, nil, fmt.Errorf("insufficient system memory available: %d bytes", availableMemory)
+		}
+	}
+
 	// add cold start metrics if instantiate is successful
 	start := time.Now()
 	defer func() {
@@ -59,28 +194,28 @@ func (f *Function) instantiate() (runtime vm.Runtime, pluginApi interface{}, err
 	}()
 	closers = append(closers, instance)
 
-	runtime, err = instance.Runtime(nil)
+	rt, err = instance.Runtime(nil)
 	if err != nil {
 		err = fmt.Errorf("creating new runtime failed with: %w", err)
 		return
 	}
-	closers = append(closers, runtime)
+	closers = append(closers, rt)
 
 	for _, plugIn := range f.serviceable.Service().Orbitals() {
-		if _, _, err = runtime.Attach(plugIn); err != nil {
+		if _, _, err = rt.Attach(plugIn); err != nil {
 			err = fmt.Errorf("attaching satellite plugin `%s` to runtime failed with: %w", plugIn.Name(), err)
 			return
 		}
 	}
 
-	sdkPi, _, err := runtime.Attach(plugins.Plugin())
+	sdkPi, _, err := rt.Attach(plugins.Plugin())
 	if err != nil {
 		err = fmt.Errorf("attaching core plugins to runtime failed with: %w", err)
 		return
 	}
 	closers = append(closers, sdkPi)
 
-	if pluginApi, err = plugins.With(sdkPi); err != nil {
+	if sdk, err = plugins.With(sdkPi); err != nil {
 		err = fmt.Errorf("loading plugin api failed with: %w", err)
 		return
 	}

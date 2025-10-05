@@ -17,7 +17,3 @@ func (f *Factory) Close() error {
 	f.memoryViews = nil
 	return nil
 }
-
-func (f *Factory) Load(hm vm.HostModule) (err error) {
-	return nil
-}

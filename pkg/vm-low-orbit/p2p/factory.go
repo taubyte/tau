@@ -8,10 +8,13 @@ import (
 
 func New(i vm.Instance, p2pNode p2pIface.Service, helper helpers.Methods) *Factory {
 	return &Factory{
-		parent:  i,
-		ctx:     i.Context().Context(),
-		p2pNode: p2pNode,
-		Methods: helper,
+		parent:   i,
+		ctx:      i.Context().Context(),
+		commands: make(map[uint32]*Command),
+		streams:  make(map[string]p2pIface.Stream),
+		discover: make(map[uint32][][]byte),
+		p2pNode:  p2pNode,
+		Methods:  helper,
 	}
 }
 
@@ -25,12 +28,5 @@ func (f *Factory) Close() error {
 	for _, stream := range f.streams {
 		stream.Close()
 	}
-	return nil
-}
-
-func (f *Factory) Load(hm vm.HostModule) (err error) {
-	f.commands = map[uint32]*Command{}
-	f.streams = map[string]p2pIface.Stream{}
-	f.discover = map[uint32][][]byte{}
 	return nil
 }

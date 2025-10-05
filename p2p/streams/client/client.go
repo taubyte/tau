@@ -371,7 +371,7 @@ func (r *Request) Do() (<-chan *Response, error) {
 
 	select {
 	case <-r.client.ctx.Done():
-		return nil, os.ErrClosed
+		return nil, r.client.ctx.Err()
 	default:
 	}
 
@@ -461,7 +461,7 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 func (c *Client) send(cmdName string, body command.Body, streams []stream, threshold int, timeout time.Duration) (<-chan *Response, error) {
 	select {
 	case <-c.ctx.Done():
-		return nil, os.ErrClosed
+		return nil, errors.New("client context ended")
 	default:
 	}
 

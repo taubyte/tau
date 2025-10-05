@@ -7,6 +7,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/core/vm"
 	helpers "github.com/taubyte/tau/pkg/vm/helpers/wazero"
+	api "github.com/tetratelabs/wazero/api"
 	wasi "github.com/tetratelabs/wazero/imports/wasi_snapshot_preview1"
 )
 
@@ -16,6 +17,7 @@ func (i *instance) Runtime(hostDef *vm.HostModuleDefinitions) (vm.Runtime, error
 	rt := helpers.NewRuntime(i.ctx.Context(), i.config)
 	r := &runtime{
 		instance:      i,
+		modules:       make(map[string]api.Module),
 		wasiStartDone: make(chan bool),
 		runtime:       rt,
 	}

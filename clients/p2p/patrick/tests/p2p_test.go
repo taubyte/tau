@@ -25,13 +25,10 @@ func TestClientWithUniverse(t *testing.T) {
 	u := dream.New(dream.UniverseConfig{Name: t.Name()})
 	defer u.Stop()
 
-	patrickHttpPort := 4443
-	authHttpPort := 4445
-
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"patrick": {Others: map[string]int{"http": patrickHttpPort}},
-			"auth":    {Others: map[string]int{"http": authHttpPort, "secure": 1}},
+			"patrick": {},
+			"auth":    {},
 			"hoarder": {},
 			"tns":     {},
 		},

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net"
 	"path"
-	"time"
 
 	_ "embed"
 
@@ -27,11 +26,6 @@ var (
 func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service, error) {
 	if config == nil {
 		config = &tauConfig.Node{}
-	}
-
-	// Beacon
-	if config.DevMode {
-		seerClient.DefaultAnnounceBeaconInterval = 30 * time.Second // To help with testing dns
 	}
 
 	srv := &Service{

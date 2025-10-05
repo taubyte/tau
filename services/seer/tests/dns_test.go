@@ -5,13 +5,13 @@ import (
 	"testing"
 	"time"
 
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 
 	"gotest.tools/v3/assert"
 
 	dns "github.com/miekg/dns"
-	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
@@ -22,8 +22,8 @@ import (
 
 var (
 	fqdn       = "testing_website_builder.com."
-	regexFqdn  = "qkfkkvlaw2.g.tau.link."
-	failedFqdn = "asdhw23.g.tau.link.net."
+	regexFqdn  = "qkfkkvlaw2.g.testdns.localtau."
+	failedFqdn = "asdhw23.g.test.localtau."
 )
 
 func createDnsClient(net string) *dns.Client {
@@ -34,35 +34,40 @@ func createDnsClient(net string) *dns.Client {
 }
 
 func TestDns(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
-
-	dnsPort, err := u.PortFor("seer", "dns")
-	assert.NilError(t, err)
-	defaultTestPort := fmt.Sprintf("127.0.0.1:%d", dnsPort)
-
 	seerClient.DefaultUsageBeaconInterval = 100 * time.Millisecond
 	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond
 	seerClient.DefaultGeoBeaconInterval = 100 * time.Millisecond
 
-	err = u.StartWithConfig(&dream.Config{
+	u := dream.New(dream.UniverseConfig{Name: t.Name()})
+	defer u.Stop()
+
+	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":      {Others: map[string]int{"dns": dnsPort, "mock": 1}},
-			"tns":       {},
-			"monkey":    {},
-			"patrick":   {},
-			"auth":      {},
+			"seer":      {Others: map[string]int{"mock": 1}},
 			"substrate": {},
-			"gateway":   {},
 		},
 	})
 	assert.NilError(t, err)
 
-	time.Sleep(15 * time.Second)
+	dnsPort, err := u.GetPort(u.Seer().Node(), "dns")
+	assert.NilError(t, err)
+
+	defaultTestPort := fmt.Sprintf("127.0.0.1:%d", dnsPort)
 
 	// Create Tcp Client
 	tcpClient := createDnsClient("tcp")
 	m := new(dns.Msg)
+	m.SetQuestion("substrate.tau.testdns.localtau.", dns.TypeA)
+
+	// Wait for services to start and register
+	for {
+		resp, _, err := tcpClient.Exchange(m, defaultTestPort)
+		if err == nil && len(resp.Answer) > 0 {
+			break
+		}
+		time.Sleep(time.Second)
+	}
+
 	resolver := u.Seer().Resolver()
 	cname, err := resolver.LookupCNAME(u.Context(), fqdn)
 	assert.NilError(t, err)
@@ -82,10 +87,8 @@ func TestDns(t *testing.T) {
 
 	// Expected to Fail
 	m.SetQuestion(failedFqdn, dns.TypeA)
-	tcpResp, _, err = tcpClient.Exchange(m, defaultTestPort)
-	assert.NilError(t, err)
-
-	assert.Assert(t, len(tcpResp.Answer) == 0, "The domain %s should have 0 answer response on tcp", failedFqdn)
+	_, _, err = tcpClient.Exchange(m, defaultTestPort)
+	assert.Assert(t, err != nil, "Expected error on tcp", err)
 
 	// Create Udp client
 	udpClient := createDnsClient("udp")
@@ -105,10 +108,8 @@ func TestDns(t *testing.T) {
 
 	// Expected to fail
 	m.SetQuestion(failedFqdn, dns.TypeA)
-	udpResp, _, err = udpClient.Exchange(m, defaultTestPort)
-	assert.NilError(t, err)
-
-	assert.Assert(t, len(udpResp.Answer) == 0, "The domain %s should have 0 answer response on udp", failedFqdn)
+	_, _, err = udpClient.Exchange(m, defaultTestPort)
+	assert.Assert(t, err != nil, "Expected error on udp", err)
 
 	// add test here for txt records
 	m.SetQuestion(cname, dns.TypeTXT)

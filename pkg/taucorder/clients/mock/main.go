@@ -23,9 +23,9 @@ import (
 )
 
 func main() {
-	dream.DreamApiListen = "localhost:2442" // diffrent port than the default
+	dream.DreamApiPort = 2442 // diffrent port than the default
 
-	dreamApi.BigBang()
+	dreamApi.BigBang(dream.MultiVerse())
 
 	uname := "mock_universe"
 
@@ -96,7 +96,6 @@ func main() {
 	printOut, err := json.Marshal(data)
 	if err != nil {
 		panic(err)
-
 	}
 	fmt.Printf("@@%s@@\n", printOut)
 

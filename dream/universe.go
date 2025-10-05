@@ -59,12 +59,12 @@ func New(config UniverseConfig) *Universe {
 	u.ctx, u.ctxC = context.WithCancel(multiverseCtx)
 
 	if config.KeepRoot {
-		cacheFolder, err := getCacheFolder()
+		cacheFolder, err := GetCacheFolder()
 		if err != nil {
 			return nil
 		}
 
-		u.root = path.Join(cacheFolder, "universe-"+u.id)
+		u.root = path.Join(cacheFolder, "universe-"+u.name)
 	} else {
 		u.root = "/tmp/universe-" + u.id
 	}
@@ -170,6 +170,20 @@ func (u *Universe) GetPortHttp(node peer.Node) (int, error) {
 	return port, nil
 }
 
+func (u *Universe) GetPort(node peer.Node, proto string) (int, error) {
+	info, err := u.GetInfo(node)
+	if err != nil {
+		return 0, err
+	}
+
+	port, ok := info.Ports[proto]
+	if !ok {
+		return 0, errors.New(proto + " field does not exist")
+	}
+
+	return port, nil
+}
+
 func (u *Universe) getHttpUrl(node peer.Node, scheme string) (string, error) {
 	if port, err := u.GetPortHttp(node); err != nil {
 		return "", err
@@ -218,7 +232,7 @@ func (u *Universe) RunFixture(name string, params ...interface{}) error {
 func (u *Universe) StartWithConfig(mainConfig *Config) error {
 	errChan := make(chan error, len(mainConfig.Services)+len(mainConfig.Simples))
 
-	privKey, pubKey, err := generateDVKeys()
+	privKey, pubKey, err := generateDeterministicDVKeys(u.name)
 	if err != nil {
 		return err
 	}
@@ -232,6 +246,7 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 	for service, config := range mainConfig.Services {
 		logger.Infof("Service %s with config:%#v\n", service, config)
 
+		// domain validation keys
 		config.PrivateKey = privKey
 		config.PublicKey = pubKey
 
@@ -333,6 +348,14 @@ func (u *Universe) Cleanup() {
 
 func (u *Universe) Id() string {
 	return u.id
+}
+
+func (u *Universe) Root() string {
+	return u.root
+}
+
+func (u *Universe) Persistent() bool {
+	return u.keepRoot
 }
 
 func (u *Universe) SwarmKey() []byte {

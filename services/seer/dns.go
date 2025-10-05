@@ -109,7 +109,6 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	errMsg.Rcode = dns.RcodeNameError
 
 	if len(msg.Question) > 0 {
-
 		name := msg.Question[0].Name
 		if strings.HasSuffix(msg.Question[0].Name, ".") {
 			name = strings.TrimSuffix(msg.Question[0].Name, ".")
@@ -173,6 +172,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if err := w.WriteMsg(errMsg); err != nil {
 		logger.Errorf("sending reply failed with: %s", err.Error())
 	}
+
 }
 
 func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
@@ -242,7 +242,7 @@ func (h *dnsHandler) replyWithHTTPServicingNodes(ctx context.Context, w dns.Resp
 	nodeIps, err := h.getServiceIpWithCache(ctx, "gateway")
 	if err != nil || len(nodeIps) == 0 {
 		nodeIps, err = h.getServiceIpWithCache(ctx, "substrate")
-		if err != nil || len(nodeIps) == 0 {
+		if err != nil { // if no nodes, still do not return an error as the domain is valid
 			err = w.WriteMsg(errMsg)
 			if err != nil {
 				logger.Error("writing error message for WriteMsg failed with:", err.Error())
