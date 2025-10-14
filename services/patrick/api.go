@@ -180,21 +180,16 @@ func (p *PatrickService) lockHandler(ctx context.Context, jid string, eta int64,
 
 // Is locked handler
 func (p *PatrickService) isLockedHandler(ctx context.Context, jid string, conn streams.Connection) (cr.Response, error) {
-	fmt.Printf("1>>> isLockedHandler %s - now is %d\n", jid, time.Now().Unix())
 	lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
 	if err != nil {
-		fmt.Printf("2>>> isLockedHandler %s - %s\n", jid, err.Error())
 		return cr.Response{"locked": false}, nil
 	}
 
-	fmt.Printf("3>>> isLockedHandler %s\n", jid)
 	resp, err := p.lockHelper(ctx, conn.RemotePeer(), lockData, jid, 0, false)
 	if err != nil {
-		fmt.Printf("4>>> isLockedHandler %s - %s\n", jid, err.Error())
 		return cr.Response{"locked": false}, err
 	}
 
-	fmt.Printf("5>>> isLockedHandler %s - %#v\n", jid, resp)
 	return resp, err
 }
 
@@ -314,22 +309,17 @@ func (p *PatrickService) deleteJob(ctx context.Context, jid string, loc ...strin
 func (p *PatrickService) lockHelper(ctx context.Context, pid peer.ID, lockData []byte, jid string, eta int64, method bool) (cr.Response, error) {
 	var jobLock Lock
 	err := cbor.Unmarshal(lockData, &jobLock)
-	fmt.Printf("1>>> lock for %s (by %s) => %s ts:%d eta:%d\n", pid.ShortString(), jid, jobLock.Pid.ShortString(), jobLock.Timestamp, jobLock.Eta)
 	if err != nil {
-		fmt.Printf("2>>> lock %s - error => %s\n", jid, err.Error())
 		logger.Errorf("Reading lock for `%s` failed with: %s", jid, err.Error())
 		return nil, err
 	}
 
 	// if not expired
 	if jobLock.Timestamp+jobLock.Eta > time.Now().Unix() {
-		fmt.Printf("3>>> lock %s => method = %t\n", jid, method)
 		if method {
 			if jobLock.Pid == pid {
-				fmt.Printf("4>>> lock %s - mine => tryLock\n", jid)
 				return p.tryLock(ctx, pid, jid, jobLock.Timestamp, eta)
 			} else {
-				fmt.Printf("5>>> lock %s - not mine => return error\n", jid)
 				return cr.Response{
 					"locked":    true,
 					"locked-by": jobLock.Pid.String(),
@@ -338,13 +328,11 @@ func (p *PatrickService) lockHelper(ctx context.Context, pid peer.ID, lockData [
 			}
 		}
 
-		fmt.Printf("6>>> lock %s - owner %s => method = %t\n", jid, jobLock.Pid.String(), method)
 		return cr.Response{"locked": true, "locked-by": jobLock.Pid.String(), "till": jobLock.Timestamp + jobLock.Eta}, nil
 	}
 
 	// if exprired, and method is true, try to lock
 	if method {
-		fmt.Printf("8>>> lock %s - not expired => tryLock\n", jid)
 		return p.tryLock(ctx, pid, jid, jobLock.Timestamp, eta)
 	}
 
@@ -409,16 +397,12 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		return fmt.Errorf("marshal in updateStatus error: %w", err)
 	}
 
-	fmt.Printf("Job %s == %#v\n", jid, job)
-
 	if job.Status == commonIface.JobStatusSuccess || job.Status == commonIface.JobStatusCancelled || job.Attempt >= servicesCommon.MaxJobAttempts {
-		fmt.Printf("Putting job %s in archive\n", jid)
 		p.deleteJob(ctx, jid, "/jobs/")
 		if err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData); err != nil {
 			return fmt.Errorf("updateStatus put failed with error: %w", err)
 		}
 	} else {
-		fmt.Printf("Putting job %s in jobs\n", jid)
 		if err = p.db.Put(ctx, "/jobs/"+jid, jobData); err != nil {
 			return fmt.Errorf("updateStatus put failed with error: %w", err)
 		}

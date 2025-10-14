@@ -321,16 +321,13 @@ func (u *Universe) Cleanup() {
 	validPorts := []string{"http", "p2p", "ipfs", "dns"}
 	// collect all used ports
 	usedPorts := make(map[int]bool)
-	for nodeId, nodeInfo := range u.lookups {
-		fmt.Printf("Node %s (%s) has ports: %v\n", nodeId, nodeInfo.Name, nodeInfo.Ports)
+	for _, nodeInfo := range u.lookups {
 		for proto, port := range nodeInfo.Ports {
-			fmt.Printf("  %s: %d\n", proto, port)
 			if slices.Contains(validPorts, proto) {
 				usedPorts[port] = true
 			}
 		}
 	}
-	fmt.Printf("Universe portShift: %d\n", u.portShift)
 
 	var (
 		closeableWg sync.WaitGroup
@@ -356,17 +353,13 @@ func (u *Universe) Cleanup() {
 		}(s)
 	}
 
-	fmt.Println("waiting for closeableWg")
 	closeableWg.Wait()
 	simpleWg.Wait()
 
-	fmt.Println("waiting done")
 	u.ctxC()
 
-	fmt.Println("waiting for ports to be closed", usedPorts)
 	// wait for all usedports to be closed
 	for port := range usedPorts {
-		fmt.Println("waiting for port", port)
 		for {
 			// Try to bind to the port to check if it's available
 			if listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", DefaultHost, port)); err == nil {
@@ -377,7 +370,6 @@ func (u *Universe) Cleanup() {
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
-	fmt.Println("waiting for ports to be closed done")
 
 }
 

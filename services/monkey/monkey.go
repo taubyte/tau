@@ -7,7 +7,6 @@ import (
 	"io"
 	"math/big"
 	"os"
-	"runtime/debug"
 	"time"
 
 	"github.com/taubyte/tau/core/services/patrick"
@@ -15,9 +14,6 @@ import (
 )
 
 func (m *Monkey) Run() {
-	fmt.Printf("Monkey %#v\n", m)
-	debug.PrintStack()
-
 	defer func() {
 		if !protocolCommon.MockedPatrick {
 			m.Service.monkeysLock.Lock()
@@ -49,9 +45,7 @@ func (m *Monkey) Run() {
 	m.run(errs)
 	close(errs)
 	ctxC()
-	fmt.Println("Context cancelled")
 	<-doneRefresh
-	fmt.Println("Done refreshing")
 
 	runErr := m.appendErrors(m.logFile, errs)
 	cid, err := m.storeLogs(m.logFile)
@@ -61,9 +55,6 @@ func (m *Monkey) Run() {
 
 	m.Job.Logs[m.Job.Id] = cid
 	m.LogCID = cid
-
-	fmt.Printf("RunErr %#v\n", runErr)
-	fmt.Printf("JOB = %#v\n", m.Job)
 
 	if runErr != nil {
 		if err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid); err != nil {
@@ -86,8 +77,6 @@ func (m *Monkey) Run() {
 }
 
 func (m *Monkey) run(errs chan error) {
-	fmt.Printf("Running job %#v\n", m.Job)
-	defer fmt.Println("Finished running job")
 	if err := m.RunJob(); err != nil {
 		appendAndLogError(errs, "Running job `%s` failed with error: %s", m.Id, err.Error())
 	} else {
