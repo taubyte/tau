@@ -318,7 +318,7 @@ func (p *PatrickService) lockHelper(ctx context.Context, pid peer.ID, lockData [
 	if jobLock.Timestamp+jobLock.Eta > time.Now().Unix() {
 		if method {
 			if jobLock.Pid == pid {
-				return p.tryLock(ctx, pid, jid, jobLock.Timestamp, eta)
+				return p.tryLock(ctx, pid, jid, time.Now().Unix(), eta)
 			} else {
 				return cr.Response{
 					"locked":    true,
@@ -333,7 +333,7 @@ func (p *PatrickService) lockHelper(ctx context.Context, pid peer.ID, lockData [
 
 	// if exprired, and method is true, try to lock
 	if method {
-		return p.tryLock(ctx, pid, jid, jobLock.Timestamp, eta)
+		return p.tryLock(ctx, pid, jid, time.Now().Unix(), eta)
 	}
 
 	return cr.Response{"locked": false, "expired": true}, nil
@@ -346,6 +346,7 @@ func (p *PatrickService) tryLock(ctx context.Context, pid peer.ID, jid string, t
 		Timestamp: timestamp,
 		Eta:       eta,
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed cbor marshal with error: %v", err)
 	}
