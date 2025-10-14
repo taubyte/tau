@@ -92,3 +92,59 @@ func Tarball(src string, options *Options, writers ...io.Writer) error {
 		return nil
 	})
 }
+
+// create a tarball of a single file
+func SingleFileTarball(filename string, writers ...io.Writer) error {
+	// ensure the file actually exists before trying to tar it
+	if _, err := os.Stat(filename); err != nil {
+		return fmt.Errorf("unable to find file with %s", err)
+	}
+
+	mw := io.MultiWriter(writers...)
+
+	gzw := gzip.NewWriter(mw)
+	defer gzw.Close()
+
+	tw := tar.NewWriter(gzw)
+	defer tw.Close()
+
+	// open the file
+	f, err := os.Open(filename)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// get file info
+	fi, err := f.Stat()
+	if err != nil {
+		return err
+	}
+
+	// return on non-regular files
+	if !fi.Mode().IsRegular() {
+		return fmt.Errorf("file is not a regular file")
+	}
+
+	// create a new file header
+	header, err := tar.FileInfoHeader(fi, fi.Name())
+	if err != nil {
+		return err
+	}
+
+	// update the name to just the filename (without path)
+	header.Name = filepath.Base(filename)
+
+	// write the header
+	if err := tw.WriteHeader(header); err != nil {
+		return err
+	}
+
+	// copy file data into tar writer
+	_, err = io.Copy(tw, f)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

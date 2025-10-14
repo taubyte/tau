@@ -13,7 +13,7 @@ import (
 
 // CopyFixture writes the given fixture tarball to a temp directory and unzips it
 func CopyFixture(fixture []byte) (tempDir string, err error) {
-	tempDir, err = os.MkdirTemp("/tmp", "*")
+	tempDir, err = os.MkdirTemp("", "*")
 	if err != nil {
 		err = fmt.Errorf("creating temp dir failed with: %w", err)
 		return
@@ -37,7 +37,7 @@ func CopyFixture(fixture []byte) (tempDir string, err error) {
 
 // Wasm builds the a wasm file from the given directory
 func Wasm(ctx context.Context, buildDir string) (wasmFile string, err error) {
-	builder, err := build.New(ctx, buildDir)
+	builder, err := build.New(ctx, os.Stdout, buildDir)
 	if err != nil {
 		err = fmt.Errorf("new builder failed with: %w", err)
 		return

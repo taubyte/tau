@@ -16,20 +16,24 @@ func (c *Context) ForceContext(ctx context.Context) {
 	}
 }
 
+func (c *Context) Context(ctx context.Context) {
+	c.ctx, c.ctxC = context.WithCancel(ctx)
+}
+
 func (c *Context) ForceGitDir(dir string) {
 	c.gitDir = dir
 }
 
 func (c *Context) startTimeout() {
-	defaultWaitTime := protocolCommon.DefaultLockTime
+	defaultJobTimeout := protocolCommon.DefaultMaxTime
 	if protocolCommon.TimeoutTest {
-		defaultWaitTime = 5 * time.Second
+		defaultJobTimeout = 5 * time.Second
 	}
 
 	select {
 	case <-c.ctx.Done():
 		return
-	case <-time.After(defaultWaitTime):
+	case <-time.After(defaultJobTimeout):
 		err := c.Patrick.Timeout(c.Job.Id)
 		if err != nil && !strings.Contains(err.Error(), "finished") {
 			logger.Errorf("Sending timeout for job %s failed with %s", c.Job.Id, err.Error())

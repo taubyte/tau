@@ -17,9 +17,7 @@ var (
 func (c *Context) Run(ctx context.Context) (err error) {
 	defer c.Monkey.Delete(c.Job.Id)
 	defer c.Patrick.Unlock(c.Job.Id)
-	defer c.handleLog(c.Job.Id)
-
-	c.ctx, c.ctxC = context.WithCancel(ctx)
+	defer c.handleLog()
 
 	go c.startTimeout()
 	defer c.ctxC()
@@ -27,6 +25,7 @@ func (c *Context) Run(ctx context.Context) (err error) {
 	if c.Job.Delay != nil {
 		select {
 		case <-c.ctx.Done():
+		case <-ctx.Done():
 			return ErrorContextCanceled
 		case <-time.After(time.Duration(c.Job.Delay.Time) * time.Second):
 		}

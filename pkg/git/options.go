@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -17,6 +18,17 @@ type Option func(c *Repository) error
 func URL(url string) Option {
 	return func(c *Repository) error {
 		c.url = url
+		return nil
+	}
+}
+
+/* Output is an Option to set the repository output.
+ *
+ * output: The output to use.
+ */
+func Output(output io.Writer) Option {
+	return func(c *Repository) error {
+		c.output = output
 		return nil
 	}
 }

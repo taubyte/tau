@@ -48,8 +48,11 @@ var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 // TODO: Fix Hoarder and tests
 func TestStoring(t *testing.T) {
 	t.Skip("hoarder needs to be fixed")
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
+
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"hoarder":   {Others: map[string]int{"copies": copies}},

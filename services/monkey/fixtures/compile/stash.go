@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/pkg/specs/methods"
@@ -21,8 +22,9 @@ func (ctx resourceContext) stashAndPush(id string, file io.ReadSeekCloser) error
 	}
 
 	c := jobs.Context{
-		Tns:  tnsClient,
-		Node: ctx.universe.TNS().Node(),
+		Tns:     tnsClient,
+		Node:    ctx.universe.TNS().Node(),
+		LogFile: os.Stdout,
 		Monkey: fakeMonkey{
 			hoarderClient: ctx.hoarderClient,
 		},

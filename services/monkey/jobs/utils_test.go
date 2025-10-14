@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"testing"
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
@@ -155,8 +156,14 @@ func cloneRepo(ctx context.Context, url string, preserve bool) (*git.Repository,
 	return repo, nil
 }
 
-func startDream(name string) (u *dream.Universe, err error) {
-	u = dream.New(dream.UniverseConfig{Name: name})
+func startDream(t *testing.T) (u *dream.Universe, cleanup func(), err error) {
+	m := dream.New(t.Context())
+	cleanup = func() {
+		m.Close()
+	}
+
+	u = m.New(dream.UniverseConfig{Name: t.Name()})
+
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"hoarder": {},

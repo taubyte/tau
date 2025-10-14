@@ -74,7 +74,10 @@ func (s *Starfish) Done(jid string, cid_log map[string]string, assetCid map[stri
 }
 
 func (s *Starfish) Failed(jid string, cid_log map[string]string, assetCid map[string]string) error {
-	job := s.Jobs[jid]
+	job, ok := s.Jobs[jid]
+	if !ok {
+		return fmt.Errorf("can't find job %s", jid)
+	}
 	job.Logs = cid_log
 	job.Status = patrick.JobStatusFailed
 	return nil

@@ -38,8 +38,10 @@ func TestDns(t *testing.T) {
 	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond
 	seerClient.DefaultGeoBeaconInterval = 100 * time.Millisecond
 
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
@@ -56,12 +58,12 @@ func TestDns(t *testing.T) {
 
 	// Create Tcp Client
 	tcpClient := createDnsClient("tcp")
-	m := new(dns.Msg)
-	m.SetQuestion("substrate.tau.testdns.localtau.", dns.TypeA)
+	md := new(dns.Msg)
+	md.SetQuestion("substrate.tau.testdns.localtau.", dns.TypeA)
 
 	// Wait for services to start and register
 	for {
-		resp, _, err := tcpClient.Exchange(m, defaultTestPort)
+		resp, _, err := tcpClient.Exchange(md, defaultTestPort)
 		if err == nil && len(resp.Answer) > 0 {
 			break
 		}
@@ -72,48 +74,48 @@ func TestDns(t *testing.T) {
 	cname, err := resolver.LookupCNAME(u.Context(), fqdn)
 	assert.NilError(t, err)
 
-	m.SetQuestion(cname, dns.TypeA)
+	md.SetQuestion(cname, dns.TypeA)
 
-	tcpResp, _, err := tcpClient.Exchange(m, defaultTestPort)
+	tcpResp, _, err := tcpClient.Exchange(md, defaultTestPort)
 	assert.NilError(t, err)
 
 	assert.Assert(t, len(tcpResp.Answer) == 1, "Expected 1 tcp answers got %d on tcp", len(tcpResp.Answer))
 
-	m.SetQuestion(regexFqdn, dns.TypeA)
-	tcpResp, _, err = tcpClient.Exchange(m, defaultTestPort)
+	md.SetQuestion(regexFqdn, dns.TypeA)
+	tcpResp, _, err = tcpClient.Exchange(md, defaultTestPort)
 	assert.NilError(t, err)
 
 	assert.Assert(t, len(tcpResp.Answer) == 1, "Expected 1 tcp for domain regex answers got %d on tcp", len(tcpResp.Answer))
 
 	// Expected to Fail
-	m.SetQuestion(failedFqdn, dns.TypeA)
-	_, _, err = tcpClient.Exchange(m, defaultTestPort)
+	md.SetQuestion(failedFqdn, dns.TypeA)
+	_, _, err = tcpClient.Exchange(md, defaultTestPort)
 	assert.Assert(t, err != nil, "Expected error on tcp", err)
 
 	// Create Udp client
 	udpClient := createDnsClient("udp")
-	m = new(dns.Msg)
-	m.SetQuestion(cname, dns.TypeA)
+	md = new(dns.Msg)
+	md.SetQuestion(cname, dns.TypeA)
 
-	udpResp, _, err := udpClient.Exchange(m, defaultTestPort)
+	udpResp, _, err := udpClient.Exchange(md, defaultTestPort)
 	assert.NilError(t, err)
 
 	assert.Assert(t, len(udpResp.Answer) == 1, "Expected 2 udp answers got %d on udp", len(udpResp.Answer))
 
-	m.SetQuestion(regexFqdn, dns.TypeA)
-	udpResp, _, err = udpClient.Exchange(m, defaultTestPort)
+	md.SetQuestion(regexFqdn, dns.TypeA)
+	udpResp, _, err = udpClient.Exchange(md, defaultTestPort)
 	assert.NilError(t, err)
 
 	assert.Assert(t, len(udpResp.Answer) == 1, "Expected 2 udp for domain regex answers got %d on udp", len(udpResp.Answer))
 
 	// Expected to fail
-	m.SetQuestion(failedFqdn, dns.TypeA)
-	_, _, err = udpClient.Exchange(m, defaultTestPort)
+	md.SetQuestion(failedFqdn, dns.TypeA)
+	_, _, err = udpClient.Exchange(md, defaultTestPort)
 	assert.Assert(t, err != nil, "Expected error on udp", err)
 
 	// add test here for txt records
-	m.SetQuestion(cname, dns.TypeTXT)
-	txtResp, _, err := udpClient.Exchange(m, defaultTestPort)
+	md.SetQuestion(cname, dns.TypeTXT)
+	txtResp, _, err := udpClient.Exchange(md, defaultTestPort)
 	assert.NilError(t, err)
 
 	assert.Assert(t, len(txtResp.Answer) == 1, "Expected 1 txt answers got %d on txt", len(txtResp.Answer))

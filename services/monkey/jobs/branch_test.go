@@ -12,9 +12,10 @@ import (
 func TestBranch(t *testing.T) {
 	t.Skip("Needs to be redone")
 	protocolCommon.MockedPatrick = true
-	u, err := startDream("testRunBranch")
-	defer u.Stop()
+
+	u, cleanup, err := startDream(t)
 	assert.NilError(t, err)
+	defer cleanup()
 
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)

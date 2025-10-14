@@ -17,8 +17,10 @@ func TestImportProdProject(t *testing.T) {
 	t.Skip("currently custom domains do not work on dream")
 
 	spec.DefaultBranches = []string{"master_test"}
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/taubyte/tau/dream"
-	dreamApi "github.com/taubyte/tau/dream/api"
 	"github.com/taubyte/tau/pkg/spore-drive/config"
 	"github.com/taubyte/tau/pkg/spore-drive/config/fixtures"
 	"github.com/taubyte/tau/services/auth/hooks"
@@ -26,11 +25,6 @@ var (
 	testWebsiteId  = "QmcrzjxwbqERscawQcXW4e5jyNBNoxLsUYatn63E8XPQq2"
 	testDomainId   = "QmNxpVc6DnbR3MKuvb3xw8Jzb8pfJTSRWJEdBMsb8AXFEX"
 )
-
-func init() {
-	dream.DreamApiPort = 4224 // diffrent port than the default
-	dreamApi.BigBang(dream.MultiVerse())
-}
 
 type MockConfigResolver struct {
 	LookupFunc func(id string) (config.Parser, error)

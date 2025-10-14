@@ -2,14 +2,14 @@ package builder
 
 import (
 	"bytes"
-	"errors"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"strings"
+	"time"
 
-	ci "github.com/taubyte/go-simple-container"
-	"github.com/taubyte/tau/core/builders"
+	ci "github.com/taubyte/tau/pkg/containers"
 	specs "github.com/taubyte/tau/pkg/specs/builders"
 	"github.com/taubyte/tau/utils/multihash"
 )
@@ -32,48 +32,104 @@ func (b *builder) setTarball() error {
 func (b *builder) buildImage() (clientImage *ci.Image, err error) {
 	environment := b.config.HandleDepreciatedEnvironment()
 	image := environment.Image
-	ops := []ci.ImageOption{}
 
+	// base options
+	ops := make([]ci.ImageOption, 0, 2)
+	ops = append(ops, ci.Output(b.output))
+
+	// if tarball is set then a new image is created
 	if b.tarball != nil {
 		image = fmt.Sprintf("%s-%s", image, strings.ToLower(multihash.Hash(b.tarball)))
 		ops = append(ops, ci.Build(bytes.NewReader(b.tarball)))
 	}
+
+	json.NewEncoder(b.output).Encode(struct {
+		Op        string `json:"op"`
+		Image     string `json:"image"`
+		Timestamp int64  `json:"timestamp"`
+	}{
+		Op:        "pull/build image",
+		Image:     image,
+		Timestamp: time.Now().UnixNano(),
+	})
 
 	return b.containerClient.Image(b.context, image, ops...)
 }
 
 // run will initialize and run the container with the given image
 func (b *builder) run(output *output, image *ci.Image, environment specs.Environment, ops ...ci.ContainerOption) (err error) {
-	output.outDir, err = os.MkdirTemp("/tmp", "*")
+	json.NewEncoder(b.output).Encode(struct {
+		Op        string            `json:"op"`
+		Timestamp int64             `json:"timestamp"`
+		Env       map[string]string `json:"env"`
+	}{
+		Op:        "run container",
+		Timestamp: time.Now().UnixNano(),
+		Env:       environment.Variables,
+	})
+
+	output.outDir, err = os.MkdirTemp("", "*")
 	if err != nil {
-		return fmt.Errorf("creating temp dir failed with: %w", err)
+		return b.Errorf("creating temp dir failed with: %w", err)
 	}
 
 	// TODO: We should not have to instantiate new containers for each workflow, will need to make slight configurations to go-simple-container as well
 	for _, script := range b.config.Workflow {
+		json.NewEncoder(b.output).Encode(struct {
+			Step      string `json:"step"`
+			Timestamp int64  `json:"timestamp"`
+		}{
+			Step:      script,
+			Timestamp: time.Now().UnixNano(),
+		})
+
 		ops = append(ops, b.wd.DefaultOptions(script, output.outDir, environment)...)
 		container, err := image.Instantiate(b.context, ops...)
 		if err != nil {
-			return fmt.Errorf("instantiating container failed with: %w", err)
+			json.NewEncoder(b.output).Encode(struct {
+				Step      string `json:"step"`
+				Timestamp int64  `json:"timestamp"`
+				Status    string `json:"status"`
+				Error     string `json:"error"`
+			}{
+				Step:      script,
+				Timestamp: time.Now().UnixNano(),
+				Status:    "error",
+				Error:     err.Error(),
+			})
+			return b.Errorf("instantiating container failed with: %w", err)
 		}
 
 		log, err := container.Run(b.context)
-		if err != nil {
-			err = fmt.Errorf("running container failed with: %w", err)
-		}
 		if log != nil {
-			if _, _err := output.logs.CopyFrom(log.Combined()); _err != nil {
-				_err = fmt.Errorf("copying logs failed with: %w", err)
-				if err != nil {
-					err = fmt.Errorf("%s:%w", err, _err)
-				} else {
-					err = _err
-				}
+			_, err = io.Copy(b.output, log.Combined())
+			if err != nil {
+				return b.Errorf("writting container output failed with: %w", err)
 			}
 		}
 		if err != nil {
-			return err
+			json.NewEncoder(b.output).Encode(struct {
+				Step      string `json:"step"`
+				Timestamp int64  `json:"timestamp"`
+				Status    string `json:"status"`
+				Error     string `json:"error"`
+			}{
+				Step:      script,
+				Timestamp: time.Now().UnixNano(),
+				Status:    "error",
+				Error:     err.Error(),
+			})
+			return b.Errorf("running container failed with: %w", err)
 		}
+		json.NewEncoder(b.output).Encode(struct {
+			Step      string `json:"step"`
+			Timestamp int64  `json:"timestamp"`
+			Status    string `json:"status"`
+		}{
+			Step:      script,
+			Timestamp: time.Now().UnixNano(),
+			Status:    "success",
+		})
 	}
 
 	return nil
@@ -103,40 +159,35 @@ func (b *builder) Tarball() []byte {
 	return b.tarball
 }
 
-// Logs returns the builder+container logs
-func (o *output) Logs() builders.Logs {
-	return o.logs
-}
-
 // OutDir returns the built files before compression or zipping
 func (o *output) OutDir() string {
 	return o.outDir
 }
 
-func (l logs) CopyTo(dst io.Writer) (int64, error) {
-	if l.File != nil && dst != nil {
-		l.File.Seek(0, 0)
-		return io.Copy(dst, l.File)
-	}
+// func (l logs) CopyTo(dst io.Writer) (int64, error) {
+// 	if l.File != nil && dst != nil {
+// 		l.File.Seek(0, 0)
+// 		return io.Copy(dst, l.File)
+// 	}
 
-	return 0, errors.New("logs or dst nil")
-}
+// 	return 0, errors.New("logs or dst nil")
+// }
 
-func (l logs) CopyFrom(src io.Reader) (int64, error) {
-	if l.File != nil && src != nil {
-		return io.Copy(l, src)
-	}
+// func (l logs) CopyFrom(src io.Reader) (int64, error) {
+// 	if l.File != nil && src != nil {
+// 		return io.Copy(l, src)
+// 	}
 
-	return 0, errors.New("logs or src is nil")
-}
+// 	return 0, errors.New("logs or src is nil")
+// }
 
-func (l logs) FormatErr(format string, args ...any) (formatErr error) {
-	formatErr = fmt.Errorf("build failed with: %s", fmt.Sprintf(format, args...))
-	if l.File != nil {
-		l.File.Seek(0, io.SeekEnd)
-		l.File.WriteString(formatErr.Error())
-		l.File.Seek(0, io.SeekStart)
-	}
+// func (l logs) FormatErr(format string, args ...any) (formatErr error) {
+// 	formatErr = fmt.Errorf("build failed with: %s", fmt.Sprintf(format, args...))
+// 	if l.File != nil {
+// 		l.File.Seek(0, io.SeekEnd)
+// 		l.File.WriteString(formatErr.Error())
+// 		l.File.Seek(0, io.SeekStart)
+// 	}
 
-	return
-}
+// 	return
+// }

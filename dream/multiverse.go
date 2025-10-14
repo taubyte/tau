@@ -3,35 +3,39 @@ package dream
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
-var multiverse Multiverse
-
-func MultiVerse() *Multiverse {
-	return &multiverse
-}
-
-// kill them all
-// ref: https://dragonball.fandom.com/wiki/Zeno
-func Zeno() {
-	universesLock.Lock()
-	defer universesLock.Unlock()
-	for _, u := range universes {
-		u.Cleanup()
+func New(ctx context.Context) *Multiverse {
+	m := &Multiverse{
+		universes: make(map[string]*Universe),
 	}
-	multiverseCtxC()
+	m.ctx, m.ctxC = context.WithCancel(ctx)
+	return m
 }
 
 func (m *Multiverse) Context() context.Context {
-	return multiverseCtx
+	return m.ctx
+}
+
+func (m *Multiverse) Close() error {
+	m.universesLock.RLock()
+	defer m.universesLock.RUnlock()
+	for _, u := range m.universes {
+		u.Cleanup()
+	}
+	m.universes = nil
+	m.ctxC()
+	return nil
 }
 
 func (m *Multiverse) Universe(name string) (*Universe, error) {
-	universesLock.RLock()
-	defer universesLock.RUnlock()
-	u, exists := universes[name]
+	name = strings.ToLower(name)
+	m.universesLock.RLock()
+	defer m.universesLock.RUnlock()
+	u, exists := m.universes[name]
 	if !exists {
 		return nil, fmt.Errorf("universe not found")
 	}
@@ -39,23 +43,24 @@ func (m *Multiverse) Universe(name string) (*Universe, error) {
 }
 
 func (m *Multiverse) Delete(name string) error {
-	universesLock.RLock()
-	defer universesLock.RUnlock()
+	name = strings.ToLower(name)
+	m.universesLock.RLock()
+	defer m.universesLock.RUnlock()
 
-	if _, exists := universes[name]; !exists {
+	if _, exists := m.universes[name]; !exists {
 		return fmt.Errorf("universe not found")
 	}
 
-	delete(universes, name)
+	delete(m.universes, name)
 
 	return nil
 }
 
 func (m *Multiverse) Status() Status {
 	status := make(Status)
-	universesLock.RLock()
-	defer universesLock.RUnlock()
-	for _, u := range universes {
+	m.universesLock.RLock()
+	defer m.universesLock.RUnlock()
+	for _, u := range m.universes {
 		u.lock.RLock()
 		status[u.name] = UniverseStatus{
 			Root:      u.root,
@@ -100,9 +105,9 @@ func (m *Multiverse) Status() Status {
 
 func (m *Multiverse) Universes() Status {
 	status := make(Status)
-	universesLock.RLock()
-	defer universesLock.RUnlock()
-	for _, u := range universes {
+	m.universesLock.RLock()
+	defer m.universesLock.RUnlock()
+	for _, u := range m.universes {
 		u.lock.RLock()
 		status[u.name] = UniverseStatus{
 			SwarmKey:  u.swarmKey,

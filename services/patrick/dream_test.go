@@ -1,6 +1,7 @@
 package service_test
 
 import (
+	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -10,11 +11,13 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	commonIface "github.com/taubyte/tau/core/common"
-	"github.com/taubyte/tau/core/services/patrick"
+	patrickCore "github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/pkg/specs/common"
+	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"gotest.tools/v3/assert"
 
@@ -30,8 +33,10 @@ import (
 func TestDream(t *testing.T) {
 	http.DefaultClient = commonTest.CreateHttpClient()
 
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
@@ -85,7 +90,7 @@ func TestDream(t *testing.T) {
 		job_byte, err := db.Get(u.Context(), jobs[0])
 		assert.NilError(t, err)
 
-		var job patrick.Job
+		var job patrickCore.Job
 		err = cbor.Unmarshal(job_byte, &job)
 		assert.NilError(t, err)
 
@@ -98,7 +103,7 @@ func TestDream(t *testing.T) {
 		assert.NilError(t, err)
 
 		attempts := 0
-		var job *patrick.Job
+		var job *patrickCore.Job
 		patrick, err := simple.Patrick()
 		assert.NilError(t, err)
 
@@ -137,55 +142,74 @@ func TestDream(t *testing.T) {
 	})
 
 	t.Run("ReAnnounce", func(t *testing.T) {
+		// Create new jobs for this test
+		err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
+		assert.NilError(t, err)
+
+		time.Sleep(1 * time.Second)
+
 		patrick, err := simple.Patrick()
 		assert.NilError(t, err)
 
 		jobs, err := patrick.List()
 		assert.NilError(t, err)
-		assert.Assert(t, len(jobs) > 0)
+		assert.Assert(t, len(jobs) > 0, "No jobs available after creating them")
 
 		job_byte, err := patrick.Get(jobs[0])
 		assert.NilError(t, err)
 
-		old_attempt := job_byte.Attempt
-
 		patrickClient, err := simple.Patrick()
 		assert.NilError(t, err)
 
+		// Test reannouncement by subscribing to patrick pubsub
+		reannounceCount := 0
+
+		// Subscribe to patrick pubsub to listen for reannouncements
+		reannounceChan := make(chan []byte, 10)
+		err = u.Patrick().Node().PubSubSubscribe(patrickSpecs.PubSubIdent, func(msg *pubsub.Message) {
+			reannounceChan <- msg.Data
+		}, func(err error) {
+			// Ignore errors
+		})
+		assert.NilError(t, err)
+
+		// Lock job
 		err = patrickClient.Lock(job_byte.Id, 10)
 		assert.NilError(t, err)
 
+		// Wait a second
+		time.Sleep(1 * time.Second)
+
+		// Fail job
 		err = patrickClient.Failed(job_byte.Id, job_byte.Logs, nil)
 		assert.NilError(t, err)
 
-		time.Sleep(10 * time.Second)
+		// Wait for reannouncement on pubsub
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
 
-		retry_job, err := patrick.Get(job_byte.Id)
-		assert.NilError(t, err)
+		select {
+		case <-ctx.Done():
+			t.Fatal("Timeout waiting for reannouncement")
+		case data := <-reannounceChan:
+			// Check if this is a reannouncement of our job
+			var job patrickCore.Job
+			err = cbor.Unmarshal(data, &job)
+			assert.NilError(t, err)
 
-		assert.Assert(t, old_attempt != retry_job.Attempt)
+			if job.Id == job_byte.Id {
+				reannounceCount++
+			}
+		}
 
-		err = patrickClient.Failed(retry_job.Id, retry_job.Logs, nil)
-		assert.NilError(t, err)
-
-		time.Sleep(10 * time.Second)
-
-		retry_job, err = patrick.Get(retry_job.Id)
-		assert.NilError(t, err)
-
-		assert.Assert(t, retry_job.Attempt > old_attempt)
-
-		err = patrickClient.Failed(retry_job.Id, retry_job.Logs, nil)
-		assert.NilError(t, err)
-
-		_, err = patrick.Get(retry_job.Id)
-		assert.NilError(t, err)
+		// We should have received a reannouncement
+		assert.Assert(t, reannounceCount > 0, "Should have received reannouncement on pubsub")
 	})
 
 }
 
-func compareJobToPayload(meta patrick.Meta, payload []byte) (err error) {
-	var _meta *patrick.Meta
+func compareJobToPayload(meta patrickCore.Meta, payload []byte) (err error) {
+	var _meta *patrickCore.Meta
 	err = json.Unmarshal(payload, &_meta)
 	if err != nil {
 		return

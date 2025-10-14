@@ -107,8 +107,6 @@ func (l libraryContext) directory() error {
 		return err
 	}
 
-	asset.Logs().CopyTo(c.LogFile)
-
 	return l.ctx.stashAndPush(l.ctx.resourceId, compressedAsset)
 }
 

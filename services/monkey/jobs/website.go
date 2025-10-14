@@ -10,7 +10,7 @@ import (
 )
 
 func (w website) handle() (err error) {
-	builder, err := build.New(w.ctx, w.WorkDir)
+	builder, err := build.New(w.ctx, w.LogFile, w.WorkDir)
 	if err != nil {
 		return fmt.Errorf("creating new builder for git website repo `%d` failed with: %w", w.Job.Meta.Repository.ID, err)
 	}
@@ -22,7 +22,6 @@ func (w website) handle() (err error) {
 		compressedAsset io.ReadSeekCloser
 	)
 	defer func() {
-		w.mergeBuildLogs(asset.Logs())
 		if compressedAsset != nil {
 			if err == nil {
 				if err = w.handleCompressedBuild(id, compressedAsset); err != nil {

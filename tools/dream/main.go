@@ -10,7 +10,6 @@ import (
 
 	// Relative
 	"github.com/pterm/pterm"
-	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/tools/dream/cli/common"
 	inject "github.com/taubyte/tau/tools/dream/cli/inject"
 	"github.com/taubyte/tau/tools/dream/cli/kill"
@@ -42,6 +41,7 @@ import (
 
 func main() {
 	ctx, ctxC := context.WithCancel(context.Background())
+	defer ctxC()
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
@@ -51,13 +51,6 @@ func main() {
 		case os.Interrupt, syscall.SIGTERM:
 			pterm.Info.Println("Received signal... Shutting down.")
 			ctxC()
-		}
-	}()
-
-	defer func() {
-		if common.DoDaemon {
-			ctxC()
-			dream.Zeno()
 		}
 	}()
 

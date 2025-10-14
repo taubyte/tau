@@ -28,11 +28,12 @@ func TestRunWasmRetry(t *testing.T) {
 	t.Skip("Review later,  is there a valid reason to retry as now code clones config")
 
 	// Reduce times from minutes to seconds for testing
-	service.DefaultReAnnounceFailedJobsTime = 10 * time.Second
 	service.DefaultReAnnounceJobTime = 10 * time.Second
 
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{

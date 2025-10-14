@@ -1,15 +1,11 @@
 package dream
 
 import (
-	"context"
-
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
 func init() {
 	// Universes
-	universes = make(map[string]*Universe)
-	multiverseCtx, multiverseCtxC = context.WithCancel(context.Background())
 	fixtures = make(map[string]FixtureHandler)
 
 	// Services and P2P Client Registry

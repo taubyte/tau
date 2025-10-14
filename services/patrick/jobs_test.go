@@ -214,7 +214,8 @@ func TestReannounceJobs(t *testing.T) {
 			mockDB, _ := factory.New(nil, "test", 0)
 
 			srv := &PatrickService{
-				db: mockDB,
+				db:   mockDB,
+				node: &mockNode{},
 			}
 
 			tt.setupMocks(mockDB.(*mock.KVDB))
@@ -257,7 +258,7 @@ func TestRepublishJob(t *testing.T) {
 				jobBytes, _ := cbor.Marshal(job)
 				mockDB.Put(context.Background(), "/archive/jobs/test-job-2", jobBytes)
 			},
-			expectedError: "",
+			expectedError: "get job test-job-2 failed with: key not found",
 			expectPubSub:  false,
 		},
 		{
@@ -266,7 +267,7 @@ func TestRepublishJob(t *testing.T) {
 			setupMocks: func(mockDB *mock.KVDB, mockNode *mockNode) {
 				// No job data set up
 			},
-			expectedError: "could not find job test-job-3",
+			expectedError: "get job test-job-3 failed with: key not found",
 			expectPubSub:  false,
 		},
 		{

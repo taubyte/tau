@@ -53,6 +53,9 @@ type Service struct {
 
 	config *config.Node
 
+	recvJobs     map[string]time.Time
+	recvJobsLock sync.RWMutex
+
 	monkeys     map[string]*Monkey
 	monkeysLock sync.RWMutex
 

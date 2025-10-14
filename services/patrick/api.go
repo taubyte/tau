@@ -181,14 +181,16 @@ func (p *PatrickService) lockHandler(ctx context.Context, jid string, eta int64,
 // Is locked handler
 func (p *PatrickService) isLockedHandler(ctx context.Context, jid string, conn streams.Connection) (cr.Response, error) {
 	lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
-	if err == nil {
-		resp, err := p.lockHelper(ctx, conn.RemotePeer(), lockData, jid, 0, false)
-		if resp != nil {
-			return resp, err
-		}
+	if err != nil {
+		return cr.Response{"locked": false}, nil
 	}
 
-	return cr.Response{"locked": false}, nil
+	resp, err := p.lockHelper(ctx, conn.RemotePeer(), lockData, jid, 0, false)
+	if err != nil {
+		return cr.Response{"locked": false}, err
+	}
+
+	return resp, err
 }
 
 // Unlock handler
@@ -310,10 +312,13 @@ func (p *PatrickService) lockHelper(ctx context.Context, pid peer.ID, lockData [
 	if err != nil {
 		logger.Errorf("Reading lock for `%s` failed with: %s", jid, err.Error())
 		return nil, err
-	} else if jobLock.Timestamp+jobLock.Eta > time.Now().Unix() {
+	}
+
+	// if not expired
+	if jobLock.Timestamp+jobLock.Eta > time.Now().Unix() {
 		if method {
 			if jobLock.Pid == pid {
-				return p.tryLock(ctx, pid, jid, jobLock.Timestamp, eta)
+				return p.tryLock(ctx, pid, jid, time.Now().Unix(), eta)
 			} else {
 				return cr.Response{
 					"locked":    true,
@@ -323,14 +328,15 @@ func (p *PatrickService) lockHelper(ctx context.Context, pid peer.ID, lockData [
 			}
 		}
 
-		return cr.Response{"locked": true, "locked-by": jobLock.Pid.String()}, nil
+		return cr.Response{"locked": true, "locked-by": jobLock.Pid.String(), "till": jobLock.Timestamp + jobLock.Eta}, nil
 	}
 
+	// if exprired, and method is true, try to lock
 	if method {
-		return p.tryLock(ctx, pid, jid, jobLock.Timestamp, eta)
+		return p.tryLock(ctx, pid, jid, time.Now().Unix(), eta)
 	}
 
-	return cr.Response{"locked": false}, nil
+	return cr.Response{"locked": false, "expired": true}, nil
 }
 
 // Try lock helper
@@ -340,6 +346,7 @@ func (p *PatrickService) tryLock(ctx context.Context, pid peer.ID, jid string, t
 		Timestamp: timestamp,
 		Eta:       eta,
 	})
+
 	if err != nil {
 		return nil, fmt.Errorf("failed cbor marshal with error: %v", err)
 	}
@@ -348,7 +355,7 @@ func (p *PatrickService) tryLock(ctx context.Context, pid peer.ID, jid string, t
 		return nil, fmt.Errorf("locking `%s` failed with: %v", jid, err)
 	}
 
-	return nil, nil
+	return cr.Response{"locked": true, "locked-by": pid.String(), "till": timestamp + eta}, nil
 }
 
 // Update status helper
@@ -392,6 +399,7 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 	}
 
 	if job.Status == commonIface.JobStatusSuccess || job.Status == commonIface.JobStatusCancelled || job.Attempt >= servicesCommon.MaxJobAttempts {
+		p.deleteJob(ctx, jid, "/jobs/")
 		if err = p.db.Put(ctx, "/archive/jobs/"+jid, jobData); err != nil {
 			return fmt.Errorf("updateStatus put failed with error: %w", err)
 		}
@@ -558,6 +566,12 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 
 	requestCtx := ctx.Request().Context()
 
+	// if job is in /jobs/ then  it's good to go
+	_, err = srv.getJob(requestCtx, "/jobs/", jid)
+	if err == nil {
+		return map[string]interface{}{"retry": jid}, nil
+	}
+
 	// This is just to make the successful job set to fail to retry it for testing on go-patrick-http test
 	if srv.devMode && servicesCommon.RetryJob {
 		// Get the specific job from archived
@@ -590,16 +604,17 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 	if job.Status == commonIface.JobStatusCancelled || job.Status == commonIface.JobStatusFailed || job.Status == commonIface.JobStatusSuccess {
 		// Change to open and resend over pubsub
 		job.Status = commonIface.JobStatusOpen
+		job.Attempt = 0
 		job_byte, err := cbor.Marshal(job)
 		if err != nil {
 			logger.Errorf("failed cbor marshall on job %s with err: %w", job.Id, err)
 			return nil, fmt.Errorf("failed marshalling job %s with err %w", job.Id, err)
 		}
 
-		// Send the job over pub sub
-		err = srv.node.PubSubPublish(requestCtx, patrickSpecs.PubSubIdent, job_byte)
+		// Delete from archive jobs now that it's back out as open
+		err = srv.db.Delete(requestCtx, "/archive/jobs/"+jid)
 		if err != nil {
-			return nil, fmt.Errorf("failed to send over pubsub error: %v", err)
+			return nil, fmt.Errorf("failed deleting job %s with error: %w", jid, err)
 		}
 
 		// Put the job back into the list
@@ -609,16 +624,10 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 			return nil, fmt.Errorf("failed putting job %s with %w", job.Id, err)
 		}
 
-		// Delete from archive jobs now that it's back out as open
-		err = srv.db.Delete(requestCtx, "/archive/jobs/"+jid)
-		if err != nil {
-			return nil, fmt.Errorf("failed deleting job %s with error: %w", jid, err)
-		}
-
 		return map[string]interface{}{"retry": job.Id}, nil
 	}
 
-	return nil, nil
+	return nil, errors.New("job is not in a state to be retried")
 }
 
 // Get job helper

@@ -14,8 +14,10 @@ import (
 )
 
 func TestDreamDoubleClient(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: "single"})
-	defer dream.Zeno()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{

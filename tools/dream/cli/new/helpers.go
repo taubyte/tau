@@ -193,14 +193,14 @@ func runFixtures(c *cli.Context, multiverse *client.Client, universes []string) 
 	return nil
 }
 
-func startUniverses(c *cli.Context) (err error) {
+func startUniverses(c *cli.Context, multiverse *dream.Multiverse) (err error) {
 	config, err := buildConfig(c)
 	if err != nil {
 		return err
 	}
 
 	for _, universe := range c.StringSlice("universes") {
-		u := dream.New(dream.UniverseConfig{
+		u := multiverse.New(dream.UniverseConfig{
 			Name:     universe,
 			Id:       c.String("id"),
 			KeepRoot: c.Bool("keep"),
@@ -214,9 +214,9 @@ func startUniverses(c *cli.Context) (err error) {
 	return
 }
 
-func startEmptyUniverses(c *cli.Context) (err error) {
+func startEmptyUniverses(c *cli.Context, multiverse *dream.Multiverse) (err error) {
 	for _, universe := range c.StringSlice("universes") {
-		u := dream.New(dream.UniverseConfig{Name: universe})
+		u := multiverse.New(dream.UniverseConfig{Name: universe})
 		err = u.StartWithConfig(&dream.Config{})
 		if err != nil {
 			return err

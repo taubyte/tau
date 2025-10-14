@@ -48,12 +48,15 @@ func TestFail(t *testing.T) {
 	maxAttempts := 5
 	commandsTested := 2
 
+	m := dream.New(t.Context())
+	defer m.Close()
+
 	var attempts int
 	var successes atomic.Int32
 	var mostRecentError error
 	for attempts < maxAttempts {
 		attempts++
-		u := dream.New(dream.UniverseConfig{Name: t.Name()})
+		u := m.New(dream.UniverseConfig{Name: t.Name()})
 		err := u.StartWithConfig(&dream.Config{
 			Services: map[string]commonIface.ServiceConfig{
 				"tns":       {},
