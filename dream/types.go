@@ -11,8 +11,11 @@ import (
 )
 
 type Universe struct {
-	ctx       context.Context
-	ctxC      context.CancelFunc
+	ctx  context.Context
+	ctxC context.CancelFunc
+
+	multiverse *Multiverse
+
 	lock      sync.RWMutex
 	name      string
 	root      string
@@ -106,7 +109,13 @@ type ServiceStatus struct {
 	Copies int    `json:"copies"`
 }
 
-type Multiverse struct{}
+type Multiverse struct {
+	ctx  context.Context
+	ctxC context.CancelFunc
+
+	universes     map[string]*Universe
+	universesLock sync.RWMutex
+}
 
 type Simple struct {
 	peer.Node

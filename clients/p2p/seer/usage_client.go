@@ -97,7 +97,7 @@ func (u *UsageBeacon) Start() {
 		// Initial usage update
 		_, err := u.usage.updateUsage(u.hostname, u.nodeId, u.clientNodeId, u.signature)
 		if err != nil {
-			logger.Errorf("updateUsage failed: %v", err)
+			logger.Debugf("updateUsage failed: %v", err)
 			u._status <- err
 		}
 
@@ -120,7 +120,7 @@ func (u *UsageBeacon) Start() {
 		// Initial announce update
 		_, err := u.usage.updateAnnounce(u.nodeId, u.clientNodeId, u.signature)
 		if err != nil {
-			logger.Errorf("updateAnnounce failed: %v", err)
+			logger.Debugf("updateAnnounce failed: %v", err)
 			u._status <- err
 		}
 

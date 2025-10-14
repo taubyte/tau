@@ -1,7 +1,6 @@
 package dream
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -45,10 +44,10 @@ var (
 
 	logger = log.Logger("tau.dream")
 
-	universes      map[string]*Universe
-	universesLock  sync.RWMutex
-	multiverseCtx  context.Context
-	multiverseCtxC context.CancelFunc
+	// universes      map[string]*Universe
+	// universesLock  sync.RWMutex
+	// multiverseCtx  context.Context
+	// multiverseCtxC context.CancelFunc
 )
 
 // TODO: This should be generated

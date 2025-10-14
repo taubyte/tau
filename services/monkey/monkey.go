@@ -7,6 +7,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"runtime/debug"
 	"time"
 
 	"github.com/taubyte/tau/core/services/patrick"
@@ -14,6 +15,8 @@ import (
 )
 
 func (m *Monkey) Run() {
+	fmt.Printf("Monkey %#v\n", m)
+	debug.PrintStack()
 
 	defer func() {
 		if !protocolCommon.MockedPatrick {
@@ -24,34 +27,15 @@ func (m *Monkey) Run() {
 	}()
 
 	errs := make(chan error, 1024)
-	gotIt := true
-
-	m.Status = patrick.JobStatusLocked
-	isLocked, err := m.Service.patrickClient.IsLocked(m.Id)
-	if !isLocked {
-		appendAndLogError(errs, "Locking job %s failed", m.Id)
-		gotIt = false
-	}
-	if err != nil {
-		appendAndLogError(errs, "Checking if locked job %s failed with: %s", m.Id, err.Error())
-		gotIt = false
-	}
-
-	if !gotIt {
-		return
-	}
 
 	ctx, ctxC := context.WithCancel(m.ctx)
 
-	go func() {
-		m.run(errs)
-		ctxC()
-	}()
-
+	doneRefresh := make(chan struct{})
 	go func() {
 		for {
 			select {
 			case <-ctx.Done():
+				doneRefresh <- struct{}{}
 				return
 			case <-time.After(protocolCommon.DefaultRefreshLockTime):
 
@@ -62,17 +46,26 @@ func (m *Monkey) Run() {
 		}
 	}()
 
-	<-ctx.Done()
+	m.run(errs)
+	close(errs)
+	ctxC()
+	fmt.Println("Context cancelled")
+	<-doneRefresh
+	fmt.Println("Done refreshing")
 
-	m.appendErrors(m.logFile, errs)
-	cid, err0 := m.storeLogs(m.logFile)
-	if err0 != nil {
-		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err0.Error())
+	runErr := m.appendErrors(m.logFile, errs)
+	cid, err := m.storeLogs(m.logFile)
+	if err != nil {
+		logger.Errorf("Writing cid of job `%s` failed: %s", m.Id, err.Error())
 	}
 
 	m.Job.Logs[m.Job.Id] = cid
 	m.LogCID = cid
-	if err != nil {
+
+	fmt.Printf("RunErr %#v\n", runErr)
+	fmt.Printf("JOB = %#v\n", m.Job)
+
+	if runErr != nil {
 		if err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid); err != nil {
 			logger.Errorf("Marking job failed `%s` failed with: %s", m.Id, err.Error())
 		}
@@ -93,6 +86,8 @@ func (m *Monkey) Run() {
 }
 
 func (m *Monkey) run(errs chan error) {
+	fmt.Printf("Running job %#v\n", m.Job)
+	defer fmt.Println("Finished running job")
 	if err := m.RunJob(); err != nil {
 		appendAndLogError(errs, "Running job `%s` failed with error: %s", m.Id, err.Error())
 	} else {
@@ -125,7 +120,7 @@ func (s *Service) newMonkey(job *patrick.Job) (*Monkey, error) {
 
 		m := &Monkey{
 			Id:                    jid,
-			Status:                patrick.JobStatusOpen,
+			Status:                patrick.JobStatusLocked,
 			Service:               s,
 			Job:                   job,
 			logFile:               logFile,

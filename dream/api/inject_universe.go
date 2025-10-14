@@ -25,7 +25,7 @@ func (srv *multiverseService) apiHandlerUniverse(ctx httpIface.Context) (interfa
 	}
 
 	// Grab the universe
-	_, err = dream.GetUniverse(name)
+	_, err = srv.Universe(name)
 	if err == nil {
 		return nil, fmt.Errorf("universe `%s` already exists", name)
 	}
@@ -39,7 +39,7 @@ func (srv *multiverseService) apiHandlerUniverse(ctx httpIface.Context) (interfa
 		return nil, err
 	}
 
-	u := dream.New(dream.UniverseConfig{
+	u := srv.New(dream.UniverseConfig{
 		Name: name,
 	})
 

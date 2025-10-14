@@ -21,11 +21,10 @@ import (
 // TODO: FIXME
 func TestGoSmartOp(t *testing.T) {
 	t.Skip("smart op is broken currently")
-	u := dream.New(dream.UniverseConfig{
-		Name: "MonkeyFixtureTestSmartOp",
-		Id:   "MonkeyFixtureTestSmartOp",
-	})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{

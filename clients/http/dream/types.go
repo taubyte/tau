@@ -3,6 +3,7 @@ package http
 import (
 	"context"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/taubyte/tau/dream"
@@ -22,11 +23,11 @@ type Client struct {
 }
 
 func (c *Client) Universe(name string) *Universe {
-	return &Universe{Name: name, client: c}
+	return &Universe{Name: strings.ToLower(name), client: c}
 }
 
 func (c *Client) StartUniverseWithConfig(name string, config *dream.Config) error {
-	return c.post("/universe/"+name, map[string]interface{}{"config": config}, nil)
+	return c.post("/universe/"+strings.ToLower(name), map[string]interface{}{"config": config}, nil)
 }
 
 type Universe struct {

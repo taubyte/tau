@@ -3,7 +3,7 @@ package website
 import (
 	"path"
 
-	ci "github.com/taubyte/go-simple-container"
+	ci "github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/specs/builders"
 )
 

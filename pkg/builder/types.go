@@ -2,9 +2,10 @@ package builder
 
 import (
 	"context"
+	"io"
 	"os"
 
-	ci "github.com/taubyte/go-simple-container"
+	ci "github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/specs/builders"
 )
 
@@ -15,11 +16,12 @@ type builder struct {
 	containerClient *ci.Client
 	context         context.Context
 	tarball         []byte
+	output          io.Writer
 }
 
 // output wraps the methods of the Output interface
 type output struct {
-	logs   logs
+	// logs   logs
 	wd     builders.Dir
 	outDir string
 }

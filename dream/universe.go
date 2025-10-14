@@ -5,31 +5,55 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path"
+	"strings"
 	"sync"
+	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	peer "github.com/taubyte/tau/p2p/peer"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/utils"
+	"golang.org/x/exp/slices"
 
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/utils/id"
 )
 
+func (u *Universe) init() error {
+	u.ctx, u.ctxC = context.WithCancel(u.multiverse.ctx)
+
+	u.all = make([]peer.Node, 0)
+	u.closables = make([]commonIface.Service, 0)
+	u.simples = make(map[string]*Simple)
+	u.lookups = make(map[string]*NodeInfo)
+	u.service = make(map[string]*serviceInfo, len(commonSpecs.Services))
+	for _, srvt := range commonSpecs.Services {
+		u.service[srvt] = &serviceInfo{
+			nodes: make(map[string]commonIface.Service),
+		}
+	}
+
+	return nil
+}
+
 // create or fetch a universe
-func New(config UniverseConfig) *Universe {
+func (m *Multiverse) New(config UniverseConfig) *Universe {
+	// make name lowercase
+	config.Name = strings.ToLower(config.Name)
+
 	// see if we have a ticket
 	id := id.Generate()
 	if len(config.Id) > 0 {
 		id = config.Id
 	}
 
-	universesLock.Lock()
-	defer universesLock.Unlock()
+	m.universesLock.Lock()
+	defer m.universesLock.Unlock()
 
-	u, exists := universes[config.Name]
+	u, exists := m.universes[config.Name]
 	if exists {
 		return u
 	}
@@ -38,25 +62,17 @@ func New(config UniverseConfig) *Universe {
 	swarmKey, _ := utils.FormatSwarmKey(utils.GenerateSwarmKeyFromString(id))
 
 	u = &Universe{
-		name:      config.Name,
-		id:        id,
-		swarmKey:  swarmKey,
-		all:       make([]peer.Node, 0),
-		closables: make([]commonIface.Service, 0),
-		simples:   make(map[string]*Simple),
-		lookups:   make(map[string]*NodeInfo),
-		portShift: lastPortShift(),
-		keepRoot:  config.KeepRoot,
-		service: func() map[string]*serviceInfo {
-			s := make(map[string]*serviceInfo)
-			for _, srvt := range commonSpecs.Services {
-				s[srvt] = new(serviceInfo)
-				s[srvt].nodes = make(map[string]commonIface.Service)
-			}
-			return s
-		}(),
+		multiverse: m,
+		name:       config.Name,
+		id:         id,
+		swarmKey:   swarmKey,
+		portShift:  lastPortShift(),
+		keepRoot:   config.KeepRoot,
 	}
-	u.ctx, u.ctxC = context.WithCancel(multiverseCtx)
+
+	if err := u.init(); err != nil {
+		return nil
+	}
 
 	if config.KeepRoot {
 		cacheFolder, err := GetCacheFolder()
@@ -74,20 +90,9 @@ func New(config UniverseConfig) *Universe {
 		return nil
 	}
 
-	universes[config.Name] = u
+	m.universes[config.Name] = u
 
 	return u
-}
-
-func GetUniverse(name string) (*Universe, error) {
-	universesLock.RLock()
-	defer universesLock.RUnlock()
-	universe, ok := universes[name]
-	if !ok {
-		return nil, fmt.Errorf("universe `%s` does not exist", name)
-	}
-
-	return universe, nil
 }
 
 func (u *Universe) toClose(c commonIface.Service) {
@@ -293,24 +298,39 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 func (u *Universe) Stop() {
 	u.Cleanup()
 
-	u, exists := universes[u.name]
-	if exists {
-		for k := range universes {
-			if k == u.name {
-				u.lock.Lock()
-				u.ctxC()
-				delete(universes, k)
-				u.lock.Unlock()
-			}
-		}
+	// reset universe
+	u.lock.Lock()
+	defer u.lock.Unlock()
+
+	if !u.keepRoot {
+		u.multiverse.universesLock.Lock()
+		defer u.multiverse.universesLock.Unlock()
+		delete(u.multiverse.universes, u.name)
+		return
 	}
+
+	// reset universe
+	u.init()
+
 }
 
 func (u *Universe) Cleanup() {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	// close services
+	validPorts := []string{"http", "p2p", "ipfs", "dns"}
+	// collect all used ports
+	usedPorts := make(map[int]bool)
+	for nodeId, nodeInfo := range u.lookups {
+		fmt.Printf("Node %s (%s) has ports: %v\n", nodeId, nodeInfo.Name, nodeInfo.Ports)
+		for proto, port := range nodeInfo.Ports {
+			fmt.Printf("  %s: %d\n", proto, port)
+			if slices.Contains(validPorts, proto) {
+				usedPorts[port] = true
+			}
+		}
+	}
+	fmt.Printf("Universe portShift: %d\n", u.portShift)
 
 	var (
 		closeableWg sync.WaitGroup
@@ -336,14 +356,29 @@ func (u *Universe) Cleanup() {
 		}(s)
 	}
 
+	fmt.Println("waiting for closeableWg")
 	closeableWg.Wait()
 	simpleWg.Wait()
 
+	fmt.Println("waiting done")
 	u.ctxC()
 
-	if u.root != "" && !u.keepRoot {
-		os.RemoveAll(u.root)
+	fmt.Println("waiting for ports to be closed", usedPorts)
+	// wait for all usedports to be closed
+	for port := range usedPorts {
+		fmt.Println("waiting for port", port)
+		for {
+			// Try to bind to the port to check if it's available
+			if listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", DefaultHost, port)); err == nil {
+				listener.Close()
+				break // Port is available, move to next
+			}
+			// Port still in use, wait a bit and retry
+			time.Sleep(10 * time.Millisecond)
+		}
 	}
+	fmt.Println("waiting for ports to be closed done")
+
 }
 
 func (u *Universe) Id() string {

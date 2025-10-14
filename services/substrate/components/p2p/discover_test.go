@@ -12,9 +12,10 @@ import (
 )
 
 func TestService_Discover(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
+	m := dream.New(t.Context())
+	defer m.Close()
 
-	defer u.Stop()
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{

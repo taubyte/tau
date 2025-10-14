@@ -1,9 +1,11 @@
 package jobs
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"path"
+	"time"
 
 	"github.com/taubyte/tau/core/builders"
 	build "github.com/taubyte/tau/pkg/builder"
@@ -66,7 +68,7 @@ func (c code) handleOp(op Op) error {
 
 func (c Context) HandleOp(op Op) (io.ReadSeekCloser, error) {
 	sourcePath := path.Join(c.gitDir, op.application, op.pathVariable, op.name)
-	builder, err := build.New(c.ctx, sourcePath)
+	builder, err := build.New(c.ctx, c.LogFile, sourcePath)
 	if err != nil {
 		err = fmt.Errorf("creating new wasm builder failed with: %w", err)
 		return nil, err
@@ -75,9 +77,7 @@ func (c Context) HandleOp(op Op) (io.ReadSeekCloser, error) {
 	var asset builders.Output
 	defer func() {
 		fmt.Fprintf(c.LogFile, "Building %s -----\n", op.name)
-		c.mergeBuildLogs(asset.Logs())
 		builder.Close()
-		asset.Close()
 	}()
 
 	if asset, err = builder.Build(); err != nil {
@@ -99,18 +99,51 @@ func (c *code) checkConfig() error {
 			return fmt.Errorf("failed fetch config ssh url with: %s", err)
 		}
 
+		json.NewEncoder(c.LogFile).Encode(struct {
+			Op        string `json:"op"`
+			Url       string `json:"url"`
+			Branch    string `json:"branch"`
+			Timestamp int64  `json:"timestamp"`
+		}{
+			Op:        "git-clone",
+			Url:       url,
+			Branch:    c.Job.Meta.Repository.Branch,
+			Timestamp: time.Now().UnixNano(),
+		})
 		configRepo, err := git.New(
 			c.ctx,
 			git.URL(url),
 			git.SSHKey(c.ConfigPrivateKey),
 			git.Temporary(),
 			git.Branch(c.Job.Meta.Repository.Branch),
+			git.Output(c.LogFile),
 		)
 		if err != nil {
+			json.NewEncoder(c.LogFile).Encode(struct {
+				Op        string `json:"op"`
+				Status    string `json:"status"`
+				Timestamp int64  `json:"timestamp"`
+				Error     string `json:"error"`
+			}{
+				Op:        "git-clone",
+				Status:    "error",
+				Error:     err.Error(),
+				Timestamp: time.Now().UnixNano(),
+			})
 			return fmt.Errorf("getting git repo from url `%s` failed with: %s", url, err)
 		}
 
 		c.ConfigRepoRoot = configRepo.Root()
+
+		json.NewEncoder(c.LogFile).Encode(struct {
+			Op        string `json:"op"`
+			Status    string `json:"status"`
+			Timestamp int64  `json:"timestamp"`
+		}{
+			Op:        "git-clone",
+			Status:    "success",
+			Timestamp: time.Now().UnixNano(),
+		})
 	}
 
 	return nil

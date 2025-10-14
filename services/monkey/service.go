@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
 	ci "github.com/taubyte/go-simple-container/gc"
@@ -98,6 +99,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	srv.monkeys = make(map[string]*Monkey, 0)
+	srv.recvJobs = make(map[string]time.Time, 0)
 
 	srv.patrickClient, err = NewPatrick(ctx, srv.clientNode)
 	if err != nil {

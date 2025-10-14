@@ -96,7 +96,8 @@ func TestLockHelper(t *testing.T) {
 			method:      false,
 			expectError: false,
 			expectedResp: cr.Response{
-				"locked": false,
+				"locked":  false,
+				"expired": true,
 			},
 		},
 		{
@@ -112,6 +113,7 @@ func TestLockHelper(t *testing.T) {
 			expectedResp: cr.Response{
 				"locked":    true,
 				"locked-by": "2Uw1bppLugs5B",
+				"till":      time.Now().Unix() + 30,
 			},
 		},
 		{
@@ -125,6 +127,11 @@ func TestLockHelper(t *testing.T) {
 			method:        true,
 			expectError:   true,
 			errorContains: "job is locked by",
+			expectedResp: cr.Response{
+				"locked":    true,
+				"locked-by": "2Uw1bppLugs5B",
+				"till":      time.Now().Unix() + 30,
+			},
 		},
 	}
 
@@ -321,8 +328,8 @@ func TestRetryJob(t *testing.T) {
 				jobBytes, _ := cbor.Marshal(job)
 				s.db.Put(context.Background(), "/archive/jobs/test-job", jobBytes)
 			},
-			expectError:  false,
-			expectedResp: nil,
+			expectError:   true,
+			errorContains: "job is not in a state to be retried",
 		},
 		{
 			name: "job not retryable - locked status",
@@ -334,8 +341,8 @@ func TestRetryJob(t *testing.T) {
 				jobBytes, _ := cbor.Marshal(job)
 				s.db.Put(context.Background(), "/archive/jobs/test-job", jobBytes)
 			},
-			expectError:  false,
-			expectedResp: nil,
+			expectError:   true,
+			errorContains: "job is not in a state to be retried",
 		},
 		{
 			name: "invalid job data - CBOR unmarshal error",

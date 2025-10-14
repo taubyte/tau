@@ -670,7 +670,7 @@ func TestTryLock_ErrorCases(t *testing.T) {
 				}
 			} else {
 				assert.NilError(t, err)
-				assert.Assert(t, resp == nil)
+				assert.Assert(t, resp != nil)
 			}
 		})
 	}
@@ -731,10 +731,10 @@ func TestIsLockedHandler_Branches(t *testing.T) {
 			expectedLocked: false,
 		},
 		{
-			name:           "existing lock data - should call lockHelper",
-			setupMock:      addLockData("test-job"),
-			expectError:    false,
-			expectedLocked: false, // CBOR unmarshal will fail, so it returns locked false
+			name:          "existing lock data - should call lockHelper",
+			setupMock:     addLockData("test-job"),
+			expectError:   true,
+			errorContains: "unexpected EOF", // CBOR unmarshal will fail
 		},
 		{
 			name:           "database get error - should return locked false",
@@ -759,7 +759,7 @@ func TestIsLockedHandler_Branches(t *testing.T) {
 
 			if tt.expectError {
 				assert.Assert(t, err != nil, "Expected error but got nil")
-				assert.Assert(t, resp == nil)
+				assert.Assert(t, resp != nil)
 			} else {
 				assert.NilError(t, err)
 				assert.Assert(t, resp != nil)

@@ -24,10 +24,10 @@ import (
 )
 
 var (
-	BootstrapTime                   = 10 * time.Second
-	logger                          = log.Logger("tau.patrick.service")
-	DefaultReAnnounceJobTime        = 5 * time.Minute
-	DefaultReAnnounceFailedJobsTime = 5 * time.Minute
+	BootstrapTime            = 10 * time.Second
+	logger                   = log.Logger("tau.patrick.service")
+	DefaultReAnnounceJobTime = 1 * time.Minute
+	MaxReAnnounceJobs        = 10
 )
 
 func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {

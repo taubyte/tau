@@ -40,23 +40,25 @@ func (s *Service) SetOption(optIface interface{}) error {
 }
 
 func (s *Service) Start() {
+
+	_cert, err := tls.X509KeyPair(s.cert, s.key)
+	if err != nil {
+		s.err = fmt.Errorf("loading tls certificate/key failed with %w", err)
+		return
+	}
+
+	s.Server.TLSConfig = &tls.Config{
+		Certificates: []tls.Certificate{_cert},
+	}
+
 	go func() {
-		_cert, err := tls.X509KeyPair(s.cert, s.key)
-		if err != nil {
-			s.err = fmt.Errorf("loading tls certificate/key failed with %w", err)
-			s.Kill()
-			return
-		}
-
-		s.Server.TLSConfig = &tls.Config{
-			Certificates: []tls.Certificate{_cert},
-		}
-
 		s.err = s.Server.ListenAndServeTLS("", "")
 		if s.err != http.ErrServerClosed {
 			s.Kill()
 		}
 	}()
+
+	s.WatchContextDone()
 }
 
 func (s *Service) GetListenAddress() (*url.URL, error) {

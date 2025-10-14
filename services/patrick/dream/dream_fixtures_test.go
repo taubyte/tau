@@ -20,8 +20,10 @@ import (
 )
 
 func TestDreamFixtures(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
@@ -71,8 +73,10 @@ func TestDreamFixtures(t *testing.T) {
 }
 
 func TestPushFixtures(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
@@ -172,8 +176,10 @@ func TestPushFixtures(t *testing.T) {
 }
 
 func TestCreatePatrickServiceConfig(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	// Test with delay config
 	config := &commonIface.ServiceConfig{
@@ -228,8 +234,10 @@ func TestCreatePatrickServiceConfig(t *testing.T) {
 }
 
 func TestPushWithNoServices(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	expectedError := "services not provided"
 

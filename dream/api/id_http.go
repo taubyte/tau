@@ -1,7 +1,6 @@
 package api
 
 import (
-	"github.com/taubyte/tau/dream"
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
@@ -21,7 +20,7 @@ func (srv *multiverseService) idHttp() {
 				return nil, err
 			}
 
-			u, err := dream.GetUniverse(universeName)
+			u, err := srv.Universe(universeName)
 			if err != nil {
 				return nil, err
 			}

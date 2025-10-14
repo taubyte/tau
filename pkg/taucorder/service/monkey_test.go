@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/dream/api"
 	"github.com/taubyte/tau/p2p/peer"
 	pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 	pbconnect "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1/taucorderv1connect"
@@ -34,16 +35,19 @@ func TestMonkey(t *testing.T) {
 	s, err := getMockService(ctx)
 	assert.NilError(t, err)
 
+	dream.DreamApiPort = 31427 // don't conflict with default port
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	uname := t.Name()
+	u := m.New(dream.UniverseConfig{Name: uname})
+
+	assert.NilError(t, api.BigBang(m))
+
 	ns := &nodeService{Service: s}
 	ms := &monkeyService{Service: s}
 
 	s.addHandler(pbconnect.NewNodeServiceHandler(ns))
-
-	uname := t.Name()
-	u := dream.New(dream.UniverseConfig{
-		Name: uname,
-	})
-	defer u.Stop()
 
 	fakeJobs := make(map[string]*patrick.Job, 0)
 	mockPatrick := &mock.Starfish{Jobs: fakeJobs}

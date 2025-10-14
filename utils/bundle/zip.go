@@ -6,14 +6,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-
-	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 )
 
-type ZipMethod func(archive *zip.Writer, source string) error
+type ZipMethod func(archive *zip.Writer, source string, files ...string) error
 
 // Zip contents from source to target and returns the file.
-func Zip(source, target string, zipMethod ZipMethod) (*os.File, error) {
+func Zip(zipMethod ZipMethod, source, target string, files ...string) (*os.File, error) {
 	_, err := os.Stat(source)
 	if err != nil {
 		return nil, err
@@ -28,20 +26,24 @@ func Zip(source, target string, zipMethod ZipMethod) (*os.File, error) {
 	archive := zip.NewWriter(zipFile)
 	defer archive.Close()
 
-	if err = zipMethod(archive, source); err != nil {
+	if err = zipMethod(archive, source, files...); err != nil {
 		return nil, err
 	}
 
 	return zipFile, archive.Flush()
 }
 
-func ZipFile(archive *zip.Writer, source string) error {
+func ZipFile(archive *zip.Writer, source string, files ...string) error {
+	if len(files) != 1 {
+		return fmt.Errorf("expected 1 file to zip, got %d", len(files))
+	}
+
 	data, err := os.ReadFile(source)
 	if err != nil {
 		return fmt.Errorf("reading path:`%s` failed with: %w", source, err)
 	}
 
-	writer, err := archive.Create(wasm.WasmFile)
+	writer, err := archive.Create(files[0])
 	if err != nil {
 		return err
 	}
@@ -54,7 +56,7 @@ func ZipFile(archive *zip.Writer, source string) error {
 }
 
 // REF: https://forum.golangbridge.org/t/trying-to-zip-files-without-creating-folder-inside-archive/10260
-func ZipDir(archive *zip.Writer, source string) error {
+func ZipDir(archive *zip.Writer, source string, _ ...string) error {
 	return filepath.Walk(source, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return fmt.Errorf("walk basic source:`%s` failed with: %w", source, err)

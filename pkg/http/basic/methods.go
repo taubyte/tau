@@ -38,6 +38,14 @@ func (s *Service) Start() {
 			s.Kill()
 		}
 	}()
+	s.WatchContextDone()
+}
+
+func (s *Service) WatchContextDone() {
+	go func() {
+		<-s.ctx.Done()
+		s.Server.Shutdown(s.ctx)
+	}()
 }
 
 func (s *Service) Kill() {

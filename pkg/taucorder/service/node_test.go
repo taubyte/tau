@@ -6,6 +6,7 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/dream/api"
 	taucorderv1 "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 	pbconnect "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1/taucorderv1connect"
 	"gotest.tools/v3/assert"
@@ -17,18 +18,21 @@ func TestNode(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 
+	dream.DreamApiPort = 31428 // don't conflict with default port
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	uname := t.Name()
+	u := m.New(dream.UniverseConfig{Name: uname})
+
+	assert.NilError(t, api.BigBang(m))
+
 	s, err := getMockService(ctx)
 	assert.NilError(t, err)
 
 	ns := &nodeService{Service: s}
 
 	s.addHandler(pbconnect.NewNodeServiceHandler(ns))
-
-	uname := t.Name()
-	u := dream.New(dream.UniverseConfig{
-		Name: uname,
-	})
-	defer u.Stop()
 
 	assert.NilError(t, u.StartWithConfig(&dream.Config{Simples: map[string]dream.SimpleConfig{"elder": {}}}))
 

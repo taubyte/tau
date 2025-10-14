@@ -31,7 +31,11 @@ func TestProtocolListen(t *testing.T) {
 		},
 	})
 
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
+
 	err := u.StartWithConfig(&dream.Config{
 		Simples: map[string]dream.SimpleConfig{
 			"sender": {

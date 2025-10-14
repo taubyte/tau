@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"strings"
 	"testing"
 
 	"github.com/otiai10/copy"
@@ -25,16 +26,19 @@ func TestBasicWebsite(t *testing.T) {
 	)
 	assert.NilError(t, err)
 
-	builder, err := New(ctx, repo.Dir())
+	logFile, err := os.CreateTemp("", "logs")
+	assert.NilError(t, err)
+	defer os.Remove(logFile.Name())
+
+	builder, err := New(ctx, logFile, repo.Dir())
 	assert.NilError(t, err)
 
 	output, err := builder.Build(builder.Wd().Website().SetWorkDir())
 	assert.NilError(t, err)
 
-	logs := output.Logs()
-	assert.Assert(t, logs != nil, "output logs should not be nil")
+	logFile.Seek(0, io.SeekStart)
 
-	_, err = io.ReadAll(logs)
+	_, err = io.ReadAll(logFile)
 	assert.NilError(t, err)
 
 	rsk, err := output.Compress(builders.Website)
@@ -62,17 +66,21 @@ func TestWasmBasic(t *testing.T) {
 
 	assert.NilError(t, copy.Copy(path.Join(goTemplate, "common"), codeSource))
 
-	builder, err := New(ctx, codeSource)
+	logFile, err := os.CreateTemp("", "logs")
+	assert.NilError(t, err)
+	defer os.Remove(logFile.Name())
+
+	builder, err := New(ctx, logFile, codeSource)
 	assert.NilError(t, err)
 
 	output, err := builder.Build()
 	assert.NilError(t, err)
 
-	logs := output.Logs()
-	assert.Assert(t, logs != nil, "output logs should not be nil")
+	logFile.Seek(0, io.SeekStart)
 
-	_, err = io.ReadAll(logs)
+	logs, err := io.ReadAll(logFile)
 	assert.NilError(t, err)
+	assert.Check(t, strings.Contains(string(logs), "\"success\":true"))
 
 	rsk, err := output.Compress(builders.WASM)
 	assert.NilError(t, err)

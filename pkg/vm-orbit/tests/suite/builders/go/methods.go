@@ -44,7 +44,7 @@ func (g *goBuilder) Name() string {
 }
 
 func (g *goBuilder) Plugin(_path string, name string, extraArgs ...string) (string, error) {
-	tempDir, err := os.MkdirTemp("/tmp", "*")
+	tempDir, err := os.MkdirTemp("", "*")
 	if err != nil {
 		return "", fmt.Errorf("creating temp dir failed with: %w", err)
 	}

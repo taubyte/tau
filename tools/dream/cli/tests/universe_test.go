@@ -23,8 +23,13 @@ func init() {
 }
 
 func TestKillService(t *testing.T) {
-	api.BigBang(dream.MultiVerse())
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
+	dream.DreamApiPort = 43421
+	m := dream.New(t.Context())
+	defer m.Close()
+	assert.NilError(t, api.BigBang(m))
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
+
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{},
 		Simples:  map[string]dream.SimpleConfig{},
@@ -64,11 +69,16 @@ func TestKillService(t *testing.T) {
 
 func TestKillSimple(t *testing.T) {
 	testSimpleName := "client"
-	universeName := "KillSimple"
+	universeName := "killsimple"
 	statusName := fmt.Sprintf("%s@%s", testSimpleName, universeName)
 
-	api.BigBang(dream.MultiVerse())
-	u := dream.New(dream.UniverseConfig{Name: universeName})
+	dream.DreamApiPort = 40424
+	m := dream.New(t.Context())
+	defer m.Close()
+	assert.NilError(t, api.BigBang(m))
+
+	u := m.New(dream.UniverseConfig{Name: universeName})
+
 	err := u.StartWithConfig(&dream.Config{
 		Simples: map[string]dream.SimpleConfig{
 			testSimpleName: {},
@@ -98,6 +108,7 @@ func TestKillSimple(t *testing.T) {
 	}
 	var found bool
 	for _, node := range resp.Nodes {
+		t.Logf("Node: %+v", node)
 		if node.Name == statusName {
 			found = true
 		}
@@ -162,8 +173,11 @@ func TestKillSimple(t *testing.T) {
 }
 
 func TestMultipleServices(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
+
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer":      {Others: map[string]int{"copies": 1}},

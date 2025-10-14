@@ -2,6 +2,7 @@ package git
 
 import (
 	"context"
+	"io"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing/transport"
@@ -33,6 +34,7 @@ type Repository struct {
 	workDir             string
 	i_cloned_it         bool
 	url                 string
+	output              io.Writer
 	auth                transport.AuthMethod
 	root                string
 	ephemeral           bool

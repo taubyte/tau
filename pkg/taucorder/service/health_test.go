@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"connectrpc.com/connect"
+	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/dream/api"
 	pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 	pbconnect "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1/taucorderv1connect"
 	_ "github.com/taubyte/tau/services/seer/dream"
@@ -18,6 +20,12 @@ import (
 func TestHealth(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
+
+	dream.DreamApiPort = 31425 // don't conflict with default port
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	assert.NilError(t, api.BigBang(m))
 
 	s, err := getMockService(ctx)
 	assert.NilError(t, err)

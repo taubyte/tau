@@ -43,7 +43,7 @@ func (srv *multiverseService) apiHandlerFixture(ctx httpIface.Context) (interfac
 		return nil, fmt.Errorf("failed getting universe name error %w", err)
 	}
 
-	universe, err = dream.GetUniverse(_name)
+	universe, err = srv.Universe(_name)
 	if err != nil {
 		return nil, fmt.Errorf("universe %s does not exist", _name)
 	}

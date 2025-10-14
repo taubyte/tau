@@ -99,6 +99,8 @@ func (m *Monkey) RunJob() (err error) {
 		GeneratedDomainRegExp: m.generatedDomainRegExp,
 	}
 
+	c.Context(m.ctx)
+
 	if repoType == compilerCommon.CodeRepository {
 		c.ConfigRepoId = p.Git.Config.Id()
 

@@ -13,5 +13,5 @@ func (srv *multiverseService) getUniverse(ctx httpIface.Context) (*dream.Univers
 		return nil, fmt.Errorf("failed getting name with: %w", err)
 	}
 
-	return dream.GetUniverse(name)
+	return srv.Universe(name)
 }

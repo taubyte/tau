@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/dream"
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
@@ -45,7 +44,7 @@ func (srv *multiverseService) apiHandlerLesMiesrable(ctx httpIface.Context) (int
 		return nil, err
 	}
 
-	u, err := dream.GetUniverse(universeName)
+	u, err := srv.Universe(universeName)
 	if err != nil {
 		return nil, fmt.Errorf("universe `%s` does not exit", universeName)
 	}

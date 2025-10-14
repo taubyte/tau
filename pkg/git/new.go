@@ -32,7 +32,8 @@ New creates a new repository.
 */
 func New(ctx context.Context, options ...Option) (c *Repository, err error) {
 	c = &Repository{
-		ctx: ctx,
+		ctx:    ctx,
+		output: os.Stdout,
 	}
 
 	for _, opt := range options {
@@ -91,18 +92,18 @@ func (c *Repository) clone() (err error) {
 
 		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
 			URL:      cloneURL,
-			Progress: os.Stdout,
+			Progress: c.output,
 		})
 	} else if c.auth != nil {
 		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
 			URL:      c.url,
-			Progress: os.Stdout,
+			Progress: c.output,
 			Auth:     c.auth,
 		})
 	} else {
 		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
 			URL:      c.url,
-			Progress: os.Stdout,
+			Progress: c.output,
 		})
 	}
 
@@ -110,7 +111,7 @@ func (c *Repository) clone() (err error) {
 		// repo might be public or we're in dev/test mode. try to clone with https
 		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
 			URL:      ConvertSSHToHTTPS(c.url),
-			Progress: os.Stdout,
+			Progress: c.output,
 		})
 	}
 

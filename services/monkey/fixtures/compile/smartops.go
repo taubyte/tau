@@ -91,6 +91,8 @@ func (f smartopsContext) codeFile(language wasmSpec.SupportedLanguage) error {
 		GeneratedDomainRegExp: generatedDomainRegExp,
 	}
 
+	c.ForceContext(f.ctx.universe.Context())
+
 	copyPath := path.Join(root, smartopsSpec.PathVariable.String(), f.config.Name)
 	for _, filePath := range f.ctx.paths {
 		splitPath := strings.Split(filePath, "/")

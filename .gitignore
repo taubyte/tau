@@ -33,7 +33,6 @@ node_modules/
 /build/
 fakeroot/
 
-
 # Compiled Java class files
 *.class
 

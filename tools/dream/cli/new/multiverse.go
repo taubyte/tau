@@ -19,10 +19,6 @@ func multiverse(multiverse *client.Client) *cli.Command {
 				Name:  "debug",
 				Usage: "Output for function calls",
 			},
-			&cli.BoolFlag{
-				Name:  "daemon",
-				Usage: "Runs multiverse in background",
-			},
 			&cli.StringSliceFlag{
 				Name:        "universes",
 				Aliases:     []string{"u"},
@@ -81,7 +77,7 @@ func multiverse(multiverse *client.Client) *cli.Command {
 	}
 }
 
-func runMultiverse(multiverse *client.Client) cli.ActionFunc {
+func runMultiverse(dreamClient *client.Client) cli.ActionFunc {
 	return func(c *cli.Context) (err error) {
 		runtime.DebugFunctionCalls = c.Bool("debug")
 
@@ -101,60 +97,46 @@ func runMultiverse(multiverse *client.Client) cli.ActionFunc {
 			}
 		}
 
-		if c.Bool("empty") {
-			err = api.BigBang(dream.MultiVerse())
-			if err != nil {
-				return err
-			}
-
-			err = startEmptyUniverses(c)
-			if err != nil {
-				return err
-			}
-
-			greatSuccess(c)
-			if c.Bool("daemon") {
-				common.DoDaemon = true
-			} else {
-				<-c.Done()
-			}
-
-			return
-		}
-
-		// Set default simple name if no names provided
-		simples := c.StringSlice("simples")
-		if len(simples) == 0 {
-			err = c.Set("simples", common.DefaultClientName)
-			if err != nil {
-				return err
-			}
-		}
+		multiverse := dream.New(c.Context)
+		defer multiverse.Close()
 
 		// Start API
-		err = api.BigBang(dream.MultiVerse())
+		err = api.BigBang(multiverse)
 		if err != nil {
 			return err
 		}
 
-		// Start each universe
-		err = startUniverses(c)
-		if err != nil {
-			return err
+		if c.Bool("empty") {
+			err = startEmptyUniverses(c, multiverse)
+			if err != nil {
+				return err
+			}
+
+		} else {
+			// Set default simple name if no names provided
+			simples := c.StringSlice("simples")
+			if len(simples) == 0 {
+				err = c.Set("simples", common.DefaultClientName)
+				if err != nil {
+					return err
+				}
+			}
+
+			// Start each universe
+			err = startUniverses(c, multiverse)
+			if err != nil {
+				return err
+			}
 		}
 
 		// Run fixtures
-		err = runFixtures(c, multiverse, c.StringSlice("universes"))
+		err = runFixtures(c, dreamClient, c.StringSlice("universes"))
 		if err != nil {
 			return err
 		}
 
 		greatSuccess(c)
-		if c.Bool("daemon") {
-			common.DoDaemon = true
-		} else {
-			<-c.Done()
-		}
+		<-c.Done()
 
 		return
 	}

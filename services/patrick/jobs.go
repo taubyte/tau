@@ -20,19 +20,32 @@ func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
 		return fmt.Errorf("failed grabbing all jobs with error: %v", err)
 	}
 
-	for _, id := range jobs {
+	republished := 0
+	for _, key := range jobs {
 		// Doing this to only get the jid since id is /jobs/jid
 		// Check if its currently locked and if it is we dont reannounce it
-		jid := id[strings.LastIndex(id, "/")+1:]
-		lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
-		if err == nil {
+		skey := strings.Split(key, "/")
+		if len(skey) < 3 {
+			continue
+		}
+
+		jid := skey[2]
+		republish := true
+
+		if lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid); err == nil {
 			var jobLock Lock
 			if err := cbor.Unmarshal(lockData, &jobLock); err == nil {
-				if jobLock.Timestamp+jobLock.Eta < time.Now().Unix() {
-					if err = p.republishJob(ctx, jid); err != nil {
-						logger.Errorf("Failed republishing job %s with error: %s", jid, err.Error())
-					}
-				}
+				republish = jobLock.Timestamp+jobLock.Eta < time.Now().Unix()
+			}
+		}
+
+		if republish {
+			if err = p.republishJob(ctx, jid); err != nil {
+				return fmt.Errorf("failed republishing job %s with error: %w", jid, err)
+			}
+			republished++
+			if republished >= MaxReAnnounceJobs {
+				break
 			}
 		}
 	}
@@ -42,32 +55,13 @@ func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
 
 // Republish job helper
 func (p *PatrickService) republishJob(ctx context.Context, jid string) error {
-	// Check if job is done otherwise delete entries and send it out again
-	if _, err := p.getJob(ctx, "/archive/jobs/", jid); err != nil {
-		job, err := p.getJob(ctx, "/jobs/", jid)
-		if err != nil {
-			return fmt.Errorf("could not find job %s with %w", jid, err)
-		}
+	job, err := p.db.Get(ctx, "/jobs/"+jid)
+	if err != nil {
+		return fmt.Errorf("get job %s failed with: %w", jid, err)
+	}
 
-		// remove it from the locked list
-		if err = p.db.Delete(ctx, "/locked/jobs/"+jid); err != nil {
-			return fmt.Errorf("failed deleting job %s at /locked/jobs/ with error in republishJob: %w", jid, err)
-		}
-
-		job.Timestamp = time.Now().Unix()
-		job_bytes, err := cbor.Marshal(job)
-		if err != nil {
-			return fmt.Errorf("failed to marshal job %s with error: %w", jid, err)
-		}
-
-		if err = p.db.Put(ctx, "/jobs/"+jid, job_bytes); err != nil {
-			return fmt.Errorf("failed putting %s in /jobs/ inside republishJob with %w", jid, err)
-		}
-
-		// Send the job over again to run again
-		if err = p.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job_bytes); err != nil {
-			return fmt.Errorf("failed to send over in republishJob pubsub error: %w", err)
-		}
+	if err = p.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job); err != nil {
+		return fmt.Errorf("failed to send over in republishJob pubsub error: %w", err)
 	}
 
 	return nil

@@ -20,27 +20,10 @@ var DeprecatedWasmBuild bool
 */
 
 // new sets the working directory and log file of the desired output
-func new(wd spec.Dir) (out *output, err error) {
-	// set working
-	out = &output{
+func new(wd spec.Dir) *output {
+	return &output{
 		wd: wd,
 	}
-
-	// logs are set to a temporary directory
-	logFile, err := os.CreateTemp("", "logs")
-	if err != nil {
-		return nil, fmt.Errorf("creating temp log file failed with: %w", err)
-	}
-
-	out.logs = logs{logFile}
-
-	return
-}
-
-// deferHandler copies std to the output logs
-func (o *output) deferHandler() {
-	io.Copy(os.Stdout, o.logs)
-	o.logs.Seek(0, io.SeekStart)
 }
 
 // Compress takes a CompressionMethod, and returns the compressed output of the files built by Build
@@ -57,35 +40,17 @@ func (o *output) Compress(method builders.CompressionMethod) (io.ReadSeekCloser,
 		}
 
 		// Try for both artifact/main.wasm
-		zippedFile, err = bundle.Zip(wasm.WasmOutput(o.outDir), o.wd.Wasm().Zip(), bundle.ZipFile)
+		zippedFile, err = bundle.Zip(bundle.ZipFile, wasm.WasmOutput(o.outDir), o.wd.Wasm().Zip(), wasm.WasmFile)
 		if err != nil {
-			zippedFile, err = bundle.Zip(wasm.WasmDeprecatedOutput(o.outDir), o.wd.Wasm().Zip(), bundle.ZipFile)
+			zippedFile, err = bundle.Zip(bundle.ZipFile, wasm.WasmDeprecatedOutput(o.outDir), o.wd.Wasm().Zip(), wasm.WasmFile)
 		}
 	case builders.Website:
-		zippedFile, err = bundle.Zip(o.outDir, o.wd.Website().BuildZip(), bundle.ZipDir)
+		zippedFile, err = bundle.Zip(bundle.ZipDir, o.outDir, o.wd.Website().BuildZip())
 	default:
 		return nil, fmt.Errorf("compression method `%d` not supported", method)
 	}
 
 	return rewindAndHandleError(zippedFile, "zipping bundle failed with: %w", err)
-}
-
-// Close will Close logs
-func (o *output) Close() error {
-	if o.logs.File != nil {
-		err := o.logs.Close()
-		if err != nil {
-			return fmt.Errorf("closing logs failed with: %w", err)
-		}
-
-		// according to doc, it's safe to call after close
-		err = os.Remove(o.logs.File.Name())
-		if err != nil {
-			return fmt.Errorf("removing logs file failed with: %w", err)
-		}
-	}
-
-	return nil
 }
 
 func rewindAndHandleError(rsc io.ReadSeekCloser, errFormat string, err error) (io.ReadSeekCloser, error) {

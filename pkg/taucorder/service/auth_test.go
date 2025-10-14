@@ -11,6 +11,7 @@ import (
 	"connectrpc.com/connect"
 	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/dream/api"
 	pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 	pbconnect "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1/taucorderv1connect"
 	_ "github.com/taubyte/tau/services/auth/dream"
@@ -23,6 +24,15 @@ func TestAuth(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 
+	dream.DreamApiPort = 38420 // don't conflict with default port
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	uname := t.Name()
+	u := m.New(dream.UniverseConfig{Name: uname})
+
+	assert.NilError(t, api.BigBang(m))
+
 	s, err := getMockService(ctx)
 	assert.NilError(t, err)
 
@@ -30,12 +40,6 @@ func TestAuth(t *testing.T) {
 	as := &authService{Service: s}
 
 	s.addHandler(pbconnect.NewNodeServiceHandler(ns))
-
-	uname := t.Name()
-	u := dream.New(dream.UniverseConfig{
-		Name: uname,
-	})
-	defer u.Stop()
 
 	assert.NilError(t, u.StartWithConfig(&dream.Config{Services: map[string]common.ServiceConfig{
 		"auth": {Others: map[string]int{"copies": 2}},

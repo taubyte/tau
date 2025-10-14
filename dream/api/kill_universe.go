@@ -3,7 +3,6 @@ package api
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/dream"
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
@@ -25,7 +24,7 @@ func (srv *multiverseService) killUniverse(ctx httpIface.Context) (interface{}, 
 		return nil, fmt.Errorf("failed getting name error %w", err)
 	}
 
-	u, err := dream.GetUniverse(name)
+	u, err := srv.Universe(name)
 	if err != nil {
 		return nil, fmt.Errorf("universe `%s` does not exist", name)
 	}

@@ -3,7 +3,7 @@ package builders
 import (
 	"io/fs"
 
-	ci "github.com/taubyte/go-simple-container"
+	ci "github.com/taubyte/tau/pkg/containers"
 )
 
 type Environment struct {

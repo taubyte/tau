@@ -20,8 +20,10 @@ import (
 var client_count = 16
 
 func TestHeartbeat(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
 
 	simConf := make(map[string]dream.SimpleConfig)
 	for i := 0; i < client_count; i++ {

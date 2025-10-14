@@ -21,6 +21,7 @@ import (
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
+	"github.com/taubyte/tau/dream/api"
 	_ "github.com/taubyte/tau/dream/fixtures"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
@@ -31,6 +32,14 @@ func TestTNS(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 
+	dream.DreamApiPort = 32422 // don't conflict with default port
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	uname := t.Name()
+	u := m.New(dream.UniverseConfig{Name: uname})
+
+	assert.NilError(t, api.BigBang(m))
 	s, err := getMockService(ctx)
 	assert.NilError(t, err)
 
@@ -38,12 +47,6 @@ func TestTNS(t *testing.T) {
 	ts := &tnsService{Service: s}
 
 	s.addHandler(pbconnect.NewNodeServiceHandler(ns))
-
-	uname := t.Name()
-	u := dream.New(dream.UniverseConfig{
-		Name: uname,
-	})
-	defer u.Stop()
 
 	assert.NilError(t, u.StartWithConfig(&dream.Config{
 		Services: map[string]common.ServiceConfig{"tns": {Others: map[string]int{"copies": 2}}},

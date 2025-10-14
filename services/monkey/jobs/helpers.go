@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -9,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/taubyte/tau/core/builders"
 	"github.com/taubyte/tau/pkg/git"
 	specs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
@@ -55,17 +55,6 @@ func (c Context) fetchConfigSshUrl() (sshString string, err error) {
 	err = errors.New("ssh key not resolved from configuration repository")
 
 	return
-}
-
-// for singular resource repositories(not code repo), error should be nil, the monkey will be handling this logic
-func (c Context) mergeBuildLogs(logs builders.Logs) {
-	if logs == nil {
-		return
-	}
-
-	if _, err := logs.CopyTo(c.LogFile); err != nil {
-		c.LogFile.WriteString("\nMonkey Error:\n" + err.Error())
-	}
 }
 
 func (c Context) getResourceRepositoryId() (id string, err error) {
@@ -117,28 +106,62 @@ func (c Context) handleCompressedBuild(id string, rsk io.ReadSeekCloser) error {
 	return err
 }
 
-func (c Context) handleLog(id string) error {
+func (c Context) handleLog() error {
 	logCid, err := c.storeLogFile(c.LogFile)
 	if err != nil {
 		return fmt.Errorf("storing log file for job `%s` failed with: %s", c.Job.Id, err)
 	}
 
-	c.Job.SetLog(id, logCid)
+	c.Job.SetLog(time.Now().Format(time.RFC3339), logCid)
 	return nil
 }
 
 func (c *Context) cloneAndSet() error {
+	json.NewEncoder(c.LogFile).Encode(struct {
+		Op        string `json:"op"`
+		Url       string `json:"url"`
+		Branch    string `json:"branch"`
+		Timestamp int64  `json:"timestamp"`
+	}{
+		Op:        "git-clone",
+		Url:       c.Job.Meta.Repository.SSHURL,
+		Branch:    c.Job.Meta.Repository.Branch,
+		Timestamp: time.Now().UnixNano(),
+	})
 	repo, err := git.New(
 		c.ctx,
 		git.URL(c.Job.Meta.Repository.SSHURL),
 		git.SSHKey(c.DeployKey),
 		git.Temporary(),
 		git.Branch(c.Job.Meta.Repository.Branch),
+		git.Output(c.LogFile),
 	)
 	if err != nil {
+		json.NewEncoder(c.LogFile).Encode(struct {
+			Op        string `json:"op"`
+			Status    string `json:"status"`
+			Timestamp int64  `json:"timestamp"`
+			Error     string `json:"error"`
+		}{
+			Op:        "git-clone",
+			Status:    "error",
+			Error:     err.Error(),
+			Timestamp: time.Now().UnixNano(),
+		})
 		return fmt.Errorf("new git repo failed with: %s", err)
 	}
 
 	c.gitDir, c.WorkDir = repo.Root(), repo.Dir()
+
+	json.NewEncoder(c.LogFile).Encode(struct {
+		Op        string `json:"op"`
+		Status    string `json:"status"`
+		Timestamp int64  `json:"timestamp"`
+	}{
+		Op:        "git-clone",
+		Status:    "success",
+		Timestamp: time.Now().UnixNano(),
+	})
+
 	return nil
 }

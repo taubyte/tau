@@ -28,8 +28,12 @@ import (
 
 func TestE2E(t *testing.T) {
 	t.Skip("Needs to be redone")
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+
+	m := dream.New(t.Context())
+	defer m.Close()
+
+	u := m.New(dream.UniverseConfig{Name: t.Name()})
+
 	err := u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
