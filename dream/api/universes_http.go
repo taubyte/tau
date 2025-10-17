@@ -5,7 +5,7 @@ import (
 )
 
 func (srv *multiverseService) universesHttp() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/universes",
 		Handler: func(ctx httpIface.Context) (interface{}, error) {
 			return srv.Universes(), nil

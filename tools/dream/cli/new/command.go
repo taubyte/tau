@@ -9,7 +9,7 @@ func Command(ctx *common.Context) *cli.Command {
 	return &cli.Command{
 		Name: "new",
 		Subcommands: []*cli.Command{
-			multiverse(ctx.Multiverse),
+			//multiverse(ctx.Multiverse),
 			universe(ctx.Multiverse),
 		},
 	}

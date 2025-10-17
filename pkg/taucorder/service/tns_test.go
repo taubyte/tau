@@ -33,11 +33,13 @@ func TestTNS(t *testing.T) {
 	defer ctxC()
 
 	dream.DreamApiPort = 32422 // don't conflict with default port
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
 	uname := t.Name()
-	u := m.New(dream.UniverseConfig{Name: uname})
+	u, err := m.New(dream.UniverseConfig{Name: uname})
+	assert.NilError(t, err)
 
 	assert.NilError(t, api.BigBang(m))
 	s, err := getMockService(ctx)

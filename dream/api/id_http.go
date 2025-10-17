@@ -9,7 +9,7 @@ type UniverseInfo struct {
 }
 
 func (srv *multiverseService) idHttp() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/id/{universe}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe"},

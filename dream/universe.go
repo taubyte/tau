@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -36,26 +37,33 @@ func (u *Universe) init() error {
 		}
 	}
 
+	u.running = false
+
 	return nil
 }
 
 // create or fetch a universe
-func (m *Multiverse) New(config UniverseConfig) *Universe {
+func (m *Multiverse) New(config UniverseConfig) (*Universe, error) {
 	// make name lowercase
 	config.Name = strings.ToLower(config.Name)
 
-	// see if we have a ticket
-	id := id.Generate()
-	if len(config.Id) > 0 {
-		id = config.Id
+	// if no id, we use the name to generate a deterministic id
+	if len(config.Id) == 0 {
+		if config.KeepRoot {
+			config.Id = id.GenerateDeterministic(config.Name)
+		} else {
+			config.Id = id.Generate(config.Name)
+		}
 	}
+
+	id := config.Id
 
 	m.universesLock.Lock()
 	defer m.universesLock.Unlock()
 
 	u, exists := m.universes[config.Name]
 	if exists {
-		return u
+		return u, nil
 	}
 
 	// needs to be predictable for when KeepRoot==true
@@ -71,28 +79,31 @@ func (m *Multiverse) New(config UniverseConfig) *Universe {
 	}
 
 	if err := u.init(); err != nil {
-		return nil
+		return nil, err
 	}
 
 	if config.KeepRoot {
-		cacheFolder, err := GetCacheFolder()
+		cacheFolder, err := GetCacheFolder(m.name)
 		if err != nil {
-			return nil
+			return nil, err
 		}
 
 		u.root = path.Join(cacheFolder, "universe-"+u.name)
 	} else {
-		u.root = "/tmp/universe-" + u.id
+		u.root = filepath.Join(os.TempDir(), "universe-"+u.id)
 	}
 
 	err := os.MkdirAll(u.root, 0755)
 	if err != nil {
-		return nil
+		return nil, err
 	}
+
+	// Initialize disk usage cache as empty since we just created the directory
+	u.setDiskUsageCache(0)
 
 	m.universes[config.Name] = u
 
-	return u
+	return u, nil
 }
 
 func (u *Universe) toClose(c commonIface.Service) {
@@ -280,8 +291,8 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 	}
 
 	wg.Wait()
-
 	close(errChan)
+	u.running = true // at this point, the universe is running, even if there are errors
 
 	if len(errChan) > 0 {
 		var errString string
@@ -298,10 +309,10 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 func (u *Universe) Stop() {
 	u.Cleanup()
 
-	// reset universe
 	u.lock.Lock()
 	defer u.lock.Unlock()
 
+	// if not persistent, we delete the universe from the multiverse
 	if !u.keepRoot {
 		u.multiverse.universesLock.Lock()
 		defer u.multiverse.universesLock.Unlock()
@@ -309,9 +320,8 @@ func (u *Universe) Stop() {
 		return
 	}
 
-	// reset universe
+	// reset universe if persistent
 	u.init()
-
 }
 
 func (u *Universe) Cleanup() {
@@ -358,19 +368,115 @@ func (u *Universe) Cleanup() {
 
 	u.ctxC()
 
+	cleanupCtx, cleanupCtxCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cleanupCtxCancel()
+
 	// wait for all usedports to be closed
 	for port := range usedPorts {
+		select {
+		case <-cleanupCtx.Done():
+			return
+		default:
+		}
 		for {
-			// Try to bind to the port to check if it's available
-			if listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", DefaultHost, port)); err == nil {
-				listener.Close()
+			select {
+			case <-cleanupCtx.Done():
+				return
+			default:
+			}
+			// Try to bind to the port to check if it's available (both TCP and UDP)
+			tcpListener, tcpErr := net.Listen("tcp", fmt.Sprintf("%s:%d", DefaultHost, port))
+			udpAddr, udpErr := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", DefaultHost, port))
+			var udpConn *net.UDPConn
+			if udpErr == nil {
+				udpConn, udpErr = net.ListenUDP("udp", udpAddr)
+			}
+
+			if tcpErr == nil && udpErr == nil {
+				tcpListener.Close()
+				udpConn.Close()
 				break // Port is available, move to next
 			}
+
+			if tcpListener != nil {
+				tcpListener.Close()
+			}
+			if udpConn != nil {
+				udpConn.Close()
+			}
+
 			// Port still in use, wait a bit and retry
 			time.Sleep(10 * time.Millisecond)
 		}
 	}
 
+}
+
+func (u *Universe) DiskUsage() (int64, error) {
+	// Check if cache is still valid
+	if cachedSize, valid := u.getDiskUsageCache(); valid {
+		return cachedSize, nil
+	}
+
+	// Cache is invalid or doesn't exist, calculate disk usage
+	totalSize, err := u.calculateDiskUsage()
+	if err != nil {
+		return 0, err
+	}
+
+	// Update cache
+	u.setDiskUsageCache(totalSize)
+	return totalSize, nil
+}
+
+// getDiskUsageCache returns the cached disk usage and whether it's still valid
+func (u *Universe) getDiskUsageCache() (int64, bool) {
+	u.diskUsageCacheLock.RLock()
+	defer u.diskUsageCacheLock.RUnlock()
+
+	if u.diskUsageCacheTime.IsZero() || time.Since(u.diskUsageCacheTime) >= DiskUsageCacheTimeout {
+		return 0, false
+	}
+
+	return u.diskUsageCache, true
+}
+
+// setDiskUsageCache updates the disk usage cache with the given value
+func (u *Universe) setDiskUsageCache(size int64) {
+	u.diskUsageCacheLock.Lock()
+	defer u.diskUsageCacheLock.Unlock()
+
+	u.diskUsageCache = size
+	u.diskUsageCacheTime = time.Now()
+}
+
+// calculateDiskUsage performs the actual disk usage calculation
+func (u *Universe) calculateDiskUsage() (int64, error) {
+	var totalSize int64
+
+	err := filepath.WalkDir(u.root, func(path string, fileInfo os.DirEntry, err error) error {
+		if err != nil {
+			// Skip files/directories we can't access
+			return nil
+		}
+
+		if !fileInfo.IsDir() {
+			info, err := fileInfo.Info()
+			if err != nil {
+				// Skip files we can't get info for
+				return nil
+			}
+			totalSize += info.Size()
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return 0, fmt.Errorf("failed to walk directory %s: %w", u.root, err)
+	}
+
+	return totalSize, nil
 }
 
 func (u *Universe) Id() string {
@@ -383,6 +489,10 @@ func (u *Universe) Root() string {
 
 func (u *Universe) Persistent() bool {
 	return u.keepRoot
+}
+
+func (u *Universe) Running() bool {
+	return u.running
 }
 
 func (u *Universe) SwarmKey() []byte {

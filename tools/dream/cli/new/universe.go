@@ -5,7 +5,6 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/services/substrate/runtime"
 	"github.com/taubyte/tau/tools/dream/cli/command"
-	"github.com/taubyte/tau/tools/dream/cli/common"
 	"github.com/urfave/cli/v2"
 )
 
@@ -47,7 +46,7 @@ func universe(multiverse *client.Client) *cli.Command {
 	}
 
 	// attach gets
-	command.NameWithDefault(c, common.DefaultUniverseName)
+	command.NameWithDefault(c, dream.DefaultUniverseName)
 
 	return c
 }
@@ -66,7 +65,7 @@ func runUniverse(multiverse *client.Client) cli.ActionFunc {
 		// Set default simple name if no names provided
 		simples := c.StringSlice("simples")
 		if len(simples) == 0 {
-			err = c.Set("simples", common.DefaultClientName)
+			err = c.Set("simples", dream.DefaultClientName)
 			if err != nil {
 				return err
 			}

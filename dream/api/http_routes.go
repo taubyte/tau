@@ -30,5 +30,5 @@ func (srv *multiverseService) setUpHttpRoutes() httpIface.Service {
 	//ping
 	srv.pingHttp()
 
-	return srv.rest
+	return srv.server
 }

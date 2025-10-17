@@ -9,7 +9,7 @@ import (
 )
 
 func (srv *multiverseService) fixtureHttp() {
-	srv.rest.POST(&httpIface.RouteDefinition{
+	srv.server.POST(&httpIface.RouteDefinition{
 		Path: "/fixture/{universe}/{fixture}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe", "fixture", "params"},

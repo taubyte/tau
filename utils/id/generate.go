@@ -43,3 +43,8 @@ func Generate(args ...interface{}) string {
 	hash, _ := mh.Sum([]byte(fmt.Sprint(args...)), mh.SHA2_256, -1)
 	return hash.B58String()
 }
+
+func GenerateDeterministic(args ...interface{}) string {
+	hash, _ := mh.Sum([]byte(fmt.Sprint(args...)), mh.SHA2_256, -1)
+	return hash.B58String()
+}

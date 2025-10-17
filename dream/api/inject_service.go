@@ -9,7 +9,7 @@ import (
 
 func (srv *multiverseService) injectServiceHttp() {
 	// Path to create services in a universe
-	srv.rest.POST(&httpIface.RouteDefinition{
+	srv.server.POST(&httpIface.RouteDefinition{
 		Path: "/service/{universe}/{name}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe", "name", "config"},

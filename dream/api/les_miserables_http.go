@@ -7,7 +7,7 @@ import (
 )
 
 func (srv *multiverseService) lesMiesrablesHttp() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/les/miserables/{universe}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe"},

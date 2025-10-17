@@ -5,7 +5,7 @@ import (
 )
 
 func (srv *multiverseService) pingHttp() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/ping",
 		Handler: func(httpIface.Context) (interface{}, error) {
 			return "pong", nil

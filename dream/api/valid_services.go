@@ -6,7 +6,7 @@ import (
 )
 
 func (srv *multiverseService) validServices() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/spec/services",
 		Handler: func(ctx httpIface.Context) (interface{}, error) {
 			return common.Services, nil

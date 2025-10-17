@@ -38,12 +38,14 @@ func TestDns(t *testing.T) {
 	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond
 	seerClient.DefaultGeoBeaconInterval = 100 * time.Millisecond
 
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer":      {Others: map[string]int{"mock": 1}},
 			"substrate": {},

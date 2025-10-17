@@ -5,7 +5,7 @@ import (
 )
 
 func (srv *multiverseService) statusHttp() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/status",
 		Handler: func(ctx httpIface.Context) (interface{}, error) {
 			return srv.Status(), nil

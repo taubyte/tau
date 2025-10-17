@@ -13,10 +13,12 @@ import (
 )
 
 func TestList(t *testing.T) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
 	u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
@@ -31,7 +33,7 @@ func TestList(t *testing.T) {
 		},
 	})
 
-	err := u.RunFixture("fakeProject")
+	err = u.RunFixture("fakeProject")
 	if err != nil {
 		t.Error(err)
 		return

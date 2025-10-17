@@ -3,6 +3,7 @@ package dream
 import (
 	"context"
 	"sync"
+	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/kvdb"
@@ -29,6 +30,12 @@ type Universe struct {
 	simples   map[string]*Simple
 
 	keepRoot bool
+	running  bool
+
+	// Disk usage cache
+	diskUsageCache     int64
+	diskUsageCacheTime time.Time
+	diskUsageCacheLock sync.RWMutex
 }
 
 type serviceInfo struct {
@@ -112,6 +119,10 @@ type ServiceStatus struct {
 type Multiverse struct {
 	ctx  context.Context
 	ctxC context.CancelFunc
+
+	name string
+
+	loadPersistent bool
 
 	universes     map[string]*Universe
 	universesLock sync.RWMutex

@@ -6,7 +6,7 @@ import (
 )
 
 func (srv *multiverseService) validFixtures() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/spec/fixtures",
 		Handler: func(ctx httpIface.Context) (interface{}, error) {
 			return dream.ValidFixtures(), nil

@@ -9,7 +9,7 @@ import (
 
 func (srv *multiverseService) injectSimpleHttp() {
 	// Path to create simples in a universe
-	srv.rest.POST(&httpIface.RouteDefinition{
+	srv.server.POST(&httpIface.RouteDefinition{
 		Path: "/simple/{universe}/{name}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe", "name", "config"},

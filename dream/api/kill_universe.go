@@ -8,7 +8,7 @@ import (
 
 func (srv *multiverseService) killUniverseHttp() {
 	// Path to delete simples in a universe
-	srv.rest.DELETE(&httpIface.RouteDefinition{
+	srv.server.DELETE(&httpIface.RouteDefinition{
 		Path: "/universe/{universe}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe"},

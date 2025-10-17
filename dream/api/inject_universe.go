@@ -9,7 +9,7 @@ import (
 
 func (srv *multiverseService) injectUniverseHttp() {
 	// Path to create simples in a universe
-	srv.rest.POST(&httpIface.RouteDefinition{
+	srv.server.POST(&httpIface.RouteDefinition{
 		Path: "/universe/{universe}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe", "config"},
@@ -39,9 +39,12 @@ func (srv *multiverseService) apiHandlerUniverse(ctx httpIface.Context) (interfa
 		return nil, err
 	}
 
-	u := srv.New(dream.UniverseConfig{
+	u, err := srv.New(dream.UniverseConfig{
 		Name: name,
 	})
+	if err != nil {
+		return err, nil
+	}
 
 	return nil, u.StartWithConfig(config.Config)
 }

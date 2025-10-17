@@ -8,7 +8,7 @@ import (
 
 func (srv *multiverseService) killNodeIdHttp() {
 	// Path to delete services/simple in a universe
-	srv.rest.DELETE(&httpIface.RouteDefinition{
+	srv.server.DELETE(&httpIface.RouteDefinition{
 		Path: "/node/{universe}/{name}/{id}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe", "name", "id"},

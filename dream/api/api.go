@@ -4,53 +4,77 @@ import (
 	"context"
 	"time"
 
-	goHttp "net/http"
-
-	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/dream"
 	httpIface "github.com/taubyte/tau/pkg/http"
 	http "github.com/taubyte/tau/pkg/http/basic"
 	"github.com/taubyte/tau/pkg/http/options"
+
+	goHttp "net/http"
 )
 
 type multiverseService struct {
-	rest httpIface.Service
+	server httpIface.Service
 	*dream.Multiverse
 }
 
+// Deprecated: Use New instead
 func BigBang(m *dream.Multiverse) error {
-	srv := &multiverseService{
-		Multiverse: m,
-	}
-
-	var err error
-	srv.rest, err = http.New(
-		srv.Context(),
-		options.Listen(dream.DreamApiListen()),
-		options.AllowedOrigins(true, []string{".*"}),
-	)
+	srv, err := New(m, nil)
 	if err != nil {
 		return err
 	}
 
-	srv.setUpHttpRoutes().Start()
+	srv.server.Start()
 
-	waitCtx, waitCtxC := context.WithTimeout(srv.Context(), 10*time.Second)
+	if _, err = srv.Ready(10 * time.Second); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func New(m *dream.Multiverse, httpService httpIface.Service) (*multiverseService, error) {
+	if httpService == nil {
+		var err error
+		httpService, err = http.New(
+			m.Context(),
+			options.Listen(dream.DreamApiListen()),
+			options.AllowedOrigins(true, []string{".*"}),
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	srv := &multiverseService{
+		Multiverse: m,
+		server:     httpService,
+	}
+
+	srv.setUpHttpRoutes()
+
+	return srv, nil
+}
+
+func (srv *multiverseService) Server() httpIface.Service {
+	return srv.server
+}
+
+func (srv *multiverseService) Ready(timeout time.Duration) (bool, error) {
+	waitCtx, waitCtxC := context.WithTimeout(srv.Context(), timeout)
 	defer waitCtxC()
 
 	for {
 		select {
 		case <-waitCtx.Done():
-			return waitCtx.Err()
+			return false, waitCtx.Err()
 		case <-time.After(100 * time.Millisecond):
-			if srv.rest.Error() != nil {
-				pterm.Error.Println("Dream failed to start")
-				return srv.rest.Error()
+			if srv.server.Error() != nil {
+				return false, srv.server.Error()
 			}
 			_, err := goHttp.Get("http://" + dream.DreamApiListen())
 			if err == nil {
-				pterm.Info.Println("Dream ready")
-				return nil
+				return true, nil
 			}
 		}
 	}

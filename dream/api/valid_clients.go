@@ -6,7 +6,7 @@ import (
 )
 
 func (srv *multiverseService) validClients() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/spec/clients",
 		Handler: func(ctx httpIface.Context) (interface{}, error) {
 			return common.P2PStreamServices, nil

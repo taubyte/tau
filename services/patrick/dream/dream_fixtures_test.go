@@ -20,12 +20,14 @@ import (
 )
 
 func TestDreamFixtures(t *testing.T) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":     {},
 			"patrick": {},
@@ -73,12 +75,14 @@ func TestDreamFixtures(t *testing.T) {
 }
 
 func TestPushFixtures(t *testing.T) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":     {},
 			"patrick": {},
@@ -176,10 +180,12 @@ func TestPushFixtures(t *testing.T) {
 }
 
 func TestCreatePatrickServiceConfig(t *testing.T) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
 	// Test with delay config
 	config := &commonIface.ServiceConfig{
@@ -189,7 +195,7 @@ func TestCreatePatrickServiceConfig(t *testing.T) {
 	}
 
 	// Test the configuration parsing logic
-	_, err := createPatrickService(u, config)
+	_, err = createPatrickService(u, config)
 	assert.Assert(t, err != nil, "should fail due to service creation requirements")
 
 	// Test with retry config
@@ -234,10 +240,12 @@ func TestCreatePatrickServiceConfig(t *testing.T) {
 }
 
 func TestPushWithNoServices(t *testing.T) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
 	expectedError := "services not provided"
 

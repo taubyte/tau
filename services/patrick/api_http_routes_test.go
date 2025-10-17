@@ -28,8 +28,11 @@ func (m *mockHTTPService) PATCH(def *httpPkg.RouteDefinition)                  {
 func (m *mockHTTPService) ALL(def *httpPkg.RouteDefinition)                    { m.Called(def.Path) }
 func (m *mockHTTPService) Raw(def *httpPkg.RawRouteDefinition) *mux.Route      { return nil }
 func (m *mockHTTPService) LowLevel(def *httpPkg.LowLevelDefinition) *mux.Route { return nil }
-func (m *mockHTTPService) WebSocket(def *httpPkg.WebSocketDefinition)          {}
-func (m *mockHTTPService) ServeAssets(def *httpPkg.AssetsDefinition)           {}
+func (m *mockHTTPService) LowLevelHandler(def *httpPkg.LowLevelHandlerDefinition) *mux.Route {
+	return nil
+}
+func (m *mockHTTPService) WebSocket(def *httpPkg.WebSocketDefinition) {}
+func (m *mockHTTPService) ServeAssets(def *httpPkg.AssetsDefinition)  {}
 func (m *mockHTTPService) AssetHandler(def *httpPkg.HeadlessAssetsDefinition, ctx httpPkg.Context) (interface{}, error) {
 	return nil, nil
 }
