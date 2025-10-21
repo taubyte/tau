@@ -1,6 +1,7 @@
 package start
 
 import (
+	"os"
 	"time"
 
 	"github.com/pterm/pterm"
@@ -8,13 +9,19 @@ import (
 	"github.com/taubyte/tau/dream/api"
 	"github.com/taubyte/tau/dream/mcp"
 	spec "github.com/taubyte/tau/pkg/specs/common"
+	vmLogger "github.com/taubyte/tau/pkg/vm/logger"
 	"github.com/taubyte/tau/services/substrate/runtime"
 	"github.com/urfave/cli/v2"
 )
 
 func runMultiverse() cli.ActionFunc {
 	return func(c *cli.Context) (err error) {
-		runtime.DebugFunctionCalls = c.Bool("debug")
+		if c.Bool("debug") {
+			runtime.DebugFunctionCallsLogger, err = vmLogger.New(os.TempDir())
+			if err != nil {
+				return err
+			}
+		}
 
 		// TODO this is ugly, and we should be able to start a universe on a specific branch
 		spec.DefaultBranches = []string{c.String("branch")}

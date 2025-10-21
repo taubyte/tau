@@ -11,6 +11,15 @@ import (
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
+type UniverseState int
+
+const (
+	UniverseStateStopped UniverseState = iota
+	UniverseStateStarting
+	UniverseStateRunning
+	UniverseStateStopping
+)
+
 type Universe struct {
 	ctx  context.Context
 	ctxC context.CancelFunc
@@ -30,7 +39,7 @@ type Universe struct {
 	simples   map[string]*Simple
 
 	keepRoot bool
-	running  bool
+	state    UniverseState
 
 	// Disk usage cache
 	diskUsageCache     int64
@@ -172,4 +181,43 @@ func (s SimpleConfigClients) Compat() map[string]*commonIface.ClientConfig {
 	}
 
 	return newClientConfig
+}
+
+// State management methods for Universe
+func (u *Universe) State() UniverseState {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+	return u.state
+}
+
+func (u *Universe) Running() bool {
+	return u.State() == UniverseStateRunning
+}
+
+func (u *Universe) Stopped() bool {
+	return u.State() == UniverseStateStopped
+}
+
+func (u *Universe) Starting() bool {
+	return u.State() == UniverseStateStarting
+}
+
+func (u *Universe) Stopping() bool {
+	return u.State() == UniverseStateStopping
+}
+
+// String representation of state for debugging
+func (s UniverseState) String() string {
+	switch s {
+	case UniverseStateStopped:
+		return "stopped"
+	case UniverseStateStarting:
+		return "starting"
+	case UniverseStateRunning:
+		return "running"
+	case UniverseStateStopping:
+		return "stopping"
+	default:
+		return "unknown"
+	}
 }

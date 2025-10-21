@@ -7,8 +7,7 @@ import (
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) injectServiceHttp() {
-	// Path to create services in a universe
+func (srv *Service) injectServiceHttp() {
 	srv.server.POST(&httpIface.RouteDefinition{
 		Path: "/service/{universe}/{name}",
 		Vars: httpIface.Variables{
@@ -18,8 +17,7 @@ func (srv *multiverseService) injectServiceHttp() {
 	})
 }
 
-func (srv *multiverseService) apiHandlerService(ctx httpIface.Context) (interface{}, error) {
-	// Grab the universe
+func (srv *Service) apiHandlerService(ctx httpIface.Context) (interface{}, error) {
 	universe, err := srv.getUniverse(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("killing service failed with: %s", err.Error())

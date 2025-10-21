@@ -12,7 +12,7 @@ import (
 	goHttp "net/http"
 )
 
-type multiverseService struct {
+type Service struct {
 	server httpIface.Service
 	*dream.Multiverse
 }
@@ -33,7 +33,7 @@ func BigBang(m *dream.Multiverse) error {
 	return nil
 }
 
-func New(m *dream.Multiverse, httpService httpIface.Service) (*multiverseService, error) {
+func New(m *dream.Multiverse, httpService httpIface.Service) (*Service, error) {
 	if httpService == nil {
 		var err error
 		httpService, err = http.New(
@@ -46,7 +46,7 @@ func New(m *dream.Multiverse, httpService httpIface.Service) (*multiverseService
 		}
 	}
 
-	srv := &multiverseService{
+	srv := &Service{
 		Multiverse: m,
 		server:     httpService,
 	}
@@ -56,11 +56,11 @@ func New(m *dream.Multiverse, httpService httpIface.Service) (*multiverseService
 	return srv, nil
 }
 
-func (srv *multiverseService) Server() httpIface.Service {
+func (srv *Service) Server() httpIface.Service {
 	return srv.server
 }
 
-func (srv *multiverseService) Ready(timeout time.Duration) (bool, error) {
+func (srv *Service) Ready(timeout time.Duration) (bool, error) {
 	waitCtx, waitCtxC := context.WithTimeout(srv.Context(), timeout)
 	defer waitCtxC()
 

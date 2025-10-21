@@ -4,7 +4,7 @@ import (
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) statusHttp() {
+func (srv *Service) statusHttp() {
 	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/status",
 		Handler: func(ctx httpIface.Context) (interface{}, error) {

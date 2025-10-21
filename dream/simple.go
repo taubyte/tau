@@ -14,6 +14,7 @@ import (
 	tnsIface "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/p2p/keypair"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	"golang.org/x/exp/slices"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 
@@ -162,8 +163,11 @@ func (u *Universe) CreateSimpleNode(name string, config *SimpleConfig) (peer.Nod
 
 	simple := &Simple{Node: simpleNode, clients: make(map[string]commonIface.Client)}
 	for name, clientCfg := range config.Clients {
-		if err = simple.startClient(name, clientCfg); err != nil {
-			return nil, fmt.Errorf("starting client `%s` failed with: %w", name, err)
+		// make sure the client asked for is a valid client
+		if slices.Contains(commonSpecs.Clients, name) {
+			if err = simple.startClient(name, clientCfg); err != nil {
+				return nil, fmt.Errorf("starting client `%s` failed with: %w", name, err)
+			}
 		}
 	}
 

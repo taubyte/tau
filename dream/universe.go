@@ -37,7 +37,7 @@ func (u *Universe) init() error {
 		}
 	}
 
-	u.running = false
+	u.state = UniverseStateStopped
 
 	return nil
 }
@@ -124,6 +124,11 @@ func (u *Universe) Register(node peer.Node, name string, ports map[string]int) {
 }
 
 func (u *Universe) StartAll(simples ...string) error {
+	// Check if we can start (must be in Stopped state)
+	if !u.Stopped() {
+		return fmt.Errorf("universe is not in stopped state, current state: %v", u.State())
+	}
+
 	serviceMap := make(map[string]commonIface.ServiceConfig, len(commonSpecs.Services))
 	for _, s := range commonSpecs.Services {
 		serviceMap[s] = commonIface.ServiceConfig{}
@@ -246,15 +251,31 @@ func (u *Universe) RunFixture(name string, params ...interface{}) error {
 
 // Start universe based on config
 func (u *Universe) StartWithConfig(mainConfig *Config) error {
+	// Check if we can start (must be in Stopped state)
+	if !u.Stopped() {
+		return fmt.Errorf("universe is not in stopped state, current state: %v", u.State())
+	}
+
+	// Set state to starting
+	u.lock.Lock()
+	u.state = UniverseStateStarting
+	u.lock.Unlock()
+
 	errChan := make(chan error, len(mainConfig.Services)+len(mainConfig.Simples))
 
 	privKey, pubKey, err := generateDeterministicDVKeys(u.name)
 	if err != nil {
+		u.lock.Lock()
+		u.state = UniverseStateStopped // Reset to stopped on error
+		u.lock.Unlock()
 		return err
 	}
 
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
+		u.lock.Lock()
+		u.state = UniverseStateStopped // Reset to stopped on error
+		u.lock.Unlock()
 		return err
 	}
 
@@ -292,7 +313,11 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 
 	wg.Wait()
 	close(errChan)
-	u.running = true // at this point, the universe is running, even if there are errors
+
+	// Set state to running (even if there are errors, services are started)
+	u.lock.Lock()
+	u.state = UniverseStateRunning
+	u.lock.Unlock()
 
 	if len(errChan) > 0 {
 		var errString string
@@ -307,10 +332,23 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 
 // compatibility
 func (u *Universe) Stop() {
+	// Check if we can stop (must be in Running state)
+	if !u.Running() {
+		return // Already stopped or in invalid state
+	}
+
+	// Set state to stopping
+	u.lock.Lock()
+	u.state = UniverseStateStopping
+	u.lock.Unlock()
+
 	u.Cleanup()
 
 	u.lock.Lock()
 	defer u.lock.Unlock()
+
+	// Transition to stopped state
+	u.state = UniverseStateStopped
 
 	// if not persistent, we delete the universe from the multiverse
 	if !u.keepRoot {
@@ -489,10 +527,6 @@ func (u *Universe) Root() string {
 
 func (u *Universe) Persistent() bool {
 	return u.keepRoot
-}
-
-func (u *Universe) Running() bool {
-	return u.running
 }
 
 func (u *Universe) SwarmKey() []byte {

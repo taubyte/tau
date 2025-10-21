@@ -28,6 +28,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
 	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
 	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
+	_ "github.com/taubyte/tau/clients/p2p/substrate/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
 	_ "github.com/taubyte/tau/services/auth/dream"

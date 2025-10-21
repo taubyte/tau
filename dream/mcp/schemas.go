@@ -1,389 +1,399 @@
 package mcp
 
-// getSchemaForType returns the JSON schema for a given data type
-func (m *MCPService) getSchemaForType(dataType string) interface{} {
-	switch dataType {
-	case "list_universes_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"universes": map[string]interface{}{
-					"type": "array",
-					"items": map[string]interface{}{
-						"type": "object",
-						"properties": map[string]interface{}{
-							"name": map[string]interface{}{
-								"type":        "string",
-								"description": "Unique name identifier for the universe",
-							},
-							"status": map[string]interface{}{
-								"type":        "string",
-								"description": "Current status of the universe",
-								"enum":        []string{"started", "stopped"},
-							},
-							"persistent": map[string]interface{}{
-								"type":        "boolean",
-								"description": "Whether the universe is persistent",
-							},
-						},
-						"required": []string{"name", "status", "persistent"},
-					},
-					"description": "List of universes in the multiverse",
-				},
-			},
-			"required": []string{"universes"},
-		}
-	case "get_universe_status_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"name": map[string]interface{}{
-					"type":        "string",
-					"description": "Unique name identifier for the universe",
-				},
-				"status": map[string]interface{}{
-					"type":        "string",
-					"description": "Current status of the universe",
-					"enum":        []string{"started", "stopped"},
-				},
-				"root": map[string]interface{}{
-					"type":        "string",
-					"description": "Root directory path for the universe",
-				},
-				"swarm_key": map[string]interface{}{
-					"type":        "string",
-					"description": "Swarm key for the universe",
-				},
-				"node_count": map[string]interface{}{
-					"type":        "integer",
-					"description": "Number of nodes in the universe",
-				},
-				"simples": map[string]interface{}{
-					"type":        "array",
-					"items":       map[string]interface{}{"type": "string"},
-					"description": "List of simple nodes in the universe",
-				},
-				"nodes": map[string]interface{}{
-					"type":        "object",
-					"description": "Map of node IDs to their addresses",
-					"additionalProperties": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]interface{}{"type": "string"},
-						"description": "List of addresses for the node",
-					},
-				},
-				"services": map[string]interface{}{
-					"type":        "array",
-					"items":       map[string]interface{}{"type": "object"},
-					"description": "List of services running in the universe",
-				},
-				"ports": map[string]interface{}{
-					"type":        "array",
-					"items":       map[string]interface{}{"type": "integer"},
-					"description": "List of ports used by the universe",
-				},
-				"disk_usage": map[string]interface{}{
-					"type":        "integer",
-					"description": "Disk usage in bytes",
-				},
-				"persistent": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether the universe is persistent",
-				},
-			},
-			"required": []string{"name", "status", "root", "swarm_key", "node_count", "simples", "nodes", "services", "persistent"},
-		}
-	case "create_universe_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"success": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether the universe was created successfully",
-				},
-				"universe_name": map[string]interface{}{
-					"type":        "string",
-					"description": "Name of the created universe",
-				},
-				"message": map[string]interface{}{
-					"type":        "string",
-					"description": "Status message",
-				},
-			},
-			"required": []string{"success", "universe_name", "message"},
-		}
-	case "delete_universe_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"success": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether the universe was deleted successfully",
-				},
-				"message": map[string]interface{}{
-					"type":        "string",
-					"description": "Status message",
-				},
-			},
-			"required": []string{"success", "message"},
-		}
-	case "start_universe_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"success": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether the universe was started successfully",
-				},
-				"universe_name": map[string]interface{}{
-					"type":        "string",
-					"description": "Name of the started universe",
-				},
-				"message": map[string]interface{}{
-					"type":        "string",
-					"description": "Status message",
-				},
-			},
-			"required": []string{"success", "universe_name", "message"},
-		}
-	case "stop_universe_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"success": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether the universe was stopped successfully",
-				},
-				"universe_name": map[string]interface{}{
-					"type":        "string",
-					"description": "Name of the stopped universe",
-				},
-				"message": map[string]interface{}{
-					"type":        "string",
-					"description": "Status message",
-				},
-			},
-			"required": []string{"success", "universe_name", "message"},
-		}
-	case "list_projects_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"projects": map[string]interface{}{
-					"type": "array",
-					"items": map[string]interface{}{
-						"type": "object",
-						"properties": map[string]interface{}{
-							"id": map[string]interface{}{
-								"type":        "string",
-								"description": "Unique project identifier within the universe",
-							},
-							"name": map[string]interface{}{
-								"type":        "string",
-								"description": "Human-readable project name",
-							},
-							"provider": map[string]interface{}{
-								"type":        "string",
-								"description": "Project provider (e.g., 'github', 'gitlab', 'local')",
-							},
-							"code": map[string]interface{}{
-								"type":        "integer",
-								"description": "Code repository ID - references the code repository in the project's git configuration",
-							},
-							"config": map[string]interface{}{
-								"type":        "integer",
-								"description": "Configuration repository ID - references the configuration repository in the project's git configuration",
-							},
-							"registry": map[string]interface{}{
-								"type":        "object",
-								"description": "Project registry containing resource definitions and configurations",
-								"additionalProperties": map[string]interface{}{
-									"type":        "object",
-									"description": "Resource configuration object",
-								},
-							},
-							"assets": map[string]interface{}{
-								"type":        "object",
-								"description": "Project assets mapping resource IDs to asset pointers",
-								"additionalProperties": map[string]interface{}{
-									"type":        "string",
-									"description": "Asset pointer (CID) for the resource",
-								},
-							},
-						},
-						"required": []string{"id", "name", "provider", "code", "config", "registry", "assets"},
-					},
-					"description": "List of projects in the universe",
-				},
-			},
-			"required": []string{"projects"},
-		}
-	case "get_project_details_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"project": map[string]interface{}{
-					"type": "object",
-					"properties": map[string]interface{}{
-						"id": map[string]interface{}{
-							"type":        "string",
-							"description": "Unique project identifier within the universe",
-						},
-						"name": map[string]interface{}{
-							"type":        "string",
-							"description": "Human-readable project name",
-						},
-						"provider": map[string]interface{}{
-							"type":        "string",
-							"description": "Project provider (e.g., 'github', 'gitlab', 'local')",
-						},
-						"code": map[string]interface{}{
-							"type":        "integer",
-							"description": "Code repository ID - references the code repository in the project's git configuration",
-						},
-						"config": map[string]interface{}{
-							"type":        "integer",
-							"description": "Configuration repository ID - references the configuration repository in the project's git configuration",
-						},
-						"registry": map[string]interface{}{
-							"type":        "object",
-							"description": "Project registry containing resource definitions and configurations",
-							"additionalProperties": map[string]interface{}{
-								"type":        "object",
-								"description": "Resource configuration object",
-							},
-						},
-						"assets": map[string]interface{}{
-							"type":        "object",
-							"description": "Project assets mapping resource IDs to asset pointers",
-							"additionalProperties": map[string]interface{}{
-								"type":        "string",
-								"description": "Asset pointer (CID) for the resource",
-							},
-						},
-					},
-					"required": []string{"id", "name", "provider", "code", "config", "registry", "assets"},
-				},
-			},
-			"required": []string{"project"},
-		}
-	case "get_disk_usage_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"universe_name": map[string]interface{}{
-					"type":        "string",
-					"description": "Name of the universe (if querying specific universe)",
-				},
-				"disk_usage_bytes": map[string]interface{}{
-					"type":        "integer",
-					"description": "Disk usage in bytes",
-				},
-				"disk_usage_mb": map[string]interface{}{
-					"type":        "integer",
-					"description": "Disk usage in megabytes",
-				},
-				"disk_usage_gb": map[string]interface{}{
-					"type":        "integer",
-					"description": "Disk usage in gigabytes",
-				},
-			},
-			"required": []string{"disk_usage_bytes", "disk_usage_mb", "disk_usage_gb"},
-		}
-	case "download_asset_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"success": map[string]interface{}{
-					"type":        "boolean",
-					"description": "Whether the asset was downloaded successfully",
-				},
-				"file_path": map[string]interface{}{
-					"type":        "string",
-					"description": "Path to the downloaded file",
-				},
-				"message": map[string]interface{}{
-					"type":        "string",
-					"description": "Status message",
-				},
-			},
-			"required": []string{"success", "message"},
-		}
-	case "get_system_metrics_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"cpu_usage_percent": map[string]interface{}{
-					"type":        "number",
-					"description": "CPU usage percentage",
-				},
-				"memory_usage_bytes": map[string]interface{}{
-					"type":        "integer",
-					"description": "Memory usage in bytes",
-				},
-				"memory_usage_mb": map[string]interface{}{
-					"type":        "integer",
-					"description": "Memory usage in megabytes",
-				},
-				"process_id": map[string]interface{}{
-					"type":        "integer",
-					"description": "Process ID of the Dream application",
-				},
-				"uptime": map[string]interface{}{
-					"type":        "string",
-					"description": "Application uptime as a duration string",
-				},
-			},
-			"required": []string{"cpu_usage_percent", "memory_usage_bytes", "memory_usage_mb", "process_id", "uptime"},
-		}
-	case "get_dns_status_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"status": map[string]interface{}{
-					"type":        "string",
-					"description": "DNS service status",
-				},
-				"message": map[string]interface{}{
-					"type":        "string",
-					"description": "Status message",
-				},
-			},
-			"required": []string{"status", "message"},
-		}
-	case "get_logs_output":
-		return map[string]interface{}{
-			"type": "object",
-			"properties": map[string]interface{}{
-				"logs": map[string]interface{}{
-					"type": "array",
-					"items": map[string]interface{}{
-						"type": "object",
-						"properties": map[string]interface{}{
-							"timestamp": map[string]interface{}{
-								"type":        "string",
-								"description": "Log entry timestamp",
-							},
-							"level": map[string]interface{}{
-								"type":        "string",
-								"description": "Log level",
-							},
-							"message": map[string]interface{}{
-								"type":        "string",
-								"description": "Log message",
-							},
-							"service": map[string]interface{}{
-								"type":        "string",
-								"description": "Service name that generated the log",
-							},
-						},
-						"required": []string{"timestamp", "level", "message"},
-					},
-					"description": "List of log entries",
-				},
-			},
-			"required": []string{"logs"},
-		}
+import "github.com/google/jsonschema-go/jsonschema"
+
+var (
+	ListUniversesInputSchema = &jsonschema.Schema{
+		Type:                 "object",
+		Properties:           map[string]*jsonschema.Schema{},
+		AdditionalProperties: &jsonschema.Schema{Type: "boolean", Const: &[]any{false}[0]},
 	}
-	return nil
-}
+
+	GetUniverseStatusInputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the universe to get status for",
+			},
+		},
+		Required:             []string{"universe_name"},
+		AdditionalProperties: &jsonschema.Schema{Type: "boolean", Const: &[]any{false}[0]},
+	}
+
+	CreateUniverseInputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"universe_name": {
+				Type:        "string",
+				Description: "Name for the new universe",
+			},
+			"persistent": {
+				Type:        "boolean",
+				Description: "Whether the universe should be persistent",
+			},
+		},
+		Required:             []string{"universe_name", "persistent"},
+		AdditionalProperties: &jsonschema.Schema{Type: "boolean", Const: &[]any{false}[0]},
+	}
+
+	DeleteUniverseInputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the universe to delete",
+			},
+		},
+		Required:             []string{"universe_name"},
+		AdditionalProperties: &jsonschema.Schema{Type: "boolean", Const: &[]any{false}[0]},
+	}
+
+	StartUniverseInputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the universe to start",
+			},
+		},
+		Required:             []string{"universe_name"},
+		AdditionalProperties: &jsonschema.Schema{Type: "boolean", Const: &[]any{false}[0]},
+	}
+
+	StopUniverseInputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the universe to stop",
+			},
+		},
+		Required:             []string{"universe_name"},
+		AdditionalProperties: &jsonschema.Schema{Type: "boolean", Const: &[]any{false}[0]},
+	}
+
+	ListProjectsInputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the universe to list projects from",
+			},
+		},
+		Required:             []string{"universe_name"},
+		AdditionalProperties: &jsonschema.Schema{Type: "boolean", Const: &[]any{false}[0]},
+	}
+
+	GetProjectDetailsInputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the universe containing the project",
+			},
+			"project_id": {
+				Type:        "string",
+				Description: "ID of the project to get details for",
+			},
+		},
+		Required:             []string{"universe_name", "project_id"},
+		AdditionalProperties: &jsonschema.Schema{Type: "boolean", Const: &[]any{false}[0]},
+	}
+
+	GetDiskUsageInputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the universe to get disk usage for (optional)",
+			},
+		},
+		AdditionalProperties: &jsonschema.Schema{Type: "boolean", Const: &[]any{false}[0]},
+	}
+)
+
+var (
+	ListUniversesOutputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"universes": {
+				Type: "array",
+				Items: &jsonschema.Schema{
+					Type: "object",
+					Properties: map[string]*jsonschema.Schema{
+						"name": {
+							Type:        "string",
+							Description: "Unique name identifier for the universe",
+						},
+						"status": {
+							Type:        "string",
+							Description: "Current status of the universe",
+							Enum:        []any{"started", "stopped"},
+						},
+						"persistent": {
+							Type:        "boolean",
+							Description: "Whether the universe is persistent",
+						},
+					},
+					Required: []string{"name", "status", "persistent"},
+				},
+				Description: "List of universes in the multiverse",
+			},
+		},
+		Required: []string{"universes"},
+	}
+	GetUniverseStatusOutputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"name": {
+				Type:        "string",
+				Description: "Unique name identifier for the universe",
+			},
+			"status": {
+				Type:        "string",
+				Description: "Current status of the universe",
+				Enum:        []any{"started", "stopped"},
+			},
+			"root": {
+				Type:        "string",
+				Description: "Root directory path for the universe",
+			},
+			"swarm_key": {
+				Type:        "string",
+				Description: "Swarm key for the universe",
+			},
+			"node_count": {
+				Type:        "integer",
+				Description: "Number of nodes in the universe",
+			},
+			"simples": {
+				Type:        "array",
+				Items:       &jsonschema.Schema{Type: "string"},
+				Description: "List of simple nodes in the universe",
+			},
+			"nodes": {
+				Type:        "object",
+				Description: "Map of node IDs to their addresses",
+				AdditionalProperties: &jsonschema.Schema{
+					Type:        "array",
+					Items:       &jsonschema.Schema{Type: "string"},
+					Description: "List of addresses for the node",
+				},
+			},
+			"services": {
+				Type:        "array",
+				Items:       &jsonschema.Schema{Type: "object"},
+				Description: "List of services running in the universe",
+			},
+			"ports": {
+				Type:        "array",
+				Items:       &jsonschema.Schema{Type: "integer"},
+				Description: "List of ports used by the universe",
+			},
+			"disk_usage": {
+				Type:        "integer",
+				Description: "Disk usage in bytes",
+			},
+			"persistent": {
+				Type:        "boolean",
+				Description: "Whether the universe is persistent",
+			},
+		},
+		Required: []string{"name", "status", "root", "swarm_key", "node_count", "simples", "nodes", "services", "persistent"},
+	}
+	CreateUniverseOutputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"success": {
+				Type:        "boolean",
+				Description: "Whether the universe was created successfully",
+			},
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the created universe",
+			},
+			"message": {
+				Type:        "string",
+				Description: "Status message",
+			},
+		},
+		Required: []string{"success", "universe_name", "message"},
+	}
+
+	DeleteUniverseOutputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"success": {
+				Type:        "boolean",
+				Description: "Whether the universe was deleted successfully",
+			},
+			"message": {
+				Type:        "string",
+				Description: "Status message",
+			},
+		},
+		Required: []string{"success", "message"},
+	}
+
+	StartUniverseOutputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"success": {
+				Type:        "boolean",
+				Description: "Whether the universe was started successfully",
+			},
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the started universe",
+			},
+			"message": {
+				Type:        "string",
+				Description: "Status message",
+			},
+		},
+		Required: []string{"success", "universe_name", "message"},
+	}
+
+	StopUniverseOutputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"success": {
+				Type:        "boolean",
+				Description: "Whether the universe was stopped successfully",
+			},
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the stopped universe",
+			},
+			"message": {
+				Type:        "string",
+				Description: "Status message",
+			},
+		},
+		Required: []string{"success", "universe_name", "message"},
+	}
+	ListProjectsOutputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"projects": {
+				Type: "array",
+				Items: &jsonschema.Schema{
+					Type: "object",
+					Properties: map[string]*jsonschema.Schema{
+						"id": {
+							Type:        "string",
+							Description: "Unique project identifier within the universe",
+						},
+						"name": {
+							Type:        "string",
+							Description: "Human-readable project name",
+						},
+						"provider": {
+							Type:        "string",
+							Description: "Project provider (e.g., 'github', 'gitlab', 'local')",
+						},
+						"code": {
+							Type:        "integer",
+							Description: "Code repository ID - references the code repository in the project's git configuration",
+						},
+						"config": {
+							Type:        "integer",
+							Description: "Configuration repository ID - references the configuration repository in the project's git configuration",
+						},
+						"registry": {
+							Type:        "object",
+							Description: "Project registry containing resource definitions and configurations",
+							AdditionalProperties: &jsonschema.Schema{
+								Type:        "object",
+								Description: "Resource configuration object",
+							},
+						},
+						"assets": {
+							Type:        "object",
+							Description: "Project assets mapping resource IDs to asset pointers",
+							AdditionalProperties: &jsonschema.Schema{
+								Type:        "string",
+								Description: "Asset pointer (CID) for the resource",
+							},
+						},
+					},
+					Required: []string{"id", "name", "provider", "code", "config", "registry", "assets"},
+				},
+				Description: "List of projects in the universe with full details",
+			},
+		},
+		Required: []string{"projects"},
+	}
+	GetProjectDetailsOutputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"project": {
+				Type: "object",
+				Properties: map[string]*jsonschema.Schema{
+					"id": {
+						Type:        "string",
+						Description: "Unique project identifier within the universe",
+					},
+					"name": {
+						Type:        "string",
+						Description: "Human-readable project name",
+					},
+					"provider": {
+						Type:        "string",
+						Description: "Project provider (e.g., 'github', 'gitlab', 'local')",
+					},
+					"code": {
+						Type:        "integer",
+						Description: "Code repository ID - references the code repository in the project's git configuration",
+					},
+					"config": {
+						Type:        "integer",
+						Description: "Configuration repository ID - references the configuration repository in the project's git configuration",
+					},
+					"registry": {
+						Type:        "object",
+						Description: "Project registry containing resource definitions and configurations",
+						AdditionalProperties: &jsonschema.Schema{
+							Type:        "object",
+							Description: "Resource configuration object",
+						},
+					},
+					"assets": {
+						Type:        "object",
+						Description: "Project assets mapping resource IDs to asset pointers",
+						AdditionalProperties: &jsonschema.Schema{
+							Type:        "string",
+							Description: "Asset pointer (CID) for the resource",
+						},
+					},
+				},
+				Required: []string{"id", "name", "provider", "code", "config", "registry", "assets"},
+			},
+		},
+		Required: []string{"project"},
+	}
+
+	GetDiskUsageOutputSchema = &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"universe_name": {
+				Type:        "string",
+				Description: "Name of the universe (if querying specific universe)",
+			},
+			"disk_usage_bytes": {
+				Type:        "integer",
+				Description: "Disk usage in bytes",
+			},
+			"disk_usage_mb": {
+				Type:        "integer",
+				Description: "Disk usage in megabytes",
+			},
+			"disk_usage_gb": {
+				Type:        "integer",
+				Description: "Disk usage in gigabytes",
+			},
+		},
+		Required: []string{"disk_usage_bytes", "disk_usage_mb", "disk_usage_gb"},
+	}
+)

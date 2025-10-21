@@ -5,7 +5,7 @@ import (
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) validFixtures() {
+func (srv *Service) validFixtures() {
 	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/spec/fixtures",
 		Handler: func(ctx httpIface.Context) (interface{}, error) {

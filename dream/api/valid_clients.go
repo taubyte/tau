@@ -5,7 +5,7 @@ import (
 	"github.com/taubyte/tau/pkg/specs/common"
 )
 
-func (srv *multiverseService) validClients() {
+func (srv *Service) validClients() {
 	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/spec/clients",
 		Handler: func(ctx httpIface.Context) (interface{}, error) {

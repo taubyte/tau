@@ -6,8 +6,7 @@ import (
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) killServiceHttp() {
-	// Path to delete services/simple in a universe
+func (srv *Service) killServiceHttp() {
 	srv.server.DELETE(&httpIface.RouteDefinition{
 		Path: "/service/{universe}/{name}",
 		Vars: httpIface.Variables{
@@ -17,20 +16,17 @@ func (srv *multiverseService) killServiceHttp() {
 	})
 }
 
-func (srv *multiverseService) killService(ctx httpIface.Context) (interface{}, error) {
-	// Grab the universe
+func (srv *Service) killService(ctx httpIface.Context) (interface{}, error) {
 	universe, err := srv.getUniverse(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("killing service failed with: %s", err.Error())
 	}
 
-	// Grab services to kill
 	_name, err := ctx.GetStringVariable("name")
 	if err != nil {
 		return nil, fmt.Errorf("failed getting services error %w", err)
 	}
 
-	// Kill services
 	err = universe.Kill(_name)
 	if err != nil {
 		return nil, fmt.Errorf("failed killing %s with error: %w", _name, err)

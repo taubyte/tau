@@ -29,6 +29,7 @@ const (
 
 var (
 	Services          = []string{Auth, Patrick, Monkey, TNS, Hoarder, Substrate, Seer, Gateway}
+	Clients           = []string{Auth, Patrick, Monkey, TNS, Hoarder, Substrate, Seer}
 	HTTPServices      = []string{Patrick, Substrate, Seer, Auth, Gateway}
 	P2PStreamServices = []string{Seer, Auth, Patrick, TNS, Monkey, Hoarder, Substrate}
 )

@@ -7,7 +7,7 @@ import (
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) corsHttp() {
+func (srv *Service) corsHttp() {
 	srv.server.LowLevel(&httpIface.LowLevelDefinition{
 		Path: "/cors",
 		Handler: func(w http.ResponseWriter, r *http.Request) {
