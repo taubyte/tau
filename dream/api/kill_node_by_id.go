@@ -6,9 +6,8 @@ import (
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) killNodeIdHttp() {
-	// Path to delete services/simple in a universe
-	srv.rest.DELETE(&httpIface.RouteDefinition{
+func (srv *Service) killNodeIdHttp() {
+	srv.server.DELETE(&httpIface.RouteDefinition{
 		Path: "/node/{universe}/{name}/{id}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe", "name", "id"},
@@ -17,14 +16,12 @@ func (srv *multiverseService) killNodeIdHttp() {
 	})
 }
 
-func (srv *multiverseService) killNodeById(ctx httpIface.Context) (interface{}, error) {
-	// Grab the universe
+func (srv *Service) killNodeById(ctx httpIface.Context) (interface{}, error) {
 	universe, err := srv.getUniverse(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("killing service failed with: %s", err.Error())
 	}
 
-	// Grab node to kill
 	_name, err := ctx.GetStringVariable("name")
 	if err != nil {
 		return nil, fmt.Errorf("failed getting name error %w", err)
@@ -35,7 +32,6 @@ func (srv *multiverseService) killNodeById(ctx httpIface.Context) (interface{}, 
 		return nil, fmt.Errorf("failed getting id error %w", err)
 	}
 
-	// Kill node
 	err = universe.KillNodeByNameID(_name, _id)
 	if err != nil {
 		return nil, fmt.Errorf("failed killing %s with error: %w", _id, err)

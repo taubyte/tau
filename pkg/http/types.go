@@ -48,6 +48,12 @@ type LowLevelDefinition struct {
 	Handler    func(w http.ResponseWriter, r *http.Request)
 }
 
+type LowLevelHandlerDefinition struct {
+	Path       string
+	PathPrefix string
+	Handler    http.Handler
+}
+
 type RouteDefinition struct {
 	Host        string
 	Path        string
@@ -146,6 +152,7 @@ type Service interface {
 
 	Raw(*RawRouteDefinition) *mux.Route
 	LowLevel(*LowLevelDefinition) *mux.Route
+	LowLevelHandler(*LowLevelHandlerDefinition) *mux.Route
 
 	WebSocket(*WebSocketDefinition)
 

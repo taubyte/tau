@@ -1,9 +1,6 @@
 package dream
 
 import (
-	"fmt"
-
-	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/tools/tau/cli/commands/dream/build"
 	dreamLib "github.com/taubyte/tau/tools/tau/lib/dream"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
@@ -23,8 +20,9 @@ var Command = &cli.Command{
 	Usage: "Starts and interfaces with a local taubyte network.  All leading arguments to `tau dream ...` are passed to dream",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
-			Name:  "cache",
-			Usage: fmt.Sprintf("caches the universe in `%s` keeping data for subsequent restarts", dream.TryGetCacheFolder()),
+			Name:    "cache",
+			Aliases: []string{"keep"},
+			Usage:   "If set will store the universe",
 		},
 	},
 	Action: func(c *cli.Context) error {

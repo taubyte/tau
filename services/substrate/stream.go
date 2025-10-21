@@ -81,12 +81,14 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 
 	httpComponent := s.components.http
 
+	matcher := http.New(request.Host, request.Path, request.Method)
+
 	var pick compIface.Serviceable
 	if serviceables, _ := httpComponent.Cache().Get(
-		&http.MatchDefinition{Request: request},
+		matcher,
 		compIface.GetOptions{Validation: true},
 	); len(serviceables) < 1 {
-		pick, err = s.components.http.Lookup(&http.MatchDefinition{Request: request})
+		pick, err = s.components.http.Lookup(matcher)
 		if err != nil {
 			return nil, fmt.Errorf("lookup failed with: %w", err)
 		}

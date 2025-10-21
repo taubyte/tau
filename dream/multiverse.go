@@ -3,21 +3,106 @@ package dream
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
-func New(ctx context.Context) *Multiverse {
-	m := &Multiverse{
-		universes: make(map[string]*Universe),
+type Option func(*Multiverse) error
+
+func LoadPersistent() Option {
+	return func(m *Multiverse) error {
+		m.loadPersistent = true
+		return nil
 	}
+}
+
+func Name(name string) Option {
+	return func(m *Multiverse) error {
+		if name == "" {
+			m.name = DefaultUniverseName
+		} else {
+			m.name = strings.ToLower(name)
+		}
+		return nil
+	}
+}
+
+func New(ctx context.Context, opts ...Option) (*Multiverse, error) {
+	m := &Multiverse{
+		name: DefaultUniverseName,
+	}
+
+	for _, opt := range opts {
+		if err := opt(m); err != nil {
+			return nil, err
+		}
+	}
+
+	return m.init(ctx)
+}
+
+func (m *Multiverse) init(ctx context.Context) (*Multiverse, error) {
 	m.ctx, m.ctxC = context.WithCancel(ctx)
-	return m
+	m.universes = make(map[string]*Universe)
+
+	if m.loadPersistent {
+		err, fatal := m.loadPersistentUniverses()
+		if fatal {
+			m.Close()
+			return nil, err
+		}
+		logger.Debugf("Loading persistent universes skipped: %w", err)
+	}
+
+	return m, nil
+}
+
+func (m *Multiverse) loadPersistentUniverses() (err error, fatal bool) {
+	cacheFolder, err := GetCacheFolder(m.name)
+	if err != nil {
+		return err, false
+	}
+
+	// Check if cache folder exists
+	if _, err := os.Stat(cacheFolder); os.IsNotExist(err) {
+		// Return empty list if cache folder doesn't exist
+		return err, false
+	}
+
+	// Read the cache folder contents
+	entries, err := os.ReadDir(cacheFolder)
+	if err != nil {
+		return err, false
+	}
+
+	// Look for universe directories with pattern "universe-{name}"
+	for _, entry := range entries {
+		if entry.IsDir() {
+			dirName := entry.Name()
+			// Check if this directory follows the universe pattern
+			if universeName, found := strings.CutPrefix(dirName, "universe-"); found {
+				_, err := m.New(UniverseConfig{
+					Name:     universeName,
+					KeepRoot: true,
+				})
+				if err != nil {
+					return err, true
+				}
+			}
+		}
+	}
+
+	return nil, false
 }
 
 func (m *Multiverse) Context() context.Context {
 	return m.ctx
+}
+
+func (m *Multiverse) Name() string {
+	return m.name
 }
 
 func (m *Multiverse) Close() error {
@@ -29,6 +114,40 @@ func (m *Multiverse) Close() error {
 	m.universes = nil
 	m.ctxC()
 	return nil
+}
+
+func (m *Multiverse) List() ([]string, error) {
+	m.universesLock.RLock()
+	defer m.universesLock.RUnlock()
+	names := make([]string, 0, len(m.universes))
+	for name := range m.universes {
+		names = append(names, name)
+	}
+	return names, nil
+}
+
+func (m *Multiverse) ListPersistent() ([]string, error) {
+	m.universesLock.RLock()
+	defer m.universesLock.RUnlock()
+	names := make([]string, 0, len(m.universes))
+	for name := range m.universes {
+		if m.universes[name].Persistent() {
+			names = append(names, name)
+		}
+	}
+	return names, nil
+}
+
+func (m *Multiverse) ListTemporary() ([]string, error) {
+	m.universesLock.RLock()
+	defer m.universesLock.RUnlock()
+	names := make([]string, 0, len(m.universes))
+	for name := range m.universes {
+		if !m.universes[name].Persistent() {
+			names = append(names, name)
+		}
+	}
+	return names, nil
 }
 
 func (m *Multiverse) Universe(name string) (*Universe, error) {

@@ -7,9 +7,8 @@ import (
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) injectSimpleHttp() {
-	// Path to create simples in a universe
-	srv.rest.POST(&httpIface.RouteDefinition{
+func (srv *Service) injectSimpleHttp() {
+	srv.server.POST(&httpIface.RouteDefinition{
 		Path: "/simple/{universe}/{name}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe", "name", "config"},
@@ -18,8 +17,7 @@ func (srv *multiverseService) injectSimpleHttp() {
 	})
 }
 
-func (srv *multiverseService) apiHandlerSimple(ctx httpIface.Context) (interface{}, error) {
-	// Grab the universe
+func (srv *Service) apiHandlerSimple(ctx httpIface.Context) (interface{}, error) {
 	universe, err := srv.getUniverse(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("killing simple failed with: %s", err.Error())

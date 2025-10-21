@@ -24,13 +24,15 @@ func init() {
 
 func TestKillService(t *testing.T) {
 	dream.DreamApiPort = 43421
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 	assert.NilError(t, api.BigBang(m))
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{},
 		Simples:  map[string]dream.SimpleConfig{},
 	})
@@ -73,13 +75,15 @@ func TestKillSimple(t *testing.T) {
 	statusName := fmt.Sprintf("%s@%s", testSimpleName, universeName)
 
 	dream.DreamApiPort = 40424
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 	assert.NilError(t, api.BigBang(m))
 
-	u := m.New(dream.UniverseConfig{Name: universeName})
+	u, err := m.New(dream.UniverseConfig{Name: universeName})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Simples: map[string]dream.SimpleConfig{
 			testSimpleName: {},
 		},
@@ -173,12 +177,14 @@ func TestKillSimple(t *testing.T) {
 }
 
 func TestMultipleServices(t *testing.T) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer":      {Others: map[string]int{"copies": 1}},
 			"auth":      {Others: map[string]int{"copies": 3}},

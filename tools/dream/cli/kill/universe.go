@@ -2,8 +2,8 @@ package kill
 
 import (
 	client "github.com/taubyte/tau/clients/http/dream"
+	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/tools/dream/cli/command"
-	"github.com/taubyte/tau/tools/dream/cli/common"
 	"github.com/urfave/cli/v2"
 )
 
@@ -13,7 +13,7 @@ func universe(multiverse *client.Client) *cli.Command {
 		Action: killUniverse(multiverse),
 	}
 
-	command.NameWithDefault(c, common.DefaultUniverseName)
+	command.NameWithDefault(c, dream.DefaultUniverseName)
 
 	return c
 }

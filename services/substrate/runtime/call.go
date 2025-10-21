@@ -2,13 +2,15 @@ package runtime
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
-	"os"
 	"time"
+
+	"github.com/taubyte/tau/core/vm"
 )
 
-var DebugFunctionCalls = false
+var DebugFunctionCallsLogger vm.Logger
 
 // Call takes instance and id, then calls the moduled function. Returns an error.
 func (f *Function) Call(inst Instance, id uint32) (err error) {
@@ -19,11 +21,26 @@ func (f *Function) Call(inst Instance, id uint32) (err error) {
 			f.totalCallTime.Add(int64(time.Since(startTime)))
 		}
 
-		if DebugFunctionCalls {
-			fmt.Println("Calling function", f.config.Name, "output:")
-			io.Copy(os.Stdout, inst.Stdout())
-			io.Copy(os.Stdout, inst.Stderr())
-			fmt.Printf("\n\n")
+		if DebugFunctionCallsLogger != nil {
+			logWriter, lgErr := DebugFunctionCallsLogger.New(f.vmContext)
+			if lgErr != nil {
+				return
+			}
+
+			meta := map[string]interface{}{
+				"start_time": startTime.UnixNano(),
+				"end_time":   time.Now().UnixNano(),
+				"duration":   time.Since(startTime).Nanoseconds(),
+			}
+
+			if err != nil {
+				meta["error"] = err.Error()
+			}
+
+			json.NewEncoder(logWriter).Encode(meta)
+			io.Copy(logWriter, inst.Stdout())
+			io.Copy(logWriter, inst.Stderr())
+			logWriter.Close()
 		}
 	}()
 

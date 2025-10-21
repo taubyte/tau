@@ -29,13 +29,15 @@ func TestRoutes(t *testing.T) {
 
 	univerName := "dream-http"
 	// start multiverse
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	err := api.BigBang(m)
+	err = api.BigBang(m)
 	assert.NilError(t, err)
 
-	u := m.New(dream.UniverseConfig{Name: univerName})
+	u, err := m.New(dream.UniverseConfig{Name: univerName})
+	assert.NilError(t, err)
 
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{

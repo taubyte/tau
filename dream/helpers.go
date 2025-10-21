@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -42,24 +43,20 @@ func afterStartDelay() time.Duration {
 	return time.Duration(BaseAfterStartDelay+rnd.Intn(MaxAfterStartDelay-BaseAfterStartDelay)) * time.Millisecond
 }
 
-func GetCacheFolder() (string, error) {
-	cacheFolder := ".cache/dream"
+// GetCacheFolder returns the cache folder for the dream
+// It can be overridden for testing purposes
+var GetCacheFolder = func(multiverse string) (string, error) {
+	suffix := "-" + strings.ToLower(multiverse)
+	if multiverse == DefaultMultiverseName {
+		suffix = ""
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
-	return path.Join(home, cacheFolder), nil
-}
-
-func TryGetCacheFolder() string {
-	cacheFolder, err := GetCacheFolder()
-	if err != nil {
-		return ".cache/dream"
-	}
-
-	return cacheFolder
+	return path.Join(home, DefaultMultiverseCacheFolder+suffix), nil
 }
 
 func generateDeterministicDVKeys(input string) ([]byte, []byte, error) {

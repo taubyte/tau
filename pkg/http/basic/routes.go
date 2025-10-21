@@ -65,3 +65,11 @@ func (s *Service) LowLevel(def *service.LowLevelDefinition) *mux.Route {
 
 	return s.Router.Path(def.Path).HandlerFunc(def.Handler)
 }
+
+func (s *Service) LowLevelHandler(def *service.LowLevelHandlerDefinition) *mux.Route {
+	if len(def.PathPrefix) > 0 {
+		return s.Router.PathPrefix(def.PathPrefix).Handler(def.Handler)
+	}
+
+	return s.Router.Path(def.Path).Handler(def.Handler)
+}

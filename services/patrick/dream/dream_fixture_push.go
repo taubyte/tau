@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	commonIface "github.com/taubyte/tau/core/common"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	servicesCommon "github.com/taubyte/tau/services/common"
@@ -152,22 +151,8 @@ func pushWebsite(u *dream.Universe, params ...interface{}) error {
 	// Create a simple to get the auth client
 	simple, err := u.Simple("client")
 	if err != nil {
-		// If simple doesn't exist, create it
-		err = u.StartWithConfig(&dream.Config{
-			Simples: map[string]dream.SimpleConfig{
-				"client": {
-					Clients: dream.SimpleConfigClients{
-						Auth: &commonIface.ClientConfig{},
-					}.Compat(),
-				},
-			},
-		})
-		if err != nil {
-			return err
-		}
-		simple, err = u.Simple("client")
-		if err != nil {
-			return err
+		if simple, err = u.Simple("client"); err != nil {
+			return fmt.Errorf("unable to get simple client: %w", err)
 		}
 	}
 
@@ -191,19 +176,6 @@ func pushLibrary(u *dream.Universe, params ...interface{}) error {
 	// Create a simple to get the auth client
 	simple, err := u.Simple("client")
 	if err != nil {
-		// If simple doesn't exist, create it
-		if err = u.StartWithConfig(&dream.Config{
-			Simples: map[string]dream.SimpleConfig{
-				"client": {
-					Clients: dream.SimpleConfigClients{
-						Auth: &commonIface.ClientConfig{},
-					}.Compat(),
-				},
-			},
-		}); err != nil {
-			return fmt.Errorf("unable to start with config: %w", err)
-		}
-
 		if simple, err = u.Simple("client"); err != nil {
 			return fmt.Errorf("unable to get simple client: %w", err)
 		}

@@ -11,18 +11,21 @@ import (
 	_ "github.com/taubyte/tau/services/monkey/dream"
 	_ "github.com/taubyte/tau/services/patrick/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
+	"gotest.tools/v3/assert"
 )
 
 func TestImportProdProject(t *testing.T) {
 	t.Skip("currently custom domains do not work on dream")
 
 	spec.DefaultBranches = []string{"master_test"}
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth":    {},
 			"tns":     {},

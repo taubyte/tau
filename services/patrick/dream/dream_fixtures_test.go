@@ -20,12 +20,14 @@ import (
 )
 
 func TestDreamFixtures(t *testing.T) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":     {},
 			"patrick": {},
@@ -73,12 +75,14 @@ func TestDreamFixtures(t *testing.T) {
 }
 
 func TestPushFixtures(t *testing.T) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":     {},
 			"patrick": {},
@@ -176,10 +180,12 @@ func TestPushFixtures(t *testing.T) {
 }
 
 func TestCreatePatrickServiceConfig(t *testing.T) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
 	// Test with delay config
 	config := &commonIface.ServiceConfig{
@@ -189,7 +195,7 @@ func TestCreatePatrickServiceConfig(t *testing.T) {
 	}
 
 	// Test the configuration parsing logic
-	_, err := createPatrickService(u, config)
+	_, err = createPatrickService(u, config)
 	assert.Assert(t, err != nil, "should fail due to service creation requirements")
 
 	// Test with retry config
@@ -234,40 +240,46 @@ func TestCreatePatrickServiceConfig(t *testing.T) {
 }
 
 func TestPushWithNoServices(t *testing.T) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	u.StartWithConfig(&dream.Config{Simples: map[string]dream.SimpleConfig{
+		"client": {
+			Clients: dream.SimpleConfigClients{
+				Auth:    &commonIface.ClientConfig{},
+				Patrick: &commonIface.ClientConfig{},
+				TNS:     &commonIface.ClientConfig{},
+			}.Compat(),
+		},
+	}})
 
 	expectedError := "services not provided"
 
 	t.Run("pushSpecific", func(t *testing.T) {
-		t.Parallel()
 		assert.ErrorContains(t, u.RunFixture("pushSpecific", "123", "test/repo"), expectedError)
 	})
 
 	t.Run("pushWebsite", func(t *testing.T) {
-		t.Parallel()
 		assert.ErrorContains(t, u.RunFixture("pushWebsite"), expectedError)
 	})
 
 	t.Run("pushLibrary", func(t *testing.T) {
-		t.Parallel()
 		assert.ErrorContains(t, u.RunFixture("pushLibrary"), expectedError)
 	})
 
 	t.Run("pushAll", func(t *testing.T) {
-		t.Parallel()
 		assert.ErrorContains(t, u.RunFixture("pushAll"), expectedError)
 	})
 
 	t.Run("pushConfig", func(t *testing.T) {
-		t.Parallel()
 		assert.ErrorContains(t, u.RunFixture("pushConfig"), expectedError)
 	})
 
 	t.Run("pushCode", func(t *testing.T) {
-		t.Parallel()
 		assert.ErrorContains(t, u.RunFixture("pushCode"), expectedError)
 	})
 }

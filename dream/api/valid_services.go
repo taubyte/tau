@@ -5,8 +5,8 @@ import (
 	"github.com/taubyte/tau/pkg/specs/common"
 )
 
-func (srv *multiverseService) validServices() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+func (srv *Service) validServices() {
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/spec/services",
 		Handler: func(ctx httpIface.Context) (interface{}, error) {
 			return common.Services, nil

@@ -11,6 +11,7 @@ import (
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/substrate/components/structure"
+	"gotest.tools/v3/assert"
 )
 
 // TODO: Needed?
@@ -31,12 +32,14 @@ func TestProtocolListen(t *testing.T) {
 		},
 	})
 
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
-	u := m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Simples: map[string]dream.SimpleConfig{
 			"sender": {
 				Clients: dream.SimpleConfigClients{}.Compat(),

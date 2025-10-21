@@ -27,9 +27,27 @@ var (
 	DefaultP2PListenFormat  string = "/ip4/" + DefaultHost + "/tcp/%d"
 	DefaultHTTPListenFormat string = "%s://" + DefaultHost + ":%d"
 
+	// Default multiverse name (must be lowercase)
+	DefaultMultiverseName = "default"
+
+	// Default universe name (must be lowercase)
+	DefaultUniverseName = "default"
+
+	// Default universe cache folder
+	DefaultMultiverseCacheFolder = ".cache/dream"
+
+	// Default client name
+	DefaultClientName = "client"
+
+	// Valid sub-binds for services
+	ValidSubBinds = []string{"http", "p2p", "dns", "https", "verbose", "copies"}
+
 	BaseAfterStartDelay = 500  // Millisecond
 	MaxAfterStartDelay  = 1000 // Millisecond
 	MeshTimeout         = 5 * time.Second
+
+	// Disk usage cache configuration
+	DiskUsageCacheTimeout = 5 * time.Second
 
 	startAllDefaultSimple = "client"
 
@@ -43,11 +61,6 @@ var (
 	portsPerUniverse = 100
 
 	logger = log.Logger("tau.dream")
-
-	// universes      map[string]*Universe
-	// universesLock  sync.RWMutex
-	// multiverseCtx  context.Context
-	// multiverseCtxC context.CancelFunc
 )
 
 // TODO: This should be generated

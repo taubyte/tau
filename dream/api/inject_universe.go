@@ -7,9 +7,8 @@ import (
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) injectUniverseHttp() {
-	// Path to create simples in a universe
-	srv.rest.POST(&httpIface.RouteDefinition{
+func (srv *Service) injectUniverseHttp() {
+	srv.server.POST(&httpIface.RouteDefinition{
 		Path: "/universe/{universe}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe", "config"},
@@ -18,13 +17,12 @@ func (srv *multiverseService) injectUniverseHttp() {
 	})
 }
 
-func (srv *multiverseService) apiHandlerUniverse(ctx httpIface.Context) (interface{}, error) {
+func (srv *Service) apiHandlerUniverse(ctx httpIface.Context) (interface{}, error) {
 	name, err := ctx.GetStringVariable("universe")
 	if err != nil {
 		return nil, fmt.Errorf("failed getting name with: %w", err)
 	}
 
-	// Grab the universe
 	_, err = srv.Universe(name)
 	if err == nil {
 		return nil, fmt.Errorf("universe `%s` already exists", name)
@@ -39,9 +37,12 @@ func (srv *multiverseService) apiHandlerUniverse(ctx httpIface.Context) (interfa
 		return nil, err
 	}
 
-	u := srv.New(dream.UniverseConfig{
+	u, err := srv.New(dream.UniverseConfig{
 		Name: name,
 	})
+	if err != nil {
+		return err, nil
+	}
 
 	return nil, u.StartWithConfig(config.Config)
 }

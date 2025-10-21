@@ -8,8 +8,8 @@ import (
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) fixtureHttp() {
-	srv.rest.POST(&httpIface.RouteDefinition{
+func (srv *Service) fixtureHttp() {
+	srv.server.POST(&httpIface.RouteDefinition{
 		Path: "/fixture/{universe}/{fixture}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe", "fixture", "params"},
@@ -18,8 +18,7 @@ func (srv *multiverseService) fixtureHttp() {
 	})
 }
 
-func (srv *multiverseService) apiHandlerFixture(ctx httpIface.Context) (interface{}, error) {
-	// Grab fixture to run
+func (srv *Service) apiHandlerFixture(ctx httpIface.Context) (interface{}, error) {
 	fixture, err := ctx.GetStringVariable("fixture")
 	if err != nil {
 		return nil, fmt.Errorf("failed getting services error %w", err)
@@ -36,7 +35,6 @@ func (srv *multiverseService) apiHandlerFixture(ctx httpIface.Context) (interfac
 		return nil, fmt.Errorf("fixture `%s` not found in `%v`", fixture, fixtures)
 	}
 
-	// Grab the universe
 	var universe *dream.Universe
 	_name, err := ctx.GetStringVariable("universe")
 	if err != nil {

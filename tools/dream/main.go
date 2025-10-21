@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -14,6 +15,7 @@ import (
 	inject "github.com/taubyte/tau/tools/dream/cli/inject"
 	"github.com/taubyte/tau/tools/dream/cli/kill"
 	"github.com/taubyte/tau/tools/dream/cli/new"
+	"github.com/taubyte/tau/tools/dream/cli/start"
 	"github.com/taubyte/tau/tools/dream/cli/status"
 
 	// Actual imports
@@ -26,6 +28,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
 	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
 	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
+	_ "github.com/taubyte/tau/clients/p2p/substrate/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
 	_ "github.com/taubyte/tau/services/auth/dream"
@@ -49,6 +52,7 @@ func main() {
 		sig := <-signals
 		switch sig {
 		case os.Interrupt, syscall.SIGTERM:
+			fmt.Println()
 			pterm.Info.Println("Received signal... Shutting down.")
 			ctxC()
 		}
@@ -76,6 +80,7 @@ func defineCLI(ctx *common.Context) *(cli.App) {
 		UseShortOptionHandling: true,
 		Commands: []*cli.Command{
 			new.Command(ctx),
+			start.Command(ctx),
 			inject.Command(ctx),
 			kill.Command(ctx),
 			status.Command(ctx),

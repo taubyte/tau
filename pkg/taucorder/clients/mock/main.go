@@ -26,15 +26,21 @@ import (
 func main() {
 	dream.DreamApiPort = 2442 // diffrent port than the default
 
-	m := dream.New(context.Background())
+	m, err := dream.New(context.Background())
+	if err != nil {
+		panic(err)
+	}
 	defer m.Close()
-	err := api.BigBang(m)
+	err = api.BigBang(m)
 	if err != nil {
 		panic(err)
 	}
 
 	uname := "mock_universe"
-	u := m.New(dream.UniverseConfig{Name: uname})
+	u, err := m.New(dream.UniverseConfig{Name: uname})
+	if err != nil {
+		panic(err)
+	}
 
 	// Start the universe with basic config
 	err = u.StartAll()

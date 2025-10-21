@@ -22,7 +22,8 @@ func TestHealth(t *testing.T) {
 	defer ctxC()
 
 	dream.DreamApiPort = 31425 // don't conflict with default port
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	defer m.Close()
 
 	assert.NilError(t, api.BigBang(m))

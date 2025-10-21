@@ -19,6 +19,7 @@ import (
 	compilerCommon "github.com/taubyte/tau/pkg/config-compiler/common"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/pkg/specs/methods"
+	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
@@ -157,12 +158,16 @@ func cloneRepo(ctx context.Context, url string, preserve bool) (*git.Repository,
 }
 
 func startDream(t *testing.T) (u *dream.Universe, cleanup func(), err error) {
-	m := dream.New(t.Context())
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
 	cleanup = func() {
 		m.Close()
 	}
 
-	u = m.New(dream.UniverseConfig{Name: t.Name()})
+	u, err = m.New(dream.UniverseConfig{Name: t.Name()})
+	if err != nil {
+		return nil, cleanup, err
+	}
 
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{

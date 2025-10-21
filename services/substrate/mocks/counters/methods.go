@@ -23,7 +23,6 @@ func (c *counter) Close() error {
 		delete(c.ledger, k)
 	}
 
-	close(c.metricChan)
 	c.ledgerLock.Unlock()
 	return nil
 }
