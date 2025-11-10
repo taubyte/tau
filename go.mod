@@ -88,7 +88,7 @@ require (
 	github.com/unrolled/secure v1.0.9
 	github.com/vbauerster/mpb/v8 v8.7.5
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7
-	go.starlark.net v0.0.0-20240520160348-046347dcd104
+	go.starlark.net v0.0.0-20251109183026-be02852a5e1f
 	golang.org/x/mod v0.26.0
 	golang.org/x/text v0.27.0
 	google.golang.org/grpc v1.73.0
@@ -114,6 +114,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/cloudflare/circl v1.3.3 // indirect
 	github.com/cockroachdb/crlib v0.0.0-20241015224233-894974b3ad94 // indirect
 	github.com/cockroachdb/errors v1.11.3 // indirect

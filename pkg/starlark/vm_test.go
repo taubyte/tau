@@ -3,6 +3,7 @@ package starlark
 import (
 	"embed"
 	"testing"
+	"testing/fstest"
 
 	"go.starlark.net/starlark"
 	"gotest.tools/v3/assert"
@@ -90,4 +91,17 @@ func TestImportAcrossFileSystems(t *testing.T) {
 	} else {
 		t.Errorf("Expected result to be a starlark.Int, got %T", result)
 	}
+}
+
+func TestNewWithoutFileSystems(t *testing.T) {
+	_, err := New()
+	assert.Error(t, err, "no file systems provided")
+}
+
+func TestFileMissingModule(t *testing.T) {
+	vm, err := New(fstest.MapFS{})
+	assert.NilError(t, err)
+
+	_, err = vm.File("missing.star")
+	assert.ErrorContains(t, err, "failed to load module missing.star")
 }
