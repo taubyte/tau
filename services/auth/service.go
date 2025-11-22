@@ -89,7 +89,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	srv.hostUrl = config.NetworkFqdn
 	srv.setupStreamRoutes()
 
-	sc, err := seerClient.New(ctx, clientNode)
+	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}

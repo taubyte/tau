@@ -28,7 +28,7 @@ func (srv *Service) startBeacon(config *config.Node) (beacon *serviceBeacon, err
 		clientNode = config.ClientNode
 	}
 
-	beacon.seerClient, err = seerClient.New(srv.ctx, clientNode)
+	beacon.seerClient, err = seerClient.New(srv.ctx, clientNode, config.SensorsRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}

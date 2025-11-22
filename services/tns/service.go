@@ -69,7 +69,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	if config.ClientNode != nil {
 		clientNode = config.ClientNode
 	}
-	sc, err := seerClient.New(ctx, clientNode)
+	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("failed creating seer client error: %v", err)
 	}

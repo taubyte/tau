@@ -272,6 +272,7 @@ func (srv *oracleService) getInfo(ctx context.Context, id string) (cr.Response, 
 		FreeDisk:      int(usage.Disk.Free),
 		UsedDisk:      int(usage.Disk.Used),
 		AvailableDisk: int(usage.Disk.Available),
+		CustomValues:  usage.CustomValues,
 	}
 
 	serviceBytes, err := json.Marshal(service)
