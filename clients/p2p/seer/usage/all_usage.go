@@ -26,9 +26,10 @@ func GetUsage() (usage iface.UsageData, err error) {
 	}
 
 	usage = iface.UsageData{
-		Memory: memory,
-		Cpu:    cpu,
-		Disk:   disk,
+		Memory:       memory,
+		Cpu:          cpu,
+		Disk:         disk,
+		CustomValues: make(map[string]float64),
 	}
 
 	return

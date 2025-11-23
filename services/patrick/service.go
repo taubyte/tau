@@ -111,7 +111,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 		srv.http.Start()
 	}
 
-	sc, err := seerClient.New(srv.ctx, clientNode)
+	sc, err := seerClient.New(srv.ctx, clientNode, config.SensorsRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("failed creating seer client %v", err)
 	}

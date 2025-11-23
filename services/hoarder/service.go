@@ -80,7 +80,7 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 		return nil, fmt.Errorf("creating new tns client failed with: %w", err)
 	}
 
-	sc, err := seerClient.New(ctx, clientNode)
+	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("new seer client failed with: %w", err)
 	}

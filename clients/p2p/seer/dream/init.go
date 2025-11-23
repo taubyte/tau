@@ -15,5 +15,5 @@ func init() {
 }
 
 func createSeerClient(node peer.Node, config *common.ClientConfig) (common.Client, error) {
-	return seer.New(node.Context(), node)
+	return seer.New(node.Context(), node, nil)
 }

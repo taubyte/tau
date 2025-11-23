@@ -11,6 +11,7 @@ import (
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/p2p/peer"
 	http "github.com/taubyte/tau/pkg/http"
+	"github.com/taubyte/tau/pkg/sensors"
 )
 
 var (
@@ -56,6 +57,8 @@ type Node struct {
 
 	Http http.Service
 
+	Sensors *sensors.Service
+
 	EnableHTTPS bool
 	Verbose     bool
 	DevMode     bool
@@ -67,6 +70,13 @@ type Node struct {
 type DomainValidation struct {
 	PrivateKey []byte
 	PublicKey  []byte
+}
+
+func (config *Node) SensorsRegistry() *sensors.Registry {
+	if config.Sensors != nil {
+		return config.Sensors.Registry()
+	}
+	return nil
 }
 
 func (config *Node) Validate() error {

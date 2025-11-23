@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"os"
 	"path"
 
 	_ "embed"
@@ -16,6 +17,7 @@ import (
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	auto "github.com/taubyte/tau/pkg/http-auto"
+	"github.com/taubyte/tau/pkg/poe"
 	servicesCommon "github.com/taubyte/tau/services/common"
 )
 
@@ -28,14 +30,24 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		config = &tauConfig.Node{}
 	}
 
+	err := config.Validate()
+	if err != nil {
+		return nil, fmt.Errorf("building config failed with: %s", err)
+	}
+
 	srv := &Service{
 		config: config,
 		shape:  config.Shape,
 	}
 
-	err := config.Validate()
-	if err != nil {
-		return nil, fmt.Errorf("building config failed with: %s", err)
+	poeFolder := os.DirFS(path.Join(config.Root, "config", "poe", "star"))
+	logger.Infof("poe folder: %s", poeFolder)
+	if _, err := poeFolder.Open("dns.star"); err == nil {
+		logger.Infof("creating poe engine")
+		srv.poe, err = poe.New(poeFolder, "dns.star")
+		if err != nil {
+			return nil, fmt.Errorf("failed to create poe engine: %w", err)
+		}
 	}
 
 	srv.dnsResolver = net.DefaultResolver
@@ -92,7 +104,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		return nil, fmt.Errorf("pubsub subscribe failed with: %s", err)
 	}
 
-	sc, err := seerClient.New(ctx, clientNode)
+	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
@@ -102,7 +114,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
 
-	// Start DNS: will panic if fails
+	// Start DNS
 	err = srv.newDnsServer(config.DevMode, config.Ports["dns"])
 	if err != nil {
 		logger.Error("creating Dns server failed with:", err.Error())

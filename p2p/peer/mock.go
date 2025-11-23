@@ -39,6 +39,8 @@ func Mock(ctx context.Context) Node {
 		panic(err)
 	}
 
+	p.id = p.host.ID()
+
 	p.dht, err = dht.New(p.ctx, p.host)
 	if err != nil {
 		panic(err)

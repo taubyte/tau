@@ -61,7 +61,7 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, er
 		return nil, fmt.Errorf("new streams client failed with: %w", err)
 	}
 
-	sc, err := seer.New(ctx, clientNode)
+	sc, err := seer.New(ctx, clientNode, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new seer client failed with: %w", err)
 	}

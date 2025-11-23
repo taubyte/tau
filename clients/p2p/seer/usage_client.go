@@ -49,6 +49,13 @@ func (u *Usage) updateUsage(hostname, nodeId, clientNodeId string, signature []b
 		return nil, fmt.Errorf("getting usage of hostname `%s` failed with: %s", hostname, err)
 	}
 
+	// get custom values
+	if u.sensors != nil {
+		for _, sensor := range u.sensors.List() {
+			usageData.CustomValues[sensor.Name] = sensor.Value
+		}
+	}
+
 	resp, err := u.Heartbeat(&usageData, hostname, nodeId, clientNodeId, signature)
 	if err != nil {
 		return nil, err

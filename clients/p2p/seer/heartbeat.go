@@ -12,6 +12,8 @@ import (
 )
 
 func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId string, signature []byte) (response.Response, error) {
+	logger.Debug("Heartbeat", "sending usage", usage)
+
 	usageData, err := cbor.Marshal(usage)
 	if err != nil {
 		return nil, err
@@ -21,6 +23,7 @@ func (u *Usage) Heartbeat(usage *iface.UsageData, hostname, nodeId, clientNodeId
 	if err != nil {
 		return nil, fmt.Errorf("calling heartbeat send failed with: %w", err)
 	}
+
 	return resp, nil
 }
 
