@@ -40,7 +40,6 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		shape:  config.Shape,
 	}
 
-	// init poe if we have a dns.star file
 	poeFolder := os.DirFS(path.Join(config.Root, "config", "poe", "star"))
 	logger.Infof("poe folder: %s", poeFolder)
 	if _, err := poeFolder.Open("dns.star"); err == nil {
@@ -115,7 +114,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
 
-	// Start DNS: will panic if fails
+	// Start DNS
 	err = srv.newDnsServer(config.DevMode, config.Ports["dns"])
 	if err != nil {
 		logger.Error("creating Dns server failed with:", err.Error())

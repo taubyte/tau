@@ -21,9 +21,9 @@ import (
 var (
 	MaxDnsResponseTime       = 3 * time.Second
 	ServerIpCacheTTL         = 30 * time.Second
-	PositiveCacheTTL         = 1 * time.Minute //5 * time.Minute
+	PositiveCacheTTL         = 1 * time.Minute
 	DefaultBlockTime         = 1 * time.Minute
-	ValidServiceResponseTime = 1 * time.Minute // 5 * time.Minute
+	ValidServiceResponseTime = 1 * time.Minute
 )
 
 type dnsServer struct {

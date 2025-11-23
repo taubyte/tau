@@ -195,14 +195,13 @@ func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.Respo
 				usageMap["timestamp"] = ts
 				ok, err := h.seer.poe.Check(id, usageMap)
 				if err != nil {
-					// Assume the poe script has an issue & return the node anyway
 					logger.Errorf("scoring %s failed with: %s", id, err.Error())
 					return true
 				}
 				logger.Infof("scoring %s with: %v, result: %t", id, usageMap, ok)
-				return ok // if ok is true, return true
+				return ok
 			}
-			return true // if no poe engine, return true
+			return true
 		})
 		if err != nil {
 			logger.Errorf("getting ip for %s failed with %s", service, err.Error())
@@ -253,7 +252,6 @@ func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.Respo
 }
 
 func (h *dnsHandler) replyWithHTTPServicingNodes(ctx context.Context, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
-	// TODO: Find a smart way to determine what to provide. For example if Seer IP is public, theres no gateways but there're substrates with private ips, return []
 	nodeIps, err := h.getServiceIpWithCache(ctx, "gateway", func(id string, ts int64, usage *iface.UsageData) bool {
 		if h.seer.poe != nil {
 			usageMap := usage.ToMap()
@@ -265,28 +263,26 @@ func (h *dnsHandler) replyWithHTTPServicingNodes(ctx context.Context, w dns.Resp
 				return true
 			}
 			logger.Infof("scoring %s with: %v, result: %t", id, usageMap, ok)
-			return ok // if ok is true, return true
+			return ok
 		}
-		return true // if no poe engine, return true
+		return true
 	})
 	if err != nil || len(nodeIps) == 0 {
-		// filtred substrate have diffrent cache enrty
 		nodeIps, err = h.getServiceIpWithCache(ctx, "substrate", func(id string, ts int64, usage *iface.UsageData) bool {
 			if h.seer.poe != nil {
 				usageMap := usage.ToMap()
 				usageMap["timestamp"] = ts
 				ok, err := h.seer.poe.Check(id, usageMap)
 				if err != nil {
-					// Assume the poe script has an issue & return the node anyway
 					logger.Errorf("scoring %s failed with: %s", id, err.Error())
 					return true
 				}
 				logger.Infof("scoring %s with: %v, result: %t", id, usageMap, ok)
-				return ok // if ok is true, return true
+				return ok
 			}
-			return true // if no poe engine, return true
+			return true
 		})
-		if err != nil { // if no nodes, still do not return an error as the domain is valid
+		if err != nil {
 			err = w.WriteMsg(errMsg)
 			if err != nil {
 				logger.Error("writing error message for WriteMsg failed with:", err.Error())

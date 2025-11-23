@@ -40,10 +40,12 @@ func (u *UsageData) ToMap() map[string]any {
 	return result
 }
 
-// convertCustomValuesToNestedMap converts a flat map with dot-separated keys
-// into a nested map structure where '.' is treated as a hierarchical separator.
-// For example: {"sensor.network.bytes": 123.45} becomes
-// {"sensor": {"network": {"bytes": 123.45}}}
+/*
+convertCustomValuesToNestedMap converts a flat map with dot-separated keys
+into a nested map structure where '.' is treated as a hierarchical separator.
+For example: {"sensor.network.bytes": 123.45} becomes
+{"sensor": {"network": {"bytes": 123.45}}}
+*/
 func convertCustomValuesToNestedMap(customValues map[string]float64) map[string]any {
 	if len(customValues) == 0 {
 		return nil
@@ -55,15 +57,12 @@ func convertCustomValuesToNestedMap(customValues map[string]float64) map[string]
 		cur := result
 		for i, part := range parts {
 			if i == len(parts)-1 {
-				// Last part, set the value
 				cur[part] = value
 			} else {
-				// Intermediate part, create nested map if needed
 				if next, ok := cur[part]; ok {
 					if nextMap, ok := next.(map[string]any); ok {
 						cur = nextMap
 					} else {
-						// Conflict: key exists but is not a map, overwrite with map
 						newMap := make(map[string]any)
 						cur[part] = newMap
 						cur = newMap

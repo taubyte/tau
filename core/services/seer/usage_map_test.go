@@ -170,7 +170,6 @@ func TestUsageData_ToMap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result := tt.usage.ToMap()
 
-			// Verify that "custom" key is not present when there are no custom values
 			if len(tt.usage.CustomValues) == 0 {
 				if _, exists := result["custom"]; exists {
 					t.Errorf("ToMap() should not include 'custom' key when CustomValues is empty, but got: %v", result["custom"])

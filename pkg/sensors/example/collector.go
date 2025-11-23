@@ -70,8 +70,6 @@ func (c *Collector) FetchMetrics(ctx context.Context) (*APIResponse, error) {
 	return &apiResp, nil
 }
 
-// PushValues pushes metrics to the sensor service
-// Handles multiple named metrics in the values map
 func (c *Collector) PushValues(ctx context.Context, values []Value) error {
 	fmt.Printf("[%s] Pushing values\n", time.Now().Format(time.RFC3339))
 	for _, value := range values {
@@ -103,8 +101,6 @@ func (c *Collector) PushValues(ctx context.Context, values []Value) error {
 	return nil
 }
 
-// CollectAndPush fetches metrics from the API and pushes them to the sensor service
-// Only processes metrics for peers that match the current node ID
 func (c *Collector) CollectAndPush(ctx context.Context) error {
 	// Get the current node ID
 	nodeID, err := c.GetNodeID(ctx)
@@ -136,7 +132,6 @@ func (c *Collector) CollectAndPush(ctx context.Context) error {
 	return nil
 }
 
-// GetNodeID retrieves the node ID from the sensor service
 func (c *Collector) GetNodeID(ctx context.Context) (string, error) {
 	req := connect.NewRequest(&sensorsv1.NodeInfoRequest{})
 	resp, err := c.sensorClient.NodeInfo(ctx, req)
@@ -147,7 +142,6 @@ func (c *Collector) GetNodeID(ctx context.Context) (string, error) {
 	return resp.Msg.GetNodeId(), nil
 }
 
-// push pushes a single metric value to the sensor service via Connect RPC
 func (c *Collector) push(ctx context.Context, name string, value float64) error {
 	req := connect.NewRequest(&sensorsv1.PushValueRequest{
 		Name:  name,
