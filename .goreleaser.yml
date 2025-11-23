@@ -1,4 +1,5 @@
 # .goreleaser.yaml
+version: 2
 project_name: tau
 release:
   # Repo in which the release will be created.
@@ -66,16 +67,15 @@ builds:
     tags:
       - odo
     ldflags:
-      - |
-        -s -w \
-        -X github.com/taubyte/tau/cli/app.Version={{ .Version }} \
-        -X github.com/taubyte/tau/cli/app.Commit={{ .ShortCommit }} \
-        -X github.com/taubyte/tau/cli/app.BuildDate={{ .Date }}
+      - -s -w -X github.com/taubyte/tau/cli/app.Version={{ .Version }} -X github.com/taubyte/tau/cli/app.Commit={{ .ShortCommit }} -X github.com/taubyte/tau/cli/app.BuildDate={{ .Date }}
   - main: "main.go"
     id: darwin
     binary: "tau"
     goos: 
       - darwin
+    goarch:
+      - amd64
+      - arm64
     env:
       - CGO_ENABLED=0
       - GOAMD64=v2
@@ -83,11 +83,7 @@ builds:
       - darwin
       - odo
     ldflags:
-      - |
-        -s -w \
-        -X github.com/taubyte/tau/cli/app.Version={{ .Version }} \
-        -X github.com/taubyte/tau/cli/app.Commit={{ .ShortCommit }} \
-        -X github.com/taubyte/tau/cli/app.BuildDate={{ .Date }}
+      - -s -w -X github.com/taubyte/tau/cli/app.Version={{ .Version }} -X github.com/taubyte/tau/cli/app.Commit={{ .ShortCommit }} -X github.com/taubyte/tau/cli/app.BuildDate={{ .Date }}
   - main: "main.go"
     id: windows
     binary: "tau"
@@ -101,11 +97,7 @@ builds:
     tags:
       - windows 
     ldflags:
-      - |
-        -s -w \
-        -X github.com/taubyte/tau/cli/app.Version={{ .Version }} \
-        -X github.com/taubyte/tau/cli/app.Commit={{ .ShortCommit }} \
-        -X github.com/taubyte/tau/cli/app.BuildDate={{ .Date }}
+      - -s -w -X github.com/taubyte/tau/cli/app.Version={{ .Version }} -X github.com/taubyte/tau/cli/app.Commit={{ .ShortCommit }} -X github.com/taubyte/tau/cli/app.BuildDate={{ .Date }}
 
 changelog:
   disable: true
