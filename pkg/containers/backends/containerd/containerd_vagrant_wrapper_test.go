@@ -37,17 +37,18 @@ func runVagrantTest(t *testing.T, testName string, rootless bool) {
 		mode = "rootless"
 	}
 
-	// Get the directory containing the test file (where Vagrantfile is)
+	// Get the directory containing the test file, then navigate to vagrant subdirectory
 	_, filename, _, _ := runtime.Caller(0)
 	testDir := filepath.Dir(filename)
+	vagrantDir := filepath.Join(testDir, "vagrant")
 
-	// Change to test directory to run vagrant commands
+	// Change to vagrant directory to run vagrant commands
 	originalDir, err := os.Getwd()
 	require.NoError(t, err, "Should get current working directory")
 	defer os.Chdir(originalDir)
 
-	err = os.Chdir(testDir)
-	require.NoError(t, err, "Should change to test directory")
+	err = os.Chdir(vagrantDir)
+	require.NoError(t, err, "Should change to vagrant directory")
 
 	vmName := "tau-containerd-test"
 
@@ -220,17 +221,18 @@ func TestContainerdBackend_Vagrant_All(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	// Get the directory containing the test file (where Vagrantfile is)
+	// Get the directory containing the test file, then navigate to vagrant subdirectory
 	_, filename, _, _ := runtime.Caller(0)
 	testDir := filepath.Dir(filename)
+	vagrantDir := filepath.Join(testDir, "vagrant")
 
-	// Change to test directory to run vagrant commands
+	// Change to vagrant directory to run vagrant commands
 	originalDir, err := os.Getwd()
 	require.NoError(t, err, "Should get current working directory")
 	defer os.Chdir(originalDir)
 
-	err = os.Chdir(testDir)
-	require.NoError(t, err, "Should change to test directory")
+	err = os.Chdir(vagrantDir)
+	require.NoError(t, err, "Should change to vagrant directory")
 
 	vmName := "tau-containerd-test"
 
