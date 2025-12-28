@@ -1,0 +1,125 @@
+# -*- mode: ruby -*-
+# vi: set ft=ruby :
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  
+  # Disable default /vagrant mount (which would mount the Vagrantfile directory)
+  config.vm.synced_folder ".", "/vagrant", disabled: true
+  
+  # Use a unique VM name to avoid conflicts
+  config.vm.define "tau-containerd-test" do |vm|
+    vm.vm.hostname = "tau-containerd-test"
+    
+    # Mount repository root to /vagrant (4 levels up from this Vagrantfile)
+    # Vagrantfile is in pkg/containers/backends/containerd, repo root is 4 levels up
+    repo_root = File.expand_path("../../../../", File.dirname(__FILE__))
+    vm.vm.synced_folder repo_root, "/vagrant", type: "virtualbox"
+    
+    # Network configuration
+    vm.vm.network "private_network", type: "dhcp"
+    
+    # Provisioning: Install Go, containerd, and configure
+    vm.vm.provision "shell", inline: <<-SHELL
+      set -e
+      
+      # Update package list
+      apt-get update -qq
+      
+      # Install prerequisites (including net-tools for netstat, though we'll use ss)
+      apt-get install -y -qq curl ca-certificates gnupg lsb-release
+      
+      # Add Docker's official GPG key (containerd is in Docker's repo)
+      install -m 0755 -d /etc/apt/keyrings
+      # Remove existing key if present (force remove)
+      rm -rf /etc/apt/keyrings/docker.gpg
+      # Download GPG key to temp file first
+      curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /tmp/docker-gpg-key.asc
+      # Dearmor the key
+      gpg --dearmor < /tmp/docker-gpg-key.asc > /etc/apt/keyrings/docker.gpg
+      # Clean up temp file
+      rm -f /tmp/docker-gpg-key.asc
+      # Set permissions
+      chmod a+r /etc/apt/keyrings/docker.gpg
+      
+      # Set up Docker repository
+      echo \
+        "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
+        $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+      
+      # Update package list again
+      apt-get update -qq
+      
+      # Install Go (required for running tests in VM)
+      # Install Go 1.25 to match project requirements
+      GO_VERSION="1.25.0"
+      GO_ARCH="amd64"
+      curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${GO_ARCH}.tar.gz" -o /tmp/go.tar.gz
+      rm -rf /usr/local/go && tar -C /usr/local -xzf /tmp/go.tar.gz
+      rm /tmp/go.tar.gz
+      echo 'export PATH=$PATH:/usr/local/go/bin' >> /home/vagrant/.bashrc
+      echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
+      export PATH=$PATH:/usr/local/go/bin
+      
+      # Install containerd
+      apt-get install -y -qq containerd.io
+      
+      # Create containerd config directory
+      mkdir -p /etc/containerd
+      
+      # Generate default containerd config
+      containerd config default | tee /etc/containerd/config.toml > /dev/null
+      
+      # Ensure socket directory exists with correct permissions
+      mkdir -p /run/containerd
+      chmod 755 /run/containerd
+      # Add vagrant user to docker group (if it exists) or ensure socket is accessible
+      # For rootful containerd, we need to ensure the socket is accessible
+      # The socket will be created by containerd with appropriate permissions
+      
+      # Note: Tests run inside the VM, so no socket forwarding or FIFO syncing needed
+      
+      # Reload systemd and restart containerd to apply configuration
+      systemctl daemon-reload
+      systemctl enable containerd
+      
+      # Start containerd and check for errors
+      if ! systemctl restart containerd; then
+        echo "Containerd failed to start, checking logs..."
+        journalctl -u containerd.service --no-pager -n 50 || true
+        systemctl status containerd.service --no-pager -l || true
+        exit 1
+      fi
+      
+      # Wait for containerd to be ready
+      for i in $(seq 1 30); do
+        if [ -S /run/containerd/containerd.sock ]; then
+          echo "Containerd socket is ready"
+          # Make socket accessible to vagrant user (world readable/writable)
+          chmod 666 /run/containerd/containerd.sock || echo "Warning: Failed to change socket permissions"
+          break
+        fi
+        sleep 1
+      done
+      
+      # Verify containerd is running
+      if ! systemctl is-active --quiet containerd; then
+        echo "Containerd is not active, checking logs..."
+        journalctl -u containerd.service --no-pager -n 50 || true
+        systemctl status containerd.service --no-pager -l || true
+        exit 1
+      fi
+      
+      systemctl status containerd --no-pager || true
+      
+      echo "Containerd installation and configuration complete"
+      
+      # Verify Go installation
+      /usr/local/go/bin/go version || echo "Warning: Go installation verification failed"
+    SHELL
+    
+    # Note: Tests run inside the VM via vagrant ssh
+    # Source code is automatically mounted at /vagrant (default Vagrant behavior)
+  end
+end
+

@@ -385,7 +385,7 @@ func (b *ContainerdBackend) Start(ctx context.Context, id containers.ContainerID
 		return fmt.Errorf("failed to load container %s: %w", id, err)
 	}
 
-	// Create a temporary directory for FIFOs (in user's temp space)
+	// Create temp directory for FIFOs
 	tmpDir, err := os.MkdirTemp("", "tau-containerd-logs-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory for FIFOs: %w", err)
