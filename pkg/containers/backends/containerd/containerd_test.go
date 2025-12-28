@@ -1202,8 +1202,8 @@ waitLoop:
 	return tc, cleanup
 }
 
-// TestContainerdBackend_Reproducible_RootfulMode tests rootful mode using containerd in Docker
-func TestContainerdBackend_Reproducible_RootfulMode(t *testing.T) {
+// TestContainerdBackend_NestedDocker_RootfulMode tests rootful mode using containerd in Docker
+func TestContainerdBackend_NestedDocker_RootfulMode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
@@ -1261,8 +1261,8 @@ func TestContainerdBackend_Reproducible_RootfulMode(t *testing.T) {
 	assert.NoError(t, err, "Container removal should succeed")
 }
 
-// TestContainerdBackend_Reproducible_ContainerOperations tests all container operations
-func TestContainerdBackend_Reproducible_ContainerOperations(t *testing.T) {
+// TestContainerdBackend_NestedDocker_ContainerOperations tests all container operations
+func TestContainerdBackend_NestedDocker_ContainerOperations(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
