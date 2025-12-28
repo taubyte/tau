@@ -11,9 +11,9 @@ Vagrant.configure("2") do |config|
   config.vm.define "tau-containerd-test" do |vm|
     vm.vm.hostname = "tau-containerd-test"
     
-    # Mount repository root to /vagrant (4 levels up from this Vagrantfile)
-    # Vagrantfile is in pkg/containers/backends/containerd, repo root is 4 levels up
-    repo_root = File.expand_path("../../../../", File.dirname(__FILE__))
+    # Mount repository root to /vagrant (5 levels up from this Vagrantfile)
+    # Vagrantfile is in pkg/containers/backends/containerd/vagrant, repo root is 5 levels up
+    repo_root = File.expand_path("../../../../../", File.dirname(__FILE__))
     vm.vm.synced_folder repo_root, "/vagrant", type: "virtualbox"
     
     # Network configuration
@@ -141,7 +141,7 @@ Vagrant.configure("2") do |config|
       # Copy mode-switching script to VM
       echo "Installing mode-switching script..."
       mkdir -p /usr/local/bin
-      cp /vagrant/pkg/containers/backends/containerd/switch_containerd_mode.sh /usr/local/bin/switch_containerd_mode.sh
+      cp /vagrant/pkg/containers/backends/containerd/vagrant/switch_containerd_mode.sh /usr/local/bin/switch_containerd_mode.sh
       chmod +x /usr/local/bin/switch_containerd_mode.sh
       
       echo "Rootless prerequisites installation complete"
