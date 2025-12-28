@@ -32,6 +32,29 @@ func TestNewDaemon(t *testing.T) {
 	assert.DirExists(t, socketDir, "Socket directory should exist")
 }
 
+func TestNewDaemon_RootfulMode(t *testing.T) {
+	config := containers.ContainerdConfig{
+		RootlessMode: containers.RootlessModeDisabled,
+	}
+
+	daemon, err := NewDaemon(config)
+	assert.NoError(t, err, "NewDaemon should succeed in rootful mode")
+	assert.NotNil(t, daemon, "Daemon should not be nil")
+
+	// Check that rootful mode uses system paths
+	assert.Equal(t, "/run/containerd/containerd.sock", daemon.socketPath, "Rootful mode should use system socket path")
+	assert.Equal(t, "/run/containerd/containerd.pid", daemon.stateFile, "Rootful mode should use system PID file path")
+
+	// Check that socket directory exists (or can be created)
+	socketDir := filepath.Dir(daemon.socketPath)
+	// Directory might not exist if containerd is not running, but we should be able to create it
+	if _, err := os.Stat(socketDir); os.IsNotExist(err) {
+		err := os.MkdirAll(socketDir, 0755)
+		assert.NoError(t, err, "Should be able to create socket directory")
+		defer os.RemoveAll(socketDir)
+	}
+}
+
 func TestDaemon_findContainerdBinary(t *testing.T) {
 	config := containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeEnabled,

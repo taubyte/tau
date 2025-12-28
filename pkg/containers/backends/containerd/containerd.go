@@ -62,8 +62,8 @@ func NewContainerdBackend(config containers.ContainerdConfig) (*ContainerdBacken
 		return nil, fmt.Errorf("failed to detect rootless mode: %w", err)
 	}
 
-	// Initialize daemon manager if AutoStart is enabled and we're in rootless mode
-	if config.AutoStart && config.RootlessMode != containers.RootlessModeDisabled {
+	// Initialize daemon manager if AutoStart is enabled
+	if config.AutoStart {
 		daemon, err := NewDaemon(config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create daemon manager: %w", err)
@@ -148,8 +148,8 @@ func (b *ContainerdBackend) ensureContainerdRunning(ctx context.Context) error {
 		}
 	}
 
-	// If AutoStart is enabled and we're in rootless mode, start containerd
-	if b.config.AutoStart && b.config.RootlessMode != containers.RootlessModeDisabled {
+	// If AutoStart is enabled, start containerd (only in rootless mode)
+	if b.config.AutoStart && b.isRootlessMode() {
 		return b.daemon.Start(ctx)
 	}
 
@@ -335,6 +335,8 @@ func (b *ContainerdBackend) createOCISpec(config *containers.ContainerConfig) (*
 			{Type: specs.UTSNamespace}, // Required for hostname
 			{Type: specs.MountNamespace},
 		},
+		// Don't set CgroupsPath - let runc handle it automatically
+		// This allows runc to use the appropriate cgroup path based on the environment
 	}
 
 	// Set resource limits if provided
