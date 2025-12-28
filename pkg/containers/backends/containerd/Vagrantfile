@@ -116,6 +116,35 @@ Vagrant.configure("2") do |config|
       
       # Verify Go installation
       /usr/local/go/bin/go version || echo "Warning: Go installation verification failed"
+      
+      # Install rootless prerequisites
+      echo "Installing rootless prerequisites..."
+      
+      # Install rootlesskit and slirp4netns via apt
+      apt-get install -y -qq rootlesskit slirp4netns
+      
+      # Configure subuid/subgid for vagrant user
+      echo "Configuring subuid/subgid for vagrant user..."
+      if ! grep -q "^vagrant:" /etc/subuid 2>/dev/null; then
+        echo "vagrant:100000:65536" >> /etc/subuid
+      fi
+      if ! grep -q "^vagrant:" /etc/subgid 2>/dev/null; then
+        echo "vagrant:100000:65536" >> /etc/subgid
+      fi
+      
+      # Ensure XDG_RUNTIME_DIR is set for vagrant user
+      VAGRANT_UID=$(id -u vagrant)
+      mkdir -p /run/user/${VAGRANT_UID}
+      chown vagrant:vagrant /run/user/${VAGRANT_UID}
+      chmod 700 /run/user/${VAGRANT_UID}
+      
+      # Copy mode-switching script to VM
+      echo "Installing mode-switching script..."
+      mkdir -p /usr/local/bin
+      cp /vagrant/pkg/containers/backends/containerd/switch_containerd_mode.sh /usr/local/bin/switch_containerd_mode.sh
+      chmod +x /usr/local/bin/switch_containerd_mode.sh
+      
+      echo "Rootless prerequisites installation complete"
     SHELL
     
     # Note: Tests run inside the VM via vagrant ssh
