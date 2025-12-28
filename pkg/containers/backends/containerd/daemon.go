@@ -26,31 +26,49 @@ type Daemon struct {
 
 // NewDaemon creates a new daemon manager
 func NewDaemon(config containers.ContainerdConfig) (*Daemon, error) {
-	// Get current user UID
-	currentUser, err := user.Current()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current user: %w", err)
-	}
+	// Determine if we need rootless mode
+	isRootless := config.RootlessMode == containers.RootlessModeEnabled ||
+		(config.RootlessMode == containers.RootlessModeAuto && os.Geteuid() != 0)
 
-	uid, err := strconv.Atoi(currentUser.Uid)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse user UID: %w", err)
-	}
+	var socketPath, stateFile string
 
-	// Use XDG_RUNTIME_DIR for socket and state (like Docker)
-	xdgRuntimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	if xdgRuntimeDir == "" {
-		xdgRuntimeDir = filepath.Join("/run", "user", strconv.Itoa(uid))
-	}
-	containerdDir := filepath.Join(xdgRuntimeDir, "tau", "containerd")
+	if isRootless {
+		// Rootless mode: use XDG directories
+		currentUser, err := user.Current()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get current user: %w", err)
+		}
 
-	// Create socket directory
-	if err := os.MkdirAll(containerdDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create directory %s: %w", containerdDir, err)
-	}
+		uid, err := strconv.Atoi(currentUser.Uid)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse user UID: %w", err)
+		}
 
-	socketPath := filepath.Join(containerdDir, "containerd.sock")
-	stateFile := filepath.Join(containerdDir, "containerd.pid")
+		// Use XDG_RUNTIME_DIR for socket and state (like Docker)
+		xdgRuntimeDir := os.Getenv("XDG_RUNTIME_DIR")
+		if xdgRuntimeDir == "" {
+			xdgRuntimeDir = filepath.Join("/run", "user", strconv.Itoa(uid))
+		}
+		containerdDir := filepath.Join(xdgRuntimeDir, "tau", "containerd")
+
+		// Create socket directory
+		if err := os.MkdirAll(containerdDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %w", containerdDir, err)
+		}
+
+		socketPath = filepath.Join(containerdDir, "containerd.sock")
+		stateFile = filepath.Join(containerdDir, "containerd.pid")
+	} else {
+		// Rootful mode: use standard system paths
+		socketPath = "/run/containerd/containerd.sock"
+		stateFile = "/run/containerd/containerd.pid"
+
+		// Create socket directory if it doesn't exist
+		socketDir := filepath.Dir(socketPath)
+		if err := os.MkdirAll(socketDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %w", socketDir, err)
+		}
+	}
 
 	return &Daemon{
 		config:     config,
@@ -66,22 +84,22 @@ func (d *Daemon) Start(ctx context.Context) error {
 		return nil
 	}
 
+	// Determine if we need rootless mode
+	isRootless := d.config.RootlessMode == containers.RootlessModeEnabled ||
+		(d.config.RootlessMode == containers.RootlessModeAuto && os.Geteuid() != 0)
+
+	if !isRootless {
+		// Rootful mode: containerd is managed by systemd, we don't start it
+		return fmt.Errorf("rootful mode: containerd is managed by systemd, please start it via systemd")
+	}
+
 	// Find containerd binary
 	containerdPath, err := d.findContainerdBinary()
 	if err != nil {
 		return fmt.Errorf("failed to find containerd binary: %w", err)
 	}
 
-	// Determine if we need rootless mode
-	isRootless := d.config.RootlessMode == containers.RootlessModeEnabled ||
-		(d.config.RootlessMode == containers.RootlessModeAuto && os.Geteuid() != 0)
-
-	if isRootless {
-		return d.startWithRootlesskit(ctx, containerdPath)
-	}
-
-	// Root mode - start containerd directly (not implemented for now)
-	return fmt.Errorf("root mode containerd startup not yet implemented")
+	return d.startWithRootlesskit(ctx, containerdPath)
 }
 
 // startWithRootlesskit starts containerd via rootlesskit (like nerdctl does)
@@ -416,9 +434,9 @@ func (d *Daemon) detectRootlesskitNetwork() (string, error) {
 	return "", fmt.Errorf("no suitable rootlesskit network driver found (need slirp4netns >= v0.4.0, pasta, or vpnkit)")
 }
 
-// createConfigFile creates a containerd config file for rootless mode
+// createConfigFile creates a containerd config file
 // Matches Docker's minimal config format
-// socketPath and debugSocketPath are paths inside the rootlesskit namespace
+// socketPath and debugSocketPath are paths for the socket
 // configDir is the directory on the host where the config file should be created
 func (d *Daemon) createConfigFile(rootDir, stateDir, socketPath, debugSocketPath, configDir string) (string, error) {
 	if err := os.MkdirAll(configDir, 0755); err != nil {
