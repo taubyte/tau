@@ -71,6 +71,11 @@ var (
 	errorContainerFormat = "%s for container Id:`%s` image:`%s` with: %w"
 )
 
+// Backend errors
+var (
+	ErrBackendNotAvailable = errors.New("backend not available on this platform")
+)
+
 func errorContainerStart(id, image string, err error) error {
 	return fmt.Errorf(errorContainerFormat, ErrorContainerStart, id, image, err)
 }

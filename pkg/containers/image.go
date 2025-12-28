@@ -16,8 +16,8 @@ import (
 
 // Image initializes the given image, and attempts to pull the container from docker hub.
 // If the Build() Option is provided then the given DockerFile tarball is built and returned.
-func (c *Client) Image(ctx context.Context, name string, options ...ImageOption) (image *Image, err error) {
-	image = &Image{
+func (c *Client) Image(ctx context.Context, name string, options ...ImageOption) (image *DockerImage, err error) {
+	image = &DockerImage{
 		client: c,
 		image:  name,
 		output: os.Stdout,
@@ -49,7 +49,7 @@ func (c *Client) Image(ctx context.Context, name string, options ...ImageOption)
 }
 
 // checkImage checks the docker host client if the image is known.
-func (i *Image) checkImageExists(ctx context.Context) bool {
+func (i *DockerImage) checkImageExists(ctx context.Context) bool {
 	res, err := i.client.ImageList(ctx, types.ImageListOptions{
 		Filters: NewFilter("reference", i.image),
 	})
@@ -58,7 +58,7 @@ func (i *Image) checkImageExists(ctx context.Context) bool {
 }
 
 // buildImage builds a DockerFile tarball as a docker image.
-func (i *Image) buildImage(ctx context.Context) error {
+func (i *DockerImage) buildImage(ctx context.Context) error {
 	imageBuildResponse, err := i.client.ImageBuild(
 		ctx,
 		i.buildTarball,
@@ -112,7 +112,7 @@ func (i *Image) buildImage(ctx context.Context) error {
 }
 
 // Pull retrieves latest changes to the image from docker hub.
-func (i *Image) Pull(ctx context.Context, statusChan chan<- PullStatus) (*Image, error) {
+func (i *DockerImage) Pull(ctx context.Context, statusChan chan<- PullStatus) (*DockerImage, error) {
 	reader, err := i.client.ImagePull(ctx, i.image, types.ImagePullOptions{})
 	if err != nil {
 		return i, errorClientPull(err)
@@ -160,7 +160,7 @@ func (i *Image) Pull(ctx context.Context, statusChan chan<- PullStatus) (*Image,
 }
 
 // Instantiate sets given options and creates the container from the docker image.
-func (i *Image) Instantiate(ctx context.Context, options ...ContainerOption) (*Container, error) {
+func (i *DockerImage) Instantiate(ctx context.Context, options ...ContainerOption) (*Container, error) {
 	c := &Container{
 		image: i,
 	}
@@ -225,6 +225,6 @@ func (c *Client) Clean(ctx context.Context, age time.Duration, filter filters.Ar
 }
 
 // Name returns the name of the image
-func (i *Image) Name() string {
+func (i *DockerImage) Name() string {
 	return i.image
 }

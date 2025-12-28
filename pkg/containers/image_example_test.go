@@ -9,7 +9,7 @@ import (
 
 var container *containers.Container
 
-func ExampleImage_Instantiate() {
+func ExampleDockerImage_Instantiate() {
 	// create new docker client
 	client, err := containers.New()
 	if err != nil {

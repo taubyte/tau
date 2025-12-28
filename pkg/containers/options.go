@@ -10,18 +10,18 @@ import (
 /**************** Image Options ****************/
 
 // ImageOption is a function to set configuration to the Image object.
-type ImageOption func(*Image) error
+type ImageOption func(*DockerImage) error
 
 // Build returns an ImageOption to build a tarball of a Dockerfile
 func Build(tarball io.Reader) ImageOption {
-	return func(i *Image) error {
+	return func(i *DockerImage) error {
 		i.buildTarball = tarball
 		return nil
 	}
 }
 
 func Dockerfile(dockerfile string) ImageOption {
-	return func(i *Image) error {
+	return func(i *DockerImage) error {
 		// create a tar of the dockerfile in memory
 		var buf bytes.Buffer
 		err := bundle.SingleFileTarball(dockerfile, &buf)
@@ -35,7 +35,7 @@ func Dockerfile(dockerfile string) ImageOption {
 }
 
 func Output(output io.Writer) ImageOption {
-	return func(i *Image) error {
+	return func(i *DockerImage) error {
 		i.output = output
 		return nil
 	}
