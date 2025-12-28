@@ -29,7 +29,7 @@ func (b *builder) setTarball() error {
 
 // buildImage returns a container image, if tarball is set then a new image is created
 // if not image is attempted to be pulled from dockerhub
-func (b *builder) buildImage() (clientImage *ci.Image, err error) {
+func (b *builder) buildImage() (clientImage *ci.DockerImage, err error) {
 	environment := b.config.HandleDepreciatedEnvironment()
 	image := environment.Image
 
@@ -57,7 +57,7 @@ func (b *builder) buildImage() (clientImage *ci.Image, err error) {
 }
 
 // run will initialize and run the container with the given image
-func (b *builder) run(output *output, image *ci.Image, environment specs.Environment, ops ...ci.ContainerOption) (err error) {
+func (b *builder) run(output *output, image *ci.DockerImage, environment specs.Environment, ops ...ci.ContainerOption) (err error) {
 	json.NewEncoder(b.output).Encode(struct {
 		Op        string            `json:"op"`
 		Timestamp int64             `json:"timestamp"`
