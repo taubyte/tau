@@ -30,9 +30,6 @@ func NewRootlessManager(config containers.ContainerdConfig) (*RootlessManager, e
 		return nil, fmt.Errorf("failed to detect rootless tools: %w", err)
 	}
 
-	// Note: UID/GID mapping validation is done lazily to avoid failures
-	// when subuid/subgid is not configured. Validation happens during mount operations.
-
 	return rm, nil
 }
 
@@ -109,30 +106,6 @@ func (rm *RootlessManager) hasSubIDMapping(file, username string) error {
 	return fmt.Errorf("no subuid/subgid mapping found for user %s in %s", username, file)
 }
 
-// checkSubIDMapping checks if subuid/subgid mapping is configured
-func (rm *RootlessManager) checkSubIDMapping(file, username string, id int) error {
-	content, err := os.ReadFile(file)
-	if err != nil {
-		return fmt.Errorf("cannot read %s: %w", file, err)
-	}
-
-	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		parts := strings.Split(line, ":")
-		if len(parts) >= 2 && parts[0] == username {
-			// Found mapping for this user
-			return nil
-		}
-	}
-
-	return fmt.Errorf("no subuid/subgid mapping found for user %s in %s", username, file)
-}
-
 // validateMountPermissions validates if a mount operation will work with current UID/GID mapping
 func (rm *RootlessManager) validateMountPermissions(hostPath, containerPath string) error {
 	// Get file info for the host path
@@ -147,7 +120,6 @@ func (rm *RootlessManager) validateMountPermissions(hostPath, containerPath stri
 		return fmt.Errorf("failed to get current user: %w", err)
 	}
 
-	// ALWAYS validate UID/GID mapping - even with rootlesskit, mismatches can cause failures
 	uid := info.Sys().(*syscall.Stat_t).Uid
 	gid := info.Sys().(*syscall.Stat_t).Gid
 

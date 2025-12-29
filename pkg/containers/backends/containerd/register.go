@@ -10,6 +10,6 @@ import (
 
 func init() {
 	containers.RegisterBackend(containers.BackendTypeContainerd, func(config containers.ContainerdConfig) (containers.Backend, error) {
-		return NewContainerdBackend(config)
+		return New(config)
 	})
 }

@@ -20,7 +20,7 @@ func TestContainerdBackend_Vagrant_RootfulMode(t *testing.T) {
 	}
 
 	// Create backend pointing to local containerd socket (running in this VM)
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeDisabled,
 		AutoStart:    false,                             // Don't start - it's already running as system service
 		SocketPath:   "/run/containerd/containerd.sock", // Local socket in VM
@@ -71,7 +71,7 @@ func TestContainerdBackend_Vagrant_ContainerOperations(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeDisabled,
 		AutoStart:    false,
 		SocketPath:   "/run/containerd/containerd.sock", // Local socket in VM
@@ -165,7 +165,7 @@ func TestContainerdBackend_Vagrant_RootlessMode(t *testing.T) {
 
 	// Create backend with rootless mode enabled and AutoStart
 	// Socket path will be auto-detected (XDG_RUNTIME_DIR/tau/containerd/containerd.sock)
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeEnabled,
 		AutoStart:    true, // Start rootless containerd automatically
 		Namespace:    "tau-test-vagrant-rootless",
@@ -219,7 +219,7 @@ func TestContainerdBackend_Vagrant_RootlessContainerOperations(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeEnabled,
 		AutoStart:    true, // Start rootless containerd automatically
 		Namespace:    "tau-test-vagrant-rootless-ops",
