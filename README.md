@@ -87,7 +87,7 @@ The quickest way to try Taubyte is to spin up a local environment with dream →
 
 ### Deploy
 
-Deploy Taubyte to your own Server and/or VMs:
+Deploy Taubyte to your own Servers and/or VMs:
 
 * Manual deployment → [https://tau.how/platform/deployment/](https://tau.how/platform/deployment/)
 
