@@ -3,22 +3,22 @@
 <a href="https://taubyte.com" target="_blank">
     <img alt="Product" src="https://img.shields.io/badge/Product-Taubyte-2563eb">
 </a>
-
+<img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
 
 <a href="https://discord.gg/KbN3KN7kpQ" target="_blank">
     <img alt="Discord" src="https://img.shields.io/discord/973677117722202152?color=%235865f2&label=discord&logo=discord">
 </a>
-
+<img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
 
 <a href="https://x.com/dtaubyte" target="_blank">
     <img alt="X (Twitter)" src="https://img.shields.io/twitter/url?url=https%3A%2F%2Fx.com%2Fdtaubyte&logo=X">
 </a>
-
+<img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
 
 <a href="https://www.linkedin.com/company/taubyte-page" target="_blank">
     <img alt="LinkedIn" src="https://custom-icon-badges.demolab.com/badge/LinkedIn-Taubyte-0A66C2?logo=linkedin-white&logoColor=fff">
 </a>
-
+<img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
 
 <a href="https://github.com/taubyte/tau" target="_blank">
     <img alt="GitHub stars" src="https://img.shields.io/github/stars/taubyte/tau">
@@ -47,9 +47,9 @@ Tau is an open-source, Git-native platform-as-a-service for building, deploying,
 
 <div align="center">
   <img src="images/dreamcli.gif" width="32%" alt="DreamCLI - dream new multiverse command which creates a new local cloud or so called universe">
-  <img src="images/gifs/5px.png">
+  <img src="images/5px.png">
   <img src="images/dreamdesktop.gif" width="32%" alt="Dream Desktop - Creating a universe with the GUI version of DreamCLI">
-  <img src="images/gifs/5px.png">
+  <img src="images/5px.png">
   <img src="images/connect.gif" width="32%" alt="Web Console - Connect and visualize your clouds on the browser">
 </div>
 
@@ -57,9 +57,9 @@ Tau is an open-source, Git-native platform-as-a-service for building, deploying,
 
 <div align="center">
   <img src="images/newproject.gif" width="32%" alt="Web Console - Creating a new project">
-  <img src="images/gifs/5px.png">
+  <img src="images/5px.png">
   <img src="images/newfunction.gif" width="32%" alt="Web Console - Creating a new function">
-  <img src="images/gifs/5px.png">
+  <img src="images/5px.png">
   <img src="images/pushall.gif" width="32%" alt="Dream Desktop - Pushing changes">
 </div>
 
@@ -67,9 +67,9 @@ Tau is an open-source, Git-native platform-as-a-service for building, deploying,
 
 <div align="center">
   <img src="images/builds.gif" width="32%" alt="Web Console - Build tab interface">
-  <img src="images/gifs/5px.png">
+  <img src="images/5px.png">
   <img src="images/runfunction.gif" width="32%" alt="Web Console - Executing a function">
-  <img src="images/gifs/5px.png">
+  <img src="images/5px.png">
   <img src="images/spore-drive.gif" width="32%" alt="Spore Drive - Deploying a new cloud">
 </div>
 
