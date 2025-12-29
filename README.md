@@ -1,193 +1,159 @@
 <div align="center">
-  <a href="https://discord.gg/KbN3KN7kpQ">
-    <img src="images/discord-btn.png" alt="Join our Discord" height="30">
-  </a>
-  <a href="https://tau.how">
-    <img src="images/docs-btn.png" alt="Read the Docs" height="30">
-  </a>
-  <a href="https://console.taubyte.com">
-    <img src="images/sandbox-btn.png" alt="Try our Sandbox" height="30">
-  </a>
+
+<a href="https://taubyte.com" target="_blank">
+    <img alt="Product" src="https://img.shields.io/badge/Product-Taubyte-2563eb">
+</a>
+<img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
+
+<a href="https://discord.gg/KbN3KN7kpQ" target="_blank">
+    <img alt="Discord" src="https://img.shields.io/discord/973677117722202152?color=%235865f2&label=discord&logo=discord">
+</a>
+<img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
+
+<a href="https://x.com/dtaubyte" target="_blank">
+    <img alt="X (Twitter)" src="https://img.shields.io/twitter/url?url=https%3A%2F%2Fx.com%2Fdtaubyte&logo=X">
+</a>
+<img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
+
+<a href="https://www.linkedin.com/company/taubyte-page" target="_blank">
+    <img alt="LinkedIn" src="https://custom-icon-badges.demolab.com/badge/LinkedIn-Taubyte-0A66C2?logo=linkedin-white&logoColor=fff">
+</a>
+<img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
+
+<a href="https://github.com/taubyte/tau" target="_blank">
+    <img alt="GitHub stars" src="https://img.shields.io/github/stars/taubyte/tau">
+</a>
+
+</div>
+<br/>
+
+<div align="center">
+    <img width="3408" height="652" alt="Full stack workspace for humans and machines which is the taubyte slogan" src="images/banner.png" />
+</div>
+
+<div align="center">
+  <a href="https://taubyte.com/doc"><img width="25%"  alt="Documentation" src="images/documentation.png" /></a>
+  <a href="https://discord.gg/KbN3KN7kpQ"><img width="25%" alt="Join Discord" src="images/joindiscord.png" /></a>
+  <a href="https://taubyte.com/book-a-demo"><img width="25%" alt="Book a ticket" src="images/requestademo.png" /></a>
+</div>
+
+<br/>
+Tau is an open-source, Git-native platform-as-a-service for building, deploying, and scaling applications. Infrastructure is defined in Git, eliminating API calls. Fully self-hosted with capabilities similar to Vercel, Firebase, and Cloudflare, plus built-in AI features.
+<br/>
+<br/>
+<img width="3568" height="1568" alt="Taubyte local cloud solution diagram showing E2E testing, console with functions, web hosting, KV databases, object storage, PubSub messaging, load balancing, HTTP/DNS, automatic HTTPS, and private networking" src="images/dreamfeatures.png" />
+
+#### Development Environment
+
+<div align="center">
+  <img src="images/dreamcli.gif" width="32%" alt="DreamCLI - dream new multiverse command which creates a new local cloud or so called universe">
+  <img src="images/5px.png">
+  <img src="images/dreamdesktop.gif" width="32%" alt="Dream Desktop - Creating a universe with the GUI version of DreamCLI">
+  <img src="images/5px.png">
+  <img src="images/connect.gif" width="32%" alt="Web Console - Connect and visualize your clouds on the browser">
+</div>
+
+#### Build Your Application
+
+<div align="center">
+  <img src="images/newproject.gif" width="32%" alt="Web Console - Creating a new project">
+  <img src="images/5px.png">
+  <img src="images/newfunction.gif" width="32%" alt="Web Console - Creating a new function">
+  <img src="images/5px.png">
+  <img src="images/pushall.gif" width="32%" alt="Dream Desktop - Pushing changes">
+</div>
+
+#### Deploy and Run
+
+<div align="center">
+  <img src="images/builds.gif" width="32%" alt="Web Console - Build tab interface">
+  <img src="images/5px.png">
+  <img src="images/runfunction.gif" width="32%" alt="Web Console - Executing a function">
+  <img src="images/5px.png">
+  <img src="images/spore-drive.gif" width="32%" alt="Spore Drive - Deploying a new cloud">
+</div>
+
+#### Example Projects
+
+<div align="center">
+  <a href="https://youtu.be/RIdwJQB3Tk0"><img src="images/pixelgame.png" width="48%" style="border-radius: 15px; margin: 5px;" alt="Example Project: Pixel Game"></a>
+  <a href="https://youtu.be/gMTYh-gQLgA"><img src="images/towergame.png" width="48%" style="border-radius: 15px; margin: 5px;" alt="Example Project: Tower Blocks Game"></a>
+</div>
+
+## Quick Start
+### Run Locally
+
+The quickest way to try Taubyte is to spin up a local environment with dream → [https://tau.how/getting-started/local-cloud/](https://tau.how/getting-started/local-cloud/)
+
+### Deploy
+
+Deploy Taubyte to your own Servers and/or VMs:
+
+* Manual deployment → [https://tau.how/platform/deployment/](https://tau.how/platform/deployment/)
+
+* Automated deployment with Spore Drive → [https://tau.how/platform/spore-drive/](https://tau.how/platform/spore-drive/)
+
+### Prefer Video?
+
+Check out the **Hitchhiker's Guide to Taubyte** for guided walkthroughs and demos:
+
+<br>
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=8FO1KiTE0FE"><img src="images/vid1.png" width="32%" alt="Video: Deploying a Taubyte Cloud"></a>
+  <a href="https://www.youtube.com/watch?v=ajdcUGd2SeE"><img src="images/vid2.png" width="32%" alt="Video: Local Taubyte Cloud using DreamCLI"></a>
+  <a href="https://www.youtube.com/watch?v=YyZHCBkjCOU"><img src="images/vid3.png" width="32%" alt="Video: Create a project using the Web Console"></a>
+</div>
+
+<div align="center">
+  <a href="https://www.youtube.com/watch?v=IDUI7a96gSw&t=10s"><img src="images/vid4.png" width="32%" alt="Video: Working with Functions"></a>
+  <a href="https://www.youtube.com/playlist?list=PLLKNB3tJrL9Y4nl0JnBhU2wHS4iWldUfh"><img src="images/vid5.png" width="32%" alt="Full Playlist: Hitchhiker's Guide to Taubyte"></a>
+  <a href="https://www.youtube.com/playlist?list=PLLKNB3tJrL9Y4nl0JnBhU2wHS4iWldUfh"><img src="images/vid6.png" width="32%" alt="Full Playlist: Hitchhiker's Guide to Taubyte"></a>
 </div>
 
 <br/>
 
+## Staying ahead
+
+Star us on GitHub and be instantly notified of new releases.
+
 <div align="center">
-  <a href="https://taubyte.com" target="_blank" rel="noopener noreferrer">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="images/logo-with-text-tau-white.png">
-      <img width="160" src="images/logo-with-text-tau-black.png" alt="Tau Logo">
-    </picture>
+
+![GIF showing starring our Taubyte repo](images/starrepo.gif)
+
+</div>
+
+## Contributing
+
+Tau thrives with your help. Fix bugs, add features, improve docs, or guide the community.
+
+**How to contribute**
+- Fork → branch from `main` → make changes → test → submit a PR
+- Keep commits focused and describe what & why clearly
+- New here? Look for `good first issue`
+
+## License
+
+BSD-3-Clause license. See [LICENSE](LICENSE) for details.
+
+<br/>
+<p align="center">
+  <a href="https://x.com/dtaubyte" aria-label="X (Twitter)">
+    <img src="https://img.shields.io/badge/X-000000?logo=X&logoColor=white" alt="X">
   </a>
-  
-  <br/>
-
-  <div align="center">
-
-[![Release](https://img.shields.io/github/release/taubyte/tau.svg)](https://github.com/taubyte/tau/releases)
-[![License](https://img.shields.io/github/license/taubyte/tau)](LICENSE)
-
-  </div>
-
-  <strong>
-  <h2>Open Source Git-Native CDN PaaS</h2>
-  </strong>
-</div>
+  &nbsp;
+  <a href="https://youtube.com/@taubyte" aria-label="YouTube">
+    <img src="https://img.shields.io/badge/YouTube-FF0000?logo=youtube&logoColor=white" alt="YouTube">
+  </a>
+  &nbsp;
+  <a href="https://discord.gg/KbN3KN7kpQ" aria-label="Discord">
+    <img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white" alt="Discord">
+  </a>
+  &nbsp;
+  <a href="https://instagram.com/dtaubyte" aria-label="Instagram">
+    <img src="https://img.shields.io/badge/Instagram-E4405F?logo=instagram&logoColor=white" alt="Instagram">
+  </a>
+</p>
 
 <div align="center">
-  <strong>
-  An alternative to: Vercel, Netlify, Cloudflare, Amazon Lambda with CloudFront, S3, ElastiCache & SQS, Etc...
-  </strong>
-  <p align="center">
-    <a href="https://tau.how"><strong>Explore the docs »</strong></a>
-    <br/>
-    <a href="https://taubyte.com/blog/be-competitive-in-few-minutes/">Quick Start Guide</a>
-    ·
-    <a href="https://console.taubyte.com">Try our Sandbox Cloud</a>
-    ·
-    <a href="https://discord.gg/KbN3KN7kpQ">Join Our Discord</a>
-  </p>
-  <div align="center">
-    <img src="images/banner-1.png" width="750px" max-width="100%" style="border-radius: 20px; margin-bottom: 7px;">
-    <img src="images/banner-2.png" width="750px" max-width="100%" style="border-radius: 20px; margin-bottom: 7px;">
-    <img src="images/banner-3.png" width="750px" max-width="100%" style="border-radius: 20px; margin-bottom: 7px;">
-    <img src="images/banner-4.png" width="750px" max-width="100%" style="border-radius: 20px; margin-bottom: 7px;">
-  </div>
+  <sub>Built by the Taubyte team</sub>
 </div>
-
----
-
-<br />
-
-Tau is a framework for building low maintenance & highly scalable cloud computing platforms that software developers will love!
-
-`tau` is a single binary with no external dependencies except standard system libraries. On top of that, it requires minimal configuration. These are the main steps:
-
-1. **Install Tau**
-
-   ```sh
-   curl https://get.tau.link/tau | sh
-   ```
-
-2. **Configure**
-
-   ```sh
-   tau config generate -n yourdomain.com -s compute --services all --ip your_public_ip --dv --swarm
-   ```
-
-3. **Launch**
-   ```sh
-   tau start -s compute
-   ```
-
-For a complete step-by-step guide, refer to [Deploy tau](https://tau.how/01-getting-started/04-deploy-a-cloud/).
-
-Building `tau` youself is a straightforward `go build` given you have Go installed.
-
-## Background
-
-The cost and time required to build software, take it from the development environment to production, and then scale it effectively to meet end-user demand are extremely high.
-
-Developer-friendly platforms, like the major cloud computing providers, are expensive, lock users in, and overlook local development and E2E testing.
-
-This is really a two-sided problem. Do you save on infrastructure cost, or do you lower development time?
-
-If you invest in your own platform, it's a rocky road that impedes the speed of development and generally ends up costing more. We all know the Kubernetes fairy tale does not end well!
-
-If you invest in development speed, you're limited by your provider's features and cost.
-
-To us, solving this problem means:
-
-- Giving you, or your very small team, the ability to build and maintain a cloud computing platform that will go head-to-head with the ones backed by thousands of engineers.
-- Setting software developers free from infrastructure and operational constraints. We refer to this as "Local Coding Equals Global Production."
-
-`tau` solves for building and maintaining a cloud computing platform, and also provides the foundations for an amazing developer experience.
-
-## Minimal Configuration
-
-One of the reasons `tau` requires minimal configuration is because it has built-in auto-discovery.
-Just like a self-driving car gathering information through sensors, `tau` will gather information and try to find the best ways to be reachable, available, etc.
-
-That said, some configuration like bootstrap peers is necessary. Unless you're running a single-node cloud, each node will need to know at least one other peer.
-
-A Cloud built with `tau` is very dynamic; at a low level, nodes communicate assets, routes, and services, and they also exchange information about other peers. Enriched by distributed services like `seer` and `gateway`, the cloud can load-balance incoming requests to ensure optimal performance and reliability.
-
-This behavior is built into cloud resources as well. For example, a service we call `hoarder` ensures object storages and databases are replicated; all you need to do is enable it on a few nodes.
-
-## Local Coding Equals Global Production
-
-In your traditional setup, the platform is a complex set of templates, pipelines, and integrations that ultimately help turn configuration into API calls and code into assets. Because of that complexity, and also the fact that many components need to run inside a very complex environment of their own, it's impossible to satisfy the 'local == production' equation.
-
-Granted, there are some solutions that either mock or reroute to dev/prod resources, enabling developers to build or debug locally. However, it's still a 3rd party service you need to integrate and manage.
-
-In order to satisfy the equation, we decided to build `tau` so it simplifies, ports, and/or sandboxes every aspect of the cloud.
-
-## Git-Native
-
-Traditionally, you interface with infrastructure through API calls. This is the case for every cloud computing provider alongside orchestration solutions like Kubernetes.
-
-A few years back, the concept of GitOps started to make waves, and that was around the time we started building, so we decided to cut the unnecessary garbage between the definition of a cloud resource, which should be stored in Git, and its instantiation.
-
-As a result, `tau` has no API calls to create a serverless function, for example. Instead, it adopts Git as the only way to alter infrastructure.
-
-Also, git being core to `tau` means that nodes in the cloud do tune to a specific branch, by default main or master. Among what it enables is an easy way to set up development environments, for example.
-
-A specific use case is local development in which case [dream-cli](https://github.com/taubyte/tau/tree/main/tools/dream) nodes can also be tuned to the current branch.
-
-In addition to the nodes being on a branch, the application registry, managed by the 'tns' service, uses commit ids to version entries, allowing nodes serving the assets to detect new versions, or a roll-back for that matter.
-
-## Networking
-
-Internally, `tau`, using [libp2p](https://github.com/libp2p/go-libp2p), builds an overlay peer-to-peer network between the nodes, enabling some pretty cool features like:
-
-- Automatic node and service discovery & routing. If, for example, a node is down, changes its IP address/port, or the services it supports, other nodes will update the info automatically.
-- Transport independent. Nodes can use any combination of TCP/IP, WebSocket, QUIC, and more.
-- NAT Traversal & Circuit Relay, which allow nodes that are not public to be part of the cloud.
-
-Unless absolutely required, which is extremely rare, no well-designed software should rely on IP addresses and ports. This is why every `tau` cloud is identified with an FQDN (i.e., enterprise.starships.ws) so no absolute network reference is used in an application. Under the hood, the Cloud will transparently take care of DNS resolution and HTTP load balancing, eliminating the need to set these up.
-
-## Storage
-
-In every other cloud computing implementation, storage means a location and generally a path. For example, `https://tau.how/assets/logo-w.svg` has two main components `tau.how`, which translates to an IP address and a location, and `/assets/logo-w.svg`, which is a path relative to the location. This way of addressing, called "location-based addressing," is simply not portable. Why? you might ask. Well, for starters, nothing guarantees the data returned is an SVG logo in this case. The other issue is the `tau.how` host we connected to might not have it.
-
-To solve this issue, `tau` uses content-addressing, a concept introduced by torrent networks and popularized by [IPFS]().
-
-So when you request `https://tau.how/assets/logo-w.svg`, which is actually hosted by a `tau` Cloud, the host that handles the request will resolve (`host=tau.how, path=/assets/logo-w.svg`) to a content address, or CID, then retrieve the content reader and then forward it through an HTTP writer to you.
-
-A few cool facts about this approach:
-
-- Content is chunked and then stored in a DAG, which means it's deduplicated.
-- Content can be downloaded from multiple peers in parallel.
-- Content can be verified as the CID is its hash.
-- When content is in demand, the cloud automatically dedicates more peers to its distribution.
-
-## Computing
-
-As of today, `tau` supports [WebAssembly](https://webassembly.org/) for computing. The reason we started with it is that it's highly portable and sandboxed. We support containers for CI/CD but not for computing yet. We're working on a way to implement containers and virtual machines while abiding by our principles of portability and sandboxing.
-
-Code, binary, images, along with any attached assets, are stored and retrieved using the same principles described in [Storage](#storage), which considerably reduces provisioning time and brings computing close to data (data gravity) and/or user (edge computing).
-
-## E2E Testing
-
-If you're looking to create E2E tests for projects hosted on `tau`, you can use `dream`, a sub-package within `tau`. We don't have documentation for it yet, but you can quickly learn from tests like [services/seer/tests/dns_test.go](https://github.com/taubyte/tau/blob/main/services/seer/tests/dns_test.go#L35).
-
-## Running a Local Cloud
-
-While you can't practically run `tau` on your local machine, you can do so using [dream-cli](https://github.com/taubyte/tau/tree/main/tools/dream), which is a CLI wrapper around `dream`. It creates local cloud environments mirroring production settings. Unlike `tau`, it offers an API for real-time configuration and testing.
-
-## Extending Tau
-
-`tau` can be extended using a plugin system we call [orbit](https://github.com/taubyte/tau/tree/main/pkg/vm-orbit). An open-source example is [ollama-cloud](https://github.com/ollama-cloud), which demonstrates how to add LLM capabilities to your cloud.
-
-## Documentation
-
-To learn more, check:
-
-- [Introduction to Taubyte](https://taubyte.com/blog/introduction-to-taubyte/)
-- [Be Competitive in a Few Minutes: Deployment Guide](https://taubyte.com/blog/be-competitive-in-few-minutes/)
-
-For comprehensive documentation, visit our [documentation](https://tau.how).
-
-## Support
-
-Questions or need assistance? Ping us on [Discord](https://discord.com/invite/KbN3KN7kpQ)!
