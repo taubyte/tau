@@ -86,7 +86,7 @@ Tau is an open-source, Git-native platform-as-a-service for building, deploying,
 The quickest way to try Taubyte on your machine:
 → [https://tau.how/getting-started/local-cloud/](https://tau.how/getting-started/local-cloud/)
 
-### Deploy a Cloud to Our Infrastructure
+### Deploy a Cloud
 
 Run Taubyte on your own Server and/or VMs:
 
