@@ -160,12 +160,8 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 		}
 	}
 
-	// Inside rootlesskit namespace, socket will be at /run/containerd/containerd.sock
-	// (after bind-mounting /run/containerd to xdgRuntimeDir/tau/containerd)
 	socketPathInNamespace := "/run/containerd/containerd.sock"
 	debugSocketPathInNamespace := "/run/containerd/containerd-debug.sock"
-
-	// Config file goes in the host directory (same as socket directory on host)
 	configDir := filepath.Dir(d.socketPath)
 
 	// Create config file with namespace paths
@@ -241,7 +237,6 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 }
 
 // createRootlesskitWrapper creates a shell script that does bind-mounts and execs containerd
-// This script runs inside the rootlesskit child namespace
 func (d *Daemon) createRootlesskitWrapper(containerdPath, configPath, rootDir, stateDir, socketDir, xdgRuntimeDir, xdgDataHome, xdgConfigHome string) (string, error) {
 	// Create temporary script file
 	tmpFile, err := os.CreateTemp("", "tau-containerd-rootless-*.sh")
@@ -251,11 +246,8 @@ func (d *Daemon) createRootlesskitWrapper(containerdPath, configPath, rootDir, s
 	scriptPath := tmpFile.Name()
 	tmpFile.Close()
 
-	// Inside rootlesskit, /run/containerd will be bind-mounted to socketDir
-	// So the socket will be at /run/containerd/containerd.sock
 	socketDirInsideNamespace := socketDir
 
-	// Write script content (based on nerdctl's containerd-rootless.sh)
 	script := fmt.Sprintf(`#!/bin/sh
 set -e
 
@@ -435,9 +427,6 @@ func (d *Daemon) detectRootlesskitNetwork() (string, error) {
 }
 
 // createConfigFile creates a containerd config file
-// Matches Docker's minimal config format
-// socketPath and debugSocketPath are paths for the socket
-// configDir is the directory on the host where the config file should be created
 func (d *Daemon) createConfigFile(rootDir, stateDir, socketPath, debugSocketPath, configDir string) (string, error) {
 	if err := os.MkdirAll(configDir, 0755); err != nil {
 		return "", fmt.Errorf("failed to create containerd directory: %w", err)
@@ -445,8 +434,6 @@ func (d *Daemon) createConfigFile(rootDir, stateDir, socketPath, debugSocketPath
 
 	configPath := filepath.Join(configDir, "containerd.toml")
 
-	// Build minimal config matching Docker's format
-	// Docker disables CRI plugin and uses minimal settings
 	config := fmt.Sprintf(`disabled_plugins = ["io.containerd.grpc.v1.cri"]
 imports = []
 oom_score = 0

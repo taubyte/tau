@@ -47,11 +47,6 @@ type ContainerdBackend struct {
 
 // New creates a new containerd backend
 func New(config containers.ContainerdConfig) (*ContainerdBackend, error) {
-	return NewContainerdBackend(config)
-}
-
-// NewContainerdBackend creates a new containerd backend (exported wrapper)
-func NewContainerdBackend(config containers.ContainerdConfig) (*ContainerdBackend, error) {
 	backend := &ContainerdBackend{
 		config: config,
 		tasks:  make(map[containers.ContainerID]*taskIO),
@@ -196,8 +191,7 @@ func (b *ContainerdBackend) initClient() error {
 	}
 
 	// Test connection by getting version
-	version, err := client.Version(ctx)
-	if err != nil {
+	if _, err := client.Version(ctx); err != nil {
 		client.Close()
 		return fmt.Errorf("failed to get containerd version: %w", err)
 	}
@@ -208,7 +202,6 @@ func (b *ContainerdBackend) initClient() error {
 		daemon: b.daemon,
 	}
 
-	fmt.Printf("Connected to containerd version %s at %s\n", version.Version, socketPath)
 	return nil
 }
 
@@ -335,8 +328,6 @@ func (b *ContainerdBackend) createOCISpec(config *containers.ContainerConfig) (*
 			{Type: specs.UTSNamespace}, // Required for hostname
 			{Type: specs.MountNamespace},
 		},
-		// Don't set CgroupsPath - let runc handle it automatically
-		// This allows runc to use the appropriate cgroup path based on the environment
 	}
 
 	// Set resource limits if provided
@@ -391,14 +382,12 @@ func (b *ContainerdBackend) Start(ctx context.Context, id containers.ContainerID
 		return fmt.Errorf("failed to create temp directory for FIFOs: %w", err)
 	}
 
-	// Create FIFO set for capturing stdout/stderr
 	fifoSet, err := cio.NewFIFOSetInDir(tmpDir, string(id), false)
 	if err != nil {
 		os.RemoveAll(tmpDir)
 		return fmt.Errorf("failed to create FIFO set: %w", err)
 	}
 
-	// Create DirectIO with the FIFO set - this properly handles FIFO creation and IO
 	directIO, err := cio.NewDirectIO(ctx, fifoSet)
 	if err != nil {
 		fifoSet.Close()
@@ -406,7 +395,6 @@ func (b *ContainerdBackend) Start(ctx context.Context, id containers.ContainerID
 		return fmt.Errorf("failed to create DirectIO: %w", err)
 	}
 
-	// Load IO from the FIFO set - this creates the IO interface containerd needs
 	io, err := cio.Load(fifoSet)
 	if err != nil {
 		directIO.Cancel()
@@ -443,8 +431,6 @@ func (b *ContainerdBackend) Start(ctx context.Context, id containers.ContainerID
 		return fmt.Errorf("failed to start container %s: %w", id, err)
 	}
 
-	// DirectIO provides stdout and stderr readers directly
-	// Store task and IO for log access
 	b.tasks[id] = &taskIO{
 		stdout:   directIO.Stdout,
 		stderr:   directIO.Stderr,
@@ -618,9 +604,6 @@ func (b *ContainerdBackend) Logs(ctx context.Context, id containers.ContainerID)
 		defer taskIO.stdout.Close()
 		defer taskIO.stderr.Close()
 
-		// Read from both stdout and stderr concurrently
-		// Use a multi-reader approach: read from stdout first, then stderr
-		// This ensures we capture all output in order
 		mr := io.MultiReader(taskIO.stdout, taskIO.stderr)
 		_, err := io.Copy(pw, mr)
 		if err != nil && err != io.EOF {
@@ -668,9 +651,7 @@ func (b *ContainerdBackend) Inspect(ctx context.Context, id containers.Container
 	}
 
 	info.Status = string(status.Status)
-	// Note: StartTime might not be available in all containerd versions
 
-	// If exited, get exit code
 	if status.Status == containerd.Stopped {
 		info.ExitCode = int(status.ExitStatus)
 	}
@@ -739,30 +720,6 @@ func (b *ContainerdBackend) hasSubIDMapping(file, username string) error {
 
 		parts := strings.Split(line, ":")
 		if len(parts) >= 3 && parts[0] == username {
-			// Found mapping for this user
-			return nil
-		}
-	}
-
-	return fmt.Errorf("no subuid/subgid mapping found for user %s in %s", username, file)
-}
-
-// checkSubIDMapping checks if subuid/subgid mapping is configured
-func (b *ContainerdBackend) checkSubIDMapping(file, username string, id int) error {
-	content, err := os.ReadFile(file)
-	if err != nil {
-		return fmt.Errorf("cannot read %s: %w", file, err)
-	}
-
-	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		parts := strings.Fields(line)
-		if len(parts) >= 2 && parts[0] == username {
 			// Found mapping for this user
 			return nil
 		}

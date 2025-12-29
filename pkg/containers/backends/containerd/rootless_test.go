@@ -54,40 +54,6 @@ func TestRootlessManager_validateUIDGIDMapping(t *testing.T) {
 	}
 }
 
-func TestRootlessManager_checkSubIDMapping(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
-	}
-
-	rm, err := NewRootlessManager(config)
-	if err != nil {
-		t.Fatalf("NewRootlessManager failed: %v", err)
-	}
-
-	currentUser, err := user.Current()
-	if err != nil {
-		t.Fatalf("user.Current() failed: %v", err)
-	}
-
-	// Test subuid mapping
-	err = rm.checkSubIDMapping("/etc/subuid", currentUser.Username, 1000)
-	if err != nil {
-		t.Logf("subuid mapping check failed (expected if not configured): %v", err)
-		// This is expected behavior
-	} else {
-		t.Log("subuid mapping check passed")
-	}
-
-	// Test subgid mapping
-	err = rm.checkSubIDMapping("/etc/subgid", currentUser.Username, 1000)
-	if err != nil {
-		t.Logf("subgid mapping check failed (expected if not configured): %v", err)
-		// This is expected behavior
-	} else {
-		t.Log("subgid mapping check passed")
-	}
-}
-
 func TestRootlessManager_validateMountPermissions(t *testing.T) {
 	config := containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeEnabled,

@@ -309,7 +309,7 @@ func TestContainerdBackend_FullIntegration(t *testing.T) {
 
 	// Try to create the backend - this should start containerd if needed
 	// If this fails, it's because our code failed to configure/start containerd properly
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeAuto,
 		AutoStart:    true,
 		Namespace:    "tau-test",
@@ -366,7 +366,7 @@ func TestContainerdBackend_SimpleContainerOutput(t *testing.T) {
 	}
 
 	// Use rootless mode with AutoStart - this should start containerd via rootlesskit
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeEnabled, // Use rootless mode
 		AutoStart:    true,
 		Namespace:    "tau-test",
@@ -446,7 +446,7 @@ func TestContainerdBackend_ContainerExitCode(t *testing.T) {
 	}
 
 	// Use rootless mode with AutoStart - this should start containerd via rootlesskit
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeEnabled, // Use rootless mode
 		AutoStart:    true,
 		Namespace:    "tau-test",
@@ -513,7 +513,7 @@ func TestContainerdBackend_ContainerOutput(t *testing.T) {
 	}
 
 	// Use rootless mode with AutoStart
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeEnabled,
 		AutoStart:    true,
 		Namespace:    "tau-test",
@@ -737,7 +737,7 @@ func TestContainerdBackend_RootfulMode_BackendCreation_NoSystemContainerd(t *tes
 		Namespace:    "tau-test-rootful",
 	}
 
-	backend, err := NewContainerdBackend(config)
+	backend, err := New(config)
 
 	// Backend creation should fail with a clear error about system containerd not running
 	if err == nil {
@@ -772,7 +772,7 @@ func TestContainerdBackend_RootfulMode_BackendCreation_WithSystemContainerd(t *t
 	conn.Close()
 
 	// Test backend creation with rootful mode when system containerd is running
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeDisabled,
 		AutoStart:    false, // Don't try to start (systemd manages it)
 		Namespace:    "tau-test-rootful",
@@ -818,7 +818,7 @@ func TestContainerdBackend_RootfulMode_ContainerOperations(t *testing.T) {
 	conn.Close()
 
 	// Create backend with rootful mode
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeDisabled,
 		AutoStart:    false,
 		Namespace:    "tau-test-rootful",
@@ -879,7 +879,7 @@ func TestContainerdBackend_RootfulMode_AutoStart_DoesNotStart(t *testing.T) {
 
 	// This should fail if system containerd is not running
 	// (we can't start it because it's managed by systemd)
-	backend, err := NewContainerdBackend(config)
+	backend, err := New(config)
 
 	if err == nil {
 		// If it succeeded, system containerd is running - that's fine
@@ -1213,7 +1213,7 @@ func TestContainerdBackend_NestedDocker_RootfulMode(t *testing.T) {
 	defer cleanup()
 
 	// Create backend pointing to the Docker containerd socket
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeDisabled,
 		AutoStart:    false,         // Don't start - it's already running in Docker
 		SocketPath:   tc.socketPath, // Use the socket from Docker container
@@ -1270,7 +1270,7 @@ func TestContainerdBackend_NestedDocker_ContainerOperations(t *testing.T) {
 	tc, cleanup := setupContainerdInDocker(t)
 	defer cleanup()
 
-	backend, err := NewContainerdBackend(containers.ContainerdConfig{
+	backend, err := New(containers.ContainerdConfig{
 		RootlessMode: containers.RootlessModeDisabled,
 		AutoStart:    false,
 		SocketPath:   tc.socketPath,
