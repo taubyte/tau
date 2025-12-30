@@ -15,6 +15,7 @@ type BackendType string
 
 const (
 	BackendTypeContainerd  BackendType = "containerd"
+	BackendTypeDocker      BackendType = "docker"
 	BackendTypeFirecracker BackendType = "firecracker"
 	BackendTypeNanos       BackendType = "nanos"
 )

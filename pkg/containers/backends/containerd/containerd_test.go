@@ -24,6 +24,39 @@ import (
 	"github.com/taubyte/tau/pkg/containers"
 )
 
+// waitForExecCompletion polls the exec command until it completes or timeout
+func waitForExecCompletion(t *testing.T, ctx context.Context, dockerClient *client.Client, execID string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	for time.Now().Before(deadline) {
+		select {
+		case <-ticker.C:
+			insp, err := dockerClient.ContainerExecInspect(ctx, execID)
+			if err != nil {
+				t.Logf("Error inspecting exec (will retry): %v", err)
+				continue
+			}
+			if insp.Running {
+				continue
+			}
+			// Exec has completed
+			return
+		case <-ctx.Done():
+			t.Logf("Context cancelled while waiting for exec completion")
+			return
+		}
+	}
+
+	// Final check
+	insp, err := dockerClient.ContainerExecInspect(ctx, execID)
+	if err == nil && insp.Running {
+		t.Logf("Warning: Exec command still running after timeout")
+	}
+}
+
 func TestContainerdBackend_detectRootlessMode(t *testing.T) {
 	// Test auto-detection
 	config := containers.ContainerdConfig{}
@@ -1178,8 +1211,8 @@ waitLoop:
 
 		if execResp, err := dockerClient.ContainerExecCreate(ctx, tc.containerID, execConfig); err == nil {
 			dockerClient.ContainerExecStart(ctx, execResp.ID, types.ExecStartCheck{})
-			// Give it a moment to complete
-			time.Sleep(500 * time.Millisecond)
+			// Wait for exec to complete by polling its status
+			waitForExecCompletion(t, ctx, dockerClient, execResp.ID, 5*time.Second)
 		}
 
 		// Stop container

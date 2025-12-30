@@ -32,6 +32,10 @@ func NewBackend(config BackendConfig) (Backend, error) {
 		if f, ok := factory.(BackendFactory[ContainerdConfig]); ok {
 			return f(config.(ContainerdConfig))
 		}
+	case BackendTypeDocker:
+		if f, ok := factory.(BackendFactory[DockerConfig]); ok {
+			return f(config.(DockerConfig))
+		}
 	case BackendTypeFirecracker:
 		if f, ok := factory.(BackendFactory[FirecrackerConfig]); ok {
 			return f(config.(FirecrackerConfig))
