@@ -56,6 +56,21 @@ type ContainerdConfig struct {
 
 func (c ContainerdConfig) BackendType() BackendType { return BackendTypeContainerd }
 
+// DockerConfig contains configuration for the Docker backend
+type DockerConfig struct {
+	// Host is the Docker daemon host/socket path
+	// If empty, defaults to DOCKER_HOST environment variable or /var/run/docker.sock
+	Host string
+	// APIVersion is the Docker API version to use
+	// If empty, uses API version negotiation
+	APIVersion string
+	// TLSConfig contains TLS configuration for secure Docker connections
+	// If nil, uses default TLS settings or no TLS for local socket connections
+	TLSConfig interface{} // TODO: Define proper TLS config type if needed
+}
+
+func (d DockerConfig) BackendType() BackendType { return BackendTypeDocker }
+
 // FirecrackerConfig contains configuration for the Firecracker backend
 type FirecrackerConfig struct {
 	// SocketPath is the path to the Firecracker socket
