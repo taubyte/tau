@@ -1,4 +1,4 @@
-//go:build !vagrant
+//go:build linux && !vagrant
 
 package containerd
 
@@ -17,8 +17,17 @@ import (
 )
 
 // isVagrantAvailable checks if Vagrant is available in PATH
+// Works on Linux, macOS, and Windows (exec.LookPath handles .exe extension on Windows)
 func isVagrantAvailable() bool {
 	_, err := exec.LookPath("vagrant")
+	return err == nil
+}
+
+// isVirtualBoxAvailable checks if VirtualBox is available in PATH
+// Works on Linux, macOS (Intel), and Windows (exec.LookPath handles .exe extension)
+// Note: VirtualBox is not supported on Apple Silicon (M1/M2/M3) Macs
+func isVirtualBoxAvailable() bool {
+	_, err := exec.LookPath("VBoxManage")
 	return err == nil
 }
 
@@ -30,6 +39,11 @@ func runVagrantTest(t *testing.T, testName string, rootless bool) {
 	// Check if Vagrant is available
 	if !isVagrantAvailable() {
 		t.Skip("Skipping test: Vagrant not available")
+	}
+
+	// Check if VirtualBox is available
+	if !isVirtualBoxAvailable() {
+		t.Skip("Skipping test: VirtualBox not available")
 	}
 
 	mode := "rootful"
@@ -219,6 +233,16 @@ func runVagrantTest(t *testing.T, testName string, rootless bool) {
 func TestContainerdBackend_Vagrant_All(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
+	}
+
+	// Check if Vagrant is available
+	if !isVagrantAvailable() {
+		t.Skip("Skipping test: Vagrant not available")
+	}
+
+	// Check if VirtualBox is available
+	if !isVirtualBoxAvailable() {
+		t.Skip("Skipping test: VirtualBox not available")
 	}
 
 	// Get the directory containing the test file, then navigate to vagrant subdirectory
