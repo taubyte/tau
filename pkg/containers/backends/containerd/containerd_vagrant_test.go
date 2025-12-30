@@ -1,4 +1,4 @@
-//go:build vagrant
+//go:build vagrant && linux
 
 package containerd
 

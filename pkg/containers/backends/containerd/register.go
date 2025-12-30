@@ -1,6 +1,6 @@
-//go:build linux || darwin || windows
+//go:build linux
 
-// This file ensures containerd backend is available on all platforms
+// This file ensures containerd backend is available on Linux
 
 package containerd
 
