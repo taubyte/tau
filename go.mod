@@ -33,7 +33,6 @@ require (
 	github.com/taubyte/domain-validation v1.0.1
 	github.com/taubyte/go-sdk v0.3.9
 	github.com/taubyte/go-sdk-smartops v0.1.3
-	github.com/taubyte/go-simple-container v0.4.5
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/zap v1.27.0
 	golang.org/x/crypto v0.45.0
@@ -60,6 +59,7 @@ require (
 	github.com/common-nighthawk/go-figure v0.0.0-20210622060536-734e95fb86be
 	github.com/containerd/containerd v1.7.30
 	github.com/docker/docker v25.0.3+incompatible
+	github.com/docker/go-connections v0.5.0
 	github.com/ethereum/go-ethereum v1.12.0
 	github.com/fsnotify/fsnotify v1.7.0
 	github.com/google/go-github/v53 v53.2.0
@@ -105,7 +105,6 @@ require (
 	atomicgo.dev/schedule v0.0.2 // indirect
 	github.com/AdaLogics/go-fuzz-headers v0.0.0-20230811130428-ced1acdcaa24 // indirect
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20230306123547-8075edf89bb0 // indirect
-	github.com/Azure/go-ansiterm v0.0.0-20230124172434-306776ec8161 // indirect
 	github.com/DataDog/zstd v1.5.6-0.20230824185856-869dae002e5e // indirect
 	github.com/Jorropo/jsync v1.0.1 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
@@ -150,7 +149,6 @@ require (
 	github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/go-connections v0.5.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
@@ -241,6 +239,8 @@ require (
 	github.com/moby/sys/signal v0.7.0 // indirect
 	github.com/moby/sys/user v0.3.0 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
+	github.com/moby/term v0.5.2 // indirect
+	github.com/morikuni/aec v1.1.0 // indirect
 	github.com/mr-tron/base58 v1.2.0 // indirect
 	github.com/multiformats/go-base32 v0.1.0 // indirect
 	github.com/multiformats/go-base36 v0.2.0 // indirect

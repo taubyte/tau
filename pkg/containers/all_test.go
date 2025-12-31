@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
-	"github.com/taubyte/go-simple-container/gc"
 	ci "github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/gc"
 )
 
 // Test Path Variables

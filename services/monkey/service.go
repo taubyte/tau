@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	ci "github.com/taubyte/go-simple-container/gc"
 	"github.com/taubyte/tau/clients/p2p/hoarder"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	seerIface "github.com/taubyte/tau/core/services/seer"
+	ci "github.com/taubyte/tau/pkg/containers/gc"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
