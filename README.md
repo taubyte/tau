@@ -32,9 +32,9 @@
 </div>
 
 <div align="center">
-  <a href="https://taubyte.com/doc"><img width="25%"  alt="Documentation" src="images/documentation.png" /></a>
+  <a href="https://dub.sh/taubyte-docs"><img width="25%"  alt="Documentation" src="images/documentation.png" /></a>
   <a href="https://discord.gg/KbN3KN7kpQ"><img width="25%" alt="Join Discord" src="images/joindiscord.png" /></a>
-  <a href="https://taubyte.com/book-a-demo"><img width="25%" alt="Book a ticket" src="images/requestademo.png" /></a>
+  <a href="https://dub.sh/book-demo-taubyte"><img width="25%" alt="Book a ticket" src="images/requestademo.png" /></a>
 </div>
 
 <br/>
@@ -76,22 +76,22 @@ Tau is an open-source, Git-native platform-as-a-service for building, deploying,
 #### Example Projects
 
 <div align="center">
-  <a href="https://youtu.be/RIdwJQB3Tk0"><img src="images/pixelgame.png" width="48%" style="border-radius: 15px; margin: 5px;" alt="Example Project: Pixel Game"></a>
-  <a href="https://youtu.be/gMTYh-gQLgA"><img src="images/towergame.png" width="48%" style="border-radius: 15px; margin: 5px;" alt="Example Project: Tower Blocks Game"></a>
+  <a href="https://dub.sh/pexel-video"><img src="images/pixelgame.png" width="48%" style="border-radius: 15px; margin: 5px;" alt="Example Project: Pixel Game"></a>
+  <a href="https://dub.sh/tower-video"><img src="images/towergame.png" width="48%" style="border-radius: 15px; margin: 5px;" alt="Example Project: Tower Blocks Game"></a>
 </div>
 
 ## Quick Start
 ### Run Locally
 
-The quickest way to try Taubyte is to spin up a local environment with dream → [https://tau.how/getting-started/local-cloud/](https://tau.how/getting-started/local-cloud/)
+The quickest way to try Taubyte is to spin up a local environment with dream → [https://dub.sh/tau-local-cloud](https://dub.sh/tau-local-cloud)
 
 ### Deploy
 
 Deploy Taubyte to your own Servers and/or VMs:
 
-* Manual deployment → [https://tau.how/platform/deployment/](https://tau.how/platform/deployment/)
+* Manual deployment → [https://dub.sh/tau-deployment](https://dub.sh/tau-deployment)
 
-* Automated deployment with Spore Drive → [https://tau.how/platform/spore-drive/](https://tau.how/platform/spore-drive/)
+* Automated deployment with Spore Drive → [https://dub.sh/tau-spore-drive](https://dub.sh/tau-spore-drive)
 
 ### Prefer Video?
 
