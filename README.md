@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://taubyte.com" target="_blank">
+<a href="https://dub.sh/pill-taubyte" target="_blank">
     <img alt="Product" src="https://img.shields.io/badge/Product-Taubyte-2563eb">
 </a>
 <img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
@@ -10,17 +10,17 @@
 </a>
 <img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
 
-<a href="https://x.com/dtaubyte" target="_blank">
+<a href="https://dub.sh/pill-taubyte-x" target="_blank">
     <img alt="X (Twitter)" src="https://img.shields.io/twitter/url?url=https%3A%2F%2Fx.com%2Fdtaubyte&logo=X">
 </a>
 <img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
 
-<a href="https://www.linkedin.com/company/taubyte-page" target="_blank">
+<a href="https://dub.sh/linkedin-taubyte-pill" target="_blank">
     <img alt="LinkedIn" src="https://custom-icon-badges.demolab.com/badge/LinkedIn-Taubyte-0A66C2?logo=linkedin-white&logoColor=fff">
 </a>
 <img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
 
-<a href="https://github.com/taubyte/tau" target="_blank">
+<a href="https://dub.sh/pill-taubyte-github" target="_blank">
     <img alt="GitHub stars" src="https://img.shields.io/github/stars/taubyte/tau">
 </a>
 
@@ -137,11 +137,11 @@ BSD-3-Clause license. See [LICENSE](LICENSE) for details.
 
 <br/>
 <p align="center">
-  <a href="https://x.com/dtaubyte" aria-label="X (Twitter)">
+  <a href="https://dub.sh/pill-taubyte-x-bottom" aria-label="X (Twitter)">
     <img src="https://img.shields.io/badge/X-000000?logo=X&logoColor=white" alt="X">
   </a>
   &nbsp;
-  <a href="https://youtube.com/@taubyte" aria-label="YouTube">
+  <a href="https://dub.sh/pill-taubyte-youtube" aria-label="YouTube">
     <img src="https://img.shields.io/badge/YouTube-FF0000?logo=youtube&logoColor=white" alt="YouTube">
   </a>
   &nbsp;
@@ -149,7 +149,7 @@ BSD-3-Clause license. See [LICENSE](LICENSE) for details.
     <img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white" alt="Discord">
   </a>
   &nbsp;
-  <a href="https://instagram.com/dtaubyte" aria-label="Instagram">
+  <a href="https://dub.sh/pill-taubyte-instagram" aria-label="Instagram">
     <img src="https://img.shields.io/badge/Instagram-E4405F?logo=instagram&logoColor=white" alt="Instagram">
   </a>
 </p>
