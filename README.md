@@ -99,15 +99,15 @@ Check out the **Hitchhiker's Guide to Taubyte** for guided walkthroughs and demo
 
 <br>
 <div align="center">
-  <a href="https://www.youtube.com/watch?v=8FO1KiTE0FE"><img src="images/vid1.png" width="32%" alt="Video: Deploying a Taubyte Cloud"></a>
-  <a href="https://www.youtube.com/watch?v=ajdcUGd2SeE"><img src="images/vid2.png" width="32%" alt="Video: Local Taubyte Cloud using DreamCLI"></a>
-  <a href="https://www.youtube.com/watch?v=YyZHCBkjCOU"><img src="images/vid3.png" width="32%" alt="Video: Create a project using the Web Console"></a>
+  <a href="https://dub.sh/vid1"><img src="images/vid1.png" width="32%" alt="Video: Deploying a Taubyte Cloud"></a>
+  <a href="https://dub.sh/vid2"><img src="images/vid2.png" width="32%" alt="Video: Local Taubyte Cloud using DreamCLI"></a>
+  <a href="https://dub.sh/vid3"><img src="images/vid3.png" width="32%" alt="Video: Create a project using the Web Console"></a>
 </div>
 
 <div align="center">
-  <a href="https://www.youtube.com/watch?v=IDUI7a96gSw&t=10s"><img src="images/vid4.png" width="32%" alt="Video: Working with Functions"></a>
-  <a href="https://www.youtube.com/playlist?list=PLLKNB3tJrL9Y4nl0JnBhU2wHS4iWldUfh"><img src="images/vid5.png" width="32%" alt="Full Playlist: Hitchhiker's Guide to Taubyte"></a>
-  <a href="https://www.youtube.com/playlist?list=PLLKNB3tJrL9Y4nl0JnBhU2wHS4iWldUfh"><img src="images/vid6.png" width="32%" alt="Full Playlist: Hitchhiker's Guide to Taubyte"></a>
+  <a href="https://dub.sh/vid4"><img src="images/vid4.png" width="32%" alt="Video: Working with Functions"></a>
+  <a href="https://dub.sh/vid5"><img src="images/vid5.png" width="32%" alt="Full Playlist: Hitchhiker's Guide to Taubyte"></a>
+  <a href="https://dub.sh/vid5"><img src="images/vid6.png" width="32%" alt="Full Playlist: Hitchhiker's Guide to Taubyte"></a>
 </div>
 
 <br/>
@@ -154,6 +154,3 @@ BSD-3-Clause license. See [LICENSE](LICENSE) for details.
   </a>
 </p>
 
-<div align="center">
-  <sub>Built by the Taubyte team</sub>
-</div>
