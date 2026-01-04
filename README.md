@@ -83,15 +83,15 @@ Tau is an open-source, Git-native platform-as-a-service for building, deploying,
 ## Quick Start
 ### Run Locally
 
-The quickest way to try Taubyte is to spin up a local environment with dream → [https://dub.sh/tau-local-cloud](https://dub.sh/tau-local-cloud)
+The quickest way to try Taubyte is to spin up a local environment with dream → [local cloud setup](https://dub.sh/tau-local-cloud)
 
 ### Deploy
 
 Deploy Taubyte to your own Servers and/or VMs:
 
-* Manual deployment → [https://dub.sh/tau-deployment](https://dub.sh/tau-deployment)
+* Manual deployment → [deployment guide](https://dub.sh/tau-deployment)
 
-* Automated deployment with Spore Drive → [https://dub.sh/tau-spore-drive](https://dub.sh/tau-spore-drive)
+* Automated deployment with Spore Drive → [Spore Drive guide](https://dub.sh/tau-spore-drive)
 
 ### Prefer Video?
 
