@@ -1,12 +1,16 @@
 package mcp
 
 import (
+	"fmt"
+	"net"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/taubyte/tau/dream"
+	httpBasic "github.com/taubyte/tau/pkg/http/basic"
+	"github.com/taubyte/tau/pkg/http/options"
 	"gotest.tools/v3/assert"
 
 	// Import dream services
@@ -29,14 +33,36 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
 
+// getAvailablePort finds an available port by listening on port 0
+func getAvailablePort() (int, error) {
+	listener, err := net.Listen("tcp", ":0")
+	if err != nil {
+		return 0, err
+	}
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port, nil
+}
+
 func TestMCPServer(t *testing.T) {
 	// Create multiverse
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer multiverse.Close()
 
-	// Create MCP service
-	mcpService, err := New(multiverse, nil)
+	// Get an available port
+	port, err := getAvailablePort()
+	assert.NilError(t, err)
+
+	// Create HTTP service with the available port
+	httpService, err := httpBasic.New(
+		multiverse.Context(),
+		options.Listen(fmt.Sprintf("127.0.0.1:%d", port)),
+		options.AllowedOrigins(true, []string{".*"}),
+	)
+	assert.NilError(t, err)
+
+	// Create MCP service with the custom HTTP service
+	mcpService, err := New(multiverse, httpService)
 	assert.NilError(t, err)
 
 	// Start MCP server in a goroutine
@@ -51,9 +77,9 @@ func TestMCPServer(t *testing.T) {
 		Version: "1.0.0",
 	}, nil)
 
-	// Create HTTP transport
+	// Create HTTP transport using the dynamic port
 	transport := &mcp.StreamableClientTransport{
-		Endpoint:   "http://localhost:8080" + MCPEndpoint,
+		Endpoint:   fmt.Sprintf("http://localhost:%d%s", port, MCPEndpoint),
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
 	}
 
