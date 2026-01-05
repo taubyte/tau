@@ -1,6 +1,6 @@
 <div align="center">
 
-<a href="https://taubyte.com" target="_blank">
+<a href="https://dub.sh/pill-taubyte" target="_blank">
     <img alt="Product" src="https://img.shields.io/badge/Product-Taubyte-2563eb">
 </a>
 <img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
@@ -10,17 +10,17 @@
 </a>
 <img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
 
-<a href="https://x.com/dtaubyte" target="_blank">
+<a href="https://dub.sh/pill-taubyte-x" target="_blank">
     <img alt="X (Twitter)" src="https://img.shields.io/twitter/url?url=https%3A%2F%2Fx.com%2Fdtaubyte&logo=X">
 </a>
 <img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
 
-<a href="https://www.linkedin.com/company/taubyte-page" target="_blank">
+<a href="https://dub.sh/linkedin-taubyte-pill" target="_blank">
     <img alt="LinkedIn" src="https://custom-icon-badges.demolab.com/badge/LinkedIn-Taubyte-0A66C2?logo=linkedin-white&logoColor=fff">
 </a>
 <img src="images/5px.png" width="1" height="1" alt="Rectangle 18" />
 
-<a href="https://github.com/taubyte/tau" target="_blank">
+<a href="https://dub.sh/pill-taubyte-github" target="_blank">
     <img alt="GitHub stars" src="https://img.shields.io/github/stars/taubyte/tau">
 </a>
 
@@ -32,9 +32,9 @@
 </div>
 
 <div align="center">
-  <a href="https://taubyte.com/doc"><img width="25%"  alt="Documentation" src="images/documentation.png" /></a>
+  <a href="https://dub.sh/taubyte-docs"><img width="25%"  alt="Documentation" src="images/documentation.png" /></a>
   <a href="https://discord.gg/KbN3KN7kpQ"><img width="25%" alt="Join Discord" src="images/joindiscord.png" /></a>
-  <a href="https://taubyte.com/book-a-demo"><img width="25%" alt="Book a ticket" src="images/requestademo.png" /></a>
+  <a href="https://dub.sh/book-demo-taubyte"><img width="25%" alt="Book a ticket" src="images/requestademo.png" /></a>
 </div>
 
 <br/>
@@ -76,22 +76,22 @@ Tau is an open-source, Git-native platform-as-a-service for building, deploying,
 #### Example Projects
 
 <div align="center">
-  <a href="https://youtu.be/RIdwJQB3Tk0"><img src="images/pixelgame.png" width="48%" style="border-radius: 15px; margin: 5px;" alt="Example Project: Pixel Game"></a>
-  <a href="https://youtu.be/gMTYh-gQLgA"><img src="images/towergame.png" width="48%" style="border-radius: 15px; margin: 5px;" alt="Example Project: Tower Blocks Game"></a>
+  <a href="https://dub.sh/pexel-video"><img src="images/pixelgame.png" width="48%" style="border-radius: 15px; margin: 5px;" alt="Example Project: Pixel Game"></a>
+  <a href="https://dub.sh/tower-video"><img src="images/towergame.png" width="48%" style="border-radius: 15px; margin: 5px;" alt="Example Project: Tower Blocks Game"></a>
 </div>
 
 ## Quick Start
 ### Run Locally
 
-The quickest way to try Taubyte is to spin up a local environment with dream → [https://tau.how/getting-started/local-cloud/](https://tau.how/getting-started/local-cloud/)
+The quickest way to try Taubyte is to spin up a local environment with dream → [https://tau.how/getting-started/local-cloud](https://dub.sh/tau-local-cloud)
 
 ### Deploy
 
 Deploy Taubyte to your own Servers and/or VMs:
 
-* Manual deployment → [https://tau.how/platform/deployment/](https://tau.how/platform/deployment/)
+* Manual deployment → [https://tau.how/platform/deployment](https://dub.sh/tau-deployment)
 
-* Automated deployment with Spore Drive → [https://tau.how/platform/spore-drive/](https://tau.how/platform/spore-drive/)
+* Automated deployment with Spore Drive → [https://tau.how/platform/spore-drive](https://dub.sh/tau-spore-drive)
 
 ### Prefer Video?
 
@@ -99,15 +99,15 @@ Check out the **Hitchhiker's Guide to Taubyte** for guided walkthroughs and demo
 
 <br>
 <div align="center">
-  <a href="https://www.youtube.com/watch?v=8FO1KiTE0FE"><img src="images/vid1.png" width="32%" alt="Video: Deploying a Taubyte Cloud"></a>
-  <a href="https://www.youtube.com/watch?v=ajdcUGd2SeE"><img src="images/vid2.png" width="32%" alt="Video: Local Taubyte Cloud using DreamCLI"></a>
-  <a href="https://www.youtube.com/watch?v=YyZHCBkjCOU"><img src="images/vid3.png" width="32%" alt="Video: Create a project using the Web Console"></a>
+  <a href="https://dub.sh/vid1"><img src="images/vid1.png" width="32%" alt="Video: Deploying a Taubyte Cloud"></a>
+  <a href="https://dub.sh/vid2"><img src="images/vid2.png" width="32%" alt="Video: Local Taubyte Cloud using DreamCLI"></a>
+  <a href="https://dub.sh/vid3"><img src="images/vid3.png" width="32%" alt="Video: Create a project using the Web Console"></a>
 </div>
 
 <div align="center">
-  <a href="https://www.youtube.com/watch?v=IDUI7a96gSw&t=10s"><img src="images/vid4.png" width="32%" alt="Video: Working with Functions"></a>
-  <a href="https://www.youtube.com/playlist?list=PLLKNB3tJrL9Y4nl0JnBhU2wHS4iWldUfh"><img src="images/vid5.png" width="32%" alt="Full Playlist: Hitchhiker's Guide to Taubyte"></a>
-  <a href="https://www.youtube.com/playlist?list=PLLKNB3tJrL9Y4nl0JnBhU2wHS4iWldUfh"><img src="images/vid6.png" width="32%" alt="Full Playlist: Hitchhiker's Guide to Taubyte"></a>
+  <a href="https://dub.sh/vid4"><img src="images/vid4.png" width="32%" alt="Video: Working with Functions"></a>
+  <a href="https://dub.sh/vid5"><img src="images/vid5.png" width="32%" alt="Full Playlist: Hitchhiker's Guide to Taubyte"></a>
+  <a href="https://dub.sh/vid5"><img src="images/vid6.png" width="32%" alt="Full Playlist: Hitchhiker's Guide to Taubyte"></a>
 </div>
 
 <br/>
@@ -137,11 +137,11 @@ BSD-3-Clause license. See [LICENSE](LICENSE) for details.
 
 <br/>
 <p align="center">
-  <a href="https://x.com/dtaubyte" aria-label="X (Twitter)">
+  <a href="https://dub.sh/pill-taubyte-x-bottom" aria-label="X (Twitter)">
     <img src="https://img.shields.io/badge/X-000000?logo=X&logoColor=white" alt="X">
   </a>
   &nbsp;
-  <a href="https://youtube.com/@taubyte" aria-label="YouTube">
+  <a href="https://dub.sh/pill-taubyte-youtube" aria-label="YouTube">
     <img src="https://img.shields.io/badge/YouTube-FF0000?logo=youtube&logoColor=white" alt="YouTube">
   </a>
   &nbsp;
@@ -149,11 +149,8 @@ BSD-3-Clause license. See [LICENSE](LICENSE) for details.
     <img src="https://img.shields.io/badge/Discord-5865F2?logo=discord&logoColor=white" alt="Discord">
   </a>
   &nbsp;
-  <a href="https://instagram.com/dtaubyte" aria-label="Instagram">
+  <a href="https://dub.sh/pill-taubyte-instagram" aria-label="Instagram">
     <img src="https://img.shields.io/badge/Instagram-E4405F?logo=instagram&logoColor=white" alt="Instagram">
   </a>
 </p>
 
-<div align="center">
-  <sub>Built by the Taubyte team</sub>
-</div>
