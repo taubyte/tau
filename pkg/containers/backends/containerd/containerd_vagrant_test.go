@@ -64,7 +64,7 @@ func TestContainerdBackend_Vagrant_RootfulMode(t *testing.T) {
 	assert.NoError(t, err, "Container removal should succeed")
 }
 
-// TestContainerdBackend_Vagrant_ContainerOperations tests all container operations using Vagrant
+// TestContainerdBackend_Vagrant_ContainerOperations tests container operations using Vagrant
 // This test runs inside the VM where containerd is running
 func TestContainerdBackend_Vagrant_ContainerOperations(t *testing.T) {
 	if testing.Short() {
@@ -212,7 +212,7 @@ func TestContainerdBackend_Vagrant_RootlessMode(t *testing.T) {
 	assert.NoError(t, err, "Container removal should succeed")
 }
 
-// TestContainerdBackend_Vagrant_RootlessContainerOperations tests all container operations in rootless mode using Vagrant
+// TestContainerdBackend_Vagrant_RootlessContainerOperations tests container operations in rootless mode using Vagrant
 // This test runs inside the VM where rootless containerd will be started
 func TestContainerdBackend_Vagrant_RootlessContainerOperations(t *testing.T) {
 	if testing.Short() {

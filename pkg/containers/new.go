@@ -30,7 +30,6 @@ func New(options ...Option) (dockerClient *Client, err error) {
 		}
 	}
 
-	// Initialize backend immediately
 	backend, err := getDefaultBackend()
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize backend: %w", err)

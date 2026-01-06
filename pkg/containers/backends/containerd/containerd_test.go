@@ -1296,7 +1296,7 @@ func TestContainerdBackend_NestedDocker_RootfulMode(t *testing.T) {
 	assert.NoError(t, err, "Container removal should succeed")
 }
 
-// TestContainerdBackend_NestedDocker_ContainerOperations tests all container operations
+// TestContainerdBackend_NestedDocker_ContainerOperations tests container operations
 func TestContainerdBackend_NestedDocker_ContainerOperations(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")

@@ -12,17 +12,14 @@ func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
 		imageName = c.image.image
 	}
 
-	// Start container using backend
 	if err := c.backend.Start(ctx, c.id); err != nil {
 		return nil, errorContainerStart(string(c.id), imageName, err)
 	}
 
-	// Wait for container to exit
 	if err := c.Wait(ctx); err != nil {
 		return nil, err
 	}
 
-	// Inspect container to get exit code
 	info, err := c.backend.Inspect(ctx, c.id)
 	if err != nil {
 		return nil, errorContainerInspect(string(c.id), imageName, err)
@@ -33,7 +30,6 @@ func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
 		RetCodeErr = errorContainerExitCode(string(c.id), imageName, info.ExitCode)
 	}
 
-	// Get container logs
 	muxed, err := c.backend.Logs(ctx, c.id)
 	if err != nil {
 		return nil, errorContainerLogs(string(c.id), imageName, err)

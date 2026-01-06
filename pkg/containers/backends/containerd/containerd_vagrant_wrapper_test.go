@@ -228,7 +228,7 @@ func runVagrantTest(t *testing.T, testName string, rootless bool) {
 	t.Logf("Test %s completed successfully", testName)
 }
 
-// TestContainerdBackend_Vagrant_All runs all vagrant tests sequentially using t.Run()
+// TestContainerdBackend_Vagrant_All runs vagrant tests sequentially using t.Run()
 // This ensures tests run in order and cleanup happens at the end
 func TestContainerdBackend_Vagrant_All(t *testing.T) {
 	if testing.Short() {
@@ -288,7 +288,7 @@ func TestContainerdBackend_Vagrant_All(t *testing.T) {
 		}
 	}()
 
-	// Run all tests sequentially
+	// Run tests sequentially
 	t.Run("RootfulMode", func(t *testing.T) {
 		runVagrantTest(t, "TestContainerdBackend_Vagrant_RootfulMode", false)
 	})
