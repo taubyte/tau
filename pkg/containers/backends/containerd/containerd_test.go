@@ -21,7 +21,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 // waitForExecCompletion polls the exec command until it completes or timeout
@@ -59,7 +59,7 @@ func waitForExecCompletion(t *testing.T, ctx context.Context, dockerClient *clie
 
 func TestContainerdBackend_detectRootlessMode(t *testing.T) {
 	// Test auto-detection
-	config := containers.ContainerdConfig{}
+	config := core.ContainerdConfig{}
 
 	backend := &ContainerdBackend{
 		config: config,
@@ -76,11 +76,11 @@ func TestContainerdBackend_detectRootlessMode(t *testing.T) {
 	}
 
 	isRoot := currentUser.Uid == "0"
-	var expectedRootless containers.RootlessMode
+	var expectedRootless core.RootlessMode
 	if isRoot {
-		expectedRootless = containers.RootlessModeDisabled
+		expectedRootless = core.RootlessModeDisabled
 	} else {
-		expectedRootless = containers.RootlessModeEnabled
+		expectedRootless = core.RootlessModeEnabled
 	}
 
 	if backend.config.RootlessMode != expectedRootless {
@@ -93,8 +93,8 @@ func TestContainerdBackend_detectRootlessMode(t *testing.T) {
 
 func TestContainerdBackend_detectRootlessMode_Explicit(t *testing.T) {
 	// Test explicit rootless mode setting
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	backend := &ContainerdBackend{
@@ -106,15 +106,15 @@ func TestContainerdBackend_detectRootlessMode_Explicit(t *testing.T) {
 		t.Fatalf("detectRootlessMode failed: %v", err)
 	}
 
-	if backend.config.RootlessMode != containers.RootlessModeEnabled {
+	if backend.config.RootlessMode != core.RootlessModeEnabled {
 		t.Errorf("Expected explicit rootless mode to be preserved")
 	}
 }
 
 func TestContainerdBackend_detectRootlessMode_ExplicitRoot(t *testing.T) {
 	// Test explicit root mode setting
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 	}
 
 	backend := &ContainerdBackend{
@@ -126,15 +126,15 @@ func TestContainerdBackend_detectRootlessMode_ExplicitRoot(t *testing.T) {
 		t.Fatalf("detectRootlessMode failed: %v", err)
 	}
 
-	if backend.config.RootlessMode != containers.RootlessModeDisabled {
+	if backend.config.RootlessMode != core.RootlessModeDisabled {
 		t.Errorf("Expected explicit root mode to be preserved")
 	}
 }
 
 func TestContainerdBackend_detectRootlessMode_Conflict(t *testing.T) {
 	// Test conflict: rootless mode enabled but running as root
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	backend := &ContainerdBackend{
@@ -161,8 +161,8 @@ func TestContainerdBackend_detectRootlessMode_Conflict(t *testing.T) {
 
 func TestContainerdBackend_getSocketPath(t *testing.T) {
 	// Test default socket path in rootless mode
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	backend := &ContainerdBackend{
@@ -185,7 +185,7 @@ func TestContainerdBackend_getSocketPath(t *testing.T) {
 func TestContainerdBackend_getSocketPath_Explicit(t *testing.T) {
 	// Test explicit socket path
 	explicitPath := "/tmp/test.sock"
-	config := containers.ContainerdConfig{
+	config := core.ContainerdConfig{
 		SocketPath: explicitPath,
 	}
 
@@ -202,8 +202,8 @@ func TestContainerdBackend_getSocketPath_Explicit(t *testing.T) {
 
 func TestContainerdBackend_getSocketPath_RootMode(t *testing.T) {
 	// Test default socket path in root mode
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 	}
 
 	backend := &ContainerdBackend{
@@ -222,17 +222,17 @@ func TestContainerdBackend_getSocketPath_RootMode(t *testing.T) {
 func TestContainerdBackend_isRootlessMode(t *testing.T) {
 	tests := []struct {
 		name         string
-		rootlessMode containers.RootlessMode
+		rootlessMode core.RootlessMode
 		expected     bool
 	}{
-		{"auto mode", containers.RootlessModeAuto, false},
-		{"disabled", containers.RootlessModeDisabled, false},
-		{"enabled", containers.RootlessModeEnabled, true},
+		{"auto mode", core.RootlessModeAuto, false},
+		{"disabled", core.RootlessModeDisabled, false},
+		{"enabled", core.RootlessModeEnabled, true},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := containers.ContainerdConfig{
+			config := core.ContainerdConfig{
 				RootlessMode: tt.rootlessMode,
 			}
 
@@ -249,8 +249,8 @@ func TestContainerdBackend_isRootlessMode(t *testing.T) {
 }
 
 func TestContainerdBackend_validateUIDGIDMapping(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	backend := &ContainerdBackend{
@@ -264,7 +264,7 @@ func TestContainerdBackend_validateUIDGIDMapping(t *testing.T) {
 }
 
 func TestContainerdBackend_Capabilities(t *testing.T) {
-	config := containers.ContainerdConfig{}
+	config := core.ContainerdConfig{}
 
 	backend := &ContainerdBackend{
 		config: config,
@@ -273,7 +273,7 @@ func TestContainerdBackend_Capabilities(t *testing.T) {
 	caps := backend.Capabilities()
 
 	// Check that all capabilities are set correctly
-	expectedCaps := containers.BackendCapabilities{
+	expectedCaps := core.BackendCapabilities{
 		SupportsMemory:     true,
 		SupportsCPU:        true,
 		SupportsStorage:    true,
@@ -292,8 +292,8 @@ func TestContainerdBackend_Capabilities(t *testing.T) {
 
 func TestContainerdBackend_TestSocketConnection(t *testing.T) {
 	backend := &ContainerdBackend{
-		config: containers.ContainerdConfig{
-			RootlessMode: containers.RootlessModeEnabled,
+		config: core.ContainerdConfig{
+			RootlessMode: core.RootlessModeEnabled,
 			Namespace:    "test",
 		},
 	}
@@ -344,8 +344,8 @@ func TestContainerdBackend_FullIntegration(t *testing.T) {
 
 	// Try to create the backend - this should start containerd if needed
 	// If this fails, it's because our code failed to configure/start containerd properly
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeAuto,
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeAuto,
 		AutoStart:    true,
 		Namespace:    "tau-test",
 	})
@@ -401,8 +401,8 @@ func TestContainerdBackend_SimpleContainerOutput(t *testing.T) {
 	}
 
 	// Use rootless mode with AutoStart - this should start containerd via rootlesskit
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled, // Use rootless mode
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled, // Use rootless mode
 		AutoStart:    true,
 		Namespace:    "tau-test",
 	})
@@ -422,7 +422,7 @@ func TestContainerdBackend_SimpleContainerOutput(t *testing.T) {
 	}()
 
 	// Test 1: Create container that outputs "hello world"
-	containerConfig := &containers.ContainerConfig{
+	containerConfig := &core.ContainerConfig{
 		Image:   "quay.io/libpod/alpine:latest",
 		Command: []string{"echo", "hello world"},
 	}
@@ -481,8 +481,8 @@ func TestContainerdBackend_ContainerExitCode(t *testing.T) {
 	}
 
 	// Use rootless mode with AutoStart - this should start containerd via rootlesskit
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled, // Use rootless mode
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled, // Use rootless mode
 		AutoStart:    true,
 		Namespace:    "tau-test",
 	})
@@ -502,7 +502,7 @@ func TestContainerdBackend_ContainerExitCode(t *testing.T) {
 	}()
 
 	// Test 2: Create container that exits with code 42
-	containerConfig := &containers.ContainerConfig{
+	containerConfig := &core.ContainerConfig{
 		Image:   "quay.io/libpod/alpine:latest",
 		Command: []string{"sh", "-c", "exit 42"},
 	}
@@ -548,8 +548,8 @@ func TestContainerdBackend_ContainerOutput(t *testing.T) {
 	}
 
 	// Use rootless mode with AutoStart
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 		AutoStart:    true,
 		Namespace:    "tau-test",
 	})
@@ -569,7 +569,7 @@ func TestContainerdBackend_ContainerOutput(t *testing.T) {
 
 	t.Run("MultiLineOutput", func(t *testing.T) {
 		// Test container that outputs multiple lines
-		containerConfig := &containers.ContainerConfig{
+		containerConfig := &core.ContainerConfig{
 			Image:   "quay.io/libpod/alpine:latest",
 			Command: []string{"sh", "-c", "echo 'line 1'; echo 'line 2'; echo 'line 3'"},
 		}
@@ -601,7 +601,7 @@ func TestContainerdBackend_ContainerOutput(t *testing.T) {
 
 	t.Run("StdoutAndStderr", func(t *testing.T) {
 		// Test container that outputs to both stdout and stderr
-		containerConfig := &containers.ContainerConfig{
+		containerConfig := &core.ContainerConfig{
 			Image:   "quay.io/libpod/alpine:latest",
 			Command: []string{"sh", "-c", "echo 'stdout message' && echo 'stderr message' >&2"},
 		}
@@ -632,7 +632,7 @@ func TestContainerdBackend_ContainerOutput(t *testing.T) {
 
 	t.Run("SpecialCharacters", func(t *testing.T) {
 		// Test container output with special characters
-		containerConfig := &containers.ContainerConfig{
+		containerConfig := &core.ContainerConfig{
 			Image:   "quay.io/libpod/alpine:latest",
 			Command: []string{"sh", "-c", "echo 'Hello, World! 123 @#$%^&*()'"},
 		}
@@ -664,7 +664,7 @@ func TestContainerdBackend_ContainerOutput(t *testing.T) {
 
 	t.Run("LargeOutput", func(t *testing.T) {
 		// Test container with larger output (multiple KB)
-		containerConfig := &containers.ContainerConfig{
+		containerConfig := &core.ContainerConfig{
 			Image:   "quay.io/libpod/alpine:latest",
 			Command: []string{"sh", "-c", "for i in $(seq 1 100); do echo 'This is line number' $i; done"},
 		}
@@ -696,7 +696,7 @@ func TestContainerdBackend_ContainerOutput(t *testing.T) {
 
 	t.Run("EmptyOutput", func(t *testing.T) {
 		// Test container that produces no output
-		containerConfig := &containers.ContainerConfig{
+		containerConfig := &core.ContainerConfig{
 			Image:   "quay.io/libpod/alpine:latest",
 			Command: []string{"true"}, // true produces no output
 		}
@@ -734,8 +734,8 @@ func min(a, b int) int {
 
 func TestContainerdBackend_RootfulMode_SocketPath(t *testing.T) {
 	// Test that rootful mode uses the correct system socket path
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 	}
 
 	backend := &ContainerdBackend{
@@ -749,8 +749,8 @@ func TestContainerdBackend_RootfulMode_SocketPath(t *testing.T) {
 
 func TestContainerdBackend_RootfulMode_DoesNotStartDaemon(t *testing.T) {
 	// Test that rootful mode doesn't try to start containerd (it's managed by systemd)
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 		AutoStart:    true, // Even with AutoStart, rootful mode shouldn't start
 	}
 
@@ -766,8 +766,8 @@ func TestContainerdBackend_RootfulMode_DoesNotStartDaemon(t *testing.T) {
 
 func TestContainerdBackend_RootfulMode_BackendCreation_NoSystemContainerd(t *testing.T) {
 	// Test that backend creation fails gracefully when system containerd is not running
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 		AutoStart:    false, // Don't try to start
 		Namespace:    "tau-test-rootful",
 	}
@@ -807,8 +807,8 @@ func TestContainerdBackend_RootfulMode_BackendCreation_WithSystemContainerd(t *t
 	conn.Close()
 
 	// Test backend creation with rootful mode when system containerd is running
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 		AutoStart:    false, // Don't try to start (systemd manages it)
 		Namespace:    "tau-test-rootful",
 	})
@@ -853,8 +853,8 @@ func TestContainerdBackend_RootfulMode_ContainerOperations(t *testing.T) {
 	conn.Close()
 
 	// Create backend with rootful mode
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 		AutoStart:    false,
 		Namespace:    "tau-test-rootful",
 	})
@@ -870,7 +870,7 @@ func TestContainerdBackend_RootfulMode_ContainerOperations(t *testing.T) {
 	}()
 
 	// Test container operations with system containerd
-	containerConfig := &containers.ContainerConfig{
+	containerConfig := &core.ContainerConfig{
 		Image:   "quay.io/libpod/alpine:latest",
 		Command: []string{"echo", "hello from rootful mode"},
 	}
@@ -906,8 +906,8 @@ func TestContainerdBackend_RootfulMode_ContainerOperations(t *testing.T) {
 
 func TestContainerdBackend_RootfulMode_AutoStart_DoesNotStart(t *testing.T) {
 	// Test that AutoStart doesn't start containerd in rootful mode
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 		AutoStart:    true, // Even with AutoStart enabled
 		Namespace:    "tau-test-rootful",
 	}
@@ -1248,8 +1248,8 @@ func TestContainerdBackend_NestedDocker_RootfulMode(t *testing.T) {
 	defer cleanup()
 
 	// Create backend pointing to the Docker containerd socket
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 		AutoStart:    false,         // Don't start - it's already running in Docker
 		SocketPath:   tc.socketPath, // Use the socket from Docker container
 		Namespace:    "tau-test-reproducible",
@@ -1276,7 +1276,7 @@ func TestContainerdBackend_NestedDocker_RootfulMode(t *testing.T) {
 	t.Logf("Connected to containerd version: %s", version.Version)
 
 	// Test container operations
-	containerConfig := &containers.ContainerConfig{
+	containerConfig := &core.ContainerConfig{
 		Image:   "quay.io/libpod/alpine:latest",
 		Command: []string{"echo", "hello from reproducible test"},
 	}
@@ -1305,8 +1305,8 @@ func TestContainerdBackend_NestedDocker_ContainerOperations(t *testing.T) {
 	tc, cleanup := setupContainerdInDocker(t)
 	defer cleanup()
 
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 		AutoStart:    false,
 		SocketPath:   tc.socketPath,
 		Namespace:    "tau-test-reproducible-ops",
@@ -1348,7 +1348,7 @@ func TestContainerdBackend_NestedDocker_ContainerOperations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			containerConfig := &containers.ContainerConfig{
+			containerConfig := &core.ContainerConfig{
 				Image:   "quay.io/libpod/alpine:latest",
 				Command: tt.command,
 			}

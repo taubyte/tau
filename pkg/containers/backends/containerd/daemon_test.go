@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 func TestNewDaemon(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	daemon, err := NewDaemon(config)
@@ -35,8 +35,8 @@ func TestNewDaemon(t *testing.T) {
 }
 
 func TestNewDaemon_RootfulMode(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 	}
 
 	daemon, err := NewDaemon(config)
@@ -58,8 +58,8 @@ func TestNewDaemon_RootfulMode(t *testing.T) {
 }
 
 func TestDaemon_findContainerdBinary(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	daemon, err := NewDaemon(config)
@@ -91,8 +91,8 @@ func TestDaemon_findContainerdBinary(t *testing.T) {
 }
 
 func TestDaemon_createConfigFile(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	daemon, err := NewDaemon(config)
@@ -140,8 +140,8 @@ func TestDaemon_createConfigFile(t *testing.T) {
 }
 
 func TestDaemon_isRunning(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	daemon, err := NewDaemon(config)
@@ -163,8 +163,8 @@ func TestDaemon_isRunning(t *testing.T) {
 }
 
 func TestDaemon_waitForSocket(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	daemon, err := NewDaemon(config)
@@ -183,8 +183,8 @@ func TestDaemon_waitForSocket(t *testing.T) {
 }
 
 func TestDaemon_HealthCheck(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	daemon, err := NewDaemon(config)
@@ -214,8 +214,8 @@ func TestDaemon_FullIntegration(t *testing.T) {
 		t.Skip("Skipping integration test: containerd binary not found")
 	}
 
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 		AutoStart:    true,
 		Namespace:    "test",
 	}
@@ -259,8 +259,8 @@ func TestDaemon_FullIntegration(t *testing.T) {
 }
 
 func TestDaemon_connectToSocket(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	daemon, err := NewDaemon(config)

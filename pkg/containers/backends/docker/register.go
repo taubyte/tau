@@ -1,11 +1,17 @@
 package docker
 
 import (
-	"github.com/taubyte/tau/pkg/containers"
+	"fmt"
+
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 func init() {
-	containers.RegisterBackend(containers.BackendTypeDocker, func(config containers.DockerConfig) (containers.Backend, error) {
-		return New(config)
+	core.RegisterBackend(core.BackendTypeDocker, func(config core.BackendConfig) (core.Backend, error) {
+		dockerConfig, ok := config.(core.DockerConfig)
+		if !ok {
+			return nil, fmt.Errorf("expected DockerConfig, got %T", config)
+		}
+		return New(dockerConfig)
 	})
 }

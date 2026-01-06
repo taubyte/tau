@@ -7,17 +7,17 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 func TestCapabilities(t *testing.T) {
 	backend := &DockerBackend{
-		config: containers.DockerConfig{},
+		config: core.DockerConfig{},
 	}
 
 	caps := backend.Capabilities()
 
-	expectedCaps := containers.BackendCapabilities{
+	expectedCaps := core.BackendCapabilities{
 		SupportsMemory:     true,
 		SupportsCPU:        true,
 		SupportsStorage:    true,
@@ -35,7 +35,7 @@ func TestCapabilities(t *testing.T) {
 func TestInitClient(t *testing.T) {
 	t.Run("DefaultHost", func(t *testing.T) {
 		backend := &DockerBackend{
-			config: containers.DockerConfig{},
+			config: core.DockerConfig{},
 		}
 
 		originalHost := os.Getenv("DOCKER_HOST")
@@ -56,7 +56,7 @@ func TestInitClient(t *testing.T) {
 
 	t.Run("CustomHost", func(t *testing.T) {
 		backend := &DockerBackend{
-			config: containers.DockerConfig{
+			config: core.DockerConfig{
 				Host: "unix:///var/run/docker.sock",
 			},
 		}
@@ -69,7 +69,7 @@ func TestInitClient(t *testing.T) {
 
 	t.Run("EnvHost", func(t *testing.T) {
 		backend := &DockerBackend{
-			config: containers.DockerConfig{},
+			config: core.DockerConfig{},
 		}
 
 		originalHost := os.Getenv("DOCKER_HOST")
@@ -90,7 +90,7 @@ func TestInitClient(t *testing.T) {
 
 	t.Run("APIVersion", func(t *testing.T) {
 		backend := &DockerBackend{
-			config: containers.DockerConfig{
+			config: core.DockerConfig{
 				APIVersion: "1.40",
 			},
 		}
@@ -102,10 +102,10 @@ func TestInitClient(t *testing.T) {
 
 	t.Run("InitClientFailure", func(t *testing.T) {
 		backend := &DockerBackend{
-			config: containers.DockerConfig{
+			config: core.DockerConfig{
 				Host: "invalid://host:9999",
 			},
-			containers: make(map[containers.ContainerID]string),
+			containers: make(map[core.ContainerID]string),
 		}
 
 		err := backend.initClient()
@@ -118,10 +118,10 @@ func TestInitClient(t *testing.T) {
 func TestNew(t *testing.T) {
 	t.Run("HealthCheckError", func(t *testing.T) {
 		backend := &DockerBackend{
-			config: containers.DockerConfig{
+			config: core.DockerConfig{
 				Host: "tcp://127.0.0.1:1",
 			},
-			containers: make(map[containers.ContainerID]string),
+			containers: make(map[core.ContainerID]string),
 		}
 
 		err := backend.initClient()
@@ -145,7 +145,7 @@ func TestHealthCheck(t *testing.T) {
 	})
 
 	t.Run("Integration", func(t *testing.T) {
-		backend, err := New(containers.DockerConfig{})
+		backend, err := New(core.DockerConfig{})
 		require.NoError(t, err, "Backend creation must succeed - Docker is required")
 		require.NotNil(t, backend, "Backend must not be nil")
 

@@ -11,7 +11,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 func TestImage(t *testing.T) {
@@ -37,7 +37,7 @@ func TestImage(t *testing.T) {
 		})
 
 		t.Run("Integration", func(t *testing.T) {
-			backend, err := New(containers.DockerConfig{})
+			backend, err := New(core.DockerConfig{})
 			require.NoError(t, err, "Backend creation must succeed - Docker is required")
 			require.NotNil(t, backend, "Backend must not be nil")
 
@@ -56,7 +56,7 @@ func TestImage(t *testing.T) {
 }
 
 func TestImage_Pull(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -134,7 +134,7 @@ func TestImage_Pull(t *testing.T) {
 }
 
 func TestImage_Build(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -168,7 +168,7 @@ func TestImage_Build(t *testing.T) {
 		require.NotNil(t, image, "Image must not be nil")
 
 		mockInput := &mockBuildInput{
-			backendType: containers.BackendTypeContainerd,
+			backendType: core.BackendTypeContainerd,
 		}
 
 		err = image.Build(context.Background(), mockInput)
@@ -181,7 +181,7 @@ func TestImage_Build(t *testing.T) {
 		require.NotNil(t, image, "Image must not be nil")
 
 		mockInput := &mockBuildInput{
-			backendType: containers.BackendTypeDocker,
+			backendType: core.BackendTypeDocker,
 		}
 
 		err = image.Build(context.Background(), mockInput)
@@ -288,7 +288,7 @@ func TestImage_Build(t *testing.T) {
 }
 
 func TestImage_Remove(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -337,7 +337,7 @@ func TestImage_Remove(t *testing.T) {
 }
 
 func TestImage_Digest(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -387,7 +387,7 @@ func TestImage_Digest(t *testing.T) {
 }
 
 func TestImage_Tags(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -439,13 +439,13 @@ func TestImage_Tags(t *testing.T) {
 
 func TestDockerBuildInputType(t *testing.T) {
 	input := &DockerBuildInput{}
-	assert.Equal(t, containers.BackendTypeDocker, input.Type())
+	assert.Equal(t, core.BackendTypeDocker, input.Type())
 }
 
 type mockBuildInput struct {
-	backendType containers.BackendType
+	backendType core.BackendType
 }
 
-func (m *mockBuildInput) Type() containers.BackendType {
+func (m *mockBuildInput) Type() core.BackendType {
 	return m.backendType
 }

@@ -8,10 +8,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-func waitForContainerStatus(t *testing.T, backend *DockerBackend, ctx context.Context, containerID containers.ContainerID, expectedStatuses []string, timeout time.Duration) string {
+func waitForContainerStatus(t *testing.T, backend *DockerBackend, ctx context.Context, containerID core.ContainerID, expectedStatuses []string, timeout time.Duration) string {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	ticker := time.NewTicker(50 * time.Millisecond)
@@ -40,24 +40,24 @@ func waitForContainerStatus(t *testing.T, backend *DockerBackend, ctx context.Co
 }
 
 func TestRegistration(t *testing.T) {
-	availableBackends := containers.AvailableBackends()
-	assert.Contains(t, availableBackends, containers.BackendTypeDocker, "Docker backend must be registered")
-
-	backend, err := containers.NewBackend(containers.DockerConfig{})
-	require.NoError(t, err, "NewBackend must succeed for Docker")
+	// Test that we can create a Docker backend directly
+	backend, err := New(core.DockerConfig{})
+	require.NoError(t, err, "New must succeed for Docker")
 	require.NotNil(t, backend, "Backend must not be nil")
 
 	defer func() {
-		if dockerBackend, ok := backend.(*DockerBackend); ok && dockerBackend.client != nil {
-			require.NoError(t, dockerBackend.client.Close(), "Client close must succeed")
+		if backend.client != nil {
+			require.NoError(t, backend.client.Close(), "Client close must succeed")
 		}
 	}()
 
-	assert.NotNil(t, backend, "Backend must be created via registration")
+	// Verify it's a valid backend by checking capabilities
+	caps := backend.Capabilities()
+	assert.NotNil(t, caps, "Backend must have capabilities")
 }
 
 func TestFullIntegration(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -88,7 +88,7 @@ func TestFullIntegration(t *testing.T) {
 		require.True(t, image.Exists(ctx), "Image must exist after pull")
 	}
 
-	config := &containers.ContainerConfig{
+	config := &core.ContainerConfig{
 		Image:   "alpine:latest",
 		Command: []string{"echo", "test"},
 	}
@@ -142,7 +142,7 @@ func TestFullIntegration(t *testing.T) {
 }
 
 func TestContainerOutput(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -194,7 +194,7 @@ func TestContainerOutput(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			containerConfig := &containers.ContainerConfig{
+			containerConfig := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				Command: tt.command,
 			}

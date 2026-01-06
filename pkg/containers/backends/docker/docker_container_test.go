@@ -7,11 +7,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 func TestCreate(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -34,7 +34,7 @@ func TestCreate(t *testing.T) {
 			client: nil,
 		}
 
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"echo", "test"},
 		}
@@ -46,7 +46,7 @@ func TestCreate(t *testing.T) {
 	})
 
 	t.Run("InvalidImageName", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "invalid-image-name-that-does-not-exist:999999",
 			Command: []string{"echo", "test"},
 		}
@@ -57,10 +57,10 @@ func TestCreate(t *testing.T) {
 	})
 
 	t.Run("ConfigError", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image: "invalid-image-that-does-not-exist:999999",
-			Network: &containers.NetworkConfig{
-				PortMappings: []containers.PortMapping{
+			Network: &core.NetworkConfig{
+				PortMappings: []core.PortMapping{
 					{
 						HostPort:      8080,
 						ContainerPort: 80,
@@ -76,10 +76,10 @@ func TestCreate(t *testing.T) {
 	})
 
 	t.Run("InvalidPort", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image: "alpine:latest",
-			Network: &containers.NetworkConfig{
-				PortMappings: []containers.PortMapping{
+			Network: &core.NetworkConfig{
+				PortMappings: []core.PortMapping{
 					{
 						HostPort:      8080,
 						ContainerPort: 99999,
@@ -97,7 +97,7 @@ func TestCreate(t *testing.T) {
 }
 
 func TestStart(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -120,19 +120,19 @@ func TestStart(t *testing.T) {
 			client: nil,
 		}
 
-		err := backend.Start(context.Background(), containers.ContainerID("test"))
+		err := backend.Start(context.Background(), core.ContainerID("test"))
 		assert.Error(t, err, "Start must fail when client is nil")
 		assert.Contains(t, err.Error(), "not initialized")
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		err = backend.Start(context.Background(), containers.ContainerID("nonexistent"))
+		err = backend.Start(context.Background(), core.ContainerID("nonexistent"))
 		assert.Error(t, err, "Start must fail for non-existent container")
 	})
 }
 
 func TestStop(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -155,18 +155,18 @@ func TestStop(t *testing.T) {
 			client: nil,
 		}
 
-		err := backend.Stop(context.Background(), containers.ContainerID("test"))
+		err := backend.Stop(context.Background(), core.ContainerID("test"))
 		assert.Error(t, err, "Stop must fail when client is nil")
 		assert.Contains(t, err.Error(), "not initialized")
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		err = backend.Stop(context.Background(), containers.ContainerID("nonexistent"))
+		err = backend.Stop(context.Background(), core.ContainerID("nonexistent"))
 		assert.Error(t, err, "Stop must fail for non-existent container")
 	})
 
 	t.Run("Success", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"sleep", "10"},
 		}
@@ -196,7 +196,7 @@ func TestStop(t *testing.T) {
 }
 
 func TestRemove(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -210,19 +210,19 @@ func TestRemove(t *testing.T) {
 			client: nil,
 		}
 
-		err := backend.Remove(context.Background(), containers.ContainerID("test"))
+		err := backend.Remove(context.Background(), core.ContainerID("test"))
 		assert.Error(t, err, "Remove must fail when client is nil")
 		assert.Contains(t, err.Error(), "not initialized")
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		err = backend.Remove(context.Background(), containers.ContainerID("nonexistent"))
+		err = backend.Remove(context.Background(), core.ContainerID("nonexistent"))
 		assert.Error(t, err, "Remove must fail for non-existent container")
 	})
 }
 
 func TestWait(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -245,18 +245,18 @@ func TestWait(t *testing.T) {
 			client: nil,
 		}
 
-		err := backend.Wait(context.Background(), containers.ContainerID("test"))
+		err := backend.Wait(context.Background(), core.ContainerID("test"))
 		assert.Error(t, err, "Wait must fail when client is nil")
 		assert.Contains(t, err.Error(), "not initialized")
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		err = backend.Wait(context.Background(), containers.ContainerID("nonexistent"))
+		err = backend.Wait(context.Background(), core.ContainerID("nonexistent"))
 		assert.Error(t, err, "Wait must fail for non-existent container")
 	})
 
 	t.Run("ZeroExitCode", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"echo", "test"},
 		}
@@ -277,7 +277,7 @@ func TestWait(t *testing.T) {
 	})
 
 	t.Run("NonZeroExitCode", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"sh", "-c", "exit 42"},
 		}
@@ -300,7 +300,7 @@ func TestWait(t *testing.T) {
 }
 
 func TestLogs(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -314,21 +314,21 @@ func TestLogs(t *testing.T) {
 			client: nil,
 		}
 
-		logs, err := backend.Logs(context.Background(), containers.ContainerID("test"))
+		logs, err := backend.Logs(context.Background(), core.ContainerID("test"))
 		assert.Error(t, err, "Logs must fail when client is nil")
 		assert.Nil(t, logs, "Logs must be nil on error")
 		assert.Contains(t, err.Error(), "not initialized")
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		logs, err := backend.Logs(context.Background(), containers.ContainerID("nonexistent"))
+		logs, err := backend.Logs(context.Background(), core.ContainerID("nonexistent"))
 		assert.Error(t, err, "Logs must fail for non-existent container")
 		assert.Nil(t, logs, "Logs must be nil on error")
 	})
 }
 
 func TestInspect(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -351,23 +351,23 @@ func TestInspect(t *testing.T) {
 			client: nil,
 		}
 
-		info, err := backend.Inspect(context.Background(), containers.ContainerID("test"))
+		info, err := backend.Inspect(context.Background(), core.ContainerID("test"))
 		assert.Error(t, err, "Inspect must fail when client is nil")
 		assert.Nil(t, info, "Info must be nil on error")
 		assert.Contains(t, err.Error(), "not initialized")
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		info, err := backend.Inspect(context.Background(), containers.ContainerID("nonexistent"))
+		info, err := backend.Inspect(context.Background(), core.ContainerID("nonexistent"))
 		assert.Error(t, err, "Inspect must fail for non-existent container")
 		assert.Nil(t, info, "Info must be nil on error")
 	})
 
 	t.Run("WithResources", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"echo", "test"},
-			Resources: &containers.ResourceLimits{
+			Resources: &core.ResourceLimits{
 				Memory: 1024 * 1024 * 512,
 				PIDs:   100,
 			},
@@ -389,10 +389,10 @@ func TestInspect(t *testing.T) {
 	})
 
 	t.Run("WithPidsLimit", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"echo", "test"},
-			Resources: &containers.ResourceLimits{
+			Resources: &core.ResourceLimits{
 				Memory: 1024 * 1024 * 512,
 				PIDs:   100,
 			},
@@ -416,7 +416,7 @@ func TestInspect(t *testing.T) {
 	})
 
 	t.Run("NoResources", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"echo", "test"},
 		}
@@ -437,7 +437,7 @@ func TestInspect(t *testing.T) {
 
 	t.Run("ExitCode", func(t *testing.T) {
 		t.Run("Zero", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				Command: []string{"echo", "test"},
 			}
@@ -464,7 +464,7 @@ func TestInspect(t *testing.T) {
 		})
 
 		t.Run("NotSet", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				Command: []string{"echo", "test"},
 			}
@@ -488,7 +488,7 @@ func TestInspect(t *testing.T) {
 	})
 
 	t.Run("StartedAt", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"echo", "test"},
 		}
@@ -516,7 +516,7 @@ func TestInspect(t *testing.T) {
 }
 
 func TestGetDockerID(t *testing.T) {
-	backend, err := New(containers.DockerConfig{})
+	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
 
@@ -535,7 +535,7 @@ func TestGetDockerID(t *testing.T) {
 	}
 
 	t.Run("MapLookup", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"echo", "test"},
 		}
@@ -559,7 +559,7 @@ func TestGetDockerID(t *testing.T) {
 	})
 
 	t.Run("ContainerListSuccess", func(t *testing.T) {
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"echo", "test"},
 		}
@@ -581,13 +581,13 @@ func TestGetDockerID(t *testing.T) {
 	})
 
 	t.Run("NotFound", func(t *testing.T) {
-		_, err = backend.getDockerID(ctx, containers.ContainerID("nonexistent-container"))
+		_, err = backend.getDockerID(ctx, core.ContainerID("nonexistent-container"))
 		require.Error(t, err, "getDockerID must fail for non-existent container")
 		assert.Contains(t, err.Error(), "not found", "Error message must indicate container not found")
 	})
 
 	t.Run("EmptyContainersList", func(t *testing.T) {
-		_, err = backend.getDockerID(ctx, containers.ContainerID("nonexistent-container-id-12345"))
+		_, err = backend.getDockerID(ctx, core.ContainerID("nonexistent-container-id-12345"))
 		assert.Error(t, err, "getDockerID must fail for non-existent container")
 		assert.Contains(t, err.Error(), "not found", "Error must indicate container not found")
 	})
@@ -596,7 +596,7 @@ func TestGetDockerID(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		_, err = backend.getDockerID(ctx, containers.ContainerID("nonexistent"))
+		_, err = backend.getDockerID(ctx, core.ContainerID("nonexistent"))
 		assert.Error(t, err, "getDockerID must fail with cancelled context")
 	})
 }

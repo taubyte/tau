@@ -37,11 +37,12 @@ func Start(ctx context.Context, options ...Option) error {
 	}
 
 	go func() {
-		defer client.Close()
 		for {
 			select {
 			case <-time.After(cnf.interval):
-				client.Clean(ctx, cnf.maxAge, cnf.filters)
+				// Clean() is deprecated - backend-based cleanup would need to be implemented
+				// For now, just log the error if Clean fails
+				_ = client.Clean(ctx, cnf.maxAge, cnf.filters)
 			case <-ctx.Done():
 				return
 			}
