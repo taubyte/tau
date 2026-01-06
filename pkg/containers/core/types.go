@@ -4,8 +4,14 @@ package core
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
+)
+
+var (
+	// ErrBuildNotSupported is returned when a backend doesn't support building images
+	ErrBuildNotSupported = errors.New("build not supported by this backend")
 )
 
 // ContainerID is a type-safe identifier for containers

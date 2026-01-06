@@ -11,6 +11,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/containerd/containerd"
@@ -200,8 +201,10 @@ func (b *ContainerdBackend) initClient() error {
 
 // Image returns an Image interface for the given image name
 func (b *ContainerdBackend) Image(name string) core.Image {
-	// TODO: Implement image operations
-	return nil
+	return &containerdImage{
+		backend: b,
+		name:    name,
+	}
 }
 
 // Create creates a new container
@@ -464,7 +467,29 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error
 		os.RemoveAll(taskIO.fifoDir)
 	}
 
-	_, err := taskIO.task.Delete(ctx)
+	// Kill the task before deleting it (required for running tasks)
+	status, err := taskIO.task.Status(ctx)
+	if err == nil && status.Status == containerd.Running {
+		if err := taskIO.task.Kill(ctx, syscall.SIGTERM); err != nil {
+			// Try SIGKILL if SIGTERM fails
+			if err := taskIO.task.Kill(ctx, syscall.SIGKILL); err != nil {
+				return fmt.Errorf("failed to kill container %s: %w", id, err)
+			}
+		}
+		// Wait for the task to actually stop
+		exitStatusC, err := taskIO.task.Wait(ctx)
+		if err == nil {
+			select {
+			case <-exitStatusC:
+				// Task has exited
+			case <-time.After(5 * time.Second):
+				// Timeout - try SIGKILL again
+				taskIO.task.Kill(ctx, syscall.SIGKILL)
+			}
+		}
+	}
+
+	_, err = taskIO.task.Delete(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to stop container %s: %w", id, err)
 	}
@@ -616,8 +641,18 @@ func (b *ContainerdBackend) Inspect(ctx context.Context, id core.ContainerID) (*
 
 // HealthCheck performs a health check on the backend
 func (b *ContainerdBackend) HealthCheck(ctx context.Context) error {
-	// TODO: Implement health check
-	return fmt.Errorf("health check not implemented")
+	if b.client == nil {
+		return fmt.Errorf("containerd client not initialized")
+	}
+
+	ctx = namespaces.WithNamespace(ctx, b.config.Namespace)
+
+	_, err := b.client.Version(ctx)
+	if err != nil {
+		return fmt.Errorf("containerd daemon not responding: %w", err)
+	}
+
+	return nil
 }
 
 // Capabilities returns the backend capabilities
