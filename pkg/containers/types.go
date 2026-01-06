@@ -3,7 +3,7 @@ package containers
 import (
 	"io"
 
-	"github.com/docker/docker/client"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 var (
@@ -16,8 +16,9 @@ type MuxedReadCloser struct {
 }
 
 // Client wraps the methods of the docker Client.
+// It now uses a Backend internally for container operations.
 type Client struct {
-	*client.Client
+	backend        core.Backend // Lazily initialized when needed
 	progressOutput bool
 }
 
@@ -28,9 +29,12 @@ type volume struct {
 }
 
 // Container wraps the methods of the docker container.
+// It now uses a Backend internally for container operations.
 type Container struct {
-	image   *Image
-	id      string
+	backend core.Backend
+	id      core.ContainerID
+	// Keep old fields for backward compatibility with options
+	image   *DockerImage // Kept for reference, but operations use backend
 	cmd     []string
 	shell   []string
 	volumes []volume
@@ -38,12 +42,21 @@ type Container struct {
 	workDir string
 }
 
-// Image wraps the methods of the docker image.
-type Image struct {
-	client       *Client
+// DockerImage wraps the methods of the docker image.
+// It now uses a Backend internally for image operations.
+type DockerImage struct {
+	backend      core.Backend
 	image        string
 	buildTarball io.Reader
 	output       io.Writer
+	// Keep client reference for backward compatibility
+	client *Client // Kept for reference, but operations use backend
+}
+
+// Close is a no-op for backward compatibility.
+// The backend handles its own lifecycle and doesn't need explicit closing.
+func (c *Client) Close() error {
+	return nil
 }
 
 type PullStatus struct {
@@ -66,3 +79,5 @@ type BuildStatus struct {
 		Message string `json:"message"`
 	} `json:"errorDetail"`
 }
+
+// Types are now in core package, re-exported in backend.go

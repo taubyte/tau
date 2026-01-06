@@ -10,7 +10,7 @@ import (
 
 var client *containers.Client
 var err error
-var image *containers.Image
+var image *containers.DockerImage
 
 func ExampleNew() {
 	// create new docker client

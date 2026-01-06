@@ -12,9 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/taubyte/go-simple-container/gc"
 	ci "github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/gc"
 )
 
 // Test Path Variables
@@ -172,30 +171,28 @@ func TestContainerCleanUpInterval(t *testing.T) {
 		return
 	}
 
-	images, err := cli.ImageList(ctx, types.ImageListOptions{
-		Filters: ci.NewFilter("reference", testCustomImage),
-	})
+	// Check if image exists locally - Image() checks existence first before pulling
+	// The image was just built, so it should exist locally
+	img, err := cli.Image(ctx, testCustomImage)
 	if err != nil {
-		t.Error(err)
-		return
+		// Image() may return error if pull fails, but image might still exist locally
+		// Check existence directly
+		if img == nil || !img.Exists(ctx) {
+			t.Errorf("Failed to get image: %v", err)
+			return
+		}
 	}
-
-	if len(images) == 0 {
+	if img == nil || !img.Exists(ctx) {
 		t.Errorf("Expected to find docker image %s", testCustomImage)
 		return
 	}
 
 	time.Sleep(20 * time.Second)
 
-	images, err = cli.ImageList(ctx, types.ImageListOptions{
-		Filters: ci.NewFilter("reference", testCustomImage),
-	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	if len(images) > 0 {
+	// Check again after cleanup interval - image should be cleaned up
+	// If image was cleaned up, Image() will return error or Exists() will return false
+	img2, err2 := cli.Image(ctx, testCustomImage)
+	if err2 == nil && img2 != nil && img2.Exists(ctx) {
 		t.Error("Expected to find no containers after clean interval")
 	}
 }

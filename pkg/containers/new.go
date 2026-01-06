@@ -3,7 +3,8 @@ package containers
 import (
 	"fmt"
 
-	"github.com/docker/docker/client"
+	_ "github.com/taubyte/tau/pkg/containers/backends/containerd" // Register containerd backend (if available)
+	_ "github.com/taubyte/tau/pkg/containers/backends/docker"     // Register docker backend
 )
 
 type Option func(*Client) error
@@ -17,6 +18,7 @@ func Verbose() Option {
 }
 
 // New creates a new dockerClient with default Options.
+// Backend is initialized immediately (Docker first, fallback to containerd).
 func New(options ...Option) (dockerClient *Client, err error) {
 	dockerClient = &Client{
 		progressOutput: false,
@@ -27,10 +29,12 @@ func New(options ...Option) (dockerClient *Client, err error) {
 			return nil, err
 		}
 	}
-	dockerClient.Client, err = client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+
+	backend, err := getDefaultBackend()
 	if err != nil {
-		return nil, fmt.Errorf("new docker client failed with: %w", err)
+		return nil, fmt.Errorf("failed to initialize backend: %w", err)
 	}
+	dockerClient.backend = backend
 
 	return
 }

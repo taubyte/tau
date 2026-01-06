@@ -3,7 +3,11 @@
 # Learn more about .gitignore:
 #     https://www.atlassian.com/git/tutorials/saving-changes/gitignore
 
+**/PLAN*.md
+
 .vscode/
+
+.vagrant/
 
 coverage.html
 coverage.out

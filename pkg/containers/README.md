@@ -1,19 +1,19 @@
 # taubyte/go-simple-container 
 
-[![Release](https://img.shields.io/github/release/taubyte/go-simple-container.svg)](https://github.com/taubyte/go-simple-container/releases)
+[![Release](https://img.shields.io/github/release/taubyte/go-simple-container.svg)](https://github.com/taubyte/tau/pkg/containers/releases)
 [![License](https://img.shields.io/github/license/taubyte/go-simple-container)](LICENSE)
 [![Go Report Card](https://goreportcard.com/badge/taubyte/go-simple-container)](https://goreportcard.com/report/taubyte/go-simple-container)
-[![GoDoc](https://godoc.org/github.com/taubyte/go-simple-container?status.svg)](https://pkg.go.dev/github.com/taubyte/go-simple-container)
+[![GoDoc](https://godoc.org/github.com/taubyte/tau/pkg/containers?status.svg)](https://pkg.go.dev/github.com/taubyte/tau/pkg/containers)
 [![Discord](https://img.shields.io/discord/973677117722202152?color=%235865f2&label=discord)](https://tau.link/discord)
 
 An abstraction layer over the docker api client. Goal: make it simple to use containers from go.
 
 ## Installation 
-The import path for the package is *github.com/taubyte/go-simple-container*.
+The import path for the package is *github.com/taubyte/tau/pkg/containers*.
 
 To install it, run:
 ```bash 
-go get github.com/taubyte/go-simple-container
+go get github.com/taubyte/tau/pkg/containers
 ```
 
 
@@ -117,7 +117,7 @@ client.Image(context.Background(),"taubyte/testrepo:version1",imageOption)
 ### Creating a Garbage Collector
 ```go
 import ( 
-    "github.com/taubyte/go-simple-container/gc"
+    "github.com/taubyte/tau/pkg/containers/gc"
     ci "github.com/taubyte/tau/pkg/containers" 
 )
 
