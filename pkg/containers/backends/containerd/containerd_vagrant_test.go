@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 // TestContainerdBackend_Vagrant_RootfulMode tests rootful mode using containerd in Vagrant VM
@@ -20,8 +20,8 @@ func TestContainerdBackend_Vagrant_RootfulMode(t *testing.T) {
 	}
 
 	// Create backend pointing to local containerd socket (running in this VM)
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 		AutoStart:    false,                             // Don't start - it's already running as system service
 		SocketPath:   "/run/containerd/containerd.sock", // Local socket in VM
 		Namespace:    "tau-test-vagrant",
@@ -48,7 +48,7 @@ func TestContainerdBackend_Vagrant_RootfulMode(t *testing.T) {
 	t.Logf("Connected to containerd version: %s", version.Version)
 
 	// Test container operations
-	containerConfig := &containers.ContainerConfig{
+	containerConfig := &core.ContainerConfig{
 		Image:   "quay.io/libpod/alpine:latest",
 		Command: []string{"echo", "hello from vagrant test"},
 	}
@@ -71,8 +71,8 @@ func TestContainerdBackend_Vagrant_ContainerOperations(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeDisabled,
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeDisabled,
 		AutoStart:    false,
 		SocketPath:   "/run/containerd/containerd.sock", // Local socket in VM
 		Namespace:    "tau-test-vagrant-ops",
@@ -114,7 +114,7 @@ func TestContainerdBackend_Vagrant_ContainerOperations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			containerConfig := &containers.ContainerConfig{
+			containerConfig := &core.ContainerConfig{
 				Image:   "quay.io/libpod/alpine:latest",
 				Command: tt.command,
 			}
@@ -165,8 +165,8 @@ func TestContainerdBackend_Vagrant_RootlessMode(t *testing.T) {
 
 	// Create backend with rootless mode enabled and AutoStart
 	// Socket path will be auto-detected (XDG_RUNTIME_DIR/tau/containerd/containerd.sock)
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 		AutoStart:    true, // Start rootless containerd automatically
 		Namespace:    "tau-test-vagrant-rootless",
 	})
@@ -196,7 +196,7 @@ func TestContainerdBackend_Vagrant_RootlessMode(t *testing.T) {
 	t.Logf("Connected to rootless containerd version: %s", version.Version)
 
 	// Test container operations
-	containerConfig := &containers.ContainerConfig{
+	containerConfig := &core.ContainerConfig{
 		Image:   "quay.io/libpod/alpine:latest",
 		Command: []string{"echo", "hello from rootless vagrant test"},
 	}
@@ -219,8 +219,8 @@ func TestContainerdBackend_Vagrant_RootlessContainerOperations(t *testing.T) {
 		t.Skip("Skipping integration test in short mode")
 	}
 
-	backend, err := New(containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	backend, err := New(core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 		AutoStart:    true, // Start rootless containerd automatically
 		Namespace:    "tau-test-vagrant-rootless-ops",
 	})
@@ -265,7 +265,7 @@ func TestContainerdBackend_Vagrant_RootlessContainerOperations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			containerConfig := &containers.ContainerConfig{
+			containerConfig := &core.ContainerConfig{
 				Image:   "quay.io/libpod/alpine:latest",
 				Command: tt.command,
 			}

@@ -11,18 +11,18 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 // RootlessManager handles rootless mode operations and UID/GID mapping
 type RootlessManager struct {
-	config            containers.ContainerdConfig
+	config            core.ContainerdConfig
 	rootlesskitPath   string
 	fuseOverlayfsPath string
 }
 
 // NewRootlessManager creates a new rootless manager
-func NewRootlessManager(config containers.ContainerdConfig) (*RootlessManager, error) {
+func NewRootlessManager(config core.ContainerdConfig) (*RootlessManager, error) {
 	rm := &RootlessManager{
 		config: config,
 	}

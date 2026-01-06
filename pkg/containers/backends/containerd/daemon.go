@@ -15,22 +15,22 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 // Daemon manages containerd daemon lifecycle for auto-start functionality
 type Daemon struct {
-	config     containers.ContainerdConfig
+	config     core.ContainerdConfig
 	process    *os.Process
 	socketPath string
 	stateFile  string
 }
 
 // NewDaemon creates a new daemon manager
-func NewDaemon(config containers.ContainerdConfig) (*Daemon, error) {
+func NewDaemon(config core.ContainerdConfig) (*Daemon, error) {
 	// Determine if we need rootless mode
-	isRootless := config.RootlessMode == containers.RootlessModeEnabled ||
-		(config.RootlessMode == containers.RootlessModeAuto && os.Geteuid() != 0)
+	isRootless := config.RootlessMode == core.RootlessModeEnabled ||
+		(config.RootlessMode == core.RootlessModeAuto && os.Geteuid() != 0)
 
 	var socketPath, stateFile string
 
@@ -87,8 +87,8 @@ func (d *Daemon) Start(ctx context.Context) error {
 	}
 
 	// Determine if we need rootless mode
-	isRootless := d.config.RootlessMode == containers.RootlessModeEnabled ||
-		(d.config.RootlessMode == containers.RootlessModeAuto && os.Geteuid() != 0)
+	isRootless := d.config.RootlessMode == core.RootlessModeEnabled ||
+		(d.config.RootlessMode == core.RootlessModeAuto && os.Geteuid() != 0)
 
 	if !isRootless {
 		// Rootful mode: containerd is managed by systemd, we don't start it

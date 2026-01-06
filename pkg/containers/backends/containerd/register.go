@@ -5,11 +5,17 @@
 package containerd
 
 import (
-	"github.com/taubyte/tau/pkg/containers"
+	"fmt"
+
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 func init() {
-	containers.RegisterBackend(containers.BackendTypeContainerd, func(config containers.ContainerdConfig) (containers.Backend, error) {
-		return New(config)
+	core.RegisterBackend(core.BackendTypeContainerd, func(config core.BackendConfig) (core.Backend, error) {
+		containerdConfig, ok := config.(core.ContainerdConfig)
+		if !ok {
+			return nil, fmt.Errorf("expected ContainerdConfig, got %T", config)
+		}
+		return New(containerdConfig)
 	})
 }

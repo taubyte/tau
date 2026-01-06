@@ -12,12 +12,12 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 func TestNewRootlessManager(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	rm, err := NewRootlessManager(config)
@@ -35,8 +35,8 @@ func TestNewRootlessManager(t *testing.T) {
 }
 
 func TestRootlessManager_validateUIDGIDMapping(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	rm, err := NewRootlessManager(config)
@@ -57,8 +57,8 @@ func TestRootlessManager_validateUIDGIDMapping(t *testing.T) {
 }
 
 func TestRootlessManager_validateMountPermissions(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	rm, err := NewRootlessManager(config)
@@ -85,8 +85,8 @@ func TestRootlessManager_validateMountPermissions(t *testing.T) {
 }
 
 func TestRootlessManager_readSubIDMappings(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	rm, err := NewRootlessManager(config)
@@ -123,8 +123,8 @@ func TestRootlessManager_readSubIDMappings(t *testing.T) {
 }
 
 func TestRootlessManager_canMapUID(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	rm, err := NewRootlessManager(config)
@@ -154,8 +154,8 @@ func TestRootlessManager_canMapUID(t *testing.T) {
 }
 
 func TestRootlessManager_canMapGID(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	rm, err := NewRootlessManager(config)
@@ -185,8 +185,8 @@ func TestRootlessManager_canMapGID(t *testing.T) {
 }
 
 func TestRootlessManager_rootlesskitFunctionality(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	rm, err := NewRootlessManager(config)
@@ -235,8 +235,8 @@ func TestRootlessManager_rootlesskitFunctionality(t *testing.T) {
 }
 
 func TestRootlessManager_rootlesskitMountTest(t *testing.T) {
-	config := containers.ContainerdConfig{
-		RootlessMode: containers.RootlessModeEnabled,
+	config := core.ContainerdConfig{
+		RootlessMode: core.RootlessModeEnabled,
 	}
 
 	rm, err := NewRootlessManager(config)

@@ -13,21 +13,21 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/go-connections/nat"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-// DockerBackend implements the containers.Backend interface for Docker
+// DockerBackend implements the core.Backend interface for Docker
 type DockerBackend struct {
-	config     containers.DockerConfig
+	config     core.DockerConfig
 	client     *client.Client
-	containers map[containers.ContainerID]string // Map container ID to Docker container ID
+	containers map[core.ContainerID]string // Map container ID to Docker container ID
 }
 
 // New creates a new Docker backend
-func New(config containers.DockerConfig) (*DockerBackend, error) {
+func New(config core.DockerConfig) (*DockerBackend, error) {
 	backend := &DockerBackend{
 		config:     config,
-		containers: make(map[containers.ContainerID]string),
+		containers: make(map[core.ContainerID]string),
 	}
 
 	if err := backend.initClient(); err != nil {
@@ -67,7 +67,7 @@ func (b *DockerBackend) initClient() error {
 }
 
 // Image returns an Image interface for the given image name
-func (b *DockerBackend) Image(name string) containers.Image {
+func (b *DockerBackend) Image(name string) core.Image {
 	return &dockerImage{
 		backend: b,
 		name:    name,
@@ -75,12 +75,12 @@ func (b *DockerBackend) Image(name string) containers.Image {
 }
 
 // Create creates a new container
-func (b *DockerBackend) Create(ctx context.Context, config *containers.ContainerConfig) (containers.ContainerID, error) {
+func (b *DockerBackend) Create(ctx context.Context, config *core.ContainerConfig) (core.ContainerID, error) {
 	if b.client == nil {
 		return "", fmt.Errorf("Docker client not initialized")
 	}
 
-	containerID := containers.ContainerID(fmt.Sprintf("tau-%s-%d", time.Now().Format("20060102-150405"), time.Now().Nanosecond()))
+	containerID := core.ContainerID(fmt.Sprintf("tau-%s-%d", time.Now().Format("20060102-150405"), time.Now().Nanosecond()))
 
 	containerConfig, hostConfig, networkingConfig, err := b.createDockerConfig(config)
 	if err != nil {
@@ -97,8 +97,8 @@ func (b *DockerBackend) Create(ctx context.Context, config *containers.Container
 	return containerID, nil
 }
 
-// createDockerConfig converts containers.ContainerConfig to Docker API types
-func (b *DockerBackend) createDockerConfig(config *containers.ContainerConfig) (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
+// createDockerConfig converts core.ContainerConfig to Docker API types
+func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*container.Config, *container.HostConfig, *network.NetworkingConfig, error) {
 	containerConfig := &container.Config{
 		Image:      config.Image,
 		Cmd:        config.Command,
@@ -201,7 +201,7 @@ func (b *DockerBackend) createDockerConfig(config *containers.ContainerConfig) (
 
 // getDockerID gets the Docker container ID for the given container ID
 // Tries the map first, then falls back to looking up by name
-func (b *DockerBackend) getDockerID(ctx context.Context, id containers.ContainerID) (string, error) {
+func (b *DockerBackend) getDockerID(ctx context.Context, id core.ContainerID) (string, error) {
 	if dockerID, ok := b.containers[id]; ok {
 		return dockerID, nil
 	}
@@ -223,7 +223,7 @@ func (b *DockerBackend) getDockerID(ctx context.Context, id containers.Container
 }
 
 // Start starts a container
-func (b *DockerBackend) Start(ctx context.Context, id containers.ContainerID) error {
+func (b *DockerBackend) Start(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
 	}
@@ -241,7 +241,7 @@ func (b *DockerBackend) Start(ctx context.Context, id containers.ContainerID) er
 }
 
 // Stop stops a container
-func (b *DockerBackend) Stop(ctx context.Context, id containers.ContainerID) error {
+func (b *DockerBackend) Stop(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
 	}
@@ -260,7 +260,7 @@ func (b *DockerBackend) Stop(ctx context.Context, id containers.ContainerID) err
 }
 
 // Remove removes a container
-func (b *DockerBackend) Remove(ctx context.Context, id containers.ContainerID) error {
+func (b *DockerBackend) Remove(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
 	}
@@ -280,7 +280,7 @@ func (b *DockerBackend) Remove(ctx context.Context, id containers.ContainerID) e
 }
 
 // Wait waits for a container to exit
-func (b *DockerBackend) Wait(ctx context.Context, id containers.ContainerID) error {
+func (b *DockerBackend) Wait(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
 	}
@@ -307,7 +307,7 @@ func (b *DockerBackend) Wait(ctx context.Context, id containers.ContainerID) err
 }
 
 // Logs returns logs for a container
-func (b *DockerBackend) Logs(ctx context.Context, id containers.ContainerID) (io.ReadCloser, error) {
+func (b *DockerBackend) Logs(ctx context.Context, id core.ContainerID) (io.ReadCloser, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("Docker client not initialized")
 	}
@@ -330,7 +330,7 @@ func (b *DockerBackend) Logs(ctx context.Context, id containers.ContainerID) (io
 }
 
 // Inspect returns information about a container
-func (b *DockerBackend) Inspect(ctx context.Context, id containers.ContainerID) (*containers.ContainerInfo, error) {
+func (b *DockerBackend) Inspect(ctx context.Context, id core.ContainerID) (*core.ContainerInfo, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("Docker client not initialized")
 	}
@@ -345,7 +345,7 @@ func (b *DockerBackend) Inspect(ctx context.Context, id containers.ContainerID) 
 		return nil, fmt.Errorf("failed to inspect container %s: %w", id, err)
 	}
 
-	containerInfo := &containers.ContainerInfo{
+	containerInfo := &core.ContainerInfo{
 		ID:     id,
 		Image:  info.Config.Image,
 		Status: info.State.Status,
@@ -363,7 +363,7 @@ func (b *DockerBackend) Inspect(ctx context.Context, id containers.ContainerID) 
 	}
 
 	if info.HostConfig != nil && info.HostConfig.Resources.Memory > 0 {
-		containerInfo.Resources = &containers.ResourceLimits{
+		containerInfo.Resources = &core.ResourceLimits{
 			Memory:     info.HostConfig.Resources.Memory,
 			MemorySwap: info.HostConfig.Resources.MemorySwap,
 			CPUQuota:   info.HostConfig.Resources.CPUQuota,
@@ -394,8 +394,8 @@ func (b *DockerBackend) HealthCheck(ctx context.Context) error {
 }
 
 // Capabilities returns the backend capabilities
-func (b *DockerBackend) Capabilities() containers.BackendCapabilities {
-	return containers.BackendCapabilities{
+func (b *DockerBackend) Capabilities() core.BackendCapabilities {
+	return core.BackendCapabilities{
 		SupportsMemory:     true,
 		SupportsCPU:        true,
 		SupportsStorage:    true,

@@ -6,14 +6,14 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 func TestCreateDockerConfig(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
 		backend := &DockerBackend{}
 
-		config := &containers.ContainerConfig{
+		config := &core.ContainerConfig{
 			Image:   "alpine:latest",
 			Command: []string{"echo", "hello"},
 			Env:     []string{"FOO=bar"},
@@ -35,7 +35,7 @@ func TestCreateDockerConfig(t *testing.T) {
 		backend := &DockerBackend{}
 
 		t.Run("Nil", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				Command: nil,
 			}
@@ -46,7 +46,7 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("Empty", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				Command: []string{},
 			}
@@ -61,7 +61,7 @@ func TestCreateDockerConfig(t *testing.T) {
 		backend := &DockerBackend{}
 
 		t.Run("Default", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				Command: []string{"echo", "hello"},
 			}
@@ -72,7 +72,7 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("Empty", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image: "alpine:latest",
 				Env:   []string{},
 			}
@@ -83,7 +83,7 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("Provided", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				Command: []string{"echo", "test"},
 				Env:     []string{"FOO=bar", "BAZ=qux"},
@@ -99,7 +99,7 @@ func TestCreateDockerConfig(t *testing.T) {
 		backend := &DockerBackend{}
 
 		t.Run("Default", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				Command: []string{"echo", "hello"},
 			}
@@ -110,7 +110,7 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("Set", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				WorkDir: "/custom/workdir",
 			}
@@ -121,7 +121,7 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("Provided", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				WorkDir: "/custom/path",
 			}
@@ -136,7 +136,7 @@ func TestCreateDockerConfig(t *testing.T) {
 		backend := &DockerBackend{}
 
 		t.Run("Nil", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:     "alpine:latest",
 				Resources: nil,
 			}
@@ -154,9 +154,9 @@ func TestCreateDockerConfig(t *testing.T) {
 			cpuShares := int64(512)
 			pids := int64(100)
 
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image: "alpine:latest",
-				Resources: &containers.ResourceLimits{
+				Resources: &core.ResourceLimits{
 					Memory:     memory,
 					MemorySwap: memorySwap,
 					CPUQuota:   cpuQuota,
@@ -179,9 +179,9 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("ZeroValues", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image: "alpine:latest",
-				Resources: &containers.ResourceLimits{
+				Resources: &core.ResourceLimits{
 					Memory:     0,
 					MemorySwap: 0,
 					CPUQuota:   0,
@@ -199,9 +199,9 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("MemoryOnly", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image: "alpine:latest",
-				Resources: &containers.ResourceLimits{
+				Resources: &core.ResourceLimits{
 					Memory: 1024 * 1024 * 512,
 				},
 			}
@@ -214,9 +214,9 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("MemoryZero", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image: "alpine:latest",
-				Resources: &containers.ResourceLimits{
+				Resources: &core.ResourceLimits{
 					Memory: 0,
 				},
 			}
@@ -228,9 +228,9 @@ func TestCreateDockerConfig(t *testing.T) {
 
 		t.Run("MemorySwap", func(t *testing.T) {
 			t.Run("Positive", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Resources: &containers.ResourceLimits{
+					Resources: &core.ResourceLimits{
 						Memory:     1024 * 1024 * 512,
 						MemorySwap: 1024 * 1024 * 1024,
 					},
@@ -244,9 +244,9 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("Unlimited", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Resources: &containers.ResourceLimits{
+					Resources: &core.ResourceLimits{
 						Memory:     1024 * 1024 * 512,
 						MemorySwap: -1,
 					},
@@ -258,9 +258,9 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("Zero", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Resources: &containers.ResourceLimits{
+					Resources: &core.ResourceLimits{
 						MemorySwap: 0,
 					},
 				}
@@ -273,9 +273,9 @@ func TestCreateDockerConfig(t *testing.T) {
 
 		t.Run("CPU", func(t *testing.T) {
 			t.Run("QuotaAndPeriod", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Resources: &containers.ResourceLimits{
+					Resources: &core.ResourceLimits{
 						CPUQuota:  50000,
 						CPUPeriod: 100000,
 					},
@@ -289,9 +289,9 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("Shares", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Resources: &containers.ResourceLimits{
+					Resources: &core.ResourceLimits{
 						CPUShares: 512,
 					},
 				}
@@ -302,9 +302,9 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("Zero", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Resources: &containers.ResourceLimits{
+					Resources: &core.ResourceLimits{
 						CPUQuota:  0,
 						CPUPeriod: 0,
 					},
@@ -317,9 +317,9 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("SharesZero", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Resources: &containers.ResourceLimits{
+					Resources: &core.ResourceLimits{
 						CPUShares: 0,
 					},
 				}
@@ -332,9 +332,9 @@ func TestCreateDockerConfig(t *testing.T) {
 
 		t.Run("PIDs", func(t *testing.T) {
 			t.Run("WithLimit", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Resources: &containers.ResourceLimits{
+					Resources: &core.ResourceLimits{
 						Memory: 1024 * 1024 * 512,
 						PIDs:   100,
 					},
@@ -347,9 +347,9 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("WithoutLimit", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Resources: &containers.ResourceLimits{
+					Resources: &core.ResourceLimits{
 						Memory: 1024 * 1024 * 512,
 						PIDs:   0,
 					},
@@ -366,10 +366,10 @@ func TestCreateDockerConfig(t *testing.T) {
 		backend := &DockerBackend{}
 
 		t.Run("Empty", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				Command: []string{"echo", "test"},
-				Volumes: []containers.VolumeMount{},
+				Volumes: []core.VolumeMount{},
 			}
 
 			_, hostConfig, _, err := backend.createDockerConfig(config)
@@ -378,9 +378,9 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("BindMount", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image: "alpine:latest",
-				Volumes: []containers.VolumeMount{
+				Volumes: []core.VolumeMount{
 					{
 						Source:      "/host/path",
 						Destination: "/container/path",
@@ -400,9 +400,9 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("NamedVolume", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image: "alpine:latest",
-				Volumes: []containers.VolumeMount{
+				Volumes: []core.VolumeMount{
 					{
 						Source:       "volume-name",
 						Destination:  "/container/volume",
@@ -421,9 +421,9 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("MixedTypes", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image: "alpine:latest",
-				Volumes: []containers.VolumeMount{
+				Volumes: []core.VolumeMount{
 					{
 						Source:       "/host/path1",
 						Destination:  "/container/path1",
@@ -450,9 +450,9 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("ReadWrite", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image: "alpine:latest",
-				Volumes: []containers.VolumeMount{
+				Volumes: []core.VolumeMount{
 					{
 						Source:      "/host/path",
 						Destination: "/container/path",
@@ -473,7 +473,7 @@ func TestCreateDockerConfig(t *testing.T) {
 		backend := &DockerBackend{}
 
 		t.Run("Nil", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image:   "alpine:latest",
 				Command: []string{"echo", "test"},
 				Network: nil,
@@ -488,9 +488,9 @@ func TestCreateDockerConfig(t *testing.T) {
 
 		t.Run("Mode", func(t *testing.T) {
 			t.Run("Host", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
+					Network: &core.NetworkConfig{
 						Mode: "host",
 					},
 				}
@@ -501,9 +501,9 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("Bridge", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
+					Network: &core.NetworkConfig{
 						Mode: "bridge",
 					},
 				}
@@ -516,9 +516,9 @@ func TestCreateDockerConfig(t *testing.T) {
 
 		t.Run("DNS", func(t *testing.T) {
 			t.Run("Single", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
+					Network: &core.NetworkConfig{
 						DNS: []string{"8.8.8.8"},
 					},
 				}
@@ -530,9 +530,9 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("Multiple", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
+					Network: &core.NetworkConfig{
 						DNS: []string{"8.8.8.8", "8.8.4.4"},
 					},
 				}
@@ -543,9 +543,9 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("WithMode", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
+					Network: &core.NetworkConfig{
 						Mode: "host",
 						DNS:  []string{"8.8.8.8", "1.1.1.1"},
 					},
@@ -560,10 +560,10 @@ func TestCreateDockerConfig(t *testing.T) {
 
 		t.Run("PortMappings", func(t *testing.T) {
 			t.Run("Basic", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
-						PortMappings: []containers.PortMapping{
+					Network: &core.NetworkConfig{
+						PortMappings: []core.PortMapping{
 							{
 								HostPort:      8080,
 								ContainerPort: 80,
@@ -581,10 +581,10 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("WithoutHostIP", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
-						PortMappings: []containers.PortMapping{
+					Network: &core.NetworkConfig{
+						PortMappings: []core.PortMapping{
 							{
 								HostPort:      8080,
 								ContainerPort: 80,
@@ -602,10 +602,10 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("DefaultProtocol", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
-						PortMappings: []containers.PortMapping{
+					Network: &core.NetworkConfig{
+						PortMappings: []core.PortMapping{
 							{
 								HostPort:      8080,
 								ContainerPort: 80,
@@ -622,10 +622,10 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("UDP", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
-						PortMappings: []containers.PortMapping{
+					Network: &core.NetworkConfig{
+						PortMappings: []core.PortMapping{
 							{
 								HostPort:      53,
 								ContainerPort: 53,
@@ -642,10 +642,10 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("Multiple", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
-						PortMappings: []containers.PortMapping{
+					Network: &core.NetworkConfig{
+						PortMappings: []core.PortMapping{
 							{
 								HostPort:      8080,
 								ContainerPort: 80,
@@ -667,10 +667,10 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("WithHostIP", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
-						PortMappings: []containers.PortMapping{
+					Network: &core.NetworkConfig{
+						PortMappings: []core.PortMapping{
 							{
 								HostPort:      8080,
 								ContainerPort: 80,
@@ -688,10 +688,10 @@ func TestCreateDockerConfig(t *testing.T) {
 			})
 
 			t.Run("InvalidPort", func(t *testing.T) {
-				config := &containers.ContainerConfig{
+				config := &core.ContainerConfig{
 					Image: "alpine:latest",
-					Network: &containers.NetworkConfig{
-						PortMappings: []containers.PortMapping{
+					Network: &core.NetworkConfig{
+						PortMappings: []core.PortMapping{
 							{
 								HostPort:      8080,
 								ContainerPort: 99999,
@@ -708,11 +708,11 @@ func TestCreateDockerConfig(t *testing.T) {
 		})
 
 		t.Run("AllOptions", func(t *testing.T) {
-			config := &containers.ContainerConfig{
+			config := &core.ContainerConfig{
 				Image: "alpine:latest",
-				Network: &containers.NetworkConfig{
+				Network: &core.NetworkConfig{
 					Mode: "bridge",
-					PortMappings: []containers.PortMapping{
+					PortMappings: []core.PortMapping{
 						{
 							HostPort:      8080,
 							ContainerPort: 80,

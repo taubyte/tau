@@ -17,7 +17,7 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/opencontainers/runtime-spec/specs-go"
-	"github.com/taubyte/tau/pkg/containers"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 // Client represents a containerd client connection
@@ -38,20 +38,20 @@ type taskIO struct {
 	io       cio.IO        // IO instance for cleanup
 }
 
-// ContainerdBackend implements the containers.Backend interface for containerd
+// ContainerdBackend implements the core.Backend interface for containerd
 type ContainerdBackend struct {
-	config   containers.ContainerdConfig
-	client   *Client                            // containerd client (to be implemented)
-	daemon   *Daemon                            // daemon manager (to be implemented)
-	rootless *RootlessManager                   // rootless manager (to be implemented)
-	tasks    map[containers.ContainerID]*taskIO // Store tasks and their IO for log access
+	config   core.ContainerdConfig
+	client   *Client                      // containerd client (to be implemented)
+	daemon   *Daemon                      // daemon manager (to be implemented)
+	rootless *RootlessManager             // rootless manager (to be implemented)
+	tasks    map[core.ContainerID]*taskIO // Store tasks and their IO for log access
 }
 
 // New creates a new containerd backend
-func New(config containers.ContainerdConfig) (*ContainerdBackend, error) {
+func New(config core.ContainerdConfig) (*ContainerdBackend, error) {
 	backend := &ContainerdBackend{
 		config: config,
-		tasks:  make(map[containers.ContainerID]*taskIO),
+		tasks:  make(map[core.ContainerID]*taskIO),
 	}
 
 	// Detect rootless mode
@@ -100,11 +100,11 @@ func (b *ContainerdBackend) detectRootlessMode() error {
 	isRoot := currentUser.Uid == "0"
 
 	// If RootlessMode is explicitly set (not auto), respect it
-	if b.config.RootlessMode != containers.RootlessModeAuto {
-		if b.config.RootlessMode == containers.RootlessModeEnabled && isRoot {
+	if b.config.RootlessMode != core.RootlessModeAuto {
+		if b.config.RootlessMode == core.RootlessModeEnabled && isRoot {
 			return fmt.Errorf("cannot enable rootless mode when running as root")
 		}
-		if b.config.RootlessMode == containers.RootlessModeDisabled && !isRoot {
+		if b.config.RootlessMode == core.RootlessModeDisabled && !isRoot {
 			// Allow running in "disabled" mode even as non-root - we'll assume system containerd
 		}
 		return nil
@@ -112,9 +112,9 @@ func (b *ContainerdBackend) detectRootlessMode() error {
 
 	// Auto-detect: enable rootless mode if not running as root
 	if isRoot {
-		b.config.RootlessMode = containers.RootlessModeDisabled
+		b.config.RootlessMode = core.RootlessModeDisabled
 	} else {
-		b.config.RootlessMode = containers.RootlessModeEnabled
+		b.config.RootlessMode = core.RootlessModeEnabled
 	}
 
 	return nil
@@ -122,7 +122,7 @@ func (b *ContainerdBackend) detectRootlessMode() error {
 
 // isRootlessMode returns true if running in rootless mode
 func (b *ContainerdBackend) isRootlessMode() bool {
-	return b.config.RootlessMode == containers.RootlessModeEnabled
+	return b.config.RootlessMode == core.RootlessModeEnabled
 }
 
 // ensureContainerdRunning ensures containerd daemon is running
@@ -140,7 +140,7 @@ func (b *ContainerdBackend) ensureContainerdRunning(ctx context.Context) error {
 			return nil
 		}
 		// Socket exists but not responding
-		if b.config.RootlessMode == containers.RootlessModeDisabled {
+		if b.config.RootlessMode == core.RootlessModeDisabled {
 			return fmt.Errorf("containerd not running at system socket %s - please start containerd system-wide", socketPath)
 		}
 	}
@@ -151,7 +151,7 @@ func (b *ContainerdBackend) ensureContainerdRunning(ctx context.Context) error {
 	}
 
 	// For RootlessModeDisabled, assume containerd is running system-wide
-	if b.config.RootlessMode == containers.RootlessModeDisabled {
+	if b.config.RootlessMode == core.RootlessModeDisabled {
 		return fmt.Errorf("containerd not running at system socket %s - please start containerd system-wide", socketPath)
 	}
 
@@ -208,13 +208,13 @@ func (b *ContainerdBackend) initClient() error {
 }
 
 // Image returns an Image interface for the given image name
-func (b *ContainerdBackend) Image(name string) containers.Image {
+func (b *ContainerdBackend) Image(name string) core.Image {
 	// TODO: Implement image operations
 	return nil
 }
 
 // Create creates a new container
-func (b *ContainerdBackend) Create(ctx context.Context, config *containers.ContainerConfig) (containers.ContainerID, error) {
+func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerConfig) (core.ContainerID, error) {
 	if b.client == nil {
 		return "", fmt.Errorf("containerd client not initialized")
 	}
@@ -223,7 +223,7 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *containers.Conta
 	ctx = namespaces.WithNamespace(ctx, b.config.Namespace)
 
 	// Generate a unique container ID
-	containerID := containers.ContainerID(fmt.Sprintf("tau-%s-%d", time.Now().Format("20060102-150405"), time.Now().Nanosecond()))
+	containerID := core.ContainerID(fmt.Sprintf("tau-%s-%d", time.Now().Format("20060102-150405"), time.Now().Nanosecond()))
 
 	// Ensure the image exists (pull if needed)
 	image, err := b.client.Pull(ctx, config.Image, containerd.WithPullUnpack)
@@ -256,7 +256,7 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *containers.Conta
 }
 
 // createOCISpec creates an OCI spec for the container configuration
-func (b *ContainerdBackend) createOCISpec(config *containers.ContainerConfig) (*specs.Spec, error) {
+func (b *ContainerdBackend) createOCISpec(config *core.ContainerConfig) (*specs.Spec, error) {
 	// Create a basic spec
 	spec := &specs.Spec{
 		Version: "1.0.2",
@@ -364,7 +364,7 @@ func (b *ContainerdBackend) createOCISpec(config *containers.ContainerConfig) (*
 }
 
 // Start starts a container
-func (b *ContainerdBackend) Start(ctx context.Context, id containers.ContainerID) error {
+func (b *ContainerdBackend) Start(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("containerd client not initialized")
 	}
@@ -447,7 +447,7 @@ func (b *ContainerdBackend) Start(ctx context.Context, id containers.ContainerID
 }
 
 // Stop stops a container
-func (b *ContainerdBackend) Stop(ctx context.Context, id containers.ContainerID) error {
+func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("containerd client not initialized")
 	}
@@ -512,7 +512,7 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id containers.ContainerID)
 }
 
 // Remove removes a container
-func (b *ContainerdBackend) Remove(ctx context.Context, id containers.ContainerID) error {
+func (b *ContainerdBackend) Remove(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("containerd client not initialized")
 	}
@@ -546,7 +546,7 @@ func (b *ContainerdBackend) Remove(ctx context.Context, id containers.ContainerI
 }
 
 // Wait waits for a container to exit
-func (b *ContainerdBackend) Wait(ctx context.Context, id containers.ContainerID) error {
+func (b *ContainerdBackend) Wait(ctx context.Context, id core.ContainerID) error {
 	if b.client == nil {
 		return fmt.Errorf("containerd client not initialized")
 	}
@@ -582,7 +582,7 @@ func (b *ContainerdBackend) Wait(ctx context.Context, id containers.ContainerID)
 }
 
 // Logs returns logs for a container
-func (b *ContainerdBackend) Logs(ctx context.Context, id containers.ContainerID) (io.ReadCloser, error) {
+func (b *ContainerdBackend) Logs(ctx context.Context, id core.ContainerID) (io.ReadCloser, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("containerd client not initialized")
 	}
@@ -618,7 +618,7 @@ func (b *ContainerdBackend) Logs(ctx context.Context, id containers.ContainerID)
 }
 
 // Inspect returns information about a container
-func (b *ContainerdBackend) Inspect(ctx context.Context, id containers.ContainerID) (*containers.ContainerInfo, error) {
+func (b *ContainerdBackend) Inspect(ctx context.Context, id core.ContainerID) (*core.ContainerInfo, error) {
 	if b.client == nil {
 		return nil, fmt.Errorf("containerd client not initialized")
 	}
@@ -633,7 +633,7 @@ func (b *ContainerdBackend) Inspect(ctx context.Context, id containers.Container
 	}
 
 	// Get container info
-	info := &containers.ContainerInfo{
+	info := &core.ContainerInfo{
 		ID:    id,
 		Image: "", // TODO: Get from container spec
 	}
@@ -668,8 +668,8 @@ func (b *ContainerdBackend) HealthCheck(ctx context.Context) error {
 }
 
 // Capabilities returns the backend capabilities
-func (b *ContainerdBackend) Capabilities() containers.BackendCapabilities {
-	return containers.BackendCapabilities{
+func (b *ContainerdBackend) Capabilities() core.BackendCapabilities {
+	return core.BackendCapabilities{
 		SupportsMemory:     true,
 		SupportsCPU:        true,
 		SupportsStorage:    true,
@@ -684,7 +684,7 @@ func (b *ContainerdBackend) Capabilities() containers.BackendCapabilities {
 
 // validateUIDGIDMapping validates that subuid/subgid mappings are configured for rootless mode
 func (b *ContainerdBackend) validateUIDGIDMapping() error {
-	if b.config.RootlessMode == containers.RootlessModeDisabled {
+	if b.config.RootlessMode == core.RootlessModeDisabled {
 		return nil
 	}
 
