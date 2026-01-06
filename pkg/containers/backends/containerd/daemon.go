@@ -46,14 +46,12 @@ func NewDaemon(config core.ContainerdConfig) (*Daemon, error) {
 			return nil, fmt.Errorf("failed to parse user UID: %w", err)
 		}
 
-		// Use XDG_RUNTIME_DIR for socket and state (like Docker)
 		xdgRuntimeDir := os.Getenv("XDG_RUNTIME_DIR")
 		if xdgRuntimeDir == "" {
 			xdgRuntimeDir = filepath.Join("/run", "user", strconv.Itoa(uid))
 		}
 		containerdDir := filepath.Join(xdgRuntimeDir, "tau", "containerd")
 
-		// Create socket directory
 		if err := os.MkdirAll(containerdDir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create directory %s: %w", containerdDir, err)
 		}
@@ -65,7 +63,6 @@ func NewDaemon(config core.ContainerdConfig) (*Daemon, error) {
 		socketPath = "/run/containerd/containerd.sock"
 		stateFile = "/run/containerd/containerd.pid"
 
-		// Create socket directory if it doesn't exist
 		socketDir := filepath.Dir(socketPath)
 		if err := os.MkdirAll(socketDir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create directory %s: %w", socketDir, err)
@@ -81,21 +78,17 @@ func NewDaemon(config core.ContainerdConfig) (*Daemon, error) {
 
 // Start starts the containerd daemon if not already running
 func (d *Daemon) Start(ctx context.Context) error {
-	// Check if already running
 	if d.isRunning() {
 		return nil
 	}
 
-	// Determine if we need rootless mode
 	isRootless := d.config.RootlessMode == core.RootlessModeEnabled ||
 		(d.config.RootlessMode == core.RootlessModeAuto && os.Geteuid() != 0)
 
 	if !isRootless {
-		// Rootful mode: containerd is managed by systemd, we don't start it
 		return fmt.Errorf("rootful mode: containerd is managed by systemd, please start it via systemd")
 	}
 
-	// Find containerd binary
 	containerdPath, err := d.findContainerdBinary()
 	if err != nil {
 		return fmt.Errorf("failed to find containerd binary: %w", err)
@@ -106,19 +99,16 @@ func (d *Daemon) Start(ctx context.Context) error {
 
 // startWithRootlesskit starts containerd via rootlesskit (like nerdctl does)
 func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string) error {
-	// Find rootlesskit binary
 	rootlesskitPath, err := d.findRootlesskitBinary()
 	if err != nil {
 		return fmt.Errorf("rootlesskit is required for rootless mode: %w", err)
 	}
 
-	// Detect network driver
 	netDriver, err := d.detectRootlesskitNetwork()
 	if err != nil {
 		return fmt.Errorf("failed to detect rootlesskit network driver: %w", err)
 	}
 
-	// Get XDG directories
 	xdgRuntimeDir := os.Getenv("XDG_RUNTIME_DIR")
 	if xdgRuntimeDir == "" {
 		currentUser, err := user.Current()
@@ -150,12 +140,10 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 		xdgConfigHome = filepath.Join(home, ".config")
 	}
 
-	// Set up directories (matching Docker's structure)
 	rootDir := filepath.Join(xdgDataHome, "tau", "containerd", "daemon")
 	stateDir := filepath.Join(xdgRuntimeDir, "tau", "containerd", "daemon")
 	rootlesskitStateDir := filepath.Join(xdgRuntimeDir, "tau-containerd-rootless")
 
-	// Create directories
 	for _, dir := range []string{rootDir, stateDir, rootlesskitStateDir} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -166,14 +154,11 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 	debugSocketPathInNamespace := "/run/containerd/containerd-debug.sock"
 	configDir := filepath.Dir(d.socketPath)
 
-	// Create config file with namespace paths
 	configPath, err := d.createConfigFile(rootDir, stateDir, socketPathInNamespace, debugSocketPathInNamespace, configDir)
 	if err != nil {
 		return fmt.Errorf("failed to create config file: %w", err)
 	}
 
-	// Create wrapper script that does bind-mounts and execs containerd
-	// The socket directory needs to be created before bind-mounting
 	socketDir := filepath.Dir(d.socketPath)
 	if err := os.MkdirAll(socketDir, 0755); err != nil {
 		return fmt.Errorf("failed to create socket directory: %w", err)
@@ -183,15 +168,13 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 	if err != nil {
 		return fmt.Errorf("failed to create rootlesskit wrapper: %w", err)
 	}
-	defer os.Remove(wrapperScript) // Clean up script after use
+	defer os.Remove(wrapperScript)
 
-	// Determine MTU based on network driver
 	mtu := "65520"
 	if netDriver != "slirp4netns" && netDriver != "pasta" {
 		mtu = "1500"
 	}
 
-	// Build rootlesskit command (like nerdctl does)
 	cmd := exec.CommandContext(ctx, rootlesskitPath,
 		"--state-dir", rootlesskitStateDir,
 		"--net", netDriver,
@@ -207,7 +190,6 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 		"/bin/sh", wrapperScript,
 	)
 
-	// Set environment
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env,
 		"XDG_RUNTIME_DIR="+xdgRuntimeDir,
@@ -215,20 +197,17 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 		"XDG_CONFIG_HOME="+xdgConfigHome,
 	)
 
-	// Start the process
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start containerd via rootlesskit: %w", err)
 	}
 
 	d.process = cmd.Process
 
-	// Save PID to state file
 	if err := os.WriteFile(d.stateFile, []byte(fmt.Sprintf("%d", d.process.Pid)), 0644); err != nil {
 		d.process.Kill()
 		return fmt.Errorf("failed to save PID: %w", err)
 	}
 
-	// Wait for socket to be available
 	if err := d.waitForSocket(ctx, 30*time.Second); err != nil {
 		d.process.Kill()
 		os.Remove(d.stateFile)
@@ -240,7 +219,6 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 
 // createRootlesskitWrapper creates a shell script that does bind-mounts and execs containerd
 func (d *Daemon) createRootlesskitWrapper(containerdPath, configPath, rootDir, stateDir, socketDir, xdgRuntimeDir, xdgDataHome, xdgConfigHome string) (string, error) {
-	// Create temporary script file
 	tmpFile, err := os.CreateTemp("", "tau-containerd-rootless-*.sh")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp script: %w", err)
@@ -309,14 +287,11 @@ func (d *Daemon) Stop(ctx context.Context) error {
 		return nil
 	}
 
-	// If we have a process, kill it
 	if d.process != nil {
-		// Kill the process
 		if err := d.process.Kill(); err != nil {
 			// Process might already be dead, try to wait anyway
 			d.process.Wait()
 		} else {
-			// Wait for process to exit
 			_, err := d.process.Wait()
 			if err != nil && err.Error() != "signal: killed" {
 				// Ignore "signal: killed" error as it's expected
@@ -336,7 +311,6 @@ func (d *Daemon) Stop(ctx context.Context) error {
 		}
 	}
 
-	// Clean up state file and socket
 	os.Remove(d.stateFile)
 	os.Remove(d.socketPath)
 
@@ -346,14 +320,11 @@ func (d *Daemon) Stop(ctx context.Context) error {
 // isRunning checks if the containerd daemon is running
 func (d *Daemon) isRunning() bool {
 	if d.process == nil {
-		// Check if state file exists and contains a valid PID
 		if data, err := os.ReadFile(d.stateFile); err == nil {
 			var pid int
 			if n, err := fmt.Sscanf(string(data), "%d", &pid); err == nil && n == 1 {
-				// Check if process is still running
 				process, err := os.FindProcess(pid)
 				if err == nil {
-					// Send signal 0 to check if process exists
 					if err := process.Signal(syscall.Signal(0)); err == nil {
 						d.process = process
 						return true
@@ -361,14 +332,12 @@ func (d *Daemon) isRunning() bool {
 				}
 			}
 		}
-		// Check if socket exists and is actually responding
 		if d.isSocketReady() {
 			return true
 		}
 		return false
 	}
 
-	// Check if process is still alive
 	return d.process.Signal(syscall.Signal(0)) == nil
 }
 
@@ -378,7 +347,6 @@ func (d *Daemon) findContainerdBinary() (string, error) {
 		return d.config.ContainerdPath, nil
 	}
 
-	// Check PATH
 	if path, err := exec.LookPath("containerd"); err == nil {
 		return path, nil
 	}
@@ -393,7 +361,6 @@ func (d *Daemon) findRootlesskitBinary() (string, error) {
 		return d.config.RootlesskitPath, nil
 	}
 
-	// Check common locations
 	for _, name := range []string{"rootlesskit", "docker-rootlesskit"} {
 		if path, err := exec.LookPath(name); err == nil {
 			return path, nil
@@ -405,9 +372,7 @@ func (d *Daemon) findRootlesskitBinary() (string, error) {
 
 // detectRootlesskitNetwork detects the best network driver for rootlesskit
 func (d *Daemon) detectRootlesskitNetwork() (string, error) {
-	// Check for slirp4netns (preferred)
 	if path, err := exec.LookPath("slirp4netns"); err == nil {
-		// Check if it supports --netns-type (>= v0.4.0)
 		cmd := exec.Command(path, "--help")
 		output, err := cmd.CombinedOutput()
 		if err == nil && strings.Contains(string(output), "--netns-type") {
@@ -415,7 +380,6 @@ func (d *Daemon) detectRootlesskitNetwork() (string, error) {
 		}
 	}
 
-	// Check for pasta
 	if _, err := exec.LookPath("pasta"); err == nil {
 		return "pasta", nil
 	}

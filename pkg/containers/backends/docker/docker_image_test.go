@@ -72,7 +72,7 @@ func TestImage_Pull(t *testing.T) {
 		require.NotNil(t, image, "Image must not be nil")
 
 		if image.Exists(ctx) {
-			_ = image.Remove(ctx)
+			image.Remove(ctx)
 		}
 
 		err = image.Pull(ctx)
@@ -214,7 +214,7 @@ func TestImage_Build(t *testing.T) {
 
 		defer func() {
 			if image.Exists(ctx) {
-				_ = image.Remove(ctx)
+				image.Remove(ctx)
 			}
 		}()
 	})
@@ -236,7 +236,7 @@ func TestImage_Build(t *testing.T) {
 
 		defer func() {
 			if image.Exists(ctx) {
-				_ = image.Remove(ctx)
+				image.Remove(ctx)
 			}
 		}()
 	})

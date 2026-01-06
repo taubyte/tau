@@ -40,26 +40,26 @@ type taskIO struct {
 
 // ContainerdBackend implements the core.Backend interface for containerd
 type ContainerdBackend struct {
-	config   core.ContainerdConfig
-	client   *Client                      // containerd client (to be implemented)
-	daemon   *Daemon                      // daemon manager (to be implemented)
-	rootless *RootlessManager             // rootless manager (to be implemented)
-	tasks    map[core.ContainerID]*taskIO // Store tasks and their IO for log access
+	config     core.ContainerdConfig
+	client     *Client                                   // containerd client (to be implemented)
+	daemon     *Daemon                                   // daemon manager (to be implemented)
+	rootless   *RootlessManager                          // rootless manager (to be implemented)
+	tasks      map[core.ContainerID]*taskIO              // Store tasks and their IO for log access
+	containers map[core.ContainerID]containerd.Container // Store containers for cleanup
 }
 
 // New creates a new containerd backend
 func New(config core.ContainerdConfig) (*ContainerdBackend, error) {
 	backend := &ContainerdBackend{
-		config: config,
-		tasks:  make(map[core.ContainerID]*taskIO),
+		config:     config,
+		tasks:      make(map[core.ContainerID]*taskIO),
+		containers: make(map[core.ContainerID]containerd.Container),
 	}
 
-	// Detect rootless mode
 	if err := backend.detectRootlessMode(); err != nil {
 		return nil, fmt.Errorf("failed to detect rootless mode: %w", err)
 	}
 
-	// Initialize daemon manager if AutoStart is enabled
 	if config.AutoStart {
 		daemon, err := NewDaemon(config)
 		if err != nil {
@@ -68,7 +68,6 @@ func New(config core.ContainerdConfig) (*ContainerdBackend, error) {
 		backend.daemon = daemon
 	}
 
-	// Initialize rootless manager if in rootless mode
 	if backend.isRootlessMode() {
 		rootless, err := NewRootlessManager(config)
 		if err != nil {
@@ -77,12 +76,10 @@ func New(config core.ContainerdConfig) (*ContainerdBackend, error) {
 		backend.rootless = rootless
 	}
 
-	// Ensure containerd is running
 	if err := backend.ensureContainerdRunning(context.Background()); err != nil {
 		return nil, fmt.Errorf("failed to ensure containerd is running: %w", err)
 	}
 
-	// Initialize containerd client
 	if err := backend.initClient(); err != nil {
 		return nil, fmt.Errorf("failed to initialize containerd client: %w", err)
 	}
@@ -132,14 +129,11 @@ func (b *ContainerdBackend) ensureContainerdRunning(ctx context.Context) error {
 		return fmt.Errorf("failed to get socket path: %w", err)
 	}
 
-	// Check if socket exists and is accessible
 	if _, err := os.Stat(socketPath); err == nil {
-		// Test actual socket connectivity
 		if conn, err := net.Dial("unix", socketPath); err == nil {
 			conn.Close()
 			return nil
 		}
-		// Socket exists but not responding
 		if b.config.RootlessMode == core.RootlessModeDisabled {
 			return fmt.Errorf("containerd not running at system socket %s - please start containerd system-wide", socketPath)
 		}
@@ -183,16 +177,13 @@ func (b *ContainerdBackend) initClient() error {
 		return fmt.Errorf("failed to get socket path: %w", err)
 	}
 
-	// Create context with namespace
 	ctx := namespaces.WithNamespace(context.Background(), b.config.Namespace)
 
-	// Connect to containerd
 	client, err := containerd.New(socketPath, containerd.WithDefaultNamespace(b.config.Namespace))
 	if err != nil {
 		return fmt.Errorf("failed to connect to containerd at %s: %w", socketPath, err)
 	}
 
-	// Test connection by getting version
 	if _, err := client.Version(ctx); err != nil {
 		client.Close()
 		return fmt.Errorf("failed to get containerd version: %w", err)
@@ -219,25 +210,20 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 		return "", fmt.Errorf("containerd client not initialized")
 	}
 
-	// Use the same namespace as the client
 	ctx = namespaces.WithNamespace(ctx, b.config.Namespace)
 
-	// Generate a unique container ID
 	containerID := core.ContainerID(fmt.Sprintf("tau-%s-%d", time.Now().Format("20060102-150405"), time.Now().Nanosecond()))
 
-	// Ensure the image exists (pull if needed)
 	image, err := b.client.Pull(ctx, config.Image, containerd.WithPullUnpack)
 	if err != nil {
 		return "", fmt.Errorf("failed to pull image %s: %w", config.Image, err)
 	}
 
-	// Create the OCI spec
 	spec, err := b.createOCISpec(config)
 	if err != nil {
 		return "", fmt.Errorf("failed to create OCI spec: %w", err)
 	}
 
-	// Create the container
 	container, err := b.client.NewContainer(
 		ctx,
 		string(containerID),
@@ -249,15 +235,13 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
 
-	// Store container reference for cleanup
-	_ = container // TODO: Store in a map for later cleanup
+	b.containers[containerID] = container
 
 	return containerID, nil
 }
 
 // createOCISpec creates an OCI spec for the container configuration
 func (b *ContainerdBackend) createOCISpec(config *core.ContainerConfig) (*specs.Spec, error) {
-	// Create a basic spec
 	spec := &specs.Spec{
 		Version: "1.0.2",
 		Process: &specs.Process{
@@ -275,19 +259,16 @@ func (b *ContainerdBackend) createOCISpec(config *core.ContainerConfig) (*specs.
 		Hostname: "tau-container",
 	}
 
-	// Set environment variables
 	if len(config.Env) > 0 {
 		spec.Process.Env = append(spec.Process.Env, config.Env...)
 	}
 
-	// Set working directory
 	if config.WorkDir != "" {
 		spec.Process.Cwd = config.WorkDir
 	} else {
 		spec.Process.Cwd = "/"
 	}
 
-	// Add mounts
 	spec.Mounts = []specs.Mount{
 		{
 			Destination: "/proc",
@@ -321,7 +302,6 @@ func (b *ContainerdBackend) createOCISpec(config *core.ContainerConfig) (*specs.
 		},
 	}
 
-	// Set up Linux namespaces (required for hostname and isolation)
 	spec.Linux = &specs.Linux{
 		Namespaces: []specs.LinuxNamespace{
 			{Type: specs.PIDNamespace},
@@ -332,7 +312,6 @@ func (b *ContainerdBackend) createOCISpec(config *core.ContainerConfig) (*specs.
 		},
 	}
 
-	// Set resource limits if provided
 	if config.Resources != nil {
 		if spec.Linux.Resources == nil {
 			spec.Linux.Resources = &specs.LinuxResources{}
@@ -369,16 +348,13 @@ func (b *ContainerdBackend) Start(ctx context.Context, id core.ContainerID) erro
 		return fmt.Errorf("containerd client not initialized")
 	}
 
-	// Use the same namespace as the client
 	ctx = namespaces.WithNamespace(ctx, b.config.Namespace)
 
-	// Get the container
 	container, err := b.client.LoadContainer(ctx, string(id))
 	if err != nil {
 		return fmt.Errorf("failed to load container %s: %w", id, err)
 	}
 
-	// Create temp directory for FIFOs
 	tmpDir, err := os.MkdirTemp("", "tau-containerd-logs-*")
 	if err != nil {
 		return fmt.Errorf("failed to create temp directory for FIFOs: %w", err)
@@ -406,12 +382,10 @@ func (b *ContainerdBackend) Start(ctx context.Context, id core.ContainerID) erro
 		return fmt.Errorf("failed to load IO from FIFO set: %w", err)
 	}
 
-	// Create a Creator that returns the loaded IO
 	cioCreator := func(id string) (cio.IO, error) {
 		return io, nil
 	}
 
-	// Create a task for the container
 	task, err := container.NewTask(ctx, cioCreator)
 	if err != nil {
 		io.Close()
@@ -422,7 +396,6 @@ func (b *ContainerdBackend) Start(ctx context.Context, id core.ContainerID) erro
 		return fmt.Errorf("failed to create task for container %s: %w", id, err)
 	}
 
-	// Start the task
 	err = task.Start(ctx)
 	if err != nil {
 		io.Close()
@@ -452,13 +425,10 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error
 		return fmt.Errorf("containerd client not initialized")
 	}
 
-	// Use the same namespace as the client
 	ctx = namespaces.WithNamespace(ctx, b.config.Namespace)
 
-	// Get task from stored tasks
 	taskIO, ok := b.tasks[id]
 	if !ok {
-		// Try to load from container
 		container, err := b.client.LoadContainer(ctx, string(id))
 		if err != nil {
 			return fmt.Errorf("failed to load container %s: %w", id, err)
@@ -467,12 +437,10 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error
 		if err != nil {
 			return fmt.Errorf("failed to get task for container %s: %w", id, err)
 		}
-		// Kill the task
 		_, err = task.Delete(ctx)
 		return err
 	}
 
-	// Close IO streams
 	if taskIO.stdout != nil {
 		taskIO.stdout.Close()
 	}
@@ -480,7 +448,6 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error
 		taskIO.stderr.Close()
 	}
 
-	// Close DirectIO and IO instances
 	if taskIO.directIO != nil {
 		taskIO.directIO.Cancel()
 		taskIO.directIO.Close()
@@ -489,23 +456,19 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error
 		taskIO.io.Close()
 	}
 
-	// Close FIFO set
 	if taskIO.fifoSet != nil {
 		taskIO.fifoSet.Close()
 	}
 
-	// Clean up FIFO directory
 	if taskIO.fifoDir != "" {
 		os.RemoveAll(taskIO.fifoDir)
 	}
 
-	// Kill the task
 	_, err := taskIO.task.Delete(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to stop container %s: %w", id, err)
 	}
 
-	// Remove from tasks map
 	delete(b.tasks, id)
 
 	return nil
@@ -517,30 +480,34 @@ func (b *ContainerdBackend) Remove(ctx context.Context, id core.ContainerID) err
 		return fmt.Errorf("containerd client not initialized")
 	}
 
-	// Use the same namespace as the client
 	ctx = namespaces.WithNamespace(ctx, b.config.Namespace)
 
-	// Get the container
-	container, err := b.client.LoadContainer(ctx, string(id))
-	if err != nil {
-		return fmt.Errorf("failed to load container %s: %w", id, err)
+	var container containerd.Container
+	var err error
+
+	if storedContainer, exists := b.containers[id]; exists {
+		container = storedContainer
+	} else {
+		container, err = b.client.LoadContainer(ctx, string(id))
+		if err != nil {
+			return fmt.Errorf("failed to load container %s: %w", id, err)
+		}
 	}
 
-	// Delete the task if it exists
 	task, err := container.Task(ctx, nil)
 	if err == nil {
-		// Task exists, delete it
 		_, err = task.Delete(ctx)
 		if err != nil {
 			return fmt.Errorf("failed to delete task for container %s: %w", id, err)
 		}
 	}
 
-	// Delete the container
 	err = container.Delete(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to delete container %s: %w", id, err)
 	}
+
+	delete(b.containers, id)
 
 	return nil
 }
@@ -551,28 +518,23 @@ func (b *ContainerdBackend) Wait(ctx context.Context, id core.ContainerID) error
 		return fmt.Errorf("containerd client not initialized")
 	}
 
-	// Use the same namespace as the client
 	ctx = namespaces.WithNamespace(ctx, b.config.Namespace)
 
-	// Get the container
 	container, err := b.client.LoadContainer(ctx, string(id))
 	if err != nil {
 		return fmt.Errorf("failed to load container %s: %w", id, err)
 	}
 
-	// Load the task
 	task, err := container.Task(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to get task for container %s: %w", id, err)
 	}
 
-	// Wait for the task to exit
 	exitStatusC, err := task.Wait(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to wait for container %s: %w", id, err)
 	}
 
-	// Get exit status from channel
 	exitStatus := <-exitStatusC
 	if exitStatus.ExitCode() != 0 {
 		return fmt.Errorf("container %s exited with status %d", id, exitStatus.ExitCode())
@@ -587,18 +549,15 @@ func (b *ContainerdBackend) Logs(ctx context.Context, id core.ContainerID) (io.R
 		return nil, fmt.Errorf("containerd client not initialized")
 	}
 
-	// Get stored task IO
 	taskIO, ok := b.tasks[id]
 	if !ok {
 		return nil, fmt.Errorf("container %s not found or not started", id)
 	}
 
-	// If logs aren't captured, return empty
 	if taskIO.stdout == nil || taskIO.stderr == nil {
 		return io.NopCloser(strings.NewReader("")), nil
 	}
 
-	// Create a pipe to combine stdout and stderr
 	pr, pw := io.Pipe()
 
 	go func() {
@@ -623,30 +582,24 @@ func (b *ContainerdBackend) Inspect(ctx context.Context, id core.ContainerID) (*
 		return nil, fmt.Errorf("containerd client not initialized")
 	}
 
-	// Use the same namespace as the client
 	ctx = namespaces.WithNamespace(ctx, b.config.Namespace)
 
-	// Get the container
 	container, err := b.client.LoadContainer(ctx, string(id))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load container %s: %w", id, err)
 	}
 
-	// Get container info
 	info := &core.ContainerInfo{
 		ID:    id,
 		Image: "", // TODO: Get from container spec
 	}
 
-	// Try to get task status
 	task, err := container.Task(ctx, nil)
 	if err != nil {
-		// Container might not be running
 		info.Status = "created"
 		return info, nil
 	}
 
-	// Get task status
 	status, err := task.Status(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get task status for container %s: %w", id, err)
@@ -693,12 +646,10 @@ func (b *ContainerdBackend) validateUIDGIDMapping() error {
 		return fmt.Errorf("failed to get current user: %w", err)
 	}
 
-	// Check if subuid mapping exists for this user (don't check specific UID mapping)
 	if err := b.hasSubIDMapping("/etc/subuid", currentUser.Username); err != nil {
 		return fmt.Errorf("subuid mapping validation failed: %w", err)
 	}
 
-	// Check if subgid mapping exists for this user (don't check specific GID mapping)
 	if err := b.hasSubIDMapping("/etc/subgid", currentUser.Username); err != nil {
 		return fmt.Errorf("subgid mapping validation failed: %w", err)
 	}
@@ -722,7 +673,6 @@ func (b *ContainerdBackend) hasSubIDMapping(file, username string) error {
 
 		parts := strings.Split(line, ":")
 		if len(parts) >= 3 && parts[0] == username {
-			// Found mapping for this user
 			return nil
 		}
 	}
@@ -737,7 +687,6 @@ func (b *ContainerdBackend) TestSocketConnection() error {
 		return fmt.Errorf("failed to get socket path: %w", err)
 	}
 
-	// Check if socket file exists
 	if _, err := os.Stat(socketPath); err != nil {
 		return fmt.Errorf("socket file does not exist: %s", socketPath)
 	}

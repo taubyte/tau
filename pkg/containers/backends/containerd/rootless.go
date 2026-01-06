@@ -27,7 +27,6 @@ func NewRootlessManager(config core.ContainerdConfig) (*RootlessManager, error) 
 		config: config,
 	}
 
-	// Auto-detect tool paths if not specified
 	if err := rm.detectTools(); err != nil {
 		return nil, fmt.Errorf("failed to detect rootless tools: %w", err)
 	}
@@ -37,14 +36,12 @@ func NewRootlessManager(config core.ContainerdConfig) (*RootlessManager, error) 
 
 // detectTools detects available rootless tools
 func (rm *RootlessManager) detectTools() error {
-	// Detect rootlesskit
 	if rm.config.RootlesskitPath != "" {
 		rm.rootlesskitPath = rm.config.RootlesskitPath
 	} else if path, err := exec.LookPath("rootlesskit"); err == nil {
 		rm.rootlesskitPath = path
 	}
 
-	// Detect fuse-overlayfs
 	if rm.config.FuseOverlayfsPath != "" {
 		rm.fuseOverlayfsPath = rm.config.FuseOverlayfsPath
 	} else if path, err := exec.LookPath("fuse-overlayfs"); err == nil {
@@ -71,12 +68,10 @@ func (rm *RootlessManager) validateUIDGIDMapping() error {
 		return fmt.Errorf("failed to get current user: %w", err)
 	}
 
-	// Check if subuid mapping exists for this user (don't check specific UID mapping)
 	if err := rm.hasSubIDMapping("/etc/subuid", currentUser.Username); err != nil {
 		return fmt.Errorf("subuid mapping validation failed: %w", err)
 	}
 
-	// Check if subgid mapping exists for this user (don't check specific GID mapping)
 	if err := rm.hasSubIDMapping("/etc/subgid", currentUser.Username); err != nil {
 		return fmt.Errorf("subgid mapping validation failed: %w", err)
 	}
@@ -100,7 +95,6 @@ func (rm *RootlessManager) hasSubIDMapping(file, username string) error {
 
 		parts := strings.Split(line, ":")
 		if len(parts) >= 3 && parts[0] == username {
-			// Found mapping for this user
 			return nil
 		}
 	}
@@ -110,13 +104,11 @@ func (rm *RootlessManager) hasSubIDMapping(file, username string) error {
 
 // validateMountPermissions validates if a mount operation will work with current UID/GID mapping
 func (rm *RootlessManager) validateMountPermissions(hostPath, containerPath string) error {
-	// Get file info for the host path
 	info, err := os.Stat(hostPath)
 	if err != nil {
 		return fmt.Errorf("cannot stat host path %s: %w", hostPath, err)
 	}
 
-	// Check if we're running as the file owner or have access
 	currentUser, err := user.Current()
 	if err != nil {
 		return fmt.Errorf("failed to get current user: %w", err)
@@ -135,9 +127,7 @@ func (rm *RootlessManager) validateMountPermissions(hostPath, containerPath stri
 		return fmt.Errorf("invalid current GID: %w", err)
 	}
 
-	// Check if file is owned by current user
 	if int(uid) != currentUID && int(gid) != currentGID {
-		// Check subuid/subgid ranges to see if we can map this UID/GID
 		if err := rm.canMapUID(uid); err != nil {
 			if rm.hasRootlesskit() {
 				return fmt.Errorf("cannot mount %s: UID %d cannot be mapped even with rootlesskit (subuid not configured): %w",

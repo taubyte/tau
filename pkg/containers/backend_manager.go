@@ -20,7 +20,6 @@ func selectBackend() (core.Backend, error) {
 	ctx := context.Background()
 	availableBackends := AvailableBackends()
 
-	// Check if Docker backend is registered and try it first
 	dockerRegistered := false
 	for _, bt := range availableBackends {
 		if bt == BackendTypeDocker {
@@ -33,14 +32,12 @@ func selectBackend() (core.Backend, error) {
 		dockerConfig := core.DockerConfig{}
 		dockerBackend, err := NewBackend(dockerConfig)
 		if err == nil {
-			// Health check Docker
 			if err := dockerBackend.HealthCheck(ctx); err == nil {
 				return dockerBackend, nil
 			}
 		}
 	}
 
-	// Check if containerd backend is registered and try it as fallback
 	containerdRegistered := false
 	for _, bt := range availableBackends {
 		if bt == BackendTypeContainerd {
@@ -53,14 +50,12 @@ func selectBackend() (core.Backend, error) {
 		containerdConfig := core.ContainerdConfig{}
 		containerdBackend, err := NewBackend(containerdConfig)
 		if err == nil {
-			// Health check containerd
 			if err := containerdBackend.HealthCheck(ctx); err == nil {
 				return containerdBackend, nil
 			}
 		}
 	}
 
-	// Provide helpful error message
 	if len(availableBackends) == 0 {
 		return nil, fmt.Errorf("no backends registered - import backends (e.g., _ \"github.com/taubyte/tau/pkg/containers/backends/docker\")")
 	}

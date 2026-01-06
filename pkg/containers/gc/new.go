@@ -42,7 +42,7 @@ func Start(ctx context.Context, options ...Option) error {
 			case <-time.After(cnf.interval):
 				// Clean() is deprecated - backend-based cleanup would need to be implemented
 				// For now, just log the error if Clean fails
-				_ = client.Clean(ctx, cnf.maxAge, cnf.filters)
+				client.Clean(ctx, cnf.maxAge, cnf.filters)
 			case <-ctx.Done():
 				return
 			}

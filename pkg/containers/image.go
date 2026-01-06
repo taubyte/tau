@@ -57,14 +57,10 @@ func (i *DockerImage) checkImageExists(ctx context.Context) bool {
 func (i *DockerImage) buildImage(ctx context.Context) error {
 	backendImage := i.backend.Image(i.image)
 
-	// Check if backend supports build
 	if !i.backend.Capabilities().SupportsBuild {
 		return errorImageBuildDockerFile(fmt.Errorf("backend does not support building images"))
 	}
 
-	// For Docker backend, we need to create a DockerBuildInput
-	// Since we can't import the docker package due to cycles, we'll need to use type assertion
-	// The docker backend will handle the type assertion internally
 	buildInput := &dockerBuildInput{
 		Context:    i.buildTarball,
 		Dockerfile: "Dockerfile",
@@ -94,17 +90,12 @@ func (d *dockerBuildInput) Type() core.BackendType {
 func (i *DockerImage) Pull(ctx context.Context, statusChan chan<- PullStatus) (*DockerImage, error) {
 	backendImage := i.backend.Image(i.image)
 
-	// Use backend to pull the image
 	err := backendImage.Pull(ctx)
 	if err != nil {
 		return i, errorClientPull(err)
 	}
 
-	// If status channel is provided, we need to parse the pull output
-	// For now, we'll just return success if backend pull succeeds
-	// TODO: Parse backend pull output if needed for status channel
 	if statusChan != nil {
-		// Create a simple status indicating success
 		status := PullStatus{
 			Status: "Image pulled successfully",
 		}
@@ -133,7 +124,6 @@ func (i *DockerImage) Instantiate(ctx context.Context, options ...ContainerOptio
 	// Convert old container options to ContainerConfig
 	config := convertToContainerConfig(i.image, c)
 
-	// Create container using backend
 	containerID, err := i.backend.Create(ctx, config)
 	if err != nil {
 		return nil, errorContainerCreate(i.image, err)
