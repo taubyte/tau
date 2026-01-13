@@ -1,12 +1,16 @@
 package mcp
 
 import (
+	"fmt"
+	"net"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/taubyte/tau/dream"
+	httpBasic "github.com/taubyte/tau/pkg/http/basic"
+	"github.com/taubyte/tau/pkg/http/options"
 	"gotest.tools/v3/assert"
 
 	// Import dream services
@@ -35,15 +39,40 @@ func TestMCPServer(t *testing.T) {
 	assert.NilError(t, err)
 	defer multiverse.Close()
 
-	// Create MCP service
-	mcpService, err := New(multiverse, nil)
+	// Find an available port
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NilError(t, err)
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close() // Close it so the HTTP server can use it
+
+	// Create HTTP service with the specific port
+	httpService, err := httpBasic.New(
+		multiverse.Context(),
+		options.Listen(fmt.Sprintf("127.0.0.1:%d", port)),
+		options.AllowedOrigins(true, []string{".*"}),
+	)
+	assert.NilError(t, err)
+
+	// Create MCP service with our HTTP service
+	mcpService, err := New(multiverse, httpService)
 	assert.NilError(t, err)
 
 	// Start MCP server in a goroutine
 	go mcpService.Server().Start()
 
-	// Wait a moment for server to start
-	time.Sleep(100 * time.Millisecond)
+	// Build endpoint
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d%s", port, MCPEndpoint)
+
+	// Wait for the server to be ready by polling the endpoint
+	httpClient := &http.Client{Timeout: 2 * time.Second}
+	for i := 0; i < 20; i++ {
+		resp, err := httpClient.Get(endpoint)
+		if err == nil {
+			resp.Body.Close()
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Create MCP client
 	client := mcp.NewClient(&mcp.Implementation{
@@ -53,16 +82,11 @@ func TestMCPServer(t *testing.T) {
 
 	// Create HTTP transport
 	transport := &mcp.StreamableClientTransport{
-		Endpoint:   "http://localhost:8080" + MCPEndpoint,
+		Endpoint:   endpoint,
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
 	}
 
-	// Connect to MCP server
-	connection, err := transport.Connect(t.Context())
-	assert.NilError(t, err)
-	defer connection.Close()
-
-	// Create session
+	// Create session (Connect handles the transport connection internally)
 	session, err := client.Connect(multiverse.Context(), transport, nil)
 	assert.NilError(t, err)
 	defer session.Close()

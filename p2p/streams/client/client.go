@@ -2,14 +2,14 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
-
-	"errors"
 
 	"github.com/taubyte/tau/p2p/peer"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
@@ -408,14 +408,20 @@ func (r *Response) Close() {
 func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body command.Body) *Response {
 	cmd := command.New(cmdName, body)
 
+	// Try to set write deadline, but continue if it's not supported (e.g., mock network pipes)
 	if err := strm.SetWriteDeadline(deadline); err != nil {
-		return &Response{
-			ReadWriter: strm.Stream,
-			pid:        strm.ID,
-			err:        fmt.Errorf("setting write deadline failed with: %w", err),
+		// If deadline is not supported (common in mock networks), continue without deadline
+		// Only fail if it's a different error
+		if !strings.Contains(err.Error(), "deadline not supported") {
+			return &Response{
+				ReadWriter: strm.Stream,
+				pid:        strm.ID,
+				err:        fmt.Errorf("setting write deadline failed with: %w", err),
+			}
 		}
+	} else {
+		defer strm.SetWriteDeadline(time.Time{})
 	}
-	defer strm.SetWriteDeadline(time.Time{})
 
 	if err := cmd.Encode(strm); err != nil {
 		return &Response{
@@ -425,14 +431,20 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 		}
 	}
 
+	// Try to set read deadline, but continue if it's not supported (e.g., mock network pipes)
 	if err := strm.SetReadDeadline(deadline); err != nil {
-		return &Response{
-			ReadWriter: strm.Stream,
-			pid:        strm.ID,
-			err:        fmt.Errorf("setting read deadline failed with: %w", err),
+		// If deadline is not supported (common in mock networks), continue without deadline
+		// Only fail if it's a different error
+		if !strings.Contains(err.Error(), "deadline not supported") {
+			return &Response{
+				ReadWriter: strm.Stream,
+				pid:        strm.ID,
+				err:        fmt.Errorf("setting read deadline failed with: %w", err),
+			}
 		}
+	} else {
+		defer strm.SetReadDeadline(time.Time{})
 	}
-	defer strm.SetReadDeadline(time.Time{})
 
 	resp, err := cr.Decode(strm)
 	if err != nil {

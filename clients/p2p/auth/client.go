@@ -20,6 +20,7 @@ func New(ctx context.Context, node peer.Node) (auth.Client, error) {
 		logger.Error("API client creation failed:", err.Error())
 		return nil, err
 	}
+	c.node = node
 
 	logger.Info("API client Created!")
 	return &c, nil

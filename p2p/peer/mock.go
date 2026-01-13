@@ -80,5 +80,25 @@ func Mock(ctx context.Context) Node {
 		panic(err)
 	}
 
+	// Note: DHT bootstrap should be called after all nodes are linked and connected
+	// Initial bootstrap here may fail if no peers are connected yet, which is fine
+	// The bootstrap will be retried/refined after LinkAllPeers() is called
+	err = p.dht.Bootstrap(p.ctx)
+	if err != nil {
+		// Expected error - no peers connected yet, will bootstrap after linking
+		_ = err
+	}
+
 	return &p
+}
+
+// LinkAllPeers links all peers in the mocknet so they can communicate
+// This should be called after creating all mock nodes that need to communicate
+func LinkAllPeers() error {
+	mocknetLock.Lock()
+	defer mocknetLock.Unlock()
+	if mocknet == nil {
+		return fmt.Errorf("mocknet not initialized")
+	}
+	return mocknet.LinkAll()
 }

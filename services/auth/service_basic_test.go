@@ -55,6 +55,7 @@ func TestAuthService_New(t *testing.T) {
 			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12347"},
 			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12347"},
 			PrivateKey:  []byte("private-key"),
+			Root:        t.TempDir(),
 			DomainValidation: config.DomainValidation{
 				PrivateKey: []byte("private-key"),
 				PublicKey:  []byte("public-key"),

@@ -69,7 +69,11 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 		clientNode = config.ClientNode
 	}
 
-	srv.db, err = srv.dbFactory.New(logger, protocolCommon.Auth, 5)
+	rebroadcastInterval := 5
+	if srv.devMode {
+		rebroadcastInterval = 1
+	}
+	srv.db, err = srv.dbFactory.New(logger, protocolCommon.Auth, rebroadcastInterval)
 	if err != nil {
 		return nil, err
 	}
@@ -87,6 +91,20 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	}
 
 	srv.hostUrl = config.NetworkFqdn
+
+	// Get node path for local storage
+	nodePath := path.Join(config.Root, protocolCommon.Auth)
+	if config.Node != nil {
+		// If node was provided, try to get path from node context or use default
+		nodePath = path.Join(config.Root, protocolCommon.Auth)
+	}
+
+	// Initialize secrets service (streams will be attached in setupStreamRoutes)
+	srv.secretsService, err = initSecretsService(srv.db, srv.node, nodePath)
+	if err != nil {
+		return nil, err
+	}
+
 	srv.setupStreamRoutes()
 
 	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
@@ -119,6 +137,11 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 func (srv *AuthService) Close() error {
 	logger.Info("Closing", protocolCommon.Auth)
 	defer logger.Info(protocolCommon.Auth, "closed")
+
+	// Close secrets service first to stop background goroutines
+	if srv.secretsService != nil {
+		srv.secretsService.Close()
+	}
 
 	srv.stream.Stop()
 	srv.tnsClient.Close()

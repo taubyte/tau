@@ -34,6 +34,8 @@ type AuthService struct {
 	hostUrl string
 
 	newGitHubClient func(context.Context, string) (GitHubClient, error)
+
+	secretsService iface.AuthServiceSecretManager
 }
 
 func (s *AuthService) Node() peer.Node {

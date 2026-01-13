@@ -31,4 +31,7 @@ func (srv *AuthService) setupStreamRoutes() {
 	srv.stream.Define("repositories", srv.apiGitRepositoryServiceHandler)
 	srv.stream.Define("projects", srv.apiProjectsServiceHandler)
 	srv.stream.Define("domain", srv.ApiDomainServiceHandler)
+
+	// Attach secret management stream handlers
+	attachSecretsServiceStreams(srv.secretsService, srv.stream)
 }

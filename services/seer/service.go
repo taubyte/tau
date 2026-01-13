@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path"
+	"time"
 
 	_ "embed"
 
@@ -147,8 +148,11 @@ func (srv *Service) Close() error {
 	defer logger.Info()
 
 	srv.stream.Stop()
-	srv.tns.Close()
 
+	// Give in-flight P2P handlers time to complete before closing datastore
+	time.Sleep(100 * time.Millisecond)
+
+	srv.tns.Close()
 	srv.ds.Close()
 
 	srv.dns.Stop()
