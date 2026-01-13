@@ -2,14 +2,14 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"slices"
+	"strings"
 	"sync"
 	"time"
-
-	"errors"
 
 	"github.com/taubyte/tau/p2p/peer"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
@@ -409,13 +409,16 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 	cmd := command.New(cmdName, body)
 
 	if err := strm.SetWriteDeadline(deadline); err != nil {
-		return &Response{
-			ReadWriter: strm.Stream,
-			pid:        strm.ID,
-			err:        fmt.Errorf("setting write deadline failed with: %w", err),
+		if !strings.Contains(err.Error(), "deadline not supported") {
+			return &Response{
+				ReadWriter: strm.Stream,
+				pid:        strm.ID,
+				err:        fmt.Errorf("setting write deadline failed with: %w", err),
+			}
 		}
+	} else {
+		defer strm.SetWriteDeadline(time.Time{})
 	}
-	defer strm.SetWriteDeadline(time.Time{})
 
 	if err := cmd.Encode(strm); err != nil {
 		return &Response{
@@ -426,13 +429,16 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 	}
 
 	if err := strm.SetReadDeadline(deadline); err != nil {
-		return &Response{
-			ReadWriter: strm.Stream,
-			pid:        strm.ID,
-			err:        fmt.Errorf("setting read deadline failed with: %w", err),
+		if !strings.Contains(err.Error(), "deadline not supported") {
+			return &Response{
+				ReadWriter: strm.Stream,
+				pid:        strm.ID,
+				err:        fmt.Errorf("setting read deadline failed with: %w", err),
+			}
 		}
+	} else {
+		defer strm.SetReadDeadline(time.Time{})
 	}
-	defer strm.SetReadDeadline(time.Time{})
 
 	resp, err := cr.Decode(strm)
 	if err != nil {

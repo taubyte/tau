@@ -386,17 +386,14 @@ func (u *Universe) Cleanup() {
 	for _, c := range u.closables {
 		go func(_c commonIface.Service) {
 			_c.Close()
-			_c.Node().Close()
 			closeableWg.Done()
 		}(c)
 	}
 
-	// close simple nodes
 	simpleWg.Add(len(u.simples))
 	for _, s := range u.simples {
 		go func(_s *Simple) {
 			_s.Close()
-			_s.PeerNode().Close()
 			simpleWg.Done()
 		}(s)
 	}
@@ -405,6 +402,24 @@ func (u *Universe) Cleanup() {
 	simpleWg.Wait()
 
 	u.ctxC()
+
+	time.Sleep(300 * time.Millisecond)
+
+	var nodeWg sync.WaitGroup
+	nodeWg.Add(len(u.closables) + len(u.simples))
+	for _, c := range u.closables {
+		go func(_c commonIface.Service) {
+			_c.Node().Close()
+			nodeWg.Done()
+		}(c)
+	}
+	for _, s := range u.simples {
+		go func(_s *Simple) {
+			_s.PeerNode().Close()
+			nodeWg.Done()
+		}(s)
+	}
+	nodeWg.Wait()
 
 	cleanupCtx, cleanupCtxCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cleanupCtxCancel()

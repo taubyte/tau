@@ -27,6 +27,7 @@ func TestGitHubClientCreation(t *testing.T) {
 			NetworkFqdn: "test.tau",
 			Node:        mockNode,
 			Databases:   mockFactory,
+			Root:        t.TempDir(),
 			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12350"},
 			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12350"},
 			PrivateKey:  []byte("private-key"),

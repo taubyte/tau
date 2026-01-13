@@ -25,6 +25,9 @@ func (kvd *kvDatabase) cleanup() {
 
 func (kvd *kvDatabase) Close() {
 	kvd.closeCtxC()
+
+	time.Sleep(100 * time.Millisecond)
+
 	kvd.cleanup()
 
 	kvd.factory.deleteDB(kvd.path)

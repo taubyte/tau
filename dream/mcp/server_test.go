@@ -1,12 +1,16 @@
 package mcp
 
 import (
+	"fmt"
+	"net"
 	"net/http"
 	"testing"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/taubyte/tau/dream"
+	httpBasic "github.com/taubyte/tau/pkg/http/basic"
+	"github.com/taubyte/tau/pkg/http/options"
 	"gotest.tools/v3/assert"
 
 	// Import dream services
@@ -30,44 +34,53 @@ import (
 )
 
 func TestMCPServer(t *testing.T) {
-	// Create multiverse
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer multiverse.Close()
 
-	// Create MCP service
-	mcpService, err := New(multiverse, nil)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	assert.NilError(t, err)
+	port := listener.Addr().(*net.TCPAddr).Port
+	listener.Close()
+
+	httpService, err := httpBasic.New(
+		multiverse.Context(),
+		options.Listen(fmt.Sprintf("127.0.0.1:%d", port)),
+		options.AllowedOrigins(true, []string{".*"}),
+	)
 	assert.NilError(t, err)
 
-	// Start MCP server in a goroutine
+	mcpService, err := New(multiverse, httpService)
+	assert.NilError(t, err)
+
 	go mcpService.Server().Start()
 
-	// Wait a moment for server to start
-	time.Sleep(100 * time.Millisecond)
+	endpoint := fmt.Sprintf("http://127.0.0.1:%d%s", port, MCPEndpoint)
 
-	// Create MCP client
+	httpClient := &http.Client{Timeout: 2 * time.Second}
+	for i := 0; i < 20; i++ {
+		resp, err := httpClient.Get(endpoint)
+		if err == nil {
+			resp.Body.Close()
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	client := mcp.NewClient(&mcp.Implementation{
 		Name:    "dream-mcp-test-client",
 		Version: "1.0.0",
 	}, nil)
 
-	// Create HTTP transport
 	transport := &mcp.StreamableClientTransport{
-		Endpoint:   "http://localhost:8080" + MCPEndpoint,
+		Endpoint:   endpoint,
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},
 	}
 
-	// Connect to MCP server
-	connection, err := transport.Connect(t.Context())
-	assert.NilError(t, err)
-	defer connection.Close()
-
-	// Create session
 	session, err := client.Connect(multiverse.Context(), transport, nil)
 	assert.NilError(t, err)
 	defer session.Close()
 
-	// Test 1: List available tools
 	t.Run("ListTools", func(t *testing.T) {
 		toolsResult, err := session.ListTools(multiverse.Context(), &mcp.ListToolsParams{})
 		assert.NilError(t, err)
@@ -96,7 +109,6 @@ func TestMCPServer(t *testing.T) {
 		}
 	})
 
-	// Test 2: List universes (should be empty initially)
 	t.Run("ListUniverses", func(t *testing.T) {
 		result, err := session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name:      "list_universes",
@@ -105,14 +117,10 @@ func TestMCPServer(t *testing.T) {
 		assert.NilError(t, err)
 
 		assert.Assert(t, !result.IsError, "List universes returned error: %v", result.Content)
-
-		// Should return empty list initially
 		assert.Assert(t, len(result.Content) > 0, "Expected content in list universes result")
 	})
 
-	// Test 3: Create universe
 	t.Run("CreateUniverse", func(t *testing.T) {
-		// First, try to delete the universe if it exists to ensure clean state
 		_, _ = session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name: "delete_universe",
 			Arguments: map[string]any{
@@ -139,7 +147,6 @@ func TestMCPServer(t *testing.T) {
 			t.Fatalf("Create universe returned error: %v", result.Content)
 		}
 
-		// Verify universe was created by listing universes
 		listResult, err := session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name:      "list_universes",
 			Arguments: map[string]any{},
@@ -149,7 +156,6 @@ func TestMCPServer(t *testing.T) {
 		assert.Assert(t, !listResult.IsError, "List universes after creation returned error: %v", listResult.Content)
 	})
 
-	// Test 4: Get universe status
 	t.Run("GetUniverseStatus", func(t *testing.T) {
 		result, err := session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name: "get_universe_status",
@@ -162,7 +168,6 @@ func TestMCPServer(t *testing.T) {
 		assert.Assert(t, !result.IsError, "Get universe status returned error: %v", result.Content)
 	})
 
-	// Test 5: Start universe
 	t.Run("StartUniverse", func(t *testing.T) {
 		result, err := session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name: "start_universe",
@@ -175,7 +180,6 @@ func TestMCPServer(t *testing.T) {
 		assert.Assert(t, !result.IsError, "Start universe returned error: %v", result.Content)
 	})
 
-	// Test 6: Get universe status after starting
 	t.Run("GetUniverseStatusAfterStart", func(t *testing.T) {
 		result, err := session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name: "get_universe_status",
@@ -188,7 +192,6 @@ func TestMCPServer(t *testing.T) {
 		assert.Assert(t, !result.IsError, "Get universe status after start returned error: %v", result.Content)
 	})
 
-	// Test 7: List projects (should be empty for new universe)
 	t.Run("ListProjects", func(t *testing.T) {
 		result, err := session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name: "list_projects",
@@ -201,7 +204,6 @@ func TestMCPServer(t *testing.T) {
 		assert.Assert(t, !result.IsError, "List projects returned error: %v", result.Content)
 	})
 
-	// Test 8: Get disk usage
 	t.Run("GetDiskUsage", func(t *testing.T) {
 		result, err := session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name: "get_disk_usage",
@@ -214,7 +216,6 @@ func TestMCPServer(t *testing.T) {
 		assert.Assert(t, !result.IsError, "Get disk usage returned error: %v", result.Content)
 	})
 
-	// Test 10: Stop universe
 	t.Run("StopUniverse", func(t *testing.T) {
 		result, err := session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name: "stop_universe",
@@ -227,7 +228,6 @@ func TestMCPServer(t *testing.T) {
 		assert.Assert(t, !result.IsError, "Stop universe returned error: %v", result.Content)
 	})
 
-	// Test 11: Delete universe
 	t.Run("DeleteUniverse", func(t *testing.T) {
 		_, err := session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name: "delete_universe",
@@ -236,11 +236,8 @@ func TestMCPServer(t *testing.T) {
 			},
 		})
 		assert.NilError(t, err)
-
-		// we dont check result as the delete should have failed coz no universe is persitent in the test
 	})
 
-	// Test 12: Verify universe is deleted
 	t.Run("VerifyUniverseDeleted", func(t *testing.T) {
 		result, err := session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name:      "list_universes",
@@ -249,13 +246,10 @@ func TestMCPServer(t *testing.T) {
 		assert.NilError(t, err)
 
 		assert.Assert(t, !result.IsError, "List universes after deletion returned error: %v", result.Content)
-
-		// Should be empty again
 		assert.Assert(t, len(result.Content) > 0, "Expected content in list universes result after deletion")
 	})
 }
 
-// TestMCPServiceCreation tests the MCP service creation with various configurations
 func TestMCPServiceCreation(t *testing.T) {
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
@@ -269,15 +263,12 @@ func TestMCPServiceCreation(t *testing.T) {
 	})
 
 	t.Run("CreateWithCustomHTTPService", func(t *testing.T) {
-		// This would test with a custom http service if we had one
-		// For now, we'll just test that the function accepts nil
 		service, err := New(multiverse, nil)
 		assert.NilError(t, err)
 		assert.Assert(t, service != nil)
 	})
 }
 
-// TestUniverseHandlers tests all universe management handlers comprehensively
 func TestUniverseHandlers(t *testing.T) {
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
@@ -292,7 +283,7 @@ func TestUniverseHandlers(t *testing.T) {
 		req := &mcp.CallToolRequest{}
 		result, output, err := service.listUniverses(ctx, req, nil)
 		assert.NilError(t, err)
-		assert.Assert(t, result == nil) // No error result
+		assert.Assert(t, result == nil)
 		assert.Assert(t, output.Universes != nil)
 	})
 
@@ -304,7 +295,7 @@ func TestUniverseHandlers(t *testing.T) {
 		}
 		result, output, err := service.createUniverse(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result == nil) // No error result
+		assert.Assert(t, result == nil)
 		assert.Assert(t, output.Success)
 		assert.Equal(t, output.UniverseName, "test-universe-creation")
 	})
@@ -317,7 +308,7 @@ func TestUniverseHandlers(t *testing.T) {
 		}
 		result, output, err := service.createUniverse(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result != nil) // Should return error result
+		assert.Assert(t, result != nil)
 		assert.Assert(t, result.IsError)
 		assert.Assert(t, !output.Success)
 	})
@@ -329,7 +320,7 @@ func TestUniverseHandlers(t *testing.T) {
 		}
 		result, output, err := service.getUniverseStatus(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result == nil) // No error result
+		assert.Assert(t, result == nil)
 		assert.Equal(t, output.Name, "test-universe-creation")
 	})
 
@@ -340,7 +331,7 @@ func TestUniverseHandlers(t *testing.T) {
 		}
 		result, _, err := service.getUniverseStatus(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result != nil) // Should return error result
+		assert.Assert(t, result != nil)
 		assert.Assert(t, result.IsError)
 	})
 
@@ -351,7 +342,7 @@ func TestUniverseHandlers(t *testing.T) {
 		}
 		result, output, err := service.startUniverse(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result == nil) // No error result
+		assert.Assert(t, result == nil)
 		assert.Assert(t, output.Success)
 		assert.Equal(t, output.UniverseName, "test-universe-creation")
 	})
@@ -363,7 +354,7 @@ func TestUniverseHandlers(t *testing.T) {
 		}
 		result, _, err := service.startUniverse(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result != nil) // Should return error result
+		assert.Assert(t, result != nil)
 		assert.Assert(t, result.IsError)
 	})
 
@@ -374,7 +365,7 @@ func TestUniverseHandlers(t *testing.T) {
 		}
 		result, output, err := service.stopUniverse(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result == nil) // No error result
+		assert.Assert(t, result == nil)
 		assert.Assert(t, output.Success)
 		assert.Equal(t, output.UniverseName, "test-universe-creation")
 	})
@@ -386,12 +377,11 @@ func TestUniverseHandlers(t *testing.T) {
 		}
 		result, _, err := service.stopUniverse(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result != nil) // Should return error result
+		assert.Assert(t, result != nil)
 		assert.Assert(t, result.IsError)
 	})
 
 	t.Run("DeleteUniverseSuccess", func(t *testing.T) {
-		// First create a universe to delete
 		createInput := CreateUniverseInput{
 			UniverseName: "test-universe-to-delete",
 			Persistent:   false,
@@ -405,7 +395,7 @@ func TestUniverseHandlers(t *testing.T) {
 		}
 		result, output, err := service.deleteUniverse(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result == nil) // No error result
+		assert.Assert(t, result == nil)
 		assert.Assert(t, output.Success)
 	})
 
@@ -416,12 +406,11 @@ func TestUniverseHandlers(t *testing.T) {
 		}
 		result, _, err := service.deleteUniverse(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result != nil) // Should return error result
+		assert.Assert(t, result != nil)
 		assert.Assert(t, result.IsError)
 	})
 }
 
-// TestProjectHandlers tests project management handlers
 func TestProjectHandlers(t *testing.T) {
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
@@ -432,18 +421,15 @@ func TestProjectHandlers(t *testing.T) {
 
 	ctx := multiverse.Context()
 
-	// Create a universe first
 	universe, err := multiverse.New(dream.UniverseConfig{
 		Name:     "test-project-universe",
 		KeepRoot: false,
 	})
 	assert.NilError(t, err)
 
-	// Start the universe
 	err = universe.StartAll("client")
 	assert.NilError(t, err)
 
-	// Wait for universe to be ready
 	time.Sleep(2 * time.Second)
 
 	t.Run("ListProjectsEmpty", func(t *testing.T) {
@@ -453,9 +439,9 @@ func TestProjectHandlers(t *testing.T) {
 		}
 		result, output, err := service.listProjects(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result == nil) // No error result
+		assert.Assert(t, result == nil)
 		assert.Assert(t, output.Projects != nil)
-		assert.Equal(t, len(output.Projects), 0) // Should be empty initially
+		assert.Equal(t, len(output.Projects), 0)
 	})
 
 	t.Run("ListProjectsUniverseNotFound", func(t *testing.T) {
@@ -465,7 +451,7 @@ func TestProjectHandlers(t *testing.T) {
 		}
 		result, _, err := service.listProjects(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result != nil) // Should return error result
+		assert.Assert(t, result != nil)
 		assert.Assert(t, result.IsError)
 	})
 
@@ -477,7 +463,7 @@ func TestProjectHandlers(t *testing.T) {
 		}
 		result, _, err := service.getProjectDetails(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result != nil) // Should return error result
+		assert.Assert(t, result != nil)
 		assert.Assert(t, result.IsError)
 	})
 
@@ -489,16 +475,14 @@ func TestProjectHandlers(t *testing.T) {
 		}
 		result, _, err := service.getProjectDetails(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result != nil) // Should return error result
+		assert.Assert(t, result != nil)
 		assert.Assert(t, result.IsError)
 	})
 
-	// Clean up
 	universe.Stop()
 	multiverse.Delete("test-project-universe")
 }
 
-// TestSystemHandlers tests system management handlers
 func TestSystemHandlers(t *testing.T) {
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
@@ -509,7 +493,6 @@ func TestSystemHandlers(t *testing.T) {
 
 	ctx := multiverse.Context()
 
-	// Create a universe first
 	_, err = multiverse.New(dream.UniverseConfig{
 		Name:     "test-disk-universe",
 		KeepRoot: false,
@@ -523,7 +506,7 @@ func TestSystemHandlers(t *testing.T) {
 		}
 		result, output, err := service.getDiskUsage(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result == nil) // No error result
+		assert.Assert(t, result == nil)
 		assert.Equal(t, output.UniverseName, "test-disk-universe")
 		assert.Assert(t, output.DiskUsage >= 0)
 		assert.Assert(t, output.DiskUsageMB >= 0)
@@ -537,7 +520,7 @@ func TestSystemHandlers(t *testing.T) {
 		}
 		result, _, err := service.getDiskUsage(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result != nil) // Should return error result
+		assert.Assert(t, result != nil)
 		assert.Assert(t, result.IsError)
 	})
 
@@ -548,15 +531,13 @@ func TestSystemHandlers(t *testing.T) {
 		}
 		result, _, err := service.getDiskUsage(ctx, req, input)
 		assert.NilError(t, err)
-		assert.Assert(t, result != nil) // Should return error result
+		assert.Assert(t, result != nil)
 		assert.Assert(t, result.IsError)
 	})
 
-	// Clean up
 	multiverse.Delete("test-disk-universe")
 }
 
-// TestHelperFunctions tests the error helper functions
 func TestHelperFunctions(t *testing.T) {
 	t.Run("ErrorResultGeneric", func(t *testing.T) {
 		result, output, err := errorResult("test", "test error: %s", "message")
@@ -627,7 +608,6 @@ func TestHelperFunctions(t *testing.T) {
 	})
 }
 
-// TestConvertRegistryToMapAndIDs tests the registry conversion helper function
 func TestConvertRegistryToMapAndIDs(t *testing.T) {
 	t.Run("EmptyMap", func(t *testing.T) {
 		registry := make(map[interface{}]interface{})
@@ -713,7 +693,6 @@ func TestConvertRegistryToMapAndIDs(t *testing.T) {
 			42: "numeric-key",
 		}
 		_, _, err := convertRegistryToMapAndIDs(registry)
-		// This should return an error because non-string keys are not supported
 		assert.Assert(t, err != nil)
 	})
 
@@ -724,7 +703,6 @@ func TestConvertRegistryToMapAndIDs(t *testing.T) {
 		result, _, err := convertRegistryToMapAndIDs(registry)
 		assert.NilError(t, err)
 		assert.Assert(t, result != nil)
-		// The complex struct should be converted to string representation
 		assert.Equal(t, result["complex"], "{test}")
 	})
 }

@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 
@@ -18,9 +19,19 @@ type Client interface {
 	Hooks() Hooks
 	Projects() Projects
 	Repositories() Repositories
+	Secrets() Secrets
 	Stats() Stats // TODO: rename State
 	Peers(...peerCore.ID) Client
 	Close()
+}
+
+type Secrets interface {
+	Store(ctx context.Context, secretID string, plaintext []byte) error
+	Retrieve(ctx context.Context, secretID string) ([]byte, error)
+	Delete(ctx context.Context, secretID string) error
+	Exists(ctx context.Context, secretID string) (bool, error)
+	List(ctx context.Context) ([]string, error)
+	PublicKeys(ctx context.Context, opts ...PublicKeyOption) ([]DistributedKey, error)
 }
 
 type DomainRegistration struct {

@@ -21,6 +21,7 @@ func TestACMEFunctionality(t *testing.T) {
 			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12345"},
 			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12345"},
 			PrivateKey:  []byte("private-key"),
+			Root:        t.TempDir(),
 			DomainValidation: config.DomainValidation{
 				PrivateKey: []byte("private-key"),
 				PublicKey:  []byte("public-key"),
@@ -50,6 +51,7 @@ func TestACMEFunctionality(t *testing.T) {
 			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12346"},
 			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12346"},
 			PrivateKey:  []byte("private-key"),
+			Root:        t.TempDir(),
 			DomainValidation: config.DomainValidation{
 				PrivateKey: privateKey,
 				PublicKey:  publicKey,
