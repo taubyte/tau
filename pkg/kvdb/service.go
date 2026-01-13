@@ -24,11 +24,8 @@ func (kvd *kvDatabase) cleanup() {
 }
 
 func (kvd *kvDatabase) Close() {
-	// Cancel context to signal CRDT goroutines to stop
 	kvd.closeCtxC()
 
-	// Give CRDT background goroutines time to see context cancellation
-	// before closing the datastore
 	time.Sleep(100 * time.Millisecond)
 
 	kvd.cleanup()

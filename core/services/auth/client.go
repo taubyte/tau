@@ -25,21 +25,12 @@ type Client interface {
 	Close()
 }
 
-// Secrets provides client-side secret management operations
-// Note: List() may have scalability concerns at large scale as it returns all secret IDs in memory.
-// Consider pagination or streaming for future improvements.
 type Secrets interface {
-	// Store encrypts a secret client-side and stores it
 	Store(ctx context.Context, secretID string, plaintext []byte) error
-	// Retrieve retrieves and decrypts a secret
 	Retrieve(ctx context.Context, secretID string) ([]byte, error)
-	// Delete deletes a secret
 	Delete(ctx context.Context, secretID string) error
-	// Exists checks if a secret exists
 	Exists(ctx context.Context, secretID string) (bool, error)
-	// List lists all secret IDs
 	List(ctx context.Context) ([]string, error)
-	// PublicKeys returns available distributed keys with optional limit
 	PublicKeys(ctx context.Context, opts ...PublicKeyOption) ([]DistributedKey, error)
 }
 

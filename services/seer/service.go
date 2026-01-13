@@ -149,7 +149,6 @@ func (srv *Service) Close() error {
 
 	srv.stream.Stop()
 
-	// Give in-flight P2P handlers time to complete before closing datastore
 	time.Sleep(100 * time.Millisecond)
 
 	srv.tns.Close()

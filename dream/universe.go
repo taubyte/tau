@@ -382,7 +382,6 @@ func (u *Universe) Cleanup() {
 		simpleWg    sync.WaitGroup
 	)
 
-	// Close services (this closes streams and datastores)
 	closeableWg.Add(len(u.closables))
 	for _, c := range u.closables {
 		go func(_c commonIface.Service) {
@@ -391,7 +390,6 @@ func (u *Universe) Cleanup() {
 		}(c)
 	}
 
-	// close simple clients
 	simpleWg.Add(len(u.simples))
 	for _, s := range u.simples {
 		go func(_s *Simple) {
@@ -403,13 +401,10 @@ func (u *Universe) Cleanup() {
 	closeableWg.Wait()
 	simpleWg.Wait()
 
-	// Cancel universe context to signal remaining goroutines to stop
 	u.ctxC()
 
-	// Give CRDT and P2P goroutines time to exit after datastores and streams are closed
 	time.Sleep(300 * time.Millisecond)
 
-	// Now close nodes (which closes pebble stores) - MUST happen after CRDT datastores close
 	var nodeWg sync.WaitGroup
 	nodeWg.Add(len(u.closables) + len(u.simples))
 	for _, c := range u.closables {

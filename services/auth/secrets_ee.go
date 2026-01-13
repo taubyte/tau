@@ -12,7 +12,6 @@ import (
 	peerService "github.com/taubyte/tau/p2p/streams/service"
 )
 
-// initSecretsService initializes the secrets service with the provided database, node, and node path
 func initSecretsService(db kv.KVDB, node peer.Node, nodePath string) (iface.AuthServiceSecretManager, error) {
 	secretsService, err := secrets.New(db, node, nodePath)
 	if err != nil {
@@ -21,7 +20,6 @@ func initSecretsService(db kv.KVDB, node peer.Node, nodePath string) (iface.Auth
 	return secretsService, nil
 }
 
-// attachSecretsServiceStreams attaches the secrets service stream handlers to the command service
 func attachSecretsServiceStreams(secretsService iface.AuthServiceSecretManager, streamService peerService.CommandService) {
 	secretsService.AttachStreams(streamService)
 }
