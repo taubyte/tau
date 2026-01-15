@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -67,10 +69,62 @@ func (s *Seer) List() ([]string, error) {
 
 func (s *Seer) Query() *Query {
 	return &Query{
-		seer:   s,
-		ops:    make([]op, 0),
-		errors: make([]error, 0),
+		seer:     s,
+		ops:      make([]op, 0),
+		errors:   make([]error, 0),
+		filePath: "",
+		line:     0,
+		column:   0,
 	}
+}
+
+type YAMLError struct {
+	FilePath string
+	Line     int
+	Column   int
+	Err      error
+}
+
+func (e *YAMLError) Error() string {
+	if e.Line > 0 && e.Column > 0 {
+		return fmt.Sprintf("error parsing YAML file '%s' at line %d, column %d: %v", e.FilePath, e.Line, e.Column, e.Err)
+	} else if e.Line > 0 {
+		return fmt.Sprintf("error parsing YAML file '%s' at line %d: %v", e.FilePath, e.Line, e.Err)
+	}
+	return fmt.Sprintf("error parsing YAML file '%s': %v", e.FilePath, e.Err)
+}
+
+func (e *YAMLError) Unwrap() error {
+	return e.Err
+}
+
+func parseYAMLError(err error) (line, column int) {
+	if err == nil {
+		return 0, 0
+	}
+
+	errStr := err.Error()
+	re := regexp.MustCompile(`line (\d+):\s*column (\d+)`)
+	matches := re.FindStringSubmatch(errStr)
+	if len(matches) == 3 {
+		if l, err := strconv.Atoi(matches[1]); err == nil {
+			line = l
+		}
+		if c, err := strconv.Atoi(matches[2]); err == nil {
+			column = c
+		}
+		return line, column
+	}
+
+	re = regexp.MustCompile(`line (\d+)`)
+	matches = re.FindStringSubmatch(errStr)
+	if len(matches) == 2 {
+		if l, err := strconv.Atoi(matches[1]); err == nil {
+			line = l
+		}
+	}
+
+	return line, column
 }
 
 func (s *Seer) loadYamlDocument(path string) (*yaml.Node, error) {
@@ -84,7 +138,13 @@ func (s *Seer) loadYamlDocument(path string) (*yaml.Node, error) {
 	yaml_decoder := yaml.NewDecoder(f)
 	err = yaml_decoder.Decode(root_node)
 	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("processing yaml file %s failed with %w", path, err)
+		line, column := parseYAMLError(err)
+		return nil, &YAMLError{
+			FilePath: path,
+			Line:     line,
+			Column:   column,
+			Err:      err,
+		}
 	}
 
 	s.documents[path] = root_node

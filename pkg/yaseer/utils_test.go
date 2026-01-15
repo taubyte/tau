@@ -2,6 +2,7 @@ package seer
 
 import (
 	"fmt"
+	"testing"
 
 	"github.com/spf13/afero"
 )
@@ -28,4 +29,14 @@ func fixtureFS(virtual bool, dir ...string) Option {
 		s.fs = newFs
 		return nil
 	}
+}
+
+// newTestSeer creates a Seer instance with VirtualFS using memfs for testing
+func newTestSeer(t *testing.T) *Seer {
+	t.Helper()
+	seer, err := New(VirtualFS(afero.NewMemMapFs(), "/"))
+	if err != nil {
+		t.Fatalf("Failed to create test seer: %v", err)
+	}
+	return seer
 }

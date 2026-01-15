@@ -2,6 +2,7 @@ package seer
 
 import (
 	"fmt"
+	"os"
 	"testing"
 
 	"golang.org/x/exp/slices"
@@ -162,5 +163,117 @@ func TestDelete(t *testing.T) {
 
 		err = _setDeleteMap(seer, "parent2", "7", map[string]string{"dasddwa": "wordwadld", "dwadwaqqew": "dasdasdwaw"})
 		assert.NilError(t, err)
+	})
+}
+
+func TestDelete_RemovesFromCache(t *testing.T) {
+	seer := newTestSeer(t)
+
+	t.Run("Delete removes document from cache", func(t *testing.T) {
+		err := seer.Get("cache").Get("test").Document().Set("value").Commit()
+		assert.NilError(t, err)
+
+		// Verify it's in cache
+		_, exists := seer.documents["/cache/test.yaml"]
+		assert.Assert(t, exists, "Document should be in cache")
+
+		// Delete the document
+		err = seer.Get("cache").Get("test").Delete().Commit()
+		assert.NilError(t, err)
+
+		// Verify it's removed from cache
+		_, exists = seer.documents["/cache/test.yaml"]
+		assert.Assert(t, !exists, "Document should be removed from cache after delete")
+	})
+}
+
+func TestDelete_FromMapping(t *testing.T) {
+	seer := newTestSeer(t)
+
+	t.Run("Delete from mapping removes key-value pair", func(t *testing.T) {
+		err := seer.Get("delmap").Get("test").Document().Set(map[string]string{
+			"key1": "val1",
+			"key2": "val2",
+			"key3": "val3",
+		}).Commit()
+		assert.NilError(t, err)
+
+		// Delete one key
+		err = seer.Get("delmap").Get("test").Get("key2").Delete().Commit()
+		assert.NilError(t, err)
+
+		// Verify it's gone
+		var val string
+		err = seer.Get("delmap").Get("test").Get("key2").Value(&val)
+		assert.Assert(t, err != nil, "Expected error when accessing deleted key")
+
+		// Verify other keys still exist
+		err = seer.Get("delmap").Get("test").Get("key1").Value(&val)
+		assert.NilError(t, err)
+		assert.Equal(t, val, "val1")
+	})
+}
+
+func TestDelete_FromFileSystem(t *testing.T) {
+	// Use real filesystem for filesystem delete tests
+	tempDir := t.TempDir()
+	seer, err := New(SystemFS(tempDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("Delete removes directory and all cached documents", func(t *testing.T) {
+		// Create nested structure
+		seer.Get("deldir").Get("sub1").Get("file1").Document().Set("val1").Commit()
+		seer.Get("deldir").Get("sub2").Get("file2").Document().Set("val2").Commit()
+
+		// Delete the directory
+		err := seer.Get("deldir").Delete().Commit()
+		if err != nil {
+			t.Fatalf("Failed to delete directory: %v", err)
+		}
+
+		// Verify directory is gone
+		_, err = seer.fs.Stat("/deldir")
+		if err == nil {
+			t.Error("Directory should be deleted")
+		}
+	})
+
+	t.Run("Delete handles unsupported file error path", func(t *testing.T) {
+		// Create a non-YAML file
+		filePath := "/unsupported.txt"
+		f, err := seer.fs.OpenFile(filePath, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0640)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.WriteString("not yaml")
+		f.Close()
+
+		// Try to delete it - should hit unsupported file path
+		// This tests the error path when Stat fails
+		seer.Get("unsupported").Delete().Commit()
+	})
+
+	t.Run("Delete handles file removal from cache", func(t *testing.T) {
+		// Create a file
+		err := seer.Get("cachefile").Get("test").Document().Set("value").Commit()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Verify in cache
+		_, exists := seer.documents["/cachefile/test.yaml"]
+		assert.Assert(t, exists, "File should be in cache")
+
+		// Delete the file (not directory)
+		err = seer.Get("cachefile").Get("test").Delete().Commit()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Verify removed from cache
+		_, exists = seer.documents["/cachefile/test.yaml"]
+		assert.Assert(t, !exists, "File should be removed from cache")
 	})
 }

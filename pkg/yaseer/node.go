@@ -186,7 +186,16 @@ func (n *Query) Value(dst interface{}) error {
 
 	err = doc.this.Decode(dst)
 	if err != nil {
-		return fmt.Errorf("decode(%T) failed with %s", dst, err)
+		line, column := getNodeLocation(doc.this)
+		if doc.filePath != "" {
+			if line > 0 && column > 0 {
+				return fmt.Errorf("decode(%T) failed in file '%s' at line %d, column %d: %w", dst, doc.filePath, line, column, err)
+			} else if line > 0 {
+				return fmt.Errorf("decode(%T) failed in file '%s' at line %d: %w", dst, doc.filePath, line, err)
+			}
+			return fmt.Errorf("decode(%T) failed in file '%s': %w", dst, doc.filePath, err)
+		}
+		return fmt.Errorf("decode(%T) failed with %w", dst, err)
 	}
 
 	return nil
@@ -214,4 +223,20 @@ func (n *Query) List() ([]string, error) {
 	default:
 		return nil, fmt.Errorf("listing keys failed with %v type(%T) is not a map or a slice", val, val)
 	}
+}
+
+func (n *Query) FilePath() string {
+	return n.filePath
+}
+
+func (n *Query) Line() int {
+	return n.line
+}
+
+func (n *Query) Column() int {
+	return n.column
+}
+
+func (n *Query) Location() (filePath string, line int, column int) {
+	return n.filePath, n.line, n.column
 }

@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type Document interface{}
+type Document any
 
 type Seer struct {
 	fs        afero.Fs
@@ -16,24 +16,25 @@ type Seer struct {
 }
 
 const (
-	opTypeGet            = 1
-	opTypeCreateDocument = 2
-	opTypeCreateFolder   = 3 // TODO: Either implement or delete
-	opTypeSet            = 16
-	opTypeGetOrCreate    = 42
+	opTypeGet = iota
+	opTypeCreateDocument
+	opTypeCreateFolder
+	opTypeSet
+	opTypeGetOrCreate
 )
 
 type op struct {
 	opType  int
 	name    string
-	value   interface{}
+	value   any
 	handler opHandler
 }
 
 type yamlNode struct {
-	parent *yaml.Node // prant
-	prev   *yaml.Node // previous -- genrally contains name
-	this   *yaml.Node // node with data
+	parent   *yaml.Node // parent
+	prev     *yaml.Node // previous -- genrally contains name
+	this     *yaml.Node // node with data
+	filePath string     // path to the YAML file this node came from
 }
 
 type opHandler func(this op, node *Query, path []string /*returned by previous op*/, value *yamlNode /* value passed by parent*/) ( /*path*/ []string /*value*/, *yamlNode, error)
@@ -44,6 +45,9 @@ type Query struct {
 	requestedPath []string // is built by the Gets
 	ops           []op
 	errors        []error
+	filePath      string
+	line          int
+	column        int
 }
 
 type Batch struct {
