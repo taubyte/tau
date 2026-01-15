@@ -12,6 +12,14 @@ import (
 	pathUtils "github.com/taubyte/tau/utils/path"
 )
 
+// getNodeLocation extracts line and column information from a yaml.Node
+func getNodeLocation(node *yaml.Node) (line, column int) {
+	if node == nil {
+		return 0, 0
+	}
+	return node.Line, node.Column
+}
+
 func opDelete(this op, query *Query, path []string, value *yamlNode) ([]string, *yamlNode, error) {
 	if !query.write {
 		return path, nil, errors.New("failed to call Delete() during a read query")
@@ -45,7 +53,7 @@ func _opDeleteInYaml(this op, query *Query, path []string, value *yamlNode) ([]s
 		value.parent.Content = append(value.parent.Content, elm)
 	}
 
-	return path, &yamlNode{parent: value.parent, prev: nil, this: nil}, nil
+	return path, &yamlNode{parent: value.parent, prev: nil, this: nil, filePath: value.filePath}, nil
 }
 
 func _opDeleteInFileSystem(this op, query *Query, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
@@ -104,7 +112,11 @@ func opSetInYaml(this op, query *Query, path []string, value *yamlNode) ([]strin
 	curNode.LineComment = curNode_LineComment
 	curNode.FootComment = curNode_FootComment
 
-	return path, &yamlNode{parent: parentNode, prev: value.prev, this: curNode}, err
+	line, column := getNodeLocation(curNode)
+	query.filePath = value.filePath
+	query.line = line
+	query.column = column
+	return path, &yamlNode{parent: parentNode, prev: value.prev, this: curNode, filePath: value.filePath}, err
 }
 
 func opGetOrCreate(this op, query *Query, path []string, value *yamlNode) ([]string, *yamlNode, error) {
@@ -129,6 +141,7 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 	path = append(path, this.name)
 	parentNode := value.parent
 	curNode := value.this
+	filePath := value.filePath
 	if curNode.Kind == yaml.DocumentNode {
 		if len(curNode.Content) != 1 {
 			return path, nil, fmt.Errorf("failed to process empty document at %s", pathUtils.Join(path))
@@ -141,7 +154,11 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 		for i := 0; i+1 < len(curNode.Content); i += 2 {
 			if curNode.Content[i].Kind == yaml.ScalarNode && curNode.Content[i].Value == this.name {
 				// we got it
-				return path, &yamlNode{parent: parentNode, prev: curNode.Content[i], this: curNode.Content[i+1]}, nil
+				line, column := getNodeLocation(curNode.Content[i+1])
+				query.filePath = filePath
+				query.line = line
+				query.column = column
+				return path, &yamlNode{parent: parentNode, prev: curNode.Content[i], this: curNode.Content[i+1], filePath: filePath}, nil
 			}
 		}
 
@@ -150,7 +167,11 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 			curNode = &yaml.Node{}
 			curNode.Encode(map[string]interface{}{this.name: nil})
 			parentNode.Content = append(parentNode.Content, curNode.Content...)
-			return path, &yamlNode{parent: parentNode, prev: curNode.Content[0], this: curNode.Content[1]}, nil
+			line, column := getNodeLocation(curNode.Content[1])
+			query.filePath = filePath
+			query.line = line
+			query.column = column
+			return path, &yamlNode{parent: parentNode, prev: curNode.Content[0], this: curNode.Content[1], filePath: filePath}, nil
 		}
 		// else, we return error
 		return path, nil, fmt.Errorf("can not find %s", pathUtils.Join(path))
@@ -168,19 +189,31 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 				curNode = &yaml.Node{}
 				curNode.Encode(nil)
 				parentNode.Content = append(parentNode.Content, curNode)
-				return path, &yamlNode{parent: parentNode, prev: nil, this: curNode}, nil
+				line, column := getNodeLocation(curNode)
+				query.filePath = filePath
+				query.line = line
+				query.column = column
+				return path, &yamlNode{parent: parentNode, prev: nil, this: curNode, filePath: filePath}, nil
 			} else {
 				return path, nil, fmt.Errorf("index %d out of range (Length: %d)", _index, len(curNode.Content))
 			}
 		}
 
-		return path, &yamlNode{parent: parentNode, prev: nil, this: curNode.Content[_index]}, nil
+		line, column := getNodeLocation(curNode.Content[_index])
+		query.filePath = filePath
+		query.line = line
+		query.column = column
+		return path, &yamlNode{parent: parentNode, prev: nil, this: curNode.Content[_index], filePath: filePath}, nil
 	}
 
 	if query.write {
 
 		curNode.Encode(map[string]interface{}{this.name: nil})
-		return path, &yamlNode{parent: parentNode, prev: curNode, this: curNode.Content[1]}, nil
+		line, column := getNodeLocation(curNode.Content[1])
+		query.filePath = filePath
+		query.line = line
+		query.column = column
+		return path, &yamlNode{parent: parentNode, prev: curNode, this: curNode.Content[1], filePath: filePath}, nil
 	}
 	//else
 
@@ -193,7 +226,12 @@ func _opGetOrCreateInFileSystem(this op, query *Query, _path []string, value *ya
 	doc, exists := query.seer.documents[path+".yaml"]
 	if exists {
 		_path[len(_path)-1] += ".yaml"
-		return _path, &yamlNode{parent: nil, this: doc}, nil
+		filePath := path + ".yaml"
+		line, column := getNodeLocation(doc)
+		query.filePath = filePath
+		query.line = line
+		query.column = column
+		return _path, &yamlNode{parent: nil, this: doc, filePath: filePath}, nil
 	}
 	st, err := query.seer.fs.Stat(path)
 	if err != nil {
@@ -211,9 +249,17 @@ func _opGetOrCreateInFileSystem(this op, query *Query, _path []string, value *ya
 		}
 
 		// it's a yaml file
-		doc, err := query.seer.loadYamlDocument(path + ".yaml")
+		filePath := path + ".yaml"
+		doc, err := query.seer.loadYamlDocument(filePath)
+		if err != nil {
+			return _path, nil, err
+		}
 		_path[len(_path)-1] += ".yaml"
-		return _path, &yamlNode{parent: nil, this: doc}, err
+		line, column := getNodeLocation(doc)
+		query.filePath = filePath
+		query.line = line
+		query.column = column
+		return _path, &yamlNode{parent: nil, this: doc, filePath: filePath}, nil
 
 	}
 	if st.IsDir() {
@@ -230,7 +276,12 @@ func _opGetInFileSystem(this op, query *Query, _path []string, value *yamlNode) 
 	doc, exists := query.seer.documents[path+".yaml"]
 	if exists {
 		_path[len(_path)-1] += ".yaml"
-		return _path, &yamlNode{parent: nil, this: doc}, nil
+		filePath := path + ".yaml"
+		line, column := getNodeLocation(doc)
+		query.filePath = filePath
+		query.line = line
+		query.column = column
+		return _path, &yamlNode{parent: nil, this: doc, filePath: filePath}, nil
 	}
 	st, err := query.seer.fs.Stat(path)
 	if err != nil {
@@ -244,9 +295,17 @@ func _opGetInFileSystem(this op, query *Query, _path []string, value *yamlNode) 
 		}
 
 		// it's a yaml file
-		doc, err := query.seer.loadYamlDocument(path + ".yaml")
+		filePath := path + ".yaml"
+		doc, err := query.seer.loadYamlDocument(filePath)
+		if err != nil {
+			return _path, nil, err
+		}
 		_path[len(_path)-1] += ".yaml"
-		return _path, &yamlNode{parent: nil, this: doc}, err
+		line, column := getNodeLocation(doc)
+		query.filePath = filePath
+		query.line = line
+		query.column = column
+		return _path, &yamlNode{parent: nil, this: doc, filePath: filePath}, nil
 
 	}
 	if st.IsDir() {
@@ -264,7 +323,11 @@ func opCreateDocument(this op, query *Query, _path []string, value *yamlNode) ([
 
 	doc, exists := query.seer.documents[path]
 	if exists {
-		return _path, &yamlNode{parent: nil, this: doc}, nil
+		line, column := getNodeLocation(doc)
+		query.filePath = path
+		query.line = line
+		query.column = column
+		return _path, &yamlNode{parent: nil, this: doc, filePath: path}, nil
 	}
 
 	st, err := query.seer.fs.Stat(path)
@@ -286,5 +349,12 @@ func opCreateDocument(this op, query *Query, _path []string, value *yamlNode) ([
 	}
 
 	doc, err = query.seer.loadYamlDocument(path)
-	return _path, &yamlNode{parent: nil, this: doc}, err
+	if err != nil {
+		return _path, nil, err
+	}
+	line, column := getNodeLocation(doc)
+	query.filePath = path
+	query.line = line
+	query.column = column
+	return _path, &yamlNode{parent: nil, this: doc, filePath: path}, nil
 }

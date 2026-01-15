@@ -114,3 +114,37 @@ func TestSet(t *testing.T) {
 		})
 	}
 }
+
+func TestSet_ErrorCases(t *testing.T) {
+	seer := newTestSeer(t)
+
+	t.Run("Set outside document returns error", func(t *testing.T) {
+		query := seer.Query().Set("value")
+		err := query.Commit()
+		if err == nil {
+			t.Error("Expected error when setting outside document")
+		}
+	})
+
+	t.Run("Set preserves comments", func(t *testing.T) {
+		// This tests that Set preserves HeadComment, LineComment, and FootComment
+		err := seer.Get("comments").Get("test").Document().Set("value").Commit()
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		err = seer.Get("comments").Get("test").Set("newvalue").Commit()
+		if err != nil {
+			t.Fatalf("Failed to set value: %v", err)
+		}
+
+		var val string
+		err = seer.Get("comments").Get("test").Value(&val)
+		if err != nil {
+			t.Fatalf("Failed to read value: %v", err)
+		}
+		if val != "newvalue" {
+			t.Errorf("Expected 'newvalue', got '%s'", val)
+		}
+	})
+}
