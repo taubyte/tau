@@ -7,7 +7,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-type Document interface{}
+type Document any
 
 type Seer struct {
 	fs        afero.Fs
@@ -26,14 +26,14 @@ const (
 type op struct {
 	opType  int
 	name    string
-	value   interface{}
+	value   any
 	handler opHandler
 }
 
 type yamlNode struct {
-	parent   *yaml.Node // prant
+	parent   *yaml.Node // parent
 	prev     *yaml.Node // previous -- genrally contains name
-	this     *yaml.Node // node with data (Line and Column fields accessible via this.Line and this.Column)
+	this     *yaml.Node // node with data
 	filePath string     // path to the YAML file this node came from
 }
 
@@ -45,9 +45,9 @@ type Query struct {
 	requestedPath []string // is built by the Gets
 	ops           []op
 	errors        []error
-	filePath      string // path to the current YAML file (empty if not in a document)
-	line          int    // line number in the current YAML file (0 if not available)
-	column        int    // column number in the current YAML file (0 if not available)
+	filePath      string
+	line          int
+	column        int
 }
 
 type Batch struct {

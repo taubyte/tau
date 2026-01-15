@@ -251,9 +251,8 @@ func TestDelete_FromFileSystem(t *testing.T) {
 		f.Close()
 
 		// Try to delete it - should hit unsupported file path
-		err = seer.Get("unsupported").Delete().Commit()
 		// This tests the error path when Stat fails
-		_ = err
+		seer.Get("unsupported").Delete().Commit()
 	})
 
 	t.Run("Delete handles file removal from cache", func(t *testing.T) {

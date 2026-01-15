@@ -225,26 +225,18 @@ func (n *Query) List() ([]string, error) {
 	}
 }
 
-// FilePath returns the file path of the current query location.
-// Returns an empty string if the query is not currently pointing to a YAML document.
 func (n *Query) FilePath() string {
 	return n.filePath
 }
 
-// Line returns the line number of the current query location in the YAML file.
-// Returns 0 if line information is not available.
 func (n *Query) Line() int {
 	return n.line
 }
 
-// Column returns the column number of the current query location in the YAML file.
-// Returns 0 if column information is not available.
 func (n *Query) Column() int {
 	return n.column
 }
 
-// Location returns the file path, line number, and column number of the current query location.
-// Returns empty string for filePath and 0 for line/column if location information is not available.
 func (n *Query) Location() (filePath string, line int, column int) {
 	return n.filePath, n.line, n.column
 }

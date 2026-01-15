@@ -47,10 +47,9 @@ func TestBatch_Commit(t *testing.T) {
 		query2.Get("nested").Document().Set("value")
 
 		batch := seer.Batch(query1, query2)
-		err := batch.Commit()
 		// The batch should either succeed or fail depending on the error handling
 		// We just verify it doesn't panic
-		_ = err
+		batch.Commit()
 	})
 
 	t.Run("Batch commit with empty batch", func(t *testing.T) {

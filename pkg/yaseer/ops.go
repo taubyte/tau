@@ -12,7 +12,6 @@ import (
 	pathUtils "github.com/taubyte/tau/utils/path"
 )
 
-// getNodeLocation extracts line and column information from a yaml.Node
 func getNodeLocation(node *yaml.Node) (line, column int) {
 	if node == nil {
 		return 0, 0

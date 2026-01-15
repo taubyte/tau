@@ -422,11 +422,8 @@ func TestCommit_ErrorHandling(t *testing.T) {
 		query.Set("value")
 
 		// Normal commit should work
-		err := query.Commit()
-		if err != nil {
-			// If error, that's the path we're testing
-			_ = err
-		}
+		// If error occurs, that's the path we're testing
+		query.Commit()
 	})
 }
 

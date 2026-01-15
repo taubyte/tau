@@ -78,7 +78,6 @@ func (s *Seer) Query() *Query {
 	}
 }
 
-// YAMLError represents a YAML parsing error with file location information
 type YAMLError struct {
 	FilePath string
 	Line     int
@@ -99,18 +98,12 @@ func (e *YAMLError) Unwrap() error {
 	return e.Err
 }
 
-// parseYAMLError extracts line and column information from yaml.v3 error messages
-// yaml.v3 errors typically have formats like:
-// - "yaml: line X: column Y: ..."
-// - "yaml: line X: ..."
 func parseYAMLError(err error) (line, column int) {
 	if err == nil {
 		return 0, 0
 	}
 
 	errStr := err.Error()
-	// Pattern: "yaml: line X: column Y: ..." or "yaml: line X: ..."
-	// Try to match "line X: column Y" first
 	re := regexp.MustCompile(`line (\d+):\s*column (\d+)`)
 	matches := re.FindStringSubmatch(errStr)
 	if len(matches) == 3 {
@@ -123,7 +116,6 @@ func parseYAMLError(err error) (line, column int) {
 		return line, column
 	}
 
-	// Try to match just "line X"
 	re = regexp.MustCompile(`line (\d+)`)
 	matches = re.FindStringSubmatch(errStr)
 	if len(matches) == 2 {

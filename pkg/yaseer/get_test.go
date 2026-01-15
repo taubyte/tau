@@ -99,9 +99,8 @@ func TestCreateDocument(t *testing.T) {
 		}
 
 		// Try to create a document - should detect directory conflict
-		err = fsSeer.Get("dirconflict").Document().Set("value").Commit()
 		// The behavior depends on implementation - just verify it doesn't panic
-		_ = err
+		fsSeer.Get("dirconflict").Document().Set("value").Commit()
 	})
 
 	t.Run("CreateDocument handles file already exists", func(t *testing.T) {
@@ -171,11 +170,8 @@ func TestCreateDocument(t *testing.T) {
 	t.Run("CreateDocument handles file creation error", func(t *testing.T) {
 		// This tests the OpenFile error path
 		// Hard to simulate, but normal path works
-		err := seer.Get("create").Get("test").Document().Set("value").Commit()
-		if err != nil {
-			// If error occurs, that's the path we're testing
-			_ = err
-		}
+		// If error occurs, that's the path we're testing
+		seer.Get("create").Get("test").Document().Set("value").Commit()
 	})
 }
 
@@ -236,9 +232,8 @@ func TestGetOrCreate_AllPaths(t *testing.T) {
 		f.Close()
 
 		// Try to get it in write mode - should hit the unsupported file path
-		err = fsSeer.Get("unsupported").Get("nested").Document().Set("value").Commit()
 		// This should either error or create directory - depends on implementation
-		_ = err
+		fsSeer.Get("unsupported").Get("nested").Document().Set("value").Commit()
 	})
 
 	t.Run("GetOrCreate handles YAML file loading error", func(t *testing.T) {
@@ -262,16 +257,10 @@ func TestGetOrCreate_AllPaths(t *testing.T) {
 		f.Close()
 
 		// Try to get it in write mode - should return YAMLError when loading
-		err = fsSeer.Get("invalid").Get("nested").Document().Set("value").Commit()
 		// This should either error (YAMLError) or succeed depending on when it loads
 		// The key is to hit the loadYamlDocument error path
-		if err != nil {
-			_, ok := err.(*YAMLError)
-			if !ok {
-				// Error might be wrapped, that's okay
-				_ = err
-			}
-		}
+		// Error might be wrapped, that's okay - we're just testing the error path
+		fsSeer.Get("invalid").Get("nested").Document().Set("value").Commit()
 	})
 
 	t.Run("GetOrCreate returns nil when path is existing directory", func(t *testing.T) {
@@ -648,9 +637,8 @@ func TestGet_LoadsYamlFile(t *testing.T) {
 		f.Close()
 
 		// Try to get it - should hit the unsupported file path (Stat succeeds, but it's not a dir)
-		err = fsSeer.Get("unsupported").Get("nested").Document().Set("value").Commit()
 		// This should either error or create directory - depends on implementation
 		// The key is to hit the "unsupported file" code path when Stat succeeds but file is not YAML
-		_ = err
+		fsSeer.Get("unsupported").Get("nested").Document().Set("value").Commit()
 	})
 }
