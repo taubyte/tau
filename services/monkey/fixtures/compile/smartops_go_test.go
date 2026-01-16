@@ -9,12 +9,12 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/services/substrate/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
+	tcc "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 )
 
@@ -44,7 +44,7 @@ func TestGoSmartOp(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	project, err := decompile.MockBuild(testProjectId, "",
+	project, err := tcc.GenerateProject(testProjectId,
 		&structureSpec.SmartOp{
 			Id:      testSmartOpId,
 			Name:    "someSmart",

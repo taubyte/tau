@@ -25,7 +25,7 @@ import (
 	specs "github.com/taubyte/tau/pkg/specs/methods"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
-	"github.com/taubyte/tau/utils/tcc"
+	tcc "github.com/taubyte/tau/utils/tcc"
 )
 
 func TestE2E(t *testing.T) {

@@ -7,9 +7,9 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
+	tcc "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 )
 
@@ -41,7 +41,7 @@ func TestRSFunction(t *testing.T) {
 		return
 	}
 
-	project, err := decompile.MockBuild(testProjectId, "",
+	project, err := tcc.GenerateProject(testProjectId,
 		&structureSpec.Function{
 			Id:      testFunctionId,
 			Name:    "someFunc",

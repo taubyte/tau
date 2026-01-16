@@ -11,8 +11,8 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	"github.com/taubyte/tau/pkg/config-compiler/compile"
-	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	tcc "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
@@ -389,7 +389,7 @@ func TestAll(t *testing.T) {
 		return
 	}
 
-	project, err := decompile.MockBuild(projectString, "",
+	project, err := tcc.GenerateProject(projectString,
 		&structureSpec.Storage{
 			Id:          "QmUhyzQ4sYGbTmFNY7w46syoiY6kYC6gCs3fDNzwMV1arH",
 			Name:        "testStorage",

@@ -11,7 +11,7 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	"github.com/taubyte/tau/pkg/schema/project"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
-	"github.com/taubyte/tau/utils/tcc"
+	tcc "github.com/taubyte/tau/utils/tcc"
 )
 
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)

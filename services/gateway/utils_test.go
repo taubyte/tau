@@ -11,11 +11,11 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	"github.com/taubyte/tau/utils/id"
+	tcc "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 )
 
@@ -56,9 +56,8 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 	})
 	assert.NilError(t, err)
 
-	prj, err := decompile.MockBuild(
+	prj, err := tcc.GenerateProject(
 		projectId,
-		"",
 		&structureSpec.Function{
 			Id:      resourceId,
 			Name:    id.Generate(),

@@ -10,7 +10,7 @@ import (
 	testFixtures "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
 	"github.com/taubyte/tau/utils/maps"
-	"github.com/taubyte/tau/utils/tcc"
+	tcc "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 )
 

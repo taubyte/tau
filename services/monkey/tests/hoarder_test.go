@@ -10,7 +10,6 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
-	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	specs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
@@ -22,6 +21,7 @@ import (
 	_ "github.com/taubyte/tau/services/substrate/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
 	"github.com/taubyte/tau/utils/id"
+	tcc "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 )
 
@@ -58,7 +58,7 @@ func TestHoarder(t *testing.T) {
 	fqdn := "hal.computers.com"
 	_path := "ping"
 
-	project, err := decompile.MockBuild(projectId, "",
+	project, err := tcc.GenerateProject(projectId,
 		&structureSpec.Function{
 			Id:      functionId,
 			Name:    "someFunc",

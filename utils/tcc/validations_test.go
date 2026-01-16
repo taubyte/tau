@@ -1,4 +1,4 @@
-package tcc
+package tccUtils
 
 import (
 	"regexp"

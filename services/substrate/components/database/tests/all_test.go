@@ -16,13 +16,13 @@ import (
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
 	"github.com/taubyte/tau/pkg/config-compiler/compile"
-	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	"github.com/taubyte/tau/pkg/kvdb"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	service "github.com/taubyte/tau/services/substrate/components/database"
 	_ "github.com/taubyte/tau/services/substrate/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
+	tcc "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 )
 
@@ -247,7 +247,7 @@ func TestAll(t *testing.T) {
 		assert.NilError(t, err)
 	}
 
-	project, err := decompile.MockBuild(projectString, "",
+	project, err := tcc.GenerateProject(projectString,
 		&structureSpec.Database{
 			Id:          databaseId,
 			Name:        "testDatabase",

@@ -6,7 +6,7 @@ import (
 
 	_ "github.com/taubyte/tau/pkg/builder"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
-	"github.com/taubyte/tau/utils/tcc"
+	tcc "github.com/taubyte/tau/utils/tcc"
 )
 
 func (c config) handle() error {

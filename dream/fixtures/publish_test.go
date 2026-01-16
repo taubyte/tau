@@ -9,7 +9,7 @@ import (
 	testFixtures "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
-	"github.com/taubyte/tau/utils/tcc"
+	tcc "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/services/tns/dream"

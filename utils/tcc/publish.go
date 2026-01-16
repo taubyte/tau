@@ -1,7 +1,4 @@
-//go:build !wasi && !wasm
-// +build !wasi,!wasm
-
-package tcc
+package tccUtils
 
 import (
 	"fmt"

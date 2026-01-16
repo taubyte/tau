@@ -23,9 +23,9 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	"github.com/taubyte/tau/dream/api"
 	_ "github.com/taubyte/tau/dream/fixtures"
-	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	_ "github.com/taubyte/tau/services/tns/dream"
+	tcc "github.com/taubyte/tau/utils/tcc"
 )
 
 func TestTNS(t *testing.T) {
@@ -57,7 +57,7 @@ func TestTNS(t *testing.T) {
 		},
 	}))
 
-	project, err := decompile.MockBuild(testProjectId, "",
+	project, err := tcc.GenerateProject(testProjectId,
 		&structureSpec.Library{
 			Id:   testLibraryId,
 			Name: "someLibrary",
