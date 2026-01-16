@@ -1,6 +1,7 @@
 package fixtures
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -8,11 +9,11 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
-	"github.com/taubyte/tau/pkg/config-compiler/compile"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
 	_ "github.com/taubyte/tau/services/tns/dream"
+	"github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 )
 
@@ -67,37 +68,65 @@ func TestHttp(t *testing.T) {
 		return
 	}
 
-	// read with seer
-	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
+	// Create TCC compiler
+	compiler, err := tccCompiler.New(
+		tccCompiler.WithLocal(gitRootConfig),
+		tccCompiler.WithBranch(fakeMeta.Repository.Branch),
+	)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	rc, err := compile.CompilerConfig(projectIface, fakeMeta, generatedDomainRegExp)
+	// Compile
+	obj, validations, err := compiler.Compile(context.Background())
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	compiler, err := compile.New(rc, compile.Dev())
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	defer compiler.Close()
-
-	err = compiler.Build()
+	// Extract project ID from validations
+	projectID, err := tcc.ExtractProjectID(validations)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	err = compiler.Publish(tns)
+	// Process DNS validations (dev mode)
+	err = tcc.ProcessDNSValidations(
+		validations,
+		generatedDomainRegExp,
+		true, // dev mode
+		nil,  // no DV key needed in dev mode
+	)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// Extract object and indexes from Flat()
+	flat := obj.Flat()
+	object, ok := flat["object"].(map[string]interface{})
+	if !ok {
+		t.Error("object not found in flat result")
+		return
+	}
+
+	indexes, ok := flat["indexes"].(map[string]interface{})
+	if !ok {
+		t.Error("indexes not found in flat result")
+		return
+	}
+
+	// Publish to TNS
+	err = tcc.Publish(
+		tns,
+		object,
+		indexes,
+		projectID,
+		fakeMeta.Repository.Branch,
+		fakeMeta.HeadCommit.ID,
+	)
 	if err != nil {
 		t.Error(err)
 		return

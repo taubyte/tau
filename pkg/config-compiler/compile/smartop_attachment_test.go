@@ -56,7 +56,7 @@ func TestFunctionSmartOps(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	expected := []string{"testAppsmartOps", "testsmartOpsid2"}
+	expected := []string{"QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvn", "testsmartOpsid2"}
 	if reflect.DeepEqual(returnMap["smartops"].([]string), expected) == false {
 		t.Errorf("Expected smartops: %v, got: %v", expected, returnMap["smartops"])
 		return
@@ -68,8 +68,8 @@ func TestFunctionSmartOps(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	if returnMap["smartops"].([]string)[0] != "testsmartOpsid" {
-		t.Errorf("Expected smartops: %v, got: %v", "testsmartOpsid", returnMap["smartops"])
+	if returnMap["smartops"].([]string)[0] != "QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvm" {
+		t.Errorf("Expected smartops: %v, got: %v", "QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvm", returnMap["smartops"])
 		return
 	}
 }
@@ -119,7 +119,7 @@ func TestApplicationSmartOps(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	expected := []string{"testAppsmartOps", "testsmartOpsid2"}
+	expected := []string{"QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvn", "testsmartOpsid2"}
 	if reflect.DeepEqual(returnMap["smartops"].([]string), expected) == false {
 		t.Errorf("Expected smartops: %v, got: %v", expected, returnMap["smartops"])
 		return

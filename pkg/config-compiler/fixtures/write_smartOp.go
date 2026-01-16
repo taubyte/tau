@@ -3,7 +3,7 @@ package fixtures
 import "github.com/spf13/afero"
 
 var fileContentsGlobal_smartOp = `
-id: testsmartOpsid
+id: QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvm
 description: 'Test smartOpstion'
 tags: #optional
  - tagsmartOps1
@@ -16,7 +16,7 @@ execution:
 `
 
 var fileContentsLocal_smartOp = `
-id: testAppsmartOps
+id: QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvn
 description: 'Test AppsmartOps'
 source: libraries/test_library_l
 execution:

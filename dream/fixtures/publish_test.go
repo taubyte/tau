@@ -1,14 +1,15 @@
 package fixtures
 
 import (
+	"context"
 	"testing"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	testFixtures "github.com/taubyte/tau/pkg/config-compiler/fixtures"
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	"github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/services/tns/dream"
@@ -53,38 +54,71 @@ func TestUpdate(t *testing.T) {
 		return
 	}
 
-	project, err := projectSchema.Open(projectSchema.VirtualFS(fs, "/test_project/config"))
+	// Create TCC compiler
+	compiler, err := tccCompiler.New(
+		tccCompiler.WithVirtual(fs, "/test_project/config"),
+		tccCompiler.WithBranch(fakeMeta.Repository.Branch),
+	)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	rc, err := compile.CompilerConfig(project, fakeMeta, generatedDomainRegExp)
+	// Compile
+	obj, validations, err := compiler.Compile(context.Background())
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	compiler, err := compile.New(rc, compile.Dev())
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	defer compiler.Close()
-
-	err = compiler.Build()
+	// Extract project ID from validations
+	projectID, err := tcc.ExtractProjectID(validations)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	err = compiler.Publish(tns)
+	// Process DNS validations (dev mode)
+	err = tcc.ProcessDNSValidations(
+		validations,
+		generatedDomainRegExp,
+		true, // dev mode
+		nil,  // no DV key needed in dev mode
+	)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	_, err = tns.Fetch(specs.ProjectPrefix(project.Get().Id(), fakeMeta.Repository.Branch, fakeMeta.HeadCommit.ID))
+	// Extract object and indexes from Flat()
+	flat := obj.Flat()
+	object, ok := flat["object"].(map[string]interface{})
+	if !ok {
+		t.Error("object not found in flat result")
+		return
+	}
+
+	indexes, ok := flat["indexes"].(map[string]interface{})
+	if !ok {
+		t.Error("indexes not found in flat result")
+		return
+	}
+
+	// Publish to TNS
+	err = tcc.Publish(
+		tns,
+		object,
+		indexes,
+		projectID,
+		fakeMeta.Repository.Branch,
+		fakeMeta.HeadCommit.ID,
+	)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	_, err = tns.Fetch(specs.ProjectPrefix(projectID, fakeMeta.Repository.Branch, fakeMeta.HeadCommit.ID))
 	if err != nil {
 		t.Error(err)
 		return

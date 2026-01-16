@@ -3,7 +3,7 @@ package fixtures
 import "github.com/spf13/afero"
 
 var fileContentsGlobalHTTP_Function = `
-id: testhttp
+id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh
 description: some description
 tags:
     - some
@@ -22,7 +22,7 @@ trigger:
 `
 
 var fileContentsGlobalP2P_Function = `
-id: testp2p
+id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXi
 description: p2p description
 tags:
     - p2p
@@ -59,7 +59,7 @@ trigger:
 `
 
 var fileContentsLocal_Function = `
-id: testlocalID
+id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXj
 description: some local description
 tags:
     - some

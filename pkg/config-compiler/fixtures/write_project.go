@@ -13,7 +13,7 @@ func writeProject(fs afero.Fs) (projectSchema.Project, error) {
 
 	err = project.Set(
 		true,
-		projectSchema.Id("testid"),
+		projectSchema.Id("QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"),
 		projectSchema.Name(testProjectName),
 		projectSchema.Description("Test Project"),
 		projectSchema.Email("test@taubyte.com"),

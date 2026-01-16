@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/dream"
-	"github.com/taubyte/tau/pkg/config-compiler/fixtures"
+	testFixtures "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 )
 
 func fakeProject(u *dream.Universe, params ...interface{}) error {
@@ -18,10 +18,10 @@ func fakeProject(u *dream.Universe, params ...interface{}) error {
 		return err
 	}
 
-	project, err := fixtures.Project()
+	fs, err := testFixtures.VirtualFSWithBuiltProject()
 	if err != nil {
-		return err
+		return fmt.Errorf("getting virtual FS failed with: %w", err)
 	}
 
-	return inject(project, simple)
+	return injectWithFS(fs, "/test_project/config", "main", "testCommit", simple)
 }

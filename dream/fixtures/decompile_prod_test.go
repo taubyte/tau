@@ -1,6 +1,7 @@
 package fixtures
 
 import (
+	"context"
 	"os"
 	"testing"
 
@@ -10,12 +11,12 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
-	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
 	_ "github.com/taubyte/tau/services/tns/dream"
 	"github.com/taubyte/tau/utils/maps"
+	"github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 )
 
@@ -68,23 +69,50 @@ func TestDecompileProd(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	// read with seer
-	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
+	// Create TCC compiler
+	compiler, err := tccCompiler.New(
+		tccCompiler.WithLocal(gitRootConfig),
+		tccCompiler.WithBranch(fakeMeta.Repository.Branch),
+	)
 	assert.NilError(t, err)
 
-	rc, err := compile.CompilerConfig(projectIface, fakeMeta, generatedDomainRegExp)
+	// Compile
+	obj, validations, err := compiler.Compile(context.Background())
 	assert.NilError(t, err)
 
-	compiler, err := compile.New(rc, compile.Dev())
+	// Extract project ID from validations
+	projectID, err := tcc.ExtractProjectID(validations)
 	assert.NilError(t, err)
 
-	err = compiler.Build()
+	// Process DNS validations (dev mode)
+	err = tcc.ProcessDNSValidations(
+		validations,
+		generatedDomainRegExp,
+		true, // dev mode
+		nil,  // no DV key needed in dev mode
+	)
 	assert.NilError(t, err)
 
-	err = compiler.Publish(tns)
+	// Extract object and indexes from Flat()
+	flat := obj.Flat()
+	object, ok := flat["object"].(map[string]interface{})
+	assert.Assert(t, ok, "object not found in flat result")
+
+	indexes, ok := flat["indexes"].(map[string]interface{})
+	assert.Assert(t, ok, "indexes not found in flat result")
+
+	// Publish to TNS
+	err = tcc.Publish(
+		tns,
+		object,
+		indexes,
+		projectID,
+		fakeMeta.Repository.Branch,
+		fakeMeta.HeadCommit.ID,
+	)
 	assert.NilError(t, err)
 
-	test_obj, err := tns.Fetch(specs.ProjectPrefix(projectIface.Get().Id(), fakeMeta.Repository.Branch, fakeMeta.HeadCommit.ID))
+	test_obj, err := tns.Fetch(specs.ProjectPrefix(projectID, fakeMeta.Repository.Branch, fakeMeta.HeadCommit.ID))
 	if test_obj.Interface() == nil {
 		t.Error("NO OBject found", err)
 		return

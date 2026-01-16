@@ -3,7 +3,7 @@ package fixtures
 import "github.com/spf13/afero"
 
 var fileContentsGlobal_messaging = `
-id: testidglobal
+id: QmXkxpwAHJXh7FwobSaJ6P9DuJWcwj6EeWbKhHf9zG1wAc
 description: Test Messaging das globe
 tags: # optional
 - tag1
@@ -21,7 +21,7 @@ bridges:
 `
 
 var fileContentsLocal_messaging = `
-id: testid
+id: QmXkxpwAHJXh7FwobSaJ6P9DuJWcwj6EeWbKhHf9zG1wAd
 description: Test Messaging
 tags: # optional
  - tag1

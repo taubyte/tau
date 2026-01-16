@@ -3,7 +3,7 @@ package fixtures
 import "github.com/spf13/afero"
 
 var fileContentsGlobal_Database = `
-id: testidglobal
+id: QmRkFTeYx8J4X3X2Jx5xutHArDyp72r7z6sLX9s3iCbsXr
 description: Test Database das globe
 tags: # optional
 - tag1
@@ -21,7 +21,7 @@ storage:
 `
 
 var fileContentsLocal_Database = `
-id: testid
+id: QmRkFTeYx8J4X3X2Jx5xutHArDyp72r7z6sLX9s3iCbsXs
 description: Test Database
 tags: # optional
  - tag1

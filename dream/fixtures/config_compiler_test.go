@@ -1,6 +1,7 @@
 package fixtures
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,7 +11,6 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
-	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	"gotest.tools/v3/assert"
 
@@ -24,6 +24,8 @@ import (
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	"github.com/taubyte/tau/utils/tcc"
 )
 
 func TestE2E(t *testing.T) {
@@ -72,34 +74,72 @@ func TestE2E(t *testing.T) {
 		return
 	}
 
-	// read with seer
+	// Create TCC compiler
+	compiler, err := tccCompiler.New(
+		tccCompiler.WithLocal(gitRootConfig),
+		tccCompiler.WithBranch(fakeMeta.Repository.Branch),
+	)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// Compile
+	obj, validations, err := compiler.Compile(context.Background())
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// Extract project ID from validations
+	projectID, err := tcc.ExtractProjectID(validations)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// Process DNS validations (dev mode)
+	err = tcc.ProcessDNSValidations(
+		validations,
+		generatedDomainRegExp,
+		true, // dev mode
+		nil,  // no DV key needed in dev mode
+	)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// Extract object and indexes from Flat()
+	flat := obj.Flat()
+	object, ok := flat["object"].(map[string]interface{})
+	if !ok {
+		t.Error("object not found in flat result")
+		return
+	}
+
+	indexes, ok := flat["indexes"].(map[string]interface{})
+	if !ok {
+		t.Error("indexes not found in flat result")
+		return
+	}
+
+	// Publish to TNS
+	err = tcc.Publish(
+		tns,
+		object,
+		indexes,
+		projectID,
+		fakeMeta.Repository.Branch,
+		fakeMeta.HeadCommit.ID,
+	)
+	if err != nil {
+		t.Error(err)
+		return
+	}
+
+	// Get project interface for later use
 	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	rc, err := compile.CompilerConfig(projectIface, fakeMeta, generatedDomainRegExp)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	compiler, err := compile.New(rc, compile.Dev())
-	if err != nil {
-		t.Error(err)
-		return
-	}
-	defer compiler.Close()
-
-	err = compiler.Build()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	// publish ( compile & send to TNS )
-	err = compiler.Publish(tns)
 	if err != nil {
 		t.Error(err)
 		return
@@ -121,7 +161,7 @@ func TestE2E(t *testing.T) {
 	_, globalFunctions := projectIface.Get().Functions("")
 	for _, function := range globalFunctions {
 		wasmPath, err := functionSpec.Tns().WasmModulePath(
-			projectIface.Get().Id(),
+			projectID,
 			"",
 			function,
 		)
@@ -140,7 +180,7 @@ func TestE2E(t *testing.T) {
 	_, globalLibraries := projectIface.Get().Libraries("")
 	for _, library := range globalLibraries {
 		wasmPath, err := librarySpec.Tns().WasmModulePath(
-			projectIface.Get().Id(),
+			projectID,
 			"",
 			library,
 		)
@@ -159,7 +199,7 @@ func TestE2E(t *testing.T) {
 	// fetch
 	new_obj, err := tns.Fetch(
 		specs.ProjectPrefix(
-			projectIface.Get().Id(),
+			projectID,
 			fakeMeta.Repository.Branch,
 			fakeMeta.HeadCommit.ID,
 		),
@@ -189,13 +229,7 @@ func TestE2E(t *testing.T) {
 		return
 	}
 
-	fetchedProjectIface, err := decompiler.Build()
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	rc, err = compile.CompilerConfig(projectIface, fakeMeta, generatedDomainRegExp)
+	_, err = decompiler.Build()
 	if err != nil {
 		t.Error(err)
 		return
@@ -203,39 +237,51 @@ func TestE2E(t *testing.T) {
 
 	// check diff
 	// compare gitRootConfig and gitRootConfig_new
-	compiler, err = compile.New(rc, compile.Dev())
+	// Compile original project
+	compiler1, err := tccCompiler.New(
+		tccCompiler.WithLocal(gitRootConfig),
+		tccCompiler.WithBranch(fakeMeta.Repository.Branch),
+	)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	err = compiler.Build()
+	obj1, _, err := compiler1.Compile(context.Background())
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	_map := compiler.Object()
+	flat1 := obj1.Flat()
+	_map, ok := flat1["object"].(map[string]interface{})
+	if !ok {
+		t.Error("object not found in flat result")
+		return
+	}
 
-	rc, err = compile.CompilerConfig(fetchedProjectIface, fakeMeta, generatedDomainRegExp)
+	// Compile fetched project
+	compiler2, err := tccCompiler.New(
+		tccCompiler.WithLocal(gitRootConfig_new),
+		tccCompiler.WithBranch(fakeMeta.Repository.Branch),
+	)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	compilerNew, err := compile.New(rc, compile.Dev())
+	obj2, _, err := compiler2.Compile(context.Background())
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	err = compilerNew.Build()
-	if err != nil {
-		t.Error(err)
+	flat2 := obj2.Flat()
+	_map2, ok := flat2["object"].(map[string]interface{})
+	if !ok {
+		t.Error("object not found in flat result")
 		return
 	}
-
-	_map2 := compilerNew.Object()
 	if !reflect.DeepEqual(_map, _map2) {
 
 		t.Error("Objects not equal")

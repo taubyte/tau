@@ -55,7 +55,7 @@ var createdProjectObject = map[interface{}]interface{}{
 					},
 					"secure": false,
 					"smartops": []interface{}{
-						"testAppsmartOps",
+						"QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvn",
 					},
 					"tags": []interface{}{
 						"some",
@@ -109,7 +109,7 @@ var createdProjectObject = map[interface{}]interface{}{
 				},
 			},
 			"smartops": map[interface{}]interface{}{
-				"testAppsmartOps": map[interface{}]interface{}{
+				"QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvn": map[interface{}]interface{}{
 					"call":        "entrypoint6",
 					"description": "Test AppsmartOps",
 					"source":      "libraries/QmXmed7RDZN77LV5uuwwuutuUHvzEMyUdtGTHFMM8LOCAL",

@@ -9,8 +9,8 @@ import (
 
 var (
 	testBranches  = []string{"master", "main"}
-	testProjectId = "testid"
-	testAppId     = "someappID"
+	testProjectId = "QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"
+	testAppId     = "QmZvW43kx7p8v5dZ1qV8WFtxtBnJA6Cr6pcZXp6p4L9kC3"
 )
 
 type testStructure[T structureSpec.Structure] struct {

@@ -3,7 +3,7 @@ package fixtures
 import "github.com/spf13/afero"
 
 var fileContentsGlobal_Streaming_Storage = `
-id: QmV2KtAPhZHjFhH4iWXZFkWzB92iFUVHWScLNU5YEGLOBAL
+id: QmSbe2pTyH3fpF2T8JSAk6s3js2MqUg2gi5Hx2iTWCBtqX
 description: this is a storage
 tags:
     - private
@@ -33,7 +33,7 @@ object:
 `
 
 var fileContentsLocal_Storage = `
-id: QmV2KtAPhZHjFhH4iWXZFkWzB92iFUVHWScLNU5YELOCAL
+id: QmSbe2pTyH3fpF2T8JSAk6s3js2MqUg2gi5Hx2iTWCBtqY
 description: this is a storage
 tags:
     - private

@@ -3,7 +3,7 @@ package fixtures
 import "github.com/spf13/afero"
 
 var fileContentsGlobal_Website = `
-id: QmZNzaehW4USdQ5tYQQNFao5D7Szp5S9x3TiKfGLOBAL
+id: QmZmW9PQmz5Z6pYPJ6VDUPVgH7L6Xb8K1GTh8dNQzDh5gh
 description: test website description
 tags:
     - local
@@ -20,7 +20,7 @@ source:
 `
 
 var fileContentsLocal_Website = `
-id: QmZNzaehW4USdQ5tYQQNFao5D7Szp5S9x3TiKfLOCAL
+id: QmZmW9PQmz5Z6pYPJ6VDUPVgH7L6Xb8K1GTh8dNQzDh5gi
 description: test website description
 tags:
     - local

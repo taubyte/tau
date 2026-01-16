@@ -1,15 +1,16 @@
 package fixtures
 
 import (
+	"context"
 	"testing"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
-	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	testFixtures "github.com/taubyte/tau/pkg/config-compiler/fixtures"
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	maps "github.com/taubyte/tau/utils/maps"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	"github.com/taubyte/tau/utils/maps"
+	"github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 )
 
@@ -50,34 +51,68 @@ func TestIndexer(t *testing.T) {
 		return
 	}
 
-	project, err := projectSchema.Open(projectSchema.VirtualFS(fs, "/test_project/config"))
+	// Create TCC compiler
+	compiler, err := tccCompiler.New(
+		tccCompiler.WithVirtual(fs, "/test_project/config"),
+		tccCompiler.WithBranch(fakeMeta.Repository.Branch),
+	)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	rc, err := compile.CompilerConfig(project, fakeMeta, generatedDomainRegExp)
+	// Compile
+	obj, validations, err := compiler.Compile(context.Background())
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	compiler, err := compile.New(rc, compile.Dev())
+	// Extract project ID from validations
+	projectID, err := tcc.ExtractProjectID(validations)
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	err = compiler.Build()
+	// Process DNS validations (dev mode)
+	err = tcc.ProcessDNSValidations(
+		validations,
+		generatedDomainRegExp,
+		true, // dev mode
+		nil,  // no DV key needed in dev mode
+	)
 	if err != nil {
 		t.Error(err)
+		return
+	}
+
+	// Extract object and indexes from Flat()
+	flat := obj.Flat()
+	object, ok := flat["object"].(map[string]interface{})
+	if !ok {
+		t.Error("object not found in flat result")
+		return
+	}
+
+	indexes, ok := flat["indexes"].(map[string]interface{})
+	if !ok {
+		t.Error("indexes not found in flat result")
 		return
 	}
 
 	tnsClient, err := simple.TNS()
 	assert.NilError(t, err)
 
-	err = compiler.Publish(tnsClient)
+	// Publish to TNS
+	err = tcc.Publish(
+		tnsClient,
+		object,
+		indexes,
+		projectID,
+		fakeMeta.Repository.Branch,
+		fakeMeta.HeadCommit.ID,
+	)
 	if err != nil {
 		t.Error(err)
 		return

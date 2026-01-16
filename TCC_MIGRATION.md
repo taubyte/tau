@@ -55,24 +55,32 @@ import (
 
 // Create compiler with options
 opts := []compiler.Option{
-    compiler.WithLocal(gitDir),  // or compiler.WithInMemory(fs, path)
+    compiler.WithLocal(gitDir),  // or compiler.WithVirtual(fs, path)
     compiler.WithBranch(meta.Repository.Branch),
 }
 
-// Add seer options if needed (for dev mode, DV keys, etc.)
-// Note: Dev mode and DV keys may need to be handled via seer options
-// This needs to be verified based on tcc implementation
+// Note: Dev mode and DV keys are NOT handled via compiler options
+// They need to be handled externally when processing validations
+// See "Dev Mode and DV Keys" section below
 
 compiler, err := compiler.New(opts...)
 if err != nil {
     return err
 }
 
-// Compile
+// Compile (returns object, validations, and error)
 ctx := context.Background()
-obj, err := compiler.Compile(ctx)
+obj, validations, err := compiler.Compile(ctx)
 if err != nil {
     return err
+}
+
+// Process validations externally (for DNS validation with dev/DV keys)
+for _, validation := range validations {
+    if validation.Validator == "dns" {
+        // Handle DNS validation with dev mode or DV key
+        // See validation processing section
+    }
 }
 
 // Access results
@@ -85,20 +93,92 @@ indexes := flat["indexes"].(map[string]interface{})
 // using the object and indexes from tcc
 ```
 
+## Handling Validations
+
+TCC returns validations that must be processed externally. This is a major architectural difference from the old compiler.
+
+**Important**: Validation processing utilities should be implemented in `utils/tcc` package (not `pkg/tcc`) because they use libraries like `domain-validation` that won't compile to WASM/WASI.
+
+### DNS Validation Example
+
+**Note**: This validation logic should be implemented in `utils/tcc/validations.go` (not `pkg/tcc`) because it uses `domain-validation` library that won't compile to WASM/WASI.
+
+```go
+// In utils/tcc/validations.go
+import (
+    dv "github.com/taubyte/domain-validation"
+    domainSpec "github.com/taubyte/tau/pkg/specs/domain"
+    "github.com/taubyte/tau/pkg/tcc/engine"
+)
+
+// ProcessDNSValidations processes DNS validations from TCC compiler
+func ProcessDNSValidations(
+    validations []engine.NextValidation,
+    generatedDomainRegExp *regexp.Regexp,
+    devMode bool,
+    dvPublicKey []byte,
+    domainValPublicKeyData []byte, // default key for dev mode
+) error {
+    for _, validation := range validations {
+        if validation.Validator == "dns" && validation.Key == "domain" {
+            fqdn := validation.Value.(string)
+            projectID := validation.Context["project"].(string)
+            
+            var err error
+            if devMode {
+                // Use default public key for dev mode
+                err = domainSpec.ValidateDNS(
+                    generatedDomainRegExp,
+                    projectID,
+                    fqdn,
+                    true,  // dev mode
+                    dv.PublicKey(domainValPublicKeyData), // default key
+                )
+            } else {
+                // Use provided DV public key for production
+                err = domainSpec.ValidateDNS(
+                    generatedDomainRegExp,
+                    projectID,
+                    fqdn,
+                    false,  // production mode
+                    dv.PublicKey(dvPublicKey),
+                )
+            }
+            
+            if err != nil {
+                return fmt.Errorf("DNS validation failed for %s: %w", fqdn, err)
+            }
+        }
+    }
+    return nil
+}
+```
+
+### Validation Structure
+
+```go
+type NextValidation struct {
+    Key       string                 // identifier (e.g., "domain")
+    Value     interface{}            // the actual value to validate (e.g., FQDN string)
+    Validator string                 // validator name (e.g., "dns", "cid")
+    Context   map[string]interface{} // additional context (project, app, etc.)
+}
+```
+
 ## Key Differences
 
 1. **Initialization**: 
    - Old: `compile.CompilerConfig()` + `compile.New()`
-   - New: `compiler.New()` with `WithLocal()` or `WithInMemory()`
+   - New: `compiler.New()` with `WithLocal()` or `WithVirtual(fs, path)`
 
 2. **Options**:
    - Old: `compile.Dev()`, `compile.DVKey()`
-   - New: `compiler.WithBranch()`, `compiler.WithLocal()`, `compiler.WithInMemory()`
-   - **TODO**: Verify how dev mode and DV keys are handled in tcc
+   - New: `compiler.WithBranch()`, `compiler.WithLocal()`, `compiler.WithVirtual(fs, path)`
+   - **IMPORTANT**: Dev mode and DV keys are NOT compiler options in tcc. They must be handled externally when processing DNS validations from the `validations` return value
 
 3. **Compilation**:
-   - Old: `compiler.Build()` (no context needed)
-   - New: `compiler.Compile(ctx)` (requires context)
+   - Old: `compiler.Build()` (no context needed, returns error only)
+   - New: `compiler.Compile(ctx)` (requires context, returns `Object, []NextValidation, error`)
 
 4. **Result Access**:
    - Old: `compiler.Object()`, `compiler.Indexes()`
@@ -106,15 +186,22 @@ indexes := flat["indexes"].(map[string]interface{})
 
 5. **Publishing**:
    - Old: `compiler.Publish(tns)` (built-in)
-   - New: **Needs to be implemented** - extract object/indexes and use TNS client directly
+   - New: **Needs to be implemented in `utils/tcc` package** - extract object/indexes and use TNS client directly
+   - **Note**: Must be in `utils/tcc` (not `pkg/tcc`) because TNS client won't compile to WASM/WASI
 
 6. **Logs**:
    - Old: `compiler.Logs()` returns `io.ReadSeeker`
-   - New: **TODO**: Check if tcc provides logging mechanism
+   - New: TCC returns errors that can be converted to `io.ReadSeeker` via helper in `utils/tcc` package
+   - **Location**: Should be implemented in `utils/tcc/logs.go` (not `pkg/tcc`)
+   - **Reason**: Cannot be in `pkg/tcc` because io operations won't compile to WASM/WASI
 
 7. **Close**:
    - Old: `compiler.Close()` (implements `io.Closer`)
-   - New: **TODO**: Check if tcc compiler needs closing
+   - New: **Not needed** - TCC compiler does not require explicit closing
+
+8. **Validations**:
+   - Old: Validations were handled internally (DNS validation with dev/DV keys)
+   - New: Returns `[]NextValidation` that must be processed externally. DNS validations include FQDN in `Value` and context in `Context` map.
 
 ## Production Code Locations
 
@@ -130,9 +217,13 @@ indexes := flat["indexes"].(map[string]interface{})
 **Migration Notes**:
 - Need to convert `c.gitDir` to `WithLocal()` option
 - Need to extract branch from `c.Job.Meta.Repository.Branch`
-- Need to implement `Publish()` equivalent using TNS client
-- Need to handle logging (currently copies logs to `c.LogFile`)
-- Need to verify dev mode handling in tcc
+- Need to use `Publish()` helper from `utils/tcc` package (see `pkg/config-compiler/compile/publish.go` for reference implementation)
+  - **Note**: Must be in `utils/tcc` (not `pkg/tcc`) because it won't compile to WASM/WASI
+- **Logging**: Use `Logs()` helper from `utils/tcc` package to convert TCC errors to `io.ReadSeeker`
+  - **Note**: Must be in `utils/tcc` (not `pkg/tcc`) because io operations won't compile to WASM/WASI
+- **Dev mode/DV keys**: Must use validation processing utilities from `utils/tcc` package
+  - Process DNS validations from `validations` return value using `c.Monkey.Dev()` or `c.DVPublicKey`
+  - **Note**: Validation utilities must be in `utils/tcc` (not `pkg/tcc`) because they won't compile to WASM/WASI
 
 **Lines**: 12-55
 
@@ -257,19 +348,49 @@ indexes := flat["indexes"].(map[string]interface{})
 1. **Publish Method**: 
    - The old compiler has a built-in `Publish(tns)` method
    - TCC doesn't appear to have this - needs to be implemented separately
+   - **Location**: Should be implemented in `utils/tcc` package (not `pkg/tcc`)
+   - **Reason**: Cannot be in `pkg/tcc` because it won't compile to WASM/WASI (uses TNS client, domain-validation, etc.)
    - See `pkg/config-compiler/compile/publish.go` for reference implementation
 
 2. **Logs Method**:
    - Old compiler provides `Logs() io.ReadSeeker`
-   - Need to verify if tcc provides logging or if it needs to be added
+   - **TCC approach**: TCC returns errors that can be converted to `io.ReadSeeker` via helper function
+   - **Location**: Should be implemented in `utils/tcc/logs.go` (not `pkg/tcc`)
+   - **Reason**: Cannot be in `pkg/tcc` because io operations won't compile to WASM/WASI
+   - Example usage:
+     ```go
+     // In utils/tcc/logs.go
+     func Logs(err error) io.ReadSeeker {
+         // Convert error to io.ReadSeeker
+         // Similar to old compiler.Logs() behavior
+     }
+     ```
 
 3. **Dev Mode and DV Keys**:
    - Old compiler has `compile.Dev()` and `compile.DVKey()` options
-   - Need to verify how these are handled in tcc (may be via seer options)
+   - **TCC handles this differently**: Dev mode and DV keys are NOT compiler options
+   - DNS validations are returned as `NextValidation` items with `Validator == "dns"`
+   - The caller must process these validations externally, using dev mode or DV key as appropriate
+   - **Location**: Validation processing utilities should be in `utils/tcc` package (not `pkg/tcc`)
+   - **Reason**: Cannot be in `pkg/tcc` because domain-validation library won't compile to WASM/WASI
+   - Example validation structure:
+     ```go
+     NextValidation{
+         Key: "domain",
+         Value: "example.com",  // FQDN string
+         Validator: "dns",
+         Context: map[string]interface{}{
+             "project": "project-id",
+             "app": "app-name",  // optional
+         },
+     }
+     ```
+   - See `pkg/config-compiler/indexer/dns.go` for reference on how DNS validation was done in old compiler
 
 4. **Generated Domain Regex**:
    - Old compiler accepts `generatedDomainRegExp` in `CompilerConfig()`
-   - Need to verify if tcc handles this or if it needs to be added
+   - **TCC handles this differently**: The generated domain regex should be used when processing DNS validations externally
+   - The regex is not passed to the compiler, but should be used in the validation handler
 
 5. **Metadata Handling**:
    - Old compiler requires `patrick.Meta` with repository info
@@ -280,6 +401,8 @@ indexes := flat["indexes"].(map[string]interface{})
 1. **`pkg/config-compiler/compile/publish.go`**:
    - Contains the publish logic that needs to be reimplemented for tcc
    - Uses `specs.ProjectPrefix()` and `specsCommon.Current()`
+   - **New location**: Should be reimplemented in `utils/tcc/publish.go` (not `pkg/tcc`)
+   - **Reason**: Cannot be in `pkg/tcc` because it uses TNS client and won't compile to WASM/WASI
 
 2. **`services/monkey/jobs/types.go`**:
    - References `compilerCommon.ConfigRepository` type (line 22, 62)
@@ -305,18 +428,22 @@ See `pkg/tcc/taubyte/v1/compile_test.go` for a working example of:
 
 ## Migration Checklist
 
-- [ ] **Priority 1**: Migrate `services/monkey/jobs/config.go` (production code)
-  - [ ] Replace `compile.CompilerConfig()` and `compile.New()`
-  - [ ] Implement `Publish()` equivalent
-  - [ ] Handle logging
+- [x] **Priority 1**: Migrate `services/monkey/jobs/config.go` (production code)
+  - [x] Replace `compile.CompilerConfig()` and `compile.New()`
+  - [x] Use `Publish()` helper from `utils/tcc` package
+  - [x] Use validation processing utilities from `utils/tcc` package
+  - [x] Use `Logs()` helper from `utils/tcc` package to convert errors to `io.ReadSeeker`
   - [ ] Test with dev and production modes
   - [ ] Verify DV key handling
 
-- [ ] **Priority 2**: Implement missing tcc features
-  - [ ] Add `Publish()` method or helper function
-  - [ ] Add logging support if needed
-  - [ ] Verify dev mode and DV key options
-  - [ ] Verify generated domain regex handling
+- [x] **Priority 2**: Implement missing tcc features in `utils/tcc` package
+  - [x] Add `Publish()` helper function in `utils/tcc/publish.go` (reuse logic from `pkg/config-compiler/compile/publish.go`)
+    - **Note**: Must be in `utils/tcc` (not `pkg/tcc`) because it won't compile to WASM/WASI
+  - [x] Implement DNS validation handler in `utils/tcc/validations.go` that processes `NextValidation` items with dev mode/DV key support
+    - **Note**: Must be in `utils/tcc` (not `pkg/tcc`) because domain-validation library won't compile to WASM/WASI
+  - [x] Handle generated domain regex in DNS validation handler
+  - [x] Implement `Logs()` helper function in `utils/tcc/logs.go` to convert TCC errors to `io.ReadSeeker`
+    - **Note**: Must be in `utils/tcc` (not `pkg/tcc`) because io operations won't compile to WASM/WASI
 
 - [ ] **Priority 3**: Migrate test files
   - [ ] Update `dream/fixtures/compile.go`
@@ -333,3 +460,11 @@ See `pkg/tcc/taubyte/v1/compile_test.go` for a working example of:
 - The test file `pkg/tcc/taubyte/v1/compile_test.go` shows that tcc produces equivalent results to the old compiler
 - There's a known bug in the old compiler regarding messaging inside apps (see line 54-56 of compile_test.go)
 - TCC uses a different architecture with passes (pass1, pass2, pass3, pass4) instead of the old compiler's single-pass approach
+- TCC compiler options: `WithLocal(path)`, `WithVirtual(fs, path)`, `WithBranch(branch)`
+- TCC does NOT have `WithInMemory()` - use `WithVirtual(fs, path)` with an in-memory filesystem instead
+- DNS validation is now external - the compiler returns `NextValidation` items that must be processed by the caller
+- The old compiler's `Dev()` and `DVKey()` options are replaced by external validation processing
+- **WASM/WASI Compatibility**: Helper functions that use TNS client, domain-validation library, io operations, or other non-WASM-compatible dependencies must be in `utils/tcc` (not `pkg/tcc`)
+  - `Publish()` helper → `utils/tcc/publish.go`
+  - DNS validation processing → `utils/tcc/validations.go`
+  - `Logs()` helper (error to io.ReadSeeker) → `utils/tcc/logs.go`

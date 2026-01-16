@@ -13,7 +13,7 @@ func writeApplication(name string, project projectSchema.Project) error {
 
 	return app.Set(
 		true,
-		appSchema.Id("someappID"),
+		appSchema.Id("QmZvW43kx7p8v5dZ1qV8WFtxtBnJA6Cr6pcZXp6p4L9kC3"),
 		appSchema.Description("some app description"),
 		appSchema.Tags([]string{"tag1", "tag2"}),
 	)

@@ -3,7 +3,7 @@ package fixtures
 import "github.com/spf13/afero"
 
 var fileContentsGlobal_Service = `
-id: testserviceid
+id: QmZsZ78FJwt281gfeK3B2M1qzYx4GTpWTPv9Kx8Z2KBF2a
 description: 'test_service'
 tags: # optional
  - tagservice1
@@ -12,7 +12,7 @@ protocol: /testprotocol/v2
 `
 
 var fileContentsLocal_Service = `
-id: testAppservice
+id: QmZsZ78FJwt281gfeK3B2M1qzYx4GTpWTPv9Kx8Z2KBF2b
 description: 'Test Appservice'
 tags: # optional
  - tagAppservice1
