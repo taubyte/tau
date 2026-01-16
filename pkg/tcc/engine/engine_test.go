@@ -47,3 +47,15 @@ func TestSchema(t *testing.T) {
 	schema := p.Schema()
 	assert.Equal(t, schema, s) // Ensure the returned schema is the same as provided during New
 }
+
+// Test for New function with error path
+func TestNew_ErrorPath(t *testing.T) {
+	s := &schemaDef{}
+
+	// Create invalid seer option that will cause an error
+	// Using an invalid path that doesn't exist and can't be created
+	_, err := New(s, yaseer.SystemFS("/nonexistent/path/that/does/not/exist/and/cannot/be/created"))
+
+	// Should return error
+	assert.ErrorContains(t, err, "parser failed to created seer")
+}

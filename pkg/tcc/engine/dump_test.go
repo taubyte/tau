@@ -10,7 +10,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestDump_RootConfigOnly(t *testing.T) {
+func TestDump_WithRootConfigOnly(t *testing.T) {
 	// Create in-memory filesystem
 	memFs := afero.NewMemMapFs()
 
@@ -52,7 +52,7 @@ func TestDump_RootConfigOnly(t *testing.T) {
 	assert.Assert(t, len(content) > 0, "config.yaml should have content")
 }
 
-func TestDump_WithResources(t *testing.T) {
+func TestDump_WithNestedResources(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
 	// Create schema with root + functions group
@@ -109,7 +109,7 @@ func TestDump_WithResources(t *testing.T) {
 	assert.Assert(t, exists, "functions/myFunction.yaml should exist")
 }
 
-func TestDump_MissingRequiredAttribute(t *testing.T) {
+func TestDump_WithMissingRequiredAttribute(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
 	schema := &schemaDef{
@@ -134,7 +134,7 @@ func TestDump_MissingRequiredAttribute(t *testing.T) {
 	assert.ErrorContains(t, err, "required attribute 'name' is missing")
 }
 
-func TestDump_ValidationError(t *testing.T) {
+func TestDump_WithValidationError(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
 	schema := &schemaDef{
@@ -168,7 +168,7 @@ func TestDump_ValidationError(t *testing.T) {
 	assert.ErrorContains(t, err, "validation failed")
 }
 
-func TestDump_SkipsDefaultValues(t *testing.T) {
+func TestDump_SkipsDefaultAttributeValues(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
 	schema := &schemaDef{
@@ -199,7 +199,7 @@ func TestDump_SkipsDefaultValues(t *testing.T) {
 	assert.Assert(t, len(content) > 0)
 }
 
-func TestDump_EmptyGroup(t *testing.T) {
+func TestDump_WithEmptyGroup(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
 	schema := &schemaDef{
@@ -243,7 +243,7 @@ func TestDump_EmptyGroup(t *testing.T) {
 	assert.Assert(t, exists)
 }
 
-func TestDump_WithPath(t *testing.T) {
+func TestDump_WithCustomPath(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
 	// Attribute with custom path
@@ -278,7 +278,7 @@ func TestDump_WithPath(t *testing.T) {
 	assert.Assert(t, len(content) > 0)
 }
 
-func TestWriteValueToPath_SimpleString(t *testing.T) {
+func TestWriteValueToPath_WithSimpleString(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 	seer, err := yaseer.New(yaseer.VirtualFS(memFs, "/"))
 	assert.NilError(t, err)
@@ -303,7 +303,7 @@ func TestWriteValueToPath_SimpleString(t *testing.T) {
 	assert.Assert(t, exists)
 }
 
-func TestWriteValueToPath_EitherWithKey(t *testing.T) {
+func TestWriteValueToPath_WithEitherAndKey(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 	seer, err := yaseer.New(yaseer.VirtualFS(memFs, "/"))
 	assert.NilError(t, err)
@@ -334,7 +334,7 @@ func TestWriteValueToPath_EitherWithKey(t *testing.T) {
 	assert.Assert(t, exists)
 }
 
-func TestWriteValueToPath_EitherWithType(t *testing.T) {
+func TestWriteValueToPath_WithEitherAndType(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 	seer, err := yaseer.New(yaseer.VirtualFS(memFs, "/"))
 	assert.NilError(t, err)
@@ -365,7 +365,7 @@ func TestWriteValueToPath_EitherWithType(t *testing.T) {
 	assert.Assert(t, exists)
 }
 
-func TestWriteValueToPath_EitherNoMatch(t *testing.T) {
+func TestWriteValueToPath_WithEitherNoMatch(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 	seer, err := yaseer.New(yaseer.VirtualFS(memFs, "/"))
 	assert.NilError(t, err)
@@ -385,7 +385,7 @@ func TestWriteValueToPath_EitherNoMatch(t *testing.T) {
 	assert.ErrorContains(t, err, "does not match Either() options")
 }
 
-func TestFindTypeValue(t *testing.T) {
+func TestFindTypeValue_Success(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("type", "http")
 
@@ -394,14 +394,14 @@ func TestFindTypeValue(t *testing.T) {
 	assert.Equal(t, typeVal, "http")
 }
 
-func TestFindTypeValue_Missing(t *testing.T) {
+func TestFindTypeValue_WhenMissing(t *testing.T) {
 	obj := object.New[object.Refrence]()
 
 	_, err := findTypeValue(obj)
 	assert.ErrorContains(t, err, "type attribute not found")
 }
 
-func TestFindTypeValue_NotString(t *testing.T) {
+func TestFindTypeValue_WhenNotString(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("type", 123) // Not a string
 
@@ -409,7 +409,7 @@ func TestFindTypeValue_NotString(t *testing.T) {
 	assert.ErrorContains(t, err, "type attribute is not a string")
 }
 
-func TestDumpChild_NonGroupError(t *testing.T) {
+func TestDumpChild_WithNonGroupError(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
 	schema := &schemaDef{
@@ -437,7 +437,7 @@ func TestDumpChild_NonGroupError(t *testing.T) {
 	assert.ErrorContains(t, err, "non-group child")
 }
 
-func TestDumpChild_UnsupportedMatchType(t *testing.T) {
+func TestDumpChild_WithUnsupportedMatchType(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
 	schema := &schemaDef{
@@ -462,7 +462,7 @@ func TestDumpChild_UnsupportedMatchType(t *testing.T) {
 	assert.ErrorContains(t, err, "unsupported child match type")
 }
 
-func TestDump_Applications(t *testing.T) {
+func TestDump_WithApplications(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
 	// Schema with applications (DefineIterGroup)
@@ -549,7 +549,7 @@ func TestDump_Applications(t *testing.T) {
 	assert.Assert(t, exists, "applications/MyApp/functions/appFunc.yaml should exist")
 }
 
-func TestDump_MultipleResources(t *testing.T) {
+func TestDump_WithMultipleResources(t *testing.T) {
 	memFs := afero.NewMemMapFs()
 
 	schema := &schemaDef{

@@ -160,3 +160,43 @@ func TestIsHttpMethod(t *testing.T) {
 		}
 	}
 }
+
+func TestIsDomainName(t *testing.T) {
+	tests := []struct {
+		domain   string
+		expected bool
+	}{
+		// Valid cases
+		{"example.com", true},
+		{"sub.example.com", true},
+		{"a.b.c.d.example.com", true},
+		{"example.co.uk", true},
+		// Invalid cases
+		{"", false},             // Empty string
+		{".", true},             // Root domain is valid (see golang.org/issue/45715)
+		{"example..com", false}, // Double dot
+		{"-example.com", false}, // Starts with hyphen
+		{"example-.com", false}, // Ends with hyphen in label
+		{"example.com-", false}, // Ends with hyphen
+		{".example.com", false}, // Starts with dot
+		// Long domain names (254+ chars)
+		{"example@com", false},  // Special characters
+		{"example com", false},  // Space
+		{"example\tcom", false}, // Tab
+	}
+
+	for _, test := range tests {
+		result := isDomainName(test.domain)
+		if result != test.expected {
+			t.Errorf("Expected isDomainName(%q) to be %v, got %v", test.domain, test.expected, result)
+		}
+	}
+
+	// Test long domain name
+	longDomain := "a." + string(make([]byte, 250)) + ".com"
+	if len(longDomain) > 254 {
+		if isDomainName(longDomain) {
+			t.Error("Expected long domain (>254 chars) to be invalid")
+		}
+	}
+}

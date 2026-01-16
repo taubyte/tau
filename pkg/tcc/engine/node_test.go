@@ -6,7 +6,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestNodeToMap(t *testing.T) {
+func TestNode_Map(t *testing.T) {
 	node := &Node{
 		Match: "test",
 		Attributes: []*Attribute{
@@ -60,7 +60,7 @@ func TestNodeToMap(t *testing.T) {
 	assert.DeepEqual(t, node.Map(), expected)
 }
 
-func TestNode_AttributesToMap_NoOptionalFields(t *testing.T) {
+func TestNode_AttributesToMap_WithoutOptionalFields(t *testing.T) {
 	// Use case: Testing attributesToMap without optional fields
 	node := &Node{
 		Attributes: []*Attribute{
@@ -87,7 +87,7 @@ func TestNode_AttributesToMap_NoOptionalFields(t *testing.T) {
 	assert.Assert(t, !hasCompat)
 }
 
-func TestNode_ChildrenToSlice(t *testing.T) {
+func TestNode_ChildrenToSlice_ConvertsChildren(t *testing.T) {
 	// Use case: Testing childrenToSlice
 	child1 := &Node{Match: "child1"}
 	child2 := &Node{Match: "child2", Group: true}
@@ -103,7 +103,7 @@ func TestNode_ChildrenToSlice(t *testing.T) {
 	assert.Assert(t, result[1] != nil)
 }
 
-func TestNode_Map_WithGroup(t *testing.T) {
+func TestNode_Map_WithGroupFlag(t *testing.T) {
 	// Use case: Testing Map() with Group=true
 	node := &Node{
 		Group: true,
@@ -121,4 +121,66 @@ func TestNode_Map_WithGroup(t *testing.T) {
 	assert.Assert(t, result != nil)
 	assert.Equal(t, result["group"], true)
 	assert.Equal(t, result["match"], "group-match")
+}
+
+func TestNode_ChildMatch_StringMatch(t *testing.T) {
+	// Setup: Create node with string match children
+	child1 := &Node{Match: "child1"}
+	child2 := &Node{Match: "child2"}
+
+	parent := &Node{
+		Children: []*Node{child1, child2},
+	}
+
+	// Execute: Match existing child
+	matched, err := parent.ChildMatch("child1")
+
+	// Verify
+	assert.NilError(t, err)
+	assert.Assert(t, matched == child1)
+}
+
+func TestNode_ChildMatch_StringMatcher(t *testing.T) {
+	// Setup: Create node with StringMatcher children
+	matcher := All()
+	child1 := &Node{Match: matcher}
+	child2 := &Node{Match: "exact"}
+
+	parent := &Node{
+		Children: []*Node{child1, child2},
+	}
+
+	// Execute: Match using StringMatcher
+	matched, err := parent.ChildMatch("any-string")
+
+	// Verify: Should match the All() matcher
+	assert.NilError(t, err)
+	assert.Assert(t, matched == child1)
+}
+
+func TestNode_ChildMatch_NotFound(t *testing.T) {
+	// Setup: Create node with children
+	child1 := &Node{Match: "child1"}
+	parent := &Node{
+		Children: []*Node{child1},
+	}
+
+	// Execute: Match non-existent child
+	_, err := parent.ChildMatch("nonexistent")
+
+	// Verify: Should return error
+	assert.Error(t, err, "not found")
+}
+
+func TestNode_ChildMatch_EmptyChildren(t *testing.T) {
+	// Setup: Create node with no children
+	parent := &Node{
+		Children: []*Node{},
+	}
+
+	// Execute: Match any child
+	_, err := parent.ChildMatch("any")
+
+	// Verify: Should return error
+	assert.Error(t, err, "not found")
 }

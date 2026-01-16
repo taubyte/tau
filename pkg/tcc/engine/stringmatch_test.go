@@ -59,3 +59,29 @@ func TestEither(t *testing.T) {
 		}
 	}
 }
+
+func TestStringMatchAll_String(t *testing.T) {
+	sm := StringMatchAll{}
+	result := sm.String()
+	if result != "StringMatchAll" {
+		t.Errorf("Expected String() to return 'StringMatchAll', got %s", result)
+	}
+}
+
+func TestEither_String(t *testing.T) {
+	matcher := Either("value1", "value2", "value3")
+	result := matcher.String()
+	if len(result) == 0 {
+		t.Error("Expected String() to return non-empty string")
+	}
+}
+
+func TestEither_EmptyValues(t *testing.T) {
+	matcher := Either()
+	if matcher.Match("any") {
+		t.Error("Expected Either() with no values to not match anything")
+	}
+	if matcher.Match("") {
+		t.Error("Expected Either() with no values to not match empty string")
+	}
+}

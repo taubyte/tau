@@ -30,7 +30,7 @@ func TestDefineIterGroup(t *testing.T) {
 	assert.Assert(t, node.Children[1] == child2)
 }
 
-func TestFloat(t *testing.T) {
+func TestFloat_Helper(t *testing.T) {
 	// Use case: Testing Float helper function
 	attr := Float("myFloat", Key(), Default(3.14))
 
@@ -40,7 +40,7 @@ func TestFloat(t *testing.T) {
 	assert.Equal(t, attr.Default, 3.14)
 }
 
-func TestStringSlice(t *testing.T) {
+func TestStringSlice_Helper(t *testing.T) {
 	// Use case: Testing StringSlice helper function
 	defaultVal := []string{"item1", "item2"}
 	attr := StringSlice("mySlice", Required(), Default(defaultVal))
@@ -55,7 +55,7 @@ func TestStringSlice(t *testing.T) {
 	assert.Equal(t, defaultSlice[1], "item2")
 }
 
-func TestDefine(t *testing.T) {
+func TestDefine_Helper(t *testing.T) {
 	// Use case: Testing Define helper function
 	attrs := []*Attribute{
 		{Name: "attr1", Type: TypeString},

@@ -7,7 +7,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestStringify_AttributeValidator(t *testing.T) {
+func TestStringify_WithAttributeValidator(t *testing.T) {
 	// Use case: Testing stringify with AttributeValidator
 	validator := func(any) error {
 		return errors.New("test")
@@ -18,7 +18,7 @@ func TestStringify_AttributeValidator(t *testing.T) {
 	assert.Equal(t, result, "AttributeValidator()")
 }
 
-func TestStringify_StringMatchSlice(t *testing.T) {
+func TestStringify_WithStringMatchSlice(t *testing.T) {
 	// Use case: Testing stringify with []StringMatch
 	matches := []StringMatch{
 		"path1",
@@ -33,7 +33,7 @@ func TestStringify_StringMatchSlice(t *testing.T) {
 	assert.Assert(t, result != "unknown")
 }
 
-func TestStringify_Unknown(t *testing.T) {
+func TestStringify_WithUnknownType(t *testing.T) {
 	// Use case: Testing stringify with unknown type
 	result := stringify(12345)
 

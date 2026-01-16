@@ -9,7 +9,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestLoad_NonGroupNode(t *testing.T) {
+func TestLoad_WithNonGroupNode(t *testing.T) {
 	// Use case: Testing load with non-group node
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test", 0755)
@@ -36,7 +36,7 @@ func TestLoad_NonGroupNode(t *testing.T) {
 	assert.Equal(t, obj.Get("name"), "test-name")
 }
 
-func TestLoad_GroupNodeWithRequiredAttributesError(t *testing.T) {
+func TestLoad_WithGroupNode_RequiredAttributesError(t *testing.T) {
 	// Use case: Testing load with group node that has required attributes and fails
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test", 0755)
@@ -64,7 +64,7 @@ func TestLoad_GroupNodeWithRequiredAttributesError(t *testing.T) {
 	assert.ErrorContains(t, err, "")
 }
 
-func TestLoad_GroupNodeWithStringMatcherChild(t *testing.T) {
+func TestLoad_WithGroupNode_StringMatcherChild(t *testing.T) {
 	// Use case: Testing load with group node that has StringMatcher children
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/match1", 0755)
@@ -93,7 +93,7 @@ func TestLoad_GroupNodeWithStringMatcherChild(t *testing.T) {
 	assert.Assert(t, obj != nil)
 }
 
-func TestLoad_GroupNodeSkipsConfigLeaf(t *testing.T) {
+func TestLoad_WithGroupNode_SkipsConfigLeaf(t *testing.T) {
 	// Use case: Testing load with group node that skips NodeDefaultSeerLeaf
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/config", 0755)
@@ -125,7 +125,7 @@ func TestLoad_GroupNodeSkipsConfigLeaf(t *testing.T) {
 	assert.NilError(t, err)
 }
 
-func TestLoad_GroupNodeChildAddError(t *testing.T) {
+func TestLoad_WithGroupNode_ChildAddError(t *testing.T) {
 	// Use case: Testing load when Child().Add() fails
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/child1", 0755)

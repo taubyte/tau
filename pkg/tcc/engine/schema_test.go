@@ -20,7 +20,7 @@ func setupTestSchema() *schemaDef {
 	}
 }
 
-func TestSchemaToMap(t *testing.T) {
+func TestSchema_Map(t *testing.T) {
 	parser := setupTestSchema()
 
 	expectedMap := map[string]any{
@@ -38,7 +38,7 @@ func TestSchemaToMap(t *testing.T) {
 	assert.DeepEqual(t, parser.Map(), expectedMap)
 }
 
-func TestSchemaJson(t *testing.T) {
+func TestSchema_Json(t *testing.T) {
 	parser := setupTestSchema()
 
 	expectedMap := map[string]any{
@@ -60,7 +60,7 @@ func TestSchemaJson(t *testing.T) {
 	assert.Equal(t, actualJson, string(expectedJson))
 }
 
-func TestSchemaYaml(t *testing.T) {
+func TestSchema_Yaml(t *testing.T) {
 	parser := setupTestSchema()
 
 	expectedMap := map[string]any{
@@ -118,7 +118,7 @@ var testSchemaDef = SchemaDefinition(
 	),
 )
 
-func TestSchemaProcess(t *testing.T) {
+func TestSchema_Process(t *testing.T) {
 	p, err := New(testSchemaDef, yaseer.SystemFS("fixtures/config"))
 	assert.NilError(t, err)
 
@@ -157,7 +157,7 @@ func TestSchemaProcess(t *testing.T) {
 	assert.Equal(t, t1_2.Get("name"), it1.Get("name"))
 }
 
-func TestBadSchemaParse(t *testing.T) {
+func TestSchema_Parse_ErrorCases(t *testing.T) {
 	for _, i := range []string{"1", "2", "3"} {
 		p, err := New(testSchemaDef, yaseer.SystemFS("fixtures/config_bad_"+i))
 		assert.NilError(t, err)
