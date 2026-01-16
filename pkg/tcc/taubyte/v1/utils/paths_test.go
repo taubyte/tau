@@ -187,3 +187,80 @@ func TestResolveNamesToId_ErrorInResolve(t *testing.T) {
 
 	assert.ErrorContains(t, err, "not indexed")
 }
+
+func TestLocalResolveNameToId_Success(t *testing.T) {
+	root := object.New[object.Refrence]()
+	root.Set("name", "root")
+
+	obj := object.New[object.Refrence]()
+	obj.Set("name", "project")
+
+	ctx := transform.NewContext[object.Refrence](context.Background(), root)
+	ctx = ctx.Fork(obj)
+
+	// Index resource
+	err := IndexById(ctx, "domains", "myDomain", "domain-id-456")
+	assert.NilError(t, err)
+
+	// Use localResolveNameToId directly
+	ctp := ctx.Path()
+	id, err := localResolveNameToId(ctx.Store(), ctp, "domains", "myDomain")
+	assert.NilError(t, err)
+	assert.Equal(t, id, "domain-id-456")
+}
+
+func TestLocalResolveNameToId_EmptyContextPath(t *testing.T) {
+	root := object.New[object.Refrence]()
+	root.Set("name", "root")
+
+	ctx := transform.NewContext[object.Refrence](context.Background(), root)
+
+	// Empty path should return error
+	_, err := localResolveNameToId(ctx.Store(), []any{}, "domains", "myDomain")
+	assert.ErrorContains(t, err, "context path is empty")
+}
+
+func TestLocalResolveNameToId_NotFound(t *testing.T) {
+	root := object.New[object.Refrence]()
+	root.Set("name", "root")
+
+	obj := object.New[object.Refrence]()
+	obj.Set("name", "project")
+
+	ctx := transform.NewContext[object.Refrence](context.Background(), root)
+	ctx = ctx.Fork(obj)
+
+	// Try to resolve non-indexed resource
+	ctp := ctx.Path()
+	_, err := localResolveNameToId(ctx.Store(), ctp, "domains", "nonExistent")
+	assert.ErrorContains(t, err, "not indexed")
+}
+
+func TestLocalResolveNameToId_InvalidPathType(t *testing.T) {
+	root := object.New[object.Refrence]()
+	root.Set("name", "root")
+
+	ctx := transform.NewContext[object.Refrence](context.Background(), root)
+
+	// Path with invalid type
+	invalidPath := []any{root, "invalid-type"}
+	_, err := localResolveNameToId(ctx.Store(), invalidPath, "domains", "myDomain")
+	assert.ErrorContains(t, err, "path contains invalid type")
+}
+
+func TestLocalResolveNameToId_ObjectWithoutName(t *testing.T) {
+	root := object.New[object.Refrence]()
+	root.Set("name", "root")
+
+	// Create obj without name
+	obj := object.New[object.Refrence]()
+	// Don't set name on obj
+
+	ctx := transform.NewContext[object.Refrence](context.Background(), root)
+	ctx = ctx.Fork(obj)
+
+	// Path contains object without name
+	ctp := ctx.Path()
+	_, err := localResolveNameToId(ctx.Store(), ctp, "domains", "myDomain")
+	assert.ErrorContains(t, err, "path contains no name")
+}

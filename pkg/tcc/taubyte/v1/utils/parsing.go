@@ -119,3 +119,106 @@ func RenameById(sel object.Selector[object.Refrence], name string) (string, erro
 
 	return idStr, nil
 }
+
+// FormatTimeout converts nanoseconds back to duration string.
+// If the field doesn't exist or is nil, the function returns nil (no error).
+// Returns an error if the field exists but is not an int64 or cannot be formatted.
+func FormatTimeout(sel object.Selector[object.Refrence], field string) error {
+	timeout, err := sel.Get(field)
+	if err != nil {
+		// Field doesn't exist, which is fine
+		return nil
+	}
+
+	// Field exists but is nil, which is also fine
+	if timeout == nil {
+		return nil
+	}
+
+	var timeoutNs int64
+	switch v := timeout.(type) {
+	case int64:
+		timeoutNs = v
+	case int:
+		timeoutNs = int64(v)
+	case int32:
+		timeoutNs = int64(v)
+	default:
+		return fmt.Errorf("%s is not an integer", field)
+	}
+
+	timeoutDur := time.Duration(timeoutNs)
+	return sel.Set(field, timeoutDur.String())
+}
+
+// FormatMemory converts bytes (int64) back to human-readable size string.
+// If the field doesn't exist or is nil, the function returns nil (no error).
+// Returns an error if the field exists but is not an int64 or cannot be formatted.
+func FormatMemory(sel object.Selector[object.Refrence], field string) error {
+	memory, err := sel.Get(field)
+	if err != nil {
+		// Field doesn't exist, which is fine
+		return nil
+	}
+
+	// Field exists but is nil, which is also fine
+	if memory == nil {
+		return nil
+	}
+
+	var memoryBytes int64
+	switch v := memory.(type) {
+	case int64:
+		memoryBytes = v
+	case int:
+		memoryBytes = int64(v)
+	case int32:
+		memoryBytes = int64(v)
+	default:
+		return fmt.Errorf("%s is not an integer", field)
+	}
+
+	memoryStr := units.MetricBytes(float64(memoryBytes)).String()
+	return sel.Set(field, memoryStr)
+}
+
+// FormatSize converts bytes (int64) back to human-readable size string.
+// This is an alias for FormatMemory for semantic clarity.
+// If the field doesn't exist or is nil, the function returns nil (no error).
+// Returns an error if the field exists but is not an int64 or cannot be formatted.
+func FormatSize(sel object.Selector[object.Refrence], field string) error {
+	return FormatMemory(sel, field)
+}
+
+// RenameByName reverses RenameById - swaps ID/name back.
+// Extracts the "name" field, sets "id" to the current key,
+// deletes the "name" field, and renames the selector to use the name value.
+// Returns the original name and an error if the name field doesn't exist or is not a string.
+func RenameByName(sel object.Selector[object.Refrence]) (string, error) {
+	name, err := sel.Get("name")
+	if err != nil {
+		return "", fmt.Errorf("fetching name failed with %w", err)
+	}
+
+	nameStr, ok := name.(string)
+	if !ok {
+		return "", fmt.Errorf("name is not a string")
+	}
+
+	currentKey := sel.Name()
+	if currentKey == "" {
+		return "", fmt.Errorf("current key is empty")
+	}
+
+	if err := sel.Set("id", currentKey); err != nil {
+		return "", fmt.Errorf("setting id failed with %w", err)
+	}
+
+	sel.Delete("name")
+
+	if err := sel.Rename(nameStr); err != nil {
+		return "", fmt.Errorf("renaming to name failed with %w", err)
+	}
+
+	return nameStr, nil
+}

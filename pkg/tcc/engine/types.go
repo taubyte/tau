@@ -26,6 +26,7 @@ type Engine interface {
 	Schema() Schema
 	Parse() (object.Object[SeerRef], error)           // load linked to seer
 	Process() (object.Object[object.Refrence], error) // load & process
+	Dump(obj object.Object[object.Refrence]) error    // dump object to filesystem using engine's seer and sync
 }
 
 type Type int

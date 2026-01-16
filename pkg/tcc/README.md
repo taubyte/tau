@@ -100,6 +100,64 @@ for _, v := range validations {
 }
 ```
 
+### Taubyte Decompiler (`taubyte/v1/decompile/`)
+
+The decompiler reverses the compilation process, converting compiled configuration objects back to YAML files. It uses a reverse transformation pipeline to restore the original structure and writes the results to the filesystem using the engine's schema.
+
+**Key Features:**
+- Reverse transformation pipeline (pass1 → pass2 → pass3)
+- Automatic YAML file generation using schema definitions
+- Value validation during decompilation
+- Support for both local and virtual filesystems
+
+**Reverse Passes:**
+1. **Pass 1** - Unwraps root object (chroot reverse)
+2. **Pass 2** - Resolves resource IDs back to names (functions, smartops, websites)
+3. **Pass 3** - Restores attribute names and formats (all resources)
+
+**Usage:**
+```go
+// Compile first
+compiler, err := compiler.New(
+    compiler.WithLocal("path/to/config"),
+    compiler.WithBranch("main"),
+)
+if err != nil {
+    return err
+}
+
+obj, validations, err := compiler.Compile(ctx)
+if err != nil {
+    return err
+}
+
+// Decompile to in-memory filesystem
+memFs := afero.NewMemMapFs()
+decompiler, err := decompile.New(decompile.WithVirtual(memFs, "/"))
+if err != nil {
+    return err
+}
+
+err = decompiler.Decompile(obj)
+if err != nil {
+    return err
+}
+
+// Or decompile to local filesystem
+decompiler, err := decompile.New(decompile.WithLocal("output/path"))
+if err != nil {
+    return err
+}
+
+err = decompiler.Decompile(obj)
+```
+
+**Options:**
+- `WithLocal(path)` - Decompile to local filesystem at the given path
+- `WithVirtual(fs, path)` - Decompile to a virtual filesystem (e.g., `afero.MemMapFs`)
+
+**Note:** The decompiler modifies the input object in place (same as regular compilation transforms). If you need to preserve the original object, make a copy before decompiling.
+
 ### External Validators
 
 TCC supports external validators to keep complex validation logic (like DNS validation with domain-validation library) outside the compiler, maintaining WASM/WASI compatibility.
@@ -206,6 +264,11 @@ pkg/tcc/
 └── taubyte/         # Taubyte-specific compiler
     └── v1/
         ├── compiler.go    # Main compiler
+        ├── decompile/     # Decompiler implementation
+        │   ├── decompiler.go    # Decompiler interface
+        │   ├── pass1/           # First reverse pass (chroot)
+        │   ├── pass2/           # Second reverse pass (ID resolution)
+        │   └── pass3/           # Third reverse pass (attribute restoration)
         ├── schema/        # Taubyte schema definitions
         ├── pass1/         # First pass transformers
         ├── pass2/         # Second pass transformers
@@ -219,8 +282,13 @@ pkg/tcc/
 The package includes comprehensive test coverage:
 - Unit tests for each component
 - Integration tests for the full compiler
+- Decompiler round-trip tests (compile → decompile → recompile)
 - Test fixtures with example configurations
 - Error location and validation tests
+
+**Coverage:**
+- Engine: >87% coverage
+- Decompile passes: >80% coverage each (pass1: 87.5%, pass2: 93.5%, pass3: 89.3%)
 
 
 ## License
