@@ -1,0 +1,14 @@
+id: QmRJFpRntf1EMgmC5Tm9QJ5iUv5vGwF4mVg1gqTbQX4m8A
+description: another messaging channel
+tags:
+    - messaging_tag_3
+    - messaging_tag_4
+local: true
+channel:
+    regex: true
+    match: simple2
+bridges:
+    mqtt:
+        enable: true
+    websocket:
+        enable: false

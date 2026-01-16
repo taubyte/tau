@@ -1,0 +1,10 @@
+id: QmUcVJtgGZYkqFr2J9t2jV2fJJWZBvD7FJ6RyXzJY2kAj1
+description: a domain for hal computers
+tags: # optional
+    - domain_tag_1
+    - domain_tag_2
+fqdn: hal.computers.com
+certificate:
+    type: inline
+    key: testKey
+    cert: testCert

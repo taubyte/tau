@@ -1,0 +1,8 @@
+id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR
+name: TrueTest
+description: a simple test project
+tags: # optional
+    - tag1
+    - tag2
+notification:
+    email: "cto@taubyte.com"

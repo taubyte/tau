@@ -1,0 +1,15 @@
+id: QmZmW9PQmz5Z6pYPJ6VDUPVgH7L6Xb8K1GTh8dNQzDh5gh
+description: a simple photo booth
+tags:
+    - website_tag_1
+    - website_tag_2
+domains:
+    # hal.computers.com
+    - test_domain1
+source:
+    paths:
+        - /photos
+    branch: main
+    github:
+        id: "111111112"
+        fullname: taubyte-test/photo_booth

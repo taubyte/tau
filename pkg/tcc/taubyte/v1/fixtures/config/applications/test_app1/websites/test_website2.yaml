@@ -1,0 +1,17 @@
+id: QmXgQKtJYK3rLtVG8VTzXj7dL5o4YkN5sPZ2MyStpUxJYw
+description: my portfolio
+tags:
+    - website_tag_3
+    - website_tag_4
+domains:
+    # app.computers.com
+    - test_domain2
+paths:
+        - /portfolio
+source:
+    branch: main
+    paths:
+        - /portfolio
+    github:
+        id: "222222223"
+        fullname: taubyte-test/portfolio

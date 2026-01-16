@@ -1,0 +1,14 @@
+id: QmX7z2k8xWThaN6EYHU7JQXd1HHqkYiF2sGfe4sP3dJZ7Q
+description: a p2p function for ping over peer-2-peer
+tags:
+    - function_tag_5
+    - function_tag_6
+trigger:
+    type: p2p
+    local: false
+    command: command3
+source: .
+execution:
+    timeout: 1h15m
+    memory: 64GB
+    call: ping3

@@ -1,0 +1,11 @@
+id: QmP5VNzL1M9vjqMXV19ypEzAWX5S7zbv8mXb1LxmC3r5ZB
+description: just another library
+tags:
+    - library_tag_3
+    - library_tag_4
+source:
+    path: /src
+    branch: dreamland
+    github:
+        id: "222222222"
+        fullname: taubyte-test/library2

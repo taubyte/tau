@@ -1,0 +1,6 @@
+id: QmZsZ78FJwt281gfeK3B2M1qzYx4GTpWTPv9Kx8Z2KBF2a
+description: a super simple protocol
+tags:
+    - service_tag_1
+    - service_tag_2
+protocol: /simple/v1

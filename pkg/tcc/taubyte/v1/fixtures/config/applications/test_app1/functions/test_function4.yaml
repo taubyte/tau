@@ -1,0 +1,17 @@
+id: QmXuTz6e3W7Y9EJ2hYH4Jk1JAXT7pKnai5NqUWFPVF8Cmx
+description: an http function with a call to a library
+tags:
+    - function_tag_3
+    - function_tag_4
+domains:
+    - test_domain2
+trigger:
+    type: http
+    method: post
+    paths:
+      - /example2
+source: "libraries/test_library2"
+execution:
+    timeout: 23s
+    memory: 23MB
+    call: ping2
