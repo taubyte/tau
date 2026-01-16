@@ -10,6 +10,26 @@ import (
 	"github.com/ipfs/go-cid"
 )
 
+// NextValidation represents a validation that needs to be performed externally.
+// The compiler emits these during compilation, and it's up to the caller to
+// implement and process these validations.
+type NextValidation struct {
+	Key       string                 `json:"key"`       // identifier for the validation (e.g., "domain", "fqdn")
+	Value     interface{}            `json:"value"`     // the actual value to validate (can be string, int, etc.)
+	Validator string                 `json:"validator"` // validator name (e.g., "dns", "cid")
+	Context   map[string]interface{} `json:"context"`   // additional context for validation
+}
+
+// NewNextValidation creates a new NextValidation instance.
+func NewNextValidation(key string, value interface{}, validator string, context map[string]interface{}) NextValidation {
+	return NextValidation{
+		Key:       key,
+		Value:     value,
+		Validator: validator,
+		Context:   context,
+	}
+}
+
 var varNameRegex = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
 func IsVariableName() Option {

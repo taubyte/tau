@@ -7,13 +7,13 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestWithInMemory(t *testing.T) {
-	// Setup: Create in-memory filesystem
+func TestWithVirtual(t *testing.T) {
+	// Setup: Create virtual filesystem
 	fs := afero.NewMemMapFs()
 	path := "/test/path"
 
 	// Execute
-	option := WithInMemory(fs, path)
+	option := WithVirtual(fs, path)
 
 	compiler := &Compiler{}
 	err := option(compiler)

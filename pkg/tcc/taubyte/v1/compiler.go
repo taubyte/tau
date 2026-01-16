@@ -14,6 +14,12 @@ import (
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
+// Object is an alias for the compiled configuration object.
+type Object = object.Object[object.Refrence]
+
+// NextValidation is an alias for a single external validation request.
+type NextValidation = engine.NextValidation
+
 type Compiler struct {
 	seerOptions []yaseer.Option
 	branch      string
@@ -41,10 +47,10 @@ func New(options ...Option) (c *Compiler, err error) {
 	return c, nil
 }
 
-func (c *Compiler) Compile(ctx context.Context) (object.Object[object.Refrence], error) {
+func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error) {
 	obj, err := c.engine.Process()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	pipe := []transform.Transformer[object.Refrence]{}
@@ -52,9 +58,19 @@ func (c *Compiler) Compile(ctx context.Context) (object.Object[object.Refrence],
 		pipe = append(pipe, p...)
 	}
 
-	return transform.Pipe(
-		transform.NewContext[object.Refrence](ctx),
+	transformCtx := transform.NewContext[object.Refrence](ctx)
+	result, err := transform.Pipe(
+		transformCtx,
 		obj,
 		pipe...,
 	)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Collect validations from transform context store
+	validationsStore := transformCtx.Store().Validators()
+	validations := validationsStore.Get()
+
+	return result, validations, nil
 }

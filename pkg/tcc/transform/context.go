@@ -3,6 +3,7 @@ package transform
 import (
 	"context"
 
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/object"
 )
 
@@ -49,16 +50,18 @@ func (c *ctx[T]) Path() []any {
 }
 
 type store[T object.DataTypes] struct {
-	strings map[string]string
-	bytes   map[string][]byte
-	objects map[string]object.Object[T]
+	strings     map[string]string
+	bytes       map[string][]byte
+	objects     map[string]object.Object[T]
+	validations []engine.NextValidation
 }
 
 func newStore[T object.DataTypes]() *store[T] {
 	return &store[T]{
-		strings: make(map[string]string),
-		bytes:   make(map[string][]byte),
-		objects: make(map[string]object.Object[T]),
+		strings:     make(map[string]string),
+		bytes:       make(map[string][]byte),
+		objects:     make(map[string]object.Object[T]),
+		validations: make([]engine.NextValidation, 0),
 	}
 }
 
@@ -72,6 +75,10 @@ func (s *store[T]) Bytes(key string) Item[[]byte] {
 
 func (s *store[T]) Object(key string) Item[object.Object[T]] {
 	return &item[object.Object[T]]{ds: s.objects, key: key}
+}
+
+func (s *store[T]) Validators() Item[[]engine.NextValidation] {
+	return &validationsItem[T]{store: s}
 }
 
 type item[T any] struct {
@@ -95,5 +102,27 @@ func (i item[T]) Set(val T) (T, error) {
 
 func (i item[T]) Del() error {
 	delete(i.ds, i.key)
+	return nil
+}
+
+type validationsItem[T object.DataTypes] struct {
+	store *store[T]
+}
+
+func (v *validationsItem[T]) Get() []engine.NextValidation {
+	return v.store.validations
+}
+
+func (v *validationsItem[T]) Exist() bool {
+	return len(v.store.validations) > 0
+}
+
+func (v *validationsItem[T]) Set(val []engine.NextValidation) ([]engine.NextValidation, error) {
+	v.store.validations = val
+	return val, nil
+}
+
+func (v *validationsItem[T]) Del() error {
+	v.store.validations = make([]engine.NextValidation, 0)
 	return nil
 }

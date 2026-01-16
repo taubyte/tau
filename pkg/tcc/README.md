@@ -82,14 +82,74 @@ A complete compiler implementation for Taubyte project configurations. It proces
 **Usage:**
 ```go
 compiler, err := compiler.New(
-    compiler.Branch("main"),
-    compiler.SeerOptions(yaseerOptions...),
+    compiler.WithBranch("main"),
+    compiler.WithLocal("path/to/config"),
 )
 if err != nil {
     return err
 }
 
-result, err := compiler.Compile(ctx)
+result, validations, err := compiler.Compile(ctx)
+if err != nil {
+    return err
+}
+
+// Process validations externally
+for _, v := range validations {
+    // Implement validation logic based on v.Validator
+}
+```
+
+### External Validators
+
+TCC supports external validators to keep complex validation logic (like DNS validation with domain-validation library) outside the compiler, maintaining WASM/WASI compatibility.
+
+**NextValidation Structure:**
+```go
+type NextValidation struct {
+    Key       string                 // identifier (e.g., "domain", "fqdn")
+    Value     interface{}            // the actual value to validate
+    Validator string                 // validator name (e.g., "dns", "cid")
+    Context   map[string]interface{} // additional context for validation
+}
+```
+
+**Example NextValidation:**
+```json
+{
+  "key": "domain",
+  "value": "example.com",
+  "validator": "dns",
+  "context": {
+    "project": "proj-456",
+    "app": "app-name"
+  }
+}
+```
+
+**Processing Validations:**
+The compiler emits `NextValidation` items during compilation. It's up to the caller to implement and process these validations externally:
+
+```go
+obj, validations, err := compiler.Compile(ctx)
+if err != nil {
+    return err
+}
+
+for _, validation := range validations {
+    switch validation.Validator {
+    case "dns":
+        // Implement DNS validation using validation.Value (FQDN)
+        // Use validation.Context for project/app context
+        err := validateDNS(validation.Value.(string), validation.Context)
+        if err != nil {
+            return fmt.Errorf("DNS validation failed: %w", err)
+        }
+    case "cid":
+        // Implement CID validation
+        // ...
+    }
+}
 ```
 
 ## Schema Definition
@@ -142,6 +202,7 @@ pkg/tcc/
 │   ├── pipe.go      # Pipeline execution
 │   ├── context.go   # Transformation context
 │   └── types.go     # Type definitions
+├── validators.go    # NextValidation structure for external validators
 └── taubyte/         # Taubyte-specific compiler
     └── v1/
         ├── compiler.go    # Main compiler

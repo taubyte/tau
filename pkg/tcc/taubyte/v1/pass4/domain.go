@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	specs "github.com/taubyte/tau/pkg/specs/domain"
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/object"
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
@@ -26,6 +27,26 @@ func (d *domains) Process(ct transform.Context[object.Refrence], config object.O
 		return nil, fmt.Errorf("root is not an object")
 	}
 
+	configRoot, ok := ct.Path()[1].(object.Object[object.Refrence])
+	if !ok {
+		return nil, fmt.Errorf("config root is not an object")
+	}
+
+	// Extract project ID
+	projectId, err := configRoot.GetString("id")
+	if err != nil {
+		return nil, fmt.Errorf("project id is not a string: %w", err)
+	}
+
+	// Extract app name if in application context
+	appId := ""
+	if configRoot != config {
+		appsObj, err := configRoot.Child("applications").Object()
+		if err == nil {
+			appId = appsObj.Child(config).Name()
+		}
+	}
+
 	domainConfig, err := config.Child(string(specs.PathVariable)).Object()
 	if err == object.ErrNotExist {
 		return config, nil
@@ -38,6 +59,10 @@ func (d *domains) Process(ct transform.Context[object.Refrence], config object.O
 		return nil, fmt.Errorf("creating path for indexes failed with %w", err)
 	}
 
+	// Get validations store
+	validationsStore := ct.Store().Validators()
+	validations := validationsStore.Get()
+
 	for _, domainId := range domainConfig.Children() {
 		domainObj, err := domainConfig.Child(domainId).Object()
 		if err != nil {
@@ -48,6 +73,22 @@ func (d *domains) Process(ct transform.Context[object.Refrence], config object.O
 		if err != nil {
 			return nil, fmt.Errorf("domain fqdn is not a string: %w", err)
 		}
+
+		// Build context map
+		context := map[string]interface{}{
+			"project": projectId,
+		}
+		if appId != "" {
+			context["app"] = appId
+		}
+
+		// Emit validation request
+		validations = append(validations, engine.NewNextValidation(
+			"domain",
+			fqdn,
+			"dns",
+			context,
+		))
 
 		// referencing wasm module
 		indexPath, err := specs.Tns().BasicPath(fqdn)
@@ -61,6 +102,12 @@ func (d *domains) Process(ct transform.Context[object.Refrence], config object.O
 		if index.Get(indexPathLinks) == nil {
 			index.Set(indexPathLinks, nil)
 		}
+	}
+
+	// Store validations back
+	_, err = validationsStore.Set(validations)
+	if err != nil {
+		return nil, fmt.Errorf("storing validations failed with %w", err)
 	}
 
 	return config, nil
