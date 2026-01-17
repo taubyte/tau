@@ -7,16 +7,17 @@ import (
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/hoarder"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
 
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestRunWasmBasic(t *testing.T) {
 	t.Skip("Needs to be redone")
-	u, err := startDreamland("testRunWasm")
-	defer u.Stop()
+
+	u, cleanup, err := startDream(t)
 	assert.NilError(t, err)
+	defer cleanup()
 
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)

@@ -10,8 +10,9 @@ import (
 	"github.com/taubyte/tau/dream"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/seer"
+	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
 )
 
 func TestHeartBeat(t *testing.T) {
@@ -19,10 +20,14 @@ func TestHeartBeat(t *testing.T) {
 	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond
 	seerClient.DefaultGeoBeaconInterval = 100 * time.Millisecond
 
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer": {},
 			"auth": {},

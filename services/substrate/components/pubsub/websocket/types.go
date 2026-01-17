@@ -1,33 +1,10 @@
 package websocket
 
 import (
-	"context"
-	"io"
 	"sync"
 
-	commonIface "github.com/taubyte/tau/core/services/substrate/components"
 	p2p "github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/services/substrate/components/pubsub/common"
 )
-
-var _ commonIface.Serviceable = &WebSocket{}
-
-type WebSocket struct {
-	ctx       context.Context
-	ctxC      context.CancelFunc
-	srv       common.LocalService
-	dagReader io.ReadSeekCloser
-	project   string
-	mmi       common.MessagingMapItem
-	matcher   *common.MatchDefinition
-
-	commit string
-	branch string
-}
-
-func (w *WebSocket) Close() {
-	w.ctxC()
-}
 
 type WrappedMessage struct {
 	Message []byte `json:"message"`

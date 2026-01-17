@@ -2,6 +2,7 @@ package function
 
 import (
 	"context"
+	"sync"
 
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
@@ -30,6 +31,8 @@ type Function struct {
 
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc
+
+	closeOnce sync.Once
 
 	*runtime.Function
 }

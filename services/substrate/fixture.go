@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"strings"
 
+	commonIface "github.com/taubyte/tau/core/common"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	orbit "github.com/taubyte/tau/pkg/vm-orbit/satellite/vm"
 
 	"github.com/taubyte/tau/dream"
 
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/monkey"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/monkey/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func init() {
@@ -43,12 +44,34 @@ func pushDomain(u *dream.Universe, params ...interface{}) error {
 		commonTest.TestFQDN = url
 	}()
 
-	mockAuthURL, err := u.GetURLHttp(u.Auth().Node())
+	// Create a simple to get the auth client
+	simple, err := u.Simple("client")
+	if err != nil {
+		// If simple doesn't exist, create it
+		err = u.StartWithConfig(&dream.Config{
+			Simples: map[string]dream.SimpleConfig{
+				"client": {
+					Clients: dream.SimpleConfigClients{
+						Auth: &commonIface.ClientConfig{},
+					}.Compat(),
+				},
+			},
+		})
+		if err != nil {
+			return err
+		}
+		simple, err = u.Simple("client")
+		if err != nil {
+			return err
+		}
+	}
+
+	auth, err := simple.Auth()
 	if err != nil {
 		return err
 	}
 
-	err = commonTest.RegisterTestDomain(u.Context(), mockAuthURL)
+	err = commonTest.RegisterTestDomain(u.Context(), auth)
 	if err != nil {
 		return err
 	}

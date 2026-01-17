@@ -425,3 +425,146 @@ func TestUnsupportedTypeFunction(t *testing.T) {
 	// Register the testModule with its functions as a built-in.
 	assert.Error(t, vm.Module(new(testModuleWithUnsupportedType)), "failed to add module `test` with unsupported argument type: complex128")
 }
+
+func TestModulesSkipsExistingModules(t *testing.T) {
+	vmInstance, err := New(testFiles)
+	assert.NilError(t, err)
+
+	assert.NilError(t, vmInstance.Modules(new(testModule)))
+
+	internal := vmInstance.(*vm)
+	assert.Equal(t, len(internal.builtins), 1)
+
+	assert.NilError(t, vmInstance.Modules(new(testModule), new(printer)))
+	assert.Equal(t, len(internal.builtins), 2)
+}
+
+func TestModulesReturnsError(t *testing.T) {
+	vmInstance, err := New(testFiles)
+	assert.NilError(t, err)
+
+	err = vmInstance.Modules(new(testModuleWithUnsupportedType))
+	assert.Error(t, err, "adding modules failed on module `test` with unsupported argument type: complex128")
+}
+
+func TestMakeGoFuncArgumentCountMismatch(t *testing.T) {
+	methods, err := registerMethods(new(testModule))
+	assert.NilError(t, err)
+
+	callable, ok := methods["add2"].(starlark.Callable)
+	assert.Assert(t, ok)
+
+	_, err = starlark.Call(&starlark.Thread{Name: "test"}, callable, nil, nil)
+	assert.Error(t, err, "expected 2 arguments, got 0")
+}
+
+func TestMakeGoFuncArgumentConversionError(t *testing.T) {
+	methods, err := registerMethods(new(testModule))
+	assert.NilError(t, err)
+
+	callable, ok := methods["add2"].(starlark.Callable)
+	assert.Assert(t, ok)
+
+	args := starlark.Tuple{starlark.String("not-an-int"), starlark.String("still-not-an-int")}
+	_, err = starlark.Call(&starlark.Thread{Name: "test"}, callable, args, nil)
+	assert.ErrorContains(t, err, "got string, want int")
+}
+
+type multiReturnModule struct{}
+
+func (m *multiReturnModule) Name() string {
+	return "multi"
+}
+
+func (m *multiReturnModule) E_MultiValues() (int, string) {
+	return 1, "one"
+}
+
+func TestMakeGoFuncMultipleReturnValues(t *testing.T) {
+	methods, err := registerMethods(new(multiReturnModule))
+	assert.NilError(t, err)
+
+	callable, ok := methods["multiValues"].(starlark.Callable)
+	assert.Assert(t, ok)
+
+	result, err := starlark.Call(&starlark.Thread{Name: "test"}, callable, nil, nil)
+	assert.NilError(t, err)
+
+	tuple, ok := result.(starlark.Tuple)
+	assert.Assert(t, ok)
+	assert.Equal(t, len(tuple), 2)
+}
+
+type unsupportedReturnModule struct{}
+
+func (m *unsupportedReturnModule) Name() string {
+	return "badreturn"
+}
+
+func (m *unsupportedReturnModule) E_BadReturn() map[string]int {
+	return map[string]int{"a": 1}
+}
+
+func TestMakeGoFuncUnsupportedReturnType(t *testing.T) {
+	methods, err := registerMethods(new(unsupportedReturnModule))
+	assert.NilError(t, err)
+
+	callable, ok := methods["badReturn"].(starlark.Callable)
+	assert.Assert(t, ok)
+
+	_, err = starlark.Call(&starlark.Thread{Name: "test"}, callable, nil, nil)
+	assert.ErrorContains(t, err, "unsupported type map[string]int")
+}
+
+func newTestCtx(t *testing.T, source string) *ctx {
+	t.Helper()
+
+	thread := &starlark.Thread{Name: "test"}
+	globals, err := starlark.ExecFile(thread, "test.star", source, nil)
+	assert.NilError(t, err)
+
+	return &ctx{
+		thread:  thread,
+		globals: globals,
+	}
+}
+
+func TestCtxCallFunctionNotFound(t *testing.T) {
+	c := &ctx{
+		thread:  &starlark.Thread{Name: "test"},
+		globals: starlark.StringDict{},
+	}
+
+	_, err := c.Call("missing")
+	assert.Error(t, err, "function missing not found")
+}
+
+func TestCtxCallPropagatesErrors(t *testing.T) {
+	c := newTestCtx(t, `
+def takes_one(x):
+    return x
+`)
+
+	_, err := c.Call("takes_one", starlark.MakeInt(1), starlark.MakeInt(2))
+	assert.ErrorContains(t, err, "failed to call function takes_one")
+}
+
+func TestCtxCallWithNativeFunctionNotFound(t *testing.T) {
+	c := &ctx{
+		thread:  &starlark.Thread{Name: "test"},
+		globals: starlark.StringDict{},
+	}
+
+	_, err := c.CallWithNative("missing")
+	assert.Error(t, err, "function missing not found")
+}
+
+func TestCtxCallWithNativeArgumentConversionError(t *testing.T) {
+	c := newTestCtx(t, `
+def identity(x):
+    return x
+`)
+
+	_, err := c.CallWithNative("identity", struct{}{})
+	assert.ErrorContains(t, err, "unsupported type struct {}")
+}

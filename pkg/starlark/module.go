@@ -7,7 +7,6 @@ import (
 
 	"go.starlark.net/starlark"
 	"go.starlark.net/starlarkstruct"
-	"golang.org/x/exp/maps"
 )
 
 // Builtin registers methods from a given struct that have names starting with 'E_'
@@ -17,61 +16,67 @@ func (v *vm) Module(mod Module) error {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
-	if dict, err := registerMethods(mod); err == nil {
-		v.builtins[mod.Name()] = starlark.StringDict{
-			mod.Name(): starlarkstruct.FromStringDict(starlarkstruct.Default, dict),
-		}
-
+	if _, exists := v.builtins[mod.Name()]; exists {
 		return nil
-	} else {
+	}
+
+	dict, err := registerMethods(mod)
+	if err != nil {
 		return fmt.Errorf("failed to add module `%s` with %w", mod.Name(), err)
 	}
+
+	v.builtins[mod.Name()] = starlark.StringDict{
+		mod.Name(): starlarkstruct.FromStringDict(starlarkstruct.Default, dict),
+	}
+
+	return nil
 }
 
 func (v *vm) Modules(mods ...Module) error {
 	v.lock.Lock()
 	defer v.lock.Unlock()
 
-	builtins := make(map[string]starlark.StringDict)
 	for _, mod := range mods {
+		if _, exists := v.builtins[mod.Name()]; exists {
+			continue
+		}
 		if dict, err := registerMethods(mod); err != nil {
 			return fmt.Errorf("adding modules failed on module `%s` with %w", mod.Name(), err)
 		} else {
-			builtins[mod.Name()] = starlark.StringDict{
+			v.builtins[mod.Name()] = starlark.StringDict{
 				mod.Name(): starlarkstruct.FromStringDict(starlarkstruct.Default, dict),
 			}
 		}
 	}
 
-	maps.Copy(v.builtins, builtins)
 	return nil
 }
 
-func registerMethods(obj interface{}) (starlark.StringDict, error) {
-	methods := make(starlark.StringDict)
+func registerMethods(obj any) (starlark.StringDict, error) {
 	val := reflect.ValueOf(obj)
 	typ := val.Type()
+	numMethods := typ.NumMethod()
+	methods := make(starlark.StringDict, numMethods)
 
-	for i := 0; i < typ.NumMethod(); i++ {
+	for i := 0; i < numMethods; i++ {
 		method := val.Method(i)
 		methodName := typ.Method(i).Name
-
-		if strings.HasPrefix(methodName, "E_") && len(methodName) > 2 {
-			starlarkName := strings.TrimPrefix(methodName, "E_")
-
-			if strings.ToUpper(string(methodName[2])) == string(methodName[2]) {
-				starlarkName = strings.ToLower(string(starlarkName[0])) + starlarkName[1:]
-				if dict, err := makeGoFunc(method); err == nil {
+		if starlarkName, ok := strings.CutPrefix(methodName, "E_"); ok && len(starlarkName) > 1 {
+			if starlarkName[0] >= 'A' && starlarkName[0] <= 'Z' {
+				starlarkName = string(starlarkName[0]+('a'-'A')) + starlarkName[1:] // converts to lowercase
+				if dict, err := makeGoFunc(starlarkName, method); err == nil {
 					methods[starlarkName] = dict
 				} else {
 					return nil, err
 				}
 			} else if validateMethodSignature(method.Type()) {
-				if dict, err := makeStarlarkFunc(method); err == nil {
+				if dict, err := makeStarlarkFunc(starlarkName, method); err == nil {
 					methods[starlarkName] = dict
 				} else {
 					return nil, err
 				}
+			} else {
+				return nil, fmt.Errorf("method %s has an invalid signature", methodName)
 			}
 		}
 	}
@@ -79,19 +84,29 @@ func registerMethods(obj interface{}) (starlark.StringDict, error) {
 	return methods, nil
 }
 
+var (
+	starlarkThreadType     = reflect.TypeOf((*starlark.Thread)(nil))
+	starlarkBuiltinType    = reflect.TypeOf((*starlark.Builtin)(nil))
+	starlarkTupleType      = reflect.TypeOf(starlark.Tuple(nil))
+	starlarkTupleSliceType = reflect.TypeOf([]starlark.Tuple(nil))
+	starlarkValueInterface = reflect.TypeOf((*starlark.Value)(nil)).Elem()
+	errorInterface         = reflect.TypeOf((*error)(nil)).Elem()
+)
+
 func validateMethodSignature(t reflect.Type) bool {
 	return t.NumIn() == 4 &&
-		t.In(0).AssignableTo(reflect.TypeOf((*starlark.Thread)(nil))) &&
-		t.In(1).AssignableTo(reflect.TypeOf((*starlark.Builtin)(nil))) &&
-		t.In(2).AssignableTo(reflect.TypeOf(starlark.Tuple(nil))) &&
-		t.In(3).AssignableTo(reflect.TypeOf([]starlark.Tuple(nil))) &&
+		t.In(0).AssignableTo(starlarkThreadType) &&
+		t.In(1).AssignableTo(starlarkBuiltinType) &&
+		t.In(2).AssignableTo(starlarkTupleType) &&
+		t.In(3).AssignableTo(starlarkTupleSliceType) &&
 		t.NumOut() == 2 &&
-		t.Out(0).AssignableTo(reflect.TypeOf((*starlark.Value)(nil)).Elem()) &&
-		t.Out(1).Implements(reflect.TypeOf((*error)(nil)).Elem())
+		t.Out(0).AssignableTo(starlarkValueInterface) &&
+		t.Out(1).Implements(errorInterface)
 }
 
-func makeStarlarkFunc(method reflect.Value) (*starlark.Builtin, error) {
-	return starlark.NewBuiltin(method.Type().Name(), func(thread *starlark.Thread, builtin *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+func makeStarlarkFunc(name string, method reflect.Value) (*starlark.Builtin, error) {
+	// method signature already validated
+	return starlark.NewBuiltin(name, func(thread *starlark.Thread, builtin *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		retValues := method.Call([]reflect.Value{
 			reflect.ValueOf(thread),
 			reflect.ValueOf(builtin),
@@ -107,8 +122,6 @@ func makeStarlarkFunc(method reflect.Value) (*starlark.Builtin, error) {
 	}), nil
 }
 
-var errorInterface = reflect.TypeOf((*error)(nil)).Elem()
-
 // Check if the type is supported
 func isSupportedType(t reflect.Type) bool {
 	switch t.Kind() {
@@ -123,8 +136,7 @@ func isSupportedType(t reflect.Type) bool {
 	}
 }
 
-func makeGoFunc(method reflect.Value) (*starlark.Builtin, error) {
-	// Check for unsupported argument types
+func makeGoFunc(name string, method reflect.Value) (*starlark.Builtin, error) {
 	methodType := method.Type()
 	for i := 0; i < methodType.NumIn(); i++ {
 		argType := methodType.In(i)
@@ -141,8 +153,7 @@ func makeGoFunc(method reflect.Value) (*starlark.Builtin, error) {
 
 		in := make([]reflect.Value, args.Len())
 		for i := 0; i < args.Len(); i++ {
-			arg := args.Index(i)
-			val, err := convertFromStarlark(arg, methodType.In(i))
+			val, err := convertFromStarlark(args.Index(i), methodType.In(i))
 			if err != nil {
 				return nil, err
 			}
@@ -179,5 +190,5 @@ func makeGoFunc(method reflect.Value) (*starlark.Builtin, error) {
 		return starlarkRet, nil
 	}
 
-	return starlark.NewBuiltin(method.Type().Name(), wfunc), nil
+	return starlark.NewBuiltin(name, wfunc), nil
 }

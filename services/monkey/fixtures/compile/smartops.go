@@ -16,7 +16,7 @@ import (
 	smartopsSpec "github.com/taubyte/tau/pkg/specs/smartops"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/jobs"
-	"github.com/taubyte/utils/bundle"
+	"github.com/taubyte/tau/utils/bundle"
 )
 
 type smartopsContext struct {
@@ -90,6 +90,8 @@ func (f smartopsContext) codeFile(language wasmSpec.SupportedLanguage) error {
 		},
 		GeneratedDomainRegExp: generatedDomainRegExp,
 	}
+
+	c.ForceContext(f.ctx.universe.Context())
 
 	copyPath := path.Join(root, smartopsSpec.PathVariable.String(), f.config.Name)
 	for _, filePath := range f.ctx.paths {

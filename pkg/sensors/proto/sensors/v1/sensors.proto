@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package sensors.v1;
+
+option go_package = ".";
+
+message PushValueRequest {
+  string name = 1;
+  double value = 2;
+  int64 timestamp = 3;
+}
+
+message PushValueResponse {}
+
+message NodeInfoRequest {}
+
+message NodeInfoResponse {
+  string node_id = 1;
+}
+
+service SensorService {
+  rpc PushValue(PushValueRequest) returns (PushValueResponse);
+  rpc NodeInfo(NodeInfoRequest) returns (NodeInfoResponse);
+}
+
+

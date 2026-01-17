@@ -12,11 +12,11 @@ var (
 	MaxJobAttempts    = 2
 
 	// From Monkey
-	RetryErrorString       = "Retry this job"
 	MockedPatrick          = false
 	TimeoutTest            = false
 	DefaultLockTime        = 600 * time.Second
-	DefaultLockMinWaitTime = 10 * time.Second
-	DefaultRefreshLockTime = 60 * time.Second
+	DefaultMaxTime         = 1 * time.Hour
+	DefaultLockMinWaitTime = 30 * time.Second
+	DefaultRefreshLockTime = 90 * time.Second
 	DefaultTestTimeOut     = 5 * time.Second
 )

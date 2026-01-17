@@ -18,7 +18,7 @@ import (
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/jobs"
-	"github.com/taubyte/utils/bundle"
+	"github.com/taubyte/tau/utils/bundle"
 )
 
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
@@ -80,7 +80,7 @@ func (f functionContext) zWasmFile() error {
 }
 
 func (f functionContext) codeFile(language wasmSpec.SupportedLanguage) error {
-	root, err := os.MkdirTemp("/tmp", fmt.Sprintf("%s-*", f.ctx.resourceId))
+	root, err := os.MkdirTemp("", fmt.Sprintf("%s-*", f.ctx.resourceId))
 	if err != nil {
 		return err
 	}

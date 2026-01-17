@@ -7,11 +7,11 @@ import (
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 
 	"github.com/taubyte/tau/p2p/streams"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 	// TODO: use https://github.com/polydawn/refmt/cbor to minimize size (used by github.com/ipfs/go-ipld-cbor
 )
 
-func (srv *Service) fetchHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+func (srv *Service) FetchHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	path, err := maps.StringArray(body, "path")
 	if err != nil {
 		return nil, err

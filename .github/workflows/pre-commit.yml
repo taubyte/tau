@@ -12,7 +12,7 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.24.2'
+        go-version: '1.25.0'
     - name: Install Go tools
       run: |
         go install golang.org/x/tools/cmd/goimports@latest
@@ -20,6 +20,23 @@ jobs:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
     - uses: pre-commit/action@v3.0.1
+
+  goreleaser-build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.25.0'
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+    - name: Run GoReleaser
+      uses: goreleaser/goreleaser-action@v4
+      with:
+        version: latest
+        args: release --snapshot --clean --config .goreleaser.yml --skip=publish
 
   go-tests:
     runs-on: ubuntu-latest
@@ -39,22 +56,26 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.22.0'
+        go-version: '1.25.0'
     - name: Checkout code
       uses: actions/checkout@v3
-    - name: Add entry to /etc/hosts
+    - name: Set up SSH agent
       run: |
-        echo "127.0.0.1 hal.computers.com" | sudo tee -a /etc/hosts
+        mkdir -p ~/.ssh
+        ssh-keyscan github.com >> ~/.ssh/known_hosts
     - name: Run Go tests with retries
       env:
         TEST_GIT_TOKEN: ${{ secrets.TEST_GIT_TOKEN }}
       run: |
+        eval $(ssh-agent -s)
+        export SSH_AUTH_SOCK
         max_attempts=5
         attempt_num=1
         until [ $attempt_num -gt $max_attempts ]
         do
           echo "Attempt $attempt_num of $max_attempts"
           go test -p 1 ./... && break || echo "Test failed. Retrying..."
+          go test -tags web3 -p 1 ./... && break || echo "Test with web3 tag failed. Retrying..."
           attempt_num=$((attempt_num + 1))
           if [ $attempt_num -gt $max_attempts ]
           then
@@ -82,12 +103,9 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.22.0'
+        go-version: '1.25.0'
     - name: Checkout code
       uses: actions/checkout@v3
-    - name: Add entry to /etc/hosts
-      run: |
-        echo "127.0.0.1 hal.computers.com" | sudo tee -a /etc/hosts
     - name: Build mock servers
       run: |
         for project in "spore-drive" "taucorder"; do
@@ -118,6 +136,58 @@ jobs:
               sleep 5
             done
             # clean-up mock servers
-            kill $(pgrep -f "mock")
+            kill $(pgrep -f "mock") || true
           ) || exit 1
         done
+
+  py-tests:
+    runs-on: ubuntu-latest
+    needs: pre-commit
+    steps:
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.25.0'
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Build mock servers
+      run: |
+        for project in "spore-drive" "taucorder"; do
+          (
+            cd pkg/$project/clients/mock
+            go build .
+          ) || exit 1
+        done
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Run Python tests with retries
+      run: |
+        max_attempts=5
+        attempt_num=1
+        (
+          cd pkg/spore-drive/clients/py
+          echo "Creating Python virtual environment"
+          python -m venv venv
+          source venv/bin/activate
+          echo "Installing Python dependencies"
+          pip install --upgrade pip
+          pip install -e .[dev]
+          pip install -r example/requirements.txt
+          echo "Running Python tests for spore-drive"
+          until [ $attempt_num -gt $max_attempts ]
+          do
+            echo "Attempt $attempt_num of $max_attempts"
+            python -m pytest tests/ -v --cov=spore_drive --cov-report=term-missing && break || echo "Test failed. Retrying..."
+            attempt_num=$((attempt_num + 1))
+            if [ $attempt_num -gt $max_attempts ]
+            then
+              echo "All test attempts failed for Python spore-drive"
+              exit 1
+            fi
+            sleep 5
+          done
+          # clean-up mock servers
+          kill $(pgrep -f "mock") || true
+        ) || exit 1

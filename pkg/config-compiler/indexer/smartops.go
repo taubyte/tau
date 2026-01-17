@@ -5,7 +5,7 @@ import (
 
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	smartOpSpec "github.com/taubyte/tau/pkg/specs/smartops"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func SmartOps(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

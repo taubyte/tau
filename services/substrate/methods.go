@@ -21,16 +21,7 @@ func (srv *Service) Close() error {
 	}
 
 	srv.tns.Close()
-	components := srv.components
-
-	components.http.Close()
-	components.pubsub.Close()
-	components.ipfs.Close()
-	components.database.Close()
-	components.storage.Close()
-	components.p2p.Close()
-	components.counters.Close()
-	components.smartops.Close()
+	srv.components.close()
 
 	srv.vm.Close()
 

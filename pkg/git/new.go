@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -31,7 +32,8 @@ New creates a new repository.
 */
 func New(ctx context.Context, options ...Option) (c *Repository, err error) {
 	c = &Repository{
-		ctx: ctx,
+		ctx:    ctx,
+		output: os.Stdout,
 	}
 
 	for _, opt := range options {
@@ -81,19 +83,37 @@ func (c *Repository) open_or_clone() error {
 func (c *Repository) clone() (err error) {
 	Info("Cloning from " + c.url + " on branch " + c.branches[0] + " into " + c.root + "\n")
 
-	cloneURL := c.url
 	if c.embedToken {
-		cloneURL, err = embedGitToken(cloneURL, c.auth)
+		var cloneURL string
+		cloneURL, err = embedGitToken(c.url, c.auth)
 		if err != nil {
 			return fmt.Errorf("embedding token failed with: %s", err)
 		}
+
+		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+			URL:      cloneURL,
+			Progress: c.output,
+		})
+	} else if c.auth != nil {
+		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+			URL:      c.url,
+			Progress: c.output,
+			Auth:     c.auth,
+		})
+	} else {
+		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+			URL:      c.url,
+			Progress: c.output,
+		})
 	}
 
-	c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
-		URL:      cloneURL,
-		Progress: os.Stdout,
-		Auth:     c.auth,
-	})
+	if err != nil && strings.Contains(err.Error(), "ssh: unable to authenticate") {
+		// repo might be public or we're in dev/test mode. try to clone with https
+		c.repo, err = git.PlainCloneContext(c.ctx, c.root, false, &git.CloneOptions{
+			URL:      ConvertSSHToHTTPS(c.url),
+			Progress: c.output,
+		})
+	}
 
 	if err == git.ErrRepositoryAlreadyExists {
 		err = nil

@@ -9,9 +9,6 @@ type PluginInstance interface {
 }
 
 type Factory interface {
-	// Load will initialize the Factory
-	Load(hm HostModule) error
-
 	// Close will close and cleanup the Factory
 	Close() error
 

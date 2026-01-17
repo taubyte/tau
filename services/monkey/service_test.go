@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	_ "github.com/taubyte/tau/clients/p2p/monkey"
+	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
 	"github.com/taubyte/tau/clients/p2p/patrick/mock"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/p2p/peer"
 	protocolCommon "github.com/taubyte/tau/services/common"
-	_ "github.com/taubyte/tau/services/hoarder"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
 	"gotest.tools/v3/assert"
 )
 
@@ -24,10 +24,14 @@ func init() {
 func TestService(t *testing.T) {
 	t.Skip("Times out, needs to be relooked at")
 	protocolCommon.MockedPatrick = true
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},

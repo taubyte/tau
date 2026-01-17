@@ -5,6 +5,7 @@ import (
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	peer "github.com/libp2p/go-libp2p/core/peer"
 )
 
 type PubSubConsumerHandler func(msg *pubsub.Message)
@@ -26,12 +27,19 @@ func (p *node) NewPubSubKeepAlive(ctx context.Context, cancel context.CancelFunc
 			}
 		}()
 
+		peers := make([]peer.ID, 0)
+
 		return p.PubSubSubscribe(
 			name,
 			func(msg *pubsub.Message) {
-				p.host.ConnManager().TagPeer(msg.ReceivedFrom, "keep", 100)
+				peers = append(peers, msg.ReceivedFrom)
+				p.host.ConnManager().Protect(msg.ReceivedFrom, "/keep/"+name)
 			},
 			func(err error) {
+				for _, peer := range peers {
+					p.host.ConnManager().Unprotect(peer, "/keep/"+name)
+				}
+				peers = nil
 				cancel()
 			},
 		)

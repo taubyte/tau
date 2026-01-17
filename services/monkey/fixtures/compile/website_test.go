@@ -5,26 +5,30 @@ import (
 	"path"
 	"strings"
 	"testing"
+	"time"
 
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
-	_ "github.com/taubyte/tau/services/substrate"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/substrate/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
+	"gotest.tools/v3/assert"
 )
 
 func TestWebsite(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{
-		Name: "MonkeyFixtureTestWebsite",
-		Id:   "MonkeyFixtureTestWebsite",
-	})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
 			"substrate": {},
@@ -83,7 +87,8 @@ func TestWebsite(t *testing.T) {
 		return
 	}
 
-	body, err := callHal(u, "/")
+	// Wait for website to be available before making HTTP request
+	body, err := callHalWithRetry(u, "/", 10, 500*time.Millisecond)
 	if err != nil {
 		t.Error(err)
 		return

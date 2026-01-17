@@ -39,6 +39,8 @@ func Mock(ctx context.Context) Node {
 		panic(err)
 	}
 
+	p.id = p.host.ID()
+
 	p.dht, err = dht.New(p.ctx, p.host)
 	if err != nil {
 		panic(err)
@@ -78,5 +80,19 @@ func Mock(ctx context.Context) Node {
 		panic(err)
 	}
 
+	err = p.dht.Bootstrap(p.ctx)
+	if err != nil {
+		_ = err
+	}
+
 	return &p
+}
+
+func LinkAllPeers() error {
+	mocknetLock.Lock()
+	defer mocknetLock.Unlock()
+	if mocknet == nil {
+		return fmt.Errorf("mocknet not initialized")
+	}
+	return mocknet.LinkAll()
 }

@@ -17,7 +17,7 @@ import (
 	peer "github.com/libp2p/go-libp2p/core/peer"
 
 	ipfslite "github.com/hsanjuan/ipfs-lite"
-	dirutils "github.com/taubyte/utils/fs/dir"
+	dirutils "github.com/taubyte/tau/utils/fs/dir"
 
 	"github.com/libp2p/go-libp2p/core/pnet"
 

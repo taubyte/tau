@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 	"github.com/urfave/cli/v2"
 )
 

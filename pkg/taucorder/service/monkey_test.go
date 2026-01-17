@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/dream/api"
 	"github.com/taubyte/tau/p2p/peer"
 	pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 	pbconnect "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1/taucorderv1connect"
@@ -23,6 +24,8 @@ import (
 	"gotest.tools/v3/assert"
 
 	"github.com/taubyte/tau/clients/p2p/patrick/mock"
+
+	_ "github.com/taubyte/tau/services/monkey/dream"
 )
 
 func TestMonkey(t *testing.T) {
@@ -32,16 +35,21 @@ func TestMonkey(t *testing.T) {
 	s, err := getMockService(ctx)
 	assert.NilError(t, err)
 
+	dream.DreamApiPort = 31427 // don't conflict with default port
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	uname := t.Name()
+	u, err := m.New(dream.UniverseConfig{Name: uname})
+	assert.NilError(t, err)
+
+	assert.NilError(t, api.BigBang(m))
+
 	ns := &nodeService{Service: s}
 	ms := &monkeyService{Service: s}
 
 	s.addHandler(pbconnect.NewNodeServiceHandler(ns))
-
-	uname := t.Name()
-	u := dream.New(dream.UniverseConfig{
-		Name: uname,
-	})
-	defer u.Stop()
 
 	fakeJobs := make(map[string]*patrick.Job, 0)
 	mockPatrick := &mock.Starfish{Jobs: fakeJobs}
@@ -162,42 +170,4 @@ func TestMonkey(t *testing.T) {
 			assert.Equal(t, job.Msg.GetStatus(), int32(ojob.Status))
 		}
 	})
-
-	// t.Run("State", func(t *testing.T) {
-	// 	c := pbconnect.NewPatrickServiceClient(http.DefaultClient, "http://"+listener.Addr().String())
-	// 	for _, n := range u.AllPatrick() {
-	// 		pid := n.Node().ID().String()
-	// 		cstate, err := c.State(ctx, connect.NewRequest(&pb.ConsensusStateRequest{
-	// 			Node: ni.Msg,
-	// 			Pid:  pid,
-	// 		}))
-	// 		assert.NilError(t, err)
-	// 		assert.Equal(t, cstate.Msg.GetMember().GetId(), pid)
-	// 		assert.Equal(t, len(cstate.Msg.GetCrdt().GetHeads()), 0) // should be empty
-	// 	}
-	// })
-
-	// t.Run("States", func(t *testing.T) {
-	// 	c := pbconnect.NewPatrickServiceClient(http.DefaultClient, "http://"+listener.Addr().String())
-	// 	allPats := u.AllPatrick()
-
-	// 	pids := make([]string, 0, len(allPats))
-	// 	for _, n := range allPats {
-	// 		pids = append(pids, n.Node().ID().String())
-	// 	}
-
-	// 	sstream, err := c.States(ctx, connect.NewRequest(ni.Msg))
-	// 	assert.NilError(t, err)
-
-	// 	count := 0
-	// 	for sstream.Receive() {
-	// 		msg := sstream.Msg()
-	// 		assert.Equal(t, slices.Contains(pids, msg.GetMember().GetId()), true)
-	// 		assert.Equal(t, len(msg.GetCrdt().GetHeads()), 0) // should be empty
-	// 		count++
-	// 	}
-
-	// 	assert.Equal(t, count, len(allPats))
-	// })
-
 }

@@ -29,6 +29,7 @@ type UsageReturn struct {
 	FreeDisk      int
 	UsedDisk      int
 	AvailableDisk int
+	CustomValues  map[string]float64
 }
 
 type Cpu struct {
@@ -48,9 +49,10 @@ type Cpu struct {
 }
 
 type UsageData struct {
-	Memory Memory `cbor:"3,keyasint"`
-	Cpu    Cpu    `cbor:"5,keyasint"`
-	Disk   Disk   `cbor:"7,keyasint"`
+	Memory       Memory             `cbor:"3,keyasint"`
+	Cpu          Cpu                `cbor:"5,keyasint"`
+	Disk         Disk               `cbor:"7,keyasint"`
+	CustomValues map[string]float64 `cbor:"9,keyasint,omitempty"`
 }
 
 type Memory struct {

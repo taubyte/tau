@@ -1,35 +1,42 @@
+//go:build !web3
+// +build !web3
+
 package taubyte
 
 import (
 	"context"
 	"errors"
-	"fmt"
-	"sync"
 
 	"github.com/taubyte/tau/core/services/substrate/components/database"
-	"github.com/taubyte/tau/core/services/substrate/components/ipfs"
 	"github.com/taubyte/tau/core/services/substrate/components/p2p"
 	"github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/core/services/substrate/components/storage"
 	"github.com/taubyte/tau/core/vm"
+	"github.com/taubyte/tau/pkg/vm-low-orbit/crypto/rand"
+	"github.com/taubyte/tau/pkg/vm-low-orbit/dns"
+	"github.com/taubyte/tau/pkg/vm-low-orbit/event"
+	"github.com/taubyte/tau/pkg/vm-low-orbit/globals"
+	"github.com/taubyte/tau/pkg/vm-low-orbit/helpers"
+	"github.com/taubyte/tau/pkg/vm-low-orbit/http/client"
+	"github.com/taubyte/tau/pkg/vm-low-orbit/i2mv/fifo"
+	"github.com/taubyte/tau/pkg/vm-low-orbit/i2mv/memoryView"
+	p2pClient "github.com/taubyte/tau/pkg/vm-low-orbit/p2p"
+	"github.com/taubyte/tau/pkg/vm-low-orbit/self"
+
+	vmpubsub "github.com/taubyte/tau/pkg/vm-low-orbit/pubsub"
+	vmstorage "github.com/taubyte/tau/pkg/vm-low-orbit/storage"
+
+	kvdb "github.com/taubyte/tau/pkg/vm-low-orbit/database/client"
 )
 
 type plugin struct {
 	ctx          context.Context
 	ctxC         context.CancelFunc
-	ipfsNode     ipfs.Service
 	pubsubNode   pubsub.Service
 	databaseNode database.Service
 	storageNode  storage.Service
 	p2pNode      p2p.Service
 }
-
-var (
-	_plugin      *plugin
-	errNilPlugin = errors.New("plugin is nil, need to initialize")
-)
-
-type Option func() error
 
 func (p *plugin) setNode(nodeService interface{}) error {
 	if nodeService == nil {
@@ -37,8 +44,6 @@ func (p *plugin) setNode(nodeService interface{}) error {
 	}
 
 	switch service := nodeService.(type) {
-	case ipfs.Service:
-		p.ipfsNode = service
 	case pubsub.Service:
 		p.pubsubNode = service
 	case database.Service:
@@ -53,112 +58,30 @@ func (p *plugin) setNode(nodeService interface{}) error {
 	return nil
 }
 
-func IpfsNode(node ipfs.Service) Option {
-	return func() (err error) {
-		if _plugin == nil {
-			return errNilPlugin
-		}
-
-		if err = _plugin.setNode(node); err != nil {
-			return fmt.Errorf("setting ipfs node failed with: %w", err)
-		}
-
-		return
-	}
-}
-
-func PubsubNode(node pubsub.Service) Option {
-	return func() (err error) {
-		if _plugin == nil {
-			return errNilPlugin
-		}
-
-		if err = _plugin.setNode(node); err != nil {
-			return fmt.Errorf("setting pubsub node failed with: %w", err)
-		}
-
-		return
-	}
-}
-
-func DatabaseNode(node database.Service) Option {
-	return func() (err error) {
-		if _plugin == nil {
-			return errNilPlugin
-		}
-
-		if err = _plugin.setNode(node); err != nil {
-			return fmt.Errorf("setting database node failed with: %w", err)
-		}
-
-		return
-	}
-}
-
-func StorageNode(node storage.Service) Option {
-	return func() (err error) {
-		if _plugin == nil {
-			return errNilPlugin
-		}
-
-		if err = _plugin.setNode(node); err != nil {
-			return fmt.Errorf("setting storage node failed with: %w", err)
-		}
-
-		return
-	}
-}
-
-func P2PNode(node p2p.Service) Option {
-	return func() (err error) {
-		if _plugin == nil {
-			return errNilPlugin
-		}
-
-		if err = _plugin.setNode(node); err != nil {
-			return fmt.Errorf("setting p2p node failed with: %w", err)
-		}
-
-		return
-	}
-}
-
-func (p *plugin) Name() string {
-	return "taubyte/sdk"
-}
-
-func (p *plugin) Close() error {
-	p.ctxC()
-	return nil
-}
-
-func Plugin() vm.Plugin {
-	return _plugin
-}
-
-var initializeLock sync.Mutex
-
-// First initialize the plugin
-func Initialize(ctx context.Context, options ...Option) error {
-	initializeLock.Lock()
-	defer initializeLock.Unlock()
-
-	if _plugin == nil {
-		_plugin = &plugin{}
-		_plugin.ctx, _plugin.ctxC = context.WithCancel(ctx)
-
-		for _, opt := range options {
-			if err := opt(); err != nil {
-				return err
-			}
-		}
-
-		go func() {
-			<-_plugin.ctx.Done()
-			_plugin.ctxC()
-			_plugin = nil
-		}()
+// create an instance of the plugin that  can be Loaded by a wasm instance
+func (p *plugin) New(instance vm.Instance) (vm.PluginInstance, error) {
+	if Plugin() == nil {
+		return nil, errors.New("initialize plugin in first")
 	}
 
-	return nil
+	helperMethods := helpers.New(instance.Context().Context())
+	eventApi := event.New(instance, helperMethods)
+	return &pluginInstance{
+		instance: instance,
+		eventApi: eventApi,
+		factories: []vm.Factory{
+			eventApi,
+			client.New(instance, helperMethods),
+			vmpubsub.New(instance, p.pubsubNode, helperMethods),
+			vmstorage.New(instance, p.storageNode, helperMethods),
+			kvdb.New(instance, p.databaseNode, helperMethods),
+			p2pClient.New(instance, p.p2pNode, helperMethods),
+			dns.New(instance, helperMethods),
+			self.New(instance, helperMethods),
+			globals.New(instance, p.databaseNode, helperMethods),
+			rand.New(instance, helperMethods),
+			memoryView.New(instance, helperMethods),
+			fifo.New(instance, helperMethods),
+		},
+	}, nil
 }

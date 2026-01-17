@@ -10,17 +10,19 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
+	"gotest.tools/v3/assert"
 )
 
 func TestRSFunction(t *testing.T) {
 	t.Skip("takes forever...")
-	u := dream.New(dream.UniverseConfig{
-		Name: "TestRSFunction",
-		Id:   "TestRSFunction",
-	})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
 			"substrate": {},

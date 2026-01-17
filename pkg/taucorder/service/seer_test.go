@@ -9,6 +9,7 @@ import (
 	"time"
 
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
+	"github.com/taubyte/tau/dream/api"
 
 	"connectrpc.com/connect"
 	"github.com/taubyte/tau/core/common"
@@ -20,13 +21,25 @@ import (
 	"golang.org/x/net/http2/h2c"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestSeer(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
+
+	dream.DreamApiPort = 31420 // don't conflict with default port
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	uname := t.Name()
+	u, err := m.New(dream.UniverseConfig{Name: uname})
+	assert.NilError(t, err)
+
+	assert.NilError(t, api.BigBang(m))
 
 	s, err := getMockService(ctx)
 	assert.NilError(t, err)
@@ -35,12 +48,6 @@ func TestSeer(t *testing.T) {
 	ss := &seerService{Service: s}
 
 	s.addHandler(pbconnect.NewNodeServiceHandler(ns))
-
-	uname := t.Name()
-	u := dream.New(dream.UniverseConfig{
-		Name: uname,
-	})
-	defer u.Stop()
 
 	seerClient.DefaultUsageBeaconInterval = 100 * time.Millisecond
 	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond

@@ -4,11 +4,11 @@ import (
 	"os"
 	"path"
 
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/pkg/cli/common"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 	"github.com/taubyte/tau/tools/tau/constants"
 	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/singletons"
-	"github.com/taubyte/utils/fs/file"
+	"github.com/taubyte/tau/utils/fs/file"
 )
 
 func loadSession() (err error) {

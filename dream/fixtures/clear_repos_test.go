@@ -5,14 +5,20 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
+	"gotest.tools/v3/assert"
 )
 
 func TestClearRepos(t *testing.T) {
 	t.Skip("Needs to be redone")
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
 
-	err := u.StartWithConfig(&dream.Config{
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{},
 		Simples: map[string]dream.SimpleConfig{
 			"client": {

@@ -6,7 +6,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/spore-drive/course"
 	"github.com/taubyte/tau/pkg/spore-drive/drive"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 func (s *Service) newCourse(d *driveInstance, opts []course.Option) (ci *courseInstance, err error) {

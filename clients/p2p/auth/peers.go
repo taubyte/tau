@@ -8,6 +8,7 @@ import (
 func (c *Client) Peers(pids ...peerCore.ID) auth.Client {
 	return &Client{
 		client: c.client,
+		node:   c.node,
 		peers:  pids,
 	}
 }

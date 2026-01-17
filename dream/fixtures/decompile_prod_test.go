@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
@@ -14,16 +14,22 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
-	_ "github.com/taubyte/tau/services/tns"
-	"github.com/taubyte/utils/maps"
+	_ "github.com/taubyte/tau/services/tns/dream"
+	"github.com/taubyte/tau/utils/maps"
 	"gotest.tools/v3/assert"
 )
 
 func TestDecompileProd(t *testing.T) {
 	t.Skip("using an old project")
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
-	err := u.StartWithConfig(&dream.Config{
+
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
@@ -47,15 +53,15 @@ func TestDecompileProd(t *testing.T) {
 	assert.NilError(t, err)
 
 	gitRoot := "./testGIT"
-	gitRootConfig := gitRoot + "/prodConfigDreamland"
+	gitRootConfig := gitRoot + "/prodConfigDream"
 	os.MkdirAll(gitRootConfig, 0755)
 
 	fakeMeta := commonTest.ConfigRepo.HookInfo
 	fakeMeta.Repository.SSHURL = "git@github.com:taubyte-test/tb_prodproject.git"
-	fakeMeta.Repository.Branch = "dreamland"
+	fakeMeta.Repository.Branch = "dream"
 	fakeMeta.Repository.Provider = "github"
 
-	err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.Repository{
+	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.Repository{
 		ID:       517160737,
 		Name:     "tb_prodproject",
 		HookInfo: fakeMeta,

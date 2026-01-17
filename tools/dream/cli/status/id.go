@@ -3,9 +3,9 @@ package status
 import (
 	"github.com/pterm/pterm"
 	client "github.com/taubyte/tau/clients/http/dream"
+	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/api"
 	"github.com/taubyte/tau/tools/dream/cli/command"
-	"github.com/taubyte/tau/tools/dream/cli/common"
 	"github.com/urfave/cli/v2"
 )
 
@@ -14,7 +14,7 @@ func getID(multiverse *client.Client) *cli.Command {
 		Name:   "id",
 		Action: getIDStatus(multiverse),
 	}
-	command.NameWithDefault(c, common.DefaultUniverseName)
+	command.NameWithDefault(c, dream.DefaultUniverseName)
 
 	return c
 }

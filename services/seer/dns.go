@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	validate "github.com/taubyte/domain-validation"
+	iface "github.com/taubyte/tau/core/services/seer"
 	servicesCommon "github.com/taubyte/tau/services/common"
 
 	"github.com/jellydator/ttlcache/v3"
@@ -109,7 +110,6 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	errMsg.Rcode = dns.RcodeNameError
 
 	if len(msg.Question) > 0 {
-
 		name := msg.Question[0].Name
 		if strings.HasSuffix(msg.Question[0].Name, ".") {
 			name = strings.TrimSuffix(msg.Question[0].Name, ".")
@@ -173,6 +173,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 	if err := w.WriteMsg(errMsg); err != nil {
 		logger.Errorf("sending reply failed with: %s", err.Error())
 	}
+
 }
 
 func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
@@ -188,7 +189,20 @@ func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.Respo
 	switch r.Question[0].Qtype {
 	case dns.TypeA:
 		logger.Debugf("request for %s A", name)
-		ips, err := h.getServiceIpWithCache(ctx, service)
+		ips, err := h.getServiceIpWithCache(ctx, service, func(id string, ts int64, usage *iface.UsageData) bool {
+			if h.seer.poe != nil {
+				usageMap := usage.ToMap()
+				usageMap["timestamp"] = ts
+				ok, err := h.seer.poe.Check(id, usageMap)
+				if err != nil {
+					logger.Errorf("scoring %s failed with: %s", id, err.Error())
+					return true
+				}
+				logger.Infof("scoring %s with: %v, result: %t", id, usageMap, ok)
+				return ok
+			}
+			return true
+		})
 		if err != nil {
 			logger.Errorf("getting ip for %s failed with %s", service, err.Error())
 			if err := w.WriteMsg(errMsg); err != nil {
@@ -238,11 +252,37 @@ func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.Respo
 }
 
 func (h *dnsHandler) replyWithHTTPServicingNodes(ctx context.Context, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
-	// TODO: Find a smart way to determine what to provide. For example if Seer IP is public, theres no gateways but there're substrates with private ips, return []
-	nodeIps, err := h.getServiceIpWithCache(ctx, "gateway")
+	nodeIps, err := h.getServiceIpWithCache(ctx, "gateway", func(id string, ts int64, usage *iface.UsageData) bool {
+		if h.seer.poe != nil {
+			usageMap := usage.ToMap()
+			usageMap["timestamp"] = ts
+			ok, err := h.seer.poe.Check(id, usageMap)
+			if err != nil {
+				// Assume the poe script has an issue & return the node anyway
+				logger.Errorf("scoring %s failed with: %s", id, err.Error())
+				return true
+			}
+			logger.Infof("scoring %s with: %v, result: %t", id, usageMap, ok)
+			return ok
+		}
+		return true
+	})
 	if err != nil || len(nodeIps) == 0 {
-		nodeIps, err = h.getServiceIpWithCache(ctx, "substrate")
-		if err != nil || len(nodeIps) == 0 {
+		nodeIps, err = h.getServiceIpWithCache(ctx, "substrate", func(id string, ts int64, usage *iface.UsageData) bool {
+			if h.seer.poe != nil {
+				usageMap := usage.ToMap()
+				usageMap["timestamp"] = ts
+				ok, err := h.seer.poe.Check(id, usageMap)
+				if err != nil {
+					logger.Errorf("scoring %s failed with: %s", id, err.Error())
+					return true
+				}
+				logger.Infof("scoring %s with: %v, result: %t", id, usageMap, ok)
+				return ok
+			}
+			return true
+		})
+		if err != nil {
 			err = w.WriteMsg(errMsg)
 			if err != nil {
 				logger.Error("writing error message for WriteMsg failed with:", err.Error())

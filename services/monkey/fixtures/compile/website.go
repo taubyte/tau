@@ -2,7 +2,6 @@ package compile
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"strings"
 
@@ -66,7 +65,7 @@ func (w websiteContext) directory() error {
 
 	c := jobs.Context{
 		Node:    w.ctx.universe.TNS().Node(),
-		LogFile: nil,
+		LogFile: os.Stdout,
 		WorkDir: root,
 		Monkey: fakeMonkey{
 			hoarderClient: w.ctx.hoarderClient,
@@ -77,7 +76,7 @@ func (w websiteContext) directory() error {
 	c.ForceGitDir(w.ctx.paths[0])
 	c.ForceContext(w.ctx.universe.Context())
 
-	builder, err := builder.New(w.ctx.universe.Context(), c.WorkDir)
+	builder, err := builder.New(w.ctx.universe.Context(), c.LogFile, c.WorkDir)
 	if err != nil {
 		return fmt.Errorf("builder new failed with: %s", err)
 	}
@@ -86,7 +85,6 @@ func (w websiteContext) directory() error {
 	if err != nil {
 		return err
 	}
-	io.Copy(os.Stdout, asset.Logs())
 
 	compressedAsset, err := asset.Compress(iface.Website)
 	if err != nil {

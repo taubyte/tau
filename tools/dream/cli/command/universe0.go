@@ -4,7 +4,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/taubyte/tau/tools/dream/cli/common"
+	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/tools/dream/cli/flags"
 	"github.com/urfave/cli/v2"
 )
@@ -33,7 +33,7 @@ func Universe0(c *cli.Command) {
 // get the universe from the flag or the first argument
 func getUniverse0(c *cli.Context) (universe string, err error) {
 	universe = c.String("universe")
-	if universe == common.DefaultUniverseName {
+	if universe == dream.DefaultUniverseName {
 		args1 := c.Args().First()
 		if len(args1) != 0 {
 			universe = c.Args().First()

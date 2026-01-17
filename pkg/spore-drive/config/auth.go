@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"path"
 )
 
 type AuthParser interface {
@@ -72,12 +73,19 @@ func (s *signer) Open() (io.ReadCloser, error) {
 }
 
 func (s *signer) Create() (io.WriteCloser, error) {
-	path := s.Key()
-	if path == "" {
+	p := s.Key()
+	if p == "" {
 		return nil, errors.New("no key found")
 	}
 
-	return s.root.fs.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+	if _, err := s.root.fs.Stat(path.Dir(p)); os.IsNotExist(err) {
+		err := s.root.fs.Mkdir(path.Dir(p), 0700)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return s.root.fs.OpenFile(p, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
 }
 
 func (s *signer) SetUsername(name string) error {

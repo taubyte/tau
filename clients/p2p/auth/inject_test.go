@@ -11,6 +11,10 @@ import (
 	"github.com/taubyte/tau/pkg/http/helpers"
 	"github.com/taubyte/tau/services/auth/acme/store"
 	"gotest.tools/v3/assert"
+
+	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func injectCert(t *testing.T, client authIface.Client) []byte {
@@ -39,10 +43,14 @@ func injectCert(t *testing.T, client authIface.Client) []byte {
 func TestInject(t *testing.T) {
 	testDir := t.TempDir()
 
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth": {},
 			"tns":  {},

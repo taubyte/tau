@@ -17,7 +17,7 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	servicesCommon "github.com/taubyte/tau/services/common"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func int64ToBytes(i int64) []byte {
@@ -100,7 +100,7 @@ func (srv *oracleService) heartbeatServiceHandler(ctx context.Context, conn stre
 		valid bool
 	)
 
-	if srv.odo {
+	if !srv.devMode {
 		id, valid, err = validateSignature(body)
 		if err != nil {
 			return nil, err
@@ -272,6 +272,7 @@ func (srv *oracleService) getInfo(ctx context.Context, id string) (cr.Response, 
 		FreeDisk:      int(usage.Disk.Free),
 		UsedDisk:      int(usage.Disk.Used),
 		AvailableDisk: int(usage.Disk.Available),
+		CustomValues:  usage.CustomValues,
 	}
 
 	serviceBytes, err := json.Marshal(service)

@@ -7,6 +7,7 @@ import (
 	serviceIface "github.com/taubyte/tau/core/services"
 )
 
+// Package interface implementation
 type protoCommandIface struct{}
 
 func (protoCommandIface) New(ctx context.Context, cnf *config.Node) (serviceIface.Service, error) {

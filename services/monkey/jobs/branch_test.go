@@ -12,9 +12,10 @@ import (
 func TestBranch(t *testing.T) {
 	t.Skip("Needs to be redone")
 	protocolCommon.MockedPatrick = true
-	u, err := startDreamland("testRunBranch")
-	defer u.Stop()
+
+	u, cleanup, err := startDream(t)
 	assert.NilError(t, err)
+	defer cleanup()
 
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)
@@ -24,7 +25,7 @@ func TestBranch(t *testing.T) {
 
 	job := newJob(commonTest.ConfigRepo, "job_for_config")
 	jobContext := newTestContext(u.Context(), simple, logFile)
-	job.Meta.Repository.Branch = "dreamland"
+	job.Meta.Repository.Branch = "dream"
 
 	err = jobContext.config(job)()
 	assert.NilError(t, err)

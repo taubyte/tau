@@ -19,15 +19,15 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/clients/p2p/hoarder"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	"github.com/taubyte/tau/pkg/kvdb"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/seer"
-	_ "github.com/taubyte/tau/services/substrate"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
 	dbApi "github.com/taubyte/tau/services/substrate/components/database"
 	storageApi "github.com/taubyte/tau/services/substrate/components/storage"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/substrate/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 const (
@@ -48,9 +48,14 @@ var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 // TODO: Fix Hoarder and tests
 func TestStoring(t *testing.T) {
 	t.Skip("hoarder needs to be fixed")
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
-	err := u.StartWithConfig(&dream.Config{
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"hoarder":   {Others: map[string]int{"copies": copies}},
 			"tns":       {},
@@ -83,7 +88,7 @@ func TestStoring(t *testing.T) {
 	defer os.RemoveAll(gitRoot)
 	gitRootConfig := gitRoot + "/config"
 	os.MkdirAll(gitRootConfig, 0755)
-	err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.ConfigRepo)
+	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
 	if err != nil {
 		t.Error(err)
 		return

@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"strconv"
+	"testing"
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
@@ -18,10 +19,11 @@ import (
 	compilerCommon "github.com/taubyte/tau/pkg/config-compiler/common"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/pkg/specs/methods"
+	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/clients/p2p/hoarder"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func newTestContext(ctx context.Context, simple *dream.Simple, logFile *os.File) testContext {
@@ -115,6 +117,9 @@ func (m *mockMonkey) Dev() bool {
 	return true
 }
 
+func (m *mockMonkey) Delete(jid string) {
+}
+
 func (m *mockMonkey) Hoarder() hoarder.Client {
 	return m.hoarder
 }
@@ -152,8 +157,18 @@ func cloneRepo(ctx context.Context, url string, preserve bool) (*git.Repository,
 	return repo, nil
 }
 
-func startDreamland(name string) (u *dream.Universe, err error) {
-	u = dream.New(dream.UniverseConfig{Name: name})
+func startDream(t *testing.T) (u *dream.Universe, cleanup func(), err error) {
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	cleanup = func() {
+		m.Close()
+	}
+
+	u, err = m.New(dream.UniverseConfig{Name: t.Name()})
+	if err != nil {
+		return nil, cleanup, err
+	}
+
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"hoarder": {},

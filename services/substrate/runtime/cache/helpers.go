@@ -15,13 +15,13 @@ func ResolveAssetCid(serviceable iface.Serviceable) (string, error) {
 	}
 
 	cidObj, err := serviceable.Service().Tns().Fetch(assetPath)
-	if err != nil {
+	if err != nil || cidObj.Interface() == nil {
 		return "", fmt.Errorf("fetching cid object failed with: %w", err)
 	}
 
 	cid, ok := cidObj.Interface().(string)
 	if !ok {
-		return "", fmt.Errorf("cid %#v is not a string", cidObj)
+		return "", fmt.Errorf("cid %#v is not a string", cidObj.Interface())
 	}
 
 	return cid, nil

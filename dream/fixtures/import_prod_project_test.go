@@ -7,20 +7,25 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/pkg/specs/common"
-	_ "github.com/taubyte/tau/services/auth"
-	_ "github.com/taubyte/tau/services/monkey"
-	_ "github.com/taubyte/tau/services/patrick"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/auth/dream"
+	_ "github.com/taubyte/tau/services/monkey/dream"
+	_ "github.com/taubyte/tau/services/patrick/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
+	"gotest.tools/v3/assert"
 )
 
 func TestImportProdProject(t *testing.T) {
-	t.Skip("currently custom domains do not work on dreamland")
+	t.Skip("currently custom domains do not work on dream")
 
 	spec.DefaultBranches = []string{"master_test"}
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth":    {},
 			"tns":     {},

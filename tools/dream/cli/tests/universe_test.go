@@ -8,6 +8,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/api"
 	cliCommon "github.com/taubyte/tau/tools/dream/cli/common"
+	"gotest.tools/v3/assert"
 
 	client "github.com/taubyte/tau/clients/http/dream"
 	commonIface "github.com/taubyte/tau/core/common"
@@ -17,10 +18,21 @@ import (
 
 var services = []string{"seer", "auth", "patrick", "tns", "monkey", "hoarder", "substrate"}
 
+func init() {
+	dream.DreamApiPort = 41421 // don't conflict with default port
+}
+
 func TestKillService(t *testing.T) {
-	api.BigBang()
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	err := u.StartWithConfig(&dream.Config{
+	dream.DreamApiPort = 43421
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+	assert.NilError(t, api.BigBang(m))
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{},
 		Simples:  map[string]dream.SimpleConfig{},
 	})
@@ -37,56 +49,41 @@ func TestKillService(t *testing.T) {
 	}
 
 	tnsIds, err := u.GetServicePids("tns")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
+	assert.Assert(t, len(tnsIds) > 0)
 	idToDelete := tnsIds[0]
 
 	err = u.KillNodeByNameID("tns", idToDelete)
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	tnsIds, err = u.GetServicePids("tns")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
+	assert.Equal(t, len(tnsIds), 0)
 
-	result := len(tnsIds)
-	if result == 1 || result > 1 {
-		t.Errorf("Service was not deleted with id: %s", idToDelete)
-		return
-	}
-
-	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamlandURL), client.Timeout(300*time.Second))
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamURL()), client.Timeout(300*time.Second))
+	assert.NilError(t, err)
 
 	resp, err := multiverse.Universe(t.Name()).Chart()
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
+	assert.Equal(t, len(resp.Nodes), 0)
 
-	if len(resp.Nodes) != 1 {
-		t.Errorf("Service was not deleted with id: %s", idToDelete)
-		return
-	}
 }
 
 func TestKillSimple(t *testing.T) {
 	testSimpleName := "client"
-	universeName := "KillSimple"
+	universeName := "killsimple"
 	statusName := fmt.Sprintf("%s@%s", testSimpleName, universeName)
 
-	api.BigBang()
-	u := dream.New(dream.UniverseConfig{Name: universeName})
-	err := u.StartWithConfig(&dream.Config{
+	dream.DreamApiPort = 40424
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+	assert.NilError(t, api.BigBang(m))
+
+	u, err := m.New(dream.UniverseConfig{Name: universeName})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Simples: map[string]dream.SimpleConfig{
 			testSimpleName: {},
 		},
@@ -95,7 +92,7 @@ func TestKillSimple(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamlandURL), client.Timeout(1000*time.Second))
+	multiverse, err := client.New(u.Context(), client.URL(cliCommon.DefaultDreamURL()), client.Timeout(1000*time.Second))
 	if err != nil {
 		t.Error(err)
 		return
@@ -115,6 +112,7 @@ func TestKillSimple(t *testing.T) {
 	}
 	var found bool
 	for _, node := range resp.Nodes {
+		t.Logf("Node: %+v", node)
 		if node.Name == statusName {
 			found = true
 		}
@@ -179,9 +177,14 @@ func TestKillSimple(t *testing.T) {
 }
 
 func TestMultipleServices(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
-	err := u.StartWithConfig(&dream.Config{
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer":      {Others: map[string]int{"copies": 1}},
 			"auth":      {Others: map[string]int{"copies": 3}},

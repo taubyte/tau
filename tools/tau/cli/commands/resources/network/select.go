@@ -9,9 +9,9 @@ import (
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/taubyte/tau/tools/tau/singletons/config"
-	"github.com/taubyte/tau/tools/tau/singletons/dreamland"
+	"github.com/taubyte/tau/tools/tau/singletons/dream"
 	"github.com/taubyte/tau/tools/tau/validate"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 
 	networkFlags "github.com/taubyte/tau/tools/tau/flags/network"
 	networkI18n "github.com/taubyte/tau/tools/tau/i18n/network"
@@ -52,14 +52,14 @@ func _select(ctx *cli.Context) error {
 		}
 
 	case ctx.IsSet(networkFlags.Universe.Name):
-		dreamClient, err := dreamland.Client(ctx.Context)
+		dreamClient, err := dream.Client(ctx.Context)
 		if err != nil {
-			return fmt.Errorf("creating dreamland client failed with: %w", err)
+			return fmt.Errorf("creating dream client failed with: %w", err)
 		}
 
 		universes, err := dreamClient.Status()
 		if err != nil {
-			return fmt.Errorf("calling dreamland status failed with: %w", err)
+			return fmt.Errorf("calling dream status failed with: %w", err)
 		}
 
 		universeName := ctx.String(networkFlags.Universe.Name)
@@ -68,17 +68,17 @@ func _select(ctx *cli.Context) error {
 			return fmt.Errorf("universe `%s` was not found", universeName)
 		}
 
-		profile.NetworkType = common.DreamlandNetwork
+		profile.NetworkType = common.DreamNetwork
 		profile.Network = universeName
 	default:
-		dreamClient, err := dreamland.Client(ctx.Context)
+		dreamClient, err := dream.Client(ctx.Context)
 		if err != nil {
-			return fmt.Errorf("creating dreamland client failed with: %w", err)
+			return fmt.Errorf("creating dream client failed with: %w", err)
 		}
 
 		networkSelections := []string{common.RemoteNetwork}
 		if _, err := dreamClient.Status(); err == nil {
-			networkSelections = append(networkSelections, common.DreamlandNetwork)
+			networkSelections = append(networkSelections, common.DreamNetwork)
 		}
 
 		networkSelections = append(networkSelections, profile.History...)
@@ -100,10 +100,10 @@ func _select(ctx *cli.Context) error {
 				profile.History = append(profile.History, profile.Network)
 			}
 
-		} else if network == common.DreamlandNetwork {
+		} else if network == common.DreamNetwork {
 			universes, err := dreamClient.Status()
 			if err != nil {
-				return fmt.Errorf("calling dreamland status failed with: %w", err)
+				return fmt.Errorf("calling dream status failed with: %w", err)
 			}
 
 			universeNames := make([]string, 0, len(universes))

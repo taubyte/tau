@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"sync"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/go-sdk/common"
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/helpers"
 )
@@ -26,7 +26,7 @@ type Event struct {
 	Id     uint32
 	Type   common.EventType
 	http   *httpEventAttributes
-	pubsub *pubsub.Message
+	pubsub pubsubIface.Message
 	p2p    *P2PData
 }
 

@@ -17,7 +17,6 @@ import (
 
 var logger = log.Logger("tau.gateway.service")
 
-// TODO: Substrate Nodes should ping Gateway that they are alive, threshold should
 func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, err error) {
 	g := &Gateway{
 		ctx: ctx,
@@ -46,7 +45,7 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, er
 		clientNode = config.ClientNode
 	}
 
-	if err = g.startHttp(config); err != nil { // should start at the end
+	if err = g.startHttp(config); err != nil {
 		return nil, fmt.Errorf("starting http failed with: %w", err)
 	}
 
@@ -62,7 +61,7 @@ func New(ctx context.Context, config *tauConfig.Node) (gateway iface.Service, er
 		return nil, fmt.Errorf("new streams client failed with: %w", err)
 	}
 
-	sc, err := seer.New(ctx, clientNode)
+	sc, err := seer.New(ctx, clientNode, nil)
 	if err != nil {
 		return nil, fmt.Errorf("new seer client failed with: %w", err)
 	}

@@ -15,7 +15,6 @@ func New(filesystems ...fs.FS) (VM, error) {
 		filesystems: filesystems,
 		builtins:    make(map[string]starlark.StringDict),
 	}
-	v.load = makeLoadFunc(v)
 	return v, nil
 }
 

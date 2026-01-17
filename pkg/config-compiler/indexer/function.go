@@ -5,7 +5,7 @@ import (
 
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func Functions(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

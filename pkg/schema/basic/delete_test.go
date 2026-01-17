@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/pkg/schema/basic"
 	internal "github.com/taubyte/tau/pkg/schema/internal/test"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 	"gotest.tools/v3/assert"
 )
 

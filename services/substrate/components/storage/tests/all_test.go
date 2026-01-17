@@ -17,15 +17,15 @@ import (
 
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
 
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/core/services/substrate/components/storage"
 	"github.com/taubyte/tau/pkg/kvdb"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	_ "github.com/taubyte/tau/services/substrate"
 	storages "github.com/taubyte/tau/services/substrate/components/storage"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/substrate/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 
 	_ "embed"
 )
@@ -61,10 +61,14 @@ func TestAll(t *testing.T) {
 	meta.HeadCommit.ID = "commitID"
 	meta.Repository.Provider = "github"
 
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
 			"substrate": {},
@@ -113,7 +117,7 @@ func TestAll(t *testing.T) {
 	err = os.MkdirAll(gitRootConfig, 0755)
 	assert.NilError(t, err)
 
-	assert.NilError(t, gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.ConfigRepo))
+	assert.NilError(t, gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo))
 
 	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
 	if err != nil {

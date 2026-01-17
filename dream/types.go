@@ -3,6 +3,7 @@ package dream
 import (
 	"context"
 	"sync"
+	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/kvdb"
@@ -10,9 +11,21 @@ import (
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
+type UniverseState int
+
+const (
+	UniverseStateStopped UniverseState = iota
+	UniverseStateStarting
+	UniverseStateRunning
+	UniverseStateStopping
+)
+
 type Universe struct {
-	ctx       context.Context
-	ctxC      context.CancelFunc
+	ctx  context.Context
+	ctxC context.CancelFunc
+
+	multiverse *Multiverse
+
 	lock      sync.RWMutex
 	name      string
 	root      string
@@ -26,6 +39,12 @@ type Universe struct {
 	simples   map[string]*Simple
 
 	keepRoot bool
+	state    UniverseState
+
+	// Disk usage cache
+	diskUsageCache     int64
+	diskUsageCacheTime time.Time
+	diskUsageCacheLock sync.RWMutex
 }
 
 type serviceInfo struct {
@@ -106,7 +125,17 @@ type ServiceStatus struct {
 	Copies int    `json:"copies"`
 }
 
-type Multiverse struct{}
+type Multiverse struct {
+	ctx  context.Context
+	ctxC context.CancelFunc
+
+	name string
+
+	loadPersistent bool
+
+	universes     map[string]*Universe
+	universesLock sync.RWMutex
+}
 
 type Simple struct {
 	peer.Node
@@ -152,4 +181,43 @@ func (s SimpleConfigClients) Compat() map[string]*commonIface.ClientConfig {
 	}
 
 	return newClientConfig
+}
+
+// State management methods for Universe
+func (u *Universe) State() UniverseState {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
+	return u.state
+}
+
+func (u *Universe) Running() bool {
+	return u.State() == UniverseStateRunning
+}
+
+func (u *Universe) Stopped() bool {
+	return u.State() == UniverseStateStopped
+}
+
+func (u *Universe) Starting() bool {
+	return u.State() == UniverseStateStarting
+}
+
+func (u *Universe) Stopping() bool {
+	return u.State() == UniverseStateStopping
+}
+
+// String representation of state for debugging
+func (s UniverseState) String() string {
+	switch s {
+	case UniverseStateStopped:
+		return "stopped"
+	case UniverseStateStarting:
+		return "starting"
+	case UniverseStateRunning:
+		return "running"
+	case UniverseStateStopping:
+		return "stopping"
+	default:
+		return "unknown"
+	}
 }

@@ -11,8 +11,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	specs "github.com/taubyte/tau/pkg/specs/common"
-	"github.com/taubyte/tau/tools/dream/cli/common"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 	"github.com/urfave/cli/v2"
 )
 
@@ -80,7 +79,7 @@ func bindConfigServices(_binds []string, _services []string) (map[string]commonI
 			port = int(_port)
 
 			if len(_portDef) == 2 {
-				valid_subs := common.ValidSubBinds
+				valid_subs := dream.ValidSubBinds
 				sub = _portDef[1]
 				if !slices.Contains(valid_subs, sub) {
 					return nil, fmt.Errorf("`%s` not valid, should be one of: %s", sub, valid_subs)
@@ -193,18 +192,21 @@ func runFixtures(c *cli.Context, multiverse *client.Client, universes []string) 
 	return nil
 }
 
-func startUniverses(c *cli.Context) (err error) {
+func startUniverses(c *cli.Context, multiverse *dream.Multiverse) (err error) {
 	config, err := buildConfig(c)
 	if err != nil {
 		return err
 	}
 
 	for _, universe := range c.StringSlice("universes") {
-		u := dream.New(dream.UniverseConfig{
+		u, err := multiverse.New(dream.UniverseConfig{
 			Name:     universe,
 			Id:       c.String("id"),
 			KeepRoot: c.Bool("keep"),
 		})
+		if err != nil {
+			return err
+		}
 		err = u.StartWithConfig(config)
 		if err != nil {
 			return err
@@ -214,9 +216,12 @@ func startUniverses(c *cli.Context) (err error) {
 	return
 }
 
-func startEmptyUniverses(c *cli.Context) (err error) {
+func startEmptyUniverses(c *cli.Context, multiverse *dream.Multiverse) (err error) {
 	for _, universe := range c.StringSlice("universes") {
-		u := dream.New(dream.UniverseConfig{Name: universe})
+		u, err := multiverse.New(dream.UniverseConfig{Name: universe})
+		if err != nil {
+			return err
+		}
 		err = u.StartWithConfig(&dream.Config{})
 		if err != nil {
 			return err

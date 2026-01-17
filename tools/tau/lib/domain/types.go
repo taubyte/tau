@@ -1,7 +1,9 @@
 package domainLib
 
-import client "github.com/taubyte/tau/clients/http/auth"
+import (
+	"github.com/taubyte/tau/core/services/auth"
+)
 
 type Validator interface {
-	ValidateFQDN(fqdn string) (response client.DomainResponse, err error)
+	ValidateFQDN(fqdn string) (response auth.DomainRegistration, err error)
 }

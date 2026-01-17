@@ -10,8 +10,8 @@ import (
 
 	"github.com/otiai10/copy"
 	"github.com/spf13/afero"
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/pkg/schema/project"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 func NewSeer() (*seer.Seer, error) {

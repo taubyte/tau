@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
 	ci "github.com/taubyte/go-simple-container/gc"
@@ -29,7 +30,6 @@ func (srv *Service) subscribe() error {
 			go srv.pubsubMsgHandler(msg)
 		},
 		func(err error) {
-			// re-establish if fails
 			if err.Error() != "context canceled" {
 				logger.Error("Subscription had an error:", err.Error())
 				if err := srv.subscribe(); err != nil {
@@ -76,7 +76,6 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		srv.clientNode = config.ClientNode
 	}
 
-	// should end if any of the two contexts ends
 	err = srv.subscribe()
 	if err != nil {
 		return nil, err
@@ -89,7 +88,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 
 	srv.setupStreamRoutes()
 
-	sc, err := seerClient.New(ctx, srv.clientNode)
+	sc, err := seerClient.New(ctx, srv.clientNode, config.SensorsRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
@@ -100,6 +99,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	srv.monkeys = make(map[string]*Monkey, 0)
+	srv.recvJobs = make(map[string]time.Time, 0)
 
 	srv.patrickClient, err = NewPatrick(ctx, srv.clientNode)
 	if err != nil {

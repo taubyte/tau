@@ -13,8 +13,9 @@ import (
 	httpService "github.com/taubyte/tau/pkg/http"
 	auto "github.com/taubyte/tau/pkg/http-auto"
 	"github.com/taubyte/tau/pkg/kvdb"
+	"github.com/taubyte/tau/pkg/sensors"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
-	slices "github.com/taubyte/utils/slices/string"
+	slices "github.com/taubyte/tau/utils/slices/string"
 )
 
 func Start(ctx context.Context, serviceConfig *config.Node) error {
@@ -35,6 +36,11 @@ func Start(ctx context.Context, serviceConfig *config.Node) error {
 	err := createNodes(ctx, storagePath, serviceConfig.Shape, serviceConfig)
 	if err != nil {
 		return err
+	}
+
+	// start sensors service
+	if serviceConfig.Sensors, err = sensors.New(serviceConfig.Node); err != nil {
+		return fmt.Errorf("new sensors service failed with: %s", err)
 	}
 
 	serviceConfig.Databases = kvdb.New(serviceConfig.Node)

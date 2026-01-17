@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/taubyte/tau/dream"
+	"github.com/taubyte/tau/dream/api"
 	dreamApi "github.com/taubyte/tau/dream/api"
 	srv "github.com/taubyte/tau/pkg/taucorder/service"
 	"golang.org/x/net/http2"
@@ -23,20 +24,26 @@ import (
 )
 
 func main() {
-	dream.DreamlandApiListen = "localhost:2442" // diffrent port than the default
+	dream.DreamApiPort = 2442 // diffrent port than the default
 
-	dreamApi.BigBang()
+	m, err := dream.New(context.Background())
+	if err != nil {
+		panic(err)
+	}
+	defer m.Close()
+	err = api.BigBang(m)
+	if err != nil {
+		panic(err)
+	}
 
 	uname := "mock_universe"
-
-	// Create a new universe
-	u := dream.New(dream.UniverseConfig{
-		Name: uname,
-	})
-	defer u.Stop()
+	u, err := m.New(dream.UniverseConfig{Name: uname})
+	if err != nil {
+		panic(err)
+	}
 
 	// Start the universe with basic config
-	err := u.StartAll()
+	err = u.StartAll()
 	if err != nil {
 		panic(err)
 	}
@@ -96,7 +103,6 @@ func main() {
 	printOut, err := json.Marshal(data)
 	if err != nil {
 		panic(err)
-
 	}
 	fmt.Printf("@@%s@@\n", printOut)
 

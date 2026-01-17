@@ -29,6 +29,8 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 		config = &tauConfig.Node{}
 	}
 
+	srv.newGitHubClient = NewGitHubClient
+
 	srv.webHookUrl = fmt.Sprintf(`https://patrick.tau.%s`, config.NetworkFqdn)
 
 	err := config.Validate()
@@ -67,7 +69,11 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 		clientNode = config.ClientNode
 	}
 
-	srv.db, err = srv.dbFactory.New(logger, protocolCommon.Auth, 5)
+	rebroadcastInterval := 5
+	if srv.devMode {
+		rebroadcastInterval = 1
+	}
+	srv.db, err = srv.dbFactory.New(logger, protocolCommon.Auth, rebroadcastInterval)
 	if err != nil {
 		return nil, err
 	}
@@ -76,20 +82,29 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	if err != nil {
 		return nil, err
 	}
-	// should end if any of the two contexts ends
 
 	srv.rootDomain = config.NetworkFqdn
 
-	// P2P
 	srv.stream, err = streams.New(srv.node, protocolCommon.Auth, protocolCommon.AuthProtocol)
 	if err != nil {
 		return nil, err
 	}
 
 	srv.hostUrl = config.NetworkFqdn
+
+	nodePath := path.Join(config.Root, protocolCommon.Auth)
+	if config.Node != nil {
+		nodePath = path.Join(config.Root, protocolCommon.Auth)
+	}
+
+	srv.secretsService, err = initSecretsService(srv.db, srv.node, nodePath)
+	if err != nil {
+		return nil, err
+	}
+
 	srv.setupStreamRoutes()
 
-	sc, err := seerClient.New(ctx, clientNode)
+	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
@@ -119,6 +134,10 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 func (srv *AuthService) Close() error {
 	logger.Info("Closing", protocolCommon.Auth)
 	defer logger.Info(protocolCommon.Auth, "closed")
+
+	if srv.secretsService != nil {
+		srv.secretsService.Close()
+	}
 
 	srv.stream.Stop()
 	srv.tnsClient.Close()

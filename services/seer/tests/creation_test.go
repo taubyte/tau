@@ -9,14 +9,21 @@ import (
 	"github.com/taubyte/tau/dream"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/seer"
+	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
 )
 
 func TestService(t *testing.T) {
 	fake_location := iface.Location{Latitude: 32.91264411258042, Longitude: -96.8907727708027}
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
-	err := u.StartWithConfig(&dream.Config{
+
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer": {Others: map[string]int{"copies": 2}},
 		},
@@ -24,7 +31,6 @@ func TestService(t *testing.T) {
 			"client": {
 				Clients: dream.SimpleConfigClients{
 					Seer: &commonIface.ClientConfig{},
-					TNS:  &commonIface.ClientConfig{},
 				}.Compat(),
 			},
 		},

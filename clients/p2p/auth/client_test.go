@@ -8,21 +8,24 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	_ "github.com/taubyte/tau/services/auth"
+	_ "github.com/taubyte/tau/services/auth/dream"
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/repositories"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 	"gotest.tools/v3/assert"
 
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 )
 
 func TestAuthClient(t *testing.T) {
-	t.Skip("Needs to be redone")
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"auth": {},
 			"tns":  {},
@@ -48,20 +51,14 @@ func TestAuthClient(t *testing.T) {
 		return
 	}
 
-	mockAuthURL, err := u.GetURLHttp(u.Auth().Node())
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	err = commonTest.RegisterTestProject(u.Context(), mockAuthURL)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
 	auth, err := simple.Auth()
 	assert.NilError(t, err)
+
+	err = commonTest.RegisterTestProject(u.Context(), auth)
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
 	hkNil, err := auth.Hooks().Get("")
 	assert.Assert(t, err != nil)

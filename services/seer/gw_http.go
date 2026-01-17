@@ -15,7 +15,7 @@ import (
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
 
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 //FIXME: this is temporary here, should move to gw node (we will create at some point morty)

@@ -1,4 +1,4 @@
-package gateway
+package gateway_test
 
 import (
 	"bytes"
@@ -10,10 +10,12 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
+	commonTest "github.com/taubyte/tau/dream/helpers"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	gateway "github.com/taubyte/tau/services/gateway"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"gotest.tools/v3/assert"
 )
 
@@ -26,15 +28,19 @@ var (
 )
 
 func testSingleFunction(t *testing.T, call, method, fileName string, body []byte) (res *http.Response) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer":      {},
 			"hoarder":   {},
 			"tns":       {},
-			"substrate": {Others: map[string]int{"copies": 1}},
+			"substrate": {}, //Others: map[string]int{"copies": 1}},
 			"patrick":   {},
 			"monkey":    {},
 			"gateway":   {},
@@ -92,7 +98,7 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 	substratePort, err := u.GetPortHttp(firstSubstrate.Node())
 	assert.NilError(t, err)
 
-	httpClient := http.DefaultClient
+	httpClient := commonTest.CreateHttpClient()
 
 	substrateUrl := fmt.Sprintf("http://%s:%d/%s", fqdn, substratePort, requestPath)
 	gatewayUrl := fmt.Sprintf("http://%s:%d/%s", fqdn, gatewayPort, requestPath)
@@ -107,18 +113,18 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 
 	case "POST":
 		buffer := bytes.NewBuffer(body)
-		_, err = http.Post(substrateUrl, "text/plain", buffer)
+		_, err = httpClient.Post(substrateUrl, "text/plain", buffer)
 		assert.NilError(t, err)
 
 		buffer = bytes.NewBuffer(body)
-		res, err = http.Post(gatewayUrl, "text/plain", buffer)
+		res, err = httpClient.Post(gatewayUrl, "text/plain", buffer)
 		assert.NilError(t, err)
 	default:
 		t.Errorf("method `%s` not supported", method)
 		t.FailNow()
 	}
 
-	proxyPid := res.Header.Get(ProxyHeader)
+	proxyPid := res.Header.Get(gateway.ProxyHeader)
 	assert.Equal(t, proxyPid, firstSubstrate.Node().ID().String())
 
 	return

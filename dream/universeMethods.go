@@ -25,6 +25,8 @@ func (u *Universe) Name() string {
 }
 
 func (u *Universe) All() []peer.Node {
+	u.lock.RLock()
+	defer u.lock.RUnlock()
 	return u.all
 }
 
@@ -36,10 +38,6 @@ func (u *Universe) Lookup(id string) (*NodeInfo, bool) {
 		return nil, false
 	}
 	return node, true
-}
-
-func (u *Universe) Root() string {
-	return u.root
 }
 
 func (u *Universe) Context() context.Context {

@@ -12,15 +12,20 @@ import (
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 	"gotest.tools/v3/assert"
 )
 
 func TestHttp(t *testing.T) {
 	t.Skip("using an old project")
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
-	err := u.StartWithConfig(&dream.Config{
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
@@ -52,7 +57,7 @@ func TestHttp(t *testing.T) {
 	fakeMeta.Repository.SSHURL = "git@github.com:taubyte-test/tb_prodproject.git"
 	fakeMeta.Repository.Provider = "github"
 
-	err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.Repository{
+	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.Repository{
 		ID:       517160737,
 		Name:     "tb_prodproject",
 		HookInfo: fakeMeta,

@@ -4,14 +4,16 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
-	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/pem"
 	"fmt"
 	mrand "math/rand"
 	"net"
 	"os"
 	"path"
+	"strings"
 	"time"
 )
 
@@ -41,19 +43,31 @@ func afterStartDelay() time.Duration {
 	return time.Duration(BaseAfterStartDelay+rnd.Intn(MaxAfterStartDelay-BaseAfterStartDelay)) * time.Millisecond
 }
 
-func getCacheFolder() (string, error) {
-	cacheFolder := ".cache/dreamland"
+// GetCacheFolder returns the cache folder for the dream
+// It can be overridden for testing purposes
+var GetCacheFolder = func(multiverse string) (string, error) {
+	suffix := "-" + strings.ToLower(multiverse)
+	if multiverse == DefaultMultiverseName {
+		suffix = ""
+	}
 
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
 
-	return path.Join(home, cacheFolder), nil
+	return path.Join(home, DefaultMultiverseCacheFolder+suffix), nil
 }
 
-func generateDVKeys() ([]byte, []byte, error) {
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+func generateDeterministicDVKeys(input string) ([]byte, []byte, error) {
+	// Create deterministic seed from input string
+	hash := sha256.Sum256([]byte(input))
+	seed := hash[:]
+
+	// Create deterministic random source
+	randSource := mrand.New(mrand.NewSource(int64(binary.BigEndian.Uint64(seed[:8]))))
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), randSource)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generate ecdsa key failed with: %s", err)
 	}

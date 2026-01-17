@@ -1,6 +1,6 @@
 package session
 
-import "github.com/taubyte/go-seer"
+import seer "github.com/taubyte/tau/pkg/yaseer"
 
 type tauSession struct {
 	root *seer.Seer

@@ -8,7 +8,7 @@ import (
 
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/libp2p/go-libp2p/core/pnet"
-	"github.com/taubyte/utils/fs/dir"
+	"github.com/taubyte/tau/utils/fs/dir"
 
 	ipfslite "github.com/hsanjuan/ipfs-lite"
 	"github.com/ipfs/go-cid"

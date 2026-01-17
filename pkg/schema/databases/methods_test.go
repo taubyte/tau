@@ -3,8 +3,8 @@ package databases
 import (
 	"testing"
 
-	"github.com/taubyte/go-seer"
 	"github.com/taubyte/tau/pkg/schema/basic"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 	"gotest.tools/v3/assert"
 )
 

@@ -9,7 +9,7 @@ import (
 )
 
 func (c Context) HandleLibrary() (builders.Output, error) {
-	builder, err := build.New(c.ctx, c.WorkDir)
+	builder, err := build.New(c.ctx, c.LogFile, c.WorkDir)
 	if err != nil {
 		return nil, fmt.Errorf("creating new builder for git library repo `%d` failed with: %w", c.Job.Meta.Repository.ID, err)
 	}
@@ -30,7 +30,6 @@ func (l library) handle() (err error) {
 		compressedAsset io.ReadSeekCloser
 	)
 	defer func() {
-		l.mergeBuildLogs(asset.Logs())
 		if compressedAsset != nil {
 			if err == nil {
 				if _err := l.handleCompressedBuild(id, compressedAsset); _err != nil {

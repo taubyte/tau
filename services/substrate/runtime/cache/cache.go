@@ -65,32 +65,39 @@ func (c *Cache) Add(serviceable iface.Serviceable) (iface.Serviceable, error) {
 
 // Get method gets the list of serviceables from the cache map, where the serviceables that are returned are those with a high match for given match definition.
 func (c *Cache) Get(matcher iface.MatchDefinition, ops iface.GetOptions) ([]iface.Serviceable, error) {
-	var serviceables []iface.Serviceable
+	var (
+		serviceables []iface.Serviceable
+		servList     []iface.Serviceable
+	)
 
 	c.locker.RLock()
-	servList, ok := c.cacheMap[matcher.CachePrefix()]
+	if cachedServList, ok := c.cacheMap[matcher.CachePrefix()]; ok {
+		servList = make([]iface.Serviceable, 0, len(cachedServList))
+		for _, serviceable := range cachedServList {
+			servList = append(servList, serviceable)
+		}
+	}
 	c.locker.RUnlock()
-	if ok {
-		matchIndex := matcherSpec.HighMatch
-		if ops.MatchIndex != nil {
-			matchIndex = *ops.MatchIndex
-		}
-		branch := ops.Branches
-		if len(branch) < 1 {
-			branch = spec.DefaultBranches
-		}
 
-		for _, serviceable := range servList {
-			if serviceable.Match(matcher) == matchIndex {
-				if ops.Validation {
-					if err := c.validate(serviceable, branch); err != nil {
-						// remove serviceable from cache & continue
-						c.Remove(serviceable)
-						continue
-					}
+	matchIndex := matcherSpec.HighMatch
+	if ops.MatchIndex != nil {
+		matchIndex = *ops.MatchIndex
+	}
+	branch := ops.Branches
+	if len(branch) < 1 {
+		branch = spec.DefaultBranches
+	}
+
+	for _, serviceable := range servList {
+		if serviceable.Match(matcher) == matchIndex {
+			if ops.Validation {
+				if err := c.validate(serviceable, branch); err != nil {
+					// remove serviceable from cache & continue
+					c.Remove(serviceable)
+					continue
 				}
-				serviceables = append(serviceables, serviceable)
 			}
+			serviceables = append(serviceables, serviceable)
 		}
 	}
 
@@ -122,13 +129,10 @@ func (c *Cache) validate(serviceable iface.Serviceable, branches []string) error
 		return fmt.Errorf("cached pick commit `%s` is outdated, latest commit is `%s`", serviceable.Commit(), commit)
 	}
 
-	cid, err := ResolveAssetCid(serviceable)
-	if err != nil {
-		return fmt.Errorf("getting cached serviceable `%s` cid failed with: %w", serviceable.Id(), err)
-	}
-
-	if serviceable.AssetId() != cid {
-		return fmt.Errorf("serviceable `%s` asset is outdated", serviceable.Id())
+	// if we have an asset ID, check if it is up to date
+	assetId, err := ResolveAssetCid(serviceable)
+	if err == nil && serviceable.AssetId() != assetId {
+		return fmt.Errorf("cached pick assetId `%s` is outdated, latest assetId is `%s`", serviceable.AssetId(), assetId)
 	}
 
 	return nil

@@ -7,7 +7,7 @@ import (
 
 type StreamHandler struct {
 	srv    database.Service
-	stream *streams.CommandService
+	stream streams.CommandService
 }
 
 func (s *StreamHandler) Close() {

@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"strings"
 
-	client "github.com/taubyte/tau/clients/http/auth"
+	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/tools/tau/common"
 	"github.com/taubyte/tau/tools/tau/env"
 	domainI18n "github.com/taubyte/tau/tools/tau/i18n/domain"
@@ -33,7 +33,7 @@ func newValidator(info getter) Validator {
 	return &validator{info}
 }
 
-func (r *validator) ValidateFQDN(fqdn string) (response client.DomainResponse, err error) {
+func (r *validator) ValidateFQDN(fqdn string) (response auth.DomainRegistration, err error) {
 	client, err := authClient.Load()
 	if err != nil {
 		return
@@ -63,7 +63,7 @@ func NewGeneratedFQDN(prefix string) (string, error) {
 	var fqdn string
 	selectedNetwork, _ := env.GetSelectedNetwork()
 	switch selectedNetwork {
-	case common.DreamlandNetwork:
+	case common.DreamNetwork:
 		universe, _ := env.GetCustomNetworkUrl()
 		fqdn = parseFqdn(fmt.Sprintf(".%s.localtau", universe))
 	case common.PythonTestNetwork:
@@ -89,7 +89,7 @@ func NewGeneratedFQDN(prefix string) (string, error) {
 func IsAGeneratedFQDN(fqdn string) (bool, error) {
 	selectedNetwork, _ := env.GetSelectedNetwork()
 	switch selectedNetwork {
-	case common.DreamlandNetwork:
+	case common.DreamNetwork:
 		universe, _ := env.GetCustomNetworkUrl()
 		return strings.HasSuffix(fqdn, fmt.Sprintf(".%s.localtau", universe)), nil
 	case common.PythonTestNetwork:

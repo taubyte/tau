@@ -20,14 +20,16 @@ func toNumber(in interface{}) int {
 	return 0
 }
 
-func (m *Monkey) appendErrors(r io.WriteSeeker, errors chan error) {
+func (m *Monkey) appendErrors(r io.WriteSeeker, errors chan error) error {
 	if len(errors) > 0 {
 		r.Seek(0, io.SeekEnd)
 		r.Write([]byte("\nCI/CD Errors:\n\n"))
 		for err := range errors {
 			r.Write([]byte(err.Error() + "\n"))
 		}
+		return fmt.Errorf("running job failed with errors")
 	}
+	return nil
 }
 
 func (m *Monkey) storeLogs(r io.ReadSeeker) (string, error) {

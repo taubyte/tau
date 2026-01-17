@@ -1,7 +1,6 @@
 package dream
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"
@@ -21,15 +20,34 @@ var (
 
 	Ports map[string]int
 
-	DreamlandApiListen = DefaultHost + ":1421"
+	DreamApiPort   = 1421
+	DreamApiListen = func() string { return fmt.Sprintf("%s:%d", DefaultHost, DreamApiPort) }
 
 	DefaultHost             string = "127.0.0.1"
 	DefaultP2PListenFormat  string = "/ip4/" + DefaultHost + "/tcp/%d"
 	DefaultHTTPListenFormat string = "%s://" + DefaultHost + ":%d"
 
+	// Default multiverse name (must be lowercase)
+	DefaultMultiverseName = "default"
+
+	// Default universe name (must be lowercase)
+	DefaultUniverseName = "default"
+
+	// Default universe cache folder
+	DefaultMultiverseCacheFolder = ".cache/dream"
+
+	// Default client name
+	DefaultClientName = "client"
+
+	// Valid sub-binds for services
+	ValidSubBinds = []string{"http", "p2p", "dns", "https", "verbose", "copies"}
+
 	BaseAfterStartDelay = 500  // Millisecond
 	MaxAfterStartDelay  = 1000 // Millisecond
 	MeshTimeout         = 5 * time.Second
+
+	// Disk usage cache configuration
+	DiskUsageCacheTimeout = 5 * time.Second
 
 	startAllDefaultSimple = "client"
 
@@ -42,12 +60,7 @@ var (
 	maxUniverses     = 100
 	portsPerUniverse = 100
 
-	logger = log.Logger("tau.dreamland")
-
-	universes      map[string]*Universe
-	universesLock  sync.RWMutex
-	multiverseCtx  context.Context
-	multiverseCtxC context.CancelFunc
+	logger = log.Logger("tau.dream")
 )
 
 // TODO: This should be generated
@@ -111,7 +124,7 @@ var FixtureMap = map[string]FixtureDefinition{
 	},
 	"clearRepos": {
 		Description: "delete all unused repos",
-		ImportRef:   "dreamland-test/fixtures",
+		ImportRef:   "dream-test/fixtures",
 		Internal:    true,
 	},
 	"attachPlugin": {
@@ -156,8 +169,8 @@ var FixtureMap = map[string]FixtureDefinition{
 		},
 	},
 	"attachProdProject": {
-		Description: "Attach a production project to dreamland",
-		ImportRef:   "dreamland-test/fixtures", // TODO should this fixture be in tns?
+		Description: "Attach a production project to dream",
+		ImportRef:   "dream-test/fixtures", // TODO should this fixture be in tns?
 		Internal:    true,
 		Variables: []FixtureVariable{
 			{
@@ -175,8 +188,8 @@ var FixtureMap = map[string]FixtureDefinition{
 		},
 	},
 	"importProdProject": {
-		Description: "Import a production project to dreamland and push all the repos",
-		ImportRef:   "dreamland-test/fixtures", // TODO should this fixture be in tns?
+		Description: "Import a production project to dream and push all the repos",
+		ImportRef:   "dream-test/fixtures", // TODO should this fixture be in tns?
 		Internal:    true,
 		Variables: []FixtureVariable{
 			{

@@ -17,24 +17,27 @@ import (
 	service "github.com/taubyte/tau/services/patrick"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/clients/p2p/monkey"
-	_ "github.com/taubyte/tau/services/auth"
+	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
+	_ "github.com/taubyte/tau/services/auth/dream"
 	protocolCommon "github.com/taubyte/tau/services/common"
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 func TestRunWasmRetry(t *testing.T) {
 	t.Skip("Review later,  is there a valid reason to retry as now code clones config")
 
 	// Reduce times from minutes to seconds for testing
-	service.DefaultReAnnounceFailedJobsTime = 10 * time.Second
 	service.DefaultReAnnounceJobTime = 10 * time.Second
 
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"monkey":  {},
 			"hoarder": {},
@@ -50,40 +53,25 @@ func TestRunWasmRetry(t *testing.T) {
 			},
 		},
 	})
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
-	authHttpURL, err := u.GetURLHttp(u.Auth().Node())
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	simple, err := u.Simple("client")
+	assert.NilError(t, err)
+
+	mockAuth, err := simple.Auth()
+	assert.NilError(t, err)
 
 	// override ID of project generated so that it matches id in config
 	protocolCommon.GetNewProjectID = func(args ...interface{}) string { return commonTest.ProjectID }
-	err = commonTest.RegisterTestProject(u.Context(), authHttpURL)
-	if err != nil {
-		t.Error(err)
-		return
-	}
-
-	simple, err := u.Simple("client")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	err = commonTest.RegisterTestProject(u.Context(), mockAuth)
+	assert.NilError(t, err)
 
 	tns, err := simple.TNS()
 	assert.NilError(t, err)
 
 	tnsClient := tns.(*tnsClient.Client)
 	err = u.RunFixture("pushCode")
-	if err != nil {
-		t.Error(err)
-		return
-	}
+	assert.NilError(t, err)
 
 	err = u.RunFixture("pushConfig")
 	assert.NilError(t, err)

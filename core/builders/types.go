@@ -3,7 +3,7 @@ package builders
 import (
 	"io"
 
-	ci "github.com/taubyte/go-simple-container"
+	ci "github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/specs/builders"
 )
 
@@ -23,19 +23,8 @@ type Builder interface {
 type Output interface {
 	// Compress takes a supported CompressionMethod, compress the files built by the Builder, and returns the ReadSeekCloser of the compressed file
 	Compress(CompressionMethod) (io.ReadSeekCloser, error)
-	// Logs returns the ReadCloser of the build logs
-	Logs() Logs
 	// OutDir returns the output directory of the built files, pre zip or compress
 	OutDir() string
-	// Closes logs
-	Close() error
-}
-
-type Logs interface {
-	io.ReadCloser
-	CopyTo(dst io.Writer) (int64, error)
-	CopyFrom(src io.Reader) (int64, error)
-	FormatErr(format string, args ...any) error
 }
 
 // CompressionMethod defines the method used to compress build Output of a Builder

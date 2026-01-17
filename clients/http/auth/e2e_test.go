@@ -9,7 +9,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// TODO: use dreamland instead of a deployed auth
+// TODO: use dream instead of a deployed auth
 var (
 	authNodeUrl = "https://auth.tau.sandbox.taubyte.com"
 	testToken   = os.Getenv("TEST_GIT_TOKEN")

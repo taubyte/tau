@@ -37,7 +37,6 @@ func TestLookup(t *testing.T) {
 	}}
 
 	structure.RefreshTestVariables()
-	refreshTestVariables()
 	fakeFetch(msg, function)
 	matcher := &common.MatchDefinition{
 		Channel: testChannel,

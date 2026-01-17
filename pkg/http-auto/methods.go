@@ -231,6 +231,8 @@ func (s *Service) Start() {
 		s.positiveCache.Stop()
 		s.negativeCache.Stop()
 	}()
+
+	s.WatchContextDone()
 }
 
 func (s *Service) GetListenAddress() (*url.URL, error) {

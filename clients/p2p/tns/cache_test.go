@@ -13,8 +13,14 @@ import (
 )
 
 func TestCache(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	err := u.StartWithConfig(&dream.Config{
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
@@ -30,7 +36,6 @@ func TestCache(t *testing.T) {
 		t.Error(err)
 		return
 	}
-	defer u.Stop()
 
 	simple, err := u.Simple("client")
 	if err != nil {

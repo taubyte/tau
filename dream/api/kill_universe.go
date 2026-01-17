@@ -3,13 +3,11 @@ package api
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/dream"
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) killUniverseHttp() {
-	// Path to delete simples in a universe
-	srv.rest.DELETE(&httpIface.RouteDefinition{
+func (srv *Service) killUniverseHttp() {
+	srv.server.DELETE(&httpIface.RouteDefinition{
 		Path: "/universe/{universe}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe"},
@@ -18,14 +16,13 @@ func (srv *multiverseService) killUniverseHttp() {
 	})
 }
 
-func (srv *multiverseService) killUniverse(ctx httpIface.Context) (interface{}, error) {
-	// Grab the universe
+func (srv *Service) killUniverse(ctx httpIface.Context) (interface{}, error) {
 	name, err := ctx.GetStringVariable("universe")
 	if err != nil {
 		return nil, fmt.Errorf("failed getting name error %w", err)
 	}
 
-	u, err := dream.GetUniverse(name)
+	u, err := srv.Universe(name)
 	if err != nil {
 		return nil, fmt.Errorf("universe `%s` does not exist", name)
 	}

@@ -30,16 +30,18 @@ func (u *Universe) PortFor(proto, _type string) (int, error) {
 }
 
 func (u *Universe) createService(name string, config *commonIface.ServiceConfig) error {
+	if config.Disabled {
+		return nil
+	}
+
 	if config.Root == "" {
-		config.Root = path.Clean(fmt.Sprintf("%s/%s/%d", u.root, name, len(u.service[name].nodes)))
+		config.Root = u.root
 	}
 
 	serviceCount := len(u.service[name].nodes)
-	config.Root = path.Join(config.Root, fmt.Sprintf("%s-%d", name, serviceCount), u.id)
+	config.Root = path.Join(config.Root, fmt.Sprintf("%s-%d", name, serviceCount))
 	// Ignoring error in case of opening
 	os.MkdirAll(config.Root, 0750)
-
-	os.Mkdir(config.Root+"/storage", 0755)
 
 	if config.Others == nil {
 		config.Others = make(map[string]int)
@@ -54,10 +56,6 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 				config.Port = config.Others[k]
 			}
 		}
-	}
-
-	if config.Disabled {
-		return nil
 	}
 
 	node, err := u.startService(name, config)
@@ -155,7 +153,7 @@ func (h *handlerRegistry) client(protocol string) (ClientCreate, error) {
 	}
 
 	if handlers.client == nil {
-		return nil, fmt.Errorf("client creation method is nil have you imported _ \"github.com/taubyte/tau/services/%s\"", protocol)
+		return nil, fmt.Errorf("client creation method is nil have you imported _ \"github.com/taubyte/tau/clients/p2p/%s/dream\"", protocol)
 	}
 
 	return handlers.client, nil
@@ -168,7 +166,7 @@ func (h *handlerRegistry) service(protocol string) (ServiceCreate, error) {
 	}
 
 	if handlers.service == nil {
-		return nil, fmt.Errorf("Service creation method is nil have you imported _ \"github.com/taubyte/tau/services/%s\"", protocol)
+		return nil, fmt.Errorf("Service creation method is nil have you imported _ \"github.com/taubyte/tau/services/%s/dream\"", protocol)
 	}
 
 	return handlers.service, nil

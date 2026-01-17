@@ -44,6 +44,10 @@ func (m *Monkey) RunJob() (err error) {
 	projectId = gitRepo.Project()
 	if projectId != "" {
 		p = ac.Projects().Get(projectId)
+		if p == nil {
+			return fmt.Errorf("project not found: %s", projectId)
+		}
+
 		switch repo.ID {
 		case p.Git.Code.Id():
 			repoType = compilerCommon.CodeRepository
@@ -91,9 +95,11 @@ func (m *Monkey) RunJob() (err error) {
 		Node:                  m.Service.node,
 		LogFile:               m.logFile,
 		ClientNode:            node,
-		DVPublicKey:           m.Service.dvPublicKey, // For Domain Validation
+		DVPublicKey:           m.Service.dvPublicKey,
 		GeneratedDomainRegExp: m.generatedDomainRegExp,
 	}
+
+	c.Context(m.ctx)
 
 	if repoType == compilerCommon.CodeRepository {
 		c.ConfigRepoId = p.Git.Config.Id()

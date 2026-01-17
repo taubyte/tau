@@ -17,13 +17,14 @@ import (
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	_ "github.com/taubyte/tau/services/hoarder"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
-	_ "github.com/taubyte/tau/services/seer"
-	_ "github.com/taubyte/tau/services/substrate"
+	_ "github.com/taubyte/tau/services/seer/dream"
 	"github.com/taubyte/tau/services/substrate/components/p2p"
-	_ "github.com/taubyte/tau/services/tns"
-	"github.com/taubyte/utils/id"
+	_ "github.com/taubyte/tau/services/substrate/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
+	"github.com/taubyte/tau/utils/id"
+	"gotest.tools/v3/assert"
 )
 
 type testContext struct {
@@ -48,13 +49,21 @@ func TestFail(t *testing.T) {
 	maxAttempts := 5
 	commandsTested := 2
 
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
 	var attempts int
 	var successes atomic.Int32
 	var mostRecentError error
 	for attempts < maxAttempts {
 		attempts++
-		u := dream.New(dream.UniverseConfig{Name: t.Name()})
-		err := u.StartWithConfig(&dream.Config{
+		u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+		if err != nil {
+			mostRecentError = err
+			continue
+		}
+		err = u.StartWithConfig(&dream.Config{
 			Services: map[string]commonIface.ServiceConfig{
 				"tns":       {},
 				"substrate": {Others: map[string]int{"verbose": 1, "copies": 2}},

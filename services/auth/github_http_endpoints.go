@@ -7,20 +7,19 @@ import (
 	"time"
 
 	http "github.com/taubyte/tau/pkg/http"
-	"github.com/taubyte/tau/services/auth/github"
 	"github.com/taubyte/tau/services/auth/repositories"
 	protocolCommon "github.com/taubyte/tau/services/common"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
-func getGithubClientFromContext(ctx http.Context) (*github.Client, error) {
+func getGithubClientFromContext(ctx http.Context) (GitHubClient, error) {
 	ctxVars := ctx.Variables()
 	v, k := ctxVars["GithubClient"]
 	if !k {
 		return nil, errors.New("no Github Client found")
 	}
 
-	return v.(*github.Client), nil
+	return v.(GitHubClient), nil
 }
 
 func extractProjectVariables(ctx http.Context) (configID, codeID, projectName string, err error) {
@@ -159,9 +158,9 @@ func (srv *AuthService) unregisterGitHubUserRepositoryHTTPHandler(ctx http.Conte
 		return nil, fmt.Errorf("parsing github repository ID failed with %w", err)
 	}
 
-	response, err := srv.unregisterGitHubRepository(ctx.Request().Context(), client, repoId)
+	err = srv.unregisterGitHubRepository(ctx.Request().Context(), client, repoId)
 
-	return response, err
+	return nil, err
 }
 
 func (srv *AuthService) getGitHubUserProjectsHTTPHandler(ctx http.Context) (interface{}, error) {
@@ -180,7 +179,13 @@ func (srv *AuthService) deleteGitHubProjectHandler(ctx http.Context) (interface{
 	}
 
 	ctxVars := ctx.Variables()
-	response, err := srv.deleteGitHubUserProject(ctx.Request().Context(), client, ctxVars["id"].(string))
+
+	id, err := maps.String(ctxVars, "id")
+	if err != nil {
+		return nil, err
+	}
+
+	response, err := srv.deleteGitHubUserProject(ctx.Request().Context(), client, id)
 	return response, err
 }
 
@@ -200,12 +205,13 @@ func (srv *AuthService) getGitHubProjectInfoHTTPHandler(ctx http.Context) (inter
 	}
 
 	ctxVars := ctx.Variables()
-	switch ctxVars["id"].(type) {
-	case string:
-		response, err := srv.getGitHubProjectInfo(ctx.Request().Context(), client, ctxVars["id"].(string))
-		return response, err
+	id, err := maps.String(ctxVars, "id")
+	if err != nil {
+		return nil, err
 	}
-	return nil, errors.New("invalid value for project id")
+
+	response, err := srv.getGitHubProjectInfo(ctx.Request().Context(), client, id)
+	return response, err
 }
 
 func (srv *AuthService) getGitHubUserHTTPHandler(ctx http.Context) (interface{}, error) {

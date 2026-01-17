@@ -11,13 +11,21 @@ import (
 	iface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/dream"
 	"gotest.tools/v3/assert"
+
+	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
 )
 
 var client_count = 16
 
 func TestHeartbeat(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
 	simConf := make(map[string]dream.SimpleConfig)
 	for i := 0; i < client_count; i++ {
@@ -29,7 +37,7 @@ func TestHeartbeat(t *testing.T) {
 		}
 	}
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"seer": {Others: map[string]int{"mock": 1}},
 		},

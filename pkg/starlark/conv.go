@@ -98,6 +98,12 @@ func convertToStarlark(val interface{}) (starlark.Value, error) {
 	switch v := val.(type) {
 	case int:
 		return starlark.MakeInt(v), nil
+	case uint:
+		return starlark.MakeUint(v), nil
+	case int64:
+		return starlark.MakeInt64(v), nil
+	case uint64:
+		return starlark.MakeUint64(v), nil
 	case float64:
 		return starlark.Float(v), nil
 	case string:
@@ -126,12 +132,32 @@ func convertToStarlark(val interface{}) (starlark.Value, error) {
 				return nil, err
 			}
 
-			v, err := convertToStarlark(value)
+			val, err := convertToStarlark(value)
 			if err != nil {
 				return nil, err
 			}
 
-			err = dict.SetKey(k, v)
+			err = dict.SetKey(k, val)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return dict, nil
+	case map[string]interface{}:
+		dict := starlark.NewDict(len(v))
+		for key, value := range v {
+			k, err := convertToStarlark(key)
+			if err != nil {
+				return nil, err
+			}
+
+			val, err := convertToStarlark(value)
+			if err != nil {
+				return nil, err
+			}
+
+			err = dict.SetKey(k, val)
 			if err != nil {
 				return nil, err
 			}

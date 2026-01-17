@@ -2,6 +2,7 @@ package git
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
@@ -17,6 +18,17 @@ type Option func(c *Repository) error
 func URL(url string) Option {
 	return func(c *Repository) error {
 		c.url = url
+		return nil
+	}
+}
+
+/* Output is an Option to set the repository output.
+ *
+ * output: The output to use.
+ */
+func Output(output io.Writer) Option {
+	return func(c *Repository) error {
+		c.output = output
 		return nil
 	}
 }
@@ -58,15 +70,24 @@ func EmbeddedToken(token string) Option {
  */
 func SSHKey(key string) Option {
 	return func(c *Repository) error {
+		// Parse the private key first to ensure it's valid
+		_, err := gossh.ParsePrivateKey([]byte(key))
+		if err != nil {
+			return fmt.Errorf("parsing private key failed with %w", err)
+		}
+
+		// Create SSH authentication using the parsed private key
 		auth, err := ssh.NewPublicKeys("git", []byte(key), "")
 		if err != nil {
 			return fmt.Errorf("adding SSH Key failed with %w", err)
 		}
-		// need to bypass checking ssh host keys
+
+		// Set up host key callback to bypass checking
 		// see: https://github.com/src-d/go-git/issues/637#issuecomment-404851019
 		auth.HostKeyCallbackHelper = ssh.HostKeyCallbackHelper{
 			HostKeyCallback: gossh.InsecureIgnoreHostKey(),
 		}
+
 		c.auth = auth
 		return nil
 	}

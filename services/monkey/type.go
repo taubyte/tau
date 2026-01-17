@@ -2,13 +2,12 @@ package monkey
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"os"
 	"regexp"
 	"sync"
 	"time"
 
-	"github.com/ipfs/go-log/v2"
 	patrickClient "github.com/taubyte/tau/clients/p2p/patrick"
 	"github.com/taubyte/tau/config"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
@@ -17,7 +16,6 @@ import (
 	tnsClient "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
-	chidori "github.com/taubyte/utils/logger/zap"
 )
 
 // TODO: This sucks
@@ -46,7 +44,7 @@ type Monkey struct {
 type Service struct {
 	ctx    context.Context
 	node   peer.Node
-	stream *streams.CommandService
+	stream streams.CommandService
 
 	patrickClient patrick.Client
 	tnsClient     tnsClient.Client
@@ -54,6 +52,9 @@ type Service struct {
 	hoarderClient hoarderIface.Client
 
 	config *config.Node
+
+	recvJobs     map[string]time.Time
+	recvJobsLock sync.RWMutex
 
 	monkeys     map[string]*Monkey
 	monkeysLock sync.RWMutex
@@ -86,8 +87,8 @@ func (s *Service) Dev() bool {
 
 type Config config.Node
 
-func appendAndLog(e chan error, format string, args ...any) {
-	if errString := chidori.Format(logger, log.LevelError, format, args...); len(errString) > 0 {
-		e <- errors.New(errString)
-	}
+func appendAndLogError(e chan error, format string, args ...any) {
+	ferr := fmt.Errorf(format, args...)
+	logger.Error(ferr)
+	e <- ferr
 }

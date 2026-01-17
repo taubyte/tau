@@ -42,7 +42,7 @@ func TestGetStruct(t *testing.T) {
 		{_struct.Description, "just another library"},
 		{_struct.Tags, []string{"library_tag_3", "library_tag_4"}},
 		{_struct.Path, "/src"},
-		{_struct.Branch, "dreamland"},
+		{_struct.Branch, "dream"},
 		{_struct.Provider, "github"},
 		{_struct.RepoID, "222222222"},
 		{_struct.RepoName, "taubyte-test/library2"},

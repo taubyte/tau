@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	iface "github.com/taubyte/tau/core/services/substrate/components/storage"
-	mh "github.com/taubyte/utils/multihash"
+	mh "github.com/taubyte/tau/utils/multihash"
 )
 
 func GetStorageHash(c iface.Context) (string, error) {

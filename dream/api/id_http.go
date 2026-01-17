@@ -1,7 +1,6 @@
 package api
 
 import (
-	"github.com/taubyte/tau/dream"
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
@@ -9,8 +8,8 @@ type UniverseInfo struct {
 	Id string `json:"id"`
 }
 
-func (srv *multiverseService) idHttp() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+func (srv *Service) idHttp() {
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/id/{universe}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe"},
@@ -21,7 +20,7 @@ func (srv *multiverseService) idHttp() {
 				return nil, err
 			}
 
-			u, err := dream.GetUniverse(universeName)
+			u, err := srv.Universe(universeName)
 			if err != nil {
 				return nil, err
 			}

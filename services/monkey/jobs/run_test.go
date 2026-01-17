@@ -2,6 +2,10 @@ package jobs
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/pem"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,7 +13,23 @@ import (
 
 	"github.com/taubyte/tau/core/services/patrick"
 	"gotest.tools/v3/assert"
+
+	"github.com/taubyte/tau/clients/p2p/patrick/mock"
+
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
+
+func generatePrivateKey(t *testing.T) string {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	assert.NilError(t, err, "Failed to generate private key")
+
+	privateKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(privateKey),
+	})
+
+	return string(privateKeyPEM)
+}
 
 func TestRunDelay(t *testing.T) {
 	tmpDir := t.TempDir()
@@ -18,9 +38,9 @@ func TestRunDelay(t *testing.T) {
 	assert.NilError(t, err)
 	defer logFile.Close()
 
-	u, err := startDreamland(t.Name())
+	u, cleanup, err := startDream(t)
 	assert.NilError(t, err)
-	defer u.Stop()
+	defer cleanup()
 
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)
@@ -34,11 +54,25 @@ func TestRunDelay(t *testing.T) {
 				Time: 300,
 			},
 			Logs: map[string]string{},
+			Meta: patrick.Meta{
+				Repository: patrick.Repository{
+					ID:       1,
+					SSHURL:   "git@github.com:testuser/testrepo.git",
+					Provider: "github",
+					Branch:   "main",
+				},
+				HeadCommit: patrick.HeadCommit{
+					ID: "testcommit123",
+				},
+			},
 		},
-		LogFile: logFile,
-		Node:    simple,
-		Monkey:  &mockMonkey{hoarder: hoarderClient},
+		LogFile:   logFile,
+		Node:      simple,
+		Monkey:    &mockMonkey{hoarder: hoarderClient},
+		Patrick:   &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)},
+		DeployKey: generatePrivateKey(t),
 	}
+	c.Context(u.Context())
 
 	ctx, ctxC := context.WithTimeout(context.Background(), 1*time.Second)
 	defer ctxC()

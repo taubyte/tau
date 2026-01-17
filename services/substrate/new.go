@@ -1,5 +1,3 @@
-//go:build !dev
-
 package substrate
 
 import (
@@ -11,8 +9,7 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/shirou/gopsutil/cpu"
-	"github.com/taubyte/go-seer"
+	"github.com/shirou/gopsutil/v4/cpu"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	tauConfig "github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/vm"
@@ -20,6 +17,7 @@ import (
 	tbPlugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	smartopsPlugins "github.com/taubyte/tau/pkg/vm-ops-orbit"
 	orbit "github.com/taubyte/tau/pkg/vm-orbit/satellite/vm"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
@@ -86,13 +84,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		return nil, fmt.Errorf("attaching node services failed with: %w", err)
 	}
 
-	if err = tbPlugins.Initialize(ctx,
-		tbPlugins.PubsubNode(srv.components.pubsub),
-		tbPlugins.IpfsNode(srv.components.ipfs),
-		tbPlugins.DatabaseNode(srv.components.database),
-		tbPlugins.StorageNode(srv.components.storage),
-		tbPlugins.P2PNode(srv.components.p2p),
-	); err != nil {
+	if err = tbPlugins.Initialize(ctx, srv.components.config()...); err != nil {
 		return nil, fmt.Errorf("initializing Taubyte plugins failed with: %w", err)
 	}
 

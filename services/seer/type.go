@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/config"
 	tnsClient "github.com/taubyte/tau/core/services/tns"
 	http "github.com/taubyte/tau/pkg/http"
+	"github.com/taubyte/tau/pkg/poe"
 
 	"github.com/ipfs/go-datastore"
 )
@@ -20,9 +21,9 @@ import (
 var (
 	MaxDnsResponseTime       = 3 * time.Second
 	ServerIpCacheTTL         = 30 * time.Second
-	PositiveCacheTTL         = 5 * time.Minute
+	PositiveCacheTTL         = 1 * time.Minute
 	DefaultBlockTime         = 1 * time.Minute
-	ValidServiceResponseTime = 5 * time.Minute
+	ValidServiceResponseTime = 1 * time.Minute
 )
 
 type dnsServer struct {
@@ -52,7 +53,7 @@ type geoService struct {
 type Service struct {
 	node          peer.Node
 	http          http.Service
-	stream        *streams.CommandService
+	stream        streams.CommandService
 	geo           *geoService
 	oracle        *oracleService
 	dns           *dnsServer
@@ -66,10 +67,11 @@ type Service struct {
 	tns         tnsClient.Client
 	dnsResolver iface.Resolver
 
+	poe poe.Engine
+
 	hostUrl string
 
 	shape   string
-	odo     bool
 	devMode bool
 }
 

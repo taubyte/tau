@@ -4,20 +4,25 @@ import (
 	"reflect"
 	"testing"
 
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
 	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 	"gotest.tools/v3/assert"
 )
 
 func TestGetById(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
 	u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
@@ -31,7 +36,7 @@ func TestGetById(t *testing.T) {
 		},
 	})
 
-	err := u.RunFixture("fakeProject")
+	err = u.RunFixture("fakeProject")
 	if err != nil {
 		t.Error(err)
 		return

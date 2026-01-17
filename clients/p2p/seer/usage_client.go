@@ -49,6 +49,13 @@ func (u *Usage) updateUsage(hostname, nodeId, clientNodeId string, signature []b
 		return nil, fmt.Errorf("getting usage of hostname `%s` failed with: %s", hostname, err)
 	}
 
+	// get custom values
+	if u.sensors != nil {
+		for _, sensor := range u.sensors.List() {
+			usageData.CustomValues[sensor.Name] = sensor.Value
+		}
+	}
+
 	resp, err := u.Heartbeat(&usageData, hostname, nodeId, clientNodeId, signature)
 	if err != nil {
 		return nil, err
@@ -92,36 +99,61 @@ func (u *Usage) Beacon(hostname, nodeId, clientNodeId string, signature []byte) 
 }
 
 func (u *UsageBeacon) Start() {
+	// Usage beacon goroutine (includes initial call)
 	go func() {
-		var err error
-
-		_, err = u.usage.updateUsage(u.hostname, u.nodeId, u.clientNodeId, u.signature)
+		// Initial usage update
+		_, err := u.usage.updateUsage(u.hostname, u.nodeId, u.clientNodeId, u.signature)
 		if err != nil {
+			logger.Debugf("updateUsage failed: %v", err)
 			u._status <- err
 		}
 
-		_, err = u.usage.updateAnnounce(u.nodeId, u.clientNodeId, u.signature)
-		if err != nil {
-			u._status <- err
-		}
-
+		// Periodic usage updates
 		for {
 			select {
 			case <-u.ctx.Done():
-				u.cleanStatus()
-				u.status = ErrorUsageBeaconStopped
+				return
+			case <-time.After(DefaultUsageBeaconInterval):
+				_, err := u.usage.updateUsage(u.hostname, u.nodeId, u.clientNodeId, u.signature)
+				if err != nil {
+					u._status <- err
+				}
+			}
+		}
+	}()
+
+	// Announce beacon goroutine (includes initial call)
+	go func() {
+		// Initial announce update
+		_, err := u.usage.updateAnnounce(u.nodeId, u.clientNodeId, u.signature)
+		if err != nil {
+			logger.Debugf("updateAnnounce failed: %v", err)
+			u._status <- err
+		}
+
+		// Periodic announce updates
+		for {
+			select {
+			case <-u.ctx.Done():
 				return
 			case <-time.After(DefaultAnnounceBeaconInterval):
 				_, err := u.usage.updateAnnounce(u.nodeId, u.clientNodeId, u.signature)
 				if err != nil {
 					u._status <- err
 				}
-			case <-time.After(DefaultUsageBeaconInterval):
-				_, err := u.usage.updateUsage(u.hostname, u.nodeId, u.clientNodeId, u.signature)
-				if err != nil {
-					u._status <- err
-				}
-			case err = <-u._status:
+			}
+		}
+	}()
+
+	// Status handler goroutine
+	go func() {
+		for {
+			select {
+			case <-u.ctx.Done():
+				u.cleanStatus()
+				u.status = ErrorUsageBeaconStopped
+				return
+			case err := <-u._status:
 				u.status = err
 			}
 		}

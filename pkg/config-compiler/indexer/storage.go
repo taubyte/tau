@@ -6,7 +6,7 @@ import (
 
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func Storages(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

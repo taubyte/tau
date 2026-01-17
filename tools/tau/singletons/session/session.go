@@ -4,8 +4,7 @@ import (
 	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/singletons"
 
 	// Importing to run the common initialization
-	"github.com/taubyte/go-seer"
-	_ "github.com/taubyte/tau/tools/tau/singletons/common"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 func getOrCreateSession() *tauSession {

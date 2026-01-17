@@ -9,7 +9,7 @@ const tar = require("tar");
 const packageJson = require("./package.json");
 
 const binaryDir = path.join(__dirname, "bin");
-const binaryPaths = {"tau-cli":path.join(binaryDir, "tau"), "dreamland": path.join(binaryDir, "dreamland")}
+const binaryPaths = {"tau-cli":path.join(binaryDir, "tau"), "dream": path.join(binaryDir, "dream")}
 const tauVersion = packageJson.tau;
 const dreamVersion = packageJson.dream;
 
@@ -102,7 +102,7 @@ function executeBinary() {
     stdio: "inherit",
     env: {
       ...process.env,
-      DREAM_BINARY: path.join(__dirname, binaryPaths["dreamland"]) // Replace with your environment variable and value
+      DREAM_BINARY: path.join(__dirname, binaryPaths["dream"]) // Replace with your environment variable and value
   }
   });
 
@@ -114,7 +114,7 @@ function executeBinary() {
 async function main() {
   try {
     await downloadAndExtractBinary("tau-cli",tauVersion);
-    await downloadAndExtractBinary("dreamland", dreamVersion);
+    await downloadAndExtractBinary("dream", dreamVersion);
     executeBinary();
   } catch (err) {
     console.error(err.message);

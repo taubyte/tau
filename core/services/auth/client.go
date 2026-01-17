@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"crypto/tls"
 	"errors"
 
@@ -14,12 +15,29 @@ type Client interface {
 	GetStaticCertificate(domain string) (*tls.Certificate, error)
 	GetRawCertificate(domain string) ([]byte, error)
 	GetRawStaticCertificate(domain string) ([]byte, error)
+	RegisterDomain(fqdn, projectID string) (*DomainRegistration, error)
 	Hooks() Hooks
 	Projects() Projects
 	Repositories() Repositories
+	Secrets() Secrets
 	Stats() Stats // TODO: rename State
 	Peers(...peerCore.ID) Client
 	Close()
+}
+
+type Secrets interface {
+	Store(ctx context.Context, secretID string, plaintext []byte) error
+	Retrieve(ctx context.Context, secretID string) ([]byte, error)
+	Delete(ctx context.Context, secretID string) error
+	Exists(ctx context.Context, secretID string) (bool, error)
+	List(ctx context.Context) ([]string, error)
+	PublicKeys(ctx context.Context, opts ...PublicKeyOption) ([]DistributedKey, error)
+}
+
+type DomainRegistration struct {
+	Token string `json:"token"`
+	Entry string `json:"entry"`
+	Type  string `json:"type"`
 }
 
 type Stats interface {
@@ -41,6 +59,7 @@ type Projects interface {
 	New(obj map[string]interface{}) *Project
 	Get(project_id string) *Project
 	List() ([]string, error)
+	Create(name, configRepoID, codeRepoID string) error
 }
 
 type Project struct {
@@ -61,6 +80,7 @@ type GithubRepositories interface {
 	New(obj map[string]interface{}) (GithubRepository, error)
 	Get(id int) (GithubRepository, error)
 	List() ([]string, error)
+	Register(repoID string) (string, error)
 }
 
 type Repository interface {

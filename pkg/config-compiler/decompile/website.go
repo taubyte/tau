@@ -3,10 +3,10 @@ package decompile
 import (
 	"fmt"
 
-	"github.com/mitchellh/mapstructure"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	lib "github.com/taubyte/tau/pkg/schema/website"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	"github.com/taubyte/tau/utils/mapstructure"
 )
 
 func website(project projectLib.Project, _id string, obj interface{}, appName string) error {

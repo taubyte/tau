@@ -11,7 +11,6 @@ import (
 type vm struct {
 	lock        sync.RWMutex
 	filesystems []fs.FS
-	load        func(thread *starlark.Thread, module string) (starlark.StringDict, error)
 	builtins    map[string]starlark.StringDict
 }
 

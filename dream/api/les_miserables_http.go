@@ -3,12 +3,11 @@ package api
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/dream"
 	httpIface "github.com/taubyte/tau/pkg/http"
 )
 
-func (srv *multiverseService) lesMiesrablesHttp() {
-	srv.rest.GET(&httpIface.RouteDefinition{
+func (srv *Service) lesMiesrablesHttp() {
+	srv.server.GET(&httpIface.RouteDefinition{
 		Path: "/les/miserables/{universe}",
 		Vars: httpIface.Variables{
 			Required: []string{"universe"},
@@ -39,13 +38,13 @@ type Echart struct {
 	Categories []*EchartCat   `json:"categories"`
 }
 
-func (srv *multiverseService) apiHandlerLesMiesrable(ctx httpIface.Context) (interface{}, error) {
+func (srv *Service) apiHandlerLesMiesrable(ctx httpIface.Context) (interface{}, error) {
 	universeName, err := ctx.GetStringVariable("universe")
 	if err != nil {
 		return nil, err
 	}
 
-	u, err := dream.GetUniverse(universeName)
+	u, err := srv.Universe(universeName)
 	if err != nil {
 		return nil, fmt.Errorf("universe `%s` does not exit", universeName)
 	}

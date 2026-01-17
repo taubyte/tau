@@ -3,7 +3,7 @@ package app
 import (
 	"fmt"
 
-	"github.com/taubyte/go-seer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 // MIGRATION from Protocols to Services

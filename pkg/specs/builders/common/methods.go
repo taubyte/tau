@@ -8,11 +8,11 @@ import (
 	"os"
 	"path"
 
-	ci "github.com/taubyte/go-simple-container"
+	ci "github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/specs/builders"
 	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	"github.com/taubyte/tau/pkg/specs/builders/website"
-	"github.com/taubyte/utils/bundle"
+	"github.com/taubyte/tau/utils/bundle"
 )
 
 func Wd(workDir string) (*dir, error) {

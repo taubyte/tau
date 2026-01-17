@@ -17,7 +17,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 
 	"github.com/spf13/afero"
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	tnsIface "github.com/taubyte/tau/core/services/tns"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
@@ -28,9 +28,15 @@ import (
 
 func TestE2E(t *testing.T) {
 	t.Skip("Needs to be redone")
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
-	err := u.StartWithConfig(&dream.Config{
+
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns": {},
 		},
@@ -60,7 +66,7 @@ func TestE2E(t *testing.T) {
 	os.MkdirAll(gitRootConfig, 0755)
 	fakeMeta.Repository.Provider = "github"
 
-	err = gitTest.CloneToDirSSH(u.Context(), gitRootConfig, commonTest.ConfigRepo)
+	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
 	if err != nil {
 		t.Error(err)
 		return

@@ -5,7 +5,7 @@ import (
 
 	iface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/p2p/streams/command"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func (r RepositoryCommon) Id() int {
@@ -72,4 +72,26 @@ func (r *GithubRepositories) List() ([]string, error) {
 		return nil, fmt.Errorf("failed map string array on list error: %v", err)
 	}
 	return ids, nil
+}
+
+// Register registers a GitHub repository and returns the deployment key
+func (r *GithubRepositories) Register(repoID string) (string, error) {
+	logger.Debugf("Registering GitHub repository `%s`", repoID)
+	defer logger.Debugf("Registering GitHub repository `%s` done", repoID)
+
+	response, err := r.client.Send("repositories", command.Body{
+		"action":   "register",
+		"provider": "github",
+		"id":       repoID,
+	}, r.peers...)
+	if err != nil {
+		return "", fmt.Errorf("failed to register repository: %w", err)
+	}
+
+	key, err := maps.String(response, "key")
+	if err != nil {
+		return "", fmt.Errorf("failed to get repository key: %w", err)
+	}
+
+	return key, nil
 }

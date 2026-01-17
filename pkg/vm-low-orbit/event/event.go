@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/go-sdk/common"
 	"github.com/taubyte/go-sdk/errno"
+	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	vmCommon "github.com/taubyte/tau/core/vm"
 )
 
@@ -16,7 +16,7 @@ func (f *Factory) AttachEvent(e *Event) {
 	f.events[e.Id] = e
 }
 
-func (f *Factory) CreatePubsubEvent(msg *pubsub.Message) *Event {
+func (f *Factory) CreatePubsubEvent(msg pubsubIface.Message) *Event {
 	e := &Event{
 		Id:     f.generateEventId(),
 		Type:   common.EventTypePubsub,

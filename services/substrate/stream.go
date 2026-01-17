@@ -19,7 +19,7 @@ import (
 	http "github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/http/function"
 	"github.com/taubyte/tau/services/substrate/components/http/website"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func (s *Service) startStream() (err error) {
@@ -81,17 +81,18 @@ func (s *Service) proxyHttp(ctx context.Context, con con.Connection, body comman
 
 	httpComponent := s.components.http
 
+	matcher := http.New(request.Host, request.Path, request.Method)
+
 	var pick compIface.Serviceable
 	if serviceables, _ := httpComponent.Cache().Get(
-		&http.MatchDefinition{Request: request},
+		matcher,
 		compIface.GetOptions{Validation: true},
 	); len(serviceables) < 1 {
-		pick, err = s.components.http.Lookup(&http.MatchDefinition{Request: request})
+		pick, err = s.components.http.Lookup(matcher)
 		if err != nil {
 			return nil, fmt.Errorf("lookup failed with: %w", err)
 		}
 	} else {
-		// lookup should always return 0 or 1 serviceable
 		pick = serviceables[0]
 	}
 

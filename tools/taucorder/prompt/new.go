@@ -12,7 +12,7 @@ import (
 
 	goPrompt "github.com/c-bata/go-prompt"
 	"github.com/google/shlex"
-	dreamland "github.com/taubyte/tau/clients/http/dream"
+	dream "github.com/taubyte/tau/clients/http/dream"
 	hoarder "github.com/taubyte/tau/clients/p2p/hoarder"
 	monkey "github.com/taubyte/tau/clients/p2p/monkey"
 	patrick "github.com/taubyte/tau/clients/p2p/patrick"
@@ -29,19 +29,19 @@ import (
 )
 
 type tcprompt struct {
-	ctx             context.Context
-	ctxC            context.CancelFunc
-	engine          *goPrompt.Prompt
-	path            string
-	node            peer.Node
-	scanner         ScannerHandler
-	authClient      authIface.Client
-	seerClient      seerIface.Client
-	hoarderClient   hoarderIface.Client
-	monkeyClient    monkeyIface.Client
-	tnsClient       tnsIface.Client
-	patrickClient   patrickIface.Client
-	dreamlandClient *dreamland.Client
+	ctx           context.Context
+	ctxC          context.CancelFunc
+	engine        *goPrompt.Prompt
+	path          string
+	node          peer.Node
+	scanner       ScannerHandler
+	authClient    authIface.Client
+	seerClient    seerIface.Client
+	hoarderClient hoarderIface.Client
+	monkeyClient  monkeyIface.Client
+	tnsClient     tnsIface.Client
+	patrickClient patrickIface.Client
+	dreamClient   *dream.Client
 }
 
 var prompt Prompt
@@ -104,7 +104,7 @@ func (p *tcprompt) Run(options ...Option) error {
 		return err
 	}
 
-	p.seerClient, err = seer.New(p.ctx, p.node)
+	p.seerClient, err = seer.New(p.ctx, p.node, nil)
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (p *tcprompt) Run(options ...Option) error {
 		return err
 	}
 
-	p.dreamlandClient, err = dreamland.New(p.ctx)
+	p.dreamClient, err = dream.New(p.ctx)
 	if err != nil {
 		return err
 	}

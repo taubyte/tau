@@ -103,7 +103,7 @@
       "open_issues": 0,
       "watchers": 0,
       "stargazers": 0,
-      "master_branch": "master"
+      "master_branch": "main"
     },
     "pusher": {
       "name": "{{.Name}}",

@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -12,25 +13,31 @@ import (
 	_ "github.com/taubyte/tau/services/auth"
 	"gotest.tools/v3/assert"
 
-	_ "github.com/taubyte/tau/services/hoarder"
-	_ "github.com/taubyte/tau/services/monkey"
-	_ "github.com/taubyte/tau/services/patrick"
-	_ "github.com/taubyte/tau/services/seer"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
+	_ "github.com/taubyte/tau/services/monkey/dream"
+	_ "github.com/taubyte/tau/services/patrick/dream"
+	_ "github.com/taubyte/tau/services/seer/dream"
+	_ "github.com/taubyte/tau/services/tns/dream"
 
-	_ "github.com/taubyte/tau/clients/p2p/monkey"
-	_ "github.com/taubyte/tau/clients/p2p/patrick"
-	_ "github.com/taubyte/tau/clients/p2p/tns"
+	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
+	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
 
 func TestRoutes(t *testing.T) {
-	univerName := "dreamland-http"
+	dream.DreamApiPort = 31421 // don't conflict with default port
+
+	univerName := "dream-http"
 	// start multiverse
-	err := api.BigBang()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	err = api.BigBang(m)
 	assert.NilError(t, err)
 
-	u := dream.New(dream.UniverseConfig{Name: univerName})
-	defer u.Stop()
+	u, err := m.New(dream.UniverseConfig{Name: univerName})
+	assert.NilError(t, err)
 
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
@@ -57,7 +64,7 @@ func TestRoutes(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
-	client, err := New(ctx, URL("http://localhost:1421"), Timeout(60*time.Second))
+	client, err := New(ctx, URL(fmt.Sprintf("http://localhost:%d", dream.DreamApiPort)), Timeout(60*time.Second))
 	assert.NilError(t, err)
 
 	univs, err := client.Universes()
@@ -65,7 +72,7 @@ func TestRoutes(t *testing.T) {
 
 	assert.DeepEqual(t, univs[univerName].SwarmKey, u.SwarmKey())
 
-	assert.Equal(t, univs[univerName].NodeCount, 8)
+	assert.Equal(t, univs[univerName].NodeCount, 7)
 
 	universe := client.Universe(univerName)
 

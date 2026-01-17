@@ -1,11 +1,9 @@
 package projects
 
 import (
-	"strconv"
-
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/services/auth"
-	"github.com/taubyte/utils/maps"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 type Repository struct {
@@ -33,32 +31,18 @@ func New(kv kvdb.KVDB, data Data) (Project, error) {
 		provider = "github"
 	}
 
-	project := &ProjectObject{
-		Id:       id,
-		Name:     name,
-		Provider: provider,
+	project := &projectObject{
+		id:       id,
+		name:     name,
+		provider: provider,
+		kv:       kv,
 	}
 
 	codeId, _ := maps.String(data, "code")
-	var codeIdInt int
-	if len(codeId) > 0 {
-		codeIdInt, err = strconv.Atoi(codeId)
-		if err != nil {
-			codeIdInt = 0
-		}
-	}
-	project.Code = codeIdInt
+	project.code = codeId
 
 	configId, _ := maps.String(data, "config")
-	var configIdInt int
-	if len(configId) > 0 {
-		configIdInt, err = strconv.Atoi(configId)
-		if err != nil {
-			configIdInt = 0
-		}
-	}
-	project.Config = configIdInt
+	project.config = configId
 
 	return project, nil
-
 }

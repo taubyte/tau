@@ -6,17 +6,20 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	_ "github.com/taubyte/tau/services/substrate"
 	"github.com/taubyte/tau/services/substrate/components/p2p"
+	_ "github.com/taubyte/tau/services/substrate/dream"
 	"gotest.tools/v3/assert"
 )
 
 func TestService_Discover(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	defer u.Stop()
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
 
-	err := u.StartWithConfig(&dream.Config{
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"substrate": {Others: map[string]int{"copies": 2}},
 		},

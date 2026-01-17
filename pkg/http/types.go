@@ -7,7 +7,6 @@ import (
 	"net/url"
 
 	"github.com/gorilla/mux"
-	"github.com/gorilla/websocket"
 	"github.com/spf13/afero"
 )
 
@@ -49,6 +48,12 @@ type LowLevelDefinition struct {
 	Handler    func(w http.ResponseWriter, r *http.Request)
 }
 
+type LowLevelHandlerDefinition struct {
+	Path       string
+	PathPrefix string
+	Handler    http.Handler
+}
+
 type RouteDefinition struct {
 	Host        string
 	Path        string
@@ -85,6 +90,15 @@ type WebSocketHandler interface {
 	Out()
 }
 
+type WebSocketConnection interface {
+	ReadMessage() (messageType int, p []byte, err error)
+	WriteJSON(v interface{}) error
+	WriteMessage(messageType int, data []byte) error
+	Close() error
+	EnableWriteCompression(enable bool)
+	SetCloseHandler(func(code int, text string) error)
+}
+
 type Variables struct {
 	Required []string
 	Optional []string
@@ -119,7 +133,7 @@ type WebSocketDefinition struct {
 	Vars       Variables
 	Scope      []string
 	Auth       RouteAuthHandler
-	NewHandler func(ctx Context, conn *websocket.Conn) WebSocketHandler
+	NewHandler func(ctx Context, conn WebSocketConnection) WebSocketHandler
 }
 
 type Service interface {
@@ -138,6 +152,7 @@ type Service interface {
 
 	Raw(*RawRouteDefinition) *mux.Route
 	LowLevel(*LowLevelDefinition) *mux.Route
+	LowLevelHandler(*LowLevelHandlerDefinition) *mux.Route
 
 	WebSocket(*WebSocketDefinition)
 

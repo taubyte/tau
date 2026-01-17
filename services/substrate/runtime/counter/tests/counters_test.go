@@ -10,19 +10,20 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"github.com/taubyte/tau/services/substrate/runtime/cache"
-	"github.com/taubyte/utils/id"
+	"github.com/taubyte/tau/utils/id"
 	"gotest.tools/v3/assert"
 
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
+	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
 	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
-	_ "github.com/taubyte/tau/services/hoarder"
+	_ "github.com/taubyte/tau/services/hoarder/dream"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
-	_ "github.com/taubyte/tau/services/seer"
-	_ "github.com/taubyte/tau/services/substrate"
+	_ "github.com/taubyte/tau/services/seer/dream"
+	_ "github.com/taubyte/tau/services/substrate/dream"
 	mockCounter "github.com/taubyte/tau/services/substrate/mocks/counters"
-	_ "github.com/taubyte/tau/services/tns"
+	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
 var (
@@ -48,10 +49,14 @@ func init() {
 }
 
 func TestCounters(t *testing.T) {
-	u := dream.New(dream.UniverseConfig{Name: t.Name()})
-	defer u.Stop()
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
 
-	err := u.StartWithConfig(&dream.Config{
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
 			"substrate": {},
@@ -106,16 +111,16 @@ func TestCounters(t *testing.T) {
 	assert.NilError(t, err)
 
 	url := fmt.Sprintf("http://%s:%d/%s", fqdn, httpPort, functionPath)
-	err = cache.ParallelGetWithBodyCheck(iterations, cache.GetTester{
+	err = ParallelGetWithBodyCheck(iterations, GetTester{
 		Url: url,
-		PassingResponse: &cache.ResponseCheck{
+		PassingResponse: &ResponseCheck{
 			Body: []byte("PONG"),
 			Code: 200,
 		},
 	})
 	assert.NilError(t, err)
 
-	counter, err := mockCounter.FromDreamland(u)
+	counter, err := mockCounter.FromDream(u)
 	assert.NilError(t, err)
 
 	metrics := counter.Dump()
