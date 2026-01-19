@@ -6,9 +6,9 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	testFixtures "github.com/taubyte/tau/pkg/config-compiler/fixtures"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	testFixtures "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
 	tcc "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"
 

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/dream"
-	testFixtures "github.com/taubyte/tau/pkg/config-compiler/fixtures"
+	testFixtures "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
 )
 
 func fakeProject(u *dream.Universe, params ...interface{}) error {

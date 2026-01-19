@@ -11,7 +11,7 @@ import (
 	"github.com/otiai10/copy"
 	"github.com/pterm/pterm"
 	"github.com/spf13/afero"
-	"github.com/taubyte/tau/pkg/config-compiler/common"
+	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/pkg/schema/functions"
 	"github.com/taubyte/tau/pkg/schema/project"
 	wasmSpec "github.com/taubyte/tau/pkg/specs/builders/wasm"

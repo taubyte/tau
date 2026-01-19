@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/taubyte/tau/pkg/config-compiler/common"
+	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	specs "github.com/taubyte/tau/pkg/specs/website"
 

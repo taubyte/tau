@@ -3,7 +3,7 @@ package indexer
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/pkg/config-compiler/common"
+	"github.com/taubyte/tau/core/common"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 
 	"github.com/taubyte/tau/pkg/specs/methods"

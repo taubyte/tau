@@ -16,7 +16,6 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	"github.com/taubyte/tau/p2p/peer"
-	compilerCommon "github.com/taubyte/tau/pkg/config-compiler/common"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	"gotest.tools/v3/assert"
@@ -47,21 +46,21 @@ func newTestContext(ctx context.Context, simple *dream.Simple, logFile *os.File)
 	}
 }
 
-func (t testContext) testHandler(repoType compilerCommon.RepositoryType, repoId int, job *patrick.Job, preserve bool) func() error {
+func (t testContext) testHandler(repoType commonIface.RepositoryType, repoId int, job *patrick.Job, preserve bool) func() error {
 	return func() error {
 		t.RepoType, t.Job = repoType, job
 
 		var url string
 		var setConfig bool
 		switch repoType {
-		case compilerCommon.CodeRepository:
+		case commonIface.CodeRepository:
 			url = commonTest.CodeRepo.URL
-		case compilerCommon.ConfigRepository:
+		case commonIface.ConfigRepository:
 			url = commonTest.ConfigRepo.URL
 			setConfig = true
-		case compilerCommon.LibraryRepository:
+		case commonIface.LibraryRepository:
 			url = commonTest.LibraryRepo.URL
-		case compilerCommon.WebsiteRepository:
+		case commonIface.WebsiteRepository:
 			url = commonTest.WebsiteRepo.URL
 		default:
 			return fmt.Errorf("unknown repo type %d", repoType)
@@ -98,19 +97,19 @@ func (t testContext) testHandler(repoType compilerCommon.RepositoryType, repoId 
 }
 
 func (t testContext) library(job *patrick.Job) func() error {
-	return t.testHandler(compilerCommon.LibraryRepository, 59371711, job, false)
+	return t.testHandler(commonIface.LibraryRepository, 59371711, job, false)
 }
 
 func (t testContext) config(job *patrick.Job) func() error {
-	return t.testHandler(compilerCommon.ConfigRepository, 593693892, job, false)
+	return t.testHandler(commonIface.ConfigRepository, 593693892, job, false)
 }
 
 func (t testContext) code(job *patrick.Job) func() error {
-	return t.testHandler(compilerCommon.CodeRepository, 593693910, job, false)
+	return t.testHandler(commonIface.CodeRepository, 593693910, job, false)
 }
 
 func (t testContext) website(job *patrick.Job) func() error {
-	return t.testHandler(compilerCommon.WebsiteRepository, 87654321, job, false)
+	return t.testHandler(commonIface.WebsiteRepository, 87654321, job, false)
 }
 
 func (m *mockMonkey) Dev() bool {

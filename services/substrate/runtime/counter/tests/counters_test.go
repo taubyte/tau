@@ -16,7 +16,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
-	_ "github.com/taubyte/tau/pkg/config-compiler/fixtures"
+	_ "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/services/seer/dream"
