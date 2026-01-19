@@ -99,7 +99,7 @@ func TestFail(t *testing.T) {
 			return
 		}
 
-		project, err := tcc.GenerateProject(id.Generate(),
+		fs, project, err := tcc.GenerateProject(id.Generate(),
 			&structureSpec.Service{
 				Name:     "someService",
 				Protocol: "/testproto/v1",
@@ -121,7 +121,7 @@ func TestFail(t *testing.T) {
 			return
 		}
 
-		err = u.RunFixture("injectProject", project)
+		err = u.RunFixture("injectProject", fs)
 		if err != nil {
 			mostRecentError = err
 			return

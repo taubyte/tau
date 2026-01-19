@@ -247,7 +247,7 @@ func TestAll(t *testing.T) {
 		assert.NilError(t, err)
 	}
 
-	project, err := tcc.GenerateProject(projectString,
+	_, project, err := tcc.GenerateProject(projectString,
 		&structureSpec.Database{
 			Id:          databaseId,
 			Name:        "testDatabase",

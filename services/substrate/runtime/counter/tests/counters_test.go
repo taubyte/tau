@@ -74,7 +74,7 @@ func TestCounters(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	project, err := tcc.GenerateProject(projectId,
+	fs, _, err := tcc.GenerateProject(projectId,
 		&structureSpec.Function{
 			Id:      functionId,
 			Name:    "testFunc",
@@ -94,7 +94,7 @@ func TestCounters(t *testing.T) {
 	)
 	assert.NilError(t, err)
 
-	err = u.RunFixture("injectProject", project)
+	err = u.RunFixture("injectProject", fs)
 	assert.NilError(t, err)
 
 	wd, err := os.Getwd()

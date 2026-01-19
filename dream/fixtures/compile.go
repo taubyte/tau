@@ -8,8 +8,6 @@ import (
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	"github.com/taubyte/tau/pkg/config-compiler/compile"
-	"github.com/taubyte/tau/pkg/schema/project"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
 	tcc "github.com/taubyte/tau/utils/tcc"
 )
@@ -85,42 +83,14 @@ func injectWithFS(fs afero.Fs, configPath string, branch string, commit string, 
 	return nil
 }
 
-// inject is a backward-compatible wrapper that uses the old compiler
-// TODO: Migrate callers to use injectWithFS directly
-func inject(project project.Project, simple *dream.Simple) error {
+// inject compiles and publishes a project using TCC
+// fs is the filesystem where the project was created (from tcc.GenerateProject)
+// configPath is the root path within the filesystem where config.yaml lives
+func inject(fs afero.Fs, configPath string, simple *dream.Simple) error {
 	fakeMeta := commonTest.ConfigRepo.HookInfo
 	fakeMeta.Repository.Provider = "github"
 	fakeMeta.Repository.Branch = "main"
 	fakeMeta.HeadCommit.ID = "testCommit"
 
-	// Use old compiler for backward compatibility
-	// TODO: Remove this once all callers use injectWithFS
-	rc, err := compile.CompilerConfig(project, fakeMeta, generatedDomainRegExp)
-	if err != nil {
-		return err
-	}
-
-	compiler, err := compile.New(rc, compile.Dev())
-	if err != nil {
-		return err
-	}
-	defer compiler.Close()
-
-	err = compiler.Build()
-	if err != nil {
-		return err
-	}
-
-	tns, err := simple.TNS()
-	if err != nil {
-		return err
-	}
-
-	// publish ( compile & send to TNS )
-	err = compiler.Publish(tns)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return injectWithFS(fs, configPath, fakeMeta.Repository.Branch, fakeMeta.HeadCommit.ID, simple)
 }

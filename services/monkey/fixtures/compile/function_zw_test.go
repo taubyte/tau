@@ -46,7 +46,7 @@ func TestZWasmFunction(t *testing.T) {
 		return
 	}
 
-	project, err := tcc.GenerateProject(testProjectId,
+	fs, _, err := tcc.GenerateProject(testProjectId,
 		&structureSpec.Function{
 			Id:      testFunctionId,
 			Name:    "someFunc",
@@ -66,7 +66,7 @@ func TestZWasmFunction(t *testing.T) {
 	)
 	assert.NilError(t, err)
 
-	err = u.RunFixture("injectProject", project)
+	err = u.RunFixture("injectProject", fs)
 	assert.NilError(t, err)
 
 	wd, err := os.Getwd()

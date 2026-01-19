@@ -19,12 +19,13 @@ func generateId(_id string) string {
 
 // GenerateProject creates a project in memfs with the provided resources
 // It uses schema's SetWithStruct which internally uses yasser to write YAML files
-func GenerateProject(projectId string, resources ...interface{}) (projectLib.Project, error) {
+// Returns both the filesystem and the project so the fs can be used for TCC compilation
+func GenerateProject(projectId string, resources ...interface{}) (afero.Fs, projectLib.Project, error) {
 	fs := afero.NewMemMapFs()
 
 	prj, err := projectLib.Open(projectLib.VirtualFS(fs, "/"))
 	if err != nil {
-		return nil, fmt.Errorf("opening project failed: %w", err)
+		return nil, nil, fmt.Errorf("opening project failed: %w", err)
 	}
 
 	err = prj.Set(
@@ -33,16 +34,16 @@ func GenerateProject(projectId string, resources ...interface{}) (projectLib.Pro
 		projectLib.Name("generatedProject"),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("setting project failed: %w", err)
+		return nil, nil, fmt.Errorf("setting project failed: %w", err)
 	}
 
 	for _, res := range resources {
 		if err := addResource(prj, res); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
 
-	return prj, nil
+	return fs, prj, nil
 }
 
 // addResource adds a resource to the project using SetWithStruct

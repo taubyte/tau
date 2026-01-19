@@ -46,11 +46,14 @@ func TestLibrary(t *testing.T) {
 		return
 	}
 
-	project, err := tcc.GenerateProject(testProjectId,
+	fs, _, err := tcc.GenerateProject(testProjectId,
 		&structureSpec.Library{
-			Id:   testLibraryId,
-			Name: "someLibrary",
-			Path: "/",
+			Id:       testLibraryId,
+			Name:     "someLibrary",
+			Path:     "/",
+			Provider: "github",
+			RepoID:   "123456",
+			RepoName: "test/library",
 		},
 		&structureSpec.Function{
 			Id:      testFunctionId,
@@ -74,7 +77,7 @@ func TestLibrary(t *testing.T) {
 		return
 	}
 
-	err = u.RunFixture("injectProject", project)
+	err = u.RunFixture("injectProject", fs)
 	if err != nil {
 		t.Error(err)
 		return

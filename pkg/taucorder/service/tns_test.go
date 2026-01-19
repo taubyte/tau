@@ -57,11 +57,14 @@ func TestTNS(t *testing.T) {
 		},
 	}))
 
-	project, err := tcc.GenerateProject(testProjectId,
+	fs, _, err := tcc.GenerateProject(testProjectId,
 		&structureSpec.Library{
-			Id:   testLibraryId,
-			Name: "someLibrary",
-			Path: "/",
+			Id:       testLibraryId,
+			Name:     "someLibrary",
+			Path:     "/",
+			Provider: "github",
+			RepoID:   "123456",
+			RepoName: "test/library",
 		},
 		&structureSpec.Function{
 			Id:      testFunctionId,
@@ -81,10 +84,13 @@ func TestTNS(t *testing.T) {
 			Fqdn: "hal.computers.com",
 		},
 		&structureSpec.Website{
-			Id:      testWebsiteId,
-			Name:    "someWebsite",
-			Domains: []string{"someDomain"},
-			Paths:   []string{"/"},
+			Id:       testWebsiteId,
+			Name:     "someWebsite",
+			Domains:  []string{"someDomain"},
+			Paths:    []string{"/"},
+			Provider: "github",
+			RepoID:   "123456",
+			RepoName: "test/website",
 		},
 	)
 	if err != nil {
@@ -92,7 +98,7 @@ func TestTNS(t *testing.T) {
 		return
 	}
 
-	assert.NilError(t, u.RunFixture("injectProject", project))
+	assert.NilError(t, u.RunFixture("injectProject", fs))
 
 	time.Sleep(10 * time.Second)
 
@@ -183,7 +189,7 @@ func TestTNS(t *testing.T) {
 		assert.Equal(
 			t,
 			obj.Msg.GetJson(),
-			`{"call":"ping","description":"","domains":["QmNxpVc6DnbR3MKuvb3xw8Jzb8pfJTSRWJEdBMsb8AXFEX"],"memory":100000,"method":"GET","name":"someFunc","paths":["/ping"],"secure":false,"source":"libraries/QmP6qBNyoLeMLiwk8uYZ8xoT4CnDspYntcY4oCkpVG1byt","timeout":1000000000,"type":"http"}`,
+			`{"call":"ping","description":"","domains":["QmNxpVc6DnbR3MKuvb3xw8Jzb8pfJTSRWJEdBMsb8AXFEX"],"memory":100000,"method":"GET","name":"someFunc","paths":["/ping"],"secure":false,"source":"libraries/QmP6qBNyoLeMLiwk8uYZ8xoT4CnDspYntcY4oCkpVG1byt","tags":[],"timeout":1000000000,"type":"http"}`,
 		)
 	})
 
@@ -199,7 +205,7 @@ func TestTNS(t *testing.T) {
 		}))
 		assert.NilError(t, err)
 
-		assert.Equal(t, len(obj.Msg.GetPaths()), 11)
+		assert.Equal(t, len(obj.Msg.GetPaths()), 12)
 	})
 
 	t.Run("Lookup Regex", func(t *testing.T) {

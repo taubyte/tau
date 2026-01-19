@@ -44,7 +44,7 @@ func TestGoSmartOp(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	project, err := tcc.GenerateProject(testProjectId,
+	fs, _, err := tcc.GenerateProject(testProjectId,
 		&structureSpec.SmartOp{
 			Id:      testSmartOpId,
 			Name:    "someSmart",
@@ -86,7 +86,7 @@ func TestGoSmartOp(t *testing.T) {
 	)
 	assert.NilError(t, err)
 
-	err = u.RunFixture("injectProject", project)
+	err = u.RunFixture("injectProject", fs)
 	assert.NilError(t, err)
 
 	wd, err := os.Getwd()

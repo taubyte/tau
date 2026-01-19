@@ -23,11 +23,11 @@ func (d *domain) SetWithStruct(sync bool, domain *structureSpec.Domain) error {
 			ops = append(ops, Tags(domain.Tags))
 			return nil
 		}},
-		{"FQDN", true, func() error {
+		{"Fqdn", true, func() error {
 			ops = append(ops, FQDN(domain.Fqdn))
 			return nil
 		}},
-		{"Type", true, func() error {
+		{"CertType", true, func() error {
 			ops = append(ops, Type(domain.CertType))
 			return nil
 		}},

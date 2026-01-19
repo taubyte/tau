@@ -389,7 +389,7 @@ func TestAll(t *testing.T) {
 		return
 	}
 
-	project, err := tcc.GenerateProject(projectString,
+	_, project, err := tcc.GenerateProject(projectString,
 		&structureSpec.Storage{
 			Id:          "QmUhyzQ4sYGbTmFNY7w46syoiY6kYC6gCs3fDNzwMV1arH",
 			Name:        "testStorage",

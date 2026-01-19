@@ -48,12 +48,15 @@ func TestWebsite(t *testing.T) {
 		return
 	}
 
-	project, err := tcc.GenerateProject(testProjectId,
+	fs, _, err := tcc.GenerateProject(testProjectId,
 		&structureSpec.Website{
-			Id:      testWebsiteId,
-			Name:    "someWebsite",
-			Domains: []string{"someDomain"},
-			Paths:   []string{"/"},
+			Id:       testWebsiteId,
+			Name:     "someWebsite",
+			Domains:  []string{"someDomain"},
+			Paths:    []string{"/"},
+			Provider: "github",
+			RepoID:   "123456",
+			RepoName: "test/website",
 		},
 		&structureSpec.Domain{
 			Name: "someDomain",
@@ -65,7 +68,7 @@ func TestWebsite(t *testing.T) {
 		return
 	}
 
-	err = u.RunFixture("injectProject", project)
+	err = u.RunFixture("injectProject", fs)
 	if err != nil {
 		t.Error(err)
 		return

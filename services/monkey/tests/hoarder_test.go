@@ -58,7 +58,7 @@ func TestHoarder(t *testing.T) {
 	fqdn := "hal.computers.com"
 	_path := "ping"
 
-	project, err := tcc.GenerateProject(projectId,
+	fs, _, err := tcc.GenerateProject(projectId,
 		&structureSpec.Function{
 			Id:      functionId,
 			Name:    "someFunc",
@@ -78,7 +78,7 @@ func TestHoarder(t *testing.T) {
 	)
 	assert.NilError(t, err)
 
-	err = u.RunFixture("injectProject", project)
+	err = u.RunFixture("injectProject", fs)
 	assert.NilError(t, err)
 
 	wd, err := os.Getwd()

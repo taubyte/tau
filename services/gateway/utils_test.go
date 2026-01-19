@@ -56,7 +56,7 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 	})
 	assert.NilError(t, err)
 
-	prj, err := tcc.GenerateProject(
+	fs, _, err := tcc.GenerateProject(
 		projectId,
 		&structureSpec.Function{
 			Id:      resourceId,
@@ -77,7 +77,7 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 	)
 	assert.NilError(t, err)
 
-	err = u.RunFixture("injectProject", prj)
+	err = u.RunFixture("injectProject", fs)
 	assert.NilError(t, err)
 
 	wd, err := os.Getwd()

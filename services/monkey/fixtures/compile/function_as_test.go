@@ -49,7 +49,7 @@ func TestASFunction(t *testing.T) {
 		return
 	}
 
-	project, err := tcc.GenerateProject(testProjectId,
+	fs, _, err := tcc.GenerateProject(testProjectId,
 		&structureSpec.Function{
 			Id:      testFunctionId,
 			Name:    "someFunc",
@@ -72,7 +72,7 @@ func TestASFunction(t *testing.T) {
 		return
 	}
 
-	err = u.RunFixture("injectProject", project)
+	err = u.RunFixture("injectProject", fs)
 	if err != nil {
 		t.Error(err)
 		return

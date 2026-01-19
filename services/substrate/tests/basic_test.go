@@ -63,11 +63,14 @@ func TestBasicWithLibrary(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	project, err := tcc.GenerateProject(testProjectId,
+	fs, _, err := tcc.GenerateProject(testProjectId,
 		&structureSpec.Library{
-			Id:   testLibraryId,
-			Name: "someLibrary",
-			Path: "/",
+			Id:       testLibraryId,
+			Name:     "someLibrary",
+			Path:     "/",
+			Provider: "github",
+			RepoID:   "123456",
+			RepoName: "test/library",
 		},
 		&structureSpec.Function{
 			Id:      testFunctionId,
@@ -86,15 +89,18 @@ func TestBasicWithLibrary(t *testing.T) {
 			Fqdn: "hal.computers.com",
 		},
 		&structureSpec.Website{
-			Id:      testWebsiteId,
-			Name:    "someWebsite",
-			Domains: []string{"someDomain"},
-			Paths:   []string{"/"},
+			Id:       testWebsiteId,
+			Name:     "someWebsite",
+			Domains:  []string{"someDomain"},
+			Paths:    []string{"/"},
+			Provider: "github",
+			RepoID:   "123456",
+			RepoName: "test/website",
 		},
 	)
 	assert.NilError(t, err)
 
-	err = u.RunFixture("injectProject", project)
+	err = u.RunFixture("injectProject", fs)
 	if err != nil {
 		t.Error(err)
 		return
