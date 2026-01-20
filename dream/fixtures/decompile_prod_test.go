@@ -5,15 +5,14 @@ import (
 	"os"
 	"testing"
 
-	"github.com/spf13/afero"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
-	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	tccDecompile "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
 	_ "github.com/taubyte/tau/services/tns/dream"
 	"github.com/taubyte/tau/utils/maps"
 	tcc "github.com/taubyte/tau/utils/tcc"
@@ -21,8 +20,6 @@ import (
 )
 
 func TestDecompileProd(t *testing.T) {
-	t.Skip("using an old project")
-
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()
@@ -53,20 +50,20 @@ func TestDecompileProd(t *testing.T) {
 	tns, err := simple.TNS()
 	assert.NilError(t, err)
 
-	gitRoot := "./testGIT"
+	// Use a temporary directory to avoid modifying any existing testGIT directories
+	gitRoot, err := os.MkdirTemp("", "testGIT-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(gitRoot) // Clean up after test
 	gitRootConfig := gitRoot + "/prodConfigDream"
 	os.MkdirAll(gitRootConfig, 0755)
 
 	fakeMeta := commonTest.ConfigRepo.HookInfo
-	fakeMeta.Repository.SSHURL = "git@github.com:taubyte-test/tb_prodproject.git"
-	fakeMeta.Repository.Branch = "dream"
+	fakeMeta.Repository.Branch = "main" // Updated to match repository default branch
 	fakeMeta.Repository.Provider = "github"
 
-	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.Repository{
-		ID:       517160737,
-		Name:     "tb_prodproject",
-		HookInfo: fakeMeta,
-	})
+	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
 	assert.NilError(t, err)
 
 	// Create TCC compiler
@@ -120,19 +117,36 @@ func TestDecompileProd(t *testing.T) {
 
 	maps.Display("", test_obj)
 
-	testProjectDir := "./testGIT/testDecompileProd"
-	os.RemoveAll(testProjectDir)
-	os.Mkdir(testProjectDir, 0777)
+	// Use a temporary directory for decompilation output
+	testProjectDir, err := os.MkdirTemp("", "testDecompileProd-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(testProjectDir) // Clean up after test
 
-	decompiler, err := decompile.New(afero.NewBasePathFs(afero.NewOsFs(), testProjectDir), test_obj.Interface())
+	// Convert the compiled object's flat structure to a TCC object for decompilation
+	// Note: We use the compiled object's flat structure (which includes both "object" and "indexes")
+	// rather than the fetched object from TNS, since the fetched object is just the "object" part
+	// and TCC decompiler expects the full structure with "object" and "indexes" as top-level children.
+	// This is consistent with how config_compiler_test.go handles decompilation.
+	objFlat := obj.Flat()
+
+	// Create a TCC object from the flat structure (which includes both object and indexes)
+	objCopy := mapToTCCObject(objFlat)
+
+	// Create TCC decompiler
+	decompiler, err := tccDecompile.New(tccDecompile.WithLocal(testProjectDir))
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	_, err = decompiler.Build()
+	// Decompile the object to filesystem
+	// Note: Decompile modifies the object in place, so we use the copy
+	err = decompiler.Decompile(objCopy)
 	if err != nil {
-		t.Error(err)
+		t.Errorf("decompilation failed: %v", err)
+		return
 	}
 
 }
