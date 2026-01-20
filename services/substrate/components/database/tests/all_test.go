@@ -15,10 +15,9 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
-	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	"github.com/taubyte/tau/pkg/kvdb"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
 	service "github.com/taubyte/tau/services/substrate/components/database"
 	_ "github.com/taubyte/tau/services/substrate/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
@@ -51,10 +50,9 @@ var (
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
 func TestAll(t *testing.T) {
-	t.Skip("Redo This Test, this test repo doesnt exist?")
 	meta := patrick.Meta{}
 	meta.Repository.ID = 1234567890
-	meta.Repository.Branch = "master"
+	meta.Repository.Branch = "main" // Updated to match repository default branch
 	meta.HeadCommit.ID = "commitID"
 	meta.Repository.Provider = "github"
 
@@ -82,9 +80,12 @@ func TestAll(t *testing.T) {
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)
 
-	gitRoot := "./testGIT"
-
-	defer os.RemoveAll(gitRoot)
+	// Use a temporary directory to avoid modifying any existing testGIT directories
+	gitRoot, err := os.MkdirTemp("", "testGIT-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(gitRoot) // Clean up after test
 	gitRootConfig := gitRoot + "/config"
 	err = os.MkdirAll(gitRootConfig, 0755)
 	assert.NilError(t, err)
@@ -92,23 +93,56 @@ func TestAll(t *testing.T) {
 	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
 	assert.NilError(t, err)
 
-	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
+	// Create TCC compiler
+	compiler, err := tccCompiler.New(
+		tccCompiler.WithLocal(gitRootConfig),
+		tccCompiler.WithBranch(meta.Repository.Branch),
+	)
 	assert.NilError(t, err)
 
-	rc, err := compile.CompilerConfig(projectIface, meta, generatedDomainRegExp)
+	// Compile
+	obj, validations, err := compiler.Compile(u.Context())
 	assert.NilError(t, err)
 
-	compiler, err := compile.New(rc, compile.Dev())
+	// Extract project ID from validations
+	projectID, err := tcc.ExtractProjectID(validations)
 	assert.NilError(t, err)
-	defer compiler.Close()
 
-	err = compiler.Build()
+	// Process DNS validations (dev mode)
+	err = tcc.ProcessDNSValidations(
+		validations,
+		generatedDomainRegExp,
+		true, // dev mode
+		nil,  // no DV key needed in dev mode
+	)
 	assert.NilError(t, err)
+
+	// Extract object and indexes from Flat()
+	flat := obj.Flat()
+	object, ok := flat["object"].(map[string]interface{})
+	if !ok {
+		t.Error("object not found in flat result")
+		return
+	}
+
+	indexes, ok := flat["indexes"].(map[string]interface{})
+	if !ok {
+		t.Error("indexes not found in flat result")
+		return
+	}
 
 	tns, err := simple.TNS()
 	assert.NilError(t, err)
 
-	err = compiler.Publish(tns)
+	// Publish to TNS
+	err = tcc.Publish(
+		tns,
+		object,
+		indexes,
+		projectID,
+		meta.Repository.Branch,
+		meta.HeadCommit.ID,
+	)
 	assert.NilError(t, err)
 
 	context := db.Context{
@@ -247,7 +281,7 @@ func TestAll(t *testing.T) {
 		assert.NilError(t, err)
 	}
 
-	_, project, err := tcc.GenerateProject(projectString,
+	fs, _, err := tcc.GenerateProject(projectString,
 		&structureSpec.Database{
 			Id:          databaseId,
 			Name:        "testDatabase",
@@ -279,20 +313,57 @@ func TestAll(t *testing.T) {
 
 	meta.HeadCommit.ID = expectedCommitId
 
-	rc, err = compile.CompilerConfig(project, meta, generatedDomainRegExp)
+	// Create TCC compiler for the updated project
+	// Since tcc.GenerateProject returns a memfs, we use WithVirtual
+	compiler2, err := tccCompiler.New(
+		tccCompiler.WithVirtual(fs, "/"),
+		tccCompiler.WithBranch(meta.Repository.Branch),
+	)
 	assert.NilError(t, err)
 
-	compiler, err = compile.New(rc, compile.Dev())
-	assert.NilError(t, err)
-	defer compiler.Close()
-
-	err = compiler.Build()
+	// Compile
+	obj2, validations2, err := compiler2.Compile(u.Context())
 	assert.NilError(t, err)
 
-	err = compiler.Publish(tns)
+	// Extract project ID from validations
+	projectID2, err := tcc.ExtractProjectID(validations2)
 	assert.NilError(t, err)
 
-	commitId, _, err := tns.Simple().Commit(projectString, "master")
+	// Process DNS validations (dev mode)
+	err = tcc.ProcessDNSValidations(
+		validations2,
+		generatedDomainRegExp,
+		true, // dev mode
+		nil,  // no DV key needed in dev mode
+	)
+	assert.NilError(t, err)
+
+	// Extract object and indexes from Flat()
+	flat2 := obj2.Flat()
+	object2, ok := flat2["object"].(map[string]interface{})
+	if !ok {
+		t.Error("object not found in flat result")
+		return
+	}
+
+	indexes2, ok := flat2["indexes"].(map[string]interface{})
+	if !ok {
+		t.Error("indexes not found in flat result")
+		return
+	}
+
+	// Publish to TNS
+	err = tcc.Publish(
+		tns,
+		object2,
+		indexes2,
+		projectID2,
+		meta.Repository.Branch,
+		meta.HeadCommit.ID,
+	)
+	assert.NilError(t, err)
+
+	commitId, _, err := tns.Simple().Commit(projectString, "main")
 	assert.NilError(t, err)
 
 	if commitId != expectedCommitId {
