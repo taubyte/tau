@@ -35,7 +35,7 @@ var TaubyteRessources = []*Node{
 				String("fqdn", IsFqdn()),
 				String("certificate-data", Path("certificate", "cert")),
 				String("certificate-key", Path("certificate", "key")),
-				String("certificate-type", Path("certificate", "type"), InSet("inline"), Default("")),
+				String("certificate-type", Path("certificate", "type"), InSet("inline", "auto"), Default("")),
 			),
 		)),
 	DefineGroup("functions",

@@ -10,5 +10,5 @@ var (
 
 func init() {
 	fakeMeta.Repository.Provider = "github"
-	fakeMeta.Repository.Branch = "master"
+	fakeMeta.Repository.Branch = "main" // Updated to match the new repository's default branch
 }

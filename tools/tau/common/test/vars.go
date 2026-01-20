@@ -26,7 +26,7 @@ var (
 	ConfigRepo Repository = Repository{
 		ID:   485473636,
 		Name: "tb_testproject",
-		URL:  "https://github.com/taubyte-test/tb_testproject",
+		URL:  "https://github.com/taubyte/tb_test_project/", //https://github.com/taubyte-test/tb_testproject",
 	}
 
 	CodeRepo Repository = Repository{

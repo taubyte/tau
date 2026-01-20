@@ -28,8 +28,18 @@ func (c *Repository) Checkout(branchName string) error {
 		return fmt.Errorf("setting reference to %s failed with: %v", remoteRef, err)
 	}
 
+	// Check if we're already on the target branch
+	head, err := c.repo.Head()
+	if err == nil {
+		if head.Name() == branchRef {
+			// Already on the target branch, no need to checkout
+			return nil
+		}
+	}
+
 	err = wt.Checkout(&git.CheckoutOptions{
 		Branch: branchRef,
+		Force:  true, // Force checkout to handle any unstaged changes (common after clone)
 	})
 	if err != nil {
 		return fmt.Errorf("Checkout %s failed with: %v", branchName, err)

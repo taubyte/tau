@@ -32,7 +32,7 @@ var fakeMeta = patrick.Meta{
 	},
 }
 
-const configRepo = "https://github.com/taubyte-test/tb_testproject"
+const configRepo = "https://github.com/taubyte/tb_test_project/" //https://github.com/taubyte-test/tb_testproject"
 
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
