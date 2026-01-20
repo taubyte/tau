@@ -13,14 +13,14 @@ import (
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	"gotest.tools/v3/assert"
 
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
 	protocolCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/monkey"
+	tcc "github.com/taubyte/tau/utils/tcc"
 
 	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
@@ -89,17 +89,17 @@ func TestConfigJob(t *testing.T) {
 	err = commonTest.RegisterTestProject(u.Context(), mockAuth)
 	assert.NilError(t, err)
 
-	gitRoot := "./testGIT"
+	// Use a temporary directory to avoid modifying any existing testGIT directories
+	gitRoot, err := os.MkdirTemp("", "testGIT-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp directory: %v", err)
+	}
+	defer os.RemoveAll(gitRoot) // Clean up after test
 	gitRootConfig := gitRoot + "/config"
 	os.MkdirAll(gitRootConfig, 0755)
-	defer os.RemoveAll(gitRootConfig)
 
 	// clone repo
 	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
-	assert.NilError(t, err)
-
-	// read with seer
-	projectIface, err := projectLib.Open(projectLib.SystemFS(gitRootConfig))
 	assert.NilError(t, err)
 
 	fakJob := &patrick.Job{}
@@ -108,20 +108,51 @@ func TestConfigJob(t *testing.T) {
 	fakJob.Meta.Repository.ID = commonTest.ConfigRepo.ID
 	fakJob.Meta.Repository.SSHURL = fmt.Sprintf("git@github.com:%s/%s", commonTest.GitUser, commonTest.ConfigRepo.Name)
 	fakJob.Meta.Repository.Provider = "github"
-	fakJob.Meta.Repository.Branch = "master"
+	fakJob.Meta.Repository.Branch = "main" // Updated to match repository default branch
 	fakJob.Meta.HeadCommit.ID = "QmaskdjfziUJHJjYfhaysgYGYyA"
 	fakJob.Id = "jobforjob_test"
-	rc, err := compile.CompilerConfig(projectIface, fakJob.Meta, generatedDomainRegExp)
+
+	// Create TCC compiler
+	compiler, err := tccCompiler.New(
+		tccCompiler.WithLocal(gitRootConfig),
+		tccCompiler.WithBranch(fakJob.Meta.Repository.Branch),
+	)
 	assert.NilError(t, err)
 
-	compiler, err := compile.New(rc, compile.Dev())
+	// Compile
+	obj, validations, err := compiler.Compile(context.Background())
 	assert.NilError(t, err)
 
-	defer compiler.Close()
-	err = compiler.Build()
+	// Extract project ID from validations
+	projectID, err := tcc.ExtractProjectID(validations)
 	assert.NilError(t, err)
 
-	err = compiler.Publish(tnsClient)
+	// Process DNS validations (dev mode)
+	err = tcc.ProcessDNSValidations(
+		validations,
+		generatedDomainRegExp,
+		true, // dev mode
+		nil,  // no DV key needed in dev mode
+	)
+	assert.NilError(t, err)
+
+	// Extract object and indexes from Flat()
+	flat := obj.Flat()
+	object, ok := flat["object"].(map[string]interface{})
+	assert.Assert(t, ok, "object not found in flat result")
+
+	indexes, ok := flat["indexes"].(map[string]interface{})
+	assert.Assert(t, ok, "indexes not found in flat result")
+
+	// Publish to TNS
+	err = tcc.Publish(
+		tnsClient,
+		object,
+		indexes,
+		projectID,
+		fakJob.Meta.Repository.Branch,
+		fakJob.Meta.HeadCommit.ID,
+	)
 	assert.NilError(t, err)
 
 	err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), fakJob)
