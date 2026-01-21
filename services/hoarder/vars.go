@@ -6,9 +6,8 @@ import (
 	"github.com/ipfs/go-log/v2"
 )
 
-const maxWaitTime = 15 * time.Second
+const maxWaitTime = 5 * time.Second
 
 var (
-	logger              = log.Logger("tau.hoarder.service")
-	RebroadCastInterval = 5
+	logger = log.Logger("tau.hoarder.service")
 )

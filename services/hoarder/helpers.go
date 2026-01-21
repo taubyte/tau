@@ -157,9 +157,38 @@ func (srv *Service) storeAuction(ctx context.Context, auction *hoarderIface.Auct
 	defer srv.regLock.Unlock()
 
 	key := datastore.NewKey(fmt.Sprintf("/hoarder/%s/%s%s", metaType, auction.Meta.ConfigId, auction.Meta.Match))
+
+	// #region agent log
+	debugLog("helpers.go:storeAuction:before-put", "About to store config in database", map[string]interface{}{
+		"configId":  auction.Meta.ConfigId,
+		"match":     auction.Meta.Match,
+		"metaType":  metaType,
+		"key":       key.String(),
+		"hoarderId": srv.node.Peer().ID().String(),
+	})
+	// #endregion
+
 	if err := srv.db.Put(ctx, key.String(), configBytes); err != nil {
+		// #region agent log
+		debugLog("helpers.go:storeAuction:put-error", "Failed to put config in database", map[string]interface{}{
+			"configId":  auction.Meta.ConfigId,
+			"match":     auction.Meta.Match,
+			"key":       key.String(),
+			"hoarderId": srv.node.Peer().ID().String(),
+			"error":     err.Error(),
+		})
+		// #endregion
 		return fmt.Errorf("put failed with: %w", err)
 	}
+
+	// #region agent log
+	debugLog("helpers.go:storeAuction:put-success", "Config stored in database successfully", map[string]interface{}{
+		"configId":  auction.Meta.ConfigId,
+		"match":     auction.Meta.Match,
+		"key":       key.String(),
+		"hoarderId": srv.node.Peer().ID().String(),
+	})
+	// #endregion
 
 	return err
 }
