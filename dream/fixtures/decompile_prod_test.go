@@ -132,7 +132,7 @@ func TestDecompileProd(t *testing.T) {
 	objFlat := obj.Flat()
 
 	// Create a TCC object from the flat structure (which includes both object and indexes)
-	objCopy := mapToTCCObject(objFlat)
+	objCopy := tcc.MapToTCCObject(objFlat)
 
 	// Create TCC decompiler
 	decompiler, err := tccDecompile.New(tccDecompile.WithLocal(testProjectDir))

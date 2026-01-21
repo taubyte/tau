@@ -30,8 +30,8 @@ import (
 )
 
 // #region agent log
-func debugLog(location, message string, data map[string]interface{}, hypothesisId string) {
-	logData := map[string]interface{}{
+func debugLog(location, message string, data map[string]any, hypothesisId string) {
+	logData := map[string]any{
 		"sessionId":    "debug-session",
 		"runId":        "run1",
 		"hypothesisId": hypothesisId,
@@ -40,7 +40,10 @@ func debugLog(location, message string, data map[string]interface{}, hypothesisI
 		"data":         data,
 		"timestamp":    time.Now().UnixMilli(),
 	}
-	jsonData, _ := json.Marshal(logData)
+	jsonData, err := json.Marshal(logData)
+	if err != nil {
+		return
+	}
 	f, err := os.OpenFile("/home/samy/Documents/taubyte/github/tau/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
 		f.Write(append(jsonData, '\n'))
@@ -50,75 +53,21 @@ func debugLog(location, message string, data map[string]interface{}, hypothesisI
 
 // #endregion
 
-// mapToTCCObject converts a map to a TCC object.Object[object.Refrence]
-// This is needed because TCC decompiler expects an object, but TNS returns a map
-// The map structure from TNS matches the Flat() output structure
-// Handles both map[string]interface{} and map[interface{}]interface{}
-func mapToTCCObject(m interface{}) object.Object[object.Refrence] {
-	// Normalize the map first
-	normalized := normalizeMap(m)
-	normalizedMap, ok := normalized.(map[string]interface{})
-	if !ok {
-		// If normalization failed, try to create empty object
-		return object.New[object.Refrence]()
-	}
-
+// mapToTCCObject is a wrapper around tcc.MapToTCCObject that adds debug logging
+func mapToTCCObject(m any) object.Object[object.Refrence] {
 	// #region agent log
-	debugLog("mapToTCCObject:entry", "Starting conversion", map[string]interface{}{"mapSize": len(normalizedMap), "keys": getMapKeys(normalizedMap)}, "A")
-	// #endregion
-	obj := object.New[object.Refrence]()
-
-	for key, value := range normalizedMap {
-		// #region agent log
-		debugLog("mapToTCCObject:loop", fmt.Sprintf("Processing key: %s", key), map[string]interface{}{
-			"key":   key,
-			"type":  fmt.Sprintf("%T", value),
-			"isMap": isMap(value),
-		}, "A")
-		// #endregion
-		switch v := value.(type) {
-		case map[string]interface{}:
-			// Recursively convert nested maps to child objects
-			childObj := mapToTCCObject(v)
-			sel := obj.Child(key)
-			// If child exists, try to get it and merge, otherwise just add
-			if sel.Exists() {
-				// #region agent log
-				debugLog("mapToTCCObject:merge", fmt.Sprintf("Child %s exists, merging", key), map[string]interface{}{"key": key}, "B")
-				// #endregion
-				// Try to get existing and merge data/children
-				if existing, err := sel.Object(); err == nil {
-					// Merge: copy data attributes and recursively merge children
-					mergeObjectRecursive(existing, childObj)
-				} else {
-					// #region agent log
-					debugLog("mapToTCCObject:merge-error", fmt.Sprintf("Failed to get existing child %s: %v", key, err), map[string]interface{}{"key": key, "error": err.Error()}, "B")
-					// #endregion
-					// If we can't get existing, try to add (may fail if exists)
-					_ = sel.Add(childObj)
-				}
-			} else {
-				// #region agent log
-				debugLog("mapToTCCObject:add", fmt.Sprintf("Adding new child %s", key), map[string]interface{}{"key": key}, "A")
-				// #endregion
-				sel.Add(childObj)
-			}
-		default:
-			// For all other values (primitives, slices, etc.), store as data attribute
-			// #region agent log
-			debugLog("mapToTCCObject:set-data", fmt.Sprintf("Setting data attribute %s", key), map[string]interface{}{
-				"key":   key,
-				"value": fmt.Sprintf("%v", v),
-				"type":  fmt.Sprintf("%T", v),
-			}, "D")
-			// #endregion
-			obj.Set(key, object.Refrence(v))
-		}
+	normalized := normalizeMap(m)
+	normalizedMap, ok := normalized.(map[string]any)
+	if ok {
+		debugLog("mapToTCCObject:entry", "Starting conversion", map[string]any{"mapSize": len(normalizedMap), "keys": getMapKeys(normalizedMap)}, "A")
 	}
+	// #endregion
+
+	obj := tcc.MapToTCCObject(m)
 
 	// #region agent log
 	flatResult := obj.Flat()
-	debugLog("mapToTCCObject:exit", "Conversion complete", map[string]interface{}{
+	debugLog("mapToTCCObject:exit", "Conversion complete", map[string]any{
 		"resultKeys": getMapKeys(flatResult),
 		"resultSize": len(flatResult),
 	}, "A")
@@ -126,7 +75,7 @@ func mapToTCCObject(m interface{}) object.Object[object.Refrence] {
 	return obj
 }
 
-func getMapKeys(m map[string]interface{}) []string {
+func getMapKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
@@ -134,28 +83,28 @@ func getMapKeys(m map[string]interface{}) []string {
 	return keys
 }
 
-func isMap(v interface{}) bool {
-	_, ok1 := v.(map[string]interface{})
-	_, ok2 := v.(map[interface{}]interface{})
+func isMap(v any) bool {
+	_, ok1 := v.(map[string]any)
+	_, ok2 := v.(map[any]any)
 	return ok1 || ok2
 }
 
 // removeEmptyMaps recursively removes empty maps from a map structure
-func removeEmptyMaps(v interface{}) interface{} {
+func removeEmptyMaps(v any) any {
 	switch val := v.(type) {
-	case map[string]interface{}:
-		result := make(map[string]interface{})
+	case map[string]any:
+		result := make(map[string]any)
 		for k, v := range val {
 			normalized := removeEmptyMaps(v)
 			// Skip empty maps
-			if normalizedMap, ok := normalized.(map[string]interface{}); ok && len(normalizedMap) == 0 {
+			if normalizedMap, ok := normalized.(map[string]any); ok && len(normalizedMap) == 0 {
 				continue
 			}
 			result[k] = normalized
 		}
 		return result
-	case []interface{}:
-		result := make([]interface{}, 0, len(val))
+	case []any:
+		result := make([]any, 0, len(val))
 		for _, v := range val {
 			normalized := removeEmptyMaps(v)
 			result = append(result, normalized)
@@ -166,11 +115,11 @@ func removeEmptyMaps(v interface{}) interface{} {
 	}
 }
 
-// normalizeMap converts map[interface{}]interface{} to map[string]interface{} recursively
-func normalizeMap(v interface{}) interface{} {
+// normalizeMap converts map[any]any to map[string]any recursively
+func normalizeMap(v any) any {
 	switch val := v.(type) {
-	case map[interface{}]interface{}:
-		result := make(map[string]interface{})
+	case map[any]any:
+		result := make(map[string]any)
 		for k, v := range val {
 			key, ok := k.(string)
 			if !ok {
@@ -179,14 +128,14 @@ func normalizeMap(v interface{}) interface{} {
 			result[key] = normalizeMap(v)
 		}
 		return result
-	case map[string]interface{}:
-		result := make(map[string]interface{})
+	case map[string]any:
+		result := make(map[string]any)
 		for k, v := range val {
 			result[k] = normalizeMap(v)
 		}
 		return result
-	case []interface{}:
-		result := make([]interface{}, len(val))
+	case []any:
+		result := make([]any, len(val))
 		for i, v := range val {
 			result[i] = normalizeMap(v)
 		}
@@ -196,61 +145,9 @@ func normalizeMap(v interface{}) interface{} {
 	}
 }
 
-// mergeObjectRecursive merges data and children from src into dst recursively
-func mergeObjectRecursive(dst, src object.Object[object.Refrence]) {
-	// #region agent log
-	srcChildren := src.Children()
-	debugLog("mergeObjectRecursive:entry", "Starting merge", map[string]interface{}{
-		"srcChildren":      srcChildren,
-		"srcChildrenCount": len(srcChildren),
-	}, "B")
-	// #endregion
-	// Copy data attributes - iterate through src's children to find data attributes
-	// Note: We can't easily iterate just data attributes, so we check each child
-	// to see if it's a data attribute (not a child object)
-	for _, key := range srcChildren {
-		srcChildSel := src.Child(key)
-		if srcChildSel.Exists() {
-			// #region agent log
-			debugLog("mergeObjectRecursive:child", fmt.Sprintf("Processing child object %s", key), map[string]interface{}{"key": key}, "B")
-			// #endregion
-			// This is a child object, merge recursively
-			if srcChild, err := srcChildSel.Object(); err == nil {
-				dstChildSel := dst.Child(key)
-				if dstChildSel.Exists() {
-					if dstChild, err := dstChildSel.Object(); err == nil {
-						mergeObjectRecursive(dstChild, srcChild)
-					}
-				} else {
-					dstChildSel.Add(srcChild)
-				}
-			}
-		} else {
-			// This might be a data attribute - try to get it
-			val := src.Get(key)
-			// #region agent log
-			debugLog("mergeObjectRecursive:data", fmt.Sprintf("Processing data attribute %s", key), map[string]interface{}{
-				"key":   key,
-				"value": fmt.Sprintf("%v", val),
-				"isNil": val == nil,
-			}, "B")
-			// #endregion
-			if val != nil {
-				dst.Set(key, val)
-			}
-		}
-	}
-
-	// Also check for data attributes that might not be in Children()
-	// Since we can't iterate data directly, we rely on the above logic
-	// #region agent log
-	debugLog("mergeObjectRecursive:exit", "Merge complete", map[string]interface{}{}, "B")
-	// #endregion
-}
-
 func TestE2E(t *testing.T) {
 	// #region agent log
-	debugLog("TestE2E:start", "Test started", map[string]interface{}{}, "A")
+	debugLog("TestE2E:start", "Test started", map[string]any{}, "A")
 	// #endregion
 
 	m, err := dream.New(t.Context())
@@ -297,7 +194,7 @@ func TestE2E(t *testing.T) {
 	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
 	if err != nil {
 		// #region agent log
-		debugLog("TestE2E:git-clone-error", "Git clone failed", map[string]interface{}{
+		debugLog("TestE2E:git-clone-error", "Git clone failed", map[string]any{
 			"error":  err.Error(),
 			"branch": fakeMeta.Repository.Branch,
 			"url":    commonTest.ConfigRepo.URL,
@@ -354,7 +251,7 @@ func TestE2E(t *testing.T) {
 
 	// Extract object and indexes from Flat()
 	flat := obj.Flat()
-	object, ok := flat["object"].(map[string]interface{})
+	object, ok := flat["object"].(map[string]any)
 	if !ok {
 		t.Error("object not found in flat result")
 		return
@@ -473,13 +370,13 @@ func TestE2E(t *testing.T) {
 
 	// Get the "object" part from the compiled result for comparison
 	originalFlat := obj.Flat()
-	originalObjMap := originalFlat["object"].(map[string]interface{})
+	originalObjMap := originalFlat["object"].(map[string]any)
 
 	// Verify the fetched object matches what we published
 	// TNS may return map[interface{}]interface{} from YAML decoding, so normalize it
 	fetchedObjRaw := new_obj.Interface()
 	fetchedObjNormalized := normalizeMap(fetchedObjRaw)
-	fetchedObjMap, ok := fetchedObjNormalized.(map[string]interface{})
+	fetchedObjMap, ok := fetchedObjNormalized.(map[string]any)
 	if !ok {
 		t.Errorf("fetched object is not a map after normalization, got type: %T", fetchedObjNormalized)
 		return
@@ -510,14 +407,14 @@ func TestE2E(t *testing.T) {
 		"hasObject":    hasKey(objFlat, "object"),
 		"hasIndexes":   hasKey(objFlat, "indexes"),
 	}, "C")
-	if objMap, ok := objFlat["object"].(map[string]interface{}); ok {
-		if domainsMap, ok := objMap["domains"].(map[string]interface{}); ok {
-			debugLog("TestE2E:original-domains", "Original domains structure", map[string]interface{}{
+	if objMap, ok := objFlat["object"].(map[string]any); ok {
+		if domainsMap, ok := objMap["domains"].(map[string]any); ok {
+			debugLog("TestE2E:original-domains", "Original domains structure", map[string]any{
 				"domainKeys": getMapKeys(domainsMap),
 			}, "C")
 			for domainKey, domainVal := range domainsMap {
-				if domainMap, ok := domainVal.(map[string]interface{}); ok {
-					debugLog("TestE2E:original-domain", fmt.Sprintf("Domain %s structure", domainKey), map[string]interface{}{
+				if domainMap, ok := domainVal.(map[string]any); ok {
+					debugLog("TestE2E:original-domain", fmt.Sprintf("Domain %s structure", domainKey), map[string]any{
 						"domainKey": domainKey,
 						"keys":      getMapKeys(domainMap),
 						"fqdn":      domainMap["fqdn"],
@@ -537,14 +434,14 @@ func TestE2E(t *testing.T) {
 		"hasObject":    hasKey(objCopyFlat, "object"),
 		"hasIndexes":   hasKey(objCopyFlat, "indexes"),
 	}, "C")
-	if objMap, ok := objCopyFlat["object"].(map[string]interface{}); ok {
-		if domainsMap, ok := objMap["domains"].(map[string]interface{}); ok {
-			debugLog("TestE2E:converted-domains", "Converted domains structure", map[string]interface{}{
+	if objMap, ok := objCopyFlat["object"].(map[string]any); ok {
+		if domainsMap, ok := objMap["domains"].(map[string]any); ok {
+			debugLog("TestE2E:converted-domains", "Converted domains structure", map[string]any{
 				"domainKeys": getMapKeys(domainsMap),
 			}, "C")
 			for domainKey, domainVal := range domainsMap {
-				if domainMap, ok := domainVal.(map[string]interface{}); ok {
-					debugLog("TestE2E:converted-domain", fmt.Sprintf("Domain %s structure", domainKey), map[string]interface{}{
+				if domainMap, ok := domainVal.(map[string]any); ok {
+					debugLog("TestE2E:converted-domain", fmt.Sprintf("Domain %s structure", domainKey), map[string]any{
 						"domainKey": domainKey,
 						"keys":      getMapKeys(domainMap),
 						"fqdn":      domainMap["fqdn"],
@@ -566,10 +463,10 @@ func TestE2E(t *testing.T) {
 			}
 		}
 	}
-	if objMap, ok := objCopyFlat["object"].(map[string]interface{}); ok {
-		if domainsMap, ok := objMap["domains"].(map[string]interface{}); ok {
+	if objMap, ok := objCopyFlat["object"].(map[string]any); ok {
+		if domainsMap, ok := objMap["domains"].(map[string]any); ok {
 			for domainKey, domainVal := range domainsMap {
-				if domainMap, ok := domainVal.(map[string]interface{}); ok {
+				if domainMap, ok := domainVal.(map[string]any); ok {
 					t.Logf("CONVERTED Domain %s: keys=%v, fqdn=%v, cert-type=%v", domainKey, getMapKeys(domainMap), domainMap["fqdn"], domainMap["cert-type"])
 				}
 			}
@@ -591,7 +488,7 @@ func TestE2E(t *testing.T) {
 	err = decompiler.Decompile(objCopy)
 	if err != nil {
 		// #region agent log
-		debugLog("TestE2E:decompile-error", "Decompilation failed", map[string]interface{}{
+		debugLog("TestE2E:decompile-error", "Decompilation failed", map[string]any{
 			"error": err.Error(),
 		}, "C")
 		// #endregion
@@ -621,7 +518,7 @@ func TestE2E(t *testing.T) {
 	}
 
 	flat1 := obj1.Flat()
-	_map, ok := flat1["object"].(map[string]interface{})
+	_map, ok := flat1["object"].(map[string]any)
 	if !ok {
 		t.Error("object not found in flat result")
 		return
@@ -676,7 +573,7 @@ func TestE2E(t *testing.T) {
 	}
 }
 
-func hasKey(m map[string]interface{}, key string) bool {
+func hasKey(m map[string]any, key string) bool {
 	_, ok := m[key]
 	return ok
 }

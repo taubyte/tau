@@ -9,11 +9,12 @@ import (
 	"github.com/h2non/filetype"
 	"github.com/h2non/filetype/matchers"
 	"github.com/spf13/afero"
-	"github.com/taubyte/tau/pkg/config-compiler/decompile"
 	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/schema/pretty"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
+	tccDecompile "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
+	tccUtils "github.com/taubyte/tau/utils/tcc"
 
 	"github.com/taubyte/tau/utils/maps"
 )
@@ -45,20 +46,31 @@ func (srv *Service) getProjectFromContext(ctx http.Context) (projectSchema.Proje
 	if err != nil {
 		return nil, err
 	}
-
 	projectObj, err := srv.tns.Simple().Project(projectId, commonSpec.DefaultBranches...)
 	if err != nil {
 		return nil, fmt.Errorf("fetching project object failed: %w, %s", err, "Retry this job")
 	}
 
-	decompiler, err := decompile.New(afero.NewMemMapFs(), projectObj)
+	// Convert TNS map to TCC object
+	tccObj := tccUtils.MapToTCCObject(projectObj)
+
+	// Create decompiler with in-memory filesystem
+	memFs := afero.NewMemMapFs()
+	decompiler, err := tccDecompile.New(tccDecompile.WithVirtual(memFs, "/"))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating decompiler failed: %w", err)
 	}
 
-	projectIface, err := decompiler.Build()
+	// Decompile to memfs
+	err = decompiler.Decompile(tccObj)
 	if err != nil {
 		return nil, fmt.Errorf("decompiling project failed with: %w", err)
+	}
+
+	// Open project schema from the decompiled filesystem
+	projectIface, err := projectSchema.Open(projectSchema.VirtualFS(memFs, "/"))
+	if err != nil {
+		return nil, fmt.Errorf("opening project schema failed: %w", err)
 	}
 
 	return projectIface, nil
@@ -80,7 +92,7 @@ func (srv *Service) projectConfigHandler(ctx http.Context) (interface{}, error) 
 	return prettyObj, nil
 }
 
-func (srv *Service) downloadAsset(ctx http.Context) (interface{}, error) {
+func (srv *Service) downloadAsset(ctx http.Context) (any, error) {
 	// Get project id
 
 	// TODO: use the projectId to confirm a user has access to the asset
