@@ -7,7 +7,6 @@ import (
 	"os"
 	"reflect"
 	"testing"
-	"time"
 
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
@@ -23,57 +22,10 @@ import (
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
-	"github.com/taubyte/tau/pkg/tcc/object"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
 	tccDecompile "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
 	tcc "github.com/taubyte/tau/utils/tcc"
 )
-
-// #region agent log
-func debugLog(location, message string, data map[string]any, hypothesisId string) {
-	logData := map[string]any{
-		"sessionId":    "debug-session",
-		"runId":        "run1",
-		"hypothesisId": hypothesisId,
-		"location":     location,
-		"message":      message,
-		"data":         data,
-		"timestamp":    time.Now().UnixMilli(),
-	}
-	jsonData, err := json.Marshal(logData)
-	if err != nil {
-		return
-	}
-	f, err := os.OpenFile("/home/samy/Documents/taubyte/github/tau/.cursor/debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err == nil {
-		f.Write(append(jsonData, '\n'))
-		f.Close()
-	}
-}
-
-// #endregion
-
-// mapToTCCObject is a wrapper around tcc.MapToTCCObject that adds debug logging
-func mapToTCCObject(m any) object.Object[object.Refrence] {
-	// #region agent log
-	normalized := normalizeMap(m)
-	normalizedMap, ok := normalized.(map[string]any)
-	if ok {
-		debugLog("mapToTCCObject:entry", "Starting conversion", map[string]any{"mapSize": len(normalizedMap), "keys": getMapKeys(normalizedMap)}, "A")
-	}
-	// #endregion
-
-	obj := tcc.MapToTCCObject(m)
-
-	// #region agent log
-	flatResult := obj.Flat()
-	debugLog("mapToTCCObject:exit", "Conversion complete", map[string]any{
-		"resultKeys": getMapKeys(flatResult),
-		"resultSize": len(flatResult),
-	}, "A")
-	// #endregion
-	return obj
-}
 
 func getMapKeys(m map[string]any) []string {
 	keys := make([]string, 0, len(m))
@@ -81,12 +33,6 @@ func getMapKeys(m map[string]any) []string {
 		keys = append(keys, k)
 	}
 	return keys
-}
-
-func isMap(v any) bool {
-	_, ok1 := v.(map[string]any)
-	_, ok2 := v.(map[any]any)
-	return ok1 || ok2
 }
 
 // removeEmptyMaps recursively removes empty maps from a map structure
@@ -146,10 +92,6 @@ func normalizeMap(v any) any {
 }
 
 func TestE2E(t *testing.T) {
-	// #region agent log
-	debugLog("TestE2E:start", "Test started", map[string]any{}, "A")
-	// #endregion
-
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()
@@ -193,23 +135,10 @@ func TestE2E(t *testing.T) {
 
 	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
 	if err != nil {
-		// #region agent log
-		debugLog("TestE2E:git-clone-error", "Git clone failed", map[string]any{
-			"error":  err.Error(),
-			"branch": fakeMeta.Repository.Branch,
-			"url":    commonTest.ConfigRepo.URL,
-		}, "A")
-		// #endregion
 		t.Logf("Git clone error: %v (branch: %s, url: %s)", err, fakeMeta.Repository.Branch, commonTest.ConfigRepo.URL)
 		t.Error(err)
 		return
 	}
-	// #region agent log
-	debugLog("TestE2E:git-clone-success", "Git clone succeeded", map[string]interface{}{
-		"branch": fakeMeta.Repository.Branch,
-		"url":    commonTest.ConfigRepo.URL,
-	}, "A")
-	// #endregion
 
 	// Create TCC compiler
 	compiler, err := tccCompiler.New(
@@ -359,21 +288,12 @@ func TestE2E(t *testing.T) {
 		return
 	}
 
-	// decompile using TCC decompiler
 	gitRootConfig_new := gitRootConfig + "_new"
 	os.MkdirAll(gitRootConfig_new, 0755)
 
-	// The object from TNS is a map representing the compiled project object
-	// We need to convert it to a TCC object for decompilation
-	// Since Decompile modifies the object in place, we make a copy by converting
-	// the map to an object (the map structure should match Flat()["object"])
-
-	// Get the "object" part from the compiled result for comparison
 	originalFlat := obj.Flat()
 	originalObjMap := originalFlat["object"].(map[string]any)
 
-	// Verify the fetched object matches what we published
-	// TNS may return map[interface{}]interface{} from YAML decoding, so normalize it
 	fetchedObjRaw := new_obj.Interface()
 	fetchedObjNormalized := normalizeMap(fetchedObjRaw)
 	fetchedObjMap, ok := fetchedObjNormalized.(map[string]any)
@@ -382,78 +302,16 @@ func TestE2E(t *testing.T) {
 		return
 	}
 
-	// Normalize both objects by removing empty maps before comparison
-	// TNS may not store empty maps, so we need to normalize for comparison
 	normalizedOriginal := removeEmptyMaps(originalObjMap)
 	normalizedFetched := removeEmptyMaps(fetchedObjMap)
 
 	if !reflect.DeepEqual(normalizedOriginal, normalizedFetched) {
 		t.Logf("fetched object does not match published object (this is expected due to TNS storage differences)")
-		// Continue anyway to test decompilation
 	}
 
-	// The decompiler expects the root compiled object (with "object" and "indexes" as children)
-	// Since Decompile modifies the object in place, we need to make a copy.
-	// We verify the fetched object matches what we published (round-trip verification above),
-	// then use the compiled object directly for decompilation by making a copy via Flat().
-	// This validates that:
-	// 1. The round-trip through TNS works (fetched object matches published) - verified above
-	// 2. Decompilation works (using the compiled object structure)
-	// TODO: Fix mapToTCCObject to properly convert from TNS map for full round-trip decompilation test
 	objFlat := obj.Flat()
-	// #region agent log
-	debugLog("TestE2E:before-conversion", "Original Flat() structure", map[string]interface{}{
-		"topLevelKeys": getMapKeys(objFlat),
-		"hasObject":    hasKey(objFlat, "object"),
-		"hasIndexes":   hasKey(objFlat, "indexes"),
-	}, "C")
-	if objMap, ok := objFlat["object"].(map[string]any); ok {
-		if domainsMap, ok := objMap["domains"].(map[string]any); ok {
-			debugLog("TestE2E:original-domains", "Original domains structure", map[string]any{
-				"domainKeys": getMapKeys(domainsMap),
-			}, "C")
-			for domainKey, domainVal := range domainsMap {
-				if domainMap, ok := domainVal.(map[string]any); ok {
-					debugLog("TestE2E:original-domain", fmt.Sprintf("Domain %s structure", domainKey), map[string]any{
-						"domainKey": domainKey,
-						"keys":      getMapKeys(domainMap),
-						"fqdn":      domainMap["fqdn"],
-						"certType":  domainMap["cert-type"],
-					}, "C")
-				}
-			}
-		}
-	}
-	// #endregion
-	objCopy := mapToTCCObject(objFlat)
-
-	// #region agent log
+	objCopy := tcc.MapToTCCObject(objFlat)
 	objCopyFlat := objCopy.Flat()
-	debugLog("TestE2E:after-conversion", "Converted Flat() structure", map[string]interface{}{
-		"topLevelKeys": getMapKeys(objCopyFlat),
-		"hasObject":    hasKey(objCopyFlat, "object"),
-		"hasIndexes":   hasKey(objCopyFlat, "indexes"),
-	}, "C")
-	if objMap, ok := objCopyFlat["object"].(map[string]any); ok {
-		if domainsMap, ok := objMap["domains"].(map[string]any); ok {
-			debugLog("TestE2E:converted-domains", "Converted domains structure", map[string]any{
-				"domainKeys": getMapKeys(domainsMap),
-			}, "C")
-			for domainKey, domainVal := range domainsMap {
-				if domainMap, ok := domainVal.(map[string]any); ok {
-					debugLog("TestE2E:converted-domain", fmt.Sprintf("Domain %s structure", domainKey), map[string]any{
-						"domainKey": domainKey,
-						"keys":      getMapKeys(domainMap),
-						"fqdn":      domainMap["fqdn"],
-						"certType":  domainMap["cert-type"],
-					}, "C")
-				}
-			}
-		}
-	}
-	// #endregion
-
-	// Also log using t.Logf for immediate visibility
 	if objMap, ok := objFlat["object"].(map[string]interface{}); ok {
 		if domainsMap, ok := objMap["domains"].(map[string]interface{}); ok {
 			for domainKey, domainVal := range domainsMap {
@@ -480,27 +338,12 @@ func TestE2E(t *testing.T) {
 		return
 	}
 
-	// Decompile the copied object to filesystem
-	// Note: Decompile modifies the object in place
-	// #region agent log
-	debugLog("TestE2E:before-decompile", "About to decompile", map[string]interface{}{}, "C")
-	// #endregion
 	err = decompiler.Decompile(objCopy)
 	if err != nil {
-		// #region agent log
-		debugLog("TestE2E:decompile-error", "Decompilation failed", map[string]any{
-			"error": err.Error(),
-		}, "C")
-		// #endregion
 		t.Errorf("decompilation failed: %v", err)
 		return
 	}
-	// #region agent log
-	debugLog("TestE2E:after-decompile", "Decompilation succeeded", map[string]interface{}{}, "C")
-	// #endregion
 
-	// check diff
-	// compare gitRootConfig and gitRootConfig_new
 	// Compile original project
 	compiler1, err := tccCompiler.New(
 		tccCompiler.WithLocal(gitRootConfig),
@@ -524,7 +367,6 @@ func TestE2E(t *testing.T) {
 		return
 	}
 
-	// Compile fetched project
 	compiler2, err := tccCompiler.New(
 		tccCompiler.WithLocal(gitRootConfig_new),
 		tccCompiler.WithBranch(fakeMeta.Repository.Branch),
@@ -547,8 +389,6 @@ func TestE2E(t *testing.T) {
 		return
 	}
 
-	// Normalize both maps by removing empty maps before comparison
-	// TCC decompiler doesn't preserve empty maps, so we need to normalize
 	normalizedMap1 := removeEmptyMaps(_map)
 	normalizedMap2 := removeEmptyMaps(_map2)
 
@@ -571,9 +411,4 @@ func TestE2E(t *testing.T) {
 		fmt.Println("\n\nB2:\n", string(b2))
 		return
 	}
-}
-
-func hasKey(m map[string]any, key string) bool {
-	_, ok := m[key]
-	return ok
 }

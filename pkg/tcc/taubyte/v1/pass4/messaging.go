@@ -59,7 +59,6 @@ func (m *messaging) Process(ct transform.Context[object.Refrence], config object
 	}
 
 	for _, messagingId := range messagingConfig.Children() {
-		fmt.Println("messagingId", messagingId)
 		tnsPath, err := specs.Tns().IndexValue(m.branch, projectId, appId, messagingId)
 		if err != nil {
 			return nil, fmt.Errorf("getting index value for messaging %s failed with %w", messagingId, err)
@@ -70,7 +69,7 @@ func (m *messaging) Process(ct transform.Context[object.Refrence], config object
 			return nil, fmt.Errorf("getting index value for messaging %s failed with %w", messagingId, err)
 		}
 
-		indexPathLinks := indexPath.String() // for some reason pubsub does not have /links
+		indexPathLinks := indexPath.String()
 		links, ok := index.Get(indexPathLinks).([]string)
 		if !ok {
 			links = []string{}

@@ -8,6 +8,8 @@ import (
 
 func Pipe(branch string) []transform.Transformer[object.Refrence] {
 	return []transform.Transformer[object.Refrence]{
+		// Initialize indexes first to ensure it always exists, even with no resources
+		utils.Global(InitIndexes()),
 		utils.Sub(utils.Global(Functions(branch)), "object"),
 		utils.Sub(utils.Global(Websites(branch)), "object"),
 		utils.Sub(utils.Global(Libraries(branch)), "object"),

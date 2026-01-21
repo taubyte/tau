@@ -123,14 +123,4 @@ func TestUpdate(t *testing.T) {
 		t.Error(err)
 		return
 	}
-
-	// TODO: Need to reimplement this check
-
-	// if !reflect.DeepEqual(new_obj.Interface(), cc.CreatedProjectObject)  {
-	// 	maps.Display("", new_obj.Interface())
-	// 	fmt.Print("\n\n\n\n\n\n")
-	// 	maps.Display("", createdProjectObject)
-	// 	t.Error("Objects not equal")
-	// 	return
-	// }
 }

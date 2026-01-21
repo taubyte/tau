@@ -40,12 +40,10 @@ func checkMatch(regex bool, match, toMatch, name string) error {
 }
 
 func (srv *Service) validateMsg(auction *hoarderIface.Auction, msg *pubsub.Message) bool {
-	// If we get a message from ourselves and its not a timeout/end/failed we ignore
 	if msg.ReceivedFrom == srv.node.Peer().ID() && auction.Type != hoarderIface.AuctionEnd {
 		return false
 	}
 
-	// If we get a message from other people and its end/timeout/ignore we ignore it
 	if msg.ReceivedFrom != srv.node.Peer().ID() && auction.Type == hoarderIface.AuctionEnd {
 		return false
 	}
@@ -54,7 +52,6 @@ func (srv *Service) validateMsg(auction *hoarderIface.Auction, msg *pubsub.Messa
 }
 
 func (srv *Service) saveAction(auction *hoarderIface.Auction) {
-	// Save action and then register it to the lottery pool
 	srv.regLock.Lock()
 	srv.auctions[auction.Meta.ConfigId+auction.Meta.Match] = auction
 	srv.regLock.Unlock()
@@ -67,33 +64,28 @@ func (srv *Service) saveAction(auction *hoarderIface.Auction) {
 }
 
 func (srv *Service) checkValidAction(match string, action hoarderIface.AuctionType, hoarderID string) bool {
-	// Check if we have an action history of the match being reported
 	srv.regLock.Lock()
 	defer srv.regLock.Unlock()
 
 	if _, ok := srv.auctionHistory[match]; !ok {
-		// If no reports are found create a new one for that match
 		newActionRecord := make(map[string][]hoarderIface.AuctionType)
 		srv.auctionHistory[match] = newActionRecord
 	}
 
 	actionList, ok := srv.auctionHistory[match][hoarderID]
 	if !ok {
-		// If no history of action from a specific hoarder record it
 		newRecord := make([]hoarderIface.AuctionType, 0)
 		newRecord = append(newRecord, action)
 		srv.auctionHistory[match][hoarderID] = newRecord
 		return false
 	}
 
-	// If we do we go through the list and check if they already reported said action
 	for _, _action := range actionList {
 		if action == _action {
 			return true
 		}
 	}
 
-	// If its not found we register the action then
 	actionList = append(actionList, action)
 	srv.auctionHistory[match][hoarderID] = actionList
 	return false
@@ -158,37 +150,9 @@ func (srv *Service) storeAuction(ctx context.Context, auction *hoarderIface.Auct
 
 	key := datastore.NewKey(fmt.Sprintf("/hoarder/%s/%s%s", metaType, auction.Meta.ConfigId, auction.Meta.Match))
 
-	// #region agent log
-	debugLog("helpers.go:storeAuction:before-put", "About to store config in database", map[string]interface{}{
-		"configId":  auction.Meta.ConfigId,
-		"match":     auction.Meta.Match,
-		"metaType":  metaType,
-		"key":       key.String(),
-		"hoarderId": srv.node.Peer().ID().String(),
-	})
-	// #endregion
-
 	if err := srv.db.Put(ctx, key.String(), configBytes); err != nil {
-		// #region agent log
-		debugLog("helpers.go:storeAuction:put-error", "Failed to put config in database", map[string]interface{}{
-			"configId":  auction.Meta.ConfigId,
-			"match":     auction.Meta.Match,
-			"key":       key.String(),
-			"hoarderId": srv.node.Peer().ID().String(),
-			"error":     err.Error(),
-		})
-		// #endregion
 		return fmt.Errorf("put failed with: %w", err)
 	}
-
-	// #region agent log
-	debugLog("helpers.go:storeAuction:put-success", "Config stored in database successfully", map[string]interface{}{
-		"configId":  auction.Meta.ConfigId,
-		"match":     auction.Meta.Match,
-		"key":       key.String(),
-		"hoarderId": srv.node.Peer().ID().String(),
-	})
-	// #endregion
 
 	return err
 }
