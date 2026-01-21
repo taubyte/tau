@@ -173,9 +173,15 @@ func (c *Client) lookup(query tns.Query) ([]string, error) {
 
 // Use for indexed object links
 func (r *responseObject) Current(branches []string) (paths []tns.Path, err error) {
-	ifaceList, ok := r.Interface().([]interface{})
+	iface := r.Interface()
+	if iface == nil {
+		// Empty index is a valid state - no resources exist
+		return []tns.Path{}, nil
+	}
+
+	ifaceList, ok := iface.([]interface{})
 	if !ok {
-		return nil, fmt.Errorf("cannot convert paths iface `%v` to []interface{}", r.Interface())
+		return nil, fmt.Errorf("cannot convert paths iface `%v` to []interface{}", iface)
 	}
 
 	for _, branch := range branches {

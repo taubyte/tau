@@ -20,8 +20,6 @@ import (
 	"github.com/taubyte/tau/services/substrate/runtime/helpers"
 )
 
-// TODO: Debug loggers
-
 var (
 	//go:embed domain_public.key
 	domainValPublicKeyData []byte

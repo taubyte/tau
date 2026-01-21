@@ -79,5 +79,15 @@ func TestEncode(t *testing.T) {
 		return
 	}
 
-	assert.DeepEqual(t, object.Data, object2.Data)
+	// Sort both Items slices to ensure deterministic comparison
+	// since map iteration order is non-deterministic in Go
+	sortedData1 := make(flat.Items, len(object.Data))
+	copy(sortedData1, object.Data)
+	sortedData1.Sort()
+
+	sortedData2 := make(flat.Items, len(object2.Data))
+	copy(sortedData2, object2.Data)
+	sortedData2.Sort()
+
+	assert.DeepEqual(t, sortedData1, sortedData2)
 }

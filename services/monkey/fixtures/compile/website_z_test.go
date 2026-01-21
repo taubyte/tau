@@ -90,7 +90,12 @@ func TestZipWebsite(t *testing.T) {
 		return
 	}
 
-	// Wait for website to be available before making HTTP request
+	err = waitForWebsiteInTNS(u, "hal.computers.com", 30, 500*time.Millisecond)
+	if err != nil {
+		t.Errorf("Website not available in TNS after waiting: %v", err)
+		return
+	}
+
 	body, err := callHalWithRetry(u, "/", 10, 500*time.Millisecond)
 	if err != nil {
 		t.Error(err)
