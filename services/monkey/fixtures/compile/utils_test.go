@@ -9,6 +9,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	"github.com/taubyte/tau/pkg/specs/common"
+	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
 )
@@ -73,6 +74,14 @@ func isLookupError(err error) bool {
 }
 
 func waitForWebsiteInTNS(u *dream.Universe, fqdn string, maxRetries int, retryDelay time.Duration) error {
+	return waitForHTTPResourceInTNS(u, fqdn, websiteSpec.PathVariable, maxRetries, retryDelay)
+}
+
+func waitForFunctionInTNS(u *dream.Universe, fqdn string, maxRetries int, retryDelay time.Duration) error {
+	return waitForHTTPResourceInTNS(u, fqdn, functionSpec.PathVariable, maxRetries, retryDelay)
+}
+
+func waitForHTTPResourceInTNS(u *dream.Universe, fqdn string, resourceType common.PathVariable, maxRetries int, retryDelay time.Duration) error {
 	substrate := u.Substrate()
 	if substrate == nil {
 		return fmt.Errorf("substrate service not available")
@@ -83,7 +92,7 @@ func waitForWebsiteInTNS(u *dream.Universe, fqdn string, maxRetries int, retryDe
 		return fmt.Errorf("TNS client not available from substrate service")
 	}
 
-	httpPath, err := methods.HttpPath(fqdn, websiteSpec.PathVariable)
+	httpPath, err := methods.HttpPath(fqdn, resourceType)
 	if err != nil {
 		return fmt.Errorf("creating HTTP path failed: %w", err)
 	}
@@ -104,5 +113,5 @@ func waitForWebsiteInTNS(u *dream.Universe, fqdn string, maxRetries int, retryDe
 		}
 	}
 
-	return fmt.Errorf("website not available in TNS after %d retries", maxRetries)
+	return fmt.Errorf("HTTP resource not available in TNS after %d retries", maxRetries)
 }

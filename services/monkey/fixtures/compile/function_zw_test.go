@@ -4,6 +4,7 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
@@ -77,6 +78,9 @@ func TestZWasmFunction(t *testing.T) {
 		ResourceId: testFunctionId,
 		Paths:      []string{path.Join(wd, "assets", "ping.zwasm")},
 	})
+	assert.NilError(t, err)
+
+	err = waitForFunctionInTNS(u, "hal.computers.com", 30, 500*time.Millisecond)
 	assert.NilError(t, err)
 
 	body, err := callHal(u, "/ping")

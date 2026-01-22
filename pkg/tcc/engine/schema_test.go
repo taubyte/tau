@@ -125,26 +125,21 @@ func TestSchema_Process(t *testing.T) {
 	obj, err := p.Process()
 	assert.NilError(t, err)
 
-	// Top-level attributes
 	assert.Equal(t, obj.Get("email"), "yo@yo.com")
 
-	// type1 children and its attributes
 	objType1, err := obj.Child("type1").Object()
 	assert.NilError(t, err)
 	it1, err := objType1.Child("it1").Object()
 	assert.NilError(t, err)
 
-	// Check attributes of 'it1' under 'type1'
 	assert.Equal(t, it1.Get("name"), "it1")
 	assert.Equal(t, it1.Get("count"), 1)
 	assert.Equal(t, it1.Get("really"), true)
 	assert.Equal(t, it1.Get("size"), 10)
 
-	// sub children and its attributes
 	subObj, err := obj.Child("sub").Object()
 	assert.NilError(t, err)
 
-	// type2 children and its attributes
 	_, err = subObj.Child("type2").Object()
 	assert.NilError(t, err)
 
