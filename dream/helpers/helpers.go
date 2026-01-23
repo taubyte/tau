@@ -148,7 +148,7 @@ func CreateHttpClient() *http.Client {
 
 func generateHMAC(body []byte, secret string) string {
 	mac := hmac.New(sha1.New, []byte(secret))
-	_, _ = mac.Write(body)
+	mac.Write(body)
 	return hex.EncodeToString(mac.Sum(nil))
 }
 

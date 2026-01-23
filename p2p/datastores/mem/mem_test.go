@@ -19,13 +19,11 @@ func TestDatastore_PutAndGet(t *testing.T) {
 	key := datastore.NewKey("testkey")
 	value := []byte("testvalue")
 
-	// Test Put
 	err := ds.Put(ctx, key, value)
 	if err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
 
-	// Test Get
 	retrievedValue, err := ds.Get(ctx, key)
 	if err != nil {
 		t.Fatalf("Get failed: %v", err)
@@ -43,7 +41,6 @@ func TestDatastore_Has(t *testing.T) {
 	key := datastore.NewKey("testkey")
 	value := []byte("testvalue")
 
-	// Should not have key
 	exists, err := ds.Has(ctx, key)
 	if err != nil {
 		t.Fatalf("Has failed: %v", err)
@@ -52,13 +49,11 @@ func TestDatastore_Has(t *testing.T) {
 		t.Fatalf("Should not have key %v", key)
 	}
 
-	// Put key
 	err = ds.Put(ctx, key, value)
 	if err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
 
-	// Now should have key
 	exists, err = ds.Has(ctx, key)
 	if err != nil {
 		t.Fatalf("Has failed: %v", err)
@@ -75,19 +70,16 @@ func TestDatastore_Delete(t *testing.T) {
 	key := datastore.NewKey("testkey")
 	value := []byte("testvalue")
 
-	// Put key
 	err := ds.Put(ctx, key, value)
 	if err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
 
-	// Delete key
 	err = ds.Delete(ctx, key)
 	if err != nil {
 		t.Fatalf("Delete failed: %v", err)
 	}
 
-	// Should not have key
 	exists, err := ds.Has(ctx, key)
 	if err != nil {
 		t.Fatalf("Has failed: %v", err)
@@ -111,7 +103,6 @@ func TestDatastore_Batch(t *testing.T) {
 	key2 := datastore.NewKey("key2")
 	value2 := []byte("value2")
 
-	// Put key1 and key2 in batch
 	err = batch.Put(ctx, key1, value1)
 	if err != nil {
 		t.Fatalf("Batch Put failed: %v", err)
@@ -121,13 +112,11 @@ func TestDatastore_Batch(t *testing.T) {
 		t.Fatalf("Batch Put failed: %v", err)
 	}
 
-	// Commit batch
 	err = batch.Commit(ctx)
 	if err != nil {
 		t.Fatalf("Batch Commit failed: %v", err)
 	}
 
-	// Check if keys are in datastore
 	exists, err := ds.Has(ctx, key1)
 	if err != nil || !exists {
 		t.Fatalf("Datastore should have key %v after batch commit", key1)
@@ -142,7 +131,6 @@ func TestDatastore_Query(t *testing.T) {
 	ctx := context.Background()
 	ds := New()
 
-	// Populate datastore with test data
 	for i := 0; i < 5; i++ {
 		key := datastore.NewKey(fmt.Sprintf("key%d", i))
 		value := []byte(fmt.Sprintf("value%d", i))
@@ -152,22 +140,18 @@ func TestDatastore_Query(t *testing.T) {
 		}
 	}
 
-	// Create a query
 	q := query.Query{Prefix: "key"}
 
-	// Execute the query
 	results, err := ds.Query(ctx, q)
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
 
-	// Collect results
 	entries, err := results.Rest()
 	if err != nil {
 		t.Fatalf("Failed to collect query results: %v", err)
 	}
 
-	// Check the number of results
 	if len(entries) != 5 {
 		t.Fatalf("Expected 5 entries, got %d", len(entries))
 	}
@@ -180,19 +164,16 @@ func TestDatastore_GetSize(t *testing.T) {
 	key := datastore.NewKey("testkey")
 	value := []byte("testvalue")
 
-	// Put key
 	err := ds.Put(ctx, key, value)
 	if err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
 
-	// Get size
 	size, err := ds.GetSize(ctx, key)
 	if err != nil {
 		t.Fatalf("GetSize failed: %v", err)
 	}
 
-	// Check the size
 	if size != len(value) {
 		t.Fatalf("Expected size %d, got %d", len(value), size)
 	}
@@ -202,7 +183,6 @@ func TestDatastore_Sync(t *testing.T) {
 	ctx := context.Background()
 	ds := New()
 
-	// Sync should not fail
 	err := ds.Sync(ctx, datastore.NewKey("testkey"))
 	if err != nil {
 		t.Fatalf("Sync failed: %v", err)
@@ -212,7 +192,6 @@ func TestDatastore_Sync(t *testing.T) {
 func TestDatastore_Close(t *testing.T) {
 	ds := New()
 
-	// Close should not fail
 	err := ds.Close()
 	if err != nil {
 		t.Fatalf("Close failed: %v", err)
@@ -223,7 +202,6 @@ func TestDatastore_QueryWithLimitOffset(t *testing.T) {
 	ctx := context.Background()
 	ds := New()
 
-	// Populate datastore with test data
 	for i := 0; i < 10; i++ {
 		key := datastore.NewKey(fmt.Sprintf("key%d", i))
 		value := []byte(fmt.Sprintf("value%d", i))
@@ -267,7 +245,6 @@ func TestDatastore_QueryKeysOnly(t *testing.T) {
 	ctx := context.Background()
 	ds := New()
 
-	// Populate datastore with test data
 	for i := 0; i < 5; i++ {
 		key := datastore.NewKey(fmt.Sprintf("key%d", i))
 		value := []byte(fmt.Sprintf("value%d", i))
@@ -301,7 +278,6 @@ func TestDatastore_GetSizeNotFound(t *testing.T) {
 
 	key := datastore.NewKey("nonexistentkey")
 
-	// Get size for non-existent key
 	size, err := ds.GetSize(ctx, key)
 	if err != datastore.ErrNotFound {
 		t.Fatalf("Expected ErrNotFound for non-existent key, got %v", err)
@@ -315,13 +291,11 @@ func TestDatastore_GetSizeNotFound(t *testing.T) {
 func TestDatastore_CloseMultiple(t *testing.T) {
 	ds := New()
 
-	// Close should not fail on first call
 	err := ds.Close()
 	if err != nil {
 		t.Fatalf("First Close failed: %v", err)
 	}
 
-	// Subsequent Close calls should also not fail
 	err = ds.Close()
 	if err != nil {
 		t.Fatalf("Subsequent Close failed: %v", err)
@@ -333,7 +307,6 @@ func TestConcurrentAccess(t *testing.T) {
 	ds := New()
 	var wg sync.WaitGroup
 
-	// Test concurrent Put operations
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func(i int) {
@@ -349,7 +322,6 @@ func TestConcurrentAccess(t *testing.T) {
 
 	wg.Wait()
 
-	// Test concurrent Get operations
 	for i := 0; i < 100; i++ {
 		wg.Add(1)
 		go func(i int) {
@@ -378,7 +350,6 @@ func TestBatchMixedOperations(t *testing.T) {
 		t.Fatalf("Batch creation failed: %v", err)
 	}
 
-	// Add some puts and deletes to the batch
 	for i := 0; i < 10; i++ {
 		key := datastore.NewKey(fmt.Sprintf("key%d", i))
 		value := []byte(fmt.Sprintf("value%d", i))
@@ -392,13 +363,11 @@ func TestBatchMixedOperations(t *testing.T) {
 		}
 	}
 
-	// Commit the batch
 	err = batch.Commit(ctx)
 	if err != nil {
 		t.Fatalf("Batch commit failed: %v", err)
 	}
 
-	// Verify the results
 	for i := 0; i < 10; i++ {
 		key := datastore.NewKey(fmt.Sprintf("key%d", i))
 		_, err := ds.Get(ctx, key)
@@ -415,7 +384,6 @@ func TestQueryNoFiltersNoOrders(t *testing.T) {
 	ds := New()
 	defer ds.Close()
 
-	// Populate the datastore with some entries
 	for i := 0; i < 5; i++ {
 		key := datastore.NewKey(fmt.Sprintf("key%d", i))
 		value := []byte(fmt.Sprintf("value%d", i))
@@ -424,14 +392,12 @@ func TestQueryNoFiltersNoOrders(t *testing.T) {
 		}
 	}
 
-	// Perform a query with no filters and orders
 	q := query.Query{}
 	results, err := ds.Query(ctx, q)
 	if err != nil {
 		t.Fatalf("Query failed: %v", err)
 	}
 
-	// Check the results
 	entries, err := results.Rest()
 	if err != nil {
 		t.Fatalf("Reading results failed: %v", err)
@@ -448,7 +414,6 @@ func TestClosedDatastore(t *testing.T) {
 		t.Fatalf("Close failed: %v", err)
 	}
 
-	// Test operations after close
 	if _, err := ds.Get(ctx, datastore.NewKey("key")); !errors.Is(err, ErrClosed) {
 		t.Errorf("Expected ErrClosed, got %v", err)
 	}
@@ -465,10 +430,8 @@ func TestClosedDatastore(t *testing.T) {
 func TestClosedDatastoreOperations(t *testing.T) {
 	ctx := context.Background()
 	ds := New()
-	// Close the datastore immediately
 	ds.Close()
 
-	// Test all operations
 	operations := []struct {
 		name string
 		fn   func() error
@@ -493,9 +456,8 @@ func TestBatchOperationsAfterDatastoreClosure(t *testing.T) {
 	ctx := context.Background()
 	ds := New()
 	batch, _ := ds.Batch(ctx)
-	ds.Close() // Close the datastore
+	ds.Close()
 
-	// Test batch operations after datastore closure
 	if err := batch.Put(ctx, datastore.NewKey("key"), []byte("value")); err != ErrClosed {
 		t.Errorf("Batch Put did not return ErrClosed after datastore closure")
 	}
@@ -512,7 +474,7 @@ func TestBatchOperationsAfterDatastoreClosure(t *testing.T) {
 func TestGetSizeOnClosedDatastore(t *testing.T) {
 	ctx := context.Background()
 	ds := New()
-	ds.Close() // Close the datastore
+	ds.Close()
 
 	size, err := ds.GetSize(ctx, datastore.NewKey("key"))
 	if err != ErrClosed {
@@ -528,7 +490,6 @@ func TestQueryWithFilters(t *testing.T) {
 	ds := New()
 	defer ds.Close()
 
-	// Populate datastore with test data
 	testData := map[string]string{
 		"/prefix/key1": "value1",
 		"/prefix/key2": "value2",
@@ -544,7 +505,6 @@ func TestQueryWithFilters(t *testing.T) {
 		}
 	}
 
-	// Create a filter that only includes keys containing "prefix"
 	prefixFilter := query.FilterKeyPrefix{Prefix: "/prefix"}
 
 	q := query.Query{
@@ -561,7 +521,6 @@ func TestQueryWithFilters(t *testing.T) {
 		t.Fatalf("Failed to collect query results: %v", err)
 	}
 
-	// Should only get the 3 keys with "/prefix" prefix
 	if len(entries) != 3 {
 		t.Errorf("Expected 3 entries with prefix filter, got %d", len(entries))
 	}
@@ -578,7 +537,6 @@ func TestQueryWithOrders(t *testing.T) {
 	ds := New()
 	defer ds.Close()
 
-	// Populate datastore with test data (out of order)
 	keys := []string{"/c", "/a", "/b", "/e", "/d"}
 	for _, k := range keys {
 		err := ds.Put(ctx, datastore.NewKey(k), []byte("value-"+k))
@@ -587,7 +545,6 @@ func TestQueryWithOrders(t *testing.T) {
 		}
 	}
 
-	// Query with key ordering
 	q := query.Query{
 		Orders: []query.Order{query.OrderByKey{}},
 	}
@@ -606,7 +563,6 @@ func TestQueryWithOrders(t *testing.T) {
 		t.Fatalf("Expected 5 entries, got %d", len(entries))
 	}
 
-	// Check entries are sorted
 	expectedOrder := []string{"/a", "/b", "/c", "/d", "/e"}
 	for i, e := range entries {
 		if e.Key != expectedOrder[i] {
@@ -636,7 +592,6 @@ func TestQueryWithMultipleFilters(t *testing.T) {
 		}
 	}
 
-	// Multiple filters: must start with /app AND contain /user
 	q := query.Query{
 		Filters: []query.Filter{
 			query.FilterKeyPrefix{Prefix: "/app"},
@@ -654,7 +609,6 @@ func TestQueryWithMultipleFilters(t *testing.T) {
 		t.Fatalf("Failed to collect query results: %v", err)
 	}
 
-	// Should only get the 2 /app/user keys
 	if len(entries) != 2 {
 		t.Errorf("Expected 2 entries with multiple filters, got %d", len(entries))
 	}
@@ -680,7 +634,6 @@ func TestQueryWithFiltersAndOrders(t *testing.T) {
 		}
 	}
 
-	// Filter AND order
 	q := query.Query{
 		Filters: []query.Filter{query.FilterKeyPrefix{Prefix: "/data"}},
 		Orders:  []query.Order{query.OrderByKey{}},
@@ -700,7 +653,6 @@ func TestQueryWithFiltersAndOrders(t *testing.T) {
 		t.Fatalf("Expected 3 entries, got %d", len(entries))
 	}
 
-	// Check sorted order
 	expectedOrder := []string{"/data/a", "/data/m", "/data/z"}
 	for i, e := range entries {
 		if e.Key != expectedOrder[i] {
@@ -714,11 +666,9 @@ func TestQueryFilterExcludesAll(t *testing.T) {
 	ds := New()
 	defer ds.Close()
 
-	// Add some data
 	ds.Put(ctx, datastore.NewKey("/foo/bar"), []byte("baz"))
 	ds.Put(ctx, datastore.NewKey("/foo/qux"), []byte("quux"))
 
-	// Filter that matches nothing
 	q := query.Query{
 		Filters: []query.Filter{query.FilterKeyPrefix{Prefix: "/nonexistent"}},
 	}

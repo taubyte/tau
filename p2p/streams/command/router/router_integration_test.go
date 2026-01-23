@@ -254,5 +254,5 @@ func TestHandle_ResponseEncodeError(t *testing.T) {
 
 	// Read any response (might error or return empty)
 	var buf bytes.Buffer
-	_, _ = io.Copy(&buf, stream)
+	io.Copy(&buf, stream)
 }

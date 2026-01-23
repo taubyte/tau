@@ -54,23 +54,20 @@ func TestDefaultValues(t *testing.T) {
 func TestSetupLibp2p(t *testing.T) {
 	ctx := context.Background()
 
-	// Create a private key
 	rawKey := keypair.NewRaw()
 	privKey, err := libp2pcrypto.UnmarshalPrivateKey(rawKey)
 	require.NoError(t, err)
 
-	// Create an in-memory datastore
 	ds := mem.New()
 	defer ds.Close()
 
-	// Setup libp2p with minimal options
 	host, routing, err := SetupLibp2p(
 		ctx,
 		privKey,
-		nil, // no swarm key
+		nil,
 		[]string{"/ip4/127.0.0.1/tcp/0"},
 		ds,
-		nil, // no bootstrap peers
+		nil,
 		Libp2pSimpleNodeOptions...,
 	)
 	require.NoError(t, err)
@@ -79,7 +76,6 @@ func TestSetupLibp2p(t *testing.T) {
 
 	defer host.Close()
 
-	// Verify host is working
 	assert.NotEmpty(t, host.ID())
 	assert.True(t, len(host.Addrs()) > 0)
 }
@@ -106,7 +102,6 @@ func TestBootstrap_EmptyPeers(t *testing.T) {
 	require.NoError(t, err)
 	defer host.Close()
 
-	// Bootstrap with empty peer list
 	result, err := Bootstrap(ctx, host, routing, []peer.AddrInfo{})
 	require.NoError(t, err)
 	assert.Empty(t, result)
@@ -145,7 +140,6 @@ func TestSetupLibp2p_WithBootstrapFunc(t *testing.T) {
 func TestBootstrap_TwoPeers(t *testing.T) {
 	ctx := context.Background()
 
-	// Create first peer
 	rawKey1 := keypair.NewRaw()
 	privKey1, err := libp2pcrypto.UnmarshalPrivateKey(rawKey1)
 	require.NoError(t, err)
@@ -165,7 +159,6 @@ func TestBootstrap_TwoPeers(t *testing.T) {
 	require.NoError(t, err)
 	defer host1.Close()
 
-	// Create second peer
 	rawKey2 := keypair.NewRaw()
 	privKey2, err := libp2pcrypto.UnmarshalPrivateKey(rawKey2)
 	require.NoError(t, err)
@@ -185,7 +178,6 @@ func TestBootstrap_TwoPeers(t *testing.T) {
 	require.NoError(t, err)
 	defer host2.Close()
 
-	// Bootstrap peer2 with peer1
 	peers := []peer.AddrInfo{
 		{ID: host1.ID(), Addrs: host1.Addrs()},
 	}
@@ -194,7 +186,6 @@ func TestBootstrap_TwoPeers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, result, 1)
 
-	// Also bootstrap routing1 just to ensure DHT is up
 	err = routing1.Bootstrap(ctx)
 	require.NoError(t, err)
 }
@@ -227,14 +218,12 @@ func TestSetupLibp2p_MultipleAddrs(t *testing.T) {
 
 	defer host.Close()
 
-	// Should have multiple addresses
 	assert.True(t, len(host.Addrs()) >= 2)
 }
 
 func TestBootstrap_WithPeers(t *testing.T) {
 	ctx := context.Background()
 
-	// Create first peer
 	rawKey1 := keypair.NewRaw()
 	privKey1, err := libp2pcrypto.UnmarshalPrivateKey(rawKey1)
 	require.NoError(t, err)
@@ -254,7 +243,6 @@ func TestBootstrap_WithPeers(t *testing.T) {
 	require.NoError(t, err)
 	defer host1.Close()
 
-	// Create second peer
 	rawKey2 := keypair.NewRaw()
 	privKey2, err := libp2pcrypto.UnmarshalPrivateKey(rawKey2)
 	require.NoError(t, err)
@@ -274,7 +262,6 @@ func TestBootstrap_WithPeers(t *testing.T) {
 	require.NoError(t, err)
 	defer host2.Close()
 
-	// Create third peer and connect it to both
 	rawKey3 := keypair.NewRaw()
 	privKey3, err := libp2pcrypto.UnmarshalPrivateKey(rawKey3)
 	require.NoError(t, err)
@@ -294,7 +281,6 @@ func TestBootstrap_WithPeers(t *testing.T) {
 	require.NoError(t, err)
 	defer host3.Close()
 
-	// Connect peer3 to peer1 and peer2
 	peers := []peer.AddrInfo{
 		{ID: host1.ID(), Addrs: host1.Addrs()},
 		{ID: host2.ID(), Addrs: host2.Addrs()},
@@ -304,7 +290,6 @@ func TestBootstrap_WithPeers(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, result, 2)
 
-	// Bootstrap routing2 as well
 	err = routing2.Bootstrap(ctx)
 	require.NoError(t, err)
 }

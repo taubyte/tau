@@ -56,7 +56,6 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 			done <- exitError
 		}()
 
-		// Create packer once outside the loop - it's stateless
 		pack := packer.New(Magic, Version)
 
 		for {

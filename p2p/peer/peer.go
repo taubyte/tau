@@ -73,6 +73,13 @@ func (p *node) cleanup() error {
 		}
 	}
 
+	// Cancel context before closing store to allow ipfs-lite's autoclose
+	// goroutine to properly shut down the reprovider (which accesses the store)
+	p.ctx_cancel()
+
+	// Give the autoclose goroutine time to finish
+	time.Sleep(50 * time.Millisecond)
+
 	if p.store != nil {
 		if err := p.store.Close(); err != nil {
 			return err
@@ -81,8 +88,6 @@ func (p *node) cleanup() error {
 	if p.ephemeral_repo_path {
 		os.RemoveAll(p.repo_path)
 	}
-
-	p.ctx_cancel()
 
 	return nil
 }

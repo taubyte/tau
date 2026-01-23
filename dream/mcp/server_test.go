@@ -121,7 +121,7 @@ func TestMCPServer(t *testing.T) {
 	})
 
 	t.Run("CreateUniverse", func(t *testing.T) {
-		_, _ = session.CallTool(multiverse.Context(), &mcp.CallToolParams{
+		session.CallTool(multiverse.Context(), &mcp.CallToolParams{
 			Name: "delete_universe",
 			Arguments: map[string]any{
 				"universe_name": "test-universe",

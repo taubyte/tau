@@ -103,11 +103,11 @@ func (p packer) Stream(channel Channel, w io.Writer, r io.Reader, bufSize int) (
 		p.SendClose(channel, w, err)
 	}()
 
-	// Get buffer from pool
 	bufPtr := bufPool.Get().(*[]byte)
 	buf := *bufPtr
 	if len(buf) < bufSize {
 		buf = make([]byte, bufSize)
+		bufPtr = &buf
 	} else {
 		buf = buf[:bufSize]
 	}

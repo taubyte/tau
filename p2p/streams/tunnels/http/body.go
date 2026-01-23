@@ -60,7 +60,6 @@ func (b *bodyReader) Read(p []byte) (n int, err error) {
 	}
 
 	if ch != b.ch {
-		// Discard unexpected channel data efficiently
 		io.Copy(io.Discard, io.LimitReader(b.stream, l))
 		return 0, ErrNotBody
 	}

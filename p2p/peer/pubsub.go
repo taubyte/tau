@@ -105,15 +105,11 @@ func (p *node) PubSubSubscribeToTopic(topic *pubsub.Topic, handler PubSubConsume
 			default:
 				msg, err := subs.Next(p.ctx)
 				if err != nil {
-					// Next is blocking till there's a message or ctx.Done, so if error
-					// retated to context we ignore
 					if p.ctx.Err() == nil {
 						err_handler(err)
 					}
 					return
 				}
-				// Note: libp2p's GossipSub already handles message deduplication internally
-				// via its seen message cache, so we don't need custom deduplication here.
 				handler(msg)
 			}
 		}
@@ -147,7 +143,6 @@ func (p *node) PubSubSubscribeContext(ctx context.Context, name string, handler 
 			default:
 				msg, err := subs.Next(ctx)
 				if err != nil {
-					// Only call error handler for real errors, not context cancellation
 					if ctx.Err() == nil {
 						err_handler(err)
 					}

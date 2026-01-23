@@ -20,20 +20,16 @@ func TestNewDatastore(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ds)
 
-	// Test basic operations
 	ctx := context.Background()
 
-	// Put
 	key := datastore.NewKey("test-key")
 	err = ds.Put(ctx, key, []byte("test-value"))
 	require.NoError(t, err)
 
-	// Get
 	val, err := ds.Get(ctx, key)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("test-value"), val)
 
-	// Close
 	err = ds.Close()
 	require.NoError(t, err)
 }
@@ -50,8 +46,6 @@ func TestNewDatastore_NewPath(t *testing.T) {
 }
 
 func TestNewDatastore_InvalidPath(t *testing.T) {
-	// Try to create datastore in a non-writable path
-	// This may not fail on all systems, so we check for successful creation instead
 	tmpDir := t.TempDir()
 	ds, err := NewDatastore(tmpDir)
 	if err != nil {
@@ -63,7 +57,6 @@ func TestNewDatastore_InvalidPath(t *testing.T) {
 }
 
 func TestMigratePebbleV1ToV2_NonexistentPath(t *testing.T) {
-	// Test migration with non-existent path
 	err := MigratePebbleV1ToV2("/nonexistent/path/to/pebble")
 	assert.Error(t, err)
 }
@@ -81,7 +74,6 @@ func TestMigratePebbleV1ToV2(t *testing.T) {
 		"binary":     string([]byte{0x00, 0x01, 0x02, 0xFF}),
 	}
 
-	// Step 1: Create a Pebble v1 database with test data
 	v1DB, err := pebblev1.Open(dbPath, nil)
 	require.NoError(t, err, "failed to create v1 database")
 
@@ -90,7 +82,6 @@ func TestMigratePebbleV1ToV2(t *testing.T) {
 		require.NoError(t, err, "failed to set key %s in v1 db", k)
 	}
 
-	// Verify data was written to v1
 	for k, expectedV := range testData {
 		val, closer, err := v1DB.Get([]byte(k))
 		require.NoError(t, err, "failed to get key %s from v1 db", k)
@@ -101,16 +92,13 @@ func TestMigratePebbleV1ToV2(t *testing.T) {
 	err = v1DB.Close()
 	require.NoError(t, err, "failed to close v1 database")
 
-	// Step 2: Run migration
 	err = MigratePebbleV1ToV2(dbPath)
 	require.NoError(t, err, "migration failed")
 
-	// Step 3: Verify backup was created
 	backupPath := dbPath + ".v1"
 	_, err = os.Stat(backupPath)
 	require.NoError(t, err, "backup path should exist after migration")
 
-	// Step 4: Open migrated database with v2 and verify all data
 	v2DB, err := pebblev2.Open(dbPath, nil)
 	require.NoError(t, err, "failed to open migrated v2 database")
 	defer v2DB.Close()
@@ -122,7 +110,6 @@ func TestMigratePebbleV1ToV2(t *testing.T) {
 		closer.Close()
 	}
 
-	// Verify key count matches
 	iter, err := v2DB.NewIter(nil)
 	require.NoError(t, err)
 	defer iter.Close()
@@ -138,7 +125,6 @@ func TestMigratePebbleV1ToV2_LargeData(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "largedb")
 
-	// Create v1 database with many keys
 	v1DB, err := pebblev1.Open(dbPath, nil)
 	require.NoError(t, err)
 
@@ -156,11 +142,9 @@ func TestMigratePebbleV1ToV2_LargeData(t *testing.T) {
 	err = v1DB.Close()
 	require.NoError(t, err)
 
-	// Migrate
 	err = MigratePebbleV1ToV2(dbPath)
 	require.NoError(t, err)
 
-	// Verify with v2
 	v2DB, err := pebblev2.Open(dbPath, nil)
 	require.NoError(t, err)
 	defer v2DB.Close()
@@ -180,17 +164,14 @@ func TestMigratePebbleV1ToV2_EmptyDatabase(t *testing.T) {
 	tmpDir := t.TempDir()
 	dbPath := filepath.Join(tmpDir, "emptydb")
 
-	// Create empty v1 database
 	v1DB, err := pebblev1.Open(dbPath, nil)
 	require.NoError(t, err)
 	err = v1DB.Close()
 	require.NoError(t, err)
 
-	// Migrate empty database
 	err = MigratePebbleV1ToV2(dbPath)
 	require.NoError(t, err)
 
-	// Verify v2 database is also empty
 	v2DB, err := pebblev2.Open(dbPath, nil)
 	require.NoError(t, err)
 	defer v2DB.Close()
@@ -207,7 +188,6 @@ func Test_migratePebbleV1ToV2(t *testing.T) {
 	v1Path := filepath.Join(tmpDir, "v1db")
 	v2Path := filepath.Join(tmpDir, "v2db")
 
-	// Create v1 database with test data
 	v1DB, err := pebblev1.Open(v1Path, nil)
 	require.NoError(t, err)
 
@@ -219,11 +199,9 @@ func Test_migratePebbleV1ToV2(t *testing.T) {
 	err = v1DB.Close()
 	require.NoError(t, err)
 
-	// Run internal migration function
 	err = migratePebbleV1ToV2(v1Path, v2Path)
 	require.NoError(t, err)
 
-	// Verify v2 database
 	v2DB, err := pebblev2.Open(v2Path, nil)
 	require.NoError(t, err)
 	defer v2DB.Close()
@@ -237,11 +215,9 @@ func Test_migratePebbleV1ToV2(t *testing.T) {
 }
 
 func Test_migratePebbleV1ToV2_InvalidV1Path(t *testing.T) {
-	// Use a path that cannot be accessed (file instead of directory)
 	tmpDir := t.TempDir()
 	invalidPath := filepath.Join(tmpDir, "afile")
 
-	// Create a regular file where pebble expects a directory
 	err := os.WriteFile(invalidPath, []byte("not a database"), 0644)
 	require.NoError(t, err)
 
@@ -256,13 +232,11 @@ func Test_migratePebbleV1ToV2_InvalidV2Path(t *testing.T) {
 	tmpDir := t.TempDir()
 	v1Path := filepath.Join(tmpDir, "v1db")
 
-	// Create valid v1 database
 	v1DB, err := pebblev1.Open(v1Path, nil)
 	require.NoError(t, err)
 	err = v1DB.Close()
 	require.NoError(t, err)
 
-	// Use invalid v2 path (read-only or non-writable location)
 	v2Path := "/nonexistent/readonly/path"
 
 	err = migratePebbleV1ToV2(v1Path, v2Path)
