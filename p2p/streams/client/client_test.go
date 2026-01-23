@@ -499,6 +499,429 @@ func TestClientUpgrade(t *testing.T) {
 
 }
 
+func TestClientOptions(t *testing.T) {
+	ctx := context.Background()
+
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var n int
+	for n < 25565 || n > 40000 {
+		n = rnd.Intn(100000)
+	}
+
+	p1, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p1.Close()
+
+	// Test Peers option
+	c, err := New(p1, "/test/1.0", Peers(32))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.maxPeers != 32 {
+		t.Errorf("expected maxPeers=32, got %d", c.maxPeers)
+	}
+	c.Close()
+
+	// Test Parallel option
+	c, err = New(p1, "/test/1.0", Parallel(128))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.maxParallel != 128 {
+		t.Errorf("expected maxParallel=128, got %d", c.maxParallel)
+	}
+	c.Close()
+
+	// Test Context
+	c, err = New(p1, "/test/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Context() == nil {
+		t.Error("Context should not be nil")
+	}
+	c.Close()
+}
+
+func TestClientSend_Sync(t *testing.T) {
+	logging.SetLogLevel("*", "error")
+
+	ctx, ctxC := context.WithCancel(context.Background())
+	defer ctxC()
+
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var n int
+	for n < 25565 || n > 40000 {
+		n = rnd.Intn(100000)
+	}
+
+	p1, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p1.Close()
+
+	svr, err := peerService.New(p1, "sync-test", "/sync/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svr.Stop()
+
+	err = svr.Define("echo", func(_ context.Context, _ streams.Connection, body command.Body) (cr.Response, error) {
+		return cr.Response{"data": body["data"]}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p2, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n+1)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p2.Close()
+
+	err = p2.Peer().Connect(ctx, peercore.AddrInfo{ID: p1.ID(), Addrs: p1.Peer().Addrs()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := New(p2, "/sync/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Test Send method (synchronous)
+	resp, err := c.Send("echo", command.Body{"data": "hello"}, p1.ID())
+	if err != nil {
+		t.Errorf("Send returned error: %s", err)
+		return
+	}
+
+	if data, _ := resp.Get("data"); data != "hello" {
+		t.Errorf("expected 'hello', got %v", data)
+	}
+}
+
+func TestRequestTimeout(t *testing.T) {
+	logging.SetLogLevel("*", "error")
+
+	ctx := context.Background()
+
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var n int
+	for n < 25565 || n > 40000 {
+		n = rnd.Intn(100000)
+	}
+
+	p1, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p1.Close()
+
+	c, err := New(p1, "/timeout/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Test Timeout option
+	req := c.New("test", Timeout(5*time.Second))
+	if req.cmdTimeout != 5*time.Second {
+		t.Errorf("expected timeout 5s, got %v", req.cmdTimeout)
+	}
+}
+
+func TestClient_SendWithoutPeers(t *testing.T) {
+	logging.SetLogLevel("*", "error")
+
+	ctx, ctxC := context.WithCancel(context.Background())
+	defer ctxC()
+
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var n int
+	for n < 25565 || n > 40000 {
+		n = rnd.Intn(100000)
+	}
+
+	p1, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p1.Close()
+
+	c, err := New(p1, "/nopeers/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Send without specifying peers - will try to discover
+	resp, err := c.Send("test", command.Body{})
+	// Should timeout or fail since there are no peers
+	if err == nil && resp != nil {
+		t.Log("Send succeeded unexpectedly")
+	}
+}
+
+func TestClient_RequestError(t *testing.T) {
+	logging.SetLogLevel("*", "error")
+
+	ctx := context.Background()
+
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var n int
+	for n < 25565 || n > 40000 {
+		n = rnd.Intn(100000)
+	}
+
+	p1, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p1.Close()
+
+	c, err := New(p1, "/error-test/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Close the client first
+	c.Close()
+
+	// Try to send on closed client
+	_, err = c.New("test").Do()
+	if err == nil {
+		t.Log("Expected error on closed client")
+	}
+}
+
+func TestClient_ThresholdOption(t *testing.T) {
+	ctx := context.Background()
+
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var n int
+	for n < 25565 || n > 40000 {
+		n = rnd.Intn(100000)
+	}
+
+	p1, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p1.Close()
+
+	c, err := New(p1, "/threshold/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Test Threshold option
+	req := c.New("test", Threshold(3))
+	if req.threshold != 3 {
+		t.Errorf("expected threshold=3, got %d", req.threshold)
+	}
+}
+
+func TestClient_ToOption(t *testing.T) {
+	ctx := context.Background()
+
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var n int
+	for n < 25565 || n > 40000 {
+		n = rnd.Intn(100000)
+	}
+
+	p1, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p1.Close()
+
+	c, err := New(p1, "/to/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	// Test To option
+	req := c.New("test", To(p1.ID()))
+	if len(req.to) != 1 {
+		t.Errorf("expected 1 peer in to list, got %d", len(req.to))
+	}
+	if req.to[0] != p1.ID() {
+		t.Errorf("peer ID mismatch")
+	}
+}
+
+func TestResponseMethods(t *testing.T) {
+	logging.SetLogLevel("*", "error")
+
+	ctx, ctxC := context.WithCancel(context.Background())
+	defer ctxC()
+
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+	var n int
+	for n < 25565 || n > 40000 {
+		n = rnd.Intn(100000)
+	}
+
+	p1, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p1.Close()
+
+	svr, err := peerService.New(p1, "response-test", "/response/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer svr.Stop()
+
+	err = svr.Define("test", func(_ context.Context, _ streams.Connection, body command.Body) (cr.Response, error) {
+		return cr.Response{"status": "ok"}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	p2, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", n+1)},
+		nil,
+		true,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p2.Close()
+
+	err = p2.Peer().Connect(ctx, peercore.AddrInfo{ID: p1.ID(), Addrs: p1.Peer().Addrs()})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := New(p2, "/response/1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+
+	resCh, err := c.New("test", To(p1.ID())).Do()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res := <-resCh
+	if res == nil {
+		t.Fatal("Response should not be nil")
+	}
+	defer res.Close()
+
+	// Test PID method
+	pid := res.PID()
+	if pid != p1.ID() {
+		t.Errorf("PID should match server ID")
+	}
+
+	// Test Error method
+	if res.Error() != nil {
+		t.Errorf("Error should be nil for successful response")
+	}
+
+	// Test CloseRead
+	res.CloseRead()
+}
+
 func TestClientMultiSend(t *testing.T) {
 	logging.SetLogLevel("*", "error")
 

@@ -522,3 +522,218 @@ func TestGetSizeOnClosedDatastore(t *testing.T) {
 		t.Errorf("GetSize did not return -1 after datastore closure, got %d", size)
 	}
 }
+
+func TestQueryWithFilters(t *testing.T) {
+	ctx := context.Background()
+	ds := New()
+	defer ds.Close()
+
+	// Populate datastore with test data
+	testData := map[string]string{
+		"/prefix/key1": "value1",
+		"/prefix/key2": "value2",
+		"/other/key3":  "value3",
+		"/prefix/key4": "value4",
+		"/other/key5":  "value5",
+	}
+
+	for k, v := range testData {
+		err := ds.Put(ctx, datastore.NewKey(k), []byte(v))
+		if err != nil {
+			t.Fatalf("Put failed: %v", err)
+		}
+	}
+
+	// Create a filter that only includes keys containing "prefix"
+	prefixFilter := query.FilterKeyPrefix{Prefix: "/prefix"}
+
+	q := query.Query{
+		Filters: []query.Filter{prefixFilter},
+	}
+
+	results, err := ds.Query(ctx, q)
+	if err != nil {
+		t.Fatalf("Query with filter failed: %v", err)
+	}
+
+	entries, err := results.Rest()
+	if err != nil {
+		t.Fatalf("Failed to collect query results: %v", err)
+	}
+
+	// Should only get the 3 keys with "/prefix" prefix
+	if len(entries) != 3 {
+		t.Errorf("Expected 3 entries with prefix filter, got %d", len(entries))
+	}
+
+	for _, e := range entries {
+		if !bytes.HasPrefix([]byte(e.Key), []byte("/prefix")) {
+			t.Errorf("Entry %s should have /prefix prefix", e.Key)
+		}
+	}
+}
+
+func TestQueryWithOrders(t *testing.T) {
+	ctx := context.Background()
+	ds := New()
+	defer ds.Close()
+
+	// Populate datastore with test data (out of order)
+	keys := []string{"/c", "/a", "/b", "/e", "/d"}
+	for _, k := range keys {
+		err := ds.Put(ctx, datastore.NewKey(k), []byte("value-"+k))
+		if err != nil {
+			t.Fatalf("Put failed: %v", err)
+		}
+	}
+
+	// Query with key ordering
+	q := query.Query{
+		Orders: []query.Order{query.OrderByKey{}},
+	}
+
+	results, err := ds.Query(ctx, q)
+	if err != nil {
+		t.Fatalf("Query with order failed: %v", err)
+	}
+
+	entries, err := results.Rest()
+	if err != nil {
+		t.Fatalf("Failed to collect query results: %v", err)
+	}
+
+	if len(entries) != 5 {
+		t.Fatalf("Expected 5 entries, got %d", len(entries))
+	}
+
+	// Check entries are sorted
+	expectedOrder := []string{"/a", "/b", "/c", "/d", "/e"}
+	for i, e := range entries {
+		if e.Key != expectedOrder[i] {
+			t.Errorf("Expected key at position %d to be %s, got %s", i, expectedOrder[i], e.Key)
+		}
+	}
+}
+
+func TestQueryWithMultipleFilters(t *testing.T) {
+	ctx := context.Background()
+	ds := New()
+	defer ds.Close()
+
+	// Populate datastore
+	testData := map[string]string{
+		"/app/user/1": "user1",
+		"/app/user/2": "user2",
+		"/app/post/1": "post1",
+		"/app/post/2": "post2",
+		"/sys/log/1":  "log1",
+	}
+
+	for k, v := range testData {
+		err := ds.Put(ctx, datastore.NewKey(k), []byte(v))
+		if err != nil {
+			t.Fatalf("Put failed: %v", err)
+		}
+	}
+
+	// Multiple filters: must start with /app AND contain /user
+	q := query.Query{
+		Filters: []query.Filter{
+			query.FilterKeyPrefix{Prefix: "/app"},
+			query.FilterKeyPrefix{Prefix: "/app/user"},
+		},
+	}
+
+	results, err := ds.Query(ctx, q)
+	if err != nil {
+		t.Fatalf("Query with multiple filters failed: %v", err)
+	}
+
+	entries, err := results.Rest()
+	if err != nil {
+		t.Fatalf("Failed to collect query results: %v", err)
+	}
+
+	// Should only get the 2 /app/user keys
+	if len(entries) != 2 {
+		t.Errorf("Expected 2 entries with multiple filters, got %d", len(entries))
+	}
+}
+
+func TestQueryWithFiltersAndOrders(t *testing.T) {
+	ctx := context.Background()
+	ds := New()
+	defer ds.Close()
+
+	// Populate datastore
+	testData := map[string]string{
+		"/data/z":  "z",
+		"/data/a":  "a",
+		"/data/m":  "m",
+		"/other/x": "x",
+	}
+
+	for k, v := range testData {
+		err := ds.Put(ctx, datastore.NewKey(k), []byte(v))
+		if err != nil {
+			t.Fatalf("Put failed: %v", err)
+		}
+	}
+
+	// Filter AND order
+	q := query.Query{
+		Filters: []query.Filter{query.FilterKeyPrefix{Prefix: "/data"}},
+		Orders:  []query.Order{query.OrderByKey{}},
+	}
+
+	results, err := ds.Query(ctx, q)
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+
+	entries, err := results.Rest()
+	if err != nil {
+		t.Fatalf("Failed to collect query results: %v", err)
+	}
+
+	if len(entries) != 3 {
+		t.Fatalf("Expected 3 entries, got %d", len(entries))
+	}
+
+	// Check sorted order
+	expectedOrder := []string{"/data/a", "/data/m", "/data/z"}
+	for i, e := range entries {
+		if e.Key != expectedOrder[i] {
+			t.Errorf("Expected key %s at position %d, got %s", expectedOrder[i], i, e.Key)
+		}
+	}
+}
+
+func TestQueryFilterExcludesAll(t *testing.T) {
+	ctx := context.Background()
+	ds := New()
+	defer ds.Close()
+
+	// Add some data
+	ds.Put(ctx, datastore.NewKey("/foo/bar"), []byte("baz"))
+	ds.Put(ctx, datastore.NewKey("/foo/qux"), []byte("quux"))
+
+	// Filter that matches nothing
+	q := query.Query{
+		Filters: []query.Filter{query.FilterKeyPrefix{Prefix: "/nonexistent"}},
+	}
+
+	results, err := ds.Query(ctx, q)
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+
+	entries, err := results.Rest()
+	if err != nil {
+		t.Fatalf("Failed to collect query results: %v", err)
+	}
+
+	if len(entries) != 0 {
+		t.Errorf("Expected 0 entries when filter excludes all, got %d", len(entries))
+	}
+}
