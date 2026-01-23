@@ -15,165 +15,166 @@ func (p *node) NewPubSubKeepAlive(ctx context.Context, cancel context.CancelFunc
 	// Use a special pubsub topic to avoid disconnecting
 	// from globaldb peers.
 
-	if !p.closed {
-		go func() {
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				case <-time.After(20 * time.Second):
-					p.PubSubPublish(ctx, name, []byte(name))
-				}
-			}
-		}()
-
-		peers := make([]peer.ID, 0)
-
-		return p.PubSubSubscribe(
-			name,
-			func(msg *pubsub.Message) {
-				peers = append(peers, msg.ReceivedFrom)
-				p.host.ConnManager().Protect(msg.ReceivedFrom, "/keep/"+name)
-			},
-			func(err error) {
-				for _, peer := range peers {
-					p.host.ConnManager().Unprotect(peer, "/keep/"+name)
-				}
-				peers = nil
-				cancel()
-			},
-		)
+	if p.closed.Load() {
+		return errorClosed
 	}
 
-	return errorClosed
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(20 * time.Second):
+				p.PubSubPublish(ctx, name, []byte(name))
+			}
+		}
+	}()
+
+	peers := make(map[peer.ID]struct{})
+
+	return p.PubSubSubscribe(
+		name,
+		func(msg *pubsub.Message) {
+			if _, exists := peers[msg.ReceivedFrom]; !exists {
+				peers[msg.ReceivedFrom] = struct{}{}
+				p.host.ConnManager().Protect(msg.ReceivedFrom, "/keep/"+name)
+			}
+		},
+		func(err error) {
+			for pid := range peers {
+				p.host.ConnManager().Unprotect(pid, "/keep/"+name)
+			}
+			peers = nil
+			cancel()
+		},
+	)
 }
 
 func (p *node) getOrCreateTopic(name string) (topic *pubsub.Topic, err error) {
-	if !p.closed {
-		p.topicsMutex.Lock()
-		defer p.topicsMutex.Unlock()
-
-		var ok bool
-		topic, ok = p.topics[name]
-		if !ok {
-			if topic, err = p.messaging.Join(name); err != nil {
-				return
-			}
-
-			p.topics[name] = topic
-		}
-
-		return topic, nil
+	if p.closed.Load() {
+		return nil, errorClosed
 	}
 
-	err = errorClosed
-	return
+	p.topicsMutex.Lock()
+	defer p.topicsMutex.Unlock()
+
+	var ok bool
+	topic, ok = p.topics[name]
+	if !ok {
+		if topic, err = p.messaging.Join(name); err != nil {
+			return
+		}
+
+		p.topics[name] = topic
+	}
+
+	return topic, nil
 }
 
 func (p *node) PubSubSubscribe(name string, handler PubSubConsumerHandler, err_handler PubSubConsumerErrorHandler) error {
-	if !p.closed {
-		topic, err := p.getOrCreateTopic(name)
-		if err != nil {
-			return err
-		}
-
-		return p.PubSubSubscribeToTopic(topic, handler, err_handler)
+	if p.closed.Load() {
+		return errorClosed
 	}
 
-	return errorClosed
+	topic, err := p.getOrCreateTopic(name)
+	if err != nil {
+		return err
+	}
+
+	return p.PubSubSubscribeToTopic(topic, handler, err_handler)
 }
 
 func (p *node) PubSubSubscribeToTopic(topic *pubsub.Topic, handler PubSubConsumerHandler, err_handler PubSubConsumerErrorHandler) error {
-	if !p.closed {
-		subs, err := topic.Subscribe()
-		if err != nil {
-			return err
-		}
-
-		go func() {
-			lookup := make(map[string]struct{})
-			max := 1024
-			order := make([]string, 0, max)
-
-			defer subs.Cancel()
-			for {
-				select {
-				case <-p.ctx.Done():
-					return
-				default:
-					msg, err := subs.Next(p.ctx)
-					if err != nil {
-						err_handler(err)
-						break
-					}
-
-					if _, ok := lookup[msg.ID]; ok {
-						continue
-					}
-
-					lookup[msg.ID] = struct{}{}
-					if len(order)+1 >= cap(order) {
-						delete(lookup, order[0])
-						order = order[1:]
-					}
-					order = append(order, msg.ID)
-
-					handler(msg)
-				}
-			}
-		}()
-
-		return nil
+	if p.closed.Load() {
+		return errorClosed
 	}
 
-	return errorClosed
+	subs, err := topic.Subscribe()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		lookup := make(map[string]struct{})
+		max := 1024
+		order := make([]string, 0, max)
+
+		defer subs.Cancel()
+		for {
+			select {
+			case <-p.ctx.Done():
+				return
+			default:
+				msg, err := subs.Next(p.ctx)
+				if err != nil {
+					err_handler(err)
+					return
+				}
+
+				if _, ok := lookup[msg.ID]; ok {
+					continue
+				}
+
+				lookup[msg.ID] = struct{}{}
+				if len(order)+1 >= cap(order) {
+					delete(lookup, order[0])
+					order = order[1:]
+				}
+				order = append(order, msg.ID)
+
+				handler(msg)
+			}
+		}
+	}()
+
+	return nil
 }
 
 // TODO: make PubSubSubscribe not recreate topics,  should cache and open.
 func (p *node) PubSubSubscribeContext(ctx context.Context, name string, handler PubSubConsumerHandler, err_handler PubSubConsumerErrorHandler) error {
-	if !p.closed {
-		topic, err := p.getOrCreateTopic(name)
-		if err != nil {
-			return err
-		}
-
-		subs, err := topic.Subscribe()
-		if err != nil {
-			return err
-		}
-
-		go func() {
-			defer subs.Cancel()
-			for {
-				select {
-				case <-ctx.Done():
-					return
-				default:
-					msg, err := subs.Next(ctx)
-					if err != nil {
-						err_handler(err)
-						break
-					}
-					handler(msg)
-				}
-			}
-		}()
-
-		return nil
+	if p.closed.Load() {
+		return errorClosed
 	}
 
-	return errorClosed
+	topic, err := p.getOrCreateTopic(name)
+	if err != nil {
+		return err
+	}
+
+	subs, err := topic.Subscribe()
+	if err != nil {
+		return err
+	}
+
+	go func() {
+		defer subs.Cancel()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+				msg, err := subs.Next(ctx)
+				if err != nil {
+					err_handler(err)
+					return
+				}
+				handler(msg)
+			}
+		}
+	}()
+
+	return nil
 }
 
 func (p *node) PubSubPublish(ctx context.Context, name string, data []byte) error {
-	if !p.closed {
-		topic, err := p.getOrCreateTopic(name)
-		if err != nil {
-			return err
-		}
-
-		return topic.Publish(ctx, data)
+	if p.closed.Load() {
+		return errorClosed
 	}
 
-	return errorClosed
+	topic, err := p.getOrCreateTopic(name)
+	if err != nil {
+		return err
+	}
+
+	return topic.Publish(ctx, data)
 }

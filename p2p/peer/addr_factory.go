@@ -53,7 +53,7 @@ func makeAddrsFactory(announce []string, noAnnounce []string) (p2pbhost.AddrsFac
 	}, nil
 }
 
-func IpfsSTyleAddrsFactory(announce []string, noAnnounce []string) libp2p.Option {
+func IpfsStyleAddrsFactory(announce []string, noAnnounce []string) libp2p.Option {
 	addrsFactory, err := makeAddrsFactory(announce, noAnnounce)
 	if err != nil {
 		return nil
@@ -66,18 +66,18 @@ func IpfsSTyleAddrsFactory(announce []string, noAnnounce []string) libp2p.Option
 //	only use for public nodes
 func (p *node) SimpleAddrsFactory(announce []string, override bool) libp2p.Option {
 	logger.Debugf("SimpleAddrsFactory: Will Announce %v", announce)
-	var annouce_addrs = make([]ma.Multiaddr, 0, len(announce))
+	announceAddrs := make([]ma.Multiaddr, 0, len(announce))
 	for _, a := range announce {
-		_a, err := ma.NewMultiaddr(a)
+		addr, err := ma.NewMultiaddr(a)
 		if err == nil {
-			annouce_addrs = append(annouce_addrs, _a)
+			announceAddrs = append(announceAddrs, addr)
 		}
 	}
-	logger.Debugf("SimpleAddrsFactory: Announce %v", annouce_addrs)
+	logger.Debugf("SimpleAddrsFactory: Announce %v", announceAddrs)
 
 	return libp2p.AddrsFactory(func(allAddrs []ma.Multiaddr) []ma.Multiaddr {
-		addrs := make([]ma.Multiaddr, 0, len(annouce_addrs))
-		addrs = append(addrs, annouce_addrs...)
+		addrs := make([]ma.Multiaddr, 0, len(announceAddrs))
+		addrs = append(addrs, announceAddrs...)
 		if !override {
 			addrs = append(addrs, allAddrs...)
 		}

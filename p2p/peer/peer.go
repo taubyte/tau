@@ -5,13 +5,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"time"
 
 	"github.com/libp2p/go-libp2p"
-	dht "github.com/libp2p/go-libp2p-kad-dht"
-	"github.com/libp2p/go-libp2p-kad-dht/dual"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
 	peer "github.com/libp2p/go-libp2p/core/peer"
@@ -42,12 +41,13 @@ func init() {
 }
 
 func (p *node) Close() {
-	err := p.cleanup()
-	if err != nil {
-		panic(err)
+	if p.closed.Swap(true) {
+		return // Already closed
 	}
 
-	p.closed = true
+	if err := p.cleanup(); err != nil {
+		logger.Errorf("cleanup failed: %v", err)
+	}
 }
 
 func (p *node) cleanup() error {
@@ -66,14 +66,8 @@ func (p *node) cleanup() error {
 		}
 	}
 	if p.dht != nil {
-		// Need to determine the type of DHT then close it
-		switch p.dht.(type) {
-		case *dht.IpfsDHT:
-			if err := p.dht.(*dht.IpfsDHT).Close(); err != nil {
-				return err
-			}
-		case *dual.DHT:
-			if err := p.dht.(*dual.DHT).Close(); err != nil {
+		if closer, ok := p.dht.(io.Closer); ok {
+			if err := closer.Close(); err != nil {
 				return err
 			}
 		}

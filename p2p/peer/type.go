@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
@@ -71,9 +72,9 @@ type node struct {
 	ipfs                *ipfslite.Peer
 	peering             PeeringService
 
-	topicsMutex sync.Mutex
+	topicsMutex sync.RWMutex
 	topics      map[string]*pubsub.Topic
-	closed      bool
+	closed      atomic.Bool
 }
 
 func (p *node) ID() peer.ID {

@@ -82,7 +82,7 @@ func Mock(ctx context.Context) Node {
 
 	err = p.dht.Bootstrap(p.ctx)
 	if err != nil {
-		_ = err
+		logger.Warnf("mock DHT bootstrap failed: %v", err)
 	}
 
 	return &p

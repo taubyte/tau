@@ -173,7 +173,9 @@ func (p packer) Recv(r io.Reader, w io.Writer) (Channel, int64, error) {
 			return channel, 0, io.EOF
 		}
 		errMsg := make([]byte, length)
-		io.ReadFull(r, errMsg)
+		if _, err := io.ReadFull(r, errMsg); err != nil {
+			return channel, 0, fmt.Errorf("failed to read error message: %w", err)
+		}
 		return channel, 0, errors.New(string(errMsg))
 	}
 
@@ -225,7 +227,9 @@ func (p packer) Next(r io.Reader) (Channel, int64, error) {
 			return channel, 0, io.EOF
 		}
 		errMsg := make([]byte, length)
-		io.ReadFull(r, errMsg)
+		if _, err := io.ReadFull(r, errMsg); err != nil {
+			return channel, 0, fmt.Errorf("failed to read error message: %w", err)
+		}
 		return channel, 0, errors.New(string(errMsg))
 	}
 

@@ -3,6 +3,7 @@ package router
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 
 	"github.com/taubyte/tau/p2p/streams"
@@ -30,11 +31,11 @@ func New(svr *streams.StreamManger) *Router {
 
 func (r *Router) AddStatic(command string, handler CommandHandler, stream StreamHandler) error {
 	if handler == nil {
-		return errors.New("can not add nil handler")
+		return errors.New("router: cannot add nil handler")
 	}
 
 	if _, ok := r.staticRoutes[command]; ok {
-		return errors.New("Command `" + command + "` already exists.")
+		return fmt.Errorf("router: command %q already registered", command)
 	}
 
 	r.staticRoutes[command] = handlers{
@@ -46,7 +47,7 @@ func (r *Router) AddStatic(command string, handler CommandHandler, stream Stream
 
 func (r *Router) handle(cmd *command.Command) (cr.Response, StreamHandler, error) {
 	if cmd == nil {
-		return nil, nil, errors.New("empty command")
+		return nil, nil, errors.New("router: received nil command")
 	}
 
 	conn, err := cmd.Connection()
@@ -59,7 +60,7 @@ func (r *Router) handle(cmd *command.Command) (cr.Response, StreamHandler, error
 		return ret, _handlers.stream, err
 	}
 
-	return nil, nil, errors.New("command `" + cmd.Command + "` does not exist.")
+	return nil, nil, fmt.Errorf("router: command %q not registered", cmd.Command)
 }
 
 func (r *Router) Handle(s streams.Stream) {

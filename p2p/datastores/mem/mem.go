@@ -39,6 +39,9 @@ func (ds *Datastore) Put(ctx context.Context, key datastore.Key, value []byte) e
 }
 
 func (ds *Datastore) Sync(ctx context.Context, prefix datastore.Key) error {
+	ds.mu.RLock()
+	defer ds.mu.RUnlock()
+
 	if ds.store == nil {
 		return ErrClosed
 	}
@@ -106,7 +109,7 @@ func (ds *Datastore) Query(ctx context.Context, q query.Query) (query.Results, e
 		return nil, ErrClosed
 	}
 
-	var entries []query.Entry
+	entries := make([]query.Entry, 0, len(ds.store))
 	for k, v := range ds.store {
 		e := query.Entry{Key: k.String(), Size: len(v)}
 		if !q.KeysOnly {
@@ -156,6 +159,8 @@ func (ds *Datastore) Query(ctx context.Context, q query.Query) (query.Results, e
 }
 
 func (ds *Datastore) Close() error {
+	ds.mu.Lock()
+	defer ds.mu.Unlock()
 	ds.store = nil
 	return nil
 }

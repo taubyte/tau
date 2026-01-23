@@ -19,7 +19,7 @@ func NewDatastore(path string) (datastore.Batching, error) {
 	if err != nil {
 		if strings.Contains(err.Error(), "version 1 which is no longer supported") {
 			fmt.Println("Migrating Pebble v1 to v2")
-			err = MigratePebbleV2ToV1(path)
+			err = MigratePebbleV1ToV2(path)
 			if err != nil {
 				fmt.Println("Failed to migrate Pebble v1 to v2", err)
 				return nil, err
@@ -72,7 +72,7 @@ func migratePebbleV1ToV2(v1Path, v2Path string) error {
 	return nil
 }
 
-func MigratePebbleV2ToV1(path string) error {
+func MigratePebbleV1ToV2(path string) error {
 	v1Path := path
 	v2Path := path + ".v2"
 	backupPath := path + ".v1"

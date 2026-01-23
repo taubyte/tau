@@ -2,6 +2,7 @@ package keypair
 
 import (
 	"encoding/base64"
+	"errors"
 	"os"
 
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
@@ -19,11 +20,14 @@ func NewPersistant(path string) ([]byte, error) {
 	rk, err := LoadRaw(path)
 	if err != nil {
 		k := New()
+		if k == nil {
+			return nil, errors.New("failed to generate keypair")
+		}
 		if err = Save(k, path); err != nil {
 			return nil, err
 		}
 
-		if rk, err = crypto.MarshalPrivateKey(New()); err != nil {
+		if rk, err = crypto.MarshalPrivateKey(k); err != nil {
 			return nil, err
 		}
 	}
