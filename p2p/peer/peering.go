@@ -294,18 +294,10 @@ func (nn *netNotifee) Connected(_ network.Network, c network.Conn) {
 	if ok {
 		// use a goroutine to avoid blocking events.
 		go handler.stopIfConnected()
-	} else {
-		// If this is an inbound connection from a peer we haven't added yet,
-		// protect it temporarily to prevent connection manager from trimming it.
-		// This handles the case where connections are established through other
-		// means (e.g., DHT bootstrap) before the peering service knows about them.
-		if c.Stat().Direction == network.DirInbound {
-			// Protect the connection even though we don't have a handler yet.
-			// This prevents the connection manager from trimming it.
-			// When the peer is eventually added via AddPeer, it will be properly managed.
-			ps.host.ConnManager().Protect(p, connmgrTag)
-		}
 	}
+	// Note: We intentionally don't protect inbound connections from unknown peers.
+	// Protecting them without a cleanup mechanism would cause connection manager leaks.
+	// The connection manager will handle these connections appropriately.
 }
 
 func (nn *netNotifee) Disconnected(_ network.Network, c network.Conn) {

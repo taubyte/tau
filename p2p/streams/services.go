@@ -52,6 +52,7 @@ func (s *StreamManger) Start(handler StreamHandler) {
 }
 
 func (s *StreamManger) Stop() {
+	s.peer.Peer().RemoveStreamHandler(protocol.ID(s.path))
 	s.ctx_cancel()
 }
 

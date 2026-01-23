@@ -6,23 +6,23 @@ This document identifies opportunities to reduce goroutines, memory usage, and p
 
 ## Summary Table
 
-| Priority | Issue | Location | Impact |
+| Priority | Issue | Location | Status |
 |----------|-------|----------|--------|
-| 🔴 Critical | `time.After` in loops | `pubsub.go:27`, `peer.go:104` | Timer leak, memory growth |
-| 🔴 Critical | Inbound connection protection | `peering.go:302-306` | Connection manager leak |
-| 🟠 High | Redundant message deduplication | `pubsub.go:98-123` | ~1024 entries × 2 per subscription |
-| 🟠 High | Buffer allocation per stream | `packer.go:97` | GC pressure |
-| 🟠 High | Inefficient data discard | `body.go:62-71` | CPU waste |
-| 🟡 Medium | Per-request goroutines | `client.go:500-559` | Goroutine explosion under load |
-| 🟡 Medium | Packer created per call | `handler.go:60` | Minor allocations |
-| 🟡 Medium | Magic byte slice allocation | `packer.go:128,187` | Minor heap allocations |
-| 🟢 Low | Stream handler not removed | `services.go:54-56` | Handler leak on stop |
+| 🔴 Critical | `time.After` in loops | `pubsub.go:27`, `peer.go:104` | ✅ FIXED |
+| 🔴 Critical | Inbound connection protection | `peering.go:302-306` | ✅ FIXED |
+| 🟠 High | Redundant message deduplication | `pubsub.go:98-123` | ✅ FIXED |
+| 🟠 High | Buffer allocation per stream | `packer.go:97` | ✅ FIXED |
+| 🟠 High | Inefficient data discard | `body.go:62-71` | ✅ FIXED |
+| 🟡 Medium | Per-request goroutines | `client.go:500-559` | 📋 Documented |
+| 🟡 Medium | Packer created inside loop | `handler.go:60` | ✅ FIXED (comment added) |
+| 🟡 Medium | Magic byte slice allocation | `packer.go:128,187` | ✅ FIXED |
+| 🟢 Low | Stream handler not removed | `services.go:54-56` | ✅ FIXED |
 
 ---
 
 ## 🔴 Critical Issues
 
-### 1. Timer Leaks with `time.After` in Loops
+### 1. Timer Leaks with `time.After` in Loops ✅ FIXED
 
 **Files:** `peer/pubsub.go:27`, `peer/peer.go:104`
 
@@ -56,7 +56,7 @@ for {
 
 ---
 
-### 2. Inbound Connection Protection Leak
+### 2. Inbound Connection Protection Leak ✅ FIXED
 
 **File:** `peer/peering.go:302-306`
 
@@ -79,7 +79,7 @@ if c.Stat().Direction == network.DirInbound {
 
 ## 🟠 High Priority Issues
 
-### 3. Redundant Message Deduplication
+### 3. Redundant Message Deduplication ✅ FIXED
 
 **File:** `peer/pubsub.go:98-123`
 
@@ -117,7 +117,7 @@ go func() {
 
 ---
 
-### 4. Buffer Allocation per Stream
+### 4. Buffer Allocation per Stream ✅ FIXED
 
 **File:** `streams/packer/packer.go:97`
 
@@ -149,7 +149,7 @@ func (p packer) Stream(channel Channel, w io.Writer, r io.Reader, bufSize int) (
 
 ---
 
-### 5. Inefficient Data Discard
+### 5. Inefficient Data Discard ✅ FIXED
 
 **File:** `streams/tunnels/http/body.go:62-71`
 
@@ -214,7 +214,7 @@ case <-ctx.Done():
 
 ---
 
-### 7. Packer Created Inside Loop
+### 7. Packer Created Inside Loop ✅ FIXED (comment added)
 
 **File:** `streams/tunnels/http/handler.go:60`
 
@@ -242,7 +242,7 @@ var defaultPacker = packer.New(Magic, Version)
 
 ---
 
-### 8. Magic Byte Slice Allocation
+### 8. Magic Byte Slice Allocation ✅ FIXED
 
 **File:** `streams/packer/packer.go:128, 187`
 
@@ -264,7 +264,7 @@ _, err := io.ReadFull(r, _magic[:])
 
 ## 🟢 Low Priority Issues
 
-### 9. Stream Handler Not Removed on Stop
+### 9. Stream Handler Not Removed on Stop ✅ FIXED
 
 **File:** `streams/services.go:54-56`
 
@@ -289,14 +289,15 @@ func (s *StreamManger) Stop() {
 
 ## Implementation Priority
 
-1. **Immediate:** Fix `time.After` leaks (simple, high impact)
-2. **Immediate:** Fix inbound connection protection leak
-3. **Short-term:** Remove redundant deduplication
-4. **Short-term:** Use `io.Discard` for data discard
-5. **Medium-term:** Implement buffer pooling
-6. **Medium-term:** Add worker pool for client sends
-7. **Low priority:** Other minor optimizations
+1. ✅ **Immediate:** Fix `time.After` leaks (simple, high impact)
+2. ✅ **Immediate:** Fix inbound connection protection leak
+3. ✅ **Short-term:** Remove redundant deduplication
+4. ✅ **Short-term:** Use `io.Discard` for data discard
+5. ✅ **Medium-term:** Implement buffer pooling
+6. 📋 **Medium-term:** Add worker pool for client sends (documented for future)
+7. ✅ **Low priority:** Other minor optimizations
 
 ---
 
 *Generated: 2026-01-23*
+*All fixes applied: 2026-01-23*

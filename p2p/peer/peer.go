@@ -99,16 +99,17 @@ func (p *node) NewFolder(name string) (dirutils.Directory, error) {
 func (p *node) WaitForSwarm(timeout time.Duration) error {
 	wctx, wctx_c := context.WithTimeout(p.ctx, timeout)
 	defer wctx_c()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 	for {
 		select {
-		case <-time.After(100 * time.Millisecond):
+		case <-ticker.C:
 			if len(p.host.Peerstore().Peers()) > 0 {
 				return nil
 			}
 		case <-wctx.Done():
 			return errors.New("not able to connect to other peers")
 		}
-
 	}
 }
 

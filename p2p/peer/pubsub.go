@@ -20,11 +20,13 @@ func (p *node) NewPubSubKeepAlive(ctx context.Context, cancel context.CancelFunc
 	}
 
 	go func() {
+		ticker := time.NewTicker(20 * time.Second)
+		defer ticker.Stop()
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(20 * time.Second):
+			case <-ticker.C:
 				p.PubSubPublish(ctx, name, []byte(name))
 			}
 		}
@@ -95,10 +97,6 @@ func (p *node) PubSubSubscribeToTopic(topic *pubsub.Topic, handler PubSubConsume
 	}
 
 	go func() {
-		lookup := make(map[string]struct{})
-		max := 1024
-		order := make([]string, 0, max)
-
 		defer subs.Cancel()
 		for {
 			select {
@@ -110,18 +108,8 @@ func (p *node) PubSubSubscribeToTopic(topic *pubsub.Topic, handler PubSubConsume
 					err_handler(err)
 					return
 				}
-
-				if _, ok := lookup[msg.ID]; ok {
-					continue
-				}
-
-				lookup[msg.ID] = struct{}{}
-				if len(order)+1 >= cap(order) {
-					delete(lookup, order[0])
-					order = order[1:]
-				}
-				order = append(order, msg.ID)
-
+				// Note: libp2p's GossipSub already handles message deduplication internally
+				// via its seen message cache, so we don't need custom deduplication here.
 				handler(msg)
 			}
 		}

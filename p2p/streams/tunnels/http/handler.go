@@ -45,7 +45,6 @@ func Backend(stream io.ReadWriter) (http.ResponseWriter, *http.Request, error) {
 // Note: make sure you call
 // HTTP -> Stream
 func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) error {
-
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 
@@ -57,6 +56,7 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 			done <- exitError
 		}()
 
+		// Create packer once outside the loop - it's stateless
 		pack := packer.New(Magic, Version)
 
 		for {

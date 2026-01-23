@@ -6,7 +6,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync"
 )
+
+// bufPool is used to reuse buffers for Stream operations to reduce GC pressure
+var bufPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 32*1024) // 32KB default buffer
+		return &buf
+	},
+}
 
 type packer struct {
 	magic   Magic
@@ -94,13 +103,21 @@ func (p packer) Stream(channel Channel, w io.Writer, r io.Reader, bufSize int) (
 		p.SendClose(channel, w, err)
 	}()
 
-	buf := make([]byte, bufSize)
+	// Get buffer from pool
+	bufPtr := bufPool.Get().(*[]byte)
+	buf := *bufPtr
+	if len(buf) < bufSize {
+		buf = make([]byte, bufSize)
+	} else {
+		buf = buf[:bufSize]
+	}
+	defer bufPool.Put(bufPtr)
 
 	for {
 		n, err = r.Read(buf)
 		l += int64(n)
 		if n > 0 {
-			err := p.Send(channel, w, bytes.NewBuffer(buf), int64(n))
+			err := p.Send(channel, w, bytes.NewBuffer(buf[:n]), int64(n))
 			if err != nil {
 				return l, fmt.Errorf("failed to send body payload with %w", err)
 			}
@@ -112,7 +129,6 @@ func (p packer) Stream(channel Channel, w io.Writer, r io.Reader, bufSize int) (
 			return l, fmt.Errorf("stream ended with %w", err)
 		}
 	}
-
 }
 
 func (p packer) SendClose(channel Channel, w io.Writer, err error) error {
@@ -125,9 +141,8 @@ func (p packer) SendClose(channel Channel, w io.Writer, err error) error {
 }
 
 func (p packer) Recv(r io.Reader, w io.Writer) (Channel, int64, error) {
-	_magic := make([]byte, 2)
-	_, err := r.Read(_magic)
-	if err != nil {
+	var _magic [2]byte
+	if _, err := io.ReadFull(r, _magic[:]); err != nil {
 		return 0, 0, err
 	}
 
@@ -136,7 +151,7 @@ func (p packer) Recv(r io.Reader, w io.Writer) (Channel, int64, error) {
 	}
 
 	var version Version
-	err = binary.Read(r, binary.LittleEndian, &version)
+	err := binary.Read(r, binary.LittleEndian, &version)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -184,9 +199,8 @@ func (p packer) Recv(r io.Reader, w io.Writer) (Channel, int64, error) {
 
 // read next headers
 func (p packer) Next(r io.Reader) (Channel, int64, error) {
-	_magic := make([]byte, 2)
-	_, err := r.Read(_magic)
-	if err != nil {
+	var _magic [2]byte
+	if _, err := io.ReadFull(r, _magic[:]); err != nil {
 		return 0, 0, err
 	}
 
@@ -195,7 +209,7 @@ func (p packer) Next(r io.Reader) (Channel, int64, error) {
 	}
 
 	var version Version
-	err = binary.Read(r, binary.LittleEndian, &version)
+	err := binary.Read(r, binary.LittleEndian, &version)
 	if err != nil {
 		return 0, 0, err
 	}
