@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/p2p/peer"
@@ -20,6 +21,18 @@ import (
 
 var logger = log.Logger("tau.auth.acme.store")
 var certFileRegexp = regexp.MustCompile(`(\+token|\+rsa|\+key|\.key)$`)
+
+var (
+	// CacheRetryDuration is the maximum time to retry getting cached tokens from kvdb
+	CacheRetryDuration = 5 * time.Second
+	// CacheRetryInterval is the time between retries for tokens
+	CacheRetryInterval = 100 * time.Millisecond
+
+	// CertRetryDuration is the maximum time to wait for another node to obtain a certificate
+	CertRetryDuration = 10 * time.Second
+	// CertRetryInterval is the time between retries when checking for certificate
+	CertRetryInterval = 500 * time.Millisecond
+)
 
 type Store struct {
 	node     peer.Node
@@ -76,37 +89,75 @@ func (d *Store) Get(ctx context.Context, name string) ([]byte, error) {
 		}
 	}
 
-	pem, err = d.getDynamicCertificate(name, isCert)
-	if err != nil {
-		logger.Debugf("Error getting dynamic certificate for `%s`: %s", name, err.Error())
-		if !isCert {
-			if err.Error() == autocert.ErrCacheMiss.Error() {
-				logger.Debugf("Cache miss for `%s` returning ErrCacheMiss", name)
+	// For tokens/challenges, retry with short interval since kvdb may be slow at scale
+	if !isCert {
+		deadline := time.Now().Add(CacheRetryDuration)
+		for {
+			pem, err = d.getDynamicCertificate(name, false)
+			if err == nil {
+				logger.Debugf("Caching locally `%s`", name)
+				d.cacheDir.Put(ctx, name, pem)
+				return pem, nil
+			}
+
+			if err != autocert.ErrCacheMiss {
+				logger.Debugf("Getting `%s` failed: %s", name, err)
+				return nil, err
+			}
+
+			if time.Now().After(deadline) {
+				logger.Debugf("Cache miss for `%s` after retries, returning ErrCacheMiss", name)
 				return nil, autocert.ErrCacheMiss
 			}
-			logger.Debugf("Getting `%s` failed: %w", name, err)
-			return nil, err
-		}
 
-		pem, err = d.getDynamicCertificate(wildcardName, true)
-		if err != nil {
-			logger.Debugf("Error getting dynamic certificate for `%s`: %s", wildcardName, err.Error())
-			pem, err = d.getStaticCertificate(name)
-			if err != nil {
-				logger.Debugf("Error getting static certificate for `%s`: %s", name, err.Error())
-				pem, err = d.getStaticCertificate(wildcardName)
-				if err != nil {
-					logger.Debugf("Not found in acme cache... trying to get a static certificate for `%s` failed: %s", name, err.Error())
-					return nil, autocert.ErrCacheMiss
-				}
-			}
+			logger.Debugf("Cache miss for `%s`, retrying...", name)
+			time.Sleep(CacheRetryInterval)
 		}
 	}
 
-	logger.Debugf("Caching locally `%s`", name)
-	d.cacheDir.Put(ctx, name, pem)
+	// For certificates, retry with longer interval to allow another node to complete ACME
+	deadline := time.Now().Add(CertRetryDuration)
+	for {
+		// Try dynamic cert (from kvdb)
+		pem, err = d.getDynamicCertificate(name, true)
+		if err == nil {
+			logger.Debugf("Caching locally `%s`", name)
+			d.cacheDir.Put(ctx, name, pem)
+			return pem, nil
+		}
 
-	return pem, nil
+		// Try wildcard dynamic cert
+		pem, err = d.getDynamicCertificate(wildcardName, true)
+		if err == nil {
+			logger.Debugf("Caching locally `%s`", name)
+			d.cacheDir.Put(ctx, name, pem)
+			return pem, nil
+		}
+
+		// Try static cert
+		pem, err = d.getStaticCertificate(name)
+		if err == nil {
+			logger.Debugf("Caching locally `%s`", name)
+			d.cacheDir.Put(ctx, name, pem)
+			return pem, nil
+		}
+
+		// Try wildcard static cert
+		pem, err = d.getStaticCertificate(wildcardName)
+		if err == nil {
+			logger.Debugf("Caching locally `%s`", name)
+			d.cacheDir.Put(ctx, name, pem)
+			return pem, nil
+		}
+
+		if time.Now().After(deadline) {
+			logger.Debugf("Not found in acme cache after retries for `%s`, returning ErrCacheMiss", name)
+			return nil, autocert.ErrCacheMiss
+		}
+
+		logger.Debugf("Cert not found for `%s`, waiting for another node...", name)
+		time.Sleep(CertRetryInterval)
+	}
 }
 
 func (d *Store) getDynamicCertificate(name string, isCert bool) ([]byte, error) {
