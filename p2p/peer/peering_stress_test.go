@@ -1,3 +1,5 @@
+//go:build stress
+
 package peer
 
 import (
