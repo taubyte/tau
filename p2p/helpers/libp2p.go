@@ -21,8 +21,8 @@ import (
 	pnet "github.com/libp2p/go-libp2p/core/pnet"
 	routing "github.com/libp2p/go-libp2p/core/routing"
 	"github.com/libp2p/go-libp2p/p2p/host/autorelay"
+	"github.com/libp2p/go-libp2p/p2p/host/observedaddrs"
 	connmgr "github.com/libp2p/go-libp2p/p2p/net/connmgr"
-	"github.com/libp2p/go-libp2p/p2p/protocol/identify"
 	libp2ptls "github.com/libp2p/go-libp2p/p2p/security/tls"
 
 	tcp "github.com/libp2p/go-libp2p/p2p/transport/tcp"
@@ -45,7 +45,7 @@ func init() {
 	// affects dockerized setups mostly. This may announce non-dialable
 	// NATed addresses too eagerly, but they should progressively be
 	// cleaned up.
-	identify.ActivationThresh = 1
+	observedaddrs.ActivationThresh = 1
 	network.DialPeerTimeout = 120 * time.Second
 }
 
