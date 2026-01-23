@@ -72,6 +72,7 @@ func NewPubSubBroadcaster(ctx context.Context, psub *pubsub.PubSub, topic string
 
 	go func() {
 		<-b.ctx.Done()
+
 		b.lock.Lock()
 		defer b.lock.Unlock()
 		if b.subs != nil {
@@ -87,7 +88,9 @@ func NewPubSubBroadcaster(ctx context.Context, psub *pubsub.PubSub, topic string
 func (pbc *PubSubBroadcaster) ensureSubscribed() (err error) {
 	pbc.lock.Lock()
 	defer pbc.lock.Unlock()
+
 	pbc.subs, err = pbc.topic.Subscribe()
+
 	return
 }
 

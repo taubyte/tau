@@ -103,17 +103,20 @@ func (ph *peerHandler) reconnect() {
 	logger.Debug("reconnecting", "peer", ph.peer, "addrs", addrs)
 
 	err := ph.host.Connect(ph.ctx, peer.AddrInfo{ID: ph.peer, Addrs: addrs})
+
 	if err != nil {
 		logger.Debug("failed to reconnect", "peer", ph.peer, "error", err)
-		// Ok, we failed. Extend the timeout.
+		// Ok, we failed. Set up a timer for retry if we're still disconnected.
 		ph.mu.Lock()
-		if ph.reconnectTimer != nil {
-			// Only counts if the reconnectTimer still exists. If not, a
-			// connection _was_ somehow established.
+		if ph.reconnectTimer == nil && ph.host.Network().Connectedness(ph.peer) != network.Connected {
+			// Connection failed and we're still disconnected - schedule a retry with backoff
+			ph.reconnectTimer = time.AfterFunc(ph.nextBackoff(), ph.reconnect)
+		} else if ph.reconnectTimer != nil {
+			// Timer already exists, reset it with new backoff
 			ph.reconnectTimer.Reset(ph.nextBackoff())
 		}
-		// Otherwise, someone else has stopped us so we can assume that
-		// we're either connected or someone else will start us.
+		// If reconnectTimer is nil and we're connected, connection was established
+		// by someone else, so we don't need to do anything.
 		ph.mu.Unlock()
 	}
 
@@ -137,12 +140,14 @@ func (ph *peerHandler) stopIfConnected() {
 // startIfDisconnected is the inverse of stopIfConnected.
 func (ph *peerHandler) startIfDisconnected() {
 	ph.mu.Lock()
-	defer ph.mu.Unlock()
+	shouldReconnect := ph.reconnectTimer == nil && ph.host.Network().Connectedness(ph.peer) != network.Connected
+	ph.mu.Unlock()
 
-	if ph.reconnectTimer == nil && ph.host.Network().Connectedness(ph.peer) != network.Connected {
+	if shouldReconnect {
 		logger.Debug("disconnected from peer", "peer", ph.peer)
-		// Always start with a short timeout so we can stagger things a bit.
-		ph.reconnectTimer = time.AfterFunc(ph.nextBackoff(), ph.reconnect)
+		// Try to connect immediately first, then use backoff for retries
+		// This avoids the initial 5 second delay when adding a new peer
+		ph.reconnect()
 	}
 }
 
@@ -211,33 +216,50 @@ func (ps *peeringService) Stop() error {
 // Add peer may also be called multiple times for the same peer. The new
 // addresses will replace the old.
 func (ps *peeringService) AddPeer(info peer.AddrInfo) {
+	var (
+		handler     *peerHandler
+		shouldStart bool
+		isConnected bool
+	)
+
 	ps.mu.Lock()
-	defer ps.mu.Unlock()
-
-	if handler, ok := ps.peers[info.ID]; ok {
+	if existingHandler, ok := ps.peers[info.ID]; ok {
+		ps.mu.Unlock()
 		logger.Info("updating addresses", "peer", info.ID, "addrs", info.Addrs)
-		handler.setAddrs(info.Addrs)
-	} else {
-		logger.Info("peer added", "peer", info.ID, "addrs", info.Addrs)
-		ps.host.ConnManager().Protect(info.ID, connmgrTag)
+		existingHandler.setAddrs(info.Addrs)
+		return
+	}
 
-		handler = &peerHandler{
-			node:      ps.node,
-			host:      ps.host,
-			peer:      info.ID,
-			addrs:     info.Addrs,
-			nextDelay: initialDelay,
-		}
-		handler.ctx, handler.cancel = context.WithCancel(context.Background())
-		ps.peers[info.ID] = handler
-		switch ps.state {
-		case stateRunning:
+	logger.Info("peer added", "peer", info.ID, "addrs", info.Addrs)
+
+	ps.host.ConnManager().Protect(info.ID, connmgrTag)
+
+	handler = &peerHandler{
+		node:      ps.node,
+		host:      ps.host,
+		peer:      info.ID,
+		addrs:     info.Addrs,
+		nextDelay: initialDelay,
+	}
+	handler.ctx, handler.cancel = context.WithCancel(context.Background())
+	ps.peers[info.ID] = handler
+
+	shouldStart = ps.state == stateRunning
+	if shouldStart {
+		isConnected = ps.host.Network().Connectedness(info.ID) == network.Connected
+	}
+	if ps.state == stateStopped {
+		handler.cancel()
+	}
+	ps.mu.Unlock()
+
+	if shouldStart {
+		// Check if already connected - if so, ensure handler is set up properly
+		if isConnected {
+			go handler.stopIfConnected()
+		} else {
+			// Not connected - start reconnection process
 			go handler.startIfDisconnected()
-		case stateStopped:
-			// We still construct everything in this state because
-			// it's easier to reason about. But we should still free
-			// resources.
-			handler.cancel()
 		}
 	}
 }
@@ -264,12 +286,25 @@ func (nn *netNotifee) Connected(_ network.Network, c network.Conn) {
 	ps := (*peeringService)(nn)
 
 	p := c.RemotePeer()
-	ps.mu.RLock()
-	defer ps.mu.RUnlock()
 
-	if handler, ok := ps.peers[p]; ok {
+	ps.mu.RLock()
+	handler, ok := ps.peers[p]
+	ps.mu.RUnlock()
+
+	if ok {
 		// use a goroutine to avoid blocking events.
 		go handler.stopIfConnected()
+	} else {
+		// If this is an inbound connection from a peer we haven't added yet,
+		// protect it temporarily to prevent connection manager from trimming it.
+		// This handles the case where connections are established through other
+		// means (e.g., DHT bootstrap) before the peering service knows about them.
+		if c.Stat().Direction == network.DirInbound {
+			// Protect the connection even though we don't have a handler yet.
+			// This prevents the connection manager from trimming it.
+			// When the peer is eventually added via AddPeer, it will be properly managed.
+			ps.host.ConnManager().Protect(p, connmgrTag)
+		}
 	}
 }
 
@@ -277,6 +312,7 @@ func (nn *netNotifee) Disconnected(_ network.Network, c network.Conn) {
 	ps := (*peeringService)(nn)
 
 	p := c.RemotePeer()
+
 	ps.mu.RLock()
 	defer ps.mu.RUnlock()
 
