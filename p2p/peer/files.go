@@ -3,6 +3,7 @@ package peer
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 
 	cid "github.com/ipfs/go-cid"
@@ -23,10 +24,14 @@ func (p *node) DeleteFile(id string) error {
 
 	_cid, err := cid.Decode(id)
 	if err != nil {
-		return err
+		return fmt.Errorf("decoding CID %q failed: %w", id, err)
 	}
 
-	return p.ipfs.Remove(p.ctx, _cid)
+	if err := p.ipfs.Remove(p.ctx, _cid); err != nil {
+		return fmt.Errorf("removing file with CID %q failed: %w", id, err)
+	}
+
+	return nil
 }
 
 func (p *node) AddFile(r io.Reader) (_cid string, err error) {
@@ -36,9 +41,10 @@ func (p *node) AddFile(r io.Reader) (_cid string, err error) {
 
 	var n ipld.Node
 	n, err = p.ipfs.AddFile(p.ctx, r, nil)
-	if err == nil {
-		_cid = n.Cid().String()
+	if err != nil {
+		return "", fmt.Errorf("adding file to IPFS failed: %w", err)
 	}
+	_cid = n.Cid().String()
 	return
 }
 
@@ -50,9 +56,15 @@ func (p *node) GetFile(ctx context.Context, id string) (ReadSeekCloser, error) {
 
 	_cid, err := cid.Decode(id)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding CID %q failed: %w", id, err)
 	}
-	return p.ipfs.GetFile(ctx, _cid)
+
+	file, err := p.ipfs.GetFile(ctx, _cid)
+	if err != nil {
+		return nil, fmt.Errorf("getting file with CID %q failed: %w", id, err)
+	}
+
+	return file, nil
 }
 
 func (p *node) GetFileFromCid(ctx context.Context, cid cid.Cid) (ReadSeekCloser, error) {
@@ -60,7 +72,12 @@ func (p *node) GetFileFromCid(ctx context.Context, cid cid.Cid) (ReadSeekCloser,
 		return nil, errorClosed
 	}
 
-	return p.ipfs.GetFile(ctx, cid)
+	file, err := p.ipfs.GetFile(ctx, cid)
+	if err != nil {
+		return nil, fmt.Errorf("getting file with CID %q failed: %w", cid.String(), err)
+	}
+
+	return file, nil
 }
 
 func (p *node) AddFileForCid(r io.Reader) (cid.Cid, error) {
@@ -70,7 +87,7 @@ func (p *node) AddFileForCid(r io.Reader) (cid.Cid, error) {
 
 	n, err := p.ipfs.AddFile(p.ctx, r, nil)
 	if err != nil {
-		return cid.Cid{}, err
+		return cid.Cid{}, fmt.Errorf("adding file to IPFS failed: %w", err)
 	}
 
 	return n.Cid(), nil

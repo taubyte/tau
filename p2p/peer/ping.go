@@ -2,7 +2,7 @@ package peer
 
 import (
 	"context"
-	"errors"
+	"fmt"
 	"time"
 
 	peer "github.com/libp2p/go-libp2p/core/peer"
@@ -17,13 +17,13 @@ func (p *node) Ping(ctx context.Context, pid string, count int) (healthy int, rt
 	}
 
 	if count <= 0 {
-		return 0, 0, errors.New("ping count must be positive")
+		return 0, 0, fmt.Errorf("ping count must be positive, got %d", count)
 	}
 
 	var _pid peer.ID
 	_pid, err = peer.Decode(pid)
 	if err != nil {
-		return
+		return 0, 0, fmt.Errorf("decoding peer ID %q failed: %w", pid, err)
 	}
 
 	ps := ping.NewPingService(p.host)
@@ -37,14 +37,14 @@ func (p *node) Ping(ctx context.Context, pid string, count int) (healthy int, rt
 		select {
 		case res := <-ts:
 			if res.Error != nil {
-				err = res.Error
+				err = fmt.Errorf("ping %d/%d to %s failed: %w", i+1, count, pid, res.Error)
 			}
 			sum += res.RTT
 			healthy++
 		case <-time.After(PingTimeout):
-			err = errors.New("took too long to ping")
+			err = fmt.Errorf("ping %d/%d to %s timed out after %v", i+1, count, pid, PingTimeout)
 		case <-ctx.Done():
-			err = ctx.Err()
+			err = fmt.Errorf("ping to %s canceled: %w", pid, ctx.Err())
 			return
 		}
 	}

@@ -2,6 +2,7 @@ package peer
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -64,7 +65,7 @@ func (p *node) getOrCreateTopic(name string) (topic *pubsub.Topic, err error) {
 	topic, ok = p.topics[name]
 	if !ok {
 		if topic, err = p.messaging.Join(name); err != nil {
-			return
+			return nil, fmt.Errorf("joining pubsub topic %q failed: %w", name, err)
 		}
 
 		p.topics[name] = topic
@@ -80,7 +81,7 @@ func (p *node) PubSubSubscribe(name string, handler PubSubConsumerHandler, err_h
 
 	topic, err := p.getOrCreateTopic(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("getting topic %q for subscription failed: %w", name, err)
 	}
 
 	return p.PubSubSubscribeToTopic(topic, handler, err_handler)
@@ -93,7 +94,7 @@ func (p *node) PubSubSubscribeToTopic(topic *pubsub.Topic, handler PubSubConsume
 
 	subs, err := topic.Subscribe()
 	if err != nil {
-		return err
+		return fmt.Errorf("subscribing to pubsub topic failed: %w", err)
 	}
 
 	go func() {
@@ -126,12 +127,12 @@ func (p *node) PubSubSubscribeContext(ctx context.Context, name string, handler 
 
 	topic, err := p.getOrCreateTopic(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("getting topic %q for context subscription failed: %w", name, err)
 	}
 
 	subs, err := topic.Subscribe()
 	if err != nil {
-		return err
+		return fmt.Errorf("subscribing to pubsub topic %q failed: %w", name, err)
 	}
 
 	go func() {
@@ -163,8 +164,12 @@ func (p *node) PubSubPublish(ctx context.Context, name string, data []byte) erro
 
 	topic, err := p.getOrCreateTopic(name)
 	if err != nil {
-		return err
+		return fmt.Errorf("getting topic %q for publish failed: %w", name, err)
 	}
 
-	return topic.Publish(ctx, data)
+	if err := topic.Publish(ctx, data); err != nil {
+		return fmt.Errorf("publishing to topic %q failed: %w", name, err)
+	}
+
+	return nil
 }

@@ -1,7 +1,6 @@
 package command
 
 import (
-	"errors"
 	"fmt"
 	"io"
 
@@ -17,14 +16,17 @@ func New(command string, body Body) *Command {
 }
 
 func (c *Command) Encode(s io.Writer) error {
-	return framer.Send(Magic, Version, s, c)
+	if err := framer.Send(Magic, Version, s, c); err != nil {
+		return fmt.Errorf("encoding command %q failed: %w", c.Command, err)
+	}
+	return nil
 }
 
 func (c *Command) Connection() (streams.Connection, error) {
 	if c.conn != nil {
 		return c.conn, nil
 	}
-	return nil, errors.New("no connection found")
+	return nil, fmt.Errorf("no connection found for command %q", c.Command)
 }
 
 func (c *Command) Get(key string) (interface{}, bool) {
@@ -62,7 +64,7 @@ func Decode(conn streams.Connection, r io.Reader) (*Command, error) {
 	c := Command{conn: conn}
 
 	if err := framer.Read(Magic, Version, r, &c); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding command failed: %w", err)
 	}
 
 	return &c, nil

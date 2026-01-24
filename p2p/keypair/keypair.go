@@ -2,7 +2,7 @@ package keypair
 
 import (
 	"encoding/base64"
-	"errors"
+	"fmt"
 	"os"
 
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
@@ -21,14 +21,14 @@ func NewPersistant(path string) ([]byte, error) {
 	if err != nil {
 		k := New()
 		if k == nil {
-			return nil, errors.New("failed to generate keypair")
+			return nil, fmt.Errorf("failed to generate keypair")
 		}
 		if err = Save(k, path); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("saving keypair to %q failed: %w", path, err)
 		}
 
 		if rk, err = crypto.MarshalPrivateKey(k); err != nil {
-			return nil, err
+			return nil, fmt.Errorf("marshaling private key failed: %w", err)
 		}
 	}
 
@@ -42,32 +42,46 @@ func NewRaw() []byte {
 
 func LoadRaw(keyPath string) ([]byte, error) {
 	if _, err := os.Stat(keyPath); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("checking key file %q failed: %w", keyPath, err)
 	}
 
-	return os.ReadFile(keyPath)
+	data, err := os.ReadFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("reading key file %q failed: %w", keyPath, err)
+	}
+
+	return data, nil
 }
 
 func Save(priv crypto.PrivKey, keyPath string) error {
 	data, err := crypto.MarshalPrivateKey(priv)
 	if err != nil {
-		return err
+		return fmt.Errorf("marshaling private key failed: %w", err)
 	}
 
-	return os.WriteFile(keyPath, data, 0400)
+	if err := os.WriteFile(keyPath, data, 0400); err != nil {
+		return fmt.Errorf("writing key file %q failed: %w", keyPath, err)
+	}
+
+	return nil
 }
 
 func Load(keyPath string) (crypto.PrivKey, error) {
 	if _, err := os.Stat(keyPath); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("checking key file %q failed: %w", keyPath, err)
 	}
 
 	key, err := os.ReadFile(keyPath)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("reading key file %q failed: %w", keyPath, err)
 	}
 
-	return crypto.UnmarshalPrivateKey(key)
+	privKey, err := crypto.UnmarshalPrivateKey(key)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshaling private key from %q failed: %w", keyPath, err)
+	}
+
+	return privKey, nil
 }
 
 // Read key from ENV. key must be encoded in base64

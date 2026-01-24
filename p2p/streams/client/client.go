@@ -366,12 +366,12 @@ func (c *Client) connect(p *peerCore.AddrInfo) (network.Stream, error) {
 
 func (r *Request) Do() (<-chan *Response, error) {
 	if r.err != nil {
-		return nil, r.err
+		return nil, fmt.Errorf("request has error: %w", r.err)
 	}
 
 	select {
 	case <-r.client.ctx.Done():
-		return nil, r.client.ctx.Err()
+		return nil, fmt.Errorf("client context ended: %w", r.client.ctx.Err())
 	default:
 	}
 
@@ -383,9 +383,13 @@ func (r *Request) Do() (<-chan *Response, error) {
 			}
 			strm, err := r.client.openStream(pid)
 			if err != nil {
-				return nil, err
+				// Skip failed peers, try next one
+				continue
 			}
 			strms = append(strms, strm)
+		}
+		if len(strms) == 0 {
+			return nil, fmt.Errorf("no streams could be opened for command %q", r.cmd)
 		}
 		return r.client.send(r.cmd, r.body, strms, r.threshold, r.cmdTimeout)
 	}
@@ -453,7 +457,7 @@ func (c *Client) sendTo(strm stream, deadline time.Time, cmdName string, body co
 		return &Response{
 			ReadWriter: strm.Stream,
 			pid:        strm.ID,
-			err:        errors.New(fmt.Sprint(v)),
+			err:        fmt.Errorf("peer %s returned error for command %q: %v", strm.ID, cmdName, v),
 		}
 	}
 
@@ -484,16 +488,16 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 	cmdDD, _ := ctx.Deadline()
 
 	strms := make(chan stream, MaxStreamsPerSend)
-	strmsCount := 0
+	strmsCount := len(streams)
 
 	needMoreStreams := true
-	if len(streams) > threshold {
+	if len(streams) >= threshold {
 		streams = streams[:threshold]
+		strmsCount = threshold
 		needMoreStreams = false
 	}
 
 	for _, strm := range streams {
-		strmsCount++
 		strms <- strm
 	}
 
@@ -518,13 +522,14 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 					strm, err := c.connect(peer)
 					if err != nil {
 						c.cleanPeers <- peer.ID
-					} else if strmsCount < threshold {
-						strmsCount++
-						select {
-						case strms <- stream{Stream: strm, ID: peer.ID}:
-						case <-ctx.Done():
-							return
-						}
+						// Continue to try next peer
+						continue morePeersLoop
+					}
+					strmsCount++
+					select {
+					case strms <- stream{Stream: strm, ID: peer.ID}:
+					case <-ctx.Done():
+						return
 					}
 				}
 			}
@@ -564,17 +569,17 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 func (c *Client) syncSend(cmd string, opts ...Option[Request]) (cr.Response, error) {
 	resCh, err := c.New(cmd, opts...).Do()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("sending command %q failed: %w", cmd, err)
 	}
 
 	res := <-resCh
 	if res == nil {
-		return nil, os.ErrDeadlineExceeded
+		return nil, fmt.Errorf("command %q timed out: %w", cmd, os.ErrDeadlineExceeded)
 	}
 	defer res.Close()
 
 	if err := res.Error(); err != nil {
-		return res.Response, err
+		return res.Response, fmt.Errorf("command %q returned error: %w", cmd, err)
 	}
 
 	return res.Response, nil

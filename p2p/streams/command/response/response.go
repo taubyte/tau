@@ -12,7 +12,10 @@ import (
 type Response map[string]interface{}
 
 func (r Response) Encode(s io.Writer) error {
-	return framer.Send(command.Magic, command.Version, s, r)
+	if err := framer.Send(command.Magic, command.Version, s, r); err != nil {
+		return fmt.Errorf("encoding response failed: %w", err)
+	}
+	return nil
 }
 
 func (r Response) Get(value string) (interface{}, error) {
@@ -31,7 +34,7 @@ func (r Response) Set(key string, value interface{}) {
 func Decode(s io.Reader) (Response, error) {
 	var r Response
 	if err := framer.Read(command.Magic, command.Version, s, &r); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("decoding response failed: %w", err)
 	}
 
 	return r, nil

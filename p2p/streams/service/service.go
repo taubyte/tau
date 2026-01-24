@@ -1,7 +1,7 @@
 package service
 
 import (
-	"errors"
+	"fmt"
 
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/p2p/streams"
@@ -30,12 +30,12 @@ func New(peer peer.Node, name string, path string) (*commandService, error) {
 
 	cs.stream = streams.New(peer, name, path)
 	if cs.stream == nil {
-		return nil, errors.New("not able to create service")
+		return nil, fmt.Errorf("creating stream service for %q on path %q failed", name, path)
 	}
 
 	cs.router = router.New(cs.stream)
 	if cs.router == nil {
-		return nil, errors.New("not able to create command router")
+		return nil, fmt.Errorf("creating command router for service %q failed", name)
 	}
 
 	cs.stream.Start(func(s streams.Stream) { cs.router.Handle(s) })
@@ -51,9 +51,15 @@ func (cs *commandService) Router() *(router.Router) {
 }
 
 func (cs *commandService) Define(command string, handler router.CommandHandler) error {
-	return cs.router.AddStatic(command, handler, nil)
+	if err := cs.router.AddStatic(command, handler, nil); err != nil {
+		return fmt.Errorf("defining command %q failed: %w", command, err)
+	}
+	return nil
 }
 
 func (cs *commandService) DefineStream(command string, std router.CommandHandler, stream router.StreamHandler) error {
-	return cs.router.AddStatic(command, std, stream)
+	if err := cs.router.AddStatic(command, std, stream); err != nil {
+		return fmt.Errorf("defining stream command %q failed: %w", command, err)
+	}
+	return nil
 }

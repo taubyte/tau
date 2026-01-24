@@ -2,6 +2,7 @@ package helpers
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -180,7 +181,7 @@ func SetupLibp2p(
 
 	h, err = libp2p.New(opts...)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("creating libp2p host failed: %w", err)
 	}
 
 	return h, idht, nil
@@ -290,7 +291,7 @@ func Bootstrap(ctx context.Context, h host.Host, dht routing.Routing, peers []pe
 
 	err := dht.Bootstrap(ctx)
 	if err != nil {
-		return peers, err
+		return peers, fmt.Errorf("DHT bootstrap failed: %w", err)
 	}
 
 	return peers, nil

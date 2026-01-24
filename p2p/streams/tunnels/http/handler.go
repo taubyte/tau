@@ -23,19 +23,19 @@ func Backend(stream io.ReadWriter) (http.ResponseWriter, *http.Request, error) {
 	}
 
 	if ch != RequestOp {
-		return nil, nil, errors.New("expected request payload")
+		return nil, nil, fmt.Errorf("expected request payload, got channel %d", ch)
 	}
 
 	var rpayload requestPayload
 
 	err = rpayload.Decode(rpbuf.Bytes())
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("decoding request payload failed: %w", err)
 	}
 
 	req, err := payloadToRequest(&rpayload, stream)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("converting payload to request failed: %w", err)
 	}
 
 	return newResponseWriter(stream), req, nil
@@ -65,7 +65,7 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 			default:
 				ch, n, err := pack.Next(stream)
 				if err != nil {
-					if err == io.EOF {
+					if errors.Is(err, io.EOF) {
 						err = nil
 					} else {
 						exitError = fmt.Errorf("reading stream failed with %w", err)
@@ -81,13 +81,13 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 				case BodyOp:
 					m, err = bodyOp(w, payload)
 					if m != n {
-						err = errors.New("failed to forward body")
+						err = fmt.Errorf("failed to forward body: expected %d bytes, forwarded %d", n, m)
 					}
 				default:
-					err = errors.New("failed to process http response op")
+					err = fmt.Errorf("failed to process http response op: unknown channel %d", ch)
 				}
 				if err != nil {
-					exitError = err
+					exitError = fmt.Errorf("processing HTTP response operation failed: %w", err)
 					return
 				}
 			}
@@ -109,13 +109,13 @@ func requestToStream(stream io.Writer, r *http.Request) (int64, int64, error) {
 
 	rpbuf, err := rpayload.Encode()
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, fmt.Errorf("encoding request payload failed: %w", err)
 	}
 
 	hdrlen := int64(len(rpbuf))
 	err = pack.Send(RequestOp, stream, bytes.NewBuffer(rpbuf), hdrlen)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, fmt.Errorf("sending request payload failed: %w", err)
 	}
 
 	bodylen, _ := pack.Stream(BodyOp, stream, r.Body, BodyStreamBufferSize)
@@ -129,7 +129,7 @@ func headersOp(w http.ResponseWriter, r io.Reader) error {
 	var obj headersOpPayload
 	err := dec.Decode(&obj)
 	if err != nil {
-		return err
+		return fmt.Errorf("decoding headers operation payload failed: %w", err)
 	}
 
 	// delete

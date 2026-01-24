@@ -3,7 +3,6 @@ package peer
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -57,18 +56,18 @@ func (p *node) cleanup() error {
 	p.topics = nil
 
 	if err := p.Peer().Close(); err != nil {
-		return err
+		return fmt.Errorf("closing peer failed: %w", err)
 	}
 
 	if p.peering != nil {
 		if err := p.peering.Stop(); err != nil {
-			return err
+			return fmt.Errorf("stopping peering service failed: %w", err)
 		}
 	}
 	if p.dht != nil {
 		if closer, ok := p.dht.(io.Closer); ok {
 			if err := closer.Close(); err != nil {
-				return err
+				return fmt.Errorf("closing DHT failed: %w", err)
 			}
 		}
 	}
@@ -82,7 +81,7 @@ func (p *node) cleanup() error {
 
 	if p.store != nil {
 		if err := p.store.Close(); err != nil {
-			return err
+			return fmt.Errorf("closing datastore failed: %w", err)
 		}
 	}
 	if p.ephemeral_repo_path {
@@ -113,7 +112,7 @@ func (p *node) WaitForSwarm(timeout time.Duration) error {
 				return nil
 			}
 		case <-wctx.Done():
-			return errors.New("not able to connect to other peers")
+			return fmt.Errorf("waiting for swarm timed out after %v: %w", timeout, wctx.Err())
 		}
 	}
 }
@@ -238,26 +237,26 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 		opts...,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("setting up libp2p failed: %w", err)
 	}
 
 	// Create ipfs node
 	p.ipfs, err = ipfslite.New(p.ctx, p.store, nil, p.host, p.dht, &ipfslite.Config{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating ipfs-lite node failed: %w", err)
 	}
 
 	p.peering = NewPeeringService(&p)
 	err = p.peering.Start()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("starting peering service failed: %w", err)
 	}
 
 	if bootstrap.Enable {
 		// Bootstrap
 		bnodes, err := helpers.Bootstrap(p.ctx, p.host, p.dht, bootstrap.Peers)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("bootstrap failed: %w", err)
 		}
 
 		// TODO: get the peering service out of bootsrap
@@ -268,7 +267,7 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 		err := p.dht.Bootstrap(p.ctx)
 		if err != nil {
 			p.ctx_cancel()
-			return nil, err
+			return nil, fmt.Errorf("DHT bootstrap failed: %w", err)
 		}
 	}
 
@@ -280,7 +279,7 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 		discoveryBackoff.NewExponentialBackoff(minBackoff, maxBackoff, discoveryBackoff.FullJitter, time.Second, 5.0, 0, rng),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating backoff discovery failed: %w", err)
 	}
 
 	// Prep messaging PUBSUB
@@ -293,7 +292,7 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 		pubsub.WithStrictSignatureVerification(true),
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("creating gossip pubsub failed: %w", err)
 	}
 
 	p.topics = make(map[string]*pubsub.Topic)
