@@ -2,7 +2,6 @@ package helpers
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -15,22 +14,54 @@ import (
 )
 
 func NewDatastore(path string) (datastore.Batching, error) {
+	// Clean up any interrupted migration before attempting to open
+	if err := cleanupInterruptedMigration(path); err != nil {
+		return nil, fmt.Errorf("failed to cleanup interrupted migration: %w", err)
+	}
+
 	ds, err := pds.NewDatastore(path, nil)
 	if err != nil {
 		if strings.Contains(err.Error(), "version 1 which is no longer supported") {
-			fmt.Println("Migrating Pebble v1 to v2")
-			err = MigratePebbleV1ToV2(path)
-			if err != nil {
-				fmt.Println("Failed to migrate Pebble v1 to v2", err)
+			if err = MigratePebbleV1ToV2(path); err != nil {
 				return nil, err
 			}
-			fmt.Println("Pebble v1 to v2 migration complete")
 			return pds.NewDatastore(path, nil)
 		}
 		return nil, err
 	}
 
 	return ds, nil
+}
+
+// cleanupInterruptedMigration handles cases where a previous migration was interrupted
+func cleanupInterruptedMigration(path string) error {
+	v2Path := path + ".v2"
+	backupPath := path + ".v1"
+
+	_, v2Err := os.Stat(v2Path)
+	_, backupErr := os.Stat(backupPath)
+	_, pathErr := os.Stat(path)
+
+	v2Exists := v2Err == nil
+	backupExists := backupErr == nil
+	pathExists := pathErr == nil
+
+	// Case 1: path.v2 exists - incomplete migration, remove it to retry fresh
+	if v2Exists {
+		if err := os.RemoveAll(v2Path); err != nil {
+			return fmt.Errorf("failed to remove incomplete migration at %s: %w", v2Path, err)
+		}
+	}
+
+	// Case 2: path.v1 exists but path doesn't - migration interrupted after backup rename
+	// Restore the backup to path so migration can be retried
+	if backupExists && !pathExists {
+		if err := os.Rename(backupPath, path); err != nil {
+			return fmt.Errorf("failed to restore backup from %s to %s: %w", backupPath, path, err)
+		}
+	}
+
+	return nil
 }
 
 func migratePebbleV1ToV2(v1Path, v2Path string) error {
@@ -89,6 +120,5 @@ func MigratePebbleV1ToV2(path string) error {
 		return fmt.Errorf("failed to rename %s to %s: %w", v2Path, v1Path, err)
 	}
 
-	log.Printf("Migration complete. Original DB backed up at: %s", backupPath)
 	return nil
 }

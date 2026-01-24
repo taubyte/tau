@@ -42,7 +42,6 @@ func Backend(stream io.ReadWriter) (http.ResponseWriter, *http.Request, error) {
 
 }
 
-// Note: make sure you call
 // HTTP -> Stream
 func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) error {
 	ctx, ctxC := context.WithCancel(context.Background())

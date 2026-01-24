@@ -100,12 +100,10 @@ func (ph *peerHandler) nextBackoff() time.Duration {
 func (ph *peerHandler) reconnect() {
 	// Try connecting
 	addrs := ph.getAddrs()
-	logger.Debug("reconnecting", "peer", ph.peer, "addrs", addrs)
 
 	err := ph.host.Connect(ph.ctx, peer.AddrInfo{ID: ph.peer, Addrs: addrs})
 
 	if err != nil {
-		logger.Debug("failed to reconnect", "peer", ph.peer, "error", err)
 		// Ok, we failed. Set up a timer for retry if we're still disconnected.
 		ph.mu.Lock()
 		if ph.reconnectTimer == nil && ph.host.Network().Connectedness(ph.peer) != network.Connected {
@@ -130,7 +128,6 @@ func (ph *peerHandler) stopIfConnected() {
 	defer ph.mu.Unlock()
 
 	if ph.reconnectTimer != nil && ph.host.Network().Connectedness(ph.peer) == network.Connected {
-		logger.Debug("successfully reconnected", "peer", ph.peer)
 		ph.reconnectTimer.Stop()
 		ph.reconnectTimer = nil
 		ph.nextDelay = initialDelay
@@ -144,7 +141,6 @@ func (ph *peerHandler) startIfDisconnected() {
 	ph.mu.Unlock()
 
 	if shouldReconnect {
-		logger.Debug("disconnected from peer", "peer", ph.peer)
 		// Try to connect immediately first, then use backoff for retries
 		// This avoids the initial 5 second delay when adding a new peer
 		ph.reconnect()

@@ -383,7 +383,6 @@ func (r *Request) Do() (<-chan *Response, error) {
 			}
 			strm, err := r.client.openStream(pid)
 			if err != nil {
-				// Skip failed peers, try next one
 				continue
 			}
 			strms = append(strms, strm)
@@ -522,7 +521,6 @@ func (c *Client) send(cmdName string, body command.Body, streams []stream, thres
 					strm, err := c.connect(peer)
 					if err != nil {
 						c.cleanPeers <- peer.ID
-						// Continue to try next peer
 						continue morePeersLoop
 					}
 					strmsCount++

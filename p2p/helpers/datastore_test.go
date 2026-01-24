@@ -243,3 +243,132 @@ func Test_migratePebbleV1ToV2_InvalidV2Path(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "failed to open v2 DB")
 }
+
+func TestCleanupInterruptedMigration_CleanState(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "testdb")
+
+	// Create a normal database
+	err := os.MkdirAll(dbPath, 0755)
+	require.NoError(t, err)
+
+	err = cleanupInterruptedMigration(dbPath)
+	require.NoError(t, err)
+
+	// Verify path still exists
+	_, err = os.Stat(dbPath)
+	require.NoError(t, err)
+}
+
+func TestCleanupInterruptedMigration_IncompleteV2(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "testdb")
+	v2Path := dbPath + ".v2"
+
+	// Create both path and path.v2 (incomplete migration)
+	err := os.MkdirAll(dbPath, 0755)
+	require.NoError(t, err)
+	err = os.MkdirAll(v2Path, 0755)
+	require.NoError(t, err)
+
+	// Add a file to v2 to ensure RemoveAll works
+	err = os.WriteFile(filepath.Join(v2Path, "somefile"), []byte("data"), 0644)
+	require.NoError(t, err)
+
+	err = cleanupInterruptedMigration(dbPath)
+	require.NoError(t, err)
+
+	// Verify v2 was removed
+	_, err = os.Stat(v2Path)
+	assert.True(t, os.IsNotExist(err), "v2 path should be removed")
+
+	// Verify original path still exists
+	_, err = os.Stat(dbPath)
+	require.NoError(t, err)
+}
+
+func TestCleanupInterruptedMigration_BackupExistsPathMissing(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "testdb")
+	backupPath := dbPath + ".v1"
+
+	// Create only the backup (path.v1) - simulates interrupted after first rename
+	err := os.MkdirAll(backupPath, 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(backupPath, "data"), []byte("backup-data"), 0644)
+	require.NoError(t, err)
+
+	err = cleanupInterruptedMigration(dbPath)
+	require.NoError(t, err)
+
+	// Verify backup was renamed to path
+	_, err = os.Stat(backupPath)
+	assert.True(t, os.IsNotExist(err), "backup path should be removed")
+
+	_, err = os.Stat(dbPath)
+	require.NoError(t, err, "path should exist after restore")
+
+	// Verify data was preserved
+	data, err := os.ReadFile(filepath.Join(dbPath, "data"))
+	require.NoError(t, err)
+	assert.Equal(t, "backup-data", string(data))
+}
+
+func TestCleanupInterruptedMigration_BothV2AndBackupExist(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "testdb")
+	v2Path := dbPath + ".v2"
+	backupPath := dbPath + ".v1"
+
+	// Create v2 and backup, but no path - worst case interrupted state
+	err := os.MkdirAll(v2Path, 0755)
+	require.NoError(t, err)
+	err = os.MkdirAll(backupPath, 0755)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(backupPath, "data"), []byte("original"), 0644)
+	require.NoError(t, err)
+
+	err = cleanupInterruptedMigration(dbPath)
+	require.NoError(t, err)
+
+	// Verify v2 was removed
+	_, err = os.Stat(v2Path)
+	assert.True(t, os.IsNotExist(err), "v2 path should be removed")
+
+	// Verify backup was restored to path
+	_, err = os.Stat(backupPath)
+	assert.True(t, os.IsNotExist(err), "backup path should be removed")
+
+	_, err = os.Stat(dbPath)
+	require.NoError(t, err, "path should exist after restore")
+}
+
+func TestCleanupInterruptedMigration_SuccessfulMigrationState(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "testdb")
+	backupPath := dbPath + ".v1"
+
+	// Create path and backup (normal state after successful migration)
+	err := os.MkdirAll(dbPath, 0755)
+	require.NoError(t, err)
+	err = os.MkdirAll(backupPath, 0755)
+	require.NoError(t, err)
+
+	err = cleanupInterruptedMigration(dbPath)
+	require.NoError(t, err)
+
+	// Both should still exist - no cleanup needed
+	_, err = os.Stat(dbPath)
+	require.NoError(t, err)
+	_, err = os.Stat(backupPath)
+	require.NoError(t, err, "backup should remain when path exists")
+}
+
+func TestCleanupInterruptedMigration_NonexistentPath(t *testing.T) {
+	tmpDir := t.TempDir()
+	dbPath := filepath.Join(tmpDir, "nonexistent")
+
+	// Nothing exists - should not error
+	err := cleanupInterruptedMigration(dbPath)
+	require.NoError(t, err)
+}
