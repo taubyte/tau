@@ -8,10 +8,12 @@ import (
 	"sync"
 )
 
+var DefaultBufferSize = 32 * 1024
+
 // bufPool is used to reuse buffers for Stream operations to reduce GC pressure
 var bufPool = sync.Pool{
 	New: func() any {
-		buf := make([]byte, 32*1024) // 32KB default buffer
+		buf := make([]byte, DefaultBufferSize)
 		return &buf
 	},
 }
