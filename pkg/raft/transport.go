@@ -186,7 +186,6 @@ func (sl *namespaceStreamLayer) Close() error {
 
 // namespaceAddrProvider provides server addresses
 type namespaceAddrProvider struct {
-	h host.Host
 }
 
 // ServerAddr takes a raft.ServerID and returns it as a ServerAddress
@@ -196,7 +195,7 @@ func (ap *namespaceAddrProvider) ServerAddr(id raft.ServerID) (raft.ServerAddres
 
 // newNamespaceTransport creates a namespace-aware Raft transport
 func newNamespaceTransport(h host.Host, namespace string, timeout time.Duration) (*raft.NetworkTransport, error) {
-	provider := &namespaceAddrProvider{h}
+	provider := &namespaceAddrProvider{}
 	stream, err := newNamespaceStreamLayer(h, namespace)
 	if err != nil {
 		return nil, err

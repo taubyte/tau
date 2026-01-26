@@ -497,40 +497,6 @@ func TestStreamService_Stop(t *testing.T) {
 	cl.Close()
 }
 
-func TestStreamService_HandleExchangePeers_NilTracker(t *testing.T) {
-	node := newMockNode(t)
-
-	cl, err := New(node, "/raft/test", testOptions()...)
-	require.NoError(t, err, "failed to create cluster")
-	defer cl.Close()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
-
-	c := getClusterInternal(cl)
-
-	// peerTracker should be nil after bootstrap
-	assert.Assert(t, c.streamService.peerTracker == nil)
-
-	body := command.Body{
-		keyStartTime: float64(time.Now().UnixMilli()),
-		keySeenAt:    map[string]interface{}{},
-	}
-
-	resp, err := c.streamService.handleExchangePeers(context.Background(), nil, body)
-	require.NoError(t, err)
-	assert.Assert(t, resp != nil)
-
-	// Response should still have startTime and seenAt
-	_, ok := resp[keyStartTime]
-	assert.Assert(t, ok, "response should have startTime")
-
-	seenAt, ok := resp[keySeenAt]
-	assert.Assert(t, ok, "response should have seenAt")
-	assert.Assert(t, seenAt != nil)
-}
-
 func TestStreamService_HandleExchangePeers_WithTracker(t *testing.T) {
 	node := newMockNode(t)
 
@@ -544,8 +510,7 @@ func TestStreamService_HandleExchangePeers_WithTracker(t *testing.T) {
 
 	c := getClusterInternal(cl)
 
-	// Set up a peer tracker
-	c.streamService.peerTracker = newPeerTracker(c.node.ID())
+	require.NotNil(t, c.tracker, "peer tracker should be initialized")
 
 	peer1Str := "QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt"
 
@@ -561,10 +526,7 @@ func TestStreamService_HandleExchangePeers_WithTracker(t *testing.T) {
 	assert.Assert(t, resp != nil)
 
 	// Verify the peer was merged
-	assert.Equal(t, len(c.streamService.peerTracker.peers), 2) // self + peer1
-
-	// Clean up
-	c.streamService.peerTracker = nil
+	assert.Equal(t, len(c.tracker.peers), 2) // self + peer1
 }
 
 func TestStreamService_ForwardToLeader_NoLeader(t *testing.T) {

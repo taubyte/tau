@@ -386,8 +386,6 @@ That's it. Nodes advertising the same namespace will:
 
 raft.WithBootstrapTimeout(30 * time.Second) // Wait for peers before auto-bootstrap
 raft.WithDiscoveryInterval(10 * time.Second) // How often to search for new peers  
-raft.WithMinPeers(2)                         // Wait for N peers before starting
-raft.WithDiscoveryTimeout(5 * time.Minute)   // Max time to wait for MinPeers
 ```
 
 ### Membership Overview
@@ -559,10 +557,6 @@ func WithTimeoutPreset(preset TimeoutPreset) Option
 // WithTimeouts sets custom timeout configuration
 func WithTimeouts(cfg TimeoutConfig) Option
 
-// WithMinPeers waits for N peers before starting consensus
-// Default: 0 (start immediately)
-func WithMinPeers(n int) Option
-
 // WithFSM provides a custom FSM implementation (advanced)
 // Default: built-in key-value FSM
 func WithFSM(fsm raft.FSM) Option
@@ -575,7 +569,6 @@ func WithLogger(logger *log.Logger) Option
 ```go
 cluster, err := raft.New(node, "/raft/patrick/jobs",
     raft.WithTimeoutPreset(raft.PresetGlobal),
-    raft.WithMinPeers(2),  // Wait for at least 2 other nodes
 )
 ```
 
@@ -1384,14 +1377,8 @@ var (
     // ErrNoLeader is returned when no leader is known
     ErrNoLeader = errors.New("no leader")
     
-    // ErrTimeout is returned when an operation times out
-    ErrTimeout = errors.New("operation timeout")
-    
     // ErrShutdown is returned when the cluster is shutting down
     ErrShutdown = errors.New("cluster shutdown")
-    
-    // ErrKeyNotFound is returned when a key doesn't exist
-    ErrKeyNotFound = errors.New("key not found")
     
     // ErrInvalidCommand is returned for malformed commands
     ErrInvalidCommand = errors.New("invalid command")

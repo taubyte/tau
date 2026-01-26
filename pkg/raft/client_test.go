@@ -16,7 +16,7 @@ func TestNewClient(t *testing.T) {
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	assert.Equal(t, client.namespace, "/raft/test")
+	assert.Assert(t, client.Client != nil)
 }
 
 func TestClient_Close(t *testing.T) {
@@ -30,28 +30,6 @@ func TestClient_Close(t *testing.T) {
 
 	// Close should not panic
 	client.Close()
-}
-
-func TestClient_Namespace(t *testing.T) {
-	node := newMockNode(t)
-
-	tests := []struct {
-		namespace string
-	}{
-		{"/raft/service-a"},
-		{"/raft/service-b"},
-		{"/raft/nested/path"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.namespace, func(t *testing.T) {
-			client, err := NewClient(node, tt.namespace)
-			require.NoError(t, err, "failed to create client")
-			defer client.Close()
-
-			assert.Equal(t, client.namespace, tt.namespace)
-		})
-	}
 }
 
 func TestClient_SetGetDelete_Integration(t *testing.T) {

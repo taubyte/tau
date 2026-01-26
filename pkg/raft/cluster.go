@@ -30,6 +30,7 @@ type cluster struct {
 	logStore *datastoreLogStore
 	stable   *datastoreStableStore
 	snaps    *fileSnapshotStore
+	tracker  *peerTracker
 
 	// Stream service for handling p2p commands
 	streamService *raftStreamService
@@ -131,6 +132,7 @@ func (c *cluster) initialize() error {
 	if err != nil {
 		return fmt.Errorf("failed to create stream service: %w", err)
 	}
+	c.tracker = newPeerTracker(c.node.ID())
 
 	// Handle bootstrap - autonomous discovery-first approach
 	if err := c.handleBootstrap(raftConfig, transport); err != nil {
@@ -157,21 +159,12 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 		return c.bootstrapSelf(raftConfig, transport)
 	}
 
-	// Create peer tracker for discovery convergence
-	tracker := newPeerTracker(c.node.ID())
-
-	// Attach tracker to stream service so it can handle exchange requests
-	if c.streamService != nil {
-		c.streamService.peerTracker = tracker
-		defer func() { c.streamService.peerTracker = nil }() // Clear after bootstrap
-	}
-
 	// Run discovery and exchange for the full timeout
 	ctx, cancel := context.WithTimeout(c.node.Context(), c.cfg.bootstrapTimeout)
 	defer cancel()
 
 	// Run discovery in background
-	go c.runDiscoveryAndExchange(ctx, tracker)
+	go c.tracker.runDiscoveryAndExchange(ctx, c)
 
 	// Wait for timeout
 	<-ctx.Done()
@@ -180,14 +173,14 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 	threshold := time.Duration(float64(c.cfg.bootstrapTimeout) * c.cfg.bootstrapThreshold)
 
 	// Check if we're a late joiner
-	if tracker.isLateJoiner(threshold) {
+	if c.tracker.isLateJoiner(threshold) {
 		// We discovered all peers after threshold - we're late
 		// Don't bootstrap, wait for leader to add us via AddVoter
 		return nil
 	}
 
 	// Get founding members (peers discovered before threshold)
-	founders := tracker.getFoundingMembers(threshold)
+	founders := c.tracker.getFoundingMembers(threshold)
 
 	if len(founders) <= 1 {
 		// Only self - bootstrap as single node
@@ -224,40 +217,6 @@ func (c *cluster) bootstrapWithPeers(raftConfig *raft.Config, transport raft.Tra
 		return err
 	}
 	return nil
-}
-
-// discoverExistingPeers searches for existing cluster members (used by discoverPeers goroutine)
-func (c *cluster) discoverExistingPeers() ([]peer.ID, error) {
-	ctx, cancel := context.WithTimeout(c.node.Context(), c.cfg.bootstrapTimeout)
-	defer cancel()
-
-	discovery := c.node.Discovery()
-	if discovery == nil {
-		// No discovery mechanism available
-		return nil, nil
-	}
-
-	var peers []peer.ID
-	peerCh, err := discovery.FindPeers(ctx, c.namespace)
-	if err != nil {
-		return nil, err
-	}
-
-	// Collect peers until timeout or channel closes
-	for {
-		select {
-		case p, ok := <-peerCh:
-			if !ok {
-				// Channel closed
-				return peers, nil
-			}
-			if p.ID != c.node.ID() {
-				peers = append(peers, p.ID)
-			}
-		case <-ctx.Done():
-			return peers, nil
-		}
-	}
 }
 
 // bootstrapSelf creates a new single-node cluster

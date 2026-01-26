@@ -19,10 +19,6 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.discoveryConfig.DiscoveryInterval != 30*time.Second {
 		t.Errorf("expected discovery interval 30s, got %v", cfg.discoveryConfig.DiscoveryInterval)
 	}
-
-	if cfg.discoveryConfig.MinPeers != 0 {
-		t.Errorf("expected min peers 0, got %d", cfg.discoveryConfig.MinPeers)
-	}
 }
 
 func TestGetTimeoutConfig_Presets(t *testing.T) {

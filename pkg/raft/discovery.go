@@ -19,11 +19,11 @@ type peerTracker struct {
 
 func newPeerTracker(selfID peer.ID) *peerTracker {
 	pt := &peerTracker{
+		selfID:    selfID,
 		startTime: time.Now(),
 		peers:     make(map[peer.ID]time.Duration),
-		selfID:    selfID,
 	}
-	// Self is always a founding member (seen at time 0)
+	// Self is always a founding member
 	pt.peers[selfID] = 0
 	return pt
 }
@@ -139,7 +139,7 @@ func (pt *peerTracker) allPeers() []peer.ID {
 }
 
 // runDiscoveryAndExchange discovers peers and exchanges lists until ctx is done
-func (c *cluster) runDiscoveryAndExchange(ctx context.Context, tracker *peerTracker) {
+func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) {
 	discovery := c.node.Discovery()
 	host := c.node.Peer()
 
@@ -156,7 +156,7 @@ func (c *cluster) runDiscoveryAndExchange(ctx context.Context, tracker *peerTrac
 			// This works even without DHT discovery
 			for _, pid := range host.Network().Peers() {
 				if pid != c.node.ID() {
-					tracker.addPeer(pid)
+					pt.addPeer(pid)
 				}
 			}
 
@@ -166,7 +166,7 @@ func (c *cluster) runDiscoveryAndExchange(ctx context.Context, tracker *peerTrac
 				peerCh, err := discovery.FindPeers(discoverCtx, c.namespace)
 				if err == nil {
 					for p := range peerCh {
-						tracker.addPeer(p.ID)
+						pt.addPeer(p.ID)
 					}
 				}
 				cancel()
@@ -174,11 +174,11 @@ func (c *cluster) runDiscoveryAndExchange(ctx context.Context, tracker *peerTrac
 
 			// Exchange with all known peers using our raft client
 			if c.raftClient != nil {
-				for _, pid := range tracker.allPeers() {
-					startTime, peersMap := tracker.getPeersMap()
+				for _, pid := range pt.allPeers() {
+					startTime, peersMap := pt.getPeersMap()
 					theirStart, theirPeers, err := c.raftClient.ExchangePeers(startTime, peersMap, pid)
 					if err == nil {
-						newPeers := tracker.mergePeers(theirStart, theirPeers)
+						newPeers := pt.mergePeers(theirStart, theirPeers)
 						// Dial newly discovered peers so we can exchange with them
 						for _, newPeer := range newPeers {
 							c.dialPeer(ctx, newPeer)

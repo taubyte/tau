@@ -48,14 +48,6 @@ type DiscoveryConfig struct {
 	// DiscoveryInterval is how often to search for new peers
 	// Default: 30s
 	DiscoveryInterval time.Duration
-
-	// MinPeers is the minimum peers to wait for before starting
-	// Default: 0 (start immediately, even as single node)
-	MinPeers int
-
-	// DiscoveryTimeout is max time to wait for MinPeers
-	// Default: 5m
-	DiscoveryTimeout time.Duration
 }
 
 // config holds the internal configuration for a cluster
@@ -64,7 +56,6 @@ type config struct {
 	timeoutPreset   TimeoutPreset
 	timeoutConfig   TimeoutConfig
 	discoveryConfig DiscoveryConfig
-	minPeers        int
 	customFSM       FSM
 
 	// Bootstrap behavior:
@@ -111,10 +102,7 @@ func defaultConfig(namespace string) *config {
 		timeoutConfig: presetConfigs[PresetRegional],
 		discoveryConfig: DiscoveryConfig{
 			DiscoveryInterval: 30 * time.Second,
-			MinPeers:          0,
-			DiscoveryTimeout:  5 * time.Minute,
 		},
-		minPeers:           0,
 		forceBootstrap:     false,            // Default: discover first, auto-bootstrap if no peers
 		bootstrapTimeout:   10 * time.Second, // Total discovery time
 		bootstrapThreshold: 0.8,              // 80% = founding members, after = late joiners

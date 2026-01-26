@@ -79,8 +79,7 @@ func TestNew_NilNode(t *testing.T) {
 func TestNew_WithOptions(t *testing.T) {
 	node := newMockNode(t)
 
-	opts := append(testOptions(), WithMinPeers(2))
-	cluster, err := New(node, "/raft/test", opts...)
+	cluster, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cluster.Close()
 

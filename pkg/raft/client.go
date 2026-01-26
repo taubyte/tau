@@ -13,7 +13,6 @@ import (
 // Client is a p2p client for communicating with raft cluster nodes
 type Client struct {
 	*streamClient.Client
-	namespace string
 }
 
 // NewClient creates a new raft p2p client for the given namespace
@@ -26,8 +25,7 @@ func NewClient(node Node, namespace string) (*Client, error) {
 	}
 
 	return &Client{
-		Client:    client,
-		namespace: namespace,
+		Client: client,
 	}, nil
 }
 

@@ -23,26 +23,10 @@ func WithTimeouts(cfg TimeoutConfig) Option {
 	}
 }
 
-// WithMinPeers waits for N peers before starting consensus
-// Default: 0 (start immediately)
-func WithMinPeers(n int) Option {
-	return func(c *config) {
-		c.minPeers = n
-		c.discoveryConfig.MinPeers = n
-	}
-}
-
 // WithDiscoveryInterval sets how often to search for new peers
 func WithDiscoveryInterval(d time.Duration) Option {
 	return func(c *config) {
 		c.discoveryConfig.DiscoveryInterval = d
-	}
-}
-
-// WithDiscoveryTimeout sets max time to wait for MinPeers
-func WithDiscoveryTimeout(d time.Duration) Option {
-	return func(c *config) {
-		c.discoveryConfig.DiscoveryTimeout = d
 	}
 }
 

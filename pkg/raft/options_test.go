@@ -63,26 +63,11 @@ func TestWithTimeouts(t *testing.T) {
 	assert.Equal(t, cfg.timeoutConfig.SnapshotThreshold, uint64(100))
 }
 
-func TestWithMinPeers(t *testing.T) {
-	cfg := defaultConfig("/raft/test")
-	WithMinPeers(3)(cfg)
-
-	assert.Equal(t, cfg.minPeers, 3)
-	assert.Equal(t, cfg.discoveryConfig.MinPeers, 3)
-}
-
 func TestWithDiscoveryInterval(t *testing.T) {
 	cfg := defaultConfig("/raft/test")
 	WithDiscoveryInterval(5 * time.Second)(cfg)
 
 	assert.Equal(t, cfg.discoveryConfig.DiscoveryInterval, 5*time.Second)
-}
-
-func TestWithDiscoveryTimeout(t *testing.T) {
-	cfg := defaultConfig("/raft/test")
-	WithDiscoveryTimeout(10 * time.Minute)(cfg)
-
-	assert.Equal(t, cfg.discoveryConfig.DiscoveryTimeout, 10*time.Minute)
 }
 
 func TestWithFSM(t *testing.T) {
@@ -118,7 +103,6 @@ func TestDefaultConfig_Values(t *testing.T) {
 	assert.Equal(t, cfg.timeoutPreset, PresetRegional)
 	assert.Assert(t, !cfg.forceBootstrap)
 	assert.Equal(t, cfg.bootstrapTimeout, 10*time.Second)
-	assert.Equal(t, cfg.minPeers, 0)
 }
 
 func TestGetTimeoutConfig(t *testing.T) {

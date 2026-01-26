@@ -37,9 +37,8 @@ const (
 
 // streamService wraps the cluster with a command service for p2p operations
 type raftStreamService struct {
-	cluster     *cluster
-	service     streamService.CommandService
-	peerTracker *peerTracker // Used during bootstrap for peer exchange
+	cluster *cluster
+	service streamService.CommandService
 }
 
 // Protocol returns the full protocol path for a namespace (for stream commands)
@@ -207,13 +206,7 @@ func (s *raftStreamService) forwardToLeader(cmd string, body command.Body) (cr.R
 
 // handleExchangePeers handles peer list exchange during bootstrap
 func (s *raftStreamService) handleExchangePeers(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
-	// If no tracker (bootstrap done), just return empty response
-	if s.peerTracker == nil {
-		return cr.Response{
-			keyStartTime: time.Now().UnixMilli(),
-			keySeenAt:    map[string]int64{},
-		}, nil
-	}
+	tracker := s.cluster.tracker
 
 	// Get their data
 	theirStart := time.UnixMilli(toInt64(body[keyStartTime]))
@@ -224,7 +217,7 @@ func (s *raftStreamService) handleExchangePeers(ctx context.Context, conn stream
 		for k, v := range theirSeenAt {
 			theirPeers[k] = toInt64(v)
 		}
-		newPeers := s.peerTracker.mergePeers(theirStart, theirPeers)
+		newPeers := tracker.mergePeers(theirStart, theirPeers)
 		// Dial newly discovered peers in background
 		for _, newPeer := range newPeers {
 			s.cluster.dialPeer(ctx, newPeer)
@@ -233,11 +226,11 @@ func (s *raftStreamService) handleExchangePeers(ctx context.Context, conn stream
 
 	// Also add the sender if connection is available
 	if conn != nil {
-		s.peerTracker.addPeer(conn.RemotePeer())
+		tracker.addPeer(conn.RemotePeer())
 	}
 
 	// Return our peer list
-	ourStart, ourPeers := s.peerTracker.getPeersMap()
+	ourStart, ourPeers := tracker.getPeersMap()
 	return cr.Response{
 		keyStartTime: ourStart.UnixMilli(),
 		keySeenAt:    ourPeers,

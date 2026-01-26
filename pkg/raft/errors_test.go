@@ -12,9 +12,7 @@ func TestErrors_Defined(t *testing.T) {
 	}{
 		{"ErrNotLeader", ErrNotLeader},
 		{"ErrNoLeader", ErrNoLeader},
-		{"ErrTimeout", ErrTimeout},
 		{"ErrShutdown", ErrShutdown},
-		{"ErrKeyNotFound", ErrKeyNotFound},
 		{"ErrInvalidCommand", ErrInvalidCommand},
 		{"ErrAlreadyClosed", ErrAlreadyClosed},
 		{"ErrInvalidNamespace", ErrInvalidNamespace},
@@ -36,9 +34,7 @@ func TestErrors_Unique(t *testing.T) {
 	errs := []error{
 		ErrNotLeader,
 		ErrNoLeader,
-		ErrTimeout,
 		ErrShutdown,
-		ErrKeyNotFound,
 		ErrInvalidCommand,
 		ErrAlreadyClosed,
 		ErrInvalidNamespace,
