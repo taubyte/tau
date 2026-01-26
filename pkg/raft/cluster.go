@@ -129,12 +129,14 @@ func (c *cluster) initialize() error {
 		return fmt.Errorf("failed to create raft client: %w", err)
 	}
 
+	// Create tracker before stream service since handlers use it
+	c.tracker = newPeerTracker(c.node.ID())
+
 	// Create stream service for handling p2p commands
 	c.streamService, err = newStreamService(c)
 	if err != nil {
 		return fmt.Errorf("failed to create stream service: %w", err)
 	}
-	c.tracker = newPeerTracker(c.node.ID())
 
 	// Handle bootstrap - autonomous discovery-first approach
 	if err := c.handleBootstrap(raftConfig, transport); err != nil {

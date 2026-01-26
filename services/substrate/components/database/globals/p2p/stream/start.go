@@ -18,6 +18,7 @@ func Start(srv database.Service) (streamHandler *StreamHandler, err error) {
 	}
 
 	streamHandler.setupRoutes()
+	streamHandler.stream.Start()
 
 	return
 }

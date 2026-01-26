@@ -94,6 +94,8 @@ func TestClientSend(t *testing.T) {
 		return
 	}
 
+	svr.Start()
+
 	p2, err := peer.New( // consumer
 		ctx,
 		nil,
@@ -351,6 +353,8 @@ func TestClientUpgrade(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	svr.Start()
 
 	p2, err := peer.New( // consumer
 		ctx,
@@ -612,6 +616,8 @@ func TestClientSend_Sync(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	svr.Start()
 
 	p2, err := peer.New(
 		ctx,
@@ -887,6 +893,8 @@ func TestResponseMethods(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	svr.Start()
+
 	p2, err := peer.New(
 		ctx,
 		nil,
@@ -982,6 +990,8 @@ func TestClientMultiSend(t *testing.T) {
 		return
 	}
 
+	svr1.Start()
+
 	p2, err := peer.New( // provider
 		ctx,
 		nil,
@@ -1012,6 +1022,8 @@ func TestClientMultiSend(t *testing.T) {
 		t.Error(err)
 		return
 	}
+
+	svr2.Start()
 
 	p3, err := peer.New( // consumer
 		ctx,
@@ -1120,6 +1132,8 @@ func TestMultiPeerThreshold(t *testing.T) {
 			return cr.Response{"provider": providerID}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	// Create consumer peer
@@ -1199,6 +1213,8 @@ func TestMultiPeerExplicitTo(t *testing.T) {
 			return cr.Response{"id": providerID}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	// Create consumer
@@ -1279,6 +1295,8 @@ func TestMultiPeerWithSlowResponder(t *testing.T) {
 			return cr.Response{"speed": "fast"}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	// Create slow provider
@@ -1304,6 +1322,8 @@ func TestMultiPeerWithSlowResponder(t *testing.T) {
 		return cr.Response{"speed": "slow"}, nil
 	})
 	require.NoError(t, err)
+
+	slowSvr.Start()
 
 	// Create consumer
 	consumer, err := peer.New(
@@ -1388,6 +1408,8 @@ func TestMultiPeerAllPeersRespond(t *testing.T) {
 			return cr.Response{"index": idx}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	consumer, err := peer.New(
@@ -1472,6 +1494,8 @@ func TestMultiPeerWithBody(t *testing.T) {
 			}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	consumer, err := peer.New(
@@ -1547,6 +1571,8 @@ func TestMultiPeerPartialFailure(t *testing.T) {
 			return cr.Response{"status": "ok"}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	// Create a provider that returns errors
@@ -1571,6 +1597,8 @@ func TestMultiPeerPartialFailure(t *testing.T) {
 		return nil, errors.New("intentional error")
 	})
 	require.NoError(t, err)
+
+	errorSvr.Start()
 
 	consumer, err := peer.New(
 		ctx,
@@ -1659,6 +1687,8 @@ func TestMultiPeerConcurrentRequests(t *testing.T) {
 			}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	consumer, err := peer.New(
@@ -1760,6 +1790,8 @@ func TestMultiPeerAllErrors(t *testing.T) {
 			return nil, fmt.Errorf("provider %d failed intentionally", idx)
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	consumer, err := peer.New(
@@ -1841,6 +1873,8 @@ func TestMultiPeerTimeout(t *testing.T) {
 			return cr.Response{"status": "ok"}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	consumer, err := peer.New(
@@ -1918,6 +1952,8 @@ func TestMultiPeerMixedErrorsAndTimeouts(t *testing.T) {
 	})
 	require.NoError(t, err)
 
+	workingSvr.Start()
+
 	// Error provider
 	errorProvider, err := peer.New(
 		ctx,
@@ -1940,6 +1976,8 @@ func TestMultiPeerMixedErrorsAndTimeouts(t *testing.T) {
 		return nil, errors.New("provider error")
 	})
 	require.NoError(t, err)
+
+	errorSvr.Start()
 
 	// Timeout provider
 	timeoutProvider, err := peer.New(
@@ -1964,6 +2002,8 @@ func TestMultiPeerMixedErrorsAndTimeouts(t *testing.T) {
 		return cr.Response{"status": "ok", "type": "timeout"}, nil
 	})
 	require.NoError(t, err)
+
+	timeoutSvr.Start()
 
 	// Consumer
 	consumer, err := peer.New(
@@ -2052,6 +2092,8 @@ func TestMultiPeerThresholdLimitsPeersContacted(t *testing.T) {
 			return cr.Response{"provider": idx}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	consumer, err := peer.New(
@@ -2140,6 +2182,8 @@ func TestMultiPeerExplicitToWithThresholdLimit(t *testing.T) {
 			return cr.Response{"id": idx}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	consumer, err := peer.New(
@@ -2224,6 +2268,8 @@ func TestMultiPeerExplicitToSkipsUnreachable(t *testing.T) {
 			return cr.Response{"provider": idx}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	// Create unreachable peer
@@ -2317,6 +2363,8 @@ func TestMultiPeerExplicitToOrderDoesNotMatter(t *testing.T) {
 			return cr.Response{"provider": idx}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	// Create 2 unreachable peers
@@ -2474,6 +2522,8 @@ func TestMultiPeerDiscoveryWithUnreachablePeers(t *testing.T) {
 			return cr.Response{"provider": idx}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	consumer, err := peer.New(
@@ -2557,6 +2607,8 @@ func TestMultiPeerProtocolNotSupportedSkipped(t *testing.T) {
 			return cr.Response{"provider": idx}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	// Peer that doesn't support our protocol
@@ -2649,6 +2701,8 @@ func TestMultiPeerProtocolNotSupportedSkippedInDiscovery(t *testing.T) {
 			return cr.Response{"provider": idx}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	consumer, err := peer.New(
@@ -2726,6 +2780,8 @@ func TestMultiPeerThresholdWithSomeErrors(t *testing.T) {
 			return cr.Response{"status": "ok", "worker": idx}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	for i := 0; i < numError; i++ {
@@ -2835,6 +2891,8 @@ func TestGoroutineCountPerSend(t *testing.T) {
 			return cr.Response{"ok": true}, nil
 		})
 		require.NoError(t, err)
+
+		svr.Start()
 	}
 
 	consumer, err := peer.New(

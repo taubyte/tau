@@ -21,6 +21,10 @@ func (m *mockStreamService) DefineStream(command string, std router.CommandHandl
 	return args.Error(0)
 }
 
+func (m *mockStreamService) Start() {
+	m.Called()
+}
+
 func (m *mockStreamService) Stop() {
 	m.Called()
 }

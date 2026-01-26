@@ -35,6 +35,8 @@ func (s *Service) startStream() (err error) {
 		return fmt.Errorf("defining command `%s` failed with: %w", substrate.CommandHTTP, err)
 	}
 
+	s.stream.Start()
+
 	return
 }
 

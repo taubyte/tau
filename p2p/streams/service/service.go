@@ -11,6 +11,7 @@ import (
 type CommandService interface {
 	Define(command string, handler router.CommandHandler) error
 	DefineStream(command string, std router.CommandHandler, stream router.StreamHandler) error
+	Start()
 	Stop()
 	Router() *(router.Router)
 }
@@ -38,8 +39,13 @@ func New(peer peer.Node, name string, path string) (*commandService, error) {
 		return nil, fmt.Errorf("creating command router for service %q failed", name)
 	}
 
-	cs.stream.Start(func(s streams.Stream) { cs.router.Handle(s) })
+	// Don't start here - caller should register handlers first, then call Start()
 	return &cs, nil
+}
+
+// Start begins accepting connections. Call after all handlers are registered.
+func (cs *commandService) Start() {
+	cs.stream.Start(func(s streams.Stream) { cs.router.Handle(s) })
 }
 
 func (cs *commandService) Stop() {

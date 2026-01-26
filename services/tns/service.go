@@ -63,6 +63,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 	}
 
 	srv.setupStreamRoutes()
+	srv.stream.Start()
 
 	// For Odo
 	clientNode := srv.node
@@ -84,8 +85,8 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 
 func (srv *Service) Close() error {
 	// TODO use debug logger
-	logger.Info("Closing", servicesCommon.Tns)
-	defer logger.Info(servicesCommon.Tns, "closed")
+	logger.Debugf("Closing %s", servicesCommon.Tns)
+	defer logger.Debugf("%s closed", servicesCommon.Tns)
 
 	// node.ctx
 	srv.stream.Stop()

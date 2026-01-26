@@ -103,6 +103,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
 	}
 
 	srv.setupStreamRoutes()
+	srv.stream.Start()
 
 	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
 	if err != nil {

@@ -2,8 +2,6 @@ package raft
 
 import (
 	"context"
-	"fmt"
-	"math/rand"
 	"testing"
 	"time"
 
@@ -16,7 +14,7 @@ import (
 )
 
 func waitForConnected(t *testing.T, node Node, peerID peercore.ID, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -41,17 +39,16 @@ func newRealNode(t *testing.T, bootstrapPeers ...peercore.AddrInfo) Node {
 	t.Cleanup(cancel)
 
 	dir := t.TempDir()
-	port := 12000 + rand.Intn(20000)
 
 	node, err := taupeer.New(
 		ctx,
 		dir,
 		keypair.NewRaw(),
-		nil, // swarm key
-		[]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port)},
-		nil,   // swarm announce
-		true,  // notPublic
-		false, // don't bootstrap to default peers
+		nil,                              // swarm key
+		[]string{"/ip4/127.0.0.1/tcp/0"}, // port 0 for dynamic allocation
+		nil,                              // swarm announce
+		true,                             // notPublic
+		false,                            // don't bootstrap to default peers
 	)
 	assert.NilError(t, err, "failed to create node")
 
@@ -97,7 +94,7 @@ func waitForMember(t *testing.T, cl Cluster, memberID peercore.ID, suffrage raft
 }
 
 func waitForMemberAbsent(t *testing.T, cl Cluster, memberID peercore.ID, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 
 	ticker := time.NewTicker(200 * time.Millisecond)

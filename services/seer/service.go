@@ -99,6 +99,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	}
 
 	srv.setupStreamRoutes()
+	srv.stream.Start()
 
 	err = srv.subscribe()
 	if err != nil {

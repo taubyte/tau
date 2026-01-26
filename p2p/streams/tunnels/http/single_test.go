@@ -94,6 +94,8 @@ func TestSingleBackend(t *testing.T) {
 		return
 	}
 
+	svr.Start()
+
 	p2, err := peer.New( // consumer
 		ctx,
 		nil,

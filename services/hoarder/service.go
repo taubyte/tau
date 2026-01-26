@@ -71,6 +71,7 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 	}
 
 	s.setupStreamRoutes()
+	s.stream.Start()
 
 	if err = s.subscribe(ctx); err != nil {
 		return nil, fmt.Errorf("pubsub subscribe failed with: %w", err)

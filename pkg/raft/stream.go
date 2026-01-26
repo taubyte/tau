@@ -99,6 +99,9 @@ func newStreamService(c *cluster) (*raftStreamService, error) {
 		return nil, fmt.Errorf("failed to define joinVoter handler: %w", err)
 	}
 
+	// Start accepting connections after all handlers are registered
+	service.Start()
+
 	return ss, nil
 }
 

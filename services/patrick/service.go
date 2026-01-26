@@ -94,6 +94,7 @@ func New(ctx context.Context, config *tauConfig.Node) (*PatrickService, error) {
 
 	srv.hostUrl = config.NetworkFqdn
 	srv.setupStreamRoutes()
+	srv.stream.Start()
 
 	// HTTP
 	if config.Http == nil {
