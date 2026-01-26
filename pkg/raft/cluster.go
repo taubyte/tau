@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/hashicorp/raft"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 const (
@@ -175,20 +177,61 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 	// Check if we're a late joiner
 	if c.tracker.isLateJoiner(threshold) {
 		// We discovered all peers after threshold - we're late
-		// Don't bootstrap, wait for leader to add us via AddVoter
+		// Don't bootstrap; request to be added as voter via stream.
+		c.requestVoterJoin(5 * time.Second)
 		return nil
 	}
 
 	// Get founding members (peers discovered before threshold)
 	founders := c.tracker.getFoundingMembers(threshold)
 
+	// If we can join an existing cluster, do so and skip bootstrapping.
+	if len(founders) > 1 {
+		joined, noLeader := c.tryJoinExistingCluster(founders, 5*time.Second)
+		if joined {
+			return nil
+		}
+		if !noLeader {
+			c.requestVoterJoin(5 * time.Second)
+			return nil
+		}
+	}
+
 	if len(founders) <= 1 {
+		if len(c.tracker.allPeers()) == 0 {
+			peers := c.raftProtocolPeers()
+			if len(peers) > 0 {
+				joined, noLeader := c.tryJoinExistingCluster(peers, 5*time.Second)
+				if joined {
+					return nil
+				}
+				if !noLeader {
+					c.requestVoterJoin(5 * time.Second)
+					return nil
+				}
+			}
+		}
+
 		// Only self - bootstrap as single node
-		return c.bootstrapSelf(raftConfig, transport)
+		if err := c.bootstrapSelf(raftConfig, transport); err != nil {
+			if err == raft.ErrCantBootstrap {
+				c.requestVoterJoin(5 * time.Second)
+				return nil
+			}
+			return err
+		}
+		return nil
 	}
 
 	// Bootstrap with all founding members
-	return c.bootstrapWithPeers(raftConfig, transport, founders)
+	if err := c.bootstrapWithPeers(raftConfig, transport, founders); err != nil {
+		if err == raft.ErrCantBootstrap {
+			c.requestVoterJoin(5 * time.Second)
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // bootstrapWithPeers bootstraps a cluster with the agreed-upon peer list
@@ -213,7 +256,7 @@ func (c *cluster) bootstrapWithPeers(raftConfig *raft.Config, transport raft.Tra
 	configuration := raft.Configuration{Servers: servers}
 
 	f := c.raft.BootstrapCluster(configuration)
-	if err := f.Error(); err != nil && err != raft.ErrCantBootstrap {
+	if err := f.Error(); err != nil {
 		return err
 	}
 	return nil
@@ -231,8 +274,7 @@ func (c *cluster) bootstrapSelf(raftConfig *raft.Config, transport raft.Transpor
 		},
 	}
 	f := c.raft.BootstrapCluster(configuration)
-	if err := f.Error(); err != nil && err != raft.ErrCantBootstrap {
-		// ErrCantBootstrap means already bootstrapped, which is fine
+	if err := f.Error(); err != nil {
 		return err
 	}
 	return nil
@@ -323,27 +365,112 @@ func (c *cluster) addPeer(peerID peer.ID) {
 		return // Only leader can add peers
 	}
 
-	serverID := raft.ServerID(peerID.String())
-	serverAddr := raft.ServerAddress(peerID.String())
+	// NOTE: do not auto-add during discovery; joiners request via stream.
+}
 
-	// Check if already a member
-	configFuture := c.raft.GetConfiguration()
-	if err := configFuture.Error(); err != nil {
+func (c *cluster) requestVoterJoin(timeout time.Duration) {
+	if c.raftClient == nil || c.tracker == nil {
 		return
 	}
 
-	for _, server := range configFuture.Configuration().Servers {
-		if server.ID == serverID {
-			return // Already a member
+	// NOTE: join safeguards and retry tuning to be added.
+	go func() {
+		ctx, cancel := context.WithTimeout(c.node.Context(), 10*time.Second)
+		defer cancel()
+
+		go c.tracker.runDiscoveryAndExchange(ctx, c)
+
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				targets := c.voterJoinTargets()
+				for _, pid := range targets {
+					if err := c.raftClient.JoinVoter(c.node.ID(), timeout, pid); err != nil {
+					} else {
+					}
+				}
+			}
+		}
+	}()
+}
+
+func (c *cluster) tryJoinExistingCluster(peers []peer.ID, timeout time.Duration) (bool, bool) {
+	if c.raftClient == nil {
+		return false, false
+	}
+
+	// NOTE: join safeguards to be added.
+	ctx, cancel := context.WithTimeout(c.node.Context(), 2*time.Second)
+	defer cancel()
+
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+
+	sawNoLeader := false
+
+	for {
+		select {
+		case <-ctx.Done():
+			return false, sawNoLeader
+		case <-ticker.C:
+			for _, pid := range peers {
+				if pid == c.node.ID() {
+					continue
+				}
+				if err := c.raftClient.JoinVoter(c.node.ID(), timeout, pid); err == nil {
+					return true, false
+				} else if errors.Is(err, ErrNoLeader) || strings.Contains(err.Error(), ErrNoLeader.Error()) {
+					sawNoLeader = true
+				} else {
+				}
+			}
+		}
+	}
+}
+
+func (c *cluster) voterJoinTargets() []peer.ID {
+	targets := make(map[peer.ID]struct{})
+
+	for _, pid := range c.tracker.allPeers() {
+		targets[pid] = struct{}{}
+	}
+
+	for _, pid := range c.node.Peer().Network().Peers() {
+		if pid == c.node.ID() {
+			continue
+		}
+		targets[pid] = struct{}{}
+	}
+
+	result := make([]peer.ID, 0, len(targets))
+	for pid := range targets {
+		result = append(result, pid)
+	}
+	return result
+}
+
+func (c *cluster) raftProtocolPeers() []peer.ID {
+	host := c.node.Peer()
+	transportProtocol := protocol.ID(TransportProtocol(c.namespace))
+	peers := host.Network().Peers()
+	filtered := make([]peer.ID, 0, len(peers))
+
+	for _, pid := range peers {
+		if pid == c.node.ID() {
+			continue
+		}
+		supported, err := host.Peerstore().SupportsProtocols(pid, transportProtocol)
+		if err == nil && len(supported) > 0 {
+			filtered = append(filtered, pid)
 		}
 	}
 
-	// Add as voter
-	future := c.raft.AddVoter(serverID, serverAddr, 0, 30*time.Second)
-	if err := future.Error(); err != nil {
-		// Log error but don't fail
-		return
-	}
+	return filtered
 }
 
 // Close gracefully shuts down the Raft node
@@ -610,7 +737,10 @@ func (c *cluster) AddVoter(id peer.ID, timeout time.Duration) error {
 	}
 
 	future := c.raft.AddVoter(serverID, serverAddr, 0, timeout)
-	return future.Error()
+	if err := future.Error(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // RemoveServer removes a node from the cluster

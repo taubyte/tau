@@ -104,6 +104,26 @@ func (c *Client) Delete(key string, timeout time.Duration, peers ...peer.ID) err
 	return nil
 }
 
+// JoinVoter requests to join the cluster as a voting member.
+// NOTE: join safeguards to be added.
+func (c *Client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error {
+	body := command.Body{
+		keyPeer:    peerID.String(),
+		keyTimeout: float64(timeout.Milliseconds()),
+	}
+
+	resp, err := c.Send(cmdJoinVoter, body, peers...)
+	if err != nil {
+		return fmt.Errorf("join voter failed: %w", err)
+	}
+
+	if errMsg, err := resp.Get("error"); err == nil && errMsg != nil {
+		return fmt.Errorf("join voter error: %v", errMsg)
+	}
+
+	return nil
+}
+
 // Keys sends a keys command to list keys with a prefix
 func (c *Client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
 	body := command.Body{

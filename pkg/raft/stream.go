@@ -6,6 +6,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/p2p/streams"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
@@ -23,6 +24,7 @@ const (
 	cmdDelete        = "delete"
 	cmdKeys          = "keys"
 	cmdExchangePeers = "exchangePeers"
+	cmdJoinVoter     = "joinVoter"
 
 	// Body keys
 	keyKey       = "key"
@@ -33,6 +35,7 @@ const (
 	keyFound     = "found"
 	keyStartTime = "start"
 	keySeenAt    = "seenAt"
+	keyPeer      = "peer"
 )
 
 // streamService wraps the cluster with a command service for p2p operations
@@ -89,6 +92,11 @@ func newStreamService(c *cluster) (*raftStreamService, error) {
 	if err := service.Define(cmdExchangePeers, ss.handleExchangePeers); err != nil {
 		service.Stop()
 		return nil, fmt.Errorf("failed to define exchangePeers handler: %w", err)
+	}
+
+	if err := service.Define(cmdJoinVoter, ss.handleJoinVoter); err != nil {
+		service.Stop()
+		return nil, fmt.Errorf("failed to define joinVoter handler: %w", err)
 	}
 
 	return ss, nil
@@ -235,4 +243,48 @@ func (s *raftStreamService) handleExchangePeers(ctx context.Context, conn stream
 		keyStartTime: ourStart.UnixMilli(),
 		keySeenAt:    ourPeers,
 	}, nil
+}
+
+// handleJoinVoter adds the requester as a voting member.
+// NOTE: join safeguards to be added.
+func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+	timeout := 5 * time.Second
+	if timeoutVal, ok := body[keyTimeout].(float64); ok {
+		timeout = time.Duration(timeoutVal) * time.Millisecond
+	}
+
+	peerID, err := peerFromBodyOrConn(body, conn)
+	if err != nil {
+		return nil, err
+	}
+
+	if s.cluster.IsLeader() {
+		if err := s.cluster.AddVoter(peerID, timeout); err != nil {
+			return nil, err
+		}
+		return cr.Response{"success": true}, nil
+	}
+
+	leaderCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := s.cluster.WaitForLeader(leaderCtx); err != nil {
+		return nil, ErrNoLeader
+	}
+
+	body[keyPeer] = peerID.String()
+	resp, err := s.forwardToLeader(cmdJoinVoter, body)
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+func peerFromBodyOrConn(body command.Body, conn streams.Connection) (peer.ID, error) {
+	if peerVal, ok := body[keyPeer].(string); ok && peerVal != "" {
+		return peer.Decode(peerVal)
+	}
+	if conn != nil {
+		return conn.RemotePeer(), nil
+	}
+	return "", fmt.Errorf("missing peer id")
 }
