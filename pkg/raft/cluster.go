@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"errors"
 	"fmt"
+	"path"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -14,15 +15,22 @@ import (
 	"github.com/hashicorp/raft"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
+	taupeer "github.com/taubyte/tau/p2p/peer"
 )
 
 const (
 	// defaultRetainSnapshots is the default number of snapshots to retain
 	defaultRetainSnapshots = 3
+
+	// MaxApplyTimeout is the maximum timeout for Apply operations
+	MaxApplyTimeout = 60 * time.Second
+
+	// RaftStoragePrefix is the prefix used for all Raft storage paths
+	RaftStoragePrefix = "/raft/"
 )
 
 type cluster struct {
-	node      Node
+	node      taupeer.Node
 	namespace string
 
 	timeoutPreset      TimeoutPreset
@@ -39,22 +47,21 @@ type cluster struct {
 	snaps         *fileSnapshotStore
 	tracker       *peerTracker
 	streamService *raftStreamService
-	raftClient    *Client // for forwarding to leader
+	raftClient    Client // Client for remote Raft operations (joining voters, forwarding to leader, etc.)
 
-	leaderCh chan bool
-	closed   atomic.Bool
-	mu       sync.RWMutex
+	closed atomic.Bool
+	mu     sync.RWMutex
 }
 
 // New creates a new Raft cluster with the given namespace
 // Nodes with the same namespace discover each other automatically
-func New(node Node, namespace string, opts ...Option) (Cluster, error) {
+func New(node taupeer.Node, namespace string, opts ...Option) (Cluster, error) {
 	if node == nil {
 		return nil, fmt.Errorf("node is required")
 	}
 
-	if !strings.HasPrefix(namespace, "/raft/") {
-		return nil, fmt.Errorf("%w: namespace must start with /raft/", ErrInvalidNamespace)
+	if namespace == "" {
+		return nil, fmt.Errorf("%w: namespace cannot be empty", ErrInvalidNamespace)
 	}
 
 	c := &cluster{
@@ -65,7 +72,6 @@ func New(node Node, namespace string, opts ...Option) (Cluster, error) {
 		forceBootstrap:     false,
 		bootstrapTimeout:   10 * time.Second,
 		bootstrapThreshold: 0.8,
-		leaderCh:           make(chan bool, 1),
 	}
 
 	for _, opt := range opts {
@@ -83,10 +89,11 @@ func New(node Node, namespace string, opts ...Option) (Cluster, error) {
 
 func (c *cluster) initialize() error {
 	store := c.node.Store()
-	prefix := c.namespace + "/"
+	// Storage always starts with RaftStoragePrefix
+	storagePrefix := path.Join(RaftStoragePrefix, c.namespace)
 
-	c.logStore = NewLogStore(store, prefix+"log/")
-	c.stable = NewStableStore(store, prefix+"stable/")
+	c.logStore = newLogStore(store, path.Join(storagePrefix, "log"))
+	c.stable = newStableStore(store, path.Join(storagePrefix, "stable"))
 
 	snapDir := filepath.Join("/tmp", "tau-raft-snapshots", strings.ReplaceAll(c.namespace, "/", "_"))
 	var err error
@@ -95,7 +102,7 @@ func (c *cluster) initialize() error {
 		return fmt.Errorf("failed to create snapshot store: %w", err)
 	}
 
-	c.fsm = newKVFSM(store, prefix)
+	c.fsm = newKVFSM(store, storagePrefix)
 
 	raftConfig := c.buildRaftConfig()
 
@@ -124,8 +131,6 @@ func (c *cluster) initialize() error {
 	if err := c.handleBootstrap(raftConfig, transport); err != nil {
 		return fmt.Errorf("failed to bootstrap: %w", err)
 	}
-
-	go c.monitorLeadership()
 
 	return nil
 }
@@ -275,20 +280,6 @@ func (c *cluster) createTransport() (raft.Transport, error) {
 		return nil, fmt.Errorf("failed to create namespace transport: %w", err)
 	}
 	return transport, nil
-}
-
-func (c *cluster) monitorLeadership() {
-	for {
-		select {
-		case isLeader := <-c.raft.LeaderCh():
-			select {
-			case c.leaderCh <- isLeader:
-			default:
-			}
-		case <-c.node.Context().Done():
-			return
-		}
-	}
 }
 
 func (c *cluster) requestVoterJoin(timeout time.Duration) {
@@ -514,6 +505,14 @@ func (c *cluster) Apply(cmd []byte, timeout time.Duration) (FSMResponse, error) 
 		return FSMResponse{}, ErrShutdown
 	}
 
+	// Validate timeout
+	if timeout <= 0 {
+		return FSMResponse{}, ErrInvalidTimeout
+	}
+	if timeout > MaxApplyTimeout {
+		return FSMResponse{}, ErrInvalidTimeout
+	}
+
 	if !c.IsLeader() {
 		return FSMResponse{}, ErrNotLeader
 	}
@@ -674,5 +673,5 @@ func (c *cluster) TransferLeadership() error {
 }
 
 func (c *cluster) LeaderCh() <-chan bool {
-	return c.leaderCh
+	return c.raft.LeaderCh()
 }

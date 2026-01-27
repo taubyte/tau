@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"path"
 	"strings"
 	"sync"
 
@@ -58,7 +59,7 @@ func newKVFSM(store datastore.Batching, prefix string) FSM {
 
 // dataKey returns the datastore key for a given user key
 func (f *kvFSM) dataKey(key string) datastore.Key {
-	return datastore.NewKey(f.prefix + "data/" + key)
+	return datastore.NewKey(path.Join(f.prefix, "data", key))
 }
 
 // Apply implements raft.FSM.Apply
@@ -98,7 +99,7 @@ func (f *kvFSM) Snapshot() (raft.FSMSnapshot, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	prefix := f.prefix + "data/"
+	prefix := path.Join(f.prefix, "data")
 	results, err := f.store.Query(context.Background(), query.Query{
 		Prefix: prefix,
 	})
@@ -107,12 +108,13 @@ func (f *kvFSM) Snapshot() (raft.FSMSnapshot, error) {
 	}
 	defer results.Close()
 
+	trimPrefix := prefix + "/"
 	data := make(map[string][]byte)
 	for result := range results.Next() {
 		if result.Error != nil {
 			return nil, result.Error
 		}
-		key := strings.TrimPrefix(result.Key, prefix)
+		key := strings.TrimPrefix(result.Key, trimPrefix)
 		data[key] = result.Value
 	}
 
@@ -139,7 +141,7 @@ func (f *kvFSM) Restore(snapshot io.ReadCloser) error {
 	ctx := context.Background()
 
 	// Clear existing data
-	prefix := f.prefix + "data/"
+	prefix := path.Join(f.prefix, "data")
 	results, err := f.store.Query(ctx, query.Query{
 		Prefix:   prefix,
 		KeysOnly: true,
@@ -186,7 +188,7 @@ func (f *kvFSM) Keys(prefix string) []string {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	dataPrefix := f.prefix + "data/"
+	dataPrefix := path.Join(f.prefix, "data")
 	results, err := f.store.Query(context.Background(), query.Query{
 		Prefix:   dataPrefix,
 		KeysOnly: true,
@@ -196,12 +198,13 @@ func (f *kvFSM) Keys(prefix string) []string {
 	}
 	defer results.Close()
 
+	trimPrefix := dataPrefix + "/"
 	var keys []string
 	for result := range results.Next() {
 		if result.Error != nil {
 			break
 		}
-		key := strings.TrimPrefix(result.Key, dataPrefix)
+		key := strings.TrimPrefix(result.Key, trimPrefix)
 		if prefix == "" || strings.HasPrefix(key, prefix) {
 			keys = append(keys, key)
 		}

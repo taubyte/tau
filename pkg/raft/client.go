@@ -6,32 +6,55 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
+	taupeer "github.com/taubyte/tau/p2p/peer"
 	streamClient "github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 )
 
-type Client struct {
+// Client represents a Raft p2p client
+type Client interface {
+	// Set stores a key-value pair
+	Set(key string, value []byte, timeout time.Duration, peers ...peer.ID) error
+	// Get retrieves a value by key
+	// barrierNs is the barrier timeout in nanoseconds. If > 0, ensures consistency before reading.
+	// Must be > 0 and <= MaxGetHandlerBarrierTimeout, otherwise returns ErrInvalidBarrier.
+	Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, bool, error)
+	// Delete removes a key
+	Delete(key string, timeout time.Duration, peers ...peer.ID) error
+	// JoinVoter requests to join as a voter
+	JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error
+	// Keys returns all keys matching a prefix
+	Keys(prefix string, peers ...peer.ID) ([]string, error)
+	// Send sends a raw command
+	Send(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error)
+	// ExchangePeers exchanges peer discovery information
+	ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error)
+	// Close closes the client
+	Close() error
+}
+
+type client struct {
 	*streamClient.Client
 	encryptionCipher cipher.AEAD
 }
 
 // NewClient creates a new raft p2p client for the given namespace
-func NewClient(node Node, namespace string, encryptionCipher cipher.AEAD) (*Client, error) {
+func NewClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD) (Client, error) {
 	protocol := Protocol(namespace)
 
-	client, err := streamClient.New(node, protocol)
+	streamCli, err := streamClient.New(node, protocol)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create stream client: %w", err)
 	}
 
-	return &Client{
-		Client:           client,
+	return &client{
+		Client:           streamCli,
 		encryptionCipher: encryptionCipher,
 	}, nil
 }
 
-func (c *Client) Set(key string, value []byte, timeout time.Duration, peers ...peer.ID) error {
+func (c *client) Set(key string, value []byte, timeout time.Duration, peers ...peer.ID) error {
 	body := command.Body{
 		keyKey:     key,
 		keyValue:   value,
@@ -66,9 +89,25 @@ func (c *Client) Set(key string, value []byte, timeout time.Duration, peers ...p
 	return nil
 }
 
-func (c *Client) Get(key string, peers ...peer.ID) ([]byte, bool, error) {
+func (c *client) Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, bool, error) {
+	// Validate barrier if provided
+	if barrierNs != 0 {
+		if barrierNs <= 0 {
+			return nil, false, ErrInvalidBarrier
+		}
+		barrierTimeout := time.Duration(barrierNs) * time.Nanosecond
+		if barrierTimeout > MaxGetHandlerBarrierTimeout {
+			return nil, false, ErrInvalidBarrier
+		}
+	}
+
 	body := command.Body{
 		keyKey: key,
+	}
+
+	// Add barrier if provided (must be > 0 and <= MaxGetHandlerBarrierTimeout)
+	if barrierNs > 0 {
+		body[keyBarrier] = barrierNs
 	}
 
 	if c.encryptionCipher != nil {
@@ -117,7 +156,7 @@ func (c *Client) Get(key string, peers ...peer.ID) ([]byte, bool, error) {
 	}
 }
 
-func (c *Client) Delete(key string, timeout time.Duration, peers ...peer.ID) error {
+func (c *client) Delete(key string, timeout time.Duration, peers ...peer.ID) error {
 	body := command.Body{
 		keyKey:     key,
 		keyTimeout: float64(timeout.Milliseconds()),
@@ -151,7 +190,7 @@ func (c *Client) Delete(key string, timeout time.Duration, peers ...peer.ID) err
 	return nil
 }
 
-func (c *Client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error {
+func (c *client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error {
 	body := command.Body{
 		keyPeer:    peerID.String(),
 		keyTimeout: float64(timeout.Milliseconds()),
@@ -185,7 +224,7 @@ func (c *Client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.
 	return nil
 }
 
-func (c *Client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
+func (c *client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
 	body := command.Body{
 		keyPrefix: prefix,
 	}
@@ -239,11 +278,11 @@ func (c *Client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
 	}
 }
 
-func (c *Client) Send(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error) {
+func (c *client) Send(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error) {
 	return c.Client.Send(cmd, body, peers...)
 }
 
-func (c *Client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error) {
+func (c *client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error) {
 	body := command.Body{
 		keyStartTime: ourStart.UnixMilli(),
 		keySeenAt:    ourPeers,
@@ -290,6 +329,11 @@ func (c *Client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, ta
 	}
 
 	return theirStart, theirPeers, nil
+}
+
+func (c *client) Close() error {
+	c.Client.Close()
+	return nil
 }
 
 func toInt64(v interface{}) int64 {

@@ -14,7 +14,7 @@ import (
 // TestDeleteRange_Comprehensive tests DeleteRange with various scenarios
 func TestDeleteRange_Comprehensive(t *testing.T) {
 	store := newTestDatastore()
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Store logs
 	logs := []*raft.Log{
@@ -56,7 +56,7 @@ func TestDeleteRange_Comprehensive(t *testing.T) {
 // TestDeleteRange_EmptyRange tests DeleteRange with empty store
 func TestDeleteRange_EmptyRange(t *testing.T) {
 	store := newTestDatastore()
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Delete from empty store should not error
 	err := logStore.DeleteRange(1, 10)
@@ -66,7 +66,7 @@ func TestDeleteRange_EmptyRange(t *testing.T) {
 // TestDeleteRange_NonExistentRange tests DeleteRange with non-existent indices
 func TestDeleteRange_NonExistentRange(t *testing.T) {
 	store := newTestDatastore()
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Store one log
 	log := &raft.Log{Index: 5, Term: 1, Type: raft.LogCommand, Data: []byte("log5")}

@@ -24,7 +24,7 @@ func TestClient_Set_Success(t *testing.T) {
 	// Wait for peers to connect
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/test-client-set"
+	namespace := "test-client-set"
 
 	// Create cluster on first node
 	cl, err := New(clusterNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -58,7 +58,7 @@ func TestClient_Get_Success(t *testing.T) {
 	clientNode := newTestNode(t, clusterNodeInfo)
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/test-client-get"
+	namespace := "test-client-get"
 
 	cl, err := New(clusterNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create cluster")
@@ -77,7 +77,7 @@ func TestClient_Get_Success(t *testing.T) {
 	defer client.Close()
 
 	// Test Get - client node gets from cluster node
-	val, found, err := client.Get("get-key", clusterNode.ID())
+	val, found, err := client.Get("get-key", 0, clusterNode.ID())
 	require.NoError(t, err, "Get should succeed")
 	require.True(t, found, "key should be found")
 	assert.Equal(t, string(val), "get-value")
@@ -91,7 +91,7 @@ func TestClient_Delete_Success(t *testing.T) {
 	clientNode := newTestNode(t, clusterNodeInfo)
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/test-client-delete"
+	namespace := "test-client-delete"
 
 	cl, err := New(clusterNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create cluster")
@@ -126,7 +126,7 @@ func TestClient_Keys_Success(t *testing.T) {
 	clientNode := newTestNode(t, clusterNodeInfo)
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/test-client-keys"
+	namespace := "test-client-keys"
 
 	cl, err := New(clusterNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create cluster")
@@ -160,7 +160,7 @@ func TestClient_ExchangePeers_Success(t *testing.T) {
 	clientNode := newTestNode(t, clusterNodeInfo)
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/test-client-exchange"
+	namespace := "test-client-exchange"
 
 	cl, err := New(clusterNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create cluster")
@@ -195,7 +195,7 @@ func TestClient_JoinVoter_Success(t *testing.T) {
 	clientNode := newTestNode(t, clusterNodeInfo)
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/test-client-join"
+	namespace := "test-client-join"
 
 	cl, err := New(clusterNode, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create cluster")
@@ -228,7 +228,7 @@ func TestClient_Set_WithEncryption_Success(t *testing.T) {
 	clientNode := newTestNode(t, clusterNodeInfo)
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/test-client-enc-set"
+	namespace := "test-client-enc-set"
 
 	cl, err := New(clusterNode, namespace, WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create encrypted cluster")
@@ -270,7 +270,7 @@ func TestClient_Get_WithEncryption_Success(t *testing.T) {
 	clientNode := newTestNode(t, clusterNodeInfo)
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/test-client-enc-get"
+	namespace := "test-client-enc-get"
 
 	cl, err := New(clusterNode, namespace, WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create encrypted cluster")
@@ -293,7 +293,7 @@ func TestClient_Get_WithEncryption_Success(t *testing.T) {
 	defer client.Close()
 
 	// Get with encryption
-	val, found, err := client.Get("enc-get-key", clusterNode.ID())
+	val, found, err := client.Get("enc-get-key", 0, clusterNode.ID())
 	require.NoError(t, err, "Get with encryption should succeed")
 	require.True(t, found, "key should be found")
 	assert.Equal(t, string(val), "enc-get-value")
@@ -312,7 +312,7 @@ func TestClient_Delete_WithEncryption_Success(t *testing.T) {
 	clientNode := newTestNode(t, clusterNodeInfo)
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/test-client-enc-del"
+	namespace := "test-client-enc-del"
 
 	cl, err := New(clusterNode, namespace, WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create encrypted cluster")
@@ -356,7 +356,7 @@ func TestClient_Keys_WithEncryption_Success(t *testing.T) {
 	clientNode := newTestNode(t, clusterNodeInfo)
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/test-client-enc-keys"
+	namespace := "test-client-enc-keys"
 
 	cl, err := New(clusterNode, namespace, WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create encrypted cluster")

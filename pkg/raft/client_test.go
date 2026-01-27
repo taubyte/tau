@@ -16,9 +16,8 @@ func TestNewClient(t *testing.T) {
 
 	client, err := NewClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
+	require.NotNil(t, client, "client should not be nil")
 	defer client.Close()
-
-	assert.Assert(t, client.Client != nil)
 }
 
 func TestClient_Close(t *testing.T) {
@@ -26,12 +25,11 @@ func TestClient_Close(t *testing.T) {
 
 	client, err := NewClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
-
-	// Client should be functional
-	assert.Assert(t, client.Client != nil)
+	require.NotNil(t, client, "client should not be nil")
 
 	// Close should not panic
-	client.Close()
+	err = client.Close()
+	require.NoError(t, err, "close should succeed")
 }
 
 func TestClient_SetGetDelete_Integration(t *testing.T) {
@@ -60,7 +58,7 @@ func TestClient_SetGetDelete_Integration(t *testing.T) {
 	}
 
 	// Test Get
-	_, _, err = client.Get("client-key", node.ID())
+	_, _, err = client.Get("client-key", 0, node.ID())
 	if err != nil {
 		t.Logf("Get returned error (expected in single-node test): %v", err)
 	}
@@ -97,7 +95,7 @@ func TestClient_Get_NotFound(t *testing.T) {
 	defer client.Close()
 
 	// Get non-existent key
-	val, found, err := client.Get("nonexistent-key", node.ID())
+	val, found, err := client.Get("nonexistent-key", 0, node.ID())
 	if err == nil {
 		assert.Assert(t, !found)
 		assert.Assert(t, val == nil)
@@ -215,7 +213,7 @@ func TestClient_Get_TypeConversions(t *testing.T) {
 	defer client.Close()
 
 	// Get the value - tests value type conversions
-	val, found, err := client.Get("testkey", node.ID())
+	val, found, err := client.Get("testkey", 0, node.ID())
 	if err == nil && found {
 		assert.Assert(t, len(val) > 0)
 	}
@@ -335,7 +333,7 @@ func TestClient_WithEncryption(t *testing.T) {
 	err = client.Set("enc-key", []byte("enc-value"), time.Second, node.ID())
 	if err == nil {
 		// Test Get with encryption
-		val, found, err := client.Get("enc-key", node.ID())
+		val, found, err := client.Get("enc-key", 0, node.ID())
 		if err == nil && found {
 			assert.Equal(t, string(val), "enc-value")
 		}
@@ -351,5 +349,188 @@ func TestClient_WithEncryption(t *testing.T) {
 		if err == nil {
 			assert.Assert(t, keys != nil)
 		}
+	}
+}
+
+func TestClient_Get_WithBarrier(t *testing.T) {
+	node := newTestNode(t)
+
+	// Create cluster first
+	cl, err := New(node, "/raft/test-barrier", testOptions()...)
+	require.NoError(t, err, "failed to create cluster")
+	defer cl.Close()
+
+	// Wait for leader
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+
+	// Set a value first
+	err = cl.Set("barrier-key", []byte("barrier-value"), time.Second)
+	require.NoError(t, err, "failed to set value")
+
+	// Create client
+	client, err := NewClient(node, "/raft/test-barrier", nil)
+	require.NoError(t, err, "failed to create client")
+	defer client.Close()
+
+	// Test Get with valid barrier (1 second in nanoseconds)
+	// Note: In single-node setup, stream may not open, but validation should pass
+	barrierNs := int64(time.Second.Nanoseconds())
+	val, found, err := client.Get("barrier-key", barrierNs, node.ID())
+	// In single-node, network may fail, but if it succeeds, barrier should work
+	if err == nil {
+		require.True(t, found, "key should be found")
+		require.Equal(t, []byte("barrier-value"), val, "value should match")
+	} else {
+		// Network error is expected in single-node, but validation should have passed
+		t.Logf("Get with barrier returned network error (expected in single-node): %v", err)
+	}
+}
+
+func TestClient_Get_WithBarrier_Zero(t *testing.T) {
+	node := newTestNode(t)
+
+	// Create cluster first
+	cl, err := New(node, "/raft/test-barrier-zero", testOptions()...)
+	require.NoError(t, err, "failed to create cluster")
+	defer cl.Close()
+
+	// Wait for leader
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+
+	// Set a value first
+	err = cl.Set("barrier-key-zero", []byte("barrier-value-zero"), time.Second)
+	require.NoError(t, err, "failed to set value")
+
+	// Create client
+	client, err := NewClient(node, "/raft/test-barrier-zero", nil)
+	require.NoError(t, err, "failed to create client")
+	defer client.Close()
+
+	// Test Get with barrierNs = 0 (no barrier, should work)
+	// Note: In single-node setup, stream may not open, but validation should pass
+	val, found, err := client.Get("barrier-key-zero", 0, node.ID())
+	// In single-node, network may fail, but if it succeeds, should work
+	if err == nil {
+		require.True(t, found, "key should be found")
+		require.Equal(t, []byte("barrier-value-zero"), val, "value should match")
+	} else {
+		// Network error is expected in single-node, but validation should have passed
+		t.Logf("Get with barrierNs=0 returned network error (expected in single-node): %v", err)
+	}
+}
+
+func TestClient_Get_WithBarrier_Invalid_Negative(t *testing.T) {
+	node := newTestNode(t)
+
+	// Create cluster first
+	cl, err := New(node, "/raft/test-barrier-invalid", testOptions()...)
+	require.NoError(t, err, "failed to create cluster")
+	defer cl.Close()
+
+	// Wait for leader
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+
+	// Create client
+	client, err := NewClient(node, "/raft/test-barrier-invalid", nil)
+	require.NoError(t, err, "failed to create client")
+	defer client.Close()
+
+	// Test Get with barrierNs < 0 (should return error)
+	_, _, err = client.Get("test-key", -1, node.ID())
+	require.Error(t, err, "Get with negative barrierNs should return error")
+	require.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
+}
+
+func TestClient_Get_WithBarrier_Invalid_Zero(t *testing.T) {
+	node := newTestNode(t)
+
+	// Create cluster first
+	cl, err := New(node, "/raft/test-barrier-invalid-zero", testOptions()...)
+	require.NoError(t, err, "failed to create cluster")
+	defer cl.Close()
+
+	// Wait for leader
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+
+	// Create client
+	client, err := NewClient(node, "/raft/test-barrier-invalid-zero", nil)
+	require.NoError(t, err, "failed to create client")
+	defer client.Close()
+
+	// Note: barrierNs = 0 is allowed (means no barrier)
+	// This test verifies that 0 is handled correctly (no error, no barrier call)
+	_, _, err = client.Get("test-key", 0, node.ID())
+	// Should not return ErrInvalidBarrier for 0
+	if err != nil && err == ErrInvalidBarrier {
+		t.Errorf("barrierNs=0 should not return ErrInvalidBarrier, got: %v", err)
+	}
+}
+
+func TestClient_Get_WithBarrier_Invalid_ExceedsMax(t *testing.T) {
+	node := newTestNode(t)
+
+	// Create cluster first
+	cl, err := New(node, "/raft/test-barrier-exceeds", testOptions()...)
+	require.NoError(t, err, "failed to create cluster")
+	defer cl.Close()
+
+	// Wait for leader
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+
+	// Create client
+	client, err := NewClient(node, "/raft/test-barrier-exceeds", nil)
+	require.NoError(t, err, "failed to create client")
+	defer client.Close()
+
+	// Test Get with barrierNs > MaxGetHandlerBarrierTimeout (should return error)
+	barrierNs := int64((MaxGetHandlerBarrierTimeout + time.Second).Nanoseconds())
+	_, _, err = client.Get("test-key", barrierNs, node.ID())
+	require.Error(t, err, "Get with barrierNs > MaxGetHandlerBarrierTimeout should return error")
+	require.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
+}
+
+func TestClient_Get_WithBarrier_AtMax(t *testing.T) {
+	node := newTestNode(t)
+
+	// Create cluster first
+	cl, err := New(node, "/raft/test-barrier-max", testOptions()...)
+	require.NoError(t, err, "failed to create cluster")
+	defer cl.Close()
+
+	// Wait for leader
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
+
+	// Set a value first
+	err = cl.Set("barrier-key-max", []byte("barrier-value-max"), time.Second)
+	require.NoError(t, err, "failed to set value")
+
+	// Create client
+	client, err := NewClient(node, "/raft/test-barrier-max", nil)
+	require.NoError(t, err, "failed to create client")
+	defer client.Close()
+
+	// Test Get with barrierNs exactly at MaxGetHandlerBarrierTimeout (should work)
+	// Note: In single-node setup, stream may not open, but validation should pass
+	barrierNs := int64(MaxGetHandlerBarrierTimeout.Nanoseconds())
+	val, found, err := client.Get("barrier-key-max", barrierNs, node.ID())
+	// In single-node, network may fail, but if it succeeds, barrier should work
+	if err == nil {
+		require.True(t, found, "key should be found")
+		require.Equal(t, []byte("barrier-value-max"), val, "value should match")
+	} else {
+		// Network error is expected in single-node, but validation should have passed
+		t.Logf("Get with barrierNs at max returned network error (expected in single-node): %v", err)
 	}
 }

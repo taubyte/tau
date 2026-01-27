@@ -20,4 +20,10 @@ var (
 
 	// ErrInvalidNamespace is returned for invalid namespace format
 	ErrInvalidNamespace = errors.New("invalid namespace")
+
+	// ErrInvalidBarrier is returned when barrier is zero or exceeds maximum
+	ErrInvalidBarrier = errors.New("invalid barrier: must be > 0 and <= MaxGetHandlerBarrierTimeout")
+
+	// ErrInvalidTimeout is returned when timeout is zero or exceeds maximum
+	ErrInvalidTimeout = errors.New("invalid timeout: must be > 0 and <= MaxApplyTimeout")
 )

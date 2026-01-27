@@ -16,7 +16,7 @@ func newTestDatastore() datastore.Batching {
 
 func TestLogStore_StoreAndRetrieve(t *testing.T) {
 	store := newTestDatastore()
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	log := &raft.Log{
 		Index: 1,
@@ -47,7 +47,7 @@ func TestLogStore_StoreAndRetrieve(t *testing.T) {
 
 func TestLogStore_StoreLogs(t *testing.T) {
 	store := newTestDatastore()
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	logs := []*raft.Log{
 		{Index: 1, Term: 1, Type: raft.LogCommand, Data: []byte("data1")},
@@ -73,7 +73,7 @@ func TestLogStore_StoreLogs(t *testing.T) {
 
 func TestLogStore_FirstLastIndex(t *testing.T) {
 	store := newTestDatastore()
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Empty initially
 	first, err := logStore.FirstIndex()
@@ -116,7 +116,7 @@ func TestLogStore_FirstLastIndex(t *testing.T) {
 
 func TestLogStore_GetLog_NotFound(t *testing.T) {
 	store := newTestDatastore()
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	var log raft.Log
 	err := logStore.GetLog(999, &log)
@@ -127,7 +127,7 @@ func TestLogStore_GetLog_NotFound(t *testing.T) {
 
 func TestLogStore_DeleteRange(t *testing.T) {
 	store := newTestDatastore()
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Add logs
 	logs := []*raft.Log{
@@ -168,7 +168,7 @@ func TestLogStore_DeleteRange(t *testing.T) {
 
 func TestStableStore_SetGet(t *testing.T) {
 	store := newTestDatastore()
-	stableStore := NewStableStore(store, "/raft/test/stable/")
+	stableStore := newStableStore(store, "/raft/test/stable")
 
 	key := []byte("test-key")
 	value := []byte("test-value")
@@ -189,7 +189,7 @@ func TestStableStore_SetGet(t *testing.T) {
 
 func TestStableStore_Get_NotFound(t *testing.T) {
 	store := newTestDatastore()
-	stableStore := NewStableStore(store, "/raft/test/stable/")
+	stableStore := newStableStore(store, "/raft/test/stable")
 
 	got, err := stableStore.Get([]byte("nonexistent"))
 	if err != nil {
@@ -202,7 +202,7 @@ func TestStableStore_Get_NotFound(t *testing.T) {
 
 func TestStableStore_SetGetUint64(t *testing.T) {
 	store := newTestDatastore()
-	stableStore := NewStableStore(store, "/raft/test/stable/")
+	stableStore := newStableStore(store, "/raft/test/stable")
 
 	key := []byte("term")
 	value := uint64(12345)
@@ -223,7 +223,7 @@ func TestStableStore_SetGetUint64(t *testing.T) {
 
 func TestStableStore_GetUint64_NotFound(t *testing.T) {
 	store := newTestDatastore()
-	stableStore := NewStableStore(store, "/raft/test/stable/")
+	stableStore := newStableStore(store, "/raft/test/stable")
 
 	got, err := stableStore.GetUint64([]byte("nonexistent"))
 	if err != nil {
@@ -236,7 +236,7 @@ func TestStableStore_GetUint64_NotFound(t *testing.T) {
 
 func TestStableStore_GetUint64_InvalidLength(t *testing.T) {
 	store := newTestDatastore()
-	stableStore := NewStableStore(store, "/raft/test/stable/")
+	stableStore := newStableStore(store, "/raft/test/stable")
 
 	// Store invalid length value
 	key := []byte("bad")
@@ -409,27 +409,27 @@ func TestSnapshotSink_Cancel(t *testing.T) {
 	}
 }
 
-func TestNewLogStore(t *testing.T) {
+func TestLogStoreCreation(t *testing.T) {
 	store := newTestDatastore()
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	if logStore == nil {
 		t.Fatal("expected non-nil log store")
 	}
-	if logStore.prefix != "/raft/test/log/" {
-		t.Errorf("expected prefix '/raft/test/log/', got '%s'", logStore.prefix)
+	if logStore.prefix != "/raft/test/log" {
+		t.Errorf("expected prefix '/raft/test/log', got '%s'", logStore.prefix)
 	}
 }
 
-func TestNewStableStore(t *testing.T) {
+func TestStableStoreCreation(t *testing.T) {
 	store := newTestDatastore()
-	stableStore := NewStableStore(store, "/raft/test/stable/")
+	stableStore := newStableStore(store, "/raft/test/stable")
 
 	if stableStore == nil {
 		t.Fatal("expected non-nil stable store")
 	}
-	if stableStore.prefix != "/raft/test/stable/" {
-		t.Errorf("expected prefix '/raft/test/stable/', got '%s'", stableStore.prefix)
+	if stableStore.prefix != "/raft/test/stable" {
+		t.Errorf("expected prefix '/raft/test/stable', got '%s'", stableStore.prefix)
 	}
 }
 
@@ -580,7 +580,7 @@ func TestSnapshotSink_Write_ThenClose(t *testing.T) {
 
 func TestLogStore_FirstIndex_Empty(t *testing.T) {
 	store := dsync.MutexWrap(datastore.NewMapDatastore())
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Empty store should return 0
 	idx, err := logStore.FirstIndex()
@@ -594,7 +594,7 @@ func TestLogStore_FirstIndex_Empty(t *testing.T) {
 
 func TestLogStore_LastIndex_Empty(t *testing.T) {
 	store := dsync.MutexWrap(datastore.NewMapDatastore())
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Empty store should return 0
 	idx, err := logStore.LastIndex()
@@ -608,7 +608,7 @@ func TestLogStore_LastIndex_Empty(t *testing.T) {
 
 func TestStableStore_Get_NilValue(t *testing.T) {
 	store := dsync.MutexWrap(datastore.NewMapDatastore())
-	stableStore := NewStableStore(store, "/raft/test/stable/")
+	stableStore := newStableStore(store, "/raft/test/stable")
 
 	// Getting non-existent key should return nil, nil
 	val, err := stableStore.Get([]byte("nonexistent"))
@@ -622,7 +622,7 @@ func TestStableStore_Get_NilValue(t *testing.T) {
 
 func TestLogStore_DeleteRange_Empty(t *testing.T) {
 	store := dsync.MutexWrap(datastore.NewMapDatastore())
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Deleting from empty store should not error
 	err := logStore.DeleteRange(0, 100)
@@ -685,7 +685,7 @@ func TestSnapshotStore_List_CorruptedMeta(t *testing.T) {
 
 func TestLogStore_StoreLogs_Multiple(t *testing.T) {
 	store := dsync.MutexWrap(datastore.NewMapDatastore())
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Store multiple logs at once
 	logs := []*raft.Log{
@@ -709,7 +709,7 @@ func TestLogStore_StoreLogs_Multiple(t *testing.T) {
 
 func TestLogStore_DeleteRange_Partial(t *testing.T) {
 	store := dsync.MutexWrap(datastore.NewMapDatastore())
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Store 5 logs
 	for i := uint64(1); i <= 5; i++ {
@@ -742,7 +742,7 @@ func TestLogStore_DeleteRange_Partial(t *testing.T) {
 
 func TestLogStore_FirstLastIndex_AfterStoring(t *testing.T) {
 	store := dsync.MutexWrap(datastore.NewMapDatastore())
-	logStore := NewLogStore(store, "/raft/test/log/")
+	logStore := newLogStore(store, "/raft/test/log")
 
 	// Store logs 5, 10, 15
 	for _, idx := range []uint64{5, 10, 15} {

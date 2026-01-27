@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -27,8 +28,8 @@ type datastoreLogStore struct {
 	mu     sync.RWMutex
 }
 
-// NewLogStore creates a new LogStore backed by the given datastore
-func NewLogStore(store datastore.Batching, prefix string) *datastoreLogStore {
+// newLogStore creates a new LogStore backed by the given datastore
+func newLogStore(store datastore.Batching, prefix string) *datastoreLogStore {
 	return &datastoreLogStore{
 		store:  store,
 		prefix: prefix,
@@ -36,7 +37,7 @@ func NewLogStore(store datastore.Batching, prefix string) *datastoreLogStore {
 }
 
 func (l *datastoreLogStore) logKey(index uint64) datastore.Key {
-	return datastore.NewKey(fmt.Sprintf("%s%020d", l.prefix, index))
+	return datastore.NewKey(path.Join(l.prefix, fmt.Sprintf("%020d", index)))
 }
 
 // FirstIndex returns the first index written
@@ -97,7 +98,7 @@ func (l *datastoreLogStore) LastIndex() (uint64, error) {
 }
 
 func (l *datastoreLogStore) parseIndex(key string) (uint64, error) {
-	key = strings.TrimPrefix(key, l.prefix)
+	key = strings.TrimPrefix(key, l.prefix+"/")
 	return strconv.ParseUint(key, 10, 64)
 }
 
@@ -171,8 +172,8 @@ type datastoreStableStore struct {
 	mu     sync.RWMutex
 }
 
-// NewStableStore creates a new StableStore backed by the given datastore
-func NewStableStore(store datastore.Batching, prefix string) *datastoreStableStore {
+// newStableStore creates a new StableStore backed by the given datastore
+func newStableStore(store datastore.Batching, prefix string) *datastoreStableStore {
 	return &datastoreStableStore{
 		store:  store,
 		prefix: prefix,
@@ -180,7 +181,7 @@ func NewStableStore(store datastore.Batching, prefix string) *datastoreStableSto
 }
 
 func (s *datastoreStableStore) stableKey(key []byte) datastore.Key {
-	return datastore.NewKey(s.prefix + string(key))
+	return datastore.NewKey(path.Join(s.prefix, string(key)))
 }
 
 // Set stores a key-value pair

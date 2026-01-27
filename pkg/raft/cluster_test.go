@@ -12,13 +12,11 @@ import (
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	taupeer "github.com/taubyte/tau/p2p/peer"
 )
 
-func newMockNode(t *testing.T) Node {
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-
-	return MockNode(ctx)
+func newMockNode(t *testing.T) taupeer.Node {
+	return taupeer.Mock(t.Context())
 }
 
 // testTimeoutConfig returns fast timeouts for testing
@@ -44,11 +42,11 @@ func testOptions() []Option {
 func TestNew_ValidNamespace(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cluster.Close()
 
-	assert.Equal(t, "/raft/test", cluster.Namespace())
+	assert.Equal(t, "test", cluster.Namespace())
 }
 
 func TestNew_InvalidNamespace(t *testing.T) {
@@ -58,8 +56,6 @@ func TestNew_InvalidNamespace(t *testing.T) {
 		name      string
 		namespace string
 	}{
-		{"no prefix", "test"},
-		{"wrong prefix", "/wrong/test"},
 		{"empty", ""},
 	}
 
@@ -72,24 +68,24 @@ func TestNew_InvalidNamespace(t *testing.T) {
 }
 
 func TestNew_NilNode(t *testing.T) {
-	_, err := New(nil, "/raft/test")
+	_, err := New(nil, "test")
 	assert.Error(t, err, "expected error for nil node")
 }
 
 func TestNew_WithOptions(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cluster.Close()
 
-	assert.Equal(t, "/raft/test", cluster.Namespace())
+	assert.Equal(t, "test", cluster.Namespace())
 }
 
 func TestCluster_Close(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 
 	// First close should succeed
@@ -102,7 +98,7 @@ func TestCluster_Close(t *testing.T) {
 func TestCluster_SingleNode_IsLeader(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cluster.Close()
 
@@ -119,7 +115,7 @@ func TestCluster_SingleNode_IsLeader(t *testing.T) {
 func TestCluster_SingleNode_SetGet(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cluster.Close()
 
@@ -141,7 +137,7 @@ func TestCluster_SingleNode_SetGet(t *testing.T) {
 func TestCluster_SingleNode_Delete(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cluster.Close()
 
@@ -165,7 +161,7 @@ func TestCluster_SingleNode_Delete(t *testing.T) {
 func TestCluster_SingleNode_Keys(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cluster.Close()
 
@@ -193,7 +189,7 @@ func TestCluster_SingleNode_Keys(t *testing.T) {
 func TestCluster_Barrier(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -216,7 +212,7 @@ func TestCluster_Barrier(t *testing.T) {
 func TestCluster_Members(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -243,7 +239,7 @@ func TestCluster_Members(t *testing.T) {
 func TestCluster_LeaderCh(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -258,7 +254,7 @@ func TestCluster_LeaderCh(t *testing.T) {
 func TestCluster_State(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -282,7 +278,7 @@ func TestCluster_State(t *testing.T) {
 func TestCluster_ClosedOperations(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -314,7 +310,7 @@ func TestCluster_ClosedOperations(t *testing.T) {
 func TestCluster_WaitForLeader_Timeout(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -332,7 +328,7 @@ func TestCluster_WaitForLeader_Timeout(t *testing.T) {
 func TestCluster_TransferLeadership(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -355,7 +351,7 @@ func TestCluster_TransferLeadership(t *testing.T) {
 func TestCluster_Leader(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -383,7 +379,7 @@ func TestCluster_Leader(t *testing.T) {
 func TestCluster_Apply(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -422,7 +418,7 @@ func TestCluster_Apply(t *testing.T) {
 func TestCluster_RemoveServer(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -446,7 +442,7 @@ func TestCluster_RemoveServer(t *testing.T) {
 func TestCluster_Get_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -466,7 +462,7 @@ func TestCluster_Get_Closed(t *testing.T) {
 func TestCluster_Keys_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -483,7 +479,7 @@ func TestCluster_Keys_Closed(t *testing.T) {
 func TestCluster_IsLeader_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -499,7 +495,7 @@ func TestCluster_IsLeader_Closed(t *testing.T) {
 func TestCluster_Leader_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -516,7 +512,7 @@ func TestCluster_Leader_Closed(t *testing.T) {
 func TestCluster_WaitForLeader_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -534,7 +530,7 @@ func TestCluster_WaitForLeader_Closed(t *testing.T) {
 func TestCluster_RemoveServer_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -551,7 +547,7 @@ func TestCluster_RemoveServer_Closed(t *testing.T) {
 func TestCluster_TransferLeadership_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -567,7 +563,7 @@ func TestCluster_TransferLeadership_Closed(t *testing.T) {
 func TestCluster_State_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -583,7 +579,7 @@ func TestCluster_State_Closed(t *testing.T) {
 func TestCluster_Set_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -599,7 +595,7 @@ func TestCluster_Set_Closed(t *testing.T) {
 func TestCluster_Delete_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -615,7 +611,7 @@ func TestCluster_Delete_Closed(t *testing.T) {
 func TestCluster_Apply_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -631,7 +627,7 @@ func TestCluster_Apply_Closed(t *testing.T) {
 func TestCluster_Apply_InvalidCommand(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -659,7 +655,7 @@ func TestCluster_Apply_InvalidCommand(t *testing.T) {
 func TestCluster_Barrier_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -675,7 +671,7 @@ func TestCluster_Barrier_Closed(t *testing.T) {
 func TestCluster_Members_Closed(t *testing.T) {
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -693,7 +689,7 @@ func TestCluster_RemoveServer_NotLeader(t *testing.T) {
 	// we can at least verify the method exists and doesn't panic
 	node := newMockNode(t)
 
-	cluster, err := New(node, "/raft/test", testOptions()...)
+	cluster, err := New(node, "test", testOptions()...)
 	if err != nil {
 		require.NoError(t, err, "failed to create cluster")
 	}
@@ -918,7 +914,7 @@ func TestCluster_Get_NotFound(t *testing.T) {
 
 func TestFsmAdapter_Apply_ViaCluster(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/adapter-test/")
+	fsm := newKVFSM(store, "/raft/adapter-test")
 
 	// Create a valid set command
 	cmd := Command{
@@ -943,7 +939,7 @@ func TestFsmAdapter_Apply_ViaCluster(t *testing.T) {
 
 func TestFsmAdapter_Snapshot_ViaCluster(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/adapter-test/")
+	fsm := newKVFSM(store, "/raft/adapter-test")
 	snap, err := fsm.Snapshot()
 	assert.NoError(t, err)
 	assert.NotNil(t, snap)
@@ -1130,6 +1126,58 @@ func TestCluster_Close_Idempotent(t *testing.T) {
 	// Second close should return error
 	err = cl.Close()
 	assert.Equal(t, ErrAlreadyClosed, err)
+}
+
+func TestCluster_Apply_InvalidTimeout(t *testing.T) {
+	node := newTestNode(t)
+
+	cluster, err := New(node, "/raft/test-apply-timeout", testOptions()...)
+	require.NoError(t, err, "failed to create cluster")
+	defer cluster.Close()
+
+	// Wait for leader
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	require.NoError(t, cluster.WaitForLeader(ctx), "failed to wait for leader")
+
+	cmd := Command{
+		Type: CommandSet,
+		Set:  &SetCommand{Key: "test", Value: []byte("value")},
+	}
+	data, _ := cbor.Marshal(cmd)
+
+	// Test with timeout = 0 (should fail)
+	_, err = cluster.Apply(data, 0)
+	require.Error(t, err, "Apply with timeout=0 should fail")
+	require.ErrorIs(t, err, ErrInvalidTimeout, "should return ErrInvalidTimeout")
+
+	// Test with timeout < 0 (should fail)
+	_, err = cluster.Apply(data, -1*time.Second)
+	require.Error(t, err, "Apply with negative timeout should fail")
+	require.ErrorIs(t, err, ErrInvalidTimeout, "should return ErrInvalidTimeout")
+
+	// Test with timeout > MaxApplyTimeout (should fail)
+	_, err = cluster.Apply(data, MaxApplyTimeout+time.Second)
+	require.Error(t, err, "Apply with timeout > MaxApplyTimeout should fail")
+	require.ErrorIs(t, err, ErrInvalidTimeout, "should return ErrInvalidTimeout")
+
+	// Test with timeout = MaxApplyTimeout (should work)
+	_, err = cluster.Apply(data, MaxApplyTimeout)
+	require.NoError(t, err, "Apply with timeout at MaxApplyTimeout should succeed")
+
+	// Test with valid timeout (1 second, well within limit)
+	cmd2 := Command{
+		Type: CommandSet,
+		Set:  &SetCommand{Key: "test2", Value: []byte("value2")},
+	}
+	data2, _ := cbor.Marshal(cmd2)
+	_, err = cluster.Apply(data2, time.Second)
+	require.NoError(t, err, "Apply with valid timeout should succeed")
+
+	// Verify the value was set
+	val, found := cluster.Get("test2")
+	require.True(t, found, "key should be found")
+	require.Equal(t, []byte("value2"), val, "value should match")
 }
 
 func TestCluster_ApplyAsLeader(t *testing.T) {

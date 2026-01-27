@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/hashicorp/raft"
 	"github.com/libp2p/go-libp2p/core/network"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
@@ -13,7 +14,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func waitForConnected(t *testing.T, node Node, peerID peercore.ID, timeout time.Duration) error {
+func waitForConnected(t *testing.T, node taupeer.Node, peerID peercore.ID, timeout time.Duration) error {
 	ctx, cancel := context.WithTimeout(t.Context(), timeout)
 	defer cancel()
 
@@ -34,8 +35,8 @@ func waitForConnected(t *testing.T, node Node, peerID peercore.ID, timeout time.
 }
 
 // newTestNode creates a real libp2p node for testing
-func newTestNode(t *testing.T, bootstrapPeers ...peercore.AddrInfo) Node {
-	ctx, cancel := context.WithCancel(context.Background())
+func newTestNode(t *testing.T, bootstrapPeers ...peercore.AddrInfo) taupeer.Node {
+	ctx, cancel := context.WithCancel(t.Context())
 	t.Cleanup(cancel)
 
 	dir := t.TempDir()
@@ -139,7 +140,7 @@ func TestCluster_MultiNode_LeaderElection(t *testing.T) {
 	// Wait for peers to connect
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/multi-node-test"
+	namespace := "multi-node-test"
 
 	// First node bootstraps as leader
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -219,7 +220,7 @@ func TestCluster_MultiNode_SendToNonLeader(t *testing.T) {
 	// Wait for peers to connect
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/forward-test"
+	namespace := "forward-test"
 
 	// First node bootstraps as leader
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -280,7 +281,7 @@ func TestCluster_AutoBootstrapThenJoiners(t *testing.T) {
 		t.Skip("skipping integration test in short mode")
 	}
 
-	namespace := "/raft/autobootstrap-joiners"
+	namespace := "autobootstrap-joiners"
 
 	// Start node1 alone; it should auto-bootstrap after 1s with no peers.
 	node1 := newTestNode(t)
@@ -360,7 +361,7 @@ func TestCluster_MultiNode_DiscoverPeers(t *testing.T) {
 	// Wait for peers to connect
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/discover-test"
+	namespace := "discover-test"
 
 	// First node bootstraps as the leader
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -415,7 +416,7 @@ func TestCluster_MultiNode_StreamServiceForwarding(t *testing.T) {
 	// Wait for peers to connect
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/stream-forward-test"
+	namespace := "stream-forward-test"
 
 	// First node bootstraps as leader
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -472,7 +473,7 @@ func TestCluster_MultiNode_StreamServiceForwarding(t *testing.T) {
 	assert.Equal(t, string(val), "forwarded-value")
 
 	// Test Get from follower
-	val, found, err = client.Get("forwarded-key", followerCluster.node.ID())
+	val, found, err = client.Get("forwarded-key", 0, followerCluster.node.ID())
 	assert.NilError(t, err, "Get from follower should work")
 	assert.Assert(t, found, "key should be found via client")
 	assert.Equal(t, string(val), "forwarded-value")
@@ -507,7 +508,7 @@ func TestCluster_MultiNode_ClientOperations(t *testing.T) {
 	// Wait for peers to connect
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/client-ops-test"
+	namespace := "client-ops-test"
 
 	// First node bootstraps as leader
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -560,7 +561,7 @@ func TestCluster_MultiNode_ClientOperations(t *testing.T) {
 	defer client.Close()
 
 	// Test Get via client to leader
-	val, found, err = client.Get("key1", node1.ID())
+	val, found, err = client.Get("key1", 0, node1.ID())
 	assert.NilError(t, err, "Get via client should succeed")
 	assert.Assert(t, found, "key1 should be found via client")
 	assert.Equal(t, string(val), "value1")
@@ -578,15 +579,204 @@ func TestCluster_MultiNode_ClientOperations(t *testing.T) {
 	time.Sleep(500 * time.Millisecond)
 
 	// Verify deletion via client
-	_, found, err = client.Get("key1", node1.ID())
+	_, found, err = client.Get("key1", 0, node1.ID())
 	assert.NilError(t, err, "Get after delete should succeed")
 	assert.Assert(t, !found, "key1 should not be found after delete")
 
 	// key2 should still exist
-	val, found, err = client.Get("key2", node1.ID())
+	val, found, err = client.Get("key2", 0, node1.ID())
 	assert.NilError(t, err, "Get key2 should succeed")
 	assert.Assert(t, found, "key2 should still exist")
 	assert.Equal(t, string(val), "value2")
+}
+
+func TestCluster_MultiNode_ClientGetWithBarrier(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	node1 := newTestNode(t)
+	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
+
+	node2 := newTestNode(t, node1Info)
+
+	// Wait for peers to connect
+	time.Sleep(2 * time.Second)
+
+	namespace := "barrier-test"
+
+	// First node bootstraps as leader
+	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	assert.NilError(t, err, "failed to create cluster1")
+	defer cluster1.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	err = cluster1.WaitForLeader(ctx)
+	assert.NilError(t, err, "cluster1 failed to wait for leader")
+	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
+
+	// Second node joins
+	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
+	assert.NilError(t, err, "failed to create cluster2")
+	defer cluster2.Close()
+
+	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel2()
+
+	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	assert.NilError(t, err, "node2 failed to join as voter")
+
+	err = cluster2.WaitForLeader(ctx2)
+	assert.NilError(t, err, "cluster2 failed to wait for leader")
+
+	// Create client from node2 to test remote operations with barrier
+	client, err := NewClient(node2, namespace, nil)
+	assert.NilError(t, err, "failed to create client")
+	defer client.Close()
+
+	// Set a value via leader
+	err = cluster1.Set("barrier-test-key", []byte("barrier-test-value"), 5*time.Second)
+	assert.NilError(t, err, "Set to leader should succeed")
+
+	// Test Get without barrier - may return stale data on follower
+	val, found, err := client.Get("barrier-test-key", 0, node1.ID())
+	assert.NilError(t, err, "Get without barrier should succeed")
+	// Note: Without barrier, might not see the value immediately due to replication lag
+
+	// Test Get with barrier - should ensure consistency
+	barrierNs := int64(2 * time.Second.Nanoseconds())
+	val, found, err = client.Get("barrier-test-key", barrierNs, node1.ID())
+	assert.NilError(t, err, "Get with barrier should succeed")
+	assert.Assert(t, found, "key should be found with barrier")
+	assert.Equal(t, string(val), "barrier-test-value", "value should match")
+
+	// Set another value
+	err = cluster1.Set("barrier-test-key2", []byte("barrier-test-value2"), 5*time.Second)
+	assert.NilError(t, err, "Set second key should succeed")
+
+	// Get with barrier should see the new value
+	val, found, err = client.Get("barrier-test-key2", barrierNs, node1.ID())
+	assert.NilError(t, err, "Get with barrier should succeed")
+	assert.Assert(t, found, "key2 should be found with barrier")
+	assert.Equal(t, string(val), "barrier-test-value2", "value2 should match")
+
+	// Test Get with barrier at max timeout
+	maxBarrierNs := int64(MaxGetHandlerBarrierTimeout.Nanoseconds())
+	val, found, err = client.Get("barrier-test-key", maxBarrierNs, node1.ID())
+	assert.NilError(t, err, "Get with max barrier should succeed")
+	assert.Assert(t, found, "key should be found with max barrier")
+	assert.Equal(t, string(val), "barrier-test-value", "value should match")
+
+	// Test Get with invalid barrier (negative) - should fail before network call
+	_, _, err = client.Get("barrier-test-key", -1, node1.ID())
+	assert.Assert(t, err != nil, "Get with negative barrier should fail")
+	assert.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
+
+	// Test Get with invalid barrier (exceeds max) - should fail before network call
+	exceedsMaxBarrierNs := int64((MaxGetHandlerBarrierTimeout + time.Second).Nanoseconds())
+	_, _, err = client.Get("barrier-test-key", exceedsMaxBarrierNs, node1.ID())
+	assert.Assert(t, err != nil, "Get with barrier exceeding max should fail")
+	assert.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
+}
+
+func TestCluster_MultiNode_Apply_InvalidTimeout(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	node1 := newTestNode(t)
+	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
+
+	node2 := newTestNode(t, node1Info)
+
+	// Wait for peers to connect
+	time.Sleep(2 * time.Second)
+
+	namespace := "apply-timeout-test"
+
+	// First node bootstraps as leader
+	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
+	assert.NilError(t, err, "failed to create cluster1")
+	defer cluster1.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	err = cluster1.WaitForLeader(ctx)
+	assert.NilError(t, err, "cluster1 failed to wait for leader")
+	assert.Assert(t, cluster1.IsLeader(), "cluster1 should be leader")
+
+	// Second node joins
+	cluster2, err := New(node2, namespace, WithTimeouts(testTimeoutConfig()), WithBootstrapTimeout(500*time.Millisecond))
+	assert.NilError(t, err, "failed to create cluster2")
+	defer cluster2.Close()
+
+	ctx2, cancel2 := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancel2()
+
+	err = waitForMember(t, cluster1, node2.ID(), raft.Voter, 20*time.Second)
+	assert.NilError(t, err, "node2 failed to join as voter")
+
+	err = cluster2.WaitForLeader(ctx2)
+	assert.NilError(t, err, "cluster2 failed to wait for leader")
+
+	// Prepare a command
+	cmd := Command{
+		Type: CommandSet,
+		Set:  &SetCommand{Key: "apply-timeout-key", Value: []byte("apply-timeout-value")},
+	}
+	data, _ := cbor.Marshal(cmd)
+
+	// Test Apply with timeout = 0 on leader (should fail)
+	_, err = cluster1.Apply(data, 0)
+	assert.Assert(t, err != nil, "Apply with timeout=0 should fail")
+	assert.ErrorIs(t, err, ErrInvalidTimeout, "should return ErrInvalidTimeout")
+
+	// Test Apply with timeout < 0 on leader (should fail)
+	_, err = cluster1.Apply(data, -1*time.Second)
+	assert.Assert(t, err != nil, "Apply with negative timeout should fail")
+	assert.ErrorIs(t, err, ErrInvalidTimeout, "should return ErrInvalidTimeout")
+
+	// Test Apply with timeout > MaxApplyTimeout on leader (should fail)
+	_, err = cluster1.Apply(data, MaxApplyTimeout+time.Second)
+	assert.Assert(t, err != nil, "Apply with timeout > MaxApplyTimeout should fail")
+	assert.ErrorIs(t, err, ErrInvalidTimeout, "should return ErrInvalidTimeout")
+
+	// Test Apply with valid timeout on leader (should work)
+	cmd2 := Command{
+		Type: CommandSet,
+		Set:  &SetCommand{Key: "apply-timeout-key2", Value: []byte("apply-timeout-value2")},
+	}
+	data2, _ := cbor.Marshal(cmd2)
+	_, err = cluster1.Apply(data2, time.Second)
+	assert.NilError(t, err, "Apply with valid timeout should succeed")
+
+	// Wait for replication
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify the value was replicated to follower
+	val, found := cluster2.Get("apply-timeout-key2")
+	assert.Assert(t, found, "key should be found on follower")
+	assert.Equal(t, string(val), "apply-timeout-value2", "value should match")
+
+	// Test Apply with timeout = MaxApplyTimeout on leader (should work)
+	cmd3 := Command{
+		Type: CommandSet,
+		Set:  &SetCommand{Key: "apply-timeout-key3", Value: []byte("apply-timeout-value3")},
+	}
+	data3, _ := cbor.Marshal(cmd3)
+	_, err = cluster1.Apply(data3, MaxApplyTimeout)
+	assert.NilError(t, err, "Apply with timeout at MaxApplyTimeout should succeed")
+
+	// Wait for replication
+	time.Sleep(500 * time.Millisecond)
+
+	// Verify the value was replicated
+	val, found = cluster2.Get("apply-timeout-key3")
+	assert.Assert(t, found, "key3 should be found on follower")
+	assert.Equal(t, string(val), "apply-timeout-value3", "value3 should match")
 }
 
 // TestCluster_MultiCluster_SameNode tests that a single node can participate
@@ -599,9 +789,9 @@ func TestCluster_MultiCluster_SameNode(t *testing.T) {
 	// Create a single node that will join multiple clusters
 	node := newTestNode(t)
 
-	namespace1 := "/raft/cluster-alpha"
-	namespace2 := "/raft/cluster-beta"
-	namespace3 := "/raft/cluster-gamma"
+	namespace1 := "cluster-alpha"
+	namespace2 := "cluster-beta"
+	namespace3 := "cluster-gamma"
 
 	// Create three separate clusters on the SAME node with different namespaces
 	cluster1, err := New(node, namespace1, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -707,8 +897,8 @@ func TestCluster_MultiCluster_MultiNode(t *testing.T) {
 	// Wait for peers to connect
 	time.Sleep(2 * time.Second)
 
-	namespaceA := "/raft/service-A"
-	namespaceB := "/raft/service-B"
+	namespaceA := "service-A"
+	namespaceB := "service-B"
 
 	// Create cluster A on both nodes
 	clusterA1, err := New(node1, namespaceA, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -801,7 +991,7 @@ func TestCluster_RejoinAfterLeave(t *testing.T) {
 
 	time.Sleep(2 * time.Second)
 
-	namespace := "/raft/rejoin-test"
+	namespace := "rejoin-test"
 
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	assert.NilError(t, err, "failed to create cluster1")
@@ -864,7 +1054,7 @@ func TestCluster_DiscoveryBasedBootstrap(t *testing.T) {
 	assert.Assert(t, len(node1Peers) > 0, "node1 should have connected peers")
 	assert.Assert(t, len(node2Peers) > 0, "node2 should have connected peers")
 
-	namespace := "/raft/discovery-bootstrap-test"
+	namespace := "discovery-bootstrap-test"
 
 	// Use a bootstrap timeout that allows discovery and exchange to work
 	bootstrapTimeout := 3 * time.Second
@@ -967,7 +1157,7 @@ func TestCluster_ThreeNodes_SimultaneousStart(t *testing.T) {
 	err = waitForConnected(t, node2, node3.ID(), 30*time.Second)
 	assert.NilError(t, err, "node2 failed to connect to node3")
 
-	namespace := "/raft/three-node-simultaneous"
+	namespace := "three-node-simultaneous"
 	bootstrapTimeout := 3 * time.Second
 
 	var cluster1, cluster2, cluster3 Cluster
@@ -1078,7 +1268,7 @@ func TestCluster_LeaderCrashAndFailover(t *testing.T) {
 	err = waitForConnected(t, node2, node3.ID(), 30*time.Second)
 	assert.NilError(t, err, "node2 failed to connect to node3")
 
-	namespace := "/raft/leader-crash-failover"
+	namespace := "leader-crash-failover"
 
 	// Node1 bootstraps as leader
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -1213,7 +1403,7 @@ func TestCluster_NodeRebootWithDataPersistence(t *testing.T) {
 	err = waitForConnected(t, node2, node3.ID(), 30*time.Second)
 	assert.NilError(t, err, "node2 failed to connect to node3")
 
-	namespace := "/raft/node-reboot-persistence"
+	namespace := "node-reboot-persistence"
 
 	// Node1 bootstraps as leader
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
@@ -1349,7 +1539,7 @@ func TestCluster_StaggeredConcurrentStartup(t *testing.T) {
 	err = waitForConnected(t, node2, node3.ID(), 30*time.Second)
 	assert.NilError(t, err, "node2 failed to connect to node3")
 
-	namespace := "/raft/staggered-startup"
+	namespace := "staggered-startup"
 	bootstrapTimeout := 3 * time.Second
 
 	var cluster1, cluster2, cluster3 Cluster
@@ -1492,7 +1682,7 @@ func TestCluster_LeaderRebootAndRejoin(t *testing.T) {
 	err = waitForConnected(t, node2, node3.ID(), 30*time.Second)
 	assert.NilError(t, err, "node2 failed to connect to node3")
 
-	namespace := "/raft/leader-reboot-rejoin"
+	namespace := "leader-reboot-rejoin"
 
 	// Node1 bootstraps as leader
 	cluster1, err := New(node1, namespace, WithTimeouts(testTimeoutConfig()), WithForceBootstrap())

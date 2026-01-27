@@ -7,16 +7,7 @@ import (
 
 	"github.com/hashicorp/raft"
 	"github.com/libp2p/go-libp2p/core/peer"
-	taupeer "github.com/taubyte/tau/p2p/peer"
 )
-
-// Node is an alias to the tau peer.Node interface
-type Node = taupeer.Node
-
-// MockNode creates a mock node for testing
-func MockNode(ctx context.Context) Node {
-	return taupeer.Mock(ctx)
-}
 
 // Cluster represents a Raft consensus cluster
 type Cluster interface {
@@ -48,6 +39,7 @@ type Cluster interface {
 
 	// Apply submits raw bytes to be replicated (for custom FSM)
 	// Returns ErrNotLeader if not leader
+	// Timeout must be > 0 and <= MaxApplyTimeout, otherwise returns ErrInvalidTimeout
 	Apply(cmd []byte, timeout time.Duration) (FSMResponse, error)
 
 	// Barrier ensures all preceding operations are committed

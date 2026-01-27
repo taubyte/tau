@@ -34,7 +34,11 @@ const (
 	keyStartTime = "start"
 	keySeenAt    = "seenAt"
 	keyPeer      = "peer"
+	keyBarrier   = "barrier"
 )
+
+// MaxGetHandlerBarrierTimeout is the maximum barrier timeout for Get operations
+const MaxGetHandlerBarrierTimeout = 30 * time.Second
 
 type raftStreamService struct {
 	cluster          *cluster
@@ -167,6 +171,39 @@ func (s *raftStreamService) handleGet(ctx context.Context, conn streams.Connecti
 	key, ok := body[keyKey].(string)
 	if !ok {
 		return nil, fmt.Errorf("missing or invalid key")
+	}
+
+	// Handle barrier if present
+	if barrierVal, ok := body[keyBarrier]; ok {
+		var barrierNs int64
+		switch v := barrierVal.(type) {
+		case int64:
+			barrierNs = v
+		case uint64:
+			barrierNs = int64(v)
+		case float64:
+			barrierNs = int64(v)
+		case int:
+			barrierNs = int64(v)
+		case uint:
+			barrierNs = int64(v)
+		case int32:
+			barrierNs = int64(v)
+		case uint32:
+			barrierNs = int64(v)
+		default:
+			return nil, ErrInvalidBarrier
+		}
+		if barrierNs <= 0 {
+			return nil, ErrInvalidBarrier
+		}
+		barrierTimeout := time.Duration(barrierNs) * time.Nanosecond
+		if barrierTimeout > MaxGetHandlerBarrierTimeout {
+			return nil, ErrInvalidBarrier
+		}
+		if err := s.cluster.Barrier(barrierTimeout); err != nil {
+			return nil, fmt.Errorf("barrier failed: %w", err)
+		}
 	}
 
 	val, found := s.cluster.Get(key)

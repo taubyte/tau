@@ -19,7 +19,7 @@ func newTestStore() datastore.Batching {
 
 func TestKVFSM_Apply_Set(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	cmd := Command{
 		Type: CommandSet,
@@ -53,7 +53,7 @@ func TestKVFSM_Apply_Set(t *testing.T) {
 
 func TestKVFSM_Apply_Delete(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// First set a value
 	setCmd := Command{
@@ -93,7 +93,7 @@ func TestKVFSM_Apply_Delete(t *testing.T) {
 
 func TestKVFSM_Apply_InvalidCommand(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// Invalid CBOR data
 	log := &raft.Log{Data: []byte("invalid"), Index: 1}
@@ -109,7 +109,7 @@ func TestKVFSM_Apply_InvalidCommand(t *testing.T) {
 
 func TestKVFSM_Apply_UnknownCommandType(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	cmd := Command{
 		Type: CommandType(99), // Unknown type
@@ -128,7 +128,7 @@ func TestKVFSM_Apply_UnknownCommandType(t *testing.T) {
 
 func TestKVFSM_Apply_SetWithNilPayload(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	cmd := Command{
 		Type: CommandSet,
@@ -148,7 +148,7 @@ func TestKVFSM_Apply_SetWithNilPayload(t *testing.T) {
 
 func TestKVFSM_Get_NotFound(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	val, ok := fsm.Get("nonexistent")
 	if ok {
@@ -161,7 +161,7 @@ func TestKVFSM_Get_NotFound(t *testing.T) {
 
 func TestKVFSM_Keys(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// Add some keys
 	keys := []string{"config/a", "config/b", "data/x"}
@@ -189,7 +189,7 @@ func TestKVFSM_Keys(t *testing.T) {
 
 func TestKVFSM_Snapshot_Restore(t *testing.T) {
 	store1 := newTestStore()
-	fsm1 := newKVFSM(store1, "/raft/test/")
+	fsm1 := newKVFSM(store1, "/raft/test")
 
 	// Add some data
 	for i, key := range []string{"key1", "key2", "key3"} {
@@ -216,7 +216,7 @@ func TestKVFSM_Snapshot_Restore(t *testing.T) {
 
 	// Restore to new FSM
 	store2 := newTestStore()
-	fsm2 := newKVFSM(store2, "/raft/test/")
+	fsm2 := newKVFSM(store2, "/raft/test")
 
 	if err := fsm2.Restore(io.NopCloser(&buf)); err != nil {
 		t.Fatalf("failed to restore snapshot: %v", err)
@@ -308,7 +308,7 @@ func TestKVSnapshot_Release(t *testing.T) {
 
 func TestFsmAdapter_Apply(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	cmd := Command{
 		Type: CommandSet,
@@ -337,7 +337,7 @@ func TestFsmAdapter_Apply(t *testing.T) {
 
 func TestFsmAdapter_Snapshot(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// Set some data
 	cmd := Command{
@@ -358,7 +358,7 @@ func TestFsmAdapter_Snapshot(t *testing.T) {
 
 func TestFsmAdapter_Restore(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// Create snapshot data
 	snapshotData := map[string][]byte{
@@ -386,7 +386,7 @@ func TestFsmAdapter_Restore(t *testing.T) {
 
 func TestKVFSM_Restore_EmptyStore(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// First add some data
 	cmd := Command{
@@ -411,7 +411,7 @@ func TestKVFSM_Restore_EmptyStore(t *testing.T) {
 
 func TestNewKVFSM(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	if fsm == nil {
 		t.Fatal("expected non-nil FSM")
@@ -423,14 +423,14 @@ func TestNewKVFSM(t *testing.T) {
 	if kvFSM.store != store {
 		t.Error("expected store to be set")
 	}
-	if kvFSM.prefix != "/raft/test/" {
-		t.Errorf("expected prefix '/raft/test/', got '%s'", kvFSM.prefix)
+	if kvFSM.prefix != "/raft/test" {
+		t.Errorf("expected prefix '/raft/test', got '%s'", kvFSM.prefix)
 	}
 }
 
 func TestKVFSM_DataKey(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	kvFSM, ok := fsm.(*kvFSM)
 	if !ok {
@@ -447,7 +447,7 @@ func TestKVFSM_DataKey(t *testing.T) {
 
 func TestKVFSM_Concurrent(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	done := make(chan bool)
 
@@ -478,7 +478,7 @@ func TestKVFSM_Concurrent(t *testing.T) {
 
 func TestKVFSM_Apply_DeleteWithNilPayload(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	cmd := Command{
 		Type:   CommandDelete,
@@ -524,7 +524,7 @@ func TestKVSnapshot_Persist_Success(t *testing.T) {
 
 func TestKVFSM_Keys_Empty(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	keys := fsm.Keys("")
 	if len(keys) != 0 {
@@ -534,7 +534,7 @@ func TestKVFSM_Keys_Empty(t *testing.T) {
 
 func TestKVFSM_Restore_InvalidCBOR(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	err := fsm.Restore(io.NopCloser(bytes.NewReader([]byte("invalid cbor"))))
 	if err == nil {
@@ -598,7 +598,7 @@ func TestKVSnapshot_Persist_WriteError(t *testing.T) {
 
 func TestKVFSM_Keys_Error(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// Get keys with no data
 	keys := fsm.Keys("nonexistent/")
@@ -609,7 +609,7 @@ func TestKVFSM_Keys_Error(t *testing.T) {
 
 func TestKVFSM_Multiple_Set_Delete(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// Set multiple keys
 	for i := 0; i < 10; i++ {
@@ -669,7 +669,7 @@ func newTestContext() context.Context {
 
 func TestKVFSM_Keys_EmptyPrefix(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// Add some keys
 	for i := 0; i < 3; i++ {
@@ -690,7 +690,7 @@ func TestKVFSM_Keys_EmptyPrefix(t *testing.T) {
 
 func TestKVFSM_Keys_NoMatch(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// Add some keys
 	cmd := Command{
@@ -747,7 +747,7 @@ func TestKVSnapshot_Release_Nil(t *testing.T) {
 
 func TestKVFSM_Restore_WithExistingData(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// First add multiple keys
 	for _, key := range []string{"key1", "key2", "key3"} {
@@ -797,7 +797,7 @@ func TestKVFSM_Restore_WithExistingData(t *testing.T) {
 
 func TestKVFSM_SnapshotAndRestore_RoundTrip(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test/")
+	fsm := newKVFSM(store, "/raft/test")
 
 	// Set up some data
 	testData := map[string]string{
@@ -830,7 +830,7 @@ func TestKVFSM_SnapshotAndRestore_RoundTrip(t *testing.T) {
 
 	// Create new FSM and restore
 	store2 := newTestStore()
-	fsm2 := newKVFSM(store2, "/raft/test2/")
+	fsm2 := newKVFSM(store2, "/raft/test2")
 
 	if err := fsm2.Restore(io.NopCloser(bytes.NewReader(buf.Bytes()))); err != nil {
 		t.Fatalf("failed to restore: %v", err)

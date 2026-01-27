@@ -520,7 +520,7 @@ func TestCluster_WithEncryption(t *testing.T) {
 		return
 	}
 
-	val, found, err := client.Get("enc-key", node.ID())
+	val, found, err := client.Get("enc-key", 0, node.ID())
 	if err == nil && found {
 		assert.Equal(t, string(val), "enc-value")
 	}
