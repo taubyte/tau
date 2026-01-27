@@ -257,7 +257,7 @@ func TestSnapshotStore_CreateListOpen(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	snapStore, err := NewSnapshotStore(dir, 3)
+	snapStore, err := newSnapshotStore(dir, 3)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}
@@ -341,7 +341,7 @@ func TestSnapshotStore_Reap(t *testing.T) {
 	defer os.RemoveAll(dir)
 
 	// Retain only 2 snapshots
-	snapStore, err := NewSnapshotStore(dir, 2)
+	snapStore, err := newSnapshotStore(dir, 2)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestSnapshotSink_Cancel(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	snapStore, err := NewSnapshotStore(dir, 3)
+	snapStore, err := newSnapshotStore(dir, 3)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}
@@ -440,7 +440,7 @@ func TestSnapshotSink_ID(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	snapStore, err := NewSnapshotStore(dir, 3)
+	snapStore, err := newSnapshotStore(dir, 3)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}
@@ -465,7 +465,7 @@ func TestSnapshotStore_List_EmptyDir(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	snapStore, err := NewSnapshotStore(dir, 3)
+	snapStore, err := newSnapshotStore(dir, 3)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}
@@ -493,7 +493,7 @@ func TestSnapshotSink_Close_Twice(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	snapStore, err := NewSnapshotStore(dir, 3)
+	snapStore, err := newSnapshotStore(dir, 3)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}
@@ -520,7 +520,7 @@ func TestSnapshotSink_Cancel_Twice(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	snapStore, err := NewSnapshotStore(dir, 3)
+	snapStore, err := newSnapshotStore(dir, 3)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}
@@ -546,7 +546,7 @@ func TestSnapshotSink_Write_ThenClose(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	snapStore, err := NewSnapshotStore(dir, 3)
+	snapStore, err := newSnapshotStore(dir, 3)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}
@@ -638,7 +638,7 @@ func TestSnapshotStore_Open_NotFound(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	snapStore, err := NewSnapshotStore(dir, 3)
+	snapStore, err := newSnapshotStore(dir, 3)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}
@@ -657,7 +657,7 @@ func TestSnapshotStore_List_CorruptedMeta(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	snapStore, err := NewSnapshotStore(dir, 3)
+	snapStore, err := newSnapshotStore(dir, 3)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}
@@ -772,7 +772,7 @@ func TestLogStore_FirstLastIndex_AfterStoring(t *testing.T) {
 func TestNewSnapshotStore_InvalidDir(t *testing.T) {
 	// Try to create snapshot store in an invalid path
 	// Use /dev/null which is not a directory
-	_, err := NewSnapshotStore("/dev/null/invalid-path", 3)
+	_, err := newSnapshotStore("/dev/null/invalid-path", 3)
 	if err == nil {
 		t.Error("expected error for invalid directory")
 	}
@@ -785,7 +785,7 @@ func TestSnapshotStore_Create_AndVerify(t *testing.T) {
 	}
 	defer os.RemoveAll(dir)
 
-	snapStore, err := NewSnapshotStore(dir, 3)
+	snapStore, err := newSnapshotStore(dir, 3)
 	if err != nil {
 		t.Fatalf("failed to create snapshot store: %v", err)
 	}

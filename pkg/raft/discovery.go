@@ -23,7 +23,6 @@ func newPeerTracker(selfID peer.ID) *peerTracker {
 		startTime: time.Now(),
 		peers:     make(map[peer.ID]time.Duration),
 	}
-	// Self is always a founding member
 	pt.peers[selfID] = 0
 	return pt
 }
@@ -57,7 +56,7 @@ func (pt *peerTracker) mergePeers(theirStart time.Time, theirPeers map[string]in
 		theirSeenAt := theirStart.Add(time.Duration(theirMs) * time.Millisecond)
 		ourEquivalent := theirSeenAt.Sub(pt.startTime)
 		if ourEquivalent < 0 {
-			ourEquivalent = 0 // They saw it before we started
+			ourEquivalent = 0
 		}
 
 		existing, exists := pt.peers[pid]
@@ -95,7 +94,6 @@ func (pt *peerTracker) getFoundingMembers(threshold time.Duration) []peer.ID {
 		}
 	}
 
-	// Sort for deterministic order
 	sort.Slice(founders, func(i, j int) bool {
 		return founders[i].String() < founders[j].String()
 	})
@@ -107,18 +105,16 @@ func (pt *peerTracker) isLateJoiner(threshold time.Duration) bool {
 	pt.mu.RLock()
 	defer pt.mu.RUnlock()
 
-	// If we only know about ourselves, we're a founder
 	if len(pt.peers) <= 1 {
 		return false
 	}
 
-	// Check if we discovered any peers before threshold
 	for pid, seenAt := range pt.peers {
 		if pid == pt.selfID {
 			continue
 		}
 		if seenAt <= threshold {
-			return false // We saw someone early, we're a founder
+			return false
 		}
 	}
 	return true
@@ -152,15 +148,12 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 			return
 
 		case <-ticker.C:
-			// First, check already-connected peers from the host's peer store
-			// This works even without DHT discovery
 			for _, pid := range host.Network().Peers() {
 				if pid != c.node.ID() {
 					pt.addPeer(pid)
 				}
 			}
 
-			// Discover new peers via libp2p discovery (DHT, etc.)
 			if discovery != nil {
 				discoverCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 				peerCh, err := discovery.FindPeers(discoverCtx, c.namespace)
@@ -172,14 +165,12 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 				cancel()
 			}
 
-			// Exchange with all known peers using our raft client
 			if c.raftClient != nil {
 				for _, pid := range pt.allPeers() {
 					startTime, peersMap := pt.getPeersMap()
 					theirStart, theirPeers, err := c.raftClient.ExchangePeers(startTime, peersMap, pid)
 					if err == nil {
 						newPeers := pt.mergePeers(theirStart, theirPeers)
-						// Dial newly discovered peers so we can exchange with them
 						for _, newPeer := range newPeers {
 							c.dialPeer(ctx, newPeer)
 						}
@@ -190,9 +181,7 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 	}
 }
 
-// dialPeer attempts to connect to a peer
 func (c *cluster) dialPeer(ctx context.Context, pid peer.ID) {
-	// Use the node's host to connect
 	peerInfo := peer.AddrInfo{ID: pid}
 	_ = c.node.Peer().Connect(ctx, peerInfo)
 }

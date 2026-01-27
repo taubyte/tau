@@ -235,8 +235,8 @@ type fileSnapshotStore struct {
 	mu     sync.Mutex
 }
 
-// NewSnapshotStore creates a new file-based snapshot store
-func NewSnapshotStore(dir string, retain int) (*fileSnapshotStore, error) {
+// newSnapshotStore creates a new file-based snapshot store
+func newSnapshotStore(dir string, retain int) (*fileSnapshotStore, error) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return nil, err
 	}
@@ -332,7 +332,6 @@ func (f *fileSnapshotStore) List() ([]*raft.SnapshotMeta, error) {
 		})
 	}
 
-	// Sort by index descending
 	sort.Slice(snapshots, func(i, j int) bool {
 		return snapshots[i].Index > snapshots[j].Index
 	})
@@ -418,7 +417,6 @@ func (s *fileSnapshotSink) Close() error {
 		return err
 	}
 
-	// Cleanup old snapshots
 	return s.store.reap()
 }
 

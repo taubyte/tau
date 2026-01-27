@@ -5,22 +5,6 @@ import (
 	"time"
 )
 
-func TestDefaultConfig(t *testing.T) {
-	cfg := defaultConfig("/raft/test")
-
-	if cfg.namespace != "/raft/test" {
-		t.Errorf("expected namespace /raft/test, got %s", cfg.namespace)
-	}
-
-	if cfg.timeoutPreset != PresetRegional {
-		t.Errorf("expected preset regional, got %s", cfg.timeoutPreset)
-	}
-
-	if cfg.discoveryConfig.DiscoveryInterval != 30*time.Second {
-		t.Errorf("expected discovery interval 30s, got %v", cfg.discoveryConfig.DiscoveryInterval)
-	}
-}
-
 func TestGetTimeoutConfig_Presets(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -50,11 +34,12 @@ func TestGetTimeoutConfig_Presets(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			cfg := defaultConfig("/raft/test")
-			cfg.timeoutPreset = tt.preset
-			cfg.timeoutConfig = presetConfigs[tt.preset]
+			c := &cluster{
+				timeoutPreset: tt.preset,
+				timeoutConfig: presetConfigs[tt.preset],
+			}
 
-			result := cfg.getTimeoutConfig()
+			result := c.getTimeoutConfig()
 
 			if result.HeartbeatTimeout != tt.expectedHeartbeat {
 				t.Errorf("expected heartbeat %v, got %v", tt.expectedHeartbeat, result.HeartbeatTimeout)
@@ -67,17 +52,18 @@ func TestGetTimeoutConfig_Presets(t *testing.T) {
 }
 
 func TestGetTimeoutConfig_Custom(t *testing.T) {
-	cfg := defaultConfig("/raft/test")
-	cfg.timeoutConfig = TimeoutConfig{
-		HeartbeatTimeout:   100 * time.Millisecond,
-		ElectionTimeout:    200 * time.Millisecond,
-		CommitTimeout:      50 * time.Millisecond,
-		LeaderLeaseTimeout: 50 * time.Millisecond,
-		SnapshotInterval:   1 * time.Minute,
-		SnapshotThreshold:  1000,
+	c := &cluster{
+		timeoutConfig: TimeoutConfig{
+			HeartbeatTimeout:   100 * time.Millisecond,
+			ElectionTimeout:    200 * time.Millisecond,
+			CommitTimeout:      50 * time.Millisecond,
+			LeaderLeaseTimeout: 50 * time.Millisecond,
+			SnapshotInterval:   1 * time.Minute,
+			SnapshotThreshold:  1000,
+		},
 	}
 
-	result := cfg.getTimeoutConfig()
+	result := c.getTimeoutConfig()
 
 	if result.HeartbeatTimeout != 100*time.Millisecond {
 		t.Errorf("expected custom heartbeat 100ms, got %v", result.HeartbeatTimeout)
@@ -106,13 +92,12 @@ func TestPresetConfigs_AllPresetsExist(t *testing.T) {
 }
 
 func TestGetTimeoutConfig_Fallback(t *testing.T) {
-	// Test with unknown preset
-	cfg := &config{
+	c := &cluster{
 		timeoutPreset: TimeoutPreset("unknown"),
 		timeoutConfig: TimeoutConfig{}, // Zero values
 	}
 
-	result := cfg.getTimeoutConfig()
+	result := c.getTimeoutConfig()
 
 	// Should fallback to regional
 	if result.HeartbeatTimeout != 5*time.Second {
@@ -121,16 +106,17 @@ func TestGetTimeoutConfig_Fallback(t *testing.T) {
 }
 
 func TestGetTimeoutConfig_CustomOverridesPreset(t *testing.T) {
-	cfg := defaultConfig("/raft/test")
-	cfg.timeoutPreset = PresetGlobal
-	cfg.timeoutConfig = TimeoutConfig{
-		HeartbeatTimeout:   999 * time.Millisecond,
-		ElectionTimeout:    888 * time.Millisecond,
-		CommitTimeout:      777 * time.Millisecond,
-		LeaderLeaseTimeout: 666 * time.Millisecond,
+	c := &cluster{
+		timeoutPreset: PresetGlobal,
+		timeoutConfig: TimeoutConfig{
+			HeartbeatTimeout:   999 * time.Millisecond,
+			ElectionTimeout:    888 * time.Millisecond,
+			CommitTimeout:      777 * time.Millisecond,
+			LeaderLeaseTimeout: 666 * time.Millisecond,
+		},
 	}
 
-	result := cfg.getTimeoutConfig()
+	result := c.getTimeoutConfig()
 
 	// Custom values should be used
 	if result.HeartbeatTimeout != 999*time.Millisecond {

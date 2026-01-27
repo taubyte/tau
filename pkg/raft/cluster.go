@@ -2,9 +2,9 @@ package raft
 
 import (
 	"context"
+	"crypto/cipher"
 	"errors"
 	"fmt"
-	"io"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -21,24 +21,25 @@ const (
 	defaultRetainSnapshots = 3
 )
 
-// cluster implements the Cluster interface
 type cluster struct {
 	node      Node
 	namespace string
-	cfg       *config
 
-	raft     *raft.Raft
-	fsm      *kvFSM
-	logStore *datastoreLogStore
-	stable   *datastoreStableStore
-	snaps    *fileSnapshotStore
-	tracker  *peerTracker
+	timeoutPreset      TimeoutPreset
+	timeoutConfig      TimeoutConfig
+	forceBootstrap     bool
+	bootstrapTimeout   time.Duration
+	bootstrapThreshold float64
+	encryptionCipher   cipher.AEAD
 
-	// Stream service for handling p2p commands
+	raft          *raft.Raft
+	fsm           FSM
+	logStore      *datastoreLogStore
+	stable        *datastoreStableStore
+	snaps         *fileSnapshotStore
+	tracker       *peerTracker
 	streamService *raftStreamService
-
-	// Client for forwarding to leader
-	raftClient *Client
+	raftClient    *Client // for forwarding to leader
 
 	leaderCh chan bool
 	closed   atomic.Bool
@@ -56,16 +57,21 @@ func New(node Node, namespace string, opts ...Option) (Cluster, error) {
 		return nil, fmt.Errorf("%w: namespace must start with /raft/", ErrInvalidNamespace)
 	}
 
-	cfg := defaultConfig(namespace)
-	for _, opt := range opts {
-		opt(cfg)
+	c := &cluster{
+		node:               node,
+		namespace:          namespace,
+		timeoutPreset:      PresetRegional,
+		timeoutConfig:      presetConfigs[PresetRegional],
+		forceBootstrap:     false,
+		bootstrapTimeout:   10 * time.Second,
+		bootstrapThreshold: 0.8,
+		leaderCh:           make(chan bool, 1),
 	}
 
-	c := &cluster{
-		node:      node,
-		namespace: namespace,
-		cfg:       cfg,
-		leaderCh:  make(chan bool, 1),
+	for _, opt := range opts {
+		if err := opt(c); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := c.initialize(); err != nil {
@@ -75,79 +81,51 @@ func New(node Node, namespace string, opts ...Option) (Cluster, error) {
 	return c, nil
 }
 
-// initialize sets up all the Raft components
 func (c *cluster) initialize() error {
 	store := c.node.Store()
 	prefix := c.namespace + "/"
 
-	// Create storage backends
 	c.logStore = NewLogStore(store, prefix+"log/")
 	c.stable = NewStableStore(store, prefix+"stable/")
 
-	// Create snapshot store (file-based for simplicity)
-	// Use a subdirectory under the node's context
 	snapDir := filepath.Join("/tmp", "tau-raft-snapshots", strings.ReplaceAll(c.namespace, "/", "_"))
 	var err error
-	c.snaps, err = NewSnapshotStore(snapDir, defaultRetainSnapshots)
+	c.snaps, err = newSnapshotStore(snapDir, defaultRetainSnapshots)
 	if err != nil {
 		return fmt.Errorf("failed to create snapshot store: %w", err)
 	}
 
-	// Create FSM
-	if c.cfg.customFSM != nil {
-		// Wrap custom FSM
-		c.fsm = nil // Custom FSM path - not using built-in kvFSM
-	} else {
-		c.fsm = NewKVFSM(store, prefix)
-	}
+	c.fsm = newKVFSM(store, prefix)
 
-	// Create Raft configuration
 	raftConfig := c.buildRaftConfig()
 
-	// Create transport
 	transport, err := c.createTransport()
 	if err != nil {
 		return fmt.Errorf("failed to create transport: %w", err)
 	}
 
-	// Create the Raft instance
-	var fsmToUse raft.FSM
-	if c.cfg.customFSM != nil {
-		fsmToUse = &fsmAdapter{fsm: c.cfg.customFSM}
-	} else {
-		fsmToUse = &fsmAdapter{fsm: c.fsm}
-	}
-
-	c.raft, err = raft.NewRaft(raftConfig, fsmToUse, c.logStore, c.stable, c.snaps, transport)
+	c.raft, err = raft.NewRaft(raftConfig, c.fsm, c.logStore, c.stable, c.snaps, transport)
 	if err != nil {
 		return fmt.Errorf("failed to create raft: %w", err)
 	}
 
-	// Create raft client for forwarding to leader
-	c.raftClient, err = NewClient(c.node, c.namespace)
+	c.raftClient, err = NewClient(c.node, c.namespace, c.encryptionCipher)
 	if err != nil {
 		return fmt.Errorf("failed to create raft client: %w", err)
 	}
 
-	// Create tracker before stream service since handlers use it
 	c.tracker = newPeerTracker(c.node.ID())
 
-	// Create stream service for handling p2p commands
 	c.streamService, err = newStreamService(c)
 	if err != nil {
 		return fmt.Errorf("failed to create stream service: %w", err)
 	}
 
-	// Handle bootstrap - autonomous discovery-first approach
 	if err := c.handleBootstrap(raftConfig, transport); err != nil {
 		return fmt.Errorf("failed to bootstrap: %w", err)
 	}
 
-	// Start leader monitoring
 	go c.monitorLeadership()
-
-	// Start peer discovery (for ongoing membership changes)
-	go c.discoverPeers()
 
 	return nil
 }
@@ -158,36 +136,26 @@ func (c *cluster) initialize() error {
 // 3. Peers discovered before threshold (80%) = founding members → bootstrap together
 // 4. Peers discovered after threshold = late joiners → wait for leader to add them
 func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transport) error {
-	// Force bootstrap - skip discovery, single-node cluster
-	if c.cfg.forceBootstrap {
+	if c.forceBootstrap {
 		return c.bootstrapSelf(raftConfig, transport)
 	}
 
-	// Run discovery and exchange for the full timeout
-	ctx, cancel := context.WithTimeout(c.node.Context(), c.cfg.bootstrapTimeout)
+	ctx, cancel := context.WithTimeout(c.node.Context(), c.bootstrapTimeout)
 	defer cancel()
 
-	// Run discovery in background
 	go c.tracker.runDiscoveryAndExchange(ctx, c)
 
-	// Wait for timeout
 	<-ctx.Done()
 
-	// Calculate threshold (e.g., 80% of timeout = founding members cutoff)
-	threshold := time.Duration(float64(c.cfg.bootstrapTimeout) * c.cfg.bootstrapThreshold)
+	threshold := time.Duration(float64(c.bootstrapTimeout) * c.bootstrapThreshold)
 
-	// Check if we're a late joiner
 	if c.tracker.isLateJoiner(threshold) {
-		// We discovered all peers after threshold - we're late
-		// Don't bootstrap; request to be added as voter via stream.
 		c.requestVoterJoin(5 * time.Second)
 		return nil
 	}
 
-	// Get founding members (peers discovered before threshold)
 	founders := c.tracker.getFoundingMembers(threshold)
 
-	// If we can join an existing cluster, do so and skip bootstrapping.
 	if len(founders) > 1 {
 		joined, noLeader := c.tryJoinExistingCluster(founders, 5*time.Second)
 		if joined {
@@ -214,7 +182,6 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 			}
 		}
 
-		// Only self - bootstrap as single node
 		if err := c.bootstrapSelf(raftConfig, transport); err != nil {
 			if err == raft.ErrCantBootstrap {
 				c.requestVoterJoin(5 * time.Second)
@@ -225,8 +192,7 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 		return nil
 	}
 
-	// Bootstrap with all founding members
-	if err := c.bootstrapWithPeers(raftConfig, transport, founders); err != nil {
+	if err := c.bootstrapWithPeers(transport, founders); err != nil {
 		if err == raft.ErrCantBootstrap {
 			c.requestVoterJoin(5 * time.Second)
 			return nil
@@ -237,8 +203,7 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 }
 
 // bootstrapWithPeers bootstraps a cluster with the agreed-upon peer list
-func (c *cluster) bootstrapWithPeers(raftConfig *raft.Config, transport raft.Transport, peers []peer.ID) error {
-	// Build server list from agreed peers
+func (c *cluster) bootstrapWithPeers(transport raft.Transport, peers []peer.ID) error {
 	servers := make([]raft.Server, 0, len(peers))
 
 	for _, p := range peers {
@@ -255,18 +220,15 @@ func (c *cluster) bootstrapWithPeers(raftConfig *raft.Config, transport raft.Tra
 		})
 	}
 
-	configuration := raft.Configuration{Servers: servers}
-
-	f := c.raft.BootstrapCluster(configuration)
+	f := c.raft.BootstrapCluster(raft.Configuration{Servers: servers})
 	if err := f.Error(); err != nil {
 		return err
 	}
 	return nil
 }
 
-// bootstrapSelf creates a new single-node cluster
 func (c *cluster) bootstrapSelf(raftConfig *raft.Config, transport raft.Transport) error {
-	configuration := raft.Configuration{
+	f := c.raft.BootstrapCluster(raft.Configuration{
 		Servers: []raft.Server{
 			{
 				ID:       raftConfig.LocalID,
@@ -274,20 +236,18 @@ func (c *cluster) bootstrapSelf(raftConfig *raft.Config, transport raft.Transpor
 				Suffrage: raft.Voter,
 			},
 		},
-	}
-	f := c.raft.BootstrapCluster(configuration)
+	})
 	if err := f.Error(); err != nil {
 		return err
 	}
 	return nil
 }
 
-// buildRaftConfig creates the Raft configuration
 func (c *cluster) buildRaftConfig() *raft.Config {
 	cfg := raft.DefaultConfig()
 	cfg.LocalID = raft.ServerID(c.node.ID().String())
 
-	timeouts := c.cfg.getTimeoutConfig()
+	timeouts := c.getTimeoutConfig()
 	cfg.HeartbeatTimeout = timeouts.HeartbeatTimeout
 	cfg.ElectionTimeout = timeouts.ElectionTimeout
 	cfg.CommitTimeout = timeouts.CommitTimeout
@@ -298,17 +258,25 @@ func (c *cluster) buildRaftConfig() *raft.Config {
 	return cfg
 }
 
-// createTransport creates the namespace-aware libp2p-based Raft transport
+func (c *cluster) getTimeoutConfig() TimeoutConfig {
+	if c.timeoutConfig.HeartbeatTimeout > 0 {
+		return c.timeoutConfig
+	}
+	if cfg, ok := presetConfigs[c.timeoutPreset]; ok {
+		return cfg
+	}
+	return presetConfigs[PresetRegional]
+}
+
 func (c *cluster) createTransport() (raft.Transport, error) {
-	timeout := c.cfg.getTimeoutConfig().HeartbeatTimeout
-	transport, err := newNamespaceTransport(c.node.Peer(), c.namespace, timeout)
+	timeout := c.getTimeoutConfig().HeartbeatTimeout
+	transport, err := newNamespaceTransport(c.node.Peer(), c.namespace, timeout, c.encryptionCipher)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create namespace transport: %w", err)
 	}
 	return transport, nil
 }
 
-// monitorLeadership watches for leadership changes
 func (c *cluster) monitorLeadership() {
 	for {
 		select {
@@ -316,7 +284,6 @@ func (c *cluster) monitorLeadership() {
 			select {
 			case c.leaderCh <- isLeader:
 			default:
-				// Channel full, skip
 			}
 		case <-c.node.Context().Done():
 			return
@@ -324,58 +291,11 @@ func (c *cluster) monitorLeadership() {
 	}
 }
 
-// discoverPeers discovers and adds peers from libp2p discovery
-func (c *cluster) discoverPeers() {
-	ctx := c.node.Context()
-	discovery := c.node.Discovery()
-	if discovery == nil {
-		return
-	}
-
-	ticker := time.NewTicker(c.cfg.discoveryConfig.DiscoveryInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			if c.closed.Load() {
-				return
-			}
-
-			// Find peers advertising the same namespace
-			peerCh, err := discovery.FindPeers(ctx, c.namespace)
-			if err != nil {
-				continue
-			}
-
-			for p := range peerCh {
-				if p.ID == c.node.ID() {
-					continue // Skip self
-				}
-				c.addPeer(p.ID)
-			}
-
-		case <-ctx.Done():
-			return
-		}
-	}
-}
-
-// addPeer adds a discovered peer to the cluster
-func (c *cluster) addPeer(peerID peer.ID) {
-	if !c.IsLeader() {
-		return // Only leader can add peers
-	}
-
-	// NOTE: do not auto-add during discovery; joiners request via stream.
-}
-
 func (c *cluster) requestVoterJoin(timeout time.Duration) {
 	if c.raftClient == nil || c.tracker == nil {
 		return
 	}
 
-	// NOTE: join safeguards and retry tuning to be added.
 	go func() {
 		ctx, cancel := context.WithTimeout(c.node.Context(), 10*time.Second)
 		defer cancel()
@@ -406,7 +326,6 @@ func (c *cluster) tryJoinExistingCluster(peers []peer.ID, timeout time.Duration)
 		return false, false
 	}
 
-	// NOTE: join safeguards to be added.
 	ctx, cancel := context.WithTimeout(c.node.Context(), 2*time.Second)
 	defer cancel()
 
@@ -498,12 +417,10 @@ func (c *cluster) Close() error {
 	return nil
 }
 
-// Namespace returns the cluster namespace
 func (c *cluster) Namespace() string {
 	return c.namespace
 }
 
-// Set stores a key-value pair
 func (c *cluster) Set(key string, value []byte, timeout time.Duration) error {
 	if c.closed.Load() {
 		return ErrShutdown
@@ -534,7 +451,6 @@ func (c *cluster) Set(key string, value []byte, timeout time.Duration) error {
 	return nil
 }
 
-// Get retrieves a value by key
 func (c *cluster) Get(key string) ([]byte, bool) {
 	if c.closed.Load() {
 		return nil, false
@@ -547,7 +463,6 @@ func (c *cluster) Get(key string) ([]byte, bool) {
 	return c.fsm.Get(key)
 }
 
-// Delete removes a key
 func (c *cluster) Delete(key string, timeout time.Duration) error {
 	if c.closed.Load() {
 		return ErrShutdown
@@ -578,7 +493,6 @@ func (c *cluster) Delete(key string, timeout time.Duration) error {
 	return nil
 }
 
-// Keys returns all keys matching a prefix
 func (c *cluster) Keys(prefix string) []string {
 	if c.closed.Load() {
 		return []string{}
@@ -595,7 +509,6 @@ func (c *cluster) Keys(prefix string) []string {
 	return keys
 }
 
-// Apply submits raw bytes to be replicated
 func (c *cluster) Apply(cmd []byte, timeout time.Duration) (FSMResponse, error) {
 	if c.closed.Load() {
 		return FSMResponse{}, ErrShutdown
@@ -621,7 +534,6 @@ func (c *cluster) Apply(cmd []byte, timeout time.Duration) (FSMResponse, error) 
 	return FSMResponse{}, nil
 }
 
-// Barrier ensures all preceding operations are committed
 func (c *cluster) Barrier(timeout time.Duration) error {
 	if c.closed.Load() {
 		return ErrShutdown
@@ -630,7 +542,6 @@ func (c *cluster) Barrier(timeout time.Duration) error {
 	return c.raft.Barrier(timeout).Error()
 }
 
-// IsLeader returns true if this node is the current leader
 func (c *cluster) IsLeader() bool {
 	if c.closed.Load() {
 		return false
@@ -639,7 +550,6 @@ func (c *cluster) IsLeader() bool {
 	return c.raft.State() == raft.Leader
 }
 
-// Leader returns the peer ID of the current leader
 func (c *cluster) Leader() (peer.ID, error) {
 	if c.closed.Load() {
 		return "", ErrShutdown
@@ -653,7 +563,6 @@ func (c *cluster) Leader() (peer.ID, error) {
 	return peer.Decode(string(addr))
 }
 
-// State returns the current Raft state
 func (c *cluster) State() raft.RaftState {
 	if c.closed.Load() {
 		return raft.Shutdown
@@ -662,7 +571,6 @@ func (c *cluster) State() raft.RaftState {
 	return c.raft.State()
 }
 
-// WaitForLeader blocks until a leader is elected
 func (c *cluster) WaitForLeader(ctx context.Context) error {
 	if c.closed.Load() {
 		return ErrShutdown
@@ -686,7 +594,6 @@ func (c *cluster) WaitForLeader(ctx context.Context) error {
 	}
 }
 
-// Members returns all cluster members
 func (c *cluster) Members() ([]Member, error) {
 	if c.closed.Load() {
 		return nil, ErrShutdown
@@ -713,7 +620,6 @@ func (c *cluster) Members() ([]Member, error) {
 	return members, nil
 }
 
-// AddVoter adds a peer as a voting member of the cluster
 func (c *cluster) AddVoter(id peer.ID, timeout time.Duration) error {
 	if c.closed.Load() {
 		return ErrShutdown
@@ -734,7 +640,7 @@ func (c *cluster) AddVoter(id peer.ID, timeout time.Duration) error {
 
 	for _, server := range configFuture.Configuration().Servers {
 		if server.ID == serverID {
-			return nil // Already a member
+			return nil
 		}
 	}
 
@@ -745,7 +651,6 @@ func (c *cluster) AddVoter(id peer.ID, timeout time.Duration) error {
 	return nil
 }
 
-// RemoveServer removes a node from the cluster
 func (c *cluster) RemoveServer(id peer.ID, timeout time.Duration) error {
 	if c.closed.Load() {
 		return ErrShutdown
@@ -760,7 +665,6 @@ func (c *cluster) RemoveServer(id peer.ID, timeout time.Duration) error {
 	return future.Error()
 }
 
-// TransferLeadership transfers leadership to another node
 func (c *cluster) TransferLeadership() error {
 	if c.closed.Load() {
 		return ErrShutdown
@@ -769,32 +673,6 @@ func (c *cluster) TransferLeadership() error {
 	return c.raft.LeadershipTransfer().Error()
 }
 
-// LeaderCh returns a channel that signals leadership changes
 func (c *cluster) LeaderCh() <-chan bool {
 	return c.leaderCh
-}
-
-// fsmAdapter adapts our FSM interface to raft.FSM
-type fsmAdapter struct {
-	fsm interface {
-		Apply(log *raft.Log) FSMResponse
-		Snapshot() (FSMSnapshot, error)
-		Restore(io.ReadCloser) error
-	}
-}
-
-func (a *fsmAdapter) Apply(log *raft.Log) interface{} {
-	return a.fsm.Apply(log)
-}
-
-func (a *fsmAdapter) Snapshot() (raft.FSMSnapshot, error) {
-	snap, err := a.fsm.Snapshot()
-	if err != nil {
-		return nil, err
-	}
-	return snap, nil
-}
-
-func (a *fsmAdapter) Restore(rc io.ReadCloser) error {
-	return a.fsm.Restore(rc)
 }

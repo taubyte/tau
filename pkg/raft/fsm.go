@@ -48,8 +48,8 @@ type kvFSM struct {
 	mu     sync.RWMutex
 }
 
-// NewKVFSM creates a new key-value FSM using the given datastore
-func NewKVFSM(store datastore.Batching, prefix string) *kvFSM {
+// newKVFSM creates a new key-value FSM using the given datastore
+func newKVFSM(store datastore.Batching, prefix string) FSM {
 	return &kvFSM{
 		store:  store,
 		prefix: prefix,
@@ -61,8 +61,8 @@ func (f *kvFSM) dataKey(key string) datastore.Key {
 	return datastore.NewKey(f.prefix + "data/" + key)
 }
 
-// Apply implements FSM.Apply
-func (f *kvFSM) Apply(log *raft.Log) FSMResponse {
+// Apply implements raft.FSM.Apply
+func (f *kvFSM) Apply(log *raft.Log) interface{} {
 	var cmd Command
 	if err := cbor.Unmarshal(log.Data, &cmd); err != nil {
 		return FSMResponse{Error: ErrInvalidCommand}
@@ -93,12 +93,11 @@ func (f *kvFSM) Apply(log *raft.Log) FSMResponse {
 	}
 }
 
-// Snapshot implements FSM.Snapshot
-func (f *kvFSM) Snapshot() (FSMSnapshot, error) {
+// Snapshot implements raft.FSM.Snapshot
+func (f *kvFSM) Snapshot() (raft.FSMSnapshot, error) {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	// Query all keys with our data prefix
 	prefix := f.prefix + "data/"
 	results, err := f.store.Query(context.Background(), query.Query{
 		Prefix: prefix,
@@ -108,13 +107,11 @@ func (f *kvFSM) Snapshot() (FSMSnapshot, error) {
 	}
 	defer results.Close()
 
-	// Collect all data
 	data := make(map[string][]byte)
 	for result := range results.Next() {
 		if result.Error != nil {
 			return nil, result.Error
 		}
-		// Strip the prefix to get the user key
 		key := strings.TrimPrefix(result.Key, prefix)
 		data[key] = result.Value
 	}
@@ -163,7 +160,6 @@ func (f *kvFSM) Restore(snapshot io.ReadCloser) error {
 	}
 	results.Close()
 
-	// Restore data
 	for key, value := range restored {
 		if err := f.store.Put(ctx, f.dataKey(key), value); err != nil {
 			return err
@@ -190,8 +186,6 @@ func (f *kvFSM) Keys(prefix string) []string {
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	// Query all data keys, then filter by prefix
-	// (pebble prefix queries work on path boundaries, not partial strings)
 	dataPrefix := f.prefix + "data/"
 	results, err := f.store.Query(context.Background(), query.Query{
 		Prefix:   dataPrefix,
@@ -208,7 +202,6 @@ func (f *kvFSM) Keys(prefix string) []string {
 			break
 		}
 		key := strings.TrimPrefix(result.Key, dataPrefix)
-		// Apply user's prefix filter
 		if prefix == "" || strings.HasPrefix(key, prefix) {
 			keys = append(keys, key)
 		}
@@ -216,12 +209,12 @@ func (f *kvFSM) Keys(prefix string) []string {
 	return keys
 }
 
-// kvSnapshot implements FSMSnapshot
+// kvSnapshot implements raft.FSMSnapshot
 type kvSnapshot struct {
 	data map[string][]byte
 }
 
-// Persist implements FSMSnapshot.Persist
+// Persist implements raft.FSMSnapshot.Persist
 func (s *kvSnapshot) Persist(sink raft.SnapshotSink) error {
 	data, err := cbor.Marshal(s.data)
 	if err != nil {
@@ -237,7 +230,7 @@ func (s *kvSnapshot) Persist(sink raft.SnapshotSink) error {
 	return sink.Close()
 }
 
-// Release implements FSMSnapshot.Release
+// Release implements raft.FSMSnapshot.Release
 func (s *kvSnapshot) Release() {}
 
 // encodeSetCommand encodes a set command

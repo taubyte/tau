@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"crypto/cipher"
 	"fmt"
 	"path"
 	"time"
@@ -15,10 +16,8 @@ import (
 
 const (
 	// ProtocolRaftPrefix is the prefix for raft stream protocols
-	// Full protocol: /raft/v1/<namespace>
 	ProtocolRaftPrefix = "/raft/v1"
 
-	// Command names
 	cmdSet           = "set"
 	cmdGet           = "get"
 	cmdDelete        = "delete"
@@ -26,7 +25,6 @@ const (
 	cmdExchangePeers = "exchangePeers"
 	cmdJoinVoter     = "joinVoter"
 
-	// Body keys
 	keyKey       = "key"
 	keyValue     = "value"
 	keyPrefix    = "prefix"
@@ -38,23 +36,20 @@ const (
 	keyPeer      = "peer"
 )
 
-// streamService wraps the cluster with a command service for p2p operations
 type raftStreamService struct {
-	cluster *cluster
-	service streamService.CommandService
+	cluster          *cluster
+	service          streamService.CommandService
+	encryptionCipher cipher.AEAD
 }
 
-// Protocol returns the full protocol path for a namespace (for stream commands)
 func Protocol(namespace string) string {
 	return path.Join(ProtocolRaftPrefix, namespace)
 }
 
-// TransportProtocol returns the protocol path for Raft transport RPC
 func TransportProtocol(namespace string) string {
 	return path.Join(ProtocolRaftPrefix, namespace, "transport")
 }
 
-// newStreamService creates a stream service for handling raft commands
 func newStreamService(c *cluster) (*raftStreamService, error) {
 	protocol := Protocol(c.namespace)
 
@@ -64,11 +59,11 @@ func newStreamService(c *cluster) (*raftStreamService, error) {
 	}
 
 	ss := &raftStreamService{
-		cluster: c,
-		service: service,
+		cluster:          c,
+		service:          service,
+		encryptionCipher: c.encryptionCipher,
 	}
 
-	// Register command handlers
 	if err := service.Define(cmdSet, ss.handleSet); err != nil {
 		service.Stop()
 		return nil, fmt.Errorf("failed to define set handler: %w", err)
@@ -99,13 +94,11 @@ func newStreamService(c *cluster) (*raftStreamService, error) {
 		return nil, fmt.Errorf("failed to define joinVoter handler: %w", err)
 	}
 
-	// Start accepting connections after all handlers are registered
 	service.Start()
 
 	return ss, nil
 }
 
-// stop stops the stream service
 func (s *raftStreamService) stop() {
 	if s.service != nil {
 		s.service.Stop()
@@ -114,6 +107,14 @@ func (s *raftStreamService) stop() {
 
 // handleSet handles set requests - forwards to leader if not leader
 func (s *raftStreamService) handleSet(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+	if s.encryptionCipher != nil {
+		decryptedBody, err := decryptBody(body, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting body: %w", err)
+		}
+		body = decryptedBody
+	}
+
 	key, ok := body[keyKey].(string)
 	if !ok {
 		return nil, fmt.Errorf("missing or invalid key")
@@ -121,7 +122,6 @@ func (s *raftStreamService) handleSet(ctx context.Context, conn streams.Connecti
 
 	value, ok := body[keyValue].([]byte)
 	if !ok {
-		// Try string conversion
 		if strVal, ok := body[keyValue].(string); ok {
 			value = []byte(strVal)
 		} else {
@@ -134,34 +134,68 @@ func (s *raftStreamService) handleSet(ctx context.Context, conn streams.Connecti
 		timeout = time.Duration(timeoutVal) * time.Millisecond
 	}
 
-	// If we're the leader, apply directly
 	if s.cluster.IsLeader() {
 		if err := s.cluster.Set(key, value, timeout); err != nil {
 			return nil, err
 		}
-		return cr.Response{"success": true}, nil
+		resp := cr.Response{"success": true}
+
+		if s.encryptionCipher != nil {
+			encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
+			if err != nil {
+				return nil, fmt.Errorf("encrypting response: %w", err)
+			}
+			resp = encryptedResp
+		}
+
+		return resp, nil
 	}
 
-	// Forward to leader
 	return s.forwardToLeader(cmdSet, body)
 }
 
 // handleGet handles get requests - reads from local state
 func (s *raftStreamService) handleGet(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+	if s.encryptionCipher != nil {
+		decryptedBody, err := decryptBody(body, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting body: %w", err)
+		}
+		body = decryptedBody
+	}
+
 	key, ok := body[keyKey].(string)
 	if !ok {
 		return nil, fmt.Errorf("missing or invalid key")
 	}
 
 	val, found := s.cluster.Get(key)
-	return cr.Response{
+	resp := cr.Response{
 		keyValue: val,
 		keyFound: found,
-	}, nil
+	}
+
+	if s.encryptionCipher != nil {
+		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("encrypting response: %w", err)
+		}
+		resp = encryptedResp
+	}
+
+	return resp, nil
 }
 
 // handleDelete handles delete requests - forwards to leader if not leader
 func (s *raftStreamService) handleDelete(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+	if s.encryptionCipher != nil {
+		decryptedBody, err := decryptBody(body, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting body: %w", err)
+		}
+		body = decryptedBody
+	}
+
 	key, ok := body[keyKey].(string)
 	if !ok {
 		return nil, fmt.Errorf("missing or invalid key")
@@ -172,20 +206,36 @@ func (s *raftStreamService) handleDelete(ctx context.Context, conn streams.Conne
 		timeout = time.Duration(timeoutVal) * time.Millisecond
 	}
 
-	// If we're the leader, apply directly
 	if s.cluster.IsLeader() {
 		if err := s.cluster.Delete(key, timeout); err != nil {
 			return nil, err
 		}
-		return cr.Response{"success": true}, nil
+		resp := cr.Response{"success": true}
+
+		if s.encryptionCipher != nil {
+			encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
+			if err != nil {
+				return nil, fmt.Errorf("encrypting response: %w", err)
+			}
+			resp = encryptedResp
+		}
+
+		return resp, nil
 	}
 
-	// Forward to leader
 	return s.forwardToLeader(cmdDelete, body)
 }
 
 // handleKeys handles keys requests - reads from local state
 func (s *raftStreamService) handleKeys(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+	if s.encryptionCipher != nil {
+		decryptedBody, err := decryptBody(body, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting body: %w", err)
+		}
+		body = decryptedBody
+	}
+
 	prefix := ""
 	if prefixVal, ok := body[keyPrefix].(string); ok {
 		prefix = prefixVal
@@ -195,9 +245,19 @@ func (s *raftStreamService) handleKeys(ctx context.Context, conn streams.Connect
 	if keys == nil {
 		keys = []string{}
 	}
-	return cr.Response{
+	resp := cr.Response{
 		keyKeys: keys,
-	}, nil
+	}
+
+	if s.encryptionCipher != nil {
+		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("encrypting response: %w", err)
+		}
+		resp = encryptedResp
+	}
+
+	return resp, nil
 }
 
 // forwardToLeader forwards a command to the current leader
@@ -207,7 +267,6 @@ func (s *raftStreamService) forwardToLeader(cmd string, body command.Body) (cr.R
 		return nil, ErrNoLeader
 	}
 
-	// Use the cluster's raft client to forward
 	if s.cluster.raftClient == nil {
 		return nil, fmt.Errorf("raft client not initialized")
 	}
@@ -215,42 +274,60 @@ func (s *raftStreamService) forwardToLeader(cmd string, body command.Body) (cr.R
 	return s.cluster.raftClient.Send(cmd, body, leader)
 }
 
-// handleExchangePeers handles peer list exchange during bootstrap
 func (s *raftStreamService) handleExchangePeers(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+	if s.encryptionCipher != nil {
+		decryptedBody, err := decryptBody(body, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting body: %w", err)
+		}
+		body = decryptedBody
+	}
+
 	tracker := s.cluster.tracker
 
-	// Get their data
 	theirStart := time.UnixMilli(toInt64(body[keyStartTime]))
 
-	// Merge their peers into ours and dial any new ones
 	if theirSeenAt, ok := body[keySeenAt].(map[string]interface{}); ok {
 		theirPeers := make(map[string]int64)
 		for k, v := range theirSeenAt {
 			theirPeers[k] = toInt64(v)
 		}
 		newPeers := tracker.mergePeers(theirStart, theirPeers)
-		// Dial newly discovered peers in background
 		for _, newPeer := range newPeers {
 			s.cluster.dialPeer(ctx, newPeer)
 		}
 	}
 
-	// Also add the sender if connection is available
 	if conn != nil {
 		tracker.addPeer(conn.RemotePeer())
 	}
 
-	// Return our peer list
 	ourStart, ourPeers := tracker.getPeersMap()
-	return cr.Response{
+	resp := cr.Response{
 		keyStartTime: ourStart.UnixMilli(),
 		keySeenAt:    ourPeers,
-	}, nil
+	}
+
+	if s.encryptionCipher != nil {
+		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("encrypting response: %w", err)
+		}
+		resp = encryptedResp
+	}
+
+	return resp, nil
 }
 
-// handleJoinVoter adds the requester as a voting member.
-// NOTE: join safeguards to be added.
 func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+	if s.encryptionCipher != nil {
+		decryptedBody, err := decryptBody(body, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting body: %w", err)
+		}
+		body = decryptedBody
+	}
+
 	timeout := 5 * time.Second
 	if timeoutVal, ok := body[keyTimeout].(float64); ok {
 		timeout = time.Duration(timeoutVal) * time.Millisecond
@@ -265,7 +342,17 @@ func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Co
 		if err := s.cluster.AddVoter(peerID, timeout); err != nil {
 			return nil, err
 		}
-		return cr.Response{"success": true}, nil
+		resp := cr.Response{"success": true}
+
+		if s.encryptionCipher != nil {
+			encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
+			if err != nil {
+				return nil, fmt.Errorf("encrypting response: %w", err)
+			}
+			resp = encryptedResp
+		}
+
+		return resp, nil
 	}
 
 	leaderCtx, cancel := context.WithTimeout(ctx, 2*time.Second)

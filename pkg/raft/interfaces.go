@@ -92,28 +92,19 @@ type Member struct {
 	Suffrage raft.ServerSuffrage
 }
 
-// FSM is the finite state machine interface
+// FSM is the finite state machine interface that embeds raft.FSM and includes KV operations
 type FSM interface {
-	// Apply is invoked when a log entry is committed
-	Apply(log *raft.Log) FSMResponse
-
-	// Snapshot creates a point-in-time snapshot
-	Snapshot() (FSMSnapshot, error)
-
-	// Restore rebuilds from a snapshot
-	Restore(snapshot io.ReadCloser) error
+	raft.FSM
+	// Get retrieves a value by key from local committed state
+	Get(key string) ([]byte, bool)
+	// Keys returns all keys matching a prefix
+	Keys(prefix string) []string
 }
 
 // FSMResponse is the typed response from FSM.Apply
 type FSMResponse struct {
 	Error error
 	Data  []byte
-}
-
-// FSMSnapshot for creating snapshots
-type FSMSnapshot interface {
-	Persist(sink raft.SnapshotSink) error
-	Release()
 }
 
 // LogStore abstracts Raft log storage

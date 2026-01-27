@@ -827,15 +827,12 @@ func TestCluster_Delete_NotFound(t *testing.T) {
 func TestCluster_FSM_Nil_CustomFSM(t *testing.T) {
 	node := newMockNode(t)
 
-	// Create a custom FSM that doesn't do anything
-	mockFSM := &mockCustomFSM{}
-
-	opts := append(testOptions(), WithFSM(mockFSM))
-	cl, err := New(node, "/raft/test", opts...)
-	require.NoError(t, err, "failed to create cluster with custom FSM")
+	// Test that default FSM works
+	cl, err := New(node, "/raft/test", testOptions()...)
+	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// With custom FSM, Get/Keys should return nil/empty
+	// Default FSM should work
 	val, found := cl.Get("test")
 	assert.False(t, found)
 	assert.Nil(t, val)
@@ -847,16 +844,24 @@ func TestCluster_FSM_Nil_CustomFSM(t *testing.T) {
 // mockCustomFSM is a minimal FSM for testing custom FSM path
 type mockCustomFSM struct{}
 
-func (m *mockCustomFSM) Apply(log *raft.Log) FSMResponse {
+func (m *mockCustomFSM) Apply(log *raft.Log) interface{} {
 	return FSMResponse{}
 }
 
-func (m *mockCustomFSM) Snapshot() (FSMSnapshot, error) {
+func (m *mockCustomFSM) Snapshot() (raft.FSMSnapshot, error) {
 	return &mockSnapshot{}, nil
 }
 
 func (m *mockCustomFSM) Restore(rc io.ReadCloser) error {
 	return nil
+}
+
+func (m *mockCustomFSM) Get(key string) ([]byte, bool) {
+	return nil, false
+}
+
+func (m *mockCustomFSM) Keys(prefix string) []string {
+	return []string{}
 }
 
 type mockSnapshot struct{}
@@ -913,8 +918,7 @@ func TestCluster_Get_NotFound(t *testing.T) {
 
 func TestFsmAdapter_Apply_ViaCluster(t *testing.T) {
 	store := newTestStore()
-	fsm := NewKVFSM(store, "/raft/adapter-test/")
-	adapter := &fsmAdapter{fsm: fsm}
+	fsm := newKVFSM(store, "/raft/adapter-test/")
 
 	// Create a valid set command
 	cmd := Command{
@@ -925,7 +929,7 @@ func TestFsmAdapter_Apply_ViaCluster(t *testing.T) {
 	require.NoError(t, err)
 
 	log := &raft.Log{Data: data, Index: 1}
-	resp := adapter.Apply(log)
+	resp := fsm.Apply(log)
 
 	fsmResp, ok := resp.(FSMResponse)
 	assert.True(t, ok)
@@ -939,10 +943,8 @@ func TestFsmAdapter_Apply_ViaCluster(t *testing.T) {
 
 func TestFsmAdapter_Snapshot_ViaCluster(t *testing.T) {
 	store := newTestStore()
-	fsm := NewKVFSM(store, "/raft/adapter-test/")
-	adapter := &fsmAdapter{fsm: fsm}
-
-	snap, err := adapter.Snapshot()
+	fsm := newKVFSM(store, "/raft/adapter-test/")
+	snap, err := fsm.Snapshot()
 	assert.NoError(t, err)
 	assert.NotNil(t, snap)
 }

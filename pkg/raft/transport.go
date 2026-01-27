@@ -2,6 +2,7 @@ package raft
 
 import (
 	"context"
+	"crypto/cipher"
 	"errors"
 	"fmt"
 	"io"
@@ -20,7 +21,6 @@ import (
 
 var raftTransportLogger = logging.Logger("raft-transport")
 
-// HcLogToLogger implements github.com/hashicorp/go-hclog for Raft transport
 type hcLogToLogger struct {
 	extraArgs []interface{}
 	name      string
@@ -127,18 +127,14 @@ func (log *hcLogToLogger) ImpliedArgs() []interface{} {
 	return nil
 }
 
-// namespaceStreamLayer implements raft.StreamLayer using namespace-specific protocols
-// This allows multiple clusters on the same node without interference
 type namespaceStreamLayer struct {
-	host     host.Host
-	protocol protocol.ID
-	listener net.Listener
+	host             host.Host
+	protocol         protocol.ID
+	listener         net.Listener
+	encryptionCipher cipher.AEAD
 }
 
-// newNamespaceStreamLayer creates a new stream layer with namespace-specific protocol
-func newNamespaceStreamLayer(h host.Host, namespace string) (*namespaceStreamLayer, error) {
-	// Use namespace-specific protocol for Raft RPC
-	// This ensures different clusters don't interfere
+func newNamespaceStreamLayer(h host.Host, namespace string, encryptionCipher cipher.AEAD) (*namespaceStreamLayer, error) {
 	protocolID := protocol.ID(TransportProtocol(namespace))
 
 	listener, err := gostream.Listen(h, protocolID)
@@ -147,13 +143,13 @@ func newNamespaceStreamLayer(h host.Host, namespace string) (*namespaceStreamLay
 	}
 
 	return &namespaceStreamLayer{
-		host:     h,
-		protocol: protocolID,
-		listener: listener,
+		host:             h,
+		protocol:         protocolID,
+		listener:         listener,
+		encryptionCipher: encryptionCipher,
 	}, nil
 }
 
-// Dial opens a connection to the target peer using namespace-specific protocol
 func (sl *namespaceStreamLayer) Dial(address raft.ServerAddress, timeout time.Duration) (net.Conn, error) {
 	if sl.host == nil {
 		return nil, errors.New("streamLayer not initialized")
@@ -166,44 +162,53 @@ func (sl *namespaceStreamLayer) Dial(address raft.ServerAddress, timeout time.Du
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return gostream.Dial(ctx, sl.host, pid, sl.protocol)
-}
-
-// Accept accepts incoming connections
-func (sl *namespaceStreamLayer) Accept() (net.Conn, error) {
-	return sl.listener.Accept()
-}
-
-// Addr returns the listener's address
-func (sl *namespaceStreamLayer) Addr() net.Addr {
-	return sl.listener.Addr()
-}
-
-// Close closes the listener
-func (sl *namespaceStreamLayer) Close() error {
-	return sl.listener.Close()
-}
-
-// namespaceAddrProvider provides server addresses
-type namespaceAddrProvider struct {
-}
-
-// ServerAddr takes a raft.ServerID and returns it as a ServerAddress
-func (ap *namespaceAddrProvider) ServerAddr(id raft.ServerID) (raft.ServerAddress, error) {
-	return raft.ServerAddress(id), nil
-}
-
-// newNamespaceTransport creates a namespace-aware Raft transport
-func newNamespaceTransport(h host.Host, namespace string, timeout time.Duration) (*raft.NetworkTransport, error) {
-	provider := &namespaceAddrProvider{}
-	stream, err := newNamespaceStreamLayer(h, namespace)
+	conn, err := gostream.Dial(ctx, sl.host, pid, sl.protocol)
 	if err != nil {
 		return nil, err
 	}
 
-	// Configuration for raft.NetworkTransport initialized with our namespace-specific StreamLayer
-	// MaxPool is set to 0 so the NetworkTransport does not pool connections.
-	// We are multiplexing streams over an already created Libp2p connection, which is cheap.
+	if sl.encryptionCipher != nil {
+		return newEncryptedConn(conn, sl.encryptionCipher)
+	}
+
+	return conn, nil
+}
+
+func (sl *namespaceStreamLayer) Accept() (net.Conn, error) {
+	conn, err := sl.listener.Accept()
+	if err != nil {
+		return nil, err
+	}
+
+	if sl.encryptionCipher != nil {
+		return newEncryptedConn(conn, sl.encryptionCipher)
+	}
+
+	return conn, nil
+}
+
+func (sl *namespaceStreamLayer) Addr() net.Addr {
+	return sl.listener.Addr()
+}
+
+func (sl *namespaceStreamLayer) Close() error {
+	return sl.listener.Close()
+}
+
+type namespaceAddrProvider struct {
+}
+
+func (ap *namespaceAddrProvider) ServerAddr(id raft.ServerID) (raft.ServerAddress, error) {
+	return raft.ServerAddress(id), nil
+}
+
+func newNamespaceTransport(h host.Host, namespace string, timeout time.Duration, encryptionCipher cipher.AEAD) (*raft.NetworkTransport, error) {
+	provider := &namespaceAddrProvider{}
+	stream, err := newNamespaceStreamLayer(h, namespace, encryptionCipher)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &raft.NetworkTransportConfig{
 		ServerAddressProvider: provider,
 		Logger:                &hcLogToLogger{},

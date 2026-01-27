@@ -43,29 +43,6 @@ type TimeoutConfig struct {
 	SnapshotThreshold uint64
 }
 
-// DiscoveryConfig allows tuning discovery behavior
-type DiscoveryConfig struct {
-	// DiscoveryInterval is how often to search for new peers
-	// Default: 30s
-	DiscoveryInterval time.Duration
-}
-
-// config holds the internal configuration for a cluster
-type config struct {
-	namespace       string
-	timeoutPreset   TimeoutPreset
-	timeoutConfig   TimeoutConfig
-	discoveryConfig DiscoveryConfig
-	customFSM       FSM
-
-	// Bootstrap behavior:
-	// - forceBootstrap=true: bootstrap immediately as single-node cluster (skip discovery)
-	// - forceBootstrap=false (default): discover peers first, auto-bootstrap only if none found
-	forceBootstrap     bool
-	bootstrapTimeout   time.Duration // Total discovery time
-	bootstrapThreshold float64       // Fraction of timeout for founding members (0.0-1.0)
-}
-
 // presetConfigs maps presets to their timeout configurations
 var presetConfigs = map[TimeoutPreset]TimeoutConfig{
 	PresetLocal: {
@@ -92,30 +69,4 @@ var presetConfigs = map[TimeoutPreset]TimeoutConfig{
 		SnapshotInterval:   10 * time.Minute,
 		SnapshotThreshold:  32768,
 	},
-}
-
-// defaultConfig returns the default configuration
-func defaultConfig(namespace string) *config {
-	return &config{
-		namespace:     namespace,
-		timeoutPreset: PresetRegional,
-		timeoutConfig: presetConfigs[PresetRegional],
-		discoveryConfig: DiscoveryConfig{
-			DiscoveryInterval: 30 * time.Second,
-		},
-		forceBootstrap:     false,            // Default: discover first, auto-bootstrap if no peers
-		bootstrapTimeout:   10 * time.Second, // Total discovery time
-		bootstrapThreshold: 0.8,              // 80% = founding members, after = late joiners
-	}
-}
-
-// getTimeoutConfig returns the effective timeout configuration
-func (c *config) getTimeoutConfig() TimeoutConfig {
-	if c.timeoutConfig.HeartbeatTimeout > 0 {
-		return c.timeoutConfig
-	}
-	if cfg, ok := presetConfigs[c.timeoutPreset]; ok {
-		return cfg
-	}
-	return presetConfigs[PresetRegional]
 }

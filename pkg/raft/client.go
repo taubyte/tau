@@ -1,6 +1,7 @@
 package raft
 
 import (
+	"crypto/cipher"
 	"fmt"
 	"time"
 
@@ -10,13 +11,13 @@ import (
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 )
 
-// Client is a p2p client for communicating with raft cluster nodes
 type Client struct {
 	*streamClient.Client
+	encryptionCipher cipher.AEAD
 }
 
 // NewClient creates a new raft p2p client for the given namespace
-func NewClient(node Node, namespace string) (*Client, error) {
+func NewClient(node Node, namespace string, encryptionCipher cipher.AEAD) (*Client, error) {
 	protocol := Protocol(namespace)
 
 	client, err := streamClient.New(node, protocol)
@@ -25,11 +26,11 @@ func NewClient(node Node, namespace string) (*Client, error) {
 	}
 
 	return &Client{
-		Client: client,
+		Client:           client,
+		encryptionCipher: encryptionCipher,
 	}, nil
 }
 
-// Set sends a set command to the specified peers (or discovers peers if none specified)
 func (c *Client) Set(key string, value []byte, timeout time.Duration, peers ...peer.ID) error {
 	body := command.Body{
 		keyKey:     key,
@@ -37,9 +38,25 @@ func (c *Client) Set(key string, value []byte, timeout time.Duration, peers ...p
 		keyTimeout: float64(timeout.Milliseconds()),
 	}
 
+	if c.encryptionCipher != nil {
+		encryptedBody, err := encryptBody(body, c.encryptionCipher)
+		if err != nil {
+			return fmt.Errorf("encrypting body: %w", err)
+		}
+		body = encryptedBody
+	}
+
 	resp, err := c.Send(cmdSet, body, peers...)
 	if err != nil {
 		return fmt.Errorf("set failed: %w", err)
+	}
+
+	if c.encryptionCipher != nil {
+		decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
+		if err != nil {
+			return fmt.Errorf("decrypting response: %w", err)
+		}
+		resp = decryptedResp
 	}
 
 	if errMsg, err := resp.Get("error"); err == nil && errMsg != nil {
@@ -49,15 +66,30 @@ func (c *Client) Set(key string, value []byte, timeout time.Duration, peers ...p
 	return nil
 }
 
-// Get sends a get command to retrieve a value
 func (c *Client) Get(key string, peers ...peer.ID) ([]byte, bool, error) {
 	body := command.Body{
 		keyKey: key,
 	}
 
+	if c.encryptionCipher != nil {
+		encryptedBody, err := encryptBody(body, c.encryptionCipher)
+		if err != nil {
+			return nil, false, fmt.Errorf("encrypting body: %w", err)
+		}
+		body = encryptedBody
+	}
+
 	resp, err := c.Send(cmdGet, body, peers...)
 	if err != nil {
 		return nil, false, fmt.Errorf("get failed: %w", err)
+	}
+
+	if c.encryptionCipher != nil {
+		decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
+		if err != nil {
+			return nil, false, fmt.Errorf("decrypting response: %w", err)
+		}
+		resp = decryptedResp
 	}
 
 	found, err := resp.Get(keyFound)
@@ -85,16 +117,31 @@ func (c *Client) Get(key string, peers ...peer.ID) ([]byte, bool, error) {
 	}
 }
 
-// Delete sends a delete command to remove a key
 func (c *Client) Delete(key string, timeout time.Duration, peers ...peer.ID) error {
 	body := command.Body{
 		keyKey:     key,
 		keyTimeout: float64(timeout.Milliseconds()),
 	}
 
+	if c.encryptionCipher != nil {
+		encryptedBody, err := encryptBody(body, c.encryptionCipher)
+		if err != nil {
+			return fmt.Errorf("encrypting body: %w", err)
+		}
+		body = encryptedBody
+	}
+
 	resp, err := c.Send(cmdDelete, body, peers...)
 	if err != nil {
 		return fmt.Errorf("delete failed: %w", err)
+	}
+
+	if c.encryptionCipher != nil {
+		decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
+		if err != nil {
+			return fmt.Errorf("decrypting response: %w", err)
+		}
+		resp = decryptedResp
 	}
 
 	if errMsg, err := resp.Get("error"); err == nil && errMsg != nil {
@@ -104,17 +151,31 @@ func (c *Client) Delete(key string, timeout time.Duration, peers ...peer.ID) err
 	return nil
 }
 
-// JoinVoter requests to join the cluster as a voting member.
-// NOTE: join safeguards to be added.
 func (c *Client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error {
 	body := command.Body{
 		keyPeer:    peerID.String(),
 		keyTimeout: float64(timeout.Milliseconds()),
 	}
 
+	if c.encryptionCipher != nil {
+		encryptedBody, err := encryptBody(body, c.encryptionCipher)
+		if err != nil {
+			return fmt.Errorf("encrypting body: %w", err)
+		}
+		body = encryptedBody
+	}
+
 	resp, err := c.Send(cmdJoinVoter, body, peers...)
 	if err != nil {
 		return fmt.Errorf("join voter failed: %w", err)
+	}
+
+	if c.encryptionCipher != nil {
+		decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
+		if err != nil {
+			return fmt.Errorf("decrypting response: %w", err)
+		}
+		resp = decryptedResp
 	}
 
 	if errMsg, err := resp.Get("error"); err == nil && errMsg != nil {
@@ -124,10 +185,17 @@ func (c *Client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.
 	return nil
 }
 
-// Keys sends a keys command to list keys with a prefix
 func (c *Client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
 	body := command.Body{
 		keyPrefix: prefix,
+	}
+
+	if c.encryptionCipher != nil {
+		encryptedBody, err := encryptBody(body, c.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("encrypting body: %w", err)
+		}
+		body = encryptedBody
 	}
 
 	resp, err := c.Send(cmdKeys, body, peers...)
@@ -135,9 +203,23 @@ func (c *Client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
 		return nil, fmt.Errorf("keys failed: %w", err)
 	}
 
+	if c.encryptionCipher != nil {
+		respBody := make(command.Body)
+		for k, v := range resp {
+			respBody[k] = v
+		}
+		decryptedBody, err := decryptBody(respBody, c.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting response: %w", err)
+		}
+		resp = make(cr.Response)
+		for k, v := range decryptedBody {
+			resp[k] = v
+		}
+	}
+
 	keysVal, err := resp.Get(keyKeys)
 	if err != nil || keysVal == nil {
-		// No keys or not found - return empty slice
 		return []string{}, nil
 	}
 
@@ -153,26 +235,46 @@ func (c *Client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
 		}
 		return keys, nil
 	default:
-		// Unknown type - return empty slice
 		return []string{}, nil
 	}
 }
 
-// Send sends a command to the specified peers
 func (c *Client) Send(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error) {
 	return c.Client.Send(cmd, body, peers...)
 }
 
-// ExchangePeers sends our peer list and receives theirs for convergence
 func (c *Client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error) {
 	body := command.Body{
 		keyStartTime: ourStart.UnixMilli(),
 		keySeenAt:    ourPeers,
 	}
 
+	if c.encryptionCipher != nil {
+		encryptedBody, err := encryptBody(body, c.encryptionCipher)
+		if err != nil {
+			return time.Time{}, nil, fmt.Errorf("encrypting body: %w", err)
+		}
+		body = encryptedBody
+	}
+
 	resp, err := c.Client.Send(cmdExchangePeers, body, target)
 	if err != nil {
 		return time.Time{}, nil, err
+	}
+
+	if c.encryptionCipher != nil {
+		respBody := make(command.Body)
+		for k, v := range resp {
+			respBody[k] = v
+		}
+		decryptedBody, err := decryptBody(respBody, c.encryptionCipher)
+		if err != nil {
+			return time.Time{}, nil, fmt.Errorf("decrypting response: %w", err)
+		}
+		resp = make(cr.Response)
+		for k, v := range decryptedBody {
+			resp[k] = v
+		}
 	}
 
 	theirStartRaw, _ := resp.Get(keyStartTime)
@@ -190,7 +292,6 @@ func (c *Client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, ta
 	return theirStart, theirPeers, nil
 }
 
-// toInt64 converts various numeric types to int64
 func toInt64(v interface{}) int64 {
 	switch n := v.(type) {
 	case int64:
