@@ -135,61 +135,77 @@ func (c *cluster) initialize() error {
 	return nil
 }
 
-// handleBootstrap implements autonomous bootstrap with time-based threshold:
+// handleBootstrap implements autonomous bootstrap with peer consensus:
 // 1. If forceBootstrap is set, bootstrap immediately as single-node
-// 2. Otherwise, discover peers and exchange lists for bootstrapTimeout
-// 3. Peers discovered before threshold (80%) = founding members → bootstrap together
-// 4. Peers discovered after threshold = late joiners → wait for leader to add them
+// 2. Otherwise, discover peers and exchange lists until timeout or early join
+// 3. Peers discovered before threshold (80%) = founding members
+// 4. If founders > 1: all founders bootstrap with same config (Raft elects leader)
+// 5. If founders == 1 but peers exist: try to join (someone else may bootstrap)
+// 6. If truly alone (no peers): bootstrap self
 func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transport) error {
 	if c.forceBootstrap {
 		return c.bootstrapSelf(raftConfig, transport)
 	}
 
+	// Run discovery with early exit if we can join an existing cluster
 	ctx, cancel := context.WithTimeout(c.node.Context(), c.bootstrapTimeout)
 	defer cancel()
 
 	go c.tracker.runDiscoveryAndExchange(ctx, c)
 
-	<-ctx.Done()
+	// Check frequently if we can join an existing cluster early
+	// Start with a small delay to let ForceBootstrap nodes initialize
+	ticker := time.NewTicker(BootstrapCheckInterval)
+	defer ticker.Stop()
 
-	threshold := time.Duration(float64(c.bootstrapTimeout) * c.bootstrapThreshold)
-
-	if c.tracker.isLateJoiner(threshold) {
-		c.requestVoterJoin(5 * time.Second)
-		return nil
-	}
-
-	founders := c.tracker.getFoundingMembers(threshold)
-
-	if len(founders) > 1 {
-		joined, noLeader := c.tryJoinExistingCluster(founders, 5*time.Second)
-		if joined {
-			return nil
-		}
-		if !noLeader {
-			c.requestVoterJoin(5 * time.Second)
-			return nil
-		}
-	}
-
-	if len(founders) <= 1 {
-		if len(c.tracker.allPeers()) == 0 {
+	for {
+		select {
+		case <-ctx.Done():
+			// Timeout reached, proceed with bootstrap decision
+			goto bootstrap
+		case <-ticker.C:
+			// Try to join peers that implement the cluster stream protocol
 			peers := c.raftProtocolPeers()
 			if len(peers) > 0 {
-				joined, noLeader := c.tryJoinExistingCluster(peers, 5*time.Second)
+				joined, _ := c.tryJoinExistingCluster(peers, 1*time.Second)
 				if joined {
-					return nil
-				}
-				if !noLeader {
-					c.requestVoterJoin(5 * time.Second)
 					return nil
 				}
 			}
 		}
+	}
 
-		if err := c.bootstrapSelf(raftConfig, transport); err != nil {
+bootstrap:
+	threshold := time.Duration(float64(c.bootstrapTimeout) * c.bootstrapThreshold)
+
+	// Check if we're a late joiner (discovered existing cluster)
+	if c.tracker.isLateJoiner(threshold) {
+		c.requestVoterJoin(VoterJoinTimeout)
+		return nil
+	}
+
+	founders := c.tracker.getFoundingMembers(threshold)
+	allPeers := c.tracker.allPeers()
+
+	// Case 1: Multiple founders - all bootstrap with same config
+	// Raft will handle leader election among them
+	if len(founders) > 1 {
+		// First try to join in case a cluster already exists
+		joined, noLeader := c.tryJoinExistingCluster(founders, 5*time.Second)
+		if joined {
+			return nil
+		}
+		// If there's a leader but we couldn't join, request to be added
+		if !noLeader {
+			c.requestVoterJoin(VoterJoinTimeout)
+			return nil
+		}
+		// No leader exists yet - bootstrap with all founders
+		// All founders will call this with the same sorted list
+		if err := c.bootstrapWithPeers(transport, founders); err != nil {
 			if err == raft.ErrCantBootstrap {
-				c.requestVoterJoin(5 * time.Second)
+				// Already bootstrapped, try to join
+				c.requestVoterJoin(VoterJoinTimeout)
 				return nil
 			}
 			return err
@@ -197,9 +213,32 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 		return nil
 	}
 
-	if err := c.bootstrapWithPeers(transport, founders); err != nil {
+	// Case 2: Only self as founder, but other peers exist
+	// Someone else should bootstrap - try to join them
+	if len(allPeers) > 0 {
+		// Check if any peer has the raft protocol (existing cluster)
+		peers := c.raftProtocolPeers()
+		if len(peers) > 0 {
+			joined, noLeader := c.tryJoinExistingCluster(peers, 5*time.Second)
+			if joined {
+				return nil
+			}
+			if !noLeader {
+				c.requestVoterJoin(VoterJoinTimeout)
+				return nil
+			}
+		}
+		// Peers exist but no cluster yet - wait and try to join
+		// Do NOT self-bootstrap as this causes split brain
+		c.requestVoterJoin(LateJoinerTimeout)
+		return nil
+	}
+
+	// Case 3: Truly alone - no peers discovered at all
+	// Safe to bootstrap as single node
+	if err := c.bootstrapSelf(raftConfig, transport); err != nil {
 		if err == raft.ErrCantBootstrap {
-			c.requestVoterJoin(5 * time.Second)
+			c.requestVoterJoin(VoterJoinTimeout)
 			return nil
 		}
 		return err
@@ -252,6 +291,10 @@ func (c *cluster) buildRaftConfig() *raft.Config {
 	cfg := raft.DefaultConfig()
 	cfg.LocalID = raft.ServerID(c.node.ID().String())
 
+	// Enable pre-vote to prevent disruptive elections
+	// A node will only start an election if it can reach a quorum
+	cfg.PreVoteDisabled = false
+
 	timeouts := c.getTimeoutConfig()
 	cfg.HeartbeatTimeout = timeouts.HeartbeatTimeout
 	cfg.ElectionTimeout = timeouts.ElectionTimeout
@@ -301,7 +344,13 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				targets := c.voterJoinTargets()
+				// Prefer leader if known, otherwise use discovered peers
+				var targets []peer.ID
+				if leader, err := c.Leader(); err == nil && leader != c.node.ID() {
+					targets = []peer.ID{leader}
+				} else {
+					targets = c.voterJoinTargets()
+				}
 				if len(targets) > 0 {
 					c.raftClient.JoinVoter(c.node.ID(), timeout, targets...)
 				}
@@ -328,12 +377,17 @@ func (c *cluster) tryJoinExistingCluster(peers []peer.ID, timeout time.Duration)
 		case <-ctx.Done():
 			return false, sawNoLeader
 		case <-ticker.C:
-			targets := make([]peer.ID, 0, len(peers))
-			for _, pid := range peers {
-				if pid == c.node.ID() {
-					continue
+			// Prefer leader if known, otherwise use provided peers
+			var targets []peer.ID
+			if leader, err := c.Leader(); err == nil && leader != c.node.ID() {
+				targets = []peer.ID{leader}
+			} else {
+				targets = make([]peer.ID, 0, len(peers))
+				for _, pid := range peers {
+					if pid != c.node.ID() {
+						targets = append(targets, pid)
+					}
 				}
-				targets = append(targets, pid)
 			}
 			if len(targets) == 0 {
 				continue

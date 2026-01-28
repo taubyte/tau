@@ -100,9 +100,12 @@ func Threshold(threshold int) Option[Request] {
 
 func To(peers ...peerCore.ID) Option[Request] {
 	return func(s *Request) error {
-		s.to = append(s.to, peers...)
-		if s.threshold < len(s.to) {
-			s.threshold = len(s.to)
+		// if no peers are provided, don't add any to the request
+		if len(peers) > 0 {
+			s.to = append(s.to, peers...)
+			if s.threshold < len(s.to) {
+				s.threshold = len(s.to)
+			}
 		}
 		return nil
 	}

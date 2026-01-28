@@ -6,22 +6,29 @@ import (
 	"sync"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 )
 
 // peerTracker tracks discovered peers and their discovery times
 type peerTracker struct {
-	mu        sync.RWMutex
-	startTime time.Time
-	peers     map[peer.ID]time.Duration // peer ID -> time since start when first seen
-	selfID    peer.ID
+	mu             sync.RWMutex
+	startTime      time.Time
+	peers          map[peer.ID]time.Duration // peer ID -> time since start when first seen
+	selfID         peer.ID
+	lastPeerCount  int       // last known peer count for stability detection
+	lastChangeTime time.Time // when peer count last changed
 }
 
 func newPeerTracker(selfID peer.ID) *peerTracker {
+	now := time.Now()
 	pt := &peerTracker{
-		selfID:    selfID,
-		startTime: time.Now(),
-		peers:     make(map[peer.ID]time.Duration),
+		selfID:         selfID,
+		startTime:      now,
+		peers:          make(map[peer.ID]time.Duration),
+		lastPeerCount:  1, // self
+		lastChangeTime: now,
 	}
 	pt.peers[selfID] = 0
 	return pt
@@ -36,6 +43,8 @@ func (pt *peerTracker) addPeer(pid peer.ID) {
 	defer pt.mu.Unlock()
 	if _, exists := pt.peers[pid]; !exists {
 		pt.peers[pid] = time.Since(pt.startTime)
+		pt.lastPeerCount = len(pt.peers)
+		pt.lastChangeTime = time.Now()
 	}
 }
 
@@ -67,6 +76,13 @@ func (pt *peerTracker) mergePeers(theirStart time.Time, theirPeers map[string]in
 			pt.peers[pid] = ourEquivalent
 		}
 	}
+
+	// Update stability tracking if new peers were added
+	if len(newPeers) > 0 {
+		pt.lastPeerCount = len(pt.peers)
+		pt.lastChangeTime = time.Now()
+	}
+
 	return newPeers
 }
 
@@ -134,10 +150,25 @@ func (pt *peerTracker) allPeers() []peer.ID {
 	return peers
 }
 
+// supportsRaftProtocol checks if a peer explicitly supports the given raft protocol
+func supportsRaftProtocol(h host.Host, pid peer.ID, raftProtocol protocol.ID) bool {
+	protocols, err := h.Peerstore().GetProtocols(pid)
+	if err != nil || len(protocols) == 0 {
+		return false
+	}
+	for _, p := range protocols {
+		if p == raftProtocol {
+			return true
+		}
+	}
+	return false
+}
+
 // runDiscoveryAndExchange discovers peers and exchanges lists until ctx is done
 func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) {
 	discovery := c.node.Discovery()
 	host := c.node.Peer()
+	raftProtocol := protocol.ID(Protocol(c.namespace))
 
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -148,23 +179,30 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 			return
 
 		case <-ticker.C:
+			// Add connected peers that explicitly support our raft protocol
 			for _, pid := range host.Network().Peers() {
-				if pid != c.node.ID() {
+				if pid != c.node.ID() && supportsRaftProtocol(host, pid, raftProtocol) {
 					pt.addPeer(pid)
 				}
 			}
 
+			// Peers from discovery.FindPeers are already filtered by namespace
 			if discovery != nil {
 				discoverCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 				peerCh, err := discovery.FindPeers(discoverCtx, c.namespace)
 				if err == nil {
 					for p := range peerCh {
-						pt.addPeer(p.ID)
+						// Also verify protocol support for discovered peers
+						if supportsRaftProtocol(host, p.ID, raftProtocol) {
+							pt.addPeer(p.ID)
+						}
 					}
 				}
 				cancel()
 			}
 
+			// Exchange peers with known peers - this will naturally fail
+			// for peers that don't support our protocol
 			if c.raftClient != nil {
 				for _, pid := range pt.allPeers() {
 					startTime, peersMap := pt.getPeersMap()
@@ -183,5 +221,5 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 
 func (c *cluster) dialPeer(ctx context.Context, pid peer.ID) {
 	peerInfo := peer.AddrInfo{ID: pid}
-	_ = c.node.Peer().Connect(ctx, peerInfo)
+	c.node.Peer().Connect(ctx, peerInfo)
 }

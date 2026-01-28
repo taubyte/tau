@@ -210,14 +210,7 @@ func (c *client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.
 		body = encryptedBody
 	}
 
-	opts := []streamClient.Option[streamClient.Request]{
-		streamClient.Body(body),
-	}
-	if len(peers) > 0 {
-		opts = append(opts, streamClient.To(peers...), streamClient.Threshold(len(peers)))
-	}
-
-	resCh, err := c.Client.New(cmdJoinVoter, opts...).Do()
+	resCh, err := c.Client.New(cmdJoinVoter, streamClient.Body(body), streamClient.To(peers...), streamClient.Threshold(1)).Do()
 	if err != nil {
 		return fmt.Errorf("join voter failed: %w", err)
 	}
