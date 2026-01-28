@@ -123,6 +123,10 @@ func (c *cluster) initialize() error {
 
 	c.tracker = newPeerTracker(c.node.ID())
 
+	// Start discovery with node's lifetime context - runs continuously
+	// Interval starts at 100ms during bootstrap, will be slowed to 30s after cluster forms
+	go c.tracker.runDiscoveryAndExchange(c.node.Context(), c)
+
 	c.streamService, err = newStreamService(c)
 	if err != nil {
 		return fmt.Errorf("failed to create stream service: %w", err)
@@ -143,17 +147,30 @@ func (c *cluster) initialize() error {
 // 5. If founders == 1 but peers exist: try to join (someone else may bootstrap)
 // 6. If truly alone (no peers): bootstrap self
 func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transport) error {
+	// Track if we successfully completed bootstrap/join to slow down discovery
+	var (
+		successfullyCompleted bool
+		noLeader              bool
+	)
+	defer func() {
+		if successfullyCompleted {
+			// Cluster formed or joined - slow down discovery to 30s
+			c.tracker.setDiscoveryInterval(30 * time.Second)
+		}
+	}()
+
 	if c.forceBootstrap {
-		return c.bootstrapSelf(raftConfig, transport)
+		err := c.bootstrapSelf(raftConfig, transport)
+		if err == nil {
+			successfullyCompleted = true
+		}
+		return err
 	}
 
-	// Run discovery with early exit if we can join an existing cluster
+	// Discovery is already running continuously (started in initialize())
+	// Check frequently if we can join an existing cluster early
 	ctx, cancel := context.WithTimeout(c.node.Context(), c.bootstrapTimeout)
 	defer cancel()
-
-	go c.tracker.runDiscoveryAndExchange(ctx, c)
-
-	// Check frequently if we can join an existing cluster early
 	// Start with a small delay to let ForceBootstrap nodes initialize
 	ticker := time.NewTicker(BootstrapCheckInterval)
 	defer ticker.Stop()
@@ -167,8 +184,7 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 			// Try to join peers that implement the cluster stream protocol
 			peers := c.raftProtocolPeers()
 			if len(peers) > 0 {
-				joined, _ := c.tryJoinExistingCluster(peers, 1*time.Second)
-				if joined {
+				if successfullyCompleted, _ = c.tryJoinExistingCluster(peers, 1*time.Second); successfullyCompleted {
 					return nil
 				}
 			}
@@ -191,8 +207,7 @@ bootstrap:
 	// Raft will handle leader election among them
 	if len(founders) > 1 {
 		// First try to join in case a cluster already exists
-		joined, noLeader := c.tryJoinExistingCluster(founders, 5*time.Second)
-		if joined {
+		if successfullyCompleted, noLeader = c.tryJoinExistingCluster(founders, 5*time.Second); successfullyCompleted {
 			return nil
 		}
 		// If there's a leader but we couldn't join, request to be added
@@ -210,6 +225,7 @@ bootstrap:
 			}
 			return err
 		}
+		successfullyCompleted = true
 		return nil
 	}
 
@@ -219,8 +235,9 @@ bootstrap:
 		// Check if any peer has the raft protocol (existing cluster)
 		peers := c.raftProtocolPeers()
 		if len(peers) > 0 {
-			joined, noLeader := c.tryJoinExistingCluster(peers, 5*time.Second)
-			if joined {
+			successfullyCompleted, noLeader = c.tryJoinExistingCluster(peers, 5*time.Second)
+
+			if successfullyCompleted {
 				return nil
 			}
 			if !noLeader {
@@ -243,6 +260,7 @@ bootstrap:
 		}
 		return err
 	}
+	successfullyCompleted = true
 	return nil
 }
 
@@ -330,11 +348,11 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 		return
 	}
 
+	// Discovery is already running continuously (started in initialize())
+	// Just periodically try to join as voter
 	go func() {
 		ctx, cancel := context.WithTimeout(c.node.Context(), 10*time.Second)
 		defer cancel()
-
-		go c.tracker.runDiscoveryAndExchange(ctx, c)
 
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()

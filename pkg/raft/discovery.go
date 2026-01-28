@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/host"
@@ -19,6 +20,9 @@ type peerTracker struct {
 	selfID         peer.ID
 	lastPeerCount  int       // last known peer count for stability detection
 	lastChangeTime time.Time // when peer count last changed
+
+	// discoveryInterval stores the interval in milliseconds (atomic for thread-safe updates)
+	discoveryInterval atomic.Int64
 }
 
 func newPeerTracker(selfID peer.ID) *peerTracker {
@@ -31,7 +35,19 @@ func newPeerTracker(selfID peer.ID) *peerTracker {
 		lastChangeTime: now,
 	}
 	pt.peers[selfID] = 0
+	// Start with fast discovery interval (100ms) during bootstrap
+	pt.discoveryInterval.Store(100)
 	return pt
+}
+
+// setDiscoveryInterval sets the discovery interval (how often to run discovery)
+func (pt *peerTracker) setDiscoveryInterval(d time.Duration) {
+	pt.discoveryInterval.Store(d.Milliseconds())
+}
+
+// getDiscoveryInterval returns the current discovery interval
+func (pt *peerTracker) getDiscoveryInterval() time.Duration {
+	return time.Duration(pt.discoveryInterval.Load()) * time.Millisecond
 }
 
 // addPeer adds a discovered peer if not already known
@@ -165,20 +181,18 @@ func supportsRaftProtocol(h host.Host, pid peer.ID, raftProtocol protocol.ID) bo
 }
 
 // runDiscoveryAndExchange discovers peers and exchanges lists until ctx is done
+// Uses dynamic interval that can be adjusted via SetDiscoveryInterval()
 func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) {
 	discovery := c.node.Discovery()
 	host := c.node.Peer()
 	raftProtocol := protocol.ID(Protocol(c.namespace))
-
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 
-		case <-ticker.C:
+		case <-time.After(pt.getDiscoveryInterval()):
 			// Add connected peers that explicitly support our raft protocol
 			for _, pid := range host.Network().Peers() {
 				if pid != c.node.ID() && supportsRaftProtocol(host, pid, raftProtocol) {
