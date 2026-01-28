@@ -27,8 +27,6 @@ type Client interface {
 	JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error
 	// Keys returns all keys matching a prefix
 	Keys(prefix string, peers ...peer.ID) ([]string, error)
-	// Send sends a raw command
-	Send(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error)
 	// ExchangePeers exchanges peer discovery information
 	ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error)
 	// Close closes the client
@@ -70,7 +68,7 @@ func (c *client) Set(key string, value []byte, timeout time.Duration, peers ...p
 		body = encryptedBody
 	}
 
-	resp, err := c.Send(cmdSet, body, peers...)
+	resp, err := c.sendCommand(cmdSet, body, peers...)
 	if err != nil {
 		return fmt.Errorf("set failed: %w", err)
 	}
@@ -81,10 +79,6 @@ func (c *client) Set(key string, value []byte, timeout time.Duration, peers ...p
 			return fmt.Errorf("decrypting response: %w", err)
 		}
 		resp = decryptedResp
-	}
-
-	if errMsg, err := resp.Get("error"); err == nil && errMsg != nil {
-		return fmt.Errorf("set error: %v", errMsg)
 	}
 
 	return nil
@@ -119,7 +113,7 @@ func (c *client) Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, boo
 		body = encryptedBody
 	}
 
-	resp, err := c.Send(cmdGet, body, peers...)
+	resp, err := c.sendCommand(cmdGet, body, peers...)
 	if err != nil {
 		return nil, false, fmt.Errorf("get failed: %w", err)
 	}
@@ -171,7 +165,7 @@ func (c *client) Delete(key string, timeout time.Duration, peers ...peer.ID) err
 		body = encryptedBody
 	}
 
-	resp, err := c.Send(cmdDelete, body, peers...)
+	resp, err := c.sendCommand(cmdDelete, body, peers...)
 	if err != nil {
 		return fmt.Errorf("delete failed: %w", err)
 	}
@@ -182,10 +176,6 @@ func (c *client) Delete(key string, timeout time.Duration, peers ...peer.ID) err
 			return fmt.Errorf("decrypting response: %w", err)
 		}
 		resp = decryptedResp
-	}
-
-	if errMsg, err := resp.Get("error"); err == nil && errMsg != nil {
-		return fmt.Errorf("delete error: %v", errMsg)
 	}
 
 	return nil
@@ -247,16 +237,6 @@ func (c *client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.
 			resp = decryptedResp
 		}
 
-		if errMsg, err := resp.Get("error"); err == nil && errMsg != nil {
-			if strings.Contains(fmt.Sprint(errMsg), ErrNoLeader.Error()) {
-				sawNoLeader = true
-			}
-			if firstErr == nil {
-				firstErr = fmt.Errorf("join voter error: %v", errMsg)
-			}
-			continue
-		}
-
 		return nil
 	}
 
@@ -282,7 +262,7 @@ func (c *client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
 		body = encryptedBody
 	}
 
-	resp, err := c.Send(cmdKeys, body, peers...)
+	resp, err := c.sendCommand(cmdKeys, body, peers...)
 	if err != nil {
 		return nil, fmt.Errorf("keys failed: %w", err)
 	}
@@ -321,10 +301,6 @@ func (c *client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
 	default:
 		return []string{}, nil
 	}
-}
-
-func (c *client) Send(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error) {
-	return c.Client.Send(cmd, body, peers...)
 }
 
 func (c *client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error) {
@@ -385,6 +361,44 @@ func (c *client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, ta
 	}
 
 	return time.Time{}, nil, fmt.Errorf("exchange peers failed: no responses")
+}
+
+// sendCommand sends a command and returns the first successful response.
+// It collects errors but continues trying until a successful response is found.
+func (c *client) sendCommand(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error) {
+	opts := []streamClient.Option[streamClient.Request]{
+		streamClient.Body(body),
+	}
+	if len(peers) > 0 {
+		opts = append(opts, streamClient.To(peers...), streamClient.Threshold(len(peers)))
+	}
+
+	resCh, err := c.Client.New(cmd, opts...).Do()
+	if err != nil {
+		return nil, fmt.Errorf("sending command %q failed: %w", cmd, err)
+	}
+
+	var firstErr error
+	for res := range resCh {
+		if res == nil {
+			continue
+		}
+		if err := res.Error(); err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("command %q failed: %w", cmd, err)
+			}
+			res.Close()
+			continue
+		}
+		resp := res.Response
+		res.Close()
+		return resp, nil
+	}
+
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	return nil, fmt.Errorf("command %q failed: no responses", cmd)
 }
 
 func (c *client) Close() error {

@@ -9,6 +9,7 @@ import (
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/p2p/streams"
+	streamClient "github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	streamService "github.com/taubyte/tau/p2p/streams/service"
@@ -304,11 +305,26 @@ func (s *raftStreamService) forwardToLeader(cmd string, body command.Body) (cr.R
 		return nil, ErrNoLeader
 	}
 
-	if s.cluster.raftClient == nil {
-		return nil, fmt.Errorf("raft client not initialized")
+	resCh, err := s.cluster.raftClient.New(cmd,
+		streamClient.Body(body),
+		streamClient.To(leader),
+		streamClient.Threshold(1),
+	).Do()
+	if err != nil {
+		return nil, fmt.Errorf("forwarding to leader failed: %w", err)
 	}
 
-	return s.cluster.raftClient.Send(cmd, body, leader)
+	res := <-resCh
+	if res == nil {
+		return nil, fmt.Errorf("forwarding to leader failed: no responses")
+	}
+	defer res.Close()
+
+	if err := res.Error(); err != nil {
+		return nil, fmt.Errorf("forwarding to leader failed: %w", err)
+	}
+
+	return res.Response, nil
 }
 
 func (s *raftStreamService) handleExchangePeers(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
