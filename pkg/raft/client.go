@@ -3,6 +3,7 @@ package raft
 import (
 	"crypto/cipher"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -204,24 +205,68 @@ func (c *client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.
 		body = encryptedBody
 	}
 
-	resp, err := c.Send(cmdJoinVoter, body, peers...)
+	opts := []streamClient.Option[streamClient.Request]{
+		streamClient.Body(body),
+	}
+	if len(peers) > 0 {
+		opts = append(opts, streamClient.To(peers...), streamClient.Threshold(len(peers)))
+	}
+
+	resCh, err := c.Client.New(cmdJoinVoter, opts...).Do()
 	if err != nil {
 		return fmt.Errorf("join voter failed: %w", err)
 	}
 
-	if c.encryptionCipher != nil {
-		decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
-		if err != nil {
-			return fmt.Errorf("decrypting response: %w", err)
+	var firstErr error
+	sawNoLeader := false
+	for res := range resCh {
+		if res == nil {
+			continue
 		}
-		resp = decryptedResp
+		if err := res.Error(); err != nil {
+			if strings.Contains(err.Error(), ErrNoLeader.Error()) {
+				sawNoLeader = true
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("join voter failed: %w", err)
+			}
+			res.Close()
+			continue
+		}
+		resp := res.Response
+		res.Close()
+
+		if c.encryptionCipher != nil {
+			decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
+			if err != nil {
+				if firstErr == nil {
+					firstErr = fmt.Errorf("decrypting response: %w", err)
+				}
+				continue
+			}
+			resp = decryptedResp
+		}
+
+		if errMsg, err := resp.Get("error"); err == nil && errMsg != nil {
+			if strings.Contains(fmt.Sprint(errMsg), ErrNoLeader.Error()) {
+				sawNoLeader = true
+			}
+			if firstErr == nil {
+				firstErr = fmt.Errorf("join voter error: %v", errMsg)
+			}
+			continue
+		}
+
+		return nil
 	}
 
-	if errMsg, err := resp.Get("error"); err == nil && errMsg != nil {
-		return fmt.Errorf("join voter error: %v", errMsg)
+	if sawNoLeader {
+		return ErrNoLeader
 	}
-
-	return nil
+	if firstErr != nil {
+		return firstErr
+	}
+	return fmt.Errorf("join voter failed: no responses")
 }
 
 func (c *client) Keys(prefix string, peers ...peer.ID) ([]string, error) {
@@ -296,39 +341,50 @@ func (c *client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, ta
 		body = encryptedBody
 	}
 
-	resp, err := c.Client.Send(cmdExchangePeers, body, target)
+	resCh, err := c.Client.New(cmdExchangePeers,
+		streamClient.Body(body),
+		streamClient.To(target),
+		streamClient.Threshold(1),
+	).Do()
 	if err != nil {
 		return time.Time{}, nil, err
 	}
 
-	if c.encryptionCipher != nil {
-		respBody := make(command.Body)
-		for k, v := range resp {
-			respBody[k] = v
+	for res := range resCh {
+		if res == nil {
+			continue
 		}
-		decryptedBody, err := decryptBody(respBody, c.encryptionCipher)
-		if err != nil {
-			return time.Time{}, nil, fmt.Errorf("decrypting response: %w", err)
+		if err := res.Error(); err != nil {
+			res.Close()
+			return time.Time{}, nil, err
 		}
-		resp = make(cr.Response)
-		for k, v := range decryptedBody {
-			resp[k] = v
+		resp := res.Response
+		res.Close()
+
+		if c.encryptionCipher != nil {
+			decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
+			if err != nil {
+				return time.Time{}, nil, fmt.Errorf("decrypting response: %w", err)
+			}
+			resp = decryptedResp
 		}
+
+		theirStartRaw, _ := resp.Get(keyStartTime)
+		theirStart := time.UnixMilli(toInt64(theirStartRaw))
+
+		theirPeersRaw, _ := resp.Get(keySeenAt)
+		theirPeers := make(map[string]int64)
+
+		if m, ok := theirPeersRaw.(map[string]interface{}); ok {
+			for k, v := range m {
+				theirPeers[k] = toInt64(v)
+			}
+		}
+
+		return theirStart, theirPeers, nil
 	}
 
-	theirStartRaw, _ := resp.Get(keyStartTime)
-	theirStart := time.UnixMilli(toInt64(theirStartRaw))
-
-	theirPeersRaw, _ := resp.Get(keySeenAt)
-	theirPeers := make(map[string]int64)
-
-	if m, ok := theirPeersRaw.(map[string]interface{}); ok {
-		for k, v := range m {
-			theirPeers[k] = toInt64(v)
-		}
-	}
-
-	return theirStart, theirPeers, nil
+	return time.Time{}, nil, fmt.Errorf("exchange peers failed: no responses")
 }
 
 func (c *client) Close() error {

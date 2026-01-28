@@ -88,7 +88,7 @@ Snapshots being on disk is a deliberate tradeoff (simple + fast). If you're runn
 - **KV**: `Set`, `Get`, `Delete`, `Keys`
 - **Raw replication**: `Apply([]byte, timeout)` (leader-only)
 - **Consistency**: `Barrier(timeout)` (use before reads when you can't tolerate stale follower data)
-- **State**: `IsLeader`, `Leader`, `State`, `Members`, `LeaderCh`, `WaitForLeader`
+- **State**: `IsLeader`, `Leader`, `State`, `Members`, `WaitForLeader`
 - **Membership**: `AddVoter`, `RemoveServer`, `TransferLeadership`
 
 ### `Client` (remote)

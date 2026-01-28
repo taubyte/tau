@@ -302,10 +302,8 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 				return
 			case <-ticker.C:
 				targets := c.voterJoinTargets()
-				for _, pid := range targets {
-					if err := c.raftClient.JoinVoter(c.node.ID(), timeout, pid); err != nil {
-					} else {
-					}
+				if len(targets) > 0 {
+					c.raftClient.JoinVoter(c.node.ID(), timeout, targets...)
 				}
 			}
 		}
@@ -330,26 +328,35 @@ func (c *cluster) tryJoinExistingCluster(peers []peer.ID, timeout time.Duration)
 		case <-ctx.Done():
 			return false, sawNoLeader
 		case <-ticker.C:
+			targets := make([]peer.ID, 0, len(peers))
 			for _, pid := range peers {
 				if pid == c.node.ID() {
 					continue
 				}
-				if err := c.raftClient.JoinVoter(c.node.ID(), timeout, pid); err == nil {
-					return true, false
-				} else if errors.Is(err, ErrNoLeader) || strings.Contains(err.Error(), ErrNoLeader.Error()) {
-					sawNoLeader = true
-				} else {
-				}
+				targets = append(targets, pid)
+			}
+			if len(targets) == 0 {
+				continue
+			}
+			if err := c.raftClient.JoinVoter(c.node.ID(), timeout, targets...); err == nil {
+				return true, false
+			} else if errors.Is(err, ErrNoLeader) || strings.Contains(err.Error(), ErrNoLeader.Error()) {
+				sawNoLeader = true
 			}
 		}
 	}
 }
 
-func (c *cluster) voterJoinTargets() []peer.ID {
+func (c *cluster) protocolPeers(protocolID protocol.ID, includeTracker bool) []peer.ID {
 	targets := make(map[peer.ID]struct{})
 
-	for _, pid := range c.tracker.allPeers() {
-		targets[pid] = struct{}{}
+	if includeTracker && c.tracker != nil {
+		for _, pid := range c.tracker.allPeers() {
+			if pid == c.node.ID() {
+				continue
+			}
+			targets[pid] = struct{}{}
+		}
 	}
 
 	for _, pid := range c.node.Peer().Network().Peers() {
@@ -359,30 +366,28 @@ func (c *cluster) voterJoinTargets() []peer.ID {
 		targets[pid] = struct{}{}
 	}
 
+	host := c.node.Peer()
 	result := make([]peer.ID, 0, len(targets))
+
 	for pid := range targets {
+		supported, err := host.Peerstore().SupportsProtocols(pid, protocolID)
+		if err != nil {
+			continue
+		}
+		if len(supported) == 0 {
+			continue
+		}
 		result = append(result, pid)
 	}
 	return result
 }
 
+func (c *cluster) voterJoinTargets() []peer.ID {
+	return c.protocolPeers(protocol.ID(Protocol(c.namespace)), true)
+}
+
 func (c *cluster) raftProtocolPeers() []peer.ID {
-	host := c.node.Peer()
-	transportProtocol := protocol.ID(TransportProtocol(c.namespace))
-	peers := host.Network().Peers()
-	filtered := make([]peer.ID, 0, len(peers))
-
-	for _, pid := range peers {
-		if pid == c.node.ID() {
-			continue
-		}
-		supported, err := host.Peerstore().SupportsProtocols(pid, transportProtocol)
-		if err == nil && len(supported) > 0 {
-			filtered = append(filtered, pid)
-		}
-	}
-
-	return filtered
+	return c.protocolPeers(protocol.ID(TransportProtocol(c.namespace)), false)
 }
 
 // Close gracefully shuts down the Raft node
@@ -670,8 +675,4 @@ func (c *cluster) TransferLeadership() error {
 	}
 
 	return c.raft.LeadershipTransfer().Error()
-}
-
-func (c *cluster) LeaderCh() <-chan bool {
-	return c.raft.LeaderCh()
 }

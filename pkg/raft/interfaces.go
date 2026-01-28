@@ -72,9 +72,6 @@ type Cluster interface {
 
 	// TransferLeadership transfers leadership to another node
 	TransferLeadership() error
-
-	// LeaderCh returns a channel that signals leadership changes
-	LeaderCh() <-chan bool
 }
 
 // Member represents a cluster member

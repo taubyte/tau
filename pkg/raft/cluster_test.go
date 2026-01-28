@@ -236,21 +236,6 @@ func TestCluster_Members(t *testing.T) {
 	}
 }
 
-func TestCluster_LeaderCh(t *testing.T) {
-	node := newMockNode(t)
-
-	cluster, err := New(node, "test", testOptions()...)
-	if err != nil {
-		require.NoError(t, err, "failed to create cluster")
-	}
-	defer cluster.Close()
-
-	ch := cluster.LeaderCh()
-	if ch == nil {
-		t.Error("expected non-nil leader channel")
-	}
-}
-
 func TestCluster_State(t *testing.T) {
 	node := newMockNode(t)
 

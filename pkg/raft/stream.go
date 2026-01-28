@@ -397,6 +397,20 @@ func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Co
 	if err := s.cluster.WaitForLeader(leaderCtx); err != nil {
 		return nil, ErrNoLeader
 	}
+	if s.cluster.IsLeader() {
+		if err := s.cluster.AddVoter(peerID, timeout); err != nil {
+			return nil, err
+		}
+		resp := cr.Response{"success": true}
+		if s.encryptionCipher != nil {
+			encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
+			if err != nil {
+				return nil, fmt.Errorf("encrypting response: %w", err)
+			}
+			resp = encryptedResp
+		}
+		return resp, nil
+	}
 
 	body[keyPeer] = peerID.String()
 	resp, err := s.forwardToLeader(cmdJoinVoter, body)
