@@ -47,7 +47,7 @@ type cluster struct {
 	snaps         *fileSnapshotStore
 	tracker       *peerTracker
 	streamService *raftStreamService
-	raftClient    *client // Client for remote Raft operations (joining voters, forwarding to leader, etc.)
+	raftClient    internalClient // Client for remote Raft operations (joining voters, forwarding to leader, etc.)
 
 	closed atomic.Bool
 	mu     sync.RWMutex
@@ -116,11 +116,10 @@ func (c *cluster) initialize() error {
 		return fmt.Errorf("failed to create raft: %w", err)
 	}
 
-	cli, err := NewClient(c.node, c.namespace, c.encryptionCipher)
+	c.raftClient, err = newInternalClient(c.node, c.namespace, c.encryptionCipher)
 	if err != nil {
 		return fmt.Errorf("failed to create raft client: %w", err)
 	}
-	c.raftClient = cli.(*client)
 
 	c.tracker = newPeerTracker(c.node.ID())
 

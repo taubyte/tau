@@ -171,7 +171,7 @@ func TestClient_ExchangePeers_Success(t *testing.T) {
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
 	// Create client on separate node
-	client, err := NewClient(clientNode, namespace, nil)
+	client, err := newInternalClient(clientNode, namespace, nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
@@ -206,7 +206,7 @@ func TestClient_JoinVoter_Success(t *testing.T) {
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
 	// Create client on separate node
-	client, err := NewClient(clientNode, namespace, nil)
+	client, err := newInternalClient(clientNode, namespace, nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 

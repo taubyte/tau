@@ -305,7 +305,9 @@ func (s *raftStreamService) forwardToLeader(cmd string, body command.Body) (cr.R
 		return nil, ErrNoLeader
 	}
 
-	resCh, err := s.cluster.raftClient.New(cmd,
+	// Type assert to *client to access embedded streamClient
+	cli := s.cluster.raftClient.(*client)
+	resCh, err := cli.New(cmd,
 		streamClient.Body(body),
 		streamClient.To(leader),
 		streamClient.Threshold(1),

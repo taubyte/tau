@@ -13,7 +13,7 @@ import (
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 )
 
-// Client represents a Raft p2p client
+// Client represents a Raft p2p client for external use
 type Client interface {
 	// Set stores a key-value pair
 	Set(key string, value []byte, timeout time.Duration, peers ...peer.ID) error
@@ -23,10 +23,16 @@ type Client interface {
 	Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, bool, error)
 	// Delete removes a key
 	Delete(key string, timeout time.Duration, peers ...peer.ID) error
-	// JoinVoter requests to join as a voter
-	JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error
 	// Keys returns all keys matching a prefix
 	Keys(prefix string, peers ...peer.ID) ([]string, error)
+	// Close closes the client
+	Close() error
+}
+
+// internalClient represents a Raft p2p client for internal cluster operations
+type internalClient interface {
+	// JoinVoter requests to join as a voter
+	JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error
 	// ExchangePeers exchanges peer discovery information
 	ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error)
 	// Close closes the client
@@ -38,8 +44,8 @@ type client struct {
 	encryptionCipher cipher.AEAD
 }
 
-// NewClient creates a new raft p2p client for the given namespace
-func NewClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD) (Client, error) {
+// newInternalClient creates a new internal raft p2p client for the given namespace
+func newInternalClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD) (internalClient, error) {
 	protocol := Protocol(namespace)
 
 	streamCli, err := streamClient.New(node, protocol)
@@ -51,6 +57,15 @@ func NewClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD
 		Client:           streamCli,
 		encryptionCipher: encryptionCipher,
 	}, nil
+}
+
+// NewClient creates a new raft p2p client for the given namespace
+func NewClient(node taupeer.Node, namespace string, encryptionCipher cipher.AEAD) (Client, error) {
+	cli, err := newInternalClient(node, namespace, encryptionCipher)
+	if err != nil {
+		return nil, err
+	}
+	return cli.(*client), nil
 }
 
 func (c *client) Set(key string, value []byte, timeout time.Duration, peers ...peer.ID) error {

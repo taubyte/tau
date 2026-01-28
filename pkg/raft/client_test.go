@@ -141,7 +141,7 @@ func TestClient_ExchangePeers(t *testing.T) {
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
 	// Create client
-	client, err := NewClient(node, "/raft/test", nil)
+	client, err := newInternalClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
@@ -172,7 +172,7 @@ func TestClient_ExchangePeers_WithPeers(t *testing.T) {
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
 	// Create client
-	client, err := NewClient(node, "/raft/test", nil)
+	client, err := newInternalClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
@@ -287,7 +287,7 @@ func TestClient_JoinVoter(t *testing.T) {
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	client, err := NewClient(node, "/raft/test", nil)
+	client, err := newInternalClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
