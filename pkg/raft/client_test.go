@@ -27,7 +27,6 @@ func TestClient_Close(t *testing.T) {
 	require.NoError(t, err, "failed to create client")
 	require.NotNil(t, client, "client should not be nil")
 
-	// Close should not panic
 	err = client.Close()
 	require.NoError(t, err, "close should succeed")
 }
@@ -35,41 +34,34 @@ func TestClient_Close(t *testing.T) {
 func TestClient_SetGetDelete_Integration(t *testing.T) {
 	node := newMockNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Create client pointing to same node
 	client, err := NewClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Test Set - send to self
 	err = client.Set("client-key", []byte("client-value"), time.Second, node.ID())
 	if err != nil {
 		t.Logf("Set returned error (expected in single-node test): %v", err)
 	}
 
-	// Test Get
 	_, _, err = client.Get("client-key", 0, node.ID())
 	if err != nil {
 		t.Logf("Get returned error (expected in single-node test): %v", err)
 	}
 
-	// Test Delete
 	err = client.Delete("client-key", time.Second, node.ID())
 	if err != nil {
 		t.Logf("Delete returned error (expected in single-node test): %v", err)
 	}
 
-	// Test Keys
 	_, err = client.Keys("client-", node.ID())
 	if err != nil {
 		t.Logf("Keys returned error (expected in single-node test): %v", err)
@@ -79,22 +71,18 @@ func TestClient_SetGetDelete_Integration(t *testing.T) {
 func TestClient_Get_NotFound(t *testing.T) {
 	node := newMockNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Create client
 	client, err := NewClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Get non-existent key
 	val, found, err := client.Get("nonexistent-key", 0, node.ID())
 	if err == nil {
 		assert.Assert(t, !found)
@@ -105,22 +93,18 @@ func TestClient_Get_NotFound(t *testing.T) {
 func TestClient_Keys_Empty(t *testing.T) {
 	node := newMockNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Create client
 	client, err := NewClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Keys with prefix that doesn't exist
 	keys, err := client.Keys("nonexistent-prefix-", node.ID())
 	if err == nil {
 		assert.Equal(t, len(keys), 0)
@@ -130,22 +114,18 @@ func TestClient_Keys_Empty(t *testing.T) {
 func TestClient_ExchangePeers(t *testing.T) {
 	node := newMockNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Create client
 	client, err := newInternalClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Exchange peers
 	ourStart := time.Now()
 	ourPeers := map[string]int64{
 		node.ID().String(): 0,
@@ -161,22 +141,18 @@ func TestClient_ExchangePeers(t *testing.T) {
 func TestClient_ExchangePeers_WithPeers(t *testing.T) {
 	node := newMockNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Create client
 	client, err := newInternalClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Exchange peers with multiple peers in the map
 	ourStart := time.Now()
 	ourPeers := map[string]int64{
 		node.ID().String(): 0,
@@ -194,25 +170,20 @@ func TestClient_ExchangePeers_WithPeers(t *testing.T) {
 func TestClient_Get_TypeConversions(t *testing.T) {
 	node := newMockNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Set a value first
 	require.NoError(t, cl.Set("testkey", []byte("testvalue"), time.Second))
 
-	// Create client
 	client, err := NewClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Get the value - tests value type conversions
 	val, found, err := client.Get("testkey", 0, node.ID())
 	if err == nil && found {
 		assert.Assert(t, len(val) > 0)
@@ -222,35 +193,28 @@ func TestClient_Get_TypeConversions(t *testing.T) {
 func TestClient_Keys_TypeConversions(t *testing.T) {
 	node := newMockNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Set some values first
 	require.NoError(t, cl.Set("prefix/a", []byte("a"), time.Second))
 	require.NoError(t, cl.Set("prefix/b", []byte("b"), time.Second))
 
-	// Create client
 	client, err := NewClient(node, "/raft/test", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Get keys - tests response type handling
 	keys, err := client.Keys("prefix/", node.ID())
 	if err == nil {
 		assert.Assert(t, len(keys) >= 0) // Just verify no panic
 	}
 }
 
-// TestClient_toInt64 tests the toInt64 helper function with various types
 func TestClient_toInt64(t *testing.T) {
-	// Test all the type conversion paths in toInt64
 	tests := []struct {
 		name     string
 		input    interface{}
@@ -291,9 +255,7 @@ func TestClient_JoinVoter(t *testing.T) {
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Test JoinVoter - may fail in single-node scenario but exercises the code
 	err = client.JoinVoter(node.ID(), time.Second, node.ID())
-	// Error is expected in single-node test, but code path is exercised
 	if err != nil {
 		t.Logf("JoinVoter returned error (expected): %v", err)
 	}
@@ -320,7 +282,6 @@ func TestClient_WithEncryption(t *testing.T) {
 		return
 	}
 
-	// Create client with encryption
 	block, err := aes.NewCipher(key)
 	require.NoError(t, err, "failed to create cipher")
 	gcm, err := cipher.NewGCMWithNonceSize(block, nonceSize)
@@ -329,22 +290,18 @@ func TestClient_WithEncryption(t *testing.T) {
 	require.NoError(t, err, "failed to create encrypted client")
 	defer client.Close()
 
-	// Test Set with encryption
 	err = client.Set("enc-key", []byte("enc-value"), time.Second, node.ID())
 	if err == nil {
-		// Test Get with encryption
 		val, found, err := client.Get("enc-key", 0, node.ID())
 		if err == nil && found {
 			assert.Equal(t, string(val), "enc-value")
 		}
 
-		// Test Delete with encryption
 		err = client.Delete("enc-key", time.Second, node.ID())
 		if err != nil {
 			t.Logf("Delete with encryption returned error: %v", err)
 		}
 
-		// Test Keys with encryption
 		keys, err := client.Keys("enc-", node.ID())
 		if err == nil {
 			assert.Assert(t, keys != nil)
@@ -355,27 +312,21 @@ func TestClient_WithEncryption(t *testing.T) {
 func TestClient_Get_WithBarrier(t *testing.T) {
 	node := newTestNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test-barrier", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Set a value first
 	err = cl.Set("barrier-key", []byte("barrier-value"), time.Second)
 	require.NoError(t, err, "failed to set value")
 
-	// Create client
 	client, err := NewClient(node, "/raft/test-barrier", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Test Get with valid barrier (1 second in nanoseconds)
-	// Note: In single-node setup, stream may not open, but validation should pass
 	barrierNs := int64(time.Second.Nanoseconds())
 	val, found, err := client.Get("barrier-key", barrierNs, node.ID())
 	// In single-node, network may fail, but if it succeeds, barrier should work
@@ -391,27 +342,21 @@ func TestClient_Get_WithBarrier(t *testing.T) {
 func TestClient_Get_WithBarrier_Zero(t *testing.T) {
 	node := newTestNode(t)
 
-	// Create cluster first
 	cl, err := New(node, "/raft/test-barrier-zero", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")
 	defer cl.Close()
 
-	// Wait for leader
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	require.NoError(t, cl.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Set a value first
 	err = cl.Set("barrier-key-zero", []byte("barrier-value-zero"), time.Second)
 	require.NoError(t, err, "failed to set value")
 
-	// Create client
 	client, err := NewClient(node, "/raft/test-barrier-zero", nil)
 	require.NoError(t, err, "failed to create client")
 	defer client.Close()
 
-	// Test Get with barrierNs = 0 (no barrier, should work)
-	// Note: In single-node setup, stream may not open, but validation should pass
 	val, found, err := client.Get("barrier-key-zero", 0, node.ID())
 	// In single-node, network may fail, but if it succeeds, should work
 	if err == nil {

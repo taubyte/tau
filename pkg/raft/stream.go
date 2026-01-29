@@ -110,7 +110,7 @@ func (s *raftStreamService) stop() {
 	}
 }
 
-// handleSet handles set requests - forwards to leader if not leader
+// handleSet handles set requests
 func (s *raftStreamService) handleSet(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	if s.encryptionCipher != nil {
 		decryptedBody, err := decryptBody(body, s.encryptionCipher)
@@ -159,7 +159,7 @@ func (s *raftStreamService) handleSet(ctx context.Context, conn streams.Connecti
 	return s.forwardToLeader(cmdSet, body)
 }
 
-// handleGet handles get requests - reads from local state
+// handleGet handles get requests
 func (s *raftStreamService) handleGet(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	if s.encryptionCipher != nil {
 		decryptedBody, err := decryptBody(body, s.encryptionCipher)
@@ -174,7 +174,6 @@ func (s *raftStreamService) handleGet(ctx context.Context, conn streams.Connecti
 		return nil, fmt.Errorf("missing or invalid key")
 	}
 
-	// Handle barrier if present
 	if barrierVal, ok := body[keyBarrier]; ok {
 		var barrierNs int64
 		switch v := barrierVal.(type) {
@@ -224,7 +223,7 @@ func (s *raftStreamService) handleGet(ctx context.Context, conn streams.Connecti
 	return resp, nil
 }
 
-// handleDelete handles delete requests - forwards to leader if not leader
+// handleDelete handles delete requests
 func (s *raftStreamService) handleDelete(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	if s.encryptionCipher != nil {
 		decryptedBody, err := decryptBody(body, s.encryptionCipher)
@@ -264,7 +263,7 @@ func (s *raftStreamService) handleDelete(ctx context.Context, conn streams.Conne
 	return s.forwardToLeader(cmdDelete, body)
 }
 
-// handleKeys handles keys requests - reads from local state
+// handleKeys handles keys requests
 func (s *raftStreamService) handleKeys(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	if s.encryptionCipher != nil {
 		decryptedBody, err := decryptBody(body, s.encryptionCipher)
@@ -305,7 +304,6 @@ func (s *raftStreamService) forwardToLeader(cmd string, body command.Body) (cr.R
 		return nil, ErrNoLeader
 	}
 
-	// Type assert to *client to access embedded streamClient
 	cli := s.cluster.raftClient.(*client)
 	resCh, err := cli.New(cmd,
 		streamClient.Body(body),

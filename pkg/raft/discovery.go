@@ -21,7 +21,6 @@ type peerTracker struct {
 	lastPeerCount  int       // last known peer count for stability detection
 	lastChangeTime time.Time // when peer count last changed
 
-	// discoveryInterval stores the interval in milliseconds (atomic for thread-safe updates)
 	discoveryInterval atomic.Int64
 }
 
@@ -35,7 +34,6 @@ func newPeerTracker(selfID peer.ID) *peerTracker {
 		lastChangeTime: now,
 	}
 	pt.peers[selfID] = 0
-	// Start with fast discovery interval (100ms) during bootstrap
 	pt.discoveryInterval.Store(100)
 	return pt
 }
@@ -77,7 +75,6 @@ func (pt *peerTracker) mergePeers(theirStart time.Time, theirPeers map[string]in
 			continue
 		}
 
-		// Convert their observation time to our timeline
 		theirSeenAt := theirStart.Add(time.Duration(theirMs) * time.Millisecond)
 		ourEquivalent := theirSeenAt.Sub(pt.startTime)
 		if ourEquivalent < 0 {
@@ -93,7 +90,6 @@ func (pt *peerTracker) mergePeers(theirStart time.Time, theirPeers map[string]in
 		}
 	}
 
-	// Update stability tracking if new peers were added
 	if len(newPeers) > 0 {
 		pt.lastPeerCount = len(pt.peers)
 		pt.lastChangeTime = time.Now()
@@ -181,7 +177,6 @@ func supportsRaftProtocol(h host.Host, pid peer.ID, raftProtocol protocol.ID) bo
 }
 
 // runDiscoveryAndExchange discovers peers and exchanges lists until ctx is done
-// Uses dynamic interval that can be adjusted via SetDiscoveryInterval()
 func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) {
 	discovery := c.node.Discovery()
 	host := c.node.Peer()
@@ -193,20 +188,17 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 			return
 
 		case <-time.After(pt.getDiscoveryInterval()):
-			// Add connected peers that explicitly support our raft protocol
 			for _, pid := range host.Network().Peers() {
 				if pid != c.node.ID() && supportsRaftProtocol(host, pid, raftProtocol) {
 					pt.addPeer(pid)
 				}
 			}
 
-			// Peers from discovery.FindPeers are already filtered by namespace
 			if discovery != nil {
 				discoverCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
 				peerCh, err := discovery.FindPeers(discoverCtx, c.namespace)
 				if err == nil {
 					for p := range peerCh {
-						// Also verify protocol support for discovered peers
 						if supportsRaftProtocol(host, p.ID, raftProtocol) {
 							pt.addPeer(p.ID)
 						}
@@ -215,8 +207,6 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 				cancel()
 			}
 
-			// Exchange peers with known peers - this will naturally fail
-			// for peers that don't support our protocol
 			if c.raftClient != nil {
 				for _, pid := range pt.allPeers() {
 					startTime, peersMap := pt.getPeersMap()

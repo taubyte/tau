@@ -100,7 +100,6 @@ func (c *client) Set(key string, value []byte, timeout time.Duration, peers ...p
 }
 
 func (c *client) Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, bool, error) {
-	// Validate barrier if provided
 	if barrierNs != 0 {
 		if barrierNs <= 0 {
 			return nil, false, ErrInvalidBarrier
@@ -115,7 +114,6 @@ func (c *client) Get(key string, barrierNs int64, peers ...peer.ID) ([]byte, boo
 		keyKey: key,
 	}
 
-	// Add barrier if provided (must be > 0 and <= MaxGetHandlerBarrierTimeout)
 	if barrierNs > 0 {
 		body[keyBarrier] = barrierNs
 	}
@@ -372,7 +370,6 @@ func (c *client) ExchangePeers(ourStart time.Time, ourPeers map[string]int64, ta
 }
 
 // sendCommand sends a command and returns the first successful response.
-// It collects errors but continues trying until a successful response is found.
 func (c *client) sendCommand(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error) {
 	opts := []streamClient.Option[streamClient.Request]{
 		streamClient.Body(body),

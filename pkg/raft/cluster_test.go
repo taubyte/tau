@@ -125,10 +125,8 @@ func TestCluster_SingleNode_SetGet(t *testing.T) {
 
 	require.NoError(t, cluster.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Set a value
 	require.NoError(t, cluster.Set("testkey", []byte("testvalue"), time.Second), "failed to set")
 
-	// Get the value
 	val, ok := cluster.Get("testkey")
 	assert.True(t, ok, "expected key to exist")
 	assert.Equal(t, "testvalue", string(val))
@@ -147,13 +145,10 @@ func TestCluster_SingleNode_Delete(t *testing.T) {
 
 	require.NoError(t, cluster.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Set a value
 	require.NoError(t, cluster.Set("testkey", []byte("testvalue"), time.Second), "failed to set")
 
-	// Delete the value
 	require.NoError(t, cluster.Delete("testkey", time.Second), "failed to delete")
 
-	// Get should return not found
 	_, ok := cluster.Get("testkey")
 	assert.False(t, ok, "expected key to be deleted")
 }
@@ -171,17 +166,14 @@ func TestCluster_SingleNode_Keys(t *testing.T) {
 
 	require.NoError(t, cluster.WaitForLeader(ctx), "failed to wait for leader")
 
-	// Set multiple values
 	keys := []string{"config/a", "config/b", "data/x"}
 	for _, key := range keys {
 		require.NoError(t, cluster.Set(key, []byte("value"), time.Second), "failed to set %s", key)
 	}
 
-	// Get all keys
 	allKeys := cluster.Keys("")
 	assert.Len(t, allKeys, 3, "expected 3 keys")
 
-	// Get keys with prefix
 	configKeys := cluster.Keys("config/")
 	assert.Len(t, configKeys, 2, "expected 2 config keys")
 }
