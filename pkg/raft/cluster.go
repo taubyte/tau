@@ -33,6 +33,9 @@ type cluster struct {
 	node      taupeer.Node
 	namespace string
 
+	ctx    context.Context
+	cancel context.CancelFunc
+
 	timeoutPreset      TimeoutPreset
 	timeoutConfig      TimeoutConfig
 	forceBootstrap     bool
@@ -73,6 +76,8 @@ func New(node taupeer.Node, namespace string, opts ...Option) (Cluster, error) {
 		bootstrapTimeout:   10 * time.Second,
 		bootstrapThreshold: 0.8,
 	}
+
+	c.ctx, c.cancel = context.WithCancel(node.Context())
 
 	for _, opt := range opts {
 		if err := opt(c); err != nil {
@@ -123,9 +128,9 @@ func (c *cluster) initialize() error {
 
 	c.tracker = newPeerTracker(c.node.ID())
 
-	// Start discovery with node's lifetime context - runs continuously
+	// Start discovery with cluster context - runs continuously
 	// Interval starts at 100ms during bootstrap, will be slowed to 30s after cluster forms
-	go c.tracker.runDiscoveryAndExchange(c.node.Context(), c)
+	go c.tracker.runDiscoveryAndExchange(c.ctx, c)
 
 	c.streamService, err = newStreamService(c)
 	if err != nil {
@@ -169,7 +174,7 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 
 	// Discovery is already running continuously (started in initialize())
 	// Check frequently if we can join an existing cluster early
-	ctx, cancel := context.WithTimeout(c.node.Context(), c.bootstrapTimeout)
+	ctx, cancel := context.WithTimeout(c.ctx, c.bootstrapTimeout)
 	defer cancel()
 	// Start with a small delay to let ForceBootstrap nodes initialize
 	ticker := time.NewTicker(BootstrapCheckInterval)
@@ -351,7 +356,7 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 	// Discovery is already running continuously (started in initialize())
 	// Just periodically try to join as voter
 	go func() {
-		ctx, cancel := context.WithTimeout(c.node.Context(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
 		defer cancel()
 
 		ticker := time.NewTicker(500 * time.Millisecond)
@@ -382,7 +387,7 @@ func (c *cluster) tryJoinExistingCluster(peers []peer.ID, timeout time.Duration)
 		return false, false
 	}
 
-	ctx, cancel := context.WithTimeout(c.node.Context(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(c.ctx, 2*time.Second)
 	defer cancel()
 
 	ticker := time.NewTicker(200 * time.Millisecond)
@@ -466,6 +471,11 @@ func (c *cluster) raftProtocolPeers() []peer.ID {
 func (c *cluster) Close() error {
 	if c.closed.Swap(true) {
 		return ErrAlreadyClosed
+	}
+
+	// Cancel cluster context
+	if c.cancel != nil {
+		c.cancel()
 	}
 
 	// Stop stream service
@@ -664,7 +674,7 @@ func (c *cluster) WaitForLeader(ctx context.Context) error {
 			}
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-c.node.Context().Done():
+		case <-c.ctx.Done():
 			return ErrShutdown
 		}
 	}
