@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/keypair"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
 )
 
@@ -36,8 +36,8 @@ func DefaultTestConfig() *TestConfig {
 	}
 }
 
-// CreateTestConfig creates a config.Node for testing based on TestConfig
-func CreateTestConfig(t *testing.T, cfg *TestConfig) *config.Node {
+// createTestConfig creates a config.Config for testing based on TestConfig
+func createTestConfig(t *testing.T, cfg *TestConfig) config.Config {
 	if cfg == nil {
 		cfg = DefaultTestConfig()
 	}
@@ -46,30 +46,34 @@ func CreateTestConfig(t *testing.T, cfg *TestConfig) *config.Node {
 		cfg.TempDir = t.TempDir()
 	}
 
-	nodeConfig := &config.Node{
-		NetworkFqdn: cfg.NetworkFqdn,
-		DevMode:     cfg.DevMode,
-		P2PListen:   []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", cfg.Port)},
-		P2PAnnounce: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", cfg.Port)},
-		PrivateKey:  keypair.NewRaw(),
-		Root:        cfg.TempDir,
+	opts := []config.Option{
+		config.WithRoot(cfg.TempDir),
+		config.WithNetworkFqdn(cfg.NetworkFqdn),
+		config.WithDevMode(cfg.DevMode),
+		config.WithP2PListen([]string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", cfg.Port)}),
+		config.WithP2PAnnounce([]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", cfg.Port)}),
+		config.WithPrivateKey(keypair.NewRaw()),
+	}
+	if cfg.UseMockNode && cfg.CustomKeys {
+		opts = append(opts, config.WithDomainValidation(config.DomainValidation{
+			PrivateKey: []byte("private-key"),
+			PublicKey:  []byte("public-key"),
+		}))
+	}
+
+	nodeConfig, err := config.New(opts...)
+	if err != nil {
+		t.Fatalf("createTestConfig: %v", err)
 	}
 
 	if cfg.UseMockDB {
-		nodeConfig.Databases = mock.New()
+		nodeConfig.SetDatabases(mock.New())
 	}
 
 	if cfg.UseMockNode {
 		ctx := context.Background()
 		mockNode := peer.Mock(ctx)
-		nodeConfig.Node = mockNode
-
-		if cfg.CustomKeys {
-			nodeConfig.DomainValidation = config.DomainValidation{
-				PrivateKey: []byte("private-key"),
-				PublicKey:  []byte("public-key"),
-			}
-		}
+		nodeConfig.SetNode(mockNode)
 	}
 
 	return nodeConfig
@@ -78,7 +82,7 @@ func CreateTestConfig(t *testing.T, cfg *TestConfig) *config.Node {
 // CreateTestService creates an auth service for testing with the given config
 func CreateTestService(t *testing.T, cfg *TestConfig) (*AuthService, func()) {
 	ctx := context.Background()
-	nodeConfig := CreateTestConfig(t, cfg)
+	nodeConfig := createTestConfig(t, cfg)
 
 	svc, err := New(ctx, nodeConfig)
 	if err != nil {

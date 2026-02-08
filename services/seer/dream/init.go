@@ -19,6 +19,10 @@ func init() {
 }
 
 func createService(u *dream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
+	cfg, err := common.NewConfig(u, config)
+	if err != nil {
+		return nil, err
+	}
 	if config.Others["mock"] == 1 {
 		// NOTE: have to keep entry lowercase since package searches through lowercase
 		mockServer, err := mockdns.NewServer(map[string]mockdns.Zone{
@@ -32,8 +36,8 @@ func createService(u *dream.Universe, config *iface.ServiceConfig) (iface.Servic
 			return nil, fmt.Errorf("starting mock dns failed with: %w", err)
 		}
 
-		return seerSvr.New(u.Context(), common.NewDreamConfig(u, config), seerSvr.Resolver(mockServer.Resolver()))
+		return seerSvr.New(u.Context(), cfg, seerSvr.Resolver(mockServer.Resolver()))
 	}
 
-	return seerSvr.New(u.Context(), common.NewDreamConfig(u, config))
+	return seerSvr.New(u.Context(), cfg)
 }

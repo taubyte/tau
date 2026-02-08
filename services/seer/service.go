@@ -14,9 +14,9 @@ import (
 	"github.com/ipfs/go-log/v2"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
-	tauConfig "github.com/taubyte/tau/config"
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 	auto "github.com/taubyte/tau/pkg/http-auto"
 	"github.com/taubyte/tau/pkg/poe"
 	servicesCommon "github.com/taubyte/tau/services/common"
@@ -26,22 +26,15 @@ var (
 	logger = log.Logger("tau.seer.service")
 )
 
-func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service, error) {
-	if config == nil {
-		config = &tauConfig.Node{}
-	}
-
-	err := config.Validate()
-	if err != nil {
-		return nil, fmt.Errorf("building config failed with: %s", err)
-	}
+func New(ctx context.Context, cfg tauConfig.Config, opts ...Options) (*Service, error) {
+	var err error
 
 	srv := &Service{
-		config: config,
-		shape:  config.Shape,
+		config: cfg,
+		shape:  cfg.Shape(),
 	}
 
-	poeFolder := os.DirFS(path.Join(config.Root, "config", "poe", "star"))
+	poeFolder := os.DirFS(path.Join(cfg.Root(), "config", "poe", "star"))
 	logger.Infof("poe folder: %s", poeFolder)
 	if _, err := poeFolder.Open("dns.star"); err == nil {
 		logger.Infof("creating poe engine")
@@ -52,7 +45,7 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	}
 
 	srv.dnsResolver = net.DefaultResolver
-	srv.hostUrl = config.NetworkFqdn
+	srv.hostUrl = cfg.NetworkFqdn()
 
 	for _, op := range opts {
 		err = op(srv)
@@ -61,64 +54,52 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 		}
 	}
 
-	if config.Node == nil {
-		srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, servicesCommon.Seer))
+	if srv.node = cfg.Node(); srv.node == nil {
+		srv.node, err = tauConfig.NewLiteNode(ctx, cfg, path.Join(cfg.Root(), servicesCommon.Seer))
 		if err != nil {
 			return nil, fmt.Errorf("new lite node failed with: %s", err)
 		}
-	} else {
-		srv.node = config.Node
 	}
 
-	srv.devMode = config.DevMode
+	srv.devMode = cfg.DevMode()
 
 	clientNode := srv.node
-	if config.ClientNode != nil {
-		clientNode = config.ClientNode
+	if cfg.ClientNode() != nil {
+		clientNode = cfg.ClientNode()
 	}
 
-	srv.tns, err = tnsClient.New(ctx, clientNode)
-	if err != nil {
+	if srv.tns, err = tnsClient.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("new tns api failed with: %s", err)
 	}
-
-	srv.ds, err = pebbleds.NewDatastore(
-		path.Join(config.Root, "storage", srv.shape, "seer"),
+	if srv.ds, err = pebbleds.NewDatastore(
+		path.Join(cfg.Root(), "storage", srv.shape, "seer"),
 		nil,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, fmt.Errorf("initialize database failed with: %s", err)
 	}
-
 	srv.geo = &geoService{srv}
 	srv.oracle = &oracleService{srv}
-
-	srv.stream, err = streams.New(srv.node, servicesCommon.Seer, servicesCommon.SeerProtocol)
-	if err != nil {
+	if srv.stream, err = streams.New(srv.node, servicesCommon.Seer, servicesCommon.SeerProtocol); err != nil {
 		return nil, fmt.Errorf("new p2p stream failed with: %w", err)
 	}
-
 	srv.setupStreamRoutes()
 	srv.stream.Start()
-
-	err = srv.subscribe()
-	if err != nil {
+	if err = srv.subscribe(); err != nil {
 		return nil, fmt.Errorf("pubsub subscribe failed with: %s", err)
 	}
-
-	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
-	if err != nil {
+	var sc seerIface.Client
+	if sc, err = seerClient.New(ctx, clientNode, cfg.SensorsRegistry()); err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
-
-	err = servicesCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeSeer, servicesCommon.SeerBeaconOptionMeta(map[string]string{"others": "dns"}))
-	if err != nil {
+	if err = servicesCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeSeer, servicesCommon.SeerBeaconOptionMeta(map[string]string{"others": "dns"})); err != nil {
 		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
-
-	// Start DNS
-	err = srv.newDnsServer(config.DevMode, config.Ports["dns"])
-	if err != nil {
+	ports := cfg.Ports()
+	dnsPort := 0
+	if ports != nil {
+		dnsPort = ports["dns"]
+	}
+	if err = srv.newDnsServer(cfg.DevMode(), dnsPort); err != nil {
 		logger.Error("creating Dns server failed with:", err.Error())
 		return nil, fmt.Errorf("new dns server failed with: %s", err)
 	}
@@ -126,20 +107,15 @@ func New(ctx context.Context, config *tauConfig.Node, opts ...Options) (*Service
 	srv.dns.Start(ctx)
 
 	// HTTP
-	if config.Http == nil {
-		srv.http, err = auto.New(ctx, srv.node, config)
+	if srv.http = cfg.Http(); srv.http == nil {
+		srv.http, err = auto.New(ctx, srv.node, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("new http failed with: %s", err)
 		}
-	} else {
-		srv.http = config.Http
+		defer srv.http.Start()
 	}
 
 	srv.setupHTTPRoutes()
-
-	if config.Http == nil {
-		srv.http.Start()
-	}
 
 	return srv, nil
 }

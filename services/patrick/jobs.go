@@ -60,10 +60,20 @@ func (p *PatrickService) republishJob(ctx context.Context, jid string) error {
 		return fmt.Errorf("get job %s failed with: %w", jid, err)
 	}
 
+	if p.jobQueue != nil {
+		_, err = p.jobQueue.Enqueue(job, 10*time.Second)
+		if err != nil {
+			return fmt.Errorf("failed to re-enqueue job in republishJob: %w", err)
+		}
+		// Also reannounce on pubsub so subscribers see the job again.
+		if err = p.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job); err != nil {
+			return fmt.Errorf("failed to send over in republishJob pubsub error: %w", err)
+		}
+		return nil
+	}
 	if err = p.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job); err != nil {
 		return fmt.Errorf("failed to send over in republishJob pubsub error: %w", err)
 	}
-
 	return nil
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -88,6 +89,140 @@ func TestKVFSM_Apply_Delete(t *testing.T) {
 	_, ok = fsm.Get("mykey")
 	if ok {
 		t.Error("expected key to be deleted")
+	}
+}
+
+func TestQueueCommand_EncodeDecode(t *testing.T) {
+	prefix := "queue/patrick"
+
+	t.Run("Enqueue", func(t *testing.T) {
+		enc, err := encodeEnqueueCommand(prefix, "id1", []byte("payload"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cmd Command
+		if err := cbor.Unmarshal(enc, &cmd); err != nil {
+			t.Fatal(err)
+		}
+		if cmd.Type != CommandEnqueue || cmd.Enqueue == nil || cmd.Enqueue.QueuePrefix != prefix || cmd.Enqueue.ID != "id1" || !bytes.Equal(cmd.Enqueue.Data, []byte("payload")) {
+			t.Errorf("roundtrip failed: %+v", cmd)
+		}
+	})
+
+	t.Run("Dequeue", func(t *testing.T) {
+		enc, err := encodeDequeueCommand(prefix)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var cmd Command
+		if err := cbor.Unmarshal(enc, &cmd); err != nil {
+			t.Fatal(err)
+		}
+		if cmd.Type != CommandDequeue || cmd.Dequeue == nil || cmd.Dequeue.QueuePrefix != prefix {
+			t.Errorf("roundtrip failed: %+v", cmd)
+		}
+	})
+
+}
+
+func TestKVFSM_Apply_Enqueue(t *testing.T) {
+	store := newTestStore()
+	fsm := newKVFSM(store, "/raft/test")
+	prefix := "q"
+
+	enc, err := encodeEnqueueCommand(prefix, "id1", []byte("job1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := fsm.Apply(&raft.Log{Data: enc, Index: 1})
+	fsmResp, ok := resp.(FSMResponse)
+	if !ok {
+		t.Fatalf("expected FSMResponse, got %T", resp)
+	}
+	if fsmResp.Error != nil {
+		t.Fatal(fsmResp.Error)
+	}
+	// Item should be stored; pending should have id1
+	key := path.Join(prefix, "item", "id1")
+	val, ok := fsm.Get(key)
+	if !ok || !bytes.Equal(val, []byte("job1")) {
+		t.Errorf("expected item stored at %s, got ok=%v val=%s", key, ok, val)
+	}
+}
+
+func TestKVFSM_Apply_Dequeue(t *testing.T) {
+	store := newTestStore()
+	fsm := newKVFSM(store, "/raft/test")
+	prefix := "q"
+
+	// Enqueue first
+	encE, _ := encodeEnqueueCommand(prefix, "id1", []byte("job1"))
+	fsm.Apply(&raft.Log{Data: encE, Index: 1})
+
+	encD, err := encodeDequeueCommand(prefix)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := fsm.Apply(&raft.Log{Data: encD, Index: 2})
+	fsmResp, ok := resp.(FSMResponse)
+	if !ok {
+		t.Fatalf("expected FSMResponse, got %T", resp)
+	}
+	if fsmResp.Error != nil {
+		t.Fatal(fsmResp.Error)
+	}
+	if len(fsmResp.Data) == 0 {
+		t.Fatal("expected dequeue response data")
+	}
+	var dr dequeueResponse
+	if err := cbor.Unmarshal(fsmResp.Data, &dr); err != nil {
+		t.Fatal(err)
+	}
+	if dr.ID != "id1" || !bytes.Equal(dr.Data, []byte("job1")) {
+		t.Errorf("dequeue response: id=%s data=%s", dr.ID, dr.Data)
+	}
+}
+
+func TestKVFSM_Apply_DequeueEmpty(t *testing.T) {
+	store := newTestStore()
+	fsm := newKVFSM(store, "/raft/test")
+	prefix := "q"
+
+	enc, _ := encodeDequeueCommand(prefix)
+	resp := fsm.Apply(&raft.Log{Data: enc, Index: 1})
+	fsmResp, ok := resp.(FSMResponse)
+	if !ok {
+		t.Fatalf("expected FSMResponse, got %T", resp)
+	}
+	if fsmResp.Error != nil {
+		t.Fatal(fsmResp.Error)
+	}
+	if fsmResp.Data != nil {
+		t.Errorf("expected nil data for empty dequeue, got %x", fsmResp.Data)
+	}
+}
+
+func TestKVFSM_Apply_DequeueRemovesItem(t *testing.T) {
+	store := newTestStore()
+	fsm := newKVFSM(store, "/raft/test")
+	prefix := "q"
+
+	encE, _ := encodeEnqueueCommand(prefix, "id1", []byte("job1"))
+	fsm.Apply(&raft.Log{Data: encE, Index: 1})
+	encD, _ := encodeDequeueCommand(prefix)
+	resp := fsm.Apply(&raft.Log{Data: encD, Index: 2})
+	fsmResp, ok := resp.(FSMResponse)
+	if !ok {
+		t.Fatalf("expected FSMResponse, got %T", resp)
+	}
+	if fsmResp.Error != nil || len(fsmResp.Data) == 0 {
+		t.Fatalf("expected dequeue success: err=%v data=%x", fsmResp.Error, fsmResp.Data)
+	}
+	// Item should be removed from store (dequeue = pop)
+	key := path.Join(prefix, "item", "id1")
+	_, ok = fsm.Get(key)
+	if ok {
+		t.Error("expected item to be removed after dequeue")
 	}
 }
 

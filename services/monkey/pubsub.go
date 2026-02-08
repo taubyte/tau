@@ -4,18 +4,19 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/taubyte/tau/core/services/patrick"
 )
 
-// already runs in a go routine
-func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
+// RunJobFromBytes unmarshals job bytes and runs the job (used by both pubsub and dequeue poll).
+func (srv *Service) RunJobFromBytes(jobBytes []byte) {
 	var receivedJob patrick.Job
-	if err := receivedJob.Unmarshal(msg.Data); err != nil {
-		logger.Error("Subscription unmarshal had an error:", err.Error())
+	err := cbor.Unmarshal(jobBytes, &receivedJob)
+	if err != nil {
+		logger.Error("job unmarshal had an error:", err.Error())
 		return
 	}
-
 	if len(receivedJob.Id) == 0 {
 		logger.Error("Got an empty job.")
 		return
@@ -41,7 +42,6 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 	srv.recvJobs[receivedJob.Id] = time.Now()
 	srv.recvJobsLock.Unlock()
 
-	//Dirty fix for now
 	if receivedJob.Logs == nil {
 		receivedJob.Logs = make(map[string]string)
 	}
@@ -49,7 +49,7 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 		receivedJob.AssetCid = make(map[string]string)
 	}
 
-	fmt.Printf("Received job: %#v\n", receivedJob)
+	fmt.Printf("Received job: %s\n", receivedJob.Id)
 
 	monkey, err := srv.newMonkey(&receivedJob)
 	if err != nil {
@@ -58,4 +58,9 @@ func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
 	}
 
 	monkey.Run()
+}
+
+// already runs in a go routine
+func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
+	srv.RunJobFromBytes(msg.Data)
 }

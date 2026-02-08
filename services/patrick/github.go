@@ -155,12 +155,25 @@ func (srv *PatrickService) RegisterJob(ctx context.Context, newJob *iface.Job) e
 		return err
 	}
 
-	// Send the job over pub sub
+	if srv.jobQueue != nil {
+		exists, err := srv.jobExistsInOtherCluster(ctx, newJob.Id)
+		if err != nil {
+			return fmt.Errorf("cross-cluster check failed: %w", err)
+		}
+		if exists {
+			return nil // job already in another cluster, discard
+		}
+		_, err = srv.jobQueue.Enqueue(job_byte, 10*time.Second)
+		if err != nil {
+			return fmt.Errorf("failed to enqueue job: %w", err)
+		}
+		return nil
+	}
+	// Fallback: send the job over pub sub
 	err = srv.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job_byte)
 	if err != nil {
 		return fmt.Errorf("failed to send over pubsub error: %w", err)
 	}
-
 	return nil
 }
 

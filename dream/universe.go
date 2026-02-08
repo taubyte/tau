@@ -280,7 +280,14 @@ func (u *Universe) StartWithConfig(mainConfig *Config) error {
 	}
 
 	var wg sync.WaitGroup
-	for service, config := range mainConfig.Services {
+	serviceNames := make([]string, 0, len(mainConfig.Services))
+	for name := range mainConfig.Services {
+		serviceNames = append(serviceNames, name)
+	}
+	slices.Sort(serviceNames)
+
+	for _, service := range serviceNames {
+		config := mainConfig.Services[service]
 		logger.Infof("Service %s with config:%#v\n", service, config)
 
 		// domain validation keys

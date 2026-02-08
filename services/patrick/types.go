@@ -10,12 +10,13 @@ import (
 
 	auth "github.com/taubyte/tau/core/services/auth"
 
-	"github.com/taubyte/tau/config"
 	monkey "github.com/taubyte/tau/core/services/monkey"
 	tns "github.com/taubyte/tau/core/services/tns"
 
 	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/core/kvdb"
+	streamClient "github.com/taubyte/tau/p2p/streams/client"
+	"github.com/taubyte/tau/pkg/raft"
 )
 
 var _ iface.Service = &PatrickService{}
@@ -33,11 +34,12 @@ type PatrickService struct {
 	dbFactory    kvdb.Factory
 	devMode      bool
 
-	hostUrl string
-}
+	cluster        string
+	raftCluster    raft.Cluster
+	jobQueue       raft.Queue
+	outboundClient *streamClient.Client // for cross-cluster hasJob calls
 
-type Config struct {
-	config.Node `yaml:"z,omitempty"`
+	hostUrl string
 }
 
 // TODO: optimize cbor storage

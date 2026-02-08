@@ -113,7 +113,7 @@ func (s *Service) newMonkey(job *patrick.Job) (*Monkey, error) {
 			Service:               s,
 			Job:                   job,
 			logFile:               logFile,
-			generatedDomainRegExp: s.config.GeneratedDomainRegExp,
+			generatedDomainRegExp: s.config.GeneratedDomainRegExp(),
 			start:                 time.Now(),
 		}
 

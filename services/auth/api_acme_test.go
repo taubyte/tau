@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
 	"gotest.tools/v3/assert"
 )
@@ -13,20 +13,7 @@ import (
 func TestACMEFunctionality(t *testing.T) {
 	t.Run("create auth service with ACME support", func(t *testing.T) {
 		ctx := context.Background()
-		mockNode := peer.Mock(ctx)
-
-		cfg := &config.Node{
-			NetworkFqdn: "test.tau",
-			Node:        mockNode,
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12345"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12345"},
-			PrivateKey:  []byte("private-key"),
-			Root:        t.TempDir(),
-			DomainValidation: config.DomainValidation{
-				PrivateKey: []byte("private-key"),
-				PublicKey:  []byte("public-key"),
-			},
-		}
+		cfg := createTestConfig(t, &TestConfig{Port: 12345, UseMockNode: true, CustomKeys: true, NetworkFqdn: "test.tau"})
 
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
@@ -34,29 +21,25 @@ func TestACMEFunctionality(t *testing.T) {
 
 		// Verify the service was created successfully with ACME support
 		assert.Assert(t, svc != nil)
-		assert.Equal(t, svc.Node(), mockNode)
+		assert.Equal(t, svc.Node(), cfg.Node())
 		assert.Assert(t, svc.KV() != nil)
 	})
 
 	t.Run("test domain validation keys", func(t *testing.T) {
 		ctx := context.Background()
-		mockNode := peer.Mock(ctx)
-
 		privateKey := []byte("test-private-key")
 		publicKey := []byte("test-public-key")
-
-		cfg := &config.Node{
-			NetworkFqdn: "test.tau",
-			Node:        mockNode,
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12346"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12346"},
-			PrivateKey:  []byte("private-key"),
-			Root:        t.TempDir(),
-			DomainValidation: config.DomainValidation{
-				PrivateKey: privateKey,
-				PublicKey:  publicKey,
-			},
-		}
+		cfg, err := config.New(
+			config.WithRoot(t.TempDir()),
+			config.WithNetworkFqdn("test.tau"),
+			config.WithP2PListen([]string{"/ip4/0.0.0.0/tcp/12346"}),
+			config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/12346"}),
+			config.WithPrivateKey([]byte("private-key")),
+			config.WithDomainValidation(config.DomainValidation{PrivateKey: privateKey, PublicKey: publicKey}),
+		)
+		assert.NilError(t, err)
+		cfg.SetNode(peer.Mock(ctx))
+		cfg.SetDatabases(mock.New())
 
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
@@ -139,28 +122,34 @@ func TestPeerNodeWithACME(t *testing.T) {
 
 func TestConfigurationValidation(t *testing.T) {
 	t.Run("test valid configuration", func(t *testing.T) {
-		cfg := &config.Node{
-			NetworkFqdn: "test.tau",
-			DevMode:     true,
-		}
+		cfg, err := config.New(
+			config.WithRoot(t.TempDir()),
+			config.WithP2PListen([]string{"/ip4/0.0.0.0/tcp/0"}),
+			config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+			config.WithNetworkFqdn("test.tau"),
+			config.WithDevMode(true),
+		)
+		assert.NilError(t, err)
 
-		// Test that the configuration is valid
-		assert.Assert(t, cfg.NetworkFqdn != "")
-		assert.Assert(t, cfg.DevMode)
+		assert.Assert(t, cfg.NetworkFqdn() != "")
+		assert.Assert(t, cfg.DevMode())
 	})
 
 	t.Run("test configuration with domain validation", func(t *testing.T) {
-		cfg := &config.Node{
-			NetworkFqdn: "test.tau",
-			DomainValidation: config.DomainValidation{
+		cfg, err := config.New(
+			config.WithRoot(t.TempDir()),
+			config.WithP2PListen([]string{"/ip4/0.0.0.0/tcp/0"}),
+			config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+			config.WithNetworkFqdn("test.tau"),
+			config.WithDomainValidation(config.DomainValidation{
 				PrivateKey: []byte("private-key"),
 				PublicKey:  []byte("public-key"),
-			},
-		}
+			}),
+		)
+		assert.NilError(t, err)
 
-		// Test that the configuration has domain validation keys
-		assert.Assert(t, cfg.NetworkFqdn != "")
-		assert.Assert(t, cfg.DomainValidation.PrivateKey != nil)
-		assert.Assert(t, cfg.DomainValidation.PublicKey != nil)
+		assert.Assert(t, cfg.NetworkFqdn() != "")
+		assert.Assert(t, cfg.DomainValidation().PrivateKey != nil)
+		assert.Assert(t, cfg.DomainValidation().PublicKey != nil)
 	})
 }

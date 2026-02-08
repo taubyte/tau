@@ -82,9 +82,14 @@ func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams
 		}
 	}
 
-	jid, err := maps.String(body, "jid")
-	if err != nil {
-		return nil, fmt.Errorf("failed getting jid from body with error: %v", err)
+	jid := ""
+	if action != "list" && action != "dequeue" {
+		jid, err = maps.String(body, "jid")
+		if err != nil {
+			return nil, fmt.Errorf("failed getting jid from body with error: %v", err)
+		}
+	} else {
+		jid, _ = maps.String(body, "jid")
 	}
 	switch action {
 	case "list":
@@ -110,6 +115,10 @@ func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams
 		return nil, p.failedHandler(ctx, jid, cidMap, assetMap, conn)
 	case "timeout":
 		return nil, p.timeoutHandler(ctx, jid, cidMap)
+	case "hasJob":
+		return p.hasJobHandler(ctx, jid)
+	case "dequeue":
+		return p.dequeueHandler(ctx)
 	}
 
 	return nil, nil
@@ -140,6 +149,33 @@ func (p *PatrickService) listHandler(ctx context.Context) (cr.Response, error) {
 	}
 
 	return cr.Response{"Ids": jobIds}, nil
+}
+
+// hasJobHandler reports whether this Patrick has the job (queued or stored).
+func (p *PatrickService) hasJobHandler(ctx context.Context, jid string) (cr.Response, error) {
+	if jid == "" {
+		return cr.Response{"has": false}, nil
+	}
+	_, err := p.db.Get(ctx, "/jobs/"+jid)
+	if err == nil {
+		return cr.Response{"has": true}, nil
+	}
+	return cr.Response{"has": false}, nil
+}
+
+// dequeueHandler returns the next job from the raft queue for cluster-based job distribution.
+func (p *PatrickService) dequeueHandler(ctx context.Context) (cr.Response, error) {
+	if p.jobQueue == nil {
+		return nil, errors.New("dequeue not available: no raft queue")
+	}
+	id, data, err := p.jobQueue.Dequeue(10 * time.Second)
+	if err != nil {
+		return nil, err
+	}
+	if id == "" && len(data) == 0 {
+		return cr.Response{"id": "", "job": nil}, nil
+	}
+	return cr.Response{"id": id, "job": data}, nil
 }
 
 // Info handler

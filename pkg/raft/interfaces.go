@@ -120,3 +120,13 @@ type SnapshotStore interface {
 	List() ([]*raft.SnapshotMeta, error)
 	Open(id string) (*raft.SnapshotMeta, io.ReadCloser, error)
 }
+
+// Queue is a replicated FIFO queue (push/pop) built on top of a Cluster.
+// Job lifecycle and worker failure are handled by the caller (e.g. Patrick/KVDB).
+type Queue interface {
+	Enqueue(data []byte, timeout time.Duration) (id string, err error)
+	Dequeue(timeout time.Duration) (id string, data []byte, err error)
+	Peek() (id string, data []byte, ok bool)
+	Len() int
+	Close() error
+}

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 	"gopkg.in/yaml.v3"
 	"gotest.tools/v3/assert"
 )

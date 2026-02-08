@@ -9,13 +9,13 @@ import (
 	"time"
 
 	patrickClient "github.com/taubyte/tau/clients/p2p/patrick"
-	"github.com/taubyte/tau/config"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	iface "github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"
 	tnsClient "github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
+	"github.com/taubyte/tau/pkg/config"
 )
 
 // TODO: This sucks
@@ -51,7 +51,8 @@ type Service struct {
 	clientNode    peer.Node
 	hoarderClient hoarderIface.Client
 
-	config *config.Node
+	config  config.Config
+	cluster string
 
 	recvJobs     map[string]time.Time
 	recvJobsLock sync.RWMutex
@@ -84,8 +85,6 @@ func (s *Service) Node() peer.Node {
 func (s *Service) Dev() bool {
 	return s.dev
 }
-
-type Config config.Node
 
 func appendAndLogError(e chan error, format string, args ...any) {
 	ferr := fmt.Errorf(format, args...)

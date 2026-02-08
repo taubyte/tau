@@ -83,11 +83,11 @@ func (seer *Service) newDnsServer(devMode bool, port int) error {
 }
 
 func (s *Service) isServiceOrAliasDomain(dom string) bool {
-	logger.Debugf("Checking %s against %s", dom, s.config.ServicesDomainRegExp.String())
-	if s.config.ServicesDomainRegExp.MatchString(dom) {
+	logger.Debugf("Checking %s against %s", dom, s.config.ServicesDomainRegExp().String())
+	if s.config.ServicesDomainRegExp().MatchString(dom) {
 		return true
 	}
-	for _, r := range s.config.AliasDomainsRegExp {
+	for _, r := range s.config.AliasDomainsRegExp() {
 		logger.Debugf("Checking %s against %s", dom, r.String())
 		if r.MatchString(dom) {
 			return true
@@ -147,8 +147,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 				return
 			}
 
-			logger.Debugf("Checking %s against %s", name, h.seer.config.GeneratedDomainRegExp.String())
-			if h.seer.config.GeneratedDomainRegExp.MatchString(name) {
+			if h.seer.config.GeneratedDomainMatch(name) {
 				h.replyWithHTTPServicingNodes(ctx, w, r, errMsg, msg)
 				return
 			}
@@ -237,7 +236,7 @@ func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.Respo
 			Hdr:   dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeCAA, Class: dns.ClassINET, Ttl: uint32(ValidServiceResponseTime.Seconds())},
 			Flag:  0,
 			Tag:   "issue",
-			Value: h.seer.config.AcmeCAARecord,
+			Value: h.seer.config.AcmeCAARecord(),
 		})
 	default:
 		logger.Debugf("request for %s (type: %d)", name, r.Question[0].Qtype)
@@ -305,7 +304,7 @@ func (h *dnsHandler) replyWithHTTPServicingNodes(ctx context.Context, w dns.Resp
 			Hdr:   dns.RR_Header{Name: r.Question[0].Name, Rrtype: dns.TypeCAA, Class: dns.ClassINET, Ttl: uint32(ValidServiceResponseTime.Seconds())},
 			Flag:  0,
 			Tag:   "issue",
-			Value: h.seer.config.AcmeCAARecord,
+			Value: h.seer.config.AcmeCAARecord(),
 		})
 	default:
 		logger.Debugf("request for %s (type: %d)", r.Question[0].Name, r.Question[0].Qtype)

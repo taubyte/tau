@@ -7,5 +7,5 @@ import (
 )
 
 type ProtoCommandIface interface {
-	New(context.Context, *Node) (serviceIface.Service, error)
+	New(context.Context, Config) (serviceIface.Service, error)
 }

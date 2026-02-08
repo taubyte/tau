@@ -16,6 +16,7 @@ type CommonConfig struct {
 type ServiceConfig struct {
 	CommonConfig
 	Ctx        context.Context
+	Cluster    string // cluster name, defaults to "main"
 	Others     map[string]int
 	PublicKey  []byte
 	PrivateKey []byte
@@ -33,6 +34,7 @@ func (c *ServiceConfig) Clone() *ServiceConfig {
 	clone := &ServiceConfig{
 		CommonConfig: c.CommonConfig,
 		Ctx:          c.Ctx,
+		Cluster:      c.Cluster,
 		Others:       make(map[string]int, 0),
 		PrivateKey:   c.PrivateKey,
 		PublicKey:    c.PublicKey,

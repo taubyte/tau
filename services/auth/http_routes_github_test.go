@@ -5,10 +5,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/taubyte/tau/config"
-	"github.com/taubyte/tau/p2p/keypair"
 	"github.com/taubyte/tau/p2p/streams/command"
-	"github.com/taubyte/tau/pkg/kvdb/mock"
 
 	"gotest.tools/v3/assert"
 )
@@ -16,14 +13,7 @@ import (
 // Test HTTP route setup workflow with comprehensive scenarios
 func TestHTTPRouteSetupWorkflowWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12377"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12377"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12377)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -66,14 +56,7 @@ func TestHTTPRouteSetupWorkflowWithFixtures(t *testing.T) {
 // Test HTTP route setup
 func TestHTTPRouteSetup(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12359"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12359"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12359)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -89,14 +72,7 @@ func TestHTTPRouteSetup(t *testing.T) {
 // Test stream route setup
 func TestStreamRouteSetup(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12361"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12361"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12361)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -112,14 +88,7 @@ func TestStreamRouteSetup(t *testing.T) {
 // Test HTTP endpoints with proper test data sequences
 func TestHTTPEndpointsWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12372"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12372"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12372)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -135,14 +104,7 @@ func TestHTTPEndpointsWithFixtures(t *testing.T) {
 // Test GitHub HTTP handlers with comprehensive scenarios
 func TestGitHubHTTPHandlersWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12382"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12382"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12382)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -234,14 +196,7 @@ func TestGitHubHTTPHandlersWithFixtures(t *testing.T) {
 // Test GitHub authentication functions with comprehensive scenarios
 func TestGitHubAuthenticationWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12383"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12383"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12383)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -273,14 +228,7 @@ func TestGitHubAuthenticationWithFixtures(t *testing.T) {
 // Test GitHub core functions with comprehensive scenarios
 func TestGitHubCoreFunctionsWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12384"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12384"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12384)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()

@@ -12,7 +12,7 @@ import (
 	keypair "github.com/taubyte/tau/p2p/keypair"
 
 	hoarder_client "github.com/taubyte/tau/clients/p2p/hoarder"
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 
 	peer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/common"
@@ -26,14 +26,17 @@ func TestHoarderClient(t *testing.T) {
 
 	srvRoot := t.TempDir()
 
-	srv, err := service.New(ctx, &config.Node{
-		Root:        srvRoot,
-		P2PListen:   []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)},
-		P2PAnnounce: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)},
-		SwarmKey:    common.SwarmKey(),
-		DevMode:     true,
-	})
+	cfg, err := config.New(
+		config.WithRoot(srvRoot),
+		config.WithP2PListen([]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)}),
+		config.WithP2PAnnounce([]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11010)}),
+		config.WithSwarmKey(common.SwarmKey()),
+	)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 
+	srv, err := service.New(ctx, cfg)
 	if err != nil {
 		t.Errorf("Error creating Service with: %s", err)
 		return

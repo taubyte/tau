@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -15,8 +16,17 @@ import (
 	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 )
 
+type dequeueItem struct {
+	id  string
+	job []byte
+}
+
 type Starfish struct {
 	Jobs map[string]*patrick.Job
+
+	// queue for Dequeue() so tests can inject jobs via AddJob and monkey poll receives them
+	dequeueQueue []dequeueItem
+	dequeueMu    sync.Mutex
 }
 
 func (s *Starfish) Close() {
@@ -39,11 +49,11 @@ func (s *Starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error
 
 	s.Jobs[job.Id] = job
 
-	err = peerC.PubSubPublish(context.TODO(), patrickSpecs.PubSubIdent, job_bytes)
-	if err != nil {
-		return fmt.Errorf("publish job failed: %w", err)
-	}
+	s.dequeueMu.Lock()
+	s.dequeueQueue = append(s.dequeueQueue, dequeueItem{id: job.Id, job: job_bytes})
+	s.dequeueMu.Unlock()
 
+	_ = peerC.PubSubPublish(context.TODO(), patrickSpecs.PubSubIdent, job_bytes)
 	return nil
 }
 
@@ -113,4 +123,17 @@ func (s *Starfish) Timeout(jid string) error {
 // added to satisfy the patrick interface
 func (s *Starfish) Cancel(jid string, cid_log map[string]string) (interface{}, error) {
 	return nil, fmt.Errorf("not implemented")
+}
+
+// Dequeue satisfies the patrick interface; returns jobs pushed via AddJob (FIFO).
+func (s *Starfish) Dequeue() (id string, job []byte, err error) {
+	s.dequeueMu.Lock()
+	if len(s.dequeueQueue) == 0 {
+		s.dequeueMu.Unlock()
+		return "", nil, nil
+	}
+	item := s.dequeueQueue[0]
+	s.dequeueQueue = s.dequeueQueue[1:]
+	s.dequeueMu.Unlock()
+	return item.id, item.job, nil
 }

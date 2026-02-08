@@ -1,7 +1,6 @@
 package http
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"reflect"
@@ -17,7 +16,7 @@ import (
 )
 
 func TestLookup(t *testing.T) {
-	s := NewTestService(peer.Mock(context.Background()))
+	s := newTestService(peer.Mock(t.Context()))
 	testDomainName := "someDomain"
 	testFunctionId := "someFuncId"
 	testWebsiteId := "someWebId"

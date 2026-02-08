@@ -16,6 +16,7 @@ type Client interface {
 	Timeout(jid string) error
 	Cancel(jid string, cid_log map[string]string) (interface{}, error)
 	DatabaseStats() (kvdb.Stats, error)
+	Dequeue() (id string, job []byte, err error)
 	Peers(...peerCore.ID) Client
 	Close()
 }

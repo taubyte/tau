@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/ipfs/go-cid"
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/keypair"
+	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
 	"github.com/taubyte/tau/utils/id"
 
@@ -56,14 +56,7 @@ func TestGitHubKeyGenerationWorkflowWithFixtures(t *testing.T) {
 // Test domain validation workflow with comprehensive test data sequences
 func TestDomainValidationWorkflowWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12376"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12376"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12376)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -177,17 +170,18 @@ func TestTokenDomainHTTPHandler(t *testing.T) {
 	err = pem.Encode(&pubBuf, pubKeyPEM)
 	assert.NilError(t, err)
 
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12381"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12381"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-		DomainValidation: config.DomainValidation{
+	cfg, err := config.New(
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{"/ip4/0.0.0.0/tcp/12381"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/12381"}),
+		config.WithPrivateKey(keypair.NewRaw()),
+		config.WithDomainValidation(config.DomainValidation{
 			PrivateKey: privBuf.Bytes(),
 			PublicKey:  pubBuf.Bytes(),
-		},
-	}
+		}),
+	)
+	assert.NilError(t, err)
+	cfg.SetDatabases(mockFactory)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()

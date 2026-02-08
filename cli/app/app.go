@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 	"github.com/urfave/cli/v2"
 )
 

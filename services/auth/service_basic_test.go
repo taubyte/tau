@@ -4,10 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/tau/config"
-	"github.com/taubyte/tau/p2p/keypair"
-	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/pkg/kvdb/mock"
+	"github.com/taubyte/tau/pkg/config"
 
 	"gotest.tools/v3/assert"
 )
@@ -16,14 +13,7 @@ func TestAuthService_New(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("successful creation with default config", func(t *testing.T) {
-		mockFactory := mock.New()
-		cfg := &config.Node{
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12351"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12351"},
-			PrivateKey:  keypair.NewRaw(),
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-		}
+		cfg := newTestConfig(t, 12351)
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		assert.Assert(t, svc != nil)
@@ -31,16 +21,7 @@ func TestAuthService_New(t *testing.T) {
 	})
 
 	t.Run("successful creation with custom config", func(t *testing.T) {
-		mockFactory := mock.New()
-		cfg := &config.Node{
-			NetworkFqdn: "test.tau",
-			DevMode:     true,
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12352"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12352"},
-			PrivateKey:  keypair.NewRaw(),
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-		}
+		cfg := createTestConfig(t, &TestConfig{Port: 12352, NetworkFqdn: "test.tau", DevMode: true})
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		assert.Assert(t, svc != nil)
@@ -48,19 +29,7 @@ func TestAuthService_New(t *testing.T) {
 	})
 
 	t.Run("successful creation with custom node", func(t *testing.T) {
-		mockNode := peer.Mock(ctx)
-		cfg := &config.Node{
-			NetworkFqdn: "test.tau",
-			Node:        mockNode,
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12347"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12347"},
-			PrivateKey:  []byte("private-key"),
-			Root:        t.TempDir(),
-			DomainValidation: config.DomainValidation{
-				PrivateKey: []byte("private-key"),
-				PublicKey:  []byte("public-key"),
-			},
-		}
+		cfg := createTestConfig(t, &TestConfig{Port: 12347, UseMockNode: true, CustomKeys: true, NetworkFqdn: "test.tau"})
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		assert.Assert(t, svc != nil)
@@ -68,15 +37,7 @@ func TestAuthService_New(t *testing.T) {
 	})
 
 	t.Run("successful creation with custom database factory", func(t *testing.T) {
-		mockFactory := mock.New()
-		cfg := &config.Node{
-			NetworkFqdn: "test.tau",
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12348"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12348"},
-			PrivateKey:  keypair.NewRaw(),
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-		}
+		cfg := createTestConfig(t, &TestConfig{Port: 12348, NetworkFqdn: "test.tau"})
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		assert.Assert(t, svc != nil)
@@ -84,26 +45,15 @@ func TestAuthService_New(t *testing.T) {
 	})
 
 	t.Run("error with custom node but missing keys", func(t *testing.T) {
-		mockNode := peer.Mock(ctx)
-		cfg := &config.Node{
-			NetworkFqdn: "test.tau",
-			Node:        mockNode,
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12363"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12363"},
-			// Missing DomainValidation keys
-		}
+		cfg := createTestConfig(t, &TestConfig{Port: 12363, UseMockNode: true, CustomKeys: false, NetworkFqdn: "test.tau"})
 		svc, err := New(ctx, cfg)
 		assert.Assert(t, err != nil, "Expected error for missing keys")
 		assert.Assert(t, svc == nil)
 	})
 
 	t.Run("error with invalid config", func(t *testing.T) {
-		cfg := &config.Node{
-			NetworkFqdn: "", // Invalid empty FQDN
-		}
-		svc, err := New(ctx, cfg)
+		_, err := config.New(config.WithRoot(""))
 		assert.Assert(t, err != nil, "Expected error for invalid config")
-		assert.Assert(t, svc == nil)
 	})
 }
 
@@ -113,12 +63,7 @@ func TestPackageFunction(t *testing.T) {
 
 	// Test that it implements the interface
 	ctx := context.Background()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12351"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12351"},
-		PrivateKey:  keypair.NewRaw(),
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12351)
 
 	svc, err := iface.New(ctx, cfg)
 	assert.NilError(t, err)
@@ -128,14 +73,7 @@ func TestPackageFunction(t *testing.T) {
 
 func TestAuthService_Close(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12353"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12353"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12353)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, svc != nil)
@@ -146,14 +84,7 @@ func TestAuthService_Close(t *testing.T) {
 
 func TestAuthService_Node(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12354"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12354"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12354)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, svc != nil)
@@ -165,14 +96,7 @@ func TestAuthService_Node(t *testing.T) {
 
 func TestAuthService_KV(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12355"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12355"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12355)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, svc != nil)

@@ -112,3 +112,21 @@ func (c *Client) Get(jid string) (*iface.Job, error) {
 
 	return &job, nil
 }
+
+// Dequeue returns the next job from Patrick's raft queue. id and job are empty when no job is available.
+func (c *Client) Dequeue() (id string, job []byte, err error) {
+	resp, err := c.Send("patrick", command.Body{"action": "dequeue", "jid": ""}, c.peers...)
+	if err != nil {
+		return "", nil, err
+	}
+	id, _ = maps.String(resp, "id")
+	if id == "" {
+		return "", nil, nil
+	}
+	if v, ok := resp["job"]; ok && v != nil {
+		if b, ok := v.([]byte); ok {
+			return id, b, nil
+		}
+	}
+	return id, nil, nil
+}

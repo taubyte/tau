@@ -4,9 +4,9 @@
 package substrate
 
 import (
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 )
 
-func (srv *Service) attachNodeIpfs(_ *config.Node) (err error) {
+func (srv *Service) attachNodeIpfs(_ config.Config) (err error) {
 	return nil
 }

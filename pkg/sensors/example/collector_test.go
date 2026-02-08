@@ -601,7 +601,7 @@ func TestCollector_FetchMetrics_InvalidURL(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	mockNode := peer.Mock(context.Background())
+	mockNode := peer.Mock(t.Context())
 	sensorService, err := sensors.New(mockNode, sensors.WithPort(0))
 	assert.NilError(t, err)
 
