@@ -1,10 +1,11 @@
 package projectLib
 
 import (
+	"context"
+
 	"github.com/taubyte/tau/pkg/git"
+	"github.com/taubyte/tau/tools/tau/config"
 	projectI18n "github.com/taubyte/tau/tools/tau/i18n/project"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
-	"github.com/taubyte/tau/tools/tau/states"
 )
 
 type repositoryHandler struct {
@@ -50,7 +51,7 @@ func (h *repositoryHandler) openOrClone(profile config.Profile, loc string, ops 
 	_ops = append(_ops, ops...)
 
 	return git.New(
-		states.Context,
+		context.Background(),
 		_ops...,
 	)
 }

@@ -68,3 +68,12 @@ func Timeout(duration time.Duration) Option {
 		return nil
 	}
 }
+
+// UseDefaultTransport leaves the client's Transport nil so http.DefaultTransport is used.
+// Use this when TAUBYTE_URL points to a mock (e.g. http://auth.mock) so gock can intercept.
+func UseDefaultTransport() Option {
+	return func(c *Client) error {
+		c.useDefaultTransport = true
+		return nil
+	}
+}

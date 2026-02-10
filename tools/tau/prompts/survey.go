@@ -5,12 +5,10 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/terminal"
-	"github.com/taubyte/tau/tools/tau/states"
 )
 
 func handleError(err error) {
 	if err != nil {
-		states.ContextC()
 		if err != terminal.InterruptErr {
 			panic(err)
 		}

@@ -1,7 +1,7 @@
 package repositoryI18n
 
-import "github.com/pterm/pterm"
+import "github.com/taubyte/tau/tools/tau/i18n/printer"
 
 func TriggerBuild() {
-	pterm.Info.Printfln("Trigger build for usage with: %s", pterm.FgGreen.Sprintf("$ tau push {resource-type}"))
+	printer.Out.InfoPrintfln("Trigger build for usage with: %s", printer.Out.SprintfGreen("$ tau push {resource-type}"))
 }

@@ -43,7 +43,7 @@ func getOrAskForSize(c *cli.Context, prompt string, prev ...string) string {
 }
 
 // TODO should take and return expected type
-func GetSizeAndType(c *cli.Context, oldSize string, isNew bool) (size string) {
+func GetSizeAndType(c *cli.Context, oldSize string, isNew bool) (size string, err error) {
 	// Uppercase the relative flags
 	flags.ToUpper(c, flags.Size, flags.SizeUnit)
 
@@ -51,24 +51,29 @@ func GetSizeAndType(c *cli.Context, oldSize string, isNew bool) (size string) {
 	if isNew {
 		memory = RequiredString(c, SizePrompt, getOrAskForSize)
 		if _, err := schemaCommon.StringToUnits(memory); err != nil {
-			unitType = GetOrAskForSelection(c, flags.SizeUnit.Name, UnitTypePrompt, common.SizeUnitTypes)
-		} else {
-			return memory
-		}
-		return memory + unitType
-	} else {
-		memory = RequiredString(c, SizePrompt, getOrAskForSize, oldSize)
-		if _, err := schemaCommon.StringToUnits(memory); err != nil {
-			var prevType string
-			for _, o := range common.SizeUnitTypes {
-				if strings.Contains(strings.ToUpper(oldSize), o) {
-					prevType = o
-				}
+			unitType, err = GetOrAskForSelection(c, flags.SizeUnit.Name, UnitTypePrompt, common.SizeUnitTypes)
+			if err != nil {
+				return "", err
 			}
-			unitType = GetOrAskForSelection(c, flags.SizeUnit.Name, UnitTypePrompt, common.SizeUnitTypes, strings.ToUpper(prevType))
 		} else {
-			return memory
+			return memory, nil
 		}
-		return memory + unitType
+		return memory + unitType, nil
 	}
+	memory = RequiredString(c, SizePrompt, getOrAskForSize, oldSize)
+	if _, parseErr := schemaCommon.StringToUnits(memory); parseErr != nil {
+		var prevType string
+		for _, o := range common.SizeUnitTypes {
+			if strings.Contains(strings.ToUpper(oldSize), o) {
+				prevType = o
+			}
+		}
+		unitType, err = GetOrAskForSelection(c, flags.SizeUnit.Name, UnitTypePrompt, common.SizeUnitTypes, strings.ToUpper(prevType))
+		if err != nil {
+			return "", err
+		}
+	} else {
+		return memory, nil
+	}
+	return memory + unitType, nil
 }

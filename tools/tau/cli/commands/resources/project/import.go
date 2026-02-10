@@ -8,15 +8,14 @@ import (
 	httpClient "github.com/taubyte/tau/clients/http/auth"
 	"github.com/taubyte/tau/pkg/cli/i18n"
 	"github.com/taubyte/tau/tools/tau/cli/common"
-	"github.com/taubyte/tau/tools/tau/env"
+	authClient "github.com/taubyte/tau/tools/tau/clients/auth_client"
 	"github.com/taubyte/tau/tools/tau/flags"
 	projectI18n "github.com/taubyte/tau/tools/tau/i18n/project"
 	repositoryI18n "github.com/taubyte/tau/tools/tau/i18n/repository"
-	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/singletons"
+	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/shared"
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
 	"github.com/taubyte/tau/tools/tau/prompts"
-	authClient "github.com/taubyte/tau/tools/tau/singletons/auth_client"
-	"github.com/taubyte/tau/tools/tau/singletons/session"
+	"github.com/taubyte/tau/tools/tau/session"
 	slices "github.com/taubyte/tau/utils/slices/string"
 	"github.com/urfave/cli/v2"
 )
@@ -39,8 +38,8 @@ func (link) Import() common.Command {
 }
 
 func _import(ctx *cli.Context) error {
-	if network, _ := env.GetSelectedNetwork(); len(network) < 1 {
-		return singletonsI18n.NoNetworkSelected()
+	if cloud, _ := session.GetSelectedCloud(); len(cloud) < 1 {
+		return singletonsI18n.NoCloudSelected()
 	}
 
 	profile, err := loginLib.GetSelectedProfile()
@@ -72,7 +71,10 @@ func _import(ctx *cli.Context) error {
 		repoMap[fullName] = repo
 	}
 
-	configRepoName := prompts.GetOrAskForSelection(ctx, "config", "Config:", configRepos)
+	configRepoName, err := prompts.GetOrAskForSelection(ctx, "config", "Config:", configRepos)
+	if err != nil {
+		return err
+	}
 	configSplit := strings.SplitN(configRepoName, "_", 2)
 	codeSplit := []string{configSplit[0], "code", configSplit[1]}
 	codeRepoName := strings.Join(codeSplit, "_")
@@ -82,7 +84,10 @@ func _import(ctx *cli.Context) error {
 		prev = append(prev, codeRepoName)
 	}
 
-	codeRepoName = prompts.GetOrAskForSelection(ctx, "code", "Code:", codeRepos, prev...)
+	codeRepoName, err = prompts.GetOrAskForSelection(ctx, "code", "Code:", codeRepos, prev...)
+	if err != nil {
+		return err
+	}
 	codeRepo, ok := repoMap[codeRepoName]
 	if !ok {
 		return i18n.ErrorDoesNotExist("code repo", codeRepoName)
@@ -117,7 +122,7 @@ func _import(ctx *cli.Context) error {
 		return projectI18n.CreatingProjectFailed(err)
 	}
 
-	projectI18n.ImportedProject(clientProject.Name, profile.Network)
+	projectI18n.ImportedProject(clientProject.Name, profile.Cloud)
 
 	if prompts.ConfirmPrompt(ctx, fmt.Sprintf("select `%s` as current project?", clientProject.Name)) {
 		if err = session.Set().SelectedProject(clientProject.Name); err != nil {

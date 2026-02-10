@@ -10,7 +10,7 @@ import (
 
 	httpClient "github.com/taubyte/tau/clients/http/auth"
 	"github.com/taubyte/tau/pkg/schema/project"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
+	"github.com/taubyte/tau/tools/tau/config"
 )
 
 func cloneProjectAndPushConfig(clientProject *httpClient.Project, location, description, user string, embedToken bool) error {

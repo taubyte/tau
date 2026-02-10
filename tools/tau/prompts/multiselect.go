@@ -7,6 +7,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/AlecAivazis/survey/v2/core"
 	"github.com/pterm/pterm"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/urfave/cli/v2"
 )
 
@@ -37,7 +38,7 @@ func MultiSelect(c *cli.Context, cnf MultiSelectConfig) (ret []string) {
 	formattedOptions := strings.ToLower(strings.Join(cnf.Options, ","))
 	for _, selection := range ret {
 		if !strings.Contains(formattedOptions, strings.ToLower(selection)) {
-			pterm.Warning.Printfln(DoubleStringNotFound, cnf.Field, selection)
+			printer.Out.WarningPrintfln(DoubleStringNotFound, cnf.Field, selection)
 			multiselectPrompt(&ret, cnf)
 			return
 		}

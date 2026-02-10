@@ -15,7 +15,6 @@ var ColorOptions = []string{"never", "auto"}
 var Color = &cli.StringFlag{
 	Name:        "color",
 	DefaultText: "auto",
-	EnvVars:     []string{"TAU_COLOR"},
 }
 
 func GetColor(c *cli.Context) (color string, err error) {

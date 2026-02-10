@@ -4,9 +4,9 @@ import (
 	"github.com/taubyte/tau/pkg/schema/application"
 	"github.com/taubyte/tau/pkg/schema/project"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
-	"github.com/taubyte/tau/tools/tau/singletons/session"
+	"github.com/taubyte/tau/tools/tau/session"
 	"github.com/taubyte/tau/utils/id"
 	"github.com/urfave/cli/v2"
 )
@@ -18,7 +18,7 @@ func SelectedProjectAndApp() (project project.Project, selectedApp string, err e
 	}
 
 	// Returns a boolean for existence
-	selectedApp, _ = env.GetSelectedApplication()
+	selectedApp, _ = config.GetSelectedApplication()
 
 	return
 }
@@ -89,7 +89,7 @@ func Set(app *structureSpec.App) error {
 }
 
 func Select(ctx *cli.Context, name string) error {
-	return env.SetSelectedApplication(ctx, name)
+	return session.Set().SelectedApplication(name)
 }
 
 func Deselect(ctx *cli.Context, name string) error {

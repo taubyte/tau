@@ -34,7 +34,6 @@ func certificate(ctx *cli.Context, domain *structureSpec.Domain, new bool) (err 
 		)
 		cert, key, err = domainLib.ValidateCertificateKeyPairAndHostname(domain)
 		if err != nil {
-			// TODO verbose
 			return
 		}
 

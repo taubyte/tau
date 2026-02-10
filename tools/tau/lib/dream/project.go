@@ -42,7 +42,7 @@ func runJobs(jobs []internalJob) error {
 }
 
 func (i *ProdProject) Import() error {
-	// Attach the project to dreamland
+	// Attach the project to dream
 	if err := i.Attach(); err != nil {
 		return err
 	}

@@ -9,7 +9,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/flags"
 	functionFlags "github.com/taubyte/tau/tools/tau/flags/function"
 	"github.com/taubyte/tau/tools/tau/prompts"
-	"github.com/taubyte/tau/tools/tau/singletons/templates"
+	"github.com/taubyte/tau/tools/tau/templates"
 	"github.com/urfave/cli/v2"
 )
 

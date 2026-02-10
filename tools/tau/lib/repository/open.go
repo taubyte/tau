@@ -3,12 +3,13 @@ package repositoryLib
 import (
 	"fmt"
 
+	"context"
+
 	"github.com/taubyte/tau/pkg/git"
+	"github.com/taubyte/tau/tools/tau/config"
 	libraryI18n "github.com/taubyte/tau/tools/tau/i18n/library"
 	websiteI18n "github.com/taubyte/tau/tools/tau/i18n/website"
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
-	"github.com/taubyte/tau/tools/tau/states"
 )
 
 func (info *Info) Open(project config.Project, url string) (*git.Repository, error) {
@@ -32,7 +33,7 @@ func (info *Info) Open(project config.Project, url string) (*git.Repository, err
 		return nil, fmt.Errorf("repository not cloned: `%s`", repositoryPath)
 	}
 
-	repo, err := git.New(states.Context,
+	repo, err := git.New(context.Background(),
 		git.Root(repositoryPath),
 		git.Author(profile.GitUsername, profile.GitEmail),
 		git.URL(url),

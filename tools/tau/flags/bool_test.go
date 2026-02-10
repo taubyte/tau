@@ -8,7 +8,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-var testFlagName = "env"
+var testFlagName = "verbose"
 
 func newBoolFlag() *BoolWithInverseFlag {
 	return &BoolWithInverseFlag{
@@ -31,7 +31,7 @@ func TestBoolWithInverse(t *testing.T) {
 		}
 		return nil
 	}
-	err := app.Run([]string{"app", "--env"})
+	err := app.Run([]string{"app", "--verbose"})
 	assert.NilError(t, err)
 
 	app.Flags = Combine(newBoolFlag())
@@ -45,7 +45,7 @@ func TestBoolWithInverse(t *testing.T) {
 		}
 		return nil
 	}
-	err = app.Run([]string{"app", "--no-env"})
+	err = app.Run([]string{"app", "--no-verbose"})
 	assert.NilError(t, err)
 
 	app.Flags = Combine(newBoolFlag())

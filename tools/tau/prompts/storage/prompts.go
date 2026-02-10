@@ -15,7 +15,7 @@ func GetVersioning(ctx *cli.Context, prev ...bool) bool {
 	return prompts.GetOrAskForBool(ctx, storageFlags.Versioning.Name, VersioningPrompt, prev...)
 }
 
-func SelectABucket(ctx *cli.Context, prev ...string) string {
+func SelectABucket(ctx *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrAskForSelection(ctx, storageFlags.BucketType.Name, BucketPrompt, storageLib.Buckets, prev...)
 }
 

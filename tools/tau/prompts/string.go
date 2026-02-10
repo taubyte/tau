@@ -2,7 +2,7 @@ package prompts
 
 import (
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/pterm/pterm"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/urfave/cli/v2"
 )
 
@@ -13,7 +13,7 @@ func RequiredString(c *cli.Context, prompt string, f stringPromptMethod, prev ..
 	for ret == "" {
 		panicIfPromptNotEnabled(prompt)
 
-		pterm.Warning.Println(Required)
+		printer.Out.WarningPrintln(Required)
 		ret = f(c, prompt, prev...)
 	}
 	return ret
@@ -24,7 +24,7 @@ func RequiredStringWithValidator(c *cli.Context, prompt string, f stringPromptMe
 		if validator != nil {
 			err := validator(ret)
 			if err != nil {
-				pterm.Warning.Println(err.Error())
+				printer.Out.Warning(err)
 				panicIfPromptNotEnabled(prompt)
 				return err
 			}
@@ -42,7 +42,7 @@ func RequiredStringWithValidator(c *cli.Context, prompt string, f stringPromptMe
 	for ret == "" || err != nil {
 		if err == nil {
 			panicIfPromptNotEnabled(prompt)
-			pterm.Warning.Println(Required)
+			printer.Out.WarningPrintln(Required)
 		}
 		ret = f(c, prompt, prev...)
 
@@ -109,7 +109,7 @@ func validateString(c *cli.Context, cnf validateStringHelper) (ret string) {
 
 		err := cnf.validator(ret)
 		if err != nil {
-			pterm.Warning.Println(err.Error())
+			printer.Out.Warning(err)
 
 			panicIfPromptNotEnabled(cnf.prompt)
 		} else {

@@ -8,7 +8,7 @@ import (
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/tools/tau/flags"
 	"github.com/taubyte/tau/tools/tau/prompts"
-	"github.com/taubyte/tau/tools/tau/singletons/templates"
+	"github.com/taubyte/tau/tools/tau/templates"
 	"github.com/urfave/cli/v2"
 )
 

@@ -1,6 +1,6 @@
 package i18n
 
-import "github.com/pterm/pterm"
+import "github.com/taubyte/tau/tools/tau/i18n/printer"
 
 type helper struct{}
 
@@ -9,21 +9,21 @@ func Help() helper {
 }
 
 func (helper) HaveYouLoggedIn() {
-	pterm.Info.Println("Have you logged in ( $tau login )")
+	printer.Out.InfoPrintln("Have you logged in ( $tau login )")
 }
 
-func (helper) HaveYouSelectedANetwork() {
-	pterm.Info.Println("Have you selected a network with ( $tau select network )")
+func (helper) HaveYouSelectedACloud() {
+	printer.Out.InfoPrintln("Have you selected a cloud with ( $tau select cloud )")
 }
 
 func (helper) TokenMayBeExpired(login string) {
-	pterm.Info.Printfln("Token may be expired refresh with ( $tau login --new %s )", login)
+	printer.Out.InfoPrintfln("Token may be expired refresh with ( $tau login --new %s )", login)
 }
 
 func (helper) BeSureToCloneProject() {
-	pterm.Info.Println("Be sure to clone the project ( $tau clone project )")
+	printer.Out.InfoPrintln("Be sure to clone the project ( $tau clone project )")
 }
 
 func (helper) BeSureToSelectProject() {
-	pterm.Info.Println("Have you selected a project? ( $tau select project )")
+	printer.Out.InfoPrintln("Have you selected a project? ( $tau select project )")
 }

@@ -48,6 +48,16 @@ func VariableDescriptionValidator(val string) error {
 	return nil
 }
 
+// VariableTypeValidator validates a type string (e.g. device type): empty allowed, max 250 chars.
+func VariableTypeValidator(val string) error {
+	if val != "" {
+		if len(val) > 250 {
+			return errors.New(GreaterThan250)
+		}
+	}
+	return nil
+}
+
 func VariableTagsValidator(val []string) error {
 	// TODO validate
 

@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/urfave/cli/v2"
 )
@@ -26,7 +26,7 @@ var LanguageCommand = &cli.Command{
 			return err
 		}
 
-		pterm.Success.Printfln("Got language: `%s`", language)
+		printer.Out.SuccessPrintfln("Got language: `%s`", language)
 		return nil
 	},
 }

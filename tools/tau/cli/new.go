@@ -10,13 +10,13 @@ import (
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/application"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds/build"
+	"github.com/taubyte/tau/tools/tau/cli/commands/resources/cloud"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/database"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/domain"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/function"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/library"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/logs"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/messaging"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/network"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/project"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/service"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/smartops"
@@ -25,13 +25,11 @@ import (
 	"github.com/taubyte/tau/tools/tau/cli/commands/version"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	"github.com/taubyte/tau/tools/tau/flags"
-	"github.com/taubyte/tau/tools/tau/states"
 	"github.com/urfave/cli/v2"
 )
 
 func New() (*cli.App, error) {
 	globalFlags := []cli.Flag{
-		flags.Env,
 		flags.Color,
 	}
 
@@ -40,8 +38,6 @@ func New() (*cli.App, error) {
 		Flags:                  globalFlags,
 		EnableBashCompletion:   true,
 		Before: func(ctx *cli.Context) error {
-			states.New(ctx.Context)
-
 			color, err := flags.GetColor(ctx)
 			if err != nil {
 				return err
@@ -65,7 +61,7 @@ func New() (*cli.App, error) {
 	common.Attach(app,
 		project.New,
 		application.New,
-		network.New,
+		cloud.New,
 		database.New,
 		domain.New,
 		function.New,

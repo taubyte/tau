@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/validate"
 	"github.com/urfave/cli/v2"
 )
@@ -19,7 +19,7 @@ func RequiredPaths(c *cli.Context, prev ...string) (ret []string) {
 		for _, p := range _ret {
 			err := validate.VariablePathValidator(p)
 			if err != nil {
-				pterm.Warning.Println(err)
+				printer.Out.Warning(err)
 			} else {
 				ret = append(ret, p)
 			}

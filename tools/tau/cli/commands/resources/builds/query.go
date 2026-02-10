@@ -6,8 +6,8 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/tools/tau/cli/common"
+	patrickClient "github.com/taubyte/tau/tools/tau/clients/patrick_client"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
-	patrickClient "github.com/taubyte/tau/tools/tau/singletons/patrick_client"
 	buildsTable "github.com/taubyte/tau/tools/tau/table/builds"
 	"github.com/urfave/cli/v2"
 )

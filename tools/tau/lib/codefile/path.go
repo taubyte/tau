@@ -4,7 +4,7 @@ import (
 	"path"
 
 	schemaCommon "github.com/taubyte/tau/pkg/schema/common"
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 )
 
@@ -14,7 +14,7 @@ func Path(name, folder string) (CodePath, error) {
 		return "", err
 	}
 
-	application, _ := env.GetSelectedApplication()
+	application, _ := config.GetSelectedApplication()
 
 	var codePath string
 	if len(application) > 0 {

@@ -7,13 +7,13 @@ import (
 
 	"github.com/pterm/pterm"
 	httpClient "github.com/taubyte/tau/clients/http/auth"
+	authClient "github.com/taubyte/tau/tools/tau/clients/auth_client"
 	"github.com/taubyte/tau/tools/tau/common"
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	projectI18n "github.com/taubyte/tau/tools/tau/i18n/project"
-	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/singletons"
+	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/shared"
 	"github.com/taubyte/tau/tools/tau/prompts/spinner"
-	authClient "github.com/taubyte/tau/tools/tau/singletons/auth_client"
-	"github.com/taubyte/tau/tools/tau/singletons/session"
+	"github.com/taubyte/tau/tools/tau/session"
 )
 
 /*
@@ -32,7 +32,7 @@ Args:
 	embedToken: Whether to embed the auth token in the git config
 */
 func New(p *Project, location string, embedToken bool) error {
-	user, err := env.GetSelectedUser()
+	user, err := config.GetSelectedUser()
 	if err != nil {
 		return err
 	}

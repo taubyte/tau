@@ -2,7 +2,7 @@ package repositoryLib
 
 import (
 	"github.com/taubyte/tau/pkg/git"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
+	"github.com/taubyte/tau/tools/tau/config"
 )
 
 func (info *Info) Pull(project config.Project, url string) (*git.Repository, error) {

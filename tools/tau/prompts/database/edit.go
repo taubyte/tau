@@ -23,10 +23,12 @@ func Edit(ctx *cli.Context, prev *structureSpec.Database) error {
 
 	prev.Min, prev.Max, _, _ /* minString, maxString */ = GetOrAskForMinMax(ctx, prev.Min, prev.Max, false)
 
-	var err error
-	prev.Size, err = common.StringToUnits(prompts.GetSizeAndType(ctx, common.UnitsToString(prev.Size), false))
+	sizeStr, err := prompts.GetSizeAndType(ctx, common.UnitsToString(prev.Size), false)
 	if err != nil {
-		// TODO verbose
+		return err
+	}
+	prev.Size, err = common.StringToUnits(sizeStr)
+	if err != nil {
 		return err
 	}
 

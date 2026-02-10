@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/pterm/pterm"
 	databaseFlags "github.com/taubyte/tau/tools/tau/flags/database"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/taubyte/tau/tools/tau/validate"
 	"github.com/urfave/cli/v2"
@@ -32,7 +32,7 @@ func GetOrAskForMinMax(c *cli.Context, prevMin, prevMax int, new bool) (intMin i
 
 		intMin, intMax, err = convertAndValidateMinMax(min, max)
 		if err != nil {
-			pterm.Warning.Println(err.Error())
+			printer.Out.Warning(err)
 			prompts.PanicIfPromptNotEnabled("min-max prompt")
 		} else {
 			break

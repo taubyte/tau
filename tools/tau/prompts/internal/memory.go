@@ -1,9 +1,9 @@
 package main
 
 import (
-	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/pkg/schema/common"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/urfave/cli/v2"
 )
@@ -28,7 +28,7 @@ var MemoryCommand = &cli.Command{
 			return err
 		}
 
-		pterm.Success.Printfln("Got memory size: `%s`", common.UnitsToString(size))
+		printer.Out.SuccessPrintfln("Got memory size: `%s`", common.UnitsToString(size))
 		return nil
 	},
 }

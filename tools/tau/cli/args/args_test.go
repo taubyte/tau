@@ -98,8 +98,8 @@ func TestArgs(t *testing.T) {
 		},
 		{
 			name:         "sub2",
-			testArgs:     []string{"tau", "login", "--set-default", "profileName", "-t", "sometoken", "--env", "--color", "never", "--new"},
-			expectedArgs: []string{"tau", "--env", "--color", "never", "login", "--set-default", "-t", "sometoken", "--new", "profileName"},
+			testArgs:     []string{"tau", "login", "--set-default", "profileName", "-t", "sometoken", "--color", "never", "--new"},
+			expectedArgs: []string{"tau", "--color", "never", "login", "--set-default", "-t", "sometoken", "--new", "profileName"},
 			app:          realApp,
 		},
 		{
@@ -128,17 +128,16 @@ func TestArgs(t *testing.T) {
 		},
 		{
 			name:         "true attached on a bool flag parse",
-			testArgs:     []string{"tau", "-env", "true", "-y", "true", "new", "someApp", "app"},
-			expectedArgs: []string{"tau", "-env", "new", "app", "-y", "someApp"},
+			testArgs:     []string{"tau", "-color", "never", "-y", "true", "new", "someApp", "app"},
+			expectedArgs: []string{"tau", "-color", "never", "new", "app", "-y", "someApp"},
 			app:          realApp,
 		},
 		{
 			name:     "true attached on a bool flag parse",
-			testArgs: []string{"tau", "-y", "true", "new", "someApp", "app", "-env", "false"},
+			testArgs: []string{"tau", "-y", "true", "new", "someApp", "app", "-color", "always"},
 
-			// Note: this will not work in practice for env, as it's not a required variable
-			// It will work for variables that initialize --var and --no-var
-			expectedArgs: []string{"tau", "-no-env", "new", "app", "-y", "someApp"},
+			// Flag reordering: global flags move to front
+			expectedArgs: []string{"tau", "-color", "always", "new", "app", "-y", "someApp"},
 			app:          realApp,
 		},
 		{

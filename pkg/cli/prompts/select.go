@@ -15,6 +15,9 @@ func SelectInterface(names []string, prompt, _default string) (selectedInterface
 		err = fmt.Errorf(SelectPromptNoOptions, prompt)
 		return
 	}
+	if IsNonInteractive() {
+		return "", ErrNonInteractive
+	}
 
 	selector := &survey.Select{
 		Message: prompt,

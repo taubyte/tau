@@ -1,16 +1,16 @@
 package projectLib_test
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/pterm/pterm"
 	httpClient "github.com/taubyte/tau/clients/http/auth"
+	authClient "github.com/taubyte/tau/tools/tau/clients/auth_client"
+	"github.com/taubyte/tau/tools/tau/config"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
-	authClient "github.com/taubyte/tau/tools/tau/singletons/auth_client"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
-	"github.com/taubyte/tau/tools/tau/states"
 	"gotest.tools/v3/assert"
 )
 
@@ -34,7 +34,7 @@ func unregisterAndDeleteRepository(client *httpClient.Client, fullname string) e
 		return err
 	}
 
-	response, err := githubClient.Repositories.Delete(states.Context, user, name)
+	response, err := githubClient.Repositories.Delete(context.Background(), user, name)
 	if err != nil {
 		if response != nil {
 			pterm.Info.Printfln("Github response: %#v", *response)

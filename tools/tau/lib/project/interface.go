@@ -2,9 +2,8 @@ package projectLib
 
 import (
 	"github.com/taubyte/tau/pkg/schema/project"
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/i18n"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
 )
 
 func SelectedProjectInterface() (project.Project, error) {
@@ -23,7 +22,7 @@ func SelectedProjectInterface() (project.Project, error) {
 }
 
 func SelectedProjectConfig() (configProject config.Project, err error) {
-	selectedProject, err := env.GetSelectedProject()
+	selectedProject, err := config.GetSelectedProject()
 	if err != nil {
 		i18n.Help().BeSureToSelectProject()
 		return
@@ -38,7 +37,7 @@ func SelectedProjectConfig() (configProject config.Project, err error) {
 }
 
 func ConfirmSelectedProject() error {
-	_, err := env.GetSelectedProject()
+	_, err := config.GetSelectedProject()
 	if err != nil {
 		i18n.Help().BeSureToSelectProject()
 	}

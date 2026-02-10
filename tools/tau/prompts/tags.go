@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	slices "github.com/taubyte/tau/utils/slices/string"
 	"github.com/urfave/cli/v2"
 )
@@ -44,7 +44,7 @@ func RequiredTags(c *cli.Context, prev ...[]string) (ret []string) {
 		if !firstRun {
 			firstRun = true
 		} else {
-			pterm.Warning.Println(Required)
+			printer.Out.WarningPrintln(Required)
 		}
 
 		ret = askForTags(c, prev...)

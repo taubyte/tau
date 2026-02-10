@@ -17,7 +17,7 @@ var (
 
 var Command = &cli.Command{
 	Name:  "dream",
-	Usage: "Starts and interfaces with a local taubyte network.  All leading arguments to `tau dream ...` are passed to dream",
+	Usage: "Starts and interfaces with a local taubyte cloud.  All leading arguments to `tau dream ...` are passed to dream",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:    "cache",

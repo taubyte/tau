@@ -37,9 +37,9 @@ func query(ctx *cli.Context) error {
 	}
 
 	// If --select is set we should not check the user's currently selected project
-	checkEnv := !ctx.Bool(flags.Select.Name)
+	checkSelected := !ctx.Bool(flags.Select.Name)
 
-	project, err := projectPrompts.GetOrSelect(ctx, checkEnv)
+	project, err := projectPrompts.GetOrSelect(ctx, checkSelected)
 	if err != nil {
 		return err
 	}

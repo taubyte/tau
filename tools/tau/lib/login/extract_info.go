@@ -1,17 +1,29 @@
 package loginLib
 
 import (
+	"context"
+
 	loginI18n "github.com/taubyte/tau/tools/tau/i18n/login"
-	"github.com/taubyte/tau/tools/tau/states"
 )
 
+// ExtractInfoStub, when non-nil, is used instead of calling the real GitHub API.
+// Set in tests to avoid network calls. Signature: (token, provider) -> (gitName, gitEmail, err).
+var ExtractInfoStub func(token, provider string) (name, email string, err error)
+
 func extractInfo(token, provider string) (name, email string, err error) {
+	if ExtractInfoStub != nil {
+		return ExtractInfoStub(token, provider)
+	}
+	return extractInfoReal(token, provider)
+}
+
+func extractInfoReal(token, provider string) (name, email string, err error) {
 	// TODO provider
 
 	client := githubApiClient(token)
 
 	user, _, err := client.Users.Get(
-		states.Context,
+		context.Background(),
 		"",
 	)
 	if err != nil {
@@ -22,7 +34,7 @@ func extractInfo(token, provider string) (name, email string, err error) {
 	name = user.GetLogin()
 
 	emails, _, err := client.Users.ListEmails(
-		states.Context,
+		context.Background(),
 		nil,
 	)
 	if err != nil {

@@ -7,13 +7,13 @@ import (
 	"github.com/taubyte/tau/pkg/cli/i18n"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/tools/tau/cli/common"
+	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/flags"
 	projectFlags "github.com/taubyte/tau/tools/tau/flags/project"
 	projectI18n "github.com/taubyte/tau/tools/tau/i18n/project"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	projectPrompts "github.com/taubyte/tau/tools/tau/prompts/project"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
 	"github.com/urfave/cli/v2"
 )
 
@@ -33,10 +33,10 @@ func (link) Clone() common.Command {
 }
 
 func clone(c *cli.Context) error {
-	checkEnv := !c.Bool(flags.Select.Name)
+	checkSelected := !c.Bool(flags.Select.Name)
 
 	// TODO should select offer projects that are already cloned?
-	project, err := projectPrompts.GetOrSelect(c, checkEnv)
+	project, err := projectPrompts.GetOrSelect(c, checkSelected)
 	if err != nil {
 		return err
 	}

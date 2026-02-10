@@ -30,9 +30,12 @@ func New(ctx *cli.Context) (*structureSpec.Database, error) {
 
 	database.Min, database.Max, _, _ = GetOrAskForMinMax(ctx, 0, 0, true)
 
-	database.Size, err = common.StringToUnits(prompts.GetSizeAndType(ctx, "", true))
+	sizeStr, err := prompts.GetSizeAndType(ctx, "", true)
 	if err != nil {
-		// TODO verbose
+		return nil, err
+	}
+	database.Size, err = common.StringToUnits(sizeStr)
+	if err != nil {
 		return nil, err
 	}
 

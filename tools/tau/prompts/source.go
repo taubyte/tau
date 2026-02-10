@@ -7,7 +7,7 @@ import (
 
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
 	"github.com/taubyte/tau/tools/tau/common"
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/flags"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/urfave/cli/v2"
@@ -28,7 +28,7 @@ func GetOrSelectSource(ctx *cli.Context, prev ...string) (common.Source, error) 
 		return "", err
 	}
 
-	selectedApp, _ := env.GetSelectedApplication()
+	selectedApp, _ := config.GetSelectedApplication()
 	local, global := project.Get().Libraries(selectedApp)
 	for _, lib := range local {
 		libLC := strings.ToLower(lib)

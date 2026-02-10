@@ -8,7 +8,7 @@ import (
 	"path"
 
 	"github.com/taubyte/tau/tools/tau/cli/common"
-	patrickClient "github.com/taubyte/tau/tools/tau/singletons/patrick_client"
+	patrickClient "github.com/taubyte/tau/tools/tau/clients/patrick_client"
 	"github.com/urfave/cli/v2"
 )
 

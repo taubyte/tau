@@ -1,13 +1,13 @@
 package main
 
 import (
-	"github.com/pterm/pterm"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	smartopsSpec "github.com/taubyte/tau/pkg/specs/smartops"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/prompts"
-	"github.com/taubyte/tau/tools/tau/singletons/templates"
+	"github.com/taubyte/tau/tools/tau/templates"
 	"github.com/urfave/cli/v2"
 )
 
@@ -77,7 +77,7 @@ var TemplateCommand = &cli.Command{
 			return err
 		}
 
-		pterm.Success.Printfln("Got template: `%s`", templateUrl)
+		printer.Out.SuccessPrintfln("Got template: `%s`", templateUrl)
 		return nil
 	},
 }

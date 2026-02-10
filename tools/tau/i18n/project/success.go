@@ -8,8 +8,8 @@ func success(prefix, name string) {
 	printer.SuccessWithName("%s project: %s", prefix, name)
 }
 
-func successOnNetwork(prefix, name, network string) {
-	printer.SuccessWithNameOnNetwork("%s project: %s on network: %s", prefix, name, network)
+func successOnCloud(prefix, name, cloud string) {
+	printer.SuccessWithNameOnCloud("%s project: %s on cloud: %s", prefix, name, cloud)
 }
 
 func DeselectedProject(name string) {
@@ -36,10 +36,10 @@ func CheckedOutProject(name, branch string) {
 	printer.SuccessWithName("Checked out branch `%s` on project `%s`", branch, name)
 }
 
-func ImportedProject(name, networkFQDN string) {
-	successOnNetwork("Imported", name, networkFQDN)
+func ImportedProject(name, cloudFQDN string) {
+	successOnCloud("Imported", name, cloudFQDN)
 }
 
-func RemovedProject(name, networkFQDN string) {
-	successOnNetwork("Removed", name, networkFQDN)
+func RemovedProject(name, cloudFQDN string) {
+	successOnCloud("Removed", name, cloudFQDN)
 }

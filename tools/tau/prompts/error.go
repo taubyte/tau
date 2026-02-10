@@ -1,12 +1,12 @@
 package prompts
 
-import "github.com/pterm/pterm"
+import "github.com/taubyte/tau/tools/tau/i18n/printer"
 
 func ValidateOk(err error) bool {
 	if err != nil {
 		panicIfPromptNotEnabledError(err)
 
-		pterm.Warning.Println(err.Error())
+		printer.Out.Warning(err)
 		return false
 	}
 	return true

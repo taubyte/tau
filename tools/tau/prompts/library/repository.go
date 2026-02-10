@@ -9,7 +9,7 @@ import (
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	repositoryLib "github.com/taubyte/tau/tools/tau/lib/repository"
 	"github.com/taubyte/tau/tools/tau/prompts"
-	"github.com/taubyte/tau/tools/tau/singletons/templates"
+	"github.com/taubyte/tau/tools/tau/templates"
 	"github.com/urfave/cli/v2"
 )
 
@@ -55,7 +55,6 @@ func repositoryInfoGenerate(ctx *cli.Context, library *structureSpec.Library) (*
 
 	templateMap, err := templates.Get().Libraries()
 	if err != nil {
-		// TODO verbose
 		return nil, err
 	}
 
@@ -68,8 +67,6 @@ func repositoryInfoGenerate(ctx *cli.Context, library *structureSpec.Library) (*
 		RepositoryName: repositoryName,
 		Info: templates.TemplateInfo{
 			URL: templateUrl,
-			// TODO Update website template description style
-			// Description: library.Description,
 		},
 		Private: private,
 	}, nil

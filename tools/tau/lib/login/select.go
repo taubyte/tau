@@ -1,9 +1,9 @@
 package loginLib
 
 import (
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	loginI18n "github.com/taubyte/tau/tools/tau/i18n/login"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
+	"github.com/taubyte/tau/tools/tau/session"
 	"github.com/urfave/cli/v2"
 )
 
@@ -41,7 +41,7 @@ func Select(ctx *cli.Context, name string, setDefault bool) error {
 		return err
 	}
 
-	env.SetSelectedNetwork(ctx, profile.NetworkType)
-	env.SetNetworkUrl(ctx, profile.Network)
-	return env.SetSelectedUser(ctx, name)
+	_ = session.Set().SelectedCloud(profile.CloudType)
+	_ = session.Set().CustomCloudUrl(profile.Cloud)
+	return session.Set().ProfileName(name)
 }

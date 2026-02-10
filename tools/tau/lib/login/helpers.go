@@ -1,9 +1,8 @@
 package loginLib
 
 import (
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/i18n"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
 )
 
 func GetSelectedProfile() (profile config.Profile, err error) {
@@ -13,7 +12,7 @@ func GetSelectedProfile() (profile config.Profile, err error) {
 		}
 	}()
 
-	currentProfile, err := env.GetSelectedUser()
+	currentProfile, err := config.GetSelectedUser()
 	if err != nil {
 		return
 	}

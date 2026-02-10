@@ -19,7 +19,7 @@ type BoolWithInverseFlag struct {
 	*cli.BoolFlag
 
 	// The prefix used to indicate a negative value
-	// Default: `env` becomes `no-env`
+	// Default: "verbose" becomes "no-verbose"
 	InversePrefix string
 
 	positiveFlag *cli.BoolFlag
@@ -66,8 +66,8 @@ func (s *BoolWithInverseFlag) RunAction(ctx *cli.Context) error {
 /*
 initialize creates a new BoolFlag that has an inverse flag
 
-consider a bool flag `--env`, there is no way to set it to false
-this function allows you to set `--env` or `--no-env` and in the command action
+consider a bool flag `--verbose`, there is no way to set it to false
+this function allows you to set `--verbose` or `--no-verbose` and in the command action
 it can be determined that BoolWithInverseFlag.IsSet()
 */
 func (parent *BoolWithInverseFlag) initialize() {
@@ -101,16 +101,9 @@ func (parent *BoolWithInverseFlag) initialize() {
 		Destination: parent.negDest,
 	}
 
-	// Set inverse names ex: --env => --no-env
+	// Set inverse names ex: --verbose => --no-verbose
 	parent.negativeFlag.Name = parent.inverseName()
 	parent.negativeFlag.Aliases = parent.inverseAliases()
-
-	if len(child.EnvVars) > 0 {
-		parent.negativeFlag.EnvVars = make([]string, len(child.EnvVars))
-		for idx, envVar := range child.EnvVars {
-			parent.negativeFlag.EnvVars[idx] = strings.ToUpper(parent.InversePrefix) + envVar
-		}
-	}
 }
 
 func (parent *BoolWithInverseFlag) inverseName() string {
@@ -165,8 +158,8 @@ func (s *BoolWithInverseFlag) Names() []string {
 	return append(s.negativeFlag.Names(), s.positiveFlag.Names()...)
 }
 
-// Example for BoolFlag{Name: "env"}
-// --env     | --no-env    Usage...
+// Example for BoolFlag{Name: "verbose"}
+// --verbose | --no-verbose    Usage...
 func (s *BoolWithInverseFlag) String() string {
 	// Initialize the flag if String is called before cli is initialized
 	if s.positiveFlag == nil {

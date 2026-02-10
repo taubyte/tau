@@ -9,12 +9,12 @@ import (
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
-func getNetworkDisplay(public bool) []string {
+func getCloudDisplay(public bool) []string {
 	if public {
-		return []string{"\tNetwork", "all"}
+		return []string{"\tCloud", "all"}
 	}
 
-	return []string{"\tNetwork", "host"}
+	return []string{"\tCloud", "host"}
 }
 
 func getTableData(storage *structureSpec.Storage, showId bool) (toRender [][]string) {
@@ -29,7 +29,7 @@ func getTableData(storage *structureSpec.Storage, showId bool) (toRender [][]str
 		{"Description", storage.Description},
 		{"Tags", strings.Join(storage.Tags, ", ")},
 		{"Access", ""},
-		getNetworkDisplay(storage.Public),
+		getCloudDisplay(storage.Public),
 	}...)
 
 	switch storage.Type {

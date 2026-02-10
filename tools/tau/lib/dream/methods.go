@@ -4,8 +4,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-
-	"github.com/taubyte/tau/tools/tau/constants"
 )
 
 func IsRunning() bool {
@@ -18,11 +16,7 @@ func IsRunning() bool {
 }
 
 func dream(args ...string) (*exec.Cmd, error) {
-	binaryLoc := os.Getenv(constants.DreamBinaryLocationEnvVarName)
-	if len(binaryLoc) < 1 {
-		// Attempts to run command that is on path
-		binaryLoc = "dream"
-	}
+	binaryLoc := "dream" // run from path; no env override
 
 	// TODO confirm binary
 	// dreamI18n.Help().IsAValidBinary()

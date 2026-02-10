@@ -78,28 +78,22 @@ go build -o ~/go/bin/otau -tags=localAuthClient
 ### All tests
 `go test -v ./...`
 
-### Hot reload tests
-`$ cd tests`
-
-Edit [air config](tests/.air.toml#L8) `cmd = "go test -v --run <Function|Database|...> [-tags=no_rebuild]`
-
-(Optional) Add `debug: true,` to an individual test
-
-`$ air`
-
-## Running Individual Prompts
+Flow tests live in each resource package (e.g. `cli/commands/resources/application/flow_test.go`, `cli/commands/login/flow_test.go`) and use `cli/testhelper` and `testutil` (auth mock via gock). ## Running Individual Prompts
 
 `go run ./prompts/internal`
 
-## Measuring Coverage:
+## Measuring Coverage
 
-### Calculate coverage for all packages
+To avoid **"error generating coverage report: write |1: broken pipe"** (common when running many packages with `-cover`), use:
+
 ```shell
-go test -v ./... -tags=localAuthClient,projectCreateable,localPatrick,cover,noPrompt -coverprofile cover.out -coverpkg ./...
+make test-cover
 ```
 
-### Display coverage for all packages
-```
+This runs tests with coverage for all packages and writes `cover.out`.
+
+### Display coverage
+```shell
 go tool cover -html=cover.out
 go tool cover -func=cover.out
 ```

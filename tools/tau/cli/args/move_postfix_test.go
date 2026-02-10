@@ -16,10 +16,10 @@ func TestPostfix(t *testing.T) {
 	}
 
 	parsedFlags := argsLib.ParseFlags(app.Flags)
-	testArgs := []string{"tau", "login", "--env", "someName", "--color", "never"}
+	testArgs := []string{"tau", "login", "someName", "--color", "never"}
 
 	gotArgs := argsLib.MovePostfixOptions(testArgs, parsedFlags)
-	expectedArgs := []string{"tau", "--env", "--color", "never", "login", "someName"}
+	expectedArgs := []string{"tau", "--color", "never", "login", "someName"}
 	if !reflect.DeepEqual(gotArgs, expectedArgs) {
 		t.Errorf("\nExpected: %v\nGot     : %v", expectedArgs, gotArgs)
 	}

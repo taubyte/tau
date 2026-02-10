@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	client "github.com/taubyte/tau/clients/http/auth"
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/flags"
 	projectI18n "github.com/taubyte/tau/tools/tau/i18n/project"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
@@ -17,12 +17,11 @@ import (
 GetOrSelect will try to get the project from a name flag
 if it is not set in the flag it will offer a selection menu
 */
-func GetOrSelect(ctx *cli.Context, checkEnv bool) (*client.Project, error) {
+func GetOrSelect(ctx *cli.Context, checkSelected bool) (*client.Project, error) {
 	name := ctx.String(flags.Name.Name)
 
-	// Try to get selected project
-	if len(name) == 0 && checkEnv {
-		name, _ = env.GetSelectedProject()
+	if len(name) == 0 && checkSelected {
+		name, _ = config.GetSelectedProject()
 	}
 
 	projects, err := projectLib.ListResources()
@@ -56,7 +55,7 @@ func GetOrSelect(ctx *cli.Context, checkEnv bool) (*client.Project, error) {
 }
 
 func GetSelectOrDeselect(ctx *cli.Context) (project *client.Project, deselect bool, err error) {
-	currentlySelected, _ := env.GetSelectedProject()
+	currentlySelected, _ := config.GetSelectedProject()
 	if len(currentlySelected) == 0 {
 		project, err = GetOrSelect(ctx, false)
 		return

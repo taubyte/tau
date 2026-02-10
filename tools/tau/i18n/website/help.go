@@ -1,6 +1,6 @@
 package websiteI18n
 
-import "github.com/pterm/pterm"
+import "github.com/taubyte/tau/tools/tau/i18n/printer"
 
 type helper struct{}
 
@@ -9,9 +9,9 @@ func Help() helper {
 }
 
 func (helper) BeSureToCloneWebsite() {
-	pterm.Info.Printfln("Be sure to clone the website ( $tau clone website )")
+	printer.Out.InfoPrintfln("Be sure to clone the website ( $tau clone website )")
 }
 
 func (helper) WebsiteAlreadyCloned(dir string) {
-	pterm.Info.Printfln("Website already cloned: %s", dir)
+	printer.Out.InfoPrintfln("Website already cloned: %s", dir)
 }

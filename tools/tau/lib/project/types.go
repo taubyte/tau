@@ -2,7 +2,7 @@ package projectLib
 
 import (
 	"github.com/taubyte/tau/pkg/git"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
+	"github.com/taubyte/tau/tools/tau/config"
 )
 
 type Project struct {

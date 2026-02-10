@@ -8,12 +8,12 @@ import (
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
-func getNetworkDisplay(local bool) []string {
+func getCloudDisplay(local bool) []string {
 	if local {
-		return []string{"\tNetwork", "host"}
+		return []string{"\tCloud", "host"}
 	}
 
-	return []string{"\tNetwork", "all"}
+	return []string{"\tCloud", "all"}
 }
 
 func getTableData(database *structureSpec.Database, showId bool) (toRender [][]string) {
@@ -31,7 +31,7 @@ func getTableData(database *structureSpec.Database, showId bool) (toRender [][]s
 		{"Tags", strings.Join(database.Tags, ", ")},
 		{"Encryption", strconv.FormatBool(secret)},
 		{"Access", ""},
-		getNetworkDisplay(database.Local),
+		getCloudDisplay(database.Local),
 		{"Replicas", ""},
 		{"\tMin", strconv.Itoa(int(database.Min))},
 		{"\tMax", strconv.Itoa(int(database.Max))},

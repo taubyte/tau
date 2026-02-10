@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/urfave/cli/v2"
 )
@@ -47,5 +47,5 @@ func tagsPrompt(ctx *cli.Context, required bool) {
 		tags = prompts.GetOrAskForTags(&cli.Context{}, tags)
 	}
 
-	pterm.Success.Printfln("Got tags: `%v`", tags)
+	printer.Out.SuccessPrintfln("Got tags: `%v`", tags)
 }

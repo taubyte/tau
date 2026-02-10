@@ -1,6 +1,6 @@
 package dreamI18n
 
-import "github.com/pterm/pterm"
+import "github.com/taubyte/tau/tools/tau/i18n/printer"
 
 type helper struct{}
 
@@ -9,9 +9,9 @@ func Help() helper {
 }
 
 func (helper) IsAValidBinary() {
-	pterm.Info.Printfln("command `dream` failed, do you have a valid binary? <insert docs link>")
+	printer.Out.InfoPrintfln("command `dream` failed, do you have a valid binary? <insert docs link>")
 }
 
 func (helper) IsDreamRunning() {
-	pterm.Info.Printfln("Have you started dream? ( $tau dream )")
+	printer.Out.InfoPrintfln("Have you started dream? ( $tau dream )")
 }

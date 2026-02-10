@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/pkg/schema/project"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/tools/tau/common"
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/flags"
 	domainFlags "github.com/taubyte/tau/tools/tau/flags/domain"
 	domainLib "github.com/taubyte/tau/tools/tau/lib/domain"
@@ -26,7 +26,7 @@ func NeedGenerateDomain(ctx *cli.Context) error {
 		return err
 	}
 
-	selectedApp, _ := env.GetSelectedApplication()
+	selectedApp, _ := config.GetSelectedApplication()
 	local, global := project.Get().Domains(selectedApp)
 	if len(local)+len(global) == 0 {
 		if GetOrAskForBoolDefaultTrue(ctx, domainFlags.Generated.Name, NoDomainGeneratePrompt) {
@@ -87,7 +87,7 @@ func buildDomainOptions(flagDomainsLowerCase []string, prev ...string) (flagDoma
 		return
 	}
 
-	selectedApp, _ := env.GetSelectedApplication()
+	selectedApp, _ := config.GetSelectedApplication()
 	local, global := project.Get().Domains(selectedApp)
 
 	// Build options and find potential selections

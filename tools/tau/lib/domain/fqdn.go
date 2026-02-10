@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/core/services/auth"
+	authClient "github.com/taubyte/tau/tools/tau/clients/auth_client"
 	"github.com/taubyte/tau/tools/tau/common"
-	"github.com/taubyte/tau/tools/tau/env"
 	domainI18n "github.com/taubyte/tau/tools/tau/i18n/domain"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
-	authClient "github.com/taubyte/tau/tools/tau/singletons/auth_client"
+	"github.com/taubyte/tau/tools/tau/session"
 )
 
 type validator struct {
@@ -61,16 +61,16 @@ func NewGeneratedFQDN(prefix string) (string, error) {
 
 	// Generate fqdn
 	var fqdn string
-	selectedNetwork, _ := env.GetSelectedNetwork()
-	switch selectedNetwork {
-	case common.DreamNetwork:
-		universe, _ := env.GetCustomNetworkUrl()
+	selectedCloud, _ := session.GetSelectedCloud()
+	switch selectedCloud {
+	case common.DreamCloud:
+		universe, _ := session.GetCustomCloudUrl()
 		fqdn = parseFqdn(fmt.Sprintf(".%s.localtau", universe))
-	case common.PythonTestNetwork:
+	case common.TestCloud:
 		fqdn = parseFqdn(DefaultGeneratedFqdnSuffix)
-	case common.RemoteNetwork:
-		customNetworkUrl, _ := env.GetCustomNetworkUrl()
-		customGeneratedFqdn, err := FetchCustomNetworkGeneratedFqdn(customNetworkUrl)
+	case common.RemoteCloud:
+		customCloudUrl, _ := session.GetCustomCloudUrl()
+		customGeneratedFqdn, err := FetchCustomNetworkGeneratedFqdn(customCloudUrl)
 		if err != nil {
 			return "", err
 		}
@@ -87,23 +87,23 @@ func NewGeneratedFQDN(prefix string) (string, error) {
 }
 
 func IsAGeneratedFQDN(fqdn string) (bool, error) {
-	selectedNetwork, _ := env.GetSelectedNetwork()
-	switch selectedNetwork {
-	case common.DreamNetwork:
-		universe, _ := env.GetCustomNetworkUrl()
+	selectedCloud, _ := session.GetSelectedCloud()
+	switch selectedCloud {
+	case common.DreamCloud:
+		universe, _ := session.GetCustomCloudUrl()
 		return strings.HasSuffix(fqdn, fmt.Sprintf(".%s.localtau", universe)), nil
-	case common.PythonTestNetwork:
+	case common.TestCloud:
 		return strings.HasSuffix(fqdn, DefaultGeneratedFqdnSuffix), nil
-	case common.RemoteNetwork:
-		customNetworkUrl, _ := env.GetCustomNetworkUrl()
-		customGeneratedFqdn, err := FetchCustomNetworkGeneratedFqdn(customNetworkUrl)
+	case common.RemoteCloud:
+		customCloudUrl, _ := session.GetCustomCloudUrl()
+		customGeneratedFqdn, err := FetchCustomNetworkGeneratedFqdn(customCloudUrl)
 		if err != nil {
 			return false, err
 		}
 
 		return strings.HasSuffix(fqdn, customGeneratedFqdn), nil
 	default:
-		return false, fmt.Errorf("%s is not a valid network type", selectedNetwork)
+		return false, fmt.Errorf("%s is not a valid cloud type", selectedCloud)
 	}
 }
 

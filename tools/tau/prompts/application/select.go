@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/flags"
 	applicationI18n "github.com/taubyte/tau/tools/tau/i18n/application"
 	applicationLib "github.com/taubyte/tau/tools/tau/lib/application"
@@ -19,12 +19,11 @@ import (
 GetOrSelect will try to get the application from a name flag
 if it is not set in the flag it will offer a selection menu
 */
-func GetOrSelect(ctx *cli.Context, checkEnv bool) (*structureSpec.App, error) {
+func GetOrSelect(ctx *cli.Context, checkSelected bool) (*structureSpec.App, error) {
 	name := ctx.String(flags.Name.Name)
 
-	// Try to get selected application
-	if len(name) == 0 && checkEnv {
-		name, _ = env.GetSelectedApplication()
+	if len(name) == 0 && checkSelected {
+		name, _ = config.GetSelectedApplication()
 	}
 
 	resources, err := applicationLib.ListResources()
@@ -61,7 +60,7 @@ func GetOrSelect(ctx *cli.Context, checkEnv bool) (*structureSpec.App, error) {
 }
 
 func GetSelectOrDeselect(ctx *cli.Context) (app *structureSpec.App, deselect bool, err error) {
-	currentlySelected, _ := env.GetSelectedApplication()
+	currentlySelected, _ := config.GetSelectedApplication()
 	if len(currentlySelected) == 0 {
 		app, err = GetOrSelect(ctx, false)
 		if err != nil {

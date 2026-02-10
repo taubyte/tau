@@ -2,9 +2,8 @@ package build
 
 import (
 	"github.com/taubyte/tau/pkg/schema/project"
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
 )
 
 type buildHelper struct {
@@ -39,6 +38,6 @@ func initBuild() (*buildHelper, error) {
 		return nil, err
 	}
 
-	helper.selectedApp, _ = env.GetSelectedApplication()
+	helper.selectedApp, _ = config.GetSelectedApplication()
 	return helper, nil
 }

@@ -12,6 +12,6 @@ var Command = &cli.Command{
 }
 
 func Run(ctx *cli.Context) error {
-	pterm.Info.Println(common.Version)
+	pterm.Info.Println(common.VersionLine())
 	return nil
 }

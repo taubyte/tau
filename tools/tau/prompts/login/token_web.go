@@ -8,10 +8,10 @@ import (
 	"path"
 	"strings"
 
-	"github.com/pterm/pterm"
 	http "github.com/taubyte/tau/pkg/http"
 	basicHttp "github.com/taubyte/tau/pkg/http/basic"
 	"github.com/taubyte/tau/pkg/http/options"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/urfave/cli/v2"
 )
 
@@ -90,7 +90,7 @@ func TokenFromWeb(ctx *cli.Context, provider string) (token string, err error) {
 	srv.Start()
 
 	origin := fmt.Sprintf("http://127.0.0.1:%s", githubLoginListenPort)
-	pterm.Info.Printfln(OpenURLToLogin, provider, getTokenConsoleURL(provider, origin))
+	printer.Out.InfoPrintfln(OpenURLToLogin, provider, getTokenConsoleURL(provider, origin))
 
 	select {
 	case token = <-tokenCh:
@@ -103,7 +103,7 @@ func TokenFromWeb(ctx *cli.Context, provider string) (token string, err error) {
 	srv.Stop()
 	if srv.Error() != nil {
 		// Only display error, as we got the token or an error
-		pterm.Warning.Printfln(ShuttingDownHttpFailedWith, githubLoginListenPort, srv.Error())
+		printer.Out.WarningPrintfln(ShuttingDownHttpFailedWith, githubLoginListenPort, srv.Error())
 	}
 
 	return

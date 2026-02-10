@@ -25,6 +25,8 @@ type Basic interface {
 	Pull() Command
 	Checkout() Command
 	Import() Command
+	Cancel() Command
+	Retry() Command
 
 	// Sets the following in the command if not already set:
 	// Name

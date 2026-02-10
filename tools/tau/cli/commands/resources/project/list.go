@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	httpClient "github.com/taubyte/tau/clients/http/auth"
+	auth_client "github.com/taubyte/tau/tools/tau/clients/auth_client"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/taubyte/tau/tools/tau/prompts/spinner"
-	auth_client "github.com/taubyte/tau/tools/tau/singletons/auth_client"
 	projectTable "github.com/taubyte/tau/tools/tau/table/project"
 	"github.com/urfave/cli/v2"
 )

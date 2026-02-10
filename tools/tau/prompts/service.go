@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/pkg/schema/project"
 	serviceSchema "github.com/taubyte/tau/pkg/schema/services"
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/urfave/cli/v2"
 )
@@ -47,7 +47,7 @@ func buildServiceOptions(flagServiceLowerCase string, prev ...string) (flagServi
 	}
 
 	// Get possible services from config
-	selectedApp, _ := env.GetSelectedApplication()
+	selectedApp, _ := config.GetSelectedApplication()
 	local, global := project.Get().Services(selectedApp)
 
 	// Build options and find potential selections
@@ -122,7 +122,7 @@ func SelectAServiceWithProtocol(ctx *cli.Context, field string, prompt string, p
 
 	// Display an error if no matches found for flag
 	if len(flagServiceLowerCase) > 0 {
-		pterm.Warning.Printfln(NoServiceFromFlag, field, ctx.String(field))
+		printer.Out.WarningPrintfln(NoServiceFromFlag, field, ctx.String(field))
 	}
 
 	selected, err := SelectInterface(options, prompt, previous)

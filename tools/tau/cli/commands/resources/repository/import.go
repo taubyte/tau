@@ -1,9 +1,9 @@
 package repositoryCommands
 
 import (
+	authClient "github.com/taubyte/tau/tools/tau/clients/auth_client"
 	repositoryI18n "github.com/taubyte/tau/tools/tau/i18n/repository"
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
-	authClient "github.com/taubyte/tau/tools/tau/singletons/auth_client"
 	"github.com/urfave/cli/v2"
 )
 
@@ -28,7 +28,7 @@ func (lib *repositoryCommands) Import(ctx *cli.Context) error {
 		return repositoryI18n.RegisteringRepositoryFailed(repoName, err)
 	}
 
-	repositoryI18n.Imported(repoName, profile.Network)
+	repositoryI18n.Imported(repoName, profile.Cloud)
 	repositoryI18n.TriggerBuild()
 
 	return nil

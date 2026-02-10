@@ -25,6 +25,8 @@ func Attach(app *cli.App, commands ...basicFunction) {
 		_pull,
 		_checkout,
 		_import,
+		_cancel,
+		_retry,
 	} {
 		if len(cmd.Subcommands) > 0 {
 			app.Commands = append(app.Commands, cmd)
@@ -47,6 +49,8 @@ func attachCommand(cmd Basic) {
 		_push:     cmd.Push,
 		_pull:     cmd.Pull,
 		_checkout: cmd.Checkout,
+		_cancel:   cmd.Cancel,
+		_retry:    cmd.Retry,
 	} {
 		_method := method()
 		if _method != NotImplemented {

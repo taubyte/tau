@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	loginPrompts "github.com/taubyte/tau/tools/tau/prompts/login"
 	"github.com/urfave/cli/v2"
@@ -32,7 +32,7 @@ var WebTokenCommand = &cli.Command{
 			return err
 		}
 
-		pterm.Success.Printfln("Got token `%s`", token)
+		printer.Out.SuccessPrintfln("Got token `%s`", token)
 		return nil
 	},
 }

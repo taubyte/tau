@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/urfave/cli/v2"
 )
@@ -26,7 +26,7 @@ var CallCommand = &cli.Command{
 		// Edit, sending empty cli context so that the flags are not set
 		call = prompts.GetOrRequireACall(&cli.Context{}, source, call)
 
-		pterm.Success.Printfln("Got call: `%s`", call)
+		printer.Out.SuccessPrintfln("Got call: `%s`", call)
 		return nil
 	},
 }

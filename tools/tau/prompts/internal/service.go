@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/pterm/pterm"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/urfave/cli/v2"
 )
@@ -31,7 +31,7 @@ var ServiceCommand = &cli.Command{
 			return err
 		}
 
-		pterm.Success.Printfln("Got services: `%v`", service)
+		printer.Out.SuccessPrintfln("Got services: `%v`", service)
 		return nil
 	},
 }

@@ -24,17 +24,19 @@ func New(ctx context.Context, options ...Option) (*Client, error) {
 		Timeout: c.timeout,
 	}
 
-	if c.unsecure {
-		c.client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: true,
-			},
-		}
-	} else {
-		c.client.Transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				RootCAs: rootCAs,
-			},
+	if !c.useDefaultTransport {
+		if c.unsecure {
+			c.client.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{
+					InsecureSkipVerify: true,
+				},
+			}
+		} else {
+			c.client.Transport = &http.Transport{
+				TLSClientConfig: &tls.Config{
+					RootCAs: rootCAs,
+				},
+			}
 		}
 	}
 

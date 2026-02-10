@@ -4,7 +4,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/pterm/pterm"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 )
 
 // Errors
@@ -47,9 +47,9 @@ const (
 	CallPrompt             = "Entry Point:"
 	TimeoutPrompt          = "Time To Live:"
 
-	NetworkPrompts = "Network:"
-	FQDN           = "FQDN:"
-	Universe       = "Universe:"
+	CloudPrompts = "Cloud:"
+	FQDN         = "FQDN:"
+	Universe     = "Universe:"
 
 	NoDomainGeneratePrompt = "No domains found, generate one?"
 
@@ -78,14 +78,14 @@ func PanicIfPromptNotEnabled(prompt string) {
 
 func panicIfPromptNotEnabled(prompt string) {
 	if !PromptEnabled {
-		pterm.Warning.Printfln("Failed to prompt: %s", prompt)
+		printer.Out.WarningPrintfln("Failed to prompt: %s", prompt)
 		panic("Prompting when prompt not enabled")
 	}
 }
 
 func panicIfPromptNotEnabledSelection(val string, prompt string, opts []string) {
 	if !PromptEnabled {
-		pterm.Warning.Printfln("%s not a valid selection %v", val, opts)
+		printer.Out.WarningPrintfln("%s not a valid selection %v", val, opts)
 		panic(fmt.Sprintf("Prompt with prompt disabled, %s", prompt))
 	}
 }

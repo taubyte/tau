@@ -3,9 +3,9 @@ package prompts
 import (
 	"strings"
 
-	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	"github.com/urfave/cli/v2"
 )
 
@@ -34,7 +34,7 @@ func SelectABranch(c *cli.Context, repo *git.Repository) (branch string, err err
 			}
 		}
 
-		pterm.Warning.Printfln("invalid branch: `%s`", branch)
+		printer.Out.WarningPrintfln("invalid branch: `%s`", branch)
 	}
 
 	return SelectInterface(branchOptions, BranchSelectPrompt, "")

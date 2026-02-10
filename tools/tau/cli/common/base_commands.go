@@ -23,4 +23,6 @@ var (
 	_pull     = newBaseCommand("pull")
 	_checkout = newBaseCommand("checkout")
 	_import   = newBaseCommand("import")
+	_cancel   = newBaseCommand("cancel")
+	_retry    = newBaseCommand("retry")
 )

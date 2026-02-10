@@ -1,8 +1,9 @@
 package current
 
 import (
-	"github.com/taubyte/tau/tools/tau/env"
+	"github.com/taubyte/tau/tools/tau/config"
 	"github.com/taubyte/tau/tools/tau/prompts"
+	"github.com/taubyte/tau/tools/tau/session"
 	"github.com/urfave/cli/v2"
 )
 
@@ -22,18 +23,18 @@ func parseIfEmpty(v string) string {
 }
 
 func Run(c *cli.Context) error {
-	selectedProfile, _ := env.GetSelectedUser()
-	selectedProject, _ := env.GetSelectedProject()
-	selectedApplication, _ := env.GetSelectedApplication()
-	selectedNetwork, _ := env.GetSelectedNetwork()
-	customNetworkUrl, _ := env.GetCustomNetworkUrl()
+	selectedProfile, _ := config.GetSelectedUser()
+	selectedProject, _ := config.GetSelectedProject()
+	selectedApplication, _ := config.GetSelectedApplication()
+	selectedCloud, _ := session.GetSelectedCloud()
+	customCloudUrl, _ := session.GetCustomCloudUrl()
 
 	toRender := [][]string{
 		{"Profile", parseIfEmpty(selectedProfile)},
 		{"Project", parseIfEmpty(selectedProject)},
 		{"Application", parseIfEmpty(selectedApplication)},
-		{"Network Type", parseIfEmpty(selectedNetwork)},
-		{"Network", parseIfEmpty(customNetworkUrl)},
+		{"Cloud Type", parseIfEmpty(selectedCloud)},
+		{"Cloud", parseIfEmpty(customCloudUrl)},
 	}
 
 	prompts.RenderTableWithMerge(toRender)

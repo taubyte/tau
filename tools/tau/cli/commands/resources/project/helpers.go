@@ -9,12 +9,12 @@ import (
 	"github.com/google/go-github/v53/github"
 	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/pkg/git"
+	"github.com/taubyte/tau/tools/tau/config"
 	projectFlags "github.com/taubyte/tau/tools/tau/flags/project"
 	"github.com/taubyte/tau/tools/tau/i18n"
 	projectI18n "github.com/taubyte/tau/tools/tau/i18n/project"
 	repositoryI18n "github.com/taubyte/tau/tools/tau/i18n/repository"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
-	"github.com/taubyte/tau/tools/tau/singletons/config"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/oauth2"
 )
