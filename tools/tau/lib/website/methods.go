@@ -7,10 +7,12 @@ import (
 )
 
 func New(website *structureSpec.Website) error {
+	fmt.Printf("[paths trace] lib/website/methods.go New website.Paths=%q\n", website.Paths)
 	return set(website, true)
 }
 
 func Set(website *structureSpec.Website) error {
+	fmt.Printf("[paths trace] lib/website/methods.go Set website.Paths=%q\n", website.Paths)
 	return set(website, false)
 }
 

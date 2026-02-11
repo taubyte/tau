@@ -1,6 +1,8 @@
 package websitePrompts
 
 import (
+	"fmt"
+
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/urfave/cli/v2"
@@ -16,7 +18,9 @@ func Edit(ctx *cli.Context, prev *structureSpec.Website) (interface{}, error) {
 		return nil, err
 	}
 
+	fmt.Printf("[paths trace] website/edit.go before RequiredPaths prev.Paths=%q\n", prev.Paths)
 	prev.Paths = prompts.RequiredPaths(ctx, prev.Paths...)
+	fmt.Printf("[paths trace] website/edit.go after RequiredPaths prev.Paths=%q\n", prev.Paths)
 
 	info, err := RepositoryInfo(ctx, prev, false)
 	if err != nil {

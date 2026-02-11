@@ -123,17 +123,18 @@ var ListRepos = func(ctx context.Context, token, user string) ([]*github.Reposit
 func removeFromGithub(ctx context.Context, token, user, name string) error {
 	client := newGithubClient(ctx, token)
 	if res, err := client.Repositories.Delete(ctx, user, name); err != nil {
-		var deleteRes deleteRes
-		data, err := io.ReadAll(res.Body)
-		if err == nil {
-			if err = json.Unmarshal(data, &deleteRes); err == nil && deleteRes.Message == adminRights {
-				pterm.Error.Println(adminRights[:len(adminRights)-1] + " to delete")
-				pterm.Info.Println(
-					"Add token with delete permissions\n" +
-						pterm.FgGreen.Sprint("$ tau login --new -n {profile-name} -p github -d -t {token}"))
-				return repositoryI18n.ErrorAdminRights
+		if res != nil && res.Body != nil {
+			var deleteRes deleteRes
+			data, err := io.ReadAll(res.Body)
+			if err == nil {
+				if err = json.Unmarshal(data, &deleteRes); err == nil && deleteRes.Message == adminRights {
+					pterm.Error.Println(adminRights[:len(adminRights)-1] + " to delete")
+					pterm.Info.Println(
+						"Add token with delete permissions\n" +
+							pterm.FgGreen.Sprint("$ tau login --new -n {profile-name} -p github -d -t {token}"))
+					return repositoryI18n.ErrorAdminRights
+				}
 			}
-
 		}
 		return repositoryI18n.ErrorDeleteRepository(name, err)
 	}

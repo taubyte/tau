@@ -1,6 +1,8 @@
 package resources
 
 import (
+	"fmt"
+
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	"github.com/taubyte/tau/tools/tau/flags"
@@ -55,6 +57,7 @@ func (h *New[T]) Action() func(ctx *cli.Context) error {
 		if confirm {
 
 			// Lib.New handles the seer creation and id generation on selected project/application
+			fmt.Printf("[paths trace] resources/common/new.go Action before LibNew resource=%+v\n", resource)
 			err := h.LibNew(resource)
 			if err != nil {
 				return err

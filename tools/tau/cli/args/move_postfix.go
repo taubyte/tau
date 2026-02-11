@@ -50,7 +50,9 @@ func MovePostfixOptions(args []string, validFlags []ParsedFlag) []string {
 								skip = true
 							} else if strings.ToLower(args[idx+1]) == "false" {
 								skip = true
-								arg = "-no-" + strings.ReplaceAll(arg, "-", "")
+								// Strip leading dashes, prepend --no-
+								name := strings.TrimLeft(arg, "-")
+								arg = "--no-" + name
 							}
 						}
 					}

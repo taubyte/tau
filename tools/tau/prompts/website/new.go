@@ -1,6 +1,8 @@
 package websitePrompts
 
 import (
+	"fmt"
+
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	websiteLib "github.com/taubyte/tau/tools/tau/lib/website"
 	"github.com/taubyte/tau/tools/tau/prompts"
@@ -33,7 +35,9 @@ func New(ctx *cli.Context) (interface{}, *structureSpec.Website, error) {
 		return nil, nil, err
 	}
 
+	fmt.Printf("[paths trace] website/new.go before RequiredPaths\n")
 	website.Paths = prompts.RequiredPaths(ctx)
+	fmt.Printf("[paths trace] website/new.go after RequiredPaths website.Paths=%q\n", website.Paths)
 
 	info, err := RepositoryInfo(ctx, website, true)
 	if err != nil {

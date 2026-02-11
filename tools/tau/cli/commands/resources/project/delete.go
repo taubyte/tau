@@ -184,7 +184,7 @@ func resources(schema project.Project) ([]libraries.Library, []website.Website, 
 	}
 
 	for _, app := range applications {
-		libNames, _ = schema.Get().Libraries(app)
+		_, libNames = schema.Get().Libraries(app)
 		for _, name := range libNames {
 			lib, err := schema.Library(name, app)
 			if err != nil {
@@ -194,7 +194,7 @@ func resources(schema project.Project) ([]libraries.Library, []website.Website, 
 			libs = append(libs, lib)
 		}
 
-		webNames, _ = schema.Get().Websites(app)
+		_, webNames = schema.Get().Websites(app)
 		for _, name := range webNames {
 			web, err := schema.Website(name, app)
 			if err != nil {

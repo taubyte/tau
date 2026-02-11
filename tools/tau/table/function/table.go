@@ -1,6 +1,7 @@
 package functionTable
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -10,6 +11,7 @@ import (
 )
 
 func getTableData(function *structureSpec.Function, showId bool) (toRender [][]string) {
+	fmt.Printf("[paths trace] table/function/table.go getTableData function.Paths=%q\n", function.Paths)
 	if showId {
 		toRender = [][]string{
 			{"ID", function.Id},

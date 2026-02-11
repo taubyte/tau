@@ -12,8 +12,10 @@ import (
 )
 
 func RequiredPaths(c *cli.Context, prev ...string) (ret []string) {
+	fmt.Printf("[paths trace] RequiredPaths entered, prev=%q\n", prev)
 	if c.IsSet(flags.Paths.Name) {
 		_ret := c.StringSlice(flags.Paths.Name)
+		fmt.Printf("[paths trace] RequiredPaths from flag StringSlice(%q)=%q\n", flags.Paths.Name, _ret)
 
 		ret = make([]string, 0)
 		for _, p := range _ret {
@@ -24,6 +26,7 @@ func RequiredPaths(c *cli.Context, prev ...string) (ret []string) {
 				ret = append(ret, p)
 			}
 		}
+		fmt.Printf("[paths trace] RequiredPaths after validation ret=%q\n", ret)
 	}
 
 	for len(ret) == 0 {
@@ -49,7 +52,9 @@ func RequiredPaths(c *cli.Context, prev ...string) (ret []string) {
 		}))
 
 		ret = cleanTags(tempRet)
+		fmt.Printf("[paths trace] RequiredPaths after prompt cleanTags ret=%q\n", ret)
 	}
 
+	fmt.Printf("[paths trace] RequiredPaths returning ret=%q\n", ret)
 	return ret
 }

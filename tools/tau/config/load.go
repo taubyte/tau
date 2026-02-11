@@ -12,10 +12,11 @@ import (
 
 func loadConfig() error {
 	if !file.Exists(constants.TauConfigFileName) {
-		_, err := os.Create(constants.TauConfigFileName)
+		f, err := os.Create(constants.TauConfigFileName)
 		if err != nil {
 			return singletonsI18n.CreatingConfigFileFailed(err)
 		}
+		f.Close()
 	}
 
 	_seer, err := seer.New(seer.SystemFS(filepath.Dir(constants.TauConfigFileName)))

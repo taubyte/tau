@@ -1,6 +1,7 @@
 package websiteTable
 
 import (
+	"fmt"
 	"strings"
 
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
@@ -8,6 +9,7 @@ import (
 )
 
 func getTableData(website *structureSpec.Website, showId bool) (toRender [][]string) {
+	fmt.Printf("[paths trace] table/website/table.go getTableData website.Paths=%q\n", website.Paths)
 	if showId {
 		toRender = [][]string{
 			{"ID", website.Id},

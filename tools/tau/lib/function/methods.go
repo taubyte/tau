@@ -1,6 +1,7 @@
 package functionLib
 
 import (
+	"fmt"
 	"os"
 
 	schemaCommon "github.com/taubyte/tau/pkg/schema/common"
@@ -10,6 +11,7 @@ import (
 )
 
 func New(function *structureSpec.Function, templateURL string) error {
+	fmt.Printf("[paths trace] lib/function/methods.go New function.Paths=%q\n", function.Paths)
 	_, err := set(function, true)
 	if err != nil {
 		return err
@@ -24,6 +26,7 @@ func New(function *structureSpec.Function, templateURL string) error {
 }
 
 func Set(function *structureSpec.Function) (err error) {
+	fmt.Printf("[paths trace] lib/function/methods.go Set function.Paths=%q\n", function.Paths)
 	_, err = set(function, false)
 	return
 }

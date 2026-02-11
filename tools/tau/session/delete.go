@@ -25,8 +25,8 @@ func Delete() error {
 			return nil
 		}
 	}
-	// Discover session file (same logic as discoverOrCreateConfigFileLoc)
-	P := ancestorPathFromRoot(maxAncestorDepthForPath)
+	// Discover session file using leaf-side suffix matching (same logic as discoverOrCreateConfigFileLoc)
+	leafPIDs := ancestorPIDs(maxAncestorDepthForPath)
 	root := sessionRootDir()
 	pattern := filepath.Join(root, sessionDirPrefix+"-session-*.yaml")
 	matches, err := filepath.Glob(pattern)
@@ -35,26 +35,32 @@ func Delete() error {
 	}
 	var bestFile string
 	var bestL int
-	var bestTs int64
 	for _, path := range matches {
 		info, err := os.Stat(path)
 		if err != nil || info.IsDir() {
 			continue
 		}
 		baseNoExt := strings.TrimSuffix(filepath.Base(path), ".yaml")
-		ts, sName, ok := parseSessionDirBase(baseNoExt)
+		storedPIDs, ok := parseSessionFileBase(baseNoExt)
 		if !ok {
-			continue
+			_, storedPIDs, ok = parseSessionDirBase(baseNoExt)
+			if !ok {
+				continue
+			}
+			// Legacy stored PIDs are root-first; reverse to leaf-first for suffix matching
+			storedPIDs = trimLeadingZeros(storedPIDs)
+			reverseInts(storedPIDs)
+		} else {
+			storedPIDs = trimTrailingZeros(storedPIDs)
 		}
-		S := trimLeadingZeros(sName)
-		L := longestCommonPrefixLength(P, S)
-		if L > bestL || (L == bestL && ts > bestTs) {
+		L := longestCommonSuffixLength(leafPIDs, storedPIDs)
+		if L > bestL {
 			bestL = L
-			bestTs = ts
 			bestFile = path
 		}
 	}
-	if bestFile == "" {
+	// Apply the same threshold as discovery — don't delete a weakly-matching session
+	if bestFile == "" || bestL < sessionCommonSuffixThreshold {
 		return singletonsI18n.SessionNotFound()
 	}
 	if err := os.Remove(bestFile); err != nil && !os.IsNotExist(err) {

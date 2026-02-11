@@ -64,6 +64,7 @@ func query(ctx *cli.Context) error {
 		}
 
 		data, err := io.ReadAll(log)
+		log.Close()
 		if err != nil {
 			return err
 		}

@@ -24,7 +24,7 @@ type SessionData struct {
 
 func extractTokenFromSession(session string) (data SessionData, err error) {
 	sessionSplit := strings.Split(session, ".")
-	if len(sessionSplit) < 1 {
+	if len(sessionSplit) < 2 {
 		err = fmt.Errorf("invalid session: `%s`", session)
 		return
 	}

@@ -3,6 +3,9 @@ package resources
 import "reflect"
 
 func PanicIfMissingValue(h interface{}) {
+	if h == nil || reflect.ValueOf(h).IsNil() {
+		panic("PanicIfMissingValue: handler is nil")
+	}
 	for i := 0; i < reflect.TypeOf(h).Elem().NumField(); i++ {
 		field := reflect.TypeOf(h).Elem().Field(i)
 		if field.Type.Kind() == reflect.Func {

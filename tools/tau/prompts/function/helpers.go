@@ -1,6 +1,7 @@
 package functionPrompts
 
 import (
+	"fmt"
 	"os"
 	"path"
 
@@ -66,7 +67,9 @@ func editHttp(ctx *cli.Context, function *structureSpec.Function) (err error) {
 		return
 	}
 
+	fmt.Printf("[paths trace] function/helpers.go editHttp before RequiredPaths function.Paths=%q\n", function.Paths)
 	function.Paths = prompts.RequiredPaths(ctx, function.Paths...)
+	fmt.Printf("[paths trace] function/helpers.go editHttp after RequiredPaths function.Paths=%q\n", function.Paths)
 	return
 }
 

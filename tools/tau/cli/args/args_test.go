@@ -19,8 +19,7 @@ type testRunner struct {
 func TestArgs(t *testing.T) {
 	realApp, err := tauCLI.New()
 	if err != nil {
-		t.Error(err)
-		return
+		t.Fatal(err)
 	}
 
 	testCases := []testRunner{
@@ -62,7 +61,7 @@ func TestArgs(t *testing.T) {
 			},
 		},
 		{
-			name:         "sub",
+			name:         "sub with subcommand flags",
 			testArgs:     []string{"program", "new", "function", "someFunc", "-g", "-c", "someCommand"},
 			expectedArgs: []string{"program", "-g", "new", "function", "-c", "someCommand", "someFunc"},
 			app: &cli.App{
@@ -91,7 +90,7 @@ func TestArgs(t *testing.T) {
 			},
 		},
 		{
-			name:         "sub",
+			name:         "sub login with profile",
 			testArgs:     []string{"tau", "login", "someProfile2", "-p", "github", "-t", "token", "--new", "--color", "never"},
 			expectedArgs: []string{"tau", "--color", "never", "login", "-p", "github", "-t", "token", "--new", "someProfile2"},
 			app:          realApp,
@@ -127,13 +126,13 @@ func TestArgs(t *testing.T) {
 			app:          realApp,
 		},
 		{
-			name:         "true attached on a bool flag parse",
+			name:         "bool true with color never",
 			testArgs:     []string{"tau", "-color", "never", "-y", "true", "new", "someApp", "app"},
 			expectedArgs: []string{"tau", "-color", "never", "-y", "new", "app", "someApp"},
 			app:          realApp,
 		},
 		{
-			name:     "true attached on a bool flag parse",
+			name:     "bool true with color always at end",
 			testArgs: []string{"tau", "-y", "true", "new", "someApp", "app", "-color", "always"},
 
 			// Flag reordering: global flags move to front
