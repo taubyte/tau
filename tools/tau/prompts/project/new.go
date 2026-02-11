@@ -14,7 +14,10 @@ func New(ctx *cli.Context) (embedToken bool, project *projectLib.Project, err er
 		return
 	}
 
-	project.Name = prompts.GetOrRequireAUniqueName(ctx, projectName, projectNames)
+	project.Name, err = prompts.GetOrRequireAUniqueName(ctx, projectName, projectNames)
+	if err != nil {
+		return
+	}
 	project.Description = prompts.GetOrAskForADescription(ctx)
 	project.Public, err = GetOrRequireVisibility(ctx)
 

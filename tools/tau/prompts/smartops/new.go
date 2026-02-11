@@ -15,7 +15,10 @@ func New(ctx *cli.Context) (smartops *structureSpec.SmartOp, templateURL string,
 		return
 	}
 
-	smartops.Name = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	smartops.Name, err = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	if err != nil {
+		return
+	}
 
 	templateURL, err = checkTemplate(ctx, smartops)
 	if err != nil {
@@ -41,7 +44,10 @@ func New(ctx *cli.Context) (smartops *structureSpec.SmartOp, templateURL string,
 	}
 	smartops.Source = source.String()
 
-	smartops.Call = prompts.GetOrRequireACall(ctx, source, smartops.Call)
+	smartops.Call, err = prompts.GetOrRequireACall(ctx, source, smartops.Call)
+	if err != nil {
+		return
+	}
 
 	return
 }

@@ -12,8 +12,8 @@ import (
 )
 
 // TODO parse the source, and make this a selection based on exported functions.
-func GetOrRequireACall(c *cli.Context, source common.Source, prev ...string) string {
-	call := validateAndRequireString(c, validateRequiredStringHelper{
+func GetOrRequireACall(c *cli.Context, source common.Source, prev ...string) (string, error) {
+	return validateAndRequireString(c, validateRequiredStringHelper{
 		field:  flags.Call.Name,
 		prompt: CallPrompt,
 		prev:   prev,
@@ -36,6 +36,4 @@ func GetOrRequireACall(c *cli.Context, source common.Source, prev ...string) str
 			return nil
 		},
 	})
-
-	return call
 }

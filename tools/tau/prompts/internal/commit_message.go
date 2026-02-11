@@ -15,7 +15,10 @@ var CommitMessage = &cli.Command{
 	Action: func(ctx *cli.Context) error {
 
 		// New
-		message := prompts.GetOrRequireACommitMessage(ctx)
+		message, err := prompts.GetOrRequireACommitMessage(ctx)
+		if err != nil {
+			return err
+		}
 
 		printer.Out.SuccessPrintfln("Got commit message: `%s`", message)
 		return nil

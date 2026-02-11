@@ -11,8 +11,8 @@ import (
 )
 
 func TestGetOrRequireABranch_FromFlag(t *testing.T) {
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: []cli.Flag{flags.Branch},
@@ -20,13 +20,14 @@ func TestGetOrRequireABranch_FromFlag(t *testing.T) {
 	}.Run()
 	assert.NilError(t, err)
 
-	got := prompts.GetOrRequireABranch(ctx)
+	got, err := prompts.GetOrRequireABranch(ctx)
+	assert.NilError(t, err)
 	assert.Equal(t, got, "main")
 }
 
 func TestGetOrRequireAName_FromFlagValid(t *testing.T) {
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: []cli.Flag{flags.Name},
@@ -34,13 +35,14 @@ func TestGetOrRequireAName_FromFlagValid(t *testing.T) {
 	}.Run()
 	assert.NilError(t, err)
 
-	got := prompts.GetOrRequireAName(ctx, "Name:", nil...)
+	got, err := prompts.GetOrRequireAName(ctx, "Name:", nil...)
+	assert.NilError(t, err)
 	assert.Equal(t, got, "my_resource")
 }
 
 func TestGetOrRequireAUniqueName_FromFlagValid(t *testing.T) {
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: []cli.Flag{flags.Name},
@@ -48,6 +50,7 @@ func TestGetOrRequireAUniqueName_FromFlagValid(t *testing.T) {
 	}.Run()
 	assert.NilError(t, err)
 
-	got := prompts.GetOrRequireAUniqueName(ctx, "Name:", []string{"other"}, nil...)
+	got, err := prompts.GetOrRequireAUniqueName(ctx, "Name:", []string{"other"}, nil...)
+	assert.NilError(t, err)
 	assert.Equal(t, got, "unique_name")
 }

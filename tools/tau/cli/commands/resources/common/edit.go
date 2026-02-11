@@ -29,15 +29,10 @@ func (h *Edit[T]) Default() common.Command {
 }
 
 func (h *Edit[T]) BasicFlags() []cli.Flag {
-	return append(append([]cli.Flag{
+	return append([]cli.Flag{
 		flags.Description,
 		flags.Tags,
-	},
-		// Insert unique flags between basic and Yes
-		h.UniqueFlags...),
-
-		flags.Yes,
-	)
+	}, h.UniqueFlags...)
 }
 
 func (h *Edit[T]) Action() func(ctx *cli.Context) error {

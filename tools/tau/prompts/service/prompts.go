@@ -7,7 +7,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func GetOrRequireAProtocol(c *cli.Context, prev ...string) string {
+func GetOrRequireAProtocol(c *cli.Context, prev ...string) (string, error) {
 	return prompts.RequiredStringWithValidator(c, ProtocolPrompt, func(*cli.Context, string, ...string) (ret string) {
 		return prompts.GetOrAskForAStringValue(c, serviceFlags.Protocol.Name, ProtocolPrompt, prev...)
 	}, validate.VariableMatchValidator)

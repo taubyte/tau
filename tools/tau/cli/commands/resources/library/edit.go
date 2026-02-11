@@ -23,8 +23,6 @@ func (l link) Edit() common.Command {
 				flags.EmbedToken,
 
 				// TODO maybe, handle generating a new repo
-
-				flags.Yes,
 			),
 			Action: l.cmd.Edit,
 		},

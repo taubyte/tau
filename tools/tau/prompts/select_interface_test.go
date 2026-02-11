@@ -16,12 +16,30 @@ func TestSelectInterface(t *testing.T) {
 		_, err := prompts.SelectInterface(nil, "Pick:", "")
 		assert.Assert(t, err != nil)
 	})
+
+	t.Run("UseDefaults_returns_first_option", func(t *testing.T) {
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
+
+		got, err := prompts.SelectInterface([]string{"a", "b", "c"}, "Pick:", "")
+		assert.NilError(t, err)
+		assert.Equal(t, got, "a")
+	})
+
+	t.Run("UseDefaults_returns_default_when_in_names", func(t *testing.T) {
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
+
+		got, err := prompts.SelectInterface([]string{"a", "b", "c"}, "Pick:", "b")
+		assert.NilError(t, err)
+		assert.Equal(t, got, "b")
+	})
 }
 
 func TestSelectInterfaceField(t *testing.T) {
 	t.Run("from_flag", func(t *testing.T) {
-		prompts.PromptEnabled = false
-		defer func() { prompts.PromptEnabled = true }()
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
 
 		ctx, err := mock.CLI{
 			Flags: []cli.Flag{methodFlag},
@@ -35,8 +53,8 @@ func TestSelectInterfaceField(t *testing.T) {
 	})
 
 	t.Run("case_insensitive", func(t *testing.T) {
-		prompts.PromptEnabled = false
-		defer func() { prompts.PromptEnabled = true }()
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
 
 		ctx, err := mock.CLI{
 			Flags: []cli.Flag{methodFlag},

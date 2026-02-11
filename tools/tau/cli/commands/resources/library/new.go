@@ -25,8 +25,6 @@ func (l link) New() common.Command {
 				libraryFlags.GenerateRepo,
 				flags.Private,
 				flags.Branch,
-
-				flags.Yes,
 			),
 			Action: l.cmd.New,
 		},

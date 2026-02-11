@@ -3,7 +3,6 @@ package resources
 import (
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/tools/tau/cli/common"
-	"github.com/taubyte/tau/tools/tau/flags"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/urfave/cli/v2"
 )
@@ -26,9 +25,7 @@ func (h *Delete[T]) Default() common.Command {
 }
 
 func (h *Delete[T]) BasicFlags() []cli.Flag {
-	return []cli.Flag{
-		flags.Yes,
-	}
+	return nil
 }
 
 func (h *Delete[T]) Action() func(ctx *cli.Context) error {

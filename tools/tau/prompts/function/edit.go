@@ -47,7 +47,10 @@ func Edit(ctx *cli.Context, function *structureSpec.Function) (err error) {
 	}
 	function.Source = source.String()
 
-	function.Call = prompts.GetOrRequireACall(ctx, source, function.Call)
+	function.Call, err = prompts.GetOrRequireACall(ctx, source, function.Call)
+	if err != nil {
+		return
+	}
 
 	return
 }

@@ -12,8 +12,8 @@ import (
 
 func TestTags(t *testing.T) {
 	t.Run("GetOrAskForTags_FromFlag", func(t *testing.T) {
-		prompts.PromptEnabled = false
-		defer func() { prompts.PromptEnabled = true }()
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
 
 		ctx, err := mock.CLI{
 			Flags: []cli.Flag{flags.Tags},
@@ -25,8 +25,8 @@ func TestTags(t *testing.T) {
 	})
 
 	t.Run("RequiredTags_from_flag", func(t *testing.T) {
-		prompts.PromptEnabled = false
-		defer func() { prompts.PromptEnabled = true }()
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
 
 		ctx, err := mock.CLI{
 			Flags: []cli.Flag{flags.Tags},
@@ -35,5 +35,33 @@ func TestTags(t *testing.T) {
 
 		got := prompts.RequiredTags(ctx)
 		assert.DeepEqual(t, got, []string{"a", "b"})
+	})
+
+	t.Run("GetOrAskForTags_empty_tag_flag", func(t *testing.T) {
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
+
+		ctx, err := mock.CLI{
+			Flags: []cli.Flag{flags.Tags},
+		}.Run("--tags", "")
+		assert.NilError(t, err)
+
+		got := prompts.GetOrAskForTags(ctx)
+		assert.Assert(t, len(got) == 0, "expected no tags, got %v", got)
+		// Must not be a slice containing one empty string (old bug with --tags "")
+		assert.Assert(t, !(len(got) == 1 && got[0] == ""), "got []string{\"\"}, expected normalized empty")
+	})
+
+	t.Run("RequiredTags_empty_tag_flag_no_hang", func(t *testing.T) {
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
+
+		ctx, err := mock.CLI{
+			Flags: []cli.Flag{flags.Tags},
+		}.Run("--tags", "")
+		assert.NilError(t, err)
+
+		got := prompts.RequiredTags(ctx)
+		assert.Assert(t, len(got) == 0, "expected empty slice, got %v", got)
 	})
 }

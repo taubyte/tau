@@ -24,7 +24,10 @@ func (lib *repositoryCommands) Push(ctx *cli.Context) error {
 		return err
 	}
 
-	message := prompts.GetOrRequireACommitMessage(ctx)
+	message, err := prompts.GetOrRequireACommitMessage(ctx)
+	if err != nil {
+		return err
+	}
 
 	_, err = info.Push(project, message, resource.Get().RepositoryURL())
 	if err != nil {

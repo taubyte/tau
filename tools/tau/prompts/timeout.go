@@ -13,6 +13,13 @@ func GetOrRequireATimeout(ctx *cli.Context, prev ...uint64) (uint64, error) {
 		prevString = schemaCommon.TimeToString(prev[0])
 	}
 
-	stringTimeout := GetOrRequireAString(ctx, flags.Timeout.Name, TimeoutPrompt, validate.Time, prevString)
-	return schemaCommon.StringToTime(stringTimeout)
+	stringTimeout, err := GetOrRequireAString(ctx, flags.Timeout.Name, TimeoutPrompt, validate.Time, prevString)
+	if err != nil {
+		return 0, err
+	}
+	t, err := schemaCommon.StringToTime(stringTimeout)
+	if err != nil {
+		return 0, err
+	}
+	return t, nil
 }

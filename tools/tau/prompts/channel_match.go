@@ -6,7 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func GetOrRequireAMatch(c *cli.Context, prompt string, prev ...string) string {
+func GetOrRequireAMatch(c *cli.Context, prompt string, prev ...string) (string, error) {
 	return validateAndRequireString(c, validateRequiredStringHelper{
 		field:     flags.Match.Name,
 		prompt:    prompt,

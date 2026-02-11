@@ -15,8 +15,8 @@ import (
 func TestNew_AllFlagsSet_NonInteractive(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
 
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: []cli.Flag{flags.Name, flags.Description, flags.Tags},

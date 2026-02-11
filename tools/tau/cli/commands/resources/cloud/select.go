@@ -93,7 +93,10 @@ func _select(ctx *cli.Context) error {
 		}
 		if cloud == common.RemoteCloud {
 			profile.CloudType = common.RemoteCloud
-			profile.Cloud = prompts.GetOrRequireAString(ctx, "", prompts.FQDN, validate.FQDNValidator, profile.Cloud)
+			profile.Cloud, err = prompts.GetOrRequireAString(ctx, "", prompts.FQDN, validate.FQDNValidator, profile.Cloud)
+			if err != nil {
+				return err
+			}
 			if err := validate.SeerFQDN(ctx.Context, profile.Cloud); err != nil {
 				return err
 			}
@@ -103,6 +106,7 @@ func _select(ctx *cli.Context) error {
 			}
 
 		} else if cloud == common.DreamCloud {
+			profile.CloudType = common.DreamCloud
 			universes, err := dreamClient.Status()
 			if err != nil {
 				return fmt.Errorf("calling dream status failed with: %w", err)

@@ -24,7 +24,6 @@ func (link) New() common.Command {
 				flags.EmbedToken,
 				projectFlags.Public,
 				projectFlags.Private,
-				flags.Yes,
 			},
 			Action: new,
 		},

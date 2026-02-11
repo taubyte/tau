@@ -34,7 +34,10 @@ func push(ctx *cli.Context) error {
 		return err
 	}
 
-	commitMessage := prompts.GetOrRequireACommitMessage(ctx)
+	commitMessage, err := prompts.GetOrRequireACommitMessage(ctx)
+	if err != nil {
+		return err
+	}
 
 	err = (&dualRepoHandler{
 		ctx:         ctx,

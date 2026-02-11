@@ -26,7 +26,7 @@ func GetHttpMethod(ctx *cli.Context, prev ...string) (string, error) {
 	)
 }
 
-func GetOrRequireACommand(ctx *cli.Context, prev ...string) string {
+func GetOrRequireACommand(ctx *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAString(ctx,
 		functionFlags.Command.Name,
 		CommandPrompt,
@@ -35,7 +35,7 @@ func GetOrRequireACommand(ctx *cli.Context, prev ...string) string {
 	)
 }
 
-func GetOrRequireAChannel(ctx *cli.Context, prev ...string) string {
+func GetOrRequireAChannel(ctx *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAString(ctx,
 		functionFlags.Channel.Name,
 		ChannelPrompt,

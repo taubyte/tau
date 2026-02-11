@@ -44,7 +44,6 @@ func (m pathsTest) run(t *testing.T) {
 
 func TestPaths(t *testing.T) {
 	// Set to false if stuck in infinite loop or testing
-	prompts.PromptEnabled = true
 
 	pathsTest{
 		paths: []string{"/a"},

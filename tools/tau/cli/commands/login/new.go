@@ -10,7 +10,10 @@ import (
 )
 
 func New(ctx *cli.Context, options []string) error {
-	name := prompts.GetOrRequireAName(ctx, loginPrompts.ProfileName)
+	name, err := prompts.GetOrRequireAName(ctx, loginPrompts.ProfileName)
+	if err != nil {
+		return err
+	}
 
 	var setDefault bool
 	if len(options) > 0 {

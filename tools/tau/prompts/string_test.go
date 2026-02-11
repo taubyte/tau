@@ -13,8 +13,8 @@ import (
 
 func TestString(t *testing.T) {
 	t.Run("GetOrAskForAStringValue_from_flag", func(t *testing.T) {
-		prompts.PromptEnabled = false
-		defer func() { prompts.PromptEnabled = true }()
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
 
 		ctx, err := mock.CLI{
 			Flags: []cli.Flag{&cli.StringFlag{Name: "field"}},
@@ -27,8 +27,8 @@ func TestString(t *testing.T) {
 	})
 
 	t.Run("GetOrRequireAString_from_flag", func(t *testing.T) {
-		prompts.PromptEnabled = false
-		defer func() { prompts.PromptEnabled = true }()
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
 
 		ctx, err := mock.CLI{
 			Flags: []cli.Flag{flags.Name},
@@ -36,7 +36,20 @@ func TestString(t *testing.T) {
 		}.Run()
 		assert.NilError(t, err)
 
-		got := prompts.GetOrRequireAString(ctx, flags.Name.Name, "Name:", validate.VariableNameValidator)
+		got, err := prompts.GetOrRequireAString(ctx, flags.Name.Name, "Name:", validate.VariableNameValidator)
+		assert.NilError(t, err)
 		assert.Equal(t, got, "valid_name")
+	})
+
+	t.Run("GetOrRequireAString_UseDefaults_no_value_returns_ErrRequiredInDefaultsMode", func(t *testing.T) {
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
+
+		ctx, err := mock.CLI{Flags: []cli.Flag{flags.Name}}.Run()
+		assert.NilError(t, err)
+
+		_, err = prompts.GetOrRequireAString(ctx, flags.Name.Name, "Name:", validate.VariableNameValidator)
+		assert.Assert(t, err != nil)
+		assert.ErrorIs(t, err, prompts.ErrRequiredInDefaultsMode)
 	})
 }

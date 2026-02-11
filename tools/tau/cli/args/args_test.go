@@ -105,7 +105,7 @@ func TestArgs(t *testing.T) {
 		{
 			name:         "sub3",
 			testArgs:     []string{"tau", "new", "-y", "application", "-n", "someApp", "-d", "some app desc", "-t", "some, other, tags"},
-			expectedArgs: []string{"tau", "new", "application", "-y", "-n", "someApp", "-d", "some app desc", "-t", "some, other, tags"},
+			expectedArgs: []string{"tau", "-y", "new", "application", "-n", "someApp", "-d", "some app desc", "-t", "some, other, tags"},
 			app:          realApp,
 		},
 		{
@@ -117,19 +117,19 @@ func TestArgs(t *testing.T) {
 		{
 			name:         "sub with alias",
 			testArgs:     []string{"tau", "new", "-y", "app", "someApp", "-d", "some app desc"},
-			expectedArgs: []string{"tau", "new", "app", "-y", "-d", "some app desc", "someApp"},
+			expectedArgs: []string{"tau", "-y", "new", "app", "-d", "some app desc", "someApp"},
 			app:          realApp,
 		},
 		{
 			name:         "crazy command (example usage)",
 			testArgs:     []string{"tau", "-y", "-d", "some app desc", "new", "someApp", "app"},
-			expectedArgs: []string{"tau", "new", "app", "-y", "-d", "some app desc", "someApp"},
+			expectedArgs: []string{"tau", "-y", "new", "app", "-d", "some app desc", "someApp"},
 			app:          realApp,
 		},
 		{
 			name:         "true attached on a bool flag parse",
 			testArgs:     []string{"tau", "-color", "never", "-y", "true", "new", "someApp", "app"},
-			expectedArgs: []string{"tau", "-color", "never", "new", "app", "-y", "someApp"},
+			expectedArgs: []string{"tau", "-color", "never", "-y", "new", "app", "someApp"},
 			app:          realApp,
 		},
 		{
@@ -137,7 +137,7 @@ func TestArgs(t *testing.T) {
 			testArgs: []string{"tau", "-y", "true", "new", "someApp", "app", "-color", "always"},
 
 			// Flag reordering: global flags move to front
-			expectedArgs: []string{"tau", "-color", "always", "new", "app", "-y", "someApp"},
+			expectedArgs: []string{"tau", "-y", "-color", "always", "new", "app", "someApp"},
 			app:          realApp,
 		},
 		{
@@ -156,7 +156,7 @@ func TestArgs(t *testing.T) {
 				"--domains", "hal.computers.com",
 			},
 			expectedArgs: []string{
-				"tau", "new", "website", "-y",
+				"tau", "-y", "new", "website",
 				"-name", "someWebsite",
 				"-description", "desc",
 				"-tags", "tag1",

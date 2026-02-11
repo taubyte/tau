@@ -12,7 +12,11 @@ func Edit(ctx *cli.Context, prev *structureSpec.Messaging) error {
 
 	prev.Local = prompts.GetOrAskForLocal(ctx, prev.Local)
 	prev.Regex = prompts.GetMatchRegex(ctx, prev.Regex)
-	prev.Match = GetOrRequireAChannelMatch(ctx, prev.Match)
+	var err error
+	prev.Match, err = GetOrRequireAChannelMatch(ctx, prev.Match)
+	if err != nil {
+		return err
+	}
 	prev.MQTT = GetMQTT(ctx, prev.MQTT)
 	prev.WebSocket = GetWebSocket(ctx, prev.WebSocket)
 

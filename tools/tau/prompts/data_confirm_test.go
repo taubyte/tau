@@ -12,8 +12,8 @@ import (
 
 func TestConfirmData(t *testing.T) {
 	t.Run("with_yes_flag", func(t *testing.T) {
-		prompts.PromptEnabled = false
-		defer func() { prompts.PromptEnabled = true }()
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
 
 		ctx, err := mock.CLI{Flags: []cli.Flag{flags.Yes}}.Run("--y")
 		assert.NilError(t, err)
@@ -23,8 +23,8 @@ func TestConfirmData(t *testing.T) {
 
 func TestConfirmDataWithMerge(t *testing.T) {
 	t.Run("with_yes_flag", func(t *testing.T) {
-		prompts.PromptEnabled = false
-		defer func() { prompts.PromptEnabled = true }()
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
 
 		ctx, err := mock.CLI{Flags: []cli.Flag{flags.Yes}}.Run("-y")
 		assert.NilError(t, err)

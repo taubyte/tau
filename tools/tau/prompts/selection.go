@@ -29,11 +29,19 @@ func GetOrAskForSelection(c *cli.Context, field string, label string, items []st
 	val := c.String(field)
 	for {
 		if val == "" {
+			if UseDefaults {
+				defaultOpt := defaultInOptions(items, prev)
+				if defaultOpt != "" {
+					return defaultOpt, nil
+				}
+				if len(items) > 0 {
+					return items[0], nil
+				}
+				return "", RequiredInDefaultsModeError(label)
+			}
 			if cliPrompts.IsNonInteractive() {
 				return "", cliPrompts.ErrNonInteractive
 			}
-			panicIfPromptNotEnabledSelection(val, label, items)
-
 			defaultOpt := defaultInOptions(items, prev)
 			if defaultOpt != "" {
 				AskOne(&survey.Select{

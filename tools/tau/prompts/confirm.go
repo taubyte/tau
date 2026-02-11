@@ -9,10 +9,12 @@ import (
 func ConfirmPrompt(c *cli.Context, label string) bool {
 	confirm := c.Bool(flags.Yes.Name)
 	if !confirm {
+		if UseDefaults {
+			return false
+		}
 		AskOne(&survey.Confirm{
 			Message: label,
 		}, &confirm)
-
 	}
 
 	return confirm

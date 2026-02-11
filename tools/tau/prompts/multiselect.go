@@ -53,8 +53,10 @@ func MultiSelect(c *cli.Context, cnf MultiSelectConfig) (ret []string) {
 }
 
 func multiselectPrompt(ret *[]string, cnf MultiSelectConfig) {
-	panicIfPromptNotEnabledSelection(strings.Join(*ret, ", "), cnf.Prompt, cnf.Options)
-
+	if UseDefaults {
+		*ret = cnf.Previous
+		return
+	}
 	AskOne(&survey.MultiSelect{
 		Message: cnf.Prompt,
 		Options: cnf.Options,

@@ -11,30 +11,106 @@ func TestDiscovery(t *testing.T) {
 	tmp := t.TempDir()
 	oldPrefix := sessionDirPrefix
 	oldOverride := sessionTempDirOverride
+	oldRootOverride := sessionRootDirOverride
 	sessionDirPrefix = "tau-test"
 	sessionTempDirOverride = tmp
+	sessionRootDirOverride = tmp
 	defer func() {
 		sessionDirPrefix = oldPrefix
 		sessionTempDirOverride = oldOverride
+		sessionRootDirOverride = oldRootOverride
 	}()
 
-	dir1, err := discoverOrCreateConfigFileLoc()
+	file1, err := discoverOrCreateConfigFileLoc()
 	if err != nil {
 		t.Fatal(err)
 	}
-	dir2, err := discoverOrCreateConfigFileLoc()
+	file2, err := discoverOrCreateConfigFileLoc()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dir1 != dir2 {
-		t.Errorf("session dir should be stable: got %s then %s", dir1, dir2)
+	if file1 != file2 {
+		t.Errorf("session file should be stable: got %s then %s", file1, file2)
 	}
-	if filepath.Dir(dir1) != tmp {
-		t.Errorf("session dir should be under test TempDir: %s", dir1)
+	if filepath.Dir(file1) != tmp {
+		t.Errorf("session file should be under test TempDir: %s", file1)
 	}
-	base := filepath.Base(dir1)
-	if !strings.HasPrefix(base, "tau-test-session-") {
-		t.Errorf("session dir base name should match tau-test-session-*: got %s", base)
+	base := filepath.Base(file1)
+	if !strings.HasPrefix(base, "tau-test-session-") || !strings.HasSuffix(base, ".yaml") {
+		t.Errorf("session file name should match tau-test-session-*.yaml: got %s", base)
+	}
+}
+
+func TestLongestCommonPrefixLength(t *testing.T) {
+	if got := longestCommonPrefixLength([]int{1, 2, 3, 4}, []int{1, 2, 3, 5}); got != 3 {
+		t.Errorf("LCP([1,2,3,4], [1,2,3,5]) = %d; want 3", got)
+	}
+	if got := longestCommonPrefixLength([]int{1, 2}, []int{1, 2, 3}); got != 2 {
+		t.Errorf("LCP([1,2], [1,2,3]) = %d; want 2", got)
+	}
+	if got := longestCommonPrefixLength([]int{1, 2}, []int{2, 1}); got != 0 {
+		t.Errorf("LCP([1,2], [2,1]) = %d; want 0", got)
+	}
+	if got := longestCommonPrefixLength([]int{}, []int{1}); got != 0 {
+		t.Errorf("LCP([], [1]) = %d; want 0", got)
+	}
+}
+
+func TestAncestorPathFromRoot(t *testing.T) {
+	P := ancestorPathFromRoot(maxAncestorDepthForPath)
+	if len(P) > maxAncestorDepthForPath {
+		t.Errorf("ancestorPathFromRoot length = %d; want <= %d", len(P), maxAncestorDepthForPath)
+	}
+	// Same process gives same path when called twice
+	P2 := ancestorPathFromRoot(maxAncestorDepthForPath)
+	if len(P) != len(P2) {
+		t.Errorf("two calls: len %d vs %d", len(P), len(P2))
+	}
+	for i := range P {
+		if P[i] != P2[i] {
+			t.Errorf("two calls differ at index %d: %d vs %d", i, P[i], P2[i])
+		}
+	}
+}
+
+func TestNewFormatSessionDoesNotForkOnSetKey(t *testing.T) {
+	Clear()
+	defer Clear()
+
+	tmp := t.TempDir()
+	oldPrefix := sessionDirPrefix
+	oldOverride := sessionTempDirOverride
+	oldRootOverride := sessionRootDirOverride
+	sessionDirPrefix = "tau-test"
+	sessionTempDirOverride = tmp
+	sessionRootDirOverride = tmp
+	defer func() {
+		sessionDirPrefix = oldPrefix
+		sessionTempDirOverride = oldOverride
+		sessionRootDirOverride = oldRootOverride
+	}()
+
+	// Discover creates a session file (path in filename)
+	file1, err := discoverOrCreateConfigFileLoc()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = LoadSessionAt(file1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// setKey triggers ensureExactSessionDir; for file-based it must be no-op
+	err = Set().ProfileName("no-fork-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Only one session file under tmp
+	matches, _ := filepath.Glob(filepath.Join(tmp, "tau-test-session-*.yaml"))
+	if len(matches) != 1 {
+		t.Errorf("expected exactly one session file under tmp; got %d: %v", len(matches), matches)
+	}
+	if _sessionDir != filepath.Dir(file1) {
+		t.Errorf("_sessionDir should be unchanged after setKey: got %q", _sessionDir)
 	}
 }
 
@@ -186,13 +262,13 @@ func TestEnsureExactSessionDirSwitchesWhenNeeded(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// ensureExactSessionDir runs inside setKey; session is now in exact path under tmp
+	// ensureExactSessionDir runs inside setKey; session is now in exact dir under tmp
 	Clear()
-	exactDir, err := discoverOrCreateConfigFileLoc()
+	exactPath, err := discoverOrCreateConfigFileLoc()
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = LoadSessionInDir(exactDir)
+	err = LoadSessionAt(exactPath)
 	if err != nil {
 		t.Fatal(err)
 	}

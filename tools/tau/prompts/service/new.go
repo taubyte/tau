@@ -15,10 +15,16 @@ func New(ctx *cli.Context) (*structureSpec.Service, error) {
 		return nil, err
 	}
 
-	service.Name = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	service.Name, err = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	if err != nil {
+		return nil, err
+	}
 	service.Description = prompts.GetOrAskForADescription(ctx)
 	service.Tags = prompts.GetOrAskForTags(ctx)
-	service.Protocol = GetOrRequireAProtocol(ctx)
+	service.Protocol, err = GetOrRequireAProtocol(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	return service, nil
 }

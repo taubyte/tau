@@ -10,7 +10,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-func GetOrRequireAName(c *cli.Context, prompt string, prev ...string) string {
+func GetOrRequireAName(c *cli.Context, prompt string, prev ...string) (string, error) {
 	return validateAndRequireString(c, validateRequiredStringHelper{
 		field:     flags.Name.Name,
 		prompt:    prompt,
@@ -19,7 +19,7 @@ func GetOrRequireAName(c *cli.Context, prompt string, prev ...string) string {
 	})
 }
 
-func GetOrRequireAUniqueName(c *cli.Context, prompt string, invalid []string, prev ...string) string {
+func GetOrRequireAUniqueName(c *cli.Context, prompt string, invalid []string, prev ...string) (string, error) {
 	invalidLowerCase := make([]string, len(invalid))
 	for idx, s := range invalid {
 		invalidLowerCase[idx] = strings.ToLower(s)

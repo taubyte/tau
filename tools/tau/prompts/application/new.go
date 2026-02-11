@@ -15,7 +15,10 @@ func New(ctx *cli.Context) (*structureSpec.App, error) {
 		return nil, err
 	}
 
-	app.Name = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	app.Name, err = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	if err != nil {
+		return nil, err
+	}
 
 	app.Description = prompts.GetOrAskForADescription(ctx)
 	app.Tags = prompts.GetOrAskForTags(ctx)

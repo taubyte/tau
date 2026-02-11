@@ -9,9 +9,8 @@ func GetOrAskForBool(c *cli.Context, field string, label string, prev ...bool) b
 	if c.IsSet(field) {
 		return c.Bool(field)
 	}
-
-	if !PromptEnabled {
-		panicIfPromptNotEnabled(label)
+	if UseDefaults {
+		return len(prev) > 0 && prev[0]
 	}
 
 	_default := FalseSelect
@@ -33,9 +32,8 @@ func GetOrAskForBoolDefaultTrue(c *cli.Context, field string, label string, prev
 	if c.IsSet(field) {
 		return c.Bool(field)
 	}
-
-	if !PromptEnabled {
-		panicIfPromptNotEnabled(label)
+	if UseDefaults {
+		return len(prev) == 0 || prev[0]
 	}
 
 	_default := TrueSelect

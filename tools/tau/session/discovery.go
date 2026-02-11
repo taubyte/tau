@@ -11,8 +11,12 @@ import (
 	"github.com/mitchellh/go-ps"
 )
 
+func debugEnabled() bool { return os.Getenv("DEBUG") == "1" }
+
 func debugSession(format string, args ...interface{}) {
-	fmt.Fprintf(os.Stderr, "[tau session] "+format+"\n", args...)
+	if debugEnabled() {
+		fmt.Fprintf(os.Stderr, "[tau session] "+format+"\n", args...)
+	}
 }
 
 const debugProcessTreeMaxDepth = 20
@@ -21,6 +25,9 @@ const debugProcessTreeMaxDepth = 20
 // Goes up to debugProcessTreeMaxDepth levels so we have enough info to debug session discovery.
 // Each line: depth pid ppid exe [runner][shell]
 func debugProcessTree() {
+	if !debugEnabled() {
+		return
+	}
 	pid := os.Getppid()
 	debugSession("--- process tree (tau's parent = %d), max depth %d ---", pid, debugProcessTreeMaxDepth)
 	depth := 0
@@ -119,7 +126,58 @@ func ancestorPIDs(maxDepth int) []int {
 	return out
 }
 
-// sessionDirBaseName returns the base name for a session dir: tau-session-<timestampMs>-pid[x-1]-...-pid[0].
+// ancestorPathFromRoot returns the ancestor chain from root to tau's parent (root-first), up to maxDepth.
+// Uses ancestorPIDs then reverses so P[0] is root, P[len-1] is closest to tau.
+func ancestorPathFromRoot(maxDepth int) []int {
+	pids := ancestorPIDs(maxDepth)
+	for i, j := 0, len(pids)-1; i < j; i, j = i+1, j-1 {
+		pids[i], pids[j] = pids[j], pids[i]
+	}
+	return pids
+}
+
+// longestCommonPrefixLength returns the length of the longest common prefix of a and b (element-wise from index 0).
+func longestCommonPrefixLength(a, b []int) int {
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	for i := 0; i < n; i++ {
+		if a[i] != b[i] {
+			return i
+		}
+	}
+	return n
+}
+
+// trimLeadingZeros returns a slice without leading zero elements (legacy dir names pad with 0 at root side).
+func trimLeadingZeros(pids []int) []int {
+	j := 0
+	for j < len(pids) && pids[j] == 0 {
+		j++
+	}
+	return pids[j:]
+}
+
+// sessionDirBaseNameFromRootPath builds a session file base name from a root-first path P (first 6 PIDs, padded with 0).
+// No timestamp so the same process tree always maps to the same file and it can be updated (mutable).
+func sessionDirBaseNameFromRootPath(rootFirstPath []int, _ int64) string {
+	six := make([]int, sessionAncestorDepth)
+	for i := 0; i < sessionAncestorDepth; i++ {
+		if i < len(rootFirstPath) {
+			six[i] = rootFirstPath[i]
+		} else {
+			six[i] = 0
+		}
+	}
+	parts := make([]string, sessionAncestorDepth)
+	for i := range six {
+		parts[i] = strconv.Itoa(six[i])
+	}
+	return sessionDirPrefix + "-session-" + strings.Join(parts, "-")
+}
+
+// sessionDirBaseName returns the base name for a session dir/file: tau-session-<timestampMs>-pid[x-1]-...-pid[0].
 // pids is [p0,...,pk,0,...,0] (closest-to-tau first, padded right with 0). Components in name are root-first.
 func sessionDirBaseName(pids []int, timestampMs int64) string {
 	if len(pids) != sessionAncestorDepth {
@@ -139,6 +197,14 @@ func sessionBaseDir() string {
 	return os.TempDir()
 }
 
+// sessionRootDir returns the single directory that contains session YAML files (path in filename).
+func sessionRootDir() string {
+	if sessionRootDirOverride != "" {
+		return sessionRootDirOverride
+	}
+	return filepath.Join(sessionBaseDir(), "tau")
+}
+
 // sessionDirFromPidList builds the session directory path for creation (uses current time in ms).
 // Format: tau-session-<timestampMs>-pid[x-1]-...-pid[0].
 func sessionDirFromPidList(pids []int) string {
@@ -149,7 +215,8 @@ func sessionDirFromPidList(pids []int) string {
 	return filepath.Join(sessionBaseDir(), name)
 }
 
-// parseSessionDirBase parses a session dir base name (e.g. "tau-session-1234567890-0-0-0-123-456") into timestamp and pids.
+// parseSessionDirBase parses a session file/dir base name into timestamp and pids (root-first).
+// Accepts: "tau-session-<ts>-<p0>-...-<p5>" (7 parts) or "tau-session-<p0>-...-<p5>" (6 parts, no timestamp).
 // Returns (0, nil, false) if format is invalid.
 func parseSessionDirBase(name string) (timestampMs int64, pids []int, ok bool) {
 	prefix := sessionDirPrefix + "-session-"
@@ -158,22 +225,26 @@ func parseSessionDirBase(name string) (timestampMs int64, pids []int, ok bool) {
 	}
 	rest := strings.TrimPrefix(name, prefix)
 	parts := strings.Split(rest, "-")
-	if len(parts) != sessionAncestorDepth+1 {
-		return 0, nil, false
-	}
-	ts, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
+	var start int
+	if len(parts) == sessionAncestorDepth+1 {
+		ts, err := strconv.ParseInt(parts[0], 10, 64)
+		if err != nil {
+			return 0, nil, false
+		}
+		timestampMs = ts
+		start = 1
+	} else if len(parts) != sessionAncestorDepth {
 		return 0, nil, false
 	}
 	out := make([]int, sessionAncestorDepth)
 	for i := 0; i < sessionAncestorDepth; i++ {
-		n, err := strconv.Atoi(parts[i+1])
+		n, err := strconv.Atoi(parts[start+i])
 		if err != nil {
 			return 0, nil, false
 		}
 		out[i] = n
 	}
-	return ts, out, true
+	return timestampMs, out, true
 }
 
 // currentSessionPidList returns the current process ancestor list padded to sessionAncestorDepth (pad right with 0).
@@ -187,81 +258,124 @@ func currentSessionPidList() []int {
 
 func discoverOrCreateConfigFileLoc() (string, error) {
 	debugProcessTree()
-	pids := currentSessionPidList()
-	if len(pids) != sessionAncestorDepth {
-		return "", fmt.Errorf("session: invalid pid list length")
-	}
-	pattern := filepath.Join(sessionBaseDir(), sessionDirPrefix+"-session-*")
-	matches, err := filepath.Glob(pattern)
+	P := ancestorPathFromRoot(maxAncestorDepthForPath)
+	debugSession("discover: current path P (root-first) len=%d P=%v threshold=%d", len(P), P, sessionCommonRootThreshold)
+
+	var bestFile string
+	var bestL int
+	var bestTs int64
+
+	// 1) Session YAML files in session root (path in filename)
+	root := sessionRootDir()
+	pattern := filepath.Join(root, sessionDirPrefix+"-session-*.yaml")
+	fileMatches, err := filepath.Glob(pattern)
 	if err != nil {
-		debugSession("discoverOrCreateConfigFileLoc: glob err=%v", err)
-		goto create
-	}
-	{
-		var fullMatchDir string
-		var fullMatchTs int64
-		var suffixMatchDir string
-		var suffixMatchCount int
-		var suffixMatchTs int64
-		for _, path := range matches {
+		debugSession("discover: glob files err=%v", err)
+	} else {
+		for _, path := range fileMatches {
 			info, err := os.Stat(path)
-			if err != nil || !info.IsDir() {
+			if err != nil || info.IsDir() {
 				continue
 			}
 			base := filepath.Base(path)
-			ts, other, ok := parseSessionDirBase(base)
+			baseNoExt := strings.TrimSuffix(base, ".yaml")
+			ts, sName, ok := parseSessionDirBase(baseNoExt)
 			if !ok {
+				debugSession("discover: skip file=%q (parse failed)", base)
 				continue
 			}
-			// Current pids are [closest,...,root]; parsed other is [root,...,closest]. Compare from tau-ward (right): pids[i] vs other[x-1-i].
-			count := 0
-			for i := 0; i < sessionAncestorDepth && pids[i] == other[sessionAncestorDepth-1-i]; i++ {
-				count++
+			sNameTrim := trimLeadingZeros(sName)
+			Lname := longestCommonPrefixLength(P, sNameTrim)
+			if Lname < sessionCommonRootThreshold {
+				debugSession("discover: skip file=%q S_name=%v L_name=%d (< threshold %d)", base, sNameTrim, Lname, sessionCommonRootThreshold)
+				continue
 			}
-			if count == sessionAncestorDepth {
-				if ts > fullMatchTs {
-					fullMatchTs = ts
-					fullMatchDir = path
-				}
-			} else if count > suffixMatchCount || (count == suffixMatchCount && ts > suffixMatchTs) {
-				suffixMatchCount = count
-				suffixMatchTs = ts
-				suffixMatchDir = path
+			L := Lname
+			debugSession("discover: contender file=%q S_name=%v L=%d ts=%d", base, sNameTrim, L, ts)
+			if L > bestL || (L == bestL && ts > bestTs) {
+				bestL = L
+				bestTs = ts
+				bestFile = path
 			}
 		}
-		if fullMatchDir != "" {
-			debugSession("discoverOrCreateConfigFileLoc: full match dir=%q", fullMatchDir)
-			return fullMatchDir, nil
-		}
-		if suffixMatchDir != "" {
-			debugSession("discoverOrCreateConfigFileLoc: longest suffix match dir=%q", suffixMatchDir)
-			return suffixMatchDir, nil
+	}
+
+	// 2) Legacy: session dirs (session.yaml inside dir named tau-session-ts-p0-...-p5)
+	legacyPattern := filepath.Join(sessionBaseDir(), sessionDirPrefix+"-session-*")
+	dirMatches, err := filepath.Glob(legacyPattern)
+	if err != nil {
+		debugSession("discover: glob legacy dirs err=%v", err)
+	} else {
+		for _, dir := range dirMatches {
+			info, err := os.Stat(dir)
+			if err != nil || !info.IsDir() {
+				continue
+			}
+			base := filepath.Base(dir)
+			ts, sName, ok := parseSessionDirBase(base)
+			if !ok {
+				debugSession("discover: skip legacy dir=%q (parse failed)", base)
+				continue
+			}
+			sNameTrim := trimLeadingZeros(sName)
+			Lname := longestCommonPrefixLength(P, sNameTrim)
+			if Lname < sessionCommonRootThreshold {
+				debugSession("discover: skip legacy dir=%q S_name=%v L_name=%d (< threshold %d)", base, sNameTrim, Lname, sessionCommonRootThreshold)
+				continue
+			}
+			legacySessionFile := filepath.Join(dir, sessionFileName+".yaml")
+			if _, err := os.Stat(legacySessionFile); err != nil {
+				continue
+			}
+			L := Lname
+			debugSession("discover: contender legacy dir=%q S_name=%v L=%d ts=%d", base, sNameTrim, L, ts)
+			if L > bestL || (L == bestL && ts > bestTs) {
+				bestL = L
+				bestTs = ts
+				bestFile = legacySessionFile
+			}
 		}
 	}
-create:
-	dir := sessionDirFromPidList(pids)
-	if dir == "" {
-		return "", fmt.Errorf("session: invalid pid list length")
+
+	if bestL >= sessionCommonRootThreshold && bestFile != "" {
+		debugSession("discover: selected path=%q L=%d (>= threshold %d) => reusing", bestFile, bestL, sessionCommonRootThreshold)
+		return bestFile, nil
 	}
-	if err := os.MkdirAll(dir, 0700); err != nil {
+	debugSession("discover: no match (best L=%d, threshold=%d) => creating new session file", bestL, sessionCommonRootThreshold)
+
+	if err := os.MkdirAll(root, 0700); err != nil {
 		return "", err
 	}
-	debugSession("discoverOrCreateConfigFileLoc: created dir=%q", dir)
-	return dir, nil
+	fileBase := sessionDirBaseNameFromRootPath(P, time.Now().UnixMilli())
+	if fileBase == "" {
+		return "", fmt.Errorf("session: invalid path for file name")
+	}
+	sessionFilePath := filepath.Join(root, fileBase+".yaml")
+	// Touch file so it exists; seer will open and use it
+	f, err := os.OpenFile(sessionFilePath, os.O_CREATE|os.O_RDWR, 0600)
+	if err != nil {
+		return "", err
+	}
+	_ = f.Close()
+	debugSession("discover: created file=%q (path len=%d)", sessionFilePath, len(P))
+	return sessionFilePath, nil
 }
 
-// ensureExactSessionDir switches the session to the exact path for the current process when we are about to mutate.
-// If the session was loaded from a longest-suffix match, we create the exact path, copy the session file there, and reload.
-// Skips switching when _sessionDir is not a discovered session dir (e.g. tests use LoadSessionInDir with a custom path).
+// ensureExactSessionDir: no-op for file-based sessions (one YAML per session, path in filename). For tests using LoadSessionInDir(dir) with a legacy dir name, may switch to exact dir.
 // Call before any setKey/deleteKey.
 func ensureExactSessionDir() error {
 	if _session == nil {
 		return nil
 	}
+	// File-based: we use a single session file; no switching.
+	if _sessionDocName != "" && _sessionDocName != sessionFileName {
+		return nil
+	}
 	base := filepath.Base(_sessionDir)
 	if !strings.HasPrefix(base, sessionDirPrefix+"-session-") {
-		return nil // not a discovered session dir (e.g. test temp dir), do not switch
+		return nil
 	}
+	// Legacy (tests): switch to exact dir for current 6 PIDs if different.
 	pids := currentSessionPidList()
 	exact := sessionDirFromPidList(pids)
 	if exact == "" {

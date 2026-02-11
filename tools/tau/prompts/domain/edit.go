@@ -9,9 +9,13 @@ import (
 func Edit(ctx *cli.Context, prev *structureSpec.Domain) error {
 	prev.Description = prompts.GetOrAskForADescription(ctx, prev.Description)
 	prev.Tags = prompts.GetOrAskForTags(ctx, prev.Tags)
-	prev.Fqdn = GetOrRequireAnFQDN(ctx, prev.Fqdn)
+	var err error
+	prev.Fqdn, err = GetOrRequireAnFQDN(ctx, prev.Fqdn)
+	if err != nil {
+		return err
+	}
 
-	err := certificate(ctx, prev, false)
+	err = certificate(ctx, prev, false)
 	if err != nil {
 		return err
 	}

@@ -21,10 +21,16 @@ var CallCommand = &cli.Command{
 		}
 
 		// New
-		call := prompts.GetOrRequireACall(ctx, source)
+		call, err := prompts.GetOrRequireACall(ctx, source)
+		if err != nil {
+			return err
+		}
 
 		// Edit, sending empty cli context so that the flags are not set
-		call = prompts.GetOrRequireACall(&cli.Context{}, source, call)
+		call, err = prompts.GetOrRequireACall(&cli.Context{}, source, call)
+		if err != nil {
+			return err
+		}
 
 		printer.Out.SuccessPrintfln("Got call: `%s`", call)
 		return nil

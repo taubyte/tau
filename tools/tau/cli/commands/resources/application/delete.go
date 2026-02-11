@@ -15,7 +15,6 @@ func (link) Delete() common.Command {
 		&cli.Command{
 			Flags: []cli.Flag{
 				flags.Select,
-				flags.Yes,
 			},
 			Action: delete,
 		},

@@ -18,12 +18,18 @@ func New(ctx *cli.Context) (*structureSpec.Storage, error) {
 		return nil, err
 	}
 
-	storage.Name = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	storage.Name, err = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	if err != nil {
+		return nil, err
+	}
 	storage.Description = prompts.GetOrAskForADescription(ctx)
 	storage.Tags = prompts.GetOrAskForTags(ctx)
 
 	storage.Regex = prompts.GetMatchRegex(ctx)
-	storage.Match = GetOrRequireAMatch(ctx)
+	storage.Match, err = GetOrRequireAMatch(ctx)
+	if err != nil {
+		return nil, err
+	}
 	storage.Public = GetPublic(ctx)
 
 	sizeStr, err := prompts.GetSizeAndType(ctx, "", true)
@@ -55,7 +61,7 @@ func New(ctx *cli.Context) (*structureSpec.Storage, error) {
 		return nil, err
 	}
 
-	return storage, err
+	return storage, nil
 }
 
 func newStreaming(ctx *cli.Context, storage *structureSpec.Storage) error {

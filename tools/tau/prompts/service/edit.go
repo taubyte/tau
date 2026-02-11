@@ -9,7 +9,11 @@ import (
 func Edit(ctx *cli.Context, prev *structureSpec.Service) error {
 	prev.Description = prompts.GetOrAskForADescription(ctx, prev.Description)
 	prev.Tags = prompts.GetOrAskForTags(ctx, prev.Tags)
-	prev.Protocol = GetOrRequireAProtocol(ctx, prev.Protocol)
+	var err error
+	prev.Protocol, err = GetOrRequireAProtocol(ctx, prev.Protocol)
+	if err != nil {
+		return err
+	}
 
 	return nil
 }

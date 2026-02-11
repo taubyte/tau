@@ -26,7 +26,10 @@ func Edit(ctx *cli.Context, smartops *structureSpec.SmartOp) (err error) {
 	}
 	smartops.Source = source.String()
 
-	smartops.Call = prompts.GetOrRequireACall(ctx, source, smartops.Call)
+	smartops.Call, err = prompts.GetOrRequireACall(ctx, source, smartops.Call)
+	if err != nil {
+		return
+	}
 
 	return
 }

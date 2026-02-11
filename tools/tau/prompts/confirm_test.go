@@ -12,11 +12,20 @@ import (
 
 func TestConfirmPrompt(t *testing.T) {
 	t.Run("with_yes_flag", func(t *testing.T) {
-		prompts.PromptEnabled = false
-		defer func() { prompts.PromptEnabled = true }()
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
 
 		ctx, err := mock.CLI{Flags: []cli.Flag{flags.Yes}}.Run("--yes")
 		assert.NilError(t, err)
 		assert.Assert(t, prompts.ConfirmPrompt(ctx, "Confirm?"))
+	})
+
+	t.Run("UseDefaults_returns_false_without_yes", func(t *testing.T) {
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
+
+		ctx, err := mock.CLI{Flags: []cli.Flag{flags.Yes}}.Run()
+		assert.NilError(t, err)
+		assert.Assert(t, !prompts.ConfirmPrompt(ctx, "Confirm?"))
 	})
 }

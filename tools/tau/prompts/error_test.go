@@ -13,8 +13,6 @@ import (
 
 func TestValidateOk(t *testing.T) {
 	t.Run("error_prints_and_returns_false", func(t *testing.T) {
-		prompts.PromptEnabled = true
-		defer func() { prompts.PromptEnabled = true }()
 
 		var buf bytes.Buffer
 		restore := printer.SetOutput(printer.WriterOutput(&buf))

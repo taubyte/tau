@@ -28,8 +28,6 @@ func (l link) New() common.Command {
 
 				flags.GenerateRepo,
 				flags.Private,
-
-				flags.Yes,
 			),
 			Action: l.cmd.New,
 		},

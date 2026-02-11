@@ -48,7 +48,11 @@ func repositoryInfoGenerate(ctx *cli.Context, library *structureSpec.Library) (*
 
 	// Skipping prompt for repository name unless set, using generated name
 	if ctx.IsSet(flags.RepositoryName.Name) {
-		repositoryName = prompts.GetOrRequireARepositoryName(ctx)
+		var err error
+		repositoryName, err = prompts.GetOrRequireARepositoryName(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	private := prompts.GetPrivate(ctx)

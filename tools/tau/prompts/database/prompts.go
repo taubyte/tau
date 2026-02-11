@@ -6,7 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func GetOrRequireAMatch(ctx *cli.Context, prev ...string) string {
+func GetOrRequireAMatch(ctx *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAMatch(ctx, DatabaseMatch, prev...)
 }
 
@@ -14,6 +14,6 @@ func GetEncryption(ctx *cli.Context, prev ...bool) bool {
 	return prompts.GetOrAskForBool(ctx, databaseFlags.Encryption.Name, EncryptionPrompt, prev...)
 }
 
-func GetOrRequireAnEncryptionKey(c *cli.Context, prev ...string) string {
+func GetOrRequireAnEncryptionKey(c *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAString(c, databaseFlags.EncryptionKey.Name, EncryptionKeyPrompt, nil, prev...)
 }

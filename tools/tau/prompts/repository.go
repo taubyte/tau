@@ -22,7 +22,7 @@ func GetGenerateRepository(ctx *cli.Context, prev ...bool) bool {
 	return GetOrAskForBool(ctx, flags.GenerateRepo.Name, GenerateRepoPrompt, prev...)
 }
 
-func GetOrRequireARepositoryName(ctx *cli.Context, prev ...string) string {
+func GetOrRequireARepositoryName(ctx *cli.Context, prev ...string) (string, error) {
 	return validateAndRequireString(ctx, validateRequiredStringHelper{
 		field:     flags.RepositoryName.Name,
 		prompt:    RepositoryNamePrompt,

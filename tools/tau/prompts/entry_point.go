@@ -6,7 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func GetOrRequireAnEntryPoint(c *cli.Context, prev ...string) string {
+func GetOrRequireAnEntryPoint(c *cli.Context, prev ...string) (string, error) {
 	return validateAndRequireString(c, validateRequiredStringHelper{
 		field:  flags.EntryPoint.Name,
 		prompt: EntryPointPrompt,

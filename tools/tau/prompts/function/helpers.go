@@ -76,14 +76,20 @@ func editP2P(ctx *cli.Context, function *structureSpec.Function) (err error) {
 		return
 	}
 
-	function.Command = GetOrRequireACommand(ctx, function.Command)
+	function.Command, err = GetOrRequireACommand(ctx, function.Command)
+	if err != nil {
+		return
+	}
 
 	function.Local = prompts.GetOrAskForLocal(ctx, function.Local)
 	return
 }
 
 func editPubSub(ctx *cli.Context, function *structureSpec.Function) (err error) {
-	function.Channel = GetOrRequireAChannel(ctx, function.Channel)
+	function.Channel, err = GetOrRequireAChannel(ctx, function.Channel)
+	if err != nil {
+		return
+	}
 	function.Local = prompts.GetOrAskForLocal(ctx, function.Local)
 	return
 }

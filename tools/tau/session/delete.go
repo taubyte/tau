@@ -9,46 +9,56 @@ import (
 )
 
 func Delete() error {
-	if _session != nil && _sessionDir != "" && strings.HasPrefix(filepath.Base(_sessionDir), sessionDirPrefix+"-session-") {
-		if err := os.RemoveAll(_sessionDir); err != nil {
-			return singletonsI18n.SessionDeleteFailed(_sessionDir, err)
+	if _session != nil && _sessionDir != "" {
+		if _sessionDocName != "" && _sessionDocName != sessionFileName {
+			// File-based: remove the single session file
+			filePath := filepath.Join(_sessionDir, _sessionDocName+".yaml")
+			if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+				return singletonsI18n.SessionDeleteFailed(filePath, err)
+			}
+			return nil
 		}
-		return nil
+		if strings.HasPrefix(filepath.Base(_sessionDir), sessionDirPrefix+"-session-") {
+			if err := os.RemoveAll(_sessionDir); err != nil {
+				return singletonsI18n.SessionDeleteFailed(_sessionDir, err)
+			}
+			return nil
+		}
 	}
-	pids := currentSessionPidList()
-	pattern := filepath.Join(os.TempDir(), sessionDirPrefix+"-session-*")
+	// Discover session file (same logic as discoverOrCreateConfigFileLoc)
+	P := ancestorPathFromRoot(maxAncestorDepthForPath)
+	root := sessionRootDir()
+	pattern := filepath.Join(root, sessionDirPrefix+"-session-*.yaml")
 	matches, err := filepath.Glob(pattern)
 	if err != nil {
 		return singletonsI18n.SessionNotFound()
 	}
-	var bestDir string
+	var bestFile string
+	var bestL int
 	var bestTs int64
 	for _, path := range matches {
 		info, err := os.Stat(path)
-		if err != nil || !info.IsDir() {
+		if err != nil || info.IsDir() {
 			continue
 		}
-		ts, other, ok := parseSessionDirBase(filepath.Base(path))
+		baseNoExt := strings.TrimSuffix(filepath.Base(path), ".yaml")
+		ts, sName, ok := parseSessionDirBase(baseNoExt)
 		if !ok {
 			continue
 		}
-		match := true
-		for i := range pids {
-			if pids[i] != other[i] {
-				match = false
-				break
-			}
-		}
-		if match && ts > bestTs {
+		S := trimLeadingZeros(sName)
+		L := longestCommonPrefixLength(P, S)
+		if L > bestL || (L == bestL && ts > bestTs) {
+			bestL = L
 			bestTs = ts
-			bestDir = path
+			bestFile = path
 		}
 	}
-	if bestDir == "" {
+	if bestFile == "" {
 		return singletonsI18n.SessionNotFound()
 	}
-	if err := os.RemoveAll(bestDir); err != nil {
-		return singletonsI18n.SessionDeleteFailed(bestDir, err)
+	if err := os.Remove(bestFile); err != nil && !os.IsNotExist(err) {
+		return singletonsI18n.SessionDeleteFailed(bestFile, err)
 	}
 	return nil
 }

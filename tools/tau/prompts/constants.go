@@ -1,11 +1,6 @@
 package prompts
 
-import (
-	"errors"
-	"fmt"
-
-	"github.com/taubyte/tau/tools/tau/i18n/printer"
-)
+import "errors"
 
 // Errors
 var (
@@ -71,27 +66,3 @@ const (
 var (
 	SelectionNone = "(none)"
 )
-
-func PanicIfPromptNotEnabled(prompt string) {
-	panicIfPromptNotEnabled(prompt)
-}
-
-func panicIfPromptNotEnabled(prompt string) {
-	if !PromptEnabled {
-		printer.Out.WarningPrintfln("Failed to prompt: %s", prompt)
-		panic("Prompting when prompt not enabled")
-	}
-}
-
-func panicIfPromptNotEnabledSelection(val string, prompt string, opts []string) {
-	if !PromptEnabled {
-		printer.Out.WarningPrintfln("%s not a valid selection %v", val, opts)
-		panic(fmt.Sprintf("Prompt with prompt disabled, %s", prompt))
-	}
-}
-
-func panicIfPromptNotEnabledError(err error) {
-	if !PromptEnabled {
-		panic(fmt.Sprintf("Prompt with prompt disabled: %s", err))
-	}
-}

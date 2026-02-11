@@ -9,7 +9,6 @@ import (
 	"github.com/taubyte/tau/pkg/cli/i18n"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	authClient "github.com/taubyte/tau/tools/tau/clients/auth_client"
-	"github.com/taubyte/tau/tools/tau/flags"
 	projectI18n "github.com/taubyte/tau/tools/tau/i18n/project"
 	repositoryI18n "github.com/taubyte/tau/tools/tau/i18n/repository"
 	singletonsI18n "github.com/taubyte/tau/tools/tau/i18n/shared"
@@ -31,7 +30,6 @@ func (link) Import() common.Command {
 				&cli.StringFlag{
 					Name: "code",
 				},
-				flags.Yes,
 			},
 		},
 	)

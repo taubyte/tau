@@ -11,8 +11,8 @@ import (
 )
 
 func TestRequiredPaths_FromFlagValid(t *testing.T) {
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: []cli.Flag{flags.Paths},
@@ -25,8 +25,8 @@ func TestRequiredPaths_FromFlagValid(t *testing.T) {
 }
 
 func TestGetGenerateRepository_FromFlag(t *testing.T) {
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: []cli.Flag{flags.GenerateRepo},
@@ -38,8 +38,8 @@ func TestGetGenerateRepository_FromFlag(t *testing.T) {
 }
 
 func TestGetOrRequireARepositoryName_FromFlag(t *testing.T) {
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: []cli.Flag{flags.RepositoryName},
@@ -47,13 +47,14 @@ func TestGetOrRequireARepositoryName_FromFlag(t *testing.T) {
 	}.Run()
 	assert.NilError(t, err)
 
-	got := prompts.GetOrRequireARepositoryName(ctx)
+	got, err := prompts.GetOrRequireARepositoryName(ctx)
+	assert.NilError(t, err)
 	assert.Equal(t, got, "my_repo")
 }
 
 func TestGetOrAskForADescription_FromFlag(t *testing.T) {
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: []cli.Flag{flags.Description},

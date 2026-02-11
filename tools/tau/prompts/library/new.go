@@ -16,7 +16,10 @@ func New(ctx *cli.Context) (interface{}, *structureSpec.Library, error) {
 		return nil, nil, err
 	}
 
-	library.Name = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	library.Name, err = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	if err != nil {
+		return nil, nil, err
+	}
 	library.Description = prompts.GetOrAskForADescription(ctx)
 	library.Tags = prompts.GetOrAskForTags(ctx)
 
@@ -30,9 +33,15 @@ func New(ctx *cli.Context) (interface{}, *structureSpec.Library, error) {
 		return nil, nil, err
 	}
 
-	library.Path = prompts.GetOrRequireAPath(ctx, "Path:")
+	library.Path, err = prompts.GetOrRequireAPath(ctx, "Path:")
+	if err != nil {
+		return nil, nil, err
+	}
 
-	library.Branch = prompts.GetOrRequireABranch(ctx)
+	library.Branch, err = prompts.GetOrRequireABranch(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return info, library, nil
 }

@@ -15,7 +15,10 @@ func New(ctx *cli.Context) (*structureSpec.Domain, error) {
 		return nil, err
 	}
 
-	domain.Name = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	domain.Name, err = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	if err != nil {
+		return nil, err
+	}
 	domain.Description = prompts.GetOrAskForADescription(ctx)
 	domain.Tags = prompts.GetOrAskForTags(ctx)
 
@@ -27,7 +30,10 @@ func New(ctx *cli.Context) (*structureSpec.Domain, error) {
 			return nil, err
 		}
 	} else {
-		domain.Fqdn = GetOrRequireAnFQDN(ctx)
+		domain.Fqdn, err = GetOrRequireAnFQDN(ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	err = certificate(ctx, domain, true)

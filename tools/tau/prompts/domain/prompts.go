@@ -12,24 +12,26 @@ func GetGeneratedFQDN(ctx *cli.Context, prev ...bool) bool {
 }
 
 func GetGeneratedFQDNPrefix(ctx *cli.Context, prev ...string) string {
-	if !prompts.PromptEnabled {
-		return ctx.String(domainFlags.GeneratedPrefix.Name)
+	if prompts.UseDefaults {
+		if ctx.IsSet(domainFlags.GeneratedPrefix.Name) {
+			return ctx.String(domainFlags.GeneratedPrefix.Name)
+		}
+		return "" // default "empty for none"
 	}
-
 	return prompts.GetOrAskForAStringValue(ctx, domainFlags.GeneratedPrefix.Name, "Generated FQDN prefix (empty for none):")
 }
 
-func GetOrRequireAnFQDN(c *cli.Context, prev ...string) string {
+func GetOrRequireAnFQDN(c *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAString(c, domainFlags.FQDN.Name, FQDNPrompt, validate.FQDNValidator, prev...)
 }
 
 // TODO get cert and key + use ValidateCertificateKeyPairAndHostname
 // Possibly get from file, currently disabled functionality due to no way to store cert and key files
 
-func GetOrRequireACertificate(c *cli.Context, prev ...string) string {
+func GetOrRequireACertificate(c *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAString(c, domainFlags.Certificate.Name, FQDNPrompt, nil, prev...)
 }
 
-func GetOrRequireAKey(c *cli.Context, prev ...string) string {
+func GetOrRequireAKey(c *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAString(c, domainFlags.Key.Name, FQDNPrompt, nil, prev...)
 }

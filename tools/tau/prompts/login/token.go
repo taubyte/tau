@@ -63,7 +63,7 @@ func GetOrRequireAProviderAndToken(ctx *cli.Context) (provider, token string, er
 	if selection == webOpt {
 		token, err = TokenFromWeb(ctx, provider)
 	} else {
-		token = prompts.GetOrRequireAString(ctx, flags.Token.Name, TokenPrompt, nil) // TODO: validator
+		token, err = prompts.GetOrRequireAString(ctx, flags.Token.Name, TokenPrompt, nil) // TODO: validator
 	}
 
 	return

@@ -54,7 +54,8 @@ func (m multiSelectTest) run(t *testing.T) {
 
 func TestMultiSelect(t *testing.T) {
 	// Set to false if stuck in infinite loop or testing
-	prompts.PromptEnabled = false
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	multiSelectTest{
 		options:  []string{"a", "b", "c"},

@@ -15,13 +15,19 @@ func New(ctx *cli.Context) (*structureSpec.Messaging, error) {
 		return nil, err
 	}
 
-	messaging.Name = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	messaging.Name, err = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	if err != nil {
+		return nil, err
+	}
 	messaging.Description = prompts.GetOrAskForADescription(ctx)
 	messaging.Tags = prompts.GetOrAskForTags(ctx)
 
 	messaging.Local = prompts.GetOrAskForLocal(ctx)
 	messaging.Regex = prompts.GetMatchRegex(ctx)
-	messaging.Match = GetOrRequireAChannelMatch(ctx)
+	messaging.Match, err = GetOrRequireAChannelMatch(ctx)
+	if err != nil {
+		return nil, err
+	}
 	messaging.MQTT = GetMQTT(ctx)
 	messaging.WebSocket = GetWebSocket(ctx)
 

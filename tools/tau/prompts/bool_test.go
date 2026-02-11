@@ -44,7 +44,6 @@ func (m boolTest) run(t *testing.T) {
 
 func TestBool(t *testing.T) {
 	// Set to false if stuck in infinite loop or testing
-	prompts.PromptEnabled = true
 
 	boolTest{
 		value: "true",

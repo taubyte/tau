@@ -23,7 +23,10 @@ func Edit(ctx *cli.Context, prev *structureSpec.Website) (interface{}, error) {
 		return nil, err
 	}
 
-	prev.Branch = prompts.GetOrRequireABranch(ctx, prev.Branch)
+	prev.Branch, err = prompts.GetOrRequireABranch(ctx, prev.Branch)
+	if err != nil {
+		return nil, err
+	}
 
 	return info, nil
 }

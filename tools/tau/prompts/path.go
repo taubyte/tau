@@ -6,7 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func GetOrRequireAPath(c *cli.Context, prompt string, prev ...string) string {
+func GetOrRequireAPath(c *cli.Context, prompt string, prev ...string) (string, error) {
 	return validateAndRequireString(c, validateRequiredStringHelper{
 		field:     flags.Path.Name,
 		prompt:    prompt,

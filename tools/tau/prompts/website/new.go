@@ -16,7 +16,10 @@ func New(ctx *cli.Context) (interface{}, *structureSpec.Website, error) {
 		return nil, nil, err
 	}
 
-	website.Name = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	website.Name, err = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	if err != nil {
+		return nil, nil, err
+	}
 	website.Description = prompts.GetOrAskForADescription(ctx)
 	website.Tags = prompts.GetOrAskForTags(ctx)
 
@@ -37,7 +40,10 @@ func New(ctx *cli.Context) (interface{}, *structureSpec.Website, error) {
 		return nil, nil, err
 	}
 
-	website.Branch = prompts.GetOrRequireABranch(ctx)
+	website.Branch, err = prompts.GetOrRequireABranch(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	return info, website, nil
 }

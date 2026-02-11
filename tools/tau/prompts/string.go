@@ -11,46 +11,47 @@ type stringPromptMethod func(c *cli.Context, prompt string, prev ...string) stri
 func RequiredString(c *cli.Context, prompt string, f stringPromptMethod, prev ...string) string {
 	ret := f(c, prompt, prev...)
 	for ret == "" {
-		panicIfPromptNotEnabled(prompt)
-
+		if UseDefaults {
+			panic(RequiredInDefaultsModeError(prompt))
+		}
 		printer.Out.WarningPrintln(Required)
 		ret = f(c, prompt, prev...)
 	}
 	return ret
 }
 
-func RequiredStringWithValidator(c *cli.Context, prompt string, f stringPromptMethod, validator validateStringMethod, prev ...string) (ret string) {
-	validate := func() error {
+func RequiredStringWithValidator(c *cli.Context, prompt string, f stringPromptMethod, validator validateStringMethod, prev ...string) (string, error) {
+	validate := func(ret string) error {
 		if validator != nil {
 			err := validator(ret)
 			if err != nil {
 				printer.Out.Warning(err)
-				panicIfPromptNotEnabled(prompt)
 				return err
 			}
 		}
-
 		return nil
 	}
-	ret = f(c, prompt, prev...)
+	ret := f(c, prompt, prev...)
 
 	var err error
 	if len(ret) > 0 {
-		err = validate()
+		err = validate(ret)
 	}
 
 	for ret == "" || err != nil {
+		if ret == "" && UseDefaults {
+			return "", RequiredInDefaultsModeError(prompt)
+		}
 		if err == nil {
-			panicIfPromptNotEnabled(prompt)
 			printer.Out.WarningPrintln(Required)
 		}
 		ret = f(c, prompt, prev...)
 
 		if len(ret) > 0 {
-			err = validate()
+			err = validate(ret)
 		}
 	}
-	return ret
+	return ret, nil
 }
 
 func GetOrAskForAStringValue(c *cli.Context, field string, label string, prev ...string) string {
@@ -64,8 +65,12 @@ func GetOrAskForAStringValue(c *cli.Context, field string, label string, prev ..
 
 	val := c.String(field)
 	if val == "" {
-		panicIfPromptNotEnabled(label)
-
+		if UseDefaults {
+			if len(prev) > 0 {
+				return prev[0]
+			}
+			return ""
+		}
 		AskOne(inp, &val)
 	}
 
@@ -90,7 +95,7 @@ type validateRequiredStringHelper struct {
 	validator validateStringMethod
 }
 
-func validateAndRequireString(c *cli.Context, cnf validateRequiredStringHelper) string {
+func validateAndRequireString(c *cli.Context, cnf validateRequiredStringHelper) (string, error) {
 	return RequiredStringWithValidator(c, cnf.prompt, func(*cli.Context, string, ...string) (ret string) {
 		return GetOrAskForAStringValue(c, cnf.field, cnf.prompt, cnf.prev...)
 	}, cnf.validator)
@@ -107,11 +112,12 @@ func validateString(c *cli.Context, cnf validateStringHelper) (ret string) {
 	for {
 		ret = GetOrAskForAStringValue(c, cnf.field, cnf.prompt, cnf.prev...)
 
+		if ret == "" && UseDefaults {
+			return ""
+		}
 		err := cnf.validator(ret)
 		if err != nil {
 			printer.Out.Warning(err)
-
-			panicIfPromptNotEnabled(cnf.prompt)
 		} else {
 			break
 		}
@@ -128,7 +134,7 @@ func validateString(c *cli.Context, cnf validateStringHelper) (ret string) {
 	return
 }
 
-func GetOrRequireAString(c *cli.Context, field, prompt string, validator validateStringMethod, prev ...string) string {
+func GetOrRequireAString(c *cli.Context, field, prompt string, validator validateStringMethod, prev ...string) (string, error) {
 	return validateAndRequireString(c, validateRequiredStringHelper{
 		field:     field,
 		prompt:    prompt,

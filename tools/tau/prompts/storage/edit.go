@@ -15,7 +15,11 @@ func Edit(ctx *cli.Context, prev *structureSpec.Storage) error {
 	prev.Tags = prompts.GetOrAskForTags(ctx, prev.Tags)
 
 	prev.Regex = prompts.GetMatchRegex(ctx, prev.Regex)
-	prev.Match = GetOrRequireAMatch(ctx, prev.Match)
+	var err error
+	prev.Match, err = GetOrRequireAMatch(ctx, prev.Match)
+	if err != nil {
+		return err
+	}
 
 	prev.Public = GetPublic(ctx, prev.Public)
 

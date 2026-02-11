@@ -17,7 +17,6 @@ func (link) Edit() common.Command {
 				flags.Description,
 				flags.Tags,
 				flags.Select,
-				flags.Yes,
 			},
 			Action: edit,
 		},

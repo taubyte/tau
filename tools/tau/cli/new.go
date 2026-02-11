@@ -25,12 +25,15 @@ import (
 	"github.com/taubyte/tau/tools/tau/cli/commands/version"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/urfave/cli/v2"
 )
 
 func New() (*cli.App, error) {
 	globalFlags := []cli.Flag{
 		flags.Color,
+		flags.Defaults,
+		flags.Yes,
 	}
 
 	app := &cli.App{
@@ -38,6 +41,8 @@ func New() (*cli.App, error) {
 		Flags:                  globalFlags,
 		EnableBashCompletion:   true,
 		Before: func(ctx *cli.Context) error {
+			prompts.UseDefaults = ctx.Bool(flags.Defaults.Name)
+
 			color, err := flags.GetColor(ctx)
 			if err != nil {
 				return err

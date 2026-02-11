@@ -15,9 +15,15 @@ func Edit(ctx *cli.Context, prev *structureSpec.Library) (interface{}, error) {
 		return nil, err
 	}
 
-	prev.Path = prompts.GetOrRequireAPath(ctx, "Path:", prev.Path)
+	prev.Path, err = prompts.GetOrRequireAPath(ctx, "Path:", prev.Path)
+	if err != nil {
+		return nil, err
+	}
 
-	prev.Branch = prompts.GetOrRequireABranch(ctx, prev.Branch)
+	prev.Branch, err = prompts.GetOrRequireABranch(ctx, prev.Branch)
+	if err != nil {
+		return nil, err
+	}
 
 	return info, nil
 }

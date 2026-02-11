@@ -12,16 +12,26 @@ func Edit(ctx *cli.Context, prev *structureSpec.Database) error {
 	prev.Tags = prompts.GetOrAskForTags(ctx, prev.Tags)
 
 	prev.Regex = prompts.GetMatchRegex(ctx, prev.Regex)
-	prev.Match = GetOrRequireAMatch(ctx, prev.Match)
+	var err error
+	prev.Match, err = GetOrRequireAMatch(ctx, prev.Match)
+	if err != nil {
+		return err
+	}
 	prev.Local = prompts.GetOrAskForLocal(ctx, prev.Local)
 
 	if GetEncryption(ctx, len(prev.Key) > 0) {
-		prev.Key = GetOrRequireAnEncryptionKey(ctx, prev.Key)
+		prev.Key, err = GetOrRequireAnEncryptionKey(ctx, prev.Key)
+		if err != nil {
+			return err
+		}
 	} else {
 		prev.Key = ""
 	}
 
-	prev.Min, prev.Max, _, _ /* minString, maxString */ = GetOrAskForMinMax(ctx, prev.Min, prev.Max, false)
+	prev.Min, prev.Max, _, _, err = GetOrAskForMinMax(ctx, prev.Min, prev.Max, false)
+	if err != nil {
+		return err
+	}
 
 	sizeStr, err := prompts.GetSizeAndType(ctx, common.UnitsToString(prev.Size), false)
 	if err != nil {

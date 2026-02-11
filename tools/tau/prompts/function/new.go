@@ -16,7 +16,10 @@ func New(ctx *cli.Context) (function *structureSpec.Function, templateURL string
 		return
 	}
 
-	function.Name = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	function.Name, err = prompts.GetOrRequireAUniqueName(ctx, NamePrompt, taken)
+	if err != nil {
+		return
+	}
 
 	templateURL, err = checkTemplate(ctx, function)
 	if err != nil {
@@ -63,7 +66,10 @@ func New(ctx *cli.Context) (function *structureSpec.Function, templateURL string
 
 	function.Source = source.String()
 
-	function.Call = prompts.GetOrRequireACall(ctx, source, function.Call)
+	function.Call, err = prompts.GetOrRequireACall(ctx, source, function.Call)
+	if err != nil {
+		return
+	}
 
 	return
 }

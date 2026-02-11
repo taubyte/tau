@@ -9,7 +9,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func GetOrRequireABranch(c *cli.Context, prev ...string) string {
+func GetOrRequireABranch(c *cli.Context, prev ...string) (string, error) {
 	return validateAndRequireString(c, validateRequiredStringHelper{
 		field:  flags.Branch.Name,
 		prompt: BranchPrompt,

@@ -11,29 +11,42 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func getOrRequireMin(c *cli.Context, prev ...string) string {
+func getOrRequireMin(c *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAString(c, databaseFlags.Min.Name, MinPrompt, validate.VariableMinValidator, prev...)
 }
 
-func getOrRequireMax(c *cli.Context, prev ...string) string {
+func getOrRequireMax(c *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAString(c, databaseFlags.Max.Name, MaxPrompt, validate.VariableMaxValidator, prev...)
 }
 
-func GetOrAskForMinMax(c *cli.Context, prevMin, prevMax int, new bool) (intMin int, intMax int, min string, max string) {
-	var err error
+func GetOrAskForMinMax(c *cli.Context, prevMin, prevMax int, new bool) (intMin int, intMax int, min string, max string, err error) {
 	for {
 		if new {
-			min = getOrRequireMin(c)
-			max = getOrRequireMax(c)
+			min, err = getOrRequireMin(c)
+			if err != nil {
+				return 0, 0, "", "", err
+			}
+			max, err = getOrRequireMax(c)
+			if err != nil {
+				return 0, 0, "", "", err
+			}
 		} else {
-			min = getOrRequireMin(c, strconv.Itoa(prevMin))
-			max = getOrRequireMax(c, strconv.Itoa(prevMax))
+			min, err = getOrRequireMin(c, strconv.Itoa(prevMin))
+			if err != nil {
+				return 0, 0, "", "", err
+			}
+			max, err = getOrRequireMax(c, strconv.Itoa(prevMax))
+			if err != nil {
+				return 0, 0, "", "", err
+			}
 		}
 
 		intMin, intMax, err = convertAndValidateMinMax(min, max)
 		if err != nil {
 			printer.Out.Warning(err)
-			prompts.PanicIfPromptNotEnabled("min-max prompt")
+			if prompts.UseDefaults {
+				return 0, 0, "", "", err
+			}
 		} else {
 			break
 		}

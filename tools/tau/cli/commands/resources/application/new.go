@@ -16,7 +16,6 @@ func (link) New() common.Command {
 			Flags: []cli.Flag{
 				flags.Description,
 				flags.Tags,
-				flags.Yes,
 			},
 			Action: new,
 		},

@@ -19,6 +19,6 @@ func SelectABucket(ctx *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrAskForSelection(ctx, storageFlags.BucketType.Name, BucketPrompt, storageLib.Buckets, prev...)
 }
 
-func GetOrRequireAMatch(ctx *cli.Context, prev ...string) string {
+func GetOrRequireAMatch(ctx *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAMatch(ctx, StorageMatch, prev...)
 }

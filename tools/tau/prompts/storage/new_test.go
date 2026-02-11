@@ -16,8 +16,8 @@ import (
 
 func TestNew_AllFlagsSet_ObjectBucket_NonInteractive(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: flags.Combine(
@@ -54,8 +54,8 @@ func TestNew_AllFlagsSet_ObjectBucket_NonInteractive(t *testing.T) {
 }
 
 func TestEdit_AllFlagsSet_ObjectBucket_NonInteractive(t *testing.T) {
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: flags.Combine(

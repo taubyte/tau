@@ -16,7 +16,6 @@ import (
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	authClient "github.com/taubyte/tau/tools/tau/clients/auth_client"
 	"github.com/taubyte/tau/tools/tau/config"
-	"github.com/taubyte/tau/tools/tau/flags"
 	projectI18n "github.com/taubyte/tau/tools/tau/i18n/project"
 	repositoryI18n "github.com/taubyte/tau/tools/tau/i18n/repository"
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
@@ -29,9 +28,6 @@ func (link) Delete() common.Command {
 	return common.Create(
 		&cli.Command{
 			Action: _delete,
-			Flags: []cli.Flag{
-				flags.Yes,
-			},
 		},
 	)
 }

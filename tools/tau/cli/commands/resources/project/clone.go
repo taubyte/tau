@@ -21,7 +21,6 @@ func (link) Clone() common.Command {
 	return common.Create(
 		&cli.Command{
 			Flags: flags.Combine(
-				flags.Yes,
 				projectFlags.Loc,
 				flags.Branch,
 				flags.EmbedToken,

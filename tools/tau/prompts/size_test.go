@@ -11,8 +11,8 @@ import (
 )
 
 func TestGetSizeAndType_New_FromFlag(t *testing.T) {
-	prompts.PromptEnabled = false
-	defer func() { prompts.PromptEnabled = true }()
+	prompts.UseDefaults = true
+	defer func() { prompts.UseDefaults = false }()
 
 	ctx, err := mock.CLI{
 		Flags: []cli.Flag{flags.Size, flags.SizeUnit},

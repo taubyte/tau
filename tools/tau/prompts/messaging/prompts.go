@@ -6,7 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func GetOrRequireAChannelMatch(ctx *cli.Context, prev ...string) string {
+func GetOrRequireAChannelMatch(ctx *cli.Context, prev ...string) (string, error) {
 	return prompts.GetOrRequireAMatch(ctx, ChannelMatch, prev...)
 }
 

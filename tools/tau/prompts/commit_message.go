@@ -6,7 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func GetOrRequireACommitMessage(c *cli.Context) (ret string) {
+func GetOrRequireACommitMessage(c *cli.Context) (string, error) {
 	return validateAndRequireString(c, validateRequiredStringHelper{
 		field:     flags.CommitMessage.Name,
 		prompt:    CommitMessagePrompt,

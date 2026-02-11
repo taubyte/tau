@@ -91,7 +91,10 @@ func repositoryInfoGenerate(ctx *cli.Context, website *structureSpec.Website) (*
 		}
 
 		printer.Out.WarningPrintfln("Repository name %s is already taken", repositoryName)
-		repositoryName = prompts.GetOrRequireARepositoryName(ctx)
+		repositoryName, err = prompts.GetOrRequireARepositoryName(ctx)
+		if err != nil {
+			return nil, err
+		}
 
 		taken, err = isRepositoryNameTaken(client, repositoryName)
 	}

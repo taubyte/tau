@@ -28,15 +28,17 @@ func (m commitMessageTest) run(t *testing.T) {
 		return
 	}
 
-	message := prompts.GetOrRequireACommitMessage(ctx)
+	message, err := prompts.GetOrRequireACommitMessage(ctx)
+	if err != nil {
+		t.Error(err)
+		return
+	}
 	if message != m.message {
 		t.Error(fmt.Errorf("expected %s, got %s", m.message, message))
 	}
 }
 
 func TestCommitMessage(t *testing.T) {
-	// Set to false if stuck in infinite loop or testing
-	prompts.PromptEnabled = true
 
 	commitMessageTest{
 		message: "some old commit",

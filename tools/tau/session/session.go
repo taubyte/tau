@@ -21,7 +21,11 @@ func getOrCreateSession() *tauSession {
 }
 
 func (s *tauSession) Document() *seer.Query {
-	return _session.root.Get(sessionFileName).Document().Fork()
+	docName := _sessionDocName
+	if docName == "" {
+		docName = sessionFileName
+	}
+	return _session.root.Get(docName).Document().Fork()
 }
 
 func (s *tauSession) keys() (values []string, err error) {
