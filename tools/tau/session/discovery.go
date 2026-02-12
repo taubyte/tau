@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/mitchellh/go-ps"
 )
@@ -182,9 +183,8 @@ func parseSessionPIDs(name string) ([]int, bool) {
 	return out, true
 }
 
-// parseLegacySessionPIDs parses legacy session file/dir names into PIDs for set intersection.
-// Handles: "tau-session-<ts>-<p0>-...-<p5>" (legacy dir, timestamp + 6 PIDs)
-// and "tau-session-<p0>-...-<p15>" (old fixed-length file format).
+// parseLegacySessionPIDs parses legacy session file names into PIDs for set intersection.
+// Handles: "tau-session-<p0>-...-<p15>" (old fixed-length file format).
 // Returns (pids, true) or (nil, false) if invalid.
 func parseLegacySessionPIDs(name string) ([]int, bool) {
 	prefix := sessionDirPrefix + "-session-"
@@ -193,24 +193,6 @@ func parseLegacySessionPIDs(name string) ([]int, bool) {
 	}
 	rest := strings.TrimPrefix(name, prefix)
 	parts := strings.Split(rest, "-")
-	if len(parts) < 2 {
-		return nil, false
-	}
-	// Legacy dir format: timestamp + 6 PID parts
-	if len(parts) == 7 {
-		if _, err := strconv.ParseInt(parts[0], 10, 64); err != nil {
-			return nil, false
-		}
-		out := make([]int, 0, 6)
-		for _, p := range parts[1:] {
-			n, err := strconv.Atoi(p)
-			if err != nil {
-				return nil, false
-			}
-			out = append(out, n)
-		}
-		return out, true
-	}
 	// Old fixed-length format: exactly 16 parts
 	if len(parts) == 16 {
 		out := make([]int, 0, 16)
@@ -251,6 +233,7 @@ func discoverOrCreateConfigFileLoc() (string, error) {
 
 	var bestFile string
 	var bestIntersection int
+	var bestModTime time.Time
 
 	// 1) Session YAML files in root (tau-session-*.yaml)
 	pattern := filepath.Join(root, sessionDirPrefix+"-session-*.yaml")
@@ -279,43 +262,10 @@ func discoverOrCreateConfigFileLoc() (string, error) {
 				continue
 			}
 			debugSession("discover: contender file=%q stored=%v intersection=%d", base, storedPIDs, inter)
-			if inter > bestIntersection {
+			if inter > bestIntersection || (inter == bestIntersection && (bestFile == "" || info.ModTime().After(bestModTime))) {
 				bestIntersection = inter
 				bestFile = path
-			}
-		}
-	}
-
-	// 2) Legacy: session dirs (session.yaml inside dir named tau-session-ts-p0-...-p5)
-	legacyPattern := filepath.Join(sessionBaseDir(), sessionDirPrefix+"-session-*")
-	dirMatches, err := filepath.Glob(legacyPattern)
-	if err != nil {
-		debugSession("discover: glob legacy dirs err=%v", err)
-	} else {
-		for _, dir := range dirMatches {
-			info, err := os.Stat(dir)
-			if err != nil || !info.IsDir() {
-				continue
-			}
-			base := filepath.Base(dir)
-			storedPIDs, ok := parseLegacySessionPIDs(base)
-			if !ok {
-				debugSession("discover: skip legacy dir=%q (parse failed)", base)
-				continue
-			}
-			inter := pidSetIntersection(leafPIDs, storedPIDs)
-			if inter < 1 {
-				debugSession("discover: skip legacy dir=%q stored=%v intersection=%d (< 1)", base, storedPIDs, inter)
-				continue
-			}
-			legacySessionFile := filepath.Join(dir, sessionFileName+".yaml")
-			if _, err := os.Stat(legacySessionFile); err != nil {
-				continue
-			}
-			debugSession("discover: contender legacy dir=%q stored=%v intersection=%d", base, storedPIDs, inter)
-			if inter > bestIntersection {
-				bestIntersection = inter
-				bestFile = legacySessionFile
+				bestModTime = info.ModTime()
 			}
 		}
 	}

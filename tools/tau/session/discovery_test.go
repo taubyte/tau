@@ -1,9 +1,11 @@
 package session
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDiscovery(t *testing.T) {
@@ -178,15 +180,6 @@ func TestParseLegacySessionPIDs(t *testing.T) {
 		sessionDirPrefix = oldPrefix
 	}()
 
-	// Legacy dir format: timestamp + 6 PIDs
-	pids, ok := parseLegacySessionPIDs("tau-test-session-1234567890123-100-200-300-400-500-600")
-	if !ok {
-		t.Fatal("parseLegacySessionPIDs(legacy dir): expected ok")
-	}
-	if len(pids) != 6 || pids[0] != 100 || pids[5] != 600 {
-		t.Errorf("legacy dir pids: got %v", pids)
-	}
-
 	// Old fixed-length format: 16 parts
 	parts := make([]string, 16)
 	for i := range parts {
@@ -208,7 +201,55 @@ func TestParseLegacySessionPIDs(t *testing.T) {
 	}
 
 	if _, ok := parseLegacySessionPIDs("tau-test-session-abc-0-0-0-0-0-0"); ok {
-		t.Error("parseLegacySessionPIDs(non-numeric ts): expected !ok")
+		t.Error("parseLegacySessionPIDs(invalid): expected !ok")
+	}
+}
+
+func TestDiscoveryPreferNewestOnTie(t *testing.T) {
+	Clear()
+	defer Clear()
+
+	tmp := t.TempDir()
+	oldPrefix := sessionDirPrefix
+	oldOverride := sessionTempDirOverride
+	oldRootOverride := sessionRootDirOverride
+	sessionDirPrefix = "tau-test"
+	sessionTempDirOverride = tmp
+	sessionRootDirOverride = tmp
+	defer func() {
+		sessionDirPrefix = oldPrefix
+		sessionTempDirOverride = oldOverride
+		sessionRootDirOverride = oldRootOverride
+	}()
+
+	pids := ancestorPIDs(sessionMaxAncestors)
+	if len(pids) < 2 {
+		t.Skip("need at least 2 PIDs for tie test")
+	}
+
+	root := sessionRootDir()
+	base1 := sessionFileBaseName(pids[0:1])
+	base2 := sessionFileBaseName(pids[1:2])
+	path1 := filepath.Join(root, base1+".yaml")
+	path2 := filepath.Join(root, base2+".yaml")
+
+	if err := os.WriteFile(path1, []byte{}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path2, []byte{}, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path2, time.Now(), time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := discoverOrCreateConfigFileLoc()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Clean(path2)
+	if filepath.Clean(got) != want {
+		t.Errorf("discoverOrCreateConfigFileLoc() = %q; want %q (newest file on tie)", got, want)
 	}
 }
 
