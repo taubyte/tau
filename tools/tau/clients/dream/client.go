@@ -12,12 +12,13 @@ import (
 	"github.com/taubyte/tau/tools/tau/session"
 )
 
+// DefaultURL returns the dream API URL (always http://127.0.0.1:DreamApiPort).
+func DefaultURL() string {
+	return fmt.Sprintf("http://127.0.0.1:%d", dreamLib.DreamApiPort)
+}
+
 func Client(ctx context.Context) (*dream.Client, error) {
-	baseURL := fmt.Sprintf("http://127.0.0.1:%d", dreamLib.DreamApiPort)
-	if url, ok := session.Get().DreamAPIURL(); ok && url != "" {
-		baseURL = url
-	}
-	return dream.New(ctx, dream.URL(baseURL), dream.Timeout(15*time.Second))
+	return dream.New(ctx, dream.URL(DefaultURL()), dream.Timeout(15*time.Second))
 }
 
 func Status(ctx context.Context) (echart api.Echart, err error) {
@@ -27,8 +28,8 @@ func Status(ctx context.Context) (echart api.Echart, err error) {
 		return
 	}
 
-	selectedUniverse, _ := session.GetCustomCloudUrl()
-	universe := dreamClient.Universe(selectedUniverse)
+	cloudValue, _ := session.GetCustomCloudUrl()
+	universe := dreamClient.Universe(cloudValue)
 	echart, err = universe.Chart()
 	return
 }

@@ -57,7 +57,7 @@ func RunCLIWithDirAndCwd(t *testing.T, runApp AppRunner, dir, cwd, configYAML st
 	return runCLIWithDirAndCwd(t, runApp, dir, cwd, configYAML, false, args...)
 }
 
-// RunCLIWithDirAndCwdWithAuthMock is like RunCLIWithDirAndCwd but sets session AuthURL and SelectedCloud
+// RunCLIWithDirAndCwdWithAuthMock is like RunCLIWithDirAndCwd but sets TAUBYTE_AUTH_URL and session SelectedCloud("test")
 // for the auth mock (test cloud). Use for flow tests that use ActivateAuthMock (gock).
 func RunCLIWithDirAndCwdWithAuthMock(t *testing.T, runApp AppRunner, dir, cwd, configYAML string, args ...string) (stdout, stderr string, err error) {
 	t.Helper()
@@ -92,7 +92,15 @@ func runCLIWithDirAndCwd(t *testing.T, runApp AppRunner, dir, cwd, configYAML st
 		return "", "", err
 	}
 	if withAuthMock {
-		session.Set().AuthURL(AuthMockBaseURL)
+		oldAuthURL := os.Getenv("TAUBYTE_AUTH_URL")
+		os.Setenv("TAUBYTE_AUTH_URL", AuthMockBaseURL)
+		t.Cleanup(func() {
+			if oldAuthURL == "" {
+				os.Unsetenv("TAUBYTE_AUTH_URL")
+			} else {
+				os.Setenv("TAUBYTE_AUTH_URL", oldAuthURL)
+			}
+		})
 		session.Set().SelectedCloud("test")
 	}
 

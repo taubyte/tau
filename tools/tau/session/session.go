@@ -16,6 +16,7 @@ func getOrCreateSession() *tauSession {
 			panic(err)
 		}
 		debugSession("getOrCreateSession: session ready")
+		debugSession("getOrCreateSession: using dir=%q doc=%q", _sessionDir, _sessionDocName)
 	}
 	return _session
 }

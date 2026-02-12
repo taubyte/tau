@@ -20,7 +20,7 @@ func GitToken(t *testing.T) (tkn string) {
 
 var (
 	GitUser     = "taubyte-test"
-	Branch      = "master"
+	Branch      = "main"
 	ProjectName = "testproject"
 
 	ConfigRepo Repository = Repository{

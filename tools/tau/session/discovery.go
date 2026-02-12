@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/mitchellh/go-ps"
 )
@@ -50,7 +49,7 @@ func debugProcessTree() {
 		if isShell(exe) {
 			tags += " [shell]"
 		}
-		debugSession("  [%2d] pid=%d ppid=%d exe=%q%s", depth, process.Pid(), ppid, exe, tags)
+		debugSession("  [%2d] pid=%d ppid=%d exe=%q%s", depth, pid, ppid, exe, tags)
 		if ppid == 0 || ppid == 1 {
 			debugSession("  [%2d] (root)", depth+1)
 			break
@@ -129,91 +128,102 @@ func ancestorPathFromRoot(maxDepth int) []int {
 	return pids
 }
 
-// longestCommonSuffixLength returns the length of the longest common suffix of a and b (element-wise from the end).
-// This compares from the leaf side (closest-to-tau), which is the most distinguishing part of the tree.
-func longestCommonSuffixLength(a, b []int) int {
-	la, lb := len(a), len(b)
-	n := la
-	if lb < n {
-		n = lb
+// pidSetIntersection returns the count of PIDs that appear in both a and b (set intersection).
+func pidSetIntersection(a, b []int) int {
+	set := make(map[int]bool)
+	for _, p := range a {
+		if p > 0 {
+			set[p] = true
+		}
 	}
 	count := 0
-	for i := 0; i < n; i++ {
-		if a[la-1-i] != b[lb-1-i] {
-			break
+	for _, p := range b {
+		if p > 0 && set[p] {
+			count++
 		}
-		count++
 	}
 	return count
 }
 
-// longestCommonPrefixLength is kept for legacy compatibility and tests.
-func longestCommonPrefixLength(a, b []int) int {
-	n := len(a)
-	if len(b) < n {
-		n = len(b)
+// sessionFileBaseName returns the session file base name (without .yaml) for the given leaf-first PIDs.
+// Format: tau-session-<p0>-<p1>-...-<pN> (variable length, no zero-padding).
+func sessionFileBaseName(pids []int) string {
+	if len(pids) == 0 {
+		return ""
 	}
-	for i := 0; i < n; i++ {
-		if a[i] != b[i] {
-			return i
-		}
-	}
-	return n
-}
-
-// trimLeadingZeros returns a slice without leading zero elements (legacy dir names pad with 0 at root side).
-func trimLeadingZeros(pids []int) []int {
-	j := 0
-	for j < len(pids) && pids[j] == 0 {
-		j++
-	}
-	return pids[j:]
-}
-
-// reverseInts reverses a slice of ints in place.
-func reverseInts(s []int) {
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
-	}
-}
-
-// trimTrailingZeros returns a slice without trailing zero elements.
-func trimTrailingZeros(pids []int) []int {
-	j := len(pids)
-	for j > 0 && pids[j-1] == 0 {
-		j--
-	}
-	return pids[:j]
-}
-
-// sessionDirBaseNameFromLeafPath builds a session file base name from leaf-first PIDs.
-// Stores the leaf-most (closest-to-tau) PIDs, padded with 0 on the right up to sessionAncestorDepth.
-// Format: tau-session-p0-p1-...-p15 (leaf-first: p0=tau's parent, p15=root-most collected).
-func sessionDirBaseNameFromLeafPath(leafFirstPIDs []int) string {
-	stored := make([]int, sessionAncestorDepth)
-	for i := 0; i < sessionAncestorDepth; i++ {
-		if i < len(leafFirstPIDs) {
-			stored[i] = leafFirstPIDs[i]
-		}
-	}
-	parts := make([]string, sessionAncestorDepth)
-	for i := range stored {
-		parts[i] = strconv.Itoa(stored[i])
+	parts := make([]string, len(pids))
+	for i, p := range pids {
+		parts[i] = strconv.Itoa(p)
 	}
 	return sessionDirPrefix + "-session-" + strings.Join(parts, "-")
 }
 
-// sessionDirBaseName returns the base name for a session dir/file (legacy format with timestamp).
-// pids is [p0,...,pk,0,...,0] (closest-to-tau first, padded right with 0). Components in name are root-first.
-func sessionDirBaseName(pids []int, timestampMs int64) string {
-	if len(pids) != sessionAncestorDepth {
-		return ""
+// parseSessionPIDs parses a session file/dir base name (new variable-length format).
+// Format: "tau-session-<p0>-<p1>-...-<pN>" (all numeric parts).
+// Returns (pids, true) or (nil, false) if invalid.
+func parseSessionPIDs(name string) ([]int, bool) {
+	prefix := sessionDirPrefix + "-session-"
+	if !strings.HasPrefix(name, prefix) {
+		return nil, false
 	}
-	components := make([]string, len(pids))
-	for i := range pids {
-		components[len(pids)-1-i] = strconv.Itoa(pids[i])
+	rest := strings.TrimPrefix(name, prefix)
+	parts := strings.Split(rest, "-")
+	if len(parts) == 0 {
+		return nil, false
 	}
-	return sessionDirPrefix + "-session-" + strconv.FormatInt(timestampMs, 10) + "-" + strings.Join(components, "-")
+	out := make([]int, 0, len(parts))
+	for _, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			return nil, false
+		}
+		out = append(out, n)
+	}
+	return out, true
+}
+
+// parseLegacySessionPIDs parses legacy session file/dir names into PIDs for set intersection.
+// Handles: "tau-session-<ts>-<p0>-...-<p5>" (legacy dir, timestamp + 6 PIDs)
+// and "tau-session-<p0>-...-<p15>" (old fixed-length file format).
+// Returns (pids, true) or (nil, false) if invalid.
+func parseLegacySessionPIDs(name string) ([]int, bool) {
+	prefix := sessionDirPrefix + "-session-"
+	if !strings.HasPrefix(name, prefix) {
+		return nil, false
+	}
+	rest := strings.TrimPrefix(name, prefix)
+	parts := strings.Split(rest, "-")
+	if len(parts) < 2 {
+		return nil, false
+	}
+	// Legacy dir format: timestamp + 6 PID parts
+	if len(parts) == 7 {
+		if _, err := strconv.ParseInt(parts[0], 10, 64); err != nil {
+			return nil, false
+		}
+		out := make([]int, 0, 6)
+		for _, p := range parts[1:] {
+			n, err := strconv.Atoi(p)
+			if err != nil {
+				return nil, false
+			}
+			out = append(out, n)
+		}
+		return out, true
+	}
+	// Old fixed-length format: exactly 16 parts
+	if len(parts) == 16 {
+		out := make([]int, 0, 16)
+		for _, p := range parts {
+			n, err := strconv.Atoi(p)
+			if err != nil {
+				return nil, false
+			}
+			out = append(out, n)
+		}
+		return out, true
+	}
+	return nil, false
 }
 
 func sessionBaseDir() string {
@@ -231,154 +241,18 @@ func sessionRootDir() string {
 	return filepath.Join(sessionBaseDir(), "tau")
 }
 
-// sessionDirFromPidList builds the session directory path for creation (uses current time in ms).
-// Legacy format with timestamp for dir-based sessions.
-func sessionDirFromPidList(pids []int) string {
-	name := sessionDirBaseName(pids, time.Now().UnixMilli())
-	if name == "" {
-		return ""
-	}
-	return filepath.Join(sessionBaseDir(), name)
-}
-
-// parseSessionFileBase parses a new-format session file base name (no timestamp).
-// Format: "tau-session-p0-p1-...-p15" (leaf-first PIDs, sessionAncestorDepth parts).
-// Returns (pids, true) or (nil, false) if invalid.
-func parseSessionFileBase(name string) (pids []int, ok bool) {
-	prefix := sessionDirPrefix + "-session-"
-	if !strings.HasPrefix(name, prefix) {
-		return nil, false
-	}
-	rest := strings.TrimPrefix(name, prefix)
-	parts := strings.Split(rest, "-")
-	if len(parts) != sessionAncestorDepth {
-		return nil, false
-	}
-	out := make([]int, sessionAncestorDepth)
-	for i := 0; i < sessionAncestorDepth; i++ {
-		n, err := strconv.Atoi(parts[i])
-		if err != nil {
-			return nil, false
-		}
-		out[i] = n
-	}
-	return out, true
-}
-
-// parseSessionDirBase parses a session file/dir base name into timestamp and pids (root-first).
-// Accepts: "tau-session-<ts>-<p0>-...-<p5>" (legacy, 7 parts with timestamp) or
-// "tau-session-<p0>-...-<p15>" (new format, sessionAncestorDepth parts, no timestamp).
-// Returns (0, nil, false) if format is invalid.
-func parseSessionDirBase(name string) (timestampMs int64, pids []int, ok bool) {
-	prefix := sessionDirPrefix + "-session-"
-	if !strings.HasPrefix(name, prefix) {
-		return 0, nil, false
-	}
-	rest := strings.TrimPrefix(name, prefix)
-	parts := strings.Split(rest, "-")
-
-	// New format: exactly sessionAncestorDepth parts (no timestamp)
-	if len(parts) == sessionAncestorDepth {
-		out := make([]int, sessionAncestorDepth)
-		for i := 0; i < sessionAncestorDepth; i++ {
-			n, err := strconv.Atoi(parts[i])
-			if err != nil {
-				return 0, nil, false
-			}
-			out[i] = n
-		}
-		return 0, out, true
-	}
-
-	// Legacy format: timestamp + 6 PID parts (for old sessions with depth 6)
-	// Try: first part is timestamp, rest are PIDs
-	if len(parts) >= 2 {
-		ts, err := strconv.ParseInt(parts[0], 10, 64)
-		if err != nil {
-			return 0, nil, false
-		}
-		pidParts := parts[1:]
-		out := make([]int, len(pidParts))
-		for i, p := range pidParts {
-			n, err := strconv.Atoi(p)
-			if err != nil {
-				return 0, nil, false
-			}
-			out[i] = n
-		}
-		return ts, out, true
-	}
-
-	return 0, nil, false
-}
-
-// isProcessAlive checks if a process with the given PID is alive.
-func isProcessAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	p, err := ps.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	return p != nil
-}
-
-// cleanStaleSessionFiles removes session files where ALL non-zero stored PIDs are dead.
-// This is conservative: a file is only removed when the entire process tree is gone,
-// not just when the leaf process (which may be a short-lived wrapper like `go run`) exits.
-func cleanStaleSessionFiles(root string) {
-	pattern := filepath.Join(root, sessionDirPrefix+"-session-*.yaml")
-	matches, err := filepath.Glob(pattern)
-	if err != nil {
-		return
-	}
-	for _, path := range matches {
-		base := filepath.Base(path)
-		baseNoExt := strings.TrimSuffix(base, ".yaml")
-		pids, ok := parseSessionFileBase(baseNoExt)
-		if !ok {
-			continue
-		}
-		anyAlive := false
-		for _, pid := range pids {
-			if pid > 0 && isProcessAlive(pid) {
-				anyAlive = true
-				break
-			}
-		}
-		if !anyAlive {
-			debugSession("cleanup: removing stale session file=%q (all PIDs dead)", base)
-			os.Remove(path)
-		}
-	}
-}
-
-// currentSessionPidList returns the current process ancestor list padded to sessionAncestorDepth.
-// Leaf-first (closest-to-tau first), padded right with 0.
-func currentSessionPidList() []int {
-	pids := ancestorPIDs(sessionAncestorDepth)
-	for len(pids) < sessionAncestorDepth {
-		pids = append(pids, 0)
-	}
-	return pids
-}
-
 func discoverOrCreateConfigFileLoc() (string, error) {
 	debugProcessTree()
-	// Collect leaf-first PIDs (closest to tau first)
-	leafPIDs := ancestorPIDs(maxAncestorDepthForPath)
-	debugSession("discover: leaf-first PIDs len=%d P=%v threshold=%d", len(leafPIDs), leafPIDs, sessionCommonSuffixThreshold)
+	leafPIDs := ancestorPIDs(sessionMaxAncestors)
+	debugSession("discover: leaf-first PIDs len=%d P=%v", len(leafPIDs), leafPIDs)
 
 	root := sessionRootDir()
-
-	// Clean stale session files before discovery
-	cleanStaleSessionFiles(root)
+	debugSession("discover: session root=%q", root)
 
 	var bestFile string
-	var bestL int
+	var bestIntersection int
 
-	// 1) New-format session YAML files (leaf-first PIDs in filename, no timestamp)
+	// 1) Session YAML files in root (tau-session-*.yaml)
 	pattern := filepath.Join(root, sessionDirPrefix+"-session-*.yaml")
 	fileMatches, err := filepath.Glob(pattern)
 	if err != nil {
@@ -391,29 +265,22 @@ func discoverOrCreateConfigFileLoc() (string, error) {
 			}
 			base := filepath.Base(path)
 			baseNoExt := strings.TrimSuffix(base, ".yaml")
-			storedPIDs, ok := parseSessionFileBase(baseNoExt)
+			storedPIDs, ok := parseSessionPIDs(baseNoExt)
 			if !ok {
-				// Try legacy format
-				_, storedPIDs, ok = parseSessionDirBase(baseNoExt)
+				storedPIDs, ok = parseLegacySessionPIDs(baseNoExt)
 				if !ok {
 					debugSession("discover: skip file=%q (parse failed)", base)
 					continue
 				}
-				// Legacy stored PIDs are root-first; reverse to leaf-first for suffix matching
-				storedPIDs = trimLeadingZeros(storedPIDs)
-				reverseInts(storedPIDs)
-			} else {
-				storedPIDs = trimTrailingZeros(storedPIDs)
 			}
-
-			L := longestCommonSuffixLength(leafPIDs, storedPIDs)
-			if L < sessionCommonSuffixThreshold {
-				debugSession("discover: skip file=%q stored=%v L_suffix=%d (< threshold %d)", base, storedPIDs, L, sessionCommonSuffixThreshold)
+			inter := pidSetIntersection(leafPIDs, storedPIDs)
+			if inter < 1 {
+				debugSession("discover: skip file=%q stored=%v intersection=%d (< 1)", base, storedPIDs, inter)
 				continue
 			}
-			debugSession("discover: contender file=%q stored=%v L_suffix=%d", base, storedPIDs, L)
-			if L > bestL {
-				bestL = L
+			debugSession("discover: contender file=%q stored=%v intersection=%d", base, storedPIDs, inter)
+			if inter > bestIntersection {
+				bestIntersection = inter
 				bestFile = path
 			}
 		}
@@ -431,46 +298,42 @@ func discoverOrCreateConfigFileLoc() (string, error) {
 				continue
 			}
 			base := filepath.Base(dir)
-			_, sName, ok := parseSessionDirBase(base)
+			storedPIDs, ok := parseLegacySessionPIDs(base)
 			if !ok {
 				debugSession("discover: skip legacy dir=%q (parse failed)", base)
 				continue
 			}
-			// Legacy stored PIDs are root-first; reverse to leaf-first for suffix matching
-			sNameTrim := trimLeadingZeros(sName)
-			reverseInts(sNameTrim)
-			L := longestCommonSuffixLength(leafPIDs, sNameTrim)
-			if L < sessionCommonSuffixThreshold {
-				debugSession("discover: skip legacy dir=%q S_name=%v L_suffix=%d (< threshold %d)", base, sNameTrim, L, sessionCommonSuffixThreshold)
+			inter := pidSetIntersection(leafPIDs, storedPIDs)
+			if inter < 1 {
+				debugSession("discover: skip legacy dir=%q stored=%v intersection=%d (< 1)", base, storedPIDs, inter)
 				continue
 			}
 			legacySessionFile := filepath.Join(dir, sessionFileName+".yaml")
 			if _, err := os.Stat(legacySessionFile); err != nil {
 				continue
 			}
-			debugSession("discover: contender legacy dir=%q S_name=%v L_suffix=%d", base, sNameTrim, L)
-			if L > bestL {
-				bestL = L
+			debugSession("discover: contender legacy dir=%q stored=%v intersection=%d", base, storedPIDs, inter)
+			if inter > bestIntersection {
+				bestIntersection = inter
 				bestFile = legacySessionFile
 			}
 		}
 	}
 
-	if bestL >= sessionCommonSuffixThreshold && bestFile != "" {
-		debugSession("discover: selected path=%q L=%d (>= threshold %d) => reusing", bestFile, bestL, sessionCommonSuffixThreshold)
+	if bestIntersection >= 1 && bestFile != "" {
+		debugSession("discover: selected path=%q intersection=%d => reusing", bestFile, bestIntersection)
 		return bestFile, nil
 	}
-	debugSession("discover: no match (best L=%d, threshold=%d) => creating new session file", bestL, sessionCommonSuffixThreshold)
+	debugSession("discover: no match (best intersection=%d) => creating new session file", bestIntersection)
 
 	if err := os.MkdirAll(root, 0700); err != nil {
 		return "", err
 	}
-	fileBase := sessionDirBaseNameFromLeafPath(leafPIDs)
+	fileBase := sessionFileBaseName(leafPIDs)
 	if fileBase == "" {
 		return "", fmt.Errorf("session: invalid path for file name")
 	}
 	sessionFilePath := filepath.Join(root, fileBase+".yaml")
-	// Touch file so it exists; seer will open and use it
 	f, err := os.OpenFile(sessionFilePath, os.O_CREATE|os.O_RDWR, 0600)
 	if err != nil {
 		return "", err
@@ -478,43 +341,4 @@ func discoverOrCreateConfigFileLoc() (string, error) {
 	f.Close()
 	debugSession("discover: created file=%q (leaf PIDs len=%d)", sessionFilePath, len(leafPIDs))
 	return sessionFilePath, nil
-}
-
-// ensureExactSessionDir: no-op for file-based sessions (one YAML per session, path in filename).
-// For tests using LoadSessionInDir(dir) with a legacy dir name, may switch to exact dir.
-// Call before any setKey/deleteKey.
-func ensureExactSessionDir() error {
-	if _session == nil {
-		return nil
-	}
-	// File-based: we use a single session file; no switching.
-	if _sessionDocName != "" && _sessionDocName != sessionFileName {
-		return nil
-	}
-	base := filepath.Base(_sessionDir)
-	if !strings.HasPrefix(base, sessionDirPrefix+"-session-") {
-		return nil
-	}
-	// Legacy (tests): switch to exact dir for current PIDs if different.
-	pids := currentSessionPidList()
-	exact := sessionDirFromPidList(pids)
-	if exact == "" {
-		return fmt.Errorf("session: invalid pid list length")
-	}
-	if _sessionDir == exact {
-		return nil
-	}
-	if err := os.MkdirAll(exact, 0700); err != nil {
-		return err
-	}
-	sessionFile := sessionFileName + ".yaml"
-	src := filepath.Join(_sessionDir, sessionFile)
-	dst := filepath.Join(exact, sessionFile)
-	if data, err := os.ReadFile(src); err == nil {
-		if err := os.WriteFile(dst, data, 0600); err != nil {
-			return err
-		}
-	}
-	debugSession("ensureExactSessionDir: switched to exact dir=%q", exact)
-	return LoadSessionInDir(exact)
 }

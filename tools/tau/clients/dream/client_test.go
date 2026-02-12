@@ -20,7 +20,6 @@ func TestClient_WithSessionURL(t *testing.T) {
 	t.Cleanup(session.Clear)
 
 	assert.NilError(t, session.LoadSessionInDir(t.TempDir()))
-	assert.NilError(t, session.Set().DreamAPIURL("http://127.0.0.1:12345"))
 
 	client, err := Client(context.Background())
 	assert.NilError(t, err)
@@ -32,9 +31,7 @@ func TestStatus_ReturnsErrorWhenUnreachable(t *testing.T) {
 	t.Cleanup(session.Clear)
 
 	assert.NilError(t, session.LoadSessionInDir(t.TempDir()))
-	// Unreachable URL so Chart() will fail (connection refused)
-	assert.NilError(t, session.Set().DreamAPIURL("http://127.0.0.1:19999"))
-
+	// No dream on default port; Status() will fail (connection refused or no universe)
 	_, err := Status(context.Background())
 	assert.Assert(t, err != nil)
 }
@@ -44,7 +41,6 @@ func TestHTTPPort_WhenStatusFails(t *testing.T) {
 	t.Cleanup(session.Clear)
 
 	assert.NilError(t, session.LoadSessionInDir(t.TempDir()))
-	assert.NilError(t, session.Set().DreamAPIURL("http://127.0.0.1:19999"))
 
 	port, err := HTTPPort(context.Background(), "patrick")
 	assert.Assert(t, err != nil)

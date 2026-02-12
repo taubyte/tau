@@ -11,9 +11,7 @@ type Setter interface {
 	SelectedProject(value string) (err error)
 	SelectedApplication(value string) (err error)
 	SelectedCloud(value string) (err error)
-	CustomCloudUrl(value string) (err error)
-	AuthURL(value string) (err error)
-	DreamAPIURL(value string) (err error)
+	CustomCloudUrl(value string) (err error) // FQDN when remote, universe name when dream
 }
 
 type Getter interface {
@@ -22,8 +20,6 @@ type Getter interface {
 	SelectedApplication() (value string, exist bool)
 	SelectedCloud() (value string, exist bool)
 	CustomCloudUrl() (value string, exist bool)
-	AuthURL() (value string, exist bool)
-	DreamAPIURL() (value string, exist bool)
 }
 
 type UnSetter interface {
@@ -32,6 +28,4 @@ type UnSetter interface {
 	SelectedApplication() (err error)
 	SelectedCloud() (err error)
 	CustomCloudUrl() (err error)
-	AuthURL() (err error)
-	DreamAPIURL() (err error)
 }

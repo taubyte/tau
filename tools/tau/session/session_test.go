@@ -78,7 +78,7 @@ func TestSessionFilePersisted(t *testing.T) {
 	assert.Equal(t, name, "persisted")
 }
 
-func TestSetGet_AuthURL_DreamAPIURL(t *testing.T) {
+func TestSetGet_CustomCloudUrl(t *testing.T) {
 	Clear()
 	defer Clear()
 
@@ -86,17 +86,13 @@ func TestSetGet_AuthURL_DreamAPIURL(t *testing.T) {
 	err := LoadSessionInDir(dir)
 	assert.NilError(t, err)
 
-	err = Set().AuthURL("https://auth.example.com")
+	err = Set().SelectedCloud("dream")
 	assert.NilError(t, err)
-	authURL, ok := Get().AuthURL()
-	assert.Assert(t, ok)
-	assert.Equal(t, authURL, "https://auth.example.com")
-
-	err = Set().DreamAPIURL("http://dream:8080")
+	err = Set().CustomCloudUrl("my-universe")
 	assert.NilError(t, err)
-	dreamURL, ok := Get().DreamAPIURL()
+	cloudVal, ok := GetCustomCloudUrl()
 	assert.Assert(t, ok)
-	assert.Equal(t, dreamURL, "http://dream:8080")
+	assert.Equal(t, cloudVal, "my-universe")
 }
 
 func TestUnset(t *testing.T) {
@@ -117,8 +113,8 @@ func TestUnset(t *testing.T) {
 	app, _ := Get().SelectedApplication()
 	assert.Equal(t, app, "")
 
-	assert.NilError(t, Set().AuthURL("https://a.com"))
-	assert.NilError(t, Unset().AuthURL())
-	_, ok = Get().AuthURL()
+	assert.NilError(t, Set().CustomCloudUrl("https://a.com"))
+	assert.NilError(t, Unset().CustomCloudUrl())
+	_, ok = Get().CustomCloudUrl()
 	assert.Assert(t, !ok)
 }

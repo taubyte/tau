@@ -8,7 +8,7 @@ import (
 
 func TestVars(t *testing.T) {
 	assert.Equal(t, GitUser, "taubyte-test")
-	assert.Equal(t, Branch, "master")
+	assert.Equal(t, Branch, "main")
 	assert.Equal(t, ProjectName, "testproject")
 	assert.Equal(t, ConfigRepo.Name, "tb_testproject")
 	assert.Equal(t, ConfigRepo.ID, 485473636)

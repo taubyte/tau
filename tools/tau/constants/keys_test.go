@@ -13,6 +13,4 @@ func TestSessionKeys(t *testing.T) {
 	assert.Equal(t, constants.KeyApplication, "application")
 	assert.Equal(t, constants.KeySelectedCloud, "selected_cloud")
 	assert.Equal(t, constants.KeyCustomCloudURL, "custom_cloud_url")
-	assert.Equal(t, constants.KeyAuthURL, "auth_url")
-	assert.Equal(t, constants.KeyDreamAPIURL, "dream_api_url")
 }

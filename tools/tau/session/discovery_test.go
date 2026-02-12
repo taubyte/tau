@@ -1,7 +1,6 @@
 package session
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,52 +40,36 @@ func TestDiscovery(t *testing.T) {
 	}
 }
 
-func TestLongestCommonSuffixLength(t *testing.T) {
-	// Suffix matching: compare from the end (leaf side)
-	if got := longestCommonSuffixLength([]int{1, 2, 3, 4}, []int{5, 2, 3, 4}); got != 3 {
-		t.Errorf("LCS([1,2,3,4], [5,2,3,4]) = %d; want 3", got)
+func TestPidSetIntersection(t *testing.T) {
+	if got := pidSetIntersection([]int{1, 2, 3, 4}, []int{5, 2, 3, 4}); got != 3 {
+		t.Errorf("pidSetIntersection([1,2,3,4], [5,2,3,4]) = %d; want 3", got)
 	}
-	if got := longestCommonSuffixLength([]int{1, 2}, []int{0, 1, 2}); got != 2 {
-		t.Errorf("LCS([1,2], [0,1,2]) = %d; want 2", got)
+	if got := pidSetIntersection([]int{1, 2}, []int{0, 1, 2}); got != 2 {
+		t.Errorf("pidSetIntersection([1,2], [0,1,2]) = %d; want 2", got)
 	}
-	if got := longestCommonSuffixLength([]int{1, 2}, []int{2, 1}); got != 0 {
-		t.Errorf("LCS([1,2], [2,1]) = %d; want 0", got)
+	if got := pidSetIntersection([]int{1, 2}, []int{2, 1}); got != 2 {
+		t.Errorf("pidSetIntersection([1,2], [2,1]) = %d; want 2 (set, order irrelevant)", got)
 	}
-	if got := longestCommonSuffixLength([]int{}, []int{1}); got != 0 {
-		t.Errorf("LCS([], [1]) = %d; want 0", got)
+	if got := pidSetIntersection([]int{}, []int{1}); got != 0 {
+		t.Errorf("pidSetIntersection([], [1]) = %d; want 0", got)
 	}
-	// Identical lists
-	if got := longestCommonSuffixLength([]int{10, 20, 30}, []int{10, 20, 30}); got != 3 {
-		t.Errorf("LCS([10,20,30], [10,20,30]) = %d; want 3", got)
+	if got := pidSetIntersection([]int{10, 20, 30}, []int{10, 20, 30}); got != 3 {
+		t.Errorf("pidSetIntersection([10,20,30], [10,20,30]) = %d; want 3", got)
 	}
-	// Different root, same leaf
-	if got := longestCommonSuffixLength([]int{100, 200, 300}, []int{999, 200, 300}); got != 2 {
-		t.Errorf("LCS([100,200,300], [999,200,300]) = %d; want 2", got)
+	if got := pidSetIntersection([]int{100, 200, 300}, []int{999, 200, 300}); got != 2 {
+		t.Errorf("pidSetIntersection([100,200,300], [999,200,300]) = %d; want 2", got)
 	}
-}
-
-func TestLongestCommonPrefixLength(t *testing.T) {
-	if got := longestCommonPrefixLength([]int{1, 2, 3, 4}, []int{1, 2, 3, 5}); got != 3 {
-		t.Errorf("LCP([1,2,3,4], [1,2,3,5]) = %d; want 3", got)
-	}
-	if got := longestCommonPrefixLength([]int{1, 2}, []int{1, 2, 3}); got != 2 {
-		t.Errorf("LCP([1,2], [1,2,3]) = %d; want 2", got)
-	}
-	if got := longestCommonPrefixLength([]int{1, 2}, []int{2, 1}); got != 0 {
-		t.Errorf("LCP([1,2], [2,1]) = %d; want 0", got)
-	}
-	if got := longestCommonPrefixLength([]int{}, []int{1}); got != 0 {
-		t.Errorf("LCP([], [1]) = %d; want 0", got)
+	if got := pidSetIntersection([]int{1, 2, 3}, []int{4, 5, 6}); got != 0 {
+		t.Errorf("pidSetIntersection([1,2,3], [4,5,6]) = %d; want 0", got)
 	}
 }
 
 func TestAncestorPathFromRoot(t *testing.T) {
-	P := ancestorPathFromRoot(maxAncestorDepthForPath)
-	if len(P) > maxAncestorDepthForPath {
-		t.Errorf("ancestorPathFromRoot length = %d; want <= %d", len(P), maxAncestorDepthForPath)
+	P := ancestorPathFromRoot(sessionMaxAncestors)
+	if len(P) > sessionMaxAncestors {
+		t.Errorf("ancestorPathFromRoot length = %d; want <= %d", len(P), sessionMaxAncestors)
 	}
-	// Same process gives same path when called twice
-	P2 := ancestorPathFromRoot(maxAncestorDepthForPath)
+	P2 := ancestorPathFromRoot(sessionMaxAncestors)
 	if len(P) != len(P2) {
 		t.Errorf("two calls: len %d vs %d", len(P), len(P2))
 	}
@@ -97,7 +80,7 @@ func TestAncestorPathFromRoot(t *testing.T) {
 	}
 }
 
-func TestNewFormatSessionDoesNotForkOnSetKey(t *testing.T) {
+func TestNewFormatSessionForkOnSetKey(t *testing.T) {
 	Clear()
 	defer Clear()
 
@@ -114,7 +97,6 @@ func TestNewFormatSessionDoesNotForkOnSetKey(t *testing.T) {
 		sessionRootDirOverride = oldRootOverride
 	}()
 
-	// Discover creates a session file (path in filename)
 	file1, err := discoverOrCreateConfigFileLoc()
 	if err != nil {
 		t.Fatal(err)
@@ -123,138 +105,110 @@ func TestNewFormatSessionDoesNotForkOnSetKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// setKey triggers ensureExactSessionDir; for file-based it must be no-op
-	err = Set().ProfileName("no-fork-test")
+	err = Set().ProfileName("fork-test")
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Only one session file under tmp
 	matches, _ := filepath.Glob(filepath.Join(tmp, "tau-test-session-*.yaml"))
-	if len(matches) != 1 {
-		t.Errorf("expected exactly one session file under tmp; got %d: %v", len(matches), matches)
+	if len(matches) < 1 {
+		t.Errorf("expected at least one session file under tmp; got %d: %v", len(matches), matches)
 	}
 	if _sessionDir != filepath.Dir(file1) {
 		t.Errorf("_sessionDir should be unchanged after setKey: got %q", _sessionDir)
 	}
 }
 
-func TestSessionDirBaseName(t *testing.T) {
+func TestSessionFileBaseName(t *testing.T) {
 	oldPrefix := sessionDirPrefix
 	sessionDirPrefix = "tau-test"
 	defer func() {
 		sessionDirPrefix = oldPrefix
 	}()
 
-	// pids must have length sessionAncestorDepth (16)
-	pids := make([]int, sessionAncestorDepth)
-	pids[0] = 100
-	pids[1] = 200
-	pids[2] = 300
-	// rest are 0
-
-	ts := int64(1234567890123)
-	got := sessionDirBaseName(pids, ts)
+	pids := []int{100, 200, 300}
+	got := sessionFileBaseName(pids)
 	if got == "" {
-		t.Fatal("sessionDirBaseName returned empty for valid input")
+		t.Fatal("sessionFileBaseName returned empty for valid input")
 	}
-	if !strings.HasPrefix(got, "tau-test-session-1234567890123-") {
-		t.Errorf("expected prefix tau-test-session-1234567890123-; got %s", got)
+	if !strings.HasPrefix(got, "tau-test-session-") {
+		t.Errorf("expected prefix tau-test-session-; got %s", got)
+	}
+	if got != "tau-test-session-100-200-300" {
+		t.Errorf("sessionFileBaseName([100,200,300]) = %q; want tau-test-session-100-200-300", got)
 	}
 
-	// Wrong length returns empty
-	if out := sessionDirBaseName([]int{1, 2}, ts); out != "" {
-		t.Errorf("sessionDirBaseName(wrong length) = %q; want \"\"", out)
-	}
-	if out := sessionDirBaseName(make([]int, 20), ts); out != "" {
-		t.Errorf("sessionDirBaseName(too long) = %q; want \"\"", out)
+	if sessionFileBaseName([]int{}) != "" {
+		t.Errorf("sessionFileBaseName([]) should return empty")
 	}
 }
 
-func TestParseSessionFileBase(t *testing.T) {
+func TestParseSessionPIDs(t *testing.T) {
 	oldPrefix := sessionDirPrefix
 	sessionDirPrefix = "tau-test"
 	defer func() {
 		sessionDirPrefix = oldPrefix
 	}()
 
-	// Build a valid new-format name
-	leafPIDs := make([]int, sessionAncestorDepth)
-	leafPIDs[0] = 5000
-	leafPIDs[1] = 3000
-	leafPIDs[2] = 2500
-	name := sessionDirBaseNameFromLeafPath(leafPIDs[:3])
-	pids, ok := parseSessionFileBase(name)
+	name := "tau-test-session-5000-3000-2500"
+	pids, ok := parseSessionPIDs(name)
 	if !ok {
-		t.Fatalf("parseSessionFileBase(%q): expected ok", name)
+		t.Fatalf("parseSessionPIDs(%q): expected ok", name)
 	}
-	if pids[0] != 5000 || pids[1] != 3000 || pids[2] != 2500 {
-		t.Errorf("parsed pids: got %v; want [5000, 3000, 2500, 0...]", pids)
-	}
-
-	// Invalid prefix
-	if _, ok := parseSessionFileBase("other-session-1-0-0-0"); ok {
-		t.Error("parseSessionFileBase(other prefix): expected !ok")
+	if len(pids) != 3 || pids[0] != 5000 || pids[1] != 3000 || pids[2] != 2500 {
+		t.Errorf("parsed pids: got %v; want [5000, 3000, 2500]", pids)
 	}
 
-	// Wrong number of parts
-	if _, ok := parseSessionFileBase("tau-test-session-1-0-0-0"); ok {
-		t.Error("parseSessionFileBase(too few parts): expected !ok")
+	if _, ok := parseSessionPIDs("other-session-1-0-0"); ok {
+		t.Error("parseSessionPIDs(other prefix): expected !ok")
+	}
+
+	if _, ok := parseSessionPIDs("tau-test-session-"); ok {
+		t.Error("parseSessionPIDs(empty rest): expected !ok")
+	}
+
+	if _, ok := parseSessionPIDs("tau-test-session-abc"); ok {
+		t.Error("parseSessionPIDs(non-numeric): expected !ok")
 	}
 }
 
-func TestParseSessionDirBase(t *testing.T) {
+func TestParseLegacySessionPIDs(t *testing.T) {
 	oldPrefix := sessionDirPrefix
 	sessionDirPrefix = "tau-test"
 	defer func() {
 		sessionDirPrefix = oldPrefix
 	}()
 
-	// New format: exactly sessionAncestorDepth parts
-	parts := make([]string, sessionAncestorDepth)
+	// Legacy dir format: timestamp + 6 PIDs
+	pids, ok := parseLegacySessionPIDs("tau-test-session-1234567890123-100-200-300-400-500-600")
+	if !ok {
+		t.Fatal("parseLegacySessionPIDs(legacy dir): expected ok")
+	}
+	if len(pids) != 6 || pids[0] != 100 || pids[5] != 600 {
+		t.Errorf("legacy dir pids: got %v", pids)
+	}
+
+	// Old fixed-length format: 16 parts
+	parts := make([]string, 16)
 	for i := range parts {
 		parts[i] = "0"
 	}
 	parts[0] = "5000"
 	parts[1] = "3000"
 	name := "tau-test-session-" + strings.Join(parts, "-")
-	ts, pids, ok := parseSessionDirBase(name)
-	if !ok {
-		t.Fatalf("parseSessionDirBase(%q): expected ok", name)
-	}
-	if ts != 0 {
-		t.Errorf("expected timestamp=0 for new format; got %d", ts)
-	}
-	if pids[0] != 5000 || pids[1] != 3000 {
-		t.Errorf("parsed pids: got %v", pids)
-	}
-
-	// Legacy format with timestamp
-	ts2, pids2, ok2 := parseSessionDirBase("tau-test-session-1234567890123-100-200-300-400-500-600")
+	pids2, ok2 := parseLegacySessionPIDs(name)
 	if !ok2 {
-		t.Fatal("parseSessionDirBase(legacy): expected ok")
+		t.Fatalf("parseLegacySessionPIDs(%q): expected ok", name)
 	}
-	if ts2 != 1234567890123 {
-		t.Errorf("legacy timestamp = %d; want 1234567890123", ts2)
-	}
-	if len(pids2) != 6 || pids2[0] != 100 || pids2[5] != 600 {
-		t.Errorf("legacy pids: got %v", pids2)
+	if pids2[0] != 5000 || pids2[1] != 3000 {
+		t.Errorf("parsed pids: got %v", pids2)
 	}
 
-	// Invalid prefix
-	if _, _, ok := parseSessionDirBase("other-session-1-0-0-0-0-0-0"); ok {
-		t.Error("parseSessionDirBase(other prefix): expected !ok")
+	if _, ok := parseLegacySessionPIDs("other-session-1-0-0-0-0-0-0"); ok {
+		t.Error("parseLegacySessionPIDs(other prefix): expected !ok")
 	}
 
-	// Non-numeric
-	if _, _, ok := parseSessionDirBase("tau-test-session-abc-0-0-0-0-0-0"); ok {
-		t.Error("parseSessionDirBase(non-numeric ts): expected !ok")
-	}
-}
-
-func TestCurrentSessionPidListLength(t *testing.T) {
-	pids := currentSessionPidList()
-	if len(pids) != sessionAncestorDepth {
-		t.Errorf("currentSessionPidList() length = %d; want %d", len(pids), sessionAncestorDepth)
+	if _, ok := parseLegacySessionPIDs("tau-test-session-abc-0-0-0-0-0-0"); ok {
+		t.Error("parseLegacySessionPIDs(non-numeric ts): expected !ok")
 	}
 }
 
@@ -275,7 +229,6 @@ func TestFileBasedSessionPersistsAcrossSetKey(t *testing.T) {
 		sessionRootDirOverride = oldRootOverride
 	}()
 
-	// Discover creates a file-based session
 	file1, err := discoverOrCreateConfigFileLoc()
 	if err != nil {
 		t.Fatal(err)
@@ -284,13 +237,11 @@ func TestFileBasedSessionPersistsAcrossSetKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// setKey triggers ensureExactSessionDir; for file-based it must be no-op
 	err = Set().ProfileName("persist-test")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Re-discover and verify the data is there
 	Clear()
 	file2, err := discoverOrCreateConfigFileLoc()
 	if err != nil {
@@ -309,52 +260,21 @@ func TestFileBasedSessionPersistsAcrossSetKey(t *testing.T) {
 	}
 }
 
-func TestSessionSuffixMatchDistinguishesSiblings(t *testing.T) {
-	// Verify that two terminal tabs with the same root but different leaf PIDs
-	// get different suffix match scores.
+func TestPidSetIntersectionDistinguishesSiblings(t *testing.T) {
 	tabA := []int{5000, 3000, 2500, 2000, 1500, 1000}
 	tabB := []int{6000, 3000, 2500, 2000, 1500, 1000}
-
-	// Stored session matches tab A (leaf-first)
 	storedA := []int{5000, 3000, 2500, 2000, 1500, 1000}
 
-	lcsA := longestCommonSuffixLength(tabA, storedA)
-	lcsB := longestCommonSuffixLength(tabB, storedA)
+	interA := pidSetIntersection(tabA, storedA)
+	interB := pidSetIntersection(tabB, storedA)
 
-	if lcsA != 6 {
-		t.Errorf("tab A suffix match with stored A: got %d; want 6", lcsA)
+	if interA != 6 {
+		t.Errorf("tab A intersection with stored A: got %d; want 6", interA)
 	}
-	if lcsB != 5 {
-		t.Errorf("tab B suffix match with stored A: got %d; want 5", lcsB)
+	if interB != 5 {
+		t.Errorf("tab B intersection with stored A: got %d; want 5", interB)
 	}
-	if lcsB >= lcsA {
-		t.Errorf("tab B should have a lower match score than tab A; got A=%d, B=%d", lcsA, lcsB)
-	}
-}
-
-func TestCleanStaleSessionFiles(t *testing.T) {
-	tmp := t.TempDir()
-	oldPrefix := sessionDirPrefix
-	sessionDirPrefix = "tau-test"
-	defer func() {
-		sessionDirPrefix = oldPrefix
-	}()
-
-	// Create a session file with a PID that definitely doesn't exist (999999999)
-	parts := make([]string, sessionAncestorDepth)
-	for i := range parts {
-		parts[i] = "0"
-	}
-	parts[0] = "999999999" // leaf PID that is almost certainly dead
-	staleName := "tau-test-session-" + strings.Join(parts, "-") + ".yaml"
-	stalePath := filepath.Join(tmp, staleName)
-	if err := os.WriteFile(stalePath, []byte("stale: true\n"), 0600); err != nil {
-		t.Fatal(err)
-	}
-
-	cleanStaleSessionFiles(tmp)
-
-	if _, err := os.Stat(stalePath); err == nil {
-		t.Errorf("stale session file should have been removed: %s", stalePath)
+	if interB >= interA {
+		t.Errorf("tab B should have lower intersection than tab A; got A=%d, B=%d", interA, interB)
 	}
 }

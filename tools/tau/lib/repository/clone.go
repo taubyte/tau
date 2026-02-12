@@ -71,9 +71,7 @@ func (info *Info) Clone(project config.Project, url, branch string, embedded boo
 		git.Author(profile.GitUsername, profile.GitEmail),
 		git.URL(url),
 		tokenOption,
-
-		// TODO branch, this breaks things
-		// git.Branch(branch),
+		git.Branch(branch),
 	)
 	if err != nil {
 		return nil, err

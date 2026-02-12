@@ -134,12 +134,18 @@ func (c *Repository) clone() (err error) {
 			return err
 		}
 
-		for _, branch := range c.branches {
-			merge := plumbing.ReferenceName("refs/heads/" + branch)
-			if err = r.CreateBranch(&config.Branch{Name: branch, Remote: git.DefaultRemoteName, Merge: merge}); err == nil {
-				break
-			}
+		// Create branch config and set HEAD so first commit/push uses main (not master)
+		mainBranch := c.branches[0]
+		merge := plumbing.ReferenceName("refs/heads/" + mainBranch)
+		if err = r.CreateBranch(&config.Branch{Name: mainBranch, Remote: git.DefaultRemoteName, Merge: merge}); err != nil {
+			return err
 		}
+		headRef := plumbing.NewSymbolicReference(plumbing.HEAD, plumbing.ReferenceName("refs/heads/"+mainBranch))
+		if err = r.Storer.SetReference(headRef); err != nil {
+			return err
+		}
+
+		c.repo = r
 	}
 
 	if err != nil {

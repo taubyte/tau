@@ -5,8 +5,6 @@ const (
 	KeyProfile        = "profile"
 	KeyProject        = "project"
 	KeyApplication    = "application"
-	KeySelectedCloud  = "selected_cloud"
-	KeyCustomCloudURL = "custom_cloud_url"
-	KeyAuthURL        = "auth_url"
-	KeyDreamAPIURL    = "dream_api_url"
+	KeySelectedCloud  = "selected_cloud"   // "remote" | "dream"
+	KeyCustomCloudURL = "custom_cloud_url" // cloud value: FQDN when remote, universe name when dream
 )

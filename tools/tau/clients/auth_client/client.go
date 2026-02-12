@@ -3,6 +3,7 @@ package authClient
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/taubyte/tau/clients/http"
@@ -34,7 +35,7 @@ func getClientUrl() (url string, err error) {
 	case common.RemoteCloud:
 		url = fmt.Sprintf("https://auth.tau.%s", profile.Cloud)
 	case common.TestCloud:
-		if u, ok := session.Get().AuthURL(); ok && u != "" {
+		if u := os.Getenv("TAUBYTE_AUTH_URL"); u != "" {
 			url = u
 		} else {
 			url = constants.ClientURL

@@ -27,14 +27,14 @@ func Run(c *cli.Context) error {
 	selectedProject, _ := config.GetSelectedProject()
 	selectedApplication, _ := config.GetSelectedApplication()
 	selectedCloud, _ := session.GetSelectedCloud()
-	customCloudUrl, _ := session.GetCustomCloudUrl()
+	cloudValue, _ := session.GetCustomCloudUrl()
 
 	toRender := [][]string{
 		{"Profile", parseIfEmpty(selectedProfile)},
 		{"Project", parseIfEmpty(selectedProject)},
 		{"Application", parseIfEmpty(selectedApplication)},
 		{"Cloud Type", parseIfEmpty(selectedCloud)},
-		{"Cloud", parseIfEmpty(customCloudUrl)},
+		{"Cloud", parseIfEmpty(cloudValue)},
 	}
 
 	prompts.RenderTableWithMerge(toRender)

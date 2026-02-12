@@ -11,29 +11,26 @@ func Unset() UnSetter {
 }
 
 func (unSetter) ProfileName() (err error) {
+	debugSession("Unset ProfileName")
 	return deleteKey(constants.KeyProfile)
 }
 
 func (unSetter) SelectedProject() (err error) {
+	debugSession("Unset SelectedProject")
 	return deleteKey(constants.KeyProject)
 }
 
 func (unSetter) SelectedApplication() (err error) {
+	debugSession("Unset SelectedApplication")
 	return deleteKey(constants.KeyApplication)
 }
 
 func (unSetter) SelectedCloud() (err error) {
+	debugSession("Unset SelectedCloud")
 	return deleteKey(constants.KeySelectedCloud)
 }
 
 func (unSetter) CustomCloudUrl() (err error) {
+	debugSession("Unset CustomCloudUrl")
 	return deleteKey(constants.KeyCustomCloudURL)
-}
-
-func (unSetter) AuthURL() (err error) {
-	return deleteKey(constants.KeyAuthURL)
-}
-
-func (unSetter) DreamAPIURL() (err error) {
-	return deleteKey(constants.KeyDreamAPIURL)
 }

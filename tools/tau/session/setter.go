@@ -31,11 +31,3 @@ func (setter) CustomCloudUrl(value string) (err error) {
 	debugSession("Set CustomCloudUrl=%q", value)
 	return setKey(constants.KeyCustomCloudURL, value)
 }
-
-func (setter) AuthURL(value string) (err error) {
-	return setKey(constants.KeyAuthURL, value)
-}
-
-func (setter) DreamAPIURL(value string) (err error) {
-	return setKey(constants.KeyDreamAPIURL, value)
-}

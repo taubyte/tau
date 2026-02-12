@@ -13,15 +13,21 @@ func Get() getter {
 }
 
 func (getter) ProfileName() (value string, exist bool) {
-	return getKey[string](constants.KeyProfile)
+	value, exist = getKey[string](constants.KeyProfile)
+	debugSession("Get ProfileName => value=%q exist=%v", value, exist)
+	return value, exist
 }
 
 func (getter) SelectedProject() (value string, exist bool) {
-	return getKey[string](constants.KeyProject)
+	value, exist = getKey[string](constants.KeyProject)
+	debugSession("Get SelectedProject => value=%q exist=%v", value, exist)
+	return value, exist
 }
 
 func (getter) SelectedApplication() (value string, exist bool) {
-	return getKey[string](constants.KeyApplication)
+	value, exist = getKey[string](constants.KeyApplication)
+	debugSession("Get SelectedApplication => value=%q exist=%v", value, exist)
+	return value, exist
 }
 
 func (getter) SelectedCloud() (value string, exist bool) {
@@ -36,20 +42,12 @@ func (getter) CustomCloudUrl() (value string, exist bool) {
 	return value, exist
 }
 
-func (getter) AuthURL() (value string, exist bool) {
-	return getKey[string](constants.KeyAuthURL)
-}
-
-func (getter) DreamAPIURL() (value string, exist bool) {
-	return getKey[string](constants.KeyDreamAPIURL)
-}
-
-// GetSelectedCloud returns the selected cloud from the session.
+// GetSelectedCloud returns the selected cloud type from the session ("remote" | "dream").
 func GetSelectedCloud() (string, bool) {
 	return Get().SelectedCloud()
 }
 
-// GetCustomCloudUrl returns the custom cloud URL from the session.
+// GetCustomCloudUrl returns the cloud value: FQDN when type=remote, universe name when type=dream.
 func GetCustomCloudUrl() (string, bool) {
 	return Get().CustomCloudUrl()
 }

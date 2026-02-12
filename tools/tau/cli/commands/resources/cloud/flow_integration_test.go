@@ -21,12 +21,10 @@ import (
 	_ "github.com/taubyte/tau/services/seer/dream"
 )
 
-// TestCloudFlow_SelectNetworkWithDream runs an integration test: start dream, then tau select cloud --universe <name>.
-// Use a fixed port for this test's dream instance; CLI gets the URL via session.DreamAPIURL (no global client cache).
+// TestCloudFlow_SelectNetworkWithDream runs an integration test: start dream on default port, then tau select cloud --universe <name>.
 //
 // Note: This test runs "select cloud" and "query project" in the same process via RunCLIWithDir (no subprocess).
 // Session is set with LoadSessionInDir(dir/session), so discovery (ppid-based $TMPDIR/tau-<pid>) is never used.
-// It therefore does not catch cross-process session issues (e.g. on Windows, path or discovery bugs between two tau invocations).
 func TestCloudFlow_SelectNetworkWithDream(t *testing.T) {
 	dream.DreamApiPort = 41422
 	m, err := dream.New(t.Context())
@@ -66,7 +64,6 @@ projects: {}
 	assert.NilError(t, err)
 
 	assert.NilError(t, session.LoadSessionInDir(filepath.Join(dir, "session")))
-	session.Set().DreamAPIURL("http://127.0.0.1:41422")
 
 	_, _, err = testutil.RunCLIWithDir(t, cli.Run, dir, "",
 		"select", "cloud", "--universe", universeName, "--color", "never",
@@ -77,9 +74,9 @@ projects: {}
 	assert.Assert(t, ok, "selected cloud should be set")
 	assert.Equal(t, cloudType, common.DreamCloud)
 
-	cloudUrl, ok := session.GetCustomCloudUrl()
-	assert.Assert(t, ok, "custom cloud url (universe name) should be set")
-	assert.Equal(t, cloudUrl, universeName)
+	cloudValue, ok := session.GetCustomCloudUrl()
+	assert.Assert(t, ok, "cloud value (universe name) should be set")
+	assert.Equal(t, cloudValue, universeName)
 
 	// List projects to confirm the CLI uses the selected dream cloud. We expect login failure (invalid token); anything else (e.g. connection error) is a test failure.
 	_, _, listErr := testutil.RunCLIWithDir(t, cli.Run, dir, "",
