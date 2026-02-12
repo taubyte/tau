@@ -7,9 +7,13 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/core/services/auth"
+	"github.com/taubyte/tau/tools/tau/output"
 )
 
 func Registered(fqdn string, resp auth.DomainRegistration) {
+	if output.Render(resp) {
+		return
+	}
 	pterm.Info.Printfln("Be sure to the following entries of `%s` to your DNS zone:", fqdn)
 	fmt.Println(GetRegisterTable(resp))
 }

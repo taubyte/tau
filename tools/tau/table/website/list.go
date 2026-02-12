@@ -6,9 +6,13 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	repositoryLib "github.com/taubyte/tau/tools/tau/lib/repository"
+	"github.com/taubyte/tau/tools/tau/output"
 )
 
 func List(libraries []*structureSpec.Website) {
+	if output.Render(libraries) {
+		return
+	}
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 	t.SetAllowedRowLength(79)

@@ -24,6 +24,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/cli/commands/version"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	"github.com/taubyte/tau/tools/tau/flags"
+	"github.com/taubyte/tau/tools/tau/output"
 	"github.com/taubyte/tau/tools/tau/prompts"
 	"github.com/urfave/cli/v2"
 )
@@ -33,6 +34,8 @@ func New() (*cli.App, error) {
 		flags.Color,
 		flags.Defaults,
 		flags.Yes,
+		flags.Json,
+		flags.Toon,
 	}
 
 	app := &cli.App{
@@ -41,6 +44,7 @@ func New() (*cli.App, error) {
 		EnableBashCompletion:   true,
 		Before: func(ctx *cli.Context) error {
 			prompts.UseDefaults = ctx.Bool(flags.Defaults.Name)
+			output.SetFormat(ctx.Bool(flags.Json.Name), ctx.Bool(flags.Toon.Name))
 
 			color, err := flags.GetColor(ctx)
 			if err != nil {

@@ -7,6 +7,7 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/mattn/go-runewidth"
 	"github.com/olekukonko/ts"
+	"github.com/taubyte/tau/tools/tau/output"
 )
 
 // Using 20 to factor in whitespace and table dividers
@@ -35,6 +36,9 @@ func truncateValue(item []string, termSize int, ws int, tp int) {
 }
 
 func RenderTable(data [][]string) {
+	if output.RenderKeyValue(data) {
+		return
+	}
 	t := table.NewWriter()
 	size, _ := ts.GetSize()
 	termSize := size.Col()
@@ -56,6 +60,9 @@ func RenderTable(data [][]string) {
 }
 
 func RenderTableWithMerge(data [][]string) {
+	if output.RenderKeyValue(data) {
+		return
+	}
 	rowConfigAutoMerge := table.RowConfig{AutoMerge: true}
 	t := table.NewWriter()
 	size, _ := ts.GetSize()

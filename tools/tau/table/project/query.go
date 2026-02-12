@@ -6,9 +6,34 @@ import (
 	"github.com/jedib0t/go-pretty/v6/table"
 	client "github.com/taubyte/tau/clients/http/auth"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
+	"github.com/taubyte/tau/tools/tau/output"
 )
 
 func Query(project *client.Project, repos *client.RawRepoDataOuter, description string) {
+	queryData := struct {
+		ID          string `json:"id" yaml:"id"`
+		Name        string `json:"name" yaml:"name"`
+		Description string `json:"description" yaml:"description"`
+		Code        struct {
+			Name string `json:"name" yaml:"name"`
+			URL  string `json:"url" yaml:"url"`
+		} `json:"code" yaml:"code"`
+		Config struct {
+			Name string `json:"name" yaml:"name"`
+			URL  string `json:"url" yaml:"url"`
+		} `json:"config" yaml:"config"`
+	}{
+		ID:          project.Id,
+		Name:        project.Name,
+		Description: description,
+	}
+	queryData.Code.Name = repos.Code.Fullname
+	queryData.Code.URL = projectLib.CleanGitURL(repos.Code.Url)
+	queryData.Config.Name = repos.Configuration.Fullname
+	queryData.Config.URL = projectLib.CleanGitURL(repos.Configuration.Url)
+	if output.Render(queryData) {
+		return
+	}
 	t := table.NewWriter()
 
 	colConfigs := make([]table.ColumnConfig, 0)

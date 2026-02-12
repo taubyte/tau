@@ -5,12 +5,16 @@ import (
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	client "github.com/taubyte/tau/clients/http/auth"
+	"github.com/taubyte/tau/tools/tau/output"
 )
 
 // Takes a project and returns a description
 type Descriptor func(project *client.Project) string
 
 func List(projects []*client.Project, descriptor Descriptor) {
+	if output.Render(projects) {
+		return
+	}
 	ListNoRender(projects, descriptor).Render()
 }
 
