@@ -21,6 +21,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/smartops"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/storage"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/website"
+	"github.com/taubyte/tau/tools/tau/cli/commands/validate"
 	"github.com/taubyte/tau/tools/tau/cli/commands/version"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	"github.com/taubyte/tau/tools/tau/flags"
@@ -62,6 +63,7 @@ func New() (*cli.App, error) {
 			login.Command,
 			current.Command,
 			dream.Command,
+			validate.Command,
 		},
 	}
 

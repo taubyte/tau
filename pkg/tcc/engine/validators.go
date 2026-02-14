@@ -89,6 +89,16 @@ func IsHttpMethod() Option {
 	})
 }
 
+// MinInt returns an Option that validates an Int attribute is >= min.
+func MinInt(min int) Option {
+	return Validator(func(v int) error {
+		if v < min {
+			return fmt.Errorf("value must be >= %d", min)
+		}
+		return nil
+	})
+}
+
 // source: https://github.com/golang/go/blob/go1.20.5/src/net/dnsclient.go#L72-L75
 func isDomainName(s string) bool {
 	// The root domain name is valid. See golang.org/issue/45715.

@@ -161,6 +161,33 @@ func TestIsHttpMethod(t *testing.T) {
 	}
 }
 
+func TestMinInt(t *testing.T) {
+	attr := &Attribute{}
+	option := MinInt(1)
+	option(attr)
+
+	tests := []struct {
+		val     int
+		isValid bool
+	}{
+		{1, true},
+		{2, true},
+		{3, true},
+		{0, false},
+		{-1, false},
+	}
+
+	for _, test := range tests {
+		err := attr.Validator(test.val)
+		if test.isValid && err != nil {
+			t.Errorf("Expected MinInt(1) to accept %d, but got error: %v", test.val, err)
+		}
+		if !test.isValid && err == nil {
+			t.Errorf("Expected MinInt(1) to reject %d, but got no error", test.val)
+		}
+	}
+}
+
 func TestIsDomainName(t *testing.T) {
 	tests := []struct {
 		domain   string

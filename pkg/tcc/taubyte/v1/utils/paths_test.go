@@ -71,13 +71,40 @@ func TestResolveNameToId_GlobalFallback(t *testing.T) {
 	// Fork to app context (path is now [root, app])
 	ctxApp := ctx.Fork(app)
 
-	// Resolve should fallback to global
+	// Resolve should fallback to parent scope (root)
 	// First tries local: path [root, app], ctp[1:] is [app] -> "app/libraries/myLib" (doesn't exist)
-	// Then falls back to global: ctp[:1] is [root], ctp[1:] is [] -> "libraries/myLib" (exists)
+	// Then falls back to ctp[:1] = [root] -> "libraries/myLib" (exists)
 	id, err := ResolveNameToId(ctxApp, "libraries", "myLib")
 
 	assert.NilError(t, err)
 	assert.Equal(t, id, "lib-id-789")
+}
+
+func TestResolveNameToId_ProjectScopeFallbackFromApp(t *testing.T) {
+	// Index at project scope, resolve from app context (aligns with substrate: app -> project -> root).
+	root := object.New[object.Refrence]()
+	root.Set("name", "root")
+
+	project := object.New[object.Refrence]()
+	project.Set("name", "myproject")
+
+	app := object.New[object.Refrence]()
+	app.Set("name", "myapp")
+
+	ctx := transform.NewContext[object.Refrence](context.Background(), root)
+	ctxProject := ctx.Fork(project)
+
+	// Index library at project level -> "myproject/libraries/mylib"
+	err := IndexById(ctxProject, "libraries", "mylib", "lib-id-project")
+	assert.NilError(t, err)
+
+	ctxApp := ctxProject.Fork(app)
+
+	// Resolve from app context: first try app ("myproject/myapp/libraries/mylib") -> not found
+	// then try project ("myproject/libraries/mylib") -> found
+	id, err := ResolveNameToId(ctxApp, "libraries", "mylib")
+	assert.NilError(t, err)
+	assert.Equal(t, id, "lib-id-project")
 }
 
 func TestResolveNamesToId_MultipleNames(t *testing.T) {

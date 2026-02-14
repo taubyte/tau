@@ -69,12 +69,20 @@ func ResolveNameToId(ct transform.Context[object.Refrence], group, name string) 
 	}
 
 	ret, err := localResolveNameToId(ct.Store(), ctp, group, name)
-	if err != nil {
-		// try global
-		return localResolveNameToId(ct.Store(), ctp[:1], group, name)
+	if err == nil {
+		return ret, nil
 	}
 
-	return ret, nil
+	// Fall back to parent scopes (app -> project -> root), matching substrate resolution order.
+	for i := len(ctp) - 1; i >= 1; i-- {
+		tryPath := ctp[:i]
+		ret, err = localResolveNameToId(ct.Store(), tryPath, group, name)
+		if err == nil {
+			return ret, nil
+		}
+	}
+
+	return "", err
 }
 
 func ResolveNamesToId(ct transform.Context[object.Refrence], group string, names []string) ([]string, error) {

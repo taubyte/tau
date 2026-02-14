@@ -17,8 +17,8 @@ func TestPipe_ReturnsAllTransformers(t *testing.T) {
 	// Execute: Get pipe transformers
 	transformers := Pipe()
 
-	// Verify: Should contain Functions, Smartops, and Websites transformers
-	assert.Equal(t, len(transformers), 3)
+	// Verify: Should contain SourceValidation, Functions, Smartops, and Websites transformers
+	assert.Equal(t, len(transformers), 4)
 
 	// Execute transformers to verify they work
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)

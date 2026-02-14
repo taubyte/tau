@@ -8,6 +8,7 @@ import (
 
 func Pipe() []transform.Transformer[object.Refrence] {
 	return []transform.Transformer[object.Refrence]{
+		utils.Global(SourceValidation()),
 		utils.Global(Functions()),
 		utils.Global(Smartops()),
 		utils.Global(Websites()),
