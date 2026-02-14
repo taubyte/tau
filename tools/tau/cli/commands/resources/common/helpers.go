@@ -2,7 +2,7 @@ package resources
 
 import "reflect"
 
-func PanicIfMissingValue(h interface{}) {
+func PanicIfMissingValue(h any) {
 	if h == nil || reflect.ValueOf(h).IsNil() {
 		panic("PanicIfMissingValue: handler is nil")
 	}

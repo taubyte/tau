@@ -32,7 +32,6 @@ func (c *Repository) Checkout(branchName string) error {
 		return nil
 	}
 
-	// Normal path: repo has commits
 	wt, err := c.repo.Worktree()
 	if err != nil {
 		return err
@@ -46,11 +45,10 @@ func (c *Repository) Checkout(branchName string) error {
 		return fmt.Errorf("setting reference to %s failed with: %v", remoteRef, err)
 	}
 
-	// Check if we're already on the target branch
+	// Already on the target branch, no need to checkout
 	head, err := c.repo.Head()
 	if err == nil {
 		if head.Name() == branchRef {
-			// Already on the target branch, no need to checkout
 			return nil
 		}
 	}

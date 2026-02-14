@@ -24,8 +24,6 @@ func runValidateConfig(c *cli.Context) error {
 		return err
 	}
 
-	configPath := projectConfig.ConfigLoc()
-
 	branch := c.String(branchFlag.Name)
 	if branch == "" {
 		h := projectLib.Repository(projectName)
@@ -40,7 +38,7 @@ func runValidateConfig(c *cli.Context) error {
 	}
 
 	compiler, err := tccCompiler.New(
-		tccCompiler.WithLocal(configPath),
+		tccCompiler.WithLocal(projectConfig.ConfigLoc()),
 		tccCompiler.WithBranch(branch),
 	)
 	if err != nil {
@@ -55,7 +53,7 @@ func runValidateConfig(c *cli.Context) error {
 		return err
 	}
 
-	// Success: print short message (plan: "Config is valid")
+	// Success
 	if _, err := io.WriteString(os.Stdout, "Config is valid\n"); err != nil {
 		return err
 	}

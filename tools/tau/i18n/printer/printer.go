@@ -10,14 +10,14 @@ import (
 // Printer is the interface for info, success, and warning output used across i18n and prompts.
 // It can be replaced with a mock in tests.
 type Printer interface {
-	InfoPrintln(a ...interface{})
-	InfoPrintfln(format string, a ...interface{})
-	SuccessPrintfln(format string, a ...interface{})
+	InfoPrintln(a ...any)
+	InfoPrintfln(format string, a ...any)
+	SuccessPrintfln(format string, a ...any)
 	Warning(err error)
-	WarningPrintln(a ...interface{})
-	WarningPrintfln(format string, a ...interface{})
+	WarningPrintln(a ...any)
+	WarningPrintfln(format string, a ...any)
 	SprintCyan(s string) string
-	SprintfGreen(format string, a ...interface{}) string
+	SprintfGreen(format string, a ...any) string
 }
 
 // Out is the global printer used by i18n. Defaults to pterm; tests can set it to a no-op or mock.
@@ -32,15 +32,15 @@ func SetOutput(p Printer) (restore func()) {
 
 type ptermPrinter struct{}
 
-func (ptermPrinter) InfoPrintln(a ...interface{}) {
+func (ptermPrinter) InfoPrintln(a ...any) {
 	pterm.Info.Println(a...)
 }
 
-func (ptermPrinter) InfoPrintfln(format string, a ...interface{}) {
+func (ptermPrinter) InfoPrintfln(format string, a ...any) {
 	pterm.Info.Printfln(format, a...)
 }
 
-func (ptermPrinter) SuccessPrintfln(format string, a ...interface{}) {
+func (ptermPrinter) SuccessPrintfln(format string, a ...any) {
 	pterm.Success.Printfln(format, a...)
 }
 
@@ -50,11 +50,11 @@ func (ptermPrinter) Warning(err error) {
 	}
 }
 
-func (ptermPrinter) WarningPrintln(a ...interface{}) {
+func (ptermPrinter) WarningPrintln(a ...any) {
 	pterm.Warning.Println(a...)
 }
 
-func (ptermPrinter) WarningPrintfln(format string, a ...interface{}) {
+func (ptermPrinter) WarningPrintfln(format string, a ...any) {
 	pterm.Warning.Printfln(format, a...)
 }
 
@@ -62,7 +62,7 @@ func (ptermPrinter) SprintCyan(s string) string {
 	return pterm.FgCyan.Sprint(s)
 }
 
-func (ptermPrinter) SprintfGreen(format string, a ...interface{}) string {
+func (ptermPrinter) SprintfGreen(format string, a ...any) string {
 	return pterm.FgGreen.Sprintf(format, a...)
 }
 
@@ -71,21 +71,21 @@ func Noop() Printer { return noopPrinter{} }
 
 type noopPrinter struct{}
 
-func (noopPrinter) InfoPrintln(...interface{}) {}
+func (noopPrinter) InfoPrintln(...any) {}
 
-func (noopPrinter) InfoPrintfln(string, ...interface{}) {}
+func (noopPrinter) InfoPrintfln(string, ...any) {}
 
-func (noopPrinter) SuccessPrintfln(string, ...interface{}) {}
+func (noopPrinter) SuccessPrintfln(string, ...any) {}
 
 func (noopPrinter) Warning(error) {}
 
-func (noopPrinter) WarningPrintln(...interface{}) {}
+func (noopPrinter) WarningPrintln(...any) {}
 
-func (noopPrinter) WarningPrintfln(string, ...interface{}) {}
+func (noopPrinter) WarningPrintfln(string, ...any) {}
 
 func (noopPrinter) SprintCyan(s string) string { return s }
 
-func (noopPrinter) SprintfGreen(format string, a ...interface{}) string {
+func (noopPrinter) SprintfGreen(format string, a ...any) string {
 	return fmt.Sprintf(format, a...)
 }
 
@@ -98,15 +98,15 @@ type writerPrinter struct {
 	w io.Writer
 }
 
-func (w *writerPrinter) InfoPrintln(a ...interface{}) {
+func (w *writerPrinter) InfoPrintln(a ...any) {
 	fmt.Fprintln(w.w, a...)
 }
 
-func (w *writerPrinter) InfoPrintfln(format string, a ...interface{}) {
+func (w *writerPrinter) InfoPrintfln(format string, a ...any) {
 	fmt.Fprintf(w.w, format+"\n", a...)
 }
 
-func (w *writerPrinter) SuccessPrintfln(format string, a ...interface{}) {
+func (w *writerPrinter) SuccessPrintfln(format string, a ...any) {
 	fmt.Fprintf(w.w, format+"\n", a...)
 }
 
@@ -116,17 +116,17 @@ func (w *writerPrinter) Warning(err error) {
 	}
 }
 
-func (w *writerPrinter) WarningPrintln(a ...interface{}) {
+func (w *writerPrinter) WarningPrintln(a ...any) {
 	fmt.Fprintln(w.w, a...)
 }
 
-func (w *writerPrinter) WarningPrintfln(format string, a ...interface{}) {
+func (w *writerPrinter) WarningPrintfln(format string, a ...any) {
 	fmt.Fprintf(w.w, format+"\n", a...)
 }
 
 func (w *writerPrinter) SprintCyan(s string) string { return s }
 
-func (w *writerPrinter) SprintfGreen(format string, a ...interface{}) string {
+func (w *writerPrinter) SprintfGreen(format string, a ...any) string {
 	return fmt.Sprintf(format, a...)
 }
 

@@ -17,7 +17,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func RepositoryInfo(ctx *cli.Context, website *structureSpec.Website, new bool) (interface{}, error) {
+func RepositoryInfo(ctx *cli.Context, website *structureSpec.Website, new bool) (any, error) {
 	if new && prompts.GetGenerateRepository(ctx) {
 		return repositoryInfoGenerate(ctx, website)
 	}

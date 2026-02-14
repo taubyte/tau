@@ -61,7 +61,7 @@ func multiselectPrompt(ret *[]string, cnf MultiSelectConfig) {
 		Message: cnf.Prompt,
 		Options: cnf.Options,
 		Default: cnf.Previous,
-	}, ret, survey.WithValidator(func(ans interface{}) error {
+	}, ret, survey.WithValidator(func(ans any) error {
 		if cnf.Required && len(ans.([]core.OptionAnswer)) == 0 {
 			return fmt.Errorf(StringIsRequired, cnf.Field)
 		}

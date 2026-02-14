@@ -13,7 +13,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func RepositoryInfo(ctx *cli.Context, library *structureSpec.Library, new bool) (interface{}, error) {
+func RepositoryInfo(ctx *cli.Context, library *structureSpec.Library, new bool) (any, error) {
 	if new && prompts.GetGenerateRepository(ctx) {
 		return repositoryInfoGenerate(ctx, library)
 	}

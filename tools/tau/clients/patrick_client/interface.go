@@ -12,6 +12,6 @@ type Client interface {
 	Jobs(projectId string) ([]string, error)
 	Job(jid string) (*patrickIface.Job, error)
 	LogFile(jobId, resourceId string) (io.ReadCloser, error)
-	Cancel(jid string) (interface{}, error)
-	Retry(jid string) (interface{}, error)
+	Cancel(jid string) (any, error)
+	Retry(jid string) (any, error)
 }

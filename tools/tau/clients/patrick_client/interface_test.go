@@ -13,8 +13,8 @@ type mockClient struct {
 	jobsFunc    func(projectId string) ([]string, error)
 	jobFunc     func(jid string) (*patrickIface.Job, error)
 	logFileFunc func(jobId, resourceId string) (io.ReadCloser, error)
-	cancelFunc  func(jid string) (interface{}, error)
-	retryFunc   func(jid string) (interface{}, error)
+	cancelFunc  func(jid string) (any, error)
+	retryFunc   func(jid string) (any, error)
 }
 
 func (m *mockClient) Jobs(projectId string) ([]string, error) {
@@ -45,7 +45,7 @@ func (m *mockClient) Cancel(jid string) (interface{}, error) {
 	return nil, nil
 }
 
-func (m *mockClient) Retry(jid string) (interface{}, error) {
+func (m *mockClient) Retry(jid string) (any, error) {
 	if m.retryFunc != nil {
 		return m.retryFunc(jid)
 	}

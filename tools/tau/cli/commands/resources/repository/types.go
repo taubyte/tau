@@ -27,14 +27,14 @@ type Resource interface {
 
 type LibCommands struct {
 	// New
-	PromptNew         func(*cli.Context) (interface{}, Resource, error)
+	PromptNew         func(*cli.Context) (any, Resource, error)
 	LibNew            func(Resource) error
 	I18nCreated       func(string)
 	PromptsCreateThis string
 
 	// Edit
 	PromptsGetOrSelect func(*cli.Context) (Resource, error)
-	PromptsEdit        func(*cli.Context, Resource) (interface{}, error)
+	PromptsEdit        func(*cli.Context, Resource) (any, error)
 	I18nEdited         func(string)
 	PromptsEditThis    string
 

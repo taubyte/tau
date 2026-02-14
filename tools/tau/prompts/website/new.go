@@ -10,7 +10,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func New(ctx *cli.Context) (interface{}, *structureSpec.Website, error) {
+func New(ctx *cli.Context) (any, *structureSpec.Website, error) {
 	website := &structureSpec.Website{}
 
 	taken, err := websiteLib.List()

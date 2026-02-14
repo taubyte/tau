@@ -35,7 +35,7 @@ func RequiredPaths(c *cli.Context, prev ...string) (ret []string) {
 		AskOne(&survey.Input{
 			Message: PathsPrompt,
 			Default: strings.Join(prev, ","),
-		}, &tempRet, survey.WithValidator(func(ans interface{}) error {
+		}, &tempRet, survey.WithValidator(func(ans any) error {
 			stringAns := ans.(string)
 			if len(stringAns) == 0 {
 				return fmt.Errorf(StringIsRequired, flags.Paths.Name)

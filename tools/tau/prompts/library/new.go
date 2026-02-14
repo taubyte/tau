@@ -8,7 +8,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func New(ctx *cli.Context) (interface{}, *structureSpec.Library, error) {
+func New(ctx *cli.Context) (any, *structureSpec.Library, error) {
 	library := &structureSpec.Library{}
 
 	taken, err := libraryLib.List()

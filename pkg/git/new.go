@@ -11,6 +11,7 @@ import (
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
+	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/pterm/pterm"
 )
 
@@ -78,9 +79,8 @@ func (c *Repository) open_or_clone() error {
 		return c.clone()
 	}
 
-	// When token is passed and remote is SSH, switch origin to HTTPS so push/fetch use the token.
+	// When token is passed and remote is SSH, switch origin to HTTPS so push/fetch use the token. Do not fail open.
 	if err := c.switchOriginToHTTPSIfTokenAndSSH(); err != nil {
-		// Do not fail open; log or skip so existing workflows keep working.
 		Info("switchOriginToHTTPSIfTokenAndSSH: " + err.Error() + "\n")
 	}
 
@@ -171,9 +171,11 @@ func (c *Repository) clone() (err error) {
 }
 
 // switchOriginToHTTPSIfTokenAndSSH sets origin remote URL to HTTPS when c has token auth and origin is SSH.
-// Returns nil when no change is needed or switch succeeded; returns error when config update fails.
 func (c *Repository) switchOriginToHTTPSIfTokenAndSSH() error {
-	if c.repo == nil || !isTokenAuth(c.auth) {
+	if c.repo == nil {
+		return nil
+	}
+	if _, ok := c.auth.(*http.BasicAuth); !ok {
 		return nil
 	}
 	rem, err := c.repo.Remote(git.DefaultRemoteName)
@@ -185,7 +187,7 @@ func (c *Repository) switchOriginToHTTPSIfTokenAndSSH() error {
 		return nil
 	}
 	url := urls[0]
-	if !isSSHRemoteURL(url) {
+	if !strings.HasPrefix(url, "git@") || !strings.Contains(url, ":") {
 		return nil
 	}
 	newURL := ConvertSSHToHTTPS(url)

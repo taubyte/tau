@@ -48,7 +48,7 @@ func SessionFileLocationEmpty() error {
 	return errors.New(sessionFileLocationEmpty)
 }
 
-func SessionSettingKeyFailed(key string, value interface{}, err error) error {
+func SessionSettingKeyFailed(key string, value any, err error) error {
 	return fmt.Errorf(sessionSettingKeyFailed, key, value, err)
 }
 

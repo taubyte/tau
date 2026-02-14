@@ -37,7 +37,9 @@ func RenderKeyValue(data [][]string) bool {
 		}
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(m)
+		if err := enc.Encode(m); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		return true
 	case "toon":
 		m := make(map[string]string)
@@ -64,7 +66,9 @@ func Render(data any) bool {
 	case "json":
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
-		_ = enc.Encode(data)
+		if err := enc.Encode(data); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+		}
 		return true
 	case "toon":
 		b, err := toon.Marshal(data, toon.WithLengthMarkers(true))

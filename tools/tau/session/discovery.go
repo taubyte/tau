@@ -13,7 +13,7 @@ import (
 
 func debugEnabled() bool { return os.Getenv("DEBUG") == "1" }
 
-func debugSession(format string, args ...interface{}) {
+func debugSession(format string, args ...any) {
 	if debugEnabled() {
 		fmt.Fprintf(os.Stderr, "[tau session] "+format+"\n", args...)
 	}

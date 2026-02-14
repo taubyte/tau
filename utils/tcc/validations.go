@@ -9,8 +9,7 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// ExtractProjectID extracts the project ID from validations without validation
-// Returns the project ID if found, or an error if not found
+// ExtractProjectID returns the project ID from validations (no validation performed).
 func ExtractProjectID(validations []engine.NextValidation) (string, error) {
 	for _, validation := range validations {
 		if validation.Validator == "project_id" && validation.Key == "project_id" {
@@ -24,8 +23,7 @@ func ExtractProjectID(validations []engine.NextValidation) (string, error) {
 	return "", fmt.Errorf("project ID validation not found")
 }
 
-// ProcessProjectIDValidation processes project ID validation from TCC compiler
-// Returns the project ID if validation passes, or an error if validation fails
+// ProcessProjectIDValidation runs project ID validation from TCC compiler.
 func ProcessProjectIDValidation(
 	validations []engine.NextValidation,
 	expectedProjectID string,
@@ -42,7 +40,7 @@ func ProcessProjectIDValidation(
 	return projectID, nil
 }
 
-// ProcessDNSValidations processes DNS validations from TCC compiler
+// ProcessDNSValidations runs DNS validations from TCC compiler.
 func ProcessDNSValidations(
 	validations []engine.NextValidation,
 	generatedDomainRegExp *regexp.Regexp,

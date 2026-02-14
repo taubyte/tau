@@ -6,7 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func Combine(flags ...interface{}) []cli.Flag {
+func Combine(flags ...any) []cli.Flag {
 	var combined []cli.Flag
 
 	for _, flagIface := range flags {

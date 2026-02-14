@@ -34,18 +34,19 @@ func row(authClient *authHttp.Client, job *patrick.Job, timeZone *time.Location,
 		}
 	}
 
-	var lastColumn interface{}
 	if showCommit {
-		lastColumn = job.Meta.HeadCommit.ID
-	} else {
-		lastColumn = job.Id
+		return table.Row{
+			job.Status.Unicode(),
+			date + "\n" + time,
+			repoType,
+			job.Meta.HeadCommit.ID,
+		}, nil
 	}
-
 	return table.Row{
 		job.Status.Unicode(),
 		date + "\n" + time,
 		repoType,
-		lastColumn,
+		job.Id,
 	}, nil
 }
 

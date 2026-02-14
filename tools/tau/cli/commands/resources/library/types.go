@@ -33,11 +33,11 @@ func New() common.Basic {
 		PromptsCreateThis: libraryPrompts.CreateThis,
 		PromptsEditThis:   libraryPrompts.EditThis,
 
-		PromptNew: func(ctx *cli.Context) (interface{}, repositoryCommands.Resource, error) {
+		PromptNew: func(ctx *cli.Context) (any, repositoryCommands.Resource, error) {
 			iface, resource, err := libraryPrompts.New(ctx)
 			return iface, Wrap(resource), err
 		},
-		PromptsEdit: func(ctx *cli.Context, resource repositoryCommands.Resource) (interface{}, error) {
+		PromptsEdit: func(ctx *cli.Context, resource repositoryCommands.Resource) (any, error) {
 			return libraryPrompts.Edit(ctx, resource.(wrapped).UnWrap())
 		},
 		PromptsGetOrSelect: func(ctx *cli.Context) (repositoryCommands.Resource, error) {

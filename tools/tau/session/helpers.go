@@ -58,7 +58,7 @@ func forkSession() error {
 	return LoadSessionAt(newPath)
 }
 
-func setKey(key string, value interface{}) (err error) {
+func setKey(key string, value any) (err error) {
 	if err := forkSession(); err != nil {
 		return err
 	}

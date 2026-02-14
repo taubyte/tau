@@ -66,7 +66,7 @@ func TokenFromWeb(ctx *cli.Context, provider string) (token string, err error) {
 
 	srv.GET(&http.RouteDefinition{
 		Path: "/",
-		Handler: func(ctx http.Context) (iface interface{}, err error) {
+		Handler: func(ctx http.Context) (iface any, err error) {
 			session := ctx.Request().URL.Query().Get("session")
 			if len(session) == 0 {
 				errCh <- errors.New(NoSessionProvided)
