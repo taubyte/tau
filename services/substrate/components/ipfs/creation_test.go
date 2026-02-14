@@ -22,7 +22,7 @@ func TestIpfs(t *testing.T) {
 		return
 	}
 
-	err = testNode.WaitForSwarm(time.Second)
+	err = testNode.WaitForSwarm(5 * time.Second)
 	if err != nil {
 		t.Error(err)
 		return

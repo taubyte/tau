@@ -6,7 +6,7 @@ import (
 	"io"
 	"sync"
 
-	"github.com/google/go-github/v53/github"
+	"github.com/google/go-github/v71/github"
 	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/tools/tau/config"
@@ -109,15 +109,24 @@ func newGithubClient(ctx context.Context, token string) *github.Client {
 // Var to allow override in tests
 var ListRepos = func(ctx context.Context, token, user string) ([]*github.Repository, error) {
 	client := newGithubClient(ctx, token)
-	repos, _, err := client.Repositories.List(ctx, "", &github.RepositoryListOptions{
+	opt := &github.RepositoryListOptions{
 		Visibility:  "all",
 		Affiliation: "owner,collaborator,organization_member",
-	})
-	if err != nil {
-		return nil, repositoryI18n.ErrorListRepositories(user, err)
+		ListOptions: github.ListOptions{PerPage: 100},
 	}
-
-	return repos, nil
+	var allRepos []*github.Repository
+	for {
+		repos, resp, err := client.Repositories.List(ctx, "", opt)
+		if err != nil {
+			return nil, repositoryI18n.ErrorListRepositories(user, err)
+		}
+		allRepos = append(allRepos, repos...)
+		if resp.NextPage == 0 {
+			break
+		}
+		opt.ListOptions.Page = resp.NextPage
+	}
+	return allRepos, nil
 }
 
 func removeFromGithub(ctx context.Context, token, user, name string) error {

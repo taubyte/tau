@@ -74,6 +74,17 @@ func injectDeploymentKey(ctx context.Context, client *github.Client, user, repoN
 	return err
 }
 
+// isTokenAuth returns true when auth is HTTP BasicAuth (token-based).
+func isTokenAuth(auth transport.AuthMethod) bool {
+	_, ok := auth.(*http.BasicAuth)
+	return ok
+}
+
+// isSSHRemoteURL returns true when the URL is an SSH remote URL (e.g. git@host:path).
+func isSSHRemoteURL(url string) bool {
+	return strings.HasPrefix(url, "git@") && strings.Contains(url, ":")
+}
+
 // convertSSHToHTTPS converts SSH URLs to HTTPS URLs for public access
 func ConvertSSHToHTTPS(url string) string {
 	if strings.HasPrefix(url, "git@") && strings.Contains(url, ":") {

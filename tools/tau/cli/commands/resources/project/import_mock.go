@@ -6,7 +6,7 @@ package project
 import (
 	"context"
 
-	"github.com/google/go-github/v53/github"
+	"github.com/google/go-github/v71/github"
 	commonTest "github.com/taubyte/tau/tools/tau/common/test"
 )
 

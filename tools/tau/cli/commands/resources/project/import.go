@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/go-github/v53/github"
+	"github.com/google/go-github/v71/github"
 	httpClient "github.com/taubyte/tau/clients/http/auth"
 	"github.com/taubyte/tau/pkg/cli/i18n"
 	"github.com/taubyte/tau/tools/tau/cli/common"
