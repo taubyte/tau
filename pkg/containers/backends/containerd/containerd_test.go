@@ -749,7 +749,9 @@ func TestContainerdBackend_RootfulMode_SocketPath(t *testing.T) {
 }
 
 func TestContainerdBackend_RootfulMode_DoesNotStartDaemon(t *testing.T) {
-	// Test that rootful mode doesn't try to start containerd (it's managed by systemd)
+	// Test that rootful mode doesn't try to start containerd (it's managed by systemd).
+	// When system containerd is already running, Start() returns nil (we don't start, socket is ready).
+	// When system containerd is not running, Start() returns an error telling the user to use systemd.
 	config := core.ContainerdConfig{
 		RootlessMode: core.RootlessModeDisabled,
 		AutoStart:    true, // Even with AutoStart, rootful mode shouldn't start
@@ -758,11 +760,28 @@ func TestContainerdBackend_RootfulMode_DoesNotStartDaemon(t *testing.T) {
 	daemon, err := NewDaemon(config)
 	assert.NoError(t, err, "NewDaemon should succeed")
 
+	// Check if system containerd is already running (e.g. CI starts it via systemctl)
+	socketPath := "/run/containerd/containerd.sock"
+	systemContainerdRunning := false
+	if _, err := os.Stat(socketPath); err == nil {
+		if conn, err := net.Dial("unix", socketPath); err == nil {
+			conn.Close()
+			systemContainerdRunning = true
+		}
+	}
+
 	ctx := context.Background()
 	err = daemon.Start(ctx)
-	assert.Error(t, err, "Start should fail in rootful mode")
-	assert.Contains(t, err.Error(), "systemd", "Error should mention systemd")
-	assert.Contains(t, err.Error(), "rootful", "Error should mention rootful mode")
+
+	if systemContainerdRunning {
+		assert.NoError(t, err, "When system containerd is already running, Start() should return nil (we don't start, socket is ready)")
+	} else {
+		assert.Error(t, err, "When system containerd is not running, Start() should fail in rootful mode")
+		if err != nil {
+			assert.Contains(t, err.Error(), "systemd", "Error should mention systemd")
+			assert.Contains(t, err.Error(), "rootful", "Error should mention rootful mode")
+		}
+	}
 }
 
 func TestContainerdBackend_RootfulMode_BackendCreation_NoSystemContainerd(t *testing.T) {
