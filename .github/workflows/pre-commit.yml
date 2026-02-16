@@ -140,6 +140,45 @@ jobs:
           ) || exit 1
         done
 
+  containerd-integration:
+    runs-on: ubuntu-latest
+    needs: pre-commit
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.25.0'
+
+      # --- Rootful: install + start system containerd ---
+      - name: Install and start containerd
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y containerd.io
+          sudo systemctl start containerd
+          sudo chmod 666 /run/containerd/containerd.sock
+
+      - name: Run rootful containerd tests
+        run: |
+          go test ./pkg/containers/backends/containerd \
+            -run 'TestContainerdBackend_RootfulMode' \
+            -count=1 -timeout 10m -v -p 1
+
+      # --- Rootless: install deps + subuid/subgid ---
+      - name: Install rootless prerequisites
+        run: |
+          sudo apt-get install -y rootlesskit slirp4netns uidmap
+          u="$(whoami)"
+          grep -q "^${u}:" /etc/subuid || echo "${u}:100000:65536" | sudo tee -a /etc/subuid
+          grep -q "^${u}:" /etc/subgid || echo "${u}:100000:65536" | sudo tee -a /etc/subgid
+
+      - name: Run rootless containerd tests
+        env:
+          RUN_ALL_CONTAINER_TESTS: "1"
+        run: |
+          go test ./pkg/containers/backends/containerd \
+            -run 'TestContainerdBackend_FullIntegration|TestContainerdBackend_SimpleContainerOutput|TestContainerdBackend_ContainerExitCode|TestContainerdBackend_ContainerOutput' \
+            -count=1 -timeout 10m -v -p 1
+
   py-tests:
     runs-on: ubuntu-latest
     needs: pre-commit
