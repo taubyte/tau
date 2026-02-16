@@ -153,19 +153,23 @@ func runVagrantTest(t *testing.T, testName string, rootless bool) {
 			}
 			diagOutput, _ := diagCmd.CombinedOutput()
 			t.Logf("Diagnostics:\n%s", string(diagOutput))
+			if !rootless {
+				journalCmd := exec.Command("vagrant", "ssh", vmName, "-c", "journalctl -u containerd -n 50 --no-pager 2>/dev/null || true")
+				journalOutput, _ := journalCmd.CombinedOutput()
+				t.Logf("Containerd service logs:\n%s", string(journalOutput))
+			}
 			t.Fatalf("Containerd not ready in %s mode after 60 seconds", mode)
 		case <-ticker.C:
-			// Check if containerd socket exists
+			// Check if containerd is responding
 			var checkCmd *exec.Cmd
 			if rootless {
-				// For rootless, check if socket directory exists (socket will be created by the Go code)
-				// We check if XDG_RUNTIME_DIR/tau/containerd directory exists
+				// For rootless, directory exists is the fast hint; if socket exists, also try ctr version
 				checkCmd = exec.Command("vagrant", "ssh", vmName, "-c",
-					"test -d /run/user/$(id -u)/tau/containerd && echo 'ready' || echo 'not-ready'")
+					"test -d /run/user/$(id -u)/tau/containerd && echo 'ready' || (test -S /run/user/$(id -u)/tau/containerd/containerd.sock 2>/dev/null && ctr -a /run/user/$(id -u)/tau/containerd/containerd.sock version >/dev/null 2>&1 && echo 'ready') || echo 'not-ready'")
 			} else {
-				// For rootful, check socket and systemd service
+				// For rootful, verify containerd is usable via ctr version (or fallback to socket+systemctl)
 				checkCmd = exec.Command("vagrant", "ssh", vmName, "-c",
-					"test -S /run/containerd/containerd.sock && systemctl is-active --quiet containerd && echo 'ready'")
+					"ctr -a /run/containerd/containerd.sock version >/dev/null 2>&1 && echo 'ready' || (test -S /run/containerd/containerd.sock && systemctl is-active --quiet containerd && echo 'ready')")
 			}
 			output, err := checkCmd.CombinedOutput()
 			if err == nil && strings.Contains(string(output), "ready") {
@@ -233,6 +237,11 @@ func runVagrantTest(t *testing.T, testName string, rootless bool) {
 func TestContainerdBackend_Vagrant_All(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
+	}
+
+	// Vagrant tests run only when explicitly requested (slow, requires VirtualBox)
+	if os.Getenv("RUN_ALL_CONTAINER_TESTS") != "1" {
+		t.Skip("Skipping Vagrant test: set RUN_ALL_CONTAINER_TESTS=1 to run")
 	}
 
 	// Check if Vagrant is available

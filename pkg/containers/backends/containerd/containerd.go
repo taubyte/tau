@@ -440,6 +440,27 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error
 		if err != nil {
 			return fmt.Errorf("failed to get task for container %s: %w", id, err)
 		}
+		// Containerd requires the task to be stopped before deletion. If Status() fails, assume running.
+		status, statusErr := task.Status(ctx)
+		if statusErr != nil || status.Status == containerd.Running {
+			if err := task.Kill(ctx, syscall.SIGTERM); err != nil {
+				if err := task.Kill(ctx, syscall.SIGKILL); err != nil {
+					return fmt.Errorf("failed to kill container %s: %w", id, err)
+				}
+			}
+			exitStatusC, err := task.Wait(ctx)
+			if err == nil {
+				select {
+				case <-exitStatusC:
+				case <-time.After(5 * time.Second):
+					task.Kill(ctx, syscall.SIGKILL)
+					select {
+					case <-exitStatusC:
+					case <-time.After(3 * time.Second):
+					}
+				}
+			}
+		}
 		_, err = task.Delete(ctx)
 		return err
 	}
@@ -467,9 +488,9 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error
 		os.RemoveAll(taskIO.fifoDir)
 	}
 
-	// Kill the task before deleting it (required for running tasks)
-	status, err := taskIO.task.Status(ctx)
-	if err == nil && status.Status == containerd.Running {
+	// Kill the task before deleting it (required for running tasks). If Status() fails, assume running.
+	status, statusErr := taskIO.task.Status(ctx)
+	if statusErr != nil || status.Status == containerd.Running {
 		if err := taskIO.task.Kill(ctx, syscall.SIGTERM); err != nil {
 			// Try SIGKILL if SIGTERM fails
 			if err := taskIO.task.Kill(ctx, syscall.SIGKILL); err != nil {
@@ -483,13 +504,17 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error
 			case <-exitStatusC:
 				// Task has exited
 			case <-time.After(5 * time.Second):
-				// Timeout - try SIGKILL again
 				taskIO.task.Kill(ctx, syscall.SIGKILL)
+				// Must wait for exit after SIGKILL before Delete
+				select {
+				case <-exitStatusC:
+				case <-time.After(3 * time.Second):
+				}
 			}
 		}
 	}
 
-	_, err = taskIO.task.Delete(ctx)
+	_, err := taskIO.task.Delete(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to stop container %s: %w", id, err)
 	}

@@ -35,12 +35,12 @@ require (
 	github.com/taubyte/go-sdk-smartops v0.1.3
 	github.com/urfave/cli/v2 v2.25.7
 	go.uber.org/zap v1.27.0
-	golang.org/x/crypto v0.41.0
+	golang.org/x/crypto v0.45.0
 	golang.org/x/exp v0.0.0-20250718183923-645b1fa84792
-	golang.org/x/net v0.43.0
+	golang.org/x/net v0.47.0
 	golang.org/x/oauth2 v0.30.0
-	golang.org/x/sys v0.35.0
-	golang.org/x/term v0.34.0
+	golang.org/x/sys v0.38.0
+	golang.org/x/term v0.37.0
 	gopkg.in/go-playground/webhooks.v5 v5.17.0
 	gopkg.in/yaml.v3 v3.0.1
 	gotest.tools/v3 v3.5.1
@@ -96,8 +96,8 @@ require (
 	github.com/vbauerster/mpb/v8 v8.7.5
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7
 	go.starlark.net v0.0.0-20251109183026-be02852a5e1f
-	golang.org/x/mod v0.27.0
-	golang.org/x/text v0.28.0
+	golang.org/x/mod v0.29.0
+	golang.org/x/text v0.31.0
 	google.golang.org/grpc v1.73.0
 	google.golang.org/protobuf v1.36.6
 	gopkg.in/ini.v1 v1.67.0
@@ -325,7 +325,7 @@ require (
 	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/telemetry v0.0.0-20251008203120-078029d740a8 // indirect
 	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.36.0 // indirect
+	golang.org/x/tools v0.38.0 // indirect
 	gonum.org/v1/gonum v0.16.0 // indirect
 	google.golang.org/genproto v0.0.0-20231211222908-989df2bf70f3 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250603155806-513f23925822 // indirect

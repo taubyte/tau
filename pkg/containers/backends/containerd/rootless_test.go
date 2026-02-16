@@ -9,6 +9,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -132,6 +133,13 @@ func TestRootlessManager_canMapUID(t *testing.T) {
 		t.Fatalf("NewRootlessManager failed: %v", err)
 	}
 
+	// Skip when subuid is not configured for this user (e.g. GHA runner), unless RUN_ALL_CONTAINER_TESTS=1
+	if os.Getenv("RUN_ALL_CONTAINER_TESTS") != "1" {
+		if err := rm.canMapUID(100000); err != nil && strings.Contains(err.Error(), "not in subuid range") {
+			t.Skipf("Skipping: subuid not configured for this user: %v", err)
+		}
+	}
+
 	currentUser, err := user.Current()
 	if err != nil {
 		t.Fatalf("user.Current() failed: %v", err)
@@ -161,6 +169,13 @@ func TestRootlessManager_canMapGID(t *testing.T) {
 	rm, err := NewRootlessManager(config)
 	if err != nil {
 		t.Fatalf("NewRootlessManager failed: %v", err)
+	}
+
+	// Skip when subgid is not configured for this user (e.g. GHA runner), unless RUN_ALL_CONTAINER_TESTS=1
+	if os.Getenv("RUN_ALL_CONTAINER_TESTS") != "1" {
+		if err := rm.canMapGID(100000); err != nil && strings.Contains(err.Error(), "not in subgid range") {
+			t.Skipf("Skipping: subgid not configured for this user: %v", err)
+		}
 	}
 
 	currentUser, err := user.Current()
