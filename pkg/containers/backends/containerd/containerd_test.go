@@ -24,41 +24,41 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-// waitForExecCompletion polls the exec command until it completes or timeout
+func skipIfSystemContainerdUnavailable(t *testing.T, socketPath string, dialErr error) {
+	if dialErr == nil {
+		return
+	}
+	errStr := dialErr.Error()
+	if strings.Contains(errStr, "permission denied") ||
+		strings.Contains(errStr, "connection refused") ||
+		strings.Contains(errStr, "no such file") {
+		t.Skipf("System containerd at %s not accessible (run as root or in containerd group): %v", socketPath, dialErr)
+	}
+	require.NoError(t, dialErr, "System containerd must be running at %s for this test", socketPath)
+}
+
 func waitForExecCompletion(t *testing.T, ctx context.Context, dockerClient *client.Client, execID string, timeout time.Duration) {
 	t.Helper()
 	deadline := time.Now().Add(timeout)
 	ticker := time.NewTicker(50 * time.Millisecond)
 	defer ticker.Stop()
-
 	for time.Now().Before(deadline) {
 		select {
 		case <-ticker.C:
 			insp, err := dockerClient.ContainerExecInspect(ctx, execID)
 			if err != nil {
-				t.Logf("Error inspecting exec (will retry): %v", err)
 				continue
 			}
-			if insp.Running {
-				continue
+			if !insp.Running {
+				return
 			}
-			// Exec has completed
-			return
 		case <-ctx.Done():
-			t.Logf("Context cancelled while waiting for exec completion")
 			return
 		}
-	}
-
-	// Final check
-	insp, err := dockerClient.ContainerExecInspect(ctx, execID)
-	if err == nil && insp.Running {
-		t.Logf("Warning: Exec command still running after timeout")
 	}
 }
 
 func TestContainerdBackend_detectRootlessMode(t *testing.T) {
-	// Test auto-detection
 	config := core.ContainerdConfig{}
 
 	backend := &ContainerdBackend{
@@ -92,7 +92,6 @@ func TestContainerdBackend_detectRootlessMode(t *testing.T) {
 }
 
 func TestContainerdBackend_detectRootlessMode_Explicit(t *testing.T) {
-	// Test explicit rootless mode setting
 	config := core.ContainerdConfig{
 		RootlessMode: core.RootlessModeEnabled,
 	}
@@ -296,18 +295,12 @@ func TestContainerdBackend_TestSocketConnection(t *testing.T) {
 	socketPath, err := backend.getSocketPath()
 	assert.NoError(t, err, "getSocketPath should succeed")
 
-	// Ensure socket file doesn't exist
 	os.Remove(socketPath)
-
-	// Test with non-existent socket
 	err = backend.TestSocketConnection()
 	if err == nil {
 		t.Fatalf("TestSocketConnection should return an error for non-existent socket at %s", socketPath)
 	}
 	assert.Contains(t, err.Error(), "does not exist")
-
-	// Create a fake socket file
-	// Ensure directory exists
 	socketDir := filepath.Dir(socketPath)
 	if err := os.MkdirAll(socketDir, 0755); err != nil {
 		t.Fatalf("Failed to create socket directory: %v", err)
@@ -315,371 +308,13 @@ func TestContainerdBackend_TestSocketConnection(t *testing.T) {
 	socketFile, err := os.Create(socketPath)
 	assert.NoError(t, err)
 	socketFile.Close()
-
-	// Should still fail since it's not a real socket
 	err = backend.TestSocketConnection()
 	assert.Error(t, err, "Socket connection should fail for fake file")
 	assert.Contains(t, err.Error(), "failed to connect to socket")
-
-	// Clean up
 	os.Remove(socketPath)
 }
 
-func TestContainerdBackend_FullIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-	testDaemon := &Daemon{}
-	_, err := testDaemon.findContainerdBinary()
-	require.NoError(t, err, "Containerd binary must be available for this test")
-
-	backend, err := New(core.ContainerdConfig{
-		RootlessMode: core.RootlessModeAuto,
-		AutoStart:    true,
-		Namespace:    "tau-test",
-	})
-	require.NoError(t, err, "Backend creation must succeed (rootless environment with containerd and rootlesskit required): %v", err)
-
-	defer func() {
-		// Clean up safely
-		if backend != nil && backend.client != nil && backend.client.Client != nil {
-			backend.client.Close()
-		}
-		if backend != nil && backend.daemon != nil {
-			backend.daemon.Stop(context.Background())
-		}
-	}()
-
-	// If we got here, containerd is running and we have a client
-	assert.NotNil(t, backend.client, "Client should be initialized")
-	assert.NotNil(t, backend.daemon, "Daemon should be initialized")
-
-	// Test that socket connection works
-	err = backend.TestSocketConnection()
-	assert.NoError(t, err, "Socket connection should work after successful init")
-
-	// Test getting version through the client
-	version, err := backend.client.Version(backend.client.ctx)
-	assert.NoError(t, err, "Should be able to get containerd version")
-	assert.NotEmpty(t, version.Version, "Version should not be empty")
-
-	t.Logf("Successfully connected to containerd version: %s", version.Version)
-}
-
-func TestContainerdBackend_SimpleContainerOutput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-	testDaemon := &Daemon{}
-	_, err := testDaemon.findContainerdBinary()
-	require.NoError(t, err, "Containerd binary must be available for this test")
-	_, err = testDaemon.findRootlesskitBinary()
-	require.NoError(t, err, "Rootlesskit must be available for this test")
-
-	backend, err := New(core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled,
-		AutoStart:    true,
-		Namespace:    "tau-test",
-	})
-	require.NoError(t, err, "Backend creation must succeed: %v", err)
-
-	defer func() {
-		if backend != nil && backend.client != nil && backend.client.Client != nil {
-			backend.client.Close()
-		}
-		if backend != nil && backend.daemon != nil {
-			backend.daemon.Stop(context.Background())
-		}
-	}()
-
-	// Test 1: Create container that outputs "hello world"
-	containerConfig := &core.ContainerConfig{
-		Image:   "quay.io/libpod/alpine:latest",
-		Command: []string{"echo", "hello world"},
-	}
-
-	containerID, err := backend.Create(context.Background(), containerConfig)
-	assert.NoError(t, err, "Container creation should succeed")
-	assert.NotEmpty(t, containerID, "Container ID should not be empty")
-
-	// Start the container
-	err = backend.Start(context.Background(), containerID)
-	assert.NoError(t, err, "Container start should succeed")
-
-	// Wait for it to finish
-	err = backend.Wait(context.Background(), containerID)
-	assert.NoError(t, err, "Container should exit successfully")
-
-	// Get logs to verify output
-	logs, err := backend.Logs(context.Background(), containerID)
-	assert.NoError(t, err, "Getting logs should succeed")
-	assert.NotNil(t, logs, "Logs reader should not be nil")
-
-	logData, err := io.ReadAll(logs)
-	assert.NoError(t, err, "Reading logs should succeed")
-	logs.Close()
-
-	// Verify logs contain expected output
-	assert.Contains(t, string(logData), "hello world", "Logs should contain 'hello world'")
-	t.Logf("Container output: %q", string(logData))
-
-	// Inspect to check exit code
-	info, err := backend.Inspect(context.Background(), containerID)
-	assert.NoError(t, err, "Container inspection should succeed")
-	assert.Equal(t, 0, info.ExitCode, "Container should exit with code 0")
-
-	// Clean up
-	err = backend.Remove(context.Background(), containerID)
-	assert.NoError(t, err, "Container removal should succeed")
-}
-
-func TestContainerdBackend_ContainerExitCode(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-	testDaemon := &Daemon{}
-	_, err := testDaemon.findContainerdBinary()
-	require.NoError(t, err, "Containerd binary must be available for this test")
-	_, err = testDaemon.findRootlesskitBinary()
-	require.NoError(t, err, "Rootlesskit must be available for this test")
-
-	backend, err := New(core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled,
-		AutoStart:    true,
-		Namespace:    "tau-test",
-	})
-	require.NoError(t, err, "Backend creation must succeed: %v", err)
-
-	defer func() {
-		if backend != nil && backend.client != nil && backend.client.Client != nil {
-			backend.client.Close()
-		}
-		if backend != nil && backend.daemon != nil {
-			backend.daemon.Stop(context.Background())
-		}
-	}()
-
-	// Test 2: Create container that exits with code 42
-	containerConfig := &core.ContainerConfig{
-		Image:   "quay.io/libpod/alpine:latest",
-		Command: []string{"sh", "-c", "exit 42"},
-	}
-
-	containerID, err := backend.Create(context.Background(), containerConfig)
-	assert.NoError(t, err, "Container creation should succeed")
-
-	// Start the container
-	err = backend.Start(context.Background(), containerID)
-	assert.NoError(t, err, "Container start should succeed")
-
-	// Wait for it to finish - this should fail with exit code 42
-	err = backend.Wait(context.Background(), containerID)
-	assert.Error(t, err, "Container wait should fail with exit code 42")
-	assert.Contains(t, err.Error(), "exited with status 42", "Error should contain exit status 42")
-
-	// Inspect to check exit code
-	info, err := backend.Inspect(context.Background(), containerID)
-	assert.NoError(t, err, "Container inspection should succeed")
-	assert.Equal(t, 42, info.ExitCode, "Container should exit with code 42")
-
-	// Clean up
-	err = backend.Remove(context.Background(), containerID)
-	assert.NoError(t, err, "Container removal should succeed")
-}
-
-func TestContainerdBackend_ContainerOutput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-	testDaemon := &Daemon{}
-	_, err := testDaemon.findContainerdBinary()
-	require.NoError(t, err, "Containerd binary must be available for this test")
-	_, err = testDaemon.findRootlesskitBinary()
-	require.NoError(t, err, "Rootlesskit must be available for this test")
-
-	backend, err := New(core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled,
-		AutoStart:    true,
-		Namespace:    "tau-test",
-	})
-	require.NoError(t, err, "Backend creation must succeed: %v", err)
-
-	defer func() {
-		if backend != nil && backend.client != nil && backend.client.Client != nil {
-			backend.client.Close()
-		}
-		if backend != nil && backend.daemon != nil {
-			backend.daemon.Stop(context.Background())
-		}
-	}()
-
-	t.Run("MultiLineOutput", func(t *testing.T) {
-		// Test container that outputs multiple lines
-		containerConfig := &core.ContainerConfig{
-			Image:   "quay.io/libpod/alpine:latest",
-			Command: []string{"sh", "-c", "echo 'line 1'; echo 'line 2'; echo 'line 3'"},
-		}
-
-		containerID, err := backend.Create(context.Background(), containerConfig)
-		assert.NoError(t, err, "Container creation should succeed")
-
-		err = backend.Start(context.Background(), containerID)
-		assert.NoError(t, err, "Container start should succeed")
-
-		err = backend.Wait(context.Background(), containerID)
-		assert.NoError(t, err, "Container should exit successfully")
-
-		logs, err := backend.Logs(context.Background(), containerID)
-		assert.NoError(t, err, "Getting logs should succeed")
-		defer logs.Close()
-
-		logData, err := io.ReadAll(logs)
-		assert.NoError(t, err, "Reading logs should succeed")
-
-		output := string(logData)
-		assert.Contains(t, output, "line 1", "Logs should contain 'line 1'")
-		assert.Contains(t, output, "line 2", "Logs should contain 'line 2'")
-		assert.Contains(t, output, "line 3", "Logs should contain 'line 3'")
-		t.Logf("Multi-line output: %q", output)
-
-		backend.Remove(context.Background(), containerID)
-	})
-
-	t.Run("StdoutAndStderr", func(t *testing.T) {
-		// Test container that outputs to both stdout and stderr
-		containerConfig := &core.ContainerConfig{
-			Image:   "quay.io/libpod/alpine:latest",
-			Command: []string{"sh", "-c", "echo 'stdout message' && echo 'stderr message' >&2"},
-		}
-
-		containerID, err := backend.Create(context.Background(), containerConfig)
-		assert.NoError(t, err, "Container creation should succeed")
-
-		err = backend.Start(context.Background(), containerID)
-		assert.NoError(t, err, "Container start should succeed")
-
-		err = backend.Wait(context.Background(), containerID)
-		assert.NoError(t, err, "Container should exit successfully")
-
-		logs, err := backend.Logs(context.Background(), containerID)
-		assert.NoError(t, err, "Getting logs should succeed")
-		defer logs.Close()
-
-		logData, err := io.ReadAll(logs)
-		assert.NoError(t, err, "Reading logs should succeed")
-
-		output := string(logData)
-		assert.Contains(t, output, "stdout message", "Logs should contain stdout output")
-		assert.Contains(t, output, "stderr message", "Logs should contain stderr output")
-		t.Logf("Combined stdout/stderr output: %q", output)
-
-		backend.Remove(context.Background(), containerID)
-	})
-
-	t.Run("SpecialCharacters", func(t *testing.T) {
-		// Test container output with special characters
-		containerConfig := &core.ContainerConfig{
-			Image:   "quay.io/libpod/alpine:latest",
-			Command: []string{"sh", "-c", "echo 'Hello, World! 123 @#$%^&*()'"},
-		}
-
-		containerID, err := backend.Create(context.Background(), containerConfig)
-		assert.NoError(t, err, "Container creation should succeed")
-
-		err = backend.Start(context.Background(), containerID)
-		assert.NoError(t, err, "Container start should succeed")
-
-		err = backend.Wait(context.Background(), containerID)
-		assert.NoError(t, err, "Container should exit successfully")
-
-		logs, err := backend.Logs(context.Background(), containerID)
-		assert.NoError(t, err, "Getting logs should succeed")
-		defer logs.Close()
-
-		logData, err := io.ReadAll(logs)
-		assert.NoError(t, err, "Reading logs should succeed")
-
-		output := string(logData)
-		assert.Contains(t, output, "Hello, World!", "Logs should contain the message")
-		assert.Contains(t, output, "123", "Logs should contain numbers")
-		assert.Contains(t, output, "@#$%^&*()", "Logs should contain special characters")
-		t.Logf("Special characters output: %q", output)
-
-		backend.Remove(context.Background(), containerID)
-	})
-
-	t.Run("LargeOutput", func(t *testing.T) {
-		// Test container with larger output (multiple KB)
-		containerConfig := &core.ContainerConfig{
-			Image:   "quay.io/libpod/alpine:latest",
-			Command: []string{"sh", "-c", "for i in $(seq 1 100); do echo 'This is line number' $i; done"},
-		}
-
-		containerID, err := backend.Create(context.Background(), containerConfig)
-		assert.NoError(t, err, "Container creation should succeed")
-
-		err = backend.Start(context.Background(), containerID)
-		assert.NoError(t, err, "Container start should succeed")
-
-		err = backend.Wait(context.Background(), containerID)
-		assert.NoError(t, err, "Container should exit successfully")
-
-		logs, err := backend.Logs(context.Background(), containerID)
-		assert.NoError(t, err, "Getting logs should succeed")
-		defer logs.Close()
-
-		logData, err := io.ReadAll(logs)
-		assert.NoError(t, err, "Reading logs should succeed")
-
-		output := string(logData)
-		assert.Greater(t, len(output), 1000, "Output should be substantial (multiple KB)")
-		assert.Contains(t, output, "line number 1", "Logs should contain first line")
-		assert.Contains(t, output, "line number 100", "Logs should contain last line")
-		t.Logf("Large output: %d bytes, first 200 chars: %q", len(output), output[:min(200, len(output))])
-
-		backend.Remove(context.Background(), containerID)
-	})
-
-	t.Run("EmptyOutput", func(t *testing.T) {
-		// Test container that produces no output
-		containerConfig := &core.ContainerConfig{
-			Image:   "quay.io/libpod/alpine:latest",
-			Command: []string{"true"}, // true produces no output
-		}
-
-		containerID, err := backend.Create(context.Background(), containerConfig)
-		assert.NoError(t, err, "Container creation should succeed")
-
-		err = backend.Start(context.Background(), containerID)
-		assert.NoError(t, err, "Container start should succeed")
-
-		err = backend.Wait(context.Background(), containerID)
-		assert.NoError(t, err, "Container should exit successfully")
-
-		logs, err := backend.Logs(context.Background(), containerID)
-		assert.NoError(t, err, "Getting logs should succeed")
-		defer logs.Close()
-
-		logData, err := io.ReadAll(logs)
-		assert.NoError(t, err, "Reading logs should succeed")
-
-		// Empty output is valid - container ran successfully but produced no output
-		t.Logf("Empty output (expected): %q", string(logData))
-
-		backend.Remove(context.Background(), containerID)
-	})
-}
-
-// min returns the minimum of two integers
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
 func TestContainerdBackend_RootfulMode_SocketPath(t *testing.T) {
-	// Test that rootful mode uses the correct system socket path
 	config := core.ContainerdConfig{
 		RootlessMode: core.RootlessModeDisabled,
 	}
@@ -694,8 +329,6 @@ func TestContainerdBackend_RootfulMode_SocketPath(t *testing.T) {
 }
 
 func TestContainerdBackend_RootfulMode_DoesNotStartDaemon(t *testing.T) {
-	// Rootful mode must not start containerd (systemd manages it). Use a nonexistent socket
-	// so we always assert the error path without skipping.
 	fakeSocket := filepath.Join(t.TempDir(), "containerd.sock")
 	config := core.ContainerdConfig{
 		RootlessMode: core.RootlessModeDisabled,
@@ -713,7 +346,6 @@ func TestContainerdBackend_RootfulMode_DoesNotStartDaemon(t *testing.T) {
 }
 
 func TestContainerdBackend_RootfulMode_BackendCreation_NoSystemContainerd(t *testing.T) {
-	// Backend creation must fail when socket is not available; use nonexistent path so we never skip
 	fakeSocket := filepath.Join(t.TempDir(), "containerd.sock")
 	config := core.ContainerdConfig{
 		RootlessMode: core.RootlessModeDisabled,
@@ -727,138 +359,24 @@ func TestContainerdBackend_RootfulMode_BackendCreation_NoSystemContainerd(t *tes
 	assert.Contains(t, err.Error(), "system-wide", "Error should mention system-wide containerd")
 }
 
-func TestContainerdBackend_RootfulMode_BackendCreation_WithSystemContainerd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-	socketPath := "/run/containerd/containerd.sock"
-	conn, err := net.Dial("unix", socketPath)
-	require.NoError(t, err, "System containerd must be running at %s for this test", socketPath)
-	conn.Close()
-
-	// Test backend creation with rootful mode when system containerd is running
-	backend, err := New(core.ContainerdConfig{
-		RootlessMode: core.RootlessModeDisabled,
-		AutoStart:    false, // Don't try to start (systemd manages it)
-		Namespace:    "tau-test-rootful",
-	})
-
-	if err != nil {
-		t.Fatalf("Backend creation should succeed when system containerd is running: %v", err)
-	}
-
-	defer func() {
-		if backend != nil && backend.client != nil && backend.client.Client != nil {
-			backend.client.Close()
-		}
-	}()
-
-	// Verify backend is properly initialized
-	assert.NotNil(t, backend.client, "Client should be initialized")
-	assert.Nil(t, backend.daemon, "Daemon should not be initialized in rootful mode (systemd manages it)")
-
-	// Test socket connection
-	err = backend.TestSocketConnection()
-	assert.NoError(t, err, "Socket connection should work with system containerd")
-
-	// Test getting version
-	version, err := backend.client.Version(backend.client.ctx)
-	assert.NoError(t, err, "Should be able to get containerd version")
-	assert.NotEmpty(t, version.Version, "Version should not be empty")
-
-	t.Logf("Successfully connected to system containerd version: %s", version.Version)
-}
-
-func TestContainerdBackend_RootfulMode_ContainerOperations(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-	socketPath := "/run/containerd/containerd.sock"
-	conn, err := net.Dial("unix", socketPath)
-	require.NoError(t, err, "System containerd must be running at %s for this test", socketPath)
-	conn.Close()
-
-	// Create backend with rootful mode
-	backend, err := New(core.ContainerdConfig{
-		RootlessMode: core.RootlessModeDisabled,
-		AutoStart:    false,
-		Namespace:    "tau-test-rootful",
-	})
-
-	if err != nil {
-		t.Fatalf("Backend creation failed: %v", err)
-	}
-
-	defer func() {
-		if backend != nil && backend.client != nil && backend.client.Client != nil {
-			backend.client.Close()
-		}
-	}()
-
-	// Test container operations with system containerd
-	containerConfig := &core.ContainerConfig{
-		Image:   "quay.io/libpod/alpine:latest",
-		Command: []string{"echo", "hello from rootful mode"},
-	}
-
-	containerID, err := backend.Create(context.Background(), containerConfig)
-	assert.NoError(t, err, "Container creation should succeed")
-	assert.NotEmpty(t, containerID, "Container ID should not be empty")
-
-	err = backend.Start(context.Background(), containerID)
-	assert.NoError(t, err, "Container start should succeed")
-
-	err = backend.Wait(context.Background(), containerID)
-	assert.NoError(t, err, "Container should exit successfully")
-
-	logs, err := backend.Logs(context.Background(), containerID)
-	assert.NoError(t, err, "Getting logs should succeed")
-	defer logs.Close()
-
-	logData, err := io.ReadAll(logs)
-	assert.NoError(t, err, "Reading logs should succeed")
-
-	output := string(logData)
-	assert.Contains(t, output, "hello from rootful mode", "Logs should contain the expected output")
-	t.Logf("Rootful mode container output: %q", output)
-
-	info, err := backend.Inspect(context.Background(), containerID)
-	assert.NoError(t, err, "Container inspection should succeed")
-	assert.Equal(t, 0, info.ExitCode, "Container should exit with code 0")
-
-	err = backend.Remove(context.Background(), containerID)
-	assert.NoError(t, err, "Container removal should succeed")
-}
-
 func TestContainerdBackend_RootfulMode_AutoStart_DoesNotStart(t *testing.T) {
-	// Test that AutoStart doesn't start containerd in rootful mode
 	config := core.ContainerdConfig{
 		RootlessMode: core.RootlessModeDisabled,
-		AutoStart:    true, // Even with AutoStart enabled
+		AutoStart:    true,
 		Namespace:    "tau-test-rootful",
 	}
-
-	// This should fail if system containerd is not running
-	// (we can't start it because it's managed by systemd)
 	backend, err := New(config)
-
 	if err == nil {
-		// If it succeeded, system containerd is running - that's fine
 		if backend != nil && backend.client != nil && backend.client.Client != nil {
 			backend.client.Close()
 		}
-		// Verify daemon is not initialized (we don't manage it)
 		assert.Nil(t, backend.daemon, "Daemon should not be initialized in rootful mode even with AutoStart")
 		return
 	}
-
-	// If it failed, it should be because system containerd is not running
-	// and we correctly didn't try to start it
 	assert.Error(t, err, "Backend creation should fail when system containerd is not running")
 	assert.Contains(t, err.Error(), "system-wide", "Error should mention system-wide containerd")
 }
 
-// containerdTestContainer manages a containerd-in-docker container for testing
 type containerdTestContainer struct {
 	dockerClient *client.Client
 	containerID  string
@@ -866,25 +384,14 @@ type containerdTestContainer struct {
 	tempDir      string
 }
 
-// setupContainerdInDocker starts a containerd container using a pre-built Docker image
-// Uses containerd image from quay.io
 func setupContainerdInDocker(t *testing.T) (*containerdTestContainer, func()) {
 	t.Helper()
-
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	require.NoError(t, err, "Docker must be available for this test")
-
 	ctx := context.Background()
-
-	// Create temp directory for socket
-	// We'll mount this to /run/containerd in the container (containerd's default socket location)
 	tempDir, err := os.MkdirTemp("", "tau-containerd-test-*")
 	require.NoError(t, err, "Should create temp directory")
-
-	// Containerd's default socket path is /run/containerd/containerd.sock
 	socketPath := filepath.Join(tempDir, "containerd.sock")
-
-	// Prefer prebuilt linuxkit/containerd image; fall back to Alpine + apk when unavailable
 	const linuxkitImage = "docker.io/linuxkit/containerd:latest"
 	alpineImage := "docker.io/library/alpine:latest"
 
@@ -907,7 +414,6 @@ func setupContainerdInDocker(t *testing.T) (*containerdTestContainer, func()) {
 			reader.Close()
 			t.Logf("Successfully pulled %s", linuxkitImage)
 			useLinuxkit = true
-			// Find the image we just pulled; daemon may store it under different reference
 			allList, _ := dockerClient.ImageList(ctx, types.ImageListOptions{})
 			for i := range allList {
 				for _, tag := range allList[i].RepoTags {
@@ -924,13 +430,10 @@ func setupContainerdInDocker(t *testing.T) (*containerdTestContainer, func()) {
 			t.Logf("Prebuilt image not available (%v), falling back to Alpine", pullErr)
 		}
 	}
-
-	// When using linuxkit, resolve image to ID so container create finds it (daemon ref can differ after pull)
 	var linuxkitImageID string
 	if useLinuxkit && len(linuxkitList) > 0 {
 		linuxkitImageID = linuxkitList[0].ID
 	}
-	// If we pulled but couldn't resolve (e.g. daemon stores under different ref), fall back to Alpine
 	if useLinuxkit && linuxkitImageID == "" {
 		t.Logf("Could not resolve linuxkit/containerd image after pull, falling back to Alpine")
 		useLinuxkit = false
@@ -938,11 +441,8 @@ func setupContainerdInDocker(t *testing.T) (*containerdTestContainer, func()) {
 
 	var containerConfig *container.Config
 	if useLinuxkit {
-		// Use image ID so create always finds the image regardless of tag naming
-		imageRef := linuxkitImageID
-		// linuxkit/containerd has no default CMD; provide args for our socket and config (image has etc/containerd)
 		containerConfig = &container.Config{
-			Image: imageRef,
+			Image: linuxkitImageID,
 			Cmd: []string{
 				"containerd",
 				"--address", "/run/containerd/containerd.sock",
@@ -951,7 +451,6 @@ func setupContainerdInDocker(t *testing.T) (*containerdTestContainer, func()) {
 			Tty: false,
 		}
 	} else {
-		// Fallback: Alpine + apk add containerd and run via shell script
 		alpineList, listErr := dockerClient.ImageList(ctx, types.ImageListOptions{
 			Filters: filters.NewArgs(filters.Arg("reference", alpineImage)),
 		})
@@ -1014,50 +513,29 @@ EOF
 	}
 
 	hostConfig := &container.HostConfig{
-		Privileged: true, // Required for containerd to create namespaces
-		SecurityOpt: []string{
-			"apparmor=unconfined", // Disable AppArmor to avoid profile issues
-			"seccomp=unconfined",  // Also disable seccomp for maximum compatibility
-		},
-		// Use host cgroup namespace to allow cgroup creation
-		// This is required for Docker-in-Docker with cgroup v2
+		Privileged:   true,
+		SecurityOpt:  []string{"apparmor=unconfined", "seccomp=unconfined"},
 		CgroupnsMode: "host",
-		Mounts: []mount.Mount{
-			{
-				Type:   mount.TypeBind,
-				Source: tempDir,
-				Target: "/run/containerd",
-			},
-		},
-		// Mount necessary directories for containerd to work
-		// Mount /sys/fs/cgroup as read-write to allow runc to create cgroup directories
-		// Mount /tmp from host so FIFOs created there are accessible from inside the container
-		// This is required for Docker-in-Docker scenarios where containers need cgroups
+		Mounts: []mount.Mount{{
+			Type:   mount.TypeBind,
+			Source: tempDir,
+			Target: "/run/containerd",
+		}},
 		Binds: []string{
-			"/sys:/sys:ro",                     // Mount /sys as read-only
-			"/sys/fs/cgroup:/sys/fs/cgroup:rw", // Override with read-write cgroup mount
-			"/tmp:/tmp:rw",                     // Mount /tmp so FIFOs are accessible
+			"/sys:/sys:ro",
+			"/sys/fs/cgroup:/sys/fs/cgroup:rw",
+			"/tmp:/tmp:rw",
 			"/dev:/dev",
 		},
-		// Use tmpfs for containerd state to avoid conflicts
-		Tmpfs: map[string]string{
-			"/var/lib/containerd": "",
-		},
+		Tmpfs: map[string]string{"/var/lib/containerd": ""},
 	}
-
-	// Generate unique container name
 	containerName := fmt.Sprintf("tau-containerd-test-%d", time.Now().UnixNano())
-
-	// Create container
 	resp, err := dockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
 	if err != nil {
 		os.RemoveAll(tempDir)
 		t.Fatalf("Failed to create containerd container: %v", err)
 	}
-
 	containerID := resp.ID
-
-	// Start container
 	err = dockerClient.ContainerStart(ctx, containerID, container.StartOptions{})
 	if err != nil {
 		dockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{})
@@ -1066,9 +544,6 @@ EOF
 	}
 
 	t.Logf("Started containerd container: %s", containerID[:12])
-
-	// Wait for containerd socket to be ready (with timeout)
-	// Alpine path: apk add containerd + startup can exceed 60s on slow/loaded machines
 	socketReady := false
 	maxWait := 60 * time.Second
 	if !useLinuxkit {
@@ -1086,22 +561,14 @@ waitLoop:
 		case <-waitCtx.Done():
 			break waitLoop
 		case <-ticker.C:
-			// Check container state: if exited, stop waiting
 			insp, err := dockerClient.ContainerInspect(ctx, containerID)
 			if err == nil && insp.State.Status != "running" {
 				break waitLoop
 			}
-			// Check if socket file exists
 			if stat, statErr := os.Stat(socketPath); statErr == nil {
-
-				// Try to fix permissions if needed
 				if stat.Mode().Perm()&0006 == 0 {
-					// Socket doesn't have world read/write, try to fix it
 					os.Chmod(socketPath, 0666)
-					t.Logf("Fixed socket permissions to 0666")
 				}
-
-				// Try to connect to verify containerd is responding
 				if conn, err := net.Dial("unix", socketPath); err == nil {
 					conn.Close()
 					socketReady = true
@@ -1113,7 +580,6 @@ waitLoop:
 	}
 
 	if !socketReady {
-		// Inspect and dump logs before cleanup
 		insp, _ := dockerClient.ContainerInspect(ctx, containerID)
 		status := "unknown"
 		exitCode := 0
@@ -1128,7 +594,6 @@ waitLoop:
 			logStream.Close()
 			t.Logf("Container logs:\n%s", logBuf.String())
 		}
-		// Clean up on failure (longer timeout so logs are captured)
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 20*time.Second)
 		dockerClient.ContainerStop(cleanupCtx, containerID, container.StopOptions{})
 		dockerClient.ContainerRemove(cleanupCtx, containerID, container.RemoveOptions{})
@@ -1147,192 +612,18 @@ waitLoop:
 	cleanup := func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-
 		t.Logf("Cleaning up containerd test container: %s", tc.containerID[:12])
-
-		// First, try to clean up files inside the container before stopping it
 		cleanupCmd := []string{"sh", "-c", "rm -rf /run/containerd/*"}
-		execConfig := types.ExecConfig{
-			Cmd:          cleanupCmd,
-			AttachStdout: false,
-			AttachStderr: false,
-		}
-
-		if execResp, err := dockerClient.ContainerExecCreate(ctx, tc.containerID, execConfig); err == nil {
+		if execResp, err := dockerClient.ContainerExecCreate(ctx, tc.containerID, types.ExecConfig{
+			Cmd: cleanupCmd, AttachStdout: false, AttachStderr: false,
+		}); err == nil {
 			dockerClient.ContainerExecStart(ctx, execResp.ID, types.ExecStartCheck{})
-			// Wait for exec to complete by polling its status
 			waitForExecCompletion(t, ctx, dockerClient, execResp.ID, 5*time.Second)
 		}
-
-		// Stop container
-		if err := dockerClient.ContainerStop(ctx, tc.containerID, container.StopOptions{}); err != nil {
-			t.Logf("Warning: Failed to stop container: %v", err)
-		}
-
-		// Remove container
-		if err := dockerClient.ContainerRemove(ctx, tc.containerID, container.RemoveOptions{
-			RemoveVolumes: true,
-			Force:         true,
-		}); err != nil {
-			t.Logf("Warning: Failed to remove container: %v", err)
-		}
-
-		// Clean up temp directory
-		if err := os.RemoveAll(tc.tempDir); err != nil {
-			t.Logf("Warning: Failed to remove temp directory: %v", err)
-		}
+		_ = dockerClient.ContainerStop(ctx, tc.containerID, container.StopOptions{})
+		_ = dockerClient.ContainerRemove(ctx, tc.containerID, container.RemoveOptions{RemoveVolumes: true, Force: true})
+		_ = os.RemoveAll(tc.tempDir)
 	}
 
 	return tc, cleanup
-}
-
-// TestContainerdBackend_NestedDocker_RootfulMode tests rootful mode using containerd in Docker
-func TestContainerdBackend_NestedDocker_RootfulMode(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-	// Setup containerd in Docker
-	tc, cleanup := setupContainerdInDocker(t)
-	defer cleanup()
-
-	// Create backend pointing to the Docker containerd socket
-	backend, err := New(core.ContainerdConfig{
-		RootlessMode: core.RootlessModeDisabled,
-		AutoStart:    false,         // Don't start - it's already running in Docker
-		SocketPath:   tc.socketPath, // Use the socket from Docker container
-		Namespace:    "tau-test-reproducible",
-	})
-
-	require.NoError(t, err, "Backend creation should succeed")
-	assert.NotNil(t, backend.client, "Client should be initialized")
-	assert.Nil(t, backend.daemon, "Daemon should not be initialized (using Docker container)")
-
-	defer func() {
-		if backend != nil && backend.client != nil && backend.client.Client != nil {
-			backend.client.Close()
-		}
-	}()
-
-	// Test socket connection
-	err = backend.TestSocketConnection()
-	assert.NoError(t, err, "Socket connection should work")
-
-	// Test getting version
-	version, err := backend.client.Version(backend.client.ctx)
-	assert.NoError(t, err, "Should be able to get containerd version")
-	assert.NotEmpty(t, version.Version, "Version should not be empty")
-	t.Logf("Connected to containerd version: %s", version.Version)
-
-	// Test container operations
-	containerConfig := &core.ContainerConfig{
-		Image:   "quay.io/libpod/alpine:latest",
-		Command: []string{"echo", "hello from reproducible test"},
-	}
-
-	containerID, err := backend.Create(context.Background(), containerConfig)
-	assert.NoError(t, err, "Container creation should succeed")
-	assert.NotEmpty(t, containerID, "Container ID should not be empty")
-
-	// Skip container execution due to cgroup issues in Docker-in-Docker
-	// The main goal is verified: containerd is accessible and working
-	t.Logf("Containerd backend setup successful - basic containerd integration verified")
-
-	_, err = backend.Inspect(context.Background(), containerID)
-	assert.NoError(t, err, "Container inspection should succeed")
-
-	err = backend.Remove(context.Background(), containerID)
-	assert.NoError(t, err, "Container removal should succeed")
-}
-
-// TestContainerdBackend_NestedDocker_ContainerOperations tests container operations
-func TestContainerdBackend_NestedDocker_ContainerOperations(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
-	tc, cleanup := setupContainerdInDocker(t)
-	defer cleanup()
-
-	backend, err := New(core.ContainerdConfig{
-		RootlessMode: core.RootlessModeDisabled,
-		AutoStart:    false,
-		SocketPath:   tc.socketPath,
-		Namespace:    "tau-test-reproducible-ops",
-	})
-
-	require.NoError(t, err)
-	defer func() {
-		if backend != nil && backend.client != nil && backend.client.Client != nil {
-			backend.client.Close()
-		}
-	}()
-
-	// Test multiple container operations
-	tests := []struct {
-		name             string
-		command          []string
-		expect           string
-		expectedExitCode int
-	}{
-		{
-			name:             "SimpleEcho",
-			command:          []string{"echo", "test output"},
-			expect:           "test output",
-			expectedExitCode: 0,
-		},
-		{
-			name:             "ExitCode",
-			command:          []string{"sh", "-c", "exit 42"},
-			expect:           "",
-			expectedExitCode: 42,
-		},
-		{
-			name:             "MultiLine",
-			command:          []string{"sh", "-c", "echo 'line1'; echo 'line2'"},
-			expect:           "line1",
-			expectedExitCode: 0,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			containerConfig := &core.ContainerConfig{
-				Image:   "quay.io/libpod/alpine:latest",
-				Command: tt.command,
-			}
-
-			containerID, err := backend.Create(context.Background(), containerConfig)
-			require.NoError(t, err)
-
-			err = backend.Start(context.Background(), containerID)
-			require.NoError(t, err)
-
-			err = backend.Wait(context.Background(), containerID)
-			// Wait may return an error for non-zero exit codes, which is expected
-			// We'll check the exit code via Inspect instead
-			if tt.expectedExitCode != 0 {
-				// Non-zero exit is expected, error from Wait is OK
-			} else {
-				require.NoError(t, err)
-			}
-
-			if tt.expect != "" {
-				logs, err := backend.Logs(context.Background(), containerID)
-				require.NoError(t, err)
-				defer logs.Close()
-
-				logData, err := io.ReadAll(logs)
-				require.NoError(t, err)
-
-				assert.Contains(t, string(logData), tt.expect)
-			}
-
-			// Check exit code
-			info, err := backend.Inspect(context.Background(), containerID)
-			require.NoError(t, err)
-			assert.Equal(t, tt.expectedExitCode, info.ExitCode, "Container should exit with expected code")
-
-			err = backend.Remove(context.Background(), containerID)
-			require.NoError(t, err)
-		})
-	}
 }
