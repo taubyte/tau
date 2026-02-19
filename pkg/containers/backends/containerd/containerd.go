@@ -61,7 +61,8 @@ func New(config core.ContainerdConfig) (*ContainerdBackend, error) {
 		return nil, fmt.Errorf("failed to detect rootless mode: %w", err)
 	}
 
-	if config.AutoStart {
+	// Only create daemon for rootless mode; in rootful mode containerd is managed by systemd
+	if config.AutoStart && backend.isRootlessMode() {
 		daemon, err := NewDaemon(config)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create daemon manager: %w", err)

@@ -59,13 +59,18 @@ func NewDaemon(config core.ContainerdConfig) (*Daemon, error) {
 		socketPath = filepath.Join(containerdDir, "containerd.sock")
 		stateFile = filepath.Join(containerdDir, "containerd.pid")
 	} else {
-		// Rootful mode: use standard system paths
-		socketPath = "/run/containerd/containerd.sock"
-		stateFile = "/run/containerd/containerd.pid"
+		// Rootful mode: use standard system paths or explicit SocketPath (e.g. for testing)
+		if config.SocketPath != "" {
+			socketPath = config.SocketPath
+			stateFile = filepath.Join(filepath.Dir(socketPath), "containerd.pid")
+		} else {
+			socketPath = "/run/containerd/containerd.sock"
+			stateFile = "/run/containerd/containerd.pid"
 
-		socketDir := filepath.Dir(socketPath)
-		if err := os.MkdirAll(socketDir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create directory %s: %w", socketDir, err)
+			socketDir := filepath.Dir(socketPath)
+			if err := os.MkdirAll(socketDir, 0755); err != nil {
+				return nil, fmt.Errorf("failed to create directory %s: %w", socketDir, err)
+			}
 		}
 	}
 

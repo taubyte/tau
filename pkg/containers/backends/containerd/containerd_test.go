@@ -146,17 +146,12 @@ func TestContainerdBackend_detectRootlessMode_Conflict(t *testing.T) {
 		t.Fatalf("user.Current() failed: %v", err)
 	}
 
-	if currentUser.Uid == "0" {
-		// We're running as root, so this should fail
-		err := backend.detectRootlessMode()
-		if err == nil {
-			t.Error("Expected error when enabling rootless mode as root user")
-		} else {
-			t.Logf("Correctly detected conflict: %v", err)
-		}
-	} else {
-		t.Skip("Not running as root, skipping conflict test")
+	if currentUser.Uid != "0" {
+		t.Skip("This test requires root to verify rootless conflict (rootless mode enabled as root must error)")
 	}
+	err = backend.detectRootlessMode()
+	require.Error(t, err, "Must error when enabling rootless mode as root user")
+	t.Logf("Correctly detected conflict: %v", err)
 }
 
 func TestContainerdBackend_getSocketPath(t *testing.T) {
@@ -334,28 +329,16 @@ func TestContainerdBackend_FullIntegration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-
-	// Check if containerd binary is available
 	testDaemon := &Daemon{}
 	_, err := testDaemon.findContainerdBinary()
-	if err != nil {
-		t.Skip("Skipping integration test: containerd binary not found")
-	}
+	require.NoError(t, err, "Containerd binary must be available for this test")
 
-	// Try to create the backend - this should start containerd if needed
 	backend, err := New(core.ContainerdConfig{
 		RootlessMode: core.RootlessModeAuto,
 		AutoStart:    true,
 		Namespace:    "tau-test",
 	})
-
-	if err != nil {
-		// In CI (e.g. GHA) rootlesskit is often not installed; skip unless RUN_ALL_CONTAINER_TESTS=1
-		if os.Getenv("RUN_ALL_CONTAINER_TESTS") != "1" && strings.Contains(err.Error(), "rootlesskit") {
-			t.Skipf("Skipping: rootless environment not available: %v", err)
-		}
-		t.Fatalf("Backend creation failed - our code should configure containerd for rootless mode: %v", err)
-	}
+	require.NoError(t, err, "Backend creation must succeed (rootless environment with containerd and rootlesskit required): %v", err)
 
 	defer func() {
 		// Clean up safely
@@ -387,31 +370,18 @@ func TestContainerdBackend_SimpleContainerOutput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-
-	// Check if containerd binary is available
 	testDaemon := &Daemon{}
 	_, err := testDaemon.findContainerdBinary()
-	if err != nil {
-		t.Skip("Skipping integration test: containerd binary not found")
-	}
-
-	// Check if rootlesskit is available (required for rootless mode)
+	require.NoError(t, err, "Containerd binary must be available for this test")
 	_, err = testDaemon.findRootlesskitBinary()
-	if err != nil {
-		t.Skip("Skipping integration test: rootlesskit not found (required for rootless mode)")
-	}
+	require.NoError(t, err, "Rootlesskit must be available for this test")
 
-	// Use rootless mode with AutoStart - this should start containerd via rootlesskit
 	backend, err := New(core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled, // Use rootless mode
+		RootlessMode: core.RootlessModeEnabled,
 		AutoStart:    true,
 		Namespace:    "tau-test",
 	})
-
-	// Backend creation should succeed if rootlesskit and containerd are available
-	if err != nil {
-		t.Fatalf("Backend creation failed - rootless containerd should start: %v", err)
-	}
+	require.NoError(t, err, "Backend creation must succeed: %v", err)
 
 	defer func() {
 		if backend != nil && backend.client != nil && backend.client.Client != nil {
@@ -467,31 +437,18 @@ func TestContainerdBackend_ContainerExitCode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-
-	// Check if containerd binary is available
 	testDaemon := &Daemon{}
 	_, err := testDaemon.findContainerdBinary()
-	if err != nil {
-		t.Skip("Skipping integration test: containerd binary not found")
-	}
-
-	// Check if rootlesskit is available (required for rootless mode)
+	require.NoError(t, err, "Containerd binary must be available for this test")
 	_, err = testDaemon.findRootlesskitBinary()
-	if err != nil {
-		t.Skip("Skipping integration test: rootlesskit not found (required for rootless mode)")
-	}
+	require.NoError(t, err, "Rootlesskit must be available for this test")
 
-	// Use rootless mode with AutoStart - this should start containerd via rootlesskit
 	backend, err := New(core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled, // Use rootless mode
+		RootlessMode: core.RootlessModeEnabled,
 		AutoStart:    true,
 		Namespace:    "tau-test",
 	})
-
-	// Backend creation should succeed if rootlesskit and containerd are available
-	if err != nil {
-		t.Fatalf("Backend creation failed - rootless containerd should start: %v", err)
-	}
+	require.NoError(t, err, "Backend creation must succeed: %v", err)
 
 	defer func() {
 		if backend != nil && backend.client != nil && backend.client.Client != nil {
@@ -534,30 +491,18 @@ func TestContainerdBackend_ContainerOutput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-
-	// Check if containerd binary is available
 	testDaemon := &Daemon{}
 	_, err := testDaemon.findContainerdBinary()
-	if err != nil {
-		t.Skip("Skipping integration test: containerd binary not found")
-	}
-
-	// Check if rootlesskit is available (required for rootless mode)
+	require.NoError(t, err, "Containerd binary must be available for this test")
 	_, err = testDaemon.findRootlesskitBinary()
-	if err != nil {
-		t.Skip("Skipping integration test: rootlesskit not found (required for rootless mode)")
-	}
+	require.NoError(t, err, "Rootlesskit must be available for this test")
 
-	// Use rootless mode with AutoStart
 	backend, err := New(core.ContainerdConfig{
 		RootlessMode: core.RootlessModeEnabled,
 		AutoStart:    true,
 		Namespace:    "tau-test",
 	})
-
-	if err != nil {
-		t.Fatalf("Backend creation failed - rootless containerd should start: %v", err)
-	}
+	require.NoError(t, err, "Backend creation must succeed: %v", err)
 
 	defer func() {
 		if backend != nil && backend.client != nil && backend.client.Client != nil {
@@ -749,81 +694,46 @@ func TestContainerdBackend_RootfulMode_SocketPath(t *testing.T) {
 }
 
 func TestContainerdBackend_RootfulMode_DoesNotStartDaemon(t *testing.T) {
-	// Test that rootful mode doesn't try to start containerd (it's managed by systemd).
-	// When system containerd is already running, Start() returns nil (we don't start, socket is ready).
-	// When system containerd is not running, Start() returns an error telling the user to use systemd.
+	// Rootful mode must not start containerd (systemd manages it). Use a nonexistent socket
+	// so we always assert the error path without skipping.
+	fakeSocket := filepath.Join(t.TempDir(), "containerd.sock")
 	config := core.ContainerdConfig{
 		RootlessMode: core.RootlessModeDisabled,
-		AutoStart:    true, // Even with AutoStart, rootful mode shouldn't start
+		AutoStart:    true,
+		SocketPath:   fakeSocket,
 	}
-
 	daemon, err := NewDaemon(config)
 	assert.NoError(t, err, "NewDaemon should succeed")
 
-	// Check if system containerd is already running (e.g. CI starts it via systemctl)
-	socketPath := "/run/containerd/containerd.sock"
-	systemContainerdRunning := false
-	if _, err := os.Stat(socketPath); err == nil {
-		if conn, err := net.Dial("unix", socketPath); err == nil {
-			conn.Close()
-			systemContainerdRunning = true
-		}
-	}
-
 	ctx := context.Background()
 	err = daemon.Start(ctx)
-
-	if systemContainerdRunning {
-		assert.NoError(t, err, "When system containerd is already running, Start() should return nil (we don't start, socket is ready)")
-	} else {
-		assert.Error(t, err, "When system containerd is not running, Start() should fail in rootful mode")
-		if err != nil {
-			assert.Contains(t, err.Error(), "systemd", "Error should mention systemd")
-			assert.Contains(t, err.Error(), "rootful", "Error should mention rootful mode")
-		}
-	}
+	require.Error(t, err, "Start() must fail in rootful mode when socket is not ready")
+	assert.Contains(t, err.Error(), "systemd", "Error should mention systemd")
+	assert.Contains(t, err.Error(), "rootful", "Error should mention rootful mode")
 }
 
 func TestContainerdBackend_RootfulMode_BackendCreation_NoSystemContainerd(t *testing.T) {
-	// Test that backend creation fails gracefully when system containerd is not running
+	// Backend creation must fail when socket is not available; use nonexistent path so we never skip
+	fakeSocket := filepath.Join(t.TempDir(), "containerd.sock")
 	config := core.ContainerdConfig{
 		RootlessMode: core.RootlessModeDisabled,
-		AutoStart:    false, // Don't try to start
+		AutoStart:    false,
 		Namespace:    "tau-test-rootful",
+		SocketPath:   fakeSocket,
 	}
 
-	backend, err := New(config)
-
-	// Backend creation should fail with a clear error about system containerd not running
-	if err == nil {
-		// If it succeeded, that means system containerd is running - clean up and skip
-		if backend != nil && backend.client != nil && backend.client.Client != nil {
-			backend.client.Close()
-		}
-		t.Skip("Skipping test: system containerd is running (this test requires containerd to be stopped)")
-	}
-
-	assert.Error(t, err, "Backend creation should fail when system containerd is not running")
+	_, err := New(config)
+	require.Error(t, err, "Backend creation must fail when containerd socket is not available")
 	assert.Contains(t, err.Error(), "system-wide", "Error should mention system-wide containerd")
-	assert.Contains(t, err.Error(), "/run/containerd/containerd.sock", "Error should mention the socket path")
 }
 
 func TestContainerdBackend_RootfulMode_BackendCreation_WithSystemContainerd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-
-	// Check if system containerd is running
 	socketPath := "/run/containerd/containerd.sock"
-	if _, err := os.Stat(socketPath); err != nil {
-		t.Skip("Skipping integration test: system containerd socket not found (containerd not running)")
-	}
-
-	// Try to connect to the socket
 	conn, err := net.Dial("unix", socketPath)
-	if err != nil {
-		t.Skip("Skipping integration test: system containerd socket exists but not responding")
-	}
+	require.NoError(t, err, "System containerd must be running at %s for this test", socketPath)
 	conn.Close()
 
 	// Test backend creation with rootful mode when system containerd is running
@@ -863,13 +773,9 @@ func TestContainerdBackend_RootfulMode_ContainerOperations(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-
-	// Check if system containerd is running
 	socketPath := "/run/containerd/containerd.sock"
 	conn, err := net.Dial("unix", socketPath)
-	if err != nil {
-		t.Skip("Skipping integration test: system containerd not running")
-	}
+	require.NoError(t, err, "System containerd must be running at %s for this test", socketPath)
 	conn.Close()
 
 	// Create backend with rootful mode
@@ -965,11 +871,8 @@ type containerdTestContainer struct {
 func setupContainerdInDocker(t *testing.T) (*containerdTestContainer, func()) {
 	t.Helper()
 
-	// Check if Docker is available
 	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		t.Skip("Skipping test: Docker not available")
-	}
+	require.NoError(t, err, "Docker must be available for this test")
 
 	ctx := context.Background()
 
@@ -1288,7 +1191,6 @@ func TestContainerdBackend_NestedDocker_RootfulMode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-
 	// Setup containerd in Docker
 	tc, cleanup := setupContainerdInDocker(t)
 	defer cleanup()
@@ -1347,7 +1249,6 @@ func TestContainerdBackend_NestedDocker_ContainerOperations(t *testing.T) {
 	if testing.Short() {
 		t.Skip("Skipping integration test in short mode")
 	}
-
 	tc, cleanup := setupContainerdInDocker(t)
 	defer cleanup()
 
