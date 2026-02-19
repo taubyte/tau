@@ -176,9 +176,8 @@ jobs:
           grep -q "^${u}:" /etc/subgid || echo "${u}:100000:65536" | sudo tee -a /etc/subgid
 
       # Run all containerd tests (unit + integration); integration tests require -tags=containerd_integration
+      # Use runner's Docker (default socket); do not set DOCKER_HOST so NestedDocker tests can connect
       - name: Run containerd tests (unit + integration)
-        env:
-          DOCKER_HOST: tcp://localhost:2375
         run: |
           go test -tags=containerd_integration ./pkg/containers/backends/containerd \
             -count=1 -timeout 15m -v -p 1

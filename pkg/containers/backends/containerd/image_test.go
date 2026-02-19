@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -444,12 +445,12 @@ func TestContainerdBackend_ensureContainerdRunning(t *testing.T) {
 		backend := &ContainerdBackend{
 			config: core.ContainerdConfig{
 				RootlessMode: core.RootlessModeDisabled,
+				SocketPath:   filepath.Join(t.TempDir(), "containerd.sock"),
 			},
 		}
-
 		ctx := context.Background()
 		err := backend.ensureContainerdRunning(ctx)
-		assert.Error(t, err, "ensureContainerdRunning should fail when socket doesn't exist")
+		require.Error(t, err, "ensureContainerdRunning should fail when socket doesn't exist")
 		assert.Contains(t, err.Error(), "not running", "Error should mention containerd not running")
 	})
 
@@ -458,12 +459,12 @@ func TestContainerdBackend_ensureContainerdRunning(t *testing.T) {
 			config: core.ContainerdConfig{
 				RootlessMode: core.RootlessModeDisabled,
 				AutoStart:    false,
+				SocketPath:   filepath.Join(t.TempDir(), "containerd.sock"),
 			},
 		}
-
 		ctx := context.Background()
 		err := backend.ensureContainerdRunning(ctx)
-		assert.Error(t, err, "ensureContainerdRunning should fail when socket doesn't exist and AutoStart is disabled")
+		require.Error(t, err, "ensureContainerdRunning should fail when socket doesn't exist and AutoStart is disabled")
 	})
 }
 
