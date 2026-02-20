@@ -171,12 +171,9 @@ func TestContainerCleanUpInterval(t *testing.T) {
 		return
 	}
 
-	// Check if image exists locally - Image() checks existence first before pulling
-	// The image was just built, so it should exist locally
+	// Image was just built; verify it exists locally.
 	img, err := cli.Image(ctx, testCustomImage)
 	if err != nil {
-		// Image() may return error if pull fails, but image might still exist locally
-		// Check existence directly
 		if img == nil || !img.Exists(ctx) {
 			t.Errorf("Failed to get image: %v", err)
 			return
@@ -189,8 +186,7 @@ func TestContainerCleanUpInterval(t *testing.T) {
 
 	time.Sleep(20 * time.Second)
 
-	// Check again after cleanup interval - image should be cleaned up
-	// If image was cleaned up, Image() will return error or Exists() will return false
+	// After cleanup interval, image should be gone.
 	img2, err2 := cli.Image(ctx, testCustomImage)
 	if err2 == nil && img2 != nil && img2.Exists(ctx) {
 		t.Error("Expected to find no containers after clean interval")

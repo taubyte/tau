@@ -284,7 +284,7 @@ func TestContainerdBackend_Capabilities(t *testing.T) {
 	}
 }
 
-func TestContainerdBackend_TestSocketConnection(t *testing.T) {
+func TestContainerdBackend_testSocketConnection(t *testing.T) {
 	backend := &ContainerdBackend{
 		config: core.ContainerdConfig{
 			RootlessMode: core.RootlessModeEnabled,
@@ -296,9 +296,9 @@ func TestContainerdBackend_TestSocketConnection(t *testing.T) {
 	assert.NoError(t, err, "getSocketPath should succeed")
 
 	os.Remove(socketPath)
-	err = backend.TestSocketConnection()
+	err = backend.testSocketConnection()
 	if err == nil {
-		t.Fatalf("TestSocketConnection should return an error for non-existent socket at %s", socketPath)
+		t.Fatalf("testSocketConnection should return an error for non-existent socket at %s", socketPath)
 	}
 	assert.Contains(t, err.Error(), "does not exist")
 	socketDir := filepath.Dir(socketPath)
@@ -308,7 +308,7 @@ func TestContainerdBackend_TestSocketConnection(t *testing.T) {
 	socketFile, err := os.Create(socketPath)
 	assert.NoError(t, err)
 	socketFile.Close()
-	err = backend.TestSocketConnection()
+	err = backend.testSocketConnection()
 	assert.Error(t, err, "Socket connection should fail for fake file")
 	assert.Contains(t, err.Error(), "failed to connect to socket")
 	os.Remove(socketPath)
@@ -620,9 +620,9 @@ waitLoop:
 			dockerClient.ContainerExecStart(ctx, execResp.ID, types.ExecStartCheck{})
 			waitForExecCompletion(t, ctx, dockerClient, execResp.ID, 5*time.Second)
 		}
-		_ = dockerClient.ContainerStop(ctx, tc.containerID, container.StopOptions{})
-		_ = dockerClient.ContainerRemove(ctx, tc.containerID, container.RemoveOptions{RemoveVolumes: true, Force: true})
-		_ = os.RemoveAll(tc.tempDir)
+		dockerClient.ContainerStop(ctx, tc.containerID, container.StopOptions{})
+		dockerClient.ContainerRemove(ctx, tc.containerID, container.RemoveOptions{RemoveVolumes: true, Force: true})
+		os.RemoveAll(tc.tempDir)
 	}
 
 	return tc, cleanup

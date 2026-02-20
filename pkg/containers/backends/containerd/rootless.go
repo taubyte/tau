@@ -192,13 +192,13 @@ func (rm *RootlessManager) canMapGID(targetGID uint32) error {
 }
 
 // readSubIDMappings reads subuid/subgid mappings for a user
-func (rm *RootlessManager) readSubIDMappings(file, username string) ([]SubIDMapping, error) {
+func (rm *RootlessManager) readSubIDMappings(file, username string) ([]subIDMapping, error) {
 	content, err := os.ReadFile(file)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", file, err)
 	}
 
-	var mappings []SubIDMapping
+	var mappings []subIDMapping
 	lines := strings.Split(string(content), "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -216,7 +216,7 @@ func (rm *RootlessManager) readSubIDMappings(file, username string) ([]SubIDMapp
 			if err != nil {
 				continue
 			}
-			mappings = append(mappings, SubIDMapping{
+			mappings = append(mappings, subIDMapping{
 				Start: uint32(start),
 				Count: uint32(count),
 			})
@@ -226,8 +226,8 @@ func (rm *RootlessManager) readSubIDMappings(file, username string) ([]SubIDMapp
 	return mappings, nil
 }
 
-// SubIDMapping represents a subuid/subgid mapping range
-type SubIDMapping struct {
+// subIDMapping represents a subuid/subgid mapping range
+type subIDMapping struct {
 	Start uint32
 	Count uint32
 }

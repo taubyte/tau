@@ -48,11 +48,9 @@ func TestMCPServer(t *testing.T) {
 	assert.NilError(t, err)
 	defer multiverse.Close()
 
-	// Get an available port
 	port, err := getAvailablePort()
 	assert.NilError(t, err)
 
-	// Create HTTP service with the available port
 	httpService, err := httpBasic.New(
 		multiverse.Context(),
 		options.Listen(fmt.Sprintf("127.0.0.1:%d", port)),
@@ -60,7 +58,6 @@ func TestMCPServer(t *testing.T) {
 	)
 	assert.NilError(t, err)
 
-	// Create MCP service with the custom HTTP service
 	mcpService, err := New(multiverse, httpService)
 	assert.NilError(t, err)
 
@@ -69,7 +66,7 @@ func TestMCPServer(t *testing.T) {
 	endpoint := fmt.Sprintf("http://127.0.0.1:%d%s", port, MCPEndpoint)
 
 	httpClient := &http.Client{Timeout: 2 * time.Second}
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		resp, err := httpClient.Get(endpoint)
 		if err == nil {
 			resp.Body.Close()
@@ -83,7 +80,6 @@ func TestMCPServer(t *testing.T) {
 		Version: "1.0.0",
 	}, nil)
 
-	// Create HTTP transport using the dynamic port
 	transport := &mcp.StreamableClientTransport{
 		Endpoint:   fmt.Sprintf("http://localhost:%d%s", port, MCPEndpoint),
 		HTTPClient: &http.Client{Timeout: 10 * time.Second},

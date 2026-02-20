@@ -493,20 +493,17 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error
 	status, statusErr := taskIO.task.Status(ctx)
 	if statusErr != nil || status.Status == containerd.Running {
 		if err := taskIO.task.Kill(ctx, syscall.SIGTERM); err != nil {
-			// Try SIGKILL if SIGTERM fails
 			if err := taskIO.task.Kill(ctx, syscall.SIGKILL); err != nil {
 				return fmt.Errorf("failed to kill container %s: %w", id, err)
 			}
 		}
-		// Wait for the task to actually stop
 		exitStatusC, err := taskIO.task.Wait(ctx)
 		if err == nil {
 			select {
 			case <-exitStatusC:
-				// Task has exited
 			case <-time.After(5 * time.Second):
 				taskIO.task.Kill(ctx, syscall.SIGKILL)
-				// Must wait for exit after SIGKILL before Delete
+				// Containerd requires task to exit before Delete.
 				select {
 				case <-exitStatusC:
 				case <-time.After(3 * time.Second):
@@ -741,8 +738,8 @@ func (b *ContainerdBackend) hasSubIDMapping(file, username string) error {
 	return fmt.Errorf("no subuid/subgid mapping found for user %s in %s", username, file)
 }
 
-// TestSocketConnection tests if we can connect to the containerd socket
-func (b *ContainerdBackend) TestSocketConnection() error {
+// testSocketConnection checks if we can connect to the containerd socket.
+func (b *ContainerdBackend) testSocketConnection() error {
 	socketPath, err := b.getSocketPath()
 	if err != nil {
 		return fmt.Errorf("failed to get socket path: %w", err)
@@ -752,7 +749,6 @@ func (b *ContainerdBackend) TestSocketConnection() error {
 		return fmt.Errorf("socket file does not exist: %s", socketPath)
 	}
 
-	// Try to connect to the socket
 	conn, err := net.Dial("unix", socketPath)
 	if err != nil {
 		return fmt.Errorf("failed to connect to socket: %w", err)

@@ -40,7 +40,7 @@ func TestContainerdBackend_FullIntegration(t *testing.T) {
 	assert.NotNil(t, backend.client, "Client should be initialized")
 	assert.NotNil(t, backend.daemon, "Daemon should be initialized")
 
-	err = backend.TestSocketConnection()
+	err = backend.testSocketConnection()
 	assert.NoError(t, err, "Socket connection should work after successful init")
 
 	version, err := backend.client.Version(backend.client.ctx)
@@ -368,7 +368,7 @@ func TestContainerdBackend_RootfulMode_BackendCreation_WithSystemContainerd(t *t
 	assert.NotNil(t, backend.client, "Client should be initialized")
 	assert.Nil(t, backend.daemon, "Daemon should not be initialized in rootful mode (systemd manages it)")
 
-	err = backend.TestSocketConnection()
+	err = backend.testSocketConnection()
 	assert.NoError(t, err, "Socket connection should work with system containerd")
 
 	version, err := backend.client.Version(backend.client.ctx)
@@ -461,7 +461,7 @@ func TestContainerdBackend_NestedDocker_RootfulMode(t *testing.T) {
 		}
 	}()
 
-	err = backend.TestSocketConnection()
+	err = backend.testSocketConnection()
 	assert.NoError(t, err, "Socket connection should work")
 
 	version, err := backend.client.Version(backend.client.ctx)
