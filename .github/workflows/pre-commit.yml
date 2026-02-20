@@ -212,14 +212,13 @@ jobs:
       packages: ${{ steps.discover.outputs.packages }}
     steps:
       - uses: actions/checkout@v3
-      - uses: actions/setup-go@v4
-        with:
-          go-version: '1.25.0'
       - name: Discover major folders with dreaming tests
         id: discover
         run: |
-          MOD=$(go list -m)
-          MAJOR_DIRS=$(go list -tags=dreaming ./... 2>/dev/null | sed "s|^${MOD}/||" | cut -d'/' -f1 | sort -u || true)
+          MAJOR_DIRS=$(grep -rl '//go:build dreaming' --include='*_test.go' . \
+            | sed 's|^\./||' \
+            | cut -d'/' -f1 \
+            | sort -u)
           if [ -z "$MAJOR_DIRS" ]; then
             echo "packages=[]" >> "$GITHUB_OUTPUT"
           else
