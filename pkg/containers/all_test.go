@@ -315,7 +315,7 @@ func TestContainerParallel_Integration(t *testing.T) {
 
 	for i := 0; i < count; i++ {
 		go func() {
-			TestContainerMount(t)
+			TestContainerMount_Integration(t)
 			wg.Done()
 		}()
 	}
