@@ -217,7 +217,15 @@ jobs:
         run: |
           MAJOR_DIRS=$(grep -rl '//go:build dreaming' --include='*_test.go' . \
             | sed 's|^\./||' \
-            | cut -d'/' -f1 \
+            | while read f; do
+                dir=$(dirname "$f")
+                top=$(echo "$dir" | cut -d'/' -f1)
+                if [ "$top" = "services" ]; then
+                  echo "$dir" | cut -d'/' -f1-2
+                else
+                  echo "$top"
+                fi
+              done \
             | sort -u)
           if [ -z "$MAJOR_DIRS" ]; then
             echo "packages=[]" >> "$GITHUB_OUTPUT"
