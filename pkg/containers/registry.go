@@ -5,13 +5,8 @@ import (
 )
 
 // AvailableBackends returns all registered backends
-func AvailableBackends() []BackendType {
-	types := core.AvailableBackendTypes()
-	result := make([]BackendType, len(types))
-	for i, t := range types {
-		result[i] = BackendType(t)
-	}
-	return result
+func AvailableBackends() []core.BackendType {
+	return core.AvailableBackendTypes()
 }
 
 // NewBackend creates a backend instance using the registered factory from core

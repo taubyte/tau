@@ -22,7 +22,7 @@ func selectBackend() (core.Backend, error) {
 
 	dockerRegistered := false
 	for _, bt := range availableBackends {
-		if bt == BackendTypeDocker {
+		if bt == core.BackendTypeDocker {
 			dockerRegistered = true
 			break
 		}
@@ -40,7 +40,7 @@ func selectBackend() (core.Backend, error) {
 
 	containerdRegistered := false
 	for _, bt := range availableBackends {
-		if bt == BackendTypeContainerd {
+		if bt == core.BackendTypeContainerd {
 			containerdRegistered = true
 			break
 		}

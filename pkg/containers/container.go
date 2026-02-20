@@ -13,7 +13,7 @@ func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
 	}
 
 	if err := c.backend.Start(ctx, c.id); err != nil {
-		return nil, errorContainerStart(string(c.id), imageName, err)
+		return nil, errorContainerStart(c.id, imageName, err)
 	}
 
 	if err := c.Wait(ctx); err != nil {
@@ -22,17 +22,17 @@ func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
 
 	info, err := c.backend.Inspect(ctx, c.id)
 	if err != nil {
-		return nil, errorContainerInspect(string(c.id), imageName, err)
+		return nil, errorContainerInspect(c.id, imageName, err)
 	}
 
 	var RetCodeErr error
 	if info.ExitCode != 0 {
-		RetCodeErr = errorContainerExitCode(string(c.id), imageName, info.ExitCode)
+		RetCodeErr = errorContainerExitCode(c.id, imageName, info.ExitCode)
 	}
 
 	muxed, err := c.backend.Logs(ctx, c.id)
 	if err != nil {
-		return nil, errorContainerLogs(string(c.id), imageName, err)
+		return nil, errorContainerLogs(c.id, imageName, err)
 	}
 
 	c.Cleanup(ctx)
@@ -50,7 +50,7 @@ func (c *Container) Wait(ctx context.Context) error {
 
 	err := c.backend.Wait(ctx, c.id)
 	if err != nil {
-		return errorContainerWait(string(c.id), imageName, err)
+		return errorContainerWait(c.id, imageName, err)
 	}
 	return nil
 }

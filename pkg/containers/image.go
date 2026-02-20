@@ -48,15 +48,12 @@ func (c *Client) Image(ctx context.Context, name string, options ...ImageOption)
 
 // checkImage checks the docker host client if the image is known.
 func (i *DockerImage) checkImageExists(ctx context.Context) bool {
-	backendImage := i.backend.Image(i.image)
-	return backendImage.Exists(ctx)
+	return i.backend.Image(i.image).Exists(ctx)
 }
 
 // buildImage builds a DockerFile tarball as a docker image.
 // Uses the backend for building if it supports building.
 func (i *DockerImage) buildImage(ctx context.Context) error {
-	backendImage := i.backend.Image(i.image)
-
 	if !i.backend.Capabilities().SupportsBuild {
 		return errorImageBuildDockerFile(fmt.Errorf("backend does not support building images"))
 	}
@@ -66,7 +63,7 @@ func (i *DockerImage) buildImage(ctx context.Context) error {
 		Dockerfile: "Dockerfile",
 	}
 
-	err := backendImage.Build(ctx, buildInput)
+	err := i.backend.Image(i.image).Build(ctx, buildInput)
 	if err != nil {
 		return errorImageBuildDockerFile(err)
 	}
@@ -88,19 +85,16 @@ func (d *dockerBuildInput) Type() core.BackendType {
 
 // Pull retrieves latest changes to the image from docker hub.
 func (i *DockerImage) Pull(ctx context.Context, statusChan chan<- PullStatus) (*DockerImage, error) {
-	backendImage := i.backend.Image(i.image)
-
-	err := backendImage.Pull(ctx)
+	err := i.backend.Image(i.image).Pull(ctx)
 	if err != nil {
 		return i, errorClientPull(err)
 	}
 
 	if statusChan != nil {
-		status := PullStatus{
-			Status: "Image pulled successfully",
-		}
 		select {
-		case statusChan <- status:
+		case statusChan <- PullStatus{
+			Status: "Image pulled successfully",
+		}:
 		default:
 		}
 	}

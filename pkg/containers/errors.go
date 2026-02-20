@@ -3,24 +3,28 @@ package containers
 import (
 	"errors"
 	"fmt"
+
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-var errorBasicFormat = "%s with: %w"
-
-// Image Method Errors
 var (
+	errorBasicFormat     = "%s with: %w"
+	errorImageFormat     = "%s for image `%s` with: %w"
+	errorContainerFormat = "%s for container Id:`%s` image:`%s` with: %w"
+
 	ErrorImageOptions         = errors.New("image options failed")
 	ErrorImageBuild           = errors.New("building image failed")
 	ErrorImagePull            = errors.New("pulling image failed")
 	ErrorClientPull           = errors.New("client pull failed")
 	ErrorImageBuildDockerFile = errors.New("building Dockerfile failed")
-	ErrorImageBuildResCopy    = errors.New("copying response from image build failed")
-	ErrorImagePullStatus      = errors.New("copying pull status failed")
-
-	ErrorContainerOptions = errors.New("container options failed")
-	ErrorContainerCreate  = errors.New("creating container failed")
-
-	errorImageFormat = "%s for image `%s` with: %w"
+	ErrorContainerOptions     = errors.New("container options failed")
+	ErrorContainerCreate      = errors.New("creating container failed")
+	ErrorContainerStart       = errors.New("start container failed")
+	ErrorContainerWait        = errors.New("container wait failed")
+	ErrorContainerInspect     = errors.New("inspecting container failed")
+	ErrorExitCode             = errors.New("exit-code")
+	ErrorContainerLogs        = errors.New("getting container logs failed")
+	ErrBackendNotAvailable    = errors.New("backend not available on this platform")
 )
 
 func errorImageOptions(image string, err error) error {
@@ -43,14 +47,6 @@ func errorImageBuildDockerFile(err error) error {
 	return fmt.Errorf(errorBasicFormat, ErrorImageBuildDockerFile, err)
 }
 
-func errorImageBuildResCopy(err error) error {
-	return fmt.Errorf(errorBasicFormat, ErrorImageBuildResCopy, err)
-}
-
-func errorImagePullStatus(err error) error {
-	return fmt.Errorf(errorBasicFormat, ErrorImagePullStatus, err)
-}
-
 func errorContainerOptions(image string, err error) error {
 	return fmt.Errorf(errorImageFormat, ErrorContainerOptions, image, err)
 }
@@ -59,39 +55,22 @@ func errorContainerCreate(image string, err error) error {
 	return fmt.Errorf(errorImageFormat, ErrorContainerCreate, image, err)
 }
 
-// Container Method Errors
-var (
-	ErrorContainerStart   = errors.New("start container failed")
-	ErrorContainerWait    = errors.New("container wait failed")
-	ErrorClientWait       = errors.New("client wait failed")
-	ErrorContainerInspect = errors.New("inspecting container failed")
-	ErrorExitCode         = errors.New("exit-code")
-	ErrorContainerLogs    = errors.New("getting container logs failed")
-
-	errorContainerFormat = "%s for container Id:`%s` image:`%s` with: %w"
-)
-
-// Backend errors
-var (
-	ErrBackendNotAvailable = errors.New("backend not available on this platform")
-)
-
-func errorContainerStart(id, image string, err error) error {
+func errorContainerStart(id core.ContainerID, image string, err error) error {
 	return fmt.Errorf(errorContainerFormat, ErrorContainerStart, id, image, err)
 }
 
-func errorContainerWait(id, image string, err error) error {
+func errorContainerWait(id core.ContainerID, image string, err error) error {
 	return fmt.Errorf(errorContainerFormat, ErrorContainerWait, id, image, err)
 }
 
-func errorContainerInspect(id, image string, err error) error {
+func errorContainerInspect(id core.ContainerID, image string, err error) error {
 	return fmt.Errorf(errorContainerFormat, ErrorContainerInspect, id, image, err)
 }
 
-func errorContainerExitCode(id, image string, code int) error {
+func errorContainerExitCode(id core.ContainerID, image string, code int) error {
 	return fmt.Errorf("container Id:`%s` image:`%s` failed with %w:%d", id, image, ErrorExitCode, code)
 }
 
-func errorContainerLogs(id, image string, err error) error {
+func errorContainerLogs(id core.ContainerID, image string, err error) error {
 	return fmt.Errorf(errorContainerFormat, ErrorContainerLogs, id, image, err)
 }

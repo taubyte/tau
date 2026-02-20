@@ -79,5 +79,3 @@ type BuildStatus struct {
 		Message string `json:"message"`
 	} `json:"errorDetail"`
 }
-
-// Types are now in core package, re-exported in backend.go

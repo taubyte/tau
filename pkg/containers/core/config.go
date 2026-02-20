@@ -64,9 +64,6 @@ type DockerConfig struct {
 	// APIVersion is the Docker API version to use
 	// If empty, uses API version negotiation
 	APIVersion string
-	// TLSConfig contains TLS configuration for secure Docker connections
-	// If nil, uses default TLS settings or no TLS for local socket connections
-	TLSConfig interface{} // TODO: Define proper TLS config type if needed
 }
 
 func (d DockerConfig) BackendType() BackendType { return BackendTypeDocker }
