@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package p2p_test
 
 import (
@@ -45,7 +47,7 @@ func (t *testContext) Context() context.Context {
 	return t.ctx
 }
 
-func TestFail(t *testing.T) {
+func TestFail_Dreaming(t *testing.T) {
 	maxAttempts := 5
 	commandsTested := 2
 

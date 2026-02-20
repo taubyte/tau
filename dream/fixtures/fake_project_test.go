@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package fixtures
 
 import (
@@ -10,7 +12,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestFakeProject(t *testing.T) {
+func TestFakeProject_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

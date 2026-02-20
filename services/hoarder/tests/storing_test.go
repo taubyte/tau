@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -43,7 +45,7 @@ var (
 
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
-func TestStoring(t *testing.T) {
+func TestStoring_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

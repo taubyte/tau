@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package fixtures
 
 import (
@@ -19,7 +21,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestDecompileProd(t *testing.T) {
+func TestDecompileProd_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

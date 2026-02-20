@@ -1,3 +1,5 @@
+//go:build docker_integration
+
 package docker
 
 import (
@@ -39,7 +41,7 @@ func waitForContainerStatus(t *testing.T, backend *DockerBackend, ctx context.Co
 	return info.Status
 }
 
-func TestRegistration(t *testing.T) {
+func TestRegistration_Integration(t *testing.T) {
 	// Test that we can create a Docker backend directly
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "New must succeed for Docker")
@@ -56,7 +58,7 @@ func TestRegistration(t *testing.T) {
 	assert.NotNil(t, caps, "Backend must have capabilities")
 }
 
-func TestFullIntegration(t *testing.T) {
+func TestFullIntegration_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -141,7 +143,7 @@ func TestFullIntegration(t *testing.T) {
 	assert.Contains(t, logContent, "test", "Logs must contain the echo output")
 }
 
-func TestContainerOutput(t *testing.T) {
+func TestContainerOutput_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")

@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package auth_test
 
 import (
@@ -19,7 +21,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
-func TestAuthServiceHTTPEndpoints(t *testing.T) {
+func TestAuthServiceHTTPEndpoints_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()
@@ -254,7 +256,7 @@ func testRepositoriesStreamAPI(t *testing.T, u *dream.Universe, ctx context.Cont
 	assert.Equal(t, retrievedRepo.Provider(), "github")
 }
 
-func TestAuthServiceIntegration(t *testing.T) {
+func TestAuthServiceIntegration_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

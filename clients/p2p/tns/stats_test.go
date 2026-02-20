@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tns_test
 
 import (
@@ -12,7 +14,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
-func TestStats(t *testing.T) {
+func TestStats_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

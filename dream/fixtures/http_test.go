@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package fixtures
 
 import (
@@ -17,7 +19,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestHttp(t *testing.T) {
+func TestHttp_Dreaming(t *testing.T) {
 	t.Skip("using an old project")
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)

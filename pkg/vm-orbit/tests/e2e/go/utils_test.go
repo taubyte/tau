@@ -67,6 +67,7 @@ func initializeWasm(name string) (err error) {
 func basicCall(t *testing.T, plugin vm.Plugin, wasmModule string, args ...interface{}) vm.Return {
 	testingSuite, err := suite.New(context.Background())
 	assert.NilError(t, err)
+	defer testingSuite.Close()
 
 	err = testingSuite.AttachPlugin(plugin)
 	assert.NilError(t, err)

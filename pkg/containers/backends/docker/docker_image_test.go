@@ -1,3 +1,5 @@
+//go:build docker_integration
+
 package docker
 
 import (
@@ -14,7 +16,7 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-func TestImage(t *testing.T) {
+func TestImage_Integration(t *testing.T) {
 	t.Run("Name", func(t *testing.T) {
 		image := &dockerImage{
 			name: "alpine:latest",
@@ -55,7 +57,7 @@ func TestImage(t *testing.T) {
 	})
 }
 
-func TestImage_Pull(t *testing.T) {
+func TestImage_Pull_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -133,7 +135,7 @@ func TestImage_Pull(t *testing.T) {
 	})
 }
 
-func TestImage_Build(t *testing.T) {
+func TestImage_Build_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -287,7 +289,7 @@ func TestImage_Build(t *testing.T) {
 	})
 }
 
-func TestImage_Remove(t *testing.T) {
+func TestImage_Remove_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -336,7 +338,7 @@ func TestImage_Remove(t *testing.T) {
 	})
 }
 
-func TestImage_Digest(t *testing.T) {
+func TestImage_Digest_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -386,7 +388,7 @@ func TestImage_Digest(t *testing.T) {
 	})
 }
 
-func TestImage_Tags(t *testing.T) {
+func TestImage_Tags_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -437,7 +439,7 @@ func TestImage_Tags(t *testing.T) {
 	})
 }
 
-func TestDockerBuildInputType(t *testing.T) {
+func TestDockerBuildInputType_Integration(t *testing.T) {
 	input := &DockerBuildInput{}
 	assert.Equal(t, core.BackendTypeDocker, input.Type())
 }

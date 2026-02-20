@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package service
 
 import (
@@ -22,7 +24,7 @@ import (
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 )
 
-func TestHoarder(t *testing.T) {
+func TestHoarder_Dreaming(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 

@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package fixtures
 
 import (
@@ -91,7 +93,7 @@ func normalizeMap(v any) any {
 	}
 }
 
-func TestE2E(t *testing.T) {
+func TestE2E_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

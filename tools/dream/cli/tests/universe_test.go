@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -22,7 +24,7 @@ func init() {
 	dream.DreamApiPort = 41421 // don't conflict with default port
 }
 
-func TestKillService(t *testing.T) {
+func TestKillService_Dreaming(t *testing.T) {
 	dream.DreamApiPort = 43421
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
@@ -69,7 +71,7 @@ func TestKillService(t *testing.T) {
 
 }
 
-func TestKillSimple(t *testing.T) {
+func TestKillSimple_Dreaming(t *testing.T) {
 	testSimpleName := "client"
 	universeName := "killsimple"
 	statusName := fmt.Sprintf("%s@%s", testSimpleName, universeName)
@@ -176,7 +178,7 @@ func TestKillSimple(t *testing.T) {
 	}
 }
 
-func TestMultipleServices(t *testing.T) {
+func TestMultipleServices_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

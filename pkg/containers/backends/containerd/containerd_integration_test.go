@@ -13,10 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-func TestContainerdBackend_FullIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+func TestContainerdBackend_FullIntegration_Integration(t *testing.T) {
 	testDaemon := &Daemon{}
 	_, err := testDaemon.findContainerdBinary()
 	require.NoError(t, err, "Containerd binary must be available for this test")
@@ -50,10 +47,7 @@ func TestContainerdBackend_FullIntegration(t *testing.T) {
 	t.Logf("Successfully connected to containerd version: %s", version.Version)
 }
 
-func TestContainerdBackend_SimpleContainerOutput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+func TestContainerdBackend_SimpleContainerOutput_Integration(t *testing.T) {
 	testDaemon := &Daemon{}
 	_, err := testDaemon.findContainerdBinary()
 	require.NoError(t, err, "Containerd binary must be available for this test")
@@ -110,10 +104,7 @@ func TestContainerdBackend_SimpleContainerOutput(t *testing.T) {
 	assert.NoError(t, err, "Container removal should succeed")
 }
 
-func TestContainerdBackend_ContainerExitCode(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+func TestContainerdBackend_ContainerExitCode_Integration(t *testing.T) {
 	testDaemon := &Daemon{}
 	_, err := testDaemon.findContainerdBinary()
 	require.NoError(t, err, "Containerd binary must be available for this test")
@@ -159,10 +150,7 @@ func TestContainerdBackend_ContainerExitCode(t *testing.T) {
 	assert.NoError(t, err, "Container removal should succeed")
 }
 
-func TestContainerdBackend_ContainerOutput(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+func TestContainerdBackend_ContainerOutput_Integration(t *testing.T) {
 	testDaemon := &Daemon{}
 	_, err := testDaemon.findContainerdBinary()
 	require.NoError(t, err, "Containerd binary must be available for this test")
@@ -340,10 +328,7 @@ func TestContainerdBackend_ContainerOutput(t *testing.T) {
 	})
 }
 
-func TestContainerdBackend_RootfulMode_BackendCreation_WithSystemContainerd(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+func TestContainerdBackend_RootfulMode_BackendCreation_WithSystemContainerd_Integration(t *testing.T) {
 	socketPath := "/run/containerd/containerd.sock"
 	conn, err := net.Dial("unix", socketPath)
 	skipIfSystemContainerdUnavailable(t, socketPath, err)
@@ -378,10 +363,7 @@ func TestContainerdBackend_RootfulMode_BackendCreation_WithSystemContainerd(t *t
 	t.Logf("Successfully connected to system containerd version: %s", version.Version)
 }
 
-func TestContainerdBackend_RootfulMode_ContainerOperations(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+func TestContainerdBackend_RootfulMode_ContainerOperations_Integration(t *testing.T) {
 	socketPath := "/run/containerd/containerd.sock"
 	conn, err := net.Dial("unix", socketPath)
 	skipIfSystemContainerdUnavailable(t, socketPath, err)
@@ -437,10 +419,7 @@ func TestContainerdBackend_RootfulMode_ContainerOperations(t *testing.T) {
 	assert.NoError(t, err, "Container removal should succeed")
 }
 
-func TestContainerdBackend_NestedDocker_RootfulMode(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+func TestContainerdBackend_NestedDocker_RootfulMode_Integration(t *testing.T) {
 	tc, cleanup := setupContainerdInDocker(t)
 	defer cleanup()
 
@@ -487,10 +466,7 @@ func TestContainerdBackend_NestedDocker_RootfulMode(t *testing.T) {
 	assert.NoError(t, err, "Container removal should succeed")
 }
 
-func TestContainerdBackend_NestedDocker_ContainerOperations(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+func TestContainerdBackend_NestedDocker_ContainerOperations_Integration(t *testing.T) {
 	tc, cleanup := setupContainerdInDocker(t)
 	defer cleanup()
 

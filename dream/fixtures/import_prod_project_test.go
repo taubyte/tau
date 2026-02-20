@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package fixtures
 
 import (
@@ -14,7 +16,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestImportProdProject(t *testing.T) {
+func TestImportProdProject_Dreaming(t *testing.T) {
 	t.Skip("currently custom domains do not work on dream")
 
 	spec.DefaultBranches = []string{"master_test"}

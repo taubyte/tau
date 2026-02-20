@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -18,7 +20,7 @@ import (
 	"github.com/taubyte/tau/core/services/hoarder"
 )
 
-func TestService(t *testing.T) {
+func TestService_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

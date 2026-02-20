@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -21,7 +23,7 @@ import (
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 )
 
-func TestCalls(t *testing.T) {
+func TestCalls_Dreaming(t *testing.T) {
 	seerClient.DefaultUsageBeaconInterval = 100 * time.Millisecond
 	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond
 	seerClient.DefaultGeoBeaconInterval = 100 * time.Millisecond

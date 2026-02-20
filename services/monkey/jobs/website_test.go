@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package jobs
 
 import (
@@ -8,7 +10,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestRunWebsiteBasic(t *testing.T) {
+func TestRunWebsiteBasic_Dreaming(t *testing.T) {
 	t.Skip("Needs to be redone")
 
 	u, cleanup, err := startDream(t)

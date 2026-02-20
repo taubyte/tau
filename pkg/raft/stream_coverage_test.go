@@ -1,3 +1,5 @@
+//go:build raft_integration
+
 package raft
 
 import (
@@ -13,7 +15,7 @@ import (
 )
 
 // TestClient_Set_Success tests Set with a separate client node connecting to cluster node
-func TestClient_Set_Success(t *testing.T) {
+func TestClient_Set_Success_Integration(t *testing.T) {
 	// Create cluster node
 	clusterNode := newTestNode(t)
 	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
@@ -51,7 +53,7 @@ func TestClient_Set_Success(t *testing.T) {
 }
 
 // TestClient_Get_Success tests Get with a separate client node
-func TestClient_Get_Success(t *testing.T) {
+func TestClient_Get_Success_Integration(t *testing.T) {
 	clusterNode := newTestNode(t)
 	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
 
@@ -84,7 +86,7 @@ func TestClient_Get_Success(t *testing.T) {
 }
 
 // TestClient_Delete_Success tests Delete with a separate client node
-func TestClient_Delete_Success(t *testing.T) {
+func TestClient_Delete_Success_Integration(t *testing.T) {
 	clusterNode := newTestNode(t)
 	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
 
@@ -119,7 +121,7 @@ func TestClient_Delete_Success(t *testing.T) {
 }
 
 // TestClient_Keys_Success tests Keys with a separate client node
-func TestClient_Keys_Success(t *testing.T) {
+func TestClient_Keys_Success_Integration(t *testing.T) {
 	clusterNode := newTestNode(t)
 	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
 
@@ -153,7 +155,7 @@ func TestClient_Keys_Success(t *testing.T) {
 }
 
 // TestClient_ExchangePeers_Success tests ExchangePeers with a separate client node
-func TestClient_ExchangePeers_Success(t *testing.T) {
+func TestClient_ExchangePeers_Success_Integration(t *testing.T) {
 	clusterNode := newTestNode(t)
 	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
 
@@ -188,7 +190,7 @@ func TestClient_ExchangePeers_Success(t *testing.T) {
 }
 
 // TestClient_JoinVoter_Success tests JoinVoter with a separate client node
-func TestClient_JoinVoter_Success(t *testing.T) {
+func TestClient_JoinVoter_Success_Integration(t *testing.T) {
 	clusterNode := newTestNode(t)
 	clusterNodeInfo := peercore.AddrInfo{ID: clusterNode.ID(), Addrs: clusterNode.Peer().Addrs()}
 
@@ -216,7 +218,7 @@ func TestClient_JoinVoter_Success(t *testing.T) {
 }
 
 // TestClient_Set_WithEncryption_Success tests Set with encryption using separate nodes
-func TestClient_Set_WithEncryption_Success(t *testing.T) {
+func TestClient_Set_WithEncryption_Success_Integration(t *testing.T) {
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i)
@@ -258,7 +260,7 @@ func TestClient_Set_WithEncryption_Success(t *testing.T) {
 }
 
 // TestClient_Get_WithEncryption_Success tests Get with encryption using separate nodes
-func TestClient_Get_WithEncryption_Success(t *testing.T) {
+func TestClient_Get_WithEncryption_Success_Integration(t *testing.T) {
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i)
@@ -300,7 +302,7 @@ func TestClient_Get_WithEncryption_Success(t *testing.T) {
 }
 
 // TestClient_Delete_WithEncryption_Success tests Delete with encryption using separate nodes
-func TestClient_Delete_WithEncryption_Success(t *testing.T) {
+func TestClient_Delete_WithEncryption_Success_Integration(t *testing.T) {
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i)
@@ -344,7 +346,7 @@ func TestClient_Delete_WithEncryption_Success(t *testing.T) {
 }
 
 // TestClient_Keys_WithEncryption_Success tests Keys with encryption using separate nodes
-func TestClient_Keys_WithEncryption_Success(t *testing.T) {
+func TestClient_Keys_WithEncryption_Success_Integration(t *testing.T) {
 	key := make([]byte, 32)
 	for i := range key {
 		key[i] = byte(i)

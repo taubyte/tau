@@ -1,3 +1,5 @@
+//go:build docker_integration
+
 package docker
 
 import (
@@ -10,7 +12,7 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-func TestCreate(t *testing.T) {
+func TestCreate_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -96,7 +98,7 @@ func TestCreate(t *testing.T) {
 	})
 }
 
-func TestStart(t *testing.T) {
+func TestStart_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -131,7 +133,7 @@ func TestStart(t *testing.T) {
 	})
 }
 
-func TestStop(t *testing.T) {
+func TestStop_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -195,7 +197,7 @@ func TestStop(t *testing.T) {
 	})
 }
 
-func TestRemove(t *testing.T) {
+func TestRemove_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -221,7 +223,7 @@ func TestRemove(t *testing.T) {
 	})
 }
 
-func TestWait(t *testing.T) {
+func TestWait_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -299,7 +301,7 @@ func TestWait(t *testing.T) {
 	})
 }
 
-func TestLogs(t *testing.T) {
+func TestLogs_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -327,7 +329,7 @@ func TestLogs(t *testing.T) {
 	})
 }
 
-func TestInspect(t *testing.T) {
+func TestInspect_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")
@@ -515,7 +517,7 @@ func TestInspect(t *testing.T) {
 	})
 }
 
-func TestGetDockerID(t *testing.T) {
+func TestGetDockerID_Integration(t *testing.T) {
 	backend, err := New(core.DockerConfig{})
 	require.NoError(t, err, "Backend creation must succeed - Docker is required")
 	require.NotNil(t, backend, "Backend must not be nil")

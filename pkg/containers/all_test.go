@@ -1,3 +1,5 @@
+//go:build docker_integration
+
 package containers_test
 
 //go:generate tar cvf fixtures/docker.tar -C fixtures/docker/ .
@@ -62,7 +64,7 @@ func init() {
 	}
 }
 
-func TestContainerBasicCommand(t *testing.T) {
+func TestContainerBasicCommand_Integration(t *testing.T) {
 	ci.ForceRebuild = true
 
 	ctx := context.Background()
@@ -116,7 +118,7 @@ func TestContainerBasicCommand(t *testing.T) {
 	}
 }
 
-func TestContainerCleanUpInterval(t *testing.T) {
+func TestContainerCleanUpInterval_Integration(t *testing.T) {
 	ci.ForceRebuild = true
 
 	ctx := context.Background()
@@ -193,7 +195,7 @@ func TestContainerCleanUpInterval(t *testing.T) {
 	}
 }
 
-func TestContainerMount(t *testing.T) {
+func TestContainerMount_Integration(t *testing.T) {
 	ci.ForceRebuild = true
 
 	ctx := context.Background()
@@ -246,7 +248,7 @@ func TestContainerMount(t *testing.T) {
 	}
 }
 
-func TestContainerBasicVariables(t *testing.T) {
+func TestContainerBasicVariables_Integration(t *testing.T) {
 	ci.ForceRebuild = true
 
 	ctx := context.Background()
@@ -303,7 +305,7 @@ func TestContainerBasicVariables(t *testing.T) {
 
 }
 
-func TestContainerParallel(t *testing.T) {
+func TestContainerParallel_Integration(t *testing.T) {
 	var (
 		wg    sync.WaitGroup
 		count int = 4

@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -11,7 +13,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestBasicUsage(t *testing.T) {
+func TestBasicUsage_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

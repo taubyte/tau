@@ -1106,7 +1106,7 @@ func TestCluster_Close_Idempotent(t *testing.T) {
 }
 
 func TestCluster_Apply_InvalidTimeout(t *testing.T) {
-	node := newTestNode(t)
+	node := newMockNode(t)
 
 	cluster, err := New(node, "/raft/test-apply-timeout", testOptions()...)
 	require.NoError(t, err, "failed to create cluster")

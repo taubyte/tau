@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package fixtures
 
 import (
@@ -15,7 +17,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
-func TestUpdate(t *testing.T) {
+func TestUpdate_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

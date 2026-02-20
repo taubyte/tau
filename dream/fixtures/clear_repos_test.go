@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package fixtures
 
 import (
@@ -8,7 +10,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestClearRepos(t *testing.T) {
+func TestClearRepos_Dreaming(t *testing.T) {
 	t.Skip("Needs to be redone")
 
 	m, err := dream.New(t.Context())

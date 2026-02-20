@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package compile_test
 
 import (
@@ -18,7 +20,7 @@ import (
 )
 
 // TODO: FIXME
-func TestLibrary(t *testing.T) {
+func TestLibrary_Dreaming(t *testing.T) {
 	t.Skip("Libraries are handled differently now")
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)

@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tns_test
 
 import (
@@ -13,7 +15,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
-func TestDreamDoubleClient(t *testing.T) {
+func TestDreamDoubleClient_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

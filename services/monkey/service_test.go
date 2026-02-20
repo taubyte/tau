@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package monkey
 
 import (
@@ -21,7 +23,7 @@ func init() {
 	}
 }
 
-func TestService(t *testing.T) {
+func TestService_Dreaming(t *testing.T) {
 	t.Skip("Times out, needs to be relooked at")
 	protocolCommon.MockedPatrick = true
 	m, err := dream.New(t.Context())

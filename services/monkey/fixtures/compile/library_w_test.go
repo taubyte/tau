@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package compile_test
 
 import (
@@ -17,7 +19,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestWasmLibrary(t *testing.T) {
+func TestWasmLibrary_Dreaming(t *testing.T) {
 	t.Skip("Needs to be redone")
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)

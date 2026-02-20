@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package compile_test
 
 import (
@@ -20,7 +22,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestWebsite(t *testing.T) {
+func TestWebsite_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package http
 
 import (
@@ -24,7 +26,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
 
-func TestRoutes(t *testing.T) {
+func TestRoutes_Dreaming(t *testing.T) {
 	dream.DreamApiPort = 31421 // don't conflict with default port
 
 	univerName := "dream-http"

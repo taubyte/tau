@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -25,7 +27,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestHoarder(t *testing.T) {
+func TestHoarder_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

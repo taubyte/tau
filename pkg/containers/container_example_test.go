@@ -1,3 +1,5 @@
+//go:build docker_integration
+
 package containers_test
 
 import (

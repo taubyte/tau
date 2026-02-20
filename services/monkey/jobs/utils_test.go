@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package jobs
 
 import (

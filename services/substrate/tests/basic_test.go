@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package main
 
 import (
@@ -35,7 +37,7 @@ var (
 	testWebsiteId  = "QmcrzjxwbqERscawQcXW4e5jyNBNoxLsUYatn63E8XPQq2"
 )
 
-func TestBasicWithLibrary(t *testing.T) {
+func TestBasicWithLibrary_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

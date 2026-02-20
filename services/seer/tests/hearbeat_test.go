@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -19,7 +21,7 @@ import (
 
 var client_count = 16
 
-func TestHeartbeat(t *testing.T) {
+func TestHeartbeat_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

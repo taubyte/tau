@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package service
 
 import (
@@ -21,7 +23,7 @@ import (
 	"github.com/taubyte/tau/clients/p2p/patrick/mock"
 )
 
-func TestPatrick(t *testing.T) {
+func TestPatrick_Dreaming(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 

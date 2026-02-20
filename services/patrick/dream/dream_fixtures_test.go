@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package dream
 
 import (
@@ -19,7 +21,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
 
-func TestDreamFixtures(t *testing.T) {
+func TestDreamFixtures_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()
@@ -74,7 +76,7 @@ func TestDreamFixtures(t *testing.T) {
 	})
 }
 
-func TestPushFixtures(t *testing.T) {
+func TestPushFixtures_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()
@@ -179,7 +181,7 @@ func TestPushFixtures(t *testing.T) {
 	})
 }
 
-func TestCreatePatrickServiceConfig(t *testing.T) {
+func TestCreatePatrickServiceConfig_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()
@@ -239,7 +241,7 @@ func TestCreatePatrickServiceConfig(t *testing.T) {
 	assert.Assert(t, err != nil, "should fail due to service creation requirements")
 }
 
-func TestPushWithNoServices(t *testing.T) {
+func TestPushWithNoServices_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

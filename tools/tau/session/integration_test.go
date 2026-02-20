@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package session_test
 
 import (
@@ -107,7 +109,7 @@ func listSessionFiles(t *testing.T, dir string) []string {
 
 // TestIntegration_SessionDiscovery_CreatesFile runs tau as a subprocess; session root is under TMPDIR.
 // It verifies that running "tau current" creates a session file (discovery creates one when none exist).
-func TestIntegration_SessionDiscovery_CreatesFile(t *testing.T) {
+func TestIntegration_SessionDiscovery_CreatesFile_Dreaming(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "tau.yaml")
 	assert.NilError(t, os.WriteFile(configPath, []byte("profiles: {}\nprojects: {}"), 0644))
@@ -122,7 +124,7 @@ func TestIntegration_SessionDiscovery_CreatesFile(t *testing.T) {
 
 // TestIntegration_SessionDiscovery_ShellWrapper runs tau directly and then via sh -c to get different PID chains.
 // Both should succeed; session files may be shared (intersection) or separate depending on PIDs.
-func TestIntegration_SessionDiscovery_ShellWrapper(t *testing.T) {
+func TestIntegration_SessionDiscovery_ShellWrapper_Dreaming(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "tau.yaml")
 	assert.NilError(t, os.WriteFile(configPath, []byte("profiles: {}\nprojects: {}"), 0644))
@@ -197,7 +199,7 @@ func startDream(t *testing.T) (cleanup func()) {
 }
 
 // TestIntegration_SessionSetGet runs tau select cloud --universe (which sets dream_api_url in session), then tau current.
-func TestIntegration_SessionSetGet(t *testing.T) {
+func TestIntegration_SessionSetGet_Dreaming(t *testing.T) {
 	cleanup := startDream(t)
 	defer cleanup()
 
@@ -230,7 +232,7 @@ projects: {}
 }
 
 // TestIntegration_SessionShellOfShell runs tau via sh -c 'sh -c "tau ..."' (or cmd on Windows) to simulate shell-of-shell.
-func TestIntegration_SessionShellOfShell(t *testing.T) {
+func TestIntegration_SessionShellOfShell_Dreaming(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "tau.yaml")
 	assert.NilError(t, os.WriteFile(configPath, []byte("profiles: {}\nprojects: {}"), 0644))
@@ -266,7 +268,7 @@ func TestIntegration_SessionShellOfShell(t *testing.T) {
 }
 
 // TestIntegration_Version does not touch session; sanity check that the built binary runs.
-func TestIntegration_Version(t *testing.T) {
+func TestIntegration_Version_Dreaming(t *testing.T) {
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "tau.yaml")
 	assert.NilError(t, os.WriteFile(configPath, []byte("profiles: {}\nprojects: {}"), 0644))

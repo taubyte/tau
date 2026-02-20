@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package p2p_test
 
 import (
@@ -11,7 +13,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestService_Discover(t *testing.T) {
+func TestService_Discover_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

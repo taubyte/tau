@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package service
 
 import (
@@ -14,7 +16,7 @@ import (
 	"github.com/taubyte/tau/utils"
 )
 
-func TestNode(t *testing.T) {
+func TestNode_Dreaming(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 

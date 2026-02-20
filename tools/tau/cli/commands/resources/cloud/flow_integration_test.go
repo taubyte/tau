@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package cloud_test
 
 import (
@@ -25,7 +27,7 @@ import (
 //
 // Note: This test runs "select cloud" and "query project" in the same process via RunCLIWithDir (no subprocess).
 // Session is set with LoadSessionInDir(dir/session), so discovery (ppid-based $TMPDIR/tau-<pid>) is never used.
-func TestCloudFlow_SelectNetworkWithDream(t *testing.T) {
+func TestCloudFlow_SelectNetworkWithDream_Dreaming(t *testing.T) {
 	dream.DreamApiPort = 41422
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)

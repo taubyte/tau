@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -24,7 +26,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
-func TestRunWasmRetry(t *testing.T) {
+func TestRunWasmRetry_Dreaming(t *testing.T) {
 	t.Skip("Review later,  is there a valid reason to retry as now code clones config")
 
 	// Reduce times from minutes to seconds for testing

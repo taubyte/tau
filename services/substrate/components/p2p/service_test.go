@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package p2p
 
 import (
@@ -15,7 +17,7 @@ import (
 )
 
 // TODO: Needed?
-func TestProtocolListen(t *testing.T) {
+func TestProtocolListen_Dreaming(t *testing.T) {
 	t.Skip("need to verify validity of this test")
 	structure.RefreshTestVariables()
 	fakeFetch(map[string]structureSpec.Service{

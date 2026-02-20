@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -33,7 +35,7 @@ func createDnsClient(net string) *dns.Client {
 	return c
 }
 
-func TestDns(t *testing.T) {
+func TestDns_Dreaming(t *testing.T) {
 	seerClient.DefaultUsageBeaconInterval = 100 * time.Millisecond
 	seerClient.DefaultAnnounceBeaconInterval = 100 * time.Millisecond
 	seerClient.DefaultGeoBeaconInterval = 100 * time.Millisecond

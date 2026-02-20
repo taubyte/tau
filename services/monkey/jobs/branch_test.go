@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package jobs
 
 import (
@@ -9,7 +11,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestBranch(t *testing.T) {
+func TestBranch_Dreaming(t *testing.T) {
 	t.Skip("Needs to be redone")
 	protocolCommon.MockedPatrick = true
 

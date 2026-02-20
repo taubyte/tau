@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package service
 
 import (
@@ -26,7 +28,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
-func TestSeer(t *testing.T) {
+func TestSeer_Dreaming(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 

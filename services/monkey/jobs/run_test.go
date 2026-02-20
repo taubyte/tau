@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package jobs
 
 import (
@@ -31,7 +33,7 @@ func generatePrivateKey(t *testing.T) string {
 	return string(privateKeyPEM)
 }
 
-func TestRunDelay(t *testing.T) {
+func TestRunDelay_Dreaming(t *testing.T) {
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "test.log")
 	logFile, err := os.Create(logPath)

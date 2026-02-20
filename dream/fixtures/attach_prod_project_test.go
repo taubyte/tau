@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package fixtures
 
 import (
@@ -15,7 +17,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestAttachProdProject(t *testing.T) {
+func TestAttachProdProject_Dreaming(t *testing.T) {
 	log.SetLogLevel("seer.p2p.client", "PANIC")
 	t.Skip("this project is not on prod anymore")
 

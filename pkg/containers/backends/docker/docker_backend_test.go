@@ -143,20 +143,6 @@ func TestHealthCheck(t *testing.T) {
 		assert.Error(t, err, "HealthCheck should fail when client is nil")
 		assert.Contains(t, err.Error(), "not initialized")
 	})
-
-	t.Run("Integration", func(t *testing.T) {
-		backend, err := New(core.DockerConfig{})
-		require.NoError(t, err, "Backend creation must succeed - Docker is required")
-		require.NotNil(t, backend, "Backend must not be nil")
-
-		defer func() {
-			require.NotNil(t, backend.client, "Client must exist for cleanup")
-			require.NoError(t, backend.client.Close(), "Client close must succeed")
-		}()
-
-		err = backend.HealthCheck(context.Background())
-		require.NoError(t, err, "HealthCheck must succeed - Docker daemon must be running")
-	})
 }
 
 func TestBackendImage(t *testing.T) {

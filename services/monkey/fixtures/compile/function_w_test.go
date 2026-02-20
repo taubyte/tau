@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package compile_test
 
 import (
@@ -17,7 +19,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestWasmFunction(t *testing.T) {
+func TestWasmFunction_Dreaming(t *testing.T) {
 	t.Skip("this wasm build results in: abort: IO in ~lib/wasi_process.ts(177:16)")
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)

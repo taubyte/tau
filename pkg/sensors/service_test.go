@@ -43,230 +43,232 @@ func newTestService(t *testing.T, node *mockNode, registry *sensors.Registry) *s
 	return svc
 }
 
-func TestService_PushValue(t *testing.T) {
-	testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
-	mockNode := &mockNode{id: testID}
-	service := newTestService(t, mockNode, nil)
-	ctx := context.Background()
+func TestAll(t *testing.T) {
+	// Allow time for default port (4217) to be released from previous runs before any subtest.
+	time.Sleep(2 * time.Second)
 
-	_, err := service.PushValue(ctx, connect.NewRequest(&sensorsv1.PushValueRequest{
-		Name:      "cpu",
-		Value:     42.5,
-		Timestamp: time.Now().Unix(),
-	}))
-	require.NoError(t, err)
+	tests := []struct {
+		name string
+		fn   func(t *testing.T)
+	}{
+		// New_DefaultPort runs first so it can bind to 4217 before any other test.
+		{"New_DefaultPort", func(t *testing.T) {
+			testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
+			mockNode := &mockNode{id: testID}
 
-	value, ok, err := service.Registry().Get("cpu")
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, 42.5, value)
-}
+			svc, err := sensors.New(mockNode)
+			require.NoError(t, err)
+			require.NotNil(t, svc)
 
-func TestService_PushValue_Validation(t *testing.T) {
-	testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
-	mockNode := &mockNode{id: testID}
-	service := newTestService(t, mockNode, nil)
-	ctx := context.Background()
+			addr := svc.Addr().(*net.TCPAddr)
+			require.Equal(t, sensors.DefaultPort, addr.Port)
+		}},
+		{"Service_PushValue", func(t *testing.T) {
+			testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
+			mockNode := &mockNode{id: testID}
+			service := newTestService(t, mockNode, nil)
+			ctx := context.Background()
 
-	_, err := service.PushValue(ctx, connect.NewRequest(&sensorsv1.PushValueRequest{
-		Name:      "",
-		Value:     10,
-		Timestamp: time.Now().Unix(),
-	}))
-	require.Error(t, err)
-}
+			_, err := service.PushValue(ctx, connect.NewRequest(&sensorsv1.PushValueRequest{
+				Name:      "cpu",
+				Value:     42.5,
+				Timestamp: time.Now().Unix(),
+			}))
+			require.NoError(t, err)
 
-func TestNew(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+			value, ok, err := service.Registry().Get("cpu")
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.Equal(t, 42.5, value)
+		}},
+		{"Service_PushValue_Validation", func(t *testing.T) {
+			testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
+			mockNode := &mockNode{id: testID}
+			service := newTestService(t, mockNode, nil)
+			ctx := context.Background()
 
-	testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
-	mockNode := &mockNode{id: testID}
+			_, err := service.PushValue(ctx, connect.NewRequest(&sensorsv1.PushValueRequest{
+				Name:      "",
+				Value:     10,
+				Timestamp: time.Now().Unix(),
+			}))
+			require.Error(t, err)
+		}},
+		{"New", func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
 
-	svc, err := sensors.New(mockNode, sensors.WithPort(0))
-	require.NoError(t, err)
-	require.NotNil(t, svc)
-	require.NotNil(t, svc.Addr())
+			testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
+			mockNode := &mockNode{id: testID}
 
-	addr := svc.Addr().(*net.TCPAddr)
-	require.Equal(t, "127.0.0.1", addr.IP.String())
+			svc, err := sensors.New(mockNode, sensors.WithPort(0))
+			require.NoError(t, err)
+			require.NotNil(t, svc)
+			require.NotNil(t, svc.Addr())
 
-	time.Sleep(100 * time.Millisecond)
+			addr := svc.Addr().(*net.TCPAddr)
+			require.Equal(t, "127.0.0.1", addr.IP.String())
 
-	_, err = svc.PushValue(ctx, connect.NewRequest(&sensorsv1.PushValueRequest{
-		Name:      "test",
-		Value:     123.45,
-		Timestamp: time.Now().Unix(),
-	}))
-	require.NoError(t, err)
+			time.Sleep(100 * time.Millisecond)
 
-	cancel()
-	time.Sleep(100 * time.Millisecond)
-}
+			_, err = svc.PushValue(ctx, connect.NewRequest(&sensorsv1.PushValueRequest{
+				Name:      "test",
+				Value:     123.45,
+				Timestamp: time.Now().Unix(),
+			}))
+			require.NoError(t, err)
 
-func TestNew_DefaultPort(t *testing.T) {
-	testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
-	mockNode := &mockNode{id: testID}
+			cancel()
+			time.Sleep(100 * time.Millisecond)
+		}},
+		{"New_WithRegistry", func(t *testing.T) {
+			testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
+			mockNode := &mockNode{id: testID}
+			registry := sensors.NewRegistry()
+			registry.Set("pre-existing", 99.9)
 
-	svc, err := sensors.New(mockNode)
-	require.NoError(t, err)
-	require.NotNil(t, svc)
+			svc, err := sensors.New(mockNode, sensors.WithPort(0), sensors.WithRegistry(registry))
+			require.NoError(t, err)
 
-	addr := svc.Addr().(*net.TCPAddr)
-	require.Equal(t, sensors.DefaultPort, addr.Port)
-}
+			value, ok, err := svc.Registry().Get("pre-existing")
+			require.NoError(t, err)
+			require.True(t, ok)
+			require.Equal(t, 99.9, value)
+		}},
+		{"Service_Path", func(t *testing.T) {
+			testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
+			mockNode := &mockNode{id: testID}
+			service := newTestService(t, mockNode, nil)
+			path := service.Path()
+			require.NotEmpty(t, path)
+		}},
+		{"Service_Handler", func(t *testing.T) {
+			testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
+			mockNode := &mockNode{id: testID}
+			service := newTestService(t, mockNode, nil)
+			handler := service.Handler()
+			require.NotNil(t, handler)
+		}},
+		{"Service_Addr_NilListener", func(t *testing.T) {
+			t.Skip("Service created via New always has a listener")
+		}},
+		{"Service_PushValue_InvalidValue", func(t *testing.T) {
+			testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
+			mockNode := &mockNode{id: testID}
+			service := newTestService(t, mockNode, nil)
+			ctx := context.Background()
 
-func TestNew_WithRegistry(t *testing.T) {
-	testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
-	mockNode := &mockNode{id: testID}
-	registry := sensors.NewRegistry()
-	registry.Set("pre-existing", 99.9)
+			_, err := service.PushValue(ctx, connect.NewRequest(&sensorsv1.PushValueRequest{
+				Name:      "invalid",
+				Value:     math.NaN(),
+				Timestamp: time.Now().Unix(),
+			}))
+			require.Error(t, err)
 
-	svc, err := sensors.New(mockNode, sensors.WithPort(0), sensors.WithRegistry(registry))
-	require.NoError(t, err)
+			_, err = service.PushValue(ctx, connect.NewRequest(&sensorsv1.PushValueRequest{
+				Name:      "invalid2",
+				Value:     math.Inf(1),
+				Timestamp: time.Now().Unix(),
+			}))
+			require.Error(t, err)
+		}},
+		{"Service_NodeInfo", func(t *testing.T) {
+			testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
+			mockNode := &mockNode{id: testID}
+			service := newTestService(t, mockNode, nil)
+			ctx := context.Background()
 
-	value, ok, err := svc.Registry().Get("pre-existing")
-	require.NoError(t, err)
-	require.True(t, ok)
-	require.Equal(t, 99.9, value)
-}
+			resp, err := service.NodeInfo(ctx, connect.NewRequest(&sensorsv1.NodeInfoRequest{}))
+			require.NoError(t, err)
+			require.NotNil(t, resp)
+			require.NotEmpty(t, resp.Msg.GetNodeId())
+			require.Equal(t, testID.String(), resp.Msg.GetNodeId())
+		}},
+		{"Registry_Delete", func(t *testing.T) {
+			registry := sensors.NewRegistry()
 
-func TestService_Path(t *testing.T) {
-	testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
-	mockNode := &mockNode{id: testID}
-	service := newTestService(t, mockNode, nil)
-	path := service.Path()
-	require.NotEmpty(t, path)
-}
+			err := registry.Set("test", 42.5)
+			require.NoError(t, err)
 
-func TestService_Handler(t *testing.T) {
-	testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
-	mockNode := &mockNode{id: testID}
-	service := newTestService(t, mockNode, nil)
-	handler := service.Handler()
-	require.NotNil(t, handler)
-}
+			_, ok, err := registry.Get("test")
+			require.NoError(t, err)
+			require.True(t, ok)
 
-func TestService_Addr_NilListener(t *testing.T) {
-	// This test is no longer applicable since New always starts a server
-	// Service created via New will always have a listener
-	t.Skip("Service created via New always has a listener")
-}
+			err = registry.Delete("test")
+			require.NoError(t, err)
 
-func TestService_PushValue_InvalidValue(t *testing.T) {
-	testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
-	mockNode := &mockNode{id: testID}
-	service := newTestService(t, mockNode, nil)
-	ctx := context.Background()
+			_, ok, err = registry.Get("test")
+			require.NoError(t, err)
+			require.False(t, ok)
+		}},
+		{"Registry_Delete_EmptyName", func(t *testing.T) {
+			registry := sensors.NewRegistry()
+			err := registry.Delete("")
+			require.Error(t, err)
+			require.Equal(t, sensors.ErrEmptyName, err)
+		}},
+		{"Registry_List", func(t *testing.T) {
+			registry := sensors.NewRegistry()
 
-	_, err := service.PushValue(ctx, connect.NewRequest(&sensorsv1.PushValueRequest{
-		Name:      "invalid",
-		Value:     math.NaN(),
-		Timestamp: time.Now().Unix(),
-	}))
-	require.Error(t, err)
+			registry.Set("cpu", 42.5)
+			registry.Set("memory", 75.0)
+			registry.Set("disk", 30.2)
 
-	_, err = service.PushValue(ctx, connect.NewRequest(&sensorsv1.PushValueRequest{
-		Name:      "invalid2",
-		Value:     math.Inf(1),
-		Timestamp: time.Now().Unix(),
-	}))
-	require.Error(t, err)
-}
+			entries := registry.List()
+			require.Len(t, entries, 3)
 
-func TestService_NodeInfo(t *testing.T) {
-	testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
-	mockNode := &mockNode{id: testID}
-	service := newTestService(t, mockNode, nil)
-	ctx := context.Background()
+			entryMap := make(map[string]float64)
+			for _, entry := range entries {
+				entryMap[entry.Name] = entry.Value
+			}
 
-	resp, err := service.NodeInfo(ctx, connect.NewRequest(&sensorsv1.NodeInfoRequest{}))
-	require.NoError(t, err)
-	require.NotNil(t, resp)
-	require.NotEmpty(t, resp.Msg.GetNodeId())
-	require.Equal(t, testID.String(), resp.Msg.GetNodeId())
-}
+			require.Equal(t, 42.5, entryMap["cpu"])
+			require.Equal(t, 75.0, entryMap["memory"])
+			require.Equal(t, 30.2, entryMap["disk"])
+		}},
+		{"Registry_List_Empty", func(t *testing.T) {
+			registry := sensors.NewRegistry()
+			entries := registry.List()
+			require.Empty(t, entries)
+		}},
+		{"Registry_Set_InvalidValue", func(t *testing.T) {
+			registry := sensors.NewRegistry()
 
-func TestRegistry_Delete(t *testing.T) {
-	registry := sensors.NewRegistry()
+			err := registry.Set("test", math.NaN())
+			require.Error(t, err)
+			require.Equal(t, sensors.ErrInvalidValue, err)
 
-	err := registry.Set("test", 42.5)
-	require.NoError(t, err)
+			err = registry.Set("test", math.Inf(1))
+			require.Error(t, err)
+			require.Equal(t, sensors.ErrInvalidValue, err)
 
-	_, ok, err := registry.Get("test")
-	require.NoError(t, err)
-	require.True(t, ok)
-
-	err = registry.Delete("test")
-	require.NoError(t, err)
-
-	_, ok, err = registry.Get("test")
-	require.NoError(t, err)
-	require.False(t, ok)
-}
-
-func TestRegistry_Delete_EmptyName(t *testing.T) {
-	registry := sensors.NewRegistry()
-	err := registry.Delete("")
-	require.Error(t, err)
-	require.Equal(t, sensors.ErrEmptyName, err)
-}
-
-func TestRegistry_List(t *testing.T) {
-	registry := sensors.NewRegistry()
-
-	registry.Set("cpu", 42.5)
-	registry.Set("memory", 75.0)
-	registry.Set("disk", 30.2)
-
-	entries := registry.List()
-	require.Len(t, entries, 3)
-
-	entryMap := make(map[string]float64)
-	for _, entry := range entries {
-		entryMap[entry.Name] = entry.Value
+			err = registry.Set("test", math.Inf(-1))
+			require.Error(t, err)
+			require.Equal(t, sensors.ErrInvalidValue, err)
+		}},
+		{"Registry_Get_EmptyName", func(t *testing.T) {
+			registry := sensors.NewRegistry()
+			_, _, err := registry.Get("")
+			require.Error(t, err)
+			require.Equal(t, sensors.ErrEmptyName, err)
+		}},
+		{"Registry_Get_NotExists", func(t *testing.T) {
+			registry := sensors.NewRegistry()
+			value, ok, err := registry.Get("nonexistent")
+			require.NoError(t, err)
+			require.False(t, ok)
+			require.Equal(t, 0.0, value)
+		}},
 	}
-
-	require.Equal(t, 42.5, entryMap["cpu"])
-	require.Equal(t, 75.0, entryMap["memory"])
-	require.Equal(t, 30.2, entryMap["disk"])
-}
-
-func TestRegistry_List_Empty(t *testing.T) {
-	registry := sensors.NewRegistry()
-	entries := registry.List()
-	require.Empty(t, entries)
-}
-
-func TestRegistry_Set_InvalidValue(t *testing.T) {
-	registry := sensors.NewRegistry()
-
-	err := registry.Set("test", math.NaN())
-	require.Error(t, err)
-	require.Equal(t, sensors.ErrInvalidValue, err)
-
-	err = registry.Set("test", math.Inf(1))
-	require.Error(t, err)
-	require.Equal(t, sensors.ErrInvalidValue, err)
-
-	err = registry.Set("test", math.Inf(-1))
-	require.Error(t, err)
-	require.Equal(t, sensors.ErrInvalidValue, err)
-}
-
-func TestRegistry_Get_EmptyName(t *testing.T) {
-	registry := sensors.NewRegistry()
-	_, _, err := registry.Get("")
-	require.Error(t, err)
-	require.Equal(t, sensors.ErrEmptyName, err)
-}
-
-func TestRegistry_Get_NotExists(t *testing.T) {
-	registry := sensors.NewRegistry()
-	value, ok, err := registry.Get("nonexistent")
-	require.NoError(t, err)
-	require.False(t, ok)
-	require.Equal(t, 0.0, value)
+	for i, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			if i > 0 {
+				time.Sleep(1 * time.Second)
+			}
+			tc.fn(t)
+		})
+	}
 }
 
 func BenchmarkRegistry_Set(b *testing.B) {

@@ -34,16 +34,22 @@ func init() {
 }
 
 func TestPlugin(t *testing.T) {
+	// Ensure default plugin (addVal=42) so ping(5) returns 47; avoid stale binary from TestUpdatePlugin.
+	assert.NilError(t, initializePlugin())
 	plugin, err := vmPlugin.Load(pluginBinary, context.Background())
 	assert.NilError(t, err)
+	defer plugin.Close()
 	ret := basicCall(t, plugin, basicWasm, 5)
 	testReturn(t, ret, 47)
 }
 
 func TestConcurrentPlugin(t *testing.T) {
+	// Ensure default plugin (addVal=42) so ping(5) returns 47.
+	assert.NilError(t, initializePlugin())
 	runtimeCount := 5
 	plugin, err := vmPlugin.Load(pluginBinary, context.Background())
 	assert.NilError(t, err)
+	defer plugin.Close()
 
 	var wg sync.WaitGroup
 	wg.Add(runtimeCount)

@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package gateway_test
 
 import (

@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package auth_test
 
 import (
@@ -18,7 +20,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
-func TestAuthServiceE2E(t *testing.T) {
+func TestAuthServiceE2E_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()
@@ -222,7 +224,7 @@ func testStreamAPI(t *testing.T, u *dream.Universe, auth interface{}) {
 	// For e2e tests, we'll just verify the service is accessible
 }
 
-func TestAuthServiceWithMockData(t *testing.T) {
+func TestAuthServiceWithMockData_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

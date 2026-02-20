@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package compile_test
 
 import (
@@ -19,7 +21,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestZWasmFunction(t *testing.T) {
+func TestZWasmFunction_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

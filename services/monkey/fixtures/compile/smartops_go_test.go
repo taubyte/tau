@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package compile_test
 
 import (
@@ -19,7 +21,7 @@ import (
 )
 
 // TODO: FIXME
-func TestGoSmartOp(t *testing.T) {
+func TestGoSmartOp_Dreaming(t *testing.T) {
 	t.Skip("smart op is broken currently")
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)

@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package jobs
 
 import (
@@ -12,7 +14,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
-func TestRunWasmBasic(t *testing.T) {
+func TestRunWasmBasic_Dreaming(t *testing.T) {
 	t.Skip("Needs to be redone")
 
 	u, cleanup, err := startDream(t)

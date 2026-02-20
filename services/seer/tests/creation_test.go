@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -13,7 +15,7 @@ import (
 	_ "github.com/taubyte/tau/services/seer/dream"
 )
 
-func TestService(t *testing.T) {
+func TestService_Dreaming(t *testing.T) {
 	fake_location := iface.Location{Latitude: 32.91264411258042, Longitude: -96.8907727708027}
 
 	m, err := dream.New(t.Context())

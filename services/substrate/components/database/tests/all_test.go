@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -49,7 +51,7 @@ var (
 
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
-func TestAll(t *testing.T) {
+func TestAll_Dreaming(t *testing.T) {
 	meta := patrick.Meta{}
 	meta.Repository.ID = 1234567890
 	meta.Repository.Branch = "main" // Updated to match repository default branch

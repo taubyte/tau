@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package auth_test
 
 import (
@@ -12,7 +14,7 @@ import (
 	_ "github.com/taubyte/tau/services/auth/dream"
 )
 
-func TestStats(t *testing.T) {
+func TestStats_Dreaming(t *testing.T) {
 	t.TempDir()
 
 	m, err := dream.New(t.Context())

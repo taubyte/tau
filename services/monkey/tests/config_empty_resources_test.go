@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -16,7 +18,7 @@ import (
 
 // TestConfigJobEmptyResources tests that indexes always exist in the flat result,
 // even when a project has no resources.
-func TestConfigJobEmptyResources(t *testing.T) {
+func TestConfigJobEmptyResources_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

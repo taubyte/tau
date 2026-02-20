@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -21,7 +23,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 )
 
-func TestClientWithUniverse(t *testing.T) {
+func TestClientWithUniverse_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

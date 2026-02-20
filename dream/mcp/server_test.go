@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package mcp
 
 import (
@@ -43,7 +45,7 @@ func getAvailablePort() (int, error) {
 	return listener.Addr().(*net.TCPAddr).Port, nil
 }
 
-func TestMCPServer(t *testing.T) {
+func TestMCPServer_Dreaming(t *testing.T) {
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer multiverse.Close()
@@ -258,7 +260,7 @@ func TestMCPServer(t *testing.T) {
 	})
 }
 
-func TestMCPServiceCreation(t *testing.T) {
+func TestMCPServiceCreation_Dreaming(t *testing.T) {
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer multiverse.Close()
@@ -277,7 +279,7 @@ func TestMCPServiceCreation(t *testing.T) {
 	})
 }
 
-func TestUniverseHandlers(t *testing.T) {
+func TestUniverseHandlers_Dreaming(t *testing.T) {
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer multiverse.Close()
@@ -419,7 +421,7 @@ func TestUniverseHandlers(t *testing.T) {
 	})
 }
 
-func TestProjectHandlers(t *testing.T) {
+func TestProjectHandlers_Dreaming(t *testing.T) {
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer multiverse.Close()
@@ -491,7 +493,7 @@ func TestProjectHandlers(t *testing.T) {
 	multiverse.Delete("test-project-universe")
 }
 
-func TestSystemHandlers(t *testing.T) {
+func TestSystemHandlers_Dreaming(t *testing.T) {
 	multiverse, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer multiverse.Close()
@@ -546,7 +548,7 @@ func TestSystemHandlers(t *testing.T) {
 	multiverse.Delete("test-disk-universe")
 }
 
-func TestHelperFunctions(t *testing.T) {
+func TestHelperFunctions_Dreaming(t *testing.T) {
 	t.Run("ErrorResultGeneric", func(t *testing.T) {
 		result, output, err := errorResult("test", "test error: %s", "message")
 		assert.NilError(t, err)
@@ -616,7 +618,7 @@ func TestHelperFunctions(t *testing.T) {
 	})
 }
 
-func TestConvertRegistryToMapAndIDs(t *testing.T) {
+func TestConvertRegistryToMapAndIDs_Dreaming(t *testing.T) {
 	t.Run("EmptyMap", func(t *testing.T) {
 		registry := make(map[interface{}]interface{})
 		result, ids, err := convertRegistryToMapAndIDs(registry)

@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package auth_test
 
 import (
@@ -17,7 +19,7 @@ import (
 	"github.com/taubyte/tau/utils/id"
 )
 
-func TestAuthClient(t *testing.T) {
+func TestAuthClient_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

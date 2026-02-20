@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package service
 
 import (
@@ -20,7 +22,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestSwarm(t *testing.T) {
+func TestSwarm_Dreaming(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 

@@ -1,3 +1,5 @@
+//go:build raft_integration
+
 package raft
 
 import (
@@ -124,11 +126,7 @@ func waitForMemberAbsent(t *testing.T, cl Cluster, memberID peercore.ID, timeout
 	}
 }
 
-func TestCluster_MultiNode_LeaderElection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_MultiNode_LeaderElection_Integration(t *testing.T) {
 	// Create first node (will be bootstrap)
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
@@ -207,11 +205,7 @@ func TestCluster_MultiNode_LeaderElection(t *testing.T) {
 	}
 }
 
-func TestCluster_MultiNode_SendToNonLeader(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_MultiNode_SendToNonLeader_Integration(t *testing.T) {
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 
@@ -276,11 +270,7 @@ func TestCluster_MultiNode_SendToNonLeader(t *testing.T) {
 	assert.Equal(t, string(val), "client-value")
 }
 
-func TestCluster_AutoBootstrapThenJoiners(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_AutoBootstrapThenJoiners_Integration(t *testing.T) {
 	namespace := "autobootstrap-joiners"
 
 	// Start node1 alone; it should auto-bootstrap after 1s with no peers.
@@ -348,11 +338,7 @@ func TestCluster_AutoBootstrapThenJoiners(t *testing.T) {
 	assert.Equal(t, leader1, leader3, "cluster3 should agree on leader")
 }
 
-func TestCluster_MultiNode_DiscoverPeers(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_MultiNode_DiscoverPeers_Integration(t *testing.T) {
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 
@@ -403,11 +389,7 @@ func TestCluster_MultiNode_DiscoverPeers(t *testing.T) {
 	t.Logf("Both clusters agree on leader: %s", leader1)
 }
 
-func TestCluster_MultiNode_StreamServiceForwarding(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_MultiNode_StreamServiceForwarding_Integration(t *testing.T) {
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 
@@ -495,11 +477,7 @@ func TestCluster_MultiNode_StreamServiceForwarding(t *testing.T) {
 	assert.Assert(t, !found, "key should be deleted after forwarded delete")
 }
 
-func TestCluster_MultiNode_ClientOperations(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_MultiNode_ClientOperations_Integration(t *testing.T) {
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 
@@ -590,11 +568,7 @@ func TestCluster_MultiNode_ClientOperations(t *testing.T) {
 	assert.Equal(t, string(val), "value2")
 }
 
-func TestCluster_MultiNode_ClientGetWithBarrier(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_MultiNode_ClientGetWithBarrier_Integration(t *testing.T) {
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 
@@ -681,11 +655,7 @@ func TestCluster_MultiNode_ClientGetWithBarrier(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidBarrier, "should return ErrInvalidBarrier")
 }
 
-func TestCluster_MultiNode_Apply_InvalidTimeout(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_MultiNode_Apply_InvalidTimeout_Integration(t *testing.T) {
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 
@@ -781,11 +751,7 @@ func TestCluster_MultiNode_Apply_InvalidTimeout(t *testing.T) {
 
 // TestCluster_MultiCluster_SameNode tests that a single node can participate
 // in multiple clusters with different namespaces without any collision
-func TestCluster_MultiCluster_SameNode(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_MultiCluster_SameNode_Integration(t *testing.T) {
 	// Create a single node that will join multiple clusters
 	node := newTestNode(t)
 
@@ -883,11 +849,7 @@ func TestCluster_MultiCluster_SameNode(t *testing.T) {
 
 // TestCluster_MultiCluster_MultiNode tests multiple nodes each participating
 // in multiple clusters with no collision
-func TestCluster_MultiCluster_MultiNode(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 	// Create two nodes
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
@@ -980,11 +942,7 @@ func TestCluster_MultiCluster_MultiNode(t *testing.T) {
 	t.Logf("Successfully tested multi-node multi-cluster isolation")
 }
 
-func TestCluster_RejoinAfterLeave(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_RejoinAfterLeave_Integration(t *testing.T) {
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 	node2 := newTestNode(t, node1Info)
@@ -1024,11 +982,7 @@ func TestCluster_RejoinAfterLeave(t *testing.T) {
 
 // TestCluster_DiscoveryBasedBootstrap tests the discovery-based peer convergence
 // where nodes discover each other and bootstrap together
-func TestCluster_DiscoveryBasedBootstrap(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_DiscoveryBasedBootstrap_Integration(t *testing.T) {
 	// Create nodes that know about each other via peering
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
@@ -1126,11 +1080,7 @@ func TestCluster_DiscoveryBasedBootstrap(t *testing.T) {
 
 // TestCluster_ThreeNodes_SimultaneousStart tests that 3 nodes starting at exactly
 // the same time can properly bootstrap and elect a single leader
-func TestCluster_ThreeNodes_SimultaneousStart(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_ThreeNodes_SimultaneousStart_Integration(t *testing.T) {
 	// Create three nodes that will know about each other
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
@@ -1237,11 +1187,7 @@ func TestCluster_ThreeNodes_SimultaneousStart(t *testing.T) {
 
 // TestCluster_LeaderCrashAndFailover tests that a cluster survives leader crash
 // and elects a new leader, with data remaining accessible
-func TestCluster_LeaderCrashAndFailover(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_LeaderCrashAndFailover_Integration(t *testing.T) {
 	// Create three nodes with full mesh connectivity
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
@@ -1372,11 +1318,7 @@ func TestCluster_LeaderCrashAndFailover(t *testing.T) {
 // TestCluster_NodeRebootWithDataPersistence verifies that when a follower reboots,
 // it catches up with the cluster and has access to all data.
 // Uses a 3-node cluster so quorum is maintained when one node reboots.
-func TestCluster_NodeRebootWithDataPersistence(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_NodeRebootWithDataPersistence_Integration(t *testing.T) {
 	// Create 3 nodes with full mesh connectivity (needed to maintain quorum during reboot)
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
@@ -1508,11 +1450,7 @@ func TestCluster_NodeRebootWithDataPersistence(t *testing.T) {
 
 // TestCluster_StaggeredConcurrentStartup tests nodes starting at random offsets
 // within a short window (simulating real network conditions)
-func TestCluster_StaggeredConcurrentStartup(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_StaggeredConcurrentStartup_Integration(t *testing.T) {
 	// Create three nodes
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
@@ -1651,11 +1589,7 @@ func TestCluster_StaggeredConcurrentStartup(t *testing.T) {
 
 // TestCluster_LeaderRebootAndRejoin tests the scenario where the leader crashes,
 // a new leader is elected, and then the old leader comes back and rejoins as follower
-func TestCluster_LeaderRebootAndRejoin(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
+func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	// Create 3 nodes with full mesh connectivity
 	node1 := newTestNode(t)
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}

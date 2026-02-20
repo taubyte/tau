@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package gateway_test
 
 import (
@@ -18,14 +20,14 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestBasicPing(t *testing.T) {
+func TestBasicPing_Dreaming(t *testing.T) {
 	res := testSingleFunction(t, "ping", "GET", "ping.zwasm", nil)
 	data, err := io.ReadAll(res.Body)
 	assert.NilError(t, err)
 	assert.Equal(t, string(data), "PONG")
 }
 
-func TestBasicWithBody(t *testing.T) {
+func TestBasicWithBody_Dreaming(t *testing.T) {
 	body := "hello_world"
 	res := testSingleFunction(t, "toUpper", "POST", "toupper.zwasm", []byte(body))
 	data, err := io.ReadAll(res.Body)

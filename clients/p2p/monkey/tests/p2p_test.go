@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -19,7 +21,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestMonkeyClient(t *testing.T) {
+func TestMonkeyClient_Dreaming(t *testing.T) {
 	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}

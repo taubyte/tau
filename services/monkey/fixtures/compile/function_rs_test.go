@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package compile_test
 
 import (
@@ -13,7 +15,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestRSFunction(t *testing.T) {
+func TestRSFunction_Dreaming(t *testing.T) {
 	t.Skip("takes forever...")
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)

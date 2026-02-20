@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -48,7 +50,7 @@ func init() {
 	}
 }
 
-func TestCounters(t *testing.T) {
+func TestCounters_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

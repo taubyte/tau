@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -12,7 +14,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
 )
 
-func TestSeerClient(t *testing.T) {
+func TestSeerClient_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

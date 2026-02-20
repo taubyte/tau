@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package service
 
 import (
@@ -19,7 +21,7 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-func TestAuthProjects(t *testing.T) {
+func TestAuthProjects_Dreaming(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 

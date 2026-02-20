@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package service_test
 
 import (
@@ -30,7 +32,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
 
-func TestDream(t *testing.T) {
+func TestDream_Dreaming(t *testing.T) {
 	http.DefaultClient = commonTest.CreateHttpClient()
 
 	m, err := dream.New(t.Context())

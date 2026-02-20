@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tns_test
 
 import (
@@ -15,7 +17,7 @@ import (
 
 var _ iface.Client = &p2p.Client{}
 
-func TestTNSClient(t *testing.T) {
+func TestTNSClient_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

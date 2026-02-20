@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package auth_test
 
 import (
@@ -40,7 +42,7 @@ func injectCert(t *testing.T, client authIface.Client) []byte {
 	return cert
 }
 
-func TestInject(t *testing.T) {
+func TestInject_Dreaming(t *testing.T) {
 	testDir := t.TempDir()
 
 	m, err := dream.New(t.Context())

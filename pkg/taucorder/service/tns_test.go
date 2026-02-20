@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package service
 
 import (
@@ -28,7 +30,7 @@ import (
 	tcc "github.com/taubyte/tau/utils/tcc"
 )
 
-func TestTNS(t *testing.T) {
+func TestTNS_Dreaming(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 

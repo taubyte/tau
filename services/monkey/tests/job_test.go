@@ -1,3 +1,5 @@
+//go:build dreaming
+
 package tests
 
 import (
@@ -34,7 +36,7 @@ import (
 
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
-func TestConfigJob(t *testing.T) {
+func TestConfigJob_Dreaming(t *testing.T) {
 	protocolCommon.MockedPatrick = true
 	monkey.NewPatrick = func(ctx context.Context, node peer.Node) (patrick.Client, error) {
 		return &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
