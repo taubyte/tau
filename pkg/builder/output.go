@@ -3,7 +3,9 @@ package builder
 import (
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/taubyte/tau/core/builders"
 	spec "github.com/taubyte/tau/pkg/specs/builders"
@@ -26,6 +28,24 @@ func new(wd spec.Dir) *output {
 	}
 }
 
+// outputDirHasNoFiles returns true when dir has no regular files (only dirs or empty).
+func outputDirHasNoFiles(dir string) (bool, error) {
+	var hasFile bool
+	err := filepath.WalkDir(dir, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			hasFile = true
+		}
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return !hasFile, nil
+}
+
 // Compress takes a CompressionMethod, and returns the compressed output of the files built by Build
 func (o *output) Compress(method builders.CompressionMethod) (io.ReadSeekCloser, error) {
 	var (
@@ -45,6 +65,13 @@ func (o *output) Compress(method builders.CompressionMethod) (io.ReadSeekCloser,
 			zippedFile, err = bundle.Zip(bundle.ZipFile, wasm.WasmDeprecatedOutput(o.outDir), o.wd.Wasm().Zip(), wasm.WasmFile)
 		}
 	case builders.Website:
+		noFiles, err := outputDirHasNoFiles(o.outDir)
+		if err != nil {
+			return nil, fmt.Errorf("checking website output directory failed with: %w", err)
+		}
+		if noFiles {
+			return nil, fmt.Errorf("website build produced no output: output directory is empty")
+		}
 		zippedFile, err = bundle.Zip(bundle.ZipDir, o.outDir, o.wd.Website().BuildZip())
 	default:
 		return nil, fmt.Errorf("compression method `%d` not supported", method)
