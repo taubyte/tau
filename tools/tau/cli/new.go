@@ -3,8 +3,8 @@ package cli
 import (
 	"github.com/pterm/pterm"
 	"github.com/taubyte/tau/tools/tau/cli/commands/autocomplete"
+	buildCmd "github.com/taubyte/tau/tools/tau/cli/commands/build"
 	"github.com/taubyte/tau/tools/tau/cli/commands/current"
-	"github.com/taubyte/tau/tools/tau/cli/commands/dream"
 	"github.com/taubyte/tau/tools/tau/cli/commands/login"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/application"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds"
@@ -62,7 +62,7 @@ func New() (*cli.App, error) {
 		Commands: []*cli.Command{
 			login.Command,
 			current.Command,
-			dream.Command,
+			buildCmd.Command,
 			validate.Command,
 		},
 	}
