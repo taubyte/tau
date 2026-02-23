@@ -11,8 +11,9 @@ import (
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-// Image initializes the given image, and attempts to pull the container from docker hub.
-// If the Build() Option is provided then the given DockerFile tarball is built and returned.
+// Image initializes the given image. It tries to pull from the registry first to get the latest;
+// if pull fails and the image exists locally, that image is used. If the Build() Option is provided
+// then the given DockerFile tarball is built and returned.
 func (c *Client) Image(ctx context.Context, name string, options ...ImageOption) (image *DockerImage, err error) {
 	image = &DockerImage{
 		backend: c.backend,
@@ -33,13 +34,11 @@ func (c *Client) Image(ctx context.Context, name string, options ...ImageOption)
 			return nil, errorImageBuild(name, err)
 		}
 	} else {
-		if image, err = image.Pull(ctx, nil); err != nil {
-			err = errorImagePull(name, err)
-			if !imageExists {
-				image = nil
+		if _, err := image.Pull(ctx, nil); err != nil {
+			if imageExists {
+				return image, nil
 			}
-
-			return image, err
+			return nil, errorImagePull(name, err)
 		}
 	}
 

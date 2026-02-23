@@ -26,6 +26,7 @@ func runBuildLibrary(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("library path: %w", err)
 	}
+
 	if err := verifyWorkDirExists(workDir); err != nil {
 		libraryI18n.Help().BeSureToCloneLibrary()
 		return err

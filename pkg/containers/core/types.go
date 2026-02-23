@@ -29,6 +29,8 @@ const (
 
 // Backend defines the interface for container runtime backends
 type Backend interface {
+	// BackendType returns which backend this is (docker, containerd, etc.)
+	BackendType() BackendType
 	// Image operations - returns an Image interface for image management
 	Image(name string) Image
 

@@ -124,7 +124,8 @@ func (i *dockerImage) Build(ctx context.Context, input core.BuildInput) error {
 	return nil
 }
 
-// Exists checks if the image exists locally
+// Exists checks if the image exists locally using ImageList with reference filter.
+// If the filter returns 0 images, ImageInspectWithRaw is tried as fallback (same resolution as "docker run").
 func (i *dockerImage) Exists(ctx context.Context) bool {
 	if i.backend.client == nil {
 		return false
@@ -136,8 +137,16 @@ func (i *dockerImage) Exists(ctx context.Context) bool {
 	images, err := i.backend.client.ImageList(ctx, types.ImageListOptions{
 		Filters: filter,
 	})
+	if err != nil {
+		return false
+	}
 
-	return err == nil && len(images) > 0
+	if len(images) == 0 {
+		_, _, inspectErr := i.backend.client.ImageInspectWithRaw(ctx, i.name)
+		return inspectErr == nil
+	}
+
+	return true
 }
 
 // Remove removes the image from the backend

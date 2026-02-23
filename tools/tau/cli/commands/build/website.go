@@ -26,6 +26,7 @@ func runBuildWebsite(ctx *cli.Context) error {
 	if err != nil {
 		return fmt.Errorf("website path: %w", err)
 	}
+
 	if err := verifyWorkDirExists(workDir); err != nil {
 		websiteI18n.Help().BeSureToCloneWebsite()
 		return err

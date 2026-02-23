@@ -2,9 +2,11 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -41,15 +43,98 @@ func New(config core.DockerConfig) (*DockerBackend, error) {
 	return backend, nil
 }
 
+// resolveDockerHost returns the Docker host to use, matching the docker CLI when possible.
+// When config.Host and DOCKER_HOST are unset, reads the current context from the Docker
+// config file (same location and layout as the Docker CLI: ~/.docker/config.json or
+// DOCKER_CONFIG) and the context endpoint from the context store (contexts/<name>/meta.json
+// or contexts/meta/<hash>/meta.json per Docker's store layout). This keeps behaviour
+// portable and aligned with the Docker CLI without adding a direct dependency on
+// github.com/docker/cli (which can pull in incompatible moby/client versions).
+// Returns ("", false) when no host should be forced.
+func resolveDockerHost(configHost string) (host string, use bool) {
+	if configHost != "" {
+		return configHost, true
+	}
+	if h := os.Getenv("DOCKER_HOST"); h != "" {
+		return h, true
+	}
+	dir := os.Getenv("DOCKER_CONFIG")
+	if dir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", false
+		}
+		dir = filepath.Join(home, ".docker")
+	}
+	configPath := filepath.Join(dir, "config.json")
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return "", false
+	}
+	var cfg struct {
+		CurrentContext string `json:"currentContext"`
+	}
+	if err := json.Unmarshal(data, &cfg); err != nil || cfg.CurrentContext == "" {
+		return "", false
+	}
+	if cfg.CurrentContext == "default" {
+		return "", false
+	}
+	// Try legacy path: contexts/<name>/meta.json
+	metaPath := filepath.Join(dir, "contexts", cfg.CurrentContext, "meta.json")
+	data, err = os.ReadFile(metaPath)
+	if err != nil {
+		// Docker stores context metadata under contexts/meta/<hash>/meta.json with Name field
+		metaDir := filepath.Join(dir, "contexts", "meta")
+		entries, listErr := os.ReadDir(metaDir)
+		if listErr != nil {
+			return "", false
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			path := filepath.Join(metaDir, e.Name(), "meta.json")
+			data, err = os.ReadFile(path)
+			if err != nil {
+				continue
+			}
+			var meta struct {
+				Name      string `json:"Name"`
+				Endpoints struct {
+					Docker struct {
+						Host string `json:"Host"`
+					} `json:"docker"`
+				} `json:"Endpoints"`
+			}
+			if json.Unmarshal(data, &meta) != nil || meta.Name != cfg.CurrentContext || meta.Endpoints.Docker.Host == "" {
+				continue
+			}
+			return meta.Endpoints.Docker.Host, true
+		}
+		return "", false
+	}
+	var meta struct {
+		Endpoints struct {
+			Docker struct {
+				Host string `json:"Host"`
+			} `json:"docker"`
+		} `json:"Endpoints"`
+	}
+	if err := json.Unmarshal(data, &meta); err != nil || meta.Endpoints.Docker.Host == "" {
+		return "", false
+	}
+	return meta.Endpoints.Docker.Host, true
+}
+
 // initClient initializes the Docker client
 func (b *DockerBackend) initClient() error {
 	opts := []client.Opt{
 		client.WithAPIVersionNegotiation(),
 	}
 
-	if b.config.Host != "" {
-		opts = append(opts, client.WithHost(b.config.Host))
-	} else if host := os.Getenv("DOCKER_HOST"); host != "" {
+	host, useHost := resolveDockerHost(b.config.Host)
+	if useHost {
 		opts = append(opts, client.WithHost(host))
 	}
 
@@ -64,6 +149,11 @@ func (b *DockerBackend) initClient() error {
 
 	b.client = cli
 	return nil
+}
+
+// BackendType returns core.BackendTypeDocker
+func (b *DockerBackend) BackendType() core.BackendType {
+	return core.BackendTypeDocker
 }
 
 // Image returns an Image interface for the given image name

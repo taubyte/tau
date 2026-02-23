@@ -30,6 +30,7 @@ pkg/vm-orbit/tests/e2e/go/fixtures/testPlugin*
 **/testGIT
 **/cover.out
 /tau
+/tools/tau/tau
 
 # Node artifact files
 node_modules/

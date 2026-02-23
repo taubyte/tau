@@ -57,6 +57,10 @@ func New(ctx context.Context, output io.Writer, workDir string) (iface.Builder, 
 		return nil, b.Errorf("decoding config failed with: %w", err)
 	}
 
+	env := b.config.HandleDepreciatedEnvironment()
+	fmt.Fprintf(b.output, "tau build: workDir=%s config=%s image=%s workflow=%v\n",
+		b.wd.String(), b.wd.ConfigFile(), env.Image, b.config.Workflow)
+
 	// set tarball if any
 	return b, b.setTarball()
 }

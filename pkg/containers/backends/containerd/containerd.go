@@ -201,6 +201,11 @@ func (b *ContainerdBackend) initClient() error {
 }
 
 // Image returns an Image interface for the given image name
+// BackendType returns core.BackendTypeContainerd
+func (b *ContainerdBackend) BackendType() core.BackendType {
+	return core.BackendTypeContainerd
+}
+
 func (b *ContainerdBackend) Image(name string) core.Image {
 	return &containerdImage{
 		backend: b,

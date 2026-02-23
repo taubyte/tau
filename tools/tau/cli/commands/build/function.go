@@ -21,6 +21,7 @@ func runBuildFunction(ctx *cli.Context) error {
 	}
 
 	workDir := bc.workDirForFunction(fn.Name)
+
 	if err := verifyWorkDirExists(workDir); err != nil {
 		return err
 	}
