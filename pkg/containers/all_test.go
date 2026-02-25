@@ -188,10 +188,10 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 
 	time.Sleep(20 * time.Second)
 
-	// After cleanup interval, image should be gone.
+	// After cleanup interval, image should be gone (GC removes images older than MaxAge).
 	img2, err2 := cli.Image(ctx, testCustomImage)
 	if err2 == nil && img2 != nil && img2.Exists(ctx) {
-		t.Error("Expected to find no containers after clean interval")
+		t.Error("Expected image to be removed after clean interval")
 	}
 }
 

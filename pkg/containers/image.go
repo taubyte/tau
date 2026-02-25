@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/filters"
+	"github.com/taubyte/tau/pkg/containers/backends/docker"
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
@@ -126,10 +127,9 @@ func (i *DockerImage) Instantiate(ctx context.Context, options ...ContainerOptio
 	return c, nil
 }
 
-// Clean removes all docker images that match the given filter, and max age.
-// This method is deprecated - use backend image operations directly instead.
+// Clean removes images older than age that match the given filter.
+// Implemented for the Docker backend; other backends return an error.
 func (c *Client) Clean(ctx context.Context, age time.Duration, filter filters.Args) error {
-	// Lazily initialize backend if not already initialized
 	if c.backend == nil {
 		backend, err := getDefaultBackend()
 		if err != nil {
@@ -138,9 +138,10 @@ func (c *Client) Clean(ctx context.Context, age time.Duration, filter filters.Ar
 		c.backend = backend
 	}
 
-	// Clean() method functionality would need to be implemented via backend
-	// For now, return an error indicating this needs backend-specific implementation
-	return fmt.Errorf("Clean() method not yet implemented via backend - use backend image operations directly")
+	if db, ok := c.backend.(*docker.DockerBackend); ok {
+		return db.Clean(ctx, age, filter)
+	}
+	return fmt.Errorf("Clean() not supported by backend %s", c.backend.BackendType())
 }
 
 // Name returns the name of the image

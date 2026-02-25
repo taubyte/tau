@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
@@ -360,12 +361,43 @@ func (b *DockerBackend) Remove(ctx context.Context, id core.ContainerID) error {
 		return err
 	}
 
-	if err := b.client.ContainerRemove(ctx, dockerID, container.RemoveOptions{}); err != nil {
+	if err := b.client.ContainerRemove(ctx, dockerID, container.RemoveOptions{Force: true}); err != nil {
 		return fmt.Errorf("failed to remove container %s: %w", id, err)
 	}
 
 	delete(b.containers, id)
 
+	return nil
+}
+
+// Clean removes images older than age that match the given filter.
+func (b *DockerBackend) Clean(ctx context.Context, age time.Duration, filter filters.Args) error {
+	if b.client == nil {
+		return fmt.Errorf("Docker client not initialized")
+	}
+
+	opts := types.ImageListOptions{}
+	if len(filter.Keys()) > 0 {
+		opts.Filters = filter
+	}
+	images, err := b.client.ImageList(ctx, opts)
+	if err != nil {
+		return fmt.Errorf("failed to list images: %w", err)
+	}
+
+	cutoff := time.Now().Add(-age).Unix()
+	for _, img := range images {
+		if img.Created < cutoff {
+			_, err := b.client.ImageRemove(ctx, img.ID, types.ImageRemoveOptions{
+				Force:         true,
+				PruneChildren: true,
+			})
+			if err != nil {
+				// Log but continue; e.g. image may be in use
+				_ = err
+			}
+		}
+	}
 	return nil
 }
 
