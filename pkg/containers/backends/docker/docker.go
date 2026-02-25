@@ -388,14 +388,11 @@ func (b *DockerBackend) Clean(ctx context.Context, age time.Duration, filter fil
 	cutoff := time.Now().Add(-age).Unix()
 	for _, img := range images {
 		if img.Created < cutoff {
-			_, err := b.client.ImageRemove(ctx, img.ID, types.ImageRemoveOptions{
+			// best effort to remove the image
+			b.client.ImageRemove(ctx, img.ID, types.ImageRemoveOptions{
 				Force:         true,
 				PruneChildren: true,
 			})
-			if err != nil {
-				// Log but continue; e.g. image may be in use
-				_ = err
-			}
 		}
 	}
 	return nil
