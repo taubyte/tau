@@ -36,10 +36,10 @@ func (b *builder) Build(ops ...ci.ContainerOption) (builders.Output, error) {
 
 	json.NewEncoder(b.output).Encode(struct {
 		Timestamp int64 `json:"timestamp"`
-		Succeess  bool  `json:"success"`
+		Success   bool  `json:"success"`
 	}{
 		Timestamp: time.Now().UnixNano(),
-		Succeess:  true,
+		Success:   true,
 	})
 
 	return out, nil

@@ -27,7 +27,7 @@ func runBuildFunction(ctx *cli.Context) error {
 	}
 
 	buildCtx := context.Background()
-	b, err := newBuilderFunc(buildCtx, os.Stderr, workDir)
+	b, err := newBuilderFunc(buildCtx, NewBuildOutputWriter(os.Stderr), workDir)
 	if err != nil {
 		return err
 	}
