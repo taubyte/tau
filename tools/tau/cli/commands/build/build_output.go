@@ -40,6 +40,12 @@ func NewBuildOutputWriter(dest io.Writer) io.Writer {
 	}
 }
 
+// writeOut writes s to the buffer and flushes; errors are ignored (buffer to terminal is best-effort).
+func (w *buildOutputWriter) writeOut(s string) {
+	w.buf.WriteString(s)
+	w.buf.Flush()
+}
+
 func (w *buildOutputWriter) flushLine() error {
 	if len(w.line) == 0 {
 		return nil
@@ -56,11 +62,8 @@ func (w *buildOutputWriter) flushLine() error {
 	// Try to parse as JSON build event
 	var ev buildEvent
 	if err := json.Unmarshal([]byte(line), &ev); err != nil {
-		_, err = w.buf.WriteString(line + "\n")
-		if err != nil {
-			return err
-		}
-		return w.buf.Flush()
+		w.writeOut(line + "\n")
+		return nil
 	}
 
 	// Handle known events (suppress raw JSON, render sections + spinner)
@@ -68,8 +71,7 @@ func (w *buildOutputWriter) flushLine() error {
 	case ev.Op == "pull/build image":
 		w.update, w.stop = spinner.StartWithSuffix(" Pull/build image...")
 		if ev.Image != "" {
-			_, _ = w.buf.WriteString("image: " + ev.Image + "\n")
-			_ = w.buf.Flush()
+			w.writeOut("image: " + ev.Image + "\n")
 		}
 	case ev.Op == "run container":
 		if w.update != nil {
@@ -88,36 +90,30 @@ func (w *buildOutputWriter) flushLine() error {
 			w.stop()
 			w.update, w.stop = nil, nil
 		}
-		_, _ = w.buf.WriteString("Step: " + ev.Step + " — success\n")
-		_ = w.buf.Flush()
+		w.writeOut("Step: " + ev.Step + " — success\n")
 	case ev.Step != "" && ev.Status == "error":
 		if w.stop != nil {
 			w.stop()
 			w.update, w.stop = nil, nil
 		}
-		_, _ = w.buf.WriteString("Step: " + ev.Step + " — error\n")
+		w.writeOut("Step: " + ev.Step + " — error\n")
 		if ev.Error != "" {
-			_, _ = w.buf.WriteString(ev.Error + "\n")
+			w.writeOut(ev.Error + "\n")
 		}
-		_ = w.buf.Flush()
 	case ev.Error != "":
 		if w.stop != nil {
 			w.stop()
 			w.update, w.stop = nil, nil
 		}
-		_, _ = w.buf.WriteString("build failed: " + ev.Error + "\n")
-		_ = w.buf.Flush()
+		w.writeOut("build failed: " + ev.Error + "\n")
 	case ev.Success:
 		if w.stop != nil {
 			w.stop()
 			w.update, w.stop = nil, nil
 		}
-		_, _ = w.buf.WriteString("Done\n")
-		_ = w.buf.Flush()
+		w.writeOut("Done\n")
 	default:
-		// Unknown JSON: pass through
-		_, _ = w.buf.WriteString(line + "\n")
-		_ = w.buf.Flush()
+		w.writeOut(line + "\n")
 	}
 	return nil
 }
@@ -146,7 +142,7 @@ func (w *buildOutputWriter) Close() error {
 		w.update, w.stop = nil, nil
 	}
 	if len(w.line) != 0 {
-		_, _ = w.buf.WriteString(string(w.line) + "\n")
+		w.writeOut(string(w.line) + "\n")
 		w.line = w.line[:0]
 	}
 	return w.buf.Flush()
