@@ -27,6 +27,7 @@ type Basic interface {
 	Import() Command
 	Cancel() Command
 	Retry() Command
+	Run() Command
 
 	// Sets the following in the command if not already set:
 	// Name

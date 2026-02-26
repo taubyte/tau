@@ -20,4 +20,5 @@ func (UnimplementedBasic) Checkout() Command              { return NotImplemente
 func (UnimplementedBasic) Import() Command                { return NotImplemented }
 func (UnimplementedBasic) Cancel() Command                { return NotImplemented }
 func (UnimplementedBasic) Retry() Command                 { return NotImplemented }
+func (UnimplementedBasic) Run() Command                   { return NotImplemented }
 func (UnimplementedBasic) Base() (*cli.Command, []Option) { return nil, nil }

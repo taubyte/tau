@@ -25,4 +25,5 @@ var (
 	_import   = newBaseCommand("import")
 	_cancel   = newBaseCommand("cancel")
 	_retry    = newBaseCommand("retry")
+	_run      = newBaseCommand("run")
 )
