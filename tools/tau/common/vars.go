@@ -32,6 +32,7 @@ const (
 	CodeRepoDir    = "code"
 	WebsiteRepoDir = "websites"
 	LibraryRepoDir = "libraries"
+	BuildsDir      = "builds"
 
 	SelectionInline = Source(".")
 )

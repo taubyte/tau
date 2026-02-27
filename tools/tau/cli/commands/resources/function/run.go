@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/taubyte/tau/tools/tau/cli/commands/build"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	tauCommon "github.com/taubyte/tau/tools/tau/common"
 	"github.com/taubyte/tau/tools/tau/config"
@@ -45,19 +46,26 @@ func runAction(ctx *cli.Context) error {
 		return fmt.Errorf("run is only supported for HTTP(S) functions (got %q)", fnSpec.Type)
 	}
 
-	wasmPath := ctx.String(functionFlags.RunWasm.Name)
-	if wasmPath == "" {
-		return fmt.Errorf("--wasm is required (path to compiled WASM file)")
-	}
-	if _, err := os.Stat(wasmPath); err != nil {
-		return fmt.Errorf("wasm file %q: %w", wasmPath, err)
-	}
-
 	project, err := config.GetSelectedProject()
 	if err != nil {
 		return err
 	}
 	application, _ := config.GetSelectedApplication()
+
+	wasmPath := ctx.String(functionFlags.RunWasm.Name)
+	if wasmPath == "" {
+		projectConfig, err := projectLib.SelectedProjectConfig()
+		if err != nil {
+			return err
+		}
+		wasmPath, err = build.ResolveArtifactPath(projectConfig.Location, application, fnSpec.Name)
+		if err != nil {
+			return err
+		}
+	}
+	if _, err := os.Stat(wasmPath); err != nil {
+		return fmt.Errorf("wasm file %q: %w", wasmPath, err)
+	}
 
 	method := ctx.String(functionFlags.RunMethod.Name)
 	if method == "" {

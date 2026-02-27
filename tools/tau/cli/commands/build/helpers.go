@@ -2,12 +2,15 @@ package build
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
+	"github.com/taubyte/tau/tools/tau/common"
 	"github.com/taubyte/tau/tools/tau/config"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 )
@@ -72,4 +75,26 @@ func (c *buildContext) workDirForLibrary(repoName string) (string, error) {
 		return "", errInvalidRepoName
 	}
 	return path.Join(c.projectConfig.LibraryLoc(), split[1]), nil
+}
+
+// buildsDirForFunction returns the builds directory path for the given function
+// (mirrors workDirForFunction under builds/ instead of code/).
+func buildsDirForFunction(projectLocation, app, functionName string) string {
+	if len(app) > 0 {
+		return path.Join(projectLocation, common.BuildsDir, commonSpec.ApplicationPathVariable.String(), app, functionSpec.PathVariable.String(), functionName)
+	}
+	return path.Join(projectLocation, common.BuildsDir, functionSpec.PathVariable.String(), functionName)
+}
+
+// ResolveArtifactPath returns the path to artifact.zip or main.wasm under the
+// function's builds dir if either exists, otherwise an error.
+func ResolveArtifactPath(projectLocation, app, functionName string) (string, error) {
+	dir := buildsDirForFunction(projectLocation, app, functionName)
+	for _, name := range []string{wasm.ZipFile, wasm.WasmFile} {
+		candidate := path.Join(dir, name)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("artifact not found in %s (run \"tau build function\" first or set --wasm)", dir)
 }

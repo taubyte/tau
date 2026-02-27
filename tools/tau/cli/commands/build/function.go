@@ -3,8 +3,10 @@ package build
 import (
 	"context"
 	"os"
+	"path"
 
 	"github.com/taubyte/tau/core/builders"
+	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	functionPrompts "github.com/taubyte/tau/tools/tau/prompts/function"
 	"github.com/urfave/cli/v2"
 )
@@ -45,6 +47,13 @@ func runBuildFunction(ctx *cli.Context) error {
 	defer compressed.Close()
 
 	outPath := ctx.String(outputFlag.Name)
+	if outPath == "" {
+		dir := buildsDirForFunction(bc.projectConfig.Location, bc.selectedApp, fn.Name)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+		outPath = path.Join(dir, wasm.ZipFile)
+	}
 	_, err = writeCompressedToOutput(compressed, outPath, "tau-build-*.wasm")
 	return err
 }
