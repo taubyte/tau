@@ -154,7 +154,14 @@ func (r *runtime) instantiate(name string, compiled wazero.CompiledModule, hasRe
 		return nil, fmt.Errorf("instantiating compiled module `%s` failed with: %s", name, err)
 	}
 
-	if _start := m.ExportedFunction("_start"); _start != nil {
+	// reactor modules export _initialize to set up globals (e.g. os.Stdout).
+	// Must be called before any other exported function.
+	if _initialize := m.ExportedFunction("_initialize"); _initialize != nil {
+		if _, err := _initialize.Call(ctx); err != nil {
+			return nil, fmt.Errorf("calling _initialize for module `%s`: %w", name, err)
+		}
+		// TODO: this should be deleted later as we should only support reactor modules
+	} else if _start := m.ExportedFunction("_start"); _start != nil {
 		if hasReady {
 			go func() {
 				_start.Call(ctx)

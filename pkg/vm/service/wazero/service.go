@@ -18,6 +18,9 @@ func (s *service) New(ctx vm.Context, config vm.Config) (vm.Instance, error) {
 	case vm.Buffer:
 		r.output = newBuffer()
 		r.outputErr = newBuffer()
+	case vm.Stdio:
+		r.output = newStdout()
+		r.outputErr = newStderr()
 	default:
 		var err error
 		if r.output, err = newPipe(); err != nil {

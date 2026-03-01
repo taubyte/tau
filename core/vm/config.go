@@ -11,4 +11,5 @@ type OutputType uint32
 const (
 	Pipe OutputType = iota
 	Buffer
+	Stdio
 )

@@ -6,6 +6,8 @@ import (
 )
 
 // Run starts the container and waits for the container to exit before returning the container logs.
+// Logs are returned even when the container exits with a non-zero status so callers
+// can inspect build output (e.g. compiler errors).
 func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
 	imageName := ""
 	if c.image != nil {
@@ -16,28 +18,31 @@ func (c *Container) Run(ctx context.Context) (*MuxedReadCloser, error) {
 		return nil, errorContainerStart(c.id, imageName, err)
 	}
 
-	if err := c.Wait(ctx); err != nil {
-		return nil, err
-	}
+	waitErr := c.Wait(ctx)
 
 	info, err := c.backend.Inspect(ctx, c.id)
 	if err != nil {
+		if waitErr != nil {
+			return nil, waitErr
+		}
 		return nil, errorContainerInspect(c.id, imageName, err)
 	}
 
-	var RetCodeErr error
-	if info.ExitCode != 0 {
-		RetCodeErr = errorContainerExitCode(c.id, imageName, info.ExitCode)
+	if waitErr == nil && info.ExitCode != 0 {
+		waitErr = errorContainerExitCode(c.id, imageName, info.ExitCode)
 	}
 
 	muxed, err := c.backend.Logs(ctx, c.id)
 	if err != nil {
+		if waitErr != nil {
+			return nil, waitErr
+		}
 		return nil, errorContainerLogs(c.id, imageName, err)
 	}
 
 	c.Cleanup(ctx)
 
-	return &MuxedReadCloser{reader: muxed}, RetCodeErr
+	return &MuxedReadCloser{reader: muxed}, waitErr
 }
 
 // Wait calls the ContainerWait method for the container, and returns once a response has been received.

@@ -27,7 +27,7 @@ func (b *buffer) Read(p []byte) (n int, err error) {
 
 func (b *buffer) Write(p []byte) (n int, err error) {
 	if b.buffer != nil {
-		b.buffer.Write(p)
+		return b.buffer.Write(p)
 	}
 
 	return 0, errors.New("buffer is closed")
@@ -96,3 +96,25 @@ func (p *pipe) Close() error {
 }
 
 var MaxOutputCapacity = 10 * 1024
+
+// stdioWriter forwards writes to a standard stream (os.Stdout or os.Stderr).
+// Read returns nothing; Close is a no-op so the process stdio is not closed.
+type stdioWriter struct {
+	*os.File
+}
+
+func (s *stdioWriter) Read(p []byte) (n int, err error) {
+	return 0, io.EOF
+}
+
+func (s *stdioWriter) Close() error {
+	return nil
+}
+
+func newStdout() io.ReadWriteCloser {
+	return &stdioWriter{File: os.Stdout}
+}
+
+func newStderr() io.ReadWriteCloser {
+	return &stdioWriter{File: os.Stderr}
+}

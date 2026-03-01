@@ -100,14 +100,13 @@ func (b *builder) run(output *output, image *ci.DockerImage, environment specs.E
 			return b.Errorf("instantiating container failed with: %w", err)
 		}
 
-		log, err := container.Run(b.context)
+		log, runErr := container.Run(b.context)
 		if log != nil {
-			_, err = io.Copy(b.output, log.Combined())
-			if err != nil {
-				return b.Errorf("writting container output failed with: %w", err)
+			if _, copyErr := io.Copy(b.output, log.Combined()); copyErr != nil {
+				return b.Errorf("writing container output failed with: %w", copyErr)
 			}
 		}
-		if err != nil {
+		if runErr != nil {
 			json.NewEncoder(b.output).Encode(struct {
 				Step      string `json:"step"`
 				Timestamp int64  `json:"timestamp"`
@@ -117,9 +116,9 @@ func (b *builder) run(output *output, image *ci.DockerImage, environment specs.E
 				Step:      script,
 				Timestamp: time.Now().UnixNano(),
 				Status:    "error",
-				Error:     err.Error(),
+				Error:     runErr.Error(),
 			})
-			return b.Errorf("running container failed with: %w", err)
+			return b.Errorf("running container failed with: %w", runErr)
 		}
 		json.NewEncoder(b.output).Encode(struct {
 			Step      string `json:"step"`

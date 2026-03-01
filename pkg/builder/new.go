@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/jedib0t/go-pretty/v6/table"
 	iface "github.com/taubyte/tau/core/builders"
 	ci "github.com/taubyte/tau/pkg/containers"
 	"github.com/taubyte/tau/pkg/specs/builders"
@@ -58,8 +59,17 @@ func New(ctx context.Context, output io.Writer, workDir string) (iface.Builder, 
 	}
 
 	env := b.config.HandleDepreciatedEnvironment()
-	fmt.Fprintf(b.output, "tau build: workDir=%s config=%s image=%s workflow=%v\n",
-		b.wd.String(), b.wd.ConfigFile(), env.Image, b.config.Workflow)
+	t := table.NewWriter()
+	t.SetOutputMirror(b.output)
+	t.SetStyle(table.StyleLight)
+	t.AppendRows([]table.Row{
+		{"Working Directory", b.wd.String()},
+		{"Config File", b.wd.ConfigFile()},
+		{"Image", env.Image},
+		{"Workflow", fmt.Sprint(b.config.Workflow)},
+	})
+	t.Render()
+	fmt.Fprintln(b.output)
 
 	// set tarball if any
 	return b, b.setTarball()
