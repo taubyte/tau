@@ -10,7 +10,7 @@ import (
 
 func CloneToDir(ctx context.Context, dir string, _repo helpers.Repository) (err error) {
 	// Only used in testing
-	cloneURL := _repo.HookInfo.Repository.SSHURL
+	cloneURL := _repo.HookInfo.Repository.URI
 	if strings.HasPrefix(cloneURL, "git@") {
 		cloneURL = git.ConvertSSHToHTTPS(cloneURL)
 	}

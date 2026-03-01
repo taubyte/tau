@@ -96,11 +96,12 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 			return nil, errors.New("can't decode push payload")
 		}
 
-		//Unmarshal the needed json fields into the structure
+		// Unmarshal the needed json fields into the structure (Repository.UnmarshalJSON runs normalize)
 		err = json.Unmarshal(pl, &newJob.Meta)
 		if err != nil {
 			return nil, fmt.Errorf("failed unmarshalling payload into struct with error: %w", err)
 		}
+
 		job_id := id.Generate(newJob.Meta.Repository.ID)
 
 		//Assign fields before marshal
@@ -113,10 +114,10 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 			return nil, fmt.Errorf("only builds main branches %v got `%s`", commonSpec.DefaultBranches, newJob.Meta.Repository.Branch)
 		}
 
-		// Pushing useful information to tns
+		// Pushing useful information to tns (ssh key stores effective URI for backward compat)
 		repoInfo := map[string]string{
 			"id":  fmt.Sprintf("%d", newJob.Meta.Repository.ID),
-			"ssh": newJob.Meta.Repository.SSHURL,
+			"ssh": newJob.Meta.Repository.URI,
 		}
 
 		err = srv.tnsClient.Push([]string{"resolve", "repo", "github", fmt.Sprintf("%d", newJob.Meta.Repository.ID)}, repoInfo)

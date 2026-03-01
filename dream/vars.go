@@ -95,27 +95,65 @@ var FixtureMap = map[string]FixtureDefinition{
 				Alias:    "b",
 				Required: false,
 			},
+			{
+				Name:        "path",
+				Alias:       "p",
+				Description: "Absolute path to local project root",
+				Required:    false,
+			},
 		},
 	},
 	"pushConfig": {
 		Description: "pushes into config repo",
 		ImportRef:   "patrick",
 		Internal:    true,
+		Variables: []FixtureVariable{
+			{
+				Name:        "path",
+				Alias:       "p",
+				Description: "Absolute path to local repo directory",
+				Required:    false,
+			},
+		},
 	},
 	"pushCode": {
 		Description: "pushes into code repo",
 		ImportRef:   "patrick",
 		Internal:    true,
+		Variables: []FixtureVariable{
+			{
+				Name:        "path",
+				Alias:       "p",
+				Description: "Absolute path to local repo directory",
+				Required:    false,
+			},
+		},
 	},
 	"pushWebsite": {
 		Description: "pushes website repo",
 		ImportRef:   "patrick",
 		Internal:    true,
+		Variables: []FixtureVariable{
+			{
+				Name:        "path",
+				Alias:       "p",
+				Description: "Absolute path to local repo directory",
+				Required:    false,
+			},
+		},
 	},
 	"pushLibrary": {
 		Description: "pushes library repo",
 		ImportRef:   "patrick",
 		Internal:    true,
+		Variables: []FixtureVariable{
+			{
+				Name:        "path",
+				Alias:       "p",
+				Description: "Absolute path to local repo directory",
+				Required:    false,
+			},
+		},
 	},
 	"attachDomain": {
 		Description: "attaches default FQDN",
@@ -164,6 +202,12 @@ var FixtureMap = map[string]FixtureDefinition{
 				Name:        "branch", // TODO : make this variable a slice
 				Alias:       "b",
 				Description: fmt.Sprintf("Defaults to %v", commonSpec.DefaultBranches),
+				Required:    false,
+			},
+			{
+				Name:        "path",
+				Alias:       "p",
+				Description: "Absolute path to local repo directory",
 				Required:    false,
 			},
 		},

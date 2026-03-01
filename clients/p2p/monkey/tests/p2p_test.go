@@ -63,7 +63,6 @@ func TestMonkeyClient_Dreaming(t *testing.T) {
 	fakJob.Logs = make(map[string]string)
 	fakJob.AssetCid = make(map[string]string)
 	fakJob.Meta.Repository.ID = 1
-	fakJob.Meta.Repository.SSHURL = ""
 	fakJob.Meta.Repository.Provider = "github"
 
 	err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), fakJob)

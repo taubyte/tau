@@ -16,6 +16,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/core/services/patrick"
 	commonAuth "github.com/taubyte/tau/services/common"
@@ -152,19 +153,43 @@ func generateHMAC(body []byte, secret string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func MakeTemplate(id int, fullname string, branch string) ([]byte, error) {
+// HeadCommitFromLocalRepo returns the HEAD commit hash of the local git repo at repoPath.
+func HeadCommitFromLocalRepo(repoPath string) (string, error) {
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return "", fmt.Errorf("opening local repo at %s: %w", repoPath, err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("getting HEAD from %s: %w", repoPath, err)
+	}
+	return head.Hash().String(), nil
+}
+
+var (
+	DefaultBranch   = "master"
+	DefaultCommitID = "0f4cf056ceaa9f9164bb17f392eea5d041bc8e73"
+)
+
+func MakeTemplate(id int, fullname string, branch string, commitID string, uri string) ([]byte, error) {
 	if len(branch) == 0 {
-		branch = "master"
+		branch = DefaultBranch
+	}
+	if len(commitID) == 0 {
+		commitID = DefaultCommitID
 	}
 	splitName := strings.Split(fullname, "/")
 	if len(splitName) != 2 {
 		return nil, fmt.Errorf("expected fullname to be `username/repo-name` got `%s`", fullname)
 	}
-	type repo struct {
-		ID                     int
-		Name, RepoName, Branch string
+	if len(uri) == 0 {
+		uri = fmt.Sprintf("git@github.com:%s/%s.git", splitName[0], splitName[1])
 	}
-	var repoInfo = &repo{ID: id, Name: splitName[0], RepoName: splitName[1], Branch: branch}
+	type repo struct {
+		ID                                    int
+		Name, RepoName, Branch, CommitID, URI string
+	}
+	var repoInfo = &repo{ID: id, Name: splitName[0], RepoName: splitName[1], Branch: branch, CommitID: commitID, URI: uri}
 
 	t := template.Must(template.New("repoInformation").Parse(string(TemplatePayload)))
 

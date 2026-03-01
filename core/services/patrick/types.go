@@ -1,6 +1,11 @@
 package patrick
 
-import "sync"
+import (
+	"encoding/json"
+	"sync"
+
+	"github.com/fxamacker/cbor/v2"
+)
 
 type Job struct {
 	Id        string    `cbor:"1,keyasint"`
@@ -31,8 +36,35 @@ type HeadCommit struct {
 type Repository struct {
 	ID       int    `json:"id" cbor:"65,keyasint"`
 	Provider string `json:"provider" cbor:"66,keyasint"`
-	SSHURL   string `json:"ssh_url" cbor:"67,keyasint"`
+	SSHURL   string `json:"ssh_url" cbor:"67,keyasint"` // deprecated: use URI; kept for backward compat
+	URI      string `json:"uri" cbor:"69,keyasint"`
 	Branch   string `json:"default_branch" cbor:"68,keyasint"`
+}
+
+// UnmarshalJSON decodes JSON and runs normalize so URI is set from SSHURL when empty.
+func (r *Repository) UnmarshalJSON(data []byte) error {
+	type repo Repository
+	if err := json.Unmarshal(data, (*repo)(r)); err != nil {
+		return err
+	}
+	r.normalize()
+	return nil
+}
+
+// Unmarshal decodes CBOR data into the job and normalizes the repository (e.g. promotes SSHURL to URI).
+func (j *Job) Unmarshal(data []byte) error {
+	if err := cbor.Unmarshal(data, j); err != nil {
+		return err
+	}
+	j.Meta.Repository.normalize()
+	return nil
+}
+
+// normalize promotes SSHURL to URI when URI is empty (backward compat for old webhooks and stored jobs).
+func (r *Repository) normalize() {
+	if r.URI == "" && r.SSHURL != "" {
+		r.URI = r.SSHURL
+	}
 }
 
 type DelayConfig struct {

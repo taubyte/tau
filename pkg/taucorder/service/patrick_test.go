@@ -152,7 +152,7 @@ func TestPatrick_Dreaming(t *testing.T) {
 			assert.Equal(t, job.Msg.GetMeta().GetHeadCommit(), ojob.Meta.HeadCommit.ID)
 			assert.Equal(t, job.Msg.GetMeta().GetRepository().GetId().GetGithub(), int64(ojob.Meta.Repository.ID))
 			assert.Equal(t, job.Msg.GetMeta().GetRepository().GetBranch(), ojob.Meta.Repository.Branch)
-			assert.Equal(t, job.Msg.GetMeta().GetRepository().GetSshUrl(), ojob.Meta.Repository.SSHURL)
+			assert.Equal(t, job.Msg.GetMeta().GetRepository().GetSshUrl(), ojob.Meta.Repository.URI)
 		}
 	})
 

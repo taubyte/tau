@@ -804,7 +804,7 @@ func TestUpdateStatus_ErrorCases(t *testing.T) {
 			jid:           "test-job",
 			status:        patrick.JobStatusSuccess,
 			expectError:   true,
-			errorContains: "failed unmarshalling job",
+			errorContains: "unmarshal job",
 		},
 	}
 

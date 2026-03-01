@@ -60,7 +60,7 @@ func (ps *patrickService) Get(ctx context.Context, req *connect.Request[pb.GetJo
 						Github: int64(job.Meta.Repository.ID),
 					},
 				},
-				SshUrl: job.Meta.Repository.SSHURL,
+				SshUrl: job.Meta.Repository.URI,
 				Branch: job.Meta.Repository.Branch,
 			},
 		},

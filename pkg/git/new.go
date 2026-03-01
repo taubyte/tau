@@ -25,6 +25,9 @@ func Info(args ...interface{}) {
 	pterm.Info.Println(args...)
 }
 
+// LocalURIScheme is the URL scheme for opening a local directory (no clone).
+const LocalURIScheme = "local://"
+
 /*
 New creates a new repository.
   - ctx: The context to use.
@@ -72,6 +75,17 @@ func (c *Repository) open_or_clone() error {
 
 	if !c.usingSpecificBranch {
 		c.branches = []string{"main", "master"}
+	}
+
+	// Handle local:// URIs — open directly, no clone
+	if strings.HasPrefix(c.url, LocalURIScheme) {
+		localPath := strings.TrimPrefix(c.url, LocalURIScheme)
+		c.root = localPath
+		c.repo, err = git.PlainOpen(localPath)
+		if err != nil {
+			return fmt.Errorf("opening local repo at %s: %w", localPath, err)
+		}
+		return nil
 	}
 
 	c.repo, err = git.PlainOpen(c.root)

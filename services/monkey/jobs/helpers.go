@@ -124,13 +124,13 @@ func (c *Context) cloneAndSet() error {
 		Timestamp int64  `json:"timestamp"`
 	}{
 		Op:        "git-clone",
-		Url:       c.Job.Meta.Repository.SSHURL,
+		Url:       c.Job.Meta.Repository.URI,
 		Branch:    c.Job.Meta.Repository.Branch,
 		Timestamp: time.Now().UnixNano(),
 	})
 	repo, err := git.New(
 		c.ctx,
-		git.URL(c.Job.Meta.Repository.SSHURL),
+		git.URL(c.Job.Meta.Repository.URI),
 		git.SSHKey(c.DeployKey),
 		git.Temporary(),
 		git.Branch(c.Job.Meta.Repository.Branch),
