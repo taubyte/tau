@@ -46,7 +46,7 @@ func TestProjectDomainCount_TCCFixture(t *testing.T) {
 
 func TestList_TCCFixture_WithApp(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	_ = session.Set().SelectedApplication("test_app1")
+	session.Set().SelectedApplication("test_app1")
 	names, err := List()
 	assert.NilError(t, err)
 	assert.Equal(t, len(names), 1)
@@ -55,7 +55,7 @@ func TestList_TCCFixture_WithApp(t *testing.T) {
 
 func TestListResources_TCCFixture_WithApp(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	_ = session.Set().SelectedApplication("test_app1")
+	session.Set().SelectedApplication("test_app1")
 	resources, err := ListResources()
 	assert.NilError(t, err)
 	assert.Equal(t, len(resources), 1)
@@ -64,7 +64,7 @@ func TestListResources_TCCFixture_WithApp(t *testing.T) {
 
 func TestIsAGeneratedFQDN_TestCloud(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	_ = session.Set().SelectedCloud("test")
+	session.Set().SelectedCloud("test")
 	ok, err := IsAGeneratedFQDN("prefix-abc12345.g.tau.link")
 	assert.NilError(t, err)
 	assert.Assert(t, ok)
@@ -75,7 +75,7 @@ func TestIsAGeneratedFQDN_TestCloud(t *testing.T) {
 
 func TestNewGeneratedFQDN_TestCloud(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	_ = session.Set().SelectedCloud("test")
+	session.Set().SelectedCloud("test")
 	fqdn, err := NewGeneratedFQDN("myapp")
 	assert.NilError(t, err)
 	assert.Assert(t, len(fqdn) > 0)

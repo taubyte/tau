@@ -44,7 +44,7 @@ func TestProjectFunctionCount_TCCFixture(t *testing.T) {
 
 func TestList_TCCFixture_WithApp(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	_ = session.Set().SelectedApplication("test_app1")
+	session.Set().SelectedApplication("test_app1")
 	names, err := List()
 	assert.NilError(t, err)
 	assert.Equal(t, len(names), 2)
@@ -54,7 +54,7 @@ func TestList_TCCFixture_WithApp(t *testing.T) {
 
 func TestListResources_TCCFixture_WithApp(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	_ = session.Set().SelectedApplication("test_app1")
+	session.Set().SelectedApplication("test_app1")
 	resources, err := ListResources()
 	assert.NilError(t, err)
 	assert.Equal(t, len(resources), 2)

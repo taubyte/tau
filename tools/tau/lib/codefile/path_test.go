@@ -22,7 +22,7 @@ func TestPath_TCCFixture_NoApp(t *testing.T) {
 
 func TestPath_TCCFixture_WithApp(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	_ = session.Set().SelectedApplication("test_app1")
+	session.Set().SelectedApplication("test_app1")
 	p, err := Path("myfunc", schemaCommon.FunctionFolder)
 	assert.NilError(t, err)
 	// Path = CodeLoc() + "/applications/test_app1/functions/myfunc"

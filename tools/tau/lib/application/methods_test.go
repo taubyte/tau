@@ -51,7 +51,7 @@ func TestSelectedProjectAndApp_TCCFixture(t *testing.T) {
 
 func TestSelectedProjectAndApp_TCCFixture_WithApp(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	_ = session.Set().SelectedApplication("test_app1")
+	session.Set().SelectedApplication("test_app1")
 	proj, app, err := SelectedProjectAndApp()
 	assert.NilError(t, err)
 	assert.Assert(t, proj != nil)
@@ -69,7 +69,7 @@ func TestSelect_TCCFixture(t *testing.T) {
 
 func TestDeselect_TCCFixture(t *testing.T) {
 	testutil.WithTCCFixtureEnv(t)
-	_ = session.Set().SelectedApplication("test_app1")
+	session.Set().SelectedApplication("test_app1")
 	err := Deselect(nil, "")
 	assert.NilError(t, err)
 	app, _ := session.Get().SelectedApplication()
