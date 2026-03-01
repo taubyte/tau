@@ -79,29 +79,6 @@ const (
 	X509InAuthServiceDeleteProcedure = "/taucorder.v1.X509InAuthService/Delete"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	authServiceServiceDescriptor                  = v1.File_taucorder_v1_auth_proto.Services().ByName("AuthService")
-	authServiceListMethodDescriptor               = authServiceServiceDescriptor.Methods().ByName("List")
-	authServiceDiscoverMethodDescriptor           = authServiceServiceDescriptor.Methods().ByName("Discover")
-	authServiceStateMethodDescriptor              = authServiceServiceDescriptor.Methods().ByName("State")
-	authServiceStatesMethodDescriptor             = authServiceServiceDescriptor.Methods().ByName("States")
-	projectsInAuthServiceServiceDescriptor        = v1.File_taucorder_v1_auth_proto.Services().ByName("ProjectsInAuthService")
-	projectsInAuthServiceListMethodDescriptor     = projectsInAuthServiceServiceDescriptor.Methods().ByName("List")
-	projectsInAuthServiceGetMethodDescriptor      = projectsInAuthServiceServiceDescriptor.Methods().ByName("Get")
-	repositoriesInAuthServiceServiceDescriptor    = v1.File_taucorder_v1_auth_proto.Services().ByName("RepositoriesInAuthService")
-	repositoriesInAuthServiceListMethodDescriptor = repositoriesInAuthServiceServiceDescriptor.Methods().ByName("List")
-	repositoriesInAuthServiceGetMethodDescriptor  = repositoriesInAuthServiceServiceDescriptor.Methods().ByName("Get")
-	gitHooksInAuthServiceServiceDescriptor        = v1.File_taucorder_v1_auth_proto.Services().ByName("GitHooksInAuthService")
-	gitHooksInAuthServiceListMethodDescriptor     = gitHooksInAuthServiceServiceDescriptor.Methods().ByName("List")
-	gitHooksInAuthServiceGetMethodDescriptor      = gitHooksInAuthServiceServiceDescriptor.Methods().ByName("Get")
-	x509InAuthServiceServiceDescriptor            = v1.File_taucorder_v1_auth_proto.Services().ByName("X509InAuthService")
-	x509InAuthServiceListMethodDescriptor         = x509InAuthServiceServiceDescriptor.Methods().ByName("List")
-	x509InAuthServiceGetMethodDescriptor          = x509InAuthServiceServiceDescriptor.Methods().ByName("Get")
-	x509InAuthServiceSetMethodDescriptor          = x509InAuthServiceServiceDescriptor.Methods().ByName("Set")
-	x509InAuthServiceDeleteMethodDescriptor       = x509InAuthServiceServiceDescriptor.Methods().ByName("Delete")
-)
-
 // AuthServiceClient is a client for the taucorder.v1.AuthService service.
 type AuthServiceClient interface {
 	List(context.Context, *connect.Request[v1.Node]) (*connect.ServerStreamForClient[v1.Peer], error)
@@ -119,29 +96,30 @@ type AuthServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) AuthServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	authServiceMethods := v1.File_taucorder_v1_auth_proto.Services().ByName("AuthService").Methods()
 	return &authServiceClient{
 		list: connect.NewClient[v1.Node, v1.Peer](
 			httpClient,
 			baseURL+AuthServiceListProcedure,
-			connect.WithSchema(authServiceListMethodDescriptor),
+			connect.WithSchema(authServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
 		discover: connect.NewClient[v1.DiscoverServiceRequest, v1.Peer](
 			httpClient,
 			baseURL+AuthServiceDiscoverProcedure,
-			connect.WithSchema(authServiceDiscoverMethodDescriptor),
+			connect.WithSchema(authServiceMethods.ByName("Discover")),
 			connect.WithClientOptions(opts...),
 		),
 		state: connect.NewClient[v1.ConsensusStateRequest, v1.ConsensusState](
 			httpClient,
 			baseURL+AuthServiceStateProcedure,
-			connect.WithSchema(authServiceStateMethodDescriptor),
+			connect.WithSchema(authServiceMethods.ByName("State")),
 			connect.WithClientOptions(opts...),
 		),
 		states: connect.NewClient[v1.Node, v1.ConsensusState](
 			httpClient,
 			baseURL+AuthServiceStatesProcedure,
-			connect.WithSchema(authServiceStatesMethodDescriptor),
+			connect.WithSchema(authServiceMethods.ByName("States")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -189,28 +167,29 @@ type AuthServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewAuthServiceHandler(svc AuthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	authServiceMethods := v1.File_taucorder_v1_auth_proto.Services().ByName("AuthService").Methods()
 	authServiceListHandler := connect.NewServerStreamHandler(
 		AuthServiceListProcedure,
 		svc.List,
-		connect.WithSchema(authServiceListMethodDescriptor),
+		connect.WithSchema(authServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
 	authServiceDiscoverHandler := connect.NewServerStreamHandler(
 		AuthServiceDiscoverProcedure,
 		svc.Discover,
-		connect.WithSchema(authServiceDiscoverMethodDescriptor),
+		connect.WithSchema(authServiceMethods.ByName("Discover")),
 		connect.WithHandlerOptions(opts...),
 	)
 	authServiceStateHandler := connect.NewUnaryHandler(
 		AuthServiceStateProcedure,
 		svc.State,
-		connect.WithSchema(authServiceStateMethodDescriptor),
+		connect.WithSchema(authServiceMethods.ByName("State")),
 		connect.WithHandlerOptions(opts...),
 	)
 	authServiceStatesHandler := connect.NewServerStreamHandler(
 		AuthServiceStatesProcedure,
 		svc.States,
-		connect.WithSchema(authServiceStatesMethodDescriptor),
+		connect.WithSchema(authServiceMethods.ByName("States")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/taucorder.v1.AuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -263,17 +242,18 @@ type ProjectsInAuthServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewProjectsInAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ProjectsInAuthServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	projectsInAuthServiceMethods := v1.File_taucorder_v1_auth_proto.Services().ByName("ProjectsInAuthService").Methods()
 	return &projectsInAuthServiceClient{
 		list: connect.NewClient[v1.Node, v1.Project](
 			httpClient,
 			baseURL+ProjectsInAuthServiceListProcedure,
-			connect.WithSchema(projectsInAuthServiceListMethodDescriptor),
+			connect.WithSchema(projectsInAuthServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
 		get: connect.NewClient[v1.ByProjectRequest, v1.Project](
 			httpClient,
 			baseURL+ProjectsInAuthServiceGetProcedure,
-			connect.WithSchema(projectsInAuthServiceGetMethodDescriptor),
+			connect.WithSchema(projectsInAuthServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -308,16 +288,17 @@ type ProjectsInAuthServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewProjectsInAuthServiceHandler(svc ProjectsInAuthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	projectsInAuthServiceMethods := v1.File_taucorder_v1_auth_proto.Services().ByName("ProjectsInAuthService").Methods()
 	projectsInAuthServiceListHandler := connect.NewServerStreamHandler(
 		ProjectsInAuthServiceListProcedure,
 		svc.List,
-		connect.WithSchema(projectsInAuthServiceListMethodDescriptor),
+		connect.WithSchema(projectsInAuthServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
 	projectsInAuthServiceGetHandler := connect.NewUnaryHandler(
 		ProjectsInAuthServiceGetProcedure,
 		svc.Get,
-		connect.WithSchema(projectsInAuthServiceGetMethodDescriptor),
+		connect.WithSchema(projectsInAuthServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/taucorder.v1.ProjectsInAuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -359,17 +340,18 @@ type RepositoriesInAuthServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewRepositoriesInAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) RepositoriesInAuthServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	repositoriesInAuthServiceMethods := v1.File_taucorder_v1_auth_proto.Services().ByName("RepositoriesInAuthService").Methods()
 	return &repositoriesInAuthServiceClient{
 		list: connect.NewClient[v1.Node, v1.ProjectRepo](
 			httpClient,
 			baseURL+RepositoriesInAuthServiceListProcedure,
-			connect.WithSchema(repositoriesInAuthServiceListMethodDescriptor),
+			connect.WithSchema(repositoriesInAuthServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
 		get: connect.NewClient[v1.ByRepositoryRequest, v1.ProjectRepo](
 			httpClient,
 			baseURL+RepositoriesInAuthServiceGetProcedure,
-			connect.WithSchema(repositoriesInAuthServiceGetMethodDescriptor),
+			connect.WithSchema(repositoriesInAuthServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -404,16 +386,17 @@ type RepositoriesInAuthServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewRepositoriesInAuthServiceHandler(svc RepositoriesInAuthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	repositoriesInAuthServiceMethods := v1.File_taucorder_v1_auth_proto.Services().ByName("RepositoriesInAuthService").Methods()
 	repositoriesInAuthServiceListHandler := connect.NewServerStreamHandler(
 		RepositoriesInAuthServiceListProcedure,
 		svc.List,
-		connect.WithSchema(repositoriesInAuthServiceListMethodDescriptor),
+		connect.WithSchema(repositoriesInAuthServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
 	repositoriesInAuthServiceGetHandler := connect.NewUnaryHandler(
 		RepositoriesInAuthServiceGetProcedure,
 		svc.Get,
-		connect.WithSchema(repositoriesInAuthServiceGetMethodDescriptor),
+		connect.WithSchema(repositoriesInAuthServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/taucorder.v1.RepositoriesInAuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -454,17 +437,18 @@ type GitHooksInAuthServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewGitHooksInAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) GitHooksInAuthServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	gitHooksInAuthServiceMethods := v1.File_taucorder_v1_auth_proto.Services().ByName("GitHooksInAuthService").Methods()
 	return &gitHooksInAuthServiceClient{
 		list: connect.NewClient[v1.Node, v1.Hook](
 			httpClient,
 			baseURL+GitHooksInAuthServiceListProcedure,
-			connect.WithSchema(gitHooksInAuthServiceListMethodDescriptor),
+			connect.WithSchema(gitHooksInAuthServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
 		get: connect.NewClient[v1.ByHookRequest, v1.Hook](
 			httpClient,
 			baseURL+GitHooksInAuthServiceGetProcedure,
-			connect.WithSchema(gitHooksInAuthServiceGetMethodDescriptor),
+			connect.WithSchema(gitHooksInAuthServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -499,16 +483,17 @@ type GitHooksInAuthServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewGitHooksInAuthServiceHandler(svc GitHooksInAuthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	gitHooksInAuthServiceMethods := v1.File_taucorder_v1_auth_proto.Services().ByName("GitHooksInAuthService").Methods()
 	gitHooksInAuthServiceListHandler := connect.NewServerStreamHandler(
 		GitHooksInAuthServiceListProcedure,
 		svc.List,
-		connect.WithSchema(gitHooksInAuthServiceListMethodDescriptor),
+		connect.WithSchema(gitHooksInAuthServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
 	gitHooksInAuthServiceGetHandler := connect.NewUnaryHandler(
 		GitHooksInAuthServiceGetProcedure,
 		svc.Get,
-		connect.WithSchema(gitHooksInAuthServiceGetMethodDescriptor),
+		connect.WithSchema(gitHooksInAuthServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/taucorder.v1.GitHooksInAuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -551,29 +536,30 @@ type X509InAuthServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewX509InAuthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) X509InAuthServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	x509InAuthServiceMethods := v1.File_taucorder_v1_auth_proto.Services().ByName("X509InAuthService").Methods()
 	return &x509InAuthServiceClient{
 		list: connect.NewClient[v1.Node, v1.X509Certificate](
 			httpClient,
 			baseURL+X509InAuthServiceListProcedure,
-			connect.WithSchema(x509InAuthServiceListMethodDescriptor),
+			connect.WithSchema(x509InAuthServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
 		get: connect.NewClient[v1.X509CertificateRequest, v1.X509Certificate](
 			httpClient,
 			baseURL+X509InAuthServiceGetProcedure,
-			connect.WithSchema(x509InAuthServiceGetMethodDescriptor),
+			connect.WithSchema(x509InAuthServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
 		set: connect.NewClient[v1.X509CertificateRequest, v1.Empty](
 			httpClient,
 			baseURL+X509InAuthServiceSetProcedure,
-			connect.WithSchema(x509InAuthServiceSetMethodDescriptor),
+			connect.WithSchema(x509InAuthServiceMethods.ByName("Set")),
 			connect.WithClientOptions(opts...),
 		),
 		delete: connect.NewClient[v1.X509CertificateRequest, v1.Empty](
 			httpClient,
 			baseURL+X509InAuthServiceDeleteProcedure,
-			connect.WithSchema(x509InAuthServiceDeleteMethodDescriptor),
+			connect.WithSchema(x509InAuthServiceMethods.ByName("Delete")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -621,28 +607,29 @@ type X509InAuthServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewX509InAuthServiceHandler(svc X509InAuthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	x509InAuthServiceMethods := v1.File_taucorder_v1_auth_proto.Services().ByName("X509InAuthService").Methods()
 	x509InAuthServiceListHandler := connect.NewServerStreamHandler(
 		X509InAuthServiceListProcedure,
 		svc.List,
-		connect.WithSchema(x509InAuthServiceListMethodDescriptor),
+		connect.WithSchema(x509InAuthServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
 	x509InAuthServiceGetHandler := connect.NewUnaryHandler(
 		X509InAuthServiceGetProcedure,
 		svc.Get,
-		connect.WithSchema(x509InAuthServiceGetMethodDescriptor),
+		connect.WithSchema(x509InAuthServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
 	x509InAuthServiceSetHandler := connect.NewUnaryHandler(
 		X509InAuthServiceSetProcedure,
 		svc.Set,
-		connect.WithSchema(x509InAuthServiceSetMethodDescriptor),
+		connect.WithSchema(x509InAuthServiceMethods.ByName("Set")),
 		connect.WithHandlerOptions(opts...),
 	)
 	x509InAuthServiceDeleteHandler := connect.NewUnaryHandler(
 		X509InAuthServiceDeleteProcedure,
 		svc.Delete,
-		connect.WithSchema(x509InAuthServiceDeleteMethodDescriptor),
+		connect.WithSchema(x509InAuthServiceMethods.ByName("Delete")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/taucorder.v1.X509InAuthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

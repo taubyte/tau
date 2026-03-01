@@ -152,7 +152,8 @@ func TestPatrick_Dreaming(t *testing.T) {
 			assert.Equal(t, job.Msg.GetMeta().GetHeadCommit(), ojob.Meta.HeadCommit.ID)
 			assert.Equal(t, job.Msg.GetMeta().GetRepository().GetId().GetGithub(), int64(ojob.Meta.Repository.ID))
 			assert.Equal(t, job.Msg.GetMeta().GetRepository().GetBranch(), ojob.Meta.Repository.Branch)
-			assert.Equal(t, job.Msg.GetMeta().GetRepository().GetSshUrl(), ojob.Meta.Repository.URI)
+			assert.Equal(t, job.Msg.GetMeta().GetRepository().GetUri(), ojob.Meta.Repository.URI)
+			assert.Equal(t, GetRepositoryURI(job.Msg.GetMeta().GetRepository()), ojob.Meta.Repository.URI) // compat: helper prefers uri, falls back to ssh_url
 		}
 	})
 

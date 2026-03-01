@@ -45,16 +45,6 @@ const (
 	TNSServiceStatesProcedure = "/taucorder.v1.TNSService/States"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	tNSServiceServiceDescriptor      = v1.File_taucorder_v1_tns_proto.Services().ByName("TNSService")
-	tNSServiceListMethodDescriptor   = tNSServiceServiceDescriptor.Methods().ByName("List")
-	tNSServiceFetchMethodDescriptor  = tNSServiceServiceDescriptor.Methods().ByName("Fetch")
-	tNSServiceLookupMethodDescriptor = tNSServiceServiceDescriptor.Methods().ByName("Lookup")
-	tNSServiceStateMethodDescriptor  = tNSServiceServiceDescriptor.Methods().ByName("State")
-	tNSServiceStatesMethodDescriptor = tNSServiceServiceDescriptor.Methods().ByName("States")
-)
-
 // TNSServiceClient is a client for the taucorder.v1.TNSService service.
 type TNSServiceClient interface {
 	List(context.Context, *connect.Request[v1.TNSListRequest]) (*connect.ServerStreamForClient[v1.TNSPath], error)
@@ -73,35 +63,36 @@ type TNSServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewTNSServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) TNSServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	tNSServiceMethods := v1.File_taucorder_v1_tns_proto.Services().ByName("TNSService").Methods()
 	return &tNSServiceClient{
 		list: connect.NewClient[v1.TNSListRequest, v1.TNSPath](
 			httpClient,
 			baseURL+TNSServiceListProcedure,
-			connect.WithSchema(tNSServiceListMethodDescriptor),
+			connect.WithSchema(tNSServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
 		fetch: connect.NewClient[v1.TNSFetchRequest, v1.TNSObject](
 			httpClient,
 			baseURL+TNSServiceFetchProcedure,
-			connect.WithSchema(tNSServiceFetchMethodDescriptor),
+			connect.WithSchema(tNSServiceMethods.ByName("Fetch")),
 			connect.WithClientOptions(opts...),
 		),
 		lookup: connect.NewClient[v1.TNSLookupRequest, v1.TNSPaths](
 			httpClient,
 			baseURL+TNSServiceLookupProcedure,
-			connect.WithSchema(tNSServiceLookupMethodDescriptor),
+			connect.WithSchema(tNSServiceMethods.ByName("Lookup")),
 			connect.WithClientOptions(opts...),
 		),
 		state: connect.NewClient[v1.ConsensusStateRequest, v1.ConsensusState](
 			httpClient,
 			baseURL+TNSServiceStateProcedure,
-			connect.WithSchema(tNSServiceStateMethodDescriptor),
+			connect.WithSchema(tNSServiceMethods.ByName("State")),
 			connect.WithClientOptions(opts...),
 		),
 		states: connect.NewClient[v1.Node, v1.ConsensusState](
 			httpClient,
 			baseURL+TNSServiceStatesProcedure,
-			connect.WithSchema(tNSServiceStatesMethodDescriptor),
+			connect.WithSchema(tNSServiceMethods.ByName("States")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -156,34 +147,35 @@ type TNSServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewTNSServiceHandler(svc TNSServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	tNSServiceMethods := v1.File_taucorder_v1_tns_proto.Services().ByName("TNSService").Methods()
 	tNSServiceListHandler := connect.NewServerStreamHandler(
 		TNSServiceListProcedure,
 		svc.List,
-		connect.WithSchema(tNSServiceListMethodDescriptor),
+		connect.WithSchema(tNSServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
 	tNSServiceFetchHandler := connect.NewUnaryHandler(
 		TNSServiceFetchProcedure,
 		svc.Fetch,
-		connect.WithSchema(tNSServiceFetchMethodDescriptor),
+		connect.WithSchema(tNSServiceMethods.ByName("Fetch")),
 		connect.WithHandlerOptions(opts...),
 	)
 	tNSServiceLookupHandler := connect.NewUnaryHandler(
 		TNSServiceLookupProcedure,
 		svc.Lookup,
-		connect.WithSchema(tNSServiceLookupMethodDescriptor),
+		connect.WithSchema(tNSServiceMethods.ByName("Lookup")),
 		connect.WithHandlerOptions(opts...),
 	)
 	tNSServiceStateHandler := connect.NewUnaryHandler(
 		TNSServiceStateProcedure,
 		svc.State,
-		connect.WithSchema(tNSServiceStateMethodDescriptor),
+		connect.WithSchema(tNSServiceMethods.ByName("State")),
 		connect.WithHandlerOptions(opts...),
 	)
 	tNSServiceStatesHandler := connect.NewServerStreamHandler(
 		TNSServiceStatesProcedure,
 		svc.States,
-		connect.WithSchema(tNSServiceStatesMethodDescriptor),
+		connect.WithSchema(tNSServiceMethods.ByName("States")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/taucorder.v1.TNSService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -39,13 +39,6 @@ const (
 	NodeServiceFreeProcedure = "/taucorder.v1.NodeService/Free"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	nodeServiceServiceDescriptor    = v1.File_taucorder_v1_node_proto.Services().ByName("NodeService")
-	nodeServiceNewMethodDescriptor  = nodeServiceServiceDescriptor.Methods().ByName("New")
-	nodeServiceFreeMethodDescriptor = nodeServiceServiceDescriptor.Methods().ByName("Free")
-)
-
 // NodeServiceClient is a client for the taucorder.v1.NodeService service.
 type NodeServiceClient interface {
 	New(context.Context, *connect.Request[v1.Config]) (*connect.Response[v1.Node], error)
@@ -61,17 +54,18 @@ type NodeServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewNodeServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) NodeServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	nodeServiceMethods := v1.File_taucorder_v1_node_proto.Services().ByName("NodeService").Methods()
 	return &nodeServiceClient{
 		new: connect.NewClient[v1.Config, v1.Node](
 			httpClient,
 			baseURL+NodeServiceNewProcedure,
-			connect.WithSchema(nodeServiceNewMethodDescriptor),
+			connect.WithSchema(nodeServiceMethods.ByName("New")),
 			connect.WithClientOptions(opts...),
 		),
 		free: connect.NewClient[v1.Node, v1.Empty](
 			httpClient,
 			baseURL+NodeServiceFreeProcedure,
-			connect.WithSchema(nodeServiceFreeMethodDescriptor),
+			connect.WithSchema(nodeServiceMethods.ByName("Free")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -105,16 +99,17 @@ type NodeServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewNodeServiceHandler(svc NodeServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	nodeServiceMethods := v1.File_taucorder_v1_node_proto.Services().ByName("NodeService").Methods()
 	nodeServiceNewHandler := connect.NewUnaryHandler(
 		NodeServiceNewProcedure,
 		svc.New,
-		connect.WithSchema(nodeServiceNewMethodDescriptor),
+		connect.WithSchema(nodeServiceMethods.ByName("New")),
 		connect.WithHandlerOptions(opts...),
 	)
 	nodeServiceFreeHandler := connect.NewUnaryHandler(
 		NodeServiceFreeProcedure,
 		svc.Free,
-		connect.WithSchema(nodeServiceFreeMethodDescriptor),
+		connect.WithSchema(nodeServiceMethods.ByName("Free")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/taucorder.v1.NodeService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

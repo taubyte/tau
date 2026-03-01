@@ -39,13 +39,6 @@ const (
 	HoarderServiceStashProcedure = "/taucorder.v1.HoarderService/Stash"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	hoarderServiceServiceDescriptor     = v1.File_taucorder_v1_hoarder_proto.Services().ByName("HoarderService")
-	hoarderServiceListMethodDescriptor  = hoarderServiceServiceDescriptor.Methods().ByName("List")
-	hoarderServiceStashMethodDescriptor = hoarderServiceServiceDescriptor.Methods().ByName("Stash")
-)
-
 // HoarderServiceClient is a client for the taucorder.v1.HoarderService service.
 type HoarderServiceClient interface {
 	List(context.Context, *connect.Request[v1.Node]) (*connect.ServerStreamForClient[v1.StashedItem], error)
@@ -61,17 +54,18 @@ type HoarderServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewHoarderServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) HoarderServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	hoarderServiceMethods := v1.File_taucorder_v1_hoarder_proto.Services().ByName("HoarderService").Methods()
 	return &hoarderServiceClient{
 		list: connect.NewClient[v1.Node, v1.StashedItem](
 			httpClient,
 			baseURL+HoarderServiceListProcedure,
-			connect.WithSchema(hoarderServiceListMethodDescriptor),
+			connect.WithSchema(hoarderServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
 		stash: connect.NewClient[v1.StashRequest, v1.Empty](
 			httpClient,
 			baseURL+HoarderServiceStashProcedure,
-			connect.WithSchema(hoarderServiceStashMethodDescriptor),
+			connect.WithSchema(hoarderServiceMethods.ByName("Stash")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -105,16 +99,17 @@ type HoarderServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewHoarderServiceHandler(svc HoarderServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	hoarderServiceMethods := v1.File_taucorder_v1_hoarder_proto.Services().ByName("HoarderService").Methods()
 	hoarderServiceListHandler := connect.NewServerStreamHandler(
 		HoarderServiceListProcedure,
 		svc.List,
-		connect.WithSchema(hoarderServiceListMethodDescriptor),
+		connect.WithSchema(hoarderServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
 	hoarderServiceStashHandler := connect.NewUnaryHandler(
 		HoarderServiceStashProcedure,
 		svc.Stash,
-		connect.WithSchema(hoarderServiceStashMethodDescriptor),
+		connect.WithSchema(hoarderServiceMethods.ByName("Stash")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/taucorder.v1.HoarderService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
