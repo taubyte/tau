@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
@@ -97,4 +99,66 @@ func ResolveArtifactPath(projectLocation, app, functionName string) (string, err
 		}
 	}
 	return "", fmt.Errorf("artifact not found in %s (run \"tau build function\" first or set --wasm)", dir)
+}
+
+// SourceDirForFunction returns the source code directory path for the given function
+// (code repo path: code/.../functions/<name> or code/apps/<app>/functions/<name>).
+func SourceDirForFunction(projectLocation, app, functionName string) string {
+	if len(app) > 0 {
+		return path.Join(projectLocation, common.CodeRepoDir, commonSpec.ApplicationPathVariable.String(), app, functionSpec.PathVariable.String(), functionName)
+	}
+	return path.Join(projectLocation, common.CodeRepoDir, functionSpec.PathVariable.String(), functionName)
+}
+
+// LatestModTimeInDir returns the latest modification time of any file under dir (recursive).
+// If dir does not exist or has no regular files, returns zero time and nil error.
+func LatestModTimeInDir(dir string) (time.Time, error) {
+	info, err := os.Stat(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return time.Time{}, nil
+		}
+		return time.Time{}, err
+	}
+	if !info.IsDir() {
+		return time.Time{}, fmt.Errorf("not a directory: %s", dir)
+	}
+	var latest time.Time
+	err = filepath.WalkDir(dir, func(_ string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		info, err := d.Info()
+		if err != nil {
+			return nil
+		}
+		if info.ModTime().After(latest) {
+			latest = info.ModTime()
+		}
+		return nil
+	})
+	if err != nil {
+		return time.Time{}, err
+	}
+	return latest, nil
+}
+
+// IsArtifactStale reports whether the artifact at artifactPath is older than the
+// latest modified file in sourceDir. If sourceDir does not exist or has no files, returns false.
+func IsArtifactStale(artifactPath, sourceDir string) (bool, error) {
+	artifactInfo, err := os.Stat(artifactPath)
+	if err != nil {
+		return false, err
+	}
+	latestSource, err := LatestModTimeInDir(sourceDir)
+	if err != nil {
+		return false, err
+	}
+	if latestSource.IsZero() {
+		return false, nil
+	}
+	return artifactInfo.ModTime().Before(latestSource), nil
 }

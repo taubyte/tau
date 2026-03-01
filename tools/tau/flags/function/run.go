@@ -48,6 +48,12 @@ var (
 		Usage:    "Override function timeout",
 		Category: CategoryRun,
 	}
+
+	RunForceBuild = &cli.BoolFlag{
+		Name:     "force-build",
+		Usage:    "Rebuild the function before running (no prompt)",
+		Category: CategoryRun,
+	}
 )
 
 func RunFlags() []cli.Flag {
@@ -59,5 +65,6 @@ func RunFlags() []cli.Flag {
 		RunPath,
 		RunDomain,
 		RunTimeout,
+		RunForceBuild,
 	}
 }

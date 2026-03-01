@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	cliPrompts "github.com/taubyte/tau/pkg/cli/prompts"
 	"github.com/taubyte/tau/tools/tau/cli/commands/build"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	tauCommon "github.com/taubyte/tau/tools/tau/common"
@@ -17,9 +18,12 @@ import (
 	functionFlags "github.com/taubyte/tau/tools/tau/flags/function"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	runLib "github.com/taubyte/tau/tools/tau/lib/run"
+	tauPrompts "github.com/taubyte/tau/tools/tau/prompts"
 	functionPrompts "github.com/taubyte/tau/tools/tau/prompts/function"
 	"github.com/urfave/cli/v2"
 )
+
+const runSeparator = "────────── running function ──────────"
 
 func (link) Run() common.Command {
 	return common.Create(
@@ -53,14 +57,50 @@ func runAction(ctx *cli.Context) error {
 	application, _ := config.GetSelectedApplication()
 
 	wasmPath := ctx.String(functionFlags.RunWasm.Name)
+	// Only auto-resolve from builds/, staleness check, and prompt for build when user did not set --wasm.
 	if wasmPath == "" {
 		projectConfig, err := projectLib.SelectedProjectConfig()
 		if err != nil {
 			return err
 		}
-		wasmPath, err = build.ResolveArtifactPath(projectConfig.Location, application, fnSpec.Name)
-		if err != nil {
-			return err
+		forceBuild := ctx.Bool(functionFlags.RunForceBuild.Name)
+		if forceBuild {
+			wasmPath, err = build.BuildFunctionToBuildsDir(projectConfig, application, fnSpec.Name, os.Stderr)
+			if err != nil {
+				return err
+			}
+		} else {
+			wasmPath, err = build.ResolveArtifactPath(projectConfig.Location, application, fnSpec.Name)
+			if err != nil {
+				if cliPrompts.IsNonInteractive() {
+					return err
+				}
+				if tauPrompts.ConfirmPrompt(ctx, "No WASM found. Build the function now?") {
+					wasmPath, err = build.BuildFunctionToBuildsDir(projectConfig, application, fnSpec.Name, os.Stderr)
+					if err != nil {
+						return err
+					}
+				} else {
+					return err
+				}
+			} else {
+				sourceDir := build.SourceDirForFunction(projectConfig.Location, application, fnSpec.Name)
+				stale, err := build.IsArtifactStale(wasmPath, sourceDir)
+				if err != nil {
+					return fmt.Errorf("checking artifact staleness: %w", err)
+				}
+				if stale {
+					if cliPrompts.IsNonInteractive() {
+						return fmt.Errorf("WASM is outdated (source changed). Rebuild with \"tau build function\" or use --force-build")
+					}
+					if tauPrompts.ConfirmPrompt(ctx, "WASM is outdated (source changed). Rebuild now?") {
+						wasmPath, err = build.BuildFunctionToBuildsDir(projectConfig, application, fnSpec.Name, os.Stderr)
+						if err != nil {
+							return err
+						}
+					}
+				}
+			}
 		}
 	}
 	if _, err := os.Stat(wasmPath); err != nil {
@@ -125,6 +165,10 @@ func runAction(ctx *cli.Context) error {
 		defer cancel()
 	}
 
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, runSeparator)
+	fmt.Fprintln(os.Stderr)
+
 	if err := runLib.HttpFunction(runCtx, wasmPath, fnSpec, project, application, req, recorder); err != nil {
 		return err
 	}
@@ -137,5 +181,6 @@ func runAction(ctx *cli.Context) error {
 	}
 	fmt.Println()
 	io.Copy(os.Stdout, recorder.Body)
+	fmt.Println()
 	return nil
 }
