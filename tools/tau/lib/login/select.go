@@ -41,7 +41,7 @@ func Select(ctx *cli.Context, name string, setDefault bool) error {
 		return err
 	}
 
-	_ = session.Set().SelectedCloud(profile.CloudType)
-	_ = session.Set().CustomCloudUrl(profile.Cloud)
+	session.Set().SelectedCloud(profile.CloudType)
+	session.Set().CustomCloudUrl(profile.Cloud)
 	return session.Set().ProfileName(name)
 }
