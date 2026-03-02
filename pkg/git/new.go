@@ -48,7 +48,7 @@ func New(ctx context.Context, options ...Option) (c *Repository, err error) {
 		}
 	}
 
-	if c.ephemeral {
+	if c.ephemeral && !strings.HasPrefix(c.url, LocalURIScheme) {
 		err = c.handle_ephemeral()
 		if err != nil {
 			return
@@ -60,7 +60,7 @@ func New(ctx context.Context, options ...Option) (c *Repository, err error) {
 		return
 	}
 
-	if c.usingSpecificBranch {
+	if c.usingSpecificBranch && !strings.HasPrefix(c.url, LocalURIScheme) {
 		err = c.Checkout(c.branches[0])
 		if err != nil {
 			return
@@ -78,8 +78,7 @@ func (c *Repository) open_or_clone() error {
 	}
 
 	// Handle local:// URIs — open directly, no clone
-	if strings.HasPrefix(c.url, LocalURIScheme) {
-		localPath := strings.TrimPrefix(c.url, LocalURIScheme)
+	if localPath, ok := strings.CutPrefix(c.url, LocalURIScheme); ok {
 		c.root = localPath
 		c.repo, err = git.PlainOpen(localPath)
 		if err != nil {

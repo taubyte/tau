@@ -103,8 +103,7 @@ func TestDream_Dreaming(t *testing.T) {
 	})
 
 	t.Run("ReportSsh", func(t *testing.T) {
-		err = u.RunFixture("createProjectWithJobs")
-		assert.NilError(t, err)
+		assert.NilError(t, commonTest.CreateTestProjectWithJobs(u))
 
 		attempts := 0
 		var job *patrickCore.Job

@@ -76,11 +76,6 @@ var FixtureMap = map[string]FixtureDefinition{
 			},
 		},
 	},
-	"createProjectWithJobs": {
-		Description: "creates jobs for code and config repos",
-		ImportRef:   "patrick",
-		Internal:    true,
-	},
 	"pushAll": {
 		Description: "pushes all ",
 		ImportRef:   "patrick",
