@@ -48,8 +48,7 @@ func TestDreamFixtures_Dreaming(t *testing.T) {
 	assert.NilError(t, err)
 
 	t.Run("createProjectWithJobs", func(t *testing.T) {
-		err := u.RunFixture("createProjectWithJobs")
-		assert.NilError(t, err)
+		assert.NilError(t, helpers.CreateTestProjectWithJobs(u))
 
 		simple, err := u.Simple("client")
 		assert.NilError(t, err)
@@ -110,21 +109,21 @@ func TestPushFixtures_Dreaming(t *testing.T) {
 		assert.NilError(t, err)
 
 		// Test with empty repo list (should return nil immediately)
-		err = waitForTNSObjects(tnsClient, []int{}, 5, 1*time.Second)
+		err = helpers.WaitForTNSObjects(tnsClient, []int{}, 5, 1*time.Second)
 		assert.NilError(t, err)
 
 		// Test with non-existent repos (should timeout with "not all repositories found" error)
-		err = waitForTNSObjects(tnsClient, []int{999, 998}, 2, 100*time.Millisecond)
+		err = helpers.WaitForTNSObjects(tnsClient, []int{999, 998}, 2, 100*time.Millisecond)
 		assert.Assert(t, err != nil, "should fail with timeout")
 		assert.Assert(t, strings.Contains(err.Error(), "not all repositories found"), "should contain expected error message")
 
 		// Test with single non-existent repo
-		err = waitForTNSObjects(tnsClient, []int{999}, 1, 10*time.Millisecond)
+		err = helpers.WaitForTNSObjects(tnsClient, []int{999}, 1, 10*time.Millisecond)
 		assert.Assert(t, err != nil, "should fail with single repo")
 		assert.Assert(t, strings.Contains(err.Error(), "not all repositories found"), "should contain expected error message")
 
 		// Test with maxAttempts = 0 (edge case)
-		err = waitForTNSObjects(tnsClient, []int{999}, 0, 10*time.Millisecond)
+		err = helpers.WaitForTNSObjects(tnsClient, []int{999}, 0, 10*time.Millisecond)
 		assert.Assert(t, err != nil, "should fail with 0 attempts")
 	})
 

@@ -41,14 +41,6 @@ const (
 	SeerServiceLocationProcedure = "/taucorder.v1.SeerService/Location"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	seerServiceServiceDescriptor        = v1.File_taucorder_v1_seer_proto.Services().ByName("SeerService")
-	seerServiceListMethodDescriptor     = seerServiceServiceDescriptor.Methods().ByName("List")
-	seerServiceUsageMethodDescriptor    = seerServiceServiceDescriptor.Methods().ByName("Usage")
-	seerServiceLocationMethodDescriptor = seerServiceServiceDescriptor.Methods().ByName("Location")
-)
-
 // SeerServiceClient is a client for the taucorder.v1.SeerService service.
 type SeerServiceClient interface {
 	List(context.Context, *connect.Request[v1.NodesListRequest]) (*connect.ServerStreamForClient[v1.Peer], error)
@@ -65,23 +57,24 @@ type SeerServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewSeerServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) SeerServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	seerServiceMethods := v1.File_taucorder_v1_seer_proto.Services().ByName("SeerService").Methods()
 	return &seerServiceClient{
 		list: connect.NewClient[v1.NodesListRequest, v1.Peer](
 			httpClient,
 			baseURL+SeerServiceListProcedure,
-			connect.WithSchema(seerServiceListMethodDescriptor),
+			connect.WithSchema(seerServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
 		usage: connect.NewClient[v1.NodesUsageRequest, v1.PeerUsage](
 			httpClient,
 			baseURL+SeerServiceUsageProcedure,
-			connect.WithSchema(seerServiceUsageMethodDescriptor),
+			connect.WithSchema(seerServiceMethods.ByName("Usage")),
 			connect.WithClientOptions(opts...),
 		),
 		location: connect.NewClient[v1.LocationRequest, v1.PeerLocation](
 			httpClient,
 			baseURL+SeerServiceLocationProcedure,
-			connect.WithSchema(seerServiceLocationMethodDescriptor),
+			connect.WithSchema(seerServiceMethods.ByName("Location")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -122,22 +115,23 @@ type SeerServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewSeerServiceHandler(svc SeerServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	seerServiceMethods := v1.File_taucorder_v1_seer_proto.Services().ByName("SeerService").Methods()
 	seerServiceListHandler := connect.NewServerStreamHandler(
 		SeerServiceListProcedure,
 		svc.List,
-		connect.WithSchema(seerServiceListMethodDescriptor),
+		connect.WithSchema(seerServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
 	seerServiceUsageHandler := connect.NewUnaryHandler(
 		SeerServiceUsageProcedure,
 		svc.Usage,
-		connect.WithSchema(seerServiceUsageMethodDescriptor),
+		connect.WithSchema(seerServiceMethods.ByName("Usage")),
 		connect.WithHandlerOptions(opts...),
 	)
 	seerServiceLocationHandler := connect.NewServerStreamHandler(
 		SeerServiceLocationProcedure,
 		svc.Location,
-		connect.WithSchema(seerServiceLocationMethodDescriptor),
+		connect.WithSchema(seerServiceMethods.ByName("Location")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/taucorder.v1.SeerService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

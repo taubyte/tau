@@ -105,7 +105,7 @@ func getJobs(p Prompt, args []string) error {
 		{"\tRepository:", "\n"},
 		{"\t\tId", job.Meta.Repository.ID},
 		{"\t\tProvider", job.Meta.Repository.Provider},
-		{"\t\tShURL", job.Meta.Repository.SSHURL}},
+		{"\tURI", job.Meta.Repository.URI}},
 		table.RowConfig{})
 	t.AppendSeparator()
 	t.AppendRows([]table.Row{{"Attempt", job.Attempt}},

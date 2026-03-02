@@ -103,8 +103,7 @@ func TestDream_Dreaming(t *testing.T) {
 	})
 
 	t.Run("ReportSsh", func(t *testing.T) {
-		err = u.RunFixture("createProjectWithJobs")
-		assert.NilError(t, err)
+		assert.NilError(t, commonTest.CreateTestProjectWithJobs(u))
 
 		attempts := 0
 		var job *patrickCore.Job
@@ -139,8 +138,8 @@ func TestDream_Dreaming(t *testing.T) {
 			return
 		}
 
-		if resp.Interface() != job.Meta.Repository.SSHURL {
-			t.Errorf("Response from tns does not match data from patrick, got `%v` != `%s`", resp, job.Meta.Repository.SSHURL)
+		if resp.Interface() != job.Meta.Repository.URI {
+			t.Errorf("Response from tns does not match data from patrick, got `%v` != `%s`", resp, job.Meta.Repository.URI)
 			return
 		}
 	})
@@ -239,7 +238,7 @@ func compareJobToPayload(meta patrickCore.Meta, payload []byte) (err error) {
 		{Before: meta.After, After: _meta.After, msg: "After"},
 		{Before: meta.HeadCommit.ID, After: _meta.HeadCommit.ID, msg: "HeadCommit.ID"},
 		{Before: meta.Repository.ID, After: _meta.Repository.ID, msg: "Repository.ID"},
-		{Before: meta.Repository.SSHURL, After: _meta.Repository.SSHURL, msg: "Repository.SSHURL"},
+		{Before: meta.Repository.URI, After: _meta.Repository.URI, msg: "Repository.URI"},
 	}
 
 	for _, c := range comparisons {

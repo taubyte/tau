@@ -4,16 +4,16 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/utils/maps"
-
-	"github.com/taubyte/tau/dream"
 
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
@@ -46,6 +46,26 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 	}
 
 	projectId := ""
+	if len(params) > 0 {
+		if p, ok := params[0].(string); ok {
+			projectId = p
+		}
+	}
+
+	projectRoot := ""
+	if len(params) > 2 {
+		if p, ok := params[2].(string); ok && p != "" {
+			projectRoot = p
+		}
+	}
+
+	branch := spec.DefaultBranches[0]
+	if len(params) > 1 {
+		if b, ok := params[1].(string); ok && b != "" {
+			branch = b
+		}
+	}
+
 	tns, err := simple.TNS()
 	if err != nil {
 		return err
@@ -60,11 +80,35 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 
 	for repoId, repoInfo := range _map {
 		_repoInfo := maps.SafeInterfaceToStringKeys(repoInfo)
-		if fullName, ok := _repoInfo["fullname"]; ok {
-			err := pushSpecific(u, repoId, fullName, projectId, spec.DefaultBranches[0]) // TODO: add param to provide branch
-			if err != nil {
-				return err
+		fullName, ok := _repoInfo["fullname"].(string)
+		if !ok {
+			continue
+		}
+		var err error
+		if projectRoot != "" {
+			// Derive per-repo local path from fullname (e.g. taubyte-test/tb_code_foo -> projectRoot/code)
+			parts := strings.SplitN(fullName, "/", 2)
+			name := fullName
+			if len(parts) == 2 {
+				name = parts[1]
 			}
+			var localPath string
+			switch {
+			case strings.HasPrefix(name, "tb_code_"):
+				localPath = projectRoot + "/code"
+			case strings.HasPrefix(name, "tb_website_"):
+				localPath = projectRoot + "/websites/" + strings.TrimPrefix(name, "tb_website_")
+			case strings.HasPrefix(name, "tb_library_"):
+				localPath = projectRoot + "/libraries/" + strings.TrimPrefix(name, "tb_library_")
+			default:
+				localPath = projectRoot + "/config"
+			}
+			err = pushSpecific(u, repoId, fullName, projectId, branch, localPath)
+		} else {
+			err = pushSpecific(u, repoId, fullName, projectId, branch)
+		}
+		if err != nil {
+			return err
 		}
 	}
 
@@ -94,6 +138,18 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 	if len(params) > 2 {
 		projectId = params[2].(string)
 	}
+	branch := spec.DefaultBranches[0]
+	if len(params) > 3 {
+		if b, ok := params[3].(string); ok && b != "" {
+			branch = b
+		}
+	}
+	localPath := ""
+	if len(params) > 4 {
+		if p, ok := params[4].(string); ok && p != "" {
+			localPath = p
+		}
+	}
 
 	intRepoId, err := strconv.Atoi(repoId)
 	if err != nil {
@@ -112,9 +168,24 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 	})
 	time.Sleep(1 * time.Second)
 
-	newPayload, err := commonTest.MakeTemplate(intRepoId, fullname, spec.DefaultBranches[0]) // TODO: add param to provide branch
-	if err != nil {
-		return fmt.Errorf("make template failed with: %v", err)
+	var newPayload []byte
+	if localPath != "" {
+		if fi, err := os.Stat(localPath); err != nil || !fi.IsDir() {
+			return fmt.Errorf("local path is not an existing directory: %s", localPath)
+		}
+		commitID, err := commonTest.HeadCommitFromLocalRepo(localPath)
+		if err != nil {
+			return fmt.Errorf("head commit from local repo: %w", err)
+		}
+		newPayload, err = commonTest.MakeTemplate(intRepoId, fullname, branch, commitID, "local://"+localPath)
+		if err != nil {
+			return fmt.Errorf("make template failed with: %v", err)
+		}
+	} else {
+		newPayload, err = commonTest.MakeTemplate(intRepoId, fullname, branch, "", "")
+		if err != nil {
+			return fmt.Errorf("make template failed with: %v", err)
+		}
 	}
 
 	// Try to get projectId from repo
@@ -140,20 +211,51 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 }
 
 func pushConfig(u *dream.Universe, params ...interface{}) error {
+	if len(params) > 0 {
+		if localPath, ok := params[0].(string); ok && localPath != "" {
+			if fi, err := os.Stat(localPath); err != nil || !fi.IsDir() {
+				return fmt.Errorf("local path is not an existing directory: %s", localPath)
+			}
+			commitID, err := commonTest.HeadCommitFromLocalRepo(localPath)
+			if err != nil {
+				return fmt.Errorf("head commit from local repo: %w", err)
+			}
+			fullname := commonTest.GitUser + "/" + commonTest.ConfigRepo.Name
+			payload, err := commonTest.MakeTemplate(commonTest.ConfigRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath)
+			if err != nil {
+				return fmt.Errorf("make template failed with: %v", err)
+			}
+			return pushWrapper(u, payload, commonTest.ConfigRepo)
+		}
+	}
 	return pushWrapper(u, commonTest.ConfigPayload, commonTest.ConfigRepo)
 }
 
 func pushCode(u *dream.Universe, params ...interface{}) error {
+	if len(params) > 0 {
+		if localPath, ok := params[0].(string); ok && localPath != "" {
+			if fi, err := os.Stat(localPath); err != nil || !fi.IsDir() {
+				return fmt.Errorf("local path is not an existing directory: %s", localPath)
+			}
+			commitID, err := commonTest.HeadCommitFromLocalRepo(localPath)
+			if err != nil {
+				return fmt.Errorf("head commit from local repo: %w", err)
+			}
+			fullname := commonTest.GitUser + "/" + commonTest.CodeRepo.Name
+			payload, err := commonTest.MakeTemplate(commonTest.CodeRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath)
+			if err != nil {
+				return fmt.Errorf("make template failed with: %v", err)
+			}
+			return pushWrapper(u, payload, commonTest.CodeRepo)
+		}
+	}
 	return pushWrapper(u, commonTest.CodePayload, commonTest.CodeRepo)
 }
 
 func pushWebsite(u *dream.Universe, params ...interface{}) error {
-	// Create a simple to get the auth client
 	simple, err := u.Simple("client")
 	if err != nil {
-		if simple, err = u.Simple("client"); err != nil {
-			return fmt.Errorf("unable to get simple client: %w", err)
-		}
+		return fmt.Errorf("unable to get simple client: %w", err)
 	}
 
 	auth, err := simple.Auth()
@@ -161,24 +263,32 @@ func pushWebsite(u *dream.Universe, params ...interface{}) error {
 		return err
 	}
 
-	// Try to register
 	commonTest.RegisterTestRepositories(u.Context(), auth, commonTest.WebsiteRepo)
 
-	err = pushWrapper(u, commonTest.WebsitePayload, commonTest.WebsiteRepo)
-	if err != nil {
-		return err
+	if len(params) > 0 {
+		if localPath, ok := params[0].(string); ok && localPath != "" {
+			if fi, err := os.Stat(localPath); err != nil || !fi.IsDir() {
+				return fmt.Errorf("local path is not an existing directory: %s", localPath)
+			}
+			commitID, err := commonTest.HeadCommitFromLocalRepo(localPath)
+			if err != nil {
+				return fmt.Errorf("head commit from local repo: %w", err)
+			}
+			fullname := commonTest.GitUser + "/" + commonTest.WebsiteRepo.Name
+			payload, err := commonTest.MakeTemplate(commonTest.WebsiteRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath)
+			if err != nil {
+				return fmt.Errorf("make template failed with: %v", err)
+			}
+			return pushWrapper(u, payload, commonTest.WebsiteRepo)
+		}
 	}
-
-	return nil
+	return pushWrapper(u, commonTest.WebsitePayload, commonTest.WebsiteRepo)
 }
 
 func pushLibrary(u *dream.Universe, params ...interface{}) error {
-	// Create a simple to get the auth client
 	simple, err := u.Simple("client")
 	if err != nil {
-		if simple, err = u.Simple("client"); err != nil {
-			return fmt.Errorf("unable to get simple client: %w", err)
-		}
+		return fmt.Errorf("unable to get simple client: %w", err)
 	}
 
 	auth, err := simple.Auth()
@@ -186,15 +296,26 @@ func pushLibrary(u *dream.Universe, params ...interface{}) error {
 		return fmt.Errorf("unable to get auth: %w", err)
 	}
 
-	// Try to register
 	commonTest.RegisterTestRepositories(u.Context(), auth, commonTest.LibraryRepo)
 
-	err = pushWrapper(u, commonTest.LibraryPayload, commonTest.LibraryRepo)
-	if err != nil {
-		return fmt.Errorf("unable to push library: %w", err)
+	if len(params) > 0 {
+		if localPath, ok := params[0].(string); ok && localPath != "" {
+			if fi, err := os.Stat(localPath); err != nil || !fi.IsDir() {
+				return fmt.Errorf("local path is not an existing directory: %s", localPath)
+			}
+			commitID, err := commonTest.HeadCommitFromLocalRepo(localPath)
+			if err != nil {
+				return fmt.Errorf("head commit from local repo: %w", err)
+			}
+			fullname := commonTest.GitUser + "/" + commonTest.LibraryRepo.Name
+			payload, err := commonTest.MakeTemplate(commonTest.LibraryRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath)
+			if err != nil {
+				return fmt.Errorf("make template failed with: %v", err)
+			}
+			return pushWrapper(u, payload, commonTest.LibraryRepo)
+		}
 	}
-
-	return nil
+	return pushWrapper(u, commonTest.LibraryPayload, commonTest.LibraryRepo)
 }
 
 func pushWrapper(u *dream.Universe, gitPayload []byte, repo commonTest.Repository) error {

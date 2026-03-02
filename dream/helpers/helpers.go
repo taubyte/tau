@@ -16,9 +16,14 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/core/services/tns"
+	dreamPkg "github.com/taubyte/tau/dream"
+	spec "github.com/taubyte/tau/pkg/specs/common"
 	commonAuth "github.com/taubyte/tau/services/common"
+	"github.com/taubyte/tau/utils/maps"
 )
 
 func RegisterTestProject(ctx context.Context, authClient auth.Client) (err error) {
@@ -152,19 +157,43 @@ func generateHMAC(body []byte, secret string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
-func MakeTemplate(id int, fullname string, branch string) ([]byte, error) {
+// HeadCommitFromLocalRepo returns the HEAD commit hash of the local git repo at repoPath.
+func HeadCommitFromLocalRepo(repoPath string) (string, error) {
+	repo, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return "", fmt.Errorf("opening local repo at %s: %w", repoPath, err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("getting HEAD from %s: %w", repoPath, err)
+	}
+	return head.Hash().String(), nil
+}
+
+var (
+	DefaultBranch   = "master"
+	DefaultCommitID = "0f4cf056ceaa9f9164bb17f392eea5d041bc8e73"
+)
+
+func MakeTemplate(id int, fullname string, branch string, commitID string, uri string) ([]byte, error) {
 	if len(branch) == 0 {
-		branch = "master"
+		branch = DefaultBranch
+	}
+	if len(commitID) == 0 {
+		commitID = DefaultCommitID
 	}
 	splitName := strings.Split(fullname, "/")
 	if len(splitName) != 2 {
 		return nil, fmt.Errorf("expected fullname to be `username/repo-name` got `%s`", fullname)
 	}
-	type repo struct {
-		ID                     int
-		Name, RepoName, Branch string
+	if len(uri) == 0 {
+		uri = fmt.Sprintf("git@github.com:%s/%s.git", splitName[0], splitName[1])
 	}
-	var repoInfo = &repo{ID: id, Name: splitName[0], RepoName: splitName[1], Branch: branch}
+	type repo struct {
+		ID                                    int
+		Name, RepoName, Branch, CommitID, URI string
+	}
+	var repoInfo = &repo{ID: id, Name: splitName[0], RepoName: splitName[1], Branch: branch, CommitID: commitID, URI: uri}
 
 	t := template.Must(template.New("repoInformation").Parse(string(TemplatePayload)))
 
@@ -174,4 +203,108 @@ func MakeTemplate(id int, fullname string, branch string) ([]byte, error) {
 		log.Println("executing template:", err)
 	}
 	return reader.Bytes(), nil
+}
+
+// CreateTestProject registers the test project, repos, and domain with auth (no jobs pushed).
+func CreateTestProject(u *dreamPkg.Universe) error {
+	if err := u.Provides("auth"); err != nil {
+		return err
+	}
+	simple, err := u.Simple("client")
+	if err != nil {
+		return fmt.Errorf("unable to get simple client: %w", err)
+	}
+	authClient, err := simple.Auth()
+	if err != nil {
+		return fmt.Errorf("unable to get auth: %w", err)
+	}
+	if err = RegisterTestProject(u.Context(), authClient); err != nil {
+		return fmt.Errorf("registering test project failed with %w", err)
+	}
+	if err = RegisterTestDomain(u.Context(), authClient); err != nil {
+		return fmt.Errorf("registering test domain failed with %w", err)
+	}
+	return nil
+}
+
+// WaitForTNSObjects waits until the given repo IDs are resolvable in TNS or maxAttempts is reached.
+func WaitForTNSObjects(tnsClient tns.Client, repoIDs []int, maxAttempts int, retryDelay time.Duration) error {
+	if len(repoIDs) == 0 {
+		return nil
+	}
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		allFound := true
+		var lastErr error
+		for _, repoID := range repoIDs {
+			expectedID := fmt.Sprintf("%d", repoID)
+			tnsPath := spec.NewTnsPath([]string{"resolve", "repo", "github", expectedID})
+			obj, err := tnsClient.Fetch(tnsPath)
+			if err != nil {
+				allFound = false
+				lastErr = err
+				break
+			}
+			if objMap, ok := obj.Interface().(map[interface{}]interface{}); ok {
+				id, _ := maps.String(maps.SafeInterfaceToStringKeys(objMap), "id")
+				sshUrl, _ := maps.String(maps.SafeInterfaceToStringKeys(objMap), "ssh")
+				if id == expectedID && sshUrl != "" {
+					continue
+				}
+			}
+			allFound = false
+			break
+		}
+		if allFound {
+			return nil
+		}
+		if attempt == maxAttempts {
+			if lastErr != nil {
+				return fmt.Errorf("failed to fetch from TNS after %d attempts: %w", maxAttempts, lastErr)
+			}
+			return fmt.Errorf("not all repositories found in TNS after %d attempts", maxAttempts)
+		}
+		time.Sleep(retryDelay)
+	}
+	return fmt.Errorf("unexpected error: exceeded max attempts without returning")
+}
+
+// CreateTestProjectWithJobs registers the test project and pushes config + code jobs, then waits for repos in TNS.
+func CreateTestProjectWithJobs(u *dreamPkg.Universe) error {
+	if err := u.Provides("auth", "patrick", "tns"); err != nil {
+		return err
+	}
+	if err := CreateTestProject(u); err != nil {
+		return err
+	}
+	simple, err := u.Simple("client")
+	if err != nil {
+		return fmt.Errorf("unable to get simple client: %w", err)
+	}
+	if err := simple.Provides("tns"); err != nil {
+		return fmt.Errorf("unable to get tns: %w", err)
+	}
+	var tnsClient tns.Client
+	for attempts := 0; tnsClient == nil; attempts++ {
+		if attempts == 3 {
+			return fmt.Errorf("unable to get tns client after 3 attempts")
+		}
+		tnsClient, _ = simple.TNS()
+		time.Sleep(1 * time.Second)
+	}
+	mockPatrickURL, err := u.GetURLHttp(u.Patrick().Node())
+	if err != nil {
+		return fmt.Errorf("unable to get url http: %w", err)
+	}
+	commonAuth.FakeSecret = true
+	if err = PushJob(ConfigPayload, mockPatrickURL, ConfigRepo); err != nil {
+		return fmt.Errorf("pushing config job failed with %w", err)
+	}
+	time.Sleep(3 * time.Second)
+	if err = PushJob(CodePayload, mockPatrickURL, CodeRepo); err != nil {
+		return fmt.Errorf("pushing code job failed with %w", err)
+	}
+	if err := WaitForTNSObjects(tnsClient, []int{ConfigRepo.ID, CodeRepo.ID}, 20, 500*time.Millisecond); err != nil {
+		return fmt.Errorf("waiting for repositories in TNS failed: %w", err)
+	}
+	return nil
 }

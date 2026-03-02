@@ -86,8 +86,9 @@ message JobMeta {
 
 message JobRepository {
     RepositoryId id=1;
-    string ssh_url=2;
+    string ssh_url=2 [deprecated = true];  // use uri instead; kept for backward compat
     string branch=3;
+    string uri=4;
 }
 
 message JobAsset {

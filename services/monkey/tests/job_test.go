@@ -108,7 +108,7 @@ func TestConfigJob_Dreaming(t *testing.T) {
 	fakJob.Logs = make(map[string]string)
 	fakJob.AssetCid = make(map[string]string)
 	fakJob.Meta.Repository.ID = commonTest.ConfigRepo.ID
-	fakJob.Meta.Repository.SSHURL = fmt.Sprintf("git@github.com:%s/%s", commonTest.GitUser, commonTest.ConfigRepo.Name)
+	fakJob.Meta.Repository.URI = fmt.Sprintf("git@github.com:%s/%s", commonTest.GitUser, commonTest.ConfigRepo.Name)
 	fakJob.Meta.Repository.Provider = "github"
 	fakJob.Meta.Repository.Branch = "main" // Updated to match repository default branch
 	fakJob.Meta.HeadCommit.ID = "QmaskdjfziUJHJjYfhaysgYGYyA"

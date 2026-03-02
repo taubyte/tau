@@ -144,21 +144,22 @@ func (p *PatrickService) listHandler(ctx context.Context) (cr.Response, error) {
 
 // Info handler
 func (p *PatrickService) infoHandler(ctx context.Context, jid string) (cr.Response, error) {
-	var job commonIface.Job
-	jobByte, err := p.db.Get(ctx, "/jobs/"+jid)
-	if err != nil {
-		jobByte, err = p.db.Get(ctx, "/archive/jobs/"+jid)
-		if err != nil {
-			return nil, fmt.Errorf("could not find %s in /archive/jobs or /jobs", jid)
-		}
+	job, errFirst := p.getJob(ctx, "/jobs/", jid)
+	if errFirst == nil {
+		return cr.Response{"job": job}, nil
 	}
-
-	err = cbor.Unmarshal(jobByte, &job)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshal job %s failed with %w", jid, err)
+	job, err := p.getJob(ctx, "/archive/jobs/", jid)
+	if err == nil {
+		return cr.Response{"job": job}, nil
 	}
-
-	return cr.Response{"job": &job}, nil
+	// Prefer returning unmarshal error when both fail (e.g. invalid CBOR in one location)
+	if strings.Contains(errFirst.Error(), "unmarshal") {
+		return nil, errFirst
+	}
+	if strings.Contains(err.Error(), "unmarshal") {
+		return nil, err
+	}
+	return nil, fmt.Errorf("could not find %s in /archive/jobs or /jobs", jid)
 }
 
 // Lock handler
@@ -373,15 +374,9 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		}
 	}
 
-	var job commonIface.Job
-	// Grab job and move it to /archive/jobs/{jid}
-	getJob, err := p.db.Get(ctx, "/jobs/"+jid)
+	job, err := p.getJob(ctx, "/jobs/", jid)
 	if err != nil {
 		return fmt.Errorf("failed getting job in updateStatus %s with error: %w", jid, err)
-	}
-
-	if err = cbor.Unmarshal(getJob, &job); err != nil {
-		return fmt.Errorf("failed unmarshalling job with error: %w", err)
 	}
 
 	job.Status = status
@@ -393,7 +388,7 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 	}
 
 	// TODO: Un-export job locks, and create methods
-	jobData, err := cbor.Marshal(&job)
+	jobData, err := cbor.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("marshal in updateStatus error: %w", err)
 	}
@@ -638,8 +633,7 @@ func (srv *PatrickService) getJob(ctx context.Context, loc string, jid string) (
 	}
 
 	var job commonIface.Job
-	err = cbor.Unmarshal(jobByte, &job)
-	if err != nil {
+	if err = job.Unmarshal(jobByte); err != nil {
 		return nil, fmt.Errorf("unmarshal job %s failed with %w", jid, err)
 	}
 

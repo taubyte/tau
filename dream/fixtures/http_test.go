@@ -57,7 +57,7 @@ func TestHttp_Dreaming(t *testing.T) {
 	gitRootConfig := gitRoot + "/prodConfig"
 	os.MkdirAll(gitRootConfig, 0755)
 
-	fakeMeta.Repository.SSHURL = "git@github.com:taubyte-test/tb_prodproject.git"
+	fakeMeta.Repository.URI = "ssh://git@github.com/taubyte-test/tb_prodproject.git"
 	fakeMeta.Repository.Provider = "github"
 
 	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.Repository{

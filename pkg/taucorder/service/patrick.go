@@ -60,7 +60,8 @@ func (ps *patrickService) Get(ctx context.Context, req *connect.Request[pb.GetJo
 						Github: int64(job.Meta.Repository.ID),
 					},
 				},
-				SshUrl: job.Meta.Repository.SSHURL,
+				Uri:    job.Meta.Repository.URI,
+				SshUrl: job.Meta.Repository.URI, // deprecated; set for backward compat
 				Branch: job.Meta.Repository.Branch,
 			},
 		},
@@ -164,4 +165,15 @@ func (ps *patrickService) States(ctx context.Context, req *connect.Request[pb.No
 	}
 
 	return nil
+}
+
+// GetRepositoryURI returns the repository URI from a JobRepository, preferring uri and falling back to the deprecated ssh_url for backward compat.
+func GetRepositoryURI(repo *pb.JobRepository) string {
+	if repo == nil {
+		return ""
+	}
+	if u := repo.GetUri(); u != "" {
+		return u
+	}
+	return repo.GetSshUrl()
 }

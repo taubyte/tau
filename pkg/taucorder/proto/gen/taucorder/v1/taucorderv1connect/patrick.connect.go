@@ -43,15 +43,6 @@ const (
 	PatrickServiceStatesProcedure = "/taucorder.v1.PatrickService/States"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	patrickServiceServiceDescriptor      = v1.File_taucorder_v1_patrick_proto.Services().ByName("PatrickService")
-	patrickServiceListMethodDescriptor   = patrickServiceServiceDescriptor.Methods().ByName("List")
-	patrickServiceGetMethodDescriptor    = patrickServiceServiceDescriptor.Methods().ByName("Get")
-	patrickServiceStateMethodDescriptor  = patrickServiceServiceDescriptor.Methods().ByName("State")
-	patrickServiceStatesMethodDescriptor = patrickServiceServiceDescriptor.Methods().ByName("States")
-)
-
 // PatrickServiceClient is a client for the taucorder.v1.PatrickService service.
 type PatrickServiceClient interface {
 	List(context.Context, *connect.Request[v1.Node]) (*connect.ServerStreamForClient[v1.Job], error)
@@ -69,29 +60,30 @@ type PatrickServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewPatrickServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) PatrickServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	patrickServiceMethods := v1.File_taucorder_v1_patrick_proto.Services().ByName("PatrickService").Methods()
 	return &patrickServiceClient{
 		list: connect.NewClient[v1.Node, v1.Job](
 			httpClient,
 			baseURL+PatrickServiceListProcedure,
-			connect.WithSchema(patrickServiceListMethodDescriptor),
+			connect.WithSchema(patrickServiceMethods.ByName("List")),
 			connect.WithClientOptions(opts...),
 		),
 		get: connect.NewClient[v1.GetJobRequest, v1.Job](
 			httpClient,
 			baseURL+PatrickServiceGetProcedure,
-			connect.WithSchema(patrickServiceGetMethodDescriptor),
+			connect.WithSchema(patrickServiceMethods.ByName("Get")),
 			connect.WithClientOptions(opts...),
 		),
 		state: connect.NewClient[v1.ConsensusStateRequest, v1.ConsensusState](
 			httpClient,
 			baseURL+PatrickServiceStateProcedure,
-			connect.WithSchema(patrickServiceStateMethodDescriptor),
+			connect.WithSchema(patrickServiceMethods.ByName("State")),
 			connect.WithClientOptions(opts...),
 		),
 		states: connect.NewClient[v1.Node, v1.ConsensusState](
 			httpClient,
 			baseURL+PatrickServiceStatesProcedure,
-			connect.WithSchema(patrickServiceStatesMethodDescriptor),
+			connect.WithSchema(patrickServiceMethods.ByName("States")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -139,28 +131,29 @@ type PatrickServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewPatrickServiceHandler(svc PatrickServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	patrickServiceMethods := v1.File_taucorder_v1_patrick_proto.Services().ByName("PatrickService").Methods()
 	patrickServiceListHandler := connect.NewServerStreamHandler(
 		PatrickServiceListProcedure,
 		svc.List,
-		connect.WithSchema(patrickServiceListMethodDescriptor),
+		connect.WithSchema(patrickServiceMethods.ByName("List")),
 		connect.WithHandlerOptions(opts...),
 	)
 	patrickServiceGetHandler := connect.NewUnaryHandler(
 		PatrickServiceGetProcedure,
 		svc.Get,
-		connect.WithSchema(patrickServiceGetMethodDescriptor),
+		connect.WithSchema(patrickServiceMethods.ByName("Get")),
 		connect.WithHandlerOptions(opts...),
 	)
 	patrickServiceStateHandler := connect.NewUnaryHandler(
 		PatrickServiceStateProcedure,
 		svc.State,
-		connect.WithSchema(patrickServiceStateMethodDescriptor),
+		connect.WithSchema(patrickServiceMethods.ByName("State")),
 		connect.WithHandlerOptions(opts...),
 	)
 	patrickServiceStatesHandler := connect.NewServerStreamHandler(
 		PatrickServiceStatesProcedure,
 		svc.States,
-		connect.WithSchema(patrickServiceStatesMethodDescriptor),
+		connect.WithSchema(patrickServiceMethods.ByName("States")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/taucorder.v1.PatrickService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

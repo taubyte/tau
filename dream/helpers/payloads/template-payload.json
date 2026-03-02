@@ -1,7 +1,7 @@
 {
     "ref": "refs/heads/{{.Branch}}",
     "before": "0000000000000000000000000000000000000000",
-    "after": "0f4cf056ceaa9f9164bb17f392eea5d041bc8e73",
+    "after": "{{.CommitID}}",
     "repository": {
       "id": {{.ID}},
       "node_id": "R_kgDOHO-9fQ",
@@ -74,7 +74,7 @@
       "updated_at": "2022-04-25T17:42:49Z",
       "pushed_at": 1650909033,
       "git_url": "git://github.com/{{.Name}}/{{.RepoName}}.git",
-      "ssh_url": "git@github.com:{{.Name}}/{{.RepoName}}.git",
+      "ssh_url": "{{.URI}}",
       "clone_url": "https://github.com/{{.Name}}/{{.RepoName}}.git",
       "svn_url": "https://github.com/{{.Name}}/{{.RepoName}}",
       "homepage": null,
@@ -133,15 +133,15 @@
     "deleted": false,
     "forced": false,
     "base_ref": null,
-    "compare": "https://github.com/{{.Name}}/{{.RepoName}}/commit/0f4cf056ceaa",
+    "compare": "https://github.com/{{.Name}}/{{.RepoName}}/commit/{{.CommitID}}",
     "commits": [
       {
-        "id": "0f4cf056ceaa9f9164bb17f392eea5d041bc8e73",
+        "id": "{{.CommitID}}",
         "tree_id": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
         "distinct": true,
         "message": "add basics for test",
         "timestamp": "2022-04-25T12:50:32-05:00",
-        "url": "https://github.com/{{.Name}}/{{.RepoName}}/commit/0f4cf056ceaa9f9164bb17f392eea5d041bc8e73",
+        "url": "https://github.com/{{.Name}}/{{.RepoName}}/commit/{{.CommitID}}",
         "author": {
           "name": "{{.Name}}",
           "email": "taubytetest@gmail.com",
@@ -164,12 +164,12 @@
       }
     ],
     "head_commit": {
-      "id": "0f4cf056ceaa9f9164bb17f392eea5d041bc8e73",
+      "id": "{{.CommitID}}",
       "tree_id": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
       "distinct": true,
       "message": "add basics for test",
       "timestamp": "2022-04-25T12:50:32-05:00",
-      "url": "https://github.com/{{.Name}}/{{.RepoName}}/commit/0f4cf056ceaa9f9164bb17f392eea5d041bc8e73",
+      "url": "https://github.com/{{.Name}}/{{.RepoName}}/commit/{{.CommitID}}",
       "author": {
         "name": "{{.Name}}",
         "email": "taubytetest@gmail.com",

@@ -117,6 +117,22 @@ func (c Context) handleLog() error {
 }
 
 func (c *Context) cloneAndSet() error {
+	uri := c.Job.Meta.Repository.URI
+	if git.IsLocalURI(uri) {
+		localPath := strings.TrimPrefix(uri, git.LocalURIScheme)
+		c.gitDir = localPath
+		c.WorkDir = localPath
+		json.NewEncoder(c.LogFile).Encode(struct {
+			Op        string `json:"op"`
+			Status    string `json:"status"`
+			Timestamp int64  `json:"timestamp"`
+		}{
+			Op:        "git-open",
+			Status:    "success",
+			Timestamp: time.Now().UnixNano(),
+		})
+		return nil
+	}
 	json.NewEncoder(c.LogFile).Encode(struct {
 		Op        string `json:"op"`
 		Url       string `json:"url"`
@@ -124,13 +140,13 @@ func (c *Context) cloneAndSet() error {
 		Timestamp int64  `json:"timestamp"`
 	}{
 		Op:        "git-clone",
-		Url:       c.Job.Meta.Repository.SSHURL,
+		Url:       uri,
 		Branch:    c.Job.Meta.Repository.Branch,
 		Timestamp: time.Now().UnixNano(),
 	})
 	repo, err := git.New(
 		c.ctx,
-		git.URL(c.Job.Meta.Repository.SSHURL),
+		git.URL(c.Job.Meta.Repository.URI),
 		git.SSHKey(c.DeployKey),
 		git.Temporary(),
 		git.Branch(c.Job.Meta.Repository.Branch),

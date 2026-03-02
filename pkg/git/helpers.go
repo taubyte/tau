@@ -87,6 +87,11 @@ func ConvertSSHToHTTPS(url string) string {
 	return url
 }
 
+// IsLocalURI reports whether url is a local:// URI (open existing dir, no clone).
+func IsLocalURI(url string) bool {
+	return strings.HasPrefix(url, LocalURIScheme)
+}
+
 // TODO support other git providers
 func embedGitToken(url string, auth transport.AuthMethod) (string, error) {
 	if strings.Contains(url, "github.com") {
