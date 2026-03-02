@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
@@ -93,7 +94,8 @@ func TestLocalPushConfigCompile_Dreaming(t *testing.T) {
 	assert.NilError(t, err)
 	_, err = w.Add(".")
 	assert.NilError(t, err)
-	_, err = w.Commit("init", &git.CommitOptions{})
+	sig := &object.Signature{Name: "test", Email: "test@test.com", When: time.Now()}
+	_, err = w.Commit("init", &git.CommitOptions{Author: sig, Committer: sig})
 	assert.NilError(t, err)
 
 	simple, err := u.Simple("client")
