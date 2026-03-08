@@ -22,12 +22,8 @@ func SelectInterface(names []string, prompt, _default string) (selectedInterface
 		return
 	}
 	if UseDefaults {
-		if _default != "" {
-			for _, n := range names {
-				if n == _default {
-					return _default, nil
-				}
-			}
+		if _default != "" && slices.Contains(names, _default) {
+			return _default, nil
 		}
 		return names[0], nil
 	}
