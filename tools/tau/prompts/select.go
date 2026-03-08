@@ -34,6 +34,20 @@ func SelectInterface(names []string, prompt, _default string) (selectedInterface
 		return "", cliPrompts.ErrNonInteractive
 	}
 
+	// If _default is not in options, survey would error; treat as no default.
+	if _default != "" {
+		found := false
+		for _, n := range names {
+			if n == _default {
+				found = true
+				break
+			}
+		}
+		if !found {
+			_default = ""
+		}
+	}
+
 	selector := &survey.Select{
 		Message: prompt,
 		Options: names,

@@ -9,6 +9,7 @@ import (
 	projectI18n "github.com/taubyte/tau/tools/tau/i18n/project"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/taubyte/tau/tools/tau/prompts"
+	"github.com/taubyte/tau/tools/tau/session"
 
 	"github.com/urfave/cli/v2"
 )
@@ -73,6 +74,22 @@ func GetSelectOrDeselect(ctx *cli.Context) (project *client.Project, deselect bo
 	}
 
 	options[len(options)-1] = prompts.SelectionNone
+
+	// If currently selected project is not in the list, clear it and app, then let user select.
+	if currentlySelected != "" {
+		found := false
+		for _, p := range projects {
+			if p.Name == currentlySelected {
+				found = true
+				break
+			}
+		}
+		if !found {
+			session.Unset().SelectedProject()
+			session.Unset().SelectedApplication()
+			currentlySelected = ""
+		}
+	}
 
 	// Try to select a project
 	if len(name) == 0 && len(options) > 1 {

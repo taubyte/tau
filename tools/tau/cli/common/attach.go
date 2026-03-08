@@ -28,6 +28,7 @@ func Attach(app *cli.App, commands ...basicFunction) {
 		_cancel,
 		_retry,
 		_run,
+		_clear,
 	} {
 		if len(cmd.Subcommands) > 0 {
 			app.Commands = append(app.Commands, cmd)
@@ -53,6 +54,7 @@ func attachCommand(cmd Basic) {
 		_cancel:   cmd.Cancel,
 		_retry:    cmd.Retry,
 		_run:      cmd.Run,
+		_clear:    cmd.Clear,
 	} {
 		_method := method()
 		if _method != NotImplemented {

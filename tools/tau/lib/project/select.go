@@ -6,6 +6,7 @@ import (
 )
 
 func Select(ctx *cli.Context, name string) error {
+	session.Unset().SelectedApplication()
 	return session.Set().SelectedProject(name)
 }
 
