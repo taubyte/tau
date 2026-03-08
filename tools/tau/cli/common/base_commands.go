@@ -26,4 +26,5 @@ var (
 	_cancel   = newBaseCommand("cancel")
 	_retry    = newBaseCommand("retry")
 	_run      = newBaseCommand("run")
+	_clear    = newBaseCommand("clear")
 )

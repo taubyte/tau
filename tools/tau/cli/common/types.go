@@ -28,6 +28,7 @@ type Basic interface {
 	Cancel() Command
 	Retry() Command
 	Run() Command
+	Clear() Command
 
 	// Sets the following in the command if not already set:
 	// Name

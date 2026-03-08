@@ -27,3 +27,7 @@ func Deleted(name string) {
 func Edited(name string) {
 	success("Edited", name)
 }
+
+func ClearedApplicationSelection() {
+	printer.Out.SuccessPrintfln("Cleared application selection")
+}

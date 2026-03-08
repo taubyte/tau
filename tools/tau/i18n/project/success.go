@@ -43,3 +43,7 @@ func ImportedProject(name, cloudFQDN string) {
 func RemovedProject(name, cloudFQDN string) {
 	successOnCloud("Removed", name, cloudFQDN)
 }
+
+func ClearedProjectSelection() {
+	printer.Out.SuccessPrintfln("Cleared project selection")
+}

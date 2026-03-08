@@ -11,6 +11,8 @@ import (
 	applicationI18n "github.com/taubyte/tau/tools/tau/i18n/application"
 	applicationLib "github.com/taubyte/tau/tools/tau/lib/application"
 	"github.com/taubyte/tau/tools/tau/prompts"
+	"github.com/taubyte/tau/tools/tau/session"
+	slices "github.com/taubyte/tau/utils/slices/string"
 
 	"github.com/urfave/cli/v2"
 )
@@ -82,6 +84,12 @@ func GetSelectOrDeselect(ctx *cli.Context) (app *structureSpec.App, deselect boo
 	}
 
 	options[len(options)-1] = prompts.SelectionNone
+
+	// If currently selected app is not in the list, clear it and let user select.
+	if currentlySelected != "" && !slices.Contains(options[:len(options)-1], currentlySelected) {
+		session.Unset().SelectedApplication()
+		currentlySelected = ""
+	}
 
 	// Try to select a application
 	if len(name) == 0 && len(options) > 0 {

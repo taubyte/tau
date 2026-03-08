@@ -34,6 +34,15 @@ func TestSelectInterface(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Equal(t, got, "b")
 	})
+
+	t.Run("UseDefaults_returns_first_option_when_default_not_in_names", func(t *testing.T) {
+		prompts.UseDefaults = true
+		defer func() { prompts.UseDefaults = false }()
+
+		got, err := prompts.SelectInterface([]string{"a", "b", "c"}, "Pick:", "stale")
+		assert.NilError(t, err)
+		assert.Equal(t, got, "a")
+	})
 }
 
 func TestSelectInterfaceField(t *testing.T) {
