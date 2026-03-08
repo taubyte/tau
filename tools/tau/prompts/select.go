@@ -8,6 +8,7 @@ import (
 	cliPrompts "github.com/taubyte/tau/pkg/cli/prompts"
 	"github.com/taubyte/tau/tools/tau/i18n/printer"
 	promptsI18n "github.com/taubyte/tau/tools/tau/i18n/prompts"
+	slices "github.com/taubyte/tau/utils/slices/string"
 	"github.com/urfave/cli/v2"
 )
 
@@ -35,17 +36,8 @@ func SelectInterface(names []string, prompt, _default string) (selectedInterface
 	}
 
 	// If _default is not in options, survey would error; treat as no default.
-	if _default != "" {
-		found := false
-		for _, n := range names {
-			if n == _default {
-				found = true
-				break
-			}
-		}
-		if !found {
-			_default = ""
-		}
+	if _default != "" && !slices.Contains(names, _default) {
+		_default = ""
 	}
 
 	selector := &survey.Select{
