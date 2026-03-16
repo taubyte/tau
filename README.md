@@ -38,6 +38,10 @@
 </div>
 
 <br/>
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/c9ed365a-a145-49f9-94dd-dbe1ed57761d" controls width="90%"></video>
+</div>
+<br/>
 Tau is an open-source, Git-native platform-as-a-service for building, deploying, and scaling applications. Infrastructure is defined in Git, eliminating API calls. Fully self-hosted with capabilities similar to Vercel, Firebase, and Cloudflare, plus built-in AI features.
 <br/>
 <br/>
@@ -72,6 +76,11 @@ Tau is an open-source, Git-native platform-as-a-service for building, deploying,
   <img src="images/5px.png">
   <img src="images/spore-drive.gif" width="32%" alt="Spore Drive - Deploying a new cloud">
 </div>
+
+<div align="center">
+  <video src="https://github.com/user-attachments/assets/615fde7a-377a-4f47-81af-8f1d29b3bb3d" controls width="90%"></video>
+</div>
+<br/>
 
 #### Example Projects
 
