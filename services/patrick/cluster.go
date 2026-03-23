@@ -37,8 +37,8 @@ func (srv *PatrickService) listClustersFromKVDB(ctx context.Context) ([]string, 
 }
 
 type clusterPidPayload struct {
-	Pid       string `cbor:"pid,keyasint"`
-	Timestamp int64  `cbor:"timestamp,keyasint"`
+	Pid       string `cbor:"pid"`
+	Timestamp int64  `cbor:"timestamp"`
 }
 
 // getClusterPeerID returns one peer ID registered for the given cluster (from /cluster/<name>/pid).

@@ -26,4 +26,10 @@ var (
 
 	// ErrInvalidTimeout is returned when timeout is zero or exceeds maximum
 	ErrInvalidTimeout = errors.New("invalid timeout: must be > 0 and <= MaxApplyTimeout")
+
+	// ErrItemNotFound is returned when DequeueItem is called with an ID not in the queue index
+	ErrItemNotFound = errors.New("item not found in queue")
+
+	// ErrQueueEmpty is returned when Pop is called on an empty queue
+	ErrQueueEmpty = errors.New("queue is empty")
 )

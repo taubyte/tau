@@ -106,7 +106,7 @@ func (c *cluster) initialize() error {
 		return fmt.Errorf("failed to create snapshot store: %w", err)
 	}
 
-	c.fsm = newKVFSM(store, storagePrefix)
+	c.fsm = newKVFSM(c.ctx, store, storagePrefix)
 
 	raftConfig := c.buildRaftConfig()
 
@@ -515,6 +515,48 @@ func (c *cluster) Delete(key string, timeout time.Duration) error {
 	}
 
 	future := c.raft.Apply(cmd, timeout)
+	if err := future.Error(); err != nil {
+		if err == raft.ErrNotLeader {
+			return ErrNotLeader
+		}
+		return err
+	}
+
+	resp := future.Response()
+	if fsmResp, ok := resp.(FSMResponse); ok && fsmResp.Error != nil {
+		return fsmResp.Error
+	}
+
+	return nil
+}
+
+func (c *cluster) Batch(ops []BatchOp, timeout time.Duration) error {
+	if c.closed.Load() {
+		return ErrShutdown
+	}
+
+	if !c.IsLeader() {
+		return ErrNotLeader
+	}
+
+	cmds := make([]Command, 0, len(ops))
+	for _, op := range ops {
+		switch {
+		case op.Set != nil:
+			cmds = append(cmds, Command{Type: CommandSet, Set: op.Set})
+		case op.Delete != nil:
+			cmds = append(cmds, Command{Type: CommandDelete, Delete: op.Delete})
+		default:
+			return ErrInvalidCommand
+		}
+	}
+
+	data, err := encodeBatchCommand(cmds)
+	if err != nil {
+		return fmt.Errorf("failed to encode batch command: %w", err)
+	}
+
+	future := c.raft.Apply(data, timeout)
 	if err := future.Error(); err != nil {
 		if err == raft.ErrNotLeader {
 			return ErrNotLeader

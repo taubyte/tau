@@ -13,36 +13,17 @@ import (
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	ci "github.com/taubyte/tau/pkg/containers/gc"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/raft"
-	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
 var logger = log.Logger("tau.monkey.service")
-
-func (srv *Service) subscribe() error {
-	return srv.node.PubSubSubscribe(
-		patrickSpecs.PubSubIdent,
-		func(msg *pubsub.Message) {
-			go srv.pubsubMsgHandler(msg)
-		},
-		func(err error) {
-			if err.Error() != "context canceled" {
-				logger.Error("Subscription had an error:", err.Error())
-				if err := srv.subscribe(); err != nil {
-					logger.Error("resubscribe failed with:", err.Error())
-				}
-			}
-		},
-	)
-}
 
 func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	var err error
@@ -92,13 +73,14 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	if srv.patrickClient, err = NewPatrick(ctx, srv.clientNode); err != nil {
 		return nil, err
 	}
-	go srv.pollJobs()
 	if srv.tnsClient, err = tnsClient.New(ctx, srv.clientNode); err != nil {
 		return nil, err
 	}
 	if srv.hoarderClient, err = hoarder.New(ctx, srv.clientNode); err != nil {
 		return nil, err
 	}
+
+	go srv.pollJobs()
 
 	return srv, nil
 }
@@ -143,40 +125,6 @@ func (srv *Service) discoverPatrickPeers() []peer.ID {
 		out = append(out, srv.node.ID())
 	}
 	return out
-}
-
-const (
-	pollJobInterval     = 5 * time.Second
-	pollJobBackoffEmpty = 2 * time.Second
-)
-
-func (srv *Service) pollJobs() {
-	backoff := pollJobInterval
-	for {
-		select {
-		case <-srv.ctx.Done():
-			return
-		default:
-		}
-		peers := srv.discoverPatrickPeers()
-		if len(peers) == 0 {
-			time.Sleep(pollJobBackoffEmpty)
-			continue
-		}
-		client := srv.patrickClient.Peers(peers...)
-		id, jobBytes, err := client.Dequeue()
-		if err != nil {
-			logger.Errorf("dequeue failed: %v", err)
-			time.Sleep(backoff)
-			continue
-		}
-		if id == "" || len(jobBytes) == 0 {
-			time.Sleep(pollJobBackoffEmpty)
-			continue
-		}
-		srv.RunJobFromBytes(jobBytes)
-		backoff = pollJobInterval
-	}
 }
 
 func (srv *Service) Close() error {

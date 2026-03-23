@@ -15,7 +15,6 @@ import (
 	authIface "github.com/taubyte/tau/core/services/auth"
 	iface "github.com/taubyte/tau/core/services/patrick"
 	http "github.com/taubyte/tau/pkg/http"
-	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/utils/id"
 	"gopkg.in/go-playground/webhooks.v5/github"
@@ -155,24 +154,15 @@ func (srv *PatrickService) RegisterJob(ctx context.Context, newJob *iface.Job) e
 		return err
 	}
 
-	if srv.jobQueue != nil {
-		exists, err := srv.jobExistsInOtherCluster(ctx, newJob.Id)
-		if err != nil {
-			return fmt.Errorf("cross-cluster check failed: %w", err)
-		}
-		if exists {
-			return nil // job already in another cluster, discard
-		}
-		_, err = srv.jobQueue.Enqueue(job_byte, 10*time.Second)
-		if err != nil {
-			return fmt.Errorf("failed to enqueue job: %w", err)
-		}
+	exists, err := srv.jobExistsInOtherCluster(ctx, newJob.Id)
+	if err != nil {
+		return fmt.Errorf("cross-cluster check failed: %w", err)
+	}
+	if exists {
 		return nil
 	}
-	// Fallback: send the job over pub sub
-	err = srv.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job_byte)
-	if err != nil {
-		return fmt.Errorf("failed to send over pubsub error: %w", err)
+	if err = srv.jobQueue.Push(newJob.Id, nil, 5*time.Second); err != nil {
+		return fmt.Errorf("failed to push job onto queue: %w", err)
 	}
 	return nil
 }

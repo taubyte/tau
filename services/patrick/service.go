@@ -44,10 +44,11 @@ func New(ctx context.Context, cfg tauConfig.Config) (*PatrickService, error) {
 	var err error
 	srv.devMode = cfg.DevMode()
 	srv.cluster = cfg.Cluster()
-	if cfg.RaftCluster() != nil {
-		srv.raftCluster = cfg.RaftCluster()
-		srv.jobQueue = raft.NewQueue(cfg.RaftCluster(), "queue/patrick")
+	if cfg.RaftCluster() == nil {
+		return nil, fmt.Errorf("raft cluster is required")
 	}
+	srv.raftCluster = cfg.RaftCluster()
+	srv.jobQueue = raft.NewQueue(cfg.RaftCluster(), "patrick")
 
 	if srv.node = cfg.Node(); srv.node == nil {
 		srv.node, err = tauConfig.NewNode(srv.ctx, cfg, path.Join(cfg.Root(), servicesCommon.Patrick))
@@ -78,12 +79,10 @@ func New(ctx context.Context, cfg tauConfig.Config) (*PatrickService, error) {
 	if srv.db, err = srv.dbFactory.New(logger, servicesCommon.Patrick, 5); err != nil {
 		return nil, fmt.Errorf("failed kv new with error: %w", err)
 	}
-	if srv.jobQueue != nil {
-		if srv.outboundClient, err = streamClient.New(srv.node, servicesCommon.PatrickProtocol); err != nil {
-			return nil, fmt.Errorf("creating outbound patrick client: %w", err)
-		}
-		go srv.runClusterHeartbeat()
+	if srv.outboundClient, err = streamClient.New(srv.node, servicesCommon.PatrickProtocol); err != nil {
+		return nil, fmt.Errorf("creating outbound patrick client: %w", err)
 	}
+	go srv.runClusterHeartbeat()
 	if srv.stream, err = streams.New(srv.node, servicesCommon.Patrick, servicesCommon.PatrickProtocol); err != nil {
 		return nil, fmt.Errorf("failed stream new with error: %w", err)
 	}
@@ -180,9 +179,7 @@ func (srv *PatrickService) Close() error {
 	defer logger.Info(servicesCommon.Patrick, "closed")
 
 	srv.cancel()
-	if srv.jobQueue != nil {
-		srv.jobQueue.Close()
-	}
+	srv.jobQueue.Close()
 	if srv.outboundClient != nil {
 		srv.outboundClient.Close()
 	}

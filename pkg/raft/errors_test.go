@@ -16,6 +16,8 @@ func TestErrors_Defined(t *testing.T) {
 		{"ErrInvalidCommand", ErrInvalidCommand},
 		{"ErrAlreadyClosed", ErrAlreadyClosed},
 		{"ErrInvalidNamespace", ErrInvalidNamespace},
+		{"ErrItemNotFound", ErrItemNotFound},
+		{"ErrQueueEmpty", ErrQueueEmpty},
 	}
 
 	for _, tc := range errs {
@@ -38,6 +40,8 @@ func TestErrors_Unique(t *testing.T) {
 		ErrInvalidCommand,
 		ErrAlreadyClosed,
 		ErrInvalidNamespace,
+		ErrItemNotFound,
+		ErrQueueEmpty,
 	}
 
 	seen := make(map[string]bool)

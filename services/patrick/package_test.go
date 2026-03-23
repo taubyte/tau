@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/taubyte/tau/pkg/config"
+	"github.com/taubyte/tau/pkg/raft"
 	"gotest.tools/v3/assert"
 )
 
@@ -31,6 +32,7 @@ func TestProtoCommandIface_New(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	cfg.SetRaftCluster(raft.NewMockCluster())
 	svc, err := iface.New(ctx, cfg)
 	assert.NilError(t, err)
 	if svc != nil {

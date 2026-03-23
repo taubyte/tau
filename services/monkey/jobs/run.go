@@ -16,7 +16,6 @@ var (
 
 func (c *Context) Run(ctx context.Context) (err error) {
 	defer c.Monkey.Delete(c.Job.Id)
-	defer c.Patrick.Unlock(c.Job.Id)
 	defer c.handleLog()
 
 	go c.startTimeout()

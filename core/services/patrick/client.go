@@ -6,9 +6,8 @@ import (
 )
 
 type Client interface {
-	Lock(jid string, eta uint32) error
-	IsLocked(jid string) (bool, error)
-	Unlock(jid string) error
+	Dequeue() (*Job, error)
+	IsAssigned(jid string) (bool, error)
 	Done(jid string, cid_log map[string]string, assetCid map[string]string) error
 	Failed(jid string, cid_log map[string]string, assetCid map[string]string) error
 	List() ([]string, error)
@@ -16,7 +15,6 @@ type Client interface {
 	Timeout(jid string) error
 	Cancel(jid string, cid_log map[string]string) (interface{}, error)
 	DatabaseStats() (kvdb.Stats, error)
-	Dequeue() (id string, job []byte, err error)
 	Peers(...peerCore.ID) Client
 	Close()
 }

@@ -1,66 +1,69 @@
 package monkey
 
 import (
-	"fmt"
 	"time"
-
-	"github.com/fxamacker/cbor/v2"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
-	"github.com/taubyte/tau/core/services/patrick"
 )
 
-// RunJobFromBytes unmarshals job bytes and runs the job (used by both pubsub and dequeue poll).
-func (srv *Service) RunJobFromBytes(jobBytes []byte) {
-	var receivedJob patrick.Job
-	err := cbor.Unmarshal(jobBytes, &receivedJob)
+// pollJobs periodically asks Patrick for available jobs.
+func (srv *Service) pollJobs() {
+	interval := 5 * time.Second
+	if srv.dev {
+		interval = 2 * time.Second
+	}
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-srv.ctx.Done():
+			return
+		case <-ticker.C:
+			srv.tryDequeueJob()
+		}
+	}
+}
+
+// tryDequeueJob attempts to dequeue a single job from Patrick and run it.
+func (srv *Service) tryDequeueJob() {
+	peers := srv.discoverPatrickPeers()
+	client := srv.patrickClient.Peers(peers...)
+
+	job, err := client.Dequeue()
 	if err != nil {
-		logger.Error("job unmarshal had an error:", err.Error())
+		logger.Debugf("Dequeue failed: %v", err)
 		return
 	}
-	if len(receivedJob.Id) == 0 {
-		logger.Error("Got an empty job.")
+	if job == nil {
 		return
 	}
 
 	srv.recvJobsLock.Lock()
-	recvJobTime, ok := srv.recvJobs[receivedJob.Id]
+	srv.recvJobs[job.Id] = time.Now()
 	srv.recvJobsLock.Unlock()
-	if ok && time.Since(recvJobTime) < time.Second*60 {
-		logger.Debugf("Already received job: `%s`", receivedJob.Id)
-		return
-	}
 
 	srv.monkeysLock.RLock()
-	_, ok = srv.monkeys[receivedJob.Id]
+	_, ok := srv.monkeys[job.Id]
 	srv.monkeysLock.RUnlock()
 	if ok {
-		logger.Debugf("Already processing job: `%s`", receivedJob.Id)
+		logger.Debugf("Already processing job: %s", job.Id)
 		return
 	}
 
-	srv.recvJobsLock.Lock()
-	srv.recvJobs[receivedJob.Id] = time.Now()
-	srv.recvJobsLock.Unlock()
-
-	if receivedJob.Logs == nil {
-		receivedJob.Logs = make(map[string]string)
+	if job.Logs == nil {
+		job.Logs = make(map[string]string)
 	}
-	if receivedJob.AssetCid == nil {
-		receivedJob.AssetCid = make(map[string]string)
+	if job.AssetCid == nil {
+		job.AssetCid = make(map[string]string)
 	}
 
-	fmt.Printf("Received job: %s\n", receivedJob.Id)
+	logger.Infof("Received job: %s", job.Id)
 
-	monkey, err := srv.newMonkey(&receivedJob)
+	monkey, err := srv.newMonkey(job)
 	if err != nil {
 		logger.Error("New monkey had an error:", err.Error())
 		return
 	}
 
 	monkey.Run()
-}
-
-// already runs in a go routine
-func (srv *Service) pubsubMsgHandler(msg *pubsub.Message) {
-	srv.RunJobFromBytes(msg.Data)
 }

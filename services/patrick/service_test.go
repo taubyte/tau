@@ -9,6 +9,7 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
+	"github.com/taubyte/tau/pkg/raft"
 	"gotest.tools/v3/assert"
 )
 
@@ -20,6 +21,7 @@ func createTestConfig(t *testing.T) config.Config {
 		config.WithPrivateKey(keypair.NewRaw()),
 	)
 	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
 	return cfg
 }
 
@@ -45,6 +47,7 @@ func TestNew(t *testing.T) {
 					config.WithDevMode(true),
 				)
 				assert.NilError(t, err)
+				cfg.SetRaftCluster(raft.NewMockCluster())
 				return cfg
 			}(),
 			expectedError: "",
@@ -101,6 +104,7 @@ func TestPatrickServiceClose(t *testing.T) {
 		config.WithDevMode(true),
 	)
 	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
 	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
@@ -123,6 +127,7 @@ func TestPatrickServiceDevMode(t *testing.T) {
 		config.WithDevMode(true),
 	)
 	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
 	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
@@ -159,6 +164,7 @@ func TestPatrickServiceInitialization(t *testing.T) {
 		config.WithDevMode(true),
 	)
 	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
 	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
@@ -187,6 +193,7 @@ func TestPatrickServiceReannounceJobsGoroutine(t *testing.T) {
 		config.WithDevMode(true),
 	)
 	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
 	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
@@ -211,6 +218,7 @@ func TestPatrickServiceReannounceJobsAfterClose(t *testing.T) {
 		config.WithDevMode(true),
 	)
 	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
 	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
@@ -235,6 +243,7 @@ func TestPatrickServiceGoroutineStopsOnContextCancel(t *testing.T) {
 		config.WithDevMode(true),
 	)
 	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
 	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)

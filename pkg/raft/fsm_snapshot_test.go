@@ -134,7 +134,7 @@ func TestKVSnapshot_Persist_Comprehensive(t *testing.T) {
 func TestKVFSM_Restore_Comprehensive(t *testing.T) {
 	t.Run("from_empty", func(t *testing.T) {
 		store := newTestStore()
-		fsm := newKVFSM(store, "/raft/test")
+		fsm := newKVFSM(t.Context(), store, "/raft/test")
 
 		// Create snapshot data
 		snapshotData := map[string][]byte{
@@ -162,7 +162,7 @@ func TestKVFSM_Restore_Comprehensive(t *testing.T) {
 
 	t.Run("overwrite_existing", func(t *testing.T) {
 		store := newTestStore()
-		fsm := newKVFSM(store, "/raft/test")
+		fsm := newKVFSM(t.Context(), store, "/raft/test")
 
 		// First add some data
 		cmd := Command{
@@ -202,7 +202,7 @@ func TestKVFSM_Restore_Comprehensive(t *testing.T) {
 
 	t.Run("empty_snapshot", func(t *testing.T) {
 		store := newTestStore()
-		fsm := newKVFSM(store, "/raft/test")
+		fsm := newKVFSM(t.Context(), store, "/raft/test")
 
 		// Add some data first
 		cmd := Command{
@@ -229,7 +229,7 @@ func TestKVFSM_Restore_Comprehensive(t *testing.T) {
 
 	t.Run("invalid_cbor", func(t *testing.T) {
 		store := newTestStore()
-		fsm := newKVFSM(store, "/raft/test")
+		fsm := newKVFSM(t.Context(), store, "/raft/test")
 
 		reader := io.NopCloser(bytes.NewReader([]byte("invalid cbor data")))
 
@@ -239,7 +239,7 @@ func TestKVFSM_Restore_Comprehensive(t *testing.T) {
 
 	t.Run("read_error", func(t *testing.T) {
 		store := newTestStore()
-		fsm := newKVFSM(store, "/raft/test")
+		fsm := newKVFSM(t.Context(), store, "/raft/test")
 
 		// Create a reader that will error on read
 		reader := &errorReader{}
@@ -263,7 +263,7 @@ func (e *errorReader) Close() error {
 // TestKVFSM_Restore_WithManyKeys tests Restore with many keys
 func TestKVFSM_Restore_WithManyKeys(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test")
+	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
 	// Create snapshot with many keys
 	snapshotData := make(map[string][]byte)
@@ -294,7 +294,7 @@ func TestKVFSM_Restore_WithManyKeys(t *testing.T) {
 // TestKVFSM_SnapshotAndRestore_RoundTrip_Comprehensive tests full snapshot/restore cycle
 func TestKVFSM_SnapshotAndRestore_RoundTrip_Comprehensive(t *testing.T) {
 	store1 := newTestStore()
-	fsm1 := newKVFSM(store1, "/raft/test1")
+	fsm1 := newKVFSM(t.Context(), store1, "/raft/test1")
 
 	// Add data to first FSM
 	keys := []string{"a", "b", "c", "prefix/x", "prefix/y"}
@@ -321,7 +321,7 @@ func TestKVFSM_SnapshotAndRestore_RoundTrip_Comprehensive(t *testing.T) {
 
 	// Create new FSM and restore
 	store2 := newTestStore()
-	fsm2 := newKVFSM(store2, "/raft/test2")
+	fsm2 := newKVFSM(t.Context(), store2, "/raft/test2")
 
 	reader := io.NopCloser(bytes.NewReader(sink.buf.Bytes()))
 	err = fsm2.Restore(reader)
@@ -338,7 +338,7 @@ func TestKVFSM_SnapshotAndRestore_RoundTrip_Comprehensive(t *testing.T) {
 // TestFsmAdapter_Restore_Comprehensive tests the fsmAdapter.Restore wrapper comprehensively
 func TestFsmAdapter_Restore_Comprehensive(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/test")
+	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
 	// Create snapshot data
 	snapshotData := map[string][]byte{

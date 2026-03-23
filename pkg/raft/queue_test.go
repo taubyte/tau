@@ -2,194 +2,149 @@ package raft
 
 import (
 	"bytes"
-	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/hashicorp/raft"
-	"github.com/ipfs/go-datastore"
-	dsync "github.com/ipfs/go-datastore/sync"
-	"github.com/libp2p/go-libp2p/core/peer"
 )
 
-// mockCluster applies commands directly to an in-memory FSM (no raft).
-type mockCluster struct {
-	fsm FSM
-}
-
-func (m *mockCluster) Apply(cmd []byte, _ time.Duration) (FSMResponse, error) {
-	log := &raft.Log{Data: cmd, Index: 1}
-	resp := m.fsm.Apply(log)
-	if fsmResp, ok := resp.(FSMResponse); ok {
-		return fsmResp, nil
-	}
-	return FSMResponse{}, nil
-}
-
-func (m *mockCluster) Get(key string) ([]byte, bool) {
-	return m.fsm.Get(key)
-}
-
-func (m *mockCluster) Keys(prefix string) []string {
-	return m.fsm.Keys(prefix)
-}
-
-func (m *mockCluster) Close() error                              { return nil }
-func (m *mockCluster) Namespace() string                         { return "test" }
-func (m *mockCluster) Set(string, []byte, time.Duration) error   { return nil }
-func (m *mockCluster) Delete(string, time.Duration) error        { return nil }
-func (m *mockCluster) Barrier(time.Duration) error               { return nil }
-func (m *mockCluster) IsLeader() bool                            { return true }
-func (m *mockCluster) Leader() (peer.ID, error)                  { return "", nil }
-func (m *mockCluster) State() raft.RaftState                     { return raft.Leader }
-func (m *mockCluster) WaitForLeader(ctx context.Context) error   { return nil }
-func (m *mockCluster) Members() ([]Member, error)                { return nil, nil }
-func (m *mockCluster) AddVoter(peer.ID, time.Duration) error     { return nil }
-func (m *mockCluster) RemoveServer(peer.ID, time.Duration) error { return nil }
-func (m *mockCluster) TransferLeadership() error                 { return nil }
-
-func newMockClusterForQueue(t *testing.T) Cluster {
-	store := dsync.MutexWrap(datastore.NewMapDatastore())
-	fsm := newKVFSM(store, "/raft/test")
-	return &mockCluster{fsm: fsm}
-}
-
-func TestQueue_EnqueueDequeue(t *testing.T) {
-	cluster := newMockClusterForQueue(t)
-	qu := NewQueue(cluster, "q").(*queue)
+func TestQueue_PushPop(t *testing.T) {
+	qu := NewQueue(NewMockCluster(), "test")
 	defer qu.Close()
 
-	id, err := qu.Enqueue([]byte("job1"), 5*time.Second)
+	err := qu.Push("job-1", []byte("item1"), 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if id == "" {
-		t.Error("expected non-empty id")
 	}
 
 	if qu.Len() != 1 {
 		t.Errorf("Len() = %d, want 1", qu.Len())
 	}
 
-	peekID, peekData, ok := qu.Peek()
-	if !ok || peekID != id || !bytes.Equal(peekData, []byte("job1")) {
-		t.Errorf("Peek() = %q, %s, %v, want id, job1, true", peekID, peekData, ok)
+	id, data, ok := qu.Peek()
+	if !ok || id != "job-1" || !bytes.Equal(data, []byte("item1")) {
+		t.Errorf("Peek() = (%q, %q, %v); want (job-1, item1, true)", id, data, ok)
 	}
 
-	gotID, gotData, err := qu.Dequeue(5 * time.Second)
+	gotID, gotData, err := qu.Pop(5 * time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotID != id || !bytes.Equal(gotData, []byte("job1")) {
-		t.Errorf("Dequeue() = %q, %s, want %q, job1", gotID, gotData, id)
+	if gotID != "job-1" || !bytes.Equal(gotData, []byte("item1")) {
+		t.Errorf("Pop() = (%q, %q); want (job-1, item1)", gotID, gotData)
 	}
 
 	if qu.Len() != 0 {
-		t.Errorf("Len() after Dequeue = %d, want 0", qu.Len())
+		t.Errorf("Len() after Pop = %d, want 0", qu.Len())
 	}
 }
 
-func TestQueue_DequeueEmpty(t *testing.T) {
-	cluster := newMockClusterForQueue(t)
-	qu := NewQueue(cluster, "q").(*queue)
+func TestQueue_PopEmpty(t *testing.T) {
+	qu := NewQueue(NewMockCluster(), "test")
 	defer qu.Close()
 
-	_, data, err := qu.Dequeue(5 * time.Second)
+	_, _, err := qu.Pop(5 * time.Second)
+	if !errors.Is(err, ErrQueueEmpty) {
+		t.Errorf("Pop empty: got %v, want ErrQueueEmpty", err)
+	}
+}
+
+func TestQueue_Dedup(t *testing.T) {
+	qu := NewQueue(NewMockCluster(), "test")
+	defer qu.Close()
+
+	err := qu.Push("same-id", []byte("first"), 5*time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data != nil {
-		t.Errorf("Dequeue empty want nil data, got %x", data)
+	err = qu.Push("same-id", []byte("second"), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if qu.Len() != 1 {
+		t.Errorf("Len() after duplicate push = %d, want 1 (dedup)", qu.Len())
+	}
+	id, data, err := qu.Pop(5 * time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "same-id" || !bytes.Equal(data, []byte("first")) {
+		t.Errorf("Pop() = (%q, %q); want first item (dedup kept original)", id, data)
 	}
 }
 
-func TestQueue_LenPeek(t *testing.T) {
-	cluster := newMockClusterForQueue(t)
-	qu := NewQueue(cluster, "q").(*queue)
+func TestQueue_FIFOOrder(t *testing.T) {
+	qu := NewQueue(NewMockCluster(), "test")
 	defer qu.Close()
 
-	qu.Enqueue([]byte("a"), 5*time.Second)
-	qu.Enqueue([]byte("b"), 5*time.Second)
-
-	if qu.Len() != 2 {
-		t.Errorf("Len() = %d, want 2", qu.Len())
-	}
-
-	id1, data1, ok := qu.Peek()
-	if !ok || !bytes.Equal(data1, []byte("a")) {
-		t.Errorf("Peek() = %q, %s, %v", id1, data1, ok)
-	}
-
-	qu.Dequeue(5 * time.Second)
-	id2, data2, ok := qu.Peek()
-	if !ok || !bytes.Equal(data2, []byte("b")) {
-		t.Errorf("second Peek() = %q, %s, %v", id2, data2, ok)
-	}
-}
-
-// TestQueue_ManyItems enqueues more than 10 items, dequeues all in order, and acks each.
-func TestQueue_ManyItems(t *testing.T) {
-	cluster := newMockClusterForQueue(t)
-	qu := NewQueue(cluster, "q").(*queue)
-	defer qu.Close()
-
-	const n = 15
-	var ids []string
-	for i := 0; i < n; i++ {
-		payload := []byte(string(rune('a' + i)))
-		id, err := qu.Enqueue(payload, 5*time.Second)
+	payloads := []string{"first", "second", "third"}
+	ids := []string{"id-1", "id-2", "id-3"}
+	for i, p := range payloads {
+		err := qu.Push(ids[i], []byte(p), 5*time.Second)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if id == "" {
-			t.Fatalf("item %d: expected non-empty id", i)
+	}
+
+	if qu.Len() != 3 {
+		t.Errorf("Len() = %d, want 3", qu.Len())
+	}
+
+	for i, expected := range payloads {
+		gotID, gotData, err := qu.Pop(5 * time.Second)
+		if err != nil {
+			t.Fatalf("Pop %d: %v", i, err)
 		}
-		ids = append(ids, id)
+		if gotID != ids[i] {
+			t.Errorf("Pop %d: id = %q, want %q", i, gotID, ids[i])
+		}
+		if string(gotData) != expected {
+			t.Errorf("Pop %d: data = %s, want %s", i, gotData, expected)
+		}
+	}
+}
+
+func TestQueue_ManyItems(t *testing.T) {
+	qu := NewQueue(NewMockCluster(), "test")
+	defer qu.Close()
+
+	const n = 20
+	for i := range n {
+		err := qu.Push(fmt.Sprintf("id-%02d", i), []byte{byte(i)}, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if qu.Len() != n {
 		t.Errorf("Len() = %d, want %d", qu.Len(), n)
 	}
 
-	for i := 0; i < n; i++ {
-		gotID, gotData, err := qu.Dequeue(5 * time.Second)
+	for i := range n {
+		_, gotData, err := qu.Pop(5 * time.Second)
 		if err != nil {
-			t.Fatalf("Dequeue %d: %v", i, err)
+			t.Fatalf("Pop %d: %v", i, err)
 		}
-		if gotID != ids[i] {
-			t.Errorf("Dequeue %d: id = %q, want %q", i, gotID, ids[i])
-		}
-		expected := []byte(string(rune('a' + i)))
-		if !bytes.Equal(gotData, expected) {
-			t.Errorf("Dequeue %d: data = %x, want %x", i, gotData, expected)
+		if len(gotData) != 1 || gotData[0] != byte(i) {
+			t.Errorf("Pop %d: data = %x, want %x", i, gotData, []byte{byte(i)})
 		}
 	}
 
 	if qu.Len() != 0 {
-		t.Errorf("Len() after all Dequeue = %d, want 0", qu.Len())
-	}
-	_, data, err := qu.Dequeue(5 * time.Second)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if data != nil {
-		t.Errorf("Dequeue empty want nil, got %x", data)
+		t.Errorf("Len() after all Pop = %d, want 0", qu.Len())
 	}
 }
 
-// TestQueue_MultipleConsumers enqueues many items and has several goroutines
-// dequeue and ack concurrently; asserts every item is delivered exactly once.
 func TestQueue_MultipleConsumers(t *testing.T) {
-	cluster := newMockClusterForQueue(t)
-	qu := NewQueue(cluster, "q").(*queue)
+	qu := NewQueue(NewMockCluster(), "test")
 	defer qu.Close()
 
-	const numItems = 15
+	const numItems = 20
 	const numConsumers = 4
 
-	for i := 0; i < numItems; i++ {
-		_, err := qu.Enqueue([]byte{byte(i)}, 5*time.Second)
+	for i := range numItems {
+		err := qu.Push(fmt.Sprintf("id-%02d", i), []byte{byte(i)}, 5*time.Second)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -198,24 +153,23 @@ func TestQueue_MultipleConsumers(t *testing.T) {
 	var mu sync.Mutex
 	seen := make(map[string]bool)
 	var collected [][]byte
-	var errs []string
 
 	var wg sync.WaitGroup
 	wg.Add(numConsumers)
-	for c := 0; c < numConsumers; c++ {
+	for range numConsumers {
 		go func() {
 			defer wg.Done()
 			for {
-				id, data, err := qu.Dequeue(5 * time.Second)
-				if err != nil {
+				id, data, err := qu.Pop(5 * time.Second)
+				if errors.Is(err, ErrQueueEmpty) {
 					return
 				}
-				if id == "" && data == nil {
+				if err != nil {
 					return
 				}
 				mu.Lock()
 				if seen[id] {
-					errs = append(errs, "duplicate delivery: id "+id)
+					t.Errorf("duplicate delivery: id %s", id)
 				}
 				seen[id] = true
 				collected = append(collected, data)
@@ -237,14 +191,8 @@ func TestQueue_MultipleConsumers(t *testing.T) {
 
 	mu.Lock()
 	defer mu.Unlock()
-	for _, e := range errs {
-		t.Error(e)
-	}
 	if len(collected) != numItems {
 		t.Errorf("collected %d items, want %d", len(collected), numItems)
-	}
-	if len(seen) != numItems {
-		t.Errorf("unique ids = %d, want %d", len(seen), numItems)
 	}
 	payloadSeen := make(map[byte]bool)
 	for _, data := range collected {
@@ -252,14 +200,206 @@ func TestQueue_MultipleConsumers(t *testing.T) {
 			t.Errorf("unexpected payload len %d", len(data))
 			continue
 		}
-		if payloadSeen[data[0]] {
-			t.Errorf("duplicate payload %d", data[0])
-		}
 		payloadSeen[data[0]] = true
 	}
-	for i := 0; i < numItems; i++ {
+	for i := range numItems {
 		if !payloadSeen[byte(i)] {
 			t.Errorf("missing payload %d", i)
 		}
+	}
+}
+
+func TestQueue_ClosedOperations(t *testing.T) {
+	qu := NewQueue(NewMockCluster(), "test")
+	qu.Close()
+
+	err := qu.Push("x", []byte("x"), 5*time.Second)
+	if err != ErrShutdown {
+		t.Errorf("Push after Close: got %v, want ErrShutdown", err)
+	}
+
+	_, _, err = qu.Pop(5 * time.Second)
+	if err != ErrShutdown {
+		t.Errorf("Pop after Close: got %v, want ErrShutdown", err)
+	}
+
+	if qu.Len() != 0 {
+		t.Errorf("Len after Close = %d, want 0", qu.Len())
+	}
+}
+
+func TestQueue_EmptyID(t *testing.T) {
+	qu := NewQueue(NewMockCluster(), "test")
+	defer qu.Close()
+
+	err := qu.Push("", []byte("x"), 5*time.Second)
+	if err == nil {
+		t.Error("Push with empty id should fail")
+	}
+}
+
+func TestQueue_KeyIsolation(t *testing.T) {
+	mc := NewMockCluster()
+	q1 := NewQueue(mc, "alpha")
+	q2 := NewQueue(mc, "beta")
+	defer q1.Close()
+	defer q2.Close()
+
+	err := q1.Push("a", []byte("a"), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = q2.Push("b", []byte("b"), 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if q1.Len() != 1 {
+		t.Errorf("q1.Len() = %d, want 1", q1.Len())
+	}
+	if q2.Len() != 1 {
+		t.Errorf("q2.Len() = %d, want 1", q2.Len())
+	}
+
+	id1, data1, err := q1.Pop(5 * time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id1 != "a" || !bytes.Equal(data1, []byte("a")) {
+		t.Errorf("q1 Pop = (%q, %s), want (a, a)", id1, data1)
+	}
+
+	id2, data2, err := q2.Pop(5 * time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id2 != "b" || !bytes.Equal(data2, []byte("b")) {
+		t.Errorf("q2 Pop = (%q, %s), want (b, b)", id2, data2)
+	}
+}
+
+func TestQueue_SnapshotRestoreRoundTrip(t *testing.T) {
+	mc1 := NewMockCluster()
+	q1 := NewQueue(mc1, "test")
+	defer q1.Close()
+
+	items := []struct {
+		id   string
+		data []byte
+	}{
+		{"job-1", []byte("data-1")},
+		{"job-2", []byte("data-2")},
+		{"job-3", []byte("data-3")},
+	}
+	for _, item := range items {
+		err := q1.Push(item.id, item.data, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mc1.mu.Lock()
+	snapshot := make(map[string][]byte, len(mc1.data))
+	for k, v := range mc1.data {
+		cp := make([]byte, len(v))
+		copy(cp, v)
+		snapshot[k] = cp
+	}
+	mc1.mu.Unlock()
+
+	mc2 := NewMockCluster()
+	mc2.mu.Lock()
+	mc2.data = snapshot
+	mc2.mu.Unlock()
+
+	q2 := NewQueue(mc2, "test")
+	defer q2.Close()
+
+	for _, want := range items {
+		id, data, err := q2.Pop(5 * time.Second)
+		if err != nil {
+			t.Fatalf("Pop: %v", err)
+		}
+		if id != want.id {
+			t.Errorf("id = %q, want %q", id, want.id)
+		}
+		if !bytes.Equal(data, want.data) {
+			t.Errorf("data = %q, want %q", data, want.data)
+		}
+	}
+
+	_, _, err := q2.Pop(5 * time.Second)
+	if !errors.Is(err, ErrQueueEmpty) {
+		t.Errorf("expected ErrQueueEmpty after draining, got %v", err)
+	}
+}
+
+func TestQueue_SnapshotRestorePartialPop(t *testing.T) {
+	mc1 := NewMockCluster()
+	q1 := NewQueue(mc1, "test")
+	defer q1.Close()
+
+	for i := range 5 {
+		err := q1.Push(fmt.Sprintf("job-%d", i), []byte{byte(i)}, 5*time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	for range 2 {
+		_, _, err := q1.Pop(5 * time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	mc1.mu.Lock()
+	snapshot := make(map[string][]byte, len(mc1.data))
+	for k, v := range mc1.data {
+		cp := make([]byte, len(v))
+		copy(cp, v)
+		snapshot[k] = cp
+	}
+	mc1.mu.Unlock()
+
+	mc2 := NewMockCluster()
+	mc2.mu.Lock()
+	mc2.data = snapshot
+	mc2.mu.Unlock()
+
+	q2 := NewQueue(mc2, "test")
+	defer q2.Close()
+
+	if q2.Len() != 3 {
+		t.Fatalf("Len() = %d, want 3", q2.Len())
+	}
+
+	id, data, err := q2.Pop(5 * time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "job-2" || data[0] != 2 {
+		t.Errorf("expected job-2/2, got %s/%d", id, data[0])
+	}
+}
+
+func TestQueue_NilData(t *testing.T) {
+	qu := NewQueue(NewMockCluster(), "test")
+	defer qu.Close()
+
+	err := qu.Push("id-nil", nil, 5*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id, data, err := qu.Pop(5 * time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if id != "id-nil" {
+		t.Errorf("id = %q, want id-nil", id)
+	}
+	if len(data) != 0 {
+		t.Errorf("data = %x, want empty", data)
 	}
 }

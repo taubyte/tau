@@ -59,6 +59,7 @@ func createTestSetup(devMode bool) *testSetup {
 		db:         mockDB,
 		node:       mockNode,
 		devMode:    devMode,
+		jobQueue:   &mockJobQueue{},
 	}
 
 	return &testSetup{
@@ -231,12 +232,12 @@ func TestRegisterJob(t *testing.T) {
 			expectedError: "failed putting job into database with error",
 		},
 		{
-			name: "pubsub error",
+			name: "queue push error (raft not leader)",
 			job:  createGitHubTestJob("test-job-3"),
 			setupMocks: func(ts *testSetup) {
-				ts.mockNode.pubsubError = errors.New("pubsub failed")
+				ts.service.jobQueue = &mockJobQueue{pushErr: errors.New("not leader")}
 			},
-			expectedError: "failed to send over pubsub error",
+			expectedError: "failed to push job onto queue",
 		},
 	}
 

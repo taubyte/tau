@@ -1,8 +1,12 @@
+//go:build raft_integration
+
 package raft
 
 import (
 	"bytes"
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -12,8 +16,6 @@ import (
 	"gotest.tools/v3/assert"
 )
 
-// TestQueue_Integration_SingleNode runs queue Enqueue/Dequeue against a
-// single-node (real) raft cluster.
 func TestQueue_Integration_SingleNode(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping queue integration test in short mode")
@@ -32,30 +34,26 @@ func TestQueue_Integration_SingleNode(t *testing.T) {
 	assert.NilError(t, err, "failed to wait for leader")
 	assert.Assert(t, cluster.IsLeader(), "single node should be leader")
 
-	qu := NewQueue(cluster, "queue/patrick")
+	qu := NewQueue(cluster, "test")
 	defer qu.Close()
 
-	id, err := qu.Enqueue([]byte("job1"), 5*time.Second)
-	assert.NilError(t, err, "Enqueue failed")
-	assert.Assert(t, id != "", "expected non-empty id")
+	err = qu.Push("job-1", []byte("item1"), 5*time.Second)
+	assert.NilError(t, err, "Push failed")
 
 	assert.Equal(t, qu.Len(), 1, "Len() should be 1")
 	peekID, peekData, ok := qu.Peek()
 	assert.Assert(t, ok, "Peek() should succeed")
-	assert.Equal(t, peekID, id)
-	assert.Assert(t, bytes.Equal(peekData, []byte("job1")), "Peek data mismatch")
+	assert.Equal(t, peekID, "job-1")
+	assert.Assert(t, bytes.Equal(peekData, []byte("item1")), "Peek data mismatch")
 
-	gotID, gotData, err := qu.Dequeue(5 * time.Second)
-	assert.NilError(t, err, "Dequeue failed")
-	assert.Equal(t, gotID, id)
-	assert.Assert(t, bytes.Equal(gotData, []byte("job1")), "Dequeue data mismatch")
+	gotID, gotData, err := qu.Pop(5 * time.Second)
+	assert.NilError(t, err, "Pop failed")
+	assert.Equal(t, gotID, "job-1")
+	assert.Assert(t, bytes.Equal(gotData, []byte("item1")), "Pop data mismatch")
 
-	assert.Equal(t, qu.Len(), 0, "Len() after Dequeue should be 0")
+	assert.Equal(t, qu.Len(), 0, "Len() after Pop should be 0")
 }
 
-// TestQueue_Integration_MultiNode_Replication enqueues on the leader and
-// verifies the follower sees the item after replication; then Dequeue
-// and verifies follower sees empty queue.
 func TestQueue_Integration_MultiNode_Replication(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping queue integration test in short mode")
@@ -91,38 +89,32 @@ func TestQueue_Integration_MultiNode_Replication(t *testing.T) {
 	err = cluster2.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	prefix := "queue/patrick"
-	qu1 := NewQueue(cluster1, prefix)
+	qu1 := NewQueue(cluster1, "repl")
 	defer qu1.Close()
-	qu2 := NewQueue(cluster2, prefix)
+	qu2 := NewQueue(cluster2, "repl")
 	defer qu2.Close()
 
-	id, err := qu1.Enqueue([]byte("replicated-job"), 5*time.Second)
-	assert.NilError(t, err, "Enqueue on leader failed")
-	assert.Assert(t, id != "", "expected non-empty id")
+	err = qu1.Push("repl-1", []byte("replicated-item"), 5*time.Second)
+	assert.NilError(t, err, "Push on leader failed")
 
-	// Wait for replication
 	time.Sleep(500 * time.Millisecond)
 
-	// Follower reads from local FSM state
 	assert.Equal(t, qu2.Len(), 1, "follower Len() should be 1 after replication")
-	_, data, ok := qu2.Peek()
+	_, peekData, ok := qu2.Peek()
 	assert.Assert(t, ok, "follower Peek() should succeed")
-	assert.Assert(t, bytes.Equal(data, []byte("replicated-job")), "follower Peek data mismatch")
+	assert.Assert(t, bytes.Equal(peekData, []byte("replicated-item")), "follower Peek data mismatch")
 
-	// Leader dequeue (removes item)
-	gotID, gotData, err := qu1.Dequeue(5 * time.Second)
-	assert.NilError(t, err, "Dequeue failed")
-	assert.Equal(t, gotID, id)
-	assert.Assert(t, bytes.Equal(gotData, []byte("replicated-job")), "Dequeue data mismatch")
+	gotID, gotData, err := qu1.Pop(5 * time.Second)
+	assert.NilError(t, err, "Pop failed")
+	assert.Equal(t, gotID, "repl-1")
+	assert.Assert(t, bytes.Equal(gotData, []byte("replicated-item")), "Pop data mismatch")
 
 	time.Sleep(500 * time.Millisecond)
 
-	assert.Equal(t, qu2.Len(), 0, "follower Len() should be 0 after dequeue")
+	assert.Equal(t, qu2.Len(), 0, "follower Len() should be 0 after pop")
 }
 
-// TestQueue_Integration_MultiNode_DequeueEmpty verifies Dequeue on empty returns empty.
-func TestQueue_Integration_MultiNode_DequeueEmpty(t *testing.T) {
+func TestQueue_Integration_MultiNode_PopEmpty(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping queue integration test in short mode")
 	}
@@ -156,17 +148,14 @@ func TestQueue_Integration_MultiNode_DequeueEmpty(t *testing.T) {
 	err = cluster2.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	qu := NewQueue(cluster1, "queue/empty-test")
+	qu := NewQueue(cluster1, "empty-test")
 	defer qu.Close()
 
-	_, data, err := qu.Dequeue(5 * time.Second)
-	assert.NilError(t, err, "Dequeue on empty should not error")
-	assert.Assert(t, data == nil, "Dequeue on empty should return nil data")
+	_, _, err = qu.Pop(5 * time.Second)
+	assert.Assert(t, errors.Is(err, ErrQueueEmpty), "Pop on empty should return ErrQueueEmpty")
 	assert.Equal(t, qu.Len(), 0, "Len() should be 0")
 }
 
-// TestQueue_Integration_MultiNode_Order enqueues multiple items and verifies
-// Dequeue returns them in FIFO order.
 func TestQueue_Integration_MultiNode_Order(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping queue integration test in short mode")
@@ -201,32 +190,29 @@ func TestQueue_Integration_MultiNode_Order(t *testing.T) {
 	err = cluster2.WaitForLeader(ctx2)
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
-	qu := NewQueue(cluster1, "queue/order-test")
+	qu := NewQueue(cluster1, "order-test")
 	defer qu.Close()
 
-	ids := make([]string, 0, 3)
-	for _, payload := range [][]byte{[]byte("first"), []byte("second"), []byte("third")} {
-		id, err := qu.Enqueue(payload, 5*time.Second)
-		assert.NilError(t, err, "Enqueue failed")
-		ids = append(ids, id)
+	payloads := [][]byte{[]byte("first"), []byte("second"), []byte("third")}
+	ids := []string{"order-1", "order-2", "order-3"}
+	for i, payload := range payloads {
+		err := qu.Push(ids[i], payload, 5*time.Second)
+		assert.NilError(t, err, "Push failed")
 	}
 
 	assert.Equal(t, qu.Len(), 3, "Len() should be 3")
 
-	for i, expected := range [][]byte{[]byte("first"), []byte("second"), []byte("third")} {
-		gotID, gotData, err := qu.Dequeue(5 * time.Second)
-		assert.NilError(t, err, "Dequeue %d failed", i)
-		assert.Equal(t, gotID, ids[i], "Dequeue %d id mismatch", i)
-		assert.Assert(t, bytes.Equal(gotData, expected), "Dequeue %d data mismatch", i)
+	for i, expected := range payloads {
+		gotID, gotData, err := qu.Pop(5 * time.Second)
+		assert.NilError(t, err, "Pop %d failed", i)
+		assert.Equal(t, gotID, ids[i], "Pop %d id mismatch", i)
+		assert.Assert(t, bytes.Equal(gotData, expected), "Pop %d data mismatch", i)
 	}
 
-	_, data, err := qu.Dequeue(5 * time.Second)
-	assert.NilError(t, err, "final Dequeue should not error")
-	assert.Assert(t, data == nil, "queue should be empty")
+	_, _, err = qu.Pop(5 * time.Second)
+	assert.Assert(t, errors.Is(err, ErrQueueEmpty), "queue should be empty")
 }
 
-// TestQueue_Integration_MultiNode_ManyItems enqueues more than 10 items on the
-// leader, verifies replication to follower, then dequeues and acks all in order.
 func TestQueue_Integration_MultiNode_ManyItems(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping queue integration test in short mode")
@@ -263,40 +249,32 @@ func TestQueue_Integration_MultiNode_ManyItems(t *testing.T) {
 	assert.NilError(t, err, "cluster2 failed to wait for leader")
 
 	const n = 15
-	prefix := "queue/many-test"
-	qu1 := NewQueue(cluster1, prefix)
+	qu1 := NewQueue(cluster1, "many-test")
 	defer qu1.Close()
-	qu2 := NewQueue(cluster2, prefix)
+	qu2 := NewQueue(cluster2, "many-test")
 	defer qu2.Close()
 
-	var ids []string
-	for i := 0; i < n; i++ {
-		payload := []byte(string(rune('a' + i)))
-		id, err := qu1.Enqueue(payload, 5*time.Second)
-		assert.NilError(t, err, "Enqueue %d failed", i)
-		ids = append(ids, id)
+	for i := range n {
+		err := qu1.Push(fmt.Sprintf("many-%02d", i), []byte{byte(i)}, 5*time.Second)
+		assert.NilError(t, err, "Push %d failed", i)
 	}
 
 	time.Sleep(500 * time.Millisecond)
 	assert.Equal(t, qu2.Len(), n, "follower Len() should be %d after replication", n)
 
-	for i := 0; i < n; i++ {
-		gotID, gotData, err := qu1.Dequeue(5 * time.Second)
-		assert.NilError(t, err, "Dequeue %d failed", i)
-		assert.Equal(t, gotID, ids[i], "Dequeue %d id mismatch", i)
-		expected := []byte(string(rune('a' + i)))
-		assert.Assert(t, bytes.Equal(gotData, expected), "Dequeue %d data mismatch", i)
+	for i := range n {
+		gotID, gotData, err := qu1.Pop(5 * time.Second)
+		assert.NilError(t, err, "Pop %d failed", i)
+		assert.Equal(t, gotID, fmt.Sprintf("many-%02d", i), "Pop %d id mismatch", i)
+		assert.Assert(t, bytes.Equal(gotData, []byte{byte(i)}), "Pop %d data mismatch", i)
 	}
 
 	time.Sleep(500 * time.Millisecond)
-	assert.Equal(t, qu2.Len(), 0, "follower Len() should be 0 after all dequeued")
-	_, data, err := qu1.Dequeue(5 * time.Second)
-	assert.NilError(t, err)
-	assert.Assert(t, data == nil, "queue should be empty")
+	assert.Equal(t, qu2.Len(), 0, "follower Len() should be 0 after all popped")
+	_, _, err = qu1.Pop(5 * time.Second)
+	assert.Assert(t, errors.Is(err, ErrQueueEmpty), "queue should be empty")
 }
 
-// TestQueue_Integration_MultiNode_MultipleConsumers enqueues many items and
-// has multiple goroutines dequeue/ack concurrently; asserts no duplicate delivery.
 func TestQueue_Integration_MultiNode_MultipleConsumers(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping queue integration test in short mode")
@@ -334,12 +312,12 @@ func TestQueue_Integration_MultiNode_MultipleConsumers(t *testing.T) {
 	const numItems = 15
 	const numConsumers = 4
 
-	qu := NewQueue(cluster1, "queue/multiconsumer")
+	qu := NewQueue(cluster1, "multiconsumer")
 	defer qu.Close()
 
-	for i := 0; i < numItems; i++ {
-		_, err := qu.Enqueue([]byte{byte(i)}, 5*time.Second)
-		assert.NilError(t, err, "Enqueue %d failed", i)
+	for i := range numItems {
+		err := qu.Push(fmt.Sprintf("mc-%02d", i), []byte{byte(i)}, 5*time.Second)
+		assert.NilError(t, err, "Push %d failed", i)
 	}
 
 	var mu sync.Mutex
@@ -349,15 +327,15 @@ func TestQueue_Integration_MultiNode_MultipleConsumers(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(numConsumers)
-	for c := 0; c < numConsumers; c++ {
+	for range numConsumers {
 		go func() {
 			defer wg.Done()
 			for {
-				id, data, err := qu.Dequeue(5 * time.Second)
-				if err != nil {
+				id, data, err := qu.Pop(5 * time.Second)
+				if errors.Is(err, ErrQueueEmpty) {
 					return
 				}
-				if id == "" && data == nil {
+				if err != nil {
 					return
 				}
 				mu.Lock()
@@ -400,7 +378,7 @@ func TestQueue_Integration_MultiNode_MultipleConsumers(t *testing.T) {
 		}
 		payloadSeen[data[0]] = true
 	}
-	for i := 0; i < numItems; i++ {
+	for i := range numItems {
 		assert.Assert(t, payloadSeen[byte(i)], "missing payload %d", i)
 	}
 }

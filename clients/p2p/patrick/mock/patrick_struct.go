@@ -1,32 +1,17 @@
 package mock
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"sync"
-	"testing"
 
-	"github.com/fxamacker/cbor/v2"
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	kvdbIface "github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/services/patrick"
-	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
-	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 )
-
-type dequeueItem struct {
-	id  string
-	job []byte
-}
 
 type Starfish struct {
 	Jobs map[string]*patrick.Job
-
-	// queue for Dequeue() so tests can inject jobs via AddJob and monkey poll receives them
-	dequeueQueue []dequeueItem
-	dequeueMu    sync.Mutex
 }
 
 func (s *Starfish) Close() {
@@ -41,37 +26,22 @@ func (s *Starfish) DatabaseStats() (kvdbIface.Stats, error) {
 	return kvdb.NewStats(), nil
 }
 
-func (s *Starfish) AddJob(t *testing.T, peerC peer.Node, job *patrick.Job) error {
-	job_bytes, err := cbor.Marshal(job)
-	if err != nil {
-		return fmt.Errorf("marshal job to add failed: %w", err)
+func (s *Starfish) Dequeue() (*patrick.Job, error) {
+	for _, job := range s.Jobs {
+		if job.Status == patrick.JobStatusOpen {
+			job.Status = patrick.JobStatusLocked
+			return job, nil
+		}
 	}
-
-	s.Jobs[job.Id] = job
-
-	s.dequeueMu.Lock()
-	s.dequeueQueue = append(s.dequeueQueue, dequeueItem{id: job.Id, job: job_bytes})
-	s.dequeueMu.Unlock()
-
-	_ = peerC.PubSubPublish(context.TODO(), patrickSpecs.PubSubIdent, job_bytes)
-	return nil
+	return nil, nil
 }
 
-func (s *Starfish) Lock(jid string, eta uint32) error {
+func (s *Starfish) IsAssigned(jid string) (bool, error) {
 	job, ok := s.Jobs[jid]
 	if !ok {
-		return fmt.Errorf("can't find job %s", jid)
+		return false, nil
 	}
-
-	if job.Status != 0 {
-		return fmt.Errorf("job `%s` already locked", jid)
-	}
-	job.Status = patrick.JobStatusLocked
-	return nil
-}
-
-func (s *Starfish) IsLocked(jid string) (bool, error) {
-	return (s.Jobs[jid].Status != 0), nil
+	return job.Status == patrick.JobStatusLocked, nil
 }
 
 func (s *Starfish) Done(jid string, cid_log map[string]string, assetCid map[string]string) error {
@@ -93,7 +63,6 @@ func (s *Starfish) Failed(jid string, cid_log map[string]string, assetCid map[st
 	return nil
 }
 
-// added to satisfy the patrick interface
 func (s *Starfish) Get(jid string) (*patrick.Job, error) {
 	job, ok := s.Jobs[jid]
 	if !ok {
@@ -102,7 +71,6 @@ func (s *Starfish) Get(jid string) (*patrick.Job, error) {
 	return job, nil
 }
 
-// added to satisfy the patrick interface
 func (s *Starfish) List() (ret []string, err error) {
 	for k := range s.Jobs {
 		ret = append(ret, k)
@@ -110,30 +78,10 @@ func (s *Starfish) List() (ret []string, err error) {
 	return
 }
 
-// added to satisfy the patrick interface
-func (s *Starfish) Unlock(jid string) error {
-	return fmt.Errorf("not implemented")
-}
-
-// added to satisfy the patrick interface
 func (s *Starfish) Timeout(jid string) error {
 	return fmt.Errorf("not implemented")
 }
 
-// added to satisfy the patrick interface
 func (s *Starfish) Cancel(jid string, cid_log map[string]string) (interface{}, error) {
 	return nil, fmt.Errorf("not implemented")
-}
-
-// Dequeue satisfies the patrick interface; returns jobs pushed via AddJob (FIFO).
-func (s *Starfish) Dequeue() (id string, job []byte, err error) {
-	s.dequeueMu.Lock()
-	if len(s.dequeueQueue) == 0 {
-		s.dequeueMu.Unlock()
-		return "", nil, nil
-	}
-	item := s.dequeueQueue[0]
-	s.dequeueQueue = s.dequeueQueue[1:]
-	s.dequeueMu.Unlock()
-	return item.id, item.job, nil
 }

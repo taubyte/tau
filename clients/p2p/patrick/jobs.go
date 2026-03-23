@@ -9,37 +9,46 @@ import (
 	"github.com/taubyte/tau/utils/maps"
 )
 
-func (c *Client) Lock(jid string, eta uint32) error {
-	if _, err := c.Send("patrick", command.Body{"action": "lock", "jid": jid, "eta": eta}, c.peers...); err != nil {
-		return fmt.Errorf("failed send lock with error: %w", err)
+func (c *Client) Dequeue() (*iface.Job, error) {
+	resp, err := c.Send("patrick", command.Body{"action": "dequeue"}, c.peers...)
+	if err != nil {
+		return nil, fmt.Errorf("dequeue failed: %w", err)
 	}
 
-	return nil
+	available, err := maps.Bool(resp, "available")
+	if err != nil || !available {
+		return nil, nil
+	}
+
+	_job, ok := resp["job"]
+	if !ok {
+		return nil, nil
+	}
+
+	var job iface.Job
+	job_byte, err := cbor.Marshal(_job)
+	if err != nil {
+		return nil, fmt.Errorf("marshal dequeued job: %w", err)
+	}
+	if err = cbor.Unmarshal(job_byte, &job); err != nil {
+		return nil, fmt.Errorf("unmarshal dequeued job: %w", err)
+	}
+
+	return &job, nil
 }
 
-func (c *Client) IsLocked(jid string) (bool, error) {
-	resp, err := c.Send("patrick", command.Body{"action": "isLocked", "jid": jid}, c.peers...)
+func (c *Client) IsAssigned(jid string) (bool, error) {
+	resp, err := c.Send("patrick", command.Body{"action": "isAssigned", "jid": jid}, c.peers...)
 	if err != nil {
-		return false, fmt.Errorf("failed send isLocked with error: %w", err)
+		return false, fmt.Errorf("isAssigned failed: %w", err)
 	}
 
-	locked, err := maps.Bool(resp, "locked")
+	assigned, err := maps.Bool(resp, "assigned")
 	if err != nil {
 		return false, err
 	}
 
-	by, _ := maps.String(resp, "locked-by")
-
-	return locked && (by == c.node.ID().String()), nil
-}
-
-// TODO: delete
-func (c *Client) Unlock(jid string) error {
-	if _, err := c.Send("patrick", command.Body{"action": "unlock", "jid": jid}, c.peers...); err != nil {
-		return fmt.Errorf("failed send unlock with error: %w", err)
-	}
-
-	return nil
+	return assigned, nil
 }
 
 func (c *Client) Done(jid string, cid_log map[string]string, assetCid map[string]string) error {
@@ -111,22 +120,4 @@ func (c *Client) Get(jid string) (*iface.Job, error) {
 	}
 
 	return &job, nil
-}
-
-// Dequeue returns the next job from Patrick's raft queue. id and job are empty when no job is available.
-func (c *Client) Dequeue() (id string, job []byte, err error) {
-	resp, err := c.Send("patrick", command.Body{"action": "dequeue", "jid": ""}, c.peers...)
-	if err != nil {
-		return "", nil, err
-	}
-	id, _ = maps.String(resp, "id")
-	if id == "" {
-		return "", nil, nil
-	}
-	if v, ok := resp["job"]; ok && v != nil {
-		if b, ok := v.([]byte); ok {
-			return id, b, nil
-		}
-	}
-	return id, nil, nil
 }

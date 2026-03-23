@@ -15,6 +15,7 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/p2p/streams/command/response"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
+	"github.com/taubyte/tau/pkg/raft"
 	"gotest.tools/v3/assert"
 )
 
@@ -25,11 +26,9 @@ type testCase struct {
 	expectError   bool
 	errorContains string
 	expectedResp  map[string]interface{}
-	// Additional fields for specific test types
-	pid            peer.ID
-	jid            string
-	status         patrick.JobStatus
-	expectedLocked bool
+	pid           peer.ID
+	jid           string
+	status        patrick.JobStatus
 }
 
 type mockConnection struct {
@@ -68,6 +67,35 @@ func (m *mockMonkeyClient) List() ([]string, error) {
 func (m *mockMonkeyClient) Close() {
 }
 
+type pushCall struct {
+	id   string
+	data []byte
+}
+
+// mockJobQueue implements raft.Queue for unit tests with call recording.
+type mockJobQueue struct {
+	popID     string
+	popData   []byte
+	popErr    error
+	pushErr   error
+	pushCalls []pushCall
+	popCalls  int
+}
+
+func (m *mockJobQueue) Push(id string, data []byte, _ time.Duration) error {
+	m.pushCalls = append(m.pushCalls, pushCall{id: id, data: data})
+	return m.pushErr
+}
+func (m *mockJobQueue) Pop(_ time.Duration) (string, []byte, error) {
+	m.popCalls++
+	return m.popID, m.popData, m.popErr
+}
+func (m *mockJobQueue) Peek() (string, []byte, bool) { return "", nil, false }
+func (m *mockJobQueue) Len() int                     { return 0 }
+func (m *mockJobQueue) Close() error                 { return nil }
+
+var _ raft.Queue = (*mockJobQueue)(nil)
+
 func createTestService() *PatrickService {
 	mockFactory := mock.New()
 	mockDB, _ := mockFactory.New(nil, "/test", 0)
@@ -76,6 +104,7 @@ func createTestService() *PatrickService {
 		db:           mockDB,
 		node:         &mockNode{},
 		monkeyClient: &mockMonkeyClient{},
+		jobQueue:     &mockJobQueue{popErr: raft.ErrQueueEmpty},
 	}
 }
 
@@ -208,9 +237,14 @@ func closeDB() func(*PatrickService) {
 	}
 }
 
-func addLockData(jobID string) func(*PatrickService) {
+func addAssignmentData(jobID string, monkeyPID string) func(*PatrickService) {
 	return func(s *PatrickService) {
-		s.db.Put(context.Background(), "/locked/jobs/"+jobID, []byte("simple-lock-data"))
+		assignment := Assignment{
+			MonkeyPID: monkeyPID,
+			Timestamp: time.Now().Unix(),
+		}
+		data, _ := cbor.Marshal(assignment)
+		s.db.Put(context.Background(), "/assigned/"+jobID, data)
 	}
 }
 
@@ -444,19 +478,69 @@ func TestInfoHandler_ErrorCases(t *testing.T) {
 	}
 }
 
-func TestRequestServiceHandler_IsLocked(t *testing.T) {
-	service := createTestService()
-	conn := &mockConnection{remotePeer: peer.ID("test-peer")}
+func TestDequeueHandler(t *testing.T) {
+	t.Run("empty queue returns available false", func(t *testing.T) {
+		service := createTestService()
+		conn := &mockConnection{remotePeer: peer.ID("monkey-1")}
 
-	// Test when job is not locked
-	body := command.Body{"action": "isLocked", "jid": "test-job"}
-	ctx := context.Background()
+		resp, err := service.dequeueHandler(context.Background(), conn)
+		assert.NilError(t, err)
+		assert.Assert(t, resp != nil)
+		assert.Equal(t, false, resp["available"].(bool))
+	})
 
-	resp, err := service.requestServiceHandler(ctx, conn, body)
+	t.Run("successful dequeue assigns job", func(t *testing.T) {
+		service := createTestService()
+		job := createTestJobWithStatus("job-1", patrick.JobStatusOpen)
+		service.db.Put(context.Background(), "/jobs/job-1", marshalJob(job))
 
-	assert.NilError(t, err)
-	assert.Assert(t, resp != nil)
-	assert.Assert(t, !resp["locked"].(bool))
+		monkeyPeer := peer.ID("monkey-1")
+		service.jobQueue = &mockJobQueue{popID: "job-1", popData: nil, popErr: nil}
+		conn := &mockConnection{remotePeer: monkeyPeer}
+
+		resp, err := service.dequeueHandler(context.Background(), conn)
+		assert.NilError(t, err)
+		assert.Assert(t, resp != nil)
+		assert.Equal(t, true, resp["available"].(bool))
+
+		assignData, err := service.db.Get(context.Background(), "/assigned/job-1")
+		assert.NilError(t, err)
+		var assignment Assignment
+		assert.NilError(t, cbor.Unmarshal(assignData, &assignment))
+		assert.Equal(t, monkeyPeer.String(), assignment.MonkeyPID)
+	})
+}
+
+func TestIsAssignedHandler(t *testing.T) {
+	t.Run("not assigned returns false", func(t *testing.T) {
+		service := createTestService()
+		conn := &mockConnection{remotePeer: peer.ID("monkey-1")}
+
+		resp, err := service.isAssignedHandler(context.Background(), "job-1", conn)
+		assert.NilError(t, err)
+		assert.Equal(t, false, resp["assigned"].(bool))
+	})
+
+	t.Run("assigned to caller returns true", func(t *testing.T) {
+		service := createTestService()
+		monkeyPeer := peer.ID("monkey-1")
+		addAssignmentData("job-1", monkeyPeer.String())(service)
+		conn := &mockConnection{remotePeer: monkeyPeer}
+
+		resp, err := service.isAssignedHandler(context.Background(), "job-1", conn)
+		assert.NilError(t, err)
+		assert.Equal(t, true, resp["assigned"].(bool))
+	})
+
+	t.Run("assigned to different monkey returns false", func(t *testing.T) {
+		service := createTestService()
+		addAssignmentData("job-1", peer.ID("monkey-2").String())(service)
+		conn := &mockConnection{remotePeer: peer.ID("monkey-1")}
+
+		resp, err := service.isAssignedHandler(context.Background(), "job-1", conn)
+		assert.NilError(t, err)
+		assert.Equal(t, false, resp["assigned"].(bool))
+	})
 }
 
 func TestRequestServiceHandler_Cancel(t *testing.T) {
@@ -494,7 +578,7 @@ func TestRequestServiceHandler_InvalidAction(t *testing.T) {
 	resp, err := service.requestServiceHandler(ctx, conn, body)
 
 	assert.NilError(t, err)
-	assert.Assert(t, resp == nil) // Invalid action returns nil, nil
+	assert.Assert(t, resp == nil)
 }
 
 func TestRequestServiceHandler_MissingJid(t *testing.T) {
@@ -509,20 +593,6 @@ func TestRequestServiceHandler_MissingJid(t *testing.T) {
 	assert.Assert(t, err != nil, "Expected error but got nil")
 	assert.Assert(t, resp == nil)
 	assert.ErrorContains(t, err, "failed getting jid")
-}
-
-func TestRequestServiceHandler_MissingEta(t *testing.T) {
-	service := createTestService()
-	conn := &mockConnection{remotePeer: peer.ID("test-peer")}
-
-	body := command.Body{"action": "lock", "jid": "test-job"}
-	ctx := context.Background()
-
-	resp, err := service.requestServiceHandler(ctx, conn, body)
-
-	assert.Assert(t, err != nil, "Expected error but got nil")
-	assert.Assert(t, resp == nil)
-	assert.ErrorContains(t, err, "failed getting eta")
 }
 
 func TestConvertToStringMap(t *testing.T) {
@@ -633,156 +703,18 @@ func TestRequestServiceHandler_UnknownAction(t *testing.T) {
 	assert.Assert(t, resp == nil)
 }
 
-func TestTryLock_ErrorCases(t *testing.T) {
-	tests := []testCase{
-		{
-			name:        "successful lock",
-			expectError: false,
-		},
-		{
-			name:          "database put error",
-			setupMock:     closeDB(),
-			expectError:   true,
-			errorContains: "locking",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			service := createTestService()
-			if tt.setupMock != nil {
-				tt.setupMock(service)
-			}
-
-			ctx := context.Background()
-			pid := peer.ID("test-peer")
-			jid := "test-job"
-			timestamp := int64(1234567890)
-			eta := int64(3600)
-
-			resp, err := service.tryLock(ctx, pid, jid, timestamp, eta)
-
-			if tt.expectError {
-				assert.Assert(t, err != nil, "Expected error but got nil")
-				assert.Assert(t, resp == nil)
-				if tt.errorContains != "" {
-					assert.ErrorContains(t, err, tt.errorContains)
-				}
-			} else {
-				assert.NilError(t, err)
-				assert.Assert(t, resp != nil)
-			}
-		})
-	}
-}
-
-func TestLockHandler_Branches(t *testing.T) {
-	tests := []testCase{
-		{
-			name:        "no existing lock - should call tryLock",
-			expectError: false,
-		},
-		{
-			name:          "existing lock - should call lockHelper",
-			setupMock:     addLockData("test-job"),
-			expectError:   true,
-			errorContains: "error in lockHandler",
-		},
-		{
-			name:          "database get error - should call tryLock",
-			setupMock:     closeDB(),
-			expectError:   true,
-			errorContains: "locking",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			service := createTestService()
-			if tt.setupMock != nil {
-				tt.setupMock(service)
-			}
-
-			ctx := context.Background()
-			conn := &mockConnection{remotePeer: peer.ID("test-peer")}
-			jid := "test-job"
-			eta := int64(3600)
-
-			resp, err := service.lockHandler(ctx, jid, eta, conn)
-
-			if tt.expectError {
-				assert.Assert(t, err != nil, "Expected error but got nil")
-				assert.Assert(t, resp == nil)
-				if tt.errorContains != "" {
-					assert.ErrorContains(t, err, tt.errorContains)
-				}
-			} else {
-				assert.NilError(t, err)
-			}
-		})
-	}
-}
-
-func TestIsLockedHandler_Branches(t *testing.T) {
-	tests := []testCase{
-		{
-			name:           "no lock data - should return locked false",
-			expectError:    false,
-			expectedLocked: false,
-		},
-		{
-			name:          "existing lock data - should call lockHelper",
-			setupMock:     addLockData("test-job"),
-			expectError:   true,
-			errorContains: "unexpected EOF", // CBOR unmarshal will fail
-		},
-		{
-			name:           "database get error - should return locked false",
-			setupMock:      closeDB(),
-			expectError:    false,
-			expectedLocked: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			service := createTestService()
-			if tt.setupMock != nil {
-				tt.setupMock(service)
-			}
-
-			ctx := context.Background()
-			conn := &mockConnection{remotePeer: peer.ID("test-peer")}
-			jid := "test-job"
-
-			resp, err := service.isLockedHandler(ctx, jid, conn)
-
-			if tt.expectError {
-				assert.Assert(t, err != nil, "Expected error but got nil")
-				assert.Assert(t, resp != nil)
-			} else {
-				assert.NilError(t, err)
-				assert.Assert(t, resp != nil)
-				locked, ok := resp["locked"].(bool)
-				assert.Assert(t, ok)
-				assert.Equal(t, tt.expectedLocked, locked)
-			}
-		})
-	}
-}
-
 func TestUpdateStatus_ErrorCases(t *testing.T) {
 	tests := []testCase{
 		{
-			name:        "successful update - no lock check",
+			name:        "successful update - no assignment check",
 			setupMock:   addJobToDB("test-job", patrick.JobStatusOpen),
-			pid:         "", // Empty pid skips lock check
+			pid:         "",
 			jid:         "test-job",
 			status:      patrick.JobStatusSuccess,
 			expectError: false,
 		},
 		{
-			name:        "successful update - with lock check",
+			name:        "successful update - with assignment check",
 			setupMock:   addJobToDB("test-job", patrick.JobStatusOpen),
 			pid:         peer.ID("test-peer"),
 			jid:         "test-job",
@@ -833,46 +765,6 @@ func TestUpdateStatus_ErrorCases(t *testing.T) {
 	}
 }
 
-func TestUnlockHandler_SimpleCases(t *testing.T) {
-	tests := []testCase{
-		{
-			name:         "successful unlock with invalid CBOR data",
-			setupMock:    addLockData("test-job"),
-			expectError:  false,
-			expectedResp: map[string]interface{}{"unlocked": "test-job"},
-		},
-		{
-			name:        "job not found",
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			service := createTestService()
-			if tt.setupMock != nil {
-				tt.setupMock(service)
-			}
-
-			ctx := context.Background()
-			resp, err := service.unlockHandler(ctx, "test-job")
-
-			if tt.expectError {
-				assert.Assert(t, err != nil, "Expected error but got nil")
-				assert.Assert(t, resp == nil)
-			} else {
-				assert.NilError(t, err)
-				assert.Assert(t, resp != nil)
-				if tt.expectedResp != nil {
-					for key, expected := range tt.expectedResp {
-						assert.DeepEqual(t, expected, resp[key])
-					}
-				}
-			}
-		})
-	}
-}
-
 func TestTimeoutHandler_SimpleCases(t *testing.T) {
 	tests := []testCase{
 		{
@@ -918,7 +810,7 @@ func TestTimeoutHandler_EdgeCases(t *testing.T) {
 			name: "job at max attempts - should fail",
 			setupMock: func(s *PatrickService) {
 				job := createTestJobWithStatus("test-job", patrick.JobStatusOpen)
-				job.Attempt = 2 // MaxJobAttempts = 2
+				job.Attempt = 2
 				s.db.Put(context.Background(), "/jobs/test-job", marshalJob(job))
 			},
 			expectError: false,
@@ -953,68 +845,155 @@ func TestTimeoutHandler_EdgeCases(t *testing.T) {
 	}
 }
 
-func TestUnlockHandler_EdgeCases(t *testing.T) {
-	tests := []testCase{
-		{
-			name: "database error during get",
-			setupMock: func(s *PatrickService) {
-				s.db.Close()
-			},
-			expectError: true,
-		},
-		{
-			name: "database error during put",
-			setupMock: func(s *PatrickService) {
-				s.db = &selectiveErrorMockKVDB{firstCallSucceeds: true}
-				s.db.Put(context.Background(), "/locked/jobs/test-job", []byte("simple-lock-data"))
-			},
-			expectError: true,
-		},
-		{
-			name: "invalid CBOR data - unmarshal error",
-			setupMock: func(s *PatrickService) {
-				s.db.Put(context.Background(), "/locked/jobs/test-job", []byte("invalid-cbor-data"))
-			},
-			expectError:  false,
-			expectedResp: map[string]interface{}{"unlocked": "test-job"},
-		},
-		{
-			name: "valid lock data - successful unlock",
-			setupMock: func(s *PatrickService) {
-				lock := struct {
-					Pid       string `cbor:"4,keyasint"`
-					Timestamp int64  `cbor:"8,keyasint"`
-					Eta       int64  `cbor:"16,keyasint"`
-				}{
-					Pid:       "test-peer",
-					Timestamp: time.Now().Unix(),
-					Eta:       30,
-				}
-				lockData, _ := cbor.Marshal(lock)
-				s.db.Put(context.Background(), "/locked/jobs/test-job", lockData)
-			},
-			expectError:  false,
-			expectedResp: map[string]interface{}{"unlocked": "test-job"},
-		},
-	}
+// #16: Test poll-based job assignment flow — dequeue, assign, verify via isAssigned.
+func TestDequeueAndAssignmentFlow(t *testing.T) {
+	service := createTestService()
+	job := createTestJobWithStatus("flow-job", patrick.JobStatusOpen)
+	service.db.Put(context.Background(), "/jobs/flow-job", marshalJob(job))
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			service := createTestService()
-			if tt.setupMock != nil {
-				tt.setupMock(service)
-			}
+	mq := &mockJobQueue{popID: "flow-job"}
+	service.jobQueue = mq
 
-			ctx := context.Background()
-			resp, err := service.unlockHandler(ctx, "test-job")
+	monkey1 := peer.ID("monkey-1")
+	monkey2 := peer.ID("monkey-2")
+	conn1 := &mockConnection{remotePeer: monkey1}
+	conn2 := &mockConnection{remotePeer: monkey2}
 
-			if tt.expectError {
-				assert.Assert(t, err != nil, "Expected error but got nil")
-				assert.Assert(t, resp == nil)
-			} else {
-				assert.NilError(t, err)
-				assert.Assert(t, resp != nil)
-			}
-		})
-	}
+	resp, err := service.dequeueHandler(context.Background(), conn1)
+	assert.NilError(t, err)
+	assert.Equal(t, true, resp["available"].(bool))
+	assert.Assert(t, resp["job"] != nil)
+	assert.Equal(t, 1, mq.popCalls)
+
+	assignData, err := service.db.Get(context.Background(), "/assigned/flow-job")
+	assert.NilError(t, err)
+	var assignment Assignment
+	assert.NilError(t, cbor.Unmarshal(assignData, &assignment))
+	assert.Equal(t, monkey1.String(), assignment.MonkeyPID)
+
+	resp, err = service.isAssignedHandler(context.Background(), "flow-job", conn1)
+	assert.NilError(t, err)
+	assert.Equal(t, true, resp["assigned"].(bool))
+
+	resp, err = service.isAssignedHandler(context.Background(), "flow-job", conn2)
+	assert.NilError(t, err)
+	assert.Equal(t, false, resp["assigned"].(bool))
+}
+
+// #17: Test timeout → re-push → reassignment cycle.
+func TestTimeoutRepushAndReassignment(t *testing.T) {
+	service := createTestService()
+	mq := &mockJobQueue{}
+	service.jobQueue = mq
+
+	job := createTestJobWithStatus("timeout-job", patrick.JobStatusOpen)
+	service.db.Put(context.Background(), "/jobs/timeout-job", marshalJob(job))
+	addAssignmentData("timeout-job", peer.ID("monkey-old").String())(service)
+
+	ctx := context.Background()
+	cidLog := map[string]string{"log1": "cid1"}
+	err := service.timeoutHandler(ctx, "timeout-job", cidLog)
+	assert.NilError(t, err)
+
+	assert.Equal(t, 1, len(mq.pushCalls))
+	assert.Equal(t, "timeout-job", mq.pushCalls[0].id)
+
+	_, err = service.db.Get(ctx, "/assigned/timeout-job")
+	assert.Assert(t, err != nil, "assignment should be deleted after timeout")
+
+	updatedJob, err := service.getJob(ctx, "/jobs/", "timeout-job")
+	assert.NilError(t, err)
+	assert.Equal(t, patrick.JobStatusOpen, updatedJob.Status)
+	assert.Equal(t, 1, updatedJob.Attempt)
+
+	mq.popID = "timeout-job"
+	mq.popErr = nil
+	monkey2 := peer.ID("monkey-new")
+	conn2 := &mockConnection{remotePeer: monkey2}
+
+	resp, err := service.dequeueHandler(ctx, conn2)
+	assert.NilError(t, err)
+	assert.Equal(t, true, resp["available"].(bool))
+
+	assignData, err := service.db.Get(ctx, "/assigned/timeout-job")
+	assert.NilError(t, err)
+	var newAssignment Assignment
+	assert.NilError(t, cbor.Unmarshal(assignData, &newAssignment))
+	assert.Equal(t, monkey2.String(), newAssignment.MonkeyPID)
+}
+
+// #18: Test zombie Monkey protection — non-owner rejected, real owner accepted.
+func TestZombieMonkeyProtection(t *testing.T) {
+	service := createTestService()
+	ctx := context.Background()
+
+	job := createTestJobWithStatus("zombie-job", patrick.JobStatusOpen)
+	service.db.Put(ctx, "/jobs/zombie-job", marshalJob(job))
+
+	monkey1 := peer.ID("monkey-owner")
+	monkey2 := peer.ID("monkey-zombie")
+	addAssignmentData("zombie-job", monkey1.String())(service)
+
+	cidLog := map[string]string{"log1": "cid1"}
+	assetCid := map[string]string{"asset1": "cid1"}
+
+	err := service.updateStatus(ctx, monkey2, "zombie-job", cidLog, patrick.JobStatusSuccess, assetCid)
+	assert.Assert(t, err != nil)
+	assert.ErrorContains(t, err, "is not the owner")
+
+	_, err = service.getJob(ctx, "/jobs/", "zombie-job")
+	assert.NilError(t, err, "job should still be in /jobs/ after zombie rejection")
+	_, err = service.getJob(ctx, "/archive/jobs/", "zombie-job")
+	assert.Assert(t, err != nil, "job should NOT be in archive after zombie rejection")
+
+	err = service.updateStatus(ctx, monkey1, "zombie-job", cidLog, patrick.JobStatusSuccess, assetCid)
+	assert.NilError(t, err)
+
+	_, err = service.getJob(ctx, "/archive/jobs/", "zombie-job")
+	assert.NilError(t, err, "job should be archived after real owner reports success")
+}
+
+// #21: Test timeoutHandler queue push — retry pushes, max-attempts does not, push error propagates.
+func TestTimeoutHandler_QueuePush(t *testing.T) {
+	t.Run("retry pushes job back to queue", func(t *testing.T) {
+		service := createTestService()
+		mq := &mockJobQueue{}
+		service.jobQueue = mq
+
+		addJobToDB("push-job", patrick.JobStatusOpen)(service)
+
+		err := service.timeoutHandler(context.Background(), "push-job", nil)
+		assert.NilError(t, err)
+		assert.Equal(t, 1, len(mq.pushCalls))
+		assert.Equal(t, "push-job", mq.pushCalls[0].id)
+	})
+
+	t.Run("max attempts archives without push", func(t *testing.T) {
+		service := createTestService()
+		mq := &mockJobQueue{}
+		service.jobQueue = mq
+
+		job := createTestJobWithStatus("max-job", patrick.JobStatusOpen)
+		job.Attempt = 2
+		service.db.Put(context.Background(), "/jobs/max-job", marshalJob(job))
+
+		err := service.timeoutHandler(context.Background(), "max-job", nil)
+		assert.NilError(t, err)
+		assert.Equal(t, 0, len(mq.pushCalls))
+
+		_, err = service.getJob(context.Background(), "/archive/jobs/", "max-job")
+		assert.NilError(t, err, "max-attempt job should be archived")
+	})
+
+	t.Run("queue push error propagates", func(t *testing.T) {
+		service := createTestService()
+		mq := &mockJobQueue{pushErr: errors.New("raft not leader")}
+		service.jobQueue = mq
+
+		addJobToDB("err-job", patrick.JobStatusOpen)(service)
+
+		err := service.timeoutHandler(context.Background(), "err-job", nil)
+		assert.Assert(t, err != nil)
+		assert.ErrorContains(t, err, "failed to push")
+	})
 }
