@@ -3,10 +3,13 @@ package mock
 import (
 	"errors"
 	"fmt"
+	"testing"
+	"time"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	kvdbIface "github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb"
 )
 
@@ -16,6 +19,29 @@ type Starfish struct {
 
 func (s *Starfish) Close() {
 	s.Jobs = nil
+}
+
+// AddJob registers a job for tests using the Patrick mock. The job is stored with
+// status JobStatusOpen so Dequeue can assign it to a monkey.
+func (s *Starfish) AddJob(t *testing.T, _ peer.Node, job *patrick.Job) error {
+	t.Helper()
+	if job == nil {
+		return errors.New("nil job")
+	}
+	if job.Id == "" {
+		return errors.New("job id empty")
+	}
+	if job.Logs == nil {
+		job.Logs = make(map[string]string)
+	}
+	if job.AssetCid == nil {
+		job.AssetCid = make(map[string]string)
+	}
+	if job.Timestamp == 0 {
+		job.Timestamp = time.Now().UnixNano()
+	}
+	s.Jobs[job.Id] = job
+	return nil
 }
 
 func (s *Starfish) Peers(...peerCore.ID) patrick.Client {
