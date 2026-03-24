@@ -175,12 +175,16 @@ var (
 	DefaultCommitID = "0f4cf056ceaa9f9164bb17f392eea5d041bc8e73"
 )
 
-func MakeTemplate(id int, fullname string, branch string, commitID string, uri string) ([]byte, error) {
+// MakeTemplate builds a GitHub push JSON payload. If pushedAt is 0, time.Now().Unix() is used.
+func MakeTemplate(id int, fullname string, branch string, commitID string, uri string, pushedAt int64) ([]byte, error) {
 	if len(branch) == 0 {
 		branch = DefaultBranch
 	}
 	if len(commitID) == 0 {
 		commitID = DefaultCommitID
+	}
+	if pushedAt == 0 {
+		pushedAt = time.Now().Unix()
 	}
 	splitName := strings.Split(fullname, "/")
 	if len(splitName) != 2 {
@@ -192,8 +196,9 @@ func MakeTemplate(id int, fullname string, branch string, commitID string, uri s
 	type repo struct {
 		ID                                    int
 		Name, RepoName, Branch, CommitID, URI string
+		PushedAt                              int64
 	}
-	var repoInfo = &repo{ID: id, Name: splitName[0], RepoName: splitName[1], Branch: branch, CommitID: commitID, URI: uri}
+	var repoInfo = &repo{ID: id, Name: splitName[0], RepoName: splitName[1], Branch: branch, CommitID: commitID, URI: uri, PushedAt: pushedAt}
 
 	t := template.Must(template.New("repoInformation").Parse(string(TemplatePayload)))
 

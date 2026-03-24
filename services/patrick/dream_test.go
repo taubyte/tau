@@ -194,6 +194,7 @@ func compareJobToPayload(meta patrickCore.Meta, payload []byte) (err error) {
 		{Before: meta.HeadCommit.ID, After: _meta.HeadCommit.ID, msg: "HeadCommit.ID"},
 		{Before: meta.Repository.ID, After: _meta.Repository.ID, msg: "Repository.ID"},
 		{Before: meta.Repository.URI, After: _meta.Repository.URI, msg: "Repository.URI"},
+		{Before: meta.Repository.PushedAt, After: _meta.Repository.PushedAt, msg: "Repository.PushedAt"},
 	}
 
 	for _, c := range comparisons {

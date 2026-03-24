@@ -78,6 +78,7 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 
 	_map := maps.SafeInterfaceToStringKeys(resp.Interface())
 
+	pushIdx := 0
 	for repoId, repoInfo := range _map {
 		_repoInfo := maps.SafeInterfaceToStringKeys(repoInfo)
 		fullName, ok := _repoInfo["fullname"].(string)
@@ -85,6 +86,8 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 			continue
 		}
 		var err error
+		pushedAt := time.Now().Unix() + int64(pushIdx)
+		pushIdx++
 		if projectRoot != "" {
 			// Derive per-repo local path from fullname (e.g. taubyte-test/tb_code_foo -> projectRoot/code)
 			parts := strings.SplitN(fullName, "/", 2)
@@ -103,9 +106,9 @@ func pushAll(u *dream.Universe, params ...interface{}) error {
 			default:
 				localPath = projectRoot + "/config"
 			}
-			err = pushSpecific(u, repoId, fullName, projectId, branch, localPath)
+			err = pushSpecific(u, repoId, fullName, projectId, branch, localPath, pushedAt)
 		} else {
-			err = pushSpecific(u, repoId, fullName, projectId, branch)
+			err = pushSpecific(u, repoId, fullName, projectId, branch, "", pushedAt)
 		}
 		if err != nil {
 			return err
@@ -150,6 +153,12 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 			localPath = p
 		}
 	}
+	pushedAt := int64(0)
+	if len(params) > 5 {
+		if p, ok := params[5].(int64); ok {
+			pushedAt = p
+		}
+	}
 
 	intRepoId, err := strconv.Atoi(repoId)
 	if err != nil {
@@ -177,12 +186,12 @@ func pushSpecific(u *dream.Universe, params ...interface{}) error {
 		if err != nil {
 			return fmt.Errorf("head commit from local repo: %w", err)
 		}
-		newPayload, err = commonTest.MakeTemplate(intRepoId, fullname, branch, commitID, "local://"+localPath)
+		newPayload, err = commonTest.MakeTemplate(intRepoId, fullname, branch, commitID, "local://"+localPath, pushedAt)
 		if err != nil {
 			return fmt.Errorf("make template failed with: %v", err)
 		}
 	} else {
-		newPayload, err = commonTest.MakeTemplate(intRepoId, fullname, branch, "", "")
+		newPayload, err = commonTest.MakeTemplate(intRepoId, fullname, branch, "", "", pushedAt)
 		if err != nil {
 			return fmt.Errorf("make template failed with: %v", err)
 		}
@@ -221,7 +230,7 @@ func pushConfig(u *dream.Universe, params ...interface{}) error {
 				return fmt.Errorf("head commit from local repo: %w", err)
 			}
 			fullname := commonTest.GitUser + "/" + commonTest.ConfigRepo.Name
-			payload, err := commonTest.MakeTemplate(commonTest.ConfigRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath)
+			payload, err := commonTest.MakeTemplate(commonTest.ConfigRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath, 0)
 			if err != nil {
 				return fmt.Errorf("make template failed with: %v", err)
 			}
@@ -242,7 +251,7 @@ func pushCode(u *dream.Universe, params ...interface{}) error {
 				return fmt.Errorf("head commit from local repo: %w", err)
 			}
 			fullname := commonTest.GitUser + "/" + commonTest.CodeRepo.Name
-			payload, err := commonTest.MakeTemplate(commonTest.CodeRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath)
+			payload, err := commonTest.MakeTemplate(commonTest.CodeRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath, 0)
 			if err != nil {
 				return fmt.Errorf("make template failed with: %v", err)
 			}
@@ -275,7 +284,7 @@ func pushWebsite(u *dream.Universe, params ...interface{}) error {
 				return fmt.Errorf("head commit from local repo: %w", err)
 			}
 			fullname := commonTest.GitUser + "/" + commonTest.WebsiteRepo.Name
-			payload, err := commonTest.MakeTemplate(commonTest.WebsiteRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath)
+			payload, err := commonTest.MakeTemplate(commonTest.WebsiteRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath, 0)
 			if err != nil {
 				return fmt.Errorf("make template failed with: %v", err)
 			}
@@ -308,7 +317,7 @@ func pushLibrary(u *dream.Universe, params ...interface{}) error {
 				return fmt.Errorf("head commit from local repo: %w", err)
 			}
 			fullname := commonTest.GitUser + "/" + commonTest.LibraryRepo.Name
-			payload, err := commonTest.MakeTemplate(commonTest.LibraryRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath)
+			payload, err := commonTest.MakeTemplate(commonTest.LibraryRepo.ID, fullname, spec.DefaultBranches[0], commitID, "local://"+localPath, 0)
 			if err != nil {
 				return fmt.Errorf("make template failed with: %v", err)
 			}

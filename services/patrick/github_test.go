@@ -484,3 +484,32 @@ func TestGithubHookHandler(t *testing.T) {
 		})
 	}
 }
+
+func TestGithubHookHandler_duplicateDeliverySameJobID(t *testing.T) {
+	servicesCommon.FakeSecret = true
+	t.Cleanup(func() { servicesCommon.FakeSecret = false })
+
+	ts := createTestSetup(true)
+	ts.setupGitHubWebhook(helpers.ConfigPayload, "taubyte_secret")
+	ts.setupHookInAuth("test-hook-1", "taubyte_secret")
+	ts.tnsClient.pushError = nil
+
+	_, err := ts.service.githubCheckHookAndExtractSecret(ts.ctx)
+	assert.NilError(t, err)
+
+	r1, err := ts.service.githubHookHandler(ts.ctx)
+	assert.NilError(t, err)
+	j1, ok := r1.(*patrick.Job)
+	assert.Assert(t, ok)
+
+	r2, err := ts.service.githubHookHandler(ts.ctx)
+	assert.NilError(t, err)
+	j2, ok := r2.(*patrick.Job)
+	assert.Assert(t, ok)
+
+	assert.Equal(t, j1.Id, j2.Id)
+
+	keys, err := ts.mockDB.List(context.Background(), "/jobs/")
+	assert.NilError(t, err)
+	assert.Equal(t, len(keys), 1)
+}
