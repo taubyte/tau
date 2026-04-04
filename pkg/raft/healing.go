@@ -23,21 +23,32 @@ var healLogger = logging.Logger("raft-healing")
 type healer struct {
 	cluster *cluster
 
-	healAckCh chan struct{}
-	healing   atomic.Bool
-	mu        sync.Mutex
+	healAckCh     chan struct{}
+	foreignVoteCh chan peer.ID
+	healing       atomic.Bool
+	mu            sync.Mutex
 }
 
 func newHealer(c *cluster) *healer {
 	return &healer{
-		cluster:   c,
-		healAckCh: make(chan struct{}, 1),
+		cluster:       c,
+		healAckCh:     make(chan struct{}, 1),
+		foreignVoteCh: make(chan peer.ID, 16),
 	}
 }
 
 func (h *healer) signalHealAck() {
 	select {
 	case h.healAckCh <- struct{}{}:
+	default:
+	}
+}
+
+// notifyForeignVote is called when we observe a vote/pre-vote from a peer
+// not in our raft configuration. Non-blocking: drops if the channel is full.
+func (h *healer) notifyForeignVote(pid peer.ID) {
+	select {
+	case h.foreignVoteCh <- pid:
 	default:
 	}
 }
@@ -53,44 +64,142 @@ func (h *healer) run(ctx context.Context) {
 		checkInterval = HealingProbeInterval
 	}
 
-	failedCycles := 0
+	healLogger.Infof("[%s] healer started (check_interval=%v, detection_cycles=%d)",
+		h.cluster.node.ID().ShortString(), checkInterval, SplitBrainDetectionCycles)
+
+	noLeaderCycles := 0
 
 	for {
 		select {
 		case <-ctx.Done():
+			healLogger.Debugf("[%s] healer stopped (context cancelled)", h.cluster.node.ID().ShortString())
 			return
+		case pid := <-h.foreignVoteCh:
+			h.handleForeignVote(ctx, pid)
+			continue
 		case <-time.After(checkInterval):
 		}
 
 		if h.cluster.closed.Load() {
+			healLogger.Debugf("[%s] healer stopped (cluster closed)", h.cluster.node.ID().ShortString())
 			return
 		}
 
-		state := h.cluster.raft.State()
-
-		switch state {
-		case hraft.Leader, hraft.Follower:
-			failedCycles = 0
-			if state == hraft.Leader {
-				h.probeAndMergeAsLeader(ctx)
-			}
-			continue
-		case hraft.Candidate:
-			failedCycles++
-		default:
+		if h.cluster.IsLeader() {
+			noLeaderCycles = 0
+			h.probeAndMergeAsLeader(ctx)
 			continue
 		}
 
-		if failedCycles < SplitBrainDetectionCycles {
+		_, leaderErr := h.cluster.Leader()
+		if leaderErr == nil {
+			noLeaderCycles = 0
 			continue
 		}
 
-		healLogger.Warnf("[%s] split-brain suspected: %d consecutive failed election cycles",
-			h.cluster.node.ID().ShortString(), failedCycles)
+		noLeaderCycles++
+		healLogger.Debugf("[%s] no leader detected (cycle %d/%d, state=%s)",
+			h.cluster.node.ID().ShortString(), noLeaderCycles, SplitBrainDetectionCycles,
+			h.cluster.raft.State())
+
+		if noLeaderCycles < SplitBrainDetectionCycles {
+			continue
+		}
+
+		healLogger.Warnf("[%s] split-brain suspected: %d consecutive leaderless cycles",
+			h.cluster.node.ID().ShortString(), noLeaderCycles)
 
 		h.detectAndHeal(ctx)
-		failedCycles = 0
+		noLeaderCycles = 0
 	}
+}
+
+// handleForeignVote reacts to a vote/pre-vote from a non-member peer.
+// Ensures the peer is tracked so findForeignPeers can discover it,
+// and if we're the leader, absorbs the orphan immediately.
+func (h *healer) handleForeignVote(ctx context.Context, pid peer.ID) {
+	if h.cluster.closed.Load() {
+		return
+	}
+
+	h.cluster.tracker.addPeer(pid)
+
+	if !h.cluster.IsLeader() {
+		healLogger.Debugf("[%s] tracked foreign voter %s (we are %s, not leader)",
+			h.cluster.node.ID().ShortString(), pid.ShortString(), h.cluster.raft.State())
+		return
+	}
+
+	healLogger.Infof("[%s] vote request from non-member %s — absorbing as leader",
+		h.cluster.node.ID().ShortString(), pid.ShortString())
+	h.absorbOrphan(ctx, pid)
+}
+
+// registerVoteObserver registers a raft Observer that watches for
+// RequestPreVoteRequest and RequestVoteRequest from peers not in the
+// current configuration and notifies the healer.
+func (h *healer) registerVoteObserver() {
+	ch := make(chan hraft.Observation, 16)
+	observer := hraft.NewObserver(ch, false, func(o *hraft.Observation) bool {
+		switch o.Data.(type) {
+		case hraft.RequestVoteRequest, hraft.RequestPreVoteRequest:
+			return true
+		default:
+			return false
+		}
+	})
+	h.cluster.raft.RegisterObserver(observer)
+
+	go func() {
+		for {
+			select {
+			case <-h.cluster.ctx.Done():
+				h.cluster.raft.DeregisterObserver(observer)
+				return
+			case obs := <-ch:
+				h.processVoteObservation(obs)
+			}
+		}
+	}()
+}
+
+func (h *healer) processVoteObservation(obs hraft.Observation) {
+	var candidateID string
+	switch req := obs.Data.(type) {
+	case hraft.RequestPreVoteRequest:
+		candidateID = string(req.ID)
+	case hraft.RequestVoteRequest:
+		candidateID = string(req.ID)
+	default:
+		return
+	}
+
+	if candidateID == "" {
+		return
+	}
+
+	pid, err := peer.Decode(candidateID)
+	if err != nil {
+		return
+	}
+
+	if pid == h.cluster.node.ID() {
+		return
+	}
+
+	members, err := h.cluster.Members()
+	if err != nil {
+		return
+	}
+	for _, m := range members {
+		if m.ID == pid {
+			return
+		}
+	}
+
+	healLogger.Infof("[%s] observed vote request from non-member %s",
+		h.cluster.node.ID().ShortString(), pid.ShortString())
+	h.notifyForeignVote(pid)
 }
 
 func (h *healer) probeAndMergeAsLeader(ctx context.Context) {
@@ -99,14 +208,29 @@ func (h *healer) probeAndMergeAsLeader(ctx context.Context) {
 		return
 	}
 
+	healLogger.Infof("[%s] probing %d foreign peers as leader", h.cluster.node.ID().ShortString(), len(foreignPeers))
+
 	for _, pid := range foreignPeers {
 		info, err := h.cluster.raftClient.ClusterInfo(pid)
-		if err != nil || info.LeaderID == "" {
+		if err != nil {
+			healLogger.Debugf("[%s] clusterInfo from foreign %s failed: %v",
+				h.cluster.node.ID().ShortString(), pid.ShortString(), err)
+			continue
+		}
+
+		if info.LeaderID == "" {
+			healLogger.Infof("[%s] detected orphaned foreign node %s — absorbing",
+				h.cluster.node.ID().ShortString(), pid.ShortString())
+			h.absorbOrphan(ctx, pid)
 			continue
 		}
 
 		localInfo := h.localClusterInfo()
 		winner := negotiateWinner(localInfo, info)
+
+		healLogger.Debugf("[%s] foreign %s: leader=%s members=%d lastIndex=%d → winner=%s",
+			h.cluster.node.ID().ShortString(), pid.ShortString(),
+			info.LeaderID, info.MemberCount, info.LastIndex, winner)
 
 		if winner == localInfo.NodeID {
 			healLogger.Infof("[%s] detected foreign cluster led by %s — we win, initiating merge",
@@ -123,33 +247,54 @@ func (h *healer) probeAndMergeAsLeader(ctx context.Context) {
 
 func (h *healer) detectAndHeal(ctx context.Context) {
 	if !h.healing.CompareAndSwap(false, true) {
+		healLogger.Debugf("[%s] detectAndHeal skipped: already healing", h.cluster.node.ID().ShortString())
 		return
 	}
 	defer h.healing.Store(false)
 
 	foreignPeers := h.findForeignPeers()
 	if len(foreignPeers) == 0 {
+		healLogger.Debugf("[%s] detectAndHeal: no foreign peers found", h.cluster.node.ID().ShortString())
 		return
 	}
+
+	healLogger.Infof("[%s] detectAndHeal: found %d foreign peers", h.cluster.node.ID().ShortString(), len(foreignPeers))
 
 	var foreignInfo *ClusterInfoResponse
 	var foreignLeader peer.ID
 	for _, pid := range foreignPeers {
 		info, err := h.cluster.raftClient.ClusterInfo(pid)
-		if err != nil || info.LeaderID == "" {
+		if err != nil {
+			healLogger.Debugf("[%s] detectAndHeal: clusterInfo from %s failed: %v",
+				h.cluster.node.ID().ShortString(), pid.ShortString(), err)
 			continue
 		}
 		foreignInfo = info
-		foreignLeader, _ = peer.Decode(info.LeaderID)
+		if info.LeaderID != "" {
+			foreignLeader, _ = peer.Decode(info.LeaderID)
+		}
 		break
 	}
 
-	if foreignInfo == nil || foreignLeader == "" {
+	if foreignInfo == nil {
+		healLogger.Debugf("[%s] detectAndHeal: could not reach any foreign peer", h.cluster.node.ID().ShortString())
+		return
+	}
+
+	if foreignLeader == "" {
+		healLogger.Debugf("[%s] detectAndHeal: foreign cluster also leaderless — deferring",
+			h.cluster.node.ID().ShortString())
 		return
 	}
 
 	localInfo := h.localClusterInfo()
 	winner := negotiateWinner(localInfo, foreignInfo)
+
+	healLogger.Infof("[%s] detectAndHeal: local(members=%d, lastIndex=%d) vs foreign(leader=%s, members=%d, lastIndex=%d) → winner=%s",
+		h.cluster.node.ID().ShortString(),
+		localInfo.MemberCount, localInfo.LastIndex,
+		foreignInfo.LeaderID, foreignInfo.MemberCount, foreignInfo.LastIndex,
+		winner)
 
 	if winner == localInfo.NodeID {
 		return
@@ -168,6 +313,8 @@ func (h *healer) findForeignPeers() []peer.ID {
 
 	members, err := h.cluster.Members()
 	if err != nil {
+		healLogger.Debugf("[%s] findForeignPeers: cannot get members: %v",
+			h.cluster.node.ID().ShortString(), err)
 		return nil
 	}
 	memberSet := make(map[peer.ID]struct{}, len(members))
@@ -175,8 +322,10 @@ func (h *healer) findForeignPeers() []peer.ID {
 		memberSet[m.ID] = struct{}{}
 	}
 
+	allTracked := h.cluster.tracker.allPeers()
+
 	var foreign []peer.ID
-	for _, pid := range h.cluster.tracker.allPeers() {
+	for _, pid := range allTracked {
 		if _, inConfig := memberSet[pid]; inConfig {
 			continue
 		}
@@ -184,6 +333,12 @@ func (h *healer) findForeignPeers() []peer.ID {
 			foreign = append(foreign, pid)
 		}
 	}
+
+	if len(foreign) > 0 {
+		healLogger.Debugf("[%s] findForeignPeers: %d foreign out of %d tracked (%d members in config)",
+			h.cluster.node.ID().ShortString(), len(foreign), len(allTracked), len(members))
+	}
+
 	return foreign
 }
 
@@ -256,6 +411,48 @@ func warnForeignWallClockDrift(self peer.ID, foreign map[string]CRDTEntry) {
 	if bad > 0 {
 		healLogger.Warnf("[%s] %d foreign FSM entries exceed wall-clock drift %v (tiebreaker unreliable); sync NTP",
 			self.ShortString(), bad, MaxWallClockDrift)
+	}
+}
+
+// absorbOrphan adds a leaderless foreign node as a voter and sends it a healAck
+// so it can wipe its stale state and rejoin.
+func (h *healer) absorbOrphan(ctx context.Context, orphan peer.ID) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if !h.cluster.IsLeader() {
+		return
+	}
+
+	foreignState, _, err := h.cluster.raftClient.ExportFSM(orphan)
+	if err != nil {
+		healLogger.Warnf("[%s] export FSM from orphan %s failed (may not be leader there): %v",
+			h.cluster.node.ID().ShortString(), orphan.ShortString(), err)
+	} else if len(foreignState) > 0 {
+		ourState, err := h.cluster.fsm.ExportState()
+		if err == nil {
+			warnForeignWallClockDrift(h.cluster.node.ID(), foreignState)
+			delta := mergeCRDTDelta(ourState, foreignState)
+			if len(delta) > 0 {
+				data, err := encodeMergeCommand(delta)
+				if err == nil {
+					if _, err := h.cluster.Apply(data, HealingMergeTimeout); err == nil {
+						healLogger.Infof("[%s] merged %d keys from orphan %s",
+							h.cluster.node.ID().ShortString(), len(delta), orphan.ShortString())
+					}
+				}
+			}
+		}
+	}
+
+	h.cluster.raftClient.HealAck(orphan)
+
+	if err := h.cluster.AddVoter(orphan, 10*time.Second); err != nil {
+		healLogger.Warnf("[%s] add voter %s failed: %v",
+			h.cluster.node.ID().ShortString(), orphan.ShortString(), err)
+	} else {
+		healLogger.Infof("[%s] absorbed orphan %s",
+			h.cluster.node.ID().ShortString(), orphan.ShortString())
 	}
 }
 
@@ -336,17 +533,23 @@ func (h *healer) yieldAndRejoin(ctx context.Context, winnerLeader peer.ID) {
 	}
 
 	if h.cluster.raft != nil {
+		healLogger.Infof("[%s] shutting down raft instance for rejoin", h.cluster.node.ID().ShortString())
 		h.cluster.raft.Shutdown()
 	}
 
+	healLogger.Infof("[%s] wiping raft state (logs + stable)", h.cluster.node.ID().ShortString())
 	h.wipeRaftState(ctx)
 
 	if h.cluster.snaps != nil {
+		healLogger.Infof("[%s] wiping snapshots", h.cluster.node.ID().ShortString())
 		h.cluster.snaps.wipeAll()
 	}
 
+	healLogger.Infof("[%s] re-initializing raft after yield", h.cluster.node.ID().ShortString())
 	if err := h.cluster.initialize(); err != nil {
 		healLogger.Errorf("[%s] re-initialize failed: %v", h.cluster.node.ID().ShortString(), err)
+	} else {
+		healLogger.Infof("[%s] re-initialize succeeded — should rejoin cluster", h.cluster.node.ID().ShortString())
 	}
 }
 

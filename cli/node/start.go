@@ -48,11 +48,17 @@ func Start(ctx context.Context, serviceConfig config.Config) error {
 		}
 		snapDir := raft.SnapshotDir(serviceConfig.Root(), serviceConfig.Shape(), namespace)
 		raftOpts := []raft.Option{raft.WithSnapshotDir(snapDir)}
-		// DevMode: shorter bootstrap wait and PresetLocal elections for local runs/tests.
 		if serviceConfig.DevMode() {
 			raftOpts = append(raftOpts,
 				raft.WithBootstrapTimeout(5*time.Second),
-				raft.WithTimeoutPreset(raft.PresetLocal),
+				raft.WithTimeouts(raft.TimeoutConfig{
+					HeartbeatTimeout:   1 * time.Second,
+					ElectionTimeout:    1 * time.Second,
+					CommitTimeout:      500 * time.Millisecond,
+					LeaderLeaseTimeout: 500 * time.Millisecond,
+					SnapshotInterval:   2 * time.Minute,
+					SnapshotThreshold:  8192,
+				}),
 			)
 		}
 		raftCluster, err := raft.New(serviceConfig.Node(), namespace, raftOpts...)

@@ -10,18 +10,6 @@ import (
 // Option configures optional cluster behavior
 type Option func(*cluster) error
 
-// WithTimeoutPreset sets a predefined timeout configuration
-// Default: PresetRegional
-func WithTimeoutPreset(preset TimeoutPreset) Option {
-	return func(c *cluster) error {
-		c.timeoutPreset = preset
-		if cfg, ok := presetConfigs[preset]; ok {
-			c.timeoutConfig = cfg
-		}
-		return nil
-	}
-}
-
 // WithTimeouts sets custom timeout configuration
 func WithTimeouts(cfg TimeoutConfig) Option {
 	return func(c *cluster) error {

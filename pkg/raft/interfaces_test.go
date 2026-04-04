@@ -48,15 +48,3 @@ func TestMember(t *testing.T) {
 		t.Errorf("expected Voter, got %v", member.Suffrage)
 	}
 }
-
-func TestTimeoutPreset_Constants(t *testing.T) {
-	if PresetLocal != "local" {
-		t.Errorf("expected 'local', got '%s'", PresetLocal)
-	}
-	if PresetRegional != "regional" {
-		t.Errorf("expected 'regional', got '%s'", PresetRegional)
-	}
-	if PresetGlobal != "global" {
-		t.Errorf("expected 'global', got '%s'", PresetGlobal)
-	}
-}

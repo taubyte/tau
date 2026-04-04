@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	taupeer "github.com/taubyte/tau/p2p/peer"
 	streamClient "github.com/taubyte/tau/p2p/streams/client"
@@ -14,6 +15,8 @@ import (
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	"github.com/taubyte/tau/utils/mapstructure"
 )
+
+var clientLogger = logging.Logger("raft-client")
 
 // Client represents a Raft p2p client for external use
 type Client interface {
@@ -200,6 +203,9 @@ func (c *client) Delete(key string, timeout time.Duration, peers ...peer.ID) err
 }
 
 func (c *client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error {
+	clientLogger.Debugf("sending joinVoter for %s to %d targets (timeout=%v)",
+		peerID.ShortString(), len(peers), timeout)
+
 	body := command.Body{
 		keyPeer:    peerID.String(),
 		keyTimeout: float64(timeout.Milliseconds()),
@@ -248,13 +254,16 @@ func (c *client) JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.
 			resp = decryptedResp
 		}
 
+		clientLogger.Debugf("joinVoter for %s succeeded", peerID.ShortString())
 		return nil
 	}
 
 	if sawNoLeader {
+		clientLogger.Debugf("joinVoter for %s failed: no leader available", peerID.ShortString())
 		return ErrNoLeader
 	}
 	if firstErr != nil {
+		clientLogger.Debugf("joinVoter for %s failed: %v", peerID.ShortString(), firstErr)
 		return firstErr
 	}
 	return fmt.Errorf("join voter failed: no responses")
@@ -434,8 +443,11 @@ func (c *client) sendInternal(cmd string, body command.Body, peers ...peer.ID) (
 }
 
 func (c *client) ClusterInfo(target peer.ID) (*ClusterInfoResponse, error) {
+	clientLogger.Debugf("querying clusterInfo from %s", target.ShortString())
+
 	resp, err := c.sendInternal(cmdClusterInfo, command.Body{}, target)
 	if err != nil {
+		clientLogger.Debugf("clusterInfo from %s failed: %v", target.ShortString(), err)
 		return nil, fmt.Errorf("clusterInfo failed: %w", err)
 	}
 
@@ -444,12 +456,18 @@ func (c *client) ClusterInfo(target peer.ID) (*ClusterInfoResponse, error) {
 		return nil, fmt.Errorf("decoding clusterInfo response: %w", err)
 	}
 
+	clientLogger.Debugf("clusterInfo from %s: leader=%s term=%d lastIndex=%d members=%d",
+		target.ShortString(), info.LeaderID, info.Term, info.LastIndex, info.MemberCount)
+
 	return info, nil
 }
 
 func (c *client) ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error) {
+	clientLogger.Debugf("requesting exportFSM from %s", target.ShortString())
+
 	resp, err := c.sendInternal(cmdExportFSM, command.Body{}, target)
 	if err != nil {
+		clientLogger.Debugf("exportFSM from %s failed: %v", target.ShortString(), err)
 		return nil, 0, fmt.Errorf("exportFSM failed: %w", err)
 	}
 
@@ -463,11 +481,17 @@ func (c *client) ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error)
 		return nil, 0, fmt.Errorf("unmarshaling FSM state: %w", err)
 	}
 
+	clientLogger.Debugf("exportFSM from %s: %d keys, clock=%d", target.ShortString(), len(state), out.Clock)
+
 	return state, out.Clock, nil
 }
 
 func (c *client) HealAck(target peer.ID) error {
+	clientLogger.Infof("sending healAck to %s", target.ShortString())
 	_, err := c.sendInternal(cmdHealAck, command.Body{}, target)
+	if err != nil {
+		clientLogger.Warnf("healAck to %s failed: %v", target.ShortString(), err)
+	}
 	return err
 }
 

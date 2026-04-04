@@ -2,20 +2,6 @@ package raft
 
 import "time"
 
-// TimeoutPreset defines timeout configurations for different deployment scenarios
-type TimeoutPreset string
-
-const (
-	// PresetLocal for same-datacenter deployments (low latency)
-	PresetLocal TimeoutPreset = "local"
-
-	// PresetRegional for multi-region within same continent
-	PresetRegional TimeoutPreset = "regional"
-
-	// PresetGlobal for worldwide distributed clusters
-	PresetGlobal TimeoutPreset = "global"
-)
-
 // TimeoutConfig allows fine-grained control over Raft timing
 type TimeoutConfig struct {
 	// HeartbeatTimeout specifies the time in follower state without
@@ -43,30 +29,13 @@ type TimeoutConfig struct {
 	SnapshotThreshold uint64
 }
 
-// presetConfigs maps presets to their timeout configurations
-var presetConfigs = map[TimeoutPreset]TimeoutConfig{
-	PresetLocal: {
-		HeartbeatTimeout:   1 * time.Second,
-		ElectionTimeout:    1 * time.Second,
-		CommitTimeout:      500 * time.Millisecond,
-		LeaderLeaseTimeout: 500 * time.Millisecond,
-		SnapshotInterval:   2 * time.Minute,
-		SnapshotThreshold:  8192,
-	},
-	PresetRegional: {
-		HeartbeatTimeout:   5 * time.Second,
-		ElectionTimeout:    10 * time.Second,
-		CommitTimeout:      5 * time.Second,
-		LeaderLeaseTimeout: 5 * time.Second,
-		SnapshotInterval:   5 * time.Minute,
-		SnapshotThreshold:  16384,
-	},
-	PresetGlobal: {
-		HeartbeatTimeout:   15 * time.Second,
-		ElectionTimeout:    30 * time.Second,
-		CommitTimeout:      15 * time.Second,
-		LeaderLeaseTimeout: 15 * time.Second,
-		SnapshotInterval:   10 * time.Minute,
-		SnapshotThreshold:  32768,
-	},
+// DefaultTimeoutConfig is the default timeout configuration, tuned for
+// worldwide distributed clusters.
+var DefaultTimeoutConfig = TimeoutConfig{
+	HeartbeatTimeout:   15 * time.Second,
+	ElectionTimeout:    30 * time.Second,
+	CommitTimeout:      15 * time.Second,
+	LeaderLeaseTimeout: 15 * time.Second,
+	SnapshotInterval:   10 * time.Minute,
+	SnapshotThreshold:  32768,
 }

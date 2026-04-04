@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/p2p/streams"
 	streamClient "github.com/taubyte/tau/p2p/streams/client"
@@ -15,6 +16,8 @@ import (
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	streamService "github.com/taubyte/tau/p2p/streams/service"
 )
+
+var streamLogger = logging.Logger("raft-stream")
 
 const (
 	// ProtocolRaftPrefix is the prefix for raft stream protocols
@@ -328,8 +331,11 @@ func (s *raftStreamService) handleKeys(ctx context.Context, conn streams.Connect
 func (s *raftStreamService) forwardToLeader(cmd string, body command.Body) (cr.Response, error) {
 	leader, err := s.cluster.Leader()
 	if err != nil {
+		streamLogger.Debugf("[%s] cannot forward %q: no leader", s.cluster.node.ID().ShortString(), cmd)
 		return nil, ErrNoLeader
 	}
+
+	streamLogger.Debugf("[%s] forwarding %q to leader %s", s.cluster.node.ID().ShortString(), cmd, leader.ShortString())
 
 	cli := s.cluster.raftClient.(*client)
 	resCh, err := cli.New(cmd,
@@ -418,8 +424,13 @@ func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Co
 		return nil, err
 	}
 
+	streamLogger.Infof("[%s] received joinVoter request from %s (is_leader=%v)",
+		s.cluster.node.ID().ShortString(), peerID.ShortString(), s.cluster.IsLeader())
+
 	if s.cluster.IsLeader() {
 		if err := s.cluster.AddVoter(peerID, timeout); err != nil {
+			streamLogger.Warnf("[%s] joinVoter: AddVoter %s failed: %v",
+				s.cluster.node.ID().ShortString(), peerID.ShortString(), err)
 			return nil, err
 		}
 		resp := cr.Response{"success": true}
@@ -438,10 +449,14 @@ func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Co
 	leaderCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	if err := s.cluster.WaitForLeader(leaderCtx); err != nil {
+		streamLogger.Debugf("[%s] joinVoter: no leader available to handle %s",
+			s.cluster.node.ID().ShortString(), peerID.ShortString())
 		return nil, ErrNoLeader
 	}
 	if s.cluster.IsLeader() {
 		if err := s.cluster.AddVoter(peerID, timeout); err != nil {
+			streamLogger.Warnf("[%s] joinVoter: AddVoter %s failed (after becoming leader): %v",
+				s.cluster.node.ID().ShortString(), peerID.ShortString(), err)
 			return nil, err
 		}
 		resp := cr.Response{"success": true}
@@ -454,6 +469,9 @@ func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Co
 		}
 		return resp, nil
 	}
+
+	streamLogger.Debugf("[%s] joinVoter: forwarding request for %s to leader",
+		s.cluster.node.ID().ShortString(), peerID.ShortString())
 
 	body[keyPeer] = peerID.String()
 	resp, err := s.forwardToLeader(cmdJoinVoter, body)
@@ -501,6 +519,13 @@ func (s *raftStreamService) handleClusterInfo(ctx context.Context, conn streams.
 		memberCount = len(members)
 	}
 
+	from := ""
+	if conn != nil {
+		from = conn.RemotePeer().ShortString()
+	}
+	streamLogger.Debugf("[%s] clusterInfo requested (from=%s): leader=%s term=%d lastIndex=%d members=%d",
+		s.cluster.node.ID().ShortString(), from, leaderID, term, lastIdx, memberCount)
+
 	resp := cr.Response{
 		keyLeader:      leaderID,
 		keyTerm:        term,
@@ -530,9 +555,19 @@ func (s *raftStreamService) handleExportFSM(ctx context.Context, conn streams.Co
 		body = decryptedBody
 	}
 
+	from := ""
+	if conn != nil {
+		from = conn.RemotePeer().ShortString()
+	}
+
 	if !s.cluster.IsLeader() {
+		streamLogger.Debugf("[%s] exportFSM requested (from=%s) — forwarding to leader",
+			s.cluster.node.ID().ShortString(), from)
 		return s.forwardToLeader(cmdExportFSM, body)
 	}
+
+	streamLogger.Infof("[%s] exportFSM requested (from=%s) — serving as leader",
+		s.cluster.node.ID().ShortString(), from)
 
 	state, err := s.cluster.fsm.ExportState()
 	if err != nil {
@@ -548,6 +583,8 @@ func (s *raftStreamService) handleExportFSM(ctx context.Context, conn streams.Co
 	fsm.mu.RLock()
 	clock := fsm.clock
 	fsm.mu.RUnlock()
+
+	streamLogger.Debugf("[%s] exportFSM: %d keys, clock=%d", s.cluster.node.ID().ShortString(), len(state), clock)
 
 	resp := cr.Response{
 		keyFSMState: stateBytes,
@@ -574,6 +611,13 @@ func (s *raftStreamService) handleHealAck(ctx context.Context, conn streams.Conn
 		}
 		body = decryptedBody
 	}
+
+	from := ""
+	if conn != nil {
+		from = conn.RemotePeer().ShortString()
+	}
+	streamLogger.Infof("[%s] received healAck from %s — signaling healer",
+		s.cluster.node.ID().ShortString(), from)
 
 	if s.cluster.healer != nil {
 		s.cluster.healer.signalHealAck()
