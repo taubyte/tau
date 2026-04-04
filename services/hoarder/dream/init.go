@@ -15,5 +15,9 @@ func init() {
 }
 
 func createService(u *dream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
-	return hoarder.New(u.Context(), common.NewDreamConfig(u, config))
+	cfg, err := common.NewConfig(u, config)
+	if err != nil {
+		return nil, err
+	}
+	return hoarder.New(u.Context(), cfg)
 }

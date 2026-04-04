@@ -15,5 +15,9 @@ func init() {
 }
 
 func createGateway(u *dream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
-	return gateway.New(u.Context(), common.NewDreamConfig(u, config))
+	cfg, err := common.NewConfig(u, config)
+	if err != nil {
+		return nil, err
+	}
+	return gateway.New(u.Context(), cfg)
 }

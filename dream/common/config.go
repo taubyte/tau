@@ -5,59 +5,58 @@ import (
 	"regexp"
 	"strings"
 
-	tauConfig "github.com/taubyte/tau/config"
 	iface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/p2p/keypair"
 	"github.com/taubyte/tau/dream"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 )
 
-func NewDreamConfig(u *dream.Universe, config *iface.ServiceConfig) *tauConfig.Node {
-	serviceConfig := &tauConfig.Node{}
+func NewConfig(u *dream.Universe, config *iface.ServiceConfig) (tauConfig.Config, error) {
+	privKey, _, err := keypair.GenerateDeterministicKey(config.Root)
+	if err != nil {
+		return nil, err
+	}
 
-	serviceConfig.Ports = make(map[string]int)
+	p2pListen := []string{fmt.Sprintf(dream.DefaultP2PListenFormat, config.Port)}
+	ports := make(map[string]int)
 	for _, k := range []string{"http", "p2p", "dns", "ipfs"} {
-		serviceConfig.Ports[k] = config.Others[k]
+		ports[k] = config.Others[k]
 	}
 
-	serviceConfig.Root = config.Root
-	serviceConfig.P2PListen = []string{fmt.Sprintf(dream.DefaultP2PListenFormat, config.Port)}
-	serviceConfig.P2PAnnounce = []string{fmt.Sprintf(dream.DefaultP2PListenFormat, config.Port)}
-	serviceConfig.DevMode = true
-	serviceConfig.SwarmKey = config.SwarmKey
-
-	serviceConfig.PrivateKey, _, _ = keypair.GenerateDeterministicKey(config.Root)
-
-	serviceConfig.HttpListen = fmt.Sprintf("%s:%d", dream.DefaultHost, config.Others["http"])
-
-	if config.Others["verbose"] != 0 {
-		serviceConfig.Verbose = true
-	}
-
-	if result, ok := config.Others["secure"]; ok {
-		serviceConfig.EnableHTTPS = (result != 0)
-	}
-
-	serviceConfig.Databases = config.Databases
-
-	serviceConfig.DomainValidation.PrivateKey = config.PrivateKey
-	serviceConfig.DomainValidation.PublicKey = config.PublicKey
-
-	serviceConfig.NetworkFqdn = strings.ToLower(u.Name()) + ".localtau"
-	serviceConfig.GeneratedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.` + strings.ToLower(u.Name()) + `.localtau$`)
-	serviceConfig.ServicesDomainRegExp = regexp.MustCompile(`^([^.]+\.)?tau\.` + strings.ToLower(u.Name()) + `.localtau$`)
-	serviceConfig.AliasDomainsRegExp = make([]*regexp.Regexp, 0)
-
-	serviceConfig.Databases = config.Databases
-
-	// build bootstrap
 	upeers := u.Peers()
 	bpeers := make([]string, 0, len(upeers))
 	for _, n := range upeers {
 		bpeers = append(bpeers, n.Peer().Addrs()[0].String()+"/p2p/"+n.ID().String())
 	}
-	serviceConfig.Peers = bpeers
 
-	serviceConfig.Location = &config.Location
+	cluster := config.Cluster
+	if cluster == "" {
+		cluster = "main"
+	}
 
-	return serviceConfig
+	serviceConfig, err := tauConfig.New(
+		tauConfig.WithRoot(config.Root),
+		tauConfig.WithP2PListen(p2pListen),
+		tauConfig.WithP2PAnnounce(p2pListen),
+		tauConfig.WithSwarmKey(config.SwarmKey),
+		tauConfig.WithPrivateKey(privKey),
+		tauConfig.WithPorts(ports),
+		tauConfig.WithHttpListen(fmt.Sprintf("%s:%d", dream.DefaultHost, config.Others["http"])),
+		tauConfig.WithVerbose(config.Others["verbose"] != 0),
+		tauConfig.WithEnableHTTPS(config.Others["secure"] != 0),
+		tauConfig.WithDomainValidation(tauConfig.DomainValidation{PrivateKey: config.PrivateKey, PublicKey: config.PublicKey}),
+		tauConfig.WithNetworkFqdn(strings.ToLower(u.Name())+".localtau"),
+		tauConfig.WithGeneratedDomainRegExp(regexp.MustCompile(`^[^.]+\.g\.`+strings.ToLower(u.Name())+`.localtau$`)),
+		tauConfig.WithServicesDomainRegExp(regexp.MustCompile(`^([^.]+\.)?tau\.`+strings.ToLower(u.Name())+`.localtau$`)),
+		tauConfig.WithAliasDomainsRegExp(make([]*regexp.Regexp, 0)),
+		tauConfig.WithCluster(cluster),
+		tauConfig.WithPeers(bpeers),
+		tauConfig.WithLocation(&config.Location),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	serviceConfig.SetDatabases(config.Databases)
+	return serviceConfig, nil
 }

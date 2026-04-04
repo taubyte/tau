@@ -72,7 +72,7 @@
       "deployments_url": "https://api.github.com/repos/{{.Name}}/{{.RepoName}}/deployments",
       "created_at": 1650908569,
       "updated_at": "2022-04-25T17:42:49Z",
-      "pushed_at": 1650909033,
+      "pushed_at": {{.PushedAt}},
       "git_url": "git://github.com/{{.Name}}/{{.RepoName}}.git",
       "ssh_url": "{{.URI}}",
       "clone_url": "https://github.com/{{.Name}}/{{.RepoName}}.git",

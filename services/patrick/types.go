@@ -10,12 +10,12 @@ import (
 
 	auth "github.com/taubyte/tau/core/services/auth"
 
-	"github.com/taubyte/tau/config"
 	monkey "github.com/taubyte/tau/core/services/monkey"
 	tns "github.com/taubyte/tau/core/services/tns"
 
-	libp2p "github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/core/kvdb"
+	streamClient "github.com/taubyte/tau/p2p/streams/client"
+	"github.com/taubyte/tau/pkg/raft"
 )
 
 var _ iface.Service = &PatrickService{}
@@ -33,16 +33,16 @@ type PatrickService struct {
 	dbFactory    kvdb.Factory
 	devMode      bool
 
+	cluster        string
+	raftCluster    raft.Cluster
+	jobQueue       raft.Queue
+	outboundClient *streamClient.Client
+
 	hostUrl string
 }
 
-type Config struct {
-	config.Node `yaml:"z,omitempty"`
-}
-
-// TODO: optimize cbor storage
-type Lock struct {
-	Pid       libp2p.ID `cbor:"4,keyasint"`
-	Timestamp int64     `cbor:"8,keyasint"`
-	Eta       int64     `cbor:"16,keyasint"`
+// Assignment tracks which Monkey is working on a job.
+type Assignment struct {
+	MonkeyPID string `cbor:"1,keyasint"`
+	Timestamp int64  `cbor:"2,keyasint"`
 }

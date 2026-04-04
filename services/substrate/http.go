@@ -6,23 +6,21 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 	auto "github.com/taubyte/tau/pkg/http-auto"
 )
 
-func (srv *Service) startHttp(config *config.Node) (err error) {
-	listen := config.HttpListen
+func (srv *Service) startHttp(cfg config.Config) (err error) {
+	listen := cfg.HttpListen()
 
-	if config.Http == nil {
-		srv.http, err = auto.New(srv.ctx, srv.node, config)
+	if srv.http = cfg.Http(); srv.http == nil {
+		srv.http, err = auto.New(srv.ctx, srv.node, cfg)
 		if err != nil {
 			return err
 		}
-	} else {
-		srv.http = config.Http
 	}
 
-	if !config.DevMode {
+	if !cfg.DevMode() {
 		host, port, err := net.SplitHostPort(listen)
 		if err != nil {
 			return err

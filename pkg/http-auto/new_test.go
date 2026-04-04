@@ -5,8 +5,8 @@ import (
 	"crypto"
 	"testing"
 
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/http/options"
 	"gotest.tools/v3/assert"
 )
@@ -26,20 +26,34 @@ func (m *MockConfigurable) SetOption(option any) error {
 	return nil
 }
 
+func testConfig(t *testing.T, opts ...config.Option) config.Config {
+	base := []config.Option{
+		config.WithRoot("/tmp"),
+		config.WithP2PListen([]string{"/ip4/0.0.0.0/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithPrivateKey(make([]byte, 32)),
+	}
+	cfg, err := config.New(append(base, opts...)...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
+
 func TestNew(t *testing.T) {
 	ctx := context.Background()
-	mockNode := peer.Mock(ctx) // Use the provided mock node function
-	mockConfig := &config.Node{
-		DevMode:     false,
-		EnableHTTPS: true,
-		HttpListen:  "127.0.0.1:443",
-		CustomAcme:  true,
-		AcmeUrl:     "https://acme-staging-v02.api.letsencrypt.org/directory",
-		AcmeKey:     &MockSigner{}, // Use mock signer
-		Verbose:     false,
-	}
+	mockNode := peer.Mock(ctx)
 
 	t.Run("Clients and caches are not nil", func(t *testing.T) {
+		mockConfig := testConfig(t,
+			config.WithDevMode(false),
+			config.WithEnableHTTPS(true),
+			config.WithHttpListen("127.0.0.1:443"),
+			config.WithCustomAcme(true),
+			config.WithAcmeUrl("https://acme-staging-v02.api.letsencrypt.org/directory"),
+			config.WithAcmeKey(&MockSigner{}),
+			config.WithVerbose(false),
+		)
 		service, err := New(ctx, mockNode, mockConfig)
 		assert.NilError(t, err)
 		assert.Assert(t, service != nil)
@@ -51,35 +65,33 @@ func TestNew(t *testing.T) {
 		assert.Assert(t, service.(*Service).negativeCache != nil)
 	})
 
-	mockConfig.DevMode = true
-
 	t.Run("DevMode with HTTPS", func(t *testing.T) {
+		mockConfig := testConfig(t, config.WithDevMode(true), config.WithEnableHTTPS(true), config.WithHttpListen("127.0.0.1:443"))
 		service, err := New(ctx, mockNode, mockConfig)
 		assert.NilError(t, err)
 		assert.Assert(t, service != nil)
 	})
 
-	mockConfig.DevMode = false
 	t.Run("Production mode", func(t *testing.T) {
+		mockConfig := testConfig(t, config.WithDevMode(false), config.WithHttpListen("127.0.0.1:443"))
 		service, err := New(ctx, mockNode, mockConfig)
 		assert.NilError(t, err)
 		assert.Assert(t, service != nil)
 	})
 
-	mockConfig.DevMode = true
-	mockConfig.EnableHTTPS = false
 	t.Run("DevMode without HTTPS", func(t *testing.T) {
+		mockConfig := testConfig(t, config.WithDevMode(true), config.WithEnableHTTPS(false))
 		service, err := New(ctx, mockNode, mockConfig)
 		assert.NilError(t, err)
 		assert.Assert(t, service != nil)
 	})
-
-	mockConfig.DevMode = false
-	mockConfig.CustomAcme = true
-	mockConfig.AcmeUrl = "https://acme-staging-v02.api.letsencrypt.org/directory"
-	mockConfig.AcmeKey = &MockSigner{} // Use mock signer
 
 	t.Run("ACME options", func(t *testing.T) {
+		mockConfig := testConfig(t,
+			config.WithCustomAcme(true),
+			config.WithAcmeUrl("https://acme-staging-v02.api.letsencrypt.org/directory"),
+			config.WithAcmeKey(&MockSigner{}),
+		)
 		mockConfigurable := &MockConfigurable{}
 		for _, op := range opsFromConfig(mockConfig) {
 			err := op(mockConfigurable)
@@ -90,11 +102,18 @@ func TestNew(t *testing.T) {
 	})
 
 	t.Run("ACME enabled", func(t *testing.T) {
+		mockConfig := testConfig(t,
+			config.WithDevMode(false),
+			config.WithEnableHTTPS(true),
+			config.WithHttpListen("127.0.0.1:443"),
+			config.WithCustomAcme(true),
+			config.WithAcmeUrl("https://acme-staging-v02.api.letsencrypt.org/directory"),
+			config.WithAcmeKey(&MockSigner{}),
+		)
 		service, err := New(ctx, mockNode, mockConfig)
 		assert.NilError(t, err)
 		assert.Assert(t, service != nil)
 
-		// Verify ACME options
 		mockConfigurable := &MockConfigurable{}
 		for _, op := range opsFromConfig(mockConfig) {
 			err := op(mockConfigurable)
@@ -104,13 +123,8 @@ func TestNew(t *testing.T) {
 		assert.Equal(t, mockConfigurable.acmeKey, &MockSigner{})
 	})
 
-	// Reset CustomAcme for other tests
-	mockConfig.CustomAcme = false
-
-	// Existing test cases
-	mockConfig.DevMode = true
-	mockConfig.EnableHTTPS = false
 	t.Run("DevMode without HTTPS", func(t *testing.T) {
+		mockConfig := testConfig(t, config.WithDevMode(true), config.WithEnableHTTPS(false))
 		service, err := New(ctx, mockNode, mockConfig)
 		assert.NilError(t, err)
 		assert.Assert(t, service != nil)

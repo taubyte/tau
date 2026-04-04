@@ -16,7 +16,7 @@ import (
 	"github.com/taubyte/tau/p2p/streams"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
-	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
+	"github.com/taubyte/tau/pkg/raft"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/utils/maps"
 
@@ -25,7 +25,6 @@ import (
 	authService "github.com/taubyte/tau/services/auth"
 )
 
-// Stream route setup
 func (srv *PatrickService) setupStreamRoutes() {
 	srv.stream.Define("ping", func(context.Context, streams.Connection, command.Body) (cr.Response, error) {
 		return cr.Response{"time": int(time.Now().Unix())}, nil
@@ -34,15 +33,11 @@ func (srv *PatrickService) setupStreamRoutes() {
 	srv.stream.Define("stats", srv.statsServiceHandler)
 }
 
-// HTTP route setup
 func (srv *PatrickService) setupHTTPRoutes() {
-	// All github hooks will come through POST
-	// see: https://github.com/go-playground/webhooks/blob/v5.17.0/github/github.go#L128
 	srv.setupGithubRoutes()
 	srv.setupJobRoutes()
 }
 
-// Stats service handler
 func (p *PatrickService) statsServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	action, err := maps.String(body, "action")
 	if err != nil {
@@ -57,7 +52,6 @@ func (p *PatrickService) statsServiceHandler(ctx context.Context, conn streams.C
 	}
 }
 
-// Main request service handler
 func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
 	cidMap := make(map[string]string, 0)
 	assetMap := make(map[string]string, 0)
@@ -82,26 +76,22 @@ func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams
 		}
 	}
 
-	jid, err := maps.String(body, "jid")
-	if err != nil {
-		return nil, fmt.Errorf("failed getting jid from body with error: %v", err)
+	jid := ""
+	if action != "list" && action != "dequeue" {
+		jid, err = maps.String(body, "jid")
+		if err != nil {
+			return nil, fmt.Errorf("failed getting jid from body with error: %v", err)
+		}
 	}
 	switch action {
 	case "list":
 		return p.listHandler(ctx)
 	case "info":
 		return p.infoHandler(ctx, jid)
-	case "lock":
-		eta, err := maps.Int(body, "eta")
-		if err != nil {
-			return nil, fmt.Errorf("failed getting eta from body with error: %v", err)
-		}
-
-		return p.lockHandler(ctx, jid, int64(eta), conn)
-	case "isLocked":
-		return p.isLockedHandler(ctx, jid, conn)
-	case "unlock":
-		return p.unlockHandler(ctx, jid)
+	case "dequeue":
+		return p.dequeueHandler(ctx, conn)
+	case "isAssigned":
+		return p.isAssignedHandler(ctx, jid, conn)
 	case "cancel":
 		return cr.Response{"cancelled": jid}, p.cancelHandler(ctx, jid, cidMap)
 	case "done":
@@ -110,12 +100,13 @@ func (p *PatrickService) requestServiceHandler(ctx context.Context, conn streams
 		return nil, p.failedHandler(ctx, jid, cidMap, assetMap, conn)
 	case "timeout":
 		return nil, p.timeoutHandler(ctx, jid, cidMap)
+	case "hasJob":
+		return p.hasJobHandler(ctx, jid)
 	}
 
 	return nil, nil
 }
 
-// List handler
 func (p *PatrickService) listHandler(ctx context.Context) (cr.Response, error) {
 	jobIds := make([]string, 0)
 	jobs, err := p.db.List(ctx, "/jobs/")
@@ -142,7 +133,17 @@ func (p *PatrickService) listHandler(ctx context.Context) (cr.Response, error) {
 	return cr.Response{"Ids": jobIds}, nil
 }
 
-// Info handler
+func (p *PatrickService) hasJobHandler(ctx context.Context, jid string) (cr.Response, error) {
+	if jid == "" {
+		return cr.Response{"has": false}, nil
+	}
+	_, err := p.db.Get(ctx, "/jobs/"+jid)
+	if err == nil {
+		return cr.Response{"has": true}, nil
+	}
+	return cr.Response{"has": false}, nil
+}
+
 func (p *PatrickService) infoHandler(ctx context.Context, jid string) (cr.Response, error) {
 	job, errFirst := p.getJob(ctx, "/jobs/", jid)
 	if errFirst == nil {
@@ -152,7 +153,6 @@ func (p *PatrickService) infoHandler(ctx context.Context, jid string) (cr.Respon
 	if err == nil {
 		return cr.Response{"job": job}, nil
 	}
-	// Prefer returning unmarshal error when both fail (e.g. invalid CBOR in one location)
 	if strings.Contains(errFirst.Error(), "unmarshal") {
 		return nil, errFirst
 	}
@@ -162,68 +162,54 @@ func (p *PatrickService) infoHandler(ctx context.Context, jid string) (cr.Respon
 	return nil, fmt.Errorf("could not find %s in /archive/jobs or /jobs", jid)
 }
 
-// Lock handler
-func (p *PatrickService) lockHandler(ctx context.Context, jid string, eta int64, conn streams.Connection) (cr.Response, error) {
-	var lockData []byte
-	lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
+// dequeueHandler pops the next job from the queue, records the assignment, and returns the job.
+func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connection) (cr.Response, error) {
+	id, _, err := p.jobQueue.Pop(5 * time.Second)
 	if err != nil {
-		return p.tryLock(ctx, conn.RemotePeer(), jid, time.Now().Unix(), eta)
-	} else {
-		resp, err := p.lockHelper(ctx, conn.RemotePeer(), lockData, jid, eta, true)
-		if err != nil {
-			return nil, fmt.Errorf("error in lockHandler %w", err)
+		if errors.Is(err, raft.ErrQueueEmpty) {
+			return cr.Response{"available": false}, nil
 		}
-		return resp, nil
-
+		return nil, fmt.Errorf("queue pop: %w", err)
 	}
 
+	job, err := p.getJob(ctx, "/jobs/", id)
+	if err != nil {
+		return nil, fmt.Errorf("get job %s after pop: %w", id, err)
+	}
+
+	monkeyPID := conn.RemotePeer()
+	assignment := Assignment{
+		MonkeyPID: monkeyPID.String(),
+		Timestamp: time.Now().Unix(),
+	}
+	assignData, err := cbor.Marshal(assignment)
+	if err != nil {
+		return nil, fmt.Errorf("marshal assignment: %w", err)
+	}
+
+	if err := p.db.Put(ctx, "/assigned/"+id, assignData); err != nil {
+		return nil, fmt.Errorf("record assignment for %s: %w", id, err)
+	}
+
+	return cr.Response{"available": true, "job": job}, nil
 }
 
-// Is locked handler
-func (p *PatrickService) isLockedHandler(ctx context.Context, jid string, conn streams.Connection) (cr.Response, error) {
-	lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
+// isAssignedHandler checks whether the calling Monkey is still the assigned owner of the job.
+func (p *PatrickService) isAssignedHandler(ctx context.Context, jid string, conn streams.Connection) (cr.Response, error) {
+	data, err := p.db.Get(ctx, "/assigned/"+jid)
 	if err != nil {
-		return cr.Response{"locked": false}, nil
+		return cr.Response{"assigned": false}, nil
 	}
 
-	resp, err := p.lockHelper(ctx, conn.RemotePeer(), lockData, jid, 0, false)
-	if err != nil {
-		return cr.Response{"locked": false}, err
+	var assignment Assignment
+	if err := cbor.Unmarshal(data, &assignment); err != nil {
+		return cr.Response{"assigned": false}, nil
 	}
 
-	return resp, err
+	isAssigned := assignment.MonkeyPID == conn.RemotePeer().String()
+	return cr.Response{"assigned": isAssigned}, nil
 }
 
-// Unlock handler
-func (p *PatrickService) unlockHandler(ctx context.Context, jid string) (cr.Response, error) {
-	lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
-	if err != nil {
-		return nil, err
-	}
-	var jobLock Lock
-	if err = cbor.Unmarshal(lockData, &jobLock); err != nil {
-		logger.Errorf("Unmarshal for `%s` failed with: %s", jid, err.Error())
-		// fine, something might've happended. we can auto-heal -> locking the job will write correct data
-	}
-
-	jobLock.Eta = 0
-	jobLock.Timestamp = 0
-	lockBytes, err := cbor.Marshal(jobLock)
-	if err != nil {
-		logger.Errorf("Marshal for `%s` failed with: %s", jid, err.Error())
-		return nil, fmt.Errorf("marshal for `%s` failed with: %w", jid, err)
-	}
-
-	err = p.db.Put(ctx, "/locked/jobs/"+jid, lockBytes)
-	if err != nil {
-		logger.Errorf("Putting locked job for `%s` failed with: %s", jid, err.Error())
-		return nil, fmt.Errorf("putting locked job for `%s` failed with: %w", jid, err)
-	}
-
-	return cr.Response{"unlocked": jid}, nil
-}
-
-// Timeout handler
 func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log map[string]string) error {
 	if _, err := p.getJob(ctx, "/archive/jobs/", jid); err != nil {
 		job, err := p.getJob(ctx, "/jobs/", jid)
@@ -245,7 +231,7 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 				return fmt.Errorf("failed put in timeoutHandler with %w", err)
 			}
 
-			err = p.deleteJob(ctx, jid, "/locked/jobs/", "/jobs/")
+			err = p.deleteJob(ctx, jid, "/assigned/", "/jobs/")
 			if err != nil {
 				return fmt.Errorf("failed delete in timeoutHandler with %w", err)
 			}
@@ -257,8 +243,8 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 		job.Timestamp = time.Now().Unix()
 		job.Status = commonIface.JobStatusOpen
 
-		if err = p.db.Delete(ctx, "/locked/jobs/"+jid); err != nil {
-			return fmt.Errorf("failed deleting job %s in /locked/jobs/ with error: %w", jid, err)
+		if err = p.db.Delete(ctx, "/assigned/"+jid); err != nil {
+			return fmt.Errorf("failed deleting assignment for %s: %w", jid, err)
 		}
 
 		job_bytes, err := cbor.Marshal(job)
@@ -270,8 +256,8 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 			return err
 		}
 
-		if err = p.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job_bytes); err != nil {
-			return fmt.Errorf("failed to send over pubsub error: %w", err)
+		if err = p.jobQueue.Push(jid, nil, 5*time.Second); err != nil {
+			return fmt.Errorf("failed to push job %s back onto queue: %w", jid, err)
 		}
 
 		return nil
@@ -280,22 +266,18 @@ func (p *PatrickService) timeoutHandler(ctx context.Context, jid string, cid_log
 	return fmt.Errorf("%s already finished", jid)
 }
 
-// Done handler
 func (p *PatrickService) doneHandler(ctx context.Context, jid string, cid_log map[string]string, assetCid map[string]string, conn streams.Connection) error {
 	return p.updateStatus(ctx, conn.RemotePeer(), jid, cid_log, commonIface.JobStatusSuccess, assetCid)
 }
 
-// Failed handler
 func (p *PatrickService) failedHandler(ctx context.Context, jid string, cid_log map[string]string, assetCid map[string]string, conn streams.Connection) error {
 	return p.updateStatus(ctx, conn.RemotePeer(), jid, cid_log, commonIface.JobStatusFailed, assetCid)
 }
 
-// Cancel handler
 func (p *PatrickService) cancelHandler(ctx context.Context, jid string, cid_log map[string]string) error {
 	return p.updateStatus(ctx, "", jid, cid_log, commonIface.JobStatusCancelled, nil)
 }
 
-// Delete job helper
 func (p *PatrickService) deleteJob(ctx context.Context, jid string, loc ...string) error {
 	for _, _loc := range loc {
 		if err := p.db.Delete(ctx, _loc+jid); err != nil {
@@ -306,68 +288,13 @@ func (p *PatrickService) deleteJob(ctx context.Context, jid string, loc ...strin
 	return nil
 }
 
-// Lock helper
-func (p *PatrickService) lockHelper(ctx context.Context, pid peer.ID, lockData []byte, jid string, eta int64, method bool) (cr.Response, error) {
-	var jobLock Lock
-	err := cbor.Unmarshal(lockData, &jobLock)
-	if err != nil {
-		logger.Errorf("Reading lock for `%s` failed with: %s", jid, err.Error())
-		return nil, err
-	}
-
-	// if not expired
-	if jobLock.Timestamp+jobLock.Eta > time.Now().Unix() {
-		if method {
-			if jobLock.Pid == pid {
-				return p.tryLock(ctx, pid, jid, time.Now().Unix(), eta)
-			} else {
-				return cr.Response{
-					"locked":    true,
-					"locked-by": jobLock.Pid.String(),
-					"till":      jobLock.Timestamp + jobLock.Eta,
-				}, fmt.Errorf("job is locked by `%s`", jobLock.Pid)
-			}
-		}
-
-		return cr.Response{"locked": true, "locked-by": jobLock.Pid.String(), "till": jobLock.Timestamp + jobLock.Eta}, nil
-	}
-
-	// if exprired, and method is true, try to lock
-	if method {
-		return p.tryLock(ctx, pid, jid, time.Now().Unix(), eta)
-	}
-
-	return cr.Response{"locked": false, "expired": true}, nil
-}
-
-// Try lock helper
-func (p *PatrickService) tryLock(ctx context.Context, pid peer.ID, jid string, timestamp, eta int64) (cr.Response, error) {
-	lockData, err := cbor.Marshal(Lock{
-		Pid:       pid, // monkey ID
-		Timestamp: timestamp,
-		Eta:       eta,
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed cbor marshal with error: %v", err)
-	}
-
-	if err = p.db.Put(ctx, ("/locked/jobs/" + jid), lockData); err != nil {
-		return nil, fmt.Errorf("locking `%s` failed with: %v", jid, err)
-	}
-
-	return cr.Response{"locked": true, "locked-by": pid.String(), "till": timestamp + eta}, nil
-}
-
-// Update status helper
 func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid string, cid_log map[string]string, status commonIface.JobStatus, assetCid map[string]string) error {
-
 	if pid != "" {
-		lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid)
+		data, err := p.db.Get(ctx, "/assigned/"+jid)
 		if err == nil {
-			var jobLock Lock
-			if err := cbor.Unmarshal(lockData, &jobLock); err == nil {
-				if pid != peer.ID(jobLock.Pid) {
+			var assignment Assignment
+			if err := cbor.Unmarshal(data, &assignment); err == nil {
+				if pid.String() != assignment.MonkeyPID {
 					return fmt.Errorf("failed to update job %s, %s is not the owner", jid, pid)
 				}
 			}
@@ -387,7 +314,6 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		job.Attempt++
 	}
 
-	// TODO: Un-export job locks, and create methods
 	jobData, err := cbor.Marshal(job)
 	if err != nil {
 		return fmt.Errorf("marshal in updateStatus error: %w", err)
@@ -404,14 +330,13 @@ func (p *PatrickService) updateStatus(ctx context.Context, pid peer.ID, jid stri
 		}
 	}
 
-	if err = p.deleteJob(ctx, jid, "/locked/jobs/"); err != nil {
+	if err = p.deleteJob(ctx, jid, "/assigned/"); err != nil {
 		return fmt.Errorf("failed delete in updateStatus with %w", err)
 	}
 
 	return nil
 }
 
-// Convert to string map helper
 func convertToStringMap(_map interface{}) (map[string]string, error) {
 	newMap := make(map[string]string, 0)
 	stringMap, ok := _map.(map[interface{}]interface{})
@@ -428,22 +353,17 @@ func convertToStringMap(_map interface{}) (map[string]string, error) {
 	return newMap, nil
 }
 
-// Project struct for HTTP responses
 type project struct {
 	ProjectId string
 	JobIds    []string
 }
 
-// HTTP Handlers
-
-// Project all job handler
 func (srv *PatrickService) projectAllJobHandler(ctx http.Context) (interface{}, error) {
 	projectId, err := maps.String(ctx.Variables(), "projectId")
 	if err != nil {
 		return []string{}, err
 	}
 
-	// TODO: Later use Async coz job list might grow big
 	prefix := fmt.Sprintf("/by/project/%s/", projectId)
 	res, err := srv.db.List(ctx.Request().Context(), prefix)
 	if err != nil {
@@ -463,7 +383,6 @@ func (srv *PatrickService) projectAllJobHandler(ctx http.Context) (interface{}, 
 	return data, nil
 }
 
-// Project job handler
 func (srv *PatrickService) projectJobHandler(ctx http.Context) (iface interface{}, err error) {
 	jid, err := maps.String(ctx.Variables(), "jid")
 	if err != nil {
@@ -473,7 +392,6 @@ func (srv *PatrickService) projectJobHandler(ctx http.Context) (iface interface{
 	var job *commonIface.Job
 	requestCtx := ctx.Request().Context()
 
-	// Try getting from /archive/jobs/ if not found try  /jobs/
 	job, err = srv.getJob(requestCtx, "/archive/jobs/", jid)
 	if err != nil {
 		job, err = srv.getJob(requestCtx, "/jobs/", jid)
@@ -486,7 +404,6 @@ func (srv *PatrickService) projectJobHandler(ctx http.Context) (iface interface{
 	return map[string]interface{}{"job": job}, nil
 }
 
-// Cancel job handler
 func (srv *PatrickService) cancelJob(ctx http.Context) (iface interface{}, err error) {
 	jid, err := maps.String(ctx.Variables(), "jid")
 	if err != nil {
@@ -495,29 +412,21 @@ func (srv *PatrickService) cancelJob(ctx http.Context) (iface interface{}, err e
 
 	requestCtx := ctx.Request().Context()
 
-	// Make sure that the job is not already archived as finished
 	_, err = srv.db.Get(requestCtx, "/archive/jobs/"+jid)
 	if err == nil {
-		// No error means it found the job in archive.
 		return nil, fmt.Errorf("job %s already finished, cannot cancel", jid)
 	}
 
-	// Get lock data to see who locked it
-	lockBytes, err := srv.db.Get(requestCtx, "/locked/jobs/"+jid)
+	assignBytes, err := srv.db.Get(requestCtx, "/assigned/"+jid)
 	if err != nil {
-		/* Monkey has not picked up the job yet so we create a delay and wait
-		   First make sure that the job is actually registered.
-		   If we cant find the job registered we return error
-		*/
 		_, err := srv.db.Get(requestCtx, "/jobs/"+jid)
 		if err != nil {
 			return nil, fmt.Errorf("job %s is not registered", jid)
 		}
 
-		// We create a timer that keeps until a monkey gets the job.
 		var attempts int
 		for {
-			lockBytes, err = srv.db.Get(requestCtx, "/locked/jobs/"+jid)
+			assignBytes, err = srv.db.Get(requestCtx, "/assigned/"+jid)
 			if err == nil {
 				break
 			}
@@ -529,21 +438,25 @@ func (srv *PatrickService) cancelJob(ctx http.Context) (iface interface{}, err e
 
 			select {
 			case <-requestCtx.Done():
-				return nil, fmt.Errorf("cancelled while waiting for job %s to be locked: %w", jid, requestCtx.Err())
+				return nil, fmt.Errorf("cancelled while waiting for job %s to be assigned: %w", jid, requestCtx.Err())
 			case <-time.After(2 * time.Second):
 			}
 		}
 
 	}
 
-	var jobLock Lock
-	err = cbor.Unmarshal(lockBytes, &jobLock)
+	var assignment Assignment
+	err = cbor.Unmarshal(assignBytes, &assignment)
 	if err != nil {
-		return nil, fmt.Errorf("failed unmarshal job %s with %w", jid, err)
+		return nil, fmt.Errorf("failed unmarshal assignment for job %s with %w", jid, err)
 	}
 
-	// Send directly to that monkey to cancel the job
-	_, err = srv.monkeyClient.Peers(jobLock.Pid).Cancel(jid)
+	monkeyPID, err := peer.Decode(assignment.MonkeyPID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid monkey pid for job %s: %w", jid, err)
+	}
+
+	_, err = srv.monkeyClient.Peers(monkeyPID).Cancel(jid)
 	if err != nil {
 		return nil, fmt.Errorf("failed cancelling job %s on monkey with %w", jid, err)
 	}
@@ -551,9 +464,7 @@ func (srv *PatrickService) cancelJob(ctx http.Context) (iface interface{}, err e
 	return map[string]interface{}{"cancelled": jid}, nil
 }
 
-// Retry job handler
 func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err error) {
-	// Get job id
 	jid, err := ctx.GetStringVariable("jid")
 	if err != nil {
 		return nil, fmt.Errorf("failed finding map jid with %w", err)
@@ -561,15 +472,12 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 
 	requestCtx := ctx.Request().Context()
 
-	// if job is in /jobs/ then  it's good to go
 	_, err = srv.getJob(requestCtx, "/jobs/", jid)
 	if err == nil {
 		return map[string]interface{}{"retry": jid}, nil
 	}
 
-	// This is just to make the successful job set to fail to retry it for testing on go-patrick-http test
 	if srv.devMode && servicesCommon.RetryJob {
-		// Get the specific job from archived
 		job, err := srv.getJob(requestCtx, "/archive/jobs/", jid)
 		if err != nil {
 			return nil, fmt.Errorf("failed grabbing archived job %s with %w", jid, err)
@@ -589,15 +497,12 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 		}
 	}
 
-	// Get the specific job from archived
 	job, err := srv.getJob(requestCtx, "/archive/jobs/", jid)
 	if err != nil {
 		return nil, fmt.Errorf("failed grabbing archived job %s with %w", jid, err)
 	}
 
-	// Only retry if it was cancelled or failed
 	if job.Status == commonIface.JobStatusCancelled || job.Status == commonIface.JobStatusFailed || job.Status == commonIface.JobStatusSuccess {
-		// Change to open and resend over pubsub
 		job.Status = commonIface.JobStatusOpen
 		job.Attempt = 0
 		job_byte, err := cbor.Marshal(job)
@@ -606,17 +511,19 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 			return nil, fmt.Errorf("failed marshalling job %s with err %w", job.Id, err)
 		}
 
-		// Delete from archive jobs now that it's back out as open
 		err = srv.db.Delete(requestCtx, "/archive/jobs/"+jid)
 		if err != nil {
 			return nil, fmt.Errorf("failed deleting job %s with error: %w", jid, err)
 		}
 
-		// Put the job back into the list
 		err = srv.db.Put(requestCtx, "/jobs/"+job.Id, job_byte)
 		if err != nil {
 			logger.Errorf("failed putting job %s into database with error: %s", job.Id, err.Error())
 			return nil, fmt.Errorf("failed putting job %s with %w", job.Id, err)
+		}
+
+		if err = srv.jobQueue.Push(job.Id, nil, 5*time.Second); err != nil {
+			return nil, fmt.Errorf("failed to push retried job %s onto queue: %w", job.Id, err)
 		}
 
 		return map[string]interface{}{"retry": job.Id}, nil
@@ -625,7 +532,6 @@ func (srv *PatrickService) retryJob(ctx http.Context) (iface interface{}, err er
 	return nil, errors.New("job is not in a state to be retried")
 }
 
-// Get job helper
 func (srv *PatrickService) getJob(ctx context.Context, loc string, jid string) (*commonIface.Job, error) {
 	jobByte, err := srv.db.Get(ctx, loc+jid)
 	if err != nil {
@@ -640,14 +546,12 @@ func (srv *PatrickService) getJob(ctx context.Context, loc string, jid string) (
 	return &job, nil
 }
 
-// CID handler
 func (srv *PatrickService) cidHandler(ctx http.Context) (interface{}, error) {
 	cid, err := ctx.GetStringVariable("cid")
 	if err != nil {
 		return nil, err
 	}
 
-	// use request context so there's no leak
 	f, err := srv.node.GetFile(ctx.Request().Context(), cid)
 	if err != nil {
 		return nil, err
@@ -656,15 +560,12 @@ func (srv *PatrickService) cidHandler(ctx http.Context) (interface{}, error) {
 	return http.RawStream{ContentType: "application/text", Stream: f}, nil
 }
 
-// Download asset handler
 func (srv *PatrickService) downloadAsset(ctx http.Context) (interface{}, error) {
-	// Get job id
 	jobId, err := ctx.GetStringVariable("jobId")
 	if err != nil {
 		return nil, fmt.Errorf("failed finding jobId with %w", err)
 	}
 
-	// Get resource id
 	resourceId, err := ctx.GetStringVariable("resourceId")
 	if err != nil {
 		return nil, fmt.Errorf("failed finding resourceId with %w", err)
@@ -712,7 +613,6 @@ func (srv *PatrickService) downloadAsset(ctx http.Context) (interface{}, error) 
 	}
 }
 
-// GitHub routes setup
 func (srv *PatrickService) setupGithubRoutes() {
 	var host string
 	if !srv.devMode && len(srv.hostUrl) > 0 {
@@ -741,7 +641,6 @@ func (srv *PatrickService) setupGithubRoutes() {
 	})
 }
 
-// Job routes setup
 func (srv *PatrickService) setupJobRoutes() {
 	var host string
 	if !srv.devMode && len(srv.hostUrl) > 0 {
@@ -826,7 +725,6 @@ func (srv *PatrickService) setupJobRoutes() {
 
 }
 
-// GitHub token HTTP auth
 func (srv *PatrickService) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, error) {
 	auth := httpAuth.GetAuthorization(ctx)
 	if auth != nil && (auth.Type == "oauth" || auth.Type == "github") {
@@ -837,14 +735,13 @@ func (srv *PatrickService) GitHubTokenHTTPAuth(ctx http.Context) (interface{}, e
 			return nil, errors.New("invalid Github token")
 		}
 		ctx.SetVariable("GithubClient", client)
-		ctx.SetVariable("GithubClientDone", rctx_cancel) // for GitHubTokenHTTPAuthCleanup to call so there's no leak
+		ctx.SetVariable("GithubClientDone", rctx_cancel)
 		logger.Debugf("[GitHubTokenHTTPAuth] ctx=%v", ctx.Variables())
 		return nil, nil
 	}
 	return nil, errors.New("valid Github token required")
 }
 
-// GitHub token HTTP auth cleanup
 func (srv *PatrickService) GitHubTokenHTTPAuthCleanup(ctx http.Context) (interface{}, error) {
 	done, k := ctx.Variables()["GithubClientDone"]
 	if k && done != nil {

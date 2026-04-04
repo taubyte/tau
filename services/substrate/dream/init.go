@@ -16,7 +16,11 @@ func init() {
 }
 
 func createNodeService(u *dream.Universe, config *iface.ServiceConfig) (iface.Service, error) {
-	service, err := substrate.New(u.Context(), common.NewDreamConfig(u, config))
+	cfg, err := common.NewConfig(u, config)
+	if err != nil {
+		return nil, err
+	}
+	service, err := substrate.New(u.Context(), cfg)
 	if err != nil {
 		return nil, err
 	}

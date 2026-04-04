@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/tns"
 	"github.com/taubyte/tau/services/tns/flat"
@@ -28,13 +28,17 @@ func TestPush(t *testing.T) {
 
 	srvRoot := t.TempDir()
 
-	srv, err := tns.New(testCtx, &config.Node{
-		Root:        srvRoot,
-		P2PListen:   []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11001)},
-		P2PAnnounce: []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", 11001)},
-		DevMode:     true,
-		SwarmKey:    common.SwarmKey(),
-	})
+	cfg, err := config.New(
+		config.WithRoot(srvRoot),
+		config.WithP2PListen([]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", 11001)}),
+		config.WithP2PAnnounce([]string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", 11001)}),
+		config.WithDevMode(true),
+		config.WithSwarmKey(common.SwarmKey()),
+	)
+	if err != nil {
+		t.Fatalf("building config: %v", err)
+	}
+	srv, err := tns.New(testCtx, cfg)
 
 	if err != nil {
 		t.Errorf("Error creating Service %s", err)

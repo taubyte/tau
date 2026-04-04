@@ -6,12 +6,13 @@ package substrate
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 	ipfs "github.com/taubyte/tau/services/substrate/components/ipfs"
 )
 
-func (srv *Service) attachNodeIpfs(config *config.Node) (err error) {
-	ipfsPort, ok := config.Ports["ipfs"]
+func (srv *Service) attachNodeIpfs(cfg config.Config) (err error) {
+	ports := cfg.Ports()
+	ipfsPort, ok := ports["ipfs"]
 	if !ok {
 		err = fmt.Errorf("did not find ipfs port in config")
 		return

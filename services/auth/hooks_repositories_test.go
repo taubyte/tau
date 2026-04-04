@@ -4,10 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/tau/config"
-	"github.com/taubyte/tau/p2p/keypair"
 	"github.com/taubyte/tau/p2p/streams/command"
-	"github.com/taubyte/tau/pkg/kvdb/mock"
 
 	"gotest.tools/v3/assert"
 )
@@ -15,14 +12,7 @@ import (
 // Test hooks endpoints with comprehensive test data sequences
 func TestHooksEndpointsWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12380"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12380"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12380)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -63,14 +53,7 @@ func TestHooksEndpointsWithFixtures(t *testing.T) {
 // Test repositories endpoints with comprehensive test data sequences
 func TestRepositoriesEndpointsWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12379"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12379"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12379)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -119,14 +102,7 @@ func TestRepositoriesEndpointsWithFixtures(t *testing.T) {
 // Test repository hook error handling and edge cases
 func TestRepositoryHookErrorHandling(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12365"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12365"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12365)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -155,14 +131,7 @@ func TestRepositoryHookErrorHandling(t *testing.T) {
 // Test repository hook error handling for non-existent entities
 func TestRepositoryHookErrorHandlingForNonExistentEntities(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12360"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12360"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12360)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -179,14 +148,7 @@ func TestRepositoryHookErrorHandlingForNonExistentEntities(t *testing.T) {
 // Test hook and repository list operations and invalid action handling
 func TestHookAndRepositoryListOperationsAndInvalidActions(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12358"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12358"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12358)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -223,14 +185,7 @@ func TestHookAndRepositoryListOperationsAndInvalidActions(t *testing.T) {
 // Test apiHookServiceHandler with different input validation scenarios
 func TestApiHookServiceHandlerInputValidation(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12369"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12369"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12369)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -260,14 +215,7 @@ func TestApiHookServiceHandlerInputValidation(t *testing.T) {
 // Test apiGitRepositoryServiceHandler with different input validation scenarios
 func TestApiGitRepositoryServiceHandlerInputValidation(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12370"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12370"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12370)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()

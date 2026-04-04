@@ -2,167 +2,25 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	libp2p "github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/crypto"
+	"github.com/libp2p/go-libp2p/core/peer"
 	commonIface "github.com/taubyte/tau/core/services/patrick"
-	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	"gotest.tools/v3/assert"
 )
 
-func TestLockHelper(t *testing.T) {
-	tests := []struct {
-		name          string
-		setupMock     func(*PatrickService)
-		pid           libp2p.ID
-		lockData      []byte
-		jid           string
-		eta           int64
-		method        bool
-		expectError   bool
-		errorContains string
-		expectedResp  cr.Response
-	}{
-		{
-			name: "invalid lock data - CBOR unmarshal error",
-			setupMock: func(s *PatrickService) {
-			},
-			pid:           libp2p.ID("test-peer"),
-			lockData:      []byte("invalid-cbor-data"),
-			jid:           "test-job",
-			eta:           30,
-			method:        true,
-			expectError:   true,
-			errorContains: "cbor:",
-		},
-		{
-			name: "lock expired - method true - same peer",
-			setupMock: func(s *PatrickService) {
-			},
-			pid:           libp2p.ID("test-peer"),
-			lockData:      []byte("simple-lock-data"),
-			jid:           "test-job",
-			eta:           30,
-			method:        true,
-			expectError:   true,
-			errorContains: "unexpected EOF",
-		},
-		{
-			name: "lock expired - method false",
-			setupMock: func(s *PatrickService) {
-			},
-			pid:           libp2p.ID("test-peer"),
-			lockData:      []byte("simple-lock-data"),
-			jid:           "test-job",
-			eta:           30,
-			method:        false,
-			expectError:   true,
-			errorContains: "unexpected EOF",
-		},
-		{
-			name: "lock active - method true - different peer",
-			setupMock: func(s *PatrickService) {
-			},
-			pid:           libp2p.ID("different-peer"),
-			lockData:      []byte("simple-lock-data"),
-			jid:           "test-job",
-			eta:           30,
-			method:        true,
-			expectError:   true,
-			errorContains: "unexpected EOF",
-		},
-		{
-			name: "lock active - method false",
-			setupMock: func(s *PatrickService) {
-			},
-			pid:           libp2p.ID("test-peer"),
-			lockData:      []byte("simple-lock-data"),
-			jid:           "test-job",
-			eta:           30,
-			method:        false,
-			expectError:   true,
-			errorContains: "unexpected EOF",
-		},
-		{
-			name: "lock expired - method false - success path",
-			setupMock: func(s *PatrickService) {
-			},
-			pid:         libp2p.ID("test-peer"),
-			lockData:    createTestLockData(time.Now().Unix()-100, 30),
-			jid:         "test-job",
-			eta:         30,
-			method:      false,
-			expectError: false,
-			expectedResp: cr.Response{
-				"locked":  false,
-				"expired": true,
-			},
-		},
-		{
-			name: "lock active - method false - success path",
-			setupMock: func(s *PatrickService) {
-			},
-			pid:         libp2p.ID("test-peer"),
-			lockData:    createTestLockData(time.Now().Unix(), 30),
-			jid:         "test-job",
-			eta:         30,
-			method:      false,
-			expectError: false,
-			expectedResp: cr.Response{
-				"locked":    true,
-				"locked-by": "2Uw1bppLugs5B",
-				"till":      time.Now().Unix() + 30,
-			},
-		},
-		{
-			name: "lock active - method true - different peer - success path",
-			setupMock: func(s *PatrickService) {
-			},
-			pid:           libp2p.ID("different-peer"),
-			lockData:      createTestLockData(time.Now().Unix(), 30),
-			jid:           "test-job",
-			eta:           30,
-			method:        true,
-			expectError:   true,
-			errorContains: "job is locked by",
-			expectedResp: cr.Response{
-				"locked":    true,
-				"locked-by": "2Uw1bppLugs5B",
-				"till":      time.Now().Unix() + 30,
-			},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			service := createTestService()
-
-			if tt.setupMock != nil {
-				tt.setupMock(service)
-			}
-
-			result, err := service.lockHelper(context.Background(), tt.pid, tt.lockData, tt.jid, tt.eta, tt.method)
-
-			if tt.expectError {
-				assert.Assert(t, err != nil, "Expected error but got nil")
-				if tt.errorContains != "" {
-					assert.ErrorContains(t, err, tt.errorContains)
-				}
-				if tt.expectedResp != nil {
-					assert.DeepEqual(t, tt.expectedResp, result)
-				}
-			} else {
-				assert.NilError(t, err)
-				if tt.expectedResp != nil {
-					assert.DeepEqual(t, tt.expectedResp, result)
-				} else {
-					assert.Assert(t, result != nil)
-				}
-			}
-		})
-	}
+func generateTestPeerID(t *testing.T) peer.ID {
+	t.Helper()
+	priv, _, err := crypto.GenerateEd25519Key(rand.Reader)
+	assert.NilError(t, err)
+	id, err := peer.IDFromPrivateKey(priv)
+	assert.NilError(t, err)
+	return id
 }
 
 func TestCancelJob(t *testing.T) {
@@ -198,14 +56,20 @@ func TestCancelJob(t *testing.T) {
 			errorContains: "job test-job is not registered",
 		},
 		{
-			name: "successful cancel with valid lock",
+			name: "successful cancel with valid assignment",
 			setupMock: func(s *PatrickService, ctx *mockHTTPContext) {
 				ctx.SetVariable("jid", "test-job")
 				job := createTestJob("test-job")
 				jobBytes, _ := cbor.Marshal(job)
 				s.db.Put(context.Background(), "/jobs/test-job", jobBytes)
-				lockData := createTestLockData(time.Now().Unix(), 30)
-				s.db.Put(context.Background(), "/locked/jobs/test-job", lockData)
+				priv, _, _ := crypto.GenerateEd25519Key(rand.Reader)
+				pid, _ := peer.IDFromPrivateKey(priv)
+				assignment := Assignment{
+					MonkeyPID: pid.String(),
+					Timestamp: time.Now().Unix(),
+				}
+				assignBytes, _ := cbor.Marshal(assignment)
+				s.db.Put(context.Background(), "/assigned/test-job", assignBytes)
 			},
 			expectError: false,
 			expectedResp: map[string]interface{}{
@@ -213,14 +77,14 @@ func TestCancelJob(t *testing.T) {
 			},
 		},
 		{
-			name: "invalid lock data - CBOR unmarshal error",
+			name: "invalid assignment data - CBOR unmarshal error",
 			setupMock: func(s *PatrickService, ctx *mockHTTPContext) {
 				ctx.SetVariable("jid", "test-job")
 				s.db.Put(context.Background(), "/jobs/test-job", []byte("job-data"))
-				s.db.Put(context.Background(), "/locked/jobs/test-job", []byte("invalid-lock-data"))
+				s.db.Put(context.Background(), "/assigned/test-job", []byte("invalid-assignment-data"))
 			},
 			expectError:   true,
-			errorContains: "failed unmarshal job test-job",
+			errorContains: "failed unmarshal assignment for job test-job",
 		},
 	}
 
@@ -383,6 +247,48 @@ func TestRetryJob(t *testing.T) {
 	}
 }
 
+// #21: Test retryJob pushes the re-opened job onto the queue.
+func TestRetryJob_QueuePush(t *testing.T) {
+	t.Run("successful retry pushes to queue", func(t *testing.T) {
+		service := createTestService()
+		mq := &mockJobQueue{}
+		service.jobQueue = mq
+
+		ctx := newMockHTTPContext()
+		ctx.SetVariable("jid", "retry-q-job")
+
+		job := createTestJob("retry-q-job")
+		job.Status = commonIface.JobStatusFailed
+		jobBytes, _ := cbor.Marshal(job)
+		service.db.Put(context.Background(), "/archive/jobs/retry-q-job", jobBytes)
+
+		result, err := service.retryJob(ctx)
+		assert.NilError(t, err)
+		assert.DeepEqual(t, map[string]interface{}{"retry": "retry-q-job"}, result)
+
+		assert.Equal(t, 1, len(mq.pushCalls))
+		assert.Equal(t, "retry-q-job", mq.pushCalls[0].id)
+	})
+
+	t.Run("queue push error propagates", func(t *testing.T) {
+		service := createTestService()
+		mq := &mockJobQueue{pushErr: errors.New("raft not leader")}
+		service.jobQueue = mq
+
+		ctx := newMockHTTPContext()
+		ctx.SetVariable("jid", "retry-fail-job")
+
+		job := createTestJob("retry-fail-job")
+		job.Status = commonIface.JobStatusFailed
+		jobBytes, _ := cbor.Marshal(job)
+		service.db.Put(context.Background(), "/archive/jobs/retry-fail-job", jobBytes)
+
+		_, err := service.retryJob(ctx)
+		assert.Assert(t, err != nil)
+		assert.ErrorContains(t, err, "failed to push retried job")
+	})
+}
+
 func TestDeleteJob(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -519,21 +425,4 @@ func TestGetJob(t *testing.T) {
 			}
 		})
 	}
-}
-
-func createTestLockData(timestamp, eta int64) []byte {
-	lock := struct {
-		Pid       string `cbor:"4,keyasint"`
-		Timestamp int64  `cbor:"8,keyasint"`
-		Eta       int64  `cbor:"16,keyasint"`
-	}{
-		Pid:       "test-peer",
-		Timestamp: timestamp,
-		Eta:       eta,
-	}
-	data, err := cbor.Marshal(lock)
-	if err != nil {
-		return []byte("simple-lock-data")
-	}
-	return data
 }

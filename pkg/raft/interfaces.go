@@ -32,6 +32,10 @@ type Cluster interface {
 	// Returns ErrNotLeader if not leader
 	Delete(key string, timeout time.Duration) error
 
+	// Batch atomically applies multiple Set/Delete operations in a single Raft log entry
+	// Returns ErrNotLeader if not leader
+	Batch(ops []BatchOp, timeout time.Duration) error
+
 	// Keys returns all keys matching a prefix
 	Keys(prefix string) []string
 
@@ -88,12 +92,36 @@ type FSM interface {
 	Get(key string) ([]byte, bool)
 	// Keys returns all keys matching a prefix
 	Keys(prefix string) []string
+	// ExportState returns full KV state (CRDT entries) for merge/heal
+	ExportState() (map[string]CRDTEntry, error)
+}
+
+// ClusterInfoResponse is a peer's view of leader, term, log position, and membership.
+type ClusterInfoResponse struct {
+	LeaderID    string `mapstructure:"leader"`
+	Term        uint64 `mapstructure:"term"`
+	LastIndex   uint64 `mapstructure:"lastIndex"`
+	MemberCount int    `mapstructure:"memberCount"`
+	NodeID      string `mapstructure:"nodeID"`
+}
+
+// ExportFSMResponse carries CBOR-encoded map[string]CRDTEntry and the FSM Lamport clock.
+type ExportFSMResponse struct {
+	FSMState []byte `mapstructure:"fsmState"`
+	Clock    uint64 `mapstructure:"clock"`
 }
 
 // FSMResponse is the typed response from FSM.Apply
 type FSMResponse struct {
 	Error error
 	Data  []byte
+}
+
+// BatchOp describes one operation inside a Batch call.
+// Exactly one of Set or Delete must be non-nil.
+type BatchOp struct {
+	Set    *SetCommand
+	Delete *DeleteCommand
 }
 
 // LogStore abstracts Raft log storage
@@ -119,4 +147,17 @@ type SnapshotStore interface {
 	Create(version raft.SnapshotVersion, index, term uint64, configuration raft.Configuration, configurationIndex uint64, trans raft.Transport) (raft.SnapshotSink, error)
 	List() ([]*raft.SnapshotMeta, error)
 	Open(id string) (*raft.SnapshotMeta, io.ReadCloser, error)
+}
+
+// Queue is a replicated FIFO queue built on top of a Cluster's KV primitives.
+// Each item is an (id, data) pair. Push deduplicates by id — pushing an item
+// whose id already exists in the queue is a no-op. Pop removes and returns the
+// oldest item. Each queue is identified by name; the internal key prefix is
+// derived automatically to avoid collisions with other queues or KV data.
+type Queue interface {
+	Push(id string, data []byte, timeout time.Duration) error
+	Pop(timeout time.Duration) (id string, data []byte, err error)
+	Peek() (id string, data []byte, ok bool)
+	Len() int
+	Close() error
 }

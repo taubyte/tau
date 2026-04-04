@@ -3,7 +3,6 @@
 package service_test
 
 import (
-	"context"
 	_ "embed"
 	"encoding/json"
 	"fmt"
@@ -13,13 +12,11 @@ import (
 	"time"
 
 	"github.com/fxamacker/cbor/v2"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	commonIface "github.com/taubyte/tau/core/common"
 	patrickCore "github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/pkg/specs/common"
-	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"gotest.tools/v3/assert"
 
@@ -145,68 +142,26 @@ func TestDream_Dreaming(t *testing.T) {
 	})
 
 	t.Run("ReAnnounce", func(t *testing.T) {
-		// Create new jobs for this test
 		err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
 		assert.NilError(t, err)
 
 		time.Sleep(1 * time.Second)
 
-		patrick, err := simple.Patrick()
-		assert.NilError(t, err)
-
-		jobs, err := patrick.List()
-		assert.NilError(t, err)
-		assert.Assert(t, len(jobs) > 0, "No jobs available after creating them")
-
-		job_byte, err := patrick.Get(jobs[0])
-		assert.NilError(t, err)
-
 		patrickClient, err := simple.Patrick()
 		assert.NilError(t, err)
 
-		// Test reannouncement by subscribing to patrick pubsub
-		reannounceCount := 0
+		job, err := patrickClient.Dequeue()
+		assert.NilError(t, err)
+		assert.Assert(t, job != nil, "Expected a job from dequeue")
 
-		// Subscribe to patrick pubsub to listen for reannouncements
-		reannounceChan := make(chan []byte, 10)
-		err = u.Patrick().Node().PubSubSubscribe(patrickSpecs.PubSubIdent, func(msg *pubsub.Message) {
-			reannounceChan <- msg.Data
-		}, func(err error) {
-			// Ignore errors
-		})
+		err = patrickClient.Failed(job.Id, job.Logs, nil)
 		assert.NilError(t, err)
 
-		// Lock job
-		err = patrickClient.Lock(job_byte.Id, 10)
+		time.Sleep(2 * time.Second)
+
+		jobs, err := patrickClient.List()
 		assert.NilError(t, err)
-
-		// Wait a second
-		time.Sleep(1 * time.Second)
-
-		// Fail job
-		err = patrickClient.Failed(job_byte.Id, job_byte.Logs, nil)
-		assert.NilError(t, err)
-
-		// Wait for reannouncement on pubsub
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		select {
-		case <-ctx.Done():
-			t.Fatal("Timeout waiting for reannouncement")
-		case data := <-reannounceChan:
-			// Check if this is a reannouncement of our job
-			var job patrickCore.Job
-			err = cbor.Unmarshal(data, &job)
-			assert.NilError(t, err)
-
-			if job.Id == job_byte.Id {
-				reannounceCount++
-			}
-		}
-
-		// We should have received a reannouncement
-		assert.Assert(t, reannounceCount > 0, "Should have received reannouncement on pubsub")
+		assert.Assert(t, len(jobs) > 0, "Job should be re-queued after failure")
 	})
 
 }
@@ -239,6 +194,7 @@ func compareJobToPayload(meta patrickCore.Meta, payload []byte) (err error) {
 		{Before: meta.HeadCommit.ID, After: _meta.HeadCommit.ID, msg: "HeadCommit.ID"},
 		{Before: meta.Repository.ID, After: _meta.Repository.ID, msg: "Repository.ID"},
 		{Before: meta.Repository.URI, After: _meta.Repository.URI, msg: "Repository.URI"},
+		{Before: meta.Repository.PushedAt, After: _meta.Repository.PushedAt, msg: "Repository.PushedAt"},
 	}
 
 	for _, c := range comparisons {

@@ -9,65 +9,50 @@ import (
 	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/tau/core/services/patrick"
 	ifaceTNS "github.com/taubyte/tau/core/services/tns"
-	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 )
 
-// Job reannouncement functionality
+// ReannounceJobs scans pending jobs and pushes forgotten or expired ones back onto the queue.
 func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
-	//Grab all job id's that are still in the list
 	jobs, err := p.db.List(ctx, "/jobs/")
 	if err != nil {
 		return fmt.Errorf("failed grabbing all jobs with error: %v", err)
 	}
 
-	republished := 0
 	for _, key := range jobs {
-		// Doing this to only get the jid since id is /jobs/jid
-		// Check if its currently locked and if it is we dont reannounce it
 		skey := strings.Split(key, "/")
 		if len(skey) < 3 {
 			continue
 		}
 
 		jid := skey[2]
-		republish := true
+		repush := true
 
-		if lockData, err := p.db.Get(ctx, "/locked/jobs/"+jid); err == nil {
-			var jobLock Lock
-			if err := cbor.Unmarshal(lockData, &jobLock); err == nil {
-				republish = jobLock.Timestamp+jobLock.Eta < time.Now().Unix()
+		if assignData, err := p.db.Get(ctx, "/assigned/"+jid); err == nil {
+			var assignment Assignment
+			if err := cbor.Unmarshal(assignData, &assignment); err == nil {
+				// Still within the assignment window — don't re-push
+				repush = time.Now().Unix()-assignment.Timestamp > int64(DefaultReAnnounceJobTime.Seconds())
 			}
 		}
 
-		if republish {
+		if repush {
 			if err = p.republishJob(ctx, jid); err != nil {
 				return fmt.Errorf("failed republishing job %s with error: %w", jid, err)
 			}
-			republished++
-			if republished >= MaxReAnnounceJobs {
-				break
-			}
 		}
 	}
 
 	return nil
 }
 
-// Republish job helper
+// republishJob pushes a job back onto the queue (idempotent by id).
 func (p *PatrickService) republishJob(ctx context.Context, jid string) error {
-	job, err := p.db.Get(ctx, "/jobs/"+jid)
-	if err != nil {
-		return fmt.Errorf("get job %s failed with: %w", jid, err)
+	if err := p.jobQueue.Push(jid, nil, 5*time.Second); err != nil {
+		return fmt.Errorf("failed to re-push job in republishJob: %w", err)
 	}
-
-	if err = p.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job); err != nil {
-		return fmt.Errorf("failed to send over in republishJob pubsub error: %w", err)
-	}
-
 	return nil
 }
 
-// Project operations
 func (srv *PatrickService) connectToProject(ctx context.Context, job *patrick.Job) error {
 	projectID, err := srv.getProjectIDFromJob(job)
 	if err != nil {

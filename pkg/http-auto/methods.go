@@ -14,8 +14,8 @@ import (
 	"github.com/jellydator/ttlcache/v3"
 	authP2P "github.com/taubyte/tau/clients/p2p/auth"
 	tnsP2P "github.com/taubyte/tau/clients/p2p/tns"
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/config"
 	autoOptions "github.com/taubyte/tau/pkg/http-auto/options"
 	basicHttp "github.com/taubyte/tau/pkg/http/basic"
 	"github.com/taubyte/tau/pkg/http/options"
@@ -44,7 +44,7 @@ func (s *Service) SetOption(opt interface{}) error {
 }
 
 // Must listen on port 443
-func new(node, clientNode peer.Node, config *config.Node, opts ...options.Option) (*Service, error) {
+func new(node, clientNode peer.Node, cfg config.Config, opts ...options.Option) (*Service, error) {
 	logger.Debug("New Auto HTTP")
 	defer logger.Debug("New Auto HTTP -> done")
 	_s, err := basicHttp.New(node.Context(), opts...)
@@ -73,7 +73,7 @@ func new(node, clientNode peer.Node, config *config.Node, opts ...options.Option
 	var s Service
 	s.Service = _s
 
-	s.config = config
+	s.config = cfg
 
 	err = options.Parse(&s, opts)
 	if err != nil {
@@ -112,18 +112,15 @@ func (s *Service) isServiceOrAliasDomain(dom string) bool {
 	dom = strings.TrimSuffix(dom, ".")
 
 	if slices.ContainsFunc(commonSpecs.Services, func(srv string) bool {
-		return dom == srv+"."+s.config.NetworkFqdn
+		return dom == srv+"."+s.config.NetworkFqdn()
 	}) {
 		return true
 	}
 
-	for _, r := range s.config.AliasDomainsRegExp {
-		if r.MatchString(dom) {
-			return true
-		}
+	if s.config.AliasDomainsMatch(dom) {
+		return true
 	}
-
-	return s.config.ServicesDomainRegExp.MatchString(dom)
+	return s.config.ServicesDomainMatch(dom)
 }
 
 func (s *Service) validateFQDN(host string) error {
@@ -142,7 +139,7 @@ func (s *Service) validateFQDN(host string) error {
 	}
 
 	// Check txt if it not using generated domain
-	if !s.config.GeneratedDomainRegExp.MatchString(host) {
+	if !s.config.GeneratedDomainMatch(host) {
 		if projectId == "" {
 			s.negativeCache.Set(host, true, NegativeTTL)
 			return fmt.Errorf("project ID is empty") // Project ID is empty, return error
@@ -194,12 +191,12 @@ func (s *Service) Start() {
 			Key:          s.acme.Key,
 		}
 
-		if s.config.AcmeCAInsecureSkipVerify || s.config.AcmeRootCA != nil {
+		if s.config.AcmeCAInsecureSkipVerify() || s.config.AcmeRootCA() != nil {
 			m.Client.HTTPClient = &http.Client{
 				Transport: &http.Transport{
 					TLSClientConfig: &tls.Config{
-						InsecureSkipVerify: s.config.AcmeCAInsecureSkipVerify,
-						RootCAs:            s.config.AcmeRootCA,
+						InsecureSkipVerify: s.config.AcmeCAInsecureSkipVerify(),
+						RootCAs:            s.config.AcmeRootCA(),
 					},
 				},
 			}

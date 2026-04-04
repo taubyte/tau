@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/jellydator/ttlcache/v3"
-	"github.com/taubyte/tau/config"
 	tns "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/http/options"
 	"gotest.tools/v3/assert"
 )
@@ -88,12 +88,15 @@ func TestSetOption(t *testing.T) {
 }
 
 func TestIsServiceOrAliasDomain(t *testing.T) {
-	s := &Service{
-		config: &config.Node{
-			ServicesDomainRegExp: regexp.MustCompile(`example.com`),
-			AliasDomainsRegExp:   []*regexp.Regexp{regexp.MustCompile(`alias.com`)},
-		},
-	}
+	cfg, err := config.New(
+		config.WithRoot("/tmp"),
+		config.WithP2PListen([]string{"/ip4/0.0.0.0/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithServicesDomainRegExp(regexp.MustCompile(`example.com`)),
+		config.WithAliasDomainsRegExp([]*regexp.Regexp{regexp.MustCompile(`alias.com`)}),
+	)
+	assert.NilError(t, err)
+	s := &Service{config: cfg}
 
 	assert.Assert(t, s.isServiceOrAliasDomain("example.com"))
 	assert.Assert(t, s.isServiceOrAliasDomain("alias.com"))
@@ -101,16 +104,21 @@ func TestIsServiceOrAliasDomain(t *testing.T) {
 }
 
 func TestValidateFQDN(t *testing.T) {
+	cfg, err := config.New(
+		config.WithRoot("/tmp"),
+		config.WithP2PListen([]string{"/ip4/0.0.0.0/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithGeneratedDomainRegExp(regexp.MustCompile(`generated.com`)),
+	)
+	assert.NilError(t, err)
 	s := &Service{
-		config: &config.Node{
-			GeneratedDomainRegExp: regexp.MustCompile(`generated.com`),
-		},
+		config:        cfg,
 		positiveCache: ttlcache.New(ttlcache.WithTTL[string, bool](PositiveTTL)),
 		negativeCache: ttlcache.New(ttlcache.WithTTL[string, bool](NegativeTTL)),
-		tnsClient:     &MockTNSClient{}, // Use the mock TNS client
+		tnsClient:     &MockTNSClient{},
 	}
 
-	err := s.validateFQDN("generated.com")
+	err = s.validateFQDN("generated.com")
 	assert.NilError(t, err)
 }
 

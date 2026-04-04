@@ -7,10 +7,6 @@ import (
 	"testing"
 
 	"github.com/h2non/gock"
-	"github.com/taubyte/tau/config"
-	"github.com/taubyte/tau/p2p/keypair"
-	"github.com/taubyte/tau/p2p/peer"
-	"github.com/taubyte/tau/pkg/kvdb/mock"
 	"gotest.tools/v3/assert"
 )
 
@@ -18,22 +14,7 @@ func TestAuthServiceWithMocks(t *testing.T) {
 	defer gock.Off()
 
 	ctx := context.Background()
-	mockNode := peer.Mock(ctx)
-	mockFactory := mock.New()
-
-	cfg := &config.Node{
-		NetworkFqdn: "test.tau",
-		Node:        mockNode,
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12349"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12349"},
-		PrivateKey:  []byte("private-key"),
-		DomainValidation: config.DomainValidation{
-			PrivateKey: []byte("private-key"),
-			PublicKey:  []byte("public-key"),
-		},
-	}
+	cfg := createTestConfig(t, &TestConfig{Port: 12349, UseMockNode: true, CustomKeys: true, NetworkFqdn: "test.tau"})
 
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
@@ -41,7 +22,7 @@ func TestAuthServiceWithMocks(t *testing.T) {
 
 	// Test that the service was created with mocks
 	assert.Assert(t, svc != nil)
-	assert.Equal(t, svc.Node(), mockNode)
+	assert.Equal(t, svc.Node(), cfg.Node())
 	assert.Assert(t, svc.KV() != nil)
 }
 
@@ -160,14 +141,7 @@ func TestContextVariableExtractionAndGitHubClientHelpers(t *testing.T) {
 // Test GitHub HTTP endpoint handlers with comprehensive scenarios
 func TestGitHubHTTPEndpointsWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12385"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12385"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12385)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()

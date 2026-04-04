@@ -1,7 +1,6 @@
 package p2p
 
 import (
-	"context"
 	"testing"
 
 	"github.com/taubyte/tau/p2p/peer"
@@ -18,7 +17,7 @@ var (
 
 func TestHandleForMatcher(t *testing.T) {
 	t.Skip("need to redo this test")
-	s := NewTestService(peer.Mock(context.Background()))
+	s := NewTestService(peer.Mock(t.Context()))
 
 	structure.RefreshTestVariables()
 	fakeFetch(map[string]structureSpec.Service{

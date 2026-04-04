@@ -3,8 +3,8 @@ package substrate
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/services/substrate"
+	"github.com/taubyte/tau/pkg/config"
 	counters "github.com/taubyte/tau/services/substrate/components/counters"
 	database "github.com/taubyte/tau/services/substrate/components/database"
 	http "github.com/taubyte/tau/services/substrate/components/http"
@@ -25,7 +25,7 @@ func (srv *Service) AttachCounters(counter substrate.CounterService) {
 	srv.components.counters = counter
 }
 
-func (srv *Service) attachNodes(config *config.Node) (err error) {
+func (srv *Service) attachNodes(cfg config.Config) (err error) {
 	// Needs to happen first, as others depend on it
 	if err = srv.attachNodeCounters(); err != nil {
 		return attachNodesError("counters", err)
@@ -40,7 +40,7 @@ func (srv *Service) attachNodes(config *config.Node) (err error) {
 		return attachNodesError("pubsub", err)
 	}
 
-	if err = srv.attachNodeIpfs(config); err != nil {
+	if err = srv.attachNodeIpfs(cfg); err != nil {
 		return attachNodesError("ipfs", err)
 	}
 
@@ -56,15 +56,15 @@ func (srv *Service) attachNodes(config *config.Node) (err error) {
 		return attachNodesError("p2p", err)
 	}
 
-	if err = srv.attachNodeHttp(config); err != nil {
+	if err = srv.attachNodeHttp(cfg); err != nil {
 		return attachNodesError("http", err)
 	}
 
 	return nil
 }
 
-func (srv *Service) attachNodeHttp(config *config.Node) (err error) {
-	srv.components.http, err = http.New(srv, config, http.DvKey(config.DomainValidation.PublicKey))
+func (srv *Service) attachNodeHttp(cfg config.Config) (err error) {
+	srv.components.http, err = http.New(srv, cfg, http.DvKey(cfg.DomainValidation().PublicKey))
 	return
 }
 

@@ -31,6 +31,7 @@ type Source struct {
 	Peers       []string            `yaml:"peers,omitempty"`
 	NetworkFqdn string              `yaml:"network-fqdn"`
 	Domains     Domains             `yaml:"domains"`
+	Cluster     string              `yaml:"cluster,omitempty"`
 	Plugins
 }
 

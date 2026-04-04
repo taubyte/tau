@@ -10,8 +10,8 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 
-	"github.com/taubyte/tau/config"
 	tnsClient "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/pkg/config"
 	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/poe"
 
@@ -60,7 +60,7 @@ type Service struct {
 	positiveCache *ttlcache.Cache[string, []string]
 	negativeCache *ttlcache.Cache[string, bool]
 
-	config *config.Node
+	config config.Config
 
 	ds datastore.Batching
 
@@ -85,8 +85,4 @@ func (s *Service) KV() kvdb.KVDB {
 
 func (s *Service) Resolver() iface.Resolver {
 	return s.dnsResolver
-}
-
-type Config struct {
-	config.Node `yaml:"z,omitempty"`
 }

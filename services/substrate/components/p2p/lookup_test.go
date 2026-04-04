@@ -1,7 +1,6 @@
 package p2p
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -35,7 +34,7 @@ var testMatcher = &p2p.MatchDefinition{
 
 func TestLookup(t *testing.T) {
 	t.Skip("this test needs to be redone")
-	s := NewTestService(peer.Mock(context.Background()))
+	s := NewTestService(peer.Mock(t.Context()))
 	fakeFetch(testServices, testFunctions)
 
 	matches, err := lookup.Lookup(s, testMatcher)
