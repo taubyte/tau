@@ -7,6 +7,7 @@ import (
 	"path"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/taubyte/tau/p2p/streams"
 	streamClient "github.com/taubyte/tau/p2p/streams/client"
@@ -25,17 +26,28 @@ const (
 	cmdKeys          = "keys"
 	cmdExchangePeers = "exchangePeers"
 	cmdJoinVoter     = "joinVoter"
+	cmdClusterInfo   = "clusterInfo"
+	cmdExportFSM     = "exportFSM"
+	cmdHealAck       = "healAck"
 
-	keyKey       = "key"
-	keyValue     = "value"
-	keyPrefix    = "prefix"
-	keyTimeout   = "timeout"
-	keyKeys      = "keys"
-	keyFound     = "found"
-	keyStartTime = "start"
-	keySeenAt    = "seenAt"
-	keyPeer      = "peer"
-	keyBarrier   = "barrier"
+	keyKey         = "key"
+	keyValue       = "value"
+	keyPrefix      = "prefix"
+	keyTimeout     = "timeout"
+	keyKeys        = "keys"
+	keyFound       = "found"
+	keyStartTime   = "start"
+	keySeenAt      = "seenAt"
+	keyPeer        = "peer"
+	keyBarrier     = "barrier"
+	keyLeader      = "leader"
+	keyTerm        = "term"
+	keyLastIndex   = "lastIndex"
+	keyMemberCount = "memberCount"
+	keyNodeID      = "nodeID"
+	keyFSMState    = "fsmState"
+	keyClock       = "clock"
+	keySuccess     = "success"
 )
 
 // MaxGetHandlerBarrierTimeout is the maximum barrier timeout for Get operations
@@ -97,6 +109,21 @@ func newStreamService(c *cluster) (*raftStreamService, error) {
 	if err := service.Define(cmdJoinVoter, ss.handleJoinVoter); err != nil {
 		service.Stop()
 		return nil, fmt.Errorf("failed to define joinVoter handler: %w", err)
+	}
+
+	if err := service.Define(cmdClusterInfo, ss.handleClusterInfo); err != nil {
+		service.Stop()
+		return nil, fmt.Errorf("failed to define clusterInfo handler: %w", err)
+	}
+
+	if err := service.Define(cmdExportFSM, ss.handleExportFSM); err != nil {
+		service.Stop()
+		return nil, fmt.Errorf("failed to define exportFSM handler: %w", err)
+	}
+
+	if err := service.Define(cmdHealAck, ss.handleHealAck); err != nil {
+		service.Stop()
+		return nil, fmt.Errorf("failed to define healAck handler: %w", err)
 	}
 
 	service.Start()
@@ -444,4 +471,134 @@ func peerFromBodyOrConn(body command.Body, conn streams.Connection) (peer.ID, er
 		return conn.RemotePeer(), nil
 	}
 	return "", fmt.Errorf("missing peer id")
+}
+
+// handleClusterInfo returns this node's cluster view; does not require leadership.
+func (s *raftStreamService) handleClusterInfo(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+	if s.encryptionCipher != nil {
+		decryptedBody, err := decryptBody(body, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting body: %w", err)
+		}
+		body = decryptedBody
+	}
+
+	leaderID := ""
+	if leader, err := s.cluster.Leader(); err == nil {
+		leaderID = leader.String()
+	}
+
+	var term uint64
+	var lastIdx uint64
+	if s.cluster.raft != nil {
+		stats := s.cluster.raft.Stats()
+		term = parseUint64(stats["term"])
+		lastIdx = parseUint64(stats["last_log_index"])
+	}
+
+	memberCount := 0
+	if members, err := s.cluster.Members(); err == nil {
+		memberCount = len(members)
+	}
+
+	resp := cr.Response{
+		keyLeader:      leaderID,
+		keyTerm:        term,
+		keyLastIndex:   lastIdx,
+		keyMemberCount: memberCount,
+		keyNodeID:      s.cluster.node.ID().String(),
+	}
+
+	if s.encryptionCipher != nil {
+		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("encrypting response: %w", err)
+		}
+		resp = encryptedResp
+	}
+
+	return resp, nil
+}
+
+// handleExportFSM serves FSM state from the leader (followers forward).
+func (s *raftStreamService) handleExportFSM(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+	if s.encryptionCipher != nil {
+		decryptedBody, err := decryptBody(body, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting body: %w", err)
+		}
+		body = decryptedBody
+	}
+
+	if !s.cluster.IsLeader() {
+		return s.forwardToLeader(cmdExportFSM, body)
+	}
+
+	state, err := s.cluster.fsm.ExportState()
+	if err != nil {
+		return nil, fmt.Errorf("exporting FSM state: %w", err)
+	}
+
+	stateBytes, err := cbor.Marshal(state)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling FSM state: %w", err)
+	}
+
+	fsm := s.cluster.fsm.(*kvFSM)
+	fsm.mu.RLock()
+	clock := fsm.clock
+	fsm.mu.RUnlock()
+
+	resp := cr.Response{
+		keyFSMState: stateBytes,
+		keyClock:    clock,
+	}
+
+	if s.encryptionCipher != nil {
+		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("encrypting response: %w", err)
+		}
+		resp = encryptedResp
+	}
+
+	return resp, nil
+}
+
+// handleHealAck wakes losers blocked in yieldAndRejoin after the winner merged.
+func (s *raftStreamService) handleHealAck(ctx context.Context, conn streams.Connection, body command.Body) (cr.Response, error) {
+	if s.encryptionCipher != nil {
+		decryptedBody, err := decryptBody(body, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting body: %w", err)
+		}
+		body = decryptedBody
+	}
+
+	if s.cluster.healer != nil {
+		s.cluster.healer.signalHealAck()
+	}
+
+	resp := cr.Response{keySuccess: true}
+
+	if s.encryptionCipher != nil {
+		encryptedResp, err := encryptResponse(resp, s.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("encrypting response: %w", err)
+		}
+		resp = encryptedResp
+	}
+
+	return resp, nil
+}
+
+func parseUint64(s string) uint64 {
+	var n uint64
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			break
+		}
+		n = n*10 + uint64(c-'0')
+	}
+	return n
 }

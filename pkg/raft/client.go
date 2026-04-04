@@ -6,11 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fxamacker/cbor/v2"
 	"github.com/libp2p/go-libp2p/core/peer"
 	taupeer "github.com/taubyte/tau/p2p/peer"
 	streamClient "github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
+	"github.com/taubyte/tau/utils/mapstructure"
 )
 
 // Client represents a Raft p2p client for external use
@@ -35,6 +37,9 @@ type internalClient interface {
 	JoinVoter(peerID peer.ID, timeout time.Duration, peers ...peer.ID) error
 	// ExchangePeers exchanges peer discovery information
 	ExchangePeers(ourStart time.Time, ourPeers map[string]int64, target peer.ID) (time.Time, map[string]int64, error)
+	ClusterInfo(target peer.ID) (*ClusterInfoResponse, error)
+	ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error)
+	HealAck(target peer.ID) error
 	// Close closes the client
 	Close() error
 }
@@ -404,6 +409,66 @@ func (c *client) sendCommand(cmd string, body command.Body, peers ...peer.ID) (c
 		return nil, firstErr
 	}
 	return nil, fmt.Errorf("command %q failed: no responses", cmd)
+}
+
+func (c *client) sendInternal(cmd string, body command.Body, peers ...peer.ID) (cr.Response, error) {
+	if c.encryptionCipher != nil {
+		encryptedBody, err := encryptBody(body, c.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("encrypting body: %w", err)
+		}
+		body = encryptedBody
+	}
+	resp, err := c.sendCommand(cmd, body, peers...)
+	if err != nil {
+		return nil, err
+	}
+	if c.encryptionCipher != nil {
+		decryptedResp, err := decryptResponse(resp, c.encryptionCipher)
+		if err != nil {
+			return nil, fmt.Errorf("decrypting response: %w", err)
+		}
+		resp = decryptedResp
+	}
+	return resp, nil
+}
+
+func (c *client) ClusterInfo(target peer.ID) (*ClusterInfoResponse, error) {
+	resp, err := c.sendInternal(cmdClusterInfo, command.Body{}, target)
+	if err != nil {
+		return nil, fmt.Errorf("clusterInfo failed: %w", err)
+	}
+
+	info := &ClusterInfoResponse{}
+	if err := mapstructure.Decode(map[string]interface{}(resp), info); err != nil {
+		return nil, fmt.Errorf("decoding clusterInfo response: %w", err)
+	}
+
+	return info, nil
+}
+
+func (c *client) ExportFSM(target peer.ID) (map[string]CRDTEntry, uint64, error) {
+	resp, err := c.sendInternal(cmdExportFSM, command.Body{}, target)
+	if err != nil {
+		return nil, 0, fmt.Errorf("exportFSM failed: %w", err)
+	}
+
+	var out ExportFSMResponse
+	if err := mapstructure.Decode(map[string]interface{}(resp), &out); err != nil {
+		return nil, 0, fmt.Errorf("decoding exportFSM response: %w", err)
+	}
+
+	var state map[string]CRDTEntry
+	if err := cbor.Unmarshal(out.FSMState, &state); err != nil {
+		return nil, 0, fmt.Errorf("unmarshaling FSM state: %w", err)
+	}
+
+	return state, out.Clock, nil
+}
+
+func (c *client) HealAck(target peer.ID) error {
+	_, err := c.sendInternal(cmdHealAck, command.Body{}, target)
+	return err
 }
 
 func (c *client) Close() error {

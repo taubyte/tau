@@ -51,6 +51,17 @@ func WithBootstrapTimeout(d time.Duration) Option {
 	}
 }
 
+// WithSnapshotDir sets the snapshot directory (default /tmp/tau-raft-snapshots/<namespace>).
+func WithSnapshotDir(dir string) Option {
+	return func(c *cluster) error {
+		if dir == "" {
+			return fmt.Errorf("snapshot dir cannot be empty")
+		}
+		c.snapshotDir = dir
+		return nil
+	}
+}
+
 // WithEncryptionKey enables AES-256-GCM encryption for all transport and stream service messages.
 // The key must be at least 32 bytes. All cluster members must use the same key.
 // This protects:

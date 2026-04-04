@@ -92,6 +92,23 @@ type FSM interface {
 	Get(key string) ([]byte, bool)
 	// Keys returns all keys matching a prefix
 	Keys(prefix string) []string
+	// ExportState returns full KV state (CRDT entries) for merge/heal
+	ExportState() (map[string]CRDTEntry, error)
+}
+
+// ClusterInfoResponse is a peer's view of leader, term, log position, and membership.
+type ClusterInfoResponse struct {
+	LeaderID    string `mapstructure:"leader"`
+	Term        uint64 `mapstructure:"term"`
+	LastIndex   uint64 `mapstructure:"lastIndex"`
+	MemberCount int    `mapstructure:"memberCount"`
+	NodeID      string `mapstructure:"nodeID"`
+}
+
+// ExportFSMResponse carries CBOR-encoded map[string]CRDTEntry and the FSM Lamport clock.
+type ExportFSMResponse struct {
+	FSMState []byte `mapstructure:"fsmState"`
+	Clock    uint64 `mapstructure:"clock"`
 }
 
 // FSMResponse is the typed response from FSM.Apply

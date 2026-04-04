@@ -433,10 +433,8 @@ func (s *testSnapshotSink) Cancel() error {
 func (s *testSnapshotSink) Close() error { return nil }
 
 func TestKVSnapshot_Release(t *testing.T) {
-	snap := &kvSnapshot{data: make(map[string][]byte)}
-	// Release should not panic
+	snap := &kvSnapshot{data: make(map[string]CRDTEntry)}
 	snap.Release()
-	// Call again should also not panic
 	snap.Release()
 }
 
@@ -459,7 +457,6 @@ func TestFsmAdapter_Apply(t *testing.T) {
 		t.Errorf("unexpected error: %v", resp.Error)
 	}
 
-	// Verify value was set
 	val, found := fsm.Get("testkey")
 	if !found {
 		t.Error("expected key to exist")
@@ -473,7 +470,6 @@ func TestFsmAdapter_Snapshot(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
-	// Set some data
 	cmd := Command{
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "snapkey", Value: []byte("snapvalue")},
@@ -494,12 +490,14 @@ func TestFsmAdapter_Restore(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
-	// Create snapshot data
-	snapshotData := map[string][]byte{
-		"restored-key": []byte("restored-value"),
+	payload := snapshotPayload{
+		Data: map[string]CRDTEntry{
+			"restored-key": {Value: []byte("restored-value"), Timestamp: 1},
+		},
+		Clock: 1,
 	}
 	var buf bytes.Buffer
-	if err := cbor.NewEncoder(&buf).Encode(snapshotData); err != nil {
+	if err := cbor.NewEncoder(&buf).Encode(payload); err != nil {
 		t.Fatalf("failed to encode snapshot: %v", err)
 	}
 
@@ -508,7 +506,6 @@ func TestFsmAdapter_Restore(t *testing.T) {
 		t.Fatalf("restore failed: %v", err)
 	}
 
-	// Verify data was restored
 	val, found := fsm.Get("restored-key")
 	if !found {
 		t.Error("expected key to exist after restore")
@@ -522,7 +519,6 @@ func TestKVFSM_Restore_EmptyStore(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
-	// First add some data
 	cmd := Command{
 		Type: CommandSet,
 		Set:  &SetCommand{Key: "oldkey", Value: []byte("oldvalue")},
@@ -530,13 +526,11 @@ func TestKVFSM_Restore_EmptyStore(t *testing.T) {
 	data, _ := cbor.Marshal(cmd)
 	fsm.Apply(&raft.Log{Data: data, Index: 1})
 
-	// Restore with empty data (should clear existing)
-	emptyData, _ := cbor.Marshal(map[string][]byte{})
+	emptyData, _ := cbor.Marshal(snapshotPayload{Data: map[string]CRDTEntry{}})
 	if err := fsm.Restore(io.NopCloser(bytes.NewReader(emptyData))); err != nil {
 		t.Fatalf("failed to restore: %v", err)
 	}
 
-	// Old data should be gone
 	_, ok := fsm.Get("oldkey")
 	if ok {
 		t.Error("expected old key to be cleared after restore")
@@ -631,11 +625,11 @@ func TestKVFSM_Apply_DeleteWithNilPayload(t *testing.T) {
 }
 
 func TestKVSnapshot_Persist_Success(t *testing.T) {
-	data := map[string][]byte{
-		"key1": []byte("value1"),
-		"key2": []byte("value2"),
+	data := map[string]CRDTEntry{
+		"key1": {Value: []byte("value1"), Timestamp: 1, WallClock: 100},
+		"key2": {Value: []byte("value2"), Timestamp: 2, WallClock: 200},
 	}
-	snap := &kvSnapshot{data: data}
+	snap := &kvSnapshot{data: data, clock: 2}
 
 	var buf bytes.Buffer
 	sink := &testSnapshotSink{Writer: &buf}
@@ -645,14 +639,13 @@ func TestKVSnapshot_Persist_Success(t *testing.T) {
 		t.Fatalf("persist failed: %v", err)
 	}
 
-	// Verify data can be unmarshaled
-	var restored map[string][]byte
+	var restored snapshotPayload
 	if err := cbor.Unmarshal(buf.Bytes(), &restored); err != nil {
 		t.Fatalf("failed to unmarshal snapshot: %v", err)
 	}
 
-	if len(restored) != 2 {
-		t.Errorf("expected 2 keys, got %d", len(restored))
+	if len(restored.Data) != 2 {
+		t.Errorf("expected 2 keys, got %d", len(restored.Data))
 	}
 }
 
@@ -677,7 +670,7 @@ func TestKVFSM_Restore_InvalidCBOR(t *testing.T) {
 }
 
 func TestKVSnapshot_Persist_Empty(t *testing.T) {
-	snap := &kvSnapshot{data: map[string][]byte{}}
+	snap := &kvSnapshot{data: map[string]CRDTEntry{}}
 
 	var buf bytes.Buffer
 	sink := &testSnapshotSink{Writer: &buf}
@@ -721,7 +714,7 @@ func (f *failingWriter) ID() string {
 }
 
 func TestKVSnapshot_Persist_WriteError(t *testing.T) {
-	snap := &kvSnapshot{data: map[string][]byte{"key": []byte("value")}}
+	snap := &kvSnapshot{data: map[string]CRDTEntry{"key": {Value: []byte("value"), Timestamp: 1}}}
 	sink := &failingWriter{failOnWrite: true}
 
 	err := snap.Persist(sink)
@@ -833,40 +826,33 @@ func TestKVFSM_Keys_NoMatch(t *testing.T) {
 }
 
 func TestKVSnapshot_Release_WithData(t *testing.T) {
-	// Create snapshot with some data
 	snap := &kvSnapshot{
-		data: map[string][]byte{
-			"key1": []byte("value1"),
-			"key2": []byte("value2"),
+		data: map[string]CRDTEntry{
+			"key1": {Value: []byte("value1"), Timestamp: 1},
+			"key2": {Value: []byte("value2"), Timestamp: 2},
 		},
 	}
 
-	// Release should not panic and is a no-op
 	snap.Release()
 
-	// Data should still be accessible after Release (no-op)
 	if len(snap.data) != 2 {
 		t.Errorf("expected 2 keys, got %d", len(snap.data))
 	}
 }
 
 func TestKVSnapshot_Release_Empty(t *testing.T) {
-	// Create empty snapshot
 	snap := &kvSnapshot{
-		data: make(map[string][]byte),
+		data: make(map[string]CRDTEntry),
 	}
 
-	// Release should not panic
 	snap.Release()
 }
 
 func TestKVSnapshot_Release_Nil(t *testing.T) {
-	// Create snapshot with nil data
 	snap := &kvSnapshot{
 		data: nil,
 	}
 
-	// Release should not panic
 	snap.Release()
 }
 
@@ -874,7 +860,6 @@ func TestKVFSM_Restore_WithExistingData(t *testing.T) {
 	store := newTestStore()
 	fsm := newKVFSM(t.Context(), store, "/raft/test")
 
-	// First add multiple keys
 	for _, key := range []string{"key1", "key2", "key3"} {
 		cmd := Command{
 			Type: CommandSet,
@@ -884,7 +869,6 @@ func TestKVFSM_Restore_WithExistingData(t *testing.T) {
 		fsm.Apply(&raft.Log{Data: data, Index: 1})
 	}
 
-	// Verify data exists
 	val, ok := fsm.Get("key1")
 	if !ok {
 		t.Fatal("expected key1 to exist before restore")
@@ -893,24 +877,24 @@ func TestKVFSM_Restore_WithExistingData(t *testing.T) {
 		t.Fatalf("expected original-key1, got %s", val)
 	}
 
-	// Restore with different data
-	newData := map[string][]byte{
-		"newkey1": []byte("newvalue1"),
-		"newkey2": []byte("newvalue2"),
+	payload := snapshotPayload{
+		Data: map[string]CRDTEntry{
+			"newkey1": {Value: []byte("newvalue1"), Timestamp: 1},
+			"newkey2": {Value: []byte("newvalue2"), Timestamp: 2},
+		},
+		Clock: 2,
 	}
-	restoreData, _ := cbor.Marshal(newData)
+	restoreData, _ := cbor.Marshal(payload)
 
 	if err := fsm.Restore(io.NopCloser(bytes.NewReader(restoreData))); err != nil {
 		t.Fatalf("failed to restore: %v", err)
 	}
 
-	// Old data should be gone
 	_, ok = fsm.Get("key1")
 	if ok {
 		t.Error("expected old key1 to be cleared after restore")
 	}
 
-	// New data should exist
 	val, ok = fsm.Get("newkey1")
 	if !ok {
 		t.Error("expected newkey1 to exist after restore")

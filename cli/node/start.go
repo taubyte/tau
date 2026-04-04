@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/taubyte/tau/core/services"
 	"github.com/taubyte/tau/pkg/config"
@@ -39,13 +40,22 @@ func Start(ctx context.Context, serviceConfig config.Config) error {
 		return err
 	}
 
-	// One raft instance per node (namespace = cluster name); services that need it use config.RaftCluster
-	if serviceConfig.Node() != nil && len(serviceConfig.Services()) > 0 {
+	// Start raft when the service list needs consensus (RequiresRaftCluster).
+	if serviceConfig.Node() != nil && commonSpecs.RequiresRaftCluster(serviceConfig.Services()) {
 		namespace := serviceConfig.Cluster()
 		if namespace == "" {
 			namespace = "main"
 		}
-		raftCluster, err := raft.New(serviceConfig.Node(), namespace)
+		snapDir := raft.SnapshotDir(serviceConfig.Root(), serviceConfig.Shape(), namespace)
+		raftOpts := []raft.Option{raft.WithSnapshotDir(snapDir)}
+		// DevMode: shorter bootstrap wait and PresetLocal elections for local runs/tests.
+		if serviceConfig.DevMode() {
+			raftOpts = append(raftOpts,
+				raft.WithBootstrapTimeout(5*time.Second),
+				raft.WithTimeoutPreset(raft.PresetLocal),
+			)
+		}
+		raftCluster, err := raft.New(serviceConfig.Node(), namespace, raftOpts...)
 		if err != nil {
 			return fmt.Errorf("creating raft cluster for namespace %q: %w", namespace, err)
 		}

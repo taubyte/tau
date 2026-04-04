@@ -51,6 +51,9 @@ type cluster struct {
 	tracker       *peerTracker
 	streamService *raftStreamService
 	raftClient    internalClient // Client for remote Raft operations (joining voters, forwarding to leader, etc.)
+	healer        *healer
+
+	snapshotDir string
 
 	closed atomic.Bool
 	mu     sync.RWMutex
@@ -73,7 +76,7 @@ func New(node taupeer.Node, namespace string, opts ...Option) (Cluster, error) {
 		timeoutPreset:      PresetRegional,
 		timeoutConfig:      presetConfigs[PresetRegional],
 		forceBootstrap:     false,
-		bootstrapTimeout:   10 * time.Second,
+		bootstrapTimeout:   30 * time.Second,
 		bootstrapThreshold: 0.8,
 	}
 
@@ -99,7 +102,10 @@ func (c *cluster) initialize() error {
 	c.logStore = newLogStore(store, path.Join(storagePrefix, "log"))
 	c.stable = newStableStore(store, path.Join(storagePrefix, "stable"))
 
-	snapDir := filepath.Join("/tmp", "tau-raft-snapshots", strings.ReplaceAll(c.namespace, "/", "_"))
+	snapDir := c.snapshotDir
+	if snapDir == "" {
+		snapDir = filepath.Join("/tmp", "tau-raft-snapshots", strings.ReplaceAll(c.namespace, "/", "_"))
+	}
 	var err error
 	c.snaps, err = newSnapshotStore(snapDir, defaultRetainSnapshots)
 	if err != nil {
@@ -137,6 +143,9 @@ func (c *cluster) initialize() error {
 	if err := c.handleBootstrap(raftConfig, transport); err != nil {
 		return fmt.Errorf("failed to bootstrap: %w", err)
 	}
+
+	c.healer = newHealer(c)
+	go c.healer.run(c.ctx)
 
 	return nil
 }
@@ -196,6 +205,11 @@ bootstrap:
 			return nil
 		}
 		if !noLeader {
+			c.requestVoterJoin(VoterJoinTimeout)
+			return nil
+		}
+		// Only the lexicographically lowest founder bootstraps; others join.
+		if founders[0] != c.node.ID() {
 			c.requestVoterJoin(VoterJoinTimeout)
 			return nil
 		}

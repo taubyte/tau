@@ -25,7 +25,7 @@ var testKey []byte
 func TestStart(t *testing.T) {
 	app := newApp()
 
-	ctx, ctxC := context.WithTimeout(context.Background(), time.Second*15)
+	ctx, ctxC := context.WithTimeout(context.Background(), 45*time.Second)
 	defer ctxC()
 
 	root := t.TempDir()

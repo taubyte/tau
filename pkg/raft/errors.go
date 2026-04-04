@@ -32,4 +32,13 @@ var (
 
 	// ErrQueueEmpty is returned when Pop is called on an empty queue
 	ErrQueueEmpty = errors.New("queue is empty")
+
+	// ErrSplitBrain indicates disjoint Raft leadership
+	ErrSplitBrain = errors.New("split-brain detected")
+
+	// ErrMergeFailed indicates a failed healing merge apply
+	ErrMergeFailed = errors.New("FSM merge failed")
+
+	// ErrHealingInProgress indicates concurrent healing
+	ErrHealingInProgress = errors.New("healing already in progress")
 )
