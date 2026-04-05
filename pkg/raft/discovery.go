@@ -195,7 +195,7 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 	for {
 		select {
 		case <-ctx.Done():
-			discoveryLogger.Debugf("[%s] peer discovery stopped (context cancelled)", pt.selfID.ShortString())
+			discoveryLogger.Infof("[%s] peer discovery stopped (context cancelled)", pt.selfID.ShortString())
 			return
 
 		case <-time.After(pt.getDiscoveryInterval()):
@@ -224,13 +224,13 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 					startTime, peersMap := pt.getPeersMap()
 					theirStart, theirPeers, err := c.raftClient.ExchangePeers(startTime, peersMap, pid)
 					if err != nil {
-						discoveryLogger.Debugf("[%s] peer exchange with %s failed: %v",
+						discoveryLogger.Infof("[%s] peer exchange with %s failed: %v",
 							pt.selfID.ShortString(), pid.ShortString(), err)
 						continue
 					}
 					newPeers := pt.mergePeers(theirStart, theirPeers)
 					for _, newPeer := range newPeers {
-						discoveryLogger.Debugf("[%s] dialing newly discovered peer %s",
+						discoveryLogger.Infof("[%s] dialing newly discovered peer %s",
 							pt.selfID.ShortString(), newPeer.ShortString())
 						c.dialPeer(ctx, newPeer)
 					}

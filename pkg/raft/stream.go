@@ -331,11 +331,11 @@ func (s *raftStreamService) handleKeys(ctx context.Context, conn streams.Connect
 func (s *raftStreamService) forwardToLeader(cmd string, body command.Body) (cr.Response, error) {
 	leader, err := s.cluster.Leader()
 	if err != nil {
-		streamLogger.Debugf("[%s] cannot forward %q: no leader", s.cluster.node.ID().ShortString(), cmd)
+		streamLogger.Infof("[%s] cannot forward %q: no leader", s.cluster.node.ID().ShortString(), cmd)
 		return nil, ErrNoLeader
 	}
 
-	streamLogger.Debugf("[%s] forwarding %q to leader %s", s.cluster.node.ID().ShortString(), cmd, leader.ShortString())
+	streamLogger.Infof("[%s] forwarding %q to leader %s", s.cluster.node.ID().ShortString(), cmd, leader.ShortString())
 
 	cli := s.cluster.raftClient.(*client)
 	resCh, err := cli.New(cmd,
@@ -449,7 +449,7 @@ func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Co
 	leaderCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	if err := s.cluster.WaitForLeader(leaderCtx); err != nil {
-		streamLogger.Debugf("[%s] joinVoter: no leader available to handle %s",
+		streamLogger.Infof("[%s] joinVoter: no leader available to handle %s",
 			s.cluster.node.ID().ShortString(), peerID.ShortString())
 		return nil, ErrNoLeader
 	}
@@ -470,7 +470,7 @@ func (s *raftStreamService) handleJoinVoter(ctx context.Context, conn streams.Co
 		return resp, nil
 	}
 
-	streamLogger.Debugf("[%s] joinVoter: forwarding request for %s to leader",
+	streamLogger.Infof("[%s] joinVoter: forwarding request for %s to leader",
 		s.cluster.node.ID().ShortString(), peerID.ShortString())
 
 	body[keyPeer] = peerID.String()
@@ -523,7 +523,7 @@ func (s *raftStreamService) handleClusterInfo(ctx context.Context, conn streams.
 	if conn != nil {
 		from = conn.RemotePeer().ShortString()
 	}
-	streamLogger.Debugf("[%s] clusterInfo requested (from=%s): leader=%s term=%d lastIndex=%d members=%d",
+	streamLogger.Infof("[%s] clusterInfo requested (from=%s): leader=%s term=%d lastIndex=%d members=%d",
 		s.cluster.node.ID().ShortString(), from, leaderID, term, lastIdx, memberCount)
 
 	resp := cr.Response{
@@ -561,7 +561,7 @@ func (s *raftStreamService) handleExportFSM(ctx context.Context, conn streams.Co
 	}
 
 	if !s.cluster.IsLeader() {
-		streamLogger.Debugf("[%s] exportFSM requested (from=%s) — forwarding to leader",
+		streamLogger.Infof("[%s] exportFSM requested (from=%s) — forwarding to leader",
 			s.cluster.node.ID().ShortString(), from)
 		return s.forwardToLeader(cmdExportFSM, body)
 	}
@@ -584,7 +584,7 @@ func (s *raftStreamService) handleExportFSM(ctx context.Context, conn streams.Co
 	clock := fsm.clock
 	fsm.mu.RUnlock()
 
-	streamLogger.Debugf("[%s] exportFSM: %d keys, clock=%d", s.cluster.node.ID().ShortString(), len(state), clock)
+	streamLogger.Infof("[%s] exportFSM: %d keys, clock=%d", s.cluster.node.ID().ShortString(), len(state), clock)
 
 	resp := cr.Response{
 		keyFSMState: stateBytes,
@@ -612,15 +612,15 @@ func (s *raftStreamService) handleHealAck(ctx context.Context, conn streams.Conn
 		body = decryptedBody
 	}
 
-	from := ""
+	var fromPeer peer.ID
 	if conn != nil {
-		from = conn.RemotePeer().ShortString()
+		fromPeer = conn.RemotePeer()
 	}
 	streamLogger.Infof("[%s] received healAck from %s — signaling healer",
-		s.cluster.node.ID().ShortString(), from)
+		s.cluster.node.ID().ShortString(), fromPeer.ShortString())
 
 	if s.cluster.healer != nil {
-		s.cluster.healer.signalHealAck()
+		s.cluster.healer.signalHealAck(fromPeer)
 	}
 
 	resp := cr.Response{keySuccess: true}

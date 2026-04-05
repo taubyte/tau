@@ -103,7 +103,7 @@ func (c *cluster) initialize() error {
 	store := c.node.Store()
 	storagePrefix := path.Join(RaftStoragePrefix, c.namespace)
 
-	clusterLogger.Debugf("[%s] initializing raft (storage_prefix=%s)", c.node.ID().ShortString(), storagePrefix)
+	clusterLogger.Infof("[%s] initializing raft (storage_prefix=%s)", c.node.ID().ShortString(), storagePrefix)
 
 	c.logStore = newLogStore(store, path.Join(storagePrefix, "log"))
 	c.stable = newStableStore(store, path.Join(storagePrefix, "stable"))
@@ -201,13 +201,13 @@ func (c *cluster) handleBootstrap(raftConfig *raft.Config, transport raft.Transp
 	for {
 		select {
 		case <-ctx.Done():
-			clusterLogger.Debugf("[%s] bootstrap timeout reached — proceeding to bootstrap decision",
+			clusterLogger.Infof("[%s] bootstrap timeout reached — proceeding to bootstrap decision",
 				c.node.ID().ShortString())
 			goto bootstrap
 		case <-ticker.C:
 			peers := c.raftProtocolPeers()
 			if len(peers) > 0 {
-				clusterLogger.Debugf("[%s] found %d raft-protocol peers — attempting join",
+				clusterLogger.Infof("[%s] found %d raft-protocol peers — attempting join",
 					c.node.ID().ShortString(), len(peers))
 				if successfullyCompleted, _ = c.tryJoinExistingCluster(peers, 1*time.Second); successfullyCompleted {
 					clusterLogger.Infof("[%s] joined existing cluster during discovery phase",
@@ -326,7 +326,7 @@ func (c *cluster) bootstrapWithPeers(transport raft.Transport, peers []peer.ID) 
 
 	clusterLogger.Infof("[%s] bootstrapping cluster with %d servers", c.node.ID().ShortString(), len(servers))
 	for i, s := range servers {
-		clusterLogger.Debugf("[%s]   server[%d]: id=%s addr=%s", c.node.ID().ShortString(), i, s.ID, s.Address)
+		clusterLogger.Infof("[%s]   server[%d]: id=%s addr=%s", c.node.ID().ShortString(), i, s.ID, s.Address)
 	}
 
 	f := c.raft.BootstrapCluster(raft.Configuration{Servers: servers})
@@ -396,7 +396,7 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 		return
 	}
 
-	clusterLogger.Debugf("[%s] starting voter join request loop (timeout=%v)", c.node.ID().ShortString(), timeout)
+	clusterLogger.Infof("[%s] starting voter join request loop (timeout=%v)", c.node.ID().ShortString(), timeout)
 
 	go func() {
 		ctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
@@ -408,22 +408,22 @@ func (c *cluster) requestVoterJoin(timeout time.Duration) {
 		for {
 			select {
 			case <-ctx.Done():
-				clusterLogger.Debugf("[%s] voter join request loop ended (context done)", c.node.ID().ShortString())
+				clusterLogger.Infof("[%s] voter join request loop ended (context done)", c.node.ID().ShortString())
 				return
 			case <-ticker.C:
 				var targets []peer.ID
 				if leader, err := c.Leader(); err == nil && leader != c.node.ID() {
 					targets = []peer.ID{leader}
-					clusterLogger.Debugf("[%s] requesting voter join from leader %s",
+					clusterLogger.Infof("[%s] requesting voter join from leader %s",
 						c.node.ID().ShortString(), leader.ShortString())
 				} else {
 					targets = c.voterJoinTargets()
-					clusterLogger.Debugf("[%s] requesting voter join from %d targets (no known leader)",
+					clusterLogger.Infof("[%s] requesting voter join from %d targets (no known leader)",
 						c.node.ID().ShortString(), len(targets))
 				}
 				if len(targets) > 0 {
 					if err := c.raftClient.JoinVoter(c.node.ID(), timeout, targets...); err != nil {
-						clusterLogger.Debugf("[%s] voter join request failed: %v", c.node.ID().ShortString(), err)
+						clusterLogger.Infof("[%s] voter join request failed: %v", c.node.ID().ShortString(), err)
 					} else {
 						clusterLogger.Infof("[%s] voter join request accepted", c.node.ID().ShortString())
 					}
@@ -449,7 +449,7 @@ func (c *cluster) tryJoinExistingCluster(peers []peer.ID, timeout time.Duration)
 	for {
 		select {
 		case <-ctx.Done():
-			clusterLogger.Debugf("[%s] tryJoinExistingCluster timed out (sawNoLeader=%v)",
+			clusterLogger.Infof("[%s] tryJoinExistingCluster timed out (sawNoLeader=%v)",
 				c.node.ID().ShortString(), sawNoLeader)
 			return false, sawNoLeader
 		case <-ticker.C:
@@ -818,7 +818,7 @@ func (c *cluster) AddVoter(id peer.ID, timeout time.Duration) error {
 
 	for _, server := range configFuture.Configuration().Servers {
 		if server.ID == serverID {
-			clusterLogger.Debugf("[%s] peer %s already in configuration — skipping AddVoter",
+			clusterLogger.Infof("[%s] peer %s already in configuration — skipping AddVoter",
 				c.node.ID().ShortString(), id.ShortString())
 			return nil
 		}

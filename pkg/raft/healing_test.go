@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	taupeer "github.com/taubyte/tau/p2p/peer"
@@ -165,27 +166,32 @@ func TestHealing_HealAck_Signal(t *testing.T) {
 	node := taupeer.Mock(t.Context())
 	require.NoError(t, taupeer.LinkAllPeers())
 
-	c, err := New(node, "ack-test", healingTestOptions()...)
-	require.NoError(t, err)
-	defer c.Close()
+	h := &healer{
+		healAckCh:     make(chan peer.ID, 1),
+		foreignVoteCh: make(chan peer.ID, 16),
+	}
 
-	waitLeader(t, c, 3*time.Second)
-
-	cl := c.(*cluster)
-	cl.healer.signalHealAck()
+	h.signalHealAck(node.ID())
 
 	select {
-	case <-cl.healer.healAckCh:
+	case from := <-h.healAckCh:
+		assert.Equal(t, node.ID(), from)
 	case <-time.After(100 * time.Millisecond):
 		t.Fatal("healAck signal was not received")
 	}
 
-	cl.healer.signalHealAck()
-	cl.healer.signalHealAck()
+	h.signalHealAck(node.ID())
+	h.signalHealAck(node.ID())
 
 	select {
-	case <-cl.healer.healAckCh:
+	case <-h.healAckCh:
 	default:
 		t.Fatal("expected buffered signal")
+	}
+
+	select {
+	case <-h.healAckCh:
+		t.Fatal("buffer should be 1, second signal should be dropped")
+	default:
 	}
 }
