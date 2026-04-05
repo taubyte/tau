@@ -26,4 +26,19 @@ var (
 
 	// ErrInvalidTimeout is returned when timeout is zero or exceeds maximum
 	ErrInvalidTimeout = errors.New("invalid timeout: must be > 0 and <= MaxApplyTimeout")
+
+	// ErrItemNotFound is returned when DequeueItem is called with an ID not in the queue index
+	ErrItemNotFound = errors.New("item not found in queue")
+
+	// ErrQueueEmpty is returned when Pop is called on an empty queue
+	ErrQueueEmpty = errors.New("queue is empty")
+
+	// ErrSplitBrain indicates disjoint Raft leadership
+	ErrSplitBrain = errors.New("split-brain detected")
+
+	// ErrMergeFailed indicates a failed healing merge apply
+	ErrMergeFailed = errors.New("FSM merge failed")
+
+	// ErrHealingInProgress indicates concurrent healing
+	ErrHealingInProgress = errors.New("healing already in progress")
 )

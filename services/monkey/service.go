@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path"
+	"slices"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
@@ -12,10 +13,11 @@ import (
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	ci "github.com/taubyte/tau/pkg/containers/gc"
 
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	"github.com/libp2p/go-libp2p/core/peer"
+	"github.com/libp2p/go-libp2p/core/protocol"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
-	tauConfig "github.com/taubyte/tau/config"
-	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
+	tauConfig "github.com/taubyte/tau/pkg/config"
+	"github.com/taubyte/tau/pkg/raft"
 
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	protocolCommon "github.com/taubyte/tau/services/common"
@@ -23,37 +25,16 @@ import (
 
 var logger = log.Logger("tau.monkey.service")
 
-func (srv *Service) subscribe() error {
-	return srv.node.PubSubSubscribe(
-		patrickSpecs.PubSubIdent,
-		func(msg *pubsub.Message) {
-			go srv.pubsubMsgHandler(msg)
-		},
-		func(err error) {
-			if err.Error() != "context canceled" {
-				logger.Error("Subscription had an error:", err.Error())
-				if err := srv.subscribe(); err != nil {
-					logger.Error("resubscribe failed with:", err.Error())
-				}
-			}
-		},
-	)
-}
-
-func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
-	if config == nil {
-		config = &tauConfig.Node{}
-	}
-
-	err := config.Validate()
-	if err != nil {
-		return nil, err
-	}
-
+func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
+	var err error
 	srv := &Service{
-		ctx:    ctx,
-		dev:    config.DevMode,
-		config: config,
+		ctx:     ctx,
+		dev:     cfg.DevMode(),
+		config:  cfg,
+		cluster: cfg.Cluster(),
+	}
+	if srv.cluster == "" {
+		srv.cluster = "main"
 	}
 
 	err = ci.Start(ctx, ci.Interval(ci.DefaultInterval), ci.MaxAge(ci.DefaultMaxAge))
@@ -61,63 +42,89 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 		return nil, err
 	}
 
-	if config.Node == nil {
-		srv.node, err = tauConfig.NewLiteNode(ctx, config, path.Join(config.Root, protocolCommon.Monkey))
+	if srv.node = cfg.Node(); srv.node == nil {
+		srv.node, err = tauConfig.NewLiteNode(ctx, cfg, path.Join(cfg.Root(), protocolCommon.Monkey))
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		srv.node = config.Node
-		srv.dvPublicKey = config.DomainValidation.PublicKey
+		srv.dvPublicKey = cfg.DomainValidation().PublicKey
 	}
 
 	srv.clientNode = srv.node
-	if config.ClientNode != nil {
-		srv.clientNode = config.ClientNode
+	if cfg.ClientNode() != nil {
+		srv.clientNode = cfg.ClientNode()
 	}
 
-	err = srv.subscribe()
-	if err != nil {
+	if srv.stream, err = streams.New(srv.node, protocolCommon.Monkey, protocolCommon.MonkeyProtocol); err != nil {
 		return nil, err
 	}
-
-	srv.stream, err = streams.New(srv.node, protocolCommon.Monkey, protocolCommon.MonkeyProtocol)
-	if err != nil {
-		return nil, err
-	}
-
 	srv.setupStreamRoutes()
 	srv.stream.Start()
-
-	sc, err := seerClient.New(ctx, srv.clientNode, config.SensorsRegistry())
-	if err != nil {
+	var sc seerIface.Client
+	if sc, err = seerClient.New(ctx, srv.clientNode, cfg.SensorsRegistry()); err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
-
-	err = protocolCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeMonkey)
-	if err != nil {
+	if err = protocolCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeMonkey); err != nil {
 		return nil, fmt.Errorf("starting seer beacon failed with %s", err)
 	}
-
 	srv.monkeys = make(map[string]*Monkey, 0)
 	srv.recvJobs = make(map[string]time.Time, 0)
-
-	srv.patrickClient, err = NewPatrick(ctx, srv.clientNode)
-	if err != nil {
+	if srv.patrickClient, err = NewPatrick(ctx, srv.clientNode); err != nil {
+		return nil, err
+	}
+	if srv.tnsClient, err = tnsClient.New(ctx, srv.clientNode); err != nil {
+		return nil, err
+	}
+	if srv.hoarderClient, err = hoarder.New(ctx, srv.clientNode); err != nil {
 		return nil, err
 	}
 
-	srv.tnsClient, err = tnsClient.New(ctx, srv.clientNode)
-	if err != nil {
-		return nil, err
-	}
-
-	srv.hoarderClient, err = hoarder.New(ctx, srv.clientNode)
-	if err != nil {
-		return nil, err
-	}
+	go srv.pollJobs()
 
 	return srv, nil
+}
+
+// discoverPatrickPeers returns peer IDs that support both /raft/v1/<cluster> and /patrick/v1 when available.
+// If no such peers exist (e.g. dream without RaftCluster), falls back to peers that support only /patrick/v1.
+// Includes self when Patrick runs on the same node (same process or same peer ID).
+func (srv *Service) discoverPatrickPeers() []peer.ID {
+	raftProto := protocol.ID(raft.Protocol(srv.cluster))
+	patrickProto := protocol.ID(protocolCommon.PatrickProtocol)
+	var out, patrickOnly []peer.ID
+	seen := make(map[peer.ID]struct{})
+	addIfPatrick := func(pid peer.ID) {
+		if len(pid) == 0 {
+			return
+		}
+		if _, ok := seen[pid]; ok {
+			return
+		}
+		protos, err := srv.node.Peer().Peerstore().GetProtocols(pid)
+		if err != nil {
+			return
+		}
+		hasRaft := slices.Contains(protos, raftProto)
+		hasPatrick := slices.Contains(protos, patrickProto)
+		if hasRaft && hasPatrick {
+			out = append(out, pid)
+			seen[pid] = struct{}{}
+		} else if hasPatrick {
+			patrickOnly = append(patrickOnly, pid)
+			seen[pid] = struct{}{}
+		}
+	}
+	for _, pid := range srv.node.Peer().Peerstore().Peers() {
+		addIfPatrick(pid)
+	}
+	addIfPatrick(srv.node.ID())
+	if len(out) == 0 && len(patrickOnly) > 0 {
+		out = patrickOnly
+	}
+	if len(out) == 0 {
+		out = append(out, srv.node.ID())
+	}
+	return out
 }
 
 func (srv *Service) Close() error {

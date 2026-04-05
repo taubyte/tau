@@ -274,11 +274,11 @@ func TestCancelJob_SimpleCases(t *testing.T) {
 		expectError bool
 	}{
 		{
-			name: "cancel job with invalid lock data",
+			name: "cancel job with invalid assignment data",
 			setupMock: func(s *PatrickService) {
 				job := createTestJobWithStatus("test-job", commonIface.JobStatusOpen)
 				s.db.Put(context.Background(), "/jobs/test-job", marshalJob(job))
-				s.db.Put(context.Background(), "/locked/jobs/test-job", []byte("simple-lock-data"))
+				s.db.Put(context.Background(), "/assigned/test-job", []byte("invalid-assignment-data"))
 			},
 			variables: map[string]interface{}{
 				"jid": "test-job",

@@ -11,7 +11,7 @@ import (
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	"github.com/taubyte/tau/pkg/kvdb"
 
-	tauConfig "github.com/taubyte/tau/config"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/tns/engine"
 )
@@ -20,45 +20,28 @@ var (
 	logger = log.Logger("tau.tns.service")
 )
 
-func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
+func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	srv := &Service{}
 
-	if config == nil {
-		config = &tauConfig.Node{}
-	}
-
-	err := config.Validate()
-	if err != nil {
-		return nil, err
-	}
-
-	if config.Node == nil {
-		srv.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, servicesCommon.Tns))
+	var err error
+	if srv.node = cfg.Node(); srv.node == nil {
+		srv.node, err = tauConfig.NewNode(ctx, cfg, path.Join(cfg.Root(), servicesCommon.Tns))
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		srv.node = config.Node
 	}
 
-	srv.dbFactory = config.Databases
-	if srv.dbFactory == nil {
+	if srv.dbFactory = cfg.Databases(); srv.dbFactory == nil {
 		srv.dbFactory = kvdb.New(srv.node)
 	}
 
-	srv.db, err = srv.dbFactory.New(logger, servicesCommon.Tns, 5)
-	if err != nil {
+	if srv.db, err = srv.dbFactory.New(logger, servicesCommon.Tns, 5); err != nil {
 		return nil, err
 	}
-
-	srv.engine, err = engine.New(srv.db, engine.Prefix...)
-	if err != nil {
+	if srv.engine, err = engine.New(srv.db, engine.Prefix...); err != nil {
 		return nil, err
 	}
-
-	// P2P
-	srv.stream, err = streams.New(srv.node, servicesCommon.Tns, servicesCommon.TnsProtocol)
-	if err != nil {
+	if srv.stream, err = streams.New(srv.node, servicesCommon.Tns, servicesCommon.TnsProtocol); err != nil {
 		return nil, err
 	}
 
@@ -67,16 +50,14 @@ func New(ctx context.Context, config *tauConfig.Node) (*Service, error) {
 
 	// For Odo
 	clientNode := srv.node
-	if config.ClientNode != nil {
-		clientNode = config.ClientNode
+	if cfg.ClientNode() != nil {
+		clientNode = cfg.ClientNode()
 	}
-	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
-	if err != nil {
+	var sc seer.Client
+	if sc, err = seerClient.New(ctx, clientNode, cfg.SensorsRegistry()); err != nil {
 		return nil, fmt.Errorf("failed creating seer client error: %v", err)
 	}
-
-	err = servicesCommon.StartSeerBeacon(config, sc, seer.ServiceTypeTns)
-	if err != nil {
+	if err = servicesCommon.StartSeerBeacon(cfg, sc, seer.ServiceTypeTns); err != nil {
 		return nil, err
 	}
 

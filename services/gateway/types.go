@@ -17,6 +17,7 @@ type Gateway struct {
 
 	substrateClient substrate.ProxyClient
 
+	cluster string
 	dev     bool
 	verbose bool
 }

@@ -10,7 +10,7 @@ import (
 	nodeService "github.com/taubyte/tau/services/substrate"
 	tnsService "github.com/taubyte/tau/services/tns"
 
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 )
 
 var available = map[string]config.ProtoCommandIface{

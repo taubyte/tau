@@ -13,6 +13,17 @@ describe("Taucorder test", () => {
   beforeAll(async () => {
     try {
       await new Promise<void>((resolve, reject) => {
+        const startupDeadlineMs = 25000;
+        const timeout = setTimeout(() => {
+          reject(
+            new Error(
+              `mock server did not emit universe config within ${startupDeadlineMs}ms`
+            )
+          );
+        }, startupDeadlineMs);
+
+        const done = () => clearTimeout(timeout);
+
         mockServerProcess = exec("cd ../mock; go run .", {
           signal: controller.signal,
         });
@@ -21,13 +32,29 @@ describe("Taucorder test", () => {
             const match = data.match(/@@(.*?)@@/);
             if (match) {
               universeConfig = JSON.parse(match[1]);
+              done();
               resolve();
             }
           }
         });
+        // Go services (e.g. hashicorp/raft) log INFO to stderr; do not treat as failure.
         mockServerProcess.stderr?.on("data", (data: string) => {
-          console.log("Mock server error:", data);
-          reject(data);
+          console.log("Mock server stderr:", data);
+        });
+        mockServerProcess.on("error", (err) => {
+          done();
+          reject(err);
+        });
+        mockServerProcess.on("close", (code) => {
+          if (universeConfig) {
+            return;
+          }
+          done();
+          reject(
+            new Error(
+              `mock server exited before universe config (code ${code ?? "unknown"})`
+            )
+          );
         });
       });
     } catch (error) {

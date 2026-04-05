@@ -10,16 +10,11 @@ import (
 	"github.com/taubyte/tau/core/vm"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/peer"
 	http "github.com/taubyte/tau/pkg/http"
 )
 
 var _ iface.Service = &Service{}
-
-type Config struct {
-	config.Node `yaml:"z,omitempty"`
-}
 
 // TODO: Node shouldn't have to have all
 type Service struct {
@@ -29,6 +24,7 @@ type Service struct {
 	vm         vm.Service
 	components components
 
+	cluster   string
 	dev       bool
 	verbose   bool
 	databases kvdb.Factory

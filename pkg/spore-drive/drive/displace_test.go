@@ -11,7 +11,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/stretchr/testify/mock"
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 	host "github.com/taubyte/tau/pkg/mycelium/host"
 	"gopkg.in/yaml.v3"
 

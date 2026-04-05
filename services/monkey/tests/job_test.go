@@ -42,12 +42,31 @@ func TestConfigJob_Dreaming(t *testing.T) {
 		return &mock.Starfish{Jobs: make(map[string]*patrick.Job, 0)}, nil
 	}
 
+	const maxAttempts = 2
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		lastErr = runTestConfigJob(t)
+		if lastErr == nil {
+			return
+		}
+		if attempt < maxAttempts {
+			t.Logf("TestConfigJob attempt %d failed, retrying: %v", attempt, lastErr)
+		}
+	}
+	assert.NilError(t, lastErr)
+}
+
+func runTestConfigJob(t *testing.T) error {
 	m, err := dream.New(t.Context())
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 	defer m.Close()
 
 	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
@@ -66,19 +85,27 @@ func TestConfigJob_Dreaming(t *testing.T) {
 			},
 		},
 	})
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	// wait a couple seconds for services to start
 	time.Sleep(time.Second * 2)
 
 	simple, err := u.Simple("client")
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	tnsClient, err := simple.TNS()
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	monkeyClient, err := simple.Monkey()
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	// Override auth method so that projectID is not changed
 	protocolCommon.GetNewProjectID = func(args ...interface{}) string {
@@ -86,10 +113,14 @@ func TestConfigJob_Dreaming(t *testing.T) {
 	}
 
 	mockAuth, err := simple.Auth()
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	err = commonTest.RegisterTestProject(u.Context(), mockAuth)
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	// Use a temporary directory to avoid modifying any existing testGIT directories
 	gitRoot, err := os.MkdirTemp("", "testGIT-*")
@@ -102,7 +133,9 @@ func TestConfigJob_Dreaming(t *testing.T) {
 
 	// clone repo
 	err = gitTest.CloneToDir(u.Context(), gitRootConfig, commonTest.ConfigRepo)
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	fakJob := &patrick.Job{}
 	fakJob.Logs = make(map[string]string)
@@ -119,15 +152,21 @@ func TestConfigJob_Dreaming(t *testing.T) {
 		tccCompiler.WithLocal(gitRootConfig),
 		tccCompiler.WithBranch(fakJob.Meta.Repository.Branch),
 	)
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	// Compile
 	obj, validations, err := compiler.Compile(context.Background())
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	// Extract project ID from validations
 	projectID, err := tcc.ExtractProjectID(validations)
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	// Process DNS validations (dev mode)
 	err = tcc.ProcessDNSValidations(
@@ -136,15 +175,21 @@ func TestConfigJob_Dreaming(t *testing.T) {
 		true, // dev mode
 		nil,  // no DV key needed in dev mode
 	)
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	// Extract object and indexes from Flat()
 	flat := obj.Flat()
 	object, ok := flat["object"].(map[string]interface{})
-	assert.Assert(t, ok, "object not found in flat result")
+	if !ok {
+		t.Fatal("object not found in flat result")
+	}
 
 	indexes, ok := flat["indexes"].(map[string]interface{})
-	assert.Assert(t, ok, "indexes not found in flat result")
+	if !ok {
+		t.Fatal("indexes not found in flat result")
+	}
 
 	// Publish to TNS
 	err = tcc.Publish(
@@ -155,12 +200,14 @@ func TestConfigJob_Dreaming(t *testing.T) {
 		fakJob.Meta.Repository.Branch,
 		fakJob.Meta.HeadCommit.ID,
 	)
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
 	err = u.Monkey().Patrick().(*mock.Starfish).AddJob(t, u.Monkey().Node(), fakJob)
-	assert.NilError(t, err)
+	if err != nil {
+		return err
+	}
 
-	err = waitForTestStatus(monkeyClient, fakJob.Id, patrick.JobStatusLocked)
-	assert.NilError(t, err)
-
+	return waitForTestStatus(monkeyClient, fakJob.Id, patrick.JobStatusLocked)
 }

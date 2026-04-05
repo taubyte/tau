@@ -7,10 +7,10 @@ import (
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 )
 
-func displayConfig(pid string, config *config.Node) error {
+func displayConfig(pid string, cfg config.Config) error {
 	t := table.NewWriter()
 	t.SetOutputMirror(os.Stdout)
 
@@ -21,22 +21,21 @@ func displayConfig(pid string, config *config.Node) error {
 	t.SetColumnConfigs(colConfigs)
 
 	addrPID := "/p2p/" + pid
-	for i := range config.P2PAnnounce {
-		config.P2PAnnounce[i] += addrPID
+	announceSlice := cfg.P2PAnnounce()
+	announceWithPID := make([]string, len(announceSlice))
+	for i, a := range announceSlice {
+		announceWithPID[i] = a + addrPID
 	}
+	announce := strings.Join(announceWithPID, "\n")
 
-	announce := strings.Join(config.P2PAnnounce, "\n")
-
-	services := strings.Join(config.Services, "\n")
-
-	peers := strings.Join(config.Peers, "\n")
-
-	listen := strings.Join(config.P2PListen, "\n")
+	services := strings.Join(cfg.Services(), "\n")
+	peers := strings.Join(cfg.Peers(), "\n")
+	listen := strings.Join(cfg.P2PListen(), "\n")
 
 	domt := table.NewWriter()
 	domt.AppendRows([]table.Row{
-		{"Generated", config.GeneratedDomain},
-		{"Aliases", fmt.Sprint(config.AliasDomains)},
+		{"Generated", cfg.GeneratedDomain()},
+		{"Aliases", fmt.Sprint(cfg.AliasDomains())},
 	})
 	domt.SetStyle(table.StyleLight)
 
@@ -44,16 +43,21 @@ func displayConfig(pid string, config *config.Node) error {
 	portst.SetStyle(table.StyleLight)
 	portst.AppendRow(table.Row{"https", 443})
 	portst.AppendRow(table.Row{"dns", 53})
-	for name, val := range config.Ports {
+	for name, val := range cfg.Ports() {
 		portst.AppendRow(table.Row{"p2p/" + name, val})
 	}
 
+	loc := cfg.Location()
+	locStr := ""
+	if loc != nil {
+		locStr = fmt.Sprintf("%f,%f", loc.Latitude, loc.Longitude)
+	}
 	data := []table.Row{
 		{"ID", pid},
-		{"Location", fmt.Sprintf("%f,%f", config.Location.Latitude, config.Location.Longitude)},
-		{"Root", config.Root},
-		{"Shape", config.Shape},
-		{"Network", config.NetworkFqdn},
+		{"Location", locStr},
+		{"Root", cfg.Root()},
+		{"Shape", cfg.Shape()},
+		{"Network", cfg.NetworkFqdn()},
 		{"Domain", domt.Render()},
 		{"Services", services},
 		{"Peers", peers},
@@ -62,7 +66,7 @@ func displayConfig(pid string, config *config.Node) error {
 		{"Ports", portst.Render()},
 	}
 
-	for _, val := range config.Plugins.Plugins {
+	for _, val := range cfg.Plugins().Plugins {
 		data = append(data, table.Row{"Plugins", val, val})
 	}
 

@@ -4,7 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
+	"github.com/taubyte/tau/pkg/raft"
 	"gotest.tools/v3/assert"
 )
 
@@ -23,9 +24,18 @@ func TestProtoCommandIface_New(t *testing.T) {
 	_, err := iface.New(ctx, nil)
 	assert.ErrorContains(t, err, "you must define p2p port")
 
-	config := &config.Node{
-		Root: "",
+	cfg, err := config.New(
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{"/ip4/0.0.0.0/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
-	_, err = iface.New(ctx, config)
-	assert.ErrorContains(t, err, "building config failed")
+	cfg.SetRaftCluster(raft.NewMockCluster())
+	svc, err := iface.New(ctx, cfg)
+	assert.NilError(t, err)
+	if svc != nil {
+		svc.Close()
+	}
 }

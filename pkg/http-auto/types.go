@@ -4,9 +4,9 @@ import (
 	"time"
 
 	"github.com/jellydator/ttlcache/v3"
-	"github.com/taubyte/tau/config"
 	auth "github.com/taubyte/tau/core/services/auth"
 	ifaceTns "github.com/taubyte/tau/core/services/tns"
+	"github.com/taubyte/tau/pkg/config"
 	basicHttp "github.com/taubyte/tau/pkg/http/basic"
 	"github.com/taubyte/tau/pkg/http/options"
 	acme "github.com/taubyte/tau/services/auth/acme/store"
@@ -18,7 +18,7 @@ type Service struct {
 	certStore           *acme.Store
 	authClient          auth.Client
 	tnsClient           ifaceTns.Client
-	config              *config.Node
+	config              config.Config
 	customDomainChecker func(host string) bool
 	acme                *options.OptionACME
 

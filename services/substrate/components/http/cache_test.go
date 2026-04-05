@@ -1,7 +1,6 @@
 package http
 
 import (
-	"context"
 	"testing"
 	"time"
 
@@ -14,7 +13,7 @@ import (
 // TODO: Revisit cache clearing
 func TestCache(t *testing.T) {
 	t.Skip("cache needs to updated")
-	s := NewTestService(peer.Mock(context.Background()))
+	s := newTestService(peer.Mock(t.Context()))
 	testDomainName := "someDomain"
 	testFunctionId := "someFuncId"
 	domains = map[string]structureSpec.Domain{

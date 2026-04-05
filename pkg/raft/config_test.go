@@ -5,49 +5,24 @@ import (
 	"time"
 )
 
-func TestGetTimeoutConfig_Presets(t *testing.T) {
-	tests := []struct {
-		name              string
-		preset            TimeoutPreset
-		expectedHeartbeat time.Duration
-		expectedElection  time.Duration
-	}{
-		{
-			name:              "local preset",
-			preset:            PresetLocal,
-			expectedHeartbeat: 1 * time.Second,
-			expectedElection:  1 * time.Second,
-		},
-		{
-			name:              "regional preset",
-			preset:            PresetRegional,
-			expectedHeartbeat: 5 * time.Second,
-			expectedElection:  10 * time.Second,
-		},
-		{
-			name:              "global preset",
-			preset:            PresetGlobal,
-			expectedHeartbeat: 15 * time.Second,
-			expectedElection:  30 * time.Second,
-		},
+func TestDefaultTimeoutConfig(t *testing.T) {
+	if DefaultTimeoutConfig.HeartbeatTimeout != 15*time.Second {
+		t.Errorf("expected heartbeat 15s, got %v", DefaultTimeoutConfig.HeartbeatTimeout)
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &cluster{
-				timeoutPreset: tt.preset,
-				timeoutConfig: presetConfigs[tt.preset],
-			}
-
-			result := c.getTimeoutConfig()
-
-			if result.HeartbeatTimeout != tt.expectedHeartbeat {
-				t.Errorf("expected heartbeat %v, got %v", tt.expectedHeartbeat, result.HeartbeatTimeout)
-			}
-			if result.ElectionTimeout != tt.expectedElection {
-				t.Errorf("expected election %v, got %v", tt.expectedElection, result.ElectionTimeout)
-			}
-		})
+	if DefaultTimeoutConfig.ElectionTimeout != 30*time.Second {
+		t.Errorf("expected election 30s, got %v", DefaultTimeoutConfig.ElectionTimeout)
+	}
+	if DefaultTimeoutConfig.CommitTimeout != 15*time.Second {
+		t.Errorf("expected commit 15s, got %v", DefaultTimeoutConfig.CommitTimeout)
+	}
+	if DefaultTimeoutConfig.LeaderLeaseTimeout != 15*time.Second {
+		t.Errorf("expected leader lease 15s, got %v", DefaultTimeoutConfig.LeaderLeaseTimeout)
+	}
+	if DefaultTimeoutConfig.SnapshotInterval != 10*time.Minute {
+		t.Errorf("expected snapshot interval 10m, got %v", DefaultTimeoutConfig.SnapshotInterval)
+	}
+	if DefaultTimeoutConfig.SnapshotThreshold != 32768 {
+		t.Errorf("expected snapshot threshold 32768, got %d", DefaultTimeoutConfig.SnapshotThreshold)
 	}
 }
 
@@ -73,41 +48,23 @@ func TestGetTimeoutConfig_Custom(t *testing.T) {
 	}
 }
 
-func TestPresetConfigs_AllPresetsExist(t *testing.T) {
-	presets := []TimeoutPreset{PresetLocal, PresetRegional, PresetGlobal}
-
-	for _, preset := range presets {
-		cfg, ok := presetConfigs[preset]
-		if !ok {
-			t.Errorf("preset %s not found in presetConfigs", preset)
-			continue
-		}
-		if cfg.HeartbeatTimeout == 0 {
-			t.Errorf("preset %s has zero heartbeat timeout", preset)
-		}
-		if cfg.ElectionTimeout == 0 {
-			t.Errorf("preset %s has zero election timeout", preset)
-		}
-	}
-}
-
 func TestGetTimeoutConfig_Fallback(t *testing.T) {
 	c := &cluster{
-		timeoutPreset: TimeoutPreset("unknown"),
-		timeoutConfig: TimeoutConfig{}, // Zero values
+		timeoutConfig: TimeoutConfig{},
 	}
 
 	result := c.getTimeoutConfig()
 
-	// Should fallback to regional
-	if result.HeartbeatTimeout != 5*time.Second {
-		t.Errorf("expected regional fallback heartbeat 5s, got %v", result.HeartbeatTimeout)
+	if result.HeartbeatTimeout != 15*time.Second {
+		t.Errorf("expected default heartbeat 15s, got %v", result.HeartbeatTimeout)
+	}
+	if result.ElectionTimeout != 30*time.Second {
+		t.Errorf("expected default election 30s, got %v", result.ElectionTimeout)
 	}
 }
 
-func TestGetTimeoutConfig_CustomOverridesPreset(t *testing.T) {
+func TestGetTimeoutConfig_CustomOverridesDefault(t *testing.T) {
 	c := &cluster{
-		timeoutPreset: PresetGlobal,
 		timeoutConfig: TimeoutConfig{
 			HeartbeatTimeout:   999 * time.Millisecond,
 			ElectionTimeout:    888 * time.Millisecond,
@@ -118,7 +75,6 @@ func TestGetTimeoutConfig_CustomOverridesPreset(t *testing.T) {
 
 	result := c.getTimeoutConfig()
 
-	// Custom values should be used
 	if result.HeartbeatTimeout != 999*time.Millisecond {
 		t.Errorf("expected custom heartbeat, got %v", result.HeartbeatTimeout)
 	}

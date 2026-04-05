@@ -153,11 +153,10 @@ func createTestJob(id string) *patrick.Job {
 	}
 }
 
-func createTestLock(pid peer.ID, eta int64) *Lock {
-	return &Lock{
-		Pid:       pid,
+func createTestAssignment(pid peer.ID) *Assignment {
+	return &Assignment{
+		MonkeyPID: pid.String(),
 		Timestamp: time.Now().Unix(),
-		Eta:       eta,
 	}
 }
 
@@ -168,7 +167,7 @@ func TestReannounceJobs(t *testing.T) {
 		expectedError string
 	}{
 		{
-			name: "successful reannounce with expired jobs",
+			name: "successful reannounce with expired assignments",
 			setupMocks: func(mockDB *mock.KVDB) {
 				job1 := createTestJob("job1")
 				job1Bytes, _ := cbor.Marshal(job1)
@@ -178,24 +177,23 @@ func TestReannounceJobs(t *testing.T) {
 				job2Bytes, _ := cbor.Marshal(job2)
 				mockDB.Put(context.Background(), "/jobs/job2", job2Bytes)
 
-				// Expired lock for job1
-				expiredLock := createTestLock(peer.ID("peer1"), 300)
-				expiredLock.Timestamp = time.Now().Unix() - 400
-				lockData, _ := cbor.Marshal(expiredLock)
-				mockDB.Put(context.Background(), "/locked/jobs/job1", lockData)
+				// Expired assignment for job1
+				expiredAssignment := createTestAssignment(peer.ID("peer1"))
+				expiredAssignment.Timestamp = time.Now().Unix() - 120
+				assignData, _ := cbor.Marshal(expiredAssignment)
+				mockDB.Put(context.Background(), "/assigned/job1", assignData)
 
-				// Valid lock for job2
-				validLock := createTestLock(peer.ID("peer2"), 300)
-				validLock.Timestamp = time.Now().Unix() - 50
-				lockData2, _ := cbor.Marshal(validLock)
-				mockDB.Put(context.Background(), "/locked/jobs/job2", lockData2)
+				// Recent assignment for job2
+				recentAssignment := createTestAssignment(peer.ID("peer2"))
+				recentAssignment.Timestamp = time.Now().Unix()
+				assignData2, _ := cbor.Marshal(recentAssignment)
+				mockDB.Put(context.Background(), "/assigned/job2", assignData2)
 			},
 			expectedError: "",
 		},
 		{
 			name: "no jobs to reannounce",
 			setupMocks: func(mockDB *mock.KVDB) {
-				// No jobs set up
 			},
 			expectedError: "",
 		},
@@ -214,8 +212,9 @@ func TestReannounceJobs(t *testing.T) {
 			mockDB, _ := factory.New(nil, "test", 0)
 
 			srv := &PatrickService{
-				db:   mockDB,
-				node: &mockNode{},
+				db:       mockDB,
+				node:     &mockNode{},
+				jobQueue: &mockJobQueue{popErr: nil},
 			}
 
 			tt.setupMocks(mockDB.(*mock.KVDB))
@@ -235,52 +234,17 @@ func TestRepublishJob(t *testing.T) {
 	tests := []struct {
 		name          string
 		jid           string
-		setupMocks    func(*mock.KVDB, *mockNode)
 		expectedError string
-		expectPubSub  bool
 	}{
 		{
-			name: "successful republish",
-			jid:  "test-job-1",
-			setupMocks: func(mockDB *mock.KVDB, mockNode *mockNode) {
-				job := createTestJob("test-job-1")
-				jobBytes, _ := cbor.Marshal(job)
-				mockDB.Put(context.Background(), "/jobs/test-job-1", jobBytes)
-			},
+			name:          "successful republish",
+			jid:           "test-job-1",
 			expectedError: "",
-			expectPubSub:  true,
 		},
 		{
-			name: "job already archived",
-			jid:  "test-job-2",
-			setupMocks: func(mockDB *mock.KVDB, mockNode *mockNode) {
-				job := createTestJob("test-job-2")
-				jobBytes, _ := cbor.Marshal(job)
-				mockDB.Put(context.Background(), "/archive/jobs/test-job-2", jobBytes)
-			},
-			expectedError: "get job test-job-2 failed with: key not found",
-			expectPubSub:  false,
-		},
-		{
-			name: "job not found",
-			jid:  "test-job-3",
-			setupMocks: func(mockDB *mock.KVDB, mockNode *mockNode) {
-				// No job data set up
-			},
-			expectedError: "get job test-job-3 failed with: key not found",
-			expectPubSub:  false,
-		},
-		{
-			name: "pubsub error",
-			jid:  "test-job-4",
-			setupMocks: func(mockDB *mock.KVDB, mockNode *mockNode) {
-				job := createTestJob("test-job-4")
-				jobBytes, _ := cbor.Marshal(job)
-				mockDB.Put(context.Background(), "/jobs/test-job-4", jobBytes)
-				mockNode.pubsubError = errors.New("pubsub failed")
-			},
-			expectedError: "failed to send over in republishJob pubsub error",
-			expectPubSub:  true,
+			name:          "republish with no job in DB",
+			jid:           "test-job-2",
+			expectedError: "",
 		},
 	}
 
@@ -288,14 +252,12 @@ func TestRepublishJob(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			factory := mock.New()
 			mockDB, _ := factory.New(nil, "test", 0)
-			mockNode := &mockNode{}
 
 			srv := &PatrickService{
-				db:   mockDB,
-				node: mockNode,
+				db:       mockDB,
+				node:     &mockNode{},
+				jobQueue: &mockJobQueue{popErr: nil},
 			}
-
-			tt.setupMocks(mockDB.(*mock.KVDB), mockNode)
 
 			err := srv.republishJob(context.Background(), tt.jid)
 
@@ -304,14 +266,31 @@ func TestRepublishJob(t *testing.T) {
 			} else {
 				assert.NilError(t, err)
 			}
-
-			if tt.expectPubSub {
-				assert.Assert(t, len(mockNode.pubsubCalls) > 0, "Expected pubsub call")
-			} else {
-				assert.Assert(t, len(mockNode.pubsubCalls) == 0, "Expected no pubsub call")
-			}
 		})
 	}
+}
+
+// #20: Verify clusterPidPayload CBOR uses string keys (not integer keys).
+func TestClusterPidPayload_CBORRoundTrip(t *testing.T) {
+	original := clusterPidPayload{
+		Pid:       "QmTestPeer123",
+		Timestamp: 1234567890,
+	}
+
+	data, err := cbor.Marshal(original)
+	assert.NilError(t, err)
+
+	var decoded clusterPidPayload
+	assert.NilError(t, cbor.Unmarshal(data, &decoded))
+	assert.Equal(t, original.Pid, decoded.Pid)
+	assert.Equal(t, original.Timestamp, decoded.Timestamp)
+
+	var generic map[string]interface{}
+	assert.NilError(t, cbor.Unmarshal(data, &generic))
+	_, hasPid := generic["pid"]
+	assert.Assert(t, hasPid, "CBOR should use string key 'pid', not integer key")
+	_, hasTimestamp := generic["timestamp"]
+	assert.Assert(t, hasTimestamp, "CBOR should use string key 'timestamp', not integer key")
 }
 
 func TestConnectToProject(t *testing.T) {

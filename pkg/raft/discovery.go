@@ -7,10 +7,13 @@ import (
 	"sync/atomic"
 	"time"
 
+	logging "github.com/ipfs/go-log/v2"
 	"github.com/libp2p/go-libp2p/core/host"
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
 )
+
+var discoveryLogger = logging.Logger("raft-discovery")
 
 // peerTracker tracks discovered peers and their discovery times
 type peerTracker struct {
@@ -59,6 +62,8 @@ func (pt *peerTracker) addPeer(pid peer.ID) {
 		pt.peers[pid] = time.Since(pt.startTime)
 		pt.lastPeerCount = len(pt.peers)
 		pt.lastChangeTime = time.Now()
+		discoveryLogger.Infof("[%s] new peer discovered: %s (total tracked: %d)",
+			pt.selfID.ShortString(), pid.ShortString(), pt.lastPeerCount)
 	}
 }
 
@@ -93,6 +98,8 @@ func (pt *peerTracker) mergePeers(theirStart time.Time, theirPeers map[string]in
 	if len(newPeers) > 0 {
 		pt.lastPeerCount = len(pt.peers)
 		pt.lastChangeTime = time.Now()
+		discoveryLogger.Infof("[%s] peer exchange yielded %d new peers (total tracked: %d)",
+			pt.selfID.ShortString(), len(newPeers), pt.lastPeerCount)
 	}
 
 	return newPeers
@@ -182,13 +189,18 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 	host := c.node.Peer()
 	raftProtocol := protocol.ID(Protocol(c.namespace))
 
+	discoveryLogger.Infof("[%s] starting peer discovery for namespace %s (interval=%v)",
+		pt.selfID.ShortString(), c.namespace, pt.getDiscoveryInterval())
+
 	for {
 		select {
 		case <-ctx.Done():
+			discoveryLogger.Infof("[%s] peer discovery stopped (context cancelled)", pt.selfID.ShortString())
 			return
 
 		case <-time.After(pt.getDiscoveryInterval()):
-			for _, pid := range host.Network().Peers() {
+			connectedPeers := host.Network().Peers()
+			for _, pid := range connectedPeers {
 				if pid != c.node.ID() && supportsRaftProtocol(host, pid, raftProtocol) {
 					pt.addPeer(pid)
 				}
@@ -211,11 +223,16 @@ func (pt *peerTracker) runDiscoveryAndExchange(ctx context.Context, c *cluster) 
 				for _, pid := range pt.allPeers() {
 					startTime, peersMap := pt.getPeersMap()
 					theirStart, theirPeers, err := c.raftClient.ExchangePeers(startTime, peersMap, pid)
-					if err == nil {
-						newPeers := pt.mergePeers(theirStart, theirPeers)
-						for _, newPeer := range newPeers {
-							c.dialPeer(ctx, newPeer)
-						}
+					if err != nil {
+						discoveryLogger.Infof("[%s] peer exchange with %s failed: %v",
+							pt.selfID.ShortString(), pid.ShortString(), err)
+						continue
+					}
+					newPeers := pt.mergePeers(theirStart, theirPeers)
+					for _, newPeer := range newPeers {
+						discoveryLogger.Infof("[%s] dialing newly discovered peer %s",
+							pt.selfID.ShortString(), newPeer.ShortString())
+						c.dialPeer(ctx, newPeer)
 					}
 				}
 			}

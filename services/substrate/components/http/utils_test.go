@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/config"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
@@ -137,12 +137,20 @@ func fakeFetch(client tns.Client, websites map[string]structureSpec.Website, fun
 	return nil
 }
 
-func NewTestService(node peer.Node) *Service {
+func newTestService(node peer.Node) *Service {
 	nodeService := structure.MockNodeService(node, context.Background())
+	cfg, err := config.New(
+		config.WithRoot("/tmp"),
+		config.WithP2PListen([]string{"/ip4/0.0.0.0/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+	)
+	if err != nil {
+		panic(err)
+	}
 	return &Service{
 		Service: nodeService,
 		cache:   cache.New(),
-		config:  &config.Node{},
+		config:  cfg,
 	}
 }
 

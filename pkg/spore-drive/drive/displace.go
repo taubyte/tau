@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/core/services/seer"
 	preader "github.com/taubyte/tau/pkg/cli/io/progress"
+	"github.com/taubyte/tau/pkg/config"
 	host "github.com/taubyte/tau/pkg/mycelium/host"
 	"github.com/taubyte/tau/pkg/spore-drive/course"
 	"gopkg.in/ini.v1"

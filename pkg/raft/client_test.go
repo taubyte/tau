@@ -270,17 +270,14 @@ func TestClient_WithEncryption(t *testing.T) {
 
 	node := newMockNode(t)
 
-	cl, err := New(node, "/raft/enc-client-test", WithEncryptionKey(key), WithForceBootstrap())
+	cl, err := New(node, "/raft/enc-client-test", WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create encrypted cluster")
 	defer cl.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	err = cl.WaitForLeader(ctx)
-	if err != nil {
-		t.Logf("WaitForLeader failed (may be expected): %v", err)
-		return
-	}
+	require.NoError(t, err, "leader election should succeed with fast timeouts")
 
 	block, err := aes.NewCipher(key)
 	require.NoError(t, err, "failed to create cipher")

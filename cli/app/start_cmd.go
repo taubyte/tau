@@ -5,7 +5,7 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/cli/node"
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 	"github.com/urfave/cli/v2"
 )
 

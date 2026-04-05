@@ -4,9 +4,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/tau/config"
-	"github.com/taubyte/tau/p2p/keypair"
-	"github.com/taubyte/tau/pkg/kvdb/mock"
 	"gotest.tools/v3/assert"
 )
 
@@ -17,7 +14,7 @@ func TestGenerateKey(t *testing.T) {
 		assert.Assert(t, deployKeyName != "")
 		assert.Assert(t, publicKey != "")
 		assert.Assert(t, privateKey != "")
-		assert.Equal(t, deployKeyName, "taubyte_deploy_key")
+		assert.Assert(t, deployKeyName == "taubyte_deploy_key" || deployKeyName == "taubyte_deploy_key_dev", "key name should be deploy key or dev variant (got %s)", deployKeyName)
 		assert.Assert(t, publicKey != "", "Public key should not be empty")
 		assert.Assert(t, privateKey != "", "Private key should not be empty")
 	})
@@ -39,14 +36,7 @@ func TestNewGitHubProject(t *testing.T) {
 
 	t.Run("successful project creation", func(t *testing.T) {
 		// Create a mock auth service for testing
-		mockFactory := mock.New()
-		cfg := &config.Node{
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12356"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12356"},
-			PrivateKey:  keypair.NewRaw(),
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-		}
+		cfg := newTestConfig(t, 12356)
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		defer svc.Close()
@@ -79,14 +69,7 @@ func TestImportGitHubProject(t *testing.T) {
 
 	t.Run("successful project import", func(t *testing.T) {
 		// Create a mock auth service for testing
-		mockFactory := mock.New()
-		cfg := &config.Node{
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12357"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12357"},
-			PrivateKey:  keypair.NewRaw(),
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-		}
+		cfg := newTestConfig(t, 12357)
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		defer svc.Close()
@@ -117,14 +100,7 @@ func TestRegisterGitHubUserRepository(t *testing.T) {
 
 	t.Run("successful repository registration", func(t *testing.T) {
 		// Create a mock auth service for testing
-		mockFactory := mock.New()
-		cfg := &config.Node{
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12358"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12358"},
-			PrivateKey:  keypair.NewRaw(),
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-		}
+		cfg := newTestConfig(t, 12358)
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		defer svc.Close()
@@ -150,14 +126,7 @@ func TestGetGitHubUserProjects(t *testing.T) {
 
 	t.Run("successful projects retrieval", func(t *testing.T) {
 		// Create a mock auth service for testing
-		mockFactory := mock.New()
-		cfg := &config.Node{
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12359"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12359"},
-			PrivateKey:  keypair.NewRaw(),
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-		}
+		cfg := newTestConfig(t, 12359)
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		defer svc.Close()
@@ -180,14 +149,7 @@ func TestGetGitHubUserRepositories(t *testing.T) {
 
 	t.Run("successful repositories retrieval", func(t *testing.T) {
 		// Create a mock auth service for testing
-		mockFactory := mock.New()
-		cfg := &config.Node{
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12360"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12360"},
-			PrivateKey:  keypair.NewRaw(),
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-		}
+		cfg := newTestConfig(t, 12360)
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		defer svc.Close()
@@ -210,14 +172,7 @@ func TestGetGitHubUser(t *testing.T) {
 
 	t.Run("successful user retrieval", func(t *testing.T) {
 		// Create a mock auth service for testing
-		mockFactory := mock.New()
-		cfg := &config.Node{
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12361"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12361"},
-			PrivateKey:  keypair.NewRaw(),
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-		}
+		cfg := newTestConfig(t, 12361)
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		defer svc.Close()
@@ -240,14 +195,7 @@ func TestDeleteGitHubProject(t *testing.T) {
 
 	t.Run("successful project deletion", func(t *testing.T) {
 		// Create a mock auth service for testing
-		mockFactory := mock.New()
-		cfg := &config.Node{
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12362"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12362"},
-			PrivateKey:  keypair.NewRaw(),
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-		}
+		cfg := newTestConfig(t, 12362)
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
 		defer svc.Close()

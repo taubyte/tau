@@ -4,10 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/taubyte/tau/config"
-	"github.com/taubyte/tau/p2p/keypair"
 	"github.com/taubyte/tau/p2p/streams/command"
-	"github.com/taubyte/tau/pkg/kvdb/mock"
 
 	"gotest.tools/v3/assert"
 )
@@ -15,14 +12,7 @@ import (
 // Test projects endpoints with comprehensive test data sequences
 func TestProjectsEndpointsWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12378"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12378"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12378)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -63,14 +53,7 @@ func TestProjectsEndpointsWithFixtures(t *testing.T) {
 // Test project error handling and edge cases
 func TestProjectErrorHandling(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12364"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12364"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12364)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -102,14 +85,7 @@ func TestProjectErrorHandling(t *testing.T) {
 // Test apiProjectsServiceHandler with different input validation scenarios
 func TestApiProjectsServiceHandlerInputValidation(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12368"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12368"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12368)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -139,14 +115,7 @@ func TestApiProjectsServiceHandlerInputValidation(t *testing.T) {
 // Test project and repository API operations with sub-tests
 func TestProjectAndRepositoryAPIOperationsWithSubTests(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12386"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12386"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12386)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -233,14 +202,7 @@ func TestProjectAndRepositoryAPIOperationsWithSubTests(t *testing.T) {
 // Test repository and project workflows with comprehensive test data sequences
 func TestRepositoryProjectWorkflowsWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12375"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12375"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12375)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()

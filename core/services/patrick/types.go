@@ -39,6 +39,7 @@ type Repository struct {
 	SSHURL   string `json:"ssh_url" cbor:"67,keyasint"` // deprecated: use URI; kept for backward compat
 	URI      string `json:"uri" cbor:"69,keyasint"`
 	Branch   string `json:"default_branch" cbor:"68,keyasint"`
+	PushedAt int64  `json:"pushed_at" cbor:"70,keyasint"`
 }
 
 // UnmarshalJSON decodes JSON and runs normalize so URI is set from SSHURL when empty.
