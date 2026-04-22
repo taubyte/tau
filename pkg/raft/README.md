@@ -103,7 +103,7 @@ The `Client` uses the stream command service and supports:
 
 ## Configuration knobs
 
-- **Timeout presets**: `local`, `regional` (default), `global`
+- **Timeouts**: `WithTimeouts(cfg)` for custom timing (default tuned for worldwide clusters)
 - **Bootstrap**:
   - `WithBootstrapTimeout(d)`
   - `WithForceBootstrap()` (only use when you really mean "this should start a new cluster right now")
@@ -121,7 +121,6 @@ The `Client` uses the stream command service and supports:
 
 ```go
 cl, err := raft.New(node, "/raft/cron",
-  raft.WithTimeoutPreset(raft.PresetRegional),
   raft.WithBootstrapTimeout(3*time.Second),
   // raft.WithEncryptionKey(key32bytesOrMore),
 )

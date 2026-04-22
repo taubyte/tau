@@ -1,7 +1,6 @@
 package http
 
 import (
-	"context"
 	"net/http"
 	"net/url"
 	"testing"
@@ -13,7 +12,7 @@ import (
 
 func TestFunction(t *testing.T) {
 	t.Skip("This test needs to be updated")
-	s := NewTestService(peer.Mock(context.Background()))
+	s := newTestService(peer.Mock(t.Context()))
 	testDomainName := "someDomain"
 	testFunctionId := "someFuncId"
 	testFunctionName := "someFunctionName"

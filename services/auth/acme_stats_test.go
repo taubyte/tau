@@ -3,27 +3,35 @@ package auth
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"testing"
 
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/keypair"
 	"github.com/taubyte/tau/p2p/streams/command"
+	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
 
 	"gotest.tools/v3/assert"
 )
 
+func newTestConfig(t *testing.T, port int) config.Config {
+	cfg, err := config.New(
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", port)}),
+		config.WithP2PAnnounce([]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", port)}),
+		config.WithPrivateKey(keypair.NewRaw()),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.SetDatabases(mock.New())
+	return cfg
+}
+
 // Test ACME service handler with comprehensive test data sequences
 func TestAcmeServiceHandlerWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12374"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12374"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12374)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -86,14 +94,7 @@ func TestAcmeServiceHandlerWithFixtures(t *testing.T) {
 // Test P2P stream endpoints with comprehensive test data sequences
 func TestP2PStreamEndpointsWithFixtures(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12373"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12373"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12373)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -153,14 +154,7 @@ func TestP2PStreamEndpointsWithFixtures(t *testing.T) {
 // Test statsServiceHandler with different input validation scenarios
 func TestStatsServiceHandlerInputValidation(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12371"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12371"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12371)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -186,14 +180,7 @@ func TestStatsServiceHandlerInputValidation(t *testing.T) {
 // Test stats service handler
 func TestStatsServiceHandler(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12356"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12356"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12356)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -211,14 +198,7 @@ func TestStatsServiceHandler(t *testing.T) {
 // Test stats service handler with different actions
 func TestStatsServiceHandlerActions(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12366"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12366"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12366)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -241,14 +221,7 @@ func TestStatsServiceHandlerActions(t *testing.T) {
 // Test ACME static certificate with wildcard fallback
 func TestACMEStaticCertificateWildcardFallback(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12367"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12367"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12367)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -275,14 +248,7 @@ func TestACMEStaticCertificateWildcardFallback(t *testing.T) {
 // Test ACME certificate functions
 func TestACMECertificateFunctions(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12357"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12357"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12357)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -332,14 +298,7 @@ func TestACMECertificateFunctions(t *testing.T) {
 // Test ACME cache error paths
 func TestACMECacheErrorPaths(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12387"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12387"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12387)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()
@@ -369,14 +328,7 @@ func TestACMECacheErrorPaths(t *testing.T) {
 // Test ACME certificate error paths
 func TestACMECertificateErrorPaths(t *testing.T) {
 	ctx := context.Background()
-	mockFactory := mock.New()
-	cfg := &config.Node{
-		P2PListen:   []string{"/ip4/0.0.0.0/tcp/12388"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12388"},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
-	}
+	cfg := newTestConfig(t, 12388)
 	svc, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	defer svc.Close()

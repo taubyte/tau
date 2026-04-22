@@ -10,47 +10,11 @@ import (
 func newTestCluster() *cluster {
 	return &cluster{
 		namespace:          "/raft/test",
-		timeoutPreset:      PresetRegional,
-		timeoutConfig:      presetConfigs[PresetRegional],
+		timeoutConfig:      DefaultTimeoutConfig,
 		forceBootstrap:     false,
 		bootstrapTimeout:   10 * time.Second,
 		bootstrapThreshold: 0.8,
 	}
-}
-
-func TestWithTimeoutPreset(t *testing.T) {
-	t.Run("local_preset", func(t *testing.T) {
-		c := newTestCluster()
-		WithTimeoutPreset(PresetLocal)(c)
-
-		assert.Equal(t, c.timeoutPreset, PresetLocal)
-		assert.Equal(t, c.timeoutConfig.HeartbeatTimeout, 1*time.Second)
-	})
-
-	t.Run("regional_preset", func(t *testing.T) {
-		c := newTestCluster()
-		WithTimeoutPreset(PresetRegional)(c)
-
-		assert.Equal(t, c.timeoutPreset, PresetRegional)
-		assert.Equal(t, c.timeoutConfig.HeartbeatTimeout, 5*time.Second)
-	})
-
-	t.Run("global_preset", func(t *testing.T) {
-		c := newTestCluster()
-		WithTimeoutPreset(PresetGlobal)(c)
-
-		assert.Equal(t, c.timeoutPreset, PresetGlobal)
-		assert.Equal(t, c.timeoutConfig.HeartbeatTimeout, 15*time.Second)
-	})
-
-	t.Run("invalid_preset", func(t *testing.T) {
-		c := newTestCluster()
-		originalTimeout := c.timeoutConfig.HeartbeatTimeout
-		WithTimeoutPreset("invalid")(c)
-
-		// Should keep original config
-		assert.Equal(t, c.timeoutConfig.HeartbeatTimeout, originalTimeout)
-	})
 }
 
 func TestWithTimeouts(t *testing.T) {
@@ -94,9 +58,10 @@ func TestDefaultConfig_Values(t *testing.T) {
 	c := newTestCluster()
 
 	assert.Equal(t, c.namespace, "/raft/test")
-	assert.Equal(t, c.timeoutPreset, PresetRegional)
 	assert.Assert(t, !c.forceBootstrap)
 	assert.Equal(t, c.bootstrapTimeout, 10*time.Second)
+	assert.Equal(t, c.timeoutConfig.HeartbeatTimeout, DefaultTimeoutConfig.HeartbeatTimeout)
+	assert.Equal(t, c.timeoutConfig.ElectionTimeout, DefaultTimeoutConfig.ElectionTimeout)
 }
 
 func TestGetTimeoutConfig(t *testing.T) {
@@ -110,21 +75,11 @@ func TestGetTimeoutConfig(t *testing.T) {
 		assert.Equal(t, result.HeartbeatTimeout, 123*time.Millisecond)
 	})
 
-	t.Run("falls_back_to_preset", func(t *testing.T) {
+	t.Run("falls_back_to_default", func(t *testing.T) {
 		c := newTestCluster()
-		c.timeoutConfig = TimeoutConfig{} // Zero value
-		c.timeoutPreset = PresetGlobal
+		c.timeoutConfig = TimeoutConfig{}
 
 		result := c.getTimeoutConfig()
-		assert.Equal(t, result.HeartbeatTimeout, 15*time.Second) // Global preset
-	})
-
-	t.Run("falls_back_to_regional", func(t *testing.T) {
-		c := newTestCluster()
-		c.timeoutConfig = TimeoutConfig{} // Zero value
-		c.timeoutPreset = "unknown"       // Invalid preset
-
-		result := c.getTimeoutConfig()
-		assert.Equal(t, result.HeartbeatTimeout, 5*time.Second) // Regional fallback
+		assert.Equal(t, result.HeartbeatTimeout, 15*time.Second)
 	})
 }

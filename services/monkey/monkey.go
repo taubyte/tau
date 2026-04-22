@@ -2,10 +2,8 @@ package monkey
 
 import (
 	"context"
-	"crypto/rand"
 	"fmt"
 	"io"
-	"math/big"
 	"os"
 	"time"
 
@@ -24,28 +22,8 @@ func (m *Monkey) Run() {
 
 	errs := make(chan error, 1024)
 
-	ctx, ctxC := context.WithCancel(m.ctx)
-
-	doneRefresh := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				doneRefresh <- struct{}{}
-				return
-			case <-time.After(protocolCommon.DefaultRefreshLockTime):
-
-				eta := time.Since(m.start) + protocolCommon.DefaultLockTime
-
-				m.Service.patrickClient.Lock(m.Id, uint32(eta/time.Second))
-			}
-		}
-	}()
-
 	m.run(errs)
 	close(errs)
-	ctxC()
-	<-doneRefresh
 
 	runErr := m.appendErrors(m.logFile, errs)
 	cid, err := m.storeLogs(m.logFile)
@@ -55,6 +33,17 @@ func (m *Monkey) Run() {
 
 	m.Job.Logs[m.Job.Id] = cid
 	m.LogCID = cid
+
+	// Zombie protection: verify we still own the job before reporting results.
+	// If assignment timed out and the job was given to another Monkey, discard.
+	assigned, assignErr := m.Service.patrickClient.IsAssigned(m.Id)
+	if assignErr != nil {
+		logger.Errorf("IsAssigned check for job `%s` failed: %s", m.Id, assignErr.Error())
+	}
+	if !assigned {
+		logger.Infof("Job `%s` is no longer assigned to us, discarding results", m.Id)
+		return
+	}
 
 	if runErr != nil {
 		if err = m.Service.patrickClient.Failed(m.Id, m.Job.Logs, m.Job.AssetCid); err != nil {
@@ -85,57 +74,30 @@ func (m *Monkey) run(errs chan error) {
 	}
 }
 
+// newMonkey creates a Monkey for a job that was already dequeued and assigned by Patrick.
 func (s *Service) newMonkey(job *patrick.Job) (*Monkey, error) {
 	jid := job.Id
-	err := s.patrickClient.Lock(jid, uint32(protocolCommon.DefaultLockTime/time.Second))
+
+	logFile, err := os.CreateTemp("/tmp", fmt.Sprintf("log-%s", jid))
 	if err != nil {
 		return nil, err
 	}
 
-	if !protocolCommon.MockedPatrick {
-		randSleep()
+	m := &Monkey{
+		Id:                    jid,
+		Status:                patrick.JobStatusLocked,
+		Service:               s,
+		Job:                   job,
+		logFile:               logFile,
+		generatedDomainRegExp: s.config.GeneratedDomainRegExp(),
+		start:                 time.Now(),
 	}
 
-	locked, err := s.patrickClient.IsLocked(jid)
-	if err != nil {
-		return nil, err
-	}
+	m.ctx, m.ctxC = context.WithCancel(s.ctx)
 
-	if locked {
-		logFile, err := os.CreateTemp("/tmp", fmt.Sprintf("log-%s", jid))
-		if err != nil {
-			return nil, err
-		}
+	s.monkeysLock.Lock()
+	s.monkeys[jid] = m
+	s.monkeysLock.Unlock()
 
-		m := &Monkey{
-			Id:                    jid,
-			Status:                patrick.JobStatusLocked,
-			Service:               s,
-			Job:                   job,
-			logFile:               logFile,
-			generatedDomainRegExp: s.config.GeneratedDomainRegExp,
-			start:                 time.Now(),
-		}
-
-		m.ctx, m.ctxC = context.WithCancel(s.ctx)
-
-		m.Service.monkeysLock.Lock()
-		s.monkeys[jid] = m
-		m.Service.monkeysLock.Unlock()
-
-		return m, nil
-	}
-
-	return nil, fmt.Errorf("didn't actually lock")
-}
-
-func randSleep() {
-	n, err := rand.Int(rand.Reader, big.NewInt(1<<53))
-	if err != nil {
-		time.Sleep(protocolCommon.DefaultLockMinWaitTime)
-		return
-	}
-
-	duration := protocolCommon.DefaultLockMinWaitTime + time.Duration(float64(n.Int64())/float64(1<<53))*protocolCommon.DefaultLockMinWaitTime
-	time.Sleep(duration)
+	return m, nil
 }

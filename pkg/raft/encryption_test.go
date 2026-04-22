@@ -491,39 +491,30 @@ func TestCluster_WithEncryption(t *testing.T) {
 
 	node := newMockNode(t)
 
-	// Create cluster with encryption
-	cl, err := New(node, "/raft/encrypted-test", WithEncryptionKey(key), WithForceBootstrap())
+	cl, err := New(node, "/raft/encrypted-test", WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create encrypted cluster")
 	defer cl.Close()
 
-	// Wait for leader with longer timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	err = cl.WaitForLeader(ctx)
-	if err != nil {
-		// In single-node scenarios, leader election may take time or fail
-		// The important thing is that cluster creation with encryption succeeded
-		t.Logf("WaitForLeader with encryption returned error (may be expected in single-node): %v", err)
-		return
-	}
+	require.NoError(t, err, "leader election should succeed with fast timeouts")
 
-	// Create client with same encryption key
-	client, err := NewClient(node, "/raft/encrypted-test", keyToCipher(t, key))
-	require.NoError(t, err, "failed to create encrypted client")
-	defer client.Close()
+	assert.Assert(t, cl.IsLeader(), "single node should be leader")
 
-	// Test operations with encryption
-	err = client.Set("enc-key", []byte("enc-value"), time.Second, node.ID())
-	if err != nil {
-		t.Logf("Set with encryption returned error: %v", err)
-		return
-	}
+	err = cl.Set("enc-key", []byte("enc-value"), time.Second)
+	require.NoError(t, err, "Set on encrypted cluster should succeed")
 
-	val, found, err := client.Get("enc-key", 0, node.ID())
-	if err == nil && found {
-		assert.Equal(t, string(val), "enc-value")
-	}
+	val, found := cl.Get("enc-key")
+	assert.Assert(t, found, "key should be found")
+	assert.Equal(t, string(val), "enc-value")
+
+	err = cl.Delete("enc-key", time.Second)
+	require.NoError(t, err, "Delete on encrypted cluster should succeed")
+
+	_, found = cl.Get("enc-key")
+	assert.Assert(t, !found, "key should be gone after delete")
 }
 
 // TestCluster_Encryption_Transport tests that transport layer encryption works
@@ -534,17 +525,13 @@ func TestCluster_Encryption_Transport(t *testing.T) {
 	node := newMockNode(t)
 
 	// Create cluster with encryption - this tests transport encryption
-	cl, err := New(node, "/raft/transport-enc-test", WithEncryptionKey(key), WithForceBootstrap())
+	cl, err := New(node, "/raft/transport-enc-test", WithEncryptionKey(key), WithTimeouts(testTimeoutConfig()), WithForceBootstrap())
 	require.NoError(t, err, "failed to create encrypted cluster")
 	defer cl.Close()
 
-	// The fact that we can create and use the cluster means transport encryption is working
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
 	err = cl.WaitForLeader(ctx)
-	// May timeout in single-node test, but cluster creation with encryption succeeded
-	if err != nil {
-		t.Logf("WaitForLeader with encryption returned error (may be expected): %v", err)
-	}
+	require.NoError(t, err, "leader election should succeed with fast timeouts")
 }

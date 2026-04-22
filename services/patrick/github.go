@@ -15,9 +15,7 @@ import (
 	authIface "github.com/taubyte/tau/core/services/auth"
 	iface "github.com/taubyte/tau/core/services/patrick"
 	http "github.com/taubyte/tau/pkg/http"
-	patrickSpecs "github.com/taubyte/tau/pkg/specs/patrick"
 	servicesCommon "github.com/taubyte/tau/services/common"
-	"github.com/taubyte/tau/utils/id"
 	"gopkg.in/go-playground/webhooks.v5/github"
 
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
@@ -102,16 +100,18 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 			return nil, fmt.Errorf("failed unmarshalling payload into struct with error: %w", err)
 		}
 
-		job_id := id.Generate(newJob.Meta.Repository.ID)
-
-		//Assign fields before marshal
+		// Assign fields before id and branch checks
 		newJob.Meta.Repository.Provider = "github"
-		newJob.Id = job_id
-
 		newJob.Meta.Repository.Branch = strings.Replace(newJob.Meta.Ref, "refs/heads/", "", 1)
 
 		if !slices.Contains(commonSpec.DefaultBranches, newJob.Meta.Repository.Branch) && !srv.devMode {
 			return nil, fmt.Errorf("only builds main branches %v got `%s`", commonSpec.DefaultBranches, newJob.Meta.Repository.Branch)
+		}
+
+		newJob.Id = iface.PushEventJobID(&newJob.Meta)
+
+		if existing, err := srv.getJob(ctx.Request().Context(), "/jobs/", newJob.Id); err == nil && existing != nil {
+			return existing, nil
 		}
 
 		// Pushing useful information to tns (ssh key stores effective URI for backward compat)
@@ -139,6 +139,10 @@ func (srv *PatrickService) githubHookHandler(ctx http.Context) (interface{}, err
 }
 
 func (srv *PatrickService) RegisterJob(ctx context.Context, newJob *iface.Job) error {
+	if _, err := srv.db.Get(ctx, "/jobs/"+newJob.Id); err == nil {
+		return nil
+	}
+
 	job_byte, err := cbor.Marshal(newJob)
 	if err != nil {
 		return fmt.Errorf("failed cbor marshall on job structure with err: %w", err)
@@ -155,12 +159,16 @@ func (srv *PatrickService) RegisterJob(ctx context.Context, newJob *iface.Job) e
 		return err
 	}
 
-	// Send the job over pub sub
-	err = srv.node.PubSubPublish(ctx, patrickSpecs.PubSubIdent, job_byte)
+	exists, err := srv.jobExistsInOtherCluster(ctx, newJob.Id)
 	if err != nil {
-		return fmt.Errorf("failed to send over pubsub error: %w", err)
+		return fmt.Errorf("cross-cluster check failed: %w", err)
 	}
-
+	if exists {
+		return nil
+	}
+	if err = srv.jobQueue.Push(newJob.Id, nil, 5*time.Second); err != nil {
+		return fmt.Errorf("failed to push job onto queue: %w", err)
+	}
 	return nil
 }
 

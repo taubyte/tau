@@ -1,7 +1,6 @@
 package pubsub
 
 import (
-	"context"
 	"testing"
 
 	"github.com/taubyte/tau/p2p/peer"
@@ -12,7 +11,7 @@ import (
 )
 
 func TestLookupRegex(t *testing.T) {
-	s := NewTestService(peer.Mock(context.Background()))
+	s := NewTestService(peer.Mock(t.Context()))
 	msg := map[string]structureSpec.Messaging{
 		"someMessagingId": {
 			Name:      "Somemessaging",

@@ -2,36 +2,33 @@ package service
 
 import (
 	"context"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/keypair"
 	"github.com/taubyte/tau/p2p/peer"
+	"github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
+	"github.com/taubyte/tau/pkg/raft"
 	"gotest.tools/v3/assert"
 )
 
-func createTestDir(t *testing.T) string {
-	dir, err := os.MkdirTemp("", "patrick-test-*")
+func createTestConfig(t *testing.T) config.Config {
+	cfg, err := config.New(
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithPrivateKey(keypair.NewRaw()),
+	)
 	assert.NilError(t, err)
-	return dir
-}
-
-func createTestConfig(t *testing.T) *config.Node {
-	return &config.Node{
-		Root:        createTestDir(t),
-		P2PListen:   []string{"/ip4/127.0.0.1/tcp/0"},
-		P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/0"},
-		PrivateKey:  keypair.NewRaw(),
-	}
+	cfg.SetRaftCluster(raft.NewMockCluster())
+	return cfg
 }
 
 func TestNew(t *testing.T) {
 	tests := []struct {
 		name          string
-		config        *config.Node
+		config        config.Config
 		expectedError string
 	}{
 		{
@@ -41,19 +38,26 @@ func TestNew(t *testing.T) {
 		},
 		{
 			name: "valid config with dev mode",
-			config: func() *config.Node {
-				config := createTestConfig(t)
-				config.DevMode = true
-				return config
+			config: func() config.Config {
+				cfg, err := config.New(
+					config.WithRoot(t.TempDir()),
+					config.WithP2PListen([]string{"/ip4/127.0.0.1/tcp/0"}),
+					config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+					config.WithPrivateKey(keypair.NewRaw()),
+					config.WithDevMode(true),
+				)
+				assert.NilError(t, err)
+				cfg.SetRaftCluster(raft.NewMockCluster())
+				return cfg
 			}(),
 			expectedError: "",
 		},
 		{
 			name: "config with custom database factory",
-			config: func() *config.Node {
-				config := createTestConfig(t)
-				config.Databases = mock.New()
-				return config
+			config: func() config.Config {
+				cfg := createTestConfig(t)
+				cfg.SetDatabases(mock.New())
+				return cfg
 			}(),
 			expectedError: "",
 		},
@@ -82,31 +86,9 @@ func TestNew(t *testing.T) {
 }
 
 func TestNewWithInvalidConfig(t *testing.T) {
-	tests := []struct {
-		name          string
-		config        *config.Node
-		expectedError string
-	}{
-		{
-			name: "invalid root path",
-			config: &config.Node{
-				Root: "", // Invalid empty root
-			},
-			expectedError: "building config failed with",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-			defer cancel()
-
-			srv, err := New(ctx, tt.config)
-
-			assert.ErrorContains(t, err, tt.expectedError)
-			assert.Assert(t, srv == nil)
-		})
-	}
+	// config.New(WithRoot("")) returns error; we cannot get a Config with invalid root to pass to New
+	_, err := config.New(config.WithRoot(""))
+	assert.Assert(t, err != nil, "expected config.New with empty root to fail")
 }
 
 func TestPatrickServiceClose(t *testing.T) {
@@ -114,10 +96,16 @@ func TestPatrickServiceClose(t *testing.T) {
 	defer cancel()
 
 	// Create a service
-	config := createTestConfig(t)
-	config.DevMode = true
-
-	srv, err := New(ctx, config)
+	cfg, err := config.New(
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithPrivateKey(keypair.NewRaw()),
+		config.WithDevMode(true),
+	)
+	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
@@ -131,10 +119,16 @@ func TestPatrickServiceDevMode(t *testing.T) {
 	defer cancel()
 
 	// Create service in dev mode
-	config := createTestConfig(t)
-	config.DevMode = true
-
-	srv, err := New(ctx, config)
+	cfg, err := config.New(
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithPrivateKey(keypair.NewRaw()),
+		config.WithDevMode(true),
+	)
+	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
@@ -148,10 +142,9 @@ func TestPatrickServiceWithCustomHTTP(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	config := createTestConfig(t)
-	config.Http = nil
-
-	srv, err := New(ctx, config)
+	cfg := createTestConfig(t)
+	// Http is not set on config by default
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
@@ -163,10 +156,16 @@ func TestPatrickServiceInitialization(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	config := createTestConfig(t)
-	config.DevMode = true
-
-	srv, err := New(ctx, config)
+	cfg, err := config.New(
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithPrivateKey(keypair.NewRaw()),
+		config.WithDevMode(true),
+	)
+	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
@@ -186,10 +185,16 @@ func TestPatrickServiceReannounceJobsGoroutine(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
 
-	config := createTestConfig(t)
-	config.DevMode = true
-
-	srv, err := New(ctx, config)
+	cfg, err := config.New(
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithPrivateKey(keypair.NewRaw()),
+		config.WithDevMode(true),
+	)
+	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
@@ -205,10 +210,16 @@ func TestPatrickServiceReannounceJobsAfterClose(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	config := createTestConfig(t)
-	config.DevMode = true
-
-	srv, err := New(ctx, config)
+	cfg, err := config.New(
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithPrivateKey(keypair.NewRaw()),
+		config.WithDevMode(true),
+	)
+	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
@@ -224,10 +235,16 @@ func TestPatrickServiceGoroutineStopsOnContextCancel(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	config := createTestConfig(t)
-	config.DevMode = true
-
-	srv, err := New(ctx, config)
+	cfg, err := config.New(
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithP2PAnnounce([]string{"/ip4/127.0.0.1/tcp/0"}),
+		config.WithPrivateKey(keypair.NewRaw()),
+		config.WithDevMode(true),
+	)
+	assert.NilError(t, err)
+	cfg.SetRaftCluster(raft.NewMockCluster())
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
@@ -247,9 +264,9 @@ func TestPatrickServiceKV(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	config := createTestConfig(t)
+	cfg := createTestConfig(t)
 
-	srv, err := New(ctx, config)
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
@@ -264,9 +281,9 @@ func TestPatrickServiceNode(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	config := createTestConfig(t)
+	cfg := createTestConfig(t)
 
-	srv, err := New(ctx, config)
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
@@ -283,10 +300,10 @@ func TestPatrickServiceWithCustomNode(t *testing.T) {
 
 	mockNode := peer.Mock(ctx)
 
-	config := createTestConfig(t)
-	config.Node = mockNode
+	cfg := createTestConfig(t)
+	cfg.SetNode(mockNode)
 
-	srv, err := New(ctx, config)
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 
@@ -302,10 +319,10 @@ func TestPatrickServiceWithCustomClientNode(t *testing.T) {
 
 	mockClientNode := peer.Mock(ctx)
 
-	config := createTestConfig(t)
-	config.ClientNode = mockClientNode
+	cfg := createTestConfig(t)
+	cfg.SetClientNode(mockClientNode)
 
-	srv, err := New(ctx, config)
+	srv, err := New(ctx, cfg)
 	assert.NilError(t, err)
 	assert.Assert(t, srv != nil)
 

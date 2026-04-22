@@ -12,13 +12,15 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/keypair"
+	"github.com/taubyte/tau/pkg/config"
 	httpPkg "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
 	"github.com/taubyte/tau/utils/id"
 	"gotest.tools/v3/assert"
 )
+
+func init() { _ = assert.NilError }
 
 // Test configuration and setup helpers
 type testConfig struct {
@@ -30,21 +32,22 @@ func createTestService(t *testing.T, cfg testConfig) (*AuthService, func()) {
 	ctx := context.Background()
 	mockFactory := mock.New()
 
-	svcConfig := &config.Node{
-		P2PListen:   []string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", cfg.port)},
-		P2PAnnounce: []string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", cfg.port)},
-		PrivateKey:  keypair.NewRaw(),
-		Databases:   mockFactory,
-		Root:        t.TempDir(),
+	opts := []config.Option{
+		config.WithRoot(t.TempDir()),
+		config.WithP2PListen([]string{fmt.Sprintf("/ip4/0.0.0.0/tcp/%d", cfg.port)}),
+		config.WithP2PAnnounce([]string{fmt.Sprintf("/ip4/127.0.0.1/tcp/%d", cfg.port)}),
+		config.WithPrivateKey(keypair.NewRaw()),
 	}
-
 	if cfg.withKeys {
 		privKey, pubKey := generateTestKeys(t)
-		svcConfig.DomainValidation = config.DomainValidation{
+		opts = append(opts, config.WithDomainValidation(config.DomainValidation{
 			PrivateKey: privKey,
 			PublicKey:  pubKey,
-		}
+		}))
 	}
+	svcConfig, err := config.New(opts...)
+	assert.NilError(t, err)
+	svcConfig.SetDatabases(mockFactory)
 
 	svc, err := New(ctx, svcConfig)
 	assert.NilError(t, err)

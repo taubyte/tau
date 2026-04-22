@@ -1,7 +1,6 @@
 package pubsub
 
 import (
-	"context"
 	"reflect"
 	"testing"
 
@@ -13,7 +12,7 @@ import (
 
 func TestLookup(t *testing.T) {
 	t.Skip("Need to update this test")
-	s := NewTestService(peer.Mock(context.Background()))
+	s := NewTestService(peer.Mock(t.Context()))
 	msg := map[string]structureSpec.Messaging{
 		"someMessagingId": {
 			Name:  "Somemessaging",

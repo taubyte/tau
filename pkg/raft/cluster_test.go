@@ -891,7 +891,7 @@ func TestCluster_Get_NotFound(t *testing.T) {
 
 func TestFsmAdapter_Apply_ViaCluster(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/adapter-test")
+	fsm := newKVFSM(t.Context(), store, "/raft/adapter-test")
 
 	// Create a valid set command
 	cmd := Command{
@@ -916,7 +916,7 @@ func TestFsmAdapter_Apply_ViaCluster(t *testing.T) {
 
 func TestFsmAdapter_Snapshot_ViaCluster(t *testing.T) {
 	store := newTestStore()
-	fsm := newKVFSM(store, "/raft/adapter-test")
+	fsm := newKVFSM(t.Context(), store, "/raft/adapter-test")
 	snap, err := fsm.Snapshot()
 	assert.NoError(t, err)
 	assert.NotNil(t, snap)

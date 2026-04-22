@@ -9,7 +9,7 @@ import (
 
 	_ "embed"
 
-	"github.com/taubyte/tau/config"
+	"github.com/taubyte/tau/pkg/config"
 	"gotest.tools/v3/assert"
 )
 

@@ -1,7 +1,6 @@
 package pubsub
 
 import (
-	"context"
 	"fmt"
 	"testing"
 
@@ -16,7 +15,7 @@ import (
 func TestSocketLookup(t *testing.T) {
 	t.Skip("Websocket as serviseable needs to be refactored")
 	testMessagingName := "someMessaging"
-	s := NewTestService(peer.Mock(context.Background()))
+	s := NewTestService(peer.Mock(t.Context()))
 
 	structure.RefreshTestVariables()
 	fakeFetch(nil, nil)

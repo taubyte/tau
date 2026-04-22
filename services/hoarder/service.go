@@ -10,25 +10,16 @@ import (
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
-	tauConfig "github.com/taubyte/tau/config"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb"
 	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
-func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Service, err error) {
-	if config == nil {
-		config = &tauConfig.Node{}
-	}
-
-	if err = config.Validate(); err != nil {
-		err = fmt.Errorf("validating node config failed with: %w", err)
-		return
-	}
-
+func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Service, err error) {
 	s := &Service{
 		auctions:       make(auctionStore),
 		auctionHistory: make(auctionHistory),
@@ -42,27 +33,23 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 		}
 	}()
 
-	if config.Node == nil {
-		s.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolCommon.Hoarder))
+	if s.node = cfg.Node(); s.node == nil {
+		s.node, err = tauConfig.NewNode(ctx, cfg, path.Join(cfg.Root(), protocolCommon.Hoarder))
 		if err != nil {
 			return nil, fmt.Errorf("new peer node failed with: %w", err)
-
 		}
-	} else {
-		s.node = config.Node
 	}
 
 	clientNode := s.node
-	if config.ClientNode != nil {
-		clientNode = config.ClientNode
+	if cfg.ClientNode() != nil {
+		clientNode = cfg.ClientNode()
 	}
 
 	if s.stream, err = streams.New(s.node, protocolCommon.Hoarder, protocolCommon.HoarderProtocol); err != nil {
 		return nil, fmt.Errorf("new command service failed with: %w", err)
 	}
 
-	s.dbFactory = config.Databases
-	if s.dbFactory == nil {
+	if s.dbFactory = cfg.Databases(); s.dbFactory == nil {
 		s.dbFactory = kvdb.New(s.node)
 	}
 
@@ -81,12 +68,12 @@ func New(ctx context.Context, config *tauConfig.Node) (service hoarderIface.Serv
 		return nil, fmt.Errorf("creating new tns client failed with: %w", err)
 	}
 
-	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
+	sc, err := seerClient.New(ctx, clientNode, cfg.SensorsRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("new seer client failed with: %w", err)
 	}
 
-	if err = protocolCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeHoarder); err != nil {
+	if err = protocolCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeHoarder); err != nil {
 		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
 

@@ -6,7 +6,6 @@ import (
 
 	"github.com/google/go-github/v71/github"
 	"github.com/h2non/gock"
-	"github.com/taubyte/tau/config"
 	"github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/kvdb/mock"
 	"gotest.tools/v3/assert"
@@ -20,22 +19,7 @@ func TestGitHubClientCreation(t *testing.T) {
 
 	t.Run("create auth service with GitHub support", func(t *testing.T) {
 		ctx := context.Background()
-		mockNode := peer.Mock(ctx)
-		mockFactory := mock.New()
-
-		cfg := &config.Node{
-			NetworkFqdn: "test.tau",
-			Node:        mockNode,
-			Databases:   mockFactory,
-			Root:        t.TempDir(),
-			P2PListen:   []string{"/ip4/0.0.0.0/tcp/12350"},
-			P2PAnnounce: []string{"/ip4/127.0.0.1/tcp/12350"},
-			PrivateKey:  []byte("private-key"),
-			DomainValidation: config.DomainValidation{
-				PrivateKey: []byte("private-key"),
-				PublicKey:  []byte("public-key"),
-			},
-		}
+		cfg := createTestConfig(t, &TestConfig{Port: 12350, UseMockNode: true, CustomKeys: true, NetworkFqdn: "test.tau"})
 
 		svc, err := New(ctx, cfg)
 		assert.NilError(t, err)
@@ -43,7 +27,7 @@ func TestGitHubClientCreation(t *testing.T) {
 
 		// Verify the service was created successfully
 		assert.Assert(t, svc != nil)
-		assert.Equal(t, svc.Node(), mockNode)
+		assert.Equal(t, svc.Node(), cfg.Node())
 		assert.Assert(t, svc.KV() != nil)
 	})
 }

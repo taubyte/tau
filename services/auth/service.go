@@ -9,9 +9,9 @@ import (
 	"github.com/ipfs/go-log/v2"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
-	tauConfig "github.com/taubyte/tau/config"
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 	auto "github.com/taubyte/tau/pkg/http-auto"
 	"github.com/taubyte/tau/pkg/kvdb"
 	protocolCommon "github.com/taubyte/tau/services/common"
@@ -21,113 +21,82 @@ var (
 	logger = log.Logger("tau.auth.service")
 )
 
-func New(ctx context.Context, config *tauConfig.Node) (*AuthService, error) {
+func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 	var srv AuthService
 	srv.ctx = ctx
 
-	if config == nil {
-		config = &tauConfig.Node{}
-	}
-
 	srv.newGitHubClient = NewGitHubClient
 
-	srv.webHookUrl = fmt.Sprintf(`https://patrick.tau.%s`, config.NetworkFqdn)
+	srv.webHookUrl = fmt.Sprintf(`https://patrick.tau.%s`, cfg.NetworkFqdn())
 
-	err := config.Validate()
-	if err != nil {
-		return nil, err
-	}
-
-	srv.devMode = config.DevMode
+	var err error
+	srv.devMode = cfg.DevMode()
 	if srv.devMode {
 		deployKeyName = devDeployKeyName
 	}
 
-	if config.Node == nil {
-		srv.node, err = tauConfig.NewNode(ctx, config, path.Join(config.Root, protocolCommon.Auth))
+	if srv.node = cfg.Node(); srv.node == nil {
+		srv.node, err = tauConfig.NewNode(ctx, cfg, path.Join(cfg.Root(), protocolCommon.Auth))
 		if err != nil {
 			return nil, err
 		}
 	} else {
-		if len(config.DomainValidation.PrivateKey) == 0 || len(config.DomainValidation.PublicKey) == 0 {
+		dv := cfg.DomainValidation()
+		if len(dv.PrivateKey) == 0 || len(dv.PublicKey) == 0 {
 			return nil, errors.New("private and public key cannot be empty")
 		}
-
-		srv.node = config.Node
 	}
 
-	srv.dbFactory = config.Databases
-	if srv.dbFactory == nil {
+	if srv.dbFactory = cfg.Databases(); srv.dbFactory == nil {
 		srv.dbFactory = kvdb.New(srv.node)
 	}
 
-	srv.dvPrivateKey = config.DomainValidation.PrivateKey
-	srv.dvPublicKey = config.DomainValidation.PublicKey
+	dv := cfg.DomainValidation()
+	srv.dvPrivateKey = dv.PrivateKey
+	srv.dvPublicKey = dv.PublicKey
 
 	clientNode := srv.node
-	if config.ClientNode != nil {
-		clientNode = config.ClientNode
+	if cfg.ClientNode() != nil {
+		clientNode = cfg.ClientNode()
 	}
 
 	rebroadcastInterval := 5
 	if srv.devMode {
 		rebroadcastInterval = 1
 	}
-	srv.db, err = srv.dbFactory.New(logger, protocolCommon.Auth, rebroadcastInterval)
-	if err != nil {
+	if srv.db, err = srv.dbFactory.New(logger, protocolCommon.Auth, rebroadcastInterval); err != nil {
 		return nil, err
 	}
-
-	srv.tnsClient, err = tnsApi.New(srv.ctx, clientNode)
-	if err != nil {
+	if srv.tnsClient, err = tnsApi.New(srv.ctx, clientNode); err != nil {
 		return nil, err
 	}
-
-	srv.rootDomain = config.NetworkFqdn
-
-	srv.stream, err = streams.New(srv.node, protocolCommon.Auth, protocolCommon.AuthProtocol)
-	if err != nil {
+	srv.rootDomain = cfg.NetworkFqdn()
+	if srv.stream, err = streams.New(srv.node, protocolCommon.Auth, protocolCommon.AuthProtocol); err != nil {
 		return nil, err
 	}
-
-	srv.hostUrl = config.NetworkFqdn
-
-	nodePath := path.Join(config.Root, protocolCommon.Auth)
-	if config.Node != nil {
-		nodePath = path.Join(config.Root, protocolCommon.Auth)
-	}
-
-	srv.secretsService, err = initSecretsService(srv.db, srv.node, nodePath)
-	if err != nil {
+	srv.hostUrl = cfg.NetworkFqdn()
+	nodePath := path.Join(cfg.Root(), protocolCommon.Auth)
+	if srv.secretsService, err = initSecretsService(srv.db, srv.node, nodePath); err != nil {
 		return nil, err
 	}
-
 	srv.setupStreamRoutes()
 	srv.stream.Start()
-
-	sc, err := seerClient.New(ctx, clientNode, config.SensorsRegistry())
-	if err != nil {
+	var sc seerIface.Client
+	if sc, err = seerClient.New(ctx, clientNode, cfg.SensorsRegistry()); err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
-
-	err = protocolCommon.StartSeerBeacon(config, sc, seerIface.ServiceTypeAuth)
-	if err != nil {
+	if err = protocolCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeAuth); err != nil {
 		return nil, err
 	}
 
-	if config.Http == nil {
-		srv.http, err = auto.New(ctx, srv.node, config)
+	if srv.http = cfg.Http(); srv.http == nil {
+		srv.http, err = auto.New(ctx, srv.node, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("new http failed with: %s", err)
 		}
-	} else {
-		srv.http = config.Http
+		defer srv.http.Start()
 	}
 	srv.setupHTTPRoutes()
-
-	if config.Http == nil {
-		srv.http.Start()
-	}
 
 	return &srv, nil
 }

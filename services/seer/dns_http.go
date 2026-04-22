@@ -19,5 +19,5 @@ func (srv *Service) setupDnsHTTPRoutes() {
 }
 
 func (srv *Service) getGeneratedDomain(ctx http.Context) (interface{}, error) {
-	return srv.config.GeneratedDomain, nil
+	return srv.config.GeneratedDomain(), nil
 }
