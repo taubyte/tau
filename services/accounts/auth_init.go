@@ -9,14 +9,14 @@ import (
 	"github.com/taubyte/tau/services/accounts/email"
 )
 
-// initAuthSubsystems wires the Phase 4 auth-side stores onto the service.
-// Pure additive; ordering: sessions → email → magic-link → webauthn.
+// initAuthSubsystems wires the auth-side stores onto the service. Ordering:
+// sessions → email → magic-link → webauthn.
 //
 // Email-sender selection:
-//   - SMTP fully configured → use SMTPSender (production).
-//   - SMTP not configured + DevMode → use StdoutSender (dev/dream).
-//   - SMTP not configured + production → return error so the operator
-//     notices before users get stuck mid-login.
+//   - SMTP fully configured → SMTPSender (production).
+//   - SMTP not configured + DevMode → StdoutSender (dev/dream).
+//   - SMTP not configured + production → error, so the operator notices
+//     before users get stuck mid-login.
 func (srv *AccountsService) initAuthSubsystems() error {
 	// Sessions (always available).
 	srv.sessions = newSessionStore(srv.db, parseSessionTTL(srv.cfg.sessionTTL))

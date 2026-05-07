@@ -23,12 +23,8 @@ var (
 	logger = log.Logger("tau.accounts.service")
 )
 
-// New constructs an AccountsService. Mirrors the construction shape of
-// services/auth/service.go:New so wiring in cli/node/node.go is uniform.
-//
-// Phase 1: brings up node, KVDB, stream, HTTP, and seer beacon — but does not
-// yet attach any handlers. Phase 2 attaches CRUD endpoints; Phase 3 attaches
-// verify/resolve; Phase 4 attaches login.
+// New constructs an AccountsService. Mirrors services/auth/service.go:New so
+// wiring in cli/node/node.go is uniform.
 func New(ctx context.Context, cfg tauConfig.Config) (*AccountsService, error) {
 	var srv AccountsService
 	srv.ctx = ctx
@@ -72,8 +68,8 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AccountsService, error) {
 		return nil, err
 	}
 
-	// Phase 4 auth subsystems. All optional from a struct-shape perspective,
-	// but the login surface returns errors when its dependencies are absent.
+	// Auth subsystems are optional struct-wise; the login surface errors
+	// when its dependencies are absent.
 	if err = srv.initAuthSubsystems(); err != nil {
 		return nil, err
 	}
@@ -121,8 +117,7 @@ func (srv *AccountsService) Node() peer.Node { return srv.node }
 // KV returns the keyvalue store (services.DBService).
 func (srv *AccountsService) KV() kvdbIface.KVDB { return srv.db }
 
-// Client returns an in-process Client. Phase 1 returns a placeholder — full
-// implementation comes online as the handler files arrive in Phase 2-4.
+// Client returns an in-process Client.
 func (srv *AccountsService) Client() accountsIface.Client {
 	if srv.client == nil {
 		srv.client = newInProcessClient(srv)

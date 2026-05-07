@@ -22,9 +22,7 @@ import (
 //   GET   /me                     — header: Authorization: Bearer tau-session.<...>
 //   POST  /logout                 — header: Authorization: Bearer tau-session.<...>
 //
-// The auth surface is intentionally tiny in v1 — login + introspection only.
-// Member-management actions (invite, plans, users, tokens) stay on the P2P
-// surface for now; the next CLI batch can expose them via additional routes.
+// Member-management actions (invite, users, plans) live on the P2P surface.
 
 func (srv *AccountsService) setupHTTPRoutes() {
 	// In dev (dream / local), routes register on bare "localhost" so a
@@ -239,11 +237,11 @@ func (srv *AccountsService) httpLogout(ctx httpsvc.Context) (any, error) {
 func bearerFromRequest(ctx httpsvc.Context) (string, error) {
 	auth := ctx.Request().Header.Get("Authorization")
 	if auth == "" {
-		return "", errors.New("Authorization header required")
+		return "", errors.New("authorization header required")
 	}
 	auth = strings.TrimPrefix(auth, "Bearer ")
 	if !strings.HasPrefix(auth, sessionBearerPrefix) {
-		return "", errors.New("Authorization is not a tau session bearer")
+		return "", errors.New("authorization is not a tau session bearer")
 	}
 	return auth, nil
 }

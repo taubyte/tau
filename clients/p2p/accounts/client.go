@@ -58,8 +58,7 @@ func (c *Client) Peers(peers ...peerCore.ID) accountsIface.Client {
 // --- Integration surface (verify + plan-resolve) ----------------
 
 // Verify asks an accounts service node whether a (provider, external_id) git
-// account is linked to ≥1 Account. Used by services/auth's
-// GitHubTokenHTTPAuth after token validation.
+// account is linked to ≥1 Account.
 func (c *Client) Verify(ctx context.Context, provider, externalID string) (*accountsIface.VerifyResponse, error) {
 	resp, err := c.client.Send(verbVerify, command.Body{
 		"provider":    provider,
@@ -73,7 +72,7 @@ func (c *Client) Verify(ctx context.Context, provider, externalID string) (*acco
 
 // ResolvePlan asks an accounts service node whether (account_slug,
 // plan_slug) names an active Plan the (provider, external_id) git user
-// has a grant on. Called by the project compiler.
+// has a grant on.
 func (c *Client) ResolvePlan(ctx context.Context, accountSlug, planSlug, provider, externalID string) (*accountsIface.ResolveResponse, error) {
 	resp, err := c.client.Send(verbResolve, command.Body{
 		"account_slug": accountSlug,
@@ -102,7 +101,6 @@ func (c *Client) Plans(accountID string) accountsIface.Plans {
 func (c *Client) Login() accountsIface.Login { return &loginImpl{c: c} }
 
 // --- Verify / Resolve verb constants and decoding ----------------
-// These predate the management wire (Phase 3) and stay self-contained here.
 
 const (
 	verbVerify  = "verify"

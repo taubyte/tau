@@ -7,29 +7,20 @@ import (
 )
 
 // Client is the consumer-side interface for the Accounts subsystem.
-//
-// Three groups of methods, by intended caller:
-//   - Verify / ResolvePlan: called by services/auth and the project compiler.
-//     These are the only two integration points the rest of tau needs.
-//   - Accounts / Members / Users / Plans: management surface, called from
-//     the new `tau accounts ...` CLI and the management web UI. Requires a
-//     Member session.
-//   - Sessions: managed/external login surfaces; produces Member sessions.
 type Client interface {
-	// Integration surface (the only methods existing tau code calls):
+	// Integration surface — the two methods the rest of tau actually calls.
 	Verify(ctx context.Context, provider, externalID string) (*VerifyResponse, error)
 	ResolvePlan(ctx context.Context, accountSlug, planSlug, provider, externalID string) (*ResolveResponse, error)
 
-	// Management surface (used by the new tau accounts CLI / management UI):
+	// Management surface — requires a Member session.
 	Accounts() Accounts
 	Members(accountID string) Members
 	Users(accountID string) Users
 	Plans(accountID string) Plans
 
-	// Login surfaces. Managed lives in core; External is EE-only stubbed in v1.
+	// Login surface — managed (passkey + magic-link); external is EE.
 	Login() Login
 
-	// Routing helpers (peer scoping).
 	Peers(...peerCore.ID) Client
 	Close()
 }

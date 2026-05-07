@@ -23,8 +23,7 @@ func newAccountStore(db kvdb.KVDB) *accountStore { return &accountStore{db: db} 
 // Compile-time check.
 var _ accountsIface.Accounts = (*accountStore)(nil)
 
-// Create persists a new Account. The slug must be unique across the auth-KV.
-// Auto-generates an ID via protocolCommon.GetNewAccountID. Defaults: managed
+// Create persists a new Account. The slug must be unique. Defaults: managed
 // auth_mode and active status when unspecified.
 func (s *accountStore) Create(ctx context.Context, in accountsIface.CreateAccountInput) (*accountsIface.Account, error) {
 	if err := validateAccountSlug(in.Slug); err != nil {

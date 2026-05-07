@@ -9,29 +9,7 @@ import (
 )
 
 // Tests for the wire codec (verify/resolve response encoding + decoding) and
-// the stream-handler dispatch layer added in Phase 3. These exercise the same
-// shape used by clients/p2p/accounts and services/accounts in production.
-
-func TestVerifyResponseRoundTrip(t *testing.T) {
-	in := &accountsIface.VerifyResponse{
-		Linked: true,
-		Accounts: []accountsIface.VerifyAccountSummary{
-			{ID: "a-1", Slug: "acme", Name: "Acme",
-				Plans: []accountsIface.VerifyPlanSummary{{ID: "b-1", Slug: "prod", IsDefault: true}}},
-		},
-	}
-	wire := verifyResponseToWire(in)
-	out, err := VerifyResponseFromWire(wire)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if out.Linked != true || len(out.Accounts) != 1 || out.Accounts[0].Slug != "acme" {
-		t.Fatalf("round-trip mismatch: %+v", out)
-	}
-	if len(out.Accounts[0].Plans) != 1 || out.Accounts[0].Plans[0].Slug != "prod" {
-		t.Fatalf("plan round-trip mismatch: %+v", out.Accounts[0].Plans)
-	}
-}
+// the stream-handler dispatch layer.
 
 func TestVerifyResponseToWire_NilAndEmpty(t *testing.T) {
 	// Nil response → wire indicates not-linked.
@@ -43,22 +21,6 @@ func TestVerifyResponseToWire_NilAndEmpty(t *testing.T) {
 	w = verifyResponseToWire(&accountsIface.VerifyResponse{Linked: false})
 	if _, ok := w["accounts"]; ok {
 		t.Fatalf("not-linked should not include accounts payload")
-	}
-}
-
-func TestResolveResponseRoundTrip(t *testing.T) {
-	bk := &accountsIface.Plan{
-		ID: "b-1", AccountID: "a-1", Slug: "prod",
-		Mode: accountsIface.PlanModeQuota, Status: accountsIface.PlanStatusActive,
-	}
-	in := &accountsIface.ResolveResponse{Valid: true, Plan: bk}
-	wire := resolveResponseToWire(in)
-	out, err := ResolveResponseFromWire(wire)
-	if err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !out.Valid || out.Plan == nil || out.Plan.Slug != "prod" {
-		t.Fatalf("round-trip mismatch: %+v", out)
 	}
 }
 
@@ -75,54 +37,6 @@ func TestResolveResponseToWire_RejectionShapes(t *testing.T) {
 	}
 	if _, ok := w["plan"]; ok {
 		t.Fatalf("invalid response should not include plan payload")
-	}
-}
-
-func TestVerifyResponseFromWire_MalformedAccounts(t *testing.T) {
-	// accounts field present but not a string → error.
-	if _, err := VerifyResponseFromWire(map[string]interface{}{
-		"linked":   true,
-		"accounts": 42,
-	}); err == nil {
-		t.Fatalf("expected error for malformed accounts payload")
-	}
-	// accounts field is bad JSON.
-	if _, err := VerifyResponseFromWire(map[string]interface{}{
-		"linked":   true,
-		"accounts": "{not-json",
-	}); err == nil {
-		t.Fatalf("expected error for invalid JSON")
-	}
-}
-
-func TestResolveResponseFromWire_MalformedPlan(t *testing.T) {
-	if _, err := ResolveResponseFromWire(map[string]interface{}{
-		"valid": true,
-		"plan":  42,
-	}); err == nil {
-		t.Fatalf("expected error for malformed plan payload")
-	}
-	if _, err := ResolveResponseFromWire(map[string]interface{}{
-		"valid": true,
-		"plan":  "{not-json",
-	}); err == nil {
-		t.Fatalf("expected error for invalid JSON")
-	}
-}
-
-func TestTryBool(t *testing.T) {
-	m := map[string]interface{}{"a": true, "b": false, "c": "not a bool", "d": nil}
-	if !tryBool(m, "a") {
-		t.Fatalf("a should be true")
-	}
-	if tryBool(m, "b") {
-		t.Fatalf("b should be false")
-	}
-	if tryBool(m, "c") {
-		t.Fatalf("c should be false (wrong type)")
-	}
-	if tryBool(m, "missing") {
-		t.Fatalf("missing should be false")
 	}
 }
 

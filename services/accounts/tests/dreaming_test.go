@@ -125,14 +125,12 @@ func TestAccounts_Dreaming(t *testing.T) {
 	})
 }
 
-// TestAccounts_Dreaming_MagicLinkLogin verifies the Phase 4 managed-mode
-// login flow against a real accounts service running in a dream universe:
+// TestAccounts_Dreaming_MagicLinkLogin verifies the managed-mode login flow
+// against a real accounts service in a dream universe:
 // invite → StartManaged (magic-link) → grab the code from the captured
 // email → FinishManagedMagicLink → VerifySession → Logout → re-Verify fails.
-//
-// Real KVDB, real signing key, real session HMAC. The dream universe runs
-// the service with stdout-fallback email so the magic-link URL appears in
-// the captured stdout sender.
+// Uses real KVDB + real session HMAC; stdout-fallback email so the link
+// appears in the captured sender.
 func TestAccounts_Dreaming_MagicLinkLogin(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
@@ -177,16 +175,9 @@ func TestAccounts_Dreaming_MagicLinkLogin(t *testing.T) {
 	// the KV (only its sha256), so we re-issue and grab the code by
 	// asking the service's in-process magic-link store directly. Since
 	// dream embeds the service in-process, we can reach for it via a
-	// helper that mirrors the SendMagicLink path.
-	//
-	// Phase 4 ships only stdout sender capture in unit tests; the dream
-	// helper here uses the same in-process Client and asserts the
-	// magic-link-sent flag, then uses the second flow (FinishManaged with
-	// a known code) by re-issuing through the magic-link store helper.
-	//
-	// For end-to-end Member-session round-trip the unit tests already
-	// exercise FinishManagedMagicLink; this dream test confirms the wire
-	// shape (StartManaged returns MagicLinkSent over a real KVDB+signer).
+	// helper that mirrors the SendMagicLink path. End-to-end Member-session
+	// round-trip is covered by unit tests; this confirms the wire shape
+	// (StartManaged returns MagicLinkSent over a real KVDB+signer).
 	_ = mem
 }
 
@@ -280,8 +271,8 @@ func TestAccounts_DreamingWire(t *testing.T) {
 	})
 
 	t.Run("Management wire round-trips over the P2P client", func(t *testing.T) {
-		// Phase 5: the management surface is real over the wire. List Accounts
-		// from the simple's perspective (it should see the seeded "acme").
+		// List Accounts from the simple's perspective; it should see the
+		// seeded "acme".
 		ids, err := wire.Accounts().List(ctx)
 		assert.NilError(t, err)
 		assert.Assert(t, len(ids) >= 1, "expected at least one account, got %d", len(ids))

@@ -92,9 +92,8 @@ func TestStrict_VerifyAcceptsAfterFixture_Dreaming(t *testing.T) {
 	assert.Equal(t, post.Accounts[0].Plans[0].Slug, dreamFixtures.FakeAccountPlan)
 }
 
-// TestStrict_ResolvePlanRejectsBadPlan_Dreaming — fixture seeded, but the plan
-// slug we ask for doesn't exist. Caller (the project compiler) sees
-// `valid: false, reason: "plan not found"` and fails the build.
+// TestStrict_ResolvePlanRejectsBadPlan_Dreaming — fixture seeded, but the
+// plan slug we ask for doesn't exist; expect valid=false, reason=plan-not-found.
 func TestStrict_ResolvePlanRejectsBadPlan_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
 	cli := u.Accounts().Client()

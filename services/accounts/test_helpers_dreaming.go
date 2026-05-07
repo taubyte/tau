@@ -5,7 +5,6 @@ package accounts
 import (
 	"context"
 
-	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/services/accounts/email"
 )
 
@@ -18,12 +17,8 @@ import (
 // services/accounts can import them when running under -tags=dreaming.
 
 // IssueTestSession mints a Member-session bearer for the given (account,
-// member) without going through the magic-link or passkey flow. Returns
-// the bearer string.
-//
-// Caller is responsible for ensuring the (account, member) refer to records
-// that exist (or will exist) in the auth-KV; the bearer is verifiable as
-// long as the per-Account signing key is reachable.
+// member) without going through magic-link or passkey. The bearer verifies
+// as long as the per-Account signing key is reachable.
 func (srv *AccountsService) IssueTestSession(ctx context.Context, accountID, memberID string) (string, error) {
 	if srv.sessions == nil {
 		// In dream tests the auth subsystems are wired by service.New, so
@@ -65,5 +60,3 @@ func (srv *AccountsService) IssueTestSessionForMember(ctx context.Context, prima
 	bearer, err = srv.IssueTestSession(ctx, idx[0].AccountID, idx[0].MemberID)
 	return bearer, idx[0].AccountID, idx[0].MemberID, err
 }
-
-var _ = accountsIface.RoleOwner // keep accountsIface import live across builds where it's not otherwise referenced

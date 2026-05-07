@@ -36,9 +36,8 @@ type AccountsService struct {
 	// In wire-mode, callers go through clients/p2p/accounts (the P2P client).
 	client accounts.Client
 
-	// Auth subsystems for managed-mode login. Phase 4 wires them; nil in
-	// Phase 1-3 unit tests that only exercise the in-process Client's
-	// integration surface.
+	// Auth subsystems for managed-mode login. May be nil in unit tests
+	// that exercise only the integration surface.
 	sessions  *sessionStore
 	magicLink *magicLinkStore
 	webAuthn  *webauthnStore

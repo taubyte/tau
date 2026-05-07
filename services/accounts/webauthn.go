@@ -61,8 +61,7 @@ func newWebAuthnStore(db kvdb.KVDB, defaults accountsIface.WebAuthnDefaults, mem
 	return &webauthnStore{db: db, rp: rp, memberStore: memberStoreFn}, nil
 }
 
-// Available reports whether passkey login is configured. Used by login_managed
-// to decide whether to send a magic-link directly when no passkey path exists.
+// Available reports whether passkey login is configured.
 func (s *webauthnStore) Available() bool { return s != nil && s.rp != nil }
 
 // memberWebAuthnUser adapts a Member to go-webauthn's User interface.

@@ -2,10 +2,8 @@ package accounts
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
-	"github.com/fxamacker/cbor/v2"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/p2p/streams"
 	"github.com/taubyte/tau/p2p/streams/command"
@@ -13,7 +11,7 @@ import (
 	"github.com/taubyte/tau/utils/maps"
 )
 
-// P2P stream verb names exposed by services/auth and the project compiler.
+// Verify / Resolve P2P stream verb names.
 const (
 	StreamVerbVerify  = "verify"
 	StreamVerbResolve = "resolve"
@@ -62,12 +60,11 @@ func (srv *AccountsService) apiResolveHandler(ctx context.Context, _ streams.Con
 	return resolveResponseToWire(resp), nil
 }
 
-// --- wire codec ---------------------------------------------------
+// --- wire encoders -------------------------------------------------
 //
 // Nested structured fields ride the wire natively — the P2P framer CBORs
-// the whole response, the HTTP wrapper JSONs it. Receiver round-trips
-// through CBOR (via decodeResponseField) to land in a typed struct, same
-// approach used by api_management.go for management verbs.
+// the whole response, the HTTP wrapper JSONs it. The client side has its
+// own decoders in clients/p2p/accounts/client.go.
 
 func verifyResponseToWire(r *accountsIface.VerifyResponse) cr.Response {
 	if r == nil {
@@ -92,60 +89,4 @@ func resolveResponseToWire(r *accountsIface.ResolveResponse) cr.Response {
 		out["plan"] = r.Plan
 	}
 	return out
-}
-
-func tryBool(m map[string]interface{}, key string) bool {
-	if v, ok := m[key]; ok {
-		if b, ok := v.(bool); ok {
-			return b
-		}
-	}
-	return false
-}
-
-// decodeResponseField round-trips m[key] through CBOR into out. Used by the
-// FromWire decoders below since map[string]any → typed-struct needs a
-// re-encode pass.
-func decodeResponseField(m map[string]any, key string, out any) error {
-	v, ok := m[key]
-	if !ok {
-		return errors.New("missing " + key)
-	}
-	raw, err := cbor.Marshal(v)
-	if err != nil {
-		return fmt.Errorf("re-encode %s: %w", key, err)
-	}
-	if err := cbor.Unmarshal(raw, out); err != nil {
-		return fmt.Errorf("decode %s: %w", key, err)
-	}
-	return nil
-}
-
-// VerifyResponseFromWire reconstructs a VerifyResponse from a wire response.
-func VerifyResponseFromWire(resp map[string]interface{}) (*accountsIface.VerifyResponse, error) {
-	out := &accountsIface.VerifyResponse{
-		Linked: tryBool(resp, "linked"),
-	}
-	if _, ok := resp["accounts"]; ok {
-		if err := decodeResponseField(resp, "accounts", &out.Accounts); err != nil {
-			return nil, fmt.Errorf("verify: %w", err)
-		}
-	}
-	return out, nil
-}
-
-// ResolveResponseFromWire reconstructs a ResolveResponse from a wire response.
-func ResolveResponseFromWire(resp map[string]interface{}) (*accountsIface.ResolveResponse, error) {
-	out := &accountsIface.ResolveResponse{
-		Valid:  tryBool(resp, "valid"),
-		Reason: maps.TryString(resp, "reason"),
-	}
-	if _, ok := resp["plan"]; ok {
-		var b accountsIface.Plan
-		if err := decodeResponseField(resp, "plan", &b); err != nil {
-			return nil, fmt.Errorf("resolve: %w", err)
-		}
-		out.Plan = &b
-	}
-	return out, nil
 }

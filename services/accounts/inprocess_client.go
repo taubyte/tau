@@ -9,13 +9,6 @@ import (
 )
 
 // inProcessClient is the in-process Client returned by AccountsService.Client().
-//
-// The integration surface (Verify + ResolvePlan) is fully implemented in
-// this Phase 2 batch since it's a thin lookup over the User and Plan
-// stores. The management surface delegates to per-entity stores backed by
-// the auth-style KVDB.
-//
-// Login (passkey + magic-link, OIDC stub) lands in Phase 4.
 type inProcessClient struct {
 	srv *AccountsService
 
@@ -31,8 +24,7 @@ func newInProcessClient(srv *AccountsService) accountsIface.Client {
 
 // --- Integration surface (verify + plan-resolve) ----------------
 
-// Verify checks whether a git provider account is linked to ≥1 Account in this
-// auth-KV. Called by services/auth's GitHubTokenHTTPAuth after token validation.
+// Verify checks whether a git provider account is linked to ≥1 Account.
 func (c *inProcessClient) Verify(ctx context.Context, provider, externalID string) (*accountsIface.VerifyResponse, error) {
 	if provider == "" || externalID == "" {
 		return nil, errors.New("accounts: provider and external_id required")
@@ -81,7 +73,7 @@ func (c *inProcessClient) Verify(ctx context.Context, provider, externalID strin
 }
 
 // ResolvePlan validates that (accountSlug, planSlug) names an active Plan
-// the calling git user has a grant on. Called by the project compiler.
+// the calling git user has a grant on.
 func (c *inProcessClient) ResolvePlan(ctx context.Context, accountSlug, planSlug, provider, externalID string) (*accountsIface.ResolveResponse, error) {
 	acc, err := c.accounts.GetBySlug(ctx, accountSlug)
 	if err != nil {
@@ -152,11 +144,8 @@ func (c *inProcessClient) Plans(accountID string) accountsIface.Plans {
 }
 
 // Login dispatches to the managed (passkey + magic-link) impl when the
-// service has those subsystems initialised; falls back to the not-implemented
-// stub otherwise (Phase 1-3 unit tests that don't go through service.New).
-//
-// External_oidc / external_saml routes through login_external.go (`!ee`) or
-// login_external_ee.go (`ee`); both currently stub.
+// service has those subsystems initialised; otherwise falls back to a
+// not-implemented stub (used by unit tests that don't go through service.New).
 func (c *inProcessClient) Login() accountsIface.Login {
 	if c.srv != nil && c.srv.sessions != nil {
 		return &loginDispatcher{managed: newLoginManaged(c.srv), srv: c.srv}
@@ -167,11 +156,11 @@ func (c *inProcessClient) Login() accountsIface.Login {
 func (c *inProcessClient) Peers(...peerCore.ID) accountsIface.Client { return c }
 func (c *inProcessClient) Close()                                    {}
 
-// --- Login stub (Phase 4 replaces it) ------------------------------
+// --- not-implemented Login stub ------------------------------------
 
 type notImplementedLogin struct{}
 
-var errLoginNotImplemented = errors.New("accounts: login subsystem not yet implemented (phase 4)")
+var errLoginNotImplemented = errors.New("accounts: login subsystem not initialised")
 
 func (notImplementedLogin) StartManaged(context.Context, accountsIface.StartManagedLoginInput) (*accountsIface.ManagedLoginChallenge, error) {
 	return nil, errLoginNotImplemented

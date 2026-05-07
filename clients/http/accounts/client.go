@@ -1,12 +1,4 @@
-// Package accounts is a minimal HTTP client for the tau accounts service.
-//
-// Aim: cover the Member-side login + introspection flow that the `tau
-// accounts ...` CLI needs. Each method maps to one HTTP route on the
-// accounts service (services/accounts/http_endpoints.go).
-//
-// Session token: passed via `Authorization: Bearer tau-session.<...>` on
-// authenticated calls. Login flow methods don't need it — they're how the
-// caller obtains one.
+// Package accounts is the HTTP client for the tau accounts service.
 package accounts
 
 import (
@@ -76,14 +68,6 @@ func WithUnsecure() Option {
 	}
 }
 
-// WithHTTPClient lets callers (tests) inject a transport.
-func WithHTTPClient(hc *http.Client) Option {
-	return func(c *Client) error {
-		c.hc = hc
-		return nil
-	}
-}
-
 // MeResponse mirrors services/accounts/http_endpoints.meResponse.
 type MeResponse struct {
 	Member   *accountsIface.Member                `json:"member,omitempty"`
@@ -137,17 +121,6 @@ func (c *Client) Logout() error {
 	}
 	return c.do("POST", "/logout", nil, nil, true)
 }
-
-// SetSession lets a caller swap the bearer mid-flight (e.g. just-logged-in).
-func (c *Client) SetSession(token string) {
-	c.token = token
-}
-
-// Token returns the current session bearer.
-func (c *Client) Token() string { return c.token }
-
-// URL returns the configured base URL.
-func (c *Client) URL() string { return c.url }
 
 // do performs a JSON HTTP round-trip. When auth=true the session bearer is
 // attached; otherwise the request is unauthenticated (login flow).

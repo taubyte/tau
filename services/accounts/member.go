@@ -43,8 +43,7 @@ type memberIndexEntry struct {
 }
 
 // Invite creates a Member with the given email + role. The Member starts
-// with no passkeys; the invitee registers one via the magic-link claim flow
-// (Phase 4).
+// with no passkeys; the invitee registers one via the magic-link claim flow.
 func (s *memberStore) Invite(ctx context.Context, in accountsIface.InviteMemberInput) (*accountsIface.Member, error) {
 	if in.PrimaryEmail == "" {
 		return nil, errors.New("accounts: primary_email required")
@@ -127,9 +126,8 @@ func (s *memberStore) Remove(ctx context.Context, memberID string) error {
 		return err
 	}
 	if m.ExternalSubject != "" {
-		// We don't know the provider here without re-reading auth_config; the
-		// best we can do is leave the external index slightly stale until a
-		// follow-up Phase-4 helper carries it.
+		// We don't know the provider here without re-reading auth_config;
+		// the external index is left slightly stale.
 	}
 	return nil
 }
@@ -155,7 +153,6 @@ func (s *memberStore) listPasskeys(ctx context.Context, memberID string) ([]acco
 }
 
 // AddPasskey persists a new WebAuthn credential against this Member.
-// Used by the passkey registration flow (Phase 4).
 func (s *memberStore) AddPasskey(ctx context.Context, memberID string, pk accountsIface.PasskeyCredential) error {
 	if len(pk.CredentialID) == 0 {
 		return errors.New("accounts: passkey credential_id required")
@@ -203,7 +200,7 @@ func (s *memberStore) removeEmailIndex(ctx context.Context, email, memberID stri
 }
 
 // AddExternalIndex registers a (provider, subject) → (account, member) entry
-// in the external login index. Called by the OIDC/SAML flows (Phase 4).
+// in the external login index.
 func (s *memberStore) AddExternalIndex(ctx context.Context, provider, subject, memberID string) error {
 	idx, err := s.readMemberIndex(ctx, LookupExternalPath(provider, subject))
 	if err != nil && !errors.Is(err, ErrNotFound) {
