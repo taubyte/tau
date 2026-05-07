@@ -24,9 +24,11 @@ import (
 	"github.com/taubyte/tau/services/monkey"
 	tcc "github.com/taubyte/tau/utils/tcc"
 
+	_ "github.com/taubyte/tau/clients/p2p/accounts/dream"
 	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"

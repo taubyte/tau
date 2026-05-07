@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	"gotest.tools/v3/assert"
 
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 	_ "github.com/taubyte/tau/services/monkey/dream"

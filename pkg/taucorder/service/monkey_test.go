@@ -27,6 +27,7 @@ import (
 
 	"github.com/taubyte/tau/clients/p2p/patrick/mock"
 
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/monkey/dream"
 )
 

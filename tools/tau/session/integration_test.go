@@ -18,6 +18,7 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/seer/dream"
 )

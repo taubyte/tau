@@ -20,6 +20,7 @@ import (
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	protocolCommon "github.com/taubyte/tau/services/common"
 	_ "github.com/taubyte/tau/services/hoarder/dream"

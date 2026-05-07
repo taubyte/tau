@@ -9,6 +9,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/helpers"
 	spec "github.com/taubyte/tau/pkg/specs/common"
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/monkey/dream"
 	_ "github.com/taubyte/tau/services/patrick/dream"

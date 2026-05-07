@@ -23,6 +23,7 @@ import (
 	"github.com/urfave/cli/v2"
 
 	// Empty imports for initializing fixtures, and client/service run methods"
+	_ "github.com/taubyte/tau/clients/p2p/accounts/dream"
 	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
@@ -31,6 +32,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/substrate/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/gateway/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"

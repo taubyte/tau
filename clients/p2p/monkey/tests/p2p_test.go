@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	_ "github.com/taubyte/tau/clients/p2p/accounts/dream"
 	p2p "github.com/taubyte/tau/clients/p2p/monkey"
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
 	"github.com/taubyte/tau/clients/p2p/patrick/mock"
@@ -14,6 +15,7 @@ import (
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/p2p/peer"
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	protocolCommon "github.com/taubyte/tau/services/common"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 	"github.com/taubyte/tau/services/monkey"

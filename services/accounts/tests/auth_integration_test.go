@@ -19,7 +19,7 @@ import (
 	_ "github.com/taubyte/tau/services/auth/dream"
 )
 
-// TestAuth_VerifiesAgainstAccounts is the end-to-end Phase 3 contract:
+// TestAuth_VerifiesAgainstAccounts_Dreaming is the end-to-end Phase 3 contract:
 // when Accounts.VerifyOnAuth=true and the accounts service is running,
 // services/auth's GitHubTokenHTTPAuth rejects a github token whose user
 // isn't linked to any Account, and accepts one that is.
@@ -27,7 +27,7 @@ import (
 // This proves the integration point: existing tau (auth) calls accounts
 // (verify) at exactly the documented chokepoint, with the documented
 // rejection message including the AccountsURL guidance.
-func TestAuth_VerifiesAgainstAccounts(t *testing.T) {
+func TestAuth_VerifiesAgainstAccounts_Dreaming(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

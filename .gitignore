@@ -2,6 +2,11 @@
 
 .notes/
 
+.claude/
+
+pkg/spore-drive/clients/mock/mock
+pkg/taucorder/clients/mock/mock
+
 .vscode/
 
 .vagrant/

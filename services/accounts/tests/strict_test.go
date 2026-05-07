@@ -45,12 +45,12 @@ func startAccountsUniverse(t *testing.T) *dream.Universe {
 	return u
 }
 
-// TestStrict_VerifyRejectsUnlinked — a real accounts service running in
+// TestStrict_VerifyRejectsUnlinked_Dreaming — a real accounts service running in
 // dream, no fixture seeded. Any (provider, external_id) we ask about
 // should come back as `linked: false`. This is the http_auth.go gate
 // that turns into "no tau account linked to this github identity — sign
 // up at <url>" at the user-facing edge.
-func TestStrict_VerifyRejectsUnlinked(t *testing.T) {
+func TestStrict_VerifyRejectsUnlinked_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
 	cli := u.Accounts().Client()
 	assert.Assert(t, cli != nil)
@@ -64,11 +64,11 @@ func TestStrict_VerifyRejectsUnlinked(t *testing.T) {
 	assert.Equal(t, len(resp.Accounts), 0)
 }
 
-// TestStrict_VerifyAcceptsAfterFixture — sanity check that the fixture
+// TestStrict_VerifyAcceptsAfterFixture_Dreaming — sanity check that the fixture
 // itself works: same "linked" identity flips from false to true after
 // the fakeAccount fixture seeds the default state. Demonstrates the
 // fixture's effect on the verify path.
-func TestStrict_VerifyAcceptsAfterFixture(t *testing.T) {
+func TestStrict_VerifyAcceptsAfterFixture_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
 	cli := u.Accounts().Client()
 
@@ -92,10 +92,10 @@ func TestStrict_VerifyAcceptsAfterFixture(t *testing.T) {
 	assert.Equal(t, post.Accounts[0].Plans[0].Slug, dreamFixtures.FakeAccountPlan)
 }
 
-// TestStrict_ResolvePlanRejectsBadPlan — fixture seeded, but the plan
+// TestStrict_ResolvePlanRejectsBadPlan_Dreaming — fixture seeded, but the plan
 // slug we ask for doesn't exist. Caller (the project compiler) sees
 // `valid: false, reason: "plan not found"` and fails the build.
-func TestStrict_ResolvePlanRejectsBadPlan(t *testing.T) {
+func TestStrict_ResolvePlanRejectsBadPlan_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
 	cli := u.Accounts().Client()
 	assert.NilError(t, u.RunFixture("fakeAccount"))
@@ -112,10 +112,10 @@ func TestStrict_ResolvePlanRejectsBadPlan(t *testing.T) {
 	assert.Equal(t, resp.Reason, "plan not found")
 }
 
-// TestStrict_ResolvePlanRejectsBadAccount — same shape, but the account
+// TestStrict_ResolvePlanRejectsBadAccount_Dreaming — same shape, but the account
 // slug doesn't exist. Distinct rejection reason so the user can tell
 // "I typo'd the account" from "I typo'd the plan".
-func TestStrict_ResolvePlanRejectsBadAccount(t *testing.T) {
+func TestStrict_ResolvePlanRejectsBadAccount_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
 	cli := u.Accounts().Client()
 	assert.NilError(t, u.RunFixture("fakeAccount"))
@@ -132,12 +132,12 @@ func TestStrict_ResolvePlanRejectsBadAccount(t *testing.T) {
 	assert.Equal(t, resp.Reason, "account not found")
 }
 
-// TestStrict_ResolvePlanRejectsUngrantedUser — the account+plan exist,
+// TestStrict_ResolvePlanRejectsUngrantedUser_Dreaming — the account+plan exist,
 // but the git user we're asking about has no grant on the plan. This is
 // the "team member tried to deploy under a plan they don't have access
 // to" path. Reason carries enough info for the user to ask their admin
 // for a grant.
-func TestStrict_ResolvePlanRejectsUngrantedUser(t *testing.T) {
+func TestStrict_ResolvePlanRejectsUngrantedUser_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
 	cli := u.Accounts().Client()
 	assert.NilError(t, u.RunFixture("fakeAccount"))
@@ -158,7 +158,7 @@ func TestStrict_ResolvePlanRejectsUngrantedUser(t *testing.T) {
 	assert.Equal(t, resp.Reason, "git user not linked to account")
 }
 
-// TestStrict_FakeMemberLogin exercises the full Member-side fixture chain:
+// TestStrict_FakeMemberLogin_Dreaming exercises the full Member-side fixture chain:
 // fakeAccount + fakeMember invites a default Member, then we mint a session
 // bearer through the dream-tagged helper. Proves that "I want a logged-in
 // caller in dream" is a one-fixture-pair away from working.
@@ -167,7 +167,7 @@ func TestStrict_ResolvePlanRejectsUngrantedUser(t *testing.T) {
 // that aren't *about* login. The bearer is a valid Member-session token —
 // it round-trips through the real `sessions.Verify` path on subsequent
 // requests, just without the email side-channel.
-func TestStrict_FakeMemberLogin(t *testing.T) {
+func TestStrict_FakeMemberLogin_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
 	assert.NilError(t, u.RunFixture("fakeAccount"))
 	assert.NilError(t, u.RunFixture("fakeMember"))
@@ -186,10 +186,10 @@ func TestStrict_FakeMemberLogin(t *testing.T) {
 	assert.Assert(t, memberID != "", "memberID empty")
 }
 
-// TestStrict_InjectMemberCustom proves `injectMember` accepts a custom
+// TestStrict_InjectMemberCustom_Dreaming proves `injectMember` accepts a custom
 // account / email / role. Pairs with `injectAccount` to seed multi-account
 // dream universes where each Account has its own admin Member.
-func TestStrict_InjectMemberCustom(t *testing.T) {
+func TestStrict_InjectMemberCustom_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
 
 	// Seed a non-default Account first so `injectMember` has somewhere to
@@ -218,11 +218,11 @@ func TestStrict_InjectMemberCustom(t *testing.T) {
 	assert.Assert(t, bearer != "")
 }
 
-// TestStrict_InjectAccountCustom — verifies the param-driven fixture path:
+// TestStrict_InjectAccountCustom_Dreaming — verifies the param-driven fixture path:
 // inject a non-default account (different slug + user) and assert the
 // resolve path picks it up. Proves callers aren't trapped on the default
 // "acme/prod/github:42" tuple.
-func TestStrict_InjectAccountCustom(t *testing.T) {
+func TestStrict_InjectAccountCustom_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
 	cli := u.Accounts().Client()
 

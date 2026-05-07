@@ -16,6 +16,7 @@ import (
 	"gotest.tools/v3/assert"
 
 	// Import dream services
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/gateway/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
@@ -26,6 +27,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 
 	// Import dream clients
+	_ "github.com/taubyte/tau/clients/p2p/accounts/dream"
 	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"

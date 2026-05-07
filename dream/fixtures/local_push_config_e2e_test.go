@@ -19,12 +19,14 @@ import (
 	"github.com/taubyte/tau/utils"
 	"gotest.tools/v3/assert"
 
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 	_ "github.com/taubyte/tau/services/monkey/dream"
 	_ "github.com/taubyte/tau/services/patrick/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
 
+	_ "github.com/taubyte/tau/clients/p2p/accounts/dream"
 	_ "github.com/taubyte/tau/clients/p2p/auth/dream"
 	_ "github.com/taubyte/tau/clients/p2p/patrick/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"

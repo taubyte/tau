@@ -14,6 +14,7 @@ import (
 	"github.com/taubyte/tau/dream/api"
 	pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 	pbconnect "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1/taucorderv1connect"
+	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
