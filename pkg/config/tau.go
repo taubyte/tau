@@ -32,6 +32,10 @@ type Source struct {
 	NetworkFqdn string              `yaml:"network-fqdn"`
 	Domains     Domains             `yaml:"domains"`
 	Cluster     string              `yaml:"cluster,omitempty"`
+	// Accounts subsystem config (session-ttl, email/SMTP). Optional —
+	// community / dream installs can omit. AccountsURL + WebAuthn are
+	// derived from NetworkFqdn at runtime.
+	Accounts Accounts `yaml:"accounts,omitempty"`
 	Plugins
 }
 

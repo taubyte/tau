@@ -2,6 +2,7 @@ package cli
 
 import (
 	"github.com/pterm/pterm"
+	accountsCmd "github.com/taubyte/tau/tools/tau/cli/commands/accounts"
 	"github.com/taubyte/tau/tools/tau/cli/commands/autocomplete"
 	buildCmd "github.com/taubyte/tau/tools/tau/cli/commands/build"
 	"github.com/taubyte/tau/tools/tau/cli/commands/current"
@@ -64,6 +65,7 @@ func New() (*cli.App, error) {
 			current.Command,
 			buildCmd.Command,
 			validate.Command,
+			accountsCmd.Command,
 		},
 	}
 

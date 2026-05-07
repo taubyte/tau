@@ -28,5 +28,8 @@ var (
 	Patrick         = "patrick"
 	PatrickProtocol = "/patrick/v1"
 
+	Accounts         = "accounts"
+	AccountsProtocol = "/accounts/v1"
+
 	OraclePubSubPath = "/seer/oracle/v1"
 )

@@ -1,0 +1,6 @@
+id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR
+name: CloudsPartialTest
+description: project with a half-set clouds entry — account but no plan
+clouds:
+    tau-cloud.io:
+        account: acme

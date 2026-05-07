@@ -16,4 +16,5 @@ const (
 	ServiceTypeTns       ServiceType = "tns"
 	ServiceTypeQ         ServiceType = "q"
 	ServiceTypeGateway   ServiceType = "gateway"
+	ServiceTypeAccounts  ServiceType = "accounts"
 )

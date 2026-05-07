@@ -7,8 +7,10 @@ import (
 	"path"
 
 	"github.com/ipfs/go-log/v2"
+	accountsClientPkg "github.com/taubyte/tau/clients/p2p/accounts"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
+	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
@@ -79,6 +81,16 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 	if srv.secretsService, err = initSecretsService(srv.db, srv.node, nodePath); err != nil {
 		return nil, err
 	}
+
+	if accountsIface.VerifyOnAuth {
+		srv.accountsURL = accountsIface.InferURL(cfg.DevMode(), cfg.NetworkFqdn())
+		var ac error
+		srv.accountsClient, ac = accountsClientPkg.New(srv.ctx, clientNode)
+		if ac != nil {
+			return nil, fmt.Errorf("creating accounts client failed with %s", ac)
+		}
+	}
+
 	srv.setupStreamRoutes()
 	srv.stream.Start()
 	var sc seerIface.Client
@@ -107,6 +119,9 @@ func (srv *AuthService) Close() error {
 
 	if srv.secretsService != nil {
 		srv.secretsService.Close()
+	}
+	if srv.accountsClient != nil {
+		srv.accountsClient.Close()
 	}
 
 	srv.stream.Stop()

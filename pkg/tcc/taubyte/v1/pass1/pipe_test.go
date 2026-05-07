@@ -15,7 +15,7 @@ func TestPipe_ReturnsAllTransformers(t *testing.T) {
 	obj.Set("id", "project-id-123")
 
 	// Execute: Get pipe transformers
-	transformers := Pipe()
+	transformers := Pipe("")
 
 	// Verify: Should contain all transformers (Project, Applications, and all resource types)
 	assert.Assert(t, len(transformers) >= 10)

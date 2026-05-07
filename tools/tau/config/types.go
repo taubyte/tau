@@ -25,6 +25,13 @@ type Profile struct {
 	CloudType   string   `yaml:"type,omitempty"`
 	Cloud       string   `yaml:"network"`
 	History     []string `yaml:"history"`
+
+	// AccountsSession is the Member-session bearer for the tau accounts
+	// service, persisted by `tau accounts login` and consumed by `tau
+	// accounts whoami` / `logout`. Kept on the same Profile so a single
+	// "logged-in identity" carries both git-side OAuth (Token above) and
+	// Account-side session in one place.
+	AccountsSession string `yaml:"accounts_session,omitempty"`
 }
 
 type Project struct {

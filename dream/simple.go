@@ -6,6 +6,7 @@ import (
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
+	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	authIface "github.com/taubyte/tau/core/services/auth"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	monkeyIface "github.com/taubyte/tau/core/services/monkey"
@@ -118,6 +119,20 @@ func (s *Simple) Hoarder() (hoarderIface.Client, error) {
 	}
 
 	return hoarderClient, nil
+}
+
+func (s *Simple) Accounts() (accountsIface.Client, error) {
+	client, err := s.getClient(commonSpecs.Accounts)
+	if err != nil {
+		return nil, err
+	}
+
+	accountsClient, ok := client.(accountsIface.Client)
+	if !ok {
+		return nil, errors.New("client is not an accounts client")
+	}
+
+	return accountsClient, nil
 }
 
 func (u *Universe) Simple(name string) (*Simple, error) {

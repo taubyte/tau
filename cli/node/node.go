@@ -1,6 +1,7 @@
 package node
 
 import (
+	accountsService "github.com/taubyte/tau/services/accounts"
 	authService "github.com/taubyte/tau/services/auth"
 	"github.com/taubyte/tau/services/gateway"
 	hoarderService "github.com/taubyte/tau/services/hoarder"
@@ -15,6 +16,7 @@ import (
 
 var available = map[string]config.ProtoCommandIface{
 	"auth":      authService.Package(),
+	"accounts":  accountsService.Package(),
 	"hoarder":   hoarderService.Package(),
 	"monkey":    monkeyService.Package(),
 	"substrate": nodeService.Package(),

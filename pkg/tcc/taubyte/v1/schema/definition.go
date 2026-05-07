@@ -128,6 +128,16 @@ var TaubyteProject = SchemaDefinition(
 					TaubyteRessources...,
 				),
 			),
+			// clouds.<fqdn>.{account, plan} — DefineIter (not Group) so each
+			// FQDN's attrs live directly under the map key in nested YAML.
+			DefineGroup("clouds",
+				DefineIter(
+					[]*Attribute{
+						String("account"),
+						String("plan"),
+					},
+				),
+			),
 		)...,
 	),
 )

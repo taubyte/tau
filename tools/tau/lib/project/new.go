@@ -100,5 +100,5 @@ func New(p *Project, location string, embedToken bool) error {
 		return err
 	}
 
-	return cloneProjectAndPushConfig(clientProject, location, p.Description, user, embedToken)
+	return cloneProjectAndPushConfig(clientProject, location, p.Description, user, embedToken, p.Account, p.Plan)
 }

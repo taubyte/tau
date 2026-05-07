@@ -69,6 +69,7 @@ func WithSource(src *Source, opts SourceOptions) Option {
 		c.plugins = src.Plugins
 		c.peers = src.Peers
 		c.acmeCAARecord = defaultCAARecord
+		c.accounts = src.Accounts
 
 		if c.swarmKey, err = loadSwarmKey(swarmPath); err != nil {
 			return err

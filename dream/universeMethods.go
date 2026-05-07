@@ -8,6 +8,7 @@ import (
 
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	commonIface "github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/core/services/gateway"
 	"github.com/taubyte/tau/core/services/hoarder"
@@ -210,6 +211,35 @@ func (u *Universe) AllSubstrate() (ret []substrate.Service) {
 
 func (u *Universe) SubstrateByPid(pid string) (substrate.Service, bool) {
 	return byId[substrate.Service](u, u.service["substrate"].nodes, pid)
+}
+
+func (u *Universe) Accounts() accounts.Service {
+	si, ok := u.service["accounts"]
+	if !ok {
+		return nil
+	}
+	ret, ok := first[accounts.Service](u, si.nodes)
+	if !ok {
+		return nil
+	}
+	return ret
+}
+
+func (u *Universe) AllAccounts() (ret []accounts.Service) {
+	si, ok := u.service["accounts"]
+	if !ok {
+		return nil
+	}
+	ret, _ = sliceT2V[accounts.Service](si.nodes)
+	return
+}
+
+func (u *Universe) AccountsByPid(pid string) (accounts.Service, bool) {
+	si, ok := u.service["accounts"]
+	if !ok {
+		return nil, false
+	}
+	return byId[accounts.Service](u, si.nodes, pid)
 }
 
 func sliceT2V[T any](a map[string]commonIface.Service) ([]T, error) {

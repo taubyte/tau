@@ -1,0 +1,10 @@
+id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR
+name: CloudsTest
+description: minimal project that pins (account, plan) for two clouds
+clouds:
+    tau-cloud.io:
+        account: acme
+        plan: prod
+    staging.tau-cloud.io:
+        account: acme
+        plan: staging-free

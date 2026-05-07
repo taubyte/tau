@@ -10,6 +10,12 @@ type Project struct {
 	Name        string
 	Description string
 	Public      bool
+
+	// Account / Plan pin the project to a tau Account + Plan on the active
+	// profile's cloud. Both empty = unbound. Both-or-neither enforced by
+	// projectLib.BindingFlags.
+	Account string
+	Plan    string
 }
 
 type ProjectRepository interface {

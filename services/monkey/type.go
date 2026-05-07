@@ -9,6 +9,7 @@ import (
 	"time"
 
 	patrickClient "github.com/taubyte/tau/clients/p2p/patrick"
+	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	iface "github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"
@@ -50,6 +51,10 @@ type Service struct {
 	tnsClient     tnsClient.Client
 	clientNode    peer.Node
 	hoarderClient hoarderIface.Client
+
+	// accountsClient validates `clouds.<fqdn>.{account, plan}`. Nil when
+	// accountsIface.VerifyOnAuth is false (dream / community).
+	accountsClient accountsIface.Client
 
 	config  config.Config
 	cluster string

@@ -62,6 +62,7 @@ type Config interface {
 	Plugins() Plugins
 	DomainValidation() DomainValidation
 	SensorsRegistry() *sensors.Registry
+	Accounts() Accounts
 
 	SetNode(peer.Node)
 	SetRaftCluster(raft.Cluster)
@@ -262,6 +263,14 @@ func WithPlugins(p Plugins) Option {
 	}
 }
 
+// WithAccounts sets the Accounts subsystem configuration.
+func WithAccounts(a Accounts) Option {
+	return func(c *config) error {
+		c.accounts = a
+		return nil
+	}
+}
+
 // New returns a validated config. Defaults are dev-friendly; override with options.
 func New(opts ...Option) (Config, error) {
 	c := &config{
@@ -322,6 +331,7 @@ type config struct {
 	devMode          bool
 	plugins          Plugins
 	domainValidation DomainValidation
+	accounts         Accounts
 }
 
 func (c *config) Root() string                          { return c.root }
@@ -383,6 +393,7 @@ func (c *config) Verbose() bool                      { return c.verbose }
 func (c *config) DevMode() bool                      { return c.devMode }
 func (c *config) Plugins() Plugins                   { return c.plugins }
 func (c *config) DomainValidation() DomainValidation { return c.domainValidation }
+func (c *config) Accounts() Accounts                 { return c.accounts }
 
 func (c *config) SetNode(n peer.Node)            { c.node = n }
 func (c *config) SetRaftCluster(rc raft.Cluster) { c.raftCluster = rc }

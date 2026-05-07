@@ -45,6 +45,14 @@ type Getter interface {
 	Applications() []string
 	Tags() []string
 	Email() string
+	// CloudBinding returns the (account, plan) pair the project declares
+	// for the given cloud FQDN, and a flag indicating whether the entry
+	// exists. Both fields are optional; missing entries (dream / local /
+	// projects not deployed to that cloud) return (zero, false).
+	CloudBinding(fqdn string) (CloudBinding, bool)
+	// Clouds returns the FQDNs the project has declared bindings for.
+	// Empty when the project doesn't declare any.
+	Clouds() []string
 	Services(string) (local []string, global []string)
 	Libraries(string) (local []string, global []string)
 	Websites(string) (local []string, global []string)

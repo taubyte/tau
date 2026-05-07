@@ -206,8 +206,11 @@ func (o *object[T]) GetBool(name string) (bool, error) {
 	return false, errors.New("value is not a boolean")
 }
 
+// Delete removes the named entry whether it lives in data (scalar) or
+// children (nested object) — callers don't need to care which.
 func (o *object[T]) Delete(name string) {
 	delete(o.data, name)
+	delete(o.children, name)
 }
 
 func (o *object[T]) Move(from, to string) error {

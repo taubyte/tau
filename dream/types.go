@@ -145,12 +145,13 @@ type Simple struct {
 
 // Deprecated use Map[string]*commonIface.ClientConfig{}
 type SimpleConfigClients struct {
-	TNS     *commonIface.ClientConfig
-	Auth    *commonIface.ClientConfig
-	Seer    *commonIface.ClientConfig
-	Patrick *commonIface.ClientConfig
-	Monkey  *commonIface.ClientConfig
-	Hoarder *commonIface.ClientConfig
+	TNS      *commonIface.ClientConfig
+	Auth     *commonIface.ClientConfig
+	Seer     *commonIface.ClientConfig
+	Patrick  *commonIface.ClientConfig
+	Monkey   *commonIface.ClientConfig
+	Hoarder  *commonIface.ClientConfig
+	Accounts *commonIface.ClientConfig
 }
 
 func (s SimpleConfigClients) Compat() map[string]*commonIface.ClientConfig {
@@ -178,6 +179,10 @@ func (s SimpleConfigClients) Compat() map[string]*commonIface.ClientConfig {
 
 	if s.Hoarder != nil {
 		newClientConfig[commonSpecs.Hoarder] = s.Hoarder
+	}
+
+	if s.Accounts != nil {
+		newClientConfig[commonSpecs.Accounts] = s.Accounts
 	}
 
 	return newClientConfig

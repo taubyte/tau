@@ -9,6 +9,7 @@ import (
 
 	http "github.com/taubyte/tau/pkg/http"
 
+	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	iface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/core/services/tns"
 )
@@ -36,6 +37,13 @@ type AuthService struct {
 	newGitHubClient func(context.Context, string) (GitHubClient, error)
 
 	secretsService iface.AuthServiceSecretManager
+
+	// accountsClient (when non-nil) is consulted by GitHubTokenHTTPAuth after
+	// validating a github token to enforce the universal "no tau account
+	// linked" rule. Nil when Accounts.VerifyOnAuth = false (community + dream
+	// tests) or when the accounts service isn't reachable at startup.
+	accountsClient accountsIface.Client
+	accountsURL    string
 }
 
 func (s *AuthService) Node() peer.Node {

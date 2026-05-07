@@ -27,3 +27,13 @@ func WithBranch(branch string) Option {
 		return nil
 	}
 }
+
+// WithCloud pins the compile to a cloud FQDN. pass1.Cloud uses it to
+// promote the matching `clouds.<fqdn>.{account, plan}` entry to flat
+// scalars and drop the rest. Empty fqdn = no-op.
+func WithCloud(fqdn string) Option {
+	return func(c *Compiler) error {
+		c.cloud = fqdn
+		return nil
+	}
+}

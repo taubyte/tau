@@ -6,9 +6,10 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
 
-func Pipe() []transform.Transformer[object.Refrence] {
+func Pipe(cloud string) []transform.Transformer[object.Refrence] {
 	return []transform.Transformer[object.Refrence]{
 		Project(),
+		Cloud(cloud),
 		Applications(),
 		utils.Global(Functions()),
 		utils.Global(Smartops()),

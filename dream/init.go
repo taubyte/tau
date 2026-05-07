@@ -1,6 +1,7 @@
 package dream
 
 import (
+	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
@@ -25,4 +26,8 @@ func init() {
 		Ports["dns/"+service] = port + 8
 		lastPort += portBuffer
 	}
+
+	// Dream tests skip the accounts integration so they don't have to
+	// stand up the accounts service for auth/monkey paths.
+	accountsIface.VerifyOnAuth = false
 }

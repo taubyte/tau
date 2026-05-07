@@ -368,46 +368,60 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], err
 	}
 
 	list, _ := query.Fork().List()
+
+	// Also enumerate keys nested inside the level's config.yaml so
+	// `DefineGroup("clouds", DefineIter(...))` matches a `clouds:` map
+	// authored as nested YAML, not just as a `clouds/<key>.yaml` directory.
+	// Filesystem entries take precedence.
+	configList, _ := query.Fork().Get(NodeDefaultSeerLeaf).List()
+	inFS := make(map[string]bool, len(list))
+	for _, l := range list {
+		inFS[l] = true
+	}
+
+	tryMatch := func(itm *Node, key string) (string, bool) {
+		switch i := itm.Match.(type) {
+		case string:
+			if i == key {
+				return key, true
+			}
+		case StringMatcher:
+			if i.Match(key) {
+				return key, true
+			}
+		}
+		return "", false
+	}
+
+	processChild := func(itm *Node, l string, childQuery *yaseer.Query) error {
+		match, matched := tryMatch(itm, l)
+		if !matched {
+			return nil
+		}
+		cobj, err := load[T](itm, childQuery)
+		if err != nil {
+			return err
+		}
+		return obj.Child(match).Add(cobj)
+	}
+
 	for _, itm := range n.Children {
 		for _, l := range list {
 			if l == NodeDefaultSeerLeaf {
 				continue
 			}
-
-			var (
-				match   string
-				matched bool
-			)
-
-			switch i := itm.Match.(type) {
-			case string:
-				if i == l {
-					match = l
-					matched = true
-				}
-			case StringMatcher:
-				if i.Match(l) {
-					match = l
-					matched = true
-				}
-			}
-
-			if !matched {
-				continue
-			}
-
-			// Fork query for each child (Get() modifies query state)
-			cobj, err := load[T](itm, query.Fork().Get(match))
-			if err != nil {
-				return nil, err
-			}
-
-			err = obj.Child(match).Add(cobj)
-			if err != nil {
+			if err := processChild(itm, l, query.Fork().Get(l)); err != nil {
 				return nil, err
 			}
 		}
-
+		for _, l := range configList {
+			if inFS[l] || l == NodeDefaultSeerLeaf {
+				continue
+			}
+			if err := processChild(itm, l, query.Fork().Get(NodeDefaultSeerLeaf).Get(l)); err != nil {
+				return nil, err
+			}
+		}
 	}
 
 	return obj, nil

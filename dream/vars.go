@@ -262,6 +262,28 @@ var FixtureMap = map[string]FixtureDefinition{
 		BlockCLI:    true,
 		Internal:    true,
 	},
+	"fakeAccount": {
+		Description: "Seeds the accounts service with a default account+plan+user (acme/prod, github:42)",
+		ImportRef:   "tau/dream/fixtures",
+		Internal:    true,
+	},
+	"injectAccount": {
+		Description: "Pass in a fixtures.AccountInjection to seed the accounts service with a custom account+plan+user",
+		ImportRef:   "tau/dream/fixtures",
+		BlockCLI:    true,
+		Internal:    true,
+	},
+	"fakeMember": {
+		Description: "Invites a default Member (alice@example.com, owner) into the fakeAccount-seeded Account",
+		ImportRef:   "tau/dream/fixtures",
+		Internal:    true,
+	},
+	"injectMember": {
+		Description: "Pass in a fixtures.MemberInjection to invite a custom Member into an existing Account",
+		ImportRef:   "tau/dream/fixtures",
+		BlockCLI:    true,
+		Internal:    true,
+	},
 	"compileFor": {
 		Description: "pushes specific repos",
 		ImportRef:   "monkey/fixtures/compile",

@@ -9,11 +9,12 @@ import (
 	"strings"
 
 	httpClient "github.com/taubyte/tau/clients/http/auth"
+	"github.com/taubyte/tau/pkg/schema/basic"
 	"github.com/taubyte/tau/pkg/schema/project"
 	"github.com/taubyte/tau/tools/tau/config"
 )
 
-func cloneProjectAndPushConfig(clientProject *httpClient.Project, location, description, user string, embedToken bool) error {
+func cloneProjectAndPushConfig(clientProject *httpClient.Project, location, description, user string, embedToken bool, account, plan string) error {
 	// Build location to clone the project, either to cwd/<project name> or providedLoc/<project name>
 	if len(location) == 0 {
 		cwd, err := os.Getwd()
@@ -55,12 +56,21 @@ func cloneProjectAndPushConfig(clientProject *httpClient.Project, location, desc
 		return err
 	}
 
-	err = projectIface.Set(true,
+	setOps := []basic.Op{
 		project.Id(clientProject.Id),
 		project.Name(clientProject.Name),
 		project.Description(description),
 		project.Email(profile.GitEmail),
-	)
+	}
+
+	// Skip the cloud binding when the active profile is dream/local (no
+	// FQDN to key the entry by). The both-or-neither rule on flags is
+	// enforced upstream in projectPrompts.New.
+	if account != "" && plan != "" && profile.Cloud != "" {
+		setOps = append(setOps, project.CloudBindingOp(profile.Cloud, account, plan))
+	}
+
+	err = projectIface.Set(true, setOps...)
 	if err != nil {
 		return err
 	}

@@ -23,6 +23,7 @@ type NextValidation = engine.NextValidation
 type Compiler struct {
 	seerOptions []yaseer.Option
 	branch      string
+	cloud       string
 	engine      engine.Engine
 }
 
@@ -54,7 +55,7 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 	}
 
 	pipe := []transform.Transformer[object.Refrence]{}
-	for _, p := range [][]transform.Transformer[object.Refrence]{pass1.Pipe(), pass2.Pipe(), pass3.Pipe(), pass4.Pipe(c.branch)} {
+	for _, p := range [][]transform.Transformer[object.Refrence]{pass1.Pipe(c.cloud), pass2.Pipe(), pass3.Pipe(), pass4.Pipe(c.branch)} {
 		pipe = append(pipe, p...)
 	}
 

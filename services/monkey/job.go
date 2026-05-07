@@ -97,6 +97,8 @@ func (m *Monkey) RunJob() (err error) {
 		ClientNode:            node,
 		DVPublicKey:           m.Service.dvPublicKey,
 		GeneratedDomainRegExp: m.generatedDomainRegExp,
+		Accounts:              m.Service.accountsClient,
+		NetworkFqdn:           m.Service.config.NetworkFqdn(),
 	}
 
 	c.Context(m.ctx)
