@@ -27,9 +27,17 @@ export const createConfig = async (config: Config) => {
   await withKeyAuth.username.set("tau2");
   await withKeyAuth.key.path.set("/keys/test.pem");
 
+  // Set Accounts configuration
+  await config.accounts.sessionTtl.set("168h");
+  await config.accounts.email.smtp.host.set("smtp.example.com");
+  await config.accounts.email.smtp.port.set(587);
+  await config.accounts.email.smtp.user.set("noreply@example.com");
+  await config.accounts.email.smtp.pass.set("secret");
+  await config.accounts.email.smtp.from.set("noreply@example.com");
+
   // Set Shapes configurations
   const shape1 = config.shape["shape1"];
-  await shape1.services.set(["auth", "seer"]);
+  await shape1.services.set(["auth", "seer", "accounts"]);
   await shape1.ports.port["main"].set(4242);
   await shape1.ports.port["lite"].set(4262);
 
@@ -95,10 +103,24 @@ export const createConfigWithSet = async (config: Config) => {
     },
   });
 
+  // Set Accounts configuration
+  await config.accounts.set({
+    sessionTtl: "168h",
+    email: {
+      smtp: {
+        host: "smtp.example.com",
+        port: 587,
+        user: "noreply@example.com",
+        pass: "secret",
+        from: "noreply@example.com",
+      },
+    },
+  });
+
   // Set Shapes configurations
   await config.shapes.set({
     shape1: {
-      services: ["auth", "seer"],
+      services: ["auth", "seer", "accounts"],
       ports: {
         main: 4242,
         lite: 4262,
@@ -360,6 +382,44 @@ describe("Config Class Integration Tests", () => {
     await signer.delete();
     const signersListAfterDelete = await config.auth.list();
     expect(signersListAfterDelete).not.toContain("testSigner");
+  });
+
+  it("should set and get accounts session ttl + SMTP fields", async () => {
+    await config.accounts.sessionTtl.set("168h");
+    expect(await config.accounts.sessionTtl.get()).toBe("168h");
+
+    const smtp = config.accounts.email.smtp;
+    await smtp.host.set("smtp.example.com");
+    await smtp.port.set(587);
+    await smtp.user.set("noreply@example.com");
+    await smtp.pass.set("secret");
+    await smtp.from.set("noreply@example.com");
+
+    expect(await smtp.host.get()).toBe("smtp.example.com");
+    expect(await smtp.port.get()).toBe(587);
+    expect(await smtp.user.get()).toBe("noreply@example.com");
+    expect(await smtp.pass.get()).toBe("secret");
+    expect(await smtp.from.get()).toBe("noreply@example.com");
+  });
+
+  it("should round-trip accounts via accounts.set()", async () => {
+    await config.accounts.set({
+      sessionTtl: "24h",
+      email: {
+        smtp: {
+          host: "smtp.batch.example.com",
+          port: 2525,
+          user: "batch",
+          pass: "batchpass",
+          from: "batch@example.com",
+        },
+      },
+    });
+    expect(await config.accounts.sessionTtl.get()).toBe("24h");
+    expect(await config.accounts.email.smtp.host.get()).toBe(
+      "smtp.batch.example.com"
+    );
+    expect(await config.accounts.email.smtp.port.get()).toBe(2525);
   });
 
   it("should generate same config with createConfig and createConfigWithSet", async () => {

@@ -76,6 +76,10 @@ export class Config {
     return new Auth(this.client, this.config!);
   }
 
+  get accounts(): Accounts {
+    return new Accounts(this.client, this.config!);
+  }
+
   get shapes(): Shapes {
     return new Shapes(this.client, this.config!);
   }
@@ -725,6 +729,117 @@ class SSHKey extends BaseOperation {
   }
 }
 
+// Accounts Operations
+
+export interface SMTPConfig {
+  host?: string;
+  port?: number;
+  user?: string;
+  pass?: string;
+  from?: string;
+}
+
+export interface EmailConfig {
+  smtp?: SMTPConfig;
+}
+
+export interface AccountsConfig {
+  sessionTtl?: string;
+  email?: EmailConfig;
+}
+
+class Accounts extends BaseOperation {
+  constructor(client: RPCClient, config: ConfigMessage) {
+    super(client, config, [{ case: "accounts" }]);
+  }
+
+  get sessionTtl(): StringOperation {
+    return new StringOperation(this.client, this.config, [
+      ...this.opPath,
+      { case: "sessionTtl" },
+    ]);
+  }
+
+  get email(): Email {
+    return new Email(this.client, this.config, [
+      ...this.opPath,
+      { case: "email" },
+    ]);
+  }
+
+  async set(value: AccountsConfig): Promise<void> {
+    if (value.sessionTtl !== undefined)
+      await this.sessionTtl.set(value.sessionTtl);
+    if (value.email) await this.email.set(value.email);
+  }
+}
+
+class Email extends BaseOperation {
+  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+    super(client, config, path);
+  }
+
+  get smtp(): SMTP {
+    return new SMTP(this.client, this.config, [
+      ...this.opPath,
+      { case: "smtp" },
+    ]);
+  }
+
+  async set(value: EmailConfig): Promise<void> {
+    if (value.smtp) await this.smtp.set(value.smtp);
+  }
+}
+
+class SMTP extends BaseOperation {
+  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+    super(client, config, path);
+  }
+
+  get host(): StringOperation {
+    return new StringOperation(this.client, this.config, [
+      ...this.opPath,
+      { case: "host" },
+    ]);
+  }
+
+  get port(): UInt64Operation {
+    return new UInt64Operation(this.client, this.config, [
+      ...this.opPath,
+      { case: "port" },
+    ]);
+  }
+
+  get user(): StringOperation {
+    return new StringOperation(this.client, this.config, [
+      ...this.opPath,
+      { case: "user" },
+    ]);
+  }
+
+  get pass(): StringOperation {
+    return new StringOperation(this.client, this.config, [
+      ...this.opPath,
+      { case: "pass" },
+    ]);
+  }
+
+  get from(): StringOperation {
+    return new StringOperation(this.client, this.config, [
+      ...this.opPath,
+      { case: "from" },
+    ]);
+  }
+
+  async set(value: SMTPConfig): Promise<void> {
+    if (value.host !== undefined) await this.host.set(value.host);
+    if (value.port !== undefined) await this.port.set(value.port);
+    if (value.user !== undefined) await this.user.set(value.user);
+    if (value.pass !== undefined) await this.pass.set(value.pass);
+    if (value.from !== undefined) await this.from.set(value.from);
+  }
+}
+
 // Shapes Operations
 
 export interface PortsConfig {
@@ -877,6 +992,24 @@ class StringOperation extends BaseOperation {
       return result.return.value;
     }
     return "";
+  }
+}
+
+class UInt64Operation extends BaseOperation {
+  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+    super(client, config, path);
+  }
+
+  async set(value: number): Promise<void> {
+    await this.doRequest({ case: "set", value: BigInt(value) });
+  }
+
+  async get(): Promise<number> {
+    const result = await this.doRequest({ case: "get", value: true });
+    if (result.return.case === "uint64") {
+      return Number(result.return.value);
+    }
+    return 0;
   }
 }
 

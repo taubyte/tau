@@ -34,7 +34,14 @@ func VirtConfig() (afero.Fs, config.Parser) {
 	io.Copy(privKeyFile, bytes.NewBuffer(privKeyData))
 	privKeyFile.Close()
 
-	p.Shapes().Shape("shape1").Services().Set("auth", "seer")
+	p.Accounts().SetSessionTTL("168h")
+	p.Accounts().Email().SMTP().SetHost("smtp.example.com")
+	p.Accounts().Email().SMTP().SetPort(587)
+	p.Accounts().Email().SMTP().SetUser("noreply@example.com")
+	p.Accounts().Email().SMTP().SetPass("secret")
+	p.Accounts().Email().SMTP().SetFrom("noreply@example.com")
+
+	p.Shapes().Shape("shape1").Services().Set("auth", "seer", "accounts")
 	p.Shapes().Shape("shape1").Ports().Set("main", 4242)
 	p.Shapes().Shape("shape1").Ports().Set("lite", 4262)
 

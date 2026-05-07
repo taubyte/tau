@@ -34,7 +34,14 @@ func TestParserEdit(t *testing.T) {
 	assert.NilError(t, p.Auth().Add("withkey").SetUsername("tau"))
 	assert.NilError(t, p.Auth().Add("withkey").SetKey("keys/test.pem"))
 
-	assert.NilError(t, p.Shapes().Shape("shape1").Services().Set("auth", "seer"))
+	assert.NilError(t, p.Accounts().SetSessionTTL("168h"))
+	assert.NilError(t, p.Accounts().Email().SMTP().SetHost("smtp.example.com"))
+	assert.NilError(t, p.Accounts().Email().SMTP().SetPort(587))
+	assert.NilError(t, p.Accounts().Email().SMTP().SetUser("noreply@example.com"))
+	assert.NilError(t, p.Accounts().Email().SMTP().SetPass("secret"))
+	assert.NilError(t, p.Accounts().Email().SMTP().SetFrom("noreply@example.com"))
+
+	assert.NilError(t, p.Shapes().Shape("shape1").Services().Set("auth", "seer", "accounts"))
 	assert.NilError(t, p.Shapes().Shape("shape1").Ports().Set("main", 4242))
 	assert.NilError(t, p.Shapes().Shape("shape1").Ports().Set("lite", 4262))
 
@@ -133,7 +140,14 @@ func TestParserSchema(t *testing.T) {
 
 	assertDeepEqualSortedStrings(t, p.Shapes().List(), []string{"shape1", "shape2"})
 
-	assert.DeepEqual(t, p.Shapes().Shape("shape1").Services().List(), []string{"auth", "seer"})
+	assert.DeepEqual(t, p.Shapes().Shape("shape1").Services().List(), []string{"auth", "seer", "accounts"})
+
+	assert.Equal(t, p.Accounts().SessionTTL(), "168h")
+	assert.Equal(t, p.Accounts().Email().SMTP().Host(), "smtp.example.com")
+	assert.Equal(t, p.Accounts().Email().SMTP().Port(), uint64(587))
+	assert.Equal(t, p.Accounts().Email().SMTP().User(), "noreply@example.com")
+	assert.Equal(t, p.Accounts().Email().SMTP().Pass(), "secret")
+	assert.Equal(t, p.Accounts().Email().SMTP().From(), "noreply@example.com")
 	assert.Equal(t, p.Shapes().Shape("shape1").Ports().Get("main"), uint16(4242))
 	assert.Equal(t, p.Shapes().Shape("shape1").Ports().Get("lite"), uint16(4262))
 

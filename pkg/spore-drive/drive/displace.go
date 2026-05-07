@@ -209,6 +209,24 @@ func (d *sporedrive) writeConfig(h remoteHost, shape string, w io.Writer) error 
 
 	mainPort := int(sc.Ports().Get("main"))
 
+	var accountsCfg config.Accounts
+	if slices.Contains(sc.Services().List(), "accounts") {
+		a := d.parser.Accounts()
+		s := a.Email().SMTP()
+		accountsCfg = config.Accounts{
+			SessionTTL: a.SessionTTL(),
+			Email: config.AccountsEmail{
+				SMTP: config.SMTP{
+					Host: s.Host(),
+					Port: int(s.Port()),
+					User: s.User(),
+					Pass: s.Pass(),
+					From: s.From(),
+				},
+			},
+		}
+	}
+
 	addrs := hc.Addresses().List()
 	announce := make([]string, len(addrs))
 	for i, addr := range addrs {
@@ -274,6 +292,7 @@ func (d *sporedrive) writeConfig(h remoteHost, shape string, w io.Writer) error 
 			},
 			Generated: d.parser.Cloud().Domain().Generated(),
 		},
+		Accounts: accountsCfg,
 	})
 	if err != nil {
 		return err

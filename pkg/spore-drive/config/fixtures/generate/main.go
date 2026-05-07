@@ -100,7 +100,29 @@ func main() {
 		panic(err)
 	}
 
-	err = p.Shapes().Shape("shape1").Services().Set("auth", "seer")
+	err = p.Accounts().SetSessionTTL("168h")
+	if err != nil {
+		panic(err)
+	}
+
+	smtp := p.Accounts().Email().SMTP()
+	if err = smtp.SetHost("smtp.example.com"); err != nil {
+		panic(err)
+	}
+	if err = smtp.SetPort(587); err != nil {
+		panic(err)
+	}
+	if err = smtp.SetUser("noreply@example.com"); err != nil {
+		panic(err)
+	}
+	if err = smtp.SetPass("secret"); err != nil {
+		panic(err)
+	}
+	if err = smtp.SetFrom("noreply@example.com"); err != nil {
+		panic(err)
+	}
+
+	err = p.Shapes().Shape("shape1").Services().Set("auth", "seer", "accounts")
 	if err != nil {
 		panic(err)
 	}

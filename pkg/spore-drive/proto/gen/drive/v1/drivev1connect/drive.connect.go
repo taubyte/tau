@@ -47,17 +47,6 @@ const (
 	DriveServiceFreeProcedure = "/drive.v1.DriveService/Free"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	driveServiceServiceDescriptor        = v1.File_drive_v1_drive_proto.Services().ByName("DriveService")
-	driveServiceNewMethodDescriptor      = driveServiceServiceDescriptor.Methods().ByName("New")
-	driveServicePlotMethodDescriptor     = driveServiceServiceDescriptor.Methods().ByName("Plot")
-	driveServiceDisplaceMethodDescriptor = driveServiceServiceDescriptor.Methods().ByName("Displace")
-	driveServiceProgressMethodDescriptor = driveServiceServiceDescriptor.Methods().ByName("Progress")
-	driveServiceAbortMethodDescriptor    = driveServiceServiceDescriptor.Methods().ByName("Abort")
-	driveServiceFreeMethodDescriptor     = driveServiceServiceDescriptor.Methods().ByName("Free")
-)
-
 // DriveServiceClient is a client for the drive.v1.DriveService service.
 type DriveServiceClient interface {
 	New(context.Context, *connect.Request[v1.DriveRequest]) (*connect.Response[v1.Drive], error)
@@ -77,41 +66,42 @@ type DriveServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewDriveServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) DriveServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	driveServiceMethods := v1.File_drive_v1_drive_proto.Services().ByName("DriveService").Methods()
 	return &driveServiceClient{
 		new: connect.NewClient[v1.DriveRequest, v1.Drive](
 			httpClient,
 			baseURL+DriveServiceNewProcedure,
-			connect.WithSchema(driveServiceNewMethodDescriptor),
+			connect.WithSchema(driveServiceMethods.ByName("New")),
 			connect.WithClientOptions(opts...),
 		),
 		plot: connect.NewClient[v1.PlotRequest, v1.Course](
 			httpClient,
 			baseURL+DriveServicePlotProcedure,
-			connect.WithSchema(driveServicePlotMethodDescriptor),
+			connect.WithSchema(driveServiceMethods.ByName("Plot")),
 			connect.WithClientOptions(opts...),
 		),
 		displace: connect.NewClient[v1.Course, v1.Empty](
 			httpClient,
 			baseURL+DriveServiceDisplaceProcedure,
-			connect.WithSchema(driveServiceDisplaceMethodDescriptor),
+			connect.WithSchema(driveServiceMethods.ByName("Displace")),
 			connect.WithClientOptions(opts...),
 		),
 		progress: connect.NewClient[v1.Course, v1.DisplacementProgress](
 			httpClient,
 			baseURL+DriveServiceProgressProcedure,
-			connect.WithSchema(driveServiceProgressMethodDescriptor),
+			connect.WithSchema(driveServiceMethods.ByName("Progress")),
 			connect.WithClientOptions(opts...),
 		),
 		abort: connect.NewClient[v1.Course, v1.Empty](
 			httpClient,
 			baseURL+DriveServiceAbortProcedure,
-			connect.WithSchema(driveServiceAbortMethodDescriptor),
+			connect.WithSchema(driveServiceMethods.ByName("Abort")),
 			connect.WithClientOptions(opts...),
 		),
 		free: connect.NewClient[v1.Drive, v1.Empty](
 			httpClient,
 			baseURL+DriveServiceFreeProcedure,
-			connect.WithSchema(driveServiceFreeMethodDescriptor),
+			connect.WithSchema(driveServiceMethods.ByName("Free")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -173,40 +163,41 @@ type DriveServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewDriveServiceHandler(svc DriveServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	driveServiceMethods := v1.File_drive_v1_drive_proto.Services().ByName("DriveService").Methods()
 	driveServiceNewHandler := connect.NewUnaryHandler(
 		DriveServiceNewProcedure,
 		svc.New,
-		connect.WithSchema(driveServiceNewMethodDescriptor),
+		connect.WithSchema(driveServiceMethods.ByName("New")),
 		connect.WithHandlerOptions(opts...),
 	)
 	driveServicePlotHandler := connect.NewUnaryHandler(
 		DriveServicePlotProcedure,
 		svc.Plot,
-		connect.WithSchema(driveServicePlotMethodDescriptor),
+		connect.WithSchema(driveServiceMethods.ByName("Plot")),
 		connect.WithHandlerOptions(opts...),
 	)
 	driveServiceDisplaceHandler := connect.NewUnaryHandler(
 		DriveServiceDisplaceProcedure,
 		svc.Displace,
-		connect.WithSchema(driveServiceDisplaceMethodDescriptor),
+		connect.WithSchema(driveServiceMethods.ByName("Displace")),
 		connect.WithHandlerOptions(opts...),
 	)
 	driveServiceProgressHandler := connect.NewServerStreamHandler(
 		DriveServiceProgressProcedure,
 		svc.Progress,
-		connect.WithSchema(driveServiceProgressMethodDescriptor),
+		connect.WithSchema(driveServiceMethods.ByName("Progress")),
 		connect.WithHandlerOptions(opts...),
 	)
 	driveServiceAbortHandler := connect.NewUnaryHandler(
 		DriveServiceAbortProcedure,
 		svc.Abort,
-		connect.WithSchema(driveServiceAbortMethodDescriptor),
+		connect.WithSchema(driveServiceMethods.ByName("Abort")),
 		connect.WithHandlerOptions(opts...),
 	)
 	driveServiceFreeHandler := connect.NewUnaryHandler(
 		DriveServiceFreeProcedure,
 		svc.Free,
-		connect.WithSchema(driveServiceFreeMethodDescriptor),
+		connect.WithSchema(driveServiceMethods.ByName("Free")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/drive.v1.DriveService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

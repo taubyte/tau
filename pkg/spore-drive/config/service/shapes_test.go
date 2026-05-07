@@ -37,7 +37,7 @@ func TestDoShapes_GetServices(t *testing.T) {
 
 	resp, err := service.doShapes(in, parser)
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, []string{"auth", "seer"}, resp.Msg.GetSlice().GetValue())
+	assert.ElementsMatch(t, []string{"auth", "seer", "accounts"}, resp.Msg.GetSlice().GetValue())
 }
 
 func TestDoShapes_SetServices(t *testing.T) {

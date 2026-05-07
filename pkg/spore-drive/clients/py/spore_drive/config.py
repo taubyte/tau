@@ -8,7 +8,7 @@ to manage configuration including cloud settings, hosts, authentication, and sha
 from typing import Optional, Union, AsyncIterator
 from .proto.config.v1 import config_pb2
 from .clients import ConfigClient
-from .operations import Cloud, Hosts, Auth, Shapes
+from .operations import Cloud, Hosts, Auth, Accounts, Shapes
 from .service_manager import get_service_manager, start_service
 
 
@@ -163,7 +163,14 @@ class Config:
         if not self._config or not self._client:
             raise RuntimeError("Config not initialized")
         return Auth(self._client, self._config)
-    
+
+    @property
+    def accounts(self) -> Accounts:
+        """Get accounts configuration interface."""
+        if not self._config or not self._client:
+            raise RuntimeError("Config not initialized")
+        return Accounts(self._client, self._config)
+
     @property
     def shapes(self) -> Shapes:
         """Get shapes configuration interface."""

@@ -38,6 +38,9 @@ class BaseOperation:
             elif case_name == 'shapes':
                 shapes_op = self._dict_to_protobuf(op['value'], config_pb2.Shapes)
                 final_op.shapes.CopyFrom(shapes_op)
+            elif case_name == 'accounts':
+                accounts_op = self._dict_to_protobuf(op['value'], config_pb2.Accounts)
+                final_op.accounts.CopyFrom(accounts_op)
         
         try:
             result = await self.client.do(final_op)
@@ -199,6 +202,37 @@ class ShapesConfig:
         self.shapes = shapes or {}
 
 
+class SMTPConfig:
+    def __init__(
+        self,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        user: Optional[str] = None,
+        pass_: Optional[str] = None,
+        from_: Optional[str] = None,
+    ):
+        self.host = host
+        self.port = port
+        self.user = user
+        self.pass_ = pass_
+        self.from_ = from_
+
+
+class EmailConfig:
+    def __init__(self, smtp: Optional[SMTPConfig] = None):
+        self.smtp = smtp
+
+
+class AccountsConfig:
+    def __init__(
+        self,
+        session_ttl: Optional[str] = None,
+        email: Optional[EmailConfig] = None,
+    ):
+        self.session_ttl = session_ttl
+        self.email = email
+
+
 
 class StringOperation(BaseOperation):
     """String operation class for get/set operations."""
@@ -217,17 +251,32 @@ class StringOperation(BaseOperation):
 
 class BytesOperation(BaseOperation):
     """Bytes operation class for binary data operations."""
-    
+
     async def set(self, value: bytes) -> None:
         """Set bytes value."""
         await self._do_request({"case": "set", "value": value})
-    
+
     async def get(self) -> bytes:
         """Get bytes value."""
         result = await self._do_request({"case": "get", "value": True})
         if result.WhichOneof('return') == 'bytes':
             return result.bytes
         raise ValueError("Bytes value does not exist")
+
+
+class UInt64Operation(BaseOperation):
+    """uint64 operation class for numeric get/set operations."""
+
+    async def set(self, value: int) -> None:
+        """Set uint64 value."""
+        await self._do_request({"case": "set", "value": int(value)})
+
+    async def get(self) -> int:
+        """Get uint64 value."""
+        result = await self._do_request({"case": "get", "value": True})
+        if result.WhichOneof('return') == 'uint64':
+            return int(result.uint64)
+        return 0
 
 
 class StringSliceOperation(BaseOperation):
@@ -672,18 +721,95 @@ class Signer(BaseOperation):
 
 class SSHKey(BaseOperation):
     """SSH key configuration operations."""
-    
+
     def __init__(self, client: ConfigClient, config: config_pb2.Config, path: List[Dict[str, Any]]):
         super().__init__(client, config, path)
-    
+
     @property
     def path(self) -> StringOperation:
         return StringOperation(self.client, self.config, self.op_path + [{"case": "path"}])
-    
+
     @property
     def data(self) -> BytesOperation:
         return BytesOperation(self.client, self.config, self.op_path + [{"case": "data"}])
 
+
+class Accounts(BaseOperation):
+    """Accounts configuration operations."""
+
+    def __init__(self, client: ConfigClient, config: config_pb2.Config):
+        super().__init__(client, config, [{"case": "accounts"}])
+
+    @property
+    def session_ttl(self) -> StringOperation:
+        return StringOperation(self.client, self.config, self.op_path + [{"case": "session_ttl"}])
+
+    @property
+    def email(self) -> 'Email':
+        return Email(self.client, self.config, self.op_path + [{"case": "email"}])
+
+    async def set(self, value: AccountsConfig) -> None:
+        """Set accounts configuration."""
+        if value.session_ttl is not None:
+            await self.session_ttl.set(value.session_ttl)
+        if value.email is not None:
+            await self.email.set(value.email)
+
+
+class Email(BaseOperation):
+    """Email configuration operations."""
+
+    def __init__(self, client: ConfigClient, config: config_pb2.Config, path: List[Dict[str, Any]]):
+        super().__init__(client, config, path)
+
+    @property
+    def smtp(self) -> 'SMTP':
+        return SMTP(self.client, self.config, self.op_path + [{"case": "smtp"}])
+
+    async def set(self, value: EmailConfig) -> None:
+        """Set email configuration."""
+        if value.smtp is not None:
+            await self.smtp.set(value.smtp)
+
+
+class SMTP(BaseOperation):
+    """SMTP configuration operations."""
+
+    def __init__(self, client: ConfigClient, config: config_pb2.Config, path: List[Dict[str, Any]]):
+        super().__init__(client, config, path)
+
+    @property
+    def host(self) -> StringOperation:
+        return StringOperation(self.client, self.config, self.op_path + [{"case": "host"}])
+
+    @property
+    def port(self) -> UInt64Operation:
+        return UInt64Operation(self.client, self.config, self.op_path + [{"case": "port"}])
+
+    @property
+    def user(self) -> StringOperation:
+        return StringOperation(self.client, self.config, self.op_path + [{"case": "user"}])
+
+    @property
+    def pass_(self) -> StringOperation:
+        return StringOperation(self.client, self.config, self.op_path + [{"case": "pass"}])
+
+    @property
+    def from_(self) -> StringOperation:
+        return StringOperation(self.client, self.config, self.op_path + [{"case": "from"}])
+
+    async def set(self, value: SMTPConfig) -> None:
+        """Set SMTP configuration."""
+        if value.host is not None:
+            await self.host.set(value.host)
+        if value.port is not None:
+            await self.port.set(value.port)
+        if value.user is not None:
+            await self.user.set(value.user)
+        if value.pass_ is not None:
+            await self.pass_.set(value.pass_)
+        if value.from_ is not None:
+            await self.from_.set(value.from_)
 
 
 class Shapes(BaseOperation):

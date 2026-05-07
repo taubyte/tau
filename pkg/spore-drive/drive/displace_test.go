@@ -190,6 +190,14 @@ func testDisplace(t *testing.T, sd Spore) {
 		assert.NilError(t, yaml.Unmarshal(data, &cnf))
 		assert.Equal(t, cnf.Privatekey, sdrive.parser.Hosts().Host(h.Name()).Shapes().Instance("shape1").Key())
 
+		// shape1 includes the accounts service — the deployed yaml gets the accounts block.
+		assert.Equal(t, cnf.Accounts.SessionTTL, "168h")
+		assert.Equal(t, cnf.Accounts.Email.SMTP.Host, "smtp.example.com")
+		assert.Equal(t, cnf.Accounts.Email.SMTP.Port, 587)
+		assert.Equal(t, cnf.Accounts.Email.SMTP.User, "noreply@example.com")
+		assert.Equal(t, cnf.Accounts.Email.SMTP.Pass, "secret")
+		assert.Equal(t, cnf.Accounts.Email.SMTP.From, "noreply@example.com")
+
 		if updatingTau {
 			// check tau
 			f, err = mfs.Open("/tmp/tau")

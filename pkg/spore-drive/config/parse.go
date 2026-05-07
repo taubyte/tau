@@ -10,6 +10,7 @@ type Parser interface {
 	Hosts() HostsParser
 	Shapes() ShapesParser
 	Auth() AuthParser
+	Accounts() AccountsParser
 	Sync() error
 }
 
@@ -47,4 +48,8 @@ func (p *parser) Shapes() ShapesParser {
 
 func (p *parser) Auth() AuthParser {
 	return &auth{root: p, Query: p.Get("auth").Document()}
+}
+
+func (p *parser) Accounts() AccountsParser {
+	return &accounts{root: p, Query: p.Get("accounts").Document()}
 }

@@ -46,16 +46,6 @@ const (
 	MockSSHServiceFreeProcedure = "/mock.v1.MockSSHService/Free"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	mockSSHServiceServiceDescriptor          = v1.File_mock_v1_ssh_proto.Services().ByName("MockSSHService")
-	mockSSHServiceNewMethodDescriptor        = mockSSHServiceServiceDescriptor.Methods().ByName("New")
-	mockSSHServiceLookupMethodDescriptor     = mockSSHServiceServiceDescriptor.Methods().ByName("Lookup")
-	mockSSHServiceCommandsMethodDescriptor   = mockSSHServiceServiceDescriptor.Methods().ByName("Commands")
-	mockSSHServiceFilesystemMethodDescriptor = mockSSHServiceServiceDescriptor.Methods().ByName("Filesystem")
-	mockSSHServiceFreeMethodDescriptor       = mockSSHServiceServiceDescriptor.Methods().ByName("Free")
-)
-
 // MockSSHServiceClient is a client for the mock.v1.MockSSHService service.
 type MockSSHServiceClient interface {
 	New(context.Context, *connect.Request[v1.HostConfig]) (*connect.Response[v1.HostConfig], error)
@@ -74,35 +64,36 @@ type MockSSHServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewMockSSHServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) MockSSHServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	mockSSHServiceMethods := v1.File_mock_v1_ssh_proto.Services().ByName("MockSSHService").Methods()
 	return &mockSSHServiceClient{
 		new: connect.NewClient[v1.HostConfig, v1.HostConfig](
 			httpClient,
 			baseURL+MockSSHServiceNewProcedure,
-			connect.WithSchema(mockSSHServiceNewMethodDescriptor),
+			connect.WithSchema(mockSSHServiceMethods.ByName("New")),
 			connect.WithClientOptions(opts...),
 		),
 		lookup: connect.NewClient[v1.Query, v1.HostConfig](
 			httpClient,
 			baseURL+MockSSHServiceLookupProcedure,
-			connect.WithSchema(mockSSHServiceLookupMethodDescriptor),
+			connect.WithSchema(mockSSHServiceMethods.ByName("Lookup")),
 			connect.WithClientOptions(opts...),
 		),
 		commands: connect.NewClient[v1.Host, v1.Command](
 			httpClient,
 			baseURL+MockSSHServiceCommandsProcedure,
-			connect.WithSchema(mockSSHServiceCommandsMethodDescriptor),
+			connect.WithSchema(mockSSHServiceMethods.ByName("Commands")),
 			connect.WithClientOptions(opts...),
 		),
 		filesystem: connect.NewClient[v1.Host, v1.BundleChunk](
 			httpClient,
 			baseURL+MockSSHServiceFilesystemProcedure,
-			connect.WithSchema(mockSSHServiceFilesystemMethodDescriptor),
+			connect.WithSchema(mockSSHServiceMethods.ByName("Filesystem")),
 			connect.WithClientOptions(opts...),
 		),
 		free: connect.NewClient[v1.Host, v1.Empty](
 			httpClient,
 			baseURL+MockSSHServiceFreeProcedure,
-			connect.WithSchema(mockSSHServiceFreeMethodDescriptor),
+			connect.WithSchema(mockSSHServiceMethods.ByName("Free")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -157,34 +148,35 @@ type MockSSHServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewMockSSHServiceHandler(svc MockSSHServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	mockSSHServiceMethods := v1.File_mock_v1_ssh_proto.Services().ByName("MockSSHService").Methods()
 	mockSSHServiceNewHandler := connect.NewUnaryHandler(
 		MockSSHServiceNewProcedure,
 		svc.New,
-		connect.WithSchema(mockSSHServiceNewMethodDescriptor),
+		connect.WithSchema(mockSSHServiceMethods.ByName("New")),
 		connect.WithHandlerOptions(opts...),
 	)
 	mockSSHServiceLookupHandler := connect.NewUnaryHandler(
 		MockSSHServiceLookupProcedure,
 		svc.Lookup,
-		connect.WithSchema(mockSSHServiceLookupMethodDescriptor),
+		connect.WithSchema(mockSSHServiceMethods.ByName("Lookup")),
 		connect.WithHandlerOptions(opts...),
 	)
 	mockSSHServiceCommandsHandler := connect.NewServerStreamHandler(
 		MockSSHServiceCommandsProcedure,
 		svc.Commands,
-		connect.WithSchema(mockSSHServiceCommandsMethodDescriptor),
+		connect.WithSchema(mockSSHServiceMethods.ByName("Commands")),
 		connect.WithHandlerOptions(opts...),
 	)
 	mockSSHServiceFilesystemHandler := connect.NewServerStreamHandler(
 		MockSSHServiceFilesystemProcedure,
 		svc.Filesystem,
-		connect.WithSchema(mockSSHServiceFilesystemMethodDescriptor),
+		connect.WithSchema(mockSSHServiceMethods.ByName("Filesystem")),
 		connect.WithHandlerOptions(opts...),
 	)
 	mockSSHServiceFreeHandler := connect.NewUnaryHandler(
 		MockSSHServiceFreeProcedure,
 		svc.Free,
-		connect.WithSchema(mockSSHServiceFreeMethodDescriptor),
+		connect.WithSchema(mockSSHServiceMethods.ByName("Free")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/mock.v1.MockSSHService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

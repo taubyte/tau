@@ -39,13 +39,6 @@ const (
 	HealthServiceSupportsProcedure = "/health.v1.HealthService/Supports"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	healthServiceServiceDescriptor        = v1.File_health_v1_health_proto.Services().ByName("HealthService")
-	healthServicePingMethodDescriptor     = healthServiceServiceDescriptor.Methods().ByName("Ping")
-	healthServiceSupportsMethodDescriptor = healthServiceServiceDescriptor.Methods().ByName("Supports")
-)
-
 // HealthServiceClient is a client for the health.v1.HealthService service.
 type HealthServiceClient interface {
 	Ping(context.Context, *connect.Request[v1.Empty]) (*connect.Response[v1.Empty], error)
@@ -61,17 +54,18 @@ type HealthServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewHealthServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) HealthServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	healthServiceMethods := v1.File_health_v1_health_proto.Services().ByName("HealthService").Methods()
 	return &healthServiceClient{
 		ping: connect.NewClient[v1.Empty, v1.Empty](
 			httpClient,
 			baseURL+HealthServicePingProcedure,
-			connect.WithSchema(healthServicePingMethodDescriptor),
+			connect.WithSchema(healthServiceMethods.ByName("Ping")),
 			connect.WithClientOptions(opts...),
 		),
 		supports: connect.NewClient[v1.SupportsRequest, v1.Empty](
 			httpClient,
 			baseURL+HealthServiceSupportsProcedure,
-			connect.WithSchema(healthServiceSupportsMethodDescriptor),
+			connect.WithSchema(healthServiceMethods.ByName("Supports")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -105,16 +99,17 @@ type HealthServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewHealthServiceHandler(svc HealthServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	healthServiceMethods := v1.File_health_v1_health_proto.Services().ByName("HealthService").Methods()
 	healthServicePingHandler := connect.NewUnaryHandler(
 		HealthServicePingProcedure,
 		svc.Ping,
-		connect.WithSchema(healthServicePingMethodDescriptor),
+		connect.WithSchema(healthServiceMethods.ByName("Ping")),
 		connect.WithHandlerOptions(opts...),
 	)
 	healthServiceSupportsHandler := connect.NewUnaryHandler(
 		HealthServiceSupportsProcedure,
 		svc.Supports,
-		connect.WithSchema(healthServiceSupportsMethodDescriptor),
+		connect.WithSchema(healthServiceMethods.ByName("Supports")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/health.v1.HealthService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

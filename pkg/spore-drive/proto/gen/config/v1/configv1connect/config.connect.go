@@ -49,18 +49,6 @@ const (
 	ConfigServiceDoProcedure = "/config.v1.ConfigService/Do"
 )
 
-// These variables are the protoreflect.Descriptor objects for the RPCs defined in this package.
-var (
-	configServiceServiceDescriptor        = v1.File_config_v1_config_proto.Services().ByName("ConfigService")
-	configServiceNewMethodDescriptor      = configServiceServiceDescriptor.Methods().ByName("New")
-	configServiceLoadMethodDescriptor     = configServiceServiceDescriptor.Methods().ByName("Load")
-	configServiceUploadMethodDescriptor   = configServiceServiceDescriptor.Methods().ByName("Upload")
-	configServiceDownloadMethodDescriptor = configServiceServiceDescriptor.Methods().ByName("Download")
-	configServiceCommitMethodDescriptor   = configServiceServiceDescriptor.Methods().ByName("Commit")
-	configServiceFreeMethodDescriptor     = configServiceServiceDescriptor.Methods().ByName("Free")
-	configServiceDoMethodDescriptor       = configServiceServiceDescriptor.Methods().ByName("Do")
-)
-
 // ConfigServiceClient is a client for the config.v1.ConfigService service.
 type ConfigServiceClient interface {
 	New(context.Context, *connect.Request[v1.Empty]) (*connect.Response[v1.Config], error)
@@ -81,47 +69,48 @@ type ConfigServiceClient interface {
 // http://api.acme.com or https://acme.com/grpc).
 func NewConfigServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) ConfigServiceClient {
 	baseURL = strings.TrimRight(baseURL, "/")
+	configServiceMethods := v1.File_config_v1_config_proto.Services().ByName("ConfigService").Methods()
 	return &configServiceClient{
 		new: connect.NewClient[v1.Empty, v1.Config](
 			httpClient,
 			baseURL+ConfigServiceNewProcedure,
-			connect.WithSchema(configServiceNewMethodDescriptor),
+			connect.WithSchema(configServiceMethods.ByName("New")),
 			connect.WithClientOptions(opts...),
 		),
 		load: connect.NewClient[v1.Source, v1.Config](
 			httpClient,
 			baseURL+ConfigServiceLoadProcedure,
-			connect.WithSchema(configServiceLoadMethodDescriptor),
+			connect.WithSchema(configServiceMethods.ByName("Load")),
 			connect.WithClientOptions(opts...),
 		),
 		upload: connect.NewClient[v1.SourceUpload, v1.Config](
 			httpClient,
 			baseURL+ConfigServiceUploadProcedure,
-			connect.WithSchema(configServiceUploadMethodDescriptor),
+			connect.WithSchema(configServiceMethods.ByName("Upload")),
 			connect.WithClientOptions(opts...),
 		),
 		download: connect.NewClient[v1.BundleConfig, v1.Bundle](
 			httpClient,
 			baseURL+ConfigServiceDownloadProcedure,
-			connect.WithSchema(configServiceDownloadMethodDescriptor),
+			connect.WithSchema(configServiceMethods.ByName("Download")),
 			connect.WithClientOptions(opts...),
 		),
 		commit: connect.NewClient[v1.Config, v1.Empty](
 			httpClient,
 			baseURL+ConfigServiceCommitProcedure,
-			connect.WithSchema(configServiceCommitMethodDescriptor),
+			connect.WithSchema(configServiceMethods.ByName("Commit")),
 			connect.WithClientOptions(opts...),
 		),
 		free: connect.NewClient[v1.Config, v1.Empty](
 			httpClient,
 			baseURL+ConfigServiceFreeProcedure,
-			connect.WithSchema(configServiceFreeMethodDescriptor),
+			connect.WithSchema(configServiceMethods.ByName("Free")),
 			connect.WithClientOptions(opts...),
 		),
 		do: connect.NewClient[v1.Op, v1.Return](
 			httpClient,
 			baseURL+ConfigServiceDoProcedure,
-			connect.WithSchema(configServiceDoMethodDescriptor),
+			connect.WithSchema(configServiceMethods.ByName("Do")),
 			connect.WithClientOptions(opts...),
 		),
 	}
@@ -190,46 +179,47 @@ type ConfigServiceHandler interface {
 // By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
 // and JSON codecs. They also support gzip compression.
 func NewConfigServiceHandler(svc ConfigServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	configServiceMethods := v1.File_config_v1_config_proto.Services().ByName("ConfigService").Methods()
 	configServiceNewHandler := connect.NewUnaryHandler(
 		ConfigServiceNewProcedure,
 		svc.New,
-		connect.WithSchema(configServiceNewMethodDescriptor),
+		connect.WithSchema(configServiceMethods.ByName("New")),
 		connect.WithHandlerOptions(opts...),
 	)
 	configServiceLoadHandler := connect.NewUnaryHandler(
 		ConfigServiceLoadProcedure,
 		svc.Load,
-		connect.WithSchema(configServiceLoadMethodDescriptor),
+		connect.WithSchema(configServiceMethods.ByName("Load")),
 		connect.WithHandlerOptions(opts...),
 	)
 	configServiceUploadHandler := connect.NewClientStreamHandler(
 		ConfigServiceUploadProcedure,
 		svc.Upload,
-		connect.WithSchema(configServiceUploadMethodDescriptor),
+		connect.WithSchema(configServiceMethods.ByName("Upload")),
 		connect.WithHandlerOptions(opts...),
 	)
 	configServiceDownloadHandler := connect.NewServerStreamHandler(
 		ConfigServiceDownloadProcedure,
 		svc.Download,
-		connect.WithSchema(configServiceDownloadMethodDescriptor),
+		connect.WithSchema(configServiceMethods.ByName("Download")),
 		connect.WithHandlerOptions(opts...),
 	)
 	configServiceCommitHandler := connect.NewUnaryHandler(
 		ConfigServiceCommitProcedure,
 		svc.Commit,
-		connect.WithSchema(configServiceCommitMethodDescriptor),
+		connect.WithSchema(configServiceMethods.ByName("Commit")),
 		connect.WithHandlerOptions(opts...),
 	)
 	configServiceFreeHandler := connect.NewUnaryHandler(
 		ConfigServiceFreeProcedure,
 		svc.Free,
-		connect.WithSchema(configServiceFreeMethodDescriptor),
+		connect.WithSchema(configServiceMethods.ByName("Free")),
 		connect.WithHandlerOptions(opts...),
 	)
 	configServiceDoHandler := connect.NewUnaryHandler(
 		ConfigServiceDoProcedure,
 		svc.Do,
-		connect.WithSchema(configServiceDoMethodDescriptor),
+		connect.WithSchema(configServiceMethods.ByName("Do")),
 		connect.WithHandlerOptions(opts...),
 	)
 	return "/config.v1.ConfigService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

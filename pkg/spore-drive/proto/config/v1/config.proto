@@ -43,6 +43,13 @@ message BytesOp {
     }
 }
 
+message UInt64Op {
+    oneof op {
+        uint64 set = 1;
+        bool get = 2;
+    }
+}
+
 message StringSliceOp {
     oneof op {
         StringSlice set = 1;
@@ -103,6 +110,7 @@ message Op {
         Hosts hosts = 3;
         Auth auth = 4;
         Shapes shapes = 5;
+        Accounts accounts = 6;
     }
 }
 
@@ -257,6 +265,30 @@ message SSHKey {
     oneof op {
         StringOp path = 1;
         BytesOp data = 2;
+    }
+}
+
+// Accounts
+message Accounts {
+    oneof op {
+        StringOp session_ttl = 1;
+        AccountsEmail email = 2;
+    }
+}
+
+message AccountsEmail {
+    oneof op {
+        SMTP smtp = 1;
+    }
+}
+
+message SMTP {
+    oneof op {
+        StringOp host = 1;
+        UInt64Op port = 2;
+        StringOp user = 3;
+        StringOp pass = 4;
+        StringOp from = 5;
     }
 }
 

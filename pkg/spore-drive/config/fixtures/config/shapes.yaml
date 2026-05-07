@@ -2,6 +2,7 @@ shape1:
     services:
         - auth
         - seer
+        - accounts
     ports:
         main: 4242
         lite: 4262

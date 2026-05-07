@@ -28,7 +28,8 @@ from spore_drive.operations import (
     CloudConfig, DomainConfig, P2PConfig, BootstrapConfig,
     HostsConfig, HostConfig, SSHConfig, LocationConfig,
     AuthConfig, SignerConfig, ShapesConfig, ShapeConfig, PortsConfig,
-    Cloud, Hosts, Auth, Shapes
+    AccountsConfig, EmailConfig, SMTPConfig,
+    Cloud, Hosts, Auth, Accounts, Shapes
 )
 from spore_drive.proto.config.v1 import config_pb2
 
@@ -69,9 +70,17 @@ async def create_config(config: Config) -> None:
     await with_key_auth.username.set("tau2")
     await with_key_auth.key.path.set("/keys/test.pem")
 
+    # Set Accounts configuration
+    await config.accounts.session_ttl.set("168h")
+    await config.accounts.email.smtp.host.set("smtp.example.com")
+    await config.accounts.email.smtp.port.set(587)
+    await config.accounts.email.smtp.user.set("noreply@example.com")
+    await config.accounts.email.smtp.pass_.set("secret")
+    await config.accounts.email.smtp.from_.set("noreply@example.com")
+
     # Set Shapes configurations
     shape1 = config.shapes.get("shape1")
-    await shape1.services.set(["auth", "seer"])
+    await shape1.services.set(["auth", "seer", "accounts"])
     await shape1.ports.port("main").set(4242)
     await shape1.ports.port("lite").set(4262)
 
@@ -123,11 +132,25 @@ async def create_config_with_set(config: Config) -> None:
         }
     ))
 
+    # Set Accounts configuration
+    await config.accounts.set(AccountsConfig(
+        session_ttl="168h",
+        email=EmailConfig(
+            smtp=SMTPConfig(
+                host="smtp.example.com",
+                port=587,
+                user="noreply@example.com",
+                pass_="secret",
+                from_="noreply@example.com",
+            )
+        ),
+    ))
+
     # Set Shapes configurations
     await config.shapes.set(ShapesConfig(
         shapes={
             "shape1": ShapeConfig(
-                services=["auth", "seer"],
+                services=["auth", "seer", "accounts"],
                 ports=PortsConfig(ports={"main": 4242, "lite": 4262})
             ),
             "shape2": ShapeConfig(
@@ -411,19 +434,58 @@ class TestConfigIntegration:
     async def test_add_list_and_delete_auth_signer(self):
         """Test adding, listing, and deleting auth signers."""
         await self.setup_config()
-        
+
         signer = self.config.auth.signer("testSigner")
         await signer.username.set("testUser")
         await signer.password.set("testPass")
-        
+
         signers_list_before_delete = await self.config.auth.list()
         assert "testSigner" in signers_list_before_delete
-        
+
         await signer.delete()
-        
+
         signers_list_after_delete = await self.config.auth.list()
         assert "testSigner" not in signers_list_after_delete
-    
+
+    @pytest.mark.asyncio
+    async def test_set_and_get_accounts_smtp(self):
+        """Round-trip the Accounts SMTP fields and session TTL."""
+        await self.setup_config()
+
+        await self.config.accounts.session_ttl.set("168h")
+        assert await self.config.accounts.session_ttl.get() == "168h"
+
+        smtp = self.config.accounts.email.smtp
+        await smtp.host.set("smtp.example.com")
+        await smtp.port.set(587)
+        await smtp.user.set("noreply@example.com")
+        await smtp.pass_.set("secret")
+        await smtp.from_.set("noreply@example.com")
+
+        assert await smtp.host.get() == "smtp.example.com"
+        assert await smtp.port.get() == 587
+        assert await smtp.user.get() == "noreply@example.com"
+        assert await smtp.pass_.get() == "secret"
+        assert await smtp.from_.get() == "noreply@example.com"
+
+    @pytest.mark.asyncio
+    async def test_accounts_set_dataclass(self):
+        """AccountsConfig dataclass round-trips through accounts.set()."""
+        await self.setup_config()
+        await self.config.accounts.set(AccountsConfig(
+            session_ttl="24h",
+            email=EmailConfig(smtp=SMTPConfig(
+                host="smtp.batch.example.com",
+                port=2525,
+                user="batch",
+                pass_="batchpass",
+                from_="batch@example.com",
+            )),
+        ))
+        assert await self.config.accounts.session_ttl.get() == "24h"
+        assert await self.config.accounts.email.smtp.host.get() == "smtp.batch.example.com"
+        assert await self.config.accounts.email.smtp.port.get() == 2525
+
     @pytest.mark.asyncio
     async def test_generate_same_config_with_different_methods(self):
         """Test that create_config and create_config_with_set generate the same config."""
