@@ -65,10 +65,7 @@ func (w *Website) Handle(_w goHttp.ResponseWriter, r *goHttp.Request, matcher co
 	}
 
 	pathMatch := _matcher.Get(common.PathMatch)
-	_path := path.Clean("/" + strings.TrimPrefix(r.URL.Path, pathMatch))
-	if strings.HasSuffix(r.URL.Path, "/") {
-		_path += "/"
-	}
+	_path := cleanRequestPath(r.URL.Path, pathMatch)
 
 	r.URL.Path = _path
 
@@ -83,6 +80,17 @@ func (w *Website) Handle(_w goHttp.ResponseWriter, r *goHttp.Request, matcher co
 
 	// Classic static website: serve from the asset with SPA fallback.
 	return w.serveStatic(_w, r, true)
+}
+
+// cleanRequestPath maps the incoming request path to a path relative to the
+// website's mount (pathMatch), preserving a trailing slash except for the root
+// (so "/" does not become "//", which a server bundle would fail to route).
+func cleanRequestPath(urlPath, pathMatch string) string {
+	p := path.Clean("/" + strings.TrimPrefix(urlPath, pathMatch))
+	if strings.HasSuffix(urlPath, "/") && p != "/" {
+		p += "/"
+	}
+	return p
 }
 
 // serveStatic serves a request straight from the build asset. spa enables the

@@ -34,6 +34,9 @@ var shimSource string
 //go:embed runtime/web.js
 var webPolyfill string
 
+//go:embed runtime/node.js
+var nodePolyfill string
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "taubyte-ssr-adapter:", err)
@@ -47,6 +50,7 @@ func run() error {
 	manifestOut := flag.String("manifest", "", "optional path to also write the SSR manifest (ssr.json)")
 	framework := flag.String("framework", "js", "framework name recorded in the manifest")
 	mode := flag.String("mode", "handler", "entry shape: `handler` (default-export handle(req)->res) or `fetch` (Web-standard app.fetch(Request), e.g. Hono)")
+	node := flag.Bool("node", false, "inject Node-compat shims (process/Buffer/global/timers) — needed by Next.js edge handlers")
 	flag.Parse()
 
 	if *entry == "" {
@@ -72,18 +76,34 @@ func run() error {
 		return err
 	}
 
+	// Runtime polyfills are installed (in order) before the app module runs.
+	var prelude string
+	writePolyfill := func(name, src string) (string, error) {
+		p := filepath.Join(tmp, name)
+		return p, os.WriteFile(p, []byte(src), 0o644)
+	}
+	if *node {
+		// Node-compat shims first (process/Buffer/global), so web.js and the app
+		// can rely on them.
+		p, err := writePolyfill("node.js", nodePolyfill)
+		if err != nil {
+			return err
+		}
+		prelude += fmt.Sprintf("import %q;\n", p)
+	}
+
 	bridge := fmt.Sprintf("import app from %q;\n", entryAbs)
 	if *mode == "fetch" {
 		// Install the Web API polyfill (Request/Response/Headers/URL) before the
 		// app runs, then dispatch through the Web-standard fetch handler.
-		polyfillPath := filepath.Join(tmp, "web.js")
-		if err := os.WriteFile(polyfillPath, []byte(webPolyfill), 0o644); err != nil {
+		p, err := writePolyfill("web.js", webPolyfill)
+		if err != nil {
 			return err
 		}
-		bridge = fmt.Sprintf("import %q;\n", polyfillPath) + bridge +
-			fmt.Sprintf("import { serveFetch } from %q;\nserveFetch(app);\n", shimPath)
+		prelude += fmt.Sprintf("import %q;\n", p)
+		bridge = prelude + bridge + fmt.Sprintf("import { serveFetch } from %q;\nserveFetch(app);\n", shimPath)
 	} else {
-		bridge += fmt.Sprintf("import { serve } from %q;\nserve(app);\n", shimPath)
+		bridge = prelude + bridge + fmt.Sprintf("import { serve } from %q;\nserve(app);\n", shimPath)
 	}
 
 	bridgePath := filepath.Join(tmp, "bridge.js")

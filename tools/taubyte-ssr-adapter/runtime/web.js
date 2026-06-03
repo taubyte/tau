@@ -32,8 +32,11 @@
       append(k, v) { this._.push([k, String(v)]); }
       delete(k) { this._ = this._.filter((e) => e[0] !== k); }
       forEach(cb) { for (const e of this._) cb(e[1], e[0], this); }
+      entries() { return this._.map((e) => [e[0], e[1]])[Symbol.iterator](); }
+      keys() { return this._.map((e) => e[0])[Symbol.iterator](); }
+      values() { return this._.map((e) => e[1])[Symbol.iterator](); }
       toString() { return this._.map((e) => enc(e[0]) + "=" + enc(e[1])).join("&"); }
-      [Symbol.iterator]() { return this._[Symbol.iterator](); }
+      [Symbol.iterator]() { return this.entries(); }
     };
     function dec(s) { try { return decodeURIComponent(s.replace(/\+/g, " ")); } catch { return s; } }
     function enc(s) { return encodeURIComponent(s); }
@@ -95,7 +98,14 @@
   }
 
   const body = {
-    text() { return Promise.resolve(this._body == null ? "" : String(this._body)); },
+    text() {
+      const b = this._body;
+      if (b == null) return Promise.resolve("");
+      if (typeof b === "string") return Promise.resolve(b);
+      if (b instanceof Uint8Array) return Promise.resolve(new TextDecoder().decode(b));
+      if (b instanceof ArrayBuffer) return Promise.resolve(new TextDecoder().decode(new Uint8Array(b)));
+      return Promise.resolve(String(b));
+    },
     json() { return this.text().then((t) => JSON.parse(t || "null")); },
     arrayBuffer() { return this.text().then((t) => new TextEncoder().encode(t).buffer); },
   };
