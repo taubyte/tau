@@ -43,31 +43,44 @@
   }
 
   if (typeof g.URL === "undefined") {
-    const RE = /^([a-zA-Z][a-zA-Z0-9+.-]*:)\/\/([^/?#]*)([^?#]*)(\?[^#]*)?(#.*)?$/;
+    const SCHEME = /^[a-zA-Z][a-zA-Z0-9+.-]*:/;
+    // scheme, optional //authority, path, ?query, #hash. The authority is
+    // optional so opaque URLs (a:, mailto:x, data:...) parse instead of throwing
+    // — SvelteKit constructs `new URL("a:")` as a placeholder during SSR.
+    const RE = /^([a-zA-Z][a-zA-Z0-9+.-]*:)(\/\/([^/?#]*))?([^?#]*)(\?[^#]*)?(#.*)?$/;
     g.URL = class URL {
       constructor(url, base) {
         let s = String(url);
-        if (base && !RE.test(s)) {
+        if (!SCHEME.test(s)) {
+          if (base == null) throw new TypeError("Invalid URL: " + url);
           const b = new g.URL(base);
-          s = s.startsWith("/") ? b.origin + s : b.origin + b.pathname.replace(/[^/]*$/, "") + s;
+          if (s.startsWith("//")) s = b.protocol + s;
+          else if (s.startsWith("/")) s = b.origin + s;
+          else if (s.startsWith("?")) s = b.origin + b.pathname + s;
+          else if (s.startsWith("#")) s = b.origin + b.pathname + b.search + s;
+          else s = b.origin + b.pathname.replace(/[^/]*$/, "") + s;
         }
         const m = RE.exec(s);
         if (!m) throw new TypeError("Invalid URL: " + url);
         this.protocol = m[1];
-        this.host = m[2];
+        const hasAuthority = m[2] !== undefined;
+        this.host = m[3] || "";
         const at = this.host.indexOf("@");
         const hostport = at >= 0 ? this.host.slice(at + 1) : this.host;
         this.hostname = hostport.split(":")[0];
         this.port = hostport.split(":")[1] || "";
-        this.pathname = m[3] || "/";
-        this.search = m[4] || "";
-        this.hash = m[5] || "";
+        // With an authority an empty path normalizes to "/"; an opaque URL keeps
+        // its (possibly empty) path and has a null origin.
+        this.pathname = m[4] || (hasAuthority ? "/" : "");
+        this.search = m[5] || "";
+        this.hash = m[6] || "";
         this.searchParams = new g.URLSearchParams(this.search);
-        this.origin = this.protocol + "//" + this.host;
+        this.origin = hasAuthority ? this.protocol + "//" + this.host : "null";
       }
       get href() {
         const q = this.searchParams.toString();
-        return this.origin + this.pathname + (q ? "?" + q : "") + this.hash;
+        const base = this.origin !== "null" ? this.origin : this.protocol;
+        return base + this.pathname + (q ? "?" + q : "") + this.hash;
       }
       toString() { return this.href; }
     };
