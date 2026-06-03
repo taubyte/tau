@@ -54,6 +54,19 @@ func buildManifest(framework string) *websiteSpec.Manifest {
 	return m
 }
 
+// siteAssetKeys returns the site-root paths a build-output file should be served
+// at: its own path, plus — for a non-index `foo.html` — the clean-URL form
+// `foo/index.html`. Taubyte resolves a clean URL `/foo` to `foo/index.html`, not
+// the flat `foo.html` that edge adapters (SvelteKit's adapter-cloudflare) emit,
+// so both forms are written for prerendered pages to serve under clean URLs.
+func siteAssetKeys(rel string) []string {
+	keys := []string{rel}
+	if strings.HasSuffix(rel, ".html") && path.Base(rel) != "index.html" {
+		keys = append(keys, strings.TrimSuffix(rel, ".html")+"/index.html")
+	}
+	return keys
+}
+
 // siteControlFiles are host/adapter artifacts that live in an edge build output
 // (e.g. SvelteKit's .svelte-kit/cloudflare) but must not be served as static
 // assets: the worker is compiled into the handler, and the rest is edge-platform
@@ -64,6 +77,23 @@ var siteControlFiles = map[string]bool{
 	"_routes.json":   true,
 	"_headers":       true,
 	".assetsignore":  true,
+}
+
+// siteControlDirs are top-level directories in an edge build output that are not
+// servable static assets: build temp dirs, and (next-on-pages) the worker
+// emitted as a directory rather than a single file.
+var siteControlDirs = map[string]bool{
+	"cloudflare-tmp": true, // SvelteKit adapter-cloudflare build temp
+	"_worker.js":     true, // next-on-pages emits the worker as _worker.js/index.js
+}
+
+// isSiteControlPath reports whether a site-relative (slash separated) path is a
+// host/adapter artifact that must be excluded from the served static surface.
+func isSiteControlPath(rel string) bool {
+	if siteControlFiles[rel] {
+		return true
+	}
+	return siteControlDirs[strings.SplitN(rel, "/", 2)[0]]
 }
 
 // buildSiteZip assembles a complete Taubyte website build asset: every static /
@@ -100,15 +130,19 @@ func buildSiteZip(siteDir string, handlerZip []byte, manifest *websiteSpec.Manif
 				return err
 			}
 			rel = filepath.ToSlash(rel)
-			top := strings.SplitN(rel, "/", 2)[0]
-			if siteControlFiles[rel] || top == "cloudflare-tmp" {
+			if isSiteControlPath(rel) {
 				return nil // host artifact, not a servable asset
 			}
 			data, err := os.ReadFile(p)
 			if err != nil {
 				return err
 			}
-			return add(rel, data)
+			for _, k := range siteAssetKeys(rel) {
+				if err := add(k, data); err != nil {
+					return err
+				}
+			}
+			return nil
 		})
 		if err != nil {
 			return nil, err

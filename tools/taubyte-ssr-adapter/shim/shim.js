@@ -145,12 +145,30 @@ export function serveFetch(app) {
   });
 
   // Workers calling convention: fetch(request, env, ctx). env is the shared
-  // bindings object (cloudflare:workers exports the same one); ASSETS 404s since
-  // Taubyte serves static assets before the bundle. Handlers that take only the
-  // request (Hono) ignore the extra args.
+  // bindings object (cloudflare:workers exports the same one). env.ASSETS
+  // resolves against assets the adapter embedded (globalThis.__TAUBYTE_ASSETS__,
+  // keyed by site-root path) — so a standalone bundle serves its own prerendered
+  // pages and SvelteKit's read() gets real bytes; unknown paths 404 (the
+  // substrate's static layer serves anything not embedded). Handlers that take
+  // only the request (Hono) ignore the extra args.
   const env = (globalThis.__TAUBYTE_ENV__ = globalThis.__TAUBYTE_ENV__ || {});
   if (!env.ASSETS) {
-    env.ASSETS = { fetch: function () { return Promise.resolve(new Response("Not Found", { status: 404 })); } };
+    env.ASSETS = {
+      fetch: function (input) {
+        const store = globalThis.__TAUBYTE_ASSETS__ || {};
+        let p;
+        try {
+          p = new URL(typeof input === "string" ? input : input.url).pathname;
+        } catch (e) {
+          p = typeof input === "string" ? input : (input && input.url) || "/";
+        }
+        const noSlash = p.replace(/\/$/, "");
+        const hit =
+          store[p] || store[noSlash] || store[p + "index.html"] || store[noSlash + "/index.html"];
+        if (!hit) return Promise.resolve(new Response("Not Found", { status: 404 }));
+        return Promise.resolve(new Response(hit.body, { status: 200, headers: { "content-type": hit.type } }));
+      },
+    };
   }
   const ctx = { waitUntil: function () {}, passThroughOnException: function () {} };
 

@@ -102,11 +102,43 @@ go run /path/to/tau/tools/taubyte-ssr-adapter --mode fetch --node \
 
 Upload that `build.zip` as the website asset: the substrate serves prerendered
 pages and `_app/` statically and routes `/api/*` and other dynamic paths to the
-bundle. (Note: SvelteKit's `read()` for server assets goes through `env.ASSETS`,
-which is a 404 stub today — outbound asset reads during SSR aren't wired yet.)
+bundle. Flat prerenders (`about.html`) are also written in clean-URL form
+(`about/index.html`) so `/about` resolves.
 
-Next.js's edge handler is the same shape (it expects Web APIs); it builds on this
-polyfill plus Node-compat shims and the `taubyte-next-adapter` (see
+`--site` also embeds the text-like assets (HTML/CSS/JS/JSON/SVG, each under
+`--asset-embed-max`, default 100 KiB) into the bundle so `env.ASSETS` resolves
+them in-process — a one-shot wasi-stdio bundle can't call back to the host, so
+this is how a standalone bundle serves its own prerendered pages and how
+SvelteKit's `read()` of a server asset gets real bytes. Large/binary assets are
+left to the static layer; streaming/`response.body` reads of those remain a gap.
+
+### Next.js (`@cloudflare/next-on-pages`)
+
+next-on-pages emits a multi-module worker: `_worker.js/index.js` plus per-route
+`__next-on-pages-dist__/functions/*.func.js` it pulls in via dynamic
+`import(runtimeStringPath)`. Javy is a single module with no runtime module
+loader, so the adapter detects this layout and folds it into one bundle: it
+statically imports every route/cache module into a registry, rewrites the
+worker's dynamic imports to a registry lookup, pre-installs next-on-pages'
+route-isolation, and shims `node:buffer`/`AsyncLocalStorage` on the global so
+the route modules find them at evaluation time. Just point `--entry` at the
+generated `index.js`:
+
+```sh
+npx @cloudflare/next-on-pages
+go run /path/to/tau/tools/taubyte-ssr-adapter --mode fetch --node --framework nextjs \
+  --entry .vercel/output/static/_worker.js/index.js \
+  --site  .vercel/output/static --out build.zip
+```
+
+Validated against a Next.js 14 App Router app: **edge routes** (`route.js` /
+pages with `runtime = 'edge'`) compile and run — `GET`/`POST /api/*` return
+correctly — and prerendered pages serve from the static layer. **Known wall:**
+a React **SSR** page (`react-dom/server`) is a ~700 KB module that crashes
+Javy/QuickJS's bytecode compiler ("stack underflow"); heavy React SSR needs the
+component-model engine (see `docs/js-runtime-roadmap.md`). Use `runtime='edge'`
++ prerendering; avoid dynamic React SSR until the engine swap lands. The older
+manifest-translation path is the `taubyte-next-adapter` (see
 `docs/nextjs-adapter.md`).
 
 ## Why Javy + WASI stdio

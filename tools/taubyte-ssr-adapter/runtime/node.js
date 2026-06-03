@@ -49,6 +49,30 @@
     };
   }
 
+  // AsyncLocalStorage on the global. Next.js' edge runtime captures
+  // globalThis.AsyncLocalStorage at module-evaluation time and falls back to a
+  // throwing stub if it's missing, so it must exist before route modules load
+  // (node.js runs in the prelude, ahead of them). Single-flow only — see the
+  // node:async_hooks shim, which re-exports this same class.
+  if (typeof g.AsyncLocalStorage === "undefined") {
+    g.AsyncLocalStorage = class AsyncLocalStorage {
+      run(store, cb, ...args) { this._store = store; return cb(...args); }
+      getStore() { return this._store; }
+      enterWith(store) { this._store = store; }
+      exit(cb, ...args) {
+        const prev = this._store;
+        this._store = undefined;
+        try { return cb(...args); } finally { this._store = prev; }
+      }
+      disable() { this._store = undefined; }
+    };
+    g.AsyncResource = class AsyncResource {
+      constructor() {}
+      runInAsyncScope(fn, thisArg, ...args) { return fn.apply(thisArg, args); }
+      bind(fn) { return fn; }
+    };
+  }
+
   // Minimal Buffer over Uint8Array (utf8 + base64/hex). Not spec-complete.
   if (typeof g.Buffer === "undefined") {
     class Buffer extends Uint8Array {

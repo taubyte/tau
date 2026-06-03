@@ -43,6 +43,9 @@ var nodeAsyncHooks string
 //go:embed runtime/node-modules/events.js
 var nodeEvents string
 
+//go:embed runtime/node-modules/buffer.js
+var nodeBuffer string
+
 //go:embed runtime/node-modules/cloudflare-workers.js
 var cloudflareWorkers string
 
@@ -61,6 +64,7 @@ func run() error {
 	mode := flag.String("mode", "handler", "entry shape: `handler` (default-export handle(req)->res) or `fetch` (Web-standard app.fetch(Request), e.g. Hono)")
 	node := flag.Bool("node", false, "inject Node-compat shims (process/Buffer/global/timers) — needed by Next.js edge handlers")
 	site := flag.String("site", "", "directory of static/prerendered assets (e.g. SvelteKit's .svelte-kit/cloudflare) to assemble with the handler into a complete website build.zip at --out")
+	assetMax := flag.Int64("asset-embed-max", defaultAssetEmbedMax, "max size (bytes) of a text-like --site asset to embed into the bundle for env.ASSETS resolution; larger assets are left to the static layer")
 	flag.Parse()
 
 	if *entry == "" {
@@ -79,6 +83,15 @@ func run() error {
 		return err
 	}
 	defer os.RemoveAll(tmp)
+
+	// next-on-pages emits a multi-module worker (per-route *.func.js loaded via
+	// dynamic import); fold it into one self-contained entry first.
+	if nopEntry, err := prepareNextOnPages(entryAbs, tmp); err != nil {
+		return fmt.Errorf("preparing next-on-pages worker failed with: %w", err)
+	} else if nopEntry != "" {
+		entryAbs = nopEntry
+		fmt.Fprintln(os.Stderr, "taubyte-ssr-adapter: detected next-on-pages worker; bundling route modules into one")
+	}
 
 	// 1. Materialise the bridge: the shim + a tiny entrypoint importing the app.
 	shimPath := filepath.Join(tmp, "shim.js")
@@ -107,6 +120,7 @@ func run() error {
 		for _, mod := range []struct{ name, src string }{
 			{"async_hooks", nodeAsyncHooks},
 			{"events", nodeEvents},
+			{"buffer", nodeBuffer},
 		} {
 			mp, err := writePolyfill(mod.name+".mjs", mod.src)
 			if err != nil {
@@ -134,6 +148,26 @@ func run() error {
 		}
 		aliases = append(aliases, "--alias:cloudflare:workers="+cf)
 
+		// Embed text-like static/prerendered assets so env.ASSETS resolves them
+		// in-process — the wasi-stdio bundle can't call back to the host mid-render.
+		// Bounded by a per-file cap; larger/binary assets are served by the static
+		// layer. Lets a standalone bundle serve its own prerendered pages and gives
+		// SvelteKit's read() real bytes.
+		if *site != "" {
+			mod, n, err := buildAssetModule(*site, *assetMax)
+			if err != nil {
+				return fmt.Errorf("embedding site assets failed with: %w", err)
+			}
+			if n > 0 {
+				ap, err := writePolyfill("assets.js", mod)
+				if err != nil {
+					return err
+				}
+				prelude += fmt.Sprintf("import %q;\n", ap)
+				fmt.Fprintf(os.Stderr, "taubyte-ssr-adapter: embedded %d assets for env.ASSETS\n", n)
+			}
+		}
+
 		bridge = prelude + bridge + fmt.Sprintf("import { serveFetch } from %q;\nserveFetch(app);\n", shimPath)
 	} else {
 		bridge = prelude + bridge + fmt.Sprintf("import { serve } from %q;\nserve(app);\n", shimPath)
@@ -148,6 +182,11 @@ func run() error {
 	bundlePath := filepath.Join(tmp, "bundle.js")
 	if err := bundleJS(bridgePath, bundlePath, aliases...); err != nil {
 		return fmt.Errorf("bundling failed (is esbuild installed?): %w", err)
+	}
+	if dst := os.Getenv("TAUBYTE_SSR_KEEP_BUNDLE"); dst != "" {
+		if data, rerr := os.ReadFile(bundlePath); rerr == nil {
+			_ = os.WriteFile(dst, data, 0o644)
+		}
 	}
 
 	// 3. Compile JS -> WASM (WASI stdin/stdout) with Javy.
@@ -215,7 +254,11 @@ func run() error {
 // or via npx). extra holds additional esbuild flags (e.g. --alias: for node
 // builtin-module shims).
 func bundleJS(entry, out string, extra ...string) error {
-	args := []string{"--bundle", entry, "--format=esm", "--platform=neutral", "--outfile=" + out}
+	// Target es2020 so esbuild transpiles newer syntax (class static blocks,
+	// logical-assignment, .at(), top-level await spots, etc.) that Javy/QuickJS's
+	// bytecode compiler doesn't fully support — heavy framework/webpack output
+	// (Next.js) otherwise crashes javy with a bytecode "stack underflow".
+	args := []string{"--bundle", entry, "--format=esm", "--platform=neutral", "--target=es2020", "--outfile=" + out}
 	args = append(args, extra...)
 	if path, err := exec.LookPath("esbuild"); err == nil {
 		return runCmd(path, args...)

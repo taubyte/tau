@@ -8,6 +8,14 @@
 // real apps; extend as needed (streams, fetch, FormData).
 
 (function (g) {
+  // define sets an own, writable data property — used for Request/Response
+  // fields so a subclass that declares them as getters (Next.js' NextRequest
+  // does `get url()`) doesn't make our constructor's assignment throw
+  // "no setter for property".
+  function define(o, k, v) {
+    Object.defineProperty(o, k, { value: v, writable: true, configurable: true, enumerable: true });
+  }
+
   if (typeof g.URLSearchParams === "undefined") {
     g.URLSearchParams = class URLSearchParams {
       constructor(init) {
@@ -127,11 +135,21 @@
     g.Request = class Request {
       constructor(input, init) {
         init = init || {};
-        this.url = typeof input === "string" ? input : input.url;
-        this.method = String(init.method || (input && input.method) || "GET").toUpperCase();
-        this.headers = new g.Headers(init.headers || (input && input.headers));
+        // input may be a string, a URL (has .href), or another Request (.url).
+        // Use define() so a Request subclass with getter-only fields is safe.
+        define(this, "url",
+          typeof input === "string"
+            ? input
+            : (input && (input.href != null ? input.href : input.url)) || "");
+        define(this, "method", String(init.method || (input && input.method) || "GET").toUpperCase());
+        define(this, "headers", new g.Headers(init.headers || (input && input.headers)));
         this._body = init.body != null ? init.body : (input && input._body) || null;
       }
+      // .body is consumed by clone patterns like `new Response(res.body, res)`;
+      // expose the raw body rather than a ReadableStream (not implemented). A
+      // setter is provided because edge runtimes assign req.body.
+      get body() { return this._body; }
+      set body(v) { this._body = v; }
       clone() { return new g.Request(this.url, { method: this.method, headers: this.headers, body: this._body }); }
     };
     Object.assign(g.Request.prototype, body);
@@ -142,10 +160,12 @@
       constructor(b, init) {
         init = init || {};
         this._body = b != null ? b : null;
-        this.status = init.status || 200;
-        this.statusText = init.statusText || "";
-        this.headers = new g.Headers(init.headers);
-        this.ok = this.status >= 200 && this.status < 300;
+        // define() so a Response subclass (NextResponse) with getter-only fields
+        // is safe against these assignments.
+        define(this, "status", init.status || 200);
+        define(this, "statusText", init.statusText || "");
+        define(this, "headers", new g.Headers(init.headers));
+        define(this, "ok", (init.status || 200) >= 200 && (init.status || 200) < 300);
       }
       static json(data, init) {
         const r = new g.Response(JSON.stringify(data), init);
@@ -157,6 +177,11 @@
         r.headers.set("location", url);
         return r;
       }
+      // Raw body for clone patterns like `new Response(res.body, res)` (used by
+      // next-on-pages); a real ReadableStream is not implemented. A setter is
+      // provided because edge runtimes assign res.body.
+      get body() { return this._body; }
+      set body(v) { this._body = v; }
       clone() { return new g.Response(this._body, { status: this.status, headers: this.headers }); }
     };
     Object.assign(g.Response.prototype, body);

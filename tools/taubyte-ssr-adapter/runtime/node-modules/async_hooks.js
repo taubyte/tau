@@ -1,41 +1,12 @@
 // node:async_hooks shim for Javy. Next/SvelteKit use AsyncLocalStorage for
-// per-request context. PROTOTYPE: single-flow only — there is no async-context
-// tracking, so `run(store, cb)` keeps the store set for the rest of the request
-// (which suits one request per module instance). Nested runs are last-wins.
+// per-request context. The implementation lives on the global (see node.js) so
+// it exists at module-evaluation time for runtimes that capture it eagerly; this
+// shim re-exports the same classes so `import { AsyncLocalStorage } from
+// "node:async_hooks"` and the global are identical. PROTOTYPE: single-flow only
+// — no async-context tracking; run(store, cb) keeps the store set for the rest
+// of the request (one request per module instance). Nested runs are last-wins.
 
-export class AsyncLocalStorage {
-  run(store, cb, ...args) {
-    this._store = store;
-    return cb(...args);
-  }
-  getStore() {
-    return this._store;
-  }
-  enterWith(store) {
-    this._store = store;
-  }
-  exit(cb, ...args) {
-    const prev = this._store;
-    this._store = undefined;
-    try {
-      return cb(...args);
-    } finally {
-      this._store = prev;
-    }
-  }
-  disable() {
-    this._store = undefined;
-  }
-}
-
-export class AsyncResource {
-  constructor() {}
-  runInAsyncScope(fn, thisArg, ...args) {
-    return fn.apply(thisArg, args);
-  }
-  bind(fn) {
-    return fn;
-  }
-}
+export const AsyncLocalStorage = globalThis.AsyncLocalStorage;
+export const AsyncResource = globalThis.AsyncResource;
 
 export default { AsyncLocalStorage, AsyncResource };

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	goHttp "net/http"
 	"path"
 	"strings"
@@ -72,8 +73,16 @@ func (w *Website) Handle(_w goHttp.ResponseWriter, r *goHttp.Request, matcher co
 	// Server side rendered websites serve immutable assets directly and dispatch
 	// every other request (pages and `/api`) to the WebAssembly server bundle.
 	if w.isSSR() {
-		if w.isStaticAsset(_path) {
-			return w.serveStatic(_w, r, false)
+		if assetPath, ok := w.resolveStaticAsset(_path); ok {
+			if assetPath == _path {
+				// Exact file: the asset handler serves it (ranges, content-type).
+				return w.serveStatic(_w, r, false)
+			}
+			// Clean URL resolved to a directory index (e.g. "/about" ->
+			// "/about/index.html"). Serve the file directly: http.FileServer would
+			// 301 "/about/index.html" -> "./" to canonicalize, but zipfs has no
+			// "/about" directory entry to anchor that, so it loops.
+			return w.serveStaticFile(_w, r, assetPath)
 		}
 		return w.serveSSR(_w, r)
 	}
@@ -104,6 +113,32 @@ func (w *Website) serveStatic(_w goHttp.ResponseWriter, r *goHttp.Request, spa b
 		Directory:             "/",
 	}, _w, r)
 	return time.Now(), err
+}
+
+// serveStaticFile streams a specific asset file from the build zip, setting the
+// content type from its extension (sniffing as a fallback). It is used for clean
+// URLs that resolve to a directory index, where http.FileServer's canonical
+// "/x/index.html" -> "/x/" redirect would otherwise loop against a zip that has
+// no explicit directory entry.
+func (w *Website) serveStaticFile(_w goHttp.ResponseWriter, r *goHttp.Request, assetPath string) (time.Time, error) {
+	f, err := w.root.Open(assetPath)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("opening static asset `%s` failed with: %w", assetPath, err)
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("stat static asset `%s` failed with: %w", assetPath, err)
+	}
+
+	if ctype := mime.TypeByExtension(path.Ext(assetPath)); ctype != "" {
+		_w.Header().Set("Content-Type", ctype)
+	}
+
+	t := time.Now()
+	goHttp.ServeContent(_w, r, path.Base(assetPath), info.ModTime(), f)
+	return t, nil
 }
 
 func (w *Website) Validate(matcher components.MatchDefinition) error {

@@ -132,6 +132,30 @@ func TestIsStaticAsset(t *testing.T) {
 	}
 }
 
+func TestResolveStaticAsset(t *testing.T) {
+	w := &Website{assetFiles: map[string]struct{}{
+		"/index.html":      {},
+		"/assets/app.js":   {},
+		"/blog/index.html": {},
+	}}
+
+	for _, tc := range []struct {
+		path, wantFile string
+		wantOK         bool
+	}{
+		{"/assets/app.js", "/assets/app.js", true}, // exact file
+		{"/", "/index.html", true},                 // root -> index.html
+		{"/blog", "/blog/index.html", true},        // clean URL -> directory index
+		{"/blog/", "/blog/index.html", true},       // trailing slash -> directory index
+		{"/missing", "", false},
+	} {
+		gotFile, gotOK := w.resolveStaticAsset(tc.path)
+		if gotOK != tc.wantOK || gotFile != tc.wantFile {
+			t.Errorf("resolveStaticAsset(%q) = (%q, %v), want (%q, %v)", tc.path, gotFile, gotOK, tc.wantFile, tc.wantOK)
+		}
+	}
+}
+
 func TestCleanRequestPath(t *testing.T) {
 	for _, tc := range []struct {
 		urlPath, pathMatch, want string

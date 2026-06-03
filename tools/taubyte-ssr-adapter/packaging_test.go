@@ -80,7 +80,7 @@ func TestBuildSiteZip(t *testing.T) {
 		"index.html":                   "<h1>home</h1>", // prerendered /
 		"404.html":                     "nope",
 		"_app/immutable/chunks/app.js": "console.log(1)",
-		"about/index.html":             "<h1>about</h1>", // clean-URL prerender
+		"about.html":                   "<h1>about</h1>", // flat prerender (SvelteKit shape)
 		"_worker.js":                   "should be excluded",
 		"_routes.json":                 "{}",
 		"_headers":                     "x",
@@ -117,8 +117,10 @@ func TestBuildSiteZip(t *testing.T) {
 		got[f.Name] = b.String()
 	}
 
-	// Static/prerendered assets must be served from the site root.
-	for _, want := range []string{"index.html", "404.html", "_app/immutable/chunks/app.js", "about/index.html"} {
+	// Static/prerendered assets must be served from the site root. A flat
+	// prerender (about.html) must ALSO appear in clean-URL form (about/index.html)
+	// so /about resolves through the static layer.
+	for _, want := range []string{"index.html", "404.html", "_app/immutable/chunks/app.js", "about.html", "about/index.html"} {
 		if _, ok := got[want]; !ok {
 			t.Errorf("expected static asset %q in build zip", want)
 		}

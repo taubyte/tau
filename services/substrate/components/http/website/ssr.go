@@ -85,17 +85,28 @@ func (w *Website) isSSR() bool {
 	return w.ssr != nil && w.ssr.IsSSR()
 }
 
-// isStaticAsset reports whether a site-root relative path resolves to a real
-// file in the build asset (a directory request resolves to its index.html).
-// Files under the internal SSR directory are never treated as static assets.
-func (w *Website) isStaticAsset(p string) bool {
+// resolveStaticAsset maps a site-root relative request path to the real asset
+// file that serves it, applying the directory-index fallback (a clean URL like
+// "/about" resolves to "/about/index.html"). The returned path is the actual
+// file, so the asset handler can stat it directly instead of failing on the
+// bare directory path. Files under the internal SSR directory are never treated
+// as static assets.
+func (w *Website) resolveStaticAsset(p string) (string, bool) {
 	if _, ok := w.assetFiles[p]; ok {
-		return true
+		return p, true
 	}
-	if _, ok := w.assetFiles[path.Join(p, "index.html")]; ok {
-		return true
+	idx := path.Join(p, "index.html")
+	if _, ok := w.assetFiles[idx]; ok {
+		return idx, true
 	}
-	return false
+	return "", false
+}
+
+// isStaticAsset reports whether a site-root relative path is backed by a static
+// file in the build asset.
+func (w *Website) isStaticAsset(p string) bool {
+	_, ok := w.resolveStaticAsset(p)
+	return ok
 }
 
 // serveSSRFunction renders via the function ABI: instantiate a pooled runtime,
