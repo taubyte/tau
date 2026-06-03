@@ -1,0 +1,98 @@
+// Taubyte SSR bridge shim for Javy (QuickJS).
+//
+// Bare Javy provides ES2023 + console + TextEncoder/TextDecoder + Javy.IO, but
+// NOT Web APIs (no fetch/Request/Response/URL/Headers). So the handler contract
+// is plain JSON objects exchanged over WASI stdin/stdout:
+//
+//   handler(req) -> res         (sync or returning a Promise)
+//     req : { method, url, headers: { [k]: v }, body: string }
+//     res : { status, headers: { [k]: v }, body: string }
+//
+// This matches the envelope the substrate wasi-stdio path uses, so anything the
+// substrate proved with the Go stand-in also runs here.
+//
+// Frameworks that need Web Request/Response (Hono, Next, ...) must bundle a
+// polyfill that provides them and adapt their fetch handler to this contract;
+// see README.md.
+
+const STDIN = 0;
+const STDOUT = 1;
+
+function readAllStdin() {
+  const chunks = [];
+  const buf = new Uint8Array(4096);
+  while (true) {
+    const n = Javy.IO.readSync(STDIN, buf);
+    if (n === 0) break;
+    chunks.push(buf.slice(0, n));
+  }
+  let len = 0;
+  for (const c of chunks) len += c.length;
+  const all = new Uint8Array(len);
+  let off = 0;
+  for (const c of chunks) {
+    all.set(c, off);
+    off += c.length;
+  }
+  return new TextDecoder().decode(all);
+}
+
+function writeStdout(text) {
+  const bytes = new TextEncoder().encode(text);
+  let off = 0;
+  while (off < bytes.length) {
+    off += Javy.IO.writeSync(STDOUT, bytes.subarray(off));
+  }
+}
+
+function envelope(res) {
+  res = res || {};
+  return JSON.stringify({
+    status: res.status || 200,
+    headers: res.headers || {},
+    body: res.body == null ? "" : String(res.body),
+  });
+}
+
+// serve wires a JSON request/response handler to the stdio ABI. The handler may
+// be a function, a module namespace with a default export, or an object with a
+// `handle`/`fetch` method.
+export function serve(handler) {
+  const fn =
+    typeof handler === "function"
+      ? handler
+      : handler && (handler.default || handler.handle || handler.fetch);
+
+  if (typeof fn !== "function") {
+    writeStdout(envelope({ status: 500, body: "adapter: no handler exported" }));
+    return;
+  }
+
+  let req;
+  try {
+    req = JSON.parse(readAllStdin() || "{}");
+  } catch (e) {
+    writeStdout(envelope({ status: 400, body: "adapter: bad request payload" }));
+    return;
+  }
+
+  const fail = (e) =>
+    writeStdout(envelope({ status: 500, body: "adapter: " + (e && e.message ? e.message : String(e)) }));
+
+  let result;
+  try {
+    result = fn(req);
+  } catch (e) {
+    fail(e);
+    return;
+  }
+
+  // Write synchronously for sync handlers so the response is flushed before the
+  // module exits; only defer to a microtask when the handler is actually async
+  // (which relies on Javy draining the job queue before _start returns).
+  if (result && typeof result.then === "function") {
+    result.then((res) => writeStdout(envelope(res))).catch(fail);
+  } else {
+    writeStdout(envelope(result));
+  }
+}

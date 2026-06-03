@@ -57,3 +57,15 @@ func (g getter) Git() (provider, id, fullname string) {
 func (g getter) SmartOps() (value []string) {
 	return basic.Get[[]string](g, "smartops")
 }
+
+func (g getter) Render() string {
+	return basic.Get[string](g, "render")
+}
+
+func (g getter) Framework() string {
+	return basic.Get[string](g, "framework")
+}
+
+func (g getter) Entry() string {
+	return basic.Get[string](g, "entry")
+}

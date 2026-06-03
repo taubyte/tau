@@ -1,0 +1,149 @@
+// Command taubyte-ssr-adapter compiles a JavaScript request handler (a module
+// default-exporting `handle(req) -> res` over plain JSON objects) into a Taubyte
+// server bundle: it bundles the handler together with a small bridge shim,
+// compiles the result to WebAssembly with Javy (QuickJS), and packages it as
+// the website handler zip (+ optional SSR manifest).
+//
+// Bare Javy has no Web APIs, so the base contract is polyfill-free JSON; Hono /
+// Next.js need a Web-API polyfill bundled in (see README.md).
+//
+// Pipeline: entry.js + shim  --esbuild-->  bundle.js  --javy-->  module.wasm
+//                                                              --> handler.wasm.zip
+//
+// PROTOTYPE STATUS: the packaging and manifest emission are covered by tests.
+// The esbuild/javy steps shell out to those tools (not bundled here), and the
+// produced bundle uses the WASI-stdio ABI, which the substrate must support to
+// execute it (see README.md "Runtime support"). Validate the JS pipeline with
+// the toolchain installed.
+package main
+
+import (
+	_ "embed"
+	"flag"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+)
+
+//go:embed shim/shim.js
+var shimSource string
+
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "taubyte-ssr-adapter:", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	entry := flag.String("entry", "", "path to the app entry (a module default-exporting { fetch })")
+	out := flag.String("out", "handler.wasm.zip", "output path for the server bundle zip")
+	manifestOut := flag.String("manifest", "", "optional path to also write the SSR manifest (ssr.json)")
+	framework := flag.String("framework", "js", "framework name recorded in the manifest")
+	flag.Parse()
+
+	if *entry == "" {
+		return fmt.Errorf("--entry is required")
+	}
+	entryAbs, err := filepath.Abs(*entry)
+	if err != nil {
+		return err
+	}
+
+	tmp, err := os.MkdirTemp("", "tb-ssr-*")
+	if err != nil {
+		return err
+	}
+	defer os.RemoveAll(tmp)
+
+	// 1. Materialise the bridge: the shim + a tiny entrypoint importing the app.
+	shimPath := filepath.Join(tmp, "shim.js")
+	if err := os.WriteFile(shimPath, []byte(shimSource), 0o644); err != nil {
+		return err
+	}
+	bridgePath := filepath.Join(tmp, "bridge.js")
+	bridge := fmt.Sprintf("import app from %q;\nimport { serve } from %q;\nserve(app);\n", entryAbs, shimPath)
+	if err := os.WriteFile(bridgePath, []byte(bridge), 0o644); err != nil {
+		return err
+	}
+
+	// 2. Bundle to a single module.
+	bundlePath := filepath.Join(tmp, "bundle.js")
+	if err := bundleJS(bridgePath, bundlePath); err != nil {
+		return fmt.Errorf("bundling failed (is esbuild installed?): %w", err)
+	}
+
+	// 3. Compile JS -> WASM (WASI stdin/stdout) with Javy.
+	wasmPath := filepath.Join(tmp, "module.wasm")
+	if err := javyBuild(bundlePath, wasmPath); err != nil {
+		return fmt.Errorf("javy build failed (is javy installed?): %w", err)
+	}
+
+	wasm, err := os.ReadFile(wasmPath)
+	if err != nil {
+		return err
+	}
+
+	// 4. Package and write outputs.
+	zipBytes, err := buildHandlerZip(wasm)
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(*out, zipBytes, 0o644); err != nil {
+		return err
+	}
+
+	if *manifestOut != "" {
+		data, err := buildManifest(*framework).Marshal()
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(*manifestOut, data, 0o644); err != nil {
+			return err
+		}
+	}
+
+	fmt.Printf("taubyte-ssr-adapter: wrote %s (%d bytes)\n", *out, len(zipBytes))
+	return nil
+}
+
+// bundleJS bundles entry into a single ES module using esbuild (direct binary
+// or via npx).
+func bundleJS(entry, out string) error {
+	args := []string{"--bundle", entry, "--format=esm", "--platform=neutral", "--outfile=" + out}
+	if path, err := exec.LookPath("esbuild"); err == nil {
+		return runCmd(path, args...)
+	}
+	return runCmd("npx", append([]string{"--yes", "esbuild"}, args...)...)
+}
+
+// javyBuild compiles a JS module to a WASI WASM module with Javy. The
+// subcommand was renamed across versions (`compile` -> `build`), so both are
+// tried; output is surfaced only if neither works.
+func javyBuild(in, out string) error {
+	javy, err := exec.LookPath("javy")
+	if err != nil {
+		return fmt.Errorf("javy not found on PATH: %w", err)
+	}
+
+	var last string
+	for _, sub := range []string{"build", "compile"} {
+		combined, err := exec.Command(javy, sub, in, "-o", out).CombinedOutput()
+		if err == nil {
+			return nil
+		}
+		last = fmt.Sprintf("javy %s: %v\n%s", sub, err, combined)
+	}
+	return fmt.Errorf("javy build and compile both failed:\n%s", last)
+}
+
+func runCmd(name string, args ...string) error {
+	cmd := exec.Command(name, args...)
+	cmd.Stdout = os.Stderr
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}

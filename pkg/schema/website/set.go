@@ -43,3 +43,15 @@ func Github(id string, fullname string) basic.Op {
 func SmartOps(value []string) basic.Op {
 	return basic.Set("smartops", value)
 }
+
+func Render(value string) basic.Op {
+	return basic.Set("render", value)
+}
+
+func Framework(value string) basic.Op {
+	return basic.Set("framework", value)
+}
+
+func Entry(value string) basic.Op {
+	return basic.Set("entry", value)
+}

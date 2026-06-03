@@ -17,6 +17,21 @@ type Website struct {
 	RepoID      string `mapstructure:"repository-id"`
 	RepoName    string `mapstructure:"repository-name"`
 
+	// Render selects how the website is served: "" / "static" (the historical
+	// behaviour, a bundle of static files) or "ssr" (dynamic server side
+	// rendering plus /api handlers backed by a WebAssembly server bundle).
+	// When unset the runtime falls back to the SSR manifest embedded in the
+	// build asset, so this stays fully backwards compatible.
+	Render    string `mapstructure:"render"`
+	Framework string `mapstructure:"framework"`
+
+	// Entry is the WebAssembly export invoked for SSR/API requests. SSRMemory
+	// (bytes) and SSRTimeout (nanoseconds) bound the server bundle VM. All
+	// three are optional; sensible defaults are applied at serve time.
+	Entry      string `mapstructure:"entry"`
+	SSRMemory  uint64 `mapstructure:"ssr-memory"`
+	SSRTimeout uint64 `mapstructure:"ssr-timeout"`
+
 	// noset, this is parsed from the tags
 	SmartOps []string
 
@@ -26,6 +41,13 @@ type Website struct {
 
 func (w Website) GetName() string {
 	return w.Name
+}
+
+// IsSSR reports whether the website is explicitly configured for server side
+// rendering. A website may still be served as SSR without this set when its
+// build asset carries an SSR manifest.
+func (w Website) IsSSR() bool {
+	return w.Render == websiteSpec.RenderSSR
 }
 
 func (w *Website) SetId(id string) {

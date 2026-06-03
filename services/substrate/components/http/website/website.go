@@ -16,6 +16,7 @@ import (
 	httpComp "github.com/taubyte/tau/core/services/substrate/components/http"
 	http "github.com/taubyte/tau/pkg/http"
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
+	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
 	"github.com/taubyte/tau/services/substrate/components/http/common"
 	"github.com/taubyte/tau/services/substrate/components/metrics"
 	"github.com/taubyte/tau/utils/readerutil"
@@ -70,9 +71,28 @@ func (w *Website) Handle(_w goHttp.ResponseWriter, r *goHttp.Request, matcher co
 	}
 
 	r.URL.Path = _path
-	err = w.srv.Http().LowLevelAssetHandler(&http.HeadlessAssetsDefinition{
+
+	// Server side rendered websites serve immutable assets directly and dispatch
+	// every other request (pages and `/api`) to the WebAssembly server bundle.
+	if w.isSSR() {
+		if w.isStaticAsset(_path) {
+			return w.serveStatic(_w, r, false)
+		}
+		return w.serveSSR(_w, r)
+	}
+
+	// Classic static website: serve from the asset with SPA fallback.
+	return w.serveStatic(_w, r, true)
+}
+
+// serveStatic serves a request straight from the build asset. spa enables the
+// single page application fallback (serve index.html for unknown routes), which
+// is desirable for static sites but not for SSR ones where unknown routes are
+// rendered by the server bundle.
+func (w *Website) serveStatic(_w goHttp.ResponseWriter, r *goHttp.Request, spa bool) (time.Time, error) {
+	err := w.srv.Http().LowLevelAssetHandler(&http.HeadlessAssetsDefinition{
 		FileSystem:            w.root,
-		SinglePageApplication: true,
+		SinglePageApplication: spa,
 		Directory:             "/",
 	}, _w, r)
 	return time.Now(), err
@@ -106,18 +126,40 @@ func (w *Website) getAsset() error {
 	}
 
 	computedPaths := make([]string, 0)
+	assetFiles := make(map[string]struct{})
+	manifestDir := websiteSpec.ManifestDir()
 
 	for _, file := range zipReader.File {
-		if !file.FileInfo().IsDir() {
-			computedPaths = append(computedPaths, file.Name)
+		if file.FileInfo().IsDir() {
+			continue
 		}
+		// The internal SSR directory (manifest + server bundle) is not part of
+		// the public static surface.
+		if isUnderDir(file.Name, manifestDir) {
+			continue
+		}
+		computedPaths = append(computedPaths, file.Name)
+		assetFiles[path.Clean("/"+file.Name)] = struct{}{}
 	}
 
 	w.computedPaths[w.matcher.Path] = computedPaths
+	w.assetFiles = assetFiles
 	w.root = zipfs.New(zipReader)
+
+	if err := w.loadManifest(zipReader); err != nil {
+		dagReader.Close()
+		return fmt.Errorf("loading ssr manifest for website `%s` failed with: %w", w.config.Name, err)
+	}
+
 	dagReader.Close()
 
 	return nil
+}
+
+// isUnderDir reports whether a (slash separated) file name lives in dir.
+func isUnderDir(name, dir string) bool {
+	name = strings.TrimPrefix(name, "/")
+	return name == dir || strings.HasPrefix(name, dir+"/")
 }
 
 func (w *Website) Match(matcher components.MatchDefinition) (currentMatchIndex matcherSpec.Index) {
@@ -129,13 +171,22 @@ func (w *Website) Match(matcher components.MatchDefinition) (currentMatchIndex m
 	}
 
 	for _, path := range w.config.Paths {
-		switch _matcher.Method {
-		case "", "GET", "HEAD":
-			matchValue := pathContains(path, _matcher.Path)
-			if matchValue > currentMatch {
-				pathMatch = path
-				currentMatch = matchValue
+		// Static websites only answer read methods. Server side rendered
+		// websites own their whole path subtree for every method so that `/api`
+		// mutations (POST/PUT/DELETE/...) reach the server bundle. An explicitly
+		// defined function on the same path still wins via its HighMatch.
+		if !w.config.IsSSR() {
+			switch _matcher.Method {
+			case "", "GET", "HEAD":
+			default:
+				continue
 			}
+		}
+
+		matchValue := pathContains(path, _matcher.Path)
+		if matchValue > currentMatch {
+			pathMatch = path
+			currentMatch = matchValue
 		}
 	}
 
