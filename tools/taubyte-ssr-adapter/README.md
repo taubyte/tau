@@ -154,7 +154,9 @@ fetch-event shim, and runs `jco componentize` against the vendored
 the manifest):
 
 ```sh
-# requires esbuild + jco (@bytecodealliance/jco) on PATH
+# requires esbuild + jco (@bytecodealliance/jco) on PATH. ./app.js is YOUR entry
+# (a Web-standard fetch handler); --site is optional (add it only to bundle a
+# built static-asset dir into a full build.zip).
 go run ./tools/taubyte-ssr-adapter --mode fetch --engine starlingmonkey \
   --framework hono --entry ./app.js --out handler.component.wasm
 ```
@@ -166,9 +168,19 @@ bindings host the Component Model. The substrate serves it via the opt-in
 substrate with that tag and `wasmtime` on PATH to enable the `component` ABI;
 otherwise `component` assets fail fast and the Javy tier is unaffected.
 
-Validated end to end: a fetch handler and a React SSR page both componentize,
-serve under `wasmtime serve`, and round-trip through the backend (with native
-`crypto.randomUUID()`). See `docs/js-runtime-roadmap.md`.
+The backend **streams** responses (a `ReadableStream` reaches the client as
+produced), **pools** `wasmtime serve` processes per component (round-robin +
+respawn + idle eviction + LRU cap, tunable via
+`TAUBYTE_COMPONENT_{POOL_SIZE,IDLE_TTL,MAX}`), and surfaces **bindings** on the
+handler's `env`: the substrate injects `x-taubyte-env` (JSON secrets/config) and
+`x-taubyte-bindings` (a per-website endpoint), which the shim turns into
+`env.<SECRET>`, `env.KV` (`get`/`put`/`delete`/`list`) and `env.STORAGE`
+(`get`/`put`) — fetch clients against that endpoint — then strips. See
+`example/bindings.js`.
+
+Validated end to end: a fetch handler, a React SSR page, a streaming
+`ReadableStream` response, and an `env.KV` round-trip all work through the
+backend (with native `crypto.randomUUID()`). See `docs/js-runtime-roadmap.md`.
 
 ## Why Javy + WASI stdio
 

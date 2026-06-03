@@ -2,10 +2,16 @@
 // world. Unlike the Javy tier, StarlingMonkey provides Web APIs natively
 // (URL/Request/Response/Headers/fetch/streams/SubtleCrypto), so no polyfill is
 // installed; this only adapts a Web-standard fetch handler (a function, or an
-// object's `fetch`/`default`) to the incoming `fetch` event.
+// object's `fetch`/`default`) to the incoming `fetch` event and assembles the
+// Workers-style `env`.
 //
-// env follows the Workers calling convention fetch(request, env, ctx); env.ASSETS
-// 404s because Taubyte's static layer serves assets before the component.
+// env (the 2nd fetch arg, also what `cloudflare:workers` exports) is built from
+// internal headers the substrate injects on the loopback request:
+//   x-taubyte-env       JSON of secrets/config -> spread onto env (env.MY_SECRET)
+//   x-taubyte-bindings  base URL of the substrate's binding endpoint -> env.KV /
+//                       env.STORAGE become fetch clients against it
+// These headers are stripped before the app sees the request. env.ASSETS 404s
+// because Taubyte's static layer serves assets before the component.
 export function serveComponent(app) {
   const fetchFn = typeof app === "function" ? app : app && (app.fetch || app.default);
   addEventListener("fetch", (event) => {
@@ -13,15 +19,88 @@ export function serveComponent(app) {
       event.respondWith(new Response("adapter: app has no fetch handler", { status: 500 }));
       return;
     }
+    const request = event.request;
+    const envHeader = request.headers.get("x-taubyte-env");
+    const bindingsUrl = request.headers.get("x-taubyte-bindings");
+
+    // Strip the internal headers so the app never sees them. The incoming
+    // request's headers are immutable, so rebuild the request with a fresh
+    // Headers (only when something needs stripping — leave plain requests as-is).
+    let appReq = request;
+    if (envHeader != null || bindingsUrl != null) {
+      const h = new Headers(request.headers);
+      h.delete("x-taubyte-env");
+      h.delete("x-taubyte-bindings");
+      try {
+        appReq = new Request(request, { headers: h });
+      } catch (e) {
+        appReq = request;
+      }
+    }
+
     const env = (globalThis.__TAUBYTE_ENV__ = globalThis.__TAUBYTE_ENV__ || {});
+    if (envHeader) {
+      try {
+        Object.assign(env, JSON.parse(envHeader));
+      } catch (e) {}
+    }
     if (!env.ASSETS) {
       env.ASSETS = { fetch: () => Promise.resolve(new Response("Not Found", { status: 404 })) };
     }
+    if (bindingsUrl) {
+      if (!env.KV) env.KV = makeKV(bindingsUrl.replace(/\/$/, "") + "/kv");
+      if (!env.STORAGE) env.STORAGE = makeStorage(bindingsUrl.replace(/\/$/, "") + "/storage");
+    }
+
     const ctx = { waitUntil() {}, passThroughOnException() {} };
     event.respondWith(
-      Promise.resolve(fetchFn(event.request, env, ctx)).catch(
+      Promise.resolve(fetchFn(appReq, env, ctx)).catch(
         (e) => new Response("adapter: " + (e && e.message ? e.message : String(e)), { status: 500 })
       )
     );
   });
+}
+
+// makeKV is a fetch client over the substrate KV binding endpoint:
+//   GET    /kv/<key>            -> 200 value | 404 (miss)
+//   PUT    /kv/<key>  body=val  -> 204
+//   DELETE /kv/<key>            -> 204
+//   GET    /kv?prefix=<p>       -> 200 ["key", ...]
+function makeKV(base) {
+  return {
+    async get(key) {
+      const r = await fetch(base + "/" + encodeURIComponent(key));
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error("KV get failed: " + r.status);
+      return await r.text();
+    },
+    async put(key, value) {
+      const r = await fetch(base + "/" + encodeURIComponent(key), { method: "PUT", body: String(value) });
+      if (!r.ok) throw new Error("KV put failed: " + r.status);
+    },
+    async delete(key) {
+      const r = await fetch(base + "/" + encodeURIComponent(key), { method: "DELETE" });
+      if (!r.ok && r.status !== 404) throw new Error("KV delete failed: " + r.status);
+    },
+    async list(prefix) {
+      const r = await fetch(base + "?prefix=" + encodeURIComponent(prefix || ""));
+      return r.ok ? await r.json() : [];
+    },
+  };
+}
+
+// makeStorage is a fetch client over the substrate storage binding endpoint:
+//   GET /storage/<path>           -> the file Response (or 404)
+//   PUT /storage/<path> body=...  -> 204
+function makeStorage(base) {
+  return {
+    async get(path) {
+      const r = await fetch(base + "/" + String(path).replace(/^\//, ""));
+      return r.ok ? r : null;
+    },
+    async put(path, body) {
+      const r = await fetch(base + "/" + String(path).replace(/^\//, ""), { method: "PUT", body });
+      if (!r.ok) throw new Error("storage put failed: " + r.status);
+    },
+  };
 }

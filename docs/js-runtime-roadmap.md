@@ -87,9 +87,25 @@ handler and a React `renderToString` page both componentize, serve under
 (`wasi:http@0.2.3` here) and serve with `-S cli=y` (StarlingMonkey's stdio
 feature imports `wasi:cli`).
 
-Remaining: per-request streaming through the proxy (works for whole responses
-today), subprocess lifecycle/pooling under load, and wiring real `env` bindings
-(KV/secrets) into the component.
+**Streaming, pooling and bindings — ✅.** The backend now:
+- **streams** responses (`ReverseProxy.FlushInterval = -1`); a `ReadableStream`
+  component's chunks reach the client as produced (validated).
+- **pools** processes per component: a configurable number of `wasmtime serve`
+  instances per cid, round-robined, with dead-process respawn, idle eviction and
+  an LRU cap (`TAUBYTE_COMPONENT_{POOL_SIZE,IDLE_TTL,MAX}`).
+- exposes **bindings** on the handler's `env`. The substrate injects internal
+  loopback headers — `x-taubyte-env` (JSON secrets/config) and `x-taubyte-bindings`
+  (a per-website endpoint URL) — which the shim turns into `env.<SECRET>`,
+  `env.KV` and `env.STORAGE` (fetch clients), then strips. Validated end to end:
+  a secret arrives via the header and `env.KV.get` round-trips through an
+  outbound fetch to the endpoint.
+
+The remaining integration is substrate-side: a handler that backs the binding
+endpoint (`GET/PUT/DELETE /kv/<key>`, `GET /kv?prefix=`, `/storage/<path>`) with
+real Taubyte KV/storage scoped to the website's project/app, and a
+`RegisterComponentBindings` provider that resolves the website's secrets + that
+endpoint URL. The seam (`website.RegisterComponentBindings`) and the wire
+protocol are in place.
 
 ### 5. Next.js on the richer engine — ⬜
 With a component engine + streaming, feed `next-on-pages` (or OpenNext) edge

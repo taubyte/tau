@@ -51,6 +51,22 @@ func RegisterComponentRuntime(rt ComponentRuntime) {
 	ssrEngines[websiteSpec.ABIComponent] = (*Website).serveSSRComponent
 }
 
+// componentBindingsInjector, when set, populates a request's internal binding
+// headers before it is proxied to the component: `x-taubyte-env` (a JSON object
+// of secrets/config spread onto the handler's `env`) and `x-taubyte-bindings`
+// (the loopback base URL of a substrate endpoint the component fetches for
+// env.KV / env.STORAGE). The component shim reads and strips these headers (see
+// tools/taubyte-ssr-adapter/shim/component.js).
+var componentBindingsInjector func(w *Website, r *goHttp.Request)
+
+// RegisterComponentBindings wires per-request env/KV/storage bindings into the
+// component path. Optional — without it, components run with an empty `env`
+// (env.ASSETS still 404s and KV/STORAGE are absent). The injector resolves the
+// website's secrets and a per-website KV/storage endpoint from Taubyte services.
+func RegisterComponentBindings(f func(w *Website, r *goHttp.Request)) {
+	componentBindingsInjector = f
+}
+
 // serveSSRComponent renders via a registered component-model engine.
 func (w *Website) serveSSRComponent(_w goHttp.ResponseWriter, r *goHttp.Request) (time.Time, error) {
 	if componentRuntime == nil {
@@ -71,6 +87,12 @@ func (w *Website) serveSSRComponent(_w goHttp.ResponseWriter, r *goHttp.Request)
 
 	ctx, cancel := context.WithTimeout(w.instanceCtx, time.Duration(w.ssr.Timeout))
 	defer cancel()
+
+	// Inject per-request env/KV/storage bindings (secrets + binding endpoint) for
+	// the component shim to consume, if a provider is registered.
+	if componentBindingsInjector != nil {
+		componentBindingsInjector(w, r)
+	}
 
 	err = componentRuntime.ServeHTTP(ctx, cid, component, _w, r, ComponentLimits{
 		MemoryBytes: w.ssr.Memory,

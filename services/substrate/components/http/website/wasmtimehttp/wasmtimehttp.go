@@ -9,12 +9,11 @@
 // wazero (Taubyte's default VM) and the wasmtime-go bindings both run only core
 // modules + WASI Preview 1 — neither hosts the Component Model. So this backend
 // shells out to the `wasmtime` CLI, whose `wasmtime serve` implements the full
-// wasi:http host: it spawns one `wasmtime serve` per component (keyed by DAG
-// cid, lazily, cached) and reverse-proxies requests to it.
-//
-// Enable with `-tags wasmtime_component` and `wasmtime` on PATH; then blank-
-// import this package so its init() registers the backend. See
-// docs/js-runtime-roadmap.md.
+// wasi:http host. Per component (keyed by DAG cid) it manages a pool of
+// `wasmtime serve` processes: requests round-robin across the pool, dead
+// processes are respawned, idle components are evicted, and responses stream
+// back through the proxy. Enable with `-tags wasmtime_component` and `wasmtime`
+// on PATH, then blank-import this package. See docs/js-runtime-roadmap.md.
 package wasmtimehttp
 
 import (
@@ -27,8 +26,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/taubyte/tau/services/substrate/components/http/website"
@@ -37,111 +38,204 @@ import (
 func init() { website.RegisterComponentRuntime(New()) }
 
 // launchFunc starts a server for the component at wasmPath and returns the
-// address it listens on plus a stop function. It is a field so tests can swap in
-// a stub server instead of a real `wasmtime serve` subprocess.
-type launchFunc func(ctx context.Context, wasmPath string, limits website.ComponentLimits) (addr string, stop func(), err error)
+// address it listens on, a stop function, and a liveness flag the launcher
+// clears when the process exits. It is a field so tests can swap in a stub.
+type launchFunc func(wasmPath string, limits website.ComponentLimits) (addr string, stop func(), alive *atomic.Bool, err error)
 
-// Runtime manages one server per component, keyed by cid.
+// Runtime manages a pool of component servers per cid.
 type Runtime struct {
-	bin    string   // wasmtime binary
-	extra  []string // extra `wasmtime serve` args (default: -S cli=y)
-	work   string   // temp root for component files
-	launch launchFunc
+	bin      string        // wasmtime binary
+	extra    []string      // extra `wasmtime serve` args (default: -S cli=y)
+	work     string        // temp root for component files
+	poolSize int           // wasmtime processes per component
+	idleTTL  time.Duration // evict a component idle longer than this
+	maxComps int           // cap on live components (LRU evicted)
+	flush    time.Duration // ReverseProxy flush interval (<0 = stream each write)
+	launch   launchFunc
 
 	mu    sync.Mutex
-	insts map[string]*instance
+	pools map[string]*pool
+	stop  chan struct{}
 }
 
-type instance struct {
-	once  sync.Once
-	addr  string
-	proxy *httputil.ReverseProxy
-	stop  func()
-	err   error
-}
-
-// New builds a backend using the `wasmtime` on PATH (override with
-// TAUBYTE_WASMTIME_BIN) and `-S cli=y` (StarlingMonkey's stdio feature imports
-// wasi:cli; override the flags with TAUBYTE_WASMTIME_SERVE_ARGS).
+// New builds a backend from the `wasmtime` on PATH (override TAUBYTE_WASMTIME_BIN)
+// and `-S cli=y` (StarlingMonkey's stdio feature imports wasi:cli; override with
+// TAUBYTE_WASMTIME_SERVE_ARGS). Pool size, idle TTL and the component cap are
+// tunable via TAUBYTE_COMPONENT_{POOL_SIZE,IDLE_TTL,MAX}.
 func New() *Runtime {
-	bin := os.Getenv("TAUBYTE_WASMTIME_BIN")
-	if bin == "" {
-		bin = "wasmtime"
-	}
+	bin := envOr("TAUBYTE_WASMTIME_BIN", "wasmtime")
 	extra := []string{"-S", "cli=y"}
 	if v := strings.TrimSpace(os.Getenv("TAUBYTE_WASMTIME_SERVE_ARGS")); v != "" {
 		extra = strings.Fields(v)
 	}
 	work, _ := os.MkdirTemp("", "tb-component-*")
-	rt := &Runtime{bin: bin, extra: extra, work: work, insts: map[string]*instance{}}
+	rt := &Runtime{
+		bin:      bin,
+		extra:    extra,
+		work:     work,
+		poolSize: envInt("TAUBYTE_COMPONENT_POOL_SIZE", 1),
+		idleTTL:  envDur("TAUBYTE_COMPONENT_IDLE_TTL", 5*time.Minute),
+		maxComps: envInt("TAUBYTE_COMPONENT_MAX", 32),
+		flush:    -1, // stream: flush each write to the client
+		pools:    map[string]*pool{},
+		stop:     make(chan struct{}),
+	}
 	rt.launch = rt.spawnWasmtime
+	if rt.poolSize < 1 {
+		rt.poolSize = 1
+	}
+	go rt.janitor()
 	return rt
 }
 
 func (rt *Runtime) Name() string { return "wasmtime/wasi-http" }
 
 // ServeHTTP renders r through the component identified by key, lazily starting
-// (and caching) its server on first use, then reverse-proxying the request.
+// (and caching) a pool of servers on first use, then reverse-proxying — with
+// streaming — through a round-robin, liveness-checked instance.
 func (rt *Runtime) ServeHTTP(ctx context.Context, key string, component []byte, w http.ResponseWriter, r *http.Request, limits website.ComponentLimits) error {
-	inst := rt.instanceFor(key)
-	inst.once.Do(func() { rt.start(ctx, inst, key, component, limits) })
-	if inst.err != nil {
-		return inst.err
+	p, err := rt.poolFor(key, component, limits)
+	if err != nil {
+		return err
+	}
+	p.lastUsed.Store(time.Now().UnixNano())
+	inst, err := p.acquire(rt)
+	if err != nil {
+		return err
 	}
 	inst.proxy.ServeHTTP(w, r)
 	return nil
 }
 
-func (rt *Runtime) instanceFor(key string) *instance {
+// Close stops every spawned server and removes the work directory.
+func (rt *Runtime) Close() {
+	close(rt.stop)
 	rt.mu.Lock()
 	defer rt.mu.Unlock()
-	inst, ok := rt.insts[key]
-	if !ok {
-		inst = &instance{}
-		rt.insts[key] = inst
+	for _, p := range rt.pools {
+		p.shutdown()
 	}
-	return inst
+	rt.pools = map[string]*pool{}
+	_ = os.RemoveAll(rt.work)
 }
 
-func (rt *Runtime) start(ctx context.Context, inst *instance, key string, component []byte, limits website.ComponentLimits) {
+// pool is the set of server processes for one component.
+type pool struct {
+	wasmPath string
+	limits   website.ComponentLimits
+	lastUsed atomic.Int64 // unix nanos
+
+	mu    sync.Mutex
+	insts []*instance
+	rr    uint64
+}
+
+type instance struct {
+	addr  string
+	proxy *httputil.ReverseProxy
+	stop  func()
+	alive *atomic.Bool
+}
+
+func (rt *Runtime) poolFor(key string, component []byte, limits website.ComponentLimits) (*pool, error) {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	if p, ok := rt.pools[key]; ok {
+		return p, nil
+	}
+	// Evict the least-recently-used component when at capacity.
+	if rt.maxComps > 0 && len(rt.pools) >= rt.maxComps {
+		rt.evictLRULocked()
+	}
 	wasmPath := filepath.Join(rt.work, sanitize(key)+".wasm")
 	if err := os.WriteFile(wasmPath, component, 0o644); err != nil {
-		inst.err = fmt.Errorf("writing component failed with: %w", err)
-		return
+		return nil, fmt.Errorf("writing component failed with: %w", err)
 	}
-	addr, stop, err := rt.launch(ctx, wasmPath, limits)
+	p := &pool{wasmPath: wasmPath, limits: limits}
+	p.lastUsed.Store(time.Now().UnixNano())
+	rt.pools[key] = p
+	return p, nil
+}
+
+// acquire returns a live instance, pruning dead ones and lazily filling the pool
+// up to poolSize (spawning on demand). It tolerates partial pools as long as one
+// instance is up.
+func (p *pool) acquire(rt *Runtime) (*instance, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	live := p.insts[:0]
+	for _, in := range p.insts {
+		if in.alive.Load() {
+			live = append(live, in)
+		} else {
+			in.stop()
+		}
+	}
+	p.insts = live
+
+	for len(p.insts) < rt.poolSize {
+		in, err := rt.spawnInstance(p.wasmPath, p.limits)
+		if err != nil {
+			if len(p.insts) == 0 {
+				return nil, err
+			}
+			break // at least one is up; serve from it
+		}
+		p.insts = append(p.insts, in)
+	}
+	if len(p.insts) == 0 {
+		return nil, fmt.Errorf("no component instances available")
+	}
+	n := atomic.AddUint64(&p.rr, 1)
+	return p.insts[int(n%uint64(len(p.insts)))], nil
+}
+
+func (p *pool) shutdown() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, in := range p.insts {
+		in.stop()
+	}
+	p.insts = nil
+}
+
+// spawnInstance launches one server and wraps it in a streaming reverse proxy.
+func (rt *Runtime) spawnInstance(wasmPath string, limits website.ComponentLimits) (*instance, error) {
+	addr, stop, alive, err := rt.launch(wasmPath, limits)
 	if err != nil {
-		inst.err = fmt.Errorf("launching component server failed with: %w", err)
-		return
+		return nil, err
 	}
 	target, err := url.Parse("http://" + addr)
 	if err != nil {
 		stop()
-		inst.err = err
-		return
+		return nil, err
 	}
-	inst.addr = addr
-	inst.stop = stop
-	inst.proxy = httputil.NewSingleHostReverseProxy(target)
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	proxy.FlushInterval = rt.flush // stream responses to the client
+	return &instance{addr: addr, proxy: proxy, stop: stop, alive: alive}, nil
 }
 
-// spawnWasmtime starts `wasmtime serve` on a free port and waits until it
-// accepts connections.
-func (rt *Runtime) spawnWasmtime(ctx context.Context, wasmPath string, limits website.ComponentLimits) (string, func(), error) {
+// spawnWasmtime starts `wasmtime serve` on a free port, watches the process for
+// exit (clearing the liveness flag), and waits until it accepts connections.
+func (rt *Runtime) spawnWasmtime(wasmPath string, limits website.ComponentLimits) (string, func(), *atomic.Bool, error) {
 	port, err := freePort()
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 	addr := fmt.Sprintf("127.0.0.1:%d", port)
 
 	args := append([]string{"serve"}, rt.extra...)
 	args = append(args, "--addr", addr, wasmPath)
-	// Detach from the request ctx: the server is cached across requests.
 	cmd := exec.Command(rt.bin, args...)
 	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
 	if err := cmd.Start(); err != nil {
-		return "", nil, fmt.Errorf("starting `%s serve` failed (is wasmtime on PATH?): %w", rt.bin, err)
+		return "", nil, nil, fmt.Errorf("starting `%s serve` failed (is wasmtime on PATH?): %w", rt.bin, err)
 	}
+
+	alive := &atomic.Bool{}
+	alive.Store(true)
+	go func() { _ = cmd.Wait(); alive.Store(false) }()
 	stop := func() {
 		if cmd.Process != nil {
 			_ = cmd.Process.Kill()
@@ -150,22 +244,54 @@ func (rt *Runtime) spawnWasmtime(ctx context.Context, wasmPath string, limits we
 
 	if err := waitReady(addr, 15*time.Second); err != nil {
 		stop()
-		return "", nil, err
+		return "", nil, nil, err
 	}
-	return addr, stop, nil
+	return addr, stop, alive, nil
 }
 
-// Close stops every spawned server and removes the work directory.
-func (rt *Runtime) Close() {
-	rt.mu.Lock()
-	defer rt.mu.Unlock()
-	for _, inst := range rt.insts {
-		if inst.stop != nil {
-			inst.stop()
+// janitor periodically evicts components idle longer than idleTTL.
+func (rt *Runtime) janitor() {
+	interval := rt.idleTTL / 2
+	if interval < 30*time.Second {
+		interval = 30 * time.Second
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-rt.stop:
+			return
+		case <-t.C:
+			rt.evictIdle()
 		}
 	}
-	rt.insts = map[string]*instance{}
-	_ = os.RemoveAll(rt.work)
+}
+
+func (rt *Runtime) evictIdle() {
+	rt.mu.Lock()
+	defer rt.mu.Unlock()
+	cutoff := time.Now().Add(-rt.idleTTL).UnixNano()
+	for k, p := range rt.pools {
+		if p.lastUsed.Load() < cutoff {
+			p.shutdown()
+			delete(rt.pools, k)
+		}
+	}
+}
+
+// evictLRULocked stops and drops the least-recently-used pool. Caller holds mu.
+func (rt *Runtime) evictLRULocked() {
+	var oldestKey string
+	var oldest int64 = 1<<63 - 1
+	for k, p := range rt.pools {
+		if u := p.lastUsed.Load(); u < oldest {
+			oldest, oldestKey = u, k
+		}
+	}
+	if oldestKey != "" {
+		rt.pools[oldestKey].shutdown()
+		delete(rt.pools, oldestKey)
+	}
 }
 
 func freePort() (int, error) {
@@ -190,7 +316,6 @@ func waitReady(addr string, timeout time.Duration) error {
 	return fmt.Errorf("component server at %s did not become ready in %s", addr, timeout)
 }
 
-// sanitize maps a cid to a safe filename.
 func sanitize(s string) string {
 	return strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
@@ -198,4 +323,29 @@ func sanitize(s string) string {
 		}
 		return '_'
 	}, s)
+}
+
+func envOr(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
+}
+
+func envInt(k string, def int) int {
+	if v := os.Getenv(k); v != "" {
+		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return def
+}
+
+func envDur(k string, def time.Duration) time.Duration {
+	if v := os.Getenv(k); v != "" {
+		if d, err := time.ParseDuration(v); err == nil {
+			return d
+		}
+	}
+	return def
 }
