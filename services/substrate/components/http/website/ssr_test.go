@@ -3,6 +3,8 @@ package website
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
+	"net/http/httptest"
 	"testing"
 
 	matcherSpec "github.com/taubyte/tau/pkg/specs/matcher"
@@ -146,6 +148,56 @@ func TestCleanRequestPath(t *testing.T) {
 		if got := cleanRequestPath(tc.urlPath, tc.pathMatch); got != tc.want {
 			t.Errorf("cleanRequestPath(%q, %q) = %q, want %q", tc.urlPath, tc.pathMatch, got, tc.want)
 		}
+	}
+}
+
+func TestEncodeStdioRequestForwardsHostAndProto(t *testing.T) {
+	r := httptest.NewRequest("POST", "http://myapp.com/contact?x=1", bytes.NewReader([]byte("name=dylan")))
+	r.Header.Set("Origin", "https://myapp.com")
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	data, err := encodeStdioRequest(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got stdioRequest
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+
+	// Host must be forwarded even though Go promotes it off r.Header onto r.Host;
+	// the bundle reconstructs the request origin from it for CSRF checks.
+	if got.Headers["Host"] != "myapp.com" {
+		t.Errorf("Host header = %q, want %q", got.Headers["Host"], "myapp.com")
+	}
+	// Scheme is propagated so the reconstructed origin matches the Origin header.
+	if got.Headers["X-Forwarded-Proto"] != "http" {
+		t.Errorf("X-Forwarded-Proto = %q, want %q", got.Headers["X-Forwarded-Proto"], "http")
+	}
+	if got.Headers["Origin"] != "https://myapp.com" {
+		t.Errorf("Origin header = %q, want forwarded as-is", got.Headers["Origin"])
+	}
+	if got.URL != "/contact?x=1" {
+		t.Errorf("URL = %q, want path+query %q", got.URL, "/contact?x=1")
+	}
+	if got.Body != "name=dylan" {
+		t.Errorf("Body = %q, want %q", got.Body, "name=dylan")
+	}
+}
+
+func TestEncodeStdioRequestKeepsExistingProto(t *testing.T) {
+	r := httptest.NewRequest("GET", "http://myapp.com/", nil)
+	r.Header.Set("X-Forwarded-Proto", "https") // edge already set it
+	data, err := encodeStdioRequest(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got stdioRequest
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.Headers["X-Forwarded-Proto"] != "https" {
+		t.Errorf("X-Forwarded-Proto = %q, want preserved %q", got.Headers["X-Forwarded-Proto"], "https")
 	}
 }
 

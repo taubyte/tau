@@ -118,8 +118,25 @@ export function serveFetch(app) {
     return;
   }
 
+  // Reconstruct an absolute URL whose origin matches what the browser sent, so
+  // CSRF checks (SvelteKit rejects form POSTs when request.url.origin !== the
+  // Origin header) pass. The substrate forwards Host + X-Forwarded-Proto; fall
+  // back to localhost only when running the bundle standalone.
+  const hdr = (name) => {
+    const h = payload.headers || {};
+    name = name.toLowerCase();
+    for (const k in h) if (k.toLowerCase() === name) return h[k];
+    return undefined;
+  };
   const u = payload.url || "/";
-  const url = u.indexOf("http") === 0 ? u : "http://localhost" + (u[0] === "/" ? u : "/" + u);
+  let url;
+  if (u.indexOf("http") === 0) {
+    url = u;
+  } else {
+    const host = hdr("x-forwarded-host") || hdr("host") || "localhost";
+    const proto = (hdr("x-forwarded-proto") || "http").split(",")[0].trim();
+    url = proto + "://" + host + (u[0] === "/" ? u : "/" + u);
+  }
   const method = (payload.method || "GET").toUpperCase();
   const req = new Request(url, {
     method,

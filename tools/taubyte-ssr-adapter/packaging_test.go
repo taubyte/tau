@@ -3,6 +3,8 @@ package main
 import (
 	"archive/zip"
 	"bytes"
+	"os"
+	"path/filepath"
 	"testing"
 
 	wasmSpec "github.com/taubyte/tau/pkg/specs/builders/wasm"
@@ -68,5 +70,74 @@ func TestBuildManifestUnknownFramework(t *testing.T) {
 	// prefixes, but otherwise well-formed).
 	if _, err := buildManifest("totally-unknown").Marshal(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestBuildSiteZip(t *testing.T) {
+	// Mimic an edge build output dir (SvelteKit's .svelte-kit/cloudflare).
+	dir := t.TempDir()
+	files := map[string]string{
+		"index.html":                   "<h1>home</h1>", // prerendered /
+		"404.html":                     "nope",
+		"_app/immutable/chunks/app.js": "console.log(1)",
+		"about/index.html":             "<h1>about</h1>", // clean-URL prerender
+		"_worker.js":                   "should be excluded",
+		"_routes.json":                 "{}",
+		"_headers":                     "x",
+		"cloudflare-tmp/manifest.js":   "internal",
+	}
+	for name, content := range files {
+		p := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	handler := []byte("HANDLER-ZIP-BYTES")
+	zipBytes, err := buildSiteZip(dir, handler, buildManifest("sveltekit"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, f := range zr.File {
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var b bytes.Buffer
+		b.ReadFrom(rc)
+		rc.Close()
+		got[f.Name] = b.String()
+	}
+
+	// Static/prerendered assets must be served from the site root.
+	for _, want := range []string{"index.html", "404.html", "_app/immutable/chunks/app.js", "about/index.html"} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("expected static asset %q in build zip", want)
+		}
+	}
+	// Host control files must be excluded.
+	for _, bad := range []string{"_worker.js", "_routes.json", "_headers", "cloudflare-tmp/manifest.js"} {
+		if _, ok := got[bad]; ok {
+			t.Errorf("control file %q must not be served as a static asset", bad)
+		}
+	}
+	// Handler + manifest must be embedded under __taubyte__/.
+	if got[websiteSpec.DefaultHandlerPath] != string(handler) {
+		t.Errorf("handler bytes missing/incorrect at %q", websiteSpec.DefaultHandlerPath)
+	}
+	if _, ok := got[websiteSpec.ManifestPath]; !ok {
+		t.Errorf("manifest missing at %q", websiteSpec.ManifestPath)
+	}
+	// The embedded manifest must still satisfy the runtime's parser.
+	if _, err := websiteSpec.ParseManifest([]byte(got[websiteSpec.ManifestPath])); err != nil {
+		t.Errorf("embedded manifest rejected by spec: %v", err)
 	}
 }

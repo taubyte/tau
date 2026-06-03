@@ -60,6 +60,7 @@ func run() error {
 	framework := flag.String("framework", "js", "framework name recorded in the manifest")
 	mode := flag.String("mode", "handler", "entry shape: `handler` (default-export handle(req)->res) or `fetch` (Web-standard app.fetch(Request), e.g. Hono)")
 	node := flag.Bool("node", false, "inject Node-compat shims (process/Buffer/global/timers) — needed by Next.js edge handlers")
+	site := flag.String("site", "", "directory of static/prerendered assets (e.g. SvelteKit's .svelte-kit/cloudflare) to assemble with the handler into a complete website build.zip at --out")
 	flag.Parse()
 
 	if *entry == "" {
@@ -133,41 +134,8 @@ func run() error {
 		}
 		aliases = append(aliases, "--alias:cloudflare:workers="+cf)
 
-bridge = prelude + bridge + fmt.Sprintf(`
-import { serveFetch } from %q;
-
-const __tbEnv = globalThis.__TAUBYTE_ENV__ || {};
-
-if (!__tbEnv.ASSETS) {
- __tbEnv.ASSETS = {
-  async fetch(request) {
-    return new Response("Taubyte asset shim: static asset not bundled", {
-      status: 404,
-      headers: { "content-type": "text/plain" }
-    });
-  }
-};
-}
-
-const __tbCtx = {
-  waitUntil(promise) {},
-  passThroughOnException() {}
-};
-
-const __tbApp = {
-  fetch(request) {
-    if (app && typeof app.fetch === "function") {
-      return app.fetch(request, __tbEnv, __tbCtx);
-    }
-    if (typeof app === "function") {
-      return app(request, __tbEnv, __tbCtx);
-    }
-    throw new Error("adapter: app has no fetch handler");
-  }
-};
-
-serveFetch(__tbApp);
-`, shimPath)	} else {
+		bridge = prelude + bridge + fmt.Sprintf("import { serveFetch } from %q;\nserveFetch(app);\n", shimPath)
+	} else {
 		bridge = prelude + bridge + fmt.Sprintf("import { serve } from %q;\nserve(app);\n", shimPath)
 	}
 
@@ -176,24 +144,29 @@ serveFetch(__tbApp);
 		return err
 	}
 
-// 2. Bundle to a single module.
-cfWorkersShim, err := filepath.Abs("tools/taubyte-ssr-adapter/shim/cloudflare-workers.js")
-if err != nil {
-	return err
-}
+	// 2. Bundle to a single module.
+	bundlePath := filepath.Join(tmp, "bundle.js")
+	if err := bundleJS(bridgePath, bundlePath, aliases...); err != nil {
+		return fmt.Errorf("bundling failed (is esbuild installed?): %w", err)
+	}
 
-aliases = append(aliases,
-	"--alias:cloudflare:workers="+cfWorkersShim,
-)
-
-bundlePath := filepath.Join(tmp, "bundle.js")
-if err := bundleJS(bridgePath, bundlePath, aliases...); err != nil {
-	return fmt.Errorf("bundling failed (is esbuild installed?): %w", err)
-}
 	// 3. Compile JS -> WASM (WASI stdin/stdout) with Javy.
 	wasmPath := filepath.Join(tmp, "module.wasm")
-	if err := javyBuild(bundlePath, wasmPath); err != nil {
+	eventLoop, err := javyBuild(bundlePath, wasmPath)
+	if err != nil {
 		return fmt.Errorf("javy build failed (is javy installed?): %w", err)
+	}
+	if !eventLoop {
+		// The build succeeded but without the event loop, so QuickJS will trap
+		// ("Pending jobs in the event queue") the moment a handler awaits. fetch
+		// mode is always async (serveFetch resolves a Promise), so refuse it
+		// outright; handler mode may be fully synchronous, so warn and proceed.
+		const hint = "javy could not enable the event loop, so async handlers (any Promise/await) will trap at runtime. " +
+			"Upgrade Javy to >= 5.0 (uses `build -J event-loop=y`) or set TAUBYTE_JAVY_ARGS to an event-loop-enabling invocation"
+		if *mode == "fetch" {
+			return fmt.Errorf("%s. fetch mode is inherently async and cannot run without it", hint)
+		}
+		fmt.Fprintln(os.Stderr, "taubyte-ssr-adapter: WARNING: "+hint+". Only fully-synchronous handlers will work.")
 	}
 
 	wasm, err := os.ReadFile(wasmPath)
@@ -201,15 +174,26 @@ if err := bundleJS(bridgePath, bundlePath, aliases...); err != nil {
 		return err
 	}
 
-	// 4. Package and write outputs.
-	zipBytes, err := buildHandlerZip(wasm)
+	// 4. Package and write outputs. By default --out is the handler.wasm.zip; with
+	// --site it becomes a complete, deployable website build.zip (static assets +
+	// handler + manifest), so prerendered pages serve from the static layer and
+	// dynamic routes hit the bundle.
+	handlerZip, err := buildHandlerZip(wasm)
 	if err != nil {
 		return err
+	}
+	outBytes, kind := handlerZip, "handler.wasm.zip"
+	if *site != "" {
+		outBytes, err = buildSiteZip(*site, handlerZip, buildManifest(*framework))
+		if err != nil {
+			return fmt.Errorf("assembling website from `%s` failed with: %w", *site, err)
+		}
+		kind = "website build.zip"
 	}
 	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(*out, zipBytes, 0o644); err != nil {
+	if err := os.WriteFile(*out, outBytes, 0o644); err != nil {
 		return err
 	}
 
@@ -223,11 +207,9 @@ if err := bundleJS(bridgePath, bundlePath, aliases...); err != nil {
 		}
 	}
 
-	fmt.Printf("taubyte-ssr-adapter: wrote %s (%d bytes)\n", *out, len(zipBytes))
+	fmt.Printf("taubyte-ssr-adapter: wrote %s %s (%d bytes)\n", kind, *out, len(outBytes))
 	return nil
 }
-
-
 
 // bundleJS bundles entry into a single ES module using esbuild (direct binary
 // or via npx). extra holds additional esbuild flags (e.g. --alias: for node
@@ -241,23 +223,28 @@ func bundleJS(entry, out string, extra ...string) error {
 	return runCmd("npx", append([]string{"--yes", "esbuild"}, args...)...)
 }
 
-// javyBuild compiles a JS module to a WASI WASM module with Javy, with the
-// event loop enabled so async handlers (Hono's app.fetch, etc.) — whose
-// promises sit on QuickJS's job queue — are drained before the module exits.
+// javyBuild compiles a JS module to a WASI WASM module with Javy and reports
+// whether it could enable the event loop. The event loop drains QuickJS's job
+// queue before the module exits, so async handlers (Hono's app.fetch, a fetch
+// worker, anything returning a Promise) resolve instead of trapping with
+// "Pending jobs in the event queue".
 //
-// The subcommand (`build` vs `compile`) and the event-loop flag differ across
-// Javy versions, so the enabled forms are tried first (preferred) and a plain
-// build only as a last resort. Override the whole invocation with
-// TAUBYTE_JAVY_ARGS (space-separated; %IN and %OUT are substituted).
-func javyBuild(in, out string) error {
+// The flag for it differs sharply across Javy versions (build -J event-loop=y
+// on v5+, --enable-experimental-event-loop on older lines), and the default
+// plugin in v3/v4 dropped it entirely. So the event-loop forms are tried first;
+// only if every one fails do we fall back to a plain build — and we tell the
+// caller (via the returned bool) so it can warn or refuse, rather than silently
+// shipping a module that traps on the first await. Override the whole
+// invocation with TAUBYTE_JAVY_ARGS (space-separated; %IN and %OUT substituted).
+func javyBuild(in, out string) (eventLoop bool, err error) {
 	javy, err := exec.LookPath("javy")
 	if err != nil {
-		return fmt.Errorf("javy not found on PATH: %w", err)
+		return false, fmt.Errorf("javy not found on PATH: %w", err)
 	}
 
-	var attempts [][]string
-	if override := os.Getenv("TAUBYTE_JAVY_ARGS"); strings.TrimSpace(override) != "" {
-		fields := strings.Fields(override)
+	var override [][]string
+	if v := os.Getenv("TAUBYTE_JAVY_ARGS"); strings.TrimSpace(v) != "" {
+		fields := strings.Fields(v)
 		for i, f := range fields {
 			switch f {
 			case "%IN":
@@ -266,27 +253,41 @@ func javyBuild(in, out string) error {
 				fields[i] = out
 			}
 		}
-		attempts = append(attempts, fields)
+		override = append(override, fields)
 	}
-	attempts = append(attempts,
-		// event-loop enabled (preferred) — modern `build`, then legacy `compile`
+
+	// Event-loop forms, preferred: modern `build`, then the older flag on both
+	// `build` and the legacy `compile`. A user override is trusted to enable it.
+	eventLoopForms := append(override,
 		[]string{"build", "-J", "event-loop=y", in, "-o", out},
 		[]string{"build", "--enable-experimental-event-loop", in, "-o", out},
 		[]string{"compile", "--enable-experimental-event-loop", in, "-o", out},
-		// plain (async handlers will trap at runtime) — last resort
-		[]string{"build", in, "-o", out},
-		[]string{"compile", in, "-o", out},
 	)
+	// Plain forms, last resort: async handlers will trap at runtime.
+	plainForms := [][]string{
+		{"build", in, "-o", out},
+		{"compile", in, "-o", out},
+	}
 
 	var last string
-	for _, args := range attempts {
-		combined, err := exec.Command(javy, args...).CombinedOutput()
-		if err == nil {
-			return nil
+	try := func(forms [][]string) bool {
+		for _, args := range forms {
+			combined, runErr := exec.Command(javy, args...).CombinedOutput()
+			if runErr == nil {
+				return true
+			}
+			last = fmt.Sprintf("javy %s: %v\n%s", strings.Join(args, " "), runErr, combined)
 		}
-		last = fmt.Sprintf("javy %s: %v\n%s", strings.Join(args, " "), err, combined)
+		return false
 	}
-	return fmt.Errorf("javy build failed (tried event-loop variants):\n%s", last)
+
+	if try(eventLoopForms) {
+		return true, nil
+	}
+	if try(plainForms) {
+		return false, nil
+	}
+	return false, fmt.Errorf("javy build failed (tried event-loop and plain variants):\n%s", last)
 }
 
 func runCmd(name string, args ...string) error {

@@ -214,6 +214,30 @@
     g.performance = { now: function () { return Date.now() - t0; }, timeOrigin: t0 };
   }
 
+  // Cloudflare Cache API (caches.default / caches.open(name)). Taubyte has no
+  // edge cache, so this is a no-op store that always misses: frameworks check
+  // the cache, miss, render fresh, then "store" into a sink. Correct semantics,
+  // just uncached. SvelteKit's adapter-cloudflare reads caches.default.
+  if (typeof g.caches === "undefined") {
+    const noopCache = {
+      match() { return Promise.resolve(undefined); },
+      matchAll() { return Promise.resolve([]); },
+      add() { return Promise.resolve(); },
+      addAll() { return Promise.resolve(); },
+      put() { return Promise.resolve(); },
+      delete() { return Promise.resolve(false); },
+      keys() { return Promise.resolve([]); },
+    };
+    g.caches = {
+      default: noopCache,
+      open() { return Promise.resolve(noopCache); },
+      match() { return Promise.resolve(undefined); },
+      has() { return Promise.resolve(false); },
+      delete() { return Promise.resolve(false); },
+      keys() { return Promise.resolve([]); },
+    };
+  }
+
   if (typeof g.AbortController === "undefined") {
     g.AbortSignal = class AbortSignal {
       constructor() { this.aborted = false; this.reason = undefined; this._cbs = []; }
@@ -282,36 +306,3 @@
     }
   }
 })(globalThis);
-
-// Cloudflare Workers Cache API shim.
-// SvelteKit's Cloudflare output may reference `caches.default`.
-// For local Taubyte/Javy smoke tests, this is a safe no-op cache.
-if (!globalThis.caches) {
-  const noopCache = {
-    async match() {
-      return undefined;
-    },
-    async put() {
-      return undefined;
-    },
-    async delete() {
-      return false;
-    }
-  };
-
-  globalThis.caches = {
-    default: noopCache,
-    async open() {
-      return noopCache;
-    },
-    async has() {
-      return true;
-    },
-    async delete() {
-      return false;
-    },
-    async keys() {
-      return ["default"];
-    }
-  };
-}

@@ -32,6 +32,11 @@ A complete example is in `example/app.js`.
 
 ```sh
 # Requires: esbuild (or npx) and javy on PATH.
+# Use Javy >= 5.0: it enables the event loop (`build -J event-loop=y`), which
+# async handlers need. On older/plugin-less Javy the adapter refuses `--mode
+# fetch` (always async) with a clear error rather than shipping a module that
+# traps at runtime on the first await. Override the invocation with
+# TAUBYTE_JAVY_ARGS if your Javy enables the loop differently.
 go run ./tools/taubyte-ssr-adapter \
   --entry ./app.js \
   --framework js \
@@ -57,10 +62,48 @@ go run ./tools/taubyte-ssr-adapter --mode fetch --framework hono \
 ```
 
 `example/hono-app.js` is a runnable Hono app. The polyfill targets the common
-SSR path (methods, headers, text/json bodies, URL parsing), not full WHATWG
-conformance — outbound `fetch` and streams are stubbed. **Status: prototype —
-validate + iterate** against real apps via `javy` (the first milestone is a Hono
-"hello world" rendering).
+SSR path (methods, headers, text/json bodies, URL parsing, FormData, Cache API,
+`cloudflare:workers`), not full WHATWG conformance — outbound `fetch` and streams
+are stubbed.
+
+A real SvelteKit 5 app (built with `@sveltejs/adapter-cloudflare`) runs through
+this pipeline end to end — SSR page render with a `+page.server.js` `load()`,
+`/api/*` server routes (GET/POST with `request.json()`), and the framework's own
+404 page all return correctly:
+
+```sh
+# in your SvelteKit project, after `npm run build`:
+go run /path/to/tau/tools/taubyte-ssr-adapter --mode fetch --node \
+  --framework sveltekit \
+  --entry .svelte-kit/cloudflare/_worker.js --out /tmp/sk.zip
+unzip -o /tmp/sk.zip main.wasm -d /tmp
+# Test a DYNAMIC route (a prerendered "/" is served by the static layer, not the
+# bundle — standalone it delegates to env.ASSETS and 404s; see --site below):
+echo '{"method":"GET","url":"/api/echo"}' | wasmtime /tmp/main.wasm
+```
+
+### Assembling a deployable site — `--site`
+
+The handler bundle only runs *dynamic* routes. A real site also has static and
+prerendered files (SvelteKit emits `index.html`, `404.html`, `_app/…` into
+`.svelte-kit/cloudflare`), which Taubyte's static layer serves directly — so a
+prerendered `/` never reaches the bundle. `--site` assembles both halves into one
+deployable website `build.zip` (static/prerendered assets at the root + the
+handler and manifest under `__taubyte__/`, with edge control files like
+`_worker.js`/`_routes.json` excluded):
+
+```sh
+go run /path/to/tau/tools/taubyte-ssr-adapter --mode fetch --node \
+  --framework sveltekit \
+  --entry .svelte-kit/cloudflare/_worker.js \
+  --site  .svelte-kit/cloudflare \
+  --out   build.zip
+```
+
+Upload that `build.zip` as the website asset: the substrate serves prerendered
+pages and `_app/` statically and routes `/api/*` and other dynamic paths to the
+bundle. (Note: SvelteKit's `read()` for server assets goes through `env.ASSETS`,
+which is a 404 stub today — outbound asset reads during SSR aren't wired yet.)
 
 Next.js's edge handler is the same shape (it expects Web APIs); it builds on this
 polyfill plus Node-compat shims and the `taubyte-next-adapter` (see
@@ -108,7 +151,15 @@ command module; a Javy bundle is hosted identically.
   serving path), proven end to end with a WASI command module.
 - ✅ Packaging (`handler.wasm.zip`) and manifest emission — unit-tested,
   round-trips through the runtime's manifest parser.
-- ⚠️ `esbuild`/`javy` pipeline and `shim/shim.js` — prototype for the
-  polyfill-free JSON handler; validate with the toolchain installed (async
-  handling depends on the Javy version draining the QuickJS job queue).
-- ⬜ Hono/Next — needs the Web-API polyfill layer described above.
+- ✅ `esbuild`/`javy` pipeline and `shim/shim.js` — runs end to end with the
+  toolchain installed (esbuild + Javy >= 5.0 + a WASI runtime). Async handlers
+  need Javy's event loop; the adapter enables it and refuses `--mode fetch` with
+  a clear error on a Javy that can't (rather than shipping a trap-at-runtime
+  module).
+- ✅ Hono + SvelteKit (`adapter-cloudflare`) — render through the Web-API
+  polyfill + Workers shims (`web.js`, `node.js`, `cloudflare:workers`, Cache
+  API). SvelteKit SSR + `/api` routes + 404 validated against a real app.
+- ⚠️ Next.js edge handler — same shape; builds on this polyfill plus the
+  `taubyte-next-adapter` (see `docs/nextjs-adapter.md`). Validate per app.
+- ⬜ Streams (`ReadableStream`/`TransformStream`) and outbound `fetch` — stubbed;
+  wire to Taubyte primitives next.

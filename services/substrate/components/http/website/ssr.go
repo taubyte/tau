@@ -98,23 +98,6 @@ func (w *Website) isStaticAsset(p string) bool {
 	return false
 }
 
-// serveSSR renders a request through the WebAssembly server bundle, dispatching
-// to the handler ABI declared by the manifest. Unsupported ABIs (e.g. a
-// component-model engine this substrate build can't run yet) fail fast.
-func (w *Website) serveSSR(_w goHttp.ResponseWriter, r *goHttp.Request) (time.Time, error) {
-	switch w.ssr.ABIOrDefault() {
-	case websiteSpec.ABIFunction:
-		return w.serveSSRFunction(_w, r)
-	case websiteSpec.ABIWasiStdio:
-		return w.serveSSRStdio(_w, r)
-	default:
-		return time.Time{}, fmt.Errorf(
-			"website `%s`: handler abi `%s` is not supported by this substrate build (supports `%s`, `%s`)",
-			w.config.Name, w.ssr.ABIOrDefault(), websiteSpec.ABIFunction, websiteSpec.ABIWasiStdio,
-		)
-	}
-}
-
 // serveSSRFunction renders via the function ABI: instantiate a pooled runtime,
 // create the HTTP event, and call the exported entry. Mirrors a regular Taubyte
 // function.
@@ -267,9 +250,26 @@ type stdioResponse struct {
 
 // encodeStdioRequest serializes the request for a WASI-stdio bundle.
 func encodeStdioRequest(r *goHttp.Request) ([]byte, error) {
-	headers := make(map[string]string, len(r.Header))
+	headers := make(map[string]string, len(r.Header)+2)
 	for k := range r.Header {
 		headers[k] = r.Header.Get(k)
+	}
+
+	// Go promotes the Host header onto r.Host and drops it from r.Header, so
+	// forward it explicitly: the bundle reconstructs the request origin from it
+	// (Host + scheme), and frameworks such as SvelteKit compare that origin
+	// against the Origin header for CSRF protection — without it every form POST
+	// is rejected as cross-site. Likewise propagate the scheme so the
+	// reconstructed origin's protocol matches the browser's Origin header.
+	if r.Host != "" {
+		headers["Host"] = r.Host
+	}
+	if _, ok := headers["X-Forwarded-Proto"]; !ok {
+		scheme := "http"
+		if r.TLS != nil || strings.EqualFold(r.URL.Scheme, "https") {
+			scheme = "https"
+		}
+		headers["X-Forwarded-Proto"] = scheme
 	}
 
 	var body string
