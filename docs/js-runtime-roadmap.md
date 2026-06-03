@@ -64,11 +64,20 @@ Options:
 - **C — pre-initialize with `weval`/wizer.** Orthogonal optimization (cold-start),
   still wasmtime-oriented.
 
-**Recommendation:** Option A. Define `vm.Engine` (instantiate + invoke), keep
-wazero as the default core/WASI-P1 engine (Javy, TinyGo handlers), add a
-wasmtime component engine for `ABIComponent`. The website `serveSSR` already
-dispatches by ABI (seam from step 2), so this slots in without touching the
-static/function/Javy paths.
+**Recommendation:** Option A. The seam is already in place and compile-checked:
+
+- `serveSSR` dispatches through the `ssrEngines` registry (step 2).
+- `ABIComponent` has a concrete contract — the `ComponentRuntime` interface in
+  `services/substrate/components/http/website/component.go`:
+  `ServeHTTP(ctx, key, component []byte, w, r, limits)` + `Name()`.
+- A backend lives in its own package (so the wasmtime dependency stays out of the
+  substrate core) and enables itself with `website.RegisterComponentRuntime(...)`
+  from `init()`. Until then, `component` assets fail fast.
+
+So building the engine is: implement `ComponentRuntime` over `wasmtime-go` with
+the Component Model + `wasi:http`, embed/build StarlingMonkey, and register it.
+No changes to the static / function / Javy paths. This is the part that needs a
+wasm/Rust/wasmtime environment to build and verify.
 
 This is a platform-level effort (new runtime dependency, WASI-P2/`wasi:http`
 host, build pipeline for the engine) — designed here, built in an environment

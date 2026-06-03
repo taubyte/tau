@@ -54,6 +54,37 @@ ships Web APIs) is the multi-week core, and is validated by running real Next
 output — not unit tests. The translator and serving path below it are done and
 proven, so that work has a stable target to build against.
 
+## Recipe: dynamic Next via next-on-pages (experimental)
+
+Next's edge output is a Web-standard Workers handler (`export default {fetch}`),
+which is the shape the adapter's `--mode fetch --node` already runs. End to end:
+
+```sh
+# 1. Build Next and convert it to a Web-standard worker.
+npx next build
+npx --yes @cloudflare/next-on-pages@1
+#    -> .vercel/output/static/  (assets)  +  _worker.js/index.js  (fetch handler)
+
+# 2. Compile the worker to wasm (Web-API + Node-compat shims).
+go run ./tools/taubyte-ssr-adapter --mode fetch --node --framework nextjs \
+  --entry .vercel/output/static/_worker.js/index.js \
+  --out /tmp/handler.wasm.zip
+
+# 3. Assemble the website asset (static + prerendered + manifest + handler).
+go run ./tools/taubyte-next-adapter --project . --handler <main.wasm from /tmp/handler.wasm.zip> --out /tmp/build.zip
+```
+
+(The generated zero-config build script for `nextjs` does steps 1–2 automatically.)
+
+**Expect gaps.** A real worker reaches for APIs beyond the Javy tier:
+Cloudflare bindings (`env`, KV/D1, `caches`), `crypto.subtle`, full
+`ReadableStream`, more of `node:*`. Run the produced `main.wasm` under `wasmtime`
+(`echo '{"method":"GET","url":"/"}' | wasmtime main.wasm`) and patch
+`runtime/web.js` / `runtime/node.js` / `runtime/node-modules/*` against the first
+missing API — or, for the full surface, the component-model engine (StarlingMonkey)
+from `docs/js-runtime-roadmap.md`. This is the frontier; Hono is the proven
+reference for the same path.
+
 ## Try the translator
 
 ```go

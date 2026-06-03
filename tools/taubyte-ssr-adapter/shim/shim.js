@@ -127,7 +127,17 @@ export function serveFetch(app) {
     body: method === "GET" || method === "HEAD" ? undefined : payload.body,
   });
 
-  Promise.resolve(fetchFn(req))
+  // Workers calling convention: fetch(request, env, ctx). env is the shared
+  // bindings object (cloudflare:workers exports the same one); ASSETS 404s since
+  // Taubyte serves static assets before the bundle. Handlers that take only the
+  // request (Hono) ignore the extra args.
+  const env = (globalThis.__TAUBYTE_ENV__ = globalThis.__TAUBYTE_ENV__ || {});
+  if (!env.ASSETS) {
+    env.ASSETS = { fetch: function () { return Promise.resolve(new Response("Not Found", { status: 404 })); } };
+  }
+  const ctx = { waitUntil: function () {}, passThroughOnException: function () {} };
+
+  Promise.resolve(fetchFn(req, env, ctx))
     .then(async (res) => {
       const headers = {};
       if (res && res.headers && typeof res.headers.forEach === "function") {

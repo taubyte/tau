@@ -37,6 +37,15 @@ var webPolyfill string
 //go:embed runtime/node.js
 var nodePolyfill string
 
+//go:embed runtime/node-modules/async_hooks.js
+var nodeAsyncHooks string
+
+//go:embed runtime/node-modules/events.js
+var nodeEvents string
+
+//go:embed runtime/node-modules/cloudflare-workers.js
+var cloudflareWorkers string
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "taubyte-ssr-adapter:", err)
@@ -78,18 +87,32 @@ func run() error {
 
 	// Runtime polyfills are installed (in order) before the app module runs.
 	var prelude string
+	var aliases []string
 	writePolyfill := func(name, src string) (string, error) {
 		p := filepath.Join(tmp, name)
 		return p, os.WriteFile(p, []byte(src), 0o644)
 	}
 	if *node {
-		// Node-compat shims first (process/Buffer/global), so web.js and the app
+		// Node-compat globals first (process/Buffer/global), so web.js and the app
 		// can rely on them.
 		p, err := writePolyfill("node.js", nodePolyfill)
 		if err != nil {
 			return err
 		}
 		prelude += fmt.Sprintf("import %q;\n", p)
+
+		// Node builtin-module shims, aliased so `import ... from "node:async_hooks"`
+		// (and the bare specifier) resolve during bundling.
+		for _, mod := range []struct{ name, src string }{
+			{"async_hooks", nodeAsyncHooks},
+			{"events", nodeEvents},
+		} {
+			mp, err := writePolyfill(mod.name+".mjs", mod.src)
+			if err != nil {
+				return err
+			}
+			aliases = append(aliases, "--alias:node:"+mod.name+"="+mp, "--alias:"+mod.name+"="+mp)
+		}
 	}
 
 	bridge := fmt.Sprintf("import app from %q;\n", entryAbs)
@@ -101,8 +124,50 @@ func run() error {
 			return err
 		}
 		prelude += fmt.Sprintf("import %q;\n", p)
-		bridge = prelude + bridge + fmt.Sprintf("import { serveFetch } from %q;\nserveFetch(app);\n", shimPath)
-	} else {
+
+		// Edge adapters (SvelteKit/Next on Cloudflare) import the Workers runtime
+		// virtual module; resolve it to a binding-less shim.
+		cf, err := writePolyfill("cloudflare-workers.mjs", cloudflareWorkers)
+		if err != nil {
+			return err
+		}
+		aliases = append(aliases, "--alias:cloudflare:workers="+cf)
+
+bridge = prelude + bridge + fmt.Sprintf(`
+import { serveFetch } from %q;
+
+const __tbEnv = globalThis.__TAUBYTE_ENV__ || {};
+
+if (!__tbEnv.ASSETS) {
+ __tbEnv.ASSETS = {
+  async fetch(request) {
+    return new Response("Taubyte asset shim: static asset not bundled", {
+      status: 404,
+      headers: { "content-type": "text/plain" }
+    });
+  }
+};
+}
+
+const __tbCtx = {
+  waitUntil(promise) {},
+  passThroughOnException() {}
+};
+
+const __tbApp = {
+  fetch(request) {
+    if (app && typeof app.fetch === "function") {
+      return app.fetch(request, __tbEnv, __tbCtx);
+    }
+    if (typeof app === "function") {
+      return app(request, __tbEnv, __tbCtx);
+    }
+    throw new Error("adapter: app has no fetch handler");
+  }
+};
+
+serveFetch(__tbApp);
+`, shimPath)	} else {
 		bridge = prelude + bridge + fmt.Sprintf("import { serve } from %q;\nserve(app);\n", shimPath)
 	}
 
@@ -111,12 +176,20 @@ func run() error {
 		return err
 	}
 
-	// 2. Bundle to a single module.
-	bundlePath := filepath.Join(tmp, "bundle.js")
-	if err := bundleJS(bridgePath, bundlePath); err != nil {
-		return fmt.Errorf("bundling failed (is esbuild installed?): %w", err)
-	}
+// 2. Bundle to a single module.
+cfWorkersShim, err := filepath.Abs("tools/taubyte-ssr-adapter/shim/cloudflare-workers.js")
+if err != nil {
+	return err
+}
 
+aliases = append(aliases,
+	"--alias:cloudflare:workers="+cfWorkersShim,
+)
+
+bundlePath := filepath.Join(tmp, "bundle.js")
+if err := bundleJS(bridgePath, bundlePath, aliases...); err != nil {
+	return fmt.Errorf("bundling failed (is esbuild installed?): %w", err)
+}
 	// 3. Compile JS -> WASM (WASI stdin/stdout) with Javy.
 	wasmPath := filepath.Join(tmp, "module.wasm")
 	if err := javyBuild(bundlePath, wasmPath); err != nil {
@@ -154,10 +227,14 @@ func run() error {
 	return nil
 }
 
+
+
 // bundleJS bundles entry into a single ES module using esbuild (direct binary
-// or via npx).
-func bundleJS(entry, out string) error {
+// or via npx). extra holds additional esbuild flags (e.g. --alias: for node
+// builtin-module shims).
+func bundleJS(entry, out string, extra ...string) error {
 	args := []string{"--bundle", entry, "--format=esm", "--platform=neutral", "--outfile=" + out}
+	args = append(args, extra...)
 	if path, err := exec.LookPath("esbuild"); err == nil {
 		return runCmd(path, args...)
 	}

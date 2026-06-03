@@ -208,4 +208,110 @@
       });
     };
   }
+
+  if (typeof g.performance === "undefined") {
+    const t0 = Date.now();
+    g.performance = { now: function () { return Date.now() - t0; }, timeOrigin: t0 };
+  }
+
+  if (typeof g.AbortController === "undefined") {
+    g.AbortSignal = class AbortSignal {
+      constructor() { this.aborted = false; this.reason = undefined; this._cbs = []; }
+      addEventListener(t, cb) { if (t === "abort") this._cbs.push(cb); }
+      removeEventListener(t, cb) { this._cbs = this._cbs.filter((f) => f !== cb); }
+      dispatchEvent() {}
+      throwIfAborted() { if (this.aborted) throw this.reason || new Error("aborted"); }
+    };
+    g.AbortController = class AbortController {
+      constructor() { this.signal = new g.AbortSignal(); }
+      abort(reason) {
+        if (this.signal.aborted) return;
+        this.signal.aborted = true;
+        this.signal.reason = reason || new Error("aborted");
+        for (const cb of this.signal._cbs) { try { cb({ type: "abort" }); } catch (e) {} }
+      }
+    };
+  }
+
+  if (typeof g.Blob === "undefined") {
+    g.Blob = class Blob {
+      constructor(parts, opts) {
+        this._text = (parts || []).map((p) => (typeof p === "string" ? p : p && p._body != null ? String(p._body) : String(p))).join("");
+        this.size = new TextEncoder().encode(this._text).length;
+        this.type = (opts && opts.type) || "";
+      }
+      text() { return Promise.resolve(this._text); }
+      arrayBuffer() { return Promise.resolve(new TextEncoder().encode(this._text).buffer); }
+    };
+  }
+
+  // FormData + Request.formData() for urlencoded bodies (form actions).
+  // multipart/form-data is not parsed yet.
+  if (typeof g.FormData === "undefined") {
+    g.FormData = class FormData {
+      constructor() { this._ = []; }
+      append(k, v) { this._.push([k, v]); }
+      set(k, v) { this.delete(k); this._.push([k, v]); }
+      get(k) { for (const e of this._) if (e[0] === k) return e[1]; return null; }
+      getAll(k) { return this._.filter((e) => e[0] === k).map((e) => e[1]); }
+      has(k) { return this._.some((e) => e[0] === k); }
+      delete(k) { this._ = this._.filter((e) => e[0] !== k); }
+      forEach(cb) { for (const e of this._) cb(e[1], e[0], this); }
+      entries() { return this._.map((e) => [e[0], e[1]])[Symbol.iterator](); }
+      keys() { return this._.map((e) => e[0])[Symbol.iterator](); }
+      values() { return this._.map((e) => e[1])[Symbol.iterator](); }
+      [Symbol.iterator]() { return this.entries(); }
+    };
+    if (g.Request && !g.Request.prototype.formData) {
+      g.Request.prototype.formData = function () {
+        return this.text().then((t) => {
+          const fd = new g.FormData();
+          const ct = (this.headers && this.headers.get && this.headers.get("content-type")) || "";
+          if (ct.indexOf("application/x-www-form-urlencoded") >= 0) {
+            for (const pair of t.split("&")) {
+              if (!pair) continue;
+              const i = pair.indexOf("=");
+              const k = decodeURIComponent((i < 0 ? pair : pair.slice(0, i)).replace(/\+/g, " "));
+              const v = i < 0 ? "" : decodeURIComponent(pair.slice(i + 1).replace(/\+/g, " "));
+              fd.append(k, v);
+            }
+          }
+          return fd;
+        });
+      };
+    }
+  }
 })(globalThis);
+
+// Cloudflare Workers Cache API shim.
+// SvelteKit's Cloudflare output may reference `caches.default`.
+// For local Taubyte/Javy smoke tests, this is a safe no-op cache.
+if (!globalThis.caches) {
+  const noopCache = {
+    async match() {
+      return undefined;
+    },
+    async put() {
+      return undefined;
+    },
+    async delete() {
+      return false;
+    }
+  };
+
+  globalThis.caches = {
+    default: noopCache,
+    async open() {
+      return noopCache;
+    },
+    async has() {
+      return true;
+    },
+    async delete() {
+      return false;
+    },
+    async keys() {
+      return ["default"];
+    }
+  };
+}
