@@ -136,10 +136,39 @@ pages with `runtime = 'edge'`) compile and run — `GET`/`POST /api/*` return
 correctly — and prerendered pages serve from the static layer. **Known wall:**
 a React **SSR** page (`react-dom/server`) is a ~700 KB module that crashes
 Javy/QuickJS's bytecode compiler ("stack underflow"); heavy React SSR needs the
-component-model engine (see `docs/js-runtime-roadmap.md`). Use `runtime='edge'`
-+ prerendering; avoid dynamic React SSR until the engine swap lands. The older
+StarlingMonkey engine below. Use `runtime='edge'` + prerendering on the Javy
+tier; for dynamic React SSR use `--engine starlingmonkey`. The older
 manifest-translation path is the `taubyte-next-adapter` (see
 `docs/nextjs-adapter.md`).
+
+## StarlingMonkey engine — `--engine starlingmonkey`
+
+The Javy/QuickJS tier is small and polyfilled, and its compiler chokes on heavy
+bundles (React SSR). `--engine starlingmonkey` instead targets **StarlingMonkey**
+(SpiderMonkey on WASM): a real JS engine with native Web APIs (URL, streams,
+SubtleCrypto, `fetch`) that runs the React `renderToString` that crashes QuickJS.
+
+It bundles the app (no Web-API polyfill — the engine is native), wraps it in a
+fetch-event shim, and runs `jco componentize` against the vendored
+`wasi:http/proxy` WIT to emit a **WebAssembly Component** (`abi:"component"` in
+the manifest):
+
+```sh
+# requires esbuild + jco (@bytecodealliance/jco) on PATH
+go run ./tools/taubyte-ssr-adapter --mode fetch --engine starlingmonkey \
+  --framework hono --entry ./app.js --out handler.component.wasm
+```
+
+The component is **not** a wasi-stdio module — neither wazero nor the wasmtime-go
+bindings host the Component Model. The substrate serves it via the opt-in
+`wasmtimehttp` backend (build tag `wasmtime_component`), which shells out to
+`wasmtime serve` (the full `wasi:http` host) and reverse-proxies to it. Build the
+substrate with that tag and `wasmtime` on PATH to enable the `component` ABI;
+otherwise `component` assets fail fast and the Javy tier is unaffected.
+
+Validated end to end: a fetch handler and a React SSR page both componentize,
+serve under `wasmtime serve`, and round-trip through the backend (with native
+`crypto.randomUUID()`). See `docs/js-runtime-roadmap.md`.
 
 ## Why Javy + WASI stdio
 

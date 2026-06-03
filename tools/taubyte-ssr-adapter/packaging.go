@@ -33,15 +33,32 @@ func buildHandlerZip(wasm []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// ComponentHandlerPath is where a StarlingMonkey wasi:http component is stored
+// in the website asset (raw .wasm, not a zip — the component backend reads the
+// bytes directly).
+const ComponentHandlerPath = "__taubyte__/handler.component.wasm"
+
 // buildManifest produces the SSR manifest for a WASI-stdio server bundle (the
-// shape Javy emits). Static prefixes are pulled from the framework registry so
-// immutable assets are served directly rather than re-rendered.
+// shape Javy emits).
 func buildManifest(framework string) *websiteSpec.Manifest {
+	return buildManifestFor(framework, websiteSpec.ABIWasiStdio, websiteSpec.DefaultHandlerPath)
+}
+
+// buildComponentManifest produces the SSR manifest for a Component Model server
+// bundle (StarlingMonkey / wasi:http), served by a registered ComponentRuntime.
+func buildComponentManifest(framework string) *websiteSpec.Manifest {
+	return buildManifestFor(framework, websiteSpec.ABIComponent, ComponentHandlerPath)
+}
+
+// buildManifestFor builds the SSR manifest for a given handler ABI + handler
+// path. Static prefixes are pulled from the framework registry so immutable
+// assets are served directly rather than re-rendered.
+func buildManifestFor(framework, abi, handler string) *websiteSpec.Manifest {
 	m := &websiteSpec.Manifest{
 		Render:    websiteSpec.RenderSSR,
-		ABI:       websiteSpec.ABIWasiStdio,
+		ABI:       abi,
 		Framework: framework,
-		Handler:   websiteSpec.DefaultHandlerPath,
+		Handler:   handler,
 		Routes: []websiteSpec.Route{
 			{Pattern: "/api/", Type: websiteSpec.RouteAPI},
 			{Pattern: "/", Type: websiteSpec.RouteSSR},
@@ -149,7 +166,7 @@ func buildSiteZip(siteDir string, handlerZip []byte, manifest *websiteSpec.Manif
 		}
 	}
 
-	if err := add(websiteSpec.DefaultHandlerPath, handlerZip); err != nil {
+	if err := add(manifest.Handler, handlerZip); err != nil {
 		return nil, err
 	}
 	mdata, err := manifest.Marshal()

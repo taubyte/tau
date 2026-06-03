@@ -30,58 +30,66 @@ slot for a richer, component-model JS engine, so bundles can target it and the
 platform can grow a backend without breaking the Javy tier. No engine swap
 required to land the seam.
 
-### 3. Streaming ABI — ⬜
-The `wasi-stdio` ABI is request → **full** response (buffered). RSC streaming and
-large/`ReadableStream` bodies need a streaming path. Design:
-- Substrate: instead of reading all of stdout then writing, stream stdout → the
-  HTTP response as it's produced (chunked). Add `vm.Config` stdout streaming and
-  a `serveSSRStream` that copies incrementally.
-- Manifest: a `stream: true` hint (or infer from a `Transfer-Encoding` in the
-  response envelope's headers preamble).
-- Independent of the engine; benefits Javy and component engines alike.
+### 3. Streaming — ◑ (partly already done; the rest is coupled)
+- **Function ABI already streams.** Those handlers write straight to the HTTP
+  response writer via the go-sdk HTTP event, so incremental writes reach the
+  client as produced — no work needed.
+- **wasi-stdio is buffered.** `serveSSRStdio` runs the module to completion, then
+  writes the JSON envelope. True streaming there needs two things:
+  1. **VM-layer plumbing** — run `_start` in a goroutine with stdout on an
+     os.Pipe, stream the read side to the response, and close only the write-end
+     on completion to signal EOF. The current `pipe` closes both ends, so this
+     needs a write-half close in `pkg/vm/service/wazero`. A header-preamble wire
+     format (`{"status","headers"}\n` then raw body) lets status/headers go out
+     before the body.
+  2. **A producer** — the JS handler must emit incrementally. Hono/`fetch` buffer
+     the `Response`; real streaming wants `ReadableStream`, which comes with the
+     richer engine (step 4). A hand-written stdio handler can stream once (1)
+     lands.
 
-### 4. Engine swap → component-model JS engine (StarlingMonkey) — ⬜ (the big one)
-Javy/QuickJS is a small engine with a thin Web-API surface we polyfill by hand.
-Real Next.js (and rich frameworks) want a near-browser surface: full WebCrypto,
-streams, `fetch`, `AsyncLocalStorage`, etc. **StarlingMonkey** (SpiderMonkey on
-WASM, used by Fastly Compute) provides that.
+  So stdio streaming is best built **with** the VM-engine work, where the pipe
+  lifecycle can be verified — not blind. The seam is the engine registry (step 2):
+  a streaming engine slots in alongside the buffered one.
 
-**The core obstacle:** StarlingMonkey is a **WebAssembly Component** (Component
-Model + WASI Preview 2, `wasi:http`). Taubyte's VM is **wazero**, which runs
-**core modules + WASI Preview 1** and does **not** support the Component Model.
-So the engine can't just be dropped in.
+### 4. Engine swap → component-model JS engine (StarlingMonkey) — ✅ (built + proven)
+Javy/QuickJS is a small engine with a thin Web-API surface we polyfill by hand,
+and its bytecode compiler **crashes** on heavy bundles (React `react-dom/server`
+traps with "stack underflow"). Real Next.js (and rich frameworks) want a
+near-browser surface: full WebCrypto, streams, `fetch`, `AsyncLocalStorage`.
+**StarlingMonkey** (SpiderMonkey on WASM) provides that, and runs the exact React
+SSR that crashed QuickJS.
 
-Options:
-- **A — add a component-model backend to the VM layer.** Introduce a second
-  runtime (e.g. `wasmtime-go`) behind a `vm.Engine` interface; route
-  `ABIComponent` bundles to it via `wasi:http`. Largest surface area (a new
-  dependency + host wiring), but the canonical path and reuses upstream
-  StarlingMonkey unchanged.
-- **B — a WASI-P1 build of the engine.** Build SpiderMonkey/StarlingMonkey (or a
-  QuickJS superset like `wasmedge-quickjs`) as a P1 core module wazero can run,
-  with a stdio/host bridge. Keeps wazero; heavy engine-build work, less upstream
-  support.
-- **C — pre-initialize with `weval`/wizer.** Orthogonal optimization (cold-start),
-  still wasmtime-oriented.
+**The obstacle that shaped the design:** StarlingMonkey is a **WebAssembly
+Component** (Component Model + WASI Preview 2, `wasi:http`). wazero (Taubyte's
+default VM) runs **core modules + WASI Preview 1** and can't host components —
+**and neither can the `wasmtime-go` bindings** (verified: v25 exposes no
+Component Model API). So an in-process Go host is not available.
 
-**Recommendation:** Option A. The seam is already in place and compile-checked:
+**What shipped:** the reference backend `services/substrate/components/http/
+website/wasmtimehttp` (build tag `wasmtime_component`) shells out to the
+**`wasmtime` CLI**, whose `wasmtime serve` implements the complete `wasi:http`
+host. It lazily spawns one `wasmtime serve` per component (keyed by DAG cid,
+cached) and reverse-proxies requests to it; `init()` registers it via
+`website.RegisterComponentRuntime`, so the wasmtime dependency stays out of the
+default (pure-Go/wazero) build. Until a backend registers, `component` assets
+fail fast.
 
-- `serveSSR` dispatches through the `ssrEngines` registry (step 2).
-- `ABIComponent` has a concrete contract — the `ComponentRuntime` interface in
-  `services/substrate/components/http/website/component.go`:
-  `ServeHTTP(ctx, key, component []byte, w, r, limits)` + `Name()`.
-- A backend lives in its own package (so the wasmtime dependency stays out of the
-  substrate core) and enables itself with `website.RegisterComponentRuntime(...)`
-  from `init()`. Until then, `component` assets fail fast.
+**Producer:** `taubyte-ssr-adapter --engine starlingmonkey` bundles the app with
+esbuild (no Web-API polyfill — StarlingMonkey is native), wraps it in a
+fetch-event shim, and runs `jco componentize` against the vendored
+`wasi:http/proxy` WIT to emit a component; the manifest records `abi:"component"`
+and the raw `.wasm` handler.
 
-So building the engine is: implement `ComponentRuntime` over `wasmtime-go` with
-the Component Model + `wasi:http`, embed/build StarlingMonkey, and register it.
-No changes to the static / function / Javy paths. This is the part that needs a
-wasm/Rust/wasmtime environment to build and verify.
+**Validated end to end** (esbuild + jco/StarlingMonkey + wasmtime 27): a fetch
+handler and a React `renderToString` page both componentize, serve under
+`wasmtime serve`, and round-trip through the substrate backend — including native
+`crypto.randomUUID()`. Toolchain notes: match the WIT version to the engine
+(`wasi:http@0.2.3` here) and serve with `-S cli=y` (StarlingMonkey's stdio
+feature imports `wasi:cli`).
 
-This is a platform-level effort (new runtime dependency, WASI-P2/`wasi:http`
-host, build pipeline for the engine) — designed here, built in an environment
-with the wasm/Rust/wasmtime toolchain.
+Remaining: per-request streaming through the proxy (works for whole responses
+today), subprocess lifecycle/pooling under load, and wiring real `env` bindings
+(KV/secrets) into the component.
 
 ### 5. Next.js on the richer engine — ⬜
 With a component engine + streaming, feed `next-on-pages` (or OpenNext) edge

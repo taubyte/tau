@@ -16,10 +16,12 @@ import (
 // Javy/wasi-stdio tier polyfills by hand.
 //
 // wazero (Taubyte's default VM) runs core modules + WASI Preview 1 and cannot
-// run components, so a component backend is a separate runtime (e.g. wasmtime-go
-// with the Component Model + wasi:http). It lives in its own package/build and
-// registers here via RegisterComponentRuntime, keeping the wasmtime dependency
-// out of the substrate core. Until a backend registers, ABIComponent assets fail
+// run components; the wasmtime-go bindings can't either (no Component Model API).
+// So the reference backend (./wasmtimehttp, build tag `wasmtime_component`)
+// shells out to the `wasmtime` CLI — whose `wasmtime serve` implements the full
+// wasi:http host — and reverse-proxies to it. It lives in its own package/build
+// and registers here via RegisterComponentRuntime, keeping that dependency out
+// of the substrate core. Until a backend registers, ABIComponent assets fail
 // fast (see engine.go / serveSSR). See docs/js-runtime-roadmap.md.
 type ComponentRuntime interface {
 	// ServeHTTP renders r through the component server bundle and writes the

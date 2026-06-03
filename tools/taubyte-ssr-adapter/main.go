@@ -49,6 +49,9 @@ var nodeBuffer string
 //go:embed runtime/node-modules/cloudflare-workers.js
 var cloudflareWorkers string
 
+//go:embed shim/component.js
+var componentShim string
+
 func main() {
 	if err := run(); err != nil {
 		fmt.Fprintln(os.Stderr, "taubyte-ssr-adapter:", err)
@@ -65,6 +68,7 @@ func run() error {
 	node := flag.Bool("node", false, "inject Node-compat shims (process/Buffer/global/timers) — needed by Next.js edge handlers")
 	site := flag.String("site", "", "directory of static/prerendered assets (e.g. SvelteKit's .svelte-kit/cloudflare) to assemble with the handler into a complete website build.zip at --out")
 	assetMax := flag.Int64("asset-embed-max", defaultAssetEmbedMax, "max size (bytes) of a text-like --site asset to embed into the bundle for env.ASSETS resolution; larger assets are left to the static layer")
+	engine := flag.String("engine", "javy", "JS engine: `javy` (QuickJS, wasi-stdio — small, no Web APIs) or `starlingmonkey` (SpiderMonkey wasi:http component via jco — full Web APIs + heavy React SSR)")
 	flag.Parse()
 
 	if *entry == "" {
@@ -72,6 +76,12 @@ func run() error {
 	}
 	if *mode != "handler" && *mode != "fetch" {
 		return fmt.Errorf("--mode must be `handler` or `fetch`")
+	}
+	if *engine != "javy" && *engine != "starlingmonkey" {
+		return fmt.Errorf("--engine must be `javy` or `starlingmonkey`")
+	}
+	if *engine == "starlingmonkey" && *mode != "fetch" {
+		return fmt.Errorf("--engine starlingmonkey requires --mode fetch (a Web-standard fetch handler)")
 	}
 	entryAbs, err := filepath.Abs(*entry)
 	if err != nil {
@@ -132,16 +142,18 @@ func run() error {
 
 	bridge := fmt.Sprintf("import app from %q;\n", entryAbs)
 	if *mode == "fetch" {
-		// Install the Web API polyfill (Request/Response/Headers/URL) before the
-		// app runs, then dispatch through the Web-standard fetch handler.
-		p, err := writePolyfill("web.js", webPolyfill)
-		if err != nil {
-			return err
+		// The Javy tier polyfills Web APIs (web.js); StarlingMonkey provides them
+		// natively, so install web.js only for Javy.
+		if *engine == "javy" {
+			p, err := writePolyfill("web.js", webPolyfill)
+			if err != nil {
+				return err
+			}
+			prelude += fmt.Sprintf("import %q;\n", p)
 		}
-		prelude += fmt.Sprintf("import %q;\n", p)
 
 		// Edge adapters (SvelteKit/Next on Cloudflare) import the Workers runtime
-		// virtual module; resolve it to a binding-less shim.
+		// virtual module; resolve it to a binding-less shim (both engines).
 		cf, err := writePolyfill("cloudflare-workers.mjs", cloudflareWorkers)
 		if err != nil {
 			return err
@@ -149,10 +161,8 @@ func run() error {
 		aliases = append(aliases, "--alias:cloudflare:workers="+cf)
 
 		// Embed text-like static/prerendered assets so env.ASSETS resolves them
-		// in-process — the wasi-stdio bundle can't call back to the host mid-render.
-		// Bounded by a per-file cap; larger/binary assets are served by the static
-		// layer. Lets a standalone bundle serve its own prerendered pages and gives
-		// SvelteKit's read() real bytes.
+		// in-process (the host bundle can't call back mid-render). Bounded by a
+		// per-file cap; larger/binary assets are served by the static layer.
 		if *site != "" {
 			mod, n, err := buildAssetModule(*site, *assetMax)
 			if err != nil {
@@ -168,7 +178,16 @@ func run() error {
 			}
 		}
 
-		bridge = prelude + bridge + fmt.Sprintf("import { serveFetch } from %q;\nserveFetch(app);\n", shimPath)
+		if *engine == "starlingmonkey" {
+			// Dispatch through the fetch-event bridge (wasi:http/proxy).
+			csp, err := writePolyfill("component-shim.mjs", componentShim)
+			if err != nil {
+				return err
+			}
+			bridge = prelude + bridge + fmt.Sprintf("import { serveComponent } from %q;\nserveComponent(app);\n", csp)
+		} else {
+			bridge = prelude + bridge + fmt.Sprintf("import { serveFetch } from %q;\nserveFetch(app);\n", shimPath)
+		}
 	} else {
 		bridge = prelude + bridge + fmt.Sprintf("import { serve } from %q;\nserve(app);\n", shimPath)
 	}
@@ -189,41 +208,58 @@ func run() error {
 		}
 	}
 
-	// 3. Compile JS -> WASM (WASI stdin/stdout) with Javy.
-	wasmPath := filepath.Join(tmp, "module.wasm")
-	eventLoop, err := javyBuild(bundlePath, wasmPath)
-	if err != nil {
-		return fmt.Errorf("javy build failed (is javy installed?): %w", err)
-	}
-	if !eventLoop {
-		// The build succeeded but without the event loop, so QuickJS will trap
-		// ("Pending jobs in the event queue") the moment a handler awaits. fetch
-		// mode is always async (serveFetch resolves a Promise), so refuse it
-		// outright; handler mode may be fully synchronous, so warn and proceed.
-		const hint = "javy could not enable the event loop, so async handlers (any Promise/await) will trap at runtime. " +
-			"Upgrade Javy to >= 5.0 (uses `build -J event-loop=y`) or set TAUBYTE_JAVY_ARGS to an event-loop-enabling invocation"
-		if *mode == "fetch" {
-			return fmt.Errorf("%s. fetch mode is inherently async and cannot run without it", hint)
+	// 3. Compile the bundle to the engine's handler artifact.
+	var handler []byte // the handler asset bytes (a wasm zip for Javy; a raw component for StarlingMonkey)
+	manifest := buildManifest(*framework)
+	if *engine == "starlingmonkey" {
+		// StarlingMonkey (SpiderMonkey) -> a wasi:http/proxy component via jco.
+		witDir, err := writeWIT(tmp)
+		if err != nil {
+			return err
 		}
-		fmt.Fprintln(os.Stderr, "taubyte-ssr-adapter: WARNING: "+hint+". Only fully-synchronous handlers will work.")
+		compPath := filepath.Join(tmp, "handler.component.wasm")
+		if err := componentizeJS(bundlePath, compPath, witDir); err != nil {
+			return fmt.Errorf("componentize failed (is jco installed?): %w", err)
+		}
+		handler, err = os.ReadFile(compPath)
+		if err != nil {
+			return err
+		}
+		manifest = buildComponentManifest(*framework)
+	} else {
+		// Javy (QuickJS) -> a WASI-stdio module, packaged as main.wasm in a zip.
+		wasmPath := filepath.Join(tmp, "module.wasm")
+		eventLoop, err := javyBuild(bundlePath, wasmPath)
+		if err != nil {
+			return fmt.Errorf("javy build failed (is javy installed?): %w", err)
+		}
+		if !eventLoop {
+			// The build succeeded but without the event loop, so QuickJS will trap
+			// ("Pending jobs in the event queue") the moment a handler awaits. fetch
+			// mode is always async, so refuse it; handler mode may be synchronous.
+			const hint = "javy could not enable the event loop, so async handlers (any Promise/await) will trap at runtime. " +
+				"Upgrade Javy to >= 5.0 (uses `build -J event-loop=y`) or set TAUBYTE_JAVY_ARGS to an event-loop-enabling invocation"
+			if *mode == "fetch" {
+				return fmt.Errorf("%s. fetch mode is inherently async and cannot run without it", hint)
+			}
+			fmt.Fprintln(os.Stderr, "taubyte-ssr-adapter: WARNING: "+hint+". Only fully-synchronous handlers will work.")
+		}
+		wasm, err := os.ReadFile(wasmPath)
+		if err != nil {
+			return err
+		}
+		if handler, err = buildHandlerZip(wasm); err != nil {
+			return err
+		}
 	}
 
-	wasm, err := os.ReadFile(wasmPath)
-	if err != nil {
-		return err
-	}
-
-	// 4. Package and write outputs. By default --out is the handler.wasm.zip; with
+	// 4. Package and write outputs. By default --out is the handler artifact; with
 	// --site it becomes a complete, deployable website build.zip (static assets +
 	// handler + manifest), so prerendered pages serve from the static layer and
 	// dynamic routes hit the bundle.
-	handlerZip, err := buildHandlerZip(wasm)
-	if err != nil {
-		return err
-	}
-	outBytes, kind := handlerZip, "handler.wasm.zip"
+	outBytes, kind := handler, "handler ("+string(manifest.ABI)+")"
 	if *site != "" {
-		outBytes, err = buildSiteZip(*site, handlerZip, buildManifest(*framework))
+		outBytes, err = buildSiteZip(*site, handler, manifest)
 		if err != nil {
 			return fmt.Errorf("assembling website from `%s` failed with: %w", *site, err)
 		}
@@ -237,7 +273,7 @@ func run() error {
 	}
 
 	if *manifestOut != "" {
-		data, err := buildManifest(*framework).Marshal()
+		data, err := manifest.Marshal()
 		if err != nil {
 			return err
 		}
