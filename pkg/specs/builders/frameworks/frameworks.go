@@ -85,6 +85,9 @@ func (f *Framework) Manifest() *websiteSpec.Manifest {
 		Static:    append([]string(nil), f.StaticPrefixes...),
 	}
 	if f.IsSSR() {
+		// JS server bundles are compiled to wasm by the adapter via Javy, whose
+		// I/O is WASI stdio based.
+		m.ABI = websiteSpec.ABIWasiStdio
 		m.Routes = []websiteSpec.Route{
 			{Pattern: "/api/", Type: websiteSpec.RouteAPI},
 			{Pattern: "/", Type: websiteSpec.RouteSSR},

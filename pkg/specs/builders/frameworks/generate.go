@@ -47,11 +47,7 @@ func Generate(f *Framework) (*Generated, error) {
 
 	var script string
 	if f.IsSSR() {
-		manifestJSON, err := manifest.Marshal()
-		if err != nil {
-			return nil, fmt.Errorf("encoding ssr manifest failed with: %w", err)
-		}
-		script = ssrScript(f, string(manifestJSON))
+		script = ssrScript(f)
 	} else {
 		script = staticScript(f)
 	}
@@ -105,9 +101,9 @@ func staticScript(f *Framework) string {
 }
 
 // ssrScript builds a server side rendered framework: install, build, publish
-// static assets, compile the server bundle to WebAssembly via the SSR adapter,
-// and drop the manifest the runtime reads.
-func ssrScript(f *Framework, manifestJSON string) string {
+// static assets, then compile the server bundle to WebAssembly via the SSR
+// adapter, which emits both the handler and the manifest the runtime reads.
+func ssrScript(f *Framework) string {
 	var b strings.Builder
 	b.WriteString("#!/bin/sh\n")
 	b.WriteString(fmt.Sprintf("# Auto-generated Taubyte build for %s (ssr)\n", f.Title))
@@ -120,14 +116,11 @@ func ssrScript(f *Framework, manifestJSON string) string {
 		b.WriteString("# publish immutable assets so they are served directly, never re-rendered\n")
 		b.WriteString(fmt.Sprintf("cp -r %s/. \"$OUT\"/ 2>/dev/null || true\n", shellQuote(f.StaticDir)))
 	}
-	b.WriteString("# compile the server bundle to WebAssembly. The adapter is provided by the\n")
-	b.WriteString("# build image; override it with TAUBYTE_SSR_ADAPTER.\n")
+	b.WriteString("# compile the server bundle to WebAssembly (handler + manifest). The\n")
+	b.WriteString("# adapter is provided by the build image; override it with TAUBYTE_SSR_ADAPTER.\n")
 	b.WriteString(`: "${TAUBYTE_SSR_ADAPTER:=taubyte-ssr-adapter}` + "\"\n")
-	b.WriteString(fmt.Sprintf("\"$TAUBYTE_SSR_ADAPTER\" --framework %s --entry %s --out \"$OUT/%s\"\n",
-		shellQuote(f.Name), shellQuote(f.ServerEntry), websiteSpec.DefaultHandlerPath))
-	b.WriteString(fmt.Sprintf("cat > \"$OUT/%s\" <<'TAUBYTE_SSR_EOF'\n", websiteSpec.ManifestPath))
-	b.WriteString(manifestJSON)
-	b.WriteString("\nTAUBYTE_SSR_EOF\n")
+	b.WriteString(fmt.Sprintf("\"$TAUBYTE_SSR_ADAPTER\" --framework %s --entry %s --out \"$OUT/%s\" --manifest \"$OUT/%s\"\n",
+		shellQuote(f.Name), shellQuote(f.ServerEntry), websiteSpec.DefaultHandlerPath, websiteSpec.ManifestPath))
 	return b.String()
 }
 

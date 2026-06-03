@@ -47,25 +47,22 @@ func TestGenerateSSR(t *testing.T) {
 	if !strings.Contains(script, "TAUBYTE_SSR_ADAPTER") {
 		t.Errorf("ssr script missing adapter invocation:\n%s", script)
 	}
-	if !strings.Contains(script, websiteSpec.DefaultHandlerPath) {
+	if !strings.Contains(script, "--out \"$OUT/"+websiteSpec.DefaultHandlerPath) {
 		t.Errorf("ssr script missing handler output path:\n%s", script)
 	}
-	if !strings.Contains(script, websiteSpec.ManifestPath) {
-		t.Errorf("ssr script missing manifest path:\n%s", script)
+	if !strings.Contains(script, "--manifest \"$OUT/"+websiteSpec.ManifestPath) {
+		t.Errorf("ssr script missing manifest output path:\n%s", script)
 	}
-	// The embedded manifest (between the heredoc markers) must be parseable.
-	const marker = "TAUBYTE_SSR_EOF"
-	open := strings.Index(script, marker+"'\n")
-	if open < 0 {
-		t.Fatalf("no manifest heredoc found in script:\n%s", script)
+	// The framework's manifest must be a valid wasi-stdio SSR manifest.
+	if g.Manifest.ABIOrDefault() != websiteSpec.ABIWasiStdio {
+		t.Errorf("ssr manifest abi = %q, want %q", g.Manifest.ABIOrDefault(), websiteSpec.ABIWasiStdio)
 	}
-	body := script[open+len(marker)+2:]
-	close := strings.Index(body, "\n"+marker)
-	if close < 0 {
-		t.Fatalf("unterminated manifest heredoc in script:\n%s", script)
+	data, err := g.Manifest.Marshal()
+	if err != nil {
+		t.Fatal(err)
 	}
-	if _, err := websiteSpec.ParseManifest([]byte(body[:close])); err != nil {
-		t.Errorf("embedded manifest is invalid: %v", err)
+	if _, err := websiteSpec.ParseManifest(data); err != nil {
+		t.Errorf("framework manifest is invalid: %v", err)
 	}
 }
 

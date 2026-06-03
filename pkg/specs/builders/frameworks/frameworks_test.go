@@ -91,6 +91,9 @@ func TestFrameworkManifest(t *testing.T) {
 	if m.Framework != "nextjs" {
 		t.Errorf("framework = %q", m.Framework)
 	}
+	if m.ABIOrDefault() != websiteSpec.ABIWasiStdio {
+		t.Errorf("ssr framework manifest abi = %q, want wasi-stdio", m.ABIOrDefault())
+	}
 	// SSR frameworks get default api + catch-all routes.
 	if m.Classify("/api/users") != websiteSpec.RouteAPI {
 		t.Error("expected /api/users to classify as api")
