@@ -99,12 +99,20 @@ func (w *Website) isStaticAsset(p string) bool {
 }
 
 // serveSSR renders a request through the WebAssembly server bundle, dispatching
-// to the handler ABI declared by the manifest.
+// to the handler ABI declared by the manifest. Unsupported ABIs (e.g. a
+// component-model engine this substrate build can't run yet) fail fast.
 func (w *Website) serveSSR(_w goHttp.ResponseWriter, r *goHttp.Request) (time.Time, error) {
-	if w.ssr.ABIOrDefault() == websiteSpec.ABIWasiStdio {
+	switch w.ssr.ABIOrDefault() {
+	case websiteSpec.ABIFunction:
+		return w.serveSSRFunction(_w, r)
+	case websiteSpec.ABIWasiStdio:
 		return w.serveSSRStdio(_w, r)
+	default:
+		return time.Time{}, fmt.Errorf(
+			"website `%s`: handler abi `%s` is not supported by this substrate build (supports `%s`, `%s`)",
+			w.config.Name, w.ssr.ABIOrDefault(), websiteSpec.ABIFunction, websiteSpec.ABIWasiStdio,
+		)
 	}
-	return w.serveSSRFunction(_w, r)
 }
 
 // serveSSRFunction renders via the function ABI: instantiate a pooled runtime,

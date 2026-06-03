@@ -52,6 +52,14 @@ const (
 	// JavaScript engine compiled to WebAssembly (e.g. Javy/QuickJS), whose I/O
 	// is WASI stdio based, and is what the taubyte-ssr-adapter targets.
 	ABIWasiStdio = "wasi-stdio"
+
+	// ABIComponent is a WebAssembly Component (Component Model + WASI) that
+	// handles requests via a wasi:http-style export. It is the slot for a richer
+	// JS engine (StarlingMonkey/SpiderMonkey) with a full Web-API surface. The
+	// manifest may declare it, but a given substrate build only serves it once a
+	// component-model runtime backend is wired in (see docs/js-runtime-roadmap.md);
+	// otherwise serving fails fast with a clear "unsupported" error.
+	ABIComponent = "component"
 )
 
 const (
@@ -213,9 +221,9 @@ func (m *Manifest) Validate() error {
 			if m.Entry == "" {
 				return fmt.Errorf("ssr manifest is missing an entry point")
 			}
-		case ABIWasiStdio:
+		case ABIWasiStdio, ABIComponent:
 		default:
-			return fmt.Errorf("invalid handler abi `%s`, expected `%s` or `%s`", m.ABI, ABIFunction, ABIWasiStdio)
+			return fmt.Errorf("invalid handler abi `%s`, expected `%s`, `%s` or `%s`", m.ABI, ABIFunction, ABIWasiStdio, ABIComponent)
 		}
 		if m.Handler == "" && m.HandlerCID == "" {
 			return fmt.Errorf("ssr manifest is missing a handler (path or cid)")

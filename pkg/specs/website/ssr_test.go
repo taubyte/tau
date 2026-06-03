@@ -104,6 +104,11 @@ func TestManifestABI(t *testing.T) {
 		t.Errorf("abi = %q, want %q", m.ABIOrDefault(), ABIWasiStdio)
 	}
 
+	// The component ABI (future richer engine) is accepted by the spec.
+	if _, err := ParseManifest([]byte(`{"render":"ssr","abi":"component","handlerCid":"bafy"}`)); err != nil {
+		t.Errorf("component abi should be accepted by the spec: %v", err)
+	}
+
 	// An unknown ABI is rejected.
 	if _, err := ParseManifest([]byte(`{"render":"ssr","abi":"v8-isolate"}`)); err == nil {
 		t.Error("expected unknown abi to be rejected")

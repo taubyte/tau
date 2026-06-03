@@ -155,4 +155,57 @@
       return Promise.reject(new Error("fetch is not available in this runtime yet"));
     };
   }
+
+  // base64 (binary strings), commonly used by framework runtimes.
+  if (typeof g.btoa === "undefined") {
+    const B = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    g.btoa = function (s) {
+      s = String(s);
+      let o = "";
+      for (let i = 0; i < s.length; i += 3) {
+        const a = s.charCodeAt(i), b = i + 1 < s.length ? s.charCodeAt(i + 1) : 0, c = i + 2 < s.length ? s.charCodeAt(i + 2) : 0;
+        o += B[a >> 2] + B[((a & 3) << 4) | (b >> 4)];
+        o += i + 1 < s.length ? B[((b & 15) << 2) | (c >> 6)] : "=";
+        o += i + 2 < s.length ? B[c & 63] : "=";
+      }
+      return o;
+    };
+    g.atob = function (s) {
+      s = String(s).replace(/[^A-Za-z0-9+/]/g, "");
+      let o = "";
+      for (let i = 0; i < s.length; i += 4) {
+        const n = (B.indexOf(s[i]) << 18) | (B.indexOf(s[i + 1]) << 12) | ((B.indexOf(s[i + 2]) & 63) << 6) | (B.indexOf(s[i + 3]) & 63);
+        o += String.fromCharCode((n >> 16) & 255);
+        if (s[i + 2] !== undefined) o += String.fromCharCode((n >> 8) & 255);
+        if (s[i + 3] !== undefined) o += String.fromCharCode(n & 255);
+      }
+      return o;
+    };
+  }
+
+  // structuredClone (deep clone; JSON fallback — no cycles/functions/blobs).
+  if (typeof g.structuredClone === "undefined") {
+    g.structuredClone = function (v) { return v == null ? v : JSON.parse(JSON.stringify(v)); };
+  }
+
+  // crypto: WARNING — Math.random based, NOT cryptographically secure. Provided
+  // so frameworks that call randomUUID/getRandomValues for non-security ids
+  // (cache keys, request ids) don't crash on Javy. Real WebCrypto arrives with
+  // the component-model engine (see docs/js-runtime-roadmap.md). Do not rely on
+  // this for security.
+  if (typeof g.crypto === "undefined") g.crypto = {};
+  if (typeof g.crypto.getRandomValues === "undefined") {
+    g.crypto.getRandomValues = function (arr) {
+      for (let i = 0; i < arr.length; i++) arr[i] = (Math.random() * 256) | 0;
+      return arr;
+    };
+  }
+  if (typeof g.crypto.randomUUID === "undefined") {
+    g.crypto.randomUUID = function () {
+      return "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, function (c) {
+        const r = (Math.random() * 16) | 0;
+        return (c === "x" ? r : (r & 0x3) | 0x8).toString(16);
+      });
+    };
+  }
 })(globalThis);
