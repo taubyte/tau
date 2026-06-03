@@ -8,7 +8,8 @@
 // Next.js need a Web-API polyfill bundled in (see README.md).
 //
 // Pipeline: entry.js + shim  --esbuild-->  bundle.js  --javy-->  module.wasm
-//                                                              --> handler.wasm.zip
+//
+//	--> handler.wasm.zip
 //
 // PROTOTYPE STATUS: the packaging and manifest emission are covered by tests.
 // The esbuild/javy steps shell out to those tools (not bundled here), and the
@@ -24,10 +25,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 //go:embed shim/shim.js
 var shimSource string
+
+//go:embed runtime/web.js
+var webPolyfill string
 
 func main() {
 	if err := run(); err != nil {
@@ -37,14 +42,18 @@ func main() {
 }
 
 func run() error {
-	entry := flag.String("entry", "", "path to the app entry (a module default-exporting { fetch })")
+	entry := flag.String("entry", "", "path to the app entry module")
 	out := flag.String("out", "handler.wasm.zip", "output path for the server bundle zip")
 	manifestOut := flag.String("manifest", "", "optional path to also write the SSR manifest (ssr.json)")
 	framework := flag.String("framework", "js", "framework name recorded in the manifest")
+	mode := flag.String("mode", "handler", "entry shape: `handler` (default-export handle(req)->res) or `fetch` (Web-standard app.fetch(Request), e.g. Hono)")
 	flag.Parse()
 
 	if *entry == "" {
 		return fmt.Errorf("--entry is required")
+	}
+	if *mode != "handler" && *mode != "fetch" {
+		return fmt.Errorf("--mode must be `handler` or `fetch`")
 	}
 	entryAbs, err := filepath.Abs(*entry)
 	if err != nil {
@@ -62,8 +71,22 @@ func run() error {
 	if err := os.WriteFile(shimPath, []byte(shimSource), 0o644); err != nil {
 		return err
 	}
+
+	bridge := fmt.Sprintf("import app from %q;\n", entryAbs)
+	if *mode == "fetch" {
+		// Install the Web API polyfill (Request/Response/Headers/URL) before the
+		// app runs, then dispatch through the Web-standard fetch handler.
+		polyfillPath := filepath.Join(tmp, "web.js")
+		if err := os.WriteFile(polyfillPath, []byte(webPolyfill), 0o644); err != nil {
+			return err
+		}
+		bridge = fmt.Sprintf("import %q;\n", polyfillPath) + bridge +
+			fmt.Sprintf("import { serveFetch } from %q;\nserveFetch(app);\n", shimPath)
+	} else {
+		bridge += fmt.Sprintf("import { serve } from %q;\nserve(app);\n", shimPath)
+	}
+
 	bridgePath := filepath.Join(tmp, "bridge.js")
-	bridge := fmt.Sprintf("import app from %q;\nimport { serve } from %q;\nserve(app);\n", entryAbs, shimPath)
 	if err := os.WriteFile(bridgePath, []byte(bridge), 0o644); err != nil {
 		return err
 	}
@@ -121,24 +144,52 @@ func bundleJS(entry, out string) error {
 	return runCmd("npx", append([]string{"--yes", "esbuild"}, args...)...)
 }
 
-// javyBuild compiles a JS module to a WASI WASM module with Javy. The
-// subcommand was renamed across versions (`compile` -> `build`), so both are
-// tried; output is surfaced only if neither works.
+// javyBuild compiles a JS module to a WASI WASM module with Javy, with the
+// event loop enabled so async handlers (Hono's app.fetch, etc.) — whose
+// promises sit on QuickJS's job queue — are drained before the module exits.
+//
+// The subcommand (`build` vs `compile`) and the event-loop flag differ across
+// Javy versions, so the enabled forms are tried first (preferred) and a plain
+// build only as a last resort. Override the whole invocation with
+// TAUBYTE_JAVY_ARGS (space-separated; %IN and %OUT are substituted).
 func javyBuild(in, out string) error {
 	javy, err := exec.LookPath("javy")
 	if err != nil {
 		return fmt.Errorf("javy not found on PATH: %w", err)
 	}
 
+	var attempts [][]string
+	if override := os.Getenv("TAUBYTE_JAVY_ARGS"); strings.TrimSpace(override) != "" {
+		fields := strings.Fields(override)
+		for i, f := range fields {
+			switch f {
+			case "%IN":
+				fields[i] = in
+			case "%OUT":
+				fields[i] = out
+			}
+		}
+		attempts = append(attempts, fields)
+	}
+	attempts = append(attempts,
+		// event-loop enabled (preferred) — modern `build`, then legacy `compile`
+		[]string{"build", "-J", "event-loop=y", in, "-o", out},
+		[]string{"build", "--enable-experimental-event-loop", in, "-o", out},
+		[]string{"compile", "--enable-experimental-event-loop", in, "-o", out},
+		// plain (async handlers will trap at runtime) — last resort
+		[]string{"build", in, "-o", out},
+		[]string{"compile", in, "-o", out},
+	)
+
 	var last string
-	for _, sub := range []string{"build", "compile"} {
-		combined, err := exec.Command(javy, sub, in, "-o", out).CombinedOutput()
+	for _, args := range attempts {
+		combined, err := exec.Command(javy, args...).CombinedOutput()
 		if err == nil {
 			return nil
 		}
-		last = fmt.Sprintf("javy %s: %v\n%s", sub, err, combined)
+		last = fmt.Sprintf("javy %s: %v\n%s", strings.Join(args, " "), err, combined)
 	}
-	return fmt.Errorf("javy build and compile both failed:\n%s", last)
+	return fmt.Errorf("javy build failed (tried event-loop variants):\n%s", last)
 }
 
 func runCmd(name string, args ...string) error {

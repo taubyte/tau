@@ -96,3 +96,50 @@ export function serve(handler) {
     writeStdout(envelope(result));
   }
 }
+
+// serveFetch wires a Web-standard fetch handler (app.fetch(Request) -> Response,
+// e.g. a Hono app) to the stdio ABI. Requires the Web API polyfill (web.js) to
+// have installed Request/Response/Headers/URL on globalThis.
+export function serveFetch(app) {
+  const fetchFn = typeof app === "function" ? app : app && app.fetch;
+  if (typeof fetchFn !== "function") {
+    writeStdout(envelope({ status: 500, body: "adapter: app has no fetch handler" }));
+    return;
+  }
+
+  const fail = (e) =>
+    writeStdout(envelope({ status: 500, body: "adapter: " + (e && e.message ? e.message : String(e)) }));
+
+  let payload;
+  try {
+    payload = JSON.parse(readAllStdin() || "{}");
+  } catch (e) {
+    writeStdout(envelope({ status: 400, body: "adapter: bad request payload" }));
+    return;
+  }
+
+  const u = payload.url || "/";
+  const url = u.indexOf("http") === 0 ? u : "http://localhost" + (u[0] === "/" ? u : "/" + u);
+  const method = (payload.method || "GET").toUpperCase();
+  const req = new Request(url, {
+    method,
+    headers: payload.headers || {},
+    body: method === "GET" || method === "HEAD" ? undefined : payload.body,
+  });
+
+  Promise.resolve(fetchFn(req))
+    .then(async (res) => {
+      const headers = {};
+      if (res && res.headers && typeof res.headers.forEach === "function") {
+        res.headers.forEach((v, k) => (headers[k] = v));
+      }
+      const text =
+        res && typeof res.text === "function"
+          ? await res.text()
+          : res && res._body != null
+          ? String(res._body)
+          : "";
+      writeStdout(JSON.stringify({ status: (res && res.status) || 200, headers, body: text }));
+    })
+    .catch(fail);
+}

@@ -43,26 +43,28 @@ Then zip your static output together with `__taubyte__/handler.wasm.zip` and
 `__taubyte__/ssr.json` into the website `build.zip` — the runtime serves static
 files directly and routes everything else to the bundle.
 
-## Hono / Next.js (needs a Web-API polyfill)
+## Web-standard frameworks (Hono, Remix, SvelteKit) — `--mode fetch`
 
-Frameworks built on Web standards (Hono's `app.fetch(Request) -> Response`,
-Next, ...) cannot run on bare Javy because `Request`/`Response`/`URL`/`Headers`
-are absent. To support them, bundle a polyfill that provides those globals and
-adapt the framework's fetch handler to the JSON contract above, e.g.:
+Frameworks built on Web standards export `app.fetch(Request) -> Response`. Bare
+Javy lacks `Request`/`Response`/`URL`/`Headers`, so `--mode fetch` injects the
+Web API polyfill (`runtime/web.js`) before the app and dispatches through it:
 
-```js
-import app from "./hono-app.js";
-import "./web-polyfill.js"; // provides Request/Response/Headers/URL
-export default async function handle(req) {
-  const request = new Request("http://x" + req.url, { method: req.method, headers: req.headers, body: req.body || undefined });
-  const res = await app.fetch(request);
-  const headers = {}; res.headers.forEach((v, k) => (headers[k] = v));
-  return { status: res.status, headers, body: await res.text() };
-}
+```sh
+npm i hono
+go run ./tools/taubyte-ssr-adapter --mode fetch --framework hono \
+  --entry ./tools/taubyte-ssr-adapter/example/hono-app.js \
+  --out /tmp/handler.wasm.zip --manifest /tmp/ssr.json
 ```
 
-Providing/validating that polyfill is the remaining JS-side work; the platform
-hosts the result unchanged.
+`example/hono-app.js` is a runnable Hono app. The polyfill targets the common
+SSR path (methods, headers, text/json bodies, URL parsing), not full WHATWG
+conformance — outbound `fetch` and streams are stubbed. **Status: prototype —
+validate + iterate** against real apps via `javy` (the first milestone is a Hono
+"hello world" rendering).
+
+Next.js's edge handler is the same shape (it expects Web APIs); it builds on this
+polyfill plus Node-compat shims and the `taubyte-next-adapter` (see
+`docs/nextjs-adapter.md`).
 
 ## Why Javy + WASI stdio
 
