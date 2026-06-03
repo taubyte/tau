@@ -118,6 +118,56 @@ func TestTranslateBasePath(t *testing.T) {
 	}
 }
 
+func TestTranslateAppRouter(t *testing.T) {
+	// App Router app with route handlers + pages, no Pages-Router routes-manifest
+	// staticRoutes/dynamicRoutes for them (only app-path-routes-manifest).
+	dir := writeNextBuild(t, map[string]string{
+		".next/routes-manifest.json": `{"version":3,"basePath":"","staticRoutes":[],"dynamicRoutes":[]}`,
+		".next/app-path-routes-manifest.json": `{
+			"/page": "/",
+			"/ui/login/page": "/ui/login",
+			"/api/health/route": "/api/health",
+			"/api/wf/webhook/[token]/route": "/api/wf/webhook/[token]",
+			"/blog/[slug]/page": "/blog/[slug]"
+		}`,
+	})
+
+	_, rep, err := Translate(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(rep.APIRoutes, "/api/health") || !contains(rep.APIRoutes, "/api/wf/webhook/[token]") {
+		t.Errorf("app-router api routes not detected: %v", rep.APIRoutes)
+	}
+	if !contains(rep.DynamicRoutes, "/blog/[slug]") {
+		t.Errorf("app-router dynamic page not detected: %v", rep.DynamicRoutes)
+	}
+}
+
+func TestTranslateAppRouterOnly(t *testing.T) {
+	// Only the App Router manifest present (no routes-manifest.json) must work.
+	dir := writeNextBuild(t, map[string]string{
+		".next/app-path-routes-manifest.json": `{"/page":"/","/api/x/route":"/api/x"}`,
+	})
+	_, rep, err := Translate(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !contains(rep.APIRoutes, "/api/x") {
+		t.Errorf("api route missing: %v", rep.APIRoutes)
+	}
+}
+
+func TestTranslateNoManifests(t *testing.T) {
+	// .next exists but has no route manifests (a dev/incomplete build).
+	dir := writeNextBuild(t, map[string]string{
+		".next/build-manifest.json": `{"pages":{}}`,
+	})
+	if _, _, err := Translate(dir); err == nil {
+		t.Error("expected a graceful error for a build without route manifests")
+	}
+}
+
 func TestTranslateMinimal(t *testing.T) {
 	// Only routes-manifest (no prerender/middleware) must still work.
 	dir := writeNextBuild(t, map[string]string{

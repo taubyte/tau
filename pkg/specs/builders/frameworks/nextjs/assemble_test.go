@@ -54,6 +54,7 @@ func TestAssembleStaticOnly(t *testing.T) {
 		"favicon.ico",
 		"about.html",
 		"index.html",
+		"about/index.html", // clean-URL form so /about resolves via dir index
 	} {
 		if _, ok := entries[want]; !ok {
 			t.Errorf("missing asset entry %q (have %v)", want, keys(entries))

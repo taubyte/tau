@@ -38,18 +38,18 @@ func Assemble(opts AssembleOptions) (*Report, error) {
 	}
 	defer out.Close()
 
-	zw := zip.NewWriter(out)
+	b := &assetZip{zw: zip.NewWriter(out), seen: map[string]bool{}}
 
 	// Immutable hashed assets.
-	if err := addDir(zw, filepath.Join(opts.ProjectDir, BuildDir, "static"), "_next/static"); err != nil {
+	if err := b.addDir(filepath.Join(opts.ProjectDir, BuildDir, "static"), "_next/static"); err != nil {
 		return nil, fmt.Errorf("adding _next/static failed with: %w", err)
 	}
 	// public/ is served from the root.
-	if err := addDir(zw, filepath.Join(opts.ProjectDir, "public"), ""); err != nil {
+	if err := b.addDir(filepath.Join(opts.ProjectDir, "public"), ""); err != nil {
 		return nil, fmt.Errorf("adding public failed with: %w", err)
 	}
 	// Pre-rendered HTML (SSG/ISR) so the runtime's static check serves them.
-	if err := addPrerendered(zw, opts.ProjectDir); err != nil {
+	if err := b.addPrerendered(opts.ProjectDir); err != nil {
 		return nil, fmt.Errorf("adding pre-rendered html failed with: %w", err)
 	}
 
@@ -58,34 +58,53 @@ func Assemble(opts AssembleOptions) (*Report, error) {
 		if err != nil {
 			return nil, fmt.Errorf("reading handler `%s` failed with: %w", opts.HandlerZip, err)
 		}
-		if err := addBytes(zw, websiteSpec.DefaultHandlerPath, handler); err != nil {
+		if err := b.addFile(websiteSpec.DefaultHandlerPath, handler); err != nil {
 			return nil, err
 		}
 		mdata, err := manifest.Marshal()
 		if err != nil {
 			return nil, err
 		}
-		if err := addBytes(zw, websiteSpec.ManifestPath, mdata); err != nil {
+		if err := b.addFile(websiteSpec.ManifestPath, mdata); err != nil {
 			return nil, err
 		}
 		report.handlerEmbedded = true
 	}
 
-	if err := zw.Close(); err != nil {
+	if err := b.zw.Close(); err != nil {
 		return nil, fmt.Errorf("finalizing asset failed with: %w", err)
 	}
 
 	return report, nil
 }
 
-// handlerEmbedded records whether a server bundle was included (for callers/logs).
+// HandlerEmbedded reports whether a server bundle was included (for callers/logs).
 func (r *Report) HandlerEmbedded() bool { return r.handlerEmbedded }
 
-// addDir walks src and adds every regular file to the zip under destPrefix
-// (slash separated, no leading slash). A missing src is a no-op.
-func addDir(zw *zip.Writer, src, destPrefix string) error {
-	info, err := os.Stat(src)
-	if err != nil || !info.IsDir() {
+// assetZip writes de-duplicated, slash-separated entries to a website asset zip.
+type assetZip struct {
+	zw   *zip.Writer
+	seen map[string]bool
+}
+
+func (b *assetZip) addFile(name string, data []byte) error {
+	name = strings.TrimPrefix(path.Clean("/"+filepath.ToSlash(name)), "/")
+	if name == "" || b.seen[name] {
+		return nil
+	}
+	b.seen[name] = true
+	w, err := b.zw.Create(name)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(data)
+	return err
+}
+
+// addDir walks src and adds every regular file under destPrefix. Missing src is
+// a no-op.
+func (b *assetZip) addDir(src, destPrefix string) error {
+	if info, err := os.Stat(src); err != nil || !info.IsDir() {
 		return nil
 	}
 	return filepath.WalkDir(src, func(p string, d os.DirEntry, err error) error {
@@ -96,20 +115,19 @@ func addDir(zw *zip.Writer, src, destPrefix string) error {
 		if err != nil {
 			return err
 		}
-		name := path.Join(destPrefix, filepath.ToSlash(rel))
 		data, err := os.ReadFile(p)
 		if err != nil {
 			return err
 		}
-		return addBytes(zw, name, data)
+		return b.addFile(path.Join(destPrefix, filepath.ToSlash(rel)), data)
 	})
 }
 
-// addPrerendered copies pre-rendered HTML emitted under `.next/server/{app,pages}`
-// to its served path: `foo.html` -> `foo.html` (served for `/foo`),
-// `index.html` -> `index.html` (served for `/`). Layout is version sensitive, so
-// this is best-effort over any `.html` found there.
-func addPrerendered(zw *zip.Writer, projectDir string) error {
+// addPrerendered copies pre-rendered HTML emitted under `.next/server/{app,pages}`.
+// Because the static handler resolves a request by exact path (falling back to a
+// directory's index.html, never `<path>.html`), each `foo.html` is also written
+// as `foo/index.html` so a clean URL `/foo` resolves. `index.html` is kept as is.
+func (b *assetZip) addPrerendered(projectDir string) error {
 	for _, sub := range []string{"server/app", "server/pages"} {
 		root := filepath.Join(projectDir, BuildDir, sub)
 		if info, err := os.Stat(root); err != nil || !info.IsDir() {
@@ -127,20 +145,22 @@ func addPrerendered(zw *zip.Writer, projectDir string) error {
 			if err != nil {
 				return err
 			}
-			return addBytes(zw, filepath.ToSlash(rel), data)
+			name := filepath.ToSlash(rel)
+			if err := b.addFile(name, data); err != nil {
+				return err
+			}
+			// clean-URL form: about.html -> about/index.html (so /about resolves)
+			if path.Base(name) != "index.html" {
+				clean := strings.TrimSuffix(name, ".html") + "/index.html"
+				if err := b.addFile(clean, data); err != nil {
+					return err
+				}
+			}
+			return nil
 		})
 		if err != nil {
 			return err
 		}
 	}
 	return nil
-}
-
-func addBytes(zw *zip.Writer, name string, data []byte) error {
-	w, err := zw.Create(strings.TrimPrefix(name, "/"))
-	if err != nil {
-		return err
-	}
-	_, err = w.Write(data)
-	return err
 }
