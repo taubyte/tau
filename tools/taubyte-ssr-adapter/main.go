@@ -46,6 +46,50 @@ var nodeEvents string
 //go:embed runtime/node-modules/buffer.js
 var nodeBuffer string
 
+//go:embed runtime/node-modules/node-http.js
+var nodeHTTP string
+
+// Node builtin-module shims for the Node HTTP-server surface (--mode node).
+//
+//go:embed runtime/node-modules/path.js
+var nodePath string
+
+//go:embed runtime/node-modules/querystring.js
+var nodeQuerystring string
+
+//go:embed runtime/node-modules/string_decoder.js
+var nodeStringDecoder string
+
+//go:embed runtime/node-modules/url.js
+var nodeURL string
+
+//go:embed runtime/node-modules/util.js
+var nodeUtil string
+
+//go:embed runtime/node-modules/stream.js
+var nodeStream string
+
+//go:embed runtime/node-modules/crypto.js
+var nodeCrypto string
+
+//go:embed runtime/node-modules/fs.js
+var nodeFS string
+
+//go:embed runtime/node-modules/net.js
+var nodeNet string
+
+//go:embed runtime/node-modules/zlib.js
+var nodeZlib string
+
+//go:embed runtime/node-modules/assert.js
+var nodeAssert string
+
+//go:embed runtime/node-modules/v8.js
+var nodeV8 string
+
+//go:embed runtime/node-modules/bun.js
+var bunRuntime string
+
 //go:embed runtime/node-modules/cloudflare-workers.js
 var cloudflareWorkers string
 
@@ -64,7 +108,7 @@ func run() error {
 	out := flag.String("out", "handler.wasm.zip", "output path for the server bundle zip")
 	manifestOut := flag.String("manifest", "", "optional path to also write the SSR manifest (ssr.json)")
 	framework := flag.String("framework", "js", "framework name recorded in the manifest")
-	mode := flag.String("mode", "handler", "entry shape: `handler` (default-export handle(req)->res) or `fetch` (Web-standard app.fetch(Request), e.g. Hono)")
+	mode := flag.String("mode", "handler", "entry shape: `handler` (default-export handle(req)->res), `fetch` (Web-standard app.fetch(Request), e.g. Hono), `node` (a Node HTTP-server app: http.createServer/app.listen, e.g. Express/Koa), or `bun` (a Bun.serve({fetch}) app)")
 	node := flag.Bool("node", false, "inject Node-compat shims (process/Buffer/global/timers) — needed by Next.js edge handlers")
 	site := flag.String("site", "", "directory of static/prerendered assets (e.g. SvelteKit's .svelte-kit/cloudflare) to assemble with the handler into a complete website build.zip at --out")
 	assetMax := flag.Int64("asset-embed-max", defaultAssetEmbedMax, "max size (bytes) of a text-like --site asset to embed into the bundle for env.ASSETS resolution; larger assets are left to the static layer")
@@ -74,14 +118,20 @@ func run() error {
 	if *entry == "" {
 		return fmt.Errorf("--entry is required")
 	}
-	if *mode != "handler" && *mode != "fetch" {
-		return fmt.Errorf("--mode must be `handler` or `fetch`")
+	if *mode != "handler" && *mode != "fetch" && *mode != "node" && *mode != "bun" {
+		return fmt.Errorf("--mode must be `handler`, `fetch`, `node`, or `bun`")
 	}
 	if *engine != "javy" && *engine != "starlingmonkey" {
 		return fmt.Errorf("--engine must be `javy` or `starlingmonkey`")
 	}
-	if *engine == "starlingmonkey" && *mode != "fetch" {
-		return fmt.Errorf("--engine starlingmonkey requires --mode fetch (a Web-standard fetch handler)")
+	// node/bun modes drive their handler from the wasi:http fetch event, which only
+	// the component tier provides; and StarlingMonkey only runs event-driven entries
+	// (fetch/node/bun), never the wasi-stdio `handler` shape.
+	if (*mode == "node" || *mode == "bun") && *engine != "starlingmonkey" {
+		return fmt.Errorf("--mode %s requires --engine starlingmonkey (the component tier provides the fetch/Web-API host the bridge runs on)", *mode)
+	}
+	if *engine == "starlingmonkey" && *mode != "fetch" && *mode != "node" && *mode != "bun" {
+		return fmt.Errorf("--engine starlingmonkey requires --mode fetch, node, or bun")
 	}
 	entryAbs, err := filepath.Abs(*entry)
 	if err != nil {
@@ -116,7 +166,10 @@ func run() error {
 		p := filepath.Join(tmp, name)
 		return p, os.WriteFile(p, []byte(src), 0o644)
 	}
-	if *node {
+	// node/bun modes are Node-compatible apps, which always want the Node-compat
+	// surface (process/Buffer/events), so enable it implicitly there.
+	nodeCompat := *node || *mode == "node" || *mode == "bun"
+	if nodeCompat {
 		// Node-compat globals first (process/Buffer/global), so web.js and the app
 		// can rely on them.
 		p, err := writePolyfill("node.js", nodePolyfill)
@@ -126,13 +179,15 @@ func run() error {
 		prelude += fmt.Sprintf("import %q;\n", p)
 
 		// Node builtin-module shims, aliased so `import ... from "node:async_hooks"`
-		// (and the bare specifier) resolve during bundling.
-		for _, mod := range []struct{ name, src string }{
-			{"async_hooks", nodeAsyncHooks},
-			{"events", nodeEvents},
-			{"buffer", nodeBuffer},
+		// (and the bare specifier) resolve during bundling. The extension picks the
+		// module format esbuild infers: `.cjs` for CJS-authored shims (events,
+		// whose module object must be the EventEmitter class) and `.mjs` otherwise.
+		for _, mod := range []struct{ name, src, ext string }{
+			{"async_hooks", nodeAsyncHooks, ".mjs"},
+			{"events", nodeEvents, ".cjs"},
+			{"buffer", nodeBuffer, ".mjs"},
 		} {
-			mp, err := writePolyfill(mod.name+".mjs", mod.src)
+			mp, err := writePolyfill(mod.name+mod.ext, mod.src)
 			if err != nil {
 				return err
 			}
@@ -141,7 +196,86 @@ func run() error {
 	}
 
 	bridge := fmt.Sprintf("import app from %q;\n", entryAbs)
-	if *mode == "fetch" {
+	if *mode == "node" || *mode == "bun" {
+		// Node-compatible app (a Node HTTP server, or a Bun.serve app — Bun is
+		// node-compatible). Alias node:http/node:https (and the bare specifiers) to
+		// the bridge module so the app's `http.createServer` is ours, alias the rest
+		// of the node builtins to shims, and run the entry: http.createServer +
+		// listen() (Express's app.listen()) or Bun.serve() captures the handler as a
+		// side effect, which the wasi:http fetch event then drives (serveNode /
+		// serveBun). A namespace import tolerates an entry with no default export.
+		nhp, err := writePolyfill("node-http.mjs", nodeHTTP)
+		if err != nil {
+			return err
+		}
+
+		// Run packages on their *browser* code path consistently. --platform=browser
+		// selects browser builds, but some libs still gate browser-disabled, node-only
+		// code on process.versions.node (e.g. iconv-lite loads its stream extensions,
+		// which the browser build stubs out -> "not a function"). Clearing it — after
+		// the node-compat globals load, before the app — keeps the bundle edge-shaped.
+		// Imported ahead of the app so it runs first (ESM evaluates in import order).
+		ep, err := writePolyfill("node-edge.mjs", "if (typeof process !== \"undefined\" && process.versions) { try { delete process.versions.node; } catch (e) {} }\n")
+		if err != nil {
+			return err
+		}
+		prelude += fmt.Sprintf("import %q;\n", ep)
+
+		// Node builtin-module shims for the HTTP-server surface. http/https are the
+		// bridge itself; the rest are pure-JS / Web-API-backed (path/stream/crypto/
+		// …) with fs/net/zlib as loud stubs (no filesystem or raw sockets here).
+		// async_hooks/events/buffer are already aliased above (nodeCompat).
+		// `.cjs` where the module object must be a function/class Node consumers
+		// require directly (stream -> the Stream class); `.mjs` for the rest.
+		nodeBuiltins := []struct{ name, src, ext string }{
+			{"http", nodeHTTP, ".mjs"}, {"https", nodeHTTP, ".mjs"},
+			{"path", nodePath, ".mjs"}, {"querystring", nodeQuerystring, ".mjs"},
+			{"string_decoder", nodeStringDecoder, ".mjs"}, {"url", nodeURL, ".mjs"},
+			{"util", nodeUtil, ".mjs"}, {"stream", nodeStream, ".cjs"}, {"crypto", nodeCrypto, ".mjs"},
+			{"fs", nodeFS, ".mjs"}, {"net", nodeNet, ".mjs"}, {"zlib", nodeZlib, ".mjs"},
+			{"assert", nodeAssert, ".cjs"}, {"v8", nodeV8, ".mjs"},
+		}
+		for _, b := range nodeBuiltins {
+			p := nhp // http/https reuse the already-written bridge module
+			if b.name != "http" && b.name != "https" {
+				if p, err = writePolyfill(b.name+b.ext, b.src); err != nil {
+					return err
+				}
+			}
+			aliases = append(aliases, "--alias:node:"+b.name+"="+p, "--alias:"+b.name+"="+p)
+		}
+
+		// Resolve npm deps under the browser platform: it selects packages' browser
+		// builds (which avoid node builtins) and honors main/module fields that
+		// --platform=neutral skips. Appended last so it overrides the neutral
+		// default in bundleJS.
+		aliases = append(aliases, "--platform=browser")
+
+		if *mode == "bun" {
+			// Bun app: Bun.serve({fetch}) is a Web-standard fetch handler. The bun
+			// shim installs the global `Bun` (and is importable as `bun`) whose
+			// serve() captures the handler; serveBun drives it. The component shim is
+			// imported only for its Web-API polyfills (Request clone-with-body etc.) —
+			// serveComponent is unused here.
+			csp, err := writePolyfill("component-shim.mjs", componentShim)
+			if err != nil {
+				return err
+			}
+			bsp, err := writePolyfill("bun.mjs", bunRuntime)
+			if err != nil {
+				return err
+			}
+			aliases = append(aliases, "--alias:bun="+bsp)
+			prelude += fmt.Sprintf("import %q;\nimport %q;\n", csp, bsp)
+			bridge = prelude +
+				fmt.Sprintf("import %q;\n", entryAbs) +
+				fmt.Sprintf("import { serveBun } from %q;\nserveBun();\n", bsp)
+		} else {
+			bridge = prelude +
+				fmt.Sprintf("import * as __app from %q;\n", entryAbs) +
+				fmt.Sprintf("import { serveNode } from %q;\nserveNode(__app);\n", nhp)
+		}
+	} else if *mode == "fetch" {
 		// The Javy tier polyfills Web APIs (web.js); StarlingMonkey provides them
 		// natively, so install web.js only for Javy.
 		if *engine == "javy" {

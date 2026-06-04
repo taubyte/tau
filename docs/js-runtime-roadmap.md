@@ -15,8 +15,11 @@ support, including the engine swap. Status legend: ✅ done · ◑ partial · �
 - ✅ Next.js (App Router) via `next-on-pages` + `--engine starlingmonkey`:
   static/prerendered, dynamic React SSR, and `GET`/`POST` edge API routes all
   work (validated against a real Next.js 14 app — see §5).
-- ❌ Node http-server frameworks (Express/Koa/Fastify/Nest): out of scope (need
-  a full Node runtime).
+- ✅ Node HTTP-server frameworks (Express/Koa/…) via `--mode node` and Bun apps
+  (`Bun.serve`) via `--mode bun`: a `node:http` → fetch bridge / a `Bun` global on
+  the component tier, with node-builtin shims. Express 4, Koa 3 and `Bun.serve`
+  validated end to end (see §6). HTTP request-handling, not a full Node/Bun runtime
+  (no fs/net/child_process).
 
 ## Ordered plan
 
@@ -150,6 +153,59 @@ wasmtime release the newer StarlingMonkey (which implements them natively) drops
 in and they no-op (see §4). Real apps may surface further per-app shims — the
 pattern (capture the JS-level error with stdio on, polyfill the missing Web API)
 is established.
+
+### 6. Node HTTP-server frameworks + Bun — ✅ (Express 4, Koa 3, Bun.serve)
+`taubyte-ssr-adapter --mode node` runs apps built on Node's HTTP server
+(`http.createServer`/`app.listen()`) on the component tier. The core is a
+`node:http` → `fetch` **bridge** (`runtime/node-modules/node-http.js`):
+`createServer`/`listen()` capture the request handler (no socket is bound), and
+each `wasi:http` request is adapted into a Node `IncomingMessage`/`ServerResponse`
+pair, driven through the handler, and the response turned back into a `fetch`
+`Response`. Around it sit self-contained shims for the node builtins an HTTP app
+touches — `path`, `stream` (Readable/Writable/Transform on EventEmitter), `crypto`
+(WebCrypto + sync SHA-1/SHA-256 for `etag`), `util`, `url`, `querystring`,
+`string_decoder`, `events`, `buffer`, `assert`, with loud stubs for
+`fs`/`net`/`zlib`/`v8`. npm deps resolve under esbuild `--platform=browser` (their
+browser builds avoid node internals) and `process` is shaped as an edge runtime so
+libraries stay on that path; injected secrets land in `process.env`.
+
+Output is the same `component` artifact the `wasmtimehttp` backend already serves,
+so this needed **no substrate changes**. Validated end to end under `wasmtime
+serve`: **Express 4** (routing, headers, `express.json()` body parsing,
+`res.send`/`res.json`, 404) and **Koa 3** (async `ctx` middleware +
+`koa-bodyparser`).
+
+Design notes worth keeping (each was a real bug found and fixed):
+- **CJS shape matters.** Builtins Node exposes as a *callable/class module*
+  (`events`→EventEmitter, `stream`→Stream, `assert`→the assert fn) must be authored
+  as CommonJS so `require()` returns that value, not an ESM namespace; esbuild
+  infers format from extension, so those ship as `.cjs`.
+- **No field collisions with the ecosystem.** The request's raw bytes can't live on
+  `req._body` — body-parser uses `req._body` as its "already parsed" flag (it's
+  `req._rawBody` now).
+- **Function constructors, not classes, for inherited shims.** iconv-lite does
+  `StringDecoder.call(this, enc)`; an ES6 `class` throws "cannot be invoked without
+  'new'", which stranded `express.json()`. `StringDecoder` is a function
+  constructor.
+- **Complete `Buffer` statics.** safe-buffer only re-exports a Buffer that has
+  `from`/`alloc`/`allocUnsafe`/`allocUnsafeSlow`; missing ones make it wrap Buffer
+  and drop non-enumerable statics like `isBuffer`.
+- **Async handlers must surface errors.** Koa ends the response only after its
+  middleware promise resolves; the bridge respects the handler's returned promise
+  and rejects (→ 500) instead of hanging the event loop.
+
+**Bun** (`--mode bun`) reuses the same machinery: `Bun.serve({ fetch })` is a
+Web-standard fetch handler, so a `Bun` global (installed before the app runs)
+captures it and the bridge (`serveBun`) dispatches each request — alongside the
+node-builtin shims (Bun is node-compatible) and the component shim's Web-API
+polyfills. Secrets land in `process.env` / `Bun.env`. `Bun.file` and WebSocket
+`upgrade` aren't available. Validated end to end (routing, JSON body, env secret).
+
+Known engine limit: routers on `path-to-regexp` v8+ (`@koa/router`, Express 5) use
+`\p{…}` Unicode-property regexes the shipped StarlingMonkey lacks Unicode tables
+for; Express-4-style routers / manual routing work today, and the newer engine
+(§4) lifts it. Full Node/Bun (`fs`/`net`/`child_process`/native addons) remains out
+of scope — route data through Taubyte primitives.
 
 ## Guiding constraint
 

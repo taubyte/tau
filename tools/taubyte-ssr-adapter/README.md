@@ -200,6 +200,64 @@ loopback server → real Taubyte database adapter) all work through the backend
 (with native
 `crypto.randomUUID()`). See `docs/js-runtime-roadmap.md`.
 
+## Node HTTP-server frameworks (Express, Koa, …) — `--mode node`
+
+`--mode node` runs an app built on Node's HTTP server — `http.createServer((req,
+res) => …)`, or a framework that wraps it (`app.listen()` in Express/Koa/Connect/
+Fastify). It implies `--engine starlingmonkey` (the component tier provides the
+`fetch`/Web-API host the bridge runs on).
+
+```sh
+# requires esbuild + jco on PATH. ./app.js is YOUR Node app (calls app.listen()
+# or default-exports a server / request handler).
+go run ./tools/taubyte-ssr-adapter --mode node --engine starlingmonkey \
+  --framework express --entry ./app.js --out handler.component.wasm
+```
+
+How it works: `node:http` is aliased to a bridge (`runtime/node-modules/node-http.js`)
+whose `createServer`/`listen()` **capture** the request handler instead of binding
+a socket; each incoming `wasi:http` request is adapted into a Node
+`IncomingMessage`/`ServerResponse` pair and driven through it, and the response is
+turned back into a `fetch` `Response`. The rest of the Node builtins an HTTP app
+reaches for are provided as self-contained shims (`path`, `stream`, `crypto` with
+sync SHA-1/SHA-256, `util`, `url`, `querystring`, `string_decoder`, `events`,
+`buffer`, `assert`, plus loud stubs for `fs`/`net`/`zlib`/`v8` — there is no
+filesystem or raw socket here). npm dependencies resolve under esbuild's
+`--platform=browser` (their browser builds avoid node internals), and `process` is
+shaped like an edge runtime so libraries stay on that path. Secrets injected by
+the substrate (`x-taubyte-env`) are merged into `process.env`.
+
+This is **HTTP request-handler compatibility, not a full Node runtime**: no
+ambient `fs`/`net`/`child_process`/native addons — route data through Taubyte
+primitives (KV/storage). Validated end to end against **Express 4** (routing,
+`req.headers`, `express.json()` body parsing, `res.send`/`res.json`, 404s) and
+**Koa 3** (`ctx`/async middleware + `koa-bodyparser`), both served under `wasmtime
+serve` and producing the `component` ABI the `wasmtimehttp` backend already hosts —
+so `--mode node` needs no substrate changes. One known engine limit: routers built
+on `path-to-regexp` v8+ (e.g. `@koa/router`, Express 5) use `\p{…}` Unicode-property
+regexes the shipped StarlingMonkey lacks Unicode tables for; manual routing or
+Express-4-style routers work, and the newer engine (see roadmap §4) lifts it.
+
+## Bun apps (`Bun.serve`) — `--mode bun`
+
+`--mode bun` runs a Bun app whose HTTP entrypoint is `Bun.serve({ fetch(request,
+server) -> Response })`. Bun's handler is a Web-standard fetch handler, so it maps
+directly onto the component tier (also implies `--engine starlingmonkey`).
+
+```sh
+go run ./tools/taubyte-ssr-adapter --mode bun --engine starlingmonkey \
+  --framework bun --entry ./app.js --out handler.component.wasm
+```
+
+A `Bun` global (also importable as `bun`) is installed before the app runs; its
+`serve()` captures the fetch handler instead of binding a socket, and the bridge
+drives each `wasi:http` request through it (reusing the node-builtin shims, since
+Bun is node-compatible, plus the component shim's Web-API polyfills). Config and
+secrets arrive through `process.env` / `Bun.env`. Validated end to end (routing,
+JSON body, 404, and an injected secret read via `Bun.env`). `Bun.file`
+(filesystem) and WebSocket `upgrade` are not available — route data through
+Taubyte primitives.
+
 ## Why Javy + WASI stdio
 
 Javy embeds QuickJS and exposes I/O over **WASI stdin/stdout** — calling host
@@ -252,5 +310,12 @@ command module; a Javy bundle is hosted identically.
   API). SvelteKit SSR + `/api` routes + 404 validated against a real app.
 - ⚠️ Next.js edge handler — same shape; builds on this polyfill plus the
   `taubyte-next-adapter` (see `docs/nextjs-adapter.md`). Validate per app.
+- ✅ Node HTTP-server frameworks via `--mode node` (`--engine starlingmonkey`) —
+  a `node:http` → fetch bridge + node-builtin shims. Express 4 (incl.
+  `express.json()`) and Koa 3 (+ `koa-bodyparser`) validated end to end. Not a
+  full Node runtime (no fs/net/child_process); HTTP request-handling only.
+- ✅ Bun apps via `--mode bun` (`--engine starlingmonkey`) — a `Bun.serve({fetch})`
+  global whose handler is dispatched on the component tier. Routing + JSON body +
+  `Bun.env` secret injection validated end to end.
 - ⬜ Streams (`ReadableStream`/`TransformStream`) and outbound `fetch` — stubbed;
   wire to Taubyte primitives next.

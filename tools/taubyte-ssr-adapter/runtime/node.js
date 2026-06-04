@@ -87,6 +87,12 @@
         return new Buffer(0);
       }
       static alloc(n) { return new Buffer(n); }
+      // safe-buffer/safer-buffer treat a Buffer as "complete native" only when
+      // from/alloc/allocUnsafe/allocUnsafeSlow all exist, otherwise they wrap it
+      // in a shim that copies only enumerable props — dropping static methods
+      // like isBuffer. Provide all four so they re-export ours directly.
+      static allocUnsafe(n) { return new Buffer(n); }
+      static allocUnsafeSlow(n) { return new Buffer(n); }
       static isBuffer(b) { return b instanceof Buffer; }
       static concat(list) {
         let len = 0;
