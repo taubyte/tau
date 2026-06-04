@@ -2,6 +2,7 @@ package substrate
 
 import (
 	"context"
+	"io"
 
 	"github.com/taubyte/tau/core/kvdb"
 	iface "github.com/taubyte/tau/core/services/substrate"
@@ -35,6 +36,10 @@ type Service struct {
 
 	cpuCount   int
 	cpuAverage float64
+
+	// componentBindings is the loopback KV/storage/secrets binding server for the
+	// StarlingMonkey component engine; set only under -tags wasmtime_component.
+	componentBindings io.Closer
 }
 
 // TODO: All of these components interfaces can be removed

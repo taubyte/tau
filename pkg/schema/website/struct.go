@@ -60,6 +60,10 @@ func (w *website) SetWithStruct(sync bool, website *structureSpec.Website) error
 			ops = append(ops, Entry(website.Entry))
 			return nil
 		}},
+		{"Bindings", false, func() error {
+			ops = append(ops, Bindings(website.Bindings))
+			return nil
+		}},
 	}
 
 	err := opMapper.Run(website)

@@ -8,8 +8,9 @@
 // env (the 2nd fetch arg, also what `cloudflare:workers` exports) is built from
 // internal headers the substrate injects on the loopback request:
 //   x-taubyte-env       JSON of secrets/config -> spread onto env (env.MY_SECRET)
-//   x-taubyte-bindings  base URL of the substrate's binding endpoint -> env.KV /
-//                       env.STORAGE become fetch clients against it
+//   x-taubyte-bindings  JSON {base, kv:[names], storage:[names]} -> each named
+//                       binding becomes a fetch client: env.<name>.get/put/...
+//                       (kv) or env.<name>.get/put (storage), against base.
 // These headers are stripped before the app sees the request. env.ASSETS 404s
 // because Taubyte's static layer serves assets before the component.
 export function serveComponent(app) {
@@ -21,13 +22,13 @@ export function serveComponent(app) {
     }
     const request = event.request;
     const envHeader = request.headers.get("x-taubyte-env");
-    const bindingsUrl = request.headers.get("x-taubyte-bindings");
+    const bindingsHeader = request.headers.get("x-taubyte-bindings");
 
     // Strip the internal headers so the app never sees them. The incoming
     // request's headers are immutable, so rebuild the request with a fresh
     // Headers (only when something needs stripping — leave plain requests as-is).
     let appReq = request;
-    if (envHeader != null || bindingsUrl != null) {
+    if (envHeader != null || bindingsHeader != null) {
       const h = new Headers(request.headers);
       h.delete("x-taubyte-env");
       h.delete("x-taubyte-bindings");
@@ -47,9 +48,20 @@ export function serveComponent(app) {
     if (!env.ASSETS) {
       env.ASSETS = { fetch: () => Promise.resolve(new Response("Not Found", { status: 404 })) };
     }
-    if (bindingsUrl) {
-      if (!env.KV) env.KV = makeKV(bindingsUrl.replace(/\/$/, "") + "/kv");
-      if (!env.STORAGE) env.STORAGE = makeStorage(bindingsUrl.replace(/\/$/, "") + "/storage");
+    if (bindingsHeader) {
+      let cfg = null;
+      try {
+        cfg = JSON.parse(bindingsHeader);
+      } catch (e) {}
+      if (cfg && cfg.base) {
+        const base = String(cfg.base).replace(/\/$/, "");
+        for (const name of cfg.kv || []) {
+          if (!env[name]) env[name] = makeKV(base + "/kv/" + name);
+        }
+        for (const name of cfg.storage || []) {
+          if (!env[name]) env[name] = makeStorage(base + "/storage/" + name);
+        }
+      }
     }
 
     const ctx = { waitUntil() {}, passThroughOnException() {} };

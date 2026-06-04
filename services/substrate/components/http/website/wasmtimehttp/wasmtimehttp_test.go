@@ -237,9 +237,9 @@ func TestComponentBindings(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Stand-in for the substrate KV binding endpoint.
+	// Stand-in for the substrate KV binding endpoint (named binding "KV").
 	bindings := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "GET" && r.URL.Path == "/kv/greeting" {
+		if r.Method == "GET" && r.URL.Path == "/kv/KV/greeting" {
 			io.WriteString(w, "hello-from-kv")
 			return
 		}
@@ -250,10 +250,11 @@ func TestComponentBindings(t *testing.T) {
 	rt := New()
 	defer rt.Close()
 
+	bindingsHeader := `{"base":"` + bindings.URL + `","kv":["KV"]}`
 	serve := func(path string) map[string]any {
 		r := httptest.NewRequest("GET", "http://site.example"+path, nil)
 		r.Header.Set("x-taubyte-env", `{"MY_SECRET":"s3cr3t"}`)
-		r.Header.Set("x-taubyte-bindings", bindings.URL)
+		r.Header.Set("x-taubyte-bindings", bindingsHeader)
 		w := httptest.NewRecorder()
 		if err := rt.ServeHTTP(context.Background(), "bind", data, w, r, website.ComponentLimits{}); err != nil {
 			t.Fatalf("ServeHTTP %s: %v", path, err)
@@ -283,4 +284,3 @@ func TestComponentBindings(t *testing.T) {
 	}
 	t.Logf("bindings ok: secret=%v kv=%v", root["secret"], kv["kv"])
 }
-

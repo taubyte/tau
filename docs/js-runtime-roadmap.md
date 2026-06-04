@@ -100,12 +100,38 @@ feature imports `wasi:cli`).
   a secret arrives via the header and `env.KV.get` round-trips through an
   outbound fetch to the endpoint.
 
-The remaining integration is substrate-side: a handler that backs the binding
-endpoint (`GET/PUT/DELETE /kv/<key>`, `GET /kv?prefix=`, `/storage/<path>`) with
-real Taubyte KV/storage scoped to the website's project/app, and a
-`RegisterComponentBindings` provider that resolves the website's secrets + that
-endpoint URL. The seam (`website.RegisterComponentBindings`) and the wire
-protocol are in place.
+**Substrate-side KV/storage wiring — ✅.** The binding endpoint is backed by the
+node's real services:
+- `bindings` — the loopback HTTP server (`/{token}/kv/...`, `/{token}/storage/...`)
+  over storage-agnostic `KV`/`Storage` interfaces, with random per-website tokens
+  so one component can't reach another's data.
+- `componentbindings` — adapters from Taubyte's `database.KV` / `storage.Storage`
+  to those interfaces (handling `datastore.ErrNotFound` → miss, and versioned
+  storage → latest-version get/put), plus `Enable(db, storage, opts)` which wires
+  `website.RegisterComponentBindings`. The KV resource is selected by a matcher
+  (default: the website name).
+- The substrate node calls this from `attachNodes` via a build-tagged
+  `attachComponentBindings()` — active only under `-tags wasmtime_component`, a
+  no-op (and zero dependency) otherwise; the server is closed on shutdown.
+
+Validated through the full real chain (a StarlingMonkey counter component's
+`env.KV.put`/`get` → the loopback server → the real adapter → a database service):
+the counter persists and increments across requests. Only the backing database
+in that test is a faithful in-memory fake; the binding server, adapter, shim,
+component and wasmtime backend are all real.
+
+**Named bindings + secrets — ✅.** A website declares bindings in config
+(`Website.Bindings`, threaded through `pkg/schema/website` and round-trip tested):
+each maps a name to a `kv`/`storage` resource (by matcher) or a `secret`, and
+surfaces as `env.<Name>` (Workers-style). The binding server, shim and injector
+route by name (`x-taubyte-bindings` carries `{base, kv:[names], storage:[names]}`);
+secrets resolve from the node environment (the binding's resource names the env
+var, so values stay out of git). With no bindings declared, `env.KV` / `env.STORAGE`
+default to resources matched by the website name (backwards compatible). The
+full named-`env.KV` chain is validated end to end.
+
+Remaining polish: a first-class secret *resource* type (today secrets come from
+node env vars), and surfacing binding declaration in the console UI.
 
 ### 5. Next.js on the richer engine — ⬜
 With a component engine + streaming, feed `next-on-pages` (or OpenNext) edge

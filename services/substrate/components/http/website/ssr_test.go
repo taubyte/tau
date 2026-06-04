@@ -160,14 +160,14 @@ func TestCleanRequestPath(t *testing.T) {
 	for _, tc := range []struct {
 		urlPath, pathMatch, want string
 	}{
-		{"/", "/", "/"},                         // root must stay "/", never "//"
-		{"/foo", "/", "/foo"},                   // simple
-		{"/foo/", "/", "/foo/"},                 // trailing slash preserved
-		{"/blog/hello", "/", "/blog/hello"},     // nested
-		{"/app/x", "/app", "/x"},                // sub-path mount
-		{"/app", "/app", "/"},                   // mount root -> "/"
-		{"/app/", "/app", "/"},                  // mount root with slash -> "/"
-		{"/a//b", "/", "/a/b"},                  // collapse double slashes
+		{"/", "/", "/"},                     // root must stay "/", never "//"
+		{"/foo", "/", "/foo"},               // simple
+		{"/foo/", "/", "/foo/"},             // trailing slash preserved
+		{"/blog/hello", "/", "/blog/hello"}, // nested
+		{"/app/x", "/app", "/x"},            // sub-path mount
+		{"/app", "/app", "/"},               // mount root -> "/"
+		{"/app/", "/app", "/"},              // mount root with slash -> "/"
+		{"/a//b", "/", "/a/b"},              // collapse double slashes
 	} {
 		if got := cleanRequestPath(tc.urlPath, tc.pathMatch); got != tc.want {
 			t.Errorf("cleanRequestPath(%q, %q) = %q, want %q", tc.urlPath, tc.pathMatch, got, tc.want)

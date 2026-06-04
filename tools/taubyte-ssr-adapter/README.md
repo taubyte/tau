@@ -171,16 +171,19 @@ otherwise `component` assets fail fast and the Javy tier is unaffected.
 The backend **streams** responses (a `ReadableStream` reaches the client as
 produced), **pools** `wasmtime serve` processes per component (round-robin +
 respawn + idle eviction + LRU cap, tunable via
-`TAUBYTE_COMPONENT_{POOL_SIZE,IDLE_TTL,MAX}`), and surfaces **bindings** on the
-handler's `env`: the substrate injects `x-taubyte-env` (JSON secrets/config) and
-`x-taubyte-bindings` (a per-website endpoint), which the shim turns into
-`env.<SECRET>`, `env.KV` (`get`/`put`/`delete`/`list`) and `env.STORAGE`
-(`get`/`put`) — fetch clients against that endpoint — then strips. See
-`example/bindings.js`.
+`TAUBYTE_COMPONENT_{POOL_SIZE,IDLE_TTL,MAX}`), and surfaces **named bindings** on
+the handler's `env` (Workers-style). A website declares its bindings in config —
+each maps a name to a `kv`/`storage` resource (by matcher) or a `secret` — and
+they become `env.<Name>`: KV (`get`/`put`/`delete`/`list`), storage (`get`/`put`),
+or a secret value. With none declared, `env.KV` / `env.STORAGE` are provided by
+default (resources matched by the website name). Secrets resolve from the node's
+environment (the binding's resource names the env var), so they stay out of git.
+See `example/bindings.js`.
 
 Validated end to end: a fetch handler, a React SSR page, a streaming
-`ReadableStream` response, and an `env.KV` round-trip all work through the
-backend (with native `crypto.randomUUID()`). See `docs/js-runtime-roadmap.md`.
+`ReadableStream` response, and a named `env.KV` round-trip (component → loopback
+server → real Taubyte database adapter) all work through the backend (with native
+`crypto.randomUUID()`). See `docs/js-runtime-roadmap.md`.
 
 ## Why Javy + WASI stdio
 

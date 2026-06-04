@@ -28,4 +28,5 @@ type Getter interface {
 	Render() string
 	Framework() string
 	Entry() string
+	Bindings() []structureSpec.Binding
 }

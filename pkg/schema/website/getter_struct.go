@@ -21,6 +21,7 @@ func (g getter) Struct() (web *structureSpec.Website, err error) {
 		Render:      g.Render(),
 		Framework:   g.Framework(),
 		Entry:       g.Entry(),
+		Bindings:    g.Bindings(),
 	}
 
 	return

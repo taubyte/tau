@@ -2,11 +2,16 @@ package website
 
 import (
 	"github.com/taubyte/tau/pkg/schema/basic"
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 func Id(value string) basic.Op {
 	return basic.Set("id", value)
+}
+
+func Bindings(value []structureSpec.Binding) basic.Op {
+	return basic.Set("bindings", value)
 }
 
 func Description(value string) basic.Op {
