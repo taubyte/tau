@@ -15,37 +15,133 @@
     g.queueMicrotask = function (cb) { Promise.resolve().then(cb); };
   }
 
-  // Timers: there is no real timer source, so 0-delay callbacks run as
-  // microtasks and delays are best-effort ignored. Enough for setTimeout(fn, 0)
-  // patterns; long delays do not actually wait.
-  if (typeof g.setTimeout === "undefined") {
-    g.setTimeout = function (cb) { g.queueMicrotask(() => cb()); return 0; };
-    g.clearTimeout = function () {};
+  // Intl — size-reduced engine builds (this StarlingMonkey) ship without the
+  // Internationalization API (ICU data is large), but libraries reference it at
+  // module load. Provide a minimal, locale-naive stub: formatters fall back to
+  // String()/toLocaleString and collation to code-point order. Not locale-aware,
+  // but lets code that touches Intl load and run.
+  if (typeof g.Intl === "undefined") {
+    const opts = (o) => Object.assign({ locale: "en-US", numberingSystem: "latn" }, o || {});
+    g.Intl = {
+      DateTimeFormat: function (l, o) { return { format: (d) => new Date(d === undefined ? Date.now() : d).toString(), formatToParts: () => [], resolvedOptions: () => opts(o) }; },
+      NumberFormat: function (l, o) { return { format: (n) => String(n), formatToParts: () => [], resolvedOptions: () => opts(o) }; },
+      Collator: function () { return { compare: (a, b) => (a < b ? -1 : a > b ? 1 : 0), resolvedOptions: () => opts() }; },
+      PluralRules: function () { return { select: () => "other", resolvedOptions: () => opts() }; },
+      ListFormat: function () { return { format: (items) => Array.from(items || []).join(", "), formatToParts: () => [] }; },
+      RelativeTimeFormat: function () { return { format: (v, u) => v + " " + u, formatToParts: () => [] }; },
+      Segmenter: function () { return { segment: (s) => Array.from(String(s)).map((seg) => ({ segment: seg })) }; },
+      getCanonicalLocales: (l) => (Array.isArray(l) ? l.slice() : l ? [l] : []),
+    };
   }
+
+  // Timers. Two constraints shape this:
+  //  - On Javy there is no timer source at all, so 0-delay callbacks run as
+  //    microtasks and real delays can't wait.
+  //  - On StarlingMonkey the platform timer EXISTS but may only be used during
+  //    request handling — calling setTimeout during component *initialization*
+  //    throws ("setTimeout can only be used during request handling, not during
+  //    initialization"). Libraries that boot at init (avvio/Fastify install a
+  //    per-plugin timeout guard with setTimeout) would then reject and abort boot.
+  // So wrap the platform timer: use it when it works (request time), and on
+  // failure (init) fall back to a microtask for ~immediate callbacks / drop long
+  // delays. A boot-time timeout guard simply never fires, which is the safe
+  // outcome (plugins still complete).
+  (function () {
+    const realSetTimeout = typeof g.setTimeout === "function" ? g.setTimeout : null;
+    g.setTimeout = function (cb) {
+      const args = Array.prototype.slice.call(arguments, 2);
+      const delay = arguments[1];
+      const call = () => cb.apply(null, args);
+      if (realSetTimeout) {
+        try { return realSetTimeout(call, delay); } catch (e) { /* init: timer unavailable */ }
+      }
+      if (!delay || delay <= 0) g.queueMicrotask(call);
+      return 0;
+    };
+    if (typeof g.clearTimeout !== "function") g.clearTimeout = function () {};
+
+    const realSetInterval = typeof g.setInterval === "function" ? g.setInterval : null;
+    g.setInterval = function (cb) {
+      const args = Array.prototype.slice.call(arguments, 2);
+      const delay = arguments[1];
+      if (realSetInterval) {
+        try { return realSetInterval(() => cb.apply(null, args), delay); } catch (e) {}
+      }
+      return 0; // no interval source during init
+    };
+    if (typeof g.clearInterval !== "function") g.clearInterval = function () {};
+  })();
   if (typeof g.setImmediate === "undefined") {
-    g.setImmediate = function (cb) { g.queueMicrotask(() => cb()); return 0; };
+    g.setImmediate = function (cb) {
+      const args = Array.prototype.slice.call(arguments, 1);
+      g.queueMicrotask(() => cb.apply(null, args));
+      return 0;
+    };
     g.clearImmediate = function () {};
   }
 
   if (typeof g.process === "undefined") {
+    // hrtime over the best available clock; returns [seconds, nanoseconds] like
+    // Node (used by loggers/timers, e.g. Fastify's pino child logger).
+    const clock = function () {
+      return typeof performance !== "undefined" && performance.now ? performance.now() : Date.now();
+    };
+    const hrtime = function (prev) {
+      const ms = clock();
+      let sec = Math.floor(ms / 1000);
+      let nano = Math.floor((ms - sec * 1000) * 1e6);
+      if (prev) {
+        sec -= prev[0];
+        nano -= prev[1];
+        if (nano < 0) { sec -= 1; nano += 1e9; }
+      }
+      return [sec, nano];
+    };
+    hrtime.bigint = function () { return BigInt(Math.round(clock() * 1e6)); };
+
     g.process = {
       env: {},
-      argv: ["javy", "app"],
-      platform: "wasi",
-      arch: "wasm",
+      argv: ["node", "app"],
+      execPath: "/usr/bin/node",
+      platform: "linux",
+      arch: "wasm32",
       version: "v18.0.0",
       versions: { node: "18.0.0" },
       pid: 1,
+      ppid: 0,
+      features: {},
+      title: "taubyte",
       cwd: function () { return "/"; },
+      chdir: function () {},
+      umask: function () { return 0; },
+      hrtime: hrtime,
+      uptime: function () { return clock() / 1000; },
+      memoryUsage: function () { return { rss: 0, heapTotal: 0, heapUsed: 0, external: 0, arrayBuffers: 0 }; },
       nextTick: function (cb) {
         const args = Array.prototype.slice.call(arguments, 1);
         g.queueMicrotask(() => cb.apply(null, args));
       },
       exit: function () {},
-      on: function () {},
-      once: function () {},
-      off: function () {},
+      // EventEmitter surface. on/emit are inert (there are no real process
+      // signals here), but the methods must exist and be chainable: frameworks
+      // (Fastify) register/remove signal + warning listeners during boot.
+      on: function () { return g.process; },
+      once: function () { return g.process; },
+      off: function () { return g.process; },
+      addListener: function () { return g.process; },
+      removeListener: function () { return g.process; },
+      prependListener: function () { return g.process; },
+      prependOnceListener: function () { return g.process; },
+      removeAllListeners: function () { return g.process; },
+      listeners: function () { return []; },
+      rawListeners: function () { return []; },
+      listenerCount: function () { return 0; },
+      setMaxListeners: function () { return g.process; },
+      eventNames: function () { return []; },
       emit: function () { return false; },
+      // emitWarning must exist: process-warning (Fastify, fastify deps) calls it
+      // unguarded when emitting deprecation/feature warnings during boot.
+      emitWarning: function () {},
     };
   }
 
@@ -67,9 +163,18 @@
       disable() { this._store = undefined; }
     };
     g.AsyncResource = class AsyncResource {
-      constructor() {}
+      constructor(type) { this.type = type; }
       runInAsyncScope(fn, thisArg, ...args) { return fn.apply(thisArg, args); }
+      // No async-id tracking here; these exist so libraries (Fastify wraps each
+      // request in an AsyncResource and calls emitDestroy on completion) don't
+      // trip over a missing method. All no-ops returning this.
+      emitDestroy() { return this; }
+      emitBefore() { return this; }
+      emitAfter() { return this; }
+      asyncId() { return 0; }
+      triggerAsyncId() { return 0; }
       bind(fn) { return fn; }
+      static bind(fn) { return fn; }
     };
   }
 
@@ -153,4 +258,53 @@
       return new g.Buffer(out);
     }
   }
+
+  // Randomness during component *initialization*. componentize-js snapshots the
+  // module's top-level with Wizer, during which imported host functions —
+  // including wasi:random — can't be called: an app/framework that generates
+  // random values or UUIDs at init/boot time (e.g. Fastify's avvio boot) would
+  // hard-trap ("attempted to call wasi:random during Wizer initialization").
+  // Gate the secure source on a "serving" flag the request bridges set: during
+  // init fall back to a fast non-secure PRNG (init-time random is for ids/seeds,
+  // not security); at request time use the real WebCrypto. Math.random is never
+  // security-bearing, so always route it through the PRNG (also avoids wasi:random
+  // seeding at init).
+  (function () {
+    let s0 = (Date.now() >>> 0) ^ 0x9e3779b9, s1 = 0x243f6a88;
+    function prng() {
+      s1 ^= s1 << 13; s1 ^= s1 >>> 17; s1 ^= s1 << 5; s1 |= 0;
+      s0 = (s0 + 0x6d2b79f5) | 0;
+      let t = Math.imul(s0 ^ (s0 >>> 15), 1 | s0) ^ s1;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+    function fill(arr) {
+      const u8 = arr instanceof Uint8Array ? arr : new Uint8Array(arr.buffer || arr.length || 0);
+      for (let i = 0; i < u8.length; i++) u8[i] = (prng() * 256) & 255;
+      return arr;
+    }
+    function prngUUID() {
+      const b = new Uint8Array(16); fill(b);
+      b[6] = (b[6] & 0x0f) | 0x40; b[8] = (b[8] & 0x3f) | 0x80;
+      let h = ""; for (let i = 0; i < 16; i++) h += b[i].toString(16).padStart(2, "0");
+      return h.slice(0, 8) + "-" + h.slice(8, 12) + "-" + h.slice(12, 16) + "-" + h.slice(16, 20) + "-" + h.slice(20);
+    }
+    const serving = function () { return !!g.__TAUBYTE_SERVING; };
+
+    // Math.random: pure JS (never hits wasi:random).
+    try { g.Math.random = prng; } catch (e) {}
+
+    const rc = g.crypto;
+    if (rc) {
+      const realGRV = typeof rc.getRandomValues === "function" ? rc.getRandomValues.bind(rc) : null;
+      const realUUID = typeof rc.randomUUID === "function" ? rc.randomUUID.bind(rc) : null;
+      const getRandomValues = function (arr) { return serving() && realGRV ? realGRV(arr) : fill(arr); };
+      const randomUUID = function () { return serving() && realUUID ? realUUID() : prngUUID(); };
+      try {
+        rc.getRandomValues = getRandomValues;
+        rc.randomUUID = randomUUID;
+      } catch (e) {
+        try { g.crypto = { getRandomValues, randomUUID, subtle: rc.subtle }; } catch (e2) {}
+      }
+    }
+  })();
 })(globalThis);

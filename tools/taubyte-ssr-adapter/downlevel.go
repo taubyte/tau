@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 // downlevelScript is a tiny Node program that rewrites Unicode-property regex
@@ -119,4 +120,48 @@ func ensureBabel() (string, error) {
 func fileExists(p string) bool {
 	_, err := os.Stat(p)
 	return err == nil
+}
+
+// fastifyDeferShim wraps Fastify so its async avvio boot is deferred from
+// component-init to the first request. Fastify boots at app.listen()/app.ready(),
+// but componentize-js's Wizer init snapshot doesn't preserve the pending job
+// queue, so an init-time boot never completes. The wrapper intercepts listen()
+// (the http server + route handler are already created in Fastify's constructor,
+// so they're captured regardless) and registers app.ready() on
+// __TAUBYTE_DEFER_READY, which the request bridge drives on the first request —
+// in the real event loop, where the boot finishes. %FASTIFY_MAIN% is the app's
+// resolved Fastify entry (absolute path, so it bypasses the "fastify" alias).
+const fastifyDeferShim = `import RealFastify from %q;
+function wrap(app) {
+  if (!app || app.__taubyteDeferred) return app;
+  app.__taubyteDeferred = true;
+  app.listen = function (...args) {
+    const cb = args.find((a) => typeof a === "function");
+    (globalThis.__TAUBYTE_DEFER_READY = globalThis.__TAUBYTE_DEFER_READY || []).push(() => app.ready());
+    if (cb) (typeof queueMicrotask !== "undefined" ? queueMicrotask : (f) => Promise.resolve().then(f))(() => { try { cb(null, "http://127.0.0.1"); } catch (e) {} });
+    return Promise.resolve("http://127.0.0.1");
+  };
+  return app;
+}
+function Fastify(opts) { return wrap(RealFastify(opts)); }
+for (const k of Object.keys(RealFastify)) { try { Fastify[k] = RealFastify[k]; } catch (e) {} }
+Fastify.fastify = Fastify;
+Fastify.default = Fastify;
+export default Fastify;
+export { Fastify as fastify };
+`
+
+// resolveNodeModule returns the absolute path Node would resolve `name` to from
+// fromDir, or "" if not found / node unavailable.
+func resolveNodeModule(fromDir, name string) string {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		return ""
+	}
+	script := fmt.Sprintf("try{process.stdout.write(require.resolve(%q,{paths:[%q]}))}catch(e){}", name, fromDir)
+	out, err := exec.Command(node, "-e", script).Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }

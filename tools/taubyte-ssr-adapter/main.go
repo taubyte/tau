@@ -99,6 +99,12 @@ var nodeDNS string
 //go:embed runtime/node-modules/http2.js
 var nodeHTTP2 string
 
+//go:embed runtime/node-modules/perf_hooks.js
+var nodePerfHooks string
+
+//go:embed runtime/node-modules/repl.js
+var nodeREPL string
+
 //go:embed runtime/node-modules/bun.js
 var bunRuntime string
 
@@ -251,7 +257,7 @@ func run() error {
 			{"fs", nodeFS, ".mjs"}, {"net", nodeNet, ".mjs"}, {"zlib", nodeZlib, ".mjs"},
 			{"assert", nodeAssert, ".cjs"}, {"v8", nodeV8, ".mjs"}, {"os", nodeOS, ".mjs"},
 			{"diagnostics_channel", nodeDiagnosticsChannel, ".mjs"}, {"dns", nodeDNS, ".mjs"},
-			{"http2", nodeHTTP2, ".mjs"},
+			{"http2", nodeHTTP2, ".mjs"}, {"perf_hooks", nodePerfHooks, ".mjs"}, {"repl", nodeREPL, ".mjs"},
 		}
 		for _, b := range nodeBuiltins {
 			p := nhp // http/https reuse the already-written bridge module
@@ -268,6 +274,19 @@ func run() error {
 		// --platform=neutral skips. Appended last so it overrides the neutral
 		// default in bundleJS.
 		aliases = append(aliases, "--platform=browser")
+
+		// If the app uses Fastify, alias it to a wrapper that defers its async boot
+		// to the first request (it can't complete during the Wizer init snapshot —
+		// see docs/framework-support.md). The wrapper imports the real Fastify by
+		// absolute path so it isn't caught by this alias.
+		if fastifyMain := resolveNodeModule(filepath.Dir(entryAbs), "fastify"); fastifyMain != "" {
+			fp, err := writePolyfill("fastify-defer.mjs", fmt.Sprintf(fastifyDeferShim, fastifyMain))
+			if err != nil {
+				return err
+			}
+			aliases = append(aliases, "--alias:fastify="+fp)
+			fmt.Fprintln(os.Stderr, "taubyte-ssr-adapter: detected Fastify; deferring its async boot to first request")
+		}
 
 		if *mode == "bun" || *mode == "deno" {
 			// Bun/Deno app: Bun.serve({fetch}) / Deno.serve(handler) is a Web-standard
@@ -463,6 +482,13 @@ func bundleJS(entry, out string, extra ...string) error {
 	// (Next.js) otherwise crashes javy with a bytecode "stack underflow".
 	args := []string{"--bundle", entry, "--format=esm", "--platform=neutral", "--target=es2020", "--outfile=" + out}
 	args = append(args, extra...)
+	// Per-app esbuild escape hatch — e.g. `--external:<pkg>` for optional peer
+	// dependencies a framework lazy-requires in a try/catch (Nest's
+	// @nestjs/microservices, class-transformer, …), so the bundle resolves and the
+	// framework treats them as absent at runtime.
+	if v := strings.TrimSpace(os.Getenv("TAUBYTE_ESBUILD_ARGS")); v != "" {
+		args = append(args, strings.Fields(v)...)
+	}
 	if path, err := exec.LookPath("esbuild"); err == nil {
 		return runCmd(path, args...)
 	}

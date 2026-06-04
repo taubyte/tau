@@ -119,6 +119,7 @@
 export function serveComponent(app) {
   const fetchFn = typeof app === "function" ? app : app && (app.fetch || app.default);
   addEventListener("fetch", (event) => {
+    globalThis.__TAUBYTE_SERVING = true; // request phase (gates init-time crypto fallback in node.js)
     if (typeof fetchFn !== "function") {
       event.respondWith(new Response("adapter: app has no fetch handler", { status: 500 }));
       return;

@@ -78,6 +78,7 @@ export default Deno;
 // sees them); the internal loopback headers are stripped before the app runs.
 export function serveDeno() {
   addEventListener("fetch", (event) => {
+    globalThis.__TAUBYTE_SERVING = true; // request phase: secure WebCrypto is now usable
     const request = event.request;
     const envHeader = request.headers.get("x-taubyte-env");
     if (envHeader && typeof process !== "undefined" && process.env) {

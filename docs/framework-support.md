@@ -27,6 +27,8 @@ Run through the adapter + `wasmtime serve`, routes exercised (GET/POST/params/bo
 | **Express 4** | `node` | routing, headers, `express.json()`, `res.json`, 404 |
 | **Express 5** | `node` | adds path-to-regexp v8 params (regex-downlevel) + body-parser 2.x |
 | **Koa 3** | `node` | async `ctx` middleware, `koa-bodyparser`; `@koa/router` works (downlevel) |
+| **Fastify 5** | `node` | routing, params, `req.body` JSON; async avvio boot deferred to first request (see below) |
+| **NestJS 11** (Express adapter) | `node` | DI (reflect-metadata), routing, `@Body()` JSON, 404 — serverless-style lazy init (see below) |
 | **Bun** (`Bun.serve`) | `bun` | routing, JSON body, `Bun.env` secret injection |
 | **Deno** (`Deno.serve`) | `deno` | routing, JSON body, `Deno.env` secret injection |
 | **Vue 3 SSR** (`vue/server-renderer`) | `fetch --node` | `renderToString` renders server-side |
@@ -42,7 +44,6 @@ builtins (the error names the missing one; adding a shim is mechanical).
 
 | Framework | how | tier |
 |-----------|-----|------|
-| **NestJS** | `@nestjs/platform-express` adapter (Express works) | `node` |
 | **Apollo Server** | Express integration or `startStandaloneServer` (node http) | `node` |
 | **Nuxt 3** | Nitro `cloudflare-module` / node preset → a fetch/node handler | `fetch`/`node` |
 | **SolidStart** | Cloudflare/`nitro` preset → a fetch handler | `fetch` |
@@ -56,11 +57,72 @@ path: build the framework for its **edge/Cloudflare** adapter (emits a Web-stand
 fetch handler) and run `--mode fetch --node`, or its **node** adapter and run
 `--mode node`.
 
-## ⚠️ Partial
+## Fastify — ✅ works, via deferred boot (the interesting case)
 
-| Framework | state |
-|-----------|-------|
-| **Fastify** | Bundles and routes, but its async plugin loader (**avvio**) fails to complete boot on the engine (route contexts end up uninitialized). Needs dedicated work on avvio's boot lifecycle / `process.nextTick` ordering. Anything on the **Fastify adapter** (Nest-fastify, some Apollo setups) inherits this until it's fixed. |
+**Fastify** works end to end (routing, params, `req.body` JSON parsing, 404), but
+getting there required solving a real architectural mismatch worth recording.
+
+Fastify's plugin loader **avvio** boots **asynchronously**, kicked off at module
+top-level (`app.listen()` → `app.ready()`). The component producer
+(`componentize-js`) snapshots the top-level with **Wizer**, which (a) forbids the
+platform timer and `wasi:random` during init, and (b) — the real blocker — does
+**not preserve the pending JS job queue** across the snapshot. So an init-time
+async boot's continuations are dropped and `app.ready()` never resolves (verified:
+it stayed `"booting"`, and pumping the event loop at request time couldn't revive
+it — the continuations were gone).
+
+The fix has two parts, both in the adapter:
+1. **Defer the boot to the first request.** When the app imports Fastify, the
+   adapter aliases it to a thin wrapper (importing the real Fastify by absolute
+   path) that intercepts `app.listen()` so it does **not** boot at init — Fastify
+   creates the http server + route handler in its *constructor*, so those are
+   captured regardless — and registers `app.ready()` on a deferred-ready list. The
+   request bridge drives that list **once, on the first request**, in the real
+   event loop where timers/random/continuations all work, so the boot completes.
+2. **`AsyncResource.emitDestroy`** — Fastify wraps each request in an
+   `async_hooks` `AsyncResource` and calls `emitDestroy()` on completion; the shim
+   was missing it (now a no-op, with the other AsyncResource methods).
+
+This generalizes: any framework that boots async at init can register on
+`globalThis.__TAUBYTE_DEFER_READY` to be driven at first request.
+
+The init-phase fallbacks added along the way are general wins too (they let *any*
+app touch timers/random/UUIDs at module top-level without trapping Wizer):
+`setTimeout`/`setInterval` fall back to a microtask (or drop, for long delays) when
+the platform timer is unavailable at init; `crypto.getRandomValues`/`randomUUID`
+use a non-secure PRNG during init and the real WebCrypto once serving (gated on a
+"request phase" flag the bridges set); `Math.random` is pure-JS.
+
+## NestJS — ✅ works (Express adapter, serverless-style)
+
+**NestJS 11** works end to end (DI via `reflect-metadata`, routing, `@Body()` JSON
+parsing, 404) on the `@nestjs/platform-express` adapter. Two things to know:
+
+- **Build with `tsc` (or SWC), not esbuild alone.** Nest's DI resolves providers by
+  constructor *type*, which needs `emitDecoratorMetadata` — esbuild doesn't emit it.
+  Compile the app with `tsc` (`experimentalDecorators` + `emitDecoratorMetadata`),
+  then run the emitted JS through the adapter (`--mode node`).
+- **Use the serverless lazy-init shape** (same as Nest on Lambda/Vercel): don't
+  `app.listen()`. Create the Nest app over an `ExpressAdapter(server)` and
+  `app.init()` **lazily on the first request**, exporting a handler that uses the
+  Express instance. This sidesteps the eager-async-boot/Wizer issue (the boot runs
+  at request time) without any framework-specific adapter hook:
+
+  ```ts
+  const server = express();
+  let booting; const ensure = () => booting ||= (async () => {
+    const app = await NestFactory.create(AppModule, new ExpressAdapter(server));
+    await app.init();
+  })();
+  export default async (req, res) => { await ensure(); server(req, res); };
+  ```
+
+Nest lazy-`require()`s optional peers (`@nestjs/microservices`, `@nestjs/websockets`,
+`class-transformer/validator`); mark those `--external` via `TAUBYTE_ESBUILD_ARGS`
+so the bundle resolves and Nest treats them as absent. Enabling shims added here:
+`node:perf_hooks`/`node:repl`, and an **`Intl` stub** (this StarlingMonkey build
+ships without the Intl/ICU API; the stub is locale-naive but lets Nest's deps
+load). Nest-fastify would instead ride the Fastify path above.
 
 ## ❌ Not hosting targets
 

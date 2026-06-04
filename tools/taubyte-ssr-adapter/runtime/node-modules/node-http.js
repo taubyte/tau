@@ -276,6 +276,20 @@ export async function __dispatch(request) {
 // when the app default-exported it instead of calling listen() (serverless
 // style). Secrets injected via x-taubyte-env are merged into process.env, the
 // Node-idiomatic place an app reads configuration.
+// Some frameworks boot asynchronously and can't finish that boot during the
+// component's Wizer init snapshot (the pending job queue isn't preserved). Such a
+// framework registers its boot (e.g. Fastify's app.ready) on
+// globalThis.__TAUBYTE_DEFER_READY; we drive those once, on the first request, in
+// the real event loop where the boot can complete. No-op when nothing registered.
+let _deferredReady = null;
+function _driveDeferredReady() {
+  if (_deferredReady === null) {
+    const fns = (typeof globalThis !== "undefined" && globalThis.__TAUBYTE_DEFER_READY) || [];
+    _deferredReady = Promise.all(fns.map((f) => Promise.resolve().then(f)));
+  }
+  return _deferredReady;
+}
+
 export function serveNode(appDefault) {
   if (typeof _handler !== "function" && appDefault) {
     const cand = appDefault.default || appDefault;
@@ -286,15 +300,16 @@ export function serveNode(appDefault) {
     }
   }
   addEventListener("fetch", (event) => {
+    globalThis.__TAUBYTE_SERVING = true; // request phase: secure WebCrypto is now usable
     const request = event.request;
     const envHeader = request.headers.get("x-taubyte-env");
     if (envHeader && typeof process !== "undefined" && process.env) {
       try { Object.assign(process.env, JSON.parse(envHeader)); } catch (e) {}
     }
     event.respondWith(
-      __dispatch(request).catch(
-        (e) => new Response("node adapter: " + (e && e.message ? e.message : String(e)), { status: 500 })
-      )
+      _driveDeferredReady()
+        .then(() => __dispatch(request))
+        .catch((e) => new Response("node adapter: " + (e && e.message ? e.message : String(e)), { status: 500 }))
     );
   });
 }
