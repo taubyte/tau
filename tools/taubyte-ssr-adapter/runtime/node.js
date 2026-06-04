@@ -111,6 +111,15 @@
     }
     g.Buffer = Buffer;
 
+    // safe-buffer / safer-buffer (pulled in by iconv-lite, used by body parsers)
+    // copy Buffer's static methods with a `for..in` loop, which only sees
+    // ENUMERABLE properties. ES6 `static` methods are non-enumerable, so those
+    // copies silently drop isBuffer/from/etc. (safer-buffer has no isBuffer
+    // fallback -> "Buffer.isBuffer is not a function"). Expose the statics as
+    // enumerable so the copies pick them all up.
+    for (const k of ["from", "alloc", "allocUnsafe", "allocUnsafeSlow", "isBuffer", "concat", "byteLength"]) {
+      Object.defineProperty(Buffer, k, { enumerable: true });
+    }
     const B64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     function bufToB64(buf) {
       let out = "";

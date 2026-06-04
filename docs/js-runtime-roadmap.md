@@ -194,12 +194,26 @@ Design notes worth keeping (each was a real bug found and fixed):
   middleware promise resolves; the bridge respects the handler's returned promise
   and rejects (→ 500) instead of hanging the event loop.
 
-**Bun** (`--mode bun`) reuses the same machinery: `Bun.serve({ fetch })` is a
-Web-standard fetch handler, so a `Bun` global (installed before the app runs)
-captures it and the bridge (`serveBun`) dispatches each request — alongside the
-node-builtin shims (Bun is node-compatible) and the component shim's Web-API
-polyfills. Secrets land in `process.env` / `Bun.env`. `Bun.file` and WebSocket
-`upgrade` aren't available. Validated end to end (routing, JSON body, env secret).
+**Bun** (`--mode bun`) and **Deno** (`--mode deno`) reuse the same machinery:
+`Bun.serve({ fetch })` / `Deno.serve(handler)` are Web-standard fetch handlers, so
+a `Bun`/`Deno` global (installed before the app runs) captures the handler and the
+bridge (`serveBun`/`serveDeno`) dispatches each request — alongside the node-builtin
+shims (both are node-compatible) and the component shim's Web-API polyfills. Secrets
+land in `process.env` (and thus `Bun.env`/`Deno.env`). `Bun.file`/`Deno.readFile`
+and WebSocket upgrade aren't available. Both validated end to end (routing, JSON
+body, env secret).
+
+**Express 5** also works: path-to-regexp v8's `\p{ID_Start}` route regexes are
+downleveled at build time (see §4's note on the engine's missing Unicode tables),
+and body-parser 2.x / finalhandler drove three more shim fixes (enumerable Buffer
+statics for safer-buffer, an EventEmitter-shaped `req.socket` for on-finished, and
+`socket.readable`). **Vue 3 SSR** (`renderToString`) renders on the `fetch` tier —
+the same path Nuxt/SolidStart/Astro/Angular-SSR take via their edge/node adapters.
+
+**Fastify** is partial: it bundles and routes, but its async plugin loader (avvio)
+doesn't complete boot on the engine — needs dedicated work. The full, honest
+per-framework matrix (incl. why Vite and Jest/Mocha/Vitest/Cypress aren't hosting
+targets) lives in `docs/framework-support.md`.
 
 Known engine limit: routers on `path-to-regexp` v8+ (`@koa/router`, Express 5) use
 `\p{…}` Unicode-property regexes the shipped StarlingMonkey lacks Unicode tables

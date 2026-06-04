@@ -22,9 +22,20 @@ export class Server {
   constructor(h) {
     if (h) _handler = h;
     this._cbs = {};
+    // Timeout/limit knobs frameworks (Fastify) read or assign; nominal here since
+    // there is no real socket lifecycle.
+    this.timeout = 0;
+    this.keepAliveTimeout = 5000;
+    this.headersTimeout = 60000;
+    this.requestTimeout = 0;
+    this.maxHeadersCount = null;
+    this.maxConnections = Infinity;
+    this.maxRequestsPerSocket = 0;
+    this.listening = false;
   }
   listen(...args) {
     const cb = args.find((a) => typeof a === "function");
+    this.listening = true;
     if (cb) queueMicrotask(cb);
     return this;
   }
@@ -34,8 +45,16 @@ export class Server {
     return this;
   }
   once(ev, cb) { return this.on(ev, cb); }
+  emit() { return false; }
+  removeListener() { return this; }
+  off() { return this; }
+  setTimeout(msecs, cb) { if (typeof msecs === "number") this.timeout = msecs; if (typeof msecs === "function") cb = msecs; if (typeof cb === "function") this.on("timeout", cb); return this; }
   address() { return { address: "127.0.0.1", port: 0, family: "IPv4" }; }
-  close(cb) { if (cb) queueMicrotask(cb); return this; }
+  ref() { return this; }
+  unref() { return this; }
+  closeAllConnections() {}
+  closeIdleConnections() {}
+  close(cb) { this.listening = false; if (cb) queueMicrotask(cb); return this; }
 }
 
 // IncomingMessage — a minimal readable request. method/url/headers are
@@ -52,7 +71,19 @@ export class IncomingMessage {
     this.httpVersionMinor = 1;
     this.complete = false;
     this.readable = true;
-    this.socket = { remoteAddress: "127.0.0.1", encrypted: false };
+    // req.socket is an EventEmitter in Node, and libraries attach to it:
+    // on-finished (Express's finalhandler 404/error path) does socket.on('close'/
+    // 'error'), so it must have on/once or it throws and strands the response.
+    // readable matters too: body-parser 2.x gates reading on isFinished(req),
+    // which treats a non-readable socket as "body already done" and skips parsing.
+    this.socket = {
+      remoteAddress: "127.0.0.1", remotePort: 0, localAddress: "127.0.0.1", localPort: 0,
+      readable: true, writable: true, encrypted: false, destroyed: false,
+      on() { return this; }, once() { return this; }, removeListener() { return this; },
+      off() { return this; }, emit() { return false; }, addListener() { return this; },
+      setTimeout() { return this; }, setNoDelay() { return this; }, setKeepAlive() { return this; },
+      destroy() { return this; }, ref() { return this; }, unref() { return this; },
+    };
     this.connection = this.socket;
     this._rawBody = bodyBytes || new Uint8Array(0);
     this._listeners = {};
@@ -79,7 +110,15 @@ export class IncomingMessage {
     return this;
   }
   off(ev, cb) { return this.removeListener(ev, cb); }
-  _emit(ev, arg) { for (const f of this._listeners[ev] || []) f(arg); }
+  // Standard EventEmitter/stream surface some libraries reach for: finalhandler
+  // (Express's 404/error path) calls unpipe(req) and on-finished inspects
+  // listeners, so these must exist or it strands the response.
+  listeners(ev) { return (this._listeners[ev] || []).slice(); }
+  listenerCount(ev) { return (this._listeners[ev] || []).length; }
+  removeAllListeners(ev) { if (ev) delete this._listeners[ev]; else this._listeners = {}; return this; }
+  emit(ev, ...args) { for (const f of (this._listeners[ev] || []).slice()) f(...args); return (this._listeners[ev] || []).length > 0; }
+  unpipe() { return this; }
+  _emit(ev, arg) { for (const f of (this._listeners[ev] || []).slice()) f(arg); }
   _flow() {
     if (this._flowed) return;
     this._flowed = true;

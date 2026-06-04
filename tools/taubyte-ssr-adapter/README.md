@@ -311,11 +311,18 @@ command module; a Javy bundle is hosted identically.
 - ⚠️ Next.js edge handler — same shape; builds on this polyfill plus the
   `taubyte-next-adapter` (see `docs/nextjs-adapter.md`). Validate per app.
 - ✅ Node HTTP-server frameworks via `--mode node` (`--engine starlingmonkey`) —
-  a `node:http` → fetch bridge + node-builtin shims. Express 4 (incl.
-  `express.json()`) and Koa 3 (+ `koa-bodyparser`) validated end to end. Not a
-  full Node runtime (no fs/net/child_process); HTTP request-handling only.
-- ✅ Bun apps via `--mode bun` (`--engine starlingmonkey`) — a `Bun.serve({fetch})`
-  global whose handler is dispatched on the component tier. Routing + JSON body +
-  `Bun.env` secret injection validated end to end.
+  a `node:http` → fetch bridge + node-builtin shims. **Express 4 & 5** (incl.
+  `express.json()` and path-to-regexp v8 params) and **Koa 3** (+ `koa-bodyparser`,
+  `@koa/router`) validated end to end. Not a full Node runtime (no
+  fs/net/child_process); HTTP request-handling only.
+- ✅ Bun apps via `--mode bun` and Deno apps via `--mode deno` — a
+  `Bun.serve({fetch})` / `Deno.serve(handler)` global dispatched on the component
+  tier. Routing + JSON body + `Bun.env`/`Deno.env` secret injection validated.
+- ✅ SSR meta-frameworks on `--mode fetch` — **Vue 3** (`renderToString`) validated;
+  Next.js, Nuxt, SolidStart, Astro take the same fetch-handler path.
+- ◑ Fastify / NestJS / Apollo Server / Angular SSR — see
+  [`docs/framework-support.md`](../../docs/framework-support.md) for the full,
+  honest per-framework matrix (incl. Fastify's avvio-boot gap, and why Vite and
+  test runners aren't hosting targets).
 - ⬜ Streams (`ReadableStream`/`TransformStream`) and outbound `fetch` — stubbed;
   wire to Taubyte primitives next.
