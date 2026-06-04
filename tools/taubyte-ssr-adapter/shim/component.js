@@ -87,6 +87,35 @@
   }
 })();
 
+// 3. Request clone-with-body. `new Request(reqWithBody, { headers })` (the
+//    next-on-pages worker re-wraps every request this way) traps on this build
+//    (IndirectCallToNull) because the native clone-with-body path is a null stub
+//    — but `new Request(url, init)` with the body passed in `init` works. Wrap
+//    the constructor to take that path when input is a body-carrying Request and
+//    init overrides fields. No-op-equivalent for the common cases.
+(function (g) {
+  if (typeof g.Request === "undefined") return;
+  const Native = g.Request;
+  function Request(input, init) {
+    if (
+      init &&
+      typeof input !== "string" &&
+      !(typeof URL !== "undefined" && input instanceof URL) &&
+      input instanceof Native
+    ) {
+      const noBody = input.method === "GET" || input.method === "HEAD";
+      const merged = Object.assign(
+        { method: input.method, headers: input.headers, body: noBody ? undefined : input.body },
+        init
+      );
+      return new Native(input.url, merged);
+    }
+    return init === undefined ? new Native(input) : new Native(input, init);
+  }
+  Request.prototype = Native.prototype;
+  g.Request = Request;
+})(globalThis);
+
 export function serveComponent(app) {
   const fetchFn = typeof app === "function" ? app : app && (app.fetch || app.default);
   addEventListener("fetch", (event) => {

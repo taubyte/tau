@@ -138,11 +138,9 @@ Validated against a Next.js 14 App Router app:
   the StarlingMonkey engine below.
 - **On `--engine starlingmonkey`:** a dynamic React SSR page (`react-dom/server`,
   `runtime='edge'`, `force-dynamic`) **renders end to end** (full HTML, server
-  timestamp, hydration scripts), and `GET /api/*` edge routes work. Remaining
-  gap: **POST** to a Next.js edge API route currently traps inside Next's request
-  machinery (`IndirectCallToNull`) — a general component POST-with-body works, so
-  this is Next-specific, not an engine-wide limit. Use `--engine starlingmonkey`
-  for dynamic SSR + GET APIs today; POST mutation routes are pending.
+  timestamp, hydration scripts), prerendered pages serve from the static layer,
+  and `GET` **and** `POST` `/api/*` edge routes work (`POST` echoes its JSON
+  body). This needs the three shim stream/request polyfills below.
 
 The older manifest-translation path is the `taubyte-next-adapter` (see
 `docs/nextjs-adapter.md`).
@@ -186,11 +184,15 @@ default (resources matched by the website name). Secrets resolve from the node's
 environment (the binding's resource names the env var), so they stay out of git.
 See `example/bindings.js`.
 
-The fetch-event shim also installs two **stream polyfills** for gaps in the
-StarlingMonkey build jco currently ships (both no-op on an engine that has them):
-ReadableStream **async iteration** (`for await (chunk of stream)`) and byte-stream
-**`tee()`**. Next.js App Router SSR needs both — without them the React render
-stream reports "not iterable" / fails to tee and the response comes back empty.
+The fetch-event shim also installs three **compatibility polyfills** for gaps in
+the StarlingMonkey build jco currently ships (each no-ops on an engine that has
+the feature): ReadableStream **async iteration** (`for await (chunk of stream)`),
+byte-stream **`tee()`**, and **`new Request(reqWithBody, init)`** (the native
+clone-with-body path traps with `IndirectCallToNull`, so it's reconstructed via
+the request's URL + explicit body). Next.js App Router exercises all three — SSR
+needs the first two (else the render stream is "not iterable" / un-tee-able and
+the body is empty), and the worker's per-request re-wrap needs the third (else
+`POST` traps).
 
 Validated end to end: a fetch handler, a **dynamic Next.js React SSR page**, a
 streaming `ReadableStream` response, and a named `env.KV` round-trip (component →
