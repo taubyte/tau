@@ -112,6 +112,13 @@ var TaubyteRessources = []*Node{
 				String("git-provider", Path("source", Either("github")), Key()),
 				String("github-id", Path("source", "github", "id")),
 				String("github-fullname", Path("source", "github", "fullname")),
+				// Server side rendering selectors. Optional, so static websites keep
+				// compiling unchanged; when present they ride through to TNS so the
+				// substrate matches SSR routes (e.g. POST /api) before the build
+				// asset's manifest loads.
+				String("render", InSet("", "static", "ssr")),
+				String("framework"),
+				String("entry"),
 			),
 		)),
 }

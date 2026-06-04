@@ -35,7 +35,28 @@ import (
 	"github.com/taubyte/tau/services/substrate/components/http/website"
 )
 
-func init() { website.RegisterComponentRuntime(New()) }
+var (
+	singleton    *Runtime
+	shutdownOnce sync.Once
+)
+
+func init() {
+	singleton = New()
+	website.RegisterComponentRuntime(singleton)
+}
+
+// ShutdownAll stops every spawned component process and removes the work dir.
+// The runtime is otherwise process-global (it lives for the substrate's
+// lifetime); this is for environments that run many substrates in one process —
+// notably dream-based tests — so they don't leak `wasmtime serve` children.
+// Idempotent.
+func ShutdownAll() {
+	shutdownOnce.Do(func() {
+		if singleton != nil {
+			singleton.Close()
+		}
+	})
+}
 
 // launchFunc starts a server for the component at wasmPath and returns the
 // address it listens on, a stop function, and a liveness flag the launcher
@@ -228,7 +249,15 @@ func (rt *Runtime) spawnWasmtime(wasmPath string, limits website.ComponentLimits
 	args := append([]string{"serve"}, rt.extra...)
 	args = append(args, "--addr", addr, wasmPath)
 	cmd := exec.Command(rt.bin, args...)
-	cmd.Stdout, cmd.Stderr = os.Stderr, os.Stderr
+	// Capture the child's output into a small per-instance buffer rather than
+	// inheriting the host's os.Stderr: a long-lived `wasmtime serve` that inherits
+	// the parent's stdio holds that pipe open, which (e.g. under `go test`) stalls
+	// the parent's exit. The buffer is bounded and surfaces startup failures.
+	logBuf := &cappedBuffer{limit: 8 << 10}
+	cmd.Stdout, cmd.Stderr = logBuf, logBuf
+	// On Kill, abandon the process's I/O after a short grace period so Wait (and
+	// the host) don't block on a child that's slow to release its pipes.
+	cmd.WaitDelay = 10 * time.Second
 	if err := cmd.Start(); err != nil {
 		return "", nil, nil, fmt.Errorf("starting `%s serve` failed (is wasmtime on PATH?): %w", rt.bin, err)
 	}
@@ -244,9 +273,36 @@ func (rt *Runtime) spawnWasmtime(wasmPath string, limits website.ComponentLimits
 
 	if err := waitReady(addr, 15*time.Second); err != nil {
 		stop()
-		return "", nil, nil, err
+		return "", nil, nil, fmt.Errorf("`%s serve` did not become ready: %w; output: %s", rt.bin, err, strings.TrimSpace(logBuf.String()))
 	}
 	return addr, stop, alive, nil
+}
+
+// cappedBuffer is a thread-safe io.Writer that retains only the first `limit`
+// bytes written (enough to surface a child process's startup error) and discards
+// the rest, so a long-running child can't grow it unbounded.
+type cappedBuffer struct {
+	mu    sync.Mutex
+	buf   []byte
+	limit int
+}
+
+func (c *cappedBuffer) Write(p []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if room := c.limit - len(c.buf); room > 0 {
+		if room > len(p) {
+			room = len(p)
+		}
+		c.buf = append(c.buf, p[:room]...)
+	}
+	return len(p), nil
+}
+
+func (c *cappedBuffer) String() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return string(c.buf)
 }
 
 // janitor periodically evicts components idle longer than idleTTL.

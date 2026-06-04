@@ -1,0 +1,3 @@
+# Component website fixtures are large prebuilt binaries — build them locally
+# (see README.md); the test skips any that are absent.
+*.wasm
