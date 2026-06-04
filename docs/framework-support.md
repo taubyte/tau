@@ -29,9 +29,11 @@ Run through the adapter + `wasmtime serve`, routes exercised (GET/POST/params/bo
 | **Koa 3** | `node` | async `ctx` middleware, `koa-bodyparser`; `@koa/router` works (downlevel) |
 | **Fastify 5** | `node` | routing, params, `req.body` JSON; async avvio boot deferred to first request (see below) |
 | **NestJS 11** (Express adapter) | `node` | DI (reflect-metadata), routing, `@Body()` JSON, 404 — serverless-style lazy init (see below) |
+| **Apollo Server 5** (GraphQL) | `node` | queries, args, validation errors — Express integration, serverless-style lazy init |
 | **Bun** (`Bun.serve`) | `bun` | routing, JSON body, `Bun.env` secret injection |
 | **Deno** (`Deno.serve`) | `deno` | routing, JSON body, `Deno.env` secret injection |
 | **Vue 3 SSR** (`vue/server-renderer`) | `fetch --node` | `renderToString` renders server-side |
+| **Nuxt 3** (Nitro `cloudflare-module`) | `fetch --node` | full SSR pages render (per-route HTML + hydration payload); see below |
 | **Hono** | `fetch` | (earlier) Web-standard fetch app |
 | **Next.js 14** (App Router via next-on-pages) | `fetch --node` | dynamic React SSR + GET/POST edge routes |
 | raw `node:http` | `node` | `createServer`/`listen`, `req.on('data')`, `res.writeHead/end` |
@@ -44,8 +46,6 @@ builtins (the error names the missing one; adding a shim is mechanical).
 
 | Framework | how | tier |
 |-----------|-----|------|
-| **Apollo Server** | Express integration or `startStandaloneServer` (node http) | `node` |
-| **Nuxt 3** | Nitro `cloudflare-module` / node preset → a fetch/node handler | `fetch`/`node` |
 | **SolidStart** | Cloudflare/`nitro` preset → a fetch handler | `fetch` |
 | **Astro** | `@astrojs/cloudflare` (fetch) or `@astrojs/node` | `fetch`/`node` |
 | **Angular SSR** | `@angular/ssr` runs on an Express server | `node` |
@@ -123,6 +123,34 @@ so the bundle resolves and Nest treats them as absent. Enabling shims added here
 `node:perf_hooks`/`node:repl`, and an **`Intl` stub** (this StarlingMonkey build
 ships without the Intl/ICU API; the stub is locale-naive but lets Nest's deps
 load). Nest-fastify would instead ride the Fastify path above.
+
+## Nuxt 3 — ✅ SSR validated (the meta-framework path)
+
+Nuxt 3 server-side rendering works end to end (validated: `/`, `/products`, `/a/b/c`
+all render the right per-route HTML + the `window.__NUXT__` hydration payload), and
+it needed **no adapter code changes** — just the right Nitro preset + the existing
+`TAUBYTE_ESBUILD_ARGS` escape hatch. Build for the **Cloudflare** preset (Nitro
+emits a single self-contained `export default { fetch }` worker — the canonical
+"Nuxt on edge" output, and a perfect fit for the component tier):
+
+```sh
+# nuxt.config.ts:  nitro: { preset: "cloudflare-module" }
+nuxt build                                   # -> .output/server/index.mjs (self-contained worker)
+echo 'export default "{}";' > stub.js        # stub Cloudflare's __STATIC_CONTENT_MANIFEST virtual
+TAUBYTE_ESBUILD_ARGS="--alias:__STATIC_CONTENT_MANIFEST=$PWD/stub.js" \
+go run ./tools/taubyte-ssr-adapter --mode fetch --node --engine starlingmonkey \
+  --framework nuxt --entry .output/server/index.mjs --out nuxt.wasm
+wasmtime serve -S cli=y nuxt.wasm
+```
+
+Why Cloudflare and not the `node-server` preset: `node-server` leaves `vue`/`@vue/*`
+as externals it traced as **node** builds, which clash with the adapter's
+`--platform=browser` resolution; the Cloudflare preset inlines everything (unenv
+node polyfills included) into one worker, so there's nothing to resolve and it's a
+clean Web-standard fetch handler. The SSR **HTML** renders; the `/_nuxt/*` static
+assets are served by Taubyte's static layer (deploy `.output/public` there), not
+the worker — same split as Cloudflare Pages. **SolidStart / Astro / Analog** take
+the identical path via their own Cloudflare/Nitro adapters.
 
 ## ❌ Not hosting targets
 

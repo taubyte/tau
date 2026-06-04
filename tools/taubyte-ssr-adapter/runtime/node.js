@@ -208,11 +208,62 @@
         return out;
       }
       static byteLength(s) { return new TextEncoder().encode(String(s)).length; }
-      toString(enc) {
-        if (enc === "base64") return bufToB64(this);
-        if (enc === "hex") return bufToHex(this);
-        return new TextDecoder().decode(this);
+      toString(enc, start, end) {
+        const v = start || end ? this.subarray(start || 0, end == null ? this.length : end) : this;
+        if (enc === "base64" || enc === "base64url") return bufToB64(v);
+        if (enc === "hex") return bufToHex(v);
+        if (enc === "latin1" || enc === "binary" || enc === "ascii") { let s = ""; for (const b of v) s += String.fromCharCode(enc === "ascii" ? b & 0x7f : b); return s; }
+        return new TextDecoder().decode(v);
       }
+      // Buffer views share memory (like Node), not copy (unlike Uint8Array.slice).
+      subarray(start, end) {
+        const u = Uint8Array.prototype.subarray.call(this, start, end);
+        return new Buffer(u.buffer, u.byteOffset, u.length);
+      }
+      slice(start, end) { return this.subarray(start, end); }
+      copy(target, ts, ss, se) {
+        ts = ts || 0; ss = ss || 0; se = se == null ? this.length : se;
+        const sub = this.subarray(ss, se);
+        target.set(sub.subarray(0, Math.min(sub.length, target.length - ts)), ts);
+        return Math.min(sub.length, target.length - ts);
+      }
+      equals(other) {
+        if (!other || other.length !== this.length) return false;
+        for (let i = 0; i < this.length; i++) if (this[i] !== other[i]) return false;
+        return true;
+      }
+      write(string, offset, length, encoding) {
+        if (typeof offset === "string") { encoding = offset; offset = 0; length = undefined; }
+        else if (typeof length === "string") { encoding = length; length = undefined; }
+        offset = offset || 0;
+        const bytes = encoding === "hex" ? hexToBuf(string)
+          : encoding === "base64" ? b64ToBuf(string)
+          : new TextEncoder().encode(String(string));
+        const n = length == null ? bytes.length : Math.min(length, bytes.length);
+        this.set(bytes.subarray(0, Math.min(n, this.length - offset)), offset);
+        return Math.min(n, this.length - offset);
+      }
+      // Integer reads/writes (used by hashing/binary code, e.g. writeUInt32BE).
+      readUInt8(o) { o = o || 0; return this[o]; }
+      readInt8(o) { o = o || 0; const v = this[o]; return v & 0x80 ? v - 0x100 : v; }
+      readUInt16BE(o) { o = o || 0; return (this[o] << 8) | this[o + 1]; }
+      readUInt16LE(o) { o = o || 0; return (this[o + 1] << 8) | this[o]; }
+      readInt16BE(o) { const v = this.readUInt16BE(o); return v & 0x8000 ? v - 0x10000 : v; }
+      readInt16LE(o) { const v = this.readUInt16LE(o); return v & 0x8000 ? v - 0x10000 : v; }
+      readUInt32BE(o) { o = o || 0; return (this[o] * 0x1000000) + (this[o + 1] << 16) + (this[o + 2] << 8) + this[o + 3]; }
+      readUInt32LE(o) { o = o || 0; return this[o] + (this[o + 1] << 8) + (this[o + 2] << 16) + (this[o + 3] * 0x1000000); }
+      readInt32BE(o) { o = o || 0; return (this[o] << 24) | (this[o + 1] << 16) | (this[o + 2] << 8) | this[o + 3]; }
+      readInt32LE(o) { o = o || 0; return (this[o + 3] << 24) | (this[o + 2] << 16) | (this[o + 1] << 8) | this[o]; }
+      writeUInt8(v, o) { o = o || 0; this[o] = v & 0xff; return o + 1; }
+      writeInt8(v, o) { return this.writeUInt8(v, o); }
+      writeUInt16BE(v, o) { o = o || 0; this[o] = (v >>> 8) & 0xff; this[o + 1] = v & 0xff; return o + 2; }
+      writeUInt16LE(v, o) { o = o || 0; this[o] = v & 0xff; this[o + 1] = (v >>> 8) & 0xff; return o + 2; }
+      writeInt16BE(v, o) { return this.writeUInt16BE(v, o); }
+      writeInt16LE(v, o) { return this.writeUInt16LE(v, o); }
+      writeUInt32BE(v, o) { o = o || 0; this[o] = (v >>> 24) & 0xff; this[o + 1] = (v >>> 16) & 0xff; this[o + 2] = (v >>> 8) & 0xff; this[o + 3] = v & 0xff; return o + 4; }
+      writeUInt32LE(v, o) { o = o || 0; this[o] = v & 0xff; this[o + 1] = (v >>> 8) & 0xff; this[o + 2] = (v >>> 16) & 0xff; this[o + 3] = (v >>> 24) & 0xff; return o + 4; }
+      writeInt32BE(v, o) { return this.writeUInt32BE(v, o); }
+      writeInt32LE(v, o) { return this.writeUInt32LE(v, o); }
     }
     g.Buffer = Buffer;
 
