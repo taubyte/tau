@@ -131,14 +131,20 @@ go run /path/to/tau/tools/taubyte-ssr-adapter --mode fetch --node --framework ne
   --site  .vercel/output/static --out build.zip
 ```
 
-Validated against a Next.js 14 App Router app: **edge routes** (`route.js` /
-pages with `runtime = 'edge'`) compile and run — `GET`/`POST /api/*` return
-correctly — and prerendered pages serve from the static layer. **Known wall:**
-a React **SSR** page (`react-dom/server`) is a ~700 KB module that crashes
-Javy/QuickJS's bytecode compiler ("stack underflow"); heavy React SSR needs the
-StarlingMonkey engine below. Use `runtime='edge'` + prerendering on the Javy
-tier; for dynamic React SSR use `--engine starlingmonkey`. The older
-manifest-translation path is the `taubyte-next-adapter` (see
+Validated against a Next.js 14 App Router app:
+- **On the Javy tier:** prerendered pages serve from the static layer and `GET`
+  edge `route.js` handlers work, but a dynamic React **SSR** page crashes
+  Javy/QuickJS's bytecode compiler ("stack underflow") — heavy React SSR needs
+  the StarlingMonkey engine below.
+- **On `--engine starlingmonkey`:** a dynamic React SSR page (`react-dom/server`,
+  `runtime='edge'`, `force-dynamic`) **renders end to end** (full HTML, server
+  timestamp, hydration scripts), and `GET /api/*` edge routes work. Remaining
+  gap: **POST** to a Next.js edge API route currently traps inside Next's request
+  machinery (`IndirectCallToNull`) — a general component POST-with-body works, so
+  this is Next-specific, not an engine-wide limit. Use `--engine starlingmonkey`
+  for dynamic SSR + GET APIs today; POST mutation routes are pending.
+
+The older manifest-translation path is the `taubyte-next-adapter` (see
 `docs/nextjs-adapter.md`).
 
 ## StarlingMonkey engine — `--engine starlingmonkey`
@@ -180,9 +186,16 @@ default (resources matched by the website name). Secrets resolve from the node's
 environment (the binding's resource names the env var), so they stay out of git.
 See `example/bindings.js`.
 
-Validated end to end: a fetch handler, a React SSR page, a streaming
-`ReadableStream` response, and a named `env.KV` round-trip (component → loopback
-server → real Taubyte database adapter) all work through the backend (with native
+The fetch-event shim also installs two **stream polyfills** for gaps in the
+StarlingMonkey build jco currently ships (both no-op on an engine that has them):
+ReadableStream **async iteration** (`for await (chunk of stream)`) and byte-stream
+**`tee()`**. Next.js App Router SSR needs both — without them the React render
+stream reports "not iterable" / fails to tee and the response comes back empty.
+
+Validated end to end: a fetch handler, a **dynamic Next.js React SSR page**, a
+streaming `ReadableStream` response, and a named `env.KV` round-trip (component →
+loopback server → real Taubyte database adapter) all work through the backend
+(with native
 `crypto.randomUUID()`). See `docs/js-runtime-roadmap.md`.
 
 ## Why Javy + WASI stdio

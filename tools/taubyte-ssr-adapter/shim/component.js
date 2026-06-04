@@ -13,6 +13,80 @@
 //                       (kv) or env.<name>.get/put (storage), against base.
 // These headers are stripped before the app sees the request. env.ASSETS 404s
 // because Taubyte's static layer serves assets before the component.
+// Stream polyfills for the StarlingMonkey build jco currently ships (its
+// ReadableStream is missing two things Next.js / React SSR rely on). Both are
+// guarded so they no-op on an engine that already implements them.
+
+// 1. Async iteration: `for await (const chunk of readableStream)`. Next.js SSR
+//    drains the render stream this way; without Symbol.asyncIterator the engine
+//    reports the stream as "not iterable".
+(function () {
+  if (typeof ReadableStream === "undefined" || ReadableStream.prototype[Symbol.asyncIterator]) return;
+  const iter = function () {
+    const reader = this.getReader();
+    return {
+      next() { return reader.read(); },
+      return(v) {
+        try { reader.releaseLock(); } catch (e) {}
+        return Promise.resolve({ done: true, value: v });
+      },
+      [Symbol.asyncIterator]() { return this; },
+    };
+  };
+  ReadableStream.prototype[Symbol.asyncIterator] = iter;
+  if (!ReadableStream.prototype.values) ReadableStream.prototype.values = iter;
+})();
+
+// 2. tee() for byte streams (unimplemented in this build) — React's SSR stream
+//    is a byte stream and the edge runtime tees it. Buffer the source once and
+//    replay it into both branches (correct, though not zero-copy). Only used
+//    when the native tee throws.
+(function () {
+  if (typeof ReadableStream === "undefined" || !ReadableStream.prototype.tee) return;
+  const native = ReadableStream.prototype.tee;
+  ReadableStream.prototype.tee = function () {
+    try {
+      return native.call(this);
+    } catch (e) {
+      return bufferingTee(this);
+    }
+  };
+  function bufferingTee(stream) {
+    const reader = stream.getReader();
+    const chunks = [];
+    let err = null;
+    let draining = null;
+    const drain = () => {
+      if (!draining) {
+        draining = (async () => {
+          try {
+            for (;;) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              chunks.push(value);
+            }
+          } catch (e) {
+            err = e;
+          }
+        })();
+      }
+      return draining;
+    };
+    const branch = () => {
+      let i = 0;
+      return new ReadableStream({
+        async pull(c) {
+          await drain();
+          if (err) return c.error(err);
+          if (i < chunks.length) c.enqueue(chunks[i++]);
+          else c.close();
+        },
+      });
+    };
+    return [branch(), branch()];
+  }
+})();
+
 export function serveComponent(app) {
   const fetchFn = typeof app === "function" ? app : app && (app.fetch || app.default);
   addEventListener("fetch", (event) => {
