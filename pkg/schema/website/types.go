@@ -25,4 +25,8 @@ type Getter interface {
 	Paths() []string
 	Branch() string
 	Git() (provider, id, fullname string)
+	Render() string
+	Framework() string
+	Entry() string
+	Bindings() []structureSpec.Binding
 }

@@ -60,6 +60,12 @@ func (srv *Service) attachNodes(cfg config.Config) (err error) {
 		return attachNodesError("http", err)
 	}
 
+	// Wires the StarlingMonkey component engine + KV/storage/secrets bindings;
+	// a no-op unless built with -tags wasmtime_component.
+	if err = srv.attachComponentBindings(); err != nil {
+		return attachNodesError("component-bindings", err)
+	}
+
 	return nil
 }
 

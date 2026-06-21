@@ -18,6 +18,10 @@ func (g getter) Struct() (web *structureSpec.Website, err error) {
 		RepoID:      repoId,
 		RepoName:    fullname,
 		SmartOps:    g.SmartOps(),
+		Render:      g.Render(),
+		Framework:   g.Framework(),
+		Entry:       g.Entry(),
+		Bindings:    g.Bindings(),
 	}
 
 	return

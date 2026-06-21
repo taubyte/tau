@@ -48,6 +48,22 @@ func (w *website) SetWithStruct(sync bool, website *structureSpec.Website) error
 			ops = append(ops, SmartOps(website.SmartOps))
 			return nil
 		}},
+		{"Render", false, func() error {
+			ops = append(ops, Render(website.Render))
+			return nil
+		}},
+		{"Framework", false, func() error {
+			ops = append(ops, Framework(website.Framework))
+			return nil
+		}},
+		{"Entry", false, func() error {
+			ops = append(ops, Entry(website.Entry))
+			return nil
+		}},
+		{"Bindings", false, func() error {
+			ops = append(ops, Bindings(website.Bindings))
+			return nil
+		}},
 	}
 
 	err := opMapper.Run(website)

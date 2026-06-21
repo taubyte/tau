@@ -21,6 +21,9 @@ func (srv *Service) Close() error {
 	}
 
 	srv.tns.Close()
+	if srv.componentBindings != nil {
+		srv.componentBindings.Close()
+	}
 	srv.components.close()
 
 	srv.vm.Close()

@@ -46,6 +46,9 @@ func (w *Website) Ready() error {
 }
 
 func (w *Website) Close() {
+	if w.ssrRuntime != nil {
+		w.ssrRuntime.Shutdown()
+	}
 	w.instanceCtxC()
 }
 

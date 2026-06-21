@@ -1,9 +1,16 @@
 package website
 
-import "github.com/taubyte/tau/pkg/schema/basic"
+import (
+	"github.com/taubyte/tau/pkg/schema/basic"
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+)
 
 type getter struct {
 	*website
+}
+
+func (g getter) Bindings() []structureSpec.Binding {
+	return basic.Get[[]structureSpec.Binding](g, "bindings")
 }
 
 func (w *website) Get() Getter {
@@ -56,4 +63,16 @@ func (g getter) Git() (provider, id, fullname string) {
 
 func (g getter) SmartOps() (value []string) {
 	return basic.Get[[]string](g, "smartops")
+}
+
+func (g getter) Render() string {
+	return basic.Get[string](g, "render")
+}
+
+func (g getter) Framework() string {
+	return basic.Get[string](g, "framework")
+}
+
+func (g getter) Entry() string {
+	return basic.Get[string](g, "entry")
 }

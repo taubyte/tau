@@ -1,0 +1,10 @@
+{
+  "name": "express-ssr-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^5.2.1"
+  }
+}

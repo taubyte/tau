@@ -148,6 +148,12 @@ func (r *runtime) instantiate(name string, compiled wazero.CompiledModule, hasRe
 		WithSysNanosleep().
 		WithRandSource(crand.Reader)
 
+	// WASI-stdio handlers (e.g. JS bundles compiled with Javy) read their
+	// request from stdin; wire it when the instance was created with one.
+	if r.instance.stdin != nil {
+		config = config.WithStdin(r.instance.stdin)
+	}
+
 	ctx := r.instance.ctx.Context()
 	m, err := r.runtime.InstantiateModule(ctx, compiled, config)
 	if err != nil {

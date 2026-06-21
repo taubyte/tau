@@ -10,6 +10,12 @@ import (
 )
 
 func (w website) handle() (err error) {
+	// Zero-config support for popular JavaScript frameworks: if the repository
+	// has no Taubyte build configuration, detect the framework and generate one.
+	if err = ensureFrameworkBuildConfig(w.WorkDir, w.LogFile); err != nil {
+		return fmt.Errorf("preparing framework build config for website repo `%d` failed with: %w", w.Job.Meta.Repository.ID, err)
+	}
+
 	builder, err := build.New(w.ctx, w.LogFile, w.WorkDir)
 	if err != nil {
 		return fmt.Errorf("creating new builder for git website repo `%d` failed with: %w", w.Job.Meta.Repository.ID, err)

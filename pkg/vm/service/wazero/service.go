@@ -10,6 +10,7 @@ func (s *service) New(ctx vm.Context, config vm.Config) (vm.Instance, error) {
 		ctx:     ctx,
 		service: s,
 		config:  &config,
+		stdin:   config.Stdin,
 		fs:      afero.NewMemMapFs(),
 		deps:    make(map[string]vm.SourceModule, 0),
 	}
