@@ -57,3 +57,12 @@ func TestGetHandler(t *testing.T) {
 		return
 	}
 }
+
+func TestConvertToValueShortBuffer(t *testing.T) {
+	short := []byte{0x1, 0x2}
+	for _, _type := range []string{"uint32", "uint64", "float32", "float64"} {
+		if _, err := convertToValue(_type, short); err == nil {
+			t.Errorf("expected error converting %d bytes to %s", len(short), _type)
+		}
+	}
+}

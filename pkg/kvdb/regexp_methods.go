@@ -2,7 +2,6 @@ package kvdb
 
 import (
 	"context"
-	"fmt"
 	"regexp"
 	"time"
 
@@ -16,7 +15,7 @@ type FilterKeyRegEx struct {
 func (f *FilterKeyRegEx) Filter(e query.Entry) bool {
 	for _, r := range f.re {
 		if r == nil {
-			panic(fmt.Sprintf("Query filter got a Nil regexp %v", f))
+			continue
 		}
 		if r.MatchString(e.Key) {
 			return true
