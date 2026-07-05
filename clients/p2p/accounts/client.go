@@ -16,10 +16,8 @@ import (
 
 var logger = log.Logger("tau.accounts.client")
 
-// Client is the P2P client for the Accounts service. Wraps a stream client
-// against the protocol registered by services/accounts; per-entity wire
-// methods live in accounts.go / members.go / users.go / plans.go /
-// tokens.go / login.go.
+// Client is the P2P client for the Accounts service. Per-entity wire methods
+// live in accounts.go / members.go / users.go / plans.go / prefs.go / login.go.
 type Client struct {
 	client *streamClient.Client
 	node   peer.Node
@@ -28,7 +26,6 @@ type Client struct {
 
 var _ accountsIface.Client = (*Client)(nil)
 
-// New constructs a P2P accounts client over the given node.
 func New(ctx context.Context, node peer.Node) (accountsIface.Client, error) {
 	var (
 		c   Client
@@ -43,22 +40,16 @@ func New(ctx context.Context, node peer.Node) (accountsIface.Client, error) {
 	return &c, nil
 }
 
-// Close releases the underlying P2P stream client.
 func (c *Client) Close() {
 	c.client.Close()
 }
 
-// Peers narrows subsequent calls to a specific peer subset.
 func (c *Client) Peers(peers ...peerCore.ID) accountsIface.Client {
 	cp := *c
 	cp.peers = peers
 	return &cp
 }
 
-// --- Integration surface (verify + plan-resolve) ----------------
-
-// Verify asks an accounts service node whether a (provider, external_id) git
-// account is linked to ≥1 Account.
 func (c *Client) Verify(ctx context.Context, provider, externalID string) (*accountsIface.VerifyResponse, error) {
 	resp, err := c.client.Send(verbVerify, command.Body{
 		"provider":    provider,
@@ -70,23 +61,41 @@ func (c *Client) Verify(ctx context.Context, provider, externalID string) (*acco
 	return decodeVerifyResponse(resp)
 }
 
-// ResolvePlan asks an accounts service node whether (account_slug,
-// plan_slug) names an active Plan the (provider, external_id) git user
-// has a grant on.
-func (c *Client) ResolvePlan(ctx context.Context, accountSlug, planSlug, provider, externalID string) (*accountsIface.ResolveResponse, error) {
+func (c *Client) LookupAccountsByEmail(ctx context.Context, email string) ([]string, error) {
+	resp, err := c.client.Send(verbLookupAccountsByEmail, command.Body{
+		"email": email,
+	}, c.peers...)
+	if err != nil {
+		return nil, fmt.Errorf("accounts.LookupAccountsByEmail: %w", err)
+	}
+	var ids []string
+	if v, ok := resp["account_ids"]; ok {
+		raw, err := cbor.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("accounts.LookupAccountsByEmail: re-encode: %w", err)
+		}
+		if err := cbor.Unmarshal(raw, &ids); err != nil {
+			return nil, fmt.Errorf("accounts.LookupAccountsByEmail: decode: %w", err)
+		}
+	}
+	if ids == nil {
+		ids = []string{}
+	}
+	return ids, nil
+}
+
+func (c *Client) ResolvePRef(ctx context.Context, accountSlug, prefName, provider, externalID string) (*accountsIface.ResolveResponse, error) {
 	resp, err := c.client.Send(verbResolve, command.Body{
 		"account_slug": accountSlug,
-		"plan_slug":    planSlug,
+		"pref_name":    prefName,
 		"provider":     provider,
 		"external_id":  externalID,
 	}, c.peers...)
 	if err != nil {
-		return nil, fmt.Errorf("accounts.ResolvePlan: %w", err)
+		return nil, fmt.Errorf("accounts.ResolvePRef: %w", err)
 	}
 	return decodeResolveResponse(resp)
 }
-
-// --- Management surface --------------------------------------------
 
 func (c *Client) Accounts() accountsIface.Accounts { return &accountsImpl{c: c} }
 func (c *Client) Members(accountID string) accountsIface.Members {
@@ -95,16 +104,18 @@ func (c *Client) Members(accountID string) accountsIface.Members {
 func (c *Client) Users(accountID string) accountsIface.Users {
 	return &usersImpl{c: c, accountID: accountID}
 }
-func (c *Client) Plans(accountID string) accountsIface.Plans {
-	return &plansImpl{c: c, accountID: accountID}
+func (c *Client) Plans() accountsIface.Plans {
+	return &plansImpl{c: c}
+}
+func (c *Client) PRefs(accountID string) accountsIface.PRefs {
+	return &prefsImpl{c: c, accountID: accountID}
 }
 func (c *Client) Login() accountsIface.Login { return &loginImpl{c: c} }
 
-// --- Verify / Resolve verb constants and decoding ----------------
-
 const (
-	verbVerify  = "verify"
-	verbResolve = "resolve"
+	verbVerify                = "verify"
+	verbResolve               = "resolve"
+	verbLookupAccountsByEmail = "lookup_accounts_by_email"
 )
 
 func decodeVerifyResponse(resp map[string]any) (*accountsIface.VerifyResponse, error) {
@@ -128,16 +139,27 @@ func decodeResolveResponse(resp map[string]any) (*accountsIface.ResolveResponse,
 		Valid:  tryBool(resp, "valid"),
 		Reason: tryString(resp, "reason"),
 	}
+	if v, ok := resp["pref"]; ok {
+		raw, err := cbor.Marshal(v)
+		if err != nil {
+			return nil, fmt.Errorf("accounts.ResolvePRef: re-encode pref: %w", err)
+		}
+		var pref accountsIface.PRef
+		if err := cbor.Unmarshal(raw, &pref); err != nil {
+			return nil, fmt.Errorf("accounts.ResolvePRef: decode pref: %w", err)
+		}
+		out.PRef = &pref
+	}
 	if v, ok := resp["plan"]; ok {
 		raw, err := cbor.Marshal(v)
 		if err != nil {
-			return nil, fmt.Errorf("accounts.ResolvePlan: re-encode plan: %w", err)
+			return nil, fmt.Errorf("accounts.ResolvePRef: re-encode plan: %w", err)
 		}
-		var b accountsIface.Plan
-		if err := cbor.Unmarshal(raw, &b); err != nil {
-			return nil, fmt.Errorf("accounts.ResolvePlan: decode plan: %w", err)
+		var p accountsIface.Plan
+		if err := cbor.Unmarshal(raw, &p); err != nil {
+			return nil, fmt.Errorf("accounts.ResolvePRef: decode plan: %w", err)
 		}
-		out.Plan = &b
+		out.Plan = &p
 	}
 	return out, nil
 }

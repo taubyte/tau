@@ -84,12 +84,12 @@ func (i *usersImpl) Remove(ctx context.Context, userID string) error {
 	return expectOK(resp, "users.Remove")
 }
 
-func (i *usersImpl) Grant(ctx context.Context, userID string, in accountsIface.GrantPlanInput) error {
+func (i *usersImpl) Grant(ctx context.Context, userID string, in accountsIface.GrantPRefInput) error {
 	resp, err := i.c.client.Send(verbUser, command.Body{
 		"action":     "grant",
 		"account_id": i.accountID,
 		"id":         userID,
-		"plan_id":    in.PlanID,
+		"pref_name":  in.PRefName,
 		"is_default": in.IsDefault,
 	}, i.c.peers...)
 	if err != nil {
@@ -98,10 +98,10 @@ func (i *usersImpl) Grant(ctx context.Context, userID string, in accountsIface.G
 	return expectOK(resp, "users.Grant")
 }
 
-func (i *usersImpl) Revoke(ctx context.Context, userID, planID string) error {
+func (i *usersImpl) Revoke(ctx context.Context, userID, prefName string) error {
 	resp, err := i.c.client.Send(verbUser, command.Body{
 		"action": "revoke", "account_id": i.accountID,
-		"id": userID, "plan_id": planID,
+		"id": userID, "pref_name": prefName,
 	}, i.c.peers...)
 	if err != nil {
 		return fmt.Errorf("users.Revoke: %w", err)

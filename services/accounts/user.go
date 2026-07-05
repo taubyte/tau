@@ -4,25 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/tau/core/kvdb"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
-// userStore implements accountsIface.Users for one Account.
-//
-// Persistence is split: the User's profile (sans grants) lives at
-// .../users/{user_id}/profile, and each PlanGrant lives at
-// .../users/{user_id}/grants/{plan_id}. This lets Grant/Revoke modify a
-// single grant without touching the profile, and lets List(grants) walk a
-// per-User prefix.
-//
-// Maintained indexes:
-//
-//	/lookup/git_user/{provider}/{external_id} → JSON [(account_id, user_id), ...]
+// userStore implements accountsIface.Users for one Account. Grants are keyed
+// by PRef name (account-scoped), not plan_id — so users automatically follow
+// plan upgrades when the PRef's pointer swaps without re-issuing the grant.
 type userStore struct {
 	db        kvdb.KVDB
 	accountID string
@@ -34,21 +26,19 @@ func newUserStore(db kvdb.KVDB, accountID string) *userStore {
 
 var _ accountsIface.Users = (*userStore)(nil)
 
-// gitUserIndexEntry is one row in the git_user lookup index.
+// gitUserIndexEntry is reconstructed from index keys; not a stored shape.
 type gitUserIndexEntry struct {
-	AccountID string `cbor:"account_id"`
-	UserID    string `cbor:"user_id"`
+	AccountID string
+	UserID    string
 }
 
-// Add records a new linked git account on this Account. Provider+external_id
-// must be unique within the Account (a given github user can only be linked
-// once per Account). Across Accounts the same git user can be linked many
-// times — the global git_user index tracks all of them.
+// Add enforces (provider, external_id) uniqueness within this Account. The
+// same git user may be linked to many Accounts — the global git_user index
+// tracks all of them.
 func (s *userStore) Add(ctx context.Context, in accountsIface.AddUserInput) (*accountsIface.User, error) {
 	if in.Provider == "" || in.ExternalID == "" {
 		return nil, errors.New("accounts: provider and external_id required")
 	}
-	// Uniqueness within Account.
 	if existing, _ := s.GetByExternal(ctx, in.Provider, in.ExternalID); existing != nil {
 		return nil, fmt.Errorf("accounts: git user %s/%s already linked to this account",
 			in.Provider, in.ExternalID)
@@ -66,14 +56,12 @@ func (s *userStore) Add(ctx context.Context, in accountsIface.AddUserInput) (*ac
 		return nil, err
 	}
 	if err := s.addGitUserIndex(ctx, u.Provider, u.ExternalID, u.ID); err != nil {
-		// best-effort rollback
 		_ = s.db.Delete(ctx, UserProfilePath(s.accountID, u.ID))
 		return nil, err
 	}
 	return u, nil
 }
 
-// Get loads a User (including its grants).
 func (s *userStore) Get(ctx context.Context, userID string) (*accountsIface.User, error) {
 	var u accountsIface.User
 	if err := getKV(ctx, s.db, UserProfilePath(s.accountID, userID), &u); err != nil {
@@ -87,8 +75,6 @@ func (s *userStore) Get(ctx context.Context, userID string) (*accountsIface.User
 	return &u, nil
 }
 
-// GetByExternal finds a User by (provider, external_id) within this Account.
-// Walks the global git_user index then filters to this Account.
 func (s *userStore) GetByExternal(ctx context.Context, provider, externalID string) (*accountsIface.User, error) {
 	idx, err := s.readGitUserIndex(ctx, provider, externalID)
 	if err != nil {
@@ -105,46 +91,44 @@ func (s *userStore) GetByExternal(ctx context.Context, provider, externalID stri
 	return nil, ErrNotFound
 }
 
-// List returns the IDs of all Users on this Account.
 func (s *userStore) List(ctx context.Context) ([]string, error) {
 	return listChildIDs(ctx, s.db, AccountUsersPrefix(s.accountID))
 }
 
-// Remove deletes the User profile, all grants, and removes the git_user index entry.
 func (s *userStore) Remove(ctx context.Context, userID string) error {
 	u, err := s.Get(ctx, userID)
 	if err != nil {
 		return err
 	}
-	// Delete each grant individually (KVDB lacks a "delete prefix" primitive).
 	for _, g := range u.PlanGrants {
-		if err := s.db.Delete(ctx, UserGrantPath(s.accountID, userID, g.PlanID)); err != nil {
+		if err := s.db.Delete(ctx, UserGrantPath(s.accountID, userID, g.PRefName)); err != nil {
 			return fmt.Errorf("accounts: delete grant: %w", err)
 		}
 	}
 	if err := s.db.Delete(ctx, UserProfilePath(s.accountID, userID)); err != nil {
 		return fmt.Errorf("accounts: delete user: %w", err)
 	}
+	// git_user-index cleanup is best-effort: profile delete already
+	// succeeded, so don't fail Remove because a secondary index is stale.
 	if err := s.removeGitUserIndex(ctx, u.Provider, u.ExternalID, userID); err != nil {
-		return err
+		logger.Warnf("accounts: stale git_user index entry for user %s on account %s: %v",
+			userID, s.accountID, err)
 	}
 	return nil
 }
 
-// Grant attaches a Plan to the User. If is_default is set, demotes any
-// existing default grant. First grant on a User is auto-default.
-func (s *userStore) Grant(ctx context.Context, userID string, in accountsIface.GrantPlanInput) error {
-	if in.PlanID == "" {
-		return errors.New("accounts: plan_id required")
+// Grant attaches a PRef to the User. The first grant on a User is
+// auto-default; a new grant marked IsDefault demotes any prior default.
+func (s *userStore) Grant(ctx context.Context, userID string, in accountsIface.GrantPRefInput) error {
+	if in.PRefName == "" {
+		return errors.New("accounts: pref_name required")
 	}
-	// Verify the User exists.
 	if _, err := s.Get(ctx, userID); err != nil {
 		return err
 	}
-	// Verify the Plan exists in this Account.
-	bs := newPlanStore(s.db, s.accountID)
-	if _, err := bs.Get(ctx, in.PlanID); err != nil {
-		return fmt.Errorf("accounts: plan %s: %w", in.PlanID, err)
+	ps := newPRefStore(s.db, s.accountID, newPlanStore(s.db))
+	if _, err := ps.Get(ctx, in.PRefName); err != nil {
+		return fmt.Errorf("accounts: pref %q: %w", in.PRefName, err)
 	}
 
 	existing, err := s.listGrants(ctx, userID)
@@ -154,29 +138,28 @@ func (s *userStore) Grant(ctx context.Context, userID string, in accountsIface.G
 
 	makeDefault := in.IsDefault || len(existing) == 0
 
-	// If this grant is becoming default, demote others.
 	if makeDefault {
 		for _, g := range existing {
-			if g.IsDefault && g.PlanID != in.PlanID {
+			if g.IsDefault && g.PRefName != in.PRefName {
 				demoted := g
 				demoted.IsDefault = false
-				if err := putKV(ctx, s.db, UserGrantPath(s.accountID, userID, demoted.PlanID), demoted); err != nil {
+				if err := putKV(ctx, s.db, UserGrantPath(s.accountID, userID, demoted.PRefName), demoted); err != nil {
 					return err
 				}
 			}
 		}
 	}
 
-	g := accountsIface.PlanGrant{PlanID: in.PlanID, IsDefault: makeDefault}
-	if err := putKV(ctx, s.db, UserGrantPath(s.accountID, userID, in.PlanID), g); err != nil {
+	g := accountsIface.PlanGrant{PRefName: in.PRefName, IsDefault: makeDefault}
+	if err := putKV(ctx, s.db, UserGrantPath(s.accountID, userID, in.PRefName), g); err != nil {
 		return err
 	}
 	return nil
 }
 
-// Revoke removes one grant. If it was the default and other grants remain,
-// promotes the first remaining to default.
-func (s *userStore) Revoke(ctx context.Context, userID, planID string) error {
+// Revoke promotes the first remaining grant to default when the removed grant
+// was the default and other grants survive.
+func (s *userStore) Revoke(ctx context.Context, userID, prefName string) error {
 	existing, err := s.listGrants(ctx, userID)
 	if err != nil {
 		return err
@@ -187,7 +170,7 @@ func (s *userStore) Revoke(ctx context.Context, userID, planID string) error {
 		others  []accountsIface.PlanGrant
 	)
 	for _, g := range existing {
-		if g.PlanID == planID {
+		if g.PRefName == prefName {
 			removed = g
 			found = true
 		} else {
@@ -197,20 +180,18 @@ func (s *userStore) Revoke(ctx context.Context, userID, planID string) error {
 	if !found {
 		return ErrNotFound
 	}
-	if err := s.db.Delete(ctx, UserGrantPath(s.accountID, userID, planID)); err != nil {
+	if err := s.db.Delete(ctx, UserGrantPath(s.accountID, userID, prefName)); err != nil {
 		return fmt.Errorf("accounts: delete grant: %w", err)
 	}
-	// Promote the first remaining grant if we removed the default.
 	if removed.IsDefault && len(others) > 0 {
 		others[0].IsDefault = true
-		if err := putKV(ctx, s.db, UserGrantPath(s.accountID, userID, others[0].PlanID), others[0]); err != nil {
+		if err := putKV(ctx, s.db, UserGrantPath(s.accountID, userID, others[0].PRefName), others[0]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// listGrants reads all grants for a User.
 func (s *userStore) listGrants(ctx context.Context, userID string) ([]accountsIface.PlanGrant, error) {
 	keys, err := s.db.List(ctx, UserGrantsPrefix(s.accountID, userID))
 	if err != nil {
@@ -230,60 +211,36 @@ func (s *userStore) listGrants(ctx context.Context, userID string) ([]accountsIf
 	return grants, nil
 }
 
-// --- git_user index helpers ----------------------------------------
-
 func (s *userStore) addGitUserIndex(ctx context.Context, provider, externalID, userID string) error {
-	idx, err := s.readGitUserIndex(ctx, provider, externalID)
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return err
-	}
-	idx = append(idx, gitUserIndexEntry{AccountID: s.accountID, UserID: userID})
-	return s.writeGitUserIndex(ctx, provider, externalID, idx)
+	return s.db.Put(ctx, LookupGitUserEntryPath(provider, externalID, s.accountID, userID), nowBytes())
 }
 
+// removeGitUserIndex returns ErrNotFound when the entry isn't present (raw
+// KVDB.Delete is idempotent).
 func (s *userStore) removeGitUserIndex(ctx context.Context, provider, externalID, userID string) error {
-	idx, err := s.readGitUserIndex(ctx, provider, externalID)
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return nil
-		}
-		return err
-	}
-	out := idx[:0]
-	for _, e := range idx {
-		if e.AccountID == s.accountID && e.UserID == userID {
-			continue
-		}
-		out = append(out, e)
-	}
-	if len(out) == 0 {
-		return s.db.Delete(ctx, LookupGitUserPath(provider, externalID))
-	}
-	return s.writeGitUserIndex(ctx, provider, externalID, out)
+	return deleteIndexEntry(ctx, s.db, LookupGitUserEntryPath(provider, externalID, s.accountID, userID))
 }
 
 func (s *userStore) readGitUserIndex(ctx context.Context, provider, externalID string) ([]gitUserIndexEntry, error) {
-	raw, err := s.db.Get(ctx, LookupGitUserPath(provider, externalID))
+	prefix := LookupGitUserPrefix(provider, externalID)
+	keys, err := s.db.List(ctx, prefix)
 	if err != nil {
-		if isMissing(err) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("accounts: git_user index get: %w", err)
+		return nil, fmt.Errorf("accounts: list git_user index %s: %w", prefix, err)
 	}
-	if len(raw) == 0 {
+	if len(keys) == 0 {
 		return nil, ErrNotFound
 	}
-	var idx []gitUserIndexEntry
-	if err := cbor.Unmarshal(raw, &idx); err != nil {
-		return nil, fmt.Errorf("accounts: git_user index unmarshal: %w", err)
+	out := make([]gitUserIndexEntry, 0, len(keys))
+	for _, k := range keys {
+		rest := strings.TrimPrefix(k, prefix)
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			continue
+		}
+		out = append(out, gitUserIndexEntry{AccountID: parts[0], UserID: parts[1]})
 	}
-	return idx, nil
-}
-
-func (s *userStore) writeGitUserIndex(ctx context.Context, provider, externalID string, idx []gitUserIndexEntry) error {
-	raw, err := cbor.Marshal(idx)
-	if err != nil {
-		return fmt.Errorf("accounts: git_user index marshal: %w", err)
+	if len(out) == 0 {
+		return nil, ErrNotFound
 	}
-	return s.db.Put(ctx, LookupGitUserPath(provider, externalID), raw)
+	return out, nil
 }

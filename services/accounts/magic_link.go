@@ -16,14 +16,17 @@ import (
 	"github.com/taubyte/tau/services/accounts/email"
 )
 
-// Magic-link layout:
+// KV layout:
 //
-//   /auth/magic_links/{sha256(code)} → {account_id, member_id, exp_unix_ms, used_at?}
-//   /auth/rate_limits/email/{sha256(email)}/{hour_plan} → counter
-//   /auth/rate_limits/ip/{ip}/{hour_plan} → counter
+//   /auth/magic_links/{sha256(code)}                            → magicLinkRecord
+//   /auth/rate_limits/email/{sha256(email)}/{hour}/{attempt_id} → ms-timestamp
+//   /auth/rate_limits/ip/{ip}/{hour}/{attempt_id}               → ms-timestamp
+//   /auth/rate_limits/verify_ip/{ip}/{minute}/{attempt_id}      → ms-timestamp
 //
-// The raw code is never stored — only its sha256. Verify hashes the
-// presented code and looks up that key.
+// Rate buckets are key-per-attempt (not a counter blob) so concurrent bumps
+// from different nodes can't lose each other's increments — "count" = List.
+// Window expiry is implicit via the {hour}/{minute} path segment; stale
+// windows simply stop being read (a sweeper or raft phase can prune).
 
 const (
 	magicLinkPathPrefix   = "/auth/magic_links/"
@@ -51,8 +54,8 @@ const (
 	verifyAttemptsPerIPMinute = 10
 )
 
-// magicLinkRecord is what we persist per code. Only its hash is the key, so
-// the raw code can't be recovered from the KV.
+// magicLinkRecord — the key is sha256(code), so the raw code is never
+// recoverable from the KV.
 type magicLinkRecord struct {
 	AccountID string `cbor:"account_id"`
 	MemberID  string `cbor:"member_id"`
@@ -70,7 +73,6 @@ const (
 	magicLinkSendsPerIPHr    = 20
 )
 
-// magicLinkStore implements send/verify with rate limiting.
 type magicLinkStore struct {
 	db          kvdb.KVDB
 	sender      email.Sender
@@ -85,12 +87,8 @@ func newMagicLinkStore(db kvdb.KVDB, sender email.Sender, accountsURL string) *m
 	}
 }
 
-// SendMagicLink generates a single-use code, persists it under the given
-// (account, member, email), enforces rate limits, and emails the URL.
-//
-// `clientIP` may be empty when the call originates from a context that
-// doesn't carry one (e.g. P2P CLI flow); only the per-email rate limit
-// applies in that case.
+// SendMagicLink: clientIP may be empty for callers that don't carry one (P2P
+// CLI flow) — only the per-email rate limit applies in that case.
 func (s *magicLinkStore) SendMagicLink(ctx context.Context, accountID, memberID, to, clientIP string) error {
 	if to == "" {
 		return errors.New("accounts: magic-link recipient required")
@@ -103,11 +101,9 @@ func (s *magicLinkStore) SendMagicLink(ctx context.Context, accountID, memberID,
 	hourPlan := fmt.Sprintf("%d", now.Unix()/3600)
 	emailHash := hashLower(to)
 
-	// Email-plan rate limit.
 	if err := s.bumpAndCheckRate(ctx, rateLimitEmailPath+emailHash+"/"+hourPlan, magicLinkSendsPerEmailHr); err != nil {
 		return err
 	}
-	// IP-plan rate limit.
 	if clientIP != "" {
 		if err := s.bumpAndCheckRate(ctx, rateLimitIPPath+clientIP+"/"+hourPlan, magicLinkSendsPerIPHr); err != nil {
 			return err
@@ -141,23 +137,29 @@ func (s *magicLinkStore) SendMagicLink(ctx context.Context, accountID, memberID,
 		return err
 	}
 	if err := s.sender.Send(ctx, to, subject, body); err != nil {
-		// Roll back the persisted code so a future user can retry without
-		// hitting the per-email limit until expiry.
+		// Roll back persisted code so the user can retry without burning
+		// their per-email budget until expiry.
 		_ = s.db.Delete(ctx, magicLinkPathPrefix+sha256Hex(code))
 		return err
 	}
 	return nil
 }
 
-// VerifyMagicLink checks the code against the store, marks it used, and
-// returns the (account, member) it authenticates. Returns an error for
-// missing / expired / already-used codes.
+// VerifyMagicLink rate-limits per-IP per minute on failed attempts only
+// (successes don't bump the counter). Without this, the 10^6 search space
+// of a 6-digit code is brute-forceable.
 //
-// `clientIP` (when non-empty) is rate-limited per minute: failed attempts
-// (lookup miss, expired, already-used) bump a per-IP counter; successful
-// verifies don't. Once the counter exceeds verifyAttemptsPerIPMinute the
-// IP is rejected for the rest of the minute. This is what makes 6-digit
-// codes safe — without it the 10^6 search space is brute-forceable.
+// KNOWN RACE (no sub-key fix; raft phase 2 closes it):
+// Two service nodes that both receive the same valid code before CRDT
+// convergence can each pass the `UsedAt == 0` check and each mark the
+// record used. Both will issue a session. Sub-keying the "used" marker
+// doesn't help — both nodes idempotently write distinct claim keys and
+// both still claim success. The only correct fix is single-leader
+// serialization (raft) or a CAS primitive on the KV. Until that lands,
+// the code's TTL (short) plus the verify-failure rate limit (above) bound
+// the blast radius. Don't try to "fix" this with another layer of
+// sub-keyed markers — the issue is exactly-once consumption across
+// partitions, not key-shape.
 func (s *magicLinkStore) VerifyMagicLink(ctx context.Context, code, clientIP string) (accountID, memberID string, err error) {
 	if code == "" {
 		return "", "", errors.New("accounts: magic-link code required")
@@ -197,85 +199,83 @@ func (s *magicLinkStore) VerifyMagicLink(ctx context.Context, code, clientIP str
 	return rec.AccountID, rec.MemberID, nil
 }
 
-// checkVerifyRateLimit returns nil when the IP is under the per-minute
-// failure cap, or an error when it has exceeded it. Counters live at
-// rateLimitVerifyIPPath/{ip}/{minute} so they reset every minute and the
-// keyspace doesn't grow unboundedly.
+// checkVerifyRateLimit uses key-per-attempt under rateLimitVerifyIPPath/
+// {ip}/{minute}/{attempt_id}; count by List, not by counter Get+Put. CRDT-
+// safe (distinct keys can't collide) at the cost of an O(N) list per check,
+// where N is bounded by the per-window limit.
 func (s *magicLinkStore) checkVerifyRateLimit(ctx context.Context, clientIP string) error {
-	key := s.verifyRateKey(clientIP)
-	raw, err := s.db.Get(ctx, key)
+	keys, err := s.db.List(ctx, s.verifyRatePrefix(clientIP))
 	if err != nil {
-		if isMissing(err) {
-			return nil
-		}
-		return fmt.Errorf("accounts: verify rate-limit read: %w", err)
+		return fmt.Errorf("accounts: verify rate-limit list: %w", err)
 	}
-	current, _ := decodeIntDecimal(string(raw))
-	if current >= verifyAttemptsPerIPMinute {
+	if len(keys) >= verifyAttemptsPerIPMinute {
 		return fmt.Errorf("accounts: too many verify attempts; try again in a minute")
 	}
 	return nil
 }
 
-// bumpVerifyFailureCounter increments the IP's failure counter for the
-// current minute. Best-effort — write errors are ignored to keep the verify
-// path returning the user-facing error rather than a confusing rate-limit
-// internal error.
+// bumpVerifyFailureCounter is best-effort: write errors are swallowed so the
+// caller still sees the original user-facing verify error.
 func (s *magicLinkStore) bumpVerifyFailureCounter(ctx context.Context, clientIP string) {
 	if clientIP == "" {
 		return
 	}
-	key := s.verifyRateKey(clientIP)
-	current := 0
-	if raw, err := s.db.Get(ctx, key); err == nil && len(raw) > 0 {
-		current, _ = decodeIntDecimal(string(raw))
-	}
-	current++
-	_ = s.db.Put(ctx, key, []byte(fmt.Sprintf("%d", current)))
+	_ = s.db.Put(ctx, s.verifyRatePrefix(clientIP)+newRateAttemptID(), nowMSBytes())
 }
 
-// verifyRateKey returns the per-minute counter key for an IP.
-func (s *magicLinkStore) verifyRateKey(clientIP string) string {
+// verifyRatePrefix — trailing slash bounds List to this minute's bucket.
+func (s *magicLinkStore) verifyRatePrefix(clientIP string) string {
 	minute := fmt.Sprintf("%d", time.Now().Unix()/60)
-	return rateLimitVerifyIPPath + clientIP + "/" + minute
+	return rateLimitVerifyIPPath + clientIP + "/" + minute + "/"
 }
 
-// bumpAndCheckRate increments the counter at key and returns an error when
-// it exceeds limit.
-func (s *magicLinkStore) bumpAndCheckRate(ctx context.Context, key string, limit int) error {
-	current := 0
-	if raw, err := s.db.Get(ctx, key); err == nil && len(raw) > 0 {
-		current, _ = decodeIntDecimal(string(raw))
-	} else if err != nil && !isMissing(err) {
-		return fmt.Errorf("accounts: rate-limit read: %w", err)
+// bumpAndCheckRate: key-per-attempt under the window prefix, count by List.
+// Sub-keyed (not counter Get+Put) so concurrent bumps from different nodes
+// can't lose each other's increments.
+func (s *magicLinkStore) bumpAndCheckRate(ctx context.Context, prefix string, limit int) error {
+	if prefix == "" || prefix[len(prefix)-1] != '/' {
+		prefix += "/"
 	}
-	if current >= limit {
+	keys, err := s.db.List(ctx, prefix)
+	if err != nil {
+		return fmt.Errorf("accounts: rate-limit list: %w", err)
+	}
+	if len(keys) >= limit {
 		return fmt.Errorf("accounts: rate limit exceeded (%d/hour)", limit)
 	}
-	current++
-	if err := s.db.Put(ctx, key, []byte(fmt.Sprintf("%d", current))); err != nil {
+	if err := s.db.Put(ctx, prefix+newRateAttemptID(), nowMSBytes()); err != nil {
 		return fmt.Errorf("accounts: rate-limit write: %w", err)
 	}
 	return nil
 }
 
-// buildMagicLinkURL is the deep-link presented in the email. Accounts.AccountsURL
-// (e.g. https://accounts.<network>) is set in config.
+// newRateAttemptID — 16-byte crypto-random hex makes collisions effectively
+// impossible across concurrent writers on different nodes within a minute.
+func newRateAttemptID() string {
+	var b [16]byte
+	_, _ = rand.Read(b[:])
+	return hex.EncodeToString(b[:])
+}
+
+// nowMSBytes — the rate-attempt value is human-readable for KV inspection;
+// counting is via List, not summation, so the format is informational.
+func nowMSBytes() []byte {
+	return []byte(fmt.Sprintf("%d", time.Now().UnixMilli()))
+}
+
 func (s *magicLinkStore) buildMagicLinkURL(code string) string {
 	base := strings.TrimRight(s.accountsURL, "/")
 	if base == "" {
-		// Fallback for dev/dream where the operator hasn't set AccountsURL —
-		// the code itself is what matters; the test harness reads it from
-		// the captured email body.
+		// Dev/dream fallback when AccountsURL isn't configured — the test
+		// harness reads the code straight out of the captured email body.
 		base = "https://accounts.localhost"
 	}
 	return base + "/auth/magic?code=" + code
 }
 
 func generateMagicLinkCode() (string, error) {
-	// Generate `magicLinkCodeDigits` digits of crypto-random uniformly in
-	// [0, 10^digits). We use `crypto/rand.Int` rather than masking off bits
-	// of byte-random to avoid modulo bias.
+	// crypto/rand.Int over [0, 10^digits) — using byte-mask + modulo would
+	// introduce modulo bias on a 10-base space.
 	max := big.NewInt(pow10(magicLinkCodeDigits))
 	n, err := rand.Int(rand.Reader, max)
 	if err != nil {
@@ -284,7 +284,7 @@ func generateMagicLinkCode() (string, error) {
 	return fmt.Sprintf("%0*d", magicLinkCodeDigits, n.Int64()), nil
 }
 
-// pow10 returns 10^n. Inlined so we don't pull math.Pow / float64 ↔ int64.
+// pow10 inlined to avoid pulling math.Pow / float64 ↔ int64.
 func pow10(n int) int64 {
 	out := int64(1)
 	for range n {
@@ -300,15 +300,4 @@ func sha256Hex(s string) string {
 
 func hashLower(email string) string {
 	return sha256Hex(strings.ToLower(strings.TrimSpace(email)))
-}
-
-func decodeIntDecimal(s string) (int, error) {
-	var n int
-	for _, r := range s {
-		if r < '0' || r > '9' {
-			return 0, errors.New("accounts: rate-limit not decimal")
-		}
-		n = n*10 + int(r-'0')
-	}
-	return n, nil
 }

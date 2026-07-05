@@ -56,11 +56,16 @@ func TestAuth_VerifiesAgainstAccounts_Dreaming(t *testing.T) {
 	cli := svc.Client()
 	acc, err := cli.Accounts().Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
 	assert.NilError(t, err)
-	plan, err := cli.Plans(acc.ID).Create(ctx, accountsIface.CreatePlanInput{Slug: "prod", Name: "Prod"})
+	plan, err := cli.Plans().Create(ctx, accountsIface.CreatePlanInput{Name: "Prod"})
+	assert.NilError(t, err)
+	prefs := cli.PRefs(acc.ID)
+	_, err = prefs.Create(ctx, accountsIface.CreatePRefInput{Name: "prod", MemberID: "system:test"})
+	assert.NilError(t, err)
+	_, err = prefs.Assign(ctx, accountsIface.AssignPRefInput{Name: "prod", PlanID: plan.ID, MemberID: "system:test"})
 	assert.NilError(t, err)
 	user, err := cli.Users(acc.ID).Add(ctx, accountsIface.AddUserInput{Provider: "github", ExternalID: "42"})
 	assert.NilError(t, err)
-	assert.NilError(t, cli.Users(acc.ID).Grant(ctx, user.ID, accountsIface.GrantPlanInput{PlanID: plan.ID}))
+	assert.NilError(t, cli.Users(acc.ID).Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: "prod"}))
 
 	// Sanity: the wire path used by services/auth (P2P accounts client →
 	// stream verb → in-process Verify) round-trips the same shape.

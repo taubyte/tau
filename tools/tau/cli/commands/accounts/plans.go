@@ -5,11 +5,12 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-// Plans are operator-managed in v1; Members can only inspect via list.
+// Plans are operator-managed in v1; Members can only inspect via list. The CLI
+// surface refers to the user-facing "plan" concept which is internally a PRef.
 var plansCommand = &cli.Command{
 	Name:    "plans",
 	Aliases: []string{"plan"},
-	Usage:   "Inspect Plans within an Account",
+	Usage:   "Inspect plans within an Account",
 	Subcommands: []*cli.Command{
 		plansListCommand,
 	},
@@ -34,17 +35,17 @@ func runPlansList(ctx *cli.Context) error {
 		if filter != "" && acc.Slug != filter {
 			continue
 		}
-		if len(acc.Plans) == 0 {
+		if len(acc.PRefs) == 0 {
 			pterm.Info.Printf("%s: <no plans>\n", acc.Slug)
 			any = true
 			continue
 		}
-		for _, p := range acc.Plans {
+		for _, p := range acc.PRefs {
 			marker := " "
 			if p.IsDefault {
 				marker = "*"
 			}
-			pterm.Info.Printf("%s %s/%s\n", marker, acc.Slug, p.Slug)
+			pterm.Info.Printf("%s %s/%s\n", marker, acc.Slug, p.Name)
 			any = true
 		}
 	}

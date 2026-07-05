@@ -108,14 +108,15 @@ func TestAccountStore_SlugValidation(t *testing.T) {
 	store := newAccountStore(srv.db)
 	ctx := context.Background()
 
-	bad := []string{"", "Acme", "with space", "x!", "-leading", "trailing-", "thisslugiswaytoolongforthelimitsetbythevalidatorwhichmaxesoutatsixtyfourchars-"}
+	bad := []string{"", "with space", "x!", "1leading", "trailing-", "kebab-case", "thisslugiswaytoolongforthelimitsetbythevalidatorwhichmaxesoutatsixtyfourchars_"}
 	for _, slug := range bad {
 		if _, err := store.Create(ctx, accountsIface.CreateAccountInput{Slug: slug, Name: "x"}); err == nil {
 			t.Errorf("slug %q should have failed validation", slug)
 		}
 	}
 
-	ok := []string{"acme", "acme-corp", "acme_dev", "team-1"}
+	// Varname rules are case-sensitive: Acme and acme are distinct slugs.
+	ok := []string{"acme", "Acme", "acme_dev", "team_1", "_under"}
 	for _, slug := range ok {
 		if _, err := store.Create(ctx, accountsIface.CreateAccountInput{Slug: slug, Name: "x"}); err != nil {
 			t.Errorf("slug %q should be valid: %v", slug, err)
@@ -127,29 +128,25 @@ func TestPlanStore_CRUD(t *testing.T) {
 	srv := newTestService(t)
 	ctx := context.Background()
 
-	accStore := newAccountStore(srv.db)
-	acc, err := accStore.Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
-	if err != nil {
-		t.Fatalf("Create account: %v", err)
-	}
-	bs := newPlanStore(srv.db, acc.ID)
+	bs := newPlanStore(srv.db)
 
 	plan, err := bs.Create(ctx, accountsIface.CreatePlanInput{
-		Slug: "prod",
 		Name: "Production",
-		Mode: accountsIface.PlanModeQuota,
 	})
 	if err != nil {
 		t.Fatalf("Create plan: %v", err)
 	}
-	if plan.AccountID != acc.ID {
-		t.Fatalf("plan account_id mismatch")
+	if plan.Name != "Production" {
+		t.Fatalf("plan name mismatch: %+v", plan)
+	}
+	if plan.DisplayName != "Production" {
+		t.Fatalf("DisplayName should default to Name; got %q", plan.DisplayName)
 	}
 
-	// GetBySlug.
-	bySlug, err := bs.GetBySlug(ctx, "prod")
-	if err != nil || bySlug.ID != plan.ID {
-		t.Fatalf("GetBySlug: %v %+v", err, bySlug)
+	// Get.
+	got, err := bs.Get(ctx, plan.ID)
+	if err != nil || got.ID != plan.ID {
+		t.Fatalf("Get: %v %+v", err, got)
 	}
 
 	// List.
@@ -158,17 +155,7 @@ func TestPlanStore_CRUD(t *testing.T) {
 		t.Fatalf("List: %v %+v", err, ids)
 	}
 
-	// Update + Delete.
-	suspended := accountsIface.PlanStatusSuspended
-	if _, err := bs.Update(ctx, plan.ID, accountsIface.UpdatePlanInput{Status: &suspended}); err != nil {
-		t.Fatalf("Update: %v", err)
-	}
-	if err := bs.Delete(ctx, plan.ID); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
-	if _, err := bs.Get(ctx, plan.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("Get after delete: %v", err)
-	}
+	// Plans are immutable and undeletable — no Update, no Delete.
 }
 
 func TestUserStore_GrantsAndDefault(t *testing.T) {
@@ -177,9 +164,20 @@ func TestUserStore_GrantsAndDefault(t *testing.T) {
 
 	accStore := newAccountStore(srv.db)
 	acc, _ := accStore.Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
-	bs := newPlanStore(srv.db, acc.ID)
-	prod, _ := bs.Create(ctx, accountsIface.CreatePlanInput{Slug: "prod", Name: "Prod"})
-	stg, _ := bs.Create(ctx, accountsIface.CreatePlanInput{Slug: "staging", Name: "Staging"})
+
+	// Two PRefs. Grants are PRef-name-keyed; the plan they point at is
+	// irrelevant for the grant default semantics this test exercises.
+	plans := newPlanStore(srv.db)
+	plan, _ := plans.Create(ctx, accountsIface.CreatePlanInput{Name: "Prod"})
+	prefs := newPRefStore(srv.db, acc.ID, plans)
+	for _, name := range []string{"prod", "staging"} {
+		if _, err := prefs.Create(ctx, accountsIface.CreatePRefInput{Name: name, MemberID: "system:test"}); err != nil {
+			t.Fatalf("Create pref %s: %v", name, err)
+		}
+		if _, err := prefs.Assign(ctx, accountsIface.AssignPRefInput{Name: name, PlanID: plan.ID, MemberID: "system:test"}); err != nil {
+			t.Fatalf("Assign pref %s: %v", name, err)
+		}
+	}
 
 	us := newUserStore(srv.db, acc.ID)
 	user, err := us.Add(ctx, accountsIface.AddUserInput{
@@ -192,7 +190,7 @@ func TestUserStore_GrantsAndDefault(t *testing.T) {
 	}
 
 	// First grant becomes default automatically.
-	if err := us.Grant(ctx, user.ID, accountsIface.GrantPlanInput{PlanID: prod.ID}); err != nil {
+	if err := us.Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: "prod"}); err != nil {
 		t.Fatalf("Grant prod: %v", err)
 	}
 	got, _ := us.Get(ctx, user.ID)
@@ -201,7 +199,7 @@ func TestUserStore_GrantsAndDefault(t *testing.T) {
 	}
 
 	// Second grant non-default.
-	if err := us.Grant(ctx, user.ID, accountsIface.GrantPlanInput{PlanID: stg.ID}); err != nil {
+	if err := us.Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: "staging"}); err != nil {
 		t.Fatalf("Grant staging: %v", err)
 	}
 	got, _ = us.Get(ctx, user.ID)
@@ -216,21 +214,21 @@ func TestUserStore_GrantsAndDefault(t *testing.T) {
 	}
 
 	// Promote staging to default → prod is demoted.
-	if err := us.Grant(ctx, user.ID, accountsIface.GrantPlanInput{PlanID: stg.ID, IsDefault: true}); err != nil {
+	if err := us.Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: "staging", IsDefault: true}); err != nil {
 		t.Fatalf("Promote staging: %v", err)
 	}
 	got, _ = us.Get(ctx, user.ID)
 	for _, g := range got.PlanGrants {
-		if g.PlanID == prod.ID && g.IsDefault {
+		if g.PRefName == "prod" && g.IsDefault {
 			t.Fatalf("prod should be demoted")
 		}
-		if g.PlanID == stg.ID && !g.IsDefault {
+		if g.PRefName == "staging" && !g.IsDefault {
 			t.Fatalf("staging should be default")
 		}
 	}
 
 	// Revoke default → other grant promotes.
-	if err := us.Revoke(ctx, user.ID, stg.ID); err != nil {
+	if err := us.Revoke(ctx, user.ID, "staging"); err != nil {
 		t.Fatalf("Revoke: %v", err)
 	}
 	got, _ = us.Get(ctx, user.ID)
@@ -272,19 +270,10 @@ func TestVerifyAndResolve(t *testing.T) {
 		t.Fatalf("Verify unknown: %v %+v", err, r)
 	}
 
-	// 2) Set up: Account + Plan + User + Grant.
-	accStore := newAccountStore(srv.db)
-	acc, _ := accStore.Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
-	bs := newPlanStore(srv.db, acc.ID)
-	prod, _ := bs.Create(ctx, accountsIface.CreatePlanInput{Slug: "prod", Name: "Prod"})
-	us := newUserStore(srv.db, acc.ID)
-	user, _ := us.Add(ctx, accountsIface.AddUserInput{Provider: "github", ExternalID: "42", DisplayName: "alice"})
-	_ = user
-	if err := us.Grant(ctx, user.ID, accountsIface.GrantPlanInput{PlanID: prod.ID}); err != nil {
-		t.Fatalf("Grant: %v", err)
-	}
+	// 2) Set up: Account + Plan + PRef (assigned) + User + Grant.
+	seedAccountUserPRef(t, srv, "acme", "prod", "github", "42")
 
-	// 3) Verify → linked, with one Account and one Plan.
+	// 3) Verify → linked, with one Account and one PRef.
 	r, err = cli.Verify(ctx, "github", "42")
 	if err != nil || !r.Linked {
 		t.Fatalf("Verify linked: %v %+v", err, r)
@@ -292,53 +281,60 @@ func TestVerifyAndResolve(t *testing.T) {
 	if len(r.Accounts) != 1 || r.Accounts[0].Slug != "acme" {
 		t.Fatalf("expected one Account 'acme', got %+v", r.Accounts)
 	}
-	if len(r.Accounts[0].Plans) != 1 || r.Accounts[0].Plans[0].Slug != "prod" {
-		t.Fatalf("expected one plan 'prod', got %+v", r.Accounts[0].Plans)
+	if len(r.Accounts[0].PRefs) != 1 || r.Accounts[0].PRefs[0].Name != "prod" {
+		t.Fatalf("expected one pref 'prod', got %+v", r.Accounts[0].PRefs)
 	}
-	if !r.Accounts[0].Plans[0].IsDefault {
+	if !r.Accounts[0].PRefs[0].IsDefault {
 		t.Fatalf("expected prod to be default grant")
 	}
 
-	// 4) ResolvePlan → valid for known grant.
-	res, err := cli.ResolvePlan(ctx, "acme", "prod", "github", "42")
+	// 4) ResolvePRef → valid for known grant.
+	res, err := cli.ResolvePRef(ctx, "acme", "prod", "github", "42")
 	if err != nil || !res.Valid {
-		t.Fatalf("ResolvePlan valid: %v %+v", err, res)
+		t.Fatalf("ResolvePRef valid: %v %+v", err, res)
 	}
 
-	// 5) ResolvePlan → invalid for unknown plan.
-	res, _ = cli.ResolvePlan(ctx, "acme", "nope", "github", "42")
+	// 5) ResolvePRef → invalid for unknown pref.
+	res, _ = cli.ResolvePRef(ctx, "acme", "nope", "github", "42")
 	if res.Valid {
-		t.Fatalf("ResolvePlan nope: should be invalid")
+		t.Fatalf("ResolvePRef nope: should be invalid")
 	}
-	if res.Reason != "plan not found" {
-		t.Fatalf("ResolvePlan nope: bad reason %q", res.Reason)
+	if res.Reason != "pref not found" {
+		t.Fatalf("ResolvePRef nope: bad reason %q", res.Reason)
 	}
 
-	// 6) ResolvePlan → invalid when User has no grant on the plan.
-	other, _ := bs.Create(ctx, accountsIface.CreatePlanInput{Slug: "staging", Name: "Stg"})
-	_ = other
-	res, _ = cli.ResolvePlan(ctx, "acme", "staging", "github", "42")
-	if res.Valid {
-		t.Fatalf("ResolvePlan without grant: should be invalid")
+	// 6) ResolvePRef → invalid when User has no grant on the pref.
+	// Create a second PRef with the same plan; user has no grant on it.
+	acc, _ := newAccountStore(srv.db).GetBySlug(ctx, "acme")
+	plan, _ := newPlanStore(srv.db).Create(ctx, accountsIface.CreatePlanInput{Name: "Staging"})
+	prefs := newPRefStore(srv.db, acc.ID, newPlanStore(srv.db))
+	if _, err := prefs.Create(ctx, accountsIface.CreatePRefInput{Name: "staging", MemberID: "system:test"}); err != nil {
+		t.Fatalf("Create staging pref: %v", err)
 	}
-	if res.Reason != "git user has no grant on plan" {
+	if _, err := prefs.Assign(ctx, accountsIface.AssignPRefInput{Name: "staging", PlanID: plan.ID, MemberID: "system:test"}); err != nil {
+		t.Fatalf("Assign staging pref: %v", err)
+	}
+	res, _ = cli.ResolvePRef(ctx, "acme", "staging", "github", "42")
+	if res.Valid {
+		t.Fatalf("ResolvePRef without grant: should be invalid")
+	}
+	if res.Reason != "git user has no grant on pref" {
 		t.Fatalf("bad reason %q", res.Reason)
 	}
 
-	// 7) ResolvePlan → invalid when account doesn't exist.
-	res, _ = cli.ResolvePlan(ctx, "ghost", "prod", "github", "42")
+	// 7) ResolvePRef → invalid when account doesn't exist.
+	res, _ = cli.ResolvePRef(ctx, "ghost", "prod", "github", "42")
 	if res.Valid || res.Reason != "account not found" {
-		t.Fatalf("ResolvePlan ghost: %+v", res)
+		t.Fatalf("ResolvePRef ghost: %+v", res)
 	}
 
-	// 8) ResolvePlan → invalid for suspended plan.
-	suspended := accountsIface.PlanStatusSuspended
-	if _, err := bs.Update(ctx, prod.ID, accountsIface.UpdatePlanInput{Status: &suspended}); err != nil {
-		t.Fatalf("suspend: %v", err)
+	// 8) ResolvePRef → invalid for disabled pref.
+	if _, err := prefs.Disable(ctx, accountsIface.DisablePRefInput{Name: "prod", MemberID: "system:test"}); err != nil {
+		t.Fatalf("disable: %v", err)
 	}
-	res, _ = cli.ResolvePlan(ctx, "acme", "prod", "github", "42")
-	if res.Valid || res.Reason != "plan suspended" {
-		t.Fatalf("ResolvePlan suspended: %+v", res)
+	res, _ = cli.ResolvePRef(ctx, "acme", "prod", "github", "42")
+	if res.Valid || res.Reason != "pref disabled" {
+		t.Fatalf("ResolvePRef disabled: %+v", res)
 	}
 }
 
@@ -362,9 +358,9 @@ func TestMemberStore_InviteAndIndex(t *testing.T) {
 	}
 
 	// Lookup index has the entry.
-	idx, err := ms.readMemberIndex(ctx, LookupEmailPath("alice@example.com"))
+	idx, err := readMemberIndexByPrefix(ctx, srv.db, LookupEmailPrefix("alice@example.com"))
 	if err != nil {
-		t.Fatalf("readMemberIndex: %v", err)
+		t.Fatalf("read email index: %v", err)
 	}
 	if len(idx) != 1 || idx[0].MemberID != m.ID {
 		t.Fatalf("index entry: %+v", idx)
@@ -374,7 +370,8 @@ func TestMemberStore_InviteAndIndex(t *testing.T) {
 	if err := ms.Remove(ctx, m.ID); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	if _, err := ms.readMemberIndex(ctx, LookupEmailPath("alice@example.com")); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("index after Remove: %v", err)
+	idx, err = readMemberIndexByPrefix(ctx, srv.db, LookupEmailPrefix("alice@example.com"))
+	if err != nil || len(idx) != 0 {
+		t.Fatalf("index after Remove: idx=%+v err=%v", idx, err)
 	}
 }

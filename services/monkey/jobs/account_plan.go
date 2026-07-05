@@ -8,7 +8,9 @@ import (
 )
 
 // checkAccountPlan validates the project's `clouds.<NetworkFqdn>.{account, plan}`
-// binding against the accounts service. No-op when the accounts client isn't
+// binding against the accounts service. The project schema still calls the
+// field `plan` for back-compat; the value is now treated as a PRef name and
+// resolved via accounts.ResolvePRef. No-op when the accounts client isn't
 // wired or the project doesn't pin this cloud. Shared by code.handle() and
 // config.handle() so both compile paths enforce the same rule.
 func (c Context) checkAccountPlan(p projectSchema.Project) error {
@@ -32,9 +34,9 @@ func (c Context) checkAccountPlan(p projectSchema.Project) error {
 	if provider == "" || externalID == "" {
 		return fmt.Errorf("project config: cannot resolve plan %q without a git provider identity", binding.Plan)
 	}
-	resp, err := c.Accounts.ResolvePlan(c.ctx, binding.Account, binding.Plan, provider, externalID)
+	resp, err := c.Accounts.ResolvePRef(c.ctx, binding.Account, binding.Plan, provider, externalID)
 	if err != nil {
-		return fmt.Errorf("accounts.ResolvePlan(%s/%s, %s/%s): %w", binding.Account, binding.Plan, provider, externalID, err)
+		return fmt.Errorf("accounts.ResolvePRef(%s/%s, %s/%s): %w", binding.Account, binding.Plan, provider, externalID, err)
 	}
 	if !resp.Valid {
 		return fmt.Errorf("project config: plan %q under account %q on cloud %q is invalid: %s",

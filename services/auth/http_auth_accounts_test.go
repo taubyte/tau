@@ -26,13 +26,17 @@ func (f *fakeAccountsClient) Verify(ctx context.Context, provider, externalID st
 	}
 	return nil, errNotImpl
 }
-func (f *fakeAccountsClient) ResolvePlan(context.Context, string, string, string, string) (*accountsIface.ResolveResponse, error) {
+func (f *fakeAccountsClient) ResolvePRef(context.Context, string, string, string, string) (*accountsIface.ResolveResponse, error) {
+	return nil, errNotImpl
+}
+func (f *fakeAccountsClient) LookupAccountsByEmail(context.Context, string) ([]string, error) {
 	return nil, errNotImpl
 }
 func (f *fakeAccountsClient) Accounts() accountsIface.Accounts          { return nil }
 func (f *fakeAccountsClient) Members(string) accountsIface.Members      { return nil }
 func (f *fakeAccountsClient) Users(string) accountsIface.Users          { return nil }
-func (f *fakeAccountsClient) Plans(string) accountsIface.Plans          { return nil }
+func (f *fakeAccountsClient) Plans() accountsIface.Plans                { return nil }
+func (f *fakeAccountsClient) PRefs(string) accountsIface.PRefs          { return nil }
 func (f *fakeAccountsClient) Login() accountsIface.Login                { return nil }
 func (f *fakeAccountsClient) Peers(...peerCore.ID) accountsIface.Client { return f }
 func (f *fakeAccountsClient) Close()                                    {}
@@ -80,7 +84,7 @@ func TestGitHubTokenHTTPAuth_AccountsLinked_Allows(t *testing.T) {
 			return &accountsIface.VerifyResponse{
 				Linked: true,
 				Accounts: []accountsIface.VerifyAccountSummary{
-					{Slug: "acme", Plans: []accountsIface.VerifyPlanSummary{{Slug: "prod", IsDefault: true}}},
+					{Slug: "acme", PRefs: []accountsIface.VerifyPRefSummary{{Name: "prod", IsDefault: true}}},
 				},
 			}, nil
 		},

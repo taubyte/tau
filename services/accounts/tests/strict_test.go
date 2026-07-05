@@ -88,8 +88,8 @@ func TestStrict_VerifyAcceptsAfterFixture_Dreaming(t *testing.T) {
 	assert.Equal(t, post.Linked, true)
 	assert.Equal(t, len(post.Accounts), 1)
 	assert.Equal(t, post.Accounts[0].Slug, dreamFixtures.FakeAccountSlug)
-	assert.Equal(t, len(post.Accounts[0].Plans), 1)
-	assert.Equal(t, post.Accounts[0].Plans[0].Slug, dreamFixtures.FakeAccountPlan)
+	assert.Equal(t, len(post.Accounts[0].PRefs), 1)
+	assert.Equal(t, post.Accounts[0].PRefs[0].Name, dreamFixtures.FakeAccountPRef)
 }
 
 // TestStrict_ResolvePlanRejectsBadPlan_Dreaming — fixture seeded, but the
@@ -102,13 +102,13 @@ func TestStrict_ResolvePlanRejectsBadPlan_Dreaming(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
-	resp, err := cli.ResolvePlan(ctx,
+	resp, err := cli.ResolvePRef(ctx,
 		dreamFixtures.FakeAccountSlug, "nonexistent-plan",
 		dreamFixtures.FakeAccountUserProv, dreamFixtures.FakeAccountUserExtID,
 	)
 	assert.NilError(t, err)
 	assert.Equal(t, resp.Valid, false)
-	assert.Equal(t, resp.Reason, "plan not found")
+	assert.Equal(t, resp.Reason, "pref not found")
 }
 
 // TestStrict_ResolvePlanRejectsBadAccount_Dreaming — same shape, but the account
@@ -122,8 +122,8 @@ func TestStrict_ResolvePlanRejectsBadAccount_Dreaming(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 
-	resp, err := cli.ResolvePlan(ctx,
-		"nonexistent-account", dreamFixtures.FakeAccountPlan,
+	resp, err := cli.ResolvePRef(ctx,
+		"nonexistent-account", dreamFixtures.FakeAccountPRef,
 		dreamFixtures.FakeAccountUserProv, dreamFixtures.FakeAccountUserExtID,
 	)
 	assert.NilError(t, err)
@@ -145,8 +145,8 @@ func TestStrict_ResolvePlanRejectsUngrantedUser_Dreaming(t *testing.T) {
 	defer cancel()
 
 	// "github:99999" is not the seeded user — the seeded user is "42".
-	resp, err := cli.ResolvePlan(ctx,
-		dreamFixtures.FakeAccountSlug, dreamFixtures.FakeAccountPlan,
+	resp, err := cli.ResolvePRef(ctx,
+		dreamFixtures.FakeAccountSlug, dreamFixtures.FakeAccountPRef,
 		"github", "99999",
 	)
 	assert.NilError(t, err)
@@ -196,7 +196,7 @@ func TestStrict_InjectMemberCustom_Dreaming(t *testing.T) {
 	assert.NilError(t, u.RunFixture("injectAccount", dreamFixtures.AccountInjection{
 		AccountSlug: "umbrella",
 		AccountName: "Umbrella Corp",
-		PlanSlug:    "enterprise",
+		PRefName:    "enterprise",
 	}))
 
 	assert.NilError(t, u.RunFixture("injectMember", dreamFixtures.MemberInjection{
@@ -228,7 +228,7 @@ func TestStrict_InjectAccountCustom_Dreaming(t *testing.T) {
 	custom := dreamFixtures.AccountInjection{
 		AccountSlug: "umbrella",
 		AccountName: "Umbrella Corp",
-		PlanSlug:    "enterprise",
+		PRefName:    "enterprise",
 		UserExtID:   "777",
 	}
 	assert.NilError(t, u.RunFixture("injectAccount", custom))
@@ -237,13 +237,13 @@ func TestStrict_InjectAccountCustom_Dreaming(t *testing.T) {
 	defer cancel()
 
 	// Custom plan resolves cleanly.
-	resp, err := cli.ResolvePlan(ctx, "umbrella", "enterprise", "github", "777")
+	resp, err := cli.ResolvePRef(ctx, "umbrella", "enterprise", "github", "777")
 	assert.NilError(t, err)
 	assert.Equal(t, resp.Valid, true)
 
 	// Default seed (acme/prod/42) was NOT injected, so it should still
 	// reject cleanly — confirms inject is additive, not a wholesale reset.
-	miss, err := cli.ResolvePlan(ctx, "acme", "prod", "github", "42")
+	miss, err := cli.ResolvePRef(ctx, "acme", "prod", "github", "42")
 	assert.NilError(t, err)
 	assert.Equal(t, miss.Valid, false)
 }

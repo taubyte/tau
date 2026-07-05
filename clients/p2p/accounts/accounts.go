@@ -14,12 +14,11 @@ type accountsImpl struct {
 
 func (i *accountsImpl) Create(ctx context.Context, in accountsIface.CreateAccountInput) (*accountsIface.Account, error) {
 	body := command.Body{
-		"action":        "create",
-		"slug":          in.Slug,
-		"name":          in.Name,
-		"kind":          string(in.Kind),
-		"auth_mode":     string(in.AuthMode),
-		"plan_template": in.PlanTemplate,
+		"action":    "create",
+		"slug":      in.Slug,
+		"name":      in.Name,
+		"kind":      string(in.Kind),
+		"auth_mode": string(in.AuthMode),
 	}
 	if in.AuthConfig != nil {
 		body["auth_config"] = in.AuthConfig
@@ -81,9 +80,6 @@ func (i *accountsImpl) Update(ctx context.Context, accountID string, in accounts
 	}
 	if in.AuthMode != nil {
 		body["auth_mode"] = string(*in.AuthMode)
-	}
-	if in.PlanTemplate != nil {
-		body["plan_template"] = *in.PlanTemplate
 	}
 	if in.Status != nil {
 		body["status"] = string(*in.Status)

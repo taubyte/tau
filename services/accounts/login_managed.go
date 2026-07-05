@@ -11,12 +11,9 @@ import (
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 )
 
-// loginManaged is the dispatcher for managed-mode authentication: passkey
-// (WebAuthn) when the resolved Member has one registered, magic-link email
-// otherwise.
-//
-// External-mode logins (Okta, OIDC, SAML) route through login_external.go
-// (`!ee` stub) or login_external_ee.go (`ee` real impl).
+// loginManaged dispatches managed-mode auth: passkey when the Member has one
+// registered, magic-link otherwise. External-mode (OIDC/SAML) routes through
+// login_external.go (stub) / login_external_ee.go (ee impl).
 type loginManaged struct {
 	srv *AccountsService
 }
@@ -25,10 +22,9 @@ func newLoginManaged(srv *AccountsService) *loginManaged {
 	return &loginManaged{srv: srv}
 }
 
-// StartManaged kicks off a managed-mode login. The caller provides either an
-// email (resolves to one or more Account/Member pairs) or an explicit
-// account-slug (must be paired with the email at the level above; this v1
-// shape returns a candidate list when ambiguous).
+// StartManaged returns a Candidates list (no challenge) when an email maps
+// to multiple Account/Member pairs — caller then re-calls with AccountSlug
+// to narrow.
 func (l *loginManaged) StartManaged(ctx context.Context, in accountsIface.StartManagedLoginInput) (*accountsIface.ManagedLoginChallenge, error) {
 	if in.Email == "" && in.AccountSlug == "" {
 		return nil, errors.New("accounts: email or account_slug required")
@@ -42,13 +38,10 @@ func (l *loginManaged) StartManaged(ctx context.Context, in accountsIface.StartM
 		return nil, errors.New("accounts: no member found for those credentials")
 	}
 	if len(candidates) > 1 {
-		// Caller must pick one. Return the candidate list; subsequent
-		// StartManaged with AccountSlug + Email narrows.
 		return &accountsIface.ManagedLoginChallenge{Candidates: summarizeCandidates(candidates)}, nil
 	}
 	chosen := candidates[0]
 
-	// Decide passkey vs magic-link.
 	hasPasskey := len(chosen.member.PasskeyCredentials) > 0 && l.srv.webAuthn != nil && l.srv.webAuthn.Available()
 	if hasPasskey {
 		sessionID, options, err := l.srv.webAuthn.BeginLogin(ctx, chosen.account.ID, chosen.member.ID)
@@ -62,7 +55,6 @@ func (l *loginManaged) StartManaged(ctx context.Context, in accountsIface.StartM
 		}, nil
 	}
 
-	// Fallback to magic-link.
 	if l.srv.magicLink == nil {
 		return nil, errors.New("accounts: magic-link sender not configured")
 	}
@@ -72,8 +64,6 @@ func (l *loginManaged) StartManaged(ctx context.Context, in accountsIface.StartM
 	return &accountsIface.ManagedLoginChallenge{MagicLinkSent: true}, nil
 }
 
-// FinishManagedPasskey verifies a WebAuthn assertion previously challenged by
-// StartManaged. On success returns a fresh Member session.
 func (l *loginManaged) FinishManagedPasskey(ctx context.Context, in accountsIface.FinishPasskeyInput) (*accountsIface.Session, error) {
 	if in.SessionID == "" {
 		return nil, errors.New("accounts: session_id required")
@@ -92,7 +82,6 @@ func (l *loginManaged) FinishManagedPasskey(ctx context.Context, in accountsIfac
 	return l.issueSession(ctx, accountID, memberID)
 }
 
-// FinishManagedMagicLink verifies a magic-link code and returns a session.
 func (l *loginManaged) FinishManagedMagicLink(ctx context.Context, in accountsIface.FinishMagicLinkInput) (*accountsIface.Session, error) {
 	if l.srv.magicLink == nil {
 		return nil, errors.New("accounts: magic-link sender not configured")
@@ -104,7 +93,6 @@ func (l *loginManaged) FinishManagedMagicLink(ctx context.Context, in accountsIf
 	return l.issueSession(ctx, accountID, memberID)
 }
 
-// VerifySession is the cookie / bearer-token verification entry point.
 func (l *loginManaged) VerifySession(ctx context.Context, token string) (*accountsIface.Session, error) {
 	if l.srv.sessions == nil {
 		return nil, errors.New("accounts: session store unavailable")
@@ -120,7 +108,6 @@ func (l *loginManaged) VerifySession(ctx context.Context, token string) (*accoun
 	}, nil
 }
 
-// Logout revokes the session bearer.
 func (l *loginManaged) Logout(ctx context.Context, token string) error {
 	if l.srv.sessions == nil {
 		return errors.New("accounts: session store unavailable")
@@ -136,14 +123,11 @@ func (l *loginManaged) issueSession(ctx context.Context, accountID, memberID str
 	return sess, err
 }
 
-// loginCandidate pairs a resolved Member with its Account (loaded from KV).
 type loginCandidate struct {
 	account *accountsIface.Account
 	member  *accountsIface.Member
 }
 
-// resolveCandidates walks the email or account-slug indexes to find matching
-// (account, member) pairs.
 func (l *loginManaged) resolveCandidates(ctx context.Context, in accountsIface.StartManagedLoginInput) ([]loginCandidate, error) {
 	switch {
 	case in.AccountSlug != "" && in.Email == "":
@@ -164,12 +148,12 @@ func (l *loginManaged) resolveCandidates(ctx context.Context, in accountsIface.S
 }
 
 func (l *loginManaged) candidatesFromEmail(ctx context.Context, emailStr string) ([]loginCandidate, error) {
-	idx, err := newMemberStore(l.srv.db, "").readMemberIndex(ctx, LookupEmailPath(emailStr))
+	idx, err := readMemberIndexByPrefix(ctx, l.srv.db, LookupEmailPrefix(emailStr))
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return nil, nil
-		}
 		return nil, err
+	}
+	if len(idx) == 0 {
+		return nil, nil
 	}
 	out := make([]loginCandidate, 0, len(idx))
 	for _, e := range idx {
@@ -206,11 +190,9 @@ func (l *loginManaged) candidatesFromAccount(ctx context.Context, acc *accountsI
 	return out, nil
 }
 
-// hashLowerSafe is the same lowercased-trimmed form Member.Invite uses on
-// PrimaryEmail; resolving by email needs the same canonicalisation.
+// hashLowerSafe mirrors Member.Invite's canonicalisation — Members store the
+// lowercased+trimmed plaintext email; the hash is only the index key.
 func hashLowerSafe(s string) string {
-	// Members store the lowercased+trimmed plaintext email, not its hash.
-	// (The hash is only the index key.) Mirror the canonicalisation here.
 	return canonicalEmail(s)
 }
 
@@ -225,8 +207,6 @@ func canonicalEmail(s string) string {
 	return string(out)
 }
 
-// summarizeCandidates produces a public VerifyAccountSummary list — used by
-// StartManaged to let the caller pick when an email maps to multiple accounts.
 func summarizeCandidates(in []loginCandidate) []accountsIface.VerifyAccountSummary {
 	out := make([]accountsIface.VerifyAccountSummary, 0, len(in))
 	for _, c := range in {

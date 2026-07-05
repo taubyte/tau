@@ -8,23 +8,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/taubyte/tau/core/kvdb"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
-// memberStore implements accountsIface.Members for one Account.
-//
-// Persistence is split: the Member's profile (sans passkeys) lives at
-// .../members/{member_id}/profile, and each PasskeyCredential lives at
-// .../members/{member_id}/passkeys/{credential_id_hex}. Passkey ops only
-// touch one key.
-//
-// Maintained indexes:
-//
-//	/lookup/email/{sha256(email)}                → JSON [(account_id, member_id), ...]
-//	/lookup/external/{provider}/{subject}        → JSON [(account_id, member_id), ...]
+// memberStore implements accountsIface.Members for one Account. The Member's
+// profile lives separate from its passkeys (each passkey is its own KV key)
+// so passkey ops touch a single key. Lookup-index layout in paths.go.
 type memberStore struct {
 	db        kvdb.KVDB
 	accountID string
@@ -36,14 +27,13 @@ func newMemberStore(db kvdb.KVDB, accountID string) *memberStore {
 
 var _ accountsIface.Members = (*memberStore)(nil)
 
-// memberIndexEntry is one row in the email or external login index.
+// memberIndexEntry is reconstructed from lookup-index keys; not a stored
+// shape — the (account, member) tuple lives in the key path.
 type memberIndexEntry struct {
-	AccountID string `cbor:"account_id"`
-	MemberID  string `cbor:"member_id"`
+	AccountID string
+	MemberID  string
 }
 
-// Invite creates a Member with the given email + role. The Member starts
-// with no passkeys; the invitee registers one via the magic-link claim flow.
 func (s *memberStore) Invite(ctx context.Context, in accountsIface.InviteMemberInput) (*accountsIface.Member, error) {
 	if in.PrimaryEmail == "" {
 		return nil, errors.New("accounts: primary_email required")
@@ -70,7 +60,6 @@ func (s *memberStore) Invite(ctx context.Context, in accountsIface.InviteMemberI
 	return m, nil
 }
 
-// Get loads a Member (including passkeys).
 func (s *memberStore) Get(ctx context.Context, memberID string) (*accountsIface.Member, error) {
 	var m accountsIface.Member
 	if err := getKV(ctx, s.db, MemberProfilePath(s.accountID, memberID), &m); err != nil {
@@ -84,13 +73,10 @@ func (s *memberStore) Get(ctx context.Context, memberID string) (*accountsIface.
 	return &m, nil
 }
 
-// List returns the IDs of all Members on this Account.
 func (s *memberStore) List(ctx context.Context) ([]string, error) {
 	return listChildIDs(ctx, s.db, AccountMembersPrefix(s.accountID))
 }
 
-// Update applies a partial update. Only Role is currently mutable through
-// this surface; passkey + external_subject changes go through their own flows.
 func (s *memberStore) Update(ctx context.Context, memberID string, in accountsIface.UpdateMemberInput) (*accountsIface.Member, error) {
 	m, err := s.Get(ctx, memberID)
 	if err != nil {
@@ -99,7 +85,6 @@ func (s *memberStore) Update(ctx context.Context, memberID string, in accountsIf
 	if in.Role != nil {
 		m.Role = *in.Role
 	}
-	// Persist sans passkeys (they live under their own prefix).
 	persisted := *m
 	persisted.PasskeyCredentials = nil
 	if err := putKV(ctx, s.db, MemberProfilePath(s.accountID, memberID), &persisted); err != nil {
@@ -108,7 +93,6 @@ func (s *memberStore) Update(ctx context.Context, memberID string, in accountsIf
 	return m, nil
 }
 
-// Remove deletes the Member's profile, passkeys, and lookup indexes.
 func (s *memberStore) Remove(ctx context.Context, memberID string) error {
 	m, err := s.Get(ctx, memberID)
 	if err != nil {
@@ -122,17 +106,18 @@ func (s *memberStore) Remove(ctx context.Context, memberID string) error {
 	if err := s.db.Delete(ctx, MemberProfilePath(s.accountID, memberID)); err != nil {
 		return fmt.Errorf("accounts: delete member: %w", err)
 	}
+	// Email-index cleanup is best-effort: the profile is already gone, and
+	// failing Remove because a secondary index couldn't be pruned would
+	// strand the caller. A future sweep or re-Remove can prune the stale row.
 	if err := s.removeEmailIndex(ctx, m.PrimaryEmail, m.ID); err != nil {
-		return err
+		logger.Warnf("accounts: stale email index entry for member %s on account %s: %v",
+			m.ID, s.accountID, err)
 	}
-	if m.ExternalSubject != "" {
-		// We don't know the provider here without re-reading auth_config;
-		// the external index is left slightly stale.
-	}
+	// External-index cleanup needs the provider, which would mean re-reading
+	// auth_config — left slightly stale on purpose.
 	return nil
 }
 
-// listPasskeys reads all PasskeyCredential blobs under a Member.
 func (s *memberStore) listPasskeys(ctx context.Context, memberID string) ([]accountsIface.PasskeyCredential, error) {
 	keys, err := s.db.List(ctx, MemberPasskeysPrefix(s.accountID, memberID))
 	if err != nil {
@@ -152,7 +137,6 @@ func (s *memberStore) listPasskeys(ctx context.Context, memberID string) ([]acco
 	return out, nil
 }
 
-// AddPasskey persists a new WebAuthn credential against this Member.
 func (s *memberStore) AddPasskey(ctx context.Context, memberID string, pk accountsIface.PasskeyCredential) error {
 	if len(pk.CredentialID) == 0 {
 		return errors.New("accounts: passkey credential_id required")
@@ -161,99 +145,64 @@ func (s *memberStore) AddPasskey(ctx context.Context, memberID string, pk accoun
 	return putKV(ctx, s.db, MemberPasskeyPath(s.accountID, memberID, credKey), pk)
 }
 
-// RemovePasskey deletes one Member's passkey by credential id.
 func (s *memberStore) RemovePasskey(ctx context.Context, memberID string, credentialID []byte) error {
 	credKey := hex.EncodeToString(credentialID)
 	return s.db.Delete(ctx, MemberPasskeyPath(s.accountID, memberID, credKey))
 }
 
-// --- email index helpers -------------------------------------------
-
 func (s *memberStore) addEmailIndex(ctx context.Context, email, memberID string) error {
-	idx, err := s.readMemberIndex(ctx, LookupEmailPath(email))
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return err
-	}
-	idx = append(idx, memberIndexEntry{AccountID: s.accountID, MemberID: memberID})
-	return s.writeMemberIndex(ctx, LookupEmailPath(email), idx)
+	return s.db.Put(ctx, LookupEmailEntryPath(email, s.accountID, memberID), nowBytes())
 }
 
 func (s *memberStore) removeEmailIndex(ctx context.Context, email, memberID string) error {
-	idx, err := s.readMemberIndex(ctx, LookupEmailPath(email))
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return nil
-		}
-		return err
-	}
-	out := idx[:0]
-	for _, e := range idx {
-		if e.AccountID == s.accountID && e.MemberID == memberID {
-			continue
-		}
-		out = append(out, e)
-	}
-	if len(out) == 0 {
-		return s.db.Delete(ctx, LookupEmailPath(email))
-	}
-	return s.writeMemberIndex(ctx, LookupEmailPath(email), out)
+	return deleteIndexEntry(ctx, s.db, LookupEmailEntryPath(email, s.accountID, memberID))
 }
 
-// AddExternalIndex registers a (provider, subject) → (account, member) entry
-// in the external login index.
 func (s *memberStore) AddExternalIndex(ctx context.Context, provider, subject, memberID string) error {
-	idx, err := s.readMemberIndex(ctx, LookupExternalPath(provider, subject))
-	if err != nil && !errors.Is(err, ErrNotFound) {
-		return err
-	}
-	idx = append(idx, memberIndexEntry{AccountID: s.accountID, MemberID: memberID})
-	return s.writeMemberIndex(ctx, LookupExternalPath(provider, subject), idx)
+	return s.db.Put(ctx, LookupExternalEntryPath(provider, subject, s.accountID, memberID), nowBytes())
 }
 
-// RemoveExternalIndex removes an external-login mapping.
+// RemoveExternalIndex returns ErrNotFound when the entry isn't present —
+// KVDB.Delete is silently idempotent, but callers want a not-found signal.
 func (s *memberStore) RemoveExternalIndex(ctx context.Context, provider, subject, memberID string) error {
-	idx, err := s.readMemberIndex(ctx, LookupExternalPath(provider, subject))
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return nil
+	return deleteIndexEntry(ctx, s.db, LookupExternalEntryPath(provider, subject, s.accountID, memberID))
+}
+
+// deleteIndexEntry reads-then-deletes so missing-key surfaces as ErrNotFound;
+// KVDB.Delete alone returns nil for missing keys.
+func deleteIndexEntry(ctx context.Context, db kvdb.KVDB, key string) error {
+	if _, err := db.Get(ctx, key); err != nil {
+		if isMissing(err) {
+			return ErrNotFound
 		}
-		return err
+		return fmt.Errorf("accounts: read index %s: %w", key, err)
 	}
-	out := idx[:0]
-	for _, e := range idx {
-		if e.AccountID == s.accountID && e.MemberID == memberID {
+	return db.Delete(ctx, key)
+}
+
+func readMemberIndexByPrefix(ctx context.Context, db kvdb.KVDB, prefix string) ([]memberIndexEntry, error) {
+	keys, err := db.List(ctx, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("accounts: list index %s: %w", prefix, err)
+	}
+	out := make([]memberIndexEntry, 0, len(keys))
+	for _, k := range keys {
+		rest := strings.TrimPrefix(k, prefix)
+		parts := strings.SplitN(rest, "/", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
 			continue
 		}
-		out = append(out, e)
+		out = append(out, memberIndexEntry{AccountID: parts[0], MemberID: parts[1]})
 	}
-	if len(out) == 0 {
-		return s.db.Delete(ctx, LookupExternalPath(provider, subject))
-	}
-	return s.writeMemberIndex(ctx, LookupExternalPath(provider, subject), out)
+	return out, nil
 }
 
-func (s *memberStore) readMemberIndex(ctx context.Context, key string) ([]memberIndexEntry, error) {
-	raw, err := s.db.Get(ctx, key)
-	if err != nil {
-		if isMissing(err) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("accounts: read index %s: %w", key, err)
+func nowBytes() []byte {
+	ts := time.Now().UnixNano()
+	b := make([]byte, 8)
+	for i := 7; i >= 0; i-- {
+		b[i] = byte(ts & 0xff)
+		ts >>= 8
 	}
-	if len(raw) == 0 {
-		return nil, ErrNotFound
-	}
-	var idx []memberIndexEntry
-	if err := cbor.Unmarshal(raw, &idx); err != nil {
-		return nil, fmt.Errorf("accounts: unmarshal index %s: %w", key, err)
-	}
-	return idx, nil
-}
-
-func (s *memberStore) writeMemberIndex(ctx context.Context, key string, idx []memberIndexEntry) error {
-	raw, err := cbor.Marshal(idx)
-	if err != nil {
-		return fmt.Errorf("accounts: marshal index: %w", err)
-	}
-	return s.db.Put(ctx, key, raw)
+	return b
 }

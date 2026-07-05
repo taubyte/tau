@@ -3,110 +3,131 @@ package accounts
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 )
 
-// KV path layout for the Accounts subsystem. All structured blobs are
-// CBOR-encoded (see kvcodec.go); raw-byte values are noted explicitly.
+// KV path layout. All structured blobs are CBOR-encoded; raw-byte values are
+// called out explicitly.
 //
-//   /accounts/{id}/profile                                       → Account
-//   /accounts/{id}/plans/{plan_id}/profile                       → Plan
-//   /accounts/{id}/members/{member_id}/profile                   → Member (sans passkeys)
-//   /accounts/{id}/members/{member_id}/passkeys/{credential_id}  → PasskeyCredential
-//   /accounts/{id}/users/{user_id}/profile                       → User (sans grants)
-//   /accounts/{id}/users/{user_id}/grants/{plan_id}              → PlanGrant
-//   /accounts/{id}/signing_key                                   → 32 raw random bytes
+//   /plans/{plan_id}                                              → Plan (global, immutable)
 //
-//   /lookup/account_slug/{slug}                                  → account_id (raw bytes)
-//   /lookup/email/{sha256(lower(email))}                         → [{account_id, member_id}, ...]
-//   /lookup/external/{provider}/{subject}                        → [{account_id, member_id}, ...]
-//   /lookup/git_user/{provider}/{external_id}                    → [{account_id, user_id}, ...]
+//   /accounts/{id}/profile                                        → Account
+//   /accounts/{id}/members/{member_id}/profile                    → Member (sans passkeys)
+//   /accounts/{id}/members/{member_id}/passkeys/{credential_id}   → PasskeyCredential
+//   /accounts/{id}/users/{user_id}/profile                        → User (sans grants)
+//   /accounts/{id}/users/{user_id}/grants/{pref_name}             → PlanGrant
+//   /accounts/{id}/prefs/{name}/profile                           → PRef envelope
+//   /accounts/{id}/prefs/{name}/events/{at_unixnano_zeropad}      → PRefEvent
+//   /accounts/{id}/signing_key                                    → 32 raw random bytes
 //
-// Sub-collection items (passkeys, grants) are stored as one blob per element
-// so individual entries can be added/revoked without rewriting the parent.
+//   /lookup/account_slug/{slug}                                       → account_id (raw bytes)
+//   /lookup/email/{sha256(lower(email))}/{account_id}/{member_id}     → 8-byte unixnano added-at
+//   /lookup/external/{provider}/{subject}/{account_id}/{member_id}    → 8-byte unixnano added-at
+//   /lookup/git_user/{provider}/{external_id}/{account_id}/{user_id}  → 8-byte unixnano added-at
+//
+// Lookup indexes are one KV key per entry (not a single CBOR slice) so
+// concurrent writes from different nodes for distinct (account, member|user)
+// pairs touch distinct keys — no read-modify-write blob, no CRDT loss. Same
+// rationale for the per-element sub-collections (passkeys, grants, events).
 
 const (
 	prefixAccounts = "/accounts/"
 	prefixLookup   = "/lookup/"
+	prefixPlans    = "/plans/"
 )
 
-// AccountProfilePath returns the KV path for an Account's JSON profile.
+func PlanProfilePath(planID string) string {
+	return prefixPlans + planID
+}
+
+func PlansPrefix() string {
+	return prefixPlans
+}
+
 func AccountProfilePath(accountID string) string {
 	return prefixAccounts + accountID + "/profile"
 }
 
-// AccountPlansPrefix returns the KV prefix for one Account's Plans.
-func AccountPlansPrefix(accountID string) string {
-	return prefixAccounts + accountID + "/plans/"
-}
-
-// PlanProfilePath returns the KV path for a Plan's JSON profile.
-func PlanProfilePath(accountID, planID string) string {
-	return AccountPlansPrefix(accountID) + planID + "/profile"
-}
-
-// AccountMembersPrefix returns the KV prefix for one Account's Members.
 func AccountMembersPrefix(accountID string) string {
 	return prefixAccounts + accountID + "/members/"
 }
 
-// MemberProfilePath returns the KV path for a Member's JSON profile (sans passkeys).
 func MemberProfilePath(accountID, memberID string) string {
 	return AccountMembersPrefix(accountID) + memberID + "/profile"
 }
 
-// MemberPasskeysPrefix returns the KV prefix under which a Member's passkeys live.
 func MemberPasskeysPrefix(accountID, memberID string) string {
 	return AccountMembersPrefix(accountID) + memberID + "/passkeys/"
 }
 
-// MemberPasskeyPath returns the KV path for one Member passkey credential.
 func MemberPasskeyPath(accountID, memberID, credentialID string) string {
 	return MemberPasskeysPrefix(accountID, memberID) + credentialID
 }
 
-// AccountUsersPrefix returns the KV prefix for one Account's Users.
 func AccountUsersPrefix(accountID string) string {
 	return prefixAccounts + accountID + "/users/"
 }
 
-// UserProfilePath returns the KV path for a User's JSON profile (sans grants).
 func UserProfilePath(accountID, userID string) string {
 	return AccountUsersPrefix(accountID) + userID + "/profile"
 }
 
-// UserGrantsPrefix returns the KV prefix for one User's plan grants.
 func UserGrantsPrefix(accountID, userID string) string {
 	return AccountUsersPrefix(accountID) + userID + "/grants/"
 }
 
-// UserGrantPath returns the KV path for one User's grant on one Plan.
-func UserGrantPath(accountID, userID, planID string) string {
-	return UserGrantsPrefix(accountID, userID) + planID
+func UserGrantPath(accountID, userID, prefName string) string {
+	return UserGrantsPrefix(accountID, userID) + prefName
 }
 
-// LookupAccountSlugPath returns the KV path mapping slug → account_id.
+func AccountPRefsPrefix(accountID string) string {
+	return prefixAccounts + accountID + "/prefs/"
+}
+
+func PRefProfilePath(accountID, prefName string) string {
+	return AccountPRefsPrefix(accountID) + prefName + "/profile"
+}
+
+func PRefEventsPrefix(accountID, prefName string) string {
+	return AccountPRefsPrefix(accountID) + prefName + "/events/"
+}
+
+// PRefEventPath formats atUnixNano as 20-digit zero-padded decimal so byte
+// order matches chronological order on prefix scans.
+func PRefEventPath(accountID, prefName string, atUnixNano int64) string {
+	return PRefEventsPrefix(accountID, prefName) + fmt.Sprintf("%020d", atUnixNano)
+}
+
 func LookupAccountSlugPath(slug string) string {
 	return prefixLookup + "account_slug/" + slug
 }
 
-// LookupEmailPath returns the KV path keyed by sha256(lower(email)) → JSON [(account_id, member_id), ...].
-func LookupEmailPath(email string) string {
-	return prefixLookup + "email/" + hashEmail(email)
+func LookupEmailPrefix(email string) string {
+	return prefixLookup + "email/" + hashEmail(email) + "/"
 }
 
-// LookupExternalPath returns the KV path keyed by (provider, subject) → JSON [(account_id, member_id), ...].
-func LookupExternalPath(provider, subject string) string {
-	return prefixLookup + "external/" + provider + "/" + subject
+func LookupEmailEntryPath(email, accountID, memberID string) string {
+	return LookupEmailPrefix(email) + accountID + "/" + memberID
 }
 
-// LookupGitUserPath returns the KV path keyed by (provider, external_id) → JSON [(account_id, user_id), ...].
-func LookupGitUserPath(provider, externalID string) string {
-	return prefixLookup + "git_user/" + provider + "/" + externalID
+func LookupExternalPrefix(provider, subject string) string {
+	return prefixLookup + "external/" + provider + "/" + subject + "/"
 }
 
-// hashEmail normalises and hashes an email so the keyspace is safe to log
-// without exposing addresses (sha256(lower(trim(email)))).
+func LookupExternalEntryPath(provider, subject, accountID, memberID string) string {
+	return LookupExternalPrefix(provider, subject) + accountID + "/" + memberID
+}
+
+func LookupGitUserPrefix(provider, externalID string) string {
+	return prefixLookup + "git_user/" + provider + "/" + externalID + "/"
+}
+
+func LookupGitUserEntryPath(provider, externalID, accountID, userID string) string {
+	return LookupGitUserPrefix(provider, externalID) + accountID + "/" + userID
+}
+
+// hashEmail keeps the keyspace safe to log: emails never appear verbatim.
 func hashEmail(email string) string {
 	normalized := strings.ToLower(strings.TrimSpace(email))
 	sum := sha256.Sum256([]byte(normalized))

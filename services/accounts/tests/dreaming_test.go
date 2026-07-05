@@ -61,12 +61,15 @@ func TestAccounts_Dreaming(t *testing.T) {
 		assert.Equal(t, acc.AuthMode, accountsIface.AuthModeManaged)
 		assert.Equal(t, acc.Status, accountsIface.AccountStatusActive)
 
-		bs := cli.Plans(acc.ID)
-		plan, err := bs.Create(ctx, accountsIface.CreatePlanInput{
-			Slug: "prod",
+		plan, err := cli.Plans().Create(ctx, accountsIface.CreatePlanInput{
 			Name: "Production",
-			Mode: accountsIface.PlanModeQuota,
 		})
+		assert.NilError(t, err)
+
+		prefs := cli.PRefs(acc.ID)
+		_, err = prefs.Create(ctx, accountsIface.CreatePRefInput{Name: "prod", MemberID: "system:test"})
+		assert.NilError(t, err)
+		_, err = prefs.Assign(ctx, accountsIface.AssignPRefInput{Name: "prod", PlanID: plan.ID, MemberID: "system:test"})
 		assert.NilError(t, err)
 
 		us := cli.Users(acc.ID)
@@ -77,18 +80,18 @@ func TestAccounts_Dreaming(t *testing.T) {
 		})
 		assert.NilError(t, err)
 
-		assert.NilError(t, us.Grant(ctx, user.ID, accountsIface.GrantPlanInput{PlanID: plan.ID}))
+		assert.NilError(t, us.Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: "prod"}))
 	})
 
-	t.Run("Verify returns linked account + plan", func(t *testing.T) {
+	t.Run("Verify returns linked account + pref", func(t *testing.T) {
 		resp, err := cli.Verify(ctx, "github", "42")
 		assert.NilError(t, err)
 		assert.Equal(t, resp.Linked, true)
 		assert.Equal(t, len(resp.Accounts), 1)
 		assert.Equal(t, resp.Accounts[0].Slug, "acme")
-		assert.Equal(t, len(resp.Accounts[0].Plans), 1)
-		assert.Equal(t, resp.Accounts[0].Plans[0].Slug, "prod")
-		assert.Equal(t, resp.Accounts[0].Plans[0].IsDefault, true)
+		assert.Equal(t, len(resp.Accounts[0].PRefs), 1)
+		assert.Equal(t, resp.Accounts[0].PRefs[0].Name, "prod")
+		assert.Equal(t, resp.Accounts[0].PRefs[0].IsDefault, true)
 	})
 
 	t.Run("Verify returns not-linked for unknown user", func(t *testing.T) {
@@ -97,21 +100,21 @@ func TestAccounts_Dreaming(t *testing.T) {
 		assert.Equal(t, resp.Linked, false)
 	})
 
-	t.Run("ResolvePlan happy path", func(t *testing.T) {
-		resp, err := cli.ResolvePlan(ctx, "acme", "prod", "github", "42")
+	t.Run("ResolvePRef happy path", func(t *testing.T) {
+		resp, err := cli.ResolvePRef(ctx, "acme", "prod", "github", "42")
 		assert.NilError(t, err)
 		assert.Equal(t, resp.Valid, true)
 	})
 
-	t.Run("ResolvePlan rejects unknown plan", func(t *testing.T) {
-		resp, err := cli.ResolvePlan(ctx, "acme", "doesnotexist", "github", "42")
+	t.Run("ResolvePRef rejects unknown pref", func(t *testing.T) {
+		resp, err := cli.ResolvePRef(ctx, "acme", "doesnotexist", "github", "42")
 		assert.NilError(t, err)
 		assert.Equal(t, resp.Valid, false)
-		assert.Equal(t, resp.Reason, "plan not found")
+		assert.Equal(t, resp.Reason, "pref not found")
 	})
 
-	t.Run("ResolvePlan rejects unknown account", func(t *testing.T) {
-		resp, err := cli.ResolvePlan(ctx, "ghost", "prod", "github", "42")
+	t.Run("ResolvePRef rejects unknown account", func(t *testing.T) {
+		resp, err := cli.ResolvePRef(ctx, "ghost", "prod", "github", "42")
 		assert.NilError(t, err)
 		assert.Equal(t, resp.Valid, false)
 		assert.Equal(t, resp.Reason, "account not found")
@@ -225,11 +228,16 @@ func TestAccounts_DreamingWire(t *testing.T) {
 
 	acc, err := srvCli.Accounts().Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
 	assert.NilError(t, err)
-	plan, err := srvCli.Plans(acc.ID).Create(ctx, accountsIface.CreatePlanInput{Slug: "prod", Name: "Prod"})
+	plan, err := srvCli.Plans().Create(ctx, accountsIface.CreatePlanInput{Name: "Prod"})
+	assert.NilError(t, err)
+	prefs := srvCli.PRefs(acc.ID)
+	_, err = prefs.Create(ctx, accountsIface.CreatePRefInput{Name: "prod", MemberID: "system:test"})
+	assert.NilError(t, err)
+	_, err = prefs.Assign(ctx, accountsIface.AssignPRefInput{Name: "prod", PlanID: plan.ID, MemberID: "system:test"})
 	assert.NilError(t, err)
 	user, err := srvCli.Users(acc.ID).Add(ctx, accountsIface.AddUserInput{Provider: "github", ExternalID: "42"})
 	assert.NilError(t, err)
-	assert.NilError(t, srvCli.Users(acc.ID).Grant(ctx, user.ID, accountsIface.GrantPlanInput{PlanID: plan.ID}))
+	assert.NilError(t, srvCli.Users(acc.ID).Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: "prod"}))
 
 	t.Run("Verify over the wire", func(t *testing.T) {
 		resp, err := wire.Verify(ctx, "github", "42")
@@ -237,9 +245,9 @@ func TestAccounts_DreamingWire(t *testing.T) {
 		assert.Equal(t, resp.Linked, true)
 		assert.Equal(t, len(resp.Accounts), 1)
 		assert.Equal(t, resp.Accounts[0].Slug, "acme")
-		assert.Equal(t, len(resp.Accounts[0].Plans), 1)
-		assert.Equal(t, resp.Accounts[0].Plans[0].Slug, "prod")
-		assert.Equal(t, resp.Accounts[0].Plans[0].IsDefault, true)
+		assert.Equal(t, len(resp.Accounts[0].PRefs), 1)
+		assert.Equal(t, resp.Accounts[0].PRefs[0].Name, "prod")
+		assert.Equal(t, resp.Accounts[0].PRefs[0].IsDefault, true)
 	})
 
 	t.Run("Verify not-linked over the wire", func(t *testing.T) {
@@ -248,23 +256,23 @@ func TestAccounts_DreamingWire(t *testing.T) {
 		assert.Equal(t, resp.Linked, false)
 	})
 
-	t.Run("ResolvePlan happy path over the wire", func(t *testing.T) {
-		resp, err := wire.ResolvePlan(ctx, "acme", "prod", "github", "42")
+	t.Run("ResolvePRef happy path over the wire", func(t *testing.T) {
+		resp, err := wire.ResolvePRef(ctx, "acme", "prod", "github", "42")
 		assert.NilError(t, err)
 		assert.Equal(t, resp.Valid, true)
 		assert.Assert(t, resp.Plan != nil)
-		assert.Equal(t, resp.Plan.Slug, "prod")
+		assert.Equal(t, resp.Plan.Name, "Prod")
 	})
 
-	t.Run("ResolvePlan bad plan over the wire", func(t *testing.T) {
-		resp, err := wire.ResolvePlan(ctx, "acme", "ghost", "github", "42")
+	t.Run("ResolvePRef bad pref over the wire", func(t *testing.T) {
+		resp, err := wire.ResolvePRef(ctx, "acme", "ghost", "github", "42")
 		assert.NilError(t, err)
 		assert.Equal(t, resp.Valid, false)
-		assert.Equal(t, resp.Reason, "plan not found")
+		assert.Equal(t, resp.Reason, "pref not found")
 	})
 
-	t.Run("ResolvePlan bad account over the wire", func(t *testing.T) {
-		resp, err := wire.ResolvePlan(ctx, "ghost", "prod", "github", "42")
+	t.Run("ResolvePRef bad account over the wire", func(t *testing.T) {
+		resp, err := wire.ResolvePRef(ctx, "ghost", "prod", "github", "42")
 		assert.NilError(t, err)
 		assert.Equal(t, resp.Valid, false)
 		assert.Equal(t, resp.Reason, "account not found")
@@ -283,10 +291,15 @@ func TestAccounts_DreamingWire(t *testing.T) {
 		assert.Equal(t, got.Slug, "acme")
 		assert.Equal(t, got.Name, "Acme")
 
-		// Per-Account sub-surfaces work.
-		bids, err := wire.Plans(acc.ID).List(ctx)
+		// Global plan list returns ≥1 (we seeded one).
+		bids, err := wire.Plans().List(ctx)
 		assert.NilError(t, err)
-		assert.Equal(t, len(bids), 1)
+		assert.Assert(t, len(bids) >= 1, "expected at least one plan, got %d", len(bids))
+
+		// Per-Account sub-surfaces work.
+		pnames, err := wire.PRefs(acc.ID).List(ctx)
+		assert.NilError(t, err)
+		assert.Equal(t, len(pnames), 1)
 
 		uids, err := wire.Users(acc.ID).List(ctx)
 		assert.NilError(t, err)
