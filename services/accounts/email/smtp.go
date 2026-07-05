@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/mail"
 	"net/smtp"
+	"time"
 )
 
 // SMTPSender delivers email via a configured SMTP server. Credentials are
@@ -44,16 +46,36 @@ func NewSMTPSender(host string, port int, user, pass, from string) (*SMTPSender,
 	}, nil
 }
 
-// Send delivers a plain-text message. v1 ships text-only; HTML / MIME comes
-// when we have richer templates.
+// Send delivers a plain-text message with the full transactional-email
+// header set gmail/microsoft expect before they stop classifying as bulk:
+// MIME-Version + Content-Type so the body isn't sniffed, Date so the message
+// isn't "no temporal reference", and a friendly From if the operator gave
+// one. We parse s.From with net/mail so display-name forms like
+// `tau <noreply@ac.dz>` set the header correctly while the SMTP envelope
+// still uses just the address — sending the display form on MAIL FROM
+// would 501 every relay on the path.
 func (s *SMTPSender) Send(ctx context.Context, to, subject, body string) error {
-	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
-	msg := []byte(fmt.Sprintf("From: %s\r\nTo: %s\r\nSubject: %s\r\n\r\n%s\r\n", s.From, to, subject, body))
+	from, err := mail.ParseAddress(s.From)
+	if err != nil {
+		return fmt.Errorf("email: parse From %q: %w", s.From, err)
+	}
+	msg := []byte(
+		"From: " + from.String() + "\r\n" +
+			"To: " + to + "\r\n" +
+			"Subject: " + subject + "\r\n" +
+			"Date: " + time.Now().UTC().Format(time.RFC1123Z) + "\r\n" +
+			"MIME-Version: 1.0\r\n" +
+			"Content-Type: text/plain; charset=UTF-8\r\n" +
+			"Content-Transfer-Encoding: 8bit\r\n" +
+			"\r\n" +
+			body + "\r\n",
+	)
 	var auth smtp.Auth
 	if s.User != "" {
 		auth = smtp.PlainAuth("", s.User, s.Pass, s.Host)
 	}
-	if err := s.dialer(addr, auth, s.From, []string{to}, msg); err != nil {
+	addr := fmt.Sprintf("%s:%d", s.Host, s.Port)
+	if err := s.dialer(addr, auth, from.Address, []string{to}, msg); err != nil {
 		return fmt.Errorf("email: SMTP send to %s: %w", to, err)
 	}
 	return nil
