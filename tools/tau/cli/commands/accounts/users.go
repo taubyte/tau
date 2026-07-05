@@ -108,11 +108,11 @@ func runUsersRemove(ctx *cli.Context) error {
 
 var usersGrantCommand = &cli.Command{
 	Name:      "grant",
-	Usage:     "Grant a User access to a Plan within the Account",
+	Usage:     "Grant a User access to a plan within the Account",
 	ArgsUsage: "<account-slug>",
 	Flags: []cli.Flag{
 		&cli.StringFlag{Name: "user", Usage: "User ID", Required: true},
-		&cli.StringFlag{Name: "plan", Usage: "Plan ID", Required: true},
+		&cli.StringFlag{Name: "plan", Usage: "Plan name (PRef name)", Required: true},
 	},
 	Action: runUsersGrant,
 }
@@ -126,7 +126,7 @@ func runUsersGrant(ctx *cli.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := loaded.HTTP.GrantPlan(accountID, ctx.String("user"), ctx.String("plan")); err != nil {
+	if err := loaded.HTTP.GrantPRef(accountID, ctx.String("user"), ctx.String("plan")); err != nil {
 		return err
 	}
 	pterm.Success.Printf("Granted plan %s to user %s\n", ctx.String("plan"), ctx.String("user"))

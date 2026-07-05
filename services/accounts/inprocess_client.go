@@ -3,28 +3,28 @@ package accounts
 import (
 	"context"
 	"errors"
+	"strings"
+	"time"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 )
 
-// inProcessClient is the in-process Client returned by AccountsService.Client().
 type inProcessClient struct {
 	srv *AccountsService
 
 	accounts *accountStore
+	plans    *planStore // global, account-agnostic
 }
 
 func newInProcessClient(srv *AccountsService) accountsIface.Client {
 	return &inProcessClient{
 		srv:      srv,
 		accounts: newAccountStore(srv.db),
+		plans:    newPlanStore(srv.db),
 	}
 }
 
-// --- Integration surface (verify + plan-resolve) ----------------
-
-// Verify checks whether a git provider account is linked to ≥1 Account.
 func (c *inProcessClient) Verify(ctx context.Context, provider, externalID string) (*accountsIface.VerifyResponse, error) {
 	if provider == "" || externalID == "" {
 		return nil, errors.New("accounts: provider and external_id required")
@@ -52,16 +52,16 @@ func (c *inProcessClient) Verify(ctx context.Context, provider, externalID strin
 			Slug: acc.Slug,
 			Name: acc.Name,
 		}
-		bs := newPlanStore(c.srv.db, e.AccountID)
+		prefs := newPRefStore(c.srv.db, e.AccountID, c.plans)
 		for _, g := range u.PlanGrants {
-			b, err := bs.Get(ctx, g.PlanID)
+			pref, err := prefs.Get(ctx, g.PRefName)
 			if err != nil {
-				continue
+				continue // grant references a PRef that's been removed
 			}
-			summary.Plans = append(summary.Plans, accountsIface.VerifyPlanSummary{
-				ID:        b.ID,
-				Slug:      b.Slug,
-				IsDefault: g.IsDefault,
+			summary.PRefs = append(summary.PRefs, accountsIface.VerifyPRefSummary{
+				Name:        pref.Name,
+				DisplayName: pref.DisplayName,
+				IsDefault:   g.IsDefault,
 			})
 		}
 		resp.Accounts = append(resp.Accounts, summary)
@@ -72,9 +72,13 @@ func (c *inProcessClient) Verify(ctx context.Context, provider, externalID strin
 	return resp, nil
 }
 
-// ResolvePlan validates that (accountSlug, planSlug) names an active Plan
-// the calling git user has a grant on.
-func (c *inProcessClient) ResolvePlan(ctx context.Context, accountSlug, planSlug, provider, externalID string) (*accountsIface.ResolveResponse, error) {
+// ResolvePRef returns Valid=true when (accountSlug, prefName) names an active
+// PRef with a currently-assigned Plan and the caller's git user has a grant
+// on the PRef. Otherwise Valid=false with a typed Reason from the set
+// {account not found, account not active, pref not found, pref disabled,
+// pref has no plan assigned, plan not found, git user not linked to account,
+// git user has no grant on pref}.
+func (c *inProcessClient) ResolvePRef(ctx context.Context, accountSlug, prefName, provider, externalID string) (*accountsIface.ResolveResponse, error) {
 	acc, err := c.accounts.GetBySlug(ctx, accountSlug)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -82,50 +86,110 @@ func (c *inProcessClient) ResolvePlan(ctx context.Context, accountSlug, planSlug
 		}
 		return nil, err
 	}
-	bs := newPlanStore(c.srv.db, acc.ID)
-	plan, err := bs.GetBySlug(ctx, planSlug)
+	if acc.Status != accountsIface.AccountStatusActive {
+		return &accountsIface.ResolveResponse{Valid: false, Reason: "account not active"}, nil
+	}
+	prefs := newPRefStore(c.srv.db, acc.ID, c.plans)
+	pref, err := prefs.Get(ctx, prefName)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return &accountsIface.ResolveResponse{Valid: false, Reason: "plan not found"}, nil
+			return &accountsIface.ResolveResponse{Valid: false, Reason: "pref not found"}, nil
 		}
 		return nil, err
 	}
-	if plan.Status != accountsIface.PlanStatusActive {
-		return &accountsIface.ResolveResponse{
-			Valid:  false,
-			Reason: "plan suspended",
-			Plan:   plan,
-		}, nil
+	if pref.Status != accountsIface.PRefStatusActive {
+		return &accountsIface.ResolveResponse{Valid: false, Reason: "pref disabled", PRef: pref}, nil
 	}
+
+	planID, err := latestAssignedPlanID(ctx, prefs, pref.Name)
+	if err != nil {
+		return nil, err
+	}
+	if planID == "" {
+		return &accountsIface.ResolveResponse{Valid: false, Reason: "pref has no plan assigned", PRef: pref}, nil
+	}
+	plan, err := c.plans.Get(ctx, planID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return &accountsIface.ResolveResponse{Valid: false, Reason: "plan not found", PRef: pref}, nil
+		}
+		return nil, err
+	}
+
 	us := newUserStore(c.srv.db, acc.ID)
 	u, err := us.GetByExternal(ctx, provider, externalID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return &accountsIface.ResolveResponse{Valid: false, Reason: "git user not linked to account"}, nil
+			return &accountsIface.ResolveResponse{Valid: false, Reason: "git user not linked to account", PRef: pref, Plan: plan}, nil
 		}
 		return nil, err
 	}
 	for _, g := range u.PlanGrants {
-		if g.PlanID == plan.ID {
-			return &accountsIface.ResolveResponse{Valid: true, Plan: plan}, nil
+		if g.PRefName == pref.Name {
+			return &accountsIface.ResolveResponse{Valid: true, PRef: pref, Plan: plan}, nil
 		}
 	}
 	return &accountsIface.ResolveResponse{
 		Valid:  false,
-		Reason: "git user has no grant on plan",
+		Reason: "git user has no grant on pref",
+		PRef:   pref,
 		Plan:   plan,
 	}, nil
 }
 
-// readGitUserIndex is a client-side helper to walk the git_user index.
-// Mirrors the helper on userStore (which is per-Account) — the verify path
-// needs it across all Accounts, hence the duplication.
+// latestAssignedPlanID returns the PlanID of the most recent assign event, or
+// "" when the log has no assigns. The PRef's "current plan" is defined as the
+// latest assign — enable/disable events don't change it.
+func latestAssignedPlanID(ctx context.Context, prefs *prefStore, prefName string) (string, error) {
+	events, err := prefs.Events(ctx, prefName, time.Time{}, time.Time{})
+	if err != nil {
+		return "", err
+	}
+	for i := len(events) - 1; i >= 0; i-- {
+		if events[i].Kind == accountsIface.PRefEventKindAssign {
+			return events[i].PlanID, nil
+		}
+	}
+	return "", nil
+}
+
+// readGitUserIndex walks the git_user index across all accounts. userStore's
+// helper is per-Account; the verify path needs cross-Account, hence this
+// thin wrapper with an empty accountID.
 func (c *inProcessClient) readGitUserIndex(ctx context.Context, provider, externalID string) ([]gitUserIndexEntry, error) {
 	tmp := &userStore{db: c.srv.db, accountID: ""}
 	return tmp.readGitUserIndex(ctx, provider, externalID)
 }
 
-// --- Management surface --------------------------------------------
+func (c *inProcessClient) readMemberEmailIndex(ctx context.Context, email string) ([]memberIndexEntry, error) {
+	return readMemberIndexByPrefix(ctx, c.srv.db, LookupEmailPrefix(email))
+}
+
+// LookupAccountsByEmail is a pure index lookup — no filtering on Account or
+// Member status. Callers apply their own policy on the returned IDs.
+func (c *inProcessClient) LookupAccountsByEmail(ctx context.Context, email string) ([]string, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, errors.New("accounts: email required")
+	}
+	idx, err := c.readMemberEmailIndex(ctx, email)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	seen := make(map[string]struct{}, len(idx))
+	out := make([]string, 0, len(idx))
+	for _, e := range idx {
+		if _, dup := seen[e.AccountID]; dup {
+			continue
+		}
+		seen[e.AccountID] = struct{}{}
+		out = append(out, e.AccountID)
+	}
+	return out, nil
+}
 
 func (c *inProcessClient) Accounts() accountsIface.Accounts {
 	return c.accounts
@@ -139,13 +203,16 @@ func (c *inProcessClient) Users(accountID string) accountsIface.Users {
 	return newUserStore(c.srv.db, accountID)
 }
 
-func (c *inProcessClient) Plans(accountID string) accountsIface.Plans {
-	return newPlanStore(c.srv.db, accountID)
+func (c *inProcessClient) Plans() accountsIface.Plans {
+	return c.plans
 }
 
-// Login dispatches to the managed (passkey + magic-link) impl when the
-// service has those subsystems initialised; otherwise falls back to a
-// not-implemented stub (used by unit tests that don't go through service.New).
+func (c *inProcessClient) PRefs(accountID string) accountsIface.PRefs {
+	return newPRefStore(c.srv.db, accountID, c.plans)
+}
+
+// Login falls back to a not-implemented stub when sessions aren't initialised
+// (unit tests that don't go through service.New hit this path).
 func (c *inProcessClient) Login() accountsIface.Login {
 	if c.srv != nil && c.srv.sessions != nil {
 		return &loginDispatcher{managed: newLoginManaged(c.srv), srv: c.srv}
@@ -155,8 +222,6 @@ func (c *inProcessClient) Login() accountsIface.Login {
 
 func (c *inProcessClient) Peers(...peerCore.ID) accountsIface.Client { return c }
 func (c *inProcessClient) Close()                                    {}
-
-// --- not-implemented Login stub ------------------------------------
 
 type notImplementedLogin struct{}
 

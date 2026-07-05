@@ -2,21 +2,34 @@ package accounts
 
 import (
 	"context"
+	"time"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 )
 
 // Client is the consumer-side interface for the Accounts subsystem.
 type Client interface {
-	// Integration surface — the two methods the rest of tau actually calls.
+	// Integration surface — methods the rest of tau actually calls.
 	Verify(ctx context.Context, provider, externalID string) (*VerifyResponse, error)
-	ResolvePlan(ctx context.Context, accountSlug, planSlug, provider, externalID string) (*ResolveResponse, error)
+	ResolvePRef(ctx context.Context, accountSlug, prefName, provider, externalID string) (*ResolveResponse, error)
 
-	// Management surface — requires a Member session.
+	// LookupAccountsByEmail returns the IDs of every Account on the cluster
+	// that has a Member with this primary_email (case-insensitive, trimmed).
+	// Empty input → error. No matches → (empty slice, nil). Result is
+	// deduplicated and unordered. No filtering: suspended accounts and
+	// pending-claim members are included. Callers fetch details via the
+	// existing Accounts() / Members() surfaces and apply their own policy.
+	LookupAccountsByEmail(ctx context.Context, email string) ([]string, error)
+
+	// Management surface — requires a Member session (per-account ops) or
+	// operator authority (Plans).
 	Accounts() Accounts
 	Members(accountID string) Members
 	Users(accountID string) Users
-	Plans(accountID string) Plans
+	PRefs(accountID string) PRefs
+
+	// Plans is the global, immutable Plan catalogue. Not scoped to an account.
+	Plans() Plans
 
 	// Login surface — managed (passkey + magic-link); external is EE.
 	Login() Login
@@ -37,23 +50,21 @@ type Accounts interface {
 
 // CreateAccountInput is the payload for creating a new Account.
 type CreateAccountInput struct {
-	Slug         string            `cbor:"slug"`
-	Name         string            `cbor:"name"`
-	Kind         AccountKind       `cbor:"kind"`
-	AuthMode     AuthMode          `cbor:"auth_mode"`
-	AuthConfig   *AuthConfig       `cbor:"auth_config,omitempty"`
-	PlanTemplate string            `cbor:"plan_template,omitempty"`
-	Metadata     map[string]string `cbor:"metadata,omitempty"`
+	Slug       string            `cbor:"slug"`
+	Name       string            `cbor:"name"`
+	Kind       AccountKind       `cbor:"kind"`
+	AuthMode   AuthMode          `cbor:"auth_mode"`
+	AuthConfig *AuthConfig       `cbor:"auth_config,omitempty"`
+	Metadata   map[string]string `cbor:"metadata,omitempty"`
 }
 
 // UpdateAccountInput is the partial-update payload for an Account.
 type UpdateAccountInput struct {
-	Name         *string           `cbor:"name,omitempty"`
-	AuthMode     *AuthMode         `cbor:"auth_mode,omitempty"`
-	AuthConfig   *AuthConfig       `cbor:"auth_config,omitempty"`
-	PlanTemplate *string           `cbor:"plan_template,omitempty"`
-	Status       *AccountStatus    `cbor:"status,omitempty"`
-	Metadata     map[string]string `cbor:"metadata,omitempty"`
+	Name       *string           `cbor:"name,omitempty"`
+	AuthMode   *AuthMode         `cbor:"auth_mode,omitempty"`
+	AuthConfig *AuthConfig       `cbor:"auth_config,omitempty"`
+	Status     *AccountStatus    `cbor:"status,omitempty"`
+	Metadata   map[string]string `cbor:"metadata,omitempty"`
 }
 
 // Members is the Member CRUD + invite surface for one Account.
@@ -85,8 +96,8 @@ type Users interface {
 	GetByExternal(ctx context.Context, provider, externalID string) (*User, error)
 	List(ctx context.Context) ([]string, error)
 	Remove(ctx context.Context, userID string) error
-	Grant(ctx context.Context, userID string, in GrantPlanInput) error
-	Revoke(ctx context.Context, userID, planID string) error
+	Grant(ctx context.Context, userID string, in GrantPRefInput) error
+	Revoke(ctx context.Context, userID, prefName string) error
 }
 
 // AddUserInput links a git provider account to the Account.
@@ -96,38 +107,71 @@ type AddUserInput struct {
 	DisplayName string `cbor:"display_name,omitempty"`
 }
 
-// GrantPlanInput grants a Plan to a User.
-type GrantPlanInput struct {
-	PlanID    string `cbor:"plan_id"`
+// GrantPRefInput grants a PRef to a User.
+type GrantPRefInput struct {
+	PRefName  string `cbor:"pref_name"`
 	IsDefault bool   `cbor:"is_default,omitempty"`
 }
 
-// Plans is the Plan CRUD surface for one Account.
+// Plans is the global Plan catalogue. Plans are immutable and undeletable;
+// the only ops are Create, Get, and List.
 type Plans interface {
 	Create(ctx context.Context, in CreatePlanInput) (*Plan, error)
 	Get(ctx context.Context, planID string) (*Plan, error)
-	GetBySlug(ctx context.Context, slug string) (*Plan, error)
 	List(ctx context.Context) ([]string, error)
-	Update(ctx context.Context, planID string, in UpdatePlanInput) (*Plan, error)
-	Delete(ctx context.Context, planID string) error
 }
 
-// CreatePlanInput is the payload for creating a new Plan.
+// CreatePlanInput is the payload for creating a new Plan record. Name is the
+// admin-facing label; DisplayName is cosmetic (defaults to Name when empty).
+// Data is an opaque metadata blob; its schema is TBD.
 type CreatePlanInput struct {
-	Slug       string      `cbor:"slug"`
-	Name       string      `cbor:"name"`
-	Mode       PlanMode    `cbor:"mode"`
-	Dimensions []Dimension `cbor:"dimensions,omitempty"`
-	Period     string      `cbor:"period,omitempty"`
+	Name        string `cbor:"name"`
+	DisplayName string `cbor:"display_name,omitempty"`
+	Data        []byte `cbor:"data,omitempty"`
 }
 
-// UpdatePlanInput is the partial-update payload for a Plan.
-type UpdatePlanInput struct {
-	Name       *string     `cbor:"name,omitempty"`
-	Mode       *PlanMode   `cbor:"mode,omitempty"`
-	Dimensions []Dimension `cbor:"dimensions,omitempty"`
-	Period     *string     `cbor:"period,omitempty"`
-	Status     *PlanStatus `cbor:"status,omitempty"`
+// PRefs is the PRef surface for one Account. PRef names are immortal once
+// created; PRefs cannot be deleted, only disabled.
+type PRefs interface {
+	Create(ctx context.Context, in CreatePRefInput) (*PRef, error)
+	Get(ctx context.Context, name string) (*PRef, error)
+	List(ctx context.Context) ([]string, error)
+	SetDisplayName(ctx context.Context, name, displayName string) (*PRef, error)
+	Assign(ctx context.Context, in AssignPRefInput) (*PRefEvent, error)
+	Disable(ctx context.Context, in DisablePRefInput) (*PRefEvent, error)
+	Enable(ctx context.Context, in EnablePRefInput) (*PRefEvent, error)
+	Events(ctx context.Context, name string, from, to time.Time) ([]PRefEvent, error)
+	LatestEvent(ctx context.Context, name string) (*PRefEvent, error)
+}
+
+// CreatePRefInput creates a new PRef envelope. Name is immortal and must match
+// varname rules ([a-zA-Z_][a-zA-Z0-9_]*); DisplayName defaults to Name if empty.
+type CreatePRefInput struct {
+	Name        string `cbor:"name"`
+	DisplayName string `cbor:"display_name,omitempty"`
+	MemberID    string `cbor:"member_id"` // server-resolved from session; "system:<actor>" for non-human
+}
+
+// AssignPRefInput records an `assign` event on a PRef.
+type AssignPRefInput struct {
+	Name     string `cbor:"name"`
+	PlanID   string `cbor:"plan_id"`
+	MemberID string `cbor:"member_id"`
+	Note     string `cbor:"note,omitempty"`
+}
+
+// DisablePRefInput records a `disable` event on a PRef.
+type DisablePRefInput struct {
+	Name     string `cbor:"name"`
+	MemberID string `cbor:"member_id"`
+	Note     string `cbor:"note,omitempty"`
+}
+
+// EnablePRefInput records an `enable` event on a PRef.
+type EnablePRefInput struct {
+	Name     string `cbor:"name"`
+	MemberID string `cbor:"member_id"`
+	Note     string `cbor:"note,omitempty"`
 }
 
 // Login is the login dispatcher — routes to managed (passkey/magic-link) or

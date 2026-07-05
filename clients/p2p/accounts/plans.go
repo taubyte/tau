@@ -8,22 +8,21 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command"
 )
 
+// plansImpl is the P2P client for the global Plan catalogue. Plans are not
+// scoped to an account; the only operations are Create (operator-only), Get,
+// and List.
 type plansImpl struct {
-	c         *Client
-	accountID string
+	c *Client
 }
 
 func (i *plansImpl) Create(ctx context.Context, in accountsIface.CreatePlanInput) (*accountsIface.Plan, error) {
 	body := command.Body{
-		"action":     "create",
-		"account_id": i.accountID,
-		"slug":       in.Slug,
-		"name":       in.Name,
-		"mode":       string(in.Mode),
-		"period":     in.Period,
+		"action":       "create",
+		"name":         in.Name,
+		"display_name": in.DisplayName,
 	}
-	if in.Dimensions != nil {
-		body["dimensions"] = in.Dimensions
+	if in.Data != nil {
+		body["data"] = in.Data
 	}
 	resp, err := i.c.client.Send(verbPlan, body, i.c.peers...)
 	if err != nil {
@@ -38,7 +37,7 @@ func (i *plansImpl) Create(ctx context.Context, in accountsIface.CreatePlanInput
 
 func (i *plansImpl) Get(ctx context.Context, planID string) (*accountsIface.Plan, error) {
 	resp, err := i.c.client.Send(verbPlan, command.Body{
-		"action": "get", "account_id": i.accountID, "id": planID,
+		"action": "get", "id": planID,
 	}, i.c.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("plans.Get: %w", err)
@@ -50,23 +49,9 @@ func (i *plansImpl) Get(ctx context.Context, planID string) (*accountsIface.Plan
 	return &p, nil
 }
 
-func (i *plansImpl) GetBySlug(ctx context.Context, slug string) (*accountsIface.Plan, error) {
-	resp, err := i.c.client.Send(verbPlan, command.Body{
-		"action": "get-by-slug", "account_id": i.accountID, "slug": slug,
-	}, i.c.peers...)
-	if err != nil {
-		return nil, fmt.Errorf("plans.GetBySlug: %w", err)
-	}
-	var p accountsIface.Plan
-	if err := readField(resp, "plan", &p); err != nil {
-		return nil, err
-	}
-	return &p, nil
-}
-
 func (i *plansImpl) List(ctx context.Context) ([]string, error) {
 	resp, err := i.c.client.Send(verbPlan, command.Body{
-		"action": "list", "account_id": i.accountID,
+		"action": "list",
 	}, i.c.peers...)
 	if err != nil {
 		return nil, fmt.Errorf("plans.List: %w", err)
@@ -76,46 +61,4 @@ func (i *plansImpl) List(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return ids, nil
-}
-
-func (i *plansImpl) Update(ctx context.Context, planID string, in accountsIface.UpdatePlanInput) (*accountsIface.Plan, error) {
-	body := command.Body{
-		"action":     "update",
-		"account_id": i.accountID,
-		"id":         planID,
-	}
-	if in.Name != nil {
-		body["name"] = *in.Name
-	}
-	if in.Mode != nil {
-		body["mode"] = string(*in.Mode)
-	}
-	if in.Period != nil {
-		body["period"] = *in.Period
-	}
-	if in.Status != nil {
-		body["status"] = string(*in.Status)
-	}
-	if in.Dimensions != nil {
-		body["dimensions"] = in.Dimensions
-	}
-	resp, err := i.c.client.Send(verbPlan, body, i.c.peers...)
-	if err != nil {
-		return nil, fmt.Errorf("plans.Update: %w", err)
-	}
-	var p accountsIface.Plan
-	if err := readField(resp, "plan", &p); err != nil {
-		return nil, err
-	}
-	return &p, nil
-}
-
-func (i *plansImpl) Delete(ctx context.Context, planID string) error {
-	resp, err := i.c.client.Send(verbPlan, command.Body{
-		"action": "delete", "account_id": i.accountID, "id": planID,
-	}, i.c.peers...)
-	if err != nil {
-		return fmt.Errorf("plans.Delete: %w", err)
-	}
-	return expectOK(resp, "plans.Delete")
 }

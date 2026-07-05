@@ -15,16 +15,16 @@ import (
 )
 
 // fakeAccounts is a minimal test double for accountsIface.Client. Only
-// ResolvePlan is wired; the rest panic on use to surface accidental calls.
+// ResolvePRef is wired; the rest panic on use to surface accidental calls.
 type fakeAccounts struct {
-	resolveFn func(ctx context.Context, accountSlug, planSlug, provider, externalID string) (*accountsIface.ResolveResponse, error)
+	resolveFn func(ctx context.Context, accountSlug, prefName, provider, externalID string) (*accountsIface.ResolveResponse, error)
 	calls     []string
 }
 
-func (f *fakeAccounts) ResolvePlan(ctx context.Context, accountSlug, planSlug, provider, externalID string) (*accountsIface.ResolveResponse, error) {
-	f.calls = append(f.calls, accountSlug+"/"+planSlug+"|"+provider+"/"+externalID)
+func (f *fakeAccounts) ResolvePRef(ctx context.Context, accountSlug, prefName, provider, externalID string) (*accountsIface.ResolveResponse, error) {
+	f.calls = append(f.calls, accountSlug+"/"+prefName+"|"+provider+"/"+externalID)
 	if f.resolveFn != nil {
-		return f.resolveFn(ctx, accountSlug, planSlug, provider, externalID)
+		return f.resolveFn(ctx, accountSlug, prefName, provider, externalID)
 	}
 	return &accountsIface.ResolveResponse{Valid: true}, nil
 }
@@ -32,10 +32,14 @@ func (f *fakeAccounts) ResolvePlan(ctx context.Context, accountSlug, planSlug, p
 func (f *fakeAccounts) Verify(context.Context, string, string) (*accountsIface.VerifyResponse, error) {
 	return nil, errors.New("unused")
 }
+func (f *fakeAccounts) LookupAccountsByEmail(context.Context, string) ([]string, error) {
+	return nil, errors.New("unused")
+}
 func (f *fakeAccounts) Accounts() accountsIface.Accounts          { return nil }
 func (f *fakeAccounts) Members(string) accountsIface.Members      { return nil }
 func (f *fakeAccounts) Users(string) accountsIface.Users          { return nil }
-func (f *fakeAccounts) Plans(string) accountsIface.Plans          { return nil }
+func (f *fakeAccounts) Plans() accountsIface.Plans                { return nil }
+func (f *fakeAccounts) PRefs(string) accountsIface.PRefs          { return nil }
 func (f *fakeAccounts) Login() accountsIface.Login                { return nil }
 func (f *fakeAccounts) Peers(...peerCore.ID) accountsIface.Client { return f }
 func (f *fakeAccounts) Close()                                    {}

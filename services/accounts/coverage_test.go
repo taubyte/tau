@@ -59,15 +59,13 @@ func TestAccountStore_UpdateAllFields(t *testing.T) {
 	newName := "Acme Inc."
 	newMode := accountsIface.AuthModeExternalOIDC
 	newConfig := &accountsIface.AuthConfig{IssuerURL: "https://idp.example.com"}
-	newPlan := "enterprise"
 	newStatus := accountsIface.AccountStatusSuspended
 	upd, err := store.Update(ctx, acc.ID, accountsIface.UpdateAccountInput{
-		Name:         &newName,
-		AuthMode:     &newMode,
-		AuthConfig:   newConfig,
-		PlanTemplate: &newPlan,
-		Status:       &newStatus,
-		Metadata:     map[string]string{"k1": "v1"},
+		Name:       &newName,
+		AuthMode:   &newMode,
+		AuthConfig: newConfig,
+		Status:     &newStatus,
+		Metadata:   map[string]string{"k1": "v1"},
 	})
 	if err != nil {
 		t.Fatalf("Update: %v", err)
@@ -78,8 +76,8 @@ func TestAccountStore_UpdateAllFields(t *testing.T) {
 	if upd.AuthConfig == nil || upd.AuthConfig.IssuerURL != "https://idp.example.com" {
 		t.Fatalf("Update AuthConfig: %+v", upd.AuthConfig)
 	}
-	if upd.PlanTemplate != newPlan || upd.Status != newStatus {
-		t.Fatalf("Update plan/status: %+v", upd)
+	if upd.Status != newStatus {
+		t.Fatalf("Update status: %+v", upd)
 	}
 	if upd.Metadata["k1"] != "v1" {
 		t.Fatalf("Update metadata: %+v", upd.Metadata)
@@ -123,45 +121,19 @@ func TestAccountStore_RequiredFields(t *testing.T) {
 func TestPlanStore_RequiredFields(t *testing.T) {
 	srv := newTestService(t)
 	ctx := context.Background()
-	acc, _ := newAccountStore(srv.db).Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
-	bs := newPlanStore(srv.db, acc.ID)
+	bs := newPlanStore(srv.db)
 
 	// Empty name → error.
-	if _, err := bs.Create(ctx, accountsIface.CreatePlanInput{Slug: "prod"}); err == nil {
+	if _, err := bs.Create(ctx, accountsIface.CreatePlanInput{}); err == nil {
 		t.Fatalf("expected error for empty plan name")
 	}
-	// Bad slug → error.
-	if _, err := bs.Create(ctx, accountsIface.CreatePlanInput{Slug: "BAD!", Name: "x"}); err == nil {
-		t.Fatalf("expected error for bad plan slug")
-	}
-}
-
-func TestPlanStore_UpdateAllFields(t *testing.T) {
-	srv := newTestService(t)
-	ctx := context.Background()
-	acc, _ := newAccountStore(srv.db).Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
-	bs := newPlanStore(srv.db, acc.ID)
-	b, _ := bs.Create(ctx, accountsIface.CreatePlanInput{Slug: "prod", Name: "Prod"})
-
-	newName := "Production"
-	newMode := accountsIface.PlanModeMetered
-	newPeriod := "rolling-30d"
-	newStatus := accountsIface.PlanStatusGrace
-	upd, err := bs.Update(ctx, b.ID, accountsIface.UpdatePlanInput{
-		Name:       &newName,
-		Mode:       &newMode,
-		Dimensions: []accountsIface.Dimension{{Name: "function.invocations"}},
-		Period:     &newPeriod,
-		Status:     &newStatus,
-	})
+	// Valid create with just a name succeeds.
+	p, err := bs.Create(ctx, accountsIface.CreatePlanInput{Name: "Production"})
 	if err != nil {
-		t.Fatalf("Update: %v", err)
+		t.Fatalf("Create: %v", err)
 	}
-	if upd.Name != newName || upd.Mode != newMode || upd.Period != newPeriod || upd.Status != newStatus {
-		t.Fatalf("Update fields: %+v", upd)
-	}
-	if len(upd.Dimensions) != 1 || upd.Dimensions[0].Name != "function.invocations" {
-		t.Fatalf("Update dimensions: %+v", upd.Dimensions)
+	if p.DisplayName != "Production" {
+		t.Fatalf("DisplayName should default to Name; got %q", p.DisplayName)
 	}
 }
 
@@ -179,21 +151,21 @@ func TestUserStore_RequiredFields(t *testing.T) {
 	}
 }
 
-func TestUserStore_GrantUnknownPlan(t *testing.T) {
+func TestUserStore_GrantUnknownPRef(t *testing.T) {
 	srv := newTestService(t)
 	ctx := context.Background()
 	acc, _ := newAccountStore(srv.db).Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
 	us := newUserStore(srv.db, acc.ID)
 	user, _ := us.Add(ctx, accountsIface.AddUserInput{Provider: "github", ExternalID: "1"})
 
-	if err := us.Grant(ctx, user.ID, accountsIface.GrantPlanInput{PlanID: "ghost-plan"}); err == nil {
-		t.Fatalf("expected error: granting unknown plan")
+	if err := us.Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: "ghost"}); err == nil {
+		t.Fatalf("expected error: granting unknown pref")
 	}
-	if err := us.Grant(ctx, "ghost-user", accountsIface.GrantPlanInput{PlanID: "x"}); err == nil {
+	if err := us.Grant(ctx, "ghost-user", accountsIface.GrantPRefInput{PRefName: "x"}); err == nil {
 		t.Fatalf("expected error: granting on unknown user")
 	}
-	if err := us.Grant(ctx, user.ID, accountsIface.GrantPlanInput{}); err == nil {
-		t.Fatalf("expected error: empty plan id")
+	if err := us.Grant(ctx, user.ID, accountsIface.GrantPRefInput{}); err == nil {
+		t.Fatalf("expected error: empty pref name")
 	}
 }
 
@@ -203,7 +175,7 @@ func TestUserStore_RevokeMissingGrant(t *testing.T) {
 	acc, _ := newAccountStore(srv.db).Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
 	us := newUserStore(srv.db, acc.ID)
 	user, _ := us.Add(ctx, accountsIface.AddUserInput{Provider: "github", ExternalID: "1"})
-	if err := us.Revoke(ctx, user.ID, "ghost-plan"); !errors.Is(err, ErrNotFound) {
+	if err := us.Revoke(ctx, user.ID, "ghost-pref"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
@@ -289,19 +261,22 @@ func TestMemberStore_ExternalIndex(t *testing.T) {
 	if err := ms.AddExternalIndex(ctx, "okta", "subject-123", m.ID); err != nil {
 		t.Fatalf("AddExternalIndex: %v", err)
 	}
-	idx, err := ms.readMemberIndex(ctx, LookupExternalPath("okta", "subject-123"))
+	idx, err := readMemberIndexByPrefix(ctx, srv.db, LookupExternalPrefix("okta", "subject-123"))
 	if err != nil || len(idx) != 1 {
-		t.Fatalf("readMemberIndex: %v %+v", err, idx)
+		t.Fatalf("read external index: %v %+v", err, idx)
 	}
 	if err := ms.RemoveExternalIndex(ctx, "okta", "subject-123", m.ID); err != nil {
 		t.Fatalf("RemoveExternalIndex: %v", err)
 	}
-	if _, err := ms.readMemberIndex(ctx, LookupExternalPath("okta", "subject-123")); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected index empty after Remove, got %v", err)
+	idx, err = readMemberIndexByPrefix(ctx, srv.db, LookupExternalPrefix("okta", "subject-123"))
+	if err != nil || len(idx) != 0 {
+		t.Fatalf("expected empty after Remove; got idx=%+v err=%v", idx, err)
 	}
-	// Removing again is a no-op (idempotent).
-	if err := ms.RemoveExternalIndex(ctx, "okta", "subject-123", m.ID); err != nil {
-		t.Fatalf("RemoveExternalIndex idempotent: %v", err)
+	// Removing again is NOT idempotent — the entry is gone, so the helper
+	// surfaces ErrNotFound. Callers that want already-gone-is-fine semantics
+	// must check explicitly (Members.Remove does this; raw helper does not).
+	if err := ms.RemoveExternalIndex(ctx, "okta", "subject-123", m.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound on second Remove, got %v", err)
 	}
 }
 
@@ -317,8 +292,11 @@ func TestInProcessClient_Accessors(t *testing.T) {
 	if cli.Users("any") == nil {
 		t.Fatalf("Users() nil")
 	}
-	if cli.Plans("any") == nil {
+	if cli.Plans() == nil {
 		t.Fatalf("Plans() nil")
+	}
+	if cli.PRefs("any") == nil {
+		t.Fatalf("PRefs() nil")
 	}
 	if cli.Login() == nil {
 		t.Fatalf("Login() nil")

@@ -156,28 +156,21 @@ func TestApiAccountHandler_BadInput(t *testing.T) {
 func TestApiPlanHandler_RoundTrip(t *testing.T) {
 	srv := dispatchTestService(t)
 	ctx := context.Background()
-	cli := newInProcessClient(srv)
 
-	acc, err := cli.Accounts().Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
-	if err != nil {
-		t.Fatalf("Create acc: %v", err)
-	}
-
+	// Plans are global; no account_id in the body.
 	body := encodeBodyPayload(t, "create",
-		accountsIface.CreatePlanInput{Slug: "prod", Name: "Prod"},
-		command.Body{"account_id": acc.ID})
+		accountsIface.CreatePlanInput{Name: "Prod"},
+		nil)
 	resp, err := srv.apiPlanHandler(ctx, nil, body)
 	if err != nil {
 		t.Fatalf("create plan: %v", err)
 	}
 	bk := decodeResponsePayload[accountsIface.Plan](t, resp)
-	if bk.Slug != "prod" {
-		t.Fatalf("create slug")
+	if bk.Name != "Prod" {
+		t.Fatalf("create name")
 	}
 
-	resp, err = srv.apiPlanHandler(ctx, nil, command.Body{
-		"action": "list", "account_id": acc.ID,
-	})
+	resp, err = srv.apiPlanHandler(ctx, nil, command.Body{"action": "list"})
 	if err != nil {
 		t.Fatalf("list plan: %v", err)
 	}
@@ -186,19 +179,13 @@ func TestApiPlanHandler_RoundTrip(t *testing.T) {
 	}
 
 	resp, err = srv.apiPlanHandler(ctx, nil, command.Body{
-		"action": "get-by-slug", "account_id": acc.ID, "slug": "prod",
+		"action": "get", "id": bk.ID,
 	})
 	if err != nil {
-		t.Fatalf("get-by-slug: %v", err)
+		t.Fatalf("get: %v", err)
 	}
 	if got := decodeResponsePayload[accountsIface.Plan](t, resp); got.ID != bk.ID {
-		t.Fatalf("get-by-slug id")
-	}
-
-	if _, err := srv.apiPlanHandler(ctx, nil, command.Body{
-		"action": "delete", "account_id": acc.ID, "id": bk.ID,
-	}); err != nil {
-		t.Fatalf("delete: %v", err)
+		t.Fatalf("get id mismatch")
 	}
 }
 
@@ -245,7 +232,16 @@ func TestApiUserHandler_RoundTrip(t *testing.T) {
 	ctx := context.Background()
 	cli := newInProcessClient(srv)
 	acc, _ := cli.Accounts().Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
-	bk, _ := cli.Plans(acc.ID).Create(ctx, accountsIface.CreatePlanInput{Slug: "prod", Name: "Prod"})
+
+	// Create a global plan + a PRef pointing at it (grant target is the PRef name).
+	plan, _ := cli.Plans().Create(ctx, accountsIface.CreatePlanInput{Name: "Prod"})
+	prefs := cli.PRefs(acc.ID)
+	if _, err := prefs.Create(ctx, accountsIface.CreatePRefInput{Name: "prod", MemberID: "system:test"}); err != nil {
+		t.Fatalf("create pref: %v", err)
+	}
+	if _, err := prefs.Assign(ctx, accountsIface.AssignPRefInput{Name: "prod", PlanID: plan.ID, MemberID: "system:test"}); err != nil {
+		t.Fatalf("assign pref: %v", err)
+	}
 
 	body := encodeBodyPayload(t, "add",
 		accountsIface.AddUserInput{Provider: "github", ExternalID: "1"},
@@ -257,7 +253,7 @@ func TestApiUserHandler_RoundTrip(t *testing.T) {
 	u := decodeResponsePayload[accountsIface.User](t, resp)
 
 	body = encodeBodyPayload(t, "grant",
-		accountsIface.GrantPlanInput{PlanID: bk.ID},
+		accountsIface.GrantPRefInput{PRefName: "prod"},
 		command.Body{"account_id": acc.ID, "id": u.ID})
 	if _, err := srv.apiUserHandler(ctx, nil, body); err != nil {
 		t.Fatalf("grant: %v", err)
@@ -271,7 +267,7 @@ func TestApiUserHandler_RoundTrip(t *testing.T) {
 	}
 
 	if _, err := srv.apiUserHandler(ctx, nil, command.Body{
-		"action": "revoke", "account_id": acc.ID, "id": u.ID, "plan_id": bk.ID,
+		"action": "revoke", "account_id": acc.ID, "id": u.ID, "pref_name": "prod",
 	}); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
@@ -444,7 +440,7 @@ func TestManagedLoginChallenge_JSONShape(t *testing.T) {
 func TestStreamVerbConstants(t *testing.T) {
 	for name, v := range map[string]string{
 		"account": StreamVerbAccount, "member": StreamVerbMember,
-		"user": StreamVerbUser, "plan": StreamVerbPlan,
+		"user": StreamVerbUser, "plan": StreamVerbPlan, "pref": StreamVerbPRef,
 		"login":  StreamVerbLogin,
 		"verify": StreamVerbVerify, "resolve": StreamVerbResolve,
 	} {
@@ -462,7 +458,7 @@ func TestApiHandlers_AdditionalBranches(t *testing.T) {
 	ctx := context.Background()
 	cli := newInProcessClient(srv)
 	acc, _ := cli.Accounts().Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
-	bk, _ := cli.Plans(acc.ID).Create(ctx, accountsIface.CreatePlanInput{Slug: "prod", Name: "Prod"})
+	bk, _ := cli.Plans().Create(ctx, accountsIface.CreatePlanInput{Name: "Prod"})
 	u, _ := cli.Users(acc.ID).Add(ctx, accountsIface.AddUserInput{Provider: "github", ExternalID: "1"})
 	m, _ := cli.Members(acc.ID).Invite(ctx, accountsIface.InviteMemberInput{PrimaryEmail: "alice@x"})
 
@@ -480,26 +476,17 @@ func TestApiHandlers_AdditionalBranches(t *testing.T) {
 		t.Fatalf("expected error for missing id on update")
 	}
 
-	// plan: get + update + delete missing-id
+	// plan: get + list (Plans are global, no account_id; immutable so no update/delete)
 	if _, err := srv.apiPlanHandler(ctx, nil, command.Body{
-		"action": "get", "account_id": acc.ID, "id": bk.ID,
+		"action": "get", "id": bk.ID,
 	}); err != nil {
 		t.Fatalf("plan get: %v", err)
 	}
-	newName := "Production"
-	body := encodeBodyPayload(t, "update",
-		accountsIface.UpdatePlanInput{Name: &newName},
-		command.Body{"account_id": acc.ID, "id": bk.ID})
-	if _, err := srv.apiPlanHandler(ctx, nil, body); err != nil {
-		t.Fatalf("plan update: %v", err)
-	}
-	for _, action := range []string{"get", "get-by-slug", "update", "delete"} {
-		if _, err := srv.apiPlanHandler(ctx, nil, command.Body{"action": action, "account_id": acc.ID}); err == nil {
-			t.Fatalf("plan %s should require id/slug", action)
-		}
-	}
 	if _, err := srv.apiPlanHandler(ctx, nil, command.Body{"action": "get"}); err == nil {
-		t.Fatalf("plan missing account_id")
+		t.Fatalf("plan get should require id")
+	}
+	if _, err := srv.apiPlanHandler(ctx, nil, command.Body{"action": "delete", "id": bk.ID}); err == nil {
+		t.Fatalf("plan delete should be unknown action")
 	}
 
 	// member: get
@@ -537,7 +524,7 @@ func TestApiHandlers_AdditionalBranches(t *testing.T) {
 		t.Fatalf("finish-external should error in v1")
 	}
 	// finish-passkey: bad assertion bytes → ParseCredentialRequestResponseBody fails.
-	body = encodeBodyPayload(t, "finish-passkey",
+	body := encodeBodyPayload(t, "finish-passkey",
 		accountsIface.FinishPasskeyInput{SessionID: "x", Assertion: []byte("{not json")}, nil)
 	if _, err := srv.apiLoginHandler(ctx, nil, body); err == nil {
 		t.Fatalf("finish-passkey should reject invalid assertion bytes")
@@ -550,6 +537,8 @@ func TestApiHandlers_AdditionalBranches(t *testing.T) {
 	}
 
 	// account_id missing on each Account-scoped verb.
+	// Account-scoped verbs (member, user, pref) require account_id. Plan is
+	// global and explicitly does not.
 	for _, verb := range []func(context.Context, any, command.Body) (map[string]interface{}, error){
 		func(c context.Context, _ any, b command.Body) (map[string]interface{}, error) {
 			return srv.apiMemberHandler(c, nil, b)
@@ -558,7 +547,7 @@ func TestApiHandlers_AdditionalBranches(t *testing.T) {
 			return srv.apiUserHandler(c, nil, b)
 		},
 		func(c context.Context, _ any, b command.Body) (map[string]interface{}, error) {
-			return srv.apiPlanHandler(c, nil, b)
+			return srv.apiPRefHandler(c, nil, b)
 		},
 	} {
 		if _, err := verb(ctx, nil, command.Body{"action": "list"}); err == nil {

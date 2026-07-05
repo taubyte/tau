@@ -127,14 +127,14 @@ func (c *Client) RemoveUser(accountID, userID string) error {
 	}, "", nil)
 }
 
-func (c *Client) GrantPlan(accountID, userID, planID string) error {
-	if accountID == "" || userID == "" || planID == "" {
-		return errors.New("GrantPlan: account_id, user_id, plan_id required")
+func (c *Client) GrantPRef(accountID, userID, prefName string) error {
+	if accountID == "" || userID == "" || prefName == "" {
+		return errors.New("GrantPRef: account_id, user_id, pref_name required")
 	}
 	return c.sendMgmt("/users", map[string]any{
 		"action":     "grant",
 		"account_id": accountID,
 		"id":         userID,
-		"plan_id":    planID,
+		"pref_name":  prefName,
 	}, "", nil)
 }
