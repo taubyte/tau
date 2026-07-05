@@ -64,6 +64,8 @@ func testDisplace(t *testing.T, sd Spore) {
 			rh.On("Sudo", ctx, "apt-get", "install", "-y", pkg).Once().Return(nil, nil)
 		}
 		rh.On("Sudo", ctx, "netstat", "-lnp").Once().Return(nil, nil)
+		// probeDNSResolvers iterates the full dnsResolvers list; mock each one.
+		// First resolver returns multiple A records, the rest a single one — all valid.
 		rh.On("Execute", ctx, "dig", "+short", "+timeout=5", "@1.1.1.1", "google.com").Once().Return([]byte(`142.250.115.100
 142.250.115.102
 142.250.115.113
@@ -71,6 +73,9 @@ func testDisplace(t *testing.T, sd Spore) {
 142.250.115.101
 142.250.115.139
 		`), nil)
+		for _, dns := range []string{"1.0.0.1", "8.8.8.8", "8.8.4.4", "9.9.9.9", "149.112.112.112", "208.67.222.222", "208.67.220.220"} {
+			rh.On("Execute", ctx, "dig", "+short", "+timeout=5", "@"+dns, "google.com").Once().Return([]byte("142.250.115.100\n"), nil)
+		}
 
 		if updatingTau {
 			rh.On("Execute", ctx, "md5sum", "-bz", "/tb/bin/tau").Once().Return(nil, nil)
