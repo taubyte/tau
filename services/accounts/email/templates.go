@@ -65,3 +65,137 @@ func RenderMagicLink(d MagicLinkTemplateData) (subject, body string, err error) 
 	}
 	return magicLinkSubject, buf.String(), nil
 }
+
+// Variables passed to MagicInviteTemplate:
+//   - InviterDisplay: name/email of the admin who issued the invite (best-effort)
+//   - AccountName: target account display name
+//   - Role: cluster-side Member role (owner/admin/viewer/billing)
+//   - URL: full invite landing URL (PublicURL + /invite?token=...)
+//   - TTLHours: integer hours from issue to expiry
+
+const magicInviteBody = `Hi,
+
+{{.InviterDisplay}} has invited you to join {{.AccountName}} as
+{{.Role}} on tau.
+
+Open this link to accept or decline:
+
+    {{.URL}}
+
+This invitation expires in {{.TTLHours}} hours. If you weren't
+expecting it, you can safely ignore — declining is one click.
+
+— tau
+`
+
+const magicInviteSubjectTpl = `You've been invited to {{.AccountName}}`
+
+// MagicInviteTemplateData is the variable bag for the member-invite email.
+type MagicInviteTemplateData struct {
+	InviterDisplay string
+	AccountName    string
+	Role           string
+	URL            string
+	TTLHours       int
+}
+
+// Variables passed to MagicGitLinkTemplate:
+//   - InviterDisplay: admin display string ("name (email)" or bare email)
+//   - AccountName: target account display name
+//   - Provider: human-facing provider name (e.g. "GitHub")
+//   - RequiredLogin: optional pinned provider handle ("alice-dev") — empty when no constraint
+//   - RequiredOrganization: optional pinned provider org / group — empty when no constraint
+//   - URL: full landing URL (PublicURL + /git-link?token=...)
+//   - TTLHours: integer hours from issue to expiry
+
+const magicGitLinkBody = `Hi,
+
+{{.InviterDisplay}} has invited you to link your {{.Provider}} account
+to {{.AccountName}} on tau.{{if .RequiredLogin}}
+
+Please sign in as {{.RequiredLogin}} — the admin pinned this invite to
+that specific {{.Provider}} handle.{{end}}{{if .RequiredOrganization}}
+
+Your {{.Provider}} account must be a member of {{.RequiredOrganization}}.{{end}}
+
+Open this link and sign in with {{.Provider}} to complete the link:
+
+    {{.URL}}
+
+This link expires in {{.TTLHours}} hours. If you weren't expecting it,
+you can safely ignore — declining is one click.
+
+— tau
+`
+
+const magicGitLinkSubjectTpl = `Link your {{.Provider}} to {{.AccountName}}`
+
+// MagicGitLinkTemplateData is the variable bag for the git-link email.
+type MagicGitLinkTemplateData struct {
+	InviterDisplay       string
+	AccountName          string
+	Provider             string
+	RequiredLogin        string
+	RequiredOrganization string
+	URL                  string
+	TTLHours             int
+}
+
+// RenderMagicGitLink renders the git-link invitation email. Subject and
+// body both templated so the recipient's inbox preview names the account +
+// provider before they open.
+func RenderMagicGitLink(d MagicGitLinkTemplateData) (subject, body string, err error) {
+	if d.URL == "" {
+		return "", "", errors.New("email: git-link URL required")
+	}
+	if d.AccountName == "" {
+		return "", "", errors.New("email: git-link AccountName required")
+	}
+	if d.Provider == "" {
+		return "", "", errors.New("email: git-link Provider required")
+	}
+	bodyTpl, err := template.New("magic-gitlink-body").Parse(magicGitLinkBody)
+	if err != nil {
+		return "", "", fmt.Errorf("email: parse magic-gitlink body template: %w", err)
+	}
+	subjTpl, err := template.New("magic-gitlink-subject").Parse(magicGitLinkSubjectTpl)
+	if err != nil {
+		return "", "", fmt.Errorf("email: parse magic-gitlink subject template: %w", err)
+	}
+	var bodyBuf, subjBuf bytes.Buffer
+	if err := bodyTpl.Execute(&bodyBuf, d); err != nil {
+		return "", "", fmt.Errorf("email: render magic-gitlink body: %w", err)
+	}
+	if err := subjTpl.Execute(&subjBuf, d); err != nil {
+		return "", "", fmt.Errorf("email: render magic-gitlink subject: %w", err)
+	}
+	return subjBuf.String(), bodyBuf.String(), nil
+}
+
+// RenderMagicInvite renders the member-invite email. Both subject and body
+// are templated (subject substitutes AccountName so the recipient sees what
+// they're being invited to before opening the message).
+func RenderMagicInvite(d MagicInviteTemplateData) (subject, body string, err error) {
+	if d.URL == "" {
+		return "", "", errors.New("email: invite URL required")
+	}
+	if d.AccountName == "" {
+		return "", "", errors.New("email: invite AccountName required")
+	}
+	bodyTpl, err := template.New("magic-invite-body").Parse(magicInviteBody)
+	if err != nil {
+		return "", "", fmt.Errorf("email: parse magic-invite body template: %w", err)
+	}
+	subjTpl, err := template.New("magic-invite-subject").Parse(magicInviteSubjectTpl)
+	if err != nil {
+		return "", "", fmt.Errorf("email: parse magic-invite subject template: %w", err)
+	}
+	var bodyBuf, subjBuf bytes.Buffer
+	if err := bodyTpl.Execute(&bodyBuf, d); err != nil {
+		return "", "", fmt.Errorf("email: render magic-invite body: %w", err)
+	}
+	if err := subjTpl.Execute(&subjBuf, d); err != nil {
+		return "", "", fmt.Errorf("email: render magic-invite subject: %w", err)
+	}
+	return subjBuf.String(), bodyBuf.String(), nil
+}
