@@ -4,6 +4,9 @@
 
 .claude/
 
+# tam dev sandbox: local configs + third-party brand assets we don't ship.
+ee/satellites/accounts/dev/
+
 pkg/spore-drive/clients/mock/mock
 pkg/taucorder/clients/mock/mock
 
@@ -215,3 +218,4 @@ pkg/spore-drive/clients/py/example/hosts.csv
 pkg/spore-drive/clients/py/spore_drive/bin/
 tools/spore-drive/service/service
 
+.gstack/
