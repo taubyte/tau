@@ -8,11 +8,11 @@ import (
 	githubClient "github.com/taubyte/tau/clients/http/auth/git/github"
 )
 
-func New(ctx context.Context, provider, token string) common.Client {
+func New(ctx context.Context, provider, token string) (common.Client, error) {
 	switch provider {
 	case "github":
-		return githubClient.New(ctx, token)
+		return githubClient.New(ctx, token), nil
 	default:
-		panic(fmt.Sprintf("provider `%s` is not supported", provider))
+		return nil, fmt.Errorf("provider `%s` is not supported", provider)
 	}
 }

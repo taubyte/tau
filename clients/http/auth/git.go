@@ -5,17 +5,12 @@ import (
 	"strings"
 
 	"github.com/avast/retry-go/v4"
-	git "github.com/taubyte/tau/clients/http/auth/git"
 	"github.com/taubyte/tau/clients/http/auth/git/common"
 )
 
 // Git returns a git client based on the current git provider
 // Currently only github is supported
 func (c *Client) Git() common.Client {
-	if c.gitClient == nil {
-		c.gitClient = git.New(c.http.Context(), c.http.Provider(), c.http.Token())
-	}
-
 	return c.gitClient
 }
 

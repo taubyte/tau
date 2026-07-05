@@ -49,15 +49,25 @@ func (s *StreamHandler) getHandler(ctx context.Context, conn streams.Connection,
 func convertToValue(_type string, value []byte) (interface{}, error) {
 	switch _type {
 	case "uint32":
-		// TODO, this will panic rather than error....
+		if len(value) < 4 {
+			return nil, fmt.Errorf("value too short for %s: %d bytes", _type, len(value))
+		}
 		return binary.BigEndian.Uint32(value), nil
 	case "uint64":
-		// TODO, this will panic rather than error....
+		if len(value) < 8 {
+			return nil, fmt.Errorf("value too short for %s: %d bytes", _type, len(value))
+		}
 		return binary.BigEndian.Uint64(value), nil
 	case "float32":
+		if len(value) < 4 {
+			return nil, fmt.Errorf("value too short for %s: %d bytes", _type, len(value))
+		}
 		bits := binary.BigEndian.Uint32(value)
 		return math.Float32frombits(bits), nil
 	case "float64":
+		if len(value) < 8 {
+			return nil, fmt.Errorf("value too short for %s: %d bytes", _type, len(value))
+		}
 		bits := binary.BigEndian.Uint64(value)
 		return math.Float64frombits(bits), nil
 	case "string":

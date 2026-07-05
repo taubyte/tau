@@ -16,8 +16,13 @@ func New(ctx context.Context, options ...http.Option) (*Client, error) {
 		return nil, fmt.Errorf("new auth client failed with: %w", err)
 	}
 
+	gitClient, err := git.New(ctx, client.Provider(), client.Token())
+	if err != nil {
+		return nil, fmt.Errorf("new git client failed with: %w", err)
+	}
+
 	return &Client{
 		http:      client,
-		gitClient: git.New(ctx, client.Provider(), client.Token()),
+		gitClient: gitClient,
 	}, nil
 }
