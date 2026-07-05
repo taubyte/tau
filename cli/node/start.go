@@ -12,11 +12,11 @@ import (
 	"github.com/taubyte/tau/core/services"
 	"github.com/taubyte/tau/pkg/config"
 	httpService "github.com/taubyte/tau/pkg/http"
-	auto "github.com/taubyte/tau/pkg/http-auto"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/sensors"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/services/common/httpsvc"
 	slices "github.com/taubyte/tau/utils/slices/string"
 )
 
@@ -81,7 +81,7 @@ func Start(ctx context.Context, serviceConfig config.Config) error {
 	var httpNode httpService.Service
 	for _, srv := range serviceConfig.Services() {
 		if slices.Contains(commonSpecs.HTTPServices, srv) {
-			httpNode, err = auto.New(ctx, serviceConfig.Node(), serviceConfig)
+			httpNode, err = httpsvc.New(ctx, serviceConfig.Node(), serviceConfig)
 			if err != nil {
 				return fmt.Errorf("new autoHttp failed with: %s", err)
 			}

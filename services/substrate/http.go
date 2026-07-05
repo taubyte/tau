@@ -7,14 +7,14 @@ import (
 	"strconv"
 
 	"github.com/taubyte/tau/pkg/config"
-	auto "github.com/taubyte/tau/pkg/http-auto"
+	"github.com/taubyte/tau/services/common/httpsvc"
 )
 
 func (srv *Service) startHttp(cfg config.Config) (err error) {
 	listen := cfg.HttpListen()
 
 	if srv.http = cfg.Http(); srv.http == nil {
-		srv.http, err = auto.New(srv.ctx, srv.node, cfg)
+		srv.http, err = httpsvc.New(srv.ctx, srv.node, cfg)
 		if err != nil {
 			return err
 		}

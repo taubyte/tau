@@ -14,9 +14,9 @@ import (
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
-	auto "github.com/taubyte/tau/pkg/http-auto"
 	kvdbpkg "github.com/taubyte/tau/pkg/kvdb"
-	protocolCommon "github.com/taubyte/tau/services/common"
+	servicesCommon "github.com/taubyte/tau/services/common"
+	"github.com/taubyte/tau/services/common/httpsvc"
 )
 
 var (
@@ -36,7 +36,7 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AccountsService, error) {
 	var err error
 
 	if srv.node = cfg.Node(); srv.node == nil {
-		srv.node, err = tauConfig.NewNode(ctx, cfg, path.Join(cfg.Root(), protocolCommon.Accounts))
+		srv.node, err = tauConfig.NewNode(ctx, cfg, path.Join(cfg.Root(), servicesCommon.Accounts))
 		if err != nil {
 			return nil, err
 		}
@@ -60,11 +60,11 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AccountsService, error) {
 	if srv.devMode {
 		rebroadcastInterval = 1
 	}
-	if srv.db, err = srv.dbFactory.New(logger, protocolCommon.Accounts, rebroadcastInterval); err != nil {
+	if srv.db, err = srv.dbFactory.New(logger, servicesCommon.Accounts, rebroadcastInterval); err != nil {
 		return nil, err
 	}
 
-	if srv.stream, err = streams.New(srv.node, protocolCommon.Accounts, protocolCommon.AccountsProtocol); err != nil {
+	if srv.stream, err = streams.New(srv.node, servicesCommon.Accounts, servicesCommon.AccountsProtocol); err != nil {
 		return nil, err
 	}
 
@@ -81,12 +81,12 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AccountsService, error) {
 	if sc, err = seerClient.New(ctx, clientNode, cfg.SensorsRegistry()); err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
-	if err = protocolCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeAccounts); err != nil {
+	if err = servicesCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeAccounts); err != nil {
 		return nil, err
 	}
 
 	if srv.http = cfg.Http(); srv.http == nil {
-		srv.http, err = auto.New(ctx, srv.node, cfg)
+		srv.http, err = httpsvc.New(ctx, srv.node, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("new http failed with: %s", err)
 		}
@@ -99,8 +99,8 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AccountsService, error) {
 
 // Close releases resources held by the service.
 func (srv *AccountsService) Close() error {
-	logger.Info("Closing", protocolCommon.Accounts)
-	defer logger.Info(protocolCommon.Accounts, "closed")
+	logger.Info("Closing", servicesCommon.Accounts)
+	defer logger.Info(servicesCommon.Accounts, "closed")
 
 	if srv.stream != nil {
 		srv.stream.Stop()

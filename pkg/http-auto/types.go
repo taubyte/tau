@@ -1,26 +1,35 @@
 package auto
 
 import (
+	"crypto/x509"
 	"time"
 
 	"github.com/jellydator/ttlcache/v3"
 	auth "github.com/taubyte/tau/core/services/auth"
 	ifaceTns "github.com/taubyte/tau/core/services/tns"
-	"github.com/taubyte/tau/pkg/config"
+	"github.com/taubyte/tau/p2p/peer"
 	basicHttp "github.com/taubyte/tau/pkg/http/basic"
 	"github.com/taubyte/tau/pkg/http/options"
-	acme "github.com/taubyte/tau/services/auth/acme/store"
+	"golang.org/x/crypto/acme/autocert"
 )
 
 type Service struct {
 	*basicHttp.Service
-	err                 error
-	certStore           *acme.Store
-	authClient          auth.Client
-	tnsClient           ifaceTns.Client
-	config              config.Config
+	err error
+
+	certStore  autocert.Cache
+	authClient auth.Client
+	tnsClient  ifaceTns.Client
+
+	clientNode peer.Node
+
 	customDomainChecker func(host string) bool
-	acme                *options.OptionACME
+	autoTrustDomain     func(host string) bool
+	skipDomainProof     func(host string) bool
+
+	acme             *options.OptionACME
+	acmeCARoots      *x509.CertPool
+	acmeCASkipVerify bool
 
 	positiveCache *ttlcache.Cache[string, bool]
 	negativeCache *ttlcache.Cache[string, bool]

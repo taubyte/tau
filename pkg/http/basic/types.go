@@ -3,6 +3,7 @@ package basic
 import (
 	"context"
 	"net/http"
+	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/rs/cors"
@@ -18,7 +19,15 @@ type Service struct {
 	SecLayer           *secure.Secure
 	Cors               *cors.Cors
 	Debug              bool
-	err                error
-	ctx                context.Context
-	ctx_cancel         context.CancelFunc
+
+	// Zero on any of these = stdlib default (no cap / no timeout).
+	MaxBodyBytes      int64
+	ReadTimeout       time.Duration
+	WriteTimeout      time.Duration
+	IdleTimeout       time.Duration
+	ReadHeaderTimeout time.Duration
+
+	err        error
+	ctx        context.Context
+	ctx_cancel context.CancelFunc
 }
