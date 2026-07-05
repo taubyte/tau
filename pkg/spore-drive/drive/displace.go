@@ -23,6 +23,39 @@ import (
 
 var systemdResolvedRegexp = regexp.MustCompile(`.*:53[\s\t].*systemd-.*`)
 
+// dnsResolvers is the ordered list of candidate public DNS servers. Each one
+// is probed from the target host before deployment; only the resolvers that
+// actually answer get written into /etc/systemd/resolved.conf, so a host
+// behind a firewall that blocks (say) 1.1.1.1 still gets a working setup.
+var dnsResolvers = []string{
+	"1.1.1.1",         // Cloudflare
+	"1.0.0.1",         // Cloudflare secondary
+	"8.8.8.8",         // Google
+	"8.8.4.4",         // Google secondary
+	"9.9.9.9",         // Quad9
+	"149.112.112.112", // Quad9 secondary
+	"208.67.222.222",  // OpenDNS
+	"208.67.220.220",  // OpenDNS secondary
+}
+
+// probeDNSResolvers returns the subset of dnsResolvers that successfully
+// resolve google.com from the target host within a 5s timeout each.
+func probeDNSResolvers(ctx context.Context, r remoteHost) []string {
+	var working []string
+	for _, dns := range dnsResolvers {
+		out, err := r.Execute(ctx, "dig", "+short", "+timeout=5", "@"+dns, "google.com")
+		if err != nil {
+			continue
+		}
+		ip := strings.TrimSpace(strings.Split(string(out), "\n")[0])
+		if net.ParseIP(ip) == nil {
+			continue
+		}
+		working = append(working, dns)
+	}
+	return working
+}
+
 func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan Progress {
 
 	hyphae := course.Hyphae()
@@ -74,7 +107,11 @@ func (d *sporedrive) Displace(ctx context.Context, course course.Course) <-chan 
 	return pCh
 }
 
-func updateResolvedConf(ctx context.Context, h remoteHost) error {
+func updateResolvedConf(ctx context.Context, h remoteHost, resolvers []string) error {
+	if len(resolvers) == 0 {
+		return fmt.Errorf("no DNS resolvers provided")
+	}
+
 	file, err := h.Open("/etc/systemd/resolved.conf")
 	if err != nil {
 		return fmt.Errorf("failed to open /etc/systemd/resolved.conf: %w", err)
@@ -92,7 +129,7 @@ func updateResolvedConf(ctx context.Context, h remoteHost) error {
 	}
 
 	resolveSection := cfg.Section("Resolve")
-	resolveSection.Key("DNS").SetValue("1.1.1.1")
+	resolveSection.Key("DNS").SetValue(strings.Join(resolvers, " "))
 	resolveSection.Key("DNSStubListener").SetValue("no")
 
 	tmpFilePath := "/tmp/resolved.conf"
@@ -508,10 +545,19 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 			return pushError("dependencies", fmt.Errorf("failed to run netstat: %w", err))
 		}
 
+		// Probe candidate DNS resolvers from the host. We only keep the ones
+		// that actually answer, so a host that can't reach (e.g.) 1.1.1.1
+		// still gets a usable resolver list.
+		workingResolvers := probeDNSResolvers(ctx, r)
+		if len(workingResolvers) == 0 {
+			return pushError("dependencies", fmt.Errorf("DNS resolution test failed: none of %v are reachable", dnsResolvers))
+		}
+		pushProgress("dependencies", 90)
+
 		netstatStr := string(netstatOutput)
 		if systemdResolvedRegexp.MatchString(netstatStr) {
 			// systemd-resolved is using port 53, updating DNS settings using ini package
-			if err := updateResolvedConf(ctx, r); err != nil {
+			if err := updateResolvedConf(ctx, r, workingResolvers); err != nil {
 				return pushError("dependencies", fmt.Errorf("failed to update /etc/systemd/resolved.conf: %w", err))
 			}
 
@@ -524,18 +570,6 @@ func (d *sporedrive) displaceHandler(hypha *course.Hypha, progressCh chan<- Prog
 			if _, err := r.Sudo(ctx, "ln", "-sf", "/run/systemd/resolve/resolv.conf", "/etc/resolv.conf"); err != nil {
 				return pushError("dependencies", fmt.Errorf("failed to update /etc/resolv.conf symlink: %w", err))
 			}
-		}
-		pushProgress("dependencies", 90)
-
-		// Validate DNS resolution using 1.1.1.1
-		digOutput, err := r.Execute(ctx, "dig", "+short", "+timeout=5", "@1.1.1.1", "google.com")
-		if err != nil {
-			return pushError("dependencies", fmt.Errorf("failed to perform DNS resolution test: %w", err))
-		}
-
-		ip := strings.TrimSpace(strings.Split(string(digOutput), "\n")[0])
-		if net.ParseIP(ip) == nil {
-			return pushError("dependencies", fmt.Errorf("DNS resolution test failed, invalid IP: `%s`", ip))
 		}
 		pushProgress("dependencies", 100)
 

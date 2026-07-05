@@ -28,7 +28,7 @@ class ServiceManager:
         self.temp_dir: Optional[tempfile.TemporaryDirectory] = None
         
         # Service configuration
-        self.service_version = "0.1.5"
+        self.service_version = "0.1.6"
         self.binary_dir = Path(__file__).parent / "bin"
         self.binary_name = "drive.exe" if platform.system() == "Windows" else "drive"
         self.binary_path = self.binary_dir / self.binary_name
