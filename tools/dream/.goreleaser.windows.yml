@@ -28,6 +28,7 @@ builds:
       - GOAMD64=v2
     tags:
       - windows
+      - dreaming
 
 changelog:
   disable: true

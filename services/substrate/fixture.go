@@ -1,3 +1,6 @@
+//go:build dreaming
+// +build dreaming
+
 package substrate
 
 import (
