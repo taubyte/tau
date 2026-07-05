@@ -27,6 +27,8 @@ builds:
     env:
       - CGO_ENABLED=0
       - GOAMD64=v2
+    tags:
+      - dreaming
 
 changelog:
   disable: true
