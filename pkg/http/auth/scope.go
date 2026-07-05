@@ -27,7 +27,14 @@ func Scope(scope []string, authHandler service.Handler) service.Handler {
 			}
 		}
 
-		return nil, ctx.HandleAuth(authHandler)
+		// Direct call — handleRequest already wraps us in HandleAuth, so a
+		// second HandleAuth here duplicates the error body on rejection.
+		// Nil-handler matches ctx.HandleAuth(nil) so ServeAssets stays
+		// "no auth required".
+		if authHandler == nil {
+			return nil, nil
+		}
+		return authHandler(ctx)
 	}
 }
 

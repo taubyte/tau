@@ -53,9 +53,19 @@ func New(ctx context.Context, opts ...options.Option) (*Service, error) {
 
 	Compress, _ := httpcompression.DefaultAdapter()
 
+	// CORS → gzip → optional body cap → router.
+	var handler http.Handler = s.Router
+	if s.MaxBodyBytes > 0 {
+		handler = http.MaxBytesHandler(handler, s.MaxBodyBytes)
+	}
+
 	s.Server = &http.Server{
-		Addr:    s.ListenAddress,
-		Handler: s.Cors.Handler(Compress(s.Router)),
+		Addr:              s.ListenAddress,
+		Handler:           s.Cors.Handler(Compress(handler)),
+		ReadTimeout:       s.ReadTimeout,
+		WriteTimeout:      s.WriteTimeout,
+		IdleTimeout:       s.IdleTimeout,
+		ReadHeaderTimeout: s.ReadHeaderTimeout,
 	}
 
 	// make sure we end context if the server was shutdown

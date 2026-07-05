@@ -25,6 +25,16 @@ func (s *Service) SetOption(optIface interface{}) error {
 		s.AllowedOriginsFunc = opt.Func
 	case options.OptionDebug:
 		s.Debug = true
+	case options.OptionMaxBodyBytes:
+		s.MaxBodyBytes = opt.Limit
+	case options.OptionReadTimeout:
+		s.ReadTimeout = opt.Duration
+	case options.OptionWriteTimeout:
+		s.WriteTimeout = opt.Duration
+	case options.OptionIdleTimeout:
+		s.IdleTimeout = opt.Duration
+	case options.OptionReadHeaderTimeout:
+		s.ReadHeaderTimeout = opt.Duration
 	}
 
 	// default: we ignore option we do not know so other modules can process them

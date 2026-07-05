@@ -17,9 +17,9 @@ import (
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
-	auto "github.com/taubyte/tau/pkg/http-auto"
 	"github.com/taubyte/tau/pkg/poe"
 	servicesCommon "github.com/taubyte/tau/services/common"
+	"github.com/taubyte/tau/services/common/httpsvc"
 )
 
 var (
@@ -108,7 +108,7 @@ func New(ctx context.Context, cfg tauConfig.Config, opts ...Options) (*Service, 
 
 	// HTTP
 	if srv.http = cfg.Http(); srv.http == nil {
-		srv.http, err = auto.New(ctx, srv.node, cfg)
+		srv.http, err = httpsvc.New(ctx, srv.node, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("new http failed with: %s", err)
 		}

@@ -14,10 +14,10 @@ import (
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	tauConfig "github.com/taubyte/tau/pkg/config"
-	auto "github.com/taubyte/tau/pkg/http-auto"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
 	servicesCommon "github.com/taubyte/tau/services/common"
+	"github.com/taubyte/tau/services/common/httpsvc"
 
 	kvdbIface "github.com/taubyte/tau/core/kvdb"
 
@@ -93,7 +93,7 @@ func New(ctx context.Context, cfg tauConfig.Config) (*PatrickService, error) {
 
 	// HTTP
 	if srv.http = cfg.Http(); srv.http == nil {
-		if srv.http, err = auto.New(srv.ctx, srv.node, cfg); err != nil {
+		if srv.http, err = httpsvc.New(srv.ctx, srv.node, cfg); err != nil {
 			return nil, err
 		}
 		defer srv.http.Start()

@@ -57,6 +57,9 @@ func (c *Context) returnData(code int, interfaceData interface{}) error {
 			c.returnError(http.StatusInternalServerError, err)
 			return err
 		}
+		// WriteHeader before Write — otherwise the first Write implicitly
+		// promotes to 200 and any non-200 code is silently dropped.
+		c.req.ResponseWriter.WriteHeader(code)
 		_, err = c.req.ResponseWriter.Write([]byte(m))
 		if err != nil {
 			return err
@@ -74,9 +77,10 @@ func (c *Context) returnError(code int, err error) {
 		},
 	)
 
-	// TODO log error here
-	c.req.ResponseWriter.Write([]byte(m))
+	// WriteHeader before Write — otherwise the first Write implicitly
+	// promotes to 200 and the error code is silently dropped on the wire.
 	c.req.ResponseWriter.WriteHeader(code)
+	c.req.ResponseWriter.Write([]byte(m))
 }
 
 func (c *Context) formatBody(m interface{}) (string, error) {

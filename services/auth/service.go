@@ -14,9 +14,9 @@ import (
 	seerIface "github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
-	auto "github.com/taubyte/tau/pkg/http-auto"
 	"github.com/taubyte/tau/pkg/kvdb"
-	protocolCommon "github.com/taubyte/tau/services/common"
+	servicesCommon "github.com/taubyte/tau/services/common"
+	"github.com/taubyte/tau/services/common/httpsvc"
 )
 
 var (
@@ -38,7 +38,7 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 	}
 
 	if srv.node = cfg.Node(); srv.node == nil {
-		srv.node, err = tauConfig.NewNode(ctx, cfg, path.Join(cfg.Root(), protocolCommon.Auth))
+		srv.node, err = tauConfig.NewNode(ctx, cfg, path.Join(cfg.Root(), servicesCommon.Auth))
 		if err != nil {
 			return nil, err
 		}
@@ -66,18 +66,18 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 	if srv.devMode {
 		rebroadcastInterval = 1
 	}
-	if srv.db, err = srv.dbFactory.New(logger, protocolCommon.Auth, rebroadcastInterval); err != nil {
+	if srv.db, err = srv.dbFactory.New(logger, servicesCommon.Auth, rebroadcastInterval); err != nil {
 		return nil, err
 	}
 	if srv.tnsClient, err = tnsApi.New(srv.ctx, clientNode); err != nil {
 		return nil, err
 	}
 	srv.rootDomain = cfg.NetworkFqdn()
-	if srv.stream, err = streams.New(srv.node, protocolCommon.Auth, protocolCommon.AuthProtocol); err != nil {
+	if srv.stream, err = streams.New(srv.node, servicesCommon.Auth, servicesCommon.AuthProtocol); err != nil {
 		return nil, err
 	}
 	srv.hostUrl = cfg.NetworkFqdn()
-	nodePath := path.Join(cfg.Root(), protocolCommon.Auth)
+	nodePath := path.Join(cfg.Root(), servicesCommon.Auth)
 	if srv.secretsService, err = initSecretsService(srv.db, srv.node, nodePath); err != nil {
 		return nil, err
 	}
@@ -97,12 +97,12 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 	if sc, err = seerClient.New(ctx, clientNode, cfg.SensorsRegistry()); err != nil {
 		return nil, fmt.Errorf("creating seer client failed with %s", err)
 	}
-	if err = protocolCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeAuth); err != nil {
+	if err = servicesCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeAuth); err != nil {
 		return nil, err
 	}
 
 	if srv.http = cfg.Http(); srv.http == nil {
-		srv.http, err = auto.New(ctx, srv.node, cfg)
+		srv.http, err = httpsvc.New(ctx, srv.node, cfg)
 		if err != nil {
 			return nil, fmt.Errorf("new http failed with: %s", err)
 		}
@@ -114,8 +114,8 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 }
 
 func (srv *AuthService) Close() error {
-	logger.Info("Closing", protocolCommon.Auth)
-	defer logger.Info(protocolCommon.Auth, "closed")
+	logger.Info("Closing", servicesCommon.Auth)
+	defer logger.Info(servicesCommon.Auth, "closed")
 
 	if srv.secretsService != nil {
 		srv.secretsService.Close()

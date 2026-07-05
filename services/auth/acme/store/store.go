@@ -176,6 +176,9 @@ func (d *Store) getDynamicCertificate(name string, isCert bool) ([]byte, error) 
 
 	res, err := d.client.Send("acme", *body)
 	if err != nil {
+		if strings.Contains(err.Error(), autocert.ErrCacheMiss.Error()) {
+			return nil, autocert.ErrCacheMiss
+		}
 		return nil, err
 	}
 

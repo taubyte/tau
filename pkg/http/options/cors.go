@@ -2,6 +2,7 @@ package options
 
 import (
 	"crypto"
+	"crypto/x509"
 	"regexp"
 )
 
@@ -14,6 +15,22 @@ func ACMEWithKey(directoryURL string, key crypto.Signer) Option {
 func ACME(directoryURL string) Option {
 	return func(s Configurable) error {
 		return s.SetOption(OptionACME{DirectoryURL: directoryURL})
+	}
+}
+
+// ACMECARoots pins a custom root-CA pool for ACME-directory verification.
+// nil = use system roots (default).
+func ACMECARoots(roots *x509.CertPool) Option {
+	return func(s Configurable) error {
+		return s.SetOption(OptionACMECARoots{Roots: roots})
+	}
+}
+
+// ACMECASkipVerify disables TLS verification for ACME-directory calls
+// (private / dev CAs only).
+func ACMECASkipVerify(skip bool) Option {
+	return func(s Configurable) error {
+		return s.SetOption(OptionACMECASkipVerify{Skip: skip})
 	}
 }
 
