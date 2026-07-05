@@ -1,7 +1,7 @@
 {
   "name": "@taubyte/spore-drive",
-  "version": "0.1.10",
-  "service": "0.1.5",
+  "version": "0.1.11",
+  "service": "0.1.6",
   "description": "",
   "type": "module",
   "main": "dist/index.js",
