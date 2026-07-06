@@ -115,7 +115,8 @@ await compile(fs, "/my-project", { branch: "main" }, assets);
   is synchronous while lightning-fs is async.
 - `npm test` runs the golden compile/decompile round-trip against the repo's tcc
   fixtures (requires the assets to have been built first).
-- `./e2e.sh` is a full pipeline test: it regenerates the wasm and TS **fresh** into
-  a tmp package, drops the runtime and tests alongside, and runs them there — so the
-  generated code is validated end to end, not just the committed `src/gen`. Also
-  runnable as `TCC_E2E=1 go test -run E2E ./tools/tcc-gen/`.
+- `go test ./tools/tcc-gen/` runs a full pipeline test (`TestGeneratedClientE2E`):
+  it regenerates the wasm and TS **fresh** into a temp package, drops this runtime
+  and the tests alongside, and typechecks + runs them there — validating the
+  generated code end to end, not just the committed `src/gen`. It skips under
+  `-short` or when node/deps are absent.
