@@ -4,8 +4,10 @@ import { readdirSync, statSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { compile, open, decompile, type AsyncFs } from "./index.js";
 
-// The golden fixture the Go compile/decompile tests use.
-const FIXTURE = resolve(import.meta.dirname, "../../../taubyte/v1/fixtures/config");
+// The golden fixture the Go compile/decompile tests use. TCC_FIXTURE lets the
+// e2e harness point at it from a tmp package; otherwise resolve it in-tree.
+const FIXTURE =
+  process.env.TCC_FIXTURE ?? resolve(import.meta.dirname, "../../../taubyte/v1/fixtures/config");
 const FN_NAME = "test_function1_glob";
 const FN_ID = "QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh";
 
