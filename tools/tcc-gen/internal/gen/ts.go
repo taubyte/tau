@@ -163,9 +163,12 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 	b.WriteString("export class Session {\n")
 	b.WriteString("  constructor(readonly binding: SessionBinding, readonly handle: number) {}\n\n")
 	for _, r := range resources {
-		fmt.Fprintf(&b, "  %s(name: string): %sConfig {\n    return new %sConfig(this, name);\n  }\n", tsName(r.spec), r.spec, r.spec)
+		// accessor factory (optionally application-scoped) + name lister
+		fmt.Fprintf(&b, "  %s(name: string, app?: string): %sConfig {\n    return new %sConfig(this, name, app);\n  }\n", tsName(r.spec), r.spec, r.spec)
+		fmt.Fprintf(&b, "  %sNames(app?: string): Promise<string[]> {\n    return this.binding.list(this.handle, app ? [\"applications\", app, %q] : [%q]);\n  }\n", tsName(r.spec), r.group, r.group)
 	}
 	b.WriteString("\n")
+	b.WriteString("  applications(): Promise<string[]> {\n    return this.binding.list(this.handle, [\"applications\"]);\n  }\n")
 	b.WriteString("  compile(opts?: CompileOptions): Promise<CompileResult> {\n    return this.binding.compile(this.handle, opts);\n  }\n")
 	b.WriteString("  save(fs: AsyncFs, dir: string): Promise<void> {\n    return this.binding.save(this.handle, fs, dir);\n  }\n")
 	b.WriteString("  close(): Promise<void> {\n    return this.binding.close(this.handle);\n  }\n")
@@ -176,7 +179,8 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 		fmt.Fprintf(&b, "/** Typed accessors for a %s's config. */\n", strings.ToLower(r.spec))
 		fmt.Fprintf(&b, "export class %sConfig {\n", r.spec)
 		fmt.Fprintf(&b, "  private res: string[];\n")
-		fmt.Fprintf(&b, "  constructor(private s: Session, name: string) {\n    this.res = [%q, name];\n  }\n", r.group)
+		fmt.Fprintf(&b, "  constructor(private s: Session, name: string, app?: string) {\n    this.res = app ? [\"applications\", app, %q, name] : [%q, name];\n  }\n", r.group, r.group)
+		fmt.Fprintf(&b, "\n  delete(): Promise<void> {\n    return this.s.binding.delete(this.s.handle, this.res);\n  }\n")
 		for _, f := range r.fields {
 			// getter
 			if len(f.compat) == 0 {

@@ -12,34 +12,64 @@ export type FunctionType = "http" | "https" | "pubsub" | "p2p";
 export class Session {
   constructor(readonly binding: SessionBinding, readonly handle: number) {}
 
-  database(name: string): DatabaseConfig {
-    return new DatabaseConfig(this, name);
+  database(name: string, app?: string): DatabaseConfig {
+    return new DatabaseConfig(this, name, app);
   }
-  domain(name: string): DomainConfig {
-    return new DomainConfig(this, name);
+  databaseNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["applications", app, "databases"] : ["databases"]);
   }
-  function(name: string): FunctionConfig {
-    return new FunctionConfig(this, name);
+  domain(name: string, app?: string): DomainConfig {
+    return new DomainConfig(this, name, app);
   }
-  library(name: string): LibraryConfig {
-    return new LibraryConfig(this, name);
+  domainNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["applications", app, "domains"] : ["domains"]);
   }
-  messaging(name: string): MessagingConfig {
-    return new MessagingConfig(this, name);
+  function(name: string, app?: string): FunctionConfig {
+    return new FunctionConfig(this, name, app);
   }
-  service(name: string): ServiceConfig {
-    return new ServiceConfig(this, name);
+  functionNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["applications", app, "functions"] : ["functions"]);
   }
-  smartOp(name: string): SmartOpConfig {
-    return new SmartOpConfig(this, name);
+  library(name: string, app?: string): LibraryConfig {
+    return new LibraryConfig(this, name, app);
   }
-  storage(name: string): StorageConfig {
-    return new StorageConfig(this, name);
+  libraryNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["applications", app, "libraries"] : ["libraries"]);
   }
-  website(name: string): WebsiteConfig {
-    return new WebsiteConfig(this, name);
+  messaging(name: string, app?: string): MessagingConfig {
+    return new MessagingConfig(this, name, app);
+  }
+  messagingNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["applications", app, "messaging"] : ["messaging"]);
+  }
+  service(name: string, app?: string): ServiceConfig {
+    return new ServiceConfig(this, name, app);
+  }
+  serviceNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["applications", app, "services"] : ["services"]);
+  }
+  smartOp(name: string, app?: string): SmartOpConfig {
+    return new SmartOpConfig(this, name, app);
+  }
+  smartOpNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["applications", app, "smartops"] : ["smartops"]);
+  }
+  storage(name: string, app?: string): StorageConfig {
+    return new StorageConfig(this, name, app);
+  }
+  storageNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["applications", app, "storages"] : ["storages"]);
+  }
+  website(name: string, app?: string): WebsiteConfig {
+    return new WebsiteConfig(this, name, app);
+  }
+  websiteNames(app?: string): Promise<string[]> {
+    return this.binding.list(this.handle, app ? ["applications", app, "websites"] : ["websites"]);
   }
 
+  applications(): Promise<string[]> {
+    return this.binding.list(this.handle, ["applications"]);
+  }
   compile(opts?: CompileOptions): Promise<CompileResult> {
     return this.binding.compile(this.handle, opts);
   }
@@ -54,8 +84,12 @@ export class Session {
 /** Typed accessors for a database's config. */
 export class DatabaseConfig {
   private res: string[];
-  constructor(private s: Session, name: string) {
-    this.res = ["databases", name];
+  constructor(private s: Session, name: string, app?: string) {
+    this.res = app ? ["applications", app, "databases", name] : ["databases", name];
+  }
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
   }
 
   async match(): Promise<string | undefined> {
@@ -133,8 +167,12 @@ export class DatabaseConfig {
 /** Typed accessors for a domain's config. */
 export class DomainConfig {
   private res: string[];
-  constructor(private s: Session, name: string) {
-    this.res = ["domains", name];
+  constructor(private s: Session, name: string, app?: string) {
+    this.res = app ? ["applications", app, "domains", name] : ["domains", name];
+  }
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
   }
 
   async fqdn(): Promise<string | undefined> {
@@ -197,8 +235,12 @@ export class DomainConfig {
 /** Typed accessors for a function's config. */
 export class FunctionConfig {
   private res: string[];
-  constructor(private s: Session, name: string) {
-    this.res = ["functions", name];
+  constructor(private s: Session, name: string, app?: string) {
+    this.res = app ? ["applications", app, "functions", name] : ["functions", name];
+  }
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
   }
 
   async type(): Promise<FunctionType | undefined> {
@@ -319,8 +361,12 @@ export class FunctionConfig {
 /** Typed accessors for a library's config. */
 export class LibraryConfig {
   private res: string[];
-  constructor(private s: Session, name: string) {
-    this.res = ["libraries", name];
+  constructor(private s: Session, name: string, app?: string) {
+    this.res = app ? ["applications", app, "libraries", name] : ["libraries", name];
+  }
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
   }
 
   async path(): Promise<string | undefined> {
@@ -383,8 +429,12 @@ export class LibraryConfig {
 /** Typed accessors for a messaging's config. */
 export class MessagingConfig {
   private res: string[];
-  constructor(private s: Session, name: string) {
-    this.res = ["messaging", name];
+  constructor(private s: Session, name: string, app?: string) {
+    this.res = app ? ["applications", app, "messaging", name] : ["messaging", name];
+  }
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
   }
 
   async local(): Promise<boolean | undefined> {
@@ -454,8 +504,12 @@ export class MessagingConfig {
 /** Typed accessors for a service's config. */
 export class ServiceConfig {
   private res: string[];
-  constructor(private s: Session, name: string) {
-    this.res = ["services", name];
+  constructor(private s: Session, name: string, app?: string) {
+    this.res = app ? ["applications", app, "services", name] : ["services", name];
+  }
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
   }
 
   async protocol(): Promise<string | undefined> {
@@ -497,8 +551,12 @@ export class ServiceConfig {
 /** Typed accessors for a smartop's config. */
 export class SmartOpConfig {
   private res: string[];
-  constructor(private s: Session, name: string) {
-    this.res = ["smartops", name];
+  constructor(private s: Session, name: string, app?: string) {
+    this.res = app ? ["applications", app, "smartops", name] : ["smartops", name];
+  }
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
   }
 
   async source(): Promise<string | undefined> {
@@ -561,8 +619,12 @@ export class SmartOpConfig {
 /** Typed accessors for a storage's config. */
 export class StorageConfig {
   private res: string[];
-  constructor(private s: Session, name: string) {
-    this.res = ["storages", name];
+  constructor(private s: Session, name: string, app?: string) {
+    this.res = app ? ["applications", app, "storages", name] : ["storages", name];
+  }
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
   }
 
   async match(): Promise<string | undefined> {
@@ -626,8 +688,12 @@ export class StorageConfig {
 /** Typed accessors for a website's config. */
 export class WebsiteConfig {
   private res: string[];
-  constructor(private s: Session, name: string) {
-    this.res = ["websites", name];
+  constructor(private s: Session, name: string, app?: string) {
+    this.res = app ? ["applications", app, "websites", name] : ["websites", name];
+  }
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
   }
 
   async domains(): Promise<string[] | undefined> {

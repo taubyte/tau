@@ -195,6 +195,58 @@ func sessionSaveFn(_ js.Value, args []js.Value) any {
 	return js.Null()
 }
 
+// delete(handle, resourcePath[]) : remove a whole resource (mirrors Resource.Delete()).
+func sessionDeleteFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("delete: expected (handle, resourcePath)")
+	}
+	res := jsToPath(args[1])
+	if len(res) == 0 {
+		return errResult("delete: empty resource path")
+	}
+	q := s.seer.Get(res[0])
+	for _, seg := range res[1:] {
+		q = q.Get(seg)
+	}
+	if err := q.Delete().Commit(); err != nil {
+		return errResult(err.Error())
+	}
+	return js.Null()
+}
+
+// list(handle, path[]) -> string[] : the names under a folder (resource names, or
+// application names for ["applications"]). Mirrors project/list.go's seer.List().
+func sessionListFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("list: expected (handle, path)")
+	}
+	path := jsToPath(args[1])
+	if len(path) == 0 {
+		return errResult("list: empty path")
+	}
+	q := s.seer.Get(path[0])
+	for _, seg := range path[1:] {
+		q = q.Get(seg)
+	}
+	names, err := q.List()
+	if err != nil {
+		return toJS([]any{}) // missing/empty folder -> []
+	}
+	out := make([]any, len(names))
+	for i, n := range names {
+		out[i] = n
+	}
+	return toJS(out)
+}
+
 func sessionCloseFn(_ js.Value, args []js.Value) any {
 	if len(args) >= 1 {
 		delete(sessions, args[0].Int())

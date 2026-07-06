@@ -45,8 +45,11 @@ func TestGenerateTSAccessors(t *testing.T) {
 
 	for _, want := range []string{
 		`export type FunctionType = "http" | "https" | "pubsub" | "p2p";`,
-		`function(name: string): FunctionConfig {`,                                    // Session factory
-		`this.res = ["functions", name];`,                                             // resource path
+		`function(name: string, app?: string): FunctionConfig {`, // Session factory (app-scoped)
+		`: ["functions", name];`,                                                      // resource path (ternary fallback)
+		`functionNames(app?: string): Promise<string[]> {`,                            // list
+		`delete(): Promise<void> {`,                                                   // delete
+		`applications(): Promise<string[]> {`,                                         // app list
 		"async type(): Promise<FunctionType | undefined> {",                           // async + union
 		`this.s.binding.get(this.s.handle, this.res, ["trigger", "type"])`,            // field path
 		`this.s.binding.set(this.s.handle, this.res, ["execution", "memory"]`,         // setter path

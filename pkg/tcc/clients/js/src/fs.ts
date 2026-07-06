@@ -89,6 +89,8 @@ export interface AsyncFs {
     readdir(path: string): Promise<string[]>;
     stat(path: string): Promise<{ isDirectory(): boolean }>;
     mkdir(path: string): Promise<void>;
+    /** Optional — used to prune deleted files when saving a session. */
+    unlink?(path: string): Promise<void>;
   };
 }
 
@@ -115,8 +117,17 @@ export async function hydrate(fs: AsyncFs, dir: string): Promise<Map<string, Uin
   return map;
 }
 
-/** Write a compiler-rooted Map back under `dir` in an async fs, creating dirs. */
-export async function flush(fs: AsyncFs, dir: string, map: Map<string, Uint8Array>): Promise<void> {
+/**
+ * Write a compiler-rooted Map back under `dir` in an async fs, creating dirs.
+ * With `prune`, files under `dir` not in the map are removed (so a saved session
+ * reflects deletions), if the fs supports `unlink`.
+ */
+export async function flush(
+  fs: AsyncFs,
+  dir: string,
+  map: Map<string, Uint8Array>,
+  opts: { prune?: boolean } = {},
+): Promise<void> {
   const mkdirp = async (rooted: string) => {
     let cur = "";
     for (const part of rooted.split("/").filter(Boolean)) {
@@ -132,5 +143,27 @@ export async function flush(fs: AsyncFs, dir: string, map: Map<string, Uint8Arra
     const slash = rooted.lastIndexOf("/");
     if (slash > 0) await mkdirp(rooted.slice(0, slash));
     await fs.promises.writeFile(joinPath(dir, rooted), data);
+  }
+
+  const unlink = fs.promises.unlink?.bind(fs.promises);
+  if (opts.prune && unlink) {
+    const prune = async (abs: string, rooted: string) => {
+      let names: string[];
+      try {
+        names = await fs.promises.readdir(abs);
+      } catch {
+        return;
+      }
+      for (const name of names) {
+        const childAbs = joinPath(abs, name);
+        const childRooted = joinPath(rooted, name);
+        if ((await fs.promises.stat(childAbs)).isDirectory()) {
+          await prune(childAbs, childRooted);
+        } else if (!map.has(childRooted)) {
+          await unlink(childAbs);
+        }
+      }
+    };
+    await prune(dir, "/");
   }
 }

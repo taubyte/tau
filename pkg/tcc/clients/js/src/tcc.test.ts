@@ -51,6 +51,9 @@ function memFs(files: Map<string, Uint8Array> = new Map()): AsyncFs & { files: M
         return { isDirectory: () => dir };
       },
       async mkdir() {},
+      async unlink(p) {
+        files.delete(p);
+      },
     },
   };
 }
@@ -93,6 +96,31 @@ test("session: edit typed fields, compile reflects the edit, save writes YAML", 
   assert.ok(yaml.includes("memory: 64GB"), "saved YAML has the edit");
   assert.ok(yaml.includes("id: " + FN_ID), "saved YAML preserved id");
   await session.close();
+});
+
+test("session: list, application-scoped access, and delete", async () => {
+  const session = await open(fixtureFs(), "/");
+
+  assert.ok((await session.functionNames()).includes(FN_NAME), "list global functions");
+  assert.ok((await session.applications()).includes("test_app1"), "list applications");
+  assert.ok((await session.functionNames("test_app1")).includes("test_function2"), "list app functions");
+
+  const appFn = session.function("test_function2", "test_app1");
+  assert.equal(await appFn.memory(), "23MB", "application-scoped read");
+  await appFn.setMemory("99MB");
+  assert.equal(await appFn.memory(), "99MB", "application-scoped write");
+
+  await session.function("test_function2_glob").delete();
+  assert.ok(!(await session.functionNames()).includes("test_function2_glob"), "deleted function is gone");
+
+  // save must persist the deletion (pruned), and the app-scoped edit
+  const out = fixtureFs();
+  await session.save(out, "/");
+  assert.ok(!out.files.has("/functions/test_function2_glob.yaml"), "save pruned the deleted file");
+  const reopened = await open(out, "/");
+  assert.ok(!(await reopened.functionNames()).includes("test_function2_glob"), "deletion persisted across reopen");
+  await session.close();
+  await reopened.close();
 });
 
 test("decompile a compiled object into an editable session", async () => {

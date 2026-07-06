@@ -35,6 +35,8 @@ export interface TccGlobal {
   sessionSet(handle: number, resource: string[], field: string[], value: unknown): null | { error: string };
   sessionCompile(handle: number, opts?: CompileOptions): CompileResult | { error: string };
   sessionSave(handle: number, fs: SyncFs): null | { error: string };
+  sessionDelete(handle: number, resource: string[]): null | { error: string };
+  sessionList(handle: number, path: string[]): string[] | { error: string };
   sessionClose(handle: number): null;
 }
 
@@ -46,6 +48,8 @@ export interface TccGlobal {
 export interface SessionBinding {
   get(handle: number, resource: string[], field: string[]): Promise<unknown>;
   set(handle: number, resource: string[], field: string[], value: unknown): Promise<void>;
+  delete(handle: number, resource: string[]): Promise<void>;
+  list(handle: number, path: string[]): Promise<string[]>;
   compile(handle: number, opts?: CompileOptions): Promise<CompileResult>;
   save(handle: number, fs: AsyncFs, dir: string): Promise<void>;
   close(handle: number): Promise<void>;
@@ -65,13 +69,19 @@ export function makeBinding(tcc: TccGlobal): SessionBinding {
     async set(handle, resource, field, value) {
       orThrow(tcc.sessionSet(handle, resource, field, value));
     },
+    async delete(handle, resource) {
+      orThrow(tcc.sessionDelete(handle, resource));
+    },
+    async list(handle, path) {
+      return orThrow(tcc.sessionList(handle, path));
+    },
     async compile(handle, opts) {
       return orThrow(tcc.sessionCompile(handle, opts));
     },
     async save(handle, fs, dir) {
       const sync = makeSyncFs();
       orThrow(tcc.sessionSave(handle, sync));
-      await flush(fs, dir, sync.map);
+      await flush(fs, dir, sync.map, { prune: true }); // reflect deletions
     },
     async close(handle) {
       tcc.sessionClose(handle);

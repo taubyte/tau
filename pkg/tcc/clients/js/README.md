@@ -76,6 +76,19 @@ await session.save(fs, "/my-project");         // write the edits back as YAML
 await session.close();
 ```
 
+List, application scope, and delete mirror the Go schema:
+
+```ts
+await session.functionNames();               // names of top-level functions
+await session.applications();                // application names
+await session.functionNames("web");          // functions inside application "web"
+
+const scoped = session.function("api", "web"); // application-scoped accessor
+await scoped.setMemory("128MB");
+
+await session.function("old").delete();       // remove a resource (pruned on save)
+```
+
 Accessors are generated from the tcc schema DSL by `tcc-gen --ts`: one class per
 resource (`session.function`, `session.database`, …), each field mapped to its
 config key (`memory` → `execution.memory`, `type` → `trigger.type`), `InSet` fields
