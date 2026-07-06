@@ -60,10 +60,10 @@ func TestGeneratedClientE2E(t *testing.T) {
 			t.Fatalf("copy %s: %v", rel, err)
 		}
 	}
-	for _, f := range []string{"src/fs.ts", "src/loader.ts", "src/index.ts", "src/tcc.test.ts"} {
+	for _, f := range []string{"src/fs.ts", "src/loader.ts", "src/index.ts", "src/tcc.test.ts", "src/browser.spec.ts"} {
 		copyInto(f, filepath.Join(tmp, "src"))
 	}
-	for _, f := range []string{"package.json", "tsconfig.json", "tsconfig.build.json"} {
+	for _, f := range []string{"package.json", "tsconfig.json", "tsconfig.build.json", "web-test-runner.config.mjs"} {
 		copyInto(f, tmp)
 	}
 
@@ -86,5 +86,12 @@ func TestGeneratedClientE2E(t *testing.T) {
 		t.Logf("npm %v:\n%s", args, out)
 	}
 	npm("run", "build") // tsc typecheck of the generated code
-	npm("test")         // run the tests against the generated code
+	npm("test")         // run the Node tests against the generated code
+
+	// run the same wasm in a real headless browser, when Chrome is available.
+	if _, err := exec.LookPath("google-chrome-stable"); err == nil {
+		npm("run", "test:browser")
+	} else {
+		t.Log("google-chrome-stable not found; skipping browser test")
+	}
 }

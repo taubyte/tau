@@ -115,8 +115,12 @@ await compile(fs, "/my-project", { branch: "main" }, assets);
   is synchronous while lightning-fs is async.
 - `npm test` runs the golden compile/decompile round-trip against the repo's tcc
   fixtures (requires the assets to have been built first).
+- `npm run test:browser` runs `src/browser.spec.ts` in a real headless Chrome via
+  [`@web/test-runner`](https://modern-web.dev/docs/test-runner/overview/): it fetches
+  and instantiates `assets/tcc.wasm` and drives compile/session exactly as a browser
+  app would (uses the system Chrome; no download).
 - `go test ./tools/tcc-gen/` runs a full pipeline test (`TestGeneratedClientE2E`):
   it regenerates the wasm and TS **fresh** into a temp package, drops this runtime
-  and the tests alongside, and typechecks + runs them there — validating the
-  generated code end to end, not just the committed `src/gen`. It skips under
-  `-short` or when node/deps are absent.
+  and the tests alongside, and runs the Node tests + the browser tests against that
+  generated code — validating it end to end, not just the committed `src/gen`. It
+  skips under `-short`, or when node / deps / Chrome are absent.

@@ -12,7 +12,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "prepublishOnly": "npm run build",
-    "test": "node --import tsx --test src/*.test.ts"
+    "test": "node --import tsx --test src/*.test.ts",
+    "test:browser": "web-test-runner"
   },
   "keywords": [
     "taubyte",
@@ -24,7 +25,11 @@
   "author": "taubyte",
   "license": "BSD-3-Clause",
   "devDependencies": {
+    "@esm-bundle/chai": "^4.3.4",
     "@types/node": "^22.5.2",
+    "@web/dev-server-esbuild": "^1.0.2",
+    "@web/test-runner": "^0.19.0",
+    "@web/test-runner-chrome": "^0.18.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.0"
   }
