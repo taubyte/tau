@@ -54,10 +54,14 @@ func GroupAnnotate(key string, val any) NodeOption {
 	}
 }
 
-// Capability is an opaque object-addressing tag. The engine treats it as a plain
-// string; the meaning of each value (e.g. "wasm" -> WasmModulePath) lives entirely
-// in the code generator.
-type Capability = string
+// Capability is an opaque object-addressing tag. The engine requires only that it
+// name itself; the meaning of each value (e.g. "wasm" -> WasmModulePath) lives
+// entirely in the code generator. It is an interface rather than a string alias so
+// callers pass typed capability values, not arbitrary strings, and so richer
+// behaviour can be added later without touching the engine.
+type Capability interface {
+	String() string
+}
 
 // Addressing records the set of TNS-key capabilities a compiled object has, for a
 // generator to emit its path helpers. Generation-only; no runtime effect.
