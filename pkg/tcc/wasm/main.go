@@ -19,8 +19,18 @@ import (
 
 func main() {
 	tcc := js.Global().Get("Object").New()
+	// Stateless whole-repo ops.
 	tcc.Set("compile", js.FuncOf(compileFn))
 	tcc.Set("decompile", js.FuncOf(decompileFn))
+	// Editable in-wasm sessions (see session_js.go): the config lives here as a
+	// yaseer tree; TS getters/setters read/write fields by path.
+	tcc.Set("openSession", js.FuncOf(openSessionFn))
+	tcc.Set("decompileSession", js.FuncOf(decompileSessionFn))
+	tcc.Set("sessionGet", js.FuncOf(sessionGetFn))
+	tcc.Set("sessionSet", js.FuncOf(sessionSetFn))
+	tcc.Set("sessionCompile", js.FuncOf(sessionCompileFn))
+	tcc.Set("sessionSave", js.FuncOf(sessionSaveFn))
+	tcc.Set("sessionClose", js.FuncOf(sessionCloseFn))
 	js.Global().Set("tcc", tcc)
 
 	// Keep the Go runtime alive so the exported functions stay callable.

@@ -9,13 +9,12 @@ import (
 )
 
 // TypeScript emission. Reuses the same DSL walk primitives as the Go accessor
-// generator (pathSegs / compatSegs / accessorName / the skip tables) but emits
-// idiomatic TypeScript: one accessor class per resource whose typed getters and
-// setters map each flat field to its nested config key (e.g. `memory` ->
-// execution.memory), with a legacy-key read fallback and string-literal unions
-// for InSet fields. Pure TS over a plain config object — YAML stays in tcc.
+// generator (pathSegs / compatSegs / accessorName / the skip tables) and emits a
+// typed facade over a wasm-resident editable session: one accessor class per
+// resource whose async getters/setters read/write fields by (resource, field)
+// path across the wasm boundary. The config representation and all YAML live in
+// wasm (see pkg/tcc/wasm/session_js.go); this is only the typed schema.
 
-// tsType maps a generated Go field type to its TypeScript equivalent.
 func tsType(goType string) string {
 	switch goType {
 	case "string":
@@ -40,7 +39,7 @@ func tsName(goField string) string {
 			break
 		}
 		if i > 0 && i+1 < len(r) && unicode.IsLower(r[i+1]) {
-			break // r[i] begins a new word
+			break
 		}
 		r[i] = unicode.ToLower(r[i])
 	}
@@ -56,25 +55,6 @@ func upperFirst(s string) string {
 	return string(r)
 }
 
-const tsPathHelpers = `type PathKey = string;
-
-function getPath(o: any, p: PathKey[]): any {
-  return p.reduce((a, k) => (a == null ? undefined : a[k]), o);
-}
-
-function setPath(o: any, p: PathKey[], v: any): void {
-  let cur = o;
-  for (let i = 0; i < p.length - 1; i++) cur = cur[p[i]] ??= {};
-  cur[p[p.length - 1]] = v;
-}
-`
-
-type tsEnum struct {
-	name   string
-	values []string
-	quoted bool
-}
-
 func tsArr(segs []string) string {
 	q := make([]string, len(segs))
 	for i, s := range segs {
@@ -83,10 +63,28 @@ func tsArr(segs []string) string {
 	return "[" + strings.Join(q, ", ") + "]"
 }
 
-// GenerateTS renders the resource accessor classes (and their enum aliases) into
-// a single schema.ts.
+type tsField struct {
+	name   string   // camelCase accessor name
+	typ    string   // ts type (or enum alias)
+	path   []string // in-document field path
+	compat []string // legacy field path (read fallback), or nil
+}
+
+type tsResource struct {
+	spec   string // e.g. "Function" -> class FunctionConfig, Session.function()
+	group  string // config directory, e.g. "functions"
+	fields []tsField
+}
+
+type tsEnum struct {
+	name   string
+	values []string
+	quoted bool
+}
+
+// GenerateTS renders the session accessor classes (+ Session + enum aliases).
 func GenerateTS(root []*engine.Node) ([]byte, error) {
-	var classes strings.Builder
+	var resources []tsResource
 	enums := map[string]tsEnum{}
 	var enumOrder []string
 
@@ -96,28 +94,22 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 		if !ok || len(g.Children) == 0 {
 			continue
 		}
-
-		var body strings.Builder
+		r := tsResource{spec: d.Spec, group: name}
 		seen := map[string]bool{}
 		for _, a := range g.Children[0].Attributes {
 			if a.Key || structSkip[name+"."+a.Name] {
-				continue // map-key attr, or a transform field with no direct path
+				continue
 			}
 			path, ok := pathSegs(a)
 			if !ok {
-				continue // matcher in the canonical path — not mechanical
+				continue
 			}
 			gt := goType(a.Type)
 			if gt == "" {
 				continue
 			}
-			// Duration/Bytes are String attrs tagged with a scalar codec; they
-			// surface as numbers (like the Go struct's uint64), not strings.
-			if s, ok := a.Meta["scalar"].(string); ok {
-				if t := scalarGoType[s]; t != "" {
-					gt = t
-				}
-			}
+			// NB: no scalar retype — these edit the SOURCE config, where
+			// Duration/Bytes are human strings ("20s", "32GB").
 			fname := tsName(structFieldName(name, a))
 			if seen[fname] {
 				continue
@@ -134,30 +126,22 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 				}
 				typ = alias
 			}
-
-			get := fmt.Sprintf("getPath(this.data, %s)", tsArr(path))
+			f := tsField{name: fname, typ: typ, path: path}
 			if compat, ok := compatSegs(a); ok {
-				get += fmt.Sprintf(" ?? getPath(this.data, %s)", tsArr(compat))
+				f.compat = compat
 			}
-			fmt.Fprintf(&body, "  get %s(): %s | undefined {\n    return %s;\n  }\n", fname, typ, get)
-			fmt.Fprintf(&body, "  set %s(v: %s | undefined) {\n    setPath(this.data, %s, v);\n  }\n", fname, typ, tsArr(path))
+			r.fields = append(r.fields, f)
 		}
-
-		// <Spec>Config, not <Spec>, so classes like "Function" don't shadow JS globals.
-		fmt.Fprintf(&classes, "/** Typed accessors for a %s's config (flat fields -> nested keys). */\n", strings.ToLower(d.Spec))
-		fmt.Fprintf(&classes, "export class %sConfig {\n", d.Spec)
-		classes.WriteString("  constructor(public readonly data: Record<string, any> = {}) {}\n\n")
-		classes.WriteString(strings.TrimRight(body.String(), "\n"))
-		classes.WriteString("\n}\n\n")
+		resources = append(resources, r)
 	}
 
 	var b strings.Builder
 	b.WriteString("// Code generated by tcc-gen; DO NOT EDIT.\n")
-	b.WriteString("// Typed accessors for Taubyte resource config: each flat field maps to its\n")
-	b.WriteString("// nested config key. Pure TypeScript over a plain config object (tcc handles\n")
-	b.WriteString("// YAML). Getters fall back to a resource's legacy key when present.\n\n")
-	b.WriteString(tsPathHelpers)
-	b.WriteString("\n")
+	b.WriteString("// Typed accessors over a wasm-resident editable config session. Getters/setters\n")
+	b.WriteString("// read/write fields by path across the wasm boundary; YAML lives in wasm.\n\n")
+	b.WriteString(`import type { SessionBinding, CompileOptions, CompileResult } from "../loader.js";` + "\n")
+	b.WriteString(`import type { AsyncFs } from "../fs.js";` + "\n\n")
+
 	for _, name := range enumOrder {
 		e := enums[name]
 		parts := make([]string, len(e.values))
@@ -173,7 +157,42 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 	if len(enumOrder) > 0 {
 		b.WriteString("\n")
 	}
-	b.WriteString(classes.String())
+
+	// Session: the editable handle, with typed resource factories.
+	b.WriteString("/** An editable, wasm-resident project config session. */\n")
+	b.WriteString("export class Session {\n")
+	b.WriteString("  constructor(readonly binding: SessionBinding, readonly handle: number) {}\n\n")
+	for _, r := range resources {
+		fmt.Fprintf(&b, "  %s(name: string): %sConfig {\n    return new %sConfig(this, name);\n  }\n", tsName(r.spec), r.spec, r.spec)
+	}
+	b.WriteString("\n")
+	b.WriteString("  compile(opts?: CompileOptions): Promise<CompileResult> {\n    return this.binding.compile(this.handle, opts);\n  }\n")
+	b.WriteString("  save(fs: AsyncFs, dir: string): Promise<void> {\n    return this.binding.save(this.handle, fs, dir);\n  }\n")
+	b.WriteString("  close(): Promise<void> {\n    return this.binding.close(this.handle);\n  }\n")
+	b.WriteString("}\n\n")
+
+	// One accessor class per resource.
+	for _, r := range resources {
+		fmt.Fprintf(&b, "/** Typed accessors for a %s's config. */\n", strings.ToLower(r.spec))
+		fmt.Fprintf(&b, "export class %sConfig {\n", r.spec)
+		fmt.Fprintf(&b, "  private res: string[];\n")
+		fmt.Fprintf(&b, "  constructor(private s: Session, name: string) {\n    this.res = [%q, name];\n  }\n", r.group)
+		for _, f := range r.fields {
+			// getter
+			if len(f.compat) == 0 {
+				fmt.Fprintf(&b, "\n  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
+				fmt.Fprintf(&b, "    return (await this.s.binding.get(this.s.handle, this.res, %s)) as %s | undefined;\n  }\n", tsArr(f.path), f.typ)
+			} else {
+				fmt.Fprintf(&b, "\n  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
+				fmt.Fprintf(&b, "    const v = await this.s.binding.get(this.s.handle, this.res, %s);\n", tsArr(f.path))
+				fmt.Fprintf(&b, "    return (v ?? (await this.s.binding.get(this.s.handle, this.res, %s))) as %s | undefined;\n  }\n", tsArr(f.compat), f.typ)
+			}
+			// setter
+			fmt.Fprintf(&b, "  set%s(v: %s): Promise<void> {\n", upperFirst(f.name), f.typ)
+			fmt.Fprintf(&b, "    return this.s.binding.set(this.s.handle, this.res, %s, v);\n  }\n", tsArr(f.path))
+		}
+		b.WriteString("}\n\n")
+	}
 
 	return []byte(strings.TrimRight(b.String(), "\n") + "\n"), nil
 }

@@ -2,10 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, statSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { compile, decompile, FunctionConfig, type AsyncFs } from "./index.js";
+import { compile, open, decompile, type AsyncFs } from "./index.js";
 
 // The golden fixture the Go compile/decompile tests use.
 const FIXTURE = resolve(import.meta.dirname, "../../../taubyte/v1/fixtures/config");
+const FN_NAME = "test_function1_glob";
+const FN_ID = "QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh";
 
 function loadDir(dir: string, prefix: string, map: Map<string, Uint8Array>) {
   for (const name of readdirSync(dir)) {
@@ -16,8 +18,7 @@ function loadDir(dir: string, prefix: string, map: Map<string, Uint8Array>) {
   }
 }
 
-// A minimal in-memory async filesystem (the shape lightning-fs exposes), so the
-// tests exercise the real staging path (hydrate/flush) through the public API.
+// A minimal in-memory async filesystem (the shape lightning-fs exposes).
 function memFs(files: Map<string, Uint8Array> = new Map()): AsyncFs & { files: Map<string, Uint8Array> } {
   const isDir = (p: string) => {
     const pre = p.endsWith("/") ? p : p + "/";
@@ -54,42 +55,54 @@ function memFs(files: Map<string, Uint8Array> = new Map()): AsyncFs & { files: M
   };
 }
 
-test("generated accessors map flat fields to nested config keys", () => {
-  const fn = new FunctionConfig();
-  fn.type = "https";
-  fn.memory = 64_000_000;
-
-  const data = fn.data as Record<string, any>;
-  assert.equal(data.trigger.type, "https", "type -> trigger.type");
-  assert.equal(data.execution.memory, 64_000_000, "memory -> execution.memory");
-  assert.equal(fn.type, "https", "reads back through the accessor");
-  assert.equal(fn.memory, 64_000_000);
-});
-
-test("compile produces the golden object and DNS validation", async () => {
+function fixtureFs() {
   const files = new Map<string, Uint8Array>();
   loadDir(FIXTURE, "", files);
-  assert.ok(files.size > 0, "fixture files loaded");
+  return memFs(files);
+}
 
-  const result = await compile(memFs(files), "/", { branch: "master" });
-  assert.ok(result.object, "has compiled object");
+test("compile produces the golden object and DNS validation", async () => {
+  const result = await compile(fixtureFs(), "/", { branch: "master" });
   assert.ok("functions" in result.object, "object has resources");
-
   const dns = result.validations.find((v) => v.validator === "dns");
   assert.equal(dns?.value, "hal.computers.com", "expected DNS validation present");
 });
 
-test("compile -> decompile -> recompile round-trips to the same object", async () => {
-  const files = new Map<string, Uint8Array>();
-  loadDir(FIXTURE, "", files);
+test("session: edit typed fields, compile reflects the edit, save writes YAML", async () => {
+  const session = await open(fixtureFs(), "/");
+  const fn = session.function(FN_NAME);
 
-  const result = await compile(memFs(files), "/", { branch: "master" });
+  assert.equal(await fn.memory(), "32GB", "read source memory");
+  assert.equal(await fn.type(), "http", "read typed enum");
+
+  await fn.setMemory("64GB");
+  await fn.setType("https");
+  assert.equal(await fn.memory(), "64GB", "read back edited memory");
+  assert.equal(await fn.type(), "https");
+
+  const compiled = await session.compile({ branch: "master" });
+  assert.equal(
+    (compiled.object.functions as any)[FN_ID].memory,
+    64000000000,
+    "compiled memory reflects 64GB edit",
+  );
 
   const out = memFs();
-  await decompile(out, "/", result);
-  assert.ok(out.files.has("/config.yaml"), "decompile wrote /config.yaml");
-  assert.ok(out.files.size > 1, "decompile wrote resource files");
+  await session.save(out, "/");
+  const yaml = new TextDecoder().decode(out.files.get(`/functions/${FN_NAME}.yaml`)!);
+  assert.ok(yaml.includes("memory: 64GB"), "saved YAML has the edit");
+  assert.ok(yaml.includes("id: " + FN_ID), "saved YAML preserved id");
+  await session.close();
+});
 
-  const result2 = await compile(out, "/", { branch: "master" });
-  assert.deepEqual(result2.object, result.object, "recompiled object matches original");
+test("decompile a compiled object into an editable session", async () => {
+  const compiled = await compile(fixtureFs(), "/", { branch: "master" });
+  const session = await decompile(compiled);
+  const fn = session.function(FN_NAME);
+  // decompiled source uses the human form again
+  assert.equal(await fn.memory(), "32GB", "decompiled memory is the source form");
+  await fn.setMemory("128GB");
+  const recompiled = await session.compile({ branch: "master" });
+  assert.equal((recompiled.object.functions as any)[FN_ID].memory, 128000000000);
+  await session.close();
 });

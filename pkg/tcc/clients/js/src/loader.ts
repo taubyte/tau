@@ -3,7 +3,7 @@
 // startup (before it blocks), so the exported functions are available as soon as
 // go.run() returns control.
 
-import type { SyncFs } from "./fs.js";
+import { makeSyncFs, flush, type SyncFs, type AsyncFs } from "./fs.js";
 
 export interface CompileOptions {
   /** Git branch the compile is pinned to (default: the compiler's default). */
@@ -25,9 +25,58 @@ export interface CompileResult {
   validations: Validation[];
 }
 
-interface TccGlobal {
+export interface TccGlobal {
   compile(fs: SyncFs, opts?: CompileOptions): CompileResult | { error: string };
   decompile(obj: unknown, fs: SyncFs): null | { error: string };
+  // Editable sessions (config lives in wasm; getters/setters address it by path).
+  openSession(fs: SyncFs): number | { error: string };
+  decompileSession(obj: unknown): number | { error: string };
+  sessionGet(handle: number, resource: string[], field: string[]): unknown; // value | null(absent) | { error }
+  sessionSet(handle: number, resource: string[], field: string[], value: unknown): null | { error: string };
+  sessionCompile(handle: number, opts?: CompileOptions): CompileResult | { error: string };
+  sessionSave(handle: number, fs: SyncFs): null | { error: string };
+  sessionClose(handle: number): null;
+}
+
+/**
+ * SessionBinding is the async facade the generated Session/accessor classes call.
+ * Field access is async so the API is uniform with compile/save and future-proofs
+ * a Worker/Atomics move, even though the wasm calls are synchronous today.
+ */
+export interface SessionBinding {
+  get(handle: number, resource: string[], field: string[]): Promise<unknown>;
+  set(handle: number, resource: string[], field: string[], value: unknown): Promise<void>;
+  compile(handle: number, opts?: CompileOptions): Promise<CompileResult>;
+  save(handle: number, fs: AsyncFs, dir: string): Promise<void>;
+  close(handle: number): Promise<void>;
+}
+
+function orThrow<T>(r: T | { error: string }): T {
+  if (r && typeof r === "object" && "error" in r) throw new Error((r as { error: string }).error);
+  return r as T;
+}
+
+/** makeBinding adapts the synchronous wasm session functions to SessionBinding. */
+export function makeBinding(tcc: TccGlobal): SessionBinding {
+  return {
+    async get(handle, resource, field) {
+      return orThrow(tcc.sessionGet(handle, resource, field) as unknown | { error: string });
+    },
+    async set(handle, resource, field, value) {
+      orThrow(tcc.sessionSet(handle, resource, field, value));
+    },
+    async compile(handle, opts) {
+      return orThrow(tcc.sessionCompile(handle, opts));
+    },
+    async save(handle, fs, dir) {
+      const sync = makeSyncFs();
+      orThrow(tcc.sessionSave(handle, sync));
+      await flush(fs, dir, sync.map);
+    },
+    async close(handle) {
+      tcc.sessionClose(handle);
+    },
+  };
 }
 
 /** The wasm binary and its Go loader script. Required outside Node. */

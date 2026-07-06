@@ -36,44 +36,51 @@ is the more conservative choice.
 
 ## Usage
 
-With isomorphic-git's [lightning-fs](https://github.com/isomorphic-git/lightning-fs)
-(or any object with the same async `promises` API):
+`fs` is isomorphic-git's [lightning-fs](https://github.com/isomorphic-git/lightning-fs)
+— or anything with the same async `promises` API (no hard dependency on it).
+
+### Compile a repo
 
 ```ts
 import LightningFS from "@isomorphic-git/lightning-fs";
-import { compile, decompile } from "@taubyte/tcc";
+import { compile } from "@taubyte/tcc";
 
 const fs = new LightningFS("tau");
-
-// Compile the project rooted at /my-project into the compiled object + indexes.
 const { object, indexes, validations } = await compile(fs, "/my-project", {
   branch: "main",
 });
-
-// Render a compiled object back to YAML files under /out.
-await decompile(fs, "/out", { object, indexes });
 ```
 
-`fs` is anything with lightning-fs's async `promises` API — no hard dependency on
-lightning-fs itself. For lower-level control (e.g. an in-memory `Map` of files),
-`makeSyncFs` / `hydrate` / `flush` are exported building blocks.
+### Edit a project with typed accessors
 
-### Typed resource accessors
-
-`src/gen/schema.ts` is generated from the tcc schema DSL by `tcc-gen --ts` — one
-accessor class per resource whose typed getters/setters map each flat field to its
-nested config key (`memory` → `execution.memory`, `type` → `trigger.type`), with
-`InSet` fields typed as unions and legacy keys read as a fallback. Pure TypeScript
-over a plain config object (no YAML — tcc handles that):
+`open` / `decompile` return a `Session` — an **editable config representation that
+lives inside the wasm module**. YAML is parsed and serialized only in wasm; the
+generated getters/setters read/write typed fields across the wasm boundary, so
+there's no YAML (or second YAML dialect) in TypeScript.
 
 ```ts
-import { FunctionConfig } from "@taubyte/tcc";
+import { open, decompile } from "@taubyte/tcc";
 
-const fn = new FunctionConfig();
-fn.type = "https";          // -> data.trigger.type ("http" | "https" | "pubsub" | "p2p")
-fn.memory = 64_000_000;     // -> data.execution.memory
-// fn.data is the nested config object.
+// From a cloned repo's YAML...
+const session = await open(fs, "/my-project");
+// ...or by decompiling a compiled object:
+// const session = await decompile(compiledObject);
+
+const fn = session.function("api");          // typed accessor, addressed by name
+await fn.setMemory("64GB");                   // source form is human-readable
+await fn.setType("https");                    // "http" | "https" | "pubsub" | "p2p"
+const t = await fn.type();                    // typed read
+
+const { object } = await session.compile();   // compile the edited state
+await session.save(fs, "/my-project");         // write the edits back as YAML
+await session.close();
 ```
+
+Accessors are generated from the tcc schema DSL by `tcc-gen --ts`: one class per
+resource (`session.function`, `session.database`, …), each field mapped to its
+config key (`memory` → `execution.memory`, `type` → `trigger.type`), `InSet` fields
+typed as unions, and legacy keys read as a fallback. `makeSyncFs` / `hydrate` /
+`flush` are also exported for lower-level filesystem control.
 
 ### Outside Node
 
