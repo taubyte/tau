@@ -48,7 +48,7 @@ func (srv *Service) startHttp(cfg config.Config) (err error) {
 					http.StatusTemporaryRedirect)
 			}))
 			if err != nil {
-				panic(err)
+				logger.Errorf("http to https redirect server on %s failed with: %s", listen, err.Error())
 			}
 		}()
 	}

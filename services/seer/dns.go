@@ -24,14 +24,14 @@ func (srv *dnsServer) Start(ctx context.Context) {
 	go func() {
 		logger.Info("Starting DNS Server on UDP")
 		if err := srv.Udp.ListenAndServe(); err != nil {
-			panic("failed starting UDP Server error: " + err.Error())
+			logger.Errorf("UDP DNS server failed with: %s", err.Error())
 		}
 	}()
 
 	go func() {
 		logger.Info("Starting DNS Server on TCP")
 		if err := srv.Tcp.ListenAndServe(); err != nil {
-			panic("failed starting TCP Server error: " + err.Error())
+			logger.Errorf("TCP DNS server failed with: %s", err.Error())
 		}
 	}()
 }

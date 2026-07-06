@@ -8,6 +8,7 @@ import (
 
 	goHttp "net/http"
 
+	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/clients/p2p/seer/usage"
 	"github.com/taubyte/tau/core/services/substrate/components"
 	httpComp "github.com/taubyte/tau/core/services/substrate/components/http"
@@ -60,13 +61,10 @@ func (f *Function) Handle(w goHttp.ResponseWriter, r *goHttp.Request, matcher co
 	return time.Now(), f.Call(instance, ev.Id)
 }
 
+var logger = log.Logger("tau.substrate.components.http.function")
+
 func (f *Function) Metrics() *metrics.Function {
 	m := f.metrics
-	mem, err := usage.GetMemoryUsage()
-	if err != nil {
-		// panic as this is unlikely
-		panic(err)
-	}
 
 	maxMemory := f.config.Memory
 	if f.provisioned {
@@ -80,7 +78,11 @@ func (f *Function) Metrics() *metrics.Function {
 		maxMemory = WasmMemorySizeLimit
 	}
 
-	m.Memory = float64(mem.Free) / float64(maxMemory)
+	if mem, err := usage.GetMemoryUsage(); err != nil {
+		logger.Errorf("getting memory usage failed with: %s", err.Error())
+	} else {
+		m.Memory = float64(mem.Free) / float64(maxMemory)
+	}
 
 	return &m
 }
