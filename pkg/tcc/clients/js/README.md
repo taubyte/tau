@@ -54,13 +54,25 @@ const { object, indexes, validations } = await compile(fs, "/my-project", {
 await decompile(fs, "/out", { object, indexes });
 ```
 
-Working from a plain `Map<path, bytes>` instead (e.g. in Node or tests):
+`fs` is anything with lightning-fs's async `promises` API — no hard dependency on
+lightning-fs itself. For lower-level control (e.g. an in-memory `Map` of files),
+`makeSyncFs` / `hydrate` / `flush` are exported building blocks.
+
+### Typed resource accessors
+
+`src/gen/schema.ts` is generated from the tcc schema DSL by `tcc-gen --ts` — one
+accessor class per resource whose typed getters/setters map each flat field to its
+nested config key (`memory` → `execution.memory`, `type` → `trigger.type`), with
+`InSet` fields typed as unions and legacy keys read as a fallback. Pure TypeScript
+over a plain config object (no YAML — tcc handles that):
 
 ```ts
-import { compileMap, decompileMap } from "@taubyte/tcc";
+import { FunctionConfig } from "@taubyte/tcc";
 
-const result = await compileMap(files, { branch: "main" });
-const yamlFiles = await decompileMap(result); // Map<"/config.yaml", bytes>, ...
+const fn = new FunctionConfig();
+fn.type = "https";          // -> data.trigger.type ("http" | "https" | "pubsub" | "p2p")
+fn.memory = 64_000_000;     // -> data.execution.memory
+// fn.data is the nested config object.
 ```
 
 ### Outside Node

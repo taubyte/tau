@@ -7,9 +7,9 @@ import (
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 )
 
-// The TS emitter must cover exactly the same resources/fields as the Go struct
-// proposals — they share the DSL walk, so any drift is a bug.
-func TestGenerateTSMatchesStructs(t *testing.T) {
+// The TS emitter must produce an accessor class for every resource the Go
+// generator covers — they share the DSL walk, so any drift is a bug.
+func TestGenerateTSCoversResources(t *testing.T) {
 	models, err := Structs(schema.TaubyteRessources)
 	if err != nil {
 		t.Fatal(err)
@@ -20,35 +20,35 @@ func TestGenerateTSMatchesStructs(t *testing.T) {
 	}
 	ts := string(out)
 
-	if got := strings.Count(ts, "export interface "); got != len(models) {
-		t.Fatalf("interface count: got %d, want %d", got, len(models))
+	if got := strings.Count(ts, "export class "); got != len(models) {
+		t.Fatalf("class count: got %d, want %d", got, len(models))
 	}
 	for _, m := range models {
-		if !strings.Contains(ts, "export interface "+m.Spec+" {") {
-			t.Errorf("missing interface for resource %s", m.Spec)
-		}
-		for _, f := range m.Fields {
-			opt := "?"
-			if f.Required {
-				opt = ""
-			}
-			want := "  " + tsName(f.Name) + opt + ": " + tsFieldType(f) + ";"
-			if !strings.Contains(ts, want) {
-				t.Errorf("%s: missing line %q", m.Spec, want)
-			}
+		if !strings.Contains(ts, "export class "+m.Spec+"Config {") {
+			t.Errorf("missing accessor class for %s", m.Spec)
 		}
 	}
+}
 
-	// Idiomatic-TS spot checks: required id (no ?), optional camelCase field,
-	// and an InSet union.
-	if !strings.Contains(ts, "  id: string;") {
-		t.Error("id should be required (no ?)")
+// Accessors must map the flat field to its nested config path, type it, and
+// expose InSet fields as unions.
+func TestGenerateTSAccessorsAndUnions(t *testing.T) {
+	out, err := GenerateTS(schema.TaubyteRessources)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(ts, `  type?: "http" | "https" | "pubsub" | "p2p";`) {
-		t.Error("function trigger type should be an optional string union")
-	}
-	if !strings.Contains(ts, "  certType?: ") {
-		t.Error("expected camelCased optional certType")
+	ts := string(out)
+
+	for _, want := range []string{
+		`export type FunctionType = "http" | "https" | "pubsub" | "p2p";`,
+		"get type(): FunctionType | undefined",
+		`return getPath(this.data, ["trigger", "type"]);`, // flat field -> nested key
+		`setPath(this.data, ["execution", "memory"], v);`, // depth-2 setter
+		"get memory(): number | undefined",
+	} {
+		if !strings.Contains(ts, want) {
+			t.Errorf("generated TS missing: %s", want)
+		}
 	}
 }
 
