@@ -84,13 +84,21 @@ func DefineGroup(match string, children ...*Node) *Node {
 	}
 }
 
-func DefineIter(attrs []*Attribute, children ...*Node) *Node {
-	return &Node{
+func DefineIter(attrs []*Attribute, extra ...any) *Node {
+	n := &Node{
 		Group:      false,
 		Match:      StringMatchAll{},
 		Attributes: attrs,
-		Children:   children,
 	}
+	for _, e := range extra {
+		switch v := e.(type) {
+		case *Node:
+			n.Children = append(n.Children, v)
+		case NodeOption:
+			v(n)
+		}
+	}
+	return n
 }
 
 func DefineIterGroup(attrs []*Attribute, children ...*Node) *Node {

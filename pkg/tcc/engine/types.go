@@ -56,6 +56,7 @@ type Attribute struct {
 	Path      []StringMatch
 	Compat    []StringMatch
 	Validator AttributeValidator
+	Meta      map[string]any // opaque codegen metadata; the engine never interprets it
 }
 
 type Option func(*Attribute)
@@ -65,6 +66,7 @@ type Node struct {
 	Match      StringMatch
 	Attributes []*Attribute
 	Children   []*Node
+	Meta       map[string]any // opaque codegen metadata; the engine never interprets it
 }
 
 type SeerOps struct {
