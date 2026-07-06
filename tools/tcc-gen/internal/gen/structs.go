@@ -38,11 +38,16 @@ type StructModel struct {
 	Skipped []string
 }
 
-// Field is one struct field.
+// Field is one struct field. Name/Type/Tag drive the Go struct emit; Required
+// and Enum are extra DSL facts the TypeScript emit uses (optionality, unions)
+// and the Go template ignores.
 type Field struct {
-	Name string
-	Type string
-	Tag  string // full tag incl. backticks, e.g. `mapstructure:"service"`, or ""
+	Name       string
+	Type       string
+	Tag        string // full tag incl. backticks, e.g. `mapstructure:"service"`, or ""
+	Required   bool
+	Enum       []string // permitted values (InSet); empty = none
+	EnumString bool     // enum literals are strings (quote them)
 }
 
 // Structs projects each DSL resource group into a struct proposal. Unlike the
@@ -79,7 +84,12 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 					gt = t
 				}
 			}
-			m.Fields = append(m.Fields, Field{Name: nm, Type: gt, Tag: structTag(nm, a)})
+			f := Field{Name: nm, Type: gt, Tag: structTag(nm, a), Required: a.Required}
+			if enum, ok := a.Meta["enum"].([]string); ok {
+				f.Enum = enum
+				_, f.EnumString = a.Meta["enumString"].(bool)
+			}
+			m.Fields = append(m.Fields, f)
 		}
 		m.Fields = append(m.Fields, Field{Name: "SmartOps", Type: "[]string"})
 		out = append(out, m)
@@ -89,7 +99,7 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 
 func commonFields() []Field {
 	return []Field{
-		{Name: "Id", Type: "string"},
+		{Name: "Id", Type: "string", Required: true}, // id is the only Required() attr
 		{Name: "Name", Type: "string"},
 		{Name: "Description", Type: "string"},
 		{Name: "Tags", Type: "[]string"},

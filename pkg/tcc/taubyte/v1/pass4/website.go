@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	specs "github.com/taubyte/tau/pkg/specs/website"
 
@@ -88,7 +88,7 @@ func (w *websites) Process(ct transform.Context[object.Refrence], config object.
 		}
 
 		// set repository path
-		index.Set(repoPath.Type().String(), common.WebsiteRepository)
+		index.Set(repoPath.Type().String(), repositorytype.WebsiteRepository)
 		index.Set(repoPath.Resource(websiteId).String(), tnsPath.String())
 
 		// referencing domains

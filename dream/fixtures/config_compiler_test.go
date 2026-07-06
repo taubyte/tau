@@ -27,6 +27,7 @@ import (
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
 	tccDecompile "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
 	tcc "github.com/taubyte/tau/utils/tcc"
+	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 )
 
 func getMapKeys(m map[string]any) []string {
@@ -312,7 +313,7 @@ func TestE2E_Dreaming(t *testing.T) {
 	}
 
 	objFlat := obj.Flat()
-	objCopy := tcc.MapToTCCObject(objFlat)
+	objCopy := tccConvert.MapToTCCObject(objFlat)
 	objCopyFlat := objCopy.Flat()
 	if objMap, ok := objFlat["object"].(map[string]interface{}); ok {
 		if domainsMap, ok := objMap["domains"].(map[string]interface{}); ok {

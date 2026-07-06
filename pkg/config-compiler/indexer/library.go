@@ -3,7 +3,7 @@ package indexer
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/common/repositorytype"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
 	"github.com/taubyte/tau/pkg/specs/methods"
@@ -50,7 +50,7 @@ func Libraries(ctx *IndexContext, project projectSchema.Project, urlIndex map[st
 		if err != nil {
 			return err
 		}
-		urlIndex[_path.Type().String()] = common.LibraryRepository
+		urlIndex[_path.Type().String()] = repositorytype.LibraryRepository
 
 		libraryId := getter.Id()
 		tnsPath, err := librarySpec.Tns().IndexValue(ctx.Branch, ctx.ProjectId, ctx.AppId, getter.Id())

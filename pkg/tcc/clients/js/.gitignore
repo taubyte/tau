@@ -1,0 +1,4 @@
+node_modules/
+dist/
+# Built by `tcc-gen --wasm` (Go); regenerate rather than commit the 8MB binary.
+assets/

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/common/repositorytype"
 	specs "github.com/taubyte/tau/pkg/specs/library"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/tau/pkg/tcc/object"
@@ -108,7 +108,7 @@ func (l *libraries) Process(ct transform.Context[object.Refrence], config object
 		}
 
 		index.Set(wasmLinkPath, links)
-		index.Set(repoPath.Type().String(), common.LibraryRepository)
+		index.Set(repoPath.Type().String(), repositorytype.LibraryRepository)
 		index.Set(repoPath.Resource(libraryId).String(), tnsPath.String())
 		index.Set(specs.Tns().NameIndex(libraryId).String(), name)
 	}

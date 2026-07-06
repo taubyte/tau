@@ -14,7 +14,7 @@ import (
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
 	tccDecompile "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
-	tccUtils "github.com/taubyte/tau/utils/tcc"
+	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 
 	"github.com/taubyte/tau/utils/maps"
 )
@@ -52,7 +52,7 @@ func (srv *Service) getProjectFromContext(ctx http.Context) (projectSchema.Proje
 	}
 
 	// Convert TNS map to TCC object
-	tccObj := tccUtils.MapToTCCObject(projectObj)
+	tccObj := tccConvert.MapToTCCObject(projectObj)
 
 	// Create decompiler with in-memory filesystem
 	memFs := afero.NewMemMapFs()

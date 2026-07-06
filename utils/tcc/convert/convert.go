@@ -1,4 +1,8 @@
-package tccUtils
+// Package convert holds the map<->tcc object conversion. It lives in its own
+// leaf package (depending only on pkg/tcc/object) so it can be imported from
+// the GOOS=js wasm build without dragging in utils/tcc's network/libp2p
+// siblings (publish.go, logs.go).
+package convert
 
 import (
 	"fmt"
@@ -68,10 +72,40 @@ func normalizeMap(v any) any {
 			result[k] = normalizeMap(v)
 		}
 		return result
+	case float64:
+		// JSON numbers decode to float64, but tcc numeric fields are integers.
+		// Small values map to int (what Int-attribute validators, e.g. replicas
+		// min/max, type-switch on); large values that don't fit int32 (memory /
+		// timeout in ns) map to int64, which the decompiler's timeout/memory
+		// formatters accept — and which survives a 32-bit int target like
+		// tinygo/wasm, where a plain int would overflow and drop the value.
+		if val == float64(int64(val)) {
+			i64 := int64(val)
+			if int64(int32(i64)) == i64 {
+				return int(i64)
+			}
+			return i64
+		}
+		return val
 	case []any:
 		result := make([]any, len(val))
+		allStrings := len(val) > 0
 		for i, v := range val {
-			result[i] = normalizeMap(v)
+			nv := normalizeMap(v)
+			result[i] = nv
+			if _, ok := nv.(string); !ok {
+				allStrings = false
+			}
+		}
+		// Restore []string from a JSON-eroded []any so the decompiler's
+		// domains.([]string) assertions (pass2 websites/functions) hold. Serialized
+		// sources (TNS maps, wasm JSON) lose the concrete slice type otherwise.
+		if allStrings {
+			strs := make([]string, len(result))
+			for i, v := range result {
+				strs[i] = v.(string)
+			}
+			return strs
 		}
 		return result
 	default:
