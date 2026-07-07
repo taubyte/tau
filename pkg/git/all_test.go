@@ -140,7 +140,7 @@ func TestCloneFail(t *testing.T) {
 		Root(dir),
 		Author(testRepoUser, testRepoEmail),
 	)
-	assert.Error(t, err, "authentication required")
+	assert.ErrorContains(t, err, "authentication required")
 
 	assert.NilError(t, os.RemoveAll(dir))
 }
