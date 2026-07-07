@@ -62,7 +62,7 @@ func createPatrickService(u *dream.Universe, config *iface.ServiceConfig) (iface
 	if err != nil {
 		return nil, err
 	}
-	raftCluster, err := common.NewRaftCluster(node, cfg.Cluster())
+	raftCluster, err := common.NewRaftCluster(node, cfg.Cluster(), cfg.Root(), cfg.Shape())
 	if err != nil {
 		return nil, err
 	}

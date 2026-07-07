@@ -46,6 +46,12 @@ func Start(ctx context.Context, serviceConfig config.Config) error {
 		if namespace == "" {
 			namespace = "main"
 		}
+		// One-time move of snapshots from the pre-scoping layout; no-op once done.
+		// TODO(remove early 2027): drop with raft.MigrateSnapshotDir once all
+		// deployments have started on the <root>/raft layout.
+		if err := raft.MigrateSnapshotDir(serviceConfig.Root(), serviceConfig.Shape(), namespace); err != nil {
+			return fmt.Errorf("migrating raft snapshot dir for namespace %q: %w", namespace, err)
+		}
 		snapDir := raft.SnapshotDir(serviceConfig.Root(), serviceConfig.Shape(), namespace)
 		raftOpts := []raft.Option{raft.WithSnapshotDir(snapDir)}
 		if serviceConfig.DevMode() {
