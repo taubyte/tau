@@ -573,19 +573,30 @@ func (h *healer) wipeRaftState(ctx context.Context) {
 			KeysOnly: true,
 		})
 		if err != nil {
+			healLogger.Warnf("[%s] failed to query %s keys during wipe: %v",
+				h.cluster.node.ID().ShortString(), sub, err)
 			continue
 		}
 		for result := range results.Next() {
 			if result.Error != nil {
+				healLogger.Warnf("[%s] error iterating %s keys during wipe: %v",
+					h.cluster.node.ID().ShortString(), sub, result.Error)
 				break
 			}
-			store.Delete(ctx, ds.NewKey(result.Key))
+			if err := store.Delete(ctx, ds.NewKey(result.Key)); err != nil {
+				healLogger.Warnf("[%s] failed to delete key %s during wipe: %v",
+					h.cluster.node.ID().ShortString(), result.Key, err)
+			}
 		}
 		results.Close()
 	}
 }
 
 func (f *fileSnapshotStore) wipeAll() {
-	os.RemoveAll(f.dir)
-	os.MkdirAll(f.dir, 0755)
+	if err := os.RemoveAll(f.dir); err != nil {
+		healLogger.Warnf("failed to remove snapshot dir %s: %v", f.dir, err)
+	}
+	if err := os.MkdirAll(f.dir, 0755); err != nil {
+		healLogger.Errorf("failed to recreate snapshot dir %s: %v", f.dir, err)
+	}
 }
