@@ -15,6 +15,8 @@ import (
 	"strings"
 	"syscall/js"
 	"testing"
+
+	"gotest.tools/v3/assert"
 )
 
 // memStore is an in-memory file store exposed to the wasm code as JS fs
@@ -204,12 +206,9 @@ func arr(segs ...string) js.Value {
 func TestCompileFn(t *testing.T) {
 	m := loadFixture(t)
 	r := val(compileFn(js.Null(), []js.Value{m.primitives(), masterOpts()}))
-	if e := errOf(r); e != "" {
-		t.Fatalf("compile error: %s", e)
-	}
-	if r.Get("object").Get("functions").IsUndefined() {
-		t.Error("compiled object has no functions")
-	}
+	assert.Equal(t, errOf(r), "")
+	assert.Assert(t, !r.Get("object").Get("functions").IsUndefined(), "compiled object has functions")
+
 	vs := r.Get("validations")
 	found := false
 	for i := 0; i < vs.Length(); i++ {
@@ -218,9 +217,7 @@ func TestCompileFn(t *testing.T) {
 			found = true
 		}
 	}
-	if !found {
-		t.Error("expected hal.computers.com dns validation")
-	}
+	assert.Assert(t, found, "expected hal.computers.com dns validation")
 }
 
 func TestDecompileFn(t *testing.T) {
@@ -229,15 +226,10 @@ func TestDecompileFn(t *testing.T) {
 
 	out := newStore()
 	r := val(decompileFn(js.Null(), []js.Value{compiled, out.primitives()}))
-	if !r.IsNull() {
-		t.Fatalf("decompile error: %s", errOf(r))
-	}
-	if _, ok := out.files["/config.yaml"]; !ok {
-		t.Error("decompile did not write /config.yaml")
-	}
-	if len(out.files) < 2 {
-		t.Errorf("decompile wrote %d files, want several", len(out.files))
-	}
+	assert.Assert(t, r.IsNull(), "decompile error: %s", errOf(r))
+	_, ok := out.files["/config.yaml"]
+	assert.Assert(t, ok, "decompile did not write /config.yaml")
+	assert.Assert(t, len(out.files) >= 2, "decompile wrote %d files, want several", len(out.files))
 }
 
 func TestSessionRoundTrip(t *testing.T) {
@@ -246,92 +238,47 @@ func TestSessionRoundTrip(t *testing.T) {
 	res := arr("functions", "test_function1_glob")
 	mem := arr("execution", "memory")
 
-	if got := val(sessionGetFn(js.Null(), []js.Value{h, res, mem})); got.String() != "32GB" {
-		t.Errorf("get memory = %q, want 32GB", got.String())
-	}
-	if e := errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, mem, js.ValueOf("64GB")}))); e != "" {
-		t.Fatalf("set memory: %s", e)
-	}
-	if got := val(sessionGetFn(js.Null(), []js.Value{h, res, mem})); got.String() != "64GB" {
-		t.Errorf("get after set = %q, want 64GB", got.String())
-	}
+	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, res, mem})).String(), "32GB")
+	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, mem, js.ValueOf("64GB")}))), "")
+	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, res, mem})).String(), "64GB")
 
 	// typed numeric field
 	dbMin := arr("databases", "test_database1")
 	minF := arr("replicas", "min")
-	if got := val(sessionGetFn(js.Null(), []js.Value{h, dbMin, minF})); got.Int() != 15 {
-		t.Errorf("db min = %d, want 15", got.Int())
-	}
+	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, dbMin, minF})).Int(), 15)
 
 	// compile reflects the edit
 	c := val(sessionCompileFn(js.Null(), []js.Value{h, masterOpts()}))
-	if e := errOf(c); e != "" {
-		t.Fatalf("session compile: %s", e)
-	}
+	assert.Equal(t, errOf(c), "")
 	fnMem := c.Get("object").Get("functions").Get("QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh").Get("memory")
-	if fnMem.Int() != 64000000000 {
-		t.Errorf("compiled memory = %v, want 64000000000", fnMem)
-	}
+	assert.Equal(t, fnMem.Int(), 64000000000)
 
 	// list + app scope
-	fns := val(sessionListFn(js.Null(), []js.Value{h, arr("functions")}))
-	if !contains(fns, "test_function1_glob") {
-		t.Error("list functions missing test_function1_glob")
-	}
-	apps := val(sessionListFn(js.Null(), []js.Value{h, arr("applications")}))
-	if !contains(apps, "test_app1") {
-		t.Error("list applications missing test_app1")
-	}
+	assert.Assert(t, contains(val(sessionListFn(js.Null(), []js.Value{h, arr("functions")})), "test_function1_glob"))
+	assert.Assert(t, contains(val(sessionListFn(js.Null(), []js.Value{h, arr("applications")})), "test_app1"))
 	appMem := val(sessionGetFn(js.Null(), []js.Value{h, arr("applications", "test_app1", "functions", "test_function2"), mem}))
-	if appMem.String() != "23MB" {
-		t.Errorf("app-scoped memory = %q, want 23MB", appMem.String())
-	}
+	assert.Equal(t, appMem.String(), "23MB")
 
 	// exercise jsToGo across value kinds: number, bool, string array
-	if e := errOf(val(sessionSetFn(js.Null(), []js.Value{h, dbMin, minF, js.ValueOf(20)}))); e != "" {
-		t.Fatalf("set number: %s", e)
-	}
-	if got := val(sessionGetFn(js.Null(), []js.Value{h, dbMin, minF})); got.Int() != 20 {
-		t.Errorf("set number -> %d, want 20", got.Int())
-	}
-	if e := errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, arr("trigger", "local"), js.ValueOf(true)}))); e != "" {
-		t.Fatalf("set bool: %s", e)
-	}
-	if got := val(sessionGetFn(js.Null(), []js.Value{h, res, arr("trigger", "local")})); !got.Bool() {
-		t.Error("set bool -> want true")
-	}
-	if e := errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, arr("tags"), js.ValueOf([]any{"a", "b"})}))); e != "" {
-		t.Fatalf("set array: %s", e)
-	}
-	if got := val(sessionGetFn(js.Null(), []js.Value{h, res, arr("tags")})); got.Length() != 2 {
-		t.Errorf("set array -> len %d, want 2", got.Length())
-	}
+	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{h, dbMin, minF, js.ValueOf(20)}))), "")
+	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, dbMin, minF})).Int(), 20)
+	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, arr("trigger", "local"), js.ValueOf(true)}))), "")
+	assert.Assert(t, val(sessionGetFn(js.Null(), []js.Value{h, res, arr("trigger", "local")})).Bool())
+	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, arr("tags"), js.ValueOf([]any{"a", "b"})}))), "")
+	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, res, arr("tags")})).Length(), 2)
 
 	// delete
-	if e := errOf(val(sessionDeleteFn(js.Null(), []js.Value{h, arr("functions", "test_function2_glob")}))); e != "" {
-		t.Fatalf("delete: %s", e)
-	}
-	if contains(val(sessionListFn(js.Null(), []js.Value{h, arr("functions")})), "test_function2_glob") {
-		t.Error("deleted function still listed")
-	}
+	assert.Equal(t, errOf(val(sessionDeleteFn(js.Null(), []js.Value{h, arr("functions", "test_function2_glob")}))), "")
+	assert.Assert(t, !contains(val(sessionListFn(js.Null(), []js.Value{h, arr("functions")})), "test_function2_glob"), "deleted function still listed")
 
 	// save writes YAML reflecting edits and the deletion
 	out := newStore()
-	if e := errOf(val(sessionSaveFn(js.Null(), []js.Value{h, out.primitives()}))); e != "" {
-		t.Fatalf("save: %s", e)
-	}
+	assert.Equal(t, errOf(val(sessionSaveFn(js.Null(), []js.Value{h, out.primitives()}))), "")
 	yaml := string(out.files["/functions/test_function1_glob.yaml"])
-	if !strings.Contains(yaml, "memory: 64GB") {
-		t.Errorf("saved YAML missing edit:\n%s", yaml)
-	}
-	if _, ok := out.files["/functions/test_function2_glob.yaml"]; !ok {
-		t.Log("note: save copies present files; deleted file simply absent from memfs")
-	}
+	assert.Assert(t, strings.Contains(yaml, "memory: 64GB"), "saved YAML missing edit:\n%s", yaml)
 
 	sessionCloseFn(js.Null(), []js.Value{h})
-	if e := errOf(val(sessionGetFn(js.Null(), []js.Value{h, res, mem}))); e == "" {
-		t.Error("expected error after close (invalid handle)")
-	}
+	assert.Assert(t, errOf(val(sessionGetFn(js.Null(), []js.Value{h, res, mem}))) != "", "expected error after close (invalid handle)")
 }
 
 func TestDecompileSessionAndErrors(t *testing.T) {
@@ -339,21 +286,13 @@ func TestDecompileSessionAndErrors(t *testing.T) {
 	compiled := val(compileFn(js.Null(), []js.Value{m.primitives(), masterOpts()}))
 	h := openHandle(t, decompileSessionFn(js.Null(), []js.Value{compiled}))
 	got := val(sessionGetFn(js.Null(), []js.Value{h, arr("functions", "test_function1_glob"), arr("execution", "memory")}))
-	if got.String() != "32GB" {
-		t.Errorf("decompiled memory = %q, want 32GB", got.String())
-	}
+	assert.Equal(t, got.String(), "32GB")
 	sessionCloseFn(js.Null(), []js.Value{h})
 
 	// error paths
-	if errOf(val(compileFn(js.Null(), nil))) == "" {
-		t.Error("compile with no args should error")
-	}
-	if errOf(val(sessionGetFn(js.Null(), []js.Value{js.ValueOf(9999), arr("x"), arr("y")}))) == "" {
-		t.Error("get with bad handle should error")
-	}
-	if errOf(val(sessionSetFn(js.Null(), []js.Value{js.ValueOf(9999), arr("x"), arr("y"), js.ValueOf(1)}))) == "" {
-		t.Error("set with bad handle should error")
-	}
+	assert.Assert(t, errOf(val(compileFn(js.Null(), nil))) != "", "compile with no args should error")
+	assert.Assert(t, errOf(val(sessionGetFn(js.Null(), []js.Value{js.ValueOf(9999), arr("x"), arr("y")}))) != "", "get with bad handle should error")
+	assert.Assert(t, errOf(val(sessionSetFn(js.Null(), []js.Value{js.ValueOf(9999), arr("x"), arr("y"), js.ValueOf(1)}))) != "", "set with bad handle should error")
 }
 
 func contains(jsArr js.Value, s string) bool {
