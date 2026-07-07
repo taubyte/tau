@@ -20,7 +20,7 @@ var (
 	basicWasm    string
 	pluginBinary string
 
-	wasmFixtures = []string{"data_helpers", "size_helpers", "basic"}
+	wasmFixtures = []string{"data_helpers", "size_helpers", "basic", "float_return"}
 	pluginName   = "testPlugin"
 )
 

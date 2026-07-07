@@ -90,7 +90,7 @@ func (p *pluginInstance) makeFunc(paramTypes []reflect.Type, retTypes []reflect.
 					_out[idx] = reflect.ValueOf(int64(cOut[idx]))
 				case vm.F32Type:
 					_out[idx] = reflect.ValueOf(math.Float32frombits(uint32(cOut[idx])))
-				case vm.I64Type:
+				case vm.F64Type:
 					_out[idx] = reflect.ValueOf(math.Float64frombits(cOut[idx]))
 				}
 			}
