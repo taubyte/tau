@@ -62,6 +62,7 @@ require (
 	github.com/docker/go-connections v0.5.0
 	github.com/ethereum/go-ethereum v1.12.0
 	github.com/fsnotify/fsnotify v1.7.0
+	github.com/go-git/go-billy/v5 v5.3.1
 	github.com/go-webauthn/webauthn v0.17.2
 	github.com/google/go-cmp v0.7.0
 	github.com/google/go-github/v71 v71.0.0
@@ -166,7 +167,6 @@ require (
 	github.com/gammazero/deque v1.0.0 // indirect
 	github.com/getsentry/sentry-go v0.27.0 // indirect
 	github.com/go-git/gcfg v1.5.0 // indirect
-	github.com/go-git/go-billy/v5 v5.3.1 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
