@@ -4,6 +4,11 @@ on:
     tags:
       - '*'
 
+# GoReleaser publishes with GORELEASER_TOKEN (see env below); the default
+# token is only used by checkout, so read is enough.
+permissions:
+  contents: read
+
 jobs:
   tau:
     runs-on: ubuntu-latest
