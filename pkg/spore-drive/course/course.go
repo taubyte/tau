@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/moby/moby/pkg/namesgenerator"
 	"github.com/taubyte/tau/pkg/mycelium"
 	"github.com/taubyte/tau/pkg/mycelium/host"
+	"github.com/taubyte/tau/pkg/spore-drive/randname"
 )
 
 var DefaultConcurrency = 4
@@ -83,7 +83,7 @@ func (c *course) Hyphae() (hyphae Hyphae) {
 	for _, shape := range c.shapes {
 		stag := fmt.Sprintf("shape[%s]", shape)
 		hyphae = append(hyphae, &Hypha{
-			Name: namesgenerator.GetRandomName(0),
+			Name: randname.Get(),
 			Subnet: c.network.Sub(func(h host.Host) bool {
 				return slices.Contains(h.Tags(), stag)
 			}),

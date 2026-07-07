@@ -5,17 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/docker/go-connections/nat"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
@@ -130,9 +128,7 @@ func resolveDockerHost(configHost string) (host string, use bool) {
 
 // initClient initializes the Docker client
 func (b *DockerBackend) initClient() error {
-	opts := []client.Opt{
-		client.WithAPIVersionNegotiation(),
-	}
+	var opts []client.Opt
 
 	host, useHost := resolveDockerHost(b.config.Host)
 	if useHost {
@@ -140,10 +136,10 @@ func (b *DockerBackend) initClient() error {
 	}
 
 	if b.config.APIVersion != "" {
-		opts = append(opts, client.WithVersion(b.config.APIVersion))
+		opts = append(opts, client.WithAPIVersion(b.config.APIVersion))
 	}
 
-	cli, err := client.NewClientWithOpts(opts...)
+	cli, err := client.New(opts...)
 	if err != nil {
 		return fmt.Errorf("failed to create Docker client: %w", err)
 	}
@@ -178,7 +174,12 @@ func (b *DockerBackend) Create(ctx context.Context, config *core.ContainerConfig
 		return "", fmt.Errorf("failed to create Docker config: %w", err)
 	}
 
-	resp, err := b.client.ContainerCreate(ctx, containerConfig, hostConfig, networkingConfig, nil, string(containerID))
+	resp, err := b.client.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:           containerConfig,
+		HostConfig:       hostConfig,
+		NetworkingConfig: networkingConfig,
+		Name:             string(containerID),
+	})
 	if err != nil {
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
@@ -260,30 +261,38 @@ func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*conta
 		}
 
 		if len(config.Network.PortMappings) > 0 {
-			hostConfig.PortBindings = make(nat.PortMap)
+			hostConfig.PortBindings = make(network.PortMap)
 			for _, pm := range config.Network.PortMappings {
 				protocol := pm.Protocol
 				if protocol == "" {
 					protocol = "tcp"
 				}
-				portKey, err := nat.NewPort(protocol, fmt.Sprintf("%d", pm.ContainerPort))
+				portKey, err := network.ParsePort(fmt.Sprintf("%d/%s", pm.ContainerPort, protocol))
 				if err != nil {
 					return nil, nil, nil, fmt.Errorf("invalid port %d/%s: %w", pm.ContainerPort, protocol, err)
 				}
 
-				binding := nat.PortBinding{
+				binding := network.PortBinding{
 					HostPort: fmt.Sprintf("%d", pm.HostPort),
 				}
 				if pm.HostIP != "" {
-					binding.HostIP = pm.HostIP
+					hostIP, err := netip.ParseAddr(pm.HostIP)
+					if err != nil {
+						return nil, nil, nil, fmt.Errorf("invalid host IP %q: %w", pm.HostIP, err)
+					}
+					binding.HostIP = hostIP
 				}
 
 				hostConfig.PortBindings[portKey] = append(hostConfig.PortBindings[portKey], binding)
 			}
 		}
 
-		if len(config.Network.DNS) > 0 {
-			hostConfig.DNS = config.Network.DNS
+		for _, d := range config.Network.DNS {
+			addr, err := netip.ParseAddr(d)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("invalid DNS address %q: %w", d, err)
+			}
+			hostConfig.DNS = append(hostConfig.DNS, addr)
 		}
 	}
 
@@ -297,17 +306,17 @@ func (b *DockerBackend) getDockerID(ctx context.Context, id core.ContainerID) (s
 		return dockerID, nil
 	}
 
-	containers, err := b.client.ContainerList(ctx, container.ListOptions{
+	res, err := b.client.ContainerList(ctx, client.ContainerListOptions{
 		All:     true,
-		Filters: filters.NewArgs(filters.Arg("name", string(id))),
+		Filters: client.Filters{}.Add("name", string(id)),
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to list containers: %w", err)
 	}
 
-	if len(containers) > 0 {
-		b.containers[id] = containers[0].ID
-		return containers[0].ID, nil
+	if len(res.Items) > 0 {
+		b.containers[id] = res.Items[0].ID
+		return res.Items[0].ID, nil
 	}
 
 	return "", fmt.Errorf("container %s not found", id)
@@ -324,7 +333,7 @@ func (b *DockerBackend) Start(ctx context.Context, id core.ContainerID) error {
 		return err
 	}
 
-	if err := b.client.ContainerStart(ctx, dockerID, container.StartOptions{}); err != nil {
+	if _, err := b.client.ContainerStart(ctx, dockerID, client.ContainerStartOptions{}); err != nil {
 		return fmt.Errorf("failed to start container %s: %w", id, err)
 	}
 
@@ -343,7 +352,7 @@ func (b *DockerBackend) Stop(ctx context.Context, id core.ContainerID) error {
 	}
 
 	timeoutSeconds := 10
-	if err := b.client.ContainerStop(ctx, dockerID, container.StopOptions{Timeout: &timeoutSeconds}); err != nil {
+	if _, err := b.client.ContainerStop(ctx, dockerID, client.ContainerStopOptions{Timeout: &timeoutSeconds}); err != nil {
 		return fmt.Errorf("failed to stop container %s: %w", id, err)
 	}
 
@@ -361,7 +370,7 @@ func (b *DockerBackend) Remove(ctx context.Context, id core.ContainerID) error {
 		return err
 	}
 
-	if err := b.client.ContainerRemove(ctx, dockerID, container.RemoveOptions{Force: true}); err != nil {
+	if _, err := b.client.ContainerRemove(ctx, dockerID, client.ContainerRemoveOptions{Force: true}); err != nil {
 		return fmt.Errorf("failed to remove container %s: %w", id, err)
 	}
 
@@ -371,25 +380,25 @@ func (b *DockerBackend) Remove(ctx context.Context, id core.ContainerID) error {
 }
 
 // Clean removes images older than age that match the given filter.
-func (b *DockerBackend) Clean(ctx context.Context, age time.Duration, filter filters.Args) error {
+func (b *DockerBackend) Clean(ctx context.Context, age time.Duration, filter client.Filters) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
 	}
 
-	opts := types.ImageListOptions{}
-	if len(filter.Keys()) > 0 {
+	opts := client.ImageListOptions{}
+	if len(filter) > 0 {
 		opts.Filters = filter
 	}
-	images, err := b.client.ImageList(ctx, opts)
+	res, err := b.client.ImageList(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("failed to list images: %w", err)
 	}
 
 	cutoff := time.Now().Add(-age).Unix()
-	for _, img := range images {
+	for _, img := range res.Items {
 		if img.Created < cutoff {
 			// best effort to remove the image
-			b.client.ImageRemove(ctx, img.ID, types.ImageRemoveOptions{
+			b.client.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{
 				Force:         true,
 				PruneChildren: true,
 			})
@@ -409,14 +418,14 @@ func (b *DockerBackend) Wait(ctx context.Context, id core.ContainerID) error {
 		return err
 	}
 
-	statusCh, errCh := b.client.ContainerWait(ctx, dockerID, container.WaitConditionNotRunning)
+	wait := b.client.ContainerWait(ctx, dockerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 
 	select {
-	case err := <-errCh:
+	case err := <-wait.Error:
 		if err != nil {
 			return fmt.Errorf("failed to wait for container %s: %w", id, err)
 		}
-	case status := <-statusCh:
+	case status := <-wait.Result:
 		if status.StatusCode != 0 {
 			return fmt.Errorf("container %s exited with status %d", id, status.StatusCode)
 		}
@@ -436,7 +445,7 @@ func (b *DockerBackend) Logs(ctx context.Context, id core.ContainerID) (io.ReadC
 		return nil, err
 	}
 
-	logs, err := b.client.ContainerLogs(ctx, dockerID, container.LogsOptions{
+	logs, err := b.client.ContainerLogs(ctx, dockerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     false,
@@ -459,15 +468,16 @@ func (b *DockerBackend) Inspect(ctx context.Context, id core.ContainerID) (*core
 		return nil, err
 	}
 
-	info, err := b.client.ContainerInspect(ctx, dockerID)
+	inspect, err := b.client.ContainerInspect(ctx, dockerID, client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect container %s: %w", id, err)
 	}
+	info := inspect.Container
 
 	containerInfo := &core.ContainerInfo{
 		ID:     id,
 		Image:  info.Config.Image,
-		Status: info.State.Status,
+		Status: string(info.State.Status),
 	}
 
 	if info.State.ExitCode != 0 {
@@ -504,7 +514,7 @@ func (b *DockerBackend) HealthCheck(ctx context.Context) error {
 		return fmt.Errorf("Docker client not initialized")
 	}
 
-	_, err := b.client.Ping(ctx)
+	_, err := b.client.Ping(ctx, client.PingOptions{})
 	if err != nil {
 		return fmt.Errorf("Docker daemon not responding: %w", err)
 	}

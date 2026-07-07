@@ -1,9 +1,10 @@
 package docker
 
 import (
+	"net/netip"
 	"testing"
 
-	"github.com/docker/docker/api/types/container"
+	"github.com/moby/moby/api/types/container"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/pkg/containers/core"
@@ -525,7 +526,7 @@ func TestCreateDockerConfig(t *testing.T) {
 
 				_, hostConfig, _, err := backend.createDockerConfig(config)
 				require.NoError(t, err)
-				assert.Equal(t, []string{"8.8.8.8"}, hostConfig.DNS)
+				assert.Equal(t, []netip.Addr{netip.MustParseAddr("8.8.8.8")}, hostConfig.DNS)
 				assert.Nil(t, hostConfig.PortBindings, "PortBindings must be nil when no port mappings")
 			})
 
@@ -539,7 +540,7 @@ func TestCreateDockerConfig(t *testing.T) {
 
 				_, hostConfig, _, err := backend.createDockerConfig(config)
 				require.NoError(t, err)
-				assert.Equal(t, []string{"8.8.8.8", "8.8.4.4"}, hostConfig.DNS)
+				assert.Equal(t, []netip.Addr{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("8.8.4.4")}, hostConfig.DNS)
 			})
 
 			t.Run("WithMode", func(t *testing.T) {
@@ -554,7 +555,7 @@ func TestCreateDockerConfig(t *testing.T) {
 				_, hostConfig, _, err := backend.createDockerConfig(config)
 				require.NoError(t, err)
 				assert.Equal(t, "host", string(hostConfig.NetworkMode), "NetworkMode must be set")
-				assert.Equal(t, []string{"8.8.8.8", "1.1.1.1"}, hostConfig.DNS, "DNS must be set")
+				assert.Equal(t, []netip.Addr{netip.MustParseAddr("8.8.8.8"), netip.MustParseAddr("1.1.1.1")}, hostConfig.DNS, "DNS must be set")
 			})
 		})
 
@@ -729,7 +730,7 @@ func TestCreateDockerConfig(t *testing.T) {
 
 			assert.Equal(t, "bridge", string(hostConfig.NetworkMode), "NetworkMode must be set")
 			assert.NotNil(t, hostConfig.PortBindings, "PortBindings must not be nil")
-			assert.Equal(t, []string{"8.8.8.8"}, hostConfig.DNS, "DNS must be set")
+			assert.Equal(t, []netip.Addr{netip.MustParseAddr("8.8.8.8")}, hostConfig.DNS, "DNS must be set")
 		})
 	})
 }
