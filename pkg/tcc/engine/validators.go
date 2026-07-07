@@ -59,14 +59,27 @@ func IsEmail() Option {
 }
 
 func InSet[T string | int | float64](elms ...T) Option {
-	return Validator(func(s T) error {
-		for _, _s := range elms {
-			if s == _s {
-				return nil
+	return func(a *Attribute) {
+		Validator(func(s T) error {
+			for _, _s := range elms {
+				if s == _s {
+					return nil
+				}
 			}
+			return errors.New("invalid value")
+		})(a)
+		// Record the permitted values so a code generator can emit an enum /
+		// union type. Opaque to the engine (see Annotate) — no runtime effect.
+		vals := make([]string, len(elms))
+		for i, e := range elms {
+			vals[i] = fmt.Sprint(e)
 		}
-		return errors.New("invalid value")
-	})
+		Annotate("enum", vals)(a)
+		var zero T
+		if _, ok := any(zero).(string); ok {
+			Annotate("enumString", true)(a)
+		}
+	}
 }
 
 func IsFqdn() Option {

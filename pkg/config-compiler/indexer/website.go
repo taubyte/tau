@@ -3,7 +3,7 @@ package indexer
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/common/repositorytype"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 
 	"github.com/taubyte/tau/pkg/specs/methods"
@@ -52,7 +52,7 @@ func Websites(ctx *IndexContext, project projectSchema.Project, urlIndex map[str
 			return err
 		}
 
-		urlIndex[_path.Type().String()] = common.WebsiteRepository
+		urlIndex[_path.Type().String()] = repositorytype.WebsiteRepository
 		tnsPath, err := websiteSpec.Tns().IndexValue(ctx.Branch, ctx.ProjectId, ctx.AppId, webId)
 		if err != nil {
 			return err

@@ -6,7 +6,7 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"
@@ -20,7 +20,7 @@ type Context struct {
 	ctxC             context.CancelFunc
 	Node             peer.Node
 	Tns              tns.Client
-	RepoType         common.RepositoryType
+	RepoType         repositorytype.Type
 	ProjectID        string
 	DeployKey        string
 	Job              *patrick.Job
@@ -68,13 +68,13 @@ type repo interface {
 
 func (c Context) Handler() (repo, error) {
 	switch c.RepoType {
-	case common.ConfigRepository:
+	case repositorytype.ConfigRepository:
 		return &config{c}, nil
-	case common.CodeRepository:
+	case repositorytype.CodeRepository:
 		return &code{c}, nil
-	case common.LibraryRepository:
+	case repositorytype.LibraryRepository:
 		return &library{c}, nil
-	case common.WebsiteRepository:
+	case repositorytype.WebsiteRepository:
 		return &website{c}, nil
 	default:
 		return nil, fmt.Errorf("unexpected repository type `%d`", c.RepoType)

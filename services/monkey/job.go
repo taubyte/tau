@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	authClient "github.com/taubyte/tau/clients/p2p/auth"
-	"github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/tau/services/monkey/jobs"
@@ -34,7 +34,7 @@ func (m *Monkey) RunJob() (err error) {
 
 	var projectId string
 	var p *auth.Project
-	repoType := common.UnknownRepository
+	repoType := repositorytype.UnknownRepository
 
 	gitRepo, err := m.tryGetGitRepo(ac, repo.ID)
 	if err != nil {
@@ -50,9 +50,9 @@ func (m *Monkey) RunJob() (err error) {
 
 		switch repo.ID {
 		case p.Git.Code.Id():
-			repoType = common.CodeRepository
+			repoType = repositorytype.CodeRepository
 		case p.Git.Config.Id():
-			repoType = common.ConfigRepository
+			repoType = repositorytype.ConfigRepository
 		}
 	}
 
@@ -65,7 +65,7 @@ func (m *Monkey) RunJob() (err error) {
 		}
 	}
 
-	if repoType == common.UnknownRepository {
+	if repoType == repositorytype.UnknownRepository {
 		p := ac.Projects().Get(projectId)
 		if p == nil {
 			return fmt.Errorf("project not found: %s", projectId)
@@ -81,7 +81,7 @@ func (m *Monkey) RunJob() (err error) {
 			return fmt.Errorf("fetch project failed with: %w", err)
 		}
 
-		repoType = common.RepositoryType(toNumber(repoTypeResponse.Interface()))
+		repoType = repositorytype.Type(toNumber(repoTypeResponse.Interface()))
 	}
 
 	c := jobs.Context{
@@ -103,7 +103,7 @@ func (m *Monkey) RunJob() (err error) {
 
 	c.Context(m.ctx)
 
-	if repoType == common.CodeRepository {
+	if repoType == repositorytype.CodeRepository {
 		c.ConfigRepoId = p.Git.Config.Id()
 
 		configRepo, err := ac.Repositories().Github().Get(p.Git.Config.Id())

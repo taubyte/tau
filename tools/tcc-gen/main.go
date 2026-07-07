@@ -4,6 +4,10 @@
 //
 //	tcc-gen [--out DIR]   write generated files under DIR (default: a temp dir)
 //	tcc-gen --check       diff generated accessors against the current pkg/schema
+//	tcc-gen --wasm [--out DIR]  build the browser wasm module + wasm_exec.js
+//	                      (default out: pkg/tcc/clients/js/assets)
+//	tcc-gen --ts [--out DIR]    generate the TypeScript schema interfaces
+//	                      (default out: pkg/tcc/clients/js/src/gen)
 package main
 
 import (
@@ -27,6 +31,8 @@ func main() {
 			&cli.StringFlag{Name: "out", Usage: "output directory (default: a temp dir)"},
 			&cli.StringFlag{Name: "root", Usage: "repo root (default: autodetected from cwd)"},
 			&cli.BoolFlag{Name: "check", Usage: "diff generated accessors against pkg/schema and report drift"},
+			&cli.BoolFlag{Name: "wasm", Usage: "build the browser wasm module (GOOS=js) + wasm_exec.js into --out"},
+			&cli.BoolFlag{Name: "ts", Usage: "generate the TypeScript schema (interfaces) into --out"},
 		},
 		Action: run,
 	}
@@ -45,6 +51,14 @@ func run(c *cli.Context) error {
 		if root, err = findRepoRoot(cwd); err != nil {
 			return err
 		}
+	}
+
+	if c.Bool("wasm") {
+		return buildWasm(root, c.String("out"))
+	}
+
+	if c.Bool("ts") {
+		return writeTS(root, c.String("out"))
 	}
 
 	generated, err := gen.Generate(schema.TaubyteRessources)

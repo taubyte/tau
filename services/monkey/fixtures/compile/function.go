@@ -11,7 +11,7 @@ import (
 	"github.com/otiai10/copy"
 	"github.com/pterm/pterm"
 	"github.com/spf13/afero"
-	"github.com/taubyte/tau/core/common"
+	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/pkg/schema/functions"
 	"github.com/taubyte/tau/pkg/schema/project"
 	wasmSpec "github.com/taubyte/tau/pkg/specs/builders/wasm"
@@ -89,7 +89,7 @@ func (f functionContext) codeFile(language wasmSpec.SupportedLanguage) error {
 		Node:     f.ctx.universe.TNS().Node(),
 		LogFile:  os.Stdout,
 		WorkDir:  root,
-		RepoType: common.CodeRepository,
+		RepoType: repositorytype.CodeRepository,
 		Monkey: fakeMonkey{
 			hoarderClient: f.ctx.hoarderClient,
 		},

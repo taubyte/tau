@@ -18,6 +18,7 @@ import (
 	_ "github.com/taubyte/tau/services/tns/dream"
 	"github.com/taubyte/tau/utils/maps"
 	tcc "github.com/taubyte/tau/utils/tcc"
+	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 	"gotest.tools/v3/assert"
 )
 
@@ -134,7 +135,7 @@ func TestDecompileProd_Dreaming(t *testing.T) {
 	objFlat := obj.Flat()
 
 	// Create a TCC object from the flat structure (which includes both object and indexes)
-	objCopy := tcc.MapToTCCObject(objFlat)
+	objCopy := tccConvert.MapToTCCObject(objFlat)
 
 	// Create TCC decompiler
 	decompiler, err := tccDecompile.New(tccDecompile.WithLocal(testProjectDir))
