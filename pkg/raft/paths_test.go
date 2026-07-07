@@ -82,3 +82,35 @@ func TestMigrateSnapshotDir(t *testing.T) {
 		}
 	})
 }
+
+// TestCopyDir covers the cross-filesystem fallback used by MigrateSnapshotDir
+// when os.Rename fails (EXDEV), which can't be forced portably in a unit test.
+func TestCopyDir(t *testing.T) {
+	src := t.TempDir()
+	seedSnapshot(t, src, "2-1065-snap")
+	if err := os.WriteFile(filepath.Join(src, "top.bin"), []byte("data"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dst := filepath.Join(t.TempDir(), "moved")
+	if err := copyDir(src, dst); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := os.ReadFile(filepath.Join(dst, "2-1065-snap", "meta.json"))
+	if err != nil || string(got) != "{}" {
+		t.Fatalf("nested file not copied: got %q err=%v", got, err)
+	}
+	got, err = os.ReadFile(filepath.Join(dst, "top.bin"))
+	if err != nil || string(got) != "data" {
+		t.Fatalf("top-level file not copied: got %q err=%v", got, err)
+	}
+	// permissions preserved
+	info, err := os.Stat(filepath.Join(dst, "top.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Fatalf("permission not preserved: got %v", info.Mode().Perm())
+	}
+}
