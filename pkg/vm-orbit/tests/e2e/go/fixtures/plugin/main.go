@@ -25,6 +25,11 @@ func (t *tester) W_add42(ctx context.Context, module satellite.Module, stringPtr
 	return uint32(val) + addVal
 }
 
+// W_getFloat64 exercises the satellite->guest f64 result path (issue #437).
+func (t *tester) W_getFloat64(ctx context.Context, module satellite.Module, val uint32) float64 {
+	return float64(val) + 0.5
+}
+
 func (t *tester) W_readWritePlus1(
 	ctx context.Context,
 	module satellite.Module,

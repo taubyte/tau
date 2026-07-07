@@ -43,6 +43,19 @@ func TestPlugin(t *testing.T) {
 	testReturn(t, ret, 47)
 }
 
+// TestFloat64Return reproduces issue #437: a satellite host function returning
+// an f64 was decoded with a duplicated I64Type switch case, so the guest never
+// received the float. ping returns 1 only when 5.5 round-trips intact.
+func TestFloat64Return(t *testing.T) {
+	assert.NilError(t, initializePlugin())
+	plugin, err := vmPlugin.Load(pluginBinary, context.Background())
+	assert.NilError(t, err)
+	defer plugin.Close()
+
+	ret := basicCall(t, plugin, path.Join(fixtureDir, "float_return.wasm"), uint32(5))
+	testReturn(t, ret, 1)
+}
+
 func TestConcurrentPlugin(t *testing.T) {
 	// Ensure default plugin (addVal=42) so ping(5) returns 47.
 	assert.NilError(t, initializePlugin())
