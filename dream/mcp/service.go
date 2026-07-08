@@ -67,9 +67,15 @@ func New(multiverse *dream.Multiverse, httpService httpIface.Service) (*Service,
 
 // setupTransport sets up the MCP transport using LowLevelHandler
 func (m *Service) setupTransport() {
+	// Stateless: the dream tools are all request/response with no server->client
+	// push, so we don't need per-session state or the standalone SSE stream. In
+	// stateless mode the server returns 405 for the standalone GET, which clients
+	// (per MCP spec §2.2.3) treat as "no SSE offered" and proceed over POST.
+	// Stateful mode instead holds the GET open, hanging clients that expect
+	// immediate headers.
 	handler := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server {
 		return m.server
-	}, &mcp.StreamableHTTPOptions{})
+	}, &mcp.StreamableHTTPOptions{Stateless: true})
 
 	m.httpService.LowLevelHandler(&httpIface.LowLevelHandlerDefinition{
 		Path:    MCPEndpoint,

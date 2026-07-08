@@ -14,8 +14,12 @@ var (
 	ErrorContextCanceled = errors.New("context cancel")
 )
 
+// Run executes the job body. The service's monkeys[jid] entry is owned by
+// monkey.Run: deleting it here (as this used to) removed the entry before the
+// final status was even set, so status queries 404'd the moment a job
+// finished, and monkey.Run's MockedPatrick-aware cleanup — which keeps
+// entries for tests — was dead code.
 func (c *Context) Run(ctx context.Context) (err error) {
-	defer c.Monkey.Delete(c.Job.Id)
 	defer c.handleLog()
 
 	go c.startTimeout()
