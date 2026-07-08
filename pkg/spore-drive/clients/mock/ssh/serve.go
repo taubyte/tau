@@ -7,9 +7,9 @@ import (
 	"sync"
 
 	"connectrpc.com/connect"
-	"github.com/moby/moby/pkg/namesgenerator"
 	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/mock/v1"
 	pbconnect "github.com/taubyte/tau/pkg/spore-drive/proto/gen/mock/v1/mockv1connect"
+	"github.com/taubyte/tau/pkg/spore-drive/randname"
 )
 
 type Service struct {
@@ -107,7 +107,7 @@ func (s *Service) New(_ context.Context, in *connect.Request[pb.HostConfig]) (*c
 
 	if hc := in.Msg.GetHost(); hc == nil || hc.GetName() == "" {
 		in.Msg.Host = &pb.Host{
-			Name: namesgenerator.GetRandomName(0),
+			Name: randname.Get(),
 		}
 	}
 

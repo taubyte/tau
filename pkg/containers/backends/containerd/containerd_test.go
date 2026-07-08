@@ -14,11 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/filters"
-	"github.com/docker/docker/api/types/mount"
-	"github.com/docker/docker/client"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/pkg/containers/core"
@@ -45,7 +43,7 @@ func waitForExecCompletion(t *testing.T, ctx context.Context, dockerClient *clie
 	for time.Now().Before(deadline) {
 		select {
 		case <-ticker.C:
-			insp, err := dockerClient.ContainerExecInspect(ctx, execID)
+			insp, err := dockerClient.ExecInspect(ctx, execID, client.ExecInspectOptions{})
 			if err != nil {
 				continue
 			}
@@ -386,7 +384,7 @@ type containerdTestContainer struct {
 
 func setupContainerdInDocker(t *testing.T) (*containerdTestContainer, func()) {
 	t.Helper()
-	dockerClient, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	dockerClient, err := client.New(client.FromEnv)
 	require.NoError(t, err, "Docker must be available for this test")
 	ctx := context.Background()
 	tempDir, err := os.MkdirTemp("", "tau-containerd-test-*")
@@ -397,24 +395,26 @@ func setupContainerdInDocker(t *testing.T) (*containerdTestContainer, func()) {
 
 	useLinuxkit := false
 
-	linuxkitList, err := dockerClient.ImageList(ctx, types.ImageListOptions{
-		Filters: filters.NewArgs(filters.Arg("reference", linuxkitImage)),
+	linuxkitRes, err := dockerClient.ImageList(ctx, client.ImageListOptions{
+		Filters: client.Filters{}.Add("reference", linuxkitImage),
 	})
 	if err != nil {
 		os.RemoveAll(tempDir)
 		t.Fatalf("Failed to check for linuxkit/containerd image: %v", err)
 	}
+	linuxkitList := linuxkitRes.Items
 	if len(linuxkitList) > 0 {
 		useLinuxkit = true
 	} else {
 		t.Logf("Pulling prebuilt containerd image: %s", linuxkitImage)
-		reader, pullErr := dockerClient.ImagePull(ctx, linuxkitImage, types.ImagePullOptions{})
+		reader, pullErr := dockerClient.ImagePull(ctx, linuxkitImage, client.ImagePullOptions{})
 		if pullErr == nil {
 			io.Copy(io.Discard, reader)
 			reader.Close()
 			t.Logf("Successfully pulled %s", linuxkitImage)
 			useLinuxkit = true
-			allList, _ := dockerClient.ImageList(ctx, types.ImageListOptions{})
+			allRes, _ := dockerClient.ImageList(ctx, client.ImageListOptions{})
+			allList := allRes.Items
 			for i := range allList {
 				for _, tag := range allList[i].RepoTags {
 					if strings.Contains(tag, "linuxkit") && strings.Contains(tag, "containerd") {
@@ -451,12 +451,12 @@ func setupContainerdInDocker(t *testing.T) (*containerdTestContainer, func()) {
 			Tty: false,
 		}
 	} else {
-		alpineList, listErr := dockerClient.ImageList(ctx, types.ImageListOptions{
-			Filters: filters.NewArgs(filters.Arg("reference", alpineImage)),
+		alpineList, listErr := dockerClient.ImageList(ctx, client.ImageListOptions{
+			Filters: client.Filters{}.Add("reference", alpineImage),
 		})
-		if listErr != nil || len(alpineList) == 0 {
+		if listErr != nil || len(alpineList.Items) == 0 {
 			t.Logf("Pulling Alpine image: %s", alpineImage)
-			reader, pullErr := dockerClient.ImagePull(ctx, alpineImage, types.ImagePullOptions{})
+			reader, pullErr := dockerClient.ImagePull(ctx, alpineImage, client.ImagePullOptions{})
 			if pullErr != nil {
 				os.RemoveAll(tempDir)
 				t.Fatalf("Failed to pull Alpine image: %v", pullErr)
@@ -530,15 +530,19 @@ EOF
 		Tmpfs: map[string]string{"/var/lib/containerd": ""},
 	}
 	containerName := fmt.Sprintf("tau-containerd-test-%d", time.Now().UnixNano())
-	resp, err := dockerClient.ContainerCreate(ctx, containerConfig, hostConfig, nil, nil, containerName)
+	resp, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
+		Config:     containerConfig,
+		HostConfig: hostConfig,
+		Name:       containerName,
+	})
 	if err != nil {
 		os.RemoveAll(tempDir)
 		t.Fatalf("Failed to create containerd container: %v", err)
 	}
 	containerID := resp.ID
-	err = dockerClient.ContainerStart(ctx, containerID, container.StartOptions{})
+	_, err = dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
 	if err != nil {
-		dockerClient.ContainerRemove(ctx, containerID, container.RemoveOptions{})
+		dockerClient.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{})
 		os.RemoveAll(tempDir)
 		t.Fatalf("Failed to start containerd container: %v", err)
 	}
@@ -561,8 +565,8 @@ waitLoop:
 		case <-waitCtx.Done():
 			break waitLoop
 		case <-ticker.C:
-			insp, err := dockerClient.ContainerInspect(ctx, containerID)
-			if err == nil && insp.State.Status != "running" {
+			inspRes, err := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+			if err == nil && inspRes.Container.State.Status != "running" {
 				break waitLoop
 			}
 			if stat, statErr := os.Stat(socketPath); statErr == nil {
@@ -580,14 +584,15 @@ waitLoop:
 	}
 
 	if !socketReady {
-		insp, _ := dockerClient.ContainerInspect(ctx, containerID)
+		inspRes, _ := dockerClient.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
+		insp := inspRes.Container
 		status := "unknown"
 		exitCode := 0
 		if insp.State != nil {
-			status = insp.State.Status
+			status = string(insp.State.Status)
 			exitCode = insp.State.ExitCode
 		}
-		logsOpts := types.ContainerLogsOptions{ShowStdout: true, ShowStderr: true}
+		logsOpts := client.ContainerLogsOptions{ShowStdout: true, ShowStderr: true}
 		if logStream, err := dockerClient.ContainerLogs(ctx, containerID, logsOpts); err == nil {
 			logBuf := new(strings.Builder)
 			io.Copy(logBuf, logStream)
@@ -595,8 +600,8 @@ waitLoop:
 			t.Logf("Container logs:\n%s", logBuf.String())
 		}
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 20*time.Second)
-		dockerClient.ContainerStop(cleanupCtx, containerID, container.StopOptions{})
-		dockerClient.ContainerRemove(cleanupCtx, containerID, container.RemoveOptions{})
+		dockerClient.ContainerStop(cleanupCtx, containerID, client.ContainerStopOptions{})
+		dockerClient.ContainerRemove(cleanupCtx, containerID, client.ContainerRemoveOptions{})
 		cleanupCancel()
 		os.RemoveAll(tempDir)
 		t.Fatalf("Containerd socket not ready after %v (container state: %s, exit code: %d); see container logs above", maxWait, status, exitCode)
@@ -614,14 +619,14 @@ waitLoop:
 		defer cancel()
 		t.Logf("Cleaning up containerd test container: %s", tc.containerID[:12])
 		cleanupCmd := []string{"sh", "-c", "rm -rf /run/containerd/*"}
-		if execResp, err := dockerClient.ContainerExecCreate(ctx, tc.containerID, types.ExecConfig{
+		if execResp, err := dockerClient.ExecCreate(ctx, tc.containerID, client.ExecCreateOptions{
 			Cmd: cleanupCmd, AttachStdout: false, AttachStderr: false,
 		}); err == nil {
-			dockerClient.ContainerExecStart(ctx, execResp.ID, types.ExecStartCheck{})
+			dockerClient.ExecStart(ctx, execResp.ID, client.ExecStartOptions{})
 			waitForExecCompletion(t, ctx, dockerClient, execResp.ID, 5*time.Second)
 		}
-		dockerClient.ContainerStop(ctx, tc.containerID, container.StopOptions{})
-		dockerClient.ContainerRemove(ctx, tc.containerID, container.RemoveOptions{RemoveVolumes: true, Force: true})
+		dockerClient.ContainerStop(ctx, tc.containerID, client.ContainerStopOptions{})
+		dockerClient.ContainerRemove(ctx, tc.containerID, client.ContainerRemoveOptions{RemoveVolumes: true, Force: true})
 		os.RemoveAll(tc.tempDir)
 	}
 

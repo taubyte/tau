@@ -4,14 +4,14 @@ import (
 	"context"
 	"time"
 
-	"github.com/docker/docker/api/types/filters"
+	"github.com/moby/moby/client"
 	ci "github.com/taubyte/tau/pkg/containers"
 )
 
 type config struct {
 	interval time.Duration
 	maxAge   time.Duration
-	filters  filters.Args
+	filters  client.Filters
 }
 
 var (

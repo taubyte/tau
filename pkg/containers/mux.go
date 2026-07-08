@@ -3,7 +3,7 @@ package containers
 import (
 	"io"
 
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/api/pkg/stdcopy"
 )
 
 // Combined returns the Stderr, and Stdout combined container logs.

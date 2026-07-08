@@ -9,8 +9,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/filters"
+	"github.com/moby/moby/client"
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
@@ -26,7 +25,7 @@ func (i *dockerImage) Pull(ctx context.Context) error {
 		return fmt.Errorf("Docker client not initialized")
 	}
 
-	reader, err := i.backend.client.ImagePull(ctx, i.name, types.ImagePullOptions{})
+	reader, err := i.backend.client.ImagePull(ctx, i.name, client.ImagePullOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to pull image %s: %w", i.name, err)
 	}
@@ -78,7 +77,7 @@ func (i *dockerImage) Build(ctx context.Context, input core.BuildInput) error {
 		}
 	}
 
-	buildOptions := types.ImageBuildOptions{
+	buildOptions := client.ImageBuildOptions{
 		Tags:       []string{i.name},
 		Remove:     true,
 		Dockerfile: dockerInput.Dockerfile,
@@ -131,18 +130,15 @@ func (i *dockerImage) Exists(ctx context.Context) bool {
 		return false
 	}
 
-	filter := filters.NewArgs()
-	filter.Add("reference", i.name)
-
-	images, err := i.backend.client.ImageList(ctx, types.ImageListOptions{
-		Filters: filter,
+	res, err := i.backend.client.ImageList(ctx, client.ImageListOptions{
+		Filters: client.Filters{}.Add("reference", i.name),
 	})
 	if err != nil {
 		return false
 	}
 
-	if len(images) == 0 {
-		_, _, inspectErr := i.backend.client.ImageInspectWithRaw(ctx, i.name)
+	if len(res.Items) == 0 {
+		_, inspectErr := i.backend.client.ImageInspect(ctx, i.name)
 		return inspectErr == nil
 	}
 
@@ -155,7 +151,7 @@ func (i *dockerImage) Remove(ctx context.Context) error {
 		return fmt.Errorf("Docker client not initialized")
 	}
 
-	_, err := i.backend.client.ImageRemove(ctx, i.name, types.ImageRemoveOptions{
+	_, err := i.backend.client.ImageRemove(ctx, i.name, client.ImageRemoveOptions{
 		Force:         false,
 		PruneChildren: true,
 	})
@@ -178,7 +174,7 @@ func (i *dockerImage) Digest(ctx context.Context) (string, error) {
 		return "", fmt.Errorf("Docker client not initialized")
 	}
 
-	image, _, err := i.backend.client.ImageInspectWithRaw(ctx, i.name)
+	image, err := i.backend.client.ImageInspect(ctx, i.name)
 	if err != nil {
 		return "", fmt.Errorf("failed to inspect image %s: %w", i.name, err)
 	}
@@ -202,7 +198,7 @@ func (i *dockerImage) Tags(ctx context.Context) ([]string, error) {
 		return nil, fmt.Errorf("Docker client not initialized")
 	}
 
-	image, _, err := i.backend.client.ImageInspectWithRaw(ctx, i.name)
+	image, err := i.backend.client.ImageInspect(ctx, i.name)
 	if err != nil {
 		return nil, fmt.Errorf("failed to inspect image %s: %w", i.name, err)
 	}
