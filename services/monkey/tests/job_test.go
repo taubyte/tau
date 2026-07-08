@@ -4,7 +4,6 @@ package tests
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"regexp"
 	"time"
@@ -143,7 +142,11 @@ func runTestConfigJob(t *testing.T) error {
 	fakJob.Logs = make(map[string]string)
 	fakJob.AssetCid = make(map[string]string)
 	fakJob.Meta.Repository.ID = commonTest.ConfigRepo.ID
-	fakJob.Meta.Repository.URI = fmt.Sprintf("git@github.com:%s/%s", commonTest.GitUser, commonTest.ConfigRepo.Name)
+	// Same repo the test clones above (taubyte/tb_test_project, from the hook
+	// payload). The old taubyte-test/tb_testproject fixture predates tcc and
+	// still has UUID resource ids, which tcc's IsCID id validation rejects —
+	// a job pointed there always fails.
+	fakJob.Meta.Repository.URI = commonTest.ConfigRepo.HookInfo.Repository.URI
 	fakJob.Meta.Repository.Provider = "github"
 	fakJob.Meta.Repository.Branch = "main" // Updated to match repository default branch
 	fakJob.Meta.HeadCommit.ID = "QmaskdjfziUJHJjYfhaysgYGYyA"
@@ -211,5 +214,8 @@ func runTestConfigJob(t *testing.T) error {
 		return err
 	}
 
-	return waitForTestStatus(monkeyClient, fakJob.Id, patrick.JobStatusLocked)
+	// Wait for the terminal status. Locked is a transient window (clone +
+	// compile), so polling for it raced the job's completion and flaked;
+	// Success both avoids the race and actually asserts the job worked.
+	return waitForTestStatus(monkeyClient, fakJob.Id, patrick.JobStatusSuccess)
 }

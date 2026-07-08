@@ -92,7 +92,15 @@ func TestWebsite_Dreaming(t *testing.T) {
 		return
 	}
 
-	// Wait for website to be available before making HTTP request
+	// Wait for the website to propagate into TNS before making the HTTP request.
+	// Build + asset stash + TNS indexing can take longer than callHalWithRetry's
+	// window, so sync on the resource appearing in TNS first (as TestZipWebsite does).
+	err = waitForWebsiteInTNS(u, "hal.computers.com", 30, 500*time.Millisecond)
+	if err != nil {
+		t.Errorf("Website not available in TNS after waiting: %v", err)
+		return
+	}
+
 	body, err := callHalWithRetry(u, "/", 10, 500*time.Millisecond)
 	if err != nil {
 		t.Error(err)
