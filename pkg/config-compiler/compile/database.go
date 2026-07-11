@@ -27,8 +27,6 @@ func database(name string, application string, project projectSchema.Project) (_
 		"match":       getter.Match(),
 		"useRegex":    getter.Regex(),
 		"local":       getter.Local(),
-		"min":         getter.Min(),
-		"max":         getter.Max(),
 		"size":        size,
 	}
 

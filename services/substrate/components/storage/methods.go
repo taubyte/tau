@@ -4,14 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
-	"github.com/fxamacker/cbor/v2"
 	"github.com/ipfs/go-cid"
-	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
 	"github.com/taubyte/tau/p2p/peer"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	"github.com/taubyte/tau/services/substrate/components/storage/common"
 )
 
@@ -33,7 +29,7 @@ func (s *Service) Storage(context storageIface.Context) (storageIface.Storage, e
 			return nil, err
 		}
 
-		storage, err = s.storageMethod(s, s.dbFactory, context, common.Logger, s.matcher)
+		storage, err = s.storageMethod(s, s.hoarderClient, context, branch)
 		if err != nil {
 			return nil, err
 		}
@@ -41,11 +37,6 @@ func (s *Service) Storage(context storageIface.Context) (storageIface.Storage, e
 		s.storagesLock.Lock()
 		s.storages[hash] = storage
 		s.storagesLock.Unlock()
-
-		err = s.pubsubStorage(context, branch)
-		if err != nil {
-			return nil, fmt.Errorf("pubsub storage `%s` failed with: %s", context.Matcher, err)
-		}
 
 		s.commitLock.Lock()
 		s.commits[hash] = commit
@@ -97,31 +88,4 @@ func (s *Service) GetFile(ctx context.Context, cid cid.Cid) (peer.ReadSeekCloser
 	}
 
 	return file, nil
-}
-func (s *Service) pubsubStorage(ctx storageIface.Context, branch string) error {
-	auction := &hoarderIface.Auction{
-		Type:     hoarderIface.AuctionNew,
-		MetaType: hoarderIface.Storage,
-		Meta: hoarderIface.MetaData{
-			ConfigId:      ctx.Config.Id,
-			ApplicationId: ctx.ApplicationId,
-			ProjectId:     ctx.ProjectId,
-			Match:         ctx.Matcher,
-			Branch:        branch,
-		},
-	}
-
-	dataBytes, err := cbor.Marshal(auction)
-	if err != nil {
-		return fmt.Errorf("marshalling auction failed with %w", err)
-	}
-
-	pubsubCtx, pubsubCtxC := context.WithTimeout(s.Node().Context(), 10*time.Second)
-	defer pubsubCtxC()
-
-	if err = s.Node().PubSubPublish(pubsubCtx, hoarderSpecs.PubSubIdent, dataBytes); err != nil {
-		return fmt.Errorf("failed publishing storage %s with %w", ctx.Matcher, err)
-	}
-
-	return nil
 }

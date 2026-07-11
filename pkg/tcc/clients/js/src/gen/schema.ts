@@ -107,20 +107,6 @@ export class DatabaseConfig {
     return this.s.binding.set(this.s.handle, this.res, ["regex"], v);
   }
 
-  async min(): Promise<number | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["replicas", "min"])) as number | undefined;
-  }
-  setMin(v: number): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["replicas", "min"], v);
-  }
-
-  async max(): Promise<number | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["replicas", "max"])) as number | undefined;
-  }
-  setMax(v: number): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["replicas", "max"], v);
-  }
-
   async size(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["storage", "size"])) as string | undefined;
   }

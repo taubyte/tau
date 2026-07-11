@@ -68,7 +68,7 @@ func TestHoarder_Dreaming(t *testing.T) {
 	cid3, err := n1.AddFile(strings.NewReader("hello world 3"))
 	assert.NilError(t, err)
 
-	_, err = n1hoarder.Stash(cid1, n1.Peer().Addrs()[0].String()+"/p2p/"+n1.ID().String())
+	err = n1hoarder.Stash(cid1, strings.NewReader("hello world"))
 	assert.NilError(t, err)
 
 	ni, err := ns.New(ctx, connect.NewRequest(&pb.Config{

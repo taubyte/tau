@@ -43,6 +43,10 @@ func New(ctx context.Context, cfg tauConfig.Config) (*PatrickService, error) {
 
 	var err error
 	srv.devMode = cfg.DevMode()
+	srv.reAnnounceJobTime = DefaultReAnnounceJobTime
+	if srv.devMode {
+		srv.reAnnounceJobTime = 5 * time.Second
+	}
 	srv.cluster = cfg.Cluster()
 	if cfg.RaftCluster() == nil {
 		return nil, fmt.Errorf("raft cluster is required")
@@ -111,15 +115,12 @@ func New(ctx context.Context, cfg tauConfig.Config) (*PatrickService, error) {
 
 	// Go routine to re announce any pending jobs (queue-based or pubsub-based)
 	go func() {
-		if srv.devMode {
-			DefaultReAnnounceJobTime = 5 * time.Second
-		}
 		for {
 			select {
 			case <-ctx.Done():
 				return
-			case <-time.After(DefaultReAnnounceJobTime):
-				_ctx, cancel := context.WithTimeout(ctx, DefaultReAnnounceJobTime)
+			case <-time.After(srv.reAnnounceJobTime):
+				_ctx, cancel := context.WithTimeout(ctx, srv.reAnnounceJobTime)
 				err := srv.ReannounceJobs(_ctx)
 				if err != nil {
 					logger.Error(err)

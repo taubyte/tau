@@ -2,18 +2,21 @@ package hoarder
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"regexp"
-	"strings"
 
-	"github.com/fxamacker/cbor/v2"
-	"github.com/ipfs/go-datastore"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
-	databaseSpec "github.com/taubyte/tau/pkg/specs/database"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
-	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
+	spec "github.com/taubyte/tau/pkg/specs/common"
 )
+
+// errNoConfigMatch marks the one DEFINITIVE validateConfig outcome: TNS answered
+// with the config list and none matched the resource's matcher, i.e. the backing
+// config was genuinely deleted or renamed. It is wrapped (fmt.Errorf %w) so that
+// configDeleted can distinguish a real deletion from a TNS listing failure (a
+// transient outage), which returns a distinct, unwrapped error and must never be
+// read as a deletion.
+var errNoConfigMatch = errors.New("no config matches")
 
 func handleRegex(pattern, match string) error {
 	matched, err := regexp.Match(pattern, []byte(match))
@@ -39,120 +42,88 @@ func checkMatch(regex bool, match, toMatch, name string) error {
 	return nil
 }
 
-func (srv *Service) validateMsg(auction *hoarderIface.Auction, msg *pubsub.Message) bool {
-	if msg.ReceivedFrom == srv.node.Peer().ID() && auction.Type != hoarderIface.AuctionEnd {
-		return false
+// validateConfig confirms a TNS config covers the requested matcher and records
+// its id on the auction carrier. Resolution is by matcher (not config id): the
+// data plane only knows project/app/match/branch, so it cannot GetById. Global
+// resources skip TNS validation.
+func (srv *Service) validateConfig(auction *hoarderIface.Auction) error {
+	if auction.MetaType == hoarderIface.Global {
+		return nil
 	}
 
-	if msg.ReceivedFrom != srv.node.Peer().ID() && auction.Type == hoarderIface.AuctionEnd {
-		return false
+	branches := spec.DefaultBranches
+	if auction.Meta.Branch != "" {
+		branches = []string{auction.Meta.Branch}
 	}
-
-	return true
-}
-
-func (srv *Service) saveAction(auction *hoarderIface.Auction) {
-	srv.regLock.Lock()
-	srv.auctions[auction.Meta.ConfigId+auction.Meta.Match] = auction
-	srv.regLock.Unlock()
-
-	newLottery := make([]*hoarderIface.Auction, 0)
-	newLottery = append(newLottery, auction)
-	srv.regLock.Lock()
-	srv.lotteryPool[auction.Meta.ConfigId+auction.Meta.Match] = newLottery
-	srv.regLock.Unlock()
-}
-
-func (srv *Service) checkValidAction(match string, action hoarderIface.AuctionType, hoarderID string) bool {
-	srv.regLock.Lock()
-	defer srv.regLock.Unlock()
-
-	if _, ok := srv.auctionHistory[match]; !ok {
-		newActionRecord := make(map[string][]hoarderIface.AuctionType)
-		srv.auctionHistory[match] = newActionRecord
-	}
-
-	actionList, ok := srv.auctionHistory[match][hoarderID]
-	if !ok {
-		newRecord := make([]hoarderIface.AuctionType, 0)
-		newRecord = append(newRecord, action)
-		srv.auctionHistory[match][hoarderID] = newRecord
-		return false
-	}
-
-	for _, _action := range actionList {
-		if action == _action {
-			return true
-		}
-	}
-
-	actionList = append(actionList, action)
-	srv.auctionHistory[match][hoarderID] = actionList
-	return false
-}
-
-func (srv *Service) publishAction(ctx context.Context, action *hoarderIface.Auction, actionType hoarderIface.AuctionType) error {
-	action.Type = actionType
-	actionBytes, err := cbor.Marshal(action)
-	if err != nil {
-		return fmt.Errorf("failed marshalling action with %w", err)
-	}
-
-	if err = srv.node.PubSubPublish(ctx, hoarderSpecs.PubSubIdent, actionBytes); err != nil {
-		return fmt.Errorf("publish to `%s` failed with: %w", hoarderSpecs.PubSubIdent, err)
-	}
-
-	return nil
-}
-
-func (srv *Service) storeAuction(ctx context.Context, auction *hoarderIface.Auction) error {
-	var (
-		metaType string
-		config   any
-		match    string
-		name     string
-		regex    bool
-	)
 
 	switch auction.MetaType {
 	case hoarderIface.Database:
-		db, err := srv.tnsClient.Database().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, auction.Meta.Branch).GetById(auction.Meta.ConfigId)
+		configs, _, _, err := srv.tnsClient.Database().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, branches...).List()
 		if err != nil {
-			return fmt.Errorf("getting database with id `%s` failed with: %w", auction.Meta.ConfigId, err)
+			return fmt.Errorf("listing databases for %s failed with: %w", auction.Meta.ProjectId, err)
 		}
-		config, match, name, regex, metaType = db, db.Match, db.Name, db.Regex, databaseSpec.PathVariable.String()
+		for id, c := range configs {
+			if checkMatch(c.Regex, auction.Meta.Match, c.Match, c.Name) == nil {
+				auction.Meta.ConfigId = id
+				return nil
+			}
+		}
+		return fmt.Errorf("no database config matches `%s`: %w", auction.Meta.Match, errNoConfigMatch)
 	case hoarderIface.Storage:
-		stor, err := srv.tnsClient.Storage().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, auction.Meta.Branch).GetById(auction.Meta.ConfigId)
+		configs, _, _, err := srv.tnsClient.Storage().All(auction.Meta.ProjectId, auction.Meta.ApplicationId, branches...).List()
 		if err != nil {
-			return fmt.Errorf("getting storage with id `%s` failed with: %w", auction.Meta.ConfigId, err)
+			return fmt.Errorf("listing storages for %s failed with: %w", auction.Meta.ProjectId, err)
 		}
+		for id, c := range configs {
+			if checkMatch(c.Regex, auction.Meta.Match, c.Match, c.Name) == nil {
+				auction.Meta.ConfigId = id
+				return nil
+			}
+		}
+		return fmt.Errorf("no storage config matches `%s`: %w", auction.Meta.Match, errNoConfigMatch)
+	}
+	return fmt.Errorf("invalid resource kind %d", auction.MetaType)
+}
 
-		config, match, name, regex, metaType = stor, stor.Match, stor.Name, stor.Regex, storageSpec.PathVariable.String()
-	default:
-		return fmt.Errorf("invalid meta type %d", auction.MetaType)
+// claimAndLoad is the placement path: validate config, write the placement
+// record + this node's claim (write-on-change), open the instance kvdb, and mark
+// it held. Idempotent — re-running for an already-claimed resource is a no-op.
+func (srv *Service) claimAndLoad(ctx context.Context, hash string, auction *hoarderIface.Auction) error {
+	if err := srv.validateConfig(auction); err != nil {
+		return err
 	}
 
-	if err := checkMatch(regex, auction.Meta.Match, match, name); err != nil {
-		return fmt.Errorf("checking auction match failed with: %w", err)
+	meta := &RegistryMeta{
+		Kind:          auction.MetaType,
+		ConfigId:      auction.Meta.ConfigId,
+		ProjectId:     auction.Meta.ProjectId,
+		ApplicationId: auction.Meta.ApplicationId,
+		Match:         auction.Meta.Match,
+		Branch:        auction.Meta.Branch,
+	}
+	if err := srv.putMeta(ctx, hash, meta); err != nil {
+		return fmt.Errorf("writing meta for %s failed with: %w", hash, err)
+	}
+	if _, err := srv.load(hash); err != nil {
+		return fmt.Errorf("loading %s failed with: %w", hash, err)
+	}
+	// Claim is written ready: the kvdb is open and the K=2 barrier delivers
+	// writes synchronously, so a fresh holder can serve and back durability
+	// immediately (background CRDT catch-up fills history).
+	if err := srv.addClaim(ctx, hash, srv.node.ID().String()); err != nil {
+		return fmt.Errorf("claiming %s failed with: %w", hash, err)
 	}
 
-	configBytes, err := cbor.Marshal(config)
+	srv.markClaimed(hash)
+	return nil
+}
+
+// currentHolders is the live claimant set for an instance (registry claims
+// crossed with live membership).
+func (srv *Service) currentHolders(ctx context.Context, hash string) ([]string, error) {
+	claims, err := srv.listClaims(ctx, hash)
 	if err != nil {
-		return fmt.Errorf("cbor marshal of config failed with: %w", err)
+		return nil, err
 	}
-
-	if !strings.HasPrefix(auction.Meta.Match, "/") {
-		auction.Meta.Match = "/" + auction.Meta.Match
-	}
-
-	srv.regLock.Lock()
-	defer srv.regLock.Unlock()
-
-	key := datastore.NewKey(fmt.Sprintf("/hoarder/%s/%s%s", metaType, auction.Meta.ConfigId, auction.Meta.Match))
-
-	if err := srv.db.Put(ctx, key.String(), configBytes); err != nil {
-		return fmt.Errorf("put failed with: %w", err)
-	}
-
-	return err
+	return srv.liveClaimants(claims), nil
 }

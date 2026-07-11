@@ -28,8 +28,6 @@ func TestDeleteBasic(t *testing.T) {
 		db.Get().Match(),
 		db.Get().Regex(),
 		db.Get().Local(),
-		db.Get().Min(),
-		db.Get().Max(),
 	)
 
 	local, _ := project.Get().Databases("test_app1")
@@ -46,8 +44,6 @@ func TestDeleteBasic(t *testing.T) {
 		db.Get().Match(),
 		db.Get().Regex(),
 		db.Get().Local(),
-		db.Get().Min(),
-		db.Get().Max(),
 	)
 }
 
@@ -61,7 +57,7 @@ func TestDeleteAttributes(t *testing.T) {
 
 	assertDatabase1(t, db.Get())
 
-	err = db.Delete("description", "match", "replicas")
+	err = db.Delete("description", "match")
 	assert.NilError(t, err)
 
 	assertion := func(_db databases.Database) {
@@ -73,8 +69,6 @@ func TestDeleteAttributes(t *testing.T) {
 			{_db.Get().Match(), ""},
 			{_db.Get().Regex(), true},
 			{_db.Get().Local(), false},
-			{_db.Get().Min(), 0},
-			{_db.Get().Max(), 0},
 			{_db.Get().Application(), ""},
 		})
 	}

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/pkg/containers/core"
@@ -313,7 +314,7 @@ func TestImage_Remove_Integration(t *testing.T) {
 				require.NoError(t, err, "Base image pull must succeed")
 			}
 
-			err = backend.client.ImageTag(ctx, "alpine:latest", randomTag)
+			_, err = backend.client.ImageTag(ctx, client.ImageTagOptions{Source: "alpine:latest", Target: randomTag})
 			require.NoError(t, err, "Image tag must succeed")
 		}
 

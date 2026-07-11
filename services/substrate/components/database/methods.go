@@ -40,18 +40,16 @@ func (s *Service) Database(context iface.Context) (database iface.Database, err 
 			return nil, fmt.Errorf("getting config for match `%s` failed with: %s", context.Matcher, err)
 		}
 
-		// Create new db from config template
-		if database, err = db.New(s, s.DBFactory, context); err != nil {
+		// Open a remote handle; the first op first-touches the instance on a
+		// hoarder (which auctions the remaining replicas). No substrate-side
+		// placement pubsub anymore.
+		if database, err = db.New(s, s.hoarderClient, context, branch); err != nil {
 			return nil, fmt.Errorf("creating new database failed with: %s", err)
 		}
 
 		s.databasesLock.Lock()
 		s.databases[hash] = database
 		s.databasesLock.Unlock()
-
-		if err = s.pubsubDatabase(context, branch); err != nil {
-			return nil, fmt.Errorf("pubsubDatabase failed with: %w", err)
-		}
 
 		s.commitLock.Lock()
 		s.commits[hash] = commit

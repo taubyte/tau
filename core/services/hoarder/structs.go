@@ -1,26 +1,22 @@
 package hoarder
 
-type AuctionType int
-
-type MetaType int
+// ResourceKind identifies what a placement/registry entry is for. Global is a
+// project-wide database hosted by hoarders without per-resource TNS validation.
+type ResourceKind int
 
 const (
-	Database MetaType = iota
+	Database ResourceKind = iota
 	Storage
+	Global
 )
 
-const (
-	AuctionNew AuctionType = iota
-	AuctionIntent
-	AuctionOffer
-	AuctionEnd
-)
-
+// Auction carries a placement request: the resource kind plus the identity/
+// config metadata used to validate and hash the instance. Deterministic HRW
+// placement replaced the timed-bidding protocol this type is named after, so it
+// now only carries that request payload.
 type Auction struct {
-	Type     AuctionType
-	MetaType MetaType
+	MetaType ResourceKind
 	Meta     MetaData
-	Lottery  Lottery
 }
 
 type MetaData struct {
@@ -29,9 +25,4 @@ type MetaData struct {
 	ApplicationId string
 	Match         string
 	Branch        string
-}
-
-type Lottery struct {
-	HoarderId string
-	Number    uint64
 }

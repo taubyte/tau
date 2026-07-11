@@ -8,6 +8,7 @@ import (
 	"path"
 	"strconv"
 	"testing"
+	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
@@ -102,11 +103,22 @@ func TestCounters_Dreaming(t *testing.T) {
 	wd, err := os.Getwd()
 	assert.NilError(t, err)
 
-	err = u.RunFixture("compileFor", compile.BasicCompileFor{
-		ProjectId:  projectId,
-		ResourceId: functionId,
-		Paths:      []string{path.Join(wd, "fixtures", "ping.go")},
-	})
+	// The compile runs the source through a go-wasi build container. That
+	// container can transiently exit non-zero when the runtime is starved under
+	// back-to-back sweep load; the build itself is deterministic and idempotent,
+	// so retry it a few times before failing. ponytail: 3 tries, widen if the
+	// container starvation proves deeper than a transient hiccup.
+	for attempt := 0; ; attempt++ {
+		err = u.RunFixture("compileFor", compile.BasicCompileFor{
+			ProjectId:  projectId,
+			ResourceId: functionId,
+			Paths:      []string{path.Join(wd, "fixtures", "ping.go")},
+		})
+		if err == nil || attempt >= 2 {
+			break
+		}
+		time.Sleep(time.Second)
+	}
 	assert.NilError(t, err)
 
 	httpPort, err := u.GetPortHttp(u.Substrate().Node())

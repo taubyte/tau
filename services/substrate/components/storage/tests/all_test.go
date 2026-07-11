@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
@@ -18,13 +19,16 @@ import (
 
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
 
+	dsquery "github.com/ipfs/go-datastore/query"
+	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/core/services/substrate/components/storage"
-	"github.com/taubyte/tau/pkg/kvdb"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
 	storages "github.com/taubyte/tau/services/substrate/components/storage"
+	stcommon "github.com/taubyte/tau/services/substrate/components/storage/common"
 	_ "github.com/taubyte/tau/services/substrate/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
 
@@ -68,6 +72,7 @@ func TestAll_Dreaming(t *testing.T) {
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
+			"hoarder":   {},
 			"substrate": {},
 		},
 		Simples: map[string]dream.SimpleConfig{
@@ -86,8 +91,17 @@ func TestAll_Dreaming(t *testing.T) {
 	tnsClient, err := simple.TNS()
 	assert.NilError(t, err)
 
-	dbFactory := kvdb.New(u.Substrate().Node())
-	service, err := storages.New(u.Substrate(), dbFactory)
+	// Connect all nodes (in production the pnet swarm links substrate to the
+	// hoarders it reaches for the data plane).
+	u.Mesh()
+
+	hcli, err := hoarderClient.New(u.Context(), u.Substrate().Node())
+	assert.NilError(t, err)
+
+	// Let the substrate node discover the hoarder before driving remote ops.
+	time.Sleep(6 * time.Second)
+
+	service, err := storages.New(u.Substrate(), hcli)
 	assert.NilError(t, err)
 
 	testBuf := new(bytes.Buffer)
@@ -187,7 +201,18 @@ func TestAll_Dreaming(t *testing.T) {
 	}
 	context3.Context = service.Context()
 
-	storage, err := service.Storage(context)
+	// Poll until the just-published config has propagated to the substrate's TNS
+	// view (async under load) before driving ops — otherwise the first resolve
+	// races the publish and fails with "commit not found".
+	var storage storage.Storage
+	tnsDeadline := time.Now().Add(90 * time.Second)
+	for {
+		storage, err = service.Storage(context)
+		if err == nil || time.Now().After(tnsDeadline) {
+			break
+		}
+		time.Sleep(time.Second)
+	}
 	assert.NilError(t, err)
 
 	storage2, err := service.Storage(context2)
@@ -223,6 +248,17 @@ func TestAll_Dreaming(t *testing.T) {
 	// Add video1 as 'video'
 	version, err := storage.AddFile(u.Context(), video1, "video", false)
 	assert.NilError(t, err)
+
+	// PR3 cutover invariant: substrate holds no project data. File metadata lives
+	// in the remote hoarder kvdb and bytes are stashed to hoarders, so the
+	// substrate node's own datastore must have no crdt/<instanceHash> namespace.
+	storageHash, err := stcommon.GetStorageHash(context)
+	assert.NilError(t, err)
+	crdtRes, err := u.Substrate().Node().Store().Query(u.Context(), dsquery.Query{Prefix: "/crdt/" + storageHash, KeysOnly: true})
+	assert.NilError(t, err)
+	crdtEntries, err := crdtRes.Rest()
+	assert.NilError(t, err)
+	assert.Equal(t, len(crdtEntries), 0, "substrate node must hold no local crdt data after cutover")
 
 	// Video1 should be version 1 of "video"
 	if version != 1 {

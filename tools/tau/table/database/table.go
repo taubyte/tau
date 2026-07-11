@@ -32,9 +32,6 @@ func getTableData(database *structureSpec.Database, showId bool) (toRender [][]s
 		{"Encryption", strconv.FormatBool(secret)},
 		{"Access", ""},
 		getCloudDisplay(database.Local),
-		{"Replicas", ""},
-		{"\tMin", strconv.Itoa(int(database.Min))},
-		{"\tMax", strconv.Itoa(int(database.Max))},
 		{"Storage", ""},
 		{"\tSize", common.UnitsToString(database.Size)},
 	}...)

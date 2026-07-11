@@ -22,8 +22,6 @@ var TaubyteRessources = []*Node{
 				String("match"),
 				Bool("useRegex", Path("regex"), Compat("useRegex")),
 				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all")),
-				Int("replicas-min", Path("replicas", "min"), Default(1), MinInt(1)),
-				Int("replicas-max", Path("replicas", "max"), Default(3), MinInt(2)),
 				Bytes("size", Path("storage", "size")),
 				String("encryption-type", Path("encryption", "type")),
 				String("encryption-key", Path("encryption", "key")),

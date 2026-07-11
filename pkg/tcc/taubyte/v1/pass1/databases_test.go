@@ -16,8 +16,6 @@ func TestDatabases_WithSizeAndAccess(t *testing.T) {
 	dbSel.Set("id", "db-id-123")
 	dbSel.Set("size", "1GB")
 	dbSel.Set("network-access", "all")
-	dbSel.Set("replicas-max", "5")
-	dbSel.Set("replicas-min", "2")
 
 	transformer := Databases()
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
@@ -37,15 +35,6 @@ func TestDatabases_WithSizeAndAccess(t *testing.T) {
 	local, err := renamedDbSel.Get("local")
 	assert.NilError(t, err)
 	assert.Equal(t, local.(bool), false)
-
-	// Verify attributes moved
-	max, err := renamedDbSel.Get("max")
-	assert.NilError(t, err)
-	assert.Equal(t, max.(string), "5")
-
-	min, err := renamedDbSel.Get("min")
-	assert.NilError(t, err)
-	assert.Equal(t, min.(string), "2")
 
 	// Verify name set
 	name, err := renamedDbSel.Get("name")
@@ -79,23 +68,6 @@ func TestDatabases_WithHostAccess(t *testing.T) {
 	local, err := renamedDbSel.Get("local")
 	assert.NilError(t, err)
 	assert.Equal(t, local.(bool), true)
-}
-
-func TestDatabases_MaxLessThanMinError(t *testing.T) {
-	obj := object.New[object.Refrence]()
-	databasesObj, _ := obj.CreatePath("databases")
-	dbSel := databasesObj.Child("myDatabase")
-	dbSel.Set("id", "db-id-123")
-	dbSel.Set("replicas-min", 5)
-	dbSel.Set("replicas-max", 2)
-	dbSel.Set("size", "1GB")
-
-	transformer := Databases()
-	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
-	_, err := transformer.Process(ctx, obj)
-
-	assert.ErrorContains(t, err, "database myDatabase")
-	assert.ErrorContains(t, err, "max (2) must be >= min (5)")
 }
 
 func TestDatabases_NoDatabases(t *testing.T) {

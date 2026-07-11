@@ -7,8 +7,5 @@ match: profiles
 useRegex: false
 access:
     network: host
-replicas:
-    min: 42
-    max: 601
 storage:
     size: 45GB

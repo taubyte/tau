@@ -7,8 +7,5 @@ match: /users
 useRegex: true
 access:
     network: all
-replicas:
-    min: 15
-    max: 30
 storage:
     size: 5GB

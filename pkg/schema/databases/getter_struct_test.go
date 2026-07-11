@@ -25,8 +25,6 @@ func TestGetStruct(t *testing.T) {
 		{_struct.Match, "/users"},
 		{_struct.Regex, true},
 		{_struct.Local, false},
-		{_struct.Min, 15},
-		{_struct.Max, 30},
 		{len(_struct.SmartOps), 0},
 	})
 
@@ -44,8 +42,6 @@ func TestGetStruct(t *testing.T) {
 		{_struct.Match, "profiles"},
 		{_struct.Regex, false},
 		{_struct.Local, true},
-		{_struct.Min, 42},
-		{_struct.Max, 601},
 		{len(_struct.SmartOps), 0},
 	})
 }

@@ -29,7 +29,6 @@ var nameOverrides = map[string]string{
 // skipSet: emit the getter but NOT the setter — the write is folded into a
 // combined hand-written helper (Replicas/Channel/Bridges/Object/Streaming).
 var skipSet = keySet(
-	"databases.replicas-min", "databases.replicas-max",
 	"messaging.match", "messaging.regex", "messaging.mqtt", "messaging.websocket",
 	"storages.versioning", "storages.ttl",
 )

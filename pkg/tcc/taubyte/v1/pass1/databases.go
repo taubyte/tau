@@ -26,13 +26,6 @@ func (a *databases) Process(ct transform.Context[object.Refrence], o object.Obje
 	for _, ch := range os.Children() {
 		sel := os.Child(ch)
 
-		sel.Move("replicas-max", "max")
-		sel.Move("replicas-min", "min")
-
-		if err := utils.ValidateMinMax(sel, "min", "max"); err != nil {
-			return nil, fmt.Errorf("database %s: %w", ch, err)
-		}
-
 		accessType, err := sel.Get("network-access")
 		if err == nil {
 			if accessType == "host" {

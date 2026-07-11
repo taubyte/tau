@@ -59,8 +59,14 @@ func (m *Monkey) Run() {
 		}
 	}
 
-	if _, err = m.Service.hoarderClient.Stash(cid); err != nil {
-		logger.Errorf("Hoarding cid `%s` of job `%s` failed: %s", cid, m.Id, err.Error())
+	if f, ferr := m.Service.node.GetFile(m.Service.node.Context(), cid); ferr != nil {
+		logger.Errorf("Re-opening cid `%s` of job `%s` failed: %s", cid, m.Id, ferr.Error())
+	} else {
+		err = m.Service.hoarderClient.Stash(cid, f)
+		f.Close()
+		if err != nil {
+			logger.Errorf("Hoarding cid `%s` of job `%s` failed: %s", cid, m.Id, err.Error())
+		}
 	}
 
 }

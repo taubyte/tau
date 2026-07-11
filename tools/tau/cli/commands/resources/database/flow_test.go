@@ -42,7 +42,7 @@ func TestDatabaseFlow(t *testing.T) {
 			"--tags", "tag1",
 			"--match", "/path",
 			"--no-regex", "--no-local", "--no-encryption",
-			"--min", "1", "--max", "10", "--size", "1GB",
+			"--size", "1GB",
 			"--color", "never",
 		)
 		assert.NilError(t, err)

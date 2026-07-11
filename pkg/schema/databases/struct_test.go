@@ -23,8 +23,6 @@ func TestStructBasic(t *testing.T) {
 		Regex:       true,
 		Local:       false,
 		Key:         "123456",
-		Min:         15,
-		Max:         30,
 		Size:        3412331123213,
 		SmartOps:    []string{},
 	})

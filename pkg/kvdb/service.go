@@ -104,7 +104,7 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 	s.broadcaster, err = NewPubSubBroadcaster(s.closeCtx, f.node.Messaging(), path+"/broadcast")
 	if err != nil {
 		s.closeCtxC()
-		slogger.Fatal(err)
+		slogger.Error("kvdb broadcaster init failed with ", err)
 		return nil, err
 	}
 

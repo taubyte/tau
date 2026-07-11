@@ -25,8 +25,6 @@ type Getter interface {
 	Regex() bool
 	Local() bool
 	Secret() bool
-	Min() int
-	Max() int
 	Size() string
 	Encryption() (key string, keyType string)
 }

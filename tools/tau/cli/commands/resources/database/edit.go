@@ -27,8 +27,6 @@ func (link) Edit() common.Command {
 			flags.Local,
 			databaseFlags.Encryption,
 			databaseFlags.EncryptionKey,
-			databaseFlags.Min,
-			databaseFlags.Max,
 			flags.Size,
 			flags.SizeUnit,
 		),

@@ -242,11 +242,6 @@ func TestSessionRoundTrip(t *testing.T) {
 	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, mem, js.ValueOf("64GB")}))), "")
 	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, res, mem})).String(), "64GB")
 
-	// typed numeric field
-	dbMin := arr("databases", "test_database1")
-	minF := arr("replicas", "min")
-	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, dbMin, minF})).Int(), 15)
-
 	// compile reflects the edit
 	c := val(sessionCompileFn(js.Null(), []js.Value{h, masterOpts()}))
 	assert.Equal(t, errOf(c), "")
@@ -259,9 +254,7 @@ func TestSessionRoundTrip(t *testing.T) {
 	appMem := val(sessionGetFn(js.Null(), []js.Value{h, arr("applications", "test_app1", "functions", "test_function2"), mem}))
 	assert.Equal(t, appMem.String(), "23MB")
 
-	// exercise jsToGo across value kinds: number, bool, string array
-	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{h, dbMin, minF, js.ValueOf(20)}))), "")
-	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, dbMin, minF})).Int(), 20)
+	// exercise jsToGo across value kinds: bool, string array
 	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, arr("trigger", "local"), js.ValueOf(true)}))), "")
 	assert.Assert(t, val(sessionGetFn(js.Null(), []js.Value{h, res, arr("trigger", "local")})).Bool())
 	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, arr("tags"), js.ValueOf([]any{"a", "b"})}))), "")

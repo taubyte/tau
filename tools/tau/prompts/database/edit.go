@@ -28,11 +28,6 @@ func Edit(ctx *cli.Context, prev *structureSpec.Database) error {
 		prev.Key = ""
 	}
 
-	prev.Min, prev.Max, _, _, err = GetOrAskForMinMax(ctx, prev.Min, prev.Max, false)
-	if err != nil {
-		return err
-	}
-
 	sizeStr, err := prompts.GetSizeAndType(ctx, common.UnitsToString(prev.Size), false)
 	if err != nil {
 		return err

@@ -15,8 +15,6 @@ func (d *database) Prettify(p pretty.Prettier) map[string]interface{} {
 		"Regex":           getter.Regex(),
 		"Local":           getter.Local(),
 		"Secret":          getter.Secret(),
-		"Min":             getter.Min(),
-		"Max":             getter.Max(),
 		"Size":            getter.Size(),
 		"Encryption-Type": encType,
 	}

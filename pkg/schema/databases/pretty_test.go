@@ -20,8 +20,6 @@ func TestPretty(t *testing.T) {
 		"Id":              "database1ID",
 		"Local":           false,
 		"Match":           "/users",
-		"Max":             30,
-		"Min":             15,
 		"Name":            "test_database1",
 		"Regex":           true,
 		"Secret":          false,

@@ -61,19 +61,6 @@ func Encryption(key string) basic.Op {
 	}
 }
 
-func Replicas(min int, max int) basic.Op {
-	return func(c basic.ConfigIface) []*seer.Query {
-		replicas := c.Config().Get("replicas")
-		if min >= max {
-			panic("min replica cannot be greater than max")
-		}
-		return []*seer.Query{
-			replicas.Fork().Get("min").Set(min),
-			replicas.Fork().Get("max").Set(max),
-		}
-	}
-}
-
 func Storage(size string) basic.Op {
 	return func(c basic.ConfigIface) []*seer.Query {
 		return []*seer.Query{

@@ -13,9 +13,6 @@ match: testMatchglobal
 useRegex: true
 access:
     network: all
-replicas:
-    min: 1
-    max: 2
 storage:
     size: 5GB
 `
@@ -30,9 +27,6 @@ match: testMatchlocal
 useRegex: true
 access:
     network: all
-replicas:
-    min: 1
-    max: 2
 storage:
     size: 5GB
 `

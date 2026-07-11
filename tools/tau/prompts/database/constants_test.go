@@ -12,5 +12,4 @@ func TestConstants(t *testing.T) {
 	assert.Equal(t, CreateThis, "Create this database?")
 	assert.Equal(t, NoneFound, "no databases found")
 	assert.Assert(t, NotFound != "")
-	assert.Assert(t, MinCannotBeGreaterThanMax != "")
 }

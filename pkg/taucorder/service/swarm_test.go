@@ -13,6 +13,7 @@ import (
 	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/api"
+	"github.com/taubyte/tau/p2p/peer"
 	pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 	pbconnect "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1/taucorderv1connect"
 	srvcommon "github.com/taubyte/tau/services/common"
@@ -97,14 +98,33 @@ func TestSwarm_Dreaming(t *testing.T) {
 	t.Run("Discover service", func(t *testing.T) {
 		c := pbconnect.NewSwarmServiceClient(http.DefaultClient, "http://"+listener.Addr().String())
 
-		pstream, err := c.Discover(ctx, connect.NewRequest(&pb.DiscoverRequest{
-			Node:    ni.Msg,
-			Service: srvcommon.SeerProtocol,
-		}))
-		assert.NilError(t, err)
-		count := 0
-		for pstream.Receive() {
-			count++
+		// seer advertises "/seer/v1" through the DHT (discoveryUtil.Advertise) and
+		// Discover is a best-effort, point-in-time snapshot of currently
+		// discoverable providers (libp2p FindProviders) — the proto count is a
+		// max, not a target. Propagation is eventually consistent, so a single
+		// shot races under load (count observed as 0). Poll until the one seer
+		// provider converges. The deadline must clear the node's BackoffDiscovery
+		// window: once a namespace lookup returns nothing, re-queries are
+		// suppressed for minBackoff (60s), so a shorter deadline could not recover
+		// from a missed first lookup.
+		var count int
+		deadline := time.Now().Add(90 * time.Second)
+		for {
+			count = 0
+			pstream, err := c.Discover(ctx, connect.NewRequest(&pb.DiscoverRequest{
+				Node:    ni.Msg,
+				Service: srvcommon.SeerProtocol,
+			}))
+			if err == nil {
+				for pstream.Receive() {
+					count++
+				}
+				pstream.Close()
+			}
+			if count == 1 || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(250 * time.Millisecond)
 		}
 		assert.Equal(t, count, 1)
 	})
@@ -172,7 +192,21 @@ func TestSwarm_Dreaming(t *testing.T) {
 				assert.Equal(t, msg.GetPingStatus().GetUp(), true)
 				assert.Equal(t, int(msg.GetPingStatus().GetCountTotal()), 3)
 				assert.Equal(t, int(msg.GetPingStatus().GetCount()), 3)
-				assert.Equal(t, time.Duration(msg.GetPingStatus().GetLatency()) < 5*time.Millisecond, true)
+
+				// Latency is the average RTT (peer node Ping: sum/healthy) of the
+				// three pings above, plumbed through List -> ni.Ping -> PingStatus.
+				// Assert it is a real, measured, per-peer value -- positive and a
+				// sane in-window duration -- not that the box is fast. The RTT is an
+				// in-process libp2p round-trip dominated by goroutine scheduling, so
+				// a wall-clock "< 5ms" bound tests the host's scheduler and fails
+				// whenever the machine is loaded; worse, "< 5ms" also holds at
+				// latency 0, so it never caught an unmeasured/zero-value latency --
+				// the one thing this field must prove. A healthy ping's RTT is
+				// bounded by peer.PingTimeout, and Count == 3 above means all three
+				// were healthy, so their average is < peer.PingTimeout on any box.
+				latency := time.Duration(msg.GetPingStatus().GetLatency())
+				assert.Equal(t, latency > 0, true)
+				assert.Equal(t, latency < peer.PingTimeout, true)
 			}
 		}
 		assert.Equal(t, hit, true)
@@ -203,7 +237,15 @@ func TestSwarm_Dreaming(t *testing.T) {
 		assert.Equal(t, int(ret.Msg.GetPingStatus().GetCountTotal()), 5)
 		assert.Equal(t, int(ret.Msg.GetPingStatus().GetCount()), 5)
 		assert.Equal(t, ret.Msg.GetPingStatus().GetUp(), true)
-		assert.Equal(t, time.Duration(ret.Msg.GetPingStatus().GetLatency()) < 5*time.Millisecond, true)
+
+		// Same rationale as List peers (with ping): assert the latency is a real,
+		// measured value (positive) and a sane in-window duration, not a wall-clock
+		// "< 5ms" that only measures the host scheduler and also passes at 0. Count
+		// == 5 above means all five pings were healthy, each RTT < peer.PingTimeout,
+		// so their average is < peer.PingTimeout regardless of machine load.
+		latency := time.Duration(ret.Msg.GetPingStatus().GetLatency())
+		assert.Equal(t, latency > 0, true)
+		assert.Equal(t, latency < peer.PingTimeout, true)
 	})
 
 	t.Run("Ping peer (timeout)", func(t *testing.T) {

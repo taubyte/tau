@@ -31,7 +31,7 @@ func (p *PatrickService) ReannounceJobs(ctx context.Context) error {
 			var assignment Assignment
 			if err := cbor.Unmarshal(assignData, &assignment); err == nil {
 				// Still within the assignment window — don't re-push
-				repush = time.Now().Unix()-assignment.Timestamp > int64(DefaultReAnnounceJobTime.Seconds())
+				repush = time.Now().Unix()-assignment.Timestamp > int64(p.reAnnounceJobTime.Seconds())
 			}
 		}
 

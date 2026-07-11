@@ -26,10 +26,6 @@ func (a *databases) Process(ct transform.Context[object.Refrence], o object.Obje
 	for _, ch := range os.Children() {
 		sel := os.Child(ch)
 
-		// Reverse attribute moves
-		sel.Move("max", "replicas-max")
-		sel.Move("min", "replicas-min")
-
 		// Reverse local->network-access
 		local, err := sel.GetBool("local")
 		if err == nil {

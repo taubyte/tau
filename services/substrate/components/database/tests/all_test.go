@@ -9,7 +9,11 @@ import (
 	"os"
 	"regexp"
 	"testing"
+	"time"
 
+	dsquery "github.com/ipfs/go-datastore/query"
+	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
+	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
@@ -17,10 +21,10 @@ import (
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
-	"github.com/taubyte/tau/pkg/kvdb"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
 	service "github.com/taubyte/tau/services/substrate/components/database"
+	dbcommon "github.com/taubyte/tau/services/substrate/components/database/common"
 	_ "github.com/taubyte/tau/services/substrate/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"
 	tcc "github.com/taubyte/tau/utils/tcc"
@@ -68,6 +72,7 @@ func TestAll_Dreaming(t *testing.T) {
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
 			"tns":       {},
+			"hoarder":   {},
 			"substrate": {},
 		},
 		Simples: map[string]dream.SimpleConfig{
@@ -81,6 +86,10 @@ func TestAll_Dreaming(t *testing.T) {
 	assert.NilError(t, err)
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)
+
+	// Connect all nodes (in production the pnet swarm links substrate to the
+	// hoarders it reaches for the data plane).
+	u.Mesh()
 
 	// Use a temporary directory to avoid modifying any existing testGIT directories
 	gitRoot, err := os.MkdirTemp("", "testGIT-*")
@@ -162,12 +171,28 @@ func TestAll_Dreaming(t *testing.T) {
 		Matcher:   databaseMatch3,
 	}
 
-	dbFactory := kvdb.New(u.Substrate().Node())
-	/************************** Testing New Databases *********************************/
-	srv, err := service.New(u.Substrate(), dbFactory)
+	hcli, err := hoarderClient.New(u.Context(), u.Substrate().Node())
 	assert.NilError(t, err)
 
-	dbNew, err := srv.Database(context)
+	// Let the substrate node discover the hoarder before driving remote ops.
+	time.Sleep(6 * time.Second)
+
+	/************************** Testing New Databases *********************************/
+	srv, err := service.New(u.Substrate(), hcli)
+	assert.NilError(t, err)
+
+	// Poll until the just-published config has propagated to the substrate's TNS
+	// view (async under load) before driving ops — otherwise the first resolve
+	// races the publish and fails with "commit not found".
+	var dbNew db.Database
+	tnsDeadline := time.Now().Add(90 * time.Second)
+	for {
+		dbNew, err = srv.Database(context)
+		if err == nil || time.Now().After(tnsDeadline) {
+			break
+		}
+		time.Sleep(time.Second)
+	}
 	assert.NilError(t, err)
 	if dbNew == nil {
 		t.Error("Creating new database returned nil")
@@ -234,6 +259,17 @@ func TestAll_Dreaming(t *testing.T) {
 		}
 	}
 
+	// PR3 cutover invariant: substrate holds no project data. Every op above is
+	// backed by the remote hoarder kvdb, so the substrate node's own datastore
+	// must have no crdt/<instanceHash> namespace for this database.
+	hash, err := dbcommon.GetDatabaseHash(context)
+	assert.NilError(t, err)
+	crdtRes, err := u.Substrate().Node().Store().Query(u.Context(), dsquery.Query{Prefix: "/crdt/" + hash, KeysOnly: true})
+	assert.NilError(t, err)
+	crdtEntries, err := crdtRes.Rest()
+	assert.NilError(t, err)
+	assert.Equal(t, len(crdtEntries), 0, "substrate node must hold no local crdt data after cutover")
+
 	// Making sure kv2 does not connect to kv1
 	for key := range expectedMap {
 		_, err = kv2.Get(u.Context(), key)
@@ -293,8 +329,6 @@ func TestAll_Dreaming(t *testing.T) {
 			Regex:       true,
 			Local:       false,
 			Key:         "",
-			Min:         10,
-			Max:         50,
 			Size:        uint64(newDBSize),
 		},
 		&structureSpec.Database{
@@ -306,8 +340,6 @@ func TestAll_Dreaming(t *testing.T) {
 			Regex:       false,
 			Local:       false,
 			Key:         "",
-			Min:         1,
-			Max:         100,
 			Size:        uint64(newDBSize2),
 		},
 	)

@@ -15,8 +15,6 @@ type Database struct {
 	Regex bool `mapstructure:"useRegex"`
 	Local bool
 	Key   string
-	Min   int
-	Max   int
 	Size  uint64
 
 	// noset, this is parsed from the tags

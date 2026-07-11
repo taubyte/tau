@@ -3,7 +3,7 @@ package substrate
 import (
 	"context"
 
-	"github.com/taubyte/tau/core/kvdb"
+	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	iface "github.com/taubyte/tau/core/services/substrate"
 	p2pIface "github.com/taubyte/tau/core/services/substrate/components/p2p"
 	"github.com/taubyte/tau/core/services/tns"
@@ -24,14 +24,14 @@ type Service struct {
 	vm         vm.Service
 	components components
 
-	cluster   string
-	dev       bool
-	verbose   bool
-	databases kvdb.Factory
-	stream    streams.CommandService
+	cluster string
+	dev     bool
+	verbose bool
+	stream  streams.CommandService
 
-	tns      tns.Client
-	orbitals []vm.Plugin
+	hoarderClient hoarderIface.Client
+	tns           tns.Client
+	orbitals      []vm.Plugin
 
 	cpuCount   int
 	cpuAverage float64
