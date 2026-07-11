@@ -45,9 +45,64 @@ func (srv *Service) ServiceHandler(ctx context.Context, conn streams.Connection,
 		return srv.loadHandler(ctx, body)
 	case hoarderSpecs.ActionUnload:
 		return srv.unloadHandler(body)
+	case hoarderSpecs.ActionMetas:
+		return srv.metasHandler(ctx, body)
+	case hoarderSpecs.ActionStashStatus:
+		return srv.stashStatusHandler(ctx, body)
 	}
 
 	return nil, fmt.Errorf("action %s unknown", action)
+}
+
+// metasHandler resolves instance hashes to their placement identity records
+// (absent hashes are omitted). Read-only: a node that knows only a data-path
+// hash recovers the instance's (kind, project, app, match, branch) here.
+func (srv *Service) metasHandler(ctx context.Context, body command.Body) (cr.Response, error) {
+	hashes, err := maps.StringArray(body, hoarderSpecs.BodyHashes)
+	if err != nil {
+		return nil, fmt.Errorf("missing hashes: %w", err)
+	}
+	out := make(map[string]interface{}, len(hashes))
+	for _, h := range hashes {
+		meta, err := srv.getMeta(ctx, h)
+		if err != nil {
+			continue
+		}
+		out[h] = map[string]interface{}{
+			hoarderSpecs.BodyKind:    int(meta.Kind),
+			hoarderSpecs.BodyConfig:  meta.ConfigId,
+			hoarderSpecs.BodyProject: meta.ProjectId,
+			hoarderSpecs.BodyApp:     meta.ApplicationId,
+			hoarderSpecs.BodyMatch:   meta.Match,
+			hoarderSpecs.BodyBranch:  meta.Branch,
+		}
+	}
+	return cr.Response{hoarderSpecs.BodyMetas: out}, nil
+}
+
+// stashStatusHandler reports the LIVE stash claim count per requested CID
+// (0 when unknown) plus the current fleet-clamped stash target. Read-only: a
+// byte holder checks a CID reached its replica target before dropping its
+// local copy — claims by dead peers don't count toward durability, and the
+// holder can't compute the target itself (it doesn't see the hoarder fleet).
+func (srv *Service) stashStatusHandler(ctx context.Context, body command.Body) (cr.Response, error) {
+	cids, err := maps.StringArray(body, hoarderSpecs.BodyCids)
+	if err != nil {
+		return nil, fmt.Errorf("missing cids: %w", err)
+	}
+	out := make(map[string]interface{}, len(cids))
+	for _, cid := range cids {
+		claims, err := srv.listStashClaims(ctx, cid)
+		if err != nil {
+			out[cid] = 0
+			continue
+		}
+		out[cid] = len(srv.liveClaimants(claims))
+	}
+	return cr.Response{
+		hoarderSpecs.BodyClaims: out,
+		hoarderSpecs.BodyTarget: stashTarget(srv.fleetSize()),
+	}, nil
 }
 
 // instanceHashFromBody derives the instance hash from the {project, app, match}

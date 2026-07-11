@@ -12,6 +12,7 @@ import (
 
 	"github.com/taubyte/tau/p2p/peer"
 	http "github.com/taubyte/tau/pkg/http"
+	"github.com/taubyte/tau/services/substrate/migration"
 )
 
 var _ iface.Service = &Service{}
@@ -31,6 +32,7 @@ type Service struct {
 
 	hoarderClient hoarderIface.Client
 	tns           tns.Client
+	migrator      *migration.Migrator
 	orbitals      []vm.Plugin
 
 	cpuCount   int

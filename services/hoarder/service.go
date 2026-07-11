@@ -84,6 +84,11 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 		return nil, fmt.Errorf("starting reconcile failed with: %w", err)
 	}
 
+	// Adopt TNS-published assets that lack stash claims (see assets.go). Joined
+	// by Close via loopsWG like the other loops.
+	s.loopsWG.Add(1)
+	go func() { defer s.loopsWG.Done(); s.assetSweepLoop(loopCtx) }()
+
 	sc, err := seerClient.New(ctx, clientNode, cfg.SensorsRegistry())
 	if err != nil {
 		return nil, fmt.Errorf("new seer client failed with: %w", err)
