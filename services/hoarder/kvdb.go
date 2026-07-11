@@ -39,6 +39,8 @@ func (srv *Service) kvdbHandler(ctx context.Context, conn streams.Connection, bo
 		resp, err = srv.kvGet(ctx, handle, body)
 	case hoarderSpecs.KVPut:
 		resp, err = srv.kvPut(ctx, handle, hash, body)
+	case hoarderSpecs.KVPutNx:
+		resp, err = srv.kvPutNx(ctx, handle, hash, body)
 	case hoarderSpecs.KVDelete:
 		resp, err = srv.kvDelete(ctx, handle, hash, body)
 	case hoarderSpecs.KVList:
@@ -198,9 +200,55 @@ func (srv *Service) kvPut(ctx context.Context, handle kvdb.KVDB, hash string, bo
 	if err != nil {
 		return nil, fmt.Errorf("encrypting value failed with: %w", err)
 	}
-	if err := handle.Put(ctx, key, enc); err != nil {
+	// Local commit under the instance write lock so putnx's check-and-write is
+	// atomic against it; the replication barrier runs outside the lock.
+	mu := srv.writeLock(hash)
+	mu.Lock()
+	err = handle.Put(ctx, key, enc)
+	mu.Unlock()
+	if err != nil {
 		return nil, fmt.Errorf("put failed with: %w", err)
 	}
+	srv.replicateWrite(ctx, hash, body)
+	return cr.Response{}, nil
+}
+
+// kvPutNx writes the key only if it is absent, atomically against concurrent
+// writes on this node (put/delete/batch share the same per-instance write
+// lock). Used when older data is replayed into a live instance: a value written
+// through the normal path must never be overwritten by the replay, so the
+// replay writes conditionally. Response carries existed=true when the key was
+// already present and nothing was written (no replication either).
+func (srv *Service) kvPutNx(ctx context.Context, handle kvdb.KVDB, hash string, body command.Body) (cr.Response, error) {
+	key, err := maps.String(body, hoarderSpecs.BodyKey)
+	if err != nil {
+		return nil, err
+	}
+	value, err := maps.ByteArray(body, hoarderSpecs.BodyValue)
+	if err != nil {
+		return nil, fmt.Errorf("missing value: %w", err)
+	}
+	if err := srv.admitWrite(maps.TryString(body, hoarderSpecs.BodyProject), len(value)); err != nil {
+		return cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeOverCapacity}, nil
+	}
+	enc, err := srv.cipherEncrypt(value)
+	if err != nil {
+		return nil, fmt.Errorf("encrypting value failed with: %w", err)
+	}
+
+	mu := srv.writeLock(hash)
+	mu.Lock()
+	if cur, gerr := handle.Get(ctx, key); gerr == nil && cur != nil {
+		mu.Unlock()
+		return cr.Response{hoarderSpecs.BodyExisted: true}, nil
+	}
+	err = handle.Put(ctx, key, enc)
+	mu.Unlock()
+	if err != nil {
+		return nil, fmt.Errorf("putnx failed with: %w", err)
+	}
+	// Replicated as putnx too: the co-owner nx-checks its own state, so a value
+	// it already holds through the normal path is never clobbered there either.
 	srv.replicateWrite(ctx, hash, body)
 	return cr.Response{}, nil
 }
@@ -210,7 +258,11 @@ func (srv *Service) kvDelete(ctx context.Context, handle kvdb.KVDB, hash string,
 	if err != nil {
 		return nil, err
 	}
-	if err := handle.Delete(ctx, key); err != nil {
+	mu := srv.writeLock(hash)
+	mu.Lock()
+	err = handle.Delete(ctx, key)
+	mu.Unlock()
+	if err != nil {
 		return nil, fmt.Errorf("delete failed with: %w", err)
 	}
 	srv.replicateWrite(ctx, hash, body)
@@ -346,6 +398,23 @@ func (srv *Service) kvBatch(ctx context.Context, handle kvdb.KVDB, hash string, 
 		return nil, fmt.Errorf("missing or malformed ops")
 	}
 
+	// Build + commit under the instance write lock (local work only); the
+	// replication barrier runs after release.
+	mu := srv.writeLock(hash)
+	mu.Lock()
+	resp, err := srv.applyBatch(ctx, handle, body, rawOps)
+	mu.Unlock()
+	if resp != nil || err != nil {
+		return resp, err
+	}
+	srv.replicateWrite(ctx, hash, body)
+	return cr.Response{}, nil
+}
+
+// applyBatch builds and commits the grouped ops. Runs under the instance write
+// lock. A non-nil response is a typed refusal (over-capacity); (nil, nil) is
+// success.
+func (srv *Service) applyBatch(ctx context.Context, handle kvdb.KVDB, body command.Body, rawOps []interface{}) (cr.Response, error) {
 	batch, err := handle.Batch(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("opening batch failed with: %w", err)
@@ -389,8 +458,7 @@ func (srv *Service) kvBatch(ctx context.Context, handle kvdb.KVDB, hash string, 
 	if err := batch.Commit(); err != nil {
 		return nil, fmt.Errorf("batch commit failed with: %w", err)
 	}
-	srv.replicateWrite(ctx, hash, body)
-	return cr.Response{}, nil
+	return nil, nil
 }
 
 func (srv *Service) kvSync(ctx context.Context, handle kvdb.KVDB, body command.Body) (cr.Response, error) {

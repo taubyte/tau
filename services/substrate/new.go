@@ -19,6 +19,7 @@ import (
 	orbit "github.com/taubyte/tau/pkg/vm-orbit/satellite/vm"
 	seer "github.com/taubyte/tau/pkg/yaseer"
 	protocolCommon "github.com/taubyte/tau/services/common"
+	"github.com/taubyte/tau/services/substrate/migration"
 )
 
 var (
@@ -65,6 +66,13 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	if srv.hoarderClient, err = hoarderClient.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("creating hoarder client failed with %w", err)
 	}
+
+	// Move any node-local project data (an upgraded node's databases, storage
+	// metadata and file bytes) to the hoarders before serving: bounded
+	// synchronous pass, background continuation past the bound. Fresh nodes
+	// pay one empty prefix query.
+	srv.migrator = migration.New(ctx, srv.node, srv.hoarderClient, srv.tns)
+	srv.migrator.Boot()
 
 	if err = srv.startVm(); err != nil {
 		return nil, fmt.Errorf("starting vm failed with %w", err)

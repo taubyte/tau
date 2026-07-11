@@ -20,6 +20,7 @@ import (
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	"github.com/taubyte/tau/pkg/config"
 	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
+	multihash "github.com/taubyte/tau/utils/multihash"
 
 	peer "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/services/common"
@@ -225,7 +226,44 @@ func TestHoarderClient(t *testing.T) {
 	if kv.Factory() != nil {
 		t.Fatal("remote Factory should be nil")
 	}
+
+	// Conditional write: only the first putnx of a key lands; a later one
+	// reports existed and never overwrites.
+	nx, ok := kv.(hoarderIface.NxKVDB)
+	if !ok {
+		t.Fatal("remote handle must support conditional writes")
+	}
+	if existed, err := nx.PutNx(kctx, "cond", []byte("first")); err != nil || existed {
+		t.Fatalf("first PutNx = existed %v, %v", existed, err)
+	}
+	if existed, err := nx.PutNx(kctx, "cond", []byte("second")); err != nil || !existed {
+		t.Fatalf("second PutNx = existed %v, %v", existed, err)
+	}
+	if v, err := kv.Get(kctx, "cond"); err != nil || string(v) != "first" {
+		t.Fatalf("PutNx overwrote: %q, %v", v, err)
+	}
 	kv.Close()
+
+	// Metas resolves the placement identity of a hash recorded by first-touch;
+	// unknown hashes are omitted.
+	kvHash := multihash.Hash("kvproj" + "" + "/kv")
+	metas, err := hc.Metas(kvHash, "unknown-hash")
+	if err != nil {
+		t.Fatalf("Metas: %v", err)
+	}
+	if len(metas) != 1 || metas[0].Hash != kvHash ||
+		metas[0].Kind != hoarderIface.Global || metas[0].Meta.ProjectId != "kvproj" || metas[0].Meta.Match != "/kv" {
+		t.Fatalf("Metas = %+v", metas)
+	}
+
+	// StashStatus reports live claims for the stashed cid and the fleet target.
+	claims, target, err := hc.StashStatus(cid, "unknown-cid")
+	if err != nil {
+		t.Fatalf("StashStatus: %v", err)
+	}
+	if target != 1 || claims[cid] != 1 || claims["unknown-cid"] != 0 {
+		t.Fatalf("StashStatus = %v target %d", claims, target)
+	}
 }
 
 // TestHoarderClient_BadAck points the client at a hoarder that accepts the push

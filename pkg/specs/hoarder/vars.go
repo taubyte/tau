@@ -48,4 +48,19 @@ var (
 	// DefaultStashReplicas is the target replica count for stashed CIDs when
 	// the caller does not specify one.
 	DefaultStashReplicas = 2
+
+	// AssetSweepRetries bounds how many times the boot-time asset sweep retries
+	// a failing TNS listing before giving up until the next boot.
+	AssetSweepRetries = 10
+
+	// AssetSweepRetryInterval is the backoff between asset-sweep TNS retries.
+	AssetSweepRetryInterval = 6 * time.Second
+
+	// AssetSweepFetchTimeout bounds fetching one asset's bytes during the sweep.
+	AssetSweepFetchTimeout = 2 * time.Minute
+
+	// AssetSweepInterval is the period of the recurring asset sweep after the
+	// boot pass — the self-heal for an asset published while every push to the
+	// stash failed (e.g. the fleet was unreachable during a build).
+	AssetSweepInterval = 10 * time.Minute
 )

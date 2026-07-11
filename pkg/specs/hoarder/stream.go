@@ -22,6 +22,11 @@ const (
 	BodyApp     = "application"
 	BodyMatch   = "match"
 	BodyPeers   = "peers"
+	BodyHashes  = "hashes"
+	BodyCids    = "cids"
+	BodyMetas   = "metas"
+	BodyClaims  = "claims"
+	BodyConfig  = "configId"
 
 	ActionRare     = "rare"
 	ActionList     = "list"
@@ -29,6 +34,13 @@ const (
 	ActionStatus   = "status"
 	ActionLoad     = "load"
 	ActionUnload   = "unload"
+	// ActionMetas resolves instance hashes to their placement identity records —
+	// lets a node that knows only a data-path hash recover (kind, project, app,
+	// match, branch).
+	ActionMetas = "metas"
+	// ActionStashStatus reports the live stash claim count per CID — lets a byte
+	// holder confirm a CID is replicated before dropping its local copy.
+	ActionStashStatus = "stashStatus"
 )
 
 // KVDBCommand is the remote data-plane route. Body carries {kind, project,
@@ -70,7 +82,14 @@ const (
 	KVBatch     = "batch"
 	KVListRegex = "listRegex"
 	KVSync      = "sync"
+	// KVPutNx writes the key only if absent, atomically against concurrent
+	// writes on the serving replica. The response carries BodyExisted=true when
+	// the key was already present and nothing was written.
+	KVPutNx = "putnx"
 )
+
+// BodyExisted is set true on a putnx response when the key already existed.
+const BodyExisted = "existed"
 
 // Typed result codes carried in the response's BodyCode field for control-flow
 // signals the client routes on (never as free text). A response with no BodyCode

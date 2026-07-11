@@ -25,13 +25,32 @@ type loader struct {
 	lock    sync.Mutex
 	loaded  map[string]*loadedInstance
 	claimed map[string]bool
+	// writeLocks serialize an instance's local write commits (put/putnx/delete/
+	// batch) so putnx's check-and-write is atomic against concurrent writers on
+	// this node. Locks live for the process — tying them to load/unload would
+	// let a racing writer hold a stale lock while a fresh one is handed out.
+	writeLocks map[string]*sync.Mutex
 }
 
 func newLoader() *loader {
 	return &loader{
-		loaded:  make(map[string]*loadedInstance),
-		claimed: make(map[string]bool),
+		loaded:     make(map[string]*loadedInstance),
+		claimed:    make(map[string]bool),
+		writeLocks: make(map[string]*sync.Mutex),
 	}
+}
+
+// writeLock returns the per-instance write mutex. Held across the LOCAL commit
+// only — never across the replication barrier's network round-trip.
+func (srv *Service) writeLock(hash string) *sync.Mutex {
+	srv.ldr.lock.Lock()
+	defer srv.ldr.lock.Unlock()
+	mu, ok := srv.ldr.writeLocks[hash]
+	if !ok {
+		mu = new(sync.Mutex)
+		srv.ldr.writeLocks[hash] = mu
+	}
+	return mu
 }
 
 func (srv *Service) markClaimed(hash string) {

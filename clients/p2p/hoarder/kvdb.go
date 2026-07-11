@@ -48,6 +48,7 @@ type remoteKV struct {
 }
 
 var _ coreKvdb.KVDB = (*remoteKV)(nil)
+var _ hoarderIface.NxKVDB = (*remoteKV)(nil)
 
 func (r *remoteKV) instanceBody() command.Body {
 	return command.Body{
@@ -235,6 +236,18 @@ func (r *remoteKV) Get(ctx context.Context, key string) ([]byte, error) {
 func (r *remoteKV) Put(ctx context.Context, key string, v []byte) error {
 	_, err := r.do(ctx, command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPut, hoarderSpecs.BodyKey: key, hoarderSpecs.BodyValue: v})
 	return err
+}
+
+// PutNx writes the key only if absent on the serving replica, atomically
+// against concurrent writes there. Returns existed=true when the key was
+// already present (nothing written).
+func (r *remoteKV) PutNx(ctx context.Context, key string, v []byte) (bool, error) {
+	resp, err := r.do(ctx, command.Body{hoarderSpecs.BodyKVOp: hoarderSpecs.KVPutNx, hoarderSpecs.BodyKey: key, hoarderSpecs.BodyValue: v})
+	if err != nil {
+		return false, err
+	}
+	existed, _ := maps.Bool(resp, hoarderSpecs.BodyExisted)
+	return existed, nil
 }
 
 func (r *remoteKV) Delete(ctx context.Context, key string) error {
