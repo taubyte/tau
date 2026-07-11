@@ -32,7 +32,6 @@ func ExampleDatabase() {
 		databases.Match("/users"),
 		databases.Regex(true),
 		databases.Local(false),
-		databases.Replicas(2, 6),
 		databases.Storage("50Kb"),
 	)
 	if err != nil {
@@ -61,9 +60,6 @@ func ExampleDatabase() {
 	// useRegex: true
 	// access:
 	//     network: all
-	// replicas:
-	//     min: 2
-	//     max: 6
 	// storage:
 	//     size: 50Kb
 }

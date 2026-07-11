@@ -172,7 +172,16 @@ func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connec
 		return nil, fmt.Errorf("queue pop: %w", err)
 	}
 
-	job, err := p.getJob(ctx, "/jobs/", id)
+	// The job is already popped from the raft queue, so it must be fully
+	// assigned or it is stranded (popped-but-unassigned) until ReAnnounce
+	// re-homes it — a slow, avoidable round-trip. The pop is destructive, so
+	// finish the read + durable assignment write on a detached, bounded context:
+	// a request-ctx cancellation after the pop (e.g. the caller stream tearing
+	// down) must not abandon the assignment.
+	opCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+
+	job, err := p.getJob(opCtx, "/jobs/", id)
 	if err != nil {
 		return nil, fmt.Errorf("get job %s after pop: %w", id, err)
 	}
@@ -187,7 +196,7 @@ func (p *PatrickService) dequeueHandler(ctx context.Context, conn streams.Connec
 		return nil, fmt.Errorf("marshal assignment: %w", err)
 	}
 
-	if err := p.db.Put(ctx, "/assigned/"+id, assignData); err != nil {
+	if err := p.db.Put(opCtx, "/assigned/"+id, assignData); err != nil {
 		return nil, fmt.Errorf("record assignment for %s: %w", id, err)
 	}
 

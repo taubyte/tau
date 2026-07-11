@@ -30,8 +30,6 @@ func TestDatabases_WithDatabases(t *testing.T) {
 	db1 := object.New[object.Refrence]()
 	db1.Set("name", "my-database")
 	db1.Set("id", "db-id-1")
-	db1.Set("replicas-max", 5)
-	db1.Set("replicas-min", 2)
 	db1.Set("local", false)
 	db1.Set("size", 10737418240) // 10GB in bytes (integer)
 	err := databasesObj.Child("db-id-1").Add(db1)
@@ -49,13 +47,6 @@ func TestDatabases_WithDatabases(t *testing.T) {
 	assert.NilError(t, err)
 	resultDb1, err := resultDatabases.Child("my-database").Object()
 	assert.NilError(t, err)
-
-	// Should have moved attributes (from max to replicas-max, etc.)
-	replicasMax := resultDb1.Get("replicas-max")
-	assert.Equal(t, replicasMax, 5)
-
-	replicasMin := resultDb1.Get("replicas-min")
-	assert.Equal(t, replicasMin, 2)
 
 	// Should have converted local to network-access
 	networkAccess, err := resultDb1.GetString("network-access")

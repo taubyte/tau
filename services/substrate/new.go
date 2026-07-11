@@ -10,10 +10,10 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/shirou/gopsutil/v4/cpu"
+	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	"github.com/taubyte/tau/core/vm"
 	tauConfig "github.com/taubyte/tau/pkg/config"
-	"github.com/taubyte/tau/pkg/kvdb"
 	tbPlugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 	smartopsPlugins "github.com/taubyte/tau/pkg/vm-ops-orbit"
 	orbit "github.com/taubyte/tau/pkg/vm-orbit/satellite/vm"
@@ -43,11 +43,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 		}
 	}
 
-	srv.databases = cfg.Databases()
-	if srv.databases == nil {
-		srv.databases = kvdb.New(srv.node)
-	}
-
 	clientNode := srv.node
 	if cfg.ClientNode() != nil {
 		clientNode = cfg.ClientNode()
@@ -65,6 +60,10 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 
 	if srv.tns, err = tnsClient.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("creating tns client failed with %w", err)
+	}
+
+	if srv.hoarderClient, err = hoarderClient.New(ctx, clientNode); err != nil {
+		return nil, fmt.Errorf("creating hoarder client failed with %w", err)
 	}
 
 	if err = srv.startVm(); err != nil {

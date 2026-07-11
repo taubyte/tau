@@ -182,12 +182,13 @@ func TestPubSubBroadcaster_TopicRegistrationAndUnregistration(t *testing.T) {
 	psub := mockNode.Messaging()
 
 	topic := "testTopicRegistration"
+	key := broadcasterKey{psub: psub, topic: topic}
 	_, err := NewPubSubBroadcaster(ctx, psub, topic)
 	if err != nil {
 		t.Fatalf("Failed to create new PubSubBroadcaster: %v", err)
 	}
 
-	if getTopic(topic) == nil {
+	if getTopic(key) == nil {
 		t.Errorf("Expected topic '%s' to be registered", topic)
 	}
 
@@ -195,7 +196,7 @@ func TestPubSubBroadcaster_TopicRegistrationAndUnregistration(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond) // Give some time for the goroutine to unregister the topic
 
-	if getTopic(topic) != nil {
+	if getTopic(key) != nil {
 		t.Errorf("Expected topic '%s' to be unregistered after context cancellation", topic)
 	}
 }

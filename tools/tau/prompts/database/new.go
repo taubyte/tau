@@ -37,11 +37,6 @@ func New(ctx *cli.Context) (*structureSpec.Database, error) {
 		}
 	}
 
-	database.Min, database.Max, _, _, err = GetOrAskForMinMax(ctx, 0, 0, true)
-	if err != nil {
-		return nil, err
-	}
-
 	sizeStr, err := prompts.GetSizeAndType(ctx, "", true)
 	if err != nil {
 		return nil, err

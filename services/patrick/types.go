@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"time"
 
 	iface "github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/p2p/peer"
@@ -32,6 +33,11 @@ type PatrickService struct {
 	db           kvdb.KVDB
 	dbFactory    kvdb.Factory
 	devMode      bool
+	// reAnnounceJobTime is captured per-service at construction (from the
+	// DefaultReAnnounceJobTime default, or 5s in dev mode). It replaces a former
+	// runtime mutation of the package global, which raced across concurrent
+	// service instances.
+	reAnnounceJobTime time.Duration
 
 	cluster        string
 	raftCluster    raft.Cluster

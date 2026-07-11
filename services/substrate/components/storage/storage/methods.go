@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/ipfs/go-cid"
+	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	"github.com/taubyte/tau/services/substrate/components/storage/common"
 	pathUtil "github.com/taubyte/tau/utils/path"
 
@@ -126,11 +127,23 @@ func (s *Store) AddFile(ctx context.Context, r io.ReadSeeker, name string, repla
 		return
 	}
 
+	// Compute the CID locally, stash the bytes to hoarders (owned by this
+	// storage instance), then drop the local copy — substrate holds no data.
 	cid, err := s.srv.Node().AddFile(r)
 	if err != nil {
 		err = fmt.Errorf("adding file to peer node failed with: %w", err)
 		return
 	}
+
+	if _, err = r.Seek(0, io.SeekStart); err != nil {
+		err = fmt.Errorf("seeking to start of file before stash failed with: %w", err)
+		return
+	}
+	if err = s.hoarderClient.Stash(cid, r, hoarderIface.WithOwner(s.id)); err != nil {
+		err = fmt.Errorf("stashing file to hoarder failed with: %w", err)
+		return
+	}
+	s.srv.Node().DeleteFile(cid) //nolint:errcheck // best-effort local drop
 
 	if err = s.put(ctx, path.Join(storageSpec.FilePath.String(), name, versionString), []byte(cid)); err != nil {
 		err = fmt.Errorf("adding file cid to database failed with: %w", err)

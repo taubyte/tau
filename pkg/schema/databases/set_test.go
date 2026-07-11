@@ -6,7 +6,6 @@ import (
 	"github.com/taubyte/tau/pkg/schema/databases"
 	internal "github.com/taubyte/tau/pkg/schema/internal/test"
 	"gotest.tools/v3/assert"
-	"gotest.tools/v3/assert/cmp"
 )
 
 func TestSetBasic(t *testing.T) {
@@ -35,7 +34,6 @@ func TestSetBasic(t *testing.T) {
 		databases.Match(match),
 		databases.Regex(regex),
 		databases.Local(local),
-		databases.Replicas(0, 10),
 	)
 	assert.NilError(t, err)
 
@@ -48,8 +46,6 @@ func TestSetBasic(t *testing.T) {
 			{_db.Get().Match(), match},
 			{_db.Get().Regex(), regex},
 			{_db.Get().Local(), local},
-			{_db.Get().Min(), 0},
-			{_db.Get().Max(), 10},
 			{_db.Get().Application(), ""},
 		})
 	}
@@ -87,7 +83,6 @@ func TestSetInApp(t *testing.T) {
 		databases.Match(match),
 		databases.Regex(regex),
 		databases.Local(local),
-		databases.Replicas(0, 10),
 	)
 	assert.NilError(t, err)
 
@@ -100,8 +95,6 @@ func TestSetInApp(t *testing.T) {
 			{_db.Get().Match(), match},
 			{_db.Get().Regex(), regex},
 			{_db.Get().Local(), local},
-			{_db.Get().Min(), 0},
-			{_db.Get().Max(), 10},
 			{_db.Get().Application(), "test_app1"},
 		})
 	}
@@ -129,9 +122,4 @@ func TestSetMisc(t *testing.T) {
 	err = db.Set(true, databases.SmartOps([]string{"smart1", "smart2"}))
 	assert.NilError(t, err)
 	assert.Equal(t, len(db.Get().SmartOps()), 2)
-
-	assert.Check(t, cmp.Panics(func() {
-		db.Set(true, databases.Replicas(10, 0))
-	}))
-
 }

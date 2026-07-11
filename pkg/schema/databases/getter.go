@@ -60,14 +60,6 @@ func (g getter) Encryption() (key string, keyType string) {
 	return
 }
 
-func (g getter) Min() int {
-	return basic.Get[int](g, "replicas", "min")
-}
-
-func (g getter) Max() int {
-	return basic.Get[int](g, "replicas", "max")
-}
-
 func (g getter) Size() string {
 	return basic.Get[string](g, "storage", "size")
 }

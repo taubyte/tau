@@ -54,7 +54,5 @@ func (d *database) SetWithStruct(sync bool, db *structureSpec.Database) error {
 		return fmt.Errorf("appending values failed with: %s", err)
 	}
 
-	ops = append(ops, Replicas(db.Min, db.Max))
-
 	return d.Set(sync, ops...)
 }

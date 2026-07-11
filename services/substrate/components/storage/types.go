@@ -3,8 +3,7 @@ package substrate
 import (
 	"sync"
 
-	"github.com/ipfs/go-log/v2"
-	"github.com/taubyte/tau/core/kvdb"
+	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	nodeIface "github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/core/services/substrate/components"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
@@ -12,16 +11,14 @@ import (
 
 var _ components.ServiceComponent = &Service{}
 
-type storageMethod func(storageIface.Service, kvdb.Factory, storageIface.Context, log.StandardLogger, map[string]kvdb.KVDB) (storageIface.Storage, error)
+type storageMethod func(storageIface.Service, hoarderIface.Client, storageIface.Context, string) (storageIface.Storage, error)
 
 type Service struct {
 	nodeIface.Service
-	dbFactory     kvdb.Factory
+	hoarderClient hoarderIface.Client
 	storages      map[string]storageIface.Storage
 	storagesLock  sync.RWMutex
 	storageMethod storageMethod
-	matcherLock   sync.RWMutex
-	matcher       map[string]kvdb.KVDB
 
 	commitLock sync.RWMutex
 	commits    map[string]string
@@ -37,15 +34,12 @@ func (s *Service) CheckTns(components.MatchDefinition) ([]components.Serviceable
 
 func (s *Service) Close() error {
 	s.storagesLock.Lock()
-	s.matcherLock.Lock()
 	s.commitLock.Lock()
 
 	s.storages = nil
-	s.matcher = nil
 	s.commits = nil
 
 	s.storagesLock.Unlock()
-	s.matcherLock.Unlock()
 	s.commitLock.Unlock()
 
 	return nil

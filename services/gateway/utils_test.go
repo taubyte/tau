@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"testing"
+	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
@@ -104,29 +105,42 @@ func testSingleFunction(t *testing.T, call, method, fileName string, body []byte
 	substrateUrl := fmt.Sprintf("http://%s:%d/%s", fqdn, substratePort, requestPath)
 	gatewayUrl := fmt.Sprintf("http://%s:%d/%s", fqdn, gatewayPort, requestPath)
 
-	switch method {
-	case "GET":
-		_, err = httpClient.Get(substrateUrl)
-		assert.NilError(t, err)
-
-		res, err = httpClient.Get(gatewayUrl)
-		assert.NilError(t, err)
-
-	case "POST":
-		buffer := bytes.NewBuffer(body)
-		_, err = httpClient.Post(substrateUrl, "text/plain", buffer)
-		assert.NilError(t, err)
-
-		buffer = bytes.NewBuffer(body)
-		res, err = httpClient.Post(gatewayUrl, "text/plain", buffer)
-		assert.NilError(t, err)
-	default:
+	if method != "GET" && method != "POST" {
 		t.Errorf("method `%s` not supported", method)
 		t.FailNow()
 	}
 
-	proxyPid := res.Header.Get(gateway.ProxyHeader)
-	assert.Equal(t, proxyPid, firstSubstrate.Node().ID().String())
+	// Warm the substrate directly.
+	switch method {
+	case "GET":
+		_, err = httpClient.Get(substrateUrl)
+	case "POST":
+		_, err = httpClient.Post(substrateUrl, "text/plain", bytes.NewBuffer(body))
+	}
+	assert.NilError(t, err)
+
+	// The gateway proxies to a substrate it discovers over p2p; right after boot
+	// (and under back-to-back sweep load) that discovery can lag the first
+	// request, so the proxy header comes back empty. Poll until the gateway has
+	// resolved the substrate rather than racing a single shot — a real failure to
+	// discover still fails the assertion when the deadline elapses.
+	wantPid := firstSubstrate.Node().ID().String()
+	deadline := time.Now().Add(30 * time.Second)
+	for {
+		switch method {
+		case "GET":
+			res, err = httpClient.Get(gatewayUrl)
+		case "POST":
+			res, err = httpClient.Post(gatewayUrl, "text/plain", bytes.NewBuffer(body))
+		}
+		assert.NilError(t, err)
+		if res.Header.Get(gateway.ProxyHeader) == wantPid || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+
+	assert.Equal(t, res.Header.Get(gateway.ProxyHeader), wantPid)
 
 	return
 }

@@ -2,28 +2,25 @@ package hoarder
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path"
 
-	"github.com/fxamacker/cbor/v2"
-	pubsub "github.com/libp2p/go-libp2p-pubsub"
+	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	seerIface "github.com/taubyte/tau/core/services/seer"
+	streamClient "github.com/taubyte/tau/p2p/streams/client"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb"
-	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
 func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Service, err error) {
 	s := &Service{
-		auctions:       make(auctionStore),
-		auctionHistory: make(auctionHistory),
-		lotteryPool:    make(lotteryPool),
+		ldr:     newLoader(),
+		members: make(map[string]*member),
 	}
 
 	defer func() {
@@ -45,6 +42,8 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 		clientNode = cfg.ClientNode()
 	}
 
+	s.zone = cfg.Cluster()
+
 	if s.stream, err = streams.New(s.node, protocolCommon.Hoarder, protocolCommon.HoarderProtocol); err != nil {
 		return nil, fmt.Errorf("new command service failed with: %w", err)
 	}
@@ -60,12 +59,29 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 	s.setupStreamRoutes()
 	s.stream.Start()
 
-	if err = s.subscribe(ctx); err != nil {
-		return nil, fmt.Errorf("pubsub subscribe failed with: %w", err)
-	}
-
 	if s.tnsClient, err = tnsApi.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("creating new tns client failed with: %w", err)
+	}
+
+	if s.stashClient, err = hoarderClient.New(ctx, clientNode); err != nil {
+		return nil, fmt.Errorf("creating hoarder fan-out client failed with: %w", err)
+	}
+
+	if s.kvStream, err = streamClient.New(clientNode, protocolCommon.HoarderProtocol); err != nil {
+		return nil, fmt.Errorf("creating hoarder kvdb replication client failed with: %w", err)
+	}
+
+	// Recover what this node already holds, then start membership + reconcile.
+	// They share a cancelable context so Close stops them before tearing down the
+	// state they read.
+	s.recoverClaims(ctx)
+	var loopCtx context.Context
+	loopCtx, s.reconcileCancel = context.WithCancel(ctx)
+	if err = s.startMembership(loopCtx); err != nil {
+		return nil, fmt.Errorf("starting membership failed with: %w", err)
+	}
+	if err = s.startReconcile(loopCtx); err != nil {
+		return nil, fmt.Errorf("starting reconcile failed with: %w", err)
 	}
 
 	sc, err := seerClient.New(ctx, clientNode, cfg.SensorsRegistry())
@@ -77,6 +93,11 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
 
+	// Cipher bootstrap (see cipher.go / cipher_ee.go).
+	if err = s.cipherInit(ctx, clientNode); err != nil {
+		return nil, fmt.Errorf("initializing at-rest cipher failed with: %w", err)
+	}
+
 	service = s
 	return
 }
@@ -84,59 +105,37 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 func (srv *Service) Close() error {
 	logger.Info("Closing", protocolCommon.Hoarder)
 	defer logger.Info(protocolCommon.Hoarder, "closed")
+
+	// Stop membership + reconcile first so they don't touch state we're tearing
+	// down.
+	if srv.reconcileCancel != nil {
+		srv.reconcileCancel()
+	}
+	// Join the loops before tearing down the state they read (db, loader,
+	// clients): cancel only signals them, a loop may still be mid-iteration.
+	srv.loopsWG.Wait()
 	if srv.stream != nil {
 		srv.stream.Stop()
+	}
+
+	// Close per-instance kvdbs before the node's datastore closes under their
+	// CRDT goroutines.
+	if srv.ldr != nil {
+		srv.unloadAll()
 	}
 
 	if srv.tnsClient != nil {
 		srv.tnsClient.Close()
 	}
+	if srv.stashClient != nil {
+		srv.stashClient.Close()
+	}
+	if srv.kvStream != nil {
+		srv.kvStream.Close()
+	}
 	if srv.db != nil {
 		srv.db.Close()
 	}
 
-	*srv = Service{node: srv.node}
 	return nil
-}
-
-func (srv *Service) subscribe(ctx context.Context) error {
-	return srv.node.PubSubSubscribe(
-		hoarderSpecs.PubSubIdent,
-		func(msg *pubsub.Message) {
-			auction := new(hoarderIface.Auction)
-			var err error
-			defer func() {
-				if err != nil {
-					logger.Error("handling auction failed with: ", err.Error())
-				}
-			}()
-			if err = cbor.Unmarshal(msg.Data, auction); err != nil {
-				err = fmt.Errorf("unmarshal failed with: %w", err)
-				return
-			}
-
-			valid := srv.validateMsg(auction, msg)
-			if !valid {
-				return
-			}
-
-			switch auction.Type {
-			case hoarderIface.AuctionNew:
-				err = srv.auctionNew(ctx, auction, msg)
-			case hoarderIface.AuctionIntent:
-				err = srv.auctionIntent(auction, msg)
-			case hoarderIface.AuctionEnd:
-				err = srv.auctionEnd(ctx, auction, msg)
-			}
-		},
-		func(err error) {
-			if !errors.Is(err, context.Canceled) {
-				logger.Error("subscription ended with error:", err.Error())
-				logger.Info("re-establishing subscription")
-				if err := srv.subscribe(ctx); err != nil {
-					logger.Error("resubscribe failed with:", err.Error())
-				}
-			}
-		},
-	)
 }

@@ -33,8 +33,6 @@ func assertDatabase1(t *testing.T, getter databases.Getter) {
 		{getter.Match(), "/users"},
 		{getter.Regex(), true},
 		{getter.Local(), false},
-		{getter.Min(), 15},
-		{getter.Max(), 30},
 		{getter.Application(), ""},
 		{len(getter.SmartOps()), 0},
 	})
@@ -49,8 +47,6 @@ func assertDatabase2(t *testing.T, getter databases.Getter) {
 		{getter.Match(), "profiles"},
 		{getter.Regex(), false},
 		{getter.Local(), true},
-		{getter.Min(), 42},
-		{getter.Max(), 601},
 		{getter.Application(), "test_app1"},
 		{len(getter.SmartOps()), 0},
 	})

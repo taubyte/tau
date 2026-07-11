@@ -69,8 +69,23 @@ func (hs *hoarderService) Stash(ctx context.Context, req *connect.Request[pb.Sta
 		}
 	}
 
-	_, err = ni.hoarderClient.Stash(req.Msg.GetCid(), slices.Unique(peers)...)
+	// Stash is push-based now: connect to the providers, pull the CID's bytes
+	// locally, then push them to the hoarder.
+	for _, ma := range slices.Unique(peers) {
+		ai, err := peer.AddrInfoFromString(ma)
+		if err != nil {
+			continue
+		}
+		_ = ni.Peer().Connect(ctx, *ai)
+	}
+
+	f, err := ni.GetFile(ctx, req.Msg.GetCid())
 	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	if err = ni.hoarderClient.Stash(req.Msg.GetCid(), f); err != nil {
 		return nil, err
 	}
 

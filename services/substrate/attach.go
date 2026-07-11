@@ -74,12 +74,12 @@ func (srv *Service) attachNodePubSub() (err error) {
 }
 
 func (srv *Service) attachNodeDatabase() (err error) {
-	srv.components.database, err = database.New(srv, srv.databases)
+	srv.components.database, err = database.New(srv, srv.hoarderClient)
 	return
 }
 
 func (srv *Service) attachNodeStorage() (err error) {
-	srv.components.storage, err = storage.New(srv, srv.databases)
+	srv.components.storage, err = storage.New(srv, srv.hoarderClient)
 	return
 }
 

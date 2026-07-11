@@ -5,6 +5,7 @@ import (
 
 	"github.com/ipfs/go-cid"
 	"github.com/taubyte/tau/core/kvdb"
+	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
 	"github.com/taubyte/tau/p2p/peer"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
@@ -14,9 +15,10 @@ var _ storageIface.Storage = &Store{}
 
 type Store struct {
 	kvdb.KVDB
-	srv     storageIface.Service
-	id      string
-	context storageIface.Context
+	srv           storageIface.Service
+	hoarderClient hoarderIface.Client
+	id            string
+	context       storageIface.Context
 
 	instanceCtx  context.Context
 	instanceCtxC context.CancelFunc

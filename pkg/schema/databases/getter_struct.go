@@ -21,8 +21,6 @@ func (g getter) Struct() (db *structureSpec.Database, err error) {
 		Regex:       g.Regex(),
 		Local:       g.Local(),
 		Key:         key,
-		Min:         g.Min(),
-		Max:         g.Max(),
 		Size:        uint64(size),
 	}
 
