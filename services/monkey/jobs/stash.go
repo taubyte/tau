@@ -31,7 +31,7 @@ func (c Context) StashBuildFile(zip io.ReadSeekCloser) (cid string, err error) {
 						logger.Errorf("stashing `%s` failed with: %s", cid, err.Error())
 						continue
 					} else {
-						logger.Infof("stashing `%s` suceeded", cid)
+						logger.Infof("stashing `%s` succeeded", cid)
 						return
 					}
 				}
