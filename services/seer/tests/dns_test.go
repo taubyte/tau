@@ -67,12 +67,17 @@ func TestDns_Dreaming(t *testing.T) {
 	md.SetQuestion("substrate.tau.testdns_dreaming.localtau.", dns.TypeA)
 
 	// Wait for services to start and register
-	for {
+	registered := false
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
 		resp, _, err := tcpClient.Exchange(md, defaultTestPort)
 		if err == nil && len(resp.Answer) > 0 {
+			registered = true
 			break
 		}
-		time.Sleep(time.Second)
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !registered {
+		t.Fatal("substrate dns record did not register in time")
 	}
 
 	resolver := u.Seer().Resolver()

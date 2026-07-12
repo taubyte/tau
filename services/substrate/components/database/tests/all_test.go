@@ -12,6 +12,7 @@ import (
 	"time"
 
 	dsquery "github.com/ipfs/go-datastore/query"
+	"github.com/libp2p/go-libp2p/core/network"
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
@@ -175,7 +176,17 @@ func TestAll_Dreaming(t *testing.T) {
 	assert.NilError(t, err)
 
 	// Let the substrate node discover the hoarder before driving remote ops.
-	time.Sleep(6 * time.Second)
+	discovered := false
+	for deadline := time.Now().Add(12 * time.Second); time.Now().Before(deadline); {
+		if u.Substrate().Node().Peer().Network().Connectedness(u.Hoarder().Node().ID()) == network.Connected {
+			discovered = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !discovered {
+		t.Fatal("substrate node did not discover the hoarder in time")
+	}
 
 	/************************** Testing New Databases *********************************/
 	srv, err := service.New(u.Substrate(), hcli)
@@ -191,7 +202,7 @@ func TestAll_Dreaming(t *testing.T) {
 		if err == nil || time.Now().After(tnsDeadline) {
 			break
 		}
-		time.Sleep(time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 	assert.NilError(t, err)
 	if dbNew == nil {

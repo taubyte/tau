@@ -81,7 +81,7 @@ func TestAssetSweep_Dreaming(t *testing.T) {
 		if time.Now().After(deadline) {
 			t.Fatalf("asset never adopted: claims=%v err=%v", claims, err)
 		}
-		time.Sleep(time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	// The hoarder holds the bytes locally now (not just a claim).

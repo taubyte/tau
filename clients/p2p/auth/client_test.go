@@ -8,6 +8,7 @@ import (
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
+	authIface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	_ "github.com/taubyte/tau/services/accounts/dream"
@@ -46,15 +47,22 @@ func TestAuthClient_Dreaming(t *testing.T) {
 		return
 	}
 
-	time.Sleep(5 * time.Second)
-
 	simple, err := u.Simple("client")
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	auth, err := simple.Auth()
+	// give time for peers to discover each other by retrying the first
+	// client call instead of guessing a fixed delay
+	var auth authIface.Client
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		auth, err = simple.Auth()
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	assert.NilError(t, err)
 
 	err = commonTest.RegisterTestProject(u.Context(), auth)

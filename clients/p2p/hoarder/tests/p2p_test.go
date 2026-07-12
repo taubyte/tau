@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/network"
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 
 	keypair "github.com/taubyte/tau/p2p/keypair"
@@ -67,17 +68,31 @@ func TestHoarderClient(t *testing.T) {
 		return
 	}
 
-	// give service some time to start
-	time.Sleep(1 * time.Second)
-
-	err = peerC.Peer().Connect(ctx, peercore.AddrInfo{ID: srv.Node().ID(), Addrs: srv.Node().Peer().Addrs()})
+	// give service some time to start: retry the connect until the swarm is listening
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		err = peerC.Peer().Connect(ctx, peercore.AddrInfo{ID: srv.Node().ID(), Addrs: srv.Node().Peer().Addrs()})
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		t.Errorf("Connect to peer returned `%s`", err.Error())
 		return
 	}
 
 	// give time for peers to discover each other
-	time.Sleep(1 * time.Second)
+	discovered := false
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+		if peerC.Peer().Network().Connectedness(srv.Node().ID()) == network.Connected {
+			discovered = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !discovered {
+		t.Fatalf("peers did not discover each other in time")
+	}
 
 	client, err := hoarder_client.New(ctx, peerC)
 	if err != nil {
@@ -144,13 +159,13 @@ func TestHoarderClient(t *testing.T) {
 	}
 	place.Close()
 	placed := false
-	for range 30 {
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
 		peers, err := hc.ReplicasOf(hoarderIface.Global, "proj", "", "placed")
 		if err == nil && len(peers) == 1 && peers[0] == srv.Node().ID() {
 			placed = true
 			break
 		}
-		time.Sleep(time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 	if !placed {
 		t.Fatal("expected the hoarder to claim and resolve as the replica")
@@ -307,11 +322,29 @@ func TestHoarderClient_BadAck(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(time.Second)
-	if err := peerC.Peer().Connect(ctx, peercore.AddrInfo{ID: hostile.ID(), Addrs: hostile.Peer().Addrs()}); err != nil {
-		t.Fatalf("connect: %v", err)
+	var connErr error
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		connErr = peerC.Peer().Connect(ctx, peercore.AddrInfo{ID: hostile.ID(), Addrs: hostile.Peer().Addrs()})
+		if connErr == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
-	time.Sleep(time.Second)
+	if connErr != nil {
+		t.Fatalf("connect: %v", connErr)
+	}
+
+	discovered := false
+	for deadline := time.Now().Add(2 * time.Second); time.Now().Before(deadline); {
+		if peerC.Peer().Network().Connectedness(hostile.ID()) == network.Connected {
+			discovered = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !discovered {
+		t.Fatalf("peers did not discover each other in time")
+	}
 
 	if err := client.Peers(hostile.ID()).Stash("bafyx", bytes.NewReader([]byte("payload"))); err == nil {
 		t.Fatal("expected a decode error from the malformed ack")

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/network"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/core/services/hoarder"
@@ -86,7 +87,17 @@ func (t testContext) testHandler(repoType repositorytype.Type, repoId int, job *
 			return err
 		}
 
-		time.Sleep(time.Second)
+		// Confirm the repo-type push landed in tns before the handler relies
+		// on classification data derived from it.
+		for deadline := time.Now().Add(2 * time.Second); ; {
+			if _, fetchErr := t.Tns.Fetch(repoPath.Type()); fetchErr == nil {
+				break
+			}
+			if time.Now().After(deadline) {
+				return fmt.Errorf("repo type for %v not visible in tns", repoPath.Type())
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 		t.WorkDir = repo.Dir()
 		t.gitDir = repo.Root()
 
@@ -186,7 +197,30 @@ func startDream(t *testing.T) (u *dream.Universe, cleanup func(), err error) {
 		},
 	})
 
-	time.Sleep(2 * time.Second)
+	// give the client time to discover both services
+	if simple, simpleErr := u.Simple("client"); simpleErr == nil {
+		clientNode := simple.PeerNode()
+		var targets []peer.Node
+		if h := u.Hoarder(); h != nil {
+			targets = append(targets, h.Node())
+		}
+		if t := u.TNS(); t != nil {
+			targets = append(targets, t.Node())
+		}
+		for deadline := time.Now().Add(4 * time.Second); ; {
+			allConnected := true
+			for _, target := range targets {
+				if clientNode.Peer().Network().Connectedness(target.ID()) != network.Connected {
+					allConnected = false
+					break
+				}
+			}
+			if allConnected || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}
 	return
 }
 

@@ -12,6 +12,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/monkey/dream"
 	"github.com/taubyte/tau/clients/p2p/patrick/mock"
 	commonIface "github.com/taubyte/tau/core/common"
+	monkeyIface "github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/p2p/peer"
@@ -73,14 +74,21 @@ func TestMonkeyClient_Dreaming(t *testing.T) {
 		return
 	}
 
-	time.Sleep(8 * time.Second)
-
-	monkey, err := simple.Monkey()
+	monkeyClient, err := simple.Monkey()
 	assert.NilError(t, err)
 
-	client := monkey.(*p2p.Client)
+	client := monkeyClient.(*p2p.Client)
 
-	resp, err := client.Status(fakJob.Id)
+	// wait for the job to reach a terminal status rather than guessing a
+	// fixed delay.
+	var resp *monkeyIface.StatusResponse
+	for deadline := time.Now().Add(16 * time.Second); ; {
+		resp, err = client.Status(fakJob.Id)
+		if (err == nil && resp.Status == patrick.JobStatusSuccess) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		t.Error(err)
 		return

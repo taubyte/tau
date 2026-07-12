@@ -61,15 +61,20 @@ func TestCalls_Dreaming(t *testing.T) {
 		return
 	}
 
-	time.Sleep(10 * time.Second)
-
 	seerClient, err := simple.Seer()
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	serviceIds, err := seerClient.Usage().ListServiceId("auth")
+	var serviceIds []string
+	for deadline := time.Now().Add(30 * time.Second); ; {
+		serviceIds, err = seerClient.Usage().ListServiceId("auth")
+		if (err == nil && len(serviceIds) == 2) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		t.Error(err)
 		return

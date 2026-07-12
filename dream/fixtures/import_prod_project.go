@@ -89,10 +89,14 @@ func importProdProject(u *dream.Universe, params ...interface{}) error {
 		return err
 	}
 
-	time.Sleep(1 * time.Second)
-
 	numJobs++
-	err = u.RunFixture("pushSpecific", SharedRepositoryData.Configuration.Id, SharedRepositoryData.Configuration.Fullname, projectId, spec.DefaultBranches)
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		err = u.RunFixture("pushSpecific", SharedRepositoryData.Configuration.Id, SharedRepositoryData.Configuration.Fullname, projectId, spec.DefaultBranches)
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		return err
 	}
@@ -135,21 +139,18 @@ waitingForProject:
 	}
 
 	// Wait for config job to be done within 15 seconds
-	maxAttempts := 15
-	var attempts int
-	for attempts < maxAttempts {
-		configJob := jobs[0]
+	configJob := jobs[0]
+	for deadline := time.Now().Add(15 * time.Second); ; {
 		job, err := patrickClient.Get(configJob)
 		if err != nil {
 			return err
 		}
 
-		time.Sleep(1 * time.Second)
-		if job.Status == patrick.JobStatusSuccess {
+		if job.Status == patrick.JobStatusSuccess || time.Now().After(deadline) {
 			break
 		}
 
-		attempts++
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	project, err := tnsClient.Simple().Project(projectId, spec.DefaultBranches...)
@@ -177,17 +178,14 @@ waitingForProject:
 	patrickJobs := make([]string, 0)
 
 	// Wait for all jobs to be on patrick
-	maxAttempts = 30
-	attempts = 0
-	for attempts < maxAttempts {
+	for deadline := time.Now().Add(30 * time.Second); ; {
 		patrickJobs, _ = patrickClient.List()
 
-		if len(patrickJobs) == numJobs {
+		if len(patrickJobs) == numJobs || time.Now().After(deadline) {
 			break
 		}
 
-		time.Sleep(1 * time.Second)
-		attempts++
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	if len(patrickJobs) != numJobs {
@@ -195,11 +193,8 @@ waitingForProject:
 	}
 
 	// Wait for all jobs to finish
-	maxAttempts = 300
-	attempts = 0
-
 	var failure bool
-	for attempts < maxAttempts {
+	for deadline := time.Now().Add(300 * time.Second); ; {
 		failure = false
 		for _, jid := range patrickJobs {
 			job, _ := patrickClient.Get(jid)
@@ -211,12 +206,11 @@ waitingForProject:
 			}
 		}
 
-		if !failure {
+		if !failure || time.Now().After(deadline) {
 			break
 		}
 
-		time.Sleep(1 * time.Second)
-		attempts++
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	if failure {

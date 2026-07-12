@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/libp2p/go-libp2p/core/network"
 	commonIface "github.com/taubyte/tau/core/common"
 	iface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/dream"
@@ -50,8 +51,6 @@ func TestHeartbeat_Dreaming(t *testing.T) {
 		return
 	}
 
-	time.Sleep(10 * time.Second)
-
 	simples := make([]*dream.Simple, len(simConf))
 
 	for i := 0; i < len(simConf); i++ {
@@ -60,6 +59,23 @@ func TestHeartbeat_Dreaming(t *testing.T) {
 			t.Error(err)
 			return
 		}
+	}
+
+	// give time for all clients to discover the seer node before driving
+	// the concurrent load below.
+	seerNode := u.Seer().Node()
+	for deadline := time.Now().Add(20 * time.Second); ; {
+		allConnected := true
+		for _, s := range simples {
+			if s.PeerNode().Peer().Network().Connectedness(seerNode.ID()) != network.Connected {
+				allConnected = false
+				break
+			}
+		}
+		if allConnected || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 	hostname, err := os.Hostname()

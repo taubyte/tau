@@ -47,14 +47,19 @@ func TestAuthServiceE2E_Dreaming(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
-
 	simple, err := u.Simple("client")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	auth, err := simple.Auth()
+	var auth interface{}
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		auth, err = simple.Auth()
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	assert.NilError(t, err)
 
 	// Test basic service functionality
@@ -251,7 +256,14 @@ func TestAuthServiceWithMockData_Dreaming(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
+	// The subtests drive the in-process service directly — poll for it to
+	// register rather than guessing a fixed delay.
+	for deadline := time.Now().Add(10 * time.Second); u.Auth() == nil && time.Now().Before(deadline); {
+		time.Sleep(100 * time.Millisecond)
+	}
+	if u.Auth() == nil {
+		t.Fatal("auth service did not register")
+	}
 
 	// Test creating multiple hooks and repositories
 	t.Run("MultipleEntities", func(t *testing.T) {

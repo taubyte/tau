@@ -101,8 +101,6 @@ func TestTNS_Dreaming(t *testing.T) {
 
 	assert.NilError(t, u.RunFixture("injectProject", fs))
 
-	time.Sleep(10 * time.Second)
-
 	//wait for nodes sync
 	n1, err := u.Simple("client")
 	assert.NilError(t, err)
@@ -113,8 +111,8 @@ func TestTNS_Dreaming(t *testing.T) {
 	n1tns1 := n1tns.Peers(tnsNodes[0].Node().ID())
 	n1tns2 := n1tns.Peers(tnsNodes[1].Node().ID())
 
-	for {
-		time.Sleep(time.Second)
+	synced := false
+	for deadline := time.Now().Add(40 * time.Second); time.Now().Before(deadline); {
 		st1 := n1tns1.Stats()
 		st2 := n1tns2.Stats()
 		kv1, _ := st1.Database()
@@ -122,8 +120,13 @@ func TestTNS_Dreaming(t *testing.T) {
 
 		if slices.EqualFunc(kv1.Heads(), kv2.Heads(), func(i, j cid.Cid) bool { return i.String() == j.String() }) {
 			fmt.Println("states:", kv1.Heads(), kv2.Heads())
+			synced = true
 			break
 		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !synced {
+		t.Fatal("tns nodes did not converge in time")
 	}
 
 	ni, err := ns.New(ctx, connect.NewRequest(&pb.Config{

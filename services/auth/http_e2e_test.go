@@ -48,11 +48,22 @@ func TestAuthServiceHTTPEndpoints_Dreaming(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
-
 	// Get the auth service URL
 	authURL, err := u.GetURLHttp(u.Auth().Node())
 	assert.NilError(t, err)
+
+	// wait for the HTTP server to come up before exercising its endpoints
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		resp, healthErr := http.Get(authURL + "/health")
+		if healthErr == nil {
+			resp.Body.Close()
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	t.Run("HTTPEndpoints", func(t *testing.T) {
 		testHTTPEndpoints(t, u, authURL)
@@ -283,14 +294,19 @@ func TestAuthServiceIntegration_Dreaming(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	time.Sleep(5 * time.Second)
-
 	simple, err := u.Simple("client")
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	auth, err := simple.Auth()
+	var auth interface{}
+	for deadline := time.Now().Add(10 * time.Second); ; {
+		auth, err = simple.Auth()
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	assert.NilError(t, err)
 
 	t.Run("ServiceIntegration", func(t *testing.T) {

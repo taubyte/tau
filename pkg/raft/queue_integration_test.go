@@ -63,7 +63,9 @@ func TestQueue_Integration_MultiNode_Replication(t *testing.T) {
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 	node2 := newTestNode(t, node1Info)
 
-	time.Sleep(2 * time.Second)
+	// Wait for peers to connect
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "queue-replication"
 
@@ -123,7 +125,9 @@ func TestQueue_Integration_MultiNode_PopEmpty(t *testing.T) {
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 	node2 := newTestNode(t, node1Info)
 
-	time.Sleep(2 * time.Second)
+	// Wait for peers to connect
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "queue-empty"
 
@@ -165,7 +169,9 @@ func TestQueue_Integration_MultiNode_Order(t *testing.T) {
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 	node2 := newTestNode(t, node1Info)
 
-	time.Sleep(2 * time.Second)
+	// Wait for peers to connect
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "queue-order"
 
@@ -222,7 +228,9 @@ func TestQueue_Integration_MultiNode_ManyItems(t *testing.T) {
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 	node2 := newTestNode(t, node1Info)
 
-	time.Sleep(2 * time.Second)
+	// Wait for peers to connect
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "queue-many"
 
@@ -284,7 +292,9 @@ func TestQueue_Integration_MultiNode_MultipleConsumers(t *testing.T) {
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 	node2 := newTestNode(t, node1Info)
 
-	time.Sleep(2 * time.Second)
+	// Wait for peers to connect
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "queue-multi-consumer"
 

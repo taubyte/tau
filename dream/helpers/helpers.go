@@ -289,12 +289,15 @@ func CreateTestProjectWithJobs(u *dreamPkg.Universe) error {
 		return fmt.Errorf("unable to get tns: %w", err)
 	}
 	var tnsClient tns.Client
-	for attempts := 0; tnsClient == nil; attempts++ {
-		if attempts == 3 {
-			return fmt.Errorf("unable to get tns client after 3 attempts")
-		}
+	for deadline := time.Now().Add(6 * time.Second); tnsClient == nil; {
 		tnsClient, _ = simple.TNS()
-		time.Sleep(1 * time.Second)
+		if tnsClient != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("unable to get tns client after 6s")
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	mockPatrickURL, err := u.GetURLHttp(u.Patrick().Node())
 	if err != nil {
@@ -304,7 +307,11 @@ func CreateTestProjectWithJobs(u *dreamPkg.Universe) error {
 	if err = PushJob(ConfigPayload, mockPatrickURL, ConfigRepo); err != nil {
 		return fmt.Errorf("pushing config job failed with %w", err)
 	}
-	time.Sleep(3 * time.Second)
+	// The code build resolves the project structure the config build publishes
+	// to TNS — wait for it rather than guessing a fixed delay.
+	if err = WaitForTNSObjects(tnsClient, []int{ConfigRepo.ID}, 60, 100*time.Millisecond); err != nil {
+		return fmt.Errorf("waiting for config repository in TNS failed: %w", err)
+	}
 	if err = PushJob(CodePayload, mockPatrickURL, CodeRepo); err != nil {
 		return fmt.Errorf("pushing code job failed with %w", err)
 	}

@@ -12,6 +12,7 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
+	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/p2p/peer"
 	"gotest.tools/v3/assert"
@@ -90,15 +91,21 @@ func runTestConfigJob(t *testing.T) error {
 		return err
 	}
 
-	// wait a couple seconds for services to start
-	time.Sleep(time.Second * 2)
-
 	simple, err := u.Simple("client")
 	if err != nil {
 		return err
 	}
 
-	tnsClient, err := simple.TNS()
+	// wait for services to start by retrying the first client call instead
+	// of guessing a fixed delay
+	var tnsClient tns.Client
+	for deadline := time.Now().Add(4 * time.Second); ; {
+		tnsClient, err = simple.TNS()
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		return err
 	}

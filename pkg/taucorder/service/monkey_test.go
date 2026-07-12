@@ -110,13 +110,18 @@ func TestMonkey_Dreaming(t *testing.T) {
 
 	assert.Equal(t, len(fakeJobs), 2)
 
-	for {
-		time.Sleep(time.Second) // give time to monkey to pick up jobs
+	picked := false
+	for deadline := time.Now().Add(30 * time.Second); time.Now().Before(deadline); {
 		l, _ := ninst.monkeyClient.List()
 		fmt.Println(l)
 		if len(l) > 1 {
+			picked = true
 			break
 		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !picked {
+		t.Fatal("monkey did not pick up the jobs in time")
 	}
 
 	listener, err := net.Listen("tcp", ":0")
