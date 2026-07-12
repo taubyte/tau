@@ -11,13 +11,12 @@ import (
 	"github.com/taubyte/tau/p2p/streams/client"
 	"github.com/taubyte/tau/p2p/streams/command"
 	"github.com/taubyte/tau/p2p/streams/command/response"
-	protocolCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/substrate/components/p2p/common"
 )
 
 type Command struct {
-	srv     iface.Service
 	matcher *iface.MatchDefinition
+	client  *client.Client
 }
 
 func (st *Stream) Command(command string) (iface.Command, error) {
@@ -27,30 +26,25 @@ func (st *Stream) Command(command string) (iface.Command, error) {
 
 	st.matcher.Command = command
 	return &Command{
-		srv:     st.srv,
 		matcher: st.matcher,
+		client:  st.client,
 	}, nil
 }
 
-func (c *Command) beforeSend(ctx context.Context, body command.Body) (*client.Client, command.Body, error) {
-	p2pClient, err := client.New(c.srv.Node(), protocolCommon.SubstrateP2PProtocol)
-	if err != nil {
-		return nil, nil, fmt.Errorf("New p2p client failed with: %s", err)
-	}
-
+func (c *Command) beforeSend(body command.Body) (*client.Client, command.Body, error) {
 	data, ok := body["data"]
 	if !ok {
 		return nil, nil, fmt.Errorf("no data found in body")
 	}
 
-	return p2pClient, command.Body{
+	return c.client, command.Body{
 		"matcher": c.matcher,
 		"data":    data,
 	}, nil
 }
 
 func (c *Command) Send(ctx context.Context, body map[string]interface{}) (response.Response, error) {
-	p2pClient, body, err := c.beforeSend(ctx, body)
+	p2pClient, body, err := c.beforeSend(body)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +58,7 @@ func (c *Command) Send(ctx context.Context, body map[string]interface{}) (respon
 }
 
 func (c *Command) SendTo(ctx context.Context, cid cid.Cid, body map[string]interface{}) (response.Response, error) {
-	p2pClient, body, err := c.beforeSend(ctx, body)
+	p2pClient, body, err := c.beforeSend(body)
 	if err != nil {
 		return nil, err
 	}
