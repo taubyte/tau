@@ -3,6 +3,7 @@
 package dream
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,8 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/helpers"
+	spec "github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/utils/maps"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/services/accounts/dream"
@@ -55,25 +58,20 @@ func TestDreamFixtures_Dreaming(t *testing.T) {
 		simple, err := u.Simple("client")
 		assert.NilError(t, err)
 
-		// Check for 20 seconds after fixture is ran for the jobs
-		attempts := 0
-		for {
-			attempts += 1
+		patrick, err := simple.Patrick()
+		assert.NilError(t, err)
 
-			patrick, err := simple.Patrick()
+		// Check for 40 seconds after fixture is ran for the jobs
+		var jobs []string
+		for deadline := time.Now().Add(40 * time.Second); ; {
+			jobs, err = patrick.List()
 			assert.NilError(t, err)
-
-			jobs, err := patrick.List()
-			assert.NilError(t, err)
-
-			if len(jobs) >= 2 {
+			if len(jobs) >= 2 || time.Now().After(deadline) {
 				break
 			}
-
-			assert.Assert(t, attempts < 20)
-
-			time.Sleep(1 * time.Second)
+			time.Sleep(100 * time.Millisecond)
 		}
+		assert.Assert(t, len(jobs) >= 2, "expected at least 2 jobs, got %d", len(jobs))
 	})
 }
 
@@ -139,7 +137,33 @@ func TestPushFixtures_Dreaming(t *testing.T) {
 		err = helpers.RegisterTestRepositories(u.Context(), auth, helpers.ConfigRepo, helpers.CodeRepo, helpers.LibraryRepo)
 		assert.NilError(t, err)
 
-		time.Sleep(5 * time.Second)
+		// pushAll drives off TNS's aggregate repo listing (the `fullname`
+		// entries auth registration writes there) — poll for the registered
+		// repos to show up in that listing rather than guessing a fixed delay.
+		tnsClient, err := simple.TNS()
+		assert.NilError(t, err)
+		wantIDs := []string{
+			fmt.Sprintf("%d", helpers.ConfigRepo.ID),
+			fmt.Sprintf("%d", helpers.CodeRepo.ID),
+			fmt.Sprintf("%d", helpers.LibraryRepo.ID),
+		}
+		for deadline := time.Now().Add(10 * time.Second); ; {
+			resp, fetchErr := tnsClient.Fetch(spec.NewTnsPath([]string{"resolve", "repo", "github"}))
+			allFound := fetchErr == nil
+			if allFound {
+				repos := maps.SafeInterfaceToStringKeys(resp.Interface())
+				for _, id := range wantIDs {
+					if _, ok := repos[id]; !ok {
+						allFound = false
+						break
+					}
+				}
+			}
+			if allFound || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 
 		err = u.RunFixture("pushAll")
 		assert.NilError(t, err)

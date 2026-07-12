@@ -210,9 +210,6 @@ func TestAccounts_DreamingWire(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	// Allow nodes to discover each other.
-	time.Sleep(1 * time.Second)
-
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)
 	wire, err := simple.Accounts()
@@ -240,7 +237,17 @@ func TestAccounts_DreamingWire(t *testing.T) {
 	assert.NilError(t, srvCli.Users(acc.ID).Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: "prod"}))
 
 	t.Run("Verify over the wire", func(t *testing.T) {
-		resp, err := wire.Verify(ctx, "github", "42")
+		// Allow nodes to discover each other by retrying the first wire call
+		// instead of guessing a fixed delay upfront.
+		var resp *accountsIface.VerifyResponse
+		var err error
+		for deadline := time.Now().Add(2 * time.Second); ; {
+			resp, err = wire.Verify(ctx, "github", "42")
+			if err == nil || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 		assert.NilError(t, err)
 		assert.Equal(t, resp.Linked, true)
 		assert.Equal(t, len(resp.Accounts), 1)

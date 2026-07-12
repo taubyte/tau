@@ -52,6 +52,12 @@ func TestPingPeer(t *testing.T) {
 	}
 
 	p1.Close()
-	time.Sleep(3 * time.Second)
+
+	// Let p2 observe p1's departure before closing it (best-effort).
+	deadline := time.Now().Add(6 * time.Second)
+	for time.Now().Before(deadline) && p2.Peer().Network().Connectedness(p1.ID()).String() == "Connected" {
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	p2.Close()
 }

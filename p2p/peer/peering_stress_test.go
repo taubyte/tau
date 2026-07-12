@@ -179,22 +179,30 @@ func TestPeeringStressManyPeers(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Wait for connections to establish
-	time.Sleep(10 * time.Second)
-
-	// Verify all connections
-	connectedCount := 0
+	// Wait for the mesh to fully connect (bounded poll; the rate check below
+	// tolerates any shortfall once the timeout hits).
 	totalConnections := numPeers * (numPeers - 1)
-
-	for i := 0; i < numPeers; i++ {
-		for j := 0; j < numPeers; j++ {
-			if i == j {
-				continue
-			}
-			if peers[i].Peer().Network().Connectedness(peers[j].ID()).String() == "Connected" {
-				connectedCount++
+	countConnected := func() int {
+		count := 0
+		for i := 0; i < numPeers; i++ {
+			for j := 0; j < numPeers; j++ {
+				if i == j {
+					continue
+				}
+				if peers[i].Peer().Network().Connectedness(peers[j].ID()).String() == "Connected" {
+					count++
+				}
 			}
 		}
+		return count
+	}
+
+	meshTimeout := 20 * time.Second
+	meshStart := time.Now()
+	connectedCount := countConnected()
+	for time.Since(meshStart) < meshTimeout && connectedCount < totalConnections {
+		time.Sleep(100 * time.Millisecond)
+		connectedCount = countConnected()
 	}
 
 	connectionRate := float64(connectedCount) / float64(totalConnections) * 100
@@ -259,29 +267,34 @@ func TestPeeringStressConnectionManager(t *testing.T) {
 	}
 	wg.Wait()
 
-	// Wait for connections
-	time.Sleep(8 * time.Second)
-
-	// Verify protected connections are maintained
-	stableCount := 0
-	unstableCount := 0
-
-	for i := 0; i < numPeers; i++ {
-		for j := 0; j < connectionsPerPeer; j++ {
-			target := (i + j + 1) % numPeers
-			if target == i {
-				target = (target + 1) % numPeers
-			}
-			connectedness := peers[i].Peer().Network().Connectedness(peers[target].ID())
-			if connectedness.String() == "Connected" {
-				stableCount++
-			} else {
-				unstableCount++
+	// Wait for connections to establish (bounded poll; the stability check
+	// below tolerates any shortfall once the timeout hits).
+	totalExpected := numPeers * connectionsPerPeer
+	countStable := func() int {
+		count := 0
+		for i := 0; i < numPeers; i++ {
+			for j := 0; j < connectionsPerPeer; j++ {
+				target := (i + j + 1) % numPeers
+				if target == i {
+					target = (target + 1) % numPeers
+				}
+				if peers[i].Peer().Network().Connectedness(peers[target].ID()).String() == "Connected" {
+					count++
+				}
 			}
 		}
+		return count
 	}
 
-	totalExpected := numPeers * connectionsPerPeer
+	connTimeout := 16 * time.Second
+	connStart := time.Now()
+	stableCount := countStable()
+	for time.Since(connStart) < connTimeout && stableCount < totalExpected {
+		time.Sleep(100 * time.Millisecond)
+		stableCount = countStable()
+	}
+	unstableCount := totalExpected - stableCount
+
 	stabilityRate := float64(stableCount) / float64(totalExpected) * 100
 	t.Logf("Connection stability: %.2f%% (%d stable, %d unstable out of %d expected)",
 		stabilityRate, stableCount, unstableCount, totalExpected)
@@ -443,8 +456,12 @@ func TestPeeringStressBackoffRecovery(t *testing.T) {
 		Addrs: p2.Peer().Addrs(),
 	})
 
-	// Wait for connection
-	time.Sleep(2 * time.Second)
+	// Wait for the initial connection.
+	initialTimeout := 4 * time.Second
+	initialStart := time.Now()
+	for time.Since(initialStart) < initialTimeout && p1.Peer().Network().Connectedness(p2.ID()).String() != "Connected" {
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Verify connected
 	if p1.Peer().Network().Connectedness(p2.ID()).String() != "Connected" {
@@ -725,8 +742,19 @@ func TestPeeringStressBidirectionalReconnect(t *testing.T) {
 		p1.Peering().RemovePeer(p2.ID())
 		p2.Peering().RemovePeer(p1.ID())
 
-		// Wait for disconnection
-		time.Sleep(1 * time.Second)
+		// Wait for the disconnection to be observed (best-effort: the
+		// connection manager may keep the link up briefly after unprotecting
+		// it, and the reconnect below works either way).
+		disconnectTimeout := 2 * time.Second
+		disconnectStart := time.Now()
+		for time.Since(disconnectStart) < disconnectTimeout {
+			p1Conn := p1.Peer().Network().Connectedness(p2.ID()).String() == "Connected"
+			p2Conn := p2.Peer().Network().Connectedness(p1.ID()).String() == "Connected"
+			if !p1Conn && !p2Conn {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 
 		// Reconnect from both sides simultaneously
 		p1.Peering().AddPeer(peercore.AddrInfo{

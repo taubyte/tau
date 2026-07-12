@@ -84,10 +84,14 @@ func TestDream_Dreaming(t *testing.T) {
 		err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
 		assert.NilError(t, err)
 
-		time.Sleep(1 * time.Second)
-
-		jobs, err = db.List(u.Context(), "/jobs/")
-		assert.NilError(t, err)
+		for deadline := time.Now().Add(2 * time.Second); ; {
+			jobs, err = db.List(u.Context(), "/jobs/")
+			assert.NilError(t, err)
+			if len(jobs) == 1 || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 		assert.Equal(t, len(jobs), 1)
 
 		job_byte, err := db.Get(u.Context(), jobs[0])
@@ -104,28 +108,22 @@ func TestDream_Dreaming(t *testing.T) {
 	t.Run("ReportSsh", func(t *testing.T) {
 		assert.NilError(t, commonTest.CreateTestProjectWithJobs(u))
 
-		attempts := 0
 		var job *patrickCore.Job
 		patrick, err := simple.Patrick()
 		assert.NilError(t, err)
 
-		for {
-			attempts++
-			assert.Assert(t, attempts < 20)
-
+		for deadline := time.Now().Add(40 * time.Second); ; {
 			jobs, err := patrick.List()
 			assert.NilError(t, err)
-			if len(jobs) < 2 {
-				continue
+			if len(jobs) >= 2 {
+				job, err = patrick.Get(jobs[0])
+				assert.NilError(t, err)
+				if job != nil {
+					break
+				}
 			}
-
-			job, err = patrick.Get(jobs[0])
-			assert.NilError(t, err)
-			if job != nil {
-				break
-			}
-
-			time.Sleep(1 * time.Second)
+			assert.Assert(t, !time.Now().After(deadline), "timed out waiting for at least 2 jobs to be queued")
+			time.Sleep(100 * time.Millisecond)
 		}
 
 		tns, err := simple.TNS()
@@ -147,22 +145,32 @@ func TestDream_Dreaming(t *testing.T) {
 		err = commonTest.PushJob(commonTest.ConfigPayload, mockPatrickURL, commonTest.ConfigRepo)
 		assert.NilError(t, err)
 
-		time.Sleep(1 * time.Second)
-
 		patrickClient, err := simple.Patrick()
 		assert.NilError(t, err)
 
-		job, err := patrickClient.Dequeue()
-		assert.NilError(t, err)
+		var job *patrickCore.Job
+		for deadline := time.Now().Add(2 * time.Second); ; {
+			job, err = patrickClient.Dequeue()
+			assert.NilError(t, err)
+			if job != nil || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 		assert.Assert(t, job != nil, "Expected a job from dequeue")
 
 		err = patrickClient.Failed(job.Id, job.Logs, nil)
 		assert.NilError(t, err)
 
-		time.Sleep(2 * time.Second)
-
-		jobs, err := patrickClient.List()
-		assert.NilError(t, err)
+		var jobs []string
+		for deadline := time.Now().Add(4 * time.Second); ; {
+			jobs, err = patrickClient.List()
+			assert.NilError(t, err)
+			if len(jobs) > 0 || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 		assert.Assert(t, len(jobs) > 0, "Job should be re-queued after failure")
 	})
 

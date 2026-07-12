@@ -130,7 +130,29 @@ func TestPeeringConnectionRefusal(t *testing.T) {
 				peers[i].Peering().RemovePeer(peers[j].ID())
 			}
 		}
-		time.Sleep(1 * time.Second)
+
+		// Wait for the disconnections to be observed (best-effort: the
+		// connection manager may keep links up briefly after unprotecting).
+		disconnectStart := time.Now()
+		disconnectMaxWait := 2 * time.Second
+		for time.Since(disconnectStart) < disconnectMaxWait {
+			anyConnected := false
+			for i := 0; i < numPeers && !anyConnected; i++ {
+				for j := 0; j < numPeers; j++ {
+					if i == j {
+						continue
+					}
+					if peers[i].Peer().Network().Connectedness(peers[j].ID()).String() == "Connected" {
+						anyConnected = true
+						break
+					}
+				}
+			}
+			if !anyConnected {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
 
 		// Re-add all peers
 		for i := 0; i < numPeers; i++ {

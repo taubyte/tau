@@ -43,11 +43,13 @@ func TestAuth_VerifiesAgainstAccounts_Dreaming(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	// Allow nodes to mesh.
-	time.Sleep(1 * time.Second)
-
-	// Seed the accounts store directly via the in-process Client.
+	// Seed the accounts store directly via the in-process Client — poll for
+	// the service to register rather than guessing a fixed delay.
 	svc := u.Accounts()
+	for deadline := time.Now().Add(2 * time.Second); svc == nil && time.Now().Before(deadline); {
+		time.Sleep(100 * time.Millisecond)
+		svc = u.Accounts()
+	}
 	assert.Assert(t, svc != nil, "accounts service did not register")
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)

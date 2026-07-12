@@ -126,6 +126,27 @@ func waitForMemberAbsent(t *testing.T, cl Cluster, memberID peercore.ID, timeout
 	}
 }
 
+// waitForKeyValue polls cl.Get(key) until it observes want, or the timeout elapses.
+// Used in place of a fixed sleep to wait for Raft replication to reach a follower.
+func waitForKeyValue(t *testing.T, cl Cluster, key, want string, timeout time.Duration) error {
+	ctx, cancel := context.WithTimeout(t.Context(), timeout)
+	defer cancel()
+
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if val, found := cl.Get(key); found && string(val) == want {
+				return nil
+			}
+		}
+	}
+}
+
 func TestCluster_MultiNode_LeaderElection_Integration(t *testing.T) {
 	// Create first node (will be bootstrap)
 	node1 := newTestNode(t)
@@ -136,7 +157,10 @@ func TestCluster_MultiNode_LeaderElection_Integration(t *testing.T) {
 	node3 := newTestNode(t, node1Info)
 
 	// Wait for peers to connect
-	time.Sleep(2 * time.Second)
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
+	err = waitForConnected(t, node3, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node3 failed to connect to node1")
 
 	namespace := "multi-node-test"
 
@@ -194,14 +218,10 @@ func TestCluster_MultiNode_LeaderElection_Integration(t *testing.T) {
 	err = cluster1.Set("test-key", []byte("test-value"), 5*time.Second)
 	assert.NilError(t, err, "failed to set on leader")
 
-	// Wait for replication
-	time.Sleep(1 * time.Second)
-
 	// Verify value is replicated to followers
 	for i, cl := range clusters[1:] {
-		val, found := cl.Get("test-key")
-		assert.Assert(t, found, "cluster%d: key not found after replication", i+2)
-		assert.Equal(t, string(val), "test-value", "cluster%d: wrong value", i+2)
+		err := waitForKeyValue(t, cl, "test-key", "test-value", 5*time.Second)
+		assert.NilError(t, err, "cluster%d: key not replicated in time", i+2)
 	}
 }
 
@@ -212,7 +232,8 @@ func TestCluster_MultiNode_SendToNonLeader_Integration(t *testing.T) {
 	node2 := newTestNode(t, node1Info)
 
 	// Wait for peers to connect
-	time.Sleep(2 * time.Second)
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "forward-test"
 
@@ -345,7 +366,8 @@ func TestCluster_MultiNode_DiscoverPeers_Integration(t *testing.T) {
 	node2 := newTestNode(t, node1Info)
 
 	// Wait for peers to connect
-	time.Sleep(2 * time.Second)
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "discover-test"
 
@@ -396,7 +418,8 @@ func TestCluster_MultiNode_StreamServiceForwarding_Integration(t *testing.T) {
 	node2 := newTestNode(t, node1Info)
 
 	// Wait for peers to connect
-	time.Sleep(2 * time.Second)
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "stream-forward-test"
 
@@ -484,7 +507,8 @@ func TestCluster_MultiNode_ClientOperations_Integration(t *testing.T) {
 	node2 := newTestNode(t, node1Info)
 
 	// Wait for peers to connect
-	time.Sleep(2 * time.Second)
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "client-ops-test"
 
@@ -575,7 +599,8 @@ func TestCluster_MultiNode_ClientGetWithBarrier_Integration(t *testing.T) {
 	node2 := newTestNode(t, node1Info)
 
 	// Wait for peers to connect
-	time.Sleep(2 * time.Second)
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "barrier-test"
 
@@ -662,7 +687,8 @@ func TestCluster_MultiNode_Apply_InvalidTimeout_Integration(t *testing.T) {
 	node2 := newTestNode(t, node1Info)
 
 	// Wait for peers to connect
-	time.Sleep(2 * time.Second)
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "apply-timeout-test"
 
@@ -857,7 +883,8 @@ func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 	node2 := newTestNode(t, node1Info)
 
 	// Wait for peers to connect
-	time.Sleep(2 * time.Second)
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespaceA := "service-A"
 	namespaceB := "service-B"
@@ -908,16 +935,14 @@ func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 	err = clusterB1.Set("service-data", []byte("from-service-B"), 5*time.Second)
 	assert.NilError(t, err, "clusterB1 Set failed")
 
-	// Wait for replication
-	time.Sleep(1 * time.Second)
-
 	// Verify cluster A data is isolated
 	valA1, foundA1 := clusterA1.Get("service-data")
 	assert.Assert(t, foundA1, "clusterA1 should have service-data")
 	assert.Equal(t, string(valA1), "from-service-A")
 
-	valA2, foundA2 := clusterA2.Get("service-data")
-	assert.Assert(t, foundA2, "clusterA2 should have replicated service-data")
+	err = waitForKeyValue(t, clusterA2, "service-data", "from-service-A", 5*time.Second)
+	assert.NilError(t, err, "clusterA2: service-data not replicated in time")
+	valA2, _ := clusterA2.Get("service-data")
 	assert.Equal(t, string(valA2), "from-service-A")
 
 	// Verify cluster B data is isolated
@@ -925,8 +950,9 @@ func TestCluster_MultiCluster_MultiNode_Integration(t *testing.T) {
 	assert.Assert(t, foundB1, "clusterB1 should have service-data")
 	assert.Equal(t, string(valB1), "from-service-B")
 
-	valB2, foundB2 := clusterB2.Get("service-data")
-	assert.Assert(t, foundB2, "clusterB2 should have replicated service-data")
+	err = waitForKeyValue(t, clusterB2, "service-data", "from-service-B", 5*time.Second)
+	assert.NilError(t, err, "clusterB2: service-data not replicated in time")
+	valB2, _ := clusterB2.Get("service-data")
 	assert.Equal(t, string(valB2), "from-service-B")
 
 	// Verify clusters are truly independent
@@ -947,7 +973,9 @@ func TestCluster_RejoinAfterLeave_Integration(t *testing.T) {
 	node1Info := peercore.AddrInfo{ID: node1.ID(), Addrs: node1.Peer().Addrs()}
 	node2 := newTestNode(t, node1Info)
 
-	time.Sleep(2 * time.Second)
+	// Wait for peers to connect
+	err := waitForConnected(t, node2, node1.ID(), 10*time.Second)
+	assert.NilError(t, err, "node2 failed to connect to node1")
 
 	namespace := "rejoin-test"
 
@@ -1096,9 +1124,6 @@ func TestCluster_ThreeNodes_SimultaneousStart_Integration(t *testing.T) {
 	node1.Peering().AddPeer(node3Info)
 	node2.Peering().AddPeer(node3Info)
 
-	// Give peering service time to start establishing connections
-	time.Sleep(2 * time.Second)
-
 	// Wait for all connections to be established
 	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
 	assert.NilError(t, err, "node1 failed to connect to node2")
@@ -1202,9 +1227,6 @@ func TestCluster_LeaderCrashAndFailover_Integration(t *testing.T) {
 	node1.Peering().AddPeer(node2Info)
 	node1.Peering().AddPeer(node3Info)
 	node2.Peering().AddPeer(node3Info)
-
-	// Give peering service time to start establishing connections
-	time.Sleep(2 * time.Second)
 
 	// Wait for all connections to be established
 	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
@@ -1334,9 +1356,6 @@ func TestCluster_NodeRebootWithDataPersistence_Integration(t *testing.T) {
 	node1.Peering().AddPeer(node3Info)
 	node2.Peering().AddPeer(node3Info)
 
-	// Give peering service time to start establishing connections
-	time.Sleep(2 * time.Second)
-
 	// Wait for all connections
 	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
 	assert.NilError(t, err, "node1 failed to connect to node2")
@@ -1422,15 +1441,16 @@ func TestCluster_NodeRebootWithDataPersistence_Integration(t *testing.T) {
 	err = cluster2b.WaitForLeader(ctx3)
 	assert.NilError(t, err, "cluster2b failed to see leader after reboot")
 
-	// Wait for replication to catch up
-	time.Sleep(1 * time.Second)
-
-	// Verify data set BEFORE reboot is accessible
+	// Verify data set BEFORE reboot is accessible, once replication catches up
+	err = waitForKeyValue(t, cluster2b, "key-before-reboot", "value-before", 5*time.Second)
+	assert.NilError(t, err, "key-before-reboot not replicated in time")
 	val, found = cluster2b.Get("key-before-reboot")
 	assert.Assert(t, found, "key-before-reboot must exist after reboot")
 	assert.Equal(t, string(val), "value-before", "value mismatch for key-before-reboot after reboot")
 
 	// Verify data set DURING reboot (while node was down) is replicated
+	err = waitForKeyValue(t, cluster2b, "key-during-reboot", "value-during", 5*time.Second)
+	assert.NilError(t, err, "key-during-reboot not replicated in time")
 	val, found = cluster2b.Get("key-during-reboot")
 	assert.Assert(t, found, "key-during-reboot must be replicated after rejoin")
 	assert.Equal(t, string(val), "value-during", "value mismatch for key-during-reboot after reboot")
@@ -1465,9 +1485,6 @@ func TestCluster_StaggeredConcurrentStartup_Integration(t *testing.T) {
 	node1.Peering().AddPeer(node2Info)
 	node1.Peering().AddPeer(node3Info)
 	node2.Peering().AddPeer(node3Info)
-
-	// Give peering service time to start establishing connections
-	time.Sleep(2 * time.Second)
 
 	// Wait for connections with longer timeout
 	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
@@ -1605,9 +1622,6 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	node1.Peering().AddPeer(node3Info)
 	node2.Peering().AddPeer(node3Info)
 
-	// Give peering service time to start establishing connections
-	time.Sleep(2 * time.Second)
-
 	// Wait for all connections
 	err := waitForConnected(t, node1, node2.ID(), 30*time.Second)
 	assert.NilError(t, err, "node1 failed to connect to node2")
@@ -1709,14 +1723,15 @@ func TestCluster_LeaderRebootAndRejoin_Integration(t *testing.T) {
 	assert.NilError(t, err, "cluster1b failed to get leader")
 	assert.Equal(t, leader1b, newLeader, "old leader must agree on current leader")
 
-	// Wait for replication
-	time.Sleep(1 * time.Second)
-
-	// Old leader must have all data
+	// Old leader must have all data, once replication catches up
+	err = waitForKeyValue(t, cluster1b, "before-leader-crash", "original-value", 5*time.Second)
+	assert.NilError(t, err, "before-leader-crash not replicated in time")
 	val, found := cluster1b.Get("before-leader-crash")
 	assert.Assert(t, found, "old leader must have data from before crash")
 	assert.Equal(t, string(val), "original-value")
 
+	err = waitForKeyValue(t, cluster1b, "during-leader-down", "new-leader-value", 5*time.Second)
+	assert.NilError(t, err, "during-leader-down not replicated in time")
 	val, found = cluster1b.Get("during-leader-down")
 	assert.Assert(t, found, "old leader must have data set during its downtime")
 	assert.Equal(t, string(val), "new-leader-value")

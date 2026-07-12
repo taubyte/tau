@@ -64,12 +64,18 @@ func TestRoutes_Dreaming(t *testing.T) {
 
 	ctx := context.Background()
 
-	time.Sleep(2 * time.Second)
-
 	client, err := New(ctx, URL(fmt.Sprintf("http://localhost:%d", dream.DreamApiPort)), Timeout(60*time.Second))
 	assert.NilError(t, err)
 
-	univs, err := client.Universes()
+	// wait for the dream API HTTP server to come up
+	var univs MultiverseInfo
+	for deadline := time.Now().Add(4 * time.Second); ; {
+		univs, err = client.Universes()
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	assert.NilError(t, err)
 
 	assert.DeepEqual(t, univs[univerName].SwarmKey, u.SwarmKey())
@@ -85,10 +91,15 @@ func TestRoutes_Dreaming(t *testing.T) {
 		return
 	}
 
-	time.Sleep(2 * time.Second)
-
-	// Should not fail
-	_, err = u.Simple("test1")
+	// The inject call queues the simple's creation asynchronously — poll for
+	// it rather than guessing a fixed delay.
+	for deadline := time.Now().Add(4 * time.Second); ; {
+		_, err = u.Simple("test1")
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		t.Errorf("Failed getting simple with error: %v", err)
 		return

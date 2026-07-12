@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -155,7 +156,18 @@ func TestSingleBackend(t *testing.T) {
 		}
 	}))
 
-	time.Sleep(3 * time.Second)
+	// Wait for the local HTTP listener to come up before hitting it.
+	addr := fmt.Sprintf("127.0.0.1:%d", n+10)
+	listenTimeout := 6 * time.Second
+	listenStart := time.Now()
+	for time.Since(listenStart) < listenTimeout {
+		conn, err := net.Dial("tcp", addr)
+		if err == nil {
+			conn.Close()
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	msg := "a%08db"
 	var str string

@@ -39,30 +39,41 @@ func TestService_Dreaming(t *testing.T) {
 	})
 	assert.NilError(t, err)
 
-	// give time for peers to discover each other
-	time.Sleep(1 * time.Second)
-
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)
 
 	seer, err := simple.Seer()
 	assert.NilError(t, err)
 
-	err = seer.Geo().Set(fake_location)
+	// give time for peers to discover each other
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		err = seer.Geo().Set(fake_location)
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	assert.NilError(t, err)
 
-	time.Sleep(1 * time.Second)
-
-	resp, err := seer.Geo().All()
-	assert.NilError(t, err)
-
+	// the just-set location reaches the other seer copies via pubsub gossip —
+	// poll All() until it shows up rather than guessing a fixed delay.
+	var resp []*iface.Peer
 	found_match := false
-	for _, p := range resp {
-		if p.Id == simple.PeerNode().ID().String() {
-			if p.Location.Location == fake_location {
+	for deadline := time.Now().Add(2 * time.Second); ; {
+		resp, err = seer.Geo().All()
+		assert.NilError(t, err)
+
+		for _, p := range resp {
+			if p.Id == simple.PeerNode().ID().String() && p.Location.Location == fake_location {
 				found_match = true
+				break
 			}
 		}
+
+		if found_match || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
 	}
 	assert.Assert(t, found_match, "Can't find peer location in All() query")
 }

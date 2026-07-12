@@ -13,6 +13,18 @@ import (
 	keypair "github.com/taubyte/tau/p2p/keypair"
 )
 
+// hasTopicPeer reports whether id is currently known to n's pubsub instance
+// as subscribed to topic (i.e. a subscription announcement from id has been
+// received).
+func hasTopicPeer(n Node, topic string, id peercore.ID) bool {
+	for _, p := range n.Messaging().ListPeers(topic) {
+		if p == id {
+			return true
+		}
+	}
+	return false
+}
+
 // TestPubSubShutdownKVDBDesync tests for pubsub shutdown causing kvdb desync
 // This reproduces the production issue where pubsub connections shutdown cause kvdb desync
 func TestPubSubShutdownKVDBDesync(t *testing.T) {
@@ -119,8 +131,14 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		t.Fatalf("Failed to subscribe peer 2: %v", err)
 	}
 
-	// Wait for subscriptions to be ready
-	time.Sleep(2 * time.Second)
+	// Wait for the subscriptions to propagate to the other side's mesh
+	// (gossipsub needs an exchange of subscription announcements) before
+	// publishing.
+	subTimeout := 4 * time.Second
+	subStart := time.Now()
+	for time.Since(subStart) < subTimeout && !(hasTopicPeer(p1, topicName, p2.ID()) && hasTopicPeer(p2, topicName, p1.ID())) {
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Publish messages from peer 1
 	for i := 0; i < 5; i++ {
@@ -132,8 +150,19 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Wait for messages to propagate
-	time.Sleep(2 * time.Second)
+	// Wait for messages to propagate (poll; the count check below reports
+	// any shortfall once the timeout hits).
+	propagateTimeout := 4 * time.Second
+	propagateStart := time.Now()
+	for time.Since(propagateStart) < propagateTimeout {
+		p2Mu.Lock()
+		got := len(p2Messages)
+		p2Mu.Unlock()
+		if got >= 5 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Verify both peers received messages
 	p1Mu.Lock()
@@ -152,8 +181,19 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 	p1.Peering().RemovePeer(p2.ID())
 	p2.Peering().RemovePeer(p1.ID())
 
-	// Wait for disconnection
-	time.Sleep(2 * time.Second)
+	// Wait for the disconnection to be observed (best-effort: RemovePeer only
+	// stops the peering service's reconnect logic, the connection manager may
+	// keep the link up briefly after unprotecting it).
+	disconnectTimeout := 4 * time.Second
+	disconnectStart := time.Now()
+	for time.Since(disconnectStart) < disconnectTimeout {
+		p1Conn := p1.Peer().Network().Connectedness(p2.ID()).String() == "Connected"
+		p2Conn := p2.Peer().Network().Connectedness(p1.ID()).String() == "Connected"
+		if !p1Conn && !p2Conn {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Check for subscription errors
 	p1Mu.Lock()
@@ -175,7 +215,16 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 	})
 
 	// Wait for reconnection
-	time.Sleep(3 * time.Second)
+	reconnectTimeout := 6 * time.Second
+	reconnectStart := time.Now()
+	for time.Since(reconnectStart) < reconnectTimeout {
+		p1Conn := p1.Peer().Network().Connectedness(p2.ID()).String() == "Connected"
+		p2Conn := p2.Peer().Network().Connectedness(p1.ID()).String() == "Connected"
+		if p1Conn && p2Conn {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Try to publish more messages
 	for i := 5; i < 10; i++ {
@@ -187,8 +236,19 @@ func TestPubSubShutdownKVDBDesync(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// Wait for messages
-	time.Sleep(2 * time.Second)
+	// Wait for messages (poll; the count check below reports any shortfall
+	// once the timeout hits).
+	afterTimeout := 4 * time.Second
+	afterStart := time.Now()
+	for time.Since(afterStart) < afterTimeout {
+		p2Mu.Lock()
+		got := len(p2Messages)
+		p2Mu.Unlock()
+		if got >= 10 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Check if messages were received after reconnection
 	p2Mu.Lock()
@@ -350,14 +410,26 @@ func TestPubSubMultipleSubscriptionsSameTopic(t *testing.T) {
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	time.Sleep(2 * time.Second)
+	// Wait for delivery across all subscriptions (poll; the count check
+	// below reports any shortfall once the timeout hits).
+	expectedCount := 5 * numSubs
+	deliverTimeout := 4 * time.Second
+	deliverStart := time.Now()
+	for time.Since(deliverStart) < deliverTimeout {
+		mu.Lock()
+		got := messageCount
+		mu.Unlock()
+		if got >= expectedCount {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	mu.Lock()
 	count := messageCount
 	mu.Unlock()
 
 	// Each message should be received by each subscription
-	expectedCount := 5 * numSubs
 	if count < expectedCount {
 		t.Errorf("Expected %d message deliveries, got %d", expectedCount, count)
 	}

@@ -41,22 +41,17 @@ func (c *MonkeyTestContext) waitForStatus() error {
 		return nil
 	}
 
-	attempts := 0
-	maxAttempts := 50
-	cont := func() {
-		attempts += 1
-		time.Sleep(time.Second)
-	}
-
 	// ==== Wait for job ====
-	for {
-		err := test()
-		if err != nil && attempts >= maxAttempts {
-			return fmt.Errorf("test failed after %d attempts with: %s", attempts, err.Error())
-		} else if err == nil {
+	var lastErr error
+	for deadline := time.Now().Add(100 * time.Second); ; {
+		lastErr = test()
+		if lastErr == nil || time.Now().After(deadline) {
 			break
 		}
-		cont()
+		time.Sleep(100 * time.Millisecond)
+	}
+	if lastErr != nil {
+		return fmt.Errorf("test failed after waiting with: %s", lastErr.Error())
 	}
 
 	return nil
@@ -73,10 +68,16 @@ func readLogsTestHelper(testCtx context.Context, response *monkey.StatusResponse
 	if err != nil {
 		return fmt.Errorf("Deleting logs `%s` failed with: %s", cid_of_logs, err.Error())
 	}
-	// Also checked with 15 second sleep
-	time.Sleep(3 * time.Second)
-
-	rs, err := peerC.GetFile(testCtx, cid_of_logs)
+	// After a local delete, the content has to be re-fetched from a remote
+	// peer over the network — poll rather than guessing a fixed delay.
+	var rs peer.ReadSeekCloser
+	for deadline := time.Now().Add(6 * time.Second); ; {
+		rs, err = peerC.GetFile(testCtx, cid_of_logs)
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		return fmt.Errorf("Getting log filed failed with %s", err.Error())
 	}

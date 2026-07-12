@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/ipfs/go-log/v2"
+	"github.com/libp2p/go-libp2p/core/network"
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
@@ -100,6 +101,21 @@ func seedLocal(t *testing.T, u *dream.Universe, hash string, entries map[string]
 	db.Close()
 }
 
+// awaitHoarderDiscovery waits for the substrate node to have an active
+// connection to the hoarder before remote ops are driven against it.
+func awaitHoarderDiscovery(t *testing.T, u *dream.Universe) {
+	t.Helper()
+	subNode := u.Substrate().Node()
+	hoarderID := u.Hoarder().Node().ID()
+	for deadline := time.Now().Add(12 * time.Second); time.Now().Before(deadline); {
+		if subNode.Peer().Network().Connectedness(hoarderID) == network.Connected {
+			return
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	t.Fatal("substrate node did not discover the hoarder in time")
+}
+
 func crdtKeyCount(t *testing.T, u *dream.Universe, prefix string) int {
 	t.Helper()
 	res, err := u.Substrate().Node().Store().Query(u.Context(), dsquery.Query{Prefix: prefix, KeysOnly: true})
@@ -144,7 +160,7 @@ func TestMigration_Dreaming(t *testing.T) {
 	)
 
 	// Let the substrate node discover the hoarder before driving remote ops.
-	time.Sleep(6 * time.Second)
+	awaitHoarderDiscovery(t, u)
 
 	// Seed the pre-hoarder shape on the substrate node.
 	cid, err := u.Substrate().Node().AddFile(bytes.NewReader(fileBytes))
@@ -173,7 +189,7 @@ func TestMigration_Dreaming(t *testing.T) {
 		if err = liveKV.Put(u.Context(), "alpha", []byte("live")); err == nil || time.Now().After(deadline) {
 			break
 		}
-		time.Sleep(time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 	assert.NilError(t, err)
 
@@ -189,7 +205,7 @@ func TestMigration_Dreaming(t *testing.T) {
 		if len(report.Instances) == 3 || time.Now().After(deadline) {
 			break
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(100 * time.Millisecond)
 	}
 	assert.Equal(t, len(report.Instances), 3, report.Summary())
 	for _, h := range []string{dbHash, stHash, oldGlobal} {
@@ -285,7 +301,7 @@ func TestMigrationFailClosed_Dreaming(t *testing.T) {
 	u.Mesh()
 
 	publishGenerated(t, u, &structureSpec.Database{Name: "migdb", Match: dbMatch, Size: 1000000})
-	time.Sleep(6 * time.Second)
+	awaitHoarderDiscovery(t, u)
 
 	dbHash := mh.Hash(projectID + "" + dbMatch)
 	seedLocal(t, u, dbHash, map[string][]byte{"alpha": []byte("v")})

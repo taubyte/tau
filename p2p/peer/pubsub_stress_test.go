@@ -104,7 +104,13 @@ func TestPubSubStressConnectionChurn(t *testing.T) {
 		t.Fatalf("Failed to subscribe peer 2: %v", err)
 	}
 
-	time.Sleep(1 * time.Second)
+	// Wait for p1 to see p2's subscription before publishing (gossipsub needs
+	// an exchange of subscription announcements).
+	subTimeout := 2 * time.Second
+	subStart := time.Now()
+	for time.Since(subStart) < subTimeout && !hasTopicPeer(p1, topicName, p2.ID()) {
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Publish messages while churning connections
 	messagesToSend := 20
@@ -209,7 +215,17 @@ func TestPubSubStressManyTopics(t *testing.T) {
 		Addrs: p1.Peer().Addrs(),
 	})
 
-	time.Sleep(3 * time.Second)
+	// Wait for the connection to establish before hammering with topics.
+	connTimeout := 6 * time.Second
+	connStart := time.Now()
+	for time.Since(connStart) < connTimeout {
+		p1Conn := p1.Peer().Network().Connectedness(p2.ID()).String() == "Connected"
+		p2Conn := p2.Peer().Network().Connectedness(p1.ID()).String() == "Connected"
+		if p1Conn && p2Conn {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 
 	// Create many topics
 	numTopics := 10

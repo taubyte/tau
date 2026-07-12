@@ -54,11 +54,17 @@ func TestHeartBeat_Dreaming(t *testing.T) {
 		return
 	}
 
-	time.Sleep(10 * time.Second)
 	seer, err := simple.Seer()
 	assert.NilError(t, err)
 
-	ids, err := seer.Usage().List()
+	var ids []string
+	for deadline := time.Now().Add(20 * time.Second); ; {
+		ids, err = seer.Usage().List()
+		if (err == nil && len(ids) == 1) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		t.Error(err)
 		return

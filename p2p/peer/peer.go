@@ -25,6 +25,15 @@ import (
 	discovery "github.com/libp2p/go-libp2p/p2p/discovery/routing"
 )
 
+// DiscoveryBackoffMin/Max bound how long failed peer-discovery lookups are
+// cached before the DHT is asked again. Dream lowers them so freshly booted
+// test universes recover from empty-routing-table lookups in seconds instead
+// of minutes.
+var (
+	DiscoveryBackoffMin = 60 * time.Second
+	DiscoveryBackoffMax = time.Hour
+)
+
 func StandAlone() BootstrapParams {
 	return BootstrapParams{Enable: false}
 }
@@ -272,11 +281,10 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 	}
 
 	// Prep Discoverer
-	minBackoff, maxBackoff := time.Second*60, time.Hour
 	rng := rand.New(rand.NewSource(rand.Int63()))
 	p.drouter, err = discoveryBackoff.NewBackoffDiscovery(
 		discovery.NewRoutingDiscovery(p.dht),
-		discoveryBackoff.NewExponentialBackoff(minBackoff, maxBackoff, discoveryBackoff.FullJitter, time.Second, 5.0, 0, rng),
+		discoveryBackoff.NewExponentialBackoff(DiscoveryBackoffMin, DiscoveryBackoffMax, discoveryBackoff.FullJitter, time.Second, 5.0, 0, rng),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating backoff discovery failed: %w", err)

@@ -65,9 +65,14 @@ func TestTNSClient_Dreaming(t *testing.T) {
 		return
 	}
 
-	time.Sleep(3 * time.Second)
-
-	new_obj, err := tns.Fetch(spec.NewTnsPath([]string{"t2"}))
+	var new_obj iface.Object
+	for deadline := time.Now().Add(6 * time.Second); ; {
+		new_obj, err = tns.Fetch(spec.NewTnsPath([]string{"t2"}))
+		if err == nil || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		t.Error(err)
 		return
@@ -80,14 +85,18 @@ func TestTNSClient_Dreaming(t *testing.T) {
 		`, fixture["/t2"], new_obj)
 		return
 	}
-	// Give time to clean up context.
-	time.Sleep(10 * time.Second)
 
-	keys, err := tns.List(1)
+	var keys [][]string
+	for deadline := time.Now().Add(20 * time.Second); ; {
+		keys, err = tns.List(1)
+		if (err == nil && len(keys) == 1) || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 	if err != nil {
 		t.Error(err)
 		return
-
 	}
 
 	if len(keys) != 1 {
