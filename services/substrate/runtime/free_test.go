@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/taubyte/tau/core/vm"
+	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
 
 func TestShouldRetire(t *testing.T) {
@@ -84,6 +85,8 @@ func TestInstanceFree(t *testing.T) {
 
 	newInst := func(rt *fakeRuntime) (*instance, *Function) {
 		f := &Function{
+			config:             &structureSpec.Function{Name: "someFunc"},
+			serviceable:        newMockServiceable(),
 			vmConfig:           &vm.Config{MemoryLimitPages: pages},
 			availableInstances: make(chan Instance, InstanceMaxRequests),
 		}
@@ -118,6 +121,31 @@ func TestInstanceFree(t *testing.T) {
 		}
 		if rt.closed != 1 || pooled(f) {
 			t.Fatalf("instance should be retired, closed=%d", rt.closed)
+		}
+		// retired without ever pooling → the no-headroom config warning fires
+		if !f.noPoolWarned.Load() {
+			t.Fatal("expected never-pooled retirement to set noPoolWarned")
+		}
+	})
+
+	t.Run("growth retirement after pooling does not warn", func(t *testing.T) {
+		rt := &fakeRuntime{size: 2 * vm.MemoryPageSize}
+		i, f := newInst(rt)
+		if err := i.Free(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if !pooled(f) {
+			t.Fatal("instance should be pooled")
+		}
+		rt.size = 3 * vm.MemoryPageSize
+		if err := i.Free(); err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rt.closed != 1 {
+			t.Fatalf("grown instance should be retired, closed=%d", rt.closed)
+		}
+		if f.noPoolWarned.Load() {
+			t.Fatal("growth retirement after pooling must not warn")
 		}
 	})
 

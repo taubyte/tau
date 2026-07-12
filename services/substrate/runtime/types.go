@@ -37,6 +37,10 @@ type Function struct {
 	calls         *atomic.Uint64
 	totalCallTime *atomic.Int64
 	maxMemory     *atomic.Uint64
+
+	// noPoolWarned gates the once-per-function warning emitted when instances
+	// retire without ever pooling (memory config leaves no headroom).
+	noPoolWarned atomic.Bool
 }
 
 type instance struct {
@@ -50,6 +54,10 @@ type instance struct {
 	// is in an unknown (possibly closed) state, so Free retires it instead of
 	// repooling.
 	failed bool
+
+	// pooled marks an instance that made it into the pool at least once,
+	// distinguishing normal growth-retirement from a config that never pools.
+	pooled bool
 
 	// cached function handle, keyed by the module/function name it was
 	// resolved under, to avoid a fresh wazero ExportedFunction lookup per call.

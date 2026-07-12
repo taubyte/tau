@@ -55,10 +55,19 @@ func (i *instance) Free() error {
 
 	capBytes := uint64(i.parent.vmConfig.MemoryLimitPages) * uint64(vm.MemoryPageSize)
 	if shouldRetire(useMem, capBytes) {
+		// an instance retired before ever being pooled means the function's
+		// memory config leaves no headroom: every call will cold-start.
+		if !i.pooled && i.parent.noPoolWarned.CompareAndSwap(false, true) {
+			logger.Warnf(
+				"function `%s` (%s) uses %d bytes of its %d-byte memory cap; instances never pool and every call cold-starts — increase the function's memory",
+				i.parent.config.Name, i.parent.serviceable.Id(), useMem, capBytes,
+			)
+		}
 		i.Close()
 		return nil
 	}
 
+	i.pooled = true
 	i.parent.availableInstances <- i
 	return nil
 }
