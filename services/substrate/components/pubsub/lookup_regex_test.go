@@ -30,13 +30,19 @@ func TestLookupRegex(t *testing.T) {
 	structure.RefreshTestVariables()
 	fakeFetch(msg, function)
 
+	// The messaging config matches on both the function and websocket path
+	// (WebSocket: true), so a plain Lookup - one that doesn't request
+	// WebSocket itself - picks up both: the function serviceable and the
+	// otherwise-harmless websocket serviceable (its HandleMessage is a
+	// no-op).
 	ret, err := s.Lookup(
 		&common.MatchDefinition{
 			Channel: testChannel + "/zing",
 			Project: testProject,
 		})
 	assert.NilError(t, err)
-	assert.Equal(t, len(ret), 1)
+	assert.Equal(t, len(ret), 2)
+	assertOneFunctionOneWebSocket(t, ret)
 
 	ret, err = s.Lookup(
 		&common.MatchDefinition{
@@ -44,6 +50,6 @@ func TestLookupRegex(t *testing.T) {
 			Project: testProject,
 		})
 	assert.NilError(t, err)
-	assert.Equal(t, len(ret), 1)
-
+	assert.Equal(t, len(ret), 2)
+	assertOneFunctionOneWebSocket(t, ret)
 }

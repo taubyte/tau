@@ -13,7 +13,6 @@ import (
 )
 
 func TestSocketLookup(t *testing.T) {
-	t.Skip("Websocket as serviseable needs to be refactored")
 	testMessagingName := "someMessaging"
 	s := NewTestService(peer.Mock(t.Context()))
 
@@ -35,20 +34,22 @@ func TestSocketLookup(t *testing.T) {
 		WebSocket: true,
 	}}
 	fakeFetch(msg, nil)
-	// _, err = s.Lookup(
-	// 	&common.MatchDefinition{
-	// 		Channel: testChannel,
-	// 		Project: testProject,
-	// 	})
-	// if err != nil {
-	// 	t.Error(err)
-	// 	return
-	// }
+	_, err = s.Lookup(
+		&common.MatchDefinition{
+			Channel: testChannel,
+			Project: testProject,
+		})
+	if err != nil {
+		t.Error(err)
+		return
+	}
 
-	// if len(structure.AttachedTestFunctions) != 0 {
-	// 	t.Errorf("Expected no functions to be attached got `%d` attached", len(structure.AttachedTestFunctions))
-	// 	return
-	// }
+	// No project functions were faked, so the websocket-only pick must not
+	// have dragged a function instantiation along with it.
+	if len(structure.AttachedTestFunctions) != 0 {
+		t.Errorf("Expected no functions to be attached got `%d` attached", len(structure.AttachedTestFunctions))
+		return
+	}
 
 	url, err := s.WebSocketURL(testProject, "", testChannel)
 	if err != nil {

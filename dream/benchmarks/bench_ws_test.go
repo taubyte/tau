@@ -65,15 +65,6 @@ const wsPayloadSize = 256
 // B (the other subscriber on the same channel) reads it back. See the file
 // comment above for why there is no pubsub-function benchmark alongside it.
 func BenchmarkWebsocketEcho(b *testing.B) {
-	// Skipped: the pubsub websocket serviceable is currently dead code — its
-	// construction is commented out in
-	// services/substrate/components/pubsub/lookup.go, so every WebSocket-matcher
-	// Lookup returns "no pub-sub matches found" and the dial below can never
-	// complete. Keeping the full benchmark under the skip so it starts measuring
-	// the websocket<->pubsub bridge the day that path is revived (just delete
-	// this line). Until then, this keeps `make bench-dreaming BENCH=.` green.
-	b.Skip("pubsub websocket serviceable disabled: websocket append commented out in services/substrate/components/pubsub/lookup.go")
-
 	u := sharedUniverse(b)
 	url, err := wsURL(u)
 	if err != nil {
