@@ -45,6 +45,19 @@ var (
 	testFunction2Id = "QmZY4u91d1YALDN2LTbpVtgwW8iT5cK9PE1bHZqX9J5456"
 )
 
+// Shared config for the websocket and database surfaces, injected once into
+// the shared project alongside the HTTP functions above. (The p2p function
+// benchmark boots its own separate 2-node universe — see bench_p2p_test.go
+// for why a single shared node can't serve it.)
+const (
+	messagingName    = "benchMessaging"
+	messagingChannel = "benchchannel"
+
+	databaseName  = "benchDatabase"
+	databaseMatch = "benchdb"
+	databaseSize  = 1 * 1024 * 1024 * 1024 // 1GiB
+)
+
 var benchServices = map[string]commonIface.ServiceConfig{
 	"tns":       {},
 	"substrate": {},
@@ -128,6 +141,21 @@ func bootShared() error {
 		&structureSpec.Domain{
 			Name: "someDomain",
 			Fqdn: testFqdn,
+		},
+		// websocket<->pubsub channel, exercised by BenchmarkWebsocketEcho (bench_ws_test.go).
+		&structureSpec.Messaging{
+			Name:      messagingName,
+			Match:     messagingChannel,
+			Regex:     false,
+			WebSocket: true,
+		},
+		// KV database, exercised by BenchmarkDatabasePut/Get (bench_data_test.go).
+		&structureSpec.Database{
+			Name:  databaseName,
+			Match: databaseMatch,
+			Regex: false,
+			Local: false,
+			Size:  databaseSize,
 		},
 	)
 	if err != nil {
