@@ -13,18 +13,50 @@ import (
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
 )
 
-func (i *instance) Free() error {
+func (i *instance) usedMemory() (uint32, error) {
 	var useMem uint32
 	for _, name := range i.runtime.Modules() {
 		mod, err := i.runtime.Module(name)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		useMem += mod.Memory().Size()
 	}
 
-	if useMem > uint32(i.parent.config.Memory*2/3) {
-		return fmt.Errorf("used memory limit exceeded") //TODO: cleanup instance
+	return useMem, nil
+}
+
+// shouldRetire decides whether a pooled instance should be discarded instead
+// of reused. wasm linear memory only ever grows, so once usage crosses the
+// last third of the enforced cap we retire the instance while it can still be
+// replaced cheaply, rather than letting its allocator hit the cap mid-call
+// later. The threshold is measured against the page-derived cap that is
+// actually enforced, not raw config.Memory: pages round up, so the byte value
+// understates the real cap and would retire instances that still have
+// headroom. Modules whose minimum footprint already sits past two thirds of
+// the cap never pool — with no room to grow, reuse only defers a mid-call OOM
+// trap, so cold-starting every call is the correct behavior for such
+// under-provisioned functions.
+func shouldRetire(useMem uint32, capBytes uint64) bool {
+	return uint64(useMem) > capBytes*2/3
+}
+
+func (i *instance) Free() error {
+	if i.failed {
+		i.Close()
+		return nil
+	}
+
+	useMem, err := i.usedMemory()
+	if err != nil {
+		i.Close()
+		return err
+	}
+
+	capBytes := uint64(i.parent.vmConfig.MemoryLimitPages) * uint64(vm.MemoryPageSize)
+	if shouldRetire(useMem, capBytes) {
+		i.Close()
+		return nil
 	}
 
 	i.parent.availableInstances <- i
@@ -33,6 +65,32 @@ func (i *instance) Free() error {
 
 func (i *instance) Module(name string) (vm.ModuleInstance, error) {
 	return i.runtime.Module(name)
+}
+
+// function returns cached module/function handles for moduleName/fxName,
+// resolving and caching them on first use. Instances are used by one request
+// at a time, so no locking is required.
+func (i *instance) function(moduleName, fxName string) (vm.ModuleInstance, vm.FunctionInstance, error) {
+	if i.fxModule != nil && i.fxModuleName == moduleName && i.fxName == fxName {
+		return i.fxModule, i.fx, nil
+	}
+
+	mod, err := i.runtime.Module(moduleName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	fx, err := mod.Function(fxName)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	i.fxModuleName = moduleName
+	i.fxName = fxName
+	i.fxModule = mod
+	i.fx = fx
+
+	return mod, fx, nil
 }
 
 func (i *instance) SDK() plugins.Instance {

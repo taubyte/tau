@@ -49,14 +49,32 @@ func (f *Function) Call(inst Instance, id uint32) (err error) {
 		return fmt.Errorf("getting module name for resource `%s` failed with: %w", f.serviceable.Id(), err)
 	}
 
-	module, err := inst.Module(moduleName)
-	if err != nil {
-		return fmt.Errorf("creating module instance failed with: %w", err)
-	}
+	var module vm.ModuleInstance
+	var fx vm.FunctionInstance
+	if ii, ok := inst.(*instance); ok {
+		// any error below (including a RawCall trap or timeout, which closes
+		// the runtime via CloseOnContextDone) leaves the instance in an
+		// unknown state; flag it so Free retires it instead of repooling.
+		defer func() {
+			if err != nil {
+				ii.failed = true
+			}
+		}()
 
-	fx, err := module.Function(f.config.Call)
-	if err != nil {
-		return fmt.Errorf("getting wasm function instance failed with: %w", err)
+		module, fx, err = ii.function(moduleName, f.config.Call)
+		if err != nil {
+			return fmt.Errorf("getting wasm function instance failed with: %w", err)
+		}
+	} else {
+		module, err = inst.Module(moduleName)
+		if err != nil {
+			return fmt.Errorf("creating module instance failed with: %w", err)
+		}
+
+		fx, err = module.Function(f.config.Call)
+		if err != nil {
+			return fmt.Errorf("getting wasm function instance failed with: %w", err)
+		}
 	}
 
 	ctx, ctxC := context.WithTimeout(f.ctx, time.Duration(time.Nanosecond*time.Duration(f.config.Timeout)))

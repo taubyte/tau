@@ -45,6 +45,18 @@ type instance struct {
 	memUsages   []uint32
 	sdk         plugins.Instance
 	parent      *Function
+
+	// failed marks an instance whose call errored or timed out; its runtime
+	// is in an unknown (possibly closed) state, so Free retires it instead of
+	// repooling.
+	failed bool
+
+	// cached function handle, keyed by the module/function name it was
+	// resolved under, to avoid a fresh wazero ExportedFunction lookup per call.
+	fxModuleName string
+	fxName       string
+	fxModule     vm.ModuleInstance
+	fx           vm.FunctionInstance
 }
 
 type instanceRequest struct {
