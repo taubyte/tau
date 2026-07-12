@@ -710,26 +710,32 @@ func TestDataStreamHandler_Out_DefaultCase(t *testing.T) {
 // Test for race conditions and closed channel writes
 func TestDataStreamHandler_RaceConditions(t *testing.T) {
 	t.Run("concurrent close and channel operations", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
+		// The interesting schedule is In()'s first iteration racing Close()'s
+		// cancel, so run many interleavings and join the goroutines each time
+		// (a wedged In/Out shows up as a test timeout).
+		var handler *dataStreamHandler
+		for i := 0; i < 100; i++ {
+			ctx, cancel := context.WithCancel(context.Background())
 
-		// Create handler with small buffer to increase chance of race conditions
-		handler := &dataStreamHandler{
-			ctx:   ctx,
-			ctxC:  cancel,
-			ch:    make(chan pubsubIface.Message, 1),
-			errCh: make(chan error, 1),
-			conn:  &mockWebSocketConnection{},
-			srv:   &mockLocalService{},
+			handler = createTestHandler(ctx, cancel, &mockWebSocketConnection{}, createMockService(nil))
+
+			var wg sync.WaitGroup
+			wg.Add(2)
+			go func() {
+				defer wg.Done()
+				handler.In()
+			}()
+			go func() {
+				defer wg.Done()
+				handler.Out()
+			}()
+
+			// Try to close while goroutines are running
+			// This should not panic or cause issues
+			handler.Close()
+			wg.Wait()
+			cancel()
 		}
-
-		// Start In and Out goroutines
-		go handler.In()
-		go handler.Out()
-
-		// Try to close while goroutines are running
-		// This should not panic or cause issues
-		handler.Close()
 
 		// Verify channels are closed
 		verifyChannelsClosed(t, handler)
