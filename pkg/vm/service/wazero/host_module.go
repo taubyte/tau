@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"reflect"
+	"sync"
 
 	"github.com/taubyte/tau/core/vm"
 	callBridge "github.com/taubyte/tau/pkg/vm/service/wazero/callBridge"
@@ -14,20 +15,30 @@ var _ vm.HostModule = &hostModule{}
 var moduleType = reflect.TypeOf((*vm.Module)(nil)).Elem()
 var wazeroModuleType = reflect.TypeOf((*api.Module)(nil)).Elem()
 
-func (hm *hostModule) convertToHandler(def *vm.HostModuleFunctionDefinition) (interface{}, error) {
-	if _, exists := hm.functions[def.Name]; exists {
-		return nil, fmt.Errorf("function `%s` @ `%s` already defined", def.Name, hm.name)
-	}
+// handlerSignature is the reflection work derivable once per handler func type:
+// the wazero-facing func type (vm.Module params swapped for api.Module), and
+// which of the first two params need that swap undone (wrapped back into a
+// vm.Module) on every call. Handler funcs are re-attached on every wasm cold
+// start, but their signatures repeat, so this is cached process-wide.
+type handlerSignature struct {
+	funcType reflect.Type
+	convert  [2]bool
+}
 
-	tp := reflect.TypeOf(def.Handler)
+var handlerSignatures sync.Map // reflect.Type (handler func type) -> *handlerSignature
 
+func buildHandlerSignature(tp reflect.Type) *handlerSignature {
 	count := tp.NumIn()
 	_in := make([]reflect.Type, count)
 
+	sig := &handlerSignature{}
 	for i := 0; i < count; i++ {
 		in := tp.In(i)
 		if in.Kind() == reflect.Interface && in.Implements(moduleType) {
 			_in[i] = wazeroModuleType
+			if i < 2 {
+				sig.convert[i] = true
+			}
 		} else {
 			_in[i] = in
 		}
@@ -39,17 +50,39 @@ func (hm *hostModule) convertToHandler(def *vm.HostModuleFunctionDefinition) (in
 		_out[i] = tp.Out(i)
 	}
 
-	_func := reflect.MakeFunc(
-		reflect.FuncOf(_in, _out, false),
-		func(args []reflect.Value) []reflect.Value {
+	sig.funcType = reflect.FuncOf(_in, _out, false)
 
+	return sig
+}
+
+func (hm *hostModule) convertToHandler(def *vm.HostModuleFunctionDefinition) (interface{}, error) {
+	if _, exists := hm.functions[def.Name]; exists {
+		return nil, fmt.Errorf("function `%s` @ `%s` already defined", def.Name, hm.name)
+	}
+
+	tp := reflect.TypeOf(def.Handler)
+
+	var sig *handlerSignature
+	if cached, ok := handlerSignatures.Load(tp); ok {
+		sig = cached.(*handlerSignature)
+	} else {
+		sig = buildHandlerSignature(tp)
+		// two goroutines racing the same type both compute the same value; last store wins
+		handlerSignatures.Store(tp, sig)
+	}
+
+	handlerVal := reflect.ValueOf(def.Handler)
+
+	_func := reflect.MakeFunc(
+		sig.funcType,
+		func(args []reflect.Value) []reflect.Value {
 			for i := 0; i < 2; i++ {
-				if len(args) > i && args[i].Kind() == reflect.Interface && args[i].Type().Implements(wazeroModuleType) {
+				if sig.convert[i] && len(args) > i {
 					args[i] = reflect.ValueOf(callBridge.New(args[i].Interface().(api.Module)))
 				}
 			}
 
-			return reflect.ValueOf(def.Handler).Call(args)
+			return handlerVal.Call(args)
 		})
 
 	return _func.Interface(), nil

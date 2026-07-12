@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
+	"github.com/taubyte/tau/pkg/vm/backend/dfs"
 	fixtures "github.com/taubyte/tau/pkg/vm/fixtures/wasm"
 	loaders "github.com/taubyte/tau/pkg/vm/loaders/wazero"
 	test "github.com/taubyte/tau/pkg/vm/test_utils"
@@ -15,6 +16,12 @@ import (
 
 func TestLoader(t *testing.T) {
 	test.ResetVars()
+
+	// this test deletes the backing file and expects loads to fail; the
+	// dfs backend's CID cache would (correctly) keep serving the bytes.
+	oldCacheSize := dfs.CacheSize
+	dfs.CacheSize = 0
+	defer func() { dfs.CacheSize = oldCacheSize }()
 
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
