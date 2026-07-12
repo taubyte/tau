@@ -34,7 +34,6 @@ type Universe struct {
 	all       []peer.Node
 	closables []commonIface.Service
 	lookups   map[string]*NodeInfo
-	portShift int
 	service   map[string]*serviceInfo
 	simples   map[string]*Simple
 

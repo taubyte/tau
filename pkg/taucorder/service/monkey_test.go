@@ -38,7 +38,6 @@ func TestMonkey_Dreaming(t *testing.T) {
 	s, err := getMockService(ctx)
 	assert.NilError(t, err)
 
-	dream.DreamApiPort = 31427 // don't conflict with default port
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

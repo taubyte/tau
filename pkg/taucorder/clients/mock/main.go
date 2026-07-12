@@ -24,8 +24,6 @@ import (
 )
 
 func main() {
-	dream.DreamApiPort = 2442 // diffrent port than the default
-
 	m, err := dream.New(context.Background())
 	if err != nil {
 		panic(err)
@@ -82,7 +80,7 @@ func main() {
 		httpServer.Shutdown(shutdownCtx)
 	}()
 
-	dreamClient, err := dreamClient.New(ctx, dreamClient.URL("http://127.0.0.1:2442"))
+	dreamClient, err := dreamClient.New(ctx, dreamClient.URL("http://"+dream.DreamApiListen()))
 	if err != nil {
 		panic(err)
 	}

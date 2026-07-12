@@ -44,15 +44,23 @@ func newTestService(t *testing.T, node *mockNode, registry *sensors.Registry) *s
 }
 
 func TestAll(t *testing.T) {
-	// Allow time for default port (4217) to be released from previous runs before any subtest.
-	time.Sleep(2 * time.Second)
-
 	tests := []struct {
 		name string
 		fn   func(t *testing.T)
 	}{
-		// New_DefaultPort runs first so it can bind to 4217 before any other test.
 		{"New_DefaultPort", func(t *testing.T) {
+			// Reserve a free port from the kernel and point DefaultPort at it, so
+			// the "binds DefaultPort when no address is given" behavior can be
+			// verified without requiring the literal 4217 to be free.
+			l, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			port := l.Addr().(*net.TCPAddr).Port
+			require.NoError(t, l.Close())
+
+			original := sensors.DefaultPort
+			sensors.DefaultPort = port
+			t.Cleanup(func() { sensors.DefaultPort = original })
+
 			testID, _ := libp2ppeer.Decode("12D3KooWMn5qZpfJckxXBgRd4syQMhkkzbAFnjwPFzAJByj5vLLn")
 			mockNode := &mockNode{id: testID}
 
@@ -260,12 +268,9 @@ func TestAll(t *testing.T) {
 			require.Equal(t, 0.0, value)
 		}},
 	}
-	for i, tc := range tests {
+	for _, tc := range tests {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
-			if i > 0 {
-				time.Sleep(1 * time.Second)
-			}
 			tc.fn(t)
 		})
 	}

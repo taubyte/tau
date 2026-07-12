@@ -20,12 +20,7 @@ import (
 
 var services = []string{"seer", "auth", "patrick", "tns", "monkey", "hoarder", "substrate"}
 
-func init() {
-	dream.DreamApiPort = 41421 // don't conflict with default port
-}
-
 func TestKillService_Dreaming(t *testing.T) {
-	dream.DreamApiPort = 43421
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()
@@ -76,7 +71,6 @@ func TestKillSimple_Dreaming(t *testing.T) {
 	universeName := "killsimple"
 	statusName := fmt.Sprintf("%s@%s", testSimpleName, universeName)
 
-	dream.DreamApiPort = 40424
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

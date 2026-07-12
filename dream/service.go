@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"strings"
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
@@ -11,23 +12,9 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 )
 
-func (u *Universe) PortFor(proto, _type string) (int, error) {
-	serviceCount := len(u.service[proto].nodes)
-	var mapPath string
-	switch _type {
-	case "http", "p2p", "ipfs", "dns":
-		mapPath = _type + "/" + proto
-	default:
-		return 0, fmt.Errorf("invalid type `%s`", _type)
-	}
-
-	port, ok := Ports[mapPath]
-	if !ok {
-		return 0, fmt.Errorf("no port set for type `%s` protocol `%s`", _type, proto)
-	}
-
-	return u.portShift + port + serviceCount, nil
-}
+// otherPortKeys is the fixed order in which "Others" ports are assigned from
+// a freshly reserved batch of ports.
+var otherPortKeys = []string{"http", "p2p", "dns", "ipfs"}
 
 func (u *Universe) createService(name string, config *commonIface.ServiceConfig) error {
 	if config.Disabled {
@@ -47,18 +34,45 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 		config.Others = make(map[string]int)
 	}
 
-	var err error
-	for _, k := range []string{"http", "p2p", "dns", "ipfs"} {
-		if prt, ok := config.Others[k]; !ok || prt == 0 {
-			config.Others[k], _ = u.PortFor(name, k)
+	var (
+		node peer.Node
+		err  error
+	)
 
-			if k == "p2p" {
-				config.Port = config.Others[k]
+	// Binding a service can race another process for the same kernel-picked
+	// port between reservation and bind; retry a few times with a fresh batch
+	// of ports rather than failing the whole service start.
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			for _, k := range otherPortKeys {
+				config.Others[k] = 0
 			}
 		}
-	}
 
-	node, err := u.startService(name, config)
+		var ports []int
+		ports, err = GetFreePorts(len(otherPortKeys))
+		if err != nil {
+			return err
+		}
+
+		for i, k := range otherPortKeys {
+			if prt, ok := config.Others[k]; !ok || prt == 0 {
+				config.Others[k] = ports[i]
+
+				if k == "p2p" {
+					config.Port = config.Others[k]
+				}
+			}
+		}
+
+		node, err = u.startService(name, config)
+		if err == nil {
+			break
+		}
+		if !strings.Contains(err.Error(), "address already in use") {
+			return err
+		}
+	}
 	if err != nil {
 		return err
 	}
@@ -68,12 +82,15 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 	// we mesh first
 	u.Mesh(node)
 
-	// wait till we're connected to others
-	node.WaitForSwarm(afterStartDelay())
+	// Wait (bounded, best-effort) until at least one peer has connected.
+	// Skipping this — even for the first-booted node, which pays the full
+	// timeout — lets a service make its first pubsub/DHT moves while
+	// isolated; those failures get backoff-cached for 60s+ and wedge the
+	// universe for minutes.
+	node.WaitForSwarm(time.Second)
 
 	// register so others can mesh with it
 	u.Register(node, name, config.Others)
-	time.Sleep(afterStartDelay())
 
 	return nil
 }
