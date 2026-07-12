@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
-	"net"
 	"os"
 	"path"
 	"path/filepath"
@@ -74,7 +73,6 @@ func (m *Multiverse) New(config UniverseConfig) (*Universe, error) {
 		name:       config.Name,
 		id:         id,
 		swarmKey:   swarmKey,
-		portShift:  lastPortShift(),
 		keepRoot:   config.KeepRoot,
 	}
 
@@ -373,17 +371,6 @@ func (u *Universe) Cleanup() {
 	u.lock.RLock()
 	defer u.lock.RUnlock()
 
-	validPorts := []string{"http", "p2p", "ipfs", "dns"}
-	// collect all used ports
-	usedPorts := make(map[int]bool)
-	for _, nodeInfo := range u.lookups {
-		for proto, port := range nodeInfo.Ports {
-			if slices.Contains(validPorts, proto) {
-				usedPorts[port] = true
-			}
-		}
-	}
-
 	var (
 		closeableWg sync.WaitGroup
 		simpleWg    sync.WaitGroup
@@ -427,49 +414,6 @@ func (u *Universe) Cleanup() {
 		}(s)
 	}
 	nodeWg.Wait()
-
-	cleanupCtx, cleanupCtxCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cleanupCtxCancel()
-
-	// wait for all usedports to be closed
-	for port := range usedPorts {
-		select {
-		case <-cleanupCtx.Done():
-			return
-		default:
-		}
-		for {
-			select {
-			case <-cleanupCtx.Done():
-				return
-			default:
-			}
-			// Try to bind to the port to check if it's available (both TCP and UDP)
-			tcpListener, tcpErr := net.Listen("tcp", fmt.Sprintf("%s:%d", DefaultHost, port))
-			udpAddr, udpErr := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", DefaultHost, port))
-			var udpConn *net.UDPConn
-			if udpErr == nil {
-				udpConn, udpErr = net.ListenUDP("udp", udpAddr)
-			}
-
-			if tcpErr == nil && udpErr == nil {
-				tcpListener.Close()
-				udpConn.Close()
-				break // Port is available, move to next
-			}
-
-			if tcpListener != nil {
-				tcpListener.Close()
-			}
-			if udpConn != nil {
-				udpConn.Close()
-			}
-
-			// Port still in use, wait a bit and retry
-			time.Sleep(10 * time.Millisecond)
-		}
-	}
-
 }
 
 func (u *Universe) DiskUsage() (int64, error) {

@@ -25,7 +25,6 @@ func TestAuthRepos_Dreaming(t *testing.T) {
 	ctx, ctxC := context.WithCancel(context.Background())
 	defer ctxC()
 
-	dream.DreamApiPort = 33423 // don't conflict with default port
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()

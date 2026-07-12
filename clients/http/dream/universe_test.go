@@ -29,8 +29,6 @@ import (
 )
 
 func TestRoutes_Dreaming(t *testing.T) {
-	dream.DreamApiPort = 31421 // don't conflict with default port
-
 	univerName := "dream-http"
 	// start multiverse
 	m, err := dream.New(t.Context())

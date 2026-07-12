@@ -18,7 +18,20 @@ type Service struct {
 }
 
 // Deprecated: Use New instead
+//
+// BigBang is the test/mock entry point (the tau CLI calls New directly and
+// keeps the fixed 1421 default). It allocates a kernel-free port and sets
+// dream.DreamApiPort before starting the server: process-local consumers
+// (taucorder, the dream http client) build their default URLs from
+// DreamApiPort, so setting it here keeps them all in agreement while making
+// concurrent test binaries collision-free.
 func BigBang(m *dream.Multiverse) error {
+	ports, err := dream.GetFreePorts(1)
+	if err != nil {
+		return err
+	}
+	dream.DreamApiPort = ports[0]
+
 	srv, err := New(m, nil)
 	if err != nil {
 		return err

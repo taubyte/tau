@@ -14,33 +14,63 @@ import (
 	"os"
 	"path"
 	"strings"
-	"time"
 )
 
-func lastSimplePort() int {
-	lastSimplePortAllocatedLock.Lock()
-	defer lastSimplePortAllocatedLock.Unlock()
-	lastSimplePortAllocated++
-	return lastSimplePortAllocated
-}
-
-func lastPortShift() int {
-	lastUniversePortShiftLock.Lock()
-	defer lastUniversePortShiftLock.Unlock()
-	for {
-		lastUniversePortShift += (int(mrand.NewSource(time.Now().UnixNano()).Int63()%int64(maxUniverses)) * portsPerUniverse) % 6000
-		l, err := net.Listen("tcp", fmt.Sprintf("%s:%d", DefaultHost, lastUniversePortShift))
-		if err == nil {
+// GetFreePorts reserves n distinct ports from the kernel: it binds n TCP
+// listeners on :0 (held simultaneously so they're distinct) and verifies UDP
+// is bindable on each (seer serves DNS over UDP). Listeners are released on
+// return; the tiny release-to-rebind window is covered by bind-retry at the
+// call sites.
+func GetFreePorts(n int) ([]int, error) {
+	var (
+		tcpListeners []net.Listener
+		udpConns     []*net.UDPConn
+	)
+	defer func() {
+		for _, l := range tcpListeners {
 			l.Close()
+		}
+		for _, c := range udpConns {
+			c.Close()
+		}
+	}()
+
+	ports := make([]int, 0, n)
+	for len(ports) < n {
+		var bound bool
+		for range 10 {
+			l, err := net.Listen("tcp", DefaultHost+":0")
+			if err != nil {
+				return nil, fmt.Errorf("listening on a free tcp port failed with: %w", err)
+			}
+
+			port := l.Addr().(*net.TCPAddr).Port
+
+			udpAddr, err := net.ResolveUDPAddr("udp", fmt.Sprintf("%s:%d", DefaultHost, port))
+			if err != nil {
+				l.Close()
+				continue
+			}
+
+			udpConn, err := net.ListenUDP("udp", udpAddr)
+			if err != nil {
+				// port not bindable on udp (e.g. taken by another process); release and retry
+				l.Close()
+				continue
+			}
+
+			tcpListeners = append(tcpListeners, l)
+			udpConns = append(udpConns, udpConn)
+			ports = append(ports, port)
+			bound = true
 			break
 		}
+		if !bound {
+			return nil, fmt.Errorf("failed to reserve a free tcp+udp port after 10 attempts")
+		}
 	}
-	return lastUniversePortShift
-}
 
-func afterStartDelay() time.Duration {
-	rnd := mrand.New(mrand.NewSource(time.Now().UnixNano()))
-	return time.Duration(BaseAfterStartDelay+rnd.Intn(MaxAfterStartDelay-BaseAfterStartDelay)) * time.Millisecond
+	return ports, nil
 }
 
 // GetCacheFolder returns the cache folder for the dream

@@ -348,16 +348,28 @@ func TestDataStreamHandler_In(t *testing.T) {
 		// Start the In goroutine
 		go handler.In()
 
-		// Wait for the message to be read and processed
+		// Wait for the message to be read. The timeout is only an upper bound
+		// for a wedged goroutine, so a busy machine doesn't slow down a healthy run.
 		select {
 		case <-done:
-			// Message was read, now wait a bit for processing
-			time.Sleep(10 * time.Millisecond)
-			// Cancel context to stop the infinite loop
-			cancel()
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(5 * time.Second):
 			t.Error("Expected message to be read within timeout")
 		}
+
+		// Publishing happens asynchronously after the read handoff, so poll for
+		// it instead of assuming a fixed delay is long enough under load.
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			mu.Lock()
+			called := publishCalled
+			mu.Unlock()
+			if called || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		// Cancel context to stop the infinite loop
+		cancel()
 
 		mu.Lock()
 		called := publishCalled
@@ -392,7 +404,7 @@ func TestDataStreamHandler_In(t *testing.T) {
 			errorSent = true
 			mu.Unlock()
 			assert.Assert(t, err != nil, "Expected error to be sent")
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(5 * time.Second):
 			t.Error("Expected error to be sent within timeout")
 		}
 
@@ -421,7 +433,7 @@ func TestDataStreamHandler_In(t *testing.T) {
 		case err := <-handler.errCh:
 			errorSent = true
 			assert.Assert(t, err != nil, "Expected error to be sent")
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(5 * time.Second):
 			t.Error("Expected error to be sent within timeout")
 		}
 
@@ -486,8 +498,17 @@ func TestDataStreamHandler_Out(t *testing.T) {
 		// Start the Out goroutine
 		go handler.Out()
 
-		// Wait for message to be written
-		time.Sleep(10 * time.Millisecond)
+		// Poll for the write instead of assuming a fixed delay is long enough under load.
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			mu.Lock()
+			called := writeCalled
+			mu.Unlock()
+			if called || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 
 		mu.Lock()
 		called := writeCalled
@@ -536,8 +557,17 @@ func TestDataStreamHandler_Out(t *testing.T) {
 		// Start the Out goroutine
 		go handler.Out()
 
-		// Wait for error handling
-		time.Sleep(10 * time.Millisecond)
+		// Poll for both effects instead of assuming a fixed delay is long enough under load.
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			mu.Lock()
+			done := writeJSONCalled && closeCalled
+			mu.Unlock()
+			if done || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
 
 		mu.Lock()
 		jsonCalled := writeJSONCalled
@@ -580,7 +610,7 @@ func TestDataStreamHandler_Out(t *testing.T) {
 		case err := <-handler.errCh:
 			errorSent = true
 			assert.Assert(t, err != nil, "Expected error to be sent")
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(5 * time.Second):
 			t.Error("Expected error to be sent within timeout")
 		}
 
@@ -645,7 +675,7 @@ func TestDataStreamHandler_In_DefaultCase(t *testing.T) {
 		if err == nil {
 			t.Error("Expected error to be sent")
 		}
-	case <-time.After(100 * time.Millisecond):
+	case <-time.After(5 * time.Second):
 		t.Error("Expected error to be sent within timeout")
 	}
 }

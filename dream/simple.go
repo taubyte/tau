@@ -3,6 +3,7 @@ package dream
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
@@ -151,8 +152,15 @@ func (u *Universe) CreateSimpleNode(name string, config *SimpleConfig) (peer.Nod
 		return nil, fmt.Errorf("simple Node `%s` exists in universe `%s`", name, u.Name())
 	}
 
-	if config.Port == 0 {
-		config.Port = u.portShift + lastSimplePort()
+	// only retry with a fresh port if we're the one who allocated it; an
+	// explicit config.Port is a caller's choice, not ours to change
+	allocatedPort := config.Port == 0
+	if allocatedPort {
+		ports, ferr := GetFreePorts(1)
+		if ferr != nil {
+			return nil, ferr
+		}
+		config.Port = ports[0]
 	}
 
 	upeers := u.Peers()
@@ -163,15 +171,32 @@ func (u *Universe) CreateSimpleNode(name string, config *SimpleConfig) (peer.Nod
 		}
 	}
 
-	simpleNode, err := peer.NewLitePublic(
-		u.ctx,
-		fmt.Sprintf("%s/simple-%s-%d", u.root, name, config.Port),
-		keypair.NewRaw(),
-		u.swarmKey,
-		[]string{fmt.Sprintf(DefaultP2PListenFormat, config.Port)},
-		[]string{fmt.Sprintf(DefaultP2PListenFormat, config.Port)},
-		peer.BootstrapParams{Enable: len(bpeers) > 0, Peers: bpeers},
-	)
+	var simpleNode peer.Node
+	for attempt := 0; attempt < 3; attempt++ {
+		if attempt > 0 {
+			ports, perr := GetFreePorts(1)
+			if perr != nil {
+				return nil, perr
+			}
+			config.Port = ports[0]
+		}
+
+		simpleNode, err = peer.NewLitePublic(
+			u.ctx,
+			fmt.Sprintf("%s/simple-%s-%d", u.root, name, config.Port),
+			keypair.NewRaw(),
+			u.swarmKey,
+			[]string{fmt.Sprintf(DefaultP2PListenFormat, config.Port)},
+			[]string{fmt.Sprintf(DefaultP2PListenFormat, config.Port)},
+			peer.BootstrapParams{Enable: len(bpeers) > 0, Peers: bpeers},
+		)
+		if err == nil {
+			break
+		}
+		if !allocatedPort || !strings.Contains(err.Error(), "address already in use") {
+			break
+		}
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed creating me error: %v", err)
 	}
@@ -190,7 +215,12 @@ func (u *Universe) CreateSimpleNode(name string, config *SimpleConfig) (peer.Nod
 	u.simples[name] = simple
 	u.lock.Unlock()
 
-	time.Sleep(afterStartDelay())
+	// Settle before joining the mesh. Meshing the simple immediately after
+	// creation deterministically wedges parallel universe boots (services
+	// end up deaf to each other for minutes); the exact libp2p-level race
+	// is not pinned down, so this keeps the settle main always had, made
+	// deterministic. Do not remove without a green full dreaming sweep.
+	time.Sleep(750 * time.Millisecond)
 	u.Mesh(simpleNode)
 	u.Register(simpleNode, name, map[string]int{"p2p": config.Port})
 
