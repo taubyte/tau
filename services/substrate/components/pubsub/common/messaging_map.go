@@ -29,9 +29,9 @@ type MessagingMapItem struct {
 }
 
 type MessagingMap struct {
-	Function MessagingMapItem
-	//WebSocket MessagingMapItem
-	HasAny bool
+	Function  MessagingMapItem
+	WebSocket MessagingMapItem
+	HasAny    bool
 }
 
 func (mmi *MessagingMapItem) Len() int {

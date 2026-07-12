@@ -45,6 +45,18 @@ func TestBackend(t *testing.T) {
 	err = dagReader.Close()
 	assert.NilError(t, err)
 
+	// Second Get for the same CID should be served from the in-process cache.
+	cachedReader, err := backend.Get(mAddr)
+	assert.NilError(t, err)
+
+	cachedData, err := io.ReadAll(cachedReader)
+	assert.NilError(t, err)
+
+	assert.DeepEqual(t, dfsData, cachedData)
+
+	err = cachedReader.Close()
+	assert.NilError(t, err)
+
 	// Missing Close coverage as dagReader Close does not seem to fail
 
 	backend.Close()

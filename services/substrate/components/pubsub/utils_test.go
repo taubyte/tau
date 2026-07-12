@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"testing"
 
+	iface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/p2p/peer"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
@@ -44,4 +46,24 @@ func NewTestService(node peer.Node) *Service {
 	}
 
 	return s
+}
+
+// assertOneFunctionOneWebSocket checks a Lookup result holds exactly one
+// function serviceable (Config() != nil) and one websocket serviceable
+// (Config() == nil, per the websocket package's Config()).
+func assertOneFunctionOneWebSocket(t *testing.T, picks []iface.Serviceable) {
+	t.Helper()
+
+	var functions, webSockets int
+	for _, p := range picks {
+		if p.Config() != nil {
+			functions++
+		} else {
+			webSockets++
+		}
+	}
+
+	if functions != 1 || webSockets != 1 {
+		t.Errorf("expected 1 function and 1 websocket serviceable, got %d function(s) and %d websocket(s)", functions, webSockets)
+	}
 }

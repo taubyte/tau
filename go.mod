@@ -99,6 +99,7 @@ require (
 	github.com/whyrusleeping/multiaddr-filter v0.0.0-20160516205228-e903e4adabd7
 	go.starlark.net v0.0.0-20251109183026-be02852a5e1f
 	golang.org/x/mod v0.35.0
+	golang.org/x/sync v0.20.0
 	golang.org/x/text v0.37.0
 	google.golang.org/grpc v1.79.3
 	google.golang.org/protobuf v1.36.10
@@ -329,7 +330,6 @@ require (
 	go.uber.org/fx v1.24.0 // indirect
 	go.uber.org/mock v0.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260409153401-be6f6cb8b1fa // indirect
 	golang.org/x/time v0.12.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect

@@ -20,7 +20,9 @@ func NewRuntime(ctx context.Context, config *vm.Config) wazero.Runtime {
 		ctx,
 		wazero.NewRuntimeConfig().
 			WithCloseOnContextDone(true).
-			WithDebugInfoEnabled(true).
+			// DWARF parsing slows every module compile and bloats memory; wasm error
+			// stack traces keep function names without it.
+			WithDebugInfoEnabled(false).
 			WithMemoryLimitPages(config.MemoryLimitPages).
 			WithCompilationCache(Cache),
 	)
