@@ -13,6 +13,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	iface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/dream"
+	streamsClient "github.com/taubyte/tau/p2p/streams/client"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
@@ -23,6 +24,14 @@ import (
 var client_count = 16
 
 func TestHeartbeat_Dreaming(t *testing.T) {
+	// 16 clients heartbeat concurrently while sibling packages load the
+	// machine during the -p 4 dreaming sweep; the default 10s p2p send
+	// timeout can starve and fail the send with an i/o timeout before the
+	// swarm recovers from discovery backoff.
+	oldTimeout := streamsClient.SendToPeerTimeout
+	streamsClient.SendToPeerTimeout = 90 * time.Second
+	defer func() { streamsClient.SendToPeerTimeout = oldTimeout }()
+
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()
