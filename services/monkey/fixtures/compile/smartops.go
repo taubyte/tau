@@ -77,7 +77,7 @@ func (f smartopsContext) zWasmFile() error {
 }
 
 func (f smartopsContext) codeFile(language wasmSpec.SupportedLanguage) error {
-	return f.ctx.stashCached(f.ctx.resourceId, func() (io.ReadSeekCloser, error) {
+	return f.ctx.stashCached(f.ctx.resourceId, "zwasm", func() (io.ReadSeekCloser, error) {
 		root, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("%s-*", f.ctx.resourceId))
 		if err != nil {
 			return nil, err
