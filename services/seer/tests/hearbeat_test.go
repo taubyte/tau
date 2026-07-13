@@ -3,6 +3,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sync"
@@ -10,10 +11,10 @@ import (
 	"time"
 
 	"github.com/libp2p/go-libp2p/core/network"
+	peercore "github.com/libp2p/go-libp2p/core/peer"
 	commonIface "github.com/taubyte/tau/core/common"
 	iface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/dream"
-	streamsClient "github.com/taubyte/tau/p2p/streams/client"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/seer/dream"
@@ -24,14 +25,6 @@ import (
 var client_count = 16
 
 func TestHeartbeat_Dreaming(t *testing.T) {
-	// 16 clients heartbeat concurrently while sibling packages load the
-	// machine during the -p 4 dreaming sweep; the default 10s p2p send
-	// timeout can starve and fail the send with an i/o timeout before the
-	// swarm recovers from discovery backoff.
-	oldTimeout := streamsClient.SendToPeerTimeout
-	streamsClient.SendToPeerTimeout = 90 * time.Second
-	defer func() { streamsClient.SendToPeerTimeout = oldTimeout }()
-
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
 	defer m.Close()
@@ -70,21 +63,35 @@ func TestHeartbeat_Dreaming(t *testing.T) {
 		}
 	}
 
-	// give time for all clients to discover the seer node before driving
-	// the concurrent load below.
+	// every client must hold a real (non-limited) connection to the seer
+	// before the concurrent load below: a heartbeat has only the 10s send
+	// timeout for discovery plus the command roundtrip. The boot mesh is
+	// best-effort — under load a pair's initial dial can fail and end up
+	// with a relay-limited connection that streams can't open over, and
+	// nothing upgrades it — so actively dial stragglers with the seer's
+	// direct addresses instead of waiting.
 	seerNode := u.Seer().Node()
-	for deadline := time.Now().Add(20 * time.Second); ; {
-		allConnected := true
-		for _, s := range simples {
-			if s.PeerNode().Peer().Network().Connectedness(seerNode.ID()) != network.Connected {
-				allConnected = false
-				break
+	seerInfo := peercore.AddrInfo{ID: seerNode.ID(), Addrs: seerNode.Peer().Addrs()}
+	deadline := time.Now().Add(60 * time.Second)
+	for {
+		var unconnected []string
+		for i, s := range simples {
+			if state := s.PeerNode().Peer().Network().Connectedness(seerNode.ID()); state != network.Connected {
+				unconnected = append(unconnected, fmt.Sprintf("client%d=%s", i, state))
+				dialCtx, dialC := context.WithTimeout(u.Context(), 5*time.Second)
+				if err := s.PeerNode().Peer().Connect(dialCtx, seerInfo); err != nil {
+					t.Logf("client%d dial to seer: %v", i, err)
+				}
+				dialC()
 			}
 		}
-		if allConnected || time.Now().After(deadline) {
+		if len(unconnected) == 0 {
 			break
 		}
-		time.Sleep(100 * time.Millisecond)
+		if time.Now().After(deadline) {
+			t.Fatalf("clients not connected to the seer within 60s: %v", unconnected)
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 
 	hostname, err := os.Hostname()

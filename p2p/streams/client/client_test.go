@@ -2986,3 +2986,86 @@ func TestGoroutineCountPerSend(t *testing.T) {
 		})
 	}
 }
+
+// TestSendRecoversFromEarlyDiscovery covers the peer-discovery starvation bug:
+// a Send started before the target peer registers its stream handler used to
+// starve forever even after identify caught up, because discover() only
+// refreshed candidate peers when a new peerRequest arrived. With the
+// PeerRetryInterval ticker in place, the parked request gets picked up on the
+// next tick once refreshFromPeerStore() finds B in the peerstore.
+func TestSendRecoversFromEarlyDiscovery(t *testing.T) {
+	logging.SetLogLevel("*", "error")
+
+	ctx := t.Context()
+
+	a, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{"/ip4/127.0.0.1/tcp/0"},
+		nil,
+		true,
+		false,
+	)
+	require.NoError(t, err, "node A creation failed")
+	defer a.Close()
+
+	b, err := peer.New(
+		ctx,
+		nil,
+		keypair.NewRaw(),
+		nil,
+		[]string{"/ip4/127.0.0.1/tcp/0"},
+		nil,
+		true,
+		false,
+	)
+	require.NoError(t, err, "node B creation failed")
+	defer b.Close()
+
+	// Connect before B's handler exists, so identify has nothing to report
+	// for this protocol yet when A's client is created below.
+	err = a.Peer().Connect(ctx, peercore.AddrInfo{ID: b.ID(), Addrs: b.Peer().Addrs()})
+	require.NoError(t, err, "connect A->B failed")
+
+	svr, err := peerService.New(b, "late", "/late/1.0")
+	require.NoError(t, err, "service creation failed")
+	defer svr.Stop()
+
+	err = svr.Define("ping", func(_ context.Context, _ streams.Connection, _ command.Body) (cr.Response, error) {
+		return cr.Response{"pong": true}, nil
+	})
+	require.NoError(t, err)
+
+	client, err := New(a, "/late/1.0")
+	require.NoError(t, err, "client creation failed")
+	defer client.Close()
+
+	type sendResult struct {
+		resp cr.Response
+		err  error
+	}
+	done := make(chan sendResult, 1)
+	start := time.Now()
+	go func() {
+		resp, err := client.Send("ping", command.Body{})
+		done <- sendResult{resp, err}
+	}()
+
+	// Let the send goroutine park on the client's peer discovery before B
+	// starts handling the protocol (and identify pushes the update to A).
+	time.Sleep(1500 * time.Millisecond)
+	svr.Start()
+
+	select {
+	case res := <-done:
+		elapsed := time.Since(start)
+		require.NoError(t, res.err, "send should recover once identify catches up")
+		pong, _ := res.resp.Get("pong")
+		assert.Equal(t, true, pong)
+		assert.Less(t, elapsed, 8*time.Second, "send should recover well before SendToPeerTimeout")
+	case <-time.After(9 * time.Second):
+		t.Fatal("send never recovered after the handler appeared; discover() isn't retrying peer lookup")
+	}
+}
