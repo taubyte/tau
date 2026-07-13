@@ -82,27 +82,60 @@ func TestAuth_Dreaming(t *testing.T) {
 
 	t.Run("Discover service", func(t *testing.T) {
 		c := pbconnect.NewAuthServiceClient(http.DefaultClient, "http://"+listener.Addr().String())
-		pstream, err := c.Discover(ctx, connect.NewRequest(&pb.DiscoverServiceRequest{
-			Node: ni.Msg,
-		}))
-		assert.NilError(t, err)
-		count := 0
-		for pstream.Receive() {
-			count++
+
+		// The two auth copies advertise "/auth/v1" through the DHT
+		// (discoveryUtil.Advertise) asynchronously, and Discover is a
+		// best-effort, point-in-time snapshot of currently discoverable
+		// providers (libp2p FindPeers) — Count is a max, not a target.
+		// Propagation is eventually consistent, so a single shot races under
+		// load (count observed below 2). Poll until both providers converge.
+		// The deadline must clear the node's BackoffDiscovery window: once a
+		// namespace lookup returns nothing, re-queries are suppressed for
+		// minBackoff, so a shorter deadline could not recover a missed first
+		// lookup. Mirrors swarm_test.go's Discover.
+		var count int
+		deadline := time.Now().Add(90 * time.Second)
+		for {
+			count = 0
+			pstream, err := c.Discover(ctx, connect.NewRequest(&pb.DiscoverServiceRequest{
+				Node: ni.Msg,
+			}))
+			if err == nil {
+				for pstream.Receive() {
+					count++
+				}
+				pstream.Close()
+			}
+			if count == 2 || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(250 * time.Millisecond)
 		}
 		assert.Equal(t, count, 2)
 	})
 
 	t.Run("Discover service (count set)", func(t *testing.T) {
 		c := pbconnect.NewAuthServiceClient(http.DefaultClient, "http://"+listener.Addr().String())
-		pstream, err := c.Discover(ctx, connect.NewRequest(&pb.DiscoverServiceRequest{
-			Node:  ni.Msg,
-			Count: 1,
-		}))
-		assert.NilError(t, err)
-		count := 0
-		for pstream.Receive() {
-			count++
+
+		// Same eventual-consistency poll as above, capped at Count=1.
+		var count int
+		deadline := time.Now().Add(90 * time.Second)
+		for {
+			count = 0
+			pstream, err := c.Discover(ctx, connect.NewRequest(&pb.DiscoverServiceRequest{
+				Node:  ni.Msg,
+				Count: 1,
+			}))
+			if err == nil {
+				for pstream.Receive() {
+					count++
+				}
+				pstream.Close()
+			}
+			if count == 1 || time.Now().After(deadline) {
+				break
+			}
+			time.Sleep(250 * time.Millisecond)
 		}
 		assert.Equal(t, count, 1)
 	})
