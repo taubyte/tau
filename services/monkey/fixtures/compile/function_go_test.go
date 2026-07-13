@@ -86,6 +86,7 @@ func TestGoFunction_Dreaming(t *testing.T) {
 		ProjectId:  testProjectId,
 		ResourceId: testFunctionId,
 		Paths:      []string{path.Join(wd, "assets", "ping2.go")},
+		ForceBuild: true, // this test exercises the Go build toolchain
 	})
 	if err != nil {
 		t.Error(err)

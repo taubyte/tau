@@ -3,6 +3,7 @@ package compile
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"strings"
@@ -46,68 +47,65 @@ func (ctx resourceContext) library(config *structureSpec.Library) (err error) {
 }
 
 func (l libraryContext) directory() error {
-	root, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("%s-*", l.ctx.resourceId))
-	if err != nil {
-		return err
-	}
-
-	c := jobs.Context{
-		Node:    l.ctx.universe.TNS().Node(),
-		LogFile: os.Stdout,
-		WorkDir: root,
-		Monkey: fakeMonkey{
-			hoarderClient: l.ctx.hoarderClient,
-		},
-		GeneratedDomainRegExp: generatedDomainRegExp,
-	}
-
-	var language *wasmSpec.SupportedLanguage
-
-	for _, filePath := range l.ctx.paths {
-		fileStat, err := os.Stat(filePath)
+	return l.ctx.stashCached(l.ctx.resourceId, func() (io.ReadSeekCloser, error) {
+		root, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("%s-*", l.ctx.resourceId))
 		if err != nil {
-			return err
+			return nil, err
 		}
 
-		if fileStat.IsDir() {
-			files, err := os.ReadDir(filePath)
+		c := jobs.Context{
+			Node:    l.ctx.universe.TNS().Node(),
+			LogFile: os.Stdout,
+			WorkDir: root,
+			Monkey: fakeMonkey{
+				hoarderClient: l.ctx.hoarderClient,
+			},
+			GeneratedDomainRegExp: generatedDomainRegExp,
+		}
+
+		var language *wasmSpec.SupportedLanguage
+
+		for _, filePath := range l.ctx.paths {
+			fileStat, err := os.Stat(filePath)
 			if err != nil {
-				return err
+				return nil, err
 			}
-			for _, file := range files {
-				name := file.Name()
-				if lang := wasmSpec.LangFromExt(path.Ext(name)); lang != nil {
-					language = lang
+
+			if fileStat.IsDir() {
+				files, err := os.ReadDir(filePath)
+				if err != nil {
+					return nil, err
 				}
+				for _, file := range files {
+					name := file.Name()
+					if lang := wasmSpec.LangFromExt(path.Ext(name)); lang != nil {
+						language = lang
+					}
 
-				copy.Copy(path.Join(filePath, file.Name()), path.Join(root, file.Name()))
+					copy.Copy(path.Join(filePath, file.Name()), path.Join(root, file.Name()))
+				}
+			} else {
+				return nil, fmt.Errorf("expected path  `%s` to be directory", filePath)
 			}
-		} else {
-			return fmt.Errorf("expected path  `%s` to be directory", filePath)
 		}
-	}
 
-	if language == nil {
-		return errors.New("library includes unsupported code files")
-	}
+		if language == nil {
+			return nil, errors.New("library includes unsupported code files")
+		}
 
-	language.CopyFunctionTemplateConfig(l.ctx.templateRepo, "", root)
+		language.CopyFunctionTemplateConfig(l.ctx.templateRepo, "", root)
 
-	pterm.Info.Println("building library in root:", root)
-	c.ForceGitDir(root)
-	c.ForceContext(l.ctx.universe.Context())
+		pterm.Info.Println("building library in root:", root)
+		c.ForceGitDir(root)
+		c.ForceContext(l.ctx.universe.Context())
 
-	asset, err := c.HandleLibrary()
-	if err != nil {
-		return err
-	}
+		asset, err := c.HandleLibrary()
+		if err != nil {
+			return nil, err
+		}
 
-	compressedAsset, err := asset.Compress(builders.WASM)
-	if err != nil {
-		return err
-	}
-
-	return l.ctx.stashAndPush(l.ctx.resourceId, compressedAsset)
+		return asset.Compress(builders.WASM)
+	})
 }
 
 func (l libraryContext) wasmFile() error {

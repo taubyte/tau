@@ -86,6 +86,7 @@ func TestWebsite_Dreaming(t *testing.T) {
 		ProjectId:  testProjectId,
 		ResourceId: testWebsiteId,
 		Paths:      []string{path.Join(wd, "assets", "website")},
+		ForceBuild: true, // this test exercises the website build toolchain
 	})
 	if err != nil {
 		t.Error(err)

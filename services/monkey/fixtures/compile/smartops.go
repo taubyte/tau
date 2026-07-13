@@ -3,6 +3,7 @@ package compile
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"strings"
@@ -76,58 +77,55 @@ func (f smartopsContext) zWasmFile() error {
 }
 
 func (f smartopsContext) codeFile(language wasmSpec.SupportedLanguage) error {
-	root, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("%s-*", f.ctx.resourceId))
-	if err != nil {
-		return err
-	}
-
-	c := jobs.Context{
-		Node:    f.ctx.universe.TNS().Node(),
-		LogFile: os.Stdout,
-		WorkDir: root,
-		Monkey: fakeMonkey{
-			hoarderClient: f.ctx.hoarderClient,
-		},
-		GeneratedDomainRegExp: generatedDomainRegExp,
-	}
-
-	c.ForceContext(f.ctx.universe.Context())
-
-	copyPath := path.Join(root, smartopsSpec.PathVariable.String(), f.config.Name)
-	for _, filePath := range f.ctx.paths {
-		splitPath := strings.Split(filePath, "/")
-		filename := splitPath[len(splitPath)-1]
-
-		if err = copy.Copy(filePath, path.Join(copyPath, filename)); err != nil {
-			return err
+	return f.ctx.stashCached(f.ctx.resourceId, func() (io.ReadSeekCloser, error) {
+		root, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("%s-*", f.ctx.resourceId))
+		if err != nil {
+			return nil, err
 		}
-	}
 
-	if err = language.CopyFunctionTemplateConfig(f.ctx.templateRepo, "", copyPath); err != nil {
-		return fmt.Errorf("copying `%s` config template failed with: %s", language, err)
-	}
+		c := jobs.Context{
+			Node:    f.ctx.universe.TNS().Node(),
+			LogFile: os.Stdout,
+			WorkDir: root,
+			Monkey: fakeMonkey{
+				hoarderClient: f.ctx.hoarderClient,
+			},
+			GeneratedDomainRegExp: generatedDomainRegExp,
+		}
 
-	pterm.Info.Println("building smartops in root:", root)
-	c.ForceGitDir(root)
-	c.ForceContext(f.ctx.universe.Context())
+		c.ForceContext(f.ctx.universe.Context())
 
-	p, err := project.Open(project.VirtualFS(afero.NewMemMapFs(), "/"))
-	if err != nil {
-		return err
-	}
+		copyPath := path.Join(root, smartopsSpec.PathVariable.String(), f.config.Name)
+		for _, filePath := range f.ctx.paths {
+			splitPath := strings.Split(filePath, "/")
+			filename := splitPath[len(splitPath)-1]
 
-	smartops, err := p.SmartOps(f.config.Name, "")
-	if err != nil {
-		return err
-	}
-	smartops.Set(true, smartopsLib.Id(f.ctx.resourceId))
+			if err = copy.Copy(filePath, path.Join(copyPath, filename)); err != nil {
+				return nil, err
+			}
+		}
 
-	moduleReader, err := c.HandleOp(jobs.ToOp(smartops))
-	if err != nil {
-		return err
-	}
+		if err = language.CopyFunctionTemplateConfig(f.ctx.templateRepo, "", copyPath); err != nil {
+			return nil, fmt.Errorf("copying `%s` config template failed with: %s", language, err)
+		}
 
-	return f.ctx.stashAndPush(f.ctx.resourceId, moduleReader)
+		pterm.Info.Println("building smartops in root:", root)
+		c.ForceGitDir(root)
+		c.ForceContext(f.ctx.universe.Context())
+
+		p, err := project.Open(project.VirtualFS(afero.NewMemMapFs(), "/"))
+		if err != nil {
+			return nil, err
+		}
+
+		smartops, err := p.SmartOps(f.config.Name, "")
+		if err != nil {
+			return nil, err
+		}
+		smartops.Set(true, smartopsLib.Id(f.ctx.resourceId))
+
+		return c.HandleOp(jobs.ToOp(smartops))
+	})
 }
 
 // Overrides smartops "Call" in config

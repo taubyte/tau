@@ -90,6 +90,7 @@ func TestASFunction_Dreaming(t *testing.T) {
 		ProjectId:  testProjectId,
 		ResourceId: testFunctionId,
 		Paths:      []string{path.Join(wd, "assets", "helloWorld.ts")},
+		ForceBuild: true, // this test exercises the AssemblyScript build toolchain
 	})
 	if err != nil {
 		t.Error(err)

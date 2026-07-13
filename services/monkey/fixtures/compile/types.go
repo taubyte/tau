@@ -18,6 +18,7 @@ type resourceContext struct {
 	branch        string
 	paths         []string
 	call          string
+	forceBuild    bool
 	templateRepo  *git.Repository
 	hoarderClient hoarder.Client
 }

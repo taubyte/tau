@@ -3,6 +3,7 @@ package compile
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path"
 	"regexp"
@@ -80,57 +81,54 @@ func (f functionContext) zWasmFile() error {
 }
 
 func (f functionContext) codeFile(language wasmSpec.SupportedLanguage) error {
-	root, err := os.MkdirTemp("", fmt.Sprintf("%s-*", f.ctx.resourceId))
-	if err != nil {
-		return err
-	}
-
-	c := jobs.Context{
-		Node:     f.ctx.universe.TNS().Node(),
-		LogFile:  os.Stdout,
-		WorkDir:  root,
-		RepoType: repositorytype.CodeRepository,
-		Monkey: fakeMonkey{
-			hoarderClient: f.ctx.hoarderClient,
-		},
-		GeneratedDomainRegExp: generatedDomainRegExp,
-	}
-
-	copyPath := path.Join(root, functionSpec.PathVariable.String(), f.config.Name)
-	for _, filePath := range f.ctx.paths {
-		splitPath := strings.Split(filePath, "/")
-		filename := splitPath[len(splitPath)-1]
-
-		if err = copy.Copy(filePath, path.Join(copyPath, filename)); err != nil {
-			return err
+	return f.ctx.stashCached(f.ctx.resourceId, func() (io.ReadSeekCloser, error) {
+		root, err := os.MkdirTemp("", fmt.Sprintf("%s-*", f.ctx.resourceId))
+		if err != nil {
+			return nil, err
 		}
-	}
 
-	if err = language.CopyFunctionTemplateConfig(f.ctx.templateRepo, "", copyPath); err != nil {
-		return fmt.Errorf("copying `%s` config template failed with: %s", language, err)
-	}
+		c := jobs.Context{
+			Node:     f.ctx.universe.TNS().Node(),
+			LogFile:  os.Stdout,
+			WorkDir:  root,
+			RepoType: repositorytype.CodeRepository,
+			Monkey: fakeMonkey{
+				hoarderClient: f.ctx.hoarderClient,
+			},
+			GeneratedDomainRegExp: generatedDomainRegExp,
+		}
 
-	pterm.Info.Println("building function in root:", root)
-	c.ForceGitDir(root)
-	c.ForceContext(f.ctx.universe.Context())
+		copyPath := path.Join(root, functionSpec.PathVariable.String(), f.config.Name)
+		for _, filePath := range f.ctx.paths {
+			splitPath := strings.Split(filePath, "/")
+			filename := splitPath[len(splitPath)-1]
 
-	p, err := project.Open(project.VirtualFS(afero.NewMemMapFs(), "/"))
-	if err != nil {
-		return err
-	}
+			if err = copy.Copy(filePath, path.Join(copyPath, filename)); err != nil {
+				return nil, err
+			}
+		}
 
-	function, err := p.Function(f.config.Name, "")
-	if err != nil {
-		return err
-	}
-	function.Set(true, functions.Id(f.ctx.resourceId))
+		if err = language.CopyFunctionTemplateConfig(f.ctx.templateRepo, "", copyPath); err != nil {
+			return nil, fmt.Errorf("copying `%s` config template failed with: %s", language, err)
+		}
 
-	moduleReader, err := c.HandleOp(jobs.ToOp(function))
-	if err != nil {
-		return err
-	}
+		pterm.Info.Println("building function in root:", root)
+		c.ForceGitDir(root)
+		c.ForceContext(f.ctx.universe.Context())
 
-	return f.ctx.stashAndPush(f.ctx.resourceId, moduleReader)
+		p, err := project.Open(project.VirtualFS(afero.NewMemMapFs(), "/"))
+		if err != nil {
+			return nil, err
+		}
+
+		function, err := p.Function(f.config.Name, "")
+		if err != nil {
+			return nil, err
+		}
+		function.Set(true, functions.Id(f.ctx.resourceId))
+
+		return c.HandleOp(jobs.ToOp(function))
+	})
 }
 
 // Overrides function "Call" in config

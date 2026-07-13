@@ -23,6 +23,9 @@ type BasicCompileFor struct {
 	Branch        string
 	Paths         []string
 	Call          string
+	// ForceBuild bypasses the source-hashed asset cache, always running the
+	// container build. Set it in tests that exist to exercise the toolchain.
+	ForceBuild bool
 }
 
 func (b *BasicCompileFor) parse(params []interface{}) error {
@@ -138,6 +141,7 @@ func CompileFor(u *dream.Universe, params ...interface{}) error {
 		branch:        b.Branch,
 		paths:         b.Paths,
 		call:          b.Call,
+		forceBuild:    b.ForceBuild,
 		templateRepo:  tauTemplates.Repository(),
 		hoarderClient: hoarder,
 	}
