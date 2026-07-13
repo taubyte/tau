@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	peercore "github.com/libp2p/go-libp2p/core/peer"
 	commonIface "github.com/taubyte/tau/core/common"
@@ -51,27 +52,45 @@ func (u *Universe) Mesh(newNodes ...peer.Node) {
 
 	u.lock.RLock()
 	var wg sync.WaitGroup
-	for _, n0 := range append(u.all, newNodes...) {
-		for _, n1 := range u.all {
-			if n0 != n1 {
-				wg.Add(1)
-				go func(n0, n1 peer.Node) {
-					defer wg.Done()
-					err := n0.Peer().Connect(
-						ctx,
-						peercore.AddrInfo{
-							ID:    n1.ID(),
-							Addrs: n1.Peer().Addrs(),
-						},
-					)
-					if err != nil {
-						n0.Peering().AddPeer(peercore.AddrInfo{
-							ID:    n1.ID(),
-							Addrs: n1.Peer().Addrs(),
-						})
-					}
-				}(n0, n1)
+	nodes := append(u.all, newNodes...)
+	for i, a := range nodes {
+		for _, b := range nodes[i+1:] {
+			// dial each unordered pair exactly once, from a canonical
+			// side: concurrent crossed dials make both TLS handshakes
+			// act as the client ("received unexpected handshake message
+			// of type *tls.clientHelloMsg") and park BOTH sides in the
+			// swarm's dial backoff, wedging the pair for tens of seconds.
+			n0, n1 := a, b
+			if n0.ID() > n1.ID() {
+				n0, n1 = n1, n0
 			}
+			wg.Add(1)
+			go func(n0, n1 peer.Node) {
+				defer wg.Done()
+				// retry with freshly resolved addresses (nodes meshed
+				// while booting may not expose listen addresses yet)
+				// instead of surrendering to the peering service,
+				// whose reconnect backoff (5s, doubling) can leave
+				// the universe half-meshed for over a minute.
+				for range 3 {
+					info := peercore.AddrInfo{
+						ID:    n1.ID(),
+						Addrs: n1.Peer().Addrs(),
+					}
+					if len(info.Addrs) > 0 {
+						if err := n0.Peer().Connect(ctx, info); err == nil {
+							return
+						}
+					}
+					select {
+					case <-ctx.Done():
+						n0.Peering().AddPeer(peercore.AddrInfo{ID: n1.ID(), Addrs: n1.Peer().Addrs()})
+						return
+					case <-time.After(time.Second):
+					}
+				}
+				n0.Peering().AddPeer(peercore.AddrInfo{ID: n1.ID(), Addrs: n1.Peer().Addrs()})
+			}(n0, n1)
 		}
 	}
 	wg.Wait()

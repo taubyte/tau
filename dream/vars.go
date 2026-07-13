@@ -36,7 +36,7 @@ var (
 	// Valid sub-binds for services
 	ValidSubBinds = []string{"http", "p2p", "dns", "https", "verbose", "copies"}
 
-	MeshTimeout = 5 * time.Second
+	MeshTimeout = 30 * time.Second
 
 	// Disk usage cache configuration
 	DiskUsageCacheTimeout = 5 * time.Second

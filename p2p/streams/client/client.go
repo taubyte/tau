@@ -133,7 +133,11 @@ var (
 	DefaultMaxParallel int = 64
 	MaxStreamsPerSend  int = 16
 
-	RefreshPeersInterval time.Duration = 30 * time.Second
+	// PeerRetryInterval bounds how long a pending send can be stuck behind a
+	// discovery gap (e.g. identify hasn't updated the peerstore yet, or a
+	// backoff-cached lookup came back empty): recovery latency must beat
+	// SendToPeerTimeout.
+	PeerRetryInterval time.Duration = time.Second
 
 	SendToPeerTimeout time.Duration = 10 * time.Second
 	ConnectTimeout    time.Duration = 500 * time.Millisecond
@@ -266,6 +270,9 @@ func (c *Client) discover() {
 	discoverDone := false
 	dpeersWait := make(chan peerCore.AddrInfo)
 
+	retry := time.NewTicker(PeerRetryInterval)
+	defer retry.Stop()
+
 	for {
 		select {
 		case <-c.ctx.Done():
@@ -305,6 +312,40 @@ func (c *Client) discover() {
 					dpeers = c.discPeers()
 					discoverDone = false
 				}
+			}
+
+		case <-retry.C:
+			// event-driven discovery only refreshes when a peerRequest
+			// arrives; without this, a request parked here because identify
+			// hadn't updated the peerstore yet (or FindPeers was served from
+			// a poisoned backoff cache) would never be looked at again.
+			if len(c.peerFeeds) == 0 {
+				continue
+			}
+
+			kept := make([]*peerRequest, 0, len(c.peerFeeds))
+			for _, pr := range c.peerFeeds {
+				select {
+				case <-pr.ctx.Done():
+					close(pr.ch)
+				default:
+					kept = append(kept, pr)
+				}
+			}
+			c.peerFeeds = kept
+
+			c.refreshFromPeerStore()
+
+			needMore := false
+			for _, pr := range c.peerFeeds {
+				if pr.need > len(c.activePeers) {
+					needMore = true
+					break
+				}
+			}
+			if needMore && discoverDone {
+				dpeers = c.discPeers()
+				discoverDone = false
 			}
 		}
 	}
