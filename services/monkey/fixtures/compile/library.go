@@ -93,7 +93,9 @@ func (l libraryContext) directory() error {
 			return nil, errors.New("library includes unsupported code files")
 		}
 
-		language.CopyFunctionTemplateConfig(l.ctx.templateRepo, "", root)
+		if err := copyTemplateConfig(*language, root); err != nil {
+			return nil, err
+		}
 
 		pterm.Info.Println("building library in root:", root)
 		c.ForceGitDir(root)

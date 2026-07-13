@@ -6,7 +6,6 @@ import (
 	"github.com/taubyte/tau/core/services/hoarder"
 	"github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/dream"
-	"github.com/taubyte/tau/pkg/git"
 )
 
 type resourceContext struct {
@@ -19,7 +18,6 @@ type resourceContext struct {
 	paths         []string
 	call          string
 	forceBuild    bool
-	templateRepo  *git.Repository
 	hoarderClient hoarder.Client
 }
 

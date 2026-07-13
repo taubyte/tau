@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/dream"
-	tauTemplates "github.com/taubyte/tau/pkg/cli/singletons/templates"
 	spec "github.com/taubyte/tau/pkg/specs/common"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 )
@@ -142,7 +141,6 @@ func CompileFor(u *dream.Universe, params ...interface{}) error {
 		paths:         b.Paths,
 		call:          b.Call,
 		forceBuild:    b.ForceBuild,
-		templateRepo:  tauTemplates.Repository(),
 		hoarderClient: hoarder,
 	}
 
