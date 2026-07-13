@@ -47,7 +47,7 @@ func (ctx resourceContext) library(config *structureSpec.Library) (err error) {
 }
 
 func (l libraryContext) directory() error {
-	return l.ctx.stashCached(l.ctx.resourceId, func() (io.ReadSeekCloser, error) {
+	return l.ctx.stashCached(l.ctx.resourceId, "zwasm", func() (io.ReadSeekCloser, error) {
 		root, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("%s-*", l.ctx.resourceId))
 		if err != nil {
 			return nil, err

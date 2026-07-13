@@ -11,18 +11,19 @@ import (
 	"github.com/pterm/pterm"
 )
 
-// stashCached serves a committed <base>.zwasm sitting next to the source when it
+// stashCached serves a committed <base>.<ext> sitting next to the source when it
 // is at least as new as the source, otherwise runs build() and writes the result
-// back so the next run skips the (slow) container build. The asset is rebuilt
-// only when the source is touched (mtime), and the stable name means git sees a
-// clean modify rather than a churn of hash-named files. Callers that exist to
-// test the build toolchain set ForceBuild to bypass the cache.
+// back so the next run skips the (slow) container build. ext names the asset
+// format: "zwasm" (zipped wasm) for code, "zip" for a website bundle. The asset
+// is rebuilt only when the source is touched (mtime), and the stable name means
+// git sees a clean modify rather than a churn of hash-named files. Callers that
+// exist to test the build toolchain set ForceBuild to bypass the cache.
 //
 // ponytail: mtime, not a content hash — keeps the committed asset name stable and
 // git clean. Caveat: git doesn't preserve mtimes, so commit source and asset
 // together; a fresh clone can't detect an asset that was committed stale.
-func (ctx resourceContext) stashCached(id string, build func() (io.ReadSeekCloser, error)) error {
-	cachePath := ctx.cachePath()
+func (ctx resourceContext) stashCached(id, ext string, build func() (io.ReadSeekCloser, error)) error {
+	cachePath := ctx.cachePath(ext)
 
 	if !ctx.forceBuild && cacheFresh(cachePath, ctx.paths) {
 		if f, err := os.Open(cachePath); err == nil {
@@ -52,12 +53,12 @@ func (ctx resourceContext) stashCached(id string, build func() (io.ReadSeekClose
 	return ctx.stashAndPush(id, readSeekNopCloser{bytes.NewReader(buf)})
 }
 
-// cachePath is the stable asset name for a source: <base>.zwasm next to it.
-func (ctx resourceContext) cachePath() string {
+// cachePath is the stable asset name for a source: <base>.<ext> next to it.
+func (ctx resourceContext) cachePath(ext string) string {
 	first := ctx.paths[0]
 	base := filepath.Base(first)
 	base = base[:len(base)-len(filepath.Ext(base))]
-	return filepath.Join(filepath.Dir(first), base+".zwasm")
+	return filepath.Join(filepath.Dir(first), base+"."+ext)
 }
 
 // cacheFresh reports whether cachePath exists and is no older than every source
@@ -104,7 +105,7 @@ func newestMod(p string) (time.Time, error) {
 
 // writeCache atomically overwrites the asset in place (stable name → clean git).
 func writeCache(cachePath string, buf []byte) {
-	tmp, err := os.CreateTemp(filepath.Dir(cachePath), ".zwasm-*")
+	tmp, err := os.CreateTemp(filepath.Dir(cachePath), ".asset-*")
 	if err != nil {
 		return
 	}

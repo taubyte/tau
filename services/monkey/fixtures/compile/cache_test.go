@@ -19,7 +19,7 @@ func TestCachePathAndFreshness(t *testing.T) {
 
 	ctx := resourceContext{paths: []string{src}}
 
-	got := ctx.cachePath()
+	got := ctx.cachePath("zwasm")
 	want := filepath.Join(dir, "echo.zwasm")
 	if got != want {
 		t.Fatalf("cachePath = %q, want %q", got, want)
@@ -65,9 +65,13 @@ func TestCacheFreshnessDirectory(t *testing.T) {
 	}
 
 	ctx := resourceContext{paths: []string{srcDir}}
-	asset := ctx.cachePath()
+	asset := ctx.cachePath("zwasm")
 	if asset != filepath.Join(dir, "lib.zwasm") {
 		t.Fatalf("cachePath = %q, want lib.zwasm next to the dir", asset)
+	}
+	// A website bundle is a zip, not a zipped wasm.
+	if got := ctx.cachePath("zip"); got != filepath.Join(dir, "lib.zip") {
+		t.Fatalf("cachePath(zip) = %q, want lib.zip", got)
 	}
 
 	writeCache(asset, []byte("built"))

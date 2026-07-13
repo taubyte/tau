@@ -52,7 +52,7 @@ func (w websiteContext) zip() error {
 }
 
 func (w websiteContext) directory() error {
-	return w.ctx.stashCached(w.ctx.resourceId, func() (io.ReadSeekCloser, error) {
+	return w.ctx.stashCached(w.ctx.resourceId, "zip", func() (io.ReadSeekCloser, error) {
 		root, err := os.MkdirTemp(os.TempDir(), fmt.Sprintf("%s-*", w.ctx.resourceId))
 		if err != nil {
 			return nil, err

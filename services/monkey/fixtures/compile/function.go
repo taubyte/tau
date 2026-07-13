@@ -81,7 +81,7 @@ func (f functionContext) zWasmFile() error {
 }
 
 func (f functionContext) codeFile(language wasmSpec.SupportedLanguage) error {
-	return f.ctx.stashCached(f.ctx.resourceId, func() (io.ReadSeekCloser, error) {
+	return f.ctx.stashCached(f.ctx.resourceId, "zwasm", func() (io.ReadSeekCloser, error) {
 		root, err := os.MkdirTemp("", fmt.Sprintf("%s-*", f.ctx.resourceId))
 		if err != nil {
 			return nil, err
