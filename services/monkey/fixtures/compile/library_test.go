@@ -95,6 +95,7 @@ func TestLibrary_Dreaming(t *testing.T) {
 		ProjectId:  testProjectId,
 		ResourceId: testLibraryId,
 		Paths:      []string{path.Join(wd, "assets", "library")},
+		ForceBuild: true, // this test exercises the library build toolchain
 	})
 	if err != nil {
 		t.Error(err)
@@ -105,6 +106,7 @@ func TestLibrary_Dreaming(t *testing.T) {
 		ProjectId:  testProjectId,
 		ResourceId: testFunctionId,
 		Paths:      []string{path.Join(wd, "assets", "ping_w_library.go")},
+		ForceBuild: true, // this test exercises the Go build toolchain
 	}); err != nil {
 		t.Error(err)
 		return

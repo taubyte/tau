@@ -82,6 +82,7 @@ func TestRSFunction_Dreaming(t *testing.T) {
 		ProjectId:  testProjectId,
 		ResourceId: testFunctionId,
 		Paths:      []string{path.Join(wd, "assets", "lib.rs"), path.Join(wd, "assets", "Cargo.toml")},
+		ForceBuild: true, // this test exercises the Rust build toolchain
 	})
 	if err != nil {
 		t.Error(err)

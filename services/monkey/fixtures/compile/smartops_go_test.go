@@ -98,6 +98,7 @@ func TestGoSmartOp_Dreaming(t *testing.T) {
 		ProjectId:  testProjectId,
 		ResourceId: testSmartOpId,
 		Paths:      []string{path.Join(wd, "assets", "confirmHttp.go")},
+		ForceBuild: true, // this test exercises the Go smartops build toolchain
 	})
 	assert.NilError(t, err)
 
