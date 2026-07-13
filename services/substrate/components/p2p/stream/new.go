@@ -6,15 +6,17 @@ import (
 
 	sdkSmartOpsCommon "github.com/taubyte/go-sdk-smartops/common"
 	iface "github.com/taubyte/tau/core/services/substrate/components/p2p"
+	"github.com/taubyte/tau/p2p/streams/client"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/services/substrate/components/p2p/service"
 )
 
-func New(srv iface.Service, ctx context.Context, config *structureSpec.Service, serviceApplication string, matcher *iface.MatchDefinition) (iface.Stream, error) {
+func New(srv iface.Service, ctx context.Context, config *structureSpec.Service, serviceApplication string, matcher *iface.MatchDefinition, p2pClient *client.Client) (iface.Stream, error) {
 	s := &Stream{
 		srv:     srv,
 		config:  config,
 		matcher: matcher,
+		client:  p2pClient,
 	}
 	s.instanceCtx, s.instanceCtxC = context.WithCancel(ctx)
 
