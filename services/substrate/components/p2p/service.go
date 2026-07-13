@@ -66,5 +66,10 @@ func (srv *Service) Stream(ctx context.Context, projectID, applicationID, protoc
 		return nil, err
 	}
 
-	return stream.New(srv, ctx, foundService, serviceApplication, matcher)
+	p2pClient, err := srv.p2pClient()
+	if err != nil {
+		return nil, fmt.Errorf("getting p2p client failed with: %w", err)
+	}
+
+	return stream.New(srv, ctx, foundService, serviceApplication, matcher, p2pClient)
 }
