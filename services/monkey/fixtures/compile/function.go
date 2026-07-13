@@ -108,7 +108,7 @@ func (f functionContext) codeFile(language wasmSpec.SupportedLanguage) error {
 			}
 		}
 
-		if err = language.CopyFunctionTemplateConfig(f.ctx.templateRepo, "", copyPath); err != nil {
+		if err = copyTemplateConfig(language, copyPath); err != nil {
 			return nil, fmt.Errorf("copying `%s` config template failed with: %s", language, err)
 		}
 

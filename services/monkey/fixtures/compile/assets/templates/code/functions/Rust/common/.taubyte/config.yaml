@@ -1,0 +1,6 @@
+version: 1.00
+environment:
+  image: taubyte/rust-wasi:latest
+  variables:
+workflow:
+  - build
