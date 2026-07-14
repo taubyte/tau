@@ -7,6 +7,7 @@ import (
 	"github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 	httpService "github.com/taubyte/tau/pkg/http"
 )
 
@@ -24,7 +25,7 @@ type AccountsService struct {
 	stream streams.CommandService
 	http   httpService.Service
 
-	rootDomain  string
+	config      tauConfig.Config
 	accountsURL string
 	devMode     bool
 

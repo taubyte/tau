@@ -70,11 +70,10 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 	if srv.tnsClient, err = tnsApi.New(srv.ctx, clientNode); err != nil {
 		return nil, err
 	}
-	srv.rootDomain = cfg.NetworkFqdn()
+	srv.config = cfg
 	if srv.stream, err = streams.New(srv.node, servicesCommon.Auth, servicesCommon.AuthProtocol); err != nil {
 		return nil, err
 	}
-	srv.hostUrl = cfg.NetworkFqdn()
 	nodePath := path.Join(cfg.Root(), servicesCommon.Auth)
 	if srv.secretsService, err = initSecretsService(srv.db, srv.node, nodePath); err != nil {
 		return nil, err

@@ -5,6 +5,7 @@ import (
 
 	iface "github.com/taubyte/tau/core/services/seer"
 	http "github.com/taubyte/tau/pkg/http"
+	servicesCommon "github.com/taubyte/tau/services/common"
 )
 
 func (srv *Service) getGeoAllHTTPHandler(ctx http.Context) (interface{}, error) {
@@ -58,13 +59,9 @@ func (srv *Service) getGeoDistanceHTTPHandler(ctx http.Context) (interface{}, er
 }
 
 func (srv *Service) setupLocationHTTPRoutes() {
-	var host string
-	if !srv.devMode && len(srv.hostUrl) > 0 {
-		host = "seer.tau." + srv.hostUrl
-	}
-
+	hosts := srv.config.RouteHosts(servicesCommon.Seer)
 	srv.http.GET(&http.RouteDefinition{
-		Hosts: []string{host},
+		Hosts: hosts,
 		Path:  "/geo/all",
 		Vars: http.Variables{
 			Required: []string{},
@@ -74,7 +71,7 @@ func (srv *Service) setupLocationHTTPRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Hosts: []string{host},
+		Hosts: hosts,
 		Path:  "/geo/distance/{distance}/{latitude}/{longitude}",
 		Vars: http.Variables{
 			Required: []string{"distance", "latitude", "longitude"},

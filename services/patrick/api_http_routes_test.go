@@ -8,8 +8,18 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/stretchr/testify/mock"
+	"github.com/taubyte/tau/core/p2p/keypair"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 	httpPkg "github.com/taubyte/tau/pkg/http"
 )
+
+func testConfig(t *testing.T, opts ...tauConfig.Option) tauConfig.Config {
+	cfg, err := tauConfig.New(opts...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg
+}
 
 type mockHTTPService struct {
 	mock.Mock
@@ -48,9 +58,8 @@ func TestSetupGithubRoutes(t *testing.T) {
 	mockHTTP.On("GET", "/ping").Return()
 
 	srv := &PatrickService{
-		http:    mockHTTP,
-		devMode: true,
-		hostUrl: "",
+		http:   mockHTTP,
+		config: testConfig(t),
 	}
 
 	srv.setupGithubRoutes()
@@ -66,9 +75,12 @@ func TestSetupGithubRoutesInProduction(t *testing.T) {
 
 	// Create a test service in production mode
 	srv := &PatrickService{
-		http:    mockHTTP,
-		devMode: false,
-		hostUrl: "example.com",
+		http: mockHTTP,
+		config: testConfig(t,
+			tauConfig.WithDevMode(false),
+			tauConfig.WithNetworkFqdn("example.com"),
+			tauConfig.WithPrivateKey(keypair.NewRaw()),
+		),
 	}
 
 	srv.setupGithubRoutes()
@@ -87,9 +99,8 @@ func TestSetupJobRoutes(t *testing.T) {
 	mockHTTP.On("POST", "/retry/{jid}").Return()
 
 	srv := &PatrickService{
-		http:    mockHTTP,
-		devMode: true,
-		hostUrl: "",
+		http:   mockHTTP,
+		config: testConfig(t),
 	}
 
 	srv.setupJobRoutes()
@@ -109,9 +120,12 @@ func TestSetupJobRoutesInProduction(t *testing.T) {
 
 	// Create a test service in production mode
 	srv := &PatrickService{
-		http:    mockHTTP,
-		devMode: false,
-		hostUrl: "example.com",
+		http: mockHTTP,
+		config: testConfig(t,
+			tauConfig.WithDevMode(false),
+			tauConfig.WithNetworkFqdn("example.com"),
+			tauConfig.WithPrivateKey(keypair.NewRaw()),
+		),
 	}
 
 	srv.setupJobRoutes()

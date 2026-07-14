@@ -8,6 +8,7 @@ import (
 	"github.com/ipfs/go-cid"
 	dv "github.com/taubyte/domain-validation"
 	http "github.com/taubyte/tau/pkg/http"
+	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
 func (srv *AuthService) tokenDomainHTTPHandler(ctx http.Context) (interface{}, error) {
@@ -50,13 +51,9 @@ func (srv *AuthService) tokenDomainHTTPHandler(ctx http.Context) (interface{}, e
 }
 
 func (srv *AuthService) setupDomainsHTTPRoutes() {
-	var host string
-	if !srv.devMode && len(srv.hostUrl) > 0 {
-		host = "auth.tau." + srv.hostUrl
-	}
-
+	hosts := srv.config.RouteHosts(protocolCommon.Auth)
 	srv.http.POST(&http.RouteDefinition{
-		Hosts: []string{host},
+		Hosts: hosts,
 		Path:  "/domain/{fqdn}/for/{project}",
 		Vars: http.Variables{
 			Required: []string{"project", "fqdn"},

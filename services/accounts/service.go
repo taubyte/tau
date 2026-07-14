@@ -26,10 +26,10 @@ var (
 func New(ctx context.Context, cfg tauConfig.Config) (*AccountsService, error) {
 	var srv AccountsService
 	srv.ctx = ctx
+	srv.config = cfg
 	srv.devMode = cfg.DevMode()
-	srv.rootDomain = cfg.NetworkFqdn()
-	srv.cfg = newAccountsConfig(cfg.Accounts(), srv.rootDomain)
-	srv.accountsURL = accountsIface.InferURL(srv.devMode, srv.rootDomain)
+	srv.cfg = newAccountsConfig(cfg.Accounts(), cfg.NetworkFqdn())
+	srv.accountsURL = accountsIface.InferURL(srv.devMode, cfg.NetworkFqdn())
 
 	var err error
 

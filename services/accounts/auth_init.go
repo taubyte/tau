@@ -39,7 +39,7 @@ func (srv *AccountsService) initAuthSubsystems() error {
 
 	// WebAuthn relying-party. Derived from NetworkFqdn (same source as the
 	// HTTP host the requests will land on); no operator config involved.
-	wa, err := newWebAuthnStore(srv.db, accountsIface.InferWebAuthn(srv.devMode, srv.rootDomain), func(accountID string) *memberStore {
+	wa, err := newWebAuthnStore(srv.db, accountsIface.InferWebAuthn(srv.devMode, srv.config.NetworkFqdn()), func(accountID string) *memberStore {
 		return newMemberStore(srv.db, accountID)
 	})
 	if err != nil {

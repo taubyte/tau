@@ -69,8 +69,6 @@ type Service struct {
 
 	poe poe.Engine
 
-	hostUrl string
-
 	shape   string
 	devMode bool
 }

@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"regexp"
+	"sync"
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/p2p/keypair"
@@ -47,6 +48,7 @@ type Config interface {
 	Hosts() map[string]string
 	ServiceForHost(host string) (string, bool)
 	HostsForService(service string) []string
+	RouteHosts(service string) []string
 	CustomAcme() bool
 	AcmeUrl() string
 	AcmeCAARecord() string
@@ -319,6 +321,9 @@ type config struct {
 	aliasDomains    []string
 	hosts           map[string]string
 
+	routeHostsMu    sync.Mutex
+	routeHostsCache map[string][]string
+
 	httpListen string
 
 	aliasDomainsRegExp    []*regexp.Regexp
@@ -379,6 +384,38 @@ func (c *config) HostsForService(service string) []string {
 		}
 	}
 	return out
+}
+
+// RouteHosts returns every hostname seer's DNS resolves to this service, so its
+// HTTP routes can be scoped to exactly that set: <service>.tau.<networkFqdn>,
+// the same under each alias domain, and every custom domain bound to it via
+// domains.hosts. Empty (host-agnostic) in dev, where each service runs its own
+// HTTP server and there is nothing to disambiguate. Memoized per service so a
+// service can call it once per route group without recomputing.
+func (c *config) RouteHosts(service string) []string {
+	c.routeHostsMu.Lock()
+	defer c.routeHostsMu.Unlock()
+	if c.routeHostsCache == nil {
+		c.routeHostsCache = make(map[string][]string)
+	}
+	if hosts, ok := c.routeHostsCache[service]; ok {
+		return hosts
+	}
+
+	var hosts []string
+	if !c.devMode {
+		if c.networkFqdn != "" {
+			hosts = append(hosts, service+".tau."+c.networkFqdn)
+		}
+		for _, alias := range c.aliasDomains {
+			if alias != "" {
+				hosts = append(hosts, service+".tau."+alias)
+			}
+		}
+		hosts = append(hosts, c.HostsForService(service)...)
+	}
+	c.routeHostsCache[service] = hosts
+	return hosts
 }
 func (c *config) HttpListen() string                    { return c.httpListen }
 func (c *config) AliasDomainsRegExp() []*regexp.Regexp  { return c.aliasDomainsRegExp }

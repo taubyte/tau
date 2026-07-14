@@ -43,7 +43,6 @@ func New(ctx context.Context, cfg tauConfig.Config, opts ...Options) (*Service, 
 	}
 
 	srv.dnsResolver = net.DefaultResolver
-	srv.hostUrl = cfg.NetworkFqdn()
 
 	for _, op := range opts {
 		err = op(srv)

@@ -14,6 +14,7 @@ import (
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
 	tccDecompile "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
+	servicesCommon "github.com/taubyte/tau/services/common"
 	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 
 	"github.com/taubyte/tau/utils/maps"
@@ -139,13 +140,9 @@ func (srv *Service) downloadAsset(ctx http.Context) (any, error) {
 }
 
 func (srv *Service) setupTNSGatewayHTTPRoutes() {
-	var host string
-	if !srv.devMode && len(srv.hostUrl) > 0 {
-		host = "seer.tau." + srv.hostUrl
-	}
-
+	hosts := srv.config.RouteHosts(servicesCommon.Seer)
 	srv.http.GET(&http.RouteDefinition{
-		Hosts: []string{host},
+		Hosts: hosts,
 		Path:  "/config/{projectId}",
 		Vars: http.Variables{
 			Required: []string{"projectId"},
@@ -154,7 +151,7 @@ func (srv *Service) setupTNSGatewayHTTPRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Hosts: []string{host},
+		Hosts: hosts,
 		Path:  "/download/{projectId}/{assetCID}",
 		Vars: http.Variables{
 			Required: []string{"projectId", "assetCID"},

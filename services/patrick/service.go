@@ -89,7 +89,7 @@ func New(ctx context.Context, cfg tauConfig.Config) (*PatrickService, error) {
 		return nil, fmt.Errorf("failed stream new with error: %w", err)
 	}
 
-	srv.hostUrl = cfg.NetworkFqdn()
+	srv.config = cfg
 	srv.setupStreamRoutes()
 	srv.stream.Start()
 
