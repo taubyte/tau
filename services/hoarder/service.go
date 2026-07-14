@@ -41,6 +41,7 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 	}
 
 	s.zone = cfg.Cluster()
+	s.devMode = cfg.DevMode()
 
 	if s.stream, err = streams.New(s.node, protocolCommon.Hoarder, protocolCommon.HoarderProtocol); err != nil {
 		return nil, fmt.Errorf("new command service failed with: %w", err)
