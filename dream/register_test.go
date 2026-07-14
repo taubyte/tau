@@ -44,3 +44,19 @@ func TestProvidedWithoutAccessor(t *testing.T) {
 		t.Fatal("a service with no typed accessor should not be reported provided")
 	}
 }
+
+// A name may resolve to a *Universe method that exists but isn't a zero-arg,
+// value-returning accessor. "lookup" -> u.Lookup(id string) (*NodeInfo, bool) is
+// arg-taking, so serviceMethod.Call(nil) would panic without the signature
+// guard. It must read as not-provided, not panic.
+func TestProvidedWithBadAccessorSignature(t *testing.T) {
+	const name = "lookup"
+	orig := append([]string(nil), commonSpecs.Services...)
+	commonSpecs.Services = append(commonSpecs.Services, name)
+	t.Cleanup(func() { commonSpecs.Services = orig })
+
+	u := &Universe{}
+	if u.provided(name) {
+		t.Fatal("an arg-taking accessor should not be reported provided")
+	}
+}
