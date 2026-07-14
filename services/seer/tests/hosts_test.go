@@ -4,6 +4,8 @@ package tests
 
 import (
 	"fmt"
+	"io"
+	"net/http"
 	"path"
 	"strings"
 	"testing"
@@ -15,7 +17,10 @@ import (
 	dreamCommon "github.com/taubyte/tau/dream/common"
 	"github.com/taubyte/tau/p2p/peer"
 	tauConfig "github.com/taubyte/tau/pkg/config"
+	tauhttp "github.com/taubyte/tau/pkg/http"
+	httpauth "github.com/taubyte/tau/pkg/http/auth"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+	"github.com/taubyte/tau/services/common/httpsvc"
 
 	dns "github.com/miekg/dns"
 	"gotest.tools/v3/assert"
@@ -24,13 +29,21 @@ import (
 )
 
 // mockService is a bare service registered through the same seam ee services use
-// (RegisterService + Registry.Set): it stands up a node in the universe and
-// beacons under its name so seer can resolve it — nothing else. Used to test
-// domains.hosts routing without coupling to a real service.
-type mockService struct{ node peer.Node }
+// (RegisterService + Registry.Set): a node that beacons under its name so seer
+// can resolve it, plus its own HTTP server (one per node — Dream doesn't share a
+// shape's http). Used to test domains.hosts routing without a real service.
+type mockService struct {
+	node peer.Node
+	http tauhttp.Service // its own HTTP listener (nil if creation failed)
+}
 
 func (m *mockService) Node() peer.Node { return m.node }
-func (m *mockService) Close() error    { return nil } // universe owns the node
+func (m *mockService) Close() error {
+	if m.http != nil {
+		m.http.Stop()
+	}
+	return nil // universe owns the node
+}
 
 func init() {
 	commonSpecs.RegisterService("mockhost", commonSpecs.ServiceCapabilities{HTTP: true})
@@ -51,7 +64,27 @@ func createMockHost(u *dream.Universe, config *commonIface.ServiceConfig) (commo
 	if err := dreamCommon.StartBeacon(u.Context(), cfg, node, "mockhost"); err != nil {
 		return nil, err
 	}
-	return &mockService{node: node}, nil
+
+	// Own HTTP server, with /whoami scoped to each custom domain bound to
+	// mockhost (domains.hosts). With no binding (the DNS-only test) no route is
+	// registered, so the server just answers 404 — exercising host-scoping.
+	h, err := httpsvc.New(u.Context(), node, cfg)
+	if err != nil {
+		return nil, err
+	}
+	for _, host := range cfg.HostsForService("mockhost") {
+		h.GET(&tauhttp.RouteDefinition{
+			Host: host,
+			Path: "/whoami",
+			Auth: tauhttp.RouteAuthHandler{Validator: httpauth.AnonymousHandler},
+			Handler: func(tauhttp.Context) (any, error) {
+				return "mockhost", nil
+			},
+		})
+	}
+	h.Start()
+
+	return &mockService{node: node, http: h}, nil
 }
 
 // TestDns_HostBinding_Dreaming binds a custom domain (admin.<fqdn>) to the
@@ -113,4 +146,64 @@ func TestDns_HostBinding_Dreaming(t *testing.T) {
 	boundIP, ok := resolveA("admin." + fqdn + ".")
 	assert.Assert(t, ok, "admin.<fqdn> did not resolve to a single A record")
 	assert.Equal(t, boundIP, directIP, "admin.<fqdn> should resolve to mockhost's node")
+}
+
+// TestHttp_HostBinding_Dreaming proves the HTTP layer host-scopes a bound domain
+// to its service. Dream has no shared shape config — each service gets its own
+// via WithHosts — so the binding goes on BOTH seer (DNS) and mockhost (so it
+// registers /whoami under the bound host). A request with the bound Host reaches
+// mockhost's handler; a mismatched Host does not.
+func TestHttp_HostBinding_Dreaming(t *testing.T) {
+	m, err := dream.New(t.Context())
+	assert.NilError(t, err)
+	defer m.Close()
+
+	u, err := m.New(dream.UniverseConfig{Name: t.Name()})
+	assert.NilError(t, err)
+
+	fqdn := strings.ToLower(u.Name()) + ".localtau"
+	boundHost := "admin." + fqdn
+
+	err = u.StartWithConfig(&dream.Config{
+		Services: map[string]commonIface.ServiceConfig{
+			"seer":     {Hosts: map[string]string{boundHost: "mockhost"}},
+			"mockhost": {Hosts: map[string]string{boundHost: "mockhost"}},
+		},
+	})
+	assert.NilError(t, err)
+
+	svc := u.ServiceInstance("mockhost")
+	assert.Assert(t, svc != nil, "mockhost did not register")
+	port, err := u.GetPortHttp(svc.Node())
+	assert.NilError(t, err)
+	url := fmt.Sprintf("http://127.0.0.1:%d/whoami", port)
+
+	get := func(host string) (int, string) {
+		req, _ := http.NewRequest(http.MethodGet, url, nil)
+		req.Host = host
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return 0, err.Error()
+		}
+		defer resp.Body.Close()
+		body, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(body)
+	}
+
+	// Wait for the HTTP server to be listening.
+	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
+		if code, _ := get(boundHost); code != 0 {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
+	// The bound host reaches mockhost's route.
+	code, body := get(boundHost)
+	assert.Equal(t, code, http.StatusOK, "bound host should reach mockhost; body="+body)
+	assert.Assert(t, strings.Contains(body, "mockhost"), "handler body: "+body)
+
+	// A mismatched host does not — routes are host-scoped.
+	code, _ = get("wrong." + fqdn)
+	assert.Equal(t, code, http.StatusNotFound, "a mismatched host must not match the route")
 }
