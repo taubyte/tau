@@ -13,6 +13,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
 
 	"github.com/spf13/afero"
@@ -206,6 +207,13 @@ func (hi *hostInst) handleCommand(c string) []byte {
 	hi.lock.Lock()
 	defer hi.lock.Unlock()
 	hi.commands = append(hi.commands, c)
+	// The deploy probes DNS resolvers with `dig +short ... @<resolver> google.com`
+	// and keeps a resolver only when the first output line is a valid IP. Answer
+	// that probe so the mock host looks like it can reach the public resolvers
+	// (otherwise the deploy stops at "none reachable" before the stages under test).
+	if strings.HasPrefix(c, "dig ") && strings.Contains(c, "google.com") {
+		return []byte("142.250.190.78\n")
+	}
 	return []byte("\n")
 }
 
