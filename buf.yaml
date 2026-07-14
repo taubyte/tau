@@ -1,0 +1,21 @@
+version: v2
+# Workspace spanning the community spore-drive protos and the ee (private
+# submodule) enterprise protos, so the ee module can import config/v1. When the
+# ee submodule is checked out both modules resolve; buf generate is dev-time and
+# this team always has the submodule.
+modules:
+  - path: pkg/spore-drive/proto
+  - path: ee/proto
+lint:
+  use:
+    - STANDARD
+  except:
+    - RPC_REQUEST_RESPONSE_UNIQUE
+    - ENUM_VALUE_UPPER_SNAKE_CASE
+    - ENUM_VALUE_PREFIX
+    - ENUM_ZERO_VALUE_SUFFIX
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
+breaking:
+  use:
+    - FILE

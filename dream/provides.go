@@ -38,6 +38,11 @@ func (u *Universe) provided(_service string) bool {
 			runes := []rune(_service)
 			runes[0] = unicode.ToUpper(runes[0])
 			serviceMethod := ru.MethodByName(string(runes))
+			// A registered service need not expose a typed u.<Name>() accessor;
+			// without one there is nothing to reflect-call, so it is not provided.
+			if !serviceMethod.IsValid() {
+				return false
+			}
 			_s := serviceMethod.Call(nil)
 			var ok bool
 			if s, ok = _s[0].Interface().(servicesIface.Service); !ok {

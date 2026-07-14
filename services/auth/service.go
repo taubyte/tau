@@ -8,10 +8,8 @@ import (
 
 	"github.com/ipfs/go-log/v2"
 	accountsClientPkg "github.com/taubyte/tau/clients/p2p/accounts"
-	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
-	seerIface "github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb"
@@ -93,13 +91,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 
 	srv.setupStreamRoutes()
 	srv.stream.Start()
-	var sc seerIface.Client
-	if sc, err = seerClient.New(ctx, clientNode, cfg.SensorsRegistry()); err != nil {
-		return nil, fmt.Errorf("creating seer client failed with %s", err)
-	}
-	if err = servicesCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeAuth); err != nil {
-		return nil, err
-	}
 
 	if srv.http = cfg.Http(); srv.http == nil {
 		srv.http, err = httpsvc.New(ctx, srv.node, cfg)

@@ -9,6 +9,7 @@ including cloud settings, hosts, authentication, and shapes.
 from typing import List, Any, Dict, Optional, Union, AsyncIterable
 from .proto.config.v1 import config_pb2
 from .clients import ConfigClient
+from .opbuild import dict_to_protobuf
 
 
 class BaseOperation:
@@ -20,32 +21,11 @@ class BaseOperation:
         self.op_path = path
     
     async def _do_request(self, operation: Any) -> config_pb2.Return:
-        """Execute operation request."""
-        op = self._build_op(operation)
-        final_op = config_pb2.Op(config=self.config)
-        
-        if isinstance(op, dict) and 'case' in op:
-            case_name = op['case']
-            if case_name == 'cloud':
-                cloud_op = self._dict_to_protobuf(op['value'], config_pb2.Cloud)
-                final_op.cloud.CopyFrom(cloud_op)
-            elif case_name == 'hosts':
-                hosts_op = self._dict_to_protobuf(op['value'], config_pb2.Hosts)
-                final_op.hosts.CopyFrom(hosts_op)
-            elif case_name == 'auth':
-                auth_op = self._dict_to_protobuf(op['value'], config_pb2.Auth)
-                final_op.auth.CopyFrom(auth_op)
-            elif case_name == 'shapes':
-                shapes_op = self._dict_to_protobuf(op['value'], config_pb2.Shapes)
-                final_op.shapes.CopyFrom(shapes_op)
-            elif case_name == 'accounts':
-                accounts_op = self._dict_to_protobuf(op['value'], config_pb2.Accounts)
-                final_op.accounts.CopyFrom(accounts_op)
-        
+        """Build the dict op tree and let the client wrap it in the service Op
+        message and dispatch it (generic over ConfigService / ee services)."""
         try:
-            result = await self.client.do(final_op)
-            return result
-        except Exception as e:
+            return await self.client.do(self.config, self._build_op(operation))
+        except Exception:
             return config_pb2.Return()
     
     def _build_op(self, operation: Any) -> Any:
@@ -69,67 +49,33 @@ class BaseOperation:
                     message_value["name"] = path_item["name"]
                 if "shape" in path_item:
                     message_value["shape"] = path_item["shape"]
+                if "domain" in path_item:
+                    message_value["domain"] = path_item["domain"]
             else:
                 message_value = {"op": op}
                 if "name" in path_item:
                     message_value["name"] = path_item["name"]
                 if "shape" in path_item:
                     message_value["shape"] = path_item["shape"]
+                if "domain" in path_item:
+                    message_value["domain"] = path_item["domain"]
             
             op = {"case": case_name, "value": message_value}
         return op
-    
+
     def _dict_to_protobuf(self, op_dict, message_type):
-        """Convert a nested operation dictionary to a protobuf message."""
-        msg = message_type()
-        if not isinstance(op_dict, dict):
-            return op_dict  # base case for leaf values
-
-        for k, v in op_dict.items():
-            if k == "case":
-                field_name = op_dict["case"]
-                if "value" in op_dict:
-                    value = op_dict["value"]
-                    field = msg.DESCRIPTOR.fields_by_name.get(field_name)
-                    if field is not None and field.message_type:
-                        nested_type = field.message_type._concrete_class
-                        nested_msg = self._dict_to_protobuf(value, nested_type)
-                        getattr(msg, field_name).CopyFrom(nested_msg)
-                    else:
-                        setattr(msg, field_name, value)
-                else:
-                    setattr(msg, field_name, True)
-            elif k == "value":
-                continue
-            elif k == "op":
-                nested = self._dict_to_protobuf(v, message_type)
-                for field in nested.DESCRIPTOR.fields:
-                    if field.message_type is not None:
-                        if nested.HasField(field.name):
-                            getattr(msg, field.name).CopyFrom(getattr(nested, field.name))
-                    else:
-                        value = getattr(nested, field.name)
-                        if value != field.default_value:
-                            setattr(msg, field.name, value)
-            elif k == "shape" or k == "name":
-                setattr(msg, k, v)
-
-            else:
-                field = msg.DESCRIPTOR.fields_by_name.get(k)
-                if field is not None and field.message_type:
-                    nested_type = field.message_type._concrete_class
-                    nested_msg = self._dict_to_protobuf(v, nested_type)
-                    getattr(msg, k).CopyFrom(nested_msg)
-                else:
-                    setattr(msg, k, v)
-        return msg
+        """Convenience delegator to the shared opbuild.dict_to_protobuf."""
+        return dict_to_protobuf(op_dict, message_type)
+    
 
 
 
 class DomainConfig:
-    def __init__(self, root: Optional[str] = None, generated: Optional[str] = None):
+    def __init__(self, root: Optional[str] = None, generated: Optional[str] = None, hosts: Optional[Dict[str, str]] = None):
         self.root = root
         self.generated = generated
+        # domains.hosts: custom domain -> service (e.g. "console.<fqdn>" -> "gateway").
+        self.hosts = hosts or {}
 
 
 class BootstrapConfig:
@@ -279,23 +225,30 @@ class UInt64Operation(BaseOperation):
         return 0
 
 
+class BoolOperation(BaseOperation):
+    """bool operation class (set only; Return has no bool case)."""
+
+    async def set(self, value: bool) -> None:
+        """Set bool value."""
+        await self._do_request({"case": "set", "value": bool(value)})
+
+
 class StringSliceOperation(BaseOperation):
     """String slice operation class for string array operations."""
     
     async def set(self, values: List[str]) -> None:
         """Set string slice values."""
-        string_slice = config_pb2.StringSlice(value=values)
-        await self._do_request({"case": "set", "value": string_slice})
-    
+        # plain list (not config_pb2.StringSlice) so the wrapping client builds
+        # the right package's StringSlice — lets ee clients reuse this class.
+        await self._do_request({"case": "set", "value": list(values)})
+
     async def add(self, values: List[str]) -> None:
         """Add values to string slice."""
-        string_slice = config_pb2.StringSlice(value=values)
-        await self._do_request({"case": "add", "value": string_slice})
-    
+        await self._do_request({"case": "add", "value": list(values)})
+
     async def delete(self, values: List[str]) -> None:
         """Delete values from string slice."""
-        string_slice = config_pb2.StringSlice(value=values)
-        await self._do_request({"case": "delete", "value": string_slice})
+        await self._do_request({"case": "delete", "value": list(values)})
     
     async def clear(self) -> None:
         """Clear all values."""
@@ -349,13 +302,63 @@ class Domain(BaseOperation):
     @property
     def validation(self) -> 'Validation':
         return Validation(self.client, self.config, self.op_path + [{"case": "validation"}])
-    
+
+    @property
+    def hosts(self) -> 'DomainHosts':
+        return DomainHosts(self.client, self.config, self.op_path + [{"case": "hosts"}])
+
     async def set(self, value: DomainConfig) -> None:
         """Set domain configuration."""
         if value.root:
             await self.root.set(value.root)
         if value.generated:
             await self.generated.set(value.generated)
+        if value.hosts:
+            await self.hosts.set(value.hosts)
+
+
+class DomainHosts(BaseOperation):
+    """domains.hosts: maps custom domains to services (any domain -> any service)."""
+
+    def __init__(self, client: ConfigClient, config: config_pb2.Config, path: List[Dict[str, Any]]):
+        super().__init__(client, config, path)
+
+    def host(self, domain: str) -> 'DomainHost':
+        return DomainHost(self.client, self.config, self.op_path + [{"case": "select", "domain": domain}])
+
+    async def list(self) -> List[str]:
+        """List all bound domains."""
+        result = await self._do_request({"case": "list", "value": True})
+        if result.WhichOneof('return') == 'slice':
+            return list(result.slice.value)
+        return []
+
+    async def set(self, value: Dict[str, str]) -> None:
+        """Bind each domain to its service."""
+        for domain, service in value.items():
+            await self.host(domain).set(service)
+
+
+class DomainHost(BaseOperation):
+    """A single domain -> service binding."""
+
+    def __init__(self, client: ConfigClient, config: config_pb2.Config, path: List[Dict[str, Any]]):
+        super().__init__(client, config, path)
+
+    async def set(self, service: str) -> None:
+        """Bind this domain to a service."""
+        await self._do_request({"case": "set", "value": service})
+
+    async def get(self) -> str:
+        """Get the service bound to this domain."""
+        result = await self._do_request({"case": "get", "value": True})
+        if result.WhichOneof('return') == 'string':
+            return result.string
+        return ""
+
+    async def delete(self) -> None:
+        """Remove this domain binding."""
+        await self._do_request({"case": "delete", "value": True})
 
 
 class Validation(BaseOperation):

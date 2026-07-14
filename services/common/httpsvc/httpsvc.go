@@ -75,6 +75,10 @@ func autoTrustFromConfig(cfg config.Config) func(string) bool {
 		if cfg.AliasDomainsMatch(host) {
 			return true
 		}
+		// custom domains bound to a service (domains.hosts) are ours to serve.
+		if _, ok := cfg.ServiceForHost(host); ok {
+			return true
+		}
 		return cfg.ServicesDomainMatch(host)
 	}
 }

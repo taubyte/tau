@@ -50,6 +50,13 @@ message UInt64Op {
     }
 }
 
+message BoolOp {
+    oneof op {
+        bool set = 1;
+        bool get = 2;
+    }
+}
+
 message StringSliceOp {
     oneof op {
         StringSlice set = 1;
@@ -127,6 +134,25 @@ message Domain {
         StringOp root = 1;
         StringOp generated = 2;
         Validation validation = 3;
+        DomainHosts hosts = 4;
+    }
+}
+
+// DomainHosts maps custom domains to services (domains.hosts):
+// e.g. "console.<fqdn>" -> "gateway". Generic: any domain -> any service.
+message DomainHosts {
+    oneof op {
+        DomainHost select = 1;
+        bool list = 2;
+    }
+}
+
+message DomainHost {
+    string domain = 1;
+    oneof op {
+        string set = 2;  // service bound to this domain
+        bool get = 3;
+        bool delete = 4;
     }
 }
 

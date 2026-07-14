@@ -10,24 +10,14 @@ import (
 	"github.com/taubyte/tau/pkg/config"
 )
 
-type seerBeaconConfig struct {
-	serviceMeta map[string]string
-}
-
-type seerBeaconOption func(cnf *seerBeaconConfig)
-
-func SeerBeaconOptionMeta(meta map[string]string) seerBeaconOption {
-	return func(cnf *seerBeaconConfig) {
-		cnf.serviceMeta = meta
-	}
-}
-
-func StartSeerBeacon(cfg config.Config, sc seer.Client, serviceType seer.ServiceType, ops ...seerBeaconOption) error {
-	seerConfig := &seerBeaconConfig{
-		serviceMeta: make(map[string]string, 0),
-	}
-	for _, op := range ops {
-		op(seerConfig)
+// StartSeerBeacon announces the given service types from this node through a
+// single seer client and one usage/geo beacon goroutine set. A node running
+// several services (a shape) beacons once for all of them, instead of opening a
+// client and beacon per service. Callers build the client (see
+// clients/p2p/seer.StartNodeBeacon) so this package need not depend on it.
+func StartSeerBeacon(cfg config.Config, sc seer.Client, serviceTypes []seer.ServiceType) error {
+	if len(serviceTypes) == 0 {
+		return nil
 	}
 
 	// Create a Geo Beacon if location was provided
@@ -49,16 +39,15 @@ func StartSeerBeacon(cfg config.Config, sc seer.Client, serviceType seer.Service
 	if err != nil {
 		return err
 	}
-	seerConfig.serviceMeta["IP"] = addr
-	if cfg.Cluster() != "" {
-		seerConfig.serviceMeta["cluster"] = cfg.Cluster()
-	} else {
-		seerConfig.serviceMeta["cluster"] = "main"
+
+	cluster := cfg.Cluster()
+	if cluster == "" {
+		cluster = "main"
 	}
 
 	hostname, err := os.Hostname()
 	if err != nil {
-		return fmt.Errorf("failed finding hostname on `%s` with: %s", serviceType, err)
+		return fmt.Errorf("failed finding hostname with: %s", err)
 	}
 
 	var nodeId, clientNodeId string
@@ -80,8 +69,10 @@ func StartSeerBeacon(cfg config.Config, sc seer.Client, serviceType seer.Service
 		}
 	}
 
-	// Start Usage Beacon
-	sc.Usage().AddService(serviceType, seerConfig.serviceMeta)
+	// Announce every service type this node runs under one usage beacon.
+	for _, serviceType := range serviceTypes {
+		sc.Usage().AddService(serviceType, map[string]string{"IP": addr, "cluster": cluster})
+	}
 	sc.Usage().Beacon(hostname, nodeId, clientNodeId, signature).Start()
 
 	return nil

@@ -19,5 +19,12 @@ func createAuthService(u *dream.Universe, config *iface.ServiceConfig) (iface.Se
 	if err != nil {
 		return nil, err
 	}
-	return auth.New(u.Context(), cfg)
+	svc, err := auth.New(u.Context(), cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := common.StartBeacon(u.Context(), cfg, svc.Node(), commonSpecs.Auth); err != nil {
+		return nil, err
+	}
+	return svc, nil
 }

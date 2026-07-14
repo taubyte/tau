@@ -573,6 +573,88 @@ func (*UInt64Op_Set) isUInt64Op_Op() {}
 
 func (*UInt64Op_Get) isUInt64Op_Op() {}
 
+type BoolOp struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Op:
+	//
+	//	*BoolOp_Set
+	//	*BoolOp_Get
+	Op            isBoolOp_Op `protobuf_oneof:"op"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BoolOp) Reset() {
+	*x = BoolOp{}
+	mi := &file_config_v1_config_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BoolOp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BoolOp) ProtoMessage() {}
+
+func (x *BoolOp) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BoolOp.ProtoReflect.Descriptor instead.
+func (*BoolOp) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *BoolOp) GetOp() isBoolOp_Op {
+	if x != nil {
+		return x.Op
+	}
+	return nil
+}
+
+func (x *BoolOp) GetSet() bool {
+	if x != nil {
+		if x, ok := x.Op.(*BoolOp_Set); ok {
+			return x.Set
+		}
+	}
+	return false
+}
+
+func (x *BoolOp) GetGet() bool {
+	if x != nil {
+		if x, ok := x.Op.(*BoolOp_Get); ok {
+			return x.Get
+		}
+	}
+	return false
+}
+
+type isBoolOp_Op interface {
+	isBoolOp_Op()
+}
+
+type BoolOp_Set struct {
+	Set bool `protobuf:"varint,1,opt,name=set,proto3,oneof"`
+}
+
+type BoolOp_Get struct {
+	Get bool `protobuf:"varint,2,opt,name=get,proto3,oneof"`
+}
+
+func (*BoolOp_Set) isBoolOp_Op() {}
+
+func (*BoolOp_Get) isBoolOp_Op() {}
+
 type StringSliceOp struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Op:
@@ -589,7 +671,7 @@ type StringSliceOp struct {
 
 func (x *StringSliceOp) Reset() {
 	*x = StringSliceOp{}
-	mi := &file_config_v1_config_proto_msgTypes[7]
+	mi := &file_config_v1_config_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -601,7 +683,7 @@ func (x *StringSliceOp) String() string {
 func (*StringSliceOp) ProtoMessage() {}
 
 func (x *StringSliceOp) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[7]
+	mi := &file_config_v1_config_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -614,7 +696,7 @@ func (x *StringSliceOp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StringSliceOp.ProtoReflect.Descriptor instead.
 func (*StringSliceOp) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{7}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *StringSliceOp) GetOp() isStringSliceOp_Op {
@@ -716,7 +798,7 @@ type ReturnValue struct {
 
 func (x *ReturnValue) Reset() {
 	*x = ReturnValue{}
-	mi := &file_config_v1_config_proto_msgTypes[8]
+	mi := &file_config_v1_config_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -728,7 +810,7 @@ func (x *ReturnValue) String() string {
 func (*ReturnValue) ProtoMessage() {}
 
 func (x *ReturnValue) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[8]
+	mi := &file_config_v1_config_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -741,7 +823,7 @@ func (x *ReturnValue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReturnValue.ProtoReflect.Descriptor instead.
 func (*ReturnValue) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{8}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ReturnValue) GetReturn() isReturnValue_Return {
@@ -794,7 +876,7 @@ type StringSlice struct {
 
 func (x *StringSlice) Reset() {
 	*x = StringSlice{}
-	mi := &file_config_v1_config_proto_msgTypes[9]
+	mi := &file_config_v1_config_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -806,7 +888,7 @@ func (x *StringSlice) String() string {
 func (*StringSlice) ProtoMessage() {}
 
 func (x *StringSlice) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[9]
+	mi := &file_config_v1_config_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -819,7 +901,7 @@ func (x *StringSlice) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StringSlice.ProtoReflect.Descriptor instead.
 func (*StringSlice) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{9}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StringSlice) GetValue() []string {
@@ -839,7 +921,7 @@ type Error struct {
 
 func (x *Error) Reset() {
 	*x = Error{}
-	mi := &file_config_v1_config_proto_msgTypes[10]
+	mi := &file_config_v1_config_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -851,7 +933,7 @@ func (x *Error) String() string {
 func (*Error) ProtoMessage() {}
 
 func (x *Error) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[10]
+	mi := &file_config_v1_config_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -864,7 +946,7 @@ func (x *Error) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Error.ProtoReflect.Descriptor instead.
 func (*Error) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{10}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Error) GetCode() int64 {
@@ -891,7 +973,7 @@ type BundleConfig struct {
 
 func (x *BundleConfig) Reset() {
 	*x = BundleConfig{}
-	mi := &file_config_v1_config_proto_msgTypes[11]
+	mi := &file_config_v1_config_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -903,7 +985,7 @@ func (x *BundleConfig) String() string {
 func (*BundleConfig) ProtoMessage() {}
 
 func (x *BundleConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[11]
+	mi := &file_config_v1_config_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -916,7 +998,7 @@ func (x *BundleConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BundleConfig.ProtoReflect.Descriptor instead.
 func (*BundleConfig) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{11}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *BundleConfig) GetId() *Config {
@@ -941,7 +1023,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_config_v1_config_proto_msgTypes[12]
+	mi := &file_config_v1_config_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -953,7 +1035,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[12]
+	mi := &file_config_v1_config_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -966,7 +1048,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{12}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{13}
 }
 
 // Return
@@ -989,7 +1071,7 @@ type Return struct {
 
 func (x *Return) Reset() {
 	*x = Return{}
-	mi := &file_config_v1_config_proto_msgTypes[13]
+	mi := &file_config_v1_config_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1001,7 +1083,7 @@ func (x *Return) String() string {
 func (*Return) ProtoMessage() {}
 
 func (x *Return) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[13]
+	mi := &file_config_v1_config_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1014,7 +1096,7 @@ func (x *Return) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Return.ProtoReflect.Descriptor instead.
 func (*Return) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{13}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *Return) GetReturn() isReturn_Return {
@@ -1166,7 +1248,7 @@ type Op struct {
 
 func (x *Op) Reset() {
 	*x = Op{}
-	mi := &file_config_v1_config_proto_msgTypes[14]
+	mi := &file_config_v1_config_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1178,7 +1260,7 @@ func (x *Op) String() string {
 func (*Op) ProtoMessage() {}
 
 func (x *Op) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[14]
+	mi := &file_config_v1_config_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1191,7 +1273,7 @@ func (x *Op) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Op.ProtoReflect.Descriptor instead.
 func (*Op) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{14}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *Op) GetConfig() *Config {
@@ -1301,7 +1383,7 @@ type Cloud struct {
 
 func (x *Cloud) Reset() {
 	*x = Cloud{}
-	mi := &file_config_v1_config_proto_msgTypes[15]
+	mi := &file_config_v1_config_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1313,7 +1395,7 @@ func (x *Cloud) String() string {
 func (*Cloud) ProtoMessage() {}
 
 func (x *Cloud) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[15]
+	mi := &file_config_v1_config_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1326,7 +1408,7 @@ func (x *Cloud) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Cloud.ProtoReflect.Descriptor instead.
 func (*Cloud) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{15}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *Cloud) GetOp() isCloud_Op {
@@ -1377,6 +1459,7 @@ type Domain struct {
 	//	*Domain_Root
 	//	*Domain_Generated
 	//	*Domain_Validation
+	//	*Domain_Hosts
 	Op            isDomain_Op `protobuf_oneof:"op"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1384,7 +1467,7 @@ type Domain struct {
 
 func (x *Domain) Reset() {
 	*x = Domain{}
-	mi := &file_config_v1_config_proto_msgTypes[16]
+	mi := &file_config_v1_config_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1396,7 +1479,7 @@ func (x *Domain) String() string {
 func (*Domain) ProtoMessage() {}
 
 func (x *Domain) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[16]
+	mi := &file_config_v1_config_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1409,7 +1492,7 @@ func (x *Domain) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Domain.ProtoReflect.Descriptor instead.
 func (*Domain) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{16}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *Domain) GetOp() isDomain_Op {
@@ -1446,6 +1529,15 @@ func (x *Domain) GetValidation() *Validation {
 	return nil
 }
 
+func (x *Domain) GetHosts() *DomainHosts {
+	if x != nil {
+		if x, ok := x.Op.(*Domain_Hosts); ok {
+			return x.Hosts
+		}
+	}
+	return nil
+}
+
 type isDomain_Op interface {
 	isDomain_Op()
 }
@@ -1462,11 +1554,207 @@ type Domain_Validation struct {
 	Validation *Validation `protobuf:"bytes,3,opt,name=validation,proto3,oneof"`
 }
 
+type Domain_Hosts struct {
+	Hosts *DomainHosts `protobuf:"bytes,4,opt,name=hosts,proto3,oneof"`
+}
+
 func (*Domain_Root) isDomain_Op() {}
 
 func (*Domain_Generated) isDomain_Op() {}
 
 func (*Domain_Validation) isDomain_Op() {}
+
+func (*Domain_Hosts) isDomain_Op() {}
+
+// DomainHosts maps custom domains to services (domains.hosts):
+// e.g. "console.<fqdn>" -> "gateway". Generic: any domain -> any service.
+type DomainHosts struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Op:
+	//
+	//	*DomainHosts_Select
+	//	*DomainHosts_List
+	Op            isDomainHosts_Op `protobuf_oneof:"op"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DomainHosts) Reset() {
+	*x = DomainHosts{}
+	mi := &file_config_v1_config_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DomainHosts) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DomainHosts) ProtoMessage() {}
+
+func (x *DomainHosts) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DomainHosts.ProtoReflect.Descriptor instead.
+func (*DomainHosts) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *DomainHosts) GetOp() isDomainHosts_Op {
+	if x != nil {
+		return x.Op
+	}
+	return nil
+}
+
+func (x *DomainHosts) GetSelect() *DomainHost {
+	if x != nil {
+		if x, ok := x.Op.(*DomainHosts_Select); ok {
+			return x.Select
+		}
+	}
+	return nil
+}
+
+func (x *DomainHosts) GetList() bool {
+	if x != nil {
+		if x, ok := x.Op.(*DomainHosts_List); ok {
+			return x.List
+		}
+	}
+	return false
+}
+
+type isDomainHosts_Op interface {
+	isDomainHosts_Op()
+}
+
+type DomainHosts_Select struct {
+	Select *DomainHost `protobuf:"bytes,1,opt,name=select,proto3,oneof"`
+}
+
+type DomainHosts_List struct {
+	List bool `protobuf:"varint,2,opt,name=list,proto3,oneof"`
+}
+
+func (*DomainHosts_Select) isDomainHosts_Op() {}
+
+func (*DomainHosts_List) isDomainHosts_Op() {}
+
+type DomainHost struct {
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Domain string                 `protobuf:"bytes,1,opt,name=domain,proto3" json:"domain,omitempty"`
+	// Types that are valid to be assigned to Op:
+	//
+	//	*DomainHost_Set
+	//	*DomainHost_Get
+	//	*DomainHost_Delete
+	Op            isDomainHost_Op `protobuf_oneof:"op"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DomainHost) Reset() {
+	*x = DomainHost{}
+	mi := &file_config_v1_config_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DomainHost) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DomainHost) ProtoMessage() {}
+
+func (x *DomainHost) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DomainHost.ProtoReflect.Descriptor instead.
+func (*DomainHost) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *DomainHost) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+func (x *DomainHost) GetOp() isDomainHost_Op {
+	if x != nil {
+		return x.Op
+	}
+	return nil
+}
+
+func (x *DomainHost) GetSet() string {
+	if x != nil {
+		if x, ok := x.Op.(*DomainHost_Set); ok {
+			return x.Set
+		}
+	}
+	return ""
+}
+
+func (x *DomainHost) GetGet() bool {
+	if x != nil {
+		if x, ok := x.Op.(*DomainHost_Get); ok {
+			return x.Get
+		}
+	}
+	return false
+}
+
+func (x *DomainHost) GetDelete() bool {
+	if x != nil {
+		if x, ok := x.Op.(*DomainHost_Delete); ok {
+			return x.Delete
+		}
+	}
+	return false
+}
+
+type isDomainHost_Op interface {
+	isDomainHost_Op()
+}
+
+type DomainHost_Set struct {
+	Set string `protobuf:"bytes,2,opt,name=set,proto3,oneof"` // service bound to this domain
+}
+
+type DomainHost_Get struct {
+	Get bool `protobuf:"varint,3,opt,name=get,proto3,oneof"`
+}
+
+type DomainHost_Delete struct {
+	Delete bool `protobuf:"varint,4,opt,name=delete,proto3,oneof"`
+}
+
+func (*DomainHost_Set) isDomainHost_Op() {}
+
+func (*DomainHost_Get) isDomainHost_Op() {}
+
+func (*DomainHost_Delete) isDomainHost_Op() {}
 
 type Validation struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -1481,7 +1769,7 @@ type Validation struct {
 
 func (x *Validation) Reset() {
 	*x = Validation{}
-	mi := &file_config_v1_config_proto_msgTypes[17]
+	mi := &file_config_v1_config_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1493,7 +1781,7 @@ func (x *Validation) String() string {
 func (*Validation) ProtoMessage() {}
 
 func (x *Validation) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[17]
+	mi := &file_config_v1_config_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1506,7 +1794,7 @@ func (x *Validation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Validation.ProtoReflect.Descriptor instead.
 func (*Validation) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{17}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *Validation) GetOp() isValidation_Op {
@@ -1563,7 +1851,7 @@ type ValidationKeys struct {
 
 func (x *ValidationKeys) Reset() {
 	*x = ValidationKeys{}
-	mi := &file_config_v1_config_proto_msgTypes[18]
+	mi := &file_config_v1_config_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1575,7 +1863,7 @@ func (x *ValidationKeys) String() string {
 func (*ValidationKeys) ProtoMessage() {}
 
 func (x *ValidationKeys) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[18]
+	mi := &file_config_v1_config_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1588,7 +1876,7 @@ func (x *ValidationKeys) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationKeys.ProtoReflect.Descriptor instead.
 func (*ValidationKeys) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{18}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *ValidationKeys) GetOp() isValidationKeys_Op {
@@ -1645,7 +1933,7 @@ type ValidationKeysPath struct {
 
 func (x *ValidationKeysPath) Reset() {
 	*x = ValidationKeysPath{}
-	mi := &file_config_v1_config_proto_msgTypes[19]
+	mi := &file_config_v1_config_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1657,7 +1945,7 @@ func (x *ValidationKeysPath) String() string {
 func (*ValidationKeysPath) ProtoMessage() {}
 
 func (x *ValidationKeysPath) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[19]
+	mi := &file_config_v1_config_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1670,7 +1958,7 @@ func (x *ValidationKeysPath) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationKeysPath.ProtoReflect.Descriptor instead.
 func (*ValidationKeysPath) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{19}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *ValidationKeysPath) GetOp() isValidationKeysPath_Op {
@@ -1727,7 +2015,7 @@ type ValidationKeysData struct {
 
 func (x *ValidationKeysData) Reset() {
 	*x = ValidationKeysData{}
-	mi := &file_config_v1_config_proto_msgTypes[20]
+	mi := &file_config_v1_config_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1739,7 +2027,7 @@ func (x *ValidationKeysData) String() string {
 func (*ValidationKeysData) ProtoMessage() {}
 
 func (x *ValidationKeysData) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[20]
+	mi := &file_config_v1_config_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1752,7 +2040,7 @@ func (x *ValidationKeysData) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ValidationKeysData.ProtoReflect.Descriptor instead.
 func (*ValidationKeysData) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{20}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *ValidationKeysData) GetOp() isValidationKeysData_Op {
@@ -1809,7 +2097,7 @@ type P2P struct {
 
 func (x *P2P) Reset() {
 	*x = P2P{}
-	mi := &file_config_v1_config_proto_msgTypes[21]
+	mi := &file_config_v1_config_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1821,7 +2109,7 @@ func (x *P2P) String() string {
 func (*P2P) ProtoMessage() {}
 
 func (x *P2P) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[21]
+	mi := &file_config_v1_config_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1834,7 +2122,7 @@ func (x *P2P) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use P2P.ProtoReflect.Descriptor instead.
 func (*P2P) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{21}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *P2P) GetOp() isP2P_Op {
@@ -1891,7 +2179,7 @@ type Bootstrap struct {
 
 func (x *Bootstrap) Reset() {
 	*x = Bootstrap{}
-	mi := &file_config_v1_config_proto_msgTypes[22]
+	mi := &file_config_v1_config_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1903,7 +2191,7 @@ func (x *Bootstrap) String() string {
 func (*Bootstrap) ProtoMessage() {}
 
 func (x *Bootstrap) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[22]
+	mi := &file_config_v1_config_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1916,7 +2204,7 @@ func (x *Bootstrap) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Bootstrap.ProtoReflect.Descriptor instead.
 func (*Bootstrap) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{22}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *Bootstrap) GetOp() isBootstrap_Op {
@@ -1974,7 +2262,7 @@ type BootstrapShape struct {
 
 func (x *BootstrapShape) Reset() {
 	*x = BootstrapShape{}
-	mi := &file_config_v1_config_proto_msgTypes[23]
+	mi := &file_config_v1_config_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1986,7 +2274,7 @@ func (x *BootstrapShape) String() string {
 func (*BootstrapShape) ProtoMessage() {}
 
 func (x *BootstrapShape) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[23]
+	mi := &file_config_v1_config_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1999,7 +2287,7 @@ func (x *BootstrapShape) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BootstrapShape.ProtoReflect.Descriptor instead.
 func (*BootstrapShape) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{23}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *BootstrapShape) GetShape() string {
@@ -2063,7 +2351,7 @@ type Swarm struct {
 
 func (x *Swarm) Reset() {
 	*x = Swarm{}
-	mi := &file_config_v1_config_proto_msgTypes[24]
+	mi := &file_config_v1_config_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2075,7 +2363,7 @@ func (x *Swarm) String() string {
 func (*Swarm) ProtoMessage() {}
 
 func (x *Swarm) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[24]
+	mi := &file_config_v1_config_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2088,7 +2376,7 @@ func (x *Swarm) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Swarm.ProtoReflect.Descriptor instead.
 func (*Swarm) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{24}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *Swarm) GetOp() isSwarm_Op {
@@ -2145,7 +2433,7 @@ type SwarmKey struct {
 
 func (x *SwarmKey) Reset() {
 	*x = SwarmKey{}
-	mi := &file_config_v1_config_proto_msgTypes[25]
+	mi := &file_config_v1_config_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2157,7 +2445,7 @@ func (x *SwarmKey) String() string {
 func (*SwarmKey) ProtoMessage() {}
 
 func (x *SwarmKey) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[25]
+	mi := &file_config_v1_config_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2170,7 +2458,7 @@ func (x *SwarmKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SwarmKey.ProtoReflect.Descriptor instead.
 func (*SwarmKey) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{25}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SwarmKey) GetOp() isSwarmKey_Op {
@@ -2228,7 +2516,7 @@ type Hosts struct {
 
 func (x *Hosts) Reset() {
 	*x = Hosts{}
-	mi := &file_config_v1_config_proto_msgTypes[26]
+	mi := &file_config_v1_config_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2240,7 +2528,7 @@ func (x *Hosts) String() string {
 func (*Hosts) ProtoMessage() {}
 
 func (x *Hosts) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[26]
+	mi := &file_config_v1_config_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2253,7 +2541,7 @@ func (x *Hosts) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hosts.ProtoReflect.Descriptor instead.
 func (*Hosts) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{26}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *Hosts) GetOp() isHosts_Op {
@@ -2314,7 +2602,7 @@ type Host struct {
 
 func (x *Host) Reset() {
 	*x = Host{}
-	mi := &file_config_v1_config_proto_msgTypes[27]
+	mi := &file_config_v1_config_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2326,7 +2614,7 @@ func (x *Host) String() string {
 func (*Host) ProtoMessage() {}
 
 func (x *Host) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[27]
+	mi := &file_config_v1_config_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2339,7 +2627,7 @@ func (x *Host) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Host.ProtoReflect.Descriptor instead.
 func (*Host) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{27}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *Host) GetName() string {
@@ -2448,7 +2736,7 @@ type SSH struct {
 
 func (x *SSH) Reset() {
 	*x = SSH{}
-	mi := &file_config_v1_config_proto_msgTypes[28]
+	mi := &file_config_v1_config_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2460,7 +2748,7 @@ func (x *SSH) String() string {
 func (*SSH) ProtoMessage() {}
 
 func (x *SSH) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[28]
+	mi := &file_config_v1_config_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2473,7 +2761,7 @@ func (x *SSH) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSH.ProtoReflect.Descriptor instead.
 func (*SSH) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{28}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *SSH) GetOp() isSSH_Op {
@@ -2530,7 +2818,7 @@ type HostShapes struct {
 
 func (x *HostShapes) Reset() {
 	*x = HostShapes{}
-	mi := &file_config_v1_config_proto_msgTypes[29]
+	mi := &file_config_v1_config_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2542,7 +2830,7 @@ func (x *HostShapes) String() string {
 func (*HostShapes) ProtoMessage() {}
 
 func (x *HostShapes) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[29]
+	mi := &file_config_v1_config_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2555,7 +2843,7 @@ func (x *HostShapes) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostShapes.ProtoReflect.Descriptor instead.
 func (*HostShapes) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{29}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *HostShapes) GetOp() isHostShapes_Op {
@@ -2613,7 +2901,7 @@ type HostShape struct {
 
 func (x *HostShape) Reset() {
 	*x = HostShape{}
-	mi := &file_config_v1_config_proto_msgTypes[30]
+	mi := &file_config_v1_config_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2625,7 +2913,7 @@ func (x *HostShape) String() string {
 func (*HostShape) ProtoMessage() {}
 
 func (x *HostShape) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[30]
+	mi := &file_config_v1_config_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2638,7 +2926,7 @@ func (x *HostShape) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostShape.ProtoReflect.Descriptor instead.
 func (*HostShape) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{30}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *HostShape) GetName() string {
@@ -2703,7 +2991,7 @@ type HostInstance struct {
 
 func (x *HostInstance) Reset() {
 	*x = HostInstance{}
-	mi := &file_config_v1_config_proto_msgTypes[31]
+	mi := &file_config_v1_config_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2715,7 +3003,7 @@ func (x *HostInstance) String() string {
 func (*HostInstance) ProtoMessage() {}
 
 func (x *HostInstance) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[31]
+	mi := &file_config_v1_config_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2728,7 +3016,7 @@ func (x *HostInstance) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HostInstance.ProtoReflect.Descriptor instead.
 func (*HostInstance) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{31}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *HostInstance) GetOp() isHostInstance_Op {
@@ -2801,7 +3089,7 @@ type Auth struct {
 
 func (x *Auth) Reset() {
 	*x = Auth{}
-	mi := &file_config_v1_config_proto_msgTypes[32]
+	mi := &file_config_v1_config_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2813,7 +3101,7 @@ func (x *Auth) String() string {
 func (*Auth) ProtoMessage() {}
 
 func (x *Auth) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[32]
+	mi := &file_config_v1_config_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2826,7 +3114,7 @@ func (x *Auth) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Auth.ProtoReflect.Descriptor instead.
 func (*Auth) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{32}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *Auth) GetOp() isAuth_Op {
@@ -2886,7 +3174,7 @@ type Signer struct {
 
 func (x *Signer) Reset() {
 	*x = Signer{}
-	mi := &file_config_v1_config_proto_msgTypes[33]
+	mi := &file_config_v1_config_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2898,7 +3186,7 @@ func (x *Signer) String() string {
 func (*Signer) ProtoMessage() {}
 
 func (x *Signer) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[33]
+	mi := &file_config_v1_config_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2911,7 +3199,7 @@ func (x *Signer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Signer.ProtoReflect.Descriptor instead.
 func (*Signer) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{33}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *Signer) GetName() string {
@@ -3005,7 +3293,7 @@ type SSHKey struct {
 
 func (x *SSHKey) Reset() {
 	*x = SSHKey{}
-	mi := &file_config_v1_config_proto_msgTypes[34]
+	mi := &file_config_v1_config_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3017,7 +3305,7 @@ func (x *SSHKey) String() string {
 func (*SSHKey) ProtoMessage() {}
 
 func (x *SSHKey) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[34]
+	mi := &file_config_v1_config_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3030,7 +3318,7 @@ func (x *SSHKey) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SSHKey.ProtoReflect.Descriptor instead.
 func (*SSHKey) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{34}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *SSHKey) GetOp() isSSHKey_Op {
@@ -3088,7 +3376,7 @@ type Accounts struct {
 
 func (x *Accounts) Reset() {
 	*x = Accounts{}
-	mi := &file_config_v1_config_proto_msgTypes[35]
+	mi := &file_config_v1_config_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3100,7 +3388,7 @@ func (x *Accounts) String() string {
 func (*Accounts) ProtoMessage() {}
 
 func (x *Accounts) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[35]
+	mi := &file_config_v1_config_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3113,7 +3401,7 @@ func (x *Accounts) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Accounts.ProtoReflect.Descriptor instead.
 func (*Accounts) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{35}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *Accounts) GetOp() isAccounts_Op {
@@ -3169,7 +3457,7 @@ type AccountsEmail struct {
 
 func (x *AccountsEmail) Reset() {
 	*x = AccountsEmail{}
-	mi := &file_config_v1_config_proto_msgTypes[36]
+	mi := &file_config_v1_config_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3181,7 +3469,7 @@ func (x *AccountsEmail) String() string {
 func (*AccountsEmail) ProtoMessage() {}
 
 func (x *AccountsEmail) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[36]
+	mi := &file_config_v1_config_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3194,7 +3482,7 @@ func (x *AccountsEmail) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AccountsEmail.ProtoReflect.Descriptor instead.
 func (*AccountsEmail) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{36}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *AccountsEmail) GetOp() isAccountsEmail_Op {
@@ -3239,7 +3527,7 @@ type SMTP struct {
 
 func (x *SMTP) Reset() {
 	*x = SMTP{}
-	mi := &file_config_v1_config_proto_msgTypes[37]
+	mi := &file_config_v1_config_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3251,7 +3539,7 @@ func (x *SMTP) String() string {
 func (*SMTP) ProtoMessage() {}
 
 func (x *SMTP) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[37]
+	mi := &file_config_v1_config_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3264,7 +3552,7 @@ func (x *SMTP) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SMTP.ProtoReflect.Descriptor instead.
 func (*SMTP) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{37}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *SMTP) GetOp() isSMTP_Op {
@@ -3367,7 +3655,7 @@ type Shapes struct {
 
 func (x *Shapes) Reset() {
 	*x = Shapes{}
-	mi := &file_config_v1_config_proto_msgTypes[38]
+	mi := &file_config_v1_config_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3379,7 +3667,7 @@ func (x *Shapes) String() string {
 func (*Shapes) ProtoMessage() {}
 
 func (x *Shapes) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[38]
+	mi := &file_config_v1_config_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3392,7 +3680,7 @@ func (x *Shapes) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Shapes.ProtoReflect.Descriptor instead.
 func (*Shapes) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{38}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *Shapes) GetOp() isShapes_Op {
@@ -3452,7 +3740,7 @@ type Shape struct {
 
 func (x *Shape) Reset() {
 	*x = Shape{}
-	mi := &file_config_v1_config_proto_msgTypes[39]
+	mi := &file_config_v1_config_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3464,7 +3752,7 @@ func (x *Shape) String() string {
 func (*Shape) ProtoMessage() {}
 
 func (x *Shape) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[39]
+	mi := &file_config_v1_config_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3477,7 +3765,7 @@ func (x *Shape) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Shape.ProtoReflect.Descriptor instead.
 func (*Shape) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{39}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *Shape) GetName() string {
@@ -3571,7 +3859,7 @@ type Ports struct {
 
 func (x *Ports) Reset() {
 	*x = Ports{}
-	mi := &file_config_v1_config_proto_msgTypes[40]
+	mi := &file_config_v1_config_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3583,7 +3871,7 @@ func (x *Ports) String() string {
 func (*Ports) ProtoMessage() {}
 
 func (x *Ports) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[40]
+	mi := &file_config_v1_config_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3596,7 +3884,7 @@ func (x *Ports) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ports.ProtoReflect.Descriptor instead.
 func (*Ports) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{40}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *Ports) GetOp() isPorts_Op {
@@ -3655,7 +3943,7 @@ type Port struct {
 
 func (x *Port) Reset() {
 	*x = Port{}
-	mi := &file_config_v1_config_proto_msgTypes[41]
+	mi := &file_config_v1_config_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3667,7 +3955,7 @@ func (x *Port) String() string {
 func (*Port) ProtoMessage() {}
 
 func (x *Port) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[41]
+	mi := &file_config_v1_config_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3680,7 +3968,7 @@ func (x *Port) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Port.ProtoReflect.Descriptor instead.
 func (*Port) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{41}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *Port) GetName() string {
@@ -3775,6 +4063,10 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\bUInt64Op\x12\x12\n" +
 	"\x03set\x18\x01 \x01(\x04H\x00R\x03set\x12\x12\n" +
 	"\x03get\x18\x02 \x01(\bH\x00R\x03getB\x04\n" +
+	"\x02op\"6\n" +
+	"\x06BoolOp\x12\x12\n" +
+	"\x03set\x18\x01 \x01(\bH\x00R\x03set\x12\x12\n" +
+	"\x03get\x18\x02 \x01(\bH\x00R\x03getB\x04\n" +
 	"\x02op\"\xcd\x01\n" +
 	"\rStringSliceOp\x12*\n" +
 	"\x03set\x18\x01 \x01(\v2\x16.config.v1.StringSliceH\x00R\x03set\x12*\n" +
@@ -3817,13 +4109,25 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\x05Cloud\x12+\n" +
 	"\x06domain\x18\x02 \x01(\v2\x11.config.v1.DomainH\x00R\x06domain\x12\"\n" +
 	"\x03p2p\x18\x03 \x01(\v2\x0e.config.v1.P2PH\x00R\x03p2pB\x04\n" +
-	"\x02op\"\xa7\x01\n" +
+	"\x02op\"\xd7\x01\n" +
 	"\x06Domain\x12)\n" +
 	"\x04root\x18\x01 \x01(\v2\x13.config.v1.StringOpH\x00R\x04root\x123\n" +
 	"\tgenerated\x18\x02 \x01(\v2\x13.config.v1.StringOpH\x00R\tgenerated\x127\n" +
 	"\n" +
 	"validation\x18\x03 \x01(\v2\x15.config.v1.ValidationH\x00R\n" +
-	"validationB\x04\n" +
+	"validation\x12.\n" +
+	"\x05hosts\x18\x04 \x01(\v2\x16.config.v1.DomainHostsH\x00R\x05hostsB\x04\n" +
+	"\x02op\"Z\n" +
+	"\vDomainHosts\x12/\n" +
+	"\x06select\x18\x01 \x01(\v2\x15.config.v1.DomainHostH\x00R\x06select\x12\x14\n" +
+	"\x04list\x18\x02 \x01(\bH\x00R\x04listB\x04\n" +
+	"\x02op\"l\n" +
+	"\n" +
+	"DomainHost\x12\x16\n" +
+	"\x06domain\x18\x01 \x01(\tR\x06domain\x12\x12\n" +
+	"\x03set\x18\x02 \x01(\tH\x00R\x03set\x12\x12\n" +
+	"\x03get\x18\x03 \x01(\bH\x00R\x03get\x12\x18\n" +
+	"\x06delete\x18\x04 \x01(\bH\x00R\x06deleteB\x04\n" +
 	"\x02op\"a\n" +
 	"\n" +
 	"Validation\x12/\n" +
@@ -3979,7 +4283,7 @@ func file_config_v1_config_proto_rawDescGZIP() []byte {
 }
 
 var file_config_v1_config_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 42)
+var file_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
 var file_config_v1_config_proto_goTypes = []any{
 	(BundleType)(0),            // 0: config.v1.BundleType
 	(*Source)(nil),             // 1: config.v1.Source
@@ -3989,127 +4293,132 @@ var file_config_v1_config_proto_goTypes = []any{
 	(*StringOp)(nil),           // 5: config.v1.StringOp
 	(*BytesOp)(nil),            // 6: config.v1.BytesOp
 	(*UInt64Op)(nil),           // 7: config.v1.UInt64Op
-	(*StringSliceOp)(nil),      // 8: config.v1.StringSliceOp
-	(*ReturnValue)(nil),        // 9: config.v1.ReturnValue
-	(*StringSlice)(nil),        // 10: config.v1.StringSlice
-	(*Error)(nil),              // 11: config.v1.Error
-	(*BundleConfig)(nil),       // 12: config.v1.BundleConfig
-	(*Empty)(nil),              // 13: config.v1.Empty
-	(*Return)(nil),             // 14: config.v1.Return
-	(*Op)(nil),                 // 15: config.v1.Op
-	(*Cloud)(nil),              // 16: config.v1.Cloud
-	(*Domain)(nil),             // 17: config.v1.Domain
-	(*Validation)(nil),         // 18: config.v1.Validation
-	(*ValidationKeys)(nil),     // 19: config.v1.ValidationKeys
-	(*ValidationKeysPath)(nil), // 20: config.v1.ValidationKeysPath
-	(*ValidationKeysData)(nil), // 21: config.v1.ValidationKeysData
-	(*P2P)(nil),                // 22: config.v1.P2P
-	(*Bootstrap)(nil),          // 23: config.v1.Bootstrap
-	(*BootstrapShape)(nil),     // 24: config.v1.BootstrapShape
-	(*Swarm)(nil),              // 25: config.v1.Swarm
-	(*SwarmKey)(nil),           // 26: config.v1.SwarmKey
-	(*Hosts)(nil),              // 27: config.v1.Hosts
-	(*Host)(nil),               // 28: config.v1.Host
-	(*SSH)(nil),                // 29: config.v1.SSH
-	(*HostShapes)(nil),         // 30: config.v1.HostShapes
-	(*HostShape)(nil),          // 31: config.v1.HostShape
-	(*HostInstance)(nil),       // 32: config.v1.HostInstance
-	(*Auth)(nil),               // 33: config.v1.Auth
-	(*Signer)(nil),             // 34: config.v1.Signer
-	(*SSHKey)(nil),             // 35: config.v1.SSHKey
-	(*Accounts)(nil),           // 36: config.v1.Accounts
-	(*AccountsEmail)(nil),      // 37: config.v1.AccountsEmail
-	(*SMTP)(nil),               // 38: config.v1.SMTP
-	(*Shapes)(nil),             // 39: config.v1.Shapes
-	(*Shape)(nil),              // 40: config.v1.Shape
-	(*Ports)(nil),              // 41: config.v1.Ports
-	(*Port)(nil),               // 42: config.v1.Port
+	(*BoolOp)(nil),             // 8: config.v1.BoolOp
+	(*StringSliceOp)(nil),      // 9: config.v1.StringSliceOp
+	(*ReturnValue)(nil),        // 10: config.v1.ReturnValue
+	(*StringSlice)(nil),        // 11: config.v1.StringSlice
+	(*Error)(nil),              // 12: config.v1.Error
+	(*BundleConfig)(nil),       // 13: config.v1.BundleConfig
+	(*Empty)(nil),              // 14: config.v1.Empty
+	(*Return)(nil),             // 15: config.v1.Return
+	(*Op)(nil),                 // 16: config.v1.Op
+	(*Cloud)(nil),              // 17: config.v1.Cloud
+	(*Domain)(nil),             // 18: config.v1.Domain
+	(*DomainHosts)(nil),        // 19: config.v1.DomainHosts
+	(*DomainHost)(nil),         // 20: config.v1.DomainHost
+	(*Validation)(nil),         // 21: config.v1.Validation
+	(*ValidationKeys)(nil),     // 22: config.v1.ValidationKeys
+	(*ValidationKeysPath)(nil), // 23: config.v1.ValidationKeysPath
+	(*ValidationKeysData)(nil), // 24: config.v1.ValidationKeysData
+	(*P2P)(nil),                // 25: config.v1.P2P
+	(*Bootstrap)(nil),          // 26: config.v1.Bootstrap
+	(*BootstrapShape)(nil),     // 27: config.v1.BootstrapShape
+	(*Swarm)(nil),              // 28: config.v1.Swarm
+	(*SwarmKey)(nil),           // 29: config.v1.SwarmKey
+	(*Hosts)(nil),              // 30: config.v1.Hosts
+	(*Host)(nil),               // 31: config.v1.Host
+	(*SSH)(nil),                // 32: config.v1.SSH
+	(*HostShapes)(nil),         // 33: config.v1.HostShapes
+	(*HostShape)(nil),          // 34: config.v1.HostShape
+	(*HostInstance)(nil),       // 35: config.v1.HostInstance
+	(*Auth)(nil),               // 36: config.v1.Auth
+	(*Signer)(nil),             // 37: config.v1.Signer
+	(*SSHKey)(nil),             // 38: config.v1.SSHKey
+	(*Accounts)(nil),           // 39: config.v1.Accounts
+	(*AccountsEmail)(nil),      // 40: config.v1.AccountsEmail
+	(*SMTP)(nil),               // 41: config.v1.SMTP
+	(*Shapes)(nil),             // 42: config.v1.Shapes
+	(*Shape)(nil),              // 43: config.v1.Shape
+	(*Ports)(nil),              // 44: config.v1.Ports
+	(*Port)(nil),               // 45: config.v1.Port
 }
 var file_config_v1_config_proto_depIdxs = []int32{
 	0,  // 0: config.v1.Bundle.type:type_name -> config.v1.BundleType
-	10, // 1: config.v1.StringSliceOp.set:type_name -> config.v1.StringSlice
-	10, // 2: config.v1.StringSliceOp.add:type_name -> config.v1.StringSlice
-	10, // 3: config.v1.StringSliceOp.delete:type_name -> config.v1.StringSlice
+	11, // 1: config.v1.StringSliceOp.set:type_name -> config.v1.StringSlice
+	11, // 2: config.v1.StringSliceOp.add:type_name -> config.v1.StringSlice
+	11, // 3: config.v1.StringSliceOp.delete:type_name -> config.v1.StringSlice
 	5,  // 4: config.v1.ReturnValue.value:type_name -> config.v1.StringOp
 	6,  // 5: config.v1.ReturnValue.data:type_name -> config.v1.BytesOp
 	3,  // 6: config.v1.BundleConfig.id:type_name -> config.v1.Config
 	0,  // 7: config.v1.BundleConfig.type:type_name -> config.v1.BundleType
-	13, // 8: config.v1.Return.empty:type_name -> config.v1.Empty
-	10, // 9: config.v1.Return.slice:type_name -> config.v1.StringSlice
-	11, // 10: config.v1.Return.error:type_name -> config.v1.Error
+	14, // 8: config.v1.Return.empty:type_name -> config.v1.Empty
+	11, // 9: config.v1.Return.slice:type_name -> config.v1.StringSlice
+	12, // 10: config.v1.Return.error:type_name -> config.v1.Error
 	3,  // 11: config.v1.Op.config:type_name -> config.v1.Config
-	16, // 12: config.v1.Op.cloud:type_name -> config.v1.Cloud
-	27, // 13: config.v1.Op.hosts:type_name -> config.v1.Hosts
-	33, // 14: config.v1.Op.auth:type_name -> config.v1.Auth
-	39, // 15: config.v1.Op.shapes:type_name -> config.v1.Shapes
-	36, // 16: config.v1.Op.accounts:type_name -> config.v1.Accounts
-	17, // 17: config.v1.Cloud.domain:type_name -> config.v1.Domain
-	22, // 18: config.v1.Cloud.p2p:type_name -> config.v1.P2P
+	17, // 12: config.v1.Op.cloud:type_name -> config.v1.Cloud
+	30, // 13: config.v1.Op.hosts:type_name -> config.v1.Hosts
+	36, // 14: config.v1.Op.auth:type_name -> config.v1.Auth
+	42, // 15: config.v1.Op.shapes:type_name -> config.v1.Shapes
+	39, // 16: config.v1.Op.accounts:type_name -> config.v1.Accounts
+	18, // 17: config.v1.Cloud.domain:type_name -> config.v1.Domain
+	25, // 18: config.v1.Cloud.p2p:type_name -> config.v1.P2P
 	5,  // 19: config.v1.Domain.root:type_name -> config.v1.StringOp
 	5,  // 20: config.v1.Domain.generated:type_name -> config.v1.StringOp
-	18, // 21: config.v1.Domain.validation:type_name -> config.v1.Validation
-	19, // 22: config.v1.Validation.keys:type_name -> config.v1.ValidationKeys
-	20, // 23: config.v1.ValidationKeys.path:type_name -> config.v1.ValidationKeysPath
-	21, // 24: config.v1.ValidationKeys.data:type_name -> config.v1.ValidationKeysData
-	5,  // 25: config.v1.ValidationKeysPath.private_key:type_name -> config.v1.StringOp
-	5,  // 26: config.v1.ValidationKeysPath.public_key:type_name -> config.v1.StringOp
-	6,  // 27: config.v1.ValidationKeysData.private_key:type_name -> config.v1.BytesOp
-	6,  // 28: config.v1.ValidationKeysData.public_key:type_name -> config.v1.BytesOp
-	23, // 29: config.v1.P2P.bootstrap:type_name -> config.v1.Bootstrap
-	25, // 30: config.v1.P2P.swarm:type_name -> config.v1.Swarm
-	24, // 31: config.v1.Bootstrap.select:type_name -> config.v1.BootstrapShape
-	8,  // 32: config.v1.BootstrapShape.nodes:type_name -> config.v1.StringSliceOp
-	26, // 33: config.v1.Swarm.key:type_name -> config.v1.SwarmKey
-	5,  // 34: config.v1.SwarmKey.path:type_name -> config.v1.StringOp
-	6,  // 35: config.v1.SwarmKey.data:type_name -> config.v1.BytesOp
-	28, // 36: config.v1.Hosts.select:type_name -> config.v1.Host
-	8,  // 37: config.v1.Host.addresses:type_name -> config.v1.StringSliceOp
-	29, // 38: config.v1.Host.ssh:type_name -> config.v1.SSH
-	5,  // 39: config.v1.Host.location:type_name -> config.v1.StringOp
-	30, // 40: config.v1.Host.shapes:type_name -> config.v1.HostShapes
-	5,  // 41: config.v1.SSH.address:type_name -> config.v1.StringOp
-	8,  // 42: config.v1.SSH.auth:type_name -> config.v1.StringSliceOp
-	31, // 43: config.v1.HostShapes.select:type_name -> config.v1.HostShape
-	32, // 44: config.v1.HostShape.select:type_name -> config.v1.HostInstance
-	5,  // 45: config.v1.HostInstance.key:type_name -> config.v1.StringOp
-	34, // 46: config.v1.Auth.select:type_name -> config.v1.Signer
-	5,  // 47: config.v1.Signer.username:type_name -> config.v1.StringOp
-	5,  // 48: config.v1.Signer.password:type_name -> config.v1.StringOp
-	35, // 49: config.v1.Signer.key:type_name -> config.v1.SSHKey
-	5,  // 50: config.v1.SSHKey.path:type_name -> config.v1.StringOp
-	6,  // 51: config.v1.SSHKey.data:type_name -> config.v1.BytesOp
-	5,  // 52: config.v1.Accounts.session_ttl:type_name -> config.v1.StringOp
-	37, // 53: config.v1.Accounts.email:type_name -> config.v1.AccountsEmail
-	38, // 54: config.v1.AccountsEmail.smtp:type_name -> config.v1.SMTP
-	5,  // 55: config.v1.SMTP.host:type_name -> config.v1.StringOp
-	7,  // 56: config.v1.SMTP.port:type_name -> config.v1.UInt64Op
-	5,  // 57: config.v1.SMTP.user:type_name -> config.v1.StringOp
-	5,  // 58: config.v1.SMTP.pass:type_name -> config.v1.StringOp
-	5,  // 59: config.v1.SMTP.from:type_name -> config.v1.StringOp
-	40, // 60: config.v1.Shapes.select:type_name -> config.v1.Shape
-	8,  // 61: config.v1.Shape.services:type_name -> config.v1.StringSliceOp
-	41, // 62: config.v1.Shape.ports:type_name -> config.v1.Ports
-	8,  // 63: config.v1.Shape.plugins:type_name -> config.v1.StringSliceOp
-	42, // 64: config.v1.Ports.select:type_name -> config.v1.Port
-	13, // 65: config.v1.ConfigService.New:input_type -> config.v1.Empty
-	1,  // 66: config.v1.ConfigService.Load:input_type -> config.v1.Source
-	2,  // 67: config.v1.ConfigService.Upload:input_type -> config.v1.SourceUpload
-	12, // 68: config.v1.ConfigService.Download:input_type -> config.v1.BundleConfig
-	3,  // 69: config.v1.ConfigService.Commit:input_type -> config.v1.Config
-	3,  // 70: config.v1.ConfigService.Free:input_type -> config.v1.Config
-	15, // 71: config.v1.ConfigService.Do:input_type -> config.v1.Op
-	3,  // 72: config.v1.ConfigService.New:output_type -> config.v1.Config
-	3,  // 73: config.v1.ConfigService.Load:output_type -> config.v1.Config
-	3,  // 74: config.v1.ConfigService.Upload:output_type -> config.v1.Config
-	4,  // 75: config.v1.ConfigService.Download:output_type -> config.v1.Bundle
-	13, // 76: config.v1.ConfigService.Commit:output_type -> config.v1.Empty
-	13, // 77: config.v1.ConfigService.Free:output_type -> config.v1.Empty
-	14, // 78: config.v1.ConfigService.Do:output_type -> config.v1.Return
-	72, // [72:79] is the sub-list for method output_type
-	65, // [65:72] is the sub-list for method input_type
-	65, // [65:65] is the sub-list for extension type_name
-	65, // [65:65] is the sub-list for extension extendee
-	0,  // [0:65] is the sub-list for field type_name
+	21, // 21: config.v1.Domain.validation:type_name -> config.v1.Validation
+	19, // 22: config.v1.Domain.hosts:type_name -> config.v1.DomainHosts
+	20, // 23: config.v1.DomainHosts.select:type_name -> config.v1.DomainHost
+	22, // 24: config.v1.Validation.keys:type_name -> config.v1.ValidationKeys
+	23, // 25: config.v1.ValidationKeys.path:type_name -> config.v1.ValidationKeysPath
+	24, // 26: config.v1.ValidationKeys.data:type_name -> config.v1.ValidationKeysData
+	5,  // 27: config.v1.ValidationKeysPath.private_key:type_name -> config.v1.StringOp
+	5,  // 28: config.v1.ValidationKeysPath.public_key:type_name -> config.v1.StringOp
+	6,  // 29: config.v1.ValidationKeysData.private_key:type_name -> config.v1.BytesOp
+	6,  // 30: config.v1.ValidationKeysData.public_key:type_name -> config.v1.BytesOp
+	26, // 31: config.v1.P2P.bootstrap:type_name -> config.v1.Bootstrap
+	28, // 32: config.v1.P2P.swarm:type_name -> config.v1.Swarm
+	27, // 33: config.v1.Bootstrap.select:type_name -> config.v1.BootstrapShape
+	9,  // 34: config.v1.BootstrapShape.nodes:type_name -> config.v1.StringSliceOp
+	29, // 35: config.v1.Swarm.key:type_name -> config.v1.SwarmKey
+	5,  // 36: config.v1.SwarmKey.path:type_name -> config.v1.StringOp
+	6,  // 37: config.v1.SwarmKey.data:type_name -> config.v1.BytesOp
+	31, // 38: config.v1.Hosts.select:type_name -> config.v1.Host
+	9,  // 39: config.v1.Host.addresses:type_name -> config.v1.StringSliceOp
+	32, // 40: config.v1.Host.ssh:type_name -> config.v1.SSH
+	5,  // 41: config.v1.Host.location:type_name -> config.v1.StringOp
+	33, // 42: config.v1.Host.shapes:type_name -> config.v1.HostShapes
+	5,  // 43: config.v1.SSH.address:type_name -> config.v1.StringOp
+	9,  // 44: config.v1.SSH.auth:type_name -> config.v1.StringSliceOp
+	34, // 45: config.v1.HostShapes.select:type_name -> config.v1.HostShape
+	35, // 46: config.v1.HostShape.select:type_name -> config.v1.HostInstance
+	5,  // 47: config.v1.HostInstance.key:type_name -> config.v1.StringOp
+	37, // 48: config.v1.Auth.select:type_name -> config.v1.Signer
+	5,  // 49: config.v1.Signer.username:type_name -> config.v1.StringOp
+	5,  // 50: config.v1.Signer.password:type_name -> config.v1.StringOp
+	38, // 51: config.v1.Signer.key:type_name -> config.v1.SSHKey
+	5,  // 52: config.v1.SSHKey.path:type_name -> config.v1.StringOp
+	6,  // 53: config.v1.SSHKey.data:type_name -> config.v1.BytesOp
+	5,  // 54: config.v1.Accounts.session_ttl:type_name -> config.v1.StringOp
+	40, // 55: config.v1.Accounts.email:type_name -> config.v1.AccountsEmail
+	41, // 56: config.v1.AccountsEmail.smtp:type_name -> config.v1.SMTP
+	5,  // 57: config.v1.SMTP.host:type_name -> config.v1.StringOp
+	7,  // 58: config.v1.SMTP.port:type_name -> config.v1.UInt64Op
+	5,  // 59: config.v1.SMTP.user:type_name -> config.v1.StringOp
+	5,  // 60: config.v1.SMTP.pass:type_name -> config.v1.StringOp
+	5,  // 61: config.v1.SMTP.from:type_name -> config.v1.StringOp
+	43, // 62: config.v1.Shapes.select:type_name -> config.v1.Shape
+	9,  // 63: config.v1.Shape.services:type_name -> config.v1.StringSliceOp
+	44, // 64: config.v1.Shape.ports:type_name -> config.v1.Ports
+	9,  // 65: config.v1.Shape.plugins:type_name -> config.v1.StringSliceOp
+	45, // 66: config.v1.Ports.select:type_name -> config.v1.Port
+	14, // 67: config.v1.ConfigService.New:input_type -> config.v1.Empty
+	1,  // 68: config.v1.ConfigService.Load:input_type -> config.v1.Source
+	2,  // 69: config.v1.ConfigService.Upload:input_type -> config.v1.SourceUpload
+	13, // 70: config.v1.ConfigService.Download:input_type -> config.v1.BundleConfig
+	3,  // 71: config.v1.ConfigService.Commit:input_type -> config.v1.Config
+	3,  // 72: config.v1.ConfigService.Free:input_type -> config.v1.Config
+	16, // 73: config.v1.ConfigService.Do:input_type -> config.v1.Op
+	3,  // 74: config.v1.ConfigService.New:output_type -> config.v1.Config
+	3,  // 75: config.v1.ConfigService.Load:output_type -> config.v1.Config
+	3,  // 76: config.v1.ConfigService.Upload:output_type -> config.v1.Config
+	4,  // 77: config.v1.ConfigService.Download:output_type -> config.v1.Bundle
+	14, // 78: config.v1.ConfigService.Commit:output_type -> config.v1.Empty
+	14, // 79: config.v1.ConfigService.Free:output_type -> config.v1.Empty
+	15, // 80: config.v1.ConfigService.Do:output_type -> config.v1.Return
+	74, // [74:81] is the sub-list for method output_type
+	67, // [67:74] is the sub-list for method input_type
+	67, // [67:67] is the sub-list for extension type_name
+	67, // [67:67] is the sub-list for extension extendee
+	0,  // [0:67] is the sub-list for field type_name
 }
 
 func init() { file_config_v1_config_proto_init() }
@@ -4138,17 +4447,21 @@ func file_config_v1_config_proto_init() {
 		(*UInt64Op_Get)(nil),
 	}
 	file_config_v1_config_proto_msgTypes[7].OneofWrappers = []any{
+		(*BoolOp_Set)(nil),
+		(*BoolOp_Get)(nil),
+	}
+	file_config_v1_config_proto_msgTypes[8].OneofWrappers = []any{
 		(*StringSliceOp_Set)(nil),
 		(*StringSliceOp_Add)(nil),
 		(*StringSliceOp_Delete)(nil),
 		(*StringSliceOp_Clear)(nil),
 		(*StringSliceOp_List)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[8].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[9].OneofWrappers = []any{
 		(*ReturnValue_Value)(nil),
 		(*ReturnValue_Data)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[13].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[14].OneofWrappers = []any{
 		(*Return_Empty)(nil),
 		(*Return_String_)(nil),
 		(*Return_Slice)(nil),
@@ -4158,129 +4471,139 @@ func file_config_v1_config_proto_init() {
 		(*Return_Float)(nil),
 		(*Return_Error)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[14].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[15].OneofWrappers = []any{
 		(*Op_Cloud)(nil),
 		(*Op_Hosts)(nil),
 		(*Op_Auth)(nil),
 		(*Op_Shapes)(nil),
 		(*Op_Accounts)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[15].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[16].OneofWrappers = []any{
 		(*Cloud_Domain)(nil),
 		(*Cloud_P2P)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[16].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[17].OneofWrappers = []any{
 		(*Domain_Root)(nil),
 		(*Domain_Generated)(nil),
 		(*Domain_Validation)(nil),
+		(*Domain_Hosts)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[17].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[18].OneofWrappers = []any{
+		(*DomainHosts_Select)(nil),
+		(*DomainHosts_List)(nil),
+	}
+	file_config_v1_config_proto_msgTypes[19].OneofWrappers = []any{
+		(*DomainHost_Set)(nil),
+		(*DomainHost_Get)(nil),
+		(*DomainHost_Delete)(nil),
+	}
+	file_config_v1_config_proto_msgTypes[20].OneofWrappers = []any{
 		(*Validation_Keys)(nil),
 		(*Validation_Generate)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[18].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[21].OneofWrappers = []any{
 		(*ValidationKeys_Path)(nil),
 		(*ValidationKeys_Data)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[19].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[22].OneofWrappers = []any{
 		(*ValidationKeysPath_PrivateKey)(nil),
 		(*ValidationKeysPath_PublicKey)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[20].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[23].OneofWrappers = []any{
 		(*ValidationKeysData_PrivateKey)(nil),
 		(*ValidationKeysData_PublicKey)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[21].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[24].OneofWrappers = []any{
 		(*P2P_Bootstrap)(nil),
 		(*P2P_Swarm)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[22].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[25].OneofWrappers = []any{
 		(*Bootstrap_Select)(nil),
 		(*Bootstrap_List)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[23].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[26].OneofWrappers = []any{
 		(*BootstrapShape_Nodes)(nil),
 		(*BootstrapShape_Delete)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[24].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[27].OneofWrappers = []any{
 		(*Swarm_Key)(nil),
 		(*Swarm_Generate)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[25].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[28].OneofWrappers = []any{
 		(*SwarmKey_Path)(nil),
 		(*SwarmKey_Data)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[26].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[29].OneofWrappers = []any{
 		(*Hosts_Select)(nil),
 		(*Hosts_List)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[27].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[30].OneofWrappers = []any{
 		(*Host_Addresses)(nil),
 		(*Host_Ssh)(nil),
 		(*Host_Location)(nil),
 		(*Host_Shapes)(nil),
 		(*Host_Delete)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[28].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[31].OneofWrappers = []any{
 		(*SSH_Address)(nil),
 		(*SSH_Auth)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[29].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[32].OneofWrappers = []any{
 		(*HostShapes_Select)(nil),
 		(*HostShapes_List)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[30].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[33].OneofWrappers = []any{
 		(*HostShape_Select)(nil),
 		(*HostShape_Delete)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[31].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[34].OneofWrappers = []any{
 		(*HostInstance_Id)(nil),
 		(*HostInstance_Key)(nil),
 		(*HostInstance_Generate)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[32].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[35].OneofWrappers = []any{
 		(*Auth_Select)(nil),
 		(*Auth_List)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[33].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[36].OneofWrappers = []any{
 		(*Signer_Username)(nil),
 		(*Signer_Password)(nil),
 		(*Signer_Key)(nil),
 		(*Signer_Delete)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[34].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[37].OneofWrappers = []any{
 		(*SSHKey_Path)(nil),
 		(*SSHKey_Data)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[35].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[38].OneofWrappers = []any{
 		(*Accounts_SessionTtl)(nil),
 		(*Accounts_Email)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[36].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[39].OneofWrappers = []any{
 		(*AccountsEmail_Smtp)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[37].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[40].OneofWrappers = []any{
 		(*SMTP_Host)(nil),
 		(*SMTP_Port)(nil),
 		(*SMTP_User)(nil),
 		(*SMTP_Pass)(nil),
 		(*SMTP_From)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[38].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[41].OneofWrappers = []any{
 		(*Shapes_Select)(nil),
 		(*Shapes_List)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[39].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[42].OneofWrappers = []any{
 		(*Shape_Services)(nil),
 		(*Shape_Ports)(nil),
 		(*Shape_Plugins)(nil),
 		(*Shape_Delete)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[40].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[43].OneofWrappers = []any{
 		(*Ports_Select)(nil),
 		(*Ports_List)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[41].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[44].OneofWrappers = []any{
 		(*Port_Set)(nil),
 		(*Port_Get)(nil),
 		(*Port_Delete)(nil),
@@ -4291,7 +4614,7 @@ func file_config_v1_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_v1_config_proto_rawDesc), len(file_config_v1_config_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   42,
+			NumMessages:   45,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

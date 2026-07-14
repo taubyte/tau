@@ -122,9 +122,10 @@ func (u *Universe) registerService(name string, srv commonIface.Service) peer.No
 	defer u.lock.Unlock()
 	registered, ok := u.service[name]
 	if !ok {
-		u.service[name] = &serviceInfo{
+		registered = &serviceInfo{
 			nodes: make(map[string]commonIface.Service),
 		}
+		u.service[name] = registered
 	}
 	registered.nodes[srv.Node().ID().String()] = srv
 	return srv.Node()
@@ -145,19 +146,28 @@ func (u *Universe) GetServicePids(name string) ([]string, error) {
 }
 
 func (h *handlerRegistry) Set(protocol string, service ServiceCreate, client ClientCreate) error {
-	handlers, err := h.handlers(protocol)
-	if err != nil {
-		return err
+	if protocol == "" {
+		return fmt.Errorf("protocol required")
 	}
 
 	h.lock.Lock()
 	defer h.lock.Unlock()
+
+	// Create the slot on demand: services pre-seeded from commonSpecs.Services
+	// already have one, but a build-tag-gated (e.g. ee) service registered from
+	// an init() may not be in that list yet, so Set is what admits it.
+	hs, ok := h.registry[protocol]
+	if !ok {
+		hs = &handlers{}
+		h.registry[protocol] = hs
+	}
+
 	if service != nil {
-		handlers.service = service
+		hs.service = service
 	}
 
 	if client != nil {
-		handlers.client = client
+		hs.client = client
 	}
 
 	return nil

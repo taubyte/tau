@@ -84,10 +84,12 @@ func TestAutoTrustFromConfig(t *testing.T) {
 		config.WithNetworkFqdn("net.example.com"),
 		config.WithAliasDomainsRegExp([]*regexp.Regexp{regexp.MustCompile(`^alias\.example\.com$`)}),
 		config.WithServicesDomainRegExp(regexp.MustCompile(`^svc\.example\.com$`)),
+		config.WithHosts(map[string]string{"admin.example.com": "gateway"}),
 	)
 	trust := autoTrustFromConfig(cfg)
 	assert.Assert(t, trust("alias.example.com"))
 	assert.Assert(t, trust("svc.example.com"))
+	assert.Assert(t, trust("admin.example.com")) // custom domain bound via domains.hosts
 	assert.Assert(t, !trust("random.example.com"))
 	assert.Assert(t, trust("alias.example.com.")) // trailing dot tolerated
 }

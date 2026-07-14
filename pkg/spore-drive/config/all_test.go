@@ -18,6 +18,27 @@ func assertDeepEqualSortedStrings(t *testing.T, a, b []string) {
 	assert.DeepEqual(t, a, b)
 }
 
+func TestDomainHosts(t *testing.T) {
+	p, err := New(afero.NewMemMapFs(), "/")
+	assert.NilError(t, err)
+
+	d := p.Cloud().Domain()
+	assert.NilError(t, d.SetHost("admin.test.com", "gateway"))
+	assert.NilError(t, d.SetHost("id.test.com", "gateway"))
+	assert.NilError(t, d.SetHost("api.test.com", "auth"))
+
+	hosts := p.Cloud().Domain().Hosts()
+	assert.Equal(t, len(hosts), 3)
+	assert.Equal(t, hosts["admin.test.com"], "gateway")
+	assert.Equal(t, hosts["api.test.com"], "auth")
+
+	assert.NilError(t, p.Cloud().Domain().DeleteHost("api.test.com"))
+	hosts = p.Cloud().Domain().Hosts()
+	assert.Equal(t, len(hosts), 2)
+	_, ok := hosts["api.test.com"]
+	assert.Assert(t, !ok)
+}
+
 func TestParserEdit(t *testing.T) {
 	p, err := New(afero.NewMemMapFs(), "/")
 	assert.NilError(t, err)

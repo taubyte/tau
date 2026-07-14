@@ -12,9 +12,7 @@ import (
 
 	pebbleds "github.com/ipfs/go-ds-pebble"
 	"github.com/ipfs/go-log/v2"
-	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
-	seerIface "github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/poe"
@@ -86,13 +84,6 @@ func New(ctx context.Context, cfg tauConfig.Config, opts ...Options) (*Service, 
 	srv.stream.Start()
 	if err = srv.subscribe(); err != nil {
 		return nil, fmt.Errorf("pubsub subscribe failed with: %s", err)
-	}
-	var sc seerIface.Client
-	if sc, err = seerClient.New(ctx, clientNode, cfg.SensorsRegistry()); err != nil {
-		return nil, fmt.Errorf("creating seer client failed with %s", err)
-	}
-	if err = servicesCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeSeer, servicesCommon.SeerBeaconOptionMeta(map[string]string{"others": "dns"})); err != nil {
-		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
 	ports := cfg.Ports()
 	dnsPort := 0

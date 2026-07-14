@@ -51,3 +51,17 @@ export {
   TauPath,
   Service,
 };
+
+// Extension surface for building on the community client (e.g. the ee client):
+// the connection-level Config (no bundled Service), the reusable op-machinery,
+// and the RPC client that owns the transport.
+export { Config as RemoteConfig } from "./src/Config";
+export {
+  BaseOperation,
+  StringOperation,
+  UInt64Operation,
+  StringSliceOperation,
+  BoolOperation,
+} from "./src/Config";
+export { RPCClient } from "./src/ConfigClient";
+export type { OpClient } from "./src/ConfigClient";

@@ -23,6 +23,9 @@ type ServiceConfig struct {
 	SwarmKey   []byte
 	Databases  kvdb.Factory
 	Location   seerIface.Location
+	// Hosts binds custom domains to services (domains.hosts) for this config;
+	// applied via config.WithHosts. Mainly for Dream tests of host routing.
+	Hosts map[string]string
 }
 
 type SimpleConfig struct {
@@ -40,6 +43,7 @@ func (c *ServiceConfig) Clone() *ServiceConfig {
 		PublicKey:    c.PublicKey,
 		SwarmKey:     c.SwarmKey,
 		Location:     c.Location,
+		Hosts:        c.Hosts,
 	}
 
 	for key, value := range c.Others {

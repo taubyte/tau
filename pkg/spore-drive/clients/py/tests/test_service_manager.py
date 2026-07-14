@@ -95,8 +95,8 @@ class TestServiceManagerUnit:
         """Test version matches when versions are the same."""
         manager = ServiceManager()
         manager.version_file_path = tmp_path / "version.txt"
-        manager.version_file_path.write_text("0.1.5")
-        
+        manager.version_file_path.write_text(manager.service_version)
+
         assert manager._version_matches() is True
     
     def test_version_matches_false(self, monkeypatch, tmp_path):

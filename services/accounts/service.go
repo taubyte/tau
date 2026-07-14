@@ -7,10 +7,8 @@ import (
 	"path"
 
 	"github.com/ipfs/go-log/v2"
-	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	kvdbIface "github.com/taubyte/tau/core/kvdb"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
-	seerIface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
@@ -51,11 +49,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AccountsService, error) {
 		srv.dbFactory = kvdbpkg.New(srv.node)
 	}
 
-	clientNode := srv.node
-	if cfg.ClientNode() != nil {
-		clientNode = cfg.ClientNode()
-	}
-
 	rebroadcastInterval := 5
 	if srv.devMode {
 		rebroadcastInterval = 1
@@ -76,14 +69,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AccountsService, error) {
 
 	srv.setupStreamRoutes()
 	srv.stream.Start()
-
-	var sc seerIface.Client
-	if sc, err = seerClient.New(ctx, clientNode, cfg.SensorsRegistry()); err != nil {
-		return nil, fmt.Errorf("creating seer client failed with %s", err)
-	}
-	if err = servicesCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeAccounts); err != nil {
-		return nil, err
-	}
 
 	if srv.http = cfg.Http(); srv.http == nil {
 		srv.http, err = httpsvc.New(ctx, srv.node, cfg)

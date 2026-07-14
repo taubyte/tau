@@ -83,5 +83,9 @@ func createPatrickService(u *dream.Universe, config *iface.ServiceConfig) (iface
 		raftCluster.Close()
 		return nil, err
 	}
+	if err := common.StartBeacon(u.Context(), cfg, node, commonSpecs.Patrick); err != nil {
+		raftCluster.Close()
+		return nil, err
+	}
 	return &patrickWithRaft{PatrickService: srv, raftCluster: raftCluster}, nil
 }

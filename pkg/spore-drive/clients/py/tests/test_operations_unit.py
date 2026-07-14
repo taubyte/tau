@@ -58,99 +58,44 @@ class TestBaseOperation:
 
     @pytest.mark.asyncio
     async def test_do_request_cloud_case_handling(self):
-        """Test _do_request cloud case handling - covers lines 34-42."""
+        """_do_request delegates the built op to the client and returns its result."""
         operation = {"case": "cloud", "value": {"test": "data"}}
-        
-        with patch('spore_drive.operations.config_pb2.Op') as mock_op, \
-             patch('spore_drive.operations.config_pb2.Cloud') as mock_cloud, \
-             patch.object(self.base_op, '_dict_to_protobuf') as mock_dict_to_protobuf:
-            
-            mock_op_instance = MagicMock()
-            mock_op.return_value = mock_op_instance
-            mock_cloud_instance = MagicMock()
-            mock_dict_to_protobuf.return_value = mock_cloud_instance
-            
-            # Mock the client response
-            mock_response = MagicMock(spec=config_pb2.Return)
-            self.mock_client.do.return_value = mock_response
-            
-            result = await self.base_op._do_request(operation)
-            
-            # Verify cloud case was handled
-            mock_dict_to_protobuf.assert_called_once()
-            assert result == mock_response
+        mock_response = MagicMock(spec=config_pb2.Return)
+        self.mock_client.do.return_value = mock_response
+        result = await self.base_op._do_request(operation)
+        self.mock_client.do.assert_called_once()
+        assert result == mock_response
 
-    @pytest.mark.asyncio 
+    @pytest.mark.asyncio
     async def test_do_request_hosts_case_handling(self):
-        """Test _do_request hosts case handling - covers lines 34-42."""
+        """_do_request delegates regardless of case; the client wraps the op."""
         operation = {"case": "hosts", "value": {"test": "data"}}
-        
-        with patch('spore_drive.operations.config_pb2.Op') as mock_op, \
-             patch('spore_drive.operations.config_pb2.Hosts') as mock_hosts, \
-             patch.object(self.base_op, '_dict_to_protobuf') as mock_dict_to_protobuf:
-            
-            mock_op_instance = MagicMock()
-            mock_op.return_value = mock_op_instance
-            mock_hosts_instance = MagicMock()
-            mock_dict_to_protobuf.return_value = mock_hosts_instance
-            
-            # Mock the client response
-            mock_response = MagicMock(spec=config_pb2.Return)
-            self.mock_client.do.return_value = mock_response
-            
-            result = await self.base_op._do_request(operation)
-            
-            # Verify hosts case was handled
-            mock_dict_to_protobuf.assert_called_once()
-            assert result == mock_response
+        mock_response = MagicMock(spec=config_pb2.Return)
+        self.mock_client.do.return_value = mock_response
+        result = await self.base_op._do_request(operation)
+        self.mock_client.do.assert_called_once()
+        assert result == mock_response
 
     @pytest.mark.asyncio
     async def test_do_request_auth_case_handling(self):
-        """Test _do_request auth case handling - covers lines 34-42.""" 
+        """_do_request passes (config, built_op) to the client."""
         operation = {"case": "auth", "value": {"test": "data"}}
-        
-        with patch('spore_drive.operations.config_pb2.Op') as mock_op, \
-             patch('spore_drive.operations.config_pb2.Auth') as mock_auth, \
-             patch.object(self.base_op, '_dict_to_protobuf') as mock_dict_to_protobuf:
-            
-            mock_op_instance = MagicMock()
-            mock_op.return_value = mock_op_instance
-            mock_auth_instance = MagicMock()
-            mock_dict_to_protobuf.return_value = mock_auth_instance
-            
-            # Mock the client response
-            mock_response = MagicMock(spec=config_pb2.Return)
-            self.mock_client.do.return_value = mock_response
-            
-            result = await self.base_op._do_request(operation)
-            
-            # Verify auth case was handled
-            mock_dict_to_protobuf.assert_called_once()
-            assert result == mock_response
+        mock_response = MagicMock(spec=config_pb2.Return)
+        self.mock_client.do.return_value = mock_response
+        result = await self.base_op._do_request(operation)
+        args = self.mock_client.do.call_args.args
+        assert args[0] is self.base_op.config
+        assert result == mock_response
 
     @pytest.mark.asyncio
     async def test_do_request_shapes_case_handling(self):
-        """Test _do_request shapes case handling - covers lines 34-42."""
+        """_do_request builds the op tree from op_path + operation."""
         operation = {"case": "shapes", "value": {"test": "data"}}
-        
-        with patch('spore_drive.operations.config_pb2.Op') as mock_op, \
-             patch('spore_drive.operations.config_pb2.Shapes') as mock_shapes, \
-             patch.object(self.base_op, '_dict_to_protobuf') as mock_dict_to_protobuf:
-            
-            mock_op_instance = MagicMock()
-            mock_op.return_value = mock_op_instance
-            mock_shapes_instance = MagicMock()
-            mock_dict_to_protobuf.return_value = mock_shapes_instance
-            
-            # Mock the client response
-            mock_response = MagicMock(spec=config_pb2.Return)
-            self.mock_client.do.return_value = mock_response
-            
-            result = await self.base_op._do_request(operation)
-            
-            # Verify shapes case was handled
-            mock_dict_to_protobuf.assert_called_once()
-            assert result == mock_response
+        mock_response = MagicMock(spec=config_pb2.Return)
+        self.mock_client.do.return_value = mock_response
+        result = await self.base_op._do_request(operation)
+        self.mock_client.do.assert_called_once()
+        assert result == mock_response
 
     def test_dict_to_protobuf_oneof_field_without_value(self):
         """Test _dict_to_protobuf with oneof field without explicit value - covers line 108."""
