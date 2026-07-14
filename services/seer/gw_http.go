@@ -145,8 +145,8 @@ func (srv *Service) setupTNSGatewayHTTPRoutes() {
 	}
 
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/config/{projectId}",
+		Hosts: []string{host},
+		Path:  "/config/{projectId}",
 		Vars: http.Variables{
 			Required: []string{"projectId"},
 		},
@@ -154,8 +154,8 @@ func (srv *Service) setupTNSGatewayHTTPRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/download/{projectId}/{assetCID}",
+		Hosts: []string{host},
+		Path:  "/download/{projectId}/{assetCID}",
 		Vars: http.Variables{
 			Required: []string{"projectId", "assetCID"},
 		},

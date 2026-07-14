@@ -64,8 +64,8 @@ func (srv *Service) setupLocationHTTPRoutes() {
 	}
 
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/geo/all",
+		Hosts: []string{host},
+		Path:  "/geo/all",
 		Vars: http.Variables{
 			Required: []string{},
 		},
@@ -74,8 +74,8 @@ func (srv *Service) setupLocationHTTPRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/geo/distance/{distance}/{latitude}/{longitude}",
+		Hosts: []string{host},
+		Path:  "/geo/distance/{distance}/{latitude}/{longitude}",
 		Vars: http.Variables{
 			Required: []string{"distance", "latitude", "longitude"},
 		},

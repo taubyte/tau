@@ -36,25 +36,25 @@ func (srv *AccountsService) setupHTTPRoutes() {
 	}
 
 	srv.http.POST(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   []string{host},
 		Path:    "/login/start",
 		Handler: srv.httpLoginStart,
 	})
 
 	srv.http.POST(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   []string{host},
 		Path:    "/login/finish/magic",
 		Handler: srv.httpLoginFinishMagic,
 	})
 
 	srv.http.GET(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   []string{host},
 		Path:    "/me",
 		Handler: srv.httpMe,
 	})
 
 	srv.http.POST(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   []string{host},
 		Path:    "/logout",
 		Handler: srv.httpLogout,
 	})
@@ -63,12 +63,12 @@ func (srv *AccountsService) setupHTTPRoutes() {
 	// (action-dispatched), so the wrapper just auth-checks the bearer and
 	// forwards. Operator-only entities (accounts, plans) stay P2P-only.
 	srv.http.POST(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   []string{host},
 		Path:    "/members",
 		Handler: srv.httpManagementHandler(srv.apiMemberHandler),
 	})
 	srv.http.POST(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   []string{host},
 		Path:    "/users",
 		Handler: srv.httpManagementHandler(srv.apiUserHandler),
 	})

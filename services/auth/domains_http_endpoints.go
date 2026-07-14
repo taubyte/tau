@@ -56,8 +56,8 @@ func (srv *AuthService) setupDomainsHTTPRoutes() {
 	}
 
 	srv.http.POST(&http.RouteDefinition{
-		Host: host,
-		Path: "/domain/{fqdn}/for/{project}",
+		Hosts: []string{host},
+		Path:  "/domain/{fqdn}/for/{project}",
 		Vars: http.Variables{
 			Required: []string{"project", "fqdn"},
 		},

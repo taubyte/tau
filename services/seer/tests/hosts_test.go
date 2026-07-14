@@ -65,18 +65,18 @@ func createMockHost(u *dream.Universe, config *commonIface.ServiceConfig) (commo
 		return nil, err
 	}
 
-	// Own HTTP server, with /whoami scoped to each custom domain bound to
-	// mockhost (domains.hosts). With no binding (the DNS-only test) no route is
-	// registered, so the server just answers 404 — exercising host-scoping.
+	// Own HTTP server, with /whoami scoped to all custom domains bound to
+	// mockhost (domains.hosts) in one registration via Hosts. With no binding
+	// (the DNS-only test) no route is registered, so the server just answers 404.
 	h, err := httpsvc.New(u.Context(), node, cfg)
 	if err != nil {
 		return nil, err
 	}
-	for _, host := range cfg.HostsForService("mockhost") {
+	if hosts := cfg.HostsForService("mockhost"); len(hosts) > 0 {
 		h.GET(&tauhttp.RouteDefinition{
-			Host: host,
-			Path: "/whoami",
-			Auth: tauhttp.RouteAuthHandler{Validator: httpauth.AnonymousHandler},
+			Hosts: hosts,
+			Path:  "/whoami",
+			Auth:  tauhttp.RouteAuthHandler{Validator: httpauth.AnonymousHandler},
 			Handler: func(tauhttp.Context) (any, error) {
 				return "mockhost", nil
 			},
@@ -162,12 +162,15 @@ func TestHttp_HostBinding_Dreaming(t *testing.T) {
 	assert.NilError(t, err)
 
 	fqdn := strings.ToLower(u.Name()) + ".localtau"
-	boundHost := "admin." + fqdn
+	// Two domains bound to the same service — the route registers under both via
+	// Hosts, so both must reach the handler.
+	bound := []string{"admin." + fqdn, "console." + fqdn}
+	binding := map[string]string{bound[0]: "mockhost", bound[1]: "mockhost"}
 
 	err = u.StartWithConfig(&dream.Config{
 		Services: map[string]commonIface.ServiceConfig{
-			"seer":     {Hosts: map[string]string{boundHost: "mockhost"}},
-			"mockhost": {Hosts: map[string]string{boundHost: "mockhost"}},
+			"seer":     {Hosts: binding},
+			"mockhost": {Hosts: binding},
 		},
 	})
 	assert.NilError(t, err)
@@ -192,18 +195,20 @@ func TestHttp_HostBinding_Dreaming(t *testing.T) {
 
 	// Wait for the HTTP server to be listening.
 	for deadline := time.Now().Add(15 * time.Second); time.Now().Before(deadline); {
-		if code, _ := get(boundHost); code != 0 {
+		if code, _ := get(bound[0]); code != 0 {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 
-	// The bound host reaches mockhost's route.
-	code, body := get(boundHost)
-	assert.Equal(t, code, http.StatusOK, "bound host should reach mockhost; body="+body)
-	assert.Assert(t, strings.Contains(body, "mockhost"), "handler body: "+body)
+	// Every bound host reaches mockhost's route.
+	for _, host := range bound {
+		code, body := get(host)
+		assert.Equal(t, code, http.StatusOK, "bound host "+host+" should reach mockhost; body="+body)
+		assert.Assert(t, strings.Contains(body, "mockhost"), "handler body for "+host+": "+body)
+	}
 
 	// A mismatched host does not — routes are host-scoped.
-	code, _ = get("wrong." + fqdn)
+	code, _ := get("wrong." + fqdn)
 	assert.Equal(t, code, http.StatusNotFound, "a mismatched host must not match the route")
 }

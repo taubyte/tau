@@ -230,8 +230,8 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 	}
 
 	srv.http.POST(&http.RouteDefinition{
-		Host: host,
-		Path: "/project/new/{project}",
+		Hosts: []string{host},
+		Path:  "/project/new/{project}",
 		Vars: http.Variables{
 			Required: []string{"project", "config", "code"},
 		},
@@ -244,8 +244,8 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 	})
 
 	srv.http.POST(&http.RouteDefinition{
-		Host: host,
-		Path: "/project/import/{project}",
+		Hosts: []string{host},
+		Path:  "/project/import/{project}",
 		Vars: http.Variables{
 			Required: []string{"project", "config", "code", "project-id"},
 		},
@@ -258,8 +258,8 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 	})
 
 	srv.http.PUT(&http.RouteDefinition{
-		Host: host,
-		Path: "/repository/{provider}/{id}",
+		Hosts: []string{host},
+		Path:  "/repository/{provider}/{id}",
 		Vars: http.Variables{
 			Required: []string{"provider", "id"},
 		},
@@ -272,8 +272,8 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 	})
 
 	srv.http.DELETE(&http.RouteDefinition{
-		Host: host,
-		Path: "/repository/{provider}/{id}",
+		Hosts: []string{host},
+		Path:  "/repository/{provider}/{id}",
 		Vars: http.Variables{
 			Required: []string{"provider", "id"},
 		},
@@ -286,8 +286,8 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/repository/{provider}/{id}",
+		Hosts: []string{host},
+		Path:  "/repository/{provider}/{id}",
 		Vars: http.Variables{
 			Required: []string{"provider", "id"},
 		},
@@ -300,7 +300,7 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host:  host,
+		Hosts: []string{host},
 		Path:  "/repositories",
 		Scope: []string{"repositories/read"},
 		Auth: http.RouteAuthHandler{
@@ -311,7 +311,7 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host:  host,
+		Hosts: []string{host},
 		Path:  "/projects",
 		Scope: []string{"projects/read"},
 		Auth: http.RouteAuthHandler{
@@ -322,8 +322,8 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/projects/{id}",
+		Hosts: []string{host},
+		Path:  "/projects/{id}",
 		Vars: http.Variables{
 			Required: []string{"id"},
 		},
@@ -336,8 +336,8 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 	})
 
 	srv.http.DELETE(&http.RouteDefinition{
-		Host: host,
-		Path: "/projects/{id}",
+		Hosts: []string{host},
+		Path:  "/projects/{id}",
 		Vars: http.Variables{
 			Required: []string{"id"},
 		},
@@ -350,7 +350,7 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host:  host,
+		Hosts: []string{host},
 		Path:  "/me",
 		Scope: []string{"user/self"},
 		Auth: http.RouteAuthHandler{

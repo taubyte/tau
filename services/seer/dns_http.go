@@ -11,7 +11,7 @@ func (srv *Service) setupDnsHTTPRoutes() {
 	}
 
 	srv.http.GET(&http.RouteDefinition{
-		Host:    host,
+		Hosts:   []string{host},
 		Path:    "/network/config",
 		Scope:   []string{"network/config"},
 		Handler: srv.getGeneratedDomain,
