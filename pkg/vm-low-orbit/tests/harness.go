@@ -1,5 +1,6 @@
 // Package tests runs the guest wasm fixtures against the real vm-low-orbit
-// plugin with mocked backends — no dream. Each fixture (see fixtures/guest,
+// plugin with mocked backends — no dream. Each fixture (see fixtures/go and
+// fixtures/rust,
 // compiled by `make vm-fixtures`) is a reactor module that imports the
 // "taubyte/sdk" host functions the plugin exposes.
 package tests
