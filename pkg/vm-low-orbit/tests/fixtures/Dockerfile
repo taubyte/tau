@@ -1,4 +1,4 @@
-# Compiles the guest test fixtures to a single size-optimized reactor wasm that
+# Compiles the go test fixtures to a single size-optimized reactor wasm that
 # imports the "taubyte/sdk" host functions. Built via `make vm-fixtures`, which
 # uses the BuildKit `export` stage to drop wasm/ onto the host (committed).
 #
@@ -6,13 +6,13 @@
 FROM tinygo/tinygo:0.40.0 AS build
 
 WORKDIR /guest
-COPY guest/go.mod guest/go.sum ./
+COPY go/go.mod go/go.sum ./
 RUN go mod download
-COPY guest/ .
+COPY go/ .
 
 # -buildmode=c-shared => wasm reactor (_initialize + //export funcs), matching
 # the substrate runtime. Size flags: -opt=z, -no-debug, leaking GC, no scheduler.
-# One reactor wasm per guest file, isolated by build tag (tag == file base).
+# One reactor wasm per go file, isolated by build tag (tag == file base).
 RUN mkdir -p /tmp/out && \
     for f in $(grep -l '//export' *.go); do \
       tag="${f%.go}"; \
