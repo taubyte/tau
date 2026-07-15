@@ -1,0 +1,16 @@
+[package]
+name = "taubyte-vm-test-guest"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+taubyte-sdk = { git = "https://github.com/taubyte/rust-sdk" }
+
+[profile.release]
+opt-level = "z"
+lto = true
+strip = true
+panic = "abort"

@@ -16,14 +16,17 @@ COPY guest/ .
 RUN mkdir -p /tmp/out && \
     for f in $(grep -l '//export' *.go); do \
       tag="${f%.go}"; \
-      echo "==> building ${tag}.wasm"; \
-      tinygo build -o "/tmp/out/${tag}.wasm" \
-        -target=wasi -buildmode=c-shared \
-        -opt=z -no-debug -panic=trap -scheduler=none -gc=leaking \
-        -tags "${tag}" . && \
-      wasm-opt -Oz --strip-debug --strip-producers "/tmp/out/${tag}.wasm" -o "/tmp/out/${tag}.wasm"; \
+      if tinygo build -o "/tmp/out/${tag}.wasm" \
+           -target=wasi -buildmode=c-shared \
+           -opt=z -no-debug -panic=trap -scheduler=none -gc=leaking \
+           -tags "${tag}" . 2>/tmp/err; then \
+        wasm-opt -Oz --strip-debug --strip-producers "/tmp/out/${tag}.wasm" -o "/tmp/out/${tag}.wasm"; \
+        echo "OK   ${tag}"; \
+      else \
+        echo "FAIL ${tag}: $(head -1 /tmp/err)"; \
+      fi; \
     done && \
-    ls -la /tmp/out/
+    ls /tmp/out/
 
 FROM scratch AS export
 COPY --from=build /tmp/out/ /

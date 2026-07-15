@@ -28,13 +28,11 @@ test-docker:
 
 test-all: test test-dreaming test-web3 test-raft
 
-# Recompile the vm-low-orbit guest test fixtures (tinygo -> size-optimized
-# reactor wasm importing "taubyte/sdk"). Output is committed; only rerun when
-# the guest sources change.
-VM_FIXTURES = pkg/vm-low-orbit/tests/fixtures
+# Recompile the vm-low-orbit guest test fixtures (Go via tinygo/container,
+# Rust via cargo/native) to size-optimized wasm importing "taubyte/sdk".
+# Output is committed; only rerun when the guest sources change.
 vm-fixtures:
-	DOCKER_BUILDKIT=1 docker build -f $(VM_FIXTURES)/Dockerfile \
-		--target=export --output=$(VM_FIXTURES)/wasm $(VM_FIXTURES)
+	bash pkg/vm-low-orbit/tests/fixtures/build.sh
 
 # Profiling benchmarks over a live dream universe (dream/benchmarks).
 # Examples:
