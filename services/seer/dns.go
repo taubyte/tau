@@ -139,11 +139,18 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 			}
 		}()
 
+		// A custom domain bound to a specific service (domains.hosts) wins:
+		// resolve it to that service's nodes.
+		if svc, ok := h.seer.config.ServiceForHost(name); ok {
+			h.tauDnsResolve(ctx, svc, name, w, r, errMsg, msg)
+			return
+		}
+
 		// if we didn't see this domain registred before
 		if h.seer.positiveCache.Get(name) == nil {
 			if h.seer.isServiceOrAliasDomain(name) {
 				logger.Debugf("Looks like %s is a ServiceOrAliasDomain", name)
-				h.tauDnsResolve(ctx, name, w, r, errMsg, msg)
+				h.tauDnsResolve(ctx, strings.Split(name, ".")[0], name, w, r, errMsg, msg)
 				return
 			}
 
@@ -175,8 +182,7 @@ func (h *dnsHandler) ServeDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 }
 
-func (h *dnsHandler) tauDnsResolve(ctx context.Context, name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
-	service := strings.Split(name, ".")[0]
+func (h *dnsHandler) tauDnsResolve(ctx context.Context, service, name string, w dns.ResponseWriter, r *dns.Msg, errMsg *dns.Msg, msg dns.Msg) {
 	if err := common.ValidateServices([]string{service}); err != nil {
 		logger.Errorf("validating service `%s` failed with: %s", service, err.Error())
 		if err := w.WriteMsg(errMsg); err != nil {

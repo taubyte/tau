@@ -64,24 +64,27 @@ func TestStashFanout_Dreaming(t *testing.T) {
 	err = hoarderClient.Stash(cid, bytes.NewReader(data), hoarderIface.WithTarget(3))
 	assert.NilError(t, err)
 
-	// Once fully replicated (3 claims ≥ target 3), the CID is no longer rare.
-	notRare := false
+	// Poll for convergence rather than sampling once. Rare() and List() are both
+	// per-node views over the eventually-consistent CRDT stash registry, and the
+	// client's RPCs may land on any fleet node — so Rare() can read "not rare"
+	// from a node before the node List() hits has finished claiming via fan-out.
+	// The end state is stable (target=3=fleet → every node claims the CID), so
+	// wait for both to hold together: replicated to target (no longer rare) AND
+	// the queried hoarder lists its own claim.
+	converged := false
 	deadline := time.Now().Add(90 * time.Second)
 	for time.Now().Before(deadline) {
 		rare, err := hoarderClient.Rare()
 		assert.NilError(t, err)
-		if !containsCid(rare, cid) {
-			notRare = true
+		list, err := hoarderClient.List()
+		assert.NilError(t, err)
+		if !containsCid(rare, cid) && containsCid(list, cid) {
+			converged = true
 			break
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
-	assert.Assert(t, notRare, "CID should reach the replica target and stop being rare")
-
-	// And it is still listed as held by the receiving hoarder.
-	list, err := hoarderClient.List()
-	assert.NilError(t, err)
-	assert.Assert(t, containsCid(list, cid), "receiver should still claim the CID")
+	assert.Assert(t, converged, "CID should replicate to target and stay claimed by the receiving hoarder")
 }
 
 func containsCid(cids []string, cid string) bool {

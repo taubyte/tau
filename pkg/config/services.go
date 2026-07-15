@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"regexp"
+	"sync"
 
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/core/p2p/keypair"
@@ -13,6 +14,7 @@ import (
 	http "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/raft"
 	"github.com/taubyte/tau/pkg/sensors"
+	"gopkg.in/yaml.v3"
 )
 
 var (
@@ -42,6 +44,11 @@ type Config interface {
 	ServicesDomainMatch(s string) bool
 	AliasDomainsMatch(dom string) bool
 	GeneratedDomainMatch(s string) bool
+	// Hosts: custom domain -> service bindings (domains.hosts).
+	Hosts() map[string]string
+	ServiceForHost(host string) (string, bool)
+	HostsForService(service string) []string
+	RouteHosts(service string) []string
 	CustomAcme() bool
 	AcmeUrl() string
 	AcmeCAARecord() string
@@ -239,6 +246,14 @@ func WithAliasDomainsRegExp(r []*regexp.Regexp) Option {
 	}
 }
 
+// WithHosts sets the domain -> service host bindings.
+func WithHosts(h map[string]string) Option {
+	return func(c *config) error {
+		c.hosts = h
+		return nil
+	}
+}
+
 // WithPeers sets the bootstrap peers.
 func WithPeers(peers []string) Option {
 	return func(c *config) error {
@@ -304,6 +319,10 @@ type config struct {
 	networkFqdn     string
 	generatedDomain string
 	aliasDomains    []string
+	hosts           map[string]string
+
+	routeHostsMu    sync.Mutex
+	routeHostsCache map[string][]string
 
 	httpListen string
 
@@ -332,20 +351,72 @@ type config struct {
 	plugins          Plugins
 	domainValidation DomainValidation
 	accounts         Accounts
+	// enterprise namespaces raw config for enterprise-only services (each decoded
+	// by //go:build ee code via EnterpriseConfig); empty in community builds.
+	enterprise map[string]yaml.Node
 }
 
-func (c *config) Root() string                          { return c.root }
-func (c *config) Shape() string                         { return c.shape }
-func (c *config) Services() []string                    { return c.services }
-func (c *config) Cluster() string                       { return c.cluster }
-func (c *config) Peers() []string                       { return c.peers }
-func (c *config) P2PListen() []string                   { return c.p2pListen }
-func (c *config) P2PAnnounce() []string                 { return c.p2pAnnounce }
-func (c *config) Ports() map[string]int                 { return c.ports }
-func (c *config) Location() *seerIface.Location         { return c.location }
-func (c *config) NetworkFqdn() string                   { return c.networkFqdn }
-func (c *config) GeneratedDomain() string               { return c.generatedDomain }
-func (c *config) AliasDomains() []string                { return c.aliasDomains }
+func (c *config) Root() string                  { return c.root }
+func (c *config) Shape() string                 { return c.shape }
+func (c *config) Services() []string            { return c.services }
+func (c *config) Cluster() string               { return c.cluster }
+func (c *config) Peers() []string               { return c.peers }
+func (c *config) P2PListen() []string           { return c.p2pListen }
+func (c *config) P2PAnnounce() []string         { return c.p2pAnnounce }
+func (c *config) Ports() map[string]int         { return c.ports }
+func (c *config) Location() *seerIface.Location { return c.location }
+func (c *config) NetworkFqdn() string           { return c.networkFqdn }
+func (c *config) GeneratedDomain() string       { return c.generatedDomain }
+func (c *config) AliasDomains() []string        { return c.aliasDomains }
+
+func (c *config) Hosts() map[string]string { return c.hosts }
+
+func (c *config) ServiceForHost(host string) (string, bool) {
+	svc, ok := c.hosts[host]
+	return svc, ok
+}
+
+func (c *config) HostsForService(service string) []string {
+	var out []string
+	for host, svc := range c.hosts {
+		if svc == service {
+			out = append(out, host)
+		}
+	}
+	return out
+}
+
+// RouteHosts returns every hostname seer's DNS resolves to this service, so its
+// HTTP routes can be scoped to exactly that set: <service>.tau.<networkFqdn>,
+// the same under each alias domain, and every custom domain bound to it via
+// domains.hosts. Empty (host-agnostic) in dev, where each service runs its own
+// HTTP server and there is nothing to disambiguate. Memoized per service so a
+// service can call it once per route group without recomputing.
+func (c *config) RouteHosts(service string) []string {
+	c.routeHostsMu.Lock()
+	defer c.routeHostsMu.Unlock()
+	if c.routeHostsCache == nil {
+		c.routeHostsCache = make(map[string][]string)
+	}
+	if hosts, ok := c.routeHostsCache[service]; ok {
+		return hosts
+	}
+
+	var hosts []string
+	if !c.devMode {
+		if c.networkFqdn != "" {
+			hosts = append(hosts, service+".tau."+c.networkFqdn)
+		}
+		for _, alias := range c.aliasDomains {
+			if alias != "" {
+				hosts = append(hosts, service+".tau."+alias)
+			}
+		}
+		hosts = append(hosts, c.HostsForService(service)...)
+	}
+	c.routeHostsCache[service] = hosts
+	return hosts
+}
 func (c *config) HttpListen() string                    { return c.httpListen }
 func (c *config) AliasDomainsRegExp() []*regexp.Regexp  { return c.aliasDomainsRegExp }
 func (c *config) GeneratedDomainRegExp() *regexp.Regexp { return c.generatedDomainRegExp }

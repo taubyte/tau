@@ -74,9 +74,7 @@ func (s *Service) ServeAssets(def *service.AssetsDefinition) {
 		fileServer.ServeHTTP(w, r)
 	})
 
-	if len(def.Host) > 0 {
-		route.Host(def.Host)
-	}
+	applyHostMatch(route, def.Hosts)
 }
 
 func (s *Service) LowLevelAssetHandler(def *service.HeadlessAssetsDefinition, w http.ResponseWriter, r *http.Request) error {

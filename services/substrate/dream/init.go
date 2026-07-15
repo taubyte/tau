@@ -27,5 +27,9 @@ func createNodeService(u *dream.Universe, config *iface.ServiceConfig) (iface.Se
 
 	service.AttachCounters(counters.New(service))
 
+	if err := common.StartBeacon(u.Context(), cfg, service.Node(), commonSpecs.Substrate); err != nil {
+		return nil, err
+	}
+
 	return service, nil
 }

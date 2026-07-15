@@ -44,6 +44,12 @@ type DomainParser interface {
 
 	SetRoot(string) error
 	SetGenerated(string) error
+
+	// Hosts binds custom domains to services (domains.hosts): e.g.
+	// "console.<fqdn>" -> "gateway". Generic (any domain -> any service).
+	Hosts() map[string]string
+	SetHost(domain, service string) error
+	DeleteHost(domain string) error
 }
 
 type ValidationParser interface {
@@ -178,6 +184,26 @@ func (v *validation) CreatePublicKey() (io.WriteCloser, error) {
 	}
 
 	return v.root.fs.OpenFile(path, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0600)
+}
+
+// Hosts stores the whole domain->service map in one node (domains contain dots,
+// which yaseer would treat as path separators if used as keys).
+func (d *domain) Hosts() map[string]string {
+	m := make(map[string]string)
+	d.Fork().Get("hosts").Value(&m)
+	return m
+}
+
+func (d *domain) SetHost(host, service string) error {
+	m := d.Hosts()
+	m[host] = service
+	return d.Fork().Get("hosts").Set(m).Commit()
+}
+
+func (d *domain) DeleteHost(host string) error {
+	m := d.Hosts()
+	delete(m, host)
+	return d.Fork().Get("hosts").Set(m).Commit()
 }
 
 func (d *domain) SetRoot(r string) error {

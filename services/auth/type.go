@@ -12,6 +12,7 @@ import (
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	iface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/core/services/tns"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 )
 
 var _ iface.Service = &AuthService{}
@@ -25,14 +26,12 @@ type AuthService struct {
 	tnsClient tns.Client
 	dbFactory kv.Factory
 
-	rootDomain string
+	config     tauConfig.Config
 	devMode    bool
 	webHookUrl string
 
 	dvPrivateKey []byte
 	dvPublicKey  []byte
-
-	hostUrl string
 
 	newGitHubClient func(context.Context, string) (GitHubClient, error)
 

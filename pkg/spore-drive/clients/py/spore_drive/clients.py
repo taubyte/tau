@@ -11,6 +11,7 @@ import grpc.aio
 
 from .proto.drive.v1 import drive_pb2
 from .proto.config.v1 import config_pb2
+from .opbuild import apply_op
 
 
 class ConfigClient:
@@ -97,9 +98,16 @@ class ConfigClient:
         response_bytes = await self._call_unary("Free", config)
         return config_pb2.Empty.FromString(response_bytes)
     
-    async def do(self, op: config_pb2.Op) -> config_pb2.Return:
-        """Execute configuration operation."""
-        response_bytes = await self._call_unary("Do", op)
+    async def do(self, config: config_pb2.Config, dict_op) -> config_pb2.Return:
+        """Wrap the built dict op in a ConfigService Op and dispatch it.
+
+        Taking (config, dict_op) rather than a prebuilt Op is what lets the
+        operation classes stay service-agnostic — an ee client wraps the same
+        dict op in a different service's op message instead.
+        """
+        final_op = config_pb2.Op(config=config)
+        apply_op(final_op, dict_op)
+        response_bytes = await self._call_unary("Do", final_op)
         return config_pb2.Return.FromString(response_bytes)
     
     async def close(self):

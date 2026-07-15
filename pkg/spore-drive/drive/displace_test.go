@@ -40,6 +40,10 @@ func testDisplace(t *testing.T, sd Spore) {
 	sdrive := sd.(*sporedrive)
 	updatingTau := (sdrive.tauBinary != nil)
 
+	// domains.hosts is generic (any domain -> any service) and must emit
+	// regardless of which services a shape runs.
+	assert.NilError(t, sdrive.parser.Cloud().Domain().SetHost("admin.test.com", "gateway"))
+
 	fses := make(map[host.Host]afero.Fs)
 	var fsesLock sync.Mutex
 
@@ -202,6 +206,9 @@ func testDisplace(t *testing.T, sd Spore) {
 		assert.Equal(t, cnf.Accounts.Email.SMTP.User, "noreply@example.com")
 		assert.Equal(t, cnf.Accounts.Email.SMTP.Pass, "secret")
 		assert.Equal(t, cnf.Accounts.Email.SMTP.From, "noreply@example.com")
+
+		// domains.hosts binding emits (generic, community).
+		assert.Equal(t, cnf.Domains.Hosts["admin.test.com"], "gateway")
 
 		if updatingTau {
 			// check tau

@@ -32,7 +32,7 @@ type RawStream struct {
 }
 
 type RawRouteDefinition struct {
-	Host        string
+	Hosts       []string // scope to these hosts (see RouteDefinition.Hosts)
 	Path        string
 	PathPrefix  string
 	Vars        Variables
@@ -55,7 +55,9 @@ type LowLevelHandlerDefinition struct {
 }
 
 type RouteDefinition struct {
-	Host        string
+	// Hosts scopes the route to these hosts — a service's <svc>.tau.<fqdn> plus
+	// any custom domains bound via domains.hosts. Empty leaves it host-agnostic.
+	Hosts       []string
 	Path        string
 	Vars        Variables
 	Scope       []string
@@ -65,7 +67,7 @@ type RouteDefinition struct {
 }
 
 type AssetsDefinition struct {
-	Host                  string
+	Hosts                 []string // scope to these hosts (see RouteDefinition.Hosts)
 	Path                  string
 	Vars                  Variables
 	Scope                 []string
@@ -128,7 +130,7 @@ type Context interface {
 }
 
 type WebSocketDefinition struct {
-	Host       string
+	Hosts      []string // scope to these hosts (see RouteDefinition.Hosts)
 	Path       string
 	Vars       Variables
 	Scope      []string

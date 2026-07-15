@@ -46,9 +46,7 @@ func (s *Service) buildRouteFromDef(def *service.RouteDefinition) *mux.Route {
 		s.handleRequest(&request.Request{ResponseWriter: w, HttpRequest: h}, &def.Vars, def.Scope, def.Auth.Validator, def.Handler, def.Auth.GC, options...)
 	})
 
-	if len(def.Host) > 0 {
-		route.Host(def.Host)
-	}
+	applyHostMatch(route, def.Hosts)
 
 	return route
 }

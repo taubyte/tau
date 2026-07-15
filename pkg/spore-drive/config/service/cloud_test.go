@@ -64,6 +64,47 @@ func TestDoCloud_SetRootDomain(t *testing.T) {
 	assert.Equal(t, "newroot.com", resp.Msg.GetString_())
 }
 
+func TestDoCloud_DomainHosts(t *testing.T) {
+	service := &Service{}
+	_, parser := fixtures.VirtConfig()
+
+	set := func(domain, svc string) {
+		in := &pb.Cloud{Op: &pb.Cloud_Domain{Domain: &pb.Domain{Op: &pb.Domain_Hosts{
+			Hosts: &pb.DomainHosts{Op: &pb.DomainHosts_Select{Select: &pb.DomainHost{
+				Domain: domain, Op: &pb.DomainHost_Set{Set: svc}}}}}}}}
+		_, err := service.doCloud(in, parser)
+		assert.NoError(t, err)
+	}
+	set("admin.test.com", "gateway")
+	set("api.test.com", "auth")
+
+	// get one
+	getIn := &pb.Cloud{Op: &pb.Cloud_Domain{Domain: &pb.Domain{Op: &pb.Domain_Hosts{
+		Hosts: &pb.DomainHosts{Op: &pb.DomainHosts_Select{Select: &pb.DomainHost{
+			Domain: "admin.test.com", Op: &pb.DomainHost_Get{Get: true}}}}}}}}
+	resp, err := service.doCloud(getIn, parser)
+	assert.NoError(t, err)
+	assert.Equal(t, "gateway", resp.Msg.GetString_())
+
+	// list
+	listIn := &pb.Cloud{Op: &pb.Cloud_Domain{Domain: &pb.Domain{Op: &pb.Domain_Hosts{
+		Hosts: &pb.DomainHosts{Op: &pb.DomainHosts_List{List: true}}}}}}
+	resp, err = service.doCloud(listIn, parser)
+	assert.NoError(t, err)
+	assert.Len(t, resp.Msg.GetSlice().GetValue(), 2)
+
+	// delete one
+	delIn := &pb.Cloud{Op: &pb.Cloud_Domain{Domain: &pb.Domain{Op: &pb.Domain_Hosts{
+		Hosts: &pb.DomainHosts{Op: &pb.DomainHosts_Select{Select: &pb.DomainHost{
+			Domain: "api.test.com", Op: &pb.DomainHost_Delete{Delete: true}}}}}}}}
+	_, err = service.doCloud(delIn, parser)
+	assert.NoError(t, err)
+
+	resp, err = service.doCloud(listIn, parser)
+	assert.NoError(t, err)
+	assert.Len(t, resp.Msg.GetSlice().GetValue(), 1)
+}
+
 func TestDoCloud_GetGeneratedDomain(t *testing.T) {
 	service := &Service{}
 	_, parser := fixtures.VirtConfig()

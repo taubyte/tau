@@ -7,6 +7,7 @@ import (
 	iface "github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/p2p/peer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 	http "github.com/taubyte/tau/pkg/http"
 
 	auth "github.com/taubyte/tau/core/services/auth"
@@ -44,7 +45,7 @@ type PatrickService struct {
 	jobQueue       raft.Queue
 	outboundClient *streamClient.Client
 
-	hostUrl string
+	config tauConfig.Config
 }
 
 // Assignment tracks which Monkey is working on a job.

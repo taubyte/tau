@@ -11,6 +11,7 @@ import (
 	"github.com/taubyte/tau/p2p/streams/command"
 	cr "github.com/taubyte/tau/p2p/streams/command/response"
 	httpsvc "github.com/taubyte/tau/pkg/http"
+	servicesCommon "github.com/taubyte/tau/services/common"
 )
 
 // Minimal HTTP surface for the Member-facing CLI.
@@ -25,36 +26,30 @@ import (
 // Member-management actions (invite, users, plans) live on the P2P surface.
 
 func (srv *AccountsService) setupHTTPRoutes() {
-	// In dev (dream / local), routes register on bare "localhost" so a
-	// request to http://localhost:<dream_port>/... matches without a custom
-	// Host header. In production the host is `accounts.tau.<network>`,
-	// served via the operator's reverse proxy / auto-tls. Matches the
-	// services/auth pattern (cf. github_http_endpoints.go).
-	host := "localhost"
-	if !srv.devMode && srv.rootDomain != "" {
-		host = "accounts.tau." + srv.rootDomain
-	}
-
+	// Scope every route to accounts.tau.<network> (plus alias domains and any
+	// domains.hosts binding); host-agnostic in dev, where each service has its
+	// own HTTP server. Matches the services/auth pattern.
+	hosts := srv.config.RouteHosts(servicesCommon.Accounts)
 	srv.http.POST(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   hosts,
 		Path:    "/login/start",
 		Handler: srv.httpLoginStart,
 	})
 
 	srv.http.POST(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   hosts,
 		Path:    "/login/finish/magic",
 		Handler: srv.httpLoginFinishMagic,
 	})
 
 	srv.http.GET(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   hosts,
 		Path:    "/me",
 		Handler: srv.httpMe,
 	})
 
 	srv.http.POST(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   hosts,
 		Path:    "/logout",
 		Handler: srv.httpLogout,
 	})
@@ -63,12 +58,12 @@ func (srv *AccountsService) setupHTTPRoutes() {
 	// (action-dispatched), so the wrapper just auth-checks the bearer and
 	// forwards. Operator-only entities (accounts, plans) stay P2P-only.
 	srv.http.POST(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   hosts,
 		Path:    "/members",
 		Handler: srv.httpManagementHandler(srv.apiMemberHandler),
 	})
 	srv.http.POST(&httpsvc.RouteDefinition{
-		Host:    host,
+		Hosts:   hosts,
 		Path:    "/users",
 		Handler: srv.httpManagementHandler(srv.apiUserHandler),
 	})

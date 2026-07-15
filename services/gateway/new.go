@@ -7,10 +7,8 @@ import (
 	"path"
 
 	"github.com/ipfs/go-log/v2"
-	"github.com/taubyte/tau/clients/p2p/seer"
 	substrate "github.com/taubyte/tau/clients/p2p/substrate"
 	iface "github.com/taubyte/tau/core/services/gateway"
-	seerIface "github.com/taubyte/tau/core/services/seer"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	"github.com/taubyte/tau/services/common/httpsvc"
@@ -50,15 +48,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (gateway iface.Service, err 
 
 	if g.substrateClient, err = substrate.New(ctx, clientNode); err != nil {
 		return nil, fmt.Errorf("new streams client failed with: %w", err)
-	}
-
-	sc, err := seer.New(ctx, clientNode, nil)
-	if err != nil {
-		return nil, fmt.Errorf("new seer client failed with: %w", err)
-	}
-
-	if err = servicesCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeGateway); err != nil {
-		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
 
 	g.attach()

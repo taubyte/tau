@@ -62,6 +62,7 @@ func WithSource(src *Source, opts SourceOptions) Option {
 		c.location = src.Location
 		c.networkFqdn = src.NetworkFqdn
 		c.generatedDomain = src.Domains.Generated
+		c.hosts = src.Domains.Hosts
 		c.generatedDomainRegExp = regexp.MustCompile(convertToPostfixRegex(src.Domains.Generated))
 		c.servicesDomainRegExp = regexp.MustCompile(convertToServicesRegex(src.NetworkFqdn))
 		c.aliasDomainsRegExp = make([]*regexp.Regexp, 0)
@@ -70,6 +71,7 @@ func WithSource(src *Source, opts SourceOptions) Option {
 		c.peers = src.Peers
 		c.acmeCAARecord = defaultCAARecord
 		c.accounts = src.Accounts
+		c.enterprise = src.Enterprise
 
 		if c.swarmKey, err = loadSwarmKey(swarmPath); err != nil {
 			return err

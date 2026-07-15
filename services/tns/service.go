@@ -2,12 +2,9 @@ package tns
 
 import (
 	"context"
-	"fmt"
 	"path"
 
 	"github.com/ipfs/go-log/v2"
-	seerClient "github.com/taubyte/tau/clients/p2p/seer"
-	"github.com/taubyte/tau/core/services/seer"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	"github.com/taubyte/tau/pkg/kvdb"
 
@@ -47,19 +44,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 
 	srv.setupStreamRoutes()
 	srv.stream.Start()
-
-	// For Odo
-	clientNode := srv.node
-	if cfg.ClientNode() != nil {
-		clientNode = cfg.ClientNode()
-	}
-	var sc seer.Client
-	if sc, err = seerClient.New(ctx, clientNode, cfg.SensorsRegistry()); err != nil {
-		return nil, fmt.Errorf("failed creating seer client error: %v", err)
-	}
-	if err = servicesCommon.StartSeerBeacon(cfg, sc, seer.ServiceTypeTns); err != nil {
-		return nil, err
-	}
 
 	return srv, nil
 }

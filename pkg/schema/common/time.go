@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/taubyte/tau/utils"
 	"golang.org/x/exp/constraints"
 )
 
@@ -32,11 +33,7 @@ func TimeToString[T constraints.Integer | time.Duration](_time T) string {
 
 // StringToTime Converts _time a unit in form 1h10m43s to a uint64 representing nanoseconds
 func StringToTime(_time string) (uint64, error) {
-	if _time == "" {
-		return 0, nil
-	}
-
-	duration, err := time.ParseDuration(_time)
+	duration, err := utils.ParseDuration(_time)
 	if err != nil {
 		return 0, err
 	}

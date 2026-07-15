@@ -19,6 +19,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/spf13/afero/tarfs"
 	"github.com/spf13/afero/zipfs"
+	"github.com/taubyte/tau/pkg/spore-drive/config"
 	pb "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1"
 	pbconnect "github.com/taubyte/tau/pkg/spore-drive/proto/gen/config/v1/configv1connect"
 	"github.com/taubyte/tau/utils/readerutil"
@@ -344,8 +345,36 @@ func (s *Service) Do(ctx context.Context, req *connect.Request[pb.Op]) (*connect
 	return connect.NewResponse(&pb.Return{}), nil
 }
 
+// EnterpriseWriter sets enterprise.<service>.<path...> = value on the config
+// with the given id. It's a type alias so an ee handler can satisfy it with a
+// plain func and need not import this package (avoids an import cycle).
+type EnterpriseWriter = func(configID, service string, path []string, value any) error
+
+// eeConfigHandlers lets an ee build mount extra Connect handlers on the same
+// mux. Each returns (path, handler) given a writer that persists an opaque
+// enterprise config path. Empty in community builds; filled from a //go:build ee
+// init(). No ee type — and no service schema — appears here.
+var eeConfigHandlers []func(EnterpriseWriter) (string, http.Handler)
+
 func (s *Service) Attach(mux *http.ServeMux) {
 	mux.Handle(s.path, s.handler)
+	for _, register := range eeConfigHandlers {
+		mux.Handle(register(s.setEnterprise))
+	}
+}
+
+// setEnterprise resolves a config by id and writes an opaque enterprise path,
+// locking + syncing like the base Do ops. The ee handler calls it via the
+// EnterpriseWriter it receives, so no ee type crosses into this package.
+func (s *Service) setEnterprise(configID, service string, path []string, value any) error {
+	cnf := s.getConfig(configID)
+	if cnf == nil {
+		return errors.New("configuration instance not found")
+	}
+	cnf.lock.Lock()
+	defer cnf.lock.Unlock()
+	defer cnf.parser.Sync()
+	return config.SetEnterprisePath(cnf.parser, service, path, value)
 }
 
 func Serve() (*Service, error) {

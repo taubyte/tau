@@ -2,16 +2,13 @@ package seer
 
 import (
 	http "github.com/taubyte/tau/pkg/http"
+	servicesCommon "github.com/taubyte/tau/services/common"
 )
 
 func (srv *Service) setupDnsHTTPRoutes() {
-	var host string
-	if !srv.devMode && len(srv.hostUrl) > 0 {
-		host = "seer.tau." + srv.hostUrl
-	}
-
+	hosts := srv.config.RouteHosts(servicesCommon.Seer)
 	srv.http.GET(&http.RouteDefinition{
-		Host:    host,
+		Hosts:   hosts,
 		Path:    "/network/config",
 		Scope:   []string{"network/config"},
 		Handler: srv.getGeneratedDomain,

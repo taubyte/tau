@@ -49,11 +49,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 		clientNode = cfg.ClientNode()
 	}
 
-	beacon, err := srv.startBeacon(cfg)
-	if err != nil {
-		return nil, fmt.Errorf("starting beacon failed with: %w", err)
-	}
-
 	//TODO: This should not be needed
 	if err = srv.startHttp(cfg); err != nil {
 		return nil, fmt.Errorf("starting http service failed with %w", err)
@@ -126,10 +121,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	if len(cfg.P2PAnnounce()) == 0 {
 		logger.Error("P2P Announce is empty")
 		return nil, errors.New("P2P Announce is empty")
-	}
-
-	if err = beacon.hostname(); err != nil {
-		return nil, fmt.Errorf("setting beacon hostname failed with: %w", err)
 	}
 
 	if err = srv.startStream(); err != nil {

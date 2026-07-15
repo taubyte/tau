@@ -35,3 +35,7 @@ test-all: test test-dreaming test-web3 test-raft
 BENCH ?= .
 bench-dreaming:
 	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags dreaming -run '^$$' -bench '$(BENCH)' -benchmem -timeout 30m $(FLAGS) ./dream/benchmarks
+
+# Enterprise-build targets live in the ee submodule and are pulled in when it's
+# checked out (a no-op for an OSS-only tree). Run `make help-ee` for the list.
+-include ee/Makefile

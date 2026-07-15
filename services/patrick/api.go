@@ -623,14 +623,10 @@ func (srv *PatrickService) downloadAsset(ctx http.Context) (interface{}, error) 
 }
 
 func (srv *PatrickService) setupGithubRoutes() {
-	var host string
-	if !srv.devMode && len(srv.hostUrl) > 0 {
-		host = "patrick.tau." + srv.hostUrl
-	}
-
+	hosts := srv.config.RouteHosts(servicesCommon.Patrick)
 	srv.http.POST(&http.RouteDefinition{
-		Host: host,
-		Path: "/github/{hook}",
+		Hosts: hosts,
+		Path:  "/github/{hook}",
 		Vars: http.Variables{
 			Required: []string{"hook", "X-Hub-Signature", "X-Hub-Signature-256", "X-GitHub-Hook-ID"},
 		},
@@ -642,8 +638,8 @@ func (srv *PatrickService) setupGithubRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/ping",
+		Hosts: hosts,
+		Path:  "/ping",
 		Handler: func(ctx http.Context) (interface{}, error) {
 			return map[string]string{"ping": "pong"}, nil
 		},
@@ -651,14 +647,10 @@ func (srv *PatrickService) setupGithubRoutes() {
 }
 
 func (srv *PatrickService) setupJobRoutes() {
-	var host string
-	if !srv.devMode && len(srv.hostUrl) > 0 {
-		host = "patrick.tau." + srv.hostUrl
-	}
-
+	hosts := srv.config.RouteHosts(servicesCommon.Patrick)
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/jobs/{projectId}",
+		Hosts: hosts,
+		Path:  "/jobs/{projectId}",
 		Vars: http.Variables{
 			Required: []string{"projectId"},
 		},
@@ -670,8 +662,8 @@ func (srv *PatrickService) setupJobRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/job/{jid}",
+		Hosts: hosts,
+		Path:  "/job/{jid}",
 		Vars: http.Variables{
 			Required: []string{"jid"},
 		},
@@ -683,8 +675,8 @@ func (srv *PatrickService) setupJobRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/download/{jobId}/{resourceId}",
+		Hosts: hosts,
+		Path:  "/download/{jobId}/{resourceId}",
 		Vars: http.Variables{
 			Required: []string{"jobId", "resourceId"},
 		},
@@ -693,8 +685,8 @@ func (srv *PatrickService) setupJobRoutes() {
 	})
 
 	srv.http.GET(&http.RouteDefinition{
-		Host: host,
-		Path: "/logs/{cid}",
+		Hosts: hosts,
+		Path:  "/logs/{cid}",
 		Vars: http.Variables{
 			Required: []string{"cid"},
 		},
@@ -707,8 +699,8 @@ func (srv *PatrickService) setupJobRoutes() {
 	})
 
 	srv.http.POST(&http.RouteDefinition{
-		Host: host,
-		Path: "/cancel/{jid}",
+		Hosts: hosts,
+		Path:  "/cancel/{jid}",
 		Vars: http.Variables{
 			Required: []string{"jid"},
 		},
@@ -720,8 +712,8 @@ func (srv *PatrickService) setupJobRoutes() {
 	})
 
 	srv.http.POST(&http.RouteDefinition{
-		Host: host,
-		Path: "/retry/{jid}",
+		Hosts: hosts,
+		Path:  "/retry/{jid}",
 		Vars: http.Variables{
 			Required: []string{"jid"},
 		},

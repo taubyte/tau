@@ -19,5 +19,12 @@ func createService(u *dream.Universe, config *iface.ServiceConfig) (iface.Servic
 	if err != nil {
 		return nil, err
 	}
-	return monkey.New(u.Context(), cfg)
+	svc, err := monkey.New(u.Context(), cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := common.StartBeacon(u.Context(), cfg, svc.Node(), commonSpecs.Monkey); err != nil {
+		return nil, err
+	}
+	return svc, nil
 }

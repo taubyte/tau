@@ -4,6 +4,7 @@ import (
 	"time"
 
 	seerIface "github.com/taubyte/tau/core/services/seer"
+	"gopkg.in/yaml.v3"
 )
 
 type Ports struct {
@@ -36,6 +37,11 @@ type Source struct {
 	// community / dream installs can omit. AccountsURL + WebAuthn are
 	// derived from NetworkFqdn at runtime.
 	Accounts Accounts `yaml:"accounts,omitempty"`
+	// Enterprise namespaces raw config for enterprise-only services under
+	// `enterprise:` in the shape config. Community builds carry it opaquely;
+	// `//go:build ee` code decodes each service's entry into its own typed
+	// config (via EnterpriseConfig).
+	Enterprise map[string]yaml.Node `yaml:"enterprise,omitempty"`
 	Plugins
 }
 
@@ -63,6 +69,12 @@ type Domains struct {
 	Acme      *AcmeConfig `yaml:"acme,omitempty"`
 	Aliases   []string    `yaml:"aliases"`
 	Generated string      `yaml:"generated"`
+	// Hosts binds a custom domain to the service that serves it, e.g.
+	// {"console.example.com": "gateway"}. seer resolves the domain to that service's
+	// nodes, the shared http server accepts + autocerts it, and the service
+	// registers its routes under it. Distinct from Aliases (generic
+	// <svc>.<alias> base domains resolved by first label).
+	Hosts map[string]string `yaml:"hosts,omitempty"`
 }
 
 type AcmeCAConfig struct {

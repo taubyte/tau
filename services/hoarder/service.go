@@ -6,10 +6,8 @@ import (
 	"path"
 
 	hoarderClient "github.com/taubyte/tau/clients/p2p/hoarder"
-	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
-	seerIface "github.com/taubyte/tau/core/services/seer"
 	streamClient "github.com/taubyte/tau/p2p/streams/client"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
@@ -43,6 +41,7 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 	}
 
 	s.zone = cfg.Cluster()
+	s.devMode = cfg.DevMode()
 
 	if s.stream, err = streams.New(s.node, protocolCommon.Hoarder, protocolCommon.HoarderProtocol); err != nil {
 		return nil, fmt.Errorf("new command service failed with: %w", err)
@@ -88,15 +87,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 	// by Close via loopsWG like the other loops.
 	s.loopsWG.Add(1)
 	go func() { defer s.loopsWG.Done(); s.assetSweepLoop(loopCtx) }()
-
-	sc, err := seerClient.New(ctx, clientNode, cfg.SensorsRegistry())
-	if err != nil {
-		return nil, fmt.Errorf("new seer client failed with: %w", err)
-	}
-
-	if err = protocolCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeHoarder); err != nil {
-		return nil, fmt.Errorf("starting seer beacon failed with: %s", err)
-	}
 
 	// Cipher bootstrap (see cipher.go / cipher_ee.go).
 	if err = s.cipherInit(ctx, clientNode); err != nil {

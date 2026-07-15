@@ -10,9 +10,7 @@ import (
 	"github.com/ipfs/go-log/v2"
 	authAPI "github.com/taubyte/tau/clients/p2p/auth"
 	monkeyApi "github.com/taubyte/tau/clients/p2p/monkey"
-	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
-	seerIface "github.com/taubyte/tau/core/services/seer"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb"
 	"github.com/taubyte/tau/pkg/raft"
@@ -91,7 +89,7 @@ func New(ctx context.Context, cfg tauConfig.Config) (*PatrickService, error) {
 		return nil, fmt.Errorf("failed stream new with error: %w", err)
 	}
 
-	srv.hostUrl = cfg.NetworkFqdn()
+	srv.config = cfg
 	srv.setupStreamRoutes()
 	srv.stream.Start()
 
@@ -104,14 +102,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*PatrickService, error) {
 	}
 
 	srv.setupHTTPRoutes()
-
-	var sc seerIface.Client
-	if sc, err = seerClient.New(srv.ctx, clientNode, cfg.SensorsRegistry()); err != nil {
-		return nil, fmt.Errorf("failed creating seer client %v", err)
-	}
-	if err = servicesCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypePatrick); err != nil {
-		return nil, err
-	}
 
 	// Go routine to re announce any pending jobs (queue-based or pubsub-based)
 	go func() {

@@ -19,5 +19,12 @@ func createGateway(u *dream.Universe, config *iface.ServiceConfig) (iface.Servic
 	if err != nil {
 		return nil, err
 	}
-	return gateway.New(u.Context(), cfg)
+	svc, err := gateway.New(u.Context(), cfg)
+	if err != nil {
+		return nil, err
+	}
+	if err := common.StartBeacon(u.Context(), cfg, svc.Node(), commonSpecs.Gateway); err != nil {
+		return nil, err
+	}
+	return svc, nil
 }

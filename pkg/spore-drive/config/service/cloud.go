@@ -14,6 +14,29 @@ import (
 
 func (s *Service) doCloud(in *pb.Cloud, p config.Parser) (*connect.Response[pb.Return], error) {
 	if a := in.GetDomain(); a != nil {
+		// domains.hosts (generic: any domain -> any service)
+		if x := a.GetHosts(); x != nil {
+			if x.GetList() {
+				m := p.Cloud().Domain().Hosts()
+				domains := make([]string, 0, len(m))
+				for d := range m {
+					domains = append(domains, d)
+				}
+				return returnStringSlice(domains), nil
+			}
+
+			if z := x.GetSelect(); z != nil {
+				domain := z.GetDomain()
+				if z.GetGet() {
+					return returnString(p.Cloud().Domain().Hosts()[domain]), nil
+				}
+				if z.GetDelete() {
+					return returnEmpty(p.Cloud().Domain().DeleteHost(domain))
+				}
+				return returnEmpty(p.Cloud().Domain().SetHost(domain, z.GetSet()))
+			}
+		}
+
 		// get
 		if x := a.GetRoot(); x != nil && x.GetGet() {
 			return returnString(p.Cloud().Domain().Root()), nil

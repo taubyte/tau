@@ -12,12 +12,10 @@ import (
 	"github.com/taubyte/tau/clients/p2p/hoarder"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
-	seerIface "github.com/taubyte/tau/core/services/seer"
 	ci "github.com/taubyte/tau/pkg/containers/gc"
 
 	"github.com/libp2p/go-libp2p/core/peer"
 	"github.com/libp2p/go-libp2p/core/protocol"
-	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/raft"
 
@@ -63,13 +61,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 	}
 	srv.setupStreamRoutes()
 	srv.stream.Start()
-	var sc seerIface.Client
-	if sc, err = seerClient.New(ctx, srv.clientNode, cfg.SensorsRegistry()); err != nil {
-		return nil, fmt.Errorf("creating seer client failed with %s", err)
-	}
-	if err = protocolCommon.StartSeerBeacon(cfg, sc, seerIface.ServiceTypeMonkey); err != nil {
-		return nil, fmt.Errorf("starting seer beacon failed with %s", err)
-	}
 	srv.monkeys = make(map[string]*Monkey, 0)
 	srv.recvJobs = make(map[string]time.Time, 0)
 	if srv.patrickClient, err = NewPatrick(ctx, srv.clientNode); err != nil {

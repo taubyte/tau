@@ -328,8 +328,10 @@ func (d *sporedrive) writeConfig(h remoteHost, shape string, w io.Writer) error 
 				Public:  "keys/dv_public.key",
 			},
 			Generated: d.parser.Cloud().Domain().Generated(),
+			Hosts:     d.parser.Cloud().Domain().Hosts(),
 		},
-		Accounts: accountsCfg,
+		Accounts:   accountsCfg,
+		Enterprise: d.enterpriseSource(sc.Services().List()),
 	})
 	if err != nil {
 		return err

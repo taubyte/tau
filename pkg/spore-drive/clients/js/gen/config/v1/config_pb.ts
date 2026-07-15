@@ -357,6 +357,56 @@ export class UInt64Op extends Message<UInt64Op> {
 }
 
 /**
+ * @generated from message config.v1.BoolOp
+ */
+export class BoolOp extends Message<BoolOp> {
+  /**
+   * @generated from oneof config.v1.BoolOp.op
+   */
+  op: {
+    /**
+     * @generated from field: bool set = 1;
+     */
+    value: boolean;
+    case: "set";
+  } | {
+    /**
+     * @generated from field: bool get = 2;
+     */
+    value: boolean;
+    case: "get";
+  } | { case: undefined; value?: undefined } = { case: undefined };
+
+  constructor(data?: PartialMessage<BoolOp>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "config.v1.BoolOp";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "set", kind: "scalar", T: 8 /* ScalarType.BOOL */, oneof: "op" },
+    { no: 2, name: "get", kind: "scalar", T: 8 /* ScalarType.BOOL */, oneof: "op" },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): BoolOp {
+    return new BoolOp().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): BoolOp {
+    return new BoolOp().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): BoolOp {
+    return new BoolOp().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: BoolOp | PlainMessage<BoolOp> | undefined, b: BoolOp | PlainMessage<BoolOp> | undefined): boolean {
+    return proto3.util.equals(BoolOp, a, b);
+  }
+}
+
+/**
  * @generated from message config.v1.StringSliceOp
  */
 export class StringSliceOp extends Message<StringSliceOp> {
@@ -881,6 +931,12 @@ export class Domain extends Message<Domain> {
      */
     value: Validation;
     case: "validation";
+  } | {
+    /**
+     * @generated from field: config.v1.DomainHosts hosts = 4;
+     */
+    value: DomainHosts;
+    case: "hosts";
   } | { case: undefined; value?: undefined } = { case: undefined };
 
   constructor(data?: PartialMessage<Domain>) {
@@ -894,6 +950,7 @@ export class Domain extends Message<Domain> {
     { no: 1, name: "root", kind: "message", T: StringOp, oneof: "op" },
     { no: 2, name: "generated", kind: "message", T: StringOp, oneof: "op" },
     { no: 3, name: "validation", kind: "message", T: Validation, oneof: "op" },
+    { no: 4, name: "hosts", kind: "message", T: DomainHosts, oneof: "op" },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Domain {
@@ -910,6 +967,124 @@ export class Domain extends Message<Domain> {
 
   static equals(a: Domain | PlainMessage<Domain> | undefined, b: Domain | PlainMessage<Domain> | undefined): boolean {
     return proto3.util.equals(Domain, a, b);
+  }
+}
+
+/**
+ * DomainHosts maps custom domains to services (domains.hosts):
+ * e.g. "console.<fqdn>" -> "gateway". Generic: any domain -> any service.
+ *
+ * @generated from message config.v1.DomainHosts
+ */
+export class DomainHosts extends Message<DomainHosts> {
+  /**
+   * @generated from oneof config.v1.DomainHosts.op
+   */
+  op: {
+    /**
+     * @generated from field: config.v1.DomainHost select = 1;
+     */
+    value: DomainHost;
+    case: "select";
+  } | {
+    /**
+     * @generated from field: bool list = 2;
+     */
+    value: boolean;
+    case: "list";
+  } | { case: undefined; value?: undefined } = { case: undefined };
+
+  constructor(data?: PartialMessage<DomainHosts>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "config.v1.DomainHosts";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "select", kind: "message", T: DomainHost, oneof: "op" },
+    { no: 2, name: "list", kind: "scalar", T: 8 /* ScalarType.BOOL */, oneof: "op" },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DomainHosts {
+    return new DomainHosts().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): DomainHosts {
+    return new DomainHosts().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): DomainHosts {
+    return new DomainHosts().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: DomainHosts | PlainMessage<DomainHosts> | undefined, b: DomainHosts | PlainMessage<DomainHosts> | undefined): boolean {
+    return proto3.util.equals(DomainHosts, a, b);
+  }
+}
+
+/**
+ * @generated from message config.v1.DomainHost
+ */
+export class DomainHost extends Message<DomainHost> {
+  /**
+   * @generated from field: string domain = 1;
+   */
+  domain = "";
+
+  /**
+   * @generated from oneof config.v1.DomainHost.op
+   */
+  op: {
+    /**
+     * service bound to this domain
+     *
+     * @generated from field: string set = 2;
+     */
+    value: string;
+    case: "set";
+  } | {
+    /**
+     * @generated from field: bool get = 3;
+     */
+    value: boolean;
+    case: "get";
+  } | {
+    /**
+     * @generated from field: bool delete = 4;
+     */
+    value: boolean;
+    case: "delete";
+  } | { case: undefined; value?: undefined } = { case: undefined };
+
+  constructor(data?: PartialMessage<DomainHost>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "config.v1.DomainHost";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "domain", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 2, name: "set", kind: "scalar", T: 9 /* ScalarType.STRING */, oneof: "op" },
+    { no: 3, name: "get", kind: "scalar", T: 8 /* ScalarType.BOOL */, oneof: "op" },
+    { no: 4, name: "delete", kind: "scalar", T: 8 /* ScalarType.BOOL */, oneof: "op" },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): DomainHost {
+    return new DomainHost().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): DomainHost {
+    return new DomainHost().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): DomainHost {
+    return new DomainHost().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: DomainHost | PlainMessage<DomainHost> | undefined, b: DomainHost | PlainMessage<DomainHost> | undefined): boolean {
+    return proto3.util.equals(DomainHost, a, b);
   }
 }
 

@@ -130,6 +130,22 @@ func (u *Universe) AuthByPid(pid string) (auth.Service, bool) {
 	return byId[auth.Service](u, u.service["auth"].nodes, pid)
 }
 
+// ServiceInstance returns the first running instance of a service by name, or nil
+// if it isn't running here. Generic counterpart to the typed accessors (Seer(),
+// Auth(), ...) for services that don't have one — callers type-assert to the
+// service's own interface.
+func (u *Universe) ServiceInstance(name string) commonIface.Service {
+	si, ok := u.service[name]
+	if !ok || si == nil {
+		return nil
+	}
+	ret, ok := first[commonIface.Service](u, si.nodes)
+	if !ok {
+		return nil
+	}
+	return ret
+}
+
 func (u *Universe) Patrick() patrick.Service {
 	ret, ok := first[patrick.Service](u, u.service["patrick"].nodes)
 	if !ok {

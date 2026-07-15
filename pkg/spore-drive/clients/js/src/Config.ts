@@ -11,7 +11,7 @@ import {
   SourceUpload,
 } from "../gen/config/v1/config_pb";
 
-import { RPCClient } from "./ConfigClient";
+import { RPCClient, OpClient } from "./ConfigClient";
 
 async function* uploadAsyncIterator(
   stream: ReadableStream<Uint8Array>
@@ -24,9 +24,12 @@ async function* uploadAsyncIterator(
 }
 
 export class Config {
-  private client!: RPCClient;
+  // protected so ee subclasses can reach the connection + loaded config to bind
+  // a sibling service (e.g. config.enterprise) on the SAME transport — no second
+  // connection.
+  protected client!: RPCClient;
   private source?: string | ReadableStream<Uint8Array>;
-  private config?: ConfigMessage;
+  protected config?: ConfigMessage;
 
   constructor(source?: string | ReadableStream<Uint8Array>) {
     this.source = source;
@@ -110,28 +113,24 @@ export class Config {
   }
 }
 
-// Base Operation class to hold the path
-class BaseOperation {
-  protected client: RPCClient;
+// Base Operation class to hold the path. Exported so ee clients can build their
+// own op tree (e.g. enterprise.<service>) reusing the same machinery.
+export class BaseOperation {
+  protected client: OpClient;
   protected config: ConfigMessage;
   protected opPath: any[];
 
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     this.client = client;
     this.config = config;
     this.opPath = path;
   }
 
   protected async doRequest(operation: any): Promise<Return> {
-    const op = this.buildOp(operation);
-    const finalOp = new Op({
-      config: this.config,
-      op: op,
-    });
-    return await this.client.do(finalOp);
+    return await this.client.do(this.config, this.buildOp(operation));
   }
 
-  private buildOp(operation: any): any {
+  protected buildOp(operation: any): any {
     let op = operation;
     for (let i = this.opPath.length - 1; i >= 0; i--) {
       const pathItem = this.opPath[i];
@@ -144,6 +143,9 @@ class BaseOperation {
       if (pathItem.shape) {
         messageValue.shape = pathItem.shape;
       }
+      if (pathItem.domain) {
+        messageValue.domain = pathItem.domain;
+      }
 
       op = { case: caseName, value: messageValue };
     }
@@ -155,6 +157,7 @@ class BaseOperation {
 export interface DomainConfig {
   root?: string;
   generated?: string;
+  hosts?: Record<string, string>;
 }
 
 export interface BootstrapConfig {
@@ -171,7 +174,7 @@ export interface CloudConfig {
 }
 
 class Cloud extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage) {
+  constructor(client: OpClient, config: ConfigMessage) {
     super(client, config, [{ case: "cloud" }]);
   }
 
@@ -193,7 +196,7 @@ class Cloud extends BaseOperation {
 }
 
 class Domain extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -218,14 +221,80 @@ class Domain extends BaseOperation {
     ]);
   }
 
+  get hosts(): DomainHosts {
+    return new DomainHosts(this.client, this.config, [
+      ...this.opPath,
+      { case: "hosts" },
+    ]);
+  }
+
   async set(value: DomainConfig): Promise<void> {
     if (value.root) await this.root.set(value.root);
     if (value.generated) await this.generated.set(value.generated);
+    if (value.hosts) await this.hosts.set(value.hosts);
+  }
+}
+
+// DomainHosts maps custom domains to services (domains.hosts):
+// e.g. "console.<fqdn>" -> "gateway". Generic (any domain -> any service).
+class DomainHosts extends BaseOperation {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
+    super(client, config, path);
+  }
+
+  get host(): Record<string, DomainHost> {
+    return new Proxy(
+      {},
+      {
+        get: (target, domain: string): DomainHost => {
+          return new DomainHost(this.client, this.config, [
+            ...this.opPath,
+            { case: "select", domain: domain },
+          ]);
+        },
+      }
+    );
+  }
+
+  async list(): Promise<string[]> {
+    const result = await this.doRequest({ case: "list", value: true });
+    if (result.return.case === "slice") {
+      return result.return.value.value;
+    }
+    return [];
+  }
+
+  async set(value: Record<string, string>): Promise<void> {
+    for (const [domain, service] of Object.entries(value)) {
+      await this.host[domain].set(service);
+    }
+  }
+}
+
+class DomainHost extends BaseOperation {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
+    super(client, config, path);
+  }
+
+  async set(service: string): Promise<void> {
+    await this.doRequest({ case: "set", value: service });
+  }
+
+  async get(): Promise<string> {
+    const result = await this.doRequest({ case: "get", value: true });
+    if (result.return.case === "string") {
+      return result.return.value;
+    }
+    return "";
+  }
+
+  async delete(): Promise<void> {
+    await this.doRequest({ case: "delete", value: true });
   }
 }
 
 class Validation extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -242,7 +311,7 @@ class Validation extends BaseOperation {
 }
 
 class ValidationKeys extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -262,7 +331,7 @@ class ValidationKeys extends BaseOperation {
 }
 
 class ValidationKeysPath extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -282,7 +351,7 @@ class ValidationKeysPath extends BaseOperation {
 }
 
 class ValidationKeysData extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -302,7 +371,7 @@ class ValidationKeysData extends BaseOperation {
 }
 
 class P2P extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -328,7 +397,7 @@ class P2P extends BaseOperation {
 }
 
 class Bootstrap extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -364,7 +433,7 @@ class Bootstrap extends BaseOperation {
 }
 
 class BootstrapShape extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -381,7 +450,7 @@ class BootstrapShape extends BaseOperation {
 }
 
 class Swarm extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -398,7 +467,7 @@ class Swarm extends BaseOperation {
 }
 
 class SwarmKey extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -440,7 +509,7 @@ export interface HostsConfig {
 }
 
 class Hosts extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage) {
+  constructor(client: OpClient, config: ConfigMessage) {
     super(client, config, [{ case: "hosts" }]);
   }
 
@@ -467,7 +536,7 @@ class Hosts extends BaseOperation {
 }
 
 class Host extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -523,7 +592,7 @@ class Host extends BaseOperation {
 }
 
 class SSH extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -551,7 +620,7 @@ class SSH extends BaseOperation {
 }
 
 class HostShapes extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -572,7 +641,7 @@ class HostShapes extends BaseOperation {
 }
 
 class HostShape extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -601,7 +670,7 @@ class HostShape extends BaseOperation {
 }
 
 class HostInstance extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -637,7 +706,7 @@ export interface AuthConfig {
 }
 
 class Auth extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage) {
+  constructor(client: OpClient, config: ConfigMessage) {
     super(client, config, [{ case: "auth" }]);
   }
 
@@ -671,7 +740,7 @@ class Auth extends BaseOperation {
 }
 
 class Signer extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -710,7 +779,7 @@ class Signer extends BaseOperation {
 }
 
 class SSHKey extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -749,7 +818,7 @@ export interface AccountsConfig {
 }
 
 class Accounts extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage) {
+  constructor(client: OpClient, config: ConfigMessage) {
     super(client, config, [{ case: "accounts" }]);
   }
 
@@ -775,7 +844,7 @@ class Accounts extends BaseOperation {
 }
 
 class Email extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -792,7 +861,7 @@ class Email extends BaseOperation {
 }
 
 class SMTP extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -857,7 +926,7 @@ export interface ShapesConfig {
 }
 
 class Shapes extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage) {
+  constructor(client: OpClient, config: ConfigMessage) {
     super(client, config, [{ case: "shapes" }]);
   }
 
@@ -884,7 +953,7 @@ class Shapes extends BaseOperation {
 }
 
 class Shape extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -921,7 +990,7 @@ class Shape extends BaseOperation {
 }
 
 class Ports extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -955,7 +1024,7 @@ class Ports extends BaseOperation {
 }
 
 class Port extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -976,9 +1045,12 @@ class Port extends BaseOperation {
   }
 }
 
-// Shared Operation Classes
-class StringOperation extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+// Shared Operation Classes — exported so ee clients reuse them instead of
+// re-implementing. They build plain oneof objects (never `new <Message>`), so the
+// wrapping client constructs the right package's messages — this is what lets the
+// ee client (whose config/v1 is a separate vendored copy) reuse them.
+export class StringOperation extends BaseOperation {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -995,8 +1067,8 @@ class StringOperation extends BaseOperation {
   }
 }
 
-class UInt64Operation extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+export class UInt64Operation extends BaseOperation {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -1013,8 +1085,18 @@ class UInt64Operation extends BaseOperation {
   }
 }
 
+export class BoolOperation extends BaseOperation {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
+    super(client, config, path);
+  }
+
+  async set(value: boolean): Promise<void> {
+    await this.doRequest({ case: "set", value });
+  }
+}
+
 class BytesOperation extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
@@ -1031,29 +1113,29 @@ class BytesOperation extends BaseOperation {
   }
 }
 
-class StringSliceOperation extends BaseOperation {
-  constructor(client: RPCClient, config: ConfigMessage, path: any[]) {
+export class StringSliceOperation extends BaseOperation {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
     super(client, config, path);
   }
 
   async set(values: string[]): Promise<void> {
     await this.doRequest({
       case: "set",
-      value: new StringSlice({ value: values }),
+      value: { value: values },
     });
   }
 
   async add(values: string[]): Promise<void> {
     await this.doRequest({
       case: "add",
-      value: new StringSlice({ value: values }),
+      value: { value: values },
     });
   }
 
   async delete(values: string[]): Promise<void> {
     await this.doRequest({
       case: "delete",
-      value: new StringSlice({ value: values }),
+      value: { value: values },
     });
   }
 

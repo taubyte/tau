@@ -46,7 +46,5 @@ func (s *Service) WebSocket(def *service.WebSocketDefinition) {
 		go handler.Out()
 	})
 
-	if len(def.Host) > 0 {
-		route.Host(def.Host)
-	}
+	applyHostMatch(route, def.Hosts)
 }

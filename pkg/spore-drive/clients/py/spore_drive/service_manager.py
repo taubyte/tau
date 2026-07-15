@@ -81,6 +81,12 @@ class ServiceManager:
         
         return os_map.get(system), arch_map.get(machine)
     
+    def _release_asset_url(self, os_name: str, arch: str) -> str:
+        """Which release tarball to download. Override point: the ee client pulls
+        the ee spore-drive build instead of the community one."""
+        asset_name = f"spore-drive-service_{self.service_version}_{os_name}_{arch}.tar.gz"
+        return f"https://github.com/taubyte/spore-drive/releases/download/v{self.service_version}/{asset_name}"
+
     def _download_and_extract_binary(self):
         """Download and extract the binary from GitHub releases."""
         if self._binary_exists() and self._version_matches():
@@ -90,14 +96,12 @@ class ServiceManager:
         if not current_os or not current_arch:
             raise RuntimeError(f"Unsupported OS or architecture: {platform.system()}/{platform.machine()}")
         
-        asset_name = f"spore-drive-service_{self.service_version}_{current_os}_{current_arch}.tar.gz"
-        asset_url = f"https://github.com/taubyte/spore-drive/releases/download/v{self.service_version}/{asset_name}"
-        
+        asset_url = self._release_asset_url(current_os, current_arch)
+        asset_name = asset_url.rsplit("/", 1)[-1]
 
-        
         # Create binary directory if it doesn't exist
         self.binary_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Download the asset
         tar_path = self.binary_dir / asset_name
         try:

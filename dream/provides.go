@@ -38,11 +38,23 @@ func (u *Universe) provided(_service string) bool {
 			runes := []rune(_service)
 			runes[0] = unicode.ToUpper(runes[0])
 			serviceMethod := ru.MethodByName(string(runes))
-			_s := serviceMethod.Call(nil)
-			var ok bool
-			if s, ok = _s[0].Interface().(servicesIface.Service); !ok {
-				return ok
+			// A registered service need not expose a typed u.<Name>() accessor.
+			// Only a zero-arg, value-returning method is a usable accessor: guard
+			// both before calling so a missing method, an arg-taking method
+			// (Call would panic), or a no-return method (Call(nil)[0] would
+			// panic) all just read as "not provided".
+			if !serviceMethod.IsValid() {
+				return false
 			}
+			mt := serviceMethod.Type()
+			if mt.NumIn() != 0 || mt.NumOut() == 0 {
+				return false
+			}
+			svc, ok := serviceMethod.Call(nil)[0].Interface().(servicesIface.Service)
+			if !ok {
+				return false
+			}
+			s = svc
 		}
 	}
 

@@ -23,21 +23,30 @@ func createService(u *dream.Universe, config *iface.ServiceConfig) (iface.Servic
 	if err != nil {
 		return nil, err
 	}
+	var srv iface.Service
 	if config.Others["mock"] == 1 {
 		// NOTE: have to keep entry lowercase since package searches through lowercase
-		mockServer, err := mockdns.NewServer(map[string]mockdns.Zone{
+		mockServer, mockErr := mockdns.NewServer(map[string]mockdns.Zone{
 			"testing_website_builder.com.": {
 				CNAME: "substrate.tau." + strings.ToLower(u.Name()) + ".localtau.",
 				A:     []string{"192.168.0.1", "10.0.0.1"},
 				TXT:   []string{"eyJhbGciOiJFUzI1NiIsInR5cCI6IkpXVCJ9.eyJhZGRyZXNzIjoiNWRydTFFR1Iza0hyWHJzTWI3TDNpTEpTQm51c01KIn0.jUcMqKyHb_IBvdjObb_sggv9mfrix18FJyZpAxWdkVIoqO9kEAcpQzU675jm7n5qZDbzfzS-dmmHsUOuA54OJQ"},
 			},
 		}, false)
-		if err != nil {
-			return nil, fmt.Errorf("starting mock dns failed with: %w", err)
+		if mockErr != nil {
+			return nil, fmt.Errorf("starting mock dns failed with: %w", mockErr)
 		}
 
-		return seerSvr.New(u.Context(), cfg, seerSvr.Resolver(mockServer.Resolver()))
+		srv, err = seerSvr.New(u.Context(), cfg, seerSvr.Resolver(mockServer.Resolver()))
+	} else {
+		srv, err = seerSvr.New(u.Context(), cfg)
+	}
+	if err != nil {
+		return nil, err
 	}
 
-	return seerSvr.New(u.Context(), cfg)
+	if err := common.StartBeacon(u.Context(), cfg, srv.Node(), commonSpecs.Seer); err != nil {
+		return nil, err
+	}
+	return srv, nil
 }

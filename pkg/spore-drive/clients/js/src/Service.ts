@@ -124,6 +124,13 @@ export class Service {
     }
   }
 
+  // Which release tarball to download. Override point: the ee client pulls the
+  // ee spore-drive build instead of the community one.
+  protected releaseAssetUrl(version: string, os: string, arch: string): string {
+    const assetName = `spore-drive-service_${version}_${os}_${arch}.tar.gz`;
+    return `https://github.com/taubyte/spore-drive/releases/download/v${version}/${assetName}`;
+  }
+
   private async downloadAndExtractBinary(): Promise<void> {
     if (this.binaryExists() && this.versionMatches()) {
       return;
@@ -136,8 +143,7 @@ export class Service {
       throw new Error("Unsupported OS or architecture");
     }
 
-    const assetName = `spore-drive-service_${version}_${currentOs}_${currentArch}.tar.gz`;
-    const assetUrl = `https://github.com/taubyte/spore-drive/releases/download/v${version}/${assetName}`;
+    const assetUrl = this.releaseAssetUrl(version, currentOs, currentArch);
 
     console.log(
       `Downloading spore-drive service v${version} for ${currentOs}/${currentArch}...`
@@ -169,7 +175,7 @@ export class Service {
       fs.mkdirSync(this.binaryDir);
     }
 
-    const tarPath = path.join(this.binaryDir, assetName);
+    const tarPath = path.join(this.binaryDir, path.basename(assetUrl));
     const writer = fs.createWriteStream(tarPath);
 
     data.on("data", (chunk: any) => {

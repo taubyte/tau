@@ -113,8 +113,8 @@ class Config:
             url: Optional service URL, defaults to localhost with service port
         """
         if url is None:
-            # Start service and get port
-            port = start_service()
+            # Start the (subclass-overridable) service manager and get its port.
+            port = self._service_manager.start()
             url = f"http://localhost:{port}/"
         
         self._client = ConfigClient(url)

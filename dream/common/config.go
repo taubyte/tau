@@ -49,6 +49,7 @@ func NewConfig(u *dream.Universe, config *iface.ServiceConfig) (tauConfig.Config
 		tauConfig.WithGeneratedDomainRegExp(regexp.MustCompile(`^[^.]+\.g\.`+strings.ToLower(u.Name())+`.localtau$`)),
 		tauConfig.WithServicesDomainRegExp(regexp.MustCompile(`^([^.]+\.)?tau\.`+strings.ToLower(u.Name())+`.localtau$`)),
 		tauConfig.WithAliasDomainsRegExp(make([]*regexp.Regexp, 0)),
+		tauConfig.WithHosts(config.Hosts),
 		tauConfig.WithCluster(cluster),
 		tauConfig.WithPeers(bpeers),
 		tauConfig.WithLocation(&config.Location),

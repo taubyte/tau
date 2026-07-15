@@ -9,7 +9,9 @@ import (
 	"syscall"
 	"time"
 
+	seerClient "github.com/taubyte/tau/clients/p2p/seer"
 	"github.com/taubyte/tau/core/services"
+	seerIface "github.com/taubyte/tau/core/services/seer"
 	"github.com/taubyte/tau/pkg/config"
 	httpService "github.com/taubyte/tau/pkg/http"
 	"github.com/taubyte/tau/pkg/kvdb"
@@ -132,6 +134,20 @@ func Start(ctx context.Context, serviceConfig config.Config) error {
 		}
 
 		services = append(services, _srv)
+	}
+
+	// One seer beacon per node: announce every service in the shape through a
+	// single client + goroutine set, instead of one beacon per service.
+	beaconTypes := make([]seerIface.ServiceType, 0, len(serviceConfig.Services()))
+	for _, name := range serviceConfig.Services() {
+		beaconTypes = append(beaconTypes, seerIface.ServiceType(name))
+	}
+	beaconNode := serviceConfig.Node()
+	if serviceConfig.ClientNode() != nil {
+		beaconNode = serviceConfig.ClientNode()
+	}
+	if err := seerClient.StartNodeBeacon(ctx, serviceConfig, beaconNode, beaconTypes...); err != nil {
+		return fmt.Errorf("starting seer beacon failed with: %s", err)
 	}
 
 	if httpNode != nil {
