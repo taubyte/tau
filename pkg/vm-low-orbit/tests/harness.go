@@ -82,8 +82,22 @@ func guestCall(t *testing.T, ctx context.Context, wasm, export string, req *http
 	if err != nil {
 		t.Fatalf("calling %q: %v", export, err)
 	}
-	if len(ret) == 0 {
-		t.Fatalf("%q returned no value", export)
+	// void exports (e.g. Rust reactor functions) return nothing; treat as 0.
+	var code uint64
+	if len(ret) > 0 {
+		code = ret[0]
 	}
-	return w, ret[0]
+	return w, code
+}
+
+// testCtxOpts is the default vm context (project/app/resource/commit/branch)
+// most guests run under.
+func testCtxOpts() []vmContext.Option {
+	return []vmContext.Option{
+		vmContext.Project("proj-123"),
+		vmContext.Application("app-456"),
+		vmContext.Resource("res-789"),
+		vmContext.Commit("commit-abc"),
+		vmContext.Branch("master"),
+	}
 }
