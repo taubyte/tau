@@ -60,7 +60,7 @@ type instance struct {
 	pooled bool
 
 	// cached function handle, keyed by the module/function name it was
-	// resolved under, to avoid a fresh wazero ExportedFunction lookup per call.
+	// resolved under, to avoid a fresh wazy ExportedFunction lookup per call.
 	fxModuleName string
 	fxName       string
 	fxModule     vm.ModuleInstance

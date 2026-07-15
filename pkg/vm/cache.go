@@ -9,7 +9,7 @@ import (
 var Cache wazy.CompilationCache
 
 func init() {
-	cacheDir, err := os.MkdirTemp("", "wazero")
+	cacheDir, err := os.MkdirTemp("", "wazy")
 	if err != nil {
 		panic(err)
 	}
