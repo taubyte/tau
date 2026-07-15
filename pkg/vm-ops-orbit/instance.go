@@ -40,7 +40,8 @@ func (i *pluginInstance) LoadFactory(factory vm.Factory, hm vm.HostModule) error
 	if !ok {
 		return fmt.Errorf("factory %q (%T) does not provide host functions", factory.Name(), factory)
 	}
-	return hm.Functions(provider.HostFunctions()...)
+	provider.RegisterHostFunctions(hm.Builder())
+	return nil
 }
 func (i *pluginInstance) Load(hm vm.HostModule) (modInstance vm.ModuleInstance, err error) {
 	for _, factory := range i.factories {

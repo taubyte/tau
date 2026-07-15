@@ -3,18 +3,17 @@ package p2p
 import (
 	"context"
 
-	"github.com/taubyte/go-sdk/errno"
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_readCommandResponse(ctx context.Context, module common.Module,
+func (f *Factory) readCommandResponse(ctx context.Context, module common.Module,
 	commandId,
 	dataBuf, dataSize uint32,
-) (err errno.Error) {
-	cmd, err := f.getCommand(commandId)
-	if err != 0 {
-		return
+) (err uint32) {
+	cmd, err0 := f.getCommand(commandId)
+	if err0 != 0 {
+		return uint32(err0)
 	}
 
-	return f.SafeWriteBytes(module, dataBuf, dataSize, cmd.Body)
+	return uint32(f.SafeWriteBytes(module, dataBuf, dataSize, cmd.Body))
 }

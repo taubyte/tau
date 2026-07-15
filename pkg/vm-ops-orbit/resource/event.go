@@ -33,20 +33,20 @@ func (f *Factory) GetEvent(resourceId uint32) (*event.Event, errno.Error) {
 	// return e, 0
 }
 
-func (f *Factory) W_getEventId(ctx context.Context, module vm.Module, resourceId uint32, eventIdPtr uint32) errno.Error {
+func (f *Factory) getEventId(ctx context.Context, module vm.Module, resourceId uint32, eventIdPtr uint32) uint32 {
 	event, err := f.GetEvent(resourceId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteUint32Le(module, eventIdPtr, event.Id)
+	return uint32(f.WriteUint32Le(module, eventIdPtr, event.Id))
 }
 
-func (f *Factory) W_getResourceType(ctx context.Context, module vm.Module, resourceId uint32, typePtr uint32) errno.Error {
+func (f *Factory) getResourceType(ctx context.Context, module vm.Module, resourceId uint32, typePtr uint32) uint32 {
 	resource, err := f.GetResource(resourceId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteUint32Le(module, typePtr, resource.Caller.Type())
+	return uint32(f.WriteUint32Le(module, typePtr, resource.Caller.Type()))
 }

@@ -261,7 +261,7 @@ func (f *Function) instantiate() (rt vm.Runtime, sdk plugins.Instance, err error
 	}()
 	closers = append(closers, instance)
 
-	rt, err = instance.Runtime(nil)
+	rt, err = instance.Runtime()
 	if err != nil {
 		err = fmt.Errorf("creating new runtime failed with: %w", err)
 		return

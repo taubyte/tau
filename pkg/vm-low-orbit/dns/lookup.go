@@ -9,130 +9,130 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_dnsLookupTxTSize(
+func (f *Factory) dnsLookupTxTSize(
 	ctx context.Context,
 	module common.Module,
 	resolverId,
 	namePtr, nameLen,
 	sizePtr uint32,
-) errno.Error {
+) uint32 {
 	name, err := f.ReadString(module, namePtr, nameLen)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	resolver, err := f.getResolver(resolverId)
 	if err != 0 {
-		return errno.ErrorResolverNotFound
+		return uint32(errno.ErrorResolverNotFound)
 	}
 
 	records, err0 := resolver.LookupTXT(f.ctx, name)
 	if err0 != nil {
-		return errno.ErrorFailedTxTLookup
+		return uint32(errno.ErrorFailedTxTLookup)
 	}
 
 	resolver.cacheResponse(TxTResponse, name, records)
 
-	return f.WriteStringSliceSize(module, sizePtr, records)
+	return uint32(f.WriteStringSliceSize(module, sizePtr, records))
 }
 
-func (f *Factory) W_dnsLookupTxT(
+func (f *Factory) dnsLookupTxT(
 	ctx context.Context,
 	module common.Module,
 	resolverId,
 	namePtr, nameLen,
 	recordPtr uint32,
-) errno.Error {
+) uint32 {
 	name, err := f.ReadString(module, namePtr, nameLen)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	resolver, err := f.getResolver(resolverId)
 	if err != 0 {
-		return errno.ErrorResolverNotFound
+		return uint32(errno.ErrorResolverNotFound)
 	}
 
 	resp, err := resolver.getCachedResponse(TxTResponse, name)
 	if err != 0 {
-		return errno.ErrorFailedTxTLookup
+		return uint32(errno.ErrorFailedTxTLookup)
 	}
 
-	return f.WriteStringSlice(module, recordPtr, resp)
+	return uint32(f.WriteStringSlice(module, recordPtr, resp))
 }
 
-func (f *Factory) W_dnsLookupAddressSize(
+func (f *Factory) dnsLookupAddressSize(
 	ctx context.Context,
 	module common.Module,
 	resolverId,
 	namePtr, nameLen,
 	sizePtr uint32,
-) errno.Error {
+) uint32 {
 	name, err := f.ReadString(module, namePtr, nameLen)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	resolver, err := f.getResolver(resolverId)
 	if err != 0 {
-		return errno.ErrorResolverNotFound
+		return uint32(errno.ErrorResolverNotFound)
 	}
 
 	addr, err0 := resolver.LookupAddr(f.ctx, name)
 	if err0 != nil {
-		return errno.ErrorFailedAddressLookup
+		return uint32(errno.ErrorFailedAddressLookup)
 	}
 
 	resolver.cacheResponse(AddressResponse, name, addr)
 
-	return f.WriteStringSliceSize(module, sizePtr, addr)
+	return uint32(f.WriteStringSliceSize(module, sizePtr, addr))
 }
 
-func (f *Factory) W_dnsLookupAddress(
+func (f *Factory) dnsLookupAddress(
 	ctx context.Context,
 	module common.Module,
 	resolverId,
 	namePtr, nameLen,
 	recordPtr uint32,
-) errno.Error {
+) uint32 {
 	name, err := f.ReadString(module, namePtr, nameLen)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	resolver, err := f.getResolver(resolverId)
 	if err != 0 {
-		return errno.ErrorResolverNotFound
+		return uint32(errno.ErrorResolverNotFound)
 	}
 
 	resp, err := resolver.getCachedResponse(AddressResponse, name)
 	if err != 0 {
-		return errno.ErrorFailedTxTLookup
+		return uint32(errno.ErrorFailedTxTLookup)
 	}
 
-	return f.WriteStringSlice(module, recordPtr, resp)
+	return uint32(f.WriteStringSlice(module, recordPtr, resp))
 }
 
-func (f *Factory) W_dnsLookupCNAMESize(
+func (f *Factory) dnsLookupCNAMESize(
 	ctx context.Context,
 	module common.Module,
 	resolverId,
 	namePtr, nameLen,
 	sizePtr uint32,
-) errno.Error {
+) uint32 {
 	name, err := f.ReadString(module, namePtr, nameLen)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	resolver, err := f.getResolver(resolverId)
 	if err != 0 {
-		return errno.ErrorResolverNotFound
+		return uint32(errno.ErrorResolverNotFound)
 	}
 
 	cname, err0 := resolver.LookupCNAME(f.ctx, name)
 	if err0 != nil {
-		return errno.ErrorFailedCNAMELookup
+		return uint32(errno.ErrorFailedCNAMELookup)
 	}
 
 	cnameResp := make([]string, 0)
@@ -140,55 +140,55 @@ func (f *Factory) W_dnsLookupCNAMESize(
 
 	resolver.cacheResponse(CnameResponse, name, cnameResp)
 
-	return f.WriteStringSize(module, sizePtr, cname)
+	return uint32(f.WriteStringSize(module, sizePtr, cname))
 }
 
-func (f *Factory) W_dnsLookupCNAME(
+func (f *Factory) dnsLookupCNAME(
 	ctx context.Context,
 	module common.Module,
 	resolverId,
 	namePtr, nameLen,
 	recordPtr uint32,
-) errno.Error {
+) uint32 {
 	name, err := f.ReadString(module, namePtr, nameLen)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	resolver, err := f.getResolver(resolverId)
 	if err != 0 {
-		return errno.ErrorResolverNotFound
+		return uint32(errno.ErrorResolverNotFound)
 	}
 
 	resp, err := resolver.getCachedResponse(CnameResponse, name)
 	if err != 0 {
-		return errno.ErrorFailedTxTLookup
+		return uint32(errno.ErrorFailedTxTLookup)
 	}
 
 	//CNAME will always be len 1
-	return f.WriteString(module, recordPtr, resp[0])
+	return uint32(f.WriteString(module, recordPtr, resp[0]))
 }
 
-func (f *Factory) W_dnsLookupMXSize(
+func (f *Factory) dnsLookupMXSize(
 	ctx context.Context,
 	module common.Module,
 	resolverId,
 	namePtr, nameLen,
 	sizePtr uint32,
-) errno.Error {
+) uint32 {
 	name, err := f.ReadString(module, namePtr, nameLen)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	resolver, err := f.getResolver(resolverId)
 	if err != 0 {
-		return errno.ErrorResolverNotFound
+		return uint32(errno.ErrorResolverNotFound)
 	}
 
 	mxRecords, err0 := resolver.LookupMX(f.ctx, name)
 	if err0 != nil {
-		return errno.ErrorFailedMXLookup
+		return uint32(errno.ErrorFailedMXLookup)
 	}
 
 	mxRecordList := make([]string, 0)
@@ -199,30 +199,30 @@ func (f *Factory) W_dnsLookupMXSize(
 
 	resolver.cacheResponse(MxResponse, name, mxRecordList)
 
-	return f.WriteStringSliceSize(module, sizePtr, mxRecordList)
+	return uint32(f.WriteStringSliceSize(module, sizePtr, mxRecordList))
 }
 
-func (f *Factory) W_dnsLookupMX(
+func (f *Factory) dnsLookupMX(
 	ctx context.Context,
 	module common.Module,
 	resolverId,
 	namePtr, nameLen,
 	mxPtr uint32,
-) errno.Error {
+) uint32 {
 	name, err := f.ReadString(module, namePtr, nameLen)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	resolver, err := f.getResolver(resolverId)
 	if err != 0 {
-		return errno.ErrorResolverNotFound
+		return uint32(errno.ErrorResolverNotFound)
 	}
 
 	resp, err := resolver.getCachedResponse(MxResponse, name)
 	if err != 0 {
-		return errno.ErrorFailedTxTLookup
+		return uint32(errno.ErrorFailedTxTLookup)
 	}
 
-	return f.WriteStringSlice(module, mxPtr, resp)
+	return uint32(f.WriteStringSlice(module, mxPtr, resp))
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	wazyapi "github.com/samyfodil/wazy/api"
 	"github.com/taubyte/tau/core/vm"
 )
 
@@ -25,17 +26,14 @@ func (p *pluginInstance) Load(hm vm.HostModule) (vm.ModuleInstance, error) {
 		return nil, fmt.Errorf("getting (satellite) symbols failed with: %w", err)
 	}
 
-	funcDefs := make([]*vm.HostModuleFunctionDefinition, len(defs))
-	for idx, def := range defs {
-		funcDefs[idx] = &vm.HostModuleFunctionDefinition{
-			Name:        def.Name(),
-			ParamTypes:  def.ParamTypes(),
-			ResultTypes: def.ResultTypes(),
-			Stack:       p.stackHandler(def.Name(), len(def.ParamTypes())),
-		}
+	b := hm.Builder()
+	for _, def := range defs {
+		name := def.Name()
+		b.NewFunctionBuilder().
+			WithGoModuleFunction(wazyapi.GoModuleFunc(p.stackHandler(name, len(def.ParamTypes()))), def.ParamTypes(), def.ResultTypes()).
+			Export(name)
 	}
 
-	hm.Functions(funcDefs...)
 	return hm.Compile()
 }
 
@@ -43,8 +41,8 @@ func (p *pluginInstance) Load(hm vm.HostModule) (vm.ModuleInstance, error) {
 // params and results are already raw uint64 slots, and satellite.Call speaks
 // []uint64, so this is a direct passthrough with no reflection or per-value
 // conversion (the engine reuses stack for both params and results).
-func (p *pluginInstance) stackHandler(name string, nParams int) vm.StackHostFunction {
-	return func(ctx context.Context, module vm.Module, stack []uint64) {
+func (p *pluginInstance) stackHandler(name string, nParams int) func(context.Context, wazyapi.Module, []uint64) {
+	return func(ctx context.Context, module wazyapi.Module, stack []uint64) {
 		in := make([]uint64, nParams)
 		copy(in, stack[:nParams])
 

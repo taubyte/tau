@@ -20,25 +20,9 @@ type funcInstance struct {
 
 /*************** Host Module ***************/
 
-type functionDef struct {
-	fn      func(ctx context.Context, mod api.Module, stack []uint64)
-	params  []vm.ValueType
-	results []vm.ValueType
-}
-
-type memoryPages struct {
-	min   uint64
-	max   uint64
-	maxed bool
-}
-
 type hostModule struct {
-	ctx       vm.Context
-	name      string
-	runtime   *runtime
-	functions map[string]functionDef
-	memories  map[string]memoryPages
-	globals   map[string]interface{}
+	ctx     vm.Context
+	builder wazy.HostModuleBuilder
 }
 
 /*************** Instance ***************/

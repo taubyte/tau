@@ -3,7 +3,6 @@ package vm
 import (
 	"testing"
 
-	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/pkg/vm/mocks"
 	"gotest.tools/v3/assert"
 )
@@ -52,7 +51,7 @@ func TestRuntime(t *testing.T) {
 	instance, err := newInstance()
 	assert.NilError(t, err)
 
-	_, err = instance.Runtime(nil)
+	_, err = instance.Runtime()
 	assert.NilError(t, err)
 
 	if instance.Stderr() == nil {
@@ -65,30 +64,6 @@ func TestRuntime(t *testing.T) {
 
 	err = instance.Close()
 	assert.NilError(t, err)
-
-	// duplicate function error
-	_, err = instance.Runtime(
-		&vm.HostModuleDefinitions{
-			Functions: []*vm.HostModuleFunctionDefinition{testFunc, testFunc},
-		})
-	assertError(t, err)
-
-	// duplicate global error
-	_, err = instance.Runtime(
-		&vm.HostModuleDefinitions{
-			Functions: []*vm.HostModuleFunctionDefinition{testFunc},
-			Globals:   []*vm.HostModuleGlobalDefinition{mockGlobalDef, mockGlobalDef},
-		})
-	assertError(t, err)
-
-	// duplicate memory error
-	_, err = instance.Runtime(
-		&vm.HostModuleDefinitions{
-			Functions: []*vm.HostModuleFunctionDefinition{testFunc},
-			Memories:  []*vm.HostModuleMemoryDefinition{mockMemoryDef, mockMemoryDef},
-		})
-	assertError(t, err)
-
 }
 
 func TestRuntimeCall(t *testing.T) {

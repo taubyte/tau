@@ -24,17 +24,17 @@ func (f *Factory) getMemoryView(viewId uint32) (*MemoryView, errno.Error) {
 	return nil, errno.ErrorMemoryViewNotFound
 }
 
-func (f *Factory) W_memoryViewNew(
+func (f *Factory) memoryViewNew(
 	ctx context.Context,
 	module common.Module,
 	bufPtr,
 	size,
 	isCloser,
 	idPtr uint32,
-) errno.Error {
+) uint32 {
 	closable, err := f.ReadBool(module, isCloser)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	view := MemoryView{
@@ -49,28 +49,28 @@ func (f *Factory) W_memoryViewNew(
 	f.memoryViews[view.id] = &view
 	f.mvLock.Unlock()
 
-	return f.WriteUint32Le(module, idPtr, view.id)
+	return uint32(f.WriteUint32Le(module, idPtr, view.id))
 }
 
-func (f *Factory) W_memoryViewOpen(
+func (f *Factory) memoryViewOpen(
 	ctx context.Context,
 	module common.Module,
 	id,
 	isClosablePtr,
 	sizePtr uint32,
-) (error errno.Error) {
+) uint32 {
 	if mv, err := f.getMemoryView(id); err != 0 {
-		return err
+		return uint32(err)
 	} else {
 		if err = f.WriteUint32Le(module, sizePtr, mv.size); err != 0 {
-			return err
+			return uint32(err)
 		}
 
-		return f.WriteBool(module, isClosablePtr, mv.closable)
+		return uint32(f.WriteBool(module, isClosablePtr, mv.closable))
 	}
 }
 
-func (f *Factory) W_memoryViewRead(
+func (f *Factory) memoryViewRead(
 	ctx context.Context,
 	module common.Module,
 	id,
@@ -78,19 +78,19 @@ func (f *Factory) W_memoryViewRead(
 	count,
 	bufPtr,
 	nPtr uint32,
-) errno.Error {
+) uint32 {
 	mv, err0 := f.getMemoryView(id)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	if offset >= mv.size {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	data, err0 := f.ReadBytes(mv.module, mv.bufPtr, mv.size)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	size := mv.size
@@ -99,17 +99,17 @@ func (f *Factory) W_memoryViewRead(
 	}
 
 	if err0 = f.WriteBytes(module, bufPtr, data[offset:offset+count]); err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	if err0 = f.WriteUint32Le(module, nPtr, count); err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
-	return 0
+	return uint32(0)
 }
 
-func (f *Factory) W_memoryViewClose(
+func (f *Factory) memoryViewClose(
 	ctx context.Context,
 	module common.Module,
 	id uint32,

@@ -3,8 +3,6 @@ package run
 import (
 	"errors"
 	"fmt"
-	"reflect"
-	"strings"
 
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/event"
@@ -16,20 +14,12 @@ type minimalPluginInstance struct {
 }
 
 func (pi *minimalPluginInstance) LoadFactory(factory vm.Factory, hm vm.HostModule) error {
-	defs := make([]*vm.HostModuleFunctionDefinition, 0)
-	m := reflect.ValueOf(factory)
-	mT := reflect.TypeOf(factory)
-	for i := 0; i < m.NumMethod(); i++ {
-		mt := m.Method(i)
-		mtT := mT.Method(i)
-		if strings.HasPrefix(mtT.Name, "W_") {
-			defs = append(defs, &vm.HostModuleFunctionDefinition{
-				Name:    mtT.Name[2:],
-				Handler: mt.Interface(),
-			})
-		}
+	provider, ok := factory.(vm.HostFunctionProvider)
+	if !ok {
+		return fmt.Errorf("factory %q (%T) does not provide host functions", factory.Name(), factory)
 	}
-	return hm.Functions(defs...)
+	provider.RegisterHostFunctions(hm.Builder())
+	return nil
 }
 
 func (pi *minimalPluginInstance) Load(hm vm.HostModule) (vm.ModuleInstance, error) {

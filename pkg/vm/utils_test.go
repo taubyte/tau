@@ -7,6 +7,8 @@ import (
 	"math"
 	"testing"
 
+	wazy "github.com/samyfodil/wazy"
+	wazyapi "github.com/samyfodil/wazy/api"
 	"github.com/taubyte/tau/core/vm"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	fixtures "github.com/taubyte/tau/pkg/vm/fixtures/wasm"
@@ -14,34 +16,7 @@ import (
 	"github.com/taubyte/tau/pkg/vm/test_utils"
 )
 
-var (
-	theAnswer uint32 = 42
-
-	mockMemoryDef = &vm.HostModuleMemoryDefinition{
-		Name: "mock",
-		Pages: struct {
-			Min   uint64
-			Max   uint64
-			Maxed bool
-		}{
-			Min:   0,
-			Max:   10,
-			Maxed: false,
-		},
-	}
-
-	mockGlobalDef = &vm.HostModuleGlobalDefinition{
-		Name:  "mock",
-		Value: "hello_world",
-	}
-
-	testFunc = &vm.HostModuleFunctionDefinition{
-		Name: "_test",
-		Handler: func(ctx context.Context, val uint32) uint32 {
-			return val
-		},
-	}
-)
+var theAnswer uint32 = 42
 
 func newService() (vm.Context, vm.Service, error) {
 	test_utils.ResetVars()
@@ -78,31 +53,21 @@ func newBasicRuntime() (vm.Runtime, error) {
 		return nil, err
 	}
 
-	return instance.Runtime(nil)
-}
-
-func newRuntimeWithHostDefs() (vm.Runtime, error) {
-	instance, err := newInstance()
-	if err != nil {
-		return nil, err
-	}
-
-	return instance.Runtime(
-		&vm.HostModuleDefinitions{
-			Functions: []*vm.HostModuleFunctionDefinition{testFunc},
-			Memories:  []*vm.HostModuleMemoryDefinition{mockMemoryDef},
-			Globals:   []*vm.HostModuleGlobalDefinition{mockGlobalDef},
-		})
+	// The test fixture imports env._test; expose it via the registration hook.
+	return instance.Runtime(func(b wazy.HostModuleBuilder) {
+		wazy.HostFunc1(b.NewFunctionBuilder(), func(ctx context.Context, m wazyapi.Module, val uint32) uint32 {
+			return val
+		}).Export("_test")
+	})
 }
 
 func newModuleInstance() (vm.ModuleInstance, error) {
-	runtime, err := newRuntimeWithHostDefs()
+	runtime, err := newBasicRuntime()
 	if err != nil {
 		return nil, err
 	}
 
 	return runtime.Module(functionSpec.ModuleName(test_utils.TestFunc.Name))
-
 }
 
 func newFuncs(functionNames []string) (map[string]vm.FunctionInstance, error) {

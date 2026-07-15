@@ -14,7 +14,7 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_ethGetContractMethodSize(
+func (f *Factory) ethGetContractMethodSize(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -23,35 +23,35 @@ func (f *Factory) W_ethGetContractMethodSize(
 	methodSize,
 	inputSizePtr,
 	outputSizePtr uint32,
-) errno.Error {
+) uint32 {
 	client, err := f.getClient(clientId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	contract, err := client.getContract(contractId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	method, err := f.ReadString(module, methodPtr, methodSize)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	contractMethod, ok := contract.methods[method]
 	if !ok {
-		return errno.ErrorEthereumContractMethodNotFound
+		return uint32(errno.ErrorEthereumContractMethodNotFound)
 	}
 
 	if err := f.WriteStringSliceSize(module, inputSizePtr, contractMethod.inputs); err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteStringSliceSize(module, outputSizePtr, contractMethod.outputs)
+	return uint32(f.WriteStringSliceSize(module, outputSizePtr, contractMethod.outputs))
 }
 
-func (f *Factory) W_ethTransactContract(
+func (f *Factory) ethTransactContract(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -66,71 +66,71 @@ func (f *Factory) W_ethTransactContract(
 	inputsSize,
 	isJSON,
 	transactionIdPtr uint32,
-) errno.Error {
+) uint32 {
 	client, err0 := f.getClient(clientId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	chainId, err0 := f.ReadBigInt(module, chainIdPtr, chainIdSize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	contract, err0 := client.getContract(contractId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	methodName, err0 := f.ReadString(module, methodPtr, methodLen)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	method, ok := contract.methods[methodName]
 	if !ok {
-		return errno.ErrorEthereumContractMethodNotFound
+		return uint32(errno.ErrorEthereumContractMethodNotFound)
 	}
 	if method.constant {
-		return errno.ErrorEthereumCannotTransactFreeMethod
+		return uint32(errno.ErrorEthereumCannotTransactFreeMethod)
 	}
 
 	var inputs []interface{}
 	if booleans.ToBool(isJSON) {
 		inputsJSON, err0 := f.ReadBytes(module, inputsPtr, inputsSize)
 		if err0 != 0 {
-			return err0
+			return uint32(err0)
 		}
 
 		inputs, err0 = contract.inputsFromJSON(inputsJSON, methodName, methodInputs)
 		if err0 != 0 {
-			return err0
+			return uint32(err0)
 		}
 	} else {
 		inputsBytes, err0 := f.ReadBytesSlice(module, inputsPtr, inputsSize)
 		if err0 != 0 {
-			return err0
+			return uint32(err0)
 		}
 
 		inputs, err0 = verifyInputs(inputsBytes, method)
 		if err0 != 0 {
-			return err0
+			return uint32(err0)
 		}
 	}
 
 	privateKey, err0 := f.toEcdsa(module, privKeyPtr, privKeySize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
 	if err != nil {
-		return errno.ErrorEthereumBindTransactorFailed
+		return uint32(errno.ErrorEthereumBindTransactorFailed)
 	}
 
 	transaction, err := contract.Transact(auth, methodName, inputs...)
 	if err != nil {
-		return errno.ErrorEthereumTransactMethodFailed
+		return uint32(errno.ErrorEthereumTransactMethodFailed)
 	}
 
 	tx := &Transaction{
@@ -139,7 +139,7 @@ func (f *Factory) W_ethTransactContract(
 	}
 
 	if err0 := f.WriteUint32Le(module, transactionIdPtr, tx.Id); err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	contract.transactionsLock.Lock()
@@ -149,7 +149,7 @@ func (f *Factory) W_ethTransactContract(
 	return 0
 }
 
-func (f *Factory) W_ethCallContractSize(
+func (f *Factory) ethCallContractSize(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -160,62 +160,62 @@ func (f *Factory) W_ethCallContractSize(
 	inputsSize,
 	isJSON,
 	outPutSizePtr uint32,
-) errno.Error {
+) uint32 {
 	client, err0 := f.getClient(clientId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	contract, err0 := client.getContract(contractId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	methodName, err0 := f.ReadString(module, methodPtr, methodSize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	method, ok := contract.methods[methodName]
 	if !ok {
-		return errno.ErrorEthereumContractMethodNotFound
+		return uint32(errno.ErrorEthereumContractMethodNotFound)
 	}
 
 	if !method.constant {
-		return errno.ErrorEthereumCannotCallPaidMutatorTransaction
+		return uint32(errno.ErrorEthereumCannotCallPaidMutatorTransaction)
 	}
 
 	var inputs []interface{}
 	if booleans.ToBool(isJSON) {
 		inputsJSON, err0 := f.ReadBytes(module, inputsPtr, inputsSize)
 		if err0 != 0 {
-			return err0
+			return uint32(err0)
 		}
 
 		inputs, err0 = contract.inputsFromJSON(inputsJSON, methodName, methodInputs)
 		if err0 != 0 {
-			return err0
+			return uint32(err0)
 		}
 	} else {
 		inputsBytes, err0 := f.ReadBytesSlice(module, inputsPtr, inputsSize)
 		if err0 != 0 {
-			return err0
+			return uint32(err0)
 		}
 
 		inputs, err0 = verifyInputs(inputsBytes, method)
 		if err0 != 0 {
-			return err0
+			return uint32(err0)
 		}
 	}
 
 	results := make([]interface{}, 0)
 	err := contract.Call(nil, &results, methodName, inputs...)
 	if err != nil {
-		return errno.ErrorEthereumCallContractFailed
+		return uint32(errno.ErrorEthereumCallContractFailed)
 	}
 
 	if len(results) != len(method.outputs) {
-		return errno.ErrorEthereumInvalidContractMethodOutput
+		return uint32(errno.ErrorEthereumInvalidContractMethodOutput)
 	}
 
 	var outputs [][]byte
@@ -228,12 +228,12 @@ func (f *Factory) W_ethCallContractSize(
 
 		encoder, err := codec.Converter(outputType).Encoder()
 		if err != nil {
-			return errno.ErrorEthereumUnsupportedDataType
+			return uint32(errno.ErrorEthereumUnsupportedDataType)
 		}
 
 		value, err := encoder(output)
 		if err != nil {
-			return errno.ErrorEthereumParseOutputTypeFailed
+			return uint32(errno.ErrorEthereumParseOutputTypeFailed)
 		}
 
 		if len(value) == 0 {
@@ -245,10 +245,10 @@ func (f *Factory) W_ethCallContractSize(
 
 	method.data = outputs
 
-	return f.WriteBytesSliceSize(module, outPutSizePtr, outputs)
+	return uint32(f.WriteBytesSliceSize(module, outPutSizePtr, outputs))
 }
 
-func (f *Factory) W_ethCallContract(
+func (f *Factory) ethCallContract(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -256,31 +256,31 @@ func (f *Factory) W_ethCallContract(
 	methodPtr,
 	methodSize,
 	outputPtr uint32,
-) errno.Error {
+) uint32 {
 	client, err0 := f.getClient(clientId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	contract, err0 := client.getContract(contractId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	methodString, err0 := f.ReadString(module, methodPtr, methodSize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	method, ok := contract.methods[methodString]
 	if !ok {
-		return errno.ErrorEthereumContractMethodNotFound
+		return uint32(errno.ErrorEthereumContractMethodNotFound)
 	}
 
-	return f.WriteBytesSlice(module, outputPtr, method.data)
+	return uint32(f.WriteBytesSlice(module, outputPtr, method.data))
 }
 
-func (f *Factory) W_ethGetContractMethod(
+func (f *Factory) ethGetContractMethod(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -289,31 +289,31 @@ func (f *Factory) W_ethGetContractMethod(
 	methodSize,
 	inputPtr,
 	outputPtr uint32,
-) errno.Error {
+) uint32 {
 	client, err := f.getClient(clientId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	contract, err := client.getContract(contractId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	method, err := f.ReadString(module, methodPtr, methodSize)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	contractMethod, ok := contract.methods[method]
 	if !ok {
-		return errno.ErrorEthereumContractMethodNotFound
+		return uint32(errno.ErrorEthereumContractMethodNotFound)
 	}
 
 	err = f.WriteStringSlice(module, inputPtr, contractMethod.inputs)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteStringSlice(module, outputPtr, contractMethod.outputs)
+	return uint32(f.WriteStringSlice(module, outputPtr, contractMethod.outputs))
 }

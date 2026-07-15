@@ -8,39 +8,39 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_setHttpRequestMethod(ctx context.Context, module common.Module,
+func (f *Factory) setHttpRequestMethod(ctx context.Context, module common.Module,
 	clientId,
 	requestId,
 	method uint32,
-) (err errno.Error) {
+) uint32 {
 	_, request, err := f.getClientAndRequest(clientId, requestId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	var err0 error
 	request.Method, err0 = convert.MethodUintToString(method)
 	if err0 != nil {
-		return errno.ErrorInvalidMethod
+		return uint32(errno.ErrorInvalidMethod)
 	}
 
-	return
+	return uint32(0)
 }
 
-func (f *Factory) W_getHttpRequestMethod(ctx context.Context, module common.Module,
+func (f *Factory) getHttpRequestMethod(ctx context.Context, module common.Module,
 	clientId,
 	requestId,
 	methodPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	_, request, err := f.getClientAndRequest(clientId, requestId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	method, err0 := convert.MethodStringToUint(request.Method)
 	if err0 != nil {
-		return errno.ErrorInvalidMethod
+		return uint32(errno.ErrorInvalidMethod)
 	}
 
-	return f.WriteUint32Le(module, methodPtr, method)
+	return uint32(f.WriteUint32Le(module, methodPtr, method))
 }

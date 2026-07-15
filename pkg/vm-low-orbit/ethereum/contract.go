@@ -14,7 +14,7 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_ethDeployContract(
+func (f *Factory) ethDeployContract(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -27,50 +27,50 @@ func (f *Factory) W_ethDeployContract(
 	eventsSizePtr,
 	contractIdPtr,
 	transactionIdPtr uint32,
-) errno.Error {
+) uint32 {
 	client, err0 := f.getClient(clientId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	abiJson, err0 := f.ReadBytes(module, abiPtr, abiSize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	chainId, err0 := f.ReadBigInt(module, chainIdPtr, chainIdSize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	parsedAbi, err := abi.JSON(bytes.NewReader(abiJson))
 	if err != nil {
-		return errno.ErrorEthereumParsingAbiFailed
+		return uint32(errno.ErrorEthereumParsingAbiFailed)
 	}
 
 	privateKey, err0 := f.toEcdsa(module, privKeyPtr, privKeySize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	bin, err0 := f.ReadString(module, binPtr, binLen)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	auth, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
 	if err != nil {
-		return errno.ErrorEthereumBindTransactorFailed
+		return uint32(errno.ErrorEthereumBindTransactorFailed)
 	}
 
 	address, transaction, boundContract, err := bind.DeployContract(auth, parsedAbi, ethCommon.FromHex(bin), client)
 	if err != nil {
-		return errno.ErrorEthereumDeployFailed
+		return uint32(errno.ErrorEthereumDeployFailed)
 	}
 
 	contract, err0 := f.handleBoundContractSize(module, client, boundContract, parsedAbi, contractIdPtr, methodsSizePtr, eventsSizePtr)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	tx := &Transaction{
@@ -79,11 +79,11 @@ func (f *Factory) W_ethDeployContract(
 	}
 
 	if err0 := f.WriteBytes(module, addressPtr, address[:]); err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	if err0 := f.WriteUint32Le(module, transactionIdPtr, tx.Id); err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	contract.transactionsLock.Lock()
@@ -93,7 +93,7 @@ func (f *Factory) W_ethDeployContract(
 	return 0
 }
 
-func (f *Factory) W_ethNewContractSize(
+func (f *Factory) ethNewContractSize(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -104,20 +104,20 @@ func (f *Factory) W_ethNewContractSize(
 	methodsSizePtr,
 	eventsSizePtr,
 	contractPtr uint32,
-) errno.Error {
+) uint32 {
 	client, err0 := f.getClient(clientId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	abiJson, err0 := f.ReadBytes(module, abiPtr, abiSize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	parsedAbi, err := abi.JSON(bytes.NewReader(abiJson))
 	if err != nil {
-		return errno.ErrorEthereumParsingAbiFailed
+		return uint32(errno.ErrorEthereumParsingAbiFailed)
 	}
 
 	var contractAddress ethCommon.Address
@@ -129,25 +129,25 @@ func (f *Factory) W_ethNewContractSize(
 	contract := bind.NewBoundContract(contractAddress, parsedAbi, client, client, client)
 	_, err0 = f.handleBoundContractSize(module, client, contract, parsedAbi, contractPtr, methodsSizePtr, eventsSizePtr)
 
-	return err0
+	return uint32(err0)
 }
 
-func (f *Factory) W_ethNewContract(
+func (f *Factory) ethNewContract(
 	ctx context.Context,
 	module common.Module,
 	clientId,
 	contractId,
 	methodsPtr,
 	eventsPtr uint32,
-) errno.Error {
+) uint32 {
 	client, err0 := f.getClient(clientId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	contract, err0 := client.getContract(contractId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	var methodList []string
@@ -163,8 +163,8 @@ func (f *Factory) W_ethNewContract(
 	contract.eventsLock.RUnlock()
 
 	if err0 := f.WriteStringSlice(module, eventsPtr, events); err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
-	return f.WriteStringSlice(module, methodsPtr, methodList)
+	return uint32(f.WriteStringSlice(module, methodsPtr, methodList))
 }

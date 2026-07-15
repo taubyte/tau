@@ -9,7 +9,7 @@ DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xa
 # web3-gated code.
 WEB3_PKGS = $(shell grep -rl --include='*.go' '//go:build web3' . | xargs -n1 dirname | sort -u | sed 's|^\([^./]\)|./\1|; s|$$|/...|')
 
-.PHONY: test test-dreaming test-web3 test-raft test-docker test-all bench-dreaming gen-hostfn
+.PHONY: test test-dreaming test-web3 test-raft test-docker test-all bench-dreaming 
 
 test:
 	go test $(FLAGS) ./...
@@ -27,11 +27,6 @@ test-docker:
 	go test -tags docker_integration -run '_Integration$$' -p 1 $(FLAGS) ./pkg/containers/...
 
 test-all: test test-dreaming test-web3 test-raft
-
-# Regenerate reflection-free host-function registration for every factory that
-# defines W_ methods (see tools/hostfn-gen). Run after adding/changing one.
-gen-hostfn:
-	go run ./tools/hostfn-gen -roots pkg/vm-low-orbit,pkg/vm-ops-orbit -out zz_generated_hostfn.go
 
 # Profiling benchmarks over a live dream universe (dream/benchmarks).
 # Examples:

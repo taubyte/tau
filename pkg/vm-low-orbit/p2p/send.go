@@ -8,69 +8,69 @@ import (
 	res "github.com/taubyte/tau/p2p/streams/command/response"
 )
 
-func (f *Factory) W_sendCommand(ctx context.Context, module common.Module,
+func (f *Factory) sendCommand(ctx context.Context, module common.Module,
 	commandId,
 	dataBuf, dataSize, // body
 	responseSize uint32,
-) (err0 errno.Error) {
-	cmd, err0 := f.getCommand(commandId)
-	if err0 != 0 {
-		return
+) (err0 uint32) {
+	cmd, err := f.getCommand(commandId)
+	if err != 0 {
+		return uint32(err)
 	}
 
-	data, err0 := f.ReadBytes(module, dataBuf, dataSize)
-	if err0 != 0 {
-		return
+	data, err := f.ReadBytes(module, dataBuf, dataSize)
+	if err != 0 {
+		return uint32(err)
 	}
 
-	responseMap, err := cmd.Send(ctx, map[string]interface{}{"data": data})
-	if err != nil {
-		return errno.ErrorP2PSendFailed
+	responseMap, err2 := cmd.Send(ctx, map[string]interface{}{"data": data})
+	if err2 != nil {
+		return uint32(errno.ErrorP2PSendFailed)
 	}
 
-	return f.handleCommandResponse(module, responseMap, cmd, responseSize)
+	return uint32(f.handleCommandResponse(module, responseMap, cmd, responseSize))
 }
 
-func (f *Factory) W_sendCommandTo(ctx context.Context, module common.Module,
+func (f *Factory) sendCommandTo(ctx context.Context, module common.Module,
 	commandId,
 	cidBuf,
 	dataBuf, dataSize,
 	responseSize uint32,
-) (err0 errno.Error) {
-	cmd, err0 := f.getCommand(commandId)
-	if err0 != 0 {
-		return
+) (err0 uint32) {
+	cmd, err := f.getCommand(commandId)
+	if err != 0 {
+		return uint32(err)
 	}
 
-	cid, err0 := f.ReadCid(module, cidBuf)
-	if err0 != 0 {
-		return
+	cid, err := f.ReadCid(module, cidBuf)
+	if err != 0 {
+		return uint32(err)
 	}
 
-	data, err0 := f.ReadBytes(module, dataBuf, dataSize)
-	if err0 != 0 {
-		return
+	data, err := f.ReadBytes(module, dataBuf, dataSize)
+	if err != 0 {
+		return uint32(err)
 	}
 
-	responseMap, err := cmd.SendTo(ctx, cid, map[string]interface{}{"data": data})
-	if err != nil {
-		return errno.ErrorP2PSendFailed
+	responseMap, err2 := cmd.SendTo(ctx, cid, map[string]interface{}{"data": data})
+	if err2 != nil {
+		return uint32(errno.ErrorP2PSendFailed)
 	}
 
-	return f.handleCommandResponse(module, responseMap, cmd, responseSize)
+	return uint32(f.handleCommandResponse(module, responseMap, cmd, responseSize))
 }
 
-func (f *Factory) handleCommandResponse(module common.Module, response res.Response, cmd *Command, responseSize uint32) errno.Error {
+func (f *Factory) handleCommandResponse(module common.Module, response res.Response, cmd *Command, responseSize uint32) uint32 {
 	data, err := response.Get("data")
 	if err != nil {
-		return errno.ErrorMarshalDataFailed
+		return uint32(errno.ErrorMarshalDataFailed)
 	}
 
 	var ok bool
 	cmd.Body, ok = data.([]byte)
 	if !ok {
-		return errno.ErrorMarshalDataFailed
+		return uint32(errno.ErrorMarshalDataFailed)
 	}
 
-	return f.WriteBytesSize(module, responseSize, cmd.Body)
+	return uint32(f.WriteBytesSize(module, responseSize, cmd.Body))
 }

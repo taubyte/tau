@@ -12,72 +12,72 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_ethPubKeyFromSignedMessage(
+func (f *Factory) ethPubKeyFromSignedMessage(
 	ctx context.Context,
 	module common.Module,
 	messagePtr, messageSize,
 	signaturePtr, signatureSize,
 	pubKeyPtr uint32,
-) errno.Error {
+) uint32 {
 	message, err0 := f.ReadBytes(module, messagePtr, messageSize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	signature, err0 := f.ReadBytes(module, signaturePtr, signatureSize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	messageHash := crypto.Keccak256Hash(message)
 
 	publicKey, err := crypto.Ecrecover(messageHash.Bytes(), signature)
 	if err != nil {
-		return errno.ErrorEthereumRecoverPubKeyFailed
+		return uint32(errno.ErrorEthereumRecoverPubKeyFailed)
 	}
 
-	return f.WriteBytes(module, pubKeyPtr, publicKey)
+	return uint32(f.WriteBytes(module, pubKeyPtr, publicKey))
 }
 
-func (f *Factory) W_ethHexToECDSA(
+func (f *Factory) ethHexToECDSA(
 	ctx context.Context,
 	module common.Module,
 	hexStringPtr, hexStringLen,
 	bufPtr uint32,
-) errno.Error {
+) uint32 {
 	hexString, err0 := f.ReadString(module, hexStringPtr, hexStringLen)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	privKey, err := crypto.HexToECDSA(hexString)
 	if err != nil {
-		return errno.ErrorEthereumInvalidHexKey
+		return uint32(errno.ErrorEthereumInvalidHexKey)
 	}
 
-	return f.WriteBytes(module, bufPtr, privKey.D.Bytes())
+	return uint32(f.WriteBytes(module, bufPtr, privKey.D.Bytes()))
 }
 
-func (f *Factory) W_ethPubFromPriv(
+func (f *Factory) ethPubFromPriv(
 	ctx context.Context,
 	module common.Module,
 	privKeyPtr, PrivKeySize,
 	bufPtr uint32,
-) errno.Error {
+) uint32 {
 	pkBytes, err0 := f.ReadBytes(module, privKeyPtr, PrivKeySize)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	pk, err := crypto.ToECDSA(pkBytes)
 	if err != nil {
-		return errno.ErrorEthereumInvalidPrivateKey
+		return uint32(errno.ErrorEthereumInvalidPrivateKey)
 	}
 
 	publicKey, ok := pk.Public().(*ecdsa.PublicKey)
 	if !ok {
-		return errno.ErrorEthereumInvalidPublicKey
+		return uint32(errno.ErrorEthereumInvalidPublicKey)
 	}
 
-	return f.WriteBytes(module, bufPtr, crypto.FromECDSAPub(publicKey))
+	return uint32(f.WriteBytes(module, bufPtr, crypto.FromECDSAPub(publicKey)))
 }

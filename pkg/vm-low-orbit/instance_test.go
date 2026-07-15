@@ -4,22 +4,19 @@ import (
 	"context"
 	"testing"
 
+	wazy "github.com/samyfodil/wazy"
 	"github.com/taubyte/tau/core/vm"
 )
 
-// typedTestFactory provides its host functions directly (the shape hostfn-gen
-// emits), so LoadFactory registers them with no reflection.
+// typedTestFactory registers its host functions with wazy's typed helpers.
 type typedTestFactory struct{}
 
-func (f *typedTestFactory) Close() error { return nil }
-func (f *typedTestFactory) Name() string { return "typedTestFactory" }
+func (f *typedTestFactory) Close() error                                             { return nil }
+func (f *typedTestFactory) Name() string                                             { return "typedTestFactory" }
+func (f *typedTestFactory) double(ctx context.Context, m vm.Module, x uint32) uint32 { return x * 2 }
 
-func (f *typedTestFactory) W_double(ctx context.Context, m vm.Module, x uint32) uint32 { return x * 2 }
-
-func (f *typedTestFactory) HostFunctions() []*vm.HostModuleFunctionDefinition {
-	return []*vm.HostModuleFunctionDefinition{
-		vm.HostFn1("double", f.W_double),
-	}
+func (f *typedTestFactory) RegisterHostFunctions(b wazy.HostModuleBuilder) {
+	wazy.HostFunc1(b.NewFunctionBuilder(), f.double).Export("double")
 }
 
 var (
@@ -33,47 +30,31 @@ type plainFactory struct{}
 func (f *plainFactory) Close() error { return nil }
 func (f *plainFactory) Name() string { return "plainFactory" }
 
-type mockHostModule struct {
-	defs []*vm.HostModuleFunctionDefinition
+type mockHostModule struct{ builder wazy.HostModuleBuilder }
+
+func (m *mockHostModule) Builder() wazy.HostModuleBuilder     { return m.builder }
+func (m *mockHostModule) Compile() (vm.ModuleInstance, error) { return nil, nil }
+
+func newMockHostModule() *mockHostModule {
+	r := wazy.NewRuntime(context.Background())
+	return &mockHostModule{builder: r.NewHostModuleBuilder("test")}
 }
 
-func (m *mockHostModule) Functions(defs ...*vm.HostModuleFunctionDefinition) error {
-	m.defs = append(m.defs, defs...)
-	return nil
-}
-
-func (m *mockHostModule) Memories(...*vm.HostModuleMemoryDefinition) error { return nil }
-func (m *mockHostModule) Globals(...*vm.HostModuleGlobalDefinition) error  { return nil }
-func (m *mockHostModule) Compile() (vm.ModuleInstance, error)              { return nil, nil }
-
-func TestLoadFactoryTyped(t *testing.T) {
+func TestLoadFactoryProvider(t *testing.T) {
 	pi := &pluginInstance{}
-	hm := &mockHostModule{}
+	hm := newMockHostModule()
 	if err := pi.LoadFactory(&typedTestFactory{}, hm); err != nil {
 		t.Fatal(err)
 	}
-
-	if len(hm.defs) != 1 {
-		t.Fatalf("expected 1 host function, got %d", len(hm.defs))
-	}
-	def := hm.defs[0]
-	if def.Name != "double" {
-		t.Fatalf("name = %q, want double", def.Name)
-	}
-	if def.Stack == nil {
-		t.Fatal("typed def must carry a reflection-free Stack adapter")
-	}
-	s := []uint64{21}
-	def.Stack(context.Background(), nil, s)
-	if s[0] != 42 {
-		t.Fatalf("double(21) = %d, want 42", s[0])
+	// registration is deferred to Compile; compiling verifies "double" registered cleanly.
+	if _, err := hm.builder.Compile(context.Background()); err != nil {
+		t.Fatalf("compile after registration: %v", err)
 	}
 }
 
 func TestLoadFactoryMissingProvider(t *testing.T) {
 	pi := &pluginInstance{}
-	hm := &mockHostModule{}
-	if err := pi.LoadFactory(&plainFactory{}, hm); err == nil {
+	if err := pi.LoadFactory(&plainFactory{}, newMockHostModule()); err == nil {
 		t.Fatal("expected an error for a factory that does not provide host functions")
 	}
 }

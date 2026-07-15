@@ -8,22 +8,22 @@ import (
 	"github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_cryptoRead(
+func (f *Factory) cryptoRead(
 	ctx context.Context,
 	module vm.Module,
 	bufPtr,
 	bufLen,
 	readPtr uint32,
-) errno.Error {
+) uint32 {
 	buf := make([]byte, bufLen)
 	n, err := rand.Read(buf)
 	if err != nil {
-		return errno.ErrorRandRead
+		return uint32(errno.ErrorRandRead)
 	}
 
 	if err := f.WriteUint64Le(module, readPtr, uint64(n)); err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteBytes(module, bufPtr, buf)
+	return uint32(f.WriteBytes(module, bufPtr, buf))
 }

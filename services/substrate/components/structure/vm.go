@@ -1,6 +1,7 @@
 package structure
 
 import (
+	wazy "github.com/samyfodil/wazy"
 	"github.com/taubyte/tau/core/vm"
 )
 
@@ -44,7 +45,7 @@ func (*testInstance) Call(vm.Runtime, interface{}) error {
 	return nil
 }
 
-func (*testInstance) Runtime(*vm.HostModuleDefinitions) (vm.Runtime, error) {
+func (*testInstance) Runtime(...func(wazy.HostModuleBuilder)) (vm.Runtime, error) {
 	return &testRuntime{}, nil
 }
 

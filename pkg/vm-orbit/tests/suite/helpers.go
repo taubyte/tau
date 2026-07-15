@@ -67,7 +67,7 @@ func New(ctx context.Context) (*suite, error) {
 		return nil, fmt.Errorf("creating new vm instance failed with: %w", err)
 	}
 
-	rt, err := instance.Runtime(nil)
+	rt, err := instance.Runtime()
 	if err != nil {
 		ctxC()
 		return nil, fmt.Errorf("creating new vm runtime failed with: %w", err)

@@ -38,31 +38,31 @@ func (f *Factory) getOrCreateStream(protocol string) (p2p.Stream, errno.Error) {
 	return stream, 0
 }
 
-func (f *Factory) W_newCommand(
+func (f *Factory) newCommand(
 	ctx context.Context,
 	module common.Module,
 	protocolPtr, protocolLen,
 	commandPtr, commandLen,
 	commandIdPtr uint32,
-) (err errno.Error) {
-	protocol, err := f.ReadString(module, protocolPtr, protocolLen)
-	if err != 0 {
-		return
+) (err uint32) {
+	protocol, err0 := f.ReadString(module, protocolPtr, protocolLen)
+	if err0 != 0 {
+		return uint32(err0)
 	}
 
-	command, err := f.ReadString(module, commandPtr, commandLen)
-	if err != 0 {
-		return
+	command, err0 := f.ReadString(module, commandPtr, commandLen)
+	if err0 != 0 {
+		return uint32(err0)
 	}
 
-	stream, err := f.getOrCreateStream(protocol)
-	if err != 0 {
-		return
+	stream, err0 := f.getOrCreateStream(protocol)
+	if err0 != 0 {
+		return uint32(err0)
 	}
 
-	cmd, err0 := stream.Command(command)
-	if err0 != nil {
-		return errno.ErrorCommandCreateFailed
+	cmd, err0err := stream.Command(command)
+	if err0err != nil {
+		return uint32(errno.ErrorCommandCreateFailed)
 	}
 
 	_cmd := &Command{
@@ -74,44 +74,44 @@ func (f *Factory) W_newCommand(
 	defer f.commandsLock.Unlock()
 	f.commands[_cmd.Id] = _cmd
 
-	return f.WriteUint32Le(module, commandIdPtr, _cmd.Id)
+	return uint32(f.WriteUint32Le(module, commandIdPtr, _cmd.Id))
 }
 
-func (f *Factory) W_listenToProtocolSize(ctx context.Context, module common.Module,
+func (f *Factory) listenToProtocolSize(ctx context.Context, module common.Module,
 	protocolPtr, protocolLen,
 	responseSizePtr uint32,
-) (err errno.Error) {
-	protocol, err := f.ReadString(module, protocolPtr, protocolLen)
-	if err != 0 {
-		return
+) (err uint32) {
+	protocol, err0 := f.ReadString(module, protocolPtr, protocolLen)
+	if err0 != 0 {
+		return uint32(err0)
 	}
 
-	stream, err := f.getOrCreateStream(protocol)
-	if err != 0 {
-		return
+	stream, err0 := f.getOrCreateStream(protocol)
+	if err0 != 0 {
+		return uint32(err0)
 	}
 
-	protocolToSend, err0 := stream.Listen()
-	if err0 != nil {
-		return errno.ErrorP2PListenFailed
+	protocolToSend, err0err := stream.Listen()
+	if err0err != nil {
+		return uint32(errno.ErrorP2PListenFailed)
 	}
 
 	f.setListenProtocol(protocolToSend)
 
-	return f.WriteStringSize(module, responseSizePtr, protocolToSend)
+	return uint32(f.WriteStringSize(module, responseSizePtr, protocolToSend))
 }
 
-func (f *Factory) W_listenToProtocol(ctx context.Context, module common.Module,
+func (f *Factory) listenToProtocol(ctx context.Context, module common.Module,
 	protocolPtr, protocolLen,
 	response, responseSize uint32,
-) (err errno.Error) {
+) (err uint32) {
 	protocol := f.getListenProtocol()
 
 	if responseSize != uint32(len(protocol)) {
-		return errno.ErrorEOF
+		return uint32(errno.ErrorEOF)
 	}
 
-	return f.WriteString(module, response, protocol)
+	return uint32(f.WriteString(module, response, protocol))
 }
 
 func (f *Factory) setListenProtocol(protocol string) {

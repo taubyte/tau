@@ -102,7 +102,7 @@ func (e *Event) TypeU64() uint32 {
 	return uint32(e.Type)
 }
 
-func (f *Factory) W_getEventType(ctx context.Context, module vmCommon.Module, eventId uint32, typeIdPtr uint32) {
+func (f *Factory) getEventType(ctx context.Context, module vmCommon.Module, eventId uint32, typeIdPtr uint32) {
 	e, err := f.getEvent(eventId)
 	if err != 0 {
 		return

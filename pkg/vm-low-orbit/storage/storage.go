@@ -10,14 +10,14 @@ import (
 	storageSpecs "github.com/taubyte/tau/pkg/specs/storage"
 )
 
-func (f *Factory) W_storageGet(ctx context.Context,
+func (f *Factory) storageGet(ctx context.Context,
 	module common.Module,
 	storageMatchPtr, storageMatchSize,
 	idPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storageMatch, err := f.ReadString(module, storageMatchPtr, storageMatchSize)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	_ctx := f.parent.Context()
@@ -30,46 +30,46 @@ func (f *Factory) W_storageGet(ctx context.Context,
 
 	storage, err0 := f.storageNode.Get(storageContext)
 	if err0 != nil {
-		return errno.ErrorStorageNotFound
+		return uint32(errno.ErrorStorageNotFound)
 	}
 
 	_storage := f.createStoragePointer(storage)
 
-	return f.WriteUint32Le(module, idPtr, uint32(_storage.id))
+	return uint32(f.WriteUint32Le(module, idPtr, uint32(_storage.id)))
 }
 
-func (f *Factory) W_storageListFilesSize(ctx context.Context, module common.Module,
+func (f *Factory) storageListFilesSize(ctx context.Context, module common.Module,
 	storageId,
 	sizePtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	filePaths, err0 := storage.List(ctx, path.Join(storageSpecs.FilePath.String()))
 	if err0 != nil {
-		return errno.ErrorStorageListFailed
+		return uint32(errno.ErrorStorageListFailed)
 	}
 
-	return f.WriteStringSliceSize(module, sizePtr, filePaths)
+	return uint32(f.WriteStringSliceSize(module, sizePtr, filePaths))
 }
 
-func (f *Factory) W_storageListFiles(ctx context.Context, module common.Module,
+func (f *Factory) storageListFiles(ctx context.Context, module common.Module,
 	storageId,
 	sizePtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	filePaths, err0 := storage.List(ctx, path.Join(storageSpecs.FilePath.String()))
 	if err0 != nil {
-		return errno.ErrorStorageListFailed
+		return uint32(errno.ErrorStorageListFailed)
 	}
 
-	return f.WriteStringSlice(module, sizePtr, filePaths)
+	return uint32(f.WriteStringSlice(module, sizePtr, filePaths))
 }
 
 func (f *Factory) createStoragePointer(storage storage.Storage) *Storage {

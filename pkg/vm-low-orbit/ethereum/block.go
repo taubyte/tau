@@ -31,27 +31,27 @@ func (f *Factory) getBlock(clientId uint32, blockId uint64) (block *Block, err e
 	return
 }
 
-func (f *Factory) W_ethBlockByNumber(
+func (f *Factory) ethBlockByNumber(
 	ctx context.Context,
 	module common.Module,
 	clientId,
 	size,
 	bufPtr,
 	blockIdPtr uint32,
-) errno.Error {
+) uint32 {
 	c, err := f.getClient(clientId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	blockNumber, err := f.ReadBigInt(module, bufPtr, size)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	block, err0 := c.BlockByNumber(f.ctx, blockNumber)
 	if err0 != nil {
-		return errno.ErrorEthereumBlockNotFound
+		return uint32(errno.ErrorEthereumBlockNotFound)
 	}
 
 	b := &Block{Id: block.NumberU64(), Block: block, transactions: make(map[uint32]*Transaction)}
@@ -59,64 +59,64 @@ func (f *Factory) W_ethBlockByNumber(
 	c.blocks[b.Id] = b
 	c.blocksLock.Unlock()
 
-	return f.WriteUint64Le(module, blockIdPtr, b.Id)
+	return uint32(f.WriteUint64Le(module, blockIdPtr, b.Id))
 }
 
-func (f *Factory) W_ethCurrentBlockNumber(
+func (f *Factory) ethCurrentBlockNumber(
 	ctx context.Context,
 	module common.Module,
 	clientId,
 	blockNumberPtr uint32,
-) errno.Error {
+) uint32 {
 	client, err0 := f.getClient(clientId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	blockNumber, err := client.BlockNumber(f.ctx)
 	if err != nil {
-		return errno.ErrorEthereumBlockNotFound
+		return uint32(errno.ErrorEthereumBlockNotFound)
 	}
 
-	return f.WriteUint64Le(module, blockNumberPtr, blockNumber)
+	return uint32(f.WriteUint64Le(module, blockNumberPtr, blockNumber))
 }
 
-func (f *Factory) W_ethBlockNumberFromIdSize(
+func (f *Factory) ethBlockNumberFromIdSize(
 	ctx context.Context,
 	module common.Module,
 	clientId,
 	blockIdPtr,
 	lenPtr uint32,
-) errno.Error {
+) uint32 {
 	blockId, err := f.ReadUint64Le(module, blockIdPtr)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	block, err := f.getBlock(clientId, blockId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteBytesConvertibleSize(module, lenPtr, block.Number())
+	return uint32(f.WriteBytesConvertibleSize(module, lenPtr, block.Number()))
 }
 
-func (f *Factory) W_ethBlockNumberFromId(
+func (f *Factory) ethBlockNumberFromId(
 	ctx context.Context,
 	module common.Module,
 	clientId,
 	blockIdPtr,
 	bufPtr uint32,
-) errno.Error {
+) uint32 {
 	blockId, err := f.ReadUint64Le(module, blockIdPtr)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	block, err := f.getBlock(clientId, blockId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteBytesConvertible(module, bufPtr, block.Number())
+	return uint32(f.WriteBytesConvertible(module, bufPtr, block.Number()))
 }

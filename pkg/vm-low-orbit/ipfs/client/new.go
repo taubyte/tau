@@ -6,7 +6,6 @@ package client
 import (
 	"context"
 
-	"github.com/taubyte/go-sdk/errno"
 	common "github.com/taubyte/tau/core/vm"
 )
 
@@ -19,9 +18,9 @@ func (f *Factory) generateClientId() uint32 {
 	return f.clientsIdToGrab
 }
 
-func (f *Factory) W_newIpfsClient(ctx context.Context, module common.Module,
+func (f *Factory) newIpfsClient(ctx context.Context, module common.Module,
 	clientIdPtr uint32,
-) errno.Error {
+) uint32 {
 	c := &Client{
 		Id:       f.generateClientId(),
 		Contents: make(map[uint32]*content),
@@ -31,5 +30,5 @@ func (f *Factory) W_newIpfsClient(ctx context.Context, module common.Module,
 	defer f.clientsLock.Unlock()
 	f.clients[c.Id] = c
 
-	return f.WriteUint32Le(module, clientIdPtr, c.Id)
+	return uint32(f.WriteUint32Le(module, clientIdPtr, c.Id))
 }

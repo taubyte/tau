@@ -3,24 +3,23 @@ package event
 import (
 	"context"
 
-	"github.com/taubyte/go-sdk/errno"
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_getHttpEventUserAgentSize(ctx context.Context, module common.Module, eventId uint32, sizePtr uint32) errno.Error {
+func (f *Factory) getHttpEventUserAgentSize(ctx context.Context, module common.Module, eventId uint32, sizePtr uint32) uint32 {
 	r, err := f.getEventRequest(eventId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteStringSize(module, sizePtr, r.UserAgent())
+	return uint32(f.WriteStringSize(module, sizePtr, r.UserAgent()))
 }
 
-func (f *Factory) W_getHttpEventUserAgent(ctx context.Context, module common.Module, eventId uint32, bufPtr uint32, bufSize uint32) errno.Error {
+func (f *Factory) getHttpEventUserAgent(ctx context.Context, module common.Module, eventId uint32, bufPtr uint32, bufSize uint32) uint32 {
 	r, err := f.getEventRequest(eventId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteString(module, bufPtr, r.UserAgent())
+	return uint32(f.WriteString(module, bufPtr, r.UserAgent()))
 }

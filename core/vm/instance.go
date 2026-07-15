@@ -5,6 +5,7 @@ import (
 
 	"context"
 
+	wazy "github.com/samyfodil/wazy"
 	api "github.com/samyfodil/wazy/api"
 	"github.com/spf13/afero"
 )
@@ -16,8 +17,10 @@ type Instance interface {
 	// Close will close the Instance
 	Close() error
 
-	// Runtime returns a new Function Instance Runtime
-	Runtime(*HostModuleDefinitions) (Runtime, error)
+	// Runtime returns a new Function Instance Runtime. Optional register
+	// callbacks add extra host functions to the built-in `env` module (used by
+	// tests to expose fixtures' host imports).
+	Runtime(register ...func(wazy.HostModuleBuilder)) (Runtime, error)
 
 	// Filesystem returns the filesystem used by the given Instance.
 	Filesystem() afero.Fs

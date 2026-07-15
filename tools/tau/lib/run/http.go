@@ -46,7 +46,7 @@ func HttpFunction(ctx context.Context, wasmPath string, fnSpec *structureSpec.Fu
 	}
 	defer instance.Close()
 
-	rt, err := instance.Runtime(nil)
+	rt, err := instance.Runtime()
 	if err != nil {
 		return fmt.Errorf("creating runtime: %w", err)
 	}

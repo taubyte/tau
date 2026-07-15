@@ -33,23 +33,23 @@ func (f *Factory) getClient(clientId uint32) (*Client, errno.Error) {
 	return nil, errno.ErrorClientNotFound
 }
 
-func (f *Factory) W_ethNew(ctx context.Context, module common.Module,
+func (f *Factory) ethNew(ctx context.Context, module common.Module,
 	clientIdPtr,
 	urlPtr,
 	urlLen,
 	optionsPtr,
 	optionsSize uint32,
-) errno.Error {
+) uint32 {
 	url, err0 := f.ReadString(module, urlPtr, urlLen)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	var dialOptions []byte
 	if optionsSize > 0 {
 		dialOptions, err0 = f.ReadBytes(module, optionsPtr, optionsSize)
 		if err0 != 0 {
-			return err0
+			return uint32(err0)
 		}
 	}
 
@@ -58,7 +58,7 @@ func (f *Factory) W_ethNew(ctx context.Context, module common.Module,
 	opts := sdkRpc.DialOptions{}
 	if len(dialOptions) > 0 {
 		if err := opts.UnmarshalJSON(dialOptions); err != nil {
-			return errno.ErrorEthereumRPCOptionUnmarshalFailed
+			return uint32(errno.ErrorEthereumRPCOptionUnmarshalFailed)
 		}
 	}
 
@@ -68,7 +68,7 @@ func (f *Factory) W_ethNew(ctx context.Context, module common.Module,
 
 	rpcClient, err := rpc.DialOptions(f.ctx, url, rpcOpts...)
 	if err != nil {
-		return errno.ErrorEthereumNewClient
+		return uint32(errno.ErrorEthereumNewClient)
 	}
 
 	c := Client{
@@ -82,17 +82,17 @@ func (f *Factory) W_ethNew(ctx context.Context, module common.Module,
 	defer f.clientsLock.Unlock()
 	f.clients[c.Id] = &c
 
-	return f.WriteUint32Le(module, clientIdPtr, c.Id)
+	return uint32(f.WriteUint32Le(module, clientIdPtr, c.Id))
 }
 
-func (f *Factory) W_ethCloseClient(
+func (f *Factory) ethCloseClient(
 	ctx context.Context,
 	module common.Module,
 	clientId uint32,
-) errno.Error {
+) uint32 {
 	client, err := f.getClient(clientId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	client.Close()

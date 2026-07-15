@@ -13,15 +13,15 @@ type pluginInstance struct {
 	factories []vm.Factory
 }
 
-// LoadFactory registers a factory's host functions from its generated,
-// reflection-free HostFunctions() (see hostfn-gen). Every factory in the plugin
-// implements vm.HostFunctionProvider.
+// LoadFactory registers a factory's host functions onto the host-module
+// builder. Every factory in the plugin implements vm.HostFunctionProvider.
 func (i *pluginInstance) LoadFactory(factory vm.Factory, hm vm.HostModule) error {
 	provider, ok := factory.(vm.HostFunctionProvider)
 	if !ok {
 		return fmt.Errorf("factory %q (%T) does not provide host functions", factory.Name(), factory)
 	}
-	return hm.Functions(provider.HostFunctions()...)
+	provider.RegisterHostFunctions(hm.Builder())
+	return nil
 }
 func (i *pluginInstance) Load(hm vm.HostModule) (moduleInstance vm.ModuleInstance, err error) {
 	for _, factory := range i.factories {

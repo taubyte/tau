@@ -26,12 +26,8 @@ func (r *runtime) Close() error {
 
 func (r *runtime) Expose(name string) (vm.HostModule, error) {
 	return &hostModule{
-		ctx:       r.instance.ctx,
-		name:      name,
-		runtime:   r,
-		functions: make(map[string]functionDef),
-		memories:  make(map[string]memoryPages),
-		globals:   make(map[string]interface{}),
+		ctx:     r.instance.ctx,
+		builder: r.runtime.NewHostModuleBuilder(name),
 	}, nil
 }
 
@@ -54,12 +50,8 @@ func (r *runtime) Attach(plugin vm.Plugin) (vm.PluginInstance, vm.ModuleInstance
 	}
 
 	hm := &hostModule{
-		ctx:       r.instance.ctx,
-		name:      plugin.Name(),
-		runtime:   r,
-		functions: make(map[string]functionDef),
-		memories:  make(map[string]memoryPages),
-		globals:   make(map[string]interface{}),
+		ctx:     r.instance.ctx,
+		builder: r.runtime.NewHostModuleBuilder(plugin.Name()),
 	}
 
 	minst, err := pi.Load(hm)
@@ -181,29 +173,21 @@ func (r *runtime) instantiate(name string, compiled wazy.CompiledModule, hasRead
 	return m, nil
 }
 
-func (r *runtime) defaultModuleFunctions() []*vm.HostModuleFunctionDefinition {
-	return []*vm.HostModuleFunctionDefinition{
-		{
-			Name: "_ready",
-			Handler: func(ctx context.Context, module vm.Module) {
-				r.wasiStartDone <- true
-			},
-		},
-		{
-			Name: "_sleep",
-			Handler: func(ctx context.Context, dur int64) {
-				select {
-				case <-ctx.Done():
-				case <-time.After(time.Duration(dur)):
-				}
-			},
-		},
-		{
-			Name: "_log",
-			Handler: func(ctx context.Context, module vm.Module, data uint32, dataLen uint32) {
-				msgBuf, _ := module.Memory().Read(data, dataLen)
-				fmt.Println(string(msgBuf))
-			},
-		},
-	}
+// registerDefaults adds the built-in `env` host functions to the builder.
+func (r *runtime) registerDefaults(b wazy.HostModuleBuilder) {
+	wazy.HostProc0(b.NewFunctionBuilder(), func(ctx context.Context, _ api.Module) {
+		r.wasiStartDone <- true
+	}).Export("_ready")
+
+	wazy.HostProc1(b.NewFunctionBuilder(), func(ctx context.Context, _ api.Module, dur int64) {
+		select {
+		case <-ctx.Done():
+		case <-time.After(time.Duration(dur)):
+		}
+	}).Export("_sleep")
+
+	wazy.HostProc2(b.NewFunctionBuilder(), func(ctx context.Context, module api.Module, data, dataLen uint32) {
+		msgBuf, _ := module.Memory().Read(data, dataLen)
+		fmt.Println(string(msgBuf))
+	}).Export("_log")
 }

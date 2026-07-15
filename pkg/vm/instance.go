@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 
+	wazy "github.com/samyfodil/wazy"
 	api "github.com/samyfodil/wazy/api"
 	wasi "github.com/samyfodil/wazy/imports/wasi_snapshot_preview1"
 	"github.com/spf13/afero"
@@ -12,7 +13,7 @@ import (
 
 var _ vm.Instance = &instance{}
 
-func (i *instance) Runtime(hostDef *vm.HostModuleDefinitions) (vm.Runtime, error) {
+func (i *instance) Runtime(register ...func(wazy.HostModuleBuilder)) (vm.Runtime, error) {
 	rt := NewRuntime(i.ctx.Context(), i.config)
 	r := &runtime{
 		instance:      i,
@@ -26,28 +27,13 @@ func (i *instance) Runtime(hostDef *vm.HostModuleDefinitions) (vm.Runtime, error
 		return nil, fmt.Errorf("exposing `env` failed with: %w", err)
 	}
 
-	moduleFunctions := r.defaultModuleFunctions()
-
-	if hostDef != nil {
-		moduleFunctions = append(moduleFunctions, hostDef.Functions...)
-
-		if err = hm.Globals(hostDef.Globals...); err != nil {
-			return nil, fmt.Errorf("adding global definitions to host module failed with: %w", err)
-		}
-
-		if err = hm.Memories(hostDef.Memories...); err != nil {
-			return nil, fmt.Errorf("adding memory definitions to host module failed with: %w", err)
-		}
-
-	}
-
-	if err = hm.Functions(moduleFunctions...); err != nil {
-		return nil, fmt.Errorf("adding function definitions to host module with: %s", err)
+	r.registerDefaults(hm.Builder())
+	for _, reg := range register {
+		reg(hm.Builder())
 	}
 
 	if _, err = hm.Compile(); err != nil {
 		return nil, fmt.Errorf("compiling host module failed with: %s", err)
-
 	}
 
 	if _, err = wasi.NewBuilder(r.runtime).Instantiate(r.instance.ctx.Context()); err != nil {
