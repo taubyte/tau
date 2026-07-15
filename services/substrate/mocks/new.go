@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/pkg/vm/backend/dfs"
 	"github.com/taubyte/tau/pkg/vm/backend/file"
 	"github.com/taubyte/tau/pkg/vm/backend/url"
-	loader "github.com/taubyte/tau/pkg/vm/loaders/wazero"
+	loader "github.com/taubyte/tau/pkg/vm/loaders"
 	resolver "github.com/taubyte/tau/pkg/vm/resolvers/taubyte"
 	source "github.com/taubyte/tau/pkg/vm/sources/taubyte"
 	counterSrv "github.com/taubyte/tau/services/substrate/components/counters"

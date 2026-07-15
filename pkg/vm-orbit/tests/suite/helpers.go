@@ -13,7 +13,7 @@ import (
 	vmPlugin "github.com/taubyte/tau/pkg/vm-orbit/satellite/vm"
 	fileBE "github.com/taubyte/tau/pkg/vm/backend/file"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
-	loader "github.com/taubyte/tau/pkg/vm/loaders/wazero"
+	loader "github.com/taubyte/tau/pkg/vm/loaders"
 	resolver "github.com/taubyte/tau/pkg/vm/resolvers/taubyte"
 	source "github.com/taubyte/tau/pkg/vm/sources/taubyte"
 	"github.com/taubyte/tau/utils/id"

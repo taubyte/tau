@@ -6,7 +6,7 @@ import (
 
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/p2p/peer"
-	loaders "github.com/taubyte/tau/pkg/vm/loaders/wazero"
+	loaders "github.com/taubyte/tau/pkg/vm/loaders"
 	tns "github.com/taubyte/tau/services/tns/mocks"
 )
 

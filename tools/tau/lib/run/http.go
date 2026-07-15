@@ -11,7 +11,7 @@ import (
 	vmWaz "github.com/taubyte/tau/pkg/vm"
 	"github.com/taubyte/tau/pkg/vm/backend/file"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
-	loader "github.com/taubyte/tau/pkg/vm/loaders/wazero"
+	loader "github.com/taubyte/tau/pkg/vm/loaders"
 	fileRes "github.com/taubyte/tau/pkg/vm/resolvers/file"
 	source "github.com/taubyte/tau/pkg/vm/sources/taubyte"
 )

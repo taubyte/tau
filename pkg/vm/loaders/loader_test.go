@@ -1,4 +1,4 @@
-package loader_test
+package loaders_test
 
 import (
 	"bytes"
@@ -9,7 +9,7 @@ import (
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	"github.com/taubyte/tau/pkg/vm/backend/dfs"
 	fixtures "github.com/taubyte/tau/pkg/vm/fixtures/wasm"
-	loaders "github.com/taubyte/tau/pkg/vm/loaders/wazero"
+	loaders "github.com/taubyte/tau/pkg/vm/loaders"
 	test "github.com/taubyte/tau/pkg/vm/test_utils"
 	"gotest.tools/v3/assert"
 )
