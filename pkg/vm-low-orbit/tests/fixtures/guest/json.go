@@ -5,20 +5,17 @@ package main
 //lint:file-ignore U1000 compiled file
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/taubyte/go-sdk/event"
 	http "github.com/taubyte/go-sdk/http/event"
 )
 
-//go:generate go get github.com/mailru/easyjson
-//go:generate go install github.com/mailru/easyjson/...@latest
-//go:generate easyjson -all ${GOFILE}
-
 type Foo struct {
-	UUID  string
-	State string
-	Titus map[string]Foo
+	UUID  string         `json:"UUID"`
+	State string         `json:"State"`
+	Titus map[string]Foo `json:"Titus"`
 }
 
 //export jsontest
@@ -48,14 +45,17 @@ func runJSONTest(h http.Event) error {
 		},
 	}
 
-	j, err := f.MarshalJSON()
+	j, err := json.Marshal(f)
 	if err != nil {
 		return err
 	}
 
 	f0 := &Foo{}
 
-	f0.UnmarshalJSON(j)
+	err = json.Unmarshal(j, f0)
+	if err != nil {
+		return err
+	}
 
 	h.Write(j)
 

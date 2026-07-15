@@ -10,7 +10,7 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$DIR/wasm"
 
 echo "==> Go fixtures (tinygo, container)"
-DOCKER_BUILDKIT=1 docker build -f "$DIR/Dockerfile" \
+DOCKER_BUILDKIT=1 docker build --no-cache -f "$DIR/Dockerfile" \
 	--target=export --output="$DIR/wasm" "$DIR"
 
 echo "==> Rust fixtures (cargo, native)"
