@@ -3,7 +3,7 @@ use std::io::Read;
 
 use taubyte_sdk::{event::Event, i2mv::memview::ReadSeekCloser};
 
-#[link(wasm_import_module = "fs//tmp/492934390/artifact.wasm")]
+#[link(wasm_import_module = "mv_writer")]
 extern "C" {
     pub fn mv_1() -> u32;
 }

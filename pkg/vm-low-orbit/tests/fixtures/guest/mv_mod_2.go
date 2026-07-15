@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/go-sdk/i2mv/memview"
 )
 
-//go:wasm-module fs//tmp/3694344193/artifact.wasm
+//go:wasm-module mv_writer
 //export mv_1
 func mvCall() uint32
 
