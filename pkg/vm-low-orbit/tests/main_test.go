@@ -1,0 +1,21 @@
+package tests
+
+import (
+	"context"
+	"os"
+	"testing"
+
+	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
+)
+
+// TestMain initializes the plugin singleton once with the backend mocks so
+// every test shares them. No-backend tests ignore the nodes; backend tests use
+// them. Guests get isolated state (mocks return fresh stores per call).
+func TestMain(m *testing.M) {
+	if err := plugins.Initialize(context.Background(),
+		plugins.DatabaseNode(&mockDBService{}),
+	); err != nil {
+		panic(err)
+	}
+	os.Exit(m.Run())
+}
