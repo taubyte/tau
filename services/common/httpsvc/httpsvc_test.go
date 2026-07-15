@@ -91,6 +91,9 @@ func TestAutoTrustFromConfig(t *testing.T) {
 	assert.Assert(t, trust("svc.example.com"))
 	assert.Assert(t, trust("admin.example.com")) // custom domain bound via domains.hosts
 	assert.Assert(t, !trust("random.example.com"))
+	// A bare <svc>.<fqdn> (no ".tau.") is not a host DNS resolves or a route
+	// serves, so it is not trusted — even for a known service name.
+	assert.Assert(t, !trust("seer.net.example.com"))
 	assert.Assert(t, trust("alias.example.com.")) // trailing dot tolerated
 }
 
