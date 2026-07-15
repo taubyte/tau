@@ -11,8 +11,8 @@ func (f *Factory) RegisterHostFunctions(b wazy.HostModuleBuilder) {
 	wazy.HostFunc1(b.NewFunctionBuilder(), f.selfProject).Export("selfProject")
 	wazy.HostFunc1(b.NewFunctionBuilder(), f.selfIdSize).Export("selfIdSize")
 	wazy.HostFunc1(b.NewFunctionBuilder(), f.selfId).Export("selfId")
-	wazy.HostFunc1(b.NewFunctionBuilder(), f.selfBranchesSize).Export("selfBranchesSize")
-	wazy.HostFunc1(b.NewFunctionBuilder(), f.selfBranches).Export("selfBranches")
+	wazy.HostFunc1(b.NewFunctionBuilder(), f.selfBranchSize).Export("selfBranchSize")
+	wazy.HostFunc1(b.NewFunctionBuilder(), f.selfBranch).Export("selfBranch")
 	wazy.HostFunc1(b.NewFunctionBuilder(), f.selfCommitSize).Export("selfCommitSize")
 	wazy.HostFunc1(b.NewFunctionBuilder(), f.selfCommit).Export("selfCommit")
 }

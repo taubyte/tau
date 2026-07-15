@@ -32,12 +32,12 @@ func (f *Factory) selfId(ctx context.Context, module vm.Module, functionPtr uint
 }
 
 // TODO: update SDK
-func (f *Factory) selfBranchesSize(ctx context.Context, module vm.Module, branchSizePtr uint32) uint32 {
+func (f *Factory) selfBranchSize(ctx context.Context, module vm.Module, branchSizePtr uint32) uint32 {
 	return uint32(f.WriteStringSliceSize(module, branchSizePtr, spec.DefaultBranches))
 }
 
 // TODO: update SDK
-func (f *Factory) selfBranches(ctx context.Context, module vm.Module, branchPtr uint32) uint32 {
+func (f *Factory) selfBranch(ctx context.Context, module vm.Module, branchPtr uint32) uint32 {
 	return uint32(f.WriteStringSlice(module, branchPtr, spec.DefaultBranches))
 }
 
