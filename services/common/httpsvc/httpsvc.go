@@ -12,7 +12,6 @@ import (
 	basicHttp "github.com/taubyte/tau/pkg/http/basic"
 	basicHttpSecure "github.com/taubyte/tau/pkg/http/basic/secure"
 	"github.com/taubyte/tau/pkg/http/options"
-	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
 
 // New wires the standard tau HTTP listener: autocert HTTPS in production,
@@ -60,18 +59,12 @@ func AutoOptsFromConfig(cfg config.Config) []options.Option {
 	return ops
 }
 
-// autoTrustFromConfig folds the three "trust this host without TNS proof"
-// cfg predicates into one closure: an exact-match against `<svc>.<NetworkFqdn>`
-// for each known tau service, plus alias and services-domain regex matches.
+// autoTrustFromConfig trusts (issues a cert for, without TNS proof) exactly the
+// hosts a tau service answers on: alias domains, custom domains bound via
+// domains.hosts, and the <svc>.tau.<NetworkFqdn> services-domain pattern.
 func autoTrustFromConfig(cfg config.Config) func(string) bool {
 	return func(host string) bool {
 		host = strings.TrimSuffix(host, ".")
-		fqdn := cfg.NetworkFqdn()
-		for _, srv := range commonSpecs.Services {
-			if host == srv+"."+fqdn {
-				return true
-			}
-		}
 		if cfg.AliasDomainsMatch(host) {
 			return true
 		}
