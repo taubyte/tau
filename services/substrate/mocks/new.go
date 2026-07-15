@@ -6,12 +6,12 @@ import (
 
 	"github.com/taubyte/tau/core/vm"
 	httpMock "github.com/taubyte/tau/pkg/http/mocks"
+	vmSrv "github.com/taubyte/tau/pkg/vm"
 	"github.com/taubyte/tau/pkg/vm/backend/dfs"
 	"github.com/taubyte/tau/pkg/vm/backend/file"
 	"github.com/taubyte/tau/pkg/vm/backend/url"
 	loader "github.com/taubyte/tau/pkg/vm/loaders/wazero"
 	resolver "github.com/taubyte/tau/pkg/vm/resolvers/taubyte"
-	vmSrv "github.com/taubyte/tau/pkg/vm/service/wazero"
 	source "github.com/taubyte/tau/pkg/vm/sources/taubyte"
 	counterSrv "github.com/taubyte/tau/services/substrate/components/counters"
 	smartops "github.com/taubyte/tau/services/substrate/components/smartops"

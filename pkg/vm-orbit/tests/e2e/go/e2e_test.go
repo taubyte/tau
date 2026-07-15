@@ -52,7 +52,7 @@ func TestFloat64Return(t *testing.T) {
 	assert.NilError(t, err)
 	defer plugin.Close()
 
-	ret := basicCall(t, plugin, path.Join(fixtureDir, "float_return.wasm"), uint32(5))
+	ret := basicCall(t, plugin, path.Join(fixtureDir, "float_return.wasm"), uint64(5))
 	testReturn(t, ret, 1)
 }
 
@@ -95,7 +95,7 @@ func TestUpdatePlugin(t *testing.T) {
 	module, err := testingSuite.WasmModule(basicWasm)
 	assert.NilError(t, err)
 
-	callVal := uint32(5)
+	callVal := uint64(5)
 	ret, err := module.Call(context.Background(), "ping", callVal)
 	assert.NilError(t, err)
 

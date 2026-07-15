@@ -1,12 +1,40 @@
 package vm
 
-// HostFunction is the function handler of a HostModuleFunctionDefinition
+import "context"
+
+// HostFunction is the function handler of a HostModuleFunctionDefinition.
+//
+// It is an arbitrary Go func whose wasm signature is derived by reflection
+// once at registration. Prefer the reflection-free typed path (Stack +
+// ParamTypes/ResultTypes) on hot call paths; see HostModuleFunctionDefinition.
 type HostFunction interface{}
 
-// HostModuleFunctionDefinition is the definition of a Function within a HostModule
+// StackHostFunction is a reflection-free host function: it reads its wasm
+// parameters from, and writes its results to, stack (little-endian uint64
+// slots, one per value, following the wasm numeric encoding). It matches the
+// engine's native calling convention, so registering one costs no reflection
+// at call time.
+type StackHostFunction = func(ctx context.Context, module Module, stack []uint64)
+
+// HostModuleFunctionDefinition is the definition of a Function within a HostModule.
+//
+// There are two ways to define the implementation:
+//
+//   - Handler: a typed Go func. Its wasm signature is derived by reflecting
+//     the func type once at registration; each call then goes through
+//     reflection. Convenient, but not free per call.
+//
+//   - Stack + ParamTypes + ResultTypes: a StackHostFunction with an explicit
+//     wasm signature, registered directly with the engine. No reflection at
+//     registration or at call time. Use this on hot paths. When Stack is set,
+//     Handler is ignored.
 type HostModuleFunctionDefinition struct {
 	Name    string
 	Handler HostFunction
+
+	Stack       StackHostFunction
+	ParamTypes  []ValueType
+	ResultTypes []ValueType
 }
 
 // HostModuleGlobalDefinition is Global Value stored within the HostModule

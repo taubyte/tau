@@ -3,8 +3,6 @@ package smartOps
 import (
 	"errors"
 	"fmt"
-	"reflect"
-	"strings"
 
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/helpers"
@@ -38,22 +36,11 @@ func (p *plugin) New(instance vm.Instance) (vm.PluginInstance, error) {
 }
 
 func (i *pluginInstance) LoadFactory(factory vm.Factory, hm vm.HostModule) error {
-	defs := make([]*vm.HostModuleFunctionDefinition, 0)
-	m := reflect.ValueOf(factory)
-	mT := reflect.TypeOf(factory)
-	for i := 0; i < m.NumMethod(); i++ {
-		mt := m.Method(i)
-		mtT := mT.Method(i)
-
-		if strings.HasPrefix(mtT.Name, "W_") {
-			defs = append(defs, &vm.HostModuleFunctionDefinition{
-				Name:    mtT.Name[2:],
-				Handler: mt.Interface(),
-			})
-		}
+	provider, ok := factory.(vm.HostFunctionProvider)
+	if !ok {
+		return fmt.Errorf("factory %q (%T) does not provide host functions", factory.Name(), factory)
 	}
-
-	return hm.Functions(defs...)
+	return hm.Functions(provider.HostFunctions()...)
 }
 func (i *pluginInstance) Load(hm vm.HostModule) (modInstance vm.ModuleInstance, err error) {
 	for _, factory := range i.factories {

@@ -1,8 +1,6 @@
 package structure
 
 import (
-	"context"
-
 	"github.com/taubyte/tau/core/vm"
 )
 
@@ -26,20 +24,8 @@ type testFunctionStruct struct {
 	vm.FunctionInstance
 }
 
-type testReturn struct {
-	vm.Return
-}
-
 type testRuntime struct {
 	vm.Runtime
-}
-
-func (*testReturn) Error() error {
-	return nil
-}
-
-func (*testFunctionStruct) Call(ctx context.Context, args ...interface{}) vm.Return {
-	return &testReturn{}
 }
 
 func (*testModule) Function(name string) (vm.FunctionInstance, error) {

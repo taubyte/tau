@@ -8,11 +8,11 @@ import (
 
 	"github.com/taubyte/tau/core/vm"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	vmWaz "github.com/taubyte/tau/pkg/vm"
 	"github.com/taubyte/tau/pkg/vm/backend/file"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
 	loader "github.com/taubyte/tau/pkg/vm/loaders/wazero"
 	fileRes "github.com/taubyte/tau/pkg/vm/resolvers/file"
-	vmWaz "github.com/taubyte/tau/pkg/vm/service/wazero"
 	source "github.com/taubyte/tau/pkg/vm/sources/taubyte"
 )
 

@@ -3,9 +3,6 @@ package taubyte
 import (
 	"errors"
 	"fmt"
-	"reflect"
-	"strings"
-	"sync"
 
 	"github.com/taubyte/tau/core/vm"
 )
@@ -16,47 +13,15 @@ type pluginInstance struct {
 	factories []vm.Factory
 }
 
-// factoryWMethods caches, per factory type, the W_-prefixed method indexes/names
-// discovered via reflection. Discovery is the same for every instance of a given
-// factory type, and reflection is expensive enough to matter on wasm cold start.
-var factoryWMethods sync.Map // reflect.Type -> []struct{ index int; name string }
-
+// LoadFactory registers a factory's host functions from its generated,
+// reflection-free HostFunctions() (see hostfn-gen). Every factory in the plugin
+// implements vm.HostFunctionProvider.
 func (i *pluginInstance) LoadFactory(factory vm.Factory, hm vm.HostModule) error {
-	mT := reflect.TypeOf(factory)
-
-	var entries []struct {
-		index int
-		name  string
+	provider, ok := factory.(vm.HostFunctionProvider)
+	if !ok {
+		return fmt.Errorf("factory %q (%T) does not provide host functions", factory.Name(), factory)
 	}
-	if cached, ok := factoryWMethods.Load(mT); ok {
-		entries = cached.([]struct {
-			index int
-			name  string
-		})
-	} else {
-		for i := 0; i < mT.NumMethod(); i++ {
-			mtT := mT.Method(i)
-			if strings.HasPrefix(mtT.Name, "W_") {
-				entries = append(entries, struct {
-					index int
-					name  string
-				}{index: i, name: mtT.Name[2:]})
-			}
-		}
-		// two goroutines racing the same type both compute the same value; last store wins
-		factoryWMethods.Store(mT, entries)
-	}
-
-	m := reflect.ValueOf(factory)
-	defs := make([]*vm.HostModuleFunctionDefinition, 0, len(entries))
-	for _, entry := range entries {
-		defs = append(defs, &vm.HostModuleFunctionDefinition{
-			Name:    entry.name,
-			Handler: m.Method(entry.index).Interface(),
-		})
-	}
-
-	return hm.Functions(defs...)
+	return hm.Functions(provider.HostFunctions()...)
 }
 func (i *pluginInstance) Load(hm vm.HostModule) (moduleInstance vm.ModuleInstance, err error) {
 	for _, factory := range i.factories {
