@@ -3,7 +3,7 @@ use std::io::Read;
 
 use taubyte_sdk::{event::Event, i2mv::fifo::ReadCloser};
 
-#[link(wasm_import_module = "fs//tmp/3748203861/artifact.wasm")]
+#[link(wasm_import_module = "fifo_writer")]
 extern "C" {
     pub fn fifo_1() -> u32;
 }

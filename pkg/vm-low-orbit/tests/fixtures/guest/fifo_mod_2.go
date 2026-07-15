@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/go-sdk/i2mv/fifo"
 )
 
-//go:wasm-module fs//tmp/1710338774/artifact.wasm
+//go:wasm-module fifo_writer
 //export fifo_1
 func fifoCall() uint32
 
