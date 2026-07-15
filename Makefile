@@ -9,7 +9,7 @@ DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xa
 # web3-gated code.
 WEB3_PKGS = $(shell grep -rl --include='*.go' '//go:build web3' . | xargs -n1 dirname | sort -u | sed 's|^\([^./]\)|./\1|; s|$$|/...|')
 
-.PHONY: test test-dreaming test-web3 test-raft test-docker test-all bench-dreaming 
+.PHONY: test test-dreaming test-web3 test-raft test-docker test-all bench-dreaming vm-fixtures
 
 test:
 	go test $(FLAGS) ./...
@@ -27,6 +27,14 @@ test-docker:
 	go test -tags docker_integration -run '_Integration$$' -p 1 $(FLAGS) ./pkg/containers/...
 
 test-all: test test-dreaming test-web3 test-raft
+
+# Recompile the vm-low-orbit guest test fixtures (tinygo -> size-optimized
+# reactor wasm importing "taubyte/sdk"). Output is committed; only rerun when
+# the guest sources change.
+VM_FIXTURES = pkg/vm-low-orbit/tests/fixtures
+vm-fixtures:
+	DOCKER_BUILDKIT=1 docker build -f $(VM_FIXTURES)/Dockerfile \
+		--target=export --output=$(VM_FIXTURES)/wasm $(VM_FIXTURES)
 
 # Profiling benchmarks over a live dream universe (dream/benchmarks).
 # Examples:
