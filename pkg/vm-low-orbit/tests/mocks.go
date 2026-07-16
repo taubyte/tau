@@ -15,6 +15,7 @@ import (
 	p2pIface "github.com/taubyte/tau/core/services/substrate/components/p2p"
 	psIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	storageIface "github.com/taubyte/tau/core/services/substrate/components/storage"
+	"github.com/taubyte/tau/p2p/peer"
 	res "github.com/taubyte/tau/p2p/streams/command/response"
 	kvdbMock "github.com/taubyte/tau/pkg/kvdb/mock"
 	dbkv "github.com/taubyte/tau/services/substrate/components/database/kv"
@@ -147,6 +148,8 @@ func (c *mockCommand) record(body map[string]interface{}) {
 // host ABI, not IPFS.
 type mockStorageService struct {
 	storageIface.Service
+	mu       sync.Mutex
+	contents map[string][]byte // cid -> bytes, for the ipfs content API (Add/GetFile)
 }
 
 func (m *mockStorageService) Storage(storageIface.Context) (storageIface.Storage, error) {
@@ -156,6 +159,81 @@ func (m *mockStorageService) Storage(storageIface.Context) (storageIface.Storage
 func (m *mockStorageService) Get(storageIface.Context) (storageIface.Storage, error) {
 	return newMockStorage(), nil
 }
+
+// Add + GetFile back the ipfs content API (client.Create/Push/Open). Content is
+// addressed by its real hash so the cid round-trips, but stored in-process.
+func (m *mockStorageService) Add(r io.Reader) (cid.Cid, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return cid.Undef, err
+	}
+	sum, err := mh.Sum(data, mh.SHA2_256, -1)
+	if err != nil {
+		return cid.Undef, err
+	}
+	c := cid.NewCidV1(cid.Raw, sum)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.contents == nil {
+		m.contents = map[string][]byte{}
+	}
+	m.contents[c.String()] = data
+	return c, nil
+}
+
+func (m *mockStorageService) GetFile(_ context.Context, c cid.Cid) (peer.ReadSeekCloser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	data, ok := m.contents[c.String()]
+	if !ok {
+		return nil, io.EOF
+	}
+	return &contentFile{bytes.NewReader(data)}, nil
+}
+
+// contentFile is a peer.ReadSeekCloser (io.ReadSeekCloser + io.WriterTo) over a
+// byte slice; bytes.Reader supplies everything but Close.
+type contentFile struct{ *bytes.Reader }
+
+func (contentFile) Close() error { return nil }
+
+// mockIpfsService backs the (web3-only) ipfs client factory. Same content-hash
+// round-trip as the storage content store, over its own in-process map.
+type mockIpfsService struct {
+	mu       sync.Mutex
+	contents map[string][]byte
+}
+
+func (m *mockIpfsService) AddFile(r io.Reader) (cid.Cid, error) {
+	data, err := io.ReadAll(r)
+	if err != nil {
+		return cid.Undef, err
+	}
+	sum, err := mh.Sum(data, mh.SHA2_256, -1)
+	if err != nil {
+		return cid.Undef, err
+	}
+	c := cid.NewCidV1(cid.Raw, sum)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.contents == nil {
+		m.contents = map[string][]byte{}
+	}
+	m.contents[c.String()] = data
+	return c, nil
+}
+
+func (m *mockIpfsService) GetFile(_ context.Context, c cid.Cid) (peer.ReadSeekCloser, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	data, ok := m.contents[c.String()]
+	if !ok {
+		return nil, io.EOF
+	}
+	return &contentFile{bytes.NewReader(data)}, nil
+}
+
+func (m *mockIpfsService) Close() {}
 
 type mockStorage struct {
 	storageIface.Storage

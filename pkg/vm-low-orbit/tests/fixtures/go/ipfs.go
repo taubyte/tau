@@ -12,10 +12,6 @@ import (
 	"github.com/taubyte/go-sdk/ipfs/client"
 )
 
-var (
-	expectedCidIPFS = "bafybeidqnk6czrgcaydbxw54tf2qpjmd5pcefpeoudytygrbukfoaawo4i"
-)
-
 //export someipfs
 func someipfs(e event.Event) uint32 {
 	h, err := e.HTTP()
@@ -32,6 +28,10 @@ func someipfs(e event.Event) uint32 {
 	return 0
 }
 
+// runTestIPFS exercises the ipfs content host ABI end to end: create a content
+// buffer, write/seek/read it back in-process, push it (host addresses it by
+// cid), then open that cid and confirm the same bytes and cid come back. It
+// asserts the round-trip, not a specific IPFS cid (the backend is a mock).
 func runTestIPFS() error {
 	data := []byte("Hello World")
 	data2 := []byte(" Hello World AGAIN")
@@ -43,103 +43,83 @@ func runTestIPFS() error {
 
 	content, err := ipfsClient.Create()
 	if err != nil {
-		return fmt.Errorf("failed creating new content with %v", err)
+		return fmt.Errorf("create content: %w", err)
 	}
 
-	_, err = content.Write(data)
-	if err != nil {
-		return fmt.Errorf("failed writing data to file with %v", err)
+	if _, err = content.Write(data); err != nil {
+		return fmt.Errorf("write data: %w", err)
 	}
 
-	// Should fail since its at the end
+	// reading at the end yields nothing
 	readData, err := io.ReadAll(content)
 	if err != nil {
-		return fmt.Errorf("read empty failed with %v", err)
+		return fmt.Errorf("read at end: %w", err)
 	}
 	if len(readData) > 0 {
-		return fmt.Errorf("expected readData to be empty got %s", string(readData))
+		return fmt.Errorf("expected empty read at end, got %q", readData)
 	}
 
-	_, err = content.Seek(0, 0)
-	if err != nil {
-		return fmt.Errorf("failed first seek with %v", err)
+	// seek back, read what we wrote
+	if _, err = content.Seek(0, 0); err != nil {
+		return fmt.Errorf("seek: %w", err)
 	}
-
 	readData, err = io.ReadAll(content)
 	if err != nil {
-		return fmt.Errorf("failed first reading file with %v", err)
+		return fmt.Errorf("read after seek: %w", err)
 	}
 	if string(readData) != string(data) {
-		return fmt.Errorf("not matching string in read %s != %s", string(readData), string(data))
+		return fmt.Errorf("read %q, want %q", readData, data)
 	}
 
-	_, err = content.Write(data2)
-	if err != nil {
-		return fmt.Errorf("failed writing data to file with %v", err)
+	// append more, read the whole thing back
+	if _, err = content.Write(data2); err != nil {
+		return fmt.Errorf("write data2: %w", err)
 	}
-
-	// Move position to beginning again
-	_, err = content.Seek(0, 0)
-	if err != nil {
-		return fmt.Errorf("failed first seek with %v", err)
+	if _, err = content.Seek(0, 0); err != nil {
+		return fmt.Errorf("seek 2: %w", err)
 	}
-
-	// Read data first
 	readData, err = io.ReadAll(content)
 	if err != nil {
-		return fmt.Errorf("failed reading file with %v", err)
+		return fmt.Errorf("read all: %w", err)
+	}
+	if len(readData) != len(data)+len(data2) {
+		return fmt.Errorf("read len %d, want %d", len(readData), len(data)+len(data2))
 	}
 
-	expectedLength := len(data) + len(data2)
-	if len(readData) != expectedLength {
-		return fmt.Errorf("read is not the same length as written %d != %d", len(readData), expectedLength)
+	// push: the host addresses the content and hands back a cid
+	if _, err = content.Seek(0, 0); err != nil {
+		return fmt.Errorf("seek before push: %w", err)
 	}
-
-	// Move position to beginning again before pushing
-	_, err = content.Seek(0, 0)
-	if err != nil {
-		return fmt.Errorf("failed first seek with %v", err)
-	}
-
 	cid, err := content.Push()
 	if err != nil {
-		return fmt.Errorf("failed pushing file with %v", err)
+		return fmt.Errorf("push: %w", err)
+	}
+	if !cid.Defined() {
+		return fmt.Errorf("push returned an undefined cid")
 	}
 
-	if cid.String() != expectedCidIPFS {
-		return fmt.Errorf("CID's do not match after push %s != %s", cid.String(), expectedCidIPFS)
-	}
-
-	if cid.String() != expectedCidIPFS {
-		return fmt.Errorf("CID's do not match after cid call %s != %s", cid.String(), expectedCidIPFS)
-	}
-
+	// open the pushed cid: same bytes, same cid
 	getContent, err := ipfsClient.Open(cid)
 	if err != nil {
-		return fmt.Errorf("failed getting cid %s with %v", cid.String(), err)
+		return fmt.Errorf("open %s: %w", cid, err)
 	}
-
-	_, err = getContent.Seek(0, 0)
-	if err != nil {
-		return fmt.Errorf("failed seeking getContent wtih %v", err)
+	if _, err = getContent.Seek(0, 0); err != nil {
+		return fmt.Errorf("seek opened: %w", err)
 	}
-
 	readData, err = io.ReadAll(getContent)
 	if err != nil {
-		return fmt.Errorf("failed last reading file with %v", err)
+		return fmt.Errorf("read opened: %w", err)
 	}
-
 	if len(readData) != len(data)+len(data2) {
-		return fmt.Errorf("read is not the same length as written %d != %d", len(readData), len(data)+len(data2))
+		return fmt.Errorf("opened len %d, want %d", len(readData), len(data)+len(data2))
 	}
 
 	getCid, err := getContent.Cid()
 	if err != nil {
-		return fmt.Errorf("failed getting cid with %v", err)
+		return fmt.Errorf("opened cid: %w", err)
 	}
-
-	if getCid.String() != expectedCidIPFS {
-		return fmt.Errorf("CID's do not match after open %s != %s", getCid.String(), cid.String())
+	if getCid.String() != cid.String() {
+		return fmt.Errorf("opened cid %s != pushed cid %s", getCid, cid)
 	}
 
 	return nil
