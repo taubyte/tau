@@ -5,6 +5,7 @@ package main
 //lint:file-ignore U1000 compiled file
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/taubyte/go-sdk/event"
@@ -12,10 +13,6 @@ import (
 	http "github.com/taubyte/go-sdk/http/event"
 	"github.com/taubyte/go-sdk/p2p/node"
 )
-
-//go:generate go get github.com/mailru/easyjson
-//go:generate go install github.com/mailru/easyjson/...@latest
-//go:generate easyjson -all ${GOFILE}
 
 type PassedDataP2PListen struct {
 	Sent []byte `json:"something_sent"`
@@ -43,7 +40,7 @@ func callp2pListenCall(e event.Event) uint32 {
 		From: from.String(),
 		Sent: data,
 	}
-	j, err := pd.MarshalJSON()
+	j, err := json.Marshal(pd)
 	if err != nil {
 		return 1
 	}

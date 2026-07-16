@@ -14,6 +14,8 @@ import (
 func TestMain(m *testing.M) {
 	if err := plugins.Initialize(context.Background(),
 		plugins.DatabaseNode(&mockDBService{}),
+		plugins.PubsubNode(pubsubMock),
+		plugins.P2PNode(p2pMock),
 	); err != nil {
 		panic(err)
 	}

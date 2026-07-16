@@ -5,24 +5,20 @@ package main
 //lint:file-ignore U1000 compiled file
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 
-	"github.com/ipfs/go-cid"
 	"github.com/taubyte/go-sdk/common"
 	"github.com/taubyte/go-sdk/event"
 	http "github.com/taubyte/go-sdk/http/event"
 	"github.com/taubyte/go-sdk/p2p/node"
 )
 
-//go:generate go get github.com/mailru/easyjson
-//go:generate go install github.com/mailru/easyjson/...@latest
-//go:generate easyjson -all ${GOFILE}
-
 type PassedData struct {
-	Sent      string  `json:"something_sent"`
-	Responded string  `json:"something_responded"`
-	From      cid.Cid `json:"from"`
+	Sent      string `json:"something_sent"`
+	Responded string `json:"something_responded"`
+	From      string `json:"from"`
 }
 
 //export callp2p
@@ -51,7 +47,7 @@ func runTestP2P(e event.Event) error {
 		return err
 	}
 
-	cid, err := p.From()
+	from, err := p.From()
 	if err != nil {
 		return err
 	}
@@ -62,8 +58,7 @@ func runTestP2P(e event.Event) error {
 	}
 
 	pd := &PassedData{}
-	err = pd.UnmarshalJSON(data)
-	if err != nil {
+	if err := json.Unmarshal(data, pd); err != nil {
 		return err
 	}
 
@@ -71,19 +66,14 @@ func runTestP2P(e event.Event) error {
 		return errors.New("didn't get expected data")
 	}
 	pd.Responded = "Hello from the other side"
-	pd.From = cid
+	pd.From = from.String()
 
-	j, err := pd.MarshalJSON()
+	j, err := json.Marshal(pd)
 	if err != nil {
 		return err
 	}
 
-	err = p.Write(j)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return p.Write(j)
 }
 
 func runTestPublishP2P(h http.Event) error {
@@ -92,11 +82,7 @@ func runTestPublishP2P(h http.Event) error {
 		return err
 	}
 
-	pd := &PassedData{
-		Sent: "Hello, world!",
-	}
-
-	j, err := pd.MarshalJSON()
+	j, err := json.Marshal(&PassedData{Sent: "Hello, world!"})
 	if err != nil {
 		return err
 	}
