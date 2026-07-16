@@ -14,6 +14,18 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
+// NewBackend dials the eth node a client talks to. It's a package var so tests
+// can swap in an in-memory backend instead of a live RPC endpoint; production
+// dials the given URL. It returns the backend and a close func for it.
+var NewBackend = func(ctx context.Context, url string, opts ...rpc.ClientOption) (Backend, func(), error) {
+	rpcClient, err := rpc.DialOptions(ctx, url, opts...)
+	if err != nil {
+		return nil, nil, err
+	}
+	c := ethclient.NewClient(rpcClient)
+	return c, c.Close, nil
+}
+
 func (f *Factory) generateClientId() uint32 {
 	f.clientsLock.Lock()
 	defer func() {
@@ -66,14 +78,15 @@ func (f *Factory) ethNew(ctx context.Context, module common.Module,
 		rpcOpts = append(rpcOpts, rpc.WithHeaders(http.Header(opts.Headers)))
 	}
 
-	rpcClient, err := rpc.DialOptions(f.ctx, url, rpcOpts...)
+	backend, closeFn, err := NewBackend(f.ctx, url, rpcOpts...)
 	if err != nil {
 		return uint32(errno.ErrorEthereumNewClient)
 	}
 
 	c := Client{
 		Id:        f.generateClientId(),
-		Client:    ethclient.NewClient(rpcClient),
+		Backend:   backend,
+		closeFn:   closeFn,
 		blocks:    make(map[uint64]*Block),
 		contracts: make(map[uint32]*Contract),
 	}

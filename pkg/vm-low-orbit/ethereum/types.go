@@ -5,17 +5,30 @@ package ethereum
 
 import (
 	"context"
+	"math/big"
 	"reflect"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	pubsubIface "github.com/taubyte/tau/core/services/substrate/components/pubsub"
 	"github.com/taubyte/tau/core/vm"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/helpers"
 )
+
+// Backend is the slice of an eth node the plugin actually uses: the contract
+// read/write/filter surface (bind.ContractBackend, needed by DeployContract and
+// bound contracts) plus the block/chain reads. *ethclient.Client satisfies it;
+// so does an in-memory node, which is how tests avoid a live RPC endpoint.
+// Close is deliberately absent — ethclient's Close() and the simulated backend's
+// Close() error have different signatures — and is handled per-client instead.
+type Backend interface {
+	bind.ContractBackend
+	BlockByNumber(ctx context.Context, number *big.Int) (*types.Block, error)
+	BlockNumber(ctx context.Context) (uint64, error)
+	ChainID(ctx context.Context) (*big.Int, error)
+}
 
 type Factory struct {
 	helpers.Methods
@@ -30,13 +43,22 @@ type Factory struct {
 var _ vm.Factory = &Factory{}
 
 type Client struct {
-	*ethclient.Client
+	Backend
+	closeFn           func()
 	Id                uint32
 	blocks            map[uint64]*Block
 	blocksLock        sync.RWMutex
 	contracts         map[uint32]*Contract
 	contractsLock     sync.RWMutex
 	contractsIdToGrab uint32
+}
+
+// Close releases the underlying backend (real RPC connection, or a no-op for an
+// injected in-memory backend).
+func (c *Client) Close() {
+	if c.closeFn != nil {
+		c.closeFn()
+	}
 }
 
 type Block struct {
