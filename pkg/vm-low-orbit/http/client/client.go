@@ -18,9 +18,9 @@ func (f *Factory) getClient(clientId uint32) (*Client, errno.Error) {
 	return nil, errno.ErrorClientNotFound
 }
 
-func (f *Factory) W_newHttpClient(ctx context.Context, module common.Module,
+func (f *Factory) newHttpClient(ctx context.Context, module common.Module,
 	clientIdPtr uint32,
-) errno.Error {
+) uint32 {
 	c := &Client{
 		Id:     f.generateClientId(),
 		Client: &http.Client{},
@@ -31,5 +31,5 @@ func (f *Factory) W_newHttpClient(ctx context.Context, module common.Module,
 	defer f.clientsLock.Unlock()
 	f.clients[c.Id] = c
 
-	return f.WriteUint32Le(module, clientIdPtr, c.Id)
+	return uint32(f.WriteUint32Le(module, clientIdPtr, c.Id))
 }

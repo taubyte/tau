@@ -8,21 +8,21 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_getP2PEventFrom(ctx context.Context, module common.Module, eventId, cidPtr uint32) errno.Error {
+func (f *Factory) getP2PEventFrom(ctx context.Context, module common.Module, eventId, cidPtr uint32) uint32 {
 	data, err := f.getP2PEventData(eventId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	conn, err0 := data.cmd.Connection()
 	if err0 != nil {
-		return err
+		return uint32(err)
 	}
 
 	_from := conn.RemotePeer()
 	if len(_from) == 0 {
-		return errno.ErrorP2PFromNotFound
+		return uint32(errno.ErrorP2PFromNotFound)
 	}
 
-	return f.WriteCid(module, cidPtr, peer.ToCid(_from))
+	return uint32(f.WriteCid(module, cidPtr, peer.ToCid(_from)))
 }

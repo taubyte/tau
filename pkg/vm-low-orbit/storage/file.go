@@ -59,51 +59,51 @@ func (st *Storage) closeFile(fileId uint32) errno.Error {
 	return 0
 }
 
-func (f *Factory) W_storageAddFile(ctx context.Context, module common.Module,
+func (f *Factory) storageAddFile(ctx context.Context, module common.Module,
 	storageId,
 	fileNamePtr, fileNameLen,
 	versionPtr,
 	bufPtr, bufLen uint32,
 	overWrite uint32,
-) (err errno.Error) {
+) uint32 {
 	fileName, err := f.ReadString(module, fileNamePtr, fileNameLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	file, ok := module.Memory().Read(bufPtr, bufLen)
 	if !ok {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	version, err0 := storage.AddFile(ctx, bytes.NewReader(file), fileName, overWrite == 1)
 	if err0 != nil {
-		return errno.ErrorAddFileFailed
+		return uint32(errno.ErrorAddFileFailed)
 	}
 
-	return f.WriteUint32Le(module, versionPtr, uint32(version))
+	return uint32(f.WriteUint32Le(module, versionPtr, uint32(version)))
 }
 
-func (f *Factory) W_storageGetFile(ctx context.Context,
+func (f *Factory) storageGetFile(ctx context.Context,
 	module common.Module,
 	storageId,
 	fileNamePtr, fileNameLen,
 	version,
 	fileIdPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	filename, err := f.ReadString(module, fileNamePtr, fileNameLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	file := &File{
@@ -112,72 +112,72 @@ func (f *Factory) W_storageGetFile(ctx context.Context,
 
 	err = f.WriteUint32Le(module, fileIdPtr, file.id)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	var err0 error
 
 	meta, err0 := storage.Meta(ctx, filename, int(version))
 	if err0 != nil {
-		return errno.ErrorStorageGetMetaFailed
+		return uint32(errno.ErrorStorageGetMetaFailed)
 	}
 
 	file.reader, err0 = meta.Get()
 	if err0 != nil {
-		return errno.ErrorGetFileFailed
+		return uint32(errno.ErrorGetFileFailed)
 	}
 
 	file.cid = meta.Cid()
 	file.version = meta.Version()
 
-	return storage.setFile(file)
+	return uint32(storage.setFile(file))
 }
 
-func (f *Factory) W_storageReadFile(ctx context.Context, module common.Module,
+func (f *Factory) storageReadFile(ctx context.Context, module common.Module,
 	storageId,
 	fileId,
 	bufPtr, bufSize,
 	countPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	file, err := storage.getFile(fileId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
-	return f.Read(module, file.reader.Read, bufPtr, bufSize, countPtr)
+	return uint32(f.Read(module, file.reader.Read, bufPtr, bufSize, countPtr))
 }
 
-func (f *Factory) W_storageCloseFile(ctx context.Context, module common.Module,
+func (f *Factory) storageCloseFile(ctx context.Context, module common.Module,
 	storageId,
 	fileId uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
-	return storage.closeFile(fileId)
+	return uint32(storage.closeFile(fileId))
 }
 
-func (f *Factory) W_storageDeleteFile(ctx context.Context, module common.Module,
+func (f *Factory) storageDeleteFile(ctx context.Context, module common.Module,
 	storageId,
 	fileNamePtr, fileNameLen,
 	version,
 	clear uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	fileName, err := f.ReadString(module, fileNamePtr, fileNameLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 	versionInt := int(version)
 	if clear == 1 {
@@ -186,182 +186,182 @@ func (f *Factory) W_storageDeleteFile(ctx context.Context, module common.Module,
 
 	err0 := storage.DeleteFile(ctx, fileName, versionInt)
 	if err0 != nil {
-		return errno.ErrorDeleteFileFailed
+		return uint32(errno.ErrorDeleteFileFailed)
 	}
 
 	return 0
 }
 
-func (f *Factory) W_storageListVersionsSize(ctx context.Context, module common.Module,
+func (f *Factory) storageListVersionsSize(ctx context.Context, module common.Module,
 	storageId,
 	fileNamePtr, fileNameLen,
 	sizePtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	fileName, err := f.ReadString(module, fileNamePtr, fileNameLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	versions, err0 := storage.ListVersions(ctx, fileName)
 	if err0 != nil {
-		return errno.ErrorListFileVersionsFailed
+		return uint32(errno.ErrorListFileVersionsFailed)
 	}
 
-	return f.WriteStringSliceSize(module, sizePtr, versions)
+	return uint32(f.WriteStringSliceSize(module, sizePtr, versions))
 }
 
-func (f *Factory) W_storageListVersions(ctx context.Context, module common.Module,
+func (f *Factory) storageListVersions(ctx context.Context, module common.Module,
 	storageId,
 	fileNamePtr, fileNameLen,
 	versionsPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	fileName, err := f.ReadString(module, fileNamePtr, fileNameLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	versions, err0 := storage.ListVersions(ctx, fileName)
 	if err0 != nil {
-		return errno.ErrorListFileVersionsFailed
+		return uint32(errno.ErrorListFileVersionsFailed)
 	}
 
-	return f.WriteStringSlice(module, versionsPtr, versions)
+	return uint32(f.WriteStringSlice(module, versionsPtr, versions))
 }
 
-func (f *Factory) W_storageCid(ctx context.Context,
+func (f *Factory) storageCid(ctx context.Context,
 	module common.Module,
 	storageId,
 	fileNamePtr, fileNameLen,
 	cidPtr uint32,
-) errno.Error {
+) uint32 {
 	storage, err0 := f.getStorage(storageId)
 	if err0 != 0 {
-		return errno.ErrorStorageNotFound
+		return uint32(errno.ErrorStorageNotFound)
 	}
 
 	fileName, err0 := f.ReadString(module, fileNamePtr, fileNameLen)
 	if err0 != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	meta, err := storage.Meta(ctx, fileName, 0)
 	if err != nil {
-		return errno.ErrorStorageGetMetaFailed
+		return uint32(errno.ErrorStorageGetMetaFailed)
 	}
 
-	return f.WriteCid(module, cidPtr, meta.Cid())
+	return uint32(f.WriteCid(module, cidPtr, meta.Cid()))
 }
 
-func (f *Factory) W_storageCurrentVersion(ctx context.Context, module common.Module,
+func (f *Factory) storageCurrentVersion(ctx context.Context, module common.Module,
 	fileNamePtr, fileNameLen,
 	versionPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	fileName, err := f.ReadString(module, fileNamePtr, fileNameLen)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	f.versionLock.RLock()
 	version, ok := f.version[fileName]
 	f.versionLock.RUnlock()
 	if !ok {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
-	return f.WriteString(module, versionPtr, version)
+	return uint32(f.WriteString(module, versionPtr, version))
 }
 
-func (f *Factory) W_storageCurrentVersionSize(ctx context.Context, module common.Module,
+func (f *Factory) storageCurrentVersionSize(ctx context.Context, module common.Module,
 	storageId,
 	fileNamePtr, fileNameLen,
 	versionPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	fileName, err := f.ReadString(module, fileNamePtr, fileNameLen)
 	if err != 0 {
-		return errno.ErrorAddressOutOfMemory
+		return uint32(errno.ErrorAddressOutOfMemory)
 	}
 
 	version, err0 := storage.GetLatestVersion(ctx, fileName)
 	if err0 != nil {
-		return errno.ErrorListFileVersionsFailed
+		return uint32(errno.ErrorListFileVersionsFailed)
 	}
 
 	f.versionLock.Lock()
 	f.version[fileName] = strconv.Itoa(version)
 	f.versionLock.Unlock()
 
-	return f.WriteStringSize(module, versionPtr, strconv.Itoa(version))
+	return uint32(f.WriteStringSize(module, versionPtr, strconv.Itoa(version)))
 }
 
-func (f *Factory) W_storageUsedSize(ctx context.Context, module common.Module,
+func (f *Factory) storageUsedSize(ctx context.Context, module common.Module,
 	storageId,
 	sizePtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	used, err0 := storage.Used(ctx)
 	if err0 != nil {
-		return errno.ErrorListingUsedSpaceFailed
+		return uint32(errno.ErrorListingUsedSpaceFailed)
 	}
 
-	return f.WriteStringSize(module, sizePtr, strconv.Itoa(used))
+	return uint32(f.WriteStringSize(module, sizePtr, strconv.Itoa(used)))
 }
 
-func (f *Factory) W_storageUsed(ctx context.Context, module common.Module,
+func (f *Factory) storageUsed(ctx context.Context, module common.Module,
 	storageId,
 	usedPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	used, err0 := storage.Used(ctx)
 	if err0 != nil {
-		return errno.ErrorListingUsedSpaceFailed
+		return uint32(errno.ErrorListingUsedSpaceFailed)
 	}
 
-	return f.WriteString(module, usedPtr, strconv.Itoa(used))
+	return uint32(f.WriteString(module, usedPtr, strconv.Itoa(used)))
 }
 
-func (f *Factory) W_storageCapacitySize(ctx context.Context, module common.Module,
+func (f *Factory) storageCapacitySize(ctx context.Context, module common.Module,
 	storageId,
 	sizePtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
-	return f.WriteStringSize(module, sizePtr, strconv.Itoa(storage.Capacity()))
+	return uint32(f.WriteStringSize(module, sizePtr, strconv.Itoa(storage.Capacity())))
 }
 
-func (f *Factory) W_storageCapacity(ctx context.Context, module common.Module,
+func (f *Factory) storageCapacity(ctx context.Context, module common.Module,
 	storageId,
 	capacityPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storage, err := f.getStorage(storageId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
-	return f.WriteString(module, capacityPtr, strconv.Itoa(storage.Capacity()))
+	return uint32(f.WriteString(module, capacityPtr, strconv.Itoa(storage.Capacity())))
 }

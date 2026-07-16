@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	wazy "github.com/samyfodil/wazy"
 	"github.com/taubyte/tau/core/services/substrate/components"
 	"github.com/taubyte/tau/core/vm"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
@@ -89,7 +90,7 @@ func (m *mockVm) New(context vm.Context, config vm.Config) (vm.Instance, error) 
 
 	return &mockInstance{}, nil
 }
-func (*mockInstance) Runtime(*vm.HostModuleDefinitions) (vm.Runtime, error) {
+func (*mockInstance) Runtime(...func(wazy.HostModuleBuilder)) (vm.Runtime, error) {
 	return &mockRuntime{}, nil
 }
 func (*mockInstance) Close() error { return nil }

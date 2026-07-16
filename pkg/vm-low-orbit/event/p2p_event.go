@@ -46,13 +46,13 @@ func (f *Factory) getP2PEventData(eventId uint32) (*P2PData, errno.Error) {
 	return e.p2p, 0
 }
 
-func (f *Factory) W_writeP2PResponse(ctx context.Context, module common.Module, eventId, bufPtr, bufSize uint32) (err errno.Error) {
+func (f *Factory) writeP2PResponse(ctx context.Context, module common.Module, eventId, bufPtr, bufSize uint32) uint32 {
 	data, err := f.getP2PEventData(eventId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 	dataBytes, err := f.ReadBytes(module, bufPtr, bufSize)
 	data.response.Set("data", dataBytes)
 
-	return
+	return uint32(err)
 }

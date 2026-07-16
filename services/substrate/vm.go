@@ -2,12 +2,12 @@ package substrate
 
 import (
 	"github.com/taubyte/tau/core/vm"
+	vmWaz "github.com/taubyte/tau/pkg/vm"
 	dfs "github.com/taubyte/tau/pkg/vm/backend/dfs"
 	"github.com/taubyte/tau/pkg/vm/backend/file"
 	httpBe "github.com/taubyte/tau/pkg/vm/backend/url"
-	loader "github.com/taubyte/tau/pkg/vm/loaders/wazero"
+	loader "github.com/taubyte/tau/pkg/vm/loaders"
 	resolver "github.com/taubyte/tau/pkg/vm/resolvers/taubyte"
-	vmWaz "github.com/taubyte/tau/pkg/vm/service/wazero"
 	source "github.com/taubyte/tau/pkg/vm/sources/taubyte"
 )
 

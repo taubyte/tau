@@ -64,7 +64,7 @@ func initializeWasm(name string) (err error) {
 	return nil
 }
 
-func basicCall(t *testing.T, plugin vm.Plugin, wasmModule string, args ...interface{}) vm.Return {
+func basicCall(t *testing.T, plugin vm.Plugin, wasmModule string, args ...uint64) []uint64 {
 	testingSuite, err := suite.New(context.Background())
 	assert.NilError(t, err)
 	defer testingSuite.Close()
@@ -81,10 +81,7 @@ func basicCall(t *testing.T, plugin vm.Plugin, wasmModule string, args ...interf
 	return ret
 }
 
-func testReturn(t *testing.T, ret vm.Return, expected uint32) {
-	var retVal uint32
-	err := ret.Reflect(&retVal)
-	assert.NilError(t, err)
-
-	assert.Equal(t, retVal, expected)
+func testReturn(t *testing.T, ret []uint64, expected uint32) {
+	assert.Assert(t, len(ret) > 0)
+	assert.Equal(t, uint32(ret[0]), expected)
 }

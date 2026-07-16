@@ -7,32 +7,32 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_readHttpResponseBody(ctx context.Context, module common.Module,
+func (f *Factory) readHttpResponseBody(ctx context.Context, module common.Module,
 	clientId, requestId,
 	bufPtr, bufSize,
 	countPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	response, err := f.getResponse(clientId, requestId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	_reader := response.Body.Read
-	return f.Read(module, _reader, bufPtr, bufSize, countPtr)
+	return uint32(f.Read(module, _reader, bufPtr, bufSize, countPtr))
 }
 
-func (f *Factory) W_closeHttpResponseBody(ctx context.Context, module common.Module,
+func (f *Factory) closeHttpResponseBody(ctx context.Context, module common.Module,
 	clientId, requestId uint32,
-) (err errno.Error) {
+) uint32 {
 	response, err := f.getResponse(clientId, requestId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	err0 := response.Body.Close()
 	if err0 != nil {
-		return errno.ErrorCloseBody
+		return uint32(errno.ErrorCloseBody)
 	}
 
-	return
+	return uint32(0)
 }

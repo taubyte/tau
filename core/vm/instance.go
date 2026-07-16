@@ -5,6 +5,8 @@ import (
 
 	"context"
 
+	wazy "github.com/samyfodil/wazy"
+	api "github.com/samyfodil/wazy/api"
 	"github.com/spf13/afero"
 )
 
@@ -15,8 +17,10 @@ type Instance interface {
 	// Close will close the Instance
 	Close() error
 
-	// Runtime returns a new Function Instance Runtime
-	Runtime(*HostModuleDefinitions) (Runtime, error)
+	// Runtime returns a new Function Instance Runtime. Optional register
+	// callbacks add extra host functions to the built-in `env` module (used by
+	// tests to expose fixtures' host imports).
+	Runtime(register ...func(wazy.HostModuleBuilder)) (Runtime, error)
 
 	// Filesystem returns the filesystem used by the given Instance.
 	Filesystem() afero.Fs
@@ -53,57 +57,21 @@ type FunctionDefinition interface {
 	ResultTypes() []ValueType
 }
 
-// Function is a WebAssembly function exported from an instantiated module.
-type Function interface {
-	// Definition is metadata about this function from its defining module.
-	Definition() FunctionDefinition
-
-	// Call invokes the function with parameters encoded according to ParamTypes. Up to one result is returned.
-	Call(ctx context.Context, params ...uint64) ([]uint64, error)
-}
-
-// Global is a WebAssembly 1.0 (20191205) global exported from an instantiated module.
-type Global interface {
-	// Type describes the numeric type of the global.
-	Type() ValueType
-
-	// Get returns the last known value of this global. When the context is nil, it defaults to context.Background.
-	Get() uint64
-}
-
-// MutableGlobal is a Global whose value can be updated at runtime (variable).
-type MutableGlobal interface {
-	Global
-
-	// Set updates the value of this global. When the context is nil, it defaults to context.Background.
-	Set(v uint64)
-}
+// Function and Global are wazy's, exposed directly (wazy is the only engine).
+type (
+	Function = api.Function
+	Global   = api.Global
+)
 
 type ModuleInstance interface {
 	// Function returns a FunctionInstance of given name from the ModuleInstance
-	Functions() []FunctionDefinition
 	Function(name string) (FunctionInstance, error)
 	Memory() Memory
 }
 
-type FunctionInstanceCommon interface {
-	// Cancel will cancel the context of the FunctionInstance
-	Cancel() error
-}
-
+// FunctionInstance is a callable wasm export. It stays a tau interface (rather
+// than aliasing api.Function) so it can be mocked in substrate tests without a
+// real engine. Params/results are raw wasm uint64 slots — the caller marshals.
 type FunctionInstance interface {
-	FunctionInstanceCommon
-	Call(ctx context.Context, args ...interface{}) Return
 	RawCall(ctx context.Context, args ...uint64) ([]uint64, error)
-}
-
-type Return interface {
-	// Returns an error
-	Error() error
-
-	// Rets will returns the raw uint64 values of the call return
-	Rets() []uint64
-
-	// Reflect assigns the return values to the given args
-	Reflect(args ...interface{}) error
 }

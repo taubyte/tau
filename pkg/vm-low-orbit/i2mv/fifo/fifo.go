@@ -25,11 +25,11 @@ func (f *Factory) getFifo(fifoId uint32) (*Fifo, errno.Error) {
 	return nil, errno.ErrorFifoNotFound
 }
 
-func (f *Factory) W_fifoNew(
+func (f *Factory) fifoNew(
 	ctx context.Context,
 	module vm.Module,
 	readCloser uint32,
-) (id uint32) {
+) uint32 {
 	fifo := Fifo{
 		readCloser: readCloser == 1,
 		list:       list.New(),
@@ -43,30 +43,30 @@ func (f *Factory) W_fifoNew(
 	return fifo.id
 }
 
-func (f *Factory) W_fifoPush(
+func (f *Factory) fifoPush(
 	ctx context.Context,
 	module vm.Module,
 	id,
 	buf uint32,
-) (error errno.Error) {
+) uint32 {
 	ff, err := f.getFifo(id)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	ff.list.PushBack(byte(buf))
-	return
+	return uint32(0)
 }
 
-func (f *Factory) W_fifoPop(
+func (f *Factory) fifoPop(
 	ctx context.Context,
 	module vm.Module,
 	id,
 	bufPtr uint32,
-) errno.Error {
+) uint32 {
 	ff, err0 := f.getFifo(id)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	bufIface := ff.list.Front()
@@ -75,30 +75,30 @@ func (f *Factory) W_fifoPop(
 
 		buf, ok := bufIface.Value.(byte)
 		if !ok {
-			return errno.ErrorFifoDatatypeInvalid
+			return uint32(errno.ErrorFifoDatatypeInvalid)
 		}
 
-		return f.WriteByte(module, bufPtr, buf)
+		return uint32(f.WriteByte(module, bufPtr, buf))
 	}
 
-	return errno.ErrorEOF
+	return uint32(errno.ErrorEOF)
 }
 
-func (f *Factory) W_fifoIsCloser(
+func (f *Factory) fifoIsCloser(
 	ctx context.Context,
 	module vm.Module,
 	id,
 	isCloser uint32,
-) errno.Error {
+) uint32 {
 	ff, err0 := f.getFifo(id)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
-	return f.WriteBool(module, isCloser, ff.readCloser)
+	return uint32(f.WriteBool(module, isCloser, ff.readCloser))
 }
 
-func (f *Factory) W_fifoClose(
+func (f *Factory) fifoClose(
 	ctx context.Context,
 	module vm.Module,
 	id uint32,

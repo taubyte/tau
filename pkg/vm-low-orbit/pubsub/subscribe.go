@@ -7,20 +7,20 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_setSubscriptionChannel(ctx context.Context, module common.Module,
+func (f *Factory) setSubscriptionChannel(ctx context.Context, module common.Module,
 	channelPtr, channelLen uint32,
-) (err errno.Error) {
+) uint32 {
 	channel, err := f.ReadString(module, channelPtr, channelLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	_ctx := f.parent.Context()
 
 	err0 := f.pubsubNode.Subscribe(_ctx.Project(), _ctx.Application(), _ctx.Resource(), channel)
 	if err0 != nil {
-		return errno.ErrorSubscribeFailed
+		return uint32(errno.ErrorSubscribeFailed)
 	}
 
-	return 0
+	return uint32(0)
 }

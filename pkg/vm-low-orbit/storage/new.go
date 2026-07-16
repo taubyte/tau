@@ -8,13 +8,13 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_storageNew(ctx context.Context, module common.Module,
+func (f *Factory) storageNew(ctx context.Context, module common.Module,
 	storageMatchPtr, storageMatchSize,
 	idPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	storageMatch, err := f.ReadString(module, storageMatchPtr, storageMatchSize)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	_ctx := f.parent.Context()
@@ -26,10 +26,10 @@ func (f *Factory) W_storageNew(ctx context.Context, module common.Module,
 
 	storage, err0 := f.storageNode.Storage(storageContext)
 	if err0 != nil {
-		return errno.ErrorDatabaseCreateFailed
+		return uint32(errno.ErrorDatabaseCreateFailed)
 	}
 
 	_storage := f.createStoragePointer(storage)
 
-	return f.WriteUint32Le(module, idPtr, uint32(_storage.id))
+	return uint32(f.WriteUint32Le(module, idPtr, uint32(_storage.id)))
 }

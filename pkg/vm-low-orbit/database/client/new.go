@@ -8,15 +8,15 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_newDatabase(ctx context.Context,
+func (f *Factory) newDatabase(ctx context.Context,
 	module common.Module,
 	databaseMatchPtr, databaseMatchSize,
 	idPtr uint32,
-) errno.Error {
+) uint32 {
 
 	databaseMatch, err := f.ReadString(module, databaseMatchPtr, databaseMatchSize)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	_ctx := f.parent.Context()
@@ -28,10 +28,10 @@ func (f *Factory) W_newDatabase(ctx context.Context,
 
 	_database, err0 := f.databaseNode.Database(databaseContext)
 	if err0 != nil {
-		return errno.ErrorDatabaseCreateFailed
+		return uint32(errno.ErrorDatabaseCreateFailed)
 	}
 
 	database := f.createDatabasePointer(_database)
 
-	return f.WriteUint32Le(module, idPtr, uint32(database.Id))
+	return uint32(f.WriteUint32Le(module, idPtr, uint32(database.Id)))
 }

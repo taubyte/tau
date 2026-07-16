@@ -1,5 +1,7 @@
 package vm
 
+import wazy "github.com/samyfodil/wazy"
+
 type PluginInstance interface {
 	// Load will load all Factories to the HostModule, and return the ModuleInstance
 	Load(HostModule) (ModuleInstance, error)
@@ -14,6 +16,13 @@ type Factory interface {
 
 	// Name returns the name of the Factory
 	Name() string
+}
+
+// HostFunctionProvider is implemented by factories that register their host
+// functions onto a wazy host-module builder (typed, via wazy.HostFuncN /
+// HostProcN). The plugin loader calls this for each factory.
+type HostFunctionProvider interface {
+	RegisterHostFunctions(wazy.HostModuleBuilder)
 }
 
 // TODO: New takes options for factories

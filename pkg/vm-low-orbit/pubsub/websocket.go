@@ -22,28 +22,28 @@ func (f *Factory) getSocketURL(module common.Module, channelPtr, channelLen uint
 	return socketURL, 0
 }
 
-func (f *Factory) W_getWebSocketURLSize(ctx context.Context, module common.Module,
+func (f *Factory) getWebSocketURLSize(ctx context.Context, module common.Module,
 	channelPtr, channelLen,
 	sizePtr uint32,
-) errno.Error {
+) uint32 {
 
 	socketURL, err := f.getSocketURL(module, channelPtr, channelLen)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteStringSize(module, sizePtr, socketURL)
+	return uint32(f.WriteStringSize(module, sizePtr, socketURL))
 }
 
-func (f *Factory) W_getWebSocketURL(ctx context.Context, module common.Module,
+func (f *Factory) getWebSocketURL(ctx context.Context, module common.Module,
 	channelPtr, channelLen,
 	socketURLPtr uint32,
-) errno.Error {
+) uint32 {
 
 	socketURL, err := f.getSocketURL(module, channelPtr, channelLen)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteString(module, socketURLPtr, socketURL)
+	return uint32(f.WriteString(module, socketURLPtr, socketURL))
 }

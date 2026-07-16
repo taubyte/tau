@@ -9,13 +9,13 @@ import (
 	"github.com/taubyte/tau/pkg/vm-low-orbit/memory"
 )
 
-func (f *Factory) W_publishToChannel(ctx context.Context, module common.Module,
+func (f *Factory) publishToChannel(ctx context.Context, module common.Module,
 	channelPtr, channelLen,
 	bodyPtr, bodySize uint32,
-) (err errno.Error) {
+) uint32 {
 	channel, err := f.ReadString(module, channelPtr, channelLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	_ctx := f.parent.Context()
@@ -24,13 +24,13 @@ func (f *Factory) W_publishToChannel(ctx context.Context, module common.Module,
 	defer readCloser.Close()
 	data, err0 := io.ReadAll(readCloser)
 	if err0 != nil {
-		return errno.ErrorEOF
+		return uint32(errno.ErrorEOF)
 	}
 
 	err0 = f.pubsubNode.Publish(ctx, _ctx.Project(), _ctx.Application(), _ctx.Resource(), channel, data)
 	if err0 != nil {
-		return errno.ErrorPublishFailed
+		return uint32(errno.ErrorPublishFailed)
 	}
 
-	return 0
+	return uint32(0)
 }

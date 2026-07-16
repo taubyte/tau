@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	"github.com/taubyte/tau/core/vm"
+	service "github.com/taubyte/tau/pkg/vm"
 	vmPlugin "github.com/taubyte/tau/pkg/vm-orbit/satellite/vm"
 	fileBE "github.com/taubyte/tau/pkg/vm/backend/file"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
-	loader "github.com/taubyte/tau/pkg/vm/loaders/wazero"
+	loader "github.com/taubyte/tau/pkg/vm/loaders"
 	resolver "github.com/taubyte/tau/pkg/vm/resolvers/taubyte"
-	service "github.com/taubyte/tau/pkg/vm/service/wazero"
 	source "github.com/taubyte/tau/pkg/vm/sources/taubyte"
 	"github.com/taubyte/tau/utils/id"
 	"gotest.tools/v3/assert"
@@ -67,7 +67,7 @@ func New(ctx context.Context) (*suite, error) {
 		return nil, fmt.Errorf("creating new vm instance failed with: %w", err)
 	}
 
-	rt, err := instance.Runtime(nil)
+	rt, err := instance.Runtime()
 	if err != nil {
 		ctxC()
 		return nil, fmt.Errorf("creating new vm runtime failed with: %w", err)
@@ -124,16 +124,17 @@ func (s *suite) WasmModule(filename string) (*module, error) {
 	}, nil
 }
 
-// Call will call an exported method from the the module
-func (m *module) Call(ctx context.Context, function string, args ...interface{}) (vm.Return, error) {
+// Call invokes an exported function with raw wasm arguments and returns its raw
+// wasm results.
+func (m *module) Call(ctx context.Context, function string, args ...uint64) ([]uint64, error) {
 	fI, err := m.mI.Function(function)
 	if err != nil {
-		return nil, fmt.Errorf("getting function `%s` failed with: ", err)
+		return nil, fmt.Errorf("getting function `%s` failed with: %w", function, err)
 	}
 
-	ret := fI.Call(ctx, args...)
-	if ret.Error() != nil {
-		return nil, fmt.Errorf("calling `%s` failed with: %w (ctx.err=%w)", function, ret.Error(), ctx.Err())
+	ret, err := fI.RawCall(ctx, args...)
+	if err != nil {
+		return nil, fmt.Errorf("calling `%s` failed with: %w (ctx.err=%w)", function, err, ctx.Err())
 	}
 
 	return ret, nil

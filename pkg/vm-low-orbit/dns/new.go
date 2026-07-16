@@ -4,34 +4,33 @@ import (
 	"context"
 	"net"
 
-	"github.com/taubyte/go-sdk/errno"
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_dnsNewResolver(ctx context.Context, module common.Module,
+func (f *Factory) dnsNewResolver(ctx context.Context, module common.Module,
 	resolverIdPtr uint32,
-) errno.Error {
-	return f.WriteUint32Le(module, resolverIdPtr, f.generateResolver())
+) uint32 {
+	return uint32(f.WriteUint32Le(module, resolverIdPtr, f.generateResolver()))
 }
 
-func (f *Factory) W_dnsRerouteResolver(ctx context.Context, module common.Module,
+func (f *Factory) dnsRerouteResolver(ctx context.Context, module common.Module,
 	resolverId,
 	addrPtr, addrLen,
 	netPtr, netLen uint32,
-) errno.Error {
+) uint32 {
 	addr, err := f.ReadString(module, addrPtr, addrLen)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	netType, err := f.ReadString(module, netPtr, netLen)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	resolver, err := f.getResolver(resolverId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	resolver.Resolver = &net.Resolver{
@@ -45,12 +44,12 @@ func (f *Factory) W_dnsRerouteResolver(ctx context.Context, module common.Module
 	return 0
 }
 
-func (f *Factory) W_dnsResetResolver(ctx context.Context, module common.Module,
+func (f *Factory) dnsResetResolver(ctx context.Context, module common.Module,
 	resolverId uint32,
-) errno.Error {
+) uint32 {
 	resolver, err := f.getResolver(resolverId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	resolver.Resolver = &net.Resolver{}

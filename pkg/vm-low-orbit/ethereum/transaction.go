@@ -109,28 +109,28 @@ func (f *Factory) getTransaction(module common.Module, clientId, blockIdPtr, con
 	return nil, errno.ErrorEthereumTransactionNotFound
 }
 
-func (f *Factory) W_ethGetTransactionFromBlockByHash(
+func (f *Factory) ethGetTransactionFromBlockByHash(
 	ctx context.Context,
 	module common.Module,
 	clientId,
 	blockIdPtr,
 	idPtr,
 	hashPtr uint32,
-) errno.Error {
+) uint32 {
 	blockId, err := f.ReadUint64Le(module, blockIdPtr)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	block, err := f.getBlock(clientId, blockId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	// Hash always 32 bytes
 	hashBytes, err0 := f.ReadBytes(module, hashPtr, ethCommon.HashLength)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	transaction := block.Transaction(ethCommon.BytesToHash(hashBytes))
@@ -146,24 +146,24 @@ func (f *Factory) W_ethGetTransactionFromBlockByHash(
 	}
 	block.transactionsLock.Unlock()
 
-	return f.WriteUint32Le(module, idPtr, id)
+	return uint32(f.WriteUint32Le(module, idPtr, id))
 }
 
-func (f *Factory) W_ethGetTransactionsFromBlockSize(
+func (f *Factory) ethGetTransactionsFromBlockSize(
 	ctx context.Context,
 	module common.Module,
 	clientId,
 	blockIdPtr,
 	sizePtr, arrSizePtr uint32,
-) errno.Error {
+) uint32 {
 	blockId, err := f.ReadUint64Le(module, blockIdPtr)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	block, err := f.getBlock(clientId, blockId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	var hashList []uint32
@@ -180,27 +180,27 @@ func (f *Factory) W_ethGetTransactionsFromBlockSize(
 
 	err = f.WriteUint32Le(module, arrSizePtr, uint32(len(hashList)))
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteUint32SliceSize(module, sizePtr, hashList)
+	return uint32(f.WriteUint32SliceSize(module, sizePtr, hashList))
 }
 
-func (f *Factory) W_ethGetTransactionsFromBlock(
+func (f *Factory) ethGetTransactionsFromBlock(
 	ctx context.Context,
 	module common.Module,
 	clientId,
 	blockIdPtr,
 	bufPtr uint32,
-) errno.Error {
+) uint32 {
 	blockId, err := f.ReadUint64Le(module, blockIdPtr)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	block, err := f.getBlock(clientId, blockId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	var hashList []uint32
@@ -208,10 +208,10 @@ func (f *Factory) W_ethGetTransactionsFromBlock(
 		hashList = append(hashList, hash)
 	}
 
-	return f.WriteUint32Slice(module, bufPtr, hashList)
+	return uint32(f.WriteUint32Slice(module, bufPtr, hashList))
 }
 
-func (f *Factory) W_ethGetTransactionMethodSize(
+func (f *Factory) ethGetTransactionMethodSize(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -221,33 +221,33 @@ func (f *Factory) W_ethGetTransactionMethodSize(
 	methodPtr,
 	methodLen,
 	sizePtr uint32,
-) errno.Error {
+) uint32 {
 	method, err0 := f.ReadString(module, methodPtr, methodLen)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	transaction, err0 := f.getTransaction(module, clientId, blockId, contractId, transactionId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	methodDetail, valueIface, err0 := transaction.callTransactionMethod(method, validateBytesMethod)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	switch methodDetail.Type() {
 	case reflection.ByteConvertibleMethod, reflection.BigIntMethod:
-		return f.WriteBytesConvertibleInterfaceSize(module, sizePtr, valueIface)
+		return uint32(f.WriteBytesConvertibleInterfaceSize(module, sizePtr, valueIface))
 	case reflection.BytesMethod:
-		return f.WriteBytesInterfaceSize(module, sizePtr, valueIface)
+		return uint32(f.WriteBytesInterfaceSize(module, sizePtr, valueIface))
 	}
 
 	return 0
 }
 
-func (f *Factory) W_ethGetTransactionMethodBytes(
+func (f *Factory) ethGetTransactionMethodBytes(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -257,33 +257,33 @@ func (f *Factory) W_ethGetTransactionMethodBytes(
 	methodPtr,
 	methodLen,
 	bufPtr uint32,
-) errno.Error {
+) uint32 {
 	method, err0 := f.ReadString(module, methodPtr, methodLen)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	transaction, err0 := f.getTransaction(module, clientId, blockId, contractId, transactionId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	methodDetail, valueIface, err0 := transaction.callTransactionMethod(method, validateBytesMethod)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	switch methodDetail.Type() {
 	case reflection.ByteConvertibleMethod, reflection.BigIntMethod:
-		return f.WriteBytesConvertibleInterface(module, bufPtr, valueIface)
+		return uint32(f.WriteBytesConvertibleInterface(module, bufPtr, valueIface))
 	case reflection.BytesMethod:
-		return f.WriteBytesInterface(module, bufPtr, valueIface)
+		return uint32(f.WriteBytesInterface(module, bufPtr, valueIface))
 	}
 
 	return 0
 }
 
-func (f *Factory) W_ethGetTransactionMethodUint64(
+func (f *Factory) ethGetTransactionMethodUint64(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -293,27 +293,27 @@ func (f *Factory) W_ethGetTransactionMethodUint64(
 	methodPtr,
 	methodLen,
 	numPtr uint32,
-) errno.Error {
+) uint32 {
 	method, err0 := f.ReadString(module, methodPtr, methodLen)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	transaction, err0 := f.getTransaction(module, clientId, blockId, contractId, transactionId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	_, valueIface, err0 := transaction.callTransactionMethod(method, validateUint64Method)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
-	return f.WriteUint64LeInterface(module, numPtr, valueIface)
+	return uint32(f.WriteUint64LeInterface(module, numPtr, valueIface))
 
 }
 
-func (f *Factory) W_ethTransactionRawSignaturesSize(
+func (f *Factory) ethTransactionRawSignaturesSize(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -323,20 +323,20 @@ func (f *Factory) W_ethTransactionRawSignaturesSize(
 	vSigSizePtr,
 	rSigSizePtr,
 	sSigSizePtr uint32,
-) errno.Error {
+) uint32 {
 	transaction, err := f.getTransaction(module, clientId, blockId, contractId, transactionId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteBytesConvertibleMultiSize(
+	return uint32(f.WriteBytesConvertibleMultiSize(
 		module,
 		[]uint32{vSigSizePtr, rSigSizePtr, sSigSizePtr},
 		helpers.BytesConvertibleMultiHelper(transaction.RawSignatureValues())...,
-	)
+	))
 }
 
-func (f *Factory) W_ethTransactionRawSignatures(
+func (f *Factory) ethTransactionRawSignatures(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -346,46 +346,46 @@ func (f *Factory) W_ethTransactionRawSignatures(
 	vSigBufPtr,
 	rSigBufPtr,
 	sSigBufPtr uint32,
-) errno.Error {
+) uint32 {
 	transaction, err := f.getTransaction(module, clientId, blockId, contractId, transactionId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteBytesConvertibleMulti(
+	return uint32(f.WriteBytesConvertibleMulti(
 		module,
 		[]uint32{vSigBufPtr, rSigBufPtr, sSigBufPtr},
 		helpers.BytesConvertibleMultiHelper(transaction.RawSignatureValues())...,
-	)
+	))
 }
 
-func (f *Factory) W_ethSendTransaction(
+func (f *Factory) ethSendTransaction(
 	ctx context.Context,
 	module common.Module,
 	clientId,
 	blockId,
 	contractId,
 	transactionId uint32,
-) errno.Error {
+) uint32 {
 	client, err0 := f.getClient(clientId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	transaction, err0 := f.getTransaction(module, clientId, blockId, contractId, transactionId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	err := client.SendTransaction(f.ctx, transaction.Transaction)
 	if err != nil {
-		return errno.ErrorEthereumSendTransactionFailed
+		return uint32(errno.ErrorEthereumSendTransactionFailed)
 	}
 
 	return 0
 }
 
-func (f *Factory) W_ethJsonSize(
+func (f *Factory) ethJsonSize(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -393,21 +393,21 @@ func (f *Factory) W_ethJsonSize(
 	contractId,
 	transactionId,
 	sizePtr uint32,
-) errno.Error {
+) uint32 {
 	transaction, err0 := f.getTransaction(module, clientId, blockId, contractId, transactionId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	buf, err := transaction.MarshalJSON()
 	if err != nil {
-		return errno.ErrorEthereumMarshalJSON
+		return uint32(errno.ErrorEthereumMarshalJSON)
 	}
 
-	return f.WriteBytesSize(module, sizePtr, buf)
+	return uint32(f.WriteBytesSize(module, sizePtr, buf))
 }
 
-func (f *Factory) W_ethJson(
+func (f *Factory) ethJson(
 	ctx context.Context,
 	module common.Module,
 	clientId,
@@ -415,16 +415,16 @@ func (f *Factory) W_ethJson(
 	contractId,
 	transactionId,
 	bufPtr uint32,
-) errno.Error {
+) uint32 {
 	transaction, err0 := f.getTransaction(module, clientId, blockId, contractId, transactionId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	buf, err := transaction.MarshalJSON()
 	if err != nil {
-		return errno.ErrorEthereumMarshalJSON
+		return uint32(errno.ErrorEthereumMarshalJSON)
 	}
 
-	return f.WriteBytes(module, bufPtr, buf)
+	return uint32(f.WriteBytes(module, bufPtr, buf))
 }

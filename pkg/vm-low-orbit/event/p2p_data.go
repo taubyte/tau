@@ -8,23 +8,23 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_getP2PEventData(ctx context.Context, module common.Module, eventId uint32, bufPtr uint32) errno.Error {
+func (f *Factory) hostGetP2PEventData(ctx context.Context, module common.Module, eventId uint32, bufPtr uint32) uint32 {
 	data, err := f.getP2PEventData(eventId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	if data == nil {
-		return errno.ErrorNilAddress
+		return uint32(errno.ErrorNilAddress)
 	}
 
-	return f.WriteBytes(module, bufPtr, data.marshalledData)
+	return uint32(f.WriteBytes(module, bufPtr, data.marshalledData))
 }
 
-func (f *Factory) W_getP2PEventDataSize(ctx context.Context, module common.Module, eventId uint32, sizePtr uint32) errno.Error {
+func (f *Factory) hostGetP2PEventDataSize(ctx context.Context, module common.Module, eventId uint32, sizePtr uint32) uint32 {
 	data, err := f.getP2PEventData(eventId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	_data, ok := data.cmd.Get("data")
@@ -32,16 +32,16 @@ func (f *Factory) W_getP2PEventDataSize(ctx context.Context, module common.Modul
 		var err0 error
 		data.marshalledData, err0 = json.Marshal(data.cmd.Raw())
 		if err0 != nil {
-			return errno.ErrorMarshalDataFailed
+			return uint32(errno.ErrorMarshalDataFailed)
 		}
 
-		return f.WriteBytesSize(module, sizePtr, data.marshalledData)
+		return uint32(f.WriteBytesSize(module, sizePtr, data.marshalledData))
 	}
 
 	data.marshalledData, ok = _data.([]byte)
 	if !ok {
-		return errno.ErrorMarshalDataFailed
+		return uint32(errno.ErrorMarshalDataFailed)
 	}
 
-	return f.WriteBytesSize(module, sizePtr, data.marshalledData)
+	return uint32(f.WriteBytesSize(module, sizePtr, data.marshalledData))
 }

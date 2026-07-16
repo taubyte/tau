@@ -7,25 +7,25 @@ import (
 	common "github.com/taubyte/tau/core/vm"
 )
 
-func (f *Factory) W_setHttpRequestHeader(ctx context.Context, module common.Module,
+func (f *Factory) setHttpRequestHeader(ctx context.Context, module common.Module,
 	clientId,
 	requestId,
 	keyPtr, keyLen,
 	valPtr, valLen uint32,
-) (err errno.Error) {
+) uint32 {
 	key, err := f.ReadString(module, keyPtr, keyLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	values, err := f.ReadStringSlice(module, valPtr, valLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	_, request, err := f.getClientAndRequest(clientId, requestId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	for idx, val := range values {
@@ -36,125 +36,125 @@ func (f *Factory) W_setHttpRequestHeader(ctx context.Context, module common.Modu
 		}
 	}
 
-	return 0
+	return uint32(0)
 }
 
-func (f *Factory) W_deleteHttpRequestHeader(ctx context.Context, module common.Module,
+func (f *Factory) deleteHttpRequestHeader(ctx context.Context, module common.Module,
 	clientId,
 	requestId,
 	keyPtr, keyLen uint32,
-) (err errno.Error) {
+) uint32 {
 	key, err := f.ReadString(module, keyPtr, keyLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	_, request, err := f.getClientAndRequest(clientId, requestId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	request.Header.Del(key)
 	if len(request.Header.Get(key)) != 0 {
-		return errno.ErrorHeaderNotFound
+		return uint32(errno.ErrorHeaderNotFound)
 	}
 
-	return 0
+	return uint32(0)
 }
 
-func (f *Factory) W_addHttpRequestHeader(
+func (f *Factory) addHttpRequestHeader(
 	ctx context.Context,
 	module common.Module,
 	clientId,
 	requestId,
 	keyPtr, keyLen,
 	valPtr, valLen uint32,
-) (err errno.Error) {
+) uint32 {
 	key, err := f.ReadString(module, keyPtr, keyLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	values, err := f.ReadStringSlice(module, valPtr, valLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	_, request, err := f.getClientAndRequest(clientId, requestId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	for _, val := range values {
 		request.Header.Add(key, val)
 	}
 
-	return 0
+	return uint32(0)
 }
 
-func (f *Factory) W_getHttpRequestHeaderSize(ctx context.Context, module common.Module,
+func (f *Factory) getHttpRequestHeaderSize(ctx context.Context, module common.Module,
 	clientId,
 	requestId,
 	keyPtr, keyLen,
 	sizePtr uint32,
-) errno.Error {
+) uint32 {
 	key, err := f.ReadString(module, keyPtr, keyLen)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	_, request, err := f.getClientAndRequest(clientId, requestId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
-	return f.WriteStringSliceSize(module, sizePtr, request.Header.Values(key))
+	return uint32(f.WriteStringSliceSize(module, sizePtr, request.Header.Values(key)))
 }
 
-func (f *Factory) W_getHttpRequestHeader(ctx context.Context, module common.Module,
+func (f *Factory) getHttpRequestHeader(ctx context.Context, module common.Module,
 	clientId,
 	requestId,
 	keyPtr, keyLen,
 	headerPtr uint32,
-) (err errno.Error) {
+) uint32 {
 	_, request, err := f.getClientAndRequest(clientId, requestId)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
 	key, err := f.ReadString(module, keyPtr, keyLen)
 	if err != 0 {
-		return
+		return uint32(err)
 	}
 
-	return f.WriteStringSlice(module, headerPtr, request.Header.Values(key))
+	return uint32(f.WriteStringSlice(module, headerPtr, request.Header.Values(key)))
 }
 
-func (f *Factory) W_getHttpRequestHeaderKeysSize(ctx context.Context, module common.Module,
+func (f *Factory) getHttpRequestHeaderKeysSize(ctx context.Context, module common.Module,
 	clientId,
 	requestId,
 	sizePtr uint32,
-) errno.Error {
+) uint32 {
 	_, request, err := f.getClientAndRequest(clientId, requestId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 	var keys = make([]string, 0)
 	for k := range request.Header {
 		keys = append(keys, k)
 	}
 
-	return f.WriteStringSliceSize(module, sizePtr, keys)
+	return uint32(f.WriteStringSliceSize(module, sizePtr, keys))
 }
 
-func (f *Factory) W_getHttpRequestHeaderKeys(ctx context.Context, module common.Module,
+func (f *Factory) getHttpRequestHeaderKeys(ctx context.Context, module common.Module,
 	clientId,
 	requestId,
 	keysPtr, keysSize uint32,
-) errno.Error {
+) uint32 {
 	_, request, err := f.getClientAndRequest(clientId, requestId)
 	if err != 0 {
-		return err
+		return uint32(err)
 	}
 
 	var keys = make([]string, 0)
@@ -162,5 +162,5 @@ func (f *Factory) W_getHttpRequestHeaderKeys(ctx context.Context, module common.
 		keys = append(keys, k)
 	}
 
-	return f.WriteStringSlice(module, keysPtr, keys)
+	return uint32(f.WriteStringSlice(module, keysPtr, keys))
 }

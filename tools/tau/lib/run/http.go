@@ -8,11 +8,11 @@ import (
 
 	"github.com/taubyte/tau/core/vm"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
+	vmWaz "github.com/taubyte/tau/pkg/vm"
 	"github.com/taubyte/tau/pkg/vm/backend/file"
 	vmContext "github.com/taubyte/tau/pkg/vm/context"
-	loader "github.com/taubyte/tau/pkg/vm/loaders/wazero"
+	loader "github.com/taubyte/tau/pkg/vm/loaders"
 	fileRes "github.com/taubyte/tau/pkg/vm/resolvers/file"
-	vmWaz "github.com/taubyte/tau/pkg/vm/service/wazero"
 	source "github.com/taubyte/tau/pkg/vm/sources/taubyte"
 )
 
@@ -46,7 +46,7 @@ func HttpFunction(ctx context.Context, wasmPath string, fnSpec *structureSpec.Fu
 	}
 	defer instance.Close()
 
-	rt, err := instance.Runtime(nil)
+	rt, err := instance.Runtime()
 	if err != nil {
 		return fmt.Errorf("creating runtime: %w", err)
 	}

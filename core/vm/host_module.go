@@ -1,46 +1,14 @@
 package vm
 
-// HostFunction is the function handler of a HostModuleFunctionDefinition
-type HostFunction interface{}
+import wazy "github.com/samyfodil/wazy"
 
-// HostModuleFunctionDefinition is the definition of a Function within a HostModule
-type HostModuleFunctionDefinition struct {
-	Name    string
-	Handler HostFunction
-}
-
-// HostModuleGlobalDefinition is Global Value stored within the HostModule
-type HostModuleGlobalDefinition struct {
-	Name  string
-	Value interface{}
-}
-
-// HostModuleMemoryDefinition is the memory definition of the Host Module.
-type HostModuleMemoryDefinition struct {
-	Name  string
-	Pages struct {
-		Min   uint64
-		Max   uint64
-		Maxed bool
-	}
-}
-
+// HostModule is a wazy host module under construction. Register host functions
+// on its Builder (with wazy.HostFuncN / HostProcN, or WithGoModuleFunction for
+// raw signatures), then Compile.
 type HostModule interface {
-	// Functions adds the function definitions to the HostModule
-	Functions(...*HostModuleFunctionDefinition) error
+	// Builder returns the underlying wazy host-module builder.
+	Builder() wazy.HostModuleBuilder
 
-	// Memory adds the memory definitions to the HostModule
-	Memories(...*HostModuleMemoryDefinition) error
-
-	// Globals adds the global definitions to the HostModule
-	Globals(...*HostModuleGlobalDefinition) error
-
-	// Compile will compile the defined HostModule, and return a ModuleInstance
+	// Compile instantiates the registered functions and returns the module.
 	Compile() (ModuleInstance, error)
-}
-
-type HostModuleDefinitions struct {
-	Functions []*HostModuleFunctionDefinition
-	Memories  []*HostModuleMemoryDefinition
-	Globals   []*HostModuleGlobalDefinition
 }

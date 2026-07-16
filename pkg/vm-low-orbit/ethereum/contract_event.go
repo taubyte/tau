@@ -45,7 +45,7 @@ func channelTypeFromPrefix(channel string) (channelType channelType, _channel st
 	return channelType, strings.SplitAfterN(channel, "://", 2)[1]
 }
 
-func (f *Factory) W_ethSubscribeContractEvent(
+func (f *Factory) ethSubscribeContractEvent(
 	ctx context.Context,
 	module vm.Module,
 	clientId,
@@ -53,32 +53,32 @@ func (f *Factory) W_ethSubscribeContractEvent(
 	eventNamePtr, eventNameLen,
 	channelPtr, channelLen,
 	ttl uint32, // in seconds
-) errno.Error {
+) uint32 {
 	client, err0 := f.getClient(clientId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	contract, err0 := client.getContract(contractId)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	eventName, err0 := f.ReadString(module, eventNamePtr, eventNameLen)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	contract.eventsLock.RLock()
 	ce, ok := contract.events[eventName]
 	if !ok || ce == nil {
-		return errno.ErrorEthereumEventNotFound
+		return uint32(errno.ErrorEthereumEventNotFound)
 	}
 	contract.eventsLock.RUnlock()
 
 	channel, err0 := f.ReadString(module, channelPtr, channelLen)
 	if err0 != 0 {
-		return err0
+		return uint32(err0)
 	}
 
 	if ce.watcher != nil {
@@ -100,10 +100,10 @@ func (f *Factory) W_ethSubscribeContractEvent(
 	case httpChannel:
 	case pubsubChannel:
 		if err := f.pubsubNode.Subscribe(f.parent.Context().Project(), f.parent.Context().Application(), f.parent.Context().Resource(), channel); err != nil {
-			return errno.ErrorSubscribeFailed
+			return uint32(errno.ErrorSubscribeFailed)
 		}
 	default:
-		return errno.ErrorSubscribeFailed
+		return uint32(errno.ErrorSubscribeFailed)
 	}
 
 	//TODO: implement query
@@ -113,7 +113,7 @@ func (f *Factory) W_ethSubscribeContractEvent(
 	_, _, err := watch(_ctx, ce)
 	if err != nil {
 		_ctxC()
-		return errno.ErrorEthereumWatchEventFailed
+		return uint32(errno.ErrorEthereumWatchEventFailed)
 	}
 
 	go func(vmCtx vm.Context, pubsubNode pubsubIface.Service) {
