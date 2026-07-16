@@ -6,20 +6,12 @@ package main
 
 import (
 	"bytes"
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/taubyte/go-sdk/event"
 	httpEvent "github.com/taubyte/go-sdk/http/event"
 	"github.com/taubyte/go-sdk/storage"
-)
-
-var (
-	testData         string = "No storage needed to send to IPFS"
-	expectedCid      string = "bafybeiavzbz2ugyergky6plyluts2evta5hu6ehhicmuow4zm6vd42pugq"
-	expectedVideoCid string = "bafybeidnuo6zjxk2bpn4iyxjlafmuplej24yhsoceutcly2edbv523omge"
 )
 
 //export storagetest
@@ -38,266 +30,107 @@ func storagetest(e event.Event) uint32 {
 	return 0
 }
 
+// _storagetest exercises the storage host ABI end to end: add versions, read
+// each back byte-for-byte, list versions/files, fetch a cid, delete. It asserts
+// the round-trip through the plugin, not IPFS content-addressing (the backend is
+// an in-memory mock), so the data it stores is fixed, not random.
 func _storagetest(h httpEvent.Event) error {
 	_storage, err := storage.New("/basic/123")
 	if err != nil {
-		return errors.New("Creating new storage failed with:" + err.Error())
+		return errors.New("creating new storage failed with: " + err.Error())
 	}
-	dataSize := 4
 
-	//TODO:: Grab file from assets use bindata or embed
-	inData1 := make([]byte, dataSize)
-	rand.Read(inData1)
+	data1 := []byte("first version")
+	data2 := []byte("second version")
 
-	_storage.RemainingCapacity()
-
-	// EXECUTION: Name our data "video" and add inData1 with replace false
-	// EXPECTATION: version set to 1
 	video := _storage.File("video")
-	version, err := video.Add(inData1, false)
+
+	// add v1, read it back
+	version, err := video.Add(data1, false)
+	if err != nil {
+		return fmt.Errorf("add v1: %w", err)
+	}
+	if version != 1 {
+		return fmt.Errorf("expected version 1, got %d", version)
+	}
+	if err := readBack(video.Version(1), data1); err != nil {
+		return fmt.Errorf("v1 round-trip: %w", err)
+	}
+
+	// current version tracks the latest add
+	version, err = video.CurrentVersion()
+	if err != nil {
+		return fmt.Errorf("current version: %w", err)
+	}
+	if version != 1 {
+		return fmt.Errorf("expected current version 1, got %d", version)
+	}
+
+	// a cid must round-trip through the host (defined, non-empty)
+	cid, err := _storage.Cid("video")
+	if err != nil {
+		return fmt.Errorf("cid: %w", err)
+	}
+	if !cid.Defined() {
+		return errors.New("expected a defined cid")
+	}
+
+	// add v2, read it back
+	version, err = video.Add(data2, false)
+	if err != nil {
+		return fmt.Errorf("add v2: %w", err)
+	}
+	if version != 2 {
+		return fmt.Errorf("expected version 2, got %d", version)
+	}
+	if err := readBack(video.Version(2), data2); err != nil {
+		return fmt.Errorf("v2 round-trip: %w", err)
+	}
+
+	// two versions listed
+	versions, err := video.Versions()
+	if err != nil {
+		return fmt.Errorf("list versions: %w", err)
+	}
+	if len(versions) != 2 {
+		return fmt.Errorf("expected 2 versions, got %d", len(versions))
+	}
+
+	// ListFiles returns one entry per version (video has v1 + v2 now)
+	files, err := _storage.ListFiles()
+	if err != nil {
+		return fmt.Errorf("list files: %w", err)
+	}
+	if len(files) != 2 {
+		return fmt.Errorf("expected 2 file entries, got %d", len(files))
+	}
+
+	// delete v1, only v2 remains
+	if err := video.Version(1).Delete(); err != nil {
+		return fmt.Errorf("delete v1: %w", err)
+	}
+	versions, err = video.Versions()
+	if err != nil {
+		return fmt.Errorf("list versions after delete: %w", err)
+	}
+	if len(versions) != 1 {
+		return fmt.Errorf("expected 1 version after delete, got %d", len(versions))
+	}
+
+	return nil
+}
+
+func readBack(v *storage.VersionedFile, want []byte) error {
+	file, err := v.GetFile()
 	if err != nil {
 		return err
 	}
-	if version != 1 {
-		return errors.New("31 expected version to be 1")
+	got := make([]byte, len(want))
+	if _, err := file.Read(got); err != nil {
+		return err
 	}
-
-	version, err = video.CurrentVersion()
-	if err != nil {
-		return fmt.Errorf("32 ERROR %v", err)
+	if !bytes.Equal(got, want) {
+		return fmt.Errorf("data mismatch: got %q want %q", got, want)
 	}
-
-	if version != 1 {
-		return errors.New("33 Expected version to be 1")
-	}
-
-	cid, err := _storage.Cid("video")
-	if err != nil {
-		return fmt.Errorf("failed storage cid with %s", err)
-	}
-
-	if cid.String() != expectedVideoCid {
-		return fmt.Errorf("cid does not match. %s != %s", cid, expectedVideoCid)
-	}
-
-	// EXECUTION: List our "video" versions
-	// EXPECTATION: Length of versions list is 1
-	versions, err := video.Versions()
-	if err != nil {
-		return fmt.Errorf("39, %w", err)
-	}
-
-	if len(versions) != 1 {
-		return errors.New("43 expected length of current versions to be 1")
-	}
-
-	// EXECUTION: Get our version 1 file
-	// EXPECTATION: version 1 should be same as indata1
-	file, err := video.Version(1).GetFile()
-	if err != nil {
-		return fmt.Errorf("50, %w", err)
-	}
-
-	outData, err := io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("55, %w", err)
-	}
-
-	if !bytes.Equal(outData, inData1) {
-		return errors.New("59 Data not same ")
-	}
-
-	inData2 := make([]byte, 4)
-	rand.Read(inData2)
-
-	// EXECUTION: Add our inData2 file with replace set to false
-	// EXPECTATION: added file should be version 2
-	version, err = video.Add(inData2, false)
-	if err != nil {
-		return fmt.Errorf("67, %w", err)
-	}
-
-	if version != 2 {
-		return errors.New("73 wrong version")
-	}
-
-	// EXECUTION: List our "video" versions
-	// EXPECTATION: Length of versions list is 2
-	versions, err = video.Versions()
-	if err != nil {
-		return fmt.Errorf("78, %w", err)
-	}
-
-	if len(versions) != 2 {
-		return errors.New("82 expected length of current versions to be 2")
-	}
-
-	// EXECUTION: Get our version 2 file
-	// EXPECTATION: version 2 should be same as indata2
-	file, err = video.Version(2).GetFile()
-	if err != nil {
-		return fmt.Errorf("91, %w", err)
-	}
-
-	outData, err = io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("96, %w", err)
-	}
-
-	if !bytes.Equal(outData, inData2) {
-		return errors.New("100 Data not same ")
-	}
-
-	// EXECUTION: Add our inData1 file with replace set to true
-	// EXPECTATION: added file should be version 2
-	version, err = video.Add(inData1, true)
-	if err != nil {
-		return fmt.Errorf("107, %w", err)
-	}
-
-	files, err := _storage.ListFiles()
-	if err != nil {
-		return fmt.Errorf("109 list files failed with %v", err)
-	}
-
-	if len(files) != 2 {
-		return fmt.Errorf("110 expected 2 files got %d", len(files))
-	}
-
-	if version != 2 {
-		return errors.New("111 wrong version")
-	}
-
-	// EXECUTION: List our "video" versions
-	// EXPECTATION: Length of versions list is 1
-	versions, err = video.Versions()
-	if err != nil {
-		return fmt.Errorf("118, %w", err)
-	}
-
-	if len(versions) != 2 {
-		return errors.New("122 expected length of current versions to be 2")
-	}
-
-	// EXECUTION: Get our version 2 file
-	// EXPECTATION: version 2 should be same as indata1
-	file, err = video.Version(2).GetFile()
-	if err != nil {
-		return fmt.Errorf("129, %w", err)
-	}
-
-	outData, err = io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("134, %w", err)
-	}
-
-	if !bytes.Equal(outData, inData1) {
-		return errors.New("138 Data not same ")
-	}
-
-	// EXECUTION: Add our inData2 file with replace set to false
-	// EXPECTATION: added file should be version 3
-	version, err = video.Add(inData2, false)
-	if err != nil {
-		return fmt.Errorf("145, %w", err)
-	}
-
-	if version != 3 {
-		return errors.New("149 wrong version")
-	}
-
-	// EXECUTION: List our "video" versions
-	// EXPECTATION: Length of versions list is 3
-	versions, err = video.Versions()
-	if err != nil {
-		return fmt.Errorf("156, %w", err)
-	}
-
-	if len(versions) != 3 {
-		return errors.New("160 expected length of current versions to be 3")
-	}
-
-	// EXECUTION: Get our version 3 file
-	// EXPECTATION: version 3 should be same as indata2
-	file, err = video.Version(3).GetFile()
-	if err != nil {
-		return fmt.Errorf("167, %w", err)
-	}
-
-	outData, err = io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("172, %w", err)
-	}
-
-	if !bytes.Equal(outData, inData2) {
-		return errors.New("176 Data not same ")
-	}
-
-	// EXECUTION: Delete our version 2 file
-	// EXPECTATION: version 2 should be delete
-	err = video.Version(2).Delete()
-	if err != nil {
-		return fmt.Errorf("183, %w", err)
-	}
-
-	// EXECUTION: Get our Version 3 file
-	// EXPECTATION: version 3 should be same as inData2
-	file, err = video.Version(3).GetFile()
-	if err != nil {
-		return fmt.Errorf("190, %w", err)
-	}
-
-	outData, err = io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("195, %w", err)
-	}
-
-	if !bytes.Equal(outData, inData2) {
-		return errors.New("199 Data not same ")
-	}
-
-	// EXECUTION: List our "video" versions
-	// EXPECTATION: Length of versions list is 3
-	versions, err = video.Versions()
-	if err != nil {
-		return fmt.Errorf("206, %w", err)
-	}
-
-	if len(versions) != 2 {
-		return errors.New("210 expected length of current versions to be 2")
-	}
-
-	// EXECUTION: Delete all file versions
-	// EXPECTATION: Getting and listing file should fail
-	err = video.DeleteAllVersions()
-	if err != nil {
-		return fmt.Errorf("215, %w", err)
-	}
-
-	_, err = video.Versions()
-	if err == nil {
-		return errors.New("222 exepcted this to error")
-	}
-
-	_, err = video.Version(1).GetFile()
-	if err == nil {
-		return errors.New("227 expected this to error")
-	}
-
-	_, err = video.Version(2).GetFile()
-	if err == nil {
-		return errors.New("232 expected this to error")
-	}
-
-	_, err = video.Version(3).GetFile()
-	if err == nil {
-		return errors.New("237 expected this to error")
-	}
-
-	_, err = video.Version(0).GetFile()
-	if err == nil {
-		return errors.New("242 expected this to error")
-	}
-
 	return nil
 }

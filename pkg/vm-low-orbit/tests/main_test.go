@@ -16,6 +16,7 @@ func TestMain(m *testing.M) {
 		plugins.DatabaseNode(&mockDBService{}),
 		plugins.PubsubNode(pubsubMock),
 		plugins.P2PNode(p2pMock),
+		plugins.StorageNode(&mockStorageService{}),
 	); err != nil {
 		panic(err)
 	}
