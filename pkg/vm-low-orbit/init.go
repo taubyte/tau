@@ -1,6 +1,3 @@
-//go:build !web3
-// +build !web3
-
 package taubyte
 
 import (

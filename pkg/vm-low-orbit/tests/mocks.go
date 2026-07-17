@@ -197,44 +197,6 @@ type contentFile struct{ *bytes.Reader }
 
 func (contentFile) Close() error { return nil }
 
-// mockIpfsService backs the (web3-only) ipfs client factory. Same content-hash
-// round-trip as the storage content store, over its own in-process map.
-type mockIpfsService struct {
-	mu       sync.Mutex
-	contents map[string][]byte
-}
-
-func (m *mockIpfsService) AddFile(r io.Reader) (cid.Cid, error) {
-	data, err := io.ReadAll(r)
-	if err != nil {
-		return cid.Undef, err
-	}
-	sum, err := mh.Sum(data, mh.SHA2_256, -1)
-	if err != nil {
-		return cid.Undef, err
-	}
-	c := cid.NewCidV1(cid.Raw, sum)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.contents == nil {
-		m.contents = map[string][]byte{}
-	}
-	m.contents[c.String()] = data
-	return c, nil
-}
-
-func (m *mockIpfsService) GetFile(_ context.Context, c cid.Cid) (peer.ReadSeekCloser, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	data, ok := m.contents[c.String()]
-	if !ok {
-		return nil, io.EOF
-	}
-	return &contentFile{bytes.NewReader(data)}, nil
-}
-
-func (m *mockIpfsService) Close() {}
-
 type mockStorage struct {
 	storageIface.Storage
 	mu    sync.Mutex

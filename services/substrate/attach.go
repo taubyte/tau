@@ -40,10 +40,6 @@ func (srv *Service) attachNodes(cfg config.Config) (err error) {
 		return attachNodesError("pubsub", err)
 	}
 
-	if err = srv.attachNodeIpfs(cfg); err != nil {
-		return attachNodesError("ipfs", err)
-	}
-
 	if err = srv.attachNodeDatabase(); err != nil {
 		return attachNodesError("database", err)
 	}
