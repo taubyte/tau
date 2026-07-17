@@ -15,7 +15,6 @@ import (
 	"github.com/taubyte/tau/pkg/vm-low-orbit/crypto/rand"
 	kvdb "github.com/taubyte/tau/pkg/vm-low-orbit/database/client"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/dns"
-	"github.com/taubyte/tau/pkg/vm-low-orbit/ethereum"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/event"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/globals"
 	"github.com/taubyte/tau/pkg/vm-low-orbit/helpers"
@@ -71,7 +70,6 @@ func (p *plugin) New(instance vm.Instance) (vm.PluginInstance, error) {
 		eventApi: eventApi,
 		factories: []vm.Factory{
 			eventApi,
-			ethereum.New(instance, p.pubsubNode, helperMethods),
 			client.New(instance, helperMethods),
 			vmpubsub.New(instance, p.pubsubNode, helperMethods),
 			vmstorage.New(instance, p.storageNode, helperMethods),

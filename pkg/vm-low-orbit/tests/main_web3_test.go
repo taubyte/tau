@@ -10,8 +10,9 @@ import (
 	plugins "github.com/taubyte/tau/pkg/vm-low-orbit"
 )
 
-// TestMain for the web3 build: same backend mocks as the default build plus the
-// ipfs node, so the ipfs + ethereum plugins (web3-only factories) are wired.
+// TestMain for the web3 build: same backend mocks as the default build. The
+// ipfs and ethereum plugins were extracted to standalone vm-orbit satellites
+// (github.com/taubyte/orbit-ipfs, github.com/taubyte/orbit-eth).
 func TestMain(m *testing.M) {
 	if err := plugins.Initialize(context.Background(),
 		plugins.DatabaseNode(&mockDBService{}),
