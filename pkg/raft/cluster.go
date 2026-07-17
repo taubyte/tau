@@ -382,8 +382,15 @@ func (c *cluster) getTimeoutConfig() TimeoutConfig {
 	return DefaultTimeoutConfig
 }
 
+// minTransportTimeout floors the transport I/O deadline so it is never tied to
+// an aggressive HeartbeatTimeout. A heartbeat as low as tens of ms would make
+// every RPC (a dial + libp2p stream negotiation on a cold peer) race that same
+// budget; raft-level liveness stays fast via HeartbeatTimeout/ElectionTimeout
+// regardless. No effect on production (default HeartbeatTimeout is 15s).
+const minTransportTimeout = time.Second
+
 func (c *cluster) createTransport() (raft.Transport, error) {
-	timeout := c.getTimeoutConfig().HeartbeatTimeout
+	timeout := max(c.getTimeoutConfig().HeartbeatTimeout, minTransportTimeout)
 	transport, err := newNamespaceTransport(c.node.Peer(), c.namespace, timeout, c.encryptionCipher)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create namespace transport: %w", err)
