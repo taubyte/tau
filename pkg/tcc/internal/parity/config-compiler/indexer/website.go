@@ -4,11 +4,11 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/core/common/repositorytype"
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
 
-	"github.com/taubyte/tau/pkg/specs/methods"
-	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
-	"github.com/taubyte/tau/utils/maps"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/specs/methods"
+	websiteSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/website"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/utils/maps"
 )
 
 func Websites(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

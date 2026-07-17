@@ -3,12 +3,12 @@ package decompile
 import (
 	"fmt"
 
-	lib "github.com/taubyte/tau/pkg/schema/functions"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	librarySpec "github.com/taubyte/tau/pkg/specs/library"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/common"
-	"github.com/taubyte/tau/utils/mapstructure"
+	lib "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/functions"
+	projectLib "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
+	librarySpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/library"
+	structureSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/structure"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/utils/mapstructure"
 )
 
 func function(project projectLib.Project, _id string, obj interface{}, appName string) error {

@@ -5,10 +5,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/taubyte/tau/pkg/schema/application"
-	"github.com/taubyte/tau/pkg/schema/libraries"
-	"github.com/taubyte/tau/pkg/schema/smartops"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/fixtures"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/application"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/libraries"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/smartops"
 )
 
 func TestFunctionSmartOps(t *testing.T) {

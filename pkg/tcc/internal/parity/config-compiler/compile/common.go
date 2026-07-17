@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/taubyte/tau/pkg/schema/libraries"
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	smartOpSpec "github.com/taubyte/tau/pkg/specs/smartops"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/libraries"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
+	smartOpSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/smartops"
 	"golang.org/x/exp/slices"
 )
 

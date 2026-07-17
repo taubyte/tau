@@ -3,7 +3,7 @@ package common
 import (
 	"strings"
 
-	librarySpec "github.com/taubyte/tau/pkg/specs/library"
+	librarySpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/library"
 )
 
 func LibraryFromSource(source string) string {

@@ -3,7 +3,7 @@ package common
 import (
 	"regexp"
 
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
 )
 
 type Config struct {

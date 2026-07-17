@@ -3,9 +3,9 @@ package indexer
 import (
 	"fmt"
 
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	smartOpSpec "github.com/taubyte/tau/pkg/specs/smartops"
-	"github.com/taubyte/tau/utils/maps"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
+	smartOpSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/smartops"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/utils/maps"
 )
 
 func SmartOps(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

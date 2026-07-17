@@ -4,9 +4,9 @@ import (
 	"errors"
 	"fmt"
 
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	domainSpec "github.com/taubyte/tau/pkg/specs/domain"
-	"github.com/taubyte/tau/utils/maps"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
+	domainSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/domain"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/utils/maps"
 )
 
 func Domains(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/alecthomas/units"
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
 )
 
 func database(name string, application string, project projectSchema.Project) (_id string, returnMap map[string]interface{}, err error) {

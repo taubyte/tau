@@ -3,9 +3,9 @@ package decompile
 import (
 	"fmt"
 
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"github.com/taubyte/tau/utils/mapstructure"
+	projectLib "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
+	structureSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/structure"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/utils/mapstructure"
 )
 
 func database(project projectLib.Project, _id string, obj interface{}, appName string) error {

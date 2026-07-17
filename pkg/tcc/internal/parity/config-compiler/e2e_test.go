@@ -13,11 +13,11 @@ import (
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/pkg/git"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/compile"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/decompile"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/fixtures"
-	"github.com/taubyte/tau/utils/maps"
+	projectLib "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/utils/maps"
 	"gotest.tools/v3/assert"
 )
 

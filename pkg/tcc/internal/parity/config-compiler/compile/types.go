@@ -1,8 +1,8 @@
 package compile
 
 import (
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/indexer"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
 )
 
 type compileObject struct {
