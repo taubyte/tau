@@ -10,8 +10,8 @@ import (
 	"github.com/ipfs/boxo/ipld/merkledag"
 	ds "github.com/ipfs/go-datastore"
 	query "github.com/ipfs/go-datastore/query"
-	crdt "github.com/ipfs/go-ds-crdt"
 	ipld "github.com/ipfs/go-ipld-format"
+	kvdb "github.com/taubyte/tau/pkg/kvdb"
 )
 
 // crdtPrefix is where every kvdb namespace lives in the node's datastore
@@ -54,11 +54,11 @@ func namespacesOf(ctx context.Context, store ds.Batching) ([]string, error) {
 // service. Reading must never announce heads or fetch remote blocks: the local
 // copy joining the live CRDT of the same path would merge data around the
 // hoarder write path (and around its at-rest cipher). This is the only place
-// the package touches go-ds-crdt.
-func openLegacyView(store ds.Batching, hash string) (*crdt.Datastore, error) {
-	opts := crdt.DefaultOptions()
+// the package touches go-ds-kvdb.
+func openLegacyView(store ds.Batching, hash string) (*kvdb.Datastore, error) {
+	opts := kvdb.DefaultOptions()
 	opts.Logger = logger
-	return crdt.New(store, ds.NewKey(crdtPrefix+hash), offlineDAG(store), nil, opts)
+	return kvdb.NewDatastore(store, ds.NewKey(crdtPrefix+hash), offlineDAG(store), nil, opts)
 }
 
 // offlineDAG is a local-only DAG service over the node's datastore, mirroring
@@ -95,7 +95,7 @@ func FileCids(entries map[string][]byte) []string {
 
 // localEntries lists every logical key/value of a namespace through its
 // offline view (tombstone-correct, unlike scanning raw set keys).
-func localEntries(ctx context.Context, view *crdt.Datastore) (map[string][]byte, error) {
+func localEntries(ctx context.Context, view *kvdb.Datastore) (map[string][]byte, error) {
 	res, err := view.Query(ctx, query.Query{})
 	if err != nil {
 		return nil, err

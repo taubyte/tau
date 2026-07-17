@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	crdt "github.com/ipfs/go-ds-crdt"
 	"github.com/taubyte/tau/p2p/peer"
 )
 
@@ -98,7 +97,7 @@ func TestPubSubBroadcaster_ContextCancellation(t *testing.T) {
 
 	// Test that Next returns an error after context cancellation
 	_, err := broadcaster.Next(ctx)
-	if !errors.Is(err, crdt.ErrNoMoreBroadcast) {
+	if !errors.Is(err, ErrNoMoreBroadcast) {
 		t.Fatalf("Expected ErrNoMoreBroadcast after context cancellation, got %v", err)
 	}
 }

@@ -13,7 +13,6 @@ require (
 	github.com/h2non/filetype v1.1.3
 	github.com/ipfs/go-cid v0.6.1
 	github.com/ipfs/go-datastore v0.8.2
-	github.com/ipfs/go-ds-crdt v0.6.7
 	github.com/ipfs/go-log/v2 v2.6.0
 	github.com/jedib0t/go-pretty/v6 v6.4.6
 	github.com/jellydator/ttlcache/v3 v3.3.0
@@ -155,7 +154,6 @@ require (
 	github.com/davidlazar/go-crypto v0.0.0-20200604182044-b73af7476f6c // indirect
 	github.com/deckarep/golang-set/v2 v2.3.0 // indirect
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.0 // indirect
-	github.com/dgraph-io/ristretto v0.0.3-0.20200630154024-f66de99634de // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/go-events v0.0.0-20190806004212-e31b211e4f1c // indirect
@@ -197,6 +195,7 @@ require (
 	github.com/ipfs/go-bitfield v1.1.0 // indirect
 	github.com/ipfs/go-block-format v0.2.2 // indirect
 	github.com/ipfs/go-cidutil v0.1.0 // indirect
+	github.com/ipfs/go-detect-race v0.0.1 // indirect
 	github.com/ipfs/go-ipfs-delay v0.0.1 // indirect
 	github.com/ipfs/go-ipfs-pq v0.0.3 // indirect
 	github.com/ipfs/go-ipld-legacy v0.2.2 // indirect

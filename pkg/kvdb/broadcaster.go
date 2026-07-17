@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync"
 
-	crdt "github.com/ipfs/go-ds-crdt"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 )
 
@@ -67,7 +66,7 @@ func getTopic(key broadcasterKey) *PubSubBroadcaster {
 // Please register any topic validators before creating the Broadcaster.
 //
 // The broadcaster can be shut down by cancelling the given context.
-// This must be done before Closing the crdt.Datastore, otherwise things
+// This must be done before Closing the Datastore, otherwise things
 // may hang.
 func NewPubSubBroadcaster(ctx context.Context, psub *pubsub.PubSub, topic string) (b *PubSubBroadcaster, err error) {
 	key := broadcasterKey{psub: psub, topic: topic}
@@ -121,7 +120,7 @@ func (pbc *PubSubBroadcaster) ensureSubscribed() (err error) {
 // libp2p Topic.Publish can wedge in the pubsub validation pipeline when the
 // router is tearing down (e.g. a killed node) — it stops observing ctx once past
 // its initial check. Publish detached and return as soon as the broadcaster is
-// shutting down, so a CRDT rebroadcast can never block crdt.Datastore.Close()'s
+// shutting down, so a CRDT rebroadcast can never block Datastore.Close()'s
 // wg.Wait (and thus service/universe teardown). The abandoned Publish unwinds on
 // its own when the pubsub finishes closing.
 func (pbc *PubSubBroadcaster) Broadcast(ctx context.Context, data []byte) error {
@@ -141,18 +140,18 @@ func (pbc *PubSubBroadcaster) Broadcast(ctx context.Context, data []byte) error 
 func (pbc *PubSubBroadcaster) Next(ctx context.Context) ([]byte, error) {
 	for try := 3; try > 0; try-- {
 		msg, err := pbc.next(ctx)
-		if err != crdt.ErrNoMoreBroadcast {
+		if err != ErrNoMoreBroadcast {
 			return msg, err
 		}
 
 		// Don't re-subscribe a broadcaster that's shutting down: ensureSubscribed
 		// would block on the lock the cleanup goroutine holds while it closes the
-		// topic, hanging this reader (handleNext) and so crdt.Close's wg.Wait.
+		// topic, hanging this reader (handleNext) and so Close's wg.Wait.
 		select {
 		case <-pbc.ctx.Done():
-			return nil, crdt.ErrNoMoreBroadcast
+			return nil, ErrNoMoreBroadcast
 		case <-ctx.Done():
-			return nil, crdt.ErrNoMoreBroadcast
+			return nil, ErrNoMoreBroadcast
 		default:
 		}
 
@@ -162,7 +161,7 @@ func (pbc *PubSubBroadcaster) Next(ctx context.Context) ([]byte, error) {
 		}
 	}
 
-	return nil, crdt.ErrNoMoreBroadcast
+	return nil, ErrNoMoreBroadcast
 }
 
 func (pbc *PubSubBroadcaster) next(ctx context.Context) ([]byte, error) {
@@ -171,9 +170,9 @@ func (pbc *PubSubBroadcaster) next(ctx context.Context) ([]byte, error) {
 
 	select {
 	case <-pbc.ctx.Done():
-		return nil, crdt.ErrNoMoreBroadcast
+		return nil, ErrNoMoreBroadcast
 	case <-ctx.Done():
-		return nil, crdt.ErrNoMoreBroadcast
+		return nil, ErrNoMoreBroadcast
 	default:
 	}
 
@@ -181,14 +180,14 @@ func (pbc *PubSubBroadcaster) next(ctx context.Context) ([]byte, error) {
 	defer pbc.lock.Unlock()
 
 	if pbc.subs == nil {
-		return nil, crdt.ErrNoMoreBroadcast
+		return nil, ErrNoMoreBroadcast
 	}
 
 	msg, err = pbc.subs.Next(pbc.ctx)
 	if err != nil {
 		if strings.Contains(err.Error(), "subscription cancelled") ||
 			strings.Contains(err.Error(), "context") {
-			return nil, crdt.ErrNoMoreBroadcast
+			return nil, ErrNoMoreBroadcast
 		}
 		return nil, err
 	}

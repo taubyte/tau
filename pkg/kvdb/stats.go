@@ -11,8 +11,12 @@ import (
 
 func (kvd *kvDatabase) Stats(ctx context.Context) kvdb.Stats {
 	s := kvd.datastore.InternalStats(ctx)
+	heads := make([]cid.Cid, len(s.Heads))
+	for i, h := range s.Heads {
+		heads[i] = h.Cid
+	}
 	return &stats{
-		heads:      s.Heads,
+		heads:      heads,
 		maxHeight:  s.MaxHeight,
 		queuedJobs: s.QueuedJobs,
 	}

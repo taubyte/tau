@@ -4,7 +4,6 @@ import (
 	"sync"
 	"time"
 
-	crdt "github.com/ipfs/go-ds-crdt"
 	"github.com/taubyte/tau/core/kvdb"
 	"github.com/taubyte/tau/p2p/peer"
 	"go.uber.org/zap/zapcore"
@@ -108,7 +107,7 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 		return nil, err
 	}
 
-	opts := crdt.DefaultOptions()
+	opts := DefaultOptions()
 	opts.Logger = logger
 	if rebroadcastIntervalSec == 0 {
 		rebroadcastIntervalSec = defaultRebroadcastIntervalSec
@@ -123,7 +122,7 @@ func (f *factory) New(logger logging.StandardLogger, path string, rebroadcastInt
 		logger.Infof("Removed: [%s]\n", k)
 	}
 
-	s.datastore, err = crdt.New(f.node.Store(), ds.NewKey("crdt/"+path), f.node.DAG(), s.broadcaster, opts)
+	s.datastore, err = NewDatastore(f.node.Store(), ds.NewKey("crdt/"+path), f.node.DAG(), s.broadcaster, opts)
 	if err != nil {
 		slogger.Error("kvdb.New failed with ", err)
 		s.closeCtxC()
