@@ -116,54 +116,22 @@ func TestFork_Query(t *testing.T) {
 		_ = forkVal
 	})
 
-	t.Run("Fork method creates independent copy", func(t *testing.T) {
-		query := seer.Get("fork2").Get("test2")
-		forked := query.Fork()
+	t.Run("branching is independent (immutable queries)", func(t *testing.T) {
+		base := seer.Get("fork2").Get("test2")
 
-		// Both should be independent
-		if query == forked {
-			t.Error("Fork should create a new instance")
+		// Fork is now a no-op identity; independence comes from Get returning a
+		// new query rather than mutating the receiver.
+		if base.Fork() != base {
+			t.Error("Fork should return the same instance for an immutable query")
 		}
 
-		// Operations on one shouldn't affect the other
-		query = query.Get("nested1")
-		forked = forked.Get("nested2")
-
-		if len(query.requestedPath) != len(forked.requestedPath) {
-			t.Error("Forked query should have same initial path")
+		a := base.Get("nested1")
+		b := base.Get("nested2")
+		if a == b {
+			t.Error("distinct Get() calls must yield distinct queries")
 		}
-	})
-}
-
-func TestClear_Query(t *testing.T) {
-	seer := newTestSeer(t)
-
-	t.Run("Clear resets query state", func(t *testing.T) {
-		query := seer.Get("clear").Get("test").Document()
-		query = query.Set("value")
-
-		cleared := query.Clear()
-
-		if len(cleared.ops) != 0 {
-			t.Error("Clear should remove all operations")
-		}
-		if len(cleared.errors) != 0 {
-			t.Error("Clear should remove all errors")
-		}
-		if cleared.write {
-			t.Error("Clear should reset write flag")
-		}
-	})
-
-	t.Run("Clear returns query for chaining", func(t *testing.T) {
-		query := seer.Get("clear2")
-		cleared := query.Clear()
-
-		if cleared == nil {
-			t.Error("Clear should return the query")
-		}
-		if cleared != query {
-			t.Error("Clear should return the same query instance")
+		if len(a.logicalPath()) != len(b.logicalPath()) {
+			t.Error("sibling branches should have equal-length paths")
 		}
 	})
 }

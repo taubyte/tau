@@ -315,7 +315,7 @@ func (s *Seer) replayWAL() error {
 		return nil
 	}
 	for i, ops := range frames {
-		q := &Query{seer: s, ops: ops}
+		q := queryFromOps(s, ops)
 		if err := q.Commit(); err != nil {
 			slog.Warn("yaseer: WAL replay frame failed", "index", i, "error", err)
 			continue

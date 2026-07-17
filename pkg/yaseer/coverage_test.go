@@ -113,8 +113,10 @@ func TestWithWALEmptyPathRejected(t *testing.T) {
 func TestOpToWireUnknownHandler(t *testing.T) {
 	// Synthesise an op with a handler we never registered.
 	o := op{
-		opType:  opTypeGet,
-		handler: func(this op, q *Query, p []string, v *yamlNode) ([]string, *yamlNode, error) { return p, v, nil },
+		opType: opTypeGet,
+		handler: func(this op, q *Query, w bool, p []string, v *yamlNode) ([]string, *yamlNode, error) {
+			return p, v, nil
+		},
 	}
 	if _, err := opToWire(o); err == nil {
 		t.Error("expected error for unknown handler")
@@ -215,7 +217,7 @@ func TestDecodeOpsFrameTruncatedAtEveryStep(t *testing.T) {
 	// Build a valid frame body, then progressively truncate from the
 	// tail to hit each "truncated" error branch.
 	q := (&Query{seer: &Seer{}}).Get("x").Set("y")
-	body, err := encodeOpsFrame(q.ops)
+	body, err := encodeOpsFrame(q.opChain())
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
@@ -229,7 +231,7 @@ func TestDecodeOpsFrameTruncatedAtEveryStep(t *testing.T) {
 
 func TestDecodeOpsFrameTrailingBytes(t *testing.T) {
 	q := (&Query{seer: &Seer{}}).Get("x")
-	body, _ := encodeOpsFrame(q.ops)
+	body, _ := encodeOpsFrame(q.opChain())
 	body = append(body, 0x99) // trailing garbage byte
 	if _, err := decodeOpsFrame(body); err == nil {
 		t.Error("expected error for trailing bytes")
@@ -280,7 +282,7 @@ func TestLoadCommitFramesBadCRC(t *testing.T) {
 	// recovery at that point.
 	s := &Seer{fs: memfs, walPath: ".wal"}
 	q := s.Query().Get("x").Set("y")
-	body, _ := encodeOpsFrame(q.ops)
+	body, _ := encodeOpsFrame(q.opChain())
 	var buf bytes.Buffer
 	buf.WriteString(frameMagic)
 	binary.Write(&buf, binary.BigEndian, uint32(len(body)))
@@ -560,7 +562,7 @@ func TestAppendCommitWALDisabledIsNoop(t *testing.T) {
 	memfs := afero.NewMemMapFs()
 	s := &Seer{fs: memfs, walPath: ""}
 	q := s.Query().Get("x").Set("y")
-	if err := s.appendCommitWAL(q.ops); err != nil {
+	if err := s.appendCommitWAL(q.opChain()); err != nil {
 		t.Errorf("disabled appendCommitWAL should be noop, got %v", err)
 	}
 }
@@ -571,7 +573,7 @@ func TestAppendCommitWALReadOnlyFS(t *testing.T) {
 	roFS := afero.NewReadOnlyFs(afero.NewMemMapFs())
 	s := &Seer{fs: roFS, walPath: ".wal"}
 	q := s.Query().Get("x").Set("y")
-	if err := s.appendCommitWAL(q.ops); err == nil {
+	if err := s.appendCommitWAL(q.opChain()); err == nil {
 		t.Error("expected error appending to read-only FS")
 	}
 }

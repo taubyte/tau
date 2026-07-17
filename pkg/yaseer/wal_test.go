@@ -127,7 +127,7 @@ func TestWAL_RoundTripFrame(t *testing.T) {
 	// Build an ops list by exercising the public Query API so the
 	// handlers match the ones live commits use.
 	q := s.Get("foo").Get("bar").Document().Get("baz").Set("value")
-	body, err := encodeOpsFrame(q.ops)
+	body, err := encodeOpsFrame(q.opChain())
 	if err != nil {
 		t.Fatalf("encode: %v", err)
 	}
@@ -135,15 +135,15 @@ func TestWAL_RoundTripFrame(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if len(rebuilt) != len(q.ops) {
-		t.Fatalf("opCount mismatch: got %d, want %d", len(rebuilt), len(q.ops))
+	if len(rebuilt) != len(q.opChain()) {
+		t.Fatalf("opCount mismatch: got %d, want %d", len(rebuilt), len(q.opChain()))
 	}
-	for i := range q.ops {
-		if rebuilt[i].opType != q.ops[i].opType {
-			t.Errorf("op[%d] opType = %d, want %d", i, rebuilt[i].opType, q.ops[i].opType)
+	for i := range q.opChain() {
+		if rebuilt[i].opType != q.opChain()[i].opType {
+			t.Errorf("op[%d] opType = %d, want %d", i, rebuilt[i].opType, q.opChain()[i].opType)
 		}
-		if rebuilt[i].name != q.ops[i].name {
-			t.Errorf("op[%d] name = %q, want %q", i, rebuilt[i].name, q.ops[i].name)
+		if rebuilt[i].name != q.opChain()[i].name {
+			t.Errorf("op[%d] name = %q, want %q", i, rebuilt[i].name, q.opChain()[i].name)
 		}
 	}
 }

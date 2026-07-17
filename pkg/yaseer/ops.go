@@ -17,22 +17,22 @@ func getNodeLocation(node *yaml.Node) (line, column int) {
 	return node.Line, node.Column
 }
 
-func opDelete(this op, query *Query, path []string, value *yamlNode) ([]string, *yamlNode, error) {
-	if !query.write {
+func opDelete(this op, query *Query, write bool, path []string, value *yamlNode) ([]string, *yamlNode, error) {
+	if !write {
 		return path, nil, errors.New("failed to call Delete() during a read query")
 	}
 
 	if value == nil || value.parent == nil {
-		return _opDeleteInFileSystem(this, query, path, nil)
+		return _opDeleteInFileSystem(this, query, write, path, nil)
 	} else {
 		// else we're dealing with inside
-		return _opDeleteInYaml(this, query, path, value)
+		return _opDeleteInYaml(this, query, write, path, value)
 	}
 }
 
-func _opDeleteInYaml(this op, query *Query, path []string, value *yamlNode) ([]string, *yamlNode, error) {
+func _opDeleteInYaml(this op, query *Query, write bool, path []string, value *yamlNode) ([]string, *yamlNode, error) {
 
-	if !query.write {
+	if !write {
 		return path, nil, errors.New("failed to call Delete() during a read query")
 	}
 
@@ -53,7 +53,7 @@ func _opDeleteInYaml(this op, query *Query, path []string, value *yamlNode) ([]s
 	return path, &yamlNode{parent: value.parent, prev: nil, this: nil, filePath: value.filePath}, nil
 }
 
-func _opDeleteInFileSystem(this op, query *Query, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
+func _opDeleteInFileSystem(this op, query *Query, write bool, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
 	_path = append(_path, this.name)
 	path := "/" + joinPath(_path)
 
@@ -86,9 +86,9 @@ func _opDeleteInFileSystem(this op, query *Query, _path []string, value *yamlNod
 
 }
 
-func opSetInYaml(this op, query *Query, path []string, value *yamlNode) ([]string, *yamlNode, error) {
+func opSetInYaml(this op, query *Query, write bool, path []string, value *yamlNode) ([]string, *yamlNode, error) {
 
-	if !query.write {
+	if !write {
 		return path, nil, errors.New("failed to call Set() during a read query")
 	}
 
@@ -116,20 +116,20 @@ func opSetInYaml(this op, query *Query, path []string, value *yamlNode) ([]strin
 	return path, &yamlNode{parent: parentNode, prev: value.prev, this: curNode, filePath: value.filePath}, err
 }
 
-func opGetOrCreate(this op, query *Query, path []string, value *yamlNode) ([]string, *yamlNode, error) {
+func opGetOrCreate(this op, query *Query, write bool, path []string, value *yamlNode) ([]string, *yamlNode, error) {
 	if value == nil {
-		if query.write {
-			return _opGetOrCreateInFileSystem(this, query, path, nil)
+		if write {
+			return _opGetOrCreateInFileSystem(this, query, write, path, nil)
 		} else {
-			return _opGetInFileSystem(this, query, path, nil)
+			return _opGetInFileSystem(this, query, write, path, nil)
 		}
 	} else {
 		// else we're dealing with inside
-		return _opGetInYaml(this, query, path, value)
+		return _opGetInYaml(this, query, write, path, value)
 	}
 }
 
-func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]string, *yamlNode, error) {
+func _opGetInYaml(this op, query *Query, write bool, path []string, value *yamlNode) ([]string, *yamlNode, error) {
 
 	if value == nil || value.this == nil {
 		return path, nil, fmt.Errorf("can not find %s in the empty document %s", this.name, joinPath(path))
@@ -159,7 +159,7 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 			}
 		}
 
-		if query.write {
+		if write {
 			parentNode = curNode
 			curNode = &yaml.Node{}
 			curNode.Encode(map[string]interface{}{this.name: nil})
@@ -181,7 +181,7 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 		}
 		_index := int(_idx)
 		if _index >= len(curNode.Content) {
-			if query.write {
+			if write {
 				parentNode = curNode
 				curNode = &yaml.Node{}
 				curNode.Encode(nil)
@@ -203,7 +203,7 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 		return path, &yamlNode{parent: parentNode, prev: nil, this: curNode.Content[_index], filePath: filePath}, nil
 	}
 
-	if query.write {
+	if write {
 
 		curNode.Encode(map[string]interface{}{this.name: nil})
 		line, column := getNodeLocation(curNode.Content[1])
@@ -217,7 +217,7 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 	return path, nil, fmt.Errorf("can not find %s", joinPath(path))
 }
 
-func _opGetOrCreateInFileSystem(this op, query *Query, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
+func _opGetOrCreateInFileSystem(this op, query *Query, write bool, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
 	_path = append(_path, this.name)
 	path := "/" + joinPath(_path)
 	doc, exists := query.seer.documents[path+".yaml"]
@@ -267,7 +267,7 @@ func _opGetOrCreateInFileSystem(this op, query *Query, _path []string, value *ya
 	return _path, nil, fmt.Errorf("unsupported file `%s`", path)
 }
 
-func _opGetInFileSystem(this op, query *Query, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
+func _opGetInFileSystem(this op, query *Query, write bool, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
 	_path = append(_path, this.name)
 	path := "/" + joinPath(_path)
 	doc, exists := query.seer.documents[path+".yaml"]
@@ -313,7 +313,7 @@ func _opGetInFileSystem(this op, query *Query, _path []string, value *yamlNode) 
 	return _path, nil, fmt.Errorf("unsupported file `%s`", path)
 }
 
-func opCreateDocument(this op, query *Query, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
+func opCreateDocument(this op, query *Query, write bool, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
 	_path = append(_path, this.name+".yaml")
 	path := "/" + joinPath(_path)
 	// Check for it first
@@ -333,7 +333,7 @@ func opCreateDocument(this op, query *Query, _path []string, value *yamlNode) ([
 			return _path, nil, fmt.Errorf("can't create document: `%s` is a directory", path)
 		}
 	} else { // we need to create
-		if query.write {
+		if write {
 			f, err := query.seer.fs.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0640)
 			if err != nil {
 				return _path, nil, fmt.Errorf("creating yaml file %s failed with %w", path, err)
