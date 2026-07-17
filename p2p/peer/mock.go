@@ -6,7 +6,6 @@ import (
 	"os"
 	"sync"
 
-	ipfslite "github.com/hsanjuan/ipfs-lite"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
 	discovery "github.com/libp2p/go-libp2p/p2p/discovery/routing"
@@ -61,7 +60,7 @@ func Mock(ctx context.Context) Node {
 	}
 
 	// Create ipfs node
-	p.ipfs, err = ipfslite.New(p.ctx, p.store, nil, p.host, p.dht, nil)
+	p.dag, err = newDAG(p.ctx, p.store, p.host, p.dht)
 	if err != nil {
 		panic(err)
 	}
