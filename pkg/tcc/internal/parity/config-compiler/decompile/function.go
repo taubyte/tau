@@ -7,7 +7,7 @@ import (
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	"github.com/taubyte/tau/pkg/tcc/internal/parity/common"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/common"
 	"github.com/taubyte/tau/utils/mapstructure"
 )
 

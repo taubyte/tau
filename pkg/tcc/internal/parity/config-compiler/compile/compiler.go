@@ -11,10 +11,10 @@ import (
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/core/services/patrick"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	"github.com/taubyte/tau/pkg/tcc/internal/parity/common"
-	"github.com/taubyte/tau/pkg/tcc/internal/parity/decompile"
-	"github.com/taubyte/tau/pkg/tcc/internal/parity/ifaces"
-	"github.com/taubyte/tau/pkg/tcc/internal/parity/indexer"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/common"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/decompile"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/ifaces"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/indexer"
 )
 
 type compiler struct {

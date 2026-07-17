@@ -9,7 +9,7 @@ import (
 	"github.com/taubyte/tau/core/services/patrick"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	"github.com/taubyte/tau/pkg/tcc/engine"
-	"github.com/taubyte/tau/pkg/tcc/internal/parity/compile"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/compile"
 	"gotest.tools/v3/assert"
 )
 

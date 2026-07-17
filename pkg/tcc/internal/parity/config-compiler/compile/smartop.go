@@ -7,7 +7,7 @@ import (
 	"github.com/alecthomas/units"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
-	"github.com/taubyte/tau/pkg/tcc/internal/parity/common"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/common"
 )
 
 func smartOps(name string, application string, project projectSchema.Project) (_id string, returnMap map[string]interface{}, err error) {

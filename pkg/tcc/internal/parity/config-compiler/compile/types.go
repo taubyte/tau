@@ -2,7 +2,7 @@ package compile
 
 import (
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	"github.com/taubyte/tau/pkg/tcc/internal/parity/indexer"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/indexer"
 )
 
 type compileObject struct {

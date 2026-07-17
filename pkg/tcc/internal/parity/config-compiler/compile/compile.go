@@ -13,7 +13,7 @@ import (
 	smartOpSpec "github.com/taubyte/tau/pkg/specs/smartops"
 	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
-	"github.com/taubyte/tau/pkg/tcc/internal/parity/indexer"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/indexer"
 )
 
 func (c *compiler) indexer(ctx *indexer.IndexContext, f indexerFunc) error {
