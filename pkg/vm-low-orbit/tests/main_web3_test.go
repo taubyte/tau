@@ -18,7 +18,6 @@ func TestMain(m *testing.M) {
 		plugins.PubsubNode(pubsubMock),
 		plugins.P2PNode(p2pMock),
 		plugins.StorageNode(&mockStorageService{}),
-		plugins.IpfsNode(&mockIpfsService{}),
 	); err != nil {
 		panic(err)
 	}
