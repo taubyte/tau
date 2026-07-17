@@ -93,10 +93,10 @@ func TestFork_Query(t *testing.T) {
 		forked := Fork(original)
 
 		// Modify original
-		original.Set("original_value")
+		original = original.Set("original_value")
 
 		// Forked should be independent
-		forked.Set("forked_value")
+		forked = forked.Set("forked_value")
 
 		// Commit both
 		if err := original.Commit(); err != nil {
@@ -126,8 +126,8 @@ func TestFork_Query(t *testing.T) {
 		}
 
 		// Operations on one shouldn't affect the other
-		query.Get("nested1")
-		forked.Get("nested2")
+		query = query.Get("nested1")
+		forked = forked.Get("nested2")
 
 		if len(query.requestedPath) != len(forked.requestedPath) {
 			t.Error("Forked query should have same initial path")
@@ -140,7 +140,7 @@ func TestClear_Query(t *testing.T) {
 
 	t.Run("Clear resets query state", func(t *testing.T) {
 		query := seer.Get("clear").Get("test").Document()
-		query.Set("value")
+		query = query.Set("value")
 
 		cleared := query.Clear()
 
@@ -174,7 +174,7 @@ func TestErrors_Query(t *testing.T) {
 	t.Run("Errors returns copy of error slice", func(t *testing.T) {
 		query := seer.Query()
 		// Force an error
-		query.Document() // This should add an error
+		query = query.Document() // This should add an error
 
 		errors := query.Errors()
 		if len(errors) == 0 {
@@ -220,7 +220,7 @@ func TestDocument_ErrorHandling(t *testing.T) {
 
 	t.Run("Document on empty query adds error", func(t *testing.T) {
 		query := seer.Query()
-		query.Document() // Should add error
+		query = query.Document() // Should add error
 
 		errors := query.Errors()
 		if len(errors) == 0 {
@@ -234,7 +234,7 @@ func TestValue_ErrorHandling(t *testing.T) {
 
 	t.Run("Value returns error when query has errors", func(t *testing.T) {
 		query := seer.Query()
-		query.Document() // Add error
+		query = query.Document() // Add error
 
 		var val string
 		err := query.Value(&val)
@@ -408,7 +408,7 @@ func TestCommit_ErrorHandling(t *testing.T) {
 
 	t.Run("Commit with errors returns error", func(t *testing.T) {
 		query := seer.Query()
-		query.Document() // This adds an error
+		query = query.Document() // This adds an error
 
 		err := query.Commit()
 		if err == nil {
@@ -419,7 +419,7 @@ func TestCommit_ErrorHandling(t *testing.T) {
 	t.Run("Commit handles operation handler errors", func(t *testing.T) {
 		// Create a query that will fail during commit
 		query := seer.Get("commit").Get("test").Document()
-		query.Set("value")
+		query = query.Set("value")
 
 		// Normal commit should work
 		// If error occurs, that's the path we're testing

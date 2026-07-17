@@ -170,7 +170,7 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, str
 	for _, itm := range path {
 		switch pitm := itm.(type) {
 		case string:
-			query.Get(pitm)
+			query = query.Get(pitm)
 			last_match = pitm
 			// Invalidate cache since query state changed
 			cacheValid = false
@@ -194,7 +194,7 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, str
 			for _, l := range list {
 				if pitm.Match(l) {
 					found = true
-					query.Get(l)
+					query = query.Get(l)
 					last_match = l
 					// Invalidate cache since query state changed
 					cacheValid = false
