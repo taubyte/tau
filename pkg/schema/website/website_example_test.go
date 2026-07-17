@@ -58,9 +58,9 @@ func ExampleWebsite() {
 	//     - tag2
 	// domains:
 	//     - hal_domain
+	// paths:
+	//     - /
 	// source:
-	//     paths:
-	//         - /
 	//     branch: main
 	//     github:
 	//         id: "222222222"

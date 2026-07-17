@@ -127,7 +127,8 @@ func getBody(goT string, segs []string) string {
 
 // getBodyCompat reads the canonical path, falling back to the compat alias when
 // the canonical key is absent (mirrors the tcc engine's Path-then-Compat read in
-// engine/node.go). Used only when the compat has no distinct deprecated accessor.
+// engine/node.go). Used for every canonical getter that declares a compat, so
+// old on-disk data under the legacy key still reads.
 func getBodyCompat(goT string, path, compat []string) string {
 	return fmt.Sprintf("var v %s\nif %s.Value(&v) == nil {\nreturn v\n}\n%s",
 		goT, chain(path), getBody(goT, compat))

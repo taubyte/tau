@@ -57,7 +57,7 @@ func ExampleStorage() {
 	//     - tag1
 	//     - tag2
 	// match: users
-	// useRegex: false
+	// regex: false
 	// access:
 	//     network: all
 	// object:
