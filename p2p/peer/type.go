@@ -11,7 +11,6 @@ import (
 	"github.com/libp2p/go-libp2p/core/pnet"
 	"github.com/taubyte/tau/utils/fs/dir"
 
-	ipfslite "github.com/hsanjuan/ipfs-lite"
 	"github.com/ipfs/go-cid"
 	"github.com/ipfs/go-datastore"
 	pubsub "github.com/libp2p/go-libp2p-pubsub"
@@ -33,7 +32,7 @@ type Node interface {
 	AddFileForCid(r io.Reader) (cid.Cid, error)
 	Close()
 	Context() context.Context
-	DAG() *ipfslite.Peer
+	DAG() *DAGService
 	DeleteFile(id string) error
 	Discovery() discovery.Discovery
 	Done() <-chan struct{}
@@ -69,7 +68,7 @@ type node struct {
 	dht                 routing.Routing
 	drouter             discovery.Discovery
 	messaging           *pubsub.PubSub
-	ipfs                *ipfslite.Peer
+	dag                 *DAGService
 	peering             PeeringService
 
 	topicsMutex sync.RWMutex
@@ -97,8 +96,8 @@ func (p *node) Store() datastore.Batching {
 	return p.store
 }
 
-func (p *node) DAG() *ipfslite.Peer {
-	return p.ipfs
+func (p *node) DAG() *DAGService {
+	return p.dag
 }
 
 func (p *node) Discovery() discovery.Discovery {

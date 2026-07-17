@@ -47,6 +47,15 @@ func TestLoad_NonexistentFile(t *testing.T) {
 	assert.Error(t, err, "Load should return an error for non-existent file")
 }
 
+func TestLoad_InvalidContent(t *testing.T) {
+	tmpDir := t.TempDir()
+	keyPath := filepath.Join(tmpDir, "garbage.key")
+	require.NoError(t, os.WriteFile(keyPath, []byte("not a valid key"), 0400))
+
+	_, err := Load(keyPath)
+	assert.Error(t, err, "Load should error on undecodable key content")
+}
+
 func TestLoadRaw(t *testing.T) {
 	tmpDir := t.TempDir()
 	keyPath := filepath.Join(tmpDir, "test.key")

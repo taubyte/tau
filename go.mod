@@ -11,7 +11,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/gorilla/websocket v1.5.3
 	github.com/h2non/filetype v1.1.3
-	github.com/hsanjuan/ipfs-lite v1.8.6
 	github.com/ipfs/go-cid v0.6.1
 	github.com/ipfs/go-datastore v0.8.2
 	github.com/ipfs/go-ds-crdt v0.6.7

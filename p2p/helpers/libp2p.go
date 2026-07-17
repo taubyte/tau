@@ -122,11 +122,9 @@ var Libp2pLitePrivateNodeOptions = []libp2p.Option{
 	libp2p.NATPortMap(),
 }
 
-// SetupLibp2p returns a routed host and DHT instances that can be used to
-// easily create a ipfslite Peer. You may consider to use Peer.Bootstrap()
-// after creating the IPFS-Lite Peer to connect to other peers. When the
-// datastore parameter is nil, the DHT will use an in-memory datastore, so all
-// provider records are lost on program shutdown.
+// SetupLibp2p returns a routed host and DHT instance used to build the peer's
+// DAG service. When the datastore parameter is nil, the DHT will use an
+// in-memory datastore, so all provider records are lost on program shutdown.
 //
 // Additional libp2p options can be passed. Note that the Identity,
 // ListenAddrs and PrivateNetwork options will be setup automatically.

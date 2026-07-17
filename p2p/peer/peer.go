@@ -14,7 +14,7 @@ import (
 	crypto "github.com/libp2p/go-libp2p/core/crypto"
 	peer "github.com/libp2p/go-libp2p/core/peer"
 
-	ipfslite "github.com/hsanjuan/ipfs-lite"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
 	dirutils "github.com/taubyte/tau/utils/fs/dir"
 
 	"github.com/libp2p/go-libp2p/core/pnet"
@@ -33,6 +33,13 @@ var (
 	DiscoveryBackoffMin = 60 * time.Second
 	DiscoveryBackoffMax = time.Hour
 )
+
+// DefaultBootstrapPeers returns the public IPFS bootstrap peers. Drop-in
+// replacement for ipfslite.DefaultBootstrapPeers().
+func DefaultBootstrapPeers() []peer.AddrInfo {
+	peers, _ := peer.AddrInfosFromP2pAddrs(dht.DefaultBootstrapPeers...)
+	return peers
+}
 
 func StandAlone() BootstrapParams {
 	return BootstrapParams{Enable: false}
@@ -81,12 +88,15 @@ func (p *node) cleanup() error {
 		}
 	}
 
-	// Cancel context before closing store to allow ipfs-lite's autoclose
-	// goroutine to properly shut down the reprovider (which accesses the store)
+	// Cancel context first, then deterministically close the DAG service
+	// (reprovider + blockservice) before the store it reads from. Close is
+	// idempotent, so racing the autoclose goroutine is safe.
 	p.ctx_cancel()
-
-	// Give the autoclose goroutine time to finish
-	time.Sleep(50 * time.Millisecond)
+	if p.dag != nil {
+		if err := p.dag.Close(); err != nil {
+			return fmt.Errorf("closing DAG service failed: %w", err)
+		}
+	}
 
 	if p.store != nil {
 		if err := p.store.Close(); err != nil {
@@ -249,10 +259,10 @@ func new(ctx context.Context, repoPath interface{}, privateKey []byte, swarmKey 
 		return nil, fmt.Errorf("setting up libp2p failed: %w", err)
 	}
 
-	// Create ipfs node
-	p.ipfs, err = ipfslite.New(p.ctx, p.store, nil, p.host, p.dht, &ipfslite.Config{})
+	// Create DAG service (blockstore + bitswap + merkledag + unixfs)
+	p.dag, err = newDAG(p.ctx, p.store, p.host, p.dht)
 	if err != nil {
-		return nil, fmt.Errorf("creating ipfs-lite node failed: %w", err)
+		return nil, fmt.Errorf("creating DAG service failed: %w", err)
 	}
 
 	p.peering = NewPeeringService(&p)
