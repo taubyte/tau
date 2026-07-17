@@ -18,9 +18,9 @@ import (
 	"github.com/ipfs/boxo/ipld/unixfs/importer/balanced"
 	ihelper "github.com/ipfs/boxo/ipld/unixfs/importer/helpers"
 	ds "github.com/ipfs/go-datastore"
-	crdt "github.com/ipfs/go-ds-crdt"
 	ipld "github.com/ipfs/go-ipld-format"
 	helpers "github.com/taubyte/tau/p2p/helpers"
+	kvdb "github.com/taubyte/tau/pkg/kvdb"
 )
 
 // seedExportFixture writes a namespace into a service data dir under the tau
@@ -39,7 +39,7 @@ func seedExportFixture(t *testing.T, root, service, hash string, entries map[str
 
 	bs := blockstore.NewIdStore(blockstore.NewBlockstore(store))
 	dag := merkledag.NewDAGService(blockservice.New(bs, offline.Exchange(bs)))
-	view, err := crdt.New(store, ds.NewKey("crdt/"+hash), dag, nil, crdt.DefaultOptions())
+	view, err := kvdb.NewDatastore(store, ds.NewKey("crdt/"+hash), dag, nil, kvdb.DefaultOptions())
 	if err != nil {
 		t.Fatalf("opening fixture namespace failed: %v", err)
 	}

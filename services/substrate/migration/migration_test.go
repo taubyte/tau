@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"go/ast"
 	"go/parser"
 	"go/token"
 	"io"
@@ -543,11 +544,21 @@ func TestMigrate_VerifyFailureBlocksScrub(t *testing.T) {
 	}
 }
 
-// TestNoKvdbImport guards the broadcaster-leak hazard structurally: the
-// migration package must never open a namespace through pkg/kvdb — its
-// broadcaster would announce the plaintext local heads to any live replica of
-// the same path.
-func TestNoKvdbImport(t *testing.T) {
+// TestNoLiveBroadcaster guards the broadcaster-leak hazard structurally: the
+// migration package must never open a namespace with a live broadcaster — the
+// kvdb factory (kvdb.New) or a PubSub broadcaster constructor would announce the
+// plaintext local heads to any live replica of the same path. Reads must go
+// through the offline view: kvdb.NewDatastore with a nil broadcaster.
+//
+// go-ds-crdt is vendored into pkg/kvdb, so migration now legitimately imports
+// pkg/kvdb for the offline datastore primitives; the guard targets the leak
+// vectors directly instead of banning the import wholesale.
+func TestNoLiveBroadcaster(t *testing.T) {
+	forbidden := map[string]bool{
+		"New":                       true, // factory -> attaches a live broadcaster
+		"NewPubSubBroadcaster":      true,
+		"NewBasicPubSubBroadcaster": true,
+	}
 	fset := token.NewFileSet()
 	files, err := filepath.Glob("*.go")
 	if err != nil {
@@ -561,14 +572,32 @@ func TestNoKvdbImport(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		parsed, err := parser.ParseFile(fset, f, src, parser.ImportsOnly)
+		parsed, err := parser.ParseFile(fset, f, src, 0)
 		if err != nil {
 			t.Fatal(err)
 		}
+		kvdbName := ""
 		for _, imp := range parsed.Imports {
-			if strings.Contains(imp.Path.Value, "github.com/taubyte/tau/pkg/kvdb") {
-				t.Fatalf("%s imports pkg/kvdb — reads must go through the offline view (%s)", f, imp.Path.Value)
+			if strings.Trim(imp.Path.Value, `"`) == "github.com/taubyte/tau/pkg/kvdb" {
+				if imp.Name != nil {
+					kvdbName = imp.Name.Name
+				} else {
+					kvdbName = "kvdb"
+				}
 			}
 		}
+		if kvdbName == "" {
+			continue
+		}
+		ast.Inspect(parsed, func(n ast.Node) bool {
+			sel, ok := n.(*ast.SelectorExpr)
+			if !ok {
+				return true
+			}
+			if x, ok := sel.X.(*ast.Ident); ok && x.Name == kvdbName && forbidden[sel.Sel.Name] {
+				t.Errorf("%s uses kvdb.%s — migration must read the offline view (kvdb.NewDatastore, nil broadcaster), never a live broadcaster", f, sel.Sel.Name)
+			}
+			return true
+		})
 	}
 }

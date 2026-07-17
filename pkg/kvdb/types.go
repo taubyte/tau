@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/ipfs/go-cid"
-	crdt "github.com/ipfs/go-ds-crdt"
 )
 
 type kvDatabase struct {
@@ -12,7 +11,7 @@ type kvDatabase struct {
 	closeCtxC   context.CancelFunc
 	factory     *factory
 	broadcaster *(PubSubBroadcaster)
-	datastore   *(crdt.Datastore)
+	datastore   *(Datastore)
 	closed      bool
 	path        string
 }
