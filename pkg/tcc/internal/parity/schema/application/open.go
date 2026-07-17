@@ -2,7 +2,7 @@ package application
 
 import (
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/basic"
-	seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 // Open opens the application at root/applications/<name>, returns Application and error

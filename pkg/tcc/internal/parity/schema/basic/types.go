@@ -2,7 +2,7 @@ package basic
 
 import (
 	structureSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/structure"
-	seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 // Getter represents the methods which are common to all resources

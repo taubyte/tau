@@ -5,7 +5,8 @@ import (
 	"os"
 	"testing"
 
-	"golang.org/x/exp/slices"
+	"slices"
+
 	"gopkg.in/yaml.v3"
 	"gotest.tools/v3/assert"
 )

@@ -1,6 +1,6 @@
 package basic
 
-import seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+import seer "github.com/taubyte/tau/pkg/yaseer"
 
 // Set runs provided ops and writes the the config if sync is true, returns an error
 func (r Resource) Set(sync bool, ops ...Op) (err error) {

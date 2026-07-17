@@ -1,6 +1,7 @@
 package seer
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -23,24 +24,63 @@ func (s *Seer) Batch(queries ...*Query) *Batch {
 	return b
 }
 
+// Sync flushes every staged document to disk and clears the WAL.
+//
+// With WAL enabled (see WithWAL), commits that happened since the
+// last Sync are already durable in the log — they get replayed on
+// the next New() if we crash here. Sync's job is just to materialise
+// the resulting in-memory state into the actual YAML files and then
+// truncate the log, since the per-commit frames are no longer needed
+// once the data files are on disk.
+//
+// Two-step: acquire the seer lock, then call syncLocked. Splitting
+// the lock from the work lets replayWAL drive Sync internally after
+// re-running ops without re-acquiring.
 func (s *Seer) Sync() error {
 	s.lock.Lock()
 	defer s.lock.Unlock()
+	return s.syncLocked()
+}
 
-	for docName, doc := range s.documents {
-		f, err := s.fs.OpenFile(docName, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0640)
-		if err != nil {
-			return fmt.Errorf("opening %s failed with %w", docName, err)
+// syncLocked writes every dirty document to its real path then
+// truncates the WAL. Caller must hold s.lock.
+func (s *Seer) syncLocked() error {
+	for path := range s.dirty {
+		doc, ok := s.documents[path]
+		if !ok {
+			// Deleted after being marked dirty — nothing to write.
+			continue
 		}
-		defer f.Close()
-
-		enc := yaml.NewEncoder(f)
-		err = enc.Encode(doc)
+		var buf bytes.Buffer
+		enc := yaml.NewEncoder(&buf)
+		if err := enc.Encode(doc); err != nil {
+			return fmt.Errorf("encoding %s failed with %w", path, err)
+		}
+		if err := enc.Close(); err != nil {
+			return fmt.Errorf("closing encoder for %s failed with %w", path, err)
+		}
+		f, err := s.fs.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o640)
 		if err != nil {
-			return fmt.Errorf("encoding data to %s failed with %w", docName, err)
+			return fmt.Errorf("opening %s failed with %w", path, err)
+		}
+		if _, err := f.Write(buf.Bytes()); err != nil {
+			f.Close()
+			return fmt.Errorf("writing %s failed with %w", path, err)
+		}
+		if syncer, ok := f.(interface{ Sync() error }); ok {
+			if err := syncer.Sync(); err != nil {
+				f.Close()
+				return fmt.Errorf("fsync %s failed with %w", path, err)
+			}
+		}
+		if err := f.Close(); err != nil {
+			return fmt.Errorf("closing %s failed with %w", path, err)
 		}
 	}
-	return nil
+	// Everything staged is now on disk; reset the dirty set and drop the
+	// now-redundant per-commit WAL frames for the next batch of commits.
+	clear(s.dirty)
+	return s.clearWAL()
 }
 
 func (s *Seer) Get(name string) *Query {
@@ -69,12 +109,11 @@ func (s *Seer) List() ([]string, error) {
 
 func (s *Seer) Query() *Query {
 	return &Query{
-		seer:     s,
-		ops:      make([]op, 0),
-		errors:   make([]error, 0),
-		filePath: "",
-		line:     0,
-		column:   0,
+		seer: s,
+		// Presized to typical path depth so chained Get()s don't realloc.
+		requestedPath: make([]string, 0, 4),
+		ops:           make([]op, 0, 4),
+		errors:        make([]error, 0),
 	}
 }
 
@@ -98,14 +137,18 @@ func (e *YAMLError) Unwrap() error {
 	return e.Err
 }
 
+var (
+	reYAMLLineColumn = regexp.MustCompile(`line (\d+):\s*column (\d+)`)
+	reYAMLLine       = regexp.MustCompile(`line (\d+)`)
+)
+
 func parseYAMLError(err error) (line, column int) {
 	if err == nil {
 		return 0, 0
 	}
 
 	errStr := err.Error()
-	re := regexp.MustCompile(`line (\d+):\s*column (\d+)`)
-	matches := re.FindStringSubmatch(errStr)
+	matches := reYAMLLineColumn.FindStringSubmatch(errStr)
 	if len(matches) == 3 {
 		if l, err := strconv.Atoi(matches[1]); err == nil {
 			line = l
@@ -116,8 +159,7 @@ func parseYAMLError(err error) (line, column int) {
 		return line, column
 	}
 
-	re = regexp.MustCompile(`line (\d+)`)
-	matches = re.FindStringSubmatch(errStr)
+	matches = reYAMLLine.FindStringSubmatch(errStr)
 	if len(matches) == 2 {
 		if l, err := strconv.Atoi(matches[1]); err == nil {
 			line = l

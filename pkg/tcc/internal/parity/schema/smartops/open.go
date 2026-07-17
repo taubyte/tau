@@ -2,7 +2,7 @@ package smartops
 
 import (
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/basic"
-	seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 func Open(seer *seer.Seer, name, application string) (SmartOps, error) {

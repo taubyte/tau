@@ -2,7 +2,7 @@ package project
 
 import (
 	"github.com/spf13/afero"
-	seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 type Option func(s *project) error

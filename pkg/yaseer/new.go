@@ -15,6 +15,7 @@ func New(options ...Option) (*Seer, error) {
 
 	s := &Seer{
 		documents: make(map[string]*yaml.Node),
+		dirty:     make(map[string]struct{}),
 	}
 
 	for _, opt := range options {
@@ -26,6 +27,14 @@ func New(options ...Option) (*Seer, error) {
 
 	if s.fs == nil {
 		return nil, errors.New("can't create a Seer instance without a file system")
+	}
+
+	// If a WAL was enabled and a complete record is sitting on disk,
+	// the previous process died between fsync(WAL) and Sync()'s
+	// data-file writes. Replay before handing the Seer to the caller
+	// so the recovered state is what subsequent reads see.
+	if err := s.replayWAL(); err != nil {
+		return nil, fmt.Errorf("wal replay: %w", err)
 	}
 
 	return s, nil

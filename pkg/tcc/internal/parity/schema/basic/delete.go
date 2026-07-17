@@ -1,6 +1,6 @@
 package basic
 
-import seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+import seer "github.com/taubyte/tau/pkg/yaseer"
 
 func (r Resource) Delete(attributes ...string) (err error) {
 	if len(attributes) == 0 {

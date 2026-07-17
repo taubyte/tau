@@ -3,7 +3,7 @@ package application
 import (
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/basic"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/pretty"
-	seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 type Application interface {
