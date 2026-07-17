@@ -77,22 +77,22 @@ type (
 )
 
 func (c *cloud) Domain() DomainParser {
-	return &domain{root: c.root, Query: c.Fork().Get("domain")}
+	return &domain{root: c.root, Query: c.Query.Get("domain")}
 
 }
 
 func (d *domain) Root() (r string) {
-	d.Fork().Get("root").Value(&r)
+	d.Query.Get("root").Value(&r)
 	return
 }
 
 func (d *domain) Generated() (g string) {
-	d.Fork().Get("generated").Value(&g)
+	d.Query.Get("generated").Value(&g)
 	return
 }
 
 func (d *domain) Validation() ValidationParser {
-	return &validation{root: d.root, Query: d.Fork().Get("validation").Get("key")}
+	return &validation{root: d.root, Query: d.Query.Get("validation").Get("key")}
 }
 
 func (v *validation) Generate() error {
@@ -125,17 +125,17 @@ func (v *validation) Generate() error {
 }
 
 func (v *validation) Keys() (privkey string, pubkey string) {
-	v.Fork().Get("private").Value(&privkey)
-	v.Fork().Get("public").Value(&pubkey)
+	v.Query.Get("private").Value(&privkey)
+	v.Query.Get("public").Value(&pubkey)
 	return
 }
 
 func (v *validation) SetPrivateKey(path string) error {
-	return v.Fork().Get("private").Set(path).Commit()
+	return v.Query.Get("private").Set(path).Commit()
 }
 
 func (v *validation) SetPublicKey(path string) error {
-	return v.Fork().Get("public").Set(path).Commit()
+	return v.Query.Get("public").Set(path).Commit()
 }
 
 func (v *validation) OpenPrivateKey() (io.ReadCloser, error) {
@@ -190,57 +190,57 @@ func (v *validation) CreatePublicKey() (io.WriteCloser, error) {
 // which yaseer would treat as path separators if used as keys).
 func (d *domain) Hosts() map[string]string {
 	m := make(map[string]string)
-	d.Fork().Get("hosts").Value(&m)
+	d.Query.Get("hosts").Value(&m)
 	return m
 }
 
 func (d *domain) SetHost(host, service string) error {
 	m := d.Hosts()
 	m[host] = service
-	return d.Fork().Get("hosts").Set(m).Commit()
+	return d.Query.Get("hosts").Set(m).Commit()
 }
 
 func (d *domain) DeleteHost(host string) error {
 	m := d.Hosts()
 	delete(m, host)
-	return d.Fork().Get("hosts").Set(m).Commit()
+	return d.Query.Get("hosts").Set(m).Commit()
 }
 
 func (d *domain) SetRoot(r string) error {
-	return d.Fork().Get("root").Set(r).Commit()
+	return d.Query.Get("root").Set(r).Commit()
 }
 
 func (d *domain) SetGenerated(g string) error {
-	return d.Fork().Get("generated").Set(g).Commit()
+	return d.Query.Get("generated").Set(g).Commit()
 }
 
 func (c *cloud) P2P() P2PParser {
-	return &p2p{root: c.root, Query: c.Fork().Get("p2p")}
+	return &p2p{root: c.root, Query: c.Query.Get("p2p")}
 }
 
 func (p *p2p) Bootstrap() BootstrapParser {
-	return &bootstrap{root: p.root, Query: p.Fork().Get("bootstrap")}
+	return &bootstrap{root: p.root, Query: p.Query.Get("bootstrap")}
 }
 
 func (b *bootstrap) Shape(shape string) ListParser[string] {
-	return &list[string]{root: b.root, Query: b.Fork().Get(shape)}
+	return &list[string]{root: b.root, Query: b.Query.Get(shape)}
 }
 
 func (b *bootstrap) Delete(shape string) error {
-	return b.Fork().Get(shape).Delete().Commit()
+	return b.Query.Get(shape).Delete().Commit()
 }
 
 func (b *bootstrap) List() (l []string) {
-	l, _ = b.Fork().List()
+	l, _ = b.Query.List()
 	return
 }
 
 func (p *p2p) Swarm() SwarmKeyParser {
-	return &swarm{root: p.root, Query: p.Fork().Get("swarm").Get("key")}
+	return &swarm{root: p.root, Query: p.Query.Get("swarm").Get("key")}
 }
 
 func (s *swarm) Get() (k string) {
-	s.Fork().Value(&k)
+	s.Query.Value(&k)
 	return
 }
 
@@ -269,7 +269,7 @@ func (s *swarm) Create() (io.WriteCloser, error) {
 }
 
 func (s *swarm) Set(path string) error {
-	return s.Fork().Set(path).Commit()
+	return s.Query.Set(path).Commit()
 }
 
 func (s *swarm) Generate() error {

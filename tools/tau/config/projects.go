@@ -12,7 +12,7 @@ func Projects() *projectHandler {
 }
 
 func (p *projectHandler) Root() *seer.Query {
-	return _config.Document().Get(singletonsI18n.ProjectsKey).Fork()
+	return _config.Document().Get(singletonsI18n.ProjectsKey)
 }
 
 func (p *projectHandler) Get(name string) (project Project, err error) {

@@ -22,10 +22,10 @@ func TestListEmpty(t *testing.T) {
 		seer.Get("parent").Get("p").Document(),
 		seer.Get("a").Get("b").Get("C").Document().Get("a").Get("orange"),
 	} {
-		err = query.Fork().Commit()
+		err = query.Commit()
 		assert.NilError(t, err)
 
-		items, err = query.Fork().List()
+		items, err = query.List()
 		assert.NilError(t, err)
 		assert.Assert(t, len(items) == 0)
 	}
@@ -87,12 +87,12 @@ func TestListDeepCommitDelete(t *testing.T) {
 	query := seer.Get("parent").Get("sad").Get("fruits")
 
 	for _, i := range items {
-		err = query.Fork().Get(i).Commit()
+		err = query.Get(i).Commit()
 		assert.NilError(t, err)
 	}
 
 	for _, i := range toDelete {
-		err = query.Fork().Get(i).Delete().Commit()
+		err = query.Get(i).Delete().Commit()
 		assert.NilError(t, err)
 	}
 

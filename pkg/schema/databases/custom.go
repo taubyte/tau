@@ -22,8 +22,8 @@ func (d getter) Secret() bool {
 func (g getter) Encryption() (key string, keyType string) {
 	enc := g.Config().Get("encryption")
 
-	enc.Fork().Get("key").Value(&key)
-	enc.Fork().Get("type").Value(&keyType)
+	enc.Get("key").Value(&key)
+	enc.Get("type").Value(&keyType)
 
 	return
 }
@@ -57,8 +57,8 @@ func Encryption(key string) basic.Op {
 		_type, key := getEncryptionTypeAndKey(key)
 		encryption := c.Config().Get("encryption")
 		return []*seer.Query{
-			encryption.Fork().Get("type").Set(_type),
-			encryption.Fork().Get("key").Set(key),
+			encryption.Get("type").Set(_type),
+			encryption.Get("key").Set(key),
 		}
 	}
 }

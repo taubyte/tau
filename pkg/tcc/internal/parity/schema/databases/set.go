@@ -55,8 +55,8 @@ func Encryption(key string) basic.Op {
 		_type, key := getEncryptionTypeAndKey(key)
 		encryption := c.Config().Get("encryption")
 		return []*seer.Query{
-			encryption.Fork().Get("type").Set(_type),
-			encryption.Fork().Get("key").Set(key),
+			encryption.Get("type").Set(_type),
+			encryption.Get("key").Set(key),
 		}
 	}
 }

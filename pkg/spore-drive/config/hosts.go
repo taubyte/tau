@@ -59,62 +59,62 @@ type location struct {
 }
 
 func (h *hosts) List() []string {
-	l, _ := h.Fork().List()
+	l, _ := h.Query.List()
 	return l
 }
 
 func (h *hosts) Host(name string) HostParser {
-	return &host{root: h.root, Query: h.Fork().Get(name)}
+	return &host{root: h.root, Query: h.Query.Get(name)}
 }
 
 func (h *hosts) Delete(name string) error {
-	return h.Fork().Get(name).Delete().Commit()
+	return h.Query.Get(name).Delete().Commit()
 }
 
 func (h *host) Addresses() ListParser[string] {
-	return &list[string]{root: h.root, Query: h.Fork().Get("addr")}
+	return &list[string]{root: h.root, Query: h.Query.Get("addr")}
 }
 
 func (h *host) SSH() SSHParser {
-	return &ssh{root: h.root, Query: h.Fork().Get("ssh")}
+	return &ssh{root: h.root, Query: h.Query.Get("ssh")}
 }
 
 func (h *host) Location() (float32, float32) {
 	var l location
-	h.Fork().Get("location").Value(&l)
+	h.Query.Get("location").Value(&l)
 	return l.Latitude, l.Longitude
 }
 
 func (h *host) SetLocation(lat float32, long float32) error {
-	return h.Fork().Get("location").Set(location{
+	return h.Query.Get("location").Set(location{
 		Latitude:  lat,
 		Longitude: long,
 	}).Commit()
 }
 
 func (h *host) Shapes() HostShapesParser {
-	return &hostShapes{root: h.root, Query: h.Fork().Get("shapes")}
+	return &hostShapes{root: h.root, Query: h.Query.Get("shapes")}
 }
 
 func (s *ssh) Address() (a string) {
-	s.Fork().Get("addr").Value(&a)
+	s.Query.Get("addr").Value(&a)
 	return
 }
 
 func (s *ssh) Port() uint16 {
 	var p int
-	if err := s.Fork().Get("port").Value(&p); err != nil {
+	if err := s.Query.Get("port").Value(&p); err != nil {
 		p = 22
 	}
 	return uint16(p)
 }
 
 func (s *ssh) SetAddress(addr string) error {
-	return s.Fork().Get("addr").Set(addr).Commit()
+	return s.Query.Get("addr").Set(addr).Commit()
 }
 
 func (s *ssh) SetPort(prt uint16) error {
-	return s.Fork().Get("port").Set(int(prt)).Commit()
+	return s.Query.Get("port").Set(int(prt)).Commit()
 }
 
 func (s *ssh) SetFullAddress(faddr string) error {
@@ -142,41 +142,41 @@ func (s *ssh) SetFullAddress(faddr string) error {
 }
 
 func (s *ssh) Auth() ListParser[string] {
-	return &list[string]{root: s.root, Query: s.Fork().Get("auth")}
+	return &list[string]{root: s.root, Query: s.Query.Get("auth")}
 }
 
 func (hs *hostShapes) List() (l []string) {
-	l, _ = hs.Fork().List()
+	l, _ = hs.Query.List()
 	return
 }
 
 func (hs *hostShapes) Instance(s string) InstanceParser {
-	return &instShape{root: hs.root, Query: hs.Fork().Get(s)}
+	return &instShape{root: hs.root, Query: hs.Query.Get(s)}
 }
 
 func (hs *hostShapes) Delete(s string) error {
-	return hs.Fork().Get(s).Delete().Commit()
+	return hs.Query.Get(s).Delete().Commit()
 }
 
 func (hs *instShape) Key() (k string) {
-	hs.Fork().Get("key").Value(&k)
+	hs.Query.Get("key").Value(&k)
 	return
 }
 
 func (hs *instShape) Id() (i string) {
 	var err error
 
-	if err = hs.Fork().Get("id").Value(&i); err == nil {
+	if err = hs.Query.Get("id").Value(&i); err == nil {
 		return
 	}
 
 	var k string
-	if err := hs.Fork().Get("key").Value(&k); err != nil {
+	if err := hs.Query.Get("key").Value(&k); err != nil {
 		return
 	}
 
 	if i, _, err = generateNodeKeyAndID(k); err == nil {
-		hs.Fork().Get("id").Set(i).Commit()
+		hs.Query.Get("id").Set(i).Commit()
 	}
 
 	return
@@ -189,8 +189,8 @@ func (hs *instShape) SetKey(key string) error {
 		return err
 	}
 
-	err = hs.Fork().Get("key").Set(key).Commit()
-	hs.Fork().Get("id").Set(i).Commit()
+	err = hs.Query.Get("key").Set(key).Commit()
+	hs.Query.Get("id").Set(i).Commit()
 
 	return err
 }
@@ -202,8 +202,8 @@ func (hs *instShape) GenerateKey() error {
 		return err
 	}
 
-	err = hs.Fork().Get("key").Set(key).Commit()
-	hs.Fork().Get("id").Set(i).Commit()
+	err = hs.Query.Get("key").Set(key).Commit()
+	hs.Query.Get("id").Set(i).Commit()
 
 	return err
 }

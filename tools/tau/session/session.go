@@ -26,7 +26,7 @@ func (s *tauSession) Document() *seer.Query {
 	if docName == "" {
 		docName = sessionFileName
 	}
-	return _session.root.Get(docName).Document().Fork()
+	return _session.root.Get(docName).Document()
 }
 
 func (s *tauSession) keys() (values []string, err error) {

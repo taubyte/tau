@@ -30,8 +30,8 @@ func Object(versioning bool, size string) basic.Op {
 	return func(c basic.ConfigIface) []*seer.Query {
 		object := c.Config().Get("object")
 		return []*seer.Query{
-			object.Fork().Get("versioning").Set(versioning),
-			object.Fork().Get("size").Set(size),
+			object.Get("versioning").Set(versioning),
+			object.Get("size").Set(size),
 		}
 	}
 }
@@ -40,8 +40,8 @@ func Streaming(ttl string, size string) basic.Op {
 	return func(c basic.ConfigIface) []*seer.Query {
 		streaming := c.Config().Get("streaming")
 		return []*seer.Query{
-			streaming.Fork().Get("ttl").Set(ttl),
-			streaming.Fork().Get("size").Set(size),
+			streaming.Get("ttl").Set(ttl),
+			streaming.Get("size").Set(size),
 		}
 	}
 }

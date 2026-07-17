@@ -8,13 +8,6 @@ import (
 	"github.com/spf13/afero"
 )
 
-// Fork is retained for API compatibility. A Query is immutable, so branching is
-// implicit (each Get/Set/... returns a new Query) and forking is a no-op.
-func Fork(n *Query) *Query { return n.Fork() }
-
-// Fork returns the query itself: immutability makes an explicit copy unnecessary.
-func (n *Query) Fork() *Query { return n }
-
 // child returns a new Query deriving from n via op o, without mutating n.
 func (n *Query) child(o op) *Query {
 	return &Query{seer: n.seer, parent: n, op: o, errors: n.errors}

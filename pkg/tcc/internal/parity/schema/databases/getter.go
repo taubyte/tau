@@ -54,8 +54,8 @@ func (d getter) Secret() bool {
 func (g getter) Encryption() (key string, keyType string) {
 	enc := g.Config().Get("encryption")
 
-	enc.Fork().Get("key").Value(&key)
-	enc.Fork().Get("type").Value(&keyType)
+	enc.Get("key").Value(&key)
+	enc.Get("type").Value(&keyType)
 
 	return
 }

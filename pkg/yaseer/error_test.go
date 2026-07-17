@@ -88,9 +88,9 @@ func TestYAMLError_Parsing(t *testing.T) {
 func TestFork_Query(t *testing.T) {
 	seer := newTestSeer(t)
 
-	t.Run("Fork creates independent copy of query", func(t *testing.T) {
+	t.Run("branches from a shared base are independent", func(t *testing.T) {
 		original := seer.Get("fork").Get("test").Document()
-		forked := Fork(original)
+		forked := original // immutable: reusing the base branches implicitly
 
 		// Modify original
 		original = original.Set("original_value")
@@ -119,12 +119,8 @@ func TestFork_Query(t *testing.T) {
 	t.Run("branching is independent (immutable queries)", func(t *testing.T) {
 		base := seer.Get("fork2").Get("test2")
 
-		// Fork is now a no-op identity; independence comes from Get returning a
-		// new query rather than mutating the receiver.
-		if base.Fork() != base {
-			t.Error("Fork should return the same instance for an immutable query")
-		}
-
+		// Immutable: independence comes from Get returning a new query rather
+		// than mutating the receiver, so no explicit Fork is needed.
 		a := base.Get("nested1")
 		b := base.Get("nested2")
 		if a == b {

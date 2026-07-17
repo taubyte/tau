@@ -13,8 +13,8 @@ func Channel(regex bool, match string) basic.Op {
 	return func(c basic.ConfigIface) []*seer.Query {
 		channel := c.Config().Get("channel")
 		return []*seer.Query{
-			channel.Fork().Get("regex").Set(regex),
-			channel.Fork().Get("match").Set(match),
+			channel.Get("regex").Set(regex),
+			channel.Get("match").Set(match),
 		}
 	}
 }
@@ -23,8 +23,8 @@ func Bridges(mqtt bool, websocket bool) basic.Op {
 	return func(c basic.ConfigIface) []*seer.Query {
 		bridges := c.Config().Get("bridges")
 		return []*seer.Query{
-			bridges.Fork().Get("mqtt").Get("enable").Set(mqtt),
-			bridges.Fork().Get("websocket").Get("enable").Set(websocket),
+			bridges.Get("mqtt").Get("enable").Set(mqtt),
+			bridges.Get("websocket").Get("enable").Set(websocket),
 		}
 	}
 }

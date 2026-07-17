@@ -34,8 +34,8 @@ func Github(id string, fullname string) basic.Op {
 		provider := "github"
 		base := c.Config().Get("source").Get(provider)
 		return []*seer.Query{
-			base.Fork().Get("id").Set(id),
-			base.Fork().Get("fullname").Set(fullname),
+			base.Get("id").Set(id),
+			base.Get("fullname").Set(fullname),
 		}
 	}
 }

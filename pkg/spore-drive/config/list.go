@@ -12,24 +12,24 @@ type ListParser[T comparable] interface {
 type list[T comparable] leaf
 
 func (a *list[T]) List() (l []T) {
-	a.Fork().Value(&l)
+	a.Query.Value(&l)
 	return
 }
 
 func (a *list[T]) Add(v T) error {
-	return a.Fork().Set(appendNew(a.List(), v)).Commit()
+	return a.Query.Set(appendNew(a.List(), v)).Commit()
 }
 
 func (a *list[T]) Append(v ...T) error {
-	return a.Fork().Set(appendNew(a.List(), v...)).Commit()
+	return a.Query.Set(appendNew(a.List(), v...)).Commit()
 }
 
 func (a *list[T]) Set(v ...T) error {
-	return a.Fork().Set(v).Commit()
+	return a.Query.Set(v).Commit()
 }
 
 func (a *list[T]) Clear() error {
-	return a.Fork().Set([]T{}).Commit()
+	return a.Query.Set([]T{}).Commit()
 }
 
 func (a *list[T]) Delete(v T) error {
@@ -40,5 +40,5 @@ func (a *list[T]) Delete(v T) error {
 			l = append(l, i)
 		}
 	}
-	return a.Fork().Set(l).Commit()
+	return a.Query.Set(l).Commit()
 }
