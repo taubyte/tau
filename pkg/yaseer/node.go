@@ -121,6 +121,12 @@ func (n *Query) Commit() error {
 		}
 	}
 
+	// A commit resolves into exactly one document; filePath is its
+	// map key. Mark it dirty so Sync rewrites just this document.
+	if n.filePath != "" {
+		n.seer.dirty[n.filePath] = struct{}{}
+	}
+
 	// Op-based WAL: persist a description of this commit's ops so a
 	// kill between now and the next Sync() doesn't drop the change.
 	// No-op when WAL is disabled (n.seer.walPath == "").

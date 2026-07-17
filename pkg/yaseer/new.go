@@ -15,6 +15,7 @@ func New(options ...Option) (*Seer, error) {
 
 	s := &Seer{
 		documents: make(map[string]*yaml.Node),
+		dirty:     make(map[string]struct{}),
 	}
 
 	for _, opt := range options {

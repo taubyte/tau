@@ -45,7 +45,12 @@ func (s *Seer) Sync() error {
 // syncLocked writes every dirty document to its real path then
 // truncates the WAL. Caller must hold s.lock.
 func (s *Seer) syncLocked() error {
-	for path, doc := range s.documents {
+	for path := range s.dirty {
+		doc, ok := s.documents[path]
+		if !ok {
+			// Deleted after being marked dirty — nothing to write.
+			continue
+		}
 		var buf bytes.Buffer
 		enc := yaml.NewEncoder(&buf)
 		if err := enc.Encode(doc); err != nil {
@@ -72,8 +77,9 @@ func (s *Seer) syncLocked() error {
 			return fmt.Errorf("closing %s failed with %w", path, err)
 		}
 	}
-	// Data files are durable; the per-commit frames in the WAL are
-	// redundant now and can be reset for the next batch of commits.
+	// Everything staged is now on disk; reset the dirty set and drop the
+	// now-redundant per-commit WAL frames for the next batch of commits.
+	clear(s.dirty)
 	return s.clearWAL()
 }
 
@@ -103,12 +109,11 @@ func (s *Seer) List() ([]string, error) {
 
 func (s *Seer) Query() *Query {
 	return &Query{
-		seer:     s,
-		ops:      make([]op, 0),
-		errors:   make([]error, 0),
-		filePath: "",
-		line:     0,
-		column:   0,
+		seer: s,
+		// Presized to typical path depth so chained Get()s don't realloc.
+		requestedPath: make([]string, 0, 4),
+		ops:           make([]op, 0, 4),
+		errors:        make([]error, 0),
 	}
 }
 
@@ -132,14 +137,18 @@ func (e *YAMLError) Unwrap() error {
 	return e.Err
 }
 
+var (
+	reYAMLLineColumn = regexp.MustCompile(`line (\d+):\s*column (\d+)`)
+	reYAMLLine       = regexp.MustCompile(`line (\d+)`)
+)
+
 func parseYAMLError(err error) (line, column int) {
 	if err == nil {
 		return 0, 0
 	}
 
 	errStr := err.Error()
-	re := regexp.MustCompile(`line (\d+):\s*column (\d+)`)
-	matches := re.FindStringSubmatch(errStr)
+	matches := reYAMLLineColumn.FindStringSubmatch(errStr)
 	if len(matches) == 3 {
 		if l, err := strconv.Atoi(matches[1]); err == nil {
 			line = l
@@ -150,8 +159,7 @@ func parseYAMLError(err error) (line, column int) {
 		return line, column
 	}
 
-	re = regexp.MustCompile(`line (\d+)`)
-	matches = re.FindStringSubmatch(errStr)
+	matches = reYAMLLine.FindStringSubmatch(errStr)
 	if len(matches) == 2 {
 		if l, err := strconv.Atoi(matches[1]); err == nil {
 			line = l

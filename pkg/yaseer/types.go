@@ -13,6 +13,11 @@ type Seer struct {
 	fs        afero.Fs
 	lock      sync.Mutex
 	documents map[string]*yaml.Node
+	// dirty is the set of document paths mutated since the last Sync.
+	// Sync only re-encodes and rewrites these, leaving read-only cached
+	// documents untouched (both a perf win and so Sync never reformats a
+	// file the caller only read).
+	dirty map[string]struct{}
 	// walPath is the file (relative to the configured FS root) where
 	// Sync() stages a write-ahead log entry before touching data
 	// files. Empty disables WAL entirely — the default.
