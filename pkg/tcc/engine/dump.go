@@ -22,7 +22,7 @@ func (s *instance) Dump(obj object.Object[object.Refrence]) error {
 	// Group node - handle config file and children
 	if n.Match == nil {
 		// Root node - write root attributes to config.yaml
-		configQuery := query.Fork().Get(NodeDefaultSeerLeaf).Document()
+		configQuery := query.Get(NodeDefaultSeerLeaf).Document()
 		if err := s.dumpAttributes(n, obj, configQuery); err != nil {
 			return err
 		}
@@ -80,7 +80,7 @@ func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], qu
 		// DefineIterGroup has StringMatchAll and Group=true
 		if _, isIterGroup := iterNode.Match.(StringMatchAll); isIterGroup && iterNode.Group {
 			// This is a group like "applications" with nested IterGroup
-			return s.dumpApplications(iterNode, groupObj, query.Fork().Get(groupName))
+			return s.dumpApplications(iterNode, groupObj, query.Get(groupName))
 		}
 
 		// Regular DefineIter - write each resource as {groupName}/{name}.yaml
@@ -91,7 +91,7 @@ func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], qu
 			}
 
 			// Create document: {groupName}/{name}.yaml
-			docQuery := query.Fork().Get(groupName).Get(name).Document()
+			docQuery := query.Get(groupName).Get(name).Document()
 			if err := s.dumpAttributes(iterNode, resObj, docQuery); err != nil {
 				return fmt.Errorf("dumping attributes for %s/%s failed: %w", groupName, name, err)
 			}
@@ -120,7 +120,7 @@ func (s *instance) dumpApplications(iterGroupNode *Node, appsObj object.Object[o
 		}
 
 		// Write application config.yaml: {appName}/config.yaml
-		appConfigQuery := query.Fork().Get(appName).Get(NodeDefaultSeerLeaf).Document()
+		appConfigQuery := query.Get(appName).Get(NodeDefaultSeerLeaf).Document()
 		if err := s.dumpAttributes(iterGroupNode, appObj, appConfigQuery); err != nil {
 			return fmt.Errorf("dumping application %s config failed: %w", appName, err)
 		}
@@ -130,7 +130,7 @@ func (s *instance) dumpApplications(iterGroupNode *Node, appsObj object.Object[o
 
 		// Write application resources
 		for _, resourceNode := range resourceNodes {
-			if err := s.dumpChild(resourceNode, appObj, query.Fork().Get(appName)); err != nil {
+			if err := s.dumpChild(resourceNode, appObj, query.Get(appName)); err != nil {
 				return fmt.Errorf("dumping application %s resources failed: %w", appName, err)
 			}
 		}
@@ -179,7 +179,7 @@ func (s *instance) dumpAttributes(n *Node, obj object.Object[object.Refrence], q
 }
 
 func writeValueToPath(query *yaseer.Query, path []StringMatch, attr *Attribute, val interface{}, obj object.Object[object.Refrence]) error {
-	q := query.Fork()
+	q := query
 
 	for _, p := range path {
 		switch pt := p.(type) {

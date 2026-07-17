@@ -27,5 +27,5 @@ func getOrCreateConfig() *tauConfig {
 
 func (*tauConfig) Document() *seer.Query {
 	configBaseName := strings.TrimSuffix(filepath.Base(constants.TauConfigFileName), ".yaml")
-	return _config.root.Get(configBaseName).Document().Fork()
+	return _config.root.Get(configBaseName).Document()
 }

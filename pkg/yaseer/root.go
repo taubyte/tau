@@ -108,13 +108,7 @@ func (s *Seer) List() ([]string, error) {
 }
 
 func (s *Seer) Query() *Query {
-	return &Query{
-		seer: s,
-		// Presized to typical path depth so chained Get()s don't realloc.
-		requestedPath: make([]string, 0, 4),
-		ops:           make([]op, 0, 4),
-		errors:        make([]error, 0),
-	}
+	return &Query{seer: s}
 }
 
 type YAMLError struct {
@@ -190,5 +184,8 @@ func (s *Seer) loadYamlDocument(path string) (*yaml.Node, error) {
 	}
 
 	s.documents[path] = root_node
+	// A read that loads a previously-absent document changes what later
+	// resolutions see, so invalidate read memos taken before this load.
+	s.gen++
 	return root_node, nil
 }

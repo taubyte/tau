@@ -26,45 +26,45 @@ type (
 )
 
 func (s *shapes) List() (l []string) {
-	l, _ = s.Fork().List()
+	l, _ = s.Query.List()
 	return
 }
 
 func (s *shapes) Shape(name string) ShapeParser {
-	return &shape{root: s.root, Query: s.Fork().Get(name)}
+	return &shape{root: s.root, Query: s.Query.Get(name)}
 }
 
 func (s *shapes) Delete(name string) error {
-	return s.Fork().Get(name).Delete().Commit()
+	return s.Query.Get(name).Delete().Commit()
 }
 
 func (s *shape) Services() ListParser[string] {
-	return &list[string]{root: s.root, Query: s.Fork().Get("services")}
+	return &list[string]{root: s.root, Query: s.Query.Get("services")}
 }
 
 func (s *shape) Ports() PortsParser {
-	return &ports{root: s.root, Query: s.Fork().Get("ports")}
+	return &ports{root: s.root, Query: s.Query.Get("ports")}
 }
 
 func (s *shape) Plugins() ListParser[string] {
-	return &list[string]{root: s.root, Query: s.Fork().Get("plugins")}
+	return &list[string]{root: s.root, Query: s.Query.Get("plugins")}
 }
 
 func (p *ports) List() (l []string) {
-	l, _ = p.Fork().List()
+	l, _ = p.Query.List()
 	return
 }
 
 func (p *ports) Get(name string) uint16 {
 	var prt int
-	p.Fork().Get(name).Value(&prt)
+	p.Query.Get(name).Value(&prt)
 	return uint16(prt)
 }
 
 func (p *ports) Set(name string, prt uint16) error {
-	return p.Fork().Get(name).Set(int(prt)).Commit()
+	return p.Query.Get(name).Set(int(prt)).Commit()
 }
 
 func (p *ports) Delete(name string) error {
-	return p.Fork().Get(name).Delete().Commit()
+	return p.Query.Get(name).Delete().Commit()
 }

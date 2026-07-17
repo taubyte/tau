@@ -8,129 +8,127 @@ import (
 	"github.com/spf13/afero"
 )
 
-// Helper
-func Fork(n *Query) *Query {
-	return n.Fork()
+// child returns a new Query deriving from n via op o, without mutating n.
+func (n *Query) child(o op) *Query {
+	return &Query{seer: n.seer, parent: n, op: o, errors: n.errors}
 }
 
-// Copy a query ... the conly way to reuse a query.
-func (n *Query) Fork() *Query {
-	nq := &Query{
-		seer:          n.seer,
-		write:         n.write,
-		requestedPath: make([]string, len(n.requestedPath)),
-		ops:           make([]op, len(n.ops)),
-		errors:        make([]error, 0),
+// queryFromOps rebuilds a linked Query chain from a flat op slice (WAL replay).
+func queryFromOps(s *Seer, ops []op) *Query {
+	q := &Query{seer: s}
+	for _, o := range ops {
+		q = q.child(o)
 	}
-
-	copy(nq.requestedPath, n.requestedPath)
-	copy(nq.ops, n.ops)
-
-	return nq
+	return q
 }
 
 func (n *Query) Set(value interface{}) *Query {
-	n.ops = append(n.ops,
-		op{
-			opType:  opTypeSet,
-			value:   value,
-			handler: opSetInYaml,
-		},
-	)
-	return n
+	return n.child(op{opType: opTypeSet, value: value, handler: opSetInYaml})
 }
 
 func (n *Query) Delete() *Query {
-	n.ops = append(n.ops,
-		op{
-			opType:  opTypeSet,
-			handler: opDelete,
-		},
-	)
-	return n
+	return n.child(op{opType: opTypeSet, handler: opDelete})
 }
 
 func (n *Query) Get(name string) *Query {
-	n.requestedPath = append(n.requestedPath, name)
-	n.ops = append(n.ops,
-		op{
-			opType:  opTypeGetOrCreate,
-			name:    name,
-			handler: opGetOrCreate,
-		},
-	)
-	return n
+	return n.child(op{opType: opTypeGetOrCreate, name: name, handler: opGetOrCreate})
 }
 
+// Document reinterprets the last Get as a document boundary: it replaces that op
+// with a CreateDocument for the same name, parented to whatever preceded the Get.
 func (n *Query) Document() *Query {
-	if len(n.ops) == 0 {
-		// should never happen actually, as you need to call get or set before
-		n.errors = append(n.errors, errors.New("can't convert root to a document"))
-		return n
+	if n.parent == nil {
+		// no prior Get to convert
+		errs := append(append([]error(nil), n.errors...), errors.New("can't convert root to a document"))
+		return &Query{seer: n.seer, parent: n, errors: errs}
 	}
-
-	n.write = true
-
-	// grab path from previous
-	// and delete last op
-	last_op_index := len(n.ops) - 1
-	name := n.ops[last_op_index].name
-	n.ops = n.ops[:last_op_index]
-
-	n.ops = append(n.ops,
-		op{
-			opType:  opTypeCreateDocument,
-			name:    name,
-			handler: opCreateDocument,
-		},
-	)
-	return n
+	return &Query{
+		seer:   n.seer,
+		parent: n.parent,
+		op:     op{opType: opTypeCreateDocument, name: n.op.name, handler: opCreateDocument},
+		errors: n.errors,
+	}
 }
 
-// return a copy of the Stack Error
+// return a copy of the accumulated errors
 func (n *Query) Errors() []error {
 	ret := make([]error, len(n.errors))
 	copy(ret, n.errors)
 	return ret
 }
 
-func (n *Query) Clear() *Query {
-	n.write = false
-	n.ops = n.ops[:0]
-	n.errors = n.errors[:0]
-	return n
+// logicalPath is the sequence of Get/Document names from root to n — the raw
+// requested path, without the ".yaml" suffix the resolver appends to documents.
+func (n *Query) logicalPath() []string {
+	if n.parent == nil {
+		return nil
+	}
+	p := n.parent.logicalPath()
+	switch n.op.opType {
+	case opTypeGetOrCreate, opTypeCreateDocument:
+		return append(p, n.op.name)
+	default: // Set/Delete contribute no path segment
+		return p
+	}
+}
+
+// opChain linearizes the ops from root to n, in execution order.
+func (n *Query) opChain() []op {
+	if n.parent == nil {
+		return nil
+	}
+	return append(n.parent.opChain(), n.op)
+}
+
+// resolve walks the chain root->n, applying each op to the previous result. Read
+// resolutions (write == false) are memoized per node and invalidated by the Seer
+// generation counter. Caller must hold seer.lock.
+func (n *Query) resolve(write bool) (path []string, node *yamlNode, err error) {
+	if n.parent == nil {
+		return nil, nil, nil
+	}
+	if !write && n.memoValid && n.memoGen == n.seer.gen {
+		return n.memoPath, n.memoNode, nil
+	}
+	ppath, pnode, err := n.parent.resolve(write)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Handlers append to the path slice; clone the parent's so sibling branches
+	// resolving off the same (memoized) parent path don't corrupt each other.
+	ppath = append([]string(nil), ppath...)
+	path, node, err = n.op.handler(n.op, n, write, ppath, pnode)
+	if err != nil {
+		return nil, nil, err
+	}
+	if !write {
+		n.memoNode, n.memoPath, n.memoGen, n.memoValid = node, path, n.seer.gen, true
+	}
+	return path, node, nil
 }
 
 func (n *Query) Commit() error {
 	n.seer.lock.Lock()
 	defer n.seer.lock.Unlock()
-	n.write = true
 	if len(n.errors) > 0 {
 		return fmt.Errorf("%d errors preventing commit", len(n.errors))
 	}
-
-	var (
-		path []string  = make([]string, 0)
-		doc  *yamlNode // nil when created here
-		err  error
-	)
-	for _, op := range n.ops {
-		path, doc, err = op.handler(op, n, path, doc)
-		if err != nil {
-			return fmt.Errorf("committing failed with %s", err.Error())
-		}
+	// A write mutates yaml.Node trees / the documents map in place; bump the
+	// generation before any of that so every read memo taken earlier invalidates,
+	// even if a later op in this commit fails partway through.
+	n.seer.gen++
+	if _, _, err := n.resolve(true); err != nil {
+		return fmt.Errorf("committing failed with %s", err.Error())
 	}
 
-	// A commit resolves into exactly one document; filePath is its
-	// map key. Mark it dirty so Sync rewrites just this document.
+	// A commit resolves into exactly one document; filePath is its map key.
 	if n.filePath != "" {
 		n.seer.dirty[n.filePath] = struct{}{}
 	}
 
-	// Op-based WAL: persist a description of this commit's ops so a
-	// kill between now and the next Sync() doesn't drop the change.
-	// No-op when WAL is disabled (n.seer.walPath == "").
-	if err := n.seer.appendCommitWAL(n.ops); err != nil {
+	// Op-based WAL: persist this commit's ops so a kill before the next Sync()
+	// doesn't drop the change. No-op when WAL is disabled (walPath == "").
+	if err := n.seer.appendCommitWAL(n.opChain()); err != nil {
 		return fmt.Errorf("wal append failed: %w", err)
 	}
 
@@ -140,21 +138,13 @@ func (n *Query) Commit() error {
 func (n *Query) Value(dst interface{}) error {
 	n.seer.lock.Lock()
 	defer n.seer.lock.Unlock()
-	n.write = false
 	if len(n.errors) > 0 {
 		return fmt.Errorf("%d errors preventing getting value", len(n.errors))
 	}
 
-	var (
-		path []string  = make([]string, 0)
-		doc  *yamlNode // nil when created here
-		err  error
-	)
-	for _, op := range n.ops {
-		path, doc, err = op.handler(op, n, path, doc)
-		if err != nil {
-			return fmt.Errorf("Value failed with %s", err.Error())
-		}
+	path, doc, err := n.resolve(false)
+	if err != nil {
+		return fmt.Errorf("Value failed with %s", err.Error())
 	}
 
 	if doc == nil {
@@ -216,7 +206,7 @@ func (n *Query) List() ([]string, error) {
 	var val interface{}
 	err := n.Value(&val)
 	if err != nil {
-		path := "/" + joinPath(n.requestedPath)
+		path := "/" + joinPath(n.logicalPath())
 		st, statErr := n.seer.fs.Stat(path)
 		if statErr == nil && st.IsDir() {
 			dirFiles, err := afero.ReadDir(n.seer.fs, path)
@@ -254,18 +244,33 @@ func (n *Query) List() ([]string, error) {
 	}
 }
 
+// Location reports where the resolved value lives. On a failed resolve the
+// terminal node has no location, so walk up to the deepest resolved ancestor —
+// matching the old replay model where the last successful op's location stuck.
+func (n *Query) location() (string, int, int) {
+	for q := n; q != nil; q = q.parent {
+		if q.filePath != "" || q.line != 0 || q.column != 0 {
+			return q.filePath, q.line, q.column
+		}
+	}
+	return "", 0, 0
+}
+
 func (n *Query) FilePath() string {
-	return n.filePath
+	fp, _, _ := n.location()
+	return fp
 }
 
 func (n *Query) Line() int {
-	return n.line
+	_, line, _ := n.location()
+	return line
 }
 
 func (n *Query) Column() int {
-	return n.column
+	_, _, col := n.location()
+	return col
 }
 
 func (n *Query) Location() (filePath string, line int, column int) {
-	return n.filePath, n.line, n.column
+	return n.location()
 }

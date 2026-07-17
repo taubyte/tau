@@ -162,7 +162,6 @@ func (n *Node) childrenToSlice() []any {
 }
 
 func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, string, error) {
-	query = query.Fork()
 	var last_match string
 	var cachedList []string
 	var cacheValid bool
@@ -170,7 +169,7 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, str
 	for _, itm := range path {
 		switch pitm := itm.(type) {
 		case string:
-			query.Get(pitm)
+			query = query.Get(pitm)
 			last_match = pitm
 			// Invalidate cache since query state changed
 			cacheValid = false
@@ -181,7 +180,7 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, str
 			if cacheValid && cachedList != nil {
 				list = cachedList
 			} else {
-				list, err = query.Fork().List()
+				list, err = query.List()
 				if err != nil {
 					return nil, "", wrapErrorWithLocation(query, err, "list path matches failed")
 				}
@@ -194,7 +193,7 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, str
 			for _, l := range list {
 				if pitm.Match(l) {
 					found = true
-					query.Get(l)
+					query = query.Get(l)
 					last_match = l
 					// Invalidate cache since query state changed
 					cacheValid = false
@@ -362,18 +361,18 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], err
 	}
 
 	// file might or might not have config, so we ignore error
-	err := setAttributes(n, obj, query.Fork().Get(NodeDefaultSeerLeaf))
+	err := setAttributes(n, obj, query.Get(NodeDefaultSeerLeaf))
 	if err != nil && n.hasRequiredAttributes() {
 		return nil, err
 	}
 
-	list, _ := query.Fork().List()
+	list, _ := query.List()
 
 	// Also enumerate keys nested inside the level's config.yaml so
 	// `DefineGroup("clouds", DefineIter(...))` matches a `clouds:` map
 	// authored as nested YAML, not just as a `clouds/<key>.yaml` directory.
 	// Filesystem entries take precedence.
-	configList, _ := query.Fork().Get(NodeDefaultSeerLeaf).List()
+	configList, _ := query.Get(NodeDefaultSeerLeaf).List()
 	inFS := make(map[string]bool, len(list))
 	for _, l := range list {
 		inFS[l] = true
@@ -410,7 +409,7 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], err
 			if l == NodeDefaultSeerLeaf {
 				continue
 			}
-			if err := processChild(itm, l, query.Fork().Get(l)); err != nil {
+			if err := processChild(itm, l, query.Get(l)); err != nil {
 				return nil, err
 			}
 		}
@@ -418,7 +417,7 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], err
 			if inFS[l] || l == NodeDefaultSeerLeaf {
 				continue
 			}
-			if err := processChild(itm, l, query.Fork().Get(NodeDefaultSeerLeaf).Get(l)); err != nil {
+			if err := processChild(itm, l, query.Get(NodeDefaultSeerLeaf).Get(l)); err != nil {
 				return nil, err
 			}
 		}

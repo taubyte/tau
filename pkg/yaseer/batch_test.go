@@ -12,9 +12,9 @@ func TestBatch_Commit(t *testing.T) {
 		query2 := seer.Get("batch2").Get("doc2").Document()
 		query3 := seer.Get("batch3").Get("doc3").Document()
 
-		query1.Set("value1")
-		query2.Set("value2")
-		query3.Set("value3")
+		query1 = query1.Set("value1")
+		query2 = query2.Set("value2")
+		query3 = query3.Set("value3")
 
 		batch := seer.Batch(query1, query2, query3)
 		err := batch.Commit()
@@ -44,7 +44,7 @@ func TestBatch_Commit(t *testing.T) {
 		query2 := seer.Get("bad").Document() // This will fail because Document() needs a Get first
 
 		// Force an error in query2
-		query2.Get("nested").Document().Set("value")
+		query2 = query2.Get("nested").Document().Set("value")
 
 		batch := seer.Batch(query1, query2)
 		// The batch should either succeed or fail depending on the error handling

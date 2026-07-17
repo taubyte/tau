@@ -26,8 +26,8 @@ func Github(id string, fullname string) basic.Op {
 	return func(c basic.ConfigIface) []*seer.Query {
 		base := c.Config().Get("source").Get("github")
 		return []*seer.Query{
-			base.Fork().Get("id").Set(id),
-			base.Fork().Get("fullname").Set(fullname),
+			base.Get("id").Set(id),
+			base.Get("fullname").Set(fullname),
 		}
 	}
 }

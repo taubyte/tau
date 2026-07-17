@@ -41,7 +41,7 @@ func TestInferPathQuery_StringPath(t *testing.T) {
 	assert.NilError(t, err)
 
 	query := sr.Query()
-	query.Get("path1")
+	query = query.Get("path1")
 
 	path := []StringMatch{"path2"}
 	resultQuery, lastMatch, err := inferPathQuery(path, query)

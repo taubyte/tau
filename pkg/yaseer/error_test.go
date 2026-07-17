@@ -88,15 +88,15 @@ func TestYAMLError_Parsing(t *testing.T) {
 func TestFork_Query(t *testing.T) {
 	seer := newTestSeer(t)
 
-	t.Run("Fork creates independent copy of query", func(t *testing.T) {
+	t.Run("branches from a shared base are independent", func(t *testing.T) {
 		original := seer.Get("fork").Get("test").Document()
-		forked := Fork(original)
+		forked := original // immutable: reusing the base branches implicitly
 
 		// Modify original
-		original.Set("original_value")
+		original = original.Set("original_value")
 
 		// Forked should be independent
-		forked.Set("forked_value")
+		forked = forked.Set("forked_value")
 
 		// Commit both
 		if err := original.Commit(); err != nil {
@@ -116,54 +116,18 @@ func TestFork_Query(t *testing.T) {
 		_ = forkVal
 	})
 
-	t.Run("Fork method creates independent copy", func(t *testing.T) {
-		query := seer.Get("fork2").Get("test2")
-		forked := query.Fork()
+	t.Run("branching is independent (immutable queries)", func(t *testing.T) {
+		base := seer.Get("fork2").Get("test2")
 
-		// Both should be independent
-		if query == forked {
-			t.Error("Fork should create a new instance")
+		// Immutable: independence comes from Get returning a new query rather
+		// than mutating the receiver, so no explicit Fork is needed.
+		a := base.Get("nested1")
+		b := base.Get("nested2")
+		if a == b {
+			t.Error("distinct Get() calls must yield distinct queries")
 		}
-
-		// Operations on one shouldn't affect the other
-		query.Get("nested1")
-		forked.Get("nested2")
-
-		if len(query.requestedPath) != len(forked.requestedPath) {
-			t.Error("Forked query should have same initial path")
-		}
-	})
-}
-
-func TestClear_Query(t *testing.T) {
-	seer := newTestSeer(t)
-
-	t.Run("Clear resets query state", func(t *testing.T) {
-		query := seer.Get("clear").Get("test").Document()
-		query.Set("value")
-
-		cleared := query.Clear()
-
-		if len(cleared.ops) != 0 {
-			t.Error("Clear should remove all operations")
-		}
-		if len(cleared.errors) != 0 {
-			t.Error("Clear should remove all errors")
-		}
-		if cleared.write {
-			t.Error("Clear should reset write flag")
-		}
-	})
-
-	t.Run("Clear returns query for chaining", func(t *testing.T) {
-		query := seer.Get("clear2")
-		cleared := query.Clear()
-
-		if cleared == nil {
-			t.Error("Clear should return the query")
-		}
-		if cleared != query {
-			t.Error("Clear should return the same query instance")
+		if len(a.logicalPath()) != len(b.logicalPath()) {
+			t.Error("sibling branches should have equal-length paths")
 		}
 	})
 }
@@ -174,7 +138,7 @@ func TestErrors_Query(t *testing.T) {
 	t.Run("Errors returns copy of error slice", func(t *testing.T) {
 		query := seer.Query()
 		// Force an error
-		query.Document() // This should add an error
+		query = query.Document() // This should add an error
 
 		errors := query.Errors()
 		if len(errors) == 0 {
@@ -220,7 +184,7 @@ func TestDocument_ErrorHandling(t *testing.T) {
 
 	t.Run("Document on empty query adds error", func(t *testing.T) {
 		query := seer.Query()
-		query.Document() // Should add error
+		query = query.Document() // Should add error
 
 		errors := query.Errors()
 		if len(errors) == 0 {
@@ -234,7 +198,7 @@ func TestValue_ErrorHandling(t *testing.T) {
 
 	t.Run("Value returns error when query has errors", func(t *testing.T) {
 		query := seer.Query()
-		query.Document() // Add error
+		query = query.Document() // Add error
 
 		var val string
 		err := query.Value(&val)
@@ -408,7 +372,7 @@ func TestCommit_ErrorHandling(t *testing.T) {
 
 	t.Run("Commit with errors returns error", func(t *testing.T) {
 		query := seer.Query()
-		query.Document() // This adds an error
+		query = query.Document() // This adds an error
 
 		err := query.Commit()
 		if err == nil {
@@ -419,7 +383,7 @@ func TestCommit_ErrorHandling(t *testing.T) {
 	t.Run("Commit handles operation handler errors", func(t *testing.T) {
 		// Create a query that will fail during commit
 		query := seer.Get("commit").Get("test").Document()
-		query.Set("value")
+		query = query.Set("value")
 
 		// Normal commit should work
 		// If error occurs, that's the path we're testing

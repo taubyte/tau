@@ -32,34 +32,34 @@ type (
 )
 
 func (a *auth) List() (l []string) {
-	l, _ = a.Fork().List()
+	l, _ = a.Query.List()
 	return
 }
 
 func (a *auth) Get(name string) SignerParser {
-	return &signer{root: a.root, Query: a.Fork().Get(name)}
+	return &signer{root: a.root, Query: a.Query.Get(name)}
 }
 
 func (a *auth) Add(name string) SignerParser {
-	return &signer{root: a.root, Query: a.Fork().Get(name)}
+	return &signer{root: a.root, Query: a.Query.Get(name)}
 }
 
 func (a *auth) Delete(name string) error {
-	return a.Fork().Get(name).Delete().Commit()
+	return a.Query.Get(name).Delete().Commit()
 }
 
 func (s *signer) Username() (u string) {
-	s.Fork().Get("username").Value(&u)
+	s.Query.Get("username").Value(&u)
 	return
 }
 
 func (s *signer) Password() (p string) {
-	s.Fork().Get("password").Value(&p)
+	s.Query.Get("password").Value(&p)
 	return
 }
 
 func (s *signer) Key() (k string) {
-	s.Fork().Get("key").Value(&k)
+	s.Query.Get("key").Value(&k)
 	return
 }
 
@@ -89,15 +89,15 @@ func (s *signer) Create() (io.WriteCloser, error) {
 }
 
 func (s *signer) SetUsername(name string) error {
-	return s.Fork().Get("username").Set(name).Commit()
+	return s.Query.Get("username").Set(name).Commit()
 }
 
 func (s *signer) SetPassword(password string) error {
-	s.Fork().Get("key").Delete().Commit()
-	return s.Fork().Get("password").Set(password).Commit()
+	s.Query.Get("key").Delete().Commit()
+	return s.Query.Get("password").Set(password).Commit()
 }
 
 func (s *signer) SetKey(path string) error {
-	s.Fork().Get("password").Delete().Commit()
-	return s.Fork().Get("key").Set(path).Commit()
+	s.Query.Get("password").Delete().Commit()
+	return s.Query.Get("key").Set(path).Commit()
 }

@@ -13,7 +13,7 @@ func Profiles() *profileHandler {
 }
 
 func (p *profileHandler) Root() *seer.Query {
-	return _config.Document().Get(singletonsI18n.ProfilesKey).Fork()
+	return _config.Document().Get(singletonsI18n.ProfilesKey)
 }
 
 func (p *profileHandler) Get(name string) (profile Profile, err error) {
