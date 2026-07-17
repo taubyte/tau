@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
-	"github.com/taubyte/tau/pkg/config-compiler/decompile"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/decompile"
 )
 
 // Change this variable to false to output to ./ rather than temp dir

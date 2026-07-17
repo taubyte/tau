@@ -12,7 +12,7 @@ import (
 // TestCompiledObjectDecodesIntoStructs checks that tcc's compiled flat object is
 // consumable by the structureSpec structs — the real downstream contract, since
 // the object is stored ~as-is on TNS and later mapstructure-decoded into these
-// structs (see pkg/config-compiler/decompile/*.go). Unlike TestCompile this does
+// structs (see pkg/tcc/internal/parity/config-compiler/decompile/*.go). Unlike TestCompile this does
 // NOT compare against the old config-compiler, so it stays a valid guard once that
 // compiler is retired: it catches tcc emitting a missing/mistyped field that no
 // longer decodes into the struct model.

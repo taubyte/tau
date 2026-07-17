@@ -1,7 +1,7 @@
 package compile
 
 import (
-	"github.com/taubyte/tau/pkg/config-compiler/indexer"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/indexer"
 )
 
 func (c *compiler) application(name string) (appID string, appObject map[string]interface{}, err error) {

@@ -3,7 +3,6 @@ package compile
 import (
 	"fmt"
 
-	"github.com/taubyte/tau/pkg/config-compiler/indexer"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	databaseSpec "github.com/taubyte/tau/pkg/specs/database"
 	domainSpec "github.com/taubyte/tau/pkg/specs/domain"
@@ -14,6 +13,7 @@ import (
 	smartOpSpec "github.com/taubyte/tau/pkg/specs/smartops"
 	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/indexer"
 )
 
 func (c *compiler) indexer(ctx *indexer.IndexContext, f indexerFunc) error {
