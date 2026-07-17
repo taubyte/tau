@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"sync"
 
-	"github.com/taubyte/tau/pkg/schema/domains"
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/domains"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
 )
 
 func getDomain(name string, app string, project projectSchema.Project) (domObj domains.Domain, err error) {

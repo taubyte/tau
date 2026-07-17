@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	tnsIface "github.com/taubyte/tau/core/services/tns"
-	specsCommon "github.com/taubyte/tau/pkg/specs/common"
-	specs "github.com/taubyte/tau/pkg/specs/methods"
+	specsCommon "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/common"
+	specs "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/methods"
 )
 
 func (c *compiler) Publish(tns tnsIface.Client) (err error) {

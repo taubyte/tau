@@ -4,10 +4,10 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/core/common/repositorytype"
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	librarySpec "github.com/taubyte/tau/pkg/specs/library"
-	"github.com/taubyte/tau/pkg/specs/methods"
-	"github.com/taubyte/tau/utils/maps"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
+	librarySpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/library"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/specs/methods"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/utils/maps"
 )
 
 func Libraries(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

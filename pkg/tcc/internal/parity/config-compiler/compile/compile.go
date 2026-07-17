@@ -3,17 +3,17 @@ package compile
 import (
 	"fmt"
 
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	databaseSpec "github.com/taubyte/tau/pkg/specs/database"
-	domainSpec "github.com/taubyte/tau/pkg/specs/domain"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	librarySpec "github.com/taubyte/tau/pkg/specs/library"
-	messagingSpec "github.com/taubyte/tau/pkg/specs/messaging"
-	serviceSpec "github.com/taubyte/tau/pkg/specs/service"
-	smartOpSpec "github.com/taubyte/tau/pkg/specs/smartops"
-	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
-	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/indexer"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
+	databaseSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/database"
+	domainSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/domain"
+	functionSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/function"
+	librarySpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/library"
+	messagingSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/messaging"
+	serviceSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/service"
+	smartOpSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/smartops"
+	storageSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/storage"
+	websiteSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/website"
 )
 
 func (c *compiler) indexer(ctx *indexer.IndexContext, f indexerFunc) error {

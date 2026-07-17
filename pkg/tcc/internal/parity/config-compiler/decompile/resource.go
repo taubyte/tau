@@ -4,16 +4,16 @@ import (
 	"fmt"
 	"reflect"
 
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
-	databaseSpec "github.com/taubyte/tau/pkg/specs/database"
-	domainSpec "github.com/taubyte/tau/pkg/specs/domain"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	librarySpec "github.com/taubyte/tau/pkg/specs/library"
-	messagingSpec "github.com/taubyte/tau/pkg/specs/messaging"
-	serviceSpec "github.com/taubyte/tau/pkg/specs/service"
-	smartopsSpec "github.com/taubyte/tau/pkg/specs/smartops"
-	storagesSpec "github.com/taubyte/tau/pkg/specs/storage"
-	websitesSpec "github.com/taubyte/tau/pkg/specs/website"
+	projectLib "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
+	databaseSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/database"
+	domainSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/domain"
+	functionSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/function"
+	librarySpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/library"
+	messagingSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/messaging"
+	serviceSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/service"
+	smartopsSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/smartops"
+	storagesSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/storage"
+	websitesSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/website"
 )
 
 type magicFunc func(project projectLib.Project, _id string, obj interface{}, appName string) error

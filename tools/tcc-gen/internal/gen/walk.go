@@ -94,7 +94,11 @@ func Resources(root []*engine.Node) ([]*Resource, error) {
 			}
 			if !skipGet[key] {
 				body := getBody(gt, path)
-				if hasCompat && !distinctAlias {
+				if hasCompat {
+					// Canonical getter always reads path-then-compat so old
+					// on-disk data under the legacy key still reads, matching the
+					// tcc engine (engine/node.go). A distinct deprecated accessor
+					// (below) is still emitted for callers of the old name.
 					body = getBodyCompat(gt, path, compat)
 				}
 				getters = append(getters, Accessor{Name: nm, GoType: gt, Body: body})

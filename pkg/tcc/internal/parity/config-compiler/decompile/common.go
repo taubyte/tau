@@ -3,9 +3,9 @@ package decompile
 import (
 	"fmt"
 
-	domLib "github.com/taubyte/tau/pkg/schema/domains"
-	libraryLib "github.com/taubyte/tau/pkg/schema/libraries"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
+	domLib "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/domains"
+	libraryLib "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/libraries"
+	projectLib "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
 )
 
 func (d *decompiler) cleanResources() (err error) {

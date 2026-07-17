@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/taubyte/tau/core/services/patrick"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/config-compiler/compile"
+	projectLib "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
 	"gotest.tools/v3/assert"
 )
 
@@ -27,6 +27,8 @@ var fakeMeta = patrick.Meta{
 var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 
 func TestCompile(t *testing.T) {
+	// projectLib is the FROZEN parity schema: the old compiler must compile against
+	// the pinned reference so tcc-gen's regeneration of live pkg/schema can't move it.
 	project, err := projectLib.Open(projectLib.SystemFS("fixtures/config"))
 	assert.NilError(t, err)
 

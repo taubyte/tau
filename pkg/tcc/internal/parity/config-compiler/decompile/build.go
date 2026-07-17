@@ -5,7 +5,7 @@ import (
 	"reflect"
 
 	"github.com/spf13/afero"
-	projectLib "github.com/taubyte/tau/pkg/schema/project"
+	projectLib "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
 )
 
 type Option func(d *decompiler) error

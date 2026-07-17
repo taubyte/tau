@@ -65,11 +65,11 @@ func ExampleFunction() {
 	//     method: GET
 	//     paths:
 	//         - /
+	//     domains:
+	//         - test_domain_1
 	// execution:
 	//     timeout: 15s
 	//     memory: 64MB
 	//     call: ping
 	// source: .
-	// domains:
-	//     - test_domain_1
 }

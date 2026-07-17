@@ -3,9 +3,9 @@ package indexer
 import (
 	"fmt"
 
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	functionSpec "github.com/taubyte/tau/pkg/specs/function"
-	"github.com/taubyte/tau/utils/maps"
+	projectSchema "github.com/taubyte/tau/pkg/tcc/internal/parity/schema/project"
+	functionSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/function"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/utils/maps"
 )
 
 func Functions(ctx *IndexContext, project projectSchema.Project, urlIndex map[string]interface{}) error {

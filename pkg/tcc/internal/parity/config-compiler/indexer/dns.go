@@ -4,7 +4,7 @@ import (
 	_ "embed"
 
 	dv "github.com/taubyte/domain-validation"
-	domainSpec "github.com/taubyte/tau/pkg/specs/domain"
+	domainSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/domain"
 	"golang.org/x/exp/slices"
 )
 

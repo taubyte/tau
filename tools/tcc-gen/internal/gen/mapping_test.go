@@ -95,13 +95,21 @@ func TestMapping(t *testing.T) {
 	}
 }
 
-// TestCompatAlias locks the deprecated-alias behaviour: a Compat with a distinct
-// name yields a separate deprecated accessor; a same-named Compat becomes a
-// read-fallback on the canonical getter.
+// TestCompatAlias locks the compat behaviour: the canonical getter always reads
+// path-then-compat so legacy on-disk data still reads; a Compat with a distinct
+// name ALSO yields a separate deprecated accessor for callers of the old name.
 func TestCompatAlias(t *testing.T) {
-	// Distinct alias: p2p-protocol -> Protocol (canonical) + Service (deprecated).
+	// Distinct alias: p2p-protocol -> Protocol (canonical, with fallback) + Service (deprecated).
 	fns := resourceByGroup(t, "functions")
-	assertHasGetter(t, fns, "Protocol", "", `return basic.Get[string](g, "trigger", "protocol")`)
+	protocol := findGetter(t, fns, "Protocol")
+	if protocol.Doc != "" {
+		t.Errorf("Protocol getter should not be deprecated, got doc %q", protocol.Doc)
+	}
+	for _, want := range []string{`g.Config().Get("trigger").Get("protocol")`, `return basic.Get[string](g, "trigger", "service")`} {
+		if !strings.Contains(protocol.Body, want) {
+			t.Errorf("Protocol getter body missing %q; got:\n%s", want, protocol.Body)
+		}
+	}
 	assertHasGetter(t, fns, "Service", "// Deprecated: use Protocol.", `return basic.Get[string](g, "trigger", "service")`)
 	assertHasSetter(t, fns, "Service", "// Deprecated: use Protocol.", `return basic.SetChild("trigger", "service", value)`)
 
