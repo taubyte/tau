@@ -3,7 +3,7 @@ package seer
 import (
 	"testing"
 
-	"golang.org/x/exp/slices"
+	"slices"
 )
 
 func TestSet(t *testing.T) {

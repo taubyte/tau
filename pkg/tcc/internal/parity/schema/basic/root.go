@@ -1,6 +1,6 @@
 package basic
 
-import seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+import seer "github.com/taubyte/tau/pkg/yaseer"
 
 // Can be overridden
 func (r Resource) config() *seer.Query {

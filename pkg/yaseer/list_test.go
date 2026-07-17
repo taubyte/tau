@@ -4,7 +4,8 @@ import (
 	"os"
 	"testing"
 
-	"golang.org/x/exp/slices"
+	"slices"
+
 	"gotest.tools/v3/assert"
 )
 

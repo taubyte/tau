@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/common"
-	seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 func (m *messaging) WrapError(format string, i ...any) error {

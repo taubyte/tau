@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"gopkg.in/yaml.v3"
-
-	pathUtils "github.com/taubyte/tau/utils/path"
 )
 
 func getNodeLocation(node *yaml.Node) (line, column int) {
@@ -57,7 +55,7 @@ func _opDeleteInYaml(this op, query *Query, path []string, value *yamlNode) ([]s
 
 func _opDeleteInFileSystem(this op, query *Query, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
 	_path = append(_path, this.name)
-	path := "/" + pathUtils.Join(_path)
+	path := "/" + joinPath(_path)
 
 	st, err := query.seer.fs.Stat(path)
 	if err != nil {
@@ -134,7 +132,7 @@ func opGetOrCreate(this op, query *Query, path []string, value *yamlNode) ([]str
 func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]string, *yamlNode, error) {
 
 	if value == nil || value.this == nil {
-		return path, nil, fmt.Errorf("can not find %s in the empty document %s", this.name, pathUtils.Join(path))
+		return path, nil, fmt.Errorf("can not find %s in the empty document %s", this.name, joinPath(path))
 	}
 
 	path = append(path, this.name)
@@ -143,7 +141,7 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 	filePath := value.filePath
 	if curNode.Kind == yaml.DocumentNode {
 		if len(curNode.Content) != 1 {
-			return path, nil, fmt.Errorf("failed to process empty document at %s", pathUtils.Join(path))
+			return path, nil, fmt.Errorf("failed to process empty document at %s", joinPath(path))
 		}
 		parentNode = curNode
 		curNode = curNode.Content[0]
@@ -173,7 +171,7 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 			return path, &yamlNode{parent: parentNode, prev: curNode.Content[0], this: curNode.Content[1], filePath: filePath}, nil
 		}
 		// else, we return error
-		return path, nil, fmt.Errorf("can not find %s", pathUtils.Join(path))
+		return path, nil, fmt.Errorf("can not find %s", joinPath(path))
 
 	}
 	if curNode.Kind == yaml.SequenceNode {
@@ -216,12 +214,12 @@ func _opGetInYaml(this op, query *Query, path []string, value *yamlNode) ([]stri
 	}
 	//else
 
-	return path, nil, fmt.Errorf("can not find %s", pathUtils.Join(path))
+	return path, nil, fmt.Errorf("can not find %s", joinPath(path))
 }
 
 func _opGetOrCreateInFileSystem(this op, query *Query, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
 	_path = append(_path, this.name)
-	path := "/" + pathUtils.Join(_path)
+	path := "/" + joinPath(_path)
 	doc, exists := query.seer.documents[path+".yaml"]
 	if exists {
 		_path[len(_path)-1] += ".yaml"
@@ -271,7 +269,7 @@ func _opGetOrCreateInFileSystem(this op, query *Query, _path []string, value *ya
 
 func _opGetInFileSystem(this op, query *Query, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
 	_path = append(_path, this.name)
-	path := "/" + pathUtils.Join(_path)
+	path := "/" + joinPath(_path)
 	doc, exists := query.seer.documents[path+".yaml"]
 	if exists {
 		_path[len(_path)-1] += ".yaml"
@@ -317,7 +315,7 @@ func _opGetInFileSystem(this op, query *Query, _path []string, value *yamlNode) 
 
 func opCreateDocument(this op, query *Query, _path []string, value *yamlNode) ([]string, *yamlNode, error) {
 	_path = append(_path, this.name+".yaml")
-	path := "/" + pathUtils.Join(_path)
+	path := "/" + joinPath(_path)
 	// Check for it first
 
 	doc, exists := query.seer.documents[path]

@@ -13,7 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/smartops"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/storages"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/website"
-	seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 type Project interface {

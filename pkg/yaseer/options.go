@@ -37,3 +37,22 @@ func VirtualFS(fs afero.Fs, path string) Option {
 		return nil
 	}
 }
+
+// WithWAL enables write-ahead logging. `path` is the WAL file
+// location relative to the FS root (e.g. ".yaseer-wal"). Sync()
+// will stage every dirty document into this file before touching
+// any real data file; if the process dies mid-Sync, the next
+// New() with the same option replays the WAL so the committed
+// write is durable.
+//
+// A leading-slash path stages the WAL above the FS root, which
+// the base FS will reject — keep paths relative.
+func WithWAL(path string) Option {
+	return func(s *Seer) error {
+		if path == "" {
+			return fmt.Errorf("WithWAL: path must not be empty")
+		}
+		s.walPath = path
+		return nil
+	}
+}

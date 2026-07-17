@@ -13,6 +13,10 @@ type Seer struct {
 	fs        afero.Fs
 	lock      sync.Mutex
 	documents map[string]*yaml.Node
+	// walPath is the file (relative to the configured FS root) where
+	// Sync() stages a write-ahead log entry before touching data
+	// files. Empty disables WAL entirely — the default.
+	walPath string
 }
 
 const (

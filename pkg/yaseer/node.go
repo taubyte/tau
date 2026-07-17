@@ -6,8 +6,6 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
-	"github.com/taubyte/tau/utils/maps"
-	pathUtils "github.com/taubyte/tau/utils/path"
 )
 
 // Helper
@@ -123,6 +121,13 @@ func (n *Query) Commit() error {
 		}
 	}
 
+	// Op-based WAL: persist a description of this commit's ops so a
+	// kill between now and the next Sync() doesn't drop the change.
+	// No-op when WAL is disabled (n.seer.walPath == "").
+	if err := n.seer.appendCommitWAL(n.ops); err != nil {
+		return fmt.Errorf("wal append failed: %w", err)
+	}
+
 	return nil
 }
 
@@ -148,7 +153,7 @@ func (n *Query) Value(dst interface{}) error {
 
 	if doc == nil {
 		//let's see if we're looking at a folder
-		_path := "/" + pathUtils.Join(path)
+		_path := "/" + joinPath(path)
 		if st, exist := n.seer.fs.Stat(_path); exist == nil && st.IsDir() {
 			// it's a folder
 			dirFiles, err := afero.ReadDir(n.seer.fs, _path)
@@ -205,7 +210,7 @@ func (n *Query) List() ([]string, error) {
 	var val interface{}
 	err := n.Value(&val)
 	if err != nil {
-		path := "/" + pathUtils.Join(n.requestedPath)
+		path := "/" + joinPath(n.requestedPath)
 		st, statErr := n.seer.fs.Stat(path)
 		if statErr == nil && st.IsDir() {
 			dirFiles, err := afero.ReadDir(n.seer.fs, path)
@@ -235,9 +240,9 @@ func (n *Query) List() ([]string, error) {
 	case []string:
 		return ival, nil
 	case map[string]interface{}:
-		return maps.Keys(ival), nil
+		return mapKeys(ival), nil
 	case map[interface{}]interface{}:
-		return maps.Keys(maps.SafeInterfaceToStringKeys(ival)), nil
+		return mapKeys(safeInterfaceToStringKeys(ival)), nil
 	default:
 		return nil, fmt.Errorf("listing keys failed with %v type(%T) is not a map or a slice", val, val)
 	}

@@ -1,7 +1,7 @@
 package basic
 
 import (
-	seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 // Resource contains the default methods, they can be overridden on the resource itself or

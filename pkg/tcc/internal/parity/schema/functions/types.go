@@ -4,7 +4,7 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/basic"
 	"github.com/taubyte/tau/pkg/tcc/internal/parity/schema/common"
 	structureSpec "github.com/taubyte/tau/pkg/tcc/internal/parity/specs/structure"
-	seer "github.com/taubyte/tau/pkg/tcc/internal/parity/yaseer"
+	seer "github.com/taubyte/tau/pkg/yaseer"
 )
 
 type Function interface {
