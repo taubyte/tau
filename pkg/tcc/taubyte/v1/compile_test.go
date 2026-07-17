@@ -7,9 +7,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/taubyte/tau/core/services/patrick"
-	"github.com/taubyte/tau/pkg/config-compiler/compile"
 	projectLib "github.com/taubyte/tau/pkg/schema/project"
 	"github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/compile"
 	"gotest.tools/v3/assert"
 )
 

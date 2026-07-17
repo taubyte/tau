@@ -5,9 +5,9 @@ import (
 	"time"
 
 	"github.com/alecthomas/units"
-	"github.com/taubyte/tau/pkg/config-compiler/common"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
+	"github.com/taubyte/tau/pkg/tcc/internal/parity/common"
 )
 
 func smartOps(name string, application string, project projectSchema.Project) (_id string, returnMap map[string]interface{}, err error) {
