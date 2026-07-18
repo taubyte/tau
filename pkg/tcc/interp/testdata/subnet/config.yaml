@@ -1,0 +1,7 @@
+id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR
+name: SubnetTest
+description: a project exercising the network-access enum round-trip
+tags:
+    - tag1
+notification:
+    email: "cto@taubyte.com"

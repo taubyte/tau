@@ -11,15 +11,16 @@ import (
 )
 
 var specTypes = map[string]reflect.Type{
-	"Function":  reflect.TypeFor[structureSpec.Function](),
-	"Database":  reflect.TypeFor[structureSpec.Database](),
-	"Domain":    reflect.TypeFor[structureSpec.Domain](),
-	"Library":   reflect.TypeFor[structureSpec.Library](),
-	"Messaging": reflect.TypeFor[structureSpec.Messaging](),
-	"Service":   reflect.TypeFor[structureSpec.Service](),
-	"SmartOp":   reflect.TypeFor[structureSpec.SmartOp](),
-	"Storage":   reflect.TypeFor[structureSpec.Storage](),
-	"Website":   reflect.TypeFor[structureSpec.Website](),
+	"Application": reflect.TypeFor[structureSpec.Application](),
+	"Function":    reflect.TypeFor[structureSpec.Function](),
+	"Database":    reflect.TypeFor[structureSpec.Database](),
+	"Domain":      reflect.TypeFor[structureSpec.Domain](),
+	"Library":     reflect.TypeFor[structureSpec.Library](),
+	"Messaging":   reflect.TypeFor[structureSpec.Messaging](),
+	"Service":     reflect.TypeFor[structureSpec.Service](),
+	"SmartOp":     reflect.TypeFor[structureSpec.SmartOp](),
+	"Storage":     reflect.TypeFor[structureSpec.Storage](),
+	"Website":     reflect.TypeFor[structureSpec.Website](),
 }
 
 // TestStructParity asserts every field tcc-gen generates matches the hand-written
@@ -28,7 +29,7 @@ var specTypes = map[string]reflect.Type{
 // emit are the hand-written tail (value transforms, derived fields like
 // Function.Secure, embedded markers) and are reported, not failed.
 func TestStructParity(t *testing.T) {
-	models, err := Structs(schema.TaubyteRessources)
+	models, err := Structs(schema.GenerationRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

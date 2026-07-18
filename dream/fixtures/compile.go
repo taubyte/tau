@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	tcc "github.com/taubyte/tau/utils/tcc"
 )
 

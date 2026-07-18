@@ -7,7 +7,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/prompts"
 )
 
-func Query(app *structureSpec.App) {
+func Query(app *structureSpec.Application) {
 	prompts.RenderTable([][]string{
 		{"ID", app.Id},
 		{"Name", app.Name},

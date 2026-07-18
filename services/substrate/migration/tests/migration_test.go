@@ -20,7 +20,7 @@ import (
 	"github.com/taubyte/tau/pkg/kvdb"
 	hoarderSpecs "github.com/taubyte/tau/pkg/specs/hoarder"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	substrateSrv "github.com/taubyte/tau/services/substrate"
 	_ "github.com/taubyte/tau/services/substrate/dream"
 	"github.com/taubyte/tau/services/substrate/migration"

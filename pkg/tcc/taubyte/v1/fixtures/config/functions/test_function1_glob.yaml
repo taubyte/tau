@@ -3,6 +3,7 @@ description: an http function for a simple ping
 tags:
     - function_tag_1
     - function_tag_2
+    - smartops:test_smartops1
 trigger:
     type: http
     method: get

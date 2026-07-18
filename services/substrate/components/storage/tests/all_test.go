@@ -27,7 +27,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/core/services/substrate/components/storage"
-	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	storages "github.com/taubyte/tau/services/substrate/components/storage"
 	stcommon "github.com/taubyte/tau/services/substrate/components/storage/common"
 	_ "github.com/taubyte/tau/services/substrate/dream"

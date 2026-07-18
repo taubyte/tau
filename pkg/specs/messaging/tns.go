@@ -1,11 +1,8 @@
 package messagingSpec
 
 import (
-	"errors"
-
 	"github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
-	multihash "github.com/taubyte/tau/utils/multihash"
 )
 
 func Tns() *tnsHelper {
@@ -25,17 +22,9 @@ func (t *tnsHelper) IndexValue(branch, projectId, appId, msgId string) (*common.
 }
 
 func (t *tnsHelper) WebSocketHashPath(projectId, appId string) (*common.TnsPath, error) {
-	if len(projectId) == 0 {
-		return nil, errors.New("projectId required for websocket hash path")
-	}
-
-	return t.WebSocketPath(multihash.Hash(projectId + appId))
+	return methods.WebSocketHashPath(projectId, appId)
 }
 
 func (t *tnsHelper) WebSocketPath(hash string) (*common.TnsPath, error) {
-	if len(hash) == 0 {
-		return nil, errors.New("hash required for websocket hash path")
-	}
-
-	return common.NewTnsPath([]string{"p2p", "pubsub", hash}), nil
+	return methods.WebSocketPath(hash)
 }

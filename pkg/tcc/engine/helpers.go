@@ -109,3 +109,13 @@ func DefineIterGroup(attrs []*Attribute, children ...*Node) *Node {
 		Children:   children,
 	}
 }
+
+// With applies node options to an already-built node and returns it, for the
+// ctors that take only children (DefineGroup / DefineIterGroup) and so can't
+// take options inline. Generation-only metadata; no runtime effect.
+func (n *Node) With(opts ...NodeOption) *Node {
+	for _, o := range opts {
+		o(n)
+	}
+	return n
+}

@@ -1,0 +1,72 @@
+package decompile
+
+import (
+	"context"
+	"fmt"
+
+	"github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/interp"
+	"github.com/taubyte/tau/pkg/tcc/object"
+	"github.com/taubyte/tau/pkg/tcc/transform"
+	yaseer "github.com/taubyte/tau/pkg/yaseer"
+)
+
+// Object is an alias for the compiled configuration object.
+type Object = object.Object[object.Refrence]
+
+type Decompiler struct {
+	seerOptions []yaseer.Option
+	compileRoot *engine.Node
+	engine      engine.Engine
+}
+
+type Option func(d *Decompiler) error
+
+// New builds a Decompiler bound to a schema project and its CompileRoot node.
+// Both are supplied by the caller (the schema facade passes schema.TaubyteProject
+// + schema.CompileRoot()) rather than referenced here, so this package never
+// imports schema — keeping the interpreter dependency one-way.
+func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (d *Decompiler, err error) {
+	d = &Decompiler{compileRoot: compileRoot}
+
+	for _, option := range options {
+		if err := option(d); err != nil {
+			return nil, err
+		}
+	}
+
+	d.engine, err = engine.New(project, d.seerOptions...)
+	if err != nil {
+		return nil, err
+	}
+
+	return d, nil
+}
+
+// Decompile converts a compiled object back to YAML files using the engine's schema.
+// Note: This modifies the input object in place (same as regular compilation transforms).
+func (d *Decompiler) Decompile(obj Object) error {
+	// Reverse pipeline: chroot unwrap -> DecompileDriver. The generic DecompileDriver
+	// is the mechanical inverse of the forward CompileDriver + ResolveRefs, driven by
+	// the same schema DSL; it replaces the hand-written id->name ref resolution and
+	// per-resource inverse projection.
+	//
+	// The chroot-unwrap is only needed when the forward path chrooted — i.e. when the
+	// schema declares indexing. When it did not there is no `object` wrapper and the
+	// unwrap is a no-op, so gating it keeps v1 identical and skips dead work for
+	// schemas without an `indexes` sibling.
+	pipe := []transform.Transformer[object.Refrence]{}
+	if interp.UsesIndexing(d.compileRoot) {
+		pipe = append(pipe, unwrapEnvelope())
+	}
+	pipe = append(pipe, interp.NewDecompileDriver(d.compileRoot))
+
+	ctx := transform.NewContext[object.Refrence](context.Background())
+	restored, err := transform.Pipe(ctx, obj, pipe...)
+	if err != nil {
+		return fmt.Errorf("reverse pipeline failed: %w", err)
+	}
+
+	// Use engine's Dump to write object back to filesystem using schema (syncs automatically)
+	return d.engine.Dump(restored)
+}

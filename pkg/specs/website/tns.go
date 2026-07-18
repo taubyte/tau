@@ -9,6 +9,12 @@ func Tns() *tnsHelper {
 	return &tnsHelper{}
 }
 
+// ModuleName is the wasm module name for a website resource, mirroring the other
+// resource specs so the generated structureSpec.Website satisfies the Wasm iface.
+func ModuleName(name string) string {
+	return PathVariable.String() + "/" + name
+}
+
 func (t *tnsHelper) BasicPath(branch, commit, projectId, appId, webId string) (*common.TnsPath, error) {
 	return methods.GetBasicTNSKey(branch, commit, projectId, appId, webId, PathVariable)
 }

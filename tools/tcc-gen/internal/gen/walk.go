@@ -21,48 +21,130 @@ type Resource struct {
 	Getters []Accessor
 }
 
-// universalFields are the config fields every resource carries: id/name/description/
-// tags come from the DSL's TaubyteAttributes and smartops is parsed from the tags.
-// Emitted uniformly (not walked) so ordering/naming stay identical across resources.
-// Head is emitted before the resource attributes, tail after.
-var (
-	universalHead = []field{{"Id", "string", "id"}, {"Description", "string", "description"}, {"Tags", "[]string", "tags"}}
-	universalTail = []field{{"SmartOps", "[]string", "smartops"}}
-)
-
 type field struct{ name, goType, key string }
 
-// Resources walks the DSL resource groups and projects each into a Resource.
-// Only the 9 groups with a descriptor are emitted (applications/clouds are
-// special-cased hand-written packages).
-func Resources(root []*engine.Node) ([]*Resource, error) {
-	var out []*Resource
-	for _, g := range root {
-		name, _ := g.Match.(string)
-		d, ok := descriptors[name]
-		if !ok {
+// universalFields are the config fields every resource carries, split for uniform
+// emission (head before the resource attributes, tail after). Head is the common
+// attrs minus name (the template reads name via Name()); the smartops tail is the
+// one universal with no DSL attribute — the compiler derives it from tags — so it
+// is the only field named here rather than read off the DSL.
+func universalFields(root []*engine.Node) (head, tail []field) {
+	for _, a := range commonAttrs(root) {
+		if a.Name == "name" {
 			continue
 		}
+		head = append(head, field{title(a.Name), goType(a.Type), a.Name})
+	}
+	return head, universalTail(root)
+}
+
+// universalTail derives the trailing derived fields every resource carries from
+// the groups marked AttachesToAll: the field is named by the group's Resource
+// iface and keyed by the group's config key (the smartops group -> a SmartOps
+// []string field, key "smartops"). No such group -> no tail.
+func universalTail(root []*engine.Node) []field {
+	var tail []field
+	for _, g := range root {
 		if len(g.Children) == 0 {
-			return nil, fmt.Errorf("group %q has no iterator child node", name)
+			continue
+		}
+		iter := g.Children[0]
+		if b, _ := iter.Meta["attachesToAll"].(bool); !b {
+			continue
+		}
+		d, ok := descriptorFor(iter)
+		if !ok {
+			continue // AttachesToAll requires Resource(...)
+		}
+		name, _ := g.Match.(string)
+		tail = append(tail, field{d.Iface, "[]string", name})
+	}
+	return tail
+}
+
+// containerKey returns the config key of the nested container group — the one
+// whose iterator holds resource sub-groups (applications) rather than being a
+// resource itself — or "" if the schema has none. Same structural test the
+// struct generator uses to emit the bare container struct.
+func containerKey(root []*engine.Node) string {
+	for _, g := range root {
+		if len(g.Children) == 0 {
+			continue
+		}
+		if _, ok := descriptorFor(g.Children[0]); ok {
+			continue
+		}
+		if it := g.Children[0]; it.Group && len(it.Children) > 0 {
+			name, _ := g.Match.(string)
+			return name
+		}
+	}
+	return ""
+}
+
+// containerSpec is the declared Go name (Singular) of the container group
+// (applications -> Application) — the struct type and the parent-container
+// accessor both take it. Returns "" if the schema has no container, or an error
+// if a container exists with no Singular() (the generator never guesses).
+func containerSpec(root []*engine.Node) (string, error) {
+	for _, g := range root {
+		if len(g.Children) == 0 {
+			continue
+		}
+		iter := g.Children[0]
+		if _, ok := descriptorFor(iter); ok {
+			continue
+		}
+		if iter.Group && len(iter.Children) > 0 {
+			if s, ok := iter.Meta["singular"].(string); ok && s != "" {
+				return s, nil
+			}
+			name, _ := g.Match.(string)
+			return "", fmt.Errorf("container group %q has no Singular() declaration", name)
+		}
+	}
+	return "", nil
+}
+
+// Resources walks the DSL resource groups and projects each into a Resource.
+// Only the groups with a Resource descriptor are emitted (the container group
+// and leaf maps like clouds are not accessor surfaces).
+func Resources(root []*engine.Node) ([]*Resource, error) {
+	var out []*Resource
+	// The getter template gives every resource a fixed Name()/Get() plus an
+	// Application() accessor named for the container group; reserve those so a
+	// DSL attribute can never generate an accessor that collides with them.
+	container, err := containerSpec(root)
+	if err != nil {
+		return nil, err
+	}
+	common := attrSet(commonAttrs(root))
+	head, tail := universalFields(root)
+	for _, g := range root {
+		name, _ := g.Match.(string)
+		if len(g.Children) == 0 {
+			continue
+		}
+		d, ok := descriptorFor(g.Children[0])
+		if !ok {
+			continue
 		}
 		r := &Resource{descriptor: d}
 
 		// reserved dedupes accessor names against the universal fields and each
 		// other, so a skip-table gap can never emit a duplicate declaration.
-		reserved := map[string]bool{"Name": true, "Application": true, "Get": true}
-		for _, f := range append(append([]field{}, universalHead...), universalTail...) {
+		reserved := map[string]bool{"Name": true, container: true, "Get": true}
+		for _, f := range append(append([]field{}, head...), tail...) {
 			reserved[f.name] = true
 		}
 
 		var setters, getters []Accessor
 		for _, a := range g.Children[0].Attributes {
-			if commonAttrs[a.Name] {
+			if common[a.Name] {
 				continue
 			}
-			key := name + "." + a.Name
-			if a.Key || skipBoth[key] {
-				continue // map-key attr, or explicitly non-mechanical
+			if a.Key || (noSetter(a) && noGetter(a)) {
+				continue // map-key attr, or no mechanical accessor at all
 			}
 			path, ok := pathSegs(a)
 			if !ok {
@@ -89,10 +171,10 @@ func Resources(root []*engine.Node) ([]*Resource, error) {
 			distinctAlias := hasCompat && aliasName != nm && !reserved[aliasName]
 
 			// Canonical accessors (setters cap at depth 2: basic.Set/SetChild).
-			if !skipSet[key] && len(path) <= 2 {
+			if !noSetter(a) && len(path) <= 2 {
 				setters = append(setters, Accessor{Name: nm, GoType: gt, Body: setBody(path)})
 			}
-			if !skipGet[key] {
+			if !noGetter(a) {
 				body := getBody(gt, path)
 				if hasCompat {
 					// Canonical getter always reads path-then-compat so old
@@ -108,17 +190,17 @@ func Resources(root []*engine.Node) ([]*Resource, error) {
 			if distinctAlias {
 				reserved[aliasName] = true
 				doc := "// Deprecated: use " + nm + "."
-				if !skipSet[key] && len(compat) <= 2 {
+				if !noSetter(a) && len(compat) <= 2 {
 					setters = append(setters, Accessor{Name: aliasName, GoType: gt, Body: setBody(compat), Doc: doc})
 				}
-				if !skipGet[key] {
+				if !noGetter(a) {
 					getters = append(getters, Accessor{Name: aliasName, GoType: gt, Body: getBody(gt, compat), Doc: doc})
 				}
 			}
 		}
 
-		r.Setters = assemble(universalSetters, setters)
-		r.Getters = assemble(universalGetters, getters)
+		r.Setters = assemble(head, tail, universalSetters, setters)
+		r.Getters = assemble(head, tail, universalGetters, getters)
 		// A package-level setter cannot share a name with the resource's exported
 		// interface type (e.g. smartops' interface is itself named SmartOps).
 		r.Setters = withoutName(r.Setters, d.Iface)
@@ -130,13 +212,13 @@ func Resources(root []*engine.Node) ([]*Resource, error) {
 
 // assemble prepends the universal head, then the resource accessors, then the
 // universal tail, using make to build each accessor from its field spec.
-func assemble(mk func(field) Accessor, mid []Accessor) []Accessor {
-	res := make([]Accessor, 0, len(universalHead)+len(mid)+len(universalTail))
-	for _, f := range universalHead {
+func assemble(head, tail []field, mk func(field) Accessor, mid []Accessor) []Accessor {
+	res := make([]Accessor, 0, len(head)+len(mid)+len(tail))
+	for _, f := range head {
 		res = append(res, mk(f))
 	}
 	res = append(res, mid...)
-	for _, f := range universalTail {
+	for _, f := range tail {
 		res = append(res, mk(f))
 	}
 	return res

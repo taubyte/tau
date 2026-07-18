@@ -6,7 +6,7 @@ import (
 
 	_ "github.com/taubyte/tau/pkg/builder"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
-	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	tcc "github.com/taubyte/tau/utils/tcc"
 )
 
