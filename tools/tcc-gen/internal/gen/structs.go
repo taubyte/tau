@@ -235,6 +235,9 @@ func structFieldName(group string, a *engine.Attribute) string {
 // derivable and are left for hand-merge.
 func structTag(fieldName string, a *engine.Attribute) string {
 	if t, ok := a.Meta["tag"].(string); ok && t != "" {
+		if t == strings.ToLower(fieldName) {
+			return "" // redundant with the field name (mapstructure decodes case-insensitively)
+		}
 		return "`mapstructure:\"" + t + "\"`"
 	}
 	compat, ok := compatSegs(a)

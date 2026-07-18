@@ -48,13 +48,13 @@ var TaubyteRessources = []*Node{
 			TaubyteAttributes(
 				String("type", Path("trigger", "type"), InSet("http", "https", "pubsub", "p2p")),
 				Bool("local", Path("trigger", "local")),
-				String("pubsub-channel", Path("trigger", "channel")),
-				String("p2p-protocol", Path("trigger", "protocol"), Compat("trigger", "service"), Default("")),
-				String("p2p-command", Path("trigger", "command")),
-				String("http-method", Path("trigger", "method"), IsHttpMethod()),
-				StringSlice("http-methods", Path("trigger", "methods"), NoAccessors(), NoStructField()), // TO IMPLEMENT
-				StringSlice("http-domains", Path("trigger", "domains"), Compat("domains")),
-				StringSlice("http-paths", Path("trigger", "paths")),
+				String("pubsub-channel", Path("trigger", "channel"), Tag("channel")),
+				String("p2p-protocol", Path("trigger", "protocol"), Compat("trigger", "service"), Tag("service"), Default("")),
+				String("p2p-command", Path("trigger", "command"), Tag("command")),
+				String("http-method", Path("trigger", "method"), IsHttpMethod(), Tag("method")),
+				StringSlice("http-methods", Path("trigger", "methods"), Tag("methods"), NoAccessors(), NoStructField()), // TO IMPLEMENT
+				StringSlice("http-domains", Path("trigger", "domains"), Compat("domains"), Tag("domains")),
+				StringSlice("http-paths", Path("trigger", "paths"), Tag("paths")),
 				String("source"),
 				Duration("timeout", Path("execution", "timeout")),
 				Bytes("memory", Path("execution", "memory")),
@@ -71,7 +71,7 @@ var TaubyteRessources = []*Node{
 			TaubyteAttributes(
 				String("path", Path("source", "path")),
 				String("branch", Path("source", "branch")),
-				String("git-provider", Path("source", Either("github")), Key(), Field("Provider")),
+				String("git-provider", Path("source", Either("github")), Key(), Field("Provider"), Tag("provider")),
 				String("github-id", Path("source", "github", "id"), Field("RepoID"), Tag("repository-id"), NoAccessors()),
 				String("github-fullname", Path("source", "github", "fullname"), Field("RepoName"), Tag("repository-name"), NoAccessors()),
 			),
@@ -139,7 +139,7 @@ var TaubyteRessources = []*Node{
 				StringSlice("domains", Path("domains")),
 				StringSlice("paths", Path("paths"), Compat("source", "paths")), // TODO: add validation
 				String("branch", Path("source", "branch")),                     // TODO: deprecate
-				String("git-provider", Path("source", Either("github")), Key(), Field("Provider")),
+				String("git-provider", Path("source", Either("github")), Key(), Field("Provider"), Tag("provider")),
 				String("github-id", Path("source", "github", "id"), Field("RepoID"), Tag("repository-id"), NoAccessors()),
 				String("github-fullname", Path("source", "github", "fullname"), Field("RepoName"), Tag("repository-name"), NoAccessors()),
 			),
