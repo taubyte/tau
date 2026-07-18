@@ -7,8 +7,7 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/object"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile/pass1"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile/pass2"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile/pass3"
+	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	"github.com/taubyte/tau/pkg/tcc/transform"
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
@@ -44,15 +43,11 @@ func New(options ...Option) (d *Decompiler, err error) {
 // Decompile converts a compiled object back to YAML files using the engine's schema.
 // Note: This modifies the input object in place (same as regular compilation transforms).
 func (d *Decompiler) Decompile(obj Object) error {
-	// Reverse pipeline: pass1 -> pass2 -> pass3
-	pipe := []transform.Transformer[object.Refrence]{}
-	for _, p := range [][]transform.Transformer[object.Refrence]{
-		pass1.Pipe(),
-		pass2.Pipe(),
-		pass3.Pipe(),
-	} {
-		pipe = append(pipe, p...)
-	}
+	// Reverse pipeline: pass1 (chroot unwrap) -> DecompileDriver. The generic
+	// DecompileDriver is the mechanical inverse of the forward CompileDriver +
+	// ResolveRefs, driven by the same schema DSL; it replaces the hand-written
+	// decompile/pass2 (ref id->name) and decompile/pass3 (per-resource inverse).
+	pipe := append(pass1.Pipe(), driver.NewDecompileDriver(schema.CompileRoot()))
 
 	ctx := transform.NewContext[object.Refrence](context.Background())
 	restored, err := transform.Pipe(ctx, obj, pipe...)

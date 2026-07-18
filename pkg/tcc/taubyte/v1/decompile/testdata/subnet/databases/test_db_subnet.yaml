@@ -1,0 +1,10 @@
+id: QmRkFTeYx8J4X3X2Jx5xutHArDyp72r7z6sLX9s3iCbsXr
+description: a database whose authored network-access is subnet
+tags:
+    - database_tag_1
+match: /users
+useRegex: true
+access:
+    network: subnet
+storage:
+    size: 5GB

@@ -1,0 +1,10 @@
+id: QmVtY5NvRh1JHFZHxPik5FEXxifvYg1sBrnP7gLtA9WVtj
+description: a database whose authored network-access is host
+tags:
+    - database_tag_2
+match: profiles
+useRegex: false
+access:
+    network: host
+storage:
+    size: 45GB
