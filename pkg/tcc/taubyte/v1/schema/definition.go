@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/taubyte/tau/core/common/repositorytype"
 	//lint:ignore ST1001 keeps defintion clean
 	. "github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
@@ -75,7 +76,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasIndex),
 			Embeds("Indexer"),
 			Resource("domains", "Domain", "Domain", "domain"),
-			driver.IndexSet(domainIndexSet),
+			driver.IndexPlaceholder("fqdn"),
 		)),
 	DefineGroup("functions",
 		DefineIter(
@@ -98,7 +99,7 @@ var TaubyteRessources = []*Node{
 			Embeds("Wasm"),
 			Resource("functions", "Function", "Function", "function"),
 			driver.IndexByName(HasWasmModule),
-			driver.IndexLink(functionIndexLink),
+			driver.IndexForeignKey(HasHttp, "domains", "domains", "fqdn"),
 		)),
 	DefineGroup("libraries",
 		DefineIter(
@@ -113,7 +114,8 @@ var TaubyteRessources = []*Node{
 			Embeds("Wasm"),
 			Resource("libraries", "Library", "Library", "library"),
 			driver.IndexByName(HasWasmModule),
-			driver.IndexSet(libraryIndexSet),
+			driver.IndexRepo(repositorytype.LibraryRepository),
+			driver.IndexName(),
 		)),
 	DefineGroup("messaging",
 		DefineIter(
@@ -129,7 +131,7 @@ var TaubyteRessources = []*Node{
 			// the dream inject path (services/tns/mocks casts to structureSpec.Wasm).
 			Embeds("Basic", "Wasm"),
 			Resource("messaging", "Messaging", "Messaging", "messaging"),
-			driver.IndexLinkRaw(messagingIndexLinkRaw),
+			driver.IndexByScope(HasWebSocket),
 		)),
 	DefineGroup("services",
 		DefineIter(
@@ -185,8 +187,8 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule),
 			Embeds("Basic", "Wasm"),
 			Resource("website", "Website", "Website", "website"),
-			driver.IndexLink(websiteIndexLink),
-			driver.IndexSet(websiteIndexSet),
+			driver.IndexForeignKey(HasHttp, "domains", "domains", "fqdn"),
+			driver.IndexRepo(repositorytype.WebsiteRepository),
 		)),
 }
 

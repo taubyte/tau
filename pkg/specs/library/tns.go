@@ -14,7 +14,7 @@ func (t *tnsHelper) BasicPath(branch, commit, projectId, appId, libId string) (*
 }
 
 func (t *tnsHelper) NameIndex(libId string) *common.TnsPath {
-	return common.NewTnsPath([]string{PathVariable.String(), libId})
+	return methods.NameIndex(libId, PathVariable)
 }
 
 func (t *tnsHelper) IndexValue(branch, projectId, appId, libId string) (*common.TnsPath, error) {

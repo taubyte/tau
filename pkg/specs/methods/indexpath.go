@@ -11,3 +11,11 @@ func IndexPath(projectId, appId, name string) *common.TnsPath {
 	}
 	return common.NewTnsPath([]string{common.ProjectPathVariable.String(), projectId, name})
 }
+
+// NameIndex is the id-keyed name index <resourceType>/<id>: a two-segment path
+// mapping a resource id to its authored name. Generic across resource kinds — the
+// resource type is the only variable — so the per-resource spec (e.g. library)
+// delegates here.
+func NameIndex(id string, resourceType common.PathVariable) *common.TnsPath {
+	return common.NewTnsPath([]string{resourceType.String(), id})
+}
