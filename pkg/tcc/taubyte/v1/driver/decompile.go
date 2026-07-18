@@ -291,15 +291,11 @@ func applyInstanceInverse(sel object.Selector[object.Refrence], iter *engine.Nod
 		_ = sel.Move(tag, a.Name)
 	}
 
-	// 5. scalar reformat: ns -> "20s", bytes -> "32GB" (inverse of the compile parse).
+	// 5. scalar reformat: ns -> "20s", bytes -> "32GB" — the inverse codec each
+	//    scalar term carries, so there is no per-scalar switch to keep in sync.
 	for _, a := range attrs {
-		switch scalarOf(a) {
-		case "duration":
-			if err := utils.FormatTimeout(sel, a.Name); err != nil {
-				return err
-			}
-		case "bytes":
-			if err := utils.FormatMemory(sel, a.Name); err != nil {
+		if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok {
+			if err := sc.Format(sel, a.Name); err != nil {
 				return err
 			}
 		}

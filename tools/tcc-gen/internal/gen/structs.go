@@ -15,13 +15,6 @@ import (
 // at adoption. Two things ARE derived: uint64 duration/size types and the
 // mapstructure tag for compat-aliased fields.
 
-// scalarGoType maps a DSL scalar tag (engine.Duration/Bytes attach these via
-// Annotate) to the Go struct field type. Pure data — no codec, no reflection.
-var scalarGoType = map[string]string{
-	"duration": "uint64",
-	"bytes":    "uint64",
-}
-
 // StructModel is the template model for one pkg/specs/structure/<res>.go file.
 type StructModel struct {
 	Spec       string   // structureSpec type name, e.g. "Function"
@@ -174,10 +167,8 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 				continue
 			}
 			reserved[nm] = true
-			if s, ok := a.Meta["scalar"].(string); ok {
-				if t := scalarGoType[s]; t != "" {
-					gt = t
-				}
+			if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok && sc.GoType != "" {
+				gt = sc.GoType
 			}
 			f := Field{Name: nm, Type: gt, Tag: structTag(nm, a), Required: a.Required}
 			if enum, ok := a.Meta["enum"].([]string); ok {

@@ -143,16 +143,11 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 // is why smartops needs no special-casing — it has no trigger/type attrs, so its
 // projections and renames naturally no-op).
 func applyInstanceOps(sel object.Selector[object.Refrence], attrs []*engine.Attribute) error {
-	// 1. scalar parse (Duration -> ns, Bytes -> bytes) — reuse the exact pass1
-	//    helpers so the parsed types are byte-identical.
+	// 1. scalar parse (Duration -> ns, Bytes -> bytes): each scalar term carries
+	//    its own codec, so there is no per-scalar switch to keep in sync.
 	for _, a := range attrs {
-		switch scalarOf(a) {
-		case "duration":
-			if err := utils.ParseTimeout(sel, a.Name); err != nil {
-				return err
-			}
-		case "bytes":
-			if err := utils.ParseMemory(sel, a.Name); err != nil {
+		if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok {
+			if err := sc.Parse(sel, a.Name); err != nil {
 				return err
 			}
 		}
@@ -295,8 +290,6 @@ func valueOf(sel object.Selector[object.Refrence], name string) (string, bool) {
 	s, ok := v.(string)
 	return s, ok
 }
-
-func scalarOf(a *engine.Attribute) string { s, _ := a.Meta["scalar"].(string); return s }
 
 func tagOf(a *engine.Attribute) (string, bool) {
 	t, ok := a.Meta["tag"].(string)

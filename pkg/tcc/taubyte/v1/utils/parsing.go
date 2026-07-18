@@ -2,70 +2,12 @@ package utils
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/alecthomas/units"
 	"github.com/taubyte/tau/pkg/tcc/object"
 )
 
-// ParseTimeout parses a duration string from the specified field and sets it as nanoseconds.
-// If the field doesn't exist or is nil, the function returns nil (no error).
-// Returns an error if the field exists but is not a string or cannot be parsed.
-func ParseTimeout(sel object.Selector[object.Refrence], field string) error {
-	timeout, err := sel.Get(field)
-	if err != nil {
-		// Field doesn't exist, which is fine
-		return nil
-	}
-
-	// Field exists but is nil, which is also fine
-	if timeout == nil {
-		return nil
-	}
-
-	timeoutStr, ok := timeout.(string)
-	if !ok {
-		return fmt.Errorf("%s is not a string", field)
-	}
-
-	timeoutDur, err := time.ParseDuration(timeoutStr)
-	if err != nil {
-		return fmt.Errorf("parsing %s failed with %w", field, err)
-	}
-
-	return sel.Set(field, timeoutDur.Nanoseconds())
-}
-
-// ParseMemory parses a memory size string from the specified field and sets it as bytes (int64).
-// If the field doesn't exist or is nil, the function returns nil (no error).
-// Returns an error if the field exists but is not a string or cannot be parsed.
-func ParseMemory(sel object.Selector[object.Refrence], field string) error {
-	memory, err := sel.Get(field)
-	if err != nil {
-		// Field doesn't exist, which is fine
-		return nil
-	}
-
-	// Field exists but is nil, which is also fine
-	if memory == nil {
-		return nil
-	}
-
-	memoryStr, ok := memory.(string)
-	if !ok {
-		return fmt.Errorf("%s is not a string", field)
-	}
-
-	memoryInt, err := units.ParseStrictBytes(memoryStr)
-	if err != nil {
-		return fmt.Errorf("parsing %s failed with %w", field, err)
-	}
-
-	return sel.Set(field, memoryInt)
-}
-
 // ParseSize parses a size string from the specified field and sets it as bytes (int64).
-// This is an alias for ParseMemory for semantic clarity.
 // If the field doesn't exist or is nil, the function returns nil (no error).
 // Returns an error if the field exists but is not a string or cannot be parsed.
 func ParseSize(sel object.Selector[object.Refrence], field string) error {
@@ -120,74 +62,35 @@ func RenameById(sel object.Selector[object.Refrence], name string) (string, erro
 	return idStr, nil
 }
 
-// FormatTimeout converts nanoseconds back to duration string.
-// If the field doesn't exist or is nil, the function returns nil (no error).
-// Returns an error if the field exists but is not an int64 or cannot be formatted.
-func FormatTimeout(sel object.Selector[object.Refrence], field string) error {
-	timeout, err := sel.Get(field)
-	if err != nil {
-		// Field doesn't exist, which is fine
-		return nil
-	}
-
-	// Field exists but is nil, which is also fine
-	if timeout == nil {
-		return nil
-	}
-
-	var timeoutNs int64
-	switch v := timeout.(type) {
-	case int64:
-		timeoutNs = v
-	case int:
-		timeoutNs = int64(v)
-	case int32:
-		timeoutNs = int64(v)
-	default:
-		return fmt.Errorf("%s is not an integer", field)
-	}
-
-	timeoutDur := time.Duration(timeoutNs)
-	return sel.Set(field, timeoutDur.String())
-}
-
-// FormatMemory converts bytes (int64) back to human-readable size string.
-// If the field doesn't exist or is nil, the function returns nil (no error).
-// Returns an error if the field exists but is not an int64 or cannot be formatted.
-func FormatMemory(sel object.Selector[object.Refrence], field string) error {
-	memory, err := sel.Get(field)
-	if err != nil {
-		// Field doesn't exist, which is fine
-		return nil
-	}
-
-	// Field exists but is nil, which is also fine
-	if memory == nil {
-		return nil
-	}
-
-	var memoryBytes int64
-	switch v := memory.(type) {
-	case int64:
-		memoryBytes = v
-	case int:
-		memoryBytes = int64(v)
-	case int32:
-		memoryBytes = int64(v)
-	default:
-		return fmt.Errorf("%s is not an integer", field)
-	}
-
-	memoryStr := units.MetricBytes(float64(memoryBytes)).String()
-	return sel.Set(field, memoryStr)
-}
-
-// FormatSize converts bytes (int64) back to human-readable size string.
-// This is an alias for FormatMemory for semantic clarity.
+// FormatSize converts bytes (int64) back to a human-readable size string.
 // If the field doesn't exist or is nil, the function returns nil (no error).
 // Returns an error if the field exists but is not an int64 or cannot be formatted.
 func FormatSize(sel object.Selector[object.Refrence], field string) error {
-	return FormatMemory(sel, field)
+	size, err := sel.Get(field)
+	if err != nil {
+		// Field doesn't exist, which is fine
+		return nil
+	}
+
+	// Field exists but is nil, which is also fine
+	if size == nil {
+		return nil
+	}
+
+	var sizeBytes int64
+	switch v := size.(type) {
+	case int64:
+		sizeBytes = v
+	case int:
+		sizeBytes = int64(v)
+	case int32:
+		sizeBytes = int64(v)
+	default:
+		return fmt.Errorf("%s is not an integer", field)
+	}
+
+	sizeStr := units.MetricBytes(float64(sizeBytes)).String()
+	return sel.Set(field, sizeStr)
 }
 
 // RenameByName reverses RenameById - swaps ID/name back.

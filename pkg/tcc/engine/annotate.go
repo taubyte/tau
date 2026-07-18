@@ -12,16 +12,17 @@ func Annotate(key string, val any) Option {
 	}
 }
 
-// Duration and Bytes are String attributes tagged with a scalar-codec name. The
-// engine treats them exactly as strings — parsing of "20s"/"32GB" into typed
-// values stays in the transform passes. The tag only tells a code generator the
-// concrete Go type to emit (e.g. uint64). It has no runtime effect.
+// Duration and Bytes are String attributes tagged with a ScalarSpec — the codec
+// (authored "20s"/"32GB" <-> typed wire value) and the Go type a generator emits.
+// The engine itself treats them exactly as strings; the ScalarSpec is inert data
+// the driver (Parse/Format) and tcc-gen (GoType) read, so each scalar's meaning
+// lives in one place instead of a switch in every consumer.
 func Duration(name string, opts ...Option) *Attribute {
-	return String(name, append(opts, Annotate("scalar", "duration"))...)
+	return String(name, append(opts, Annotate("scalar", ScalarSpec{ID: "duration", GoType: "uint64", Parse: parseDuration, Format: formatDuration}))...)
 }
 
 func Bytes(name string, opts ...Option) *Attribute {
-	return String(name, append(opts, Annotate("scalar", "bytes"))...)
+	return String(name, append(opts, Annotate("scalar", ScalarSpec{ID: "bytes", GoType: "uint64", Parse: parseBytes, Format: formatBytes}))...)
 }
 
 // Field overrides the Go struct field name a generator emits for this attribute,
