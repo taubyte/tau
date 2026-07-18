@@ -23,7 +23,7 @@ type CompileDriver struct {
 // newCompileDriver builds a CompileDriver from the schema root node. `root` carries
 // the project-scope attributes (id -> project_id validation, tags -> wire drop via
 // annotations) and the resource/container/map groups as its children. env is the
-// compile environment (branch, cloud, …) that env-keyed group projections read.
+// compile environment whose values env-keyed group projections read by name.
 // Takes the node tree as data so this package never imports schema.
 func newCompileDriver(root *engine.Node, env Env) transform.Transformer[object.Refrence] {
 	return &CompileDriver{root: root, env: env}
@@ -66,9 +66,9 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 	}
 	iter := g.Children[0]
 
-	// An env-keyed promotion owns the whole projection for this group (clouds:
-	// select the entry keyed by env["cloud"], hoist its fields to root scalars,
-	// drop the map). It reads the scope object directly — no per-instance walk.
+	// An env-keyed promotion owns the whole projection for this group: select the
+	// entry keyed by env[spec.EnvVar], hoist its fields to root scalars, drop the
+	// map. It reads the scope object directly — no per-instance walk.
 	if spec, ok := iter.Meta["promoteEnvKeyed"].(EnvKeyedPromoteSpec); ok {
 		return runPromoteEnvKeyed(spec, d.env, scope)
 	}

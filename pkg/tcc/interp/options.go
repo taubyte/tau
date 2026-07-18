@@ -7,9 +7,11 @@ import (
 
 type Option func(c *Compiler) error
 
-// Env is the compile environment: named compile-time parameters (branch, cloud, …)
-// that DSL declarations reference by name — e.g. PromoteEnvKeyed selects a map entry
-// by env["cloud"]. Generalizes the old fixed cloud/branch fields into an open bag.
+// Env is the compile environment: named compile-time parameters that DSL
+// declarations reference by name. interp itself consumes only "branch" (the
+// IndexDriver bakes it into index paths); every other key is owned by the schema
+// that reads it — e.g. the taubyte schema's WithCloud sets "cloud", consumed by a
+// PromoteEnvKeyed declaration, not by interp.
 type Env map[string]string
 
 func WithLocal(path string) Option {
@@ -26,8 +28,9 @@ func WithVirtual(fs afero.Fs, path string) Option {
 	}
 }
 
-// WithEnv sets a compile-environment variable. WithBranch/WithCloud are thin
-// wrappers over it; a caller can set any other key a schema's declarations read.
+// WithEnv sets a compile-environment variable. WithBranch is a thin wrapper over
+// it; a schema exposes its own wrappers (e.g. WithCloud) for the keys its own
+// declarations read, so interp needs no knowledge of those domain vars.
 func WithEnv(key, val string) Option {
 	return func(c *Compiler) error {
 		c.env[key] = val
@@ -35,9 +38,5 @@ func WithEnv(key, val string) Option {
 	}
 }
 
+// WithBranch pins the compile branch, which the IndexDriver bakes into index paths.
 func WithBranch(branch string) Option { return WithEnv("branch", branch) }
-
-// WithCloud pins the compile to a cloud FQDN. A PromoteEnvKeyed("clouds", "cloud", …)
-// declaration reads env["cloud"] to promote the matching `clouds.<fqdn>` entry to
-// flat scalars and drop the rest. Empty fqdn = no promotion (the map is dropped).
-func WithCloud(fqdn string) Option { return WithEnv("cloud", fqdn) }

@@ -41,7 +41,9 @@ func WithVirtual(fs afero.Fs, path string) Option { return interp.WithVirtual(fs
 func WithBranch(branch string) Option { return interp.WithBranch(branch) }
 
 // WithCloud pins the compile to a cloud FQDN, promoting its clouds.<fqdn> entry.
-func WithCloud(fqdn string) Option { return interp.WithCloud(fqdn) }
+// "cloud" is a taubyte domain var: the cloudsGroup() PromoteEnvKeyed declaration
+// reads it — interp knows nothing about it, so the key lives here, not in interp.
+func WithCloud(fqdn string) Option { return interp.WithEnv("cloud", fqdn) }
 
 // ---- decompile facade ----
 

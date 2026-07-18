@@ -37,7 +37,7 @@ var DefaultBranch = "main"
 // this package never imports schema — the crux that keeps the dependency one-way.
 func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c *Compiler, err error) {
 	c = &Compiler{
-		env:         Env{"branch": DefaultBranch, "cloud": ""},
+		env:         Env{"branch": DefaultBranch},
 		compileRoot: compileRoot,
 	}
 
