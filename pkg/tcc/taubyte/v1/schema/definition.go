@@ -146,20 +146,20 @@ var TaubyteRessources = []*Node{
 		)),
 }
 
-// applicationsGroup is the applications container: its iterator holds a nested
-// copy of every resource group. StructOnly("App") makes tcc-gen generate
-// pkg/specs/structure/app.go — a bare struct of the common fields, no
-// object-addressing methods and no pkg/schema accessor package (it's a container
-// identity, not a config-decode resource, so it can't drift).
+// applicationsGroup is the applications container: a group whose iterator (a
+// DefineIterGroup) holds a nested copy of every resource group. Because it's the
+// only such nested container with no Resource descriptor, tcc-gen recognizes it
+// structurally and generates pkg/specs/structure/application.go — a bare struct
+// of the common fields, no object-addressing methods and no pkg/schema accessor
+// package (it's a container identity, not a config-decode resource).
 func applicationsGroup() *Node {
-	iter := DefineIterGroup(TaubyteAttributes(), TaubyteRessources...)
-	StructOnly("App")(iter)
-	return DefineGroup("applications", iter)
+	return DefineGroup("applications", DefineIterGroup(TaubyteAttributes(), TaubyteRessources...))
 }
 
-// cloudsGroup: clouds.<fqdn>.{account, plan} — DefineIter (not Group) so each
-// FQDN's attrs live directly under the map key in nested YAML. No StructOnly:
-// clouds compiles to no structureSpec type.
+// cloudsGroup: clouds.<fqdn>.{account, plan} — DefineIter (not Group, so no
+// nested sub-groups) so each FQDN's attrs live directly under the map key in
+// nested YAML. Pass1 flattens the active FQDN's entry to the project root and
+// drops the map, so clouds compiles to no structureSpec type.
 func cloudsGroup() *Node {
 	return DefineGroup("clouds", DefineIter([]*Attribute{
 		String("account"),

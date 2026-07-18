@@ -11,16 +11,16 @@ import (
 )
 
 var specTypes = map[string]reflect.Type{
-	"App":       reflect.TypeFor[structureSpec.App](),
-	"Function":  reflect.TypeFor[structureSpec.Function](),
-	"Database":  reflect.TypeFor[structureSpec.Database](),
-	"Domain":    reflect.TypeFor[structureSpec.Domain](),
-	"Library":   reflect.TypeFor[structureSpec.Library](),
-	"Messaging": reflect.TypeFor[structureSpec.Messaging](),
-	"Service":   reflect.TypeFor[structureSpec.Service](),
-	"SmartOp":   reflect.TypeFor[structureSpec.SmartOp](),
-	"Storage":   reflect.TypeFor[structureSpec.Storage](),
-	"Website":   reflect.TypeFor[structureSpec.Website](),
+	"Application": reflect.TypeFor[structureSpec.Application](),
+	"Function":    reflect.TypeFor[structureSpec.Function](),
+	"Database":    reflect.TypeFor[structureSpec.Database](),
+	"Domain":      reflect.TypeFor[structureSpec.Domain](),
+	"Library":     reflect.TypeFor[structureSpec.Library](),
+	"Messaging":   reflect.TypeFor[structureSpec.Messaging](),
+	"Service":     reflect.TypeFor[structureSpec.Service](),
+	"SmartOp":     reflect.TypeFor[structureSpec.SmartOp](),
+	"Storage":     reflect.TypeFor[structureSpec.Storage](),
+	"Website":     reflect.TypeFor[structureSpec.Website](),
 }
 
 // TestStructParity asserts every field tcc-gen generates matches the hand-written

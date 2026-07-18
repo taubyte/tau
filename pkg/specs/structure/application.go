@@ -6,7 +6,7 @@
 
 package structureSpec
 
-type App struct {
+type Application struct {
 	Id          string
 	Name        string
 	Description string

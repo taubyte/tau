@@ -8,7 +8,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func Confirm(ctx *cli.Context, app *structureSpec.App, prompt string) bool {
+func Confirm(ctx *cli.Context, app *structureSpec.Application, prompt string) bool {
 	return prompts.ConfirmData(ctx, prompt, [][]string{
 		{"Name", app.Name},
 		{"Description", app.Description},

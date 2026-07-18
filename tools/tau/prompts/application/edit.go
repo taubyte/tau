@@ -6,7 +6,7 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func Edit(ctx *cli.Context, prev *structureSpec.App) {
+func Edit(ctx *cli.Context, prev *structureSpec.Application) {
 	prev.Description = prompts.GetOrAskForADescription(ctx, prev.Description)
 	prev.Tags = prompts.GetOrAskForTags(ctx, prev.Tags)
 }

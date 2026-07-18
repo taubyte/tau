@@ -94,15 +94,6 @@ func StructBool(goName string) Option {
 	return Annotate("structBool", goName)
 }
 
-// StructOnly marks a container group (e.g. applications) that compiles to a
-// structureSpec type but has NO object-addressing helpers and NO pkg/schema
-// accessor package — the generator emits only its struct (common fields),
-// no methods/embeds/SmartOps/imports. Distinct from Resource so the accessor and
-// TS-accessor walks skip it for free. Generation-only; no runtime effect.
-func StructOnly(specType string) NodeOption {
-	return GroupAnnotate("structOnly", specType)
-}
-
 // Resource declares the irregular Go names a resource generates into, so the
 // generator needs no hardcoded per-resource table:
 //   - schemaPkg: the pkg/schema/<dir> accessor package (usually the group name;

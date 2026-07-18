@@ -7,8 +7,8 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-func New(ctx *cli.Context) (*structureSpec.App, error) {
-	app := &structureSpec.App{}
+func New(ctx *cli.Context) (*structureSpec.Application, error) {
+	app := &structureSpec.Application{}
 
 	taken, err := applicationLib.List()
 	if err != nil {

@@ -8,7 +8,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/output"
 )
 
-func List(apps []*structureSpec.App) {
+func List(apps []*structureSpec.Application) {
 	if output.Render(apps) {
 		return
 	}

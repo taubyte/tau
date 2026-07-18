@@ -102,6 +102,7 @@ type Field struct {
 // struct has a field per logical attribute regardless of how it is read/written.
 func Structs(root []*engine.Node) ([]*StructModel, error) {
 	var out []*StructModel
+	common := attrSet(commonAttrs(root))
 	for _, g := range root {
 		name, _ := g.Match.(string)
 		if len(g.Children) == 0 {
@@ -109,15 +110,18 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 		}
 		iter := g.Children[0]
 		// A group emits a struct if the DSL declares it a Resource (full: struct +
-		// addressing methods + SmartOps) or StructOnly (a bare container struct,
-		// common fields only — applications -> App). Everything else is skipped.
+		// addressing methods + SmartOps), or if it's a nested container group — an
+		// iterator that itself holds resource sub-groups (applications) — which
+		// compiles to a bare struct of the common fields only, named by
+		// singularizing the group (applications -> Application). Everything else
+		// (leaf maps like clouds, which decode to no type) is skipped.
 		var m *StructModel
 		bare := false
 		if d, ok := descriptorFor(iter); ok {
 			alias := strings.ToLower(d.Spec) + "Spec"
 			m = &StructModel{
 				Spec:       d.Spec,
-				Fields:     commonFields(),
+				Fields:     commonFields(root),
 				SpecImport: "github.com/taubyte/tau/pkg/specs/" + d.SpecPkg,
 				SpecAlias:  alias,
 			}
@@ -126,15 +130,15 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			}
 			caps, _ := iter.Meta["addressing"].([]engine.Capability)
 			m.Methods = addressingMethods(d.Recv, d.Spec, alias, caps)
-		} else if so, ok := iter.Meta["structOnly"].(string); ok && so != "" {
-			m = &StructModel{Spec: so, Fields: commonFields()}
+		} else if iter.Group && len(iter.Children) > 0 {
+			m = &StructModel{Spec: title(strings.TrimSuffix(name, "s")), Fields: commonFields(root)}
 			bare = true
 		} else {
 			continue
 		}
 		reserved := map[string]bool{"Id": true, "Name": true, "Description": true, "Tags": true, "SmartOps": true}
 		for _, a := range iter.Attributes {
-			if commonAttrs[a.Name] || structSkip[name+"."+a.Name] {
+			if common[a.Name] || structSkip[name+"."+a.Name] {
 				continue
 			}
 			// A StructBool attr (network-access) projects to a bool field named
@@ -173,7 +177,7 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			m.Fields = append(m.Fields, f)
 		}
 		// Derived fields and SmartOps are resource conventions — a bare container
-		// struct (App) has neither.
+		// struct (Application) has neither.
 		if !bare {
 			if db, ok := iter.Meta["derivedBools"].([]string); ok {
 				for _, nm := range db {
@@ -191,13 +195,16 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 	return out, nil
 }
 
-func commonFields() []Field {
-	return []Field{
-		{Name: "Id", Type: "string", Required: true}, // id is the only Required() attr
-		{Name: "Name", Type: "string"},
-		{Name: "Description", Type: "string"},
-		{Name: "Tags", Type: "[]string"},
+// commonFields are the struct fields every resource carries, derived from the
+// DSL's shared attributes (id/name/description/tags) — name, type and the
+// Required flag all read off the attribute, so the struct block never restates
+// the common schema.
+func commonFields(root []*engine.Node) []Field {
+	var out []Field
+	for _, a := range commonAttrs(root) {
+		out = append(out, Field{Name: title(a.Name), Type: goType(a.Type), Required: a.Required})
 	}
+	return out
 }
 
 // structFieldName is the Field("...") override if present, else the accessor name

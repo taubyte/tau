@@ -11,10 +11,54 @@ import (
 // (name + type + body) that pkg/schema hand-writes today. See the plan file for
 // the derivation of every rule below.
 
-// commonAttrs come from TaubyteAttributes and are emitted by the fixed universal
-// template block (Id/Description/Tags), not from the DSL walk. "name" is the
-// resource identity (Name() reads the struct field), never a config accessor.
-var commonAttrs = map[string]bool{"id": true, "name": true, "description": true, "tags": true}
+// commonAttrs are the attributes every resource group shares — the DSL's
+// TaubyteAttributes block (id/name/description/tags) — derived as the attrs
+// present in ALL Resource groups, in DSL order. The generator never restates the
+// common schema; it reads it back off the walk, so it cannot drift. "name" is
+// the resource identity (Name() reads the struct field), never a config accessor.
+func commonAttrs(root []*engine.Node) []*engine.Attribute {
+	var iters []*engine.Node
+	for _, g := range root {
+		if len(g.Children) == 0 {
+			continue
+		}
+		if _, ok := descriptorFor(g.Children[0]); ok {
+			iters = append(iters, g.Children[0])
+		}
+	}
+	if len(iters) == 0 {
+		return nil
+	}
+	inAll := map[string]int{}
+	for _, it := range iters {
+		seen := map[string]bool{}
+		for _, a := range it.Attributes {
+			if !seen[a.Name] {
+				seen[a.Name] = true
+				inAll[a.Name]++
+			}
+		}
+	}
+	var shared []*engine.Attribute
+	seen := map[string]bool{}
+	for _, a := range iters[0].Attributes {
+		if inAll[a.Name] == len(iters) && !seen[a.Name] {
+			seen[a.Name] = true
+			shared = append(shared, a)
+		}
+	}
+	return shared
+}
+
+// attrSet is the name-set of a list of attributes, for O(1) "is this a common
+// attribute?" membership tests during the resource walk.
+func attrSet(attrs []*engine.Attribute) map[string]bool {
+	m := make(map[string]bool, len(attrs))
+	for _, a := range attrs {
+		m[a.Name] = true
+	}
+	return m
+}
 
 // nameOverrides pin the exported accessor name where the derived name (last plain
 // Path segment) does not match the existing public API.
