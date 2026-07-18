@@ -61,7 +61,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
 			Resource("databases", "Database", "Database", "database"),
-			driver.IndexLink(databaseIndexLink),
+			driver.IndexByName(HasIndexPath),
 		)),
 	DefineGroup("domains",
 		DefineIter(
@@ -97,6 +97,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule, HasServices),
 			Embeds("Wasm"),
 			Resource("functions", "Function", "Function", "function"),
+			driver.IndexByName(HasWasmModule),
 			driver.IndexLink(functionIndexLink),
 		)),
 	DefineGroup("libraries",
@@ -111,7 +112,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasWasmModule, HasNameIndex),
 			Embeds("Wasm"),
 			Resource("libraries", "Library", "Library", "library"),
-			driver.IndexLink(libraryIndexLink),
+			driver.IndexByName(HasWasmModule),
 			driver.IndexSet(libraryIndexSet),
 		)),
 	DefineGroup("messaging",
@@ -153,7 +154,7 @@ var TaubyteRessources = []*Node{
 			// smartops attach to every resource: each compiled resource carries a
 			// derived SmartOps []string field (key "smartops"), sourced here.
 			AttachesToAll(),
-			driver.IndexLink(smartopIndexLink),
+			driver.IndexByName(HasWasmModule),
 		)),
 	DefineGroup("storages",
 		DefineIter(
@@ -169,7 +170,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
 			Resource("storages", "Storage", "Storage", "storage"),
-			driver.IndexLink(storageIndexLink),
+			driver.IndexByName(HasIndexPath),
 		)),
 	DefineGroup("websites",
 		DefineIter(

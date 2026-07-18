@@ -12,14 +12,11 @@ import (
 
 	"github.com/taubyte/tau/core/common/repositorytype"
 	"github.com/taubyte/tau/pkg/specs/common"
-	databaseSpec "github.com/taubyte/tau/pkg/specs/database"
 	domainSpec "github.com/taubyte/tau/pkg/specs/domain"
 	functionSpec "github.com/taubyte/tau/pkg/specs/function"
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
 	messagingSpec "github.com/taubyte/tau/pkg/specs/messaging"
 	"github.com/taubyte/tau/pkg/specs/methods"
-	smartOpSpec "github.com/taubyte/tau/pkg/specs/smartops"
-	storageSpec "github.com/taubyte/tau/pkg/specs/storage"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
 )
@@ -72,17 +69,9 @@ func repositoryPath(ic *driver.IndexCtx) (*methods.RepositoryPath, error) {
 	return rp, nil
 }
 
-// functions: wasm module link + domain fan-out (both keyed off IndexValue).
+// functions: domain fan-out. The wasm-module link is IndexByName(HasWasmModule).
 func functionIndexLink(ic *driver.IndexCtx) ([]*common.TnsPath, error) {
-	wasm, err := functionSpec.Tns().WasmModulePath(ic.Project, ic.App, ic.Name)
-	if err != nil {
-		return nil, fmt.Errorf("getting wasm module path for %s failed with %w", ic.Name, err)
-	}
-	domains, err := domainHttpPaths(ic, functionSpec.Tns().HttpPath)
-	if err != nil {
-		return nil, err
-	}
-	return append([]*common.TnsPath{wasm}, domains...), nil
+	return domainHttpPaths(ic, functionSpec.Tns().HttpPath)
 }
 
 // websites: domain fan-out only (no wasm) + the git-repo reverse index.
@@ -101,15 +90,8 @@ func websiteIndexSet(ic *driver.IndexCtx) ([]driver.IndexEntry, error) {
 	}, nil
 }
 
-// libraries: wasm module link + git-repo reverse index + id-keyed name index.
-func libraryIndexLink(ic *driver.IndexCtx) ([]*common.TnsPath, error) {
-	wasm, err := librarySpec.Tns().WasmModulePath(ic.Project, ic.App, ic.Name)
-	if err != nil {
-		return nil, fmt.Errorf("getting wasm module path for %s failed with %w", ic.Name, err)
-	}
-	return []*common.TnsPath{wasm}, nil
-}
-
+// libraries: git-repo reverse index + id-keyed name index. The wasm-module link
+// is IndexByName(HasWasmModule).
 func libraryIndexSet(ic *driver.IndexCtx) ([]driver.IndexEntry, error) {
 	repoPath, err := repositoryPath(ic)
 	if err != nil {
@@ -122,24 +104,8 @@ func libraryIndexSet(ic *driver.IndexCtx) ([]driver.IndexEntry, error) {
 	}, nil
 }
 
-// smartops: wasm module link only.
-func smartopIndexLink(ic *driver.IndexCtx) ([]*common.TnsPath, error) {
-	wasm, err := smartOpSpec.Tns().WasmModulePath(ic.Project, ic.App, ic.Name)
-	if err != nil {
-		return nil, fmt.Errorf("getting wasm module path for %s failed with %w", ic.Name, err)
-	}
-	return []*common.TnsPath{wasm}, nil
-}
-
-// storages: single index-path link.
-func storageIndexLink(ic *driver.IndexCtx) ([]*common.TnsPath, error) {
-	return []*common.TnsPath{storageSpec.Tns().IndexPath(ic.Project, ic.App, ic.Name)}, nil
-}
-
-// databases: single index-path link.
-func databaseIndexLink(ic *driver.IndexCtx) ([]*common.TnsPath, error) {
-	return []*common.TnsPath{databaseSpec.Tns().IndexPath(ic.Project, ic.App, ic.Name)}, nil
-}
+// (databases, storages, smartops carry no closure — their whole index footprint
+// is IndexByName(HasIndexPath) / IndexByName(HasWasmModule) in definition.go.)
 
 // messaging: the per-(project,app) websocket bucket — a RAW append (no Links()
 // suffix), so every messaging instance in a scope aggregates under one key.

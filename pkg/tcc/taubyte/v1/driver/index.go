@@ -67,6 +67,30 @@ func IndexSet(fn IndexSetFunc) engine.NodeOption {
 	return engine.GroupAnnotate("indexSet", fn)
 }
 
+// IndexByName declares the mechanical "keyed by Name" index link most resources
+// share: the driver appends the resource's IndexValue to cap(Name).Links(), where
+// cap is one of the resource's Addressing capabilities (wasm -> WasmModulePath,
+// indexPath -> IndexPath). It is declared explicitly rather than derived from
+// Addressing() because a capability being present does not imply it is indexed —
+// e.g. websites declare HasWasmModule but write no wasm index link.
+func IndexByName(cap engine.Capability) engine.NodeOption {
+	return engine.GroupAnnotate("indexByName", cap)
+}
+
+// indexByNamePath maps a capability to its by-Name index path, computed
+// generically from the group key (its PathVariable) — the exact paths the old
+// per-resource pass4 files built via each spec's Tns() helper.
+func indexByNamePath(cap engine.Capability, project, app, name, groupKey string) (*common.TnsPath, error) {
+	switch cap.String() {
+	case "wasm":
+		return methods.WasmModulePath(project, app, name, common.PathVariable(groupKey))
+	case "indexPath":
+		return methods.IndexPath(project, app, name), nil
+	default:
+		return nil, fmt.Errorf("IndexByName: unsupported capability %q", cap.String())
+	}
+}
+
 // indexOrder is the fixed V1 index order, taken verbatim from pass4/pipe.go. It is
 // NOT the DSL declaration order: link buckets shared across scopes accumulate in
 // this order, so it is load-bearing for parity and must not be derived from the
@@ -185,6 +209,7 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 	linkFn, _ := gi.iter.Meta["indexLink"].(IndexLinkFunc)
 	rawFn, _ := gi.iter.Meta["indexLinkRaw"].(IndexLinkFunc)
 	setFn, _ := gi.iter.Meta["indexSet"].(IndexSetFunc)
+	byNameCap, _ := gi.iter.Meta["indexByName"].(engine.Capability)
 
 	lookup := makeLookup(config, configRoot)
 
@@ -210,6 +235,14 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 			IndexValue: indexValue,
 			Obj:        instObj,
 			Lookup:     lookup,
+		}
+
+		if byNameCap != nil {
+			p, err := indexByNamePath(byNameCap, projectId, appId, name, gi.groupKey)
+			if err != nil {
+				return nil, fmt.Errorf("index-by-name for %s %s failed with %w", gi.groupKey, id, err)
+			}
+			appendLink(index, p.Versioning().Links().String(), indexValue.String())
 		}
 
 		if linkFn != nil {
