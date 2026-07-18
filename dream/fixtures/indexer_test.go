@@ -9,7 +9,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/core/services/tns"
 	"github.com/taubyte/tau/dream"
-	testFixtures "github.com/taubyte/tau/pkg/tcc/interp/fixtures"
+	testFixtures "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	"github.com/taubyte/tau/utils/maps"
 	tcc "github.com/taubyte/tau/utils/tcc"

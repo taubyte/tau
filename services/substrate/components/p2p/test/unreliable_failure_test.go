@@ -17,7 +17,7 @@ import (
 	nodeIface "github.com/taubyte/tau/core/services/substrate"
 	"github.com/taubyte/tau/dream"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	_ "github.com/taubyte/tau/pkg/tcc/interp/fixtures"
+	_ "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/services/seer/dream"

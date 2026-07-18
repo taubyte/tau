@@ -31,7 +31,7 @@ var generatedDomainRegExp = regexp.MustCompile(`^[^.]+\.g\.tau\.link$`)
 func TestCompile(t *testing.T) {
 	// projectLib is the FROZEN parity schema: the old compiler must compile against
 	// the pinned reference so tcc-gen's regeneration of live pkg/schema can't move it.
-	project, err := projectLib.Open(projectLib.SystemFS("fixtures/config"))
+	project, err := projectLib.Open(projectLib.SystemFS("../taubyte/v1/fixtures/config"))
 	assert.NilError(t, err)
 
 	rc, err := compile.CompilerConfig(project, fakeMeta, generatedDomainRegExp)
@@ -43,7 +43,7 @@ func TestCompile(t *testing.T) {
 	err = oldCompiler.Build()
 	assert.NilError(t, err)
 
-	compiler, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
+	compiler, err := schema.New(schema.WithLocal("../taubyte/v1/fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, validations, err := compiler.Compile(context.Background())
@@ -109,7 +109,7 @@ func TestCompile(t *testing.T) {
 }
 
 func TestCompile_ReturnsValidations(t *testing.T) {
-	compiler, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
+	compiler, err := schema.New(schema.WithLocal("../taubyte/v1/fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, validations, err := compiler.Compile(context.Background())

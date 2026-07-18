@@ -14,7 +14,7 @@ func BenchmarkCompile(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
+		c, err := schema.New(schema.WithLocal("../taubyte/v1/fixtures/config"), schema.WithBranch("master"))
 		if err != nil {
 			b.Fatal(err)
 		}

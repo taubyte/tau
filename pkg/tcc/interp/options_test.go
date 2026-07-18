@@ -60,7 +60,7 @@ func TestWithBranch_Default(t *testing.T) {
 	// not a full compile, and keeps this internal test free of a schema import
 	// (which would recreate the interp<->schema cycle).
 	root := engine.Root(nil)
-	compiler, err := New(engine.SchemaDefinition(root), root, WithLocal("fixtures/config"))
+	compiler, err := New(engine.SchemaDefinition(root), root, WithLocal(t.TempDir()))
 
 	// Verify: Should have default branch
 	assert.NilError(t, err)

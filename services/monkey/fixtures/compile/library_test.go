@@ -11,7 +11,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	_ "github.com/taubyte/tau/pkg/tcc/interp/fixtures"
+	_ "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/services/substrate/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"

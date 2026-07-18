@@ -179,7 +179,7 @@ func TestCompile_NestedPathError_Line2_ExactError(t *testing.T) {
 // TestCompile_ProjectEmailValidation tests email validation error using fixtures
 func TestCompile_ProjectEmailValidation(t *testing.T) {
 	// Mount fixtures directory with copy-on-write
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -201,7 +201,7 @@ func TestCompile_ProjectEmailValidation(t *testing.T) {
 
 // TestCompile_FunctionInvalidType tests function type validation using InSet
 func TestCompile_FunctionInvalidType(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -223,7 +223,7 @@ func TestCompile_FunctionInvalidType(t *testing.T) {
 
 // TestCompile_FunctionInvalidHttpMethod tests HTTP method validation
 func TestCompile_FunctionInvalidHttpMethod(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -245,7 +245,7 @@ func TestCompile_FunctionInvalidHttpMethod(t *testing.T) {
 
 // TestCompile_DomainInvalidFqdn tests FQDN validation
 func TestCompile_DomainInvalidFqdn(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -267,7 +267,7 @@ func TestCompile_DomainInvalidFqdn(t *testing.T) {
 
 // TestCompile_DatabaseInvalidNetworkAccess tests InSet validation for network-access
 func TestCompile_DatabaseInvalidNetworkAccess(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -289,7 +289,7 @@ func TestCompile_DatabaseInvalidNetworkAccess(t *testing.T) {
 
 // TestCompile_FunctionInvalidName tests variable name validation on function
 func TestCompile_FunctionInvalidName(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -311,7 +311,7 @@ func TestCompile_FunctionInvalidName(t *testing.T) {
 
 // TestCompile_FunctionMissingId tests required id field
 func TestCompile_FunctionMissingId(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -333,7 +333,7 @@ func TestCompile_FunctionMissingId(t *testing.T) {
 
 // TestCompile_FunctionInvalidId tests CID validation on id field
 func TestCompile_FunctionInvalidId(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -355,7 +355,7 @@ func TestCompile_FunctionInvalidId(t *testing.T) {
 
 // TestCompile_StorageInvalidNetworkAccess tests InSet validation for storage network-access
 func TestCompile_StorageInvalidNetworkAccess(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -377,7 +377,7 @@ func TestCompile_StorageInvalidNetworkAccess(t *testing.T) {
 
 // TestCompile_ApplicationFunctionError tests errors in application-specific functions
 func TestCompile_ApplicationFunctionError(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -410,7 +410,7 @@ func TestCompile_ApplicationFunctionError(t *testing.T) {
 
 // TestCompile_MultipleValidationErrors tests that multiple errors are reported
 func TestCompile_MultipleValidationErrors(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -452,7 +452,7 @@ func TestCompile_MultipleValidationErrors(t *testing.T) {
 
 // TestCompile_LibraryInvalidName tests variable name validation on library
 func TestCompile_LibraryInvalidName(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -474,7 +474,7 @@ func TestCompile_LibraryInvalidName(t *testing.T) {
 
 // TestCompile_WebsiteInvalidName tests variable name validation on website
 func TestCompile_WebsiteInvalidName(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -496,7 +496,7 @@ func TestCompile_WebsiteInvalidName(t *testing.T) {
 
 // TestCompile_SmartopInvalidName tests variable name validation on smartop
 func TestCompile_SmartopInvalidName(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -521,7 +521,7 @@ func TestCompile_SmartopInvalidName(t *testing.T) {
 // used to live in pass2/source_validation_test.go, now owned by the schema-level
 // Validator (which gains file:line context).
 func TestCompile_FunctionInvalidSource(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -541,7 +541,7 @@ func TestCompile_FunctionInvalidSource(t *testing.T) {
 
 // TestCompile_SmartopInvalidSource tests the load-time source Validator on a smartop.
 func TestCompile_SmartopInvalidSource(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
@@ -561,7 +561,7 @@ func TestCompile_SmartopInvalidSource(t *testing.T) {
 
 // TestCompile_DomainCertificateTypeInvalid tests InSet validation for certificate-type
 func TestCompile_DomainCertificateTypeInvalid(t *testing.T) {
-	fixturesPath := filepath.Join("fixtures", "config")
+	fixturesPath := filepath.Join("..", "taubyte", "v1", "fixtures", "config")
 	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
 	overlayFs := afero.NewMemMapFs()
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)

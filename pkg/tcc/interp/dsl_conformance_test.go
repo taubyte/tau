@@ -92,7 +92,7 @@ var resourceDecoders = map[string]func(any) (name string, unused []string, err e
 var intentionalDrops = map[string]map[string]bool{}
 
 func TestCompiledObjectDecodesIntoStructs(t *testing.T) {
-	compiler, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
+	compiler, err := schema.New(schema.WithLocal("../taubyte/v1/fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, _, err := compiler.Compile(context.Background())

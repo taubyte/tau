@@ -17,7 +17,7 @@ import (
 
 func TestDecompileRoundTrip(t *testing.T) {
 	// Compile from fixtures (for decompiling)
-	c, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
+	c, err := schema.New(schema.WithLocal("../taubyte/v1/fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, validations, err := c.Compile(context.Background())
@@ -41,7 +41,7 @@ func TestDecompileRoundTrip(t *testing.T) {
 	assert.Assert(t, len(validations2) > 0, "should have validations")
 
 	// Compile again from original fixtures (for comparison, since decompile modifies obj)
-	c3, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
+	c3, err := schema.New(schema.WithLocal("../taubyte/v1/fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj3, _, err := c3.Compile(context.Background())
@@ -55,7 +55,7 @@ func TestDecompileRoundTrip(t *testing.T) {
 }
 
 func TestDecompileBasic(t *testing.T) {
-	c, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
+	c, err := schema.New(schema.WithLocal("../taubyte/v1/fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, _, err := c.Compile(context.Background())
@@ -95,7 +95,7 @@ func TestWithLocal(t *testing.T) {
 	assert.Assert(t, d != nil)
 
 	// Compile from fixtures
-	c, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
+	c, err := schema.New(schema.WithLocal("../taubyte/v1/fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, _, err := c.Compile(context.Background())
