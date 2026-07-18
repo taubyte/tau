@@ -6,7 +6,6 @@ import (
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
-	"github.com/taubyte/tau/pkg/tcc/interp/decompile/pass1"
 	"github.com/taubyte/tau/pkg/tcc/object"
 	"github.com/taubyte/tau/pkg/tcc/transform"
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
@@ -47,18 +46,18 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (d 
 // Decompile converts a compiled object back to YAML files using the engine's schema.
 // Note: This modifies the input object in place (same as regular compilation transforms).
 func (d *Decompiler) Decompile(obj Object) error {
-	// Reverse pipeline: pass1 (chroot unwrap) -> DecompileDriver. The generic
-	// DecompileDriver is the mechanical inverse of the forward CompileDriver +
-	// ResolveRefs, driven by the same schema DSL; it replaces the hand-written
-	// decompile/pass2 (ref id->name) and decompile/pass3 (per-resource inverse).
+	// Reverse pipeline: chroot unwrap -> DecompileDriver. The generic DecompileDriver
+	// is the mechanical inverse of the forward CompileDriver + ResolveRefs, driven by
+	// the same schema DSL; it replaces the hand-written id->name ref resolution and
+	// per-resource inverse projection.
 	//
-	// The chroot-unwrap (pass1) is only needed when the forward path chrooted — i.e.
-	// when the schema declares indexing. When it did not there is no `object`
-	// wrapper and pass1 is a no-op, so gating it keeps v1 identical and skips dead
-	// work for schemas without an `indexes` sibling.
+	// The chroot-unwrap is only needed when the forward path chrooted — i.e. when the
+	// schema declares indexing. When it did not there is no `object` wrapper and the
+	// unwrap is a no-op, so gating it keeps v1 identical and skips dead work for
+	// schemas without an `indexes` sibling.
 	pipe := []transform.Transformer[object.Refrence]{}
 	if interp.UsesIndexing(d.compileRoot) {
-		pipe = append(pipe, pass1.Pipe()...)
+		pipe = append(pipe, unwrapEnvelope())
 	}
 	pipe = append(pipe, interp.NewDecompileDriver(d.compileRoot))
 

@@ -11,7 +11,6 @@ import (
 	"context"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
-	"github.com/taubyte/tau/pkg/tcc/interp/pass3"
 	"github.com/taubyte/tau/pkg/tcc/object"
 	"github.com/taubyte/tau/pkg/tcc/transform"
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
@@ -106,12 +105,12 @@ func compilePipe(root *engine.Node, cloud, branch string) []transform.Transforme
 		pipe = append(pipe, AttachAll(root))
 	}
 
-	// IndexDriver (pass4): interpret the DSL's per-resource index-footprint closures
-	// to build the compiled `indexes` subtree. The chroot (pass3) exists solely to
-	// make room for that `indexes` sibling, so both are gated together on whether any
-	// group declares an index footprint.
+	// IndexDriver: interpret the DSL's per-resource index-footprint closures to build
+	// the compiled `indexes` subtree. The chroot exists solely to make room for that
+	// `indexes` sibling, so both are gated together on whether any group declares an
+	// index footprint.
 	if UsesIndexing(root) {
-		pipe = append(pipe, pass3.Pipe()...)
+		pipe = append(pipe, chrootEnvelope())
 		pipe = append(pipe, NewIndexDriver(root, branch))
 	}
 

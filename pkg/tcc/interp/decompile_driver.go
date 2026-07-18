@@ -29,11 +29,10 @@ var decompileOrder = []string{
 }
 
 // NewDecompileDriver returns the mechanical inverse of CompileDriver+ResolveRefs,
-// driven by the SAME DSL node tree. It replaces the whole decompile/pass2 (id->name
-// ref resolution) and decompile/pass3 (per-resource wire-projection inverse) layers
-// with one generic transform. decompile/pass1 (chroot unwrap) and engine.Dump (the
-// nested-YAML writer) stay: this driver only rewrites the flat compiled keys back to
-// their authored shape, exactly as the hand-written passes did.
+// driven by the SAME DSL node tree. It replaces the whole id->name ref resolution and
+// per-resource wire-projection-inverse layers with one generic transform. The chroot
+// unwrap and engine.Dump (the nested-YAML writer) stay: this driver only rewrites the
+// flat compiled keys back to their authored shape, exactly as the old passes did.
 func NewDecompileDriver(root *engine.Node) transform.Transformer[object.Refrence] {
 	return &decompileDriver{root: root}
 }
