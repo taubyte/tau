@@ -3,6 +3,7 @@ package schema
 import (
 	//lint:ignore ST1001 keeps defintion clean
 	. "github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
 )
 
 func TaubyteAttributes(attrs ...*Attribute) []*Attribute {
@@ -13,6 +14,22 @@ func TaubyteAttributes(attrs ...*Attribute) []*Attribute {
 		String("description"),
 		StringSlice("tags"),
 	)
+}
+
+// taubyteRootAttributes is the project-root attribute list. It mirrors the shared
+// TaubyteAttributes block (email is project-only) but carries two project-scope
+// driver annotations the CompileDriver reads and no resource has: the project id
+// emits a deferred `project_id` validation, and the root `tags` list is dropped
+// from the compiled wire object. These must NOT live on the shared
+// TaubyteAttributes — resources keep their tags and never emit an id validation.
+func taubyteRootAttributes() []*Attribute {
+	return []*Attribute{
+		String("email", Path("notification", "email"), IsEmail()),
+		String("id", IsCID(), Required(), EmitValidation("project_id", "project_id")),
+		String("name", IsVariableName()),
+		String("description"),
+		StringSlice("tags", WireDrop()),
+	}
 }
 
 var TaubyteRessources = []*Node{
@@ -49,7 +66,7 @@ var TaubyteRessources = []*Node{
 				String("type", Path("trigger", "type"), InSet("http", "https", "pubsub", "p2p"), DerivedBool("Secure", map[string]bool{"http": false, "https": true}, map[bool]string{false: "http", true: "https"})),
 				Bool("local", Path("trigger", "local")),
 				String("pubsub-channel", Path("trigger", "channel"), Tag("channel")),
-				String("p2p-protocol", Path("trigger", "protocol"), Compat("trigger", "service"), Tag("service"), Default("")),
+				String("p2p-protocol", Path("trigger", "protocol"), Compat("trigger", "service"), Tag("service"), OnlyWhen("type", "p2p"), Default("")),
 				String("p2p-command", Path("trigger", "command"), Tag("command")),
 				String("http-method", Path("trigger", "method"), IsHttpMethod(), Tag("method")),
 				StringSlice("http-methods", Path("trigger", "methods"), Tag("methods"), NoAccessors(), NoStructField()), // TO IMPLEMENT
@@ -160,19 +177,21 @@ func applicationsGroup() *Node {
 
 // cloudsGroup: clouds.<fqdn>.{account, plan} — DefineIter (not Group, so no
 // nested sub-groups) so each FQDN's attrs live directly under the map key in
-// nested YAML. Pass1 flattens the active FQDN's entry to the project root and
-// drops the map, so clouds compiles to no structureSpec type.
+// nested YAML. The CompileDriver runs driver.FlattenClouds (a GroupTransform
+// closure) to promote the active FQDN's entry to the project root and drop the
+// map, so clouds compiles to no structureSpec type.
 func cloudsGroup() *Node {
-	return DefineGroup("clouds", DefineIter([]*Attribute{
-		String("account"),
-		String("plan"),
-	}))
+	return DefineGroup("clouds", DefineIter(
+		[]*Attribute{
+			String("account"),
+			String("plan"),
+		},
+		driver.GroupTransform(driver.FlattenClouds),
+	))
 }
 
 var taubyteRoot = Root(
-	TaubyteAttributes(
-		String("email", Path("notification", "email"), IsEmail()),
-	),
+	taubyteRootAttributes(),
 	append(append([]*Node{}, TaubyteRessources...), applicationsGroup(), cloudsGroup())...,
 )
 
@@ -182,3 +201,10 @@ var TaubyteProject = SchemaDefinition(taubyteRoot)
 // (the 9 resources + applications + clouds), so no curated list can drift from
 // the schema. Every generator/test uses this one accessor.
 func GenerationRoot() []*Node { return taubyteRoot.Children }
+
+// CompileRoot is the CompileDriver's entrypoint into the DSL: the whole project
+// root node. Its Attributes carry the project-scope driver annotations (id ->
+// project_id validation, tags -> wire drop) and its Children are the resource,
+// applications-container and clouds groups. Distinct from GenerationRoot, which
+// exposes only the children (all a code generator needs).
+func CompileRoot() *Node { return taubyteRoot }

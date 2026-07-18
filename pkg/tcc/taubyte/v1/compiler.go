@@ -5,7 +5,7 @@ import (
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/object"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/pass1"
+	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/pass2"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/pass3"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/pass4"
@@ -54,8 +54,12 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 		return nil, nil, err
 	}
 
+	// The CompileDriver replaces the whole pass1 layer: one generic transform
+	// that interprets the schema DSL to do every structural projection pass1 did.
+	compileDriver := driver.New(schema.CompileRoot(), c.cloud, c.branch)
+
 	pipe := []transform.Transformer[object.Refrence]{}
-	for _, p := range [][]transform.Transformer[object.Refrence]{pass1.Pipe(c.cloud), pass2.Pipe(), pass3.Pipe(), pass4.Pipe(c.branch)} {
+	for _, p := range [][]transform.Transformer[object.Refrence]{{compileDriver}, pass2.Pipe(), pass3.Pipe(), pass4.Pipe(c.branch)} {
 		pipe = append(pipe, p...)
 	}
 
