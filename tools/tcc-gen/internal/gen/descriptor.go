@@ -11,7 +11,7 @@ type descriptor struct {
 	Recv        string // method receiver letter, e.g. "f"
 	Noun        string // WrapError noun + open.go local var, e.g. "function"
 	FolderConst string // common.<X>Folder constant name
-	Spec        string // structureSpec type name, e.g. "Function" ("SmartOp")
+	Spec        string // structureSpec type name, e.g. "Function" ("SmartOp") — used by the TS emit
 }
 
 var descriptors = map[string]descriptor{

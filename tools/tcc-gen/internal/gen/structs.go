@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"fmt"
 	"strings"
 
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
@@ -31,10 +32,57 @@ var structSkip = keySet(
 
 // StructModel is the template model for one pkg/specs/structure/<res>.go file.
 type StructModel struct {
-	Spec    string   // structureSpec type name, e.g. "Function"
-	Fields  []Field  // DSL-derived fields (common + resource + derived + SmartOps)
-	Embeds  []string // embedded interface types, e.g. "Basic", "Indexer", "Wasm"
-	Skipped []string
+	Spec       string   // structureSpec type name, e.g. "Function"
+	Fields     []Field  // DSL-derived fields (common + resource + derived + SmartOps)
+	Embeds     []string // embedded interface types, e.g. "Basic", "Indexer", "Wasm"
+	SpecImport string   // pkg/specs import path for the method delegates
+	SpecAlias  string   // its import alias, e.g. "functionSpec"
+	Methods    []string // full method source (GetName/SetId/<addressing>/GetId)
+	Skipped    []string
+}
+
+// addressingMethods emits the object-addressing methods for a resource from its
+// Addressing capabilities. Bodies delegate to <alias>.Tns(); the resource field
+// each threads is fixed per capability (.Id for basic/index, .Name for
+// wasm/index-path/name-index, .Command for services). project/app arg names are
+// normalized (some hand-written variants used projectId/appId — cosmetic only).
+func addressingMethods(recv, spec, alias string, caps []engine.Capability) []string {
+	r := recv
+	sig := func(name, args, ret string) string {
+		return fmt.Sprintf("func (%s *%s) %s(%s) %s {\n", r, spec, name, args, ret)
+	}
+	tns := func(m, args string) string { return fmt.Sprintf("\treturn %s.Tns().%s(%s)\n}", alias, m, args) }
+
+	out := []string{
+		fmt.Sprintf("func (%s %s) GetName() string {\n\treturn %s.Name\n}", r, spec, r),
+		fmt.Sprintf("func (%s *%s) SetId(id string) {\n\t%s.Id = id\n}", r, spec, r),
+	}
+	for _, c := range caps {
+		switch c.String() {
+		case "basic":
+			out = append(out, sig("BasicPath", "branch, commit, project, app string", "(*common.TnsPath, error)")+tns("BasicPath", "branch, commit, project, app, "+r+".Id"))
+		case "index":
+			out = append(out, sig("IndexValue", "branch, project, app string", "(*common.TnsPath, error)")+tns("IndexValue", "branch, project, app, "+r+".Id"))
+		case "indexPath":
+			out = append(out, sig("IndexPath", "project, app string", "*common.TnsPath")+tns("IndexPath", "project, app, "+r+".Name"))
+		case "http":
+			out = append(out, sig("HttpPath", "fqdn string", "(*common.TnsPath, error)")+tns("HttpPath", "fqdn"))
+		case "wasm":
+			out = append(out, sig("WasmModulePath", "project, app string", "(*common.TnsPath, error)")+tns("WasmModulePath", "project, app, "+r+".Name"))
+			out = append(out, fmt.Sprintf("func (%s *%s) ModuleName() string {\n\treturn %s.ModuleName(%s.Name)\n}", r, spec, alias, r))
+		case "services":
+			out = append(out, sig("ServicesPath", "project, app, serviceId string", "(*common.TnsPath, error)")+tns("ServicesPath", "project, app, serviceId, "+r+".Command"))
+		case "empty":
+			out = append(out, sig("EmptyPath", "branch, commit, project, app string", "(*common.TnsPath, error)")+tns("EmptyPath", "branch, commit, project, app"))
+		case "websocket":
+			out = append(out, sig("WebSocketHashPath", "project, app string", "(*common.TnsPath, error)")+tns("WebSocketHashPath", "project, app"))
+			out = append(out, sig("WebSocketPath", "hash string", "(*common.TnsPath, error)")+tns("WebSocketPath", "hash"))
+		case "nameIndex":
+			out = append(out, sig("NameIndex", "", "*common.TnsPath")+tns("NameIndex", r+".Name"))
+		}
+	}
+	out = append(out, fmt.Sprintf("func (%s *%s) GetId() string {\n\treturn %s.Id\n}", r, spec, r))
+	return out
 }
 
 // Field is one struct field. Name/Type/Tag drive the Go struct emit; Required
@@ -56,15 +104,27 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 	var out []*StructModel
 	for _, g := range root {
 		name, _ := g.Match.(string)
-		d, ok := descriptors[name]
-		if !ok || len(g.Children) == 0 {
+		if len(g.Children) == 0 {
 			continue
 		}
 		iter := g.Children[0]
-		m := &StructModel{Spec: d.Spec, Fields: commonFields()}
+		// A group emits a struct iff the DSL declares its Spec; type name and
+		// specs package come from there, everything else derives — no hardcoding.
+		sp, ok := iter.Meta["spec"].([2]string)
+		if !ok {
+			continue
+		}
+		typeName, pkgDir := sp[0], sp[1]
+		recv := strings.ToLower(typeName[:1])
+		alias := strings.ToLower(typeName) + "Spec"
+		imp := "github.com/taubyte/tau/pkg/specs/" + pkgDir
+
+		m := &StructModel{Spec: typeName, Fields: commonFields(), SpecImport: imp, SpecAlias: alias}
 		if e, ok := iter.Meta["embeds"].([]string); ok {
 			m.Embeds = e
 		}
+		caps, _ := iter.Meta["addressing"].([]engine.Capability)
+		m.Methods = addressingMethods(recv, typeName, alias, caps)
 		reserved := map[string]bool{"Id": true, "Name": true, "Description": true, "Tags": true, "SmartOps": true}
 		for _, a := range iter.Attributes {
 			if commonAttrs[a.Name] || structSkip[name+"."+a.Name] {

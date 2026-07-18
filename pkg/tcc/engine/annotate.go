@@ -93,3 +93,12 @@ func DerivedBools(names ...string) NodeOption {
 func StructBool(goName string) Option {
 	return Annotate("structBool", goName)
 }
+
+// Spec declares the structureSpec type this resource compiles into (typeName)
+// and the pkg/specs sub-package its object-addressing helpers live in (pkgDir),
+// so the generator can emit pkg/specs/structure/<res>.go entirely from the DSL —
+// import alias, receiver, file name and method delegates all derive from these.
+// Generation-only; no runtime effect.
+func Spec(typeName, pkgDir string) NodeOption {
+	return GroupAnnotate("spec", [2]string{typeName, pkgDir})
+}
