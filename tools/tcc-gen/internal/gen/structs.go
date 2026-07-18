@@ -1,6 +1,7 @@
 package gen
 
 import (
+	"fmt"
 	"strings"
 
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
@@ -14,28 +15,51 @@ import (
 // at adoption. Two things ARE derived: uint64 duration/size types and the
 // mapstructure tag for compat-aliased fields.
 
-// scalarGoType maps a DSL scalar tag (engine.Duration/Bytes attach these via
-// Annotate) to the Go struct field type. Pure data — no codec, no reflection.
-var scalarGoType = map[string]string{
-	"duration": "uint64",
-	"bytes":    "uint64",
+// StructModel is the template model for one pkg/specs/structure/<res>.go file.
+type StructModel struct {
+	Spec       string   // structureSpec type name, e.g. "Function"
+	Fields     []Field  // DSL-derived fields (common + resource + derived + SmartOps)
+	Embeds     []string // embedded interface types, e.g. "Basic", "Indexer", "Wasm"
+	SpecImport string   // pkg/specs import path for the method delegates
+	SpecAlias  string   // its import alias, e.g. "functionSpec"
+	Methods    []string // full method source (GetName/SetId/<addressing>/GetId)
+	Skipped    []string
 }
 
-// structSkip lists DSL attrs with no direct struct field: value transforms whose
-// struct representation is a different hand-written field (network-access ->
-// Local/Public bool), a field folded elsewhere (encryption-type), or unimplemented
-// (http-methods). Everything else projects to exactly one struct field.
-var structSkip = keySet(
-	"functions.http-methods",
-	"databases.network-access", "databases.encryption-type",
-	"storages.network-access",
-)
+// addressingMethods emits the object-addressing methods for a resource from its
+// Addressing capabilities. Each capability carries its own method specs (an
+// engine.MethodCarrier), so there is no per-capability switch here: the loop
+// renders whatever each term declares, in declaration order. GetName/SetId/GetId
+// bracket the set and are the same for every resource.
+func addressingMethods(recv, spec, alias string, caps []engine.Capability) []string {
+	r := recv
+	out := []string{
+		fmt.Sprintf("func (%s %s) GetName() string {\n\treturn %s.Name\n}", r, spec, r),
+		fmt.Sprintf("func (%s *%s) SetId(id string) {\n\t%s.Id = id\n}", r, spec, r),
+	}
+	for _, c := range caps {
+		mc, ok := c.(engine.MethodCarrier)
+		if !ok {
+			continue
+		}
+		for _, m := range mc.AddressingMethods() {
+			out = append(out, renderMethod(r, spec, alias, m))
+		}
+	}
+	out = append(out, fmt.Sprintf("func (%s *%s) GetId() string {\n\treturn %s.Id\n}", r, spec, r))
+	return out
+}
 
-// StructModel is the template model for one pkg/specs/structure/<res>.go proposal.
-type StructModel struct {
-	Spec    string  // structureSpec type name, e.g. "Function"
-	Fields  []Field // DSL-derived fields (common + resource + SmartOps)
-	Skipped []string
+// renderMethod renders one capability method spec to Go source. "@" in the args
+// expands to the receiver; ViaTns picks the delegate form (<alias>.Tns().<Name>
+// vs <alias>.<Name>). Produces the exact bytes the old per-capability switch did.
+func renderMethod(recv, spec, alias string, m engine.MethodSpec) string {
+	args := strings.ReplaceAll(m.Args, "@", recv)
+	header := fmt.Sprintf("func (%s *%s) %s(%s) %s {\n", recv, spec, m.Name, m.Params, m.Ret)
+	if m.ViaTns {
+		return header + fmt.Sprintf("\treturn %s.Tns().%s(%s)\n}", alias, m.Name, args)
+	}
+	return header + fmt.Sprintf("\treturn %s.%s(%s)\n}", alias, m.Name, args)
 }
 
 // Field is one struct field. Name/Type/Tag drive the Go struct emit; Required
@@ -55,16 +79,72 @@ type Field struct {
 // struct has a field per logical attribute regardless of how it is read/written.
 func Structs(root []*engine.Node) ([]*StructModel, error) {
 	var out []*StructModel
+	common := attrSet(commonAttrs(root))
 	for _, g := range root {
 		name, _ := g.Match.(string)
-		d, ok := descriptors[name]
-		if !ok || len(g.Children) == 0 {
+		if len(g.Children) == 0 {
 			continue
 		}
-		m := &StructModel{Spec: d.Spec, Fields: commonFields()}
-		reserved := map[string]bool{"Id": true, "Name": true, "Description": true, "Tags": true, "SmartOps": true}
-		for _, a := range g.Children[0].Attributes {
-			if commonAttrs[a.Name] || structSkip[name+"."+a.Name] {
+		iter := g.Children[0]
+		// A group emits a struct if the DSL declares it a Resource (full: struct +
+		// addressing methods + SmartOps), or if it's a nested container group — an
+		// iterator that itself holds resource sub-groups (applications) — which
+		// compiles to a bare struct of the common fields only, named by its
+		// Singular() declaration (applications -> Application). Everything else
+		// (leaf maps like clouds, which decode to no type) is skipped.
+		var m *StructModel
+		bare := false
+		if d, ok := descriptorFor(iter); ok {
+			alias := strings.ToLower(d.Spec) + "Spec"
+			m = &StructModel{
+				Spec:       d.Spec,
+				Fields:     commonFields(root),
+				SpecImport: "github.com/taubyte/tau/pkg/specs/" + d.SpecPkg,
+				SpecAlias:  alias,
+			}
+			if e, ok := iter.Meta["embeds"].([]string); ok {
+				m.Embeds = e
+			}
+			caps, _ := iter.Meta["addressing"].([]engine.Capability)
+			m.Methods = addressingMethods(d.Recv, d.Spec, alias, caps)
+		} else if iter.Group && len(iter.Children) > 0 {
+			so, ok := iter.Meta["singular"].(string)
+			if !ok || so == "" {
+				return nil, fmt.Errorf("container group %q has no Singular() declaration", name)
+			}
+			m = &StructModel{Spec: so, Fields: commonFields(root)}
+			bare = true
+		} else {
+			continue
+		}
+		reserved := map[string]bool{}
+		for _, f := range commonFields(root) {
+			reserved[f.Name] = true
+		}
+		for _, t := range universalTail(root) {
+			reserved[t.name] = true
+		}
+		var derived []string // DerivedBool GoNames, emitted post-loop (see below)
+		for _, a := range iter.Attributes {
+			if common[a.Name] || noStructField(a) {
+				continue
+			}
+			// A DerivedBool attr synthesizes an extra bool field (Function.Secure
+			// from type) IN ADDITION to its own field; collected here and emitted
+			// post-loop at the position the old node-level DerivedBools used.
+			if d, ok := a.Meta["derivedBool"].(engine.DerivedBoolSpec); ok && d.GoName != "" {
+				derived = append(derived, d.GoName)
+			}
+			// An EnumBool attr (network-access) projects to a bool field named by
+			// the annotation, replacing its own field (decoded from lower(name)).
+			if eb, ok := a.Meta["enumBool"].(engine.EnumBoolSpec); ok && eb.GoName != "" {
+				b := eb.GoName
+				if reserved[b] {
+					m.Skipped = append(m.Skipped, name+"."+a.Name)
+					continue
+				}
+				reserved[b] = true
+				m.Fields = append(m.Fields, Field{Name: b, Type: "bool"})
 				continue
 			}
 			gt := goType(a.Type)
@@ -79,10 +159,8 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 				continue
 			}
 			reserved[nm] = true
-			if s, ok := a.Meta["scalar"].(string); ok {
-				if t := scalarGoType[s]; t != "" {
-					gt = t
-				}
+			if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok && sc.GoType != "" {
+				gt = sc.GoType
 			}
 			f := Field{Name: nm, Type: gt, Tag: structTag(nm, a), Required: a.Required}
 			if enum, ok := a.Meta["enum"].([]string); ok {
@@ -91,19 +169,35 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			}
 			m.Fields = append(m.Fields, f)
 		}
-		m.Fields = append(m.Fields, Field{Name: "SmartOps", Type: "[]string"})
+		// Derived fields and SmartOps are resource conventions — a bare container
+		// struct (Application) has neither.
+		if !bare {
+			for _, nm := range derived {
+				if reserved[nm] {
+					continue
+				}
+				reserved[nm] = true
+				m.Fields = append(m.Fields, Field{Name: nm, Type: "bool"})
+			}
+			for _, t := range universalTail(root) {
+				m.Fields = append(m.Fields, Field{Name: t.name, Type: t.goType})
+			}
+		}
 		out = append(out, m)
 	}
 	return out, nil
 }
 
-func commonFields() []Field {
-	return []Field{
-		{Name: "Id", Type: "string", Required: true}, // id is the only Required() attr
-		{Name: "Name", Type: "string"},
-		{Name: "Description", Type: "string"},
-		{Name: "Tags", Type: "[]string"},
+// commonFields are the struct fields every resource carries, derived from the
+// DSL's shared attributes (id/name/description/tags) — name, type and the
+// Required flag all read off the attribute, so the struct block never restates
+// the common schema.
+func commonFields(root []*engine.Node) []Field {
+	var out []Field
+	for _, a := range commonAttrs(root) {
+		out = append(out, Field{Name: title(a.Name), Type: goType(a.Type), Required: a.Required})
 	}
+	return out
 }
 
 // structFieldName is the Field("...") override if present, else the accessor name
@@ -130,6 +224,9 @@ func structFieldName(group string, a *engine.Attribute) string {
 // derivable and are left for hand-merge.
 func structTag(fieldName string, a *engine.Attribute) string {
 	if t, ok := a.Meta["tag"].(string); ok && t != "" {
+		if t == strings.ToLower(fieldName) {
+			return "" // redundant with the field name (mapstructure decodes case-insensitively)
+		}
 		return "`mapstructure:\"" + t + "\"`"
 	}
 	compat, ok := compatSegs(a)

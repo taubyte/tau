@@ -18,15 +18,5 @@ func (t *tnsHelper) IndexValue(branch, projectId, appId, storeId string) (*commo
 }
 
 func (t *tnsHelper) IndexPath(projectId, appId, name string) *common.TnsPath {
-	if len(appId) > 0 {
-		return common.NewTnsPath([]string{
-			common.ProjectPathVariable.String(),
-			projectId,
-			common.ApplicationPathVariable.String(),
-			appId,
-			name,
-		})
-	}
-
-	return common.NewTnsPath([]string{common.ProjectPathVariable.String(), projectId, name})
+	return methods.IndexPath(projectId, appId, name)
 }

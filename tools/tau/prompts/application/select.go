@@ -21,7 +21,7 @@ import (
 GetOrSelect will try to get the application from a name flag
 if it is not set in the flag it will offer a selection menu
 */
-func GetOrSelect(ctx *cli.Context, checkSelected bool) (*structureSpec.App, error) {
+func GetOrSelect(ctx *cli.Context, checkSelected bool) (*structureSpec.Application, error) {
 	name := ctx.String(flags.Name.Name)
 
 	if len(name) == 0 && checkSelected {
@@ -61,7 +61,7 @@ func GetOrSelect(ctx *cli.Context, checkSelected bool) (*structureSpec.App, erro
 	return nil, errors.New(NoneFound)
 }
 
-func GetSelectOrDeselect(ctx *cli.Context) (app *structureSpec.App, deselect bool, err error) {
+func GetSelectOrDeselect(ctx *cli.Context) (app *structureSpec.Application, deselect bool, err error) {
 	currentlySelected, _ := config.GetSelectedApplication()
 	if len(currentlySelected) == 0 {
 		app, err = GetOrSelect(ctx, false)
@@ -117,7 +117,7 @@ func GetSelectOrDeselect(ctx *cli.Context) (app *structureSpec.App, deselect boo
 	return nil, false, errors.New(NoneFound)
 }
 
-func matchLowercase(name string, apps []*structureSpec.App) (*structureSpec.App, error) {
+func matchLowercase(name string, apps []*structureSpec.Application) (*structureSpec.Application, error) {
 	nameLC := strings.ToLower(name)
 
 	for _, app := range apps {

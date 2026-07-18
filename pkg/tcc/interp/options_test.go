@@ -1,0 +1,68 @@
+package interp
+
+import (
+	"testing"
+
+	"github.com/spf13/afero"
+	"github.com/taubyte/tau/pkg/tcc/engine"
+	"gotest.tools/v3/assert"
+)
+
+func TestWithVirtual(t *testing.T) {
+	// Setup: Create virtual filesystem
+	fs := afero.NewMemMapFs()
+	path := "/test/path"
+
+	// Execute
+	option := WithVirtual(fs, path)
+
+	compiler := &Compiler{}
+	err := option(compiler)
+
+	// Verify
+	assert.NilError(t, err)
+	assert.Equal(t, len(compiler.seerOptions), 1)
+}
+
+func TestWithLocal(t *testing.T) {
+	// Setup
+	path := "fixtures/config"
+
+	// Execute
+	option := WithLocal(path)
+
+	compiler := &Compiler{}
+	err := option(compiler)
+
+	// Verify
+	assert.NilError(t, err)
+	assert.Equal(t, len(compiler.seerOptions), 1)
+}
+
+func TestWithBranch(t *testing.T) {
+	// Setup
+	branch := "test-branch"
+
+	// Execute
+	option := WithBranch(branch)
+
+	compiler := &Compiler{env: Env{}}
+	err := option(compiler)
+
+	// Verify
+	assert.NilError(t, err)
+	assert.Equal(t, compiler.env["branch"], branch)
+}
+
+func TestWithBranch_Default(t *testing.T) {
+	// Setup: Create compiler using New() with filesystem but without branch option.
+	// A minimal engine root is enough here — this exercises New's branch default,
+	// not a full compile, and keeps this internal test free of a schema import
+	// (which would recreate the interp<->schema cycle).
+	root := engine.Root(nil)
+	compiler, err := New(engine.SchemaDefinition(root), root, WithLocal(t.TempDir()))
+
+	// Verify: Should have default branch
+	assert.NilError(t, err)
+	assert.Equal(t, compiler.env["branch"], DefaultBranch)
+}

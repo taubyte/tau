@@ -23,7 +23,7 @@ import (
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	service "github.com/taubyte/tau/services/substrate/components/database"
 	dbcommon "github.com/taubyte/tau/services/substrate/components/database/common"
 	_ "github.com/taubyte/tau/services/substrate/dream"

@@ -46,8 +46,8 @@ func TestCheck(t *testing.T) {
 		filepath.Join("pkg", "schema", "foo", "set.go"): []byte("package foo\nfunc A() {}\nfunc C() {}\n"),
 		// no real counterpart on disk: everything is "extra in generated"
 		filepath.Join("pkg", "schema", "bar", "set.go"): []byte("package bar\nfunc D() {}\n"),
-		// non-schema path: must be skipped entirely
-		filepath.Join("pkg", "specs", "structure", "foo.go"): []byte("package structureSpec\nfunc Ignored() {}\n"),
+		// struct path: byte-checked; no on-disk counterpart -> byte diff
+		filepath.Join("pkg", "specs", "structure", "foo.go"): []byte("package structureSpec\ntype Foo struct{}\n"),
 	}
 
 	diffs, err := Check(root, gen)
@@ -73,8 +73,8 @@ func TestCheck(t *testing.T) {
 		t.Errorf("bar (no real file) extra-in-gen = %q, want D", got)
 	}
 
-	if _, ok := byRel[filepath.Join("pkg", "specs", "structure", "foo.go")]; ok {
-		t.Error("non-schema file must be skipped by Check")
+	if d, ok := byRel[filepath.Join("pkg", "specs", "structure", "foo.go")]; !ok || !d.BytesDiffer {
+		t.Error("struct file with no on-disk counterpart must be flagged as a byte diff")
 	}
 }
 
@@ -82,7 +82,7 @@ func TestPrintReport(t *testing.T) {
 	gen := map[string][]byte{
 		filepath.Join("pkg", "schema", "a", "set.go"):      nil,
 		filepath.Join("pkg", "schema", "b", "set.go"):      nil,
-		filepath.Join("pkg", "specs", "structure", "a.go"): nil, // must not be reported
+		filepath.Join("pkg", "specs", "structure", "a.go"): nil, // struct files are now checked
 	}
 	diffs := []Diff{{
 		Rel:          filepath.Join("pkg", "schema", "b", "set.go"),
@@ -97,16 +97,14 @@ func TestPrintReport(t *testing.T) {
 	for _, want := range []string{
 		"OK    " + filepath.Join("pkg", "schema", "a", "set.go"),
 		"DIFF  " + filepath.Join("pkg", "schema", "b", "set.go"),
+		"OK    " + filepath.Join("pkg", "specs", "structure", "a.go"),
 		"only in generated: [X]",
 		"only in hand-written: [Y]",
-		"2 schema files checked, 1 with differences",
+		"3 generated files checked, 1 with differences",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report missing %q; got:\n%s", want, out)
 		}
-	}
-	if strings.Contains(out, "structure") {
-		t.Error("PrintReport must not list non-schema files")
 	}
 }
 

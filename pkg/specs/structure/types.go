@@ -3,7 +3,7 @@ package structureSpec
 import "github.com/taubyte/tau/pkg/specs/common"
 
 type Structure interface {
-	*App |
+	*Application |
 		*Database |
 		*Domain |
 		*Function |

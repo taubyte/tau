@@ -45,9 +45,9 @@ func TestMapping(t *testing.T) {
 			wantGet:  `return basic.Get[string](g, "trigger", "protocol")`,
 		},
 		{
-			desc:     "name override",
+			desc:     "accessor name override",
 			group:    "domains",
-			attr:     engine.String("fqdn"),
+			attr:     engine.String("fqdn", engine.Accessor("FQDN")),
 			wantName: "FQDN",
 			wantSet:  `return basic.Set("fqdn", value)`,
 			wantGet:  `return basic.Get[string](g, "fqdn")`,
@@ -63,7 +63,7 @@ func TestMapping(t *testing.T) {
 		{
 			desc:     "depth-3 getter (variadic), no setter",
 			group:    "messaging",
-			attr:     engine.Bool("mqtt", engine.Path("bridges", "mqtt", "enable")),
+			attr:     engine.Bool("mqtt", engine.Path("bridges", "mqtt", "enable"), engine.Accessor("MQTT")),
 			wantName: "MQTT",
 			wantSet:  "", // depth 3 exceeds basic.SetChild
 			wantGet:  `return basic.Get[bool](g, "bridges", "mqtt", "enable")`,
@@ -131,12 +131,20 @@ func TestCompatAlias(t *testing.T) {
 
 func resourceByGroup(t *testing.T, group string) *Resource {
 	t.Helper()
-	rs, err := Resources(schema.TaubyteRessources)
+	rs, err := Resources(schema.GenerationRoot())
 	if err != nil {
 		t.Fatal(err)
 	}
+	var pkg string
+	for _, g := range schema.GenerationRoot() {
+		if name, _ := g.Match.(string); name == group && len(g.Children) > 0 {
+			if d, ok := descriptorFor(g.Children[0]); ok {
+				pkg = d.Package
+			}
+		}
+	}
 	for _, r := range rs {
-		if descriptors[group].Package == r.Package {
+		if r.Package == pkg {
 			return r
 		}
 	}
@@ -191,7 +199,7 @@ func assertHasSetter(t *testing.T, r *Resource, name, doc, body string) {
 
 // TestGenerateParses ensures every emitted file is valid, gofmt-able Go.
 func TestGenerateParses(t *testing.T) {
-	files, err := Generate(schema.TaubyteRessources)
+	files, err := Generate(schema.GenerationRoot())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,6 +207,9 @@ func TestGenerateParses(t *testing.T) {
 		t.Fatal("no files generated")
 	}
 	for rel, b := range files {
+		if !strings.HasSuffix(rel, ".go") {
+			continue // non-Go generated output (e.g. schema.ts)
+		}
 		if _, err := funcNames(rel, b); err != nil {
 			t.Errorf("%s does not parse: %v", rel, err)
 		}

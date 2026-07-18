@@ -24,8 +24,7 @@ import (
 	librarySpec "github.com/taubyte/tau/pkg/specs/library"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
 	websiteSpec "github.com/taubyte/tau/pkg/specs/website"
-	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
-	tccDecompile "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	tcc "github.com/taubyte/tau/utils/tcc"
 	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 )
@@ -335,7 +334,7 @@ func TestE2E_Dreaming(t *testing.T) {
 	}
 
 	// Create TCC decompiler
-	decompiler, err := tccDecompile.New(tccDecompile.WithLocal(gitRootConfig_new))
+	decompiler, err := tccCompiler.NewDecompiler(tccCompiler.DecompilerWithLocal(gitRootConfig_new))
 	if err != nil {
 		t.Error(err)
 		return

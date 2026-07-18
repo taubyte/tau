@@ -13,7 +13,7 @@ import (
 	"github.com/taubyte/tau/pkg/schema/pretty"
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	commonSpec "github.com/taubyte/tau/pkg/specs/common"
-	tccDecompile "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
+	tccSchema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	servicesCommon "github.com/taubyte/tau/services/common"
 	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 
@@ -57,7 +57,7 @@ func (srv *Service) getProjectFromContext(ctx http.Context) (projectSchema.Proje
 
 	// Create decompiler with in-memory filesystem
 	memFs := afero.NewMemMapFs()
-	decompiler, err := tccDecompile.New(tccDecompile.WithVirtual(memFs, "/"))
+	decompiler, err := tccSchema.NewDecompiler(tccSchema.DecompilerWithVirtual(memFs, "/"))
 	if err != nil {
 		return nil, fmt.Errorf("creating decompiler failed: %w", err)
 	}

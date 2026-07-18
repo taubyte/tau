@@ -4,6 +4,7 @@
 package gen
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/parser"
@@ -17,9 +18,14 @@ import (
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
 
-// schemaPrefix scopes the drift check to the accessor files; struct proposals
-// under pkg/specs/structure are review-only and skipped by Check.
-const schemaPrefix = "pkg/schema/"
+// schemaPrefix scopes the accessor drift check (a formatting-agnostic func-name
+// diff). structPrefix scopes the structureSpec struct files, which are fully
+// generated and adopted in place, so they get a strict byte-exact check.
+const (
+	schemaPrefix = "pkg/schema/"
+	structPrefix = "pkg/specs/structure/"
+	tsGenPath    = "pkg/tcc/clients/js/src/gen/schema.ts"
+)
 
 // Generate returns a map of repo-relative path -> gofmt'd file content: the
 // pkg/schema accessor files plus the pkg/specs/structure struct proposals.
@@ -49,6 +55,11 @@ func Generate(root []*engine.Node) (map[string][]byte, error) {
 		}
 		out[filepath.Join("pkg", "specs", "structure", strings.ToLower(m.Spec)+".go")] = b
 	}
+	ts, err := GenerateTS(root)
+	if err != nil {
+		return nil, err
+	}
+	out[filepath.FromSlash(tsGenPath)] = ts
 	return out, nil
 }
 
@@ -75,35 +86,49 @@ type Diff struct {
 	Rel          string
 	ExtraInGen   []string // generated but absent from the real file
 	MissingInGen []string // present in the real file but not generated
+	BytesDiffer  bool     // struct files: generated output != on-disk (byte-exact)
 }
 
-// Check diffs every generated file against pkg/schema under repoRoot.
+// Check diffs every generated file against its on-disk counterpart under
+// repoRoot: struct files byte-exact, accessor files by func-name set.
 func Check(repoRoot string, gen map[string][]byte) ([]Diff, error) {
 	var diffs []Diff
 	for rel, b := range gen {
-		if !strings.HasPrefix(rel, schemaPrefix) {
-			continue // struct proposals are review-only
-		}
-		genNames, err := funcNames(rel, b)
-		if err != nil {
-			return nil, fmt.Errorf("parse generated %s: %w", rel, err)
-		}
-		realBytes, err := os.ReadFile(filepath.Join(repoRoot, rel))
-		if err != nil {
-			if os.IsNotExist(err) {
-				diffs = append(diffs, Diff{Rel: rel, ExtraInGen: sortedKeys(genNames)})
-				continue
+		switch {
+		case strings.HasPrefix(rel, structPrefix) || rel == filepath.FromSlash(tsGenPath):
+			realBytes, err := os.ReadFile(filepath.Join(repoRoot, rel))
+			if err != nil {
+				if os.IsNotExist(err) {
+					diffs = append(diffs, Diff{Rel: rel, BytesDiffer: true})
+					continue
+				}
+				return nil, err
 			}
-			return nil, err
-		}
-		realNames, err := funcNames(rel, realBytes)
-		if err != nil {
-			return nil, fmt.Errorf("parse real %s: %w", rel, err)
-		}
-		extra := missing(genNames, realNames)
-		miss := missing(realNames, genNames)
-		if len(extra) > 0 || len(miss) > 0 {
-			diffs = append(diffs, Diff{Rel: rel, ExtraInGen: extra, MissingInGen: miss})
+			if !bytes.Equal(b, realBytes) {
+				diffs = append(diffs, Diff{Rel: rel, BytesDiffer: true})
+			}
+		case strings.HasPrefix(rel, schemaPrefix):
+			genNames, err := funcNames(rel, b)
+			if err != nil {
+				return nil, fmt.Errorf("parse generated %s: %w", rel, err)
+			}
+			realBytes, err := os.ReadFile(filepath.Join(repoRoot, rel))
+			if err != nil {
+				if os.IsNotExist(err) {
+					diffs = append(diffs, Diff{Rel: rel, ExtraInGen: sortedKeys(genNames)})
+					continue
+				}
+				return nil, err
+			}
+			realNames, err := funcNames(rel, realBytes)
+			if err != nil {
+				return nil, fmt.Errorf("parse real %s: %w", rel, err)
+			}
+			extra := missing(genNames, realNames)
+			miss := missing(realNames, genNames)
+			if len(extra) > 0 || len(miss) > 0 {
+				diffs = append(diffs, Diff{Rel: rel, ExtraInGen: extra, MissingInGen: miss})
+			}
 		}
 	}
 	sort.Slice(diffs, func(i, j int) bool { return diffs[i].Rel < diffs[j].Rel })
@@ -118,7 +143,7 @@ func PrintReport(w io.Writer, gen map[string][]byte, diffs []Diff) {
 	}
 	rels := make([]string, 0, len(gen))
 	for rel := range gen {
-		if strings.HasPrefix(rel, schemaPrefix) {
+		if strings.HasPrefix(rel, schemaPrefix) || strings.HasPrefix(rel, structPrefix) || rel == filepath.FromSlash(tsGenPath) {
 			rels = append(rels, rel)
 		}
 	}
@@ -131,6 +156,9 @@ func PrintReport(w io.Writer, gen map[string][]byte, diffs []Diff) {
 			continue
 		}
 		fmt.Fprintf(w, "DIFF  %s\n", rel)
+		if d.BytesDiffer {
+			fmt.Fprintf(w, "        ! regenerated output differs (run tcc-gen and adopt)\n")
+		}
 		if len(d.ExtraInGen) > 0 {
 			fmt.Fprintf(w, "        + only in generated: %v\n", d.ExtraInGen)
 		}
@@ -138,7 +166,7 @@ func PrintReport(w io.Writer, gen map[string][]byte, diffs []Diff) {
 			fmt.Fprintf(w, "        - only in hand-written: %v\n", d.MissingInGen)
 		}
 	}
-	fmt.Fprintf(w, "\n%d schema files checked, %d with differences\n", len(rels), len(diffs))
+	fmt.Fprintf(w, "\n%d generated files checked, %d with differences\n", len(rels), len(diffs))
 }
 
 // funcNames returns the set of top-level func/method names declared in src.

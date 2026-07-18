@@ -32,7 +32,7 @@ func List() ([]string, error) {
 	return project.Get().Applications(), nil
 }
 
-func ListResources() ([]*structureSpec.App, error) {
+func ListResources() ([]*structureSpec.Application, error) {
 	names, err := List()
 	if err != nil {
 		return nil, err
@@ -41,7 +41,7 @@ func ListResources() ([]*structureSpec.App, error) {
 		return nil, nil
 	}
 
-	resources := make([]*structureSpec.App, len(names))
+	resources := make([]*structureSpec.Application, len(names))
 	for idx, name := range names {
 		resources[idx], err = Get(name)
 		if err != nil {
@@ -52,7 +52,7 @@ func ListResources() ([]*structureSpec.App, error) {
 	return resources, nil
 }
 
-func Get(name string) (*structureSpec.App, error) {
+func Get(name string) (*structureSpec.Application, error) {
 	project, err := projectLib.SelectedProjectInterface()
 	if err != nil {
 		return nil, err
@@ -63,7 +63,7 @@ func Get(name string) (*structureSpec.App, error) {
 		return nil, err
 	}
 	getter := app.Get()
-	return &structureSpec.App{
+	return &structureSpec.Application{
 		Id:          getter.Id(),
 		Name:        getter.Name(),
 		Description: getter.Description(),
@@ -71,7 +71,7 @@ func Get(name string) (*structureSpec.App, error) {
 	}, nil
 }
 
-func Set(app *structureSpec.App) error {
+func Set(app *structureSpec.Application) error {
 	project, err := projectLib.SelectedProjectInterface()
 	if err != nil {
 		return err
@@ -96,7 +96,7 @@ func Deselect(ctx *cli.Context, name string) error {
 	return session.Unset().SelectedApplication()
 }
 
-func New(app *structureSpec.App) error {
+func New(app *structureSpec.Application) error {
 	project, err := projectLib.SelectedProjectInterface()
 	if err != nil {
 		return err
@@ -114,7 +114,7 @@ func New(app *structureSpec.App) error {
 	)
 }
 
-func Delete(app *structureSpec.App) error {
+func Delete(app *structureSpec.Application) error {
 	project, err := projectLib.SelectedProjectInterface()
 	if err != nil {
 		return err

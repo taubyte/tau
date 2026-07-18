@@ -13,8 +13,7 @@ import (
 	commonTest "github.com/taubyte/tau/dream/helpers"
 	gitTest "github.com/taubyte/tau/dream/helpers/git"
 	specs "github.com/taubyte/tau/pkg/specs/methods"
-	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
-	tccDecompile "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	_ "github.com/taubyte/tau/services/tns/dream"
 	"github.com/taubyte/tau/utils/maps"
 	tcc "github.com/taubyte/tau/utils/tcc"
@@ -138,7 +137,7 @@ func TestDecompileProd_Dreaming(t *testing.T) {
 	objCopy := tccConvert.MapToTCCObject(objFlat)
 
 	// Create TCC decompiler
-	decompiler, err := tccDecompile.New(tccDecompile.WithLocal(testProjectDir))
+	decompiler, err := tccCompiler.NewDecompiler(tccCompiler.DecompilerWithLocal(testProjectDir))
 	if err != nil {
 		t.Error(err)
 		return

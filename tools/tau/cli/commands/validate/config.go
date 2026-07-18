@@ -10,7 +10,7 @@ import (
 	tcc "github.com/taubyte/tau/utils/tcc"
 	"github.com/urfave/cli/v2"
 
-	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 )
 
 func runValidateConfig(c *cli.Context) error {

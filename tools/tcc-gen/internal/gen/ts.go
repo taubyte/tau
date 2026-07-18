@@ -55,6 +55,40 @@ func upperFirst(s string) string {
 	return string(r)
 }
 
+// wireKey is the JSON key a compiled resource carries for a struct field — the
+// mapstructure tag if declared, else the lower-cased field name (which is what
+// the compiler emits and mapstructure decodes case-insensitively).
+func wireKey(f Field) string {
+	if f.Tag != "" {
+		if i := strings.IndexByte(f.Tag, '"'); i >= 0 {
+			if j := strings.IndexByte(f.Tag[i+1:], '"'); j >= 0 {
+				return f.Tag[i+1 : i+1+j]
+			}
+		}
+	}
+	return strings.ToLower(f.Name)
+}
+
+// tsProp quotes a property name that isn't a bare TS identifier (e.g. the
+// hyphenated git/cert keys "cert-file", "repository-id").
+func tsProp(k string) string {
+	for _, r := range k {
+		if !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '$') {
+			return `"` + k + `"`
+		}
+	}
+	return k
+}
+
+// tsWireType is the TS type of a compiled-shape field: its enum union if it has
+// one (same alias the accessor emit declares), else the scalar mapping.
+func tsWireType(spec string, f Field) string {
+	if len(f.Enum) > 0 {
+		return spec + upperFirst(tsName(f.Name))
+	}
+	return tsType(f.Type)
+}
+
 func tsArr(segs []string) string {
 	q := make([]string, len(segs))
 	for i, s := range segs {
@@ -90,14 +124,17 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 
 	for _, g := range root {
 		name, _ := g.Match.(string)
-		d, ok := descriptors[name]
-		if !ok || len(g.Children) == 0 {
+		if len(g.Children) == 0 {
+			continue
+		}
+		d, ok := descriptorFor(g.Children[0])
+		if !ok {
 			continue
 		}
 		r := tsResource{spec: d.Spec, group: name}
 		seen := map[string]bool{}
 		for _, a := range g.Children[0].Attributes {
-			if a.Key || structSkip[name+"."+a.Name] {
+			if a.Key || noStructField(a) {
 				continue
 			}
 			path, ok := pathSegs(a)
@@ -158,6 +195,10 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 		b.WriteString("\n")
 	}
 
+	// container is the config key of the applications-style container group,
+	// derived from the DSL so the app-scoping path is never a literal here.
+	container := containerKey(root)
+
 	// Session: the editable handle, with typed resource factories.
 	b.WriteString("/** An editable, wasm-resident project config session. */\n")
 	b.WriteString("export class Session {\n")
@@ -165,10 +206,10 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 	for _, r := range resources {
 		// accessor factory (optionally application-scoped) + name lister
 		fmt.Fprintf(&b, "  %s(name: string, app?: string): %sConfig {\n    return new %sConfig(this, name, app);\n  }\n", tsName(r.spec), r.spec, r.spec)
-		fmt.Fprintf(&b, "  %sNames(app?: string): Promise<string[]> {\n    return this.binding.list(this.handle, app ? [\"applications\", app, %q] : [%q]);\n  }\n", tsName(r.spec), r.group, r.group)
+		fmt.Fprintf(&b, "  %sNames(app?: string): Promise<string[]> {\n    return this.binding.list(this.handle, app ? [%q, app, %q] : [%q]);\n  }\n", tsName(r.spec), container, r.group, r.group)
 	}
 	b.WriteString("\n")
-	b.WriteString("  applications(): Promise<string[]> {\n    return this.binding.list(this.handle, [\"applications\"]);\n  }\n")
+	fmt.Fprintf(&b, "  %s(): Promise<string[]> {\n    return this.binding.list(this.handle, [%q]);\n  }\n", container, container)
 	b.WriteString("  compile(opts?: CompileOptions): Promise<CompileResult> {\n    return this.binding.compile(this.handle, opts);\n  }\n")
 	b.WriteString("  save(fs: AsyncFs, dir: string): Promise<void> {\n    return this.binding.save(this.handle, fs, dir);\n  }\n")
 	b.WriteString("  close(): Promise<void> {\n    return this.binding.close(this.handle);\n  }\n")
@@ -179,7 +220,7 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 		fmt.Fprintf(&b, "/** Typed accessors for a %s's config. */\n", strings.ToLower(r.spec))
 		fmt.Fprintf(&b, "export class %sConfig {\n", r.spec)
 		fmt.Fprintf(&b, "  private res: string[];\n")
-		fmt.Fprintf(&b, "  constructor(private s: Session, name: string, app?: string) {\n    this.res = app ? [\"applications\", app, %q, name] : [%q, name];\n  }\n", r.group, r.group)
+		fmt.Fprintf(&b, "  constructor(private s: Session, name: string, app?: string) {\n    this.res = app ? [%q, app, %q, name] : [%q, name];\n  }\n", container, r.group, r.group)
 		fmt.Fprintf(&b, "\n  delete(): Promise<void> {\n    return this.s.binding.delete(this.s.handle, this.res);\n  }\n")
 		for _, f := range r.fields {
 			// getter
@@ -194,6 +235,25 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 			// setter
 			fmt.Fprintf(&b, "  set%s(v: %s): Promise<void> {\n", upperFirst(f.name), f.typ)
 			fmt.Fprintf(&b, "    return this.s.binding.set(this.s.handle, this.res, %s, v);\n  }\n", tsArr(f.path))
+		}
+		b.WriteString("}\n\n")
+	}
+
+	// Compiled resource shapes: the data types as decoded from the TNS object
+	// (what the console receives over the wire), keyed by the compiled JSON keys.
+	structs, err := Structs(root)
+	if err != nil {
+		return nil, err
+	}
+	b.WriteString("// --- Compiled resource shapes (decoded from the TNS object) ---\n\n")
+	for _, m := range structs {
+		if m.SpecImport == "" {
+			continue // bare container struct (Application) — not a decode surface
+		}
+		fmt.Fprintf(&b, "/** %s as decoded from the compiled config object. */\n", m.Spec)
+		fmt.Fprintf(&b, "export interface %s {\n", m.Spec)
+		for _, f := range m.Fields {
+			fmt.Fprintf(&b, "  %s?: %s;\n", tsProp(wireKey(f)), tsWireType(m.Spec, f))
 		}
 		b.WriteString("}\n\n")
 	}
