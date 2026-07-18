@@ -123,9 +123,10 @@ func Embeds(names ...string) NodeOption {
 // THIS kind attached to it. The generator names that universal field from this
 // group's Resource iface and keys it by this group's config key (e.g. the
 // smartops group -> a `SmartOps []string` field on every resource, key
-// "smartops"). The compiler synthesizes the list in a pass (from tags), never
-// from an authored key — so this is purely generation metadata, no runtime
-// effect. Requires Resource(...) on the same node.
+// "smartops"). The compiler synthesizes the list from each resource's tags
+// (driver.AttachAll reads this same annotation): a "<key>:<name>" tag adds
+// <name>'s id to that resource's <key> list — it is never an authored key.
+// Requires Resource(...) on the same node.
 func AttachesToAll() NodeOption {
 	return GroupAnnotate("attachesToAll", true)
 }

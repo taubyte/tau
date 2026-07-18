@@ -61,13 +61,19 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 	// CompileDriver populated (source validation moved to the load-time Validator).
 	resolveRefs := driver.ResolveRefs(schema.CompileRoot())
 
+	// AttachAll performs the AttachesToAll() cross-cutting attachment: it reads the
+	// frozen attachSmartOpsFromTags step off the DSL annotation, turning each
+	// "smartops:<name>" resource tag into an entry on that resource's `smartops`
+	// wire list. Runs after the CompileDriver populated the name->id index.
+	attachAll := driver.AttachAll(schema.CompileRoot())
+
 	// IndexDriver replaces the whole pass4 layer: one generic transform that
 	// interprets the DSL's per-resource index-footprint closures to build the
 	// compiled `indexes` subtree (explicit V1 order, project + per-app scope).
 	indexDriver := driver.NewIndexDriver(schema.CompileRoot(), c.branch)
 
 	pipe := []transform.Transformer[object.Refrence]{}
-	for _, p := range [][]transform.Transformer[object.Refrence]{{compileDriver}, {resolveRefs}, pass3.Pipe(), {indexDriver}} {
+	for _, p := range [][]transform.Transformer[object.Refrence]{{compileDriver}, {resolveRefs}, {attachAll}, pass3.Pipe(), {indexDriver}} {
 		pipe = append(pipe, p...)
 	}
 
