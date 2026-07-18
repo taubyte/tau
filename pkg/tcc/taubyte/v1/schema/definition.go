@@ -21,10 +21,10 @@ var TaubyteRessources = []*Node{
 			TaubyteAttributes(
 				String("match"),
 				Bool("useRegex", Path("regex"), Compat("useRegex")),
-				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), StructBool("Local")),
+				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), StructBool("Local"), NoAccessors()),
 				Bytes("size", Path("storage", "size")),
-				String("encryption-type", Path("encryption", "type")),
-				String("encryption-key", Path("encryption", "key")),
+				String("encryption-type", Path("encryption", "type"), NoAccessors(), NoStructField()),
+				String("encryption-key", Path("encryption", "key"), NoAccessors()),
 			),
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
@@ -33,7 +33,7 @@ var TaubyteRessources = []*Node{
 	DefineGroup("domains",
 		DefineIter(
 			TaubyteAttributes(
-				String("fqdn", IsFqdn(), Field("Fqdn")),
+				String("fqdn", IsFqdn(), Field("Fqdn"), Accessor("FQDN"), NoGetter()),
 				String("certificate-data", Path("certificate", "cert"), Field("CertFile"), Tag("cert-file")),
 				String("certificate-key", Path("certificate", "key"), Field("KeyFile"), Tag("key-file")),
 				String("certificate-type", Path("certificate", "type"), InSet("inline", "auto"), Default(""), Field("CertType"), Tag("cert-type")),
@@ -52,7 +52,7 @@ var TaubyteRessources = []*Node{
 				String("p2p-protocol", Path("trigger", "protocol"), Compat("trigger", "service"), Default("")),
 				String("p2p-command", Path("trigger", "command")),
 				String("http-method", Path("trigger", "method"), IsHttpMethod()),
-				StringSlice("http-methods", Path("trigger", "methods")), // TO IMPLEMENT
+				StringSlice("http-methods", Path("trigger", "methods"), NoAccessors(), NoStructField()), // TO IMPLEMENT
 				StringSlice("http-domains", Path("trigger", "domains"), Compat("domains")),
 				StringSlice("http-paths", Path("trigger", "paths")),
 				String("source"),
@@ -72,8 +72,8 @@ var TaubyteRessources = []*Node{
 				String("path", Path("source", "path")),
 				String("branch", Path("source", "branch")),
 				String("git-provider", Path("source", Either("github")), Key(), Field("Provider")),
-				String("github-id", Path("source", "github", "id"), Field("RepoID"), Tag("repository-id")),
-				String("github-fullname", Path("source", "github", "fullname"), Field("RepoName"), Tag("repository-name")),
+				String("github-id", Path("source", "github", "id"), Field("RepoID"), Tag("repository-id"), NoAccessors()),
+				String("github-fullname", Path("source", "github", "fullname"), Field("RepoName"), Tag("repository-name"), NoAccessors()),
 			),
 			Addressing(HasBasicPath, HasIndex, HasWasmModule, HasNameIndex),
 			Embeds("Wasm"),
@@ -83,10 +83,10 @@ var TaubyteRessources = []*Node{
 		DefineIter(
 			TaubyteAttributes(
 				Bool("local"),
-				String("match", Path("channel", "match"), Field("Match")),
-				Bool("regex", Path("channel", "regex")),
-				Bool("mqtt", Path("bridges", "mqtt", "enable")),
-				Bool("websocket", Path("bridges", "websocket", "enable"), Tag("webSocket")),
+				String("match", Path("channel", "match"), Field("Match"), Accessor("ChannelMatch"), NoSetter()),
+				Bool("regex", Path("channel", "regex"), NoSetter()),
+				Bool("mqtt", Path("bridges", "mqtt", "enable"), Accessor("MQTT"), NoSetter()),
+				Bool("websocket", Path("bridges", "websocket", "enable"), Tag("webSocket"), Accessor("WebSocket"), NoSetter()),
 			),
 			Addressing(HasBasicPath, HasIndex, HasWebSocket, HasEmptyPath),
 			// messaging embeds Wasm beyond its capability flags — load-bearing in
@@ -114,6 +114,9 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasWasmModule),
 			Embeds("Wasm"),
 			Resource("smartops", "SmartOps", "SmartOp", "smartops"),
+			// smartops attach to every resource: each compiled resource carries a
+			// derived SmartOps []string field (key "smartops"), sourced here.
+			AttachesToAll(),
 		)),
 	DefineGroup("storages",
 		DefineIter(
@@ -121,9 +124,9 @@ var TaubyteRessources = []*Node{
 				String("type", Path(Either("object", "streaming")), Key()),
 				String("match"),
 				Bool("useRegex", Path("regex"), Compat("useRegex")),
-				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), StructBool("Public")),
-				Bool("versioning", Path("object", "versioning")),
-				Duration("ttl", Path("streaming", "ttl"), Field("Ttl")),
+				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), StructBool("Public"), NoAccessors()),
+				Bool("versioning", Path("object", "versioning"), NoSetter()),
+				Duration("ttl", Path("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter()),
 				Bytes("size", Path(Either("object", "streaming"), "size")),
 			),
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
@@ -137,8 +140,8 @@ var TaubyteRessources = []*Node{
 				StringSlice("paths", Path("paths"), Compat("source", "paths")), // TODO: add validation
 				String("branch", Path("source", "branch")),                     // TODO: deprecate
 				String("git-provider", Path("source", Either("github")), Key(), Field("Provider")),
-				String("github-id", Path("source", "github", "id"), Field("RepoID"), Tag("repository-id")),
-				String("github-fullname", Path("source", "github", "fullname"), Field("RepoName"), Tag("repository-name")),
+				String("github-id", Path("source", "github", "id"), Field("RepoID"), Tag("repository-id"), NoAccessors()),
+				String("github-fullname", Path("source", "github", "fullname"), Field("RepoName"), Tag("repository-name"), NoAccessors()),
 			),
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule),
 			Embeds("Basic", "Wasm"),
@@ -153,7 +156,8 @@ var TaubyteRessources = []*Node{
 // of the common fields, no object-addressing methods and no pkg/schema accessor
 // package (it's a container identity, not a config-decode resource).
 func applicationsGroup() *Node {
-	return DefineGroup("applications", DefineIterGroup(TaubyteAttributes(), TaubyteRessources...))
+	return DefineGroup("applications",
+		DefineIterGroup(TaubyteAttributes(), TaubyteRessources...).With(Singular("Application")))
 }
 
 // cloudsGroup: clouds.<fqdn>.{account, plan} — DefineIter (not Group, so no

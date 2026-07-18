@@ -22,14 +22,6 @@ var scalarGoType = map[string]string{
 	"bytes":    "uint64",
 }
 
-// structSkip lists DSL attrs with no direct struct field: a field folded
-// elsewhere (encryption-type) or unimplemented (http-methods). network-access is
-// NOT skipped — it carries a StructBool annotation projecting it to Local/Public.
-var structSkip = keySet(
-	"functions.http-methods",
-	"databases.encryption-type",
-)
-
 // StructModel is the template model for one pkg/specs/structure/<res>.go file.
 type StructModel struct {
 	Spec       string   // structureSpec type name, e.g. "Function"
@@ -112,8 +104,8 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 		// A group emits a struct if the DSL declares it a Resource (full: struct +
 		// addressing methods + SmartOps), or if it's a nested container group — an
 		// iterator that itself holds resource sub-groups (applications) — which
-		// compiles to a bare struct of the common fields only, named by
-		// singularizing the group (applications -> Application). Everything else
+		// compiles to a bare struct of the common fields only, named by its
+		// Singular() declaration (applications -> Application). Everything else
 		// (leaf maps like clouds, which decode to no type) is skipped.
 		var m *StructModel
 		bare := false
@@ -131,14 +123,24 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			caps, _ := iter.Meta["addressing"].([]engine.Capability)
 			m.Methods = addressingMethods(d.Recv, d.Spec, alias, caps)
 		} else if iter.Group && len(iter.Children) > 0 {
-			m = &StructModel{Spec: title(strings.TrimSuffix(name, "s")), Fields: commonFields(root)}
+			so, ok := iter.Meta["singular"].(string)
+			if !ok || so == "" {
+				return nil, fmt.Errorf("container group %q has no Singular() declaration", name)
+			}
+			m = &StructModel{Spec: so, Fields: commonFields(root)}
 			bare = true
 		} else {
 			continue
 		}
-		reserved := map[string]bool{"Id": true, "Name": true, "Description": true, "Tags": true, "SmartOps": true}
+		reserved := map[string]bool{}
+		for _, f := range commonFields(root) {
+			reserved[f.Name] = true
+		}
+		for _, t := range universalTail(root) {
+			reserved[t.name] = true
+		}
 		for _, a := range iter.Attributes {
-			if common[a.Name] || structSkip[name+"."+a.Name] {
+			if common[a.Name] || noStructField(a) {
 				continue
 			}
 			// A StructBool attr (network-access) projects to a bool field named
@@ -188,7 +190,9 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 					m.Fields = append(m.Fields, Field{Name: nm, Type: "bool"})
 				}
 			}
-			m.Fields = append(m.Fields, Field{Name: "SmartOps", Type: "[]string"})
+			for _, t := range universalTail(root) {
+				m.Fields = append(m.Fields, Field{Name: t.name, Type: t.goType})
+			}
 		}
 		out = append(out, m)
 	}

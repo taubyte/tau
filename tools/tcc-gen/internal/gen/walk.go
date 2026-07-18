@@ -1,7 +1,7 @@
 package gen
 
 import (
-	"strings"
+	"fmt"
 
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
@@ -35,7 +35,31 @@ func universalFields(root []*engine.Node) (head, tail []field) {
 		}
 		head = append(head, field{title(a.Name), goType(a.Type), a.Name})
 	}
-	return head, []field{{"SmartOps", "[]string", "smartops"}}
+	return head, universalTail(root)
+}
+
+// universalTail derives the trailing derived fields every resource carries from
+// the groups marked AttachesToAll: the field is named by the group's Resource
+// iface and keyed by the group's config key (the smartops group -> a SmartOps
+// []string field, key "smartops"). No such group -> no tail.
+func universalTail(root []*engine.Node) []field {
+	var tail []field
+	for _, g := range root {
+		if len(g.Children) == 0 {
+			continue
+		}
+		iter := g.Children[0]
+		if b, _ := iter.Meta["attachesToAll"].(bool); !b {
+			continue
+		}
+		d, ok := descriptorFor(iter)
+		if !ok {
+			continue // AttachesToAll requires Resource(...)
+		}
+		name, _ := g.Match.(string)
+		tail = append(tail, field{d.Iface, "[]string", name})
+	}
+	return tail
 }
 
 // containerKey returns the config key of the nested container group — the one
@@ -58,10 +82,28 @@ func containerKey(root []*engine.Node) string {
 	return ""
 }
 
-// containerSpec is the singular Go name for the container group (applications ->
-// Application) — the struct type and the parent-container accessor both take it.
-func containerSpec(root []*engine.Node) string {
-	return title(strings.TrimSuffix(containerKey(root), "s"))
+// containerSpec is the declared Go name (Singular) of the container group
+// (applications -> Application) — the struct type and the parent-container
+// accessor both take it. Returns "" if the schema has no container, or an error
+// if a container exists with no Singular() (the generator never guesses).
+func containerSpec(root []*engine.Node) (string, error) {
+	for _, g := range root {
+		if len(g.Children) == 0 {
+			continue
+		}
+		iter := g.Children[0]
+		if _, ok := descriptorFor(iter); ok {
+			continue
+		}
+		if iter.Group && len(iter.Children) > 0 {
+			if s, ok := iter.Meta["singular"].(string); ok && s != "" {
+				return s, nil
+			}
+			name, _ := g.Match.(string)
+			return "", fmt.Errorf("container group %q has no Singular() declaration", name)
+		}
+	}
+	return "", nil
 }
 
 // Resources walks the DSL resource groups and projects each into a Resource.
@@ -72,7 +114,10 @@ func Resources(root []*engine.Node) ([]*Resource, error) {
 	// The getter template gives every resource a fixed Name()/Get() plus an
 	// Application() accessor named for the container group; reserve those so a
 	// DSL attribute can never generate an accessor that collides with them.
-	container := containerSpec(root)
+	container, err := containerSpec(root)
+	if err != nil {
+		return nil, err
+	}
 	common := attrSet(commonAttrs(root))
 	head, tail := universalFields(root)
 	for _, g := range root {
@@ -98,9 +143,8 @@ func Resources(root []*engine.Node) ([]*Resource, error) {
 			if common[a.Name] {
 				continue
 			}
-			key := name + "." + a.Name
-			if a.Key || skipBoth[key] {
-				continue // map-key attr, or explicitly non-mechanical
+			if a.Key || (noSetter(a) && noGetter(a)) {
+				continue // map-key attr, or no mechanical accessor at all
 			}
 			path, ok := pathSegs(a)
 			if !ok {
@@ -127,10 +171,10 @@ func Resources(root []*engine.Node) ([]*Resource, error) {
 			distinctAlias := hasCompat && aliasName != nm && !reserved[aliasName]
 
 			// Canonical accessors (setters cap at depth 2: basic.Set/SetChild).
-			if !skipSet[key] && len(path) <= 2 {
+			if !noSetter(a) && len(path) <= 2 {
 				setters = append(setters, Accessor{Name: nm, GoType: gt, Body: setBody(path)})
 			}
-			if !skipGet[key] {
+			if !noGetter(a) {
 				body := getBody(gt, path)
 				if hasCompat {
 					// Canonical getter always reads path-then-compat so old
@@ -146,10 +190,10 @@ func Resources(root []*engine.Node) ([]*Resource, error) {
 			if distinctAlias {
 				reserved[aliasName] = true
 				doc := "// Deprecated: use " + nm + "."
-				if !skipSet[key] && len(compat) <= 2 {
+				if !noSetter(a) && len(compat) <= 2 {
 					setters = append(setters, Accessor{Name: aliasName, GoType: gt, Body: setBody(compat), Doc: doc})
 				}
-				if !skipGet[key] {
+				if !noGetter(a) {
 					getters = append(getters, Accessor{Name: aliasName, GoType: gt, Body: getBody(gt, compat), Doc: doc})
 				}
 			}

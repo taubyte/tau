@@ -45,9 +45,9 @@ func TestMapping(t *testing.T) {
 			wantGet:  `return basic.Get[string](g, "trigger", "protocol")`,
 		},
 		{
-			desc:     "name override",
+			desc:     "accessor name override",
 			group:    "domains",
-			attr:     engine.String("fqdn"),
+			attr:     engine.String("fqdn", engine.Accessor("FQDN")),
 			wantName: "FQDN",
 			wantSet:  `return basic.Set("fqdn", value)`,
 			wantGet:  `return basic.Get[string](g, "fqdn")`,
@@ -63,7 +63,7 @@ func TestMapping(t *testing.T) {
 		{
 			desc:     "depth-3 getter (variadic), no setter",
 			group:    "messaging",
-			attr:     engine.Bool("mqtt", engine.Path("bridges", "mqtt", "enable")),
+			attr:     engine.Bool("mqtt", engine.Path("bridges", "mqtt", "enable"), engine.Accessor("MQTT")),
 			wantName: "MQTT",
 			wantSet:  "", // depth 3 exceeds basic.SetChild
 			wantGet:  `return basic.Get[bool](g, "bridges", "mqtt", "enable")`,

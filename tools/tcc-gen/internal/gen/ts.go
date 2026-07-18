@@ -134,7 +134,7 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 		r := tsResource{spec: d.Spec, group: name}
 		seen := map[string]bool{}
 		for _, a := range g.Children[0].Attributes {
-			if a.Key || structSkip[name+"."+a.Name] {
+			if a.Key || noStructField(a) {
 				continue
 			}
 			path, ok := pathSegs(a)

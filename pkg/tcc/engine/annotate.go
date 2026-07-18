@@ -38,6 +38,46 @@ func Tag(key string) Option {
 	return Annotate("tag", key)
 }
 
+// Accessor overrides the exported NAME of the pkg/schema getter/setter a
+// generator emits for this attribute, when the config-key-derived name doesn't
+// match the existing public API (e.g. fqdn -> FQDN, match -> ChannelMatch).
+// Distinct from Field, which names the struct field. Generation-only.
+func Accessor(goName string) Option {
+	return Annotate("accessor", goName)
+}
+
+// NoSetter suppresses the generated pkg/schema setter for this attribute — the
+// write is folded into a combined hand-written helper (e.g. Channel/Bridges).
+// The getter is still emitted. Generation-only; no runtime effect.
+func NoSetter() Option {
+	return Annotate("noSetter", true)
+}
+
+// NoGetter suppresses the generated pkg/schema getter for this attribute — the
+// read applies a value transform the DSL can't express (e.g. fqdn lower-cases).
+// The setter is still emitted. Generation-only; no runtime effect.
+func NoGetter() Option {
+	return Annotate("noGetter", true)
+}
+
+// NoAccessors suppresses BOTH generated pkg/schema accessors — neither is
+// mechanical (a value transform, combined encryption, or deep github-* folded
+// into a hand-written helper own this attribute's config surface). Note: the TS
+// source facade is unaffected and still edits these keys. Generation-only.
+func NoAccessors() Option {
+	return func(a *Attribute) {
+		NoSetter()(a)
+		NoGetter()(a)
+	}
+}
+
+// NoStructField declares that this attribute projects to no structureSpec struct
+// field (and no TS wire/session field) — folded elsewhere (encryption-type) or
+// unimplemented (http-methods). Generation-only; no runtime effect.
+func NoStructField() Option {
+	return Annotate("noStructField", true)
+}
+
 // NodeOption mutates a node — the node-level analogue of Option. Passed to
 // DefineIter to attach opaque metadata to the object template (the node each
 // compiled resource-object matches), not to the parse rules.
@@ -84,6 +124,26 @@ func Embeds(names ...string) NodeOption {
 // Generation-only; no runtime effect.
 func DerivedBools(names ...string) NodeOption {
 	return GroupAnnotate("derivedBools", names)
+}
+
+// AttachesToAll marks a resource group as cross-cutting: every OTHER compiled
+// resource carries a trailing derived []string field listing the instances of
+// THIS kind attached to it. The generator names that universal field from this
+// group's Resource iface and keys it by this group's config key (e.g. the
+// smartops group -> a `SmartOps []string` field on every resource, key
+// "smartops"). The compiler synthesizes the list in a pass (from tags), never
+// from an authored key — so this is purely generation metadata, no runtime
+// effect. Requires Resource(...) on the same node.
+func AttachesToAll() NodeOption {
+	return GroupAnnotate("attachesToAll", true)
+}
+
+// Singular declares the Go type name a container group compiles to (e.g. the
+// applications group -> "Application"). Required on any container group (one
+// whose iterator holds resource sub-groups); the generator fails loudly rather
+// than guess a singular from the plural key. Generation-only; no runtime effect.
+func Singular(goName string) NodeOption {
+	return GroupAnnotate("singular", goName)
 }
 
 // StructBool declares that a transform pass projects this attribute's value into

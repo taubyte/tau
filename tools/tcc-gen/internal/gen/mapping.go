@@ -60,39 +60,15 @@ func attrSet(attrs []*engine.Attribute) map[string]bool {
 	return m
 }
 
-// nameOverrides pin the exported accessor name where the derived name (last plain
-// Path segment) does not match the existing public API.
-var nameOverrides = map[string]string{
-	"domains.fqdn":        "FQDN",
-	"storages.ttl":        "TTL",
-	"messaging.match":     "ChannelMatch",
-	"messaging.mqtt":      "MQTT",
-	"messaging.websocket": "WebSocket",
-}
+// noSetter / noGetter report the attribute's accessor-suppression annotations
+// (NoSetter/NoGetter/NoAccessors). An attribute with both suppressed has no
+// mechanical accessor at all (the old skipBoth case).
+func noSetter(a *engine.Attribute) bool { b, _ := a.Meta["noSetter"].(bool); return b }
+func noGetter(a *engine.Attribute) bool { b, _ := a.Meta["noGetter"].(bool); return b }
 
-// skipSet: emit the getter but NOT the setter — the write is folded into a
-// combined hand-written helper (Replicas/Channel/Bridges/Object/Streaming).
-var skipSet = keySet(
-	"messaging.match", "messaging.regex", "messaging.mqtt", "messaging.websocket",
-	"storages.versioning", "storages.ttl",
-)
-
-// skipGet: emit the setter but NOT the getter — the read applies a value
-// transform the DSL can't express (domains.fqdn lower-cases).
-var skipGet = keySet(
-	"domains.fqdn",
-)
-
-// skipBoth: neither accessor is mechanical — value transforms (network-access
-// bool<->string), combined encryption, or deep github-* folded into Git()/Github().
-// Keys use the DSL group name (note: the group is "websites", not "website").
-var skipBoth = keySet(
-	"functions.http-methods", // TO IMPLEMENT in the DSL; no accessor exists yet
-	"databases.network-access", "databases.encryption-type", "databases.encryption-key",
-	"storages.network-access",
-	"libraries.github-id", "libraries.github-fullname",
-	"websites.github-id", "websites.github-fullname",
-)
+// noStructField reports the NoStructField() annotation — the attribute projects
+// to no structureSpec struct field (and no TS wire/session field).
+func noStructField(a *engine.Attribute) bool { b, _ := a.Meta["noStructField"].(bool); return b }
 
 // goType maps a DSL type to the Go type used by the schema accessors. Float is
 // unused by resource schemas; "" signals "skip".
@@ -144,10 +120,10 @@ func compatSegs(a *engine.Attribute) (segs []string, ok bool) {
 	return plainSegs(a.Compat)
 }
 
-// accessorName is the exported Go name: an override, else the last plain Path
-// segment title-cased, else the attribute name title-cased.
+// accessorName is the exported Go name: an Accessor() override, else the last
+// plain Path segment title-cased, else the attribute name title-cased.
 func accessorName(group string, a *engine.Attribute) string {
-	if ov, has := nameOverrides[group+"."+a.Name]; has {
+	if ov, ok := a.Meta["accessor"].(string); ok && ov != "" {
 		return ov
 	}
 	base := a.Name
@@ -201,12 +177,4 @@ func quoteAll(segs []string) []string {
 		out[i] = fmt.Sprintf("%q", s)
 	}
 	return out
-}
-
-func keySet(keys ...string) map[string]bool {
-	m := make(map[string]bool, len(keys))
-	for _, k := range keys {
-		m[k] = true
-	}
-	return m
 }
