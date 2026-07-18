@@ -1,7 +1,5 @@
 package counters
 
-import goPath "path"
-
 type path string
 
 type Path interface {
@@ -31,7 +29,9 @@ func (c path) String() string {
 }
 
 func join[v string | path](basePath Path, toJoin v) path {
-	return NewPath(goPath.Join(basePath.String(), string(toJoin)))
+	// plain concat: every joined token is a clean, non-empty constant
+	// (vars.go) or an id, so path.Join's clean/lazybuf is dead weight.
+	return NewPath(basePath.String() + "/" + string(toJoin))
 }
 
 func (c path) Join(toJoin string) path {
