@@ -1,8 +1,6 @@
 package gen
 
 import (
-	"fmt"
-
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
 )
 
@@ -39,12 +37,12 @@ func Resources(root []*engine.Node) ([]*Resource, error) {
 	var out []*Resource
 	for _, g := range root {
 		name, _ := g.Match.(string)
-		d, ok := descriptors[name]
-		if !ok {
+		if len(g.Children) == 0 {
 			continue
 		}
-		if len(g.Children) == 0 {
-			return nil, fmt.Errorf("group %q has no iterator child node", name)
+		d, ok := descriptorFor(g.Children[0])
+		if !ok {
+			continue
 		}
 		r := &Resource{descriptor: d}
 

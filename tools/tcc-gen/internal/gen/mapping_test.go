@@ -135,8 +135,16 @@ func resourceByGroup(t *testing.T, group string) *Resource {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var pkg string
+	for _, g := range schema.TaubyteRessources {
+		if name, _ := g.Match.(string); name == group && len(g.Children) > 0 {
+			if d, ok := descriptorFor(g.Children[0]); ok {
+				pkg = d.Package
+			}
+		}
+	}
 	for _, r := range rs {
-		if descriptors[group].Package == r.Package {
+		if r.Package == pkg {
 			return r
 		}
 	}

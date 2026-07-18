@@ -90,8 +90,11 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 
 	for _, g := range root {
 		name, _ := g.Match.(string)
-		d, ok := descriptors[name]
-		if !ok || len(g.Children) == 0 {
+		if len(g.Children) == 0 {
+			continue
+		}
+		d, ok := descriptorFor(g.Children[0])
+		if !ok {
 			continue
 		}
 		r := tsResource{spec: d.Spec, group: name}

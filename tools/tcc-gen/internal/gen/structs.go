@@ -108,23 +108,22 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			continue
 		}
 		iter := g.Children[0]
-		// A group emits a struct iff the DSL declares its Spec; type name and
+		// A group emits a struct iff the DSL declares it a Resource; type name and
 		// specs package come from there, everything else derives — no hardcoding.
-		sp, ok := iter.Meta["spec"].([2]string)
+		d, ok := descriptorFor(iter)
 		if !ok {
 			continue
 		}
-		typeName, pkgDir := sp[0], sp[1]
-		recv := strings.ToLower(typeName[:1])
-		alias := strings.ToLower(typeName) + "Spec"
-		imp := "github.com/taubyte/tau/pkg/specs/" + pkgDir
+		recv := d.Recv
+		alias := strings.ToLower(d.Spec) + "Spec"
+		imp := "github.com/taubyte/tau/pkg/specs/" + d.SpecPkg
 
-		m := &StructModel{Spec: typeName, Fields: commonFields(), SpecImport: imp, SpecAlias: alias}
+		m := &StructModel{Spec: d.Spec, Fields: commonFields(), SpecImport: imp, SpecAlias: alias}
 		if e, ok := iter.Meta["embeds"].([]string); ok {
 			m.Embeds = e
 		}
 		caps, _ := iter.Meta["addressing"].([]engine.Capability)
-		m.Methods = addressingMethods(recv, typeName, alias, caps)
+		m.Methods = addressingMethods(recv, d.Spec, alias, caps)
 		reserved := map[string]bool{"Id": true, "Name": true, "Description": true, "Tags": true, "SmartOps": true}
 		for _, a := range iter.Attributes {
 			if commonAttrs[a.Name] || structSkip[name+"."+a.Name] {

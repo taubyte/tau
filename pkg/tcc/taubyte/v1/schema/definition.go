@@ -28,7 +28,7 @@ var TaubyteRessources = []*Node{
 			),
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
-			Spec("Database", "database"),
+			Resource("databases", "Database", "Database", "database"),
 		)),
 	DefineGroup("domains",
 		DefineIter(
@@ -41,7 +41,7 @@ var TaubyteRessources = []*Node{
 			// domain's BasicPath is bespoke (fqdn-reversed), so it's not tagged here.
 			Addressing(HasIndex),
 			Embeds("Indexer"),
-			Spec("Domain", "domain"),
+			Resource("domains", "Domain", "Domain", "domain"),
 		)),
 	DefineGroup("functions",
 		DefineIter(
@@ -62,7 +62,7 @@ var TaubyteRessources = []*Node{
 			),
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule, HasServices),
 			Embeds("Wasm"),
-			Spec("Function", "function"),
+			Resource("functions", "Function", "Function", "function"),
 			// secure is synthesized from type=="https" in pass1.
 			DerivedBools("Secure"),
 		)),
@@ -77,7 +77,7 @@ var TaubyteRessources = []*Node{
 			),
 			Addressing(HasBasicPath, HasIndex, HasWasmModule, HasNameIndex),
 			Embeds("Wasm"),
-			Spec("Library", "library"),
+			Resource("libraries", "Library", "Library", "library"),
 		)),
 	DefineGroup("messaging",
 		DefineIter(
@@ -92,7 +92,7 @@ var TaubyteRessources = []*Node{
 			// messaging embeds Wasm beyond its capability flags — load-bearing in
 			// the dream inject path (services/tns/mocks casts to structureSpec.Wasm).
 			Embeds("Basic", "Wasm"),
-			Spec("Messaging", "messaging"),
+			Resource("messaging", "Messaging", "Messaging", "messaging"),
 		)),
 	DefineGroup("services",
 		DefineIter(
@@ -101,7 +101,7 @@ var TaubyteRessources = []*Node{
 			),
 			Addressing(HasIndex, HasEmptyPath),
 			Embeds("Indexer"),
-			Spec("Service", "service"),
+			Resource("services", "Service", "Service", "service"),
 		)),
 	DefineGroup("smartops",
 		DefineIter(
@@ -113,7 +113,7 @@ var TaubyteRessources = []*Node{
 			),
 			Addressing(HasBasicPath, HasIndex, HasWasmModule),
 			Embeds("Wasm"),
-			Spec("SmartOp", "smartops"),
+			Resource("smartops", "SmartOps", "SmartOp", "smartops"),
 		)),
 	DefineGroup("storages",
 		DefineIter(
@@ -128,7 +128,7 @@ var TaubyteRessources = []*Node{
 			),
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
-			Spec("Storage", "storage"),
+			Resource("storages", "Storage", "Storage", "storage"),
 		)),
 	DefineGroup("websites",
 		DefineIter(
@@ -142,7 +142,7 @@ var TaubyteRessources = []*Node{
 			),
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule),
 			Embeds("Basic", "Wasm"),
-			Spec("Website", "website"),
+			Resource("website", "Website", "Website", "website"),
 		)),
 }
 

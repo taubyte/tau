@@ -94,11 +94,16 @@ func StructBool(goName string) Option {
 	return Annotate("structBool", goName)
 }
 
-// Spec declares the structureSpec type this resource compiles into (typeName)
-// and the pkg/specs sub-package its object-addressing helpers live in (pkgDir),
-// so the generator can emit pkg/specs/structure/<res>.go entirely from the DSL —
-// import alias, receiver, file name and method delegates all derive from these.
-// Generation-only; no runtime effect.
-func Spec(typeName, pkgDir string) NodeOption {
-	return GroupAnnotate("spec", [2]string{typeName, pkgDir})
+// Resource declares the irregular Go names a resource generates into, so the
+// generator needs no hardcoded per-resource table:
+//   - schemaPkg: the pkg/schema/<dir> accessor package (usually the group name;
+//     "website" for the "websites" group).
+//   - iface:     the exported accessor interface, e.g. "Database", "SmartOps".
+//   - specType:  the structureSpec type, e.g. "Database", "SmartOp".
+//   - specPkg:   the pkg/specs/<dir> addressing-helper package.
+//
+// Everything else — struct name, receiver, error noun, folder constant, import
+// alias, file name — derives from these. Generation-only; no runtime effect.
+func Resource(schemaPkg, iface, specType, specPkg string) NodeOption {
+	return GroupAnnotate("resource", [4]string{schemaPkg, iface, specType, specPkg})
 }
