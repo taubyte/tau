@@ -248,14 +248,15 @@ func (d *IndexDriver) Process(ct transform.Context[object.Refrence], o object.Ob
 	// Build the pass4-shaped pipe: each group is Sub("object")+Global so the
 	// context path (root, project-object-subtree[, app]) and the project-then-apps
 	// accumulation order are byte-for-byte what the hand-written passes produced.
+	container := containerKey(d.root)
 	pipe := make([]transform.Transformer[object.Refrence], 0, len(indexOrder))
 	for _, key := range indexOrder {
 		g := findGroup(d.root, key)
 		if g == nil || len(g.Children) == 0 {
 			continue
 		}
-		gi := &groupIndexer{groupKey: key, iter: g.Children[0], branch: d.branch}
-		pipe = append(pipe, utils.Sub(utils.Global(gi), "object"))
+		gi := &groupIndexer{groupKey: key, iter: g.Children[0], branch: d.branch, container: container}
+		pipe = append(pipe, utils.Sub(utils.Global(container, gi), "object"))
 	}
 
 	return transform.Pipe(ct, o, pipe...)
@@ -275,9 +276,10 @@ func findGroup(root *engine.Node, key string) *engine.Node {
 // every pass4/<resource>.go file: it computes the identity/IndexValue/Lookup each
 // pass4 file computed by hand, then runs the group's declared closures.
 type groupIndexer struct {
-	groupKey string
-	iter     *engine.Node
-	branch   string
+	groupKey  string
+	iter      *engine.Node
+	branch    string
+	container string
 }
 
 func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
@@ -297,9 +299,9 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 
 	appId := ""
 	if configRoot != config {
-		appsObj, err := configRoot.Child("applications").Object()
+		appsObj, err := configRoot.Child(gi.container).Object()
 		if err != nil {
-			return nil, fmt.Errorf("fetching applications failed with %w", err)
+			return nil, fmt.Errorf("fetching %s failed with %w", gi.container, err)
 		}
 		appId = appsObj.Child(config).Name()
 	}

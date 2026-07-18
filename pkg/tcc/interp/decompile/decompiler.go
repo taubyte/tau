@@ -51,7 +51,16 @@ func (d *Decompiler) Decompile(obj Object) error {
 	// DecompileDriver is the mechanical inverse of the forward CompileDriver +
 	// ResolveRefs, driven by the same schema DSL; it replaces the hand-written
 	// decompile/pass2 (ref id->name) and decompile/pass3 (per-resource inverse).
-	pipe := append(pass1.Pipe(), interp.NewDecompileDriver(d.compileRoot))
+	//
+	// The chroot-unwrap (pass1) is only needed when the forward path chrooted — i.e.
+	// when the schema declares indexing. When it did not there is no `object`
+	// wrapper and pass1 is a no-op, so gating it keeps v1 identical and skips dead
+	// work for schemas without an `indexes` sibling.
+	pipe := []transform.Transformer[object.Refrence]{}
+	if interp.UsesIndexing(d.compileRoot) {
+		pipe = append(pipe, pass1.Pipe()...)
+	}
+	pipe = append(pipe, interp.NewDecompileDriver(d.compileRoot))
 
 	ctx := transform.NewContext[object.Refrence](context.Background())
 	restored, err := transform.Pipe(ctx, obj, pipe...)

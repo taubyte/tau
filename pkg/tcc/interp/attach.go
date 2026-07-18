@@ -27,7 +27,7 @@ import (
 // (matching the frozen scope rules), and it MUST run after the CompileDriver has
 // populated the name->id index — a group's names only resolve once it is indexed.
 func AttachAll(root *engine.Node) transform.Transformer[object.Refrence] {
-	return utils.Global(&attachAll{groups: root.Children})
+	return utils.Global(containerKey(root), &attachAll{groups: root.Children})
 }
 
 type attachAll struct {

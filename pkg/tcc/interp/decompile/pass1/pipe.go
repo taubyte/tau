@@ -8,6 +8,6 @@ import (
 
 func Pipe() []transform.Transformer[object.Refrence] {
 	return []transform.Transformer[object.Refrence]{
-		utils.Global(Chroot()),
+		utils.Global("", Chroot()),
 	}
 }

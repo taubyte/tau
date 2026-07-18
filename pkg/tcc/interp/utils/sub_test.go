@@ -15,7 +15,7 @@ func TestSub_ProcessInSubObject(t *testing.T) {
 	obj.Set("id", "project-id-123")
 
 	// Execute: Use Sub wrapper to process in "object" sub-object
-	wrapped := Sub(Global(transform.Transformer[object.Refrence](&mockTransformer{})), "object")
+	wrapped := Sub(Global("", transform.Transformer[object.Refrence](&mockTransformer{})), "object")
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
 	result, err := wrapped.Process(ctx, obj)
 
@@ -38,7 +38,7 @@ func TestSub_WithNestedPath(t *testing.T) {
 	funcSel.Set("id", "func-id-456")
 	funcSel.Set("type", "http")
 
-	wrapped := Sub(Global(transform.Transformer[object.Refrence](&mockTransformer{})), "object")
+	wrapped := Sub(Global("", transform.Transformer[object.Refrence](&mockTransformer{})), "object")
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
 	result, err := wrapped.Process(ctx, obj)
 
@@ -61,7 +61,7 @@ func TestSub_CreatesPathIfNotExists(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("id", "project-id-123")
 
-	wrapped := Sub(Global(transform.Transformer[object.Refrence](&mockTransformer{})), "newPath")
+	wrapped := Sub(Global("", transform.Transformer[object.Refrence](&mockTransformer{})), "newPath")
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
 	result, err := wrapped.Process(ctx, obj)
 

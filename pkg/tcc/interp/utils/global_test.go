@@ -41,7 +41,7 @@ func TestGlobal_ProcessProjectAndApps(t *testing.T) {
 	appFuncSel.Set("type", "https")
 
 	// Execute: Use Global wrapper with mock transformer
-	wrapped := Global(transform.Transformer[object.Refrence](&mockTransformer{}))
+	wrapped := Global("applications", transform.Transformer[object.Refrence](&mockTransformer{}))
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
 	result, err := wrapped.Process(ctx, obj)
 
@@ -69,7 +69,7 @@ func TestGlobal_NoApplications(t *testing.T) {
 	funcSel.Set("id", "func-id")
 	funcSel.Set("type", "http")
 
-	wrapped := Global(transform.Transformer[object.Refrence](&mockTransformer{}))
+	wrapped := Global("applications", transform.Transformer[object.Refrence](&mockTransformer{}))
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
 	result, err := wrapped.Process(ctx, obj)
 
@@ -101,7 +101,7 @@ func TestGlobal_MultipleApplications(t *testing.T) {
 	app2FuncSel.Set("id", "func-id-2")
 	app2FuncSel.Set("type", "https")
 
-	wrapped := Global(transform.Transformer[object.Refrence](&mockTransformer{}))
+	wrapped := Global("applications", transform.Transformer[object.Refrence](&mockTransformer{}))
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
 	result, err := wrapped.Process(ctx, obj)
 
@@ -121,7 +121,7 @@ func TestGlobal_ProcessError(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("id", "project-id-123")
 
-	wrapped := Global(transform.Transformer[object.Refrence](&errorTransformer{}))
+	wrapped := Global("applications", transform.Transformer[object.Refrence](&errorTransformer{}))
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
 	_, err := wrapped.Process(ctx, obj)
 
@@ -153,7 +153,7 @@ func TestGlobal_ApplicationProcessError(t *testing.T) {
 	appSel.Add(appObj)
 
 	// Use app error transformer
-	wrapped := Global(transform.Transformer[object.Refrence](&appErrorTransformer{}))
+	wrapped := Global("applications", transform.Transformer[object.Refrence](&appErrorTransformer{}))
 	ctx := transform.NewContext[object.Refrence](context.Background(), obj)
 	_, err := wrapped.Process(ctx, obj)
 

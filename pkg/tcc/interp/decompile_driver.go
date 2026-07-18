@@ -49,16 +49,17 @@ func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o objec
 	//   - the per-resource inverse in the fixed pass3 order, applications first so
 	//     the resource walks that follow can iterate apps by whatever key they now
 	//     carry (the walk is key-agnostic).
+	container := containerKey(d.root)
 	pipe := []transform.Transformer[object.Refrence]{
-		utils.Global(&decompileRefs{groups: d.root.Children}),
-		&decompileApps{},
+		utils.Global(container, &decompileRefs{groups: d.root.Children}),
+		&decompileApps{container: container},
 	}
 	for _, key := range decompileOrder {
 		g := findGroup(d.root, key)
 		if g == nil || len(g.Children) == 0 {
 			continue
 		}
-		pipe = append(pipe, utils.Global(&decompileResource{groupKey: key, iter: g.Children[0]}))
+		pipe = append(pipe, utils.Global(container, &decompileResource{groupKey: key, iter: g.Children[0]}))
 	}
 	return transform.Pipe(ct, o, pipe...)
 }
@@ -201,15 +202,18 @@ func invertRefAttr(sel object.Selector[object.Refrence], ra refAttr, getMap func
 // application's compiled id key back to its authored name (restoring the id field),
 // mirroring decompile/pass3/applications.go. It does NOT recurse — the per-resource
 // walks that follow handle each app's nested resources via utils.Global.
-type decompileApps struct{}
+type decompileApps struct{ container string }
 
 func (a *decompileApps) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	apps, err := o.Child("applications").Object()
+	if a.container == "" {
+		return o, nil
+	}
+	apps, err := o.Child(a.container).Object()
 	if err == object.ErrNotExist {
 		return o, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("fetching applications failed with %w", err)
+		return nil, fmt.Errorf("fetching %s failed with %w", a.container, err)
 	}
 	for _, id := range apps.Children() {
 		if _, err := utils.RenameByName(apps.Child(id)); err != nil {

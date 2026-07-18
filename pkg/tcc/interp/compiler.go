@@ -63,36 +63,11 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 		return nil, nil, err
 	}
 
-	// The CompileDriver replaces the whole pass1 layer: one generic transform
-	// that interprets the schema DSL to do every structural projection pass1 did.
-	compileDriver := newCompileDriver(c.compileRoot, c.cloud, c.branch)
-
-	// ResolveRefs replaces the whole pass2 layer: a generic transform that
-	// resolves every Ref(...)-annotated attribute against the name->id index the
-	// CompileDriver populated (source validation moved to the load-time Validator).
-	resolveRefs := ResolveRefs(c.compileRoot)
-
-	// AttachAll performs the AttachesToAll() cross-cutting attachment: it reads the
-	// frozen attachSmartOpsFromTags step off the DSL annotation, turning each
-	// "smartops:<name>" resource tag into an entry on that resource's `smartops`
-	// wire list. Runs after the CompileDriver populated the name->id index.
-	attachAll := AttachAll(c.compileRoot)
-
-	// IndexDriver replaces the whole pass4 layer: one generic transform that
-	// interprets the DSL's per-resource index-footprint closures to build the
-	// compiled `indexes` subtree (explicit V1 order, project + per-app scope).
-	indexDriver := NewIndexDriver(c.compileRoot, c.branch)
-
-	pipe := []transform.Transformer[object.Refrence]{}
-	for _, p := range [][]transform.Transformer[object.Refrence]{{compileDriver}, {resolveRefs}, {attachAll}, pass3.Pipe(), {indexDriver}} {
-		pipe = append(pipe, p...)
-	}
-
 	transformCtx := transform.NewContext[object.Refrence](ctx)
 	result, err := transform.Pipe(
 		transformCtx,
 		obj,
-		pipe...,
+		compilePipe(c.compileRoot, c.cloud, c.branch)...,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -103,4 +78,42 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 	validations := validationsStore.Get()
 
 	return result, validations, nil
+}
+
+// compilePipe assembles the transform pipeline from what the schema root actually
+// declares, so a schema that doesn't use a feature doesn't pay for its pass. The
+// CompileDriver always runs; the rest are gated on generic predicates over the
+// root's DSL annotations. For the v1 schema every predicate is true, so the pipe is
+// byte-for-byte the historical fixed sequence
+// {compileDriver, resolveRefs, attachAll, chroot, indexDriver}.
+func compilePipe(root *engine.Node, cloud, branch string) []transform.Transformer[object.Refrence] {
+	// The CompileDriver replaces the whole pass1 layer: one generic transform that
+	// interprets the schema DSL to do every structural projection pass1 did.
+	pipe := []transform.Transformer[object.Refrence]{
+		newCompileDriver(root, cloud, branch),
+	}
+
+	// ResolveRefs (pass2): resolve every Ref(...)-annotated attribute against the
+	// name->id index the CompileDriver populated. Only needed if the schema has refs.
+	if usesRefs(root) {
+		pipe = append(pipe, ResolveRefs(root))
+	}
+
+	// AttachAll: the AttachesToAll() cross-cutting attachment, turning each
+	// "<group>:<name>" resource tag into an entry on that resource's wire list. Only
+	// needed if some group declares AttachesToAll.
+	if usesAttachesToAll(root) {
+		pipe = append(pipe, AttachAll(root))
+	}
+
+	// IndexDriver (pass4): interpret the DSL's per-resource index-footprint closures
+	// to build the compiled `indexes` subtree. The chroot (pass3) exists solely to
+	// make room for that `indexes` sibling, so both are gated together on whether any
+	// group declares an index footprint.
+	if UsesIndexing(root) {
+		pipe = append(pipe, pass3.Pipe()...)
+		pipe = append(pipe, NewIndexDriver(root, branch))
+	}
+
+	return pipe
 }

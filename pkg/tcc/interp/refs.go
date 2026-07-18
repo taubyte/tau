@@ -21,7 +21,7 @@ import (
 // key the store identically (app -> project -> root scope walk). Resolution runs
 // after the CompileDriver, so the index is complete before any ref is read.
 func ResolveRefs(root *engine.Node) transform.Transformer[object.Refrence] {
-	return utils.Global(&resolveRefs{groups: root.Children})
+	return utils.Global(containerKey(root), &resolveRefs{groups: root.Children})
 }
 
 type resolveRefs struct {
