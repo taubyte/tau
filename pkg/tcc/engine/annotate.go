@@ -104,6 +104,30 @@ type Capability interface {
 	String() string
 }
 
+// MethodSpec is one object-addressing method a capability contributes to a
+// generated structureSpec struct: the Go method Name, its Params and Ret (as
+// rendered source fragments), and the Args passed to the delegate. ViaTns picks
+// the delegate form — <alias>.Tns().<Name>(args) when true, <alias>.<Name>(args)
+// when false. "@" in Args expands to the method receiver. Carrying the method
+// shape as data is what lets a generator render a capability's methods without a
+// term-keyed switch. Generation-only; no runtime effect.
+type MethodSpec struct {
+	Name   string
+	Params string
+	Ret    string
+	Args   string
+	ViaTns bool
+}
+
+// MethodCarrier is a Capability that also declares the object-addressing methods
+// it generates. A generator reads AddressingMethods() to render them, so the
+// capability's codegen meaning lives on the term — the generator needs neither a
+// per-capability switch nor a dependency on where the capability is defined.
+type MethodCarrier interface {
+	Capability
+	AddressingMethods() []MethodSpec
+}
+
 // Addressing records the set of TNS-key capabilities a compiled object has, for a
 // generator to emit its path helpers. Generation-only; no runtime effect.
 func Addressing(caps ...Capability) NodeOption {

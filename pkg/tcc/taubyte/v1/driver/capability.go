@@ -17,6 +17,11 @@ import (
 type Cap struct {
 	Name string
 
+	// Gen is the object-addressing methods this capability contributes to a
+	// generated structureSpec struct — the codegen face tcc-gen renders through
+	// the engine.MethodCarrier interface. Empty for a capability with no methods.
+	Gen []engine.MethodSpec
+
 	// ByName computes the capability's by-Name index path from the group's
 	// PathVariable — used by IndexByName. nil unless the capability is a by-Name
 	// index role.
@@ -34,4 +39,8 @@ type Cap struct {
 // reads only String() is unaffected.
 func (c *Cap) String() string { return c.Name }
 
-var _ engine.Capability = (*Cap)(nil)
+// AddressingMethods makes Cap an engine.MethodCarrier: it hands the generator the
+// method specs declared on the term, so tcc-gen renders them without a switch.
+func (c *Cap) AddressingMethods() []engine.MethodSpec { return c.Gen }
+
+var _ engine.MethodCarrier = (*Cap)(nil)

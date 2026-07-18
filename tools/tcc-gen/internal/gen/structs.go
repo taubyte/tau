@@ -27,47 +27,39 @@ type StructModel struct {
 }
 
 // addressingMethods emits the object-addressing methods for a resource from its
-// Addressing capabilities. Bodies delegate to <alias>.Tns(); the resource field
-// each threads is fixed per capability (.Id for basic/index, .Name for
-// wasm/index-path/name-index, .Command for services). project/app arg names are
-// normalized (some hand-written variants used projectId/appId — cosmetic only).
+// Addressing capabilities. Each capability carries its own method specs (an
+// engine.MethodCarrier), so there is no per-capability switch here: the loop
+// renders whatever each term declares, in declaration order. GetName/SetId/GetId
+// bracket the set and are the same for every resource.
 func addressingMethods(recv, spec, alias string, caps []engine.Capability) []string {
 	r := recv
-	sig := func(name, args, ret string) string {
-		return fmt.Sprintf("func (%s *%s) %s(%s) %s {\n", r, spec, name, args, ret)
-	}
-	tns := func(m, args string) string { return fmt.Sprintf("\treturn %s.Tns().%s(%s)\n}", alias, m, args) }
-
 	out := []string{
 		fmt.Sprintf("func (%s %s) GetName() string {\n\treturn %s.Name\n}", r, spec, r),
 		fmt.Sprintf("func (%s *%s) SetId(id string) {\n\t%s.Id = id\n}", r, spec, r),
 	}
 	for _, c := range caps {
-		switch c.String() {
-		case "basic":
-			out = append(out, sig("BasicPath", "branch, commit, project, app string", "(*common.TnsPath, error)")+tns("BasicPath", "branch, commit, project, app, "+r+".Id"))
-		case "index":
-			out = append(out, sig("IndexValue", "branch, project, app string", "(*common.TnsPath, error)")+tns("IndexValue", "branch, project, app, "+r+".Id"))
-		case "indexPath":
-			out = append(out, sig("IndexPath", "project, app string", "*common.TnsPath")+tns("IndexPath", "project, app, "+r+".Name"))
-		case "http":
-			out = append(out, sig("HttpPath", "fqdn string", "(*common.TnsPath, error)")+tns("HttpPath", "fqdn"))
-		case "wasm":
-			out = append(out, sig("WasmModulePath", "project, app string", "(*common.TnsPath, error)")+tns("WasmModulePath", "project, app, "+r+".Name"))
-			out = append(out, fmt.Sprintf("func (%s *%s) ModuleName() string {\n\treturn %s.ModuleName(%s.Name)\n}", r, spec, alias, r))
-		case "services":
-			out = append(out, sig("ServicesPath", "project, app, serviceId string", "(*common.TnsPath, error)")+tns("ServicesPath", "project, app, serviceId, "+r+".Command"))
-		case "empty":
-			out = append(out, sig("EmptyPath", "branch, commit, project, app string", "(*common.TnsPath, error)")+tns("EmptyPath", "branch, commit, project, app"))
-		case "websocket":
-			out = append(out, sig("WebSocketHashPath", "project, app string", "(*common.TnsPath, error)")+tns("WebSocketHashPath", "project, app"))
-			out = append(out, sig("WebSocketPath", "hash string", "(*common.TnsPath, error)")+tns("WebSocketPath", "hash"))
-		case "nameIndex":
-			out = append(out, sig("NameIndex", "", "*common.TnsPath")+tns("NameIndex", r+".Name"))
+		mc, ok := c.(engine.MethodCarrier)
+		if !ok {
+			continue
+		}
+		for _, m := range mc.AddressingMethods() {
+			out = append(out, renderMethod(r, spec, alias, m))
 		}
 	}
 	out = append(out, fmt.Sprintf("func (%s *%s) GetId() string {\n\treturn %s.Id\n}", r, spec, r))
 	return out
+}
+
+// renderMethod renders one capability method spec to Go source. "@" in the args
+// expands to the receiver; ViaTns picks the delegate form (<alias>.Tns().<Name>
+// vs <alias>.<Name>). Produces the exact bytes the old per-capability switch did.
+func renderMethod(recv, spec, alias string, m engine.MethodSpec) string {
+	args := strings.ReplaceAll(m.Args, "@", recv)
+	header := fmt.Sprintf("func (%s *%s) %s(%s) %s {\n", recv, spec, m.Name, m.Params, m.Ret)
+	if m.ViaTns {
+		return header + fmt.Sprintf("\treturn %s.Tns().%s(%s)\n}", alias, m.Name, args)
+	}
+	return header + fmt.Sprintf("\treturn %s.%s(%s)\n}", alias, m.Name, args)
 }
 
 // Field is one struct field. Name/Type/Tag drive the Go struct emit; Required
