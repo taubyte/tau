@@ -21,20 +21,19 @@ var scalarGoType = map[string]string{
 	"bytes":    "uint64",
 }
 
-// structSkip lists DSL attrs with no direct struct field: value transforms whose
-// struct representation is a different hand-written field (network-access ->
-// Local/Public bool), a field folded elsewhere (encryption-type), or unimplemented
-// (http-methods). Everything else projects to exactly one struct field.
+// structSkip lists DSL attrs with no direct struct field: a field folded
+// elsewhere (encryption-type) or unimplemented (http-methods). network-access is
+// NOT skipped — it carries a StructBool annotation projecting it to Local/Public.
 var structSkip = keySet(
 	"functions.http-methods",
-	"databases.network-access", "databases.encryption-type",
-	"storages.network-access",
+	"databases.encryption-type",
 )
 
-// StructModel is the template model for one pkg/specs/structure/<res>.go proposal.
+// StructModel is the template model for one pkg/specs/structure/<res>.go file.
 type StructModel struct {
-	Spec    string  // structureSpec type name, e.g. "Function"
-	Fields  []Field // DSL-derived fields (common + resource + SmartOps)
+	Spec    string   // structureSpec type name, e.g. "Function"
+	Fields  []Field  // DSL-derived fields (common + resource + derived + SmartOps)
+	Embeds  []string // embedded interface types, e.g. "Basic", "Indexer", "Wasm"
 	Skipped []string
 }
 
@@ -61,10 +60,25 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 		if !ok || len(g.Children) == 0 {
 			continue
 		}
+		iter := g.Children[0]
 		m := &StructModel{Spec: d.Spec, Fields: commonFields()}
+		if e, ok := iter.Meta["embeds"].([]string); ok {
+			m.Embeds = e
+		}
 		reserved := map[string]bool{"Id": true, "Name": true, "Description": true, "Tags": true, "SmartOps": true}
-		for _, a := range g.Children[0].Attributes {
+		for _, a := range iter.Attributes {
 			if commonAttrs[a.Name] || structSkip[name+"."+a.Name] {
+				continue
+			}
+			// A StructBool attr (network-access) projects to a bool field named
+			// by the annotation, decoded from the compiled key lower(name).
+			if b, ok := a.Meta["structBool"].(string); ok && b != "" {
+				if reserved[b] {
+					m.Skipped = append(m.Skipped, name+"."+a.Name)
+					continue
+				}
+				reserved[b] = true
+				m.Fields = append(m.Fields, Field{Name: b, Type: "bool"})
 				continue
 			}
 			gt := goType(a.Type)
@@ -90,6 +104,16 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 				_, f.EnumString = a.Meta["enumString"].(bool)
 			}
 			m.Fields = append(m.Fields, f)
+		}
+		// Derived bool fields synthesized by transform passes (e.g. Secure).
+		if db, ok := iter.Meta["derivedBools"].([]string); ok {
+			for _, nm := range db {
+				if reserved[nm] {
+					continue
+				}
+				reserved[nm] = true
+				m.Fields = append(m.Fields, Field{Name: nm, Type: "bool"})
+			}
 		}
 		m.Fields = append(m.Fields, Field{Name: "SmartOps", Type: "[]string"})
 		out = append(out, m)

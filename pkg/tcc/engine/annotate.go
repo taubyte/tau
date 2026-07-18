@@ -68,3 +68,28 @@ type Capability interface {
 func Addressing(caps ...Capability) NodeOption {
 	return GroupAnnotate("addressing", caps)
 }
+
+// Embeds records the structureSpec interface types a generated struct embeds
+// (e.g. "Basic", "Indexer", "Wasm") — the object-addressing behaviours it
+// exposes. Kept explicit (not derived from Addressing) because a few resources
+// embed more than their capability flags imply (e.g. messaging embeds Wasm).
+// Generation-only; no runtime effect.
+func Embeds(names ...string) NodeOption {
+	return GroupAnnotate("embeds", names)
+}
+
+// DerivedBools declares extra bool struct fields a transform pass synthesizes
+// with no source attribute (e.g. Function.Secure from type=="https"). The
+// generator emits `<Name> bool`, decoded from the compiled key lower(Name).
+// Generation-only; no runtime effect.
+func DerivedBools(names ...string) NodeOption {
+	return GroupAnnotate("derivedBools", names)
+}
+
+// StructBool declares that a transform pass projects this attribute's value into
+// a bool struct field named goName (e.g. network-access -> Local/Public), decoded
+// from the compiled key lower(goName). It replaces the attribute's own struct
+// field. Generation-only; no runtime effect.
+func StructBool(goName string) Option {
+	return Annotate("structBool", goName)
+}

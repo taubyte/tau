@@ -21,12 +21,13 @@ var TaubyteRessources = []*Node{
 			TaubyteAttributes(
 				String("match"),
 				Bool("useRegex", Path("regex"), Compat("useRegex")),
-				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all")),
+				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), StructBool("Local")),
 				Bytes("size", Path("storage", "size")),
 				String("encryption-type", Path("encryption", "type")),
 				String("encryption-key", Path("encryption", "key")),
 			),
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
+			Embeds("Basic", "Indexer"),
 		)),
 	DefineGroup("domains",
 		DefineIter(
@@ -38,6 +39,7 @@ var TaubyteRessources = []*Node{
 			),
 			// domain's BasicPath is bespoke (fqdn-reversed), so it's not tagged here.
 			Addressing(HasIndex),
+			Embeds("Indexer"),
 		)),
 	DefineGroup("functions",
 		DefineIter(
@@ -57,6 +59,9 @@ var TaubyteRessources = []*Node{
 				String("call", Path("execution", "call")),
 			),
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule, HasServices),
+			Embeds("Wasm"),
+			// secure is synthesized from type=="https" in pass1.
+			DerivedBools("Secure"),
 		)),
 	DefineGroup("libraries",
 		DefineIter(
@@ -68,6 +73,7 @@ var TaubyteRessources = []*Node{
 				String("github-fullname", Path("source", "github", "fullname"), Field("RepoName"), Tag("repository-name")),
 			),
 			Addressing(HasBasicPath, HasIndex, HasWasmModule, HasNameIndex),
+			Embeds("Wasm"),
 		)),
 	DefineGroup("messaging",
 		DefineIter(
@@ -79,6 +85,9 @@ var TaubyteRessources = []*Node{
 				Bool("websocket", Path("bridges", "websocket", "enable")),
 			),
 			Addressing(HasBasicPath, HasIndex, HasWebSocket, HasEmptyPath),
+			// messaging embeds Wasm beyond its capability flags — load-bearing in
+			// the dream inject path (services/tns/mocks casts to structureSpec.Wasm).
+			Embeds("Basic", "Wasm"),
 		)),
 	DefineGroup("services",
 		DefineIter(
@@ -86,6 +95,7 @@ var TaubyteRessources = []*Node{
 				String("protocol"),
 			),
 			Addressing(HasIndex, HasEmptyPath),
+			Embeds("Indexer"),
 		)),
 	DefineGroup("smartops",
 		DefineIter(
@@ -96,6 +106,7 @@ var TaubyteRessources = []*Node{
 				String("call", Path("execution", "call")),
 			),
 			Addressing(HasBasicPath, HasIndex, HasWasmModule),
+			Embeds("Wasm"),
 		)),
 	DefineGroup("storages",
 		DefineIter(
@@ -103,12 +114,13 @@ var TaubyteRessources = []*Node{
 				String("type", Path(Either("object", "streaming")), Key()),
 				String("match"),
 				Bool("useRegex", Path("regex"), Compat("useRegex")),
-				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all")),
+				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), StructBool("Public")),
 				Bool("versioning", Path("object", "versioning")),
 				Duration("ttl", Path("streaming", "ttl"), Field("Ttl")),
 				Bytes("size", Path(Either("object", "streaming"), "size")),
 			),
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
+			Embeds("Basic", "Indexer"),
 		)),
 	DefineGroup("websites",
 		DefineIter(
@@ -121,6 +133,7 @@ var TaubyteRessources = []*Node{
 				String("github-fullname", Path("source", "github", "fullname"), Field("RepoName"), Tag("repository-name")),
 			),
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule),
+			Embeds("Basic", "Wasm"),
 		)),
 }
 
