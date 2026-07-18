@@ -207,6 +207,9 @@ func TestGenerateParses(t *testing.T) {
 		t.Fatal("no files generated")
 	}
 	for rel, b := range files {
+		if !strings.HasSuffix(rel, ".go") {
+			continue // non-Go generated output (e.g. schema.ts)
+		}
 		if _, err := funcNames(rel, b); err != nil {
 			t.Errorf("%s does not parse: %v", rel, err)
 		}

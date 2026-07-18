@@ -24,6 +24,7 @@ import (
 const (
 	schemaPrefix = "pkg/schema/"
 	structPrefix = "pkg/specs/structure/"
+	tsGenPath    = "pkg/tcc/clients/js/src/gen/schema.ts"
 )
 
 // Generate returns a map of repo-relative path -> gofmt'd file content: the
@@ -54,6 +55,11 @@ func Generate(root []*engine.Node) (map[string][]byte, error) {
 		}
 		out[filepath.Join("pkg", "specs", "structure", strings.ToLower(m.Spec)+".go")] = b
 	}
+	ts, err := GenerateTS(root)
+	if err != nil {
+		return nil, err
+	}
+	out[filepath.FromSlash(tsGenPath)] = ts
 	return out, nil
 }
 
@@ -89,7 +95,7 @@ func Check(repoRoot string, gen map[string][]byte) ([]Diff, error) {
 	var diffs []Diff
 	for rel, b := range gen {
 		switch {
-		case strings.HasPrefix(rel, structPrefix):
+		case strings.HasPrefix(rel, structPrefix) || rel == filepath.FromSlash(tsGenPath):
 			realBytes, err := os.ReadFile(filepath.Join(repoRoot, rel))
 			if err != nil {
 				if os.IsNotExist(err) {
@@ -137,7 +143,7 @@ func PrintReport(w io.Writer, gen map[string][]byte, diffs []Diff) {
 	}
 	rels := make([]string, 0, len(gen))
 	for rel := range gen {
-		if strings.HasPrefix(rel, schemaPrefix) || strings.HasPrefix(rel, structPrefix) {
+		if strings.HasPrefix(rel, schemaPrefix) || strings.HasPrefix(rel, structPrefix) || rel == filepath.FromSlash(tsGenPath) {
 			rels = append(rels, rel)
 		}
 	}

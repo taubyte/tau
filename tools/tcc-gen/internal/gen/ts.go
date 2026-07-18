@@ -55,6 +55,40 @@ func upperFirst(s string) string {
 	return string(r)
 }
 
+// wireKey is the JSON key a compiled resource carries for a struct field — the
+// mapstructure tag if declared, else the lower-cased field name (which is what
+// the compiler emits and mapstructure decodes case-insensitively).
+func wireKey(f Field) string {
+	if f.Tag != "" {
+		if i := strings.IndexByte(f.Tag, '"'); i >= 0 {
+			if j := strings.IndexByte(f.Tag[i+1:], '"'); j >= 0 {
+				return f.Tag[i+1 : i+1+j]
+			}
+		}
+	}
+	return strings.ToLower(f.Name)
+}
+
+// tsProp quotes a property name that isn't a bare TS identifier (e.g. the
+// hyphenated git/cert keys "cert-file", "repository-id").
+func tsProp(k string) string {
+	for _, r := range k {
+		if !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '_' || r == '$') {
+			return `"` + k + `"`
+		}
+	}
+	return k
+}
+
+// tsWireType is the TS type of a compiled-shape field: its enum union if it has
+// one (same alias the accessor emit declares), else the scalar mapping.
+func tsWireType(spec string, f Field) string {
+	if len(f.Enum) > 0 {
+		return spec + upperFirst(tsName(f.Name))
+	}
+	return tsType(f.Type)
+}
+
 func tsArr(segs []string) string {
 	q := make([]string, len(segs))
 	for i, s := range segs {
@@ -197,6 +231,22 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 			// setter
 			fmt.Fprintf(&b, "  set%s(v: %s): Promise<void> {\n", upperFirst(f.name), f.typ)
 			fmt.Fprintf(&b, "    return this.s.binding.set(this.s.handle, this.res, %s, v);\n  }\n", tsArr(f.path))
+		}
+		b.WriteString("}\n\n")
+	}
+
+	// Compiled resource shapes: the data types as decoded from the TNS object
+	// (what the console receives over the wire), keyed by the compiled JSON keys.
+	structs, err := Structs(root)
+	if err != nil {
+		return nil, err
+	}
+	b.WriteString("// --- Compiled resource shapes (decoded from the TNS object) ---\n\n")
+	for _, m := range structs {
+		fmt.Fprintf(&b, "/** %s as decoded from the compiled config object. */\n", m.Spec)
+		fmt.Fprintf(&b, "export interface %s {\n", m.Spec)
+		for _, f := range m.Fields {
+			fmt.Fprintf(&b, "  %s?: %s;\n", tsProp(wireKey(f)), tsWireType(m.Spec, f))
 		}
 		b.WriteString("}\n\n")
 	}

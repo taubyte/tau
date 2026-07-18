@@ -86,7 +86,7 @@ var TaubyteRessources = []*Node{
 				String("match", Path("channel", "match"), Field("Match")),
 				Bool("regex", Path("channel", "regex")),
 				Bool("mqtt", Path("bridges", "mqtt", "enable")),
-				Bool("websocket", Path("bridges", "websocket", "enable")),
+				Bool("websocket", Path("bridges", "websocket", "enable"), Tag("webSocket")),
 			),
 			Addressing(HasBasicPath, HasIndex, HasWebSocket, HasEmptyPath),
 			// messaging embeds Wasm beyond its capability flags — load-bearing in

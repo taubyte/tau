@@ -20,7 +20,7 @@ type Messaging struct {
 	Match       string
 	Regex       bool
 	MQTT        bool
-	WebSocket   bool
+	WebSocket   bool `mapstructure:"webSocket"`
 	SmartOps    []string
 
 	Basic

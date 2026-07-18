@@ -5,8 +5,10 @@
 import type { SessionBinding, CompileOptions, CompileResult } from "../loader.js";
 import type { AsyncFs } from "../fs.js";
 
+export type DatabaseNetwork = "all" | "subnet" | "host";
 export type DomainCertType = "inline" | "auto";
 export type FunctionType = "http" | "https" | "pubsub" | "p2p";
+export type StorageNetwork = "all" | "subnet" | "host";
 
 /** An editable, wasm-resident project config session. */
 export class Session {
@@ -105,6 +107,13 @@ export class DatabaseConfig {
   }
   setRegex(v: boolean): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["regex"], v);
+  }
+
+  async network(): Promise<DatabaseNetwork | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["access", "network"])) as DatabaseNetwork | undefined;
+  }
+  setNetwork(v: DatabaseNetwork): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["access", "network"], v);
   }
 
   async size(): Promise<string | undefined> {
@@ -628,6 +637,13 @@ export class StorageConfig {
     return this.s.binding.set(this.s.handle, this.res, ["regex"], v);
   }
 
+  async network(): Promise<StorageNetwork | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["access", "network"])) as StorageNetwork | undefined;
+  }
+  setNetwork(v: StorageNetwork): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["access", "network"], v);
+  }
+
   async versioning(): Promise<boolean | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["object", "versioning"])) as boolean | undefined;
   }
@@ -745,4 +761,137 @@ export class WebsiteConfig {
   setTags(v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
   }
+}
+
+// --- Compiled resource shapes (decoded from the TNS object) ---
+
+/** Database as decoded from the compiled config object. */
+export interface Database {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  match?: string;
+  useRegex?: boolean;
+  local?: boolean;
+  size?: number;
+  key?: string;
+  smartops?: string[];
+}
+
+/** Domain as decoded from the compiled config object. */
+export interface Domain {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  fqdn?: string;
+  "cert-file"?: string;
+  "key-file"?: string;
+  "cert-type"?: DomainCertType;
+  smartops?: string[];
+}
+
+/** Function as decoded from the compiled config object. */
+export interface Function {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  type?: FunctionType;
+  local?: boolean;
+  channel?: string;
+  service?: string;
+  command?: string;
+  method?: string;
+  domains?: string[];
+  paths?: string[];
+  source?: string;
+  timeout?: number;
+  memory?: number;
+  call?: string;
+  secure?: boolean;
+  smartops?: string[];
+}
+
+/** Library as decoded from the compiled config object. */
+export interface Library {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  path?: string;
+  branch?: string;
+  provider?: string;
+  "repository-id"?: string;
+  "repository-name"?: string;
+  smartops?: string[];
+}
+
+/** Messaging as decoded from the compiled config object. */
+export interface Messaging {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  local?: boolean;
+  match?: string;
+  regex?: boolean;
+  mqtt?: boolean;
+  webSocket?: boolean;
+  smartops?: string[];
+}
+
+/** Service as decoded from the compiled config object. */
+export interface Service {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  protocol?: string;
+  smartops?: string[];
+}
+
+/** SmartOp as decoded from the compiled config object. */
+export interface SmartOp {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  source?: string;
+  timeout?: number;
+  memory?: number;
+  call?: string;
+  smartops?: string[];
+}
+
+/** Storage as decoded from the compiled config object. */
+export interface Storage {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  type?: string;
+  match?: string;
+  useRegex?: boolean;
+  public?: boolean;
+  versioning?: boolean;
+  ttl?: number;
+  size?: number;
+  smartops?: string[];
+}
+
+/** Website as decoded from the compiled config object. */
+export interface Website {
+  id?: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  domains?: string[];
+  paths?: string[];
+  branch?: string;
+  provider?: string;
+  "repository-id"?: string;
+  "repository-name"?: string;
+  smartops?: string[];
 }
