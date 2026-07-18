@@ -1,7 +1,7 @@
 package schema
 
 // This file holds the per-resource index-footprint closures the IndexDriver runs
-// (Phase 3, replacing pass4/*). Each closure declares ONLY which tns paths/entries
+// (one per resource). Each closure declares ONLY which tns paths/entries
 // its resource contributes to the compiled `indexes` subtree; the driver owns the
 // append/dedup/Set mechanics and the scope walk. Kept out of definition.go so the
 // DSL stays readable. The schema package may import specs + driver; the driver

@@ -34,7 +34,7 @@ import (
 //     every fixture, so its Tag value is excluded from assertion (3). Its raw-name
 //     no-leak (2) and allowed-key (1) checks still apply.
 //   - EnumBool granularity (network-access -> local/public) and the conditional
-//     drop of p2p-protocol are the concern of later phases; here they are only
+//     drop of p2p-protocol are exercised elsewhere; here they are only
 //     required not to leak a raw name and not to introduce an unexpected key.
 type groupRule struct {
 	allowed map[string]bool   // every legal wire key for the group
