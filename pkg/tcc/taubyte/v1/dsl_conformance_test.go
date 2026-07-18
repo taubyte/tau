@@ -17,55 +17,77 @@ import (
 // compiler is retired: it catches tcc emitting a missing/mistyped field that no
 // longer decodes into the struct model.
 //
-// Each entry decodes an instance map into its struct and returns the decoded Name,
-// which every resource must carry (the id is the map key, not a field).
-var resourceDecoders = map[string]func(any) (string, error){
-	"functions": func(o any) (string, error) {
+// Each entry decodes an instance map into its struct and returns the decoded
+// Name plus the set of compiled keys that did NOT map to a struct field
+// (mapstructure Metadata.Unused). An unused key is a divergence between the
+// compiled-object contract and structureSpec — either an intentional drop
+// (see intentionalDrops) or a silent data loss the test must fail on.
+var resourceDecoders = map[string]func(any) (name string, unused []string, err error){
+	"functions": func(o any) (string, []string, error) {
 		var v structureSpec.Function
-		e := mapstructure.Decode(o, &v)
-		return v.Name, e
+		var md mapstructure.Metadata
+		e := mapstructure.DecodeMetadata(o, &v, &md)
+		return v.Name, md.Unused, e
 	},
-	"databases": func(o any) (string, error) {
+	"databases": func(o any) (string, []string, error) {
 		var v structureSpec.Database
-		e := mapstructure.Decode(o, &v)
-		return v.Name, e
+		var md mapstructure.Metadata
+		e := mapstructure.DecodeMetadata(o, &v, &md)
+		return v.Name, md.Unused, e
 	},
-	"domains": func(o any) (string, error) {
+	"domains": func(o any) (string, []string, error) {
 		var v structureSpec.Domain
-		e := mapstructure.Decode(o, &v)
-		return v.Name, e
+		var md mapstructure.Metadata
+		e := mapstructure.DecodeMetadata(o, &v, &md)
+		return v.Name, md.Unused, e
 	},
-	"libraries": func(o any) (string, error) {
+	"libraries": func(o any) (string, []string, error) {
 		var v structureSpec.Library
-		e := mapstructure.Decode(o, &v)
-		return v.Name, e
+		var md mapstructure.Metadata
+		e := mapstructure.DecodeMetadata(o, &v, &md)
+		return v.Name, md.Unused, e
 	},
-	"messaging": func(o any) (string, error) {
+	"messaging": func(o any) (string, []string, error) {
 		var v structureSpec.Messaging
-		e := mapstructure.Decode(o, &v)
-		return v.Name, e
+		var md mapstructure.Metadata
+		e := mapstructure.DecodeMetadata(o, &v, &md)
+		return v.Name, md.Unused, e
 	},
-	"services": func(o any) (string, error) {
+	"services": func(o any) (string, []string, error) {
 		var v structureSpec.Service
-		e := mapstructure.Decode(o, &v)
-		return v.Name, e
+		var md mapstructure.Metadata
+		e := mapstructure.DecodeMetadata(o, &v, &md)
+		return v.Name, md.Unused, e
 	},
-	"smartops": func(o any) (string, error) {
+	"smartops": func(o any) (string, []string, error) {
 		var v structureSpec.SmartOp
-		e := mapstructure.Decode(o, &v)
-		return v.Name, e
+		var md mapstructure.Metadata
+		e := mapstructure.DecodeMetadata(o, &v, &md)
+		return v.Name, md.Unused, e
 	},
-	"storages": func(o any) (string, error) {
+	"storages": func(o any) (string, []string, error) {
 		var v structureSpec.Storage
-		e := mapstructure.Decode(o, &v)
-		return v.Name, e
+		var md mapstructure.Metadata
+		e := mapstructure.DecodeMetadata(o, &v, &md)
+		return v.Name, md.Unused, e
 	},
-	"websites": func(o any) (string, error) {
+	"websites": func(o any) (string, []string, error) {
 		var v structureSpec.Website
-		e := mapstructure.Decode(o, &v)
-		return v.Name, e
+		var md mapstructure.Metadata
+		e := mapstructure.DecodeMetadata(o, &v, &md)
+		return v.Name, md.Unused, e
 	},
 }
+
+// intentionalDrops are compiled-object keys that legitimately have no
+// structureSpec field, per resource. Everything else that fails to map is a
+// divergence. Keep this list SMALL and documented — each entry is a known gap.
+//
+// Empty today: the fixture project doesn't exercise the currently-droppable
+// keys (database "keyType" needs an encrypted db; function "methods" needs the
+// unimplemented http-methods). If the fixture grows to cover them, add the
+// field to pkg/specs/structure — or, if the drop is deliberate, an entry here.
+var intentionalDrops = map[string]map[string]bool{}
 
 func TestCompiledObjectDecodesIntoStructs(t *testing.T) {
 	compiler, err := New(WithLocal("fixtures/config"), WithBranch("master"))
@@ -104,9 +126,19 @@ func checkResources(t *testing.T, container map[string]any) int {
 			m, ok := inst.(map[string]any)
 			assert.Assert(t, ok, "%s/%s is not an object", group, id)
 
-			name, err := decode(m)
+			name, unused, err := decode(m)
 			assert.NilError(t, err, "%s/%s does not decode into its struct", group, id)
 			assert.Assert(t, name != "", "%s/%s decoded with an empty Name", group, id)
+
+			// A compiled key with no struct field is a divergence unless it is a
+			// documented intentional drop. This is the guard that fails when
+			// tcc emits a field structureSpec doesn't model.
+			for _, key := range unused {
+				assert.Assert(t, intentionalDrops[group][key],
+					"%s/%s: compiled key %q has no structureSpec field (divergence). "+
+						"Add the field to pkg/specs/structure or, if intentional, to intentionalDrops[%q].",
+					group, id, key, group)
+			}
 			count++
 		}
 	}
