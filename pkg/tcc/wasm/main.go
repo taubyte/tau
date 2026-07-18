@@ -12,8 +12,7 @@ import (
 	"encoding/json"
 	"syscall/js"
 
-	compiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
-	decompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
+	compiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 )
 
@@ -97,7 +96,7 @@ func decompileFn(_ js.Value, args []js.Value) any {
 	fs := &jsFs{p: args[1]}
 	obj := tccConvert.MapToTCCObject(m)
 
-	d, err := decompiler.New(decompiler.WithVirtual(fs, "/"))
+	d, err := compiler.NewDecompiler(compiler.DecompilerWithVirtual(fs, "/"))
 	if err != nil {
 		return errResult(err.Error())
 	}

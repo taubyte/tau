@@ -1,4 +1,4 @@
-package decompile
+package interp_test
 
 import (
 	"context"
@@ -9,14 +9,15 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/afero"
+	"github.com/taubyte/tau/pkg/tcc/interp/decompile"
 	"github.com/taubyte/tau/pkg/tcc/object"
-	compiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	"gotest.tools/v3/assert"
 )
 
 func TestDecompileRoundTrip(t *testing.T) {
 	// Compile from fixtures (for decompiling)
-	c, err := compiler.New(compiler.WithLocal("../fixtures/config"), compiler.WithBranch("master"))
+	c, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, validations, err := c.Compile(context.Background())
@@ -25,14 +26,14 @@ func TestDecompileRoundTrip(t *testing.T) {
 
 	// Decompile to in-memory filesystem
 	memFs := afero.NewMemMapFs()
-	d, err := New(WithVirtual(memFs, "/"))
+	d, err := schema.NewDecompiler(schema.DecompilerWithVirtual(memFs, "/"))
 	assert.NilError(t, err)
 
 	err = d.Decompile(obj)
 	assert.NilError(t, err)
 
 	// Recompile from decompiled YAML
-	c2, err := compiler.New(compiler.WithVirtual(memFs, "/"), compiler.WithBranch("master"))
+	c2, err := schema.New(schema.WithVirtual(memFs, "/"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj2, validations2, err := c2.Compile(context.Background())
@@ -40,7 +41,7 @@ func TestDecompileRoundTrip(t *testing.T) {
 	assert.Assert(t, len(validations2) > 0, "should have validations")
 
 	// Compile again from original fixtures (for comparison, since decompile modifies obj)
-	c3, err := compiler.New(compiler.WithLocal("../fixtures/config"), compiler.WithBranch("master"))
+	c3, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj3, _, err := c3.Compile(context.Background())
@@ -54,7 +55,7 @@ func TestDecompileRoundTrip(t *testing.T) {
 }
 
 func TestDecompileBasic(t *testing.T) {
-	c, err := compiler.New(compiler.WithLocal("../fixtures/config"), compiler.WithBranch("master"))
+	c, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, _, err := c.Compile(context.Background())
@@ -62,7 +63,7 @@ func TestDecompileBasic(t *testing.T) {
 
 	// Decompile to in-memory filesystem
 	memFs := afero.NewMemMapFs()
-	d, err := New(WithVirtual(memFs, "/"))
+	d, err := schema.NewDecompiler(schema.DecompilerWithVirtual(memFs, "/"))
 	assert.NilError(t, err)
 
 	err = d.Decompile(obj)
@@ -89,12 +90,12 @@ func TestWithLocal(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// Test WithLocal option with temp directory
-	d, err := New(WithLocal(tempDir))
+	d, err := schema.NewDecompiler(schema.DecompilerWithLocal(tempDir))
 	assert.NilError(t, err)
 	assert.Assert(t, d != nil)
 
 	// Compile from fixtures
-	c, err := compiler.New(compiler.WithLocal("../fixtures/config"), compiler.WithBranch("master"))
+	c, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, _, err := c.Compile(context.Background())
@@ -112,25 +113,25 @@ func TestWithLocal(t *testing.T) {
 
 func TestNew_NoOptions(t *testing.T) {
 	// Test New with no options - should fail because seer needs filesystem
-	d, err := New()
+	d, err := schema.NewDecompiler()
 	assert.ErrorContains(t, err, "file system")
 	assert.Assert(t, d == nil)
 }
 
 func TestNew_OptionError(t *testing.T) {
 	// Test New with an option that returns an error
-	errOption := func(d *Decompiler) error {
+	errOption := func(d *decompile.Decompiler) error {
 		return fmt.Errorf("test option error")
 	}
 
-	d, err := New(errOption)
+	d, err := schema.NewDecompiler(errOption)
 	assert.ErrorContains(t, err, "test option error")
 	assert.Assert(t, d == nil)
 }
 
 func TestDecompile_EmptyObject(t *testing.T) {
 	memFs := afero.NewMemMapFs()
-	d, err := New(WithVirtual(memFs, "/"))
+	d, err := schema.NewDecompiler(schema.DecompilerWithVirtual(memFs, "/"))
 	assert.NilError(t, err)
 
 	// Create an object with required id field
@@ -145,7 +146,7 @@ func TestDecompile_EmptyObject(t *testing.T) {
 
 func TestDecompile_MinimalObject(t *testing.T) {
 	memFs := afero.NewMemMapFs()
-	d, err := New(WithVirtual(memFs, "/"))
+	d, err := schema.NewDecompiler(schema.DecompilerWithVirtual(memFs, "/"))
 	assert.NilError(t, err)
 
 	// Create a minimal object with a valid CID id

@@ -4,11 +4,11 @@ import (
 	"github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	"github.com/taubyte/tau/pkg/tcc/engine"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
+	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // Object-addressing capabilities: the set of TNS-key methods a compiled
-// resource-object exposes (see pkg/specs/<res>). Each is a *driver.Cap carrying
+// resource-object exposes (see pkg/specs/<res>). Each is a *interp.Cap carrying
 // its own meaning as data — the runtime path funcs the index driver reads
 // (ByName/ForeignKey/ScopePath, bound directly to the matching
 // pkg/specs/methods helper) AND the Gen method specs tcc-gen renders into the
@@ -21,21 +21,21 @@ import (
 // and ViaTns picks the delegate form (<alias>.Tns().<Name> vs <alias>.<Name>).
 var (
 	// BasicPath(branch,commit,project,app,id)
-	HasBasicPath = &driver.Cap{
+	HasBasicPath = &interp.Cap{
 		Name: "basic",
 		Gen: []engine.MethodSpec{
 			{Name: "BasicPath", Params: "branch, commit, project, app string", Ret: "(*common.TnsPath, error)", Args: "branch, commit, project, app, @.Id", ViaTns: true},
 		},
 	}
 	// IndexValue(branch,project,app,id)
-	HasIndex = &driver.Cap{
+	HasIndex = &interp.Cap{
 		Name: "index",
 		Gen: []engine.MethodSpec{
 			{Name: "IndexValue", Params: "branch, project, app string", Ret: "(*common.TnsPath, error)", Args: "branch, project, app, @.Id", ViaTns: true},
 		},
 	}
 	// IndexPath(project,app)
-	HasIndexPath = &driver.Cap{
+	HasIndexPath = &interp.Cap{
 		Name: "indexPath",
 		Gen: []engine.MethodSpec{
 			{Name: "IndexPath", Params: "project, app string", Ret: "*common.TnsPath", Args: "project, app, @.Name", ViaTns: true},
@@ -45,7 +45,7 @@ var (
 		},
 	}
 	// HttpPath(fqdn)
-	HasHttp = &driver.Cap{
+	HasHttp = &interp.Cap{
 		Name: "http",
 		Gen: []engine.MethodSpec{
 			{Name: "HttpPath", Params: "fqdn string", Ret: "(*common.TnsPath, error)", Args: "fqdn", ViaTns: true},
@@ -53,7 +53,7 @@ var (
 		ForeignKey: methods.HttpPath,
 	}
 	// WasmModulePath(...) + ModuleName(name)
-	HasWasmModule = &driver.Cap{
+	HasWasmModule = &interp.Cap{
 		Name: "wasm",
 		Gen: []engine.MethodSpec{
 			{Name: "WasmModulePath", Params: "project, app string", Ret: "(*common.TnsPath, error)", Args: "project, app, @.Name", ViaTns: true},
@@ -62,14 +62,14 @@ var (
 		ByName: methods.WasmModulePath,
 	}
 	// ServicesPath(project,app,serviceId,command)
-	HasServices = &driver.Cap{
+	HasServices = &interp.Cap{
 		Name: "services",
 		Gen: []engine.MethodSpec{
 			{Name: "ServicesPath", Params: "project, app, serviceId string", Ret: "(*common.TnsPath, error)", Args: "project, app, serviceId, @.Command", ViaTns: true},
 		},
 	}
 	// WebSocketHashPath + WebSocketPath
-	HasWebSocket = &driver.Cap{
+	HasWebSocket = &interp.Cap{
 		Name: "websocket",
 		Gen: []engine.MethodSpec{
 			{Name: "WebSocketHashPath", Params: "project, app string", Ret: "(*common.TnsPath, error)", Args: "project, app", ViaTns: true},
@@ -78,14 +78,14 @@ var (
 		ScopePath: methods.WebSocketHashPath,
 	}
 	// NameIndex(name)
-	HasNameIndex = &driver.Cap{
+	HasNameIndex = &interp.Cap{
 		Name: "nameIndex",
 		Gen: []engine.MethodSpec{
 			{Name: "NameIndex", Params: "", Ret: "*common.TnsPath", Args: "@.Name", ViaTns: true},
 		},
 	}
 	// EmptyPath()
-	HasEmptyPath = &driver.Cap{
+	HasEmptyPath = &interp.Cap{
 		Name: "empty",
 		Gen: []engine.MethodSpec{
 			{Name: "EmptyPath", Params: "branch, commit, project, app string", Ret: "(*common.TnsPath, error)", Args: "branch, commit, project, app", ViaTns: true},

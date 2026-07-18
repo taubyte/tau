@@ -5,9 +5,7 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/core/common/repositorytype"
-	//lint:ignore ST1001 keeps defintion clean
-	. "github.com/taubyte/tau/pkg/tcc/engine"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
+	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // sourceShape is the load-time Validator for a function/smartop `source`: it must
@@ -62,7 +60,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
 			Resource("databases", "Database", "Database", "database"),
-			driver.IndexByName(HasIndexPath),
+			interp.IndexByName(HasIndexPath),
 		)),
 	DefineGroup("domains",
 		DefineIter(
@@ -76,7 +74,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasIndex),
 			Embeds("Indexer"),
 			Resource("domains", "Domain", "Domain", "domain"),
-			driver.IndexPlaceholder("fqdn"),
+			interp.IndexPlaceholder("fqdn"),
 		)),
 	DefineGroup("functions",
 		DefineIter(
@@ -98,8 +96,8 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule, HasServices),
 			Embeds("Wasm"),
 			Resource("functions", "Function", "Function", "function"),
-			driver.IndexByName(HasWasmModule),
-			driver.IndexForeignKey(HasHttp, "domains", "domains", "fqdn"),
+			interp.IndexByName(HasWasmModule),
+			interp.IndexForeignKey(HasHttp, "domains", "domains", "fqdn"),
 		)),
 	DefineGroup("libraries",
 		DefineIter(
@@ -113,9 +111,9 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasWasmModule, HasNameIndex),
 			Embeds("Wasm"),
 			Resource("libraries", "Library", "Library", "library"),
-			driver.IndexByName(HasWasmModule),
-			driver.IndexRepo(repositorytype.LibraryRepository),
-			driver.IndexName(),
+			interp.IndexByName(HasWasmModule),
+			interp.IndexRepo(repositorytype.LibraryRepository),
+			interp.IndexName(),
 		)),
 	DefineGroup("messaging",
 		DefineIter(
@@ -131,7 +129,7 @@ var TaubyteRessources = []*Node{
 			// the dream inject path (services/tns/mocks casts to structureSpec.Wasm).
 			Embeds("Basic", "Wasm"),
 			Resource("messaging", "Messaging", "Messaging", "messaging"),
-			driver.IndexByScope(HasWebSocket),
+			interp.IndexByScope(HasWebSocket),
 		)),
 	DefineGroup("services",
 		DefineIter(
@@ -156,7 +154,7 @@ var TaubyteRessources = []*Node{
 			// smartops attach to every resource: each compiled resource carries a
 			// derived SmartOps []string field (key "smartops"), sourced here.
 			AttachesToAll(),
-			driver.IndexByName(HasWasmModule),
+			interp.IndexByName(HasWasmModule),
 		)),
 	DefineGroup("storages",
 		DefineIter(
@@ -172,7 +170,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
 			Resource("storages", "Storage", "Storage", "storage"),
-			driver.IndexByName(HasIndexPath),
+			interp.IndexByName(HasIndexPath),
 		)),
 	DefineGroup("websites",
 		DefineIter(
@@ -187,8 +185,8 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule),
 			Embeds("Basic", "Wasm"),
 			Resource("website", "Website", "Website", "website"),
-			driver.IndexForeignKey(HasHttp, "domains", "domains", "fqdn"),
-			driver.IndexRepo(repositorytype.WebsiteRepository),
+			interp.IndexForeignKey(HasHttp, "domains", "domains", "fqdn"),
+			interp.IndexRepo(repositorytype.WebsiteRepository),
 		)),
 }
 
@@ -205,7 +203,7 @@ func applicationsGroup() *Node {
 
 // cloudsGroup: clouds.<fqdn>.{account, plan} — DefineIter (not Group, so no
 // nested sub-groups) so each FQDN's attrs live directly under the map key in
-// nested YAML. The CompileDriver runs driver.FlattenClouds (a GroupTransform
+// nested YAML. The CompileDriver runs FlattenClouds (a GroupTransform
 // closure) to promote the active FQDN's entry to the project root and drop the
 // map, so clouds compiles to no structureSpec type.
 func cloudsGroup() *Node {
@@ -214,7 +212,7 @@ func cloudsGroup() *Node {
 			String("account"),
 			String("plan"),
 		},
-		driver.GroupTransform(driver.FlattenClouds),
+		interp.GroupTransform(FlattenClouds),
 	))
 }
 

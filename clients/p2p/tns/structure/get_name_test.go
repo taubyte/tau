@@ -9,7 +9,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	_ "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
+	_ "github.com/taubyte/tau/pkg/tcc/interp/fixtures"
 	_ "github.com/taubyte/tau/services/tns/dream"
 	"gotest.tools/v3/assert"
 )

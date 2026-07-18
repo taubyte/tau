@@ -1,9 +1,11 @@
-package compiler
+package interp_test
 
 import (
 	"context"
 	"regexp"
 	"testing"
+
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/taubyte/tau/core/services/patrick"
@@ -41,7 +43,7 @@ func TestCompile(t *testing.T) {
 	err = oldCompiler.Build()
 	assert.NilError(t, err)
 
-	compiler, err := New(WithLocal("fixtures/config"), WithBranch("master"))
+	compiler, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, validations, err := compiler.Compile(context.Background())
@@ -107,7 +109,7 @@ func TestCompile(t *testing.T) {
 }
 
 func TestCompile_ReturnsValidations(t *testing.T) {
-	compiler, err := New(WithLocal("fixtures/config"), WithBranch("master"))
+	compiler, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, validations, err := compiler.Compile(context.Background())

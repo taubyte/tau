@@ -24,7 +24,7 @@ func TestSchema(t *testing.T) {
 }
 
 func TestConfigSchema(t *testing.T) {
-	p, err := engine.New(TaubyteProject, yaseer.SystemFS("../fixtures/config"))
+	p, err := engine.New(TaubyteProject, yaseer.SystemFS("../../../interp/fixtures/config"))
 	assert.NilError(t, err)
 
 	obj, err := p.Parse()

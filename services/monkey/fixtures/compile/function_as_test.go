@@ -12,7 +12,7 @@ import (
 	"github.com/taubyte/tau/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	_ "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
+	_ "github.com/taubyte/tau/pkg/tcc/interp/fixtures"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"
 	_ "github.com/taubyte/tau/services/seer/dream"
 	_ "github.com/taubyte/tau/services/substrate/dream"

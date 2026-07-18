@@ -1,4 +1,4 @@
-package compiler
+package interp_test
 
 import (
 	"context"
@@ -47,7 +47,7 @@ func attrTag(a *engine.Attribute) (string, bool) {
 }
 
 func TestWireKeyConformance(t *testing.T) {
-	compiler, err := New(WithLocal("fixtures/config"), WithBranch("master"))
+	compiler, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, _, err := compiler.Compile(context.Background())

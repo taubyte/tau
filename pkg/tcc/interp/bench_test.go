@@ -1,8 +1,10 @@
-package compiler
+package interp_test
 
 import (
 	"context"
 	"testing"
+
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 )
 
 // BenchmarkCompile runs a full compile of the fixture project — read the config
@@ -12,7 +14,7 @@ func BenchmarkCompile(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		c, err := New(WithLocal("fixtures/config"), WithBranch("master"))
+		c, err := schema.New(schema.WithLocal("fixtures/config"), schema.WithBranch("master"))
 		if err != nil {
 			b.Fatal(err)
 		}

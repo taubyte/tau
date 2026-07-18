@@ -73,7 +73,7 @@ func TestGeneratedClientE2E(t *testing.T) {
 	}
 
 	// 4. typecheck then run the tests against the generated code.
-	fixture := filepath.Join(root, "pkg", "tcc", "taubyte", "v1", "fixtures", "config")
+	fixture := filepath.Join(root, "pkg", "tcc", "interp", "fixtures", "config")
 	npm := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("npm", args...)

@@ -1,4 +1,4 @@
-package decompile
+package interp_test
 
 import (
 	"context"
@@ -7,7 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/spf13/afero"
-	compiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	"gotest.tools/v3/assert"
 )
 
@@ -24,8 +24,8 @@ import (
 func TestDecompileRoundTripPreservesSubnet(t *testing.T) {
 	const fixture = "testdata/subnet"
 
-	compileFixture := func() compiler.Object {
-		c, err := compiler.New(compiler.WithLocal(fixture), compiler.WithBranch("master"))
+	compileFixture := func() schema.Object {
+		c, err := schema.New(schema.WithLocal(fixture), schema.WithBranch("master"))
 		assert.NilError(t, err)
 		obj, _, err := c.Compile(context.Background())
 		assert.NilError(t, err)
@@ -35,7 +35,7 @@ func TestDecompileRoundTripPreservesSubnet(t *testing.T) {
 	// Compile, then decompile to an in-memory filesystem.
 	obj := compileFixture()
 	memFs := afero.NewMemMapFs()
-	d, err := New(WithVirtual(memFs, "/"))
+	d, err := schema.NewDecompiler(schema.DecompilerWithVirtual(memFs, "/"))
 	assert.NilError(t, err)
 	assert.NilError(t, d.Decompile(obj))
 
@@ -48,7 +48,7 @@ func TestDecompileRoundTripPreservesSubnet(t *testing.T) {
 
 	// Full round-trip: recompiling the decompiled YAML must reproduce a fresh
 	// compile exactly (subnet preserved, host restored via the bool).
-	c2, err := compiler.New(compiler.WithVirtual(memFs, "/"), compiler.WithBranch("master"))
+	c2, err := schema.New(schema.WithVirtual(memFs, "/"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 	obj2, _, err := c2.Compile(context.Background())
 	assert.NilError(t, err)

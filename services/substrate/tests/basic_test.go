@@ -19,7 +19,7 @@ import (
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/dream/fixtures"
-	_ "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
+	_ "github.com/taubyte/tau/pkg/tcc/interp/fixtures"
 	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"

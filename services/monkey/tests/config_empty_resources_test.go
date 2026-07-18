@@ -8,7 +8,7 @@ import (
 
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
-	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
+	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	"github.com/taubyte/tau/utils/id"
 	tccUtils "github.com/taubyte/tau/utils/tcc"
 	"gotest.tools/v3/assert"

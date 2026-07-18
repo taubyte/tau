@@ -10,8 +10,7 @@ import (
 	"syscall/js"
 
 	"github.com/spf13/afero"
-	compiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1"
-	decompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile"
+	compiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	seer "github.com/taubyte/tau/pkg/yaseer"
 	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 )
@@ -67,7 +66,7 @@ func decompileSessionFn(_ js.Value, args []js.Value) any {
 	}
 	obj := tccConvert.MapToTCCObject(jsToMap(args[0]))
 	mem := afero.NewMemMapFs()
-	d, err := decompiler.New(decompiler.WithVirtual(mem, "/"))
+	d, err := compiler.NewDecompiler(compiler.DecompilerWithVirtual(mem, "/"))
 	if err != nil {
 		return errResult(err.Error())
 	}

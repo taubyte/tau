@@ -1,8 +1,10 @@
-package compiler
+package interp_test
 
 import (
 	"context"
 	"testing"
+
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 
 	"gotest.tools/v3/assert"
 )
@@ -16,7 +18,7 @@ import (
 // project repo is valid in any cloud, and a stand-alone validation run
 // shouldn't fabricate a binding.
 func TestCompile_CloudsBindings_NoCloud(t *testing.T) {
-	compiler, err := New(WithLocal("fixtures/clouds"), WithBranch("master"))
+	compiler, err := schema.New(schema.WithLocal("fixtures/clouds"), schema.WithBranch("master"))
 	assert.NilError(t, err)
 
 	obj, _, err := compiler.Compile(context.Background())
@@ -36,7 +38,7 @@ func TestCompile_CloudsBindings_NoCloud(t *testing.T) {
 }
 
 // TestCompile_CloudsBindings_PromotesActive exercises the production path:
-// when the compiler is configured with `WithCloud("tau-cloud.io")`, the
+// when the compiler is configured with `schema.WithCloud("tau-cloud.io")`, the
 // pass picks the matching entry from the project's `clouds:` map, sets
 // `account` / `plan` on the project root, and drops the entire `clouds`
 // map (including the staging entry that doesn't belong on this cloud).
@@ -45,10 +47,10 @@ func TestCompile_CloudsBindings_NoCloud(t *testing.T) {
 // `.../plan` directly — they don't see, or need to know, the FQDN they
 // happen to be running on.
 func TestCompile_CloudsBindings_PromotesActive(t *testing.T) {
-	compiler, err := New(
-		WithLocal("fixtures/clouds"),
-		WithBranch("master"),
-		WithCloud("tau-cloud.io"),
+	compiler, err := schema.New(
+		schema.WithLocal("fixtures/clouds"),
+		schema.WithBranch("master"),
+		schema.WithCloud("tau-cloud.io"),
 	)
 	assert.NilError(t, err)
 
@@ -70,10 +72,10 @@ func TestCompile_CloudsBindings_PromotesActive(t *testing.T) {
 // other FQDN — same project repo, different cloud, different binding.
 // Confirms the same compile producing different output per cloud.
 func TestCompile_CloudsBindings_PromotesStaging(t *testing.T) {
-	compiler, err := New(
-		WithLocal("fixtures/clouds"),
-		WithBranch("master"),
-		WithCloud("staging.tau-cloud.io"),
+	compiler, err := schema.New(
+		schema.WithLocal("fixtures/clouds"),
+		schema.WithBranch("master"),
+		schema.WithCloud("staging.tau-cloud.io"),
 	)
 	assert.NilError(t, err)
 
@@ -97,10 +99,10 @@ func TestCompile_CloudsBindings_PromotesStaging(t *testing.T) {
 // shape too — not just the live monkey-side validator. Same project
 // in a different cloud's compile is fine (the no-entry path).
 func TestCompile_CloudsBindings_PartialFails(t *testing.T) {
-	compiler, err := New(
-		WithLocal("fixtures/clouds_partial"),
-		WithBranch("master"),
-		WithCloud("tau-cloud.io"),
+	compiler, err := schema.New(
+		schema.WithLocal("fixtures/clouds_partial"),
+		schema.WithBranch("master"),
+		schema.WithCloud("tau-cloud.io"),
 	)
 	assert.NilError(t, err)
 
@@ -115,10 +117,10 @@ func TestCompile_CloudsBindings_PartialFails(t *testing.T) {
 // FQDN. This is intentional: the half-set entry is a problem for that
 // cloud's compile, not for unrelated clouds compiling the same repo.
 func TestCompile_CloudsBindings_PartialOnOtherCloud(t *testing.T) {
-	compiler, err := New(
-		WithLocal("fixtures/clouds_partial"),
-		WithBranch("master"),
-		WithCloud("staging.tau-cloud.io"),
+	compiler, err := schema.New(
+		schema.WithLocal("fixtures/clouds_partial"),
+		schema.WithBranch("master"),
+		schema.WithCloud("staging.tau-cloud.io"),
 	)
 	assert.NilError(t, err)
 
@@ -141,10 +143,10 @@ func TestCompile_CloudsBindings_PartialOnOtherCloud(t *testing.T) {
 // "valid for this cloud, just not bound to a plan here." The plan-presence
 // gate is policy in `services/monkey/jobs/checkAccountPlan`, not in TCC.
 func TestCompile_CloudsBindings_UnknownCloud(t *testing.T) {
-	compiler, err := New(
-		WithLocal("fixtures/clouds"),
-		WithBranch("master"),
-		WithCloud("offshore.tau-cloud.io"),
+	compiler, err := schema.New(
+		schema.WithLocal("fixtures/clouds"),
+		schema.WithBranch("master"),
+		schema.WithCloud("offshore.tau-cloud.io"),
 	)
 	assert.NilError(t, err)
 

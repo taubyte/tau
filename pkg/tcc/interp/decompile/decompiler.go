@@ -5,10 +5,9 @@ import (
 	"fmt"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/interp"
+	"github.com/taubyte/tau/pkg/tcc/interp/decompile/pass1"
 	"github.com/taubyte/tau/pkg/tcc/object"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/decompile/pass1"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	"github.com/taubyte/tau/pkg/tcc/transform"
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
@@ -18,13 +17,18 @@ type Object = object.Object[object.Refrence]
 
 type Decompiler struct {
 	seerOptions []yaseer.Option
+	compileRoot *engine.Node
 	engine      engine.Engine
 }
 
 type Option func(d *Decompiler) error
 
-func New(options ...Option) (d *Decompiler, err error) {
-	d = &Decompiler{}
+// New builds a Decompiler bound to a schema project and its CompileRoot node.
+// Both are supplied by the caller (the schema facade passes schema.TaubyteProject
+// + schema.CompileRoot()) rather than referenced here, so this package never
+// imports schema — keeping the interpreter dependency one-way.
+func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (d *Decompiler, err error) {
+	d = &Decompiler{compileRoot: compileRoot}
 
 	for _, option := range options {
 		if err := option(d); err != nil {
@@ -32,7 +36,7 @@ func New(options ...Option) (d *Decompiler, err error) {
 		}
 	}
 
-	d.engine, err = engine.New(schema.TaubyteProject, d.seerOptions...)
+	d.engine, err = engine.New(project, d.seerOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +51,7 @@ func (d *Decompiler) Decompile(obj Object) error {
 	// DecompileDriver is the mechanical inverse of the forward CompileDriver +
 	// ResolveRefs, driven by the same schema DSL; it replaces the hand-written
 	// decompile/pass2 (ref id->name) and decompile/pass3 (per-resource inverse).
-	pipe := append(pass1.Pipe(), driver.NewDecompileDriver(schema.CompileRoot()))
+	pipe := append(pass1.Pipe(), interp.NewDecompileDriver(d.compileRoot))
 
 	ctx := transform.NewContext[object.Refrence](context.Background())
 	restored, err := transform.Pipe(ctx, obj, pipe...)

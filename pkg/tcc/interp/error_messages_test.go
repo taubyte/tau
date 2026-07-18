@@ -1,10 +1,12 @@
-package compiler
+package interp_test
 
 import (
 	"context"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 
 	"github.com/spf13/afero"
 	"gotest.tools/v3/assert"
@@ -25,7 +27,7 @@ func TestCompile_RequiredFieldMissing_Line1_ExactError(t *testing.T) {
 	functionYaml := "name: test-function\n"
 	afero.WriteFile(fs, "/test/config/functions/test_func.yaml", []byte(functionYaml), 0644)
 
-	compiler, err := New(WithVirtual(fs, "/test/config"))
+	compiler, err := schema.New(schema.WithVirtual(fs, "/test/config"))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -51,7 +53,7 @@ func TestCompile_ValidationError_Line2_ExactError(t *testing.T) {
 	functionYaml := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\nname: 12345\n"
 	afero.WriteFile(fs, "/test/config/functions/test_func.yaml", []byte(functionYaml), 0644)
 
-	compiler, err := New(WithVirtual(fs, "/test/config"))
+	compiler, err := schema.New(schema.WithVirtual(fs, "/test/config"))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -78,7 +80,7 @@ func TestCompile_ValidationError_Line3_ExactError(t *testing.T) {
 	functionYaml := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\ntype: http\nname: 999invalid\n"
 	afero.WriteFile(fs, "/test/config/functions/test_func.yaml", []byte(functionYaml), 0644)
 
-	compiler, err := New(WithVirtual(fs, "/test/config"))
+	compiler, err := schema.New(schema.WithVirtual(fs, "/test/config"))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -106,7 +108,7 @@ func TestCompile_ValidationError_Line4_ExactError(t *testing.T) {
 	functionYaml := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\ntype: http\nhttp-method: GET\nname: 999invalid\n"
 	afero.WriteFile(fs, "/test/config/functions/test_func.yaml", []byte(functionYaml), 0644)
 
-	compiler, err := New(WithVirtual(fs, "/test/config"))
+	compiler, err := schema.New(schema.WithVirtual(fs, "/test/config"))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -134,7 +136,7 @@ func TestCompile_NestedPathError_Line1_ExactError(t *testing.T) {
 	functionYaml := "name: test-function\n"
 	afero.WriteFile(fs, "/test/config/applications/test_app/functions/test_func.yaml", []byte(functionYaml), 0644)
 
-	compiler, err := New(WithVirtual(fs, "/test/config"))
+	compiler, err := schema.New(schema.WithVirtual(fs, "/test/config"))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -164,7 +166,7 @@ func TestCompile_NestedPathError_Line2_ExactError(t *testing.T) {
 	functionYaml := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\nname: 12345\n"
 	afero.WriteFile(fs, "/test/config/applications/test_app/functions/test_func.yaml", []byte(functionYaml), 0644)
 
-	compiler, err := New(WithVirtual(fs, "/test/config"))
+	compiler, err := schema.New(schema.WithVirtual(fs, "/test/config"))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -187,7 +189,7 @@ func TestCompile_ProjectEmailValidation(t *testing.T) {
 	invalidConfig := "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nname: TrueTest\nnotification:\n    email: invalid-email\n"
 	afero.WriteFile(cowFs, configPath, []byte(invalidConfig), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -209,7 +211,7 @@ func TestCompile_FunctionInvalidType(t *testing.T) {
 	invalidFunc := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\ntrigger:\n    type: invalid_type\n    method: get\n"
 	afero.WriteFile(cowFs, funcPath, []byte(invalidFunc), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -231,7 +233,7 @@ func TestCompile_FunctionInvalidHttpMethod(t *testing.T) {
 	invalidFunc := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\ntrigger:\n    type: http\n    method: INVALID_METHOD\n"
 	afero.WriteFile(cowFs, funcPath, []byte(invalidFunc), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -253,7 +255,7 @@ func TestCompile_DomainInvalidFqdn(t *testing.T) {
 	invalidDomain := "id: QmUcVJtgGZYkqFr2J9t2jV2fJJWZBvD7FJ6RyXzJY2kAj1\nfqdn: not-a-valid-fqdn!!!\n"
 	afero.WriteFile(cowFs, domainPath, []byte(invalidDomain), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -275,7 +277,7 @@ func TestCompile_DatabaseInvalidNetworkAccess(t *testing.T) {
 	invalidDb := "id: QmRkFTeYx8J4X3X2Jx5xutHArDyp72r7z6sLX9s3iCbsXr\naccess:\n    network: invalid_access\n"
 	afero.WriteFile(cowFs, dbPath, []byte(invalidDb), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -297,7 +299,7 @@ func TestCompile_FunctionInvalidName(t *testing.T) {
 	invalidFunc := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\nname: 123invalid\n"
 	afero.WriteFile(cowFs, funcPath, []byte(invalidFunc), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -319,7 +321,7 @@ func TestCompile_FunctionMissingId(t *testing.T) {
 	invalidFunc := "description: an http function\n"
 	afero.WriteFile(cowFs, funcPath, []byte(invalidFunc), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -341,7 +343,7 @@ func TestCompile_FunctionInvalidId(t *testing.T) {
 	invalidFunc := "id: not-a-valid-cid\n"
 	afero.WriteFile(cowFs, funcPath, []byte(invalidFunc), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -363,7 +365,7 @@ func TestCompile_StorageInvalidNetworkAccess(t *testing.T) {
 	invalidStorage := "id: QmSbe2pTyH3fpF2T8JSAk6s3js2MqUg2gi5Hx2iTWCBtqX\naccess:\n    network: invalid_access\nstreaming:\n    ttl: 5m\n"
 	afero.WriteFile(cowFs, storagePath, []byte(invalidStorage), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -385,7 +387,7 @@ func TestCompile_ApplicationFunctionError(t *testing.T) {
 	invalidFunc := "id: QmXuTz6e3W7Y9EJ2hYH4Jk1JAXT7pKnai5NqUWFPVF5Cmx\nname: @invalid-name\ntrigger:\n    type: pubsub\n    local: true\n    channel: channel2\nsource: \"libraries/test_library2\"\nexecution:\n    timeout: 23s\n    memory: 23MB\n    call: ping2\n"
 	afero.WriteFile(cowFs, appFuncPath, []byte(invalidFunc), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -422,7 +424,7 @@ func TestCompile_MultipleValidationErrors(t *testing.T) {
 	invalidDomain := "id: QmUcVJtgGZYkqFr2J9t2jV2fJJWZBvD7FJ6RyXzJY2kAj1\nfqdn: invalid!!!\n"
 	afero.WriteFile(cowFs, domainPath, []byte(invalidDomain), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -460,7 +462,7 @@ func TestCompile_LibraryInvalidName(t *testing.T) {
 	invalidLib := "id: QmPzW5WJfw7oR8zHrYPXGMxqM9vLhZ6vW7jbUbJj5Xf4sR\nname: -invalid\nsource:\n    github:\n        id: \"111111111\"\n        fullname: taubyte-test/library1\n"
 	afero.WriteFile(cowFs, libPath, []byte(invalidLib), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -482,7 +484,7 @@ func TestCompile_WebsiteInvalidName(t *testing.T) {
 	invalidWebsite := "id: QmZmW9PQmz5Z6pYPJ6VDUPVgH7L6Xb8K1GTh8dNQzDh5gh\nname: 0invalid\nsource:\n    github:\n        id: \"111111112\"\n        fullname: taubyte-test/photo_booth\n"
 	afero.WriteFile(cowFs, websitePath, []byte(invalidWebsite), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -504,7 +506,7 @@ func TestCompile_SmartopInvalidName(t *testing.T) {
 	invalidSmartop := "id: QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvm\nname: invalid-name-with-dashes\n"
 	afero.WriteFile(cowFs, smartopPath, []byte(invalidSmartop), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -528,7 +530,7 @@ func TestCompile_FunctionInvalidSource(t *testing.T) {
 	invalidFunc := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\nsource: not_a_ref\n"
 	afero.WriteFile(cowFs, funcPath, []byte(invalidFunc), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -548,7 +550,7 @@ func TestCompile_SmartopInvalidSource(t *testing.T) {
 	invalidSmartop := "id: QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvm\nsource: not_a_ref\n"
 	afero.WriteFile(cowFs, smartopPath, []byte(invalidSmartop), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())
@@ -569,7 +571,7 @@ func TestCompile_DomainCertificateTypeInvalid(t *testing.T) {
 	invalidDomain := "id: QmUcVJtgGZYkqFr2J9t2jV2fJJWZBvD7FJ6RyXzJY2kAj1\nfqdn: hal.computers.com\ncertificate:\n    type: invalid_type\n"
 	afero.WriteFile(cowFs, domainPath, []byte(invalidDomain), 0644)
 
-	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
 	assert.NilError(t, err)
 
 	_, _, err = compiler.Compile(context.Background())

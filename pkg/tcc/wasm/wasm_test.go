@@ -139,7 +139,7 @@ func (m *memStore) primitives() js.Value {
 	return obj
 }
 
-const fixtureRoot = "../taubyte/v1/fixtures/config"
+const fixtureRoot = "../interp/fixtures/config"
 
 func loadFixture(t *testing.T) *memStore {
 	t.Helper()

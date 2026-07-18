@@ -31,7 +31,7 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 	_ "github.com/taubyte/tau/dream/fixtures"
-	_ "github.com/taubyte/tau/pkg/tcc/taubyte/v1/fixtures"
+	_ "github.com/taubyte/tau/pkg/tcc/interp/fixtures"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 	_ "github.com/taubyte/tau/services/substrate/dream"
 	_ "github.com/taubyte/tau/services/tns/dream"

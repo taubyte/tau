@@ -1,4 +1,4 @@
-package driver
+package interp
 
 import (
 	"fmt"
@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/interp/utils"
 	"github.com/taubyte/tau/pkg/tcc/object"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/utils"
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
 

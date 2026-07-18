@@ -10,7 +10,7 @@ import (
 )
 
 // TCCFixtureProjectRoot returns the absolute path to the TCC fixture project root
-// (pkg/tcc/taubyte/v1/fixtures). The project config repo is at <returned path>/config.
+// (pkg/tcc/interp/fixtures). The project config repo is at <returned path>/config.
 // Use this with config.Project{Location: TCCFixtureProjectRoot()} so that Interface()
 // opens the schema project from the TCC fixtures.
 func TCCFixtureProjectRoot() (string, error) {
@@ -18,7 +18,7 @@ func TCCFixtureProjectRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(root, "pkg", "tcc", "taubyte", "v1", "fixtures"), nil
+	return filepath.Join(root, "pkg", "tcc", "interp", "fixtures"), nil
 }
 
 const TCCFixtureProjectName = "fixture"

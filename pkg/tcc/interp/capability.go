@@ -1,4 +1,4 @@
-package driver
+package interp
 
 import (
 	"github.com/taubyte/tau/pkg/specs/common"

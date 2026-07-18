@@ -32,14 +32,14 @@ import (
 	_ "github.com/taubyte/tau/clients/p2p/tns/dream"
 )
 
-// tccFixtureConfigPath returns the absolute path to the TCC fixture config dir (pkg/tcc/taubyte/v1/fixtures/config).
+// tccFixtureConfigPath returns the absolute path to the TCC fixture config dir (pkg/tcc/interp/fixtures/config).
 func tccFixtureConfigPath(t *testing.T) string {
 	t.Helper()
 	dir, err := os.Getwd()
 	assert.NilError(t, err)
 	for {
 		if _, err := os.Stat(filepath.Join(dir, "go.mod")); err == nil {
-			return filepath.Join(dir, "pkg", "tcc", "taubyte", "v1", "fixtures", "config")
+			return filepath.Join(dir, "pkg", "tcc", "interp", "fixtures", "config")
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {

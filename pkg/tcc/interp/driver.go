@@ -1,13 +1,4 @@
-// Package driver holds the CompileDriver: a single, generic transform that
-// interprets the tcc schema DSL to perform every structural projection the old
-// hand-written pass1/* files did (scalar parse, EnumBool/DerivedBool bool
-// synthesis, OnlyWhen-gated + plain Tag wire-key renames, id -> object-key
-// promotion, and the name->id index the later passes resolve refs against),
-// plus the project-scope drops/validations and the clouds flatten. It is driven
-// entirely by the *engine.Node tree it is handed, so it never restates the
-// schema and cannot drift from it. It does NOT import the schema package (the
-// schema imports THIS package for GroupTransform, so the dependency is one-way).
-package driver
+package interp
 
 import (
 	"fmt"
@@ -15,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/interp/utils"
 	"github.com/taubyte/tau/pkg/tcc/object"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/utils"
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
 
@@ -30,12 +21,12 @@ type CompileDriver struct {
 	branch string
 }
 
-// New builds a CompileDriver from the schema root node. `root` carries the
-// project-scope attributes (id -> project_id validation, tags -> wire drop via
+// newCompileDriver builds a CompileDriver from the schema root node. `root` carries
+// the project-scope attributes (id -> project_id validation, tags -> wire drop via
 // annotations) and the resource/container/clouds groups as its children. cloud
 // and branch are threaded into the TC that group-transform closures (clouds)
 // receive. Takes the node tree as data so this package never imports schema.
-func New(root *engine.Node, cloud, branch string) transform.Transformer[object.Refrence] {
+func newCompileDriver(root *engine.Node, cloud, branch string) transform.Transformer[object.Refrence] {
 	return &CompileDriver{root: root, cloud: cloud, branch: branch}
 }
 

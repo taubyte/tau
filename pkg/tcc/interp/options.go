@@ -1,4 +1,4 @@
-package compiler
+package interp
 
 import (
 	"github.com/spf13/afero"
