@@ -131,12 +131,12 @@ func TestCompatAlias(t *testing.T) {
 
 func resourceByGroup(t *testing.T, group string) *Resource {
 	t.Helper()
-	rs, err := Resources(schema.TaubyteRessources)
+	rs, err := Resources(schema.GenerationRoot())
 	if err != nil {
 		t.Fatal(err)
 	}
 	var pkg string
-	for _, g := range schema.TaubyteRessources {
+	for _, g := range schema.GenerationRoot() {
 		if name, _ := g.Match.(string); name == group && len(g.Children) > 0 {
 			if d, ok := descriptorFor(g.Children[0]); ok {
 				pkg = d.Package
@@ -199,7 +199,7 @@ func assertHasSetter(t *testing.T, r *Resource, name, doc, body string) {
 
 // TestGenerateParses ensures every emitted file is valid, gofmt-able Go.
 func TestGenerateParses(t *testing.T) {
-	files, err := Generate(schema.TaubyteRessources)
+	files, err := Generate(schema.GenerationRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -108,22 +108,30 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			continue
 		}
 		iter := g.Children[0]
-		// A group emits a struct iff the DSL declares it a Resource; type name and
-		// specs package come from there, everything else derives — no hardcoding.
-		d, ok := descriptorFor(iter)
-		if !ok {
+		// A group emits a struct if the DSL declares it a Resource (full: struct +
+		// addressing methods + SmartOps) or StructOnly (a bare container struct,
+		// common fields only — applications -> App). Everything else is skipped.
+		var m *StructModel
+		bare := false
+		if d, ok := descriptorFor(iter); ok {
+			alias := strings.ToLower(d.Spec) + "Spec"
+			m = &StructModel{
+				Spec:       d.Spec,
+				Fields:     commonFields(),
+				SpecImport: "github.com/taubyte/tau/pkg/specs/" + d.SpecPkg,
+				SpecAlias:  alias,
+			}
+			if e, ok := iter.Meta["embeds"].([]string); ok {
+				m.Embeds = e
+			}
+			caps, _ := iter.Meta["addressing"].([]engine.Capability)
+			m.Methods = addressingMethods(d.Recv, d.Spec, alias, caps)
+		} else if so, ok := iter.Meta["structOnly"].(string); ok && so != "" {
+			m = &StructModel{Spec: so, Fields: commonFields()}
+			bare = true
+		} else {
 			continue
 		}
-		recv := d.Recv
-		alias := strings.ToLower(d.Spec) + "Spec"
-		imp := "github.com/taubyte/tau/pkg/specs/" + d.SpecPkg
-
-		m := &StructModel{Spec: d.Spec, Fields: commonFields(), SpecImport: imp, SpecAlias: alias}
-		if e, ok := iter.Meta["embeds"].([]string); ok {
-			m.Embeds = e
-		}
-		caps, _ := iter.Meta["addressing"].([]engine.Capability)
-		m.Methods = addressingMethods(recv, d.Spec, alias, caps)
 		reserved := map[string]bool{"Id": true, "Name": true, "Description": true, "Tags": true, "SmartOps": true}
 		for _, a := range iter.Attributes {
 			if commonAttrs[a.Name] || structSkip[name+"."+a.Name] {
@@ -164,17 +172,20 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 			}
 			m.Fields = append(m.Fields, f)
 		}
-		// Derived bool fields synthesized by transform passes (e.g. Secure).
-		if db, ok := iter.Meta["derivedBools"].([]string); ok {
-			for _, nm := range db {
-				if reserved[nm] {
-					continue
+		// Derived fields and SmartOps are resource conventions — a bare container
+		// struct (App) has neither.
+		if !bare {
+			if db, ok := iter.Meta["derivedBools"].([]string); ok {
+				for _, nm := range db {
+					if reserved[nm] {
+						continue
+					}
+					reserved[nm] = true
+					m.Fields = append(m.Fields, Field{Name: nm, Type: "bool"})
 				}
-				reserved[nm] = true
-				m.Fields = append(m.Fields, Field{Name: nm, Type: "bool"})
 			}
+			m.Fields = append(m.Fields, Field{Name: "SmartOps", Type: "[]string"})
 		}
-		m.Fields = append(m.Fields, Field{Name: "SmartOps", Type: "[]string"})
 		out = append(out, m)
 	}
 	return out, nil

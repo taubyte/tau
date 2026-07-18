@@ -146,28 +146,37 @@ var TaubyteRessources = []*Node{
 		)),
 }
 
-var TaubyteProject = SchemaDefinition(
-	Root(
-		TaubyteAttributes(
-			String("email", Path("notification", "email"), IsEmail()),
-		),
-		append(TaubyteRessources,
-			DefineGroup("applications",
-				DefineIterGroup(
-					TaubyteAttributes(),
-					TaubyteRessources...,
-				),
-			),
-			// clouds.<fqdn>.{account, plan} — DefineIter (not Group) so each
-			// FQDN's attrs live directly under the map key in nested YAML.
-			DefineGroup("clouds",
-				DefineIter(
-					[]*Attribute{
-						String("account"),
-						String("plan"),
-					},
-				),
-			),
-		)...,
+// applicationsGroup is the applications container: its iterator holds a nested
+// copy of every resource group. StructOnly("App") makes tcc-gen generate
+// pkg/specs/structure/app.go — a bare struct of the common fields, no
+// object-addressing methods and no pkg/schema accessor package (it's a container
+// identity, not a config-decode resource, so it can't drift).
+func applicationsGroup() *Node {
+	iter := DefineIterGroup(TaubyteAttributes(), TaubyteRessources...)
+	StructOnly("App")(iter)
+	return DefineGroup("applications", iter)
+}
+
+// cloudsGroup: clouds.<fqdn>.{account, plan} — DefineIter (not Group) so each
+// FQDN's attrs live directly under the map key in nested YAML. No StructOnly:
+// clouds compiles to no structureSpec type.
+func cloudsGroup() *Node {
+	return DefineGroup("clouds", DefineIter([]*Attribute{
+		String("account"),
+		String("plan"),
+	}))
+}
+
+var taubyteRoot = Root(
+	TaubyteAttributes(
+		String("email", Path("notification", "email"), IsEmail()),
 	),
+	append(append([]*Node{}, TaubyteRessources...), applicationsGroup(), cloudsGroup())...,
 )
+
+var TaubyteProject = SchemaDefinition(taubyteRoot)
+
+// GenerationRoot is the node list tcc-gen walks: the real project root's groups
+// (the 9 resources + applications + clouds), so no curated list can drift from
+// the schema. Every generator/test uses this one accessor.
+func GenerationRoot() []*Node { return taubyteRoot.Children }

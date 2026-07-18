@@ -11,6 +11,7 @@ import (
 )
 
 var specTypes = map[string]reflect.Type{
+	"App":       reflect.TypeFor[structureSpec.App](),
 	"Function":  reflect.TypeFor[structureSpec.Function](),
 	"Database":  reflect.TypeFor[structureSpec.Database](),
 	"Domain":    reflect.TypeFor[structureSpec.Domain](),
@@ -28,7 +29,7 @@ var specTypes = map[string]reflect.Type{
 // emit are the hand-written tail (value transforms, derived fields like
 // Function.Secure, embedded markers) and are reported, not failed.
 func TestStructParity(t *testing.T) {
-	models, err := Structs(schema.TaubyteRessources)
+	models, err := Structs(schema.GenerationRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

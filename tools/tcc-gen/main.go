@@ -61,7 +61,7 @@ func run(c *cli.Context) error {
 		return writeTS(root, c.String("out"))
 	}
 
-	generated, err := gen.Generate(schema.TaubyteRessources)
+	generated, err := gen.Generate(schema.GenerationRoot())
 	if err != nil {
 		return err
 	}

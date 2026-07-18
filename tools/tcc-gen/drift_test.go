@@ -24,7 +24,7 @@ func TestNoDrift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	generated, err := gen.Generate(schema.TaubyteRessources)
+	generated, err := gen.Generate(schema.GenerationRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

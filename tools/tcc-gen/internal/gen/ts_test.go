@@ -10,24 +10,34 @@ import (
 // The TS emitter must produce an accessor class + a Session factory for every
 // resource the Go generator covers — they share the DSL walk.
 func TestGenerateTSCoversResources(t *testing.T) {
-	models, err := Structs(schema.TaubyteRessources)
+	models, err := Structs(schema.GenerationRoot())
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := GenerateTS(schema.TaubyteRessources)
+	out, err := GenerateTS(schema.GenerationRoot())
 	if err != nil {
 		t.Fatal(err)
 	}
 	ts := string(out)
 
-	// one class per resource, plus Session
-	if got := strings.Count(ts, "export class "); got != len(models)+1 {
-		t.Fatalf("class count: got %d, want %d", got, len(models)+1)
+	// One accessor class per RESOURCE (bare container structs like App have a
+	// struct but no accessor class), plus Session.
+	resources := 0
+	for _, m := range models {
+		if m.SpecImport != "" {
+			resources++
+		}
+	}
+	if got := strings.Count(ts, "export class "); got != resources+1 {
+		t.Fatalf("class count: got %d, want %d", got, resources+1)
 	}
 	if !strings.Contains(ts, "export class Session {") {
 		t.Error("missing Session class")
 	}
 	for _, m := range models {
+		if m.SpecImport == "" {
+			continue // bare container struct — no accessor class
+		}
 		if !strings.Contains(ts, "export class "+m.Spec+"Config {") {
 			t.Errorf("missing accessor class for %s", m.Spec)
 		}
@@ -37,7 +47,7 @@ func TestGenerateTSCoversResources(t *testing.T) {
 // Accessors must address (resource, field) by path, be async, type InSet fields
 // as unions, and read the legacy key as a fallback.
 func TestGenerateTSAccessors(t *testing.T) {
-	out, err := GenerateTS(schema.TaubyteRessources)
+	out, err := GenerateTS(schema.GenerationRoot())
 	if err != nil {
 		t.Fatal(err)
 	}

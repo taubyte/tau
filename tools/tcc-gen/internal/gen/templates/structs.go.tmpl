@@ -9,12 +9,12 @@
 {{- end}}
 
 package structureSpec
-
+{{if .SpecImport}}
 import (
 	"github.com/taubyte/tau/pkg/specs/common"
 	{{.SpecAlias}} "{{.SpecImport}}"
 )
-
+{{end}}
 type {{.Spec}} struct {
 {{range .Fields}}	{{.Name}} {{.Type}}{{if .Tag}} {{.Tag}}{{end}}
 {{end}}
