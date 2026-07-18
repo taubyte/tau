@@ -118,14 +118,6 @@ func Embeds(names ...string) NodeOption {
 	return GroupAnnotate("embeds", names)
 }
 
-// DerivedBools declares extra bool struct fields a transform pass synthesizes
-// with no source attribute (e.g. Function.Secure from type=="https"). The
-// generator emits `<Name> bool`, decoded from the compiled key lower(Name).
-// Generation-only; no runtime effect.
-func DerivedBools(names ...string) NodeOption {
-	return GroupAnnotate("derivedBools", names)
-}
-
 // AttachesToAll marks a resource group as cross-cutting: every OTHER compiled
 // resource carries a trailing derived []string field listing the instances of
 // THIS kind attached to it. The generator names that universal field from this
@@ -146,12 +138,102 @@ func Singular(goName string) NodeOption {
 	return GroupAnnotate("singular", goName)
 }
 
-// StructBool declares that a transform pass projects this attribute's value into
-// a bool struct field named goName (e.g. network-access -> Local/Public), decoded
-// from the compiled key lower(goName). It replaces the attribute's own struct
-// field. Generation-only; no runtime effect.
-func StructBool(goName string) Option {
-	return Annotate("structBool", goName)
+// EnumBoolSpec is the compile/decompile contract for an EnumBool attribute.
+type EnumBoolSpec struct {
+	GoName      string    // bool struct-field name (network-access -> Local/Public)
+	TrueWhen    []string  // source values that compile the bool to true
+	DropWhen    []string  // source values whose wire key is dropped after projection
+	DecompileAs [2]string // [falseVal, trueVal] restored on decompile
+}
+
+// EnumBool declares that this enum attribute projects to a bool struct field
+// named goName (network-access -> Local/Public), replacing the attribute's own
+// field. It carries the full compile/decompile contract a generic driver reads:
+// values in trueWhen compile the bool true; values in dropWhen have their wire
+// key deleted after projection (values in neither survive compile as-is, e.g. a
+// database's authored "subnet"); decompileAs is the [false,true] pair the
+// inverse restores. Generation reads only GoName; the rest is inert driver data
+// this phase. No runtime effect (the hand-written passes still hardcode this).
+func EnumBool(goName string, trueWhen, dropWhen []string, decompileAs [2]string) Option {
+	return Annotate("enumBool", EnumBoolSpec{GoName: goName, TrueWhen: trueWhen, DropWhen: dropWhen, DecompileAs: decompileAs})
+}
+
+// DerivedBoolSpec is the compile/decompile contract for a DerivedBool attribute.
+type DerivedBoolSpec struct {
+	GoName      string          // synthesized bool struct-field name (Function.Secure)
+	When        map[string]bool // source value -> the bool it yields
+	Reconstruct map[bool]string // bool -> the source value restored on decompile
+}
+
+// DerivedBool declares an attribute-level derived bool: a bool struct field
+// named goName synthesized from THIS attribute's value (Function.Secure from
+// type=="https"). `when` maps each source value to the bool it yields;
+// `reconstruct` maps the bool back to a source value on decompile. It is
+// attribute-level (unlike the removed node-level DerivedBools) so a generic
+// driver knows the source attribute. The generator still emits `<goName> bool`
+// alongside the source attribute's own field. Inert driver data this phase; the
+// generator reads only GoName. No runtime effect.
+func DerivedBool(goName string, when map[string]bool, reconstruct map[bool]string) Option {
+	return Annotate("derivedBool", DerivedBoolSpec{GoName: goName, When: when, Reconstruct: reconstruct})
+}
+
+// OnlyWhenSpec gates a wire-key rename/emit on a sibling attribute's value.
+type OnlyWhenSpec struct {
+	Attr string
+	Vals []string
+}
+
+// OnlyWhen makes an attribute's wire projection conditional on a sibling
+// attribute's value (p2p-protocol renames to "service" only when type=="p2p").
+// Inert driver data — no generation or runtime effect this phase.
+func OnlyWhen(attr string, vals ...string) Option {
+	return Annotate("onlyWhen", OnlyWhenSpec{Attr: attr, Vals: vals})
+}
+
+// RefSpec declares that an attribute value references another resource group,
+// so a driver can resolve it to that group's compiled key, optionally under a
+// key Prefix.
+type RefSpec struct {
+	Group  string
+	Prefix string
+}
+
+// RefOpt tunes a RefSpec.
+type RefOpt func(*RefSpec)
+
+// Prefix sets the RefSpec key prefix.
+func Prefix(p string) RefOpt {
+	return func(s *RefSpec) { s.Prefix = p }
+}
+
+// Ref declares that this attribute's value is a reference into another resource
+// group. Inert driver data — no generation or runtime effect this phase.
+func Ref(group string, opts ...RefOpt) Option {
+	s := RefSpec{Group: group}
+	for _, o := range opts {
+		o(&s)
+	}
+	return Annotate("ref", s)
+}
+
+// ValidationEmit declares a DEFERRED validation (engine.NextValidation) a driver
+// should emit for the compiled resource under Key, using the named validator.
+type ValidationEmit struct {
+	Key       string
+	Validator string
+}
+
+// EmitValidation declares a deferred validation to attach at compile time
+// (domains -> EmitValidation("domain","dns")). Distinct from the load-time
+// Validator(). Inert driver data — no effect this phase.
+func EmitValidation(key, validator string) Option {
+	return Annotate("emitValidation", ValidationEmit{Key: key, Validator: validator})
+}
+
+// WireDrop marks an attribute whose compiled wire key a driver should delete
+// after consuming it. Inert driver data — no effect this phase.
+func WireDrop() Option {
+	return Annotate("wireDrop", true)
 }
 
 // Resource declares the irregular Go names a resource generates into, so the

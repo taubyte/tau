@@ -21,7 +21,7 @@ var TaubyteRessources = []*Node{
 			TaubyteAttributes(
 				String("match"),
 				Bool("useRegex", Path("regex"), Compat("useRegex")),
-				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), StructBool("Local"), NoAccessors()),
+				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Local", []string{"host"}, []string{"all", "host"}, [2]string{"host", "all"}), NoAccessors()),
 				Bytes("size", Path("storage", "size")),
 				String("encryption-type", Path("encryption", "type"), NoAccessors(), NoStructField()),
 				String("encryption-key", Path("encryption", "key"), NoAccessors()),
@@ -46,7 +46,7 @@ var TaubyteRessources = []*Node{
 	DefineGroup("functions",
 		DefineIter(
 			TaubyteAttributes(
-				String("type", Path("trigger", "type"), InSet("http", "https", "pubsub", "p2p")),
+				String("type", Path("trigger", "type"), InSet("http", "https", "pubsub", "p2p"), DerivedBool("Secure", map[string]bool{"http": false, "https": true}, map[bool]string{false: "http", true: "https"})),
 				Bool("local", Path("trigger", "local")),
 				String("pubsub-channel", Path("trigger", "channel"), Tag("channel")),
 				String("p2p-protocol", Path("trigger", "protocol"), Compat("trigger", "service"), Tag("service"), Default("")),
@@ -63,8 +63,6 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule, HasServices),
 			Embeds("Wasm"),
 			Resource("functions", "Function", "Function", "function"),
-			// secure is synthesized from type=="https" in pass1.
-			DerivedBools("Secure"),
 		)),
 	DefineGroup("libraries",
 		DefineIter(
@@ -124,7 +122,7 @@ var TaubyteRessources = []*Node{
 				String("type", Path(Either("object", "streaming")), Key()),
 				String("match"),
 				Bool("useRegex", Path("regex"), Compat("useRegex")),
-				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), StructBool("Public"), NoAccessors()),
+				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Public", []string{"all"}, []string{"all", "subnet", "host"}, [2]string{"all", "subnet"}), NoAccessors()),
 				Bool("versioning", Path("object", "versioning"), NoSetter()),
 				Duration("ttl", Path("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter()),
 				Bytes("size", Path(Either("object", "streaming"), "size")),

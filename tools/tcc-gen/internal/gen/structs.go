@@ -139,13 +139,21 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 		for _, t := range universalTail(root) {
 			reserved[t.name] = true
 		}
+		var derived []string // DerivedBool GoNames, emitted post-loop (see below)
 		for _, a := range iter.Attributes {
 			if common[a.Name] || noStructField(a) {
 				continue
 			}
-			// A StructBool attr (network-access) projects to a bool field named
-			// by the annotation, decoded from the compiled key lower(name).
-			if b, ok := a.Meta["structBool"].(string); ok && b != "" {
+			// A DerivedBool attr synthesizes an extra bool field (Function.Secure
+			// from type) IN ADDITION to its own field; collected here and emitted
+			// post-loop at the position the old node-level DerivedBools used.
+			if d, ok := a.Meta["derivedBool"].(engine.DerivedBoolSpec); ok && d.GoName != "" {
+				derived = append(derived, d.GoName)
+			}
+			// An EnumBool attr (network-access) projects to a bool field named by
+			// the annotation, replacing its own field (decoded from lower(name)).
+			if eb, ok := a.Meta["enumBool"].(engine.EnumBoolSpec); ok && eb.GoName != "" {
+				b := eb.GoName
 				if reserved[b] {
 					m.Skipped = append(m.Skipped, name+"."+a.Name)
 					continue
@@ -181,14 +189,12 @@ func Structs(root []*engine.Node) ([]*StructModel, error) {
 		// Derived fields and SmartOps are resource conventions — a bare container
 		// struct (Application) has neither.
 		if !bare {
-			if db, ok := iter.Meta["derivedBools"].([]string); ok {
-				for _, nm := range db {
-					if reserved[nm] {
-						continue
-					}
-					reserved[nm] = true
-					m.Fields = append(m.Fields, Field{Name: nm, Type: "bool"})
+			for _, nm := range derived {
+				if reserved[nm] {
+					continue
 				}
+				reserved[nm] = true
+				m.Fields = append(m.Fields, Field{Name: nm, Type: "bool"})
 			}
 			for _, t := range universalTail(root) {
 				m.Fields = append(m.Fields, Field{Name: t.name, Type: t.goType})

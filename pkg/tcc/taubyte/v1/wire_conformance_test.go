@@ -21,7 +21,7 @@ import (
 // asserts:
 //
 //  1. no wire key exists that isn't Tag()??Name of some attribute (or a known
-//     synthesized key: the StructBool projection local/public, the DerivedBool
+//     synthesized key: the EnumBool projection local/public, the DerivedBool
 //     secure, the common name/description/tags, or the attaches-to-all smartops
 //     list). id never survives — it is promoted to the object key.
 //  2. no attribute's raw Name leaks where a Tag() renamed it (e.g. a function must
@@ -33,7 +33,7 @@ import (
 //   - http-methods (Tag "methods") is NoStructField / unimplemented and absent from
 //     every fixture, so its Tag value is excluded from assertion (3). Its raw-name
 //     no-leak (2) and allowed-key (1) checks still apply.
-//   - StructBool granularity (network-access -> local/public) and the conditional
+//   - EnumBool granularity (network-access -> local/public) and the conditional
 //     drop of p2p-protocol are the concern of later phases; here they are only
 //     required not to leak a raw name and not to introduce an unexpected key.
 type groupRule struct {
@@ -80,12 +80,17 @@ func TestWireKeyConformance(t *testing.T) {
 			if common[a.Name] || a.Name == "id" {
 				continue
 			}
-			// A StructBool attr projects to a bool under lower(goName) (network-access
+			// An EnumBool attr projects to a bool under lower(goName) (network-access
 			// -> local/public), replacing its own key. That is a separate mechanism
 			// from Tag; here we only allow its projected key.
-			if b, ok := a.Meta["structBool"].(string); ok && b != "" {
-				r.allowed[strings.ToLower(b)] = true
+			if eb, ok := a.Meta["enumBool"].(engine.EnumBoolSpec); ok && eb.GoName != "" {
+				r.allowed[strings.ToLower(eb.GoName)] = true
 				continue
+			}
+			// A DerivedBool attr synthesizes a bool wire key (function secure) in
+			// addition to keeping its own key.
+			if d, ok := a.Meta["derivedBool"].(engine.DerivedBoolSpec); ok && d.GoName != "" {
+				r.allowed[strings.ToLower(d.GoName)] = true
 			}
 			key := a.Name
 			if tag, ok := attrTag(a); ok {
@@ -98,11 +103,6 @@ func TestWireKeyConformance(t *testing.T) {
 				}
 			}
 			r.allowed[key] = true
-		}
-		if db, ok := iter.Meta["derivedBools"].([]string); ok {
-			for _, nm := range db {
-				r.allowed[strings.ToLower(nm)] = true
-			}
 		}
 		if b, _ := iter.Meta["attachesToAll"].(bool); b {
 			attachKey = name
