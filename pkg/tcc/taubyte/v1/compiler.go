@@ -6,7 +6,6 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/object"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/pass2"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/pass3"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/pass4"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
@@ -58,8 +57,13 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 	// that interprets the schema DSL to do every structural projection pass1 did.
 	compileDriver := driver.New(schema.CompileRoot(), c.cloud, c.branch)
 
+	// ResolveRefs replaces the whole pass2 layer: a generic transform that
+	// resolves every Ref(...)-annotated attribute against the name->id index the
+	// CompileDriver populated (source validation moved to the load-time Validator).
+	resolveRefs := driver.ResolveRefs(schema.CompileRoot())
+
 	pipe := []transform.Transformer[object.Refrence]{}
-	for _, p := range [][]transform.Transformer[object.Refrence]{{compileDriver}, pass2.Pipe(), pass3.Pipe(), pass4.Pipe(c.branch)} {
+	for _, p := range [][]transform.Transformer[object.Refrence]{{compileDriver}, {resolveRefs}, pass3.Pipe(), pass4.Pipe(c.branch)} {
 		pipe = append(pipe, p...)
 	}
 

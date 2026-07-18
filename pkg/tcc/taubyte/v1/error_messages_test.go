@@ -514,6 +514,49 @@ func TestCompile_SmartopInvalidName(t *testing.T) {
 	assert.Error(t, err, expectedError)
 }
 
+// TestCompile_FunctionInvalidSource tests the load-time source Validator on a
+// function: source must be "." or "libraries/<name>". This is the coverage that
+// used to live in pass2/source_validation_test.go, now owned by the schema-level
+// Validator (which gains file:line context).
+func TestCompile_FunctionInvalidSource(t *testing.T) {
+	fixturesPath := filepath.Join("fixtures", "config")
+	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
+	overlayFs := afero.NewMemMapFs()
+	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
+
+	funcPath := filepath.Join(fixturesPath, "functions", "test_function1_glob.yaml")
+	invalidFunc := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\nsource: not_a_ref\n"
+	afero.WriteFile(cowFs, funcPath, []byte(invalidFunc), 0644)
+
+	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	assert.NilError(t, err)
+
+	_, _, err = compiler.Compile(context.Background())
+
+	expectedError := "/functions/test_function1_glob.yaml:2:9: source must be \".\" (inline) or start with \"libraries/\", got \"not_a_ref\""
+	assert.Error(t, err, expectedError)
+}
+
+// TestCompile_SmartopInvalidSource tests the load-time source Validator on a smartop.
+func TestCompile_SmartopInvalidSource(t *testing.T) {
+	fixturesPath := filepath.Join("fixtures", "config")
+	baseFs := afero.NewReadOnlyFs(afero.NewOsFs())
+	overlayFs := afero.NewMemMapFs()
+	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
+
+	smartopPath := filepath.Join(fixturesPath, "smartops", "test_smartops1.yaml")
+	invalidSmartop := "id: QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvm\nsource: not_a_ref\n"
+	afero.WriteFile(cowFs, smartopPath, []byte(invalidSmartop), 0644)
+
+	compiler, err := New(WithVirtual(cowFs, fixturesPath))
+	assert.NilError(t, err)
+
+	_, _, err = compiler.Compile(context.Background())
+
+	expectedError := "/smartops/test_smartops1.yaml:2:9: source must be \".\" (inline) or start with \"libraries/\", got \"not_a_ref\""
+	assert.Error(t, err, expectedError)
+}
+
 // TestCompile_DomainCertificateTypeInvalid tests InSet validation for certificate-type
 func TestCompile_DomainCertificateTypeInvalid(t *testing.T) {
 	fixturesPath := filepath.Join("fixtures", "config")

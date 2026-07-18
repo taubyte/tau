@@ -1,10 +1,25 @@
 package schema
 
 import (
+	"fmt"
+	"strings"
+
 	//lint:ignore ST1001 keeps defintion clean
 	. "github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
 )
+
+// sourceShape is the load-time Validator for a function/smartop `source`: it must
+// be either "." (inline code) or a "libraries/<name>" reference. Ported from the
+// old pass2/source_validation.go — but run at load, so it validates the authored
+// value (the same value pass2 checked) with file:line context. The driver's
+// ResolveRefs then resolves the "libraries/<name>" arm to "libraries/<id>".
+func sourceShape(s string) error {
+	if s == "." || strings.HasPrefix(s, "libraries/") {
+		return nil
+	}
+	return fmt.Errorf("source must be %q (inline) or start with %q, got %q", ".", "libraries/", s)
+}
 
 func TaubyteAttributes(attrs ...*Attribute) []*Attribute {
 	return append(
@@ -70,9 +85,9 @@ var TaubyteRessources = []*Node{
 				String("p2p-command", Path("trigger", "command"), Tag("command")),
 				String("http-method", Path("trigger", "method"), IsHttpMethod(), Tag("method")),
 				StringSlice("http-methods", Path("trigger", "methods"), Tag("methods"), NoAccessors(), NoStructField()), // TO IMPLEMENT
-				StringSlice("http-domains", Path("trigger", "domains"), Compat("domains"), Tag("domains")),
+				StringSlice("http-domains", Path("trigger", "domains"), Compat("domains"), Tag("domains"), Ref("domains")),
 				StringSlice("http-paths", Path("trigger", "paths"), Tag("paths")),
-				String("source"),
+				String("source", Ref("libraries", Prefix("libraries/")), Validator(sourceShape)),
 				Duration("timeout", Path("execution", "timeout")),
 				Bytes("memory", Path("execution", "memory")),
 				String("call", Path("execution", "call")),
@@ -121,7 +136,7 @@ var TaubyteRessources = []*Node{
 	DefineGroup("smartops",
 		DefineIter(
 			TaubyteAttributes(
-				String("source"),
+				String("source", Ref("libraries", Prefix("libraries/")), Validator(sourceShape)),
 				Duration("timeout", Path("execution", "timeout")),
 				Bytes("memory", Path("execution", "memory")),
 				String("call", Path("execution", "call")),
@@ -151,7 +166,7 @@ var TaubyteRessources = []*Node{
 	DefineGroup("websites",
 		DefineIter(
 			TaubyteAttributes(
-				StringSlice("domains", Path("domains")),
+				StringSlice("domains", Path("domains"), Ref("domains")),
 				StringSlice("paths", Path("paths"), Compat("source", "paths")), // TODO: add validation
 				String("branch", Path("source", "branch")),                     // TODO: deprecate
 				String("git-provider", Path("source", Either("github")), Key(), Field("Provider"), Tag("provider")),
