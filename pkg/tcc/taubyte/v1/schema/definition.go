@@ -61,11 +61,12 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
 			Resource("databases", "Database", "Database", "database"),
+			driver.IndexLink(databaseIndexLink),
 		)),
 	DefineGroup("domains",
 		DefineIter(
 			TaubyteAttributes(
-				String("fqdn", IsFqdn(), Field("Fqdn"), Accessor("FQDN"), NoGetter()),
+				String("fqdn", IsFqdn(), Field("Fqdn"), Accessor("FQDN"), NoGetter(), EmitValidation("domain", "dns")),
 				String("certificate-data", Path("certificate", "cert"), Field("CertFile"), Tag("cert-file")),
 				String("certificate-key", Path("certificate", "key"), Field("KeyFile"), Tag("key-file")),
 				String("certificate-type", Path("certificate", "type"), InSet("inline", "auto"), Default(""), Field("CertType"), Tag("cert-type")),
@@ -74,6 +75,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasIndex),
 			Embeds("Indexer"),
 			Resource("domains", "Domain", "Domain", "domain"),
+			driver.IndexSet(domainIndexSet),
 		)),
 	DefineGroup("functions",
 		DefineIter(
@@ -95,6 +97,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule, HasServices),
 			Embeds("Wasm"),
 			Resource("functions", "Function", "Function", "function"),
+			driver.IndexLink(functionIndexLink),
 		)),
 	DefineGroup("libraries",
 		DefineIter(
@@ -108,6 +111,8 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasWasmModule, HasNameIndex),
 			Embeds("Wasm"),
 			Resource("libraries", "Library", "Library", "library"),
+			driver.IndexLink(libraryIndexLink),
+			driver.IndexSet(libraryIndexSet),
 		)),
 	DefineGroup("messaging",
 		DefineIter(
@@ -123,6 +128,7 @@ var TaubyteRessources = []*Node{
 			// the dream inject path (services/tns/mocks casts to structureSpec.Wasm).
 			Embeds("Basic", "Wasm"),
 			Resource("messaging", "Messaging", "Messaging", "messaging"),
+			driver.IndexLinkRaw(messagingIndexLinkRaw),
 		)),
 	DefineGroup("services",
 		DefineIter(
@@ -147,6 +153,7 @@ var TaubyteRessources = []*Node{
 			// smartops attach to every resource: each compiled resource carries a
 			// derived SmartOps []string field (key "smartops"), sourced here.
 			AttachesToAll(),
+			driver.IndexLink(smartopIndexLink),
 		)),
 	DefineGroup("storages",
 		DefineIter(
@@ -162,6 +169,7 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasIndexPath),
 			Embeds("Basic", "Indexer"),
 			Resource("storages", "Storage", "Storage", "storage"),
+			driver.IndexLink(storageIndexLink),
 		)),
 	DefineGroup("websites",
 		DefineIter(
@@ -176,6 +184,8 @@ var TaubyteRessources = []*Node{
 			Addressing(HasBasicPath, HasIndex, HasHttp, HasWasmModule),
 			Embeds("Basic", "Wasm"),
 			Resource("website", "Website", "Website", "website"),
+			driver.IndexLink(websiteIndexLink),
+			driver.IndexSet(websiteIndexSet),
 		)),
 }
 

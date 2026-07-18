@@ -7,7 +7,6 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/object"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/driver"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/pass3"
-	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/pass4"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	"github.com/taubyte/tau/pkg/tcc/transform"
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
@@ -62,8 +61,13 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 	// CompileDriver populated (source validation moved to the load-time Validator).
 	resolveRefs := driver.ResolveRefs(schema.CompileRoot())
 
+	// IndexDriver replaces the whole pass4 layer: one generic transform that
+	// interprets the DSL's per-resource index-footprint closures to build the
+	// compiled `indexes` subtree (explicit V1 order, project + per-app scope).
+	indexDriver := driver.NewIndexDriver(schema.CompileRoot(), c.branch)
+
 	pipe := []transform.Transformer[object.Refrence]{}
-	for _, p := range [][]transform.Transformer[object.Refrence]{{compileDriver}, {resolveRefs}, pass3.Pipe(), pass4.Pipe(c.branch)} {
+	for _, p := range [][]transform.Transformer[object.Refrence]{{compileDriver}, {resolveRefs}, pass3.Pipe(), {indexDriver}} {
 		pipe = append(pipe, p...)
 	}
 
