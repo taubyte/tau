@@ -47,6 +47,9 @@ type foreignKeyIndex struct {
 // functions/websites domain-http closures — both declare
 // IndexForeignKey(HasHttp, "domains", "domains", "fqdn").
 func IndexForeignKey(cap engine.Capability, refField, targetGroup, targetKey string) engine.NodeOption {
+	if c, ok := cap.(*Cap); !ok || c.ForeignKey == nil {
+		panic(fmt.Sprintf("IndexForeignKey: capability %q carries no foreign-key path", cap.String()))
+	}
 	return engine.GroupAnnotate("indexForeignKey", foreignKeyIndex{cap, refField, targetGroup, targetKey})
 }
 
@@ -70,6 +73,9 @@ func IndexName() engine.NodeOption {
 // verbatim (NO Links() suffix), so every instance of the scope aggregates under
 // one key. Replaces messaging's websocket IndexLinkRaw closure.
 func IndexByScope(cap engine.Capability) engine.NodeOption {
+	if c, ok := cap.(*Cap); !ok || c.ScopePath == nil {
+		panic(fmt.Sprintf("IndexByScope: capability %q carries no scope path", cap.String()))
+	}
 	return engine.GroupAnnotate("indexByScope", cap)
 }
 
@@ -88,21 +94,22 @@ func IndexPlaceholder(keyField string) engine.NodeOption {
 // Addressing() because a capability being present does not imply it is indexed —
 // e.g. websites declare HasWasmModule but write no wasm index link.
 func IndexByName(cap engine.Capability) engine.NodeOption {
+	if c, ok := cap.(*Cap); !ok || c.ByName == nil {
+		panic(fmt.Sprintf("IndexByName: capability %q carries no by-name path", cap.String()))
+	}
 	return engine.GroupAnnotate("indexByName", cap)
 }
 
-// indexByNamePath maps a capability to its by-Name index path, computed
-// generically from the group key (its PathVariable) — the exact paths the old
-// per-resource pass4 files built via each spec's Tns() helper.
+// indexByNamePath computes a capability's by-Name index path from its declared
+// ByName role, keyed by the group's PathVariable — the exact paths the old
+// per-resource pass4 files built via each spec's Tns() helper. The IndexByName
+// constructor guarantees the role is present, so a miss here is a programmer error.
 func indexByNamePath(cap engine.Capability, project, app, name, groupKey string) (*common.TnsPath, error) {
-	switch cap.String() {
-	case "wasm":
-		return methods.WasmModulePath(project, app, name, common.PathVariable(groupKey))
-	case "indexPath":
-		return methods.IndexPath(project, app, name), nil
-	default:
-		return nil, fmt.Errorf("IndexByName: unsupported capability %q", cap.String())
+	c, ok := cap.(*Cap)
+	if !ok || c.ByName == nil {
+		return nil, fmt.Errorf("IndexByName: capability %q carries no by-name path", cap.String())
 	}
+	return c.ByName(project, app, name, common.PathVariable(groupKey))
 }
 
 // indexForeignKey reproduces the old domainHttpPaths fan-out: for every resolved
@@ -133,15 +140,15 @@ func indexForeignKey(ic *IndexCtx, index object.Object[object.Refrence], groupKe
 	return nil
 }
 
-// foreignKeyPath maps a capability to the path form IndexForeignKey writes, keyed
-// off the resolved target value (e.g. http -> HttpPath(fqdn, group)).
+// foreignKeyPath computes the path form IndexForeignKey writes from a capability's
+// ForeignKey role, keyed off the resolved target value (e.g. http ->
+// HttpPath(fqdn, group)). The IndexForeignKey constructor guarantees the role.
 func foreignKeyPath(cap engine.Capability, value, groupKey string) (*common.TnsPath, error) {
-	switch cap.String() {
-	case "http":
-		return methods.HttpPath(value, common.PathVariable(groupKey))
-	default:
-		return nil, fmt.Errorf("IndexForeignKey: unsupported capability %q", cap.String())
+	c, ok := cap.(*Cap)
+	if !ok || c.ForeignKey == nil {
+		return nil, fmt.Errorf("IndexForeignKey: capability %q carries no foreign-key path", cap.String())
 	}
+	return c.ForeignKey(value, common.PathVariable(groupKey))
 }
 
 // indexRepo reproduces the old repositoryPath + website/library repo IndexSet: it
@@ -169,17 +176,16 @@ func indexRepo(ic *IndexCtx, index object.Object[object.Refrence], repoType repo
 // scope path for cap and appends the IndexValue at path.String() verbatim (no
 // Links() suffix), so every instance of the scope aggregates under one key.
 func indexByScope(ic *IndexCtx, index object.Object[object.Refrence], cap engine.Capability) error {
-	switch cap.String() {
-	case "websocket":
-		p, err := methods.WebSocketHashPath(ic.Project, ic.App)
-		if err != nil {
-			return fmt.Errorf("getting websocket hash path failed with %w", err)
-		}
-		appendLink(index, p.String(), ic.IndexValue.String())
-		return nil
-	default:
-		return fmt.Errorf("IndexByScope: unsupported capability %q", cap.String())
+	c, ok := cap.(*Cap)
+	if !ok || c.ScopePath == nil {
+		return fmt.Errorf("IndexByScope: capability %q carries no scope path", cap.String())
 	}
+	p, err := c.ScopePath(ic.Project, ic.App)
+	if err != nil {
+		return fmt.Errorf("getting scope path for %q failed with %w", cap.String(), err)
+	}
+	appendLink(index, p.String(), ic.IndexValue.String())
+	return nil
 }
 
 // indexPlaceholder reproduces the old domain nil-placeholder IndexSet: it reverses
