@@ -16,18 +16,17 @@ import (
 // but reading the behavior off attribute/node annotations rather than a file per
 // resource.
 type CompileDriver struct {
-	root   *engine.Node
-	cloud  string
-	branch string
+	root *engine.Node
+	env  Env
 }
 
 // newCompileDriver builds a CompileDriver from the schema root node. `root` carries
 // the project-scope attributes (id -> project_id validation, tags -> wire drop via
-// annotations) and the resource/container/clouds groups as its children. cloud
-// and branch are threaded into the TC that group-transform closures (clouds)
-// receive. Takes the node tree as data so this package never imports schema.
-func newCompileDriver(root *engine.Node, cloud, branch string) transform.Transformer[object.Refrence] {
-	return &CompileDriver{root: root, cloud: cloud, branch: branch}
+// annotations) and the resource/container/map groups as its children. env is the
+// compile environment (branch, cloud, …) that env-keyed group projections read.
+// Takes the node tree as data so this package never imports schema.
+func newCompileDriver(root *engine.Node, env Env) transform.Transformer[object.Refrence] {
+	return &CompileDriver{root: root, env: env}
 }
 
 func (d *CompileDriver) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
@@ -42,7 +41,7 @@ func (d *CompileDriver) Process(ct transform.Context[object.Refrence], o object.
 	}
 
 	// Groups: resources (project scope), the applications container (id-promote
-	// each app, then recurse into its scope), and clouds (a GroupTransform).
+	// each app, then recurse into its scope), and env-keyed map groups (clouds).
 	if err := d.processGroups(ctRoot, o, d.root.Children); err != nil {
 		return nil, err
 	}
@@ -67,11 +66,11 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 	}
 	iter := g.Children[0]
 
-	// A GroupTransform closure owns the whole projection for this group (clouds:
-	// flatten the active fqdn to root scalars and drop the map). It reads the
-	// scope object directly, so there is no per-instance walk.
-	if fn, ok := iter.Meta["groupTransform"].(GroupTransformFunc); ok {
-		return fn(&TC{Cloud: d.cloud, Branch: d.branch}, scope)
+	// An env-keyed promotion owns the whole projection for this group (clouds:
+	// select the entry keyed by env["cloud"], hoist its fields to root scalars,
+	// drop the map). It reads the scope object directly — no per-instance walk.
+	if spec, ok := iter.Meta["promoteEnvKeyed"].(EnvKeyedPromoteSpec); ok {
+		return runPromoteEnvKeyed(spec, d.env, scope)
 	}
 
 	groupObj, err := scope.Child(groupKey).Object()

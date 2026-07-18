@@ -49,7 +49,7 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 	assert.Assert(t, !UsesIndexing(bare), "bare schema should not index")
 
 	// Only the CompileDriver — no resolveRefs / attachAll / chroot / indexDriver.
-	assert.Equal(t, len(compilePipe(bare, "", "main")), 1)
+	assert.Equal(t, len(compilePipe(bare, Env{"branch": "main"})), 1)
 
 	// A Ref annotation alone adds exactly ResolveRefs.
 	refRoot := mkRoot(mkResGroup("widgets", []*engine.Attribute{
@@ -59,7 +59,7 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 	assert.Assert(t, usesRefs(refRoot))
 	assert.Assert(t, !usesAttachesToAll(refRoot))
 	assert.Assert(t, !UsesIndexing(refRoot))
-	assert.Equal(t, len(compilePipe(refRoot, "", "main")), 2)
+	assert.Equal(t, len(compilePipe(refRoot, Env{"branch": "main"})), 2)
 
 	// An AttachesToAll marker alone adds exactly AttachAll.
 	attachRoot := mkRoot(mkResGroup("ops", []*engine.Attribute{{Name: "id"}},
@@ -67,7 +67,7 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 	assert.Assert(t, usesAttachesToAll(attachRoot))
 	assert.Assert(t, !usesRefs(attachRoot))
 	assert.Assert(t, !UsesIndexing(attachRoot))
-	assert.Equal(t, len(compilePipe(attachRoot, "", "main")), 2)
+	assert.Equal(t, len(compilePipe(attachRoot, Env{"branch": "main"})), 2)
 
 	// An index annotation alone adds chroot + IndexDriver (two transforms).
 	indexRoot := mkRoot(mkResGroup("widgets", []*engine.Attribute{{Name: "id"}},
@@ -75,7 +75,7 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 	assert.Assert(t, UsesIndexing(indexRoot))
 	assert.Assert(t, !usesRefs(indexRoot))
 	assert.Assert(t, !usesAttachesToAll(indexRoot))
-	assert.Equal(t, len(compilePipe(indexRoot, "", "main")), 3)
+	assert.Equal(t, len(compilePipe(indexRoot, Env{"branch": "main"})), 3)
 
 	// The full set: every predicate true -> the historical fixed sequence
 	// {compileDriver, resolveRefs, attachAll, chroot, indexDriver} = 5 transforms.
@@ -89,7 +89,7 @@ func TestCompilePipe_SelectsPassesFromSchema(t *testing.T) {
 	assert.Assert(t, usesRefs(full))
 	assert.Assert(t, usesAttachesToAll(full))
 	assert.Assert(t, UsesIndexing(full))
-	assert.Equal(t, len(compilePipe(full, "", "main")), 5)
+	assert.Equal(t, len(compilePipe(full, Env{"branch": "main"})), 5)
 }
 
 // containerKey derives the nested-container config key structurally (a top-level

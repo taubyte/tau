@@ -24,8 +24,7 @@ type NextValidation = engine.NextValidation
 
 type Compiler struct {
 	seerOptions []yaseer.Option
-	branch      string
-	cloud       string
+	env         Env
 	compileRoot *engine.Node
 	engine      engine.Engine
 }
@@ -38,7 +37,7 @@ var DefaultBranch = "main"
 // this package never imports schema — the crux that keeps the dependency one-way.
 func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c *Compiler, err error) {
 	c = &Compiler{
-		branch:      DefaultBranch,
+		env:         Env{"branch": DefaultBranch, "cloud": ""},
 		compileRoot: compileRoot,
 	}
 
@@ -66,7 +65,7 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 	result, err := transform.Pipe(
 		transformCtx,
 		obj,
-		compilePipe(c.compileRoot, c.cloud, c.branch)...,
+		compilePipe(c.compileRoot, c.env)...,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -85,11 +84,11 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 // root's DSL annotations. For the v1 schema every predicate is true, so the pipe is
 // byte-for-byte the historical fixed sequence
 // {compileDriver, resolveRefs, attachAll, chroot, indexDriver}.
-func compilePipe(root *engine.Node, cloud, branch string) []transform.Transformer[object.Refrence] {
+func compilePipe(root *engine.Node, env Env) []transform.Transformer[object.Refrence] {
 	// The CompileDriver replaces the whole pass1 layer: one generic transform that
 	// interprets the schema DSL to do every structural projection pass1 did.
 	pipe := []transform.Transformer[object.Refrence]{
-		newCompileDriver(root, cloud, branch),
+		newCompileDriver(root, env),
 	}
 
 	// ResolveRefs (pass2): resolve every Ref(...)-annotated attribute against the
@@ -111,7 +110,7 @@ func compilePipe(root *engine.Node, cloud, branch string) []transform.Transforme
 	// index footprint.
 	if UsesIndexing(root) {
 		pipe = append(pipe, chrootEnvelope())
-		pipe = append(pipe, NewIndexDriver(root, branch))
+		pipe = append(pipe, NewIndexDriver(root, env["branch"]))
 	}
 
 	return pipe

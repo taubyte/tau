@@ -203,16 +203,17 @@ func applicationsGroup() *Node {
 
 // cloudsGroup: clouds.<fqdn>.{account, plan} — DefineIter (not Group, so no
 // nested sub-groups) so each FQDN's attrs live directly under the map key in
-// nested YAML. The CompileDriver runs FlattenClouds (a GroupTransform
-// closure) to promote the active FQDN's entry to the project root and drop the
-// map, so clouds compiles to no structureSpec type.
+// nested YAML. PromoteEnvKeyed selects the entry keyed by the compile env's
+// "cloud" var (set by WithCloud), hoists account/plan to the project root, and
+// drops the map — so clouds compiles to no structureSpec type. Pure declaration
+// data: the generic projection lives in interp, no taubyte closure here.
 func cloudsGroup() *Node {
 	return DefineGroup("clouds", DefineIter(
 		[]*Attribute{
 			String("account"),
 			String("plan"),
 		},
-		interp.GroupTransform(FlattenClouds),
+		interp.PromoteEnvKeyed("clouds", "cloud", []string{"account", "plan"}, true),
 	))
 }
 

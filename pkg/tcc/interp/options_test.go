@@ -46,12 +46,12 @@ func TestWithBranch(t *testing.T) {
 	// Execute
 	option := WithBranch(branch)
 
-	compiler := &Compiler{}
+	compiler := &Compiler{env: Env{}}
 	err := option(compiler)
 
 	// Verify
 	assert.NilError(t, err)
-	assert.Equal(t, compiler.branch, branch)
+	assert.Equal(t, compiler.env["branch"], branch)
 }
 
 func TestWithBranch_Default(t *testing.T) {
@@ -64,5 +64,5 @@ func TestWithBranch_Default(t *testing.T) {
 
 	// Verify: Should have default branch
 	assert.NilError(t, err)
-	assert.Equal(t, compiler.branch, DefaultBranch)
+	assert.Equal(t, compiler.env["branch"], DefaultBranch)
 }
