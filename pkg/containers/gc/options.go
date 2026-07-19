@@ -2,6 +2,8 @@ package gc
 
 import (
 	"time"
+
+	"github.com/moby/moby/client"
 )
 
 type Option func(o *config) error
@@ -22,6 +24,9 @@ func MaxAge(t time.Duration) Option {
 
 func Filter(key, value string) Option {
 	return func(o *config) error {
+		if o.filters == nil {
+			o.filters = make(client.Filters)
+		}
 		o.filters.Add(key, value)
 		return nil
 	}
