@@ -2,7 +2,6 @@ package extract
 
 import (
 	"errors"
-	"path"
 	"regexp"
 	"strings"
 
@@ -67,8 +66,8 @@ func (tns *tnsHelper) BasicPath(_path string) (*Path, error) {
 		return nil, errors.New("extraction path cannot be empty")
 	}
 
-	cleanPath := path.Join("/" + _path)
-
-	// Here we are splitting on / and removing the first so that the first item is not empty.
-	return (&Path{}).Parse(common.NewTnsPath(strings.Split(cleanPath, "/")[1:])), nil
+	// Parse feeds the slice through TnsPath.String() (which path.Join-cleans it)
+	// before matching, so raw split tokens yield the same result without the
+	// extra clean here.
+	return (&Path{}).Parse(common.NewTnsPath(strings.Split(_path, "/"))), nil
 }

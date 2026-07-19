@@ -273,9 +273,10 @@ describe("Taucorder test", () => {
       expect(item).toBeDefined();
     }
 
-    // Test stash
-    const response = await hoarder.stash("test-cid");
-    expect(response).toBeDefined();
+    // Test stash validation
+    await expect(hoarder.stash("test-cid")).rejects.toThrow(
+      /decoding CID "test-cid" failed/
+    );
   });
 
   it("should call all Monkey methods", async () => {

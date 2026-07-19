@@ -86,9 +86,6 @@ func (c *Client) List(depth int) ([][]string, error) {
 /****** FETCH *******/
 // Fetch a key, does not watch nor cache value
 func (c *Client) Fetch(path tns.Path) (tns.Object, error) {
-	logger.Debugf("Fetching keys %v", path.String())
-	defer logger.Debugf("Fetching keys %v DONE", path.String())
-
 	var err error
 	object := c.cache.get(path)
 	if object == nil {

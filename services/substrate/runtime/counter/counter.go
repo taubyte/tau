@@ -64,13 +64,14 @@ func ErrorWrapper(serviceable components.Serviceable, startTime time.Time, coldS
 					},
 				}
 				if !skipExecution {
+					executionPath := basePath.Execution()
 					ws = append(ws,
 						&counters.WrappedMetric{
-							Key:    basePath.Execution().String(),
+							Key:    executionPath.String(),
 							Metric: metrics.NewSumMetric[uint64](1),
 						},
 						&counters.WrappedMetric{
-							Key:    basePath.Execution().Time().String(),
+							Key:    executionPath.Time().String(),
 							Metric: metrics.NewSumMetric(doneTime.Sub(coldStartDone).Nanoseconds()),
 						},
 					)
