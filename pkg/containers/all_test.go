@@ -26,6 +26,7 @@ const (
 	DockerTarBall = "docker.tar"
 	TestScript    = "helloWorld.sh"
 	TestVarScript = "envVars.sh"
+	testGCImage   = "taubyte/test:gc"
 )
 
 // Test Variables
@@ -121,14 +122,21 @@ func TestContainerBasicCommand_Integration(t *testing.T) {
 func TestContainerCleanUpInterval_Integration(t *testing.T) {
 	ci.ForceRebuild = true
 
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
 	cli, err := ci.New()
 	if err != nil {
 		t.Error(err)
 		return
 	}
 
-	err = gc.Start(ctx, gc.Interval(20*time.Second), gc.MaxAge(10*time.Second))
+	err = gc.Start(
+		ctx,
+		gc.Interval(20*time.Second),
+		gc.MaxAge(10*time.Second),
+		gc.Filter("reference", testGCImage),
+	)
 	if err != nil {
 		t.Error(err)
 		return
@@ -141,7 +149,7 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 	}
 	defer file.Close()
 
-	image, err := cli.Image(ctx, testCustomImage, ci.Build(file))
+	image, err := cli.Image(ctx, testGCImage, ci.Build(file))
 	if err != nil {
 		t.Error(err)
 		return
@@ -174,7 +182,7 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 	}
 
 	// Image was just built; verify it exists locally.
-	img, err := cli.Image(ctx, testCustomImage)
+	img, err := cli.Image(ctx, testGCImage)
 	if err != nil {
 		if img == nil || !img.Exists(ctx) {
 			t.Errorf("Failed to get image: %v", err)
@@ -182,14 +190,14 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 		}
 	}
 	if img == nil || !img.Exists(ctx) {
-		t.Errorf("Expected to find docker image %s", testCustomImage)
+		t.Errorf("Expected to find docker image %s", testGCImage)
 		return
 	}
 
 	time.Sleep(20 * time.Second)
 
 	// After cleanup interval, image should be gone (GC removes images older than MaxAge).
-	img2, err2 := cli.Image(ctx, testCustomImage)
+	img2, err2 := cli.Image(ctx, testGCImage)
 	if err2 == nil && img2 != nil && img2.Exists(ctx) {
 		t.Error("Expected image to be removed after clean interval")
 	}
