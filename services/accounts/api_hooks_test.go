@@ -11,43 +11,21 @@ import (
 // Tests for the wire codec (verify/resolve response encoding + decoding) and
 // the stream-handler dispatch layer.
 
-// seedAccountUserPRef stands up an Account + Plan + PRef (assigned) + User
-// (with a grant on that PRef). Returns the IDs/names so callers can build
-// resolve/verify queries against them. Centralised so test files share one
-// setup convention.
-func seedAccountUserPRef(t *testing.T, srv *AccountsService, accountSlug, prefName, provider, externalID string) (accountID, planID string) {
+// seedAccountUser stands up an Account + a linked git User. community access is
+// linkage-only — being linked to an active Account IS the grant, so no
+// ee fixture is needed here (the ee pref/plan/grant fixtures live with the ee
+// package's own tests). Returns the Account ID.
+func seedAccountUser(t *testing.T, srv *AccountsService, accountSlug, provider, externalID string) (accountID string) {
 	t.Helper()
 	ctx := context.Background()
 	acc, err := newAccountStore(srv.db).Create(ctx, accountsIface.CreateAccountInput{Slug: accountSlug, Name: accountSlug})
 	if err != nil {
 		t.Fatalf("seed: create account: %v", err)
 	}
-	plan, err := newPlanStore(srv.db).Create(ctx, accountsIface.CreatePlanInput{Name: "Prod"})
-	if err != nil {
-		t.Fatalf("seed: create plan: %v", err)
-	}
-	prefs := newPRefStore(srv.db, acc.ID, newPlanStore(srv.db))
-	if _, err := prefs.Create(ctx, accountsIface.CreatePRefInput{
-		Name:     prefName,
-		MemberID: "system:test",
-	}); err != nil {
-		t.Fatalf("seed: create pref: %v", err)
-	}
-	if _, err := prefs.Assign(ctx, accountsIface.AssignPRefInput{
-		Name:     prefName,
-		PlanID:   plan.ID,
-		MemberID: "system:test",
-	}); err != nil {
-		t.Fatalf("seed: assign pref: %v", err)
-	}
-	user, err := newUserStore(srv.db, acc.ID).Add(ctx, accountsIface.AddUserInput{Provider: provider, ExternalID: externalID})
-	if err != nil {
+	if _, err := newUserStore(srv.db, acc.ID).Add(ctx, accountsIface.AddUserInput{Provider: provider, ExternalID: externalID}); err != nil {
 		t.Fatalf("seed: add user: %v", err)
 	}
-	if err := newUserStore(srv.db, acc.ID).Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: prefName}); err != nil {
-		t.Fatalf("seed: grant: %v", err)
-	}
-	return acc.ID, plan.ID
+	return acc.ID
 }
 
 func TestVerifyResponseToWire_NilAndEmpty(t *testing.T) {
@@ -69,13 +47,10 @@ func TestResolveResponseToWire_RejectionShapes(t *testing.T) {
 	if v, _ := w["valid"].(bool); v {
 		t.Fatalf("nil should be invalid")
 	}
-	// Invalid with reason but no plan.
-	w = resolveResponseToWire(&accountsIface.ResolveResponse{Valid: false, Reason: "pref not found"})
-	if r, _ := w["reason"].(string); r != "pref not found" {
+	// Invalid with reason.
+	w = resolveResponseToWire(&accountsIface.ResolveResponse{Valid: false, Reason: "account not active"})
+	if r, _ := w["reason"].(string); r != "account not active" {
 		t.Fatalf("reason missing: %+v", w)
-	}
-	if _, ok := w["plan"]; ok {
-		t.Fatalf("invalid response should not include plan payload")
 	}
 }
 
@@ -83,7 +58,7 @@ func TestApiVerifyHandler_HappyAndMissingFields(t *testing.T) {
 	srv := newTestService(t)
 	ctx := context.Background()
 
-	seedAccountUserPRef(t, srv, "acme", "prod", "github", "1")
+	seedAccountUser(t, srv, "acme", "github", "1")
 
 	// Linked path.
 	resp, err := srv.apiVerifyHandler(ctx, nil, command.Body{
@@ -107,16 +82,18 @@ func TestApiVerifyHandler_HappyAndMissingFields(t *testing.T) {
 	}
 }
 
+// TestApiResolveHandler_HappyAndMissingFields covers the community linkage-only
+// resolve verb: body is {account_slug, provider, external_id} (no pref_name),
+// response is {valid, reason}. The ee resolve verb is covered in the ee tree.
 func TestApiResolveHandler_HappyAndMissingFields(t *testing.T) {
 	srv := newTestService(t)
 	ctx := context.Background()
 
-	seedAccountUserPRef(t, srv, "acme", "prod", "github", "1")
+	seedAccountUser(t, srv, "acme", "github", "1")
 
 	// Valid path.
 	resp, err := srv.apiResolveHandler(ctx, nil, command.Body{
 		"account_slug": "acme",
-		"pref_name":    "prod",
 		"provider":     "github",
 		"external_id":  "1",
 	})
@@ -128,11 +105,10 @@ func TestApiResolveHandler_HappyAndMissingFields(t *testing.T) {
 	}
 
 	// Each missing field → error.
-	missing := []string{"account_slug", "pref_name", "provider", "external_id"}
+	missing := []string{"account_slug", "provider", "external_id"}
 	for _, drop := range missing {
 		body := command.Body{
 			"account_slug": "acme",
-			"pref_name":    "prod",
 			"provider":     "github",
 			"external_id":  "1",
 		}

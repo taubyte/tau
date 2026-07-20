@@ -4,13 +4,11 @@
 //
 //   - login / logout / whoami       — Member-session lifecycle.
 //   - list                          — Accounts attached to the session.
-//   - plans list [account-slug]     — Plan grants across (or within) Accounts.
 //   - members invite/list           — Manage other Members on an Account.
-//   - users add/list/remove/grant   — Manage linked git accounts and their plan grants.
+//   - users add/list/remove         — Manage linked git accounts.
 //
-// Plan and Account creation are deliberately absent — those are
-// operator-only and reachable only through the P2P verbs today. An
-// operator-side CLI is a separate workstream.
+// Some builds attach further subcommands via a build seam. Account creation is
+// an operator-only P2P verb.
 package accounts
 
 import "github.com/urfave/cli/v2"
@@ -26,7 +24,6 @@ var Command = &cli.Command{
 		logoutCommand,
 		whoamiCommand,
 		listCommand,
-		plansCommand,
 		membersCommand,
 		usersCommand,
 	},

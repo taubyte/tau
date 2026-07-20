@@ -679,7 +679,10 @@ export class JobRepository extends Message<JobRepository> {
   id?: RepositoryId;
 
   /**
-   * @generated from field: string ssh_url = 2;
+   * use uri instead; kept for backward compat
+   *
+   * @generated from field: string ssh_url = 2 [deprecated = true];
+   * @deprecated
    */
   sshUrl = "";
 
@@ -687,6 +690,11 @@ export class JobRepository extends Message<JobRepository> {
    * @generated from field: string branch = 3;
    */
   branch = "";
+
+  /**
+   * @generated from field: string uri = 4;
+   */
+  uri = "";
 
   constructor(data?: PartialMessage<JobRepository>) {
     super();
@@ -699,6 +707,7 @@ export class JobRepository extends Message<JobRepository> {
     { no: 1, name: "id", kind: "message", T: RepositoryId },
     { no: 2, name: "ssh_url", kind: "scalar", T: 9 /* ScalarType.STRING */ },
     { no: 3, name: "branch", kind: "scalar", T: 9 /* ScalarType.STRING */ },
+    { no: 4, name: "uri", kind: "scalar", T: 9 /* ScalarType.STRING */ },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): JobRepository {

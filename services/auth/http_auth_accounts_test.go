@@ -9,12 +9,16 @@ import (
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	httpAuth "github.com/taubyte/tau/pkg/http/auth"
+	project "github.com/taubyte/tau/pkg/schema/project"
 )
 
 // fakeAccountsClient is a minimal implementation of
 // core/services/accounts.Client for verify-call tests. Only Verify is wired;
-// other methods return errNotImpl to make accidental use loud.
+// other methods return errNotImpl to make accidental use loud. The embedded
+// eeStub (empty in community, the shared ee stub under -tags ee) fills in the ee-only
+// Client methods without this community file naming the ee package.
 type fakeAccountsClient struct {
+	eeStub
 	verifyFn func(ctx context.Context, provider, externalID string) (*accountsIface.VerifyResponse, error)
 }
 
@@ -26,7 +30,7 @@ func (f *fakeAccountsClient) Verify(ctx context.Context, provider, externalID st
 	}
 	return nil, errNotImpl
 }
-func (f *fakeAccountsClient) ResolvePRef(context.Context, string, string, string, string) (*accountsIface.ResolveResponse, error) {
+func (f *fakeAccountsClient) Validate(context.Context, string, string, project.CloudBinding) (*accountsIface.ResolveResponse, error) {
 	return nil, errNotImpl
 }
 func (f *fakeAccountsClient) LookupAccountsByEmail(context.Context, string) ([]string, error) {
@@ -35,8 +39,6 @@ func (f *fakeAccountsClient) LookupAccountsByEmail(context.Context, string) ([]s
 func (f *fakeAccountsClient) Accounts() accountsIface.Accounts          { return nil }
 func (f *fakeAccountsClient) Members(string) accountsIface.Members      { return nil }
 func (f *fakeAccountsClient) Users(string) accountsIface.Users          { return nil }
-func (f *fakeAccountsClient) Plans() accountsIface.Plans                { return nil }
-func (f *fakeAccountsClient) PRefs(string) accountsIface.PRefs          { return nil }
 func (f *fakeAccountsClient) Login() accountsIface.Login                { return nil }
 func (f *fakeAccountsClient) Peers(...peerCore.ID) accountsIface.Client { return f }
 func (f *fakeAccountsClient) Close()                                    {}
@@ -84,7 +86,7 @@ func TestGitHubTokenHTTPAuth_AccountsLinked_Allows(t *testing.T) {
 			return &accountsIface.VerifyResponse{
 				Linked: true,
 				Accounts: []accountsIface.VerifyAccountSummary{
-					{Slug: "acme", PRefs: []accountsIface.VerifyPRefSummary{{Name: "prod", IsDefault: true}}},
+					{Slug: "acme"},
 				},
 			}, nil
 		},

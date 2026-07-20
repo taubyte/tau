@@ -12,8 +12,6 @@ const (
 	verbAccount = "account"
 	verbMember  = "member"
 	verbUser    = "user"
-	verbPlan    = "plan"
-	verbPRef    = "pref"
 	verbLogin   = "login"
 )
 

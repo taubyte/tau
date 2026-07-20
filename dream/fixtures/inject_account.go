@@ -14,8 +14,6 @@ import (
 type AccountInjection struct {
 	AccountSlug string
 	AccountName string
-	PRefName    string
-	PlanName    string
 	UserProv    string
 	UserExtID   string
 	UserDisplay string
@@ -46,12 +44,6 @@ func injectAccount(u *dream.Universe, params ...any) error {
 	if inj.AccountName == "" {
 		inj.AccountName = FakeAccountName
 	}
-	if inj.PRefName == "" {
-		inj.PRefName = FakeAccountPRef
-	}
-	if inj.PlanName == "" {
-		inj.PlanName = "Production"
-	}
 	if inj.UserProv == "" {
 		inj.UserProv = FakeAccountUserProv
 	}
@@ -72,27 +64,6 @@ func injectAccount(u *dream.Universe, params ...any) error {
 	if err != nil {
 		return fmt.Errorf("injectAccount: create account %q: %w", inj.AccountSlug, err)
 	}
-	plan, err := cli.Plans().Create(ctx, accountsIface.CreatePlanInput{
-		Name:        inj.PlanName,
-		DisplayName: inj.PlanName,
-	})
-	if err != nil {
-		return fmt.Errorf("injectAccount: create plan %q: %w", inj.PlanName, err)
-	}
-	pref, err := cli.PRefs(acc.ID).Create(ctx, accountsIface.CreatePRefInput{
-		Name:     inj.PRefName,
-		MemberID: "system:dream-fixture",
-	})
-	if err != nil {
-		return fmt.Errorf("injectAccount: create pref %q under %q: %w", inj.PRefName, inj.AccountSlug, err)
-	}
-	if _, err := cli.PRefs(acc.ID).Assign(ctx, accountsIface.AssignPRefInput{
-		Name:     pref.Name,
-		PlanID:   plan.ID,
-		MemberID: "system:dream-fixture",
-	}); err != nil {
-		return fmt.Errorf("injectAccount: assign plan to pref %q: %w", inj.PRefName, err)
-	}
 	user, err := cli.Users(acc.ID).Add(ctx, accountsIface.AddUserInput{
 		Provider:    inj.UserProv,
 		ExternalID:  inj.UserExtID,
@@ -101,8 +72,8 @@ func injectAccount(u *dream.Universe, params ...any) error {
 	if err != nil {
 		return fmt.Errorf("injectAccount: add user %s/%s: %w", inj.UserProv, inj.UserExtID, err)
 	}
-	if err := cli.Users(acc.ID).Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: pref.Name}); err != nil {
-		return fmt.Errorf("injectAccount: grant pref %q to user %s/%s: %w", inj.PRefName, inj.UserProv, inj.UserExtID, err)
+	if err := seedAccountExtras(ctx, cli, acc.ID, user.ID); err != nil {
+		return fmt.Errorf("injectAccount: %w", err)
 	}
 	return nil
 }

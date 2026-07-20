@@ -7,40 +7,39 @@ import (
 	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 )
 
-// checkAccountPlan validates the project's `clouds.<NetworkFqdn>.{account, plan}`
-// binding against the accounts service. The project schema still calls the
-// field `plan` for back-compat; the value is now treated as a PRef name and
-// resolved via accounts.ResolvePRef. No-op when the accounts client isn't
-// wired or the project doesn't pin this cloud. Shared by code.handle() and
-// config.handle() so both compile paths enforce the same rule.
+// checkAccountPlan validates the project's clouds.<NetworkFqdn> binding against
+// the accounts service. Monkey is build-agnostic here: it hands the whole
+// binding to accounts.Validate and lets the accounts client decide what to
+// check (the community build checks linkage; richer builds read more from the
+// binding). No-op when the accounts client isn't wired or the project doesn't
+// pin this cloud. Shared by code.handle() and config.handle().
 func (c Context) checkAccountPlan(p projectSchema.Project) error {
 	if c.Accounts == nil {
 		return nil
 	}
 	if c.NetworkFqdn == "" {
-		fmt.Fprintf(c.LogFile, "[accounts] warning: monkey did not propagate network FQDN; skipping plan check\n")
+		fmt.Fprintf(c.LogFile, "[accounts] warning: monkey did not propagate network FQDN; skipping account check\n")
 		return nil
 	}
 	binding, ok := p.Get().CloudBinding(c.NetworkFqdn)
 	if !ok {
-		fmt.Fprintf(c.LogFile, "[accounts] info: project does not declare a binding for %q; skipping plan check\n", c.NetworkFqdn)
+		fmt.Fprintf(c.LogFile, "[accounts] info: project does not declare a binding for %q; skipping account check\n", c.NetworkFqdn)
 		return nil
 	}
-	if binding.Account == "" || binding.Plan == "" {
-		return fmt.Errorf("project config: clouds[%q].{account, plan} must both be set or the entry must be omitted (got account=%q plan=%q)",
-			c.NetworkFqdn, binding.Account, binding.Plan)
+	if binding.Account == "" {
+		return fmt.Errorf("project config: clouds[%q].account must be set or the entry must be omitted", c.NetworkFqdn)
 	}
 	provider, externalID := c.gitProviderIdentity()
 	if provider == "" || externalID == "" {
-		return fmt.Errorf("project config: cannot resolve plan %q without a git provider identity", binding.Plan)
+		return fmt.Errorf("project config: cannot validate account %q without a git provider identity", binding.Account)
 	}
-	resp, err := c.Accounts.ResolvePRef(c.ctx, binding.Account, binding.Plan, provider, externalID)
+	resp, err := c.Accounts.Validate(c.ctx, provider, externalID, binding)
 	if err != nil {
-		return fmt.Errorf("accounts.ResolvePRef(%s/%s, %s/%s): %w", binding.Account, binding.Plan, provider, externalID, err)
+		return fmt.Errorf("accounts.Validate(%s, %s/%s): %w", binding.Account, provider, externalID, err)
 	}
 	if !resp.Valid {
-		return fmt.Errorf("project config: plan %q under account %q on cloud %q is invalid: %s",
-			binding.Plan, binding.Account, c.NetworkFqdn, resp.Reason)
+		return fmt.Errorf("project config: cloud binding for account %q on cloud %q is invalid: %s",
+			binding.Account, c.NetworkFqdn, resp.Reason)
 	}
 	return nil
 }

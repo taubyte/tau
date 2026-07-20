@@ -13,7 +13,7 @@ import (
 
 // AccountsService is the in-process implementation of the Accounts subsystem.
 //
-// Hangs the Account / Member / User / Plan stores off this struct, plus the
+// Hangs the Account / Member / User stores off this struct, plus the
 // auth subsystems (sessions / magic-link / WebAuthn) wired by `auth_init.go`.
 type AccountsService struct {
 	ctx context.Context

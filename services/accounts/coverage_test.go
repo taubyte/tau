@@ -118,25 +118,6 @@ func TestAccountStore_RequiredFields(t *testing.T) {
 	}
 }
 
-func TestPlanStore_RequiredFields(t *testing.T) {
-	srv := newTestService(t)
-	ctx := context.Background()
-	bs := newPlanStore(srv.db)
-
-	// Empty name → error.
-	if _, err := bs.Create(ctx, accountsIface.CreatePlanInput{}); err == nil {
-		t.Fatalf("expected error for empty plan name")
-	}
-	// Valid create with just a name succeeds.
-	p, err := bs.Create(ctx, accountsIface.CreatePlanInput{Name: "Production"})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if p.DisplayName != "Production" {
-		t.Fatalf("DisplayName should default to Name; got %q", p.DisplayName)
-	}
-}
-
 func TestUserStore_RequiredFields(t *testing.T) {
 	srv := newTestService(t)
 	ctx := context.Background()
@@ -148,35 +129,6 @@ func TestUserStore_RequiredFields(t *testing.T) {
 	}
 	if _, err := us.Add(ctx, accountsIface.AddUserInput{ExternalID: "1"}); err == nil {
 		t.Fatalf("expected error: missing provider")
-	}
-}
-
-func TestUserStore_GrantUnknownPRef(t *testing.T) {
-	srv := newTestService(t)
-	ctx := context.Background()
-	acc, _ := newAccountStore(srv.db).Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
-	us := newUserStore(srv.db, acc.ID)
-	user, _ := us.Add(ctx, accountsIface.AddUserInput{Provider: "github", ExternalID: "1"})
-
-	if err := us.Grant(ctx, user.ID, accountsIface.GrantPRefInput{PRefName: "ghost"}); err == nil {
-		t.Fatalf("expected error: granting unknown pref")
-	}
-	if err := us.Grant(ctx, "ghost-user", accountsIface.GrantPRefInput{PRefName: "x"}); err == nil {
-		t.Fatalf("expected error: granting on unknown user")
-	}
-	if err := us.Grant(ctx, user.ID, accountsIface.GrantPRefInput{}); err == nil {
-		t.Fatalf("expected error: empty pref name")
-	}
-}
-
-func TestUserStore_RevokeMissingGrant(t *testing.T) {
-	srv := newTestService(t)
-	ctx := context.Background()
-	acc, _ := newAccountStore(srv.db).Create(ctx, accountsIface.CreateAccountInput{Slug: "acme", Name: "Acme"})
-	us := newUserStore(srv.db, acc.ID)
-	user, _ := us.Add(ctx, accountsIface.AddUserInput{Provider: "github", ExternalID: "1"})
-	if err := us.Revoke(ctx, user.ID, "ghost-pref"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
 
@@ -291,12 +243,6 @@ func TestInProcessClient_Accessors(t *testing.T) {
 	}
 	if cli.Users("any") == nil {
 		t.Fatalf("Users() nil")
-	}
-	if cli.Plans() == nil {
-		t.Fatalf("Plans() nil")
-	}
-	if cli.PRefs("any") == nil {
-		t.Fatalf("PRefs() nil")
 	}
 	if cli.Login() == nil {
 		t.Fatalf("Login() nil")

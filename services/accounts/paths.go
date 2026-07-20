@@ -3,22 +3,17 @@ package accounts
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"strings"
 )
 
 // KV path layout. All structured blobs are CBOR-encoded; raw-byte values are
-// called out explicitly.
-//
-//   /plans/{plan_id}                                              → Plan (global, immutable)
+// called out explicitly. The ee build keeps its own keys in the ee
+// store package (ee/services/accounts), not here.
 //
 //   /accounts/{id}/profile                                        → Account
 //   /accounts/{id}/members/{member_id}/profile                    → Member (sans passkeys)
 //   /accounts/{id}/members/{member_id}/passkeys/{credential_id}   → PasskeyCredential
-//   /accounts/{id}/users/{user_id}/profile                        → User (sans grants)
-//   /accounts/{id}/users/{user_id}/grants/{pref_name}             → PlanGrant
-//   /accounts/{id}/prefs/{name}/profile                           → PRef envelope
-//   /accounts/{id}/prefs/{name}/events/{at_unixnano_zeropad}      → PRefEvent
+//   /accounts/{id}/users/{user_id}/profile                        → User
 //   /accounts/{id}/signing_key                                    → 32 raw random bytes
 //
 //   /lookup/account_slug/{slug}                                       → account_id (raw bytes)
@@ -29,21 +24,12 @@ import (
 // Lookup indexes are one KV key per entry (not a single CBOR slice) so
 // concurrent writes from different nodes for distinct (account, member|user)
 // pairs touch distinct keys — no read-modify-write blob, no CRDT loss. Same
-// rationale for the per-element sub-collections (passkeys, grants, events).
+// rationale for the per-element sub-collections (passkeys).
 
 const (
 	prefixAccounts = "/accounts/"
 	prefixLookup   = "/lookup/"
-	prefixPlans    = "/plans/"
 )
-
-func PlanProfilePath(planID string) string {
-	return prefixPlans + planID
-}
-
-func PlansPrefix() string {
-	return prefixPlans
-}
 
 func AccountProfilePath(accountID string) string {
 	return prefixAccounts + accountID + "/profile"
@@ -71,32 +57,6 @@ func AccountUsersPrefix(accountID string) string {
 
 func UserProfilePath(accountID, userID string) string {
 	return AccountUsersPrefix(accountID) + userID + "/profile"
-}
-
-func UserGrantsPrefix(accountID, userID string) string {
-	return AccountUsersPrefix(accountID) + userID + "/grants/"
-}
-
-func UserGrantPath(accountID, userID, prefName string) string {
-	return UserGrantsPrefix(accountID, userID) + prefName
-}
-
-func AccountPRefsPrefix(accountID string) string {
-	return prefixAccounts + accountID + "/prefs/"
-}
-
-func PRefProfilePath(accountID, prefName string) string {
-	return AccountPRefsPrefix(accountID) + prefName + "/profile"
-}
-
-func PRefEventsPrefix(accountID, prefName string) string {
-	return AccountPRefsPrefix(accountID) + prefName + "/events/"
-}
-
-// PRefEventPath formats atUnixNano as 20-digit zero-padded decimal so byte
-// order matches chronological order on prefix scans.
-func PRefEventPath(accountID, prefName string, atUnixNano int64) string {
-	return PRefEventsPrefix(accountID, prefName) + fmt.Sprintf("%020d", atUnixNano)
 }
 
 func LookupAccountSlugPath(slug string) string {

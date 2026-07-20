@@ -12,9 +12,8 @@ import (
 	protocolCommon "github.com/taubyte/tau/services/common"
 )
 
-// userStore implements accountsIface.Users for one Account. Grants are keyed
-// by PRef name (account-scoped), not plan_id — so users automatically follow
-// plan upgrades when the PRef's pointer swaps without re-issuing the grant.
+// userStore implements accountsIface.Users for one Account — the linked git
+// accounts. A linked user is the access grant.
 type userStore struct {
 	db        kvdb.KVDB
 	accountID string
@@ -67,11 +66,6 @@ func (s *userStore) Get(ctx context.Context, userID string) (*accountsIface.User
 	if err := getKV(ctx, s.db, UserProfilePath(s.accountID, userID), &u); err != nil {
 		return nil, err
 	}
-	grants, err := s.listGrants(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	u.PlanGrants = grants
 	return &u, nil
 }
 
@@ -100,11 +94,9 @@ func (s *userStore) Remove(ctx context.Context, userID string) error {
 	if err != nil {
 		return err
 	}
-	for _, g := range u.PlanGrants {
-		if err := s.db.Delete(ctx, UserGrantPath(s.accountID, userID, g.PRefName)); err != nil {
-			return fmt.Errorf("accounts: delete grant: %w", err)
-		}
-	}
+	// ponytail: any extra per-user data keyed under this user's id is left
+	// dangling — never read again (a re-linked user gets a fresh id), so no
+	// cleanup is needed here.
 	if err := s.db.Delete(ctx, UserProfilePath(s.accountID, userID)); err != nil {
 		return fmt.Errorf("accounts: delete user: %w", err)
 	}
@@ -115,100 +107,6 @@ func (s *userStore) Remove(ctx context.Context, userID string) error {
 			userID, s.accountID, err)
 	}
 	return nil
-}
-
-// Grant attaches a PRef to the User. The first grant on a User is
-// auto-default; a new grant marked IsDefault demotes any prior default.
-func (s *userStore) Grant(ctx context.Context, userID string, in accountsIface.GrantPRefInput) error {
-	if in.PRefName == "" {
-		return errors.New("accounts: pref_name required")
-	}
-	if _, err := s.Get(ctx, userID); err != nil {
-		return err
-	}
-	ps := newPRefStore(s.db, s.accountID, newPlanStore(s.db))
-	if _, err := ps.Get(ctx, in.PRefName); err != nil {
-		return fmt.Errorf("accounts: pref %q: %w", in.PRefName, err)
-	}
-
-	existing, err := s.listGrants(ctx, userID)
-	if err != nil {
-		return err
-	}
-
-	makeDefault := in.IsDefault || len(existing) == 0
-
-	if makeDefault {
-		for _, g := range existing {
-			if g.IsDefault && g.PRefName != in.PRefName {
-				demoted := g
-				demoted.IsDefault = false
-				if err := putKV(ctx, s.db, UserGrantPath(s.accountID, userID, demoted.PRefName), demoted); err != nil {
-					return err
-				}
-			}
-		}
-	}
-
-	g := accountsIface.PlanGrant{PRefName: in.PRefName, IsDefault: makeDefault}
-	if err := putKV(ctx, s.db, UserGrantPath(s.accountID, userID, in.PRefName), g); err != nil {
-		return err
-	}
-	return nil
-}
-
-// Revoke promotes the first remaining grant to default when the removed grant
-// was the default and other grants survive.
-func (s *userStore) Revoke(ctx context.Context, userID, prefName string) error {
-	existing, err := s.listGrants(ctx, userID)
-	if err != nil {
-		return err
-	}
-	var (
-		removed accountsIface.PlanGrant
-		found   bool
-		others  []accountsIface.PlanGrant
-	)
-	for _, g := range existing {
-		if g.PRefName == prefName {
-			removed = g
-			found = true
-		} else {
-			others = append(others, g)
-		}
-	}
-	if !found {
-		return ErrNotFound
-	}
-	if err := s.db.Delete(ctx, UserGrantPath(s.accountID, userID, prefName)); err != nil {
-		return fmt.Errorf("accounts: delete grant: %w", err)
-	}
-	if removed.IsDefault && len(others) > 0 {
-		others[0].IsDefault = true
-		if err := putKV(ctx, s.db, UserGrantPath(s.accountID, userID, others[0].PRefName), others[0]); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (s *userStore) listGrants(ctx context.Context, userID string) ([]accountsIface.PlanGrant, error) {
-	keys, err := s.db.List(ctx, UserGrantsPrefix(s.accountID, userID))
-	if err != nil {
-		return nil, fmt.Errorf("accounts: list grants: %w", err)
-	}
-	grants := make([]accountsIface.PlanGrant, 0, len(keys))
-	for _, k := range keys {
-		var g accountsIface.PlanGrant
-		if err := getKV(ctx, s.db, k, &g); err != nil {
-			if errors.Is(err, ErrNotFound) {
-				continue
-			}
-			return nil, err
-		}
-		grants = append(grants, g)
-	}
-	return grants, nil
 }
 
 func (s *userStore) addGitUserIndex(ctx context.Context, provider, externalID, userID string) error {

@@ -161,7 +161,7 @@ func (srv *Service) replicasHandler(ctx context.Context, body command.Body) (cr.
 	return cr.Response{hoarderSpecs.BodyPeers: srv.liveClaimants(claims)}, nil
 }
 
-// stashReady is the command phase of a push. OSS accepts unconditionally; the
+// stashReady is the command phase of a push. community accepts unconditionally; the
 // admission hooks slot in here.
 func (srv *Service) stashReady(context.Context, streams.Connection, command.Body) (cr.Response, error) {
 	return cr.Response{"ready": true}, nil

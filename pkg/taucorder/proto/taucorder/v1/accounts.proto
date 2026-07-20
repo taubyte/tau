@@ -1,0 +1,55 @@
+syntax = "proto3";
+
+package taucorder.v1;
+
+option go_package = ".";
+
+import "taucorder/v1/common.proto";
+
+// Account mirrors core/services/accounts.Account.
+message Account {
+    string id = 1;
+    string slug = 2;
+    string name = 3;
+    string kind = 4;
+    string status = 5;
+    string auth_mode = 6;
+}
+
+// User is a git provider account linked to an Account (the access grant).
+message User {
+    string id = 1;
+    string account_id = 2;
+    string provider = 3;
+    string external_id = 4;
+    string display_name = 5;
+}
+
+message CreateAccountRequest {
+    Node node = 1;
+    string slug = 2;
+    string name = 3;
+    string kind = 4;       // optional; defaults server-side
+    string auth_mode = 5;  // optional; defaults to managed
+}
+
+message AssignUserRequest {
+    Node node = 1;
+    string account_id = 2;
+    string provider = 3;
+    string external_id = 4;
+    string display_name = 5;
+}
+
+message ListUsersRequest {
+    Node node = 1;
+    string account_id = 2;
+}
+
+// AccountsService: create accounts, assign (link) git users to them, and list.
+service AccountsService {
+    rpc CreateAccount(CreateAccountRequest) returns (Account);
+    rpc AssignUser(AssignUserRequest) returns (User);
+    rpc ListAccounts(Node) returns (stream Account);
+    rpc ListUsers(ListUsersRequest) returns (stream User);
+}
