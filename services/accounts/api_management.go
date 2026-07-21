@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/fxamacker/cbor/v2"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
@@ -21,8 +20,6 @@ const (
 	StreamVerbAccount = "account"
 	StreamVerbMember  = "member"
 	StreamVerbUser    = "user"
-	StreamVerbPlan    = "plan"
-	StreamVerbPRef    = "pref"
 	StreamVerbLogin   = "login"
 )
 
@@ -282,206 +279,9 @@ func (srv *AccountsService) apiUserHandler(ctx context.Context, _ streams.Connec
 			return nil, err
 		}
 		return cr.Response{"ok": true}, nil
-	case "grant":
-		id, err := maps.String(body, "id")
-		if err != nil {
-			return nil, err
-		}
-		prefName, err := maps.String(body, "pref_name")
-		if err != nil {
-			return nil, err
-		}
-		isDefault, _ := maps.Bool(body, "is_default")
-		if err := cli.Grant(ctx, id, accountsIface.GrantPRefInput{PRefName: prefName, IsDefault: isDefault}); err != nil {
-			return nil, err
-		}
-		return cr.Response{"ok": true}, nil
-	case "revoke":
-		id, err := maps.String(body, "id")
-		if err != nil {
-			return nil, err
-		}
-		prefName, err := maps.String(body, "pref_name")
-		if err != nil {
-			return nil, err
-		}
-		if err := cli.Revoke(ctx, id, prefName); err != nil {
-			return nil, err
-		}
-		return cr.Response{"ok": true}, nil
 	default:
 		return nil, fmt.Errorf("user: unknown action %q", action)
 	}
-}
-
-func (srv *AccountsService) apiPlanHandler(ctx context.Context, _ streams.Connection, body command.Body) (cr.Response, error) {
-	action, err := maps.String(body, "action")
-	if err != nil {
-		return nil, fmt.Errorf("plan: %w", err)
-	}
-	cli := srv.Client().Plans()
-	switch action {
-	case "create":
-		in := accountsIface.CreatePlanInput{
-			Name:        maps.TryString(body, "name"),
-			DisplayName: maps.TryString(body, "display_name"),
-		}
-		if v, ok := body["data"]; ok {
-			if b, ok := v.([]byte); ok {
-				in.Data = b
-			} else if err := decodeField(v, &in.Data); err != nil {
-				return nil, err
-			}
-		}
-		p, err := cli.Create(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"plan": p}, nil
-	case "get":
-		id, err := maps.String(body, "id")
-		if err != nil {
-			return nil, err
-		}
-		p, err := cli.Get(ctx, id)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"plan": p}, nil
-	case "list":
-		ids, err := cli.List(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"ids": ids}, nil
-	default:
-		return nil, fmt.Errorf("plan: unknown action %q", action)
-	}
-}
-
-func (srv *AccountsService) apiPRefHandler(ctx context.Context, _ streams.Connection, body command.Body) (cr.Response, error) {
-	action, err := maps.String(body, "action")
-	if err != nil {
-		return nil, fmt.Errorf("pref: %w", err)
-	}
-	accountID, err := requireAccountID(body)
-	if err != nil {
-		return nil, err
-	}
-	cli := srv.Client().PRefs(accountID)
-	switch action {
-	case "create":
-		in := accountsIface.CreatePRefInput{
-			Name:        maps.TryString(body, "name"),
-			DisplayName: maps.TryString(body, "display_name"),
-			MemberID:    maps.TryString(body, "member_id"),
-		}
-		pref, err := cli.Create(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"pref": pref}, nil
-	case "get":
-		name, err := maps.String(body, "name")
-		if err != nil {
-			return nil, err
-		}
-		pref, err := cli.Get(ctx, name)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"pref": pref}, nil
-	case "list":
-		names, err := cli.List(ctx)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"names": names}, nil
-	case "set-display-name":
-		name, err := maps.String(body, "name")
-		if err != nil {
-			return nil, err
-		}
-		displayName := maps.TryString(body, "display_name")
-		pref, err := cli.SetDisplayName(ctx, name, displayName)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"pref": pref}, nil
-	case "assign":
-		in := accountsIface.AssignPRefInput{
-			Name:     maps.TryString(body, "name"),
-			PlanID:   maps.TryString(body, "plan_id"),
-			MemberID: maps.TryString(body, "member_id"),
-			Note:     maps.TryString(body, "note"),
-		}
-		ev, err := cli.Assign(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"event": ev}, nil
-	case "disable":
-		in := accountsIface.DisablePRefInput{
-			Name:     maps.TryString(body, "name"),
-			MemberID: maps.TryString(body, "member_id"),
-			Note:     maps.TryString(body, "note"),
-		}
-		ev, err := cli.Disable(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"event": ev}, nil
-	case "enable":
-		in := accountsIface.EnablePRefInput{
-			Name:     maps.TryString(body, "name"),
-			MemberID: maps.TryString(body, "member_id"),
-			Note:     maps.TryString(body, "note"),
-		}
-		ev, err := cli.Enable(ctx, in)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"event": ev}, nil
-	case "events":
-		name, err := maps.String(body, "name")
-		if err != nil {
-			return nil, err
-		}
-		from, _ := optInt64(body, "from_unixnano")
-		to, _ := optInt64(body, "to_unixnano")
-		var fromT, toT time.Time
-		if from != 0 {
-			fromT = time.Unix(0, from)
-		}
-		if to != 0 {
-			toT = time.Unix(0, to)
-		}
-		events, err := cli.Events(ctx, name, fromT, toT)
-		if err != nil {
-			return nil, err
-		}
-		return cr.Response{"events": events}, nil
-	default:
-		return nil, fmt.Errorf("pref: unknown action %q", action)
-	}
-}
-
-func optInt64(body command.Body, key string) (int64, bool) {
-	v, ok := body[key]
-	if !ok {
-		return 0, false
-	}
-	switch n := v.(type) {
-	case int64:
-		return n, true
-	case uint64:
-		return int64(n), true
-	case int:
-		return int64(n), true
-	case float64:
-		return int64(n), true
-	}
-	return 0, false
 }
 
 func (srv *AccountsService) apiLoginHandler(ctx context.Context, _ streams.Connection, body command.Body) (cr.Response, error) {

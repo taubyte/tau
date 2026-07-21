@@ -3,8 +3,10 @@ FLAGS ?=
 DREAM_P ?= 4
 
 # Tagged sweeps discover their packages instead of sweeping ./... so they only
-# build and run the packages that actually carry tagged tests.
-DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs -n1 dirname | sort -u | sed 's|^\([^./]\)|./\1|')
+# build and run the packages that actually carry tagged tests. Scoped to the
+# community tree — the ee/ submodule's dreaming tests run under
+# `make test-ee-dreaming`.
+DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | sed 's|^\./||' | grep -v '^ee/' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
 .PHONY: test test-dreaming test-raft test-docker test-all bench-dreaming vm-fixtures
 

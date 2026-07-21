@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	dream "github.com/taubyte/tau/clients/http/dream"
+	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	authIface "github.com/taubyte/tau/core/services/auth"
 	p2p "github.com/taubyte/tau/p2p/peer"
 	"github.com/taubyte/tau/pkg/spore-drive/config"
@@ -78,6 +79,11 @@ type monkeyService struct {
 	*Service
 }
 
+type accountsService struct {
+	pbconnect.UnimplementedAccountsServiceHandler
+	*Service
+}
+
 type healthService struct {
 	pbconnect.UnimplementedHealthServiceHandler
 	*Service
@@ -92,12 +98,13 @@ type instance struct {
 	dream    *dream.Client
 	universe string
 
-	authClient    authIface.Client
-	seerClient    seerIface.Client
-	hoarderClient hoarderIface.Client
-	monkeyClient  monkeyIface.Client
-	tnsClient     tnsIface.Client
-	patrickClient patrickIface.Client
+	authClient     authIface.Client
+	accountsClient accountsIface.Client
+	seerClient     seerIface.Client
+	hoarderClient  hoarderIface.Client
+	monkeyClient   monkeyIface.Client
+	tnsClient      tnsIface.Client
+	patrickClient  patrickIface.Client
 
 	p2p.Node
 }

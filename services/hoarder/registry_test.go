@@ -477,7 +477,7 @@ func TestKVOps(t *testing.T) {
 	if _, err := srv.kvBatch(ctx, handle, hash, batchBody); err != nil {
 		t.Fatal(err)
 	}
-	// Read through kvGet (which decrypts under -tags ee; identity under OSS).
+	// Read through kvGet (which decrypts under -tags ee; identity under community).
 	getK2 := kvBody(hoarderSpecs.KVGet)
 	getK2[hoarderSpecs.BodyKey] = "k2"
 	if resp, _ := srv.kvGet(ctx, handle, getK2); string(resp[hoarderSpecs.BodyValue].([]byte)) != "v2" {

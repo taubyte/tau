@@ -188,24 +188,8 @@ func TestHTTPMgmt_Members_InviteAndList(t *testing.T) {
 
 // --- Users route --------------------------------------------------
 
-// Plan-create is operator-only and not HTTP-exposed, so the test uses the
-// in-process Client to seed a plan + PRef before exercising the HTTP user route.
 func TestHTTPMgmt_Users_AddAndList(t *testing.T) {
 	s := setupMgmt(t)
-	ctx := context.Background()
-	plan, err := s.srv.Client().Plans().Create(ctx, accountsIface.CreatePlanInput{
-		Name: "Production",
-	})
-	if err != nil {
-		t.Fatalf("inline create plan: %v", err)
-	}
-	prefs := s.srv.Client().PRefs(s.accountID)
-	if _, err := prefs.Create(ctx, accountsIface.CreatePRefInput{Name: "prod", MemberID: "system:test"}); err != nil {
-		t.Fatalf("inline create pref: %v", err)
-	}
-	if _, err := prefs.Assign(ctx, accountsIface.AssignPRefInput{Name: "prod", PlanID: plan.ID, MemberID: "system:test"}); err != nil {
-		t.Fatalf("inline assign pref: %v", err)
-	}
 
 	var added accountsIface.User
 	if err := s.callMgmt(t, "/users", "add", s.accountID, nil, accountsIface.AddUserInput{
@@ -217,14 +201,6 @@ func TestHTTPMgmt_Users_AddAndList(t *testing.T) {
 	}
 	if added.ID == "" {
 		t.Fatalf("add response missing id: %+v", added)
-	}
-
-	if err := s.callMgmt(t, "/users", "grant", s.accountID,
-		map[string]string{"id": added.ID},
-		accountsIface.GrantPRefInput{PRefName: "prod"},
-		nil,
-	); err != nil {
-		t.Fatalf("grant: %v", err)
 	}
 
 	var ids []string

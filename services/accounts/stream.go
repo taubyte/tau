@@ -1,20 +1,7 @@
+//go:build !ee
+
 package accounts
 
-// setupStreamRoutes wires the accounts service's P2P stream verbs.
-//
-// Two integration verbs (verify, resolve) drive services/auth and the
-// project compiler. The management verbs (account, member, user, plan)
-// drive the Member CLI + future operator tooling. Login drives the
-// magic-link / passkey flow.
-func (srv *AccountsService) setupStreamRoutes() {
-	srv.stream.Define(StreamVerbVerify, srv.apiVerifyHandler)
-	srv.stream.Define(StreamVerbResolve, srv.apiResolveHandler)
-	srv.stream.Define(StreamVerbLookupAccountsByEmail, srv.apiLookupAccountsByEmailHandler)
-
-	srv.stream.Define(StreamVerbAccount, srv.apiAccountHandler)
-	srv.stream.Define(StreamVerbMember, srv.apiMemberHandler)
-	srv.stream.Define(StreamVerbUser, srv.apiUserHandler)
-	srv.stream.Define(StreamVerbPlan, srv.apiPlanHandler)
-	srv.stream.Define(StreamVerbPRef, srv.apiPRefHandler)
-	srv.stream.Define(StreamVerbLogin, srv.apiLoginHandler)
-}
+// setupStreamRoutesEE is a no-op in the community build — there are no ee
+// verbs. The ee build registers them (see stream_ee.go).
+func (srv *AccountsService) setupStreamRoutesEE() {}

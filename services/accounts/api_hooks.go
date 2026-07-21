@@ -45,12 +45,10 @@ func (srv *AccountsService) apiLookupAccountsByEmailHandler(ctx context.Context,
 	return cr.Response{"account_ids": ids}, nil
 }
 
+// apiResolveHandler is the linkage resolve: account active + git user linked →
+// valid. Some builds add a separate resolve verb.
 func (srv *AccountsService) apiResolveHandler(ctx context.Context, _ streams.Connection, body command.Body) (cr.Response, error) {
 	accountSlug, err := maps.String(body, "account_slug")
-	if err != nil {
-		return nil, fmt.Errorf("resolve: %w", err)
-	}
-	prefName, err := maps.String(body, "pref_name")
 	if err != nil {
 		return nil, fmt.Errorf("resolve: %w", err)
 	}
@@ -62,7 +60,7 @@ func (srv *AccountsService) apiResolveHandler(ctx context.Context, _ streams.Con
 	if err != nil {
 		return nil, fmt.Errorf("resolve: %w", err)
 	}
-	resp, err := srv.Client().ResolvePRef(ctx, accountSlug, prefName, provider, externalID)
+	resp, err := resolveLinkage(ctx, srv.db, accountSlug, provider, externalID)
 	if err != nil {
 		return nil, err
 	}
@@ -87,12 +85,6 @@ func resolveResponseToWire(r *accountsIface.ResolveResponse) cr.Response {
 	out := cr.Response{"valid": r.Valid}
 	if r.Reason != "" {
 		out["reason"] = r.Reason
-	}
-	if r.PRef != nil {
-		out["pref"] = r.PRef
-	}
-	if r.Plan != nil {
-		out["plan"] = r.Plan
 	}
 	return out
 }

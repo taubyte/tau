@@ -246,12 +246,12 @@ var FixtureMap = map[string]FixtureDefinition{
 		Internal:    true,
 	},
 	"fakeAccount": {
-		Description: "Seeds the accounts service with a default account+plan+user (acme/prod, github:42)",
+		Description: "Seeds the accounts service with a default linked account+user (acme, github:42)",
 		ImportRef:   "tau/dream/fixtures",
 		Internal:    true,
 	},
 	"injectAccount": {
-		Description: "Pass in a fixtures.AccountInjection to seed the accounts service with a custom account+plan+user",
+		Description: "Pass in a fixtures.AccountInjection to seed the accounts service with a custom linked account+user",
 		ImportRef:   "tau/dream/fixtures",
 		BlockCLI:    true,
 		Internal:    true,

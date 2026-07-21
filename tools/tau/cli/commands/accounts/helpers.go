@@ -43,3 +43,18 @@ func (l *loadedClient) resolveAccountID(slug string) (string, error) {
 	}
 	return "", fmt.Errorf("Account %q not found among the Member's linked Accounts (run `tau accounts list` to see what you have access to)", slug)
 }
+
+// SessionForAccount logs the caller in and maps a slug to its account ID,
+// returning the live HTTP client so a subcommand added through a build seam can
+// issue account-scoped calls without re-implementing the session/lookup dance.
+func SessionForAccount(slug string) (*httpaccounts.Client, string, error) {
+	loaded, err := requireLoggedIn()
+	if err != nil {
+		return nil, "", err
+	}
+	id, err := loaded.resolveAccountID(slug)
+	if err != nil {
+		return nil, "", err
+	}
+	return loaded.HTTP, id, nil
+}

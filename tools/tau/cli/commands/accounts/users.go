@@ -13,8 +13,13 @@ var usersCommand = &cli.Command{
 		usersAddCommand,
 		usersListCommand,
 		usersRemoveCommand,
-		usersGrantCommand,
 	},
+}
+
+// AddUsersSubcommand appends a subcommand under `accounts users`. Build seams
+// use it to attach subcommands that only exist in some builds.
+func AddUsersSubcommand(cmd *cli.Command) {
+	usersCommand.Subcommands = append(usersCommand.Subcommands, cmd)
 }
 
 var usersAddCommand = &cli.Command{
@@ -70,8 +75,7 @@ func runUsersList(ctx *cli.Context) error {
 		pterm.Info.Println("No Users on this Account.")
 		return nil
 	}
-	// IDs only in v1 — User records carry grant arrays that would balloon
-	// the listing.
+	// IDs only in v1 — a full record listing would balloon the output.
 	for _, id := range ids {
 		pterm.Info.Println(id)
 	}
@@ -103,32 +107,5 @@ func runUsersRemove(ctx *cli.Context) error {
 		return err
 	}
 	pterm.Success.Printf("Removed user %s\n", userID)
-	return nil
-}
-
-var usersGrantCommand = &cli.Command{
-	Name:      "grant",
-	Usage:     "Grant a User access to a plan within the Account",
-	ArgsUsage: "<account-slug>",
-	Flags: []cli.Flag{
-		&cli.StringFlag{Name: "user", Usage: "User ID", Required: true},
-		&cli.StringFlag{Name: "plan", Usage: "Plan name (PRef name)", Required: true},
-	},
-	Action: runUsersGrant,
-}
-
-func runUsersGrant(ctx *cli.Context) error {
-	loaded, err := requireLoggedIn()
-	if err != nil {
-		return err
-	}
-	accountID, err := loaded.resolveAccountID(ctx.Args().First())
-	if err != nil {
-		return err
-	}
-	if err := loaded.HTTP.GrantPRef(accountID, ctx.String("user"), ctx.String("plan")); err != nil {
-		return err
-	}
-	pterm.Success.Printf("Granted plan %s to user %s\n", ctx.String("plan"), ctx.String("user"))
 	return nil
 }

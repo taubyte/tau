@@ -11,6 +11,12 @@ import (
 // Member-facing management routes (/members, /users). Plans and Accounts are
 // operator-only and have no HTTP surface.
 
+// SendMgmt posts to a management route, optionally decoding outField into out.
+// Exposed so build-tagged surfaces can add routes without re-plumbing auth.
+func (c *Client) SendMgmt(route string, body map[string]any, outField string, out any) error {
+	return c.sendMgmt(route, body, outField, out)
+}
+
 func (c *Client) sendMgmt(route string, body map[string]any, outField string, out any) error {
 	var resp map[string]any
 	if err := c.do("POST", route, body, &resp, true); err != nil {
@@ -124,17 +130,5 @@ func (c *Client) RemoveUser(accountID, userID string) error {
 		"action":     "remove",
 		"account_id": accountID,
 		"id":         userID,
-	}, "", nil)
-}
-
-func (c *Client) GrantPRef(accountID, userID, prefName string) error {
-	if accountID == "" || userID == "" || prefName == "" {
-		return errors.New("GrantPRef: account_id, user_id, pref_name required")
-	}
-	return c.sendMgmt("/users", map[string]any{
-		"action":     "grant",
-		"account_id": accountID,
-		"id":         userID,
-		"pref_name":  prefName,
 	}, "", nil)
 }

@@ -83,28 +83,3 @@ func (i *usersImpl) Remove(ctx context.Context, userID string) error {
 	}
 	return expectOK(resp, "users.Remove")
 }
-
-func (i *usersImpl) Grant(ctx context.Context, userID string, in accountsIface.GrantPRefInput) error {
-	resp, err := i.c.client.Send(verbUser, command.Body{
-		"action":     "grant",
-		"account_id": i.accountID,
-		"id":         userID,
-		"pref_name":  in.PRefName,
-		"is_default": in.IsDefault,
-	}, i.c.peers...)
-	if err != nil {
-		return fmt.Errorf("users.Grant: %w", err)
-	}
-	return expectOK(resp, "users.Grant")
-}
-
-func (i *usersImpl) Revoke(ctx context.Context, userID, prefName string) error {
-	resp, err := i.c.client.Send(verbUser, command.Body{
-		"action": "revoke", "account_id": i.accountID,
-		"id": userID, "pref_name": prefName,
-	}, i.c.peers...)
-	if err != nil {
-		return fmt.Errorf("users.Revoke: %w", err)
-	}
-	return expectOK(resp, "users.Revoke")
-}

@@ -35,9 +35,8 @@ const (
 	AccountStatusSuspended    AccountStatus = "suspended"
 )
 
-// Role is the Account-side authority of a Member. Plan grants are a separate
-// concern (they live on User records) — Role only governs Account-management
-// actions like inviting Members, creating Plans, etc.
+// Role is the Account-side authority of a Member — it governs Account-management
+// actions like inviting Members.
 type Role string
 
 const (
@@ -47,9 +46,8 @@ const (
 	RoleBilling Role = "billing"
 )
 
-// Account is the tenancy entity. It holds Members (login principals), Users
-// (linked git accounts) and PRefs (account-scoped pointers to Plans).
-// Plans themselves are global, not owned by an Account.
+// Account is the tenancy entity. It holds Members (login principals) and Users
+// (linked git accounts).
 type Account struct {
 	ID         string            `json:"id"                       cbor:"id"`
 	Slug       string            `json:"slug"                     cbor:"slug"`
@@ -106,84 +104,19 @@ type PasskeyCredential struct {
 	RegisteredAt    time.Time `json:"registered_at"        cbor:"registered_at"`
 }
 
-// User is a git provider account linked to an Account. It is the entity that
-// holds plan grants — `tau project new` works as long as the calling git
-// user has at least one grant. A User is **not** a login subject; logins are
-// authenticated as Members.
+// User is a git provider account linked to an Account. In the community build, being
+// linked to an active Account IS the access grant — `tau project new` works for
+// any git user linked to the account. A User is **not** a login subject; logins
+// are authenticated as Members.
 type User struct {
-	ID              string      `json:"id"                           cbor:"id"`
-	AccountID       string      `json:"account_id"                   cbor:"account_id"`
-	Provider        string      `json:"provider"                     cbor:"provider"`
-	ExternalID      string      `json:"external_id"                  cbor:"external_id"`
-	DisplayName     string      `json:"display_name"                 cbor:"display_name"`
-	PlanGrants      []PlanGrant `json:"plan_grants"                  cbor:"plan_grants"`
-	AddedAt         time.Time   `json:"added_at"                     cbor:"added_at"`
-	AddedByMemberID string      `json:"added_by_member_id,omitempty" cbor:"added_by_member_id,omitempty"`
-	LastUsedAt      *time.Time  `json:"last_used_at,omitempty"       cbor:"last_used_at,omitempty"`
-}
-
-// PlanGrant attaches a PRef to a User. Exactly one grant per User is marked
-// IsDefault (used when project config doesn't explicitly disambiguate).
-//
-// Grants are keyed by PRef name (account-scoped), not by plan ID. When the
-// PRef's pointer swaps to a new plan, the user automatically follows the
-// upgrade — no re-grant needed.
-type PlanGrant struct {
-	PRefName  string `json:"pref_name"  cbor:"pref_name"`
-	IsDefault bool   `json:"is_default" cbor:"is_default"`
-}
-
-// Plan is an immutable, undeletable, global usage-capacity record. Plans are
-// not scoped to an Account; the only link between a Plan and an Account is a
-// PRef. Modifying a Plan = creating a new immutable Plan record (versioning is
-// emergent from the PRef event log, not encoded on the record).
-type Plan struct {
-	ID          string `json:"id"                     cbor:"id"`
-	Name        string `json:"name"                   cbor:"name"`
-	DisplayName string `json:"display_name,omitempty" cbor:"display_name,omitempty"`
-	Data        []byte `json:"data,omitempty"         cbor:"data,omitempty"` // opaque metadata blob; schema TBD
-}
-
-// PRefStatus tracks the lifecycle of a PRef. PRefs cannot be deleted; they go
-// `active` ↔ `disabled` via events.
-type PRefStatus string
-
-const (
-	PRefStatusActive   PRefStatus = "active"
-	PRefStatusDisabled PRefStatus = "disabled"
-)
-
-// PRef is an account-scoped named pointer to a Plan. Its Name is immortal once
-// created; its DisplayName is cosmetic and mutable; its Status is reflected
-// from the latest disable/enable event; its current plan is the PlanID of the
-// latest `assign` event.
-type PRef struct {
-	Name        string     `json:"name"                   cbor:"name"`
-	AccountID   string     `json:"account_id"             cbor:"account_id"`
-	DisplayName string     `json:"display_name,omitempty" cbor:"display_name,omitempty"`
-	Status      PRefStatus `json:"status"                 cbor:"status"`
-	CreatedAt   time.Time  `json:"created_at"             cbor:"created_at"`
-}
-
-// PRefEventKind enumerates the operations recorded in a PRef's event log.
-type PRefEventKind string
-
-const (
-	PRefEventKindAssign  PRefEventKind = "assign"
-	PRefEventKindDisable PRefEventKind = "disable"
-	PRefEventKindEnable  PRefEventKind = "enable"
-)
-
-// PRefEvent is one entry in a PRef's append-only event log. Each event carries
-// the server-stamped time, who initiated it (Member session or `system:<actor>`),
-// the kind, and an optional human-readable note. Assign events also carry the
-// PlanID newly bound to the PRef.
-type PRefEvent struct {
-	At       time.Time     `json:"at"                cbor:"at"`
-	Kind     PRefEventKind `json:"kind"              cbor:"kind"`
-	PlanID   string        `json:"plan_id,omitempty" cbor:"plan_id,omitempty"`
-	MemberID string        `json:"member_id"         cbor:"member_id"`
-	Note     string        `json:"note,omitempty"    cbor:"note,omitempty"`
+	ID              string     `json:"id"                           cbor:"id"`
+	AccountID       string     `json:"account_id"                   cbor:"account_id"`
+	Provider        string     `json:"provider"                     cbor:"provider"`
+	ExternalID      string     `json:"external_id"                  cbor:"external_id"`
+	DisplayName     string     `json:"display_name"                 cbor:"display_name"`
+	AddedAt         time.Time  `json:"added_at"                     cbor:"added_at"`
+	AddedByMemberID string     `json:"added_by_member_id,omitempty" cbor:"added_by_member_id,omitempty"`
+	LastUsedAt      *time.Time `json:"last_used_at,omitempty"       cbor:"last_used_at,omitempty"`
 }
 
 // Session is an authenticated Member session, returned by managed or external
@@ -208,26 +141,18 @@ type VerifyResponse struct {
 }
 
 // VerifyAccountSummary is one entry in VerifyResponse.Accounts: an Account the
-// git user is linked to, plus that User's PRef grants on the Account.
+// git user is linked to.
 type VerifyAccountSummary struct {
-	ID    string              `json:"id"    cbor:"id"`
-	Slug  string              `json:"slug"  cbor:"slug"`
-	Name  string              `json:"name"  cbor:"name"`
-	PRefs []VerifyPRefSummary `json:"prefs" cbor:"prefs"`
+	ID   string `json:"id"   cbor:"id"`
+	Slug string `json:"slug" cbor:"slug"`
+	Name string `json:"name" cbor:"name"`
 }
 
-// VerifyPRefSummary is one PRef grant in a VerifyAccountSummary.
-type VerifyPRefSummary struct {
-	Name        string `json:"name"                   cbor:"name"`
-	DisplayName string `json:"display_name,omitempty" cbor:"display_name,omitempty"`
-	IsDefault   bool   `json:"is_default"             cbor:"is_default"`
-}
-
-// ResolveResponse is the result of resolving an account/pref pair against a
-// git user, called by the project compiler at compile time.
+// ResolveResponse is the result of resolving a git user against an account,
+// called by the project compiler at compile time. In the community build this is a
+// pure linkage check: Valid is true iff the account is active and the git user
+// is linked to it.
 type ResolveResponse struct {
-	Valid  bool   `json:"valid"             cbor:"valid"`
-	Reason string `json:"reason,omitempty"  cbor:"reason,omitempty"` // typed: account not active | pref not found | pref disabled | pref has no plan assigned | plan not found | git user not linked | git user has no grant
-	PRef   *PRef  `json:"pref,omitempty"    cbor:"pref,omitempty"`
-	Plan   *Plan  `json:"plan,omitempty"    cbor:"plan,omitempty"`
+	Valid  bool   `json:"valid"            cbor:"valid"`
+	Reason string `json:"reason,omitempty" cbor:"reason,omitempty"` // typed: account not found | account not active | git user not linked to account
 }

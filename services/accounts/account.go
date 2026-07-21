@@ -116,8 +116,8 @@ func (s *accountStore) Update(ctx context.Context, accountID string, in accounts
 	return acc, nil
 }
 
-// Delete does not cascade into Members/Users/PRefs — callers must empty
-// those first. Explicit emptying is safer than implicit cascade here.
+// Delete does not cascade into Members/Users — callers must empty those first.
+// Explicit emptying is safer than implicit cascade here.
 func (s *accountStore) Delete(ctx context.Context, accountID string) error {
 	acc, err := s.Get(ctx, accountID)
 	if err != nil {
@@ -168,4 +168,26 @@ func validateAccountSlug(slug string) error {
 		}
 	}
 	return nil
+}
+
+func isVarnameStart(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z':
+		return true
+	case r >= 'A' && r <= 'Z':
+		return true
+	case r == '_':
+		return true
+	}
+	return false
+}
+
+func isVarnameRune(r rune) bool {
+	if isVarnameStart(r) {
+		return true
+	}
+	if r >= '0' && r <= '9' {
+		return true
+	}
+	return false
 }
