@@ -107,6 +107,69 @@ func TestResolveNameToId_ProjectScopeFallbackFromApp(t *testing.T) {
 	assert.Equal(t, id, "lib-id-project")
 }
 
+// Scope qualifiers: a global "foo" and an app-local "foo" coexist; the qualifier
+// on the name selects which one, generically (any Ref).
+func TestResolveNameToId_ScopeQualifiers(t *testing.T) {
+	root := object.New[object.Refrence]()
+	root.Set("name", "root")
+	app := object.New[object.Refrence]()
+	app.Set("name", "app")
+
+	ctx := transform.NewContext[object.Refrence](context.Background(), root)
+	// global library
+	assert.NilError(t, IndexById(ctx, "libraries", "foo", "global-id"))
+	ctxApp := ctx.Fork(app)
+	// app-local library, same name
+	assert.NilError(t, IndexById(ctxApp, "libraries", "foo", "app-id"))
+
+	// default: current (app) scope wins
+	id, err := ResolveNameToId(ctxApp, "libraries", "foo")
+	assert.NilError(t, err)
+	assert.Equal(t, id, "app-id")
+
+	// "/foo": absolute root/global, ignores the app-local one
+	id, err = ResolveNameToId(ctxApp, "libraries", "/foo")
+	assert.NilError(t, err)
+	assert.Equal(t, id, "global-id")
+
+	// "../foo": the app's parent is root -> global
+	id, err = ResolveNameToId(ctxApp, "libraries", "../foo")
+	assert.NilError(t, err)
+	assert.Equal(t, id, "global-id")
+}
+
+// Generic cross-app isolation: the resolver climbs ancestors only, never
+// sideways — so a resource in app2 cannot resolve one that lives only in app1.
+func TestResolveNameToId_NoSiblingAppResolution(t *testing.T) {
+	root := object.New[object.Refrence]()
+	root.Set("name", "root")
+	app1 := object.New[object.Refrence]()
+	app1.Set("name", "app1")
+	app2 := object.New[object.Refrence]()
+	app2.Set("name", "app2")
+
+	ctx := transform.NewContext[object.Refrence](context.Background(), root)
+	// library exists only in app1
+	assert.NilError(t, IndexById(ctx.Fork(app1), "libraries", "foo", "app1-id"))
+
+	// from app2: unreachable, whether by default, absolute-root, or parent
+	ctx2 := ctx.Fork(app2)
+	for _, name := range []string{"foo", "/foo", "../foo"} {
+		_, err := ResolveNameToId(ctx2, "libraries", name)
+		assert.ErrorContains(t, err, "not indexed", "sibling app resource must be unreachable: %q", name)
+	}
+}
+
+func TestResolveNameToId_ScopeClimbsAboveRoot(t *testing.T) {
+	root := object.New[object.Refrence]()
+	root.Set("name", "root")
+	ctx := transform.NewContext[object.Refrence](context.Background(), root)
+	assert.NilError(t, IndexById(ctx, "libraries", "foo", "gid"))
+
+	_, err := ResolveNameToId(ctx, "libraries", "../foo")
+	assert.ErrorContains(t, err, "climbs above the project root")
+}
+
 func TestResolveNamesToId_MultipleNames(t *testing.T) {
 	root := object.New[object.Refrence]()
 	root.Set("name", "root")

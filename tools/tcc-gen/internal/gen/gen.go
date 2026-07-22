@@ -16,16 +16,26 @@ import (
 	"strings"
 
 	engine "github.com/taubyte/tau/pkg/tcc/engine"
+	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 )
 
 // schemaPrefix scopes the accessor drift check (a formatting-agnostic func-name
 // diff). structPrefix scopes the structureSpec struct files, which are fully
 // generated and adopted in place, so they get a strict byte-exact check.
 const (
-	schemaPrefix = "pkg/schema/"
-	structPrefix = "pkg/specs/structure/"
-	tsGenPath    = "pkg/tcc/clients/js/src/gen/schema.ts"
+	schemaPrefix   = "pkg/schema/"
+	structPrefix   = "pkg/specs/structure/"
+	tsGenPath      = "pkg/tcc/clients/js/src/gen/schema.ts"
+	jsonSchemaPath = "pkg/tcc/taubyte/v1/config.schema.json"
 )
+
+// byteExact reports whether a generated file is checked byte-for-byte (struct
+// files, the TS schema, the JSON schema) rather than by func-name set.
+func byteExact(rel string) bool {
+	return strings.HasPrefix(rel, structPrefix) ||
+		rel == filepath.FromSlash(tsGenPath) ||
+		rel == filepath.FromSlash(jsonSchemaPath)
+}
 
 // Generate returns a map of repo-relative path -> gofmt'd file content: the
 // pkg/schema accessor files plus the pkg/specs/structure struct proposals.
@@ -60,6 +70,11 @@ func Generate(root []*engine.Node) (map[string][]byte, error) {
 		return nil, err
 	}
 	out[filepath.FromSlash(tsGenPath)] = ts
+	js, err := schema.JSONSchema()
+	if err != nil {
+		return nil, err
+	}
+	out[filepath.FromSlash(jsonSchemaPath)] = js
 	return out, nil
 }
 
@@ -95,7 +110,7 @@ func Check(repoRoot string, gen map[string][]byte) ([]Diff, error) {
 	var diffs []Diff
 	for rel, b := range gen {
 		switch {
-		case strings.HasPrefix(rel, structPrefix) || rel == filepath.FromSlash(tsGenPath):
+		case byteExact(rel):
 			realBytes, err := os.ReadFile(filepath.Join(repoRoot, rel))
 			if err != nil {
 				if os.IsNotExist(err) {
@@ -143,7 +158,7 @@ func PrintReport(w io.Writer, gen map[string][]byte, diffs []Diff) {
 	}
 	rels := make([]string, 0, len(gen))
 	for rel := range gen {
-		if strings.HasPrefix(rel, schemaPrefix) || strings.HasPrefix(rel, structPrefix) || rel == filepath.FromSlash(tsGenPath) {
+		if strings.HasPrefix(rel, schemaPrefix) || byteExact(rel) {
 			rels = append(rels, rel)
 		}
 	}

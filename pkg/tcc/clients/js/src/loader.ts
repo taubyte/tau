@@ -28,15 +28,21 @@ export interface CompileResult {
 export interface TccGlobal {
   compile(fs: SyncFs, opts?: CompileOptions): CompileResult | { error: string };
   decompile(obj: unknown, fs: SyncFs): null | { error: string };
+  /** The config JSON Schema (Draft 2020-12), generated from this wasm's own DSL. */
+  schema(): Record<string, unknown> | { error: string };
   // Editable sessions (config lives in wasm; getters/setters address it by path).
   openSession(fs: SyncFs): number | { error: string };
   decompileSession(obj: unknown): number | { error: string };
   sessionGet(handle: number, resource: string[], field: string[]): unknown; // value | null(absent) | { error }
   sessionSet(handle: number, resource: string[], field: string[], value: unknown): null | { error: string };
   sessionCompile(handle: number, opts?: CompileOptions): CompileResult | { error: string };
+  sessionValidate(handle: number, opts?: CompileOptions): { validations: Validation[] } | { error: string };
   sessionSave(handle: number, fs: SyncFs): null | { error: string };
-  sessionDelete(handle: number, resource: string[]): null | { error: string };
+  // field omitted -> delete the whole resource; field given -> unset that one field.
+  sessionDelete(handle: number, resource: string[], field?: string[]): null | { error: string };
   sessionList(handle: number, path: string[]): string[] | { error: string };
+  sessionFork(handle: number): number | { error: string };
+  sessionMerge(handle: number): null | { error: string };
   sessionClose(handle: number): null;
 }
 
@@ -48,10 +54,13 @@ export interface TccGlobal {
 export interface SessionBinding {
   get(handle: number, resource: string[], field: string[]): Promise<unknown>;
   set(handle: number, resource: string[], field: string[], value: unknown): Promise<void>;
-  delete(handle: number, resource: string[]): Promise<void>;
+  delete(handle: number, resource: string[], field?: string[]): Promise<void>;
   list(handle: number, path: string[]): Promise<string[]>;
   compile(handle: number, opts?: CompileOptions): Promise<CompileResult>;
+  validate(handle: number, opts?: CompileOptions): Promise<Validation[]>;
   save(handle: number, fs: AsyncFs, dir: string): Promise<void>;
+  fork(handle: number): Promise<number>;
+  merge(handle: number): Promise<void>;
   close(handle: number): Promise<void>;
 }
 
@@ -69,8 +78,8 @@ export function makeBinding(tcc: TccGlobal): SessionBinding {
     async set(handle, resource, field, value) {
       orThrow(tcc.sessionSet(handle, resource, field, value));
     },
-    async delete(handle, resource) {
-      orThrow(tcc.sessionDelete(handle, resource));
+    async delete(handle, resource, field) {
+      orThrow(tcc.sessionDelete(handle, resource, field));
     },
     async list(handle, path) {
       return orThrow(tcc.sessionList(handle, path));
@@ -78,10 +87,19 @@ export function makeBinding(tcc: TccGlobal): SessionBinding {
     async compile(handle, opts) {
       return orThrow(tcc.sessionCompile(handle, opts));
     },
+    async validate(handle, opts) {
+      return orThrow(tcc.sessionValidate(handle, opts)).validations;
+    },
     async save(handle, fs, dir) {
       const sync = makeSyncFs();
       orThrow(tcc.sessionSave(handle, sync));
       await flush(fs, dir, sync.map, { prune: true }); // reflect deletions
+    },
+    async fork(handle) {
+      return orThrow(tcc.sessionFork(handle));
+    },
+    async merge(handle) {
+      orThrow(tcc.sessionMerge(handle));
     },
     async close(handle) {
       tcc.sessionClose(handle);

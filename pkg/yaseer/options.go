@@ -56,3 +56,14 @@ func WithWAL(path string) Option {
 		return nil
 	}
 }
+
+// WithInMemWAL records every commit's ops in memory as a replayable op-log — no
+// file, no byte encoding. The log is exposed via WAL() and replayed into another
+// Seer with ReplayWal, e.g. to merge a forked, in-memory edit session into its
+// parent without copying files. The parent needs no WAL of its own.
+func WithInMemWAL() Option {
+	return func(s *Seer) error {
+		s.memwal = &memWAL{}
+		return nil
+	}
+}

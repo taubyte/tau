@@ -1,10 +1,28 @@
 package schema
 
 import (
+	"context"
+
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/interp"
 	"github.com/taubyte/tau/pkg/tcc/interp/decompile"
 )
+
+// NextValidation is a deferred external check (DNS, project_id) a compile/validate
+// surfaces for the caller to run. Re-exported so tools depend only on this package.
+type NextValidation = interp.NextValidation
+
+// Validate builds a compiler and runs the whole-config validate pass in one shot:
+// it returns the deferred external checks and any load-time or referential-
+// integrity error, without producing a compiled artifact. This is the entry
+// external tools (UIs, agents) use to validate a config tree.
+func Validate(ctx context.Context, opts ...Option) ([]NextValidation, error) {
+	c, err := New(opts...)
+	if err != nil {
+		return nil, err
+	}
+	return c.Validate(ctx)
+}
 
 // This file is the thin public facade over the generic interpreter (pkg/tcc/interp).
 // External callers depend only on this schema package: it binds the interpreter's
@@ -21,6 +39,10 @@ type Option = interp.Option
 
 // Object is the compiled configuration object New(...).Compile returns.
 type Object = interp.Object
+
+// Compiler is the bound compiler New(...) returns — re-exported so callers can
+// name it (e.g. a helper returning *schema.Compiler) without importing interp.
+type Compiler = interp.Compiler
 
 // DefaultBranch is the branch a compile assumes when WithBranch is not given.
 var DefaultBranch = interp.DefaultBranch

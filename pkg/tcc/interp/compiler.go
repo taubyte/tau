@@ -78,6 +78,21 @@ func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error
 	return result, validations, nil
 }
 
+// Validate runs the full compile pipeline (load -> assemble -> resolve refs ->
+// index) purely to surface diagnostics, discarding the compiled object. It is the
+// only honest whole-config validator: the generated structureSpec structs model
+// the COMPILED-WIRE shape (resolved ids, projected keys), so they cannot check
+// authored-config or cross-element constraints (e.g. "source is '.' or a library",
+// "a function's domains are defined domains"). This entry does — it reports load-
+// time validation errors and referential-integrity errors as err, and returns the
+// deferred external checks (DNS, project_id) the caller must still run. External
+// tools (UIs, agents, the wasm build) call this to validate a config tree without
+// building artifacts.
+func (c *Compiler) Validate(ctx context.Context) ([]NextValidation, error) {
+	_, validations, err := c.Compile(ctx)
+	return validations, err
+}
+
 // compilePipe assembles the transform pipeline from what the schema root actually
 // declares, so a schema that doesn't use a feature doesn't pay for its pass. The
 // CompileDriver always runs; the rest are gated on generic predicates over the

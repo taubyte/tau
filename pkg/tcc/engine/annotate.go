@@ -25,6 +25,80 @@ func Bytes(name string, opts ...Option) *Attribute {
 	return String(name, append(opts, Annotate("scalar", ScalarSpec{ID: "bytes", GoType: "uint64", Parse: parseBytes, Format: formatBytes}))...)
 }
 
+// Doc attaches a human-readable description to an attribute for schema export
+// (it becomes JSON Schema `description`). Documentation-only: the engine and
+// compiler ignore it. Distinct from the `description` CONFIG attribute some
+// resources declare — this documents the field; that one IS a field.
+func Doc(text string) Option {
+	return Annotate("doc", text)
+}
+
+// GroupDoc is the node-level Doc: a human-readable description for a resource or
+// container group, surfaced on its schema object. Documentation-only.
+func GroupDoc(text string) NodeOption {
+	return GroupAnnotate("doc", text)
+}
+
+// ConditionSpec is a simple static visibility condition: show the field or section
+// only when a sibling attribute (Field) holds one of In. Presentation-only — a
+// UI/CLI evaluates it; it never affects parsing or the compiled output. (For
+// compile-time wire-projection gating, that's the separate OnlyWhen.)
+type ConditionSpec struct {
+	Field string
+	In    []string
+}
+
+// ShowWhen makes a field's display conditional: a UI/CLI shows it only when the
+// sibling attribute Field holds one of in. Schema-only, static — no compile or
+// parse effect.
+func ShowWhen(field string, in ...string) Option {
+	return Annotate("showWhen", ConditionSpec{Field: field, In: in})
+}
+
+// SectionSpec declares a human-facing section for a resource's fields — how a UI
+// or CLI groups them for display. It is presentation-only (no compile effect) and
+// does NOT have to align with the authored nesting: a field under one Path can sit
+// in a section with a field from another. Membership is explicit (see Section),
+// never derived from Path. Title is the short heading; Doc the longer blurb; When
+// (optional) shows the whole section only when its condition holds.
+type SectionSpec struct {
+	ID    string
+	Title string
+	Doc   string
+	When  *ConditionSpec
+}
+
+// SectionDefinition declares a display section with an id, a short Title, and a
+// longer description (Doc). Repeatable on a node; declaration order is display
+// order. Fields join it with Section(id). Schema-only — no compile/parse effect.
+func SectionDefinition(id, title, doc string) NodeOption {
+	return sectionDef(SectionSpec{ID: id, Title: title, Doc: doc})
+}
+
+// SectionDefinitionWhen is SectionDefinition with a static visibility condition:
+// the section is shown only when sibling attribute field holds one of in (e.g. the
+// HTTP section only when a function's type is "http"/"https"). Schema-only.
+func SectionDefinitionWhen(id, title, doc, field string, in ...string) NodeOption {
+	return sectionDef(SectionSpec{ID: id, Title: title, Doc: doc, When: &ConditionSpec{Field: field, In: in}})
+}
+
+func sectionDef(spec SectionSpec) NodeOption {
+	return func(n *Node) {
+		if n.Meta == nil {
+			n.Meta = map[string]any{}
+		}
+		s, _ := n.Meta["sections"].([]SectionSpec)
+		n.Meta["sections"] = append(s, spec)
+	}
+}
+
+// Section assigns an attribute to a display section by id (see SectionDefinition),
+// telling a UI/CLI which section to render the field under. Explicit and
+// independent of the field's Path. Schema-only — no compile or parse effect.
+func Section(id string) Option {
+	return Annotate("section", id)
+}
+
 // Field overrides the Go struct field name a generator emits for this attribute,
 // for cases where the config-key-derived name differs from the struct field
 // (e.g. github-id -> RepoID). Generation-only; no runtime effect.

@@ -2,12 +2,13 @@
 // Typed accessors over a wasm-resident editable config session. Getters/setters
 // read/write fields by path across the wasm boundary; YAML lives in wasm.
 
-import type { SessionBinding, CompileOptions, CompileResult } from "../loader.js";
+import type { SessionBinding, CompileOptions, CompileResult, Validation } from "../loader.js";
 import type { AsyncFs } from "../fs.js";
 
 export type DatabaseNetwork = "all" | "subnet" | "host";
 export type DomainCertType = "inline" | "auto";
 export type FunctionType = "http" | "https" | "pubsub" | "p2p";
+export type FunctionMethod = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
 export type StorageNetwork = "all" | "subnet" | "host";
 
 /** An editable, wasm-resident project config session. */
@@ -75,8 +76,17 @@ export class Session {
   compile(opts?: CompileOptions): Promise<CompileResult> {
     return this.binding.compile(this.handle, opts);
   }
+  validate(opts?: CompileOptions): Promise<Validation[]> {
+    return this.binding.validate(this.handle, opts);
+  }
   save(fs: AsyncFs, dir: string): Promise<void> {
     return this.binding.save(this.handle, fs, dir);
+  }
+  async fork(): Promise<Session> {
+    return new Session(this.binding, await this.binding.fork(this.handle));
+  }
+  merge(): Promise<void> {
+    return this.binding.merge(this.handle);
   }
   close(): Promise<void> {
     return this.binding.close(this.handle);
@@ -94,11 +104,54 @@ export class DatabaseConfig {
     return this.s.binding.delete(this.s.handle, this.res);
   }
 
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
   async match(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["match"])) as string | undefined;
   }
   setMatch(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["match"], v);
+  }
+  unsetMatch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["match"]);
   }
 
   async regex(): Promise<boolean | undefined> {
@@ -108,12 +161,18 @@ export class DatabaseConfig {
   setRegex(v: boolean): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["regex"], v);
   }
+  unsetRegex(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regex"]);
+  }
 
   async network(): Promise<DatabaseNetwork | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["access", "network"])) as DatabaseNetwork | undefined;
   }
   setNetwork(v: DatabaseNetwork): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["access", "network"], v);
+  }
+  unsetNetwork(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["access", "network"]);
   }
 
   async size(): Promise<string | undefined> {
@@ -122,6 +181,9 @@ export class DatabaseConfig {
   setSize(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["storage", "size"], v);
   }
+  unsetSize(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["storage", "size"]);
+  }
 
   async key(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["encryption", "key"])) as string | undefined;
@@ -129,33 +191,8 @@ export class DatabaseConfig {
   setKey(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["encryption", "key"], v);
   }
-
-  async id(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
-  }
-  setId(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
-  }
-
-  async name(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
-  }
-  setName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
-  }
-
-  async description(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
-  }
-  setDescription(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
-  }
-
-  async tags(): Promise<string[] | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
-  }
-  setTags(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  unsetKey(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["encryption", "key"]);
   }
 }
 
@@ -170,39 +207,14 @@ export class DomainConfig {
     return this.s.binding.delete(this.s.handle, this.res);
   }
 
-  async fqdn(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["fqdn"])) as string | undefined;
-  }
-  setFqdn(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["fqdn"], v);
-  }
-
-  async certFile(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "cert"])) as string | undefined;
-  }
-  setCertFile(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["certificate", "cert"], v);
-  }
-
-  async keyFile(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "key"])) as string | undefined;
-  }
-  setKeyFile(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["certificate", "key"], v);
-  }
-
-  async certType(): Promise<DomainCertType | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "type"])) as DomainCertType | undefined;
-  }
-  setCertType(v: DomainCertType): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["certificate", "type"], v);
-  }
-
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
   }
   setId(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
   }
 
   async name(): Promise<string | undefined> {
@@ -211,6 +223,9 @@ export class DomainConfig {
   setName(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["name"], v);
   }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
 
   async description(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
@@ -218,12 +233,58 @@ export class DomainConfig {
   setDescription(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["description"], v);
   }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
 
   async tags(): Promise<string[] | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
   }
   setTags(v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async fqdn(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["fqdn"])) as string | undefined;
+  }
+  setFqdn(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["fqdn"], v);
+  }
+  unsetFqdn(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["fqdn"]);
+  }
+
+  async certFile(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "cert"])) as string | undefined;
+  }
+  setCertFile(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "cert"], v);
+  }
+  unsetCertFile(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "cert"]);
+  }
+
+  async keyFile(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "key"])) as string | undefined;
+  }
+  setKeyFile(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "key"], v);
+  }
+  unsetKeyFile(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "key"]);
+  }
+
+  async certType(): Promise<DomainCertType | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["certificate", "type"])) as DomainCertType | undefined;
+  }
+  setCertType(v: DomainCertType): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["certificate", "type"], v);
+  }
+  unsetCertType(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["certificate", "type"]);
   }
 }
 
@@ -238,11 +299,54 @@ export class FunctionConfig {
     return this.s.binding.delete(this.s.handle, this.res);
   }
 
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
   async type(): Promise<FunctionType | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "type"])) as FunctionType | undefined;
   }
   setType(v: FunctionType): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["trigger", "type"], v);
+  }
+  unsetType(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "type"]);
   }
 
   async local(): Promise<boolean | undefined> {
@@ -251,12 +355,18 @@ export class FunctionConfig {
   setLocal(v: boolean): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["trigger", "local"], v);
   }
+  unsetLocal(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "local"]);
+  }
 
   async channel(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "channel"])) as string | undefined;
   }
   setChannel(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["trigger", "channel"], v);
+  }
+  unsetChannel(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "channel"]);
   }
 
   async protocol(): Promise<string | undefined> {
@@ -266,6 +376,9 @@ export class FunctionConfig {
   setProtocol(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["trigger", "protocol"], v);
   }
+  unsetProtocol(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "protocol"]);
+  }
 
   async command(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "command"])) as string | undefined;
@@ -273,12 +386,18 @@ export class FunctionConfig {
   setCommand(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["trigger", "command"], v);
   }
-
-  async method(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "method"])) as string | undefined;
+  unsetCommand(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "command"]);
   }
-  setMethod(v: string): Promise<void> {
+
+  async method(): Promise<FunctionMethod | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "method"])) as FunctionMethod | undefined;
+  }
+  setMethod(v: FunctionMethod): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["trigger", "method"], v);
+  }
+  unsetMethod(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "method"]);
   }
 
   async domains(): Promise<string[] | undefined> {
@@ -288,12 +407,18 @@ export class FunctionConfig {
   setDomains(v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["trigger", "domains"], v);
   }
+  unsetDomains(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "domains"]);
+  }
 
   async paths(): Promise<string[] | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["trigger", "paths"])) as string[] | undefined;
   }
   setPaths(v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["trigger", "paths"], v);
+  }
+  unsetPaths(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["trigger", "paths"]);
   }
 
   async source(): Promise<string | undefined> {
@@ -302,12 +427,18 @@ export class FunctionConfig {
   setSource(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["source"], v);
   }
+  unsetSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
+  }
 
   async timeout(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["execution", "timeout"])) as string | undefined;
   }
   setTimeout(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["execution", "timeout"], v);
+  }
+  unsetTimeout(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "timeout"]);
   }
 
   async memory(): Promise<string | undefined> {
@@ -316,6 +447,9 @@ export class FunctionConfig {
   setMemory(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["execution", "memory"], v);
   }
+  unsetMemory(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "memory"]);
+  }
 
   async call(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["execution", "call"])) as string | undefined;
@@ -323,33 +457,8 @@ export class FunctionConfig {
   setCall(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["execution", "call"], v);
   }
-
-  async id(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
-  }
-  setId(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
-  }
-
-  async name(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
-  }
-  setName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
-  }
-
-  async description(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
-  }
-  setDescription(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
-  }
-
-  async tags(): Promise<string[] | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
-  }
-  setTags(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  unsetCall(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "call"]);
   }
 }
 
@@ -364,39 +473,14 @@ export class LibraryConfig {
     return this.s.binding.delete(this.s.handle, this.res);
   }
 
-  async path(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
-  }
-  setPath(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
-  }
-
-  async branch(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
-  }
-  setBranch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
-  }
-
-  async repoID(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "github", "id"])) as string | undefined;
-  }
-  setRepoID(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "github", "id"], v);
-  }
-
-  async repoName(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source", "github", "fullname"])) as string | undefined;
-  }
-  setRepoName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source", "github", "fullname"], v);
-  }
-
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
   }
   setId(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
   }
 
   async name(): Promise<string | undefined> {
@@ -405,6 +489,9 @@ export class LibraryConfig {
   setName(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["name"], v);
   }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
 
   async description(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
@@ -412,12 +499,58 @@ export class LibraryConfig {
   setDescription(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["description"], v);
   }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
 
   async tags(): Promise<string[] | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
   }
   setTags(v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async path(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "path"])) as string | undefined;
+  }
+  setPath(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "path"], v);
+  }
+  unsetPath(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "path"]);
+  }
+
+  async branch(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
+  }
+  setBranch(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
+  }
+  unsetBranch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
+  }
+
+  async repoID(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "github", "id"])) as string | undefined;
+  }
+  setRepoID(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "github", "id"], v);
+  }
+  unsetRepoID(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "github", "id"]);
+  }
+
+  async repoName(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source", "github", "fullname"])) as string | undefined;
+  }
+  setRepoName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source", "github", "fullname"], v);
+  }
+  unsetRepoName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "github", "fullname"]);
   }
 }
 
@@ -432,46 +565,14 @@ export class MessagingConfig {
     return this.s.binding.delete(this.s.handle, this.res);
   }
 
-  async local(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["local"])) as boolean | undefined;
-  }
-  setLocal(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["local"], v);
-  }
-
-  async match(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["channel", "match"])) as string | undefined;
-  }
-  setMatch(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["channel", "match"], v);
-  }
-
-  async regex(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["channel", "regex"])) as boolean | undefined;
-  }
-  setRegex(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["channel", "regex"], v);
-  }
-
-  async mqtt(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["bridges", "mqtt", "enable"])) as boolean | undefined;
-  }
-  setMqtt(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["bridges", "mqtt", "enable"], v);
-  }
-
-  async webSocket(): Promise<boolean | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["bridges", "websocket", "enable"])) as boolean | undefined;
-  }
-  setWebSocket(v: boolean): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["bridges", "websocket", "enable"], v);
-  }
-
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
   }
   setId(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
   }
 
   async name(): Promise<string | undefined> {
@@ -480,6 +581,9 @@ export class MessagingConfig {
   setName(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["name"], v);
   }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
 
   async description(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
@@ -487,12 +591,68 @@ export class MessagingConfig {
   setDescription(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["description"], v);
   }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
 
   async tags(): Promise<string[] | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
   }
   setTags(v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async local(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["local"])) as boolean | undefined;
+  }
+  setLocal(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["local"], v);
+  }
+  unsetLocal(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["local"]);
+  }
+
+  async match(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["channel", "match"])) as string | undefined;
+  }
+  setMatch(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["channel", "match"], v);
+  }
+  unsetMatch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["channel", "match"]);
+  }
+
+  async regex(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["channel", "regex"])) as boolean | undefined;
+  }
+  setRegex(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["channel", "regex"], v);
+  }
+  unsetRegex(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["channel", "regex"]);
+  }
+
+  async mqtt(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["bridges", "mqtt", "enable"])) as boolean | undefined;
+  }
+  setMqtt(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["bridges", "mqtt", "enable"], v);
+  }
+  unsetMqtt(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["bridges", "mqtt", "enable"]);
+  }
+
+  async webSocket(): Promise<boolean | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["bridges", "websocket", "enable"])) as boolean | undefined;
+  }
+  setWebSocket(v: boolean): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["bridges", "websocket", "enable"], v);
+  }
+  unsetWebSocket(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["bridges", "websocket", "enable"]);
   }
 }
 
@@ -507,18 +667,14 @@ export class ServiceConfig {
     return this.s.binding.delete(this.s.handle, this.res);
   }
 
-  async protocol(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["protocol"])) as string | undefined;
-  }
-  setProtocol(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["protocol"], v);
-  }
-
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
   }
   setId(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
   }
 
   async name(): Promise<string | undefined> {
@@ -527,6 +683,9 @@ export class ServiceConfig {
   setName(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["name"], v);
   }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
 
   async description(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
@@ -534,12 +693,28 @@ export class ServiceConfig {
   setDescription(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["description"], v);
   }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
 
   async tags(): Promise<string[] | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
   }
   setTags(v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async protocol(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["protocol"])) as string | undefined;
+  }
+  setProtocol(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["protocol"], v);
+  }
+  unsetProtocol(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["protocol"]);
   }
 }
 
@@ -554,39 +729,14 @@ export class SmartOpConfig {
     return this.s.binding.delete(this.s.handle, this.res);
   }
 
-  async source(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
-  }
-  setSource(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
-  }
-
-  async timeout(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "timeout"])) as string | undefined;
-  }
-  setTimeout(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["execution", "timeout"], v);
-  }
-
-  async memory(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "memory"])) as string | undefined;
-  }
-  setMemory(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["execution", "memory"], v);
-  }
-
-  async call(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "call"])) as string | undefined;
-  }
-  setCall(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["execution", "call"], v);
-  }
-
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
   }
   setId(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
   }
 
   async name(): Promise<string | undefined> {
@@ -595,6 +745,9 @@ export class SmartOpConfig {
   setName(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["name"], v);
   }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
 
   async description(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
@@ -602,12 +755,58 @@ export class SmartOpConfig {
   setDescription(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["description"], v);
   }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
 
   async tags(): Promise<string[] | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
   }
   setTags(v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
+  async source(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["source"])) as string | undefined;
+  }
+  setSource(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["source"], v);
+  }
+  unsetSource(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source"]);
+  }
+
+  async timeout(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "timeout"])) as string | undefined;
+  }
+  setTimeout(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "timeout"], v);
+  }
+  unsetTimeout(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "timeout"]);
+  }
+
+  async memory(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "memory"])) as string | undefined;
+  }
+  setMemory(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "memory"], v);
+  }
+  unsetMemory(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "memory"]);
+  }
+
+  async call(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["execution", "call"])) as string | undefined;
+  }
+  setCall(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["execution", "call"], v);
+  }
+  unsetCall(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["execution", "call"]);
   }
 }
 
@@ -622,11 +821,54 @@ export class StorageConfig {
     return this.s.binding.delete(this.s.handle, this.res);
   }
 
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
   async match(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["match"])) as string | undefined;
   }
   setMatch(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["match"], v);
+  }
+  unsetMatch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["match"]);
   }
 
   async regex(): Promise<boolean | undefined> {
@@ -636,12 +878,18 @@ export class StorageConfig {
   setRegex(v: boolean): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["regex"], v);
   }
+  unsetRegex(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["regex"]);
+  }
 
   async network(): Promise<StorageNetwork | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["access", "network"])) as StorageNetwork | undefined;
   }
   setNetwork(v: StorageNetwork): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["access", "network"], v);
+  }
+  unsetNetwork(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["access", "network"]);
   }
 
   async versioning(): Promise<boolean | undefined> {
@@ -650,6 +898,9 @@ export class StorageConfig {
   setVersioning(v: boolean): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["object", "versioning"], v);
   }
+  unsetVersioning(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["object", "versioning"]);
+  }
 
   async ttl(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["streaming", "ttl"])) as string | undefined;
@@ -657,33 +908,8 @@ export class StorageConfig {
   setTtl(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["streaming", "ttl"], v);
   }
-
-  async id(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
-  }
-  setId(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
-  }
-
-  async name(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
-  }
-  setName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
-  }
-
-  async description(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
-  }
-  setDescription(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
-  }
-
-  async tags(): Promise<string[] | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
-  }
-  setTags(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  unsetTtl(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["streaming", "ttl"]);
   }
 }
 
@@ -698,11 +924,54 @@ export class WebsiteConfig {
     return this.s.binding.delete(this.s.handle, this.res);
   }
 
+  async id(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
+  }
+  setId(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
+  }
+  unsetId(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["id"]);
+  }
+
+  async name(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
+  }
+  setName(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
+  }
+  unsetName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["name"]);
+  }
+
+  async description(): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
+  }
+  setDescription(v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
+  }
+  unsetDescription(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["description"]);
+  }
+
+  async tags(): Promise<string[] | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
+  }
+  setTags(v: string[]): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  }
+  unsetTags(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
+  }
+
   async domains(): Promise<string[] | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["domains"])) as string[] | undefined;
   }
   setDomains(v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["domains"], v);
+  }
+  unsetDomains(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["domains"]);
   }
 
   async paths(): Promise<string[] | undefined> {
@@ -712,12 +981,18 @@ export class WebsiteConfig {
   setPaths(v: string[]): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["paths"], v);
   }
+  unsetPaths(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["paths"]);
+  }
 
   async branch(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["source", "branch"])) as string | undefined;
   }
   setBranch(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["source", "branch"], v);
+  }
+  unsetBranch(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
   }
 
   async repoID(): Promise<string | undefined> {
@@ -726,6 +1001,9 @@ export class WebsiteConfig {
   setRepoID(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["source", "github", "id"], v);
   }
+  unsetRepoID(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "github", "id"]);
+  }
 
   async repoName(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["source", "github", "fullname"])) as string | undefined;
@@ -733,33 +1011,8 @@ export class WebsiteConfig {
   setRepoName(v: string): Promise<void> {
     return this.s.binding.set(this.s.handle, this.res, ["source", "github", "fullname"], v);
   }
-
-  async id(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
-  }
-  setId(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["id"], v);
-  }
-
-  async name(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["name"])) as string | undefined;
-  }
-  setName(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["name"], v);
-  }
-
-  async description(): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["description"])) as string | undefined;
-  }
-  setDescription(v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["description"], v);
-  }
-
-  async tags(): Promise<string[] | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, ["tags"])) as string[] | undefined;
-  }
-  setTags(v: string[]): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, ["tags"], v);
+  unsetRepoName(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, ["source", "github", "fullname"]);
   }
 }
 
@@ -803,7 +1056,7 @@ export interface Function {
   channel?: string;
   service?: string;
   command?: string;
-  method?: string;
+  method?: FunctionMethod;
   domains?: string[];
   paths?: string[];
   source?: string;

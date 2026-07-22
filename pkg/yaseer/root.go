@@ -78,8 +78,13 @@ func (s *Seer) syncLocked() error {
 		}
 	}
 	// Everything staged is now on disk; reset the dirty set and drop the
-	// now-redundant per-commit WAL frames for the next batch of commits.
+	// now-redundant per-commit WAL frames for the next batch of commits — unless
+	// the WAL is a retained op-log (see WithWALRetain / ReplayInto), in which case
+	// its frames must survive Sync so they can be replayed elsewhere.
 	clear(s.dirty)
+	if s.memwal != nil {
+		return nil // in-mem WAL is a retained op-log, not per-Sync durability
+	}
 	return s.clearWAL()
 }
 

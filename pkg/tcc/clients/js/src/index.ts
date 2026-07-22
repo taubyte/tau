@@ -34,6 +34,18 @@ export async function compile(
 }
 
 /**
+ * return the config JSON Schema (Draft 2020-12) describing every resource, its
+ * fields, constraints, and cross-references — generated from the wasm's own DSL,
+ * so it always matches this build. Useful for UI generation and agent tooling.
+ */
+export async function schema(assets?: WasmAssets): Promise<Record<string, unknown>> {
+  const tcc = await loadWasm(assets);
+  const res = tcc.schema();
+  if ("error" in res) throw new Error(res.error as string);
+  return res;
+}
+
+/**
  * open an editable {@link Session} over a project's YAML under `dir` (parsed into
  * a wasm-resident representation). Edit typed fields via `session.function(name)`
  * etc., then `session.compile()` or `session.save(fs, dir)`.
