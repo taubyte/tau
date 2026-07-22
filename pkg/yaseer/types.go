@@ -23,8 +23,13 @@ type Seer struct {
 	gen uint64
 	// walPath is the file (relative to the configured FS root) where
 	// Sync() stages a write-ahead log entry before touching data
-	// files. Empty disables WAL entirely — the default.
+	// files. Empty disables the on-disk WAL entirely — the default.
 	walPath string
+	// memwal (WithInMemWAL) records every commit's ops in memory as a replayable
+	// op-log — no filesystem, no byte encoding. It survives Sync, so it can be
+	// replayed into another Seer (see WAL / ReplayWal): merging a forked, in-memory
+	// edit session into its parent without copying files. nil = off.
+	memwal *memWAL
 }
 
 const (

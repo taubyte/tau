@@ -1,0 +1,1127 @@
+{
+  "$defs": {
+    "Application": {
+      "description": "An application: a named grouping of resources with its own scope within the project.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its project or application. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "databases": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Database"
+          },
+          "description": "Map of name -> Database (authored under databases/<name>.yaml).",
+          "type": "object"
+        },
+        "domains": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Domain"
+          },
+          "description": "Map of name -> Domain (authored under domains/<name>.yaml).",
+          "type": "object"
+        },
+        "functions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Function"
+          },
+          "description": "Map of name -> Function (authored under functions/<name>.yaml).",
+          "type": "object"
+        },
+        "libraries": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Library"
+          },
+          "description": "Map of name -> Library (authored under libraries/<name>.yaml).",
+          "type": "object"
+        },
+        "messaging": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Messaging"
+          },
+          "description": "Map of name -> Messaging (authored under messaging/<name>.yaml).",
+          "type": "object"
+        },
+        "services": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Service"
+          },
+          "description": "Map of name -> Service (authored under services/<name>.yaml).",
+          "type": "object"
+        },
+        "smartops": {
+          "additionalProperties": {
+            "$ref": "#/$defs/SmartOp"
+          },
+          "description": "Map of name -> SmartOp (authored under smartops/<name>.yaml).",
+          "type": "object"
+        },
+        "storages": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Storage"
+          },
+          "description": "Map of name -> Storage (authored under storages/<name>.yaml).",
+          "type": "object"
+        },
+        "websites": {
+          "additionalProperties": {
+            "$ref": "#/$defs/Website"
+          },
+          "description": "Map of name -> Website (authored under websites/<name>.yaml).",
+          "type": "object"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object"
+    },
+    "Database": {
+      "description": "A key-value database served to the project's peers.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its project or application. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "match": {
+          "description": "Key or key-pattern this database serves (a literal prefix, or a regex when useRegex is set).",
+          "type": "string",
+          "x-tau-section": "storage"
+        },
+        "regex": {
+          "description": "Treat match as a regular expression instead of a literal prefix.",
+          "type": "boolean",
+          "x-tau-section": "storage"
+        },
+        "access": {
+          "properties": {
+            "network": {
+              "default": "all",
+              "description": "Which peers may reach this database: all, subnet (project peers only), or host (local node only).",
+              "enum": [
+                "all",
+                "subnet",
+                "host"
+              ],
+              "type": "string",
+              "x-tau-section": "storage"
+            }
+          },
+          "type": "object"
+        },
+        "storage": {
+          "properties": {
+            "size": {
+              "description": "Maximum storage size, as a human string (e.g. \"32MB\", \"1GB\").",
+              "type": "string",
+              "x-tau-scalar": "bytes",
+              "x-tau-section": "storage"
+            }
+          },
+          "type": "object"
+        },
+        "encryption": {
+          "properties": {
+            "key": {
+              "description": "Key material or reference used to encrypt data at rest.",
+              "type": "string",
+              "x-tau-section": "encryption"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object",
+      "x-tau-sections": [
+        {
+          "description": "Resource identity and metadata.",
+          "id": "identity",
+          "title": "Identity"
+        },
+        {
+          "description": "Key matching, capacity, and reachability.",
+          "id": "storage",
+          "title": "Storage"
+        },
+        {
+          "description": "Encryption at rest.",
+          "id": "encryption",
+          "title": "Encryption"
+        }
+      ]
+    },
+    "Domain": {
+      "description": "A DNS domain and its TLS configuration, referenced by functions and websites.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its project or application. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "fqdn": {
+          "description": "Fully-qualified domain name this resource represents.",
+          "format": "hostname",
+          "type": "string",
+          "x-tau-section": "identity",
+          "x-tau-validation": "dns"
+        },
+        "certificate": {
+          "properties": {
+            "cert": {
+              "description": "PEM-encoded TLS certificate for the domain (inline certificate-type).",
+              "type": "string",
+              "x-tau-section": "tls",
+              "x-tau-show-when": {
+                "field": "certificate-type",
+                "in": [
+                  "inline"
+                ]
+              }
+            },
+            "key": {
+              "description": "PEM-encoded private key for the certificate (inline certificate-type).",
+              "type": "string",
+              "x-tau-section": "tls",
+              "x-tau-show-when": {
+                "field": "certificate-type",
+                "in": [
+                  "inline"
+                ]
+              }
+            },
+            "type": {
+              "default": "",
+              "description": "How the TLS certificate is provisioned: inline (supplied here) or auto (managed).",
+              "enum": [
+                "inline",
+                "auto"
+              ],
+              "type": "string",
+              "x-tau-section": "tls"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object",
+      "x-tau-sections": [
+        {
+          "description": "Resource identity and metadata.",
+          "id": "identity",
+          "title": "Identity"
+        },
+        {
+          "description": "Certificate configuration.",
+          "id": "tls",
+          "title": "TLS"
+        }
+      ]
+    },
+    "Function": {
+      "description": "A serverless function triggered over HTTP(S), PubSub, or p2p.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its project or application. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "trigger": {
+          "properties": {
+            "type": {
+              "description": "Trigger that invokes the function: http, https, pubsub, or p2p.",
+              "enum": [
+                "http",
+                "https",
+                "pubsub",
+                "p2p"
+              ],
+              "type": "string",
+              "x-tau-section": "trigger"
+            },
+            "local": {
+              "description": "Restrict the trigger to the local node / project scope.",
+              "type": "boolean",
+              "x-tau-section": "trigger"
+            },
+            "channel": {
+              "description": "PubSub channel the function subscribes to (pubsub trigger).",
+              "type": "string",
+              "x-tau-section": "pubsub"
+            },
+            "protocol": {
+              "default": "",
+              "description": "libp2p protocol the function serves (p2p trigger).",
+              "type": "string",
+              "x-tau-section": "p2p"
+            },
+            "command": {
+              "description": "Command name within the p2p protocol this function handles.",
+              "type": "string",
+              "x-tau-section": "p2p"
+            },
+            "method": {
+              "description": "HTTP method the function handles (http/https trigger).",
+              "enum": [
+                "GET",
+                "HEAD",
+                "POST",
+                "PUT",
+                "DELETE",
+                "CONNECT",
+                "OPTIONS",
+                "TRACE",
+                "PATCH"
+              ],
+              "type": "string",
+              "x-tau-section": "http"
+            },
+            "domains": {
+              "description": "Domains that route to this function. Each must name a defined domain.",
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "x-tau-ref": {
+                "group": "domains"
+              },
+              "x-tau-section": "http"
+            },
+            "paths": {
+              "description": "URL path patterns that route to this function (http/https trigger).",
+              "items": {
+                "type": "string"
+              },
+              "type": "array",
+              "x-tau-section": "http"
+            }
+          },
+          "type": "object"
+        },
+        "source": {
+          "description": "Code source: \".\" for inline code, or \"libraries/<name>\" to build from a defined library.",
+          "oneOf": [
+            {
+              "const": "."
+            },
+            {
+              "pattern": "^libraries/",
+              "type": "string"
+            }
+          ],
+          "type": "string",
+          "x-tau-ref": {
+            "group": "libraries",
+            "prefix": "libraries/"
+          },
+          "x-tau-section": "code"
+        },
+        "execution": {
+          "properties": {
+            "timeout": {
+              "description": "Maximum execution time, as a human string (e.g. \"30s\").",
+              "type": "string",
+              "x-tau-scalar": "duration",
+              "x-tau-section": "limits"
+            },
+            "memory": {
+              "description": "Maximum memory the function may use, as a human string (e.g. \"32MB\").",
+              "type": "string",
+              "x-tau-scalar": "bytes",
+              "x-tau-section": "limits"
+            },
+            "call": {
+              "description": "Exported entrypoint symbol invoked in the WASM module.",
+              "type": "string",
+              "x-tau-section": "code"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object",
+      "x-tau-sections": [
+        {
+          "description": "Resource identity and metadata.",
+          "id": "identity",
+          "title": "Identity"
+        },
+        {
+          "description": "How the function is invoked.",
+          "id": "trigger",
+          "title": "Trigger"
+        },
+        {
+          "description": "HTTP(S) routing.",
+          "id": "http",
+          "show-when": {
+            "field": "type",
+            "in": [
+              "http",
+              "https"
+            ]
+          },
+          "title": "HTTP"
+        },
+        {
+          "description": "PubSub subscription.",
+          "id": "pubsub",
+          "show-when": {
+            "field": "type",
+            "in": [
+              "pubsub"
+            ]
+          },
+          "title": "PubSub"
+        },
+        {
+          "description": "libp2p protocol handling.",
+          "id": "p2p",
+          "show-when": {
+            "field": "type",
+            "in": [
+              "p2p"
+            ]
+          },
+          "title": "P2P"
+        },
+        {
+          "description": "The function's code source and entrypoint.",
+          "id": "code",
+          "title": "Code"
+        },
+        {
+          "description": "Runtime resource limits.",
+          "id": "limits",
+          "title": "Limits"
+        }
+      ]
+    },
+    "Library": {
+      "description": "A reusable code library backed by a git repository, referenced as a function/smartop source.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its project or application. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "source": {
+          "properties": {
+            "path": {
+              "description": "Subpath within the repository that holds the library code.",
+              "type": "string",
+              "x-tau-section": "source"
+            },
+            "branch": {
+              "description": "Git branch to build the library from.",
+              "type": "string",
+              "x-tau-section": "source"
+            },
+            "github": {
+              "properties": {
+                "id": {
+                  "description": "GitHub repository numeric id.",
+                  "type": "string",
+                  "x-tau-section": "source"
+                },
+                "fullname": {
+                  "description": "GitHub repository full name (owner/repo).",
+                  "type": "string",
+                  "x-tau-section": "source"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "git-provider": {
+          "description": "Source-control provider hosting the repository (the key selects the provider block).",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "source/{github}",
+          "x-tau-section": "source"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object",
+      "x-tau-sections": [
+        {
+          "description": "Resource identity and metadata.",
+          "id": "identity",
+          "title": "Identity"
+        },
+        {
+          "description": "Where the library's code is sourced from.",
+          "id": "source",
+          "title": "Source"
+        }
+      ]
+    },
+    "Messaging": {
+      "description": "A PubSub messaging channel, optionally bridged to MQTT/WebSocket.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its project or application. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "local": {
+          "description": "Restrict the channel to the local node / project scope.",
+          "type": "boolean",
+          "x-tau-section": "channel"
+        },
+        "channel": {
+          "properties": {
+            "match": {
+              "description": "Channel name or pattern this messaging resource matches.",
+              "type": "string",
+              "x-tau-section": "channel"
+            },
+            "regex": {
+              "description": "Treat match as a regular expression.",
+              "type": "boolean",
+              "x-tau-section": "channel"
+            }
+          },
+          "type": "object"
+        },
+        "bridges": {
+          "properties": {
+            "mqtt": {
+              "properties": {
+                "enable": {
+                  "description": "Expose this channel over the MQTT bridge.",
+                  "type": "boolean",
+                  "x-tau-section": "bridges"
+                }
+              },
+              "type": "object"
+            },
+            "websocket": {
+              "properties": {
+                "enable": {
+                  "description": "Expose this channel over the WebSocket bridge.",
+                  "type": "boolean",
+                  "x-tau-section": "bridges"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object",
+      "x-tau-sections": [
+        {
+          "description": "Resource identity and metadata.",
+          "id": "identity",
+          "title": "Identity"
+        },
+        {
+          "description": "Channel matching.",
+          "id": "channel",
+          "title": "Channel"
+        },
+        {
+          "description": "External protocol bridges (MQTT / WebSocket).",
+          "id": "bridges",
+          "title": "Bridges"
+        }
+      ]
+    },
+    "Service": {
+      "description": "A libp2p service advertised on the network.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its project or application. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "protocol": {
+          "description": "libp2p protocol identifier this service advertises.",
+          "type": "string",
+          "x-tau-section": "identity"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object",
+      "x-tau-sections": [
+        {
+          "description": "Resource identity and metadata.",
+          "id": "identity",
+          "title": "Identity"
+        }
+      ]
+    },
+    "SmartOp": {
+      "description": "A smartop: policy/hook code (inline or backed by a library) attached to every resource.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its project or application. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "source": {
+          "description": "Code source: \".\" for inline code, or \"libraries/<name>\" to build from a defined library.",
+          "oneOf": [
+            {
+              "const": "."
+            },
+            {
+              "pattern": "^libraries/",
+              "type": "string"
+            }
+          ],
+          "type": "string",
+          "x-tau-ref": {
+            "group": "libraries",
+            "prefix": "libraries/"
+          },
+          "x-tau-section": "code"
+        },
+        "execution": {
+          "properties": {
+            "timeout": {
+              "description": "Maximum execution time, as a human string (e.g. \"30s\").",
+              "type": "string",
+              "x-tau-scalar": "duration",
+              "x-tau-section": "limits"
+            },
+            "memory": {
+              "description": "Maximum memory the smartop may use, as a human string (e.g. \"32MB\").",
+              "type": "string",
+              "x-tau-scalar": "bytes",
+              "x-tau-section": "limits"
+            },
+            "call": {
+              "description": "Exported entrypoint symbol invoked in the WASM module.",
+              "type": "string",
+              "x-tau-section": "code"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object",
+      "x-tau-sections": [
+        {
+          "description": "Resource identity and metadata.",
+          "id": "identity",
+          "title": "Identity"
+        },
+        {
+          "description": "The smartop's code source and entrypoint.",
+          "id": "code",
+          "title": "Code"
+        },
+        {
+          "description": "Runtime resource limits.",
+          "id": "limits",
+          "title": "Limits"
+        }
+      ]
+    },
+    "Storage": {
+      "description": "Object or streaming storage served to the project's peers.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its project or application. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "type": {
+          "description": "Storage kind: object or streaming (the key selects the type block).",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "{object|streaming}",
+          "x-tau-section": "storage"
+        },
+        "match": {
+          "description": "Key or key-pattern this storage serves (a literal prefix, or a regex when useRegex is set).",
+          "type": "string",
+          "x-tau-section": "storage"
+        },
+        "regex": {
+          "description": "Treat match as a regular expression instead of a literal prefix.",
+          "type": "boolean",
+          "x-tau-section": "storage"
+        },
+        "access": {
+          "properties": {
+            "network": {
+              "default": "all",
+              "description": "Which peers may reach this storage: all, subnet (project peers only), or host (local node only).",
+              "enum": [
+                "all",
+                "subnet",
+                "host"
+              ],
+              "type": "string",
+              "x-tau-section": "access"
+            }
+          },
+          "type": "object"
+        },
+        "object": {
+          "properties": {
+            "versioning": {
+              "description": "Keep historical versions of objects (object storage).",
+              "type": "boolean",
+              "x-tau-section": "storage"
+            }
+          },
+          "type": "object"
+        },
+        "streaming": {
+          "properties": {
+            "ttl": {
+              "description": "Time-to-live for streamed entries, as a human string (e.g. \"1h\") (streaming storage).",
+              "type": "string",
+              "x-tau-scalar": "duration",
+              "x-tau-section": "storage"
+            }
+          },
+          "type": "object"
+        },
+        "size": {
+          "description": "Maximum storage size, as a human string (e.g. \"1GB\").",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "{object|streaming}/size",
+          "x-tau-scalar": "bytes",
+          "x-tau-section": "storage"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object",
+      "x-tau-sections": [
+        {
+          "description": "Resource identity and metadata.",
+          "id": "identity",
+          "title": "Identity"
+        },
+        {
+          "description": "Storage kind, key matching, and capacity.",
+          "id": "storage",
+          "title": "Storage"
+        },
+        {
+          "description": "Network reachability.",
+          "id": "access",
+          "title": "Access"
+        }
+      ]
+    },
+    "Website": {
+      "description": "A static website built from a git repository and served over one or more domains.",
+      "properties": {
+        "id": {
+          "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+          "format": "cid",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "name": {
+          "description": "Unique resource name within its project or application. Must be a valid variable name.",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "description": {
+          "description": "Free-form, human-readable description of this resource.",
+          "type": "string",
+          "x-tau-section": "identity"
+        },
+        "tags": {
+          "description": "Arbitrary labels for organizing and filtering this resource.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "identity"
+        },
+        "domains": {
+          "description": "Domains that serve this website. Each must name a defined domain.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-ref": {
+            "group": "domains"
+          },
+          "x-tau-section": "serving"
+        },
+        "paths": {
+          "description": "URL path patterns served by this website.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "x-tau-section": "serving"
+        },
+        "source": {
+          "properties": {
+            "branch": {
+              "description": "Git branch to build the website from.",
+              "type": "string",
+              "x-tau-section": "source"
+            },
+            "github": {
+              "properties": {
+                "id": {
+                  "description": "GitHub repository numeric id.",
+                  "type": "string",
+                  "x-tau-section": "source"
+                },
+                "fullname": {
+                  "description": "GitHub repository full name (owner/repo).",
+                  "type": "string",
+                  "x-tau-section": "source"
+                }
+              },
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "git-provider": {
+          "description": "Source-control provider hosting the repository (the key selects the provider block).",
+          "type": "string",
+          "x-tau-dynamic": true,
+          "x-tau-path": "source/{github}",
+          "x-tau-section": "source"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "type": "object",
+      "x-tau-sections": [
+        {
+          "description": "Resource identity and metadata.",
+          "id": "identity",
+          "title": "Identity"
+        },
+        {
+          "description": "Domains and paths served.",
+          "id": "serving",
+          "title": "Serving"
+        },
+        {
+          "description": "Where the website's code is sourced from.",
+          "id": "source",
+          "title": "Source"
+        }
+      ]
+    }
+  },
+  "$id": "https://taubyte.com/schemas/config/v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The Taubyte DSL and its constraints. Resources are authored one file per instance under <group>/<name>.yaml (and applications/<app>/<group>/<name>.yaml); this schema models the assembled project. x-tau-ref / x-tau-validation mark checks the compiler enforces that a plain JSON Schema validator cannot.",
+  "properties": {
+    "id": {
+      "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
+      "format": "cid",
+      "type": "string",
+      "x-tau-section": "identity"
+    },
+    "name": {
+      "description": "Unique resource name within its project or application. Must be a valid variable name.",
+      "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+      "type": "string",
+      "x-tau-section": "identity"
+    },
+    "description": {
+      "description": "Free-form, human-readable description of this resource.",
+      "type": "string",
+      "x-tau-section": "identity"
+    },
+    "tags": {
+      "description": "Arbitrary labels for organizing and filtering this resource.",
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "x-tau-section": "identity"
+    },
+    "databases": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Database"
+      },
+      "description": "Map of name -> Database (authored under databases/<name>.yaml).",
+      "type": "object"
+    },
+    "domains": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Domain"
+      },
+      "description": "Map of name -> Domain (authored under domains/<name>.yaml).",
+      "type": "object"
+    },
+    "functions": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Function"
+      },
+      "description": "Map of name -> Function (authored under functions/<name>.yaml).",
+      "type": "object"
+    },
+    "libraries": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Library"
+      },
+      "description": "Map of name -> Library (authored under libraries/<name>.yaml).",
+      "type": "object"
+    },
+    "messaging": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Messaging"
+      },
+      "description": "Map of name -> Messaging (authored under messaging/<name>.yaml).",
+      "type": "object"
+    },
+    "services": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Service"
+      },
+      "description": "Map of name -> Service (authored under services/<name>.yaml).",
+      "type": "object"
+    },
+    "smartops": {
+      "additionalProperties": {
+        "$ref": "#/$defs/SmartOp"
+      },
+      "description": "Map of name -> SmartOp (authored under smartops/<name>.yaml).",
+      "type": "object"
+    },
+    "storages": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Storage"
+      },
+      "description": "Map of name -> Storage (authored under storages/<name>.yaml).",
+      "type": "object"
+    },
+    "websites": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Website"
+      },
+      "description": "Map of name -> Website (authored under websites/<name>.yaml).",
+      "type": "object"
+    },
+    "applications": {
+      "additionalProperties": {
+        "$ref": "#/$defs/Application"
+      },
+      "description": "Map of name -> Application (authored under applications/<name>.yaml).",
+      "type": "object"
+    }
+  },
+  "required": [
+    "id"
+  ],
+  "title": "Taubyte project configuration",
+  "type": "object"
+}

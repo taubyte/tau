@@ -220,6 +220,74 @@ func TestCompileFn(t *testing.T) {
 	assert.Assert(t, found, "expected hal.computers.com dns validation")
 }
 
+func TestSessionFieldDelete(t *testing.T) {
+	m := loadFixture(t)
+	h := openHandle(t, openSessionFn(js.Null(), []js.Value{m.primitives()}))
+	res := arr("functions", "test_function1_glob")
+	field := arr("execution", "timeout")
+
+	// set then read back.
+	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, field, js.ValueOf("30s")}))), "")
+	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, res, field})).String(), "30s")
+
+	// delete the single field (fieldPath given) -> absent, resource still present.
+	r := val(sessionDeleteFn(js.Null(), []js.Value{h, res, field}))
+	assert.Assert(t, r.IsNull(), "field delete error: %s", errOf(r))
+	assert.Assert(t, val(sessionGetFn(js.Null(), []js.Value{h, res, field})).IsNull(), "field should be gone")
+	assert.Assert(t, contains(val(sessionListFn(js.Null(), []js.Value{h, arr("functions")})), "test_function1_glob"),
+		"resource itself must survive a field delete")
+}
+
+// session.validate() binds schema.Validate: it re-runs the compiler for
+// diagnostics only. A valid project returns its deferred checks; an invalid edit
+// (bad source shape) comes back as an error.
+func TestSessionValidateFn(t *testing.T) {
+	m := loadFixture(t)
+	h := openHandle(t, openSessionFn(js.Null(), []js.Value{m.primitives()}))
+
+	// valid: returns validations, no error
+	r := val(sessionValidateFn(js.Null(), []js.Value{h, masterOpts()}))
+	assert.Equal(t, errOf(r), "")
+	assert.Assert(t, r.Get("validations").Length() > 0, "expected deferred validations")
+
+	// break a field, then validate -> error
+	res := arr("functions", "test_function1_glob")
+	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{h, res, arr("source"), js.ValueOf("not_a_ref")}))), "")
+	bad := val(sessionValidateFn(js.Null(), []js.Value{h, masterOpts()}))
+	assert.Assert(t, errOf(bad) != "", "expected validation error for bad source")
+}
+
+// fork/merge through the wasm: a fork's edits are isolated until merge.
+func TestSessionForkMergeFn(t *testing.T) {
+	m := loadFixture(t)
+	h := openHandle(t, openSessionFn(js.Null(), []js.Value{m.primitives()}))
+	res := arr("functions", "test_function1_glob")
+
+	fh := openHandle(t, sessionForkFn(js.Null(), []js.Value{h}))
+	assert.Equal(t, errOf(val(sessionSetFn(js.Null(), []js.Value{fh, res, arr("description"), js.ValueOf("forked")}))), "")
+
+	// parent unchanged before merge
+	pv := val(sessionGetFn(js.Null(), []js.Value{h, res, arr("description")}))
+	assert.Assert(t, pv.IsNull() || pv.String() != "forked", "parent must not see fork edit before merge")
+
+	// merge -> parent adopts the edit
+	mr := val(sessionMergeFn(js.Null(), []js.Value{fh}))
+	assert.Assert(t, mr.IsNull(), "merge error: %s", errOf(mr))
+	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, res, arr("description")})).String(), "forked")
+}
+
+func TestSchemaFn(t *testing.T) {
+	r := val(schemaFn(js.Null(), nil))
+	assert.Equal(t, errOf(r), "")
+	fn := r.Get("$defs").Get("Function")
+	assert.Assert(t, !fn.IsUndefined(), "schema exposes a Function def")
+	assert.Assert(t, fn.Get("description").String() != "", "Function def is documented")
+	// constraints survive the wasm round-trip.
+	src := fn.Get("properties").Get("source")
+	assert.Assert(t, !src.Get("x-tau-ref").IsUndefined(), "source carries x-tau-ref")
+	assert.Assert(t, !src.Get("oneOf").IsUndefined(), "source carries its oneOf shape")
+}
+
 func TestDecompileFn(t *testing.T) {
 	m := loadFixture(t)
 	compiled := val(compileFn(js.Null(), []js.Value{m.primitives(), masterOpts()}))

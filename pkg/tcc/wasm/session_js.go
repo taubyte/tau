@@ -6,60 +6,54 @@ import (
 	"context"
 	"encoding/json"
 	"math"
-	"os"
 	"syscall/js"
 
 	"github.com/spf13/afero"
 	compiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
-	seer "github.com/taubyte/tau/pkg/yaseer"
 	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 )
 
-// A session is a wasm-resident, editable representation of a project's SOURCE
-// config: a yaseer document tree over a private in-memory filesystem. The TS
-// getters/setters read/write fields against it by path; YAML is only ever
-// crossed here (on open and save). This is the "decompile into an editable
-// in-memory representation, edit via getters/setters" model.
-type session struct {
-	fs   afero.Fs // the memfs the seer owns
-	seer *seer.Seer
-}
+// The editable-config session lives in pkg/tcc/session (exported as
+// schema.Session), so the same code serves Go callers (tau-cli) and this wasm.
+// Everything here is just JS<->Go marshaling over a handle table of sessions.
 
 var (
-	sessions   = map[int]*session{}
+	sessions   = map[int]*compiler.Session{}
 	nextHandle = 1
 )
 
-func newSession(fs afero.Fs) (int, error) {
-	s, err := seer.New(seer.VirtualFS(fs, "/"))
-	if err != nil {
-		return 0, err
-	}
+func register(s *compiler.Session) int {
 	h := nextHandle
 	nextHandle++
-	sessions[h] = &session{fs: fs, seer: s}
-	return h, nil
+	sessions[h] = s
+	return h
 }
 
-// open(fsPrimitives) -> handle : stage a project's YAML into a private memfs and
-// open an editable session over it.
+func lookup(args []js.Value) (*compiler.Session, any) {
+	if len(args) < 1 {
+		return nil, errResult("missing session handle")
+	}
+	s, ok := sessions[args[0].Int()]
+	if !ok {
+		return nil, errResult("invalid or closed session handle")
+	}
+	return s, nil
+}
+
+// open(fsPrimitives) -> handle : stage a project's YAML into a private session.
 func openSessionFn(_ js.Value, args []js.Value) any {
 	if len(args) < 1 {
 		return errResult("open: expected (fsPrimitives)")
 	}
-	mem := afero.NewMemMapFs()
-	if err := copyTree(&jsFs{p: args[0]}, mem); err != nil {
+	s, err := compiler.NewSession(&jsFs{p: args[0]}, "/")
+	if err != nil {
 		return errResult("open: " + err.Error())
 	}
-	h, err := newSession(mem)
-	if err != nil {
-		return errResult(err.Error())
-	}
-	return h
+	return register(s)
 }
 
-// decompileSession(compiledObject) -> handle : decompile a compiled object into
-// a private memfs and open an editable session over it.
+// decompileSession(compiledObject) -> handle : decompile into a private fs and
+// open a session over it.
 func decompileSessionFn(_ js.Value, args []js.Value) any {
 	if len(args) < 1 {
 		return errResult("decompile: expected (compiledObject)")
@@ -73,37 +67,11 @@ func decompileSessionFn(_ js.Value, args []js.Value) any {
 	if err := d.Decompile(obj); err != nil {
 		return errResult(err.Error())
 	}
-	h, err := newSession(mem)
+	s, err := compiler.AdoptSession(mem)
 	if err != nil {
 		return errResult(err.Error())
 	}
-	return h
-}
-
-func lookup(args []js.Value) (*session, any) {
-	if len(args) < 1 {
-		return nil, errResult("missing session handle")
-	}
-	s, ok := sessions[args[0].Int()]
-	if !ok {
-		return nil, errResult("invalid or closed session handle")
-	}
-	return s, nil
-}
-
-// queryField navigates seer to a field: down the resource path ([dir, id]) to the
-// file, into it with Document(), then down the in-doc field path — mirroring how
-// pkg/schema/basic scopes (root().Document().Get(...)).
-func queryField(s *session, res, field []string) *seer.Query {
-	q := s.seer.Get(res[0])
-	for _, seg := range res[1:] {
-		q = q.Get(seg)
-	}
-	q = q.Document()
-	for _, seg := range field {
-		q = q.Get(seg)
-	}
-	return q
+	return register(s)
 }
 
 // get(handle, resourcePath[], fieldPath[]) -> value | null(absent)
@@ -119,8 +87,8 @@ func sessionGetFn(_ js.Value, args []js.Value) any {
 	if len(res) == 0 {
 		return errResult("get: empty resource path")
 	}
-	var v any
-	if err := queryField(s, res, jsToPath(args[2])).Value(&v); err != nil {
+	v, err := s.Get(res, jsToPath(args[2]))
+	if err != nil {
 		return js.Null() // absent -> undefined
 	}
 	return toJS(v)
@@ -139,86 +107,37 @@ func sessionSetFn(_ js.Value, args []js.Value) any {
 	if len(res) == 0 {
 		return errResult("set: empty resource path")
 	}
-	if err := queryField(s, res, jsToPath(args[2])).Set(jsToGo(args[3])).Commit(); err != nil {
+	if err := s.Set(res, jsToPath(args[2]), jsToGo(args[3])); err != nil {
 		return errResult(err.Error())
 	}
 	return js.Null()
 }
 
-// compileSession(handle, opts?) -> { object, indexes, validations }
-func sessionCompileFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
-	if e != nil {
-		return e
-	}
-	if err := s.seer.Sync(); err != nil {
-		return errResult(err.Error())
-	}
-	branch, cloud := compiler.DefaultBranch, ""
-	if len(args) > 1 && args[1].Truthy() {
-		if v := args[1].Get("branch"); v.Truthy() {
-			branch = v.String()
-		}
-		if v := args[1].Get("cloud"); v.Truthy() {
-			cloud = v.String()
-		}
-	}
-	c, err := compiler.New(compiler.WithVirtual(s.fs, "/"), compiler.WithBranch(branch), compiler.WithCloud(cloud))
-	if err != nil {
-		return errResult(err.Error())
-	}
-	obj, validations, err := c.Compile(context.Background())
-	if err != nil {
-		return errResult(err.Error())
-	}
-	out := obj.Flat()
-	out["validations"] = validations
-	return toJS(out)
-}
-
-// saveSession(handle, fsPrimitives) : flush the in-memory YAML out to the fs.
-func sessionSaveFn(_ js.Value, args []js.Value) any {
-	s, e := lookup(args)
-	if e != nil {
-		return e
-	}
-	if len(args) < 2 {
-		return errResult("save: expected (handle, fsPrimitives)")
-	}
-	if err := s.seer.Sync(); err != nil {
-		return errResult(err.Error())
-	}
-	if err := copyTree(s.fs, &jsFs{p: args[1]}); err != nil {
-		return errResult("save: " + err.Error())
-	}
-	return js.Null()
-}
-
-// delete(handle, resourcePath[]) : remove a whole resource (mirrors Resource.Delete()).
+// delete(handle, resourcePath[], fieldPath[]?) : remove a resource, or a single
+// field when fieldPath is given.
 func sessionDeleteFn(_ js.Value, args []js.Value) any {
 	s, e := lookup(args)
 	if e != nil {
 		return e
 	}
 	if len(args) < 2 {
-		return errResult("delete: expected (handle, resourcePath)")
+		return errResult("delete: expected (handle, resourcePath, fieldPath?)")
 	}
 	res := jsToPath(args[1])
 	if len(res) == 0 {
 		return errResult("delete: empty resource path")
 	}
-	q := s.seer.Get(res[0])
-	for _, seg := range res[1:] {
-		q = q.Get(seg)
+	var field []string
+	if len(args) > 2 && args[2].Truthy() {
+		field = jsToPath(args[2])
 	}
-	if err := q.Delete().Commit(); err != nil {
+	if err := s.Delete(res, field); err != nil {
 		return errResult(err.Error())
 	}
 	return js.Null()
 }
 
-// list(handle, path[]) -> string[] : the names under a folder (resource names, or
-// application names for ["applications"]). Mirrors project/list.go's seer.List().
+// list(handle, path[]) -> string[]
 func sessionListFn(_ js.Value, args []js.Value) any {
 	s, e := lookup(args)
 	if e != nil {
@@ -227,15 +146,11 @@ func sessionListFn(_ js.Value, args []js.Value) any {
 	if len(args) < 2 {
 		return errResult("list: expected (handle, path)")
 	}
-	path := jsToPath(args[1])
-	if len(path) == 0 {
+	p := jsToPath(args[1])
+	if len(p) == 0 {
 		return errResult("list: empty path")
 	}
-	q := s.seer.Get(path[0])
-	for _, seg := range path[1:] {
-		q = q.Get(seg)
-	}
-	names, err := q.List()
+	names, err := s.List(p)
 	if err != nil {
 		return toJS([]any{}) // missing/empty folder -> []
 	}
@@ -246,30 +161,99 @@ func sessionListFn(_ js.Value, args []js.Value) any {
 	return toJS(out)
 }
 
+func compileOpts(args []js.Value, optIdx int) compiler.CompileOptions {
+	var o compiler.CompileOptions
+	if len(args) > optIdx && args[optIdx].Truthy() {
+		if v := args[optIdx].Get("branch"); v.Truthy() {
+			o.Branch = v.String()
+		}
+		if v := args[optIdx].Get("cloud"); v.Truthy() {
+			o.Cloud = v.String()
+		}
+	}
+	return o
+}
+
+// compile(handle, opts?) -> { object, indexes, validations }
+func sessionCompileFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	obj, validations, err := s.Compile(context.Background(), compileOpts(args, 1))
+	if err != nil {
+		return errResult(err.Error())
+	}
+	out := obj.Flat()
+	out["validations"] = validations
+	return toJS(out)
+}
+
+// validate(handle, opts?) -> { validations } : whole-config diagnostics only.
+func sessionValidateFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	validations, err := s.Validate(context.Background(), compileOpts(args, 1))
+	if err != nil {
+		return errResult(err.Error())
+	}
+	return toJS(map[string]any{"validations": validations})
+}
+
+// save(handle, fsPrimitives) : flush the session's YAML out to the fs.
+func sessionSaveFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("save: expected (handle, fsPrimitives)")
+	}
+	if err := s.Save(&jsFs{p: args[1]}, "/"); err != nil {
+		return errResult("save: " + err.Error())
+	}
+	return js.Null()
+}
+
+// fork(handle) -> forkHandle : a copy-on-write child; edit + validate in
+// isolation, then merge or close.
+func sessionForkFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	f, err := s.Fork()
+	if err != nil {
+		return errResult(err.Error())
+	}
+	return register(f)
+}
+
+// merge(forkHandle) : collapse a fork's validated changes onto its parent.
+func sessionMergeFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if err := s.Merge(); err != nil {
+		return errResult(err.Error())
+	}
+	return js.Null()
+}
+
 func sessionCloseFn(_ js.Value, args []js.Value) any {
 	if len(args) >= 1 {
+		if s, ok := sessions[args[0].Int()]; ok {
+			s.Close()
+		}
 		delete(sessions, args[0].Int())
 	}
 	return js.Null()
 }
 
-// --- helpers ---
-
-func copyTree(src, dst afero.Fs) error {
-	return afero.Walk(src, "/", func(p string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			return dst.MkdirAll(p, 0o755)
-		}
-		data, err := afero.ReadFile(src, p)
-		if err != nil {
-			return err
-		}
-		return afero.WriteFile(dst, p, data, 0o644)
-	})
-}
+// --- JS <-> Go marshaling helpers ---
 
 func jsToPath(v js.Value) []string {
 	n := v.Length()

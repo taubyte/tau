@@ -21,6 +21,7 @@ func main() {
 	// Stateless whole-repo ops.
 	tcc.Set("compile", js.FuncOf(compileFn))
 	tcc.Set("decompile", js.FuncOf(decompileFn))
+	tcc.Set("schema", js.FuncOf(schemaFn))
 	// Editable in-wasm sessions (see session_js.go): the config lives here as a
 	// yaseer tree; TS getters/setters read/write fields by path.
 	tcc.Set("openSession", js.FuncOf(openSessionFn))
@@ -28,9 +29,12 @@ func main() {
 	tcc.Set("sessionGet", js.FuncOf(sessionGetFn))
 	tcc.Set("sessionSet", js.FuncOf(sessionSetFn))
 	tcc.Set("sessionCompile", js.FuncOf(sessionCompileFn))
+	tcc.Set("sessionValidate", js.FuncOf(sessionValidateFn))
 	tcc.Set("sessionSave", js.FuncOf(sessionSaveFn))
 	tcc.Set("sessionDelete", js.FuncOf(sessionDeleteFn))
 	tcc.Set("sessionList", js.FuncOf(sessionListFn))
+	tcc.Set("sessionFork", js.FuncOf(sessionForkFn))
+	tcc.Set("sessionMerge", js.FuncOf(sessionMergeFn))
 	tcc.Set("sessionClose", js.FuncOf(sessionCloseFn))
 	js.Global().Set("tcc", tcc)
 
@@ -76,6 +80,17 @@ func compileFn(_ js.Value, args []js.Value) any {
 	out := obj.Flat()
 	out["validations"] = validations
 	return toJS(out)
+}
+
+// schemaFn: schema() -> the config JSON Schema (Draft 2020-12) as a JS object, or
+// { error } on failure. Generated from the same DSL definition the compiler uses,
+// so it always matches this wasm build — no separately-shipped schema to drift.
+func schemaFn(_ js.Value, _ []js.Value) any {
+	b, err := compiler.JSONSchema()
+	if err != nil {
+		return errResult(err.Error())
+	}
+	return js.Global().Get("JSON").Call("parse", string(b))
 }
 
 // decompileFn: decompile(compiledObject, fsPrimitives) -> null on success, or

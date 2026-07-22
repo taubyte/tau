@@ -118,6 +118,11 @@ func wireToOp(w byte, name string, value any) (op, error) {
 // and fsyncs. No-op when WAL is disabled (s.walPath == "").
 // Called by Query.Commit() after the in-memory mutation succeeds.
 func (s *Seer) appendCommitWAL(ops []op) error {
+	// In-memory op-log: record the ops directly, no file, no byte encoding.
+	if s.memwal != nil {
+		s.memwal.append(ops)
+		return nil
+	}
 	if s.walPath == "" {
 		return nil
 	}
@@ -327,6 +332,69 @@ func (s *Seer) replayWAL() error {
 		return fmt.Errorf("wal: sync after replay: %w", err)
 	}
 	return s.clearWAL()
+}
+
+// Op is one recorded operation. Opaque outside this package — obtain a stream of
+// them only from a WAL.
+type Op = op
+
+// WAL is an ordered source of recorded commits to replay into a Seer: each Read
+// yields the next commit's ops, or io.EOF when drained. Implementations own their
+// own storage and encoding — the in-memory WAL holds ops directly; a file-backed
+// WAL would decode them from disk — so ReplayWal never sees bytes.
+type WAL interface {
+	Read() ([]Op, error)
+}
+
+// memWAL is the in-memory op-log behind WithInMemWAL: it records each commit's ops
+// as-is, with no serialization.
+type memWAL struct {
+	frames [][]op
+}
+
+func (w *memWAL) append(ops []op) { w.frames = append(w.frames, ops) }
+
+// cursor over a memWAL's frames, so WAL() can be replayed more than once.
+type memWALCursor struct {
+	frames [][]op
+	pos    int
+}
+
+func (c *memWALCursor) Read() ([]Op, error) {
+	if c.pos >= len(c.frames) {
+		return nil, io.EOF
+	}
+	ops := c.frames[c.pos]
+	c.pos++
+	return ops, nil
+}
+
+// WAL returns this Seer's in-memory op-log (see WithInMemWAL) as a fresh,
+// independently-consumable stream, or nil if the in-memory WAL is off.
+func (s *Seer) WAL() WAL {
+	if s.memwal == nil {
+		return nil
+	}
+	return &memWALCursor{frames: s.memwal.frames}
+}
+
+// ReplayWal applies every commit from w onto this Seer, in order, as fresh
+// commits. Combined with a forked Seer's WAL() this merges the fork's edits into a
+// parent Seer without copying files — the parent stays live and consistent. The
+// Seer is not Synced; the caller flushes when ready.
+func (s *Seer) ReplayWal(w WAL) error {
+	for {
+		ops, err := w.Read()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if err := queryFromOps(s, ops).Commit(); err != nil {
+			return err
+		}
+	}
 }
 
 // clearWAL removes the WAL file. ENOENT is ignored.

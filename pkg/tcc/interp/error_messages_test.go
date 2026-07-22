@@ -535,7 +535,7 @@ func TestCompile_FunctionInvalidSource(t *testing.T) {
 
 	_, _, err = compiler.Compile(context.Background())
 
-	expectedError := "/functions/test_function1_glob.yaml:2:9: source must be \".\" (inline) or start with \"libraries/\", got \"not_a_ref\""
+	expectedError := "/functions/test_function1_glob.yaml:2:9: must be \".\" or start with \"libraries/\", got \"not_a_ref\""
 	assert.Error(t, err, expectedError)
 }
 
@@ -555,7 +555,7 @@ func TestCompile_SmartopInvalidSource(t *testing.T) {
 
 	_, _, err = compiler.Compile(context.Background())
 
-	expectedError := "/smartops/test_smartops1.yaml:2:9: source must be \".\" (inline) or start with \"libraries/\", got \"not_a_ref\""
+	expectedError := "/smartops/test_smartops1.yaml:2:9: must be \".\" or start with \"libraries/\", got \"not_a_ref\""
 	assert.Error(t, err, expectedError)
 }
 
