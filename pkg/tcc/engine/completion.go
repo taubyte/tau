@@ -37,10 +37,25 @@ func Completion(root []*Node, group string, field []string) (fc FieldCompletion,
 	return fc, true
 }
 
-// findAttr locates the attribute of a resource group whose authored path — its
-// canonical Path or a legacy Compat alias, the same paths the accessors accept —
-// matches field; nil if not found.
+// findAttr locates the attribute of a resource group addressed by field. It
+// matches an attribute's canonical Path or a legacy Compat alias (the paths the
+// accessors accept), and also a single element of a list field addressed by a
+// trailing numeric index — e.g. ["trigger","domains","0"] resolves to the
+// "trigger/domains" StringSlice, so per-element validation/completion of a list
+// works the same as the whole field. Returns nil for an unknown path.
 func findAttr(root []*Node, group string, field []string) *Attribute {
+	if a := matchAttr(root, group, field); a != nil {
+		return a
+	}
+	if n := len(field); n > 0 && isIndex(field[n-1]) {
+		if a := matchAttr(root, group, field[:n-1]); a != nil && a.Type == TypeStringSlice {
+			return a
+		}
+	}
+	return nil
+}
+
+func matchAttr(root []*Node, group string, field []string) *Attribute {
 	for _, g := range root {
 		name, _ := g.Match.(string)
 		if name != group || len(g.Children) == 0 {
@@ -53,4 +68,16 @@ func findAttr(root []*Node, group string, field []string) *Attribute {
 		}
 	}
 	return nil
+}
+
+func isIndex(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }

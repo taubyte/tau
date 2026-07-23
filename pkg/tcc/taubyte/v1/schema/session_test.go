@@ -73,8 +73,22 @@ func TestSession(t *testing.T) {
 		// alias of the canonical "trigger/domains".
 		assert.NilError(t, s.ValidateField(fn, []string{"domains"}, []any{"test_domain1"}))
 		assert.ErrorContains(t, s.ValidateField(fn, []string{"domains"}, []any{"ghost"}), `no domains named "ghost"`)
-		// array-element addressing is still not a field
-		assert.ErrorContains(t, s.ValidateField(fn, []string{"tags", "0"}, "x"), "unknown field")
+		// a list element is addressable by index — valid for a free-form list, but a
+		// genuinely unknown path still errors
+		assert.NilError(t, s.ValidateField(fn, []string{"tags", "0"}, "anything"))
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"trigger", "foo"}, "x"), "unknown field")
+	})
+
+	t.Run("list elements are addressable by index for validate and complete", func(t *testing.T) {
+		fn := []string{"functions", "test_function1_glob"}
+		elem := []string{"trigger", "domains", "0"} // one element of the domains list
+		// per-element reference validation
+		assert.NilError(t, s.ValidateField(fn, elem, "test_domain1"))
+		assert.ErrorContains(t, s.ValidateField(fn, elem, "ghost"), `no domains named "ghost"`)
+		// per-element completion
+		c, err := s.Complete(fn, elem, "test_")
+		assert.NilError(t, err)
+		assert.DeepEqual(t, c, []string{"test_domain1"})
 	})
 
 	t.Run("partial validation catches bad references in scope, compile-free", func(t *testing.T) {
