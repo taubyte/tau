@@ -58,12 +58,10 @@ func (taubyteFieldValidator) ValidateField(group string, field []string, value a
 }
 
 func (taubyteFieldValidator) Fields(group string) [][]string {
-	vfs := engine.ValidatedFields(GenerationRoot(), group)
-	out := make([][]string, len(vfs))
-	for i, vf := range vfs {
-		out[i] = vf.Path
-	}
-	return out
+	// Every partial-checkable field — single-value validators AND references —
+	// so per-resource validation covers both (the session checks reference
+	// existence against the in-scope config).
+	return engine.CheckFields(GenerationRoot(), group)
 }
 
 // ValidateField runs this DSL's single-value validator for one field of a resource

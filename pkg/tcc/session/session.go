@@ -11,6 +11,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"strings"
@@ -169,34 +170,89 @@ func (s *Session) compiler(opts CompileOptions) (*interp.Compiler, error) {
 	return s.bind.CompilerFor(s.fs, opts.Branch, opts.Cloud)
 }
 
-// ValidateField runs the DSL's single-value validator for one field of a resource
-// against value (enum, string shape, cid, fqdn, ...) WITHOUT compiling — the cheap
-// live-edit path. It does not check cross-element constraints (refs, cross-app
-// scope); those need a whole-config Validate. Returns nil when partial validation
-// isn't wired or the field has no validator.
+// ValidateField checks one field of a resource against value WITHOUT compiling —
+// the cheap live-edit path. It runs the DSL's single-value validator (enum, string
+// shape, cid, fqdn, ...) AND, for a reference field, that the value names a
+// resource that actually exists IN SCOPE (the resource's own app + root/global —
+// the same scope the compiler resolves against, so siblings don't count). Returns
+// nil when partial validation isn't wired or the field carries no constraint.
 func (s *Session) ValidateField(res, field []string, value any) error {
-	if s.bind.FieldValidator == nil {
-		return nil
+	group := resGroup(res)
+	if s.bind.FieldValidator != nil {
+		if err := s.bind.FieldValidator.ValidateField(group, field, value); err != nil {
+			return err
+		}
 	}
-	return s.bind.FieldValidator.ValidateField(resGroup(res), field, value)
+	if s.bind.Completer != nil {
+		if _, refGroup, refPrefix := s.bind.Completer.Field(group, field); refGroup != "" {
+			if err := s.checkRef(res, refGroup, refPrefix, value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
-// ValidateResource runs every single-value validator of one resource against its
-// current values, returning all failures (empty slice = locally valid). Scoped to
-// the one file and compile-free; cross-element refs still need a whole-config
-// Validate.
+// checkRef verifies that every referenced name in value names a refGroup resource
+// visible from res (its app + root). Values that don't carry the ref prefix are
+// literals (e.g. a source of ".") and are left to the shape validator.
+func (s *Session) checkRef(res []string, refGroup, refPrefix string, value any) error {
+	inScope := map[string]bool{}
+	for _, n := range s.scopedNames(res, refGroup) {
+		inScope[n] = true
+	}
+	for _, v := range asStrings(value) {
+		name := v
+		if refPrefix != "" {
+			if !strings.HasPrefix(v, refPrefix) {
+				continue // a literal, not a reference
+			}
+			name = strings.TrimPrefix(v, refPrefix)
+		}
+		if name == "" {
+			continue
+		}
+		if !inScope[name] {
+			return fmt.Errorf("no %s named %q in scope", refGroup, name)
+		}
+	}
+	return nil
+}
+
+func asStrings(v any) []string {
+	switch t := v.(type) {
+	case string:
+		return []string{t}
+	case []string:
+		return t
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, e := range t {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// ValidateResource checks every constrained field of one resource against its
+// current values — single-value validators and reference existence — returning all
+// failures (empty slice = valid). Scoped to the one file and compile-free. It does
+// not run whole-config concerns beyond references (e.g. deferred external checks);
+// those stay in Validate.
 func (s *Session) ValidateResource(res []string) []error {
 	if s.bind.FieldValidator == nil {
 		return nil
 	}
-	group := resGroup(res)
 	var errs []error
-	for _, f := range s.bind.FieldValidator.Fields(group) {
+	for _, f := range s.bind.FieldValidator.Fields(resGroup(res)) {
 		v, err := s.Get(res, f)
 		if err != nil {
 			continue // field absent -> nothing to validate
 		}
-		if e := s.bind.FieldValidator.ValidateField(group, f, v); e != nil {
+		if e := s.ValidateField(res, f, v); e != nil {
 			errs = append(errs, e)
 		}
 	}

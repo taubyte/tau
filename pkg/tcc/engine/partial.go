@@ -39,6 +39,31 @@ func ValidatedFields(root []*Node, group string) []ValidatedField {
 	return out
 }
 
+// CheckFields returns the authored paths of every field of a resource group that
+// carries a partial-checkable constraint — a single-value validator OR a reference
+// (dynamic Either/Key paths are skipped). It is what a per-resource partial
+// validation iterates: the single-value ones are validated directly, the reference
+// ones are checked for existence against the config's in-scope resources.
+func CheckFields(root []*Node, group string) [][]string {
+	var out [][]string
+	for _, g := range root {
+		name, _ := g.Match.(string)
+		if name != group || len(g.Children) == 0 {
+			continue
+		}
+		for _, a := range g.Children[0].Attributes {
+			_, hasRef := a.Meta["ref"].(RefSpec)
+			if a.Validator == nil && !hasRef {
+				continue
+			}
+			if p := fieldPath(a); p != nil {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
+
 // ValidateField runs the single-value validator for one field (by authored path)
 // of a resource group against value. Returns nil when the field has no validator
 // or isn't found (unknown/dynamic paths are permissive).

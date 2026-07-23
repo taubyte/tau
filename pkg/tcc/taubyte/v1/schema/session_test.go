@@ -55,6 +55,25 @@ func TestSession(t *testing.T) {
 		assert.NilError(t, s.Set(fn, []string{"trigger", "type"}, "http"))
 	})
 
+	t.Run("partial validation catches bad references in scope, compile-free", func(t *testing.T) {
+		fn := []string{"functions", "test_function1_glob"} // a root function
+		// a domain that doesn't exist -> flagged (was silent before)
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"trigger", "domains"}, []any{"ghost"}), `no domains named "ghost"`)
+		// an existing global domain -> ok
+		assert.NilError(t, s.ValidateField(fn, []string{"trigger", "domains"}, []any{"test_domain1"}))
+		// a library only defined in test_app1 is out of scope for a root function
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"source"}, "libraries/test_library2"), `no libraries named "test_library2"`)
+		// "." is a literal, not a reference -> ok
+		assert.NilError(t, s.ValidateField(fn, []string{"source"}, "."))
+
+		// resource-level surfaces it too
+		assert.NilError(t, s.Set(fn, []string{"trigger", "domains"}, []any{"ghost"}))
+		errs := s.ValidateResource(fn)
+		assert.Assert(t, len(errs) == 1)
+		assert.ErrorContains(t, errs[0], `no domains named "ghost"`)
+		assert.NilError(t, s.Set(fn, []string{"trigger", "domains"}, []any{"test_domain1"})) // undo
+	})
+
 	t.Run("completion: enum members and scoped references, filtered by the partial", func(t *testing.T) {
 		fn := []string{"functions", "test_function1_glob"} // a root function
 
