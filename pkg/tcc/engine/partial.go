@@ -1,5 +1,10 @@
 package engine
 
+import (
+	"fmt"
+	"strings"
+)
+
 // Partial validation: run a resource's declared single-value validators (enum,
 // string shape, cid, fqdn, variable-name, minimum, ...) against one field or one
 // resource, WITHOUT a compile. This is the cheap path for live editing (UI, IDE,
@@ -65,15 +70,24 @@ func CheckFields(root []*Node, group string) [][]string {
 }
 
 // ValidateField runs the single-value validator for one field (by authored path)
-// of a resource group against value. Returns nil when the field has no validator
-// or isn't found (unknown/dynamic paths are permissive).
+// of a resource group against value. It distinguishes three outcomes so a caller
+// can tell "valid" from "not recognized":
+//   - the field is unknown (no attribute at that plain path) -> an "unknown field"
+//     error, so a typo'd path isn't silently reported as OK;
+//   - the field is known but carries no single-value validator -> nil (valid,
+//     unconstrained);
+//   - the field has a validator -> its result.
+//
+// Fields at a dynamic (Either/Key) path have no plain path and read as unknown.
 func ValidateField(root []*Node, group string, field []string, value any) error {
-	for _, vf := range ValidatedFields(root, group) {
-		if fieldPathEq(vf.Path, field) {
-			return vf.Validate(value)
-		}
+	a := findAttr(root, group, field)
+	if a == nil {
+		return fmt.Errorf("unknown field %q on %q", strings.Join(field, "/"), group)
 	}
-	return nil
+	if a.Validator == nil {
+		return nil
+	}
+	return a.Validator(value)
 }
 
 // fieldPath is an attribute's plain authored path (its Path, or its bare name);

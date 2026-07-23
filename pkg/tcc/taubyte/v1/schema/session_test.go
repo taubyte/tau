@@ -55,6 +55,20 @@ func TestSession(t *testing.T) {
 		assert.NilError(t, s.Set(fn, []string{"trigger", "type"}, "http"))
 	})
 
+	t.Run("partial validation: unknown fields error, scalar formats are checked", func(t *testing.T) {
+		fn := []string{"functions", "test_function1_glob"}
+		// (a) an unknown path is reported as unknown, not silently OK
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"nonexistent"}, "x"), "unknown field")
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"trigger", "typo"}, "x"), "unknown field")
+		// a known field with no constraint is still valid
+		assert.NilError(t, s.ValidateField(fn, []string{"description"}, "anything"))
+		// (b) duration/bytes format is checked per-field, not only at compile
+		assert.NilError(t, s.ValidateField(fn, []string{"execution", "timeout"}, "20s"))
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"execution", "timeout"}, "20x"), "invalid duration")
+		assert.NilError(t, s.ValidateField(fn, []string{"execution", "memory"}, "32GB"))
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"execution", "memory"}, "banana"), "invalid size")
+	})
+
 	t.Run("partial validation catches bad references in scope, compile-free", func(t *testing.T) {
 		fn := []string{"functions", "test_function1_glob"} // a root function
 		// a domain that doesn't exist -> flagged (was silent before)

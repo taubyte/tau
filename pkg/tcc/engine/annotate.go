@@ -18,11 +18,17 @@ func Annotate(key string, val any) Option {
 // the driver (Parse/Format) and tcc-gen (GoType) read, so each scalar's meaning
 // lives in one place instead of a switch in every consumer.
 func Duration(name string, opts ...Option) *Attribute {
-	return String(name, append(opts, Annotate("scalar", ScalarSpec{ID: "duration", GoType: "uint64", Parse: parseDuration, Format: formatDuration}))...)
+	return String(name, append(opts,
+		Annotate("scalar", ScalarSpec{ID: "duration", GoType: "uint64", Parse: parseDuration, Format: formatDuration}),
+		durationValidator(),
+	)...)
 }
 
 func Bytes(name string, opts ...Option) *Attribute {
-	return String(name, append(opts, Annotate("scalar", ScalarSpec{ID: "bytes", GoType: "uint64", Parse: parseBytes, Format: formatBytes}))...)
+	return String(name, append(opts,
+		Annotate("scalar", ScalarSpec{ID: "bytes", GoType: "uint64", Parse: parseBytes, Format: formatBytes}),
+		bytesValidator(),
+	)...)
 }
 
 // Doc attaches a human-readable description to an attribute for schema export

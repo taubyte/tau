@@ -22,15 +22,16 @@ func TestValidateField(t *testing.T) {
 	if err := ValidateField(root, "widgets", []string{"spec", "kind"}, "z"); err == nil {
 		t.Error("invalid enum value should fail")
 	}
-	// no validator on note, and unknown fields, are permissive
+	// a known field with no validator is valid (unconstrained), not an error
 	if err := ValidateField(root, "widgets", []string{"note"}, "anything"); err != nil {
-		t.Errorf("unvalidated field should pass: %v", err)
+		t.Errorf("unvalidated known field should pass: %v", err)
 	}
-	if err := ValidateField(root, "widgets", []string{"nope"}, "x"); err != nil {
-		t.Errorf("unknown field should be permissive: %v", err)
+	// but an unknown field path / group is reported as unknown, not silently OK
+	if err := ValidateField(root, "widgets", []string{"nope"}, "x"); err == nil {
+		t.Error("unknown field should error")
 	}
-	if err := ValidateField(root, "ghost", []string{"kind"}, "z"); err != nil {
-		t.Errorf("unknown group should be permissive: %v", err)
+	if err := ValidateField(root, "ghost", []string{"kind"}, "z"); err == nil {
+		t.Error("unknown group should error")
 	}
 }
 

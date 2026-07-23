@@ -25,6 +25,28 @@ type ScalarSpec struct {
 // parseDuration parses a duration string from field and sets it as nanoseconds.
 // A missing or nil field is a no-op (nil error); a non-string or unparsable value
 // is a wrapped error.
+// durationValidator / bytesValidator are load-time validators for the authored
+// scalar strings, so partial (per-field) validation can flag a malformed "20x" /
+// "banana" as the user types — not only at compile. The wire conversion still
+// happens in Parse; these just reject an unparseable string early, with file:line.
+func durationValidator() Option {
+	return Validator(func(s string) error {
+		if _, err := time.ParseDuration(s); err != nil {
+			return fmt.Errorf("invalid duration %q: %w", s, err)
+		}
+		return nil
+	})
+}
+
+func bytesValidator() Option {
+	return Validator(func(s string) error {
+		if _, err := units.ParseStrictBytes(s); err != nil {
+			return fmt.Errorf("invalid size %q: %w", s, err)
+		}
+		return nil
+	})
+}
+
 func parseDuration(sel object.Selector[object.Refrence], field string) error {
 	timeout, err := sel.Get(field)
 	if err != nil {
