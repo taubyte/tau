@@ -276,6 +276,25 @@ func TestSessionForkMergeFn(t *testing.T) {
 	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, res, arr("description")})).String(), "forked")
 }
 
+// Partial validation through the wasm: field + resource scope, compile-free.
+func TestSessionPartialValidateFn(t *testing.T) {
+	m := loadFixture(t)
+	h := openHandle(t, openSessionFn(js.Null(), []js.Value{m.primitives()}))
+	res := arr("functions", "test_function1_glob")
+
+	// field: good enum passes, bad enum errors
+	assert.Assert(t, val(sessionValidateFieldFn(js.Null(), []js.Value{h, res, arr("trigger", "type"), js.ValueOf("https")})).IsNull())
+	bad := val(sessionValidateFieldFn(js.Null(), []js.Value{h, res, arr("trigger", "type"), js.ValueOf("nope")}))
+	assert.Assert(t, errOf(bad) != "", "bad enum must error")
+
+	// resource: clean fixture -> no errors; after a bad set -> one error
+	r := val(sessionValidateResourceFn(js.Null(), []js.Value{h, res}))
+	assert.Equal(t, r.Get("errors").Length(), 0)
+	val(sessionSetFn(js.Null(), []js.Value{h, res, arr("trigger", "type"), js.ValueOf("nope")}))
+	r = val(sessionValidateResourceFn(js.Null(), []js.Value{h, res}))
+	assert.Equal(t, r.Get("errors").Length(), 1)
+}
+
 func TestSchemaFn(t *testing.T) {
 	r := val(schemaFn(js.Null(), nil))
 	assert.Equal(t, errOf(r), "")

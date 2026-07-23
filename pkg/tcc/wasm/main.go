@@ -30,6 +30,8 @@ func main() {
 	tcc.Set("sessionSet", js.FuncOf(sessionSetFn))
 	tcc.Set("sessionCompile", js.FuncOf(sessionCompileFn))
 	tcc.Set("sessionValidate", js.FuncOf(sessionValidateFn))
+	tcc.Set("sessionValidateField", js.FuncOf(sessionValidateFieldFn))
+	tcc.Set("sessionValidateResource", js.FuncOf(sessionValidateResourceFn))
 	tcc.Set("sessionSave", js.FuncOf(sessionSaveFn))
 	tcc.Set("sessionDelete", js.FuncOf(sessionDeleteFn))
 	tcc.Set("sessionList", js.FuncOf(sessionListFn))

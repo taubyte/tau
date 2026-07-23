@@ -227,6 +227,10 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 		fmt.Fprintf(&b, "  private res: string[];\n")
 		fmt.Fprintf(&b, "  constructor(private s: Session, name: string, app?: string) {\n    this.res = app ? [%q, app, %q, name] : [%q, name];\n  }\n", container, r.group, r.group)
 		fmt.Fprintf(&b, "\n  delete(): Promise<void> {\n    return this.s.binding.delete(this.s.handle, this.res);\n  }\n")
+		// Partial validation (compile-free): resource-scoped local checks + a single
+		// field check. Cross-element refs still need Session.validate().
+		fmt.Fprintf(&b, "  validate(): Promise<string[]> {\n    return this.s.binding.validateResource(this.s.handle, this.res);\n  }\n")
+		fmt.Fprintf(&b, "  validateField(field: string[], value: unknown): Promise<void> {\n    return this.s.binding.validateField(this.s.handle, this.res, field, value);\n  }\n")
 		for _, f := range r.fields {
 			// getter
 			if len(f.compat) == 0 {

@@ -29,7 +29,7 @@ func TestSessionForkMerge(t *testing.T) {
 	assert.NilError(t, afero.WriteFile(src, "/functions/foo.yaml", []byte("id: fooid\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(src, "/functions/bar.yaml", []byte("id: barid\n"), 0o644))
 
-	parent, err := New(src, "/", noCompiler)
+	parent, err := New(src, "/", Bindings{CompilerFor: noCompiler})
 	assert.NilError(t, err)
 
 	fork, err := parent.Fork()

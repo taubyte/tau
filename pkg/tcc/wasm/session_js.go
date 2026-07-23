@@ -202,6 +202,48 @@ func sessionValidateFn(_ js.Value, args []js.Value) any {
 	return toJS(map[string]any{"validations": validations})
 }
 
+// validateField(handle, resourcePath[], fieldPath[], value) : run one field's
+// single-value validator (enum/shape/cid/...) with no compile. null | { error }.
+func sessionValidateFieldFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 4 {
+		return errResult("validateField: expected (handle, resourcePath, fieldPath, value)")
+	}
+	res := jsToPath(args[1])
+	if len(res) == 0 {
+		return errResult("validateField: empty resource path")
+	}
+	if err := s.ValidateField(res, jsToPath(args[2]), jsToGo(args[3])); err != nil {
+		return errResult(err.Error())
+	}
+	return js.Null()
+}
+
+// validateResource(handle, resourcePath[]) : run every single-value validator of
+// one resource, no compile. -> { errors: string[] } (empty = locally valid).
+func sessionValidateResourceFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("validateResource: expected (handle, resourcePath)")
+	}
+	res := jsToPath(args[1])
+	if len(res) == 0 {
+		return errResult("validateResource: empty resource path")
+	}
+	errs := s.ValidateResource(res)
+	msgs := make([]any, len(errs))
+	for i, er := range errs {
+		msgs[i] = er.Error()
+	}
+	return toJS(map[string]any{"errors": msgs})
+}
+
 // save(handle, fsPrimitives) : flush the session's YAML out to the fs.
 func sessionSaveFn(_ js.Value, args []js.Value) any {
 	s, e := lookup(args)

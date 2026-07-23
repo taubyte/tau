@@ -25,6 +25,23 @@ import (
 // imports schema, keeping the dependency one-way.
 type CompilerFor func(fs afero.Fs, branch, cloud string) (*interp.Compiler, error)
 
+// FieldValidator runs a DSL's declared single-value field validators (enum, string
+// shape, cid, fqdn, ...) for partial validation — no compile. Injected by the
+// binding, since the session core is DSL-agnostic.
+type FieldValidator interface {
+	// ValidateField runs one field's validator; nil if the field has none.
+	ValidateField(group string, field []string, value any) error
+	// Fields returns the authored paths of a resource group's validated fields.
+	Fields(group string) [][]string
+}
+
+// Bindings wires a Session to a specific DSL: how to compile it (required) and how
+// to partial-validate its fields (optional).
+type Bindings struct {
+	CompilerFor    CompilerFor
+	FieldValidator FieldValidator
+}
+
 // CompileOptions are the per-compile parameters (empty Branch uses the compiler's
 // default).
 type CompileOptions struct {
@@ -35,32 +52,32 @@ type CompileOptions struct {
 // Session is an editable configuration, resident on a private in-memory
 // filesystem. Not safe for concurrent use.
 type Session struct {
-	fs          afero.Fs
-	seer        *yaseer.Seer
-	compilerFor CompilerFor
-	parent      *Session // non-nil for a fork (see Fork/Merge)
+	fs     afero.Fs
+	seer   *yaseer.Seer
+	bind   Bindings
+	parent *Session // non-nil for a fork (see Fork/Merge)
 }
 
 // New stages the config under dir in src into a private in-memory copy and opens
-// an editable session over it. compilerFor binds compilation (see the schema
-// package's NewSession).
-func New(src afero.Fs, dir string, compilerFor CompilerFor) (*Session, error) {
+// an editable session over it. bind wires the DSL (see the schema package's
+// NewSession).
+func New(src afero.Fs, dir string, bind Bindings) (*Session, error) {
 	mem := afero.NewMemMapFs()
 	if err := copyTree(src, dir, mem, "/"); err != nil {
 		return nil, err
 	}
-	return Adopt(mem, compilerFor)
+	return Adopt(mem, bind)
 }
 
 // Adopt opens a session directly over fs (no copy) — for callers that already own
 // a private filesystem (e.g. a freshly decompiled config). The session then owns
 // fs; don't mutate it behind the session's back.
-func Adopt(fs afero.Fs, compilerFor CompilerFor) (*Session, error) {
+func Adopt(fs afero.Fs, bind Bindings) (*Session, error) {
 	sr, err := yaseer.New(yaseer.VirtualFS(fs, "/"))
 	if err != nil {
 		return nil, err
 	}
-	return &Session{fs: fs, seer: sr, compilerFor: compilerFor}, nil
+	return &Session{fs: fs, seer: sr, bind: bind}, nil
 }
 
 // FS exposes the session's working filesystem (read-only intent; for compilers /
@@ -139,7 +156,50 @@ func (s *Session) compiler(opts CompileOptions) (*interp.Compiler, error) {
 	if err := s.seer.Sync(); err != nil {
 		return nil, err
 	}
-	return s.compilerFor(s.fs, opts.Branch, opts.Cloud)
+	return s.bind.CompilerFor(s.fs, opts.Branch, opts.Cloud)
+}
+
+// ValidateField runs the DSL's single-value validator for one field of a resource
+// against value (enum, string shape, cid, fqdn, ...) WITHOUT compiling — the cheap
+// live-edit path. It does not check cross-element constraints (refs, cross-app
+// scope); those need a whole-config Validate. Returns nil when partial validation
+// isn't wired or the field has no validator.
+func (s *Session) ValidateField(res, field []string, value any) error {
+	if s.bind.FieldValidator == nil {
+		return nil
+	}
+	return s.bind.FieldValidator.ValidateField(resGroup(res), field, value)
+}
+
+// ValidateResource runs every single-value validator of one resource against its
+// current values, returning all failures (empty slice = locally valid). Scoped to
+// the one file and compile-free; cross-element refs still need a whole-config
+// Validate.
+func (s *Session) ValidateResource(res []string) []error {
+	if s.bind.FieldValidator == nil {
+		return nil
+	}
+	group := resGroup(res)
+	var errs []error
+	for _, f := range s.bind.FieldValidator.Fields(group) {
+		v, err := s.Get(res, f)
+		if err != nil {
+			continue // field absent -> nothing to validate
+		}
+		if e := s.bind.FieldValidator.ValidateField(group, f, v); e != nil {
+			errs = append(errs, e)
+		}
+	}
+	return errs
+}
+
+// resGroup is the resource-kind name in a resource path: res[len-2] — the folder
+// above the instance name, whether or not the path is application-scoped.
+func resGroup(res []string) string {
+	if len(res) < 2 {
+		return ""
+	}
+	return res[len(res)-2]
 }
 
 // Save flushes the session and writes its config out under dir in dst.
@@ -165,7 +225,7 @@ func (s *Session) Fork() (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Session{fs: cow, seer: sr, compilerFor: s.compilerFor, parent: s}, nil
+	return &Session{fs: cow, seer: sr, bind: s.bind, parent: s}, nil
 }
 
 // Merge replays the fork's in-memory op-log onto the parent seer — no file
