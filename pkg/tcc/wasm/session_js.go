@@ -262,7 +262,10 @@ func sessionCompleteFn(_ js.Value, args []js.Value) any {
 	if len(args) > 3 && args[3].Truthy() {
 		partial = args[3].String()
 	}
-	names := s.Complete(res, jsToPath(args[2]), partial)
+	names, err := s.Complete(res, jsToPath(args[2]), partial)
+	if err != nil {
+		return errResult(err.Error())
+	}
 	out := make([]any, len(names))
 	for i, n := range names {
 		out[i] = n

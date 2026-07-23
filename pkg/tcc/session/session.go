@@ -41,8 +41,9 @@ type FieldValidator interface {
 // in-scope instances are candidates. Injected by the binding.
 type Completer interface {
 	// Field returns a field's fixed candidates and, if it references a resource
-	// group, that group + the prefix to prepend to each referenced name.
-	Field(group string, field []string) (values []string, refGroup, refPrefix string)
+	// group, that group + the prefix to prepend to each referenced name. found is
+	// false when the field is unknown (no such attribute path).
+	Field(group string, field []string) (values []string, refGroup, refPrefix string, found bool)
 }
 
 // Bindings wires a Session to a specific DSL: how to compile it (required), how to
@@ -184,7 +185,7 @@ func (s *Session) ValidateField(res, field []string, value any) error {
 		}
 	}
 	if s.bind.Completer != nil {
-		if _, refGroup, refPrefix := s.bind.Completer.Field(group, field); refGroup != "" {
+		if _, refGroup, refPrefix, _ := s.bind.Completer.Field(group, field); refGroup != "" {
 			if err := s.checkRef(res, refGroup, refPrefix, value); err != nil {
 				return err
 			}
@@ -272,19 +273,25 @@ func resGroup(res []string) string {
 // partial string the user has typed (case-insensitive prefix; "" = all). Fixed
 // candidates come from the DSL (enum members, shape literals); reference fields
 // also offer the target group's instances IN SCOPE (the resource's own app plus
-// root/global), each prefixed. Returns nil if completion isn't wired.
-func (s *Session) Complete(res, field []string, partial string) []string {
+// root/global), each prefixed. An unknown field path is an error (so a typo isn't
+// mistaken for "no suggestions"); a known field with no candidates returns an
+// empty slice. Returns (nil, nil) if completion isn't wired.
+func (s *Session) Complete(res, field []string, partial string) ([]string, error) {
 	if s.bind.Completer == nil {
-		return nil
+		return nil, nil
 	}
-	values, refGroup, refPrefix := s.bind.Completer.Field(resGroup(res), field)
+	group := resGroup(res)
+	values, refGroup, refPrefix, found := s.bind.Completer.Field(group, field)
+	if !found {
+		return nil, fmt.Errorf("unknown field %q on %q", strings.Join(field, "/"), group)
+	}
 	cands := append([]string(nil), values...)
 	if refGroup != "" {
 		for _, name := range s.scopedNames(res, refGroup) {
 			cands = append(cands, refPrefix+name)
 		}
 	}
-	return filterPrefix(cands, partial)
+	return filterPrefix(cands, partial), nil
 }
 
 // scopedNames lists the instances of refGroup visible from res: its own

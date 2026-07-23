@@ -75,7 +75,7 @@ func ValidateField(group string, field []string, value any) error {
 // shape literals, and reference-group descriptors) from the live schema.
 type taubyteCompleter struct{}
 
-func (taubyteCompleter) Field(group string, field []string) (values []string, refGroup, refPrefix string) {
-	fc := engine.Completion(GenerationRoot(), group, field)
-	return fc.Values, fc.RefGroup, fc.RefPrefix
+func (taubyteCompleter) Field(group string, field []string) (values []string, refGroup, refPrefix string, found bool) {
+	fc, found := engine.Completion(GenerationRoot(), group, field)
+	return fc.Values, fc.RefGroup, fc.RefPrefix, found
 }

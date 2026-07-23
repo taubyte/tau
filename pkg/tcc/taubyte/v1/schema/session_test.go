@@ -96,29 +96,41 @@ func TestSession(t *testing.T) {
 		assert.NilError(t, s.Set(fn, []string{"trigger", "domains"}, []any{"test_domain1"})) // undo
 	})
 
+	complete := func(t *testing.T, res, field []string, partial string) []string {
+		t.Helper()
+		c, err := s.Complete(res, field, partial)
+		assert.NilError(t, err)
+		return c
+	}
+
 	t.Run("completion: enum members and scoped references, filtered by the partial", func(t *testing.T) {
 		fn := []string{"functions", "test_function1_glob"} // a root function
 
 		// enum field — partial filters the members
-		all := s.Complete(fn, []string{"trigger", "type"}, "")
+		all := complete(t, fn, []string{"trigger", "type"}, "")
 		assert.Assert(t, slices.Contains(all, "pubsub") && slices.Contains(all, "http"))
-		assert.DeepEqual(t, s.Complete(fn, []string{"trigger", "type"}, "p"), []string{"pubsub", "p2p"})
+		assert.DeepEqual(t, complete(t, fn, []string{"trigger", "type"}, "p"), []string{"pubsub", "p2p"})
 
 		// reference field — the shape literal "." plus in-scope libraries, prefixed.
 		// Root scope sees the global library test_library1 (not app1's test_library2).
-		src := s.Complete(fn, []string{"source"}, "")
+		src := complete(t, fn, []string{"source"}, "")
 		assert.Assert(t, slices.Contains(src, "."), "source offers the inline literal")
 		assert.Assert(t, slices.Contains(src, "libraries/test_library1"), "source offers the global library")
 		assert.Assert(t, !slices.Contains(src, "libraries/test_library2"), "a root function must not see app1's library")
 
 		// the user's partial narrows it
-		assert.DeepEqual(t, s.Complete(fn, []string{"source"}, "libraries/test_l"), []string{"libraries/test_library1"})
-		assert.DeepEqual(t, s.Complete(fn, []string{"source"}, "."), []string{"."})
+		assert.DeepEqual(t, complete(t, fn, []string{"source"}, "libraries/test_l"), []string{"libraries/test_library1"})
+		assert.DeepEqual(t, complete(t, fn, []string{"source"}, "."), []string{"."})
+
+		// compat alias resolves for completion too, and an unknown path errors
+		assert.DeepEqual(t, complete(t, fn, []string{"domains"}, ""), []string{"test_domain1"})
+		_, err := s.Complete(fn, []string{"nonexistent"}, "")
+		assert.ErrorContains(t, err, "unknown field")
 	})
 
 	t.Run("completion: an app function also sees its own app's libraries", func(t *testing.T) {
 		appFn := []string{"applications", "test_app1", "functions", "test_function2"}
-		src := s.Complete(appFn, []string{"source"}, "libraries/")
+		src := complete(t, appFn, []string{"source"}, "libraries/")
 		assert.Assert(t, slices.Contains(src, "libraries/test_library2"), "app scope sees app1's library")
 		assert.Assert(t, slices.Contains(src, "libraries/test_library1"), "and the global one")
 	})

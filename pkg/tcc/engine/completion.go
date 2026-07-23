@@ -14,15 +14,16 @@ type FieldCompletion struct {
 	RefPrefix string   // prefix to prepend to each referenced name (e.g. "libraries/")
 }
 
-// Completion returns the completion sources for one field of a resource group.
-// Empty (zero value) when the field has no enumerable candidates (free-form:
-// cid/fqdn/pattern/plain strings).
-func Completion(root []*Node, group string, field []string) FieldCompletion {
+// Completion returns the completion sources for one field of a resource group and
+// whether the field is known (an attribute at that path, canonical or compat).
+// found is false for an unknown path so a caller can distinguish "no candidates"
+// (a known free-form field: cid/fqdn/pattern/plain string) from "unknown field".
+func Completion(root []*Node, group string, field []string) (fc FieldCompletion, found bool) {
 	a := findAttr(root, group, field)
 	if a == nil {
-		return FieldCompletion{}
+		return FieldCompletion{}, false
 	}
-	var fc FieldCompletion
+	found = true
 	if enum, ok := a.Meta["enum"].([]string); ok {
 		fc.Values = append(fc.Values, enum...)
 	}
@@ -33,7 +34,7 @@ func Completion(root []*Node, group string, field []string) FieldCompletion {
 		fc.RefGroup = ref.Group
 		fc.RefPrefix = ref.Prefix
 	}
-	return fc
+	return fc, true
 }
 
 // findAttr locates the attribute of a resource group whose authored path — its
