@@ -39,6 +39,7 @@ export interface TccGlobal {
   sessionValidate(handle: number, opts?: CompileOptions): { validations: Validation[] } | { error: string };
   sessionValidateField(handle: number, resource: string[], field: string[], value: unknown): null | { error: string };
   sessionValidateResource(handle: number, resource: string[]): { errors: string[] } | { error: string };
+  sessionComplete(handle: number, resource: string[], field: string[], partial?: string): string[] | { error: string };
   sessionSave(handle: number, fs: SyncFs): null | { error: string };
   // field omitted -> delete the whole resource; field given -> unset that one field.
   sessionDelete(handle: number, resource: string[], field?: string[]): null | { error: string };
@@ -62,6 +63,7 @@ export interface SessionBinding {
   validate(handle: number, opts?: CompileOptions): Promise<Validation[]>;
   validateField(handle: number, resource: string[], field: string[], value: unknown): Promise<void>;
   validateResource(handle: number, resource: string[]): Promise<string[]>;
+  complete(handle: number, resource: string[], field: string[], partial?: string): Promise<string[]>;
   save(handle: number, fs: AsyncFs, dir: string): Promise<void>;
   fork(handle: number): Promise<number>;
   merge(handle: number): Promise<void>;
@@ -99,6 +101,9 @@ export function makeBinding(tcc: TccGlobal): SessionBinding {
     },
     async validateResource(handle, resource) {
       return orThrow(tcc.sessionValidateResource(handle, resource)).errors;
+    },
+    async complete(handle, resource, field, partial) {
+      return orThrow(tcc.sessionComplete(handle, resource, field, partial));
     },
     async save(handle, fs, dir) {
       const sync = makeSyncFs();

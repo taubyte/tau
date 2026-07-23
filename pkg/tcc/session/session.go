@@ -35,11 +35,21 @@ type FieldValidator interface {
 	Fields(group string) [][]string
 }
 
-// Bindings wires a Session to a specific DSL: how to compile it (required) and how
-// to partial-validate its fields (optional).
+// Completer supplies a DSL's field completion sources: the fixed candidates (enum
+// members, shape literals) and, for a reference field, the resource group whose
+// in-scope instances are candidates. Injected by the binding.
+type Completer interface {
+	// Field returns a field's fixed candidates and, if it references a resource
+	// group, that group + the prefix to prepend to each referenced name.
+	Field(group string, field []string) (values []string, refGroup, refPrefix string)
+}
+
+// Bindings wires a Session to a specific DSL: how to compile it (required), how to
+// partial-validate its fields, and how to complete field values (both optional).
 type Bindings struct {
 	CompilerFor    CompilerFor
 	FieldValidator FieldValidator
+	Completer      Completer
 }
 
 // CompileOptions are the per-compile parameters (empty Branch uses the compiler's
@@ -200,6 +210,63 @@ func resGroup(res []string) string {
 		return ""
 	}
 	return res[len(res)-2]
+}
+
+// Complete returns completion candidates for a field's value, filtered by the
+// partial string the user has typed (case-insensitive prefix; "" = all). Fixed
+// candidates come from the DSL (enum members, shape literals); reference fields
+// also offer the target group's instances IN SCOPE (the resource's own app plus
+// root/global), each prefixed. Returns nil if completion isn't wired.
+func (s *Session) Complete(res, field []string, partial string) []string {
+	if s.bind.Completer == nil {
+		return nil
+	}
+	values, refGroup, refPrefix := s.bind.Completer.Field(resGroup(res), field)
+	cands := append([]string(nil), values...)
+	if refGroup != "" {
+		for _, name := range s.scopedNames(res, refGroup) {
+			cands = append(cands, refPrefix+name)
+		}
+	}
+	return filterPrefix(cands, partial)
+}
+
+// scopedNames lists the instances of refGroup visible from res: its own
+// application scope (if application-scoped) then root/global, deduped.
+func (s *Session) scopedNames(res []string, refGroup string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(path []string) {
+		names, err := s.List(path)
+		if err != nil {
+			return
+		}
+		for _, n := range names {
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+	}
+	if len(res) >= 4 { // [container, app, group, name] -> the app's own scope
+		add([]string{res[0], res[1], refGroup})
+	}
+	add([]string{refGroup}) // root/global
+	return out
+}
+
+func filterPrefix(cands []string, partial string) []string {
+	if partial == "" {
+		return cands
+	}
+	p := strings.ToLower(partial)
+	out := make([]string, 0, len(cands))
+	for _, c := range cands {
+		if strings.HasPrefix(strings.ToLower(c), p) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // Save flushes the session and writes its config out under dir in dst.

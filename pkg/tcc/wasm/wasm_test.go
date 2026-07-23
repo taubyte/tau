@@ -295,6 +295,27 @@ func TestSessionPartialValidateFn(t *testing.T) {
 	assert.Equal(t, r.Get("errors").Length(), 1)
 }
 
+// Completion through the wasm: enum members filtered by the partial + scoped refs.
+func TestSessionCompleteFn(t *testing.T) {
+	m := loadFixture(t)
+	h := openHandle(t, openSessionFn(js.Null(), []js.Value{m.primitives()}))
+	res := arr("functions", "test_function1_glob")
+
+	// enum, filtered by "p"
+	e := val(sessionCompleteFn(js.Null(), []js.Value{h, res, arr("trigger", "type"), js.ValueOf("p")}))
+	assert.Equal(t, e.Length(), 2) // pubsub, p2p
+
+	// reference: source offers "." and the in-scope global library, prefixed
+	src := val(sessionCompleteFn(js.Null(), []js.Value{h, res, arr("source"), js.Null()}))
+	found := false
+	for i := 0; i < src.Length(); i++ {
+		if src.Index(i).String() == "libraries/test_library1" {
+			found = true
+		}
+	}
+	assert.Assert(t, found, "source completion should include the global library")
+}
+
 func TestSchemaFn(t *testing.T) {
 	r := val(schemaFn(js.Null(), nil))
 	assert.Equal(t, errOf(r), "")

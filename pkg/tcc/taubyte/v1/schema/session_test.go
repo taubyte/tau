@@ -3,6 +3,7 @@ package schema
 import (
 	"context"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -52,6 +53,33 @@ func TestSession(t *testing.T) {
 		assert.ErrorContains(t, errs[0], "invalid value")
 		// undo
 		assert.NilError(t, s.Set(fn, []string{"trigger", "type"}, "http"))
+	})
+
+	t.Run("completion: enum members and scoped references, filtered by the partial", func(t *testing.T) {
+		fn := []string{"functions", "test_function1_glob"} // a root function
+
+		// enum field — partial filters the members
+		all := s.Complete(fn, []string{"trigger", "type"}, "")
+		assert.Assert(t, slices.Contains(all, "pubsub") && slices.Contains(all, "http"))
+		assert.DeepEqual(t, s.Complete(fn, []string{"trigger", "type"}, "p"), []string{"pubsub", "p2p"})
+
+		// reference field — the shape literal "." plus in-scope libraries, prefixed.
+		// Root scope sees the global library test_library1 (not app1's test_library2).
+		src := s.Complete(fn, []string{"source"}, "")
+		assert.Assert(t, slices.Contains(src, "."), "source offers the inline literal")
+		assert.Assert(t, slices.Contains(src, "libraries/test_library1"), "source offers the global library")
+		assert.Assert(t, !slices.Contains(src, "libraries/test_library2"), "a root function must not see app1's library")
+
+		// the user's partial narrows it
+		assert.DeepEqual(t, s.Complete(fn, []string{"source"}, "libraries/test_l"), []string{"libraries/test_library1"})
+		assert.DeepEqual(t, s.Complete(fn, []string{"source"}, "."), []string{"."})
+	})
+
+	t.Run("completion: an app function also sees its own app's libraries", func(t *testing.T) {
+		appFn := []string{"applications", "test_app1", "functions", "test_function2"}
+		src := s.Complete(appFn, []string{"source"}, "libraries/")
+		assert.Assert(t, slices.Contains(src, "libraries/test_library2"), "app scope sees app1's library")
+		assert.Assert(t, slices.Contains(src, "libraries/test_library1"), "and the global one")
 	})
 
 	t.Run("fork with a good edit validates and merges", func(t *testing.T) {

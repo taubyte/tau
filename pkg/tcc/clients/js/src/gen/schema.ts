@@ -109,6 +109,9 @@ export class DatabaseConfig {
   validateField(field: string[], value: unknown): Promise<void> {
     return this.s.binding.validateField(this.s.handle, this.res, field, value);
   }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
 
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
@@ -218,6 +221,9 @@ export class DomainConfig {
   validateField(field: string[], value: unknown): Promise<void> {
     return this.s.binding.validateField(this.s.handle, this.res, field, value);
   }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
 
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
@@ -315,6 +321,9 @@ export class FunctionConfig {
   }
   validateField(field: string[], value: unknown): Promise<void> {
     return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
   }
 
   async id(): Promise<string | undefined> {
@@ -496,6 +505,9 @@ export class LibraryConfig {
   validateField(field: string[], value: unknown): Promise<void> {
     return this.s.binding.validateField(this.s.handle, this.res, field, value);
   }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
 
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
@@ -593,6 +605,9 @@ export class MessagingConfig {
   }
   validateField(field: string[], value: unknown): Promise<void> {
     return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
   }
 
   async id(): Promise<string | undefined> {
@@ -702,6 +717,9 @@ export class ServiceConfig {
   validateField(field: string[], value: unknown): Promise<void> {
     return this.s.binding.validateField(this.s.handle, this.res, field, value);
   }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
 
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
@@ -769,6 +787,9 @@ export class SmartOpConfig {
   }
   validateField(field: string[], value: unknown): Promise<void> {
     return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
   }
 
   async id(): Promise<string | undefined> {
@@ -867,6 +888,9 @@ export class StorageConfig {
   }
   validateField(field: string[], value: unknown): Promise<void> {
     return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
   }
 
   async id(): Promise<string | undefined> {
@@ -976,6 +1000,9 @@ export class WebsiteConfig {
   }
   validateField(field: string[], value: unknown): Promise<void> {
     return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
   }
 
   async id(): Promise<string | undefined> {

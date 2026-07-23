@@ -244,6 +244,32 @@ func sessionValidateResourceFn(_ js.Value, args []js.Value) any {
 	return toJS(map[string]any{"errors": msgs})
 }
 
+// complete(handle, resourcePath[], fieldPath[], partial?) : completion candidates
+// for a field's value, filtered by the partial the user typed. -> string[].
+func sessionCompleteFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 3 {
+		return errResult("complete: expected (handle, resourcePath, fieldPath, partial?)")
+	}
+	res := jsToPath(args[1])
+	if len(res) == 0 {
+		return errResult("complete: empty resource path")
+	}
+	partial := ""
+	if len(args) > 3 && args[3].Truthy() {
+		partial = args[3].String()
+	}
+	names := s.Complete(res, jsToPath(args[2]), partial)
+	out := make([]any, len(names))
+	for i, n := range names {
+		out[i] = n
+	}
+	return toJS(out)
+}
+
 // save(handle, fsPrimitives) : flush the session's YAML out to the fs.
 func sessionSaveFn(_ js.Value, args []js.Value) any {
 	s, e := lookup(args)

@@ -231,6 +231,8 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 		// field check. Cross-element refs still need Session.validate().
 		fmt.Fprintf(&b, "  validate(): Promise<string[]> {\n    return this.s.binding.validateResource(this.s.handle, this.res);\n  }\n")
 		fmt.Fprintf(&b, "  validateField(field: string[], value: unknown): Promise<void> {\n    return this.s.binding.validateField(this.s.handle, this.res, field, value);\n  }\n")
+		// completion candidates for a field's value, filtered by what the user typed.
+		fmt.Fprintf(&b, "  complete(field: string[], partial?: string): Promise<string[]> {\n    return this.s.binding.complete(this.s.handle, this.res, field, partial);\n  }\n")
 		for _, f := range r.fields {
 			// getter
 			if len(f.compat) == 0 {

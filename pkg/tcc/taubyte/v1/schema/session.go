@@ -19,6 +19,7 @@ type (
 var bindings = session.Bindings{
 	CompilerFor:    taubyteCompilerFor,
 	FieldValidator: taubyteFieldValidator{},
+	Completer:      taubyteCompleter{},
 }
 
 // NewSession opens an editable session over the config under dir in fs, bound to
@@ -70,4 +71,13 @@ func (taubyteFieldValidator) Fields(group string) [][]string {
 // validation semantics as Session.ValidateField.
 func ValidateField(group string, field []string, value any) error {
 	return engine.ValidateField(GenerationRoot(), group, field, value)
+}
+
+// taubyteCompleter supplies this DSL's field completion sources (enum members,
+// shape literals, and reference-group descriptors) from the live schema.
+type taubyteCompleter struct{}
+
+func (taubyteCompleter) Field(group string, field []string) (values []string, refGroup, refPrefix string) {
+	fc := engine.Completion(GenerationRoot(), group, field)
+	return fc.Values, fc.RefGroup, fc.RefPrefix
 }
