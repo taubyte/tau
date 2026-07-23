@@ -11,6 +11,7 @@ package session
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path"
 	"strings"
@@ -25,6 +26,34 @@ import (
 // imports schema, keeping the dependency one-way.
 type CompilerFor func(fs afero.Fs, branch, cloud string) (*interp.Compiler, error)
 
+// FieldValidator runs a DSL's declared single-value field validators (enum, string
+// shape, cid, fqdn, ...) for partial validation — no compile. Injected by the
+// binding, since the session core is DSL-agnostic.
+type FieldValidator interface {
+	// ValidateField runs one field's validator; nil if the field has none.
+	ValidateField(group string, field []string, value any) error
+	// Fields returns the authored paths of a resource group's validated fields.
+	Fields(group string) [][]string
+}
+
+// Completer supplies a DSL's field completion sources: the fixed candidates (enum
+// members, shape literals) and, for a reference field, the resource group whose
+// in-scope instances are candidates. Injected by the binding.
+type Completer interface {
+	// Field returns a field's fixed candidates and, if it references a resource
+	// group, that group + the prefix to prepend to each referenced name. found is
+	// false when the field is unknown (no such attribute path).
+	Field(group string, field []string) (values []string, refGroup, refPrefix string, found bool)
+}
+
+// Bindings wires a Session to a specific DSL: how to compile it (required), how to
+// partial-validate its fields, and how to complete field values (both optional).
+type Bindings struct {
+	CompilerFor    CompilerFor
+	FieldValidator FieldValidator
+	Completer      Completer
+}
+
 // CompileOptions are the per-compile parameters (empty Branch uses the compiler's
 // default).
 type CompileOptions struct {
@@ -35,32 +64,32 @@ type CompileOptions struct {
 // Session is an editable configuration, resident on a private in-memory
 // filesystem. Not safe for concurrent use.
 type Session struct {
-	fs          afero.Fs
-	seer        *yaseer.Seer
-	compilerFor CompilerFor
-	parent      *Session // non-nil for a fork (see Fork/Merge)
+	fs     afero.Fs
+	seer   *yaseer.Seer
+	bind   Bindings
+	parent *Session // non-nil for a fork (see Fork/Merge)
 }
 
 // New stages the config under dir in src into a private in-memory copy and opens
-// an editable session over it. compilerFor binds compilation (see the schema
-// package's NewSession).
-func New(src afero.Fs, dir string, compilerFor CompilerFor) (*Session, error) {
+// an editable session over it. bind wires the DSL (see the schema package's
+// NewSession).
+func New(src afero.Fs, dir string, bind Bindings) (*Session, error) {
 	mem := afero.NewMemMapFs()
 	if err := copyTree(src, dir, mem, "/"); err != nil {
 		return nil, err
 	}
-	return Adopt(mem, compilerFor)
+	return Adopt(mem, bind)
 }
 
 // Adopt opens a session directly over fs (no copy) — for callers that already own
 // a private filesystem (e.g. a freshly decompiled config). The session then owns
 // fs; don't mutate it behind the session's back.
-func Adopt(fs afero.Fs, compilerFor CompilerFor) (*Session, error) {
+func Adopt(fs afero.Fs, bind Bindings) (*Session, error) {
 	sr, err := yaseer.New(yaseer.VirtualFS(fs, "/"))
 	if err != nil {
 		return nil, err
 	}
-	return &Session{fs: fs, seer: sr, compilerFor: compilerFor}, nil
+	return &Session{fs: fs, seer: sr, bind: bind}, nil
 }
 
 // FS exposes the session's working filesystem (read-only intent; for compilers /
@@ -139,7 +168,168 @@ func (s *Session) compiler(opts CompileOptions) (*interp.Compiler, error) {
 	if err := s.seer.Sync(); err != nil {
 		return nil, err
 	}
-	return s.compilerFor(s.fs, opts.Branch, opts.Cloud)
+	return s.bind.CompilerFor(s.fs, opts.Branch, opts.Cloud)
+}
+
+// ValidateField checks one field of a resource against value WITHOUT compiling —
+// the cheap live-edit path. It runs the DSL's single-value validator (enum, string
+// shape, cid, fqdn, ...) AND, for a reference field, that the value names a
+// resource that actually exists IN SCOPE (the resource's own app + root/global —
+// the same scope the compiler resolves against, so siblings don't count). Returns
+// nil when partial validation isn't wired or the field carries no constraint.
+func (s *Session) ValidateField(res, field []string, value any) error {
+	group := resGroup(res)
+	if s.bind.FieldValidator != nil {
+		if err := s.bind.FieldValidator.ValidateField(group, field, value); err != nil {
+			return err
+		}
+	}
+	if s.bind.Completer != nil {
+		if _, refGroup, refPrefix, _ := s.bind.Completer.Field(group, field); refGroup != "" {
+			if err := s.checkRef(res, refGroup, refPrefix, value); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// checkRef verifies that every referenced name in value names a refGroup resource
+// visible from res (its app + root). Values that don't carry the ref prefix are
+// literals (e.g. a source of ".") and are left to the shape validator.
+func (s *Session) checkRef(res []string, refGroup, refPrefix string, value any) error {
+	inScope := map[string]bool{}
+	for _, n := range s.scopedNames(res, refGroup) {
+		inScope[n] = true
+	}
+	for _, v := range asStrings(value) {
+		name := v
+		if refPrefix != "" {
+			if !strings.HasPrefix(v, refPrefix) {
+				continue // a literal, not a reference
+			}
+			name = strings.TrimPrefix(v, refPrefix)
+		}
+		if name == "" {
+			continue
+		}
+		if !inScope[name] {
+			return fmt.Errorf("no %s named %q in scope", refGroup, name)
+		}
+	}
+	return nil
+}
+
+func asStrings(v any) []string {
+	switch t := v.(type) {
+	case string:
+		return []string{t}
+	case []string:
+		return t
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, e := range t {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// ValidateResource checks every constrained field of one resource against its
+// current values — single-value validators and reference existence — returning all
+// failures (empty slice = valid). Scoped to the one file and compile-free. It does
+// not run whole-config concerns beyond references (e.g. deferred external checks);
+// those stay in Validate.
+func (s *Session) ValidateResource(res []string) []error {
+	if s.bind.FieldValidator == nil {
+		return nil
+	}
+	var errs []error
+	for _, f := range s.bind.FieldValidator.Fields(resGroup(res)) {
+		v, err := s.Get(res, f)
+		if err != nil {
+			continue // field absent -> nothing to validate
+		}
+		if e := s.ValidateField(res, f, v); e != nil {
+			errs = append(errs, e)
+		}
+	}
+	return errs
+}
+
+// resGroup is the resource-kind name in a resource path: res[len-2] — the folder
+// above the instance name, whether or not the path is application-scoped.
+func resGroup(res []string) string {
+	if len(res) < 2 {
+		return ""
+	}
+	return res[len(res)-2]
+}
+
+// Complete returns completion candidates for a field's value, filtered by the
+// partial string the user has typed (case-insensitive prefix; "" = all). Fixed
+// candidates come from the DSL (enum members, shape literals); reference fields
+// also offer the target group's instances IN SCOPE (the resource's own app plus
+// root/global), each prefixed. An unknown field path is an error (so a typo isn't
+// mistaken for "no suggestions"); a known field with no candidates returns an
+// empty slice. Returns (nil, nil) if completion isn't wired.
+func (s *Session) Complete(res, field []string, partial string) ([]string, error) {
+	if s.bind.Completer == nil {
+		return nil, nil
+	}
+	group := resGroup(res)
+	values, refGroup, refPrefix, found := s.bind.Completer.Field(group, field)
+	if !found {
+		return nil, fmt.Errorf("unknown field %q on %q", strings.Join(field, "/"), group)
+	}
+	cands := append([]string(nil), values...)
+	if refGroup != "" {
+		for _, name := range s.scopedNames(res, refGroup) {
+			cands = append(cands, refPrefix+name)
+		}
+	}
+	return filterPrefix(cands, partial), nil
+}
+
+// scopedNames lists the instances of refGroup visible from res: its own
+// application scope (if application-scoped) then root/global, deduped.
+func (s *Session) scopedNames(res []string, refGroup string) []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(path []string) {
+		names, err := s.List(path)
+		if err != nil {
+			return
+		}
+		for _, n := range names {
+			if !seen[n] {
+				seen[n] = true
+				out = append(out, n)
+			}
+		}
+	}
+	if len(res) >= 4 { // [container, app, group, name] -> the app's own scope
+		add([]string{res[0], res[1], refGroup})
+	}
+	add([]string{refGroup}) // root/global
+	return out
+}
+
+func filterPrefix(cands []string, partial string) []string {
+	if partial == "" {
+		return cands
+	}
+	p := strings.ToLower(partial)
+	out := make([]string, 0, len(cands))
+	for _, c := range cands {
+		if strings.HasPrefix(strings.ToLower(c), p) {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // Save flushes the session and writes its config out under dir in dst.
@@ -165,7 +355,7 @@ func (s *Session) Fork() (*Session, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Session{fs: cow, seer: sr, compilerFor: s.compilerFor, parent: s}, nil
+	return &Session{fs: cow, seer: sr, bind: s.bind, parent: s}, nil
 }
 
 // Merge replays the fork's in-memory op-log onto the parent seer — no file

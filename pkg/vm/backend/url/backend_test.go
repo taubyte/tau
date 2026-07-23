@@ -29,7 +29,7 @@ func TestBackend(t *testing.T) {
 	backend := New()
 	assert.Equal(t, backend.Scheme(), "url")
 
-	httpUrl := "/dns4/get.tau.link/https/path/tau"
+	httpUrl := "/dns4/taubyte.com/https/path/llms.txt"
 	incorrectUris := []string{
 		"/dns4/ping.examples.tau",
 		"/file//tmp/test",
@@ -59,7 +59,7 @@ func TestBackend(t *testing.T) {
 	assert.NilError(t, err)
 
 	var expData bytes.Buffer
-	err = downloadFile("https://get.tau.link/tau", &expData)
+	err = downloadFile("https://taubyte.com/llms.txt", &expData)
 	assert.NilError(t, err)
 
 	assert.DeepEqual(t, data, expData.Bytes())

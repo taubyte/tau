@@ -103,6 +103,15 @@ export class DatabaseConfig {
   delete(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res);
   }
+  validate(): Promise<string[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
 
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
@@ -206,6 +215,15 @@ export class DomainConfig {
   delete(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res);
   }
+  validate(): Promise<string[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
 
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
@@ -297,6 +315,15 @@ export class FunctionConfig {
 
   delete(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res);
+  }
+  validate(): Promise<string[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
   }
 
   async id(): Promise<string | undefined> {
@@ -472,6 +499,15 @@ export class LibraryConfig {
   delete(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res);
   }
+  validate(): Promise<string[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
 
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
@@ -563,6 +599,15 @@ export class MessagingConfig {
 
   delete(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res);
+  }
+  validate(): Promise<string[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
   }
 
   async id(): Promise<string | undefined> {
@@ -666,6 +711,15 @@ export class ServiceConfig {
   delete(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res);
   }
+  validate(): Promise<string[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
 
   async id(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["id"])) as string | undefined;
@@ -727,6 +781,15 @@ export class SmartOpConfig {
 
   delete(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res);
+  }
+  validate(): Promise<string[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
   }
 
   async id(): Promise<string | undefined> {
@@ -819,6 +882,15 @@ export class StorageConfig {
 
   delete(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res);
+  }
+  validate(): Promise<string[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
   }
 
   async id(): Promise<string | undefined> {
@@ -922,6 +994,15 @@ export class WebsiteConfig {
 
   delete(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res);
+  }
+  validate(): Promise<string[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
   }
 
   async id(): Promise<string | undefined> {
