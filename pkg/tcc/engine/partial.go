@@ -96,8 +96,21 @@ func fieldPath(a *Attribute) []string {
 	if len(a.Path) == 0 {
 		return []string{a.Name}
 	}
-	out := make([]string, 0, len(a.Path))
-	for _, p := range a.Path {
+	return plainStrings(a.Path)
+}
+
+// compatPath is an attribute's plain legacy-alias path (Compat), which the
+// accessors accept as a read fallback; nil if none or dynamic.
+func compatPath(a *Attribute) []string {
+	if len(a.Compat) == 0 {
+		return nil
+	}
+	return plainStrings(a.Compat)
+}
+
+func plainStrings(path []StringMatch) []string {
+	out := make([]string, 0, len(path))
+	for _, p := range path {
 		s, ok := p.(string)
 		if !ok {
 			return nil

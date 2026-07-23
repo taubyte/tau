@@ -36,8 +36,9 @@ func Completion(root []*Node, group string, field []string) FieldCompletion {
 	return fc
 }
 
-// findAttr locates the attribute of a resource group whose authored path matches
-// field; nil if not found.
+// findAttr locates the attribute of a resource group whose authored path — its
+// canonical Path or a legacy Compat alias, the same paths the accessors accept —
+// matches field; nil if not found.
 func findAttr(root []*Node, group string, field []string) *Attribute {
 	for _, g := range root {
 		name, _ := g.Match.(string)
@@ -45,7 +46,7 @@ func findAttr(root []*Node, group string, field []string) *Attribute {
 			continue
 		}
 		for _, a := range g.Children[0].Attributes {
-			if fieldPathEq(fieldPath(a), field) {
+			if fieldPathEq(fieldPath(a), field) || fieldPathEq(compatPath(a), field) {
 				return a
 			}
 		}

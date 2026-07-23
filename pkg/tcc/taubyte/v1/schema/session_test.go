@@ -67,6 +67,14 @@ func TestSession(t *testing.T) {
 		assert.ErrorContains(t, s.ValidateField(fn, []string{"execution", "timeout"}, "20x"), "invalid duration")
 		assert.NilError(t, s.ValidateField(fn, []string{"execution", "memory"}, "32GB"))
 		assert.ErrorContains(t, s.ValidateField(fn, []string{"execution", "memory"}, "banana"), "invalid size")
+
+		// a legacy Compat alias the accessors accept is recognized too — not
+		// "unknown" — and its reference is still checked. "domains" is the compat
+		// alias of the canonical "trigger/domains".
+		assert.NilError(t, s.ValidateField(fn, []string{"domains"}, []any{"test_domain1"}))
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"domains"}, []any{"ghost"}), `no domains named "ghost"`)
+		// array-element addressing is still not a field
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"tags", "0"}, "x"), "unknown field")
 	})
 
 	t.Run("partial validation catches bad references in scope, compile-free", func(t *testing.T) {
