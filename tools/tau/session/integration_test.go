@@ -44,7 +44,15 @@ func buildTau(t *testing.T, dir string) string {
 	if runtime.GOOS == "windows" {
 		exe += ".exe"
 	}
-	cmd := exec.Command("go", "build", "-o", exe, "./tools/tau")
+	// Build cover-instrumented so a subprocess run isn't a coverage black box:
+	// when GOCOVERDIR is set, the binary writes its coverage there and the
+	// caller can merge it with `go tool covdata` (see runTau).
+	args := []string{"build", "-o", exe}
+	if os.Getenv("GOCOVERDIR") != "" {
+		args = append(args, "-cover", "-coverpkg=./tools/tau/...")
+	}
+	args = append(args, "./tools/tau")
+	cmd := exec.Command("go", args...)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
 	out, err := cmd.CombinedOutput()
@@ -61,6 +69,9 @@ func runTau(t *testing.T, tauExe, dir, configPath string, args ...string) (stdou
 	if runtime.GOOS == "windows" {
 		env = appendEnv(env, "TEMP", dir)
 		env = appendEnv(env, "TMP", dir)
+	}
+	if gcd := os.Getenv("GOCOVERDIR"); gcd != "" {
+		env = appendEnv(env, "GOCOVERDIR", gcd) // survives the TMPDIR override
 	}
 	cmd := exec.Command(tauExe, args...)
 	cmd.Env = env

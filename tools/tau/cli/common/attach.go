@@ -4,11 +4,11 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-type basicFunction func() Basic
+type BasicFunction func() Basic
 
 // Used to attach subCommands to their relative base commands
 // Ex: `tau new project`  project is attached to the new command
-func Attach(app *cli.App, commands ...basicFunction) {
+func Attach(app *cli.App, commands ...BasicFunction) {
 	for _, cmdFunc := range commands {
 		attachCommand(cmdFunc())
 	}

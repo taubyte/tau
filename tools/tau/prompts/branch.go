@@ -3,9 +3,9 @@ package prompts
 import (
 	"strings"
 
-	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/tools/tau/flags"
 	"github.com/taubyte/tau/tools/tau/i18n/printer"
+	repositoryLib "github.com/taubyte/tau/tools/tau/lib/repository"
 	"github.com/urfave/cli/v2"
 )
 
@@ -19,7 +19,7 @@ func GetOrRequireABranch(c *cli.Context, prev ...string) (string, error) {
 	})
 }
 
-func SelectABranch(c *cli.Context, repo *git.Repository) (branch string, err error) {
+func SelectABranch(c *cli.Context, repo repositoryLib.GitRepository) (branch string, err error) {
 	branchOptions, _, err := repo.ListBranches(true)
 	if err != nil {
 		return

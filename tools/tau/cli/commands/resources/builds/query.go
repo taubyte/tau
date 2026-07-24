@@ -7,9 +7,9 @@ import (
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	patrickClient "github.com/taubyte/tau/tools/tau/clients/patrick_client"
-	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/taubyte/tau/tools/tau/output"
 	buildsTable "github.com/taubyte/tau/tools/tau/table/builds"
+	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/urfave/cli/v2"
 )
 
@@ -34,7 +34,12 @@ func (l link) List() common.Command {
 }
 
 func query(ctx *cli.Context) error {
-	prj, err := projectLib.SelectedProjectInterface()
+	store, err := tcc.Open()
+	if err != nil {
+		return err
+	}
+
+	projectID, err := store.ProjectID()
 	if err != nil {
 		return err
 	}
@@ -44,7 +49,7 @@ func query(ctx *cli.Context) error {
 		return err
 	}
 
-	jobIds, err := patrickC.Jobs(prj.Get().Id())
+	jobIds, err := patrickC.Jobs(projectID)
 	if err != nil {
 		// use i18n
 		return err

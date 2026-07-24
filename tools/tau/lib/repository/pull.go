@@ -1,11 +1,10 @@
 package repositoryLib
 
 import (
-	"github.com/taubyte/tau/pkg/git"
 	"github.com/taubyte/tau/tools/tau/config"
 )
 
-func (info *Info) Pull(project config.Project, url string) (*git.Repository, error) {
+func (info *Info) Pull(project config.Project, url string) (GitRepository, error) {
 	repo, err := info.Open(project, url)
 	if err != nil {
 		return nil, err

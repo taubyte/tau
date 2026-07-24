@@ -7,7 +7,7 @@ import (
 
 	"github.com/taubyte/tau/core/builders"
 	websiteI18n "github.com/taubyte/tau/tools/tau/i18n/website"
-	websitePrompts "github.com/taubyte/tau/tools/tau/prompts/website"
+	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/urfave/cli/v2"
 )
 
@@ -17,12 +17,17 @@ func runBuildWebsite(ctx *cli.Context) error {
 		return err
 	}
 
-	website, err := websitePrompts.GetOrSelect(ctx)
+	_, doc, err := tcc.SelectResource(ctx, "websites")
 	if err != nil {
 		return err
 	}
 
-	workDir, err := bc.workDirForWebsite(website.RepoName)
+	repoName, err := tcc.RepositoryName("websites", doc)
+	if err != nil {
+		return err
+	}
+
+	workDir, err := bc.workDirForWebsite(repoName)
 	if err != nil {
 		return fmt.Errorf("website path: %w", err)
 	}

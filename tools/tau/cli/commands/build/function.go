@@ -10,7 +10,7 @@ import (
 	"github.com/taubyte/tau/core/builders"
 	"github.com/taubyte/tau/pkg/specs/builders/wasm"
 	"github.com/taubyte/tau/tools/tau/config"
-	functionPrompts "github.com/taubyte/tau/tools/tau/prompts/function"
+	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/urfave/cli/v2"
 )
 
@@ -20,12 +20,12 @@ func runBuildFunction(ctx *cli.Context) error {
 		return err
 	}
 
-	fn, err := functionPrompts.GetOrSelect(ctx)
+	name, _, err := tcc.SelectResource(ctx, "functions")
 	if err != nil {
 		return err
 	}
 
-	workDir := bc.workDirForFunction(fn.Name)
+	workDir := bc.workDirForFunction(name)
 
 	if err := verifyWorkDirExists(workDir); err != nil {
 		return err
@@ -51,7 +51,7 @@ func runBuildFunction(ctx *cli.Context) error {
 
 	outPath := ctx.String(outputFlag.Name)
 	if outPath == "" {
-		dir := buildsDirForFunction(bc.projectConfig.Location, bc.selectedApp, fn.Name)
+		dir := buildsDirForFunction(bc.projectConfig.Location, bc.selectedApp, name)
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			return err
 		}

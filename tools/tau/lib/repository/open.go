@@ -12,7 +12,7 @@ import (
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
 )
 
-func (info *Info) Open(project config.Project, url string) (*git.Repository, error) {
+func (info *Info) Open(project config.Project, url string) (GitRepository, error) {
 	profile, err := loginLib.GetSelectedProfile()
 	if err != nil {
 		return nil, err
@@ -33,7 +33,7 @@ func (info *Info) Open(project config.Project, url string) (*git.Repository, err
 		return nil, fmt.Errorf("repository not cloned: `%s`", repositoryPath)
 	}
 
-	repo, err := git.New(context.Background(),
+	repo, err := NewRepository(context.Background(),
 		git.Root(repositoryPath),
 		git.Author(profile.GitUsername, profile.GitEmail),
 		git.URL(url),

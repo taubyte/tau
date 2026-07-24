@@ -33,6 +33,28 @@ func WithTCCFixtureEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TCC fixture path: %v", err)
 	}
+	withFixtureEnv(t, fixtureRoot)
+}
+
+// WithTCCFixtureCopyEnv is WithTCCFixtureEnv over a throwaway copy of the
+// fixtures, for tests that write to the project (new/edit/delete). Returns the
+// copy's root.
+func WithTCCFixtureCopyEnv(t *testing.T) string {
+	t.Helper()
+	src, err := TCCFixtureProjectRoot()
+	if err != nil {
+		t.Fatalf("TCC fixture path: %v", err)
+	}
+	root := filepath.Join(t.TempDir(), "project")
+	if err := os.CopyFS(root, os.DirFS(src)); err != nil {
+		t.Fatalf("copying fixtures: %v", err)
+	}
+	withFixtureEnv(t, root)
+	return root
+}
+
+func withFixtureEnv(t *testing.T, fixtureRoot string) {
+	t.Helper()
 	dir := t.TempDir()
 	configPath := filepath.Join(dir, "tau.yaml")
 	sessionPath := filepath.Join(dir, "session")

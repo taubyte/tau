@@ -65,3 +65,10 @@ func (t *templates) genericRepositoryTemplates(folder string) (map[string]Templa
 
 	return templateMap, nil
 }
+
+// RepositoryTemplates lists the templates for a repository-backed resource kind,
+// looked up by the kind's own directory name (websites, libraries, ...) so the
+// DSL decides which kinds have templates rather than a per-kind method here.
+func (t *templates) RepositoryTemplates(dir string) (map[string]TemplateInfo, error) {
+	return t.genericRepositoryTemplates(path.Join(templateRepositoryFolder, dir))
+}

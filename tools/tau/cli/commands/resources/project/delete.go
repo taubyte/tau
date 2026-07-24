@@ -10,9 +10,6 @@ import (
 	client "github.com/taubyte/tau/clients/http/auth"
 	authCommon "github.com/taubyte/tau/clients/http/auth/git/common"
 	"github.com/taubyte/tau/pkg/cli/i18n"
-	"github.com/taubyte/tau/pkg/schema/libraries"
-	"github.com/taubyte/tau/pkg/schema/project"
-	"github.com/taubyte/tau/pkg/schema/website"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	authClient "github.com/taubyte/tau/tools/tau/clients/auth_client"
 	"github.com/taubyte/tau/tools/tau/config"
@@ -21,6 +18,7 @@ import (
 	loginLib "github.com/taubyte/tau/tools/tau/lib/login"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	"github.com/taubyte/tau/tools/tau/prompts"
+	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/urfave/cli/v2"
 )
 
@@ -38,7 +36,7 @@ func _delete(ctx *cli.Context) error {
 		return err
 	}
 
-	project, schema, err := selectDeletion(ctx)
+	project, store, err := selectDeletion(ctx)
 	if err != nil {
 		return err
 	}
@@ -52,13 +50,12 @@ func _delete(ctx *cli.Context) error {
 
 	msg := formatDeleteConfirm(project.Name, repoNames)
 	if prompts.ConfirmPrompt(ctx, msg) {
-		libraries, websites, err := resources(schema)
+		resources, err := store.RepositoryNames()
 		if err != nil {
-			// use i18n
 			return err
 		}
 
-		if resources := resourceNames(websites, libraries); len(resources) > 0 {
+		if len(resources) > 0 {
 			repoNames = append(repoNames,
 				prompts.MultiSelect(ctx,
 					prompts.MultiSelectConfig{
@@ -123,7 +120,7 @@ func _delete(ctx *cli.Context) error {
 	return nil
 }
 
-func selectDeletion(ctx *cli.Context) (*client.Project, project.Project, error) {
+func selectDeletion(ctx *cli.Context) (*client.Project, *tcc.Store, error) {
 	projects, err := projectLib.ListResources()
 	if err != nil {
 		return nil, nil, err
@@ -151,76 +148,12 @@ func selectDeletion(ctx *cli.Context) (*client.Project, project.Project, error) 
 		return nil, nil, err
 	}
 
-	schema, err := config.Interface()
+	store, err := tcc.OpenAt(tcc.ConfigDir(config.Location))
 	if err != nil {
 		return nil, nil, err
 	}
 
-	return project, schema, nil
-}
-
-func resources(schema project.Project) ([]libraries.Library, []website.Website, error) {
-	applications := schema.Get().Applications()
-
-	libs := make([]libraries.Library, 0)
-	_, libNames := schema.Get().Libraries("")
-	for _, name := range libNames {
-		lib, err := schema.Library(name, "")
-		if err != nil {
-			return nil, nil, err
-		}
-		libs = append(libs, lib)
-	}
-
-	webs := make([]website.Website, 0)
-	_, webNames := schema.Get().Websites("")
-	for _, name := range webNames {
-		web, err := schema.Website(name, "")
-		if err != nil {
-			return nil, nil, err
-		}
-
-		webs = append(webs, web)
-	}
-
-	for _, app := range applications {
-		_, libNames = schema.Get().Libraries(app)
-		for _, name := range libNames {
-			lib, err := schema.Library(name, app)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			libs = append(libs, lib)
-		}
-
-		_, webNames = schema.Get().Websites(app)
-		for _, name := range webNames {
-			web, err := schema.Website(name, app)
-			if err != nil {
-				return nil, nil, err
-			}
-
-			webs = append(webs, web)
-		}
-	}
-
-	return libs, webs, nil
-}
-
-func resourceNames(websites []website.Website, libraries []libraries.Library) []string {
-	names := make([]string, 0, len(websites)+len(libraries))
-	for _, website := range websites {
-		_, _, name := website.Get().Git()
-		names = append(names, name)
-	}
-
-	for _, library := range libraries {
-		_, _, name := library.Get().Git()
-		names = append(names, name)
-	}
-
-	return names
+	return project, store, nil
 }
 
 func formatDeleteConfirm(project string, repos []string) string {

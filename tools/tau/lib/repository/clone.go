@@ -33,7 +33,7 @@ func (info *Info) HasBeenCloned(project config.Project, provider string) bool {
 	return err == nil
 }
 
-func (info *Info) Clone(project config.Project, url, branch string, embedded bool) (*git.Repository, error) {
+func (info *Info) Clone(project config.Project, url, branch string, embedded bool) (GitRepository, error) {
 	if !info.DoClone {
 		return nil, errors.New("cloning when info.Clone is false")
 	}
@@ -66,7 +66,7 @@ func (info *Info) Clone(project config.Project, url, branch string, embedded boo
 		tokenOption = git.Token(profile.Token)
 	}
 
-	repo, err := git.New(context.Background(),
+	repo, err := NewRepository(context.Background(),
 		git.Root(repositoryPath),
 		git.Author(profile.GitUsername, profile.GitEmail),
 		git.URL(url),

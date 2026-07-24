@@ -9,9 +9,8 @@ import (
 	"strings"
 
 	httpClient "github.com/taubyte/tau/clients/http/auth"
-	"github.com/taubyte/tau/pkg/schema/basic"
-	"github.com/taubyte/tau/pkg/schema/project"
 	"github.com/taubyte/tau/tools/tau/config"
+	"github.com/taubyte/tau/tools/tau/tcc"
 )
 
 func cloneProjectAndPushConfig(clientProject *httpClient.Project, location, description, user string, embedToken bool, account, plan string) error {
@@ -44,8 +43,8 @@ func cloneProjectAndPushConfig(clientProject *httpClient.Project, location, desc
 		return fmt.Errorf("failed to clone %s with %w", clientProject.Name, err)
 	}
 
-	// Get go-project-schema project for config access
-	projectIface, err := SelectedProjectInterface()
+	// Write the project's root config through the DSL
+	store, err := tcc.OpenAt(tcc.ConfigDir(location))
 	if err != nil {
 		return err
 	}
@@ -56,22 +55,22 @@ func cloneProjectAndPushConfig(clientProject *httpClient.Project, location, desc
 		return err
 	}
 
-	setOps := []basic.Op{
-		project.Id(clientProject.Id),
-		project.Name(clientProject.Name),
-		project.Description(description),
-		project.Email(profile.GitEmail),
+	fields := map[string]any{
+		"id":                 clientProject.Id,
+		"name":               clientProject.Name,
+		"description":        description,
+		"notification/email": profile.GitEmail,
 	}
 
 	// Skip the cloud binding when the active profile is dream/local (no
 	// FQDN to key the entry by). The both-or-neither rule on flags is
 	// enforced upstream in projectPrompts.New.
 	if account != "" && plan != "" && profile.Cloud != "" {
-		setOps = append(setOps, project.CloudBindingOp(profile.Cloud, account, plan))
+		fields["clouds/"+profile.Cloud+"/account"] = account
+		fields["clouds/"+profile.Cloud+"/plan"] = plan
 	}
 
-	err = projectIface.Set(true, setOps...)
-	if err != nil {
+	if err = store.SetProject(fields); err != nil {
 		return err
 	}
 

@@ -3,10 +3,13 @@ package codefile
 import (
 	"path"
 
-	schemaCommon "github.com/taubyte/tau/pkg/schema/common"
 	"github.com/taubyte/tau/tools/tau/config"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 )
+
+// applicationFolder is where an application scopes its code, mirroring the
+// config repo layout.
+const applicationFolder = "applications"
 
 func Path(name, folder string) (CodePath, error) {
 	projectConfig, err := projectLib.SelectedProjectConfig()
@@ -18,7 +21,7 @@ func Path(name, folder string) (CodePath, error) {
 
 	var codePath string
 	if len(application) > 0 {
-		codePath = path.Join(projectConfig.CodeLoc(), schemaCommon.ApplicationFolder, application, folder, name)
+		codePath = path.Join(projectConfig.CodeLoc(), applicationFolder, application, folder, name)
 	} else {
 		codePath = path.Join(projectConfig.CodeLoc(), folder, name)
 	}
