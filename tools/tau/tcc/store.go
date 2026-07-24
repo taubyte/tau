@@ -71,7 +71,7 @@ func (st *Store) res(group, name string) []string {
 		return []string{group, name, rootDoc}
 	}
 	if st.app != "" {
-		return []string{"applications", st.app, group, name}
+		return []string{containerDir(), st.app, group, name}
 	}
 	return []string{group, name}
 }
@@ -79,9 +79,25 @@ func (st *Store) res(group, name string) []string {
 // dir is the session path of a resource group in the current scope.
 func (st *Store) dir(group string) []string {
 	if st.app != "" && !isContainer(group) {
-		return []string{"applications", st.app, group}
+		return []string{containerDir(), st.app, group}
 	}
 	return []string{group}
+}
+
+// containerDir is the directory the DSL authors application-scoped resources
+// under — the container group's own dir — so the scope prefix follows the DSL
+// rather than a hardcoded "applications".
+func containerDir() string {
+	groups, err := Groups()
+	if err != nil {
+		return ""
+	}
+	for _, g := range groups {
+		if g.Container {
+			return g.Dir
+		}
+	}
+	return ""
 }
 
 // rootDoc is the config document a directory-shaped resource — an application,
