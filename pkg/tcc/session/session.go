@@ -261,12 +261,15 @@ func (s *Session) ValidateResource(res []string) []error {
 }
 
 // resGroup is the resource-kind name in a resource path: the folder above the
-// instance name, whether or not the path is application-scoped. A resource whose
-// instance is a directory addresses its document through a trailing "config"
-// segment, which is part of the layout, not of the path to the instance.
+// instance name, whether or not the path is application-scoped. A directory-
+// shaped resource (an application) keeps its own fields in a RootDocument file,
+// so its path is [group, name, RootDocument] — three segments — and that
+// trailing filename is dropped so the group resolves to the folder, not the
+// instance name. Only that 3-segment shape is a container document; a plain
+// resource named "config" is a 2- or 4-segment path and is left alone.
 func resGroup(res []string) string {
-	if n := len(res); n > 0 && res[n-1] == RootDocument {
-		res = res[:n-1]
+	if len(res) == 3 && res[len(res)-1] == RootDocument {
+		res = res[:len(res)-1]
 	}
 	if len(res) < 2 {
 		return ""

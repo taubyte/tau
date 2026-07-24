@@ -190,3 +190,25 @@ func TestSession(t *testing.T) {
 		assert.Equal(t, got, "edited via fork")
 	})
 }
+
+// resGroup resolves the DSL group for partial validation from the resource path.
+// A container's own document lives in a config file, so its path ends in the
+// RootDocument segment; a plain resource may legitimately be named "config".
+// Both must resolve to the right group.
+func TestResGroupResolution(t *testing.T) {
+	s, err := NewSession(afero.NewOsFs(), filepath.Join("..", "fixtures", "config"))
+	assert.NilError(t, err)
+
+	// an application's own field (its config document, [applications,name,config])
+	// validates against the Application group, not the app name.
+	appDoc := []string{"applications", "test_app1", "config"}
+	assert.NilError(t, s.ValidateField(appDoc, []string{"description"}, "anything"))
+	assert.ErrorContains(t, s.ValidateField(appDoc, []string{"nonexistent"}, "x"), "unknown field")
+
+	// a resource literally named "config" is not mistaken for a container
+	// document: its trigger.type enum is still validated as a function.
+	cfgFn := []string{"functions", "config"}
+	assert.NilError(t, s.Set(cfgFn, []string{"trigger", "type"}, "http"))
+	assert.NilError(t, s.ValidateField(cfgFn, []string{"trigger", "type"}, "https"))
+	assert.ErrorContains(t, s.ValidateField(cfgFn, []string{"trigger", "type"}, "nope"), "invalid value")
+}
