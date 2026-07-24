@@ -9,21 +9,15 @@ import (
 )
 
 var commands = []*cli.Command{
-	MemoryCommand,
 	CommitMessage,
 	MultiSelectCommand,
-	PathsCommand,
 	BoolCommand,
 	WebTokenCommand,
 	TagsCommand,
 	TagsRequiredCommand,
 	TemplateCommand,
-	DomainsCommand,
 	SelectRepositoryCommand,
-	SourceCommand,
 	LanguageCommand,
-	CallCommand,
-	ServiceCommand,
 }
 
 func main() {

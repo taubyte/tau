@@ -5,6 +5,7 @@ import (
 	"github.com/taubyte/tau/tools/tau/i18n"
 	projectLib "github.com/taubyte/tau/tools/tau/lib/project"
 	repositoryLib "github.com/taubyte/tau/tools/tau/lib/repository"
+	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/urfave/cli/v2"
 )
 
@@ -15,8 +16,7 @@ func (lib *repositoryCommands) selectResource(ctx *cli.Context) (project config.
 	}
 
 	// Confirm project is cloned
-	_, err = project.Interface()
-	if err != nil {
+	if _, err = tcc.OpenAt(tcc.ConfigDir(project.Location)); err != nil {
 		i18n.Help().BeSureToCloneProject()
 		return
 	}

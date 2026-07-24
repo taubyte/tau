@@ -34,6 +34,9 @@ type FieldValidator interface {
 	ValidateField(group string, field []string, value any) error
 	// Fields returns the authored paths of a resource group's validated fields.
 	Fields(group string) [][]string
+	// Compat pairs a group's legacy alias paths with the canonical paths they
+	// stand for, so a reader can resolve a value authored at the old location.
+	Compat(group string) [][2][]string
 }
 
 // Completer supplies a DSL's field completion sources: the fixed candidates (enum
@@ -260,14 +263,23 @@ func (s *Session) ValidateResource(res []string) []error {
 	return errs
 }
 
-// resGroup is the resource-kind name in a resource path: res[len-2] — the folder
-// above the instance name, whether or not the path is application-scoped.
+// resGroup is the resource-kind name in a resource path: the folder above the
+// instance name, whether or not the path is application-scoped. A resource whose
+// instance is a directory addresses its document through a trailing "config"
+// segment, which is part of the layout, not of the path to the instance.
 func resGroup(res []string) string {
+	if n := len(res); n > 0 && res[n-1] == RootDocument {
+		res = res[:n-1]
+	}
 	if len(res) < 2 {
 		return ""
 	}
 	return res[len(res)-2]
 }
+
+// RootDocument is the file a directory-shaped resource — and the configuration
+// root itself — keeps its own fields in, next to the resources it contains.
+const RootDocument = "config"
 
 // Complete returns completion candidates for a field's value, filtered by the
 // partial string the user has typed (case-insensitive prefix; "" = all). Fixed
@@ -330,6 +342,95 @@ func filterPrefix(cands []string, partial string) []string {
 		}
 	}
 	return out
+}
+
+// Sync flushes pending edits to the session's own filesystem — for callers that
+// adopted a filesystem they want written in place (e.g. tau-cli over a config
+// repo) rather than copied out with Save.
+func (s *Session) Sync() error { return s.seer.Sync() }
+
+// Aliases pairs the legacy paths of a resource's group with the canonical paths
+// they stand for. A config authored at a legacy location still reads correctly
+// (Read normalizes it) and stops being written at two places once rewritten.
+// Empty when partial validation isn't wired.
+func (s *Session) Aliases(res []string) [][2][]string {
+	if s.bind.FieldValidator == nil {
+		return nil
+	}
+	return s.bind.FieldValidator.Compat(resGroup(res))
+}
+
+// Read is Get for a whole resource with legacy locations resolved: a value
+// authored at a Compat alias is returned at its canonical path, so readers only
+// ever deal with the canonical shape. The stored document is untouched — use
+// Get for the document exactly as authored.
+func (s *Session) Read(res []string) (map[string]any, error) {
+	v, err := s.Get(res, nil)
+	if err != nil {
+		return nil, err
+	}
+	doc, ok := v.(map[string]any)
+	if !ok {
+		return map[string]any{}, nil
+	}
+	out := cloneMap(doc)
+	for _, pair := range s.Aliases(res) {
+		alias, canonical := pair[0], pair[1]
+		val := at(out, alias)
+		if val == nil || at(out, canonical) != nil {
+			continue
+		}
+		put(out, canonical, val)
+		drop(out, alias)
+	}
+	return out, nil
+}
+
+func cloneMap(m map[string]any) map[string]any {
+	out := make(map[string]any, len(m))
+	for k, v := range m {
+		if inner, ok := v.(map[string]any); ok {
+			out[k] = cloneMap(inner)
+			continue
+		}
+		out[k] = v
+	}
+	return out
+}
+
+func at(m map[string]any, path []string) any {
+	var cur any = m
+	for _, seg := range path {
+		inner, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur = inner[seg]
+	}
+	return cur
+}
+
+func put(m map[string]any, path []string, v any) {
+	for _, seg := range path[:len(path)-1] {
+		inner, ok := m[seg].(map[string]any)
+		if !ok {
+			inner = map[string]any{}
+			m[seg] = inner
+		}
+		m = inner
+	}
+	m[path[len(path)-1]] = v
+}
+
+func drop(m map[string]any, path []string) {
+	for _, seg := range path[:len(path)-1] {
+		inner, ok := m[seg].(map[string]any)
+		if !ok {
+			return
+		}
+		m = inner
+	}
+	delete(m, path[len(path)-1])
 }
 
 // Save flushes the session and writes its config out under dir in dst.

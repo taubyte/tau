@@ -7,27 +7,19 @@ import (
 	buildCmd "github.com/taubyte/tau/tools/tau/cli/commands/build"
 	"github.com/taubyte/tau/tools/tau/cli/commands/current"
 	"github.com/taubyte/tau/tools/tau/cli/commands/login"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/application"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/builds/build"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/cloud"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/database"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/domain"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/function"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/library"
+	"github.com/taubyte/tau/tools/tau/cli/commands/resources/generic"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/logs"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/messaging"
 	"github.com/taubyte/tau/tools/tau/cli/commands/resources/project"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/service"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/smartops"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/storage"
-	"github.com/taubyte/tau/tools/tau/cli/commands/resources/website"
 	"github.com/taubyte/tau/tools/tau/cli/commands/validate"
 	"github.com/taubyte/tau/tools/tau/cli/commands/version"
 	"github.com/taubyte/tau/tools/tau/cli/common"
 	"github.com/taubyte/tau/tools/tau/flags"
 	"github.com/taubyte/tau/tools/tau/output"
 	"github.com/taubyte/tau/tools/tau/prompts"
+	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/urfave/cli/v2"
 )
 
@@ -69,23 +61,20 @@ func New() (*cli.App, error) {
 		},
 	}
 
-	common.Attach(app,
+	// Resource commands come from the tcc DSL: one command set per resource
+	// kind it defines, built from its schema.
+	resources, err := resourceCommands()
+	if err != nil {
+		return nil, err
+	}
+
+	common.Attach(app, append([]common.BasicFunction{
 		project.New,
-		application.New,
 		cloud.New,
-		database.New,
-		domain.New,
-		function.New,
-		library.New,
-		messaging.New,
-		service.New,
-		smartops.New,
-		storage.New,
-		website.New,
 		builds.New,
 		build.New,
 		logs.New,
-	)
+	}, resources...)...)
 
 	app.Commands = append(app.Commands, []*cli.Command{
 		autocomplete.Command,
@@ -93,4 +82,23 @@ func New() (*cli.App, error) {
 	}...)
 
 	return app, nil
+}
+
+// resourceCommands binds one command set per resource kind the DSL defines.
+func resourceCommands() ([]common.BasicFunction, error) {
+	groups, err := tcc.Groups()
+	if err != nil {
+		return nil, err
+	}
+
+	out := make([]common.BasicFunction, 0, len(groups))
+	for _, g := range groups {
+		cmd, err := generic.New(g)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, cmd)
+	}
+
+	return out, nil
 }

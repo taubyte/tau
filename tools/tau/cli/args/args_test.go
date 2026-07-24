@@ -151,7 +151,7 @@ func TestArgs(t *testing.T) {
 				"--repository-name", "tb_website_reactdemo",
 				"--no-clone",
 				"-b", "main",
-				"--provider", "github",
+				"--git-provider", "github",
 				"--domains", "hal.computers.com",
 			},
 			expectedArgs: []string{
@@ -164,7 +164,7 @@ func TestArgs(t *testing.T) {
 				"--repository-name", "tb_website_reactdemo",
 				"--no-clone",
 				"-b", "main",
-				"--provider", "github",
+				"--git-provider", "github",
 				"--domains", "hal.computers.com",
 			},
 			app: realApp,

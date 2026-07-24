@@ -7,7 +7,7 @@ import (
 
 	"github.com/taubyte/tau/core/builders"
 	libraryI18n "github.com/taubyte/tau/tools/tau/i18n/library"
-	libraryPrompts "github.com/taubyte/tau/tools/tau/prompts/library"
+	"github.com/taubyte/tau/tools/tau/tcc"
 	"github.com/urfave/cli/v2"
 )
 
@@ -17,12 +17,17 @@ func runBuildLibrary(ctx *cli.Context) error {
 		return err
 	}
 
-	lib, err := libraryPrompts.GetOrSelect(ctx)
+	_, doc, err := tcc.SelectResource(ctx, "libraries")
 	if err != nil {
 		return err
 	}
 
-	workDir, err := bc.workDirForLibrary(lib.RepoName)
+	repoName, err := tcc.RepositoryName("libraries", doc)
+	if err != nil {
+		return err
+	}
+
+	workDir, err := bc.workDirForLibrary(repoName)
 	if err != nil {
 		return fmt.Errorf("library path: %w", err)
 	}
