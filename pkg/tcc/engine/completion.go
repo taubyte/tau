@@ -37,22 +37,30 @@ func Completion(root []*Node, group string, field []string) (fc FieldCompletion,
 	return fc, true
 }
 
-// findAttr locates the attribute of a resource group addressed by field. It
-// matches an attribute's canonical Path or a legacy Compat alias (the paths the
-// accessors accept), and also a single element of a list field addressed by a
-// trailing numeric index — e.g. ["trigger","domains","0"] resolves to the
-// "trigger/domains" StringSlice, so per-element validation/completion of a list
-// works the same as the whole field. Returns nil for an unknown path.
+// findAttr locates the attribute of a resource group addressed by field (see
+// matchField); nil for an unknown path.
 func findAttr(root []*Node, group string, field []string) *Attribute {
+	a, _ := matchField(root, group, field)
+	return a
+}
+
+// matchField locates the attribute addressed by field. It matches an attribute's
+// canonical Path or a legacy Compat alias (the paths the accessors accept), and
+// also a single element of a list field addressed by a trailing numeric index —
+// e.g. ["trigger","domains","0"] resolves to the "trigger/domains" StringSlice, so
+// per-element validation/completion of a list works the same as the whole field.
+// element reports that latter case (the value is one scalar item, not the list).
+// Returns (nil, false) for an unknown path.
+func matchField(root []*Node, group string, field []string) (a *Attribute, element bool) {
 	if a := matchAttr(root, group, field); a != nil {
-		return a
+		return a, false
 	}
 	if n := len(field); n > 0 && isIndex(field[n-1]) {
 		if a := matchAttr(root, group, field[:n-1]); a != nil && a.Type == TypeStringSlice {
-			return a
+			return a, true
 		}
 	}
-	return nil
+	return nil, false
 }
 
 func matchAttr(root []*Node, group string, field []string) *Attribute {

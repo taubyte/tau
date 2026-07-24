@@ -344,6 +344,9 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	default: // string (incl. Duration/Bytes, authored as human strings)
 		s["type"] = "string"
 	}
+	if l, ok := a.Meta["label"].(string); ok && l != "" {
+		s["title"] = l // human display name (JSON Schema title)
+	}
 	if d, ok := a.Meta["doc"].(string); ok && d != "" {
 		s["description"] = d
 	}

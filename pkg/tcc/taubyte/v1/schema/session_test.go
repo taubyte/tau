@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -77,6 +78,32 @@ func TestSession(t *testing.T) {
 		// genuinely unknown path still errors
 		assert.NilError(t, s.ValidateField(fn, []string{"tags", "0"}, "anything"))
 		assert.ErrorContains(t, s.ValidateField(fn, []string{"trigger", "foo"}, "x"), "unknown field")
+	})
+
+	t.Run("validateField enforces each field's declared type, not only format validators", func(t *testing.T) {
+		fn := []string{"functions", "test_function1_glob"}
+		// trigger.local is a boolean whose ONLY constraint is its type — previously
+		// anything passed. A non-bool is now rejected.
+		for _, bad := range []any{"true6", 123, "nope"} {
+			assert.ErrorContains(t, s.ValidateField(fn, []string{"trigger", "local"}, bad), "expects boolean")
+		}
+		assert.NilError(t, s.ValidateField(fn, []string{"trigger", "local"}, true))
+		// tags is an array of strings — a bare string is not a list.
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"tags"}, "notalist"), "expects array")
+		assert.NilError(t, s.ValidateField(fn, []string{"tags"}, []any{"a", "b"}))
+		// a string field rejects a non-string before its format validator runs.
+		assert.ErrorContains(t, s.ValidateField(fn, []string{"execution", "timeout"}, true), "expects string")
+
+		// the resource-level check catches a wrong-typed value too (via a fork, so
+		// the shared session stays untouched — no merge).
+		fork, err := s.Fork()
+		assert.NilError(t, err)
+		assert.NilError(t, fork.Set(fn, []string{"trigger", "local"}, "true6")) // raw write
+		var found bool
+		for _, e := range fork.ValidateResource(fn) {
+			found = found || strings.Contains(e.Error(), "expects boolean")
+		}
+		assert.Assert(t, found, "ValidateResource should flag the mistyped boolean")
 	})
 
 	t.Run("list elements are addressable by index for validate and complete", func(t *testing.T) {

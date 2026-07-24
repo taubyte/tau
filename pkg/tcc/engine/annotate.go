@@ -31,12 +31,24 @@ func Bytes(name string, opts ...Option) *Attribute {
 	)...)
 }
 
-// Doc attaches a human-readable description to an attribute for schema export
-// (it becomes JSON Schema `description`). Documentation-only: the engine and
-// compiler ignore it. Distinct from the `description` CONFIG attribute some
-// resources declare — this documents the field; that one IS a field.
-func Doc(text string) Option {
-	return Annotate("doc", text)
+// Doc documents an attribute for schema export: title is the human display name
+// (how a UI/CLI titles the field, when the raw name reads poorly — id -> "ID",
+// ttl -> "Time-To-Live"), desc the longer description. They become JSON Schema
+// `title` and `description`. Either may be "" to omit it. Documentation-only:
+// the engine and compiler ignore both. Distinct from the `description` CONFIG
+// attribute some resources declare — this documents the field; that one IS a field.
+func Doc(title, desc string) Option {
+	return func(a *Attribute) {
+		if a.Meta == nil {
+			a.Meta = map[string]any{}
+		}
+		if title != "" {
+			a.Meta["label"] = title
+		}
+		if desc != "" {
+			a.Meta["doc"] = desc
+		}
+	}
 }
 
 // GroupDoc is the node-level Doc: a human-readable description for a resource or
@@ -64,7 +76,7 @@ func ShowWhen(field string, in ...string) Option {
 // SectionSpec declares a human-facing section for a resource's fields — how a UI
 // or CLI groups them for display. It is presentation-only (no compile effect) and
 // does NOT have to align with the authored nesting: a field under one Path can sit
-// in a section with a field from another. Membership is explicit (see Section),
+// in a section with a field from another. Membership is explicit (see InSection),
 // never derived from Path. Title is the short heading; Doc the longer blurb; When
 // (optional) shows the whole section only when its condition holds.
 type SectionSpec struct {
@@ -74,17 +86,17 @@ type SectionSpec struct {
 	When  *ConditionSpec
 }
 
-// SectionDefinition declares a display section with an id, a short Title, and a
-// longer description (Doc). Repeatable on a node; declaration order is display
-// order. Fields join it with Section(id). Schema-only — no compile/parse effect.
-func SectionDefinition(id, title, doc string) NodeOption {
+// Section declares a display section with an id, a short Title, and a longer
+// description (Doc). Repeatable on a node; declaration order is display order.
+// Fields join it with InSection(id). Schema-only — no compile/parse effect.
+func Section(id, title, doc string) NodeOption {
 	return sectionDef(SectionSpec{ID: id, Title: title, Doc: doc})
 }
 
-// SectionDefinitionWhen is SectionDefinition with a static visibility condition:
-// the section is shown only when sibling attribute field holds one of in (e.g. the
-// HTTP section only when a function's type is "http"/"https"). Schema-only.
-func SectionDefinitionWhen(id, title, doc, field string, in ...string) NodeOption {
+// SectionWhen is Section with a static visibility condition: the section is shown
+// only when sibling attribute field holds one of in (e.g. the HTTP section only
+// when a function's type is "http"/"https"). Schema-only.
+func SectionWhen(id, title, doc, field string, in ...string) NodeOption {
 	return sectionDef(SectionSpec{ID: id, Title: title, Doc: doc, When: &ConditionSpec{Field: field, In: in}})
 }
 
@@ -98,10 +110,10 @@ func sectionDef(spec SectionSpec) NodeOption {
 	}
 }
 
-// Section assigns an attribute to a display section by id (see SectionDefinition),
-// telling a UI/CLI which section to render the field under. Explicit and
-// independent of the field's Path. Schema-only — no compile or parse effect.
-func Section(id string) Option {
+// InSection assigns an attribute to a display section by id (see Section), telling
+// a UI/CLI which section to render the field under. Explicit and independent of
+// the field's Path. Schema-only — no compile or parse effect.
+func InSection(id string) Option {
 	return Annotate("section", id)
 }
 

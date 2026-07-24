@@ -44,11 +44,11 @@ func ValidatedFields(root []*Node, group string) []ValidatedField {
 	return out
 }
 
-// CheckFields returns the authored paths of every field of a resource group that
-// carries a partial-checkable constraint — a single-value validator OR a reference
-// (dynamic Either/Key paths are skipped). It is what a per-resource partial
-// validation iterates: the single-value ones are validated directly, the reference
-// ones are checked for existence against the config's in-scope resources.
+// CheckFields returns the authored paths of every partial-checkable field of a
+// resource group (dynamic Either/Key paths, which have no plain path, are skipped).
+// Every addressable field is checkable: at minimum its declared type is enforced,
+// and on top of that any single-value validator and reference existence. It is what
+// a per-resource partial validation iterates.
 func CheckFields(root []*Node, group string) [][]string {
 	var out [][]string
 	for _, g := range root {
@@ -57,10 +57,6 @@ func CheckFields(root []*Node, group string) [][]string {
 			continue
 		}
 		for _, a := range g.Children[0].Attributes {
-			_, hasRef := a.Meta["ref"].(RefSpec)
-			if a.Validator == nil && !hasRef {
-				continue
-			}
 			if p := fieldPath(a); p != nil {
 				out = append(out, p)
 			}
@@ -78,16 +74,83 @@ func CheckFields(root []*Node, group string) [][]string {
 //     unconstrained);
 //   - the field has a validator -> its result.
 //
+// Before the validator, the value is checked against the field's DECLARED TYPE
+// (bool / integer / string / string-array), so a type-only field — one whose sole
+// constraint is its type — is still type-safe (a "true6" into a boolean, or a bare
+// string into an array, is rejected, not stored as-is).
+//
 // Fields at a dynamic (Either/Key) path have no plain path and read as unknown.
 func ValidateField(root []*Node, group string, field []string, value any) error {
-	a := findAttr(root, group, field)
+	a, element := matchField(root, group, field)
 	if a == nil {
 		return fmt.Errorf("unknown field %q on %q", strings.Join(field, "/"), group)
+	}
+	if err := checkType(a, element, value); err != nil {
+		return err
 	}
 	if a.Validator == nil {
 		return nil
 	}
 	return a.Validator(value)
+}
+
+// checkType enforces an attribute's declared type. element is true when addressing
+// one item of a list field (e.g. domains/0), whose value must be a scalar string,
+// not the list. A nil value (an absent/cleared field) is not type-checked here.
+func checkType(a *Attribute, element bool, value any) error {
+	if value == nil {
+		return nil
+	}
+	if element { // one element of a StringSlice
+		return wantString(a, value)
+	}
+	switch a.Type {
+	case TypeBool:
+		if _, ok := value.(bool); !ok {
+			return typeErr(a, "boolean", value)
+		}
+	case TypeInt:
+		switch value.(type) {
+		case int, int8, int16, int32, int64:
+		default:
+			return typeErr(a, "integer", value)
+		}
+	case TypeStringSlice:
+		if !isStringList(value) {
+			return typeErr(a, "array of strings", value)
+		}
+	default: // TypeString (incl. Duration/Bytes, authored as strings)
+		return wantString(a, value)
+	}
+	return nil
+}
+
+func wantString(a *Attribute, value any) error {
+	if _, ok := value.(string); !ok {
+		return typeErr(a, "string", value)
+	}
+	return nil
+}
+
+// isStringList reports whether value is a list ([]string or []any) whose every
+// element is a string. An empty list is valid; a bare string is not a list.
+func isStringList(value any) bool {
+	switch t := value.(type) {
+	case []string:
+		return true
+	case []any:
+		for _, e := range t {
+			if _, ok := e.(string); !ok {
+				return false
+			}
+		}
+		return true
+	}
+	return false
+}
+
+func typeErr(a *Attribute, want string, value any) error {
+	return fmt.Errorf("field %q expects %s, got %T", a.Name, want, value)
 }
 
 // fieldPath is an attribute's plain authored path (its Path, or its bare name);
