@@ -21,12 +21,13 @@ test:
 # (git/OAuth/container/accounts) that need live-service mocks to unit-test.
 # The gate is on tools/tau/tcc — the DSL reader the CLI is now built on, which is
 # the substantive logic this refactor introduced. The tools/tau command tree is
-# reported for visibility but not gated: roughly half its statements are I/O
-# shells (git clone/push, OAuth, container builds, the accounts service,
-# interactive prompts, OS process-discovery) that the e2e/dreaming suites drive
-# against real services and that no unit test can reach without live-service
-# mocks. Coverage is credited in-process via -coverpkg (a plain per-package run
-# hides the e2e reach).
+# reported for visibility but not gated: the remaining uncovered statements are
+# I/O shells (git clone/push against github, the OAuth login flow, container
+# builds, interactive survey prompts, OS process-discovery) that the e2e/dreaming
+# suites drive against real services and that no unit test can reach without a
+# git server / PTY / container. The accounts service is mocked with a local
+# httptest server (see cli/commands/accounts). Coverage is credited in-process
+# via -coverpkg (a plain per-package run hides the e2e reach).
 CLI_CORE ?= ./tools/tau/tcc/...
 CLI_CORE_MIN ?= 80.0
 test-cli:
