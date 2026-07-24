@@ -260,26 +260,14 @@ func (s *Session) ValidateResource(res []string) []error {
 	return errs
 }
 
-// resGroup is the resource-kind name in a resource path: the folder above the
-// instance name, whether or not the path is application-scoped. A directory-
-// shaped resource (an application) keeps its own fields in a RootDocument file,
-// so its path is [group, name, RootDocument] — three segments — and that
-// trailing filename is dropped so the group resolves to the folder, not the
-// instance name. Only that 3-segment shape is a container document; a plain
-// resource named "config" is a 2- or 4-segment path and is left alone.
+// resGroup is the resource-kind name in a resource path: res[len-2] — the folder
+// above the instance name, whether or not the path is application-scoped.
 func resGroup(res []string) string {
-	if len(res) == 3 && res[len(res)-1] == RootDocument {
-		res = res[:len(res)-1]
-	}
 	if len(res) < 2 {
 		return ""
 	}
 	return res[len(res)-2]
 }
-
-// RootDocument is the file a directory-shaped resource — and the configuration
-// root itself — keeps its own fields in, next to the resources it contains.
-const RootDocument = "config"
 
 // Complete returns completion candidates for a field's value, filtered by the
 // partial string the user has typed (case-insensitive prefix; "" = all). Fixed
@@ -343,11 +331,6 @@ func filterPrefix(cands []string, partial string) []string {
 	}
 	return out
 }
-
-// Sync flushes pending edits to the session's own filesystem — for callers that
-// adopted a filesystem they want written in place (e.g. tau-cli over a config
-// repo) rather than copied out with Save.
-func (s *Session) Sync() error { return s.seer.Sync() }
 
 // Save flushes the session and writes its config out under dir in dst.
 func (s *Session) Save(dst afero.Fs, dir string) error {

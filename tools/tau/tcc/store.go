@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
-	"github.com/taubyte/tau/pkg/tcc/session"
 	"github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	"github.com/taubyte/tau/tools/tau/common"
 	"github.com/taubyte/tau/tools/tau/config"
@@ -85,9 +84,16 @@ func (st *Store) dir(group string) []string {
 	return []string{group}
 }
 
-// rootDoc is the config document of a directory-shaped resource — and of the
-// project itself.
-const rootDoc = session.RootDocument
+// rootDoc is the config document a directory-shaped resource — an application,
+// or the project itself — keeps its own fields in, next to the resources it
+// contains. This is the DSL's layout (the same convention the JS client's
+// resourceParts encodes); the session addresses it as a plain path segment.
+const rootDoc = "config"
+
+// flush persists the session's pending edits back to the config repo in place,
+// via the session's own Save — the same primitive the wasm binding uses, no
+// session-level additions needed.
+func (st *Store) flush() error { return st.s.Save(st.s.FS(), "/") }
 
 func isContainer(group string) bool {
 	groups, err := Groups()
@@ -143,7 +149,7 @@ func (st *Store) SetProject(fields map[string]any) error {
 			return err
 		}
 	}
-	return st.s.Sync()
+	return st.flush()
 }
 
 // Write applies doc to a resource as the minimal set of field writes and
@@ -162,7 +168,7 @@ func (st *Store) Write(group, name string, doc Doc) error {
 			return err
 		}
 	}
-	return st.s.Sync()
+	return st.flush()
 }
 
 // Delete removes a resource. A container's instance is a directory, so its
@@ -172,7 +178,7 @@ func (st *Store) Delete(group, name string) error {
 	if err := st.s.Delete(st.res(group, name), nil); err != nil {
 		return err
 	}
-	if err := st.s.Sync(); err != nil {
+	if err := st.flush(); err != nil {
 		return err
 	}
 	if isContainer(group) {
@@ -181,8 +187,16 @@ func (st *Store) Delete(group, name string) error {
 	return nil
 }
 
-// ValidateField runs the DSL's compile-free check for one field value.
+// ValidateField runs the DSL's compile-free check for one field value. A
+// container's own document (an application's config) carries no single-value
+// validators, and the session derives the group from the [group, name] tail of
+// the path — which a container's [group, name, config] path doesn't have — so
+// per-field validation is skipped for it here; the whole-config Validate still
+// covers it.
 func (st *Store) ValidateField(group, name string, field []string, value any) error {
+	if isContainer(group) {
+		return nil
+	}
 	return st.s.ValidateField(st.res(group, name), field, value)
 }
 
