@@ -29,9 +29,10 @@ type Option func(*Client) error
 func New(ctx context.Context, opts ...Option) (*Client, error) {
 	c := &Client{
 		ctx: ctx,
-		hc: &http.Client{
-			Transport: &http.Transport{TLSClientConfig: &tls.Config{}},
-		},
+		// Default to http.DefaultTransport (nil Transport) so the client is
+		// interceptable by test doubles that patch it (gock); WithUnsecure
+		// installs a custom transport when a self-signed endpoint needs it.
+		hc: &http.Client{},
 	}
 	for _, opt := range opts {
 		if err := opt(c); err != nil {

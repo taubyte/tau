@@ -1,18 +1,17 @@
 package accounts_test
 
 import (
-	"encoding/json"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
 
+	"github.com/h2non/gock"
 	"github.com/taubyte/tau/tools/tau/cli"
 	"github.com/taubyte/tau/tools/tau/testutil"
 	"gotest.tools/v3/assert"
 )
+
+const accountsMockURL = "https://accounts.mock"
 
 // A profile carrying an accounts session bearer, on the test cloud, so the
 // accounts client resolves its URL from TAUBYTE_ACCOUNTS_URL.
@@ -33,63 +32,42 @@ projects:
     location: ` + projectPath + "\n"
 }
 
-// mockAccounts stands up a real local accounts service: /me, the member/user
-// management actions (dispatched by the JSON body's "action"), and /logout.
-// A real server avoids the custom-transport interception problem gock has with
-// this client. Returns a cleanup.
+// mockAccounts gocks the accounts-service endpoints the CLI calls: /me, the
+// member/user management actions (dispatched by the request body's "action"),
+// and /logout. Returns a cleanup.
 func mockAccounts(t *testing.T) func() {
 	t.Helper()
+	os.Setenv("TAUBYTE_ACCOUNTS_URL", accountsMockURL)
+	gock.DisableNetworking()
+
 	member := map[string]any{"id": "m2", "primary_email": "invitee@t.com", "role": "admin", "status": "invited"}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/me", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, map[string]any{
-			"member":   map[string]any{"id": "m1", "primary_email": "me@t.com", "role": "owner", "status": "active"},
-			"accounts": []map[string]any{{"id": "acc-1", "slug": "acme", "name": "Acme Inc"}},
-			"session":  map[string]any{"id": "s1", "expires_at": "2030-01-02T15:04:05Z"},
-		})
-	})
-	mux.HandleFunc("/members", func(w http.ResponseWriter, r *http.Request) {
-		switch action(r) {
-		case "list":
-			writeJSON(w, map[string]any{"ids": []string{"m2"}})
-		default: // invite, get
-			writeJSON(w, map[string]any{"member": member})
-		}
-	})
-	mux.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
-		switch action(r) {
-		case "list":
-			writeJSON(w, map[string]any{"ids": []string{"u2"}})
-		case "remove":
-			writeJSON(w, map[string]any{"ok": true})
-		default: // add
-			writeJSON(w, map[string]any{"user": map[string]any{"id": "u2", "provider": "github", "external_id": "42", "display_name": "octocat"}})
-		}
-	})
-	mux.HandleFunc("/logout", func(w http.ResponseWriter, _ *http.Request) {
-		writeJSON(w, map[string]any{"ok": true})
+	gock.New(accountsMockURL).Get("/me").Persist().Reply(200).JSON(map[string]any{
+		"member":   map[string]any{"id": "m1", "primary_email": "me@t.com", "role": "owner", "status": "active"},
+		"accounts": []map[string]any{{"id": "acc-1", "slug": "acme", "name": "Acme Inc"}},
+		"session":  map[string]any{"id": "s1", "expires_at": "2030-01-02T15:04:05Z"},
 	})
 
-	srv := httptest.NewServer(mux)
-	os.Setenv("TAUBYTE_ACCOUNTS_URL", srv.URL)
+	// One reply per (path, action); the action is matched in the request body.
+	act := func(path, action string, body map[string]any) {
+		gock.New(accountsMockURL).Post(path).
+			BodyString(`"action":"` + action + `"`).
+			Persist().Reply(200).JSON(body)
+	}
+	act("/members", "invite", map[string]any{"member": member})
+	act("/members", "list", map[string]any{"ids": []string{"m2"}})
+	act("/members", "get", map[string]any{"member": member})
+	act("/users", "add", map[string]any{"user": map[string]any{"id": "u2", "provider": "github", "external_id": "42", "display_name": "octocat"}})
+	act("/users", "list", map[string]any{"ids": []string{"u2"}})
+	act("/users", "remove", map[string]any{"ok": true})
+
+	gock.New(accountsMockURL).Post("/logout").Persist().Reply(200).JSON(map[string]any{"ok": true})
+
+	gock.Intercept()
 	return func() {
-		srv.Close()
+		gock.Off()
+		gock.EnableNetworking()
 		os.Unsetenv("TAUBYTE_ACCOUNTS_URL")
 	}
-}
-
-func action(r *http.Request) string {
-	b, _ := io.ReadAll(r.Body)
-	var m map[string]any
-	_ = json.Unmarshal(b, &m)
-	s, _ := m["action"].(string)
-	return s
-}
-
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(v)
 }
 
 // rawRun runs the full app without cli.Run's argument reordering, which only
