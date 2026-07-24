@@ -111,26 +111,17 @@ func (st *Store) List(group string) ([]string, error) {
 	return names, nil
 }
 
-// Doc reads one resource's whole document, with values authored at a legacy
-// location resolved to their canonical path (the DSL declares both, so readers
-// never have to know about aliases).
+// Doc reads one resource's whole document.
 func (st *Store) Doc(group, name string) (Doc, error) {
-	d, err := st.s.Read(st.res(group, name))
+	v, err := st.s.Get(st.res(group, name), nil)
 	if err != nil {
 		return nil, err
 	}
-	return Doc(d), nil
-}
-
-// raw is the document exactly as authored — what a write must diff against, so
-// a value that moves off a legacy path is deleted there rather than duplicated.
-func (st *Store) raw(group, name string) Doc {
-	v, err := st.s.Get(st.res(group, name), nil)
-	if err != nil {
-		return Doc{}
-	}
 	d, _ := v.(map[string]any)
-	return Doc(d)
+	if d == nil {
+		return Doc{}, nil
+	}
+	return Doc(d), nil
 }
 
 // ProjectID is the config repo's project id, used to derive resource ids.
@@ -159,7 +150,7 @@ func (st *Store) SetProject(fields map[string]any) error {
 // deletes, so untouched YAML (comments included) is preserved.
 func (st *Store) Write(group, name string, doc Doc) error {
 	res := st.res(group, name)
-	prev := st.raw(group, name)
+	prev, _ := st.Doc(group, name)
 	for _, op := range diff(prev, doc, nil) {
 		var err error
 		if op.del {

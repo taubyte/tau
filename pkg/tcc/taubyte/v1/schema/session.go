@@ -64,10 +64,6 @@ func (taubyteFieldValidator) Fields(group string) [][]string {
 	return engine.CheckFields(GenerationRoot(), group)
 }
 
-func (taubyteFieldValidator) Compat(group string) [][2][]string {
-	return engine.CompatFields(GenerationRoot(), group)
-}
-
 // ValidateField runs this DSL's single-value validator for one field of a resource
 // group, without a session — for direct callers (e.g. tau-cli). Same partial-
 // validation semantics as Session.ValidateField.

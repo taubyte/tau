@@ -130,23 +130,6 @@ func TestStoreContainerScope(t *testing.T) {
 	assert.NilError(t, statErr)
 }
 
-// A value authored at a legacy Compat path reads at its canonical path, and a
-// rewrite drops the stale key.
-func TestStoreCompatAliasResolves(t *testing.T) {
-	st, _ := openStore(t)
-	res := "compat_fn"
-
-	// author "domains" at the legacy top-level path (canonical is trigger/domains)
-	assert.NilError(t, st.Session().Set([]string{"functions", res}, []string{"id"}, "QmC"))
-	assert.NilError(t, st.Session().Set([]string{"functions", res}, []string{"domains"}, []string{"test_domain1"}))
-	assert.NilError(t, st.Session().Sync())
-
-	doc, err := st.Doc("functions", res)
-	assert.NilError(t, err)
-	// Read resolves the legacy value onto the canonical path
-	assert.DeepEqual(t, strs(tcc.Get(doc, []string{"trigger", "domains"})), []string{"test_domain1"})
-}
-
 func TestGroupForAndRepositoryName(t *testing.T) {
 	g, err := tcc.GroupFor("websites")
 	assert.NilError(t, err)
@@ -173,20 +156,6 @@ func contains(ss []string, s string) bool {
 		}
 	}
 	return false
-}
-
-func strs(v any) []string {
-	switch t := v.(type) {
-	case []string:
-		return t
-	case []any:
-		out := make([]string, len(t))
-		for i, e := range t {
-			out[i], _ = e.(string)
-		}
-		return out
-	}
-	return nil
 }
 
 func stat(p string) (os.FileInfo, error) { return os.Stat(p) }

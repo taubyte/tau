@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 )
 
@@ -194,27 +193,4 @@ func fieldPathEq(a, b []string) bool {
 		}
 	}
 	return true
-}
-
-// CompatFields pairs each legacy alias path of a resource group with the
-// canonical path it stands for. The DSL already declares both (Path + Compat) —
-// this exposes them so a reader can resolve a value authored at the old
-// location instead of reading a blank, and a writer can drop the alias when it
-// writes the canonical path.
-func CompatFields(root []*Node, group string) [][2][]string {
-	var out [][2][]string
-	for _, g := range root {
-		name, _ := g.Match.(string)
-		if name != group || len(g.Children) == 0 {
-			continue
-		}
-		for _, a := range g.Children[0].Attributes {
-			alias, canonical := compatPath(a), fieldPath(a)
-			if alias == nil || canonical == nil || slices.Equal(alias, canonical) {
-				continue
-			}
-			out = append(out, [2][]string{alias, canonical})
-		}
-	}
-	return out
 }

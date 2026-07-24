@@ -42,11 +42,12 @@ func (st *Store) RepositoryNames() ([]string, error) {
 				continue
 			}
 			for _, name := range names {
-				doc, err := st.s.Read(append(append([]string{}, dir...), name))
+				v, err := st.s.Get(append(append([]string{}, dir...), name), nil)
 				if err != nil {
 					continue
 				}
-				if full, ok := Get(Doc(doc), repo.Under(doc, repo.Fullname)).(string); ok && full != "" {
+				doc, _ := v.(map[string]any)
+				if full, ok := Get(Doc(doc), repo.Under(Doc(doc), repo.Fullname)).(string); ok && full != "" {
 					out = append(out, full)
 				}
 			}
