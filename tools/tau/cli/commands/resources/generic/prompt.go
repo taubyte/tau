@@ -16,18 +16,47 @@ import (
 // branches are re-evaluated as answers come in, so choosing an http trigger asks
 // the http questions and nothing else.
 func (l link) fill(ctx *cli.Context, st *tcc.Store, name string, doc tcc.Doc) error {
+	targets := l.showWhenTargets()
 	for _, section := range l.sectionOrder() {
-		for _, f := range l.form.Fields {
-			if f.Section != section || !l.editable(f) || !l.form.Visible(f, doc) {
-				continue
-			}
-			if err := l.ask(ctx, st, name, doc, f); err != nil {
-				return err
+		// A field whose show-when points at a discriminator must be asked after
+		// it. The DSL orders by document layout, which can put the discriminator
+		// last (a domain authors certificate/type after certificate/cert), so a
+		// field that other fields depend on is asked first within its section.
+		for _, targetFirst := range []bool{true, false} {
+			for _, f := range l.form.Fields {
+				if f.Section != section || targets[key(f.Path)] != targetFirst {
+					continue
+				}
+				if !l.editable(f) || !l.form.Visible(f, doc) {
+					continue
+				}
+				if err := l.ask(ctx, st, name, doc, f); err != nil {
+					return err
+				}
 			}
 		}
 	}
 	return nil
 }
+
+// showWhenTargets is the set of field paths some other field's or section's
+// show-when depends on — the discriminators.
+func (l link) showWhenTargets() map[string]bool {
+	out := map[string]bool{}
+	for _, f := range l.form.Fields {
+		if f.ShowWhen != nil {
+			out[key(f.ShowWhen.Path)] = true
+		}
+	}
+	for _, s := range l.form.Sections {
+		if s.ShowWhen != nil {
+			out[key(s.ShowWhen.Path)] = true
+		}
+	}
+	return out
+}
+
+func key(path []string) string { return strings.Join(path, "/") }
 
 // sectionOrder is the DSL's section order, with any field whose section the DSL
 // never declared appended last so nothing is silently dropped.
