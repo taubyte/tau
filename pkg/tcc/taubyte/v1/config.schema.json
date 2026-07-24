@@ -6,17 +6,20 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "title": "ID",
           "type": "string",
           "x-tau-section": "identity"
         },
         "name": {
           "description": "Unique resource name within its project or application. Must be a valid variable name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
           "type": "string",
           "x-tau-section": "identity"
         },
         "description": {
           "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
           "type": "string",
           "x-tau-section": "identity"
         },
@@ -25,6 +28,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
         },
@@ -103,17 +107,20 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "title": "ID",
           "type": "string",
           "x-tau-section": "identity"
         },
         "name": {
           "description": "Unique resource name within its project or application. Must be a valid variable name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
           "type": "string",
           "x-tau-section": "identity"
         },
         "description": {
           "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
           "type": "string",
           "x-tau-section": "identity"
         },
@@ -122,16 +129,19 @@
           "items": {
             "type": "string"
           },
+          "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
         },
         "match": {
           "description": "Key or key-pattern this database serves (a literal prefix, or a regex when useRegex is set).",
+          "title": "Match",
           "type": "string",
           "x-tau-section": "storage"
         },
         "regex": {
           "description": "Treat match as a regular expression instead of a literal prefix.",
+          "title": "Use Regex",
           "type": "boolean",
           "x-tau-section": "storage"
         },
@@ -145,6 +155,7 @@
                 "subnet",
                 "host"
               ],
+              "title": "Network Access",
               "type": "string",
               "x-tau-section": "storage"
             }
@@ -155,6 +166,7 @@
           "properties": {
             "size": {
               "description": "Maximum storage size, as a human string (e.g. \"32MB\", \"1GB\").",
+              "title": "Size",
               "type": "string",
               "x-tau-scalar": "bytes",
               "x-tau-section": "storage"
@@ -166,6 +178,7 @@
           "properties": {
             "key": {
               "description": "Key material or reference used to encrypt data at rest.",
+              "title": "Encryption Key",
               "type": "string",
               "x-tau-section": "encryption"
             }
@@ -201,17 +214,20 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "title": "ID",
           "type": "string",
           "x-tau-section": "identity"
         },
         "name": {
           "description": "Unique resource name within its project or application. Must be a valid variable name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
           "type": "string",
           "x-tau-section": "identity"
         },
         "description": {
           "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
           "type": "string",
           "x-tau-section": "identity"
         },
@@ -220,12 +236,14 @@
           "items": {
             "type": "string"
           },
+          "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
         },
         "fqdn": {
           "description": "Fully-qualified domain name this resource represents.",
           "format": "hostname",
+          "title": "FQDN",
           "type": "string",
           "x-tau-section": "identity",
           "x-tau-validation": "dns"
@@ -234,6 +252,7 @@
           "properties": {
             "cert": {
               "description": "PEM-encoded TLS certificate for the domain (inline certificate-type).",
+              "title": "Certificate",
               "type": "string",
               "x-tau-section": "tls",
               "x-tau-show-when": {
@@ -245,6 +264,7 @@
             },
             "key": {
               "description": "PEM-encoded private key for the certificate (inline certificate-type).",
+              "title": "Certificate Key",
               "type": "string",
               "x-tau-section": "tls",
               "x-tau-show-when": {
@@ -261,6 +281,7 @@
                 "inline",
                 "auto"
               ],
+              "title": "Certificate Type",
               "type": "string",
               "x-tau-section": "tls"
             }
@@ -291,17 +312,20 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "title": "ID",
           "type": "string",
           "x-tau-section": "identity"
         },
         "name": {
           "description": "Unique resource name within its project or application. Must be a valid variable name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
           "type": "string",
           "x-tau-section": "identity"
         },
         "description": {
           "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
           "type": "string",
           "x-tau-section": "identity"
         },
@@ -310,6 +334,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
         },
@@ -323,27 +348,32 @@
                 "pubsub",
                 "p2p"
               ],
+              "title": "Trigger Type",
               "type": "string",
               "x-tau-section": "trigger"
             },
             "local": {
               "description": "Restrict the trigger to the local node / project scope.",
+              "title": "Local",
               "type": "boolean",
               "x-tau-section": "trigger"
             },
             "channel": {
               "description": "PubSub channel the function subscribes to (pubsub trigger).",
+              "title": "PubSub Channel",
               "type": "string",
               "x-tau-section": "pubsub"
             },
             "protocol": {
               "default": "",
               "description": "libp2p protocol the function serves (p2p trigger).",
+              "title": "P2P Protocol",
               "type": "string",
               "x-tau-section": "p2p"
             },
             "command": {
               "description": "Command name within the p2p protocol this function handles.",
+              "title": "P2P Command",
               "type": "string",
               "x-tau-section": "p2p"
             },
@@ -360,6 +390,7 @@
                 "TRACE",
                 "PATCH"
               ],
+              "title": "HTTP Method",
               "type": "string",
               "x-tau-section": "http"
             },
@@ -368,6 +399,7 @@
               "items": {
                 "type": "string"
               },
+              "title": "Domains",
               "type": "array",
               "x-tau-ref": {
                 "group": "domains"
@@ -379,6 +411,7 @@
               "items": {
                 "type": "string"
               },
+              "title": "Paths",
               "type": "array",
               "x-tau-section": "http"
             }
@@ -396,6 +429,7 @@
               "type": "string"
             }
           ],
+          "title": "Source",
           "type": "string",
           "x-tau-ref": {
             "group": "libraries",
@@ -407,18 +441,21 @@
           "properties": {
             "timeout": {
               "description": "Maximum execution time, as a human string (e.g. \"30s\").",
+              "title": "Timeout",
               "type": "string",
               "x-tau-scalar": "duration",
               "x-tau-section": "limits"
             },
             "memory": {
               "description": "Maximum memory the function may use, as a human string (e.g. \"32MB\").",
+              "title": "Memory",
               "type": "string",
               "x-tau-scalar": "bytes",
               "x-tau-section": "limits"
             },
             "call": {
               "description": "Exported entrypoint symbol invoked in the WASM module.",
+              "title": "Entrypoint",
               "type": "string",
               "x-tau-section": "code"
             }
@@ -493,17 +530,20 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "title": "ID",
           "type": "string",
           "x-tau-section": "identity"
         },
         "name": {
           "description": "Unique resource name within its project or application. Must be a valid variable name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
           "type": "string",
           "x-tau-section": "identity"
         },
         "description": {
           "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
           "type": "string",
           "x-tau-section": "identity"
         },
@@ -512,6 +552,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
         },
@@ -519,11 +560,13 @@
           "properties": {
             "path": {
               "description": "Subpath within the repository that holds the library code.",
+              "title": "Path",
               "type": "string",
               "x-tau-section": "source"
             },
             "branch": {
               "description": "Git branch to build the library from.",
+              "title": "Branch",
               "type": "string",
               "x-tau-section": "source"
             },
@@ -531,11 +574,13 @@
               "properties": {
                 "id": {
                   "description": "GitHub repository numeric id.",
+                  "title": "Repository ID",
                   "type": "string",
                   "x-tau-section": "source"
                 },
                 "fullname": {
                   "description": "GitHub repository full name (owner/repo).",
+                  "title": "Repository",
                   "type": "string",
                   "x-tau-section": "source"
                 }
@@ -547,6 +592,7 @@
         },
         "git-provider": {
           "description": "Source-control provider hosting the repository (the key selects the provider block).",
+          "title": "Provider",
           "type": "string",
           "x-tau-dynamic": true,
           "x-tau-path": "source/{github}",
@@ -576,17 +622,20 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "title": "ID",
           "type": "string",
           "x-tau-section": "identity"
         },
         "name": {
           "description": "Unique resource name within its project or application. Must be a valid variable name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
           "type": "string",
           "x-tau-section": "identity"
         },
         "description": {
           "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
           "type": "string",
           "x-tau-section": "identity"
         },
@@ -595,11 +644,13 @@
           "items": {
             "type": "string"
           },
+          "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
         },
         "local": {
           "description": "Restrict the channel to the local node / project scope.",
+          "title": "Local",
           "type": "boolean",
           "x-tau-section": "channel"
         },
@@ -607,11 +658,13 @@
           "properties": {
             "match": {
               "description": "Channel name or pattern this messaging resource matches.",
+              "title": "Match",
               "type": "string",
               "x-tau-section": "channel"
             },
             "regex": {
               "description": "Treat match as a regular expression.",
+              "title": "Regex",
               "type": "boolean",
               "x-tau-section": "channel"
             }
@@ -624,6 +677,7 @@
               "properties": {
                 "enable": {
                   "description": "Expose this channel over the MQTT bridge.",
+                  "title": "MQTT",
                   "type": "boolean",
                   "x-tau-section": "bridges"
                 }
@@ -634,6 +688,7 @@
               "properties": {
                 "enable": {
                   "description": "Expose this channel over the WebSocket bridge.",
+                  "title": "WebSocket",
                   "type": "boolean",
                   "x-tau-section": "bridges"
                 }
@@ -672,17 +727,20 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "title": "ID",
           "type": "string",
           "x-tau-section": "identity"
         },
         "name": {
           "description": "Unique resource name within its project or application. Must be a valid variable name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
           "type": "string",
           "x-tau-section": "identity"
         },
         "description": {
           "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
           "type": "string",
           "x-tau-section": "identity"
         },
@@ -691,11 +749,13 @@
           "items": {
             "type": "string"
           },
+          "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
         },
         "protocol": {
           "description": "libp2p protocol identifier this service advertises.",
+          "title": "Protocol",
           "type": "string",
           "x-tau-section": "identity"
         }
@@ -718,17 +778,20 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "title": "ID",
           "type": "string",
           "x-tau-section": "identity"
         },
         "name": {
           "description": "Unique resource name within its project or application. Must be a valid variable name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
           "type": "string",
           "x-tau-section": "identity"
         },
         "description": {
           "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
           "type": "string",
           "x-tau-section": "identity"
         },
@@ -737,6 +800,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
         },
@@ -751,6 +815,7 @@
               "type": "string"
             }
           ],
+          "title": "Source",
           "type": "string",
           "x-tau-ref": {
             "group": "libraries",
@@ -762,18 +827,21 @@
           "properties": {
             "timeout": {
               "description": "Maximum execution time, as a human string (e.g. \"30s\").",
+              "title": "Timeout",
               "type": "string",
               "x-tau-scalar": "duration",
               "x-tau-section": "limits"
             },
             "memory": {
               "description": "Maximum memory the smartop may use, as a human string (e.g. \"32MB\").",
+              "title": "Memory",
               "type": "string",
               "x-tau-scalar": "bytes",
               "x-tau-section": "limits"
             },
             "call": {
               "description": "Exported entrypoint symbol invoked in the WASM module.",
+              "title": "Entrypoint",
               "type": "string",
               "x-tau-section": "code"
             }
@@ -809,17 +877,20 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "title": "ID",
           "type": "string",
           "x-tau-section": "identity"
         },
         "name": {
           "description": "Unique resource name within its project or application. Must be a valid variable name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
           "type": "string",
           "x-tau-section": "identity"
         },
         "description": {
           "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
           "type": "string",
           "x-tau-section": "identity"
         },
@@ -828,11 +899,13 @@
           "items": {
             "type": "string"
           },
+          "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
         },
         "type": {
           "description": "Storage kind: object or streaming (the key selects the type block).",
+          "title": "Type",
           "type": "string",
           "x-tau-dynamic": true,
           "x-tau-path": "{object|streaming}",
@@ -840,11 +913,13 @@
         },
         "match": {
           "description": "Key or key-pattern this storage serves (a literal prefix, or a regex when useRegex is set).",
+          "title": "Match",
           "type": "string",
           "x-tau-section": "storage"
         },
         "regex": {
           "description": "Treat match as a regular expression instead of a literal prefix.",
+          "title": "Use Regex",
           "type": "boolean",
           "x-tau-section": "storage"
         },
@@ -858,6 +933,7 @@
                 "subnet",
                 "host"
               ],
+              "title": "Network Access",
               "type": "string",
               "x-tau-section": "access"
             }
@@ -868,6 +944,7 @@
           "properties": {
             "versioning": {
               "description": "Keep historical versions of objects (object storage).",
+              "title": "Versioning",
               "type": "boolean",
               "x-tau-section": "storage"
             }
@@ -878,6 +955,7 @@
           "properties": {
             "ttl": {
               "description": "Time-to-live for streamed entries, as a human string (e.g. \"1h\") (streaming storage).",
+              "title": "Time-To-Live",
               "type": "string",
               "x-tau-scalar": "duration",
               "x-tau-section": "storage"
@@ -887,6 +965,7 @@
         },
         "size": {
           "description": "Maximum storage size, as a human string (e.g. \"1GB\").",
+          "title": "Size",
           "type": "string",
           "x-tau-dynamic": true,
           "x-tau-path": "{object|streaming}/size",
@@ -922,17 +1001,20 @@
         "id": {
           "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
           "format": "cid",
+          "title": "ID",
           "type": "string",
           "x-tau-section": "identity"
         },
         "name": {
           "description": "Unique resource name within its project or application. Must be a valid variable name.",
           "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+          "title": "Name",
           "type": "string",
           "x-tau-section": "identity"
         },
         "description": {
           "description": "Free-form, human-readable description of this resource.",
+          "title": "Description",
           "type": "string",
           "x-tau-section": "identity"
         },
@@ -941,6 +1023,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Tags",
           "type": "array",
           "x-tau-section": "identity"
         },
@@ -949,6 +1032,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Domains",
           "type": "array",
           "x-tau-ref": {
             "group": "domains"
@@ -960,6 +1044,7 @@
           "items": {
             "type": "string"
           },
+          "title": "Paths",
           "type": "array",
           "x-tau-section": "serving"
         },
@@ -967,6 +1052,7 @@
           "properties": {
             "branch": {
               "description": "Git branch to build the website from.",
+              "title": "Branch",
               "type": "string",
               "x-tau-section": "source"
             },
@@ -974,11 +1060,13 @@
               "properties": {
                 "id": {
                   "description": "GitHub repository numeric id.",
+                  "title": "Repository ID",
                   "type": "string",
                   "x-tau-section": "source"
                 },
                 "fullname": {
                   "description": "GitHub repository full name (owner/repo).",
+                  "title": "Repository",
                   "type": "string",
                   "x-tau-section": "source"
                 }
@@ -990,6 +1078,7 @@
         },
         "git-provider": {
           "description": "Source-control provider hosting the repository (the key selects the provider block).",
+          "title": "Provider",
           "type": "string",
           "x-tau-dynamic": true,
           "x-tau-path": "source/{github}",
@@ -1026,17 +1115,20 @@
     "id": {
       "description": "Content-addressed identifier (CID) of this resource. Stable across renames.",
       "format": "cid",
+      "title": "ID",
       "type": "string",
       "x-tau-section": "identity"
     },
     "name": {
       "description": "Unique resource name within its project or application. Must be a valid variable name.",
       "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$",
+      "title": "Name",
       "type": "string",
       "x-tau-section": "identity"
     },
     "description": {
       "description": "Free-form, human-readable description of this resource.",
+      "title": "Description",
       "type": "string",
       "x-tau-section": "identity"
     },
@@ -1045,6 +1137,7 @@
       "items": {
         "type": "string"
       },
+      "title": "Tags",
       "type": "array",
       "x-tau-section": "identity"
     },
