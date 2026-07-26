@@ -5,7 +5,6 @@ import (
 	"io"
 
 	_ "github.com/taubyte/tau/pkg/builder"
-	projectSchema "github.com/taubyte/tau/pkg/schema/project"
 	tccCompiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	tcc "github.com/taubyte/tau/utils/tcc"
 )
@@ -50,16 +49,6 @@ func (c config) handle() error {
 	)
 	if err != nil {
 		return fmt.Errorf("processing DNS validations failed with: %s", err.Error())
-	}
-
-	// Validate the cloud/account/plan binding. Both code- and config-repo
-	// pushes run the same check so neither path can bypass it.
-	project, err := projectSchema.Open(projectSchema.SystemFS(c.gitDir))
-	if err != nil {
-		return fmt.Errorf("opening project from path `%s` failed with: %w", c.gitDir, err)
-	}
-	if err := c.checkAccountPlan(project); err != nil {
-		return err
 	}
 
 	flat := obj.Flat()

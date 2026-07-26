@@ -11,7 +11,6 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/dream"
-	project "github.com/taubyte/tau/pkg/schema/project"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/accounts/dream"
@@ -19,11 +18,10 @@ import (
 )
 
 // TestAccounts_Dreaming brings up a single accounts service in a dream
-// universe, exercises CRUD + Verify + Resolve (community linkage) via the
-// in-process Client, and asserts everything round-trips against the real
-// KVDB and service initialisation (node, stream, http, seer beacon). The
-// ee surface is covered by TestAccounts_Dreaming_EE in
-// dreaming_ee_test.go.
+// universe, exercises CRUD + Verify via the in-process Client, and asserts
+// everything round-trips against the real KVDB and service initialisation
+// (node, stream, http, seer beacon). The ee surface is covered by
+// TestAccounts_Dreaming_EE in dreaming_ee_test.go.
 //
 // This is the dream-context analog of services/accounts/store_test.go,
 // which exercises the same logic against a mock KVDB.
@@ -85,26 +83,6 @@ func TestAccounts_Dreaming(t *testing.T) {
 		resp, err := cli.Verify(ctx, "github", "doesnotexist")
 		assert.NilError(t, err)
 		assert.Equal(t, resp.Linked, false)
-	})
-
-	t.Run("Resolve linkage happy path", func(t *testing.T) {
-		resp, err := cli.Validate(ctx, "github", "42", project.CloudBinding{Account: "acme"})
-		assert.NilError(t, err)
-		assert.Equal(t, resp.Valid, true)
-	})
-
-	t.Run("Resolve rejects unlinked git user", func(t *testing.T) {
-		resp, err := cli.Validate(ctx, "github", "doesnotexist", project.CloudBinding{Account: "acme"})
-		assert.NilError(t, err)
-		assert.Equal(t, resp.Valid, false)
-		assert.Equal(t, resp.Reason, "git user not linked to account")
-	})
-
-	t.Run("Resolve rejects unknown account", func(t *testing.T) {
-		resp, err := cli.Validate(ctx, "github", "42", project.CloudBinding{Account: "ghost"})
-		assert.NilError(t, err)
-		assert.Equal(t, resp.Valid, false)
-		assert.Equal(t, resp.Reason, "account not found")
 	})
 
 	t.Run("Login returns errLoginNotImplemented", func(t *testing.T) {
@@ -173,10 +151,9 @@ func TestAccounts_Dreaming_MagicLinkLogin(t *testing.T) {
 
 // TestAccounts_DreamingWire spins up an accounts service plus a Simple node
 // running the P2P accounts client, and exercises the wire round-trip for the
-// two community integration verbs (Verify + Resolve) — proving services/auth and
-// the compiler can reach the accounts service over P2P in production. The
-// ee wire round-trip is covered by TestAccounts_DreamingWire_EE in
-// dreaming_ee_test.go.
+// community integration verb (Verify) — proving services/auth can reach the
+// accounts service over P2P in production. The ee wire round-trip is covered
+// by TestAccounts_DreamingWire_EE in dreaming_ee_test.go.
 func TestAccounts_DreamingWire(t *testing.T) {
 	m, err := dream.New(t.Context())
 	assert.NilError(t, err)
@@ -239,19 +216,6 @@ func TestAccounts_DreamingWire(t *testing.T) {
 		resp, err := wire.Verify(ctx, "github", "doesnotexist")
 		assert.NilError(t, err)
 		assert.Equal(t, resp.Linked, false)
-	})
-
-	t.Run("Resolve linkage happy path over the wire", func(t *testing.T) {
-		resp, err := wire.Validate(ctx, "github", "42", project.CloudBinding{Account: "acme"})
-		assert.NilError(t, err)
-		assert.Equal(t, resp.Valid, true)
-	})
-
-	t.Run("Resolve bad account over the wire", func(t *testing.T) {
-		resp, err := wire.Validate(ctx, "github", "42", project.CloudBinding{Account: "ghost"})
-		assert.NilError(t, err)
-		assert.Equal(t, resp.Valid, false)
-		assert.Equal(t, resp.Reason, "account not found")
 	})
 
 	t.Run("Management wire round-trips over the P2P client", func(t *testing.T) {

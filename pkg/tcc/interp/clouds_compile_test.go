@@ -140,8 +140,8 @@ func TestCompile_CloudsBindings_PartialOnOtherCloud(t *testing.T) {
 
 // TestCompile_CloudsBindings_UnknownCloud — compiler points at a cloud the
 // project doesn't pin. Drop without promotion; no error. The project is
-// "valid for this cloud, just not bound to a plan here." The plan-presence
-// gate is policy in `services/monkey/jobs/checkAccountPlan`, not in TCC.
+// "valid for this cloud, just not bound to a plan here." Nothing validates
+// account/plan presence; the field is declarative only.
 func TestCompile_CloudsBindings_UnknownCloud(t *testing.T) {
 	compiler, err := schema.New(
 		schema.WithLocal("../taubyte/v1/fixtures/clouds"),

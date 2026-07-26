@@ -7,7 +7,6 @@ import (
 	"regexp"
 
 	"github.com/taubyte/tau/core/common/repositorytype"
-	"github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/core/services/monkey"
 	"github.com/taubyte/tau/core/services/patrick"
 	"github.com/taubyte/tau/core/services/tns"
@@ -40,12 +39,8 @@ type Context struct {
 
 	DVPublicKey []byte
 
-	// Accounts is the validator for `clouds.<NetworkFqdn>.{account, plan}`.
-	// Nil disables the check (community / dream).
-	Accounts accounts.Client
-
 	// NetworkFqdn is the cloud FQDN this monkey is compiling for. Empty in
-	// dream/local; checkAccountPlan skips when empty.
+	// dream/local; WithCloud is a no-op when empty.
 	NetworkFqdn string
 }
 

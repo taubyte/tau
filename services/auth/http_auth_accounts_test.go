@@ -9,7 +9,6 @@ import (
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	httpAuth "github.com/taubyte/tau/pkg/http/auth"
-	project "github.com/taubyte/tau/pkg/schema/project"
 )
 
 // fakeAccountsClient is a minimal implementation of
@@ -28,9 +27,6 @@ func (f *fakeAccountsClient) Verify(ctx context.Context, provider, externalID st
 	if f.verifyFn != nil {
 		return f.verifyFn(ctx, provider, externalID)
 	}
-	return nil, errNotImpl
-}
-func (f *fakeAccountsClient) Validate(context.Context, string, string, project.CloudBinding) (*accountsIface.ResolveResponse, error) {
 	return nil, errNotImpl
 }
 func (f *fakeAccountsClient) LookupAccountsByEmail(context.Context, string) ([]string, error) {

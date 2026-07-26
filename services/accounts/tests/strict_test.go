@@ -9,7 +9,6 @@ import (
 
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	dreamFixtures "github.com/taubyte/tau/dream/fixtures"
-	project "github.com/taubyte/tau/pkg/schema/project"
 	"github.com/taubyte/tau/services/accounts"
 	"gotest.tools/v3/assert"
 
@@ -61,45 +60,6 @@ func TestStrict_VerifyAcceptsAfterFixture_Dreaming(t *testing.T) {
 	assert.Equal(t, post.Linked, true)
 	assert.Equal(t, len(post.Accounts), 1)
 	assert.Equal(t, post.Accounts[0].Slug, dreamFixtures.FakeAccountSlug)
-}
-
-// TestStrict_ResolveRejectsBadAccount_Dreaming — fixture seeded, but the
-// account slug we ask about doesn't exist; expect valid=false,
-// reason=account-not-found. The ee resolve counterpart is in
-// strict_ee_test.go.
-func TestStrict_ResolveRejectsBadAccount_Dreaming(t *testing.T) {
-	u := startAccountsUniverse(t)
-	cli := u.Accounts().Client()
-	assert.NilError(t, u.RunFixture("fakeAccount"))
-
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-
-	resp, err := cli.Validate(ctx,
-		dreamFixtures.FakeAccountUserProv, dreamFixtures.FakeAccountUserExtID,
-		project.CloudBinding{Account: "nonexistent-account"},
-	)
-	assert.NilError(t, err)
-	assert.Equal(t, resp.Valid, false)
-	assert.Equal(t, resp.Reason, "account not found")
-}
-
-// TestStrict_ResolveRejectsUnlinkedUser_Dreaming — the account exists, but the
-// git user we're asking about was never linked to it. In the community build,
-// linkage IS the access grant, so a linked-but-restricted state doesn't exist.
-func TestStrict_ResolveRejectsUnlinkedUser_Dreaming(t *testing.T) {
-	u := startAccountsUniverse(t)
-	cli := u.Accounts().Client()
-	assert.NilError(t, u.RunFixture("fakeAccount"))
-
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-
-	// "github:99999" is not the seeded user — the seeded user is "42".
-	resp, err := cli.Validate(ctx, "github", "99999", project.CloudBinding{Account: dreamFixtures.FakeAccountSlug})
-	assert.NilError(t, err)
-	assert.Equal(t, resp.Valid, false)
-	assert.Equal(t, resp.Reason, "git user not linked to account")
 }
 
 // TestStrict_FakeMemberLogin_Dreaming exercises the full Member-side fixture chain:
@@ -163,7 +123,7 @@ func TestStrict_InjectMemberCustom_Dreaming(t *testing.T) {
 
 // TestStrict_InjectAccountCustom_Dreaming — verifies the param-driven fixture path:
 // inject a non-default account (different slug + user) and assert the
-// linkage resolve path picks it up. Proves callers aren't trapped on the
+// linkage verify path picks it up. Proves callers aren't trapped on the
 // default "acme/github:42" tuple.
 func TestStrict_InjectAccountCustom_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
@@ -180,13 +140,15 @@ func TestStrict_InjectAccountCustom_Dreaming(t *testing.T) {
 	defer cancel()
 
 	// Custom account/user linkage resolves cleanly.
-	resp, err := cli.Validate(ctx, "github", "777", project.CloudBinding{Account: "umbrella"})
+	resp, err := cli.Verify(ctx, "github", "777")
 	assert.NilError(t, err)
-	assert.Equal(t, resp.Valid, true)
+	assert.Equal(t, resp.Linked, true)
+	assert.Equal(t, len(resp.Accounts), 1)
+	assert.Equal(t, resp.Accounts[0].Slug, "umbrella")
 
 	// Default seed (acme/github:42) was NOT injected, so it should still
 	// reject cleanly — confirms inject is additive, not a wholesale reset.
-	miss, err := cli.Validate(ctx, "github", "42", project.CloudBinding{Account: "acme"})
+	miss, err := cli.Verify(ctx, "github", "42")
 	assert.NilError(t, err)
-	assert.Equal(t, miss.Valid, false)
+	assert.Equal(t, miss.Linked, false)
 }
