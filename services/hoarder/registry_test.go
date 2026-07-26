@@ -35,8 +35,6 @@ func newTestService(t *testing.T) *Service {
 		dbFactory: factory,
 		ldr:       newLoader(),
 		members:   make(map[string]*member),
-		// A fixed 32-byte key so the suite is build-tag agnostic across cipher seams.
-		atRestKey: bytes.Repeat([]byte{0x2a}, 32),
 	}
 }
 

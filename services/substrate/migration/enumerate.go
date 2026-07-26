@@ -53,8 +53,7 @@ func namespacesOf(ctx context.Context, store ds.Batching) ([]string, error) {
 // nil broadcaster (go-ds-crdt's offline mode) and an offline-exchange DAG
 // service. Reading must never announce heads or fetch remote blocks: the local
 // copy joining the live CRDT of the same path would merge data around the
-// hoarder write path (and around its at-rest cipher). This is the only place
-// the package touches go-ds-kvdb.
+// hoarder write path. This is the only place the package touches go-ds-kvdb.
 func openLegacyView(store ds.Batching, hash string) (*kvdb.Datastore, error) {
 	opts := kvdb.DefaultOptions()
 	opts.Logger = logger

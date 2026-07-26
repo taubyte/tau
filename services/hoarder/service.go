@@ -41,7 +41,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 	}
 
 	s.zone = cfg.Cluster()
-	s.devMode = cfg.DevMode()
 
 	if s.stream, err = streams.New(s.node, protocolCommon.Hoarder, protocolCommon.HoarderProtocol); err != nil {
 		return nil, fmt.Errorf("new command service failed with: %w", err)
@@ -68,14 +67,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 
 	if s.kvStream, err = streamClient.New(clientNode, protocolCommon.HoarderProtocol); err != nil {
 		return nil, fmt.Errorf("creating hoarder kvdb replication client failed with: %w", err)
-	}
-
-	// Cipher bootstrap (see cipher.go / cipher_ee.go). MUST stay above every loop
-	// below: recover/reconcile/asset-sweep all write through cipherEncrypt, and a
-	// build holding no key yet stores values as-is rather than refusing. Running
-	// this last leaves a startup window where those writes land unencrypted.
-	if err = s.cipherInit(ctx, clientNode); err != nil {
-		return nil, fmt.Errorf("initializing at-rest cipher failed with: %w", err)
 	}
 
 	// Recover what this node already holds, then start membership + reconcile.
