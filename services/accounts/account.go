@@ -2,8 +2,10 @@ package accounts
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/taubyte/tau/core/kvdb"
@@ -53,7 +55,7 @@ func (s *accountStore) Create(ctx context.Context, in accountsIface.CreateAccoun
 	if err := putKV(ctx, s.db, AccountProfilePath(acc.ID), acc); err != nil {
 		return nil, err
 	}
-	if err := s.db.Put(ctx, LookupAccountSlugPath(in.Slug), []byte(acc.ID)); err != nil {
+	if err := s.db.Put(ctx, LookupAccountSlugEntryPath(in.Slug, acc.ID), unixNanoBytes(now)); err != nil {
 		_ = s.db.Delete(ctx, AccountProfilePath(acc.ID))
 		return nil, fmt.Errorf("accounts: index slug: %w", err)
 	}
@@ -130,7 +132,7 @@ func (s *accountStore) Delete(ctx context.Context, accountID string) error {
 	if err := batch.Delete(AccountProfilePath(accountID)); err != nil {
 		return fmt.Errorf("accounts: batch delete profile: %w", err)
 	}
-	if err := batch.Delete(LookupAccountSlugPath(acc.Slug)); err != nil {
+	if err := batch.Delete(LookupAccountSlugEntryPath(acc.Slug, accountID)); err != nil {
 		return fmt.Errorf("accounts: batch delete slug index: %w", err)
 	}
 	if err := batch.Commit(); err != nil {
@@ -140,15 +142,48 @@ func (s *accountStore) Delete(ctx context.Context, accountID string) error {
 }
 
 // lookupIDBySlug returns "" (not ErrNotFound) when the slug is missing.
+//
+// The index is one key per claimant, so a slug claimed concurrently by two
+// accounts yields two entries rather than one being lost. Earliest created-at
+// wins, account id breaking ties for a total order, so every node resolves the
+// same way from the same replicated state.
 func (s *accountStore) lookupIDBySlug(ctx context.Context, slug string) (string, error) {
-	raw, err := s.db.Get(ctx, LookupAccountSlugPath(slug))
+	prefix := LookupAccountSlugPrefix(slug)
+	keys, err := s.db.List(ctx, prefix)
 	if err != nil {
 		if isMissing(err) {
 			return "", nil
 		}
 		return "", fmt.Errorf("accounts: lookup slug: %w", err)
 	}
-	return string(raw), nil
+
+	best, bestAt := "", int64(0)
+	for _, k := range keys {
+		accountID := strings.TrimPrefix(k, prefix)
+		if accountID == "" || strings.Contains(accountID, "/") {
+			continue
+		}
+		raw, err := s.db.Get(ctx, k)
+		if err != nil {
+			if isMissing(err) {
+				continue
+			}
+			return "", fmt.Errorf("accounts: lookup slug: %w", err)
+		}
+		at := int64(binary.BigEndian.Uint64(raw))
+		if best == "" || at < bestAt || (at == bestAt && accountID < best) {
+			best, bestAt = accountID, at
+		}
+	}
+	return best, nil
+}
+
+// unixNanoBytes encodes a timestamp as 8 big-endian bytes, matching the other
+// lookup indexes in this package.
+func unixNanoBytes(t time.Time) []byte {
+	var b [8]byte
+	binary.BigEndian.PutUint64(b[:], uint64(t.UnixNano()))
+	return b[:]
 }
 
 // validateAccountSlug is case-sensitive — "Pro" and "pro" are distinct.

@@ -16,10 +16,10 @@ import (
 //   /accounts/{id}/users/{user_id}/profile                        → User
 //   /accounts/{id}/signing_key                                    → 32 raw random bytes
 //
-//   /lookup/account_slug/{slug}                                       → account_id (raw bytes)
+//   /lookup/account/slug/{slug}/{account_id}                          → 8-byte unixnano created-at
 //   /lookup/email/{sha256(lower(email))}/{account_id}/{member_id}     → 8-byte unixnano added-at
 //   /lookup/external/{provider}/{subject}/{account_id}/{member_id}    → 8-byte unixnano added-at
-//   /lookup/git_user/{provider}/{external_id}/{account_id}/{user_id}  → 8-byte unixnano added-at
+//   /lookup/git/user/{provider}/{external_id}/{account_id}/{user_id} → 8-byte unixnano added-at
 //
 // Lookup indexes are one KV key per entry (not a single CBOR slice) so
 // concurrent writes from different nodes for distinct (account, member|user)
@@ -59,8 +59,19 @@ func UserProfilePath(accountID, userID string) string {
 	return AccountUsersPrefix(accountID) + userID + "/profile"
 }
 
-func LookupAccountSlugPath(slug string) string {
-	return prefixLookup + "account_slug/" + slug
+// LookupAccountSlugPrefix / LookupAccountSlugEntryPath: one key per claimant
+// rather than a single key per slug holding the owning account id. A contended
+// key would let two nodes creating accounts with the same slug both write it,
+// last-write-wins discard one, and leave the losing account existing with a
+// slug that resolves to somebody else — an orphan nothing can detect. Per
+// claimant, both claims survive and lookupIDBySlug settles them
+// deterministically. See AGENTS.md, "Designing around kvdb".
+func LookupAccountSlugPrefix(slug string) string {
+	return prefixLookup + "account/slug/" + slug + "/"
+}
+
+func LookupAccountSlugEntryPath(slug, accountID string) string {
+	return LookupAccountSlugPrefix(slug) + accountID
 }
 
 func LookupEmailPrefix(email string) string {
@@ -80,7 +91,7 @@ func LookupExternalEntryPath(provider, subject, accountID, memberID string) stri
 }
 
 func LookupGitUserPrefix(provider, externalID string) string {
-	return prefixLookup + "git_user/" + provider + "/" + externalID + "/"
+	return prefixLookup + "git/user/" + provider + "/" + externalID + "/"
 }
 
 func LookupGitUserEntryPath(provider, externalID, accountID, userID string) string {

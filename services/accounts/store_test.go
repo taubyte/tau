@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/ipfs/go-log/v2"
 	"github.com/taubyte/tau/core/kvdb"
@@ -185,5 +186,62 @@ func TestMemberStore_InviteAndIndex(t *testing.T) {
 	idx, err = readMemberIndexByPrefix(ctx, srv.db, LookupEmailPrefix("alice@example.com"))
 	if err != nil || len(idx) != 0 {
 		t.Fatalf("index after Remove: idx=%+v err=%v", idx, err)
+	}
+}
+
+// TestAccountStore_ConcurrentSlugClaim covers what the per-claimant slug index
+// is for: two nodes creating accounts with the same slug, neither having seen
+// the other's write. A single contended key would lose one claim to
+// last-write-wins and leave that account existing with a slug resolving to
+// somebody else. Both claims must survive and every reader must agree.
+func TestAccountStore_ConcurrentSlugClaim(t *testing.T) {
+	srv := newTestService(t)
+	store := newAccountStore(srv.db)
+	ctx := context.Background()
+
+	// Write both index entries directly: Create's guard cannot see a
+	// concurrent write on another node, so this is the state that replicates.
+	early := time.Now().UTC().Add(-time.Hour)
+	late := time.Now().UTC()
+	if err := srv.db.Put(ctx, LookupAccountSlugEntryPath("acme", "accZ"), unixNanoBytes(early)); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.Put(ctx, LookupAccountSlugEntryPath("acme", "accA"), unixNanoBytes(late)); err != nil {
+		t.Fatal(err)
+	}
+
+	keys, err := srv.db.List(ctx, LookupAccountSlugPrefix("acme"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(keys) != 2 {
+		t.Fatalf("both claims must survive, got %d", len(keys))
+	}
+
+	// Earliest created-at wins, not write order and not lexicographic id.
+	for range 5 {
+		got, err := store.lookupIDBySlug(ctx, "acme")
+		if err != nil {
+			t.Fatalf("lookup: %v", err)
+		}
+		if got != "accZ" {
+			t.Fatalf("expected the earliest claim to win, got %q", got)
+		}
+	}
+
+	// Equal timestamps fall back to account id, so nodes still converge.
+	same := time.Now().UTC()
+	if err := srv.db.Put(ctx, LookupAccountSlugEntryPath("tie", "accB"), unixNanoBytes(same)); err != nil {
+		t.Fatal(err)
+	}
+	if err := srv.db.Put(ctx, LookupAccountSlugEntryPath("tie", "accA"), unixNanoBytes(same)); err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.lookupIDBySlug(ctx, "tie")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "accA" {
+		t.Fatalf("tie must break on account id, got %q", got)
 	}
 }
