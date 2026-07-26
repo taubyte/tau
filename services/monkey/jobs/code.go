@@ -23,10 +23,6 @@ func (c code) handle() error {
 		return fmt.Errorf("opening project from path `%s` failed with: %w", c.ConfigRepoRoot, err)
 	}
 
-	if err := c.checkAccountPlan(project); err != nil {
-		return err
-	}
-
 	// Decompile and get includes and id of each function, website and library
 	ops, err := buildTodoFromConfig(project)
 	if err != nil {

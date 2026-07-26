@@ -2,16 +2,13 @@ package monkey
 
 import (
 	"context"
-	"fmt"
 	"path"
 	"slices"
 	"time"
 
 	"github.com/ipfs/go-log/v2"
-	accountsClientPkg "github.com/taubyte/tau/clients/p2p/accounts"
 	"github.com/taubyte/tau/clients/p2p/hoarder"
 	tnsClient "github.com/taubyte/tau/clients/p2p/tns"
-	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	ci "github.com/taubyte/tau/pkg/containers/gc"
 
 	"github.com/libp2p/go-libp2p/core/peer"
@@ -73,12 +70,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*Service, error) {
 		return nil, err
 	}
 
-	if accountsIface.VerifyOnAuth {
-		if srv.accountsClient, err = accountsClientPkg.New(ctx, srv.clientNode); err != nil {
-			return nil, fmt.Errorf("creating accounts client failed with %s", err)
-		}
-	}
-
 	go srv.pollJobs()
 
 	return srv, nil
@@ -134,9 +125,6 @@ func (srv *Service) Close() error {
 
 	srv.tnsClient.Close()
 	srv.patrickClient.Close()
-	if srv.accountsClient != nil {
-		srv.accountsClient.Close()
-	}
 
 	return nil
 }

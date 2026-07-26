@@ -84,20 +84,6 @@ func (c *Client) LookupAccountsByEmail(ctx context.Context, email string) ([]str
 	return ids, nil
 }
 
-// sendLinkageResolve issues the community linkage check over the wire (verb
-// "resolve"). Used by Validate in both builds' fallback path.
-func (c *Client) sendLinkageResolve(accountSlug, provider, externalID string) (*accountsIface.ResolveResponse, error) {
-	resp, err := c.client.Send(verbResolve, command.Body{
-		"account_slug": accountSlug,
-		"provider":     provider,
-		"external_id":  externalID,
-	}, c.peers...)
-	if err != nil {
-		return nil, fmt.Errorf("accounts.Validate: %w", err)
-	}
-	return decodeResolveResponse(resp)
-}
-
 func (c *Client) Accounts() accountsIface.Accounts { return &accountsImpl{c: c} }
 func (c *Client) Members(accountID string) accountsIface.Members {
 	return &membersImpl{c: c, accountID: accountID}
@@ -109,7 +95,6 @@ func (c *Client) Login() accountsIface.Login { return &loginImpl{c: c} }
 
 const (
 	verbVerify                = "verify"
-	verbResolve               = "resolve"
 	verbLookupAccountsByEmail = "lookup_accounts_by_email"
 )
 
@@ -129,13 +114,6 @@ func decodeVerifyResponse(resp map[string]any) (*accountsIface.VerifyResponse, e
 	return out, nil
 }
 
-func decodeResolveResponse(resp map[string]any) (*accountsIface.ResolveResponse, error) {
-	return &accountsIface.ResolveResponse{
-		Valid:  tryBool(resp, "valid"),
-		Reason: tryString(resp, "reason"),
-	}, nil
-}
-
 func tryBool(m map[string]interface{}, key string) bool {
 	if v, ok := m[key]; ok {
 		if b, ok := v.(bool); ok {
@@ -143,13 +121,4 @@ func tryBool(m map[string]interface{}, key string) bool {
 		}
 	}
 	return false
-}
-
-func tryString(m map[string]interface{}, key string) string {
-	if v, ok := m[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-	return ""
 }

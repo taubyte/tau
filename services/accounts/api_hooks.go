@@ -13,7 +13,6 @@ import (
 
 const (
 	StreamVerbVerify                = "verify"
-	StreamVerbResolve               = "resolve"
 	StreamVerbLookupAccountsByEmail = "lookup_accounts_by_email"
 )
 
@@ -45,28 +44,6 @@ func (srv *AccountsService) apiLookupAccountsByEmailHandler(ctx context.Context,
 	return cr.Response{"account_ids": ids}, nil
 }
 
-// apiResolveHandler is the linkage resolve: account active + git user linked →
-// valid. Some builds add a separate resolve verb.
-func (srv *AccountsService) apiResolveHandler(ctx context.Context, _ streams.Connection, body command.Body) (cr.Response, error) {
-	accountSlug, err := maps.String(body, "account_slug")
-	if err != nil {
-		return nil, fmt.Errorf("resolve: %w", err)
-	}
-	provider, err := maps.String(body, "provider")
-	if err != nil {
-		return nil, fmt.Errorf("resolve: %w", err)
-	}
-	externalID, err := maps.String(body, "external_id")
-	if err != nil {
-		return nil, fmt.Errorf("resolve: %w", err)
-	}
-	resp, err := resolveLinkage(ctx, srv.db, accountSlug, provider, externalID)
-	if err != nil {
-		return nil, err
-	}
-	return resolveResponseToWire(resp), nil
-}
-
 func verifyResponseToWire(r *accountsIface.VerifyResponse) cr.Response {
 	if r == nil {
 		return cr.Response{"linked": false}
@@ -74,17 +51,6 @@ func verifyResponseToWire(r *accountsIface.VerifyResponse) cr.Response {
 	out := cr.Response{"linked": r.Linked}
 	if len(r.Accounts) > 0 {
 		out["accounts"] = r.Accounts
-	}
-	return out
-}
-
-func resolveResponseToWire(r *accountsIface.ResolveResponse) cr.Response {
-	if r == nil {
-		return cr.Response{"valid": false, "reason": "nil response"}
-	}
-	out := cr.Response{"valid": r.Valid}
-	if r.Reason != "" {
-		out["reason"] = r.Reason
 	}
 	return out
 }

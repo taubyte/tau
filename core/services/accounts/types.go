@@ -147,12 +147,3 @@ type VerifyAccountSummary struct {
 	Slug string `json:"slug" cbor:"slug"`
 	Name string `json:"name" cbor:"name"`
 }
-
-// ResolveResponse is the result of resolving a git user against an account,
-// called by the project compiler at compile time. In the community build this is a
-// pure linkage check: Valid is true iff the account is active and the git user
-// is linked to it.
-type ResolveResponse struct {
-	Valid  bool   `json:"valid"            cbor:"valid"`
-	Reason string `json:"reason,omitempty" cbor:"reason,omitempty"` // typed: account not found | account not active | git user not linked to account
-}

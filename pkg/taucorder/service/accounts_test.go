@@ -13,7 +13,6 @@ import (
 	"github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
 	"github.com/taubyte/tau/dream/api"
-	project "github.com/taubyte/tau/pkg/schema/project"
 	pb "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1"
 	pbconnect "github.com/taubyte/tau/pkg/taucorder/proto/gen/taucorder/v1/taucorderv1connect"
 	"golang.org/x/net/http2"
@@ -110,19 +109,10 @@ func TestAccounts_Dreaming(t *testing.T) {
 	assert.NilError(t, ustream.Err())
 	assert.Assert(t, slices.Contains(userIDs, usr.Msg.GetId()))
 
-	// Linkage is the access grant: Verify + Resolve succeed for the assigned
-	// identity, straight against the universe's accounts client.
+	// Linkage is the access grant: Verify succeeds for the assigned identity,
+	// straight against the universe's accounts client.
 	cli := u.Accounts().Client()
 	vr, err := cli.Verify(ctx, "github", "42")
 	assert.NilError(t, err)
 	assert.Equal(t, vr.Linked, true)
-
-	rr, err := cli.Validate(ctx, "github", "42", project.CloudBinding{Account: "acme"})
-	assert.NilError(t, err)
-	assert.Equal(t, rr.Valid, true)
-
-	// An unlinked identity resolves invalid.
-	rr2, err := cli.Validate(ctx, "github", "999", project.CloudBinding{Account: "acme"})
-	assert.NilError(t, err)
-	assert.Equal(t, rr2.Valid, false)
 }

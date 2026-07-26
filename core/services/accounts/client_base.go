@@ -4,7 +4,6 @@ import (
 	"context"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
-	project "github.com/taubyte/tau/pkg/schema/project"
 )
 
 // Client is the consumer-side interface for the Accounts subsystem.
@@ -15,12 +14,6 @@ import (
 type Client interface {
 	// Integration surface — methods the rest of tau actually calls.
 	Verify(ctx context.Context, provider, externalID string) (*VerifyResponse, error)
-
-	// Validate is the compile-time check the project compiler calls: may this
-	// git user build against the given cloud binding? The community build
-	// checks linkage (account active + git user linked); a -tags ee build reads
-	// whatever extra the binding carries. Returns Valid with a typed Reason.
-	Validate(ctx context.Context, provider, externalID string, binding project.CloudBinding) (*ResolveResponse, error)
 
 	// LookupAccountsByEmail returns the IDs of every Account on the cluster
 	// that has a Member with this primary_email (case-insensitive, trimmed).

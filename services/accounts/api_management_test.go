@@ -395,7 +395,7 @@ func TestStreamVerbConstants(t *testing.T) {
 		"account": StreamVerbAccount, "member": StreamVerbMember,
 		"user":   StreamVerbUser,
 		"login":  StreamVerbLogin,
-		"verify": StreamVerbVerify, "resolve": StreamVerbResolve,
+		"verify": StreamVerbVerify,
 	} {
 		if v == "" {
 			t.Errorf("StreamVerb%s is empty", name)
