@@ -177,11 +177,7 @@ func (srv *Service) kvGet(ctx context.Context, handle kvdb.KVDB, body command.Bo
 	if err != nil {
 		return cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeNotFound}, nil
 	}
-	plain, err := srv.cipherDecrypt(value)
-	if err != nil {
-		return nil, fmt.Errorf("decrypting value failed with: %w", err)
-	}
-	return cr.Response{hoarderSpecs.BodyValue: plain}, nil
+	return cr.Response{hoarderSpecs.BodyValue: value}, nil
 }
 
 func (srv *Service) kvPut(ctx context.Context, handle kvdb.KVDB, hash string, body command.Body) (cr.Response, error) {
@@ -196,15 +192,11 @@ func (srv *Service) kvPut(ctx context.Context, handle kvdb.KVDB, hash string, bo
 	if err := srv.admitWrite(maps.TryString(body, hoarderSpecs.BodyProject), len(value)); err != nil {
 		return cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeOverCapacity}, nil
 	}
-	enc, err := srv.cipherEncrypt(value)
-	if err != nil {
-		return nil, fmt.Errorf("encrypting value failed with: %w", err)
-	}
 	// Local commit under the instance write lock so putnx's check-and-write is
 	// atomic against it; the replication barrier runs outside the lock.
 	mu := srv.writeLock(hash)
 	mu.Lock()
-	err = handle.Put(ctx, key, enc)
+	err = handle.Put(ctx, key, value)
 	mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("put failed with: %w", err)
@@ -231,10 +223,6 @@ func (srv *Service) kvPutNx(ctx context.Context, handle kvdb.KVDB, hash string, 
 	if err := srv.admitWrite(maps.TryString(body, hoarderSpecs.BodyProject), len(value)); err != nil {
 		return cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeOverCapacity}, nil
 	}
-	enc, err := srv.cipherEncrypt(value)
-	if err != nil {
-		return nil, fmt.Errorf("encrypting value failed with: %w", err)
-	}
 
 	mu := srv.writeLock(hash)
 	mu.Lock()
@@ -242,7 +230,7 @@ func (srv *Service) kvPutNx(ctx context.Context, handle kvdb.KVDB, hash string, 
 		mu.Unlock()
 		return cr.Response{hoarderSpecs.BodyExisted: true}, nil
 	}
-	err = handle.Put(ctx, key, enc)
+	err = handle.Put(ctx, key, value)
 	mu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("putnx failed with: %w", err)
@@ -439,11 +427,7 @@ func (srv *Service) applyBatch(ctx context.Context, handle kvdb.KVDB, body comma
 			if err := srv.admitWrite(maps.TryString(body, hoarderSpecs.BodyProject), len(value)); err != nil {
 				return cr.Response{hoarderSpecs.BodyCode: hoarderSpecs.CodeOverCapacity}, nil
 			}
-			enc, err := srv.cipherEncrypt(value)
-			if err != nil {
-				return nil, fmt.Errorf("encrypting batch value failed with: %w", err)
-			}
-			if err := batch.Put(key, enc); err != nil {
+			if err := batch.Put(key, value); err != nil {
 				return nil, err
 			}
 		case hoarderSpecs.KVDelete:

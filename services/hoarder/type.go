@@ -42,9 +42,7 @@ type Service struct {
 	// loopsWG tracks the heartbeat, liveness, and reconcile loops so Close can
 	// join them after cancel: a canceled-but-still-running loop must not touch
 	// srv.db / srv.ldr / the clients while Close tears them down.
-	loopsWG   sync.WaitGroup
-	atRestKey []byte // cipher key material; nil when this build stores values as-is (set by cipherInit)
-	devMode   bool   // -tags ee: degrade the at-rest cipher to pass-through when the secrets stack is unreachable (dev/test only)
+	loopsWG sync.WaitGroup
 }
 
 func (s *Service) Node() peer.Node {
