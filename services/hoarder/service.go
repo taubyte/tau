@@ -70,6 +70,14 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 		return nil, fmt.Errorf("creating hoarder kvdb replication client failed with: %w", err)
 	}
 
+	// Cipher bootstrap (see cipher.go / cipher_ee.go). MUST stay above every loop
+	// below: recover/reconcile/asset-sweep all write through cipherEncrypt, and a
+	// build holding no key yet stores values as-is rather than refusing. Running
+	// this last leaves a startup window where those writes land unencrypted.
+	if err = s.cipherInit(ctx, clientNode); err != nil {
+		return nil, fmt.Errorf("initializing at-rest cipher failed with: %w", err)
+	}
+
 	// Recover what this node already holds, then start membership + reconcile.
 	// They share a cancelable context so Close stops them before tearing down the
 	// state they read.
@@ -87,11 +95,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (service hoarderIface.Servic
 	// by Close via loopsWG like the other loops.
 	s.loopsWG.Add(1)
 	go func() { defer s.loopsWG.Done(); s.assetSweepLoop(loopCtx) }()
-
-	// Cipher bootstrap (see cipher.go / cipher_ee.go).
-	if err = s.cipherInit(ctx, clientNode); err != nil {
-		return nil, fmt.Errorf("initializing at-rest cipher failed with: %w", err)
-	}
 
 	service = s
 	return

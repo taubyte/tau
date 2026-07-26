@@ -10,20 +10,23 @@ import (
 )
 
 // cipherInit obtains the fleet key from the ee secrets stack and holds it on the
-// Service. Production (DevMode=false) fails closed — the hoarder never serves
-// values it cannot encrypt. In dev/test (DevMode=true) the secrets stack is
-// often absent (auth-less fleets), so rather than refuse to start it degrades to
-// pass-through: values are stored as-is, exactly like the community (!ee) cipher stub.
-// It never stores plaintext when DevMode is false.
+// Service. The hoarder must never fail to start for lack of an at-rest cipher —
+// an operator may legitimately run without one configured — so a BootstrapKey
+// failure never aborts startup, in any mode: it warns and degrades to
+// pass-through, storing values as-is, exactly like the community (!ee) cipher
+// stub. Dev/test and production emit distinguishable warnings, since an
+// unencrypted production node is a much bigger deal than an unencrypted dev
+// one.
 func (srv *Service) cipherInit(ctx context.Context, node peer.Node) error {
 	key, err := cipher.BootstrapKey(ctx, node)
 	if err != nil {
 		if srv.devMode {
-			logger.Warnf("at-rest cipher: secrets stack unreachable in dev mode; storing values unencrypted like the community build (dev/test only, never in production): %s", err)
-			srv.atRestKey = nil
-			return nil
+			logger.Warnf("at-rest cipher: secrets stack unreachable in dev mode; hoarder values unencrypted at rest (dev/test only, never in production): %s", err)
+		} else {
+			logger.Warnf("at-rest cipher: secrets stack unreachable; hoarder values unencrypted at rest in production, Enterprise Edition normally encrypts values at rest: %s", err)
 		}
-		return err
+		srv.atRestKey = nil
+		return nil
 	}
 	srv.atRestKey = key
 	return nil
