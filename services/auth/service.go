@@ -7,9 +7,7 @@ import (
 	"path"
 
 	"github.com/ipfs/go-log/v2"
-	accountsClientPkg "github.com/taubyte/tau/clients/p2p/accounts"
 	tnsApi "github.com/taubyte/tau/clients/p2p/tns"
-	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	streams "github.com/taubyte/tau/p2p/streams/service"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	"github.com/taubyte/tau/pkg/kvdb"
@@ -74,21 +72,10 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 	if srv.stream, err = streams.New(srv.node, servicesCommon.Auth, servicesCommon.AuthProtocol); err != nil {
 		return nil, err
 	}
-	if accountsIface.VerifyOnAuth {
-		srv.accountsURL = accountsIface.InferURL(cfg.DevMode(), cfg.NetworkFqdn())
-		var ac error
-		srv.accountsClient, ac = accountsClientPkg.New(srv.ctx, clientNode)
-		if ac != nil {
-			return nil, fmt.Errorf("creating accounts client failed with %s", ac)
-		}
-	}
-
-	// A configured tenancy requires a usable app credential. Without one,
-	// membership is unanswerable, and there is no narrower gate to fall back to:
-	// refusing at startup surfaces the missing credential now rather than at
-	// whichever registration first needs it.
-	srv.tenancy = cfg.Tenancy()
-	if srv.membership, err = tenancyVerifier(srv.tenancy); err != nil {
+	// How this build answers "may this identity use the API" is a build-tagged
+	// seam; see identity.go and identity_ee.go.
+	srv.identityClientNode = clientNode
+	if err = srv.initIdentity(cfg); err != nil {
 		return nil, err
 	}
 
@@ -113,6 +100,11 @@ func (srv *AuthService) Close() error {
 
 	if srv.accountsClient != nil {
 		srv.accountsClient.Close()
+	}
+
+	// The membership verifier owns a cache goroutine.
+	if c, ok := srv.membership.(interface{ Close() }); ok {
+		c.Close()
 	}
 
 	srv.stream.Stop()

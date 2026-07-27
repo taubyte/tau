@@ -35,16 +35,19 @@ type AuthService struct {
 
 	newGitHubClient func(context.Context, string) (GitHubClient, error)
 
-	// accountsClient (when non-nil) is consulted by GitHubTokenHTTPAuth after
-	// validating a github token to enforce the universal "no tau account
-	// linked" rule. Nil when Accounts.VerifyOnAuth = false (community + dream
-	// tests) or when the accounts service isn't reachable at startup.
+	// identityClientNode is the node initIdentity builds its client on, when
+	// the build needs one.
+	identityClientNode peer.Node
+
+	// Set only by the build that answers identity through the accounts service;
+	// see identity_ee.go. Left zero otherwise.
 	accountsClient accountsIface.Client
 	accountsURL    string
 
 	// tenancy names the namespace that owns this cloud; membership answers
-	// whether a caller belongs to it. membership is nil when no app credential
-	// is configured, in which case only the owner comparison applies.
+	// whether a caller belongs to it. Both are set by the build that answers
+	// identity from the namespace; see identity.go, which refuses to start
+	// outside dev mode unless the tenancy is configured and usable.
 	tenancy    tauConfig.Tenancy
 	membership MembershipVerifier
 }

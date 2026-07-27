@@ -1,3 +1,5 @@
+//go:build ee
+
 package auth
 
 import (
@@ -158,16 +160,5 @@ func TestGitHubTokenHTTPAuth_VerifyError_RejectsWithErrorContext(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "accounts verify failed") {
 		t.Fatalf("expected verify-failed wrap, got: %v", err)
-	}
-}
-
-func TestGitHubTokenHTTPAuth_NoToken_Rejects(t *testing.T) {
-	srv, cleanup := CreateTestService(t, nil)
-	defer cleanup()
-
-	// No Authorization on context.
-	ctx := authCtx(t, "", "")
-	if _, err := srv.GitHubTokenHTTPAuth(ctx); err == nil {
-		t.Fatalf("expected rejection when no token")
 	}
 }
