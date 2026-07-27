@@ -32,5 +32,4 @@ func (srv *AuthService) setupStreamRoutes() {
 	srv.stream.Define("projects", srv.apiProjectsServiceHandler)
 	srv.stream.Define("domain", srv.ApiDomainServiceHandler)
 
-	attachSecretsServiceStreams(srv.secretsService, srv.stream)
 }

@@ -80,6 +80,7 @@ func New() (*cli.App, error) {
 		autocomplete.Command,
 		version.Command,
 	}...)
+	app.Commands = append(app.Commands, extraCommands...)
 
 	return app, nil
 }
