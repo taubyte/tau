@@ -118,6 +118,7 @@ message Op {
         Auth auth = 4;
         Shapes shapes = 5;
         Accounts accounts = 6;
+        Tenancy tenancy = 7;
     }
 }
 
@@ -315,6 +316,22 @@ message SMTP {
         StringOp user = 3;
         StringOp pass = 4;
         StringOp from = 5;
+    }
+}
+
+// Tenancy
+message Tenancy {
+    oneof op {
+        StringOp provider = 1;
+        StringOp owner = 2;
+        TenancyApp app = 3;
+    }
+}
+
+message TenancyApp {
+    oneof op {
+        StringOp client_id = 1;
+        StringOp key = 2;
     }
 }
 

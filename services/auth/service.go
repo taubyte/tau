@@ -83,6 +83,13 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 		}
 	}
 
+	srv.tenancy = cfg.Tenancy()
+	if srv.tenancy.Configured() && srv.tenancy.App.Key != "" {
+		if srv.membership, err = newGitHubAppVerifier(srv.tenancy.App.ClientId, srv.tenancy.App.Key); err != nil {
+			return nil, fmt.Errorf("tenancy app credential unusable: %w", err)
+		}
+	}
+
 	srv.setupStreamRoutes()
 	srv.stream.Start()
 

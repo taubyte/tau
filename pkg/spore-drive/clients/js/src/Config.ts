@@ -83,6 +83,10 @@ export class Config {
     return new Accounts(this.client, this.config!);
   }
 
+  get tenancy(): Tenancy {
+    return new Tenancy(this.client, this.config!);
+  }
+
   get shapes(): Shapes {
     return new Shapes(this.client, this.config!);
   }
@@ -906,6 +910,77 @@ class SMTP extends BaseOperation {
     if (value.user !== undefined) await this.user.set(value.user);
     if (value.pass !== undefined) await this.pass.set(value.pass);
     if (value.from !== undefined) await this.from.set(value.from);
+  }
+}
+
+// Tenancy Operations
+
+export interface TenancyAppConfig {
+  clientId?: string;
+  key?: string;
+}
+
+export interface TenancyConfig {
+  provider?: string;
+  owner?: string;
+  app?: TenancyAppConfig;
+}
+
+class Tenancy extends BaseOperation {
+  constructor(client: OpClient, config: ConfigMessage) {
+    super(client, config, [{ case: "tenancy" }]);
+  }
+
+  get provider(): StringOperation {
+    return new StringOperation(this.client, this.config, [
+      ...this.opPath,
+      { case: "provider" },
+    ]);
+  }
+
+  get owner(): StringOperation {
+    return new StringOperation(this.client, this.config, [
+      ...this.opPath,
+      { case: "owner" },
+    ]);
+  }
+
+  get app(): TenancyApp {
+    return new TenancyApp(this.client, this.config, [
+      ...this.opPath,
+      { case: "app" },
+    ]);
+  }
+
+  async set(value: TenancyConfig): Promise<void> {
+    if (value.provider !== undefined) await this.provider.set(value.provider);
+    if (value.owner !== undefined) await this.owner.set(value.owner);
+    if (value.app) await this.app.set(value.app);
+  }
+}
+
+class TenancyApp extends BaseOperation {
+  constructor(client: OpClient, config: ConfigMessage, path: any[]) {
+    super(client, config, path);
+  }
+
+  get clientId(): StringOperation {
+    return new StringOperation(this.client, this.config, [
+      ...this.opPath,
+      { case: "clientId" },
+    ]);
+  }
+
+  get key(): StringOperation {
+    return new StringOperation(this.client, this.config, [
+      ...this.opPath,
+      { case: "key" },
+    ]);
+  }
+
+  async set(value: TenancyAppConfig): Promise<void> {
+    if (value.clientId !== undefined) await this.clientId.set(value.clientId);
+    if (value.key !== undefined) await this.key.set(value.key);
   }
 }
 

@@ -179,6 +179,28 @@ class AccountsConfig:
         self.email = email
 
 
+class TenancyAppConfig:
+    def __init__(
+        self,
+        client_id: Optional[str] = None,
+        key: Optional[str] = None,
+    ):
+        self.client_id = client_id
+        self.key = key
+
+
+class TenancyConfig:
+    def __init__(
+        self,
+        provider: Optional[str] = None,
+        owner: Optional[str] = None,
+        app: Optional[TenancyAppConfig] = None,
+    ):
+        self.provider = provider
+        self.owner = owner
+        self.app = app
+
+
 
 class StringOperation(BaseOperation):
     """String operation class for get/set operations."""
@@ -813,6 +835,56 @@ class SMTP(BaseOperation):
             await self.pass_.set(value.pass_)
         if value.from_ is not None:
             await self.from_.set(value.from_)
+
+
+class Tenancy(BaseOperation):
+    """Tenancy configuration operations."""
+
+    def __init__(self, client: ConfigClient, config: config_pb2.Config):
+        super().__init__(client, config, [{"case": "tenancy"}])
+
+    @property
+    def provider(self) -> StringOperation:
+        return StringOperation(self.client, self.config, self.op_path + [{"case": "provider"}])
+
+    @property
+    def owner(self) -> StringOperation:
+        return StringOperation(self.client, self.config, self.op_path + [{"case": "owner"}])
+
+    @property
+    def app(self) -> 'TenancyApp':
+        return TenancyApp(self.client, self.config, self.op_path + [{"case": "app"}])
+
+    async def set(self, value: TenancyConfig) -> None:
+        """Set tenancy configuration."""
+        if value.provider is not None:
+            await self.provider.set(value.provider)
+        if value.owner is not None:
+            await self.owner.set(value.owner)
+        if value.app is not None:
+            await self.app.set(value.app)
+
+
+class TenancyApp(BaseOperation):
+    """Tenancy app credential operations."""
+
+    def __init__(self, client: ConfigClient, config: config_pb2.Config, path: List[Dict[str, Any]]):
+        super().__init__(client, config, path)
+
+    @property
+    def client_id(self) -> StringOperation:
+        return StringOperation(self.client, self.config, self.op_path + [{"case": "client_id"}])
+
+    @property
+    def key(self) -> StringOperation:
+        return StringOperation(self.client, self.config, self.op_path + [{"case": "key"}])
+
+    async def set(self, value: TenancyAppConfig) -> None:
+        """Set tenancy app configuration."""
+        if value.client_id is not None:
+            await self.client_id.set(value.client_id)
+        if value.key is not None:
+            await self.key.set(value.key)
 
 
 class Shapes(BaseOperation):

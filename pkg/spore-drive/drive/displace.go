@@ -264,6 +264,18 @@ func (d *sporedrive) writeConfig(h remoteHost, shape string, w io.Writer) error 
 		}
 	}
 
+	// Unconditional, unlike accounts above: every shape gets the owning
+	// namespace so any service can filter on a repository's owner locally.
+	t := d.parser.Tenancy()
+	tenancyCfg := config.Tenancy{
+		Provider: t.Provider(),
+		Owner:    t.Owner(),
+		App: config.TenancyApp{
+			ClientId: t.App().ClientId(),
+			Key:      t.App().Key(),
+		},
+	}
+
 	addrs := hc.Addresses().List()
 	announce := make([]string, len(addrs))
 	for i, addr := range addrs {
@@ -331,6 +343,7 @@ func (d *sporedrive) writeConfig(h remoteHost, shape string, w io.Writer) error 
 			Hosts:     d.parser.Cloud().Domain().Hosts(),
 		},
 		Accounts:   accountsCfg,
+		Tenancy:    tenancyCfg,
 		Enterprise: d.enterpriseSource(sc.Services().List()),
 	})
 	if err != nil {

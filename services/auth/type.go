@@ -41,6 +41,12 @@ type AuthService struct {
 	// tests) or when the accounts service isn't reachable at startup.
 	accountsClient accountsIface.Client
 	accountsURL    string
+
+	// tenancy names the namespace that owns this cloud; membership answers
+	// whether a caller belongs to it. membership is nil when no app credential
+	// is configured, in which case only the owner comparison applies.
+	tenancy    tauConfig.Tenancy
+	membership MembershipVerifier
 }
 
 func (s *AuthService) Node() peer.Node {

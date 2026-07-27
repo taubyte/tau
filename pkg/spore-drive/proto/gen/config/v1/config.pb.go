@@ -1241,6 +1241,7 @@ type Op struct {
 	//	*Op_Auth
 	//	*Op_Shapes
 	//	*Op_Accounts
+	//	*Op_Tenancy
 	Op            isOp_Op `protobuf_oneof:"op"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1335,6 +1336,15 @@ func (x *Op) GetAccounts() *Accounts {
 	return nil
 }
 
+func (x *Op) GetTenancy() *Tenancy {
+	if x != nil {
+		if x, ok := x.Op.(*Op_Tenancy); ok {
+			return x.Tenancy
+		}
+	}
+	return nil
+}
+
 type isOp_Op interface {
 	isOp_Op()
 }
@@ -1359,6 +1369,10 @@ type Op_Accounts struct {
 	Accounts *Accounts `protobuf:"bytes,6,opt,name=accounts,proto3,oneof"`
 }
 
+type Op_Tenancy struct {
+	Tenancy *Tenancy `protobuf:"bytes,7,opt,name=tenancy,proto3,oneof"`
+}
+
 func (*Op_Cloud) isOp_Op() {}
 
 func (*Op_Hosts) isOp_Op() {}
@@ -1368,6 +1382,8 @@ func (*Op_Auth) isOp_Op() {}
 func (*Op_Shapes) isOp_Op() {}
 
 func (*Op_Accounts) isOp_Op() {}
+
+func (*Op_Tenancy) isOp_Op() {}
 
 // Cloud
 type Cloud struct {
@@ -3641,6 +3657,187 @@ func (*SMTP_Pass) isSMTP_Op() {}
 
 func (*SMTP_From) isSMTP_Op() {}
 
+// Tenancy
+type Tenancy struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Op:
+	//
+	//	*Tenancy_Provider
+	//	*Tenancy_Owner
+	//	*Tenancy_App
+	Op            isTenancy_Op `protobuf_oneof:"op"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Tenancy) Reset() {
+	*x = Tenancy{}
+	mi := &file_config_v1_config_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Tenancy) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Tenancy) ProtoMessage() {}
+
+func (x *Tenancy) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Tenancy.ProtoReflect.Descriptor instead.
+func (*Tenancy) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *Tenancy) GetOp() isTenancy_Op {
+	if x != nil {
+		return x.Op
+	}
+	return nil
+}
+
+func (x *Tenancy) GetProvider() *StringOp {
+	if x != nil {
+		if x, ok := x.Op.(*Tenancy_Provider); ok {
+			return x.Provider
+		}
+	}
+	return nil
+}
+
+func (x *Tenancy) GetOwner() *StringOp {
+	if x != nil {
+		if x, ok := x.Op.(*Tenancy_Owner); ok {
+			return x.Owner
+		}
+	}
+	return nil
+}
+
+func (x *Tenancy) GetApp() *TenancyApp {
+	if x != nil {
+		if x, ok := x.Op.(*Tenancy_App); ok {
+			return x.App
+		}
+	}
+	return nil
+}
+
+type isTenancy_Op interface {
+	isTenancy_Op()
+}
+
+type Tenancy_Provider struct {
+	Provider *StringOp `protobuf:"bytes,1,opt,name=provider,proto3,oneof"`
+}
+
+type Tenancy_Owner struct {
+	Owner *StringOp `protobuf:"bytes,2,opt,name=owner,proto3,oneof"`
+}
+
+type Tenancy_App struct {
+	App *TenancyApp `protobuf:"bytes,3,opt,name=app,proto3,oneof"`
+}
+
+func (*Tenancy_Provider) isTenancy_Op() {}
+
+func (*Tenancy_Owner) isTenancy_Op() {}
+
+func (*Tenancy_App) isTenancy_Op() {}
+
+type TenancyApp struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Op:
+	//
+	//	*TenancyApp_ClientId
+	//	*TenancyApp_Key
+	Op            isTenancyApp_Op `protobuf_oneof:"op"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TenancyApp) Reset() {
+	*x = TenancyApp{}
+	mi := &file_config_v1_config_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TenancyApp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TenancyApp) ProtoMessage() {}
+
+func (x *TenancyApp) ProtoReflect() protoreflect.Message {
+	mi := &file_config_v1_config_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TenancyApp.ProtoReflect.Descriptor instead.
+func (*TenancyApp) Descriptor() ([]byte, []int) {
+	return file_config_v1_config_proto_rawDescGZIP(), []int{42}
+}
+
+func (x *TenancyApp) GetOp() isTenancyApp_Op {
+	if x != nil {
+		return x.Op
+	}
+	return nil
+}
+
+func (x *TenancyApp) GetClientId() *StringOp {
+	if x != nil {
+		if x, ok := x.Op.(*TenancyApp_ClientId); ok {
+			return x.ClientId
+		}
+	}
+	return nil
+}
+
+func (x *TenancyApp) GetKey() *StringOp {
+	if x != nil {
+		if x, ok := x.Op.(*TenancyApp_Key); ok {
+			return x.Key
+		}
+	}
+	return nil
+}
+
+type isTenancyApp_Op interface {
+	isTenancyApp_Op()
+}
+
+type TenancyApp_ClientId struct {
+	ClientId *StringOp `protobuf:"bytes,1,opt,name=client_id,json=clientId,proto3,oneof"`
+}
+
+type TenancyApp_Key struct {
+	Key *StringOp `protobuf:"bytes,2,opt,name=key,proto3,oneof"`
+}
+
+func (*TenancyApp_ClientId) isTenancyApp_Op() {}
+
+func (*TenancyApp_Key) isTenancyApp_Op() {}
+
 // Shapes
 type Shapes struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -3655,7 +3852,7 @@ type Shapes struct {
 
 func (x *Shapes) Reset() {
 	*x = Shapes{}
-	mi := &file_config_v1_config_proto_msgTypes[41]
+	mi := &file_config_v1_config_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3667,7 +3864,7 @@ func (x *Shapes) String() string {
 func (*Shapes) ProtoMessage() {}
 
 func (x *Shapes) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[41]
+	mi := &file_config_v1_config_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3680,7 +3877,7 @@ func (x *Shapes) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Shapes.ProtoReflect.Descriptor instead.
 func (*Shapes) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{41}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *Shapes) GetOp() isShapes_Op {
@@ -3740,7 +3937,7 @@ type Shape struct {
 
 func (x *Shape) Reset() {
 	*x = Shape{}
-	mi := &file_config_v1_config_proto_msgTypes[42]
+	mi := &file_config_v1_config_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3752,7 +3949,7 @@ func (x *Shape) String() string {
 func (*Shape) ProtoMessage() {}
 
 func (x *Shape) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[42]
+	mi := &file_config_v1_config_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3765,7 +3962,7 @@ func (x *Shape) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Shape.ProtoReflect.Descriptor instead.
 func (*Shape) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{42}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *Shape) GetName() string {
@@ -3859,7 +4056,7 @@ type Ports struct {
 
 func (x *Ports) Reset() {
 	*x = Ports{}
-	mi := &file_config_v1_config_proto_msgTypes[43]
+	mi := &file_config_v1_config_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3871,7 +4068,7 @@ func (x *Ports) String() string {
 func (*Ports) ProtoMessage() {}
 
 func (x *Ports) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[43]
+	mi := &file_config_v1_config_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3884,7 +4081,7 @@ func (x *Ports) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Ports.ProtoReflect.Descriptor instead.
 func (*Ports) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{43}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *Ports) GetOp() isPorts_Op {
@@ -3943,7 +4140,7 @@ type Port struct {
 
 func (x *Port) Reset() {
 	*x = Port{}
-	mi := &file_config_v1_config_proto_msgTypes[44]
+	mi := &file_config_v1_config_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3955,7 +4152,7 @@ func (x *Port) String() string {
 func (*Port) ProtoMessage() {}
 
 func (x *Port) ProtoReflect() protoreflect.Message {
-	mi := &file_config_v1_config_proto_msgTypes[44]
+	mi := &file_config_v1_config_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3968,7 +4165,7 @@ func (x *Port) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Port.ProtoReflect.Descriptor instead.
 func (*Port) Descriptor() ([]byte, []int) {
-	return file_config_v1_config_proto_rawDescGZIP(), []int{44}
+	return file_config_v1_config_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *Port) GetName() string {
@@ -4097,14 +4294,15 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\x05int64\x18\x06 \x01(\x03H\x00R\x05int64\x12\x16\n" +
 	"\x05float\x18\a \x01(\x02H\x00R\x05float\x12(\n" +
 	"\x05error\x18\b \x01(\v2\x10.config.v1.ErrorH\x00R\x05errorB\b\n" +
-	"\x06return\"\x90\x02\n" +
+	"\x06return\"\xc0\x02\n" +
 	"\x02Op\x12)\n" +
 	"\x06config\x18\x01 \x01(\v2\x11.config.v1.ConfigR\x06config\x12(\n" +
 	"\x05cloud\x18\x02 \x01(\v2\x10.config.v1.CloudH\x00R\x05cloud\x12(\n" +
 	"\x05hosts\x18\x03 \x01(\v2\x10.config.v1.HostsH\x00R\x05hosts\x12%\n" +
 	"\x04auth\x18\x04 \x01(\v2\x0f.config.v1.AuthH\x00R\x04auth\x12+\n" +
 	"\x06shapes\x18\x05 \x01(\v2\x11.config.v1.ShapesH\x00R\x06shapes\x121\n" +
-	"\baccounts\x18\x06 \x01(\v2\x13.config.v1.AccountsH\x00R\baccountsB\x04\n" +
+	"\baccounts\x18\x06 \x01(\v2\x13.config.v1.AccountsH\x00R\baccounts\x12.\n" +
+	"\atenancy\x18\a \x01(\v2\x12.config.v1.TenancyH\x00R\atenancyB\x04\n" +
 	"\x02op\"^\n" +
 	"\x05Cloud\x12+\n" +
 	"\x06domain\x18\x02 \x01(\v2\x11.config.v1.DomainH\x00R\x06domain\x12\"\n" +
@@ -4231,6 +4429,16 @@ const file_config_v1_config_proto_rawDesc = "" +
 	"\x04user\x18\x03 \x01(\v2\x13.config.v1.StringOpH\x00R\x04user\x12)\n" +
 	"\x04pass\x18\x04 \x01(\v2\x13.config.v1.StringOpH\x00R\x04pass\x12)\n" +
 	"\x04from\x18\x05 \x01(\v2\x13.config.v1.StringOpH\x00R\x04fromB\x04\n" +
+	"\x02op\"\x9a\x01\n" +
+	"\aTenancy\x121\n" +
+	"\bprovider\x18\x01 \x01(\v2\x13.config.v1.StringOpH\x00R\bprovider\x12+\n" +
+	"\x05owner\x18\x02 \x01(\v2\x13.config.v1.StringOpH\x00R\x05owner\x12)\n" +
+	"\x03app\x18\x03 \x01(\v2\x15.config.v1.TenancyAppH\x00R\x03appB\x04\n" +
+	"\x02op\"o\n" +
+	"\n" +
+	"TenancyApp\x122\n" +
+	"\tclient_id\x18\x01 \x01(\v2\x13.config.v1.StringOpH\x00R\bclientId\x12'\n" +
+	"\x03key\x18\x02 \x01(\v2\x13.config.v1.StringOpH\x00R\x03keyB\x04\n" +
 	"\x02op\"P\n" +
 	"\x06Shapes\x12*\n" +
 	"\x06select\x18\x01 \x01(\v2\x10.config.v1.ShapeH\x00R\x06select\x12\x14\n" +
@@ -4283,7 +4491,7 @@ func file_config_v1_config_proto_rawDescGZIP() []byte {
 }
 
 var file_config_v1_config_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 45)
+var file_config_v1_config_proto_msgTypes = make([]protoimpl.MessageInfo, 47)
 var file_config_v1_config_proto_goTypes = []any{
 	(BundleType)(0),            // 0: config.v1.BundleType
 	(*Source)(nil),             // 1: config.v1.Source
@@ -4327,10 +4535,12 @@ var file_config_v1_config_proto_goTypes = []any{
 	(*Accounts)(nil),           // 39: config.v1.Accounts
 	(*AccountsEmail)(nil),      // 40: config.v1.AccountsEmail
 	(*SMTP)(nil),               // 41: config.v1.SMTP
-	(*Shapes)(nil),             // 42: config.v1.Shapes
-	(*Shape)(nil),              // 43: config.v1.Shape
-	(*Ports)(nil),              // 44: config.v1.Ports
-	(*Port)(nil),               // 45: config.v1.Port
+	(*Tenancy)(nil),            // 42: config.v1.Tenancy
+	(*TenancyApp)(nil),         // 43: config.v1.TenancyApp
+	(*Shapes)(nil),             // 44: config.v1.Shapes
+	(*Shape)(nil),              // 45: config.v1.Shape
+	(*Ports)(nil),              // 46: config.v1.Ports
+	(*Port)(nil),               // 47: config.v1.Port
 }
 var file_config_v1_config_proto_depIdxs = []int32{
 	0,  // 0: config.v1.Bundle.type:type_name -> config.v1.BundleType
@@ -4348,77 +4558,83 @@ var file_config_v1_config_proto_depIdxs = []int32{
 	17, // 12: config.v1.Op.cloud:type_name -> config.v1.Cloud
 	30, // 13: config.v1.Op.hosts:type_name -> config.v1.Hosts
 	36, // 14: config.v1.Op.auth:type_name -> config.v1.Auth
-	42, // 15: config.v1.Op.shapes:type_name -> config.v1.Shapes
+	44, // 15: config.v1.Op.shapes:type_name -> config.v1.Shapes
 	39, // 16: config.v1.Op.accounts:type_name -> config.v1.Accounts
-	18, // 17: config.v1.Cloud.domain:type_name -> config.v1.Domain
-	25, // 18: config.v1.Cloud.p2p:type_name -> config.v1.P2P
-	5,  // 19: config.v1.Domain.root:type_name -> config.v1.StringOp
-	5,  // 20: config.v1.Domain.generated:type_name -> config.v1.StringOp
-	21, // 21: config.v1.Domain.validation:type_name -> config.v1.Validation
-	19, // 22: config.v1.Domain.hosts:type_name -> config.v1.DomainHosts
-	20, // 23: config.v1.DomainHosts.select:type_name -> config.v1.DomainHost
-	22, // 24: config.v1.Validation.keys:type_name -> config.v1.ValidationKeys
-	23, // 25: config.v1.ValidationKeys.path:type_name -> config.v1.ValidationKeysPath
-	24, // 26: config.v1.ValidationKeys.data:type_name -> config.v1.ValidationKeysData
-	5,  // 27: config.v1.ValidationKeysPath.private_key:type_name -> config.v1.StringOp
-	5,  // 28: config.v1.ValidationKeysPath.public_key:type_name -> config.v1.StringOp
-	6,  // 29: config.v1.ValidationKeysData.private_key:type_name -> config.v1.BytesOp
-	6,  // 30: config.v1.ValidationKeysData.public_key:type_name -> config.v1.BytesOp
-	26, // 31: config.v1.P2P.bootstrap:type_name -> config.v1.Bootstrap
-	28, // 32: config.v1.P2P.swarm:type_name -> config.v1.Swarm
-	27, // 33: config.v1.Bootstrap.select:type_name -> config.v1.BootstrapShape
-	9,  // 34: config.v1.BootstrapShape.nodes:type_name -> config.v1.StringSliceOp
-	29, // 35: config.v1.Swarm.key:type_name -> config.v1.SwarmKey
-	5,  // 36: config.v1.SwarmKey.path:type_name -> config.v1.StringOp
-	6,  // 37: config.v1.SwarmKey.data:type_name -> config.v1.BytesOp
-	31, // 38: config.v1.Hosts.select:type_name -> config.v1.Host
-	9,  // 39: config.v1.Host.addresses:type_name -> config.v1.StringSliceOp
-	32, // 40: config.v1.Host.ssh:type_name -> config.v1.SSH
-	5,  // 41: config.v1.Host.location:type_name -> config.v1.StringOp
-	33, // 42: config.v1.Host.shapes:type_name -> config.v1.HostShapes
-	5,  // 43: config.v1.SSH.address:type_name -> config.v1.StringOp
-	9,  // 44: config.v1.SSH.auth:type_name -> config.v1.StringSliceOp
-	34, // 45: config.v1.HostShapes.select:type_name -> config.v1.HostShape
-	35, // 46: config.v1.HostShape.select:type_name -> config.v1.HostInstance
-	5,  // 47: config.v1.HostInstance.key:type_name -> config.v1.StringOp
-	37, // 48: config.v1.Auth.select:type_name -> config.v1.Signer
-	5,  // 49: config.v1.Signer.username:type_name -> config.v1.StringOp
-	5,  // 50: config.v1.Signer.password:type_name -> config.v1.StringOp
-	38, // 51: config.v1.Signer.key:type_name -> config.v1.SSHKey
-	5,  // 52: config.v1.SSHKey.path:type_name -> config.v1.StringOp
-	6,  // 53: config.v1.SSHKey.data:type_name -> config.v1.BytesOp
-	5,  // 54: config.v1.Accounts.session_ttl:type_name -> config.v1.StringOp
-	40, // 55: config.v1.Accounts.email:type_name -> config.v1.AccountsEmail
-	41, // 56: config.v1.AccountsEmail.smtp:type_name -> config.v1.SMTP
-	5,  // 57: config.v1.SMTP.host:type_name -> config.v1.StringOp
-	7,  // 58: config.v1.SMTP.port:type_name -> config.v1.UInt64Op
-	5,  // 59: config.v1.SMTP.user:type_name -> config.v1.StringOp
-	5,  // 60: config.v1.SMTP.pass:type_name -> config.v1.StringOp
-	5,  // 61: config.v1.SMTP.from:type_name -> config.v1.StringOp
-	43, // 62: config.v1.Shapes.select:type_name -> config.v1.Shape
-	9,  // 63: config.v1.Shape.services:type_name -> config.v1.StringSliceOp
-	44, // 64: config.v1.Shape.ports:type_name -> config.v1.Ports
-	9,  // 65: config.v1.Shape.plugins:type_name -> config.v1.StringSliceOp
-	45, // 66: config.v1.Ports.select:type_name -> config.v1.Port
-	14, // 67: config.v1.ConfigService.New:input_type -> config.v1.Empty
-	1,  // 68: config.v1.ConfigService.Load:input_type -> config.v1.Source
-	2,  // 69: config.v1.ConfigService.Upload:input_type -> config.v1.SourceUpload
-	13, // 70: config.v1.ConfigService.Download:input_type -> config.v1.BundleConfig
-	3,  // 71: config.v1.ConfigService.Commit:input_type -> config.v1.Config
-	3,  // 72: config.v1.ConfigService.Free:input_type -> config.v1.Config
-	16, // 73: config.v1.ConfigService.Do:input_type -> config.v1.Op
-	3,  // 74: config.v1.ConfigService.New:output_type -> config.v1.Config
-	3,  // 75: config.v1.ConfigService.Load:output_type -> config.v1.Config
-	3,  // 76: config.v1.ConfigService.Upload:output_type -> config.v1.Config
-	4,  // 77: config.v1.ConfigService.Download:output_type -> config.v1.Bundle
-	14, // 78: config.v1.ConfigService.Commit:output_type -> config.v1.Empty
-	14, // 79: config.v1.ConfigService.Free:output_type -> config.v1.Empty
-	15, // 80: config.v1.ConfigService.Do:output_type -> config.v1.Return
-	74, // [74:81] is the sub-list for method output_type
-	67, // [67:74] is the sub-list for method input_type
-	67, // [67:67] is the sub-list for extension type_name
-	67, // [67:67] is the sub-list for extension extendee
-	0,  // [0:67] is the sub-list for field type_name
+	42, // 17: config.v1.Op.tenancy:type_name -> config.v1.Tenancy
+	18, // 18: config.v1.Cloud.domain:type_name -> config.v1.Domain
+	25, // 19: config.v1.Cloud.p2p:type_name -> config.v1.P2P
+	5,  // 20: config.v1.Domain.root:type_name -> config.v1.StringOp
+	5,  // 21: config.v1.Domain.generated:type_name -> config.v1.StringOp
+	21, // 22: config.v1.Domain.validation:type_name -> config.v1.Validation
+	19, // 23: config.v1.Domain.hosts:type_name -> config.v1.DomainHosts
+	20, // 24: config.v1.DomainHosts.select:type_name -> config.v1.DomainHost
+	22, // 25: config.v1.Validation.keys:type_name -> config.v1.ValidationKeys
+	23, // 26: config.v1.ValidationKeys.path:type_name -> config.v1.ValidationKeysPath
+	24, // 27: config.v1.ValidationKeys.data:type_name -> config.v1.ValidationKeysData
+	5,  // 28: config.v1.ValidationKeysPath.private_key:type_name -> config.v1.StringOp
+	5,  // 29: config.v1.ValidationKeysPath.public_key:type_name -> config.v1.StringOp
+	6,  // 30: config.v1.ValidationKeysData.private_key:type_name -> config.v1.BytesOp
+	6,  // 31: config.v1.ValidationKeysData.public_key:type_name -> config.v1.BytesOp
+	26, // 32: config.v1.P2P.bootstrap:type_name -> config.v1.Bootstrap
+	28, // 33: config.v1.P2P.swarm:type_name -> config.v1.Swarm
+	27, // 34: config.v1.Bootstrap.select:type_name -> config.v1.BootstrapShape
+	9,  // 35: config.v1.BootstrapShape.nodes:type_name -> config.v1.StringSliceOp
+	29, // 36: config.v1.Swarm.key:type_name -> config.v1.SwarmKey
+	5,  // 37: config.v1.SwarmKey.path:type_name -> config.v1.StringOp
+	6,  // 38: config.v1.SwarmKey.data:type_name -> config.v1.BytesOp
+	31, // 39: config.v1.Hosts.select:type_name -> config.v1.Host
+	9,  // 40: config.v1.Host.addresses:type_name -> config.v1.StringSliceOp
+	32, // 41: config.v1.Host.ssh:type_name -> config.v1.SSH
+	5,  // 42: config.v1.Host.location:type_name -> config.v1.StringOp
+	33, // 43: config.v1.Host.shapes:type_name -> config.v1.HostShapes
+	5,  // 44: config.v1.SSH.address:type_name -> config.v1.StringOp
+	9,  // 45: config.v1.SSH.auth:type_name -> config.v1.StringSliceOp
+	34, // 46: config.v1.HostShapes.select:type_name -> config.v1.HostShape
+	35, // 47: config.v1.HostShape.select:type_name -> config.v1.HostInstance
+	5,  // 48: config.v1.HostInstance.key:type_name -> config.v1.StringOp
+	37, // 49: config.v1.Auth.select:type_name -> config.v1.Signer
+	5,  // 50: config.v1.Signer.username:type_name -> config.v1.StringOp
+	5,  // 51: config.v1.Signer.password:type_name -> config.v1.StringOp
+	38, // 52: config.v1.Signer.key:type_name -> config.v1.SSHKey
+	5,  // 53: config.v1.SSHKey.path:type_name -> config.v1.StringOp
+	6,  // 54: config.v1.SSHKey.data:type_name -> config.v1.BytesOp
+	5,  // 55: config.v1.Accounts.session_ttl:type_name -> config.v1.StringOp
+	40, // 56: config.v1.Accounts.email:type_name -> config.v1.AccountsEmail
+	41, // 57: config.v1.AccountsEmail.smtp:type_name -> config.v1.SMTP
+	5,  // 58: config.v1.SMTP.host:type_name -> config.v1.StringOp
+	7,  // 59: config.v1.SMTP.port:type_name -> config.v1.UInt64Op
+	5,  // 60: config.v1.SMTP.user:type_name -> config.v1.StringOp
+	5,  // 61: config.v1.SMTP.pass:type_name -> config.v1.StringOp
+	5,  // 62: config.v1.SMTP.from:type_name -> config.v1.StringOp
+	5,  // 63: config.v1.Tenancy.provider:type_name -> config.v1.StringOp
+	5,  // 64: config.v1.Tenancy.owner:type_name -> config.v1.StringOp
+	43, // 65: config.v1.Tenancy.app:type_name -> config.v1.TenancyApp
+	5,  // 66: config.v1.TenancyApp.client_id:type_name -> config.v1.StringOp
+	5,  // 67: config.v1.TenancyApp.key:type_name -> config.v1.StringOp
+	45, // 68: config.v1.Shapes.select:type_name -> config.v1.Shape
+	9,  // 69: config.v1.Shape.services:type_name -> config.v1.StringSliceOp
+	46, // 70: config.v1.Shape.ports:type_name -> config.v1.Ports
+	9,  // 71: config.v1.Shape.plugins:type_name -> config.v1.StringSliceOp
+	47, // 72: config.v1.Ports.select:type_name -> config.v1.Port
+	14, // 73: config.v1.ConfigService.New:input_type -> config.v1.Empty
+	1,  // 74: config.v1.ConfigService.Load:input_type -> config.v1.Source
+	2,  // 75: config.v1.ConfigService.Upload:input_type -> config.v1.SourceUpload
+	13, // 76: config.v1.ConfigService.Download:input_type -> config.v1.BundleConfig
+	3,  // 77: config.v1.ConfigService.Commit:input_type -> config.v1.Config
+	3,  // 78: config.v1.ConfigService.Free:input_type -> config.v1.Config
+	16, // 79: config.v1.ConfigService.Do:input_type -> config.v1.Op
+	3,  // 80: config.v1.ConfigService.New:output_type -> config.v1.Config
+	3,  // 81: config.v1.ConfigService.Load:output_type -> config.v1.Config
+	3,  // 82: config.v1.ConfigService.Upload:output_type -> config.v1.Config
+	4,  // 83: config.v1.ConfigService.Download:output_type -> config.v1.Bundle
+	14, // 84: config.v1.ConfigService.Commit:output_type -> config.v1.Empty
+	14, // 85: config.v1.ConfigService.Free:output_type -> config.v1.Empty
+	15, // 86: config.v1.ConfigService.Do:output_type -> config.v1.Return
+	80, // [80:87] is the sub-list for method output_type
+	73, // [73:80] is the sub-list for method input_type
+	73, // [73:73] is the sub-list for extension type_name
+	73, // [73:73] is the sub-list for extension extendee
+	0,  // [0:73] is the sub-list for field type_name
 }
 
 func init() { file_config_v1_config_proto_init() }
@@ -4477,6 +4693,7 @@ func file_config_v1_config_proto_init() {
 		(*Op_Auth)(nil),
 		(*Op_Shapes)(nil),
 		(*Op_Accounts)(nil),
+		(*Op_Tenancy)(nil),
 	}
 	file_config_v1_config_proto_msgTypes[16].OneofWrappers = []any{
 		(*Cloud_Domain)(nil),
@@ -4590,20 +4807,29 @@ func file_config_v1_config_proto_init() {
 		(*SMTP_From)(nil),
 	}
 	file_config_v1_config_proto_msgTypes[41].OneofWrappers = []any{
+		(*Tenancy_Provider)(nil),
+		(*Tenancy_Owner)(nil),
+		(*Tenancy_App)(nil),
+	}
+	file_config_v1_config_proto_msgTypes[42].OneofWrappers = []any{
+		(*TenancyApp_ClientId)(nil),
+		(*TenancyApp_Key)(nil),
+	}
+	file_config_v1_config_proto_msgTypes[43].OneofWrappers = []any{
 		(*Shapes_Select)(nil),
 		(*Shapes_List)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[42].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[44].OneofWrappers = []any{
 		(*Shape_Services)(nil),
 		(*Shape_Ports)(nil),
 		(*Shape_Plugins)(nil),
 		(*Shape_Delete)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[43].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[45].OneofWrappers = []any{
 		(*Ports_Select)(nil),
 		(*Ports_List)(nil),
 	}
-	file_config_v1_config_proto_msgTypes[44].OneofWrappers = []any{
+	file_config_v1_config_proto_msgTypes[46].OneofWrappers = []any{
 		(*Port_Set)(nil),
 		(*Port_Get)(nil),
 		(*Port_Delete)(nil),
@@ -4614,7 +4840,7 @@ func file_config_v1_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_v1_config_proto_rawDesc), len(file_config_v1_config_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   45,
+			NumMessages:   47,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

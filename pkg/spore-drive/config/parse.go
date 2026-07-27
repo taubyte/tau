@@ -11,6 +11,7 @@ type Parser interface {
 	Shapes() ShapesParser
 	Auth() AuthParser
 	Accounts() AccountsParser
+	Tenancy() TenancyParser
 	Sync() error
 }
 
@@ -52,4 +53,8 @@ func (p *parser) Auth() AuthParser {
 
 func (p *parser) Accounts() AccountsParser {
 	return &accounts{root: p, Query: p.Get("accounts").Document()}
+}
+
+func (p *parser) Tenancy() TenancyParser {
+	return &tenancy{root: p, Query: p.Get("tenancy").Document()}
 }

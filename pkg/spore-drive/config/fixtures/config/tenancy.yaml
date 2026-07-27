@@ -1,0 +1,8 @@
+provider: github
+owner: taubyte
+app:
+    client-id: Iv1.0000000000000000
+    key: |
+        -----BEGIN RSA PRIVATE KEY-----
+        fixture
+        -----END RSA PRIVATE KEY-----

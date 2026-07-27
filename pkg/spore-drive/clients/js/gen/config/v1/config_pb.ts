@@ -819,6 +819,12 @@ export class Op extends Message<Op> {
      */
     value: Accounts;
     case: "accounts";
+  } | {
+    /**
+     * @generated from field: config.v1.Tenancy tenancy = 7;
+     */
+    value: Tenancy;
+    case: "tenancy";
   } | { case: undefined; value?: undefined } = { case: undefined };
 
   constructor(data?: PartialMessage<Op>) {
@@ -835,6 +841,7 @@ export class Op extends Message<Op> {
     { no: 4, name: "auth", kind: "message", T: Auth, oneof: "op" },
     { no: 5, name: "shapes", kind: "message", T: Shapes, oneof: "op" },
     { no: 6, name: "accounts", kind: "message", T: Accounts, oneof: "op" },
+    { no: 7, name: "tenancy", kind: "message", T: Tenancy, oneof: "op" },
   ]);
 
   static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Op {
@@ -2225,6 +2232,115 @@ export class SMTP extends Message<SMTP> {
 
   static equals(a: SMTP | PlainMessage<SMTP> | undefined, b: SMTP | PlainMessage<SMTP> | undefined): boolean {
     return proto3.util.equals(SMTP, a, b);
+  }
+}
+
+/**
+ * Tenancy
+ *
+ * @generated from message config.v1.Tenancy
+ */
+export class Tenancy extends Message<Tenancy> {
+  /**
+   * @generated from oneof config.v1.Tenancy.op
+   */
+  op: {
+    /**
+     * @generated from field: config.v1.StringOp provider = 1;
+     */
+    value: StringOp;
+    case: "provider";
+  } | {
+    /**
+     * @generated from field: config.v1.StringOp owner = 2;
+     */
+    value: StringOp;
+    case: "owner";
+  } | {
+    /**
+     * @generated from field: config.v1.TenancyApp app = 3;
+     */
+    value: TenancyApp;
+    case: "app";
+  } | { case: undefined; value?: undefined } = { case: undefined };
+
+  constructor(data?: PartialMessage<Tenancy>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "config.v1.Tenancy";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "provider", kind: "message", T: StringOp, oneof: "op" },
+    { no: 2, name: "owner", kind: "message", T: StringOp, oneof: "op" },
+    { no: 3, name: "app", kind: "message", T: TenancyApp, oneof: "op" },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): Tenancy {
+    return new Tenancy().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): Tenancy {
+    return new Tenancy().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): Tenancy {
+    return new Tenancy().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: Tenancy | PlainMessage<Tenancy> | undefined, b: Tenancy | PlainMessage<Tenancy> | undefined): boolean {
+    return proto3.util.equals(Tenancy, a, b);
+  }
+}
+
+/**
+ * @generated from message config.v1.TenancyApp
+ */
+export class TenancyApp extends Message<TenancyApp> {
+  /**
+   * @generated from oneof config.v1.TenancyApp.op
+   */
+  op: {
+    /**
+     * @generated from field: config.v1.StringOp client_id = 1;
+     */
+    value: StringOp;
+    case: "clientId";
+  } | {
+    /**
+     * @generated from field: config.v1.StringOp key = 2;
+     */
+    value: StringOp;
+    case: "key";
+  } | { case: undefined; value?: undefined } = { case: undefined };
+
+  constructor(data?: PartialMessage<TenancyApp>) {
+    super();
+    proto3.util.initPartial(data, this);
+  }
+
+  static readonly runtime: typeof proto3 = proto3;
+  static readonly typeName = "config.v1.TenancyApp";
+  static readonly fields: FieldList = proto3.util.newFieldList(() => [
+    { no: 1, name: "client_id", kind: "message", T: StringOp, oneof: "op" },
+    { no: 2, name: "key", kind: "message", T: StringOp, oneof: "op" },
+  ]);
+
+  static fromBinary(bytes: Uint8Array, options?: Partial<BinaryReadOptions>): TenancyApp {
+    return new TenancyApp().fromBinary(bytes, options);
+  }
+
+  static fromJson(jsonValue: JsonValue, options?: Partial<JsonReadOptions>): TenancyApp {
+    return new TenancyApp().fromJson(jsonValue, options);
+  }
+
+  static fromJsonString(jsonString: string, options?: Partial<JsonReadOptions>): TenancyApp {
+    return new TenancyApp().fromJsonString(jsonString, options);
+  }
+
+  static equals(a: TenancyApp | PlainMessage<TenancyApp> | undefined, b: TenancyApp | PlainMessage<TenancyApp> | undefined): boolean {
+    return proto3.util.equals(TenancyApp, a, b);
   }
 }
 

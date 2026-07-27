@@ -122,6 +122,20 @@ func main() {
 		panic(err)
 	}
 
+	t := p.Tenancy()
+	if err = t.SetProvider("github"); err != nil {
+		panic(err)
+	}
+	if err = t.SetOwner("taubyte"); err != nil {
+		panic(err)
+	}
+	if err = t.App().SetClientId("Iv1.0000000000000000"); err != nil {
+		panic(err)
+	}
+	if err = t.App().SetKey("-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n"); err != nil {
+		panic(err)
+	}
+
 	err = p.Shapes().Shape("shape1").Services().Set("auth", "seer", "accounts")
 	if err != nil {
 		panic(err)

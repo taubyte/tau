@@ -118,6 +118,10 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 		if err != nil {
 			return nil, fmt.Errorf("fetch repository failed with %w", err)
 		}
+
+		if err := srv.authorizeRepository(client); err != nil {
+			return nil, err
+		}
 	}
 
 	repoKey := fmt.Sprintf("/repositories/github/%s/key", repoID)

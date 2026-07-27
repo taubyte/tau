@@ -37,6 +37,10 @@ type Source struct {
 	// community / dream installs can omit. AccountsURL + WebAuthn are
 	// derived from NetworkFqdn at runtime.
 	Accounts Accounts `yaml:"accounts,omitempty"`
+	// Tenancy names the git namespace that owns this cloud. Unlike Accounts it
+	// is emitted to every shape, so any service can compare a repository's
+	// owner against it without a client or an API call.
+	Tenancy Tenancy `yaml:"tenancy,omitempty"`
 	// Enterprise namespaces raw config for enterprise-only services under
 	// `enterprise:` in the shape config. Community builds carry it opaquely;
 	// `//go:build ee` code decodes each service's entry into its own typed
