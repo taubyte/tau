@@ -65,6 +65,30 @@ func CheckFields(root []*Node, group string) [][]string {
 	return out
 }
 
+// RequiredFields returns the authored paths of a resource group's REQUIRED
+// fields — the ones whose absence the compiler rejects at load. Partial
+// validation has to ask for these separately: every other check runs against a
+// value, and a missing field has none, so a loop over present values can only
+// ever report a resource with nothing in it as valid.
+func RequiredFields(root []*Node, group string) [][]string {
+	var out [][]string
+	for _, g := range root {
+		name, _ := g.Match.(string)
+		if name != group || len(g.Children) == 0 {
+			continue
+		}
+		for _, a := range g.Children[0].Attributes {
+			if !a.Required {
+				continue
+			}
+			if p := fieldPath(a); p != nil {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
+}
+
 // ValidateField runs the single-value validator for one field (by authored path)
 // of a resource group against value. It distinguishes three outcomes so a caller
 // can tell "valid" from "not recognized":

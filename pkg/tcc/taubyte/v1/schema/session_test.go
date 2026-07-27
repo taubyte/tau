@@ -338,6 +338,30 @@ func TestSession(t *testing.T) {
 		assert.Equal(t, s.Exists(s.Root()), true)
 	})
 
+	// Partial validation must report a field the compiler will reject as MISSING,
+	// not just a present field with a bad value — otherwise a barely-created
+	// resource reads as locally valid and then fails to compile.
+	t.Run("a missing required field is reported, not skipped", func(t *testing.T) {
+		fork, err := s.Fork()
+		assert.NilError(t, err)
+		bare := []string{"functions", "bare_fn"}
+		assert.NilError(t, fork.Set(bare, []string{"name"}, "bare_fn"))
+
+		issues := fork.ValidateResource(bare)
+		assert.Equal(t, len(issues), 1)
+		assert.DeepEqual(t, issues[0].Field, []string{"id"})
+		assert.Assert(t, strings.Contains(issues[0].Message, "required"))
+		// and the compiler agrees, which is the point
+		_, err = fork.Validate(ctx, CompileOptions{})
+		assert.ErrorContains(t, err, "required attribute 'id'")
+
+		// supplying it clears the issue
+		id, err := fork.Generate(bare, []string{"id"})
+		assert.NilError(t, err)
+		assert.NilError(t, fork.Set(bare, []string{"id"}, id))
+		assert.Equal(t, len(fork.ValidateResource(bare)), 0)
+	})
+
 	t.Run("Generate mints a resource id per the DSL, not per consumer", func(t *testing.T) {
 		fn := []string{"functions", "test_function1_glob"}
 		got, err := s.Generate(fn, []string{"id"})

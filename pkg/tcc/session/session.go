@@ -36,6 +36,10 @@ type FieldValidator interface {
 	ValidateField(group string, field []string, value any) error
 	// Fields returns the authored paths of a resource group's validated fields.
 	Fields(group string) [][]string
+	// RequiredFields returns the authored paths of a resource group's required
+	// fields — asked for separately because a missing field has no value for
+	// the value-driven checks to run against.
+	RequiredFields(group string) [][]string
 }
 
 // Completer supplies a DSL's field completion sources: the fixed candidates (enum
@@ -377,11 +381,23 @@ func (s *Session) ValidateResource(res []string) []FieldIssue {
 	if s.bind.FieldValidator == nil {
 		return nil
 	}
+	group := s.resGroup(res)
 	var issues []FieldIssue
-	for _, f := range s.bind.FieldValidator.Fields(s.resGroup(res)) {
+	// A required field that is absent has no value to check, so it must be
+	// looked for by name — otherwise a resource with nothing in it validates
+	// clean here and is then rejected by the compiler.
+	for _, f := range s.bind.FieldValidator.RequiredFields(group) {
+		if _, err := s.Get(res, f); err != nil {
+			issues = append(issues, FieldIssue{
+				Field:   f,
+				Message: fmt.Sprintf("required field %q is missing", strings.Join(f, "/")),
+			})
+		}
+	}
+	for _, f := range s.bind.FieldValidator.Fields(group) {
 		v, err := s.Get(res, f)
 		if err != nil {
-			continue // field absent -> nothing to validate
+			continue // absent -> already reported above if required
 		}
 		if e := s.ValidateField(res, f, v); e != nil {
 			issues = append(issues, FieldIssue{Field: f, Message: e.Error()})
