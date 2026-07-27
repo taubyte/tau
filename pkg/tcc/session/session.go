@@ -497,11 +497,11 @@ func (s *Session) ResourceAt(filePath string) ([]string, bool) {
 	if l == nil {
 		return nil, false
 	}
+	// ".yaml" only — that is the sole extension yaseer reads or writes, so any
+	// other spelling names a file this session can never round-trip.
 	stem, ok := strings.CutSuffix(strings.TrimPrefix(filePath, "/"), ".yaml")
 	if !ok {
-		if stem, ok = strings.CutSuffix(strings.TrimPrefix(filePath, "/"), ".yml"); !ok {
-			return nil, false
-		}
+		return nil, false
 	}
 	segs := strings.Split(stem, "/")
 	if slices.Contains(segs, "") {
@@ -525,10 +525,10 @@ func (s *Session) ResourceAt(filePath string) ([]string, bool) {
 }
 
 // Generate mints a value for one of a resource's DSL-generated fields (its id),
-// so no consumer carries its own "how do I make an id". seed is mixed into the
-// generator on top of the project id and the resource name, which are read from
-// the session — two resources of the same name in different projects can't
-// collide, and re-creating one never reproduces the old value.
+// so no consumer carries its own "how do I make an id". The resource's address
+// is mixed in, plus any seed the caller adds; a generator is required to supply
+// its own entropy on top (see engine.Generate), so uniqueness never depends on
+// the seed — which is why this needs to know nothing about the DSL's fields.
 func (s *Session) Generate(res, field []string, seed ...any) (string, error) {
 	if s.bind.Generator == nil {
 		return "", errors.New("session: no generator wired")
@@ -540,13 +540,7 @@ func (s *Session) Generate(res, field []string, seed ...any) (string, error) {
 	if kind == "" {
 		return "", fmt.Errorf("session: %q is not a generated field", strings.Join(field, "/"))
 	}
-	ctx := append([]any{}, seed...)
-	if s.bind.Layout != nil {
-		if id, err := s.Get([]string{s.bind.Layout.RootDoc()}, []string{"id"}); err == nil {
-			ctx = append(ctx, id)
-		}
-	}
-	return s.bind.Generator.Generate(kind, append(ctx, strings.Join(res, "/"))...)
+	return s.bind.Generator.Generate(kind, append(seed, strings.Join(res, "/"))...)
 }
 
 // resGroup is the resource-kind name in a resource address: res[len-2] — the

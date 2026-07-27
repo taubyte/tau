@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 
 	mh "github.com/multiformats/go-multihash"
 )
@@ -40,33 +39,10 @@ func GeneratedBy(root []*Node, group string, field []string) string {
 	return kind
 }
 
-// GeneratedFields returns the authored paths of a resource group's generated
-// fields, paired with their generator id — what a caller fills in when creating
-// a resource.
-func GeneratedFields(root []*Node, group string) map[string]string {
-	out := map[string]string{}
-	for _, g := range root {
-		name, _ := g.Match.(string)
-		if name != group || len(g.Children) == 0 {
-			continue
-		}
-		for _, a := range g.Children[0].Attributes {
-			kind, ok := a.Meta["generated"].(string)
-			if !ok || kind == "" {
-				continue
-			}
-			if p := fieldPath(a); p != nil {
-				out[strings.Join(p, "/")] = kind
-			}
-		}
-	}
-	return out
-}
-
-// Generate mints a value for a generated field. seed is the caller's uniqueness
-// context (e.g. the project id and the resource name) — it is mixed in, never
-// relied on alone, so two resources with the same name in different projects
-// can't collide and re-creating one never reproduces the old id.
+// Generate mints a value for a generated field. seed is the caller's context
+// (e.g. the resource's address); a generator MUST mix in its own entropy rather
+// than rely on it, so two resources that share a seed still never collide and
+// re-generating one never reproduces the old value.
 func Generate(kind string, seed ...any) (string, error) {
 	switch kind {
 	case GenCID:

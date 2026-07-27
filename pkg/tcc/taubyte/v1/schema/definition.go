@@ -252,10 +252,13 @@ func cloudsGroup() *Node {
 	))
 }
 
+// taubyteRoot is the project itself: its own attributes (the root document) plus
+// every group. Singular names the type a generator emits for it, exactly as a
+// container group declares its own — no generator invents the name.
 var taubyteRoot = Root(
 	taubyteRootAttributes(),
 	append(append([]*Node{}, TaubyteRessources...), applicationsGroup(), cloudsGroup())...,
-)
+).With(Singular("Project"))
 
 var TaubyteProject = SchemaDefinition(taubyteRoot)
 
