@@ -6,7 +6,13 @@ DREAM_P ?= 4
 # build and run the packages that actually carry tagged tests. Scoped to the
 # community tree — the ee/ submodule's dreaming tests run under
 # `make test-ee-dreaming`.
-DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | sed 's|^\./||' | grep -v '^ee/' | xargs -n1 dirname | sort -u | sed 's|^|./|')
+#
+# Dot-directories are excluded because tooling keeps git worktrees there —
+# checkouts of this repo nested inside it. `go test ./...` skips them (own
+# go.mod), but this glob does not, and including them both fails their packages
+# outright and runs every dreaming test twice under -p, colliding on the fixed
+# ports the fixtures bind.
+DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
 .PHONY: test test-dreaming test-raft test-docker test-all bench-dreaming vm-fixtures test-cli test-cli-cover
 
