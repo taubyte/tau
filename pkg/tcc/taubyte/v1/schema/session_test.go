@@ -293,6 +293,15 @@ func TestSession(t *testing.T) {
 		}
 		assert.Equal(t, byGroup["functions"], false)
 		assert.Equal(t, byGroup["applications"], true, "the container says so, so no caller name-checks it")
+		// A group the DSL never names is not a kind: clouds is a leaf map of
+		// settings inside the root document, and declares neither Resource nor
+		// Singular. Reporting it would hand consumers a nameless entry to filter.
+		_, cloudsIsAKind := byGroup["clouds"]
+		assert.Assert(t, !cloudsIsAKind, "clouds is not a resource kind")
+		for _, k := range kinds {
+			assert.Assert(t, k.Name != "", "every kind the DSL reports is named: %+v", k)
+		}
+		assert.Equal(t, len(kinds), 10, "9 resources + the application container")
 
 		addr := func(kind, name, app string) []string {
 			t.Helper()

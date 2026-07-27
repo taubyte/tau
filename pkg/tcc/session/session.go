@@ -63,11 +63,23 @@ type Layout interface {
 	Kinds() []Kind
 }
 
-// Kind is one resource kind the DSL defines. Group is the canonical key (the
+// Kind is one kind of thing the DSL names. Group is the canonical key (the
 // config directory it is authored under); Name is the singular the DSL declares
 // for one instance, lowercased, and is accepted as an alias wherever a kind is
-// named. Container marks a kind whose instances hold resources of their own — a
-// distinction a consumer should read here rather than special-case by name.
+// named.
+//
+// Container is NOT cosmetic, and a consumer should branch on it rather than
+// treat every kind alike. A container's instances hold resources of their own;
+// in this DSL that is the application, and it is deliberately not declared as a
+// resource — it has no compiled resource type and never appears in the compiled
+// object as one. What IS uniform is everything about editing it: its address,
+// its document, its file, its local validation. So:
+//
+//	address / doc / serialize / validate  — same for every kind, container or not
+//	"which kinds can I create as resources" — filter out Container
+//
+// Branching on Container is right; branching on a kind's NAME is what this
+// exists to remove.
 type Kind struct {
 	Name      string `json:"name"`
 	Group     string `json:"group"`

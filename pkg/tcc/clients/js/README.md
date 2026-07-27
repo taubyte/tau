@@ -124,9 +124,23 @@ await session.exists(r.res);             // is it in the config, or being create
 ```
 
 `kind` accepts a kind's group key (`"functions"`) or its declared singular
-(`"function"`); an unknown one throws rather than address nothing. An application
-is not a special case — it is a kind whose `container` is true, which is what to
-branch on if you need to.
+(`"function"`); an unknown one throws rather than address nothing.
+
+**`container` is not cosmetic.** An application is a container, and the DSL
+deliberately does *not* declare it a resource: it has no compiled resource type
+and never appears in the compiled object as one. What's uniform is everything
+about *editing* it — address, document, file, local validation. What isn't is
+whether it belongs in a list of resources:
+
+```ts
+const resourceKinds = (await session.kinds()).filter((k) => !k.container);
+```
+
+So `if (kind === "application")` should become `if (k.container)`, not disappear.
+Branching on the capability is right; branching on the name is what this removes.
+
+Groups the DSL never names are not kinds at all — `clouds` is a leaf map of
+settings inside the root document, so it isn't reported and you don't filter it.
 
 ### Whole-document editing
 

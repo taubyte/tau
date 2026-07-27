@@ -43,10 +43,19 @@ func (taubyteLayout) RootDoc() string { return engine.NodeDefaultSeerLeaf }
 // Kinds projects the DSL's groups into the session's kind vocabulary. The
 // singular is lowercased so a consumer routing on a kind string ("function")
 // matches without knowing it derives from a Go type name.
+//
+// A group the DSL never NAMES is not a kind: `clouds` is a leaf map of settings
+// authored inside the root document (see cloudsGroup), not a directory of
+// resources, and it declares neither Resource() nor Singular(). Reporting it
+// would hand every consumer a nameless entry to filter out — the DSL already
+// says it isn't one.
 func (taubyteLayout) Kinds() []session.Kind {
 	groups := engine.Groups(GenerationRoot())
 	out := make([]session.Kind, 0, len(groups))
 	for _, g := range groups {
+		if g.Singular == "" {
+			continue
+		}
 		out = append(out, session.Kind{
 			Name:      strings.ToLower(g.Singular),
 			Group:     g.Group,

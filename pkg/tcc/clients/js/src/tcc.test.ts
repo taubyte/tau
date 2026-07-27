@@ -237,9 +237,20 @@ test("session: kind-keyed addressing, listing and existence", async () => {
   const fnKind = kinds.find((k) => k.group === "functions")!;
   assert.equal(fnKind.name, "function", "a kind's declared singular");
   assert.equal(fnKind.container, false);
-  // an application is not a special case — it is a kind whose instances contain
-  // resources of their own, and it says so
+  // An application is a CONTAINER, not a resource: the DSL declares no
+  // Resource() for it, so it has no compiled resource type. Editing it is
+  // uniform (address/doc/serialize/validate below); "which kinds can I create as
+  // resources" is the container flag, not a name check.
   assert.equal(kinds.find((k) => k.group === "applications")?.container, true);
+  assert.deepEqual(
+    kinds.filter((k) => !k.container).map((k) => k.group).sort(),
+    ["databases", "domains", "functions", "libraries", "messaging", "services", "smartops", "storages", "websites"],
+    "the resource kinds are exactly the nine the DSL declares Resource() for",
+  );
+  // and a group the DSL never names (clouds — a leaf map in the root document)
+  // is not reported as a kind at all
+  assert.equal(kinds.find((k) => k.group === "clouds"), undefined);
+  assert.ok(kinds.every((k) => k.name !== ""));
 
   // both the group key and the singular resolve to the same address
   assert.deepEqual(await session.address("functions", FN_NAME), ["functions", FN_NAME]);
