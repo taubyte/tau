@@ -74,11 +74,6 @@ func New(ctx context.Context, cfg tauConfig.Config) (*AuthService, error) {
 	if srv.stream, err = streams.New(srv.node, servicesCommon.Auth, servicesCommon.AuthProtocol); err != nil {
 		return nil, err
 	}
-	nodePath := path.Join(cfg.Root(), servicesCommon.Auth)
-	if srv.secretsService, err = initSecretsService(srv.db, srv.node, nodePath); err != nil {
-		return nil, err
-	}
-
 	if accountsIface.VerifyOnAuth {
 		srv.accountsURL = accountsIface.InferURL(cfg.DevMode(), cfg.NetworkFqdn())
 		var ac error
@@ -107,9 +102,6 @@ func (srv *AuthService) Close() error {
 	logger.Info("Closing", servicesCommon.Auth)
 	defer logger.Info(servicesCommon.Auth, "closed")
 
-	if srv.secretsService != nil {
-		srv.secretsService.Close()
-	}
 	if srv.accountsClient != nil {
 		srv.accountsClient.Close()
 	}

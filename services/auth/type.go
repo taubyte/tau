@@ -35,8 +35,6 @@ type AuthService struct {
 
 	newGitHubClient func(context.Context, string) (GitHubClient, error)
 
-	secretsService iface.AuthServiceSecretManager
-
 	// accountsClient (when non-nil) is consulted by GitHubTokenHTTPAuth after
 	// validating a github token to enforce the universal "no tau account
 	// linked" rule. Nil when Accounts.VerifyOnAuth = false (community + dream
