@@ -70,6 +70,7 @@ type Config interface {
 	DomainValidation() DomainValidation
 	SensorsRegistry() *sensors.Registry
 	Accounts() Accounts
+	Tenancy() Tenancy
 
 	SetNode(peer.Node)
 	SetRaftCluster(raft.Cluster)
@@ -286,6 +287,14 @@ func WithAccounts(a Accounts) Option {
 	}
 }
 
+// WithTenancy sets the owning namespace for this cloud.
+func WithTenancy(t Tenancy) Option {
+	return func(c *config) error {
+		c.tenancy = t
+		return nil
+	}
+}
+
 // New returns a validated config. Defaults are dev-friendly; override with options.
 func New(opts ...Option) (Config, error) {
 	c := &config{
@@ -351,6 +360,7 @@ type config struct {
 	plugins          Plugins
 	domainValidation DomainValidation
 	accounts         Accounts
+	tenancy          Tenancy
 	// enterprise namespaces raw config for enterprise-only services (each decoded
 	// by //go:build ee code via EnterpriseConfig); empty in community builds.
 	enterprise map[string]yaml.Node
@@ -465,6 +475,7 @@ func (c *config) DevMode() bool                      { return c.devMode }
 func (c *config) Plugins() Plugins                   { return c.plugins }
 func (c *config) DomainValidation() DomainValidation { return c.domainValidation }
 func (c *config) Accounts() Accounts                 { return c.accounts }
+func (c *config) Tenancy() Tenancy                   { return c.tenancy }
 
 func (c *config) SetNode(n peer.Node)            { c.node = n }
 func (c *config) SetRaftCluster(rc raft.Cluster) { c.raftCluster = rc }

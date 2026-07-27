@@ -107,12 +107,35 @@ func (client *githubClient) CreateDeployKey(name *string, key *string) error {
 		return errors.New("no repository selected")
 	}
 
-	_, _, err := client.Repositories.CreateKey(client.ctx, *(client.user.Login), *(client.current_repository.Name), &github.Key{
+	owner, repo, err := client.currentOwnerRepo()
+	if err != nil {
+		return err
+	}
+
+	_, _, err = client.Repositories.CreateKey(client.ctx, owner, repo, &github.Key{
 		Title: name,
 		Key:   key,
 	})
 
 	return err
+}
+
+// currentOwnerRepo is the owner and name of the selected repository. The owner
+// is the repository's, not the caller's: they differ whenever the repository
+// belongs to an organization the caller is a member of.
+func (client *githubClient) currentOwnerRepo() (string, string, error) {
+	if client.current_repository == nil {
+		return "", "", errors.New("no repository selected")
+	}
+	owner := client.current_repository.GetOwner().GetLogin()
+	if owner == "" {
+		return "", "", errors.New("repository owner unavailable")
+	}
+	name := client.current_repository.GetName()
+	if name == "" {
+		return "", "", errors.New("repository name unavailable")
+	}
+	return owner, name, nil
 }
 
 func (client *githubClient) CreatePushHook(name *string, url *string, devMode bool) (int64, string, error) {
@@ -130,7 +153,12 @@ func (client *githubClient) CreatePushHook(name *string, url *string, devMode bo
 		return 1, secret, nil
 	}
 
-	hk, _, err := client.Repositories.CreateHook(client.ctx, *(client.user.Login), *(client.current_repository.Name), &github.Hook{
+	owner, repo, err := client.currentOwnerRepo()
+	if err != nil {
+		return 0, "", err
+	}
+
+	hk, _, err := client.Repositories.CreateHook(client.ctx, owner, repo, &github.Hook{
 		Events: []string{
 			"push",
 		},

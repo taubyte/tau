@@ -254,7 +254,7 @@ func TestGitHubClientComprehensiveCoverage(t *testing.T) {
 	t.Run("CreateDeployKey", func(t *testing.T) {
 		// Mock GitHub API response for deploy key creation
 		gock.New("https://api.github.com").
-			Post("/repos/testuser/test-repo/keys").
+			Post("/repos/testorg/test-repo/keys").
 			Reply(201).
 			JSON(map[string]interface{}{
 				"id":    12345,
@@ -278,7 +278,8 @@ func TestGitHubClientComprehensiveCoverage(t *testing.T) {
 
 		// Test with valid repository
 		client.current_repository = &github.Repository{
-			Name: github.Ptr("test-repo"),
+			Name:  github.Ptr("test-repo"),
+			Owner: &github.User{Login: github.Ptr("testorg")},
 		}
 		client.user = &github.User{
 			Login: github.Ptr("testuser"),
@@ -294,7 +295,7 @@ func TestGitHubClientComprehensiveCoverage(t *testing.T) {
 	t.Run("CreatePushHook", func(t *testing.T) {
 		// Mock GitHub API response for webhook creation
 		gock.New("https://api.github.com").
-			Post("/repos/testuser/test-repo/hooks").
+			Post("/repos/testorg/test-repo/hooks").
 			Reply(201).
 			JSON(map[string]interface{}{
 				"id":     12345,
@@ -321,7 +322,8 @@ func TestGitHubClientComprehensiveCoverage(t *testing.T) {
 
 		// Set repository for dev mode test
 		client.current_repository = &github.Repository{
-			Name: github.Ptr("test-repo"),
+			Name:  github.Ptr("test-repo"),
+			Owner: &github.User{Login: github.Ptr("testorg")},
 		}
 		client.user = &github.User{
 			Login: github.Ptr("testuser"),

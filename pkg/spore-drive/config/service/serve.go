@@ -342,6 +342,10 @@ func (s *Service) Do(ctx context.Context, req *connect.Request[pb.Op]) (*connect
 		return s.doAccounts(q, p)
 	}
 
+	if q := req.Msg.GetTenancy(); q != nil {
+		return s.doTenancy(q, p)
+	}
+
 	return connect.NewResponse(&pb.Return{}), nil
 }
 

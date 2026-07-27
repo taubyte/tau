@@ -62,6 +62,11 @@ func TestParserEdit(t *testing.T) {
 	assert.NilError(t, p.Accounts().Email().SMTP().SetPass("secret"))
 	assert.NilError(t, p.Accounts().Email().SMTP().SetFrom("noreply@example.com"))
 
+	assert.NilError(t, p.Tenancy().SetProvider("github"))
+	assert.NilError(t, p.Tenancy().SetOwner("taubyte"))
+	assert.NilError(t, p.Tenancy().App().SetClientId("Iv1.0000000000000000"))
+	assert.NilError(t, p.Tenancy().App().SetKey("-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n"))
+
 	assert.NilError(t, p.Shapes().Shape("shape1").Services().Set("auth", "seer", "accounts"))
 	assert.NilError(t, p.Shapes().Shape("shape1").Ports().Set("main", 4242))
 	assert.NilError(t, p.Shapes().Shape("shape1").Ports().Set("lite", 4262))
@@ -169,6 +174,11 @@ func TestParserSchema(t *testing.T) {
 	assert.Equal(t, p.Accounts().Email().SMTP().User(), "noreply@example.com")
 	assert.Equal(t, p.Accounts().Email().SMTP().Pass(), "secret")
 	assert.Equal(t, p.Accounts().Email().SMTP().From(), "noreply@example.com")
+
+	assert.Equal(t, p.Tenancy().Provider(), "github")
+	assert.Equal(t, p.Tenancy().Owner(), "taubyte")
+	assert.Equal(t, p.Tenancy().App().ClientId(), "Iv1.0000000000000000")
+	assert.Equal(t, p.Tenancy().App().Key(), "-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n")
 	assert.Equal(t, p.Shapes().Shape("shape1").Ports().Get("main"), uint16(4242))
 	assert.Equal(t, p.Shapes().Shape("shape1").Ports().Get("lite"), uint16(4262))
 

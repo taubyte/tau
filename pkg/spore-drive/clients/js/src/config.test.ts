@@ -35,6 +35,14 @@ export const createConfig = async (config: Config) => {
   await config.accounts.email.smtp.pass.set("secret");
   await config.accounts.email.smtp.from.set("noreply@example.com");
 
+  // Set Tenancy configuration
+  await config.tenancy.provider.set("github");
+  await config.tenancy.owner.set("taubyte");
+  await config.tenancy.app.clientId.set("Iv1.0000000000000000");
+  await config.tenancy.app.key.set(
+    "-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n"
+  );
+
   // Set Shapes configurations
   const shape1 = config.shape["shape1"];
   await shape1.services.set(["auth", "seer", "accounts"]);
@@ -114,6 +122,16 @@ export const createConfigWithSet = async (config: Config) => {
         pass: "secret",
         from: "noreply@example.com",
       },
+    },
+  });
+
+  // Set Tenancy configuration
+  await config.tenancy.set({
+    provider: "github",
+    owner: "taubyte",
+    app: {
+      clientId: "Iv1.0000000000000000",
+      key: "-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n",
     },
   });
 
@@ -420,6 +438,40 @@ describe("Config Class Integration Tests", () => {
       "smtp.batch.example.com"
     );
     expect(await config.accounts.email.smtp.port.get()).toBe(2525);
+  });
+
+  it("should set and get tenancy provider, owner and app credential", async () => {
+    await config.tenancy.provider.set("github");
+    await config.tenancy.owner.set("acme");
+
+    const app = config.tenancy.app;
+    await app.clientId.set("Iv1.0000000000000000");
+    await app.key.set(
+      "-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n"
+    );
+
+    expect(await config.tenancy.provider.get()).toBe("github");
+    expect(await config.tenancy.owner.get()).toBe("acme");
+    expect(await app.clientId.get()).toBe("Iv1.0000000000000000");
+    expect(await app.key.get()).toBe(
+      "-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n"
+    );
+  });
+
+  it("should round-trip tenancy via tenancy.set()", async () => {
+    await config.tenancy.set({
+      provider: "github",
+      owner: "batchorg",
+      app: {
+        clientId: "Iv1.1111111111111111",
+        key: "-----BEGIN RSA PRIVATE KEY-----\nbatch\n-----END RSA PRIVATE KEY-----\n",
+      },
+    });
+    expect(await config.tenancy.provider.get()).toBe("github");
+    expect(await config.tenancy.owner.get()).toBe("batchorg");
+    expect(await config.tenancy.app.clientId.get()).toBe(
+      "Iv1.1111111111111111"
+    );
   });
 
   it("should generate same config with createConfig and createConfigWithSet", async () => {

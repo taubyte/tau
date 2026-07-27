@@ -41,6 +41,11 @@ func VirtConfig() (afero.Fs, config.Parser) {
 	p.Accounts().Email().SMTP().SetPass("secret")
 	p.Accounts().Email().SMTP().SetFrom("noreply@example.com")
 
+	p.Tenancy().SetProvider("github")
+	p.Tenancy().SetOwner("taubyte")
+	p.Tenancy().App().SetClientId("Iv1.0000000000000000")
+	p.Tenancy().App().SetKey("-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n")
+
 	p.Shapes().Shape("shape1").Services().Set("auth", "seer", "accounts")
 	p.Shapes().Shape("shape1").Ports().Set("main", 4242)
 	p.Shapes().Shape("shape1").Ports().Set("lite", 4262)
