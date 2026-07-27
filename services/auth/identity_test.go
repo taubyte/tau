@@ -6,6 +6,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-github/v71/github"
 	"github.com/taubyte/tau/core/p2p/keypair"
@@ -33,6 +34,99 @@ func TestGitHubTokenHTTPAuth_NoToken_Rejects(t *testing.T) {
 	if _, err := srv.GitHubTokenHTTPAuth(ctx); err == nil {
 		t.Fatalf("expected rejection when no token")
 	}
+}
+
+// --- GitHubTokenHTTPAuth end to end -------------------------------------
+//
+// The checks above exercise authorizeIdentity directly. These drive the whole
+// validator, which is what every authenticated route actually runs: a refusal
+// has to stop the request, and it must not leave the request context open.
+
+func authService(t *testing.T, v MembershipVerifier) (*AuthService, func()) {
+	t.Helper()
+	srv, cleanup := CreateTestService(t, nil)
+	srv.tenancy = tauConfig.Tenancy{Provider: "github", Owner: "acme"}
+	srv.membership = v
+	srv.newGitHubClient = func(context.Context, string) (GitHubClient, error) {
+		return &mockGitHubClient{}, nil
+	}
+	return srv, cleanup
+}
+
+func TestGitHubTokenHTTPAuth_MemberIsAdmitted(t *testing.T) {
+	srv, cleanup := authService(t, stubVerifier{member: true})
+	defer cleanup()
+
+	ctx := authCtx(t, "github", "tok")
+	_, err := srv.GitHubTokenHTTPAuth(ctx)
+	assert.NilError(t, err)
+
+	// Handlers downstream read the client off the context; a validator that
+	// admits without publishing it would fail them instead.
+	_, ok := ctx.Variables()["GithubClient"]
+	assert.Assert(t, ok, "admitted request must carry the github client")
+}
+
+func TestGitHubTokenHTTPAuth_NonMemberIsRefused(t *testing.T) {
+	srv, cleanup := authService(t, stubVerifier{member: false})
+	defer cleanup()
+
+	ctx := authCtx(t, "github", "tok")
+	_, err := srv.GitHubTokenHTTPAuth(ctx)
+	assert.Assert(t, err != nil, "a non-member must not reach any route")
+	assert.Assert(t, strings.Contains(err.Error(), "acme"))
+
+	// A refused request must not leave a client behind for a handler to find.
+	_, ok := ctx.Variables()["GithubClient"]
+	assert.Assert(t, !ok, "refused request must publish no github client")
+}
+
+// The request context is created before the identity check and released by the
+// route's GC handler, which the router does not run when a validator fails. So
+// the refusal path has to cancel it itself or every refused request leaks a
+// context until its 30s timeout.
+func TestGitHubTokenHTTPAuth_RefusalCancelsRequestContext(t *testing.T) {
+	srv, cleanup := authService(t, stubVerifier{member: false})
+	defer cleanup()
+
+	var captured context.Context
+	srv.newGitHubClient = func(rctx context.Context, _ string) (GitHubClient, error) {
+		captured = rctx
+		return &mockGitHubClient{}, nil
+	}
+
+	_, err := srv.GitHubTokenHTTPAuth(authCtx(t, "github", "tok"))
+	assert.Assert(t, err != nil)
+	assert.Assert(t, captured != nil, "the github client was never built")
+
+	select {
+	case <-captured.Done():
+	case <-time.After(time.Second):
+		t.Fatal("refused request left its context open")
+	}
+}
+
+func TestGitHubTokenHTTPAuth_ProviderErrorIsRefusedAndRelayed(t *testing.T) {
+	srv, cleanup := authService(t, stubVerifier{err: context.DeadlineExceeded})
+	defer cleanup()
+
+	_, err := srv.GitHubTokenHTTPAuth(authCtx(t, "github", "tok"))
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+// Dev mode has no namespace to check against, so the validator admits and the
+// request still gets its client.
+func TestGitHubTokenHTTPAuth_DevModeAdmits(t *testing.T) {
+	srv, cleanup := authService(t, nil)
+	defer cleanup()
+	srv.devMode = true
+	srv.tenancy = tauConfig.Tenancy{}
+
+	ctx := authCtx(t, "github", "tok")
+	_, err := srv.GitHubTokenHTTPAuth(ctx)
+	assert.NilError(t, err)
+	_, ok := ctx.Variables()["GithubClient"]
+	assert.Assert(t, ok)
 }
 
 // meClientStub reports a login and nothing else.
