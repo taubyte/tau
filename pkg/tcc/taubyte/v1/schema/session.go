@@ -12,14 +12,40 @@ import (
 type (
 	Session        = session.Session
 	CompileOptions = session.CompileOptions
+	FieldIssue     = session.FieldIssue
 )
 
-// bindings wires the generic session to THIS DSL: its compiler (whole-config) and
-// its single-value field validators (partial, compile-free, for live editing).
+// bindings wires the generic session to THIS DSL: its compiler (whole-config),
+// its single-value field validators (partial, compile-free, for live editing),
+// its completion sources, its document layout, and its value generators.
 var bindings = session.Bindings{
 	CompilerFor:    taubyteCompilerFor,
 	FieldValidator: taubyteFieldValidator{},
 	Completer:      taubyteCompleter{},
+	Layout:         taubyteLayout{},
+	Generator:      taubyteGenerator{},
+}
+
+// taubyteLayout tells the session how this DSL lays its documents out: an
+// application is a directory whose own fields live in config.yaml, everything
+// else is one file. Read off the live schema, so a new container group in the
+// DSL needs no change here.
+type taubyteLayout struct{}
+
+func (taubyteLayout) ContainerDoc(group string) string {
+	return engine.ContainerDoc(GenerationRoot(), group)
+}
+func (taubyteLayout) RootDoc() string  { return engine.NodeDefaultSeerLeaf }
+func (taubyteLayout) Groups() []string { return engine.Groups(GenerationRoot()) }
+
+// taubyteGenerator mints this DSL's generated field values (a resource id, a CID).
+type taubyteGenerator struct{}
+
+func (taubyteGenerator) GeneratedBy(group string, field []string) string {
+	return engine.GeneratedBy(GenerationRoot(), group, field)
+}
+func (taubyteGenerator) Generate(kind string, seed ...any) (string, error) {
+	return engine.Generate(kind, seed...)
 }
 
 // NewSession opens an editable session over the config under dir in fs, bound to

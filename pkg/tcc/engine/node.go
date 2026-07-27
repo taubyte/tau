@@ -9,22 +9,13 @@ import (
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
-// errorWithLocation formats an error message with file location information from a Query if available.
-// It returns an error with location information formatted as: "message (file:line:column)" or just "message" if no location is available.
+// errorWithLocation formats an error message with file location information from
+// a Query if available, as a *LocatedError so a consumer can read the position
+// off the error instead of parsing it. Rendering is unchanged:
+// "file:line:column: message", or just "message" with no location.
 func errorWithLocation(query *yaseer.Query, format string, args ...any) error {
-	msg := fmt.Sprintf(format, args...)
 	filePath, line, column := query.Location()
-
-	if filePath != "" {
-		if line > 0 && column > 0 {
-			return fmt.Errorf("%s:%d:%d: %s", filePath, line, column, msg)
-		} else if line > 0 {
-			return fmt.Errorf("%s:%d: %s", filePath, line, msg)
-		}
-		return fmt.Errorf("%s: %s", filePath, msg)
-	}
-
-	return fmt.Errorf("%s", msg)
+	return located(filePath, line, column, fmt.Errorf(format, args...))
 }
 
 // simplifyYAMLError extracts user-friendly information from low-level YAML parsing errors.
@@ -67,28 +58,15 @@ func wrapErrorWithLocation(query *yaseer.Query, err error, context string) error
 	// Simplify low-level YAML errors before wrapping
 	err = simplifyYAMLError(err)
 
-	errStr := err.Error()
-	// Check if the error already contains location information
-	hasLocation := strings.Contains(errStr, "(at ")
+	wrapped := fmt.Errorf("%s: %w", context, err)
+
+	// If the error already carries location info, don't duplicate it.
+	if strings.Contains(err.Error(), "(at ") {
+		return wrapped
+	}
 
 	filePath, line, column := query.Location()
-
-	// If error already has location info, just add context without duplicating location
-	if hasLocation {
-		return fmt.Errorf("%s: %w", context, err)
-	}
-
-	// Otherwise, add location information
-	if filePath != "" {
-		if line > 0 && column > 0 {
-			return fmt.Errorf("%s:%d:%d: %s: %w", filePath, line, column, context, err)
-		} else if line > 0 {
-			return fmt.Errorf("%s:%d: %s: %w", filePath, line, context, err)
-		}
-		return fmt.Errorf("%s: %s: %w", filePath, context, err)
-	}
-
-	return fmt.Errorf("%s: %w", context, err)
+	return located(filePath, line, column, wrapped)
 }
 
 func (n *Node) Map() map[string]any {
@@ -305,15 +283,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 				// For required attributes, format as: filepath:line:column: required attribute 'name'
 				// Don't include underlying YAML processing error details
 				filePath, line, column := aq.Location()
-				if filePath != "" {
-					if line > 0 && column > 0 {
-						return fmt.Errorf("%s:%d:%d: required attribute '%s'", filePath, line, column, attr.Name)
-					} else if line > 0 {
-						return fmt.Errorf("%s:%d: required attribute '%s'", filePath, line, attr.Name)
-					}
-					return fmt.Errorf("%s: required attribute '%s'", filePath, attr.Name)
-				}
-				return fmt.Errorf("required attribute '%s'", attr.Name)
+				return located(filePath, line, column, fmt.Errorf("required attribute '%s'", attr.Name))
 			}
 			if attr.Default != nil {
 				switch o := obj.(type) {
@@ -329,15 +299,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 				// For validation errors, format as: filepath:line:column: message
 				// Don't include "validation failed for attribute" wrapper, just the location and validator error
 				filePath, line, column := aq.Location()
-				if filePath != "" {
-					if line > 0 && column > 0 {
-						return fmt.Errorf("%s:%d:%d: %w", filePath, line, column, err)
-					} else if line > 0 {
-						return fmt.Errorf("%s:%d: %w", filePath, line, err)
-					}
-					return fmt.Errorf("%s: %w", filePath, err)
-				}
-				return err
+				return located(filePath, line, column, err)
 			}
 		}
 

@@ -97,11 +97,16 @@ export interface AsyncFs {
 const joinPath = (a: string, b: string) =>
   (a.endsWith("/") ? a + b : a + "/" + b).replace(/\/{2,}/g, "/");
 
-/** Read every file under `dir` in an async fs into a compiler-rooted ("/") Map. */
+/** Read every file under `dir` in an async fs into a compiler-rooted ("/") Map.
+ *
+ *  Dot-entries are skipped: a DSL group name never starts with a dot, and every
+ *  consumer staging a git checkout would otherwise pay to copy `.git`'s whole
+ *  object store into wasm. */
 export async function hydrate(fs: AsyncFs, dir: string): Promise<Map<string, Uint8Array>> {
   const map = new Map<string, Uint8Array>();
   const walk = async (abs: string, rooted: string) => {
     for (const name of await fs.promises.readdir(abs)) {
+      if (name.startsWith(".")) continue;
       const childAbs = joinPath(abs, name);
       const childRooted = joinPath(rooted, name);
       const st = await fs.promises.stat(childAbs);
@@ -121,6 +126,9 @@ export async function hydrate(fs: AsyncFs, dir: string): Promise<Map<string, Uin
  * Write a compiler-rooted Map back under `dir` in an async fs, creating dirs.
  * With `prune`, files under `dir` not in the map are removed (so a saved session
  * reflects deletions), if the fs supports `unlink`.
+ *
+ * Prune skips dot-entries. It MUST: hydrate never staged them, so a pruning
+ * save would see all of `.git` as "not in the map" and delete the repository.
  */
 export async function flush(
   fs: AsyncFs,
@@ -155,6 +163,7 @@ export async function flush(
         return;
       }
       for (const name of names) {
+        if (name.startsWith(".")) continue;
         const childAbs = joinPath(abs, name);
         const childRooted = joinPath(rooted, name);
         if ((await fs.promises.stat(childAbs)).isDirectory()) {

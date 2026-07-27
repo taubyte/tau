@@ -2,7 +2,6 @@ package tcc
 
 import (
 	"fmt"
-	"path"
 	"path/filepath"
 	"strings"
 
@@ -63,12 +62,13 @@ func (st *Store) Session() *schema.Session { return st.s }
 // Application is the selected application, empty at project scope.
 func (st *Store) Application() string { return st.app }
 
-// res is the session path of one resource's document in the current scope. A
-// container kind's instance is a directory, so its document is the config file
-// inside it, and it is never application-scoped (containers don't nest).
+// res is the session address of one resource in the current scope. A container
+// kind's instance is addressed by its group form like everything else — the
+// session maps it to the document inside its directory — and it is never
+// application-scoped (containers don't nest).
 func (st *Store) res(group, name string) []string {
 	if isContainer(group) {
-		return []string{group, name, rootDoc}
+		return []string{group, name}
 	}
 	if st.app != "" {
 		return []string{containerDir(), st.app, group, name}
@@ -100,10 +100,8 @@ func containerDir() string {
 	return ""
 }
 
-// rootDoc is the config document a directory-shaped resource — an application,
-// or the project itself — keeps its own fields in, next to the resources it
-// contains. This is the DSL's layout (the same convention the JS client's
-// resourceParts encodes); the session addresses it as a plain path segment.
+// rootDoc is the project's own document — the one resource with no group above
+// it. Everything else the session addresses by [group, name].
 const rootDoc = "config"
 
 // flush persists the session's pending edits back to the config repo in place,
@@ -169,50 +167,29 @@ func (st *Store) SetProject(fields map[string]any) error {
 }
 
 // Write applies doc to a resource as the minimal set of field writes and
-// deletes, so untouched YAML (comments included) is preserved.
+// deletes, so untouched YAML (comments included) is preserved. The diff itself
+// lives in the session (Session.SetResource) — the web console needs the same
+// thing, and neither should carry its own copy.
 func (st *Store) Write(group, name string, doc Doc) error {
-	res := st.res(group, name)
-	prev, _ := st.Doc(group, name)
-	for _, op := range diff(prev, doc, nil) {
-		var err error
-		if op.del {
-			err = st.s.Delete(res, op.path)
-		} else {
-			err = st.s.Set(res, op.path, op.value)
-		}
-		if err != nil {
-			return err
-		}
+	if err := st.s.SetResource(st.res(group, name), doc); err != nil {
+		return err
 	}
 	return st.flush()
 }
 
-// Delete removes a resource. A container's instance is a directory, so its
-// document goes through the session (keeping it consistent) and the directory —
-// with whatever it still contained — goes with it.
+// Delete removes a resource. A container's instance is a directory, and the
+// session removes it whole — with whatever it still contained.
 func (st *Store) Delete(group, name string) error {
 	if err := st.s.Delete(st.res(group, name), nil); err != nil {
 		return err
 	}
-	if err := st.flush(); err != nil {
-		return err
-	}
-	if isContainer(group) {
-		return st.s.FS().RemoveAll(path.Join(group, name))
-	}
-	return nil
+	return st.flush()
 }
 
 // ValidateField runs the DSL's compile-free check for one field value. A
-// container's own document (an application's config) carries no single-value
-// validators, and the session derives the group from the [group, name] tail of
-// the path — which a container's [group, name, config] path doesn't have — so
-// per-field validation is skipped for it here; the whole-config Validate still
-// covers it.
+// container's own document is addressed like any other resource, so its fields
+// are validated the same way.
 func (st *Store) ValidateField(group, name string, field []string, value any) error {
-	if isContainer(group) {
-		return nil
-	}
 	return st.s.ValidateField(st.res(group, name), field, value)
 }
 
@@ -224,64 +201,4 @@ func (st *Store) Complete(group, name string, field []string) []string {
 		return nil
 	}
 	return c
-}
-
-type op struct {
-	path  []string
-	value any
-	del   bool
-}
-
-// diff is the minimal set/delete ops turning prev into next. Maps recurse;
-// arrays and scalars are leaves.
-func diff(prev, next map[string]any, base []string) []op {
-	var ops []op
-	for k, nv := range next {
-		path := append(append([]string{}, base...), k)
-		if nm, ok := nv.(map[string]any); ok {
-			pm, _ := prev[k].(map[string]any)
-			ops = append(ops, diff(pm, nm, path)...)
-			continue
-		}
-		if !equal(prev[k], nv) {
-			ops = append(ops, op{path: path, value: nv})
-		}
-	}
-	for k := range prev {
-		if _, ok := next[k]; !ok {
-			ops = append(ops, op{path: append(append([]string{}, base...), k), del: true})
-		}
-	}
-	return ops
-}
-
-func equal(a, b any) bool {
-	as, aok := asList(a)
-	bs, bok := asList(b)
-	if aok || bok {
-		if len(as) != len(bs) {
-			return false
-		}
-		for i := range as {
-			if as[i] != bs[i] {
-				return false
-			}
-		}
-		return true
-	}
-	return a == b
-}
-
-func asList(v any) ([]string, bool) {
-	switch t := v.(type) {
-	case []string:
-		return t, true
-	case []any:
-		out := make([]string, 0, len(t))
-		for _, e := range t {
-			out = append(out, fmt.Sprint(e))
-		}
-		return out, true
-	}
-	return nil, false
 }

@@ -303,6 +303,9 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node) ma
 	if d, ok := iter.Meta["doc"].(string); ok && d != "" {
 		out["description"] = d
 	}
+	if ic, ok := iter.Meta["icon"].(string); ok && ic != "" {
+		out[g.ext+"icon"] = ic // semantic glyph hint; the consumer maps it to its icon set
+	}
 	// Display sections: a presentation overlay a UI/CLI reads to render fields in
 	// human sections. It rides ALONGSIDE properties (which stay faithful to the
 	// authored nesting) — each field carries <ext>section, and this registry gives
@@ -358,6 +361,10 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	}
 	if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok && sc.ID != "" {
 		s[g.ext+"scalar"] = sc.ID // e.g. "duration" ("20s"), "bytes" ("32GB")
+	}
+	if gn, ok := a.Meta["generated"].(string); ok && gn != "" {
+		// Minted, not authored: render read-only and fill via Session.generate.
+		s[g.ext+"generated"] = gn
 	}
 	if e, ok := a.Meta["enum"].([]string); ok {
 		s["enum"] = e

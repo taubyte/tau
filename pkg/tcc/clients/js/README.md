@@ -95,6 +95,72 @@ config key (`memory` → `execution.memory`, `type` → `trigger.type`), `InSet`
 typed as unions, and legacy keys read as a fallback. `makeSyncFs` / `hydrate` /
 `flush` are also exported for lower-level filesystem control.
 
+Applications and the project root are documents too, addressed the same way:
+
+```ts
+const app = session.application("web");       // the container's own config
+await app.setDescription("the web app");
+await session.project().setName("my_project"); // the project root document
+```
+
+### Whole-document editing
+
+An editor holds a plain object, not a field at a time. Hand tcc the object and it
+works out the minimal set/delete ops — so comments on untouched lines survive —
+then hand back the one file that changed:
+
+```ts
+const fn = session.function("api");
+
+const doc = await fn.doc();                   // the resource's whole document
+await fn.setDoc({ ...doc, description: "edited" }); // minimal diff; missing keys delete
+
+const { path, yaml } = await fn.serialize();  // "functions/api.yaml" + its exact YAML
+await session.resourceAt(path);               // ["functions", "api"] — the inverse
+```
+
+Never build these paths yourself: where a resource's document lives is the DSL's
+to decide (an application is `applications/web/config.yaml`, a function is
+`functions/api.yaml`), and asserting a layout is how you end up reading a path
+tcc never wrote.
+
+Values the DSL declares as generated — a resource `id`, which is a CID — are
+minted by tcc, not by the caller:
+
+```ts
+await fn.generate(["id"]);   // a fresh CID, seeded with the project and resource
+```
+
+### Validation
+
+`validate()` on a resource is compile-free and per-field: one call returns every
+local failure attributed to the field that caused it.
+
+```ts
+for (const { field, message } of await fn.validate()) {
+  markField(field, message);                  // field: ["trigger", "domains"]
+}
+```
+
+Whole-project checks still need `session.validate()`, which throws a `TccError`
+carrying `file` / `line` / `column` — so "is this error in the file I'm editing?"
+is a field comparison, not a substring match on the message.
+
+```ts
+try {
+  await session.validate({ branch: "main" });
+} catch (e) {
+  if (e instanceof TccError && e.file !== myPath) { /* someone else's problem */ }
+}
+```
+
+`session.resourceRepo(res)` returns the git repository backing a resource
+(`{ provider, fullname, branch? }`) or `null`. The provider key is dynamic, so it
+is read by shape — no provider is named.
+
+`hydrate` skips dot-entries, so staging a git checkout never copies `.git` into
+wasm, and a pruning `save` leaves them alone.
+
 ### Outside Node
 
 In the browser, fetch the assets and pass them explicitly (Node auto-loads them

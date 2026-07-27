@@ -12,6 +12,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall/js"
 	"testing"
@@ -287,12 +288,45 @@ func TestSessionPartialValidateFn(t *testing.T) {
 	bad := val(sessionValidateFieldFn(js.Null(), []js.Value{h, res, arr("trigger", "type"), js.ValueOf("nope")}))
 	assert.Assert(t, errOf(bad) != "", "bad enum must error")
 
-	// resource: clean fixture -> no errors; after a bad set -> one error
+	// resource: clean fixture -> no issues; after a bad set -> one, field-attributed
 	r := val(sessionValidateResourceFn(js.Null(), []js.Value{h, res}))
-	assert.Equal(t, r.Get("errors").Length(), 0)
+	assert.Equal(t, r.Get("issues").Length(), 0)
 	val(sessionSetFn(js.Null(), []js.Value{h, res, arr("trigger", "type"), js.ValueOf("nope")}))
 	r = val(sessionValidateResourceFn(js.Null(), []js.Value{h, res}))
-	assert.Equal(t, r.Get("errors").Length(), 1)
+	assert.Equal(t, r.Get("issues").Length(), 1)
+	issue := r.Get("issues").Index(0)
+	assert.Equal(t, issue.Get("field").Index(0).String(), "trigger")
+	assert.Equal(t, issue.Get("field").Index(1).String(), "type")
+	assert.Assert(t, strings.Contains(issue.Get("message").String(), "invalid value"))
+}
+
+// The whole-document surface through the wasm: setResource writes an object doc
+// (which needs jsToGo's object branch), serialize names the file, resourceAt is
+// its inverse, generate mints an id.
+func TestSessionDocumentFns(t *testing.T) {
+	m := loadFixture(t)
+	h := openHandle(t, openSessionFn(js.Null(), []js.Value{m.primitives()}))
+	res := arr("functions", "test_function1_glob")
+
+	id := val(sessionGenerateFn(js.Null(), []js.Value{h, res, arr("id")}))
+	assert.Assert(t, id.String() != "", "generate must mint an id")
+	assert.Assert(t, val(sessionValidateFieldFn(js.Null(), []js.Value{h, res, arr("id"), id})).IsNull())
+
+	doc := js.Global().Get("JSON").Call("parse",
+		`{"id":`+strconv.Quote(id.String())+`,"description":"via setResource","trigger":{"type":"https"}}`)
+	assert.Assert(t, val(sessionSetResourceFn(js.Null(), []js.Value{h, res, doc})).IsNull())
+	assert.Equal(t, val(sessionGetFn(js.Null(), []js.Value{h, res, arr("description")})).String(), "via setResource")
+	// keys absent from the doc are deleted, not merged
+	assert.Assert(t, val(sessionGetFn(js.Null(), []js.Value{h, res, arr("execution", "call")})).IsNull())
+
+	ser := val(sessionSerializeFn(js.Null(), []js.Value{h, res}))
+	assert.Equal(t, ser.Get("path").String(), "functions/test_function1_glob.yaml")
+	assert.Assert(t, strings.Contains(ser.Get("yaml").String(), "via setResource"))
+
+	at := val(sessionResourceAtFn(js.Null(), []js.Value{h, js.ValueOf(ser.Get("path").String())}))
+	assert.Equal(t, at.Index(0).String(), "functions")
+	assert.Equal(t, at.Index(1).String(), "test_function1_glob")
+	assert.Assert(t, val(sessionResourceAtFn(js.Null(), []js.Value{h, js.ValueOf(".git/config.yaml")})).IsNull())
 }
 
 // Completion through the wasm: enum members filtered by the partial + scoped refs.

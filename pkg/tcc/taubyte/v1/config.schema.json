@@ -8,6 +8,7 @@
           "format": "cid",
           "title": "ID",
           "type": "string",
+          "x-tau-generated": "cid",
           "x-tau-section": "identity"
         },
         "name": {
@@ -99,7 +100,8 @@
       "required": [
         "id"
       ],
-      "type": "object"
+      "type": "object",
+      "x-tau-icon": "apps"
     },
     "Database": {
       "description": "A key-value database served to the project's peers.",
@@ -109,6 +111,7 @@
           "format": "cid",
           "title": "ID",
           "type": "string",
+          "x-tau-generated": "cid",
           "x-tau-section": "identity"
         },
         "name": {
@@ -190,6 +193,7 @@
         "id"
       ],
       "type": "object",
+      "x-tau-icon": "database",
       "x-tau-sections": [
         {
           "description": "Resource identity and metadata.",
@@ -216,6 +220,7 @@
           "format": "cid",
           "title": "ID",
           "type": "string",
+          "x-tau-generated": "cid",
           "x-tau-section": "identity"
         },
         "name": {
@@ -293,6 +298,7 @@
         "id"
       ],
       "type": "object",
+      "x-tau-icon": "link",
       "x-tau-sections": [
         {
           "description": "Resource identity and metadata.",
@@ -314,6 +320,7 @@
           "format": "cid",
           "title": "ID",
           "type": "string",
+          "x-tau-generated": "cid",
           "x-tau-section": "identity"
         },
         "name": {
@@ -467,6 +474,7 @@
         "id"
       ],
       "type": "object",
+      "x-tau-icon": "bolt",
       "x-tau-sections": [
         {
           "description": "Resource identity and metadata.",
@@ -532,6 +540,7 @@
           "format": "cid",
           "title": "ID",
           "type": "string",
+          "x-tau-generated": "cid",
           "x-tau-section": "identity"
         },
         "name": {
@@ -603,6 +612,7 @@
         "id"
       ],
       "type": "object",
+      "x-tau-icon": "book",
       "x-tau-sections": [
         {
           "description": "Resource identity and metadata.",
@@ -624,6 +634,7 @@
           "format": "cid",
           "title": "ID",
           "type": "string",
+          "x-tau-generated": "cid",
           "x-tau-section": "identity"
         },
         "name": {
@@ -703,6 +714,7 @@
         "id"
       ],
       "type": "object",
+      "x-tau-icon": "message",
       "x-tau-sections": [
         {
           "description": "Resource identity and metadata.",
@@ -729,6 +741,7 @@
           "format": "cid",
           "title": "ID",
           "type": "string",
+          "x-tau-generated": "cid",
           "x-tau-section": "identity"
         },
         "name": {
@@ -764,6 +777,7 @@
         "id"
       ],
       "type": "object",
+      "x-tau-icon": "server",
       "x-tau-sections": [
         {
           "description": "Resource identity and metadata.",
@@ -780,6 +794,7 @@
           "format": "cid",
           "title": "ID",
           "type": "string",
+          "x-tau-generated": "cid",
           "x-tau-section": "identity"
         },
         "name": {
@@ -853,6 +868,7 @@
         "id"
       ],
       "type": "object",
+      "x-tau-icon": "robot",
       "x-tau-sections": [
         {
           "description": "Resource identity and metadata.",
@@ -879,6 +895,7 @@
           "format": "cid",
           "title": "ID",
           "type": "string",
+          "x-tau-generated": "cid",
           "x-tau-section": "identity"
         },
         "name": {
@@ -977,6 +994,7 @@
         "id"
       ],
       "type": "object",
+      "x-tau-icon": "bucket",
       "x-tau-sections": [
         {
           "description": "Resource identity and metadata.",
@@ -1003,6 +1021,7 @@
           "format": "cid",
           "title": "ID",
           "type": "string",
+          "x-tau-generated": "cid",
           "x-tau-section": "identity"
         },
         "name": {
@@ -1089,6 +1108,7 @@
         "id"
       ],
       "type": "object",
+      "x-tau-icon": "globe",
       "x-tau-sections": [
         {
           "description": "Resource identity and metadata.",
@@ -1117,6 +1137,7 @@
       "format": "cid",
       "title": "ID",
       "type": "string",
+      "x-tau-generated": "cid",
       "x-tau-section": "identity"
     },
     "name": {

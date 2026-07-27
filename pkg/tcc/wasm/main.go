@@ -10,8 +10,10 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"syscall/js"
 
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	compiler "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	tccConvert "github.com/taubyte/tau/utils/tcc/convert"
 )
@@ -32,6 +34,10 @@ func main() {
 	tcc.Set("sessionValidate", js.FuncOf(sessionValidateFn))
 	tcc.Set("sessionValidateField", js.FuncOf(sessionValidateFieldFn))
 	tcc.Set("sessionValidateResource", js.FuncOf(sessionValidateResourceFn))
+	tcc.Set("sessionSerialize", js.FuncOf(sessionSerializeFn))
+	tcc.Set("sessionSetResource", js.FuncOf(sessionSetResourceFn))
+	tcc.Set("sessionResourceAt", js.FuncOf(sessionResourceAtFn))
+	tcc.Set("sessionGenerate", js.FuncOf(sessionGenerateFn))
 	tcc.Set("sessionComplete", js.FuncOf(sessionCompleteFn))
 	tcc.Set("sessionSave", js.FuncOf(sessionSaveFn))
 	tcc.Set("sessionDelete", js.FuncOf(sessionDeleteFn))
@@ -76,7 +82,7 @@ func compileFn(_ js.Value, args []js.Value) any {
 
 	obj, validations, err := c.Compile(context.Background())
 	if err != nil {
-		return errResult(err.Error())
+		return errFrom(err)
 	}
 
 	// Flat() yields { object, indexes }; attach the external validations.
@@ -137,5 +143,24 @@ func toJS(v any) js.Value {
 func errResult(msg string) js.Value {
 	o := js.Global().Get("Object").New()
 	o.Set("error", msg)
+	return o
+}
+
+// errFrom is errResult plus the source position, when the error carries one:
+// { error, file, line, column }. `error` is byte-identical to before, so a
+// consumer that only reads the message is unaffected — but one that wants to
+// know WHICH file failed no longer has to substring-match the message.
+func errFrom(err error) js.Value {
+	o := errResult(err.Error())
+	var le *engine.LocatedError
+	if errors.As(err, &le) && le.File != "" {
+		o.Set("file", le.File)
+		if le.Line > 0 {
+			o.Set("line", le.Line)
+		}
+		if le.Column > 0 {
+			o.Set("column", le.Column)
+		}
+	}
 	return o
 }

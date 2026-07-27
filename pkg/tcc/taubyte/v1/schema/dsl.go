@@ -14,6 +14,9 @@ type (
 	Attribute = engine.Attribute
 )
 
+// Known value generators (see engine.Generated).
+const GenCID = engine.GenCID
+
 var (
 	Accessor         = engine.Accessor
 	Addressing       = engine.Addressing
@@ -32,7 +35,9 @@ var (
 	EmitValidation   = engine.EmitValidation
 	EnumBool         = engine.EnumBool
 	Field            = engine.Field
+	Generated        = engine.Generated
 	GroupDoc         = engine.GroupDoc
+	Icon             = engine.Icon
 	IsCID            = engine.IsCID
 	IsEmail          = engine.IsEmail
 	IsFqdn           = engine.IsFqdn
@@ -47,6 +52,8 @@ var (
 	Path             = engine.Path
 	Prefix           = engine.Prefix
 	Ref              = engine.Ref
+	RepoBranch       = engine.RepoBranch
+	RepoName         = engine.RepoName
 	Required         = engine.Required
 	Resource         = engine.Resource
 	Root             = engine.Root

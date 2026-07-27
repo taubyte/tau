@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -46,12 +48,40 @@ type Completer interface {
 	Field(group string, field []string) (values []string, refGroup, refPrefix string, found bool)
 }
 
-// Bindings wires a Session to a specific DSL: how to compile it (required), how to
-// partial-validate its fields, and how to complete field values (both optional).
+// Layout describes the DSL's document layout so the session can map a resource
+// address to the document that holds it. Injected by the binding: "a container's
+// instances are directories with a config document inside" is DSL knowledge, and
+// the session core stays layout-agnostic without it (nil Layout = every resource
+// address is a leaf document, the pre-Layout behaviour).
+type Layout interface {
+	// ContainerDoc returns the document name (e.g. "config") a container group's
+	// instances keep their own fields in; "" if group is not a container.
+	ContainerDoc(group string) string
+	// RootDoc is the project root document name (e.g. "config").
+	RootDoc() string
+	// Groups lists the DSL's top-level group keys (the config directories).
+	Groups() []string
+}
+
+// Generator mints values for the DSL's generated fields (a resource id), so
+// every consumer stops carrying its own "how do I make an id".
+type Generator interface {
+	// GeneratedBy returns the generator id declared for a field, or "" if the
+	// field is authored rather than generated.
+	GeneratedBy(group string, field []string) string
+	// Generate mints a value for that generator, mixing in seed for uniqueness.
+	Generate(kind string, seed ...any) (string, error)
+}
+
+// Bindings wires a Session to a specific DSL: how to compile it (required), how
+// to partial-validate its fields, how to complete field values, how its
+// documents are laid out, and how its generated fields are minted (all optional).
 type Bindings struct {
 	CompilerFor    CompilerFor
 	FieldValidator FieldValidator
 	Completer      Completer
+	Layout         Layout
+	Generator      Generator
 }
 
 // CompileOptions are the per-compile parameters (empty Branch uses the compiler's
@@ -96,22 +126,73 @@ func Adopt(fs afero.Fs, bind Bindings) (*Session, error) {
 // inspection).
 func (s *Session) FS() afero.Fs { return s.fs }
 
-func (s *Session) query(res, field []string) *yaseer.Query {
-	q := s.seer.Get(res[0])
-	for _, seg := range res[1:] {
+// docPath canonicalizes a resource address to the segments of the document that
+// holds it, and rejects structurally bogus addresses. THE canonical address of a
+// container instance is its DSL-group form ([applications, x]) — the container
+// IS the resource; that its fields live in applications/x/config.yaml is layout,
+// mapped here. The config-suffixed form is accepted as a legacy alias.
+//
+// Rejecting the malformed shapes here is what closes the silent-corruption hole:
+// Set(["applications"], ["a","id"], v) used to create /applications.yaml, a
+// sibling of the real directory, with no error.
+func (s *Session) docPath(res []string) ([]string, error) {
+	if len(res) == 0 {
+		return nil, errors.New("session: empty resource address")
+	}
+	l := s.bind.Layout
+	if l == nil {
+		return res, nil // no layout wired: every address is a leaf document
+	}
+	bad := func(why string) error {
+		return fmt.Errorf("session: %q is not a resource address (%s)", strings.Join(res, "/"), why)
+	}
+	switch len(res) {
+	case 1:
+		if res[0] != l.RootDoc() {
+			return nil, bad("a resource needs a group and a name")
+		}
+	case 2:
+		if doc := l.ContainerDoc(res[0]); doc != "" {
+			return append(append([]string{}, res...), doc), nil
+		}
+	case 3: // legacy [container, name, containerDoc]
+		if doc := l.ContainerDoc(res[0]); doc == "" || res[2] != doc {
+			return nil, bad("only a container instance's document is addressable three deep")
+		}
+	case 4: // [container, instance, group, name]
+		if l.ContainerDoc(res[0]) == "" {
+			return nil, bad(strconv.Quote(res[0]) + " is not a container")
+		}
+	default:
+		return nil, bad("too deep")
+	}
+	return res, nil
+}
+
+func (s *Session) query(res, field []string) (*yaseer.Query, error) {
+	doc, err := s.docPath(res)
+	if err != nil {
+		return nil, err
+	}
+	q := s.seer.Get(doc[0])
+	for _, seg := range doc[1:] {
 		q = q.Get(seg)
 	}
 	q = q.Document()
 	for _, seg := range field {
 		q = q.Get(seg)
 	}
-	return q
+	return q, nil
 }
 
 // Get reads a field of a resource; a nil/absent value returns (nil, error).
 func (s *Session) Get(res, field []string) (any, error) {
+	q, err := s.query(res, field)
+	if err != nil {
+		return nil, err
+	}
 	var v any
-	if err := s.query(res, field).Value(&v); err != nil {
+	if err := q.Value(&v); err != nil {
 		return nil, err
 	}
 	return v, nil
@@ -119,14 +200,29 @@ func (s *Session) Get(res, field []string) (any, error) {
 
 // Set writes a field of a resource (raw write — no validation; see Validate).
 func (s *Session) Set(res, field []string, value any) error {
-	return s.query(res, field).Set(value).Commit()
+	q, err := s.query(res, field)
+	if err != nil {
+		return err
+	}
+	return q.Set(value).Commit()
 }
 
 // Delete removes a whole resource (field == nil/empty) or a single field of it.
+// Deleting a container instance removes its directory, and with it whatever
+// resources it still held.
 func (s *Session) Delete(res, field []string) error {
 	if len(field) > 0 {
-		return s.query(res, field).Delete().Commit()
+		q, err := s.query(res, field)
+		if err != nil {
+			return err
+		}
+		return q.Delete().Commit()
 	}
+	if _, err := s.docPath(res); err != nil {
+		return err
+	}
+	// Deletion addresses the resource ITSELF, not its document: a leaf resource
+	// is its file, a container instance is its whole directory.
 	q := s.seer.Get(res[0])
 	for _, seg := range res[1:] {
 		q = q.Get(seg)
@@ -178,7 +274,7 @@ func (s *Session) compiler(opts CompileOptions) (*interp.Compiler, error) {
 // the same scope the compiler resolves against, so siblings don't count). Returns
 // nil when partial validation isn't wired or the field carries no constraint.
 func (s *Session) ValidateField(res, field []string, value any) error {
-	group := resGroup(res)
+	group := s.resGroup(res)
 	if s.bind.FieldValidator != nil {
 		if err := s.bind.FieldValidator.ValidateField(group, field, value); err != nil {
 			return err
@@ -238,31 +334,230 @@ func asStrings(v any) []string {
 	return nil
 }
 
+// FieldIssue is one failed check, attributed to the field that failed it. Field
+// is the authored path ("trigger/domains" as ["trigger","domains"]); empty means
+// the issue is about the resource as a whole.
+type FieldIssue struct {
+	Field   []string `json:"field"`
+	Message string   `json:"message"`
+}
+
 // ValidateResource checks every constrained field of one resource against its
-// current values — single-value validators and reference existence — returning all
-// failures (empty slice = valid). Scoped to the one file and compile-free. It does
-// not run whole-config concerns beyond references (e.g. deferred external checks);
-// those stay in Validate.
-func (s *Session) ValidateResource(res []string) []error {
+// current values — single-value validators and reference existence — returning
+// every failure ATTRIBUTED to its field (empty slice = valid). Scoped to the one
+// file and compile-free. It does not run whole-config concerns beyond references
+// (e.g. deferred external checks); those stay in Validate.
+//
+// Attribution is per declared field ("domains", not "domains/0"); the message
+// already names the offending value.
+func (s *Session) ValidateResource(res []string) []FieldIssue {
 	if s.bind.FieldValidator == nil {
 		return nil
 	}
-	var errs []error
-	for _, f := range s.bind.FieldValidator.Fields(resGroup(res)) {
+	var issues []FieldIssue
+	for _, f := range s.bind.FieldValidator.Fields(s.resGroup(res)) {
 		v, err := s.Get(res, f)
 		if err != nil {
 			continue // field absent -> nothing to validate
 		}
 		if e := s.ValidateField(res, f, v); e != nil {
-			errs = append(errs, e)
+			issues = append(issues, FieldIssue{Field: f, Message: e.Error()})
 		}
 	}
-	return errs
+	return issues
 }
 
-// resGroup is the resource-kind name in a resource path: res[len-2] — the folder
-// above the instance name, whether or not the path is application-scoped.
-func resGroup(res []string) string {
+// Serialize flushes pending edits and returns ONE resource's document: its
+// repo-relative path and its exact YAML, comments preserved. Where the document
+// lives is the DSL's business, so the caller never names the file — which is how
+// a caller ends up reading a path tcc never wrote.
+func (s *Session) Serialize(res []string) (path string, data []byte, err error) {
+	if err = s.seer.Sync(); err != nil {
+		return "", nil, err
+	}
+	q, err := s.query(res, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	// Resolve as a read so yaseer populates the document's file path. An empty
+	// document resolves to no value but still has a path, so the read error is
+	// not fatal here — ReadFile below is the honest existence check.
+	var v any
+	_ = q.Value(&v)
+	fp := q.FilePath()
+	if fp == "" {
+		return "", nil, fmt.Errorf("session: no document for %q", strings.Join(res, "/"))
+	}
+	if data, err = afero.ReadFile(s.fs, fp); err != nil {
+		return "", nil, err
+	}
+	return strings.TrimPrefix(fp, "/"), data, nil
+}
+
+// SetResource makes res's document equal doc, as the minimal set of field writes
+// and deletes: maps recurse, arrays and scalars are leaves, and a key missing
+// from doc is deleted. Untouched YAML — comments included — survives. An
+// explicit nil writes a null; absence deletes.
+//
+// The ops are applied through a fork so a diff that fails partway can't leave
+// the resource half-written.
+func (s *Session) SetResource(res []string, doc map[string]any) error {
+	if _, err := s.docPath(res); err != nil {
+		return err
+	}
+	prev, _ := s.Get(res, nil) // absent resource -> no previous fields, all sets
+	prevDoc, _ := prev.(map[string]any)
+	ops := diffOps(prevDoc, doc, nil)
+	if len(ops) == 0 {
+		return nil
+	}
+	fork, err := s.Fork()
+	if err != nil {
+		return err
+	}
+	for _, o := range ops {
+		if o.del {
+			err = fork.Delete(res, o.path)
+		} else {
+			err = fork.Set(res, o.path, o.value)
+		}
+		if err != nil {
+			fork.Close()
+			return err
+		}
+	}
+	return fork.Merge()
+}
+
+type fieldOp struct {
+	path  []string
+	value any
+	del   bool
+}
+
+// diffOps is the minimal set/delete ops turning prev into next. Maps recurse;
+// arrays and scalars are leaves; keys gone from next become deletes.
+func diffOps(prev, next map[string]any, base []string) []fieldOp {
+	var ops []fieldOp
+	at := func(k string) []string { return append(append([]string{}, base...), k) }
+	for k, nv := range next {
+		if nm, ok := nv.(map[string]any); ok {
+			pm, _ := prev[k].(map[string]any)
+			ops = append(ops, diffOps(pm, nm, at(k))...)
+			continue
+		}
+		if !sameValue(prev[k], nv) {
+			ops = append(ops, fieldOp{path: at(k), value: nv})
+		}
+	}
+	for k := range prev {
+		if _, ok := next[k]; !ok {
+			ops = append(ops, fieldOp{path: at(k), del: true})
+		}
+	}
+	return ops
+}
+
+func sameValue(a, b any) bool {
+	as, aok := asStrings(a), isList(a)
+	bs, bok := asStrings(b), isList(b)
+	if aok || bok {
+		if aok != bok || len(as) != len(bs) {
+			return false
+		}
+		for i := range as {
+			if as[i] != bs[i] {
+				return false
+			}
+		}
+		return true
+	}
+	return a == b
+}
+
+func isList(v any) bool {
+	switch v.(type) {
+	case []string, []any:
+		return true
+	}
+	return false
+}
+
+// ResourceAt maps a repo-relative YAML path to its canonical resource address;
+// ok is false when the path is not a resource document under the DSL's layout
+// (an unknown directory, a non-YAML file, .git, ...). The inverse of the
+// addressing Serialize returns.
+//
+//	config.yaml                     -> [rootDoc]
+//	functions/x.yaml                -> [functions, x]
+//	applications/a/config.yaml      -> [applications, a]
+//	applications/a/functions/x.yaml -> itself
+func (s *Session) ResourceAt(filePath string) ([]string, bool) {
+	l := s.bind.Layout
+	if l == nil {
+		return nil, false
+	}
+	stem, ok := strings.CutSuffix(strings.TrimPrefix(filePath, "/"), ".yaml")
+	if !ok {
+		if stem, ok = strings.CutSuffix(strings.TrimPrefix(filePath, "/"), ".yml"); !ok {
+			return nil, false
+		}
+	}
+	segs := strings.Split(stem, "/")
+	if slices.Contains(segs, "") {
+		return nil, false
+	}
+	if len(segs) == 1 {
+		return segs, segs[0] == l.RootDoc()
+	}
+	if !slices.Contains(l.Groups(), segs[0]) {
+		return nil, false
+	}
+	switch len(segs) {
+	case 2:
+		return segs, true
+	case 3: // a container instance's own document addresses the container
+		return segs[:2], segs[2] == l.ContainerDoc(segs[0])
+	case 4:
+		return segs, l.ContainerDoc(segs[0]) != "" && slices.Contains(l.Groups(), segs[2])
+	}
+	return nil, false
+}
+
+// Generate mints a value for one of a resource's DSL-generated fields (its id),
+// so no consumer carries its own "how do I make an id". seed is mixed into the
+// generator on top of the project id and the resource name, which are read from
+// the session — two resources of the same name in different projects can't
+// collide, and re-creating one never reproduces the old value.
+func (s *Session) Generate(res, field []string, seed ...any) (string, error) {
+	if s.bind.Generator == nil {
+		return "", errors.New("session: no generator wired")
+	}
+	if _, err := s.docPath(res); err != nil {
+		return "", err
+	}
+	kind := s.bind.Generator.GeneratedBy(s.resGroup(res), field)
+	if kind == "" {
+		return "", fmt.Errorf("session: %q is not a generated field", strings.Join(field, "/"))
+	}
+	ctx := append([]any{}, seed...)
+	if s.bind.Layout != nil {
+		if id, err := s.Get([]string{s.bind.Layout.RootDoc()}, []string{"id"}); err == nil {
+			ctx = append(ctx, id)
+		}
+	}
+	return s.bind.Generator.Generate(kind, append(ctx, strings.Join(res, "/"))...)
+}
+
+// resGroup is the resource-kind name in a resource address: res[len-2] — the
+// folder above the instance name, whether or not the address is
+// application-scoped. A container instance's legacy config-suffixed address
+// names the CONTAINER, not the instance ([applications, x, config] ->
+// "applications"), so partial validation of an application works either way.
+func (s *Session) resGroup(res []string) string {
+	if l := s.bind.Layout; l != nil && len(res) == 3 && res[2] == l.ContainerDoc(res[0]) {
+		return res[0]
+	}
 	if len(res) < 2 {
 		return ""
 	}
@@ -280,7 +575,7 @@ func (s *Session) Complete(res, field []string, partial string) ([]string, error
 	if s.bind.Completer == nil {
 		return nil, nil
 	}
-	group := resGroup(res)
+	group := s.resGroup(res)
 	values, refGroup, refPrefix, found := s.bind.Completer.Field(group, field)
 	if !found {
 		return nil, fmt.Errorf("unknown field %q on %q", strings.Join(field, "/"), group)

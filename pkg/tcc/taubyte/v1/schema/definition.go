@@ -18,7 +18,7 @@ var sourceShape = StringShape([]string{"."}, []string{"libraries/"})
 // or the generated structs (which always emit the common block first regardless).
 func TaubyteAttributes(attrs ...*Attribute) []*Attribute {
 	return append([]*Attribute{
-		String("id", IsCID(), Required(), InSection("identity"), Doc("ID", "Content-addressed identifier (CID) of this resource. Stable across renames.")),
+		String("id", IsCID(), Required(), Generated(GenCID), InSection("identity"), Doc("ID", "Content-addressed identifier (CID) of this resource. Stable across renames.")),
 		String("name", IsVariableName(), InSection("identity"), Doc("Name", "Unique resource name within its project or application. Must be a valid variable name.")),
 		String("description", InSection("identity"), Doc("Description", "Free-form, human-readable description of this resource.")),
 		StringSlice("tags", InSection("identity"), Doc("Tags", "Arbitrary labels for organizing and filtering this resource.")),
@@ -38,7 +38,7 @@ var secIdentity = Section("identity", "Identity", "Resource identity and metadat
 func taubyteRootAttributes() []*Attribute {
 	return []*Attribute{
 		String("email", Path("notification", "email"), IsEmail(), Doc("Email", "Contact email for project notifications.")),
-		String("id", IsCID(), Required(), EmitValidation("project_id", "project_id"), Doc("ID", "Content-addressed identifier (CID) of the project.")),
+		String("id", IsCID(), Required(), Generated(GenCID), EmitValidation("project_id", "project_id"), Doc("ID", "Content-addressed identifier (CID) of the project.")),
 		String("name", IsVariableName(), Doc("Name", "Project name. Must be a valid variable name.")),
 		String("description", Doc("Description", "Free-form, human-readable description of the project.")),
 		StringSlice("tags", WireDrop(), Doc("Tags", "Project-level labels.")),
@@ -56,7 +56,7 @@ var TaubyteRessources = []*Node{
 				String("encryption-type", Path("encryption", "type"), NoAccessors(), NoStructField(), Doc("Encryption Type", "Encryption scheme for data at rest.")),
 				String("encryption-key", Path("encryption", "key"), NoAccessors(), InSection("encryption"), Doc("Encryption Key", "Key material or reference used to encrypt data at rest.")),
 			),
-			GroupDoc("A key-value database served to the project's peers."),
+			GroupDoc("A key-value database served to the project's peers."), Icon("database"),
 			secIdentity,
 			Section("storage", "Storage", "Key matching, capacity, and reachability."),
 			Section("encryption", "Encryption", "Encryption at rest."),
@@ -73,7 +73,7 @@ var TaubyteRessources = []*Node{
 				String("certificate-key", Path("certificate", "key"), Field("KeyFile"), Tag("key-file"), InSection("tls"), ShowWhen("certificate-type", "inline"), Doc("Certificate Key", "PEM-encoded private key for the certificate (inline certificate-type).")),
 				String("certificate-type", Path("certificate", "type"), InSet("inline", "auto"), Default(""), Field("CertType"), Tag("cert-type"), InSection("tls"), Doc("Certificate Type", "How the TLS certificate is provisioned: inline (supplied here) or auto (managed).")),
 			),
-			GroupDoc("A DNS domain and its TLS configuration, referenced by functions and websites."),
+			GroupDoc("A DNS domain and its TLS configuration, referenced by functions and websites."), Icon("link"),
 			secIdentity,
 			Section("tls", "TLS", "Certificate configuration."),
 			// domain's BasicPath is bespoke (fqdn-reversed), so it's not tagged here.
@@ -99,7 +99,7 @@ var TaubyteRessources = []*Node{
 				Bytes("memory", Path("execution", "memory"), InSection("limits"), Doc("Memory", "Maximum memory the function may use, as a human string (e.g. \"32MB\").")),
 				String("call", Path("execution", "call"), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM module.")),
 			),
-			GroupDoc("A serverless function triggered over HTTP(S), PubSub, or p2p."),
+			GroupDoc("A serverless function triggered over HTTP(S), PubSub, or p2p."), Icon("bolt"),
 			secIdentity,
 			Section("trigger", "Trigger", "How the function is invoked."),
 			SectionWhen("http", "HTTP", "HTTP(S) routing.", "type", "http", "https"),
@@ -117,12 +117,12 @@ var TaubyteRessources = []*Node{
 		DefineIter(
 			TaubyteAttributes(
 				String("path", Path("source", "path"), InSection("source"), Doc("Path", "Subpath within the repository that holds the library code.")),
-				String("branch", Path("source", "branch"), InSection("source"), Doc("Branch", "Git branch to build the library from.")),
+				String("branch", Path("source", "branch"), RepoBranch(), InSection("source"), Doc("Branch", "Git branch to build the library from.")),
 				String("git-provider", Path("source", Either("github")), Key(), Field("Provider"), Tag("provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
 				String("github-id", Path("source", "github", "id"), Field("RepoID"), Tag("repository-id"), NoAccessors(), InSection("source"), Doc("Repository ID", "GitHub repository numeric id.")),
-				String("github-fullname", Path("source", "github", "fullname"), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
+				String("github-fullname", Path("source", "github", "fullname"), RepoName(), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
 			),
-			GroupDoc("A reusable code library backed by a git repository, referenced as a function/smartop source."),
+			GroupDoc("A reusable code library backed by a git repository, referenced as a function/smartop source."), Icon("book"),
 			secIdentity,
 			Section("source", "Source", "Where the library's code is sourced from."),
 			Addressing(HasBasicPath, HasIndex, HasWasmModule, HasNameIndex),
@@ -141,7 +141,7 @@ var TaubyteRessources = []*Node{
 				Bool("mqtt", Path("bridges", "mqtt", "enable"), Accessor("MQTT"), NoSetter(), InSection("bridges"), Doc("MQTT", "Expose this channel over the MQTT bridge.")),
 				Bool("websocket", Path("bridges", "websocket", "enable"), Tag("webSocket"), Accessor("WebSocket"), NoSetter(), InSection("bridges"), Doc("WebSocket", "Expose this channel over the WebSocket bridge.")),
 			),
-			GroupDoc("A PubSub messaging channel, optionally bridged to MQTT/WebSocket."),
+			GroupDoc("A PubSub messaging channel, optionally bridged to MQTT/WebSocket."), Icon("message"),
 			secIdentity,
 			Section("channel", "Channel", "Channel matching."),
 			Section("bridges", "Bridges", "External protocol bridges (MQTT / WebSocket)."),
@@ -157,7 +157,7 @@ var TaubyteRessources = []*Node{
 			TaubyteAttributes(
 				String("protocol", InSection("identity"), Doc("Protocol", "libp2p protocol identifier this service advertises.")),
 			),
-			GroupDoc("A libp2p service advertised on the network."),
+			GroupDoc("A libp2p service advertised on the network."), Icon("server"),
 			secIdentity,
 			Addressing(HasIndex, HasEmptyPath),
 			Embeds("Indexer"),
@@ -171,7 +171,7 @@ var TaubyteRessources = []*Node{
 				Bytes("memory", Path("execution", "memory"), InSection("limits"), Doc("Memory", "Maximum memory the smartop may use, as a human string (e.g. \"32MB\").")),
 				String("call", Path("execution", "call"), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM module.")),
 			),
-			GroupDoc("A smartop: policy/hook code (inline or backed by a library) attached to every resource."),
+			GroupDoc("A smartop: policy/hook code (inline or backed by a library) attached to every resource."), Icon("robot"),
 			secIdentity,
 			Section("code", "Code", "The smartop's code source and entrypoint."),
 			Section("limits", "Limits", "Runtime resource limits."),
@@ -194,7 +194,7 @@ var TaubyteRessources = []*Node{
 				Duration("ttl", Path("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), InSection("storage"), Doc("Time-To-Live", "Time-to-live for streamed entries, as a human string (e.g. \"1h\") (streaming storage).")),
 				Bytes("size", Path(Either("object", "streaming"), "size"), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
 			),
-			GroupDoc("Object or streaming storage served to the project's peers."),
+			GroupDoc("Object or streaming storage served to the project's peers."), Icon("bucket"),
 			secIdentity,
 			Section("storage", "Storage", "Storage kind, key matching, and capacity."),
 			Section("access", "Access", "Network reachability."),
@@ -208,12 +208,12 @@ var TaubyteRessources = []*Node{
 			TaubyteAttributes(
 				StringSlice("domains", Path("domains"), Ref("domains"), InSection("serving"), Doc("Domains", "Domains that serve this website. Each must name a defined domain.")),
 				StringSlice("paths", Path("paths"), Compat("source", "paths"), InSection("serving"), Doc("Paths", "URL path patterns served by this website.")), // TODO: add validation
-				String("branch", Path("source", "branch"), InSection("source"), Doc("Branch", "Git branch to build the website from.")),                         // TODO: deprecate
+				String("branch", Path("source", "branch"), RepoBranch(), InSection("source"), Doc("Branch", "Git branch to build the website from.")),           // TODO: deprecate
 				String("git-provider", Path("source", Either("github")), Key(), Field("Provider"), Tag("provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
 				String("github-id", Path("source", "github", "id"), Field("RepoID"), Tag("repository-id"), NoAccessors(), InSection("source"), Doc("Repository ID", "GitHub repository numeric id.")),
-				String("github-fullname", Path("source", "github", "fullname"), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
+				String("github-fullname", Path("source", "github", "fullname"), RepoName(), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
 			),
-			GroupDoc("A static website built from a git repository and served over one or more domains."),
+			GroupDoc("A static website built from a git repository and served over one or more domains."), Icon("globe"),
 			secIdentity,
 			Section("serving", "Serving", "Domains and paths served."),
 			Section("source", "Source", "Where the website's code is sourced from."),
@@ -233,7 +233,7 @@ var TaubyteRessources = []*Node{
 // package (it's a container identity, not a config-decode resource).
 func applicationsGroup() *Node {
 	return DefineGroup("applications",
-		DefineIterGroup(TaubyteAttributes(), TaubyteRessources...).With(Singular("Application"), GroupDoc("An application: a named grouping of resources with its own scope within the project.")))
+		DefineIterGroup(TaubyteAttributes(), TaubyteRessources...).With(Singular("Application"), GroupDoc("An application: a named grouping of resources with its own scope within the project."), Icon("apps")))
 }
 
 // cloudsGroup: clouds.<fqdn>.{account, plan} — DefineIter (not Group, so no

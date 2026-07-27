@@ -14,25 +14,32 @@ func TestGenerateTSCoversResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := GenerateTS(schema.GenerationRoot())
+	out, err := GenerateTS(schema.CompileRoot())
 	if err != nil {
 		t.Fatal(err)
 	}
 	ts := string(out)
 
-	// One accessor class per RESOURCE (bare container structs like App have a
-	// struct but no accessor class), plus Session.
+	// One accessor class per RESOURCE, plus Session, plus the two documents that
+	// are resources without being a resource GROUP: the container (Application)
+	// and the project root.
 	resources := 0
 	for _, m := range models {
 		if m.SpecImport != "" {
 			resources++
 		}
 	}
-	if got := strings.Count(ts, "export class "); got != resources+1 {
-		t.Fatalf("class count: got %d, want %d", got, resources+1)
+	if got := strings.Count(ts, "export class "); got != resources+3 {
+		t.Fatalf("class count: got %d, want %d", got, resources+3)
 	}
-	if !strings.Contains(ts, "export class Session {") {
-		t.Error("missing Session class")
+	for _, want := range []string{
+		"export class Session {",
+		"export class ApplicationConfig {", // the container is addressable too
+		"export class ProjectConfig {",     // ...and so is the project root
+	} {
+		if !strings.Contains(ts, want) {
+			t.Errorf("missing %s", want)
+		}
 	}
 	for _, m := range models {
 		if m.SpecImport == "" {
@@ -47,7 +54,7 @@ func TestGenerateTSCoversResources(t *testing.T) {
 // Accessors must address (resource, field) by path, be async, type InSet fields
 // as unions, and read the legacy key as a fallback.
 func TestGenerateTSAccessors(t *testing.T) {
-	out, err := GenerateTS(schema.GenerationRoot())
+	out, err := GenerateTS(schema.CompileRoot())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +72,12 @@ func TestGenerateTSAccessors(t *testing.T) {
 		`this.s.binding.set(this.s.handle, this.res, ["execution", "memory"]`,         // setter path
 		"async memory(): Promise<string | undefined> {",                               // Bytes -> string (source form)
 		`(await this.s.binding.get(this.s.handle, this.res, ["trigger", "service"]))`, // compat fallback
+		`application(name: string): ApplicationConfig {`,                              // the container is addressed like any resource
+		`this.res = ["config"];`,                                                      // the project root's own document
+		`resourceAt(path: string): Promise<string[] | null> {`,                        // path -> address
+		`serialize(): Promise<SerializedResource> {`,                                  // one resource's file + YAML
+		`setDoc(doc: Record<string, unknown>): Promise<void> {`,                       // whole-document diff
+		`generate(field: string[]): Promise<string> {`,                                // DSL-minted values
 	} {
 		if !strings.Contains(ts, want) {
 			t.Errorf("generated TS missing: %s", want)

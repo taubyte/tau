@@ -125,6 +125,109 @@ test("session: list, application-scoped access, and delete", async () => {
   await reopened.close();
 });
 
+test("session: an application is one address, mapped to its own document", async () => {
+  const session = await open(fixtureFs(), "/");
+  const app = session.application("test_app1");
+
+  await app.setDescription("edited");
+  const { path, yaml } = await app.serialize();
+  assert.equal(path, "applications/test_app1/config.yaml", "the container's own document");
+  assert.ok(yaml.includes("edited"));
+
+  // the whole point: no sibling applications/test_app1.yaml is ever written
+  const out = memFs();
+  await session.save(out, "/");
+  assert.ok(!out.files.has("/applications/test_app1.yaml"), "no sibling document");
+  assert.ok(out.files.has("/applications/test_app1/config.yaml"));
+
+  assert.deepEqual(await app.validate(), [], "an application validates as a container");
+  await session.close();
+});
+
+test("session: whole-document diff, serialize, and path->address", async () => {
+  const session = await open(fixtureFs(), "/");
+  const fn = session.function(FN_NAME);
+
+  const doc = await fn.doc();
+  assert.equal(doc.id, FN_ID);
+
+  // replace the document: nested edit + a removed key, comments untouched
+  await fn.setDoc({ ...doc, description: "diffed", trigger: { type: "https" } });
+  assert.equal(await fn.description(), "diffed");
+  // NB: the wasm reports an absent field as null while the generated getters are
+  // typed `| undefined` — pre-existing, so accept either rather than pin it.
+  const method = await fn.method();
+  assert.ok(method === undefined || method === null, "a key absent from the doc is deleted");
+
+  const { path } = await fn.serialize();
+  assert.equal(path, `functions/${FN_NAME}.yaml`);
+  assert.deepEqual(await session.resourceAt(path), ["functions", FN_NAME], "path -> address");
+  assert.equal(await session.resourceAt(".git/config.yaml"), null, "not a resource document");
+  assert.deepEqual(
+    await session.resourceAt("applications/test_app1/config.yaml"),
+    ["applications", "test_app1"],
+    "a container's document addresses the container",
+  );
+  await session.close();
+});
+
+test("session: generate mints a DSL-declared id, and validation is field-attributed", async () => {
+  const session = await open(fixtureFs(), "/");
+  const fn = session.function(FN_NAME);
+
+  const id = await fn.generate(["id"]);
+  assert.notEqual(id, FN_ID, "a fresh id, not the current one");
+  await fn.validateField(["id"], id); // throws if it isn't a valid CID
+
+  await fn.setType("nope" as never);
+  const issues = await fn.validate();
+  assert.equal(issues.length, 1);
+  assert.deepEqual(issues[0]!.field, ["trigger", "type"], "the issue names the field");
+  assert.ok(issues[0]!.message.includes("invalid value"));
+  await session.close();
+});
+
+test("session: resourceRepo reads the backing repo without naming a provider", async () => {
+  // A non-github provider block: if the extraction hardcoded "github" anywhere,
+  // this returns null instead of naming gitlab.
+  const files = new Map<string, Uint8Array>();
+  loadDir(FIXTURE, "", files);
+  files.set(
+    "/libraries/gitlab_lib.yaml",
+    new TextEncoder().encode(
+      "id: QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o\n" +
+        "name: gitlab_lib\n" +
+        "source:\n  branch: main\n  gitlab:\n    id: '42'\n    fullname: acme/lib\n",
+    ),
+  );
+  const session = await open(memFs(files), "/");
+  assert.deepEqual(await session.resourceRepo(["libraries", "gitlab_lib"]), {
+    provider: "gitlab",
+    fullname: "acme/lib",
+    branch: "main",
+  });
+  assert.equal(
+    await session.resourceRepo(["functions", FN_NAME]),
+    null,
+    "a resource with no repo block is not repo-backed",
+  );
+  await session.close();
+});
+
+test("hydrate skips dot-entries, and a pruning save never deletes them", async () => {
+  const files = new Map<string, Uint8Array>();
+  loadDir(FIXTURE, "", files);
+  const sentinel = "/.git/objects/ab/cdef";
+  files.set(sentinel, new TextEncoder().encode("git object"));
+  const fs = memFs(files);
+
+  const session = await open(fs, "/");
+  await session.function(FN_NAME).setMemory("64GB");
+  await session.save(fs, "/"); // prunes deleted files
+  assert.ok(fs.files.has(sentinel), "a pruning save must not delete .git");
+  await session.close();
+});
+
 test("decompile a compiled object into an editable session", async () => {
   const compiled = await compile(fixtureFs(), "/", { branch: "master" });
   const session = await decompile(compiled);

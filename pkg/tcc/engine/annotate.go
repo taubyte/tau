@@ -57,6 +57,16 @@ func GroupDoc(text string) NodeOption {
 	return GroupAnnotate("doc", text)
 }
 
+// Icon is a SEMANTIC icon hint for a resource group — "bolt", "database",
+// "globe" — surfaced on its schema object so a UI/CLI picks a glyph from the
+// DSL instead of keeping its own kind->icon table (three of them, in the web
+// console's case). Deliberately a neutral key, not an asset path or an icon-set
+// class: which library draws it stays the consumer's business, and a consumer
+// that doesn't know the key just falls back to its default. Presentation-only.
+func Icon(name string) NodeOption {
+	return GroupAnnotate("icon", name)
+}
+
 // ConditionSpec is a simple static visibility condition: show the field or section
 // only when a sibling attribute (Field) holds one of In. Presentation-only — a
 // UI/CLI evaluates it; it never affects parsing or the compiled output. (For
@@ -116,6 +126,18 @@ func sectionDef(spec SectionSpec) NodeOption {
 func InSection(id string) Option {
 	return Annotate("section", id)
 }
+
+// RepoName marks the attribute holding a repository's full name (owner/repo)
+// INSIDE its provider block — the value that says which repository backs the
+// resource. It is what lets a tool extract the backing repo generically: the
+// provider key is dynamic, so "the sub-object carrying the repo name" is the
+// only stable handle, and this says which leaf that is instead of every consumer
+// hardcoding "fullname". Introspection-only; no compile or runtime effect.
+func RepoName() Option { return Annotate("repoName", true) }
+
+// RepoBranch marks the attribute holding the git branch a repo-backed resource
+// builds from (a sibling of the provider block). Introspection-only.
+func RepoBranch() Option { return Annotate("repoBranch", true) }
 
 // Field overrides the Go struct field name a generator emits for this attribute,
 // for cases where the config-key-derived name differs from the struct field
