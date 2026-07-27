@@ -211,7 +211,7 @@ func GenerateJSONSchema(root []*engine.Node, opts JSONSchemaOptions) ([]byte, er
 		}
 		iter := node.Children[0]
 		if spec, ok := resourceSpec(iter); ok {
-			defs[spec] = g.objectSchema(iter, nil)
+			defs[spec] = g.objectSchema(iter, nil, spec)
 			props.set(name, resourceMap(spec, name))
 			continue
 		}
@@ -222,7 +222,7 @@ func GenerateJSONSchema(root []*engine.Node, opts JSONSchemaOptions) ([]byte, er
 			if spec == "" {
 				return nil, fmt.Errorf("container group %q has no Singular() declaration", name)
 			}
-			defs[spec] = g.objectSchema(iter, iter.Children)
+			defs[spec] = g.objectSchema(iter, iter.Children, spec)
 			props.set(name, resourceMap(spec, name))
 		}
 		// leaf maps (clouds) decode to no type — omitted from $defs.
@@ -267,8 +267,10 @@ func resourceMap(spec, group string) map[string]any {
 
 // objectSchema projects one resource/container iterator into an object schema:
 // its attributes nested by authored Path, plus (for a container) a map per nested
-// resource group.
-func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node) map[string]any {
+// resource group. title is the singular the DSL declares for one instance, with
+// its declared casing ("SmartOp", not "Smartop") — the only place that casing
+// survives, since it is otherwise just a $defs key nobody should have to parse.
+func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, title string) map[string]any {
 	props := newOmap()
 	var required []string
 	for _, a := range iter.Attributes {
@@ -300,6 +302,9 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node) ma
 		}
 	}
 	out := map[string]any{"type": "object", "properties": props}
+	if title != "" {
+		out["title"] = title // human display name for the kind (JSON Schema title)
+	}
 	if d, ok := iter.Meta["doc"].(string); ok && d != "" {
 		out["description"] = d
 	}

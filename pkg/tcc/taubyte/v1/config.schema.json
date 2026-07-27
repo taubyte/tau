@@ -100,6 +100,7 @@
       "required": [
         "id"
       ],
+      "title": "Application",
       "type": "object",
       "x-tau-icon": "apps"
     },
@@ -192,6 +193,7 @@
       "required": [
         "id"
       ],
+      "title": "Database",
       "type": "object",
       "x-tau-icon": "database",
       "x-tau-sections": [
@@ -297,6 +299,7 @@
       "required": [
         "id"
       ],
+      "title": "Domain",
       "type": "object",
       "x-tau-icon": "link",
       "x-tau-sections": [
@@ -473,6 +476,7 @@
       "required": [
         "id"
       ],
+      "title": "Function",
       "type": "object",
       "x-tau-icon": "bolt",
       "x-tau-sections": [
@@ -611,6 +615,7 @@
       "required": [
         "id"
       ],
+      "title": "Library",
       "type": "object",
       "x-tau-icon": "book",
       "x-tau-sections": [
@@ -713,6 +718,7 @@
       "required": [
         "id"
       ],
+      "title": "Messaging",
       "type": "object",
       "x-tau-icon": "message",
       "x-tau-sections": [
@@ -776,6 +782,7 @@
       "required": [
         "id"
       ],
+      "title": "Service",
       "type": "object",
       "x-tau-icon": "server",
       "x-tau-sections": [
@@ -867,6 +874,7 @@
       "required": [
         "id"
       ],
+      "title": "SmartOp",
       "type": "object",
       "x-tau-icon": "robot",
       "x-tau-sections": [
@@ -993,6 +1001,7 @@
       "required": [
         "id"
       ],
+      "title": "Storage",
       "type": "object",
       "x-tau-icon": "bucket",
       "x-tau-sections": [
@@ -1107,6 +1116,7 @@
       "required": [
         "id"
       ],
+      "title": "Website",
       "type": "object",
       "x-tau-icon": "globe",
       "x-tau-sections": [
