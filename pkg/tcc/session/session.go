@@ -594,13 +594,22 @@ func (s *Session) Address(kind, name, app string) ([]string, error) {
 
 // Names lists the instances of a kind in scope — the whole project when app is
 // empty, one application's own otherwise. An absent directory is simply empty.
+//
+// Scoping a CONTAINER kind is an error, exactly as it is in Address: containers
+// don't nest, so "the applications inside this application" is not a question
+// with an answer. Answering it anyway — by quietly ignoring app and returning
+// all of them — would hide the caller's bug, and is the flattening of the
+// container/resource distinction this API exists to avoid.
 func (s *Session) Names(kind, app string) ([]string, error) {
 	k, err := s.kind(kind)
 	if err != nil {
 		return nil, err
 	}
 	dir := []string{k.Group}
-	if app != "" && !k.Container {
+	if app != "" {
+		if k.Container {
+			return nil, fmt.Errorf("session: %s is a container kind and cannot be scoped to %q", k.Group, app)
+		}
 		c, ok := s.container()
 		if !ok {
 			return nil, fmt.Errorf("session: this DSL has no container kind to scope %q under", app)

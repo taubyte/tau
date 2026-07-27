@@ -319,6 +319,10 @@ func TestSession(t *testing.T) {
 		assert.ErrorContains(t, err, "unknown kind")
 		_, err = s.Address("application", "app", "other")
 		assert.ErrorContains(t, err, "container kind")
+		// listing agrees with addressing: "applications inside an application"
+		// is not a question with an answer, so it is not quietly answered
+		_, err = s.Names("application", "other")
+		assert.ErrorContains(t, err, "container kind")
 
 		names, err := s.Names("function", "")
 		assert.NilError(t, err)

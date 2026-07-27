@@ -62,11 +62,26 @@ func (st *Store) Session() *schema.Session { return st.s }
 // Application is the selected application, empty at project scope.
 func (st *Store) Application() string { return st.app }
 
-// res is the session address of one resource in the current scope. The scoping
-// rule — which kinds nest under an application, and that a container's own
-// instance never does — belongs to the session, not here.
+// scope is the selected application as it applies to a kind. Containers don't
+// nest, so a container kind is always at project scope however deep the CLI is
+// currently selected — an application is still an application when you are
+// inside one. Asked from the session so nothing here names a container.
+func (st *Store) scope(group string) string {
+	if st.app == "" {
+		return ""
+	}
+	for _, k := range st.s.Kinds() {
+		if (k.Group == group || k.Name == group) && k.Container {
+			return ""
+		}
+	}
+	return st.app
+}
+
+// res is the session address of one resource in the current scope. How a scope
+// nests is the session's rule, not this file's.
 func (st *Store) res(group, name string) []string {
-	r, err := st.s.Address(group, name, st.app)
+	r, err := st.s.Address(group, name, st.scope(group))
 	if err != nil {
 		// Unreachable by construction: every caller passes a Group.Dir, which
 		// comes from the same DSL the session resolves against. Degrade to the
@@ -83,7 +98,7 @@ func (st *Store) flush() error { return st.s.Save(st.s.FS(), "/") }
 
 // List names the resources of a group in the current scope.
 func (st *Store) List(group string) ([]string, error) {
-	names, err := st.s.Names(group, st.app)
+	names, err := st.s.Names(group, st.scope(group))
 	if err != nil {
 		return nil, nil // an unknown or absent group is simply empty
 	}

@@ -128,6 +128,15 @@ func TestStoreContainerScope(t *testing.T) {
 	assert.NilError(t, scoped.Write("functions", "scoped_fn", tcc.Doc{"id": "QmS", "trigger": map[string]any{"type": "https"}}))
 	_, statErr := stat(filepath.Join(root, "config", "applications", "test_app1", "functions", "scoped_fn.yaml"))
 	assert.NilError(t, statErr)
+
+	// ...but a container is never scoped: applications stay listable and
+	// addressable at project scope while you are selected INSIDE one.
+	apps, listErr := scoped.List("applications")
+	assert.NilError(t, listErr)
+	assert.Assert(t, contains(apps, "test_app1"), "applications list from inside an application")
+	app, docErr := scoped.Doc("applications", "test_app1")
+	assert.NilError(t, docErr)
+	assert.Equal(t, tcc.Get(app, []string{"description"}), "this is test app 1")
 }
 
 func TestGroupForAndRepositoryName(t *testing.T) {
