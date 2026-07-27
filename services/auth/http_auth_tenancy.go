@@ -39,10 +39,11 @@ func (srv *AuthService) authorizeRegistrant(ctx http.Context) error {
 		return ErrNoTenancy
 	}
 
-	// No app credential means membership is unanswerable. Repository ownership
-	// still applies at registration, so this is a narrower gate, not an open one.
+	// Startup refuses a configured tenancy without one, so this is unreachable.
+	// It stays because the alternative on an authorization path is a nil-deref
+	// panic rather than a refusal.
 	if srv.membership == nil {
-		return nil
+		return errors.New("membership verifier unavailable")
 	}
 
 	client, err := getGithubClientFromContext(ctx)
@@ -57,9 +58,9 @@ func (srv *AuthService) authorizeRegistrant(ctx http.Context) error {
 
 	member, err := srv.membership.IsActiveMember(ctx.Request().Context(), srv.tenancy.Owner, me.GetLogin())
 	if err != nil {
-		// Distinct from a refusal on purpose: a caller told "not a member" when
-		// the check never ran has nothing to act on.
-		return fmt.Errorf("could not verify your membership in `%s`: %w", srv.tenancy.Owner, err)
+		// Relayed as-is. A check that never ran is not a refusal, and the
+		// provider's own message is the only thing that says what to fix.
+		return err
 	}
 	if !member {
 		return fmt.Errorf("`%s` is not a member of `%s`", me.GetLogin(), srv.tenancy.Owner)

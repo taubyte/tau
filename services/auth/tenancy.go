@@ -13,6 +13,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/go-github/v71/github"
 	"github.com/jellydator/ttlcache/v3"
+	tauConfig "github.com/taubyte/tau/pkg/config"
 	"golang.org/x/oauth2"
 )
 
@@ -65,6 +66,24 @@ type githubAppVerifier struct {
 type tokenEntry struct {
 	token   string
 	expires time.Time
+}
+
+// tenancyVerifier returns the verifier a tenancy requires: none when no
+// namespace is configured, and otherwise one built from the app credential.
+//
+// A configured tenancy has no ownership-only fallback. Membership is
+// unanswerable without the credential, so a missing or unusable one is an error
+// here — at startup — rather than a quietly narrower gate discovered at
+// whichever registration first needs it.
+func tenancyVerifier(t tauConfig.Tenancy) (MembershipVerifier, error) {
+	if !t.Configured() {
+		return nil, nil
+	}
+	v, err := newGitHubAppVerifier(t.App.ClientId, t.App.Key)
+	if err != nil {
+		return nil, fmt.Errorf("tenancy `%s` needs a usable app credential: %w", t.Owner, err)
+	}
+	return v, nil
 }
 
 // newGitHubAppVerifier builds a verifier from a PEM private key. It fails on a
