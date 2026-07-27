@@ -29,7 +29,8 @@ from spore_drive.operations import (
     HostsConfig, HostConfig, SSHConfig, LocationConfig,
     AuthConfig, SignerConfig, ShapesConfig, ShapeConfig, PortsConfig,
     AccountsConfig, EmailConfig, SMTPConfig,
-    Cloud, Hosts, Auth, Accounts, Shapes
+    TenancyConfig, TenancyAppConfig,
+    Cloud, Hosts, Auth, Accounts, Tenancy, Shapes
 )
 from spore_drive.proto.config.v1 import config_pb2
 
@@ -77,6 +78,12 @@ async def create_config(config: Config) -> None:
     await config.accounts.email.smtp.user.set("noreply@example.com")
     await config.accounts.email.smtp.pass_.set("secret")
     await config.accounts.email.smtp.from_.set("noreply@example.com")
+
+    # Set Tenancy configuration
+    await config.tenancy.provider.set("github")
+    await config.tenancy.owner.set("taubyte")
+    await config.tenancy.app.client_id.set("Iv1.0000000000000000")
+    await config.tenancy.app.key.set("-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n")
 
     # Set Shapes configurations
     shape1 = config.shapes.get("shape1")
@@ -143,6 +150,16 @@ async def create_config_with_set(config: Config) -> None:
                 pass_="secret",
                 from_="noreply@example.com",
             )
+        ),
+    ))
+
+    # Set Tenancy configuration
+    await config.tenancy.set(TenancyConfig(
+        provider="github",
+        owner="taubyte",
+        app=TenancyAppConfig(
+            client_id="Iv1.0000000000000000",
+            key="-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n",
         ),
     ))
 
@@ -485,6 +502,39 @@ class TestConfigIntegration:
         assert await self.config.accounts.session_ttl.get() == "24h"
         assert await self.config.accounts.email.smtp.host.get() == "smtp.batch.example.com"
         assert await self.config.accounts.email.smtp.port.get() == 2525
+
+    @pytest.mark.asyncio
+    async def test_set_and_get_tenancy(self):
+        """Round-trip tenancy provider, owner and the app credential."""
+        await self.setup_config()
+
+        await self.config.tenancy.provider.set("github")
+        await self.config.tenancy.owner.set("acme")
+
+        app = self.config.tenancy.app
+        await app.client_id.set("Iv1.0000000000000000")
+        await app.key.set("-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n")
+
+        assert await self.config.tenancy.provider.get() == "github"
+        assert await self.config.tenancy.owner.get() == "acme"
+        assert await app.client_id.get() == "Iv1.0000000000000000"
+        assert await app.key.get() == "-----BEGIN RSA PRIVATE KEY-----\nfixture\n-----END RSA PRIVATE KEY-----\n"
+
+    @pytest.mark.asyncio
+    async def test_tenancy_set_dataclass(self):
+        """TenancyConfig dataclass round-trips through tenancy.set()."""
+        await self.setup_config()
+        await self.config.tenancy.set(TenancyConfig(
+            provider="github",
+            owner="batchorg",
+            app=TenancyAppConfig(
+                client_id="Iv1.1111111111111111",
+                key="-----BEGIN RSA PRIVATE KEY-----\nbatch\n-----END RSA PRIVATE KEY-----\n",
+            ),
+        ))
+        assert await self.config.tenancy.provider.get() == "github"
+        assert await self.config.tenancy.owner.get() == "batchorg"
+        assert await self.config.tenancy.app.client_id.get() == "Iv1.1111111111111111"
 
     @pytest.mark.asyncio
     async def test_generate_same_config_with_different_methods(self):
