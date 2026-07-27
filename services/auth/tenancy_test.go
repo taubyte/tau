@@ -122,12 +122,59 @@ func TestMembership_ForbiddenIsAnErrorNotARefusal(t *testing.T) {
 	assert.Equal(t, atomic.LoadInt64(&calls), int64(2), "errors must not be cached")
 }
 
-func TestMembership_RejectsMalformedKey(t *testing.T) {
-	_, err := newGitHubAppVerifier("Iv1.test", "not a pem")
-	assert.Assert(t, err != nil)
+// No namespace configured means no verifier and no error — the cloud refuses
+// registration outright, so there is nothing to verify against.
+func TestTenancyVerifier_UnconfiguredNeedsNoCredential(t *testing.T) {
+	v, err := tenancyVerifier(tauConfig.Tenancy{})
+	assert.NilError(t, err)
+	assert.Assert(t, v == nil)
+}
 
-	_, err = newGitHubAppVerifier("", testAppKey(t))
-	assert.Assert(t, err != nil, "an empty client id cannot sign a usable jwt")
+// The other half of "no fallback": once an owner is set, startup fails unless
+// the credential is usable. Without this, a tenancy with no app would silently
+// degrade to an ownership-only gate.
+func TestTenancyVerifier_ConfiguredRequiresCredential(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		app  tauConfig.TenancyApp
+	}{
+		{"no app at all", tauConfig.TenancyApp{}},
+		{"client id but no key", tauConfig.TenancyApp{ClientId: "Iv1.test"}},
+		{"key but no client id", tauConfig.TenancyApp{Key: testAppKey(t)}},
+		{"malformed key", tauConfig.TenancyApp{ClientId: "Iv1.test", Key: "not a pem"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			v, err := tenancyVerifier(tauConfig.Tenancy{Owner: "acme", App: tc.app})
+			assert.Assert(t, err != nil, "%s must refuse startup", tc.name)
+			assert.Assert(t, v == nil)
+		})
+	}
+
+	v, err := tenancyVerifier(tauConfig.Tenancy{
+		Owner: "acme",
+		App:   tauConfig.TenancyApp{ClientId: "Iv1.test", Key: testAppKey(t)},
+	})
+	assert.NilError(t, err)
+	assert.Assert(t, v != nil)
+}
+
+// A configured tenancy has no ownership-only fallback, so every way of not
+// supplying a usable credential has to be an error the service refuses to start
+// on, not a quietly narrower gate.
+func TestMembership_RejectsUnusableCredential(t *testing.T) {
+	for _, tc := range []struct {
+		name, clientID, key string
+	}{
+		{"malformed key", "Iv1.test", "not a pem"},
+		{"empty key", "Iv1.test", ""},
+		{"empty client id", "", testAppKey(t)},
+		{"nothing at all", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := newGitHubAppVerifier(tc.clientID, tc.key)
+			assert.Assert(t, err != nil, "%s must not yield a usable verifier", tc.name)
+		})
+	}
 }
 
 // --- repository ownership ------------------------------------------------
