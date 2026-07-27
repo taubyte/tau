@@ -310,6 +310,82 @@ func sessionResourceAtFn(_ js.Value, args []js.Value) any {
 	return toJS(out)
 }
 
+// kinds(handle) -> [{ name, group, container }] : the DSL's resource kinds, for
+// a consumer that routes on a kind string rather than a static accessor.
+func sessionKindsFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	kinds := s.Kinds()
+	if kinds == nil {
+		kinds = []compiler.Kind{}
+	}
+	return toJS(kinds)
+}
+
+// address(handle, kind, name, app?) -> string[] : the canonical address of one
+// resource, by kind — no group-name table or plural rule on the caller's side.
+func sessionAddressFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 3 {
+		return errResult("address: expected (handle, kind, name, app?)")
+	}
+	app := ""
+	if len(args) > 3 && args[3].Truthy() {
+		app = args[3].String()
+	}
+	res, err := s.Address(args[1].String(), args[2].String(), app)
+	if err != nil {
+		return errResult(err.Error())
+	}
+	out := make([]any, len(res))
+	for i, seg := range res {
+		out[i] = seg
+	}
+	return toJS(out)
+}
+
+// names(handle, kind, app?) -> string[] : the instances of a kind in scope.
+func sessionNamesFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("names: expected (handle, kind, app?)")
+	}
+	app := ""
+	if len(args) > 2 && args[2].Truthy() {
+		app = args[2].String()
+	}
+	names, err := s.Names(args[1].String(), app)
+	if err != nil {
+		return errResult(err.Error())
+	}
+	out := make([]any, len(names))
+	for i, n := range names {
+		out[i] = n
+	}
+	return toJS(out)
+}
+
+// exists(handle, resourcePath[]) -> bool : is this resource already in the
+// config (i.e. is an editor creating it or editing it).
+func sessionExistsFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("exists: expected (handle, resourcePath)")
+	}
+	return js.ValueOf(s.Exists(jsToPath(args[1])))
+}
+
 // generate(handle, resourcePath[], fieldPath[]) -> string : mint a value for a
 // DSL-generated field (a resource id).
 func sessionGenerateFn(_ js.Value, args []js.Value) any {

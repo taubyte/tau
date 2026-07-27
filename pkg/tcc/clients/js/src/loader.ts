@@ -33,6 +33,16 @@ export interface FieldIssue {
   message: string;
 }
 
+/** One resource kind the DSL defines. `group` is the canonical key (the config
+ *  directory); `name` is the declared singular, lowercased, accepted as an alias
+ *  wherever a kind is named. `container` marks a kind whose instances hold
+ *  resources of their own — read it rather than special-casing a kind by name. */
+export interface Kind {
+  name: string;
+  group: string;
+  container: boolean;
+}
+
 /** One resource's document as tcc serializes it: where it lives and its exact
  *  YAML. The path is the DSL's to decide — never assert one. */
 export interface SerializedResource {
@@ -71,6 +81,10 @@ export interface TccGlobal {
   sessionSerialize(handle: number, resource: string[]): SerializedResource | { error: string };
   sessionSetResource(handle: number, resource: string[], doc: Record<string, unknown>): null | { error: string };
   sessionResourceAt(handle: number, path: string): string[] | null | { error: string };
+  sessionKinds(handle: number): Kind[] | { error: string };
+  sessionAddress(handle: number, kind: string, name: string, app?: string): string[] | { error: string };
+  sessionNames(handle: number, kind: string, app?: string): string[] | { error: string };
+  sessionExists(handle: number, resource: string[]): boolean | { error: string };
   sessionGenerate(handle: number, resource: string[], field: string[]): string | { error: string };
   sessionComplete(handle: number, resource: string[], field: string[], partial?: string): string[] | { error: string };
   sessionSave(handle: number, fs: SyncFs): null | { error: string };
@@ -99,6 +113,10 @@ export interface SessionBinding {
   serialize(handle: number, resource: string[]): Promise<SerializedResource>;
   setResource(handle: number, resource: string[], doc: Record<string, unknown>): Promise<void>;
   resourceAt(handle: number, path: string): Promise<string[] | null>;
+  kinds(handle: number): Promise<Kind[]>;
+  address(handle: number, kind: string, name: string, app?: string): Promise<string[]>;
+  names(handle: number, kind: string, app?: string): Promise<string[]>;
+  exists(handle: number, resource: string[]): Promise<boolean>;
   generate(handle: number, resource: string[], field: string[]): Promise<string>;
   complete(handle: number, resource: string[], field: string[], partial?: string): Promise<string[]>;
   save(handle: number, fs: AsyncFs, dir: string): Promise<void>;
@@ -150,6 +168,18 @@ export function makeBinding(tcc: TccGlobal): SessionBinding {
     },
     async resourceAt(handle, path) {
       return orThrow(tcc.sessionResourceAt(handle, path));
+    },
+    async kinds(handle) {
+      return orThrow(tcc.sessionKinds(handle));
+    },
+    async address(handle, kind, name, app) {
+      return orThrow(tcc.sessionAddress(handle, kind, name, app));
+    },
+    async names(handle, kind, app) {
+      return orThrow(tcc.sessionNames(handle, kind, app));
+    },
+    async exists(handle, resource) {
+      return orThrow(tcc.sessionExists(handle, resource));
     },
     async generate(handle, resource, field) {
       return orThrow(tcc.sessionGenerate(handle, resource, field));

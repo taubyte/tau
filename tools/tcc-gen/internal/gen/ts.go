@@ -199,29 +199,66 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 	return out
 }
 
-// writeTSClass emits one accessor class: its address (built by ctor), the
-// whole-document surface every resource shares, and its typed field accessors.
+// resourceBase is the surface EVERY resource shares, whatever its kind: its
+// address, its whole document, its file, its local validation. Emitted once as a
+// base class so the typed per-kind classes add only their field accessors — and
+// so a caller holding a kind as a STRING (a UI rendering whatever its route
+// names) gets the identical surface from Session.resource() with no typing.
+const resourceBase = `/** The surface every resource has, whatever its kind. */
+export class ResourceConfig {
+  constructor(
+    protected s: Session,
+    readonly res: string[],
+  ) {}
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
+  }
+  /** Is this resource already in the config, or is it being created? */
+  exists(): Promise<boolean> {
+    return this.s.binding.exists(this.s.handle, this.res);
+  }
+  /** The whole document, as an editor holds it. */
+  async doc(): Promise<Record<string, unknown>> {
+    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  }
+  /** Make the document equal doc, as the minimal diff — comments on untouched
+   *  lines survive, and a key missing from doc is deleted. */
+  setDoc(doc: Record<string, unknown>): Promise<void> {
+    return this.s.binding.setResource(this.s.handle, this.res, doc);
+  }
+  /** This resource's repo-relative path and exact YAML. Never assert the path
+   *  yourself — where a document lives is the DSL's to decide. */
+  serialize(): Promise<SerializedResource> {
+    return this.s.binding.serialize(this.s.handle, this.res);
+  }
+  /** Mint a DSL-declared generated value (a resource id) rather than invent one. */
+  generate(field: string[]): Promise<string> {
+    return this.s.binding.generate(this.s.handle, this.res, field);
+  }
+  /** Compile-free local validation, each issue attributed to its field.
+   *  Cross-element references still need Session.validate(). */
+  validate(): Promise<FieldIssue[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  /** Allowed values for a field, filtered by what the user typed. */
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
+}
+
+`
+
+// writeTSClass emits one typed accessor class: its address (built by ctor) on
+// top of ResourceConfig, plus its own field accessors.
 func writeTSClass(b *strings.Builder, r tsResource, ctor string) {
 	fmt.Fprintf(b, "/** Typed accessors for a %s's config. */\n", strings.ToLower(r.spec))
-	fmt.Fprintf(b, "export class %sConfig {\n", r.spec)
-	b.WriteString("  readonly res: string[];\n")
+	fmt.Fprintf(b, "export class %sConfig extends ResourceConfig {\n", r.spec)
 	fmt.Fprintf(b, "  %s\n", ctor)
-	b.WriteString("\n  delete(): Promise<void> {\n    return this.s.binding.delete(this.s.handle, this.res);\n  }\n")
-	// Whole-document surface: read it, replace it with the minimal diff, and get
-	// the exact YAML it serializes to. Never name the file — tcc owns the layout.
-	b.WriteString("  async doc(): Promise<Record<string, unknown>> {\n" +
-		"    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);\n" +
-		"    return v && typeof v === \"object\" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};\n  }\n")
-	b.WriteString("  setDoc(doc: Record<string, unknown>): Promise<void> {\n    return this.s.binding.setResource(this.s.handle, this.res, doc);\n  }\n")
-	b.WriteString("  serialize(): Promise<SerializedResource> {\n    return this.s.binding.serialize(this.s.handle, this.res);\n  }\n")
-	// Mint a DSL-generated field's value (a resource id) rather than inventing one.
-	b.WriteString("  generate(field: string[]): Promise<string> {\n    return this.s.binding.generate(this.s.handle, this.res, field);\n  }\n")
-	// Partial validation (compile-free): resource-scoped local checks + a single
-	// field check. Cross-element refs still need Session.validate().
-	b.WriteString("  validate(): Promise<FieldIssue[]> {\n    return this.s.binding.validateResource(this.s.handle, this.res);\n  }\n")
-	b.WriteString("  validateField(field: string[], value: unknown): Promise<void> {\n    return this.s.binding.validateField(this.s.handle, this.res, field, value);\n  }\n")
-	// completion candidates for a field's value, filtered by what the user typed.
-	b.WriteString("  complete(field: string[], partial?: string): Promise<string[]> {\n    return this.s.binding.complete(this.s.handle, this.res, field, partial);\n  }\n")
 	for _, f := range r.fields {
 		// getter
 		if len(f.compat) == 0 {
@@ -305,6 +342,7 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 		`  CompileOptions,` + "\n" +
 		`  CompileResult,` + "\n" +
 		`  Validation,` + "\n" +
+		`  Kind,` + "\n" +
 		`  FieldIssue,` + "\n" +
 		`  SerializedResource,` + "\n" +
 		`} from "../loader.js";` + "\n")
@@ -351,6 +389,34 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 	fmt.Fprintf(&b, "  %s(): Promise<string[]> {\n    return this.binding.list(this.handle, [%q]);\n  }\n", container, container)
 	// path -> canonical address, the inverse of a resource's serialize().
 	b.WriteString("  resourceAt(path: string): Promise<string[] | null> {\n    return this.binding.resourceAt(this.handle, path);\n  }\n")
+	// The generic, kind-keyed entry points. Everything above is statically named
+	// per kind; a consumer that only knows a kind as a string — a UI rendering
+	// whatever its route names — works entirely through these, and never has to
+	// rebuild an address, pluralize a kind, or special-case the container.
+	b.WriteString(`  /** Every resource kind this DSL defines, with its group key and whether
+   *  its instances contain resources of their own. */
+  kinds(): Promise<Kind[]> {
+    return this.binding.kinds(this.handle);
+  }
+  /** The canonical address of one resource, by kind. Accepts a kind's group key
+   *  or its declared singular; unknown kinds throw rather than address nothing. */
+  address(kind: string, name: string, app?: string): Promise<string[]> {
+    return this.binding.address(this.handle, kind, name, app);
+  }
+  /** The instances of a kind in scope — the project, or one application's own. */
+  names(kind: string, app?: string): Promise<string[]> {
+    return this.binding.names(this.handle, kind, app);
+  }
+  /** Is this resource already in the config, or is it being created? */
+  exists(res: string[]): Promise<boolean> {
+    return this.binding.exists(this.handle, res);
+  }
+  /** An accessor for a resource named only by kind — the untyped sibling of the
+   *  generated per-kind factories, with the identical document surface. */
+  async resource(kind: string, name: string, app?: string): Promise<ResourceConfig> {
+    return new ResourceConfig(this, await this.address(kind, name, app));
+  }
+`)
 	if repo != nil {
 		fmt.Fprintf(&b, `  /** The git repository backing a resource, or null if it isn't repo-backed.
    * The provider key is dynamic, so this takes whichever sub-object of %q
@@ -381,18 +447,20 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 	b.WriteString("  close(): Promise<void> {\n    return this.binding.close(this.handle);\n  }\n")
 	b.WriteString("}\n\n")
 
+	b.WriteString(resourceBase)
+
 	// One accessor class per resource, plus one for the container group and one
 	// for the project root — every document the DSL defines is addressed the
 	// same way, so no caller has to build an address by hand.
 	for _, r := range resources {
-		writeTSClass(&b, r, fmt.Sprintf("constructor(private s: Session, name: string, app?: string) {\n    this.res = app ? [%q, app, %q, name] : [%q, name];\n  }", container, r.group, r.group))
+		writeTSClass(&b, r, fmt.Sprintf("constructor(s: Session, name: string, app?: string) {\n    super(s, app ? [%q, app, %q, name] : [%q, name]);\n  }", container, r.group, r.group))
 	}
 	if cSpec != "" {
 		writeTSClass(&b, tsResource{spec: cSpec, group: container, fields: cFields},
-			fmt.Sprintf("constructor(private s: Session, name: string) {\n    this.res = [%q, name];\n  }", container))
+			fmt.Sprintf("constructor(s: Session, name: string) {\n    super(s, [%q, name]);\n  }", container))
 	}
 	writeTSClass(&b, tsResource{spec: projectSpec, group: "", fields: projectFields},
-		fmt.Sprintf("constructor(private s: Session) {\n    this.res = [%q];\n  }", engine.NodeDefaultSeerLeaf))
+		fmt.Sprintf("constructor(s: Session) {\n    super(s, [%q]);\n  }", engine.NodeDefaultSeerLeaf))
 
 	// Compiled resource shapes: the data types as decoded from the TNS object
 	// (what the console receives over the wire), keyed by the compiled JSON keys.

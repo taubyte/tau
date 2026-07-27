@@ -7,6 +7,7 @@ import type {
   CompileOptions,
   CompileResult,
   Validation,
+  Kind,
   FieldIssue,
   SerializedResource,
 } from "../loader.js";
@@ -96,6 +97,29 @@ export class Session {
   resourceAt(path: string): Promise<string[] | null> {
     return this.binding.resourceAt(this.handle, path);
   }
+  /** Every resource kind this DSL defines, with its group key and whether
+   *  its instances contain resources of their own. */
+  kinds(): Promise<Kind[]> {
+    return this.binding.kinds(this.handle);
+  }
+  /** The canonical address of one resource, by kind. Accepts a kind's group key
+   *  or its declared singular; unknown kinds throw rather than address nothing. */
+  address(kind: string, name: string, app?: string): Promise<string[]> {
+    return this.binding.address(this.handle, kind, name, app);
+  }
+  /** The instances of a kind in scope — the project, or one application's own. */
+  names(kind: string, app?: string): Promise<string[]> {
+    return this.binding.names(this.handle, kind, app);
+  }
+  /** Is this resource already in the config, or is it being created? */
+  exists(res: string[]): Promise<boolean> {
+    return this.binding.exists(this.handle, res);
+  }
+  /** An accessor for a resource named only by kind — the untyped sibling of the
+   *  generated per-kind factories, with the identical document surface. */
+  async resource(kind: string, name: string, app?: string): Promise<ResourceConfig> {
+    return new ResourceConfig(this, await this.address(kind, name, app));
+  }
   /** The git repository backing a resource, or null if it isn't repo-backed.
    * The provider key is dynamic, so this takes whichever sub-object of "source"
    * carries the repo name — no provider is named here or in the DSL walk. */
@@ -133,37 +157,57 @@ export class Session {
   }
 }
 
-/** Typed accessors for a database's config. */
-export class DatabaseConfig {
-  readonly res: string[];
-  constructor(private s: Session, name: string, app?: string) {
-    this.res = app ? ["applications", app, "databases", name] : ["databases", name];
-  }
+/** The surface every resource has, whatever its kind. */
+export class ResourceConfig {
+  constructor(
+    protected s: Session,
+    readonly res: string[],
+  ) {}
 
   delete(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res);
   }
+  /** Is this resource already in the config, or is it being created? */
+  exists(): Promise<boolean> {
+    return this.s.binding.exists(this.s.handle, this.res);
+  }
+  /** The whole document, as an editor holds it. */
   async doc(): Promise<Record<string, unknown>> {
     const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
     return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
   }
+  /** Make the document equal doc, as the minimal diff — comments on untouched
+   *  lines survive, and a key missing from doc is deleted. */
   setDoc(doc: Record<string, unknown>): Promise<void> {
     return this.s.binding.setResource(this.s.handle, this.res, doc);
   }
+  /** This resource's repo-relative path and exact YAML. Never assert the path
+   *  yourself — where a document lives is the DSL's to decide. */
   serialize(): Promise<SerializedResource> {
     return this.s.binding.serialize(this.s.handle, this.res);
   }
+  /** Mint a DSL-declared generated value (a resource id) rather than invent one. */
   generate(field: string[]): Promise<string> {
     return this.s.binding.generate(this.s.handle, this.res, field);
   }
+  /** Compile-free local validation, each issue attributed to its field.
+   *  Cross-element references still need Session.validate(). */
   validate(): Promise<FieldIssue[]> {
     return this.s.binding.validateResource(this.s.handle, this.res);
   }
   validateField(field: string[], value: unknown): Promise<void> {
     return this.s.binding.validateField(this.s.handle, this.res, field, value);
   }
+  /** Allowed values for a field, filtered by what the user typed. */
   complete(field: string[], partial?: string): Promise<string[]> {
     return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
+}
+
+/** Typed accessors for a database's config. */
+export class DatabaseConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["applications", app, "databases", name] : ["databases", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -259,36 +303,9 @@ export class DatabaseConfig {
 }
 
 /** Typed accessors for a domain's config. */
-export class DomainConfig {
-  readonly res: string[];
-  constructor(private s: Session, name: string, app?: string) {
-    this.res = app ? ["applications", app, "domains", name] : ["domains", name];
-  }
-
-  delete(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res);
-  }
-  async doc(): Promise<Record<string, unknown>> {
-    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  }
-  setDoc(doc: Record<string, unknown>): Promise<void> {
-    return this.s.binding.setResource(this.s.handle, this.res, doc);
-  }
-  serialize(): Promise<SerializedResource> {
-    return this.s.binding.serialize(this.s.handle, this.res);
-  }
-  generate(field: string[]): Promise<string> {
-    return this.s.binding.generate(this.s.handle, this.res, field);
-  }
-  validate(): Promise<FieldIssue[]> {
-    return this.s.binding.validateResource(this.s.handle, this.res);
-  }
-  validateField(field: string[], value: unknown): Promise<void> {
-    return this.s.binding.validateField(this.s.handle, this.res, field, value);
-  }
-  complete(field: string[], partial?: string): Promise<string[]> {
-    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+export class DomainConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["applications", app, "domains", name] : ["domains", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -373,36 +390,9 @@ export class DomainConfig {
 }
 
 /** Typed accessors for a function's config. */
-export class FunctionConfig {
-  readonly res: string[];
-  constructor(private s: Session, name: string, app?: string) {
-    this.res = app ? ["applications", app, "functions", name] : ["functions", name];
-  }
-
-  delete(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res);
-  }
-  async doc(): Promise<Record<string, unknown>> {
-    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  }
-  setDoc(doc: Record<string, unknown>): Promise<void> {
-    return this.s.binding.setResource(this.s.handle, this.res, doc);
-  }
-  serialize(): Promise<SerializedResource> {
-    return this.s.binding.serialize(this.s.handle, this.res);
-  }
-  generate(field: string[]): Promise<string> {
-    return this.s.binding.generate(this.s.handle, this.res, field);
-  }
-  validate(): Promise<FieldIssue[]> {
-    return this.s.binding.validateResource(this.s.handle, this.res);
-  }
-  validateField(field: string[], value: unknown): Promise<void> {
-    return this.s.binding.validateField(this.s.handle, this.res, field, value);
-  }
-  complete(field: string[], partial?: string): Promise<string[]> {
-    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+export class FunctionConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["applications", app, "functions", name] : ["functions", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -569,36 +559,9 @@ export class FunctionConfig {
 }
 
 /** Typed accessors for a library's config. */
-export class LibraryConfig {
-  readonly res: string[];
-  constructor(private s: Session, name: string, app?: string) {
-    this.res = app ? ["applications", app, "libraries", name] : ["libraries", name];
-  }
-
-  delete(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res);
-  }
-  async doc(): Promise<Record<string, unknown>> {
-    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  }
-  setDoc(doc: Record<string, unknown>): Promise<void> {
-    return this.s.binding.setResource(this.s.handle, this.res, doc);
-  }
-  serialize(): Promise<SerializedResource> {
-    return this.s.binding.serialize(this.s.handle, this.res);
-  }
-  generate(field: string[]): Promise<string> {
-    return this.s.binding.generate(this.s.handle, this.res, field);
-  }
-  validate(): Promise<FieldIssue[]> {
-    return this.s.binding.validateResource(this.s.handle, this.res);
-  }
-  validateField(field: string[], value: unknown): Promise<void> {
-    return this.s.binding.validateField(this.s.handle, this.res, field, value);
-  }
-  complete(field: string[], partial?: string): Promise<string[]> {
-    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+export class LibraryConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["applications", app, "libraries", name] : ["libraries", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -683,36 +646,9 @@ export class LibraryConfig {
 }
 
 /** Typed accessors for a messaging's config. */
-export class MessagingConfig {
-  readonly res: string[];
-  constructor(private s: Session, name: string, app?: string) {
-    this.res = app ? ["applications", app, "messaging", name] : ["messaging", name];
-  }
-
-  delete(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res);
-  }
-  async doc(): Promise<Record<string, unknown>> {
-    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  }
-  setDoc(doc: Record<string, unknown>): Promise<void> {
-    return this.s.binding.setResource(this.s.handle, this.res, doc);
-  }
-  serialize(): Promise<SerializedResource> {
-    return this.s.binding.serialize(this.s.handle, this.res);
-  }
-  generate(field: string[]): Promise<string> {
-    return this.s.binding.generate(this.s.handle, this.res, field);
-  }
-  validate(): Promise<FieldIssue[]> {
-    return this.s.binding.validateResource(this.s.handle, this.res);
-  }
-  validateField(field: string[], value: unknown): Promise<void> {
-    return this.s.binding.validateField(this.s.handle, this.res, field, value);
-  }
-  complete(field: string[], partial?: string): Promise<string[]> {
-    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+export class MessagingConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["applications", app, "messaging", name] : ["messaging", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -807,36 +743,9 @@ export class MessagingConfig {
 }
 
 /** Typed accessors for a service's config. */
-export class ServiceConfig {
-  readonly res: string[];
-  constructor(private s: Session, name: string, app?: string) {
-    this.res = app ? ["applications", app, "services", name] : ["services", name];
-  }
-
-  delete(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res);
-  }
-  async doc(): Promise<Record<string, unknown>> {
-    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  }
-  setDoc(doc: Record<string, unknown>): Promise<void> {
-    return this.s.binding.setResource(this.s.handle, this.res, doc);
-  }
-  serialize(): Promise<SerializedResource> {
-    return this.s.binding.serialize(this.s.handle, this.res);
-  }
-  generate(field: string[]): Promise<string> {
-    return this.s.binding.generate(this.s.handle, this.res, field);
-  }
-  validate(): Promise<FieldIssue[]> {
-    return this.s.binding.validateResource(this.s.handle, this.res);
-  }
-  validateField(field: string[], value: unknown): Promise<void> {
-    return this.s.binding.validateField(this.s.handle, this.res, field, value);
-  }
-  complete(field: string[], partial?: string): Promise<string[]> {
-    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+export class ServiceConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["applications", app, "services", name] : ["services", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -891,36 +800,9 @@ export class ServiceConfig {
 }
 
 /** Typed accessors for a smartop's config. */
-export class SmartOpConfig {
-  readonly res: string[];
-  constructor(private s: Session, name: string, app?: string) {
-    this.res = app ? ["applications", app, "smartops", name] : ["smartops", name];
-  }
-
-  delete(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res);
-  }
-  async doc(): Promise<Record<string, unknown>> {
-    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  }
-  setDoc(doc: Record<string, unknown>): Promise<void> {
-    return this.s.binding.setResource(this.s.handle, this.res, doc);
-  }
-  serialize(): Promise<SerializedResource> {
-    return this.s.binding.serialize(this.s.handle, this.res);
-  }
-  generate(field: string[]): Promise<string> {
-    return this.s.binding.generate(this.s.handle, this.res, field);
-  }
-  validate(): Promise<FieldIssue[]> {
-    return this.s.binding.validateResource(this.s.handle, this.res);
-  }
-  validateField(field: string[], value: unknown): Promise<void> {
-    return this.s.binding.validateField(this.s.handle, this.res, field, value);
-  }
-  complete(field: string[], partial?: string): Promise<string[]> {
-    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+export class SmartOpConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["applications", app, "smartops", name] : ["smartops", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -1005,36 +887,9 @@ export class SmartOpConfig {
 }
 
 /** Typed accessors for a storage's config. */
-export class StorageConfig {
-  readonly res: string[];
-  constructor(private s: Session, name: string, app?: string) {
-    this.res = app ? ["applications", app, "storages", name] : ["storages", name];
-  }
-
-  delete(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res);
-  }
-  async doc(): Promise<Record<string, unknown>> {
-    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  }
-  setDoc(doc: Record<string, unknown>): Promise<void> {
-    return this.s.binding.setResource(this.s.handle, this.res, doc);
-  }
-  serialize(): Promise<SerializedResource> {
-    return this.s.binding.serialize(this.s.handle, this.res);
-  }
-  generate(field: string[]): Promise<string> {
-    return this.s.binding.generate(this.s.handle, this.res, field);
-  }
-  validate(): Promise<FieldIssue[]> {
-    return this.s.binding.validateResource(this.s.handle, this.res);
-  }
-  validateField(field: string[], value: unknown): Promise<void> {
-    return this.s.binding.validateField(this.s.handle, this.res, field, value);
-  }
-  complete(field: string[], partial?: string): Promise<string[]> {
-    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+export class StorageConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["applications", app, "storages", name] : ["storages", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -1130,36 +985,9 @@ export class StorageConfig {
 }
 
 /** Typed accessors for a website's config. */
-export class WebsiteConfig {
-  readonly res: string[];
-  constructor(private s: Session, name: string, app?: string) {
-    this.res = app ? ["applications", app, "websites", name] : ["websites", name];
-  }
-
-  delete(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res);
-  }
-  async doc(): Promise<Record<string, unknown>> {
-    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  }
-  setDoc(doc: Record<string, unknown>): Promise<void> {
-    return this.s.binding.setResource(this.s.handle, this.res, doc);
-  }
-  serialize(): Promise<SerializedResource> {
-    return this.s.binding.serialize(this.s.handle, this.res);
-  }
-  generate(field: string[]): Promise<string> {
-    return this.s.binding.generate(this.s.handle, this.res, field);
-  }
-  validate(): Promise<FieldIssue[]> {
-    return this.s.binding.validateResource(this.s.handle, this.res);
-  }
-  validateField(field: string[], value: unknown): Promise<void> {
-    return this.s.binding.validateField(this.s.handle, this.res, field, value);
-  }
-  complete(field: string[], partial?: string): Promise<string[]> {
-    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+export class WebsiteConfig extends ResourceConfig {
+  constructor(s: Session, name: string, app?: string) {
+    super(s, app ? ["applications", app, "websites", name] : ["websites", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -1255,36 +1083,9 @@ export class WebsiteConfig {
 }
 
 /** Typed accessors for a application's config. */
-export class ApplicationConfig {
-  readonly res: string[];
-  constructor(private s: Session, name: string) {
-    this.res = ["applications", name];
-  }
-
-  delete(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res);
-  }
-  async doc(): Promise<Record<string, unknown>> {
-    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  }
-  setDoc(doc: Record<string, unknown>): Promise<void> {
-    return this.s.binding.setResource(this.s.handle, this.res, doc);
-  }
-  serialize(): Promise<SerializedResource> {
-    return this.s.binding.serialize(this.s.handle, this.res);
-  }
-  generate(field: string[]): Promise<string> {
-    return this.s.binding.generate(this.s.handle, this.res, field);
-  }
-  validate(): Promise<FieldIssue[]> {
-    return this.s.binding.validateResource(this.s.handle, this.res);
-  }
-  validateField(field: string[], value: unknown): Promise<void> {
-    return this.s.binding.validateField(this.s.handle, this.res, field, value);
-  }
-  complete(field: string[], partial?: string): Promise<string[]> {
-    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+export class ApplicationConfig extends ResourceConfig {
+  constructor(s: Session, name: string) {
+    super(s, ["applications", name]);
   }
 
   async id(): Promise<string | undefined> {
@@ -1329,36 +1130,9 @@ export class ApplicationConfig {
 }
 
 /** Typed accessors for a project's config. */
-export class ProjectConfig {
-  readonly res: string[];
-  constructor(private s: Session) {
-    this.res = ["config"];
-  }
-
-  delete(): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res);
-  }
-  async doc(): Promise<Record<string, unknown>> {
-    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
-  }
-  setDoc(doc: Record<string, unknown>): Promise<void> {
-    return this.s.binding.setResource(this.s.handle, this.res, doc);
-  }
-  serialize(): Promise<SerializedResource> {
-    return this.s.binding.serialize(this.s.handle, this.res);
-  }
-  generate(field: string[]): Promise<string> {
-    return this.s.binding.generate(this.s.handle, this.res, field);
-  }
-  validate(): Promise<FieldIssue[]> {
-    return this.s.binding.validateResource(this.s.handle, this.res);
-  }
-  validateField(field: string[], value: unknown): Promise<void> {
-    return this.s.binding.validateField(this.s.handle, this.res, field, value);
-  }
-  complete(field: string[], partial?: string): Promise<string[]> {
-    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+export class ProjectConfig extends ResourceConfig {
+  constructor(s: Session) {
+    super(s, ["config"]);
   }
 
   async email(): Promise<string | undefined> {

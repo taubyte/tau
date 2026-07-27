@@ -62,71 +62,30 @@ func (st *Store) Session() *schema.Session { return st.s }
 // Application is the selected application, empty at project scope.
 func (st *Store) Application() string { return st.app }
 
-// res is the session address of one resource in the current scope. A container
-// kind's instance is addressed by its group form like everything else — the
-// session maps it to the document inside its directory — and it is never
-// application-scoped (containers don't nest).
+// res is the session address of one resource in the current scope. The scoping
+// rule — which kinds nest under an application, and that a container's own
+// instance never does — belongs to the session, not here.
 func (st *Store) res(group, name string) []string {
-	if isContainer(group) {
+	r, err := st.s.Address(group, name, st.app)
+	if err != nil {
+		// Unreachable by construction: every caller passes a Group.Dir, which
+		// comes from the same DSL the session resolves against. Degrade to the
+		// project-scope form rather than panic in a CLI.
 		return []string{group, name}
 	}
-	if st.app != "" {
-		return []string{containerDir(), st.app, group, name}
-	}
-	return []string{group, name}
+	return r
 }
-
-// dir is the session path of a resource group in the current scope.
-func (st *Store) dir(group string) []string {
-	if st.app != "" && !isContainer(group) {
-		return []string{containerDir(), st.app, group}
-	}
-	return []string{group}
-}
-
-// containerDir is the directory the DSL authors application-scoped resources
-// under — the container group's own dir — so the scope prefix follows the DSL
-// rather than a hardcoded "applications".
-func containerDir() string {
-	groups, err := Groups()
-	if err != nil {
-		return ""
-	}
-	for _, g := range groups {
-		if g.Container {
-			return g.Dir
-		}
-	}
-	return ""
-}
-
-// rootDoc is the project's own document — the one resource with no group above
-// it. Everything else the session addresses by [group, name].
-const rootDoc = "config"
 
 // flush persists the session's pending edits back to the config repo in place,
 // via the session's own Save — the same primitive the wasm binding uses, no
 // session-level additions needed.
 func (st *Store) flush() error { return st.s.Save(st.s.FS(), "/") }
 
-func isContainer(group string) bool {
-	groups, err := Groups()
-	if err != nil {
-		return false
-	}
-	for _, g := range groups {
-		if g.Dir == group {
-			return g.Container
-		}
-	}
-	return false
-}
-
 // List names the resources of a group in the current scope.
 func (st *Store) List(group string) ([]string, error) {
-	names, err := st.s.List(st.dir(group))
+	names, err := st.s.Names(group, st.app)
 	if err != nil {
-		return nil, nil // an absent group directory is simply empty
+		return nil, nil // an unknown or absent group is simply empty
 	}
 	return names, nil
 }
@@ -146,7 +105,7 @@ func (st *Store) Doc(group, name string) (Doc, error) {
 
 // ProjectID is the config repo's project id, used to derive resource ids.
 func (st *Store) ProjectID() (string, error) {
-	v, err := st.s.Get([]string{rootDoc}, []string{"id"})
+	v, err := st.s.Get(st.s.Root(), []string{"id"})
 	if err != nil {
 		return "", err
 	}
@@ -159,7 +118,7 @@ func (st *Store) ProjectID() (string, error) {
 // resources.
 func (st *Store) SetProject(fields map[string]any) error {
 	for path, value := range fields {
-		if err := st.s.Set([]string{rootDoc}, strings.Split(path, "/"), value); err != nil {
+		if err := st.s.Set(st.s.Root(), strings.Split(path, "/"), value); err != nil {
 			return err
 		}
 	}

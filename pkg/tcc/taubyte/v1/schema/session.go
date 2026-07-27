@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"strings"
+
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
@@ -13,6 +15,7 @@ type (
 	Session        = session.Session
 	CompileOptions = session.CompileOptions
 	FieldIssue     = session.FieldIssue
+	Kind           = session.Kind
 )
 
 // bindings wires the generic session to THIS DSL: its compiler (whole-config),
@@ -35,8 +38,23 @@ type taubyteLayout struct{}
 func (taubyteLayout) ContainerDoc(group string) string {
 	return engine.ContainerDoc(GenerationRoot(), group)
 }
-func (taubyteLayout) RootDoc() string  { return engine.NodeDefaultSeerLeaf }
-func (taubyteLayout) Groups() []string { return engine.Groups(GenerationRoot()) }
+func (taubyteLayout) RootDoc() string { return engine.NodeDefaultSeerLeaf }
+
+// Kinds projects the DSL's groups into the session's kind vocabulary. The
+// singular is lowercased so a consumer routing on a kind string ("function")
+// matches without knowing it derives from a Go type name.
+func (taubyteLayout) Kinds() []session.Kind {
+	groups := engine.Groups(GenerationRoot())
+	out := make([]session.Kind, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, session.Kind{
+			Name:      strings.ToLower(g.Singular),
+			Group:     g.Group,
+			Container: g.Container,
+		})
+	}
+	return out
+}
 
 // taubyteGenerator mints this DSL's generated field values (a resource id, a CID).
 type taubyteGenerator struct{}

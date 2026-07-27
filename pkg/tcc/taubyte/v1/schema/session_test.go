@@ -284,6 +284,47 @@ func TestSession(t *testing.T) {
 		}
 	})
 
+	// A consumer that knows a kind only as a string builds no address itself.
+	t.Run("kinds, addressing and existence by kind name", func(t *testing.T) {
+		kinds := s.Kinds()
+		byGroup := map[string]bool{}
+		for _, k := range kinds {
+			byGroup[k.Group] = k.Container
+		}
+		assert.Equal(t, byGroup["functions"], false)
+		assert.Equal(t, byGroup["applications"], true, "the container says so, so no caller name-checks it")
+
+		addr := func(kind, name, app string) []string {
+			t.Helper()
+			r, err := s.Address(kind, name, app)
+			assert.NilError(t, err)
+			return r
+		}
+		// the group key and the declared singular resolve alike
+		assert.DeepEqual(t, addr("functions", "f", ""), []string{"functions", "f"})
+		assert.DeepEqual(t, addr("function", "f", ""), []string{"functions", "f"})
+		assert.DeepEqual(t, addr("function", "f", "app"), []string{"applications", "app", "functions", "f"})
+		assert.DeepEqual(t, addr("application", "app", ""), []string{"applications", "app"})
+
+		_, err := s.Address("nope", "f", "")
+		assert.ErrorContains(t, err, "unknown kind")
+		_, err = s.Address("application", "app", "other")
+		assert.ErrorContains(t, err, "container kind")
+
+		names, err := s.Names("function", "")
+		assert.NilError(t, err)
+		assert.Assert(t, slices.Contains(names, "test_function1_glob"))
+		scoped, err := s.Names("function", "test_app1")
+		assert.NilError(t, err)
+		assert.Assert(t, slices.Contains(scoped, "test_function2"))
+		assert.Assert(t, !slices.Contains(scoped, "test_function1_glob"))
+
+		assert.Equal(t, s.Exists([]string{"functions", "test_function1_glob"}), true)
+		assert.Equal(t, s.Exists([]string{"functions", "ghost"}), false)
+		assert.Equal(t, s.Exists([]string{"applications", "test_app1"}), true)
+		assert.Equal(t, s.Exists(s.Root()), true)
+	})
+
 	t.Run("Generate mints a resource id per the DSL, not per consumer", func(t *testing.T) {
 		fn := []string{"functions", "test_function1_glob"}
 		got, err := s.Generate(fn, []string{"id"})

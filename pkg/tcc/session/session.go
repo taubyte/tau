@@ -59,8 +59,19 @@ type Layout interface {
 	ContainerDoc(group string) string
 	// RootDoc is the project root document name (e.g. "config").
 	RootDoc() string
-	// Groups lists the DSL's top-level group keys (the config directories).
-	Groups() []string
+	// Kinds lists the DSL's resource kinds — its top-level groups.
+	Kinds() []Kind
+}
+
+// Kind is one resource kind the DSL defines. Group is the canonical key (the
+// config directory it is authored under); Name is the singular the DSL declares
+// for one instance, lowercased, and is accepted as an alias wherever a kind is
+// named. Container marks a kind whose instances hold resources of their own — a
+// distinction a consumer should read here rather than special-case by name.
+type Kind struct {
+	Name      string `json:"name"`
+	Group     string `json:"group"`
+	Container bool   `json:"container"`
 }
 
 // Generator mints values for the DSL's generated fields (a resource id), so
@@ -483,6 +494,133 @@ func isList(v any) bool {
 	return false
 }
 
+// Kinds lists the resource kinds this DSL defines. A consumer that routes on a
+// kind STRING — a UI rendering whatever its route names — reads the vocabulary
+// here instead of keeping its own kind table beside the schema.
+func (s *Session) Kinds() []Kind {
+	if s.bind.Layout == nil {
+		return nil
+	}
+	return s.bind.Layout.Kinds()
+}
+
+// kind resolves a kind name to its Kind: by Group (canonical) or by the declared
+// singular, case-insensitively. Unknown names error listing what is valid, so a
+// typo'd route never silently addresses a directory the DSL never defined.
+func (s *Session) kind(name string) (Kind, error) {
+	kinds := s.Kinds()
+	for _, k := range kinds {
+		if k.Group == name {
+			return k, nil
+		}
+	}
+	lower := strings.ToLower(name)
+	for _, k := range kinds {
+		if k.Name != "" && k.Name == lower {
+			return k, nil
+		}
+	}
+	valid := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		valid = append(valid, k.Group)
+	}
+	if len(valid) == 0 {
+		return Kind{}, errors.New("session: no layout wired, so no kinds are known")
+	}
+	return Kind{}, fmt.Errorf("session: unknown kind %q (have %s)", name, strings.Join(valid, ", "))
+}
+
+// container is the kind whose instances hold resources of their own — the scope
+// an application-scoped address is nested under.
+func (s *Session) container() (Kind, bool) {
+	for _, k := range s.Kinds() {
+		if k.Container {
+			return k, true
+		}
+	}
+	return Kind{}, false
+}
+
+// Root is the address of the config's own root document — the one resource with
+// no kind above it. A caller that wants to edit it should ask for it rather than
+// spell the document name, which is the DSL's to choose.
+func (s *Session) Root() []string {
+	if s.bind.Layout == nil {
+		return nil
+	}
+	return []string{s.bind.Layout.RootDoc()}
+}
+
+// Address is the canonical address of one resource, by kind. This is the entry
+// point for a caller that knows a kind only as a string: it needs no group-name
+// table, no plural rule, and no special case for the container kind (an
+// application is addressed like anything else — passing app for one is an
+// error, since containers don't nest). An empty app means project scope.
+func (s *Session) Address(kind, name, app string) ([]string, error) {
+	k, err := s.kind(kind)
+	if err != nil {
+		return nil, err
+	}
+	if name == "" {
+		return nil, fmt.Errorf("session: a %s needs a name", k.Group)
+	}
+	if k.Container {
+		if app != "" {
+			return nil, fmt.Errorf("session: %s is a container kind and cannot be scoped to %q", k.Group, app)
+		}
+		return []string{k.Group, name}, nil
+	}
+	if app == "" {
+		return []string{k.Group, name}, nil
+	}
+	c, ok := s.container()
+	if !ok {
+		return nil, fmt.Errorf("session: this DSL has no container kind to scope %q under", app)
+	}
+	return []string{c.Group, app, k.Group, name}, nil
+}
+
+// Names lists the instances of a kind in scope — the whole project when app is
+// empty, one application's own otherwise. An absent directory is simply empty.
+func (s *Session) Names(kind, app string) ([]string, error) {
+	k, err := s.kind(kind)
+	if err != nil {
+		return nil, err
+	}
+	dir := []string{k.Group}
+	if app != "" && !k.Container {
+		c, ok := s.container()
+		if !ok {
+			return nil, fmt.Errorf("session: this DSL has no container kind to scope %q under", app)
+		}
+		dir = []string{c.Group, app, k.Group}
+	}
+	names, err := s.List(dir)
+	if err != nil {
+		return []string{}, nil
+	}
+	return names, nil
+}
+
+// Exists reports whether a resource is already in the config — what tells an
+// editor "this is a new resource" without consulting a file listing. It asks the
+// resource's own group, so a container instance counts as existing as soon as
+// its directory does, even before it has a document.
+func (s *Session) Exists(res []string) bool {
+	if _, err := s.docPath(res); err != nil {
+		return false
+	}
+	if len(res) == 1 { // the project root document
+		_, err := s.Get(res, nil)
+		return err == nil
+	}
+	names, err := s.List(res[:len(res)-1])
+	if err != nil {
+		return false
+	}
+	return slices.Contains(names, res[len(res)-1])
+}
+
 // ResourceAt maps a repo-relative YAML path to its canonical resource address;
 // ok is false when the path is not a resource document under the DSL's layout
 // (an unknown directory, a non-YAML file, .git, ...). The inverse of the
@@ -510,7 +648,7 @@ func (s *Session) ResourceAt(filePath string) ([]string, bool) {
 	if len(segs) == 1 {
 		return segs, segs[0] == l.RootDoc()
 	}
-	if !slices.Contains(l.Groups(), segs[0]) {
+	if !s.hasGroup(segs[0]) {
 		return nil, false
 	}
 	switch len(segs) {
@@ -519,9 +657,19 @@ func (s *Session) ResourceAt(filePath string) ([]string, bool) {
 	case 3: // a container instance's own document addresses the container
 		return segs[:2], segs[2] == l.ContainerDoc(segs[0])
 	case 4:
-		return segs, l.ContainerDoc(segs[0]) != "" && slices.Contains(l.Groups(), segs[2])
+		return segs, l.ContainerDoc(segs[0]) != "" && s.hasGroup(segs[2])
 	}
 	return nil, false
+}
+
+// hasGroup reports whether name is a group the DSL declares.
+func (s *Session) hasGroup(name string) bool {
+	for _, k := range s.Kinds() {
+		if k.Group == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Generate mints a value for one of a resource's DSL-generated fields (its id),

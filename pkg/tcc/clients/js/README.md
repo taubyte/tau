@@ -103,6 +103,31 @@ await app.setDescription("the web app");
 await session.project().setName("my_project"); // the project root document
 ```
 
+### When the kind is a string
+
+The accessors above are statically named. A UI that renders whatever kind its
+route names holds the kind as a *string*, so it goes through the generic entry
+points instead — and never rebuilds an address, pluralizes a kind, or
+special-cases the container:
+
+```ts
+await session.kinds();
+// [{ name: "function", group: "functions", container: false },
+//  { name: "application", group: "applications", container: true }, …]
+
+const r = await session.resource(kind, name, app);  // same surface, untyped
+await r.doc(); await r.setDoc(next); await r.serialize(); await r.validate();
+
+await session.address(kind, name, app);  // ["applications", app, "functions", name]
+await session.names(kind, app);          // instances in scope
+await session.exists(r.res);             // is it in the config, or being created?
+```
+
+`kind` accepts a kind's group key (`"functions"`) or its declared singular
+(`"function"`); an unknown one throws rather than address nothing. An application
+is not a special case — it is a kind whose `container` is true, which is what to
+branch on if you need to.
+
 ### Whole-document editing
 
 An editor holds a plain object, not a field at a time. Hand tcc the object and it

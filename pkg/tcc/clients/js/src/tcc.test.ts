@@ -228,6 +228,62 @@ test("hydrate skips dot-entries, and a pruning save never deletes them", async (
   await session.close();
 });
 
+// The generic path: a caller that knows a kind only as a string never builds an
+// address, pluralizes a name, or special-cases the container kind.
+test("session: kind-keyed addressing, listing and existence", async () => {
+  const session = await open(fixtureFs(), "/");
+
+  const kinds = await session.kinds();
+  const fnKind = kinds.find((k) => k.group === "functions")!;
+  assert.equal(fnKind.name, "function", "a kind's declared singular");
+  assert.equal(fnKind.container, false);
+  // an application is not a special case — it is a kind whose instances contain
+  // resources of their own, and it says so
+  assert.equal(kinds.find((k) => k.group === "applications")?.container, true);
+
+  // both the group key and the singular resolve to the same address
+  assert.deepEqual(await session.address("functions", FN_NAME), ["functions", FN_NAME]);
+  assert.deepEqual(await session.address("function", FN_NAME), ["functions", FN_NAME]);
+  assert.deepEqual(await session.address("function", "f", "web"), [
+    "applications",
+    "web",
+    "functions",
+    "f",
+  ]);
+  assert.deepEqual(await session.address("application", "web"), ["applications", "web"]);
+  await assert.rejects(() => session.address("functionz", "x"), /unknown kind/);
+  // containers don't nest, and saying so beats silently building a bad address
+  await assert.rejects(() => session.address("application", "web", "other"), /container kind/);
+
+  // listing by kind, project scope and application scope
+  assert.ok((await session.names("function")).includes(FN_NAME));
+  assert.ok((await session.names("function", "test_app1")).includes("test_function2"));
+  assert.ok((await session.names("application")).includes("test_app1"));
+  assert.deepEqual(await session.names("function", "no_such_app"), []);
+
+  // existence — what tells an editor a resource is new
+  assert.equal(await session.exists(["functions", FN_NAME]), true);
+  assert.equal(await session.exists(["functions", "never_created"]), false);
+  assert.equal(await session.exists(["applications", "test_app1"]), true);
+
+  // the untyped accessor has the same document surface as the typed one
+  const fn = await session.resource("function", FN_NAME);
+  assert.deepEqual(fn.res, ["functions", FN_NAME]);
+  assert.equal((await fn.doc()).id, FN_ID);
+  assert.equal((await fn.serialize()).path, `functions/${FN_NAME}.yaml`);
+  assert.equal(await fn.exists(), true);
+
+  const fresh = await session.resource("function", "brand_new");
+  assert.equal(await fresh.exists(), false);
+  await fresh.setDoc({ id: await fresh.generate(["id"]), trigger: { type: "https" } });
+  assert.equal(await fresh.exists(), true, "created through the generic path");
+
+  // and it works for the container kind with no special case at the call site
+  const app = await session.resource("application", "test_app1");
+  assert.equal((await app.serialize()).path, "applications/test_app1/config.yaml");
+  await session.close();
+});
+
 test("decompile a compiled object into an editable session", async () => {
   const compiled = await compile(fixtureFs(), "/", { branch: "master" });
   const session = await decompile(compiled);
