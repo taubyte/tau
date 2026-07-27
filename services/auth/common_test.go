@@ -61,6 +61,17 @@ func createTestConfig(t *testing.T, cfg *TestConfig) config.Config {
 		}))
 	}
 
+	// Tests build prod-mode services by default, and a prod service must be
+	// bound to a namespace, so give them one.
+	opts = append(opts, config.WithTenancy(config.Tenancy{
+		Provider: "github",
+		Owner:    "taubyte",
+		App: config.TenancyApp{
+			ClientId: "Iv1.0000000000000000",
+			Key:      testAppKeyPEM,
+		},
+	}))
+
 	nodeConfig, err := config.New(opts...)
 	if err != nil {
 		t.Fatalf("createTestConfig: %v", err)

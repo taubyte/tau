@@ -233,7 +233,7 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		},
 		Scope: []string{"projects/new"},
 		Auth: http.RouteAuthHandler{
-			Validator: srv.GitHubTokenHTTPAuthRegistration,
+			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
 		Handler: srv.newGitHubProjectHTTPHandler,
@@ -247,7 +247,7 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		},
 		Scope: []string{"projects/import"},
 		Auth: http.RouteAuthHandler{
-			Validator: srv.GitHubTokenHTTPAuthRegistration,
+			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
 		Handler: srv.importGitHubProjectHTTPHandler,
@@ -261,7 +261,7 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		},
 		Scope: []string{"repositories/write"},
 		Auth: http.RouteAuthHandler{
-			Validator: srv.GitHubTokenHTTPAuthRegistration,
+			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
 		Handler: srv.registerGitHubUserRepositoryHTTPHandler,
@@ -275,7 +275,7 @@ func (srv *AuthService) setupGitHubHTTPRoutes() {
 		},
 		Scope: []string{"repositories/write"},
 		Auth: http.RouteAuthHandler{
-			Validator: srv.GitHubTokenHTTPAuthRegistration,
+			Validator: srv.GitHubTokenHTTPAuth,
 			GC:        srv.GitHubTokenHTTPAuthCleanup,
 		},
 		Handler: srv.unregisterGitHubUserRepositoryHTTPHandler,
