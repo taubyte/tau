@@ -69,6 +69,8 @@ export interface TccGlobal {
   decompile(obj: unknown, fs: SyncFs): null | { error: string };
   /** The config JSON Schema (Draft 2020-12), generated from this wasm's own DSL. */
   schema(): Record<string, unknown> | { error: string };
+  /** The kinds this DSL defines. Stateless, like schema(). */
+  kinds(): Kind[] | { error: string };
   // Editable sessions (config lives in wasm; getters/setters address it by path).
   openSession(fs: SyncFs): number | { error: string };
   decompileSession(obj: unknown): number | { error: string };
@@ -79,6 +81,7 @@ export interface TccGlobal {
   sessionValidateField(handle: number, resource: string[], field: string[], value: unknown): null | { error: string };
   sessionValidateResource(handle: number, resource: string[]): { issues: FieldIssue[] } | { error: string };
   sessionSerialize(handle: number, resource: string[]): SerializedResource | { error: string };
+  sessionLocation(handle: number, resource: string[]): string | { error: string };
   sessionSetResource(handle: number, resource: string[], doc: Record<string, unknown>): null | { error: string };
   sessionResourceAt(handle: number, path: string): string[] | null | { error: string };
   sessionKinds(handle: number): Kind[] | { error: string };
@@ -111,6 +114,7 @@ export interface SessionBinding {
   validateField(handle: number, resource: string[], field: string[], value: unknown): Promise<void>;
   validateResource(handle: number, resource: string[]): Promise<FieldIssue[]>;
   serialize(handle: number, resource: string[]): Promise<SerializedResource>;
+  location(handle: number, resource: string[]): Promise<string>;
   setResource(handle: number, resource: string[], doc: Record<string, unknown>): Promise<void>;
   resourceAt(handle: number, path: string): Promise<string[] | null>;
   kinds(handle: number): Promise<Kind[]>;
@@ -162,6 +166,9 @@ export function makeBinding(tcc: TccGlobal): SessionBinding {
     },
     async serialize(handle, resource) {
       return orThrow(tcc.sessionSerialize(handle, resource));
+    },
+    async location(handle, resource) {
+      return orThrow(tcc.sessionLocation(handle, resource));
     },
     async setResource(handle, resource, doc) {
       orThrow(tcc.sessionSetResource(handle, resource, doc));

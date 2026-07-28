@@ -316,6 +316,12 @@ export class ResourceConfig {
   serialize(): Promise<SerializedResource> {
     return this.s.binding.serialize(this.s.handle, this.res);
   }
+  /** Where this resource's document lives, WITHOUT rendering it. Use this when
+   *  you want the path per resource — serialize() reads and returns the whole
+   *  file, which an inventory would then throw away. */
+  location(): Promise<string> {
+    return this.s.binding.location(this.s.handle, this.res);
+  }
   /** Mint a DSL-declared generated value (a resource id) rather than invent one. */
   generate(field: string[]): Promise<string> {
     return this.s.binding.generate(this.s.handle, this.res, field);

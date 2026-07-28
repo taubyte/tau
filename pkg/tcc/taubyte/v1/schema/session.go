@@ -65,6 +65,13 @@ func (taubyteLayout) Kinds() []session.Kind {
 	return out
 }
 
+// Kinds lists the resource kinds THIS DSL defines, with no project involved.
+// The vocabulary is a property of the schema — Layout.Kinds() reads the
+// generation root and touches no config — so a consumer that only needs to know
+// what kinds exist should not have to open a session over an empty filesystem
+// to ask, any more than it does for JSONSchema.
+func Kinds() []Kind { return bindings.Layout.Kinds() }
+
 // taubyteGenerator mints this DSL's generated field values (a resource id, a CID).
 type taubyteGenerator struct{}
 

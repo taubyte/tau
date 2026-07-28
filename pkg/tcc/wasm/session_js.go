@@ -265,6 +265,27 @@ func sessionSerializeFn(_ js.Value, args []js.Value) any {
 	return toJS(map[string]any{"path": path, "yaml": string(data)})
 }
 
+// location(handle, resourcePath[]) -> string : where the document lives, without
+// reading it. serialize() when you want the YAML; this when you want the path.
+func sessionLocationFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("location: expected (handle, resourcePath)")
+	}
+	res := jsToPath(args[1])
+	if len(res) == 0 {
+		return errResult("location: empty resource path")
+	}
+	p, err := s.Location(res)
+	if err != nil {
+		return errFrom(err)
+	}
+	return js.ValueOf(p)
+}
+
 // setResource(handle, resourcePath[], doc) : make the resource's document equal
 // doc, as the minimal set/delete ops, so untouched YAML (comments) survives.
 func sessionSetResourceFn(_ js.Value, args []js.Value) any {

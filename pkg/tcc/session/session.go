@@ -538,6 +538,28 @@ func (s *Session) requiredNow(res []string, rf RequiredField) bool {
 	return ok && slices.Contains(rf.WhenIn, got)
 }
 
+// Location reports where a resource's document lives — the repo-relative path
+// Serialize returns — WITHOUT flushing, reading or rendering it. A caller that
+// only wants the path (an inventory keyed on the git file list, a rename) pays
+// neither the sync nor the file read, and the answer is still the DSL's rather
+// than a path the caller guessed.
+func (s *Session) Location(res []string) (string, error) {
+	q, err := s.query(res, nil)
+	if err != nil {
+		return "", err
+	}
+	// Resolve as a read so yaseer populates the document's path. An empty
+	// document resolves to no value but still has one, so the read error is
+	// not fatal — an absent path is the honest "no such document".
+	var v any
+	_ = q.Value(&v)
+	fp := q.FilePath()
+	if fp == "" {
+		return "", fmt.Errorf("session: no document for %q", strings.Join(res, "/"))
+	}
+	return strings.TrimPrefix(fp, "/"), nil
+}
+
 // Serialize flushes pending edits and returns ONE resource's document: its
 // repo-relative path and its exact YAML, comments preserved. Where the document
 // lives is the DSL's business, so the caller never names the file — which is how
@@ -546,23 +568,13 @@ func (s *Session) Serialize(res []string) (path string, data []byte, err error) 
 	if err = s.seer.Sync(); err != nil {
 		return "", nil, err
 	}
-	q, err := s.query(res, nil)
-	if err != nil {
+	if path, err = s.Location(res); err != nil {
 		return "", nil, err
 	}
-	// Resolve as a read so yaseer populates the document's file path. An empty
-	// document resolves to no value but still has a path, so the read error is
-	// not fatal here — ReadFile below is the honest existence check.
-	var v any
-	_ = q.Value(&v)
-	fp := q.FilePath()
-	if fp == "" {
-		return "", nil, fmt.Errorf("session: no document for %q", strings.Join(res, "/"))
-	}
-	if data, err = afero.ReadFile(s.fs, fp); err != nil {
+	if data, err = afero.ReadFile(s.fs, "/"+path); err != nil {
 		return "", nil, err
 	}
-	return strings.TrimPrefix(fp, "/"), data, nil
+	return path, data, nil
 }
 
 // SetResource makes res's document equal doc, as the minimal set of field writes

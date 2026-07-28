@@ -24,6 +24,7 @@ func main() {
 	tcc.Set("compile", js.FuncOf(compileFn))
 	tcc.Set("decompile", js.FuncOf(decompileFn))
 	tcc.Set("schema", js.FuncOf(schemaFn))
+	tcc.Set("kinds", js.FuncOf(kindsFn))
 	// Editable in-wasm sessions (see session_js.go): the config lives here as a
 	// yaseer tree; TS getters/setters read/write fields by path.
 	tcc.Set("openSession", js.FuncOf(openSessionFn))
@@ -35,6 +36,7 @@ func main() {
 	tcc.Set("sessionValidateField", js.FuncOf(sessionValidateFieldFn))
 	tcc.Set("sessionValidateResource", js.FuncOf(sessionValidateResourceFn))
 	tcc.Set("sessionSerialize", js.FuncOf(sessionSerializeFn))
+	tcc.Set("sessionLocation", js.FuncOf(sessionLocationFn))
 	tcc.Set("sessionSetResource", js.FuncOf(sessionSetResourceFn))
 	tcc.Set("sessionResourceAt", js.FuncOf(sessionResourceAtFn))
 	tcc.Set("sessionKinds", js.FuncOf(sessionKindsFn))
@@ -104,6 +106,13 @@ func schemaFn(_ js.Value, _ []js.Value) any {
 		return errResult(err.Error())
 	}
 	return js.Global().Get("JSON").Call("parse", string(b))
+}
+
+// kindsFn: kinds() -> [{ name, group, container }]. Stateless, like schema():
+// the kinds a DSL defines are a property of the schema, so asking what exists
+// needs no project and no session.
+func kindsFn(_ js.Value, _ []js.Value) any {
+	return toJS(compiler.Kinds())
 }
 
 // decompileFn: decompile(compiledObject, fsPrimitives) -> null on success, or

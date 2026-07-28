@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readdirSync, statSync, readFileSync } from "node:fs";
 import { resolve, join } from "node:path";
-import { compile, open, decompile, type AsyncFs } from "./index.js";
+import { compile, open, decompile, kinds, type AsyncFs } from "./index.js";
 
 // The golden fixture the Go compile/decompile tests use. TCC_FIXTURE lets the
 // e2e harness point at it from a tmp package; otherwise resolve it in-tree.
@@ -341,6 +341,30 @@ test("session: branching fields and their discriminator are addressable", async 
 
   // a nested discriminator reads from the block that holds it, not the root
   assert.equal(await session.library("test_library1").provider(), "github");
+  await session.close();
+});
+
+// Two things a caller should not need a project for, or a whole document for.
+test("kinds needs no session, and location needs no document read", async () => {
+  // the vocabulary is a property of the schema — no project, no session
+  const ks = await kinds();
+  assert.ok(ks.length > 0);
+  assert.deepEqual(
+    ks.find((k) => k.group === "functions"),
+    { name: "function", group: "functions", container: false },
+  );
+  assert.equal(ks.find((k) => k.group === "applications")?.container, true);
+
+  const session = await open(fixtureFs(), "/");
+  const fn = session.function(FN_NAME);
+
+  // location agrees with serialize's path, without rendering the document
+  const { path } = await fn.serialize();
+  assert.equal(await fn.location(), path);
+  assert.equal(await session.application("test_app1").location(), "applications/test_app1/config.yaml");
+
+  // and it still refuses to invent a path for a resource that has no document
+  await assert.rejects(() => session.function("no_such_function").location());
   await session.close();
 });
 
