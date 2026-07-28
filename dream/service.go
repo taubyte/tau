@@ -25,7 +25,17 @@ func (u *Universe) createService(name string, config *commonIface.ServiceConfig)
 		config.Root = u.root
 	}
 
-	serviceCount := len(u.service[name].nodes)
+	// Create the slot on demand, for the same reason handlerRegistry.Set does:
+	// the map is pre-seeded from commonSpecs.Services, and a build-tag-gated
+	// service registered from an init() is not in that list. Without this the
+	// lookup is a nil map entry and the deref below panics.
+	si, ok := u.service[name]
+	if !ok {
+		si = &serviceInfo{nodes: make(map[string]commonIface.Service)}
+		u.service[name] = si
+	}
+
+	serviceCount := len(si.nodes)
 	config.Root = path.Join(config.Root, fmt.Sprintf("%s-%d", name, serviceCount))
 	// Ignoring error in case of opening
 	os.MkdirAll(config.Root, 0750)
