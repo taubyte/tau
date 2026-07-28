@@ -17,7 +17,10 @@ export type DatabaseNetwork = "all" | "subnet" | "host";
 export type DomainCertType = "inline" | "auto";
 export type FunctionType = "http" | "https" | "pubsub" | "p2p";
 export type FunctionMethod = "GET" | "HEAD" | "POST" | "PUT" | "DELETE" | "CONNECT" | "OPTIONS" | "TRACE" | "PATCH";
+export type LibraryProvider = "github";
+export type StorageType = "object" | "streaming";
 export type StorageNetwork = "all" | "subnet" | "host";
+export type WebsiteProvider = "github";
 
 /** The git repository backing a resource. */
 export interface RepoRef {
@@ -624,6 +627,14 @@ export class LibraryConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
   }
 
+  /** Which library this is — the key its settings live under. */
+  async provider(): Promise<LibraryProvider | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["github"] as readonly string[]) if (k in block) return k as LibraryProvider;
+    return undefined;
+  }
+
   async repoID(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["source", "github", "id"])) as string | undefined;
   }
@@ -932,6 +943,14 @@ export class StorageConfig extends ResourceConfig {
     return this.s.binding.delete(this.s.handle, this.res, ["tags"]);
   }
 
+  /** Which storage this is — the key its settings live under. */
+  async type(): Promise<StorageType | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["object", "streaming"] as readonly string[]) if (k in block) return k as StorageType;
+    return undefined;
+  }
+
   async match(): Promise<string | undefined> {
     return (await this.s.binding.get(this.s.handle, this.res, ["match"])) as string | undefined;
   }
@@ -981,6 +1000,17 @@ export class StorageConfig extends ResourceConfig {
   }
   unsetTtl(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["streaming", "ttl"]);
+  }
+
+  /** Lives under the storage's kind, so the branch is explicit. */
+  async size(kind: StorageType): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, [kind, "size"])) as string | undefined;
+  }
+  setSize(kind: StorageType, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, [kind, "size"], v);
+  }
+  unsetSize(kind: StorageType): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, [kind, "size"]);
   }
 }
 
@@ -1059,6 +1089,14 @@ export class WebsiteConfig extends ResourceConfig {
   }
   unsetBranch(): Promise<void> {
     return this.s.binding.delete(this.s.handle, this.res, ["source", "branch"]);
+  }
+
+  /** Which website this is — the key its settings live under. */
+  async provider(): Promise<WebsiteProvider | undefined> {
+    const at = await this.s.binding.get(this.s.handle, this.res, ["source"]).catch(() => null);
+    const block = at && typeof at === "object" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};
+    for (const k of ["github"] as readonly string[]) if (k in block) return k as WebsiteProvider;
+    return undefined;
   }
 
   async repoID(): Promise<string | undefined> {

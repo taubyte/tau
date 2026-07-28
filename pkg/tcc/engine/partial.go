@@ -113,11 +113,10 @@ func fieldPaths(a *Attribute) [][]string {
 		switch m := seg.(type) {
 		case string:
 			vals = []string{m}
-		case *either:
-			if len(m.values) == 0 {
+		case FiniteMatcher:
+			if vals = m.Values(); len(vals) == 0 {
 				return nil // matches nothing: no enumerable location
 			}
-			vals = m.values
 		default:
 			return nil // unbounded matcher: not enumerable
 		}

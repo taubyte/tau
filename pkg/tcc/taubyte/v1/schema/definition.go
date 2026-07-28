@@ -71,7 +71,7 @@ var TaubyteRessources = []*Node{
 				String("fqdn", IsFqdn(), Required(), Field("Fqdn"), Accessor("FQDN"), NoGetter(), EmitValidation("domain", "dns"), InSection("identity"), Doc("FQDN", "Fully-qualified domain name this resource represents.")),
 				String("certificate-data", Path("certificate", "cert"), RequiredWhen("certificate-type", "inline"), Field("CertFile"), Tag("cert-file"), InSection("tls"), ShowWhen("certificate-type", "inline"), Doc("Certificate", "PEM-encoded TLS certificate for the domain (inline certificate-type).")),
 				String("certificate-key", Path("certificate", "key"), RequiredWhen("certificate-type", "inline"), Field("KeyFile"), Tag("key-file"), InSection("tls"), ShowWhen("certificate-type", "inline"), Doc("Certificate Key", "PEM-encoded private key for the certificate (inline certificate-type).")),
-				String("certificate-type", Path("certificate", "type"), InSet("inline", "auto"), Default(""), Field("CertType"), Tag("cert-type"), InSection("tls"), Doc("Certificate Type", "How the TLS certificate is provisioned: inline (supplied here) or auto (managed).")),
+				String("certificate-type", Path("certificate", "type"), InSet("inline", "auto"), Default("auto"), Field("CertType"), Tag("cert-type"), InSection("tls"), Doc("Certificate Type", "How the TLS certificate is provisioned: inline (supplied here) or auto (managed).")),
 			),
 			GroupDoc("A DNS domain and its TLS configuration, referenced by functions and websites."), Icon("link"),
 			secIdentity,

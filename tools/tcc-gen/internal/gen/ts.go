@@ -89,6 +89,20 @@ func tsWireType(spec string, f Field) string {
 	return tsType(f.Type)
 }
 
+// branchArr renders a field path whose middle segment is a runtime value:
+// ["source", kind] rather than [...[], kind, ...["source"]].
+func branchArr(prefix []string, v string, suffix []string) string {
+	parts := make([]string, 0, len(prefix)+len(suffix)+1)
+	for _, p := range prefix {
+		parts = append(parts, `"`+p+`"`)
+	}
+	parts = append(parts, v)
+	for _, p := range suffix {
+		parts = append(parts, `"`+p+`"`)
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
 func tsArr(segs []string) string {
 	q := make([]string, len(segs))
 	for i, s := range segs {
@@ -102,6 +116,39 @@ type tsField struct {
 	typ    string   // ts type (or enum alias)
 	path   []string // in-document field path
 	compat []string // legacy field path (read fallback), or nil
+	// A branching location: the field lives under one of several alternative
+	// keys (a storage's size is at object/size or streaming/size). prefix and
+	// suffix are the literal segments around the choice; alts are the keys.
+	// alias is the TS union naming them. isKey marks the discriminator itself,
+	// whose VALUE is the chosen key rather than a stored field.
+	prefix, suffix, alts []string
+	alias                string
+	isKey                bool
+}
+
+// branchOf splits an attribute's authored path around its single finite matcher:
+// the literal segments before it, the alternatives, and the segments after. ok
+// is false for a plain path or an unbounded matcher.
+func branchOf(a *engine.Attribute) (prefix, alts, suffix []string, ok bool) {
+	for i, seg := range a.Path {
+		switch m := seg.(type) {
+		case string:
+			if !ok {
+				prefix = append(prefix, m)
+			} else {
+				suffix = append(suffix, m)
+			}
+		case engine.FiniteMatcher:
+			if ok {
+				return nil, nil, nil, false // more than one choice in one path
+			}
+			alts, ok = m.Values(), true
+			_ = i
+		case engine.StringMatcher:
+			return nil, nil, nil, false // unbounded: not enumerable
+		}
+	}
+	return prefix, alts, suffix, ok && len(alts) > 0
 }
 
 type tsResource struct {
@@ -160,16 +207,33 @@ func repoShapeOf(groups []*engine.Node) (*repoShape, error) {
 func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enumOrder *[]string) []tsField {
 	var out []tsField
 	seen := map[string]bool{}
+	// The discriminator's alternatives name the branch union for the whole
+	// group, so a branched field and the key that selects it share one type.
+	branchAlias := ""
 	for _, a := range n.Attributes {
-		if a.Key || noStructField(a) {
+		if _, alts, _, ok := branchOf(a); ok && a.Key {
+			branchAlias = spec + upperFirst(tsName(structFieldName(group, a)))
+			if _, exists := enums[branchAlias]; !exists {
+				enums[branchAlias] = tsEnum{name: branchAlias, values: alts, quoted: true}
+				*enumOrder = append(*enumOrder, branchAlias)
+			}
+		}
+	}
+
+	for _, a := range n.Attributes {
+		if noStructField(a) {
 			continue
 		}
+		prefix, alts, suffix, branched := branchOf(a)
+		if a.Key && !branched {
+			continue // a key with no alternatives is not addressable
+		}
 		path, ok := pathSegs(a)
-		if !ok {
+		if !ok && !branched {
 			continue
 		}
 		gt := goType(a.Type)
-		if gt == "" {
+		if gt == "" && !a.Key {
 			continue
 		}
 		// NB: no scalar retype — these edit the SOURCE config, where
@@ -191,6 +255,16 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 			typ = alias
 		}
 		f := tsField{name: fname, typ: typ, path: path}
+		if branched {
+			f.prefix, f.alts, f.suffix = prefix, alts, suffix
+			f.alias, f.isKey = branchAlias, a.Key
+			if f.alias == "" {
+				continue // no discriminator declared the union: not addressable
+			}
+			if a.Key {
+				f.typ = branchAlias
+			}
+		}
 		if compat, ok := compatSegs(a); ok {
 			f.compat = compat
 		}
@@ -260,6 +334,35 @@ func writeTSClass(b *strings.Builder, r tsResource, ctor string) {
 	fmt.Fprintf(b, "export class %sConfig extends ResourceConfig {\n", r.spec)
 	fmt.Fprintf(b, "  %s\n", ctor)
 	for _, f := range r.fields {
+		if f.isKey {
+			// The discriminator's VALUE is the key its settings live under, so
+			// it is read by asking which alternative the document opened —
+			// there is no stored field to fetch. Switching it moves a whole
+			// block, which is a document-level edit: use setDoc for that.
+			fmt.Fprintf(b, "\n  /** Which %s this is — the key its settings live under. */\n", strings.ToLower(r.spec))
+			fmt.Fprintf(b, "  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
+			// look inside the block that HOLDS the alternatives, which is the
+			// whole document only when the choice is at the top level
+			fmt.Fprintf(b, "    const at = await this.s.binding.get(this.s.handle, this.res, %s).catch(() => null);\n", tsArr(f.prefix))
+			fmt.Fprintf(b, "    const block = at && typeof at === \"object\" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};\n")
+			fmt.Fprintf(b, "    for (const k of %s as readonly string[]) if (k in block) return k as %s;\n", tsArr(f.alts), f.typ)
+			fmt.Fprintf(b, "    return undefined;\n  }\n")
+			continue
+		}
+		if f.alias != "" {
+			// A branching location: the caller says which branch, because the
+			// document may not have opened one yet (creating a resource) and
+			// guessing would write into the wrong block.
+			seg := branchArr(f.prefix, "kind", f.suffix)
+			fmt.Fprintf(b, "\n  /** Lives under the %s's kind, so the branch is explicit. */\n", strings.ToLower(r.spec))
+			fmt.Fprintf(b, "  async %s(kind: %s): Promise<%s | undefined> {\n", f.name, f.alias, f.typ)
+			fmt.Fprintf(b, "    return (await this.s.binding.get(this.s.handle, this.res, %s)) as %s | undefined;\n  }\n", seg, f.typ)
+			fmt.Fprintf(b, "  set%s(kind: %s, v: %s): Promise<void> {\n", upperFirst(f.name), f.alias, f.typ)
+			fmt.Fprintf(b, "    return this.s.binding.set(this.s.handle, this.res, %s, v);\n  }\n", seg)
+			fmt.Fprintf(b, "  unset%s(kind: %s): Promise<void> {\n", upperFirst(f.name), f.alias)
+			fmt.Fprintf(b, "    return this.s.binding.delete(this.s.handle, this.res, %s);\n  }\n", seg)
+			continue
+		}
 		// getter
 		if len(f.compat) == 0 {
 			fmt.Fprintf(b, "\n  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)

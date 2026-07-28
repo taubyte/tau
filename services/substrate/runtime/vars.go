@@ -15,6 +15,4 @@ var (
 
 	MaxGlobalInstances int64  = 128 * 1024
 	MemoryThreshold    uint64 = 80
-
-	DefaultWasmMemory uint64 = 4 * 1024 * 1024 * 1024
 )

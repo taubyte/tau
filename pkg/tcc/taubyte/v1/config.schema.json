@@ -299,7 +299,7 @@
               }
             },
             "type": {
-              "default": "",
+              "default": "auto",
               "description": "How the TLS certificate is provisioned: inline (supplied here) or auto (managed).",
               "enum": [
                 "inline",

@@ -317,6 +317,33 @@ test("session: kind-keyed addressing, listing and existence", async () => {
   await session.close();
 });
 
+// A field whose location BRANCHES (a storage's size lives under object/ or
+// streaming/) and the key that selects the branch used to have no accessor at
+// all — the generator skipped both — so the console could only reach a required
+// field through setDoc.
+test("session: branching fields and their discriminator are addressable", async () => {
+  const session = await open(fixtureFs(), "/");
+
+  const streaming = session.storage("test_storage1");
+  assert.equal(await streaming.type(), "streaming", "the key that selects the branch");
+  assert.equal(await streaming.size("streaming"), "30GB");
+  const otherBranch = await streaming.size("object"); // absent reads as null, see note above
+  assert.ok(otherBranch === undefined || otherBranch === null, "the other branch is empty");
+
+  const object = session.storage("test_storage2", "test_app1");
+  assert.equal(await object.type(), "object");
+  assert.equal(await object.size("object"), "50GB");
+
+  // writes land in the named branch and reach the file
+  await streaming.setSize("streaming", "64GB");
+  const { yaml } = await streaming.serialize();
+  assert.ok(/streaming:[\s\S]*size: 64GB/.test(yaml), `size not written under streaming:\n${yaml}`);
+
+  // a nested discriminator reads from the block that holds it, not the root
+  assert.equal(await session.library("test_library1").provider(), "github");
+  await session.close();
+});
+
 test("decompile a compiled object into an editable session", async () => {
   const compiled = await compile(fixtureFs(), "/", { branch: "master" });
   const session = await decompile(compiled);
