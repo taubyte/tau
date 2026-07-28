@@ -5,6 +5,7 @@ version: v2
 # this team always has the submodule.
 modules:
   - path: pkg/spore-drive/proto
+  - path: pkg/taucorder/proto
   - path: ee/proto
 lint:
   use:

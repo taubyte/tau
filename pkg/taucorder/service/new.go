@@ -40,8 +40,11 @@ func Serve(ctx context.Context, resolver ConfigResolver) (*Service, error) {
 	s.addHandler(pbconnect.NewTNSServiceHandler(&tnsService{Service: s}))
 	s.addHandler(pbconnect.NewPatrickServiceHandler(&patrickService{Service: s}))
 	s.addHandler(pbconnect.NewMonkeyServiceHandler(&monkeyService{Service: s}))
-	s.addHandler(pbconnect.NewAccountsServiceHandler(&accountsService{Service: s}))
 	s.addHandler(pbconnect.NewHealthServiceHandler(&healthService{Service: s}))
+
+	for _, h := range extraHandlers {
+		s.addHandler(h(s.nodeByID))
+	}
 
 	return s, nil
 }
