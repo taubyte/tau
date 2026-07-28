@@ -32,6 +32,8 @@ func main() {
 		panic(err)
 	}
 
+	registerExtraHandlers()
+
 	tc, err := service.Serve(context.Background(), nil)
 	if err != nil {
 		panic(err)
