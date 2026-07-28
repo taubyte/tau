@@ -90,7 +90,7 @@ var TaubyteRessources = []*Node{
 				String("pubsub-channel", Path("trigger", "channel"), RequiredWhen("type", "pubsub"), Tag("channel"), InSection("pubsub"), Doc("PubSub Channel", "PubSub channel the function subscribes to (pubsub trigger).")),
 				String("p2p-protocol", Path("trigger", "protocol"), Compat("trigger", "service"), RequiredWhen("type", "p2p"), Tag("service"), OnlyWhen("type", "p2p"), Default(""), InSection("p2p"), Doc("P2P Protocol", "libp2p protocol the function serves (p2p trigger).")),
 				String("p2p-command", Path("trigger", "command"), RequiredWhen("type", "p2p"), Tag("command"), InSection("p2p"), Doc("P2P Command", "Command name within the p2p protocol this function handles.")),
-				String("http-method", Path("trigger", "method"), IsHttpMethod(), Tag("method"), InSection("http"), Doc("HTTP Method", "HTTP method the function handles (http/https trigger).")),
+				String("http-method", Path("trigger", "method"), IsHttpMethod(), RequiredWhen("type", "http", "https"), Tag("method"), InSection("http"), Doc("HTTP Method", "HTTP method the function handles (http/https trigger).")),
 				StringSlice("http-methods", Path("trigger", "methods"), Tag("methods"), NoAccessors(), NoStructField()), // TO IMPLEMENT
 				StringSlice("http-domains", Path("trigger", "domains"), Compat("domains"), RequiredWhen("type", "http", "https"), Tag("domains"), Ref("domains"), InSection("http"), Doc("Domains", "Domains that route to this function. Each must name a defined domain.")),
 				StringSlice("http-paths", Path("trigger", "paths"), RequiredWhen("type", "http", "https"), Tag("paths"), InSection("http"), Doc("Paths", "URL path patterns that route to this function (http/https trigger).")),

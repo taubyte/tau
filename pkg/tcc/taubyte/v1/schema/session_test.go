@@ -365,7 +365,7 @@ func TestSession(t *testing.T) {
 
 		// choosing http brings in exactly what http routes on
 		assert.NilError(t, fork.Set(bare, []string{"trigger", "type"}, "http"))
-		assert.DeepEqual(t, fields(), []string{"execution/call", "execution/memory", "execution/timeout", "id", "source", "trigger/domains", "trigger/paths"})
+		assert.DeepEqual(t, fields(), []string{"execution/call", "execution/memory", "execution/timeout", "id", "source", "trigger/domains", "trigger/method", "trigger/paths"})
 
 		// switching to pubsub swaps them for the channel — no domains, no paths
 		assert.NilError(t, fork.Set(bare, []string{"trigger", "type"}, "pubsub"))

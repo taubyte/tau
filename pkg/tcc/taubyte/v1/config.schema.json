@@ -433,6 +433,13 @@
               ],
               "title": "HTTP Method",
               "type": "string",
+              "x-tau-required-when": {
+                "field": "type",
+                "in": [
+                  "http",
+                  "https"
+                ]
+              },
               "x-tau-section": "http"
             },
             "domains": {

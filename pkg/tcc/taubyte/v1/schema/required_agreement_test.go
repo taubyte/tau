@@ -98,8 +98,8 @@ func TestConditionalRequiredFollowsTheDiscriminator(t *testing.T) {
 	fn := []string{"functions", "probe_fn"}
 	// per trigger type: the fields it must have beyond the universal ones
 	perType := map[string][]string{
-		"http":   {"trigger/domains", "trigger/paths"},
-		"https":  {"trigger/domains", "trigger/paths"},
+		"http":   {"trigger/domains", "trigger/paths", "trigger/method"},
+		"https":  {"trigger/domains", "trigger/paths", "trigger/method"},
 		"pubsub": {"trigger/channel"},
 		"p2p":    {"trigger/protocol", "trigger/command"},
 	}
@@ -137,6 +137,9 @@ func TestConditionalRequiredFollowsTheDiscriminator(t *testing.T) {
 		// ...until the trigger's own fields are supplied, and then it does not.
 		for _, f := range want {
 			v := any("x")
+			if strings.HasSuffix(f, "method") {
+				v = "GET"
+			}
 			if strings.HasSuffix(f, "domains") || strings.HasSuffix(f, "paths") {
 				v = []any{"test_domain1"}
 				if strings.HasSuffix(f, "paths") {
