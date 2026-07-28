@@ -117,6 +117,8 @@ func TestConditionalRequiredFollowsTheDiscriminator(t *testing.T) {
 		assert.NilError(t, fork.Set(fn, []string{"id"}, "QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o"))
 		assert.NilError(t, fork.Set(fn, []string{"source"}, "."))
 		assert.NilError(t, fork.Set(fn, []string{"execution", "call"}, "ping"))
+		assert.NilError(t, fork.Set(fn, []string{"execution", "timeout"}, "10s"))
+		assert.NilError(t, fork.Set(fn, []string{"execution", "memory"}, "16MB"))
 		assert.NilError(t, fork.Set(fn, []string{"trigger", "type"}, typ))
 
 		got := map[string]bool{}

@@ -361,15 +361,15 @@ func TestSession(t *testing.T) {
 
 		// nothing but a name: the unconditional requirements, and NOT one
 		// trigger-specific field — with no trigger type, none of them apply yet
-		assert.DeepEqual(t, fields(), []string{"execution/call", "id", "source", "trigger/type"})
+		assert.DeepEqual(t, fields(), []string{"execution/call", "execution/memory", "execution/timeout", "id", "source", "trigger/type"})
 
 		// choosing http brings in exactly what http routes on
 		assert.NilError(t, fork.Set(bare, []string{"trigger", "type"}, "http"))
-		assert.DeepEqual(t, fields(), []string{"execution/call", "id", "source", "trigger/domains", "trigger/paths"})
+		assert.DeepEqual(t, fields(), []string{"execution/call", "execution/memory", "execution/timeout", "id", "source", "trigger/domains", "trigger/paths"})
 
 		// switching to pubsub swaps them for the channel — no domains, no paths
 		assert.NilError(t, fork.Set(bare, []string{"trigger", "type"}, "pubsub"))
-		assert.DeepEqual(t, fields(), []string{"execution/call", "id", "source", "trigger/channel"})
+		assert.DeepEqual(t, fields(), []string{"execution/call", "execution/memory", "execution/timeout", "id", "source", "trigger/channel"})
 
 		// filling them clears the issues, and the compiler agrees
 		id, err := fork.Generate(bare, []string{"id"})
@@ -377,6 +377,8 @@ func TestSession(t *testing.T) {
 		assert.NilError(t, fork.Set(bare, []string{"id"}, id))
 		assert.NilError(t, fork.Set(bare, []string{"source"}, "."))
 		assert.NilError(t, fork.Set(bare, []string{"execution", "call"}, "ping"))
+		assert.NilError(t, fork.Set(bare, []string{"execution", "timeout"}, "10s"))
+		assert.NilError(t, fork.Set(bare, []string{"execution", "memory"}, "16MB"))
 		assert.NilError(t, fork.Set(bare, []string{"trigger", "channel"}, "chan"))
 		assert.Equal(t, len(fork.ValidateResource(bare)), 0)
 		_, err = fork.Validate(ctx, CompileOptions{})

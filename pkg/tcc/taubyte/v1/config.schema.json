@@ -519,6 +519,8 @@
             }
           },
           "required": [
+            "timeout",
+            "memory",
             "call"
           ],
           "type": "object"
@@ -936,6 +938,8 @@
             }
           },
           "required": [
+            "timeout",
+            "memory",
             "call"
           ],
           "type": "object"
