@@ -6,6 +6,7 @@ tags:
 trigger:
     type: p2p
     local: false
+    service: /simple/v3
     command: command3
 source: .
 execution:

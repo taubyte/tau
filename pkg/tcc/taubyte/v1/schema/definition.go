@@ -88,7 +88,7 @@ var TaubyteRessources = []*Node{
 				String("type", Path("trigger", "type"), Required(), InSet("http", "https", "pubsub", "p2p"), DerivedBool("Secure", map[string]bool{"http": false, "https": true}, map[bool]string{false: "http", true: "https"}), InSection("trigger"), Doc("Trigger Type", "Trigger that invokes the function: http, https, pubsub, or p2p.")),
 				Bool("local", Path("trigger", "local"), InSection("trigger"), Doc("Local", "Restrict the trigger to the local node / project scope.")),
 				String("pubsub-channel", Path("trigger", "channel"), RequiredWhen("type", "pubsub"), Tag("channel"), InSection("pubsub"), Doc("PubSub Channel", "PubSub channel the function subscribes to (pubsub trigger).")),
-				String("p2p-protocol", Path("trigger", "protocol"), Compat("trigger", "service"), Tag("service"), OnlyWhen("type", "p2p"), Default(""), InSection("p2p"), Doc("P2P Protocol", "libp2p protocol the function serves (p2p trigger).")),
+				String("p2p-protocol", Path("trigger", "protocol"), Compat("trigger", "service"), RequiredWhen("type", "p2p"), Tag("service"), OnlyWhen("type", "p2p"), Default(""), InSection("p2p"), Doc("P2P Protocol", "libp2p protocol the function serves (p2p trigger).")),
 				String("p2p-command", Path("trigger", "command"), RequiredWhen("type", "p2p"), Tag("command"), InSection("p2p"), Doc("P2P Command", "Command name within the p2p protocol this function handles.")),
 				String("http-method", Path("trigger", "method"), IsHttpMethod(), Tag("method"), InSection("http"), Doc("HTTP Method", "HTTP method the function handles (http/https trigger).")),
 				StringSlice("http-methods", Path("trigger", "methods"), Tag("methods"), NoAccessors(), NoStructField()), // TO IMPLEMENT

@@ -399,6 +399,12 @@
               "description": "libp2p protocol the function serves (p2p trigger).",
               "title": "P2P Protocol",
               "type": "string",
+              "x-tau-required-when": {
+                "field": "type",
+                "in": [
+                  "p2p"
+                ]
+              },
               "x-tau-section": "p2p"
             },
             "command": {
