@@ -27,6 +27,9 @@ func TestRequiredWhenDeclarationsAreSound(t *testing.T) {
 				continue
 			}
 			where := group + "." + a.Name
+			if _, both := a.Meta["requiredUnless"].(string); both {
+				t.Errorf("%s declares both RequiredWhen and RequiredUnless; one would silently win", where)
+			}
 
 			// (1) the discriminator must be an attribute of the same resource
 			var sib *engine.Attribute
@@ -53,6 +56,39 @@ func TestRequiredWhenDeclarationsAreSound(t *testing.T) {
 					"%s: RequiredWhen expects %s=%q, but %q only admits %s",
 					where, cond.Field, v, cond.Field, strings.Join(enum, "|"))
 			}
+		}
+	}
+}
+
+// A RequiredUnless whose sibling is not a bool reads as "not required" on one
+// path and "required" on the other — the evaluator asserts a bool on both sides.
+// A sibling that does not exist fires nowhere at all.
+func TestRequiredUnlessDeclarationsAreSound(t *testing.T) {
+	root := GenerationRoot()
+	for _, g := range root {
+		group, _ := g.Match.(string)
+		if len(g.Children) == 0 {
+			continue
+		}
+		attrs := g.Children[0].Attributes
+		for _, a := range attrs {
+			field, ok := a.Meta["requiredUnless"].(string)
+			if !ok {
+				continue
+			}
+			where := group + "." + a.Name
+			var sib *engine.Attribute
+			for _, c := range attrs {
+				if c.Name == field {
+					sib = c
+					break
+				}
+			}
+			assert.Assert(t, sib != nil, "%s: RequiredUnless names %q, which %s has no attribute for", where, field, group)
+			assert.Equal(t, sib.Type, engine.TypeBool,
+				"%s: RequiredUnless(%q) needs a boolean discriminator, got %v", where, field, sib.Type)
+			assert.Assert(t, engine.RequiredPathOf(sib) != "",
+				"%s: the discriminator %q must be addressable", where, field)
 		}
 	}
 }

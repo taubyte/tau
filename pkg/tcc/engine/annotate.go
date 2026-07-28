@@ -95,6 +95,20 @@ func RequiredWhen(field string, in ...string) Option {
 	return Annotate("requiredWhen", ConditionSpec{Field: field, In: in})
 }
 
+// RequiredUnless makes a field required UNLESS a sibling boolean attribute is
+// true — a database's match is a literal key and must be there, unless useRegex
+// turns it into a regular expression, where empty is a valid catch-all.
+//
+// Deliberately not RequiredWhen with a negation. Two things differ, and the
+// second is the one that bites: an ABSENT discriminator here means required (an
+// unset bool is false), whereas RequiredWhen treats an absent discriminator as
+// "condition cannot hold, so not required". Encoding it as a value list would
+// also break silently, because the value is read as a bool on one side and
+// compared as a string on the other.
+func RequiredUnless(field string) Option {
+	return Annotate("requiredUnless", field)
+}
+
 // SectionSpec declares a human-facing section for a resource's fields — how a UI
 // or CLI groups them for display. It is presentation-only (no compile effect) and
 // does NOT have to align with the authored nesting: a field under one Path can sit

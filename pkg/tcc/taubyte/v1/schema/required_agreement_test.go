@@ -49,10 +49,19 @@ func TestRequiredCheckAgreesWithTheCompiler(t *testing.T) {
 			fork, err := base.Fork()
 			assert.NilError(t, err)
 
-			// The field may be authored under either location; clear both, and
-			// skip when it was not present to begin with (nothing to remove).
+			// Every location the field may live at — a branching path (AnyOf)
+			// plus the legacy alias. Iterating only Path would silently skip a
+			// field whose fixture authored the OTHER branch, and the test would
+			// pass on coverage it never had.
+			locs := rf.AnyOf
+			if len(locs) == 0 {
+				locs = [][]string{rf.Path}
+			}
+			if len(rf.Compat) > 0 {
+				locs = append(append([][]string{}, locs...), rf.Compat)
+			}
 			removed := false
-			for _, p := range [][]string{rf.Path, rf.Compat} {
+			for _, p := range locs {
 				if len(p) == 0 {
 					continue
 				}
@@ -66,17 +75,29 @@ func TestRequiredCheckAgreesWithTheCompiler(t *testing.T) {
 			}
 			checked++
 
-			// partial: is it flagged, on that exact field?
+			// Both sides must name one of the field's real locations — and the
+			// SAME one, since each reports where it actually looked.
+			names := map[string]bool{}
+			for _, p := range locs {
+				names[strings.Join(p, "/")] = true
+			}
 			flagged := false
 			for _, i := range fork.ValidateResource(res) {
-				if strings.Join(i.Field, "/") == field {
+				if names[strings.Join(i.Field, "/")] {
 					flagged = true
 				}
 			}
 
-			// compiler: does it reject, naming that field?
+			// compiler: does it reject, naming one of them?
 			_, cErr := fork.Validate(ctx, CompileOptions{})
-			rejected := cErr != nil && strings.Contains(cErr.Error(), field)
+			rejected := false
+			if cErr != nil {
+				for n := range names {
+					if strings.Contains(cErr.Error(), n) {
+						rejected = true
+					}
+				}
+			}
 
 			assert.Equal(t, flagged, rejected,
 				"disagreement on %s after deleting it — partial flagged=%v, compiler rejected=%v (%v)",

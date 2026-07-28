@@ -140,8 +140,12 @@ func (n *Node) childrenToSlice() []any {
 	return ret
 }
 
-func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, string, error) {
-	var last_match string
+// inferPathQuery walks a declared path against the document, resolving each
+// matcher segment to the key actually present. It returns the RESOLVED segments
+// so a caller can report where it really looked ("streaming/size"), not the
+// declared shape — the two differ exactly where a matcher is involved.
+func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, []string, error) {
+	resolved := make([]string, 0, len(path))
 	var cachedList []string
 	var cacheValid bool
 
@@ -149,7 +153,7 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, str
 		switch pitm := itm.(type) {
 		case string:
 			query = query.Get(pitm)
-			last_match = pitm
+			resolved = append(resolved, pitm)
 			// Invalidate cache since query state changed
 			cacheValid = false
 		case StringMatcher:
@@ -161,32 +165,40 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, str
 			} else {
 				list, err = query.List()
 				if err != nil {
-					return nil, "", wrapErrorWithLocation(query, err, "list path matches failed")
+					return nil, nil, wrapErrorWithLocation(query, err, "list path matches failed")
 				}
 				// Cache the list for potential reuse (only valid until query state changes)
 				cachedList = list
 				cacheValid = true
 			}
 
-			var found bool
+			// Exactly one key may match. Taking "the first" would be a coin
+			// flip: mapKeys returns document keys in unspecified order (see
+			// yaseer/utils.go), so a document that opens BOTH branches of an
+			// Either would resolve differently between runs — and differently
+			// from any consumer that enumerates the branches statically.
+			var matched []string
 			for _, l := range list {
 				if pitm.Match(l) {
-					found = true
-					query = query.Get(l)
-					last_match = l
-					// Invalidate cache since query state changed
-					cacheValid = false
-					break
+					matched = append(matched, l)
 				}
 			}
-
-			if !found {
-				return nil, "", errorWithLocation(query, "can't find match for path")
+			switch len(matched) {
+			case 0:
+				return nil, nil, errorWithLocation(query, "can't find match for path")
+			case 1:
+			default:
+				slices.Sort(matched) // stable message, whatever the map order was
+				return nil, nil, errorWithLocation(query,
+					"ambiguous path: %s each match, and only one may be set", strings.Join(matched, " and "))
 			}
+			query = query.Get(matched[0])
+			resolved = append(resolved, matched[0])
+			cacheValid = false
 		}
 	}
 
-	return query, last_match, nil
+	return query, resolved, nil
 }
 
 func (n *Node) hasRequiredAttributes() bool {
@@ -286,6 +298,9 @@ func getValue(aq *yaseer.Query, attr *Attribute) (val any, err error) {
 // declaration order. An absent or unreadable discriminator means the condition
 // cannot hold — a resource with no trigger type owes no trigger-specific field.
 func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
+	if field, ok := attr.Meta["requiredUnless"].(string); ok {
+		return requiredUnlessHere(n, field, query)
+	}
 	c, ok := attr.Meta["requiredWhen"].(ConditionSpec)
 	if !ok {
 		return false
@@ -310,15 +325,6 @@ func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
 	return false
 }
 
-// authoredName is the path a user actually types for an attribute
-// ("trigger/domains"), not the DSL's internal name for it ("http-domains").
-func authoredName(attr *Attribute) string {
-	if p := fieldPath(attr); p != nil {
-		return strings.Join(p, "/")
-	}
-	return attr.Name
-}
-
 // isBlank reports a value that carries no information: only strings and lists
 // can be blank — a false bool or a zero int are legitimate values.
 func isBlank(val any) bool {
@@ -335,6 +341,46 @@ func isBlank(val any) bool {
 	return false
 }
 
+// requiredUnlessHere reports whether a RequiredUnless field is required right
+// now: it is, unless the named sibling reads as true. An absent or unreadable
+// discriminator means required — an unset bool is false — which is the opposite
+// default to requiredHere's condition, and the reason the two are separate.
+func requiredUnlessHere(n *Node, field string, query *yaseer.Query) bool {
+	for _, sib := range n.Attributes {
+		if sib.Name != field {
+			continue
+		}
+		path := sib.Path
+		if len(path) == 0 {
+			path = []StringMatch{sib.Name}
+		}
+		var v bool
+		if sq, _, err := inferPathQuery(path, query); err == nil && sq.Value(&v) == nil {
+			return !v
+		}
+		// the fixtures author useRegex at its legacy location
+		if cq, _, err := inferPathQuery(sib.Compat, query); len(sib.Compat) > 0 && err == nil && cq.Value(&v) == nil {
+			return !v
+		}
+		return true
+	}
+	return false // names an attribute this group does not have
+}
+
+// requiredName is the authored path to report for a missing required field,
+// using the segments the document actually resolved to when the declared path
+// contains a matcher — "streaming/size", not the bare attribute name. Both
+// enforcement paths must name the same thing or the agreement test cannot hold.
+func requiredName(attr *Attribute, resolved []string) string {
+	if p := fieldPath(attr); p != nil {
+		return strings.Join(p, "/")
+	}
+	if len(resolved) > 0 {
+		return strings.Join(resolved, "/")
+	}
+	return attr.Name
+}
+
 func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query) error {
 	if len(n.Attributes) == 0 {
 		return nil
@@ -344,19 +390,19 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		if len(attr.Path) == 0 {
 			attr.Path = []StringMatch{attr.Name}
 		}
-		aq, last_match, err := inferPathQuery(attr.Path, query)
+		aq, resolved, err := inferPathQuery(attr.Path, query)
 		if err != nil {
-			aq, last_match, err = inferPathQuery(attr.Compat, query)
+			aq, resolved, err = inferPathQuery(attr.Compat, query)
 			if err != nil {
 				return wrapErrorWithLocation(query, err, fmt.Sprintf("attribute '%s' path resolution failed", attr.Name))
 			}
 		}
 
 		if attr.Key {
-			if len(last_match) > 0 {
+			if len(resolved) > 0 {
 				switch o := obj.(type) {
 				case object.Object[object.Refrence]:
-					o.Set(attr.Name, object.Refrence(last_match))
+					o.Set(attr.Name, object.Refrence(resolved[len(resolved)-1]))
 				}
 				continue
 			} else {
@@ -382,7 +428,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		if err != nil && hasScalar(origAq) {
 			filePath, line, column := origAq.Location()
 			return located(filePath, line, column,
-				fmt.Errorf("attribute '%s' has a value of the wrong type", authoredName(attr)))
+				fmt.Errorf("attribute '%s' has a value of the wrong type", requiredName(attr, resolved)))
 		}
 
 		if err != nil {
@@ -390,7 +436,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 				// For required attributes, format as: filepath:line:column: required attribute 'name'
 				// Don't include underlying YAML processing error details
 				filePath, line, column := aq.Location()
-				return located(filePath, line, column, fmt.Errorf("required attribute '%s'", authoredName(attr)))
+				return located(filePath, line, column, fmt.Errorf("required attribute '%s'", requiredName(attr, resolved)))
 			}
 			if attr.Default != nil {
 				switch o := obj.(type) {
@@ -405,7 +451,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 			// Present but empty: an empty domains list routes nothing, an empty
 			// entrypoint invokes nothing. Same defect as the absent key.
 			filePath, line, column := aq.Location()
-			return located(filePath, line, column, fmt.Errorf("required attribute '%s' is empty", authoredName(attr)))
+			return located(filePath, line, column, fmt.Errorf("required attribute '%s' is empty", requiredName(attr, resolved)))
 		}
 
 		if attr.Validator != nil {

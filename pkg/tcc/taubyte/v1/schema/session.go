@@ -125,8 +125,9 @@ func (taubyteFieldValidator) RequiredFields(group string) []session.RequiredFiel
 	out := make([]session.RequiredField, 0, len(src))
 	for _, r := range src {
 		rf := session.RequiredField{
-			FieldRef: session.FieldRef{Path: r.Path, Compat: r.Compat},
+			FieldRef: session.FieldRef{Path: r.Path, Compat: r.Compat, AnyOf: r.AnyOf},
 			WhenIn:   r.WhenIn,
+			Unless:   r.Unless,
 		}
 		if r.When != nil {
 			rf.When = &session.FieldRef{Path: r.When.Path, Compat: r.When.Compat}

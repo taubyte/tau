@@ -72,6 +72,12 @@ func CheckFields(root []*Node, group string) [][]string {
 type FieldRef struct {
 	Path   []string
 	Compat []string // nil if the field has no legacy alias
+	// AnyOf is every plain location the field may be authored at, when its
+	// declared path contains a FINITE matcher (Either). A storage's size lives
+	// at object/size or streaming/size depending on which block the author
+	// wrote — two static locations, not a dynamic one. AnyOf[0] == Path; nil
+	// when the path has no matcher.
+	AnyOf [][]string
 }
 
 // RequiredField is a field whose absence the compiler rejects, and the condition
@@ -81,6 +87,49 @@ type RequiredField struct {
 	FieldRef
 	When   *FieldRef // the discriminator to read, nil when unconditional
 	WhenIn []string  // ...required only if its value is one of these
+	// Unless inverts the sense AND the default: the field is required unless
+	// the discriminator (a bool) is true, and an ABSENT discriminator means
+	// required — an unset bool is false. RequiredWhen cannot express that:
+	// there, an absent discriminator means NOT required.
+	Unless bool
+}
+
+// fieldPaths is every plain authored location of an attribute: a static path
+// yields one, and each FINITE matcher segment multiplies into its values. An
+// unbounded matcher (All) yields nil — such a field has no enumerable location
+// and stays unaddressable, which is what RequiredPathOf reports.
+//
+// This is the whole trick behind required fields at a "dynamic" path: Either is
+// declared, so the set of locations is known statically. Nothing has to resolve
+// a matcher against a document outside the engine.
+func fieldPaths(a *Attribute) [][]string {
+	path := a.Path
+	if len(path) == 0 {
+		return [][]string{{a.Name}}
+	}
+	out := [][]string{{}}
+	for _, seg := range path {
+		var vals []string
+		switch m := seg.(type) {
+		case string:
+			vals = []string{m}
+		case *either:
+			if len(m.values) == 0 {
+				return nil // matches nothing: no enumerable location
+			}
+			vals = m.values
+		default:
+			return nil // unbounded matcher: not enumerable
+		}
+		next := make([][]string, 0, len(out)*len(vals))
+		for _, prefix := range out {
+			for _, v := range vals {
+				next = append(next, append(append([]string{}, prefix...), v))
+			}
+		}
+		out = next
+	}
+	return out
 }
 
 // RequiredFields returns a resource group's REQUIRED fields — the ones whose
@@ -102,14 +151,30 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 		attrs := g.Children[0].Attributes
 		for _, a := range attrs {
 			cond, conditional := a.Meta["requiredWhen"].(ConditionSpec)
-			if !a.Required && !conditional {
+			unlessField, unless := a.Meta["requiredUnless"].(string)
+			if !a.Required && !conditional && !unless {
 				continue
 			}
-			p := fieldPath(a)
-			if p == nil {
+			paths := fieldPaths(a)
+			if paths == nil {
 				continue
 			}
-			rf := RequiredField{FieldRef: FieldRef{Path: p, Compat: compatPath(a)}}
+			rf := RequiredField{FieldRef: FieldRef{Path: paths[0], Compat: compatPath(a)}}
+			if len(paths) > 1 {
+				rf.AnyOf = paths
+			}
+			if unless {
+				sib := attrByName(attrs, unlessField)
+				if sib == nil {
+					continue // names an attribute this group doesn't have
+				}
+				sp := fieldPath(sib)
+				if sp == nil {
+					continue
+				}
+				rf.When = &FieldRef{Path: sp, Compat: compatPath(sib)}
+				rf.Unless = true
+			}
 			if conditional {
 				// Resolve the discriminator's NAME to its authored path here,
 				// where the attribute list is in hand — a consumer holding only
@@ -134,8 +199,8 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 // RequiredPathOf is an attribute's authored path as a display/lookup key, or ""
 // when it sits at a dynamic (Either/Key) location with no plain path.
 func RequiredPathOf(a *Attribute) string {
-	if p := fieldPath(a); p != nil {
-		return strings.Join(p, "/")
+	if p := fieldPaths(a); p != nil {
+		return strings.Join(p[0], "/")
 	}
 	return ""
 }

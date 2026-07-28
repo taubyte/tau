@@ -141,6 +141,7 @@
           "description": "Key or key-pattern this database serves (a literal prefix, or a regex when useRegex is set).",
           "title": "Match",
           "type": "string",
+          "x-tau-required-unless": "useRegex",
           "x-tau-section": "storage"
         },
         "regex": {
@@ -176,6 +177,9 @@
               "x-tau-section": "storage"
             }
           },
+          "required": [
+            "size"
+          ],
           "type": "object"
         },
         "encryption": {
@@ -191,7 +195,8 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "storage"
       ],
       "title": "Database",
       "type": "object",
@@ -1077,6 +1082,7 @@
           "type": "string",
           "x-tau-dynamic": true,
           "x-tau-path": "{object|streaming}/size",
+          "x-tau-required": true,
           "x-tau-scalar": "bytes",
           "x-tau-section": "storage"
         }
@@ -1157,6 +1163,8 @@
           },
           "title": "Paths",
           "type": "array",
+          "x-tau-required": true,
+          "x-tau-required-alias": "source/paths",
           "x-tau-section": "serving"
         },
         "source": {

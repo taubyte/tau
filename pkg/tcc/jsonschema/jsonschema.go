@@ -289,10 +289,26 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 			props.set(a.Name, leaf)
 		}
 		if a.Required {
-			if ok && !a.Key {
+			switch {
+			case !ok || a.Key:
+				// A dynamic (Either/Key) location is emitted as a FLAT marker
+				// property, not at its real path, so naming it in `required`
+				// would demand a top-level property that does not exist and
+				// reject every valid document. The requirement rides the
+				// marker, in the vocabulary the compat case already set.
+				leaf[g.ext+"required"] = true
+			case len(a.Compat) > 0:
+				// A field with a legacy alias is satisfied by EITHER location,
+				// and JSON Schema's `required` names exactly one. Listing it
+				// would reject documents the compiler accepts (the fixtures
+				// author a website's paths under source/paths), so the
+				// requirement is recorded as a vendor key instead of lost.
+				leaf[g.ext+"required"] = true
+				if c := compatSegs(a); c != "" {
+					leaf[g.ext+"required-alias"] = c
+				}
+			default:
 				markRequired(props, &required, segs)
-			} else {
-				required = append(required, a.Name) // dynamic key: flat, as emitted
 			}
 		}
 	}
@@ -368,6 +384,11 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	if c, ok := a.Meta["showWhen"].(engine.ConditionSpec); ok {
 		s[g.ext+"show-when"] = condition(c) // static visibility: show only when field ∈ in
 	}
+	if f, ok := a.Meta["requiredUnless"].(string); ok {
+		// Required unless the named sibling bool is true. One datum, so a bare
+		// name — the same identifier space as x-tau-required-when.field.
+		s[g.ext+"required-unless"] = f
+	}
 	if c, ok := a.Meta["requiredWhen"].(engine.ConditionSpec); ok {
 		// Conditionally required: enforced at load, so it belongs beside the
 		// standard `required` list rather than in it — JSON Schema's `required`
@@ -410,6 +431,20 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 		s["default"] = a.Default
 	}
 	return s
+}
+
+// compatSegs renders an attribute's legacy alias path, or "" if it has none or
+// the path is dynamic.
+func compatSegs(a *engine.Attribute) string {
+	out := make([]string, 0, len(a.Compat))
+	for _, p := range a.Compat {
+		s, ok := p.(string)
+		if !ok {
+			return ""
+		}
+		out = append(out, s)
+	}
+	return strings.Join(out, "/")
 }
 
 // condition renders a static visibility condition (show when Field ∈ In).

@@ -47,6 +47,11 @@ type FieldValidator interface {
 type FieldRef struct {
 	Path   []string
 	Compat []string
+	// AnyOf is every location the field may be authored at, when the DSL gives
+	// it more than one — a storage's size lives at object/size or
+	// streaming/size depending on which block the author wrote. AnyOf[0] ==
+	// Path; nil when there is only one location.
+	AnyOf [][]string
 }
 
 // RequiredField is a field whose absence is an error, and the condition under
@@ -58,6 +63,10 @@ type RequiredField struct {
 	FieldRef
 	When   *FieldRef
 	WhenIn []string
+	// Unless inverts both the sense and the default: required UNLESS the
+	// discriminator (a bool) is true, and an ABSENT discriminator means
+	// required, because an unset bool is false.
+	Unless bool
 }
 
 // Completer supplies a DSL's field completion sources: the fixed candidates (enum
@@ -408,12 +417,17 @@ func (s *Session) ValidateResource(res []string) []FieldIssue {
 		if !s.requiredNow(res, rf) || s.hasValue(res, rf.FieldRef) {
 			continue
 		}
-		msg := fmt.Sprintf("required field %q is missing", strings.Join(rf.Path, "/"))
-		if rf.When != nil {
-			msg = fmt.Sprintf("%s is required when %s is %s", strings.Join(rf.Path, "/"),
+		at := s.authoredAt(res, rf.FieldRef)
+		msg := fmt.Sprintf("required field %q is missing", strings.Join(at, "/"))
+		switch {
+		case rf.Unless:
+			msg = fmt.Sprintf("%s is required unless %s is true", strings.Join(at, "/"),
+				strings.Join(rf.When.Path, "/"))
+		case rf.When != nil:
+			msg = fmt.Sprintf("%s is required when %s is %s", strings.Join(at, "/"),
 				strings.Join(rf.When.Path, "/"), strings.Join(rf.WhenIn, " or "))
 		}
-		issues = append(issues, FieldIssue{Field: rf.Path, Message: msg})
+		issues = append(issues, FieldIssue{Field: at, Message: msg})
 	}
 	for _, f := range s.bind.FieldValidator.Fields(group) {
 		v, err := s.Get(res, f)
@@ -431,7 +445,10 @@ func (s *Session) ValidateResource(res []string) []FieldIssue {
 // compat alias counts: the compiler reads it as a fallback, so a field present
 // only under its legacy key is present, not missing.
 func (s *Session) hasValue(res []string, f FieldRef) bool {
-	for _, p := range [][]string{f.Path, f.Compat} {
+	// Candidates: every location the DSL allows, plus the legacy alias. Built
+	// with an explicit loop rather than appending to AnyOf — that slice comes
+	// from the binding and appending to it can write into its backing array.
+	for _, p := range f.locations() {
 		if len(p) == 0 {
 			continue
 		}
@@ -442,6 +459,40 @@ func (s *Session) hasValue(res []string, f FieldRef) bool {
 		}
 	}
 	return false
+}
+
+// locations is every place a field may be authored: its candidate paths (one,
+// unless the DSL branches) followed by its legacy alias.
+func (f FieldRef) locations() [][]string {
+	out := make([][]string, 0, len(f.AnyOf)+2)
+	if len(f.AnyOf) > 0 {
+		out = append(out, f.AnyOf...)
+	} else {
+		out = append(out, f.Path)
+	}
+	if len(f.Compat) > 0 {
+		out = append(out, f.Compat)
+	}
+	return out
+}
+
+// authoredAt is where to report a missing field. With one location that is the
+// path; with several it is the branch the author actually opened — a storage
+// that says `streaming:` is missing streaming/size, not object/size — so an
+// editor marks a field the document actually has a place for.
+func (s *Session) authoredAt(res []string, f FieldRef) []string {
+	if len(f.AnyOf) == 0 {
+		return f.Path
+	}
+	for _, p := range f.AnyOf {
+		if len(p) < 2 {
+			continue
+		}
+		if _, err := s.Get(res, p[:len(p)-1]); err == nil {
+			return p
+		}
+	}
+	return f.Path
 }
 
 // isBlank reports a value that carries no information. Only strings and lists
@@ -471,6 +522,14 @@ func (s *Session) requiredNow(res []string, rf RequiredField) bool {
 	v, err := s.Get(res, rf.When.Path)
 	if err != nil && len(rf.When.Compat) > 0 {
 		v, err = s.Get(res, rf.When.Compat)
+	}
+	if rf.Unless {
+		// Required unless the discriminator reads as true. Absent, unreadable
+		// or non-bool all mean required — an unset bool is false. Read as a
+		// real bool on both sides, so the two paths cannot drift over casing
+		// or stringification.
+		b, ok := v.(bool)
+		return err != nil || !ok || !b
 	}
 	if err != nil {
 		return false

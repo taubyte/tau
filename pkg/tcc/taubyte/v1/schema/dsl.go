@@ -55,6 +55,7 @@ var (
 	RepoBranch       = engine.RepoBranch
 	RepoName         = engine.RepoName
 	Required         = engine.Required
+	RequiredUnless   = engine.RequiredUnless
 	RequiredWhen     = engine.RequiredWhen
 	Resource         = engine.Resource
 	Root             = engine.Root

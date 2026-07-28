@@ -49,10 +49,10 @@ var TaubyteRessources = []*Node{
 	DefineGroup("databases",
 		DefineIter( //use name as "name"?
 			TaubyteAttributes(
-				String("match", InSection("storage"), Doc("Match", "Key or key-pattern this database serves (a literal prefix, or a regex when useRegex is set).")),
+				String("match", RequiredUnless("useRegex"), InSection("storage"), Doc("Match", "Key or key-pattern this database serves (a literal prefix, or a regex when useRegex is set).")),
 				Bool("useRegex", Path("regex"), Compat("useRegex"), InSection("storage"), Doc("Use Regex", "Treat match as a regular expression instead of a literal prefix.")),
 				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Local", []string{"host"}, []string{"all", "host"}, [2]string{"host", "all"}), NoAccessors(), InSection("storage"), Doc("Network Access", "Which peers may reach this database: all, subnet (project peers only), or host (local node only).")),
-				Bytes("size", Path("storage", "size"), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"32MB\", \"1GB\").")),
+				Bytes("size", Path("storage", "size"), Required(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"32MB\", \"1GB\").")),
 				String("encryption-type", Path("encryption", "type"), NoAccessors(), NoStructField(), Doc("Encryption Type", "Encryption scheme for data at rest.")),
 				String("encryption-key", Path("encryption", "key"), NoAccessors(), InSection("encryption"), Doc("Encryption Key", "Key material or reference used to encrypt data at rest.")),
 			),
@@ -187,12 +187,19 @@ var TaubyteRessources = []*Node{
 		DefineIter(
 			TaubyteAttributes(
 				String("type", Path(Either("object", "streaming")), Key(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
+				// NOTE: match is required-unless-regex for databases (above) and is the
+				// same here by the same runtime argument (storages.go:49 compares it
+				// exactly, so an empty non-regex match is unreachable). It is NOT
+				// declared because the config repo the dreaming suite clones
+				// (taubyte/tb_test_project) contains someapp/storages/teststorage.yaml
+				// with no match and no regex — a storage that is already dead there.
+				// Add RequiredUnless("useRegex") once that repo is fixed.
 				String("match", InSection("storage"), Doc("Match", "Key or key-pattern this storage serves (a literal prefix, or a regex when useRegex is set).")),
 				Bool("useRegex", Path("regex"), Compat("useRegex"), InSection("storage"), Doc("Use Regex", "Treat match as a regular expression instead of a literal prefix.")),
 				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Public", []string{"all"}, []string{"all", "subnet", "host"}, [2]string{"all", "subnet"}), NoAccessors(), InSection("access"), Doc("Network Access", "Which peers may reach this storage: all, subnet (project peers only), or host (local node only).")),
 				Bool("versioning", Path("object", "versioning"), NoSetter(), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
 				Duration("ttl", Path("streaming", "ttl"), Field("Ttl"), Accessor("TTL"), NoSetter(), InSection("storage"), Doc("Time-To-Live", "Time-to-live for streamed entries, as a human string (e.g. \"1h\") (streaming storage).")),
-				Bytes("size", Path(Either("object", "streaming"), "size"), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
+				Bytes("size", Path(Either("object", "streaming"), "size"), Required(), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"1GB\").")),
 			),
 			GroupDoc("Object or streaming storage served to the project's peers."), Icon("bucket"),
 			secIdentity,
@@ -207,8 +214,8 @@ var TaubyteRessources = []*Node{
 		DefineIter(
 			TaubyteAttributes(
 				StringSlice("domains", Path("domains"), Required(), Ref("domains"), InSection("serving"), Doc("Domains", "Domains that serve this website. Each must name a defined domain.")),
-				StringSlice("paths", Path("paths"), Compat("source", "paths"), InSection("serving"), Doc("Paths", "URL path patterns served by this website.")), // TODO: add validation
-				String("branch", Path("source", "branch"), RepoBranch(), InSection("source"), Doc("Branch", "Git branch to build the website from.")),           // TODO: deprecate
+				StringSlice("paths", Path("paths"), Compat("source", "paths"), Required(), InSection("serving"), Doc("Paths", "URL path patterns served by this website.")), // TODO: add validation
+				String("branch", Path("source", "branch"), RepoBranch(), InSection("source"), Doc("Branch", "Git branch to build the website from.")),                       // TODO: deprecate
 				String("git-provider", Path("source", Either("github")), Key(), Field("Provider"), Tag("provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
 				String("github-id", Path("source", "github", "id"), Required(), Field("RepoID"), Tag("repository-id"), NoAccessors(), InSection("source"), Doc("Repository ID", "GitHub repository numeric id.")),
 				String("github-fullname", Path("source", "github", "fullname"), Required(), RepoName(), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
