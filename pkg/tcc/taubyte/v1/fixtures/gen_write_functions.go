@@ -19,6 +19,8 @@ trigger:
     method: post
     paths:
       - /example
+domains:
+    - test_domain_g
 `
 
 var fileContentsGlobalP2P_Function = `

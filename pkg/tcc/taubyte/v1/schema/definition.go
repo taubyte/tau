@@ -49,7 +49,7 @@ var TaubyteRessources = []*Node{
 	DefineGroup("databases",
 		DefineIter( //use name as "name"?
 			TaubyteAttributes(
-				String("match", Required(), InSection("storage"), Doc("Match", "Key or key-pattern this database serves (a literal prefix, or a regex when useRegex is set).")),
+				String("match", InSection("storage"), Doc("Match", "Key or key-pattern this database serves (a literal prefix, or a regex when useRegex is set).")),
 				Bool("useRegex", Path("regex"), Compat("useRegex"), InSection("storage"), Doc("Use Regex", "Treat match as a regular expression instead of a literal prefix.")),
 				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Local", []string{"host"}, []string{"all", "host"}, [2]string{"host", "all"}), NoAccessors(), InSection("storage"), Doc("Network Access", "Which peers may reach this database: all, subnet (project peers only), or host (local node only).")),
 				Bytes("size", Path("storage", "size"), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"32MB\", \"1GB\").")),
@@ -187,7 +187,7 @@ var TaubyteRessources = []*Node{
 		DefineIter(
 			TaubyteAttributes(
 				String("type", Path(Either("object", "streaming")), Key(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
-				String("match", Required(), InSection("storage"), Doc("Match", "Key or key-pattern this storage serves (a literal prefix, or a regex when useRegex is set).")),
+				String("match", InSection("storage"), Doc("Match", "Key or key-pattern this storage serves (a literal prefix, or a regex when useRegex is set).")),
 				Bool("useRegex", Path("regex"), Compat("useRegex"), InSection("storage"), Doc("Use Regex", "Treat match as a regular expression instead of a literal prefix.")),
 				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Public", []string{"all"}, []string{"all", "subnet", "host"}, [2]string{"all", "subnet"}), NoAccessors(), InSection("access"), Doc("Network Access", "Which peers may reach this storage: all, subnet (project peers only), or host (local node only).")),
 				Bool("versioning", Path("object", "versioning"), NoSetter(), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),

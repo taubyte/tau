@@ -198,13 +198,43 @@ func (n *Node) hasRequiredAttributes() bool {
 	return false
 }
 
+// hasScalar reports that the query resolves to a value at all — used to tell a
+// field that is absent (fine, unless required) from one that is present with a
+// value the declared type cannot take (always an error).
+func hasScalar(aq *yaseer.Query) bool {
+	var raw any
+	if aq.Value(&raw) != nil {
+		return false
+	}
+	switch raw.(type) {
+	case nil, map[string]any, map[any]any:
+		return false // a missing leaf, or a sub-tree rather than a value
+	}
+	return true
+}
+
+// coerced retries a failed typed read as a generic scalar and converts it to the
+// declared type where the notation is merely different (an unquoted id into a
+// string field, a quoted number into a numeric one). See coerce.go.
+func coerced(aq *yaseer.Query, t Type) (any, bool) {
+	var raw any
+	if aq.Value(&raw) != nil {
+		return nil, false
+	}
+	return coerceScalar(raw, t)
+}
+
 func getValue(aq *yaseer.Query, attr *Attribute) (val any, err error) {
 	switch attr.Type {
 	case TypeInt:
 		var v int
 		err = aq.Value(&v)
 		if err != nil {
-			err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get int value for attribute '%s'", attr.Name))
+			if c, ok := coerced(aq, TypeInt); ok {
+				v, err = c.(int), nil
+			} else {
+				err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get int value for attribute '%s'", attr.Name))
+			}
 		}
 		val = v
 	case TypeBool:
@@ -218,14 +248,22 @@ func getValue(aq *yaseer.Query, attr *Attribute) (val any, err error) {
 		var v float64
 		err = aq.Value(&v)
 		if err != nil {
-			err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get float value for attribute '%s'", attr.Name))
+			if c, ok := coerced(aq, TypeFloat); ok {
+				v, err = c.(float64), nil
+			} else {
+				err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get float value for attribute '%s'", attr.Name))
+			}
 		}
 		val = v
 	case TypeString:
 		var v string
 		err = aq.Value(&v)
 		if err != nil {
-			err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get string value for attribute '%s'", attr.Name))
+			if c, ok := coerced(aq, TypeString); ok {
+				v, err = c.(string), nil
+			} else {
+				err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get string value for attribute '%s'", attr.Name))
+			}
 		}
 		val = v
 	case TypeStringSlice:
@@ -326,6 +364,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 			}
 		}
 
+		origAq := aq
 		val, err := getValue(aq, attr)
 		if err != nil {
 			aq, _, err = inferPathQuery(attr.Compat, query)
@@ -333,6 +372,17 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 				return wrapErrorWithLocation(query, err, fmt.Sprintf("attribute '%s' compat path resolution failed", attr.Name))
 			}
 			val, err = getValue(aq, attr)
+		}
+
+		// A value that is THERE but of the wrong type is a mistake, not an
+		// omission: coercion already accepted every difference that is merely
+		// notation, so what is left is a real disagreement about the field.
+		// Reporting it beats the old behaviour of dropping it — a mistyped
+		// domains list used to silently deploy an unroutable function.
+		if err != nil && hasScalar(origAq) {
+			filePath, line, column := origAq.Location()
+			return located(filePath, line, column,
+				fmt.Errorf("attribute '%s' has a value of the wrong type", authoredName(attr)))
 		}
 
 		if err != nil {

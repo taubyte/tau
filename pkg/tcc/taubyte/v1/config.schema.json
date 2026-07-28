@@ -191,8 +191,7 @@
         }
       },
       "required": [
-        "id",
-        "match"
+        "id"
       ],
       "title": "Database",
       "type": "object",
@@ -1072,8 +1071,7 @@
         }
       },
       "required": [
-        "id",
-        "match"
+        "id"
       ],
       "title": "Storage",
       "type": "object",

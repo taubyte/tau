@@ -197,7 +197,9 @@ func checkType(a *Attribute, element bool, value any) error {
 		switch value.(type) {
 		case int, int8, int16, int32, int64:
 		default:
-			return typeErr(a, "integer", value)
+			if !convertible(value, TypeInt) { // a quoted number is still a number
+				return typeErr(a, "integer", value)
+			}
 		}
 	case TypeStringSlice:
 		if !isStringList(value) {
@@ -210,10 +212,16 @@ func checkType(a *Attribute, element bool, value any) error {
 }
 
 func wantString(a *Attribute, value any) error {
-	if _, ok := value.(string); !ok {
-		return typeErr(a, "string", value)
+	if _, ok := value.(string); ok {
+		return nil
 	}
-	return nil
+	// An unquoted number is still a string field's value — YAML inferred a type
+	// from notation, the DSL declares meaning. A bool is not: that is a mistake
+	// about the field, not a way of writing it.
+	if convertible(value, TypeString) {
+		return nil
+	}
+	return typeErr(a, "string", value)
 }
 
 // isStringList reports whether value is a list ([]string or []any) whose every
