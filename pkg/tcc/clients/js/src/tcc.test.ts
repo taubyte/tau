@@ -159,8 +159,30 @@ test("session: whole-document diff, serialize, and path->address", async () => {
   const method = await fn.method();
   assert.ok(method === undefined || method === null, "a key absent from the doc is deleted");
 
-  const { path } = await fn.serialize();
+  const { path, yaml } = await fn.serialize();
   assert.equal(path, `functions/${FN_NAME}.yaml`);
+  // The deletion must reach the FILE, not just the in-memory view. Asserting
+  // through get() is what let a "deleted" key survive in the YAML: reads saw it
+  // gone while save() wrote it straight back.
+  assert.ok(!yaml.includes("method:"), `removed key still in the serialized YAML:\n${yaml}`);
+  const saved = memFs();
+  await session.save(saved, "/");
+  const onDisk = new TextDecoder().decode(saved.files.get(`/functions/${FN_NAME}.yaml`)!);
+  assert.ok(!onDisk.includes("method:"), `removed key still in the saved file:\n${onDisk}`);
+  assert.ok(onDisk.includes("diffed"), "the edit itself must be saved");
+
+  // ...and a diff that ONLY removes must reach the file too. This is the case
+  // that isolates the bug: a deletion updated the in-memory tree but never
+  // marked the document dirty, so it was written only as a side effect of some
+  // OTHER edit to the same document. A removal on its own vanished silently.
+  const cur = await fn.doc();
+  delete (cur as Record<string, unknown>).description;
+  await fn.setDoc(cur);
+  const { yaml: afterRemoveOnly } = await fn.serialize();
+  assert.ok(
+    !afterRemoveOnly.includes("description:"),
+    `a removal with no other change must reach the file:\n${afterRemoveOnly}`,
+  );
   assert.deepEqual(await session.resourceAt(path), ["functions", FN_NAME], "path -> address");
   assert.equal(await session.resourceAt(".git/config.yaml"), null, "not a resource document");
   assert.deepEqual(
