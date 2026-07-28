@@ -1003,14 +1003,14 @@ export class StorageConfig extends ResourceConfig {
   }
 
   /** Lives under the storage's kind, so the branch is explicit. */
-  async size(kind: StorageType): Promise<string | undefined> {
-    return (await this.s.binding.get(this.s.handle, this.res, [kind, "size"])) as string | undefined;
+  async size(type: StorageType): Promise<string | undefined> {
+    return (await this.s.binding.get(this.s.handle, this.res, [type, "size"])) as string | undefined;
   }
-  setSize(kind: StorageType, v: string): Promise<void> {
-    return this.s.binding.set(this.s.handle, this.res, [kind, "size"], v);
+  setSize(type: StorageType, v: string): Promise<void> {
+    return this.s.binding.set(this.s.handle, this.res, [type, "size"], v);
   }
-  unsetSize(kind: StorageType): Promise<void> {
-    return this.s.binding.delete(this.s.handle, this.res, [kind, "size"]);
+  unsetSize(type: StorageType): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res, [type, "size"]);
   }
 }
 

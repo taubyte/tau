@@ -122,8 +122,11 @@ type tsField struct {
 	// alias is the TS union naming them. isKey marks the discriminator itself,
 	// whose VALUE is the chosen key rather than a stored field.
 	prefix, suffix, alts []string
-	alias                string
-	isKey                bool
+	alias                string // the TS union naming the alternatives
+	param                string // what to call the branch argument: the
+	// discriminator's own accessor name, so a
+	// storage reads size(type) and not size(kind)
+	isKey bool
 }
 
 // branchOf splits an attribute's authored path around its single finite matcher:
@@ -204,15 +207,16 @@ func repoShapeOf(groups []*engine.Node) (*repoShape, error) {
 // tsFieldsOf projects a node's attributes into TS accessor fields, registering
 // each enum under an alias named for spec. Shared by resources, the container
 // group and the project root, so all three get the same accessors.
-func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enumOrder *[]string) []tsField {
+func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enumOrder *[]string) ([]tsField, error) {
 	var out []tsField
 	seen := map[string]bool{}
 	// The discriminator's alternatives name the branch union for the whole
 	// group, so a branched field and the key that selects it share one type.
-	branchAlias := ""
+	branchAlias, branchParam := "", ""
 	for _, a := range n.Attributes {
 		if _, alts, _, ok := branchOf(a); ok && a.Key {
-			branchAlias = spec + upperFirst(tsName(structFieldName(group, a)))
+			branchParam = tsName(structFieldName(group, a))
+			branchAlias = spec + upperFirst(branchParam)
 			if _, exists := enums[branchAlias]; !exists {
 				enums[branchAlias] = tsEnum{name: branchAlias, values: alts, quoted: true}
 				*enumOrder = append(*enumOrder, branchAlias)
@@ -257,9 +261,14 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 		f := tsField{name: fname, typ: typ, path: path}
 		if branched {
 			f.prefix, f.alts, f.suffix = prefix, alts, suffix
-			f.alias, f.isKey = branchAlias, a.Key
+			f.alias, f.param, f.isKey = branchAlias, branchParam, a.Key
 			if f.alias == "" {
-				continue // no discriminator declared the union: not addressable
+				// A branching field with no Key attribute over the same
+				// alternatives has nothing to name the branch. Rather than
+				// silently drop it — which is how this whole class of field
+				// went unaddressable in the first place — say so.
+				return nil, fmt.Errorf("%s.%s branches over %v but %s declares no Key attribute to select it",
+					group, a.Name, alts, group)
 			}
 			if a.Key {
 				f.typ = branchAlias
@@ -270,7 +279,7 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 		}
 		out = append(out, f)
 	}
-	return out
+	return out, nil
 }
 
 // resourceBase is the surface EVERY resource shares, whatever its kind: its
@@ -353,13 +362,13 @@ func writeTSClass(b *strings.Builder, r tsResource, ctor string) {
 			// A branching location: the caller says which branch, because the
 			// document may not have opened one yet (creating a resource) and
 			// guessing would write into the wrong block.
-			seg := branchArr(f.prefix, "kind", f.suffix)
+			seg := branchArr(f.prefix, f.param, f.suffix)
 			fmt.Fprintf(b, "\n  /** Lives under the %s's kind, so the branch is explicit. */\n", strings.ToLower(r.spec))
-			fmt.Fprintf(b, "  async %s(kind: %s): Promise<%s | undefined> {\n", f.name, f.alias, f.typ)
+			fmt.Fprintf(b, "  async %s(%s: %s): Promise<%s | undefined> {\n", f.name, f.param, f.alias, f.typ)
 			fmt.Fprintf(b, "    return (await this.s.binding.get(this.s.handle, this.res, %s)) as %s | undefined;\n  }\n", seg, f.typ)
-			fmt.Fprintf(b, "  set%s(kind: %s, v: %s): Promise<void> {\n", upperFirst(f.name), f.alias, f.typ)
+			fmt.Fprintf(b, "  set%s(%s: %s, v: %s): Promise<void> {\n", upperFirst(f.name), f.param, f.alias, f.typ)
 			fmt.Fprintf(b, "    return this.s.binding.set(this.s.handle, this.res, %s, v);\n  }\n", seg)
-			fmt.Fprintf(b, "  unset%s(kind: %s): Promise<void> {\n", upperFirst(f.name), f.alias)
+			fmt.Fprintf(b, "  unset%s(%s: %s): Promise<void> {\n", upperFirst(f.name), f.param, f.alias)
 			fmt.Fprintf(b, "    return this.s.binding.delete(this.s.handle, this.res, %s);\n  }\n", seg)
 			continue
 		}
@@ -400,11 +409,11 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 		if !ok {
 			continue
 		}
-		resources = append(resources, tsResource{
-			spec:   d.Spec,
-			group:  name,
-			fields: tsFieldsOf(g.Children[0], name, d.Spec, enums, &enumOrder),
-		})
+		fields, err := tsFieldsOf(g.Children[0], name, d.Spec, enums, &enumOrder)
+		if err != nil {
+			return nil, err
+		}
+		resources = append(resources, tsResource{spec: d.Spec, group: name, fields: fields})
 	}
 
 	// container is the config key of the applications-style container group,
@@ -422,7 +431,9 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 	if cSpec != "" {
 		for _, g := range root {
 			if name, _ := g.Match.(string); name == container && len(g.Children) > 0 {
-				cFields = tsFieldsOf(g.Children[0], container, cSpec, enums, &enumOrder)
+				if cFields, err = tsFieldsOf(g.Children[0], container, cSpec, enums, &enumOrder); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
@@ -430,7 +441,10 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 	if projectSpec == "" {
 		return nil, fmt.Errorf("the schema root has no Singular() declaration")
 	}
-	projectFields := tsFieldsOf(rootNode, "", projectSpec, enums, &enumOrder)
+	projectFields, err2 := tsFieldsOf(rootNode, "", projectSpec, enums, &enumOrder)
+	if err2 != nil {
+		return nil, err2
+	}
 	repo, err := repoShapeOf(root)
 	if err != nil {
 		return nil, err
