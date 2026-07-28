@@ -36,10 +36,28 @@ type FieldValidator interface {
 	ValidateField(group string, field []string, value any) error
 	// Fields returns the authored paths of a resource group's validated fields.
 	Fields(group string) [][]string
-	// RequiredFields returns the authored paths of a resource group's required
-	// fields — asked for separately because a missing field has no value for
-	// the value-driven checks to run against.
-	RequiredFields(group string) [][]string
+	// RequiredFields returns a resource group's required fields — asked for
+	// separately because a missing field has no value for the value-driven
+	// checks to run against.
+	RequiredFields(group string) []RequiredField
+}
+
+// FieldRef is where a field may be authored: its canonical path plus the legacy
+// alias that also satisfies it.
+type FieldRef struct {
+	Path   []string
+	Compat []string
+}
+
+// RequiredField is a field whose absence is an error, and the condition under
+// which that applies. When is nil when the field is always required; otherwise
+// it names the sibling to read, and WhenIn the values that make it required —
+// a function's pubsub channel is required for a pubsub trigger and meaningless
+// for an http one.
+type RequiredField struct {
+	FieldRef
+	When   *FieldRef
+	WhenIn []string
 }
 
 // Completer supplies a DSL's field completion sources: the fixed candidates (enum
@@ -386,13 +404,16 @@ func (s *Session) ValidateResource(res []string) []FieldIssue {
 	// A required field that is absent has no value to check, so it must be
 	// looked for by name — otherwise a resource with nothing in it validates
 	// clean here and is then rejected by the compiler.
-	for _, f := range s.bind.FieldValidator.RequiredFields(group) {
-		if _, err := s.Get(res, f); err != nil {
-			issues = append(issues, FieldIssue{
-				Field:   f,
-				Message: fmt.Sprintf("required field %q is missing", strings.Join(f, "/")),
-			})
+	for _, rf := range s.bind.FieldValidator.RequiredFields(group) {
+		if !s.requiredNow(res, rf) || s.hasValue(res, rf.FieldRef) {
+			continue
 		}
+		msg := fmt.Sprintf("required field %q is missing", strings.Join(rf.Path, "/"))
+		if rf.When != nil {
+			msg = fmt.Sprintf("%s is required when %s is %s", strings.Join(rf.Path, "/"),
+				strings.Join(rf.When.Path, "/"), strings.Join(rf.WhenIn, " or "))
+		}
+		issues = append(issues, FieldIssue{Field: rf.Path, Message: msg})
 	}
 	for _, f := range s.bind.FieldValidator.Fields(group) {
 		v, err := s.Get(res, f)
@@ -404,6 +425,40 @@ func (s *Session) ValidateResource(res []string) []FieldIssue {
 		}
 	}
 	return issues
+}
+
+// hasValue reports whether a field is authored at either of its locations. The
+// compat alias counts: the compiler reads it as a fallback, so a field present
+// only under its legacy key is present, not missing.
+func (s *Session) hasValue(res []string, f FieldRef) bool {
+	if _, err := s.Get(res, f.Path); err == nil {
+		return true
+	}
+	if len(f.Compat) > 0 {
+		if _, err := s.Get(res, f.Compat); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// requiredNow evaluates a conditional requirement against the resource's current
+// values. An absent discriminator means the condition cannot hold — a resource
+// with no trigger type owes no trigger-specific field, and saying otherwise
+// would flood a half-created resource with issues it cannot act on yet.
+func (s *Session) requiredNow(res []string, rf RequiredField) bool {
+	if rf.When == nil {
+		return true
+	}
+	v, err := s.Get(res, rf.When.Path)
+	if err != nil && len(rf.When.Compat) > 0 {
+		v, err = s.Get(res, rf.When.Compat)
+	}
+	if err != nil {
+		return false
+	}
+	got, ok := v.(string)
+	return ok && slices.Contains(rf.WhenIn, got)
 }
 
 // Serialize flushes pending edits and returns ONE resource's document: its

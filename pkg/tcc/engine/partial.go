@@ -65,28 +65,79 @@ func CheckFields(root []*Node, group string) [][]string {
 	return out
 }
 
-// RequiredFields returns the authored paths of a resource group's REQUIRED
-// fields — the ones whose absence the compiler rejects at load. Partial
-// validation has to ask for these separately: every other check runs against a
-// value, and a missing field has none, so a loop over present values can only
-// ever report a resource with nothing in it as valid.
-func RequiredFields(root []*Node, group string) [][]string {
-	var out [][]string
+// FieldRef is where a field may be authored: its canonical path, plus the legacy
+// alias that also satisfies it. Both matter for required-ness — the fixtures
+// author a function's domains under the compat key, and a requirement that only
+// looked at the canonical path would call them missing.
+type FieldRef struct {
+	Path   []string
+	Compat []string // nil if the field has no legacy alias
+}
+
+// RequiredField is a field whose absence the compiler rejects, and the condition
+// under which that applies. When is nil for an unconditional Required(); for a
+// RequiredWhen it names the sibling that decides, and the values that trigger it.
+type RequiredField struct {
+	FieldRef
+	When   *FieldRef // the discriminator to read, nil when unconditional
+	WhenIn []string  // ...required only if its value is one of these
+}
+
+// RequiredFields returns a resource group's REQUIRED fields — the ones whose
+// absence the compiler rejects at load — each with the condition that governs
+// it. Partial validation has to ask for these separately: every other check runs
+// against a value, and a missing field has none, so a loop over present values
+// can only ever report a resource with nothing in it as valid.
+//
+// A field at a dynamic (Either/Key) path is skipped, as everywhere else: it has
+// no plain authored path to report against. Such a field can still be required
+// in effect — a Key attribute with no match already fails at load.
+func RequiredFields(root []*Node, group string) []RequiredField {
+	var out []RequiredField
 	for _, g := range root {
 		name, _ := g.Match.(string)
 		if name != group || len(g.Children) == 0 {
 			continue
 		}
-		for _, a := range g.Children[0].Attributes {
-			if !a.Required {
+		attrs := g.Children[0].Attributes
+		for _, a := range attrs {
+			cond, conditional := a.Meta["requiredWhen"].(ConditionSpec)
+			if !a.Required && !conditional {
 				continue
 			}
-			if p := fieldPath(a); p != nil {
-				out = append(out, p)
+			p := fieldPath(a)
+			if p == nil {
+				continue
 			}
+			rf := RequiredField{FieldRef: FieldRef{Path: p, Compat: compatPath(a)}}
+			if conditional {
+				// Resolve the discriminator's NAME to its authored path here,
+				// where the attribute list is in hand — a consumer holding only
+				// paths could not do it without guessing.
+				sib := attrByName(attrs, cond.Field)
+				if sib == nil {
+					continue // names an attribute this group doesn't have
+				}
+				sp := fieldPath(sib)
+				if sp == nil {
+					continue // discriminator at a dynamic path — not addressable
+				}
+				rf.When = &FieldRef{Path: sp, Compat: compatPath(sib)}
+				rf.WhenIn = cond.In
+			}
+			out = append(out, rf)
 		}
 	}
 	return out
+}
+
+func attrByName(attrs []*Attribute, name string) *Attribute {
+	for _, a := range attrs {
+		if a.Name == name {
+			return a
+		}
+	}
+	return nil
 }
 
 // ValidateField runs the single-value validator for one field (by authored path)

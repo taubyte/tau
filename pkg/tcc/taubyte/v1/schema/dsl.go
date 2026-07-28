@@ -55,6 +55,7 @@ var (
 	RepoBranch       = engine.RepoBranch
 	RepoName         = engine.RepoName
 	Required         = engine.Required
+	RequiredWhen     = engine.RequiredWhen
 	Resource         = engine.Resource
 	Root             = engine.Root
 	SchemaDefinition = engine.SchemaDefinition

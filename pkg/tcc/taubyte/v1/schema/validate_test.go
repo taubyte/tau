@@ -33,7 +33,10 @@ func TestValidate(t *testing.T) {
 		base := afero.NewReadOnlyFs(afero.NewOsFs())
 		cow := afero.NewCopyOnWriteFs(base, afero.NewMemMapFs())
 		bad := filepath.Join(fixtures, "functions", "test_function1_glob.yaml")
-		body := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\nsource: not_a_ref\n"
+		body := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\n" +
+			"trigger:\n    type: pubsub\n    channel: c\n" +
+			"execution:\n    call: ping\n" +
+			"source: not_a_ref\n"
 		assert.NilError(t, afero.WriteFile(cow, bad, []byte(body), 0644))
 
 		_, err := Validate(context.Background(), WithVirtual(cow, fixtures))

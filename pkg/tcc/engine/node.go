@@ -3,6 +3,7 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/object"
@@ -240,6 +241,40 @@ func getValue(aq *yaseer.Query, attr *Attribute) (val any, err error) {
 	return
 }
 
+// requiredHere reports whether attr's RequiredWhen condition holds for the
+// resource being loaded: the discriminator it names currently has one of the
+// values that make it required. The discriminator is read from the document
+// rather than from the partly-built object, so it does not depend on attribute
+// declaration order. An absent or unreadable discriminator means the condition
+// cannot hold — a resource with no trigger type owes no trigger-specific field.
+func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
+	c, ok := attr.Meta["requiredWhen"].(ConditionSpec)
+	if !ok {
+		return false
+	}
+	for _, sib := range n.Attributes {
+		if sib.Name != c.Field {
+			continue
+		}
+		path := sib.Path
+		if len(path) == 0 {
+			path = []StringMatch{sib.Name}
+		}
+		sq, _, err := inferPathQuery(path, query)
+		if err != nil {
+			if sq, _, err = inferPathQuery(sib.Compat, query); err != nil {
+				return false
+			}
+		}
+		var v string
+		if sq.Value(&v) != nil {
+			return false
+		}
+		return slices.Contains(c.In, v)
+	}
+	return false
+}
+
 func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query) error {
 	if len(n.Attributes) == 0 {
 		return nil
@@ -279,7 +314,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		}
 
 		if err != nil {
-			if attr.Required {
+			if attr.Required || requiredHere(n, attr, query) {
 				// For required attributes, format as: filepath:line:column: required attribute 'name'
 				// Don't include underlying YAML processing error details
 				filePath, line, column := aq.Location()

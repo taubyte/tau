@@ -191,7 +191,8 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "match"
       ],
       "title": "Database",
       "type": "object",
@@ -261,6 +262,12 @@
               "description": "PEM-encoded TLS certificate for the domain (inline certificate-type).",
               "title": "Certificate",
               "type": "string",
+              "x-tau-required-when": {
+                "field": "certificate-type",
+                "in": [
+                  "inline"
+                ]
+              },
               "x-tau-section": "tls",
               "x-tau-show-when": {
                 "field": "certificate-type",
@@ -273,6 +280,12 @@
               "description": "PEM-encoded private key for the certificate (inline certificate-type).",
               "title": "Certificate Key",
               "type": "string",
+              "x-tau-required-when": {
+                "field": "certificate-type",
+                "in": [
+                  "inline"
+                ]
+              },
               "x-tau-section": "tls",
               "x-tau-show-when": {
                 "field": "certificate-type",
@@ -297,7 +310,8 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "fqdn"
       ],
       "title": "Domain",
       "type": "object",
@@ -372,6 +386,12 @@
               "description": "PubSub channel the function subscribes to (pubsub trigger).",
               "title": "PubSub Channel",
               "type": "string",
+              "x-tau-required-when": {
+                "field": "type",
+                "in": [
+                  "pubsub"
+                ]
+              },
               "x-tau-section": "pubsub"
             },
             "protocol": {
@@ -385,6 +405,12 @@
               "description": "Command name within the p2p protocol this function handles.",
               "title": "P2P Command",
               "type": "string",
+              "x-tau-required-when": {
+                "field": "type",
+                "in": [
+                  "p2p"
+                ]
+              },
               "x-tau-section": "p2p"
             },
             "method": {
@@ -414,6 +440,13 @@
               "x-tau-ref": {
                 "group": "domains"
               },
+              "x-tau-required-when": {
+                "field": "type",
+                "in": [
+                  "http",
+                  "https"
+                ]
+              },
               "x-tau-section": "http"
             },
             "paths": {
@@ -423,6 +456,13 @@
               },
               "title": "Paths",
               "type": "array",
+              "x-tau-required-when": {
+                "field": "type",
+                "in": [
+                  "http",
+                  "https"
+                ]
+              },
               "x-tau-section": "http"
             }
           },
@@ -474,7 +514,10 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "type",
+        "source",
+        "call"
       ],
       "title": "Function",
       "type": "object",
@@ -613,7 +656,8 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "github-fullname"
       ],
       "title": "Library",
       "type": "object",
@@ -716,7 +760,8 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "match"
       ],
       "title": "Messaging",
       "type": "object",
@@ -780,7 +825,8 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "protocol"
       ],
       "title": "Service",
       "type": "object",
@@ -872,7 +918,9 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "source",
+        "call"
       ],
       "title": "SmartOp",
       "type": "object",
@@ -999,7 +1047,8 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "match"
       ],
       "title": "Storage",
       "type": "object",
@@ -1114,7 +1163,9 @@
         }
       },
       "required": [
-        "id"
+        "id",
+        "domains",
+        "github-fullname"
       ],
       "title": "Website",
       "type": "object",

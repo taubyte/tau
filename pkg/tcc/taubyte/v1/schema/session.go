@@ -117,8 +117,23 @@ func (taubyteFieldValidator) Fields(group string) [][]string {
 	return engine.CheckFields(GenerationRoot(), group)
 }
 
-func (taubyteFieldValidator) RequiredFields(group string) [][]string {
-	return engine.RequiredFields(GenerationRoot(), group)
+// RequiredFields projects the DSL's required fields — conditional ones included
+// — into the session's vocabulary, resolving each condition's discriminator to
+// an authored path so the session never has to look one up by name.
+func (taubyteFieldValidator) RequiredFields(group string) []session.RequiredField {
+	src := engine.RequiredFields(GenerationRoot(), group)
+	out := make([]session.RequiredField, 0, len(src))
+	for _, r := range src {
+		rf := session.RequiredField{
+			FieldRef: session.FieldRef{Path: r.Path, Compat: r.Compat},
+			WhenIn:   r.WhenIn,
+		}
+		if r.When != nil {
+			rf.When = &session.FieldRef{Path: r.When.Path, Compat: r.When.Compat}
+		}
+		out = append(out, rf)
+	}
+	return out
 }
 
 // ValidateField runs this DSL's single-value validator for one field of a resource

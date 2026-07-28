@@ -364,6 +364,12 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	if c, ok := a.Meta["showWhen"].(engine.ConditionSpec); ok {
 		s[g.ext+"show-when"] = condition(c) // static visibility: show only when field ∈ in
 	}
+	if c, ok := a.Meta["requiredWhen"].(engine.ConditionSpec); ok {
+		// Conditionally required: enforced at load, so it belongs beside the
+		// standard `required` list rather than in it — JSON Schema's `required`
+		// is unconditional, and this depends on a sibling's value.
+		s[g.ext+"required-when"] = condition(c)
+	}
 	if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok && sc.ID != "" {
 		s[g.ext+"scalar"] = sc.ID // e.g. "duration" ("20s"), "bytes" ("32GB")
 	}

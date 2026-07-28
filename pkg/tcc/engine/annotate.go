@@ -83,6 +83,18 @@ func ShowWhen(field string, in ...string) Option {
 	return Annotate("showWhen", ConditionSpec{Field: field, In: in})
 }
 
+// RequiredWhen makes a field required only when a sibling attribute holds one of
+// the given values — a function's pubsub channel matters when its trigger type
+// is pubsub and is meaningless otherwise, so requiring it unconditionally would
+// reject every http function. Unlike ShowWhen this is NOT presentation: it is
+// enforced at load exactly like Required(), and reported by partial validation.
+//
+// Deliberately separate from ShowWhen. A field can be shown and optional (a
+// timeout), so "required" cannot be inferred from "visible".
+func RequiredWhen(field string, in ...string) Option {
+	return Annotate("requiredWhen", ConditionSpec{Field: field, In: in})
+}
+
 // SectionSpec declares a human-facing section for a resource's fields — how a UI
 // or CLI groups them for display. It is presentation-only (no compile effect) and
 // does NOT have to align with the authored nesting: a field under one Path can sit

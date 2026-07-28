@@ -341,25 +341,56 @@ func TestSession(t *testing.T) {
 	// Partial validation must report a field the compiler will reject as MISSING,
 	// not just a present field with a bad value — otherwise a barely-created
 	// resource reads as locally valid and then fails to compile.
-	t.Run("a missing required field is reported, not skipped", func(t *testing.T) {
+	// Partial validation must report a field the compiler will reject as MISSING,
+	// and must follow the DSL's switch: a trigger-specific field is required only
+	// for the trigger that uses it.
+	t.Run("missing required fields are reported, conditionally on the discriminator", func(t *testing.T) {
 		fork, err := s.Fork()
 		assert.NilError(t, err)
 		bare := []string{"functions", "bare_fn"}
 		assert.NilError(t, fork.Set(bare, []string{"name"}, "bare_fn"))
 
-		issues := fork.ValidateResource(bare)
-		assert.Equal(t, len(issues), 1)
-		assert.DeepEqual(t, issues[0].Field, []string{"id"})
-		assert.Assert(t, strings.Contains(issues[0].Message, "required"))
-		// and the compiler agrees, which is the point
-		_, err = fork.Validate(ctx, CompileOptions{})
-		assert.ErrorContains(t, err, "required attribute 'id'")
+		fields := func() []string {
+			var out []string
+			for _, i := range fork.ValidateResource(bare) {
+				out = append(out, strings.Join(i.Field, "/"))
+			}
+			slices.Sort(out)
+			return out
+		}
 
-		// supplying it clears the issue
+		// nothing but a name: the unconditional requirements, and NOT one
+		// trigger-specific field — with no trigger type, none of them apply yet
+		assert.DeepEqual(t, fields(), []string{"execution/call", "id", "source", "trigger/type"})
+
+		// choosing http brings in exactly what http routes on
+		assert.NilError(t, fork.Set(bare, []string{"trigger", "type"}, "http"))
+		assert.DeepEqual(t, fields(), []string{"execution/call", "id", "source", "trigger/domains", "trigger/paths"})
+
+		// switching to pubsub swaps them for the channel — no domains, no paths
+		assert.NilError(t, fork.Set(bare, []string{"trigger", "type"}, "pubsub"))
+		assert.DeepEqual(t, fields(), []string{"execution/call", "id", "source", "trigger/channel"})
+
+		// filling them clears the issues, and the compiler agrees
 		id, err := fork.Generate(bare, []string{"id"})
 		assert.NilError(t, err)
 		assert.NilError(t, fork.Set(bare, []string{"id"}, id))
+		assert.NilError(t, fork.Set(bare, []string{"source"}, "."))
+		assert.NilError(t, fork.Set(bare, []string{"execution", "call"}, "ping"))
+		assert.NilError(t, fork.Set(bare, []string{"trigger", "channel"}, "chan"))
 		assert.Equal(t, len(fork.ValidateResource(bare)), 0)
+		_, err = fork.Validate(ctx, CompileOptions{})
+		assert.NilError(t, err)
+	})
+
+	// A field authored under its LEGACY key is present, not missing: the fixtures
+	// put a function's domains at the top level, and the compiler reads them.
+	t.Run("a compat alias satisfies a requirement", func(t *testing.T) {
+		fn := []string{"functions", "test_function1_glob"} // http, domains at the compat key
+		for _, i := range s.ValidateResource(fn) {
+			assert.Assert(t, !slices.Equal(i.Field, []string{"trigger", "domains"}),
+				"domains authored under the compat key must not read as missing")
+		}
 	})
 
 	t.Run("Generate mints a resource id per the DSL, not per consumer", func(t *testing.T) {

@@ -274,7 +274,7 @@ func TestCompile_DatabaseInvalidNetworkAccess(t *testing.T) {
 
 	// Modify database to have invalid network-access
 	dbPath := filepath.Join(fixturesPath, "databases", "test_database1.yaml")
-	invalidDb := "id: QmRkFTeYx8J4X3X2Jx5xutHArDyp72r7z6sLX9s3iCbsXr\naccess:\n    network: invalid_access\n"
+	invalidDb := "id: QmRkFTeYx8J4X3X2Jx5xutHArDyp72r7z6sLX9s3iCbsXr\naccess:\n    network: invalid_access\nmatch: users\n"
 	afero.WriteFile(cowFs, dbPath, []byte(invalidDb), 0644)
 
 	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
@@ -362,7 +362,7 @@ func TestCompile_StorageInvalidNetworkAccess(t *testing.T) {
 
 	// Modify storage to have invalid network-access
 	storagePath := filepath.Join(fixturesPath, "storages", "test_storage1.yaml")
-	invalidStorage := "id: QmSbe2pTyH3fpF2T8JSAk6s3js2MqUg2gi5Hx2iTWCBtqX\naccess:\n    network: invalid_access\nstreaming:\n    ttl: 5m\n"
+	invalidStorage := "id: QmSbe2pTyH3fpF2T8JSAk6s3js2MqUg2gi5Hx2iTWCBtqX\naccess:\n    network: invalid_access\nmatch: photos\nstreaming:\n    ttl: 5m\n"
 	afero.WriteFile(cowFs, storagePath, []byte(invalidStorage), 0644)
 
 	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
@@ -527,7 +527,7 @@ func TestCompile_FunctionInvalidSource(t *testing.T) {
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
 
 	funcPath := filepath.Join(fixturesPath, "functions", "test_function1_glob.yaml")
-	invalidFunc := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\nsource: not_a_ref\n"
+	invalidFunc := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\nsource: not_a_ref\ntrigger:\n    type: pubsub\n    channel: c\nexecution:\n    call: ping\n"
 	afero.WriteFile(cowFs, funcPath, []byte(invalidFunc), 0644)
 
 	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))
@@ -547,7 +547,7 @@ func TestCompile_SmartopInvalidSource(t *testing.T) {
 	cowFs := afero.NewCopyOnWriteFs(baseFs, overlayFs)
 
 	smartopPath := filepath.Join(fixturesPath, "smartops", "test_smartops1.yaml")
-	invalidSmartop := "id: QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvm\nsource: not_a_ref\n"
+	invalidSmartop := "id: QmQ5vhrL7uv6tuoN9KeVBwd4PwfQkXdVVmDLUZuTNxqgvm\nsource: not_a_ref\nexecution:\n    call: ping\n"
 	afero.WriteFile(cowFs, smartopPath, []byte(invalidSmartop), 0644)
 
 	compiler, err := schema.New(schema.WithVirtual(cowFs, fixturesPath))

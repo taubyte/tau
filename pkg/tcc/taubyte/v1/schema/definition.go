@@ -49,7 +49,7 @@ var TaubyteRessources = []*Node{
 	DefineGroup("databases",
 		DefineIter( //use name as "name"?
 			TaubyteAttributes(
-				String("match", InSection("storage"), Doc("Match", "Key or key-pattern this database serves (a literal prefix, or a regex when useRegex is set).")),
+				String("match", Required(), InSection("storage"), Doc("Match", "Key or key-pattern this database serves (a literal prefix, or a regex when useRegex is set).")),
 				Bool("useRegex", Path("regex"), Compat("useRegex"), InSection("storage"), Doc("Use Regex", "Treat match as a regular expression instead of a literal prefix.")),
 				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Local", []string{"host"}, []string{"all", "host"}, [2]string{"host", "all"}), NoAccessors(), InSection("storage"), Doc("Network Access", "Which peers may reach this database: all, subnet (project peers only), or host (local node only).")),
 				Bytes("size", Path("storage", "size"), InSection("storage"), Doc("Size", "Maximum storage size, as a human string (e.g. \"32MB\", \"1GB\").")),
@@ -68,9 +68,9 @@ var TaubyteRessources = []*Node{
 	DefineGroup("domains",
 		DefineIter(
 			TaubyteAttributes(
-				String("fqdn", IsFqdn(), Field("Fqdn"), Accessor("FQDN"), NoGetter(), EmitValidation("domain", "dns"), InSection("identity"), Doc("FQDN", "Fully-qualified domain name this resource represents.")),
-				String("certificate-data", Path("certificate", "cert"), Field("CertFile"), Tag("cert-file"), InSection("tls"), ShowWhen("certificate-type", "inline"), Doc("Certificate", "PEM-encoded TLS certificate for the domain (inline certificate-type).")),
-				String("certificate-key", Path("certificate", "key"), Field("KeyFile"), Tag("key-file"), InSection("tls"), ShowWhen("certificate-type", "inline"), Doc("Certificate Key", "PEM-encoded private key for the certificate (inline certificate-type).")),
+				String("fqdn", IsFqdn(), Required(), Field("Fqdn"), Accessor("FQDN"), NoGetter(), EmitValidation("domain", "dns"), InSection("identity"), Doc("FQDN", "Fully-qualified domain name this resource represents.")),
+				String("certificate-data", Path("certificate", "cert"), RequiredWhen("certificate-type", "inline"), Field("CertFile"), Tag("cert-file"), InSection("tls"), ShowWhen("certificate-type", "inline"), Doc("Certificate", "PEM-encoded TLS certificate for the domain (inline certificate-type).")),
+				String("certificate-key", Path("certificate", "key"), RequiredWhen("certificate-type", "inline"), Field("KeyFile"), Tag("key-file"), InSection("tls"), ShowWhen("certificate-type", "inline"), Doc("Certificate Key", "PEM-encoded private key for the certificate (inline certificate-type).")),
 				String("certificate-type", Path("certificate", "type"), InSet("inline", "auto"), Default(""), Field("CertType"), Tag("cert-type"), InSection("tls"), Doc("Certificate Type", "How the TLS certificate is provisioned: inline (supplied here) or auto (managed).")),
 			),
 			GroupDoc("A DNS domain and its TLS configuration, referenced by functions and websites."), Icon("link"),
@@ -85,19 +85,19 @@ var TaubyteRessources = []*Node{
 	DefineGroup("functions",
 		DefineIter(
 			TaubyteAttributes(
-				String("type", Path("trigger", "type"), InSet("http", "https", "pubsub", "p2p"), DerivedBool("Secure", map[string]bool{"http": false, "https": true}, map[bool]string{false: "http", true: "https"}), InSection("trigger"), Doc("Trigger Type", "Trigger that invokes the function: http, https, pubsub, or p2p.")),
+				String("type", Path("trigger", "type"), Required(), InSet("http", "https", "pubsub", "p2p"), DerivedBool("Secure", map[string]bool{"http": false, "https": true}, map[bool]string{false: "http", true: "https"}), InSection("trigger"), Doc("Trigger Type", "Trigger that invokes the function: http, https, pubsub, or p2p.")),
 				Bool("local", Path("trigger", "local"), InSection("trigger"), Doc("Local", "Restrict the trigger to the local node / project scope.")),
-				String("pubsub-channel", Path("trigger", "channel"), Tag("channel"), InSection("pubsub"), Doc("PubSub Channel", "PubSub channel the function subscribes to (pubsub trigger).")),
+				String("pubsub-channel", Path("trigger", "channel"), RequiredWhen("type", "pubsub"), Tag("channel"), InSection("pubsub"), Doc("PubSub Channel", "PubSub channel the function subscribes to (pubsub trigger).")),
 				String("p2p-protocol", Path("trigger", "protocol"), Compat("trigger", "service"), Tag("service"), OnlyWhen("type", "p2p"), Default(""), InSection("p2p"), Doc("P2P Protocol", "libp2p protocol the function serves (p2p trigger).")),
-				String("p2p-command", Path("trigger", "command"), Tag("command"), InSection("p2p"), Doc("P2P Command", "Command name within the p2p protocol this function handles.")),
+				String("p2p-command", Path("trigger", "command"), RequiredWhen("type", "p2p"), Tag("command"), InSection("p2p"), Doc("P2P Command", "Command name within the p2p protocol this function handles.")),
 				String("http-method", Path("trigger", "method"), IsHttpMethod(), Tag("method"), InSection("http"), Doc("HTTP Method", "HTTP method the function handles (http/https trigger).")),
 				StringSlice("http-methods", Path("trigger", "methods"), Tag("methods"), NoAccessors(), NoStructField()), // TO IMPLEMENT
-				StringSlice("http-domains", Path("trigger", "domains"), Compat("domains"), Tag("domains"), Ref("domains"), InSection("http"), Doc("Domains", "Domains that route to this function. Each must name a defined domain.")),
-				StringSlice("http-paths", Path("trigger", "paths"), Tag("paths"), InSection("http"), Doc("Paths", "URL path patterns that route to this function (http/https trigger).")),
-				String("source", Ref("libraries", Prefix("libraries/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"libraries/<name>\" to build from a defined library.")),
+				StringSlice("http-domains", Path("trigger", "domains"), Compat("domains"), RequiredWhen("type", "http", "https"), Tag("domains"), Ref("domains"), InSection("http"), Doc("Domains", "Domains that route to this function. Each must name a defined domain.")),
+				StringSlice("http-paths", Path("trigger", "paths"), RequiredWhen("type", "http", "https"), Tag("paths"), InSection("http"), Doc("Paths", "URL path patterns that route to this function (http/https trigger).")),
+				String("source", Required(), Ref("libraries", Prefix("libraries/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"libraries/<name>\" to build from a defined library.")),
 				Duration("timeout", Path("execution", "timeout"), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
 				Bytes("memory", Path("execution", "memory"), InSection("limits"), Doc("Memory", "Maximum memory the function may use, as a human string (e.g. \"32MB\").")),
-				String("call", Path("execution", "call"), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM module.")),
+				String("call", Path("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM module.")),
 			),
 			GroupDoc("A serverless function triggered over HTTP(S), PubSub, or p2p."), Icon("bolt"),
 			secIdentity,
@@ -120,7 +120,7 @@ var TaubyteRessources = []*Node{
 				String("branch", Path("source", "branch"), RepoBranch(), InSection("source"), Doc("Branch", "Git branch to build the library from.")),
 				String("git-provider", Path("source", Either("github")), Key(), Field("Provider"), Tag("provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
 				String("github-id", Path("source", "github", "id"), Field("RepoID"), Tag("repository-id"), NoAccessors(), InSection("source"), Doc("Repository ID", "GitHub repository numeric id.")),
-				String("github-fullname", Path("source", "github", "fullname"), RepoName(), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
+				String("github-fullname", Path("source", "github", "fullname"), Required(), RepoName(), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
 			),
 			GroupDoc("A reusable code library backed by a git repository, referenced as a function/smartop source."), Icon("book"),
 			secIdentity,
@@ -136,7 +136,7 @@ var TaubyteRessources = []*Node{
 		DefineIter(
 			TaubyteAttributes(
 				Bool("local", InSection("channel"), Doc("Local", "Restrict the channel to the local node / project scope.")),
-				String("match", Path("channel", "match"), Field("Match"), Accessor("ChannelMatch"), NoSetter(), InSection("channel"), Doc("Match", "Channel name or pattern this messaging resource matches.")),
+				String("match", Path("channel", "match"), Required(), Field("Match"), Accessor("ChannelMatch"), NoSetter(), InSection("channel"), Doc("Match", "Channel name or pattern this messaging resource matches.")),
 				Bool("regex", Path("channel", "regex"), NoSetter(), InSection("channel"), Doc("Regex", "Treat match as a regular expression.")),
 				Bool("mqtt", Path("bridges", "mqtt", "enable"), Accessor("MQTT"), NoSetter(), InSection("bridges"), Doc("MQTT", "Expose this channel over the MQTT bridge.")),
 				Bool("websocket", Path("bridges", "websocket", "enable"), Tag("webSocket"), Accessor("WebSocket"), NoSetter(), InSection("bridges"), Doc("WebSocket", "Expose this channel over the WebSocket bridge.")),
@@ -155,7 +155,7 @@ var TaubyteRessources = []*Node{
 	DefineGroup("services",
 		DefineIter(
 			TaubyteAttributes(
-				String("protocol", InSection("identity"), Doc("Protocol", "libp2p protocol identifier this service advertises.")),
+				String("protocol", Required(), InSection("identity"), Doc("Protocol", "libp2p protocol identifier this service advertises.")),
 			),
 			GroupDoc("A libp2p service advertised on the network."), Icon("server"),
 			secIdentity,
@@ -166,10 +166,10 @@ var TaubyteRessources = []*Node{
 	DefineGroup("smartops",
 		DefineIter(
 			TaubyteAttributes(
-				String("source", Ref("libraries", Prefix("libraries/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"libraries/<name>\" to build from a defined library.")),
+				String("source", Required(), Ref("libraries", Prefix("libraries/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"libraries/<name>\" to build from a defined library.")),
 				Duration("timeout", Path("execution", "timeout"), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
 				Bytes("memory", Path("execution", "memory"), InSection("limits"), Doc("Memory", "Maximum memory the smartop may use, as a human string (e.g. \"32MB\").")),
-				String("call", Path("execution", "call"), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM module.")),
+				String("call", Path("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM module.")),
 			),
 			GroupDoc("A smartop: policy/hook code (inline or backed by a library) attached to every resource."), Icon("robot"),
 			secIdentity,
@@ -187,7 +187,7 @@ var TaubyteRessources = []*Node{
 		DefineIter(
 			TaubyteAttributes(
 				String("type", Path(Either("object", "streaming")), Key(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
-				String("match", InSection("storage"), Doc("Match", "Key or key-pattern this storage serves (a literal prefix, or a regex when useRegex is set).")),
+				String("match", Required(), InSection("storage"), Doc("Match", "Key or key-pattern this storage serves (a literal prefix, or a regex when useRegex is set).")),
 				Bool("useRegex", Path("regex"), Compat("useRegex"), InSection("storage"), Doc("Use Regex", "Treat match as a regular expression instead of a literal prefix.")),
 				String("network-access", Path("access", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Public", []string{"all"}, []string{"all", "subnet", "host"}, [2]string{"all", "subnet"}), NoAccessors(), InSection("access"), Doc("Network Access", "Which peers may reach this storage: all, subnet (project peers only), or host (local node only).")),
 				Bool("versioning", Path("object", "versioning"), NoSetter(), InSection("storage"), Doc("Versioning", "Keep historical versions of objects (object storage).")),
@@ -206,12 +206,12 @@ var TaubyteRessources = []*Node{
 	DefineGroup("websites",
 		DefineIter(
 			TaubyteAttributes(
-				StringSlice("domains", Path("domains"), Ref("domains"), InSection("serving"), Doc("Domains", "Domains that serve this website. Each must name a defined domain.")),
+				StringSlice("domains", Path("domains"), Required(), Ref("domains"), InSection("serving"), Doc("Domains", "Domains that serve this website. Each must name a defined domain.")),
 				StringSlice("paths", Path("paths"), Compat("source", "paths"), InSection("serving"), Doc("Paths", "URL path patterns served by this website.")), // TODO: add validation
 				String("branch", Path("source", "branch"), RepoBranch(), InSection("source"), Doc("Branch", "Git branch to build the website from.")),           // TODO: deprecate
 				String("git-provider", Path("source", Either("github")), Key(), Field("Provider"), Tag("provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
 				String("github-id", Path("source", "github", "id"), Field("RepoID"), Tag("repository-id"), NoAccessors(), InSection("source"), Doc("Repository ID", "GitHub repository numeric id.")),
-				String("github-fullname", Path("source", "github", "fullname"), RepoName(), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
+				String("github-fullname", Path("source", "github", "fullname"), Required(), RepoName(), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
 			),
 			GroupDoc("A static website built from a git repository and served over one or more domains."), Icon("globe"),
 			secIdentity,
