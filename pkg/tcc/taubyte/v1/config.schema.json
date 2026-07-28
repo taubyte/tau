@@ -466,6 +466,9 @@
               "x-tau-section": "http"
             }
           },
+          "required": [
+            "type"
+          ],
           "type": "object"
         },
         "source": {
@@ -510,14 +513,17 @@
               "x-tau-section": "code"
             }
           },
+          "required": [
+            "call"
+          ],
           "type": "object"
         }
       },
       "required": [
         "id",
-        "type",
+        "trigger",
         "source",
-        "call"
+        "execution"
       ],
       "title": "Function",
       "type": "object",
@@ -641,9 +647,16 @@
                   "x-tau-section": "source"
                 }
               },
+              "required": [
+                "id",
+                "fullname"
+              ],
               "type": "object"
             }
           },
+          "required": [
+            "github"
+          ],
           "type": "object"
         },
         "git-provider": {
@@ -657,7 +670,7 @@
       },
       "required": [
         "id",
-        "github-fullname"
+        "source"
       ],
       "title": "Library",
       "type": "object",
@@ -729,6 +742,9 @@
               "x-tau-section": "channel"
             }
           },
+          "required": [
+            "match"
+          ],
           "type": "object"
         },
         "bridges": {
@@ -761,7 +777,7 @@
       },
       "required": [
         "id",
-        "match"
+        "channel"
       ],
       "title": "Messaging",
       "type": "object",
@@ -914,13 +930,16 @@
               "x-tau-section": "code"
             }
           },
+          "required": [
+            "call"
+          ],
           "type": "object"
         }
       },
       "required": [
         "id",
         "source",
-        "call"
+        "execution"
       ],
       "title": "SmartOp",
       "type": "object",
@@ -1148,9 +1167,16 @@
                   "x-tau-section": "source"
                 }
               },
+              "required": [
+                "id",
+                "fullname"
+              ],
               "type": "object"
             }
           },
+          "required": [
+            "github"
+          ],
           "type": "object"
         },
         "git-provider": {
@@ -1165,7 +1191,7 @@
       "required": [
         "id",
         "domains",
-        "github-fullname"
+        "source"
       ],
       "title": "Website",
       "type": "object",

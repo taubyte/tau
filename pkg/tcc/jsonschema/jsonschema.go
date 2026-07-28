@@ -289,7 +289,11 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 			props.set(a.Name, leaf)
 		}
 		if a.Required {
-			required = append(required, a.Name)
+			if ok && !a.Key {
+				markRequired(props, &required, segs)
+			} else {
+				required = append(required, a.Name) // dynamic key: flat, as emitted
+			}
 		}
 	}
 	for _, node := range nested {
@@ -424,6 +428,40 @@ func shapeOneOf(sh engine.ShapeSpec) []any {
 		out = append(out, map[string]any{"type": "string", "pattern": "^" + regexp.QuoteMeta(p)})
 	}
 	return out
+}
+
+// markRequired records a required field at the level it actually lives.
+// JSON Schema's `required` names a property of the OBJECT IT SITS ON, so a
+// nested path listed at the root ("call" for a field authored at
+// execution/call) makes every valid document fail: no such top-level property
+// exists. Each intermediate key becomes required on its parent too — a required
+// execution/call means `execution` itself must be there to hold it.
+func markRequired(props *omap, own *[]string, segs []string) {
+	addOnce(own, segs[0])
+	if len(segs) == 1 {
+		return
+	}
+	node, _ := props.get(segs[0])
+	m, ok := node.(map[string]any)
+	if !ok {
+		return
+	}
+	sub, ok := m["properties"].(*omap)
+	if !ok {
+		return
+	}
+	nestedReq, _ := m["required"].([]string)
+	markRequired(sub, &nestedReq, segs[1:])
+	m["required"] = nestedReq
+}
+
+func addOnce(list *[]string, v string) {
+	for _, e := range *list {
+		if e == v {
+			return
+		}
+	}
+	*list = append(*list, v)
 }
 
 // setNested writes leaf at props[seg0].properties[seg1]...[segN], creating

@@ -260,17 +260,39 @@ func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
 		if len(path) == 0 {
 			path = []StringMatch{sib.Name}
 		}
-		sq, _, err := inferPathQuery(path, query)
-		if err != nil {
-			if sq, _, err = inferPathQuery(sib.Compat, query); err != nil {
+		var v string
+		if sq, _, err := inferPathQuery(path, query); err != nil || sq.Value(&v) != nil {
+			cq, _, cerr := inferPathQuery(sib.Compat, query)
+			if len(sib.Compat) == 0 || cerr != nil || cq.Value(&v) != nil {
 				return false
 			}
 		}
-		var v string
-		if sq.Value(&v) != nil {
-			return false
-		}
 		return slices.Contains(c.In, v)
+	}
+	return false
+}
+
+// authoredName is the path a user actually types for an attribute
+// ("trigger/domains"), not the DSL's internal name for it ("http-domains").
+func authoredName(attr *Attribute) string {
+	if p := fieldPath(attr); p != nil {
+		return strings.Join(p, "/")
+	}
+	return attr.Name
+}
+
+// isBlank reports a value that carries no information: only strings and lists
+// can be blank — a false bool or a zero int are legitimate values.
+func isBlank(val any) bool {
+	switch v := val.(type) {
+	case nil:
+		return true
+	case string:
+		return v == ""
+	case []string:
+		return len(v) == 0
+	case []any:
+		return len(v) == 0
 	}
 	return false
 }
@@ -318,7 +340,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 				// For required attributes, format as: filepath:line:column: required attribute 'name'
 				// Don't include underlying YAML processing error details
 				filePath, line, column := aq.Location()
-				return located(filePath, line, column, fmt.Errorf("required attribute '%s'", attr.Name))
+				return located(filePath, line, column, fmt.Errorf("required attribute '%s'", authoredName(attr)))
 			}
 			if attr.Default != nil {
 				switch o := obj.(type) {
@@ -327,6 +349,13 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 				}
 			}
 			continue
+		}
+
+		if (attr.Required || requiredHere(n, attr, query)) && isBlank(val) {
+			// Present but empty: an empty domains list routes nothing, an empty
+			// entrypoint invokes nothing. Same defect as the absent key.
+			filePath, line, column := aq.Location()
+			return located(filePath, line, column, fmt.Errorf("required attribute '%s' is empty", authoredName(attr)))
 		}
 
 		if attr.Validator != nil {

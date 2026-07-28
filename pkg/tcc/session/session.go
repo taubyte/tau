@@ -431,13 +431,31 @@ func (s *Session) ValidateResource(res []string) []FieldIssue {
 // compat alias counts: the compiler reads it as a fallback, so a field present
 // only under its legacy key is present, not missing.
 func (s *Session) hasValue(res []string, f FieldRef) bool {
-	if _, err := s.Get(res, f.Path); err == nil {
-		return true
-	}
-	if len(f.Compat) > 0 {
-		if _, err := s.Get(res, f.Compat); err == nil {
+	for _, p := range [][]string{f.Path, f.Compat} {
+		if len(p) == 0 {
+			continue
+		}
+		// Present but empty is not present: an empty domains list routes
+		// nothing. Matches what the compiler rejects at load.
+		if v, err := s.Get(res, p); err == nil && !isBlank(v) {
 			return true
 		}
+	}
+	return false
+}
+
+// isBlank reports a value that carries no information. Only strings and lists
+// can be blank — a false bool or a zero int are legitimate values.
+func isBlank(v any) bool {
+	switch t := v.(type) {
+	case nil:
+		return true
+	case string:
+		return t == ""
+	case []string:
+		return len(t) == 0
+	case []any:
+		return len(t) == 0
 	}
 	return false
 }

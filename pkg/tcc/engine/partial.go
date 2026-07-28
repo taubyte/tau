@@ -131,6 +131,15 @@ func RequiredFields(root []*Node, group string) []RequiredField {
 	return out
 }
 
+// RequiredPathOf is an attribute's authored path as a display/lookup key, or ""
+// when it sits at a dynamic (Either/Key) location with no plain path.
+func RequiredPathOf(a *Attribute) string {
+	if p := fieldPath(a); p != nil {
+		return strings.Join(p, "/")
+	}
+	return ""
+}
+
 func attrByName(attrs []*Attribute, name string) *Attribute {
 	for _, a := range attrs {
 		if a.Name == name {
