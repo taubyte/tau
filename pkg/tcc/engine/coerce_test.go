@@ -84,4 +84,18 @@ func TestCheckTypeAgreesWithCoercion(t *testing.T) {
 	assert.ErrorContains(t, ValidateField(root, "g", []string{"i"}, "eighty"), "expects integer")
 	assert.ErrorContains(t, ValidateField(root, "g", []string{"s"}, true), "expects string")
 	assert.ErrorContains(t, ValidateField(root, "g", []string{"b"}, 1), "expects boolean")
+
+	// Numeric-ness is decided by KIND on both sides. Two hand-written type lists
+	// had already drifted: int32 was an acceptable integer but not an acceptable
+	// string, so the same value passed one field and failed the other.
+	for _, n := range []any{int8(5), int16(5), int32(5), int64(5), uint(5), uint32(5), float32(1.5), 5.5} {
+		assert.NilError(t, ValidateField(root, "g", []string{"s"}, n),
+			"every numeric kind renders into a string field: %T", n)
+	}
+	for _, n := range []any{int8(5), int16(5), int32(5), uint32(5)} {
+		assert.NilError(t, ValidateField(root, "g", []string{"i"}, n),
+			"every whole-number kind is an integer: %T", n)
+	}
+	// ...but a float is not a whole number, however it was written.
+	assert.ErrorContains(t, ValidateField(root, "g", []string{"i"}, 5.5), "expects integer")
 }

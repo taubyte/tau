@@ -194,12 +194,10 @@ func checkType(a *Attribute, element bool, value any) error {
 			return typeErr(a, "boolean", value)
 		}
 	case TypeInt:
-		switch value.(type) {
-		case int, int8, int16, int32, int64:
-		default:
-			if !convertible(value, TypeInt) { // a quoted number is still a number
-				return typeErr(a, "integer", value)
-			}
+		// isInteger covers every whole-number kind, so this cannot drift out of
+		// step with what coerceScalar will render for a string field.
+		if !isInteger(value) && !convertible(value, TypeInt) { // a quoted number is still a number
+			return typeErr(a, "integer", value)
 		}
 	case TypeStringSlice:
 		if !isStringList(value) {
