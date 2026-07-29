@@ -7,71 +7,45 @@ import (
 	"errors"
 	"fmt"
 
-	accountsClientPkg "github.com/taubyte/tau/ee/clients/p2p/accounts"
-	accountsIface "github.com/taubyte/tau/ee/core/services/accounts"
+	eeauth "github.com/taubyte/tau/ee/auth"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	http "github.com/taubyte/tau/pkg/http"
 )
 
-// identityClient is the client this build answers identity questions with.
-type identityClient = accountsIface.Client
+// identityClient is what this build resolves identity through.
+type identityClient = *eeauth.Identity
 
-// closeIdentity releases the client initIdentity built.
-func (srv *AuthService) closeIdentity() {
-	if srv.accountsClient != nil {
-		srv.accountsClient.Close()
-	}
-}
+func (srv *AuthService) closeIdentity() { srv.accountsClient.Close() }
 
-// initIdentity wires the client this build answers identity questions with.
-// tenancy is read but not required here; this build resolves identity through
-// the accounts service instead.
+// initIdentity builds the provider. tenancy is read but not required here;
+// this build resolves identity through the provider instead.
 func (srv *AuthService) initIdentity(cfg tauConfig.Config) error {
 	srv.tenancy = cfg.Tenancy()
 
-	if !accountsIface.VerifyOnAuth {
-		return nil
-	}
-
-	srv.accountsURL = accountsIface.InferURL(cfg.DevMode(), cfg.NetworkFqdn())
-
 	var err error
-	if srv.accountsClient, err = accountsClientPkg.New(srv.ctx, srv.identityClientNode); err != nil {
-		return fmt.Errorf("creating accounts client failed with %s", err)
-	}
-
-	return nil
+	srv.accountsClient, err = eeauth.NewIdentity(srv.ctx, srv.identityClientNode, cfg)
+	return err
 }
 
-// authorizeIdentity answers whether the caller may use this cloud's API. Linked
-// accounts are stashed on the http context for downstream use.
+// authorizeIdentity answers whether the caller may use this cloud's API.
+// Whatever the provider resolves is stashed on the http context for downstream
+// use; this seam does not inspect it.
 func (srv *AuthService) authorizeIdentity(rctx context.Context, ctx http.Context, client GitHubClient) error {
-	if srv.accountsClient == nil {
-		return nil
-	}
-
 	gh := client.Me()
 	if gh == nil || gh.ID == nil {
 		return errors.New("github user identity unavailable")
 	}
 
-	externalID := fmt.Sprintf("%d", *gh.ID)
-	vresp, err := srv.accountsClient.Verify(rctx, "github", externalID)
+	resolved, err := srv.accountsClient.Authorize(rctx, "github", fmt.Sprintf("%d", *gh.ID))
 	if err != nil {
-		return fmt.Errorf("accounts verify failed: %w", err)
+		return err
 	}
-	if !vresp.Linked {
-		if srv.accountsURL != "" {
-			return fmt.Errorf("no tau account linked to this github identity — sign up at %s", srv.accountsURL)
-		}
-		return errors.New("no tau account linked to this github identity")
+	if resolved != nil {
+		ctx.SetVariable("LinkedAccounts", resolved)
 	}
-
-	ctx.SetVariable("LinkedAccounts", vresp.Accounts)
 	return nil
 }
 
-// authorizeRepository is a no-op in this build. Which repositories may be
-// registered follows from the identity resolved above, not from a namespace
-// named in the shape config.
+// authorizeRepository is a no-op in this build: which repositories may be
+// registered follows from the identity resolved above.
 func (srv *AuthService) authorizeRepository(GitHubClient) error { return nil }
