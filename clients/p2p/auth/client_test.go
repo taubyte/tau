@@ -11,7 +11,6 @@ import (
 	authIface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/dream"
 	commonTest "github.com/taubyte/tau/dream/helpers"
-	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/auth/dream"
 	"github.com/taubyte/tau/services/auth/hooks"
 	"github.com/taubyte/tau/services/auth/repositories"

@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	peerCore "github.com/libp2p/go-libp2p/core/peer"
-	accountsIface "github.com/taubyte/tau/core/services/accounts"
+	accountsIface "github.com/taubyte/tau/ee/core/services/accounts"
 	httpAuth "github.com/taubyte/tau/pkg/http/auth"
 )
 

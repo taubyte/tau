@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	_ "github.com/taubyte/tau/clients/p2p/accounts/dream"
 	_ "github.com/taubyte/tau/clients/p2p/hoarder/dream"
 	commonIface "github.com/taubyte/tau/core/common"
 	"github.com/taubyte/tau/dream"
@@ -16,7 +15,6 @@ import (
 	specs "github.com/taubyte/tau/pkg/specs/common"
 	"github.com/taubyte/tau/pkg/specs/methods"
 	structureSpec "github.com/taubyte/tau/pkg/specs/structure"
-	_ "github.com/taubyte/tau/services/accounts/dream"
 	_ "github.com/taubyte/tau/services/hoarder/dream"
 	_ "github.com/taubyte/tau/services/monkey/dream"
 	"github.com/taubyte/tau/services/monkey/fixtures/compile"

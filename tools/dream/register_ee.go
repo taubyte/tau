@@ -1,6 +1,6 @@
 //go:build ee
 
-package dream
+package main
 
 // Registers the dream wiring for services this build provides.
 import (

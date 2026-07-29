@@ -7,11 +7,21 @@ import (
 	"errors"
 	"fmt"
 
-	accountsClientPkg "github.com/taubyte/tau/clients/p2p/accounts"
-	accountsIface "github.com/taubyte/tau/core/services/accounts"
+	accountsClientPkg "github.com/taubyte/tau/ee/clients/p2p/accounts"
+	accountsIface "github.com/taubyte/tau/ee/core/services/accounts"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	http "github.com/taubyte/tau/pkg/http"
 )
+
+// identityClient is the client this build answers identity questions with.
+type identityClient = accountsIface.Client
+
+// closeIdentity releases the client initIdentity built.
+func (srv *AuthService) closeIdentity() {
+	if srv.accountsClient != nil {
+		srv.accountsClient.Close()
+	}
+}
 
 // initIdentity wires the client this build answers identity questions with.
 // tenancy is read but not required here; this build resolves identity through

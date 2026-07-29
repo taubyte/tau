@@ -9,7 +9,6 @@ import (
 
 	http "github.com/taubyte/tau/pkg/http"
 
-	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	iface "github.com/taubyte/tau/core/services/auth"
 	"github.com/taubyte/tau/core/services/tns"
 	tauConfig "github.com/taubyte/tau/pkg/config"
@@ -39,9 +38,10 @@ type AuthService struct {
 	// the build needs one.
 	identityClientNode peer.Node
 
-	// Set only by the build that answers identity through the accounts service;
-	// see identity_ee.go. Left zero otherwise.
-	accountsClient accountsIface.Client
+	// Set only by the build that answers identity through a separate service;
+	// see identity_ee.go. The type is aliased per build so this file names
+	// nothing that build alone provides. Left zero otherwise.
+	accountsClient identityClient
 	accountsURL    string
 
 	// tenancy names the namespace that owns this cloud; membership answers

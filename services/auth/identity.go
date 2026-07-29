@@ -11,6 +11,13 @@ import (
 	http "github.com/taubyte/tau/pkg/http"
 )
 
+// identityClient is empty in this build: identity is answered from the
+// configured tenancy, with no client to hold.
+type identityClient = any
+
+// closeIdentity releases whatever initIdentity built. Nothing here.
+func (srv *AuthService) closeIdentity() {}
+
 // initIdentity binds this service to the namespace that owns the cloud.
 //
 // Outside dev mode a tenancy is required, not optional: without one there is no
