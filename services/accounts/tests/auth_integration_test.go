@@ -1,4 +1,4 @@
-//go:build dreaming
+//go:build dreaming && ee
 
 package tests
 
@@ -12,6 +12,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/dream"
+	eedream "github.com/taubyte/tau/ee/dream"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/accounts/dream"
@@ -45,10 +46,10 @@ func TestAuth_VerifiesAgainstAccounts_Dreaming(t *testing.T) {
 
 	// Seed the accounts store directly via the in-process Client — poll for
 	// the service to register rather than guessing a fixed delay.
-	svc := u.Accounts()
+	svc := eedream.Accounts(u)
 	for deadline := time.Now().Add(2 * time.Second); svc == nil && time.Now().Before(deadline); {
 		time.Sleep(100 * time.Millisecond)
-		svc = u.Accounts()
+		svc = eedream.Accounts(u)
 	}
 	assert.Assert(t, svc != nil, "accounts service did not register")
 

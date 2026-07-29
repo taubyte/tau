@@ -1,4 +1,4 @@
-//go:build dreaming && !ee
+//go:build dreaming && ee
 
 package tests
 
@@ -7,13 +7,15 @@ import (
 	"testing"
 	"time"
 
+	eedream "github.com/taubyte/tau/ee/dream"
+
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
-	dreamFixtures "github.com/taubyte/tau/dream/fixtures"
+	dreamFixtures "github.com/taubyte/tau/ee/dream/fixtures"
 	"github.com/taubyte/tau/services/accounts"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/accounts/dream"
-	_ "github.com/taubyte/tau/dream/fixtures"
+	_ "github.com/taubyte/tau/ee/dream/fixtures"
 	_ "github.com/taubyte/tau/services/accounts/dream"
 )
 
@@ -24,7 +26,7 @@ import (
 // up at <url>" at the user-facing edge.
 func TestStrict_VerifyRejectsUnlinked_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
-	cli := u.Accounts().Client()
+	cli := eedream.Accounts(u).Client()
 	assert.Assert(t, cli != nil)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -42,7 +44,7 @@ func TestStrict_VerifyRejectsUnlinked_Dreaming(t *testing.T) {
 // fixture's effect on the verify path.
 func TestStrict_VerifyAcceptsAfterFixture_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
-	cli := u.Accounts().Client()
+	cli := eedream.Accounts(u).Client()
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -76,7 +78,7 @@ func TestStrict_FakeMemberLogin_Dreaming(t *testing.T) {
 	assert.NilError(t, u.RunFixture("fakeAccount"))
 	assert.NilError(t, u.RunFixture("fakeMember"))
 
-	svc := u.Accounts()
+	svc := eedream.Accounts(u)
 	realSvc, ok := svc.(*accounts.AccountsService)
 	assert.Assert(t, ok, "accounts service is not the expected type")
 
@@ -109,7 +111,7 @@ func TestStrict_InjectMemberCustom_Dreaming(t *testing.T) {
 		Role:        accountsIface.RoleAdmin,
 	}))
 
-	svc := u.Accounts()
+	svc := eedream.Accounts(u)
 	realSvc, ok := svc.(*accounts.AccountsService)
 	assert.Assert(t, ok)
 
@@ -127,7 +129,7 @@ func TestStrict_InjectMemberCustom_Dreaming(t *testing.T) {
 // default "acme/github:42" tuple.
 func TestStrict_InjectAccountCustom_Dreaming(t *testing.T) {
 	u := startAccountsUniverse(t)
-	cli := u.Accounts().Client()
+	cli := eedream.Accounts(u).Client()
 
 	custom := dreamFixtures.AccountInjection{
 		AccountSlug: "umbrella",

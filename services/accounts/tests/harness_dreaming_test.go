@@ -1,4 +1,4 @@
-//go:build dreaming
+//go:build dreaming && ee
 
 package tests
 

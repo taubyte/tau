@@ -1,4 +1,4 @@
-//go:build dreaming
+//go:build dreaming && ee
 
 package tests
 
@@ -14,6 +14,7 @@ import (
 	commonIface "github.com/taubyte/tau/core/common"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/dream"
+	eedream "github.com/taubyte/tau/ee/dream"
 	"github.com/taubyte/tau/services/accounts"
 	"github.com/taubyte/tau/services/accounts/email"
 	"gotest.tools/v3/assert"
@@ -51,7 +52,7 @@ func TestHTTPEndpoints_E2E_Dreaming(t *testing.T) {
 	// Allow the HTTP listener to bind.
 	time.Sleep(500 * time.Millisecond)
 
-	svc := u.Accounts()
+	svc := eedream.Accounts(u)
 	assert.Assert(t, svc != nil, "accounts service did not register")
 
 	// Fish out the dream-allocated HTTP port for the accounts service node.

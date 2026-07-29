@@ -3,7 +3,6 @@ package dream
 import (
 	"time"
 
-	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/p2p/peer"
 	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
 )
@@ -27,7 +26,4 @@ func init() {
 		Registry.registry[service] = &handlers{}
 	}
 
-	// Dream tests skip the accounts integration so they don't have to
-	// stand up the accounts service for auth/monkey paths.
-	accountsIface.VerifyOnAuth = false
 }

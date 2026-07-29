@@ -1,4 +1,4 @@
-//go:build dreaming && !ee
+//go:build dreaming && ee
 
 package tests
 
@@ -8,9 +8,12 @@ import (
 	"testing"
 	"time"
 
+	commonSpecs "github.com/taubyte/tau/pkg/specs/common"
+
 	commonIface "github.com/taubyte/tau/core/common"
 	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	"github.com/taubyte/tau/dream"
+	eedream "github.com/taubyte/tau/ee/dream"
 	"gotest.tools/v3/assert"
 
 	_ "github.com/taubyte/tau/clients/p2p/accounts/dream"
@@ -43,8 +46,8 @@ func TestAccounts_Dreaming(t *testing.T) {
 	// Allow the service to settle.
 	time.Sleep(500 * time.Millisecond)
 
-	svc := u.Accounts()
-	assert.Assert(t, svc != nil, "u.Accounts() returned nil — service didn't register")
+	svc := eedream.Accounts(u)
+	assert.Assert(t, svc != nil, "eedream.Accounts(u) returned nil — service didn't register")
 
 	cli := svc.Client()
 	assert.Assert(t, cli != nil, "service.Client() returned nil")
@@ -117,7 +120,7 @@ func TestAccounts_Dreaming_MagicLinkLogin(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-	svc := u.Accounts()
+	svc := eedream.Accounts(u)
 	assert.Assert(t, svc != nil)
 	cli := svc.Client()
 
@@ -168,9 +171,11 @@ func TestAccounts_DreamingWire(t *testing.T) {
 		},
 		Simples: map[string]dream.SimpleConfig{
 			"client": {
-				Clients: dream.SimpleConfigClients{
-					Accounts: &commonIface.ClientConfig{},
-				}.Compat(),
+				// Requested by name: dream has no typed field for a
+				// client whose service it does not know about.
+				Clients: map[string]*commonIface.ClientConfig{
+					commonSpecs.Accounts: {},
+				},
 			},
 		},
 	})
@@ -178,11 +183,11 @@ func TestAccounts_DreamingWire(t *testing.T) {
 
 	simple, err := u.Simple("client")
 	assert.NilError(t, err)
-	wire, err := simple.Accounts()
+	wire, err := eedream.AccountsClient(simple)
 	assert.NilError(t, err)
 
 	// Server-side: seed an Account / User via the in-process Client.
-	svc := u.Accounts()
+	svc := eedream.Accounts(u)
 	assert.Assert(t, svc != nil)
 	srvCli := svc.Client()
 

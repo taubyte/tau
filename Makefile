@@ -12,7 +12,11 @@ DREAM_P ?= 4
 # go.mod), but this glob does not, and including them both fails their packages
 # outright and runs every dreaming test twice under -p, colliding on the fixed
 # ports the fixtures bind.
-DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
+#
+# Files tagged `dreaming && ee` are dropped as well: a package whose dreaming
+# tests are all tagged that way has nothing to build in this sweep, and listing
+# it fails the package outright rather than skipping it.
+DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
 .PHONY: test test-dreaming test-raft test-docker test-all bench-dreaming vm-fixtures test-cli test-cli-cover
 
