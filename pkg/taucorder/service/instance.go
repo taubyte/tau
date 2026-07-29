@@ -1,7 +1,6 @@
 package service
 
 import (
-	"github.com/taubyte/tau/clients/p2p/accounts"
 	"github.com/taubyte/tau/clients/p2p/auth"
 	"github.com/taubyte/tau/clients/p2p/hoarder"
 	"github.com/taubyte/tau/clients/p2p/monkey"
@@ -12,11 +11,6 @@ import (
 
 func (ni *instance) post() (err error) {
 	ni.authClient, err = auth.New(ni.ctx, ni)
-	if err != nil {
-		return err
-	}
-
-	ni.accountsClient, err = accounts.New(ni.ctx, ni)
 	if err != nil {
 		return err
 	}
