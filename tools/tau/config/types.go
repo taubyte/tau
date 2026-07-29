@@ -26,11 +26,14 @@ type Profile struct {
 	Cloud       string   `yaml:"network"`
 	History     []string `yaml:"history"`
 
-	// AccountsSession is the Member-session bearer for the tau accounts
-	// service, persisted by `tau accounts login` and consumed by `tau
-	// accounts whoami` / `logout`. Kept on the same Profile so a single
-	// "logged-in identity" carries both git-side OAuth (Token above) and
-	// Account-side session in one place.
+	// AccountsSession is the Member-session bearer for the accounts service,
+	// written and read by the `accounts` command tree where a build provides
+	// one. Kept on the same Profile so a single "logged-in identity" carries
+	// both git-side OAuth (Token above) and Account-side session in one place.
+	//
+	// The field stays in every build on purpose: it round-trips whatever is
+	// already in a profile on disk, so a build without that command tree does
+	// not silently drop a key it never wrote.
 	AccountsSession string `yaml:"accounts_session,omitempty"`
 }
 
