@@ -4,48 +4,32 @@ package auth
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
 	eeauth "github.com/taubyte/tau/ee/auth"
 	tauConfig "github.com/taubyte/tau/pkg/config"
 	http "github.com/taubyte/tau/pkg/http"
 )
 
-// identityClient is what this build resolves identity through.
-type identityClient = *eeauth.Identity
+// identity is what this build answers callers through. The type is defined
+// once in the ee tree; this file only names it.
+type identity = *eeauth.Identity
 
-func (srv *AuthService) closeIdentity() { srv.accountsClient.Close() }
+func (srv *AuthService) closeIdentity() { srv.identity.Close() }
 
 // initIdentity builds the provider. tenancy is read but not required here;
-// this build resolves identity through the provider instead.
+// this build answers through the provider instead.
 func (srv *AuthService) initIdentity(cfg tauConfig.Config) error {
 	srv.tenancy = cfg.Tenancy()
 
 	var err error
-	srv.accountsClient, err = eeauth.NewIdentity(srv.ctx, srv.identityClientNode, cfg)
+	srv.identity, err = eeauth.NewIdentity(srv.ctx, srv.identityClientNode, cfg)
 	return err
 }
 
-// authorizeIdentity answers whether the caller may use this cloud's API.
-// Whatever the provider resolves is stashed on the http context for downstream
-// use; this seam does not inspect it.
 func (srv *AuthService) authorizeIdentity(rctx context.Context, ctx http.Context, client GitHubClient) error {
-	gh := client.Me()
-	if gh == nil || gh.ID == nil {
-		return errors.New("github user identity unavailable")
-	}
-
-	resolved, err := srv.accountsClient.Authorize(rctx, "github", fmt.Sprintf("%d", *gh.ID))
-	if err != nil {
-		return err
-	}
-	if resolved != nil {
-		ctx.SetVariable("LinkedAccounts", resolved)
-	}
-	return nil
+	return srv.identity.Authorize(rctx, ctx, client)
 }
 
-// authorizeRepository is a no-op in this build: which repositories may be
-// registered follows from the identity resolved above.
-func (srv *AuthService) authorizeRepository(GitHubClient) error { return nil }
+func (srv *AuthService) authorizeRepository(client GitHubClient) error {
+	return srv.identity.AuthorizeRepository(client)
+}

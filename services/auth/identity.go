@@ -11,9 +11,9 @@ import (
 	http "github.com/taubyte/tau/pkg/http"
 )
 
-// identityClient is empty in this build: identity is answered from the
-// configured tenancy, with no client to hold.
-type identityClient = any
+// identity is empty in this build: callers are answered from the configured
+// tenancy, so there is no provider to hold.
+type identity = struct{}
 
 // closeIdentity releases whatever initIdentity built. Nothing here.
 func (srv *AuthService) closeIdentity() {}
