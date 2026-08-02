@@ -11,11 +11,8 @@ import (
 	http "github.com/taubyte/tau/pkg/http"
 )
 
-// identity is empty in this build: callers are answered from the configured
-// tenancy, so there is no provider to hold.
-type identity = struct{}
-
-// closeIdentity releases whatever initIdentity built. Nothing here.
+// closeIdentity releases whatever initIdentity built. This build installs no
+// provider — callers are answered from the configured tenancy — so nothing.
 func (srv *AuthService) closeIdentity() {}
 
 // initIdentity binds this service to the namespace that owns the cloud.

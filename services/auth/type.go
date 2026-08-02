@@ -38,10 +38,9 @@ type AuthService struct {
 	// the build needs one.
 	identityClientNode peer.Node
 
-	// Set only by the build that answers callers through a separate service;
-	// see identity_ee.go. The type is aliased per build so this file names
-	// nothing that build alone provides. Left zero otherwise.
-	identity identity
+	// Set only by the build that answers callers by asking something; see
+	// identity_ee.go for what it installs. Nil otherwise.
+	identity identityProvider
 
 	// tenancy names the namespace that owns this cloud; membership answers
 	// whether a caller belongs to it. Both are set by the build that answers

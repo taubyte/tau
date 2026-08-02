@@ -10,10 +10,6 @@ import (
 	http "github.com/taubyte/tau/pkg/http"
 )
 
-// identity is what this build answers callers through. The type is defined
-// once in the ee tree; this file only names it.
-type identity = *eeauth.Identity
-
 func (srv *AuthService) closeIdentity() { srv.identity.Close() }
 
 // initIdentity builds the provider. tenancy is read but not required here;
