@@ -28,5 +28,11 @@ var (
 	Patrick         = "patrick"
 	PatrickProtocol = "/patrick/v1"
 
+	// Reserved rather than used: no service in this build answers on it. The
+	// name and the protocol are claimed here so nothing else can take either,
+	// since a collision would only surface in a build that does run it.
+	Accounts         = "accounts"
+	AccountsProtocol = "/accounts/v1"
+
 	OraclePubSubPath = "/seer/oracle/v1"
 )
