@@ -211,7 +211,7 @@ func GenerateJSONSchema(root []*engine.Node, opts JSONSchemaOptions) ([]byte, er
 		}
 		iter := node.Children[0]
 		if spec, ok := resourceSpec(iter); ok {
-			defs[spec] = g.objectSchema(iter, nil)
+			defs[spec] = g.objectSchema(iter, nil, spec)
 			props.set(name, resourceMap(spec, name))
 			continue
 		}
@@ -222,7 +222,7 @@ func GenerateJSONSchema(root []*engine.Node, opts JSONSchemaOptions) ([]byte, er
 			if spec == "" {
 				return nil, fmt.Errorf("container group %q has no Singular() declaration", name)
 			}
-			defs[spec] = g.objectSchema(iter, iter.Children)
+			defs[spec] = g.objectSchema(iter, iter.Children, spec)
 			props.set(name, resourceMap(spec, name))
 		}
 		// leaf maps (clouds) decode to no type — omitted from $defs.
@@ -267,8 +267,10 @@ func resourceMap(spec, group string) map[string]any {
 
 // objectSchema projects one resource/container iterator into an object schema:
 // its attributes nested by authored Path, plus (for a container) a map per nested
-// resource group.
-func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node) map[string]any {
+// resource group. title is the singular the DSL declares for one instance, with
+// its declared casing ("SmartOp", not "Smartop") — the only place that casing
+// survives, since it is otherwise just a $defs key nobody should have to parse.
+func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, title string) map[string]any {
 	props := newOmap()
 	var required []string
 	for _, a := range iter.Attributes {
@@ -287,7 +289,27 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node) ma
 			props.set(a.Name, leaf)
 		}
 		if a.Required {
-			required = append(required, a.Name)
+			switch {
+			case !ok || a.Key:
+				// A dynamic (Either/Key) location is emitted as a FLAT marker
+				// property, not at its real path, so naming it in `required`
+				// would demand a top-level property that does not exist and
+				// reject every valid document. The requirement rides the
+				// marker, in the vocabulary the compat case already set.
+				leaf[g.ext+"required"] = true
+			case len(a.Compat) > 0:
+				// A field with a legacy alias is satisfied by EITHER location,
+				// and JSON Schema's `required` names exactly one. Listing it
+				// would reject documents the compiler accepts (the fixtures
+				// author a website's paths under source/paths), so the
+				// requirement is recorded as a vendor key instead of lost.
+				leaf[g.ext+"required"] = true
+				if c := compatSegs(a); c != "" {
+					leaf[g.ext+"required-alias"] = c
+				}
+			default:
+				markRequired(props, &required, segs)
+			}
 		}
 	}
 	for _, node := range nested {
@@ -300,8 +322,14 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node) ma
 		}
 	}
 	out := map[string]any{"type": "object", "properties": props}
+	if title != "" {
+		out["title"] = title // human display name for the kind (JSON Schema title)
+	}
 	if d, ok := iter.Meta["doc"].(string); ok && d != "" {
 		out["description"] = d
+	}
+	if ic, ok := iter.Meta["icon"].(string); ok && ic != "" {
+		out[g.ext+"icon"] = ic // semantic glyph hint; the consumer maps it to its icon set
 	}
 	// Display sections: a presentation overlay a UI/CLI reads to render fields in
 	// human sections. It rides ALONGSIDE properties (which stay faithful to the
@@ -356,8 +384,23 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	if c, ok := a.Meta["showWhen"].(engine.ConditionSpec); ok {
 		s[g.ext+"show-when"] = condition(c) // static visibility: show only when field ∈ in
 	}
+	if f, ok := a.Meta["requiredUnless"].(string); ok {
+		// Required unless the named sibling bool is true. One datum, so a bare
+		// name — the same identifier space as x-tau-required-when.field.
+		s[g.ext+"required-unless"] = f
+	}
+	if c, ok := a.Meta["requiredWhen"].(engine.ConditionSpec); ok {
+		// Conditionally required: enforced at load, so it belongs beside the
+		// standard `required` list rather than in it — JSON Schema's `required`
+		// is unconditional, and this depends on a sibling's value.
+		s[g.ext+"required-when"] = condition(c)
+	}
 	if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok && sc.ID != "" {
 		s[g.ext+"scalar"] = sc.ID // e.g. "duration" ("20s"), "bytes" ("32GB")
+	}
+	if gn, ok := a.Meta["generated"].(string); ok && gn != "" {
+		// Minted, not authored: render read-only and fill via Session.generate.
+		s[g.ext+"generated"] = gn
 	}
 	if e, ok := a.Meta["enum"].([]string); ok {
 		s["enum"] = e
@@ -390,6 +433,20 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	return s
 }
 
+// compatSegs renders an attribute's legacy alias path, or "" if it has none or
+// the path is dynamic.
+func compatSegs(a *engine.Attribute) string {
+	out := make([]string, 0, len(a.Compat))
+	for _, p := range a.Compat {
+		s, ok := p.(string)
+		if !ok {
+			return ""
+		}
+		out = append(out, s)
+	}
+	return strings.Join(out, "/")
+}
+
 // condition renders a static visibility condition (show when Field ∈ In).
 func condition(c engine.ConditionSpec) map[string]any {
 	return map[string]any{"field": c.Field, "in": c.In}
@@ -406,6 +463,40 @@ func shapeOneOf(sh engine.ShapeSpec) []any {
 		out = append(out, map[string]any{"type": "string", "pattern": "^" + regexp.QuoteMeta(p)})
 	}
 	return out
+}
+
+// markRequired records a required field at the level it actually lives.
+// JSON Schema's `required` names a property of the OBJECT IT SITS ON, so a
+// nested path listed at the root ("call" for a field authored at
+// execution/call) makes every valid document fail: no such top-level property
+// exists. Each intermediate key becomes required on its parent too — a required
+// execution/call means `execution` itself must be there to hold it.
+func markRequired(props *omap, own *[]string, segs []string) {
+	addOnce(own, segs[0])
+	if len(segs) == 1 {
+		return
+	}
+	node, _ := props.get(segs[0])
+	m, ok := node.(map[string]any)
+	if !ok {
+		return
+	}
+	sub, ok := m["properties"].(*omap)
+	if !ok {
+		return
+	}
+	nestedReq, _ := m["required"].([]string)
+	markRequired(sub, &nestedReq, segs[1:])
+	m["required"] = nestedReq
+}
+
+func addOnce(list *[]string, v string) {
+	for _, e := range *list {
+		if e == v {
+			return
+		}
+	}
+	*list = append(*list, v)
 }
 
 // setNested writes leaf at props[seg0].properties[seg1]...[segN], creating

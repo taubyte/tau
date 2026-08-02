@@ -10,6 +10,7 @@ import {
   type CompileOptions,
   type CompileResult,
   type WasmAssets,
+  type Kind,
 } from "./loader.js";
 import { Session } from "./gen/schema.js";
 
@@ -43,6 +44,19 @@ export async function schema(assets?: WasmAssets): Promise<Record<string, unknow
   const res = tcc.schema();
   if ("error" in res) throw new Error(res.error as string);
   return res;
+}
+
+/**
+ * return the resource kinds this DSL defines — each kind's group key, the
+ * singular it is named by, and whether its instances contain resources of their
+ * own. Stateless, like {@link schema}: the vocabulary is a property of the
+ * schema, so asking what kinds exist needs no project and no session.
+ */
+export async function kinds(assets?: WasmAssets): Promise<Kind[]> {
+  const tcc = await loadWasm(assets);
+  const res = tcc.kinds();
+  if ("error" in res) throw new Error((res as { error: string }).error);
+  return res as Kind[];
 }
 
 /**

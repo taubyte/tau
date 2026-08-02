@@ -50,6 +50,12 @@ func _opDeleteInYaml(this op, query *Query, write bool, path []string, value *ya
 		value.parent.Content = append(value.parent.Content, elm)
 	}
 
+	// Record which document was edited, exactly as opSetInYaml does. Commit
+	// marks seer.dirty from this, and Sync only writes dirty documents — so
+	// without it the key vanished from the in-memory tree (reads saw it gone)
+	// while the file on disk kept it forever.
+	query.filePath = value.filePath
+
 	return path, &yamlNode{parent: value.parent, prev: nil, this: nil, filePath: value.filePath}, nil
 }
 

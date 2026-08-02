@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -42,6 +43,31 @@ func TestValidationError_ReportsLine1Column1(t *testing.T) {
 	// Check for location format: filepath:line:column
 	assert.ErrorContains(t, err, "/email.yaml:1:1:", "Error should be reported at line 1, column 1 in format 'filepath:line:column'")
 	assert.ErrorContains(t, err, "email.yaml", "Error should reference email.yaml file")
+}
+
+// The location is carried STRUCTURALLY, not only rendered into the message: a
+// consumer reads file/line/column off the error instead of parsing it (which is
+// what forced the web console to substring-match a repo path).
+func TestValidationError_CarriesLocationStructurally(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, fs.MkdirAll("/test", 0755))
+	assert.NilError(t, afero.WriteFile(fs, "/test/email.yaml", []byte("invalid-email"), 0644))
+
+	sr, err := yaseer.New(yaseer.VirtualFS(fs, "/test"))
+	assert.NilError(t, err)
+
+	attr := &Attribute{Name: "email", Type: TypeString, Required: true}
+	IsEmail()(attr)
+	_, err = load[object.Refrence](&Node{Attributes: []*Attribute{attr}}, sr.Query())
+	assert.Assert(t, err != nil)
+
+	var le *LocatedError
+	assert.Assert(t, errors.As(err, &le), "compile errors must carry their location")
+	assert.Equal(t, le.File, "/email.yaml")
+	assert.Equal(t, le.Line, 1)
+	assert.Equal(t, le.Column, 1)
+	// ...and render exactly as before, so message-matching callers are unaffected.
+	assert.Equal(t, err.Error(), "/email.yaml:1:1: "+le.Err.Error())
 }
 
 // TestValidationError_MultiLineYAML_ReportsCorrectLine verifies that errors in multi-line YAML files

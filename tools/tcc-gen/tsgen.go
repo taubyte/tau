@@ -21,7 +21,7 @@ func writeTS(root, out string) error {
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err
 	}
-	data, err := gen.GenerateTS(schema.GenerationRoot())
+	data, err := gen.GenerateTS(schema.CompileRoot())
 	if err != nil {
 		return err
 	}

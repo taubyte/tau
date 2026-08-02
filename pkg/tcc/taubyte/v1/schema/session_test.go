@@ -49,9 +49,10 @@ func TestSession(t *testing.T) {
 		assert.Equal(t, len(s.ValidateResource(fn)), 0)
 		// ...set a bad enum, and ValidateResource surfaces it (no compile).
 		assert.NilError(t, s.Set(fn, []string{"trigger", "type"}, "nope"))
-		errs := s.ValidateResource(fn)
-		assert.Equal(t, len(errs), 1)
-		assert.ErrorContains(t, errs[0], "invalid value")
+		issues := s.ValidateResource(fn)
+		assert.Equal(t, len(issues), 1)
+		assert.DeepEqual(t, issues[0].Field, []string{"trigger", "type"})
+		assert.Assert(t, strings.Contains(issues[0].Message, "invalid value"))
 		// undo
 		assert.NilError(t, s.Set(fn, []string{"trigger", "type"}, "http"))
 	})
@@ -100,8 +101,8 @@ func TestSession(t *testing.T) {
 		assert.NilError(t, err)
 		assert.NilError(t, fork.Set(fn, []string{"trigger", "local"}, "true6")) // raw write
 		var found bool
-		for _, e := range fork.ValidateResource(fn) {
-			found = found || strings.Contains(e.Error(), "expects boolean")
+		for _, i := range fork.ValidateResource(fn) {
+			found = found || strings.Contains(i.Message, "expects boolean")
 		}
 		assert.Assert(t, found, "ValidateResource should flag the mistyped boolean")
 	})
@@ -131,9 +132,10 @@ func TestSession(t *testing.T) {
 
 		// resource-level surfaces it too
 		assert.NilError(t, s.Set(fn, []string{"trigger", "domains"}, []any{"ghost"}))
-		errs := s.ValidateResource(fn)
-		assert.Assert(t, len(errs) == 1)
-		assert.ErrorContains(t, errs[0], `no domains named "ghost"`)
+		issues := s.ValidateResource(fn)
+		assert.Assert(t, len(issues) == 1)
+		assert.DeepEqual(t, issues[0].Field, []string{"trigger", "domains"})
+		assert.Assert(t, strings.Contains(issues[0].Message, `no domains named "ghost"`))
 		assert.NilError(t, s.Set(fn, []string{"trigger", "domains"}, []any{"test_domain1"})) // undo
 	})
 
@@ -174,6 +176,235 @@ func TestSession(t *testing.T) {
 		src := complete(t, appFn, []string{"source"}, "libraries/")
 		assert.Assert(t, slices.Contains(src, "libraries/test_library2"), "app scope sees app1's library")
 		assert.Assert(t, slices.Contains(src, "libraries/test_library1"), "and the global one")
+	})
+
+	// The crux: a container instance is addressed by its DSL-group form, and that
+	// address resolves to the document INSIDE its directory — never to a sibling
+	// applications/<name>.yaml, which is what split an edited app into two files.
+	t.Run("a container instance is one address, mapped to its own document", func(t *testing.T) {
+		fork, err := s.Fork()
+		assert.NilError(t, err)
+		app := []string{"applications", "test_app1"}
+
+		assert.NilError(t, fork.Set(app, []string{"description"}, "edited"))
+		path, data, err := fork.Serialize(app)
+		assert.NilError(t, err)
+		assert.Equal(t, path, "applications/test_app1/config.yaml")
+		assert.Assert(t, strings.Contains(string(data), "edited"))
+		_, err = fork.FS().Stat("/applications/test_app1.yaml")
+		assert.Assert(t, err != nil, "must not create a sibling applications/test_app1.yaml")
+
+		// the same address validates as the container group, not as "test_app1"
+		assert.Equal(t, len(fork.ValidateResource(app)), 0)
+		assert.ErrorContains(t, fork.ValidateField(app, []string{"name"}, "not a var name!"), "invalid variable name")
+
+		// a brand-new application lands in its own directory too
+		fresh := []string{"applications", "brand_new"}
+		assert.NilError(t, fork.Set(fresh, []string{"id"}, "QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o"))
+		path, _, err = fork.Serialize(fresh)
+		assert.NilError(t, err)
+		assert.Equal(t, path, "applications/brand_new/config.yaml")
+
+		// the legacy config-suffixed address (tau-cli's) still resolves there
+		path, _, err = fork.Serialize([]string{"applications", "test_app1", "config"})
+		assert.NilError(t, err)
+		assert.Equal(t, path, "applications/test_app1/config.yaml")
+	})
+
+	t.Run("a structurally bogus address errors instead of corrupting the tree", func(t *testing.T) {
+		fork, err := s.Fork()
+		assert.NilError(t, err)
+		// used to silently create /applications.yaml next to the real directory
+		assert.ErrorContains(t, fork.Set([]string{"applications"}, []string{"a", "id"}, "x"), "not a resource address")
+		assert.ErrorContains(t, fork.Set([]string{"functions", "x", "config"}, []string{"id"}, "x"), "not a resource address")
+		assert.ErrorContains(t, fork.Set([]string{"functions", "a", "b", "c", "d"}, []string{"id"}, "x"), "not a resource address")
+		_, err = fork.FS().Stat("/applications.yaml")
+		assert.Assert(t, err != nil, "no sibling document was created")
+	})
+
+	t.Run("Serialize returns one resource's file and exact YAML, comments kept", func(t *testing.T) {
+		fork, err := s.Fork()
+		assert.NilError(t, err)
+		fn := []string{"functions", "test_function1_glob"}
+		assert.NilError(t, fork.Set(fn, []string{"description"}, "serialized"))
+		path, data, err := fork.Serialize(fn)
+		assert.NilError(t, err)
+		assert.Equal(t, path, "functions/test_function1_glob.yaml")
+		assert.Assert(t, strings.Contains(string(data), "serialized"))
+		_, _, err = fork.Serialize([]string{"functions", "no_such_function"})
+		assert.Assert(t, err != nil, "a missing resource has no document")
+	})
+
+	t.Run("SetResource applies the minimal diff and leaves untouched YAML alone", func(t *testing.T) {
+		fork, err := s.Fork()
+		assert.NilError(t, err)
+		fn := []string{"functions", "diffed"}
+		assert.NilError(t, fork.SetResource(fn, map[string]any{
+			"id":          "QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o",
+			"description": "first",
+			"trigger":     map[string]any{"type": "https", "method": "GET"},
+			"tags":        []any{"a", "b"},
+		}))
+		// nested change + removed key + explicit null; description is untouched
+		assert.NilError(t, fork.SetResource(fn, map[string]any{
+			"id":          "QmT78zSuBmuS4z925WZfrqQ1qHaJ56DQaTfyMUF7F8ff5o",
+			"description": "first",
+			"trigger":     map[string]any{"type": "http"},
+			"tags":        nil,
+		}))
+		doc, err := fork.Get(fn, nil)
+		assert.NilError(t, err)
+		m := doc.(map[string]any)
+		assert.Equal(t, m["description"], "first")
+		assert.Equal(t, m["trigger"].(map[string]any)["type"], "http")
+		_, stillThere := m["trigger"].(map[string]any)["method"]
+		assert.Assert(t, !stillThere, "a key missing from the doc is deleted")
+		v, ok := m["tags"]
+		assert.Assert(t, ok && v == nil, "an explicit nil writes null rather than deleting")
+	})
+
+	t.Run("ResourceAt maps a repo path back to its canonical address", func(t *testing.T) {
+		for path, want := range map[string][]string{
+			"config.yaml":                      {"config"},
+			"functions/x.yaml":                 {"functions", "x"},
+			"applications/a/config.yaml":       {"applications", "a"},
+			"applications/a/functions/x.yaml":  {"applications", "a", "functions", "x"},
+			"/applications/a/functions/x.yaml": {"applications", "a", "functions", "x"},
+		} {
+			got, ok := s.ResourceAt(path)
+			assert.Assert(t, ok, path)
+			assert.DeepEqual(t, got, want)
+		}
+		for _, path := range []string{
+			"README.md", "notes.yaml", ".git/config.yaml", "functions/x/config.yaml",
+			"docs/guide.yaml", "applications/a/functions/x/y.yaml", "",
+		} {
+			_, ok := s.ResourceAt(path)
+			assert.Assert(t, !ok, path)
+		}
+	})
+
+	// A consumer that knows a kind only as a string builds no address itself.
+	t.Run("kinds, addressing and existence by kind name", func(t *testing.T) {
+		kinds := s.Kinds()
+		byGroup := map[string]bool{}
+		for _, k := range kinds {
+			byGroup[k.Group] = k.Container
+		}
+		assert.Equal(t, byGroup["functions"], false)
+		assert.Equal(t, byGroup["applications"], true, "the container says so, so no caller name-checks it")
+		// A group the DSL never names is not a kind: clouds is a leaf map of
+		// settings inside the root document, and declares neither Resource nor
+		// Singular. Reporting it would hand consumers a nameless entry to filter.
+		_, cloudsIsAKind := byGroup["clouds"]
+		assert.Assert(t, !cloudsIsAKind, "clouds is not a resource kind")
+		for _, k := range kinds {
+			assert.Assert(t, k.Name != "", "every kind the DSL reports is named: %+v", k)
+		}
+		assert.Equal(t, len(kinds), 10, "9 resources + the application container")
+
+		addr := func(kind, name, app string) []string {
+			t.Helper()
+			r, err := s.Address(kind, name, app)
+			assert.NilError(t, err)
+			return r
+		}
+		// the group key and the declared singular resolve alike
+		assert.DeepEqual(t, addr("functions", "f", ""), []string{"functions", "f"})
+		assert.DeepEqual(t, addr("function", "f", ""), []string{"functions", "f"})
+		assert.DeepEqual(t, addr("function", "f", "app"), []string{"applications", "app", "functions", "f"})
+		assert.DeepEqual(t, addr("application", "app", ""), []string{"applications", "app"})
+
+		_, err := s.Address("nope", "f", "")
+		assert.ErrorContains(t, err, "unknown kind")
+		_, err = s.Address("application", "app", "other")
+		assert.ErrorContains(t, err, "container kind")
+		// listing agrees with addressing: "applications inside an application"
+		// is not a question with an answer, so it is not quietly answered
+		_, err = s.Names("application", "other")
+		assert.ErrorContains(t, err, "container kind")
+
+		names, err := s.Names("function", "")
+		assert.NilError(t, err)
+		assert.Assert(t, slices.Contains(names, "test_function1_glob"))
+		scoped, err := s.Names("function", "test_app1")
+		assert.NilError(t, err)
+		assert.Assert(t, slices.Contains(scoped, "test_function2"))
+		assert.Assert(t, !slices.Contains(scoped, "test_function1_glob"))
+
+		assert.Equal(t, s.Exists([]string{"functions", "test_function1_glob"}), true)
+		assert.Equal(t, s.Exists([]string{"functions", "ghost"}), false)
+		assert.Equal(t, s.Exists([]string{"applications", "test_app1"}), true)
+		assert.Equal(t, s.Exists(s.Root()), true)
+	})
+
+	// Partial validation must report a field the compiler will reject as MISSING,
+	// not just a present field with a bad value — otherwise a barely-created
+	// resource reads as locally valid and then fails to compile.
+	// Partial validation must report a field the compiler will reject as MISSING,
+	// and must follow the DSL's switch: a trigger-specific field is required only
+	// for the trigger that uses it.
+	t.Run("missing required fields are reported, conditionally on the discriminator", func(t *testing.T) {
+		fork, err := s.Fork()
+		assert.NilError(t, err)
+		bare := []string{"functions", "bare_fn"}
+		assert.NilError(t, fork.Set(bare, []string{"name"}, "bare_fn"))
+
+		fields := func() []string {
+			var out []string
+			for _, i := range fork.ValidateResource(bare) {
+				out = append(out, strings.Join(i.Field, "/"))
+			}
+			slices.Sort(out)
+			return out
+		}
+
+		// nothing but a name: the unconditional requirements, and NOT one
+		// trigger-specific field — with no trigger type, none of them apply yet
+		assert.DeepEqual(t, fields(), []string{"execution/call", "execution/memory", "execution/timeout", "id", "source", "trigger/type"})
+
+		// choosing http brings in exactly what http routes on
+		assert.NilError(t, fork.Set(bare, []string{"trigger", "type"}, "http"))
+		assert.DeepEqual(t, fields(), []string{"execution/call", "execution/memory", "execution/timeout", "id", "source", "trigger/domains", "trigger/method", "trigger/paths"})
+
+		// switching to pubsub swaps them for the channel — no domains, no paths
+		assert.NilError(t, fork.Set(bare, []string{"trigger", "type"}, "pubsub"))
+		assert.DeepEqual(t, fields(), []string{"execution/call", "execution/memory", "execution/timeout", "id", "source", "trigger/channel"})
+
+		// filling them clears the issues, and the compiler agrees
+		id, err := fork.Generate(bare, []string{"id"})
+		assert.NilError(t, err)
+		assert.NilError(t, fork.Set(bare, []string{"id"}, id))
+		assert.NilError(t, fork.Set(bare, []string{"source"}, "."))
+		assert.NilError(t, fork.Set(bare, []string{"execution", "call"}, "ping"))
+		assert.NilError(t, fork.Set(bare, []string{"execution", "timeout"}, "10s"))
+		assert.NilError(t, fork.Set(bare, []string{"execution", "memory"}, "16MB"))
+		assert.NilError(t, fork.Set(bare, []string{"trigger", "channel"}, "chan"))
+		assert.Equal(t, len(fork.ValidateResource(bare)), 0)
+		_, err = fork.Validate(ctx, CompileOptions{})
+		assert.NilError(t, err)
+	})
+
+	// A field authored under its LEGACY key is present, not missing: the fixtures
+	// put a function's domains at the top level, and the compiler reads them.
+	t.Run("a compat alias satisfies a requirement", func(t *testing.T) {
+		fn := []string{"functions", "test_function1_glob"} // http, domains at the compat key
+		for _, i := range s.ValidateResource(fn) {
+			assert.Assert(t, !slices.Equal(i.Field, []string{"trigger", "domains"}),
+				"domains authored under the compat key must not read as missing")
+		}
+	})
+
+	t.Run("Generate mints a resource id per the DSL, not per consumer", func(t *testing.T) {
+		fn := []string{"functions", "test_function1_glob"}
+		got, err := s.Generate(fn, []string{"id"})
+		assert.NilError(t, err)
+		assert.NilError(t, s.ValidateField(fn, []string{"id"}, got))
+		again, err := s.Generate(fn, []string{"id"})
+		assert.NilError(t, err)
+		assert.Assert(t, got != again, "each call mints a fresh id")
+		_, err = s.Generate(fn, []string{"description"})
+		assert.ErrorContains(t, err, "not a generated field")
 	})
 
 	t.Run("fork with a good edit validates and merges", func(t *testing.T) {

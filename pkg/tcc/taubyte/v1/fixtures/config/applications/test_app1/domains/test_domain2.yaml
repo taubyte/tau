@@ -4,3 +4,5 @@ tags: # optional
     - domain_tag_3
     - domain_tag_4
 fqdn: app.computers.com
+certificate:
+    type: auto

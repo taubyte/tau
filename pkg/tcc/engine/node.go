@@ -3,28 +3,20 @@ package engine
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/object"
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
-// errorWithLocation formats an error message with file location information from a Query if available.
-// It returns an error with location information formatted as: "message (file:line:column)" or just "message" if no location is available.
+// errorWithLocation formats an error message with file location information from
+// a Query if available, as a *LocatedError so a consumer can read the position
+// off the error instead of parsing it. Rendering is unchanged:
+// "file:line:column: message", or just "message" with no location.
 func errorWithLocation(query *yaseer.Query, format string, args ...any) error {
-	msg := fmt.Sprintf(format, args...)
 	filePath, line, column := query.Location()
-
-	if filePath != "" {
-		if line > 0 && column > 0 {
-			return fmt.Errorf("%s:%d:%d: %s", filePath, line, column, msg)
-		} else if line > 0 {
-			return fmt.Errorf("%s:%d: %s", filePath, line, msg)
-		}
-		return fmt.Errorf("%s: %s", filePath, msg)
-	}
-
-	return fmt.Errorf("%s", msg)
+	return located(filePath, line, column, fmt.Errorf(format, args...))
 }
 
 // simplifyYAMLError extracts user-friendly information from low-level YAML parsing errors.
@@ -67,28 +59,15 @@ func wrapErrorWithLocation(query *yaseer.Query, err error, context string) error
 	// Simplify low-level YAML errors before wrapping
 	err = simplifyYAMLError(err)
 
-	errStr := err.Error()
-	// Check if the error already contains location information
-	hasLocation := strings.Contains(errStr, "(at ")
+	wrapped := fmt.Errorf("%s: %w", context, err)
+
+	// If the error already carries location info, don't duplicate it.
+	if strings.Contains(err.Error(), "(at ") {
+		return wrapped
+	}
 
 	filePath, line, column := query.Location()
-
-	// If error already has location info, just add context without duplicating location
-	if hasLocation {
-		return fmt.Errorf("%s: %w", context, err)
-	}
-
-	// Otherwise, add location information
-	if filePath != "" {
-		if line > 0 && column > 0 {
-			return fmt.Errorf("%s:%d:%d: %s: %w", filePath, line, column, context, err)
-		} else if line > 0 {
-			return fmt.Errorf("%s:%d: %s: %w", filePath, line, context, err)
-		}
-		return fmt.Errorf("%s: %s: %w", filePath, context, err)
-	}
-
-	return fmt.Errorf("%s: %w", context, err)
+	return located(filePath, line, column, wrapped)
 }
 
 func (n *Node) Map() map[string]any {
@@ -161,8 +140,12 @@ func (n *Node) childrenToSlice() []any {
 	return ret
 }
 
-func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, string, error) {
-	var last_match string
+// inferPathQuery walks a declared path against the document, resolving each
+// matcher segment to the key actually present. It returns the RESOLVED segments
+// so a caller can report where it really looked ("streaming/size"), not the
+// declared shape — the two differ exactly where a matcher is involved.
+func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, []string, error) {
+	resolved := make([]string, 0, len(path))
 	var cachedList []string
 	var cacheValid bool
 
@@ -170,7 +153,7 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, str
 		switch pitm := itm.(type) {
 		case string:
 			query = query.Get(pitm)
-			last_match = pitm
+			resolved = append(resolved, pitm)
 			// Invalidate cache since query state changed
 			cacheValid = false
 		case StringMatcher:
@@ -182,32 +165,40 @@ func inferPathQuery(path []StringMatch, query *yaseer.Query) (*yaseer.Query, str
 			} else {
 				list, err = query.List()
 				if err != nil {
-					return nil, "", wrapErrorWithLocation(query, err, "list path matches failed")
+					return nil, nil, wrapErrorWithLocation(query, err, "list path matches failed")
 				}
 				// Cache the list for potential reuse (only valid until query state changes)
 				cachedList = list
 				cacheValid = true
 			}
 
-			var found bool
+			// Exactly one key may match. Taking "the first" would be a coin
+			// flip: mapKeys returns document keys in unspecified order (see
+			// yaseer/utils.go), so a document that opens BOTH branches of an
+			// Either would resolve differently between runs — and differently
+			// from any consumer that enumerates the branches statically.
+			var matched []string
 			for _, l := range list {
 				if pitm.Match(l) {
-					found = true
-					query = query.Get(l)
-					last_match = l
-					// Invalidate cache since query state changed
-					cacheValid = false
-					break
+					matched = append(matched, l)
 				}
 			}
-
-			if !found {
-				return nil, "", errorWithLocation(query, "can't find match for path")
+			switch len(matched) {
+			case 0:
+				return nil, nil, errorWithLocation(query, "can't find match for path")
+			case 1:
+			default:
+				slices.Sort(matched) // stable message, whatever the map order was
+				return nil, nil, errorWithLocation(query,
+					"ambiguous path: %s each match, and only one may be set", strings.Join(matched, " and "))
 			}
+			query = query.Get(matched[0])
+			resolved = append(resolved, matched[0])
+			cacheValid = false
 		}
 	}
 
-	return query, last_match, nil
+	return query, resolved, nil
 }
 
 func (n *Node) hasRequiredAttributes() bool {
@@ -219,13 +210,43 @@ func (n *Node) hasRequiredAttributes() bool {
 	return false
 }
 
+// hasScalar reports that the query resolves to a value at all — used to tell a
+// field that is absent (fine, unless required) from one that is present with a
+// value the declared type cannot take (always an error).
+func hasScalar(aq *yaseer.Query) bool {
+	var raw any
+	if aq.Value(&raw) != nil {
+		return false
+	}
+	switch raw.(type) {
+	case nil, map[string]any, map[any]any:
+		return false // a missing leaf, or a sub-tree rather than a value
+	}
+	return true
+}
+
+// coerced retries a failed typed read as a generic scalar and converts it to the
+// declared type where the notation is merely different (an unquoted id into a
+// string field, a quoted number into a numeric one). See coerce.go.
+func coerced(aq *yaseer.Query, t Type) (any, bool) {
+	var raw any
+	if aq.Value(&raw) != nil {
+		return nil, false
+	}
+	return coerceScalar(raw, t)
+}
+
 func getValue(aq *yaseer.Query, attr *Attribute) (val any, err error) {
 	switch attr.Type {
 	case TypeInt:
 		var v int
 		err = aq.Value(&v)
 		if err != nil {
-			err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get int value for attribute '%s'", attr.Name))
+			if c, ok := coerced(aq, TypeInt); ok {
+				v, err = c.(int), nil
+			} else {
+				err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get int value for attribute '%s'", attr.Name))
+			}
 		}
 		val = v
 	case TypeBool:
@@ -239,14 +260,22 @@ func getValue(aq *yaseer.Query, attr *Attribute) (val any, err error) {
 		var v float64
 		err = aq.Value(&v)
 		if err != nil {
-			err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get float value for attribute '%s'", attr.Name))
+			if c, ok := coerced(aq, TypeFloat); ok {
+				v, err = c.(float64), nil
+			} else {
+				err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get float value for attribute '%s'", attr.Name))
+			}
 		}
 		val = v
 	case TypeString:
 		var v string
 		err = aq.Value(&v)
 		if err != nil {
-			err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get string value for attribute '%s'", attr.Name))
+			if c, ok := coerced(aq, TypeString); ok {
+				v, err = c.(string), nil
+			} else {
+				err = wrapErrorWithLocation(aq, err, fmt.Sprintf("failed to get string value for attribute '%s'", attr.Name))
+			}
 		}
 		val = v
 	case TypeStringSlice:
@@ -262,6 +291,96 @@ func getValue(aq *yaseer.Query, attr *Attribute) (val any, err error) {
 	return
 }
 
+// requiredHere reports whether attr's RequiredWhen condition holds for the
+// resource being loaded: the discriminator it names currently has one of the
+// values that make it required. The discriminator is read from the document
+// rather than from the partly-built object, so it does not depend on attribute
+// declaration order. An absent or unreadable discriminator means the condition
+// cannot hold — a resource with no trigger type owes no trigger-specific field.
+func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
+	if field, ok := attr.Meta["requiredUnless"].(string); ok {
+		return requiredUnlessHere(n, field, query)
+	}
+	c, ok := attr.Meta["requiredWhen"].(ConditionSpec)
+	if !ok {
+		return false
+	}
+	for _, sib := range n.Attributes {
+		if sib.Name != c.Field {
+			continue
+		}
+		path := sib.Path
+		if len(path) == 0 {
+			path = []StringMatch{sib.Name}
+		}
+		var v string
+		if sq, _, err := inferPathQuery(path, query); err != nil || sq.Value(&v) != nil {
+			cq, _, cerr := inferPathQuery(sib.Compat, query)
+			if len(sib.Compat) == 0 || cerr != nil || cq.Value(&v) != nil {
+				return false
+			}
+		}
+		return slices.Contains(c.In, v)
+	}
+	return false
+}
+
+// isBlank reports a value that carries no information: only strings and lists
+// can be blank — a false bool or a zero int are legitimate values.
+func isBlank(val any) bool {
+	switch v := val.(type) {
+	case nil:
+		return true
+	case string:
+		return v == ""
+	case []string:
+		return len(v) == 0
+	case []any:
+		return len(v) == 0
+	}
+	return false
+}
+
+// requiredUnlessHere reports whether a RequiredUnless field is required right
+// now: it is, unless the named sibling reads as true. An absent or unreadable
+// discriminator means required — an unset bool is false — which is the opposite
+// default to requiredHere's condition, and the reason the two are separate.
+func requiredUnlessHere(n *Node, field string, query *yaseer.Query) bool {
+	for _, sib := range n.Attributes {
+		if sib.Name != field {
+			continue
+		}
+		path := sib.Path
+		if len(path) == 0 {
+			path = []StringMatch{sib.Name}
+		}
+		var v bool
+		if sq, _, err := inferPathQuery(path, query); err == nil && sq.Value(&v) == nil {
+			return !v
+		}
+		// the fixtures author useRegex at its legacy location
+		if cq, _, err := inferPathQuery(sib.Compat, query); len(sib.Compat) > 0 && err == nil && cq.Value(&v) == nil {
+			return !v
+		}
+		return true
+	}
+	return false // names an attribute this group does not have
+}
+
+// requiredName is the authored path to report for a missing required field,
+// using the segments the document actually resolved to when the declared path
+// contains a matcher — "streaming/size", not the bare attribute name. Both
+// enforcement paths must name the same thing or the agreement test cannot hold.
+func requiredName(attr *Attribute, resolved []string) string {
+	if p := fieldPath(attr); p != nil {
+		return strings.Join(p, "/")
+	}
+	if len(resolved) > 0 {
+		return strings.Join(resolved, "/")
+	}
+	return attr.Name
+}
+
 func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query) error {
 	if len(n.Attributes) == 0 {
 		return nil
@@ -271,19 +390,19 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 		if len(attr.Path) == 0 {
 			attr.Path = []StringMatch{attr.Name}
 		}
-		aq, last_match, err := inferPathQuery(attr.Path, query)
+		aq, resolved, err := inferPathQuery(attr.Path, query)
 		if err != nil {
-			aq, last_match, err = inferPathQuery(attr.Compat, query)
+			aq, resolved, err = inferPathQuery(attr.Compat, query)
 			if err != nil {
 				return wrapErrorWithLocation(query, err, fmt.Sprintf("attribute '%s' path resolution failed", attr.Name))
 			}
 		}
 
 		if attr.Key {
-			if len(last_match) > 0 {
+			if len(resolved) > 0 {
 				switch o := obj.(type) {
 				case object.Object[object.Refrence]:
-					o.Set(attr.Name, object.Refrence(last_match))
+					o.Set(attr.Name, object.Refrence(resolved[len(resolved)-1]))
 				}
 				continue
 			} else {
@@ -291,6 +410,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 			}
 		}
 
+		origAq := aq
 		val, err := getValue(aq, attr)
 		if err != nil {
 			aq, _, err = inferPathQuery(attr.Compat, query)
@@ -300,20 +420,23 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 			val, err = getValue(aq, attr)
 		}
 
+		// A value that is THERE but of the wrong type is a mistake, not an
+		// omission: coercion already accepted every difference that is merely
+		// notation, so what is left is a real disagreement about the field.
+		// Reporting it beats the old behaviour of dropping it — a mistyped
+		// domains list used to silently deploy an unroutable function.
+		if err != nil && hasScalar(origAq) {
+			filePath, line, column := origAq.Location()
+			return located(filePath, line, column,
+				fmt.Errorf("attribute '%s' has a value of the wrong type", requiredName(attr, resolved)))
+		}
+
 		if err != nil {
-			if attr.Required {
+			if attr.Required || requiredHere(n, attr, query) {
 				// For required attributes, format as: filepath:line:column: required attribute 'name'
 				// Don't include underlying YAML processing error details
 				filePath, line, column := aq.Location()
-				if filePath != "" {
-					if line > 0 && column > 0 {
-						return fmt.Errorf("%s:%d:%d: required attribute '%s'", filePath, line, column, attr.Name)
-					} else if line > 0 {
-						return fmt.Errorf("%s:%d: required attribute '%s'", filePath, line, attr.Name)
-					}
-					return fmt.Errorf("%s: required attribute '%s'", filePath, attr.Name)
-				}
-				return fmt.Errorf("required attribute '%s'", attr.Name)
+				return located(filePath, line, column, fmt.Errorf("required attribute '%s'", requiredName(attr, resolved)))
 			}
 			if attr.Default != nil {
 				switch o := obj.(type) {
@@ -324,20 +447,19 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 			continue
 		}
 
+		if (attr.Required || requiredHere(n, attr, query)) && isBlank(val) {
+			// Present but empty: an empty domains list routes nothing, an empty
+			// entrypoint invokes nothing. Same defect as the absent key.
+			filePath, line, column := aq.Location()
+			return located(filePath, line, column, fmt.Errorf("required attribute '%s' is empty", requiredName(attr, resolved)))
+		}
+
 		if attr.Validator != nil {
 			if err = attr.Validator(val); err != nil {
 				// For validation errors, format as: filepath:line:column: message
 				// Don't include "validation failed for attribute" wrapper, just the location and validator error
 				filePath, line, column := aq.Location()
-				if filePath != "" {
-					if line > 0 && column > 0 {
-						return fmt.Errorf("%s:%d:%d: %w", filePath, line, column, err)
-					} else if line > 0 {
-						return fmt.Errorf("%s:%d: %w", filePath, line, err)
-					}
-					return fmt.Errorf("%s: %w", filePath, err)
-				}
-				return err
+				return located(filePath, line, column, err)
 			}
 		}
 

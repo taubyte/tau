@@ -48,11 +48,32 @@ func TestInferPathQuery_StringPath(t *testing.T) {
 
 	assert.NilError(t, err)
 	assert.Assert(t, resultQuery != nil)
-	assert.Equal(t, lastMatch, "path2")
+	// resolved is the DECLARED path's segments, relative to the query passed in
+	assert.DeepEqual(t, lastMatch, []string{"path2"})
 }
 
 func TestInferPathQuery_StringMatcher(t *testing.T) {
-	// Use case: Testing inferPathQuery with StringMatcher
+	// One branch present: it resolves, and reports which one.
+	fs := afero.NewMemMapFs()
+	fs.MkdirAll("/test/match2", 0755)
+
+	sr, err := yaseer.New(yaseer.VirtualFS(fs, "/test"))
+	assert.NilError(t, err)
+
+	resultQuery, resolved, err := inferPathQuery([]StringMatch{Either("match1", "match2")}, sr.Query())
+	assert.NilError(t, err)
+	assert.Assert(t, resultQuery != nil)
+	// the RESOLVED segments, so a caller can report where it actually looked
+	assert.DeepEqual(t, resolved, []string{"match2"})
+}
+
+// Two branches of the same Either present is ambiguous and must be rejected,
+// not resolved. Document keys arrive in unspecified order (yaseer mapKeys), so
+// "take the first match" would pick differently between runs — and differently
+// from any consumer that enumerates the branches statically, which is exactly
+// how a required field can be reported clean by one path and rejected by the
+// other.
+func TestInferPathQuery_AmbiguousMatchIsRejected(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/match1", 0755)
 	fs.MkdirAll("/test/match2", 0755)
@@ -60,15 +81,10 @@ func TestInferPathQuery_StringMatcher(t *testing.T) {
 	sr, err := yaseer.New(yaseer.VirtualFS(fs, "/test"))
 	assert.NilError(t, err)
 
-	query := sr.Query()
-	matcher := Either("match1", "match2")
-
-	path := []StringMatch{matcher}
-	resultQuery, lastMatch, err := inferPathQuery(path, query)
-
-	assert.NilError(t, err)
-	assert.Assert(t, resultQuery != nil)
-	assert.Assert(t, lastMatch == "match1" || lastMatch == "match2")
+	_, _, err = inferPathQuery([]StringMatch{Either("match1", "match2")}, sr.Query())
+	assert.ErrorContains(t, err, "ambiguous path")
+	// deterministic message whatever order the keys came back in
+	assert.ErrorContains(t, err, "match1 and match2")
 }
 
 func TestInferPathQuery_StringMatcherNotFound(t *testing.T) {

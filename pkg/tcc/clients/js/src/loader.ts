@@ -25,11 +25,52 @@ export interface CompileResult {
   validations: Validation[];
 }
 
+/** One failed check on a resource, attributed to the field that failed it.
+ *  `field` is the authored path (`["trigger","domains"]`); empty means the issue
+ *  is about the resource as a whole. */
+export interface FieldIssue {
+  field: string[];
+  message: string;
+}
+
+/** One resource kind the DSL defines. `group` is the canonical key (the config
+ *  directory); `name` is the declared singular, lowercased, accepted as an alias
+ *  wherever a kind is named. `container` marks a kind whose instances hold
+ *  resources of their own — read it rather than special-casing a kind by name. */
+export interface Kind {
+  name: string;
+  group: string;
+  container: boolean;
+}
+
+/** One resource's document as tcc serializes it: where it lives and its exact
+ *  YAML. The path is the DSL's to decide — never assert one. */
+export interface SerializedResource {
+  path: string;
+  yaml: string;
+}
+
+/** A repo-relative wasm error carrying the source position it was found at, so
+ *  a caller attributes it to a file without substring-matching the message. */
+export class TccError extends Error {
+  constructor(
+    message: string,
+    readonly file?: string,
+    readonly line?: number,
+    readonly column?: number,
+  ) {
+    super(message);
+    this.name = "TccError";
+  }
+}
+
 export interface TccGlobal {
   compile(fs: SyncFs, opts?: CompileOptions): CompileResult | { error: string };
   decompile(obj: unknown, fs: SyncFs): null | { error: string };
   /** The config JSON Schema (Draft 2020-12), generated from this wasm's own DSL. */
   schema(): Record<string, unknown> | { error: string };
+  /** The kinds this DSL defines. Stateless, like schema(). */
+  kinds(): Kind[] | { error: string };
   // Editable sessions (config lives in wasm; getters/setters address it by path).
   openSession(fs: SyncFs): number | { error: string };
   decompileSession(obj: unknown): number | { error: string };
@@ -38,7 +79,16 @@ export interface TccGlobal {
   sessionCompile(handle: number, opts?: CompileOptions): CompileResult | { error: string };
   sessionValidate(handle: number, opts?: CompileOptions): { validations: Validation[] } | { error: string };
   sessionValidateField(handle: number, resource: string[], field: string[], value: unknown): null | { error: string };
-  sessionValidateResource(handle: number, resource: string[]): { errors: string[] } | { error: string };
+  sessionValidateResource(handle: number, resource: string[]): { issues: FieldIssue[] } | { error: string };
+  sessionSerialize(handle: number, resource: string[]): SerializedResource | { error: string };
+  sessionLocation(handle: number, resource: string[]): string | { error: string };
+  sessionSetResource(handle: number, resource: string[], doc: Record<string, unknown>): null | { error: string };
+  sessionResourceAt(handle: number, path: string): string[] | null | { error: string };
+  sessionKinds(handle: number): Kind[] | { error: string };
+  sessionAddress(handle: number, kind: string, name: string, app?: string): string[] | { error: string };
+  sessionNames(handle: number, kind: string, app?: string): string[] | { error: string };
+  sessionExists(handle: number, resource: string[]): boolean | { error: string };
+  sessionGenerate(handle: number, resource: string[], field: string[]): string | { error: string };
   sessionComplete(handle: number, resource: string[], field: string[], partial?: string): string[] | { error: string };
   sessionSave(handle: number, fs: SyncFs): null | { error: string };
   // field omitted -> delete the whole resource; field given -> unset that one field.
@@ -62,7 +112,16 @@ export interface SessionBinding {
   compile(handle: number, opts?: CompileOptions): Promise<CompileResult>;
   validate(handle: number, opts?: CompileOptions): Promise<Validation[]>;
   validateField(handle: number, resource: string[], field: string[], value: unknown): Promise<void>;
-  validateResource(handle: number, resource: string[]): Promise<string[]>;
+  validateResource(handle: number, resource: string[]): Promise<FieldIssue[]>;
+  serialize(handle: number, resource: string[]): Promise<SerializedResource>;
+  location(handle: number, resource: string[]): Promise<string>;
+  setResource(handle: number, resource: string[], doc: Record<string, unknown>): Promise<void>;
+  resourceAt(handle: number, path: string): Promise<string[] | null>;
+  kinds(handle: number): Promise<Kind[]>;
+  address(handle: number, kind: string, name: string, app?: string): Promise<string[]>;
+  names(handle: number, kind: string, app?: string): Promise<string[]>;
+  exists(handle: number, resource: string[]): Promise<boolean>;
+  generate(handle: number, resource: string[], field: string[]): Promise<string>;
   complete(handle: number, resource: string[], field: string[], partial?: string): Promise<string[]>;
   save(handle: number, fs: AsyncFs, dir: string): Promise<void>;
   fork(handle: number): Promise<number>;
@@ -71,7 +130,10 @@ export interface SessionBinding {
 }
 
 function orThrow<T>(r: T | { error: string }): T {
-  if (r && typeof r === "object" && "error" in r) throw new Error((r as { error: string }).error);
+  if (r && typeof r === "object" && "error" in r) {
+    const e = r as { error: string; file?: string; line?: number; column?: number };
+    throw new TccError(e.error, e.file, e.line, e.column);
+  }
   return r as T;
 }
 
@@ -100,7 +162,34 @@ export function makeBinding(tcc: TccGlobal): SessionBinding {
       orThrow(tcc.sessionValidateField(handle, resource, field, value));
     },
     async validateResource(handle, resource) {
-      return orThrow(tcc.sessionValidateResource(handle, resource)).errors;
+      return orThrow(tcc.sessionValidateResource(handle, resource)).issues;
+    },
+    async serialize(handle, resource) {
+      return orThrow(tcc.sessionSerialize(handle, resource));
+    },
+    async location(handle, resource) {
+      return orThrow(tcc.sessionLocation(handle, resource));
+    },
+    async setResource(handle, resource, doc) {
+      orThrow(tcc.sessionSetResource(handle, resource, doc));
+    },
+    async resourceAt(handle, path) {
+      return orThrow(tcc.sessionResourceAt(handle, path));
+    },
+    async kinds(handle) {
+      return orThrow(tcc.sessionKinds(handle));
+    },
+    async address(handle, kind, name, app) {
+      return orThrow(tcc.sessionAddress(handle, kind, name, app));
+    },
+    async names(handle, kind, app) {
+      return orThrow(tcc.sessionNames(handle, kind, app));
+    },
+    async exists(handle, resource) {
+      return orThrow(tcc.sessionExists(handle, resource));
+    },
+    async generate(handle, resource, field) {
+      return orThrow(tcc.sessionGenerate(handle, resource, field));
     },
     async complete(handle, resource, field, partial) {
       return orThrow(tcc.sessionComplete(handle, resource, field, partial));

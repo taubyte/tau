@@ -65,7 +65,7 @@ func Generate(root []*engine.Node) (map[string][]byte, error) {
 		}
 		out[filepath.Join("pkg", "specs", "structure", strings.ToLower(m.Spec)+".go")] = b
 	}
-	ts, err := GenerateTS(root)
+	ts, err := GenerateTS(schema.CompileRoot())
 	if err != nil {
 		return nil, err
 	}

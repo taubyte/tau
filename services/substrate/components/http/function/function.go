@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	goHttp "net/http"
@@ -94,7 +95,14 @@ func (f *Function) Match(matcher components.MatchDefinition) (currentMatchIndex 
 		return
 	}
 
-	if _matcher.Method == f.config.Method {
+	// The request's method stays exact — RFC 9110 §9.1 makes the method token
+	// case-sensitive, so a client sending "get" has not sent GET. Only the
+	// CONFIGURED method is canonicalized, because that side was typed by a
+	// human and the DSL accepts any casing for it (IsHttpMethod upper-cases
+	// before checking, and advertises the uppercase set as canonical). Without
+	// this, a function authored `method: get` validated, compiled, deployed —
+	// and silently never routed.
+	if _matcher.Method == strings.ToUpper(f.config.Method) {
 		for _, path := range f.config.Paths {
 			if path == _matcher.Path {
 				currentMatch = matcherSpec.HighMatch

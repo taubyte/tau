@@ -182,7 +182,7 @@ func sessionCompileFn(_ js.Value, args []js.Value) any {
 	}
 	obj, validations, err := s.Compile(context.Background(), compileOpts(args, 1))
 	if err != nil {
-		return errResult(err.Error())
+		return errFrom(err)
 	}
 	out := obj.Flat()
 	out["validations"] = validations
@@ -197,7 +197,7 @@ func sessionValidateFn(_ js.Value, args []js.Value) any {
 	}
 	validations, err := s.Validate(context.Background(), compileOpts(args, 1))
 	if err != nil {
-		return errResult(err.Error())
+		return errFrom(err)
 	}
 	return toJS(map[string]any{"validations": validations})
 }
@@ -223,7 +223,8 @@ func sessionValidateFieldFn(_ js.Value, args []js.Value) any {
 }
 
 // validateResource(handle, resourcePath[]) : run every single-value validator of
-// one resource, no compile. -> { errors: string[] } (empty = locally valid).
+// one resource, no compile. -> { issues: [{ field, message }] } (empty = locally
+// valid). One call per resource, each issue attributed to the field that failed.
 func sessionValidateResourceFn(_ js.Value, args []js.Value) any {
 	s, e := lookup(args)
 	if e != nil {
@@ -236,12 +237,195 @@ func sessionValidateResourceFn(_ js.Value, args []js.Value) any {
 	if len(res) == 0 {
 		return errResult("validateResource: empty resource path")
 	}
-	errs := s.ValidateResource(res)
-	msgs := make([]any, len(errs))
-	for i, er := range errs {
-		msgs[i] = er.Error()
+	issues := s.ValidateResource(res)
+	if issues == nil {
+		issues = []compiler.FieldIssue{}
 	}
-	return toJS(map[string]any{"errors": msgs})
+	return toJS(map[string]any{"issues": issues})
+}
+
+// serialize(handle, resourcePath[]) -> { path, yaml } : one resource's document,
+// comments preserved. The caller never names the file.
+func sessionSerializeFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("serialize: expected (handle, resourcePath)")
+	}
+	res := jsToPath(args[1])
+	if len(res) == 0 {
+		return errResult("serialize: empty resource path")
+	}
+	path, data, err := s.Serialize(res)
+	if err != nil {
+		return errFrom(err)
+	}
+	return toJS(map[string]any{"path": path, "yaml": string(data)})
+}
+
+// location(handle, resourcePath[]) -> string : where the document lives, without
+// reading it. serialize() when you want the YAML; this when you want the path.
+func sessionLocationFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("location: expected (handle, resourcePath)")
+	}
+	res := jsToPath(args[1])
+	if len(res) == 0 {
+		return errResult("location: empty resource path")
+	}
+	p, err := s.Location(res)
+	if err != nil {
+		return errFrom(err)
+	}
+	return js.ValueOf(p)
+}
+
+// setResource(handle, resourcePath[], doc) : make the resource's document equal
+// doc, as the minimal set/delete ops, so untouched YAML (comments) survives.
+func sessionSetResourceFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 3 {
+		return errResult("setResource: expected (handle, resourcePath, doc)")
+	}
+	res := jsToPath(args[1])
+	if len(res) == 0 {
+		return errResult("setResource: empty resource path")
+	}
+	doc, ok := jsToGo(args[2]).(map[string]any)
+	if !ok {
+		return errResult("setResource: doc must be an object")
+	}
+	if err := s.SetResource(res, doc); err != nil {
+		return errFrom(err)
+	}
+	return js.Null()
+}
+
+// resourceAt(handle, repoPath) -> string[] | null : the canonical address of the
+// resource a repo-relative YAML path holds, null when it holds none.
+func sessionResourceAtFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("resourceAt: expected (handle, path)")
+	}
+	res, ok := s.ResourceAt(args[1].String())
+	if !ok {
+		return js.Null()
+	}
+	out := make([]any, len(res))
+	for i, seg := range res {
+		out[i] = seg
+	}
+	return toJS(out)
+}
+
+// kinds(handle) -> [{ name, group, container }] : the DSL's resource kinds, for
+// a consumer that routes on a kind string rather than a static accessor.
+func sessionKindsFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	kinds := s.Kinds()
+	if kinds == nil {
+		kinds = []compiler.Kind{}
+	}
+	return toJS(kinds)
+}
+
+// address(handle, kind, name, app?) -> string[] : the canonical address of one
+// resource, by kind — no group-name table or plural rule on the caller's side.
+func sessionAddressFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 3 {
+		return errResult("address: expected (handle, kind, name, app?)")
+	}
+	app := ""
+	if len(args) > 3 && args[3].Truthy() {
+		app = args[3].String()
+	}
+	res, err := s.Address(args[1].String(), args[2].String(), app)
+	if err != nil {
+		return errResult(err.Error())
+	}
+	out := make([]any, len(res))
+	for i, seg := range res {
+		out[i] = seg
+	}
+	return toJS(out)
+}
+
+// names(handle, kind, app?) -> string[] : the instances of a kind in scope.
+func sessionNamesFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("names: expected (handle, kind, app?)")
+	}
+	app := ""
+	if len(args) > 2 && args[2].Truthy() {
+		app = args[2].String()
+	}
+	names, err := s.Names(args[1].String(), app)
+	if err != nil {
+		return errResult(err.Error())
+	}
+	out := make([]any, len(names))
+	for i, n := range names {
+		out[i] = n
+	}
+	return toJS(out)
+}
+
+// exists(handle, resourcePath[]) -> bool : is this resource already in the
+// config (i.e. is an editor creating it or editing it).
+func sessionExistsFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 2 {
+		return errResult("exists: expected (handle, resourcePath)")
+	}
+	return js.ValueOf(s.Exists(jsToPath(args[1])))
+}
+
+// generate(handle, resourcePath[], fieldPath[]) -> string : mint a value for a
+// DSL-generated field (a resource id).
+func sessionGenerateFn(_ js.Value, args []js.Value) any {
+	s, e := lookup(args)
+	if e != nil {
+		return e
+	}
+	if len(args) < 3 {
+		return errResult("generate: expected (handle, resourcePath, fieldPath)")
+	}
+	res := jsToPath(args[1])
+	if len(res) == 0 {
+		return errResult("generate: empty resource path")
+	}
+	v, err := s.Generate(res, jsToPath(args[2]))
+	if err != nil {
+		return errResult(err.Error())
+	}
+	return js.ValueOf(v)
 }
 
 // complete(handle, resourcePath[], fieldPath[], partial?) : completion candidates
@@ -360,6 +544,15 @@ func jsToGo(v js.Value) any {
 			}
 			return out
 		}
+		// A plain object. Without this branch every object marshaled to nil,
+		// which silently blanked object-valued sessionSet writes.
+		keys := js.Global().Get("Object").Call("keys", v)
+		out := make(map[string]any, keys.Length())
+		for i := 0; i < keys.Length(); i++ {
+			k := keys.Index(i).String()
+			out[k] = jsToGo(v.Get(k))
+		}
+		return out
 	}
 	return nil
 }

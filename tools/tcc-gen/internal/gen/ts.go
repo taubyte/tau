@@ -89,6 +89,20 @@ func tsWireType(spec string, f Field) string {
 	return tsType(f.Type)
 }
 
+// branchArr renders a field path whose middle segment is a runtime value:
+// ["source", kind] rather than [...[], kind, ...["source"]].
+func branchArr(prefix []string, v string, suffix []string) string {
+	parts := make([]string, 0, len(prefix)+len(suffix)+1)
+	for _, p := range prefix {
+		parts = append(parts, `"`+p+`"`)
+	}
+	parts = append(parts, v)
+	for _, p := range suffix {
+		parts = append(parts, `"`+p+`"`)
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
 func tsArr(segs []string) string {
 	q := make([]string, len(segs))
 	for i, s := range segs {
@@ -102,6 +116,42 @@ type tsField struct {
 	typ    string   // ts type (or enum alias)
 	path   []string // in-document field path
 	compat []string // legacy field path (read fallback), or nil
+	// A branching location: the field lives under one of several alternative
+	// keys (a storage's size is at object/size or streaming/size). prefix and
+	// suffix are the literal segments around the choice; alts are the keys.
+	// alias is the TS union naming them. isKey marks the discriminator itself,
+	// whose VALUE is the chosen key rather than a stored field.
+	prefix, suffix, alts []string
+	alias                string // the TS union naming the alternatives
+	param                string // what to call the branch argument: the
+	// discriminator's own accessor name, so a
+	// storage reads size(type) and not size(kind)
+	isKey bool
+}
+
+// branchOf splits an attribute's authored path around its single finite matcher:
+// the literal segments before it, the alternatives, and the segments after. ok
+// is false for a plain path or an unbounded matcher.
+func branchOf(a *engine.Attribute) (prefix, alts, suffix []string, ok bool) {
+	for i, seg := range a.Path {
+		switch m := seg.(type) {
+		case string:
+			if !ok {
+				prefix = append(prefix, m)
+			} else {
+				suffix = append(suffix, m)
+			}
+		case engine.FiniteMatcher:
+			if ok {
+				return nil, nil, nil, false // more than one choice in one path
+			}
+			alts, ok = m.Values(), true
+			_ = i
+		case engine.StringMatcher:
+			return nil, nil, nil, false // unbounded: not enumerable
+		}
+	}
+	return prefix, alts, suffix, ok && len(alts) > 0
 }
 
 type tsResource struct {
@@ -116,8 +166,242 @@ type tsEnum struct {
 	quoted bool
 }
 
+// repoShape is the DSL's git-repository block, read off the RepoName/RepoBranch
+// annotations: `source` is the block, the provider key under it is dynamic, and
+// `fullname` is the leaf that says which repository. Nothing here names a
+// provider or a leaf — that is exactly the hardcoding this shape removes.
+type repoShape struct{ source, fullname, branch string }
+
+// repoShapeOf reads the shape off every group that declares one and requires
+// them to agree: one generated resourceRepo serves all of them, so two kinds
+// with different repo layouts would silently read the wrong key for one. Fail
+// loudly instead — the generator never guesses.
+func repoShapeOf(groups []*engine.Node) (*repoShape, error) {
+	var found *repoShape
+	for _, g := range groups {
+		if len(g.Children) == 0 {
+			continue
+		}
+		s := &repoShape{}
+		for _, a := range g.Children[0].Attributes {
+			p, plain := pathSegs(a)
+			if b, _ := a.Meta["repoName"].(bool); b && plain && len(p) >= 2 {
+				s.source, s.fullname = p[0], p[len(p)-1]
+			}
+			if b, _ := a.Meta["repoBranch"].(bool); b && plain && len(p) > 0 {
+				s.branch = p[len(p)-1]
+			}
+		}
+		if s.source == "" || s.fullname == "" {
+			continue
+		}
+		if found != nil && *s != *found {
+			name, _ := g.Match.(string)
+			return nil, fmt.Errorf("group %q declares a repository shape %+v that disagrees with %+v", name, *s, *found)
+		}
+		found = s
+	}
+	return found, nil
+}
+
+// tsFieldsOf projects a node's attributes into TS accessor fields, registering
+// each enum under an alias named for spec. Shared by resources, the container
+// group and the project root, so all three get the same accessors.
+func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enumOrder *[]string) ([]tsField, error) {
+	var out []tsField
+	seen := map[string]bool{}
+	// The discriminator's alternatives name the branch union for the whole
+	// group, so a branched field and the key that selects it share one type.
+	branchAlias, branchParam := "", ""
+	for _, a := range n.Attributes {
+		if _, alts, _, ok := branchOf(a); ok && a.Key {
+			branchParam = tsName(structFieldName(group, a))
+			branchAlias = spec + upperFirst(branchParam)
+			if _, exists := enums[branchAlias]; !exists {
+				enums[branchAlias] = tsEnum{name: branchAlias, values: alts, quoted: true}
+				*enumOrder = append(*enumOrder, branchAlias)
+			}
+		}
+	}
+
+	for _, a := range n.Attributes {
+		if noStructField(a) {
+			continue
+		}
+		prefix, alts, suffix, branched := branchOf(a)
+		if a.Key && !branched {
+			continue // a key with no alternatives is not addressable
+		}
+		path, ok := pathSegs(a)
+		if !ok && !branched {
+			continue
+		}
+		gt := goType(a.Type)
+		if gt == "" && !a.Key {
+			continue
+		}
+		// NB: no scalar retype — these edit the SOURCE config, where
+		// Duration/Bytes are human strings ("20s", "32GB").
+		fname := tsName(structFieldName(group, a))
+		if seen[fname] {
+			continue
+		}
+		seen[fname] = true
+
+		typ := tsType(gt)
+		if vals, ok := a.Meta["enum"].([]string); ok {
+			alias := spec + upperFirst(fname)
+			if _, exists := enums[alias]; !exists {
+				_, quoted := a.Meta["enumString"].(bool)
+				enums[alias] = tsEnum{name: alias, values: vals, quoted: quoted}
+				*enumOrder = append(*enumOrder, alias)
+			}
+			typ = alias
+		}
+		f := tsField{name: fname, typ: typ, path: path}
+		if branched {
+			f.prefix, f.alts, f.suffix = prefix, alts, suffix
+			f.alias, f.param, f.isKey = branchAlias, branchParam, a.Key
+			if f.alias == "" {
+				// A branching field with no Key attribute over the same
+				// alternatives has nothing to name the branch. Rather than
+				// silently drop it — which is how this whole class of field
+				// went unaddressable in the first place — say so.
+				return nil, fmt.Errorf("%s.%s branches over %v but %s declares no Key attribute to select it",
+					group, a.Name, alts, group)
+			}
+			if a.Key {
+				f.typ = branchAlias
+			}
+		}
+		if compat, ok := compatSegs(a); ok {
+			f.compat = compat
+		}
+		out = append(out, f)
+	}
+	return out, nil
+}
+
+// resourceBase is the surface EVERY resource shares, whatever its kind: its
+// address, its whole document, its file, its local validation. Emitted once as a
+// base class so the typed per-kind classes add only their field accessors — and
+// so a caller holding a kind as a STRING (a UI rendering whatever its route
+// names) gets the identical surface from Session.resource() with no typing.
+const resourceBase = `/** The surface every resource has, whatever its kind. */
+export class ResourceConfig {
+  constructor(
+    protected s: Session,
+    readonly res: string[],
+  ) {}
+
+  delete(): Promise<void> {
+    return this.s.binding.delete(this.s.handle, this.res);
+  }
+  /** Is this resource already in the config, or is it being created? */
+  exists(): Promise<boolean> {
+    return this.s.binding.exists(this.s.handle, this.res);
+  }
+  /** The whole document, as an editor holds it. */
+  async doc(): Promise<Record<string, unknown>> {
+    const v = await this.s.binding.get(this.s.handle, this.res, []).catch(() => null);
+    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
+  }
+  /** Make the document equal doc, as the minimal diff — comments on untouched
+   *  lines survive, and a key missing from doc is deleted. */
+  setDoc(doc: Record<string, unknown>): Promise<void> {
+    return this.s.binding.setResource(this.s.handle, this.res, doc);
+  }
+  /** This resource's repo-relative path and exact YAML. Never assert the path
+   *  yourself — where a document lives is the DSL's to decide. */
+  serialize(): Promise<SerializedResource> {
+    return this.s.binding.serialize(this.s.handle, this.res);
+  }
+  /** Where this resource's document lives, WITHOUT rendering it. Use this when
+   *  you want the path per resource — serialize() reads and returns the whole
+   *  file, which an inventory would then throw away. */
+  location(): Promise<string> {
+    return this.s.binding.location(this.s.handle, this.res);
+  }
+  /** Mint a DSL-declared generated value (a resource id) rather than invent one. */
+  generate(field: string[]): Promise<string> {
+    return this.s.binding.generate(this.s.handle, this.res, field);
+  }
+  /** Compile-free local validation, each issue attributed to its field.
+   *  Cross-element references still need Session.validate(). */
+  validate(): Promise<FieldIssue[]> {
+    return this.s.binding.validateResource(this.s.handle, this.res);
+  }
+  validateField(field: string[], value: unknown): Promise<void> {
+    return this.s.binding.validateField(this.s.handle, this.res, field, value);
+  }
+  /** Allowed values for a field, filtered by what the user typed. */
+  complete(field: string[], partial?: string): Promise<string[]> {
+    return this.s.binding.complete(this.s.handle, this.res, field, partial);
+  }
+}
+
+`
+
+// writeTSClass emits one typed accessor class: its address (built by ctor) on
+// top of ResourceConfig, plus its own field accessors.
+func writeTSClass(b *strings.Builder, r tsResource, ctor string) {
+	fmt.Fprintf(b, "/** Typed accessors for a %s's config. */\n", strings.ToLower(r.spec))
+	fmt.Fprintf(b, "export class %sConfig extends ResourceConfig {\n", r.spec)
+	fmt.Fprintf(b, "  %s\n", ctor)
+	for _, f := range r.fields {
+		if f.isKey {
+			// The discriminator's VALUE is the key its settings live under, so
+			// it is read by asking which alternative the document opened —
+			// there is no stored field to fetch. Switching it moves a whole
+			// block, which is a document-level edit: use setDoc for that.
+			fmt.Fprintf(b, "\n  /** Which %s this is — the key its settings live under. */\n", strings.ToLower(r.spec))
+			fmt.Fprintf(b, "  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
+			// look inside the block that HOLDS the alternatives, which is the
+			// whole document only when the choice is at the top level
+			fmt.Fprintf(b, "    const at = await this.s.binding.get(this.s.handle, this.res, %s).catch(() => null);\n", tsArr(f.prefix))
+			fmt.Fprintf(b, "    const block = at && typeof at === \"object\" && !Array.isArray(at) ? (at as Record<string, unknown>) : {};\n")
+			fmt.Fprintf(b, "    for (const k of %s as readonly string[]) if (k in block) return k as %s;\n", tsArr(f.alts), f.typ)
+			fmt.Fprintf(b, "    return undefined;\n  }\n")
+			continue
+		}
+		if f.alias != "" {
+			// A branching location: the caller says which branch, because the
+			// document may not have opened one yet (creating a resource) and
+			// guessing would write into the wrong block.
+			seg := branchArr(f.prefix, f.param, f.suffix)
+			fmt.Fprintf(b, "\n  /** Lives under the %s's kind, so the branch is explicit. */\n", strings.ToLower(r.spec))
+			fmt.Fprintf(b, "  async %s(%s: %s): Promise<%s | undefined> {\n", f.name, f.param, f.alias, f.typ)
+			fmt.Fprintf(b, "    return (await this.s.binding.get(this.s.handle, this.res, %s)) as %s | undefined;\n  }\n", seg, f.typ)
+			fmt.Fprintf(b, "  set%s(%s: %s, v: %s): Promise<void> {\n", upperFirst(f.name), f.param, f.alias, f.typ)
+			fmt.Fprintf(b, "    return this.s.binding.set(this.s.handle, this.res, %s, v);\n  }\n", seg)
+			fmt.Fprintf(b, "  unset%s(%s: %s): Promise<void> {\n", upperFirst(f.name), f.param, f.alias)
+			fmt.Fprintf(b, "    return this.s.binding.delete(this.s.handle, this.res, %s);\n  }\n", seg)
+			continue
+		}
+		// getter
+		if len(f.compat) == 0 {
+			fmt.Fprintf(b, "\n  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
+			fmt.Fprintf(b, "    return (await this.s.binding.get(this.s.handle, this.res, %s)) as %s | undefined;\n  }\n", tsArr(f.path), f.typ)
+		} else {
+			fmt.Fprintf(b, "\n  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
+			fmt.Fprintf(b, "    const v = await this.s.binding.get(this.s.handle, this.res, %s);\n", tsArr(f.path))
+			fmt.Fprintf(b, "    return (v ?? (await this.s.binding.get(this.s.handle, this.res, %s))) as %s | undefined;\n  }\n", tsArr(f.compat), f.typ)
+		}
+		// setter
+		fmt.Fprintf(b, "  set%s(v: %s): Promise<void> {\n", upperFirst(f.name), f.typ)
+		fmt.Fprintf(b, "    return this.s.binding.set(this.s.handle, this.res, %s, v);\n  }\n", tsArr(f.path))
+		// unset (delete this one field)
+		fmt.Fprintf(b, "  unset%s(): Promise<void> {\n", upperFirst(f.name))
+		fmt.Fprintf(b, "    return this.s.binding.delete(this.s.handle, this.res, %s);\n  }\n", tsArr(f.path))
+	}
+	b.WriteString("}\n\n")
+}
+
 // GenerateTS renders the session accessor classes (+ Session + enum aliases).
-func GenerateTS(root []*engine.Node) ([]byte, error) {
+// It takes the project ROOT node: its Children are the groups, and its own
+// Attributes are the project's own fields (which Session.project() edits).
+func GenerateTS(rootNode *engine.Node) ([]byte, error) {
+	root := rootNode.Children
 	var resources []tsResource
 	enums := map[string]tsEnum{}
 	var enumOrder []string
@@ -131,52 +415,60 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 		if !ok {
 			continue
 		}
-		r := tsResource{spec: d.Spec, group: name}
-		seen := map[string]bool{}
-		for _, a := range g.Children[0].Attributes {
-			if a.Key || noStructField(a) {
-				continue
-			}
-			path, ok := pathSegs(a)
-			if !ok {
-				continue
-			}
-			gt := goType(a.Type)
-			if gt == "" {
-				continue
-			}
-			// NB: no scalar retype — these edit the SOURCE config, where
-			// Duration/Bytes are human strings ("20s", "32GB").
-			fname := tsName(structFieldName(name, a))
-			if seen[fname] {
-				continue
-			}
-			seen[fname] = true
-
-			typ := tsType(gt)
-			if vals, ok := a.Meta["enum"].([]string); ok {
-				alias := d.Spec + upperFirst(fname)
-				if _, exists := enums[alias]; !exists {
-					_, quoted := a.Meta["enumString"].(bool)
-					enums[alias] = tsEnum{name: alias, values: vals, quoted: quoted}
-					enumOrder = append(enumOrder, alias)
-				}
-				typ = alias
-			}
-			f := tsField{name: fname, typ: typ, path: path}
-			if compat, ok := compatSegs(a); ok {
-				f.compat = compat
-			}
-			r.fields = append(r.fields, f)
+		fields, err := tsFieldsOf(g.Children[0], name, d.Spec, enums, &enumOrder)
+		if err != nil {
+			return nil, err
 		}
-		resources = append(resources, r)
+		resources = append(resources, tsResource{spec: d.Spec, group: name, fields: fields})
+	}
+
+	// container is the config key of the applications-style container group,
+	// derived from the DSL so the app-scoping path is never a literal here;
+	// cSpec is its declared Go name (applications -> Application). The container
+	// and the project root are documents like any other, so they get the same
+	// accessor class — all field walks happen BEFORE emission so every enum
+	// alias they contribute is declared.
+	container := containerKey(root)
+	cSpec, err := containerSpec(root)
+	if err != nil {
+		return nil, err
+	}
+	var cFields []tsField
+	if cSpec != "" {
+		for _, g := range root {
+			if name, _ := g.Match.(string); name == container && len(g.Children) > 0 {
+				if cFields, err = tsFieldsOf(g.Children[0], container, cSpec, enums, &enumOrder); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
+	projectSpec, _ := rootNode.Meta["singular"].(string)
+	if projectSpec == "" {
+		return nil, fmt.Errorf("the schema root has no Singular() declaration")
+	}
+	projectFields, err2 := tsFieldsOf(rootNode, "", projectSpec, enums, &enumOrder)
+	if err2 != nil {
+		return nil, err2
+	}
+	repo, err := repoShapeOf(root)
+	if err != nil {
+		return nil, err
 	}
 
 	var b strings.Builder
 	b.WriteString("// Code generated by tcc-gen; DO NOT EDIT.\n")
 	b.WriteString("// Typed accessors over a wasm-resident editable config session. Getters/setters\n")
 	b.WriteString("// read/write fields by path across the wasm boundary; YAML lives in wasm.\n\n")
-	b.WriteString(`import type { SessionBinding, CompileOptions, CompileResult, Validation } from "../loader.js";` + "\n")
+	b.WriteString(`import type {` + "\n" +
+		`  SessionBinding,` + "\n" +
+		`  CompileOptions,` + "\n" +
+		`  CompileResult,` + "\n" +
+		`  Validation,` + "\n" +
+		`  Kind,` + "\n" +
+		`  FieldIssue,` + "\n" +
+		`  SerializedResource,` + "\n" +
+		`} from "../loader.js";` + "\n")
 	b.WriteString(`import type { AsyncFs } from "../fs.js";` + "\n\n")
 
 	for _, name := range enumOrder {
@@ -195,9 +487,10 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 		b.WriteString("\n")
 	}
 
-	// container is the config key of the applications-style container group,
-	// derived from the DSL so the app-scoping path is never a literal here.
-	container := containerKey(root)
+	if repo != nil {
+		b.WriteString("/** The git repository backing a resource. */\n")
+		b.WriteString("export interface RepoRef {\n  provider: string;\n  fullname: string;\n  branch?: string;\n}\n\n")
+	}
 
 	// Session: the editable handle, with typed resource factories.
 	b.WriteString("/** An editable, wasm-resident project config session. */\n")
@@ -209,7 +502,64 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 		fmt.Fprintf(&b, "  %sNames(app?: string): Promise<string[]> {\n    return this.binding.list(this.handle, app ? [%q, app, %q] : [%q]);\n  }\n", tsName(r.spec), container, r.group, r.group)
 	}
 	b.WriteString("\n")
+	// The container group and the project root are resources too: their own
+	// fields live in a document like everything else, so they get the same
+	// accessor class rather than the caller hand-addressing them.
+	if cSpec != "" {
+		fmt.Fprintf(&b, "  %s(name: string): %sConfig {\n    return new %sConfig(this, name);\n  }\n", tsName(cSpec), cSpec, cSpec)
+	}
+	fmt.Fprintf(&b, "  project(): %sConfig {\n    return new %sConfig(this);\n  }\n", projectSpec, projectSpec)
 	fmt.Fprintf(&b, "  %s(): Promise<string[]> {\n    return this.binding.list(this.handle, [%q]);\n  }\n", container, container)
+	// path -> canonical address, the inverse of a resource's serialize().
+	b.WriteString("  resourceAt(path: string): Promise<string[] | null> {\n    return this.binding.resourceAt(this.handle, path);\n  }\n")
+	// The generic, kind-keyed entry points. Everything above is statically named
+	// per kind; a consumer that only knows a kind as a string — a UI rendering
+	// whatever its route names — works entirely through these, and never has to
+	// rebuild an address, pluralize a kind, or special-case the container.
+	b.WriteString(`  /** Every resource kind this DSL defines, with its group key and whether
+   *  its instances contain resources of their own. */
+  kinds(): Promise<Kind[]> {
+    return this.binding.kinds(this.handle);
+  }
+  /** The canonical address of one resource, by kind. Accepts a kind's group key
+   *  or its declared singular; unknown kinds throw rather than address nothing. */
+  address(kind: string, name: string, app?: string): Promise<string[]> {
+    return this.binding.address(this.handle, kind, name, app);
+  }
+  /** The instances of a kind in scope — the project, or one application's own. */
+  names(kind: string, app?: string): Promise<string[]> {
+    return this.binding.names(this.handle, kind, app);
+  }
+  /** Is this resource already in the config, or is it being created? */
+  exists(res: string[]): Promise<boolean> {
+    return this.binding.exists(this.handle, res);
+  }
+  /** An accessor for a resource named only by kind — the untyped sibling of the
+   *  generated per-kind factories, with the identical document surface. */
+  async resource(kind: string, name: string, app?: string): Promise<ResourceConfig> {
+    return new ResourceConfig(this, await this.address(kind, name, app));
+  }
+`)
+	if repo != nil {
+		fmt.Fprintf(&b, `  /** The git repository backing a resource, or null if it isn't repo-backed.
+   * The provider key is dynamic, so this takes whichever sub-object of %q
+   * carries the repo name — no provider is named here or in the DSL walk. */
+  async resourceRepo(res: string[]): Promise<RepoRef | null> {
+    const src = await this.binding.get(this.handle, res, [%q]).catch(() => null);
+    if (!src || typeof src !== "object" || Array.isArray(src)) return null;
+    const block = src as Record<string, unknown>;
+    const branch = typeof block[%q] === "string" ? (block[%q] as string) : undefined;
+    for (const [provider, v] of Object.entries(block)) {
+      if (!v || typeof v !== "object" || Array.isArray(v)) continue;
+      const fullname = (v as Record<string, unknown>)[%q];
+      if (typeof fullname === "string" && fullname) {
+        return { provider, fullname, ...(branch ? { branch } : {}) };
+      }
+    }
+    return null;
+  }
+`, repo.source, repo.source, repo.branch, repo.branch, repo.fullname)
+	}
 	b.WriteString("  compile(opts?: CompileOptions): Promise<CompileResult> {\n    return this.binding.compile(this.handle, opts);\n  }\n")
 	b.WriteString("  validate(opts?: CompileOptions): Promise<Validation[]> {\n    return this.binding.validate(this.handle, opts);\n  }\n")
 	b.WriteString("  save(fs: AsyncFs, dir: string): Promise<void> {\n    return this.binding.save(this.handle, fs, dir);\n  }\n")
@@ -220,38 +570,20 @@ func GenerateTS(root []*engine.Node) ([]byte, error) {
 	b.WriteString("  close(): Promise<void> {\n    return this.binding.close(this.handle);\n  }\n")
 	b.WriteString("}\n\n")
 
-	// One accessor class per resource.
+	b.WriteString(resourceBase)
+
+	// One accessor class per resource, plus one for the container group and one
+	// for the project root — every document the DSL defines is addressed the
+	// same way, so no caller has to build an address by hand.
 	for _, r := range resources {
-		fmt.Fprintf(&b, "/** Typed accessors for a %s's config. */\n", strings.ToLower(r.spec))
-		fmt.Fprintf(&b, "export class %sConfig {\n", r.spec)
-		fmt.Fprintf(&b, "  private res: string[];\n")
-		fmt.Fprintf(&b, "  constructor(private s: Session, name: string, app?: string) {\n    this.res = app ? [%q, app, %q, name] : [%q, name];\n  }\n", container, r.group, r.group)
-		fmt.Fprintf(&b, "\n  delete(): Promise<void> {\n    return this.s.binding.delete(this.s.handle, this.res);\n  }\n")
-		// Partial validation (compile-free): resource-scoped local checks + a single
-		// field check. Cross-element refs still need Session.validate().
-		fmt.Fprintf(&b, "  validate(): Promise<string[]> {\n    return this.s.binding.validateResource(this.s.handle, this.res);\n  }\n")
-		fmt.Fprintf(&b, "  validateField(field: string[], value: unknown): Promise<void> {\n    return this.s.binding.validateField(this.s.handle, this.res, field, value);\n  }\n")
-		// completion candidates for a field's value, filtered by what the user typed.
-		fmt.Fprintf(&b, "  complete(field: string[], partial?: string): Promise<string[]> {\n    return this.s.binding.complete(this.s.handle, this.res, field, partial);\n  }\n")
-		for _, f := range r.fields {
-			// getter
-			if len(f.compat) == 0 {
-				fmt.Fprintf(&b, "\n  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
-				fmt.Fprintf(&b, "    return (await this.s.binding.get(this.s.handle, this.res, %s)) as %s | undefined;\n  }\n", tsArr(f.path), f.typ)
-			} else {
-				fmt.Fprintf(&b, "\n  async %s(): Promise<%s | undefined> {\n", f.name, f.typ)
-				fmt.Fprintf(&b, "    const v = await this.s.binding.get(this.s.handle, this.res, %s);\n", tsArr(f.path))
-				fmt.Fprintf(&b, "    return (v ?? (await this.s.binding.get(this.s.handle, this.res, %s))) as %s | undefined;\n  }\n", tsArr(f.compat), f.typ)
-			}
-			// setter
-			fmt.Fprintf(&b, "  set%s(v: %s): Promise<void> {\n", upperFirst(f.name), f.typ)
-			fmt.Fprintf(&b, "    return this.s.binding.set(this.s.handle, this.res, %s, v);\n  }\n", tsArr(f.path))
-			// unset (delete this one field)
-			fmt.Fprintf(&b, "  unset%s(): Promise<void> {\n", upperFirst(f.name))
-			fmt.Fprintf(&b, "    return this.s.binding.delete(this.s.handle, this.res, %s);\n  }\n", tsArr(f.path))
-		}
-		b.WriteString("}\n\n")
+		writeTSClass(&b, r, fmt.Sprintf("constructor(s: Session, name: string, app?: string) {\n    super(s, app ? [%q, app, %q, name] : [%q, name]);\n  }", container, r.group, r.group))
 	}
+	if cSpec != "" {
+		writeTSClass(&b, tsResource{spec: cSpec, group: container, fields: cFields},
+			fmt.Sprintf("constructor(s: Session, name: string) {\n    super(s, [%q, name]);\n  }", container))
+	}
+	writeTSClass(&b, tsResource{spec: projectSpec, group: "", fields: projectFields},
+		fmt.Sprintf("constructor(s: Session) {\n    super(s, [%q]);\n  }", engine.NodeDefaultSeerLeaf))
 
 	// Compiled resource shapes: the data types as decoded from the TNS object
 	// (what the console receives over the wire), keyed by the compiled JSON keys.

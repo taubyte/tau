@@ -57,6 +57,16 @@ func GroupDoc(text string) NodeOption {
 	return GroupAnnotate("doc", text)
 }
 
+// Icon is a SEMANTIC icon hint for a resource group — "bolt", "database",
+// "globe" — surfaced on its schema object so a UI/CLI picks a glyph from the
+// DSL instead of keeping its own kind->icon table (three of them, in the web
+// console's case). Deliberately a neutral key, not an asset path or an icon-set
+// class: which library draws it stays the consumer's business, and a consumer
+// that doesn't know the key just falls back to its default. Presentation-only.
+func Icon(name string) NodeOption {
+	return GroupAnnotate("icon", name)
+}
+
 // ConditionSpec is a simple static visibility condition: show the field or section
 // only when a sibling attribute (Field) holds one of In. Presentation-only — a
 // UI/CLI evaluates it; it never affects parsing or the compiled output. (For
@@ -71,6 +81,32 @@ type ConditionSpec struct {
 // parse effect.
 func ShowWhen(field string, in ...string) Option {
 	return Annotate("showWhen", ConditionSpec{Field: field, In: in})
+}
+
+// RequiredWhen makes a field required only when a sibling attribute holds one of
+// the given values — a function's pubsub channel matters when its trigger type
+// is pubsub and is meaningless otherwise, so requiring it unconditionally would
+// reject every http function. Unlike ShowWhen this is NOT presentation: it is
+// enforced at load exactly like Required(), and reported by partial validation.
+//
+// Deliberately separate from ShowWhen. A field can be shown and optional (a
+// timeout), so "required" cannot be inferred from "visible".
+func RequiredWhen(field string, in ...string) Option {
+	return Annotate("requiredWhen", ConditionSpec{Field: field, In: in})
+}
+
+// RequiredUnless makes a field required UNLESS a sibling boolean attribute is
+// true — a database's match is a literal key and must be there, unless useRegex
+// turns it into a regular expression, where empty is a valid catch-all.
+//
+// Deliberately not RequiredWhen with a negation. Two things differ, and the
+// second is the one that bites: an ABSENT discriminator here means required (an
+// unset bool is false), whereas RequiredWhen treats an absent discriminator as
+// "condition cannot hold, so not required". Encoding it as a value list would
+// also break silently, because the value is read as a bool on one side and
+// compared as a string on the other.
+func RequiredUnless(field string) Option {
+	return Annotate("requiredUnless", field)
 }
 
 // SectionSpec declares a human-facing section for a resource's fields — how a UI
@@ -116,6 +152,18 @@ func sectionDef(spec SectionSpec) NodeOption {
 func InSection(id string) Option {
 	return Annotate("section", id)
 }
+
+// RepoName marks the attribute holding a repository's full name (owner/repo)
+// INSIDE its provider block — the value that says which repository backs the
+// resource. It is what lets a tool extract the backing repo generically: the
+// provider key is dynamic, so "the sub-object carrying the repo name" is the
+// only stable handle, and this says which leaf that is instead of every consumer
+// hardcoding "fullname". Introspection-only; no compile or runtime effect.
+func RepoName() Option { return Annotate("repoName", true) }
+
+// RepoBranch marks the attribute holding the git branch a repo-backed resource
+// builds from (a sibling of the provider block). Introspection-only.
+func RepoBranch() Option { return Annotate("repoBranch", true) }
 
 // Field overrides the Go struct field name a generator emits for this attribute,
 // for cases where the config-key-derived name differs from the struct field

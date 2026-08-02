@@ -1,6 +1,8 @@
 package schema
 
 import (
+	"strings"
+
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
@@ -12,14 +14,72 @@ import (
 type (
 	Session        = session.Session
 	CompileOptions = session.CompileOptions
+	FieldIssue     = session.FieldIssue
+	Kind           = session.Kind
 )
 
-// bindings wires the generic session to THIS DSL: its compiler (whole-config) and
-// its single-value field validators (partial, compile-free, for live editing).
+// bindings wires the generic session to THIS DSL: its compiler (whole-config),
+// its single-value field validators (partial, compile-free, for live editing),
+// its completion sources, its document layout, and its value generators.
 var bindings = session.Bindings{
 	CompilerFor:    taubyteCompilerFor,
 	FieldValidator: taubyteFieldValidator{},
 	Completer:      taubyteCompleter{},
+	Layout:         taubyteLayout{},
+	Generator:      taubyteGenerator{},
+}
+
+// taubyteLayout tells the session how this DSL lays its documents out: an
+// application is a directory whose own fields live in config.yaml, everything
+// else is one file. Read off the live schema, so a new container group in the
+// DSL needs no change here.
+type taubyteLayout struct{}
+
+func (taubyteLayout) ContainerDoc(group string) string {
+	return engine.ContainerDoc(GenerationRoot(), group)
+}
+func (taubyteLayout) RootDoc() string { return engine.NodeDefaultSeerLeaf }
+
+// Kinds projects the DSL's groups into the session's kind vocabulary. The
+// singular is lowercased so a consumer routing on a kind string ("function")
+// matches without knowing it derives from a Go type name.
+//
+// A group the DSL never NAMES is not a kind: `clouds` is a leaf map of settings
+// authored inside the root document (see cloudsGroup), not a directory of
+// resources, and it declares neither Resource() nor Singular(). Reporting it
+// would hand every consumer a nameless entry to filter out — the DSL already
+// says it isn't one.
+func (taubyteLayout) Kinds() []session.Kind {
+	groups := engine.Groups(GenerationRoot())
+	out := make([]session.Kind, 0, len(groups))
+	for _, g := range groups {
+		if g.Singular == "" {
+			continue
+		}
+		out = append(out, session.Kind{
+			Name:      strings.ToLower(g.Singular),
+			Group:     g.Group,
+			Container: g.Container,
+		})
+	}
+	return out
+}
+
+// Kinds lists the resource kinds THIS DSL defines, with no project involved.
+// The vocabulary is a property of the schema — Layout.Kinds() reads the
+// generation root and touches no config — so a consumer that only needs to know
+// what kinds exist should not have to open a session over an empty filesystem
+// to ask, any more than it does for JSONSchema.
+func Kinds() []Kind { return bindings.Layout.Kinds() }
+
+// taubyteGenerator mints this DSL's generated field values (a resource id, a CID).
+type taubyteGenerator struct{}
+
+func (taubyteGenerator) GeneratedBy(group string, field []string) string {
+	return engine.GeneratedBy(GenerationRoot(), group, field)
+}
+func (taubyteGenerator) Generate(kind string, seed ...any) (string, error) {
+	return engine.Generate(kind, seed...)
 }
 
 // NewSession opens an editable session over the config under dir in fs, bound to
@@ -62,6 +122,26 @@ func (taubyteFieldValidator) Fields(group string) [][]string {
 	// so per-resource validation covers both (the session checks reference
 	// existence against the in-scope config).
 	return engine.CheckFields(GenerationRoot(), group)
+}
+
+// RequiredFields projects the DSL's required fields — conditional ones included
+// — into the session's vocabulary, resolving each condition's discriminator to
+// an authored path so the session never has to look one up by name.
+func (taubyteFieldValidator) RequiredFields(group string) []session.RequiredField {
+	src := engine.RequiredFields(GenerationRoot(), group)
+	out := make([]session.RequiredField, 0, len(src))
+	for _, r := range src {
+		rf := session.RequiredField{
+			FieldRef: session.FieldRef{Path: r.Path, Compat: r.Compat, AnyOf: r.AnyOf},
+			WhenIn:   r.WhenIn,
+			Unless:   r.Unless,
+		}
+		if r.When != nil {
+			rf.When = &session.FieldRef{Path: r.When.Path, Compat: r.When.Compat}
+		}
+		out = append(out, rf)
+	}
+	return out
 }
 
 // ValidateField runs this DSL's single-value validator for one field of a resource

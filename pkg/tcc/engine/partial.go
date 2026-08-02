@@ -65,6 +65,154 @@ func CheckFields(root []*Node, group string) [][]string {
 	return out
 }
 
+// FieldRef is where a field may be authored: its canonical path, plus the legacy
+// alias that also satisfies it. Both matter for required-ness — the fixtures
+// author a function's domains under the compat key, and a requirement that only
+// looked at the canonical path would call them missing.
+type FieldRef struct {
+	Path   []string
+	Compat []string // nil if the field has no legacy alias
+	// AnyOf is every plain location the field may be authored at, when its
+	// declared path contains a FINITE matcher (Either). A storage's size lives
+	// at object/size or streaming/size depending on which block the author
+	// wrote — two static locations, not a dynamic one. AnyOf[0] == Path; nil
+	// when the path has no matcher.
+	AnyOf [][]string
+}
+
+// RequiredField is a field whose absence the compiler rejects, and the condition
+// under which that applies. When is nil for an unconditional Required(); for a
+// RequiredWhen it names the sibling that decides, and the values that trigger it.
+type RequiredField struct {
+	FieldRef
+	When   *FieldRef // the discriminator to read, nil when unconditional
+	WhenIn []string  // ...required only if its value is one of these
+	// Unless inverts the sense AND the default: the field is required unless
+	// the discriminator (a bool) is true, and an ABSENT discriminator means
+	// required — an unset bool is false. RequiredWhen cannot express that:
+	// there, an absent discriminator means NOT required.
+	Unless bool
+}
+
+// fieldPaths is every plain authored location of an attribute: a static path
+// yields one, and each FINITE matcher segment multiplies into its values. An
+// unbounded matcher (All) yields nil — such a field has no enumerable location
+// and stays unaddressable, which is what RequiredPathOf reports.
+//
+// This is the whole trick behind required fields at a "dynamic" path: Either is
+// declared, so the set of locations is known statically. Nothing has to resolve
+// a matcher against a document outside the engine.
+func fieldPaths(a *Attribute) [][]string {
+	path := a.Path
+	if len(path) == 0 {
+		return [][]string{{a.Name}}
+	}
+	out := [][]string{{}}
+	for _, seg := range path {
+		var vals []string
+		switch m := seg.(type) {
+		case string:
+			vals = []string{m}
+		case FiniteMatcher:
+			if vals = m.Values(); len(vals) == 0 {
+				return nil // matches nothing: no enumerable location
+			}
+		default:
+			return nil // unbounded matcher: not enumerable
+		}
+		next := make([][]string, 0, len(out)*len(vals))
+		for _, prefix := range out {
+			for _, v := range vals {
+				next = append(next, append(append([]string{}, prefix...), v))
+			}
+		}
+		out = next
+	}
+	return out
+}
+
+// RequiredFields returns a resource group's REQUIRED fields — the ones whose
+// absence the compiler rejects at load — each with the condition that governs
+// it. Partial validation has to ask for these separately: every other check runs
+// against a value, and a missing field has none, so a loop over present values
+// can only ever report a resource with nothing in it as valid.
+//
+// A field at a dynamic (Either/Key) path is skipped, as everywhere else: it has
+// no plain authored path to report against. Such a field can still be required
+// in effect — a Key attribute with no match already fails at load.
+func RequiredFields(root []*Node, group string) []RequiredField {
+	var out []RequiredField
+	for _, g := range root {
+		name, _ := g.Match.(string)
+		if name != group || len(g.Children) == 0 {
+			continue
+		}
+		attrs := g.Children[0].Attributes
+		for _, a := range attrs {
+			cond, conditional := a.Meta["requiredWhen"].(ConditionSpec)
+			unlessField, unless := a.Meta["requiredUnless"].(string)
+			if !a.Required && !conditional && !unless {
+				continue
+			}
+			paths := fieldPaths(a)
+			if paths == nil {
+				continue
+			}
+			rf := RequiredField{FieldRef: FieldRef{Path: paths[0], Compat: compatPath(a)}}
+			if len(paths) > 1 {
+				rf.AnyOf = paths
+			}
+			if unless {
+				sib := attrByName(attrs, unlessField)
+				if sib == nil {
+					continue // names an attribute this group doesn't have
+				}
+				sp := fieldPath(sib)
+				if sp == nil {
+					continue
+				}
+				rf.When = &FieldRef{Path: sp, Compat: compatPath(sib)}
+				rf.Unless = true
+			}
+			if conditional {
+				// Resolve the discriminator's NAME to its authored path here,
+				// where the attribute list is in hand — a consumer holding only
+				// paths could not do it without guessing.
+				sib := attrByName(attrs, cond.Field)
+				if sib == nil {
+					continue // names an attribute this group doesn't have
+				}
+				sp := fieldPath(sib)
+				if sp == nil {
+					continue // discriminator at a dynamic path — not addressable
+				}
+				rf.When = &FieldRef{Path: sp, Compat: compatPath(sib)}
+				rf.WhenIn = cond.In
+			}
+			out = append(out, rf)
+		}
+	}
+	return out
+}
+
+// RequiredPathOf is an attribute's authored path as a display/lookup key, or ""
+// when it sits at a dynamic (Either/Key) location with no plain path.
+func RequiredPathOf(a *Attribute) string {
+	if p := fieldPaths(a); p != nil {
+		return strings.Join(p[0], "/")
+	}
+	return ""
+}
+
+func attrByName(attrs []*Attribute, name string) *Attribute {
+	for _, a := range attrs {
+		if a.Name == name {
+			return a
+		}
+	}
+	return nil
+}
+
 // ValidateField runs the single-value validator for one field (by authored path)
 // of a resource group against value. It distinguishes three outcomes so a caller
 // can tell "valid" from "not recognized":
@@ -110,9 +258,9 @@ func checkType(a *Attribute, element bool, value any) error {
 			return typeErr(a, "boolean", value)
 		}
 	case TypeInt:
-		switch value.(type) {
-		case int, int8, int16, int32, int64:
-		default:
+		// isInteger covers every whole-number kind, so this cannot drift out of
+		// step with what coerceScalar will render for a string field.
+		if !isInteger(value) && !convertible(value, TypeInt) { // a quoted number is still a number
 			return typeErr(a, "integer", value)
 		}
 	case TypeStringSlice:
@@ -126,10 +274,16 @@ func checkType(a *Attribute, element bool, value any) error {
 }
 
 func wantString(a *Attribute, value any) error {
-	if _, ok := value.(string); !ok {
-		return typeErr(a, "string", value)
+	if _, ok := value.(string); ok {
+		return nil
 	}
-	return nil
+	// An unquoted number is still a string field's value — YAML inferred a type
+	// from notation, the DSL declares meaning. A bool is not: that is a mistake
+	// about the field, not a way of writing it.
+	if convertible(value, TypeString) {
+		return nil
+	}
+	return typeErr(a, "string", value)
 }
 
 // isStringList reports whether value is a list ([]string or []any) whose every

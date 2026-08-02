@@ -95,6 +95,111 @@ config key (`memory` → `execution.memory`, `type` → `trigger.type`), `InSet`
 typed as unions, and legacy keys read as a fallback. `makeSyncFs` / `hydrate` /
 `flush` are also exported for lower-level filesystem control.
 
+Applications and the project root are documents too, addressed the same way:
+
+```ts
+const app = session.application("web");       // the container's own config
+await app.setDescription("the web app");
+await session.project().setName("my_project"); // the project root document
+```
+
+### When the kind is a string
+
+The accessors above are statically named. A UI that renders whatever kind its
+route names holds the kind as a *string*, so it goes through the generic entry
+points instead — and never rebuilds an address, pluralizes a kind, or
+special-cases the container:
+
+```ts
+await session.kinds();
+// [{ name: "function", group: "functions", container: false },
+//  { name: "application", group: "applications", container: true }, …]
+
+const r = await session.resource(kind, name, app);  // same surface, untyped
+await r.doc(); await r.setDoc(next); await r.serialize(); await r.validate();
+
+await session.address(kind, name, app);  // ["applications", app, "functions", name]
+await session.names(kind, app);          // instances in scope
+await session.exists(r.res);             // is it in the config, or being created?
+```
+
+`kind` accepts a kind's group key (`"functions"`) or its declared singular
+(`"function"`); an unknown one throws rather than address nothing.
+
+**`container` is not cosmetic.** An application is a container, and the DSL
+deliberately does *not* declare it a resource: it has no compiled resource type
+and never appears in the compiled object as one. What's uniform is everything
+about *editing* it — address, document, file, local validation. What isn't is
+whether it belongs in a list of resources:
+
+```ts
+const resourceKinds = (await session.kinds()).filter((k) => !k.container);
+```
+
+So `if (kind === "application")` should become `if (k.container)`, not disappear.
+Branching on the capability is right; branching on the name is what this removes.
+
+Groups the DSL never names are not kinds at all — `clouds` is a leaf map of
+settings inside the root document, so it isn't reported and you don't filter it.
+
+### Whole-document editing
+
+An editor holds a plain object, not a field at a time. Hand tcc the object and it
+works out the minimal set/delete ops — so comments on untouched lines survive —
+then hand back the one file that changed:
+
+```ts
+const fn = session.function("api");
+
+const doc = await fn.doc();                   // the resource's whole document
+await fn.setDoc({ ...doc, description: "edited" }); // minimal diff; missing keys delete
+
+const { path, yaml } = await fn.serialize();  // "functions/api.yaml" + its exact YAML
+await session.resourceAt(path);               // ["functions", "api"] — the inverse
+```
+
+Never build these paths yourself: where a resource's document lives is the DSL's
+to decide (an application is `applications/web/config.yaml`, a function is
+`functions/api.yaml`), and asserting a layout is how you end up reading a path
+tcc never wrote.
+
+Values the DSL declares as generated — a resource `id`, which is a CID — are
+minted by tcc, not by the caller:
+
+```ts
+await fn.generate(["id"]);   // a fresh CID, seeded with the project and resource
+```
+
+### Validation
+
+`validate()` on a resource is compile-free and per-field: one call returns every
+local failure attributed to the field that caused it.
+
+```ts
+for (const { field, message } of await fn.validate()) {
+  markField(field, message);                  // field: ["trigger", "domains"]
+}
+```
+
+Whole-project checks still need `session.validate()`, which throws a `TccError`
+carrying `file` / `line` / `column` — so "is this error in the file I'm editing?"
+is a field comparison, not a substring match on the message.
+
+```ts
+try {
+  await session.validate({ branch: "main" });
+} catch (e) {
+  if (e instanceof TccError && e.file !== myPath) { /* someone else's problem */ }
+}
+```
+
+`session.resourceRepo(res)` returns the git repository backing a resource
+(`{ provider, fullname, branch? }`) or `null`. The provider key is dynamic, so it
+is read by shape — no provider is named.
+
+`hydrate` skips dot-entries, so staging a git checkout never copies `.git` into
+wasm, and a pruning `save` leaves them alone.
+
 ### Outside Node
 
 In the browser, fetch the assets and pass them explicitly (Node auto-loads them

@@ -3,6 +3,7 @@ package seer
 import (
 	"fmt"
 	"os"
+	"strings"
 	"testing"
 
 	"slices"
@@ -278,3 +279,44 @@ func TestDelete_FromFileSystem(t *testing.T) {
 		assert.Assert(t, !exists, "File should be removed from cache")
 	})
 }
+
+// Deleting a key mutates the in-memory document, so reads see it gone
+// immediately — but Sync only writes documents Commit marked dirty, and Commit
+// marks them from the query's filePath. opSetInYaml set that; _opDeleteInYaml
+// did not. The result was a deletion that looked applied to every reader and
+// never reached the file: the key came back the moment the config was reloaded,
+// and any consumer diffing a document against it (removing a field) silently
+// did nothing on disk.
+func TestDeleteKeyReachesTheFile(t *testing.T) {
+	dir := t.TempDir()
+	seer, err := New(SystemFS(dir))
+	assert.NilError(t, err)
+
+	assert.NilError(t, seer.Get("doc").Document().Get("keep").Set("yes").Commit())
+	assert.NilError(t, seer.Get("doc").Document().Get("drop").Set("no").Commit())
+	assert.NilError(t, seer.Get("doc").Document().Get("nested").Get("inner").Set("x").Commit())
+	assert.NilError(t, seer.Sync())
+
+	assert.NilError(t, seer.Get("doc").Document().Get("drop").Delete().Commit())
+	assert.NilError(t, seer.Get("doc").Document().Get("nested").Get("inner").Delete().Commit())
+	assert.NilError(t, seer.Sync())
+
+	// the file itself, not the in-memory view
+	body, err := os.ReadFile(dir + "/doc.yaml")
+	assert.NilError(t, err)
+	got := string(body)
+	assert.Assert(t, !contains(got, "drop"), "a deleted key must not survive in the file:\n%s", got)
+	assert.Assert(t, !contains(got, "inner"), "a deleted nested key must not survive in the file:\n%s", got)
+	assert.Assert(t, contains(got, "keep"), "untouched keys must survive:\n%s", got)
+
+	// and it must still be gone after a reload, which is what the file decides
+	reopened, err := New(SystemFS(dir))
+	assert.NilError(t, err)
+	var v string
+	assert.Assert(t, reopened.Get("doc").Document().Get("drop").Value(&v) != nil,
+		"the deletion must survive a reload")
+	assert.NilError(t, reopened.Get("doc").Document().Get("keep").Value(&v))
+	assert.Equal(t, v, "yes")
+}
+
+func contains(s, sub string) bool { return len(s) >= len(sub) && strings.Contains(s, sub) }
