@@ -189,8 +189,14 @@ class ServiceManager:
         except Exception as e:
             raise RuntimeError(f"Failed to execute binary: {e}")
     
-    def _get_port(self, timeout: int = 3500) -> Optional[int]:
-        """Get the port from the run file with timeout."""
+    def _get_port(self, timeout: int = 30000) -> Optional[int]:
+        """Get the port from the run file with timeout.
+
+        The budget covers a cold process launch, not a warm one: the binary has
+        to start, bind, and write its run file before any of this succeeds. The
+        loop already polls, so a generous ceiling costs nothing on a fast start
+        and is the difference between passing and failing on a loaded machine.
+        """
         start_time = time.time() * 1000  # Convert to milliseconds
         
         while (time.time() * 1000) - start_time < timeout:

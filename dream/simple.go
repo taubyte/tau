@@ -7,7 +7,6 @@ import (
 	"time"
 
 	commonIface "github.com/taubyte/tau/core/common"
-	accountsIface "github.com/taubyte/tau/core/services/accounts"
 	authIface "github.com/taubyte/tau/core/services/auth"
 	hoarderIface "github.com/taubyte/tau/core/services/hoarder"
 	monkeyIface "github.com/taubyte/tau/core/services/monkey"
@@ -21,6 +20,13 @@ import (
 
 	peer "github.com/taubyte/tau/p2p/peer"
 )
+
+// Client returns the client a Simple was configured with, by protocol name.
+// The typed accessors below wrap it; a caller whose service has no typed
+// accessor here — because it is not part of this build — uses this directly.
+func (s *Simple) Client(name string) (commonIface.Client, error) {
+	return s.getClient(name)
+}
 
 func (s *Simple) getClient(name string) (commonIface.Client, error) {
 	s.lock.RLock()
@@ -119,20 +125,6 @@ func (s *Simple) Hoarder() (hoarderIface.Client, error) {
 	}
 
 	return hoarderClient, nil
-}
-
-func (s *Simple) Accounts() (accountsIface.Client, error) {
-	client, err := s.getClient(commonSpecs.Accounts)
-	if err != nil {
-		return nil, err
-	}
-
-	accountsClient, ok := client.(accountsIface.Client)
-	if !ok {
-		return nil, errors.New("client is not an accounts client")
-	}
-
-	return accountsClient, nil
 }
 
 func (u *Universe) Simple(name string) (*Simple, error) {

@@ -11,6 +11,10 @@ import (
 	http "github.com/taubyte/tau/pkg/http"
 )
 
+// closeIdentity releases whatever initIdentity built. This build installs no
+// provider — callers are answered from the configured tenancy — so nothing.
+func (srv *AuthService) closeIdentity() {}
+
 // initIdentity binds this service to the namespace that owns the cloud.
 //
 // Outside dev mode a tenancy is required, not optional: without one there is no

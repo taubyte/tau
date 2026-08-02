@@ -98,9 +98,7 @@ func (srv *AuthService) Close() error {
 	logger.Info("Closing", servicesCommon.Auth)
 	defer logger.Info(servicesCommon.Auth, "closed")
 
-	if srv.accountsClient != nil {
-		srv.accountsClient.Close()
-	}
+	srv.closeIdentity()
 
 	// The membership verifier owns a cache goroutine.
 	if c, ok := srv.membership.(interface{ Close() }); ok {

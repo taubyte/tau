@@ -1,6 +1,6 @@
 //go:build ee
 
-package dream
+package main
 
 import eedream "github.com/taubyte/tau/ee/dream"
 
