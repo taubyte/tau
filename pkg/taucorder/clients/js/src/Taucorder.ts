@@ -62,8 +62,11 @@ class ExtendedAuth extends Auth {
 }
 
 export class Taucorder {
-  private transport: Transport;
-  private node?: Node;
+  // Reachable by subclasses so a client built on this one can attach its own
+  // service wrappers to the same transport and node, rather than opening a
+  // second connection and initialising a second node.
+  protected transport: Transport;
+  protected node?: Node;
   private config: Config;
   private nodeClient?: NodeRPCClient;
   private wrappers: {
