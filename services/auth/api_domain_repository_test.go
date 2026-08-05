@@ -362,8 +362,9 @@ func TestActualHTTPHandlers(t *testing.T) {
 		// Create mock HTTP context
 		mockCtx := &mockHTTPContextWithClient{
 			variables: map[string]interface{}{
-				"provider": "github",
-				"id":       "33333",
+				"provider":     "github",
+				"id":           "33333",
+				"GithubClient": mockGitHubClient,
 			},
 		}
 
