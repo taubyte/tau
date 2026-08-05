@@ -111,6 +111,10 @@ func (srv *AuthService) registerGitHubUserRepositoryHTTPHandler(ctx http.Context
 
 func (srv *AuthService) getGitHubUserRepositoryHTTPHandler(ctx http.Context) (interface{}, error) {
 	ctxVars := ctx.Variables()
+	client, err := getGithubClientFromContext(ctx)
+	if err != nil {
+		return nil, err
+	}
 	provider, err := maps.String(ctxVars, "provider")
 	if err != nil {
 		return nil, err
@@ -119,6 +123,10 @@ func (srv *AuthService) getGitHubUserRepositoryHTTPHandler(ctx http.Context) (in
 	repoId, err := maps.String(ctxVars, "id")
 	if err != nil {
 		return nil, fmt.Errorf("parsing github repository ID failed with %w", err)
+	}
+
+	if !srv.devMode && !repoAccess(client, repoId) {
+		return nil, fmt.Errorf("repository %s not found", repoId)
 	}
 
 	requestCtx := ctx.Request().Context()

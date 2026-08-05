@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -111,12 +112,49 @@ func generateKey() (string, string, string, error) {
 	return deployKeyName, string(ssh.MarshalAuthorizedKey(pub)), private.String(), nil
 }
 
+// repoAccess reports whether the caller may act on a repository. GetByID already
+// fetches it under the caller's own token and GitHub returns that caller's
+// permissions with it, so this costs no extra API call. Read access is not
+// enough: a public repository reads to everyone, which is what let an unrelated
+// caller reach another project's repositories.
+func repoAccess(client GitHubClient, repoID string) bool {
+	if client.GetByID(repoID) != nil {
+		return false
+	}
+
+	repo := client.Cur()
+	if repo == nil {
+		return false
+	}
+
+	perms := repo.GetPermissions()
+	return perms["admin"] || perms["maintain"] || perms["push"]
+}
+
+// authorizeProject refuses a caller who can write to neither of the project's
+// linked repositories. That is the same scoping getGitHubUserProjects applies
+// when it lists projects, so a project is reachable by id to exactly the people
+// who already see it in their own list.
+func (srv *AuthService) authorizeProject(client GitHubClient, project projects.Project) error {
+	if srv.devMode {
+		return nil
+	}
+
+	if repoAccess(client, project.Config()) || repoAccess(client, project.Code()) {
+		return nil
+	}
+
+	// Worded like a missing project on purpose. Telling the caller a project
+	// exists but isn't theirs turns the route back into the id oracle this
+	// check exists to close.
+	return errors.New("project not found")
+}
+
 func (srv *AuthService) registerGitHubRepository(ctx context.Context, client GitHubClient, repoID string) (*RepositoryRegistrationResponse, error) {
 	// If client is nil (P2P calls), skip GitHub API verification
 	if client != nil {
-		err := client.GetByID(repoID)
-		if err != nil {
-			return nil, fmt.Errorf("fetch repository failed with %w", err)
+		if !repoAccess(client, repoID) {
+			return nil, fmt.Errorf("no access to repository `%s`", repoID)
 		}
 
 		if err := srv.authorizeRepository(client); err != nil {
@@ -236,9 +274,16 @@ func (srv *AuthService) registerGitHubRepository(ctx context.Context, client Git
 func (srv *AuthService) unregisterGitHubRepository(ctx context.Context, client GitHubClient, repoID string) error {
 	// If client is nil (P2P calls), skip GitHub API verification
 	if client != nil {
-		err := client.GetByID(repoID)
-		if err != nil {
-			return fmt.Errorf("fetch repository failed with %w", err)
+		// Registering already required write access and tenancy ownership;
+		// unregistering tears down the deploy key and hooks, so it requires
+		// the same. Read access alone would let anyone drop a public
+		// repository's build wiring.
+		if !repoAccess(client, repoID) {
+			return fmt.Errorf("no access to repository `%s`", repoID)
+		}
+
+		if err := srv.authorizeRepository(client); err != nil {
+			return err
 		}
 	}
 
@@ -282,6 +327,26 @@ func (srv *AuthService) newGitHubProject(ctx context.Context, client GitHubClien
 	logger.Debug("Creating project " + projectName)
 
 	logger.Debug("Project ID=" + projectID)
+
+	if !srv.devMode {
+		// The caller is claiming these two repositories for a project, so they
+		// have to be able to write to both. Without this, any id could be
+		// pointed at repositories the caller has nothing to do with.
+		for _, repoID := range []string{configID, codeID} {
+			if !repoAccess(client, repoID) {
+				return nil, fmt.Errorf("no access to repository `%s`", repoID)
+			}
+		}
+
+		// Import supplies the project id, so this call can land on a project
+		// that already exists and would otherwise overwrite it — including its
+		// repository links — and add the caller as an owner.
+		if existing, err := projects.Fetch(ctx, srv.KV(), projectID); err == nil {
+			if err := srv.authorizeProject(client, existing); err != nil {
+				return nil, err
+			}
+		}
+	}
 
 	gituser := client.Me()
 
@@ -386,6 +451,10 @@ func (srv *AuthService) getGitHubProjectInfo(ctx context.Context, client GitHubC
 		return nil, fmt.Errorf("retrieving project error: %w", err)
 	}
 
+	if err := srv.authorizeProject(client, project); err != nil {
+		return nil, err
+	}
+
 	return &ProjectInfoResponse{
 		Project: ProjectDetails{
 			ID:   projectid,
@@ -403,6 +472,10 @@ func (srv *AuthService) deleteGitHubUserProject(ctx context.Context, client GitH
 	project, err := projects.Fetch(ctx, srv.KV(), projectid)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch project: %w", err)
+	}
+
+	if err := srv.authorizeProject(client, project); err != nil {
+		return nil, err
 	}
 
 	err = project.Delete()

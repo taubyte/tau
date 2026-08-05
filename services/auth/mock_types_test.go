@@ -225,7 +225,7 @@ type mockGitHubClient struct {
 }
 
 func (m *mockGitHubClient) Cur() *github.Repository {
-	return nil
+	return m.currentRepo
 }
 
 func (m *mockGitHubClient) Me() *github.User {
@@ -242,9 +242,10 @@ func (m *mockGitHubClient) Me() *github.User {
 func (m *mockGitHubClient) GetByID(id string) error {
 	// Create a mock repository when GetByID is called
 	m.currentRepo = &github.Repository{
-		ID:       github.Int64(12345),
-		SSHURL:   github.Ptr("git@github.com:test/test-repo.git"),
-		FullName: github.Ptr("test/test-repo"),
+		ID:          github.Int64(12345),
+		SSHURL:      github.Ptr("git@github.com:test/test-repo.git"),
+		FullName:    github.Ptr("test/test-repo"),
+		Permissions: map[string]bool{"admin": true, "push": true, "pull": true},
 	}
 	return nil
 }
