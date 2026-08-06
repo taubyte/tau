@@ -141,42 +141,79 @@ func (p packer) SendClose(channel Channel, w io.Writer, err error) error {
 	return p.send(channel, TypeClose, w, &buf, int64(buf.Len()))
 }
 
-func (p packer) Recv(r io.Reader, w io.Writer) (Channel, int64, error) {
+// MaxCloseMessageSize bounds the error string a close frame can make us
+// buffer. SendClose only ever writes err.Error(), so anything larger is
+// malformed rather than merely long.
+const MaxCloseMessageSize = 64 * 1024
+
+// readHeader reads a frame header off the wire and validates the one field a
+// peer can use against us. length is read as a signed 64-bit integer straight
+// from the remote, and every frame is one: a negative value panics
+// make([]byte, length) on the close path and silently truncates to nothing on
+// the data path. Both call sites parsed this header themselves, so both had
+// the bug; validating it here means a third caller cannot reintroduce it.
+func (p packer) readHeader(r io.Reader) (_type Type, channel Channel, length int64, err error) {
 	var _magic [2]byte
-	if _, err := io.ReadFull(r, _magic[:]); err != nil {
-		return 0, 0, fmt.Errorf("reading magic bytes failed: %w", err)
+	if _, err = io.ReadFull(r, _magic[:]); err != nil {
+		return 0, 0, 0, fmt.Errorf("reading magic bytes failed: %w", err)
 	}
 
 	if _magic[0] != p.magic[0] || _magic[1] != p.magic[1] {
-		return 0, 0, fmt.Errorf("wrong packer magic: expected [%d %d], got [%d %d]", p.magic[0], p.magic[1], _magic[0], _magic[1])
+		return 0, 0, 0, fmt.Errorf("wrong packer magic: expected [%d %d], got [%d %d]", p.magic[0], p.magic[1], _magic[0], _magic[1])
 	}
 
 	var version Version
-	err := binary.Read(r, binary.LittleEndian, &version)
-	if err != nil {
-		return 0, 0, fmt.Errorf("reading version failed: %w", err)
+	if err = binary.Read(r, binary.LittleEndian, &version); err != nil {
+		return 0, 0, 0, fmt.Errorf("reading version failed: %w", err)
 	}
 
 	if version != p.version {
-		return 0, 0, fmt.Errorf("wrong packer version: expected %d, got %d", p.version, version)
+		return 0, 0, 0, fmt.Errorf("wrong packer version: expected %d, got %d", p.version, version)
 	}
 
-	var _type Type
-	err = binary.Read(r, binary.LittleEndian, &_type)
-	if err != nil {
-		return 0, 0, fmt.Errorf("reading type failed: %w", err)
+	if err = binary.Read(r, binary.LittleEndian, &_type); err != nil {
+		return 0, 0, 0, fmt.Errorf("reading type failed: %w", err)
 	}
 
-	var length int64
-	err = binary.Read(r, binary.LittleEndian, &length)
-	if err != nil {
-		return 0, 0, fmt.Errorf("reading length failed: %w", err)
+	if err = binary.Read(r, binary.LittleEndian, &length); err != nil {
+		return 0, 0, 0, fmt.Errorf("reading length failed: %w", err)
 	}
 
-	var channel Channel
-	err = binary.Read(r, binary.LittleEndian, &channel)
+	if length < 0 {
+		return 0, 0, 0, fmt.Errorf("negative payload length: %d", length)
+	}
+
+	if err = binary.Read(r, binary.LittleEndian, &channel); err != nil {
+		return 0, 0, 0, fmt.Errorf("reading channel failed: %w", err)
+	}
+
+	return _type, channel, length, nil
+}
+
+// readClose turns a close frame into the error it carries. The length is
+// bounded before it is allocated, so a peer cannot claim a gigabyte and have
+// us reserve it before sending a single byte.
+func (p packer) readClose(r io.Reader, channel Channel, length int64) (Channel, int64, error) {
+	if length == 0 {
+		return channel, 0, io.EOF
+	}
+
+	if length > MaxCloseMessageSize {
+		return channel, 0, fmt.Errorf("close message too large: %d bytes", length)
+	}
+
+	errMsg := make([]byte, length)
+	if _, err := io.ReadFull(r, errMsg); err != nil {
+		return channel, 0, fmt.Errorf("failed to read error message: %w", err)
+	}
+
+	return channel, 0, fmt.Errorf("packer close error: %s", string(errMsg))
+}
+
+func (p packer) Recv(r io.Reader, w io.Writer) (Channel, int64, error) {
+	_type, channel, length, err := p.readHeader(r)
 	if err != nil {
-		return 0, 0, fmt.Errorf("reading channel failed: %w", err)
+		return 0, 0, err
 	}
 
 	switch _type {
@@ -188,14 +225,7 @@ func (p packer) Recv(r io.Reader, w io.Writer) (Channel, int64, error) {
 		}
 		return channel, n, err
 	case TypeClose:
-		if length == 0 {
-			return channel, 0, io.EOF
-		}
-		errMsg := make([]byte, length)
-		if _, err := io.ReadFull(r, errMsg); err != nil {
-			return channel, 0, fmt.Errorf("failed to read error message: %w", err)
-		}
-		return channel, 0, fmt.Errorf("packer close error: %s", string(errMsg))
+		return p.readClose(r, channel, length)
 	}
 
 	return channel, 0, fmt.Errorf("unknown payload type: %d", _type)
@@ -203,52 +233,13 @@ func (p packer) Recv(r io.Reader, w io.Writer) (Channel, int64, error) {
 
 // read next headers
 func (p packer) Next(r io.Reader) (Channel, int64, error) {
-	var _magic [2]byte
-	if _, err := io.ReadFull(r, _magic[:]); err != nil {
-		return 0, 0, fmt.Errorf("reading magic bytes failed: %w", err)
-	}
-
-	if _magic[0] != p.magic[0] || _magic[1] != p.magic[1] {
-		return 0, 0, fmt.Errorf("wrong packer magic: expected [%d %d], got [%d %d]", p.magic[0], p.magic[1], _magic[0], _magic[1])
-	}
-
-	var version Version
-	err := binary.Read(r, binary.LittleEndian, &version)
+	_type, channel, length, err := p.readHeader(r)
 	if err != nil {
-		return 0, 0, fmt.Errorf("reading version failed: %w", err)
-	}
-
-	if version != p.version {
-		return 0, 0, fmt.Errorf("wrong packer version: expected %d, got %d", p.version, version)
-	}
-
-	var _type Type
-	err = binary.Read(r, binary.LittleEndian, &_type)
-	if err != nil {
-		return 0, 0, fmt.Errorf("reading type failed: %w", err)
-	}
-
-	var length int64
-	err = binary.Read(r, binary.LittleEndian, &length)
-	if err != nil {
-		return 0, 0, fmt.Errorf("reading length failed: %w", err)
-	}
-
-	var channel Channel
-	err = binary.Read(r, binary.LittleEndian, &channel)
-	if err != nil {
-		return 0, 0, fmt.Errorf("reading channel failed: %w", err)
+		return 0, 0, err
 	}
 
 	if _type == TypeClose {
-		if length == 0 {
-			return channel, 0, io.EOF
-		}
-		errMsg := make([]byte, length)
-		if _, err := io.ReadFull(r, errMsg); err != nil {
-			return channel, 0, fmt.Errorf("failed to read error message: %w", err)
-		}
-		return channel, 0, fmt.Errorf("packer close error: %s", string(errMsg))
+		return p.readClose(r, channel, length)
 	}
 
 	return channel, length, nil
