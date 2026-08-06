@@ -89,6 +89,10 @@ all enforced by the conformance suite. They still differ where the runtimes do:
 - **The image's `USER`.** Not applied by containerd — resolving a user name
   needs a mount of the image's snapshot that rootless is not permitted to make,
   so containers run as root. Its `ENV`, `WORKDIR` and `ENTRYPOINT` are applied.
+- **What `Clean` considers an image's age.** Docker reports only the image's
+  build date, so the sweep measures how old the image *is*; containerd records
+  when the image arrived locally, so it measures how long it has been *here*.
+  Same call, different cutoff.
 
 ## Tests
 

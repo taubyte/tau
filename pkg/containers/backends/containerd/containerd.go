@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -22,6 +23,7 @@ import (
 	"github.com/containerd/containerd/cio"
 	"github.com/containerd/containerd/containers"
 	"github.com/containerd/containerd/content"
+	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/namespaces"
 	"github.com/containerd/containerd/oci"
 	"github.com/containerd/errdefs"
@@ -928,6 +930,44 @@ func (b *ContainerdBackend) Inspect(ctx context.Context, id core.ContainerID) (*
 	}
 
 	return info, nil
+}
+
+// Clean removes images older than age, optionally scoped to one reference.
+func (b *ContainerdBackend) Clean(ctx context.Context, age time.Duration, reference string) error {
+	if b.client == nil {
+		return fmt.Errorf("containerd client not initialized")
+	}
+
+	ctx = namespaces.WithNamespace(ctx, b.config.Namespace)
+
+	imageService := b.client.ImageService()
+
+	list, err := imageService.List(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list images: %w", err)
+	}
+
+	cutoff := time.Now().Add(-age)
+
+	var errs []error
+	for _, img := range list {
+		if reference != "" && img.Name != reference {
+			continue
+		}
+		if img.CreatedAt.After(cutoff) {
+			continue
+		}
+		// SynchronousDelete so the content is actually released before this
+		// returns: the point of the sweep is to get the disk space back.
+		if err := imageService.Delete(ctx, img.Name, images.SynchronousDelete()); err != nil {
+			if errdefs.IsNotFound(err) {
+				continue
+			}
+			errs = append(errs, fmt.Errorf("removing image %s: %w", img.Name, err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // HealthCheck performs a health check on the backend

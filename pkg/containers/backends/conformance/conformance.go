@@ -55,6 +55,7 @@ func Run(t *testing.T, b Backend) {
 	t.Run("ImageDefaults", func(t *testing.T) { testImageDefaults(t, b) })
 	t.Run("LargeOutput", func(t *testing.T) { testLargeOutput(t, b) })
 	t.Run("RemoveIsFinal", func(t *testing.T) { testRemoveIsFinal(t, b) })
+	t.Run("CleanKeepsRecentImages", func(t *testing.T) { testCleanKeepsRecentImages(t, b) })
 	t.Run("HealthCheck", func(t *testing.T) {
 		assert.NoError(t, b.Backend.HealthCheck(context.Background()))
 	})
@@ -221,6 +222,22 @@ func testRemoveIsFinal(t *testing.T, b Backend) {
 
 	_, err = b.Backend.Inspect(ctx, id)
 	assert.Error(t, err, "a removed container must not be inspectable")
+}
+
+func testCleanKeepsRecentImages(t *testing.T, b Backend) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	image := b.Backend.Image(b.Image)
+	require.NoError(t, image.Pull(ctx))
+
+	// Only the harmless direction is asserted. Clean takes an age and no filter,
+	// so a test that proved deletion would delete images off whatever machine
+	// ran it — a century's cutoff keeps everything and still exercises the
+	// listing and traversal, which is where a backend that cannot sweep fails.
+	require.NoError(t, b.Backend.Clean(ctx, 100*365*24*time.Hour, b.Image), "a sweep must not error")
+
+	assert.True(t, image.Exists(ctx), "an image younger than the cutoff must survive the sweep")
 }
 
 // RunStopsRunningContainer checks that a container still running can be stopped

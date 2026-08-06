@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -59,7 +60,8 @@ func (f *fakeBackend) Start(context.Context, core.ContainerID) error {
 	return f.startErr
 }
 
-func (f *fakeBackend) Stop(context.Context, core.ContainerID) error { return nil }
+func (f *fakeBackend) Stop(context.Context, core.ContainerID) error       { return nil }
+func (f *fakeBackend) Clean(context.Context, time.Duration, string) error { return nil }
 
 func (f *fakeBackend) Remove(context.Context, core.ContainerID) error {
 	f.record("remove")

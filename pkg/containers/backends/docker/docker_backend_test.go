@@ -154,7 +154,7 @@ func TestOperationsWithoutClient(t *testing.T) {
 	assert.Error(t, backend.Stop(ctx, "c"))
 	assert.Error(t, backend.Remove(ctx, "c"))
 	assert.Error(t, backend.Wait(ctx, "c"))
-	assert.Error(t, backend.Clean(ctx, time.Hour, nil))
+	assert.Error(t, backend.Clean(ctx, time.Hour, ""))
 
 	_, err = backend.Logs(ctx, "c")
 	assert.Error(t, err)

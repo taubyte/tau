@@ -1,14 +1,8 @@
 package containers
 
 import (
-	"github.com/moby/moby/client"
 	"github.com/taubyte/tau/pkg/containers/core"
 )
-
-// New Filter returns a filter argument to perform key value Lookups on docker host.
-func NewFilter(key, value string) client.Filters {
-	return client.Filters{}.Add(key, value)
-}
 
 // convertToContainerConfig converts old Container options to ContainerConfig
 func convertToContainerConfig(imageName string, c *Container) *core.ContainerConfig {

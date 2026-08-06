@@ -6,7 +6,6 @@ import (
 	"os"
 	"time"
 
-	"github.com/moby/moby/client"
 	"github.com/taubyte/tau/pkg/containers/backends/docker"
 )
 
@@ -113,9 +112,8 @@ func (i *DockerImage) Instantiate(ctx context.Context, options ...ContainerOptio
 	return c, nil
 }
 
-// Clean removes images older than age that match the given filter.
-// Implemented for the Docker backend; other backends return an error.
-func (c *Client) Clean(ctx context.Context, age time.Duration, filter client.Filters) error {
+// Clean removes images older than age, optionally scoped to one reference.
+func (c *Client) Clean(ctx context.Context, age time.Duration, reference string) error {
 	if c.backend == nil {
 		backend, err := getDefaultBackend()
 		if err != nil {
@@ -124,10 +122,7 @@ func (c *Client) Clean(ctx context.Context, age time.Duration, filter client.Fil
 		c.backend = backend
 	}
 
-	if db, ok := c.backend.(*docker.DockerBackend); ok {
-		return db.Clean(ctx, age, filter)
-	}
-	return fmt.Errorf("Clean() not supported by backend %s", c.backend.BackendType())
+	return c.backend.Clean(ctx, age, reference)
 }
 
 // Name returns the name of the image

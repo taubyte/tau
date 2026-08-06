@@ -4,14 +4,16 @@ import (
 	"context"
 	"time"
 
-	"github.com/moby/moby/client"
+	"github.com/ipfs/go-log/v2"
 	ci "github.com/taubyte/tau/pkg/containers"
 )
 
+var logger = log.Logger("tau.containers.gc")
+
 type config struct {
-	interval time.Duration
-	maxAge   time.Duration
-	filters  client.Filters
+	interval  time.Duration
+	maxAge    time.Duration
+	reference string
 }
 
 var (
@@ -40,9 +42,11 @@ func Start(ctx context.Context, options ...Option) error {
 		for {
 			select {
 			case <-time.After(cnf.interval):
-				// Clean() is deprecated - backend-based cleanup would need to be implemented
-				// For now, just log the error if Clean fails
-				client.Clean(ctx, cnf.maxAge, cnf.filters)
+				// A sweep that cannot reclaim anything is how a build node runs
+				// out of disk, so say so rather than dropping the error.
+				if err := client.Clean(ctx, cnf.maxAge, cnf.reference); err != nil {
+					logger.Errorf("image cleanup failed: %s", err)
+				}
 			case <-ctx.Done():
 				return
 			}

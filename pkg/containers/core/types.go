@@ -46,6 +46,13 @@ type Backend interface {
 	Logs(ctx context.Context, id ContainerID) (io.ReadCloser, error)
 	Inspect(ctx context.Context, id ContainerID) (*ContainerInfo, error)
 
+	// Clean removes images older than age. A build node pulls a new image for
+	// every toolchain version it sees, so without this its disk fills up.
+	//
+	// reference scopes the sweep to one image reference; empty means every
+	// image the backend can see, including ones tau never pulled.
+	Clean(ctx context.Context, age time.Duration, reference string) error
+
 	// Backend-specific operations
 	HealthCheck(ctx context.Context) error
 	Capabilities() BackendCapabilities

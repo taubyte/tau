@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/netip"
@@ -403,32 +404,38 @@ func (b *DockerBackend) Remove(ctx context.Context, id core.ContainerID) error {
 	return nil
 }
 
-// Clean removes images older than age that match the given filter.
-func (b *DockerBackend) Clean(ctx context.Context, age time.Duration, filter client.Filters) error {
+// Clean removes images older than age, optionally scoped to one reference.
+func (b *DockerBackend) Clean(ctx context.Context, age time.Duration, reference string) error {
 	if b.client == nil {
 		return fmt.Errorf("Docker client not initialized")
 	}
 
 	opts := client.ImageListOptions{}
-	if len(filter) > 0 {
-		opts.Filters = filter
+	if reference != "" {
+		opts.Filters = client.Filters{}.Add("reference", reference)
 	}
+
 	res, err := b.client.ImageList(ctx, opts)
 	if err != nil {
 		return fmt.Errorf("failed to list images: %w", err)
 	}
 
 	cutoff := time.Now().Add(-age).Unix()
+
+	var errs []error
 	for _, img := range res.Items {
-		if img.Created < cutoff {
-			// best effort to remove the image
-			b.client.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{
-				Force:         true,
-				PruneChildren: true,
-			})
+		if img.Created >= cutoff {
+			continue
+		}
+		if _, err := b.client.ImageRemove(ctx, img.ID, client.ImageRemoveOptions{
+			Force:         true,
+			PruneChildren: true,
+		}); err != nil {
+			errs = append(errs, fmt.Errorf("removing image %s: %w", img.ID, err))
 		}
 	}
-	return nil
+
+	return errors.Join(errs...)
 }
 
 // Wait waits for a container to exit
