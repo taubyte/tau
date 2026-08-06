@@ -631,6 +631,9 @@ func (b *ContainerdBackend) Start(ctx context.Context, id core.ContainerID) erro
 	tio.drain()
 
 	if err := tio.task.Start(ctx); err != nil {
+		// A container may hold only one task, so the one that failed to start
+		// has to go: leaving it makes every retry fail with "already exists".
+		tio.task.Delete(ctx)
 		tio.close()
 		return fmt.Errorf("failed to start container %s: %w", id, err)
 	}
@@ -653,12 +656,13 @@ func (b *ContainerdBackend) Stop(ctx context.Context, id core.ContainerID) error
 		return err
 	}
 
+	// The task is killed but deliberately not deleted. Deleting it discards the
+	// runtime record, after which Inspect can no longer tell a stopped container
+	// from one that never ran — it would report "created" and exit code 0, losing
+	// the status that says why it was stopped — and a second Stop would fail
+	// against a task that is no longer there. Deleting is Remove's job.
 	if err := killAndWait(ctx, task); err != nil {
 		return fmt.Errorf("failed to kill container %s: %w", id, err)
-	}
-
-	if _, err := task.Delete(ctx); err != nil {
-		return fmt.Errorf("failed to stop container %s: %w", id, err)
 	}
 
 	return nil

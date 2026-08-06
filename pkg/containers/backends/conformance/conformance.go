@@ -260,6 +260,13 @@ func RunStopsRunningContainer(t *testing.T, b Backend) {
 	require.NoError(t, b.Backend.Start(ctx, id))
 	require.NoError(t, b.Backend.Stop(ctx, id), "a running container must be stoppable")
 
+	// A stopped container must still be distinguishable from one that was never
+	// run. A backend that discards the runtime record on stop reports the zero
+	// value here, which reads as a container that succeeded.
+	info, err := b.Backend.Inspect(ctx, id)
+	require.NoError(t, err, "a stopped container must still be inspectable")
+	assert.NotEqual(t, "created", info.Status, "a container that ran and was stopped is not merely created")
+
 	// Stopping must not throw away the output: the reason an operator stopped a
 	// container is usually in its logs.
 	logs, err := b.Backend.Logs(ctx, id)
@@ -270,6 +277,10 @@ func RunStopsRunningContainer(t *testing.T, b Backend) {
 	_, err = stdcopy.StdCopy(&stdout, &stderr, logs)
 	require.NoError(t, err)
 	assert.Contains(t, stdout.String(), "before stop", "output produced before the stop must survive it")
+
+	// Stopping something already stopped is how cancellation paths behave when
+	// they race, and must not be an error.
+	assert.NoError(t, b.Backend.Stop(ctx, id), "stopping an already-stopped container must be a no-op")
 
 	require.NoError(t, b.Backend.Remove(ctx, id), "a stopped container must be removable")
 }
