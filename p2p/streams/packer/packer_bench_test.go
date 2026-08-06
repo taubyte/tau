@@ -1,6 +1,7 @@
 package packer
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"testing"
@@ -86,6 +87,33 @@ func BenchmarkRecv(b *testing.B) {
 				}
 			}
 			b.ReportMetric(float64(src.reads), "reads/op")
+		})
+	}
+}
+
+// BenchmarkRecvIntoBuffer is Recv as this repo actually calls it. Both real
+// callers (command/framer and tunnels/http) receive into a fresh
+// *bytes.Buffer, which implements io.ReaderFrom — so the copy runs through
+// bytes.Buffer.ReadFrom and the packer's own buffer never enters it. The gain
+// here is header parsing only; BenchmarkRecv's payload-buffer saving is real
+// but applies to a destination no caller in this tree passes.
+func BenchmarkRecvIntoBuffer(b *testing.B) {
+	for _, size := range benchSizes {
+		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
+			p := New(testMagic, testVersion)
+			frameBytes := frame(TypeData, int64(size), make([]byte, size))
+			src := &netReader{data: frameBytes}
+
+			b.ReportAllocs()
+			b.SetBytes(int64(size))
+			for b.Loop() {
+				src.reset()
+				// Fresh buffer per call, exactly as framer.Read does.
+				var out bytes.Buffer
+				if _, _, err := p.Recv(src, &out); err != nil {
+					b.Fatal(err)
+				}
+			}
 		})
 	}
 }

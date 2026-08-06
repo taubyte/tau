@@ -67,14 +67,27 @@ func (p packer) encodeHeader(hdr *[headerSize]byte, channel Channel, _type Type,
 // copyPayload moves exactly length bytes from r to w. io.Copy would allocate
 // its own buffer here — sized min(32KiB, length), since io.LimitReader tells
 // it how much is coming — on every single frame. The pool makes that nothing.
-// A zero length is not short-circuited: io.CopyBuffer still consults the
+// A zero length is not short-circuited: the copy still consults the
 // destination's ReadFrom, and for a *bytes.Buffer that is what leaves an empty
 // (rather than nil) result behind. Callers compare against []byte{}.
 func copyPayload(w io.Writer, r io.Reader, length int64) (int64, error) {
+	src := io.LimitReader(r, length)
+
+	// A destination that can read for itself does its own buffering, and
+	// io.CopyBuffer would ignore the buffer we handed it — taking one from the
+	// pool just to put it back is pure churn. Recv is always this case in
+	// practice: both callers in this repo receive into a *bytes.Buffer.
+	if _, ok := w.(io.ReaderFrom); ok {
+		return io.Copy(w, src)
+	}
+
+	// Send's destination is the raw stream, which cannot, so the pool earns
+	// its keep there: io.Copy would otherwise allocate min(32KiB, length) per
+	// frame, because io.LimitReader tells it exactly how much is coming.
 	bufPtr := bufPool.Get().(*[]byte)
 	defer bufPool.Put(bufPtr)
 
-	return io.CopyBuffer(w, io.LimitReader(r, length), *bufPtr)
+	return io.CopyBuffer(w, src, *bufPtr)
 }
 
 // sendBytes is send for a payload already in memory: no intermediate reader,
