@@ -10,24 +10,17 @@ import (
 func (mx *MuxedReadCloser) Combined() io.ReadCloser {
 	r, w := io.Pipe()
 	go func() {
-		defer w.Close()
 		defer mx.reader.Close()
-		stdcopy.StdCopy(w, w, mx.reader)
+		// A demultiplexing failure means the output is not what it claims to
+		// be; surfacing it beats handing the caller a silently short read.
+		w.CloseWithError(demux(w, w, mx.reader))
 	}()
 	return r
 }
 
-// Separated returns both the standard Out and Error logs of the container.
-func (mx *MuxedReadCloser) Separated() (stdOut io.ReadCloser, stdErr io.ReadCloser) {
-	r, w := io.Pipe()
-	rE, wE := io.Pipe()
-	go func() {
-		defer w.Close()
-		defer wE.Close()
-		defer mx.reader.Close()
-		stdcopy.StdCopy(w, wE, mx.reader)
-	}()
-	return r, rE
+func demux(stdOut, stdErr io.Writer, muxed io.Reader) error {
+	_, err := stdcopy.StdCopy(stdOut, stdErr, muxed)
+	return err
 }
 
 func (mx *MuxedReadCloser) Close() error {

@@ -34,6 +34,18 @@ func NewDaemon(config core.ContainerdConfig) (*Daemon, error) {
 
 	var socketPath, stateFile string
 
+	// An explicit socket path wins in either mode: it is what the config field
+	// means, and it is the only way to point a daemon somewhere other than the
+	// one well-known location per user.
+	if config.SocketPath != "" {
+		socketPath = config.SocketPath
+		stateFile = filepath.Join(filepath.Dir(socketPath), "containerd.pid")
+		if err := os.MkdirAll(filepath.Dir(socketPath), 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %w", filepath.Dir(socketPath), err)
+		}
+		return &Daemon{config: config, socketPath: socketPath, stateFile: stateFile}, nil
+	}
+
 	if isRootless {
 		// Rootless mode: use XDG directories
 		currentUser, err := user.Current()
@@ -59,18 +71,13 @@ func NewDaemon(config core.ContainerdConfig) (*Daemon, error) {
 		socketPath = filepath.Join(containerdDir, "containerd.sock")
 		stateFile = filepath.Join(containerdDir, "containerd.pid")
 	} else {
-		// Rootful mode: use standard system paths or explicit SocketPath (e.g. for testing)
-		if config.SocketPath != "" {
-			socketPath = config.SocketPath
-			stateFile = filepath.Join(filepath.Dir(socketPath), "containerd.pid")
-		} else {
-			socketPath = "/run/containerd/containerd.sock"
-			stateFile = "/run/containerd/containerd.pid"
+		// Rootful mode: containerd lives at the system path, managed by systemd.
+		socketPath = "/run/containerd/containerd.sock"
+		stateFile = "/run/containerd/containerd.pid"
 
-			socketDir := filepath.Dir(socketPath)
-			if err := os.MkdirAll(socketDir, 0755); err != nil {
-				return nil, fmt.Errorf("failed to create directory %s: %w", socketDir, err)
-			}
+		socketDir := filepath.Dir(socketPath)
+		if err := os.MkdirAll(socketDir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory %s: %w", socketDir, err)
 		}
 	}
 

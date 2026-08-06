@@ -18,7 +18,7 @@ DREAM_P ?= 4
 # it fails the package outright rather than skipping it.
 DREAM_PKGS = $(shell grep -rl --include='*_test.go' '//go:build dreaming' . | xargs grep -L '//go:build dreaming && ee' | sed 's|^\./||' | grep -vE '^(ee/|\.)' | xargs -n1 dirname | sort -u | sed 's|^|./|')
 
-.PHONY: test test-dreaming test-raft test-docker test-all bench-dreaming vm-fixtures test-cli test-cli-cover
+.PHONY: test test-dreaming test-raft test-docker test-containerd test-containers test-all bench-dreaming vm-fixtures test-cli test-cli-cover
 
 test:
 	go test $(FLAGS) ./...
@@ -57,8 +57,22 @@ test-dreaming:
 test-raft:
 	GOMEMLIMIT=$(GOMEMLIMIT) go test -tags raft_integration -p 1 -timeout 20m $(FLAGS) ./pkg/raft/...
 
+# Container backend integration suites. Both drive the same conformance suite
+# (pkg/containers/backends/conformance), which is what keeps docker and
+# containerd interchangeable. They are kept out of `test`/`test-all` because
+# they need a live runtime; the untagged tests under ./pkg/containers/... run
+# with no daemon at all.
+#
+# test-docker needs a running docker daemon.
+# test-containerd needs either a reachable /run/containerd/containerd.sock or
+# containerd + rootlesskit on PATH (plus subuid/subgid entries) for rootless.
 test-docker:
-	go test -tags docker_integration -run '_Integration$$' -p 1 $(FLAGS) ./pkg/containers/...
+	go test -tags docker_integration -run '_Integration$$' -p 1 -timeout 15m $(FLAGS) ./pkg/containers/...
+
+test-containerd:
+	go test -tags containerd_integration -run '_Integration$$' -p 1 -timeout 20m $(FLAGS) ./pkg/containers/...
+
+test-containers: test-docker test-containerd
 
 test-all: test test-dreaming test-raft
 

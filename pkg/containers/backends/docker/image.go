@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"reflect"
 	"strings"
 
 	"github.com/moby/moby/client"
@@ -66,15 +65,9 @@ func (i *dockerImage) Build(ctx context.Context, input core.BuildInput) error {
 		return fmt.Errorf("build input type %s not supported for Docker backend", input.Type())
 	}
 
-	// Try type assertion to DockerBuildInput first
 	dockerInput, ok := input.(*DockerBuildInput)
 	if !ok {
-		// If type assertion fails, try to extract fields using reflection
-		// This allows containers package to pass a compatible struct without importing DockerBuildInput
-		dockerInput = extractDockerBuildInput(input)
-		if dockerInput == nil {
-			return fmt.Errorf("invalid build input type for Docker backend - expected DockerBuildInput or compatible struct")
-		}
+		return fmt.Errorf("invalid build input type %T for Docker backend - expected *DockerBuildInput", input)
 	}
 
 	buildOptions := client.ImageBuildOptions{
@@ -215,44 +208,4 @@ type DockerBuildInput struct {
 // Type returns the backend type this input is for
 func (d *DockerBuildInput) Type() core.BackendType {
 	return core.BackendTypeDocker
-}
-
-// extractDockerBuildInput extracts build input fields using reflection
-// This allows the containers package to pass compatible structs without importing DockerBuildInput
-func extractDockerBuildInput(input core.BuildInput) *DockerBuildInput {
-	if input == nil {
-		return nil
-	}
-
-	v := reflect.ValueOf(input)
-	if v.Kind() == reflect.Ptr {
-		v = v.Elem()
-	}
-
-	if v.Kind() != reflect.Struct {
-		return nil
-	}
-
-	result := &DockerBuildInput{}
-
-	// Try to extract Context field
-	if contextField := v.FieldByName("Context"); contextField.IsValid() && contextField.CanInterface() {
-		if reader, ok := contextField.Interface().(io.Reader); ok {
-			result.Context = reader
-		}
-	}
-
-	// Try to extract Dockerfile field
-	if dockerfileField := v.FieldByName("Dockerfile"); dockerfileField.IsValid() && dockerfileField.CanInterface() {
-		if str, ok := dockerfileField.Interface().(string); ok {
-			result.Dockerfile = str
-		}
-	}
-
-	// If we got both fields, return the result
-	if result.Context != nil && result.Dockerfile != "" {
-		return result
-	}
-
-	return nil
 }

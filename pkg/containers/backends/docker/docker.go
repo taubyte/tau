@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -19,9 +20,32 @@ import (
 
 // DockerBackend implements the core.Backend interface for Docker
 type DockerBackend struct {
-	config     core.DockerConfig
-	client     *client.Client
+	config core.DockerConfig
+	client *client.Client
+
+	// mu guards containers: a backend is shared across goroutines (one per
+	// build step), and Create/Remove/every lookup mutate the map.
+	mu         sync.Mutex
 	containers map[core.ContainerID]string // Map container ID to Docker container ID
+}
+
+func (b *DockerBackend) putContainer(id core.ContainerID, dockerID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.containers[id] = dockerID
+}
+
+func (b *DockerBackend) lookupContainer(id core.ContainerID) (string, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	dockerID, ok := b.containers[id]
+	return dockerID, ok
+}
+
+func (b *DockerBackend) forgetContainer(id core.ContainerID) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	delete(b.containers, id)
 }
 
 // New creates a new Docker backend
@@ -184,7 +208,7 @@ func (b *DockerBackend) Create(ctx context.Context, config *core.ContainerConfig
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
 
-	b.containers[containerID] = resp.ID
+	b.putContainer(containerID, resp.ID)
 
 	return containerID, nil
 }
@@ -302,7 +326,7 @@ func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*conta
 // getDockerID gets the Docker container ID for the given container ID
 // Tries the map first, then falls back to looking up by name
 func (b *DockerBackend) getDockerID(ctx context.Context, id core.ContainerID) (string, error) {
-	if dockerID, ok := b.containers[id]; ok {
+	if dockerID, ok := b.lookupContainer(id); ok {
 		return dockerID, nil
 	}
 
@@ -315,7 +339,7 @@ func (b *DockerBackend) getDockerID(ctx context.Context, id core.ContainerID) (s
 	}
 
 	if len(res.Items) > 0 {
-		b.containers[id] = res.Items[0].ID
+		b.putContainer(id, res.Items[0].ID)
 		return res.Items[0].ID, nil
 	}
 
@@ -374,7 +398,7 @@ func (b *DockerBackend) Remove(ctx context.Context, id core.ContainerID) error {
 		return fmt.Errorf("failed to remove container %s: %w", id, err)
 	}
 
-	delete(b.containers, id)
+	b.forgetContainer(id)
 
 	return nil
 }
@@ -420,15 +444,16 @@ func (b *DockerBackend) Wait(ctx context.Context, id core.ContainerID) error {
 
 	wait := b.client.ContainerWait(ctx, dockerID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 
+	// Waiting succeeds whatever the container exited with: a non-zero status is
+	// the container's own result, reported through Inspect, not a failure to wait.
 	select {
 	case err := <-wait.Error:
 		if err != nil {
 			return fmt.Errorf("failed to wait for container %s: %w", id, err)
 		}
-	case status := <-wait.Result:
-		if status.StatusCode != 0 {
-			return fmt.Errorf("container %s exited with status %d", id, status.StatusCode)
-		}
+	case <-wait.Result:
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
 	return nil
@@ -524,15 +549,5 @@ func (b *DockerBackend) HealthCheck(ctx context.Context) error {
 
 // Capabilities returns the backend capabilities
 func (b *DockerBackend) Capabilities() core.BackendCapabilities {
-	return core.BackendCapabilities{
-		SupportsMemory:     true,
-		SupportsCPU:        true,
-		SupportsStorage:    true,
-		SupportsPIDs:       true,
-		SupportsMemorySwap: true,
-		SupportsBuild:      true,
-		SupportsOCI:        true,
-		SupportsNetworking: true,
-		SupportsVolumes:    true,
-	}
+	return core.BackendCapabilities{SupportsBuild: true}
 }

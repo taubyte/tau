@@ -3,13 +3,11 @@ package containers
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"time"
 
 	"github.com/moby/moby/client"
 	"github.com/taubyte/tau/pkg/containers/backends/docker"
-	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 // Image initializes the given image. It tries to pull from the registry first to get the latest;
@@ -58,7 +56,7 @@ func (i *DockerImage) buildImage(ctx context.Context) error {
 		return errorImageBuildDockerFile(fmt.Errorf("backend does not support building images"))
 	}
 
-	buildInput := &dockerBuildInput{
+	buildInput := &docker.DockerBuildInput{
 		Context:    i.buildTarball,
 		Dockerfile: "Dockerfile",
 	}
@@ -69,18 +67,6 @@ func (i *DockerImage) buildImage(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// dockerBuildInput is a local struct that matches DockerBuildInput structure
-// This avoids import cycles while allowing the docker backend to type-assert it
-// Fields must be exported (capitalized) so reflection can access them
-type dockerBuildInput struct {
-	Context    io.Reader
-	Dockerfile string
-}
-
-func (d *dockerBuildInput) Type() core.BackendType {
-	return core.BackendTypeDocker
 }
 
 // Pull retrieves latest changes to the image from docker hub.

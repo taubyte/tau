@@ -36,7 +36,6 @@ type Container struct {
 	// Keep old fields for backward compatibility with options
 	image   *DockerImage // Kept for reference, but operations use backend
 	cmd     []string
-	shell   []string
 	volumes []volume
 	env     []string
 	workDir string

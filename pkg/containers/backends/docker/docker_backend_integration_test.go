@@ -7,19 +7,40 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"github.com/taubyte/tau/pkg/containers/backends/conformance"
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-func TestHealthCheckIntegration_Integration(t *testing.T) {
+const conformanceImage = "alpine:latest"
+
+func newTestBackend(t *testing.T) *DockerBackend {
+	t.Helper()
+
 	backend, err := New(core.DockerConfig{})
-	require.NoError(t, err, "Backend creation must succeed - Docker is required")
-	require.NotNil(t, backend, "Backend must not be nil")
+	require.NoError(t, err, "the docker daemon must be running for these tests")
 
-	defer func() {
-		require.NotNil(t, backend.client, "Client must exist for cleanup")
-		require.NoError(t, backend.client.Close(), "Client close must succeed")
-	}()
+	t.Cleanup(func() { backend.client.Close() })
 
-	err = backend.HealthCheck(context.Background())
-	require.NoError(t, err, "HealthCheck must succeed - Docker daemon must be running")
+	return backend
+}
+
+// TestConformance_Integration is the shared suite every backend must pass. It
+// is what makes docker and containerd interchangeable rather than merely both
+// present.
+func TestConformance_Integration(t *testing.T) {
+	conformance.Run(t, conformance.Backend{
+		Backend: newTestBackend(t),
+		Image:   conformanceImage,
+	})
+}
+
+func TestStopRunningContainer_Integration(t *testing.T) {
+	conformance.RunStopsRunningContainer(t, conformance.Backend{
+		Backend: newTestBackend(t),
+		Image:   conformanceImage,
+	})
+}
+
+func TestHealthCheckIntegration_Integration(t *testing.T) {
+	require.NoError(t, newTestBackend(t).HealthCheck(context.Background()))
 }

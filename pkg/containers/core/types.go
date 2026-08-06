@@ -21,10 +21,8 @@ type ContainerID string
 type BackendType string
 
 const (
-	BackendTypeContainerd  BackendType = "containerd"
-	BackendTypeDocker      BackendType = "docker"
-	BackendTypeFirecracker BackendType = "firecracker"
-	BackendTypeNanos       BackendType = "nanos"
+	BackendTypeContainerd BackendType = "containerd"
+	BackendTypeDocker     BackendType = "docker"
 )
 
 // Backend defines the interface for container runtime backends
@@ -39,7 +37,12 @@ type Backend interface {
 	Start(ctx context.Context, id ContainerID) error
 	Stop(ctx context.Context, id ContainerID) error
 	Remove(ctx context.Context, id ContainerID) error
+	// Wait blocks until the container exits. The container's own exit status is
+	// not an error: it is reported by Inspect. Wait errors only when waiting
+	// itself fails.
 	Wait(ctx context.Context, id ContainerID) error
+	// Logs returns the container's output as a docker-multiplexed stream, to be
+	// demultiplexed with stdcopy. Callers must read it before removing the container.
 	Logs(ctx context.Context, id ContainerID) (io.ReadCloser, error)
 	Inspect(ctx context.Context, id ContainerID) (*ContainerInfo, error)
 
@@ -54,10 +57,6 @@ type Image interface {
 	Pull(ctx context.Context) error
 	// Build builds an image from backend-specific inputs
 	// Returns ErrBuildNotSupported if the backend doesn't support building
-	// Input types vary by backend:
-	//   - Containerd: ContainerdBuildInput (Dockerfile + build context, uses BuildKit)
-	//   - OPS/Nanos: NanosBuildInput (application binary path + config)
-	//   - Firecracker: FirecrackerBuildInput (kernel + rootfs paths)
 	Build(ctx context.Context, input BuildInput) error
 	// Exists checks if the image exists locally
 	Exists(ctx context.Context) bool
@@ -80,18 +79,10 @@ type BuildInput interface {
 
 // BackendCapabilities describes what a backend supports
 type BackendCapabilities struct {
-	// Supported resource limits
-	SupportsMemory     bool
-	SupportsCPU        bool
-	SupportsStorage    bool
-	SupportsPIDs       bool
-	SupportsMemorySwap bool
-
-	// Supported features
-	SupportsBuild      bool
-	SupportsOCI        bool
-	SupportsNetworking bool
-	SupportsVolumes    bool
+	// SupportsBuild reports whether the backend can build an image from a
+	// Dockerfile. containerd cannot without BuildKit, so callers building
+	// images must check this first.
+	SupportsBuild bool
 }
 
 // ContainerInfo contains information about a container
@@ -111,7 +102,6 @@ type ResourceLimits struct {
 	CPUQuota   int64 // CPU quota in microseconds
 	CPUPeriod  int64 // CPU period in microseconds
 	CPUShares  int64 // CPU shares (relative weight)
-	Storage    int64 // Storage limit in bytes
 	PIDs       int64 // Maximum number of PIDs
 }
 
@@ -119,7 +109,6 @@ type ResourceLimits struct {
 type ContainerConfig struct {
 	Image     string
 	Command   []string
-	Shell     []string
 	Env       []string
 	WorkDir   string
 	Volumes   []VolumeMount  // Unified volume mounts
@@ -129,78 +118,26 @@ type ContainerConfig struct {
 
 // VolumeMount represents a volume mount configuration
 type VolumeMount struct {
-	Source      string // Source path on host OR volume name (for OPS/Nanos)
+	Source      string // Source path on host OR volume name when IsVolumeName
 	Destination string // Destination path in container
 	ReadOnly    bool   // Whether the mount is read-only
 
-	// OPS/Nanos specific: if true, Source is treated as volume name
-	// Format: "volume_name:/mount/path" (for OPS volume mounting)
-	// If false, Source is a host path (standard bind mount)
+	// IsVolumeName treats Source as a named volume rather than a host path.
+	// Docker only: containerd has no volume manager and rejects these.
 	IsVolumeName bool
 }
 
 // NetworkConfig represents unified network configuration
 type NetworkConfig struct {
-	// Network mode: bridge, host, none, custom
-	// For OPS/Nanos: maps to hypervisor network type (QEMU/Xen)
+	// Network mode: bridge, host, none, custom.
+	// The containerd backend runs without CNI and accepts only host and none.
 	Mode string
 
-	// Port mappings: host port -> container port
+	// Port mappings: host port -> container port. Docker only.
 	PortMappings []PortMapping
 
 	// DNS servers
 	DNS []string
-
-	// Network aliases (for containerd/Docker)
-	Aliases []string
-
-	// Custom network name (for custom mode)
-	NetworkName string
-
-	// IP Configuration (for OPS/Nanos, Firecracker on bare metal)
-	IPConfig *IPConfig
-
-	// MTU size (for OPS/Nanos)
-	MTU int
-
-	// Additional backend-specific options
-	BackendOptions map[string]interface{}
-}
-
-// IPConfig represents IP address configuration
-type IPConfig struct {
-	// IPv4 configuration
-	IPv4 *IPv4Config
-
-	// IPv6 configuration
-	IPv6 *IPv6Config
-}
-
-// IPv4Config represents IPv4 settings
-type IPv4Config struct {
-	// Static IP address (if empty, uses DHCP)
-	Address string
-
-	// Wait for DHCP (seconds, for OPS/Nanos)
-	WaitForDHCPSeconds int
-
-	// Gateway
-	Gateway string
-
-	// Subnet mask
-	Netmask string
-}
-
-// IPv6Config represents IPv6 settings
-type IPv6Config struct {
-	// Static IPv6 address (if empty, uses DHCPv6)
-	Address string
-
-	// Wait for DHCPv6 (seconds, for OPS/Nanos)
-	WaitForDHCPSeconds int
-
-	// Gateway
-	Gateway string
 }
 
 // PortMapping represents a port mapping

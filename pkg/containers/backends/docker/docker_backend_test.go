@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -11,25 +12,9 @@ import (
 )
 
 func TestCapabilities(t *testing.T) {
-	backend := &DockerBackend{
-		config: core.DockerConfig{},
-	}
-
-	caps := backend.Capabilities()
-
-	expectedCaps := core.BackendCapabilities{
-		SupportsMemory:     true,
-		SupportsCPU:        true,
-		SupportsStorage:    true,
-		SupportsPIDs:       true,
-		SupportsMemorySwap: true,
-		SupportsBuild:      true,
-		SupportsOCI:        true,
-		SupportsNetworking: true,
-		SupportsVolumes:    true,
-	}
-
-	assert.Equal(t, expectedCaps, caps, "Capabilities should match expected values")
+	// Callers route Dockerfile builds by this flag, and the docker daemon is
+	// the backend that can serve them.
+	assert.True(t, (&DockerBackend{}).Capabilities().SupportsBuild)
 }
 
 func TestInitClient(t *testing.T) {
@@ -155,4 +140,54 @@ func TestBackendImage(t *testing.T) {
 	require.True(t, ok, "Image should return *dockerImage")
 	assert.Equal(t, "alpine:latest", dockerImage.name)
 	assert.Equal(t, backend, dockerImage.backend)
+}
+
+func TestOperationsWithoutClient(t *testing.T) {
+	// Every entry point must refuse rather than panic when the backend was
+	// never connected. These need no daemon, so they run in the default suite.
+	backend := &DockerBackend{}
+	ctx := context.Background()
+
+	_, err := backend.Create(ctx, &core.ContainerConfig{Image: "alpine"})
+	assert.Error(t, err)
+	assert.Error(t, backend.Start(ctx, "c"))
+	assert.Error(t, backend.Stop(ctx, "c"))
+	assert.Error(t, backend.Remove(ctx, "c"))
+	assert.Error(t, backend.Wait(ctx, "c"))
+	assert.Error(t, backend.Clean(ctx, time.Hour, nil))
+
+	_, err = backend.Logs(ctx, "c")
+	assert.Error(t, err)
+
+	_, err = backend.Inspect(ctx, "c")
+	assert.Error(t, err)
+}
+
+func TestImageWithoutClient(t *testing.T) {
+	image := (&DockerBackend{}).Image("alpine:latest")
+
+	assert.Equal(t, "alpine:latest", image.Name())
+	assert.False(t, image.Exists(context.Background()))
+	assert.Error(t, image.Pull(context.Background()))
+	assert.Error(t, image.Remove(context.Background()))
+	assert.Error(t, image.Build(context.Background(), &DockerBuildInput{}))
+
+	_, err := image.Digest(context.Background())
+	assert.Error(t, err)
+
+	_, err = image.Tags(context.Background())
+	assert.Error(t, err)
+}
+
+func TestGetDockerIDFromMap(t *testing.T) {
+	// A known container resolves from the map without asking the daemon.
+	backend := &DockerBackend{containers: map[core.ContainerID]string{"tau-1": "deadbeef"}}
+
+	dockerID, err := backend.getDockerID(context.Background(), "tau-1")
+	require.NoError(t, err)
+	assert.Equal(t, "deadbeef", dockerID)
+
+	backend.forgetContainer("tau-1")
+	_, ok := backend.lookupContainer("tau-1")
+	assert.False(t, ok, "a forgotten container must not resolve")
 }

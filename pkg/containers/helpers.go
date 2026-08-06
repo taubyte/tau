@@ -15,7 +15,6 @@ func convertToContainerConfig(imageName string, c *Container) *core.ContainerCon
 	config := &core.ContainerConfig{
 		Image:   imageName,
 		Command: c.cmd,
-		Shell:   c.shell,
 		Env:     c.env,
 		WorkDir: c.workDir,
 	}
