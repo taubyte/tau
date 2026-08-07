@@ -54,14 +54,6 @@ func WorkDir(workDir string) ContainerOption {
 	}
 }
 
-// Shell sets the shell-form of RUN, CMD, ENTRYPOINT
-func Shell(cmd []string) ContainerOption {
-	return func(c *Container) error {
-		c.shell = cmd
-		return nil
-	}
-}
-
 // Command sets the commands to be run by the container after being built.
 func Command(cmd []string) ContainerOption {
 	return func(c *Container) error {

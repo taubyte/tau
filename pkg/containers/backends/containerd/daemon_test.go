@@ -1,286 +1,174 @@
 //go:build linux
 
+// Unit tests for daemon lifecycle bookkeeping. Every test points the daemon at
+// a temp directory: writing to the real per-user socket path would fight with,
+// and can kill, a containerd the developer is actually using.
+
 package containerd
 
 import (
 	"context"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"github.com/taubyte/tau/pkg/containers/core"
 )
 
-func TestNewDaemon(t *testing.T) {
-	config := core.ContainerdConfig{
+func newTestDaemon(t *testing.T) *Daemon {
+	t.Helper()
+
+	daemon, err := NewDaemon(core.ContainerdConfig{
 		RootlessMode: core.RootlessModeEnabled,
-	}
+		SocketPath:   filepath.Join(t.TempDir(), "containerd.sock"),
+	})
+	require.NoError(t, err)
 
-	daemon, err := NewDaemon(config)
-	assert.NoError(t, err, "NewDaemon should succeed")
-	assert.NotNil(t, daemon, "Daemon should not be nil")
-
-	// Check that directories and paths are set up correctly
-	// Should be /run/user/{uid}/tau/containerd/containerd.sock (or XDG_RUNTIME_DIR)
-	assert.Contains(t, daemon.socketPath, "/tau/containerd/containerd.sock")
-	assert.Contains(t, daemon.stateFile, "/tau/containerd/containerd.pid")
-
-	// Check that socket directory exists
-	socketDir := filepath.Dir(daemon.socketPath)
-	assert.DirExists(t, socketDir, "Socket directory should exist")
+	return daemon
 }
 
-func TestNewDaemon_RootfulMode(t *testing.T) {
-	config := core.ContainerdConfig{
+func TestNewDaemonPaths(t *testing.T) {
+	t.Run("explicit socket path is used in either mode", func(t *testing.T) {
+		for _, mode := range []core.RootlessMode{core.RootlessModeEnabled, core.RootlessModeDisabled} {
+			socket := filepath.Join(t.TempDir(), "containerd.sock")
+
+			daemon, err := NewDaemon(core.ContainerdConfig{RootlessMode: mode, SocketPath: socket})
+			require.NoError(t, err)
+
+			assert.Equal(t, socket, daemon.socketPath)
+			assert.Equal(t, filepath.Join(filepath.Dir(socket), "containerd.pid"), daemon.stateFile,
+				"the pid file must sit beside the socket it describes")
+		}
+	})
+
+	t.Run("rootless defaults to a per-user path", func(t *testing.T) {
+		daemon, err := NewDaemon(core.ContainerdConfig{RootlessMode: core.RootlessModeEnabled})
+		require.NoError(t, err)
+
+		assert.Contains(t, daemon.socketPath, "/tau/containerd/containerd.sock")
+		assert.NotEqual(t, "/run/containerd/containerd.sock", daemon.socketPath,
+			"a rootless daemon must not claim the system socket")
+	})
+}
+
+func TestDaemonStartRefusesRootful(t *testing.T) {
+	// Rootful containerd belongs to systemd; starting one here would fight it.
+	daemon, err := NewDaemon(core.ContainerdConfig{
 		RootlessMode: core.RootlessModeDisabled,
-	}
+		AutoStart:    true,
+		SocketPath:   filepath.Join(t.TempDir(), "containerd.sock"),
+	})
+	require.NoError(t, err)
 
-	daemon, err := NewDaemon(config)
-	assert.NoError(t, err, "NewDaemon should succeed in rootful mode")
-	assert.NotNil(t, daemon, "Daemon should not be nil")
-
-	// Check that rootful mode uses system paths
-	assert.Equal(t, "/run/containerd/containerd.sock", daemon.socketPath, "Rootful mode should use system socket path")
-	assert.Equal(t, "/run/containerd/containerd.pid", daemon.stateFile, "Rootful mode should use system PID file path")
-
-	// Check that socket directory exists (or can be created)
-	socketDir := filepath.Dir(daemon.socketPath)
-	// Directory might not exist if containerd is not running, but we should be able to create it
-	if _, err := os.Stat(socketDir); os.IsNotExist(err) {
-		err := os.MkdirAll(socketDir, 0755)
-		assert.NoError(t, err, "Should be able to create socket directory")
-		defer os.RemoveAll(socketDir)
-	}
+	err = daemon.Start(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "systemd")
 }
 
-func TestDaemon_findContainerdBinary(t *testing.T) {
-	config := core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled,
-	}
+func TestDaemonFindContainerdBinary(t *testing.T) {
+	t.Run("configured path is returned as-is", func(t *testing.T) {
+		daemon := &Daemon{config: core.ContainerdConfig{ContainerdPath: "/custom/containerd"}}
 
-	daemon, err := NewDaemon(config)
-	assert.NoError(t, err)
+		path, err := daemon.findContainerdBinary()
+		require.NoError(t, err)
+		assert.Equal(t, "/custom/containerd", path)
+	})
 
-	// Test with explicit path
-	config.ContainerdPath = "/usr/bin/containerd"
-	daemon.config.ContainerdPath = "/usr/bin/containerd"
+	t.Run("falls back to PATH", func(t *testing.T) {
+		// Empty PATH means nothing is findable, whatever the machine has.
+		t.Setenv("PATH", t.TempDir())
 
-	path, err := daemon.findContainerdBinary()
-	if _, statErr := os.Stat("/usr/bin/containerd"); statErr == nil {
-		assert.NoError(t, err, "Should find containerd at explicit path")
-		assert.Equal(t, "/usr/bin/containerd", path)
-	} else {
-		t.Log("containerd not found at /usr/bin/containerd, testing PATH lookup")
-	}
-
-	// Test PATH lookup
-	daemon.config.ContainerdPath = ""
-	path, err = daemon.findContainerdBinary()
-
-	// This will depend on whether containerd is in PATH
-	if err != nil {
+		_, err := (&Daemon{}).findContainerdBinary()
+		require.Error(t, err)
 		assert.Contains(t, err.Error(), "not found in PATH")
-		t.Log("containerd not found in PATH (expected on systems without containerd installed)")
-	} else {
-		t.Logf("Found containerd at: %s", path)
-	}
+	})
 }
 
-func TestDaemon_createConfigFile(t *testing.T) {
-	config := core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled,
-	}
+func TestDaemonFindRootlesskitBinary(t *testing.T) {
+	t.Run("configured path is returned as-is", func(t *testing.T) {
+		daemon := &Daemon{config: core.ContainerdConfig{RootlesskitPath: "/custom/rootlesskit"}}
 
-	daemon, err := NewDaemon(config)
-	assert.NoError(t, err)
+		path, err := daemon.findRootlesskitBinary()
+		require.NoError(t, err)
+		assert.Equal(t, "/custom/rootlesskit", path)
+	})
 
-	// Get XDG directories
-	xdgDataHome := os.Getenv("XDG_DATA_HOME")
-	if xdgDataHome == "" {
-		home, _ := os.UserHomeDir()
-		xdgDataHome = filepath.Join(home, ".local", "share")
-	}
+	t.Run("missing binary is reported", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
 
-	xdgRuntimeDir := os.Getenv("XDG_RUNTIME_DIR")
-	if xdgRuntimeDir == "" {
-		currentUser, _ := user.Current()
-		uid, _ := strconv.Atoi(currentUser.Uid)
-		xdgRuntimeDir = filepath.Join("/run", "user", strconv.Itoa(uid))
-	}
-
-	rootDir := filepath.Join(xdgDataHome, "tau", "containerd", "daemon")
-	stateDir := filepath.Join(xdgRuntimeDir, "tau", "containerd", "daemon")
-	socketPath := "/run/containerd/containerd.sock"
-	debugSocketPath := "/run/containerd/containerd-debug.sock"
-	configDir := filepath.Join(xdgRuntimeDir, "tau", "containerd")
-
-	configPath, err := daemon.createConfigFile(rootDir, stateDir, socketPath, debugSocketPath, configDir)
-	assert.NoError(t, err, "createConfigFile should succeed")
-	assert.NotEmpty(t, configPath, "Config path should not be empty")
-
-	// Check that config file exists and contains expected content
-	assert.FileExists(t, configPath, "Config file should exist")
-
-	content, err := os.ReadFile(configPath)
-	assert.NoError(t, err)
-	contentStr := string(content)
-
-	// Check for Docker-style minimal config (CRI disabled)
-	assert.Contains(t, contentStr, "disabled_plugins = [\"io.containerd.grpc.v1.cri\"]", "Config should disable CRI plugin")
-	assert.Contains(t, contentStr, "version = 2", "Config should have version 2")
-	assert.Contains(t, contentStr, "[grpc]", "Config should have grpc section")
-	assert.Contains(t, contentStr, socketPath, "Config should contain socket path")
-
-	// Clean up
-	os.Remove(configPath)
+		_, err := (&Daemon{}).findRootlesskitBinary()
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not found in PATH")
+	})
 }
 
-func TestDaemon_isRunning(t *testing.T) {
-	config := core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled,
-	}
+func TestDaemonCreateConfigFile(t *testing.T) {
+	dir := t.TempDir()
+	daemon := newTestDaemon(t)
 
-	daemon, err := NewDaemon(config)
-	assert.NoError(t, err)
+	path, err := daemon.createConfigFile(
+		filepath.Join(dir, "root"),
+		filepath.Join(dir, "state"),
+		"/run/containerd/containerd.sock",
+		"/run/containerd/debug.sock",
+		filepath.Join(dir, "config"),
+	)
+	require.NoError(t, err)
 
-	// Initially should not be running
-	assert.False(t, daemon.isRunning(), "Daemon should not be running initially")
+	content, err := os.ReadFile(path)
+	require.NoError(t, err)
+	config := string(content)
 
-	// Create a fake PID file to test detection
-	pidData := "999999"
-	err = os.WriteFile(daemon.stateFile, []byte(pidData), 0644)
-	assert.NoError(t, err)
-
-	// Should still return false since PID doesn't exist
-	assert.False(t, daemon.isRunning(), "Daemon should not be running with fake PID")
-
-	// Clean up
-	os.Remove(daemon.stateFile)
+	// The socket address is the one setting the client depends on: if it does
+	// not land in the config, the daemon listens somewhere nobody looks.
+	assert.Contains(t, config, `address = "/run/containerd/containerd.sock"`)
+	assert.Contains(t, config, filepath.Join(dir, "root"))
+	assert.Contains(t, config, filepath.Join(dir, "state"))
+	assert.Contains(t, config, `disabled_plugins = ["io.containerd.grpc.v1.cri"]`,
+		"CRI is dead weight here and slows startup")
 }
 
-func TestDaemon_waitForSocket(t *testing.T) {
-	config := core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled,
-	}
+func TestDaemonIsRunning(t *testing.T) {
+	daemon := newTestDaemon(t)
 
-	daemon, err := NewDaemon(config)
-	assert.NoError(t, err)
+	assert.False(t, daemon.isRunning(), "nothing has been started")
 
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
+	// A stale pid file from a dead process must not read as running.
+	require.NoError(t, os.WriteFile(daemon.stateFile, []byte("4194303"), 0644))
+	assert.False(t, daemon.isRunning(), "a pid that no longer exists is not a running daemon")
 
-	// Test with non-existent socket (should timeout)
-	err = daemon.waitForSocket(ctx, 50*time.Millisecond)
-	assert.Error(t, err, "waitForSocket should timeout for non-existent socket")
+	// Our own pid does exist, and is signalable.
+	require.NoError(t, os.WriteFile(daemon.stateFile, []byte(strconv.Itoa(os.Getpid())), 0644))
+	assert.True(t, daemon.isRunning())
+}
+
+func TestDaemonWaitForSocket(t *testing.T) {
+	daemon := newTestDaemon(t)
+
+	err := daemon.waitForSocket(context.Background(), 50*time.Millisecond)
+	require.Error(t, err, "a socket that never appears must time out")
 	assert.Contains(t, err.Error(), "context deadline exceeded")
-
-	// Note: We can't easily test the success case without actually starting containerd
-	// The integration test will cover this scenario
 }
 
-func TestDaemon_HealthCheck(t *testing.T) {
-	config := core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled,
-	}
-
-	daemon, err := NewDaemon(config)
-	assert.NoError(t, err)
-
-	// Health check should fail when daemon is not running
-	err = daemon.HealthCheck(context.Background())
-	assert.Error(t, err, "Health check should fail when daemon is not running")
+func TestDaemonHealthCheck(t *testing.T) {
+	err := newTestDaemon(t).HealthCheck(context.Background())
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "not running")
 }
 
-func TestDaemon_FullIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("Skipping integration test in short mode")
-	}
+func TestDaemonConnectToSocket(t *testing.T) {
+	daemon := newTestDaemon(t)
 
-	// Check if rootlesskit is available
-	testDaemon := &Daemon{}
-	_, err := testDaemon.findRootlesskitBinary()
-	if err != nil {
-		t.Skip("Skipping integration test: rootlesskit not found")
-	}
+	_, err := daemon.connectToSocket()
+	assert.Error(t, err, "there is no socket to connect to")
 
-	// Check if containerd binary is available
-	_, err = testDaemon.findContainerdBinary()
-	if err != nil {
-		t.Skip("Skipping integration test: containerd binary not found")
-	}
-
-	config := core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled,
-		AutoStart:    true,
-		Namespace:    "test",
-	}
-
-	daemon, err := NewDaemon(config)
-	assert.NoError(t, err)
-
-	// Clean up any existing state
-	os.Remove(daemon.socketPath)
-	os.Remove(daemon.stateFile)
-
-	ctx := context.Background()
-
-	// Test starting daemon
-	err = daemon.Start(ctx)
-	assert.NoError(t, err, "Daemon should start successfully when containerd and rootlesskit are available. If this fails, check subuid/subgid mappings and network driver availability")
-
-	defer func() {
-		// Clean up
-		daemon.Stop(ctx)
-		os.Remove(daemon.socketPath)
-		os.Remove(daemon.stateFile)
-	}()
-
-	// Should be running now
-	assert.True(t, daemon.isRunning(), "Daemon should be running after start")
-
-	// Socket should be ready
-	assert.True(t, daemon.isSocketReady(), "Socket should be ready")
-
-	// Health check should pass
-	err = daemon.HealthCheck(ctx)
-	assert.NoError(t, err, "Health check should pass")
-
-	// Test stopping daemon
-	err = daemon.Stop(ctx)
-	assert.NoError(t, err, "Stop should succeed")
-
-	// Should not be running anymore
-	assert.False(t, daemon.isRunning(), "Daemon should not be running after stop")
-}
-
-func TestDaemon_connectToSocket(t *testing.T) {
-	config := core.ContainerdConfig{
-		RootlessMode: core.RootlessModeEnabled,
-	}
-
-	daemon, err := NewDaemon(config)
-	assert.NoError(t, err)
-
-	// Test connecting to non-existent socket
-	conn, err := daemon.connectToSocket()
-	assert.Error(t, err, "Connecting to non-existent socket should fail")
-	assert.Nil(t, conn, "Connection should be nil")
-
-	// Create a fake socket file (but not a real socket)
-	socketFile, err := os.Create(daemon.socketPath)
-	assert.NoError(t, err)
-	socketFile.Close()
-
-	// Should still fail since it's not a real socket
-	conn, err = daemon.connectToSocket()
-	assert.Error(t, err, "Connecting to fake file should fail")
-	assert.Nil(t, conn, "Connection should be nil")
-
-	// Clean up
-	os.Remove(daemon.socketPath)
+	// A plain file at the path is not a socket.
+	require.NoError(t, os.WriteFile(daemon.socketPath, nil, 0644))
+	_, err = daemon.connectToSocket()
+	assert.Error(t, err)
+	assert.False(t, daemon.isSocketReady())
 }

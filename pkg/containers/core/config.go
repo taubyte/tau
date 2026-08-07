@@ -67,29 +67,3 @@ type DockerConfig struct {
 }
 
 func (d DockerConfig) BackendType() BackendType { return BackendTypeDocker }
-
-// FirecrackerConfig contains configuration for the Firecracker backend
-type FirecrackerConfig struct {
-	// SocketPath is the path to the Firecracker socket
-	SocketPath string
-	// AutoDownload automatically downloads Firecracker binary if not found
-	AutoDownload bool
-	// Version is the Firecracker version to use (e.g., "v1.4.0")
-	// If empty, uses latest stable
-	Version string
-	// BinaryPath is the path to the Firecracker binary
-	// If empty and AutoDownload is true, downloads to cache
-	BinaryPath string
-}
-
-func (f FirecrackerConfig) BackendType() BackendType { return BackendTypeFirecracker }
-
-// NanosConfig contains configuration for the Nanos backend
-type NanosConfig struct {
-	// ConfigPath is the path to the OPS config file (JSON)
-	ConfigPath string
-	// WorkDir is the working directory for OPS operations
-	WorkDir string
-}
-
-func (n NanosConfig) BackendType() BackendType { return BackendTypeNanos }

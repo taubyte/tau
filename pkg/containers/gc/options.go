@@ -2,8 +2,6 @@ package gc
 
 import (
 	"time"
-
-	"github.com/moby/moby/client"
 )
 
 type Option func(o *config) error
@@ -22,12 +20,12 @@ func MaxAge(t time.Duration) Option {
 	}
 }
 
-func Filter(key, value string) Option {
+// Reference scopes the sweep to a single image reference. Without it the
+// collector removes every image on the host old enough to qualify, including
+// ones that have nothing to do with tau.
+func Reference(ref string) Option {
 	return func(o *config) error {
-		if o.filters == nil {
-			o.filters = make(client.Filters)
-		}
-		o.filters.Add(key, value)
+		o.reference = ref
 		return nil
 	}
 }

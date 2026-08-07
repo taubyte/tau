@@ -8,9 +8,11 @@ import (
 )
 
 var (
-	errorBasicFormat     = "%s with: %w"
-	errorImageFormat     = "%s for image `%s` with: %w"
-	errorContainerFormat = "%s for container Id:`%s` image:`%s` with: %w"
+	// The sentinel is wrapped, not just printed: callers match these with
+	// errors.Is, which only sees an error joined in with %w.
+	errorBasicFormat     = "%w with: %w"
+	errorImageFormat     = "%w for image `%s` with: %w"
+	errorContainerFormat = "%w for container Id:`%s` image:`%s` with: %w"
 
 	ErrorImageOptions         = errors.New("image options failed")
 	ErrorImageBuild           = errors.New("building image failed")

@@ -146,23 +146,15 @@ jobs:
   containerd-integration:
     runs-on: ubuntu-latest
     needs: pre-commit
-    services:
-      docker:
-        image: docker:19.03.12
-        options: --privileged
-        ports:
-          - 2375:2375
-        volumes:
-          - /var/lib/docker
     steps:
       - uses: actions/checkout@v3
       - uses: actions/setup-go@v4
         with:
           go-version: '1.26.0'
-      - name: Set up Docker environment
-        run: docker info
 
-      # --- Rootful: install + start system containerd ---
+      # The tests talk to this containerd directly. They used to start one
+      # inside a privileged docker container instead, which is why this job
+      # needed a docker service; it no longer does.
       - name: Install and start containerd
         run: |
           sudo apt-get update
@@ -170,7 +162,8 @@ jobs:
           sudo systemctl start containerd
           sudo chmod 666 /run/containerd/containerd.sock
 
-      # --- Rootless: install deps + subuid/subgid ---
+      # Prerequisites for the rootless path, which the backend falls back to
+      # when the system socket is not reachable.
       - name: Install rootless prerequisites
         run: |
           sudo apt-get install -y rootlesskit slirp4netns uidmap
@@ -178,12 +171,12 @@ jobs:
           grep -q "^${u}:" /etc/subuid || echo "${u}:100000:65536" | sudo tee -a /etc/subuid
           grep -q "^${u}:" /etc/subgid || echo "${u}:100000:65536" | sudo tee -a /etc/subgid
 
-      # Run all containerd tests (unit + integration); integration tests require -tags=containerd_integration
-      # Use runner's Docker (default socket); do not set DOCKER_HOST so NestedDocker tests can connect
+      # Unit tests and integration tests both: the unit tests need no daemon,
+      # the integration ones drive the shared conformance suite.
       - name: Run containerd tests (unit + integration)
         run: |
-          go test -tags=containerd_integration ./pkg/containers/backends/containerd \
-            -count=1 -timeout 15m -v -p 1
+          go test -tags=containerd_integration ./pkg/containers/... \
+            -count=1 -timeout 20m -v -p 1
 
   docker-integration:
     runs-on: ubuntu-latest

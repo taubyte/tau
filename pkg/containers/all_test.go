@@ -135,7 +135,7 @@ func TestContainerCleanUpInterval_Integration(t *testing.T) {
 		ctx,
 		gc.Interval(20*time.Second),
 		gc.MaxAge(10*time.Second),
-		gc.Filter("reference", testGCImage),
+		gc.Reference(testGCImage),
 	)
 	if err != nil {
 		t.Error(err)
