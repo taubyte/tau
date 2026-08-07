@@ -16,7 +16,11 @@
 #     -o containerd.test ../../../../../pkg/containers/backends/containerd/
 #   VAGRANT_HOME=<your-vagrant-home> vagrant up
 #   VAGRANT_HOME=<your-vagrant-home> vagrant ssh -c \
-#     "sudo /vagrant/containerd.test -test.run '_Integration$' -test.v"
+#     "cd /tmp && /vagrant/containerd.test -test.run '_Integration$' -test.v"
+#
+# Run it unprivileged, as above and as CI does. Running under sudo also works
+# and exercises a real configuration, but it is the weaker of the two: it hides
+# anything that depends on the client's own privileges.
 #
 # The test binary is built on the host on purpose: the guest then needs no Go
 # toolchain and no module download, which turns a ten-minute provision into a
@@ -56,6 +60,12 @@ https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_C
 
     systemctl enable --now containerd
     systemctl is-active --quiet containerd
+
+    # Loosen the socket exactly as CI does. This is the configuration that
+    # matters: an unprivileged client of a root daemon. Running the suite as
+    # root instead hides bugs where a privilege is copied from the caller
+    # rather than requested outright.
+    chmod 666 /run/containerd/containerd.sock
 
     # The rootless path the backend falls back to, so both can be exercised here.
     apt-get install -y -qq rootlesskit slirp4netns uidmap

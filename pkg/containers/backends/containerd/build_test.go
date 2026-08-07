@@ -239,6 +239,22 @@ func TestPrivilegeSpecOpts(t *testing.T) {
 		assert.Nil(t, spec.Linux.Seccomp)
 	})
 
+	t.Run("privileged does not depend on this process's own capabilities", func(t *testing.T) {
+		// This test runs unprivileged. containerd's own WithPrivileged copies
+		// the caller's capability set, which would be empty here — and empty is
+		// exactly what an unprivileged tau would hand a root daemon, producing
+		// a container that claims to be privileged and cannot mount anything.
+		spec := applySpecOpts(t, &core.ContainerConfig{
+			Privileges: &core.Privileges{Privileged: true},
+		})
+
+		require.NotNil(t, spec.Process.Capabilities)
+		assert.Contains(t, spec.Process.Capabilities.Bounding, "CAP_SYS_ADMIN")
+		assert.Contains(t, spec.Process.Capabilities.Effective, "CAP_SYS_ADMIN")
+		assert.Greater(t, len(spec.Process.Capabilities.Bounding), 20,
+			"privileged means every capability, not the caller's")
+	})
+
 	t.Run("a container asks for no privileges by default", func(t *testing.T) {
 		spec := applySpecOpts(t, &core.ContainerConfig{Command: []string{"true"}})
 

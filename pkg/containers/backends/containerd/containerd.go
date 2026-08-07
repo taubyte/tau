@@ -514,7 +514,19 @@ func privilegeSpecOpts(privileges *core.Privileges) []oci.SpecOpts {
 	}
 
 	if privileges.Privileged {
-		opts = append(opts, oci.WithPrivileged, oci.WithAllDevicesAllowed)
+		// Deliberately not oci.WithPrivileged: it composes
+		// WithAllCurrentCapabilities, which copies the capabilities of *this*
+		// process. A tau talking to a system containerd is typically an
+		// unprivileged client of a root daemon, and there that grants the
+		// container nothing at all — the mounts then fail with "operation not
+		// permitted" while the spec still claims to be privileged. What the
+		// daemon may grant does not depend on the caller's own capabilities.
+		opts = append(opts,
+			oci.WithAllKnownCapabilities,
+			oci.WithMaskedPaths(nil),
+			oci.WithReadonlyPaths(nil),
+			oci.WithAllDevicesAllowed,
+		)
 	}
 
 	return opts
