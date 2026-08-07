@@ -321,7 +321,34 @@ func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*conta
 		}
 	}
 
+	applyPrivileges(hostConfig, config.Privileges)
+
 	return containerConfig, hostConfig, networkingConfig, nil
+}
+
+// applyPrivileges widens the container's confinement. Docker names capabilities
+// with the CAP_ prefix, and a device needs a cgroup rule alongside the node.
+func applyPrivileges(hostConfig *container.HostConfig, privileges *core.Privileges) {
+	if privileges == nil {
+		return
+	}
+
+	for _, capability := range privileges.Capabilities {
+		hostConfig.CapAdd = append(hostConfig.CapAdd, "CAP_"+capability)
+	}
+
+	for _, path := range privileges.Devices {
+		hostConfig.Devices = append(hostConfig.Devices, container.DeviceMapping{
+			PathOnHost:        path,
+			PathInContainer:   path,
+			CgroupPermissions: "rwm",
+		})
+	}
+
+	if privileges.Unconfined {
+		hostConfig.SecurityOpt = append(hostConfig.SecurityOpt,
+			"seccomp=unconfined", "apparmor=unconfined")
+	}
 }
 
 // getDockerID gets the Docker container ID for the given container ID

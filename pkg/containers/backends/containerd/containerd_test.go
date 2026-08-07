@@ -92,9 +92,9 @@ func TestGetSocketPath(t *testing.T) {
 }
 
 func TestCapabilities(t *testing.T) {
-	// No BuildKit is wired up, and callers pick a backend by this flag: saying
-	// otherwise sends Dockerfile builds to a backend that cannot run them.
-	assert.False(t, (&ContainerdBackend{}).Capabilities().SupportsBuild)
+	// Builds run BuildKit in a container, so this backend can build wherever it
+	// can run. Callers route Dockerfile builds by this flag.
+	assert.True(t, (&ContainerdBackend{}).Capabilities().SupportsBuild)
 }
 
 func TestEnsureContainerdRunningWithoutSocket(t *testing.T) {
@@ -448,12 +448,6 @@ func TestImageWithoutClient(t *testing.T) {
 
 	_, err = image.Tags(context.Background())
 	assert.Error(t, err)
-}
-
-func TestImageBuildUnsupported(t *testing.T) {
-	// The backend advertises SupportsBuild=false; Build must agree with it.
-	err := (&ContainerdBackend{}).Image("test:latest").Build(context.Background(), nil)
-	assert.ErrorIs(t, err, core.ErrBuildNotSupported)
 }
 
 func TestTaskIOCloseIsIdempotent(t *testing.T) {

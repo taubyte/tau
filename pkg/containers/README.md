@@ -12,8 +12,8 @@ Runs containers from Go, over docker or containerd.
 | --- | --- |
 | `containers` | The client: images, containers, run, logs. What callers use. |
 | `core` | The `Backend` and `Image` interfaces, the config types, the backend registry. |
-| `backends/docker` | Docker backend. Can build images. |
-| `backends/containerd` | containerd backend, Linux only. Cannot build images. |
+| `backends/docker` | Docker backend. Builds natively. |
+| `backends/containerd` | containerd backend, Linux only. Builds by running BuildKit. |
 | `backends/conformance` | The behaviour both backends are held to. |
 | `gc` | Periodic image cleanup. |
 
@@ -68,9 +68,11 @@ tar cvf image.tar -C <dir>/ .
 client.Image(ctx, "org/name:version", containers.Build(tarball))
 ```
 
-Image names must be lowercase. Building needs a backend that supports it —
-check `Capabilities().SupportsBuild`; containerd does not, having no BuildKit
-wired up.
+Image names must be lowercase. Both backends build: docker hands the context to
+its daemon, and containerd runs BuildKit as a one-shot container and imports
+what it produces, so nothing extra has to be installed or kept running. Check
+`Capabilities().SupportsBuild` before building anyway — it is what routes a
+build, and a backend added later may not.
 
 ## Backend differences
 
@@ -78,11 +80,15 @@ Docker and containerd are interchangeable for running containers: same exit
 codes, same log framing, same environment, working directory and bind mounts,
 all enforced by the conformance suite. They still differ where the runtimes do:
 
-- **Building.** Docker only.
 - **Networking.** Docker bridges by default. containerd runs without CNI, so it
   shares the host's network instead; `none` isolates, and a bridged mode is
-  refused rather than silently downgraded.
+  refused rather than silently downgraded. containerd containers use the host's
+  resolver, so custom DNS servers are refused there.
 - **Port mappings and named volumes.** Docker only. containerd refuses both.
+- **What a build needs.** containerd's BuildKit container needs `CAP_SYS_ADMIN`,
+  `/dev/fuse`, and the host's cgroup hierarchy — BuildKit runs a runc of its own
+  per step, and that runc mounts filesystems and wants cgroups. A build fails
+  loudly on a host that does not allow this. Docker builds need none of it.
 - **Resource limits.** Not available on *rootless* containerd, which cannot
   create the cgroup that would enforce them; asking for them there is an error
   rather than a limit that quietly does nothing.

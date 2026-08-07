@@ -62,9 +62,9 @@ type Backend interface {
 type Image interface {
 	// Pull retrieves the image from a registry/repository
 	Pull(ctx context.Context) error
-	// Build builds an image from backend-specific inputs
-	// Returns ErrBuildNotSupported if the backend doesn't support building
-	Build(ctx context.Context, input BuildInput) error
+	// Build builds the image from a Dockerfile.
+	// Returns ErrBuildNotSupported if the backend cannot build.
+	Build(ctx context.Context, input *DockerfileBuild) error
 	// Exists checks if the image exists locally
 	Exists(ctx context.Context) bool
 	// Remove removes the image from the backend
@@ -77,11 +77,21 @@ type Image interface {
 	Tags(ctx context.Context) ([]string, error)
 }
 
-// BuildInput is a type that can hold different build inputs for different backends
-// Backends can type-assert to get their specific input type
-type BuildInput interface {
-	// Type returns the backend type this input is for
-	Type() BackendType
+// DockerfileBuild is everything needed to build an image from a Dockerfile:
+// a tar of the build context, and the name of the Dockerfile within it.
+type DockerfileBuild struct {
+	// Context is a tar stream of the build directory.
+	Context io.Reader
+	// Dockerfile is the path within the context; empty means "Dockerfile".
+	Dockerfile string
+}
+
+// DockerfileName returns the Dockerfile to build, defaulting to "Dockerfile".
+func (d *DockerfileBuild) DockerfileName() string {
+	if d.Dockerfile == "" {
+		return "Dockerfile"
+	}
+	return d.Dockerfile
 }
 
 // BackendCapabilities describes what a backend supports
@@ -121,6 +131,29 @@ type ContainerConfig struct {
 	Volumes   []VolumeMount  // Unified volume mounts
 	Network   *NetworkConfig // Unified network configuration
 	Resources *ResourceLimits
+
+	// Privileges a container needs beyond the runtime's defaults. Nothing but
+	// the image build sets these today: BuildKit has to mount filesystems to
+	// assemble layers, which the default sandbox forbids. They are here rather
+	// than hidden inside the build path because they describe the container,
+	// and a workload imported from a PaaS may legitimately need them too.
+	Privileges *Privileges
+}
+
+// Privileges loosens a container's default confinement. Every field widens what
+// the container may do, so leave it nil unless something demonstrably needs it.
+type Privileges struct {
+	// Capabilities to add, named without the CAP_ prefix (e.g. "SYS_ADMIN").
+	Capabilities []string
+
+	// Devices from the host to expose, by path (e.g. "/dev/fuse").
+	Devices []string
+
+	// Unconfined drops the runtime's default seccomp and AppArmor profiles.
+	//
+	// ponytail: one switch for both, because the only caller wants both off.
+	// Split into per-profile settings if anything ever needs finer control.
+	Unconfined bool
 }
 
 // VolumeMount represents a volume mount configuration
