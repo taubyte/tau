@@ -9,6 +9,7 @@
 package conformance
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"fmt"
@@ -56,6 +57,7 @@ func Run(t *testing.T, b Backend) {
 	t.Run("LargeOutput", func(t *testing.T) { testLargeOutput(t, b) })
 	t.Run("RemoveIsFinal", func(t *testing.T) { testRemoveIsFinal(t, b) })
 	t.Run("CleanKeepsRecentImages", func(t *testing.T) { testCleanKeepsRecentImages(t, b) })
+	t.Run("BuildFromDockerfile", func(t *testing.T) { testBuildFromDockerfile(t, b) })
 	t.Run("HealthCheck", func(t *testing.T) {
 		assert.NoError(t, b.Backend.HealthCheck(context.Background()))
 	})
@@ -238,6 +240,59 @@ func testCleanKeepsRecentImages(t *testing.T, b Backend) {
 	require.NoError(t, b.Backend.Clean(ctx, 100*365*24*time.Hour, b.Image), "a sweep must not error")
 
 	assert.True(t, image.Exists(ctx), "an image younger than the cutoff must survive the sweep")
+}
+
+func testBuildFromDockerfile(t *testing.T, b Backend) {
+	if !b.Backend.Capabilities().SupportsBuild {
+		t.Skip("backend does not build images")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	// A distinct name per run: a build must not be satisfied by something an
+	// earlier one left behind.
+	name := fmt.Sprintf("tau-conformance-build:%d", time.Now().UnixNano())
+
+	dockerfile := fmt.Sprintf("FROM %s\nRUN echo built-by-tau > /marker\n", b.Image)
+
+	image := b.Backend.Image(name)
+	require.NoError(t, image.Build(ctx, &core.DockerfileBuild{
+		Context: tarOfDockerfile(t, dockerfile),
+	}), "building a Dockerfile must succeed")
+
+	t.Cleanup(func() {
+		removeCtx, removeCancel := context.WithTimeout(context.Background(), time.Minute)
+		defer removeCancel()
+		b.Backend.Image(name).Remove(removeCtx)
+	})
+
+	assert.True(t, image.Exists(ctx), "a built image must exist locally")
+
+	// The point of building is running what was built, under the name asked for.
+	got := run(t, Backend{Backend: b.Backend, Image: name}, sh("cat /marker"))
+
+	assert.Equal(t, 0, got.exitCode, "the built image must run, stderr: %s", got.stderr)
+	assert.Contains(t, got.stdout, "built-by-tau", "the built layer must be present")
+}
+
+// tarOfDockerfile packs a one-file build context.
+func tarOfDockerfile(t *testing.T, dockerfile string) io.Reader {
+	t.Helper()
+
+	var buf bytes.Buffer
+	writer := tar.NewWriter(&buf)
+
+	require.NoError(t, writer.WriteHeader(&tar.Header{
+		Name: "Dockerfile",
+		Mode: 0o644,
+		Size: int64(len(dockerfile)),
+	}))
+	_, err := io.WriteString(writer, dockerfile)
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	return &buf
 }
 
 // RunStopsRunningContainer checks that a container still running can be stopped

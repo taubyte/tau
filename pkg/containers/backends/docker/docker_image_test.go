@@ -156,7 +156,7 @@ func TestImage_Build_Integration(t *testing.T) {
 			name: "test-image:latest",
 		}
 
-		buildInput := &DockerBuildInput{
+		buildInput := &core.DockerfileBuild{
 			Context:    strings.NewReader("test"),
 			Dockerfile: "Dockerfile",
 		}
@@ -166,30 +166,15 @@ func TestImage_Build_Integration(t *testing.T) {
 		assert.Contains(t, err.Error(), "not initialized")
 	})
 
-	t.Run("WrongBackendType", func(t *testing.T) {
+	t.Run("NoContext", func(t *testing.T) {
+		// The build input is a concrete type now, so a mismatched one cannot be
+		// passed at all; a missing context still can.
 		image := backend.Image("test-image:latest")
 		require.NotNil(t, image, "Image must not be nil")
 
-		mockInput := &mockBuildInput{
-			backendType: core.BackendTypeContainerd,
-		}
-
-		err = image.Build(context.Background(), mockInput)
-		assert.Error(t, err, "Build must fail with wrong backend type")
-		assert.Contains(t, err.Error(), "not supported")
-	})
-
-	t.Run("InvalidTypeAssertion", func(t *testing.T) {
-		image := backend.Image("test-image:latest")
-		require.NotNil(t, image, "Image must not be nil")
-
-		mockInput := &mockBuildInput{
-			backendType: core.BackendTypeDocker,
-		}
-
-		err = image.Build(context.Background(), mockInput)
-		assert.Error(t, err, "Build must fail with invalid type assertion")
-		assert.Contains(t, err.Error(), "invalid build input type")
+		err = image.Build(context.Background(), &core.DockerfileBuild{})
+		assert.Error(t, err, "Build must fail without a context")
+		assert.Contains(t, err.Error(), "context")
 	})
 
 	t.Run("Success", func(t *testing.T) {
@@ -206,7 +191,7 @@ func TestImage_Build_Integration(t *testing.T) {
 		image := backend.Image(randomTag)
 		require.NotNil(t, image, "Image must not be nil")
 
-		buildInput := &DockerBuildInput{
+		buildInput := &core.DockerfileBuild{
 			Context:    file,
 			Dockerfile: "Dockerfile",
 		}
@@ -228,7 +213,7 @@ func TestImage_Build_Integration(t *testing.T) {
 		require.NotNil(t, image, "Image must not be nil")
 
 		dockerfile := "FROM alpine:latest\nRUN echo 'test'"
-		buildInput := &DockerBuildInput{
+		buildInput := &core.DockerfileBuild{
 			Context:    strings.NewReader(dockerfile),
 			Dockerfile: "Dockerfile",
 		}
@@ -249,7 +234,7 @@ func TestImage_Build_Integration(t *testing.T) {
 		require.NotNil(t, image, "Image must not be nil")
 
 		invalidDockerfile := "INVALID DOCKERFILE SYNTAX !!!"
-		buildInput := &DockerBuildInput{
+		buildInput := &core.DockerfileBuild{
 			Context:    strings.NewReader(invalidDockerfile),
 			Dockerfile: "Dockerfile",
 		}
@@ -263,7 +248,7 @@ func TestImage_Build_Integration(t *testing.T) {
 		require.NotNil(t, image, "Image must not be nil")
 
 		invalidContext := "NOT A VALID TARBALL"
-		buildInput := &DockerBuildInput{
+		buildInput := &core.DockerfileBuild{
 			Context:    strings.NewReader(invalidContext),
 			Dockerfile: "Dockerfile",
 		}
@@ -277,7 +262,7 @@ func TestImage_Build_Integration(t *testing.T) {
 		require.NotNil(t, image, "Image must not be nil")
 
 		dockerfile := "FROM alpine:latest\nRUN echo 'test'"
-		buildInput := &DockerBuildInput{
+		buildInput := &core.DockerfileBuild{
 			Context:    strings.NewReader(dockerfile),
 			Dockerfile: "Dockerfile",
 		}
@@ -440,15 +425,9 @@ func TestImage_Tags_Integration(t *testing.T) {
 	})
 }
 
-func TestDockerBuildInputType_Integration(t *testing.T) {
-	input := &DockerBuildInput{}
-	assert.Equal(t, core.BackendTypeDocker, input.Type())
-}
-
-type mockBuildInput struct {
-	backendType core.BackendType
-}
-
-func (m *mockBuildInput) Type() core.BackendType {
-	return m.backendType
+func TestDockerfileName_Integration(t *testing.T) {
+	assert.Equal(t, "Dockerfile", (&core.DockerfileBuild{}).DockerfileName(),
+		"an unnamed Dockerfile must default rather than build nothing")
+	assert.Equal(t, "Custom.dockerfile",
+		(&core.DockerfileBuild{Dockerfile: "Custom.dockerfile"}).DockerfileName())
 }

@@ -480,7 +480,56 @@ func specOpts(config *core.ContainerConfig) ([]oci.SpecOpts, error) {
 	}
 	opts = append(opts, networkOpts...)
 
-	return append(opts, resourceSpecOpts(config.Resources)...), nil
+	opts = append(opts, resourceSpecOpts(config.Resources)...)
+
+	return append(opts, privilegeSpecOpts(config.Privileges)...), nil
+}
+
+// privilegeSpecOpts widens the container's confinement. The OCI spec names
+// capabilities with the CAP_ prefix, and a device needs a cgroup rule next to
+// the node or the container may not open it.
+func privilegeSpecOpts(privileges *core.Privileges) []oci.SpecOpts {
+	if privileges == nil {
+		return nil
+	}
+
+	var opts []oci.SpecOpts
+
+	if len(privileges.Capabilities) > 0 {
+		prefixed := make([]string, 0, len(privileges.Capabilities))
+		for _, capability := range privileges.Capabilities {
+			prefixed = append(prefixed, "CAP_"+capability)
+		}
+		opts = append(opts, oci.WithAddedCapabilities(prefixed))
+	}
+
+	for _, device := range privileges.Devices {
+		opts = append(opts, oci.WithDevices(device, device, "rwm"))
+	}
+
+	if privileges.Unconfined {
+		// AppArmor needs nothing here: unlike docker, containerd applies no
+		// profile of its own unless one is asked for.
+		opts = append(opts, oci.WithSeccompUnconfined)
+	}
+
+	if privileges.Privileged {
+		// Deliberately not oci.WithPrivileged: it composes
+		// WithAllCurrentCapabilities, which copies the capabilities of *this*
+		// process. A tau talking to a system containerd is typically an
+		// unprivileged client of a root daemon, and there that grants the
+		// container nothing at all — the mounts then fail with "operation not
+		// permitted" while the spec still claims to be privileged. What the
+		// daemon may grant does not depend on the caller's own capabilities.
+		opts = append(opts,
+			oci.WithAllKnownCapabilities,
+			oci.WithMaskedPaths(nil),
+			oci.WithReadonlyPaths(nil),
+			oci.WithAllDevicesAllowed,
+		)
+	}
+
+	return opts
 }
 
 // volumeMounts turns the unified volume mounts into OCI bind mounts.
@@ -523,12 +572,16 @@ func networkSpecOpts(network *core.NetworkConfig) ([]oci.SpecOpts, error) {
 		mode = network.Mode
 	}
 
+	if network != nil && len(network.DNS) > 0 {
+		return nil, fmt.Errorf("custom DNS servers not supported by containerd: the container uses the host's resolver")
+	}
+
 	switch mode {
 	case "host":
 		if network != nil && len(network.PortMappings) > 0 {
 			return nil, fmt.Errorf("port mappings not supported by containerd host networking: the container already shares the host's ports")
 		}
-		return []oci.SpecOpts{oci.WithHostNamespace(specs.NetworkNamespace)}, nil
+		return append(resolverMount(), oci.WithHostNamespace(specs.NetworkNamespace)), nil
 	case "none":
 		// The default spec already unshares the network namespace.
 		return nil, nil
@@ -548,6 +601,28 @@ func withoutCgroups() oci.SpecOpts {
 		}
 		return nil
 	}
+}
+
+// resolverMount hands the container the host's DNS configuration.
+//
+// containerd, unlike docker, injects nothing: a container's /etc/resolv.conf is
+// whatever its image shipped, which is usually nothing, and every lookup then
+// falls back to localhost and fails. Any build that fetches dependencies needs
+// this. The container shares the host's network namespace, so a resolver the
+// host reaches on loopback works here too.
+func resolverMount() []oci.SpecOpts {
+	const resolvConf = "/etc/resolv.conf"
+
+	if _, err := os.Stat(resolvConf); err != nil {
+		return nil
+	}
+
+	return []oci.SpecOpts{oci.WithMounts([]specs.Mount{{
+		Destination: resolvConf,
+		Type:        "bind",
+		Source:      resolvConf,
+		Options:     []string{"rbind", "ro"},
+	}})}
 }
 
 func resourceSpecOpts(resources *core.ResourceLimits) []oci.SpecOpts {
@@ -992,8 +1067,9 @@ func (b *ContainerdBackend) HealthCheck(ctx context.Context) error {
 
 // Capabilities returns the backend capabilities
 func (b *ContainerdBackend) Capabilities() core.BackendCapabilities {
-	// No BuildKit is wired up, so this backend runs images but cannot build them.
-	return core.BackendCapabilities{SupportsBuild: false}
+	// Builds run BuildKit in a container (see build.go), so this backend can
+	// build wherever it can run.
+	return core.BackendCapabilities{SupportsBuild: true}
 }
 
 // testSocketConnection checks if we can connect to the containerd socket.

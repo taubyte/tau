@@ -1,0 +1,82 @@
+# A rootful containerd, which is the one thing a developer machine usually
+# cannot provide. The backend prefers a reachable /run/containerd/containerd.sock
+# and only falls back to starting a rootless daemon, so a laptop running
+# containerd as root-only exercises the fallback and never the primary path —
+# while CI exercises only the primary one. This VM closes that gap locally.
+#
+# It deliberately mirrors the containerd-integration job in
+# .github/workflows/pre-commit.yml: same Ubuntu, same containerd package, same
+# rootless prerequisites. If the two drift, this stops being evidence.
+#
+# Usage, from this directory:
+#
+#   go test -tags containerd_integration -c \
+#     -o containerd.test ../../../../../pkg/containers/backends/containerd/
+#   vagrant up
+#   vagrant ssh -c "cd /tmp && /vagrant/containerd.test -test.run '_Integration$' -test.v"
+#
+# Run it unprivileged, as above and as CI does. Running under sudo also works
+# and exercises a real configuration, but it is the weaker of the two: it hides
+# anything that depends on the client's own privileges.
+#
+# The box and the VM together are a few gigabytes. Set VAGRANT_HOME, and
+# VirtualBox's machine folder, somewhere with room if your home directory is
+# short of it.
+#
+# The test binary is built on the host on purpose: the guest then needs no Go
+# toolchain and no module download, which turns a ten-minute provision into a
+# one-minute one.
+
+Vagrant.configure("2") do |config|
+  config.vm.box = "bento/ubuntu-24.04"
+  config.vm.hostname = "tau-containerd"
+
+  # No forwarded ports and no extra networking: the tests only need outbound
+  # access to pull images.
+  config.vm.provider "virtualbox" do |vb|
+    vb.name = "tau-containerd-rootful"
+    vb.memory = 4096
+    vb.cpus = 4
+  end
+
+  config.vm.provision "shell", name: "containerd", privileged: true, inline: <<~SHELL
+    set -euo pipefail
+
+    export DEBIAN_FRONTEND=noninteractive
+    apt-get update -qq
+
+    # containerd.io comes from Docker's repository, which is where CI gets it.
+    # Ubuntu's own "containerd" package is a different, older build.
+    apt-get install -y -qq ca-certificates curl
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
+      -o /etc/apt/keyrings/docker.asc
+    chmod a+r /etc/apt/keyrings/docker.asc
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
+      > /etc/apt/sources.list.d/docker.list
+
+    apt-get update -qq
+    apt-get install -y -qq containerd.io
+
+    systemctl enable --now containerd
+    systemctl is-active --quiet containerd
+
+    # Loosen the socket exactly as CI does. This is the configuration that
+    # matters: an unprivileged client of a root daemon. Running the suite as
+    # root instead hides bugs where a privilege is copied from the caller
+    # rather than requested outright.
+    chmod 666 /run/containerd/containerd.sock
+
+    # The rootless path the backend falls back to, so both can be exercised here.
+    apt-get install -y -qq rootlesskit slirp4netns uidmap
+    grep -q "^vagrant:" /etc/subuid || echo "vagrant:100000:65536" >> /etc/subuid
+    grep -q "^vagrant:" /etc/subgid || echo "vagrant:100000:65536" >> /etc/subgid
+
+    # BuildKit's snapshotter needs it, and the module is not always loaded.
+    modprobe fuse || true
+    echo fuse > /etc/modules-load.d/fuse.conf
+
+    containerd --version
+  SHELL
+end

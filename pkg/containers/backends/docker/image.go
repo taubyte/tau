@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/moby/moby/client"
@@ -55,29 +54,25 @@ func (i *dockerImage) Pull(ctx context.Context) error {
 	return nil
 }
 
-// Build builds an image from backend-specific inputs
-func (i *dockerImage) Build(ctx context.Context, input core.BuildInput) error {
+// Build builds an image from a Dockerfile. The docker daemon builds natively,
+// so the context tar is handed straight to it.
+func (i *dockerImage) Build(ctx context.Context, input *core.DockerfileBuild) error {
 	if i.backend.client == nil {
 		return fmt.Errorf("Docker client not initialized")
 	}
 
-	if input.Type() != core.BackendTypeDocker {
-		return fmt.Errorf("build input type %s not supported for Docker backend", input.Type())
-	}
-
-	dockerInput, ok := input.(*DockerBuildInput)
-	if !ok {
-		return fmt.Errorf("invalid build input type %T for Docker backend - expected *DockerBuildInput", input)
+	if input == nil || input.Context == nil {
+		return fmt.Errorf("build requires a context")
 	}
 
 	buildOptions := client.ImageBuildOptions{
 		Tags:       []string{i.name},
 		Remove:     true,
-		Dockerfile: dockerInput.Dockerfile,
-		Context:    dockerInput.Context,
+		Dockerfile: input.DockerfileName(),
+		Context:    input.Context,
 	}
 
-	buildResponse, err := i.backend.client.ImageBuild(ctx, dockerInput.Context, buildOptions)
+	buildResponse, err := i.backend.client.ImageBuild(ctx, input.Context, buildOptions)
 	if err != nil {
 		return fmt.Errorf("failed to build image %s: %w", i.name, err)
 	}
@@ -197,15 +192,4 @@ func (i *dockerImage) Tags(ctx context.Context) ([]string, error) {
 	}
 
 	return image.RepoTags, nil
-}
-
-// DockerBuildInput represents build input for Docker backend
-type DockerBuildInput struct {
-	Context    io.Reader // Build context (tarball)
-	Dockerfile string    // Dockerfile path within context (default: "Dockerfile")
-}
-
-// Type returns the backend type this input is for
-func (d *DockerBuildInput) Type() core.BackendType {
-	return core.BackendTypeDocker
 }

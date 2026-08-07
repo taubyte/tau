@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/taubyte/tau/pkg/containers/backends/docker"
+	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 // Image initializes the given image. It tries to pull from the registry first to get the latest;
@@ -55,12 +55,9 @@ func (i *DockerImage) buildImage(ctx context.Context) error {
 		return errorImageBuildDockerFile(fmt.Errorf("backend does not support building images"))
 	}
 
-	buildInput := &docker.DockerBuildInput{
-		Context:    i.buildTarball,
-		Dockerfile: "Dockerfile",
-	}
-
-	err := i.backend.Image(i.image).Build(ctx, buildInput)
+	err := i.backend.Image(i.image).Build(ctx, &core.DockerfileBuild{
+		Context: i.buildTarball,
+	})
 	if err != nil {
 		return errorImageBuildDockerFile(err)
 	}

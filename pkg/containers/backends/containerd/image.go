@@ -9,7 +9,6 @@ import (
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/namespaces"
-	"github.com/taubyte/tau/pkg/containers/core"
 )
 
 // containerdImage implements the core.Image interface for containerd
@@ -32,11 +31,6 @@ func (i *containerdImage) Pull(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// Build builds an image from backend-specific inputs
-func (i *containerdImage) Build(ctx context.Context, input core.BuildInput) error {
-	return core.ErrBuildNotSupported
 }
 
 // Exists checks if the image exists locally

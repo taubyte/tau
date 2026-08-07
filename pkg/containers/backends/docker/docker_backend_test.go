@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -170,7 +171,7 @@ func TestImageWithoutClient(t *testing.T) {
 	assert.False(t, image.Exists(context.Background()))
 	assert.Error(t, image.Pull(context.Background()))
 	assert.Error(t, image.Remove(context.Background()))
-	assert.Error(t, image.Build(context.Background(), &DockerBuildInput{}))
+	assert.Error(t, image.Build(context.Background(), &core.DockerfileBuild{Context: strings.NewReader("")}))
 
 	_, err := image.Digest(context.Background())
 	assert.Error(t, err)
