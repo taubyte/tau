@@ -8,19 +8,20 @@
 # .github/workflows/pre-commit.yml: same Ubuntu, same containerd package, same
 # rootless prerequisites. If the two drift, this stops being evidence.
 #
-# Usage (from this directory):
-#
-#   ../../../../../scripts is not needed — everything is here:
+# Usage, from this directory:
 #
 #   go test -tags containerd_integration -c \
 #     -o containerd.test ../../../../../pkg/containers/backends/containerd/
-#   VAGRANT_HOME=<your-vagrant-home> vagrant up
-#   VAGRANT_HOME=<your-vagrant-home> vagrant ssh -c \
-#     "cd /tmp && /vagrant/containerd.test -test.run '_Integration$' -test.v"
+#   vagrant up
+#   vagrant ssh -c "cd /tmp && /vagrant/containerd.test -test.run '_Integration$' -test.v"
 #
 # Run it unprivileged, as above and as CI does. Running under sudo also works
 # and exercises a real configuration, but it is the weaker of the two: it hides
 # anything that depends on the client's own privileges.
+#
+# The box and the VM together are a few gigabytes. Set VAGRANT_HOME, and
+# VirtualBox's machine folder, somewhere with room if your home directory is
+# short of it.
 #
 # The test binary is built on the host on purpose: the guest then needs no Go
 # toolchain and no module download, which turns a ten-minute provision into a
