@@ -1,0 +1,2 @@
+# Built on the host and dropped here for the guest to run.
+*.test

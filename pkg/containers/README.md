@@ -85,10 +85,20 @@ all enforced by the conformance suite. They still differ where the runtimes do:
   refused rather than silently downgraded. containerd containers use the host's
   resolver, so custom DNS servers are refused there.
 - **Port mappings and named volumes.** Docker only. containerd refuses both.
-- **What a build needs.** containerd's BuildKit container needs `CAP_SYS_ADMIN`,
-  `/dev/fuse`, and the host's cgroup hierarchy — BuildKit runs a runc of its own
-  per step, and that runc mounts filesystems and wants cgroups. A build fails
-  loudly on a host that does not allow this. Docker builds need none of it.
+- **What a build needs.** containerd's BuildKit container needs the host's
+  cgroup hierarchy either way, because BuildKit runs a runc of its own per step.
+  Beyond that it differs by mode, and the difference is not cosmetic — asking
+  for the wrong one stops buildkitd from starting at all:
+
+  | | rootless containerd | rootful containerd |
+  | --- | --- | --- |
+  | buildkitd flags | no-process-sandbox, rootless worker, native snapshotter | none: its defaults are right |
+  | privileges | `CAP_SYS_ADMIN` + `/dev/fuse` | privileged |
+
+  Privileged is asked for only where the runtime is already real root, so it
+  relaxes the container and grants nothing the process did not have. Under a
+  rootless runtime the user namespace is the boundary and the narrow set stays
+  inside it. Docker builds need none of this — its daemon builds natively.
 - **Resource limits.** Not available on *rootless* containerd, which cannot
   create the cgroup that would enforce them; asking for them there is an error
   rather than a limit that quietly does nothing.

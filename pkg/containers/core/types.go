@@ -154,6 +154,13 @@ type Privileges struct {
 	// ponytail: one switch for both, because the only caller wants both off.
 	// Split into per-profile settings if anything ever needs finer control.
 	Unconfined bool
+
+	// Privileged removes essentially all confinement. Only ask for it where the
+	// runtime is already running as real root, since there the container's
+	// confinement is the only thing being relaxed and nothing new is granted;
+	// under a rootless runtime the user namespace is the real boundary and
+	// narrower privileges belong there instead.
+	Privileged bool
 }
 
 // VolumeMount represents a volume mount configuration

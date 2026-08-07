@@ -513,6 +513,10 @@ func privilegeSpecOpts(privileges *core.Privileges) []oci.SpecOpts {
 		opts = append(opts, oci.WithSeccompUnconfined)
 	}
 
+	if privileges.Privileged {
+		opts = append(opts, oci.WithPrivileged, oci.WithAllDevicesAllowed)
+	}
+
 	return opts
 }
 

@@ -39,21 +39,59 @@ const (
 )
 
 // buildkitFlags configures the buildkitd that buildctl-daemonless.sh starts.
-// Every flag here is what makes a builder work inside a container that is
-// itself unprivileged; none of them is decoration.
+//
+// The flags depend on how containerd itself runs, because they exist purely to
+// cope with being unprivileged. Asking for them as real root does not merely
+// waste them: buildkitd refuses to start at all, with "rootless mode requires
+// to be executed as the mapped root in a user namespace".
+//
+// Under a rootful containerd the build container is real root, with cgroups and
+// overlayfs available, and BuildKit's own defaults are the right ones.
+//
+// Under a rootless one it needs all three:
 //
 //   - no-process-sandbox: BuildKit would otherwise create a user namespace of
-//     its own. Running inside a rootless containerd we are already in one, and
-//     nesting fails with "newuidmap: Operation not permitted".
-//   - rootless worker: the runc BuildKit runs for each step must not expect
-//     cgroups of its own, or every RUN fails with "no cgroup mount found in
-//     mountinfo". Tau's containers are not given a cgroup to subdivide.
+//     its own. We are already in one, and nesting fails with
+//     "newuidmap: Operation not permitted".
+//   - rootless worker: the runc BuildKit runs for each step must not expect a
+//     cgroup of its own, or every RUN fails with "no cgroup mount found in
+//     mountinfo".
 //   - native snapshotter: overlayfs cannot be mounted from within a user
 //     namespace, so the slower snapshotter that only copies is the one that works.
-const buildkitFlags = "BUILDKITD_FLAGS=" +
-	"--oci-worker-no-process-sandbox " +
-	"--oci-worker-rootless " +
-	"--oci-worker-snapshotter=native"
+func buildkitFlags(rootless bool) []string {
+	if !rootless {
+		return nil
+	}
+
+	return []string{"BUILDKITD_FLAGS=" +
+		"--oci-worker-no-process-sandbox " +
+		"--oci-worker-rootless " +
+		"--oci-worker-snapshotter=native"}
+}
+
+// buildPrivileges is what the builder needs loosened, and it differs by mode
+// for the same reason the flags do.
+//
+// Rootless: the user namespace is the real boundary, so the narrow set is
+// enough and stays inside it. SYS_ADMIN to mount layers, /dev/fuse for the
+// snapshotter a rootless build falls back to.
+//
+// Rootful: the runc BuildKit runs per step attaches a BPF device filter to its
+// cgroup, which SYS_ADMIN alone does not permit — "bpf_prog_query
+// (BPF_CGROUP_DEVICE) failed: operation not permitted". The process is already
+// real root on the host there, so dropping the container's confinement grants
+// it nothing it did not already have.
+func buildPrivileges(rootless bool) *core.Privileges {
+	if !rootless {
+		return &core.Privileges{Unconfined: true, Privileged: true}
+	}
+
+	return &core.Privileges{
+		Capabilities: []string{"SYS_ADMIN"},
+		Devices:      []string{"/dev/fuse"},
+		Unconfined:   true,
+	}
+}
 
 // Build builds the image from a Dockerfile by running BuildKit in a container
 // and importing what it produces.
@@ -111,7 +149,7 @@ func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir
 			"--output", fmt.Sprintf("type=docker,name=%s,dest=%s",
 				i.name, path.Join(buildOutputPath, buildOutputFile)),
 		},
-		Env: []string{buildkitFlags},
+		Env: buildkitFlags(i.backend.isRootlessMode()),
 		Volumes: []core.VolumeMount{
 			{Source: contextDir, Destination: buildContextPath, ReadOnly: true},
 			{Source: outputDir, Destination: buildOutputPath},
@@ -121,14 +159,7 @@ func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir
 			// of their own, so the host's is passed through.
 			{Source: cgroupPath, Destination: cgroupPath},
 		},
-		// BuildKit assembles layers by mounting them; the default sandbox
-		// forbids that. /dev/fuse is what the snapshotter needs to do it
-		// without being fully privileged.
-		Privileges: &core.Privileges{
-			Capabilities: []string{"SYS_ADMIN"},
-			Devices:      []string{"/dev/fuse"},
-			Unconfined:   true,
-		},
+		Privileges: buildPrivileges(i.backend.isRootlessMode()),
 	}
 
 	id, err := i.backend.Create(ctx, config)

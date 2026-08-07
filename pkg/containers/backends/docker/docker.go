@@ -349,6 +349,8 @@ func applyPrivileges(hostConfig *container.HostConfig, privileges *core.Privileg
 		hostConfig.SecurityOpt = append(hostConfig.SecurityOpt,
 			"seccomp=unconfined", "apparmor=unconfined")
 	}
+
+	hostConfig.Privileged = privileges.Privileged
 }
 
 // getDockerID gets the Docker container ID for the given container ID

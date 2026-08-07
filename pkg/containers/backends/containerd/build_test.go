@@ -178,16 +178,41 @@ func TestBuildWithoutClient(t *testing.T) {
 	assert.Contains(t, err.Error(), "not initialized")
 }
 
-// The recipe is what makes BuildKit work inside an already-unprivileged
-// container; each part of it is load-bearing and easy to lose in a refactor.
+// The recipe is what makes BuildKit work, and it differs by mode: each flag
+// copes with being unprivileged, and buildkitd refuses to start if asked for
+// them as real root.
 func TestBuildKitRecipe(t *testing.T) {
-	assert.Contains(t, buildkitFlags, "--oci-worker-no-process-sandbox",
+	rootless := buildkitFlags(true)
+	require.Len(t, rootless, 1)
+
+	assert.Contains(t, rootless[0], "--oci-worker-no-process-sandbox",
 		"BuildKit must not nest a user namespace inside the one it runs in")
-	assert.Contains(t, buildkitFlags, "--oci-worker-snapshotter=native",
+	assert.Contains(t, rootless[0], "--oci-worker-rootless",
+		"its per-step runc must not expect a cgroup of its own")
+	assert.Contains(t, rootless[0], "--oci-worker-snapshotter=native",
 		"overlayfs cannot be mounted from a user namespace")
+
+	assert.Empty(t, buildkitFlags(false),
+		"as real root BuildKit's defaults are right, and asking for rootless mode makes it refuse to start")
 
 	assert.NotContains(t, buildkitImage, ":latest",
 		"the builder must be pinned so builds do not change underneath us")
+}
+
+func TestBuildPrivileges(t *testing.T) {
+	rootless := buildPrivileges(true)
+	assert.Contains(t, rootless.Capabilities, "SYS_ADMIN", "BuildKit mounts layers to assemble them")
+	assert.Contains(t, rootless.Devices, "/dev/fuse", "the rootless snapshotter needs it")
+	assert.True(t, rootless.Unconfined)
+	assert.False(t, rootless.Privileged,
+		"under a user namespace the narrow set is enough, and privileged would not reach past it anyway")
+
+	rootful := buildPrivileges(false)
+	assert.True(t, rootful.Privileged,
+		"the per-step runc attaches a BPF device filter, which SYS_ADMIN alone does not permit")
+	assert.True(t, rootful.Unconfined)
+	assert.Empty(t, rootful.Devices,
+		"a device the host may not have must not be demanded where it is not needed")
 }
 
 func TestPrivilegeSpecOpts(t *testing.T) {
