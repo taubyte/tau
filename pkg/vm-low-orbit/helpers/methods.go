@@ -13,20 +13,22 @@ func (m *methods) Read(module common.Module,
 	bufPtr, bufSize, // reader
 	countPtr uint32, // reader size
 ) errno.Error {
-	buf := make([]byte, bufSize)
+	// Read straight into the guest's linear memory. wazy's Memory().Read returns
+	// a slice aliasing that memory, so readMethod fills it in place: no host
+	// allocation sized from the guest's bufSize and no extra buf->guest copy.
+	// Read also bounds-checks bufPtr/bufSize, so an oversized guest length is
+	// rejected here instead of driving a multi-GiB allocation.
+	buf, ok := module.Memory().Read(bufPtr, bufSize)
+	if !ok {
+		return errno.ErrorAddressOutOfMemory
+	}
 
 	n, err0 := readMethod(buf)
 	if err0 != nil && err0 != io.EOF {
 		return errno.ErrorHttpReadBody
 	}
 
-	ok := module.Memory().WriteUint32Le(countPtr, uint32(n))
-	if !ok {
-		return errno.ErrorAddressOutOfMemory
-	}
-
-	ok = module.Memory().Write(bufPtr, buf)
-	if !ok {
+	if !module.Memory().WriteUint32Le(countPtr, uint32(n)) {
 		return errno.ErrorAddressOutOfMemory
 	}
 

@@ -93,9 +93,12 @@ func (f *Factory) memoryViewRead(
 		return uint32(err0)
 	}
 
-	size := mv.size
-	if size < offset+count {
-		count = size - offset
+	// Clamp against the remaining bytes without computing offset+count, which
+	// overflows uint32 for a large guest-supplied count (e.g. 0xFFFFFFF8) and
+	// would slip past a `size < offset+count` check into an out-of-range
+	// data[offset:offset+count] slice. offset < mv.size here, so remaining > 0.
+	if remaining := mv.size - offset; count > remaining {
+		count = remaining
 	}
 
 	if err0 = f.WriteBytes(module, bufPtr, data[offset:offset+count]); err0 != 0 {
