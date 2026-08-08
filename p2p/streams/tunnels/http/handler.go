@@ -52,6 +52,12 @@ func Frontend(w http.ResponseWriter, r *http.Request, stream io.ReadWriter) erro
 		var exitError error
 
 		defer func() {
+			// This goroutine processes untrusted peer frames outside net/http's
+			// per-request recover, so a panic here would take down the process.
+			// Convert it to an error the caller can surface instead.
+			if rec := recover(); rec != nil {
+				exitError = fmt.Errorf("panic while forwarding http response: %v", rec)
+			}
 			done <- exitError
 		}()
 
@@ -149,7 +155,16 @@ func headersOp(w http.ResponseWriter, r io.Reader) error {
 		}
 	}
 
-	w.WriteHeader(int(obj.Code))
+	// obj.Code is attacker-controlled: a substrate forwarding a guest's return
+	// code, or any peer speaking this protocol. net/http's WriteHeader panics
+	// for a code < 100 or > 999, and this runs on the Frontend goroutine below
+	// with no net/http recover to catch it, so clamp an out-of-range code to 500
+	// rather than crash the process.
+	code := int(obj.Code)
+	if code < 100 || code > 999 {
+		code = http.StatusInternalServerError
+	}
+	w.WriteHeader(code)
 
 	return nil
 }
