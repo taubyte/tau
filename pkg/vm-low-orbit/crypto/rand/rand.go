@@ -15,15 +15,19 @@ func (f *Factory) cryptoRead(
 	bufLen,
 	readPtr uint32,
 ) uint32 {
-	buf := make([]byte, bufLen)
+	// Fill the guest's buffer in place. Memory().Read returns a slice aliasing
+	// guest memory, so rand.Read writes straight into it: no host allocation
+	// sized from the guest's bufLen (which rand.Read would otherwise commit page
+	// by page) and no extra copy. Read bounds-checks bufPtr/bufLen for us.
+	buf, ok := module.Memory().Read(bufPtr, bufLen)
+	if !ok {
+		return uint32(errno.ErrorAddressOutOfMemory)
+	}
+
 	n, err := rand.Read(buf)
 	if err != nil {
 		return uint32(errno.ErrorRandRead)
 	}
 
-	if err := f.WriteUint64Le(module, readPtr, uint64(n)); err != 0 {
-		return uint32(err)
-	}
-
-	return uint32(f.WriteBytes(module, bufPtr, buf))
+	return uint32(f.WriteUint64Le(module, readPtr, uint64(n)))
 }

@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"os"
 
@@ -20,12 +19,12 @@ func (f *Factory) storageNewContent(ctx context.Context, module common.Module,
 		f.contentLock.Unlock()
 	}()
 
-	newFile, err := os.Create("tempFile" + fmt.Sprint("", f.contentIdToGrab))
+	newFile, err := os.CreateTemp("", "tau-content-"+f.parent.Context().Project()+"-*")
 	if err != nil {
 		return uint32(errno.ErrorCreatingNewFile)
 	}
 
-	f.contents[f.contentIdToGrab] = &content{id: f.contentIdToGrab, cid: cid.Cid{}, file: newFile}
+	f.contents[f.contentIdToGrab] = &content{id: f.contentIdToGrab, cid: cid.Cid{}, file: newFile, path: newFile.Name()}
 	return uint32(f.WriteUint32Le(module, contentIdPtr, f.contentIdToGrab))
 }
 
@@ -43,7 +42,7 @@ func (f *Factory) storageOpenCid(ctx context.Context, module common.Module,
 		return uint32(errno.ErrorCidNotFound)
 	}
 
-	newFile, err := os.Create(cid.String())
+	newFile, err := os.CreateTemp("", "tau-content-"+f.parent.Context().Project()+"-*")
 	if err != nil {
 		return uint32(errno.ErrorCreatingNewFile)
 	}
@@ -59,7 +58,7 @@ func (f *Factory) storageOpenCid(ctx context.Context, module common.Module,
 		f.contentLock.Unlock()
 	}()
 
-	f.contents[f.contentIdToGrab] = &content{id: f.contentIdToGrab, cid: cid, file: newFile}
+	f.contents[f.contentIdToGrab] = &content{id: f.contentIdToGrab, cid: cid, file: newFile, path: newFile.Name()}
 	return uint32(f.WriteUint32Le(module, contentIdPtr, f.contentIdToGrab))
 }
 
@@ -76,6 +75,14 @@ func (f *Factory) contentCloseFile(ctx context.Context,
 	if err != nil {
 		return uint32(errno.ErrorCloseFileFailed)
 	}
+
+	if content.path != "" {
+		os.Remove(content.path)
+	}
+
+	f.contentLock.Lock()
+	delete(f.contents, contentId)
+	f.contentLock.Unlock()
 
 	return 0
 }

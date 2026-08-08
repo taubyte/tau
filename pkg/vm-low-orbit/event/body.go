@@ -15,20 +15,20 @@ func (f *Factory) readHttpEventBody(ctx context.Context, module common.Module, e
 		return uint32(err)
 	}
 
-	buf := make([]byte, bufSize)
+	// Read straight into the guest's linear memory (aliasing slice): the body
+	// lands at bufPtr in place, with no host allocation and no extra copy. Read
+	// bounds-checks bufSize, rejecting an oversized request without allocating.
+	buf, ok := module.Memory().Read(bufPtr, bufSize)
+	if !ok {
+		return uint32(errno.ErrorAddressOutOfMemory)
+	}
 
 	n, err0 := r.Body.Read(buf)
 	if err0 != nil && err0 != io.EOF {
 		return uint32(errno.ErrorHttpReadBody)
 	}
 
-	err = f.WriteUint32Le(module, countPtr, uint32(n))
-	if err != 0 {
-		return uint32(err)
-	}
-
-	err = f.WriteBytes(module, bufPtr, buf)
-	if err != 0 {
+	if err = f.WriteUint32Le(module, countPtr, uint32(n)); err != 0 {
 		return uint32(err)
 	}
 

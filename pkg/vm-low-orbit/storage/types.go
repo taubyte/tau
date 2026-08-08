@@ -40,6 +40,7 @@ type content struct {
 	id   uint32
 	cid  cid.Cid
 	file contentFile
+	path string
 }
 
 type contentFile interface{}
