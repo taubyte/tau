@@ -91,8 +91,11 @@ func (f *Factory) doHttpRequest(ctx context.Context, module common.Module,
 		return uint32(err)
 	}
 
+	// Thread the host-call ctx so the guest's outbound request is cancelled when
+	// the function's deadline passes — otherwise a slow/blackhole endpoint pins
+	// the pooled instance, which is freed only after this synchronous call.
 	var _err error
-	resp, _err := client.Do(req.Request)
+	resp, _err := client.Do(req.Request.WithContext(ctx))
 	if _err != nil {
 		return uint32(errno.ErrorHttpRequestFailed)
 	}

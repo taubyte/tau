@@ -17,6 +17,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"github.com/taubyte/tau/pkg/netguard"
 )
 
 // DockerBackend implements the core.Backend interface for Docker
@@ -199,6 +200,14 @@ func (b *DockerBackend) Create(ctx context.Context, config *core.ContainerConfig
 		return "", fmt.Errorf("failed to create Docker config: %w", err)
 	}
 
+	// Fail-closed: an untrusted build with restricted egress is not created
+	// unless the host firewall is in place (idempotent, re-asserted per build).
+	if config.Network != nil && config.Network.RestrictEgress {
+		if err := netguard.InstallDockerBridgeFilter(); err != nil {
+			return "", fmt.Errorf("installing egress firewall (build not started): %w", err)
+		}
+	}
+
 	resp, err := b.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:           containerConfig,
 		HostConfig:       hostConfig,
@@ -281,6 +290,13 @@ func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*conta
 
 	networkingConfig := &network.NetworkingConfig{}
 	if config.Network != nil {
+		if config.Network.RestrictEgress && config.Network.Mode != "" && config.Network.Mode != "bridge" {
+			// The egress firewall matches the default bridge (docker0). Host
+			// networking evades it, and a custom network gets a br-<hash> veth the
+			// rule doesn't match — either would install cleanly but filter
+			// nothing. A restricted build must use the default bridge.
+			return nil, nil, nil, fmt.Errorf("restricted egress requires the default docker bridge, got network mode %q", config.Network.Mode)
+		}
 		if config.Network.Mode != "" {
 			hostConfig.NetworkMode = container.NetworkMode(config.Network.Mode)
 		}

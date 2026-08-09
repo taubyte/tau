@@ -74,6 +74,18 @@ func Volume(sourcePath, containerPath string) ContainerOption {
 	}
 }
 
+// RestrictedEgress makes the backend confine the container's network egress to
+// the public internet — blocking node-local services, the cloud metadata
+// endpoint, and private/link-local ranges. Set for untrusted build containers.
+// Enforcement is fail-closed: if the firewall cannot be installed the container
+// is not started.
+func RestrictedEgress() ContainerOption {
+	return func(c *Container) error {
+		c.restrictedEgress = true
+		return nil
+	}
+}
+
 // Variable sets an environment variable in the container.
 func Variable(key, value string) ContainerOption {
 	return func(c *Container) error {

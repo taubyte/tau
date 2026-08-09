@@ -375,7 +375,24 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 		if config.Resources != nil {
 			return "", fmt.Errorf("resource limits require rootful containerd: a rootless daemon cannot create the cgroup to enforce them")
 		}
+		if config.Network != nil && config.Network.RestrictEgress {
+			// The egress firewall targets the container's cgroup, but a rootless
+			// container's cgroup is not managed here (withoutCgroups). Fail closed.
+			return "", fmt.Errorf("restricted egress requires rootful containerd: cannot firewall a rootless container's egress")
+		}
 		opts = append(opts, withoutCgroups())
+	}
+
+	if config.Network != nil && config.Network.RestrictEgress {
+		// Pin the build under the namespace's cgroup subtree and install (or
+		// re-assert) the single parent-cgroup egress rule that covers every
+		// build container. Fail-closed: no firewall, no container. Installing
+		// here — before the container is created — guarantees the rule is in
+		// place well before the build process starts.
+		opts = append(opts, oci.WithCgroup("/"+b.config.Namespace+"/"+string(containerID)))
+		if err := ensureCgroupEgressFilter(b.config.Namespace); err != nil {
+			return "", fmt.Errorf("installing egress firewall (build not created): %w", err)
+		}
 	}
 
 	// The image's own configuration is the baseline, exactly as docker treats
