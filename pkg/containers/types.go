@@ -45,10 +45,11 @@ type Container struct {
 // DockerImage wraps the methods of the docker image.
 // It now uses a Backend internally for image operations.
 type DockerImage struct {
-	backend      core.Backend
-	image        string
-	buildTarball io.Reader
-	output       io.Writer
+	backend          core.Backend
+	image            string
+	buildTarball     io.Reader
+	output           io.Writer
+	restrictedEgress bool
 	// Keep client reference for backward compatibility
 	client *Client // Kept for reference, but operations use backend
 }

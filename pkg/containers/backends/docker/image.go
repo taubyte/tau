@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/moby/moby/client"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"github.com/taubyte/tau/pkg/netguard"
 )
 
 // dockerImage implements the core.Image interface for Docker
@@ -70,6 +72,22 @@ func (i *dockerImage) Build(ctx context.Context, input *core.DockerfileBuild) er
 		Remove:     true,
 		Dockerfile: input.DockerfileName(),
 		Context:    input.Context,
+	}
+
+	// A RUN step is a container of the daemon's own making, so the only handle
+	// on its egress is the network it runs on. Same fail-closed rule as Create:
+	// no firewall, no build.
+	if input.RestrictEgress {
+		if err := i.backend.ensureRestrictedNetwork(ctx); err != nil {
+			return err
+		}
+		if _, err := net.InterfaceByName(restrictedBridge); err != nil {
+			return fmt.Errorf("restricted egress needs the %s bridge in tau's own network namespace (a rootless docker keeps it in its own); refusing to fail open: %w", restrictedBridge, err)
+		}
+		if err := netguard.InstallBridgeFilter(restrictedBridge); err != nil {
+			return fmt.Errorf("installing egress firewall (image not built): %w", err)
+		}
+		buildOptions.NetworkMode = restrictedNetwork
 	}
 
 	buildResponse, err := i.backend.client.ImageBuild(ctx, input.Context, buildOptions)

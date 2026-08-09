@@ -89,10 +89,6 @@ func (d *dir) DefaultOptions(script, outDir string, environment builders.Environ
 		d.SetEnvironmentVariables(),
 		d.SetOutVolume(outDir),
 		d.SetBuildCommand(script),
-		// build.sh is untrusted repo content: confine its network to the public
-		// internet so it cannot reach node-local services or the cloud metadata
-		// endpoint.
-		ci.RestrictedEgress(),
 	}
 
 	if len(environment.Variables) > 0 {

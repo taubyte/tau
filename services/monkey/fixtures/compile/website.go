@@ -78,7 +78,7 @@ func (w websiteContext) directory() error {
 		c.ForceGitDir(w.ctx.paths[0])
 		c.ForceContext(w.ctx.universe.Context())
 
-		b, err := builder.New(w.ctx.universe.Context(), c.LogFile, c.WorkDir)
+		b, err := builder.New(w.ctx.universe.Context(), c.LogFile, c.WorkDir, builder.Dev(true))
 		if err != nil {
 			return nil, fmt.Errorf("builder new failed with: %s", err)
 		}

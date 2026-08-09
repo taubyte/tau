@@ -30,7 +30,7 @@ func TestBasicWebsite(t *testing.T) {
 	assert.NilError(t, err)
 	defer os.Remove(logFile.Name())
 
-	builder, err := New(ctx, logFile, repo.Dir())
+	builder, err := New(ctx, logFile, repo.Dir(), Dev(true))
 	assert.NilError(t, err)
 
 	output, err := builder.Build(builder.Wd().Website().SetWorkDir())
@@ -70,7 +70,7 @@ func TestWasmBasic(t *testing.T) {
 	assert.NilError(t, err)
 	defer os.Remove(logFile.Name())
 
-	builder, err := New(ctx, logFile, codeSource)
+	builder, err := New(ctx, logFile, codeSource, Dev(true))
 	assert.NilError(t, err)
 
 	output, err := builder.Build()

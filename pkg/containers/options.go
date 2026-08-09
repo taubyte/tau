@@ -87,6 +87,15 @@ func RestrictedEgress() ContainerOption {
 	}
 }
 
+// RestrictedBuildEgress confines a Dockerfile build's egress, the way
+// RestrictedEgress does for a container it is the image of.
+func RestrictedBuildEgress() ImageOption {
+	return func(i *DockerImage) error {
+		i.restrictedEgress = true
+		return nil
+	}
+}
+
 // Variable sets an environment variable in the container.
 func Variable(key, value string) ContainerOption {
 	return func(c *Container) error {

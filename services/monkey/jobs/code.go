@@ -68,7 +68,7 @@ func (c code) handleOp(op Op) error {
 
 func (c Context) HandleOp(op Op) (io.ReadSeekCloser, error) {
 	sourcePath := path.Join(c.gitDir, op.application, op.pathVariable, op.name)
-	builder, err := build.New(c.ctx, c.LogFile, sourcePath)
+	builder, err := build.New(c.ctx, c.LogFile, sourcePath, build.Dev(c.Monkey.Dev()))
 	if err != nil {
 		err = fmt.Errorf("creating new wasm builder failed with: %w", err)
 		return nil, err

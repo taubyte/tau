@@ -362,8 +362,10 @@ RUN nc -w 3 127.0.0.1 %s </dev/null >/dev/null 2>&1 && echo LOCAL_REACHED > /pro
 `, testImage, port)
 
 	image := backend.Image(name)
-	require.NoError(t, image.Build(ctx, &core.DockerfileBuild{Context: tarOfDockerfile(t, dockerfile)}),
-		"a restricted build must still reach the registry and resolve its name")
+	require.NoError(t, image.Build(ctx, &core.DockerfileBuild{
+		Context:        tarOfDockerfile(t, dockerfile),
+		RestrictEgress: true,
+	}), "a restricted build must still reach the registry and resolve its name")
 	t.Cleanup(func() { image.Remove(context.WithoutCancel(ctx)) })
 
 	id, err := backend.Create(ctx, &core.ContainerConfig{

@@ -82,10 +82,13 @@ func buildkitFlags(rootless bool) []string {
 //
 // The container sees the host's cgroup hierarchy at the same paths (it is bind
 // mounted, with no cgroup namespace), so the host path is the right one to name.
-func writeBuildKitConfig(workDir, namespace string) (string, error) {
+func writeBuildKitConfig(workDir, namespace string, restrictEgress bool) (string, error) {
 	path := filepath.Join(workDir, "buildkitd.toml")
-	config := fmt.Sprintf("[worker.oci]\n  defaultCgroupParent = %q\n",
-		"/"+namespace+"/"+restrictedCgroup)
+
+	config := "[worker.oci]\n"
+	if restrictEgress {
+		config += fmt.Sprintf("  defaultCgroupParent = %q\n", "/"+namespace+"/"+restrictedCgroup)
+	}
 
 	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
 		return "", fmt.Errorf("failed to write the builder configuration: %w", err)
@@ -152,12 +155,12 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 		return fmt.Errorf("failed to unpack build context: %w", err)
 	}
 
-	configPath, err := writeBuildKitConfig(workDir, i.backend.config.Namespace)
+	configPath, err := writeBuildKitConfig(workDir, i.backend.config.Namespace, input.RestrictEgress)
 	if err != nil {
 		return err
 	}
 
-	if err := i.runBuildKit(ctx, contextDir, outputDir, configPath, input.DockerfileName()); err != nil {
+	if err := i.runBuildKit(ctx, contextDir, outputDir, configPath, input.DockerfileName(), input.RestrictEgress); err != nil {
 		return err
 	}
 
@@ -166,7 +169,7 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 
 // runBuildKit runs one build and returns the builder's own output on failure —
 // that output is the compiler error, the missing package, the failed RUN.
-func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir, configPath, dockerfile string) error {
+func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir, configPath, dockerfile string, restrictEgress bool) error {
 	config := &core.ContainerConfig{
 		Image: buildkitImage,
 		Command: []string{
@@ -183,7 +186,7 @@ func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir
 		// code and get the same egress policy as build.sh. Restricting the
 		// builder is only half of it — see writeBuildKitConfig for the half that
 		// reaches the steps themselves.
-		Network: &core.NetworkConfig{RestrictEgress: true},
+		Network: &core.NetworkConfig{RestrictEgress: restrictEgress},
 		Volumes: []core.VolumeMount{
 			{Source: contextDir, Destination: buildContextPath, ReadOnly: true},
 			{Source: outputDir, Destination: buildOutputPath},

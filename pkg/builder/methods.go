@@ -41,6 +41,11 @@ func (b *builder) buildImage() (clientImage *ci.DockerImage, err error) {
 	if b.tarball != nil {
 		image = fmt.Sprintf("%s-%s", image, strings.ToLower(multihash.Hash(b.tarball)))
 		ops = append(ops, ci.Build(bytes.NewReader(b.tarball)))
+		if b.restrictEgress() {
+			// A repository's Dockerfile is untrusted for the same reason its
+			// build.sh is, and its RUN steps run before build.sh ever does.
+			ops = append(ops, ci.RestrictedBuildEgress())
+		}
 	}
 
 	json.NewEncoder(b.output).Encode(struct {
@@ -84,6 +89,12 @@ func (b *builder) run(output *output, image *ci.DockerImage, environment specs.E
 		})
 
 		ops = append(ops, b.wd.DefaultOptions(script, output.outDir, environment)...)
+		if b.restrictEgress() {
+			// build.sh is untrusted repo content: confine its network to the
+			// public internet so it cannot reach node-local services or the
+			// cloud metadata endpoint.
+			ops = append(ops, ci.RestrictedEgress())
+		}
 		container, err := image.Instantiate(b.context, ops...)
 		if err != nil {
 			json.NewEncoder(b.output).Encode(struct {
