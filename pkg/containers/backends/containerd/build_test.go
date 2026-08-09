@@ -192,8 +192,15 @@ func TestBuildKitRecipe(t *testing.T) {
 	assert.Contains(t, rootless[0], "--oci-worker-snapshotter=native",
 		"overlayfs cannot be mounted from a user namespace")
 
-	assert.Empty(t, buildkitFlags(false),
+	rootful := buildkitFlags(false)
+	require.Len(t, rootful, 1)
+	assert.NotContains(t, rootful[0], "rootless",
 		"as real root BuildKit's defaults are right, and asking for rootless mode makes it refuse to start")
+
+	for _, flags := range [][]string{rootless, rootful} {
+		assert.Contains(t, flags[0], "--config="+buildConfigPath,
+			"without its config the per-step runc gets no cgroup parent, and the steps escape the egress rule")
+	}
 
 	assert.NotContains(t, buildkitImage, ":latest",
 		"the builder must be pinned so builds do not change underneath us")

@@ -55,15 +55,12 @@ func (f *Factory) dnsResetResolver(ctx context.Context, module common.Module,
 		return uint32(err)
 	}
 
-	// Keep the egress guard on the default resolver too: a guest must not be
-	// able to reset and then resolve via the host's local stub (127.0.0.53), a
-	// denied loopback destination.
-	resolver.Resolver = &net.Resolver{
-		PreferGo: true,
-		Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return netguard.RestrictedDialer(10*time.Second).DialContext(ctx, network, address)
-		},
-	}
+	// Back to the host's own resolver, guard and all removed. The guard belongs
+	// on Reroute, where the guest picks the address; here it picks nothing, and
+	// the address is whatever the node is configured with — commonly a systemd
+	// stub on 127.0.0.53, which the policy denies. Guarding this would resolve
+	// nothing on such a host while blocking no attack: the guest cannot aim it.
+	resolver.Resolver = &net.Resolver{}
 
 	return 0
 }

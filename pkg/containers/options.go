@@ -76,7 +76,8 @@ func Volume(sourcePath, containerPath string) ContainerOption {
 
 // RestrictedEgress makes the backend confine the container's network egress to
 // the public internet — blocking node-local services, the cloud metadata
-// endpoint, and private/link-local ranges. Set for untrusted build containers.
+// endpoint, and private/link-local ranges. Set for any workload the node did not
+// author — a build running a repository's own build.sh, a tenant's container.
 // Enforcement is fail-closed: if the firewall cannot be installed the container
 // is not started.
 func RestrictedEgress() ContainerOption {

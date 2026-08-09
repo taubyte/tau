@@ -1,14 +1,14 @@
 // Package netguard defines the single network-egress policy for untrusted code
 // running on a tau node: which destinations must be blocked so a tenant WASM
-// function or a build container cannot reach node-local services or cloud
-// infrastructure (loopback, private networks, and the link-local metadata
-// endpoint), while still reaching the public internet.
+// function or a container the node did not author cannot reach node-local
+// services or cloud infrastructure (loopback, private networks, and the
+// link-local metadata endpoint), while still reaching the public internet.
 //
 // The same policy feeds two enforcement layers so they can never drift:
 //   - a net.Dialer control guard for the in-process WASM guest's HTTP client
 //     (pkg/vm-low-orbit/http) — portable Go, every OS;
-//   - an nftables ruleset for build containers (pkg/containers firewall) — Linux
-//     only, built from DeniedPrefixes.
+//   - an nftables ruleset for restricted containers (pkg/containers firewall) —
+//     Linux only, built from DeniedPrefixes.
 package netguard
 
 import (
@@ -22,16 +22,18 @@ import (
 // everything not listed here.
 var deniedCIDRs = mustParseCIDRs(
 	// IPv4
-	"0.0.0.0/8",          // "this host on this network"; 0.0.0.0 often routes to loopback
-	"127.0.0.0/8",        // loopback
-	"10.0.0.0/8",         // RFC1918 private
-	"172.16.0.0/12",      // RFC1918 private
-	"192.168.0.0/16",     // RFC1918 private
-	"169.254.0.0/16",     // link-local, incl. cloud metadata 169.254.169.254
-	"100.64.0.0/10",      // CGNAT (RFC6598)
-	"192.0.0.0/24",       // IETF protocol assignments
-	"198.18.0.0/15",      // benchmarking
-	"255.255.255.255/32", // limited broadcast
+	"0.0.0.0/8",        // "this host on this network"; 0.0.0.0 often routes to loopback
+	"127.0.0.0/8",      // loopback
+	"10.0.0.0/8",       // RFC1918 private
+	"172.16.0.0/12",    // RFC1918 private
+	"192.168.0.0/16",   // RFC1918 private
+	"169.254.0.0/16",   // link-local, incl. cloud metadata 169.254.169.254
+	"168.63.129.16/32", // Azure WireServer: platform agent and DNS, globally routable
+	"100.64.0.0/10",    // CGNAT (RFC6598)
+	"224.0.0.0/4",      // multicast
+	"240.0.0.0/4",      // reserved, incl. 255.255.255.255 broadcast
+	"192.0.0.0/24",     // IETF protocol assignments
+	"198.18.0.0/15",    // benchmarking
 	// IPv6
 	"::1/128",      // loopback
 	"::/128",       // unspecified
@@ -40,6 +42,7 @@ var deniedCIDRs = mustParseCIDRs(
 	"64:ff9b::/96", // NAT64 well-known prefix (embeds IPv4)
 	"2002::/16",    // 6to4 (embeds IPv4, incl. private)
 	"2001::/32",    // Teredo (embeds IPv4)
+	"ff00::/8",     // multicast
 	// IPv4-mapped IPv6 (::ffff:a.b.c.d) is handled by To4() normalisation in
 	// IsDenied, not a CIDR here: a "::ffff:0:0/96" entry collapses to /0 against
 	// a 4-byte IP and would deny every IPv4 destination.

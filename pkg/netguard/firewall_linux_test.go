@@ -8,41 +8,70 @@ import (
 	"testing"
 )
 
-// Each denied CIDR must encode as one interval element [network, broadcast]
-// (Key/KeyEnd) with the correct byte width per family, so the nftables set
+// Each denied range must encode as a boundary pair — start, then an exclusive
+// end marker — with the correct byte width per family, so the nftables set
 // matches the whole range. This validates rule construction without programming
-// the kernel.
+// the kernel; that the encoding is the one the kernel accepts is the
+// integration test's job.
 func TestDeniedElementsIntervals(t *testing.T) {
-	v4 := deniedElements(false)
-	if len(v4) == 0 {
-		t.Fatal("expected some v4 elements")
-	}
-	for _, e := range v4 {
-		if len(e.Key) != net.IPv4len || len(e.KeyEnd) != net.IPv4len {
-			t.Errorf("v4 element widths key=%d keyEnd=%d, want 4/4", len(e.Key), len(e.KeyEnd))
+	for _, fam := range []struct {
+		v6    bool
+		width int
+	}{{false, net.IPv4len}, {true, net.IPv6len}} {
+		els := deniedElements(fam.v6)
+		if len(els) == 0 {
+			t.Fatalf("v6=%v: expected some elements", fam.v6)
+		}
+		for _, e := range els {
+			if len(e.Key) != fam.width {
+				t.Errorf("v6=%v: element key width %d, want %d", fam.v6, len(e.Key), fam.width)
+			}
+			if len(e.KeyEnd) != 0 {
+				t.Errorf("v6=%v: KeyEnd is set; the kernel rejects that form", fam.v6)
+			}
 		}
 	}
 
-	// 10.0.0.0/8 must be [10.0.0.0, 10.255.255.255].
+	// 10.0.0.0/8 must be [10.0.0.0, 11.0.0.0).
+	v4 := deniedElements(false)
 	var found bool
-	for _, e := range v4 {
-		if bytes.Equal(e.Key, net.IPv4(10, 0, 0, 0).To4()) &&
-			bytes.Equal(e.KeyEnd, net.IPv4(10, 255, 255, 255).To4()) {
+	for i, e := range v4 {
+		if !bytes.Equal(e.Key, net.IPv4(10, 0, 0, 0).To4()) || e.IntervalEnd {
+			continue
+		}
+		if i+1 < len(v4) && v4[i+1].IntervalEnd &&
+			bytes.Equal(v4[i+1].Key, net.IPv4(11, 0, 0, 0).To4()) {
 			found = true
 		}
 	}
 	if !found {
-		t.Error("10.0.0.0/8 not encoded as [10.0.0.0, 10.255.255.255]")
+		t.Error("10.0.0.0/8 not encoded as start 10.0.0.0 + end marker 11.0.0.0")
 	}
 
-	v6 := deniedElements(true)
-	if len(v6) == 0 {
-		t.Fatal("expected some v6 elements")
+	// 224.0.0.0/4 and 240.0.0.0/4 are adjacent, so they merge into one range
+	// that runs to the last address — which has no successor to mark an end
+	// with. The last element must therefore be that open-ended start.
+	if last := v4[len(v4)-1]; last.IntervalEnd ||
+		!bytes.Equal(last.Key, net.IPv4(224, 0, 0, 0).To4()) {
+		t.Errorf("last v4 element = %v (end=%v), want an open-ended 224.0.0.0 start",
+			net.IP(last.Key), last.IntervalEnd)
 	}
-	for _, e := range v6 {
-		if len(e.Key) != net.IPv6len || len(e.KeyEnd) != net.IPv6len {
-			t.Errorf("v6 element widths key=%d keyEnd=%d, want 16/16", len(e.Key), len(e.KeyEnd))
+}
+
+// Adjacent ranges must merge: ::/128 and ::1/128 would otherwise emit an end
+// marker and a start element both keyed ::1, a duplicate the kernel rejects.
+func TestDeniedRangesMergeAdjacent(t *testing.T) {
+	seen := map[string]bool{}
+	for _, e := range deniedElements(true) {
+		k := net.IP(e.Key).String()
+		if seen[k] {
+			t.Errorf("duplicate boundary %s", k)
 		}
+		seen[k] = true
+	}
+	first := deniedRanges(true)[0]
+	if !first[0].Equal(net.IPv6zero) || !first[1].Equal(net.IPv6loopback) {
+		t.Errorf("::/128 and ::1/128 not merged: first range = [%v, %v]", first[0], first[1])
 	}
 }
 

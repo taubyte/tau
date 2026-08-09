@@ -189,9 +189,9 @@ type NetworkConfig struct {
 	// RestrictEgress makes the backend install a host firewall that blocks the
 	// container from reaching node-local and private/link-local networks (the
 	// cloud metadata endpoint, loopback, RFC1918) while still allowing the
-	// public internet. Set for untrusted build containers. Fail-closed: if the
-	// firewall cannot be installed (e.g. missing CAP_NET_ADMIN) the container is
-	// not started.
+	// public internet. Set for untrusted workloads. Fail-closed: if the firewall
+	// cannot be installed (e.g. missing CAP_NET_ADMIN) the container is not
+	// started.
 	RestrictEgress bool
 }
 

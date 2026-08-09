@@ -35,6 +35,7 @@ const (
 	buildContextPath = "/tau/context"
 	buildOutputPath  = "/tau/out"
 	buildOutputFile  = "image.tar"
+	buildConfigPath  = "/tau/buildkitd.toml"
 	cgroupPath       = "/sys/fs/cgroup"
 )
 
@@ -59,14 +60,37 @@ const (
 //   - native snapshotter: overlayfs cannot be mounted from within a user
 //     namespace, so the slower snapshotter that only copies is the one that works.
 func buildkitFlags(rootless bool) []string {
-	if !rootless {
-		return nil
+	flags := "--config=" + buildConfigPath
+	if rootless {
+		flags += " --oci-worker-no-process-sandbox" +
+			" --oci-worker-rootless" +
+			" --oci-worker-snapshotter=native"
 	}
 
-	return []string{"BUILDKITD_FLAGS=" +
-		"--oci-worker-no-process-sandbox " +
-		"--oci-worker-rootless " +
-		"--oci-worker-snapshotter=native"}
+	return []string{"BUILDKITD_FLAGS=" + flags}
+}
+
+// writeBuildKitConfig writes the buildkitd configuration the builder is started
+// with, and returns its path on the host.
+//
+// It exists for one setting. BuildKit runs every RUN step in a runc container of
+// its own, and leaves that container's cgroup path empty unless it is told a
+// parent — so the steps would land at the root of the host hierarchy, outside
+// the subtree the egress rule matches, and a Dockerfile could do what build.sh
+// cannot. Naming the restricted parent puts every step inside it: the rule
+// matches the ancestor at that level, so nesting depth below it does not matter.
+//
+// The container sees the host's cgroup hierarchy at the same paths (it is bind
+// mounted, with no cgroup namespace), so the host path is the right one to name.
+func writeBuildKitConfig(workDir, namespace string) (string, error) {
+	path := filepath.Join(workDir, "buildkitd.toml")
+	config := fmt.Sprintf("[worker.oci]\n  defaultCgroupParent = %q\n",
+		"/"+namespace+"/"+restrictedCgroup)
+
+	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
+		return "", fmt.Errorf("failed to write the builder configuration: %w", err)
+	}
+	return path, nil
 }
 
 // buildPrivileges is what the builder needs loosened, and it differs by mode
@@ -128,7 +152,12 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 		return fmt.Errorf("failed to unpack build context: %w", err)
 	}
 
-	if err := i.runBuildKit(ctx, contextDir, outputDir, input.DockerfileName()); err != nil {
+	configPath, err := writeBuildKitConfig(workDir, i.backend.config.Namespace)
+	if err != nil {
+		return err
+	}
+
+	if err := i.runBuildKit(ctx, contextDir, outputDir, configPath, input.DockerfileName()); err != nil {
 		return err
 	}
 
@@ -137,7 +166,7 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 
 // runBuildKit runs one build and returns the builder's own output on failure —
 // that output is the compiler error, the missing package, the failed RUN.
-func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir, dockerfile string) error {
+func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir, configPath, dockerfile string) error {
 	config := &core.ContainerConfig{
 		Image: buildkitImage,
 		Command: []string{
@@ -150,9 +179,15 @@ func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir
 				i.name, path.Join(buildOutputPath, buildOutputFile)),
 		},
 		Env: buildkitFlags(i.backend.isRootlessMode()),
+		// The Dockerfile is repository content, so its RUN steps are untrusted
+		// code and get the same egress policy as build.sh. Restricting the
+		// builder is only half of it — see writeBuildKitConfig for the half that
+		// reaches the steps themselves.
+		Network: &core.NetworkConfig{RestrictEgress: true},
 		Volumes: []core.VolumeMount{
 			{Source: contextDir, Destination: buildContextPath, ReadOnly: true},
 			{Source: outputDir, Destination: buildOutputPath},
+			{Source: configPath, Destination: buildConfigPath, ReadOnly: true},
 			// BuildKit runs a runc of its own for every step, and that runc
 			// refuses to start without a cgroup hierarchy it can see: "no cgroup
 			// mount found in mountinfo". Rootless containers get no cgroup mount

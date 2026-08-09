@@ -64,3 +64,37 @@ func TestDeniedPrefixesIsACopy(t *testing.T) {
 		t.Error("policy corrupted by mutating DeniedPrefixes result")
 	}
 }
+
+// The two enforcement layers must agree. IsDenied is the guest layer and mixes
+// stdlib predicates with the CIDR list; the firewall layer is built from the
+// CIDR list alone, so anything IsDenied rejects that no prefix covers is a
+// destination one layer blocks and the other permits. That is the drift the
+// package doc promises cannot happen.
+func TestNoDriftBetweenLayers(t *testing.T) {
+	prefixes := DeniedPrefixes()
+	covered := func(ip net.IP) bool {
+		for _, n := range prefixes {
+			if n.Contains(ip) {
+				return true
+			}
+		}
+		return false
+	}
+
+	for _, addr := range []string{
+		"127.0.0.1", "0.0.0.0", "10.1.2.3", "172.20.0.1", "192.168.1.1",
+		"169.254.169.254", "168.63.129.16", "100.64.0.1", "192.0.0.1",
+		"198.18.0.1", "255.255.255.255", "224.0.0.251", "239.255.255.250",
+		"240.0.0.1", "::1", "::", "fe80::1", "fc00::1", "64:ff9b::1",
+		"2002::1", "2001::1", "ff02::fb", "ff01::1",
+	} {
+		ip := net.ParseIP(addr)
+		if !IsDenied(ip) {
+			t.Errorf("%s: IsDenied says permitted", addr)
+			continue
+		}
+		if !covered(ip) {
+			t.Errorf("%s: denied by IsDenied but covered by no prefix, so the firewall layer permits it", addr)
+		}
+	}
+}
