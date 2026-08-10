@@ -39,6 +39,14 @@ type ContainerdConfig struct {
 	SocketPath string
 	// Namespace is the containerd namespace to use
 	Namespace string
+
+	// Runtime names the containerd runtime handler untrusted workloads are run
+	// with — "io.containerd.runsc.v1" for gVisor, say. Empty means containerd's
+	// default, which is runc: the host kernel is then the only boundary a
+	// container has, so a node running untrusted code should name a sandboxed
+	// one. It is a handler name rather than a flag so that swapping the
+	// implementation later is configuration, not a code change.
+	Runtime string
 	// RootlessMode specifies how rootless container mode should be handled
 	// Defaults to RootlessModeAuto (auto-detect based on user privileges)
 	RootlessMode RootlessMode

@@ -426,13 +426,20 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 		return "", fmt.Errorf("failed to read config of image %s: %w", config.Image, err)
 	}
 
-	container, err := b.client.NewContainer(
-		ctx,
-		string(containerID),
+	newContainer := []containerd.NewContainerOpts{
 		containerd.WithImage(image),
 		containerd.WithNewSnapshot(fmt.Sprintf("%s-snapshot", containerID), image),
 		containerd.WithNewSpec(append(imageOpts, opts...)...),
-	)
+	}
+
+	// The runtime is the boundary an untrusted workload runs against, so it is
+	// named for restricted ones when the node has been given one. Everything
+	// else keeps containerd's default.
+	if restricted && b.config.Runtime != "" {
+		newContainer = append(newContainer, containerd.WithRuntime(b.config.Runtime, nil))
+	}
+
+	container, err := b.client.NewContainer(ctx, string(containerID), newContainer...)
 	if err != nil {
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
@@ -521,7 +528,7 @@ func specOpts(config *core.ContainerConfig) ([]oci.SpecOpts, error) {
 	}
 	opts = append(opts, networkOpts...)
 
-	opts = append(opts, resourceSpecOpts(config.Resources)...)
+	opts = append(opts, resourceSpecOpts(restrictedResources(config))...)
 	opts = append(opts, privilegeSpecOpts(config.Privileges)...)
 
 	if config.Network != nil && config.Network.RestrictEgress && !privileged(config.Privileges) {
@@ -551,6 +558,31 @@ func specOpts(config *core.ContainerConfig) ([]oci.SpecOpts, error) {
 
 func privileged(privileges *core.Privileges) bool {
 	return privileges != nil && privileges.Privileged
+}
+
+// defaultRestrictedPIDs caps how many processes untrusted code may create. A
+// build that forks until the node falls over needs no exploit and no network,
+// and it takes the whole node's other tenants with it. High enough that no real
+// build notices; low enough that a loop does.
+const defaultRestrictedPIDs = 4096
+
+// restrictedResources gives an untrusted workload a process cap when the caller
+// asked for no limits of its own. Memory is deliberately not guessed at here —
+// a wrong number fails real builds, and it belongs in configuration.
+func restrictedResources(config *core.ContainerConfig) *core.ResourceLimits {
+	if config.Network == nil || !config.Network.RestrictEgress || !resourceLimitsAvailable() {
+		return config.Resources
+	}
+
+	if config.Resources == nil {
+		return &core.ResourceLimits{PIDs: defaultRestrictedPIDs}
+	}
+	if config.Resources.PIDs == 0 {
+		limits := *config.Resources
+		limits.PIDs = defaultRestrictedPIDs
+		return &limits
+	}
+	return config.Resources
 }
 
 // privilegeSpecOpts widens the container's confinement. The OCI spec names

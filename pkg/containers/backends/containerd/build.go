@@ -4,7 +4,9 @@ package containerd
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -320,7 +322,21 @@ func (b *ContainerdBackend) nameImage(ctx context.Context, name string, target o
 // entry named ../../etc/cron.d/x, or a symlink pointing at /etc/shadow, would
 // otherwise write outside the build or pull host files into the image.
 func extractContext(r io.Reader, dir string) error {
-	reader := tar.NewReader(r)
+	// The tarball a builder hands over is gzipped (utils/bundle), while the one
+	// a test or an API caller writes usually is not. The docker daemon sniffs
+	// this for itself; here it has to be done by hand.
+	buffered := bufio.NewReader(r)
+	var source io.Reader = buffered
+	if magic, err := buffered.Peek(2); err == nil && magic[0] == 0x1f && magic[1] == 0x8b {
+		unzipped, err := gzip.NewReader(buffered)
+		if err != nil {
+			return fmt.Errorf("reading build context: %w", err)
+		}
+		defer unzipped.Close()
+		source = unzipped
+	}
+
+	reader := tar.NewReader(source)
 
 	for {
 		header, err := reader.Next()
