@@ -38,6 +38,16 @@ func ZipFile(archive *zip.Writer, source string, files ...string) error {
 		return fmt.Errorf("expected 1 file to zip, got %d", len(files))
 	}
 
+	// Regular files only, as Tarball does: read below would otherwise follow a
+	// link and archive whatever it names.
+	info, err := os.Lstat(source)
+	if err != nil {
+		return fmt.Errorf("reading path:`%s` failed with: %w", source, err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("refusing to archive `%s`: not a regular file", source)
+	}
+
 	data, err := os.ReadFile(source)
 	if err != nil {
 		return fmt.Errorf("reading path:`%s` failed with: %w", source, err)
@@ -67,6 +77,13 @@ func ZipDir(archive *zip.Writer, source string, _ ...string) error {
 				return nil
 			}
 			path += "/"
+		} else if !info.Mode().IsRegular() {
+			// Only regular files are archived, as Tarball does. Walk reports a
+			// link itself rather than its target, but opening one below would
+			// follow it and copy in whatever it points at — from anywhere on the
+			// machine, since the directory being archived is written by the
+			// build and the archiving happens outside it.
+			return nil
 		}
 
 		header, err := zip.FileInfoHeader(info)

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/taubyte/tau/core/builders"
 	spec "github.com/taubyte/tau/pkg/specs/builders"
@@ -46,6 +47,29 @@ func outputDirHasNoFiles(dir string) (bool, error) {
 	return !hasFile, nil
 }
 
+// zipOutput archives one file the build produced.
+//
+// The output directory is written by the build, so a path under it is resolved
+// and required to stay under it before anything is read: a component along the
+// way may name somewhere else entirely, and this runs outside the container.
+func (o *output) zipOutput(source, target string) (*os.File, error) {
+	root, err := filepath.EvalSymlinks(o.outDir)
+	if err != nil {
+		return nil, fmt.Errorf("resolving output directory failed with: %w", err)
+	}
+
+	resolved, err := filepath.EvalSymlinks(source)
+	if err != nil {
+		return nil, fmt.Errorf("resolving `%s` failed with: %w", source, err)
+	}
+
+	if resolved != root && !strings.HasPrefix(resolved, root+string(filepath.Separator)) {
+		return nil, fmt.Errorf("refusing to archive `%s`: it resolves outside the output directory", source)
+	}
+
+	return bundle.Zip(bundle.ZipFile, resolved, target, wasm.WasmFile)
+}
+
 // Compress takes a CompressionMethod, and returns the compressed output of the files built by Build
 func (o *output) Compress(method builders.CompressionMethod) (io.ReadSeekCloser, error) {
 	var (
@@ -60,9 +84,9 @@ func (o *output) Compress(method builders.CompressionMethod) (io.ReadSeekCloser,
 		}
 
 		// Try for both artifact/main.wasm
-		zippedFile, err = bundle.Zip(bundle.ZipFile, wasm.WasmOutput(o.outDir), o.wd.Wasm().Zip(), wasm.WasmFile)
+		zippedFile, err = o.zipOutput(wasm.WasmOutput(o.outDir), o.wd.Wasm().Zip())
 		if err != nil {
-			zippedFile, err = bundle.Zip(bundle.ZipFile, wasm.WasmDeprecatedOutput(o.outDir), o.wd.Wasm().Zip(), wasm.WasmFile)
+			zippedFile, err = o.zipOutput(wasm.WasmDeprecatedOutput(o.outDir), o.wd.Wasm().Zip())
 		}
 	case builders.Website:
 		noFiles, err := outputDirHasNoFiles(o.outDir)
