@@ -464,3 +464,17 @@ func TestTaskIOCloseIsIdempotent(t *testing.T) {
 	_, err := os.Stat(fifoDir)
 	assert.True(t, os.IsNotExist(err), "the FIFO directory must be removed, not leaked")
 }
+
+// Every containerd call needs a namespace, and the egress firewall names the
+// cgroup it matches after it, so a backend built without one must not end up
+// with an empty string.
+func TestNamespaceDefaulted(t *testing.T) {
+	assert.Equal(t, defaultNamespace, withDefaults(core.ContainerdConfig{}).Namespace,
+		"a config literal with no namespace is what the backend manager builds")
+
+	assert.Equal(t, "chosen", withDefaults(core.ContainerdConfig{Namespace: "chosen"}).Namespace,
+		"a caller that names one keeps it")
+
+	assert.NotContains(t, restrictedCgroupPath(withDefaults(core.ContainerdConfig{}).Namespace, "id"), "//",
+		"the restricted cgroup path must not have an empty component")
+}

@@ -2,6 +2,7 @@ package docker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -67,11 +68,12 @@ func (i *dockerImage) Build(ctx context.Context, input *core.DockerfileBuild) er
 		return fmt.Errorf("build requires a context")
 	}
 
+	buildContext := input.Context
+
 	buildOptions := client.ImageBuildOptions{
 		Tags:       []string{i.name},
 		Remove:     true,
 		Dockerfile: input.DockerfileName(),
-		Context:    input.Context,
 	}
 
 	// A RUN step is a container of the daemon's own making, so the only handle
@@ -88,9 +90,20 @@ func (i *dockerImage) Build(ctx context.Context, input *core.DockerfileBuild) er
 			return fmt.Errorf("installing egress firewall (image not built): %w", err)
 		}
 		buildOptions.NetworkMode = restrictedNetwork
+
+		dockerfile, buffered, err := readDockerfile(buildContext, input.DockerfileName())
+		if err != nil {
+			return err
+		}
+		if source, found := remoteADD(dockerfile); found {
+			return fmt.Errorf("restricted egress cannot cover `ADD %s`: the daemon fetches it outside the build's network; use COPY for files in the context", source)
+		}
+		buildContext = bytes.NewReader(buffered)
 	}
 
-	buildResponse, err := i.backend.client.ImageBuild(ctx, input.Context, buildOptions)
+	buildOptions.Context = buildContext
+
+	buildResponse, err := i.backend.client.ImageBuild(ctx, buildContext, buildOptions)
 	if err != nil {
 		return fmt.Errorf("failed to build image %s: %w", i.name, err)
 	}

@@ -195,10 +195,26 @@ func (t *taskIO) close() {
 	}
 }
 
+// defaultNamespace is the containerd namespace tau works in when a caller does
+// not name one. It cannot be empty: containerd requires a namespace on every
+// call, and the egress firewall derives the cgroup it matches from it, so an
+// unset one fails a restricted container closed.
+const defaultNamespace = "taubyte"
+
+// withDefaults fills in what a caller left unset. Callers build a
+// core.ContainerdConfig literal (pkg/containers/backend_manager.go), so an
+// unnamed field is the common case, not an edge one.
+func withDefaults(config core.ContainerdConfig) core.ContainerdConfig {
+	if config.Namespace == "" {
+		config.Namespace = defaultNamespace
+	}
+	return config
+}
+
 // New creates a new containerd backend
 func New(config core.ContainerdConfig) (*ContainerdBackend, error) {
 	backend := &ContainerdBackend{
-		config:     config,
+		config:     withDefaults(config),
 		tasks:      make(map[core.ContainerID]*taskIO),
 		containers: make(map[core.ContainerID]containerd.Container),
 	}
