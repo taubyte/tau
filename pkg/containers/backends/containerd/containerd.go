@@ -389,31 +389,32 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 		return "", fmt.Errorf("failed to build OCI spec options: %w", err)
 	}
 
-	if b.isRootlessMode() {
-		if config.Resources != nil {
-			return "", fmt.Errorf("resource limits require rootful containerd: a rootless daemon cannot create the cgroup to enforce them")
-		}
-		if config.Network != nil && config.Network.RestrictEgress {
-			// The egress firewall targets the container's cgroup, but a rootless
-			// container's cgroup is not managed here (withoutCgroups). Fail closed.
-			return "", fmt.Errorf("restricted egress requires rootful containerd: cannot firewall a rootless container's egress")
-		}
-		opts = append(opts, withoutCgroups())
+	// A container is placed in tau's own cgroup subtree whenever there is one:
+	// that is what the egress rule matches, and what carries resource limits.
+	// Rootless is no longer the exception it was — with the subtree delegated,
+	// a rootless daemon owns cgroups just as a rootful one does.
+	restricted := config.Network != nil && config.Network.RestrictEgress
+	cgroupPath, cgroupErr := containerCgroupPath(string(containerID), restricted)
+
+	if config.Resources != nil && !resourceLimitsAvailable() {
+		return "", fmt.Errorf("resource limits need tau's cgroup subtree, which is not available here (a systemd unit with Delegate=yes, or root): %v", cgroupErr)
 	}
 
-	if config.Network != nil && config.Network.RestrictEgress {
-		// Privileged is allowed here, and safe, only because specOpts takes
-		// CAP_NET_ADMIN and CAP_NET_RAW back last — a container that kept either
-		// could remove the firewall rather than obey it. The builder is the
-		// caller that needs both at once.
-		//
-		// Pin the container under the restricted subtree and install (or
-		// re-assert) the single parent-cgroup egress rule that covers every
-		// container in it. Fail-closed: no firewall, no container. Installing
-		// here — before the container is created — guarantees the rule is in
-		// place well before the workload starts.
-		opts = append(opts, oci.WithCgroup(restrictedCgroupPath(b.config.Namespace, string(containerID))))
-		if err := ensureCgroupEgressFilter(b.config.Namespace); err != nil {
+	if cgroupErr != nil {
+		if restricted {
+			return "", fmt.Errorf("restricted egress needs tau's cgroup subtree: %w", cgroupErr)
+		}
+		opts = append(opts, withoutCgroups())
+	} else {
+		opts = append(opts, oci.WithCgroup(cgroupPath))
+	}
+
+	if restricted {
+		// Install, or re-assert, the single rule covering tau's restricted
+		// subtree. Fail-closed: no firewall, no container. Installing here —
+		// before the container is created — guarantees the rule is in place well
+		// before the workload starts.
+		if err := ensureCgroupEgressFilter(); err != nil {
 			return "", fmt.Errorf("installing egress firewall (container not created): %w", err)
 		}
 	}

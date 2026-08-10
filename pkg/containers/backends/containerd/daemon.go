@@ -209,6 +209,19 @@ func (d *Daemon) startWithRootlesskit(ctx context.Context, containerdPath string
 		"XDG_CONFIG_HOME="+xdgConfigHome,
 	)
 
+	// The daemon starts inside tau's restricted cgroup, and every container it
+	// runs inherits that. It matters for more than tidiness: a rootless
+	// container's traffic leaves through a userspace network stack in this
+	// process, so the sockets the host actually sees belong to it, and the
+	// egress rule finds them by this cgroup or not at all.
+	//
+	// Not fatal on its own — Create refuses a restricted container when the
+	// subtree is missing, which is where the decision belongs.
+	if dir, err := restrictedCgroupDir(); err == nil {
+		defer dir.Close()
+		cmd.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(dir.Fd())}
+	}
+
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start containerd via rootlesskit: %w", err)
 	}

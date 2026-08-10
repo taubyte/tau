@@ -82,12 +82,16 @@ func buildkitFlags(rootless bool) []string {
 //
 // The container sees the host's cgroup hierarchy at the same paths (it is bind
 // mounted, with no cgroup namespace), so the host path is the right one to name.
-func writeBuildKitConfig(workDir, namespace string, restrictEgress bool) (string, error) {
+func writeBuildKitConfig(workDir string, restrictEgress bool) (string, error) {
 	path := filepath.Join(workDir, "buildkitd.toml")
 
 	config := "[worker.oci]\n"
 	if restrictEgress {
-		config += fmt.Sprintf("  defaultCgroupParent = %q\n", "/"+namespace+"/"+restrictedCgroup)
+		parent, err := restrictedCgroupParent()
+		if err != nil {
+			return "", err
+		}
+		config += fmt.Sprintf("  defaultCgroupParent = %q\n", parent)
 	}
 
 	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
@@ -155,7 +159,7 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 		return fmt.Errorf("failed to unpack build context: %w", err)
 	}
 
-	configPath, err := writeBuildKitConfig(workDir, i.backend.config.Namespace, input.RestrictEgress)
+	configPath, err := writeBuildKitConfig(workDir, input.RestrictEgress)
 	if err != nil {
 		return err
 	}

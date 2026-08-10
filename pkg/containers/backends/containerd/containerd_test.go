@@ -475,6 +475,14 @@ func TestNamespaceDefaulted(t *testing.T) {
 	assert.Equal(t, "chosen", withDefaults(core.ContainerdConfig{Namespace: "chosen"}).Namespace,
 		"a caller that names one keeps it")
 
-	assert.NotContains(t, restrictedCgroupPath(withDefaults(core.ContainerdConfig{}).Namespace, "id"), "//",
-		"the restricted cgroup path must not have an empty component")
+	if path, err := containerCgroupPath("id", true); err == nil {
+		assert.NotContains(t, path, "//", "the cgroup path must not have an empty component")
+		assert.True(t, strings.HasSuffix(path, "/"+restrictedCgroup+"/id"),
+			"a restricted container belongs under tau's restricted cgroup, got %q", path)
+	}
+
+	if path, err := containerCgroupPath("id", false); err == nil {
+		assert.False(t, strings.Contains(path, "/"+restrictedCgroup+"/"),
+			"a container that asked for nothing must not land where the egress rule looks, got %q", path)
+	}
 }

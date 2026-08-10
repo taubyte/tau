@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -424,6 +425,77 @@ func effectiveCaps(t *testing.T, output string) uint64 {
 	}
 	t.Fatalf("no CapEff in container output %q", output)
 	return 0
+}
+
+// TestRestrictedEgressRootless_Integration is the same proof for the rootless
+// daemon, which is the mode a node should prefer: there is no privileged
+// container anywhere in it, and a container's traffic leaves through a userspace
+// network stack, so a raw frame cannot reach a device at all. What the host sees
+// are sockets belonging to the daemon, which is why the daemon is started inside
+// the restricted cgroup — the rule finds them by that or not at all.
+func TestRestrictedEgressRootless_Integration(t *testing.T) {
+	if os.Geteuid() != 0 {
+		t.Skip("programming nftables needs CAP_NET_ADMIN; run this test as root")
+	}
+	requireBinary(t, "containerd")
+	requireBinary(t, "rootlesskit")
+
+	// Rootless refuses to run as root, so the daemon runs as somebody else.
+	// The test still needs root for nftables, which is why this is one binary
+	// driving two identities rather than two runs.
+	user := os.Getenv("TAU_ROOTLESS_USER")
+	if user == "" {
+		t.Skip("set TAU_ROOTLESS_USER to the unprivileged user the rootless daemon should run as")
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+	go func() {
+		for {
+			conn, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			conn.Close()
+		}
+	}()
+	_, port, err := net.SplitHostPort(ln.Addr().String())
+	require.NoError(t, err)
+
+	t.Cleanup(func() {
+		if err := netguard.Uninstall(); err != nil {
+			t.Logf("removing the egress table: %v", err)
+		}
+	})
+
+	require.NoError(t, ensureCgroupEgressFilter(), "the restricted cgroup and its rule must be installable")
+
+	tree, err := cgroups()
+	require.NoError(t, err)
+	t.Logf("restricted cgroup %s at level %d, limits available: %v",
+		tree.restrictedPath(), tree.level(), tree.limitsAvailable())
+
+	// The daemon, in the restricted cgroup, as the unprivileged user.
+	daemon := exec.Command("setpriv", "--reuid", user, "--regid", user, "--init-groups",
+		"rootlesskit", "--net", "slirp4netns", "--disable-host-loopback", "--copy-up=/etc",
+		"sh", "-c", fmt.Sprintf(
+			"nc -w 3 127.0.0.1 %s </dev/null >/dev/null 2>&1 && echo LOCAL_REACHED || echo LOCAL_BLOCKED;"+
+				"nc -w 5 1.1.1.1 443 </dev/null >/dev/null 2>&1 && echo PUBLIC_REACHED || echo PUBLIC_BLOCKED", port))
+	daemon.Env = append(os.Environ(), "HOME=/home/"+user, "XDG_RUNTIME_DIR=/run/user/1000")
+
+	dir, err := restrictedCgroupDir()
+	require.NoError(t, err)
+	defer dir.Close()
+	daemon.SysProcAttr = &syscall.SysProcAttr{UseCgroupFD: true, CgroupFD: int(dir.Fd())}
+
+	out, err := daemon.CombinedOutput()
+	require.NoError(t, err, "rootless run failed: %s", out)
+
+	assert.Contains(t, string(out), "LOCAL_BLOCKED",
+		"a rootless workload in the restricted cgroup reached a node-local service (got %q)", out)
+	assert.Contains(t, string(out), "PUBLIC_REACHED",
+		"the rule cut the rootless workload off from the public internet (got %q)", out)
 }
 
 func TestHealthCheck_Integration(t *testing.T) {
