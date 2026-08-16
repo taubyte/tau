@@ -9,7 +9,7 @@ import (
 )
 
 func (c Context) HandleLibrary() (builders.Output, error) {
-	builder, err := build.New(c.ctx, c.LogFile, c.WorkDir)
+	builder, err := build.New(c.ctx, c.LogFile, c.WorkDir, build.Dev(c.Monkey.Dev()))
 	if err != nil {
 		return nil, fmt.Errorf("creating new builder for git library repo `%d` failed with: %w", c.Job.Meta.Repository.ID, err)
 	}

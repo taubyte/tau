@@ -37,7 +37,7 @@ func CopyFixture(fixture []byte) (tempDir string, err error) {
 
 // Wasm builds the a wasm file from the given directory
 func Wasm(ctx context.Context, buildDir string) (wasmFile string, err error) {
-	builder, err := build.New(ctx, os.Stdout, buildDir)
+	builder, err := build.New(ctx, os.Stdout, buildDir, build.Dev(true))
 	if err != nil {
 		err = fmt.Errorf("new builder failed with: %w", err)
 		return

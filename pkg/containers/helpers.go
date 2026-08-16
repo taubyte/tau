@@ -13,6 +13,13 @@ func convertToContainerConfig(imageName string, c *Container) *core.ContainerCon
 		WorkDir: c.workDir,
 	}
 
+	if c.restrictedEgress {
+		if config.Network == nil {
+			config.Network = &core.NetworkConfig{}
+		}
+		config.Network.RestrictEgress = true
+	}
+
 	// Convert volumes
 	if len(c.volumes) > 0 {
 		config.Volumes = make([]core.VolumeMount, len(c.volumes))

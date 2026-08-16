@@ -178,6 +178,34 @@ jobs:
           go test -tags=containerd_integration ./pkg/containers/... \
             -count=1 -timeout 20m -v -p 1
 
+      # The egress firewall is the one thing the unprivileged run above skips:
+      # programming nftables and pinning cgroups needs CAP_NET_ADMIN. Run just
+      # that test as root, or it silently never runs anywhere.
+      - name: Run the restricted-egress test as root
+        run: |
+          go test -tags=containerd_integration -c -o containerd.test \
+            ./pkg/containers/backends/containerd/
+          sudo ./containerd.test -test.run 'TestRestrictedEgress_Integration' \
+            -test.v -test.timeout 10m
+
+  netguard-firewall:
+    runs-on: ubuntu-latest
+    needs: pre-commit
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-go@v4
+        with:
+          go-version: '1.26.0'
+
+      # The egress firewall is the one part of netguard that cannot fail loudly
+      # in a unit test: a wrong nftables encoding or cgroup level installs
+      # cleanly and matches nothing. Programming it needs CAP_NET_ADMIN and
+      # cgroup v2, so the binary is built first and run under sudo.
+      - name: Run netguard firewall integration tests
+        run: |
+          go test -tags=firewall_integration -c -o netguard.test ./pkg/netguard/
+          sudo ./netguard.test -test.v -test.timeout 5m
+
   docker-integration:
     runs-on: ubuntu-latest
     needs: pre-commit
@@ -200,6 +228,15 @@ jobs:
         run: |
           go test -tags=docker_integration -run '_Integration$' ./pkg/containers/... \
             -timeout 15m -v -p 1
+
+      # Same reason as the containerd job: the egress firewall needs
+      # CAP_NET_ADMIN, so it never runs in the unprivileged pass above.
+      - name: Run the restricted-egress test as root
+        run: |
+          go test -tags=docker_integration -c -o docker.test \
+            ./pkg/containers/backends/docker/
+          sudo ./docker.test -test.run 'TestRestrictedEgress_Integration' \
+            -test.v -test.timeout 10m
 
   discover-dream-packages:
     runs-on: ubuntu-latest

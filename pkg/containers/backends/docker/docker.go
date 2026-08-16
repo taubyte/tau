@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -17,6 +18,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"github.com/taubyte/tau/pkg/netguard"
 )
 
 // DockerBackend implements the core.Backend interface for Docker
@@ -199,6 +201,27 @@ func (b *DockerBackend) Create(ctx context.Context, config *core.ContainerConfig
 		return "", fmt.Errorf("failed to create Docker config: %w", err)
 	}
 
+	// Fail-closed: a container with restricted egress is not created unless its
+	// network and the host firewall are both in place (both idempotent, and
+	// re-asserted per container so an out-of-band change is repaired).
+	if config.Network != nil && config.Network.RestrictEgress {
+		if err := b.ensureRestrictedNetwork(ctx); err != nil {
+			return "", err
+		}
+		// The rule is installed in this process's network namespace and matches
+		// an interface by name. A rootless daemon puts its bridge inside
+		// RootlessKit's namespace instead, where this rule never sees it, and a
+		// name with no device behind it matches nothing without erroring — both
+		// install cleanly and filter nothing. Check for the device rather than
+		// trusting the daemon's report of itself.
+		if _, err := net.InterfaceByName(restrictedBridge); err != nil {
+			return "", fmt.Errorf("restricted egress needs the %s bridge in tau's own network namespace (a rootless docker keeps it in its own); refusing to fail open: %w", restrictedBridge, err)
+		}
+		if err := netguard.InstallBridgeFilter(restrictedBridge); err != nil {
+			return "", fmt.Errorf("installing egress firewall (container not created): %w", err)
+		}
+	}
+
 	resp, err := b.client.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Config:           containerConfig,
 		HostConfig:       hostConfig,
@@ -212,6 +235,36 @@ func (b *DockerBackend) Create(ctx context.Context, config *core.ContainerConfig
 	b.putContainer(containerID, resp.ID)
 
 	return containerID, nil
+}
+
+// The network egress-restricted containers run on, and the bridge interface the
+// firewall rule matches. They get a network of their own because an nftables
+// rule matches an interface, not a container: on the shared default bridge the
+// same rule would filter every container on the host, including ones tau never
+// created. The bridge name is pinned because docker's own br-<hash> names change
+// with the network id, and a rule cannot match what it cannot name.
+const (
+	restrictedNetwork = "taubyte_netguard"
+	restrictedBridge  = "tau-netguard0" // must fit IFNAMSIZ (16 with the NUL)
+)
+
+// ensureRestrictedNetwork creates the restricted network if it is missing.
+func (b *DockerBackend) ensureRestrictedNetwork(ctx context.Context) error {
+	if _, err := b.client.NetworkInspect(ctx, restrictedNetwork, client.NetworkInspectOptions{}); err == nil {
+		return nil
+	}
+
+	if _, err := b.client.NetworkCreate(ctx, restrictedNetwork, client.NetworkCreateOptions{
+		Driver:  "bridge",
+		Options: map[string]string{"com.docker.network.bridge.name": restrictedBridge},
+		Labels:  map[string]string{"taubyte.netguard": "restricted-egress"},
+	}); err != nil {
+		// Another node process creating it at the same instant is not a failure.
+		if _, e := b.client.NetworkInspect(ctx, restrictedNetwork, client.NetworkInspectOptions{}); e != nil {
+			return fmt.Errorf("creating the restricted-egress network %q: %w", restrictedNetwork, err)
+		}
+	}
+	return nil
 }
 
 // createDockerConfig converts core.ContainerConfig to Docker API types
@@ -281,7 +334,21 @@ func (b *DockerBackend) createDockerConfig(config *core.ContainerConfig) (*conta
 
 	networkingConfig := &network.NetworkingConfig{}
 	if config.Network != nil {
-		if config.Network.Mode != "" {
+		switch {
+		case config.Network.RestrictEgress && config.Network.Mode != "":
+			// The firewall matches one interface, so a restricted container runs
+			// on the network that interface belongs to and nowhere else. Host
+			// networking would evade the rule outright, and any other network
+			// gets a bridge the rule does not match — both would install cleanly
+			// and filter nothing.
+			return nil, nil, nil, fmt.Errorf("restricted egress runs the container on tau's %q network, got network mode %q", restrictedNetwork, config.Network.Mode)
+		case config.Network.RestrictEgress:
+			hostConfig.NetworkMode = container.NetworkMode(restrictedNetwork)
+			// The firewall filters the IP stack; these are the two ways around
+			// it. NET_RAW opens AF_PACKET, which writes frames straight to the
+			// device, and NET_ADMIN can rewrite the container's own routing.
+			hostConfig.CapDrop = append(hostConfig.CapDrop, "NET_RAW", "NET_ADMIN")
+		case config.Network.Mode != "":
 			hostConfig.NetworkMode = container.NetworkMode(config.Network.Mode)
 		}
 

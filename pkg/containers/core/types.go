@@ -80,6 +80,11 @@ type Image interface {
 // DockerfileBuild is everything needed to build an image from a Dockerfile:
 // a tar of the build context, and the name of the Dockerfile within it.
 type DockerfileBuild struct {
+	// RestrictEgress confines the build the same way NetworkConfig does for a
+	// container. A Dockerfile is repository content, so its RUN steps are as
+	// untrusted as anything else the repository ships.
+	RestrictEgress bool
+
 	// Context is a tar stream of the build directory.
 	Context io.Reader
 	// Dockerfile is the path within the context; empty means "Dockerfile".
@@ -185,6 +190,14 @@ type NetworkConfig struct {
 
 	// DNS servers
 	DNS []string
+
+	// RestrictEgress makes the backend install a host firewall that blocks the
+	// container from reaching node-local and private/link-local networks (the
+	// cloud metadata endpoint, loopback, RFC1918) while still allowing the
+	// public internet. Set for untrusted workloads. Fail-closed: if the firewall
+	// cannot be installed (e.g. missing CAP_NET_ADMIN) the container is not
+	// started.
+	RestrictEgress bool
 }
 
 // PortMapping represents a port mapping

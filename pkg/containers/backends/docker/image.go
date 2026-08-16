@@ -2,13 +2,16 @@ package docker
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 
 	"github.com/moby/moby/client"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"github.com/taubyte/tau/pkg/netguard"
 )
 
 // dockerImage implements the core.Image interface for Docker
@@ -65,14 +68,42 @@ func (i *dockerImage) Build(ctx context.Context, input *core.DockerfileBuild) er
 		return fmt.Errorf("build requires a context")
 	}
 
+	buildContext := input.Context
+
 	buildOptions := client.ImageBuildOptions{
 		Tags:       []string{i.name},
 		Remove:     true,
 		Dockerfile: input.DockerfileName(),
-		Context:    input.Context,
 	}
 
-	buildResponse, err := i.backend.client.ImageBuild(ctx, input.Context, buildOptions)
+	// A RUN step is a container of the daemon's own making, so the only handle
+	// on its egress is the network it runs on. Same fail-closed rule as Create:
+	// no firewall, no build.
+	if input.RestrictEgress {
+		if err := i.backend.ensureRestrictedNetwork(ctx); err != nil {
+			return err
+		}
+		if _, err := net.InterfaceByName(restrictedBridge); err != nil {
+			return fmt.Errorf("restricted egress needs the %s bridge in tau's own network namespace (a rootless docker keeps it in its own); refusing to fail open: %w", restrictedBridge, err)
+		}
+		if err := netguard.InstallBridgeFilter(restrictedBridge); err != nil {
+			return fmt.Errorf("installing egress firewall (image not built): %w", err)
+		}
+		buildOptions.NetworkMode = restrictedNetwork
+
+		dockerfile, buffered, err := readDockerfile(buildContext, input.DockerfileName())
+		if err != nil {
+			return err
+		}
+		if source, found := remoteADD(dockerfile); found {
+			return fmt.Errorf("restricted egress cannot cover `ADD %s`: the daemon fetches it outside the build's network; use COPY for files in the context", source)
+		}
+		buildContext = bytes.NewReader(buffered)
+	}
+
+	buildOptions.Context = buildContext
+
+	buildResponse, err := i.backend.client.ImageBuild(ctx, buildContext, buildOptions)
 	if err != nil {
 		return fmt.Errorf("failed to build image %s: %w", i.name, err)
 	}

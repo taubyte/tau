@@ -15,6 +15,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -30,6 +31,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/taubyte/tau/pkg/containers/core"
+	"github.com/taubyte/tau/pkg/netguard"
 )
 
 // Client represents a containerd client connection
@@ -193,10 +195,26 @@ func (t *taskIO) close() {
 	}
 }
 
+// defaultNamespace is the containerd namespace tau works in when a caller does
+// not name one. It cannot be empty: containerd requires a namespace on every
+// call, and the egress firewall derives the cgroup it matches from it, so an
+// unset one fails a restricted container closed.
+const defaultNamespace = "taubyte"
+
+// withDefaults fills in what a caller left unset. Callers build a
+// core.ContainerdConfig literal (pkg/containers/backend_manager.go), so an
+// unnamed field is the common case, not an edge one.
+func withDefaults(config core.ContainerdConfig) core.ContainerdConfig {
+	if config.Namespace == "" {
+		config.Namespace = defaultNamespace
+	}
+	return config
+}
+
 // New creates a new containerd backend
 func New(config core.ContainerdConfig) (*ContainerdBackend, error) {
 	backend := &ContainerdBackend{
-		config:     config,
+		config:     withDefaults(config),
 		tasks:      make(map[core.ContainerID]*taskIO),
 		containers: make(map[core.ContainerID]containerd.Container),
 	}
@@ -371,11 +389,34 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 		return "", fmt.Errorf("failed to build OCI spec options: %w", err)
 	}
 
-	if b.isRootlessMode() {
-		if config.Resources != nil {
-			return "", fmt.Errorf("resource limits require rootful containerd: a rootless daemon cannot create the cgroup to enforce them")
+	// A container is placed in tau's own cgroup subtree whenever there is one:
+	// that is what the egress rule matches, and what carries resource limits.
+	// Rootless is no longer the exception it was — with the subtree delegated,
+	// a rootless daemon owns cgroups just as a rootful one does.
+	restricted := config.Network != nil && config.Network.RestrictEgress
+	cgroupPath, cgroupErr := containerCgroupPath(string(containerID), restricted)
+
+	if config.Resources != nil && !resourceLimitsAvailable() {
+		return "", fmt.Errorf("resource limits need tau's cgroup subtree, which is not available here (a systemd unit with Delegate=yes, or root): %v", cgroupErr)
+	}
+
+	if cgroupErr != nil {
+		if restricted {
+			return "", fmt.Errorf("restricted egress needs tau's cgroup subtree: %w", cgroupErr)
 		}
 		opts = append(opts, withoutCgroups())
+	} else {
+		opts = append(opts, oci.WithCgroup(cgroupPath))
+	}
+
+	if restricted {
+		// Install, or re-assert, the single rule covering tau's restricted
+		// subtree. Fail-closed: no firewall, no container. Installing here —
+		// before the container is created — guarantees the rule is in place well
+		// before the workload starts.
+		if err := ensureCgroupEgressFilter(); err != nil {
+			return "", fmt.Errorf("installing egress firewall (container not created): %w", err)
+		}
 	}
 
 	// The image's own configuration is the baseline, exactly as docker treats
@@ -385,13 +426,20 @@ func (b *ContainerdBackend) Create(ctx context.Context, config *core.ContainerCo
 		return "", fmt.Errorf("failed to read config of image %s: %w", config.Image, err)
 	}
 
-	container, err := b.client.NewContainer(
-		ctx,
-		string(containerID),
+	newContainer := []containerd.NewContainerOpts{
 		containerd.WithImage(image),
 		containerd.WithNewSnapshot(fmt.Sprintf("%s-snapshot", containerID), image),
 		containerd.WithNewSpec(append(imageOpts, opts...)...),
-	)
+	}
+
+	// The runtime is the boundary an untrusted workload runs against, so it is
+	// named for restricted ones when the node has been given one. Everything
+	// else keeps containerd's default.
+	if restricted && b.config.Runtime != "" {
+		newContainer = append(newContainer, containerd.WithRuntime(b.config.Runtime, nil))
+	}
+
+	container, err := b.client.NewContainer(ctx, string(containerID), newContainer...)
 	if err != nil {
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
@@ -480,9 +528,61 @@ func specOpts(config *core.ContainerConfig) ([]oci.SpecOpts, error) {
 	}
 	opts = append(opts, networkOpts...)
 
-	opts = append(opts, resourceSpecOpts(config.Resources)...)
+	opts = append(opts, resourceSpecOpts(restrictedResources(config))...)
+	opts = append(opts, privilegeSpecOpts(config.Privileges)...)
 
-	return append(opts, privilegeSpecOpts(config.Privileges)...), nil
+	if config.Network != nil && config.Network.RestrictEgress && !privileged(config.Privileges) {
+		// Last, so it also takes back what the privileges above handed out.
+		//
+		// CAP_NET_RAW is how a container walks around an IP-layer filter:
+		// AF_PACKET writes straight to the device and never passes the output
+		// hook the rule lives in, and a restricted container here shares the
+		// host's network namespace. Dropping it from the bounding set denies it
+		// to everything the container spawns, too.
+		//
+		// Not for privileged containers, and the exception is not cosmetic: the
+		// only privileged caller is the builder, and both halves of BuildKit
+		// refuse to run without these. Its per-step runc needs CAP_NET_ADMIN to
+		// attach the cgroup device filter ("bpf_prog_query(BPF_CGROUP_DEVICE)
+		// failed") and asks for the default capability set for each step, which
+		// includes CAP_NET_RAW — a bounding set missing it fails the step with
+		// "unable to apply caps". So a Dockerfile's RUN steps are confined by
+		// the cgroup rule but keep AF_PACKET; giving those steps a network
+		// namespace of their own is what would close that, and it is a change to
+		// how BuildKit is run, not to this policy.
+		opts = append(opts, oci.WithDroppedCapabilities([]string{"CAP_NET_RAW"}))
+	}
+
+	return opts, nil
+}
+
+func privileged(privileges *core.Privileges) bool {
+	return privileges != nil && privileges.Privileged
+}
+
+// defaultRestrictedPIDs caps how many processes untrusted code may create. A
+// build that forks until the node falls over needs no exploit and no network,
+// and it takes the whole node's other tenants with it. High enough that no real
+// build notices; low enough that a loop does.
+const defaultRestrictedPIDs = 4096
+
+// restrictedResources gives an untrusted workload a process cap when the caller
+// asked for no limits of its own. Memory is deliberately not guessed at here —
+// a wrong number fails real builds, and it belongs in configuration.
+func restrictedResources(config *core.ContainerConfig) *core.ResourceLimits {
+	if config.Network == nil || !config.Network.RestrictEgress || !resourceLimitsAvailable() {
+		return config.Resources
+	}
+
+	if config.Resources == nil {
+		return &core.ResourceLimits{PIDs: defaultRestrictedPIDs}
+	}
+	if config.Resources.PIDs == 0 {
+		limits := *config.Resources
+		limits.PIDs = defaultRestrictedPIDs
+		return &limits
+	}
+	return config.Resources
 }
 
 // privilegeSpecOpts widens the container's confinement. The OCI spec names
@@ -581,7 +681,11 @@ func networkSpecOpts(network *core.NetworkConfig) ([]oci.SpecOpts, error) {
 		if network != nil && len(network.PortMappings) > 0 {
 			return nil, fmt.Errorf("port mappings not supported by containerd host networking: the container already shares the host's ports")
 		}
-		return append(resolverMount(), oci.WithHostNamespace(specs.NetworkNamespace)), nil
+		resolver, err := resolverMount(network != nil && network.RestrictEgress)
+		if err != nil {
+			return nil, err
+		}
+		return append(resolver, oci.WithHostNamespace(specs.NetworkNamespace)), nil
 	case "none":
 		// The default spec already unshares the network namespace.
 		return nil, nil
@@ -603,26 +707,112 @@ func withoutCgroups() oci.SpecOpts {
 	}
 }
 
-// resolverMount hands the container the host's DNS configuration.
+// resolverMount hands the container the DNS configuration it should use.
 //
 // containerd, unlike docker, injects nothing: a container's /etc/resolv.conf is
 // whatever its image shipped, which is usually nothing, and every lookup then
 // falls back to localhost and fails. Any build that fetches dependencies needs
 // this. The container shares the host's network namespace, so a resolver the
-// host reaches on loopback works here too.
-func resolverMount() []oci.SpecOpts {
+// host reaches on loopback works here too — unless egress is restricted, in
+// which case the host's file has to be filtered first (restrictedResolvConf).
+func resolverMount(restricted bool) ([]oci.SpecOpts, error) {
 	const resolvConf = "/etc/resolv.conf"
 
-	if _, err := os.Stat(resolvConf); err != nil {
-		return nil
+	source := resolvConf
+	if restricted {
+		path, err := restrictedResolvConf(resolvConf)
+		if err != nil {
+			return nil, err
+		}
+		source = path
+	} else if _, err := os.Stat(resolvConf); err != nil {
+		return nil, nil
 	}
 
 	return []oci.SpecOpts{oci.WithMounts([]specs.Mount{{
 		Destination: resolvConf,
 		Type:        "bind",
-		Source:      resolvConf,
+		Source:      source,
 		Options:     []string{"rbind", "ro"},
-	}})}
+	}})}, nil
+}
+
+// publicResolvers are the last resort for a restricted container: reached only
+// when no resolver the host is configured with is one the container is allowed
+// to talk to. A restricted workload resolves public names, so a public resolver
+// is the right shape of answer — and it cannot resolve the node's internal
+// names, which is the point.
+var publicResolvers = []string{"1.1.1.1", "8.8.8.8"}
+
+var (
+	restrictedResolvOnce sync.Once
+	restrictedResolvDir  string
+	restrictedResolvErr  error
+)
+
+// restrictedResolvConf writes, and returns the path of, the /etc/resolv.conf a
+// restricted container gets: the host's nameservers minus every one the egress
+// policy denies.
+//
+// Without this the firewall quietly costs the container its name resolution. The
+// default resolver on a systemd host is the resolved stub at 127.0.0.53, which
+// is loopback and therefore denied, so a restricted container inheriting the
+// host file would resolve nothing and every fetch would fail — a broken node,
+// not a secured one. systemd publishes the real upstream servers separately, so
+// those are tried before falling back to public ones.
+//
+// One file per process: its content is the same for every container, and a file
+// per container would leak a temp directory per run on a long-lived node.
+func restrictedResolvConf(hostPath string) (string, error) {
+	restrictedResolvOnce.Do(func() {
+		restrictedResolvDir, restrictedResolvErr = os.MkdirTemp("", "tau-netguard-*")
+	})
+	if restrictedResolvErr != nil {
+		return "", fmt.Errorf("creating the restricted build's resolver directory: %w", restrictedResolvErr)
+	}
+
+	servers := permittedNameservers(hostPath)
+	if len(servers) == 0 {
+		// The stub-resolver case: ask systemd for what it forwards to.
+		servers = permittedNameservers("/run/systemd/resolve/resolv.conf")
+	}
+	if len(servers) == 0 {
+		servers = publicResolvers
+	}
+
+	var b strings.Builder
+	b.WriteString("# generated by tau: the host's resolvers, minus those a restricted build may not reach\n")
+	for _, s := range servers {
+		fmt.Fprintf(&b, "nameserver %s\n", s)
+	}
+
+	path := filepath.Join(restrictedResolvDir, "resolv.conf")
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		return "", fmt.Errorf("writing the restricted build's resolv.conf: %w", err)
+	}
+	return path, nil
+}
+
+// permittedNameservers returns the nameservers in a resolv.conf-shaped file
+// that the egress policy allows a restricted container to reach. A missing or
+// unreadable file is not an error here — the caller has another candidate.
+func permittedNameservers(path string) []string {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil
+	}
+
+	var servers []string
+	for _, line := range strings.Split(string(content), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 2 || fields[0] != "nameserver" {
+			continue
+		}
+		if ip := net.ParseIP(fields[1]); ip != nil && !netguard.IsDenied(ip) {
+			servers = append(servers, fields[1])
+		}
+	}
+	return servers
 }
 
 func resourceSpecOpts(resources *core.ResourceLimits) []oci.SpecOpts {

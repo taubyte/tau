@@ -14,8 +14,17 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Option configures a Builder.
+type Option func(*builder)
+
+// Dev marks the build as running on a development node, which turns off the
+// egress firewall the containers would otherwise be confined by.
+func Dev(dev bool) Option {
+	return func(b *builder) { b.dev = dev }
+}
+
 // New creates a new container Builder for the given working directory.
-func New(ctx context.Context, output io.Writer, workDir string) (iface.Builder, error) {
+func New(ctx context.Context, output io.Writer, workDir string, options ...Option) (iface.Builder, error) {
 	// create new container client
 	ciClient, err := ci.New(ci.Verbose())
 	if err != nil {
@@ -34,6 +43,10 @@ func New(ctx context.Context, output io.Writer, workDir string) (iface.Builder, 
 		wd:              wd,
 		context:         ctx,
 		output:          output,
+	}
+
+	for _, option := range options {
+		option(b)
 	}
 
 	// If context cancelled close.

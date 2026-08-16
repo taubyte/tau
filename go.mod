@@ -104,7 +104,12 @@ require (
 	gopkg.in/ini.v1 v1.67.0
 )
 
-require github.com/docker/go-connections v0.7.0 // indirect
+require (
+	github.com/docker/go-connections v0.7.0 // indirect
+	github.com/google/nftables v0.3.0 // indirect
+	github.com/mdlayher/netlink v1.7.3-0.20250113171957-fbb4dce95f42 // indirect
+	github.com/mdlayher/socket v0.5.0 // indirect
+)
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect

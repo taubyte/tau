@@ -4,7 +4,9 @@ package containerd
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"context"
 	"fmt"
 	"io"
@@ -35,6 +37,7 @@ const (
 	buildContextPath = "/tau/context"
 	buildOutputPath  = "/tau/out"
 	buildOutputFile  = "image.tar"
+	buildConfigPath  = "/tau/buildkitd.toml"
 	cgroupPath       = "/sys/fs/cgroup"
 )
 
@@ -59,14 +62,44 @@ const (
 //   - native snapshotter: overlayfs cannot be mounted from within a user
 //     namespace, so the slower snapshotter that only copies is the one that works.
 func buildkitFlags(rootless bool) []string {
-	if !rootless {
-		return nil
+	flags := "--config=" + buildConfigPath
+	if rootless {
+		flags += " --oci-worker-no-process-sandbox" +
+			" --oci-worker-rootless" +
+			" --oci-worker-snapshotter=native"
 	}
 
-	return []string{"BUILDKITD_FLAGS=" +
-		"--oci-worker-no-process-sandbox " +
-		"--oci-worker-rootless " +
-		"--oci-worker-snapshotter=native"}
+	return []string{"BUILDKITD_FLAGS=" + flags}
+}
+
+// writeBuildKitConfig writes the buildkitd configuration the builder is started
+// with, and returns its path on the host.
+//
+// It exists for one setting. BuildKit runs every RUN step in a runc container of
+// its own, and leaves that container's cgroup path empty unless it is told a
+// parent — so the steps would land at the root of the host hierarchy, outside
+// the subtree the egress rule matches, and a Dockerfile could do what build.sh
+// cannot. Naming the restricted parent puts every step inside it: the rule
+// matches the ancestor at that level, so nesting depth below it does not matter.
+//
+// The container sees the host's cgroup hierarchy at the same paths (it is bind
+// mounted, with no cgroup namespace), so the host path is the right one to name.
+func writeBuildKitConfig(workDir string, restrictEgress bool) (string, error) {
+	path := filepath.Join(workDir, "buildkitd.toml")
+
+	config := "[worker.oci]\n"
+	if restrictEgress {
+		parent, err := restrictedCgroupParent()
+		if err != nil {
+			return "", err
+		}
+		config += fmt.Sprintf("  defaultCgroupParent = %q\n", parent)
+	}
+
+	if err := os.WriteFile(path, []byte(config), 0o644); err != nil {
+		return "", fmt.Errorf("failed to write the builder configuration: %w", err)
+	}
+	return path, nil
 }
 
 // buildPrivileges is what the builder needs loosened, and it differs by mode
@@ -128,7 +161,12 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 		return fmt.Errorf("failed to unpack build context: %w", err)
 	}
 
-	if err := i.runBuildKit(ctx, contextDir, outputDir, input.DockerfileName()); err != nil {
+	configPath, err := writeBuildKitConfig(workDir, input.RestrictEgress)
+	if err != nil {
+		return err
+	}
+
+	if err := i.runBuildKit(ctx, contextDir, outputDir, configPath, input.DockerfileName(), input.RestrictEgress); err != nil {
 		return err
 	}
 
@@ -137,7 +175,7 @@ func (i *containerdImage) Build(ctx context.Context, input *core.DockerfileBuild
 
 // runBuildKit runs one build and returns the builder's own output on failure —
 // that output is the compiler error, the missing package, the failed RUN.
-func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir, dockerfile string) error {
+func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir, configPath, dockerfile string, restrictEgress bool) error {
 	config := &core.ContainerConfig{
 		Image: buildkitImage,
 		Command: []string{
@@ -150,9 +188,15 @@ func (i *containerdImage) runBuildKit(ctx context.Context, contextDir, outputDir
 				i.name, path.Join(buildOutputPath, buildOutputFile)),
 		},
 		Env: buildkitFlags(i.backend.isRootlessMode()),
+		// The Dockerfile is repository content, so its RUN steps are untrusted
+		// code and get the same egress policy as build.sh. Restricting the
+		// builder is only half of it — see writeBuildKitConfig for the half that
+		// reaches the steps themselves.
+		Network: &core.NetworkConfig{RestrictEgress: restrictEgress},
 		Volumes: []core.VolumeMount{
 			{Source: contextDir, Destination: buildContextPath, ReadOnly: true},
 			{Source: outputDir, Destination: buildOutputPath},
+			{Source: configPath, Destination: buildConfigPath, ReadOnly: true},
 			// BuildKit runs a runc of its own for every step, and that runc
 			// refuses to start without a cgroup hierarchy it can see: "no cgroup
 			// mount found in mountinfo". Rootless containers get no cgroup mount
@@ -278,7 +322,21 @@ func (b *ContainerdBackend) nameImage(ctx context.Context, name string, target o
 // entry named ../../etc/cron.d/x, or a symlink pointing at /etc/shadow, would
 // otherwise write outside the build or pull host files into the image.
 func extractContext(r io.Reader, dir string) error {
-	reader := tar.NewReader(r)
+	// The tarball a builder hands over is gzipped (utils/bundle), while the one
+	// a test or an API caller writes usually is not. The docker daemon sniffs
+	// this for itself; here it has to be done by hand.
+	buffered := bufio.NewReader(r)
+	var source io.Reader = buffered
+	if magic, err := buffered.Peek(2); err == nil && magic[0] == 0x1f && magic[1] == 0x8b {
+		unzipped, err := gzip.NewReader(buffered)
+		if err != nil {
+			return fmt.Errorf("reading build context: %w", err)
+		}
+		defer unzipped.Close()
+		source = unzipped
+	}
+
+	reader := tar.NewReader(source)
 
 	for {
 		header, err := reader.Next()

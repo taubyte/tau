@@ -5,6 +5,7 @@ package containerd
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"io"
 	"os"
 	"path/filepath"
@@ -192,8 +193,15 @@ func TestBuildKitRecipe(t *testing.T) {
 	assert.Contains(t, rootless[0], "--oci-worker-snapshotter=native",
 		"overlayfs cannot be mounted from a user namespace")
 
-	assert.Empty(t, buildkitFlags(false),
+	rootful := buildkitFlags(false)
+	require.Len(t, rootful, 1)
+	assert.NotContains(t, rootful[0], "rootless",
 		"as real root BuildKit's defaults are right, and asking for rootless mode makes it refuse to start")
+
+	for _, flags := range [][]string{rootless, rootful} {
+		assert.Contains(t, flags[0], "--config="+buildConfigPath,
+			"without its config the per-step runc gets no cgroup parent, and the steps escape the egress rule")
+	}
 
 	assert.NotContains(t, buildkitImage, ":latest",
 		"the builder must be pinned so builds do not change underneath us")
@@ -263,4 +271,55 @@ func TestPrivilegeSpecOpts(t *testing.T) {
 				"only a container that asks for it may have SYS_ADMIN")
 		}
 	})
+}
+
+// The tarball a builder produces is gzipped; a test or an API caller usually
+// writes a bare tar. Both have to unpack, or a real build fails at the door.
+func TestExtractContextAcceptsGzip(t *testing.T) {
+	for _, compressed := range []bool{false, true} {
+		dir := t.TempDir()
+
+		var raw bytes.Buffer
+		writer := tar.NewWriter(&raw)
+		require.NoError(t, writer.WriteHeader(&tar.Header{Name: "Dockerfile", Mode: 0o644, Size: 4}))
+		_, err := writer.Write([]byte("FROM"))
+		require.NoError(t, err)
+		require.NoError(t, writer.Close())
+
+		source := io.Reader(bytes.NewReader(raw.Bytes()))
+		if compressed {
+			var zipped bytes.Buffer
+			gz := gzip.NewWriter(&zipped)
+			_, err := gz.Write(raw.Bytes())
+			require.NoError(t, err)
+			require.NoError(t, gz.Close())
+			source = bytes.NewReader(zipped.Bytes())
+		}
+
+		require.NoError(t, extractContext(source, dir), "gzipped=%v", compressed)
+
+		content, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+		require.NoError(t, err, "gzipped=%v", compressed)
+		assert.Equal(t, "FROM", string(content))
+	}
+}
+
+// An untrusted workload gets a process cap it did not ask for; anything else is
+// left alone, and a caller's own limit wins.
+func TestRestrictedResources(t *testing.T) {
+	if !resourceLimitsAvailable() {
+		t.Skip("no cgroup subtree here to carry limits")
+	}
+
+	restricted := &core.ContainerConfig{Network: &core.NetworkConfig{RestrictEgress: true}}
+	assert.Equal(t, int64(defaultRestrictedPIDs), restrictedResources(restricted).PIDs)
+
+	assert.Nil(t, restrictedResources(&core.ContainerConfig{}),
+		"a container that asked for nothing and is not restricted keeps nothing")
+
+	chosen := &core.ContainerConfig{
+		Network:   &core.NetworkConfig{RestrictEgress: true},
+		Resources: &core.ResourceLimits{PIDs: 7},
+	}
+	assert.Equal(t, int64(7), restrictedResources(chosen).PIDs, "a caller's own limit wins")
 }

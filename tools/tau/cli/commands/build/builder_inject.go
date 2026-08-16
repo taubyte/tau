@@ -15,7 +15,11 @@ import (
 // predictable, we copy workDir into a temp sandbox and build against that. The
 // sandbox is removed when the returned Builder is Closed.
 var newBuilderFunc = func(ctx context.Context, output io.Writer, workDir string) (builders.Builder, error) {
-	return sandboxedBuild(ctx, output, workDir, build.New)
+	// The CLI builds on whoever's machine ran it, which is a development node
+	// by definition: no egress firewall to program, and nothing behind it.
+	return sandboxedBuild(ctx, output, workDir, func(ctx context.Context, output io.Writer, workDir string) (builders.Builder, error) {
+		return build.New(ctx, output, workDir, build.Dev(true))
+	})
 }
 
 // sandboxedBuild copies workDir into a disposable sandbox and builds against it,

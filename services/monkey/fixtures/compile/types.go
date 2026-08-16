@@ -67,3 +67,10 @@ type fakeMonkey struct {
 func (f fakeMonkey) Hoarder() hoarder.Client {
 	return f.hoarderClient
 }
+
+// Dev is what a universe is. The embedded Service is nil — this stands in for a
+// monkey rather than being one — so every method a job reaches for has to be
+// answered here or the call lands on nothing.
+func (f fakeMonkey) Dev() bool {
+	return true
+}

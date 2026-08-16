@@ -56,7 +56,8 @@ func (i *DockerImage) buildImage(ctx context.Context) error {
 	}
 
 	err := i.backend.Image(i.image).Build(ctx, &core.DockerfileBuild{
-		Context: i.buildTarball,
+		Context:        i.buildTarball,
+		RestrictEgress: i.restrictedEgress,
 	})
 	if err != nil {
 		return errorImageBuildDockerFile(err)

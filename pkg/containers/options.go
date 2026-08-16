@@ -74,6 +74,28 @@ func Volume(sourcePath, containerPath string) ContainerOption {
 	}
 }
 
+// RestrictedEgress makes the backend confine the container's network egress to
+// the public internet — blocking node-local services, the cloud metadata
+// endpoint, and private/link-local ranges. Set for any workload the node did not
+// author — a build running a repository's own build.sh, a tenant's container.
+// Enforcement is fail-closed: if the firewall cannot be installed the container
+// is not started.
+func RestrictedEgress() ContainerOption {
+	return func(c *Container) error {
+		c.restrictedEgress = true
+		return nil
+	}
+}
+
+// RestrictedBuildEgress confines a Dockerfile build's egress, the way
+// RestrictedEgress does for a container it is the image of.
+func RestrictedBuildEgress() ImageOption {
+	return func(i *DockerImage) error {
+		i.restrictedEgress = true
+		return nil
+	}
+}
+
 // Variable sets an environment variable in the container.
 func Variable(key, value string) ContainerOption {
 	return func(c *Container) error {
