@@ -37,13 +37,14 @@ func TestGenerateRandomBytes(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Equal(t, len(bytes), length)
 
-		// Generate another set to ensure randomness
-		bytes2, err := GenerateRandomBytes(length)
-		assert.NilError(t, err)
-		assert.Equal(t, len(bytes2), length)
-
-		// The bytes should be different (very unlikely to be the same)
-		assert.Assert(t, !bytesEqual(bytes, bytes2))
+		// Randomness is checked over many draws rather than by comparing one
+		// pair. A pair says nothing at small sizes — one byte repeats once
+		// every 256 draws — and sampling is correct at every size, so the
+		// short case needs no exception.
+		assert.Assert(t, distinctDraws(t, length, func() (string, error) {
+			b, err := GenerateRandomBytes(length)
+			return string(b), err
+		}) > 1, "every draw of %d byte(s) returned the same value", length)
 	}
 }
 
@@ -56,19 +57,34 @@ func TestGenerateRandomString(t *testing.T) {
 		assert.NilError(t, err)
 		assert.Equal(t, len(str), length)
 
-		// Generate another string to ensure randomness
-		str2, err := GenerateRandomString(length)
-		assert.NilError(t, err)
-		assert.Equal(t, len(str2), length)
-
-		// The strings should be different (very unlikely to be the same)
-		assert.Assert(t, str != str2)
+		// See TestGenerateRandomBytes: one character out of 62 repeats often
+		// enough that a single comparison is a coin flip, not a check.
+		assert.Assert(t, distinctDraws(t, length, func() (string, error) {
+			return GenerateRandomString(length)
+		}) > 1, "every draw of %d character(s) returned the same value", length)
 
 		// Verify all characters are valid
 		for _, char := range str {
 			assert.Assert(t, isValidRandomChar(char))
 		}
 	}
+}
+
+// distinctDraws counts how many distinct values draw produces over enough
+// samples that a working generator cannot return one value by chance: the
+// smallest space here is 62 symbols, and 256 draws make an all-identical run
+// impossible in practice while a stuck generator fails every time.
+func distinctDraws(t *testing.T, length int, draw func() (string, error)) int {
+	t.Helper()
+
+	seen := make(map[string]struct{})
+	for range 256 {
+		v, err := draw()
+		assert.NilError(t, err)
+		assert.Equal(t, len(v), length)
+		seen[v] = struct{}{}
+	}
+	return len(seen)
 }
 
 func TestGenerateSecretString(t *testing.T) {
@@ -93,19 +109,6 @@ func TestGenerateSecretString(t *testing.T) {
 func TestSecretStringLength(t *testing.T) {
 	// Verify the constant is set correctly
 	assert.Equal(t, SecretStringLength, 32)
-}
-
-// Helper functions for testing
-func bytesEqual(a, b []byte) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func isValidRandomChar(char rune) bool {
