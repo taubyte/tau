@@ -159,9 +159,19 @@ func kindsFn(js.Value, []js.Value) any {
 			}
 			fields = append(fields, a.Name)
 		}
+		// how this kind is reachable, if at all: by an access declaration from
+		// another resource, by a gateway route, or neither
+		reach := []string{}
+		if len(schema.OpsOf(name)) > 0 {
+			reach = append(reach, "access")
+		}
+		if schema.ServedByRoute(name) {
+			reach = append(reach, "route")
+		}
 		out = append(out, map[string]any{
 			"group": name, "singular": singular, "container": iter.Group,
 			"category": category, "doc": doc, "icon": icon, "fields": fields,
+			"reach": reach,
 		})
 	}
 	return toJS(out)

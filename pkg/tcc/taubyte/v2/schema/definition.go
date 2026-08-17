@@ -170,10 +170,36 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				String("image", Required(), InSection("code"), Doc("Image", "OCI image reference this workload runs.")),
-				String("health/path", Path("health", "path"), InSection("network"), Doc("Health Check", "HTTP path polled for readiness.")),
+				// How the platform decides this workload is up. Two answers, and they
+				// are different in kind, so the switch names which: an HTTP probe the
+				// platform makes itself, or a FUNCTION that decides — given the
+				// workload, it answers healthy or not, and can look at whatever
+				// "healthy" actually means here (a queue drained, a cache warm, a
+				// migration finished) rather than at a status code.
+				String("health/kind", Path("health", Either("http", "function")), Key(), Field("HealthKind"), InSection("network"),
+					Doc("Health", "How readiness is decided: an http probe, or a function that answers.")),
+				String("health/port", Path("health", "http", "port"), IsVariableName(), InSection("network"), ShowWhen("health/kind", "http"),
+					Doc("Health Port", "Which of this workload's ports the probe is made on, by name.")),
+				String("health/path", Path("health", "http", "path"), InSection("network"), ShowWhen("health/kind", "http"),
+					Doc("Health Path", "HTTP path polled for readiness.")),
+				String("health/function", Path("health", "function", "name"), IsVariableName(), InSection("network"), ShowWhen("health/kind", "function"),
+					Doc("Health Function", "A function that decides whether this workload is ready.")),
+				String("health/namespace", Path("health", "function", "namespace"), IsNamespacePath(), InSection("network"), ShowWhen("health/kind", "function"),
+					Doc("Health Function Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
 				Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory per instance.")),
 				StringSlice("egress", InSection("network"), Doc("Egress", "Hosts this workload may reach. Layered on top of the node-wide deny floor, which it can never widen.")),
+
+				// Ceilings, not counts. How many instances run is still the
+				// platform's — these bound what it may do, which is a different
+				// statement from telling it what to do: one is a limit the operator
+				// owns (cost, blast radius, what the workload can survive), the other
+				// is a number the system would have to fight.
+				Int("limits/max-instances", Path("limits", "max-instances"), MinInt(1), InSection("limits"),
+					Doc("Max Instances", "The most instances the platform may run of this workload. A ceiling it scales within, not a count.")),
+				Int("limits/concurrency", Path("limits", "concurrency"), MinInt(1), InSection("limits"),
+					Doc("Concurrency", "The most simultaneous requests one instance may be given. Cloud Run and Knative call this concurrency; Fly calls it a hard limit. Above it the platform queues or starts another instance, within max-instances.")),
 			),
+			Nested(portsGroup()),
 			GroupDoc("A long-running container that listens on HTTP. Ships with volumes or it ships broken."), Icon("box"), Category("compute"),
 			secIdentity, secAccess, secCode, secLimits,
 			Section("network", "Network", "Listening port, health, and declared egress."),
@@ -497,6 +523,7 @@ var V2Resources = []*Node{
 				String("route/handler/kind", Path("route", "handler", Either(handlerKinds...)), Key(), Field("HandlerKind"), InSection("handler"), Doc("Handler", "Which kind serves this path (the key selects the handler block).")),
 				String("route/handler/namespace", Path("route", "handler", Either(handlerKinds...), "namespace"), InSection("handler"), Doc("Namespace", "Path to the namespace holding the handler, e.g. \"/shop/eu\". Omitted means the project root.")),
 				String("route/handler/name", Path("route", "handler", Either(handlerKinds...), "name"), Required(), IsVariableName(), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
+				String("route/handler/port", Path("route", "handler", Either(handlerKinds...), "port"), IsVariableName(), InSection("handler"), Doc("Port", "Which of the handler's ports to reach, by name. A workload listening on more than one has to be told which, and the number is never written here — the platform assigns the external one, and there may be several instances of the workload on one host.")),
 
 				StringSlice("cors/origins", Path("cors", "origins"), InSection("policy"), Doc("CORS Origins", "Origins allowed by CORS.")),
 				StringSlice("cors/methods", Path("cors", "methods"), InSection("policy"), Doc("CORS Methods", "Methods allowed by CORS.")),
@@ -632,3 +659,30 @@ func GenerationRoot() []*Node { return v2Root.Children }
 
 // CompileRoot is the interpreter's entrypoint into the DSL: the whole project root.
 func CompileRoot() *Node { return v2Root }
+
+// portsGroup is a workload's own listening ports, keyed by name.
+//
+//	ports:
+//	    http:    8080
+//	    metrics: 9090
+//	health:
+//	    port: http
+//	    path: /healthz
+//
+// The NUMBER here is the internal one — the port the process binds inside its
+// container, which its own code already knows. The external port is assigned by the
+// platform and tunnelled, so nothing outside the workload ever writes a number:
+// health names a port, and so does a gateway route targeting this workload.
+//
+// That is also why a port is a named entry rather than a bare list. A workload that
+// listens on two ports has to be pointed at one, and "the first one" is not an
+// answer anybody can read.
+func portsGroup() *Node {
+	return DefineGroup("ports",
+		DefineIter([]*Attribute{
+			Int("number", Required(), MinInt(1), InSection("network"),
+				Doc("Number", "The port the process binds INSIDE the container. Not the one anything outside reaches it on.")),
+		},
+			GroupDoc("A port this workload listens on, named so everything else can refer to it without repeating the number."),
+		))
+}

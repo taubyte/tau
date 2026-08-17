@@ -1,0 +1,16 @@
+id: QmRZ8XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuK
+description: readiness is not a status code here - a function decides, and it can look at the queue
+image: "ghcr.io/acme/pool:2.1"
+ports:
+    rpc: 7000
+health:
+    function:
+        name: pool_ready
+execution:
+    memory: 256MB
+limits:
+    max-instances: 4
+    concurrency: 1
+queues:
+    orders:
+        ops: [receive]

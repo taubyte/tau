@@ -1,10 +1,18 @@
 id: QmVUyCkPnH4TfoyRmnAXPzGZ4PGwVJ9wJTvGXFqSaYbnGF
-description: the storefront api
+description: the storefront api; two listening ports, named so nothing repeats a number
 image: "ghcr.io/acme/api:1.4"
+ports:
+    http: 8080
+    metrics: 9090
 health:
-    path: "/healthz"
+    http:
+        port: http
+        path: /healthz
 execution:
     memory: 512MB
+limits:
+    max-instances: 10
+    concurrency: 80
 egress: [api.stripe.com]
 caches:
     orders:

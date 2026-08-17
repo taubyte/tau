@@ -59,6 +59,19 @@ func OpsOf(kind string) []Verb {
 	return nil
 }
 
+// ServedByRoute reports whether a gateway route can hand a request to this kind. It
+// is the OTHER way to be reachable, and the two are not interchangeable: ops are what
+// one resource does to another inside the cloud, a route is how a request from
+// outside arrives. A kind with neither is not a target at all.
+func ServedByRoute(kind string) bool {
+	for _, k := range handlerKinds {
+		if k+"s" == kind || k == kind {
+			return true
+		}
+	}
+	return false
+}
+
 // Kinds lists every kind that declares ops — i.e. everything a resource can reach.
 func Kinds() []string {
 	out := []string{}

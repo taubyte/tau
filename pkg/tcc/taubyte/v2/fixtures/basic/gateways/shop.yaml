@@ -8,9 +8,9 @@ route:
     match: prefix
     methods: [POST]
     handler:
-        function:
-            namespace: /shop
-            name: notify
+        application:
+            name: api
+            port: http
 cors:
     origins: ["https://shop.example.com"]
 rate-limit:

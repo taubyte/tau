@@ -165,7 +165,7 @@ func TestNamespaceScope(t *testing.T) {
 	kv := only(t, shop["caches"].(map[string]any))
 	assert.Equal(t, kv["match"], "sessions")
 
-	app := only(t, resources(t, compileBasic(t), "applications"))
+	app := namedResource(t, resources(t, compileBasic(t), "applications"), "api")
 	assert.Equal(t, app["image"], "ghcr.io/acme/api:1.4", "applications is a compute kind, not a scope")
 	// what the platform assigns is never authored: the port is handed to the
 	// workload and tunnelled, and how many instances run is placement
@@ -235,9 +235,9 @@ func TestGatewayRoute(t *testing.T) {
 	assert.DeepEqual(t, gw["route/methods"], []string{"POST"})
 
 	// the switch, and the resource path through namespaces
-	assert.Equal(t, gw["route/handler/kind"], "function", "Key() captures which branch the handler took")
-	assert.Equal(t, gw["route/handler/namespace"], "/shop")
-	assert.Equal(t, gw["route/handler/name"], "notify")
+	assert.Equal(t, gw["route/handler/kind"], "application", "Key() captures which branch the handler took")
+	assert.Equal(t, gw["route/handler/name"], "api")
+	assert.Equal(t, gw["route/handler/port"], "http", "a workload with two ports is told which")
 
 	// there is no route resource kind
 	_, standalone := root(t, flat)["routes"]
@@ -560,4 +560,40 @@ func TestTargetOwnsThePolicy(t *testing.T) {
 	zone := only(t, resources(t, flat, "zones"))
 	_, present := zone["authorizer/name"]
 	assert.Assert(t, !present, "a kind with no ops is not reachable, so it authorises nothing")
+}
+
+// Ports are named because the external one is dynamic and there may be several
+// instances of the same workload on one host — so there is no single external number
+// to write down. Everything else refers to a port by name.
+func TestPortsAreNamed(t *testing.T) {
+	flat := compileBasic(t)
+
+	app := namedResource(t, resources(t, flat, "applications"), "api")
+	ports := app["ports"].(map[string]any)
+	assert.Equal(t, ports["http"].(map[string]any)["number"], 8080, "the number is the INTERNAL one")
+	assert.Equal(t, ports["metrics"].(map[string]any)["number"], 9090)
+
+	// health names a port rather than repeating a number
+	assert.Equal(t, app["health/kind"], "http")
+	assert.Equal(t, app["health/port"], "http")
+
+	// or a function decides, which is a different kind of answer and says so
+	pool := namedResource(t, resources(t, flat, "applications"), "worker_pool")
+	assert.Equal(t, pool["health/kind"], "function")
+	assert.Equal(t, pool["health/function"], "pool_ready")
+	_, probe := pool["health/path"]
+	assert.Assert(t, !probe, "a function-checked workload declares no probe path")
+
+	// so does a route targeting the workload
+	gw := only(t, resources(t, flat, "gateways"))
+	assert.Equal(t, gw["route/handler/kind"], "application")
+	assert.Equal(t, gw["route/handler/port"], "http")
+
+	// ceilings are authored; counts are not
+	assert.Equal(t, app["limits/max-instances"], 10)
+	assert.Equal(t, app["limits/concurrency"], 80)
+	for _, gone := range []string{"port", "replicas", "instances"} {
+		_, present := app[gone]
+		assert.Assert(t, !present, "%q must not be authorable", gone)
+	}
 }
