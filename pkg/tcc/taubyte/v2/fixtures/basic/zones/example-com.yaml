@@ -1,0 +1,8 @@
+id: QmRgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLL
+description: the zone this cloud answers for; the gateway's own name needs no record here
+fqdn: example.com
+records:
+    - "@ 3600 IN MX 10 mail.example.com."
+    - "@ 3600 IN TXT v=spf1 include:_spf.google.com ~all"
+    - "docs 300 IN CNAME hosted.notion.so."
+    - "vpn 300 IN A 203.0.113.9"

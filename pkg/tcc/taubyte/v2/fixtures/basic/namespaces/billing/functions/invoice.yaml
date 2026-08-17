@@ -1,0 +1,13 @@
+id: QmS8sDbYoAcgtGdmDGiG3Yhoqp6nJEUTvSsUJqzhqVGYCe
+description: bills an order; reads a cache, writes the books
+source: "."
+execution:
+    call: invoice
+    timeout: 10s
+    memory: 16MB
+caches:
+    sessions:
+        ops: [get]
+databases:
+    ledger:
+        ops: [exec]

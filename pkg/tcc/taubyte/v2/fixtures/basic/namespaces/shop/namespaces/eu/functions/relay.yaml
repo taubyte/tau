@@ -1,0 +1,14 @@
+id: QmXjjmDUAsdBnCLnMmnbi9WdPYYbCbAdYSpuvfvBBnvLPP
+description: in shop/eu; its own cache with no path, and billing's books by absolute path
+source: "."
+execution:
+    call: relay
+    timeout: 5s
+    memory: 8MB
+caches:
+    sessions:
+        ops: [get]
+databases:
+    ledger:
+        namespace: /billing
+        ops: [query]

@@ -1,0 +1,4 @@
+id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
+description: an external database, reached through the connector that holds its credentials
+engine:
+    connector: connectors/kafka-orders

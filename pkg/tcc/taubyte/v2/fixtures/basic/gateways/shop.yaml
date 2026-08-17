@@ -1,0 +1,19 @@
+id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG
+description: the public entry point
+fqdn: shop.example.com
+certificate:
+    source: generated
+route:
+    path: /checkout
+    match: prefix
+    methods: [POST]
+    handler:
+        function:
+            namespace: /shop
+            name: notify
+cors:
+    origins: ["https://shop.example.com"]
+rate-limit:
+    rpm: 600
+    burst: 60
+    key: ip

@@ -1,0 +1,13 @@
+id: QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR
+description: notifies a customer; its own sessions, eu's below it, and the project-wide orders
+source: "."
+execution:
+    call: notify
+    timeout: 5s
+    memory: 16MB
+caches:
+    sessions:
+        ops: [get]
+    orders:
+        namespace: /
+        ops: [get]

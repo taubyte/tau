@@ -1,0 +1,6 @@
+id: QmdmQXB2d1q5PVFHrpKgHqPnnGSuVYd3ZWZAJf1YXcvJcz
+channel:
+    match: orders
+functions:
+    checkout:
+        ops: [invoke]

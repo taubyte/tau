@@ -1,0 +1,15 @@
+id: QmVUyCkPnH4TfoyRmnAXPzGZ4PGwVJ9wJTvGXFqSaYbnGF
+description: the storefront api
+image: "ghcr.io/acme/api:1.4"
+port: 8080
+health:
+    path: "/healthz"
+execution:
+    memory: 512MB
+egress: [api.stripe.com]
+caches:
+    orders:
+        ops: [get, put]
+secrets:
+    stripe:
+        ops: [get]
