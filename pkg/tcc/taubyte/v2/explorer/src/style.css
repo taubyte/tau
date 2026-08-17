@@ -203,3 +203,10 @@ code.om.open { color: var(--internet); }
 .kindcell.compute  { color: var(--compute); }
 .kindcell.data     { color: var(--data); }
 .kindcell.code     { color: var(--code-cat); }
+
+.rf-edgelabel {
+  position: absolute; pointer-events: none;
+  font-family: ui-monospace, monospace; font-size: 9px;
+  background: var(--card); color: var(--mut);
+  border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px;
+}

@@ -18,20 +18,24 @@
 import { useMemo } from "react";
 import {
   Background,
+  BaseEdge,
   Controls,
+  EdgeLabelRenderer,
   Handle,
   MarkerType,
   MiniMap,
   Position,
   ReactFlow,
+  getBezierPath,
   type Edge,
+  type EdgeProps,
   type Node as FlowNode,
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { blastRadius, categoryOf, iconOf, reachesFrom, NODE_H, NODE_W, type Graph } from "./graph";
 import { KindIcon } from "./icons";
-import type { Placed } from "./layout";
+import { routeKey, type Placed } from "./layout";
 
 export type Selection = { id: string; mode: "blast" | "reach" } | null;
 
@@ -80,6 +84,45 @@ function ScopeNode({ data }: NodeProps) {
 }
 
 const NODE_TYPES = { resource: ResourceNode, scope: ScopeNode };
+
+// The edge dot routed.
+//
+// React Flow's built-in edge types draw between two handles and know nothing about
+// what is in the way, so `smoothstep` ran lines straight through boxes — while
+// layout.ts had already computed a spline that avoids them and was throwing it away.
+// This renders that spline.
+//
+// The fallback is a plain bezier for an edge dot returned no route for, which should
+// not happen: dot routes every edge, including the ones leaving a cluster, and that is
+// most of why it is the layout here.
+function RoutedEdge({ id, data, markerEnd, style, label, sourceX, sourceY, targetX, targetY }: EdgeProps) {
+  const routed = typeof data?.path === "string" ? (data.path as string) : "";
+  const [fallback, midX, midY] = getBezierPath({
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition: Position.Right,
+    targetPosition: Position.Left,
+  });
+  return (
+    <>
+      <BaseEdge id={id} path={routed || fallback} markerEnd={markerEnd} style={style} />
+      {label ? (
+        <EdgeLabelRenderer>
+          <div
+            className="rf-edgelabel"
+            style={{ transform: `translate(-50%, -50%) translate(${midX}px, ${midY}px)` }}
+          >
+            {label}
+          </div>
+        </EdgeLabelRenderer>
+      ) : null}
+    </>
+  );
+}
+
+const EDGE_TYPES = { routed: RoutedEdge };
 
 const CATEGORY_COLOR: Record<string, string> = {
   internet: "var(--internet)",
@@ -183,12 +226,9 @@ export function GraphView({
           id: `${a.from}->${a.to}->${a.verb}`,
           source: a.from,
           target: a.to,
-          type: "smoothstep",
+          type: "routed",
+          data: { path: placed.routes.get(routeKey(a)) ?? "" },
           label: touched ? a.verb : undefined,
-          labelShowBg: true,
-          labelBgPadding: [4, 2] as [number, number],
-          labelBgBorderRadius: 3,
-          labelBgStyle: { fill: "var(--card)", stroke: "var(--line)" },
           className: `rf-edge ${cls}${faded ? " faded" : ""}`,
           // An arrowhead, which the first cut of this forgot: direction is the entire
           // claim an edge makes here — who acts on whom — and a line without one says
@@ -208,7 +248,7 @@ export function GraphView({
           zIndex: touched ? 10 : 0,
         } satisfies Edge;
       }),
-    [graph, lit, selection],
+    [graph, placed, lit, selection],
   );
 
   return (
@@ -216,6 +256,7 @@ export function GraphView({
       nodes={nodes}
       edges={edges}
       nodeTypes={NODE_TYPES}
+      edgeTypes={EDGE_TYPES}
       onNodeClick={(_e, node) => onPick(node.id.startsWith("ns:") ? null : node.id)}
       onPaneClick={() => onPick(null)}
       fitView
