@@ -17,7 +17,7 @@ func loadAttr(t *testing.T, body string, attr *Attribute) (any, error) {
 	assert.NilError(t, afero.WriteFile(fs, "/t/"+attr.Name+".yaml", []byte(body), 0644))
 	sr, err := yaseer.New(yaseer.VirtualFS(fs, "/t"))
 	assert.NilError(t, err)
-	obj, err := load[object.Refrence](&Node{Attributes: []*Attribute{attr}}, sr.Query())
+	obj, err := load[object.Refrence](&Node{Attributes: []*Attribute{attr}}, sr.Query(), false)
 	if err != nil {
 		return nil, err
 	}

@@ -30,7 +30,7 @@ func strictSchema() Schema {
 				)),
 			),
 		),
-	))
+	).With(Strict()))
 }
 
 func compileDoc(t *testing.T, doc string) error {
@@ -109,7 +109,7 @@ func TestStrictIgnoresANodeThatClaimsNothing(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/config.yaml", []byte("whatever: 1\n"), 0o644))
 
-	e, err := New(SchemaDefinition(&Node{}), yaseer.VirtualFS(fs, "/"))
+	e, err := New(SchemaDefinition((&Node{}).With(Strict())), yaseer.VirtualFS(fs, "/"))
 	assert.NilError(t, err)
 	_, err = e.Process()
 	assert.NilError(t, err)
@@ -133,4 +133,28 @@ func TestStrictIgnoresNeighbouringFilesOnDisk(t *testing.T) {
 	assert.NilError(t, err)
 	_, err = e.Process()
 	assert.NilError(t, err, "a neighbouring directory is not an unknown key")
+}
+
+// A vocabulary that does not ask for the check keeps the old behaviour, which is what
+// keeps v1 loading the projects already deployed against it. The same document that
+// fails above compiles here.
+func TestStrictIsOptInPerVocabulary(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/config.yaml", []byte("id: root\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/things/one.yaml",
+		[]byte("id: one\nengine:\n    local:\n        host: here\nreplicas: 3\n"), 0o644))
+
+	lax := SchemaDefinition(Root(
+		Attributes(String("id")),
+		DefineGroup("things", DefineIter([]*Attribute{
+			String("id", Required()),
+			String("kind", Path("engine", Either("local", "remote")), Key()),
+			String("host", Path("engine", Either("local", "remote"), "host")),
+		})),
+	))
+
+	e, err := New(lax, yaseer.VirtualFS(fs, "/"))
+	assert.NilError(t, err)
+	_, err = e.Process()
+	assert.NilError(t, err, "without Strict() an unknown key is still dropped")
 }

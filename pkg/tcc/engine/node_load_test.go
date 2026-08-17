@@ -29,7 +29,7 @@ func TestLoad_WithNonGroupNode(t *testing.T) {
 	}
 
 	query := sr.Query()
-	obj, err := load[object.Refrence](node, query)
+	obj, err := load[object.Refrence](node, query, false)
 
 	assert.NilError(t, err)
 	assert.Assert(t, obj != nil)
@@ -58,7 +58,7 @@ func TestLoad_WithGroupNode_RequiredAttributesError(t *testing.T) {
 	}
 
 	query := sr.Query()
-	_, err = load[object.Refrence](node, query)
+	_, err = load[object.Refrence](node, query, false)
 
 	// Should return error because required attribute is missing
 	assert.ErrorContains(t, err, "")
@@ -87,7 +87,7 @@ func TestLoad_WithGroupNode_StringMatcherChild(t *testing.T) {
 	}
 
 	query := sr.Query()
-	obj, err := load[object.Refrence](node, query)
+	obj, err := load[object.Refrence](node, query, false)
 
 	assert.NilError(t, err)
 	assert.Assert(t, obj != nil)
@@ -116,7 +116,7 @@ func TestLoad_WithGroupNode_SkipsConfigLeaf(t *testing.T) {
 	}
 
 	query := sr.Query()
-	obj, err := load[object.Refrence](node, query)
+	obj, err := load[object.Refrence](node, query, false)
 
 	assert.NilError(t, err)
 	assert.Assert(t, obj != nil)
@@ -148,7 +148,7 @@ func TestLoad_WithGroupNode_ChildAddError(t *testing.T) {
 	}
 
 	query := sr.Query()
-	obj, err := load[object.Refrence](node, query)
+	obj, err := load[object.Refrence](node, query, false)
 
 	assert.NilError(t, err)
 	assert.Assert(t, obj != nil)

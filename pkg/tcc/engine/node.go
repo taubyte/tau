@@ -472,13 +472,16 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 	return nil
 }
 
-func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], error) {
+func load[T ObjectDataType](n *Node, query *yaseer.Query, strict bool) (object.Object[T], error) {
 	obj := object.New[T]()
 
-	// Before reading anything: a key this node cannot read is a mistake, not an
-	// extension. See strict.go — it used to be dropped in silence.
-	if err := checkKeys(n, query); err != nil {
-		return nil, err
+	// Before reading anything: where the vocabulary asks for it, a key this node
+	// cannot read is a mistake rather than an extension. See strict.go — it used to
+	// be dropped in silence, and it still is for a vocabulary that does not opt in.
+	if strict {
+		if err := checkKeys(n, query); err != nil {
+			return nil, err
+		}
 	}
 
 	if !n.Group {
@@ -490,7 +493,7 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], err
 		}
 		// A nested resource's child groups live inside its OWN document, so they
 		// walk the same query: no config leaf, no directory descent.
-		return obj, loadChildren(n, obj, query)
+		return obj, loadChildren(n, obj, query, strict)
 	}
 
 	// file might or might not have config, so we ignore error
@@ -499,13 +502,13 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], err
 		return nil, err
 	}
 
-	return obj, loadChildren(n, obj, query)
+	return obj, loadChildren(n, obj, query, strict)
 }
 
 // loadChildren walks a node's child groups against the document at query. Shared by
 // group nodes (children are entries one level down) and nested resources (children
 // are keys of the resource's own document).
-func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query) error {
+func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, strict bool) error {
 	list, _ := query.List()
 
 	// Also enumerate keys nested inside the level's config.yaml so
@@ -537,7 +540,7 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 		if !matched {
 			return nil
 		}
-		cobj, err := load[T](itm, childQuery)
+		cobj, err := load[T](itm, childQuery, strict)
 		if err != nil {
 			return err
 		}

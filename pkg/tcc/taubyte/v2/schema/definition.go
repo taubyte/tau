@@ -762,7 +762,7 @@ var _ = func() any { attachAccess(); return nil }()
 var v2Root = Root(
 	rootAttributes(),
 	append(append([]*Node{}, V2Resources...), namespacesGroup(MaxNamespaceDepth))...,
-).With(Singular("Project"))
+).With(Singular("Project"), Strict())
 
 var TaubyteProject = SchemaDefinition(v2Root)
 

@@ -57,6 +57,7 @@ var (
 	Section          = engine.Section
 	ShowWhen         = engine.ShowWhen
 	Singular         = engine.Singular
+	Strict           = engine.Strict
 	String           = engine.String
 	StringShape      = engine.StringShape
 	StringSlice      = engine.StringSlice

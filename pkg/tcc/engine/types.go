@@ -62,7 +62,10 @@ type Attribute struct {
 type Option func(*Attribute)
 
 type Node struct {
-	Group bool
+	// Strict rejects an authored key this vocabulary cannot read. Declared on the
+	// root; see strict.go for why it is not simply always on.
+	Strict bool
+	Group  bool
 	// Nested marks a RESOURCE iterator that also carries child groups, authored
 	// inside its own document. Distinct from Group, whose instances are scopes:
 	// a nested group is data belonging to the instance, so the instance keeps its

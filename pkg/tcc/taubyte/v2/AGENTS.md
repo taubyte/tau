@@ -202,7 +202,9 @@ neither the field nor the file. Worth improving one day; do not paper over it.
   dropped and the compile succeeded — until `engine/strict.go` (2026-08-17); a fixture
   here said `source: true` where the attribute is `polls` and nothing complained for
   weeks. If you are adding an attribute and its key is rejected, the schema is what is
-  wrong.
+  wrong. It is opt-in per vocabulary (`Strict()` on the root): v2 has it, v1 does not,
+  because v1 is frozen with projects deployed against it — so in v1 the key is still
+  dropped in silence.
 - A `ShowWhen` / `RequiredWhen` that never fires ⇒ its first argument is not an
   attribute name. It takes the **sibling attribute's `Name`**, which for a nested field
   is the full slashed one — `ShowWhen("certificate/source", "provided")`, never

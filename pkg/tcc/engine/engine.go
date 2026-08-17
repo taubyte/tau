@@ -20,11 +20,11 @@ func New(schema Schema, options ...yaseer.Option) (Engine, error) {
 }
 
 func (s *instance) Parse() (object.Object[SeerRef], error) {
-	return load[SeerRef](s.schema.root, s.seer.Query())
+	return load[SeerRef](s.schema.root, s.seer.Query(), s.schema.root.Strict)
 }
 
 func (s *instance) Process() (object.Object[object.Refrence], error) {
-	return load[object.Refrence](s.schema.root, s.seer.Query())
+	return load[object.Refrence](s.schema.root, s.seer.Query(), s.schema.root.Strict)
 }
 
 func (s *instance) Schema() Schema {
