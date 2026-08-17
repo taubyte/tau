@@ -1,4 +1,7 @@
 id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
-description: an external database, reached through a connector that provides one - kafka would compile here and answer nothing
+description: an external postgres - the engine key IS the kind, so naming kafka here is not something the yaml can say
 engine:
-    connector: connectors/pg-main
+    postgres:
+        host: db.example.com:5432
+        database: orders
+        credentials: secrets/stripe

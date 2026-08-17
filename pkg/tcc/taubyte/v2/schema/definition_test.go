@@ -145,19 +145,50 @@ func TestConnectorCredentialsResolve(t *testing.T) {
 	}
 }
 
-// `provides` is what makes a reference INTO a connector answerable: `type` is open by
-// design, so the only thing a database's engine can check is the role. Kafka provides
-// a stream and nothing else, which is exactly the config that used to compile as a
-// SQL engine.
-func TestConnectorProvidesRole(t *testing.T) {
+// A database's engine key IS the engine, from a closed set, so an external system
+// that is not a database cannot be named as one. This replaced a `provides` role list
+// on the connector, which asked the author to restate a fact about software they did
+// not write — and would have compiled just as happily when they got it wrong.
+func TestDatabaseEngineIsClosed(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/config.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/databases/orders.yaml", []byte(`
+id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
+engine:
+    kafka:
+        host: broker:9092
+`), 0o644))
+
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "unknown key 'kafka'")
+	assert.ErrorContains(t, err, "distributed, mysql, postgres",
+		"and it says which engines there are")
+}
+
+// An external engine carries its own connection; tau's own carries a size and no
+// host at all, so neither borrows the other's fields.
+func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 	flat := compileBasic(t)
-	byName := map[string][]string{}
-	for _, v := range resources(t, flat, "connectors") {
-		conn := v.(map[string]any)
-		byName[conn["name"].(string)] = conn["provides"].([]string)
+	dbs := resources(t, flat, "databases")
+
+	orders := namedResource(t, dbs, "orders")
+	assert.Equal(t, orders["engine/kind"], "postgres")
+	assert.Equal(t, orders["engine/host"], "db.example.com:5432")
+	assert.Assert(t, strings.HasPrefix(orders["engine/credentials"].(string), "secrets/"),
+		"credentials resolve to a secret id, never a value")
+	_, borrowed := orders["engine/distributed/size"]
+	assert.Assert(t, !borrowed)
+
+	obj := root(t, flat)
+	ledger := namedResource(t, namespace(t, obj, "billing")["databases"].(map[string]any), "ledger")
+	assert.Equal(t, ledger["engine/kind"], "distributed")
+	for _, gone := range []string{"engine/host", "engine/credentials", "engine/database"} {
+		_, present := ledger[gone]
+		assert.Assert(t, !present, "a distributed database has no %q", gone)
 	}
-	assert.DeepEqual(t, byName["kafka-orders"], []string{"stream"})
-	assert.DeepEqual(t, byName["pg-main"], []string{"database", "stream"})
 }
 
 // The new kinds load at all, with their scalars parsed.

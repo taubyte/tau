@@ -144,6 +144,14 @@ var handlerKinds = []string{"function", "application", "website", "gateway", "mc
 // rather than a reshape.
 var proxyHandlerKinds = []string{"application"}
 
+// externalDatabaseEngines are the database servers reachable over the network, and
+// databaseEngines is those plus tau's own. Closed, because each one is a wire protocol
+// and a driver — adding one is a release, not a config value — and because a closed set
+// is what makes naming a non-database here impossible rather than merely wrong.
+var externalDatabaseEngines = []string{"postgres", "mysql"}
+
+var databaseEngines = append([]string{"distributed"}, externalDatabaseEngines...)
+
 // A kind declares Ops() when something can reach it. A kind without them is not a
 // target: nothing "uses" a cron, a zone or a module — a cron fires, a zone answers
 // DNS, a module is built into a workload and named by its source. Their absence is
@@ -331,14 +339,47 @@ var V2Resources = []*Node{
 	//	    distributed: { size: 1GB }
 	//	  # engine:
 	//	  #   connector: connectors/pg-main
+	// The external engines are a CLOSED set, and this database names one directly
+	// rather than pointing at a `connector`.
+	//
+	// It used to point at one, and `databases/orders` naming `connectors/kafka-orders`
+	// compiled clean — Ref() resolves a name to an id and stops there, so nothing
+	// noticed that Kafka answers no query. The first fix was a `provides` role list on
+	// the connector, which was wrong twice over: it asked the author to restate a fact
+	// about software they did not write (whoever implements the postgres connector
+	// knows it backs a database; the person copying that into yaml can copy it wrong),
+	// and it declared capabilities nothing consumed, which is the inert-field defect
+	// this vocabulary deleted `notification.email` for.
+	//
+	// So the mismatch is made UNREPRESENTABLE rather than detectable. `kafka` is not a
+	// key that can be written here, the same way a non-HTTP kind cannot be a gateway
+	// handler. A database engine is not an extensibility surface — a new one is a new
+	// wire protocol and a new driver, which is a release, not a config value.
+	//
+	// `connectors` keeps the open seam and goes back to meaning one thing: an external
+	// system you RECEIVE EVENTS from.
+	//
+	// The cost, accepted: a Postgres used both as a database and as an event source is
+	// configured twice. They are different credentials and different access anyway, and
+	// one config object meaning two things is what caused this.
 	DefineGroup("databases",
 		resource(
 			commonAttributes(
-				String("engine/kind", Path("engine", Either("distributed", "connector")), Key(), Field("Engine"), InSection("engine"), Doc("Engine", "distributed: tau's own, replicated across the swarm. connector: an external database reached through a connector.")),
-				Bytes("engine/distributed/size", Path("engine", "distributed", "size"), RequiredWhen("engine", "distributed"), InSection("engine"), ShowWhen("engine", "distributed"), Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
-				String("engine/connector", Path("engine", "connector"), RequiredWhen("engine", "connector"), Ref("connectors", Prefix("connectors/")), InSection("engine"), ShowWhen("engine", "connector"), Doc("Connector", "The connector holding this database's address and credentials, as \"connectors/<name>\".")),
-			),
-			GroupDoc("A database: tau's own distributed engine, or an external one reached through a connector."), Icon("database"), Category("data"),
+				String("engine/kind", Path("engine", Either(databaseEngines...)), Key(), Field("Engine"), InSection("engine"),
+					Doc("Engine", "Which engine backs this database. distributed is tau's own, replicated across the swarm; the rest are external systems reached over the network.")),
+				Bytes("engine/distributed/size", Path("engine", "distributed", "size"), RequiredWhen("engine/kind", "distributed"), InSection("engine"), ShowWhen("engine/kind", "distributed"),
+					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
+
+				// An external engine carries its OWN connection. There is no reference
+				// to a `connector` here, and that absence is the point — see the note
+				// above this kind.
+				String("engine/host", Path("engine", Either(externalDatabaseEngines...), "host"), RequiredWhen("engine/kind", externalDatabaseEngines...), InSection("engine"),
+					Doc("Host", "Where the external database is reached, as host or host:port.")),
+				String("engine/database", Path("engine", Either(externalDatabaseEngines...), "database"), InSection("engine"),
+					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
+				String("engine/credentials", Path("engine", Either(externalDatabaseEngines...), "credentials"), RequiredWhen("engine/kind", externalDatabaseEngines...), Ref("secrets", Prefix("secrets/")), InSection("engine"),
+					Doc("Credentials", "Secret holding the credentials to connect with, as \"secrets/<name>\"."))),
+			GroupDoc("A database: tau's own distributed engine, or an external server reached over the network."), Icon("database"), Category("data"),
 			secIdentity, secAccess,
 			Section("engine", "Engine", "Which engine backs it, and its settings."),
 			Ops(ReadOp("query"), WriteOp("exec")), // exec is write: the host cannot classify arbitrary SQL
@@ -688,25 +729,11 @@ var V2Resources = []*Node{
 	DefineGroup("connectors",
 		resource(
 			commonAttributes(
-				String("type", Required(), InSection("identity"), Doc("Type", "Which external system this connects to, e.g. \"kafka\", \"postgres\", \"s3\", \"slack\".")),
-				// What the external system can BE USED AS, which is a different question
-				// from what it is. `type` is deliberately open — a connector is one of the
-				// two seams where this vocabulary stays extensible, so a new external
-				// system must not require editing an enum. But every reference INTO a
-				// connector needs to know the shape on the other side: a database's engine
-				// needs something queryable, and naming a Kafka connector there compiles
-				// clean and answers no query.
-				//
-				// The roles are closed and few because they are what the rest of the
-				// vocabulary reaches for. A new external system is a new `type` string that
-				// declares which of these it can play; it is a list because one system can
-				// play several — Postgres backs a database AND emits change events.
-				StringSlice("provides", Required(), EachInSet("database", "stream", "object-store", "endpoint"), InSection("identity"),
-					Doc("Provides", "What this external system can back: database (queryable), stream (emits events), object-store (blobs), endpoint (a thing you call). A reference into this connector has to want one of these.")),
+				String("type", Required(), InSection("identity"), Doc("Type", "Which external system events are received from, e.g. \"kafka\", \"s3\", \"slack\".")),
 				String("credentials", Ref("secrets", Prefix("secrets/")), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials, as \"secrets/<name>\".")),
 				Bool("polls", InSection("identity"), Doc("Polls", "This connector holds a live connection to the external system and emits events from it. Exactly one node in the cloud runs it.")),
 			),
-			GroupDoc("An external system: credentials, and for source-like externals the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
+			GroupDoc("An external system events are received from: credentials, and the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
 			secIdentity, secAccess,
 			Resource("connectors", "Connector", "Connector", "connector"),
 		)),

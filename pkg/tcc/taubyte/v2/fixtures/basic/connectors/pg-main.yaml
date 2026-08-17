@@ -1,5 +1,0 @@
-id: QmZgVLmWTBpgTbCPnHRUvKGnHqHf7Yd7t8ZffKeRXPkRLM
-description: an external postgres - this is what a database engine may point at, because it answers queries
-type: postgres
-provides: [database, stream]
-credentials: secrets/stripe
