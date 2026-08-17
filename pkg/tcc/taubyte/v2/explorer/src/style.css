@@ -75,34 +75,60 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
 .legend .sw.policy { background: repeating-linear-gradient(90deg, var(--acc) 0 2px, transparent 2px 6px); }
 .legend .sw.ref { background: repeating-linear-gradient(90deg, var(--mut) 0 4px, transparent 4px 8px); }
 .legend .hint { margin-left: auto; }
-.scroll { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: .5rem; max-height: 78vh; }
-/* Intrinsic size, and the pane scrolls. `max-width: 100%` scaled the whole drawing
-   down to fit instead, which on a real project means every label is too small to
-   read - a diagram that fits and cannot be read is not a smaller diagram. */
-svg.graph { display: block; }
-.scopebox { fill: color-mix(in srgb, var(--internet) 6%, transparent); stroke: var(--internet); stroke-width: 1; stroke-dasharray: 5 4; opacity: .85; }
-.scopelabel { font-family: ui-monospace, monospace; font-size: 9.5px; letter-spacing: .04em; fill: var(--internet); text-transform: uppercase; }
+/* React Flow owns everything inside this box, viewport included: the graph no longer
+   has to FIT, it pans and zooms, which is what stops a bigger project turning the
+   picture into unreadable confetti. */
+.rfhost {
+  height: 72vh; min-height: 420px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--card);
+  overflow: hidden;
+}
+.rfhost .react-flow__attribution { display: none; }
+.rfhost .react-flow__handle { opacity: 0; }
+
+.rf-node {
+  width: 168px; padding: 6px 10px;
+  display: flex; flex-direction: column; gap: 1px;
+  background: var(--card); border: 1.4px solid var(--line); border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  cursor: pointer; transition: opacity .12s, box-shadow .12s;
+}
+.rf-kind { font-size: 8.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--mut); }
+.rf-name { font-size: 11.5px; font-weight: 600; color: var(--fg); }
+.rf-node.internet { border-color: var(--internet); }
+.rf-node.trigger  { border-color: var(--trigger); }
+.rf-node.compute  { border-color: var(--compute); }
+.rf-node.data     { border-color: var(--data); }
+.rf-node.code     { border-color: var(--code-cat); }
+.rf-node.picked { border-color: var(--acc); border-width: 2px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 22%, transparent); }
+/* Faded, never hidden: the shape of the whole graph is the context that makes a
+   blast radius mean anything. */
+.rf-node.faded { opacity: .13; }
+
+.rf-scope {
+  width: 100%; height: 100%;
+  border: 1px dashed var(--internet); border-radius: 8px;
+  background: color-mix(in srgb, var(--internet) 6%, transparent);
+}
+.rf-scopelabel {
+  position: absolute; top: 5px; left: 10px;
+  font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--internet);
+}
+.react-flow__edge-text { font-family: ui-monospace, monospace; font-size: 8.5px; fill: var(--mut); }
+.react-flow__edge.faded .react-flow__edge-text { opacity: .1; }
+.react-flow__controls-button {
+  background: var(--card); border-bottom: 1px solid var(--line); fill: var(--fg);
+}
+.react-flow__controls-button:hover { background: var(--code); }
 .node .box { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }
 .node text { font-family: ui-sans-serif, sans-serif; }
 .node .kind { font-size: 9.5px; letter-spacing: .04em; text-transform: uppercase; fill: var(--mut); }
 .node .name { font-size: 13px; fill: var(--fg); font-weight: 600; }
 .node { cursor: pointer; }
 .node:hover .box { stroke: var(--acc); }
-.node.selected .box { stroke: var(--acc); stroke-width: 2.5; }
-.node.internet .box { stroke: var(--internet); }
-.node.trigger .box { stroke: var(--trigger); }
-.node.compute .box { stroke: var(--compute); }
-.node.data .box { stroke: var(--data); }
-.node.code .box { stroke: var(--code-cat); }
-.node.dim { opacity: .18; }
 .edge { fill: none; stroke-width: 1.6; }
-.edge.read { stroke: var(--read); }
-.edge.write { stroke: var(--write); }
-.edge.policy { stroke: var(--acc); stroke-width: 1.6; stroke-dasharray: 1 4; stroke-linecap: round; }
 .mk.policy { fill: var(--acc); }
-.edge.ref { stroke: var(--mut); stroke-width: 1.2; }
-.edge.isref { stroke-dasharray: 4 4; }
-.edge.dim { stroke: var(--line); opacity: .5; }
 .mk.read { fill: var(--read); }
 .mk.write { fill: var(--write); }
 .mk.ref { fill: var(--mut); }

@@ -1,7 +1,9 @@
 import "./style.css";
 import { loadTcc, type CompileOk, type Kind, type KindVerbs, type Omission } from "./wasm";
 import { buildGraph, categoryOf, setCategories, type Graph } from "./graph";
-import { drawGraph, esc, jsonRoot, type Selection } from "./render";
+import { esc, jsonRoot } from "./render";
+import { graphHost, renderGraph } from "./graph-mount";
+import type { Selection } from "./graph-view";
 import { place, type Placed } from "./layout";
 
 // The example project is the SAME tree the Go tests compile
@@ -23,13 +25,12 @@ let verbs: KindVerbs[] = [];
 let kinds: Kind[] = [];
 let omissions: Omission[] = [];
 let graph: Graph | null = null;
-// Layout is asynchronous now, so what is on screen is the LAST layout that finished.
-// placedFor pins it to the graph it was computed from: a compile can land while a
-// layout is still running, and drawing new nodes with old coordinates is worse than
-// drawing nothing.
+let lastResult: CompileOk | { error: string } | null = null;
+// dot runs asynchronously (it is wasm), so what is drawn is the last layout that
+// finished. placedFor pins it to the graph it was computed from: positions from a
+// previous compile applied to new nodes is worse than one frame of nothing.
 let placed: Placed | null = null;
 let placedFor: Graph | null = null;
-let lastResult: CompileOk | { error: string } | null = null;
 let layoutSeq = 0;
 let selection: Selection = null;
 let current = Object.keys(files).sort()[0];
@@ -56,8 +57,8 @@ function render() {
     graph = buildGraph(lastResult.object, verbs);
     const g = graph;
     const seq = ++layoutSeq;
-    // A keystroke while a layout is in flight makes that layout stale; the counter
-    // is what stops it landing after the one it lost to.
+    // A keystroke while a layout is in flight makes that layout stale; the counter is
+    // what stops it landing after the one it lost to.
     place(g.nodes, g.arrows).then((p) => {
       if (seq !== layoutSeq) return;
       placed = p;
@@ -193,7 +194,7 @@ function dirEl(d: Dir): HTMLElement {
       const node = graph?.nodes.find((n) => fileOf(n) === path);
       selection = node ? { id: node.id, mode: "blast" } : null;
       render();
-      reveal("svg .node.selected");
+      // the graph highlights the pick itself; there is no scroll position to chase
     };
     wrap.appendChild(line);
   }
@@ -244,25 +245,26 @@ function graphPane(): HTMLElement {
   );
   wrap.appendChild(legend());
 
-  const scroll = div("scroll");
-  if (!graph || !placed || placedFor !== graph) {
-    scroll.innerHTML = `<p class="hint">laying out…</p>`;
-    wrap.appendChild(scroll);
-    return wrap;
+  // The same host element every time, so the React root — and with it the viewport
+  // the user panned to — survives a DOM rebuild.
+  wrap.appendChild(graphHost());
+  if (graph && placed && placedFor === graph) {
+    renderGraph(graph, placed, selection, (id) => {
+      selection =
+        id === null
+          ? null
+          : { id, mode: selection?.id === id && selection.mode === "blast" ? "reach" : "blast" };
+      // Picking a node opens its file. The graph and the tree are two views of one
+      // thing, and a node whose source you cannot read is half an answer.
+      const node = id === null ? null : graph!.byId.get(id);
+      if (node) {
+        const path = fileOf(node);
+        if (path in files) current = path;
+      }
+      render();
+      reveal(".files .file.on");
+    });
   }
-  scroll.appendChild(drawGraph(graph, placed, selection, (id) => {
-    selection = id === null ? null : { id, mode: selection?.id === id && selection.mode === "blast" ? "reach" : "blast" };
-    // Picking a node opens its file. The graph and the tree are two views of one
-    // thing, and a node whose source you cannot read is half an answer.
-    const node = id === null ? null : graph!.byId.get(id);
-    if (node) {
-      const path = fileOf(node);
-      if (path in files) current = path;
-    }
-    render();
-    reveal(".files .file.on");
-  }));
-  wrap.appendChild(scroll);
   wrap.appendChild(detail());
   return wrap;
 }
