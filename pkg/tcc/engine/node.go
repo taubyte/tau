@@ -479,7 +479,12 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], err
 		if err := setAttributes(n, obj, query); err != nil {
 			return nil, err
 		}
-		return obj, nil
+		if !n.Nested {
+			return obj, nil
+		}
+		// A nested resource's child groups live inside its OWN document, so they
+		// walk the same query: no config leaf, no directory descent.
+		return obj, loadChildren(n, obj, query)
 	}
 
 	// file might or might not have config, so we ignore error
@@ -488,6 +493,13 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], err
 		return nil, err
 	}
 
+	return obj, loadChildren(n, obj, query)
+}
+
+// loadChildren walks a node's child groups against the document at query. Shared by
+// group nodes (children are entries one level down) and nested resources (children
+// are keys of the resource's own document).
+func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query) error {
 	list, _ := query.List()
 
 	// Also enumerate keys nested inside the level's config.yaml so
@@ -532,7 +544,7 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], err
 				continue
 			}
 			if err := processChild(itm, l, query.Get(l)); err != nil {
-				return nil, err
+				return err
 			}
 		}
 		for _, l := range configList {
@@ -540,10 +552,10 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], err
 				continue
 			}
 			if err := processChild(itm, l, query.Get(NodeDefaultSeerLeaf).Get(l)); err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
 
-	return obj, nil
+	return nil
 }

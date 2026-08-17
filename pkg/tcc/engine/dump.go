@@ -95,6 +95,12 @@ func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], qu
 			if err := s.dumpAttributes(iterNode, resObj, docQuery); err != nil {
 				return fmt.Errorf("dumping attributes for %s/%s failed: %w", groupName, name, err)
 			}
+			// A nested resource's own groups are written into the SAME document,
+			// which is where they were read from. Without this the dump is lossy:
+			// the resource round-trips minus everything it declared.
+			if err := s.dumpNested(iterNode, resObj, docQuery); err != nil {
+				return fmt.Errorf("dumping nested groups for %s/%s failed: %w", groupName, name, err)
+			}
 			if err := docQuery.Commit(); err != nil {
 				return fmt.Errorf("committing %s/%s failed: %w", groupName, name, err)
 			}
@@ -104,6 +110,40 @@ func (s *instance) dumpChild(child *Node, obj object.Object[object.Refrence], qu
 		return fmt.Errorf("non-group child in group context")
 	}
 
+	return nil
+}
+
+// dumpNested writes a nested resource's child groups back into the resource's own
+// document — the inverse of load's nested branch. Each child group is a map keyed by
+// the entry name, holding that entry's attributes.
+func (s *instance) dumpNested(n *Node, obj object.Object[object.Refrence], query *yaseer.Query) error {
+	if !n.Nested {
+		return nil
+	}
+	for _, child := range n.Children {
+		groupName, ok := child.Match.(string)
+		if !ok || len(child.Children) == 0 {
+			continue
+		}
+		groupObj, err := obj.Child(groupName).Object()
+		if err == object.ErrNotExist {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("fetching %s failed: %w", groupName, err)
+		}
+
+		iter := child.Children[0]
+		for _, name := range groupObj.Children() {
+			entry, err := groupObj.Child(name).Object()
+			if err != nil {
+				return fmt.Errorf("fetching %s/%s failed: %w", groupName, name, err)
+			}
+			if err := s.dumpAttributes(iter, entry, query.Get(groupName).Get(name)); err != nil {
+				return fmt.Errorf("dumping %s/%s failed: %w", groupName, name, err)
+			}
+		}
+	}
 	return nil
 }
 

@@ -257,6 +257,12 @@ func GenerateJSONSchema(root []*engine.Node, opts JSONSchemaOptions) ([]byte, er
 
 // resourceMap is the "<group>: map of name -> resource" property: each authored
 // file under the group dir is one entry keyed by its name.
+// groupDoc is a group iterator's own documentation, if it declared any.
+func groupDoc(iter *engine.Node) string {
+	d, _ := iter.Meta["doc"].(string)
+	return d
+}
+
 func resourceMap(spec, group string) map[string]any {
 	return map[string]any{
 		"type":                 "object",
@@ -321,6 +327,23 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 			props.set(name, resourceMap(spec, name))
 		}
 	}
+	// A nested group with no Resource descriptor (a resource's access block) is data
+	// belonging to this kind, so it is emitted INLINE rather than as a $def: it has
+	// no type of its own and nothing else can reference it.
+	for _, node := range iter.Children {
+		name, _ := node.Match.(string)
+		if name == "" || len(node.Children) == 0 {
+			continue
+		}
+		if _, isResource := resourceSpec(node.Children[0]); isResource {
+			continue
+		}
+		props.set(name, map[string]any{
+			"type":                 "object",
+			"description":          groupDoc(node.Children[0]),
+			"additionalProperties": g.objectSchema(node.Children[0], nil, ""),
+		})
+	}
 	out := map[string]any{"type": "object", "properties": props}
 	if title != "" {
 		out["title"] = title // human display name for the kind (JSON Schema title)
@@ -364,7 +387,13 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 	switch a.Type {
 	case engine.TypeStringSlice:
 		s["type"] = "array"
-		s["items"] = map[string]any{"type": "string"}
+		items := map[string]any{"type": "string"}
+		// An enum on a LIST constrains each member, not the list: putting it on the
+		// array itself would say the whole array equals one of the strings.
+		if e, ok := a.Meta["enum"].([]string); ok {
+			items["enum"] = e
+		}
+		s["items"] = items
 	case engine.TypeBool:
 		s["type"] = "boolean"
 	case engine.TypeInt:
@@ -402,7 +431,7 @@ func (g jsonSchemaGen) attrSchema(a *engine.Attribute) map[string]any {
 		// Minted, not authored: render read-only and fill via Session.generate.
 		s[g.ext+"generated"] = gn
 	}
-	if e, ok := a.Meta["enum"].([]string); ok {
+	if e, ok := a.Meta["enum"].([]string); ok && a.Type != engine.TypeStringSlice {
 		s["enum"] = e
 	}
 	if p, ok := a.Meta["pattern"].(string); ok {

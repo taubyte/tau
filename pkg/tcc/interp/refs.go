@@ -36,13 +36,25 @@ type refAttr struct {
 }
 
 func (r *resolveRefs) Process(ct transform.Context[object.Refrence], scope object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	for _, g := range r.groups {
+	if err := resolveGroups(ct, scope, r.groups); err != nil {
+		return nil, err
+	}
+	return scope, nil
+}
+
+// resolveGroups resolves every Ref-annotated attribute of each group at this scope,
+// then recurses into a nested resource's own groups with the SAME context — a nested
+// group is data inside the resource, not a scope, so a reference written there
+// resolves against the index of the scope the resource was authored in.
+func resolveGroups(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], groups []*engine.Node) error {
+	for _, g := range groups {
 		groupKey, _ := g.Match.(string)
 		if len(g.Children) == 0 {
 			continue
 		}
-		refs := collectRefAttrs(g.Children[0].Attributes)
-		if len(refs) == 0 {
+		iter := g.Children[0]
+		refs := collectRefAttrs(iter.Attributes)
+		if len(refs) == 0 && !iter.Nested {
 			continue
 		}
 
@@ -51,19 +63,29 @@ func (r *resolveRefs) Process(ct transform.Context[object.Refrence], scope objec
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("fetching %s failed with %w", groupKey, err)
+			return fmt.Errorf("fetching %s failed with %w", groupKey, err)
 		}
 
 		for _, instName := range groupObj.Children() {
 			sel := groupObj.Child(instName)
 			for _, ra := range refs {
 				if err := resolveRefAttr(ct, sel, ra); err != nil {
-					return nil, err
+					return err
 				}
+			}
+			if !iter.Nested {
+				continue
+			}
+			instObj, err := sel.Object()
+			if err != nil {
+				return fmt.Errorf("fetching %s/%s failed with %w", groupKey, instName, err)
+			}
+			if err := resolveGroups(ct, instObj, iter.Children); err != nil {
+				return err
 			}
 		}
 	}
-	return scope, nil
+	return nil
 }
 
 // collectRefAttrs picks the Ref-annotated attributes off an iterator's attribute

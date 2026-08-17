@@ -62,7 +62,13 @@ type Attribute struct {
 type Option func(*Attribute)
 
 type Node struct {
-	Group      bool
+	Group bool
+	// Nested marks a RESOURCE iterator that also carries child groups, authored
+	// inside its own document. Distinct from Group, whose instances are scopes:
+	// a nested group is data belonging to the instance, so the instance keeps its
+	// scalar parsing, its wire-key renames and its name->id index, and names inside
+	// the group resolve where the resource was authored.
+	Nested     bool
 	Match      StringMatch
 	Attributes []*Attribute
 	Children   []*Node

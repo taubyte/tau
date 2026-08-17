@@ -101,6 +101,16 @@ func DefineIter(attrs []*Attribute, extra ...any) *Node {
 	return n
 }
 
+// Nested attaches child groups authored inside a resource's own document — an
+// `edges:`/`caches:` map in functions/checkout.yaml, not a sibling directory.
+// Passed to DefineIter alongside its attributes.
+func Nested(children ...*Node) NodeOption {
+	return func(n *Node) {
+		n.Nested = true
+		n.Children = append(n.Children, children...)
+	}
+}
+
 func DefineIterGroup(attrs []*Attribute, children ...*Node) *Node {
 	return &Node{
 		Group:      true,

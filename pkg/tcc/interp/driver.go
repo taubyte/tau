@@ -122,6 +122,22 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 				}
 			}
 		}
+
+		// A nested resource's own groups (a resource's `caches:`) are processed in
+		// the INSTANCE's object but the ENCLOSING scope's context — deliberately not
+		// forked. A nested group is data belonging to the instance, not a scope: the
+		// instance has already had its per-instance ops, its id promotion and its
+		// index, and names inside the group resolve where the resource was authored.
+		// Forking here would make the resource a scope and break both.
+		if iter.Nested {
+			instObj, err := sel.Object()
+			if err != nil {
+				return fmt.Errorf("fetching %s/%s failed with %w", groupKey, instName, err)
+			}
+			if err := d.processGroups(ct, instObj, iter.Children); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
