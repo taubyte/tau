@@ -1,0 +1,5 @@
+node_modules/
+dist/
+public/tcc.wasm
+public/wasm_exec.js
+src/gen/

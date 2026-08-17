@@ -1,0 +1,19 @@
+{
+  "name": "@taubyte/tcc-v2-explorer",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Live view of the tau v2 DSL: edit the config, compile it in the browser with tcc, see the graph it produces.",
+  "scripts": {
+    "gen": "cd ../../../../.. && go run ./tools/tcc-gen --dsl v2 --wasm --out pkg/tcc/taubyte/v2/explorer/public && go run ./tools/tcc-gen --dsl v2 --ts --out pkg/tcc/taubyte/v2/explorer/src/gen",
+    "predev": "npm run gen",
+    "dev": "vite",
+    "prebuild": "npm run gen",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0"
+  }
+}

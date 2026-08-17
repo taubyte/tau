@@ -1,0 +1,361 @@
+import "./style.css";
+import { loadTcc, type CompileOk, type Kind, type KindVerbs, type Omission } from "./wasm";
+import { buildGraph, categoryOf, setCategories, type Graph } from "./graph";
+import { drawGraph, esc, jsonRoot, type Selection } from "./render";
+
+// The example project is the SAME tree the Go tests compile
+// (pkg/tcc/taubyte/v2/fixtures/basic), pulled in raw at build time. One example,
+// asserted by tests and rendered here — not a copy that drifts.
+const raw = import.meta.glob("../../fixtures/basic/**/*.yaml", {
+  query: "?raw",
+  import: "default",
+  eager: true,
+}) as Record<string, string>;
+
+const PREFIX = "../../fixtures/basic/";
+const files: Record<string, string> = {};
+for (const [path, body] of Object.entries(raw)) {
+  files[path.slice(path.indexOf(PREFIX) + PREFIX.length)] = body;
+}
+
+let verbs: KindVerbs[] = [];
+let kinds: Kind[] = [];
+let omissions: Omission[] = [];
+let graph: Graph | null = null;
+let selection: Selection = null;
+let current = Object.keys(files).sort()[0];
+let tab: "graph" | "compiled" | "vocabulary" | "omitted" = "graph";
+
+const app = document.getElementById("app")!;
+
+async function main() {
+  const tcc = await loadTcc();
+  verbs = tcc.verbs();
+  kinds = tcc.kinds();
+  omissions = tcc.omissions();
+  setCategories(kinds);
+  render();
+}
+
+function compile(): CompileOk | { error: string } {
+  return window.tccV2!.compile(files, { branch: "main" });
+}
+
+function render() {
+  const result = compile();
+  const ok = !("error" in result);
+  if (ok) graph = buildGraph((result as CompileOk).object, verbs);
+
+  app.innerHTML = "";
+  app.appendChild(header(ok ? null : (result as { error: string }).error));
+
+  const cols = div("cols");
+  cols.appendChild(filesPane());
+  cols.appendChild(mainPane(result));
+  app.appendChild(cols);
+}
+
+function header(error: string | null): HTMLElement {
+  const h = div("head");
+  h.innerHTML = `
+    <div class="title">
+      <h1>tau v2 — the DSL</h1>
+      <p>The config on the left is compiled in this tab by tcc itself, built to
+      WebAssembly from <code>pkg/tcc/taubyte/v2/schema</code>. Edit anything and the
+      graph, the compiled object and the errors all move with it.</p>
+    </div>`;
+  const tabs = div("tabs");
+  for (const [id, label] of [
+    ["graph", "Graph"],
+    ["compiled", "Compiled object"],
+    ["vocabulary", "Vocabulary & verbs"],
+    ["omitted", "What is not here"],
+  ] as const) {
+    const b = document.createElement("button");
+    b.textContent = label;
+    b.className = tab === id ? "on" : "";
+    b.onclick = () => {
+      tab = id;
+      render();
+    };
+    tabs.appendChild(b);
+  }
+  h.appendChild(tabs);
+  if (error) {
+    const e = div("err");
+    e.innerHTML = `<b>compile failed</b><pre>${esc(error)}</pre>`;
+    h.appendChild(e);
+  }
+  return h;
+}
+
+function filesPane(): HTMLElement {
+  const pane = div("pane files");
+  const tree = div("tree");
+  tree.appendChild(fileTree());
+  pane.appendChild(sectionTitle("the config tree", `${Object.keys(files).length} files`));
+  pane.appendChild(tree);
+
+  pane.appendChild(sectionTitle(current, "editable — compiles on every keystroke"));
+  const ta = document.createElement("textarea");
+  ta.value = files[current] ?? "";
+  ta.spellcheck = false;
+  ta.oninput = () => {
+    files[current] = ta.value;
+    const pos = ta.selectionStart;
+    render();
+    const next = document.querySelector<HTMLTextAreaElement>(".files textarea");
+    if (next) {
+      next.focus();
+      next.selectionStart = next.selectionEnd = pos;
+    }
+  };
+  pane.appendChild(ta);
+  return pane;
+}
+
+// A real directory tree, because the layout IS part of the DSL: a resource is a file
+// under its kind's directory, and a namespace is a directory with a config.yaml and
+// resource directories of its own.
+function fileTree(): HTMLElement {
+  const root: Dir = { dirs: new Map(), files: [] };
+  for (const path of Object.keys(files).sort()) {
+    const parts = path.split("/");
+    let node = root;
+    for (const seg of parts.slice(0, -1)) {
+      if (!node.dirs.has(seg)) node.dirs.set(seg, { dirs: new Map(), files: [] });
+      node = node.dirs.get(seg)!;
+    }
+    node.files.push([parts[parts.length - 1], path]);
+  }
+  return dirEl(root);
+}
+interface Dir {
+  dirs: Map<string, Dir>;
+  files: [string, string][];
+}
+function dirEl(d: Dir): HTMLElement {
+  const wrap = document.createElement("div");
+  for (const [name, child] of [...d.dirs].sort(([a], [b]) => a.localeCompare(b))) {
+    const line = document.createElement("div");
+    line.className = "dir";
+    line.textContent = name + "/";
+    wrap.appendChild(line);
+    const kids = document.createElement("div");
+    kids.className = "kids";
+    kids.appendChild(dirEl(child));
+    wrap.appendChild(kids);
+  }
+  for (const [name, path] of d.files) {
+    const line = document.createElement("div");
+    line.className = "file" + (path === current ? " on" : "");
+    line.textContent = name;
+    line.onclick = () => {
+      current = path;
+      render();
+    };
+    wrap.appendChild(line);
+  }
+  return wrap;
+}
+
+function mainPane(result: CompileOk | { error: string }): HTMLElement {
+  const pane = div("pane main");
+  if (tab === "vocabulary") {
+    pane.appendChild(vocabulary());
+    return pane;
+  }
+  if (tab === "omitted") {
+    pane.appendChild(omitted());
+    return pane;
+  }
+  if ("error" in result) {
+    pane.appendChild(sectionTitle("nothing to show", "fix the error above"));
+    return pane;
+  }
+  if (tab === "compiled") {
+    pane.appendChild(
+      sectionTitle(
+        "the compiled object",
+        "a nested map, shown as JSON. On the wire it is CBOR in TNS — never YAML.",
+      ),
+    );
+    pane.appendChild(jsonRoot(result.object, "project", 3));
+    if (result.validations?.length) {
+      pane.appendChild(
+        sectionTitle("deferred validations", "checks the compiler cannot answer alone"),
+      );
+      pane.appendChild(jsonRoot(result.validations, "validations", 3));
+    }
+    return pane;
+  }
+  pane.appendChild(graphPane());
+  return pane;
+}
+
+function graphPane(): HTMLElement {
+  const wrap = div("graphwrap");
+  wrap.appendChild(
+    sectionTitle(
+      "the graph the config already is",
+      "every arrow is a use declared in the resource at its tail",
+    ),
+  );
+  wrap.appendChild(legend());
+
+  const scroll = div("scroll");
+  scroll.appendChild(drawGraph(graph!, selection, (id) => {
+    selection = id === null ? null : { id, mode: selection?.id === id && selection.mode === "blast" ? "reach" : "blast" };
+    render();
+  }));
+  wrap.appendChild(scroll);
+  wrap.appendChild(detail());
+  return wrap;
+}
+
+function legend(): HTMLElement {
+  const l = div("legend");
+  l.innerHTML = `
+    <span><i class="sw read"></i>read</span>
+    <span><i class="sw write"></i>write</span>
+    <span><i class="sw ref"></i>reference (no verb)</span>
+    <span class="hint">click a resource for its blast radius · click it again for what can reach it</span>`;
+  return l;
+}
+
+function detail(): HTMLElement {
+  const d = div("detail");
+  if (!selection || !graph) {
+    // What is reachable from outside is: every resource that compiled a name, plus
+    // whatever attaches to it. A traversal, not a scan of every file.
+    const named = graph ? graph.nodes.filter((n) => n.fqdn) : [];
+    d.innerHTML = `<p class="hint">${
+      named.length
+        ? named
+            .map((n) => {
+              // what a name reaches is what it hands requests to, which is an
+              // arrow OUT of it — the gateway is the tail of its own route
+              const serves = graph!.arrows
+                .filter((a) => a.from === n.id && !a.ref)
+                .map((a) => graph!.byId.get(a.to)!)
+                .map((t) => `<code>${esc(t.kind)}/${esc(t.name)}</code>${t.scope ? ` <span class="c">in ${esc(t.scope)}</span>` : ""}`);
+              return `<b>${esc(n.fqdn!)}</b> — <code>${esc(n.kind)}/${esc(n.name)}</code>${
+                serves.length ? ` serves ${serves.join(", ")}` : " serves nothing yet"
+              }.`;
+            })
+            .join("<br>")
+        : "Nothing compiled an fqdn, so nothing answers from the internet."
+    }</p>`;
+    return d;
+  }
+  const n = graph.byId.get(selection.id)!;
+  const outs = graph.arrows.filter((a) => a.from === n.id);
+  const ins = graph.arrows.filter((a) => a.to === n.id);
+  const line = (a: { verb: string; effect: string }, other: string) =>
+    `<li><span class="verb ${a.effect}">${esc(a.verb)}</span> ${esc(other)}</li>`;
+  d.innerHTML = `
+    <h3>${esc(n.kind)}/${esc(n.name)}${n.scope ? ` <span class="c">in ${esc(n.scope)}</span>` : ""}</h3>
+    <div class="two">
+      <div><h4>uses</h4><ul>${
+        outs.map((a) => line(a, `${graph!.byId.get(a.to)!.kind}/${graph!.byId.get(a.to)!.name}`)).join("") ||
+        "<li class='hint'>nothing</li>"
+      }</ul></div>
+      <div><h4>used by</h4><ul>${
+        ins.map((a) => line(a, `${graph!.byId.get(a.from)!.kind}/${graph!.byId.get(a.from)!.name}`)).join("") ||
+        "<li class='hint'>nothing — unreachable</li>"
+      }</ul></div>
+    </div>
+    <p class="hint">showing ${selection.mode === "blast" ? "what this reaches" : "what reaches this"}</p>`;
+  return d;
+}
+
+function vocabulary(): HTMLElement {
+  const wrap = div("vocab");
+  wrap.appendChild(sectionTitle("the vocabulary", `${kinds.length} kinds, read off the schema`));
+  const t = document.createElement("table");
+  t.innerHTML =
+    "<thead><tr><th>kind</th><th>what it is</th><th>its own fields</th></tr></thead><tbody>" +
+    kinds
+      .map(
+        (k) =>
+          `<tr><td><code class="${categoryOf(k.group)}">${esc(k.group)}</code>${
+            k.container ? ' <span class="tag">scope</span>' : ""
+          }</td><td>${esc(k.doc)}</td><td class="fields">${esc(k.fields.join(", "))}</td></tr>`,
+      )
+      .join("") +
+    "</tbody></table>";
+  wrap.appendChild(t);
+
+  wrap.appendChild(
+    sectionTitle("verbs and effect classes", "per kind, because a standard verb set breaks on the second one"),
+  );
+  const v = document.createElement("table");
+  v.innerHTML =
+    "<thead><tr><th>target kind</th><th>verbs</th></tr></thead><tbody>" +
+    [...verbs]
+      .sort((a, b) => a.kind.localeCompare(b.kind))
+      .map(
+        (kv) =>
+          `<tr><td><code>${esc(kv.kind)}</code></td><td>${kv.verbs
+            .map((x) => `<span class="verb ${x.effect}">${esc(x.name)}</span>`)
+            .join(" ")}</td></tr>`,
+      )
+      .join("") +
+    "</tbody></table>";
+  wrap.appendChild(v);
+  return wrap;
+}
+
+// A closed vocabulary is only honest if you can see what it closed out. Every entry
+// here is declared next to the kinds, so "why is there no X" has an answer in the
+// same place the kinds do — and an answer that cannot quietly go stale.
+function omitted(): HTMLElement {
+  const wrap = div("vocab");
+  const label: Record<string, string> = {
+    never: "refused",
+    blocked: "nothing to author yet",
+    open: "owner decision",
+  };
+  for (const state of ["never", "blocked", "open"] as const) {
+    const rows = omissions.filter((o) => o.state === state);
+    if (!rows.length) continue;
+    wrap.appendChild(sectionTitle(label[state], `${rows.length}`));
+    const t = document.createElement("table");
+    t.innerHTML =
+      `<thead><tr><th>not a kind</th><th>why</th><th>${
+        state === "never" ? "instead" : "instead / what unblocks it"
+      }</th></tr></thead><tbody>` +
+      rows
+        .map(
+          (o) =>
+            `<tr><td><code class="om ${o.state}">${esc(o.name)}</code></td><td>${esc(o.why)}</td><td>${
+              [
+                o.instead ? `<b>use</b> ${esc(o.instead)}` : "",
+                o.unblocks ? `<b>needs</b> ${esc(o.unblocks)}` : "",
+              ]
+                .filter(Boolean)
+                .join("<br>") || "&mdash;"
+            }</td></tr>`,
+        )
+        .join("") +
+      "</tbody></table>";
+    wrap.appendChild(t);
+  }
+  return wrap;
+}
+
+function div(cls: string): HTMLElement {
+  const d = document.createElement("div");
+  d.className = cls;
+  return d;
+}
+function sectionTitle(title: string, sub = ""): HTMLElement {
+  const h = div("st");
+  h.innerHTML = `<h2>${esc(title)}</h2>${sub ? `<span>${esc(sub)}</span>` : ""}`;
+  return h;
+}
+
+main().catch((e) => {
+  app.innerHTML = `<div class="err"><b>failed to start</b><pre>${esc(String(e))}</pre>
+  <p>Run <code>npm run build:wasm</code> first, or use <code>npm run dev</code> which does it for you.</p></div>`;
+});
