@@ -152,7 +152,13 @@ function dirEl(d: Dir): HTMLElement {
     line.textContent = name;
     line.onclick = () => {
       current = path;
+      // The tree and the graph are two views of one resource, so selecting in
+      // either selects in both. A file with no node — a namespace's config.yaml —
+      // clears the selection rather than leaving one pointing somewhere else.
+      const node = graph?.nodes.find((n) => fileOf(n) === path);
+      selection = node ? { id: node.id, mode: "blast" } : null;
       render();
+      reveal("svg .node.selected");
     };
     wrap.appendChild(line);
   }
@@ -214,6 +220,7 @@ function graphPane(): HTMLElement {
       if (path in files) current = path;
     }
     render();
+    reveal(".files .file.on");
   }));
   wrap.appendChild(scroll);
   wrap.appendChild(detail());
@@ -227,6 +234,15 @@ function graphPane(): HTMLElement {
 function fileOf(n: { kind: string; name: string; scope: string }): string {
   const dirs = n.scope ? n.scope.split("/").map((s) => `namespaces/${s}`).join("/") + "/" : "";
   return `${dirs}${n.kind}/${n.name}.yaml`;
+}
+
+// Both panes scroll and both are longer than their viewport, so a selection made in
+// one is often off-screen in the other — and a selection you cannot see reads as
+// nothing having happened. Each direction reveals the OTHER pane: the one you clicked
+// in is already where you are looking. "nearest" so an already-visible target does not
+// move at all.
+function reveal(sel: string): void {
+  document.querySelector(sel)?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
 }
 
 function legend(): HTMLElement {
