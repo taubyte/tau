@@ -418,9 +418,18 @@ const ROW = 58;
 // not in it — a diagram that lies about the one boundary it exists to show.
 function place(cols: Map<number, Node[]>) {
   const all = [...cols.values()].flat();
-  const bands = [...new Set(all.map((n) => n.scope))].sort((a, b) =>
-    a === "" ? -1 : b === "" ? 1 : a.localeCompare(b),
-  );
+  // Sorted BY PATH SEGMENT, not as strings: a child band has to sit immediately
+  // below its parent's, because the parent's box is drawn around both and anything
+  // landing between them would be enclosed by a namespace it is not in.
+  const bands = [...new Set(all.map((n) => n.scope))].sort((a, b) => {
+    if (a === "") return -1;
+    if (b === "") return 1;
+    const as = a.split("/"), bs = b.split("/");
+    for (let i = 0; i < Math.min(as.length, bs.length); i++) {
+      if (as[i] !== bs[i]) return as[i].localeCompare(bs[i]);
+    }
+    return as.length - bs.length;
+  });
 
   const BAND_GAP = 30;
   const bandY = new Map<string, number>();
@@ -428,7 +437,8 @@ function place(cols: Map<number, Node[]>) {
   for (const band of bands) {
     bandY.set(band, y);
     const tallest = Math.max(...[...cols.values()].map((c) => c.filter((n) => n.scope === band).length));
-    y += tallest * ROW + BAND_GAP;
+    // a deeper band draws a box inside its parent's, so leave room for both edges
+    y += tallest * ROW + BAND_GAP + (band.split("/").length - 1) * 12;
   }
 
   for (const [layer, col] of cols) {

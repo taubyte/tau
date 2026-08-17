@@ -62,14 +62,22 @@ export function drawGraph(g: Graph, sel: Selection, onPick: (id: string | null) 
   // nested copy of every resource group. A resource inside one resolves names in
   // its own scope first and falls back to the project root — so the box is not
   // decoration, it is the boundary the compiler applied.
+  // A namespace holds namespaces, so its box has to CONTAIN theirs — shop/eu is
+  // inside shop, not beside it. That means a scope's extent is its own resources plus
+  // every descendant's, and outer boxes take extra padding so the nesting is visible
+  // as nesting rather than as two rectangles sharing an edge.
+  const depthOf = (s: string) => s.split("/").length;
+  const maxDepth = Math.max(1, ...g.scopes.map(depthOf));
+
   const scopeLayer = el("g", { class: "scopes" });
   for (const scope of g.scopes) {
-    const inside = g.nodes.filter((n) => n.scope === scope);
+    const inside = g.nodes.filter((n) => n.scope === scope || n.scope.startsWith(scope + "/"));
     if (!inside.length) continue;
-    const x = Math.min(...inside.map((n) => n.x)) - 10;
-    const y = Math.min(...inside.map((n) => n.y)) - 22;
-    const w = Math.max(...inside.map((n) => n.x + NODE_W)) + 10 - x;
-    const h = Math.max(...inside.map((n) => n.y + NODE_H)) + 10 - y;
+    const pad = 10 + 9 * (maxDepth - depthOf(scope));
+    const x = Math.min(...inside.map((n) => n.x)) - pad;
+    const y = Math.min(...inside.map((n) => n.y)) - 22 - (maxDepth - depthOf(scope)) * 9;
+    const w = Math.max(...inside.map((n) => n.x + NODE_W)) + pad - x;
+    const h = Math.max(...inside.map((n) => n.y + NODE_H)) + pad - y;
     const box = el("g", { class: "scope" });
     box.appendChild(el("rect", { x, y, width: w, height: h, rx: 8, class: "scopebox" }));
     const label = el("text", { x: x + 10, y: y + 14, class: "scopelabel" });
