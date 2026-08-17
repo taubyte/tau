@@ -59,6 +59,18 @@ func namespace(t *testing.T, obj map[string]any, name string) map[string]any {
 	return nil
 }
 
+// namedResource picks one compiled instance by its authored name.
+func namedResource(t *testing.T, group map[string]any, name string) map[string]any {
+	t.Helper()
+	for _, v := range group {
+		if r := v.(map[string]any); r["name"] == name {
+			return r
+		}
+	}
+	t.Fatalf("no resource named %q", name)
+	return nil
+}
+
 func compileBasic(t *testing.T) map[string]any {
 	t.Helper()
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
@@ -72,7 +84,7 @@ func compileBasic(t *testing.T) map[string]any {
 // back, the trigger block was extended rather than deleted and reachability is
 // still the function's business.
 func TestFunctionHasNoTrigger(t *testing.T) {
-	fn := only(t, resources(t, compileBasic(t), "functions"))
+	fn := namedResource(t, resources(t, compileBasic(t), "functions"), "checkout")
 
 	for _, gone := range []string{"type", "local", "channel", "protocol", "command", "method", "methods", "domains", "paths", "secure"} {
 		_, present := fn[gone]
@@ -94,7 +106,7 @@ func TestModuleSourceResolves(t *testing.T) {
 	}
 	assert.Assert(t, modID != "", "no module compiled")
 
-	fn := only(t, resources(t, flat, "functions"))
+	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
 	assert.Equal(t, fn["source"], "module/"+modID)
 }
 
@@ -167,7 +179,7 @@ func TestNamespaceScope(t *testing.T) {
 // own document, so the resource stays a plain file with its id at the root.
 func TestAccessIsPerTarget(t *testing.T) {
 	flat := compileBasic(t)
-	fn := only(t, resources(t, flat, "functions"))
+	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
 
 	caches, ok := fn["caches"].(map[string]any)
 	assert.Assert(t, ok, "no caches block on the function")
@@ -231,7 +243,7 @@ func TestGatewayRoute(t *testing.T) {
 	assert.Assert(t, !standalone, "routes must not be a resource kind")
 
 	// and the function itself still says nothing about being reachable
-	fn := only(t, resources(t, flat, "functions"))
+	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
 	for _, gone := range []string{"domains", "paths", "method", "type"} {
 		_, present := fn[gone]
 		assert.Assert(t, !present, "functions carries %q", gone)
@@ -375,7 +387,7 @@ func TestAccessNamesItsScope(t *testing.T) {
 	assert.Assert(t, !scoped, "a target in the resource's own scope needs no namespace")
 
 	// and from the project root, reaching into a namespace
-	fn := only(t, resources(t, flat, "functions"))
+	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
 	elsewhere := fn["caches"].(map[string]any)["sessions"].(map[string]any)
 	assert.Equal(t, elsewhere["namespace"], "/shop")
 
@@ -506,15 +518,20 @@ func TestNamespacePathForms(t *testing.T) {
 func TestAccessEntryModifiers(t *testing.T) {
 	flat := compileBasic(t)
 
-	var authID string
-	for id := range resources(t, flat, "authorizers") {
-		authID = id
-	}
-	assert.Assert(t, authID != "", "no authorizer compiled")
+	// an authorizer is a FUNCTION built against the authorizer interface, not a kind
+	_, kind := root(t, flat)["authorizers"]
+	assert.Assert(t, !kind, "authorizers must not be a resource kind")
 
-	fn := only(t, resources(t, flat, "functions"))
+	var fn map[string]any
+	for _, v := range resources(t, flat, "functions") {
+		if r := v.(map[string]any); r["name"] == "checkout" {
+			fn = r
+		}
+	}
+	assert.Assert(t, fn != nil)
 	orders := fn["caches"].(map[string]any)["orders"].(map[string]any)
-	assert.Equal(t, orders["via"], "authorizers/"+authID, "via resolves like any other reference")
+	// addressed the way every target is: a name, and a namespace path when needed
+	assert.Equal(t, orders["via"], "paid_tier")
 	assert.Equal(t, orders["timeout"], int64(200000000), "200ms parses to nanoseconds")
 
 	// and an entry that names neither carries neither

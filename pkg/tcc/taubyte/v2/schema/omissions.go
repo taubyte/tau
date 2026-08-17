@@ -201,6 +201,40 @@ var Omissions = []Omission{
 		Unblocks: "an attribute type that can hold a list of objects, or a nested group under a resource.",
 	},
 	{
+		Name:    "authorizers",
+		State:   Never,
+		Decided: ByOwner,
+		Why: "It was declared with exactly a function's fields and nothing else. What makes a " +
+			"function an authorizer is the host interface it is built against — it is handed the " +
+			"operation and answers yes or no — and that is a property of the artifact, not of the " +
+			"config. A kind that adds no field is a second name for the same thing.",
+		Instead: "a function, named by an access entry's `via`.",
+	},
+	{
+		Name:    "traffic transformers on a route",
+		State:   Open,
+		Decided: ByDefault,
+		Why: "A gateway can deny (an authorizer) but cannot TRANSFORM: strip a prefix, rewrite a " +
+			"path, set a header, compress, redirect, retry, break a circuit. Traefik models these " +
+			"as named middlewares with a type and per-type settings, chained in order on the " +
+			"router, and that shape now fits — a type is an Either switch and a chain is an " +
+			"ordered list of references. What is undecided is the set: shipping half of " +
+			"Traefik's two dozen is worse than shipping a named few, and which few is a product " +
+			"call.",
+		Instead:  "nothing. A route matches and dispatches; it does not touch the request.",
+		Unblocks: "a decision on the set, then one kind with a type switch.",
+	},
+	{
+		Name:    "validation of a resource's own name",
+		State:   Blocked,
+		Decided: Forced,
+		Why: "A resource's name comes from its FILE name, and the compile driver sets it without " +
+			"checking — so `paid-tier.yaml` yields a name that IsVariableName() would reject, " +
+			"while a reference written to it is checked and fails. The two ends disagree.",
+		Instead:  "keep resource file names to variable names by convention.",
+		Unblocks: "the driver validating the name it derives, which is not this package's to change.",
+	},
+	{
 		Name:    "mount and event filters on a use",
 		State:   Blocked,
 		Decided: Forced,

@@ -170,6 +170,11 @@ var V2Resources = []*Node{
 
 	// A function is now only code plus limits. Nine attributes, one section, three
 	// conditional sections and the domains foreign key left with the trigger block.
+	//
+	// An AUTHORIZER is one of these, not a kind of its own: it was declared with
+	// exactly a function's fields and nothing else, and what distinguishes it is the
+	// host interface it is built against — it is handed the operation and answers
+	// yes or no — which is a property of the artifact, not of the config.
 	DefineGroup("functions",
 		resource(
 			wasmAttributes(),
@@ -222,19 +227,6 @@ var V2Resources = []*Node{
 			secIdentity, secAccess,
 			Resource("crons", "Cron", "Cron", "cron"),
 		)),
-
-	// A WASM function that decides ONE access, at the moment it happens, with the
-	// operation detail in hand. Named by an edge's `via`. Ceiling never floor: it
-	// can only narrow the static edge (edges.md §4).
-	DefineGroup("authorizers",
-		resource(
-			wasmAttributes(),
-			GroupDoc("Request-scoped authorization code named by an edge's via. It can only deny."), Icon("shield"), Category("compute"),
-			secIdentity, secAccess, secCode, secLimits,
-			Resource("authorizers", "Authorizer", "Authorizer", "authorizer"),
-		)),
-
-	// ---- code artifacts ----
 
 	DefineGroup("module",
 		resource(

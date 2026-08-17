@@ -129,8 +129,15 @@ func accessGroups() []*Node {
 				// Per-use modifiers. These were unexpressible while access was a
 				// verb-keyed list of names: there was no per-target place to put
 				// them. An entry is that place.
-				String("via", Ref("authorizers", Prefix("authorizers/")), InSection("access"),
-					Doc("Via", "An authorizer consulted per operation, as \"authorizers/<name>\". It can only narrow this entry, never widen it, and a failure is a denial.")),
+				// Addressed the way every target is — {namespace, name} — because one
+				// addressing form is the point. An authorizer is a FUNCTION, built
+				// against the authorizer host interface rather than the workload one;
+				// it is not a kind of its own, since it would carry exactly a
+				// function's fields and nothing else.
+				String("via", Path("via", "name"), IsVariableName(), InSection("access"),
+					Doc("Via", "A function consulted per operation, built against the authorizer interface. It can only narrow this entry, never widen it, and a failure is a denial.")),
+				String("via-namespace", Path("via", "namespace"), IsNamespacePath(), InSection("access"),
+					Doc("Via Namespace", "Where that function lives. Same forms as any namespace path; omitted means this resource's own scope, then its parents.")),
 				Duration("timeout", InSection("access"),
 					Doc("Timeout", "How long one operation on it may take before it is given up on.")),
 			},

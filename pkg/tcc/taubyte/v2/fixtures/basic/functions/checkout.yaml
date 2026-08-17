@@ -8,7 +8,8 @@ execution:
 caches:
     orders:
         ops: [get, put]
-        via: authorizers/paid-tier
+        via:
+            name: paid_tier
         timeout: 200ms
     sessions:
         namespace: /shop

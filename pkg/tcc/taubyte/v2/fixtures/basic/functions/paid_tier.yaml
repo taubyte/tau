@@ -1,5 +1,5 @@
 id: QmQwsLKS7hLCkVCFPYqjHhLNxjnkNCiJqBFPPbrmvSaWAd
-description: decides per key, with the operation in hand; it can only deny
+description: an authorizer - a function built against the authorizer interface, given the operation and answering yes or no
 source: "."
 execution:
     call: authorize
