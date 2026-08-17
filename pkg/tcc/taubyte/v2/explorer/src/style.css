@@ -75,8 +75,11 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
 .legend .sw.policy { background: repeating-linear-gradient(90deg, var(--acc) 0 2px, transparent 2px 6px); }
 .legend .sw.ref { background: repeating-linear-gradient(90deg, var(--mut) 0 4px, transparent 4px 8px); }
 .legend .hint { margin-left: auto; }
-.scroll { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: .5rem; }
-svg.graph { display: block; max-width: 100%; height: auto; }
+.scroll { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: .5rem; max-height: 78vh; }
+/* Intrinsic size, and the pane scrolls. `max-width: 100%` scaled the whole drawing
+   down to fit instead, which on a real project means every label is too small to
+   read - a diagram that fits and cannot be read is not a smaller diagram. */
+svg.graph { display: block; }
 .scopebox { fill: color-mix(in srgb, var(--internet) 6%, transparent); stroke: var(--internet); stroke-width: 1; stroke-dasharray: 5 4; opacity: .85; }
 .scopelabel { font-family: ui-monospace, monospace; font-size: 9.5px; letter-spacing: .04em; fill: var(--internet); text-transform: uppercase; }
 .node .box { fill: var(--card); stroke: var(--line); stroke-width: 1.5; }

@@ -4,7 +4,6 @@
 import {
   blastRadius,
   categoryOf,
-  extent,
   NODE_H,
   NODE_W,
   reachesFrom,
@@ -12,6 +11,7 @@ import {
   type Graph,
   type Node,
 } from "./graph";
+import { routeKey, type Placed } from "./layout";
 
 const NS = "http://www.w3.org/2000/svg";
 const el = <K extends keyof SVGElementTagNameMap>(t: K, attrs: Record<string, string | number> = {}) => {
@@ -22,8 +22,13 @@ const el = <K extends keyof SVGElementTagNameMap>(t: K, attrs: Record<string, st
 
 export type Selection = { id: string; mode: "blast" | "reach" } | null;
 
-export function drawGraph(g: Graph, sel: Selection, onPick: (id: string | null) => void): SVGSVGElement {
-  const { w, h } = extent(g.nodes);
+export function drawGraph(
+  g: Graph,
+  placed: Placed,
+  sel: Selection,
+  onPick: (id: string | null) => void,
+): SVGSVGElement {
+  const { w, h } = placed;
   const svg = el("svg", {
     viewBox: `0 0 ${w} ${h}`,
     // Intrinsic size in CSS pixels; the stylesheet caps width at 100% so a wide
@@ -62,26 +67,16 @@ export function drawGraph(g: Graph, sel: Selection, onPick: (id: string | null) 
   // nested copy of every resource group. A resource inside one resolves names in
   // its own scope first and falls back to the project root — so the box is not
   // decoration, it is the boundary the compiler applied.
-  // A namespace holds namespaces, so its box has to CONTAIN theirs — shop/eu is
-  // inside shop, not beside it. That means a scope's extent is its own resources plus
-  // every descendant's, and outer boxes take extra padding so the nesting is visible
-  // as nesting rather than as two rectangles sharing an edge.
-  const depthOf = (s: string) => s.split("/").length;
-  const maxDepth = Math.max(1, ...g.scopes.map(depthOf));
-
+  // The frames come from the layout, which placed the children inside them. They are
+  // no longer an extent measured around a set of nodes and hoped to agree with the
+  // compiler's idea of the boundary — shop/eu is inside shop because ELK put it
+  // there.
   const scopeLayer = el("g", { class: "scopes" });
-  for (const scope of g.scopes) {
-    const inside = g.nodes.filter((n) => n.scope === scope || n.scope.startsWith(scope + "/"));
-    if (!inside.length) continue;
-    const pad = 10 + 9 * (maxDepth - depthOf(scope));
-    const x = Math.min(...inside.map((n) => n.x)) - pad;
-    const y = Math.min(...inside.map((n) => n.y)) - 22 - (maxDepth - depthOf(scope)) * 9;
-    const w = Math.max(...inside.map((n) => n.x + NODE_W)) + pad - x;
-    const h = Math.max(...inside.map((n) => n.y + NODE_H)) + pad - y;
+  for (const s of placed.scopes) {
     const box = el("g", { class: "scope" });
-    box.appendChild(el("rect", { x, y, width: w, height: h, rx: 8, class: "scopebox" }));
-    const label = el("text", { x: x + 10, y: y + 14, class: "scopelabel" });
-    label.textContent = `namespace · ${scope}`;
+    box.appendChild(el("rect", { x: s.x, y: s.y, width: s.w, height: s.h, rx: 8, class: "scopebox" }));
+    const label = el("text", { x: s.x + 10, y: s.y + 18, class: "scopelabel" });
+    label.textContent = `namespace · ${s.scope}`;
     box.appendChild(label);
     scopeLayer.appendChild(box);
   }
@@ -92,7 +87,7 @@ export function drawGraph(g: Graph, sel: Selection, onPick: (id: string | null) 
     const from = g.byId.get(a.from)!;
     const to = g.byId.get(a.to)!;
     const dim = highlight !== null && !(highlight.has(a.from) && highlight.has(a.to));
-    arrowLayer.appendChild(edgePath(from, to, a, dim));
+    arrowLayer.appendChild(edgePath(from, to, a, dim, placed.routes.get(routeKey(a))));
   }
   svg.appendChild(arrowLayer);
 
@@ -113,17 +108,14 @@ function pickHighlight(g: Graph, sel: Selection): Set<string> | null {
   return reached;
 }
 
-function edgePath(from: Node, to: Node, a: Arrow, dim: boolean): SVGElement {
-  const x1 = from.x + NODE_W;
-  const y1 = from.y + NODE_H / 2;
-  const x2 = to.x;
-  const y2 = to.y + NODE_H / 2;
-  const backwards = x2 < x1;
-  // A backward arrow bows above the columns so it reads as going the other way
-  // rather than disappearing behind the boxes it crosses.
-  const d = backwards
-    ? `M${x1},${y1} C${x1 + 60},${y1 - 46} ${x2 - 60},${y2 - 46} ${x2},${y2}`
-    : `M${x1},${y1} C${x1 + (x2 - x1) / 2},${y1} ${x1 + (x2 - x1) / 2},${y2} ${x2},${y2}`;
+function edgePath(
+  from: Node,
+  to: Node,
+  a: Arrow,
+  dim: boolean,
+  route?: { x: number; y: number }[],
+): SVGElement {
+  const d = route && route.length >= 2 ? curveThrough(route) : straight(from, to);
   const cls = dim ? "dim" : a.policy ? "policy" : a.ref ? "ref" : a.effect;
   const g = el("g", { class: `arrow ${cls}` });
   const p = el("path", {
@@ -140,6 +132,30 @@ function edgePath(from: Node, to: Node, a: Arrow, dim: boolean): SVGElement {
   p.appendChild(title);
   g.appendChild(p);
   return g;
+}
+
+// ELK hands back a polyline routed around the boxes. Drawing it as straight segments
+// is accurate and ugly; a Catmull-Rom pass through the same points keeps every bend
+// ELK chose and rounds the corners, so the line still avoids what it was routed to
+// avoid.
+function curveThrough(p: { x: number; y: number }[]): string {
+  if (p.length === 2) return `M${p[0].x},${p[0].y} L${p[1].x},${p[1].y}`;
+  let d = `M${p[0].x},${p[0].y}`;
+  for (let i = 0; i < p.length - 1; i++) {
+    const p0 = p[i - 1] ?? p[i];
+    const p1 = p[i];
+    const p2 = p[i + 1];
+    const p3 = p[i + 2] ?? p2;
+    const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
+    const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
+    d += ` C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`;
+  }
+  return d;
+}
+
+// Only reached if a layout ever comes back without a section for an edge.
+function straight(from: Node, to: Node): string {
+  return `M${from.x + NODE_W},${from.y + NODE_H / 2} L${to.x},${to.y + NODE_H / 2}`;
 }
 
 function nodeBox(n: Node, highlight: Set<string> | null, selected: boolean, onPick: (id: string) => void): SVGElement {

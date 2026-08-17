@@ -2,6 +2,7 @@ import "./style.css";
 import { loadTcc, type CompileOk, type Kind, type KindVerbs, type Omission } from "./wasm";
 import { buildGraph, categoryOf, setCategories, type Graph } from "./graph";
 import { drawGraph, esc, jsonRoot, type Selection } from "./render";
+import { place, type Placed } from "./layout";
 
 // The example project is the SAME tree the Go tests compile
 // (pkg/tcc/taubyte/v2/fixtures/basic), pulled in raw at build time. One example,
@@ -22,6 +23,14 @@ let verbs: KindVerbs[] = [];
 let kinds: Kind[] = [];
 let omissions: Omission[] = [];
 let graph: Graph | null = null;
+// Layout is asynchronous now, so what is on screen is the LAST layout that finished.
+// placedFor pins it to the graph it was computed from: a compile can land while a
+// layout is still running, and drawing new nodes with old coordinates is worse than
+// drawing nothing.
+let placed: Placed | null = null;
+let placedFor: Graph | null = null;
+let lastResult: CompileOk | { error: string } | null = null;
+let layoutSeq = 0;
 let selection: Selection = null;
 let current = Object.keys(files).sort()[0];
 let tab: "graph" | "compiled" | "vocabulary" | "omitted" = "graph";
@@ -42,9 +51,33 @@ function compile(): CompileOk | { error: string } {
 }
 
 function render() {
-  const result = compile();
+  lastResult = compile();
+  if (!("error" in lastResult)) {
+    graph = buildGraph(lastResult.object, verbs);
+    const g = graph;
+    const seq = ++layoutSeq;
+    // A keystroke while a layout is in flight makes that layout stale; the counter
+    // is what stops it landing after the one it lost to.
+    place(g.nodes, g.arrows).then((p) => {
+      if (seq !== layoutSeq) return;
+      placed = p;
+      placedFor = g;
+      paint();
+    });
+  }
+  paint();
+}
+
+// paint rebuilds the DOM from whatever is currently known. It runs on every compile
+// and again when a layout resolves, so anything the user was doing has to survive it
+// — which is why the caret is restored here rather than at one call site.
+function paint() {
+  const result = lastResult!;
   const ok = !("error" in result);
-  if (ok) graph = buildGraph((result as CompileOk).object, verbs);
+
+  const editor = document.querySelector<HTMLTextAreaElement>(".files textarea");
+  const hadFocus = editor !== null && document.activeElement === editor;
+  const caret = editor?.selectionStart ?? 0;
 
   app.innerHTML = "";
   app.appendChild(header(ok ? null : (result as { error: string }).error));
@@ -53,6 +86,14 @@ function render() {
   cols.appendChild(filesPane());
   cols.appendChild(mainPane(result));
   app.appendChild(cols);
+
+  if (hadFocus) {
+    const next = document.querySelector<HTMLTextAreaElement>(".files textarea");
+    if (next) {
+      next.focus();
+      next.selectionStart = next.selectionEnd = caret;
+    }
+  }
 }
 
 function header(error: string | null): HTMLElement {
@@ -102,13 +143,7 @@ function filesPane(): HTMLElement {
   ta.spellcheck = false;
   ta.oninput = () => {
     files[current] = ta.value;
-    const pos = ta.selectionStart;
-    render();
-    const next = document.querySelector<HTMLTextAreaElement>(".files textarea");
-    if (next) {
-      next.focus();
-      next.selectionStart = next.selectionEnd = pos;
-    }
+    render(); // paint() puts the caret back, on this pass and on the layout's
   };
   pane.appendChild(ta);
   return pane;
@@ -210,7 +245,12 @@ function graphPane(): HTMLElement {
   wrap.appendChild(legend());
 
   const scroll = div("scroll");
-  scroll.appendChild(drawGraph(graph!, selection, (id) => {
+  if (!graph || !placed || placedFor !== graph) {
+    scroll.innerHTML = `<p class="hint">laying out…</p>`;
+    wrap.appendChild(scroll);
+    return wrap;
+  }
+  scroll.appendChild(drawGraph(graph, placed, selection, (id) => {
     selection = id === null ? null : { id, mode: selection?.id === id && selection.mode === "blast" ? "reach" : "blast" };
     // Picking a node opens its file. The graph and the tree are two views of one
     // thing, and a node whose source you cannot read is half an answer.
