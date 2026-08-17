@@ -294,7 +294,7 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
 
   const byId = new Map(nodes.map((n) => [n.id, n]));
   // An arrow to something outside this project compiles to an id we do not hold.
-  const live = arrows.filter((a) => byId.has(a.to) && byId.has(a.from));
+  const live = merge(arrows.filter((a) => byId.has(a.to) && byId.has(a.from)));
 
   // Coordinates come from ELK now (layout.ts) — this file decides WHAT is on the
   // graph, not where it goes.
@@ -304,6 +304,36 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
 
 export const NODE_W = 168;
 export const NODE_H = 40;
+// One line per PAIR, not per verb.
+//
+// `api` declaring `caches: { orders: { ops: [get, put] } }` was drawing two arrows
+// between the same two boxes, following almost the same path — twice the ink for one
+// fact, and on a real project the duplicates are most of what makes the picture hard
+// to read.
+//
+// The verbs merge into the tooltip and the EFFECT takes the strongest of them, which
+// is the honest colour for a blast-radius view: if a caller may put, the edge is a
+// write edge no matter how many reads sit beside it.
+//
+// A reference and a policy arrow never merge into a use, because they are not one:
+// they carry no verb and they are excluded from the blast radius.
+const RANK: Record<Effect, number> = { read: 0, write: 1, admin: 2 };
+
+function merge(arrows: Arrow[]): Arrow[] {
+  const out = new Map<string, Arrow>();
+  for (const a of arrows) {
+    const key = `${a.from}->${a.to}|${a.policy ? "p" : a.ref ? "r" : "use"}`;
+    const seen = out.get(key);
+    if (!seen) {
+      out.set(key, { ...a });
+      continue;
+    }
+    if (!seen.verb.split(", ").includes(a.verb)) seen.verb += `, ${a.verb}`;
+    if (RANK[a.effect] > RANK[seen.effect]) seen.effect = a.effect;
+  }
+  return [...out.values()];
+}
+
 // blastRadius: everything reachable from a node by following arrows forward. This is
 // the query the model exists to make answerable — "what would this reach if it were
 // compromised" — and it is a graph walk, not a review.

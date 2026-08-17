@@ -91,12 +91,22 @@ export async function place(nodes: Node[], arrows: Arrow[]): Promise<Placed> {
       // an edge between two namespaces is the whole point of drawing namespaces;
       // without this ELK refuses to route across a container boundary
       "elk.hierarchyHandling": "INCLUDE_CHILDREN",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "64",
-      "elk.spacing.nodeNode": "22",
-      "elk.layered.spacing.edgeNodeBetweenLayers": "24",
+      "elk.layered.spacing.nodeNodeBetweenLayers": "70",
+      "elk.spacing.nodeNode": "26",
+      "elk.layered.spacing.edgeNodeBetweenLayers": "28",
+      // parallel edges get their own lane instead of overdrawing each other
+      "elk.spacing.edgeEdge": "12",
+      "elk.layered.spacing.edgeEdgeBetweenLayers": "12",
+      "elk.spacing.edgeNode": "18",
       // the crossing minimiser is what this whole change is for
       "elk.layered.crossingMinimization.strategy": "LAYER_SWEEP",
       "elk.layered.nodePlacement.strategy": "BRANDES_KOEPF",
+      "elk.layered.nodePlacement.bk.fixedAlignment": "BALANCED",
+      // A config graph has real cycles — a channel invokes a function that publishes
+      // back to it — so SOME edge has to run backwards. Depth-first picks a smaller
+      // feedback set than the greedy default here, which is the difference between
+      // one wire looping under the picture and a bundle of them.
+      "elk.layered.cycleBreaking.strategy": "DEPTH_FIRST",
       "elk.edgeRouting": "SPLINES",
     },
     children: tree(nodes),
