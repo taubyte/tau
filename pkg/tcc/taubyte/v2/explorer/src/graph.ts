@@ -26,6 +26,10 @@ export interface Arrow {
   kind: string;
   verb: string;
   effect: Effect;
+  // The target's own authorizer: policy, not access. Drawn apart from both because
+  // it runs in the other direction from everything else — it is what decides what
+  // the arrows INTO this resource are actually worth.
+  policy?: boolean;
   // A plain reference (source, credentials, dead-letter) rather than a use. It is
   // still a dependency — X cannot build or run without Y — but it grants no verb,
   // so it is drawn differently and never counts toward a blast radius.
@@ -63,6 +67,7 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
   const root = (compiled.object as Compiled) ?? compiled;
   const pendingHandlers: { from: string; kind: string; name: string; scope: string }[] = [];
   // an access entry names its target; it is matched once every node is known
+  const pendingPolicy: { from: string; name: string; scope: string | null }[] = [];
   const pendingAccess: {
     from: string; kind: string; name: string; scope: string | null; verb: string; effect: Effect;
   }[] = [];
@@ -151,6 +156,14 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
       }
     }
 
+    // A reachable resource names the function that decides what callers get. It is
+    // the target's declaration, so the arrow starts at the target.
+    const az = res["authorizer/name"];
+    if (typeof az === "string") {
+      const ns = typeof res["authorizer/namespace"] === "string" ? (res["authorizer/namespace"] as string) : null;
+      pendingPolicy.push({ from: id, name: az, scope: ns });
+    }
+
     // A gateway's handler names its target by (kind, namespace, name) rather than
     // resolving it to an id — a name in another namespace has no spelling the ref
     // resolver accepts. Resolve it here, against the nodes actually compiled.
@@ -208,6 +221,21 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
       const target = nodes.find((n) => n.kind === a.kind && n.name === a.name && n.scope === scope);
       if (target) {
         arrows.push({ from: a.from, to: target.id, kind: a.kind, verb: a.verb, effect: a.effect });
+        break;
+      }
+    }
+  }
+
+  // an authorizer is a function, addressed like any other target
+  for (const pol of pendingPolicy) {
+    const own = nodes.find((n) => n.id === pol.from)?.scope ?? "";
+    for (const scope of scopeOf(own, pol.scope)) {
+      const target = nodes.find((n) => n.kind === "functions" && n.name === pol.name && n.scope === scope);
+      if (target) {
+        arrows.push({
+          from: pol.from, to: target.id, kind: "functions",
+          verb: "authorized by", effect: "read", policy: true,
+        });
         break;
       }
     }

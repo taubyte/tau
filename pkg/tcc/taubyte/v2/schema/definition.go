@@ -151,13 +151,18 @@ var V2Resources = []*Node{
 	// is free in v2 because the SCOPE container is `namespaces` here — `applications`
 	// was v1's word for a scope, and tcc itself is agnostic about both.
 	//
-	// `port` is singular: one listening port is what a route can dial, and a list
-	// invites a "which one does the route mean?" question with no good answer.
+	// There is NO port. The platform assigns one, hands it to the workload as an
+	// environment variable, and tunnels it over a p2p stream — so a port in the
+	// config would be a number the workload is told to ignore, and a second place for
+	// the real one to disagree with.
 	//
-	// There is NO replica count. How many instances run, and where, is the platform's
-	// job — it places, it reconciles, it re-places when a node dies. A number here
-	// would be an operator knob that the system then has to either obey while it is
-	// wrong or override while it is authored.
+	// There is NO replica count either, for the same reason as everywhere else: how
+	// many instances run, and where, is the platform's job — it places, it reconciles,
+	// it re-places when a node dies.
+	//
+	// And it declares no ops, so nothing reaches it directly. HTTP arrives through a
+	// gateway route, which is the one way in; an application that could also be named
+	// as a target would be a second, unrouted door into the same workload.
 	//
 	// `egress` is the per-workload ALLOWLIST; the node-wide denylist floor
 	// (pkg/netguard) is not representable here and is never relaxable by a resource.
@@ -165,7 +170,6 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				String("image", Required(), InSection("code"), Doc("Image", "OCI image reference this workload runs.")),
-				Int("port", Required(), InSection("network"), Doc("Port", "The single port this workload listens on.")),
 				String("health/path", Path("health", "path"), InSection("network"), Doc("Health Check", "HTTP path polled for readiness.")),
 				Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory per instance.")),
 				StringSlice("egress", InSection("network"), Doc("Egress", "Hosts this workload may reach. Layered on top of the node-wide deny floor, which it can never widen.")),
@@ -173,7 +177,6 @@ var V2Resources = []*Node{
 			GroupDoc("A long-running container that listens on HTTP. Ships with volumes or it ships broken."), Icon("box"), Category("compute"),
 			secIdentity, secAccess, secCode, secLimits,
 			Section("network", "Network", "Listening port, health, and declared egress."),
-			Ops(httpOps()...),
 			Resource("applications", "Application", "Application", "application"),
 		)),
 
@@ -189,7 +192,7 @@ var V2Resources = []*Node{
 			wasmAttributes(),
 			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"),
 			secIdentity, secAccess, secCode, secLimits,
-			Ops(append([]Verb{WriteOp("invoke")}, httpOps()...)...), // invoke is write: a call may do anything the callee can
+			Ops(WriteOp("invoke")), // invoke is write: a call may do anything the callee can
 			Resource("functions", "Function", "Function", "function"),
 		)),
 
@@ -254,7 +257,6 @@ var V2Resources = []*Node{
 			commonAttributes(gitSource()...),
 			GroupDoc("A static website built from a git repository. What serves it is an inbound domain edge."), Icon("globe"), Category("compute"),
 			secIdentity, secAccess, secSource,
-			Ops(ReadOp("GET"), ReadOp("HEAD")),
 			Resource("website", "Website", "Website", "website"),
 		)),
 
@@ -508,7 +510,6 @@ var V2Resources = []*Node{
 			Section("route", "Route", "The path served and how it is matched."),
 			Section("handler", "Handler", "What serves it."),
 			Section("policy", "Policy", "CORS and rate limiting, at the name."),
-			Ops(httpOps()...),
 			Resource("gateways", "Gateway", "Gateway", "gateway"),
 		)),
 
@@ -562,7 +563,6 @@ var V2Resources = []*Node{
 			GroupDoc("An MCP server grouping functions as tools. Stateless Streamable HTTP; subscriptions are declined in v1."), Icon("plug"), Category("internet"),
 			secIdentity, secAccess,
 			Section("tools", "Tools", "tools/list caching."),
-			Ops(WriteOp("POST")),
 			Resource("mcp", "MCP", "MCP", "mcp"),
 		)),
 

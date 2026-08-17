@@ -167,11 +167,12 @@ func TestNamespaceScope(t *testing.T) {
 
 	app := only(t, resources(t, compileBasic(t), "applications"))
 	assert.Equal(t, app["image"], "ghcr.io/acme/api:1.4", "applications is a compute kind, not a scope")
-	assert.Equal(t, app["port"], 8080)
-
-	// how many instances run is the platform's, never authored
-	_, replicas := app["replicas"]
-	assert.Assert(t, !replicas, "a replica count must not be authorable")
+	// what the platform assigns is never authored: the port is handed to the
+	// workload and tunnelled, and how many instances run is placement
+	for _, gone := range []string{"port", "replicas"} {
+		_, present := app[gone]
+		assert.Assert(t, !present, "%q must not be authorable", gone)
+	}
 }
 
 // Access is declared per TARGET, named once, with its ops beside it and a namespace
@@ -327,8 +328,6 @@ func TestEffectClasses(t *testing.T) {
 		{"messaging", "publish", schema.Write},
 		{"messaging", "subscribe", schema.Read},
 		{"functions", "invoke", schema.Write},
-		{"functions", "GET", schema.Read},
-		{"functions", "DELETE", schema.Write},
 		{"secrets", "get", schema.Read},
 	} {
 		got, ok := schema.EffectOf(c.kind, c.verb)
@@ -339,6 +338,15 @@ func TestEffectClasses(t *testing.T) {
 	// there is no write verb on a secret from a workload, ever
 	_, ok := schema.EffectOf("secrets", "put")
 	assert.Assert(t, !ok, "secrets must have no write verb")
+
+	// and an HTTP method is a route's, never a kind's: a workload nameable by GET
+	// would be a second door into it that no gateway knows about
+	for _, kind := range []string{"functions", "applications", "websites", "gateways", "mcp"} {
+		for _, m := range []string{"GET", "POST"} {
+			_, ok := schema.EffectOf(kind, m)
+			assert.Assert(t, !ok, "%s must not carry the HTTP method %q as an op", kind, m)
+		}
+	}
 }
 
 // ---- namespaces ------------------------------------------------------------

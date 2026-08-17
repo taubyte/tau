@@ -45,6 +45,27 @@ type Omission struct {
 
 var Omissions = []Omission{
 	{
+		Name:    "a listening port",
+		State:   Never,
+		Decided: ByOwner,
+		Why: "The platform assigns the port, hands it to the workload as an environment " +
+			"variable, and tunnels it over a p2p stream. A port in the config would be a number " +
+			"the workload is told to ignore, and a second place for the real one to disagree " +
+			"with it.",
+		Instead: "nothing to write. The workload reads the port it was given.",
+	},
+	{
+		Name:    "HTTP methods as a kind's ops",
+		State:   Never,
+		Decided: ByOwner,
+		Why: "A method belongs to a gateway's route, which is where a request enters and where " +
+			"the method is matched. A workload that also carried GET as an op would be nameable " +
+			"as a direct target — a second door into it that no route knows about, with no path, " +
+			"no gateway policy and no name in front of it.",
+		Instead: "route.methods on the gateway. Ops are for what one resource does to another " +
+			"inside the cloud: invoke, get, put, publish.",
+	},
+	{
 		Name:    "replicas / replication factor / instance count",
 		State:   Never,
 		Decided: ByOwner,

@@ -38,15 +38,11 @@ func ReadOp(name string) Verb  { return Verb{name, Read} }
 func WriteOp(name string) Verb { return Verb{name, Write} }
 func AdminOp(name string) Verb { return Verb{name, Admin} }
 
-// httpOps: for an ingress-shaped kind the HTTP methods ARE the verbs. GET/HEAD/
-// OPTIONS classify read, the rest write.
-func httpOps() []Verb {
-	return []Verb{
-		ReadOp("GET"), ReadOp("HEAD"), ReadOp("OPTIONS"),
-		WriteOp("POST"), WriteOp("PUT"), WriteOp("PATCH"), WriteOp("DELETE"),
-	}
-}
-
+// HTTP methods are NOT ops. They belong to a gateway's route, which is where a
+// request enters and where the method is matched. Declaring them as a kind's ops
+// would make a workload nameable as a direct target — a second door into it that no
+// route knows about, with no path, no gateway policy and no name in front of it.
+//
 // Ops annotates a kind with its verb set.
 func Ops(verbs ...Verb) NodeOption { return GroupAnnotate("ops", verbs) }
 

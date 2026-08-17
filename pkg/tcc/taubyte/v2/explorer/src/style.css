@@ -72,6 +72,7 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
 .legend .sw { display: inline-block; width: 18px; height: 3px; border-radius: 2px; margin-right: .35rem; vertical-align: middle; }
 .legend .sw.read { background: var(--read); }
 .legend .sw.write { background: var(--write); }
+.legend .sw.policy { background: repeating-linear-gradient(90deg, var(--acc) 0 2px, transparent 2px 6px); }
 .legend .sw.ref { background: repeating-linear-gradient(90deg, var(--mut) 0 4px, transparent 4px 8px); }
 .legend .hint { margin-left: auto; }
 .scroll { overflow: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--card); padding: .5rem; }
@@ -94,6 +95,8 @@ svg.graph { display: block; max-width: 100%; height: auto; }
 .edge { fill: none; stroke-width: 1.6; }
 .edge.read { stroke: var(--read); }
 .edge.write { stroke: var(--write); }
+.edge.policy { stroke: var(--acc); stroke-width: 1.6; stroke-dasharray: 1 4; stroke-linecap: round; }
+.mk.policy { fill: var(--acc); }
 .edge.ref { stroke: var(--mut); stroke-width: 1.2; }
 .edge.isref { stroke-dasharray: 4 4; }
 .edge.dim { stroke: var(--line); opacity: .5; }

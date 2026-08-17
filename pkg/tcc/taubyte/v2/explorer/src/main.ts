@@ -218,7 +218,8 @@ function legend(): HTMLElement {
   l.innerHTML = `
     <span><i class="sw read"></i>read</span>
     <span><i class="sw write"></i>write</span>
-    <span><i class="sw ref"></i>reference (no verb)</span>
+    <span><i class="sw ref"></i>reference</span>
+    <span><i class="sw policy"></i>authorized by</span>
     <span class="hint">click a resource for its blast radius · click it again for what can reach it</span>`;
   return l;
 }

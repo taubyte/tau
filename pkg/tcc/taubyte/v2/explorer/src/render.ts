@@ -39,6 +39,7 @@ export function drawGraph(g: Graph, sel: Selection, onPick: (id: string | null) 
     ["arrow-read", "read"],
     ["arrow-write", "write"],
     ["arrow-ref", "ref"],
+    ["arrow-policy", "policy"],
     ["arrow-dim", "dim"],
   ]) {
     const m = el("marker", {
@@ -115,15 +116,17 @@ function edgePath(from: Node, to: Node, a: Arrow, dim: boolean): SVGElement {
   const d = backwards
     ? `M${x1},${y1} C${x1 + 60},${y1 - 46} ${x2 - 60},${y2 - 46} ${x2},${y2}`
     : `M${x1},${y1} C${x1 + (x2 - x1) / 2},${y1} ${x1 + (x2 - x1) / 2},${y2} ${x2},${y2}`;
-  const cls = dim ? "dim" : a.ref ? "ref" : a.effect;
+  const cls = dim ? "dim" : a.policy ? "policy" : a.ref ? "ref" : a.effect;
   const g = el("g", { class: `arrow ${cls}` });
   const p = el("path", {
     d,
     class: `edge ${cls}${a.ref ? " isref" : ""}`,
-    "marker-end": `url(#arrow-${dim ? "dim" : a.ref ? "ref" : a.effect})`,
+    "marker-end": `url(#arrow-${dim ? "dim" : a.policy ? "policy" : a.ref ? "ref" : a.effect})`,
   });
   const title = el("title");
-  title.textContent = a.ref
+  title.textContent = a.policy
+    ? `${from.kind}/${from.name} is authorized by ${to.kind}/${to.name} — it returns the ops a caller gets`
+    : a.ref
     ? `${from.kind}/${from.name} → ${to.kind}/${to.name} · ${a.verb} (reference, no verb)`
     : `${from.kind}/${from.name} → ${to.kind}/${to.name} · ${a.verb} (${a.effect})`;
   p.appendChild(title);
