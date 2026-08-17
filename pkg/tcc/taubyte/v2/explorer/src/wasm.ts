@@ -56,8 +56,13 @@ export function loadTcc(): Promise<TccV2> {
   ready = (async () => {
     await loadScript(`${import.meta.env.BASE_URL}wasm_exec.js`);
     const go = new window.Go();
+    // no-cache, not because the wasm is large but because it is REGENERATED: every
+    // `tcc-gen --dsl v2 --wasm` writes a new schema to the same URL, and public/ is
+    // outside the module graph so Vite has no hash to bust and no HMR edge to fire.
+    // A cached copy is a page showing a vocabulary that no longer exists — a kind
+    // added to the DSL simply does not appear, and nothing says why. Revalidate.
     const src = await WebAssembly.instantiateStreaming(
-      fetch(`${import.meta.env.BASE_URL}tcc.wasm`),
+      fetch(`${import.meta.env.BASE_URL}tcc.wasm`, { cache: "no-cache" }),
       go.importObject,
     );
     // go.run never resolves: the Go side parks on `select {}` so the exported

@@ -206,11 +206,27 @@ function graphPane(): HTMLElement {
   const scroll = div("scroll");
   scroll.appendChild(drawGraph(graph!, selection, (id) => {
     selection = id === null ? null : { id, mode: selection?.id === id && selection.mode === "blast" ? "reach" : "blast" };
+    // Picking a node opens its file. The graph and the tree are two views of one
+    // thing, and a node whose source you cannot read is half an answer.
+    const node = id === null ? null : graph!.byId.get(id);
+    if (node) {
+      const path = fileOf(node);
+      if (path in files) current = path;
+    }
     render();
   }));
   wrap.appendChild(scroll);
   wrap.appendChild(detail());
   return wrap;
+}
+
+// A node's source file, derived from the same layout rule the tree draws: a resource
+// lives at <kind>/<name>.yaml, under one namespaces/<name>/ level per scope segment.
+// Derived rather than carried, so it cannot drift from the tree — and the caller
+// checks the result exists, which is what catches it if it ever does.
+function fileOf(n: { kind: string; name: string; scope: string }): string {
+  const dirs = n.scope ? n.scope.split("/").map((s) => `namespaces/${s}`).join("/") + "/" : "";
+  return `${dirs}${n.kind}/${n.name}.yaml`;
 }
 
 function legend(): HTMLElement {
@@ -219,7 +235,7 @@ function legend(): HTMLElement {
     <span><i class="sw read"></i>read</span>
     <span><i class="sw write"></i>write</span>
     <span><i class="sw ref"></i>reference</span>
-    <span><i class="sw policy"></i>decided by a function</span>
+    <span><i class="sw policy"></i>a function it names</span>
     <span class="hint">click a resource for its blast radius · click it again for what can reach it</span>`;
   return l;
 }

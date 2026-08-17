@@ -5,6 +5,10 @@ fqdn: db.shop.example.com
 service: postgres
 tls:
     mode: none
+transformers:
+    pg_audit:
+        order: 1
+        direction: inbound
 handler:
     application:
         name: db

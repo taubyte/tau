@@ -1,0 +1,7 @@
+id: QmPZ9XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuK
+description: strips card numbers out of request bodies on the way in - built against the gateway transformer interface
+source: "."
+execution:
+    call: redact
+    timeout: 2s
+    memory: 16MB

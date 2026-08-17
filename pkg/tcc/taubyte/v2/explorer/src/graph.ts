@@ -143,6 +143,20 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
         continue;
       }
 
+      // the transformer chain: keyed by the FUNCTION's name, with the fields of this
+      // use under it. Same addressing as an authorizer — a name plus an optional
+      // namespace — so it resolves through the same pass.
+      if (key === "transformers" && !!val && typeof val === "object" && !Array.isArray(val)) {
+        for (const [fn, e] of Object.entries(val as Record<string, Compiled>)) {
+          const ns = typeof e.namespace === "string" ? (e.namespace as string) : null;
+          pendingPolicy.push({
+            from: id, name: fn, scope: ns,
+            verb: `transforms ${e.direction ?? "inbound"}, #${e.order ?? "?"}`,
+          });
+        }
+        continue;
+      }
+
       // a plain reference: "<group>/<id>"
       if (typeof val === "string" && val.includes("/")) {
         const cut = val.indexOf("/");

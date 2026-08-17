@@ -1,0 +1,7 @@
+id: QmXY8XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuA
+description: counts bytes and start-up packets on a raw stream - a different host interface from the gateway one, and nothing in this file says so
+source: "."
+execution:
+    call: audit
+    timeout: 1s
+    memory: 8MB

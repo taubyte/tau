@@ -61,6 +61,23 @@ var Omissions = []Omission{
 			"than configured.",
 	},
 	{
+		Name:    "a function's host interface",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "A function is named in four places that hand it four DIFFERENT worlds: a handler " +
+			"gets a request, an authorizer gets a caller and an operation and answers with ops, a " +
+			"gateway transformer gets a parsed HTTP request, a proxy transformer gets bytes on a " +
+			"stream. Each is its own host SDK and its own WIT world, and NOTHING IN A FUNCTION " +
+			"SAYS WHICH ONE IT WAS BUILT AGAINST. So naming a gateway transformer on a proxy " +
+			"compiles clean and fails at runtime, on traffic, and the config that caused it looks " +
+			"correct. This is the one place the vocabulary knows something it refuses to check.",
+		Instead: "nothing. The build breaks late, or the transformer is handed a world it cannot " +
+			"parse.",
+		Unblocks: "an owner call on whether a function declares its world — one attribute, an " +
+			"InSet over the interfaces, checked where the function is named. It is small, and it " +
+			"changes how every function is authored, which is why it is not taken here.",
+	},
+	{
 		Name:    "SNI routing / multiplexing several proxies onto one address",
 		State:   Never,
 		Decided: Forced,

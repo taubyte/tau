@@ -11,6 +11,13 @@ route:
         application:
             name: api
             port: http
+transformers:
+    redact:
+        order: 1
+    tier_header:
+        namespace: /shop
+        order: 2
+        direction: both
 cors:
     origins: ["https://shop.example.com"]
 rate-limit:

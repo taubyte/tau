@@ -541,8 +541,9 @@ var V2Resources = []*Node{
 				Int("rate-limit/burst", Path("rate-limit", "burst"), InSection("policy"), Doc("Burst", "Requests allowed above the sustained rate.")),
 				String("rate-limit/key", Path("rate-limit", "key"), InSection("policy"), Doc("Rate Limit Key", "What the limit is counted per: \"ip\" or \"header:<name>\".")),
 			),
+			Nested(transformersGroup()),
 			GroupDoc("A name, the policy at it, and what it serves."), Category("internet"), Icon("route"),
-			secIdentity,
+			secIdentity, secTransformers,
 			Section("naming", "Naming", "The name served, and where its certificate comes from."),
 			Section("route", "Route", "The path served and how it is matched."),
 			Section("handler", "Handler", "What serves it."),
@@ -630,8 +631,9 @@ var V2Resources = []*Node{
 				String("handler/port", Path("handler", Either(proxyHandlerKinds...), "port"), IsVariableName(), InSection("handler"),
 					Doc("Port", "Which of the workload's ports to stream to, by name. The number stays where the workload declared it.")),
 			),
+			Nested(transformersGroup()),
 			GroupDoc("An allocated address that accepts a raw connection and streams it to a workload over p2p. For everything a gateway cannot parse."), Category("internet"), Icon("plug"),
-			secIdentity,
+			secIdentity, secTransformers,
 			Section("listener", "Listener", "The protocol carried, the name it is reached by, and whether TLS stops here."),
 			Section("handler", "Handler", "The workload on the other end."),
 			Resource("proxies", "Proxy", "Proxy", "proxy"),
@@ -756,6 +758,52 @@ func GenerationRoot() []*Node { return v2Root.Children }
 
 // CompileRoot is the interpreter's entrypoint into the DSL: the whole project root.
 func CompileRoot() *Node { return v2Root }
+
+// transformersGroup is the middleware chain on an ingress, keyed by the name of the
+// function that runs.
+//
+//	transformers:
+//	    redact:
+//	        namespace: /shop
+//	        order: 1
+//	    tier_header:
+//	        order: 2
+//	        direction: inbound
+//
+// It is the same shape as an access entry, on purpose: a key that names a resource,
+// with the fields of THIS use under it. An author who has written `caches:` has
+// already written this.
+//
+// A transformer ENRICHES and FILTERS — add a header, strip a field, annotate, drop.
+// That is different in kind from an authorizer, which answers what a caller may do and
+// lives on the resource being reached. Both are functions; neither is a kind of its
+// own; what makes one what it is, is the host interface it was built against.
+//
+// AND THE TWO INGRESSES DO NOT SHARE ONE. A gateway transformer is handed a parsed
+// HTTP request — method, path, headers, body — and a proxy transformer is handed
+// bytes on a stream that it must not pretend to understand. Two host interfaces, two
+// WIT worlds, one config shape. Which means the config cannot tell you that you named
+// a gateway transformer on a proxy: nothing in a function declares which world it was
+// built for. See Omissions, "a function's host interface".
+//
+// `order` is required rather than defaulted because a YAML mapping has no order and a
+// chain does: redact-then-enrich and enrich-then-redact are different programs, and an
+// implicit 0 on every entry would make which one runs a matter of map iteration.
+func transformersGroup() *Node {
+	return DefineGroup("transformers",
+		DefineIter([]*Attribute{
+			String("namespace", IsNamespacePath(), InSection("transformers"),
+				Doc("Namespace", "Where the function lives. \"/shop\" is absolute from the project root; \"eu\" is relative to this resource's own namespace. Omitted means this resource's own scope, then its parents.")),
+			Int("order", Required(), MinInt(1), InSection("transformers"),
+				Doc("Order", "Position in the chain, low to high. Required: a mapping has no order, and a filter chain has.")),
+			String("direction", InSet("inbound", "outbound", "both"), Default("inbound"), InSection("transformers"),
+				Doc("Direction", "inbound: on the way to the workload. outbound: on the way back. both: run twice, once each way.")),
+		},
+			GroupDoc("A function that enriches or filters traffic through this ingress, and where it sits in the chain."),
+		))
+}
+
+var secTransformers = Section("transformers", "Transformers", "Functions that enrich or filter traffic passing through, in order.")
 
 // portsGroup is a workload's own listening ports, keyed by name.
 //
