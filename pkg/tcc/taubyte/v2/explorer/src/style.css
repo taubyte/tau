@@ -53,8 +53,12 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
 
 /* file tree */
 .tree { font-size: .8rem; padding: 0 .6rem .6rem; font-family: ui-monospace, monospace; }
-.tree .dir { color: var(--mut); padding: .12rem .3rem; font-weight: 600; }
-.tree .dir::before { content: "\25BE"; margin-right: .3em; font-size: .8em; opacity: .7; }
+.tree .dir {
+  display: flex; align-items: center; gap: .35rem;
+  color: var(--mut); padding: .12rem .3rem; font-weight: 600;
+}
+.tree .dir::before { content: "\25BE"; font-size: .8em; opacity: .7; }
+.tree .dir .kindcell { display: inline-flex; }
 .tree .kids { margin-left: .5em; padding-left: .85em; border-left: 1px solid var(--line); }
 .tree .file { padding: .12rem .3rem; border-radius: 4px; cursor: pointer; }
 .tree .file::before { content: "\2022"; margin-right: .45em; color: var(--mut); opacity: .5; }
@@ -88,11 +92,19 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
 
 .rf-node {
   width: 168px; padding: 6px 10px;
-  display: flex; flex-direction: column; gap: 1px;
+  display: flex; align-items: center; gap: 8px;
   background: var(--card); border: 1.4px solid var(--line); border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   cursor: pointer; transition: opacity .12s, box-shadow .12s;
 }
+.rf-glyph { display: flex; flex: 0 0 auto; color: var(--mut); }
+.rf-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.rf-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rf-node.internet .rf-glyph { color: var(--internet); }
+.rf-node.trigger  .rf-glyph { color: var(--trigger); }
+.rf-node.compute  .rf-glyph { color: var(--compute); }
+.rf-node.data     .rf-glyph { color: var(--data); }
+.rf-node.code     .rf-glyph { color: var(--code-cat); }
 .rf-kind { font-size: 8.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--mut); }
 .rf-name { font-size: 11.5px; font-weight: 600; color: var(--fg); }
 .rf-node.internet { border-color: var(--internet); }
@@ -183,3 +195,11 @@ code.om.never { color: var(--write); }
 code.om.blocked { color: var(--data); }
 code.om.open { color: var(--internet); }
 .tag { font-size: .65rem; text-transform: uppercase; letter-spacing: .05em; color: var(--acc); border: 1px solid var(--acc); border-radius: 3px; padding: .05em .3em; }
+
+/* the vocabulary table: the kind's declared icon beside its name */
+.kindcell { display: inline-flex; align-items: center; gap: .4rem; }
+.kindcell.internet { color: var(--internet); }
+.kindcell.trigger  { color: var(--trigger); }
+.kindcell.compute  { color: var(--compute); }
+.kindcell.data     { color: var(--data); }
+.kindcell.code     { color: var(--code-cat); }

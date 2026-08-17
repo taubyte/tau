@@ -1,8 +1,9 @@
 import "./style.css";
 import { loadTcc, type CompileOk, type Kind, type KindVerbs, type Omission } from "./wasm";
-import { buildGraph, categoryOf, setCategories, type Graph } from "./graph";
+import { buildGraph, categoryOf, iconOf, setCategories, type Graph } from "./graph";
 import { esc, jsonRoot } from "./render";
 import { graphHost, renderGraph } from "./graph-mount";
+import { kindIconMarkup } from "./icons";
 import type { Selection } from "./graph-view";
 import { place, type Placed } from "./layout";
 
@@ -175,7 +176,13 @@ function dirEl(d: Dir): HTMLElement {
   for (const [name, child] of [...d.dirs].sort(([a], [b]) => a.localeCompare(b))) {
     const line = document.createElement("div");
     line.className = "dir";
-    line.textContent = name + "/";
+    // A directory in this tree IS a kind — that is the layout rule — so it gets the
+    // kind's declared icon. A namespace's own subdirectories are instances, not
+    // kinds, and iconOf returns nothing for them.
+    const icon = iconOf(name);
+    line.innerHTML = icon
+      ? `<span class="kindcell ${categoryOf(name)}">${kindIconMarkup(icon, 12)}</span>${esc(name)}/`
+      : `${esc(name)}/`;
     wrap.appendChild(line);
     const kids = document.createElement("div");
     kids.className = "kids";
@@ -355,7 +362,7 @@ function vocabulary(): HTMLElement {
     kinds
       .map(
         (k) =>
-          `<tr><td><code class="${categoryOf(k.group)}">${esc(k.group)}</code>${
+          `<tr><td><span class="kindcell ${categoryOf(k.group)}">${kindIconMarkup(k.icon, 14)}<code class="${categoryOf(k.group)}">${esc(k.group)}</code></span>${
             k.container ? ' <span class="tag">scope</span>' : ""
           }</td><td>${esc(k.doc)}</td><td class="fields">${esc(k.fields.join(", "))}</td></tr>`,
       )

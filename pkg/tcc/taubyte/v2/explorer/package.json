@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@hpcc-js/wasm-graphviz": "^1.28.0",
+    "@tabler/icons-react": "^3.46.0",
     "@xyflow/react": "^12.11.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"

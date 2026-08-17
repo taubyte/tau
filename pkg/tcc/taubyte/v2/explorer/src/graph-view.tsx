@@ -29,13 +29,15 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { blastRadius, categoryOf, reachesFrom, NODE_H, NODE_W, type Graph } from "./graph";
+import { blastRadius, categoryOf, iconOf, reachesFrom, NODE_H, NODE_W, type Graph } from "./graph";
+import { KindIcon } from "./icons";
 import type { Placed } from "./layout";
 
 export type Selection = { id: string; mode: "blast" | "reach" } | null;
 
 interface ResourceData extends Record<string, unknown> {
   kind: string;
+  icon: string;
   name: string;
   scope: string;
   category: string;
@@ -50,11 +52,16 @@ function ResourceNode({ data }: NodeProps) {
   return (
     <div className={`rf-node ${d.category}${d.faded ? " faded" : ""}${d.picked ? " picked" : ""}`}>
       <Handle type="target" position={Position.Left} isConnectable={false} />
-      <span className="rf-kind">
-        {d.kind}
-        {d.scope ? ` · ${d.scope}` : ""}
+      <span className="rf-glyph">
+        <KindIcon icon={d.icon} size={15} />
       </span>
-      <span className="rf-name">{d.name}</span>
+      <span className="rf-text">
+        <span className="rf-kind">
+          {d.kind}
+          {d.scope ? ` · ${d.scope}` : ""}
+        </span>
+        <span className="rf-name">{d.name}</span>
+      </span>
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </div>
   );
@@ -150,6 +157,7 @@ export function GraphView({
         draggable: false,
         data: {
           kind: n.kind,
+          icon: iconOf(n.kind),
           name: n.name,
           scope: n.scope,
           category: categoryOf(n.kind),

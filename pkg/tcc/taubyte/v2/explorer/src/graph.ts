@@ -54,13 +54,21 @@ export interface Graph {
 // to keep its own table; that table drifted the moment a kind was added, which is
 // exactly the failure the whole "the config is the architecture" claim is about.
 let CATEGORY: Record<string, string> = {};
+let ICON: Record<string, string> = {};
 
-export function setCategories(kinds: { group: string; category: string }[]) {
+export function setCategories(kinds: { group: string; category: string; icon?: string }[]) {
   CATEGORY = Object.fromEntries(kinds.map((k) => [k.group, k.category || "other"]));
+  // The icon is declared on the kind too — Icon(...) in definition.go — so it comes
+  // from the same place and drifts for the same reason if it is copied anywhere else.
+  ICON = Object.fromEntries(kinds.map((k) => [k.group, k.icon || ""]));
 }
 
 export function categoryOf(kind: string): string {
   return CATEGORY[kind] ?? "other";
+}
+
+export function iconOf(kind: string): string {
+  return ICON[kind] ?? "";
 }
 
 const isScopeContainer = (k: string) => k === "namespaces";
