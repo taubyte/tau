@@ -80,6 +80,9 @@ function dotFor(nodes: Node[], arrows: Arrow[], exposed: string[]): string {
     const pad = "  ".repeat(depth);
     const body = [
       `${pad}  label=${q(`namespace · ${scope}`)};`,
+      // room between a namespace's border and the resources inside it, so an edge
+      // crossing the boundary has somewhere to be that is not on top of the dashes
+      `${pad}  margin=16;`,
       ...nodes.filter((n) => n.scope === scope).map((n) => `${pad}  ${q(n.id)};`),
       ...childrenOf(scope).map((c) => emit(c, depth + 1)),
     ].join("\n");
@@ -96,6 +99,12 @@ function dotFor(nodes: Node[], arrows: Arrow[], exposed: string[]): string {
     "  splines=ortho;",
     "  nodesep=0.42;",
     "  ranksep=0.95;",
+    // Keep routed lines OFF the boxes. sep pads a node for the router's purposes and
+    // esep is the margin a line keeps from that padding; without them ortho is happy
+    // to run a wire flush along a border, which reads as the line belonging to the box
+    // rather than passing it.
+    '  sep="+14,10";',
+    '  esep="+7,5";',
     "  fontsize=11;",
     "  labelloc=t;",
     `  node [shape=box, fixedsize=true, width=${NODE_W / PT}, height=${NODE_H / PT}, label=""];`,

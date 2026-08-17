@@ -91,7 +91,9 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
 .rfhost .react-flow__handle { opacity: 0; }
 
 .rf-node {
-  width: 168px; padding: 6px 10px;
+  /* pinned: graph.ts reserves exactly this in the layout — see NODE_W / NODE_H */
+  width: 168px; height: 46px; box-sizing: border-box;
+  padding: 6px 10px;
   display: flex; align-items: center; gap: 8px;
   background: var(--card); border: 1.4px solid var(--line); border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;

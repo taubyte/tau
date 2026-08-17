@@ -343,7 +343,11 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
 }
 
 export const NODE_W = 168;
-export const NODE_H = 40;
+// MUST match what .rf-node actually renders at (style.css pins the same number).
+// dot reserves corridors for the edges around a box of exactly this size: when the
+// rendered node was 6px taller than the reserved one, every route dot planned along
+// the bottom of a node ran under it instead, and arrowheads landed on corners.
+export const NODE_H = 46;
 // One line per PAIR, not per verb.
 //
 // `api` declaring `caches: { orders: { ops: [get, put] } }` was drawing two arrows
