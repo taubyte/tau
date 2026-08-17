@@ -44,11 +44,15 @@ func resource(attrs []*Attribute, opts ...any) *Node {
 	return DefineIter(attrs, opts...)
 }
 
-// attachAccess gives every kind the access groups: one per kind that declares Ops(),
-// nested in the resource's own document. It runs once the vocabulary exists, and it
-// mutates the same nodes the namespace levels share, so every scope gets them too.
+// attachAccess wires the two halves of access, once the vocabulary exists and can be
+// read. It mutates the same nodes the namespace levels share, so every scope gets
+// them too.
+//
+//	every kind          gains the access groups — what it reaches
+//	a kind with Ops()   also gains an authorizer — who decides what reaches IT
 func attachAccess() {
 	groups := accessGroups()
+	authz := authorizerAttributes()
 	for _, g := range V2Resources {
 		if len(g.Children) == 0 {
 			continue
@@ -59,6 +63,11 @@ func attachAccess() {
 		}
 		iter.Nested = true
 		iter.Children = append(iter.Children, groups...)
+
+		if _, reachable := iter.Meta["ops"].([]Verb); reachable {
+			iter.Attributes = append(iter.Attributes, authz...)
+			secAuthorizer(iter)
+		}
 	}
 }
 

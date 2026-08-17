@@ -1,5 +1,5 @@
 id: QmQwsLKS7hLCkVCFPYqjHhLNxjnkNCiJqBFPPbrmvSaWAd
-description: an authorizer - a function built against the authorizer interface, given the operation and answering yes or no
+description: the cache's own authorizer - handed the caller and the operation, it returns the ops that caller gets
 source: "."
 execution:
     call: authorize

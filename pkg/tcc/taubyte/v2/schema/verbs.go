@@ -125,19 +125,10 @@ func accessGroups() []*Node {
 				String("namespace", IsNamespacePath(), InSection("access"),
 					Doc("Namespace", "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.")),
 				StringSlice("ops", Required(), AreVerbsOf(kind), InSection("access"),
-					Doc("Ops", fmt.Sprintf("What may be done to it: %s.", strings.Join(verbs, ", ")))),
+					Doc("Ops", fmt.Sprintf("What this resource asks to do to it: %s. The target decides what it actually gets — see that resource's authorizer.", strings.Join(verbs, ", ")))),
 				// Per-use modifiers. These were unexpressible while access was a
 				// verb-keyed list of names: there was no per-target place to put
 				// them. An entry is that place.
-				// Addressed the way every target is — {namespace, name} — because one
-				// addressing form is the point. An authorizer is a FUNCTION, built
-				// against the authorizer host interface rather than the workload one;
-				// it is not a kind of its own, since it would carry exactly a
-				// function's fields and nothing else.
-				String("via", Path("via", "name"), IsVariableName(), InSection("access"),
-					Doc("Via", "A function consulted per operation, built against the authorizer interface. It can only narrow this entry, never widen it, and a failure is a denial.")),
-				String("via-namespace", Path("via", "namespace"), IsNamespacePath(), InSection("access"),
-					Doc("Via Namespace", "Where that function lives. Same forms as any namespace path; omitted means this resource's own scope, then its parents.")),
 				Duration("timeout", InSection("access"),
 					Doc("Timeout", "How long one operation on it may take before it is given up on.")),
 			},
@@ -215,3 +206,30 @@ func IsNamespacePath() engine.Option {
 		return nil
 	})
 }
+
+// authorizerAttributes are declared on a kind that can be REACHED. The policy lives
+// with the target, not with the caller: a function asks a cache for get and put, and
+// the cache's authorizer is what decides that this caller, from this namespace, gets
+// get only.
+//
+//	# caches/orders.yaml
+//	authorizer:
+//	    name: tier_check
+//	    namespace: /shop      # same path rules as anywhere else
+//
+// It is a FUNCTION built against the authorizer host interface, handed the caller and
+// the operation and RETURNING THE OPS that caller may perform. The accessor's `ops`
+// list is a request, and a declaration of intent that keeps the config readable as
+// blast radius; the answer is the target's.
+//
+// A resource with no authorizer is decided by its declared access alone.
+func authorizerAttributes() []*Attribute {
+	return []*Attribute{
+		String("authorizer/name", Path("authorizer", "name"), IsVariableName(), InSection("authorizer"),
+			Doc("Authorizer", "A function that decides what a caller may do to this resource, and returns the ops it gets.")),
+		String("authorizer/namespace", Path("authorizer", "namespace"), IsNamespacePath(), InSection("authorizer"),
+			Doc("Authorizer Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
+	}
+}
+
+var secAuthorizer = Section("authorizer", "Authorizer", "Who decides what a caller may do to this.")

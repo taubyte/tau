@@ -158,7 +158,7 @@ func TestNamespaceScope(t *testing.T) {
 	obj := root(t, compileBasic(t))
 	shop := namespace(t, obj, "shop")
 
-	fn := only(t, shop["functions"].(map[string]any))
+	fn := namedResource(t, shop["functions"].(map[string]any), "notify")
 	assert.Equal(t, fn["source"], ".", "inline source is not a ref")
 	assert.Equal(t, fn["execution/call"], "notify")
 
@@ -302,7 +302,7 @@ func TestDeepNamespaceRefsAreNotResolved(t *testing.T) {
 
 	// the contrast first: a first-level namespace declares access like anywhere else
 	shop := namespace(t, root(t, flat), "shop")
-	notify := only(t, shop["functions"].(map[string]any))
+	notify := namedResource(t, shop["functions"].(map[string]any), "notify")
 	sessions := notify["caches"].(map[string]any)["sessions"].(map[string]any)
 	assert.DeepEqual(t, sessions["ops"], []string{"get"})
 
@@ -381,7 +381,7 @@ func TestAccessNamesItsScope(t *testing.T) {
 	flat := compileBasic(t)
 
 	shop := namespace(t, root(t, flat), "shop")
-	notify := only(t, shop["functions"].(map[string]any))
+	notify := namedResource(t, shop["functions"].(map[string]any), "notify")
 	own := notify["caches"].(map[string]any)["sessions"].(map[string]any)
 	_, scoped := own["namespace"]
 	assert.Assert(t, !scoped, "a target in the resource's own scope needs no namespace")
@@ -424,7 +424,7 @@ databases:
 	assert.NilError(t, err, "naming a sibling namespace compiles; nothing authorises it yet")
 
 	shop := namespace(t, root(t, obj.Flat()), "shop")
-	notify := only(t, shop["functions"].(map[string]any))
+	notify := namedResource(t, shop["functions"].(map[string]any), "notify")
 	ledger := notify["databases"].(map[string]any)["ledger"].(map[string]any)
 	assert.Equal(t, ledger["namespace"], "/billing")
 	assert.DeepEqual(t, ledger["ops"], []string{"exec"})
@@ -481,7 +481,7 @@ func TestNamespacePathForms(t *testing.T) {
 	obj := root(t, compileBasic(t))
 
 	shop := namespace(t, obj, "shop")
-	notify := only(t, shop["functions"].(map[string]any))
+	notify := namedResource(t, shop["functions"].(map[string]any), "notify")
 	caches := notify["caches"].(map[string]any)
 
 	// omitted: shop's own sessions
@@ -513,31 +513,43 @@ func TestNamespacePathForms(t *testing.T) {
 
 // Per-use modifiers: an access entry is a place to put them, which a verb-keyed list
 // of names never had. They get the same treatment as any other attribute — the
-// authorizer resolves to an id, the duration parses — because a nested group is
-// processed as an ordinary group, per entry.
+// duration parses — because a nested group is processed as an ordinary group, per
+// entry.
 func TestAccessEntryModifiers(t *testing.T) {
 	flat := compileBasic(t)
 
-	// an authorizer is a FUNCTION built against the authorizer interface, not a kind
-	_, kind := root(t, flat)["authorizers"]
-	assert.Assert(t, !kind, "authorizers must not be a resource kind")
-
-	var fn map[string]any
-	for _, v := range resources(t, flat, "functions") {
-		if r := v.(map[string]any); r["name"] == "checkout" {
-			fn = r
-		}
-	}
-	assert.Assert(t, fn != nil)
+	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
 	orders := fn["caches"].(map[string]any)["orders"].(map[string]any)
-	// addressed the way every target is: a name, and a namespace path when needed
-	assert.Equal(t, orders["via"], "paid_tier")
 	assert.Equal(t, orders["timeout"], int64(200000000), "200ms parses to nanoseconds")
 
-	// and an entry that names neither carries neither
+	// and an entry that names none carries none
 	sessions := fn["caches"].(map[string]any)["sessions"].(map[string]any)
-	for _, k := range []string{"via", "timeout"} {
-		_, present := sessions[k]
-		assert.Assert(t, !present, "an unauthored modifier must not appear: %q", k)
+	_, present := sessions["timeout"]
+	assert.Assert(t, !present, "an unauthored modifier must not appear")
+}
+
+// The target owns the policy, the accessor only states intent: a reachable resource
+// declares the authorizer that decides what a caller gets, and a caller declares the
+// ops it asks for. The caller cannot name its own judge.
+func TestTargetOwnsThePolicy(t *testing.T) {
+	flat := compileBasic(t)
+
+	// the cache being reached carries the authorizer
+	orders := namedResource(t, resources(t, flat, "caches"), "orders")
+	assert.Equal(t, orders["authorizer/name"], "tier_check")
+	assert.Equal(t, orders["authorizer/namespace"], "/shop")
+
+	// the caller states what it asks for, and names no authorizer
+	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
+	entry := fn["caches"].(map[string]any)["orders"].(map[string]any)
+	assert.DeepEqual(t, entry["ops"], []string{"get", "put"})
+	for _, gone := range []string{"via", "via-namespace", "authorizer", "authorizer/name"} {
+		_, present := entry[gone]
+		assert.Assert(t, !present, "an accessor must not name its own authorizer: %q", gone)
 	}
+
+	// a kind nothing can reach has no authorizer to declare
+	zone := only(t, resources(t, flat, "zones"))
+	_, present := zone["authorizer/name"]
+	assert.Assert(t, !present, "a kind with no ops is not reachable, so it authorises nothing")
 }

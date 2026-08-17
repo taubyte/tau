@@ -211,7 +211,22 @@ go test ./pkg/tcc/... ./tools/tcc-gen/   # v1's parity oracle must stay green
 
 ---
 
-## 9. Two rules learned the hard way
+## 9. The one modelling rule
+
+**The target owns the policy, the accessor only states intent.** A resource that can
+be reached declares its own `authorizer` — a function handed the caller and the
+operation, which RETURNS the ops that caller gets. A resource that reaches declares
+`ops`, and that is a request and an upper bound, never a grant.
+
+The inverse — the caller naming the authorizer it will be judged by — is policy
+written by the party requesting access, which is not policy. It reads fine on one
+resource and is indefensible the moment two teams own the two ends.
+
+Corollary: an authorizer is not a kind. It carried exactly a function's fields, and
+what makes it one is the host interface it is built against, which is a property of
+the artifact rather than of the config.
+
+## 10. Two rules learned the hard way
 
 **Declare a thing once, on the thing.** A kind's verbs are `Ops(ReadOp("get"),
 WriteOp("put"))` on the kind itself, and the access block, the load-time check, the
@@ -225,7 +240,7 @@ the third existed only to keep an old test green. It was rejected, correctly. If
 capability needs a new meaning, give it its own addressable form — a path location,
 say — rather than a mode on an existing term.
 
-## 10. Decisions are not yours
+## 11. Decisions are not yours
 
 `omissions.go` records what the vocabulary deliberately lacks, and carries a `Decided`
 axis — `ByOwner` / `ByDefault` / `Forced`. A technical constraint decides itself. A

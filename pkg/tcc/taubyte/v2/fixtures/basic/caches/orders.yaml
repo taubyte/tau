@@ -3,3 +3,6 @@ match: orders
 storage:
     size: 32MB
     ttl: 24h
+authorizer:
+    name: tier_check
+    namespace: /shop
