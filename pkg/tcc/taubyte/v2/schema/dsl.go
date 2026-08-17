@@ -14,6 +14,8 @@ type (
 
 const GenCID = engine.GenCID
 
+const DeriveDNSLabel = engine.DeriveDNSLabel
+
 var (
 	Accessor         = engine.Accessor
 	Bool             = engine.Bool
@@ -57,6 +59,7 @@ var (
 	Section          = engine.Section
 	ShowWhen         = engine.ShowWhen
 	Singular         = engine.Singular
+	Derived          = engine.Derived
 	Strict           = engine.Strict
 	String           = engine.String
 	StringShape      = engine.StringShape

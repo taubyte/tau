@@ -236,6 +236,30 @@ go test ./pkg/tcc/... ./tools/tcc-gen/   # v1's parity oracle must stay green
 
 ---
 
+## 8a. Generated vs derived
+
+Two different things, and the DSL has both:
+
+```go
+String("id",         Generated(GenCID))                 // MINTED: fresh entropy, never reproducible
+String("zone-label", Derived(DeriveDNSLabel, "id"))     // COMPUTED: same input, same output, forever
+```
+
+Confusing them is a bug in either direction — a minted id that reproduced would collide,
+a derived name that did not would resolve differently in two consumers. Neither has any
+compile effect: both are schema/tooling annotations, and the value is filled in by the
+consumer via `engine.Generate` / `engine.Derive`.
+
+A derived field is never authored, so it never lands in the compiled object. Give it a
+validator that rejects a non-empty value — otherwise the strict-key check accepts it
+(the key IS in the schema) and a stale copy of a derived name sits in the document,
+which is the drift deriving it was meant to remove.
+
+`GeneratedBy` / `DerivedBy` address a field of a GROUP. Project-root attributes are not
+reachable through them; read `CompileRoot().Attributes` for those.
+
+---
+
 ## 9. The one modelling rule
 
 **The target owns the policy, the accessor only states intent.** A resource that can

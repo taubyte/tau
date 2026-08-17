@@ -27,6 +27,8 @@
 // per-edge modifiers (mount, timeout, retry, via).
 package schema
 
+import "errors"
+
 // commonAttributes prepends the shared identity block and appends the access block.
 // EVERY resource carries one, because it is a single construct between any two
 // resources — there is no kind that may only be a target.
@@ -798,6 +800,21 @@ func rootAttributes() []*Attribute {
 	return []*Attribute{
 		String("id", IsCID(), Required(), Generated(GenCID), EmitValidation("project_id", "project_id"), Doc("ID", "Content-addressed identifier (CID) of the project.")),
 		String("name", IsVariableName(), Doc("Name", "Project name. Must be a valid variable name.")),
+
+		// Declared so a consumer can DISCOVER it — engine.DerivedBy names the
+		// derivation and its inputs — rather than each one hard-coding "hash the id
+		// and base32 it". It is never authored and so never appears in the compiled
+		// object; the validator is what says so out loud, because a key the schema
+		// knows would otherwise be silently accepted from a document that set it, and
+		// a stale copy of a derived name is exactly the drift deriving it avoids.
+		String("zone-label", Derived(DeriveDNSLabel, "id"), NoAccessors(),
+			Validator(func(v string) error {
+				if v == "" {
+					return nil
+				}
+				return errors.New("zone-label is derived from the project id, not authored; remove it")
+			}),
+			Doc("Zone Label", "The project's label in a cloud's generated zone, derived from its id. Read-only.")),
 		String("description", Doc("Description", "Free-form, human-readable description of the project.")),
 		StringSlice("tags", WireDrop(), Doc("Tags", "Project-level labels.")),
 	}
