@@ -5,23 +5,19 @@ import (
 	"os"
 	"path/filepath"
 
-	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
 	"github.com/taubyte/tau/tools/tcc-gen/internal/gen"
 )
 
-// defaultTSOut is where the generated schema.ts lands when --out is not given:
-// under the @taubyte/tcc package src so tsc picks it up. Redirectable via --out.
-const defaultTSOut = "pkg/tcc/clients/js/src/gen"
-
-// writeTS renders the DSL resource interfaces to schema.ts.
-func writeTS(root, out string) error {
+// writeTS renders the selected DSL's resource interfaces to schema.ts. The default
+// --out is the vocabulary's own (dslTarget.tsOut); --out redirects it.
+func writeTS(root, out string, dsl dslTarget) error {
 	if out == "" {
-		out = filepath.Join(root, defaultTSOut)
+		out = filepath.Join(root, dsl.tsOut)
 	}
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err
 	}
-	data, err := gen.GenerateTS(schema.CompileRoot())
+	data, err := gen.GenerateTS(dsl.compileRoot)
 	if err != nil {
 		return err
 	}

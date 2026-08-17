@@ -8,23 +8,20 @@ import (
 	"strings"
 )
 
-// defaultWasmOut is where the browser artifacts land when --out is not given:
-// the @taubyte/tcc npm package's assets dir. It is only a default — --out
-// redirects it (e.g. to a temp dir for tests, or a Go package for //go:embed).
-const defaultWasmOut = "pkg/tcc/clients/js/assets"
-
-// buildWasm compiles pkg/tcc/wasm for the browser (GOOS=js GOARCH=wasm) and
-// copies the matching wasm_exec.js loader next to it.
-func buildWasm(root, out string) error {
+// buildWasm compiles the selected DSL's wasm main package for the browser
+// (GOOS=js GOARCH=wasm) and copies the matching wasm_exec.js loader next to it.
+// The default --out is the vocabulary's own (dslTarget.wasmOut); --out redirects
+// it, e.g. to a temp dir for tests or a Go package for //go:embed.
+func buildWasm(root, out string, dsl dslTarget) error {
 	if out == "" {
-		out = filepath.Join(root, defaultWasmOut)
+		out = filepath.Join(root, dsl.wasmOut)
 	}
 	if err := os.MkdirAll(out, 0o755); err != nil {
 		return err
 	}
 
 	wasmPath := filepath.Join(out, "tcc.wasm")
-	cmd := exec.Command("go", "build", "-o", wasmPath, "./pkg/tcc/wasm")
+	cmd := exec.Command("go", "build", "-o", wasmPath, dsl.wasmPkg)
 	cmd.Dir = root
 	cmd.Env = append(os.Environ(), "GOOS=js", "GOARCH=wasm")
 	cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr

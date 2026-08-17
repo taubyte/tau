@@ -8,6 +8,11 @@
 //	                      (default out: pkg/tcc/clients/js/assets)
 //	tcc-gen --ts [--out DIR]    generate the TypeScript schema interfaces
 //	                      (default out: pkg/tcc/clients/js/src/gen)
+//
+// --dsl v1|v2 selects the vocabulary every mode reads. It is the ONLY thing that
+// differs between the two: accessors, TypeScript and the wasm module are all
+// generated from whichever schema root is named, so a second DSL costs a flag
+// rather than a second generator.
 package main
 
 import (
@@ -18,7 +23,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
+	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"github.com/taubyte/tau/tools/tcc-gen/internal/gen"
 	"github.com/urfave/cli/v2"
 )
@@ -33,6 +40,7 @@ func main() {
 			&cli.BoolFlag{Name: "check", Usage: "diff generated accessors against pkg/schema and report drift"},
 			&cli.BoolFlag{Name: "wasm", Usage: "build the browser wasm module (GOOS=js) + wasm_exec.js into --out"},
 			&cli.BoolFlag{Name: "ts", Usage: "generate the TypeScript schema (interfaces) into --out"},
+			&cli.StringFlag{Name: "dsl", Value: "v1", Usage: "which vocabulary to generate from: v1 or v2"},
 		},
 		Action: run,
 	}
@@ -53,15 +61,20 @@ func run(c *cli.Context) error {
 		}
 	}
 
+	dsl, err := selectDSL(c.String("dsl"))
+	if err != nil {
+		return err
+	}
+
 	if c.Bool("wasm") {
-		return buildWasm(root, c.String("out"))
+		return buildWasm(root, c.String("out"), dsl)
 	}
 
 	if c.Bool("ts") {
-		return writeTS(root, c.String("out"))
+		return writeTS(root, c.String("out"), dsl)
 	}
 
-	generated, err := gen.Generate(schema.GenerationRoot())
+	generated, err := gen.Generate(dsl.generationRoot)
 	if err != nil {
 		return err
 	}
@@ -86,6 +99,42 @@ func run(c *cli.Context) error {
 	}
 	fmt.Printf("wrote %d files to %s\n", len(generated), out)
 	return nil
+}
+
+// dslTarget is everything the generator needs to know about a vocabulary: its two
+// schema roots and where its browser artifacts belong. Adding a vocabulary is one
+// entry here, not a fork of the generator.
+type dslTarget struct {
+	name           string
+	generationRoot []*engine.Node
+	compileRoot    *engine.Node
+	wasmPkg        string // the main package built for GOOS=js
+	wasmOut        string // default --out for --wasm
+	tsOut          string // default --out for --ts
+}
+
+func selectDSL(name string) (dslTarget, error) {
+	switch name {
+	case "", "v1":
+		return dslTarget{
+			name:           "v1",
+			generationRoot: schema.GenerationRoot(),
+			compileRoot:    schema.CompileRoot(),
+			wasmPkg:        "./pkg/tcc/wasm",
+			wasmOut:        "pkg/tcc/clients/js/assets",
+			tsOut:          "pkg/tcc/clients/js/src/gen",
+		}, nil
+	case "v2":
+		return dslTarget{
+			name:           "v2",
+			generationRoot: v2.GenerationRoot(),
+			compileRoot:    v2.CompileRoot(),
+			wasmPkg:        "./pkg/tcc/taubyte/v2/wasm",
+			wasmOut:        "pkg/tcc/taubyte/v2/explorer/public",
+			tsOut:          "pkg/tcc/taubyte/v2/explorer/src/gen",
+		}, nil
+	}
+	return dslTarget{}, fmt.Errorf("unknown --dsl %q: want v1 or v2", name)
 }
 
 // findRepoRoot walks up from dir to the tau module root.
