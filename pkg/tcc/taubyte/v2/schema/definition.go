@@ -534,19 +534,6 @@ var V2Resources = []*Node{
 			Resource("messaging", "Messaging", "Messaging", "messaging"),
 		)),
 
-	// The commands a p2p service declares ARE its verbs, each tagged with an effect
-	// class in the service's own definition (edges.md §3.3).
-	DefineGroup("services",
-		resource(
-			commonAttributes(
-				String("protocol", Required(), InSection("identity"), Doc("Protocol", "libp2p protocol identifier this service advertises.")),
-			),
-			GroupDoc("A libp2p service. Its declared commands are the verbs an edge to it may use."), Icon("server"), Category("trigger"),
-			secIdentity, secAccess,
-			Ops(WriteOp("call")), // a p2p service's own commands narrow this
-			Resource("services", "Service", "Service", "service"),
-		)),
-
 	// Thin on purpose: the tools are already functions. Stateless Streamable HTTP,
 	// POST only, no sessions. It compiles to route-table rows that additionally
 	// predicate on the Mcp-Method / Mcp-Name headers the 2026-07-28 spec mirrors out

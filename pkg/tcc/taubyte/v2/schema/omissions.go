@@ -232,6 +232,17 @@ var Omissions = []Omission{
 		Instead: "a function, named by an access entry's `via`.",
 	},
 	{
+		Name:    "services (p2p)",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "Carried forward from v1 without being re-thought: a `protocol` string and a single " +
+			"`call` op, where the notes say a p2p service's own declared commands are its verbs — " +
+			"which is per-instance data, not a fixed op set. p2p gets a shape of its own; it does " +
+			"not have one yet.",
+		Instead:  "nothing. A p2p service cannot be declared in v2 today.",
+		Unblocks: "a decision on the shape.",
+	},
+	{
 		Name:    "traffic transformers on a route",
 		State:   Open,
 		Decided: ByDefault,
