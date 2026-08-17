@@ -103,7 +103,7 @@ func schemaFn(js.Value, []js.Value) any {
 	return js.Global().Get("JSON").Call("parse", string(b))
 }
 
-// verbs() -> [{kind, verbs: [{name, effect}]}] — read back off each kind's own Ops()
+// verbs() -> [{kind, verbs: [{name, effect, delivered}]}] — read back off each kind's own Ops()
 // declaration, so the UI cannot show a verb the compiler would reject.
 func verbsFn(js.Value, []js.Value) any {
 	kinds := schema.Kinds()
@@ -112,7 +112,7 @@ func verbsFn(js.Value, []js.Value) any {
 		ops := schema.OpsOf(kind)
 		vs := make([]map[string]any, 0, len(ops))
 		for _, v := range ops {
-			vs = append(vs, map[string]any{"name": v.Name, "effect": v.Effect})
+			vs = append(vs, map[string]any{"name": v.Name, "effect": v.Effect, "delivered": v.Delivered})
 		}
 		out = append(out, map[string]any{"kind": kind, "verbs": vs})
 	}

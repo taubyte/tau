@@ -298,6 +298,7 @@ var Omissions = []Omission{
 		Decided: Forced,
 		Why: "A port nothing routes to, an application no gateway fronts, a queue nobody consumes, " +
 			"a cache nobody reads: each compiles, and each is dead config that reads as working. " +
+			"A container that declares `receive` and no `deliver` port: same. " +
 			"Deleting the trigger block made reachability answerable by traversing the graph, and " +
 			"nothing yet does the traversal. It cannot live in one resource's schema, because the " +
 			"question is about the whole compiled project.",

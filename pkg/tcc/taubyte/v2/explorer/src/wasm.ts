@@ -6,6 +6,10 @@ export type Effect = "read" | "write" | "admin";
 export interface Verb {
   name: string;
   effect: Effect;
+  // the platform hands the work over, rather than the resource going to get it —
+  // which is the difference between an arrow that points at a queue and one that
+  // comes out of it
+  delivered: boolean;
 }
 export interface KindVerbs {
   kind: string;

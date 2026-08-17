@@ -11,3 +11,7 @@ caches:
     orders:
         namespace: /
         ops: [get]
+messaging:
+    orders:
+        namespace: /
+        ops: [subscribe]

@@ -446,7 +446,7 @@ var V2Resources = []*Node{
 			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. Per-key ordering is an entity, not this."), Icon("list"), Category("data"),
 			secIdentity, secAccess,
 			Section("delivery", "Delivery", "Claim, retry and dead-letter behaviour."),
-			Ops(ReadOp("receive"), WriteOp("send")),
+			Ops(DeliveredOp("receive"), WriteOp("send")),
 			Resource("queues", "Queue", "Queue", "queue"),
 		)),
 
@@ -656,7 +656,7 @@ var V2Resources = []*Node{
 			secIdentity, secAccess,
 			Section("channel", "Channel", "Channel matching."),
 			Section("bridges", "Bridges", "External protocol bridges."),
-			Ops(ReadOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
+			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
 			Resource("messaging", "Messaging", "Messaging", "messaging"),
 		)),
 

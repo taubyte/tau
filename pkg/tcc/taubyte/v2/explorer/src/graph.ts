@@ -65,7 +65,13 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
   const nodes: Node[] = [];
   const arrows: Arrow[] = [];
   const verbEffect = new Map<string, Effect>();
-  for (const kv of verbs) for (const v of kv.verbs) verbEffect.set(`${kv.kind}/${v.name}`, v.effect);
+  const verbDelivered = new Set<string>();
+  for (const kv of verbs) {
+    for (const v of kv.verbs) {
+      verbEffect.set(`${kv.kind}/${v.name}`, v.effect);
+      if (v.delivered) verbDelivered.add(`${kv.kind}/${v.name}`);
+    }
+  }
 
   const root = (compiled.object as Compiled) ?? compiled;
   const pendingHandlers: { from: string; kind: string; name: string; scope: string }[] = [];
@@ -73,6 +79,7 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
   const pendingPolicy: { from: string; name: string; scope: string | null; verb: string }[] = [];
   const pendingAccess: {
     from: string; kind: string; name: string; scope: string | null; verb: string; effect: Effect;
+    inbound?: boolean;
   }[] = [];
 
   // an access block is a map of target-name -> { ops, namespace? }
@@ -137,6 +144,11 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
               scope: ns,
               verb: op,
               effect: verbEffect.get(`${key}/${op}`) ?? "write",
+              // `receive` and `subscribe` are declared by the consumer but the work
+              // travels the other way. Drawn from the declaration, a queue worker has
+              // two arrows out and none in, and reads as a workload nothing ever
+              // starts — which is exactly backwards from what runs.
+              inbound: verbDelivered.has(`${key}/${op}`),
             });
           }
         }
@@ -247,7 +259,13 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
     for (const scope of scopeOf(own, a.scope)) {
       const target = nodes.find((n) => n.kind === a.kind && n.name === a.name && n.scope === scope);
       if (target) {
-        arrows.push({ from: a.from, to: target.id, kind: a.kind, verb: a.verb, effect: a.effect });
+        // a delivered verb is flipped: the declaration stays where it is authored,
+        // the ARROW follows the work
+        arrows.push(
+          a.inbound
+            ? { from: target.id, to: a.from, kind: a.kind, verb: a.verb, effect: a.effect }
+            : { from: a.from, to: target.id, kind: a.kind, verb: a.verb, effect: a.effect },
+        );
         break;
       }
     }

@@ -1,6 +1,8 @@
 id: QmRZ8XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuK
-description: a queue consumer - it listens on nothing, so it declares no ports, and readiness is not a status code
+description: a container queue consumer - it has no host ABI, so each item is POSTed to a port it declared
 image: "ghcr.io/acme/pool:2.1"
+ports:
+    work: 8080
 health:
     function:
         name: pool_ready
@@ -12,3 +14,6 @@ limits:
 queues:
     orders:
         ops: [receive]
+        deliver:
+            port: work
+            path: /work

@@ -30,13 +30,37 @@ const (
 type Verb struct {
 	Name   string
 	Effect string
+	// Delivered marks a verb where the PLATFORM hands the work over, rather than the
+	// resource going and asking for it. `get` on a cache is a call the workload
+	// makes; `receive` on a queue and `subscribe` on a channel are the other
+	// direction, and something has to actually arrive.
+	//
+	// It is what makes a consumer's inbound path expressible. A WASM consumer needs
+	// nothing — the dispatch IS the delivery, and there is no port to speak of. A
+	// CONTAINER has no host ABI to be called through, so the item has to be posted to
+	// it, and this is the flag that puts a `deliver` block on those access entries and
+	// on no others.
+	Delivered bool
 }
 
 // Read/Write/Admin name a verb and its effect class in one term, so a verb cannot be
 // declared without one.
-func ReadOp(name string) Verb  { return Verb{name, Read} }
-func WriteOp(name string) Verb { return Verb{name, Write} }
-func AdminOp(name string) Verb { return Verb{name, Admin} }
+func ReadOp(name string) Verb  { return Verb{Name: name, Effect: Read} }
+func WriteOp(name string) Verb { return Verb{Name: name, Effect: Write} }
+func AdminOp(name string) Verb { return Verb{Name: name, Effect: Admin} }
+
+// DeliveredOp is a read whose data ARRIVES. See Verb.Delivered.
+func DeliveredOp(name string) Verb { return Verb{Name: name, Effect: Read, Delivered: true} }
+
+// isDelivered reports whether any of a kind's verbs hands work over.
+func isDelivered(kind string) bool {
+	for _, v := range OpsOf(kind) {
+		if v.Delivered {
+			return true
+		}
+	}
+	return false
+}
 
 // HTTP methods are NOT ops. They belong to a gateway's route, which is where a
 // request enters and where the method is matched. Declaring them as a kind's ops
@@ -131,7 +155,7 @@ func accessGroups() []*Node {
 	for _, kind := range kinds {
 		verbs := opNames(kind)
 		out = append(out, DefineGroup(kind,
-			DefineIter([]*Attribute{
+			DefineIter(append([]*Attribute{
 				String("namespace", IsNamespacePath(), InSection("access"),
 					Doc("Namespace", "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.")),
 				StringSlice("ops", Required(), AreVerbsOf(kind), InSection("access"),
@@ -141,7 +165,7 @@ func accessGroups() []*Node {
 				// them. An entry is that place.
 				Duration("timeout", InSection("access"),
 					Doc("Timeout", "How long one operation on it may take before it is given up on.")),
-			},
+			}, deliverAttributes(kind)...),
 				// No Resource(...): an access entry is data under its parent, not a
 				// kind. That descriptor would emit a generated type for it and would
 				// mark the group as something a scope walk cares about.
@@ -243,3 +267,45 @@ func authorizerAttributes() []*Attribute {
 }
 
 var secAuthorizer = Section("authorizer", "Authorizer", "Who decides what a caller may do to this.")
+
+// deliverAttributes answer a question the vocabulary was not asking: with a queue or
+// a channel, WHAT STARTS THE WORK.
+//
+//	queues:
+//	    orders:
+//	        ops: [receive]
+//	        deliver:
+//	            port: http     # one of this workload's own named ports
+//	            path: /work
+//
+// A WASM consumer needs none of it. It is dispatched — the call is the delivery, the
+// host ABI is the channel, and there is no port anywhere in the picture.
+//
+// A CONTAINER has no host ABI. It is already running, and an item has to be handed to
+// it over something, so the platform posts each one to a port the workload declared
+// and a path it chose. That is Cloud Run's push-subscription shape, and it is the one
+// that fits what this vocabulary already says: `limits.concurrency` is how many items
+// an instance may hold at once and `limits.max-instances` is how far the platform may
+// scale to keep up, which are only meaningful if the platform is the one pushing. A
+// consumer that pulled would own its own concurrency and those two ceilings would
+// describe nothing.
+//
+// It is per-USE, not per-workload, because one container can consume two queues on two
+// paths, and the entry is where that is already written.
+//
+// Left optional rather than required-for-containers: this block hangs off the shared
+// access group, which every kind gets, so "required when the consumer is a container"
+// is not a condition the schema can state. A container that declares `receive` and no
+// `deliver` receives nothing — the same publish-time reachability check that catches a
+// port with no feeder catches this, and both are still unwritten.
+func deliverAttributes(kind string) []*Attribute {
+	if !isDelivered(kind) {
+		return nil
+	}
+	return []*Attribute{
+		String("deliver/port", Path("deliver", "port"), IsVariableName(), InSection("access"),
+			Doc("Deliver To Port", "Which of this workload's own named ports each item is posted to. Containers only: a WASM consumer is dispatched and has no port.")),
+		String("deliver/path", Path("deliver", "path"), InSection("access"),
+			Doc("Deliver To Path", "The path each item is posted to, e.g. \"/work\".")),
+	}
+}
