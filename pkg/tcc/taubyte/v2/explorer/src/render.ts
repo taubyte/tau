@@ -115,7 +115,7 @@ function edgePath(
   dim: boolean,
   route?: { x: number; y: number }[],
 ): SVGElement {
-  const d = route && route.length >= 2 ? curveThrough(route) : straight(from, to);
+  const d = route && route.length >= 2 ? curveThrough(route) : drawn(from, to);
   const cls = dim ? "dim" : a.policy ? "policy" : a.ref ? "ref" : a.effect;
   const g = el("g", { class: `arrow ${cls}` });
   const p = el("path", {
@@ -153,9 +153,24 @@ function curveThrough(p: { x: number; y: number }[]): string {
   return d;
 }
 
-// Only reached if a layout ever comes back without a section for an edge.
-function straight(from: Node, to: Node): string {
-  return `M${from.x + NODE_W},${from.y + NODE_H / 2} L${to.x},${to.y + NODE_H / 2}`;
+// The edges ELK declines to route: the ones crossing a namespace boundary, under the
+// hierarchy mode that keeps the layout compact (see layout.ts). A straight line
+// between two boxes reads as a wire laid over the picture; a curve that leaves the
+// source's side and arrives at the target's reads as a connection, which is all this
+// has to do. It is drawn, not routed — it does not know what it passes over.
+function drawn(from: Node, to: Node): string {
+  const x1 = from.x + NODE_W;
+  const y1 = from.y + NODE_H / 2;
+  const x2 = to.x;
+  const y2 = to.y + NODE_H / 2;
+  if (x2 < x1) {
+    // backwards: bow above both boxes so it reads as going the other way instead of
+    // disappearing behind everything between them
+    const lift = Math.min(y1, y2) - 34;
+    return `M${x1},${y1} C${x1 + 70},${lift} ${x2 - 70},${lift} ${x2},${y2}`;
+  }
+  const mid = x1 + (x2 - x1) / 2;
+  return `M${x1},${y1} C${mid},${y1} ${mid},${y2} ${x2},${y2}`;
 }
 
 function nodeBox(n: Node, highlight: Set<string> | null, selected: boolean, onPick: (id: string) => void): SVGElement {
