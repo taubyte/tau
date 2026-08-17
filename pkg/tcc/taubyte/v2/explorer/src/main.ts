@@ -204,7 +204,7 @@ function graphPane(): HTMLElement {
   wrap.appendChild(
     sectionTitle(
       "the graph the config already is",
-      "every arrow is a use declared in the resource at its tail",
+      "an arrow points the way the action goes - which is not always where it is declared",
     ),
   );
   wrap.appendChild(legend());
