@@ -65,7 +65,7 @@ export function categoryOf(kind: string): string {
 
 const isScopeContainer = (k: string) => k === "namespaces";
 
-export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
+export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel = ""): Graph {
   const nodes: Node[] = [];
   const arrows: Arrow[] = [];
   const verbEffect = new Map<string, Effect>();
@@ -320,7 +320,9 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
     if (!n.host) continue;
     const label = n.host.name ? `${n.host.name}.` : "";
     if (n.host.kind === "generated") {
-      n.fqdn = `${label}⟨cloud zone⟩`;
+      // The project's own label is derived from its id, so it is known here. The
+      // cloud's fqdn is not in the config and is not guessed.
+      n.fqdn = projectLabel ? `${label}${projectLabel}.⟨cloud⟩` : `${label}⟨cloud zone⟩`;
       continue;
     }
     const zoneID = n.host.zone?.replace(/^zones\//, "");

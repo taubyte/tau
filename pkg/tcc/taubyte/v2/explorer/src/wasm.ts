@@ -33,6 +33,8 @@ export interface Omission {
 }
 export type Compiled = Record<string, unknown>;
 export interface CompileOk {
+  /** The project's label in a cloud's generated zone — derived from its id. */
+  projectLabel?: string;
   object: Compiled;
   validations?: { key: string; value: unknown; validator: string }[];
 }

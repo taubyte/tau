@@ -54,7 +54,7 @@ function compile(): CompileOk | { error: string } {
 function render() {
   lastResult = compile();
   if (!("error" in lastResult)) {
-    graph = buildGraph(lastResult.object, verbs);
+    graph = buildGraph(lastResult.object, verbs, lastResult.projectLabel);
     const g = graph;
     const seq = ++layoutSeq;
     // A keystroke while a layout is in flight makes that layout stale; the counter is

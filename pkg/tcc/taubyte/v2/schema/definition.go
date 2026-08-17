@@ -147,11 +147,19 @@ var proxyHandlerKinds = []string{"application"}
 // hostAttributes is how anything reachable from the internet gets its name.
 //
 // THE GENERATED PART IS NOT IN THE CONFIG, and that is the whole point. Every cloud
-// serves a zone of its own — `<generated>.<cloud fqdn>` — and a project gets a label
-// inside it. Both halves are decided by the cloud the project is deployed to, so they
-// are resolved at RUNTIME. v1 wrote its generated domain into the config, which tied a
-// project to the one cloud that string described: the same repo deployed to a second
-// cloud claimed a name it did not have there.
+// serves a zone of its own — `<project label>.<cloud fqdn>` — and a project gets a
+// label inside it.
+//
+// The two halves are NOT alike, and the difference is what makes this usable. The
+// project label is DERIVED from the project id, which is a CID and already unique, so
+// it is a pure function anyone holding the config can compute — see ProjectLabel. Only
+// the cloud's own fqdn is unknown until deploy.
+//
+// v1 wrote a whole generated domain into the config, which tied a project to the one
+// cloud that string described: the same repo deployed to a second cloud claimed a name
+// it did not have there. Deriving the label keeps the stable half stable — the same
+// project has the same label everywhere — while leaving the half that genuinely
+// belongs to the cloud out of git.
 //
 //	host:
 //	    generated:

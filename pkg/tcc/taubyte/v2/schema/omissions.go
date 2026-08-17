@@ -97,8 +97,9 @@ var Omissions = []Omission{
 		Name:    "spelling out a generated name inside the config",
 		State:   Open,
 		Decided: Forced,
-		Why: "A host under the cloud's own zone is `<label>.<generated>.<cloud fqdn>`, and both " +
-			"generated halves are resolved at deploy — that is the point of them. So any field " +
+		Why: "A host under the cloud's own zone is `<label>.<project label>.<cloud fqdn>`. The " +
+			"project label is derived from the project id and IS computable here; the cloud's " +
+			"own fqdn is not, and never will be — it belongs to the deployment. So any field " +
 			"that needs the FULL name cannot hold it. `cors.origins` is the live case: it takes " +
 			"literal origins, and an author cannot write an origin they will not know until the " +
 			"project is deployed. Today that field is only usable with a zone you own.",

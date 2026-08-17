@@ -80,7 +80,17 @@ func compileFn(_ js.Value, args []js.Value) any {
 		return errResult(err.Error())
 	}
 
-	out := map[string]any{"object": obj.Flat()}
+	// The project's label in a cloud's generated zone is a pure function of its id, so
+	// it can be shown rather than guessed at. Only the cloud's own fqdn is unknown
+	// here, and that stays unknown.
+	flat := obj.Flat()
+	out := map[string]any{"object": flat}
+	if root, ok := flat["object"].(map[string]any); ok {
+		flat = root
+	}
+	if id, ok := flat["id"].(string); ok && id != "" {
+		out["projectLabel"] = schema.ProjectLabel(id)
+	}
 	if len(validations) > 0 {
 		vs := make([]map[string]any, 0, len(validations))
 		for _, v := range validations {
