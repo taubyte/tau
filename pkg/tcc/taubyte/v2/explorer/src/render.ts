@@ -125,7 +125,7 @@ function edgePath(from: Node, to: Node, a: Arrow, dim: boolean): SVGElement {
   });
   const title = el("title");
   title.textContent = a.policy
-    ? `${from.kind}/${from.name} is authorized by ${to.kind}/${to.name} — it returns the ops a caller gets`
+    ? `${from.kind}/${from.name} — ${a.verb} — ${to.kind}/${to.name}`
     : a.ref
     ? `${from.kind}/${from.name} → ${to.kind}/${to.name} · ${a.verb} (reference, no verb)`
     : `${from.kind}/${from.name} → ${to.kind}/${to.name} · ${a.verb} (${a.effect})`;

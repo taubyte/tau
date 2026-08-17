@@ -134,6 +134,16 @@ var secSource = Section("source", "Source", "Where the code is sourced from.")
 // a route that silently never fires.
 var handlerKinds = []string{"function", "application", "website", "gateway", "mcp"}
 
+// proxyHandlerKinds are what may sit behind an L4 proxy. Only a container: a raw
+// connection is held open and streamed, and a function is request-and-answer with no
+// connection to hold. A website or an mcp is HTTP by definition, so a route serves
+// them and this never does.
+//
+// It is still an Either() with one branch rather than a flat block, so a proxy's
+// handler reads exactly like a gateway route's, and a second kind is a list entry
+// rather than a reshape.
+var proxyHandlerKinds = []string{"application"}
+
 // A kind declares Ops() when something can reach it. A kind without them is not a
 // target: nothing "uses" a cron, a zone or a module — a cron fires, a zone answers
 // DNS, a module is built into a workload and named by its source. Their absence is
@@ -509,8 +519,8 @@ var V2Resources = []*Node{
 			append(identityAttributes(),
 				String("fqdn", IsFqdn(), Field("Fqdn"), Accessor("FQDN"), InSection("naming"), Doc("FQDN", "The name this gateway answers on. Omit it for a gateway that is only ever mounted beneath another one.")),
 				String("certificate/source", Path("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("naming"), Doc("Certificate", "generated: issued on demand for this name. provided: supplied below.")),
-				String("certificate/cert", Path("certificate", "cert"), RequiredWhen("certificate", "provided"), Field("CertFile"), InSection("naming"), ShowWhen("certificate", "provided"), Doc("Certificate PEM", "PEM-encoded certificate chain.")),
-				String("certificate/key", Path("certificate", "key"), RequiredWhen("certificate", "provided"), Field("KeyFile"), InSection("naming"), ShowWhen("certificate", "provided"), Doc("Certificate Key", "PEM-encoded private key for the certificate.")),
+				String("certificate/cert", Path("certificate", "cert"), RequiredWhen("certificate/source", "provided"), Field("CertFile"), InSection("naming"), ShowWhen("certificate/source", "provided"), Doc("Certificate PEM", "PEM-encoded certificate chain.")),
+				String("certificate/key", Path("certificate", "key"), RequiredWhen("certificate/source", "provided"), Field("KeyFile"), InSection("naming"), ShowWhen("certificate/source", "provided"), Doc("Certificate Key", "PEM-encoded private key for the certificate.")),
 
 				// The compiled keys are PATHS, not dashed names: TNS is a CRDT, so
 				// `route/handler/namespace` is three mergeable segments while
@@ -538,6 +548,93 @@ var V2Resources = []*Node{
 			Section("handler", "Handler", "What serves it."),
 			Section("policy", "Policy", "CORS and rate limiting, at the name."),
 			Resource("gateways", "Gateway", "Gateway", "gateway"),
+		)),
+
+	// The same front door for everything that is not HTTP: a raw TCP, UDP or SCTP
+	// connection accepted at the edge and streamed over p2p to a workload, the way a
+	// gateway route already carries a request. A gateway can only route what it can
+	// parse — a path, a method, a Host header — and Postgres, Redis, MQTT and a game
+	// server offer none of those.
+	//
+	// THIS RESOURCE DECLARES NO PORT AND NO ADDRESS. Both are allocated, and clients
+	// are told through DNS — which is the only reason the "nobody writes a port
+	// number" rule survives contact with L4. For HTTP the address is the name plus the
+	// path and the port is an implementation detail; for a raw connection the port IS
+	// the address, so it has to come from somewhere, and a number in this file would
+	// be the first authored value in the whole config with a GLOBAL collision domain.
+	// Two projects wanting 5432 on one edge address is not an error either project's
+	// schema can see.
+	//
+	// So the proxy gets its own address, and the platform publishes both records:
+	//
+	//	db.shop.example.com.              30 IN AAAA 2001:db8::7
+	//	_postgres._tcp.db.shop.example.com. 30 IN SRV 0 0 5432 db.shop.example.com.
+	//
+	// SRV (RFC 2782) is the record that carries a port, and it is the precise answer.
+	// But close to nothing performs SRV lookups on its own — MongoDB made it explicit
+	// with `mongodb+srv://`, XMPP and SIP do it, and psql, redis-cli and most client
+	// libraries do not. A dedicated address is what makes that survivable: scarcity was
+	// only ever per-address, so on its own name the protocol's conventional port is
+	// free again and `psql -h db.shop.example.com` connects with nothing looked up by
+	// hand. `service` is what names that convention.
+	//
+	// The v4 address space is the real cost here, not anything in this schema. On v6
+	// an address per proxy is free.
+	//
+	// TWO RUNTIME CAVEATS the config layer cannot fix, recorded here because they are
+	// invisible at authoring time:
+	//
+	// UDP over a libp2p stream is not transparent. Streams are reliable and ordered,
+	// which is the property a UDP application chose to do without — tunnelled, packet
+	// loss becomes a latency spike and head-of-line blocking arrives for free. It
+	// works; it does not behave the way the application was written against.
+	//
+	// SCTP has that problem worse, since multi-streaming and multi-homing are the
+	// entire reason to pick it and neither survives a tunnel. Both stay in the enum:
+	// which protocols the runtime actually carries is the runtime's statement to make,
+	// and pretending the vocabulary is where that gets decided helps nobody.
+	//
+	// Like a gateway's, an fqdn inside a zone this cloud serves needs no record in
+	// `zones` — those are produced, not authored.
+	DefineGroup("proxies",
+		resource(
+			append(identityAttributes(),
+				String("protocol", InSet("tcp", "udp", "sctp"), Default("tcp"), Required(), InSection("listener"),
+					Doc("Protocol", "The transport carried. tcp is the transparent one; see this kind's docs for what a tunnel does to udp and sctp.")),
+				String("fqdn", IsFqdn(), Required(), Field("Fqdn"), Accessor("FQDN"), EmitValidation("zone", "dns"), InSection("listener"),
+					Doc("FQDN", "The name clients dial. It resolves to an allocated address — no port and no IP are written here, because both are assigned and published in DNS.")),
+				String("service", IsVariableName(), InSection("listener"),
+					Doc("Service", "IANA service name, e.g. \"postgres\". It builds the SRV label published beside this name, and gives clients that cannot do SRV lookups the conventional port to dial. Defaults to this resource's name.")),
+
+				// Only `terminate` earns its keep: the proxy holds the certificate so a
+				// plaintext workload can answer on a public name, reusing exactly the
+				// gateway's cert machinery. There is no `passthrough` mode because there
+				// is nothing to pass through to a decision — one proxy owns its address,
+				// so nothing is multiplexed and no SNI is read.
+				String("tls/mode", Path("tls", "mode"), InSet("none", "terminate"), Default("none"), Field("TLSMode"), InSection("listener"),
+					Doc("TLS", "none: an opaque pipe, whatever the protocol does about TLS is its own business. terminate: the proxy answers TLS and hands plaintext to the workload.")),
+				String("certificate/source", Path("certificate", "source"), InSet("generated", "provided"), RequiredWhen("tls/mode", "terminate"), Field("CertSource"), InSection("listener"), ShowWhen("tls/mode", "terminate"),
+					Doc("Certificate", "generated: issued on demand for this name. provided: supplied below.")),
+				String("certificate/cert", Path("certificate", "cert"), RequiredWhen("certificate/source", "provided"), Field("CertFile"), InSection("listener"), ShowWhen("certificate/source", "provided"),
+					Doc("Certificate PEM", "PEM-encoded certificate chain.")),
+				String("certificate/key", Path("certificate", "key"), RequiredWhen("certificate/source", "provided"), Field("KeyFile"), InSection("listener"), ShowWhen("certificate/source", "provided"),
+					Doc("Certificate Key", "PEM-encoded private key for the certificate.")),
+
+				// Same shape as a gateway route's handler, one kind wide.
+				String("handler/kind", Path("handler", Either(proxyHandlerKinds...)), Key(), Field("HandlerKind"), InSection("handler"),
+					Doc("Handler", "Which kind sits behind this proxy (the key selects the handler block).")),
+				String("handler/namespace", Path("handler", Either(proxyHandlerKinds...), "namespace"), IsNamespacePath(), InSection("handler"),
+					Doc("Namespace", "Path to the namespace holding the workload, e.g. \"/shop/eu\". Omitted means the project root.")),
+				String("handler/name", Path("handler", Either(proxyHandlerKinds...), "name"), Required(), IsVariableName(), InSection("handler"),
+					Doc("Name", "The workload's name within that namespace.")),
+				String("handler/port", Path("handler", Either(proxyHandlerKinds...), "port"), IsVariableName(), InSection("handler"),
+					Doc("Port", "Which of the workload's ports to stream to, by name. The number stays where the workload declared it.")),
+			),
+			GroupDoc("An allocated address that accepts a raw connection and streams it to a workload over p2p. For everything a gateway cannot parse."), Category("internet"), Icon("plug"),
+			secIdentity,
+			Section("listener", "Listener", "The protocol carried, the name it is reached by, and whether TLS stops here."),
+			Section("handler", "Handler", "The workload on the other end."),
+			Resource("proxies", "Proxy", "Proxy", "proxy"),
 		)),
 
 	// Both halves are declared now: the channel edges to its consumer with

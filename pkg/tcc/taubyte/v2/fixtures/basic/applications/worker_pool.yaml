@@ -1,8 +1,6 @@
 id: QmRZ8XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuK
-description: readiness is not a status code here - a function decides, and it can look at the queue
+description: a queue consumer - it listens on nothing, so it declares no ports, and readiness is not a status code
 image: "ghcr.io/acme/pool:2.1"
-ports:
-    rpc: 7000
 health:
     function:
         name: pool_ready

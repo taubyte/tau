@@ -1,0 +1,11 @@
+id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR
+description: an allocated address that streams raw tcp to db over p2p - no port and no ip is written here
+protocol: tcp
+fqdn: db.shop.example.com
+service: postgres
+tls:
+    mode: none
+handler:
+    application:
+        name: db
+        port: pg

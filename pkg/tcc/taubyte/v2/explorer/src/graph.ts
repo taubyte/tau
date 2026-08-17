@@ -16,6 +16,9 @@ export interface Node {
   // Read off the field rather than off a list of kinds, so a new kind that carries
   // a name is answered without editing this file.
   fqdn?: string;
+  // How a client reaches that name, when it is not just "https". An L4 proxy writes
+  // no port and no address, so this is the only place the page can say what to dial.
+  dial?: string;
   layer: number;
   x: number;
   y: number;
@@ -67,7 +70,7 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
   const root = (compiled.object as Compiled) ?? compiled;
   const pendingHandlers: { from: string; kind: string; name: string; scope: string }[] = [];
   // an access entry names its target; it is matched once every node is known
-  const pendingPolicy: { from: string; name: string; scope: string | null }[] = [];
+  const pendingPolicy: { from: string; name: string; scope: string | null; verb: string }[] = [];
   const pendingAccess: {
     from: string; kind: string; name: string; scope: string | null; verb: string; effect: Effect;
   }[] = [];
@@ -107,6 +110,9 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
       name: String(res.name ?? id.slice(0, 8)),
       scope,
       fqdn: typeof res.fqdn === "string" ? res.fqdn : undefined,
+      dial: typeof res.protocol === "string"
+        ? `${res.protocol}${typeof res.service === "string" ? ` · _${res.service}._${res.protocol}` : ""}`
+        : undefined,
       layer: 0,
       x: 0,
       y: 0,
@@ -156,21 +162,28 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
       }
     }
 
-    // A reachable resource names the function that decides what callers get. It is
-    // the target's declaration, so the arrow starts at the target.
-    const az = res["authorizer/name"];
-    if (typeof az === "string") {
-      const ns = typeof res["authorizer/namespace"] === "string" ? (res["authorizer/namespace"] as string) : null;
-      pendingPolicy.push({ from: id, name: az, scope: ns });
-    }
+    // Two places a resource names a function that decides something ABOUT it, rather
+    // than something it reaches: who may use it, and whether it is ready. Both are
+    // the resource's own declaration, so both arrows start at it.
+    const named = (nameKey: string, nsKey: string, verb: string) => {
+      const n = res[nameKey];
+      if (typeof n !== "string") return;
+      const ns = typeof res[nsKey] === "string" ? (res[nsKey] as string) : null;
+      pendingPolicy.push({ from: id, name: n, scope: ns, verb });
+    };
+    named("authorizer/name", "authorizer/namespace", "authorized by");
+    named("health/function/name", "health/function/namespace", "readiness decided by");
 
-    // A gateway's handler names its target by (kind, namespace, name) rather than
-    // resolving it to an id — a name in another namespace has no spelling the ref
-    // resolver accepts. Resolve it here, against the nodes actually compiled.
-    const hk = res["route/handler/kind"];
-    const hn = res["route/handler/name"];
-    if (typeof hk === "string" && typeof hn === "string") {
-      const ns = typeof res["route/handler/namespace"] === "string" ? (res["route/handler/namespace"] as string) : "";
+    // An ingress names its target by (kind, namespace, name) rather than resolving it
+    // to an id — a name in another namespace has no spelling the ref resolver accepts.
+    // Resolve it here, against the nodes actually compiled. Two prefixes because there
+    // are two front doors: a gateway route parses HTTP and carries the handler under
+    // `route/`, an L4 proxy parses nothing and has only the handler.
+    for (const p of ["route/handler", "handler"]) {
+      const hk = res[`${p}/kind`];
+      const hn = res[`${p}/name`];
+      if (typeof hk !== "string" || typeof hn !== "string") continue;
+      const ns = typeof res[`${p}/namespace`] === "string" ? (res[`${p}/namespace`] as string) : "";
       pendingHandlers.push({ from: id, kind: hk + "s", name: hn, scope: ns.replace(/^\/+/, "") });
     }
   };
@@ -234,7 +247,7 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
       if (target) {
         arrows.push({
           from: pol.from, to: target.id, kind: "functions",
-          verb: "authorized by", effect: "read", policy: true,
+          verb: pol.verb, effect: "read", policy: true,
         });
         break;
       }

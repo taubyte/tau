@@ -219,7 +219,7 @@ function legend(): HTMLElement {
     <span><i class="sw read"></i>read</span>
     <span><i class="sw write"></i>write</span>
     <span><i class="sw ref"></i>reference</span>
-    <span><i class="sw policy"></i>authorized by</span>
+    <span><i class="sw policy"></i>decided by a function</span>
     <span class="hint">click a resource for its blast radius · click it again for what can reach it</span>`;
   return l;
 }
@@ -240,7 +240,9 @@ function detail(): HTMLElement {
                 .filter((a) => a.from === n.id && !a.ref)
                 .map((a) => graph!.byId.get(a.to)!)
                 .map((t) => `<code>${esc(t.kind)}/${esc(t.name)}</code>${t.scope ? ` <span class="c">in ${esc(t.scope)}</span>` : ""}`);
-              return `<b>${esc(n.fqdn!)}</b> — <code>${esc(n.kind)}/${esc(n.name)}</code>${
+              return `<b>${esc(n.fqdn!)}</b>${
+                n.dial ? ` <span class="c">${esc(n.dial)}</span>` : ""
+              } — <code>${esc(n.kind)}/${esc(n.name)}</code>${
                 serves.length ? ` serves ${serves.join(", ")}` : " serves nothing yet"
               }.`;
             })

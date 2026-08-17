@@ -191,6 +191,17 @@ neither the field nor the file. Worth improving one day; do not paper over it.
 - A field you declared is missing from the compiled object, with no error ⇒ a
   self-referential `Tag`. §4.
 - Children silently absent ⇒ you hung a group off a `DefineIter`. §1.
+- A `ShowWhen` / `RequiredWhen` that never fires ⇒ its first argument is not an
+  attribute name. It takes the **sibling attribute's `Name`**, which for a nested field
+  is the full slashed one — `ShowWhen("certificate/source", "provided")`, never
+  `ShowWhen("certificate", ...)` after the block it appears to name. Nothing validates
+  that the target exists, so a wrong name is a condition that is simply never true: the
+  field is always hidden, or never required. Eight of these were wrong at once in the
+  gateway before anybody noticed, because the compiled output looks identical.
+- A defaulted field appearing where its own `ShowWhen` says it is irrelevant ⇒
+  `Default()` fires unconditionally. `ShowWhen` is presentation only. If a value would be
+  misleading in the compiled object when the branch is not taken, do not give it a
+  default — use `RequiredWhen` on the same condition instead.
 
 ---
 

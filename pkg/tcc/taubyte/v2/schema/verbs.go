@@ -59,12 +59,13 @@ func OpsOf(kind string) []Verb {
 	return nil
 }
 
-// ServedByRoute reports whether a gateway route can hand a request to this kind. It
-// is the OTHER way to be reachable, and the two are not interchangeable: ops are what
-// one resource does to another inside the cloud, a route is how a request from
-// outside arrives. A kind with neither is not a target at all.
+// ServedByRoute reports whether traffic from outside can be handed to this kind — by
+// a gateway route if it is HTTP, or by an L4 proxy if it is a raw connection. It is
+// the OTHER way to be reachable, and the two are not interchangeable: ops are what one
+// resource does to another inside the cloud, an ingress is how something from outside
+// arrives. A kind with neither is not a target at all.
 func ServedByRoute(kind string) bool {
-	for _, k := range handlerKinds {
+	for _, k := range append(handlerKinds, proxyHandlerKinds...) {
 		if k+"s" == kind || k == kind {
 			return true
 		}

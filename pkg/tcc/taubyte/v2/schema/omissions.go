@@ -45,14 +45,47 @@ type Omission struct {
 
 var Omissions = []Omission{
 	{
-		Name:    "a listening port",
+		Name:    "an external port, on a workload or on a proxy",
 		State:   Never,
 		Decided: ByOwner,
-		Why: "The platform assigns the port, hands it to the workload as an environment " +
-			"variable, and tunnels it over a p2p stream. A port in the config would be a number " +
-			"the workload is told to ignore, and a second place for the real one to disagree " +
-			"with it.",
-		Instead: "nothing to write. The workload reads the port it was given.",
+		Why: "A workload declares the ports it binds INSIDE its container, by name, because its " +
+			"own code has to agree with those numbers. The port anything outside reaches it on is " +
+			"assigned by the platform and tunnelled over a p2p stream — so writing it here would " +
+			"be a number the workload is told to ignore, and a second place for the real one to " +
+			"disagree with it. It is also the only value in this vocabulary that would collide " +
+			"ACROSS projects: two of them wanting 5432 on one edge address is not an error either " +
+			"project's schema can see.",
+		Instead: "a named port on the workload, referred to by name from a gateway route, a proxy " +
+			"or a health probe. At L4, where the port IS the address, the platform allocates an " +
+			"address per proxy and publishes A/AAAA plus an SRV record, so clients are told rather " +
+			"than configured.",
+	},
+	{
+		Name:    "SNI routing / multiplexing several proxies onto one address",
+		State:   Never,
+		Decided: Forced,
+		Why: "A proxy owns its address, so there is nothing to multiplex and no decision to route " +
+			"on. SNI only earns its keep when several services share a port, which is the shape " +
+			"chosen to avoid: it works solely for TLS-speaking clients, and everything the " +
+			"vocabulary would gain is already bought by allocating an address.",
+		Instead: "one address per proxy. `tls.mode: terminate` is there when the proxy should hold " +
+			"the certificate; `none` is an opaque pipe, which is the right answer for a protocol " +
+			"like Postgres that negotiates TLS inside the stream.",
+	},
+	{
+		Name:    "a transparency guarantee for tunnelled UDP and SCTP",
+		State:   Open,
+		Decided: Forced,
+		Why: "Both are in the `protocol` enum and neither survives a reliable ordered stream " +
+			"unchanged. Tunnelled UDP turns packet loss into a latency spike and inherits " +
+			"head-of-line blocking — it works, but not the way an application that chose UDP was " +
+			"written against. SCTP is worse: multi-streaming and multi-homing are the whole reason " +
+			"to pick it, and a tunnel keeps neither. This is a runtime property with no config " +
+			"expression, so the schema cannot warn about it at the point it matters.",
+		Instead: "tcp, which is transparent. The enum still carries all three, because which " +
+			"protocols the runtime actually serves is the runtime's statement to make.",
+		Unblocks: "unreliable datagrams over QUIC (RFC 9221) for the UDP path, which would make it " +
+			"honest instead of merely working.",
 	},
 	{
 		Name:    "HTTP methods as a kind's ops",
@@ -241,6 +274,18 @@ var Omissions = []Omission{
 			"not have one yet.",
 		Instead:  "nothing. A p2p service cannot be declared in v2 today.",
 		Unblocks: "a decision on the shape.",
+	},
+	{
+		Name:    "a check that a declared thing is actually fed",
+		State:   Blocked,
+		Decided: Forced,
+		Why: "A port nothing routes to, an application no gateway fronts, a queue nobody consumes, " +
+			"a cache nobody reads: each compiles, and each is dead config that reads as working. " +
+			"Deleting the trigger block made reachability answerable by traversing the graph, and " +
+			"nothing yet does the traversal. It cannot live in one resource's schema, because the " +
+			"question is about the whole compiled project.",
+		Instead:  "reading the graph by eye. The explorer draws it, which is how the first one was found.",
+		Unblocks: "a publish-time pass over the compiled object, alongside the deferred validations that already exist.",
 	},
 	{
 		Name:    "traffic transformers on a route",
