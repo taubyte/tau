@@ -144,6 +144,45 @@ var handlerKinds = []string{"function", "application", "website", "gateway", "mc
 // rather than a reshape.
 var proxyHandlerKinds = []string{"application"}
 
+// hostAttributes is how anything reachable from the internet gets its name.
+//
+// THE GENERATED PART IS NOT IN THE CONFIG, and that is the whole point. Every cloud
+// serves a zone of its own — `<generated>.<cloud fqdn>` — and a project gets a label
+// inside it. Both halves are decided by the cloud the project is deployed to, so they
+// are resolved at RUNTIME. v1 wrote its generated domain into the config, which tied a
+// project to the one cloud that string described: the same repo deployed to a second
+// cloud claimed a name it did not have there.
+//
+//	host:
+//	    generated:
+//	        name: shop        # shop.<project>.<cloud>, whatever those turn out to be
+//
+//	host:
+//	    zone:
+//	        in: zones/example-com
+//	        name: shop        # shop.example.com
+//
+// Making it a ZONE rather than a domain is what makes the rest work. The cloud is
+// authoritative for it, so it can publish whatever the resource needs under that name
+// without anyone authoring a record: A and AAAA for a gateway, and for an L4 proxy the
+// SRV record that carries the port. A "generated domain" — one flat name handed out —
+// could not have carried an SRV label at all.
+//
+// It also pays for certificates: the cloud holds a wildcard for its own zone, so a
+// generated name needs no per-name issuance and no `certificate` block.
+//
+// Omitting `name` means the apex of that zone.
+func hostAttributes(section string) []*Attribute {
+	return []*Attribute{
+		String("host/kind", Path("host", Either("generated", "zone")), Key(), Field("HostKind"), InSection(section),
+			Doc("Host", "generated: a name under the cloud's own zone, resolved when it is deployed. zone: a name in a zone you own and delegated here.")),
+		String("host/name", Path("host", Either("generated", "zone"), "name"), IsVariableName(), InSection(section),
+			Doc("Name", "The label within that zone, e.g. \"shop\". Omit it for the zone apex.")),
+		String("host/zone", Path("host", "zone", "in"), Ref("zones", Prefix("zones/")), RequiredWhen("host/kind", "zone"), InSection(section), ShowWhen("host/kind", "zone"),
+			Doc("Zone", "The zone this name lives in, as \"zones/<name>\". Only for a zone you own; a generated name has no zone to choose.")),
+	}
+}
+
 // externalDatabaseEngines are the database servers reachable over the network, and
 // databaseEngines is those plus tau's own. Closed, because each one is a wire protocol
 // and a driver — adding one is a release, not a config value — and because a closed set
@@ -493,6 +532,10 @@ var V2Resources = []*Node{
 
 	// ---- routing and naming ----
 
+	// A zone YOU own and delegated here. The cloud also serves a zone of its own —
+	// `<generated>.<cloud fqdn>` — which is never declared, because neither half of it
+	// is the project's to choose: see hostAttributes.
+	//
 	// A DNS zone this cloud is authoritative for. Separate from `gateways` because it
 	// answers a different question: a gateway says which workload serves a path under
 	// a name, a zone says what the name resolves to AT ALL — MX for mail, TXT for SPF
@@ -513,7 +556,7 @@ var V2Resources = []*Node{
 	DefineGroup("zones",
 		resource(
 			commonAttributes(
-				String("fqdn", IsFqdn(), Required(), Field("Fqdn"), Accessor("FQDN"), EmitValidation("zone", "dns"), InSection("identity"), Doc("Zone", "The zone apex this cloud answers for, e.g. \"example.com\". Delegate it with NS records at your registrar.")),
+				String("fqdn", IsFqdn(), Required(), Field("Fqdn"), Accessor("FQDN"), EmitValidation("zone", "dns"), InSection("identity"), Doc("Zone", "The zone apex this cloud answers for, e.g. \"example.com\". Delegate it with NS records at your registrar. The cloud's OWN zone is not declared here — it is generated, and a resource reaches it with host.generated.")),
 				StringSlice("records", InSection("records"), Doc("Records", "Zone-file lines, e.g. \"www 300 IN A 1.2.3.4\", \"@ 3600 IN MX 10 mail.example.com.\".")),
 			),
 			GroupDoc("A DNS zone served authoritatively by this cloud, and the records you own in it."), Category("internet"), Icon("dns"),
@@ -557,9 +600,10 @@ var V2Resources = []*Node{
 	// being mounted beneath another (a handler whose kind is `gateway`).
 	DefineGroup("gateways",
 		resource(
-			append(identityAttributes(),
-				String("fqdn", IsFqdn(), Field("Fqdn"), Accessor("FQDN"), InSection("naming"), Doc("FQDN", "The name this gateway answers on. Omit it for a gateway that is only ever mounted beneath another one.")),
-				String("certificate/source", Path("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("naming"), Doc("Certificate", "generated: issued on demand for this name. provided: supplied below.")),
+			// A gateway with no host block is reachable only by being mounted beneath
+			// another one, which is what collapsed the old `domains` kind into this one.
+			append(append(identityAttributes(), hostAttributes("naming")...),
+				String("certificate/source", Path("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("naming"), ShowWhen("host/kind", "zone"), Doc("Certificate", "generated: issued on demand for this name. provided: supplied below. A host under the cloud's own zone needs neither — that zone has a wildcard.")),
 				String("certificate/cert", Path("certificate", "cert"), RequiredWhen("certificate/source", "provided"), Field("CertFile"), InSection("naming"), ShowWhen("certificate/source", "provided"), Doc("Certificate PEM", "PEM-encoded certificate chain.")),
 				String("certificate/key", Path("certificate", "key"), RequiredWhen("certificate/source", "provided"), Field("KeyFile"), InSection("naming"), ShowWhen("certificate/source", "provided"), Doc("Certificate Key", "PEM-encoded private key for the certificate.")),
 
@@ -640,11 +684,10 @@ var V2Resources = []*Node{
 	// `zones` — those are produced, not authored.
 	DefineGroup("proxies",
 		resource(
-			append(identityAttributes(),
+			append(append(identityAttributes(), hostAttributes("listener")...),
 				String("protocol", InSet("tcp", "udp", "sctp"), Default("tcp"), Required(), InSection("listener"),
 					Doc("Protocol", "The transport carried. tcp is the transparent one; see this kind's docs for what a tunnel does to udp and sctp.")),
-				String("fqdn", IsFqdn(), Required(), Field("Fqdn"), Accessor("FQDN"), EmitValidation("zone", "dns"), InSection("listener"),
-					Doc("FQDN", "The name clients dial. It resolves to an allocated address — no port and no IP are written here, because both are assigned and published in DNS.")),
+
 				String("service", IsVariableName(), InSection("listener"),
 					Doc("Service", "IANA service name, e.g. \"postgres\". It builds the SRV label published beside this name, and gives clients that cannot do SRV lookups the conventional port to dial. Defaults to this resource's name.")),
 
@@ -655,7 +698,7 @@ var V2Resources = []*Node{
 				// so nothing is multiplexed and no SNI is read.
 				String("tls/mode", Path("tls", "mode"), InSet("none", "terminate"), Default("none"), Field("TLSMode"), InSection("listener"),
 					Doc("TLS", "none: an opaque pipe, whatever the protocol does about TLS is its own business. terminate: the proxy answers TLS and hands plaintext to the workload.")),
-				String("certificate/source", Path("certificate", "source"), InSet("generated", "provided"), RequiredWhen("tls/mode", "terminate"), Field("CertSource"), InSection("listener"), ShowWhen("tls/mode", "terminate"),
+				String("certificate/source", Path("certificate", "source"), InSet("generated", "provided"), RequiredWhen("tls/mode", "terminate"), Field("CertSource"), InSection("listener"), ShowWhen("host/kind", "zone"),
 					Doc("Certificate", "generated: issued on demand for this name. provided: supplied below.")),
 				String("certificate/cert", Path("certificate", "cert"), RequiredWhen("certificate/source", "provided"), Field("CertFile"), InSection("listener"), ShowWhen("certificate/source", "provided"),
 					Doc("Certificate PEM", "PEM-encoded certificate chain.")),

@@ -20,6 +20,8 @@ import {
   Background,
   Controls,
   Handle,
+  MarkerType,
+  MiniMap,
   Position,
   ReactFlow,
   type Edge,
@@ -71,6 +73,14 @@ function ScopeNode({ data }: NodeProps) {
 }
 
 const NODE_TYPES = { resource: ResourceNode, scope: ScopeNode };
+
+const CATEGORY_COLOR: Record<string, string> = {
+  internet: "var(--internet)",
+  trigger: "var(--trigger)",
+  compute: "var(--compute)",
+  data: "var(--data)",
+  code: "var(--code-cat)",
+};
 
 const EDGE_COLOR: Record<string, string> = {
   read: "var(--read)",
@@ -132,6 +142,11 @@ export function GraphView({
         type: "resource",
         parentId: parent ? `ns:${n.scope}` : undefined,
         position: parent ? { x: n.x - parent.x, y: n.y - parent.y } : { x: n.x, y: n.y },
+        // Declared, not measured: the minimap draws from node dimensions, and a
+        // custom node React has not laid out yet has none — which is why the minimap
+        // came up blank the first time.
+        width: NODE_W,
+        height: NODE_H,
         draggable: false,
         data: {
           kind: n.kind,
@@ -167,12 +182,22 @@ export function GraphView({
           labelBgBorderRadius: 3,
           labelBgStyle: { fill: "var(--card)", stroke: "var(--line)" },
           className: `rf-edge ${cls}${faded ? " faded" : ""}`,
+          // An arrowhead, which the first cut of this forgot: direction is the entire
+          // claim an edge makes here — who acts on whom — and a line without one says
+          // only that two things are related.
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            width: 14,
+            height: 14,
+            color: EDGE_COLOR[cls],
+          },
           style: {
             stroke: EDGE_COLOR[cls],
-            strokeWidth: 1.4,
+            strokeWidth: touched ? 2 : 1.4,
             strokeDasharray: a.ref ? "4 4" : a.policy ? "2 4" : undefined,
             opacity: faded ? 0.1 : 1,
           },
+          zIndex: touched ? 10 : 0,
         } satisfies Edge;
       }),
     [graph, lit, selection],
@@ -196,6 +221,16 @@ export function GraphView({
     >
       <Background gap={16} color="var(--line)" />
       <Controls showInteractive={false} />
+      {/* A project outgrows one screen long before it outgrows the model, and the
+          minimap is what keeps "where am I" answerable once it has. */}
+      <MiniMap
+        pannable
+        zoomable
+        maskColor="var(--code)"
+        nodeColor={(n) => (n.type === "scope" ? "transparent" : CATEGORY_COLOR[String(n.data.category)] ?? "var(--mut)")}
+        nodeStrokeWidth={2}
+        style={{ background: "var(--card)", border: "1px solid var(--line)" }}
+      />
     </ReactFlow>
   );
 }

@@ -1,7 +1,9 @@
 id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR
-description: an allocated address that streams raw tcp to db over p2p - no port and no ip is written here
+description: an allocated address on the cloud's own zone - no port, no ip, and no zone name either; all three are the cloud's to decide
 protocol: tcp
-fqdn: db.shop.example.com
+host:
+    generated:
+        name: db
 service: postgres
 tls:
     mode: none

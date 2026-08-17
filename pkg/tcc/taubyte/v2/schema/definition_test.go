@@ -276,7 +276,13 @@ func TestGatewayRoute(t *testing.T) {
 	flat := compileBasic(t)
 
 	gw := only(t, resources(t, flat, "gateways"))
-	assert.Equal(t, gw["fqdn"], "shop.example.com", "the name lives on the gateway, not on a domain")
+	// The name lives on the gateway, and it names a ZONE plus a label rather than a
+	// flat fqdn — so a project moved to another cloud does not carry a name it does
+	// not have there.
+	assert.Equal(t, gw["host/kind"], "zone")
+	assert.Equal(t, gw["host/name"], "shop")
+	assert.Assert(t, strings.HasPrefix(gw["host/zone"].(string), "zones/"),
+		"the zone resolves to a compiled zone id")
 	assert.Equal(t, gw["certificate/source"], "generated", "generated unless it is provided")
 
 	assert.Equal(t, gw["route/path"], "/checkout")
@@ -310,7 +316,6 @@ func TestNonHTTPHandlerKindIsRefused(t *testing.T) {
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 	assert.NilError(t, afero.WriteFile(fs, "/gateways/shop.yaml", []byte(`
 id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG
-fqdn: shop.example.com
 route:
     path: /checkout
     handler:
@@ -330,7 +335,7 @@ route:
 		"the refusal has to say what a handler may be")
 	// the position is the value's, so for a key holding a block it lands on the
 	// first line inside that block rather than on the key
-	assert.ErrorContains(t, err, "/gateways/shop.yaml:8:",
+	assert.ErrorContains(t, err, "/gateways/shop.yaml:7:",
 		"and where")
 }
 
@@ -536,7 +541,7 @@ func TestZoneIsNotRouting(t *testing.T) {
 
 	// and the gateway that serves a name under it still holds the ingress
 	gw := only(t, resources(t, flat, "gateways"))
-	assert.Equal(t, gw["fqdn"], "shop.example.com")
+	assert.Equal(t, gw["host/name"], "shop")
 }
 
 // A namespace path is absolute with a leading "/" and relative without one — the same

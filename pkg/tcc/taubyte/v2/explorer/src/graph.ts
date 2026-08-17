@@ -16,6 +16,10 @@ export interface Node {
   // Read off the field rather than off a list of kinds, so a new kind that carries
   // a name is answered without editing this file.
   fqdn?: string;
+  /** How this resource is named, before the zone is resolved. */
+  host?: { kind: string; name: string; zone: string | null };
+  /** A zone's own apex, so a host that names it can be spelled out. */
+  zoneFqdn?: string;
   // How a client reaches that name, when it is not just "https". An L4 proxy writes
   // no port and no address, so this is the only place the page can say what to dial.
   dial?: string;
@@ -116,7 +120,18 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
       kind: group,
       name: String(res.name ?? id.slice(0, 8)),
       scope,
-      fqdn: typeof res.fqdn === "string" ? res.fqdn : undefined,
+      // The name is a zone plus a label now, and for a generated host the zone is
+      // not knowable here at all — it is the cloud's, decided at deploy. Resolved in
+      // a second pass, once the zones are compiled and can be looked up.
+      host:
+        typeof res["host/kind"] === "string"
+          ? {
+              kind: res["host/kind"] as string,
+              name: typeof res["host/name"] === "string" ? (res["host/name"] as string) : "",
+              zone: typeof res["host/zone"] === "string" ? (res["host/zone"] as string) : null,
+            }
+          : undefined,
+      zoneFqdn: group === "zones" && typeof res.fqdn === "string" ? (res.fqdn as string) : undefined,
       dial: typeof res.protocol === "string"
         ? `${res.protocol}${typeof res.service === "string" ? ` · _${res.service}._${res.protocol}` : ""}`
         : undefined,
@@ -298,6 +313,21 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[]): Graph {
 
   // Coordinates come from ELK now (layout.ts) — this file decides WHAT is on the
   // graph, not where it goes.
+  // A host names a zone; the zone knows its apex. A GENERATED host names the cloud's
+  // own zone, which no compiled object contains and no config may assert — so it is
+  // shown as the placeholder it is rather than guessed at.
+  for (const n of nodes) {
+    if (!n.host) continue;
+    const label = n.host.name ? `${n.host.name}.` : "";
+    if (n.host.kind === "generated") {
+      n.fqdn = `${label}⟨cloud zone⟩`;
+      continue;
+    }
+    const zoneID = n.host.zone?.replace(/^zones\//, "");
+    const apex = zoneID ? byId.get(zoneID)?.zoneFqdn : undefined;
+    n.fqdn = apex ? `${label}${apex}` : `${label}⟨zone⟩`;
+  }
+
   const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();
   return { nodes, arrows: live, byId, scopes };
 }

@@ -94,6 +94,19 @@ var Omissions = []Omission{
 			"consumer reads a target from today.",
 	},
 	{
+		Name:    "spelling out a generated name inside the config",
+		State:   Open,
+		Decided: Forced,
+		Why: "A host under the cloud's own zone is `<label>.<generated>.<cloud fqdn>`, and both " +
+			"generated halves are resolved at deploy — that is the point of them. So any field " +
+			"that needs the FULL name cannot hold it. `cors.origins` is the live case: it takes " +
+			"literal origins, and an author cannot write an origin they will not know until the " +
+			"project is deployed. Today that field is only usable with a zone you own.",
+		Instead: "a zone you own, where the name is known when it is authored.",
+		Unblocks: "a symbolic form — a `self` token, or origins expressed as references to a host " +
+			"rather than as strings — resolved by the same pass that resolves the name.",
+	},
+	{
 		Name:    "a function's host interface",
 		State:   Open,
 		Decided: ByOwner,

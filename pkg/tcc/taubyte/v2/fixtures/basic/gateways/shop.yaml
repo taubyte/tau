@@ -1,6 +1,9 @@
 id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG
 description: the public entry point
-fqdn: shop.example.com
+host:
+    zone:
+        in: zones/example-com
+        name: shop
 certificate:
     source: generated
 route:
