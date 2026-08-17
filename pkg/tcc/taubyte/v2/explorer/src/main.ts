@@ -4,6 +4,7 @@ import { buildGraph, categoryOf, iconOf, setCategories, type Graph } from "./gra
 import { esc, jsonRoot } from "./render";
 import { graphHost, renderGraph } from "./graph-mount";
 import { kindIconMarkup } from "./icons";
+import { review, type Finding } from "./review";
 import type { Selection } from "./graph-view";
 import { place, type Placed } from "./layout";
 
@@ -35,7 +36,7 @@ let placedFor: Graph | null = null;
 let layoutSeq = 0;
 let selection: Selection = null;
 let current = Object.keys(files).sort()[0];
-let tab: "graph" | "compiled" | "vocabulary" | "omitted" = "graph";
+let tab: "graph" | "review" | "compiled" | "vocabulary" | "omitted" = "graph";
 
 const app = document.getElementById("app")!;
 
@@ -60,7 +61,10 @@ function render() {
     const seq = ++layoutSeq;
     // A keystroke while a layout is in flight makes that layout stale; the counter is
     // what stops it landing after the one it lost to.
-    place(g.nodes, g.arrows).then((p) => {
+    // The exposed set drives the internet node in the layout; it is presentation,
+    // never part of the model.
+    const exposed = g.nodes.filter((n) => n.fqdn).map((n) => n.id);
+    place(g.nodes, g.arrows, exposed).then((p) => {
       if (seq !== layoutSeq) return;
       placed = p;
       placedFor = g;
@@ -110,6 +114,7 @@ function header(error: string | null): HTMLElement {
   const tabs = div("tabs");
   for (const [id, label] of [
     ["graph", "Graph"],
+    ["review", "Review"],
     ["compiled", "Compiled object"],
     ["vocabulary", "Vocabulary & verbs"],
     ["omitted", "What is not here"],
@@ -220,6 +225,10 @@ function mainPane(result: CompileOk | { error: string }): HTMLElement {
   }
   if ("error" in result) {
     pane.appendChild(sectionTitle("nothing to show", "fix the error above"));
+    return pane;
+  }
+  if (tab === "review") {
+    pane.appendChild(reviewPane(result as CompileOk));
     return pane;
   }
   if (tab === "compiled") {
@@ -351,6 +360,104 @@ function detail(): HTMLElement {
     </div>
     <p class="hint">showing ${selection.mode === "blast" ? "what this reaches" : "what reaches this"}</p>`;
   return d;
+}
+
+// The review: what the graph says, for the person signing off on it rather than the
+// person writing it. Every row is derived from the compiled object, and clicking one
+// selects that resource on the graph — a finding you cannot locate is half a finding.
+function reviewPane(result: CompileOk): HTMLElement {
+  const wrap = div("review");
+  if (!graph) {
+    wrap.appendChild(sectionTitle("nothing to review", "the project has not compiled yet"));
+    return wrap;
+  }
+  const r = review(graph, result.object, verbs);
+
+  const broken = r.findings.filter((f) => f.severity === "broken").length;
+  const checks = r.findings.filter((f) => f.severity === "check").length;
+  wrap.appendChild(
+    sectionTitle(
+      "what the graph says",
+      broken
+        ? `${broken} that will not work, ${checks} to look at`
+        : checks
+        ? `nothing broken, ${checks} to look at`
+        : "nothing broken, nothing to look at",
+    ),
+  );
+
+  // None of this is enforced anywhere, and saying so is the difference between a
+  // review tool and a false sense of one.
+  const caveat = div("hint");
+  caveat.innerHTML =
+    "These are read off the compiled object here, in the browser. <b>Nothing refuses a deploy on them</b> — the publish-time pass that would is still unwritten (<code>schema/omissions.go</code>).";
+  wrap.appendChild(caveat);
+
+  wrap.appendChild(exposureTable(r.exposure));
+
+  const list = div("findings");
+  for (const f of r.findings) list.appendChild(findingRow(f));
+  wrap.appendChild(list);
+
+  wrap.appendChild(sectionTitle("inventory", `${graph.nodes.length} resources`));
+  const inv = div("inventory");
+  inv.innerHTML = r.counts
+    .map(
+      (c) =>
+        `<span class="chip ${categoryOf(c.kind)}">${kindIconMarkup(iconOf(c.kind), 12)}${esc(c.kind)}<b>${c.n}</b></span>`,
+    )
+    .join("");
+  wrap.appendChild(inv);
+  return wrap;
+}
+
+function exposureTable(rows: { id: string; kind: string; name: string; at: string; serves: string[] }[]): HTMLElement {
+  const wrap = div("");
+  wrap.appendChild(
+    sectionTitle("reachable from the internet", rows.length ? `${rows.length} name${rows.length === 1 ? "" : "s"}` : "nothing answers"),
+  );
+  if (!rows.length) return wrap;
+  const t = document.createElement("table");
+  t.innerHTML =
+    "<thead><tr><th>name</th><th>served by</th><th>which fronts</th></tr></thead><tbody>" +
+    rows
+      .map(
+        (e) =>
+          `<tr data-id="${esc(e.id)}"><td><code>${esc(e.at)}</code></td><td><code>${esc(e.kind)}/${esc(e.name)}</code></td><td>${
+            e.serves.length ? esc(e.serves.join(", ")) : '<span class="c">nothing yet</span>'
+          }</td></tr>`,
+      )
+      .join("") +
+    "</tbody></table>";
+  t.onclick = (ev) => {
+    const row = (ev.target as HTMLElement).closest("tr[data-id]");
+    if (row) pickFromReview(row.getAttribute("data-id")!);
+  };
+  wrap.appendChild(t);
+  return wrap;
+}
+
+function findingRow(f: Finding): HTMLElement {
+  const row = div(`finding ${f.severity}`);
+  row.innerHTML = `<span class="sev">${f.severity}</span><div><b>${esc(f.title)}</b><p>${esc(f.detail)}</p></div>`;
+  if (f.id) {
+    row.classList.add("clickable");
+    row.onclick = () => pickFromReview(f.id!);
+  }
+  return row;
+}
+
+// A finding names a resource; clicking it puts that resource on the graph with its
+// blast radius, which is the next question anyone asks about a finding.
+function pickFromReview(id: string): void {
+  const node = graph?.byId.get(id);
+  if (!node) return;
+  selection = { id, mode: "blast" };
+  const path = fileOf(node);
+  if (path in files) current = path;
+  tab = "graph";
+  render();
+  reveal(".files .file.on");
 }
 
 function vocabulary(): HTMLElement {

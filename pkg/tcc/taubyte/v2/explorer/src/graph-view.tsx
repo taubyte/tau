@@ -35,7 +35,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import { blastRadius, categoryOf, iconOf, reachesFrom, NODE_H, NODE_W, type Graph } from "./graph";
 import { KindIcon } from "./icons";
-import { routeKey, type Placed } from "./layout";
+import { IconWorld } from "@tabler/icons-react";
+import { INTERNET, internetEdgeKey, routeKey, type Placed } from "./layout";
 
 export type Selection = { id: string; mode: "blast" | "reach" } | null;
 
@@ -83,7 +84,19 @@ function ScopeNode({ data }: NodeProps) {
   );
 }
 
-const NODE_TYPES = { resource: ResourceNode, scope: ScopeNode };
+// The internet. Not a resource and never part of the model — it is drawn so that
+// ingress arrives from somewhere visible instead of from the edge of the canvas.
+function InternetNode() {
+  return (
+    <div className="rf-internet">
+      <IconWorld size={16} stroke={1.7} />
+      <span>the internet</span>
+      <Handle type="source" position={Position.Right} isConnectable={false} />
+    </div>
+  );
+}
+
+const NODE_TYPES = { resource: ResourceNode, scope: ScopeNode, internet: InternetNode };
 
 // The edge dot routed.
 //
@@ -185,6 +198,19 @@ export function GraphView({
       });
     }
 
+    if (placed.internet) {
+      out.push({
+        id: INTERNET,
+        type: "internet",
+        position: { x: placed.internet.x, y: placed.internet.y },
+        width: placed.internet.w,
+        height: placed.internet.h,
+        draggable: false,
+        selectable: false,
+        data: {},
+      });
+    }
+
     for (const n of graph.nodes) {
       const parent = n.scope ? frame.get(n.scope) : undefined;
       out.push({
@@ -212,8 +238,22 @@ export function GraphView({
     return out;
   }, [graph, placed, lit, selection]);
 
-  const edges: Edge[] = useMemo(
-    () =>
+  const edges: Edge[] = useMemo(() => {
+    const out: Edge[] = graph.nodes
+      .filter((n) => n.fqdn && placed.routes.has(internetEdgeKey(n.id)))
+      .map((n) => ({
+        id: internetEdgeKey(n.id),
+        source: INTERNET,
+        target: n.id,
+        type: "routed",
+        data: { path: placed.routes.get(internetEdgeKey(n.id)) ?? "" },
+        label: n.fqdn,
+        className: "rf-edge exposed",
+        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "var(--internet)" },
+        style: { stroke: "var(--internet)", strokeWidth: 1.6, opacity: lit ? 0.15 : 1 },
+      }));
+
+    return out.concat(
       graph.arrows.map((a) => {
         const cls = a.policy ? "policy" : a.ref ? "ref" : a.effect;
         const faded = lit !== null && (!lit.has(a.from) || !lit.has(a.to));
@@ -248,8 +288,8 @@ export function GraphView({
           zIndex: touched ? 10 : 0,
         } satisfies Edge;
       }),
-    [graph, placed, lit, selection],
-  );
+    );
+  }, [graph, placed, lit, selection]);
 
   return (
     <ReactFlow

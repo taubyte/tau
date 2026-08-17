@@ -210,3 +210,52 @@ code.om.open { color: var(--internet); }
   background: var(--card); color: var(--mut);
   border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px;
 }
+
+/* the internet: the one node on the canvas that is not a resource */
+.rf-internet {
+  width: 140px; height: 44px; padding: 0 12px;
+  display: flex; align-items: center; gap: 8px;
+  border: 1.4px dashed var(--internet); border-radius: 22px;
+  background: color-mix(in srgb, var(--internet) 8%, var(--card));
+  color: var(--internet);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; font-weight: 600;
+}
+
+/* review */
+.review { padding: .2rem .1rem 1.2rem; }
+.review table { width: 100%; border-collapse: collapse; font-size: .84rem; margin-bottom: .4rem; }
+.review th { text-align: left; font-weight: 600; color: var(--mut); font-size: .74rem;
+  text-transform: uppercase; letter-spacing: .04em; padding: .3rem .5rem; border-bottom: 1px solid var(--line); }
+.review td { padding: .35rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.review tbody tr { cursor: pointer; }
+.review tbody tr:hover { background: var(--code); }
+
+.findings { display: flex; flex-direction: column; gap: .3rem; margin: .6rem 0 1rem; }
+.finding {
+  display: flex; gap: .7rem; align-items: flex-start;
+  border: 1px solid var(--line); border-left-width: 3px; border-radius: 6px;
+  padding: .5rem .7rem; background: var(--card);
+}
+.finding.clickable { cursor: pointer; }
+.finding.clickable:hover { background: var(--code); }
+.finding b { font-size: .87rem; }
+.finding p { margin: .15rem 0 0; color: var(--mut); font-size: .8rem; }
+.finding .sev {
+  font-family: ui-monospace, monospace; font-size: .62rem; text-transform: uppercase;
+  letter-spacing: .06em; padding: .12rem .4rem; border-radius: 3px; margin-top: .15rem;
+  flex: 0 0 auto;
+}
+.finding.broken { border-left-color: var(--write); }
+.finding.broken .sev { background: color-mix(in srgb, var(--write) 16%, transparent); color: var(--write); }
+.finding.check { border-left-color: var(--data); }
+.finding.check .sev { background: color-mix(in srgb, var(--data) 16%, transparent); color: var(--data); }
+.finding.note { border-left-color: var(--line); }
+.finding.note .sev { background: var(--code); color: var(--mut); }
+
+.inventory { display: flex; flex-wrap: wrap; gap: .35rem; }
+.chip {
+  display: inline-flex; align-items: center; gap: .35rem;
+  border: 1px solid var(--line); border-radius: 20px; padding: .18rem .6rem;
+  font-family: ui-monospace, monospace; font-size: .74rem; color: var(--mut);
+}
+.chip b { color: var(--fg); }

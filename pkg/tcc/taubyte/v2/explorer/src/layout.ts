@@ -33,11 +33,22 @@ export interface Placed {
   scopes: { scope: string; x: number; y: number; w: number; h: number }[];
   /** A ready-made SVG path per arrow — dot's spline, not a curve we invented. */
   routes: Map<string, string>;
+  /** Where the internet sits, when anything is exposed at all. */
+  internet: { x: number; y: number; w: number; h: number } | null;
   w: number;
   h: number;
 }
 
 export const routeKey = (a: Arrow) => `${a.from}->${a.to}->${a.verb}`;
+
+// The internet is not a resource, so it is not in the compiled object — but a diagram
+// that omits it makes ingress look like it comes from nowhere, and "what is exposed"
+// is the first question anyone asks of an architecture. It is laid out as a real node
+// so dot keeps the exposed resources next to it and routes the arrows properly, and it
+// is excluded from everything that reasons about the model: no blast radius, no
+// inventory, no findings.
+export const INTERNET = "internet";
+export const internetEdgeKey = (to: string) => `${INTERNET}->${to}`;
 
 let engine: Promise<Graphviz> | null = null;
 const graphviz = () => (engine ??= Graphviz.load());
@@ -48,7 +59,7 @@ const cluster = (scope: string) => `cluster_${scope.replace(/[^A-Za-z0-9]/g, "_"
 
 // Namespaces nest, so the subgraphs do. The label is declared so dot reserves room at
 // the top of the box for it; the text itself is drawn by render.ts, into that space.
-function dotFor(nodes: Node[], arrows: Arrow[]): string {
+function dotFor(nodes: Node[], arrows: Arrow[], exposed: string[]): string {
   const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();
   const childrenOf = (scope: string) =>
     scopes.filter((s) => s.startsWith(scope + "/") && !s.slice(scope.length + 1).includes("/"));
@@ -76,8 +87,12 @@ function dotFor(nodes: Node[], arrows: Arrow[]): string {
     "  fontsize=11;",
     "  labelloc=t;",
     `  node [shape=box, fixedsize=true, width=${NODE_W / PT}, height=${NODE_H / PT}, label=""];`,
+    ...(exposed.length
+      ? [`  ${q(INTERNET)} [width=${140 / PT}, height=${44 / PT}];`]
+      : []),
     ...nodes.filter((n) => !n.scope).map((n) => `  ${q(n.id)};`),
     ...scopes.filter((s) => !s.includes("/")).map((s) => emit(s, 1)),
+    ...exposed.map((id) => `  ${q(INTERNET)} -> ${q(id)};`),
     ...arrows.map((a) => `  ${q(a.from)} -> ${q(a.to)};`),
     "}",
   ].join("\n");
@@ -124,9 +139,9 @@ function pathFrom(pos: string, h: number): string {
   return d;
 }
 
-export async function place(nodes: Node[], arrows: Arrow[]): Promise<Placed> {
+export async function place(nodes: Node[], arrows: Arrow[], exposed: string[] = []): Promise<Placed> {
   const gv = await graphviz();
-  const out = JSON.parse(gv.layout(dotFor(nodes, arrows), "json", "dot")) as {
+  const out = JSON.parse(gv.layout(dotFor(nodes, arrows, exposed), "json", "dot")) as {
     bb: string;
     objects?: DotObject[];
     edges?: DotEdge[];
@@ -140,6 +155,7 @@ export async function place(nodes: Node[], arrows: Arrow[]): Promise<Placed> {
 
   const objects = out.objects ?? [];
   const scopes: Placed["scopes"] = [];
+  let internet: Placed["internet"] = null;
   for (const o of objects) {
     if (o.bb) {
       const scope = scopeByCluster.get(o.name);
@@ -148,9 +164,14 @@ export async function place(nodes: Node[], arrows: Arrow[]): Promise<Placed> {
       scopes.push({ scope, x: x1, y: flip(H, y2), w: x2 - x1, h: y2 - y1 });
       continue;
     }
-    const node = byId.get(o.name);
-    if (!node || !o.pos) continue;
+    if (!o.pos) continue;
     const [cx, cy] = o.pos.split(",").map(Number);
+    if (o.name === INTERNET) {
+      internet = { x: cx - 70, y: flip(H, cy) - 22, w: 140, h: 44 };
+      continue;
+    }
+    const node = byId.get(o.name);
+    if (!node) continue;
     node.x = cx - NODE_W / 2;
     node.y = flip(H, cy) - NODE_H / 2;
   }
@@ -166,11 +187,15 @@ export async function place(nodes: Node[], arrows: Arrow[]): Promise<Placed> {
     const from = objects[e.tail]?.name;
     const to = objects[e.head]?.name;
     if (!from || !to) continue;
+    if (from === INTERNET) {
+      routes.set(internetEdgeKey(to), pathFrom(e.pos, H));
+      continue;
+    }
     const i = arrows.findIndex((a, idx) => a.from === from && a.to === to && !claimed.has(idx));
     if (i < 0) continue;
     claimed.add(i);
     routes.set(routeKey(arrows[i]), pathFrom(e.pos, H));
   }
 
-  return { nodes, scopes, routes, w: W + 24, h: H + 24 };
+  return { nodes, scopes, routes, internet, w: W + 24, h: H + 24 };
 }
