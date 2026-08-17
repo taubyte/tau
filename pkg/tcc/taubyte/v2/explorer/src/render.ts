@@ -113,9 +113,9 @@ function edgePath(
   to: Node,
   a: Arrow,
   dim: boolean,
-  route?: { x: number; y: number }[],
+  route?: string,
 ): SVGElement {
-  const d = route && route.length >= 2 ? curveThrough(route) : drawn(from, to);
+  const d = route || drawn(from, to);
   const cls = dim ? "dim" : a.policy ? "policy" : a.ref ? "ref" : a.effect;
   const g = el("g", { class: `arrow ${cls}` });
   const p = el("path", {
@@ -134,30 +134,10 @@ function edgePath(
   return g;
 }
 
-// ELK hands back a polyline routed around the boxes. Drawing it as straight segments
-// is accurate and ugly; a Catmull-Rom pass through the same points keeps every bend
-// ELK chose and rounds the corners, so the line still avoids what it was routed to
-// avoid.
-function curveThrough(p: { x: number; y: number }[]): string {
-  if (p.length === 2) return `M${p[0].x},${p[0].y} L${p[1].x},${p[1].y}`;
-  let d = `M${p[0].x},${p[0].y}`;
-  for (let i = 0; i < p.length - 1; i++) {
-    const p0 = p[i - 1] ?? p[i];
-    const p1 = p[i];
-    const p2 = p[i + 1];
-    const p3 = p[i + 2] ?? p2;
-    const c1 = { x: p1.x + (p2.x - p0.x) / 6, y: p1.y + (p2.y - p0.y) / 6 };
-    const c2 = { x: p2.x - (p3.x - p1.x) / 6, y: p2.y - (p3.y - p1.y) / 6 };
-    d += ` C${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`;
-  }
-  return d;
-}
-
-// The edges ELK declines to route: the ones crossing a namespace boundary, under the
-// hierarchy mode that keeps the layout compact (see layout.ts). A straight line
-// between two boxes reads as a wire laid over the picture; a curve that leaves the
-// source's side and arrives at the target's reads as a connection, which is all this
-// has to do. It is drawn, not routed — it does not know what it passes over.
+// Fallback for an edge dot returns no spline for. It should not happen — dot routes
+// every edge including the ones that leave a cluster, which is why it replaced ELK —
+// so this exists so a missing route degrades to a readable line instead of nothing.
+// Drawn, not routed: it does not know what it passes over.
 function drawn(from: Node, to: Node): string {
   const x1 = from.x + NODE_W;
   const y1 = from.y + NODE_H / 2;
