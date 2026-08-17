@@ -67,7 +67,10 @@ function dotFor(nodes: Node[], arrows: Arrow[]): string {
     "digraph {",
     "  rankdir=LR;",
     "  compound=true;",
-    "  splines=spline;",
+    // ORTHO, not spline: right-angle edges read better against rectangular boxes, and
+    // dot routes them around obstacles either way — which is the part React Flow's own
+    // orthogonal edge type does not do.
+    "  splines=ortho;",
     "  nodesep=0.42;",
     "  ranksep=0.95;",
     "  fontsize=11;",
