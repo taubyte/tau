@@ -125,6 +125,11 @@ var secSource = Section("source", "Source", "Where the code is sourced from.")
 // a route that silently never fires.
 var handlerKinds = []string{"function", "application", "website", "gateway", "mcp"}
 
+// A kind declares Ops() when something can reach it. A kind without them is not a
+// target: nothing "uses" a cron, a zone or a module — a cron fires, a zone answers
+// DNS, a module is built into a workload and named by its source. Their absence is
+// the statement, not an oversight.
+//
 // V2Resources is the v2 resource vocabulary. The enum is closed: tcc's validation,
 // completion, JSON-Schema emission and decompilation all need every type's shape at
 // compile time. Openness lives at two seams instead — `connector` for external
@@ -379,7 +384,6 @@ var V2Resources = []*Node{
 	DefineGroup("entities",
 		resource(
 			wasmAttributes(
-				Int("shards", Default(16), Required(), InSection("coordination"), Doc("Shards", "Lease and replica-set granularity. Fixed at creation.")),
 				Bool("durable", InSection("coordination"), Doc("Durable", "Journal every host call so an interrupted turn replays deterministically.")),
 				Bytes("storage/size", Path("storage", "size"), InSection("limits"), Doc("Storage", "Per-instance SQL storage ceiling.")),
 			),
@@ -518,7 +522,7 @@ var V2Resources = []*Node{
 				String("channel/match", Path("channel", "match"), Required(), Field("Match"), Accessor("ChannelMatch"), NoSetter(), InSection("channel"), Doc("Match", "Channel name or pattern this resource matches.")),
 				Bool("channel/regex", Path("channel", "regex"), NoSetter(), InSection("channel"), Doc("Regex", "Treat match as a regular expression.")),
 				Bool("bridges/mqtt/enable", Path("bridges", "mqtt", "enable"), Accessor("MQTT"), NoSetter(), InSection("bridges"), Doc("MQTT", "Expose this channel over the MQTT bridge.")),
-				Bool("webSocket", Path("bridges", "websocket", "enable"), Accessor("WebSocket"), NoSetter(), InSection("bridges"), Doc("WebSocket", "Expose this channel over the WebSocket bridge.")),
+				Bool("bridges/websocket/enable", Path("bridges", "websocket", "enable"), Accessor("WebSocket"), NoSetter(), InSection("bridges"), Doc("WebSocket", "Expose this channel over the WebSocket bridge.")),
 			),
 			GroupDoc("A PubSub channel, optionally bridged to MQTT/WebSocket. It edges to its subscribers; publishers edge to it."), Icon("message"), Category("trigger"),
 			secIdentity, secAccess,
@@ -572,7 +576,7 @@ var V2Resources = []*Node{
 			commonAttributes(
 				String("type", Required(), InSection("identity"), Doc("Type", "Which external system this connects to, e.g. \"kafka\", \"s3\", \"slack\".")),
 				String("credentials", Ref("secrets", Prefix("secrets/")), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials, as \"secrets/<name>\".")),
-				Bool("source", InSection("identity"), Doc("Source", "This connector polls the external system and emits events. Held by exactly one node per cloud.")),
+				Bool("polls", InSection("identity"), Doc("Polls", "This connector holds a live connection to the external system and emits events from it. Exactly one node in the cloud runs it.")),
 			),
 			GroupDoc("An external system: credentials, and for source-like externals the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
 			secIdentity, secAccess,

@@ -201,15 +201,24 @@ var Omissions = []Omission{
 		Unblocks: "an attribute type that can hold a list of objects, or a nested group under a resource.",
 	},
 	{
-		Name:    "per-use modifiers",
+		Name:    "mount and event filters on a use",
 		State:   Blocked,
 		Decided: Forced,
-		Why: "A single use cannot carry `mount`, `timeout`, `retry`, `via` (an authorizer) or event " +
-			"`filters`, because uses are keyed kind-then-verb — which is what makes their targets " +
-			"ordinary resource references the compiler can resolve. A gateway mounted at /auth that " +
-			"cannot bind outside /auth is the property that makes delegating a prefix safe by " +
-			"construction, and it has nowhere to attach.",
-		Unblocks: "the same missing shape as route rules — this is the cost of the current keying, and the open design question.",
+		Why: "An access entry now carries `via` and `timeout`, which nesting made possible — " +
+			"there is a per-target place to put them. What still has nowhere to go is `mount`, " +
+			"which belongs to a route rather than to a use, and CloudEvents `filters`, which is " +
+			"a list of attribute matches.",
+		Instead:  "via and timeout on the entry; a gateway's route carries the path.",
+		Unblocks: "a list-of-objects attribute, for the filters half.",
+	},
+	{
+		Name:    "shards / replica-set granularity on an entity",
+		State:   Never,
+		Decided: ByOwner,
+		Why: "Same family as a replica count: how the key space is partitioned across the fleet " +
+			"is the platform's, and an authored number is one it must then either obey while it " +
+			"is wrong or override while it is authored.",
+		Instead: "nothing to write. The lease and its epoch are the fence; granularity follows the fleet.",
 	},
 	{
 		Name:    "cross-scope addressing",

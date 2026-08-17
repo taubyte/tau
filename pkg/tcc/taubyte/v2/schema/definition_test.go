@@ -498,3 +498,29 @@ func TestNamespacePathForms(t *testing.T) {
 		assert.ErrorContains(t, err, "namespace path", "%q must be refused", bad)
 	}
 }
+
+// Per-use modifiers: an access entry is a place to put them, which a verb-keyed list
+// of names never had. They get the same treatment as any other attribute — the
+// authorizer resolves to an id, the duration parses — because a nested group is
+// processed as an ordinary group, per entry.
+func TestAccessEntryModifiers(t *testing.T) {
+	flat := compileBasic(t)
+
+	var authID string
+	for id := range resources(t, flat, "authorizers") {
+		authID = id
+	}
+	assert.Assert(t, authID != "", "no authorizer compiled")
+
+	fn := only(t, resources(t, flat, "functions"))
+	orders := fn["caches"].(map[string]any)["orders"].(map[string]any)
+	assert.Equal(t, orders["via"], "authorizers/"+authID, "via resolves like any other reference")
+	assert.Equal(t, orders["timeout"], int64(200000000), "200ms parses to nanoseconds")
+
+	// and an entry that names neither carries neither
+	sessions := fn["caches"].(map[string]any)["sessions"].(map[string]any)
+	for _, k := range []string{"via", "timeout"} {
+		_, present := sessions[k]
+		assert.Assert(t, !present, "an unauthored modifier must not appear: %q", k)
+	}
+}

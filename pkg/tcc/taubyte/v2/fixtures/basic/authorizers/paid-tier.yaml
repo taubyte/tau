@@ -1,0 +1,7 @@
+id: QmQwsLKS7hLCkVCFPYqjHhLNxjnkNCiJqBFPPbrmvSaWAd
+description: decides per key, with the operation in hand; it can only deny
+source: "."
+execution:
+    call: authorize
+    timeout: 200ms
+    memory: 8MB

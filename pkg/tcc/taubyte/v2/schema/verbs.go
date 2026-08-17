@@ -126,6 +126,13 @@ func accessGroups() []*Node {
 					Doc("Namespace", "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.")),
 				StringSlice("ops", Required(), AreVerbsOf(kind), InSection("access"),
 					Doc("Ops", fmt.Sprintf("What may be done to it: %s.", strings.Join(verbs, ", ")))),
+				// Per-use modifiers. These were unexpressible while access was a
+				// verb-keyed list of names: there was no per-target place to put
+				// them. An entry is that place.
+				String("via", Ref("authorizers", Prefix("authorizers/")), InSection("access"),
+					Doc("Via", "An authorizer consulted per operation, as \"authorizers/<name>\". It can only narrow this entry, never widen it, and a failure is a denial.")),
+				Duration("timeout", InSection("access"),
+					Doc("Timeout", "How long one operation on it may take before it is given up on.")),
 			},
 				// No Resource(...): an access entry is data under its parent, not a
 				// kind. That descriptor would emit a generated type for it and would
