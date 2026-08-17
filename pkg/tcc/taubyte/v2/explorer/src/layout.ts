@@ -31,12 +31,24 @@ export interface Placed {
   nodes: Node[];
   /** A namespace's frame, from dot's cluster bounding box. */
   scopes: { scope: string; x: number; y: number; w: number; h: number }[];
-  /** A ready-made SVG path per arrow — dot's spline, not a curve we invented. */
-  routes: Map<string, string>;
+  /**
+   * Per arrow: the path dot routed, and the point halfway ALONG it. The midpoint has
+   * to come from the route — a label placed between the two endpoints instead sits
+   * wherever the straight line would have been, which is exactly the space the router
+   * moved the line out of.
+   */
+  routes: Map<string, Route>;
   /** Where the internet sits, when anything is exposed at all. */
   internet: { x: number; y: number; w: number; h: number } | null;
   w: number;
   h: number;
+}
+
+export interface Route {
+  d: string;
+  mid: { x: number; y: number };
+  /** How long the line is, so a caller can decide whether a word fits on it. */
+  len: number;
 }
 
 export const routeKey = (a: Arrow) => `${a.from}->${a.to}->${a.verb}`;
@@ -114,10 +126,17 @@ interface DotEdge {
 const flip = (h: number, y: number) => h - y;
 
 // An edge's `pos` is "e,x,y p0 p1 p2 p3 …": an optional arrow tip, a start point, then
-// cubic bezier triples. Emitting them AS beziers keeps dot's routing exactly —
-// sampling a spline into a polyline and re-curving it, which the ELK path had to do,
-// is where a routed line quietly stops avoiding what it was routed around.
-function pathFrom(pos: string, h: number): string {
+// control points. Under splines=ortho every corner is a right angle and the control
+// points are colinear with the anchors, so the points ARE the polyline — reading them
+// that way loses nothing and, unlike re-curving a sampled spline, cannot bend the line
+// into something dot did not route.
+//
+// Corners are then rounded, which is cosmetic and bounded: the radius is capped at
+// half the shorter adjacent segment, so a short leg gets a small arc instead of a
+// bulge that leaves the corridor dot reserved.
+const CORNER = 9;
+
+function pathFrom(pos: string, h: number): Route | null {
   let tip: { x: number; y: number } | null = null;
   const pts: { x: number; y: number }[] = [];
 
@@ -129,14 +148,56 @@ function pathFrom(pos: string, h: number): string {
     if (lead === "e,") tip = { x, y: flip(h, y) };
     else if (lead !== "s,") pts.push({ x, y: flip(h, y) });
   }
-  if (!pts.length) return "";
+  if (tip) pts.push(tip);
 
-  let d = `M${pts[0].x},${pts[0].y}`;
-  for (let i = 1; i + 2 < pts.length; i += 3) {
-    d += ` C${pts[i].x},${pts[i].y} ${pts[i + 1].x},${pts[i + 1].y} ${pts[i + 2].x},${pts[i + 2].y}`;
+  // A repeated point has no direction, and a zero-length final segment leaves the
+  // arrowhead with no angle to orient by.
+  const line = pts.filter((p, i) => i === 0 || Math.hypot(p.x - pts[i - 1].x, p.y - pts[i - 1].y) > 0.5);
+  if (line.length < 2) return null;
+
+  let d = `M${line[0].x},${line[0].y}`;
+  for (let i = 1; i < line.length - 1; i++) {
+    const [a, p, b] = [line[i - 1], line[i], line[i + 1]];
+    const r = Math.min(CORNER, Math.hypot(p.x - a.x, p.y - a.y) / 2, Math.hypot(b.x - p.x, b.y - p.y) / 2);
+    if (r < 1) {
+      d += ` L${p.x},${p.y}`;
+      continue;
+    }
+    const towards = (from: { x: number; y: number }, to: { x: number; y: number }) => {
+      const len = Math.hypot(to.x - from.x, to.y - from.y) || 1;
+      return { x: from.x + ((to.x - from.x) / len) * r, y: from.y + ((to.y - from.y) / len) * r };
+    };
+    const enter = towards(p, a);
+    const exit = towards(p, b);
+    d += ` L${enter.x.toFixed(2)},${enter.y.toFixed(2)} Q${p.x},${p.y} ${exit.x.toFixed(2)},${exit.y.toFixed(2)}`;
   }
-  if (tip) d += ` L${tip.x},${tip.y}`;
-  return d;
+  const end = line[line.length - 1];
+  const seg = line.slice(1).map((p, i) => Math.hypot(p.x - line[i].x, p.y - line[i].y));
+  return {
+    d: `${d} L${end.x},${end.y}`,
+    mid: midpointOf(line),
+    len: seg.reduce((a, b) => a + b, 0),
+  };
+}
+
+// Halfway by LENGTH, not the middle vertex: an L-shaped route with one long leg and
+// one short one has its middle vertex at the corner, which is the least useful place
+// on the line to put a word.
+function midpointOf(line: { x: number; y: number }[]): { x: number; y: number } {
+  const seg = line.slice(1).map((p, i) => Math.hypot(p.x - line[i].x, p.y - line[i].y));
+  const half = seg.reduce((a, b) => a + b, 0) / 2;
+  let walked = 0;
+  for (let i = 0; i < seg.length; i++) {
+    if (walked + seg[i] >= half) {
+      const t = seg[i] === 0 ? 0 : (half - walked) / seg[i];
+      return {
+        x: line[i].x + (line[i + 1].x - line[i].x) * t,
+        y: line[i].y + (line[i + 1].y - line[i].y) * t,
+      };
+    }
+    walked += seg[i];
+  }
+  return line[line.length - 1];
 }
 
 export async function place(nodes: Node[], arrows: Arrow[], exposed: string[] = []): Promise<Placed> {
@@ -180,7 +241,7 @@ export async function place(nodes: Node[], arrows: Arrow[], exposed: string[] = 
   // matched by its endpoints. `claimed` keeps two arrows between the same pair from
   // both taking the first spline — which cannot happen while parallel edges are merged
   // upstream, and would be a silent mis-draw if that ever changed.
-  const routes = new Map<string, string>();
+  const routes = new Map<string, Route>();
   const claimed = new Set<number>();
   for (const e of out.edges ?? []) {
     if (!e.pos) continue;
@@ -188,13 +249,15 @@ export async function place(nodes: Node[], arrows: Arrow[], exposed: string[] = 
     const to = objects[e.head]?.name;
     if (!from || !to) continue;
     if (from === INTERNET) {
-      routes.set(internetEdgeKey(to), pathFrom(e.pos, H));
+      const r = pathFrom(e.pos, H);
+      if (r) routes.set(internetEdgeKey(to), r);
       continue;
     }
     const i = arrows.findIndex((a, idx) => a.from === from && a.to === to && !claimed.has(idx));
     if (i < 0) continue;
     claimed.add(i);
-    routes.set(routeKey(arrows[i]), pathFrom(e.pos, H));
+    const r = pathFrom(e.pos, H);
+    if (r) routes.set(routeKey(arrows[i]), r);
   }
 
   return { nodes, scopes, routes, internet, w: W + 24, h: H + 24 };

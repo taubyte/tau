@@ -109,8 +109,8 @@ const NODE_TYPES = { resource: ResourceNode, scope: ScopeNode, internet: Interne
 // not happen: dot routes every edge, including the ones leaving a cluster, and that is
 // most of why it is the layout here.
 function RoutedEdge({ id, data, markerEnd, style, label, sourceX, sourceY, targetX, targetY }: EdgeProps) {
-  const routed = typeof data?.path === "string" ? (data.path as string) : "";
-  const [fallback, midX, midY] = getBezierPath({
+  const route = data?.route as { d: string; mid: { x: number; y: number } } | undefined;
+  const [fallback, bezierX, bezierY] = getBezierPath({
     sourceX,
     sourceY,
     targetX,
@@ -118,9 +118,11 @@ function RoutedEdge({ id, data, markerEnd, style, label, sourceX, sourceY, targe
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
   });
+  const midX = route ? route.mid.x : bezierX;
+  const midY = route ? route.mid.y : bezierY;
   return (
     <>
-      <BaseEdge id={id} path={routed || fallback} markerEnd={markerEnd} style={style} />
+      <BaseEdge id={id} path={route?.d || fallback} markerEnd={markerEnd} style={style} />
       {label ? (
         <EdgeLabelRenderer>
           <div
@@ -136,6 +138,13 @@ function RoutedEdge({ id, data, markerEnd, style, label, sourceX, sourceY, targe
 }
 
 const EDGE_TYPES = { routed: RoutedEdge };
+
+// Resolved, not `var(--x)`. React Flow builds a marker's id out of its config and
+// references it as url(#id) — a CSS var carries parentheses, which terminate that
+// reference early, and every arrowhead on the canvas silently fails to resolve. The
+// stroke can stay a var because it is a plain CSS property; the marker cannot.
+const cssVar = (name: string) =>
+  getComputedStyle(document.documentElement).getPropertyValue(name).trim() || "#888";
 
 const CATEGORY_COLOR: Record<string, string> = {
   internet: "var(--internet)",
@@ -163,6 +172,18 @@ export function GraphView({
   selection: Selection;
   onPick: (id: string | null) => void;
 }) {
+  // Read once per render rather than per edge; a theme flip re-renders the page.
+  const ink = useMemo(
+    () => ({
+      read: cssVar("--read"),
+      write: cssVar("--write"),
+      ref: cssVar("--mut"),
+      policy: cssVar("--acc"),
+      internet: cssVar("--internet"),
+    }),
+    [],
+  );
+
   const lit = useMemo(() => {
     if (!selection) return null;
     const reached =
@@ -236,22 +257,29 @@ export function GraphView({
       });
     }
     return out;
-  }, [graph, placed, lit, selection]);
+  }, [graph, placed, lit, selection, ink]);
 
   const edges: Edge[] = useMemo(() => {
     const out: Edge[] = graph.nodes
       .filter((n) => n.fqdn && placed.routes.has(internetEdgeKey(n.id)))
-      .map((n) => ({
+      .map((n) => {
+        const route = placed.routes.get(internetEdgeKey(n.id));
+        // A name written across a line shorter than the name lands on the boxes at
+        // either end. It is in the Review tab and the footer either way, so the
+        // diagram drops it rather than smearing it over something.
+        const fits = (route?.len ?? 0) > (n.fqdn?.length ?? 0) * 5.5;
+        return {
         id: internetEdgeKey(n.id),
         source: INTERNET,
         target: n.id,
         type: "routed",
-        data: { path: placed.routes.get(internetEdgeKey(n.id)) ?? "" },
-        label: n.fqdn,
+        data: { route },
+        label: fits ? n.fqdn : undefined,
         className: "rf-edge exposed",
-        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: "var(--internet)" },
+        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: ink.internet },
         style: { stroke: "var(--internet)", strokeWidth: 1.6, opacity: lit ? 0.15 : 1 },
-      }));
+        };
+      });
 
     return out.concat(
       graph.arrows.map((a) => {
@@ -267,7 +295,7 @@ export function GraphView({
           source: a.from,
           target: a.to,
           type: "routed",
-          data: { path: placed.routes.get(routeKey(a)) ?? "" },
+          data: { route: placed.routes.get(routeKey(a)) },
           label: touched ? a.verb : undefined,
           className: `rf-edge ${cls}${faded ? " faded" : ""}`,
           // An arrowhead, which the first cut of this forgot: direction is the entire
@@ -277,7 +305,7 @@ export function GraphView({
             type: MarkerType.ArrowClosed,
             width: 14,
             height: 14,
-            color: EDGE_COLOR[cls],
+            color: ink[cls as keyof typeof ink],
           },
           style: {
             stroke: EDGE_COLOR[cls],
@@ -289,7 +317,7 @@ export function GraphView({
         } satisfies Edge;
       }),
     );
-  }, [graph, placed, lit, selection]);
+  }, [graph, placed, lit, selection, ink]);
 
   return (
     <ReactFlow
