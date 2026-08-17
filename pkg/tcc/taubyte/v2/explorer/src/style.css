@@ -119,13 +119,19 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
    blast radius mean anything. */
 .rf-node.faded { opacity: .13; }
 
+/* Drawn INSIDE the frame dot reserved, not on it.
+   dot does not keep an orthogonal route off a cluster boundary — 60 sampled points
+   sat within 3px of shop's border — so the reserved rectangle is treated as what it
+   is, a reserved region, and the visible dashes are inset within it. That turns "the
+   wire is on the border" into a gutter, and it costs no coordinate change: the node
+   wrapper is still exactly the frame, so every child's position stays relative to it. */
 .rf-scope {
-  width: 100%; height: 100%;
+  position: absolute; inset: 6px;
   border: 1px dashed var(--internet); border-radius: 8px;
   background: color-mix(in srgb, var(--internet) 6%, transparent);
 }
 .rf-scopelabel {
-  position: absolute; top: 5px; left: 10px;
+  position: absolute; top: 4px; left: 10px;
   font-family: ui-monospace, monospace; font-size: 9px; letter-spacing: .05em;
   text-transform: uppercase; color: var(--internet);
 }
