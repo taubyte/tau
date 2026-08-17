@@ -475,6 +475,12 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 func load[T ObjectDataType](n *Node, query *yaseer.Query) (object.Object[T], error) {
 	obj := object.New[T]()
 
+	// Before reading anything: a key this node cannot read is a mistake, not an
+	// extension. See strict.go — it used to be dropped in silence.
+	if err := checkKeys(n, query); err != nil {
+		return nil, err
+	}
+
 	if !n.Group {
 		if err := setAttributes(n, obj, query); err != nil {
 			return nil, err

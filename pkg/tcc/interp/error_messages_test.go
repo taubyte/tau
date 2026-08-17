@@ -75,9 +75,9 @@ func TestCompile_ValidationError_Line3_ExactError(t *testing.T) {
 
 	// Create a function YAML file with invalid name at line 3
 	// Line 1: id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh
-	// Line 2: type: http
+	// Line 2: description: pad
 	// Line 3: name: 999invalid  <- invalid variable name (starts with number)
-	functionYaml := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\ntype: http\nname: 999invalid\n"
+	functionYaml := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\ndescription: pad\nname: 999invalid\n"
 	afero.WriteFile(fs, "/test/config/functions/test_func.yaml", []byte(functionYaml), 0644)
 
 	compiler, err := schema.New(schema.WithVirtual(fs, "/test/config"))
@@ -102,10 +102,10 @@ func TestCompile_ValidationError_Line4_ExactError(t *testing.T) {
 
 	// Create a function YAML file with invalid name at line 4
 	// Line 1: id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh
-	// Line 2: type: http
-	// Line 3: http-method: GET
+	// Line 2: description: pad
+	// Line 3: tags: [pad]
 	// Line 4: name: 999invalid  <- invalid variable name (starts with number)
-	functionYaml := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\ntype: http\nhttp-method: GET\nname: 999invalid\n"
+	functionYaml := "id: QmNf1SAZuyM9vLPeWiYx9qh3AWJKCjJvF9d1f5ZPZCZxXh\ndescription: pad\ntags: [pad]\nname: 999invalid\n"
 	afero.WriteFile(fs, "/test/config/functions/test_func.yaml", []byte(functionYaml), 0644)
 
 	compiler, err := schema.New(schema.WithVirtual(fs, "/test/config"))

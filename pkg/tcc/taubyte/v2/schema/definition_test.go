@@ -290,9 +290,17 @@ route:
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
-	// the Either() matches no key, so the switch has nothing to capture
-	assert.ErrorContains(t, err, "attribute route/handler/kind has an empty key",
+	// The Either() enumerates what a handler may be, so an unlisted key is now
+	// rejected as an unknown key BEFORE the switch fails to capture one — same
+	// refusal, at the offending line, naming what was allowed instead.
+	assert.ErrorContains(t, err, "unknown key 'kv'",
 		"a real but non-HTTP kind must not be a handler")
+	assert.ErrorContains(t, err, "application, function, gateway, mcp, website",
+		"the refusal has to say what a handler may be")
+	// the position is the value's, so for a key holding a block it lands on the
+	// first line inside that block rather than on the key
+	assert.ErrorContains(t, err, "/gateways/shop.yaml:8:",
+		"and where")
 }
 
 // Namespaces nest — v1's applications did not. A tenant can hold its own tenants,

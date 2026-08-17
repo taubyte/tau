@@ -196,10 +196,13 @@ neither the field nor the file. Worth improving one day; do not paper over it.
   a `[]string` fails at LOAD, in the user's yaml, not at schema-build where the
   mistake is. Use `EachInSet` (verbs.go). Same family as `Ref` without `Prefix` on a
   `String`, §6.
-- A field you authored is simply absent from the compiled object, no error ⇒ the key
-  is not in the schema and unknown keys are DROPPED IN SILENCE. Check the spelling
-  against the attribute's `Path(...)`, not against what looks right. A fixture here
-  said `source: true` where the attribute is `polls` and nothing complained.
+- `unknown key 'x'; valid keys here: …` ⇒ exactly what it says, and the list is
+  generated from the schema, so it is the truth rather than a doc comment. Check the
+  spelling against the attribute's `Path(...)`. This used to be SILENT — the field was
+  dropped and the compile succeeded — until `engine/strict.go` (2026-08-17); a fixture
+  here said `source: true` where the attribute is `polls` and nothing complained for
+  weeks. If you are adding an attribute and its key is rejected, the schema is what is
+  wrong.
 - A `ShowWhen` / `RequiredWhen` that never fires ⇒ its first argument is not an
   attribute name. It takes the **sibling attribute's `Name`**, which for a nested field
   is the full slashed one — `ShowWhen("certificate/source", "provided")`, never

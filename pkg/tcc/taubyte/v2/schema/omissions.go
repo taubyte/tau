@@ -77,21 +77,6 @@ var Omissions = []Omission{
 			"compare one field — and it is the fourth thing waiting on that pass.",
 	},
 	{
-		Name:    "an error for a key the schema does not have",
-		State:   Open,
-		Decided: ByOwner,
-		Why: "An unknown key is dropped in silence. A connector in this repo's own fixtures said " +
-			"`source: true` for weeks where the attribute is `polls`, compiled clean, and the field " +
-			"simply was not there — the config asserted something and the compiler agreed by saying " +
-			"nothing. Every typo'd field name behaves this way, and the failure surfaces as absent " +
-			"behaviour at runtime rather than as an error at the line that caused it.",
-		Instead: "reading the compiled object and checking the field arrived, which is what caught " +
-			"this one.",
-		Unblocks: "an owner call on strictness. Rejecting unknown keys is the right default for a " +
-			"config compiler, but it is a compatibility decision — it turns every forward-compatible " +
-			"document into a hard error — and it belongs to whoever owns that policy, not here.",
-	},
-	{
 		Name:    "a function's host interface",
 		State:   Open,
 		Decided: ByOwner,
@@ -330,6 +315,7 @@ var Omissions = []Omission{
 		Why: "A port nothing routes to, an application no gateway fronts, a queue nobody consumes, " +
 			"a cache nobody reads: each compiles, and each is dead config that reads as working. " +
 			"A container that declares `receive` and no `deliver` port: same. " +
+			"(An unknown KEY is no longer one of these — engine/strict.go rejects it at load.) " +
 			"Deleting the trigger block made reachability answerable by traversing the graph, and " +
 			"nothing yet does the traversal. It cannot live in one resource's schema, because the " +
 			"question is about the whole compiled project.",
