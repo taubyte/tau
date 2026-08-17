@@ -1,0 +1,164 @@
+package schema_test
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/taubyte/tau/pkg/tcc/engine"
+	v1 "github.com/taubyte/tau/pkg/tcc/taubyte/v1/schema"
+	v2 "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
+	"gopkg.in/yaml.v3"
+)
+
+// claim is a prefix tree of every key path the schema can consume.
+type claim struct {
+	kids map[string]*claim
+	any  bool // StringMatchAll here: any key at this level, keep descending
+	leaf bool // an attribute ends here; nothing below is schema
+}
+
+func newClaim() *claim { return &claim{kids: map[string]*claim{}} }
+
+func (c *claim) child(k string) *claim {
+	if c.kids[k] == nil {
+		c.kids[k] = newClaim()
+	}
+	return c.kids[k]
+}
+
+func (c *claim) insert(path []engine.StringMatch) {
+	if len(path) == 0 {
+		c.leaf = true
+		return
+	}
+	switch m := path[0].(type) {
+	case string:
+		c.child(m).insert(path[1:])
+	case engine.FiniteMatcher:
+		for _, v := range m.Values() {
+			c.child(v).insert(path[1:])
+		}
+	case engine.StringMatcher: // StringMatchAll
+		c.any = true
+		c.insert(path[1:])
+	default:
+		panic(fmt.Sprintf("unknown matcher %T", path[0]))
+	}
+}
+
+// claimsOf is everything one node's own document may contain.
+func claimsOf(n *engine.Node) *claim {
+	c := newClaim()
+	for _, a := range n.Attributes {
+		p := a.Path
+		if len(p) == 0 {
+			p = []engine.StringMatch{a.Name}
+		}
+		c.insert(p)
+		if len(a.Compat) > 0 {
+			c.insert(a.Compat)
+		}
+	}
+	for _, ch := range n.Children {
+		if s, ok := ch.Match.(string); ok {
+			sub := c.child(s)
+			// a group's entries are keyed by NAME, then the iterator's own claims
+			if len(ch.Children) > 0 {
+				sub.any = true
+				inner := claimsOf(ch.Children[0])
+				sub.kids = inner.kids
+				sub.leaf = inner.leaf
+			}
+		} else {
+			c.any = true
+		}
+	}
+	return c
+}
+
+func (c *claim) walk(doc map[string]any, at string, out *[]string) {
+	for k, v := range doc {
+		sub, ok := c.kids[k]
+		if !ok {
+			if c.any {
+				continue // unconstrained level
+			}
+			*out = append(*out, strings.TrimPrefix(at+"/"+k, "/"))
+			continue
+		}
+		if sub.leaf {
+			continue
+		}
+		if m, ok := v.(map[string]any); ok {
+			sub.walk(m, at+"/"+k, out)
+		}
+	}
+}
+
+func unknownKeys(t *testing.T, dir string, groups []*engine.Node, rootAttrs *engine.Node) []string {
+	byGroup := map[string]*engine.Node{}
+	for _, g := range groups {
+		if s, ok := g.Match.(string); ok && len(g.Children) > 0 {
+			byGroup[s] = g.Children[0]
+		}
+	}
+	var found []string
+	filepath.Walk(dir, func(p string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() || !strings.HasSuffix(p, ".yaml") {
+			return nil
+		}
+		rel, _ := filepath.Rel(dir, p)
+		parts := strings.Split(rel, string(filepath.Separator))
+		group := ""
+		if len(parts) >= 2 {
+			group = parts[len(parts)-2]
+		}
+		node, ok := byGroup[group]
+		if !ok {
+			if filepath.Base(rel) == "config.yaml" && rootAttrs != nil {
+				node = rootAttrs
+			} else {
+				return nil
+			}
+		}
+		b, _ := os.ReadFile(p)
+		var doc map[string]any
+		if yaml.Unmarshal(b, &doc) != nil || doc == nil {
+			return nil
+		}
+		var out []string
+		claimsOf(node).walk(doc, "", &out)
+		for _, k := range out {
+			found = append(found, rel+": "+k)
+		}
+		return nil
+	})
+	sort.Strings(found)
+	return found
+}
+
+func TestUnknownKeyBlastRadius(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		dir    string
+		groups []*engine.Node
+		root   *engine.Node
+	}{
+		{"v2/basic", "../fixtures/basic", v2.CompileRoot().Children, v2.CompileRoot()},
+		{"v1/config", "../../v1/fixtures/config", v1.CompileRoot().Children, v1.CompileRoot()},
+	} {
+		if _, err := os.Stat(tc.dir); err != nil {
+			t.Logf("%-12s SKIP (%v)", tc.name, err)
+			continue
+		}
+		got := unknownKeys(t, tc.dir, tc.groups, tc.root)
+		t.Logf("%-12s %d unknown keys", tc.name, len(got))
+		for _, g := range got {
+			t.Logf("    %s", g)
+		}
+	}
+}
