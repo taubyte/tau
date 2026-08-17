@@ -1,4 +1,4 @@
 id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
-description: an external database, reached through the connector that holds its credentials
+description: an external database, reached through a connector that provides one - kafka would compile here and answer nothing
 engine:
-    connector: connectors/kafka-orders
+    connector: connectors/pg-main

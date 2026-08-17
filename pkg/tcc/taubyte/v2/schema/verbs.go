@@ -175,6 +175,36 @@ func accessGroups() []*Node {
 	return out
 }
 
+// EachInSet is InSet for a StringSlice.
+//
+// engine.InSet is scalar-only: its validator takes a T, so handing it a []string
+// fails at LOAD with "invalid type passed to validator" and a line number in the
+// user's yaml — not at schema-build time, where the mistake actually is. The schema
+// compiles, every fixture breaks, and the error names the wrong file.
+//
+// Same pair AreVerbsOf already forms: check every member, and record the permitted
+// set as the enum a generator, an editor and the JSON Schema all read back.
+func EachInSet(vals ...string) engine.Option {
+	return func(a *Attribute) {
+		Validator(func(in []string) error {
+			for _, v := range in {
+				ok := false
+				for _, want := range vals {
+					if v == want {
+						ok = true
+						break
+					}
+				}
+				if !ok {
+					return fmt.Errorf("%q is not one of %s", v, strings.Join(vals, ", "))
+				}
+			}
+			return nil
+		})(a)
+		engine.Annotate("enum", vals)(a)
+	}
+}
+
 // AreVerbsOf checks every op against the kind's declared verb set at load AND records
 // the set, so the same table that enforces it is the one an editor completes from and
 // the JSON Schema publishes. One source of truth: the closure is derived from the

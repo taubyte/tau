@@ -191,6 +191,15 @@ neither the field nor the file. Worth improving one day; do not paper over it.
 - A field you declared is missing from the compiled object, with no error ⇒ a
   self-referential `Tag`. §4.
 - Children silently absent ⇒ you hung a group off a `DefineIter`. §1.
+- `invalid type passed to validator`, pointing at a fixture line ⇒ a scalar-only
+  option on a `StringSlice`. `InSet` is the usual one: its validator takes a `T`, so
+  a `[]string` fails at LOAD, in the user's yaml, not at schema-build where the
+  mistake is. Use `EachInSet` (verbs.go). Same family as `Ref` without `Prefix` on a
+  `String`, §6.
+- A field you authored is simply absent from the compiled object, no error ⇒ the key
+  is not in the schema and unknown keys are DROPPED IN SILENCE. Check the spelling
+  against the attribute's `Path(...)`, not against what looks right. A fixture here
+  said `source: true` where the attribute is `polls` and nothing complained.
 - A `ShowWhen` / `RequiredWhen` that never fires ⇒ its first argument is not an
   attribute name. It takes the **sibling attribute's `Name`**, which for a nested field
   is the full slashed one — `ShowWhen("certificate/source", "provided")`, never

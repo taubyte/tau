@@ -138,8 +138,26 @@ func TestConnectorCredentialsResolve(t *testing.T) {
 	for id := range resources(t, flat, "secrets") {
 		secretID = id
 	}
-	conn := only(t, resources(t, flat, "connectors"))
-	assert.Equal(t, conn["credentials"], "secrets/"+secretID)
+	for _, v := range resources(t, flat, "connectors") {
+		conn := v.(map[string]any)
+		assert.Equal(t, conn["credentials"], "secrets/"+secretID,
+			"connector %q", conn["name"])
+	}
+}
+
+// `provides` is what makes a reference INTO a connector answerable: `type` is open by
+// design, so the only thing a database's engine can check is the role. Kafka provides
+// a stream and nothing else, which is exactly the config that used to compile as a
+// SQL engine.
+func TestConnectorProvidesRole(t *testing.T) {
+	flat := compileBasic(t)
+	byName := map[string][]string{}
+	for _, v := range resources(t, flat, "connectors") {
+		conn := v.(map[string]any)
+		byName[conn["name"].(string)] = conn["provides"].([]string)
+	}
+	assert.DeepEqual(t, byName["kafka-orders"], []string{"stream"})
+	assert.DeepEqual(t, byName["pg-main"], []string{"database", "stream"})
 }
 
 // The new kinds load at all, with their scalars parsed.

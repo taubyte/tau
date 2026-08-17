@@ -688,7 +688,21 @@ var V2Resources = []*Node{
 	DefineGroup("connectors",
 		resource(
 			commonAttributes(
-				String("type", Required(), InSection("identity"), Doc("Type", "Which external system this connects to, e.g. \"kafka\", \"s3\", \"slack\".")),
+				String("type", Required(), InSection("identity"), Doc("Type", "Which external system this connects to, e.g. \"kafka\", \"postgres\", \"s3\", \"slack\".")),
+				// What the external system can BE USED AS, which is a different question
+				// from what it is. `type` is deliberately open — a connector is one of the
+				// two seams where this vocabulary stays extensible, so a new external
+				// system must not require editing an enum. But every reference INTO a
+				// connector needs to know the shape on the other side: a database's engine
+				// needs something queryable, and naming a Kafka connector there compiles
+				// clean and answers no query.
+				//
+				// The roles are closed and few because they are what the rest of the
+				// vocabulary reaches for. A new external system is a new `type` string that
+				// declares which of these it can play; it is a list because one system can
+				// play several — Postgres backs a database AND emits change events.
+				StringSlice("provides", Required(), EachInSet("database", "stream", "object-store", "endpoint"), InSection("identity"),
+					Doc("Provides", "What this external system can back: database (queryable), stream (emits events), object-store (blobs), endpoint (a thing you call). A reference into this connector has to want one of these.")),
 				String("credentials", Ref("secrets", Prefix("secrets/")), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials, as \"secrets/<name>\".")),
 				Bool("polls", InSection("identity"), Doc("Polls", "This connector holds a live connection to the external system and emits events from it. Exactly one node in the cloud runs it.")),
 			),

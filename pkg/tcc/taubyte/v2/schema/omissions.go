@@ -61,6 +61,37 @@ var Omissions = []Omission{
 			"than configured.",
 	},
 	{
+		Name:    "a reference that requires a particular KIND of target",
+		State:   Open,
+		Decided: Forced,
+		Why: "Ref() resolves a name to an id and stops there. So a database's engine can name a " +
+			"connector to Kafka and compile clean, and the resulting config claims a SQL engine that " +
+			"answers no query. `connector.type` cannot be closed to fix it — a connector is one of " +
+			"the two seams where this vocabulary stays extensible, and a new external system must " +
+			"not require editing an enum.",
+		Instead: "`provides` on the connector: `type` stays open, and the ROLE it can play — " +
+			"database, stream, object-store, endpoint — is a closed set the rest of the vocabulary " +
+			"can reach for. That makes the config self-describing and the check writable; it does " +
+			"not make it checked.",
+		Unblocks: "the publish-time pass. Every case is the same shape — read the target and " +
+			"compare one field — and it is the fourth thing waiting on that pass.",
+	},
+	{
+		Name:    "an error for a key the schema does not have",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "An unknown key is dropped in silence. A connector in this repo's own fixtures said " +
+			"`source: true` for weeks where the attribute is `polls`, compiled clean, and the field " +
+			"simply was not there — the config asserted something and the compiler agreed by saying " +
+			"nothing. Every typo'd field name behaves this way, and the failure surfaces as absent " +
+			"behaviour at runtime rather than as an error at the line that caused it.",
+		Instead: "reading the compiled object and checking the field arrived, which is what caught " +
+			"this one.",
+		Unblocks: "an owner call on strictness. Rejecting unknown keys is the right default for a " +
+			"config compiler, but it is a compatibility decision — it turns every forward-compatible " +
+			"document into a hard error — and it belongs to whoever owns that policy, not here.",
+	},
+	{
 		Name:    "a function's host interface",
 		State:   Open,
 		Decided: ByOwner,
