@@ -580,7 +580,7 @@ func TestPortsAreNamed(t *testing.T) {
 	// or a function decides, which is a different kind of answer and says so
 	pool := namedResource(t, resources(t, flat, "applications"), "worker_pool")
 	assert.Equal(t, pool["health/kind"], "function")
-	assert.Equal(t, pool["health/function"], "pool_ready")
+	assert.Equal(t, pool["health/function/name"], "pool_ready")
 	_, probe := pool["health/path"]
 	assert.Assert(t, !probe, "a function-checked workload declares no probe path")
 
