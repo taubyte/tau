@@ -123,6 +123,21 @@ func DefineIterGroup(attrs []*Attribute, children ...*Node) *Node {
 // With applies node options to an already-built node and returns it, for the
 // ctors that take only children (DefineGroup / DefineIterGroup) and so can't
 // take options inline. Generation-only metadata; no runtime effect.
+// Leaf names the document this group's instances keep their own fields in.
+func Leaf(name string) NodeOption {
+	return func(n *Node) { n.Leaf = name }
+}
+
+// LeafOf is the document a group's instances keep their own fields in, declared or
+// defaulted. Exported because a consumer mapping an address to a file — a session, a
+// CLI, a UI — must not re-derive the convention.
+func LeafOf(n *Node) string {
+	if n == nil || n.Leaf == "" {
+		return NodeDefaultSeerLeaf
+	}
+	return n.Leaf
+}
+
 func (n *Node) With(opts ...NodeOption) *Node {
 	for _, o := range opts {
 		o(n)

@@ -547,7 +547,7 @@ func load[T ObjectDataType](n *Node, query *yaseer.Query, strict bool) (object.O
 	}
 
 	// file might or might not have config, so we ignore error
-	err := setAttributes(n, obj, query.Get(NodeDefaultSeerLeaf))
+	err := setAttributes(n, obj, query.Get(LeafOf(n)))
 	if err != nil && n.hasRequiredAttributes() {
 		return nil, err
 	}
@@ -565,7 +565,8 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 	// `DefineGroup("clouds", DefineIter(...))` matches a `clouds:` map
 	// authored as nested YAML, not just as a `clouds/<key>.yaml` directory.
 	// Filesystem entries take precedence.
-	configList, _ := query.Get(NodeDefaultSeerLeaf).List()
+	leaf := LeafOf(n)
+	configList, _ := query.Get(leaf).List()
 	inFS := make(map[string]bool, len(list))
 	for _, l := range list {
 		inFS[l] = true
@@ -599,7 +600,11 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 
 	for _, itm := range n.Children {
 		for _, l := range list {
-			if l == NodeDefaultSeerLeaf {
+			// Only a GROUP keeps its own fields in a leaf document, so only a group
+			// reserves that name. A nested resource reads its attributes from its own
+			// document root and has no leaf at all — skipping the name there deleted a
+			// legitimate child group, silently.
+			if n.Group && l == leaf {
 				continue
 			}
 			if err := processChild(itm, l, query.Get(l)); err != nil {
@@ -607,10 +612,10 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 			}
 		}
 		for _, l := range configList {
-			if inFS[l] || l == NodeDefaultSeerLeaf {
+			if inFS[l] || (n.Group && l == leaf) {
 				continue
 			}
-			if err := processChild(itm, l, query.Get(NodeDefaultSeerLeaf).Get(l)); err != nil {
+			if err := processChild(itm, l, query.Get(leaf).Get(l)); err != nil {
 				return err
 			}
 		}

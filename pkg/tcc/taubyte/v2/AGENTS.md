@@ -26,8 +26,8 @@ every construct. `functions` alone answers most questions.
 | Authored | Loaded by |
 |---|---|
 | `functions/checkout.yaml` — a resource, one flat file, `id` at the document root | `DefineGroup("functions", DefineIter(attrs…))` |
-| `namespaces/shop/config.yaml` + `namespaces/shop/functions/*.yaml` — a scope | `DefineGroup("namespaces", DefineIterGroup(attrs, groups…))` |
-| `clouds:` as a map inside the project's `config.yaml` | `DefineGroup("clouds", DefineIter(attrs…))` |
+| `namespaces/shop/namespace.yaml` + `namespaces/shop/functions/*.yaml` — a scope | `DefineGroup("namespaces", DefineIterGroup(attrs, groups…).With(Leaf("namespace")))` |
+| `clouds:` as a map inside the project's `project.yaml` | `DefineGroup("clouds", DefineIter(attrs…))` |
 
 A **resource** (`DefineIter`, `Group == false`) reads its attributes from the
 document root and **never walks children** — `engine/node.go:478-483` returns before
@@ -36,7 +36,8 @@ dropped.
 
 A **container** (`DefineIterGroup`, `Group == true`) walks children, but reads its own
 attributes from the `config` leaf (`node.go:486`). In a directory that is
-`config.yaml`; in a flat document it is a literal `config:` key. This is why a
+the document the group NAMES with `Leaf(...)` — `namespace.yaml` in v2, `config.yaml`
+when a group names none; in a flat document it is a literal key by that name. This is why a
 container instance cannot be a flat `shop.yaml` with `id` at the root — the resulting
 error is `required attribute 'id'`, and that error is **correct**.
 
@@ -193,7 +194,7 @@ neither the field nor the file. Worth improving one day; do not paper over it.
   Check the document, not the schema. A `- "*" /api …` list entry is the classic one: a
   quoted scalar followed by trailing text is invalid YAML.
 - `required attribute 'id'` on a container ⇒ you are authoring a flat file where the
-  schema expects `<name>/config.yaml`. §1.
+  schema expects `<name>/<leaf>.yaml` — `namespace.yaml` in v2. §1.
 - A field you declared is missing from the compiled object, with no error ⇒ a
   self-referential `Tag`. §4.
 - Children silently absent ⇒ you hung a group off a `DefineIter`. §1.

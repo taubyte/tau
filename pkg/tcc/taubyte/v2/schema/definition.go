@@ -1031,6 +1031,9 @@ func namespacesGroup(depth int) *Node {
 	return DefineGroup("namespaces",
 		DefineIterGroup(identityAttributes(), children...).
 			With(Singular("Namespace"),
+				// namespaces/shop/namespace.yaml, not config.yaml. The file says what
+				// it holds, and `config` stops being a word this vocabulary has spent.
+				Leaf("namespace"),
 				GroupDoc("A named scope holding resources, and namespaces, of its own. Names resolve here first, then in the parent."),
 				secIdentity,
 				Icon("apps")))
@@ -1041,7 +1044,7 @@ var _ = func() any { attachAccess(); return nil }()
 var v2Root = Root(
 	rootAttributes(),
 	append(append([]*Node{}, V2Resources...), namespacesGroup(MaxNamespaceDepth))...,
-).With(Singular("Project"), Strict())
+).With(Singular("Project"), Leaf("project"), Strict())
 
 var TaubyteProject = SchemaDefinition(v2Root)
 

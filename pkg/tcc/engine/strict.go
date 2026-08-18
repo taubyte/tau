@@ -146,8 +146,9 @@ func checkKeys(n *Node, query *yaseer.Query) error {
 	// A container holds its own fields under the config leaf and its child groups
 	// beside it — and a child group may ALSO be authored inside config, which
 	// loadChildren accepts, so both levels admit both.
+	leaf := LeafOf(n)
 	outer := newClaim()
-	outer.child(NodeDefaultSeerLeaf).leaf = true // its contents are the inner pass
+	outer.child(leaf).leaf = true // its contents are the inner pass
 	for _, child := range n.Children {
 		outer.claimGroup(child)
 	}
@@ -159,7 +160,7 @@ func checkKeys(n *Node, query *yaseer.Query) error {
 	for _, child := range n.Children {
 		inner.claimGroup(child)
 	}
-	return inner.walk(query.Get(NodeDefaultSeerLeaf))
+	return inner.walk(query.Get(leaf))
 }
 
 func (c *claim) walk(query *yaseer.Query) error {

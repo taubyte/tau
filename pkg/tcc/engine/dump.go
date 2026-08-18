@@ -22,7 +22,7 @@ func (s *instance) Dump(obj object.Object[object.Refrence]) error {
 	// Group node - handle config file and children
 	if n.Match == nil {
 		// Root node - write root attributes to config.yaml
-		configQuery := query.Get(NodeDefaultSeerLeaf).Document()
+		configQuery := query.Get(LeafOf(n)).Document()
 		if err := s.dumpAttributes(n, obj, configQuery); err != nil {
 			return err
 		}
@@ -160,7 +160,7 @@ func (s *instance) dumpApplications(iterGroupNode *Node, appsObj object.Object[o
 		}
 
 		// Write application config.yaml: {appName}/config.yaml
-		appConfigQuery := query.Get(appName).Get(NodeDefaultSeerLeaf).Document()
+		appConfigQuery := query.Get(appName).Get(LeafOf(iterGroupNode)).Document()
 		if err := s.dumpAttributes(iterGroupNode, appObj, appConfigQuery); err != nil {
 			return fmt.Errorf("dumping application %s config failed: %w", appName, err)
 		}

@@ -157,7 +157,7 @@ function filesPane(): HTMLElement {
 }
 
 // A real directory tree, because the layout IS part of the DSL: a resource is a file
-// under its kind's directory, and a namespace is a directory with a config.yaml and
+// under its kind's directory, and a namespace is a directory with a namespace.yaml and
 // resource directories of its own.
 function fileTree(): HTMLElement {
   const root: Dir = { dirs: new Map(), files: [] };
@@ -201,7 +201,7 @@ function dirEl(d: Dir): HTMLElement {
     line.onclick = () => {
       current = path;
       // The tree and the graph are two views of one resource, so selecting in
-      // either selects in both. A file with no node — a namespace's config.yaml —
+      // either selects in both. A file with no node — a namespace's own document —
       // clears the selection rather than leaving one pointing somewhere else.
       const node = graph?.nodes.find((n) => fileOf(n) === path);
       selection = node ? { id: node.id, mode: "blast" } : null;

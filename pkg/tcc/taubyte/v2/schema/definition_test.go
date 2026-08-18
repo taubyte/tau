@@ -152,7 +152,7 @@ func TestConnectorCredentialsResolve(t *testing.T) {
 // not write — and would have compiled just as happily when they got it wrong.
 func TestDatabaseEngineIsClosed(t *testing.T) {
 	fs := afero.NewMemMapFs()
-	assert.NilError(t, afero.WriteFile(fs, "/config.yaml",
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/databases/orders.yaml", []byte(`
 id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
@@ -701,7 +701,7 @@ func TestCronCarriesItsTimezone(t *testing.T) {
 
 	// and a cron that says nothing gets the zone where every day has 24 hours
 	fs := afero.NewMemMapFs()
-	assert.NilError(t, afero.WriteFile(fs, "/config.yaml",
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/crons/c.yaml",
 		[]byte("id: QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4\nschedule: \"@daily\"\n"), 0o644))
@@ -720,7 +720,7 @@ func TestExternalDatabaseMustStateItsTransport(t *testing.T) {
 	assert.Equal(t, orders["engine/tls"], "verify-full")
 
 	fs := afero.NewMemMapFs()
-	assert.NilError(t, afero.WriteFile(fs, "/config.yaml",
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/secrets/k.yaml",
 		[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))

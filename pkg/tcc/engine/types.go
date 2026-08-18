@@ -5,6 +5,10 @@ import (
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
+// NodeDefaultSeerLeaf is the document a container's instances keep their OWN fields in
+// when the DSL does not say. A group can name its own with Leaf(...), and should: a
+// package-level default is a layout rule that the schema — the thing whose whole job is
+// to describe the layout — does not state.
 var NodeDefaultSeerLeaf = "config"
 
 type instance struct {
@@ -65,7 +69,19 @@ type Node struct {
 	// Strict rejects an authored key this vocabulary cannot read. Declared on the
 	// root; see strict.go for why it is not simply always on.
 	Strict bool
-	Group  bool
+
+	// Leaf is the document this group's instances keep their own fields in —
+	// `namespace` gives namespaces/shop/namespace.yaml. Empty means
+	// NodeDefaultSeerLeaf.
+	//
+	// It exists because that name was a GLOBAL, and a global reserved the word
+	// everywhere: a nested group called `config` under a resource was silently
+	// skipped, because somewhere else in the tree a container keeps its fields in a
+	// file by that name. Naming it per group makes the reservation local to the group
+	// that actually has one, and puts the layout in the DSL with everything else about
+	// the layout.
+	Leaf  string
+	Group bool
 	// Nested marks a RESOURCE iterator that also carries child groups, authored
 	// inside its own document. Distinct from Group, whose instances are scopes:
 	// a nested group is data belonging to the instance, so the instance keeps its

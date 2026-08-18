@@ -131,3 +131,48 @@ func TestKeySwitchOnAnOptionalBlock(t *testing.T) {
 		})
 	}
 }
+
+// A group names the document its instances keep their own fields in. Before, that name
+// was a package-level global, so it was reserved EVERYWHERE: a nested group called
+// `config` under a resource was skipped in silence, because somewhere else in the tree
+// a container keeps its fields in a file by that name.
+func TestAGroupNamesItsOwnDocument(t *testing.T) {
+	schema := SchemaDefinition(Root(
+		Attributes(String("id")),
+		DefineGroup("scopes",
+			DefineIterGroup([]*Attribute{String("id", Required()), String("owner")},
+				DefineGroup("things", DefineIter([]*Attribute{
+					String("id", Required()),
+				}, Nested(DefineGroup("config", DefineIter([]*Attribute{String("value")}))))),
+			).With(Leaf("scope")),
+		),
+	))
+
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/config.yaml", []byte("id: root\n"), 0o644))
+	// the scope's own fields live in scope.yaml, exactly as the DSL says
+	assert.NilError(t, afero.WriteFile(fs, "/scopes/a/scope.yaml", []byte("id: a\nowner: me\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/scopes/a/things/t.yaml",
+		[]byte("id: t\nconfig:\n    LOG_LEVEL:\n        value: info\n"), 0o644))
+
+	e, err := New(schema, yaseer.VirtualFS(fs, "/"))
+	assert.NilError(t, err)
+	obj, err := e.Process()
+	assert.NilError(t, err)
+
+	scopes, err := obj.Child("scopes").Object()
+	assert.NilError(t, err)
+	a, err := scopes.Child("a").Object()
+	assert.NilError(t, err)
+	assert.Equal(t, a.Get("owner"), "me", "the scope read its own fields from scope.yaml")
+
+	things, err := a.Child("things").Object()
+	assert.NilError(t, err)
+	tObj, err := things.Child("t").Object()
+	assert.NilError(t, err)
+	cfg, err := tObj.Child("config").Object()
+	assert.NilError(t, err, "a nested group named config used to vanish")
+	entry, err := cfg.Child("LOG_LEVEL").Object()
+	assert.NilError(t, err)
+	assert.Equal(t, entry.Get("value"), "info")
+}
