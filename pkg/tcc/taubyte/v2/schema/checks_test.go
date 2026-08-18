@@ -227,3 +227,16 @@ func TestAuditVariableAsFile(t *testing.T) {
 	})
 	hasNo(t, found, "names no path")
 }
+
+// The entry's KEY is the function's name, and a key is not a value — nothing resolves
+// it — so a typo compiles clean and the step never runs. In the authorizer's case, it
+// never runs and the resource is silently unguarded.
+func TestAuditGhostFunctions(t *testing.T) {
+	found := auditDocs(t, nil, map[string]string{
+		"/application/a.yaml": appBody + "ports:\n    p:\n        number: 80\n",
+		"/gateway/g.yaml":     "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        application:\n            name: a\n            port: p\ntransformers:\n    ghost:\n        order: 1\n",
+		"/cache/c.yaml":       "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nmatch: c\nsize: 1MB\nauthorizer:\n    name: alsoghost\n",
+	})
+	has(t, found, schema.Broken, "is named as a gateway-transformer by gateway/g transformers, and does not exist")
+	has(t, found, schema.Broken, "is named as a authorizer by cache/c authorizer, and does not exist")
+}

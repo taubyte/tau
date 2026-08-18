@@ -421,7 +421,17 @@ func checkHostWorlds(all []compiled) []Finding {
 	var out []Finding
 	for _, u := range uses {
 		got, known := lookupWorld(world, u.name, u.scope)
-		if !known || got == u.wants {
+		if !known {
+			// The entry's KEY is the function's name, and a key is not a value — no
+			// Ref() resolves it, so a typo here compiles clean and the transformer or
+			// authorizer simply never runs. Silent, and in the authorizer's case
+			// silently unguarded.
+			out = append(out, Finding{Broken, "function", u.name, u.scope,
+				fmt.Sprintf("is named as a %s by %s, and does not exist", u.wants, u.where),
+				"The name is the key of the entry, and a key is not a reference the compiler resolves — so this one names nothing and the step never runs."})
+			continue
+		}
+		if got == u.wants {
 			continue
 		}
 		out = append(out, Finding{Broken, "function", u.name, u.scope,
