@@ -483,11 +483,34 @@ var V2Resources = []*Node{
 
 	// Build -> zip -> hoarder -> serve, unchanged. What left: domains, paths and
 	// the serving section. A website is served because a domain edges to it.
+	// A built static site, and how it answers a path it does not have — which is the
+	// one thing every static host has to be told and this kind was not asking.
+	//
+	// SPA AND 404 ARE THE SAME DOCUMENT WITH DIFFERENT STATUS, which is why `mode`
+	// exists instead of a single "fallback document" field. A single-page app must
+	// answer an unmatched path with index.html and **200**, because the router in the
+	// page renders the route from the URL; a multi-page site must answer with its 404
+	// page and **404**, because the page genuinely is not there. Same file in both
+	// cases if you write it that way, opposite meanings — and the wrong one is
+	// invisible in a browser and obvious to a crawler, a monitor, or anything that
+	// reads status codes.
+	//
+	// It is the same pair every static host encodes: S3's IndexDocument and
+	// ErrorDocument, Netlify's `/* /index.html 200`, Cloudflare Pages' "single-page
+	// app" switch, Vercel's rewrites.
 	DefineGroup("website",
 		resource(
-			commonAttributes(gitSource()...),
+			commonAttributes(append(gitSource(),
+				String("serve/index", Path("serve", "index"), Default("index.html"), InSection("serving"),
+					Doc("Index Document", "What a request for a directory returns, e.g. \"/docs/\" -> /docs/index.html.")),
+				String("serve/mode", Path("serve", "mode"), InSet("static", "spa"), Default("static"), InSection("serving"),
+					Doc("Mode", "static: an unmatched path returns the not-found document with 404. spa: it returns the index document with 200, because the page's own router renders the route.")),
+				String("serve/not-found", Path("serve", "not-found"), InSection("serving"), ShowWhen("serve/mode", "static"),
+					Doc("Not Found Document", "Returned with 404 for a path the site does not have. Omitted means a bare 404.")),
+			)...),
 			GroupDoc("A static website built from a git repository. What serves it is an inbound domain edge."), Icon("globe"), Category("compute"),
 			secIdentity, secAccess, secSource,
+			Section("serving", "Serving", "What the site returns for a path it does not have."),
 			Resource("website", "Website", "Website", "website"),
 		)),
 
@@ -783,6 +806,17 @@ var V2Resources = []*Node{
 				// `handler-namespace` is one opaque leaf that can only be replaced whole.
 				String("route/path", Path("route", "path"), Required(), InSection("route"), Doc("Path", "The path served, e.g. \"/checkout\" or \"/\".")),
 				String("route/match", Path("route", "match"), InSet("prefix", "exact", "regex"), Default("prefix"), InSection("route"), Doc("Match", "How the path is compared: prefix, exact, or regex.")),
+				// A handler mounted at /docs receives /docs/x unless this is set. For an
+				// APPLICATION that is usually right — it routes on the full path and may
+				// need the prefix to build links. For a WEBSITE it is usually wrong: the
+				// site was built for /, so /docs/x is a file it does not have, and every
+				// page 404s while the config looks correct.
+				//
+				// False by default because passing the request through unchanged is the
+				// answer that surprises nobody; the audit reports a website mounted at a
+				// prefix without it.
+				Bool("route/strip-prefix", Path("route", "strip-prefix"), InSection("route"),
+					Doc("Strip Prefix", "Remove the matched path prefix before handing the request on. A website mounted anywhere but / usually wants this.")),
 				StringSlice("route/methods", Path("route", "methods"), InSection("route"), Doc("Methods", "HTTP methods answered. Omit for any. GET/HEAD/OPTIONS read, the rest write.")),
 
 				// the switch: which kind handles it, and where that resource lives

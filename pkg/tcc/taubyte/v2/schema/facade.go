@@ -35,6 +35,20 @@ func Validate(ctx context.Context, opts ...Option) ([]NextValidation, error) {
 	return c.Validate(ctx)
 }
 
+// AuditProject compiles and then runs every cross-resource check over the result.
+// The resolver answers what tcc cannot see; nil means the stub, which says yes.
+func AuditProject(ctx context.Context, r Resolver, opts ...Option) ([]Finding, error) {
+	c, err := New(opts...)
+	if err != nil {
+		return nil, err
+	}
+	obj, _, err := c.Compile(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return Audit(obj.Flat(), r), nil
+}
+
 func WithLocal(path string) Option                { return interp.WithLocal(path) }
 func WithVirtual(fs afero.Fs, path string) Option { return interp.WithVirtual(fs, path) }
 func WithBranch(branch string) Option             { return interp.WithBranch(branch) }

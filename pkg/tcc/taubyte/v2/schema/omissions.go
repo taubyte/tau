@@ -354,20 +354,6 @@ var Omissions = []Omission{
 		Unblocks: "a decision on the shape.",
 	},
 	{
-		Name:    "a check that a declared thing is actually fed",
-		State:   Blocked,
-		Decided: Forced,
-		Why: "A port nothing routes to, an application no gateway fronts, a queue nobody consumes, " +
-			"a cache nobody reads: each compiles, and each is dead config that reads as working. " +
-			"A container that declares `receive` and no `deliver` port: same. " +
-			"(An unknown KEY is no longer one of these — engine/strict.go rejects it at load.) " +
-			"Deleting the trigger block made reachability answerable by traversing the graph, and " +
-			"nothing yet does the traversal. It cannot live in one resource's schema, because the " +
-			"question is about the whole compiled project.",
-		Instead:  "reading the graph by eye. The explorer draws it, which is how the first one was found.",
-		Unblocks: "a publish-time pass over the compiled object, alongside the deferred validations that already exist.",
-	},
-	{
 		Name:    "traffic transformers on a route",
 		State:   Open,
 		Decided: ByDefault,
