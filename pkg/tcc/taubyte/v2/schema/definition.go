@@ -367,9 +367,9 @@ var V2Resources = []*Node{
 	DefineGroup("applications",
 		resource(
 			commonAttributes(applicationAttributes()...),
-			Nested(portsGroup()),
+			Nested(portsGroup(), variablesGroup()),
 			GroupDoc("A long-running container that listens on HTTP. Ships with volumes or it ships broken."), Icon("box"), Category("compute"),
-			secIdentity, secAccess, secNetwork, secCode, secLimits,
+			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Resource("applications", "Application", "Application", "application"),
 		)),
 
@@ -383,8 +383,9 @@ var V2Resources = []*Node{
 	DefineGroup("functions",
 		resource(
 			wasmAttributes(),
+			Nested(variablesGroup()),
 			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"),
-			secIdentity, secAccess, secNetwork, secCode, secLimits,
+			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")), // invoke is write: a call may do anything the callee can
 			Resource("functions", "Function", "Function", "function"),
 		)),
@@ -398,8 +399,9 @@ var V2Resources = []*Node{
 				String("image", RequiredWhen("runtime", "container"), InSection("code"), Doc("Image", "OCI image reference (container runtime only).")),
 				pullSecret(),
 			),
+			Nested(variablesGroup()),
 			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"),
-			secIdentity, secAccess, secNetwork, secCode, secLimits,
+			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")),
 			Resource("workers", "Worker", "Worker", "worker"),
 		)),
@@ -418,8 +420,9 @@ var V2Resources = []*Node{
 				Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory the sandbox may use.")),
 				cpuLimit(),
 			),
+			Nested(variablesGroup()),
 			GroupDoc("An interactive container with exec and filesystem access, for agent and build sessions."), Icon("terminal"), Category("compute"),
-			secIdentity, secAccess, secNetwork, secCode, secLimits,
+			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("exec"), ReadOp("read"), WriteOp("write")),
 			Resource("sandboxes", "Sandbox", "Sandbox", "sandbox"),
 		)),
@@ -673,8 +676,9 @@ var V2Resources = []*Node{
 				Bool("durable", InSection("coordination"), Doc("Durable", "Journal every host call so an interrupted turn replays deterministically.")),
 				Bytes("storage/size", Path("storage", "size"), InSection("limits"), Doc("Storage", "Per-instance SQL storage ceiling.")),
 			),
+			Nested(variablesGroup()),
 			GroupDoc("A single-writer, durably-stored compute instance addressed by name. CP: a partition that cannot reach K replicas cannot write."), Icon("cube"), Category("compute"),
-			secIdentity, secAccess, secNetwork, secCode, secLimits,
+			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Section("coordination", "Coordination", "Sharding and durability."),
 			Ops(ReadOp("get"), WriteOp("call")),
 			Resource("entities", "Entity", "Entity", "entity"),
@@ -1093,6 +1097,60 @@ func transformersGroup() *Node {
 }
 
 var secTransformers = Section("transformers", "Transformers", "Functions that enrich or filter traffic passing through, in order.")
+
+// variablesGroup is how a workload is configured: entries keyed by the NAME the
+// workload reads them under.
+//
+//	variables:
+//	    LOG_LEVEL:   { value: info }
+//	    REGION:      { value: eu-west }
+//	    STRIPE_KEY:  { secret: stripe }
+//
+// NOT named `config`, which is the word everyone reaches for first. `config` is the
+// engine's own leaf name (NodeDefaultSeerLeaf): loadChildren skips a child key called
+// that, because it is where a CONTAINER keeps its own fields, so a nested group by that
+// name is read as nothing at all — silently, which is how this was found. `variables`
+// is also what v1 called them.
+//
+// A container reads them as environment variables; a WASM workload reads them through
+// the host config interface. Same declaration either way, because "what is this
+// workload configured with" is one question and the delivery mechanism is the runtime's
+// business.
+//
+// WHY THIS EXISTED NOWHERE. A workload could declare an image, ports, ceilings and
+// which secrets it may READ, but not a log level or an upstream URL — so the only place
+// to put one was inside the image, which makes one image per environment and defeats
+// naming the image at all. The harmless half of configuration had no path while the
+// dangerous half did, which is backwards.
+//
+// A VALUE OR A SECRET, not both, and the difference is real: `value` is in git and
+// visible to anyone who can read the repo; `secret` names a secret and only the
+// reference travels. Nothing in the DSL can say "exactly one of these" — a list of
+// objects has no representation and neither does a mutual exclusion — so a publish-time
+// check owes that one too, alongside the four it already owes.
+//
+// Referencing a secret here is a USE of it and the graph draws it. It does not replace
+// the `secrets:` access block: that block is for a workload that FETCHES a secret while
+// running, which is a different thing from one handed a value at start — one can be
+// revoked mid-flight and the other cannot.
+//
+// Not covered, deliberately: configuration as a FILE. An env var has a size limit and
+// no structure, so a certificate or a 40KB json document wants a mount. That is a
+// second delivery mechanism rather than a second source, and it can be an `as: file`
+// with a path when something needs it.
+func variablesGroup() *Node {
+	return DefineGroup("variables",
+		DefineIter([]*Attribute{
+			String("value", InSection("config"),
+				Doc("Value", "A literal, stored in git and readable by anyone who can read the repo. For anything that is not a secret.")),
+			String("secret", Ref("secrets", Prefix("secrets/")), InSection("config"),
+				Doc("From Secret", "Take the value from this secret, as \"secrets/<name>\". Only the reference is in git.")),
+		},
+			GroupDoc("One configuration entry, keyed by the name the workload reads it under."),
+		))
+}
+
+var secConfig = Section("config", "Configuration", "Values handed to the workload when it starts.")
 
 // portsGroup is a workload's own listening ports, keyed by name.
 //

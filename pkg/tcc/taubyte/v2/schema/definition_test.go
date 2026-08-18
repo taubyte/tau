@@ -766,3 +766,37 @@ func TestEverySectionAnAttributeClaimsIsDeclared(t *testing.T) {
 		walk(t, name, g.Children[0])
 	}
 }
+
+// F8: a workload can be configured. It could declare an image, ports, ceilings and
+// which secrets it may read — but not a log level, so the only place to put one was
+// inside the image, which makes one image per environment.
+func TestWorkloadVariables(t *testing.T) {
+	api := namedResource(t, resources(t, compileBasic(t), "applications"), "api")
+	vars, ok := api["variables"].(map[string]any)
+	assert.Assert(t, ok, "no variables block")
+
+	// a literal is in git and says so
+	assert.Equal(t, vars["LOG_LEVEL"].(map[string]any)["value"], "info")
+
+	// a secret is a REFERENCE: the value never enters the config
+	from := vars["STRIPE_KEY"].(map[string]any)["secret"].(string)
+	assert.Assert(t, strings.HasPrefix(from, "secrets/Qm"), "got %q, want a resolved secret id", from)
+	_, literal := vars["STRIPE_KEY"].(map[string]any)["value"]
+	assert.Assert(t, !literal)
+
+	// every workload kind can be configured, not just the container one
+	for _, kind := range []string{"applications", "functions", "workers", "entities", "sandboxes"} {
+		var found bool
+		for _, g := range schema.CompileRoot().Children {
+			if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
+				continue
+			}
+			for _, child := range g.Children[0].Children {
+				if n, _ := child.Match.(string); n == "variables" {
+					found = true
+				}
+			}
+		}
+		assert.Assert(t, found, "%s cannot be configured", kind)
+	}
+}

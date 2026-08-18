@@ -18,6 +18,13 @@ execution:
 limits:
     max-instances: 10
     concurrency: 80
+variables:
+    LOG_LEVEL:
+        value: info
+    REGION:
+        value: eu-west
+    STRIPE_KEY:
+        secret: secrets/stripe
 egress: [api.stripe.com]
 caches:
     orders:

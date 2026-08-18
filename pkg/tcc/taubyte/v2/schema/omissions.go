@@ -124,19 +124,18 @@ var Omissions = []Omission{
 			"family as the RequiredWhen defect below, and the same file.",
 	},
 	{
-		Name:    "configuration for a workload — environment, files, arguments",
+		Name:    "configuration as a FILE, and a mutual exclusion the DSL cannot state",
 		State:   Open,
-		Decided: ByOwner,
-		Why: "A container is configured by its environment, and nothing here sets one. A workload " +
-			"can declare an image, a port, a memory ceiling and which secrets it may READ — but " +
-			"not the plain, non-secret values that decide what it does: a log level, a region, a " +
-			"feature flag, an upstream URL. Today the only path is baking them into the image, " +
-			"which makes one image per environment and defeats the point of naming the image.",
-		Instead: "nothing. Secrets have a path and configuration does not, which is backwards: the " +
-			"harmless half is the one you change most often.",
-		Unblocks: "an owner call on the SHAPE, which is the whole difficulty — env vars, a mounted " +
-			"file, or both; whether a value can reference another resource; and how it interacts " +
-			"with the secret it will inevitably sit next to.",
+		Decided: Forced,
+		Why: "`variables` covers a workload's configuration as NAMED VALUES, which is what an " +
+			"environment variable is. It does not cover a certificate or a 40KB json document: " +
+			"those want a path on a filesystem, which is a second delivery mechanism rather than a " +
+			"second source. Separately, an entry carries a literal `value` or a `secret` reference " +
+			"and nothing can say \"exactly one of these\" — a mutual exclusion has no representation " +
+			"here any more than a list of objects does.",
+		Instead: "named values only, and a publish-time check for the exclusion — the fifth thing " +
+			"that pass owes.",
+		Unblocks: "an `as: file` with a path when something needs one, which is additive.",
 	},
 	{
 		Name:    "a function's host interface",
