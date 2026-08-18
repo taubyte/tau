@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +51,7 @@ func generatePrivateKey(t *testing.T, passphrase string) (string, ssh.Signer) {
 	return string(privateKeyPEM), signer
 }
 
-func newSSHServer(t *testing.T, port string) {
+func newSSHServer(t *testing.T) string {
 	privateKey, err := generateServerKey()
 	assert.NilError(t, err, "Failed to generate server key")
 
@@ -73,8 +74,14 @@ func newSSHServer(t *testing.T, port string) {
 
 	config.AddHostKey(privateKey)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:"+port)
+	// Port 0: the kernel picks one that is free, and the test uses whatever it got.
+	// A fixed port makes the test fail when ANY other process happens to hold it —
+	// which is what 2222 did here, against a VM's ssh forward that had nothing to do
+	// with this package.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	assert.NilError(t, err, "Failed to listen for connection")
+	t.Cleanup(func() { listener.Close() })
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
 
 	go func() {
 		for {
@@ -89,6 +96,7 @@ func newSSHServer(t *testing.T, port string) {
 	}()
 
 	time.Sleep(500 * time.Millisecond)
+	return port
 }
 
 func handleSSHConnection(nConn net.Conn, config *ssh.ServerConfig) {
@@ -149,7 +157,7 @@ func generateServerKey() (ssh.Signer, error) {
 	return ssh.ParsePrivateKey(privateKeyPEM)
 }
 
-func newSFTPServer(t *testing.T, port string) {
+func newSFTPServer(t *testing.T) string {
 	privateKey, err := generateServerKey()
 	assert.NilError(t, err, "Failed to generate server key")
 
@@ -164,8 +172,14 @@ func newSFTPServer(t *testing.T, port string) {
 
 	config.AddHostKey(privateKey)
 
-	listener, err := net.Listen("tcp", "127.0.0.1:"+port)
+	// Port 0: the kernel picks one that is free, and the test uses whatever it got.
+	// A fixed port makes the test fail when ANY other process happens to hold it —
+	// which is what 2222 did here, against a VM's ssh forward that had nothing to do
+	// with this package.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	assert.NilError(t, err, "Failed to listen for connection")
+	t.Cleanup(func() { listener.Close() })
+	port := strconv.Itoa(listener.Addr().(*net.TCPAddr).Port)
 
 	go func() {
 		for {
@@ -180,6 +194,7 @@ func newSFTPServer(t *testing.T, port string) {
 	}()
 
 	time.Sleep(500 * time.Millisecond)
+	return port
 }
 
 func handleSFTPConnection(nConn net.Conn, config *ssh.ServerConfig) {

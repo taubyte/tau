@@ -16,7 +16,11 @@ func TestIpfs(t *testing.T) {
 	ctx, ctxC := context.WithTimeout(context.Background(), (5 * time.Minute))
 	defer ctxC()
 
-	testNode, err := New(ctx, Public(), Listen([]string{"/ip4/0.0.0.0/tcp/8890"}))
+	// tcp/0: the kernel picks a free port for each node. Fixed ports made this test
+	// fail whenever anything else on the machine happened to hold one — 8899 was
+	// taken by an unrelated daemon — and the test never cared which port it got, only
+	// that the two nodes could find each other.
+	testNode, err := New(ctx, Public(), Listen([]string{"/ip4/127.0.0.1/tcp/0"}))
 	if err != nil {
 		t.Error(err)
 		return
@@ -28,7 +32,7 @@ func TestIpfs(t *testing.T) {
 		return
 	}
 
-	testNode2, err := New(ctx, Public(), Listen([]string{"/ip4/0.0.0.0/tcp/8899"}))
+	testNode2, err := New(ctx, Public(), Listen([]string{"/ip4/127.0.0.1/tcp/0"}))
 	if err != nil {
 		t.Error(err)
 		return

@@ -3,6 +3,7 @@ package host
 import (
 	"context"
 	"path"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -13,8 +14,7 @@ import (
 )
 
 func TestHostCommandExecution(t *testing.T) {
-	port := "2222"
-	newSSHServer(t, port)
+	port := newSSHServer(t)
 
 	username := "testuser"
 	password := "password"
@@ -40,15 +40,15 @@ func TestHostCommandExecution(t *testing.T) {
 }
 
 func TestHostAttributes(t *testing.T) {
-	port := "2223"
-	newSSHServer(t, port)
+	port := newSSHServer(t)
 
 	h := &host{}
 	err := Address("127.0.0.1:" + port)(h)
 	assert.NilError(t, err, "Failed to set address")
 	assert.Equal(t, h.addr, "127.0.0.1")
-	assert.Equal(t, h.port, uint64(2223))
+	assert.Equal(t, strconv.FormatUint(h.port, 10), port)
 
+	// an arbitrary literal: this asserts the Port() option, not the listener
 	err = Port(2223)(h)
 	assert.NilError(t, err, "Failed to set port")
 	assert.Equal(t, h.port, uint64(2223))
@@ -59,8 +59,7 @@ func TestHostAttributes(t *testing.T) {
 }
 
 func TestHostAuthAttributes(t *testing.T) {
-	port := "2224"
-	newSSHServer(t, port)
+	port := newSSHServer(t)
 
 	privateKey, _ := generatePrivateKey(t, "")
 	privateKeyReader := strings.NewReader(privateKey)
@@ -84,8 +83,7 @@ func TestHostAuthAttributes(t *testing.T) {
 }
 
 func TestHostPublicKey(t *testing.T) {
-	port := "2225"
-	newSSHServer(t, port)
+	port := newSSHServer(t)
 
 	_, signer := generatePrivateKey(t, "")
 	publicKey := signer.PublicKey()
@@ -109,8 +107,7 @@ func TestNewHostWithInvalidAddress(t *testing.T) {
 }
 
 func TestHostCommandExecutionTimeout(t *testing.T) {
-	port := "2226"
-	newSSHServer(t, port)
+	port := newSSHServer(t)
 
 	username := "testuser"
 	password := "password"
@@ -138,8 +135,7 @@ func TestHostCommandExecutionTimeout(t *testing.T) {
 }
 
 func TestHostInvalidAuth(t *testing.T) {
-	port := "2227"
-	newSSHServer(t, port)
+	port := newSSHServer(t)
 
 	// Create Host with invalid authentication
 	h, err := New(
@@ -156,8 +152,7 @@ func TestHostInvalidAuth(t *testing.T) {
 }
 
 func TestHostWithMultipleAuthMethods(t *testing.T) {
-	port := "2228"
-	newSSHServer(t, port)
+	port := newSSHServer(t)
 
 	privateKey, _ := generatePrivateKey(t, "")
 	privateKeyReader := strings.NewReader(privateKey)
@@ -182,8 +177,7 @@ func TestHostWithMultipleAuthMethods(t *testing.T) {
 }
 
 func TestHostWithKeyPassphrase(t *testing.T) {
-	port := "2229"
-	newSSHServer(t, port)
+	port := newSSHServer(t)
 
 	privateKey, _ := generatePrivateKey(t, "testpassphrase")
 	privateKeyReader := strings.NewReader(privateKey)
@@ -207,8 +201,7 @@ func TestHostWithKeyPassphrase(t *testing.T) {
 }
 
 func TestHostFs(t *testing.T) {
-	port := "2230"
-	newSFTPServer(t, port)
+	port := newSFTPServer(t)
 
 	username := "testuser"
 	password := "password"
@@ -248,8 +241,7 @@ func TestHostFs(t *testing.T) {
 }
 
 func TestHostClone(t *testing.T) {
-	port := "2231"
-	newSSHServer(t, port)
+	port := newSSHServer(t)
 
 	originalHost, err := New(
 		Address("127.0.0.1:"+port),
