@@ -5,3 +5,4 @@ engine:
         host: db.example.com:5432
         database: orders
         credentials: secrets/stripe
+        tls: verify-full

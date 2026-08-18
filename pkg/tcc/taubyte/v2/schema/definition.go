@@ -98,19 +98,39 @@ var secIdentity = Section("identity", "Identity", "Resource identity and metadat
 //	code     — a build artifact
 func Category(name string) NodeOption { return GroupAnnotate("category", name) }
 
-// sourceShape: a code source is "." (inline) or "module/<name>". The v1 prefix was
+// sourceShape: a code source is "." (inline) or "modules/<name>". v1's prefix was
 // "libraries/"; the rename carries into the reference form.
-var sourceShape = StringShape([]string{"."}, []string{"module/"})
+//
+// PLURAL, like every other kind. It was `module` alone, which meant one directory in
+// a project read `module/` while its nineteen siblings read `functions/`, `caches/`,
+// `queues/` — a rule with one exception is a rule everybody has to remember.
+var sourceShape = StringShape([]string{"."}, []string{"modules/"})
+
+// egressAttribute is the per-workload ALLOWLIST of hosts a workload may reach,
+// layered on top of the node-wide deny floor (pkg/netguard) which it can never widen.
+//
+// On EVERY workload kind, not just the container one. It was on `applications` alone,
+// which said that a container reaching the internet is a decision and a function
+// doing the same is not — and the guest HTTP client is exactly as real as the
+// container's socket. A sandbox is the sharpest case: it exists to run code somebody
+// else wrote, and it was the one kind with no way to say where that code may call.
+func egressAttribute() *Attribute {
+	return StringSlice("egress", InSection("network"),
+		Doc("Egress", "Hosts this workload may reach. Layered on top of the node-wide deny floor, which it can never widen. Absent means the floor alone."))
+}
+
+var secNetwork = Section("network", "Network", "How this workload is reached, and what it may reach.")
 
 // wasmAttributes is the shared shape of everything that runs a WASM entrypoint —
 // function, worker's wasm half, entity and authorizer. Declared once because the
 // four differ in what points AT them, never in how they run.
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	return commonAttributes(append([]*Attribute{
-		String("source", Required(), Ref("module", Prefix("module/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"module/<name>\" to build from a defined module.")),
+		String("source", Required(), Ref("modules", Prefix("modules/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"modules/<name>\" to build from a defined module.")),
 		String("execution/call", Path("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
 		Duration("execution/timeout", Path("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
 		Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory this workload may use, as a human string (e.g. \"32MB\").")),
+		egressAttribute(),
 	}, attrs...)...)
 }
 
@@ -254,7 +274,7 @@ var V2Resources = []*Node{
 				String("health/function/namespace", Path("health", "function", "namespace"), IsNamespacePath(), InSection("network"), ShowWhen("health/kind", "function"),
 					Doc("Health Function Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
 				Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory per instance.")),
-				StringSlice("egress", InSection("network"), Doc("Egress", "Hosts this workload may reach. Layered on top of the node-wide deny floor, which it can never widen.")),
+				egressAttribute(),
 
 				// Ceilings, not counts. How many instances run is still the
 				// platform's — these bound what it may do, which is a different
@@ -268,8 +288,7 @@ var V2Resources = []*Node{
 			),
 			Nested(portsGroup()),
 			GroupDoc("A long-running container that listens on HTTP. Ships with volumes or it ships broken."), Icon("box"), Category("compute"),
-			secIdentity, secAccess, secCode, secLimits,
-			Section("network", "Network", "Listening port, health, and declared egress."),
+			secIdentity, secAccess, secNetwork, secCode, secLimits,
 			Resource("applications", "Application", "Application", "application"),
 		)),
 
@@ -284,7 +303,7 @@ var V2Resources = []*Node{
 		resource(
 			wasmAttributes(),
 			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"),
-			secIdentity, secAccess, secCode, secLimits,
+			secIdentity, secAccess, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")), // invoke is write: a call may do anything the callee can
 			Resource("functions", "Function", "Function", "function"),
 		)),
@@ -298,7 +317,7 @@ var V2Resources = []*Node{
 				String("image", RequiredWhen("runtime", "container"), InSection("code"), Doc("Image", "OCI image reference (container runtime only).")),
 			),
 			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"),
-			secIdentity, secAccess, secCode, secLimits,
+			secIdentity, secAccess, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")),
 			Resource("workers", "Worker", "Worker", "worker"),
 		)),
@@ -312,10 +331,11 @@ var V2Resources = []*Node{
 				String("image", Required(), InSection("code"), Doc("Image", "OCI image the sandbox boots from.")),
 				Duration("lifetime/idle", Path("lifetime", "idle"), InSection("limits"), Doc("Idle Timeout", "Stop the sandbox after this long with no activity.")),
 				Duration("lifetime/max", Path("lifetime", "max"), InSection("limits"), Doc("Max Lifetime", "Hard ceiling on how long a sandbox may live.")),
+				egressAttribute(),
 				Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory the sandbox may use.")),
 			),
 			GroupDoc("An interactive container with exec and filesystem access, for agent and build sessions."), Icon("terminal"), Category("compute"),
-			secIdentity, secAccess, secCode, secLimits,
+			secIdentity, secAccess, secNetwork, secCode, secLimits,
 			Ops(WriteOp("exec"), ReadOp("read"), WriteOp("write")),
 			Resource("sandboxes", "Sandbox", "Sandbox", "sandbox"),
 		)),
@@ -327,20 +347,32 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				String("schedule", Required(), InSection("identity"), Doc("Schedule", "Cron expression, e.g. \"0 3 * * *\".")),
+
+				// A cron expression alone does not name a moment. "0 3 * * *" is a
+				// different instant in every zone, and a fleet spread across regions
+				// would fire it at whichever local time each node happened to hold —
+				// so the schedule has to carry the zone it is written in.
+				//
+				// UTC by default because it is the only zone with no daylight saving:
+				// a 2am job in a DST zone runs twice on one night a year and not at all
+				// on another, and that is a property of the zone rather than of the
+				// schedule, so the default should not have it.
+				String("timezone", Default("UTC"), InSection("identity"),
+					Doc("Timezone", "IANA zone the schedule is written in, e.g. \"Europe/Paris\". UTC by default — the only zone where every day has 24 hours.")),
 			),
 			GroupDoc("A schedule. It fires whatever it edges to; the target declares nothing."), Icon("clock"), Category("trigger"),
 			secIdentity, secAccess,
 			Resource("crons", "Cron", "Cron", "cron"),
 		)),
 
-	DefineGroup("module",
+	DefineGroup("modules",
 		resource(
 			commonAttributes(append(
 				[]*Attribute{String("source/path", Path("source", "path"), InSection("source"), Doc("Path", "Subpath within the repository that holds the code."))},
 				gitSource()...)...),
 			GroupDoc("A WASM / Component Model artifact built from a git repository, referenced as a workload source."), Icon("book"), Category("code"),
 			secIdentity, secAccess, secSource,
-			Resource("module", "Module", "Module", "module"),
+			Resource("modules", "Module", "Module", "module"),
 		)),
 
 	// Build -> zip -> hoarder -> serve, unchanged. What left: domains, paths and
@@ -427,7 +459,29 @@ var V2Resources = []*Node{
 				String("engine/database", Path("engine", Either(externalDatabaseEngines...), "database"), InSection("engine"),
 					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
 				String("engine/credentials", Path("engine", Either(externalDatabaseEngines...), "credentials"), RequiredWhen("engine/kind", externalDatabaseEngines...), Ref("secrets", Prefix("secrets/")), InSection("engine"),
-					Doc("Credentials", "Secret holding the credentials to connect with, as \"secrets/<name>\"."))),
+					Doc("Credentials", "Secret holding the credentials to connect with, as \"secrets/<name>\".")),
+
+				// SAFE BY DEFAULT, EXPLICIT TO WEAKEN: absent means verify-full, and an
+				// author who wants credentials on the wire in the clear has to write
+				// `disable` and see the word.
+				//
+				// It is not Required(), and not RequiredWhen either, because NEITHER
+				// expresses "required only on this Either branch" — both were tried:
+				//
+				//   Required()                        fires on `distributed` too, which
+				//                                     opens no socket
+				//   RequiredWhen("engine/kind", …)    never fires at all, because
+				//                                     engine/kind is a Key() attribute
+				//                                     and RequiredWhen reads a sibling's
+				//                                     DOCUMENT value, which for a Key is
+				//                                     the branch's contents rather than
+				//                                     its name
+				//
+				// The second is a live defect, not a quirk of this field:
+				// engine/distributed/size makes the same claim and is equally
+				// unenforced. Recorded in omissions.go.
+				String("engine/tls", Path("engine", Either(externalDatabaseEngines...), "tls"), InSet("verify-full", "require", "disable"), InSection("engine"), ShowWhen("engine/kind", externalDatabaseEngines...),
+					Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included."))),
 			GroupDoc("A database: tau's own distributed engine, or an external server reached over the network."), Icon("database"), Category("data"),
 			secIdentity, secAccess,
 			Section("engine", "Engine", "Which engine backs it, and its settings."),
@@ -517,7 +571,7 @@ var V2Resources = []*Node{
 				Bytes("storage/size", Path("storage", "size"), InSection("limits"), Doc("Storage", "Per-instance SQL storage ceiling.")),
 			),
 			GroupDoc("A single-writer, durably-stored compute instance addressed by name. CP: a partition that cannot reach K replicas cannot write."), Icon("cube"), Category("compute"),
-			secIdentity, secAccess, secCode, secLimits,
+			secIdentity, secAccess, secNetwork, secCode, secLimits,
 			Section("coordination", "Coordination", "Sharding and durability."),
 			Ops(ReadOp("get"), WriteOp("call")),
 			Resource("entities", "Entity", "Entity", "entity"),
@@ -849,6 +903,7 @@ func namespacesGroup(depth int) *Node {
 		DefineIterGroup(identityAttributes(), children...).
 			With(Singular("Namespace"),
 				GroupDoc("A named scope holding resources, and namespaces, of its own. Names resolve here first, then in the parent."),
+				secIdentity,
 				Icon("apps")))
 }
 

@@ -1,6 +1,6 @@
 id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh
 description: takes an order and charges it
-source: module/paylib
+source: modules/paylib
 execution:
     call: checkout
     timeout: 20s

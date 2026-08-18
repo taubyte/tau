@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"gotest.tools/v3/assert"
 )
@@ -96,18 +97,18 @@ func TestFunctionHasNoTrigger(t *testing.T) {
 	assert.Equal(t, fn["execution/memory"], int64(32000000), "32MB parses to bytes")
 }
 
-// `libraries` -> `module` carries into the reference form: a source of
-// "module/<name>" resolves to "module/<id>" against the compiled index.
+// `libraries` -> `modules` carries into the reference form: a source of
+// "modules/<name>" resolves to "modules/<id>" against the compiled index.
 func TestModuleSourceResolves(t *testing.T) {
 	flat := compileBasic(t)
 	modID := ""
-	for id := range resources(t, flat, "module") {
+	for id := range resources(t, flat, "modules") {
 		modID = id
 	}
 	assert.Assert(t, modID != "", "no module compiled")
 
 	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
-	assert.Equal(t, fn["source"], "module/"+modID)
+	assert.Equal(t, fn["source"], "modules/"+modID)
 }
 
 // A queue's dead-letter is a ref to another queue, so a typo is a compile error
@@ -246,7 +247,7 @@ func TestAccessIsPerTarget(t *testing.T) {
 
 	// nesting did NOT cost the resource its own compile passes
 	assert.Equal(t, fn["execution/timeout"], int64(20000000000), "scalars still parse")
-	assert.Assert(t, strings.HasPrefix(fn["source"].(string), "module/Qm"), "refs still resolve")
+	assert.Assert(t, strings.HasPrefix(fn["source"].(string), "modules/Qm"), "refs still resolve")
 
 	// and a verb the kind does not implement is refused at load
 	fs := afero.NewMemMapFs()
@@ -657,5 +658,99 @@ func TestPortsAreNamed(t *testing.T) {
 	for _, gone := range []string{"port", "replicas", "instances"} {
 		_, present := app[gone]
 		assert.Assert(t, !present, "%q must not be authorable", gone)
+	}
+}
+
+// --- what the multi-profile review changed, asserted so it cannot drift back ---
+
+// Egress is a property of a WORKLOAD, not of containers. It used to be on
+// `applications` alone, which said a container reaching the internet is a decision and
+// a function doing the same is not — while the guest HTTP client is exactly as real as
+// the container's socket.
+func TestEveryWorkloadCanDeclareEgress(t *testing.T) {
+	for _, kind := range []string{"applications", "functions", "workers", "entities", "sandboxes"} {
+		var found bool
+		for _, g := range schema.CompileRoot().Children {
+			if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
+				continue
+			}
+			for _, a := range g.Children[0].Attributes {
+				if a.Name == "egress" {
+					found = true
+				}
+			}
+		}
+		assert.Assert(t, found, "%s cannot declare egress; a sandbox runs code somebody else wrote", kind)
+	}
+}
+
+// A cron expression alone does not name a moment: "0 3 * * *" is a different instant
+// in every zone.
+func TestCronCarriesItsTimezone(t *testing.T) {
+	cron := only(t, resources(t, compileBasic(t), "crons"))
+	assert.Equal(t, cron["schedule"], "0 3 * * *")
+	assert.Equal(t, cron["timezone"], "UTC", "UTC by default: the only zone where every day has 24 hours")
+}
+
+// Whether credentials cross a network in the clear is not a question to answer with a
+// default nobody reads — and a default would also land on a distributed database that
+// never opens a socket.
+func TestExternalDatabaseMustStateItsTransport(t *testing.T) {
+	orders := namedResource(t, resources(t, compileBasic(t), "databases"), "orders")
+	assert.Equal(t, orders["engine/tls"], "verify-full")
+
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/config.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/secrets/k.yaml",
+		[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/databases/x.yaml", []byte(`
+id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
+engine:
+    postgres:
+        host: db.example.com
+        credentials: secrets/k
+`), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err, "omitting it is allowed; absent means verify-full")
+	x := namedResource(t, resources(t, obj.Flat(), "databases"), "x")
+	_, stated := x["engine/tls"]
+	assert.Assert(t, !stated, "and it stays absent rather than compiling a value nobody wrote")
+
+	// and tau's own engine is never asked the question
+	ledger := namedResource(t, namespace(t, root(t, compileBasic(t)), "billing")["databases"].(map[string]any), "ledger")
+	_, present := ledger["engine/tls"]
+	assert.Assert(t, !present, "a distributed database opens no socket")
+}
+
+// Every attribute names a section, and a section has a title and a doc that a UI
+// groups by. An attribute in a section its kind never declared lands in a group with
+// no name — invisible in Go, and the reason `egress` arrived on four kinds inside a
+// "network" section that only two of them had.
+func TestEverySectionAnAttributeClaimsIsDeclared(t *testing.T) {
+	walk := func(t *testing.T, kind string, it *engine.Node) {
+		t.Helper()
+		declared := map[string]bool{}
+		if secs, ok := it.Meta["sections"].([]engine.SectionSpec); ok {
+			for _, s := range secs {
+				declared[s.ID] = true
+			}
+		}
+		for _, a := range it.Attributes {
+			s, _ := a.Meta["section"].(string)
+			if s == "" {
+				continue
+			}
+			assert.Assert(t, declared[s], "%s: attribute %q is in section %q, which %s never declares", kind, a.Name, s, kind)
+		}
+	}
+	for _, g := range schema.CompileRoot().Children {
+		name, _ := g.Match.(string)
+		if len(g.Children) == 0 {
+			continue
+		}
+		walk(t, name, g.Children[0])
 	}
 }

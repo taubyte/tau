@@ -108,6 +108,97 @@ var Omissions = []Omission{
 			"rather than as strings — resolved by the same pass that resolves the name.",
 	},
 	{
+		Name:    "RequiredWhen against a Key() attribute — a claim the loader does not keep",
+		State:   Blocked,
+		Decided: Forced,
+		Why: "RequiredWhen reads the sibling attribute's DOCUMENT value. For a Key() attribute the " +
+			"document holds the branch's CONTENTS under that key, not the key's name, so the " +
+			"comparison never matches and the field is never required. " +
+			"`engine/distributed/size` says RequiredWhen(engine/kind, distributed) and a " +
+			"distributed database with no size compiles clean today. Plain Required() is not the " +
+			"answer either: it fires on every branch, so it would demand a TLS mode from an engine " +
+			"that opens no socket. The DSL currently cannot say \"required only on this branch\".",
+		Instead: "a safe default stated in the doc string, with the dangerous choice written out — " +
+			"which is what engine/tls does. It does not work for a field with no safe default.",
+		Unblocks: "RequiredWhen resolving a Key() sibling to its matched key rather than its value. " +
+			"An engine change, and one that would enforce a promise the schema is already making.",
+	},
+	{
+		Name:    "configuration for a workload — environment, files, arguments",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "A container is configured by its environment, and nothing here sets one. A workload " +
+			"can declare an image, a port, a memory ceiling and which secrets it may READ — but " +
+			"not the plain, non-secret values that decide what it does: a log level, a region, a " +
+			"feature flag, an upstream URL. Today the only path is baking them into the image, " +
+			"which makes one image per environment and defeats the point of naming the image.",
+		Instead: "nothing. Secrets have a path and configuration does not, which is backwards: the " +
+			"harmless half is the one you change most often.",
+		Unblocks: "an owner call on the SHAPE, which is the whole difficulty — env vars, a mounted " +
+			"file, or both; whether a value can reference another resource; and how it interacts " +
+			"with the secret it will inevitably sit next to.",
+	},
+	{
+		Name:    "a CPU ceiling",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "`execution/memory` is required on every workload and there is no CPU equivalent, so " +
+			"the platform is told what a workload may hold and not what it may burn. One busy " +
+			"loop is then indistinguishable from correct load, and a node's other tenants pay for " +
+			"it.",
+		Instead: "memory alone, plus whatever the runtime does about scheduling.",
+		Unblocks: "an owner call on whether tau meters CPU at all. It is a different promise from " +
+			"memory — a ceiling on a rate rather than on an amount — and it decides whether the " +
+			"field is a limit, a share, or a price.",
+	},
+	{
+		Name:    "credentials for a private image registry",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "`image` takes any OCI reference, and every private registry needs a credential to " +
+			"pull from. `secrets` exists and nothing connects the two, so a private image is not " +
+			"expressible — which quietly makes the container kinds public-registry-only.",
+		Instead: "a public image.",
+		Unblocks: "an owner call on whether the pull credential belongs on the workload, on a " +
+			"registry resource, or on the cloud.",
+	},
+	{
+		Name:    "liveness as a separate question from readiness",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "`health` answers one question and two are being asked. Whether a workload should " +
+			"receive traffic and whether it should be killed and restarted have different answers " +
+			"and different consequences: a workload warming a cache is not ready and must not be " +
+			"restarted, and one deadlocked on a lock is neither. With one signal, the platform " +
+			"must guess which it was told.",
+		Instead: "one health check, read as readiness.",
+		Unblocks: "an owner call on whether tau restarts a workload on its own, which is the only " +
+			"reason the second question exists.",
+	},
+	{
+		Name:    "rate limiting on an L4 proxy",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "A gateway carries cors and rate-limit; a proxy carries neither, and it is the kind " +
+			"that accepts raw connections from the internet. So the HTTP door has a limiter and " +
+			"the TCP door does not.",
+		Instead: "nothing at the edge. Whatever the workload does about it.",
+		Unblocks: "an owner call on the unit — connections per minute, concurrent connections, or " +
+			"bytes — since a request rate does not translate to a protocol with no requests in it.",
+	},
+	{
+		Name:    "what a cron does when the last run is still going",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "A schedule fires on a clock. If the previous run has not finished, the choice is to " +
+			"skip, to queue, or to run both at once, and each is right somewhere: skipping is right " +
+			"for a reconcile, queueing for a billing run, overlap for anything idempotent and " +
+			"cheap. The config does not say, so the runtime picks for everyone.",
+		Instead: "whatever the runtime does.",
+		Unblocks: "an owner call. Jitter belongs to the same decision — a fleet-wide `0 3 * * *` " +
+			"is a thundering herd at 03:00 exactly.",
+	},
+	{
 		Name:    "a function's host interface",
 		State:   Open,
 		Decided: ByOwner,
