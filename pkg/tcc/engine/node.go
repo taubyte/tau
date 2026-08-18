@@ -313,6 +313,22 @@ func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
 		if len(path) == 0 {
 			path = []StringMatch{sib.Name}
 		}
+		// A Key() sibling has no value of its own: its path ends in the Either() and
+		// the document holds the BRANCH there, so reading it as a string fails and the
+		// condition silently never fires. What the condition means by that field is
+		// which branch matched, which is the resolved last segment — the same thing
+		// setAttributes files as the key.
+		//
+		// Without this, `RequiredWhen("engine/kind", "distributed")` was a promise the
+		// loader did not keep: a distributed database with no size compiled clean.
+		if sib.Key {
+			_, resolved, err := inferPathQuery(path, query)
+			if err != nil || len(resolved) == 0 {
+				return false
+			}
+			return slices.Contains(c.In, resolved[len(resolved)-1])
+		}
+
 		var v string
 		if sq, _, err := inferPathQuery(path, query); err != nil || sq.Value(&v) != nil {
 			cq, _, cerr := inferPathQuery(sib.Compat, query)

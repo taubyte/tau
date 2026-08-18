@@ -205,6 +205,9 @@ neither the field nor the file. Worth improving one day; do not paper over it.
   wrong. It is opt-in per vocabulary (`Strict()` on the root): v2 has it, v1 does not,
   because v1 is frozen with projects deployed against it — so in v1 the key is still
   dropped in silence.
+- A `RequiredWhen` naming a `Key()` sibling works (engine reads the matched branch,
+  fixed 2026-08-18). A `ShowWhen` naming one is still evaluated by CONSUMERS, not the
+  engine, so a UI has to do the same resolution.
 - A `ShowWhen` / `RequiredWhen` that never fires ⇒ its first argument is not an
   attribute name. It takes the **sibling attribute's `Name`**, which for a nested field
   is the full slashed one — `ShowWhen("certificate/source", "provided")`, never

@@ -124,22 +124,6 @@ var Omissions = []Omission{
 			"family as the RequiredWhen defect below, and the same file.",
 	},
 	{
-		Name:    "RequiredWhen against a Key() attribute — a claim the loader does not keep",
-		State:   Blocked,
-		Decided: Forced,
-		Why: "RequiredWhen reads the sibling attribute's DOCUMENT value. For a Key() attribute the " +
-			"document holds the branch's CONTENTS under that key, not the key's name, so the " +
-			"comparison never matches and the field is never required. " +
-			"`engine/distributed/size` says RequiredWhen(engine/kind, distributed) and a " +
-			"distributed database with no size compiles clean today. Plain Required() is not the " +
-			"answer either: it fires on every branch, so it would demand a TLS mode from an engine " +
-			"that opens no socket. The DSL currently cannot say \"required only on this branch\".",
-		Instead: "a safe default stated in the doc string, with the dangerous choice written out — " +
-			"which is what engine/tls does. It does not work for a field with no safe default.",
-		Unblocks: "RequiredWhen resolving a Key() sibling to its matched key rather than its value. " +
-			"An engine change, and one that would enforce a promise the schema is already making.",
-	},
-	{
 		Name:    "configuration for a workload — environment, files, arguments",
 		State:   Open,
 		Decided: ByOwner,
