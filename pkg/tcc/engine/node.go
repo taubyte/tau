@@ -341,6 +341,22 @@ func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
 	return false
 }
 
+// parentExists reports whether the block a branching path hangs off is present in the
+// document at all. A path whose Either() is at the top level hangs off the document
+// root, which always exists — so a switch with no parent keeps its old behaviour and an
+// unmatched key there is still an error.
+func parentExists(path []StringMatch, query *yaseer.Query) bool {
+	if len(path) < 2 {
+		return true
+	}
+	pq, _, err := inferPathQuery(path[:len(path)-1], query)
+	if err != nil {
+		return false
+	}
+	var v any
+	return pq.Value(&v) == nil && v != nil
+}
+
 // isBlank reports a value that carries no information: only strings and lists
 // can be blank — a false bool or a zero int are legitimate values.
 func isBlank(val any) bool {
@@ -421,9 +437,27 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 					o.Set(attr.Name, object.Refrence(resolved[len(resolved)-1]))
 				}
 				continue
-			} else {
+			}
+			// Nothing matched the Either(). Two very different documents reach here and
+			// they were being given the same answer:
+			//
+			//	handler:              the block is THERE and names something the switch
+			//	    kv: {…}           does not have — a mistake, and the error that says
+			//	                      "empty key" is the one that catches it
+			//
+			//	(no liveness at all)  the block is ABSENT, which for an optional switch
+			//	                      is a legitimate document: a workload with no
+			//	                      liveness probe is simply never restarted
+			//
+			// Erroring on both is what made an Either()+Key() switch unusable on
+			// anything optional, so every switch in the vocabulary sits on a mandatory
+			// block — not by design, but because the others could not be written.
+			//
+			// The parent tells them apart: if the block exists, some key in it is wrong.
+			if attr.Required || parentExists(attr.Path, query) {
 				return errorWithLocation(aq, "attribute %s has an empty key", attr.Name)
 			}
+			continue
 		}
 
 		origAq := aq

@@ -229,23 +229,23 @@ func applicationAttributes() []*Attribute {
 // Either probe can be an http poll or a FUNCTION, because "working" is not always a
 // status code: a queue drained, a migration finished, a leader lease still held.
 //
-// NOT an Either()+Key() switch, which is what this vocabulary uses everywhere else for
-// exactly this shape. A Key() attribute fails to load when its block is ABSENT —
-// "attribute liveness/kind has an empty key" — so the construct can only sit on a block
-// that is mandatory, and every existing use of it (route.handler, storages.type,
-// engine.kind) happens to be on one. A probe is optional: a workload with neither is
-// ready when it starts and is never restarted, which is a reasonable thing to be. So
-// the branch is read from which fields are set rather than captured in a key.
-// Recorded in omissions.go.
+// An Either()+Key() switch, like every other either-or in this vocabulary. It could not
+// be one at first — a Key() failed to load whenever its block was ABSENT, so the
+// construct only worked on a mandatory block and a probe is optional. That was fixed in
+// the engine (an absent block and a block naming something unlisted are now different
+// answers), and this is the shape it unblocked: the branch is captured, and http and
+// function cannot both be filled in.
 func probeAttributes(name, section, doc string) []*Attribute {
 	return []*Attribute{
-		String(name+"/port", Path(name, "http", "port"), IsVariableName(), InSection(section),
-			Doc(title(name)+" Port", doc+" Polled over http, on this port of the workload's own, by name.")),
-		String(name+"/path", Path(name, "http", "path"), InSection(section),
+		String(name+"/kind", Path(name, Either("http", "function")), Key(), InSection(section),
+			Doc(title(name), doc+" An http poll, or a function that answers.")),
+		String(name+"/port", Path(name, "http", "port"), IsVariableName(), InSection(section), ShowWhen(name+"/kind", "http"),
+			Doc(title(name)+" Port", "Which of this workload's ports the poll is made on, by name.")),
+		String(name+"/path", Path(name, "http", "path"), InSection(section), ShowWhen(name+"/kind", "http"),
 			Doc(title(name)+" Path", "HTTP path polled.")),
-		String(name+"/function/name", Path(name, "function", "name"), IsVariableName(), InSection(section),
+		String(name+"/function/name", Path(name, "function", "name"), IsVariableName(), InSection(section), ShowWhen(name+"/kind", "function"),
 			Doc(title(name)+" Function", "A function that answers for this workload, when \"working\" is not a status code — a queue drained, a migration finished, a lease still held.")),
-		String(name+"/function/namespace", Path(name, "function", "namespace"), IsNamespacePath(), InSection(section),
+		String(name+"/function/namespace", Path(name, "function", "namespace"), IsNamespacePath(), InSection(section), ShowWhen(name+"/kind", "function"),
 			Doc(title(name)+" Function Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
 	}
 }

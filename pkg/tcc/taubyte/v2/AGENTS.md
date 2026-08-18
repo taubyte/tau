@@ -91,6 +91,12 @@ A key outside the set fails to compile with `attribute handler has an empty key`
 an unroutable target from becoming a rule that silently never fires. Prefer this over
 one boolean/enum plus five parallel fields.
 
+A switch may sit on an OPTIONAL block (fixed 2026-08-18). An absent block leaves the
+key unset; a block that IS there but names something outside the set is still
+`attribute X has an empty key`. The two are told apart by whether the parent exists, so
+a switch whose `Either()` is at the top level — its parent being the document — keeps
+the old behaviour and always demands a branch.
+
 Related conditionals: `RequiredWhen`, `RequiredUnless`, `OnlyWhen`, `ShowWhen`,
 `SectionWhen`, `DerivedBool`, `EnumBool`.
 

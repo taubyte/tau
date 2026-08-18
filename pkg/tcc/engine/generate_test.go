@@ -82,3 +82,52 @@ func TestRequiredWhenReadsAKeysBranch(t *testing.T) {
 		})
 	}
 }
+
+// An Either()+Key() switch on an OPTIONAL block. Absent and wrong are different
+// documents and were getting the same answer, which is why every switch in the tau
+// vocabulary sits on a block that must be there — not by design, but because the
+// others could not be written.
+func TestKeySwitchOnAnOptionalBlock(t *testing.T) {
+	schema := SchemaDefinition(Root(
+		Attributes(String("id")),
+		DefineGroup("things", DefineIter([]*Attribute{
+			String("id", Required()),
+			// optional: hangs off a `probe` block that need not be there
+			String("probe", Path("probe", Either("http", "function")), Key()),
+			String("probe-path", Path("probe", "http", "path")),
+			// mandatory: the switch is at the top level, so its parent is the document
+			String("shape", Path(Either("round", "square")), Key()),
+		})),
+	))
+
+	for _, tc := range []struct{ name, doc, wantErr, wantProbe string }{
+		{"optional block absent", "id: one\nround: {}\n", "", ""},
+		{"optional block present", "id: one\nround: {}\nprobe:\n    http:\n        path: /x\n", "", "http"},
+		{"optional block present, unlisted key", "id: one\nround: {}\nprobe:\n    telepathy: {}\n", "empty key", ""},
+		{"top-level switch, nothing matched", "id: one\n", "empty key", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fs := afero.NewMemMapFs()
+			assert.NilError(t, afero.WriteFile(fs, "/config.yaml", []byte("id: root\n"), 0o644))
+			assert.NilError(t, afero.WriteFile(fs, "/things/one.yaml", []byte(tc.doc), 0o644))
+			e, err := New(schema, yaseer.VirtualFS(fs, "/"))
+			assert.NilError(t, err)
+			obj, err := e.Process()
+			if tc.wantErr != "" {
+				assert.ErrorContains(t, err, tc.wantErr)
+				return
+			}
+			assert.NilError(t, err)
+			things, err := obj.Child("things").Object()
+			assert.NilError(t, err)
+			thing, err := things.Child("one").Object()
+			assert.NilError(t, err)
+			got := thing.Get("probe")
+			if tc.wantProbe == "" {
+				assert.Assert(t, got == nil, "an absent block leaves the key unset, not empty; got %v", got)
+				return
+			}
+			assert.Equal(t, got, tc.wantProbe)
+		})
+	}
+}

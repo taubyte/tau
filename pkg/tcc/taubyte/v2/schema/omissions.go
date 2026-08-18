@@ -108,22 +108,6 @@ var Omissions = []Omission{
 			"rather than as strings — resolved by the same pass that resolves the name.",
 	},
 	{
-		Name:    "an Either()+Key() switch on an OPTIONAL block",
-		State:   Blocked,
-		Decided: Forced,
-		Why: "A Key() attribute fails to load when its block is absent — \"attribute liveness/kind " +
-			"has an empty key\" — so the switch can only sit on a block that is mandatory. Every " +
-			"other use of it in this vocabulary happens to be on one (route.handler, storages.type, " +
-			"engine.kind), which is why it went unnoticed until a probe needed to be optional: a " +
-			"workload with neither readiness nor liveness is ready when it starts and never " +
-			"restarted, which is a reasonable thing to be.",
-		Instead: "fixed paths under each branch — readiness/http/port beside " +
-			"readiness/function/name — and read which branch was taken from which fields are set. " +
-			"It costs the captured key and the guarantee that only one branch is filled in.",
-		Unblocks: "Key() treating an absent block as an empty value rather than an error. Same " +
-			"family as the RequiredWhen defect below, and the same file.",
-	},
-	{
 		Name:    "configuration as a FILE, and a mutual exclusion the DSL cannot state",
 		State:   Open,
 		Decided: Forced,

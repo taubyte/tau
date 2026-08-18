@@ -636,13 +636,21 @@ func TestPortsAreNamed(t *testing.T) {
 	assert.Equal(t, ports["http"].(map[string]any)["number"], 8080, "the number is the INTERNAL one")
 	assert.Equal(t, ports["metrics"].(map[string]any)["number"], 9090)
 
-	// a probe names a port rather than repeating a number
+	// a probe names a port rather than repeating a number, and says which kind it is
+	assert.Equal(t, app["readiness/kind"], "http")
 	assert.Equal(t, app["readiness/port"], "http")
+	assert.Equal(t, app["liveness/kind"], "http")
 	assert.Equal(t, app["liveness/port"], "http")
 
-	// or a function decides, which is a different kind of answer
+	// or a function decides, which is a different kind of answer and says so
 	pool := namedResource(t, resources(t, flat, "applications"), "worker_pool")
+	assert.Equal(t, pool["readiness/kind"], "function")
 	assert.Equal(t, pool["readiness/function/name"], "pool_ready")
+
+	// and a workload that declares no liveness simply has none — the case an
+	// Either()+Key() switch could not express before
+	_, live := pool["liveness/kind"]
+	assert.Assert(t, !live, "no liveness declared, so nothing restarts it")
 	_, probe := pool["readiness/path"]
 	assert.Assert(t, !probe, "a function-checked workload declares no probe path")
 
