@@ -91,6 +91,24 @@ func compileFn(_ js.Value, args []js.Value) any {
 	if id, ok := flat["id"].(string); ok && id != "" {
 		out["projectLabel"] = schema.ProjectLabel(id)
 	}
+	// The audit runs HERE, not in the page. Every one of its checks needs a second
+	// resource to answer, and the compiled object is what has them — so a second
+	// implementation in TypeScript would be the same reasoning written twice, drifting
+	// the first time a kind changed. The page renders findings; it does not decide
+	// them.
+	//
+	// The stub resolver: what tcc cannot see — is this zone delegated, is this image
+	// pullable — nothing in a browser can see either.
+	findings := schema.Audit(obj.Flat(), schema.StubResolver())
+	found := make([]map[string]any, 0, len(findings))
+	for _, f := range findings {
+		found = append(found, map[string]any{
+			"severity": string(f.Severity), "kind": f.Kind, "name": f.Name,
+			"scope": f.Scope, "title": f.Title, "detail": f.Detail,
+		})
+	}
+	out["findings"] = found
+
 	if len(validations) > 0 {
 		vs := make([]map[string]any, 0, len(validations))
 		for _, v := range validations {

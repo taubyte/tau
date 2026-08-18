@@ -234,7 +234,7 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
       const hn = res[`${p}/name`];
       if (typeof hk !== "string" || typeof hn !== "string") continue;
       const ns = typeof res[`${p}/namespace`] === "string" ? (res[`${p}/namespace`] as string) : "";
-      pendingHandlers.push({ from: id, kind: hk + "s", name: hn, scope: ns.replace(/^\/+/, "") });
+      pendingHandlers.push({ from: id, kind: hk, name: hn, scope: ns.replace(/^\/+/, "") });
     }
   };
 
@@ -334,7 +334,7 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
       n.fqdn = projectLabel ? `${label}${projectLabel}.⟨cloud⟩` : `${label}⟨cloud zone⟩`;
       continue;
     }
-    const zoneID = n.host.zone?.replace(/^zones\//, "");
+    const zoneID = n.host.zone?.replace(/^zone\//, "");
     const apex = zoneID ? byId.get(zoneID)?.zoneFqdn : undefined;
     n.fqdn = apex ? `${label}${apex}` : `${label}⟨zone⟩`;
   }

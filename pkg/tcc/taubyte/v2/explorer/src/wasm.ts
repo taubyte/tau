@@ -32,7 +32,18 @@ export interface Omission {
   unblocks: string;
 }
 export type Compiled = Record<string, unknown>;
+/** One cross-resource finding, decided by tcc — see schema/checks.go. */
+export interface Finding {
+  severity: "broken" | "check" | "note";
+  kind: string;
+  name: string;
+  scope: string;
+  title: string;
+  detail: string;
+}
+
 export interface CompileOk {
+  findings?: Finding[];
   /** The project's label in a cloud's generated zone — derived from its id. */
   projectLabel?: string;
   object: Compiled;

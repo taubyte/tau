@@ -4,7 +4,7 @@ import { buildGraph, categoryOf, iconOf, setCategories, type Graph } from "./gra
 import { esc, jsonRoot } from "./render";
 import { graphHost, renderGraph } from "./graph-mount";
 import { kindIconMarkup } from "./icons";
-import { review, type Finding } from "./review";
+import type { Finding } from "./wasm";
 import type { Selection } from "./graph-view";
 import { place, type Placed } from "./layout";
 
@@ -371,10 +371,29 @@ function reviewPane(result: CompileOk): HTMLElement {
     wrap.appendChild(sectionTitle("nothing to review", "the project has not compiled yet"));
     return wrap;
   }
-  const r = review(graph, result.object, verbs);
+  // Decided by tcc, rendered here. The page used to recompute these in TypeScript,
+  // which was the same reasoning written twice and would have drifted the first time a
+  // kind changed.
+  const findings = result.findings ?? [];
+  const exposure = graph.nodes
+    .filter((n) => n.fqdn)
+    .map((n) => ({
+      id: n.id,
+      kind: n.kind,
+      name: n.name,
+      at: n.fqdn!,
+      serves: graph!.arrows
+        .filter((a) => a.from === n.id && a.verb === "serves")
+        .map((a) => graph!.byId.get(a.to))
+        .filter((x): x is NonNullable<typeof x> => !!x)
+        .map((t) => `${t.kind}/${t.name}${t.scope ? ` in ${t.scope}` : ""}`),
+    }));
+  const counts = [...graph.nodes.reduce((m, n) => m.set(n.kind, (m.get(n.kind) ?? 0) + 1), new Map<string, number>())]
+    .map(([kind, n]) => ({ kind, n }))
+    .sort((a, b) => b.n - a.n || a.kind.localeCompare(b.kind));
 
-  const broken = r.findings.filter((f) => f.severity === "broken").length;
-  const checks = r.findings.filter((f) => f.severity === "check").length;
+  const broken = findings.filter((f) => f.severity === "broken").length;
+  const checks = findings.filter((f) => f.severity === "check").length;
   wrap.appendChild(
     sectionTitle(
       "what the graph says",
@@ -390,18 +409,18 @@ function reviewPane(result: CompileOk): HTMLElement {
   // review tool and a false sense of one.
   const caveat = div("hint");
   caveat.innerHTML =
-    "These are read off the compiled object here, in the browser. <b>Nothing refuses a deploy on them</b> — the publish-time pass that would is still unwritten (<code>schema/omissions.go</code>).";
+    "Decided by tcc, in <code>schema/checks.go</code> — the same checks any caller gets from <code>schema.Audit</code>. <b>Nothing refuses a deploy on them yet</b>: what blocks and what warns is a policy decision, not this pane's.";
   wrap.appendChild(caveat);
 
-  wrap.appendChild(exposureTable(r.exposure));
+  wrap.appendChild(exposureTable(exposure));
 
   const list = div("findings");
-  for (const f of r.findings) list.appendChild(findingRow(f));
+  for (const f of findings) list.appendChild(findingRow(f));
   wrap.appendChild(list);
 
   wrap.appendChild(sectionTitle("inventory", `${graph.nodes.length} resources`));
   const inv = div("inventory");
-  inv.innerHTML = r.counts
+  inv.innerHTML = counts
     .map(
       (c) =>
         `<span class="chip ${categoryOf(c.kind)}">${kindIconMarkup(iconOf(c.kind), 12)}${esc(c.kind)}<b>${c.n}</b></span>`,
@@ -439,10 +458,15 @@ function exposureTable(rows: { id: string; kind: string; name: string; at: strin
 
 function findingRow(f: Finding): HTMLElement {
   const row = div(`finding ${f.severity}`);
-  row.innerHTML = `<span class="sev">${f.severity}</span><div><b>${esc(f.title)}</b><p>${esc(f.detail)}</p></div>`;
-  if (f.id) {
+  const where = `${f.kind}/${f.name}${f.scope ? ` in ${f.scope}` : ""}`;
+  row.innerHTML =
+    `<span class="sev">${f.severity}</span>` +
+    `<div><b><code>${esc(where)}</code> ${esc(f.title)}</b><p>${esc(f.detail)}</p></div>`;
+  // tcc names the resource, not a compiled id, so the node is found by identity
+  const node = graph?.nodes.find((n) => n.kind === f.kind && n.name === f.name && n.scope === f.scope.replace(/^\//, ""));
+  if (node) {
     row.classList.add("clickable");
-    row.onclick = () => pickFromReview(f.id!);
+    row.onclick = () => pickFromReview(node.id);
   }
   return row;
 }
