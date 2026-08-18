@@ -1,0 +1,8 @@
+id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
+description: an external postgres - the engine key IS the kind, so naming kafka here is not something the yaml can say
+engine:
+    postgres:
+        host: db.example.com:5432
+        database: orders
+        credentials: secret/stripe
+        tls: verify-full

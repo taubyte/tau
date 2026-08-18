@@ -45,7 +45,7 @@ func toJS(v any) any {
 	return js.Global().Get("JSON").Call("parse", string(b))
 }
 
-// compile({ "functions/checkout.yaml": "...", ... }, { branch }) ->
+// compile({ "function/checkout.yaml": "...", ... }, { branch }) ->
 //
 //	{ object, validations } | { error }
 func compileFn(_ js.Value, args []js.Value) any {

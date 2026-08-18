@@ -101,13 +101,13 @@ var secIdentity = Section("identity", "Identity", "Resource identity and metadat
 //	code     — a build artifact
 func Category(name string) NodeOption { return GroupAnnotate("category", name) }
 
-// sourceShape: a code source is "." (inline) or "modules/<name>". v1's prefix was
+// sourceShape: a code source is "." (inline) or "module/<name>". v1's prefix was
 // "libraries/"; the rename carries into the reference form.
 //
 // PLURAL, like every other kind. It was `module` alone, which meant one directory in
 // a project read `module/` while its nineteen siblings read `functions/`, `caches/`,
 // `queues/` — a rule with one exception is a rule everybody has to remember.
-var sourceShape = StringShape([]string{"."}, []string{"modules/"})
+var sourceShape = StringShape([]string{"."}, []string{"module/"})
 
 // egressAttribute is the per-workload ALLOWLIST of hosts a workload may reach,
 // layered on top of the node-wide deny floor (pkg/netguard) which it can never widen.
@@ -129,7 +129,7 @@ var secNetwork = Section("network", "Network", "How this workload is reached, an
 // four differ in what points AT them, never in how they run.
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	return commonAttributes(append([]*Attribute{
-		String("source", Required(), Ref("modules", Prefix("modules/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"modules/<name>\" to build from a defined module.")),
+		String("source", Required(), Ref("module", Prefix("module/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"module/<name>\" to build from a defined module.")),
 		String("execution/call", Path("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
 		Duration("execution/timeout", Path("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
 		Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory this workload may use, as a human string (e.g. \"32MB\").")),
@@ -258,8 +258,8 @@ func cpuLimit() *Attribute {
 }
 
 func pullSecret() *Attribute {
-	return String("image-pull-secret", Path("image-pull-secret"), Ref("secrets", Prefix("secrets/")), InSection("code"),
-		Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with, as \"secrets/<name>\". Omit for a public registry."))
+	return String("image-pull-secret", Path("image-pull-secret"), Ref("secret", Prefix("secret/")), InSection("code"),
+		Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with, as \"secret/<name>\". Omit for a public registry."))
 }
 
 // handlerKinds are what may serve a route. Closed, because it is the Either() a
@@ -319,8 +319,8 @@ func hostAttributes(section string) []*Attribute {
 			Doc("Host", "generated: a name under the cloud's own zone, resolved when it is deployed. zone: a name in a zone you own and delegated here.")),
 		String("host/name", Path("host", Either("generated", "zone"), "name"), IsVariableName(), InSection(section),
 			Doc("Name", "The label within that zone, e.g. \"shop\". Omit it for the zone apex.")),
-		String("host/zone", Path("host", "zone", "in"), Ref("zones", Prefix("zones/")), RequiredWhen("host/kind", "zone"), InSection(section), ShowWhen("host/kind", "zone"),
-			Doc("Zone", "The zone this name lives in, as \"zones/<name>\". Only for a zone you own; a generated name has no zone to choose.")),
+		String("host/zone", Path("host", "zone", "in"), Ref("zone", Prefix("zone/")), RequiredWhen("host/kind", "zone"), InSection(section), ShowWhen("host/kind", "zone"),
+			Doc("Zone", "The zone this name lives in, as \"zone/<name>\". Only for a zone you own; a generated name has no zone to choose.")),
 	}
 }
 
@@ -364,13 +364,13 @@ var V2Resources = []*Node{
 	//
 	// `egress` is the per-workload ALLOWLIST; the node-wide denylist floor
 	// (pkg/netguard) is not representable here and is never relaxable by a resource.
-	DefineGroup("applications",
+	DefineGroup("application",
 		resource(
 			commonAttributes(applicationAttributes()...),
 			Nested(portsGroup(), variablesGroup()),
 			GroupDoc("A long-running container that listens on HTTP. Ships with volumes or it ships broken."), Icon("box"), Category("compute"),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
-			Resource("applications", "Application", "Application", "application"),
+			Resource("application", "Application", "Application", "application"),
 		)),
 
 	// A function is now only code plus limits. Nine attributes, one section, three
@@ -380,19 +380,19 @@ var V2Resources = []*Node{
 	// exactly a function's fields and nothing else, and what distinguishes it is the
 	// host interface it is built against — it is handed the operation and answers
 	// yes or no — which is a property of the artifact, not of the config.
-	DefineGroup("functions",
+	DefineGroup("function",
 		resource(
 			wasmAttributes(),
 			Nested(variablesGroup()),
 			GroupDoc("A serverless function. It declares no trigger: what may reach it is an inbound edge."), Icon("bolt"), Category("compute"),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")), // invoke is write: a call may do anything the callee can
-			Resource("functions", "Function", "Function", "function"),
+			Resource("function", "Function", "Function", "function"),
 		)),
 
 	// On-demand, long-running once triggered, not HTTP-listening. The only type
 	// where the runtime tier is an authored field (resources.md §1.2).
-	DefineGroup("workers",
+	DefineGroup("worker",
 		resource(
 			wasmAttributes(
 				String("runtime", InSet("wasm", "container"), Default("wasm"), InSection("code"), Doc("Runtime", "Which tier runs this worker: wasm or container.")),
@@ -403,13 +403,13 @@ var V2Resources = []*Node{
 			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("invoke")),
-			Resource("workers", "Worker", "Worker", "worker"),
+			Resource("worker", "Worker", "Worker", "worker"),
 		)),
 
 	// Interactive container: exec, filesystem, a generated FQDN. idle_timeout is
 	// separate from max_lifetime on purpose — an idle agent session and a runaway
 	// one are different failures (resources.md §1.7).
-	DefineGroup("sandboxes",
+	DefineGroup("sandbox",
 		resource(
 			commonAttributes(
 				String("image", Required(), InSection("code"), Doc("Image", "OCI image the sandbox boots from.")),
@@ -424,13 +424,13 @@ var V2Resources = []*Node{
 			GroupDoc("An interactive container with exec and filesystem access, for agent and build sessions."), Icon("terminal"), Category("compute"),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Ops(WriteOp("exec"), ReadOp("read"), WriteOp("write")),
-			Resource("sandboxes", "Sandbox", "Sandbox", "sandbox"),
+			Resource("sandbox", "Sandbox", "Sandbox", "sandbox"),
 		)),
 
 	// One field and one outbound edge — the thinnest resource in the vocabulary.
 	// A schedule has to be nameable because an edge needs two addressable ends,
 	// and that buys "what runs on a schedule" as a graph query (resources.md §1.6).
-	DefineGroup("crons",
+	DefineGroup("cron",
 		resource(
 			commonAttributes(
 				String("schedule", Required(), InSection("identity"), Doc("Schedule", "Cron expression, e.g. \"0 3 * * *\".")),
@@ -468,22 +468,22 @@ var V2Resources = []*Node{
 			GroupDoc("A schedule. It fires whatever it edges to; the target declares nothing."), Icon("clock"), Category("trigger"),
 			secIdentity, secAccess,
 			Section("firing", "Firing", "What happens when the clock comes round."),
-			Resource("crons", "Cron", "Cron", "cron"),
+			Resource("cron", "Cron", "Cron", "cron"),
 		)),
 
-	DefineGroup("modules",
+	DefineGroup("module",
 		resource(
 			commonAttributes(append(
 				[]*Attribute{String("source/path", Path("source", "path"), InSection("source"), Doc("Path", "Subpath within the repository that holds the code."))},
 				gitSource()...)...),
 			GroupDoc("A WASM / Component Model artifact built from a git repository, referenced as a workload source."), Icon("book"), Category("code"),
 			secIdentity, secAccess, secSource,
-			Resource("modules", "Module", "Module", "module"),
+			Resource("module", "Module", "Module", "module"),
 		)),
 
 	// Build -> zip -> hoarder -> serve, unchanged. What left: domains, paths and
 	// the serving section. A website is served because a domain edges to it.
-	DefineGroup("websites",
+	DefineGroup("website",
 		resource(
 			commonAttributes(gitSource()...),
 			GroupDoc("A static website built from a git repository. What serves it is an inbound domain edge."), Icon("globe"), Category("compute"),
@@ -496,14 +496,14 @@ var V2Resources = []*Node{
 	// A cache. Eventually consistent, AP, and it never gets CAS — an entity is what
 	// serves a linearizable counter. It is NOT a database: entries have a lifetime,
 	// losing one costs a recomputation, and nothing here is a system of record.
-	DefineGroup("caches",
+	DefineGroup("cache",
 		resource(
 			commonAttributes(
 				String("match", RequiredUnless("useRegex"), InSection("keys"), Doc("Match", "Key or key-pattern this cache serves.")),
 				Bool("useRegex", Path("regex"), InSection("keys"), Doc("Use Regex", "Treat match as a regular expression instead of a literal prefix.")),
 				String("reach/network", Path("reach", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Local", []string{"host"}, []string{"all", "host"}, [2]string{"host", "all"}), NoAccessors(), InSection("keys"), Doc("Network Access", "Which peers may reach this cache: all, subnet, or host.")),
-				Bytes("storage/size", Path("storage", "size"), Required(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
-				Duration("storage/ttl", Path("storage", "ttl"), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
+				Bytes("size", Path("size"), Required(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
+				Duration("ttl", Path("ttl"), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
 				String("encryption/key", Path("encryption", "key"), NoAccessors(), InSection("encryption"), Doc("Encryption Key", "Key material or reference used to encrypt entries at rest.")),
 			),
 			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"),
@@ -511,7 +511,7 @@ var V2Resources = []*Node{
 			Section("keys", "Keys", "Key matching, capacity, and reachability."),
 			Section("encryption", "Encryption", "Encryption at rest."),
 			Ops(ReadOp("get"), ReadOp("list"), ReadOp("watch"), WriteOp("put"), WriteOp("delete")),
-			Resource("caches", "Cache", "Cache", "cache"),
+			Resource("cache", "Cache", "Cache", "cache"),
 		)),
 
 	// A database — a system of record, and the only kind here that is one.
@@ -549,7 +549,7 @@ var V2Resources = []*Node{
 	// The cost, accepted: a Postgres used both as a database and as an event source is
 	// configured twice. They are different credentials and different access anyway, and
 	// one config object meaning two things is what caused this.
-	DefineGroup("databases",
+	DefineGroup("database",
 		resource(
 			commonAttributes(
 				String("engine/kind", Path("engine", Either(databaseEngines...)), Key(), Field("Engine"), InSection("engine"),
@@ -564,8 +564,8 @@ var V2Resources = []*Node{
 					Doc("Host", "Where the external database is reached, as host or host:port.")),
 				String("engine/database", Path("engine", Either(externalDatabaseEngines...), "database"), InSection("engine"),
 					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
-				String("engine/credentials", Path("engine", Either(externalDatabaseEngines...), "credentials"), RequiredWhen("engine/kind", externalDatabaseEngines...), Ref("secrets", Prefix("secrets/")), InSection("engine"),
-					Doc("Credentials", "Secret holding the credentials to connect with, as \"secrets/<name>\".")),
+				String("engine/credentials", Path("engine", Either(externalDatabaseEngines...), "credentials"), RequiredWhen("engine/kind", externalDatabaseEngines...), Ref("secret", Prefix("secret/")), InSection("engine"),
+					Doc("Credentials", "Secret holding the credentials to connect with, as \"secret/<name>\".")),
 
 				// SAFE BY DEFAULT, EXPLICIT TO WEAKEN: absent means verify-full, and an
 				// author who wants credentials on the wire in the clear has to write
@@ -592,7 +592,7 @@ var V2Resources = []*Node{
 			secIdentity, secAccess,
 			Section("engine", "Engine", "Which engine backs it, and its settings."),
 			Ops(ReadOp("query"), WriteOp("exec")), // exec is write: the host cannot classify arbitrary SQL
-			Resource("databases", "Database", "Database", "database"),
+			Resource("database", "Database", "Database", "database"),
 		)),
 
 	// NO `sql` KIND, deliberately. It was declared here with exactly one authored
@@ -604,7 +604,7 @@ var V2Resources = []*Node{
 	// defect as `notification.email`: a lie with a type signature. It comes back
 	// when there is something to write in it.
 
-	DefineGroup("storages",
+	DefineGroup("storage",
 		resource(
 			commonAttributes(
 				String("type", Path(Either("object", "streaming")), Key(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
@@ -620,7 +620,7 @@ var V2Resources = []*Node{
 			Section("storage", "Storage", "Storage kind, key matching, and capacity."),
 			Section("reach", "Reachability", "Which peers may reach this."),
 			Ops(ReadOp("get"), ReadOp("list"), ReadOp("head"), WriteOp("put"), WriteOp("delete")),
-			Resource("storages", "Storage", "Storage", "storage"),
+			Resource("storage", "Storage", "Storage", "storage"),
 		)),
 
 	// A leased, quota'd local directory whose contents are continuously checkpointed
@@ -631,7 +631,7 @@ var V2Resources = []*Node{
 	// snapshot, and it is unbounded while checkpoints cannot keep up with churn.
 	// An unbounded RPO with no ceiling is silent data loss with a dashboard
 	// (resources.md §2.4).
-	DefineGroup("volumes",
+	DefineGroup("volume",
 		resource(
 			commonAttributes(
 				Bytes("size", Path("quota"), Required(), InSection("storage"), Doc("Size", "Hard quota for the directory, as a human string (e.g. \"10GB\").")),
@@ -644,14 +644,14 @@ var V2Resources = []*Node{
 			Section("storage", "Storage", "Capacity."),
 			Section("checkpoint", "Checkpoint", "Durability out of band from the write path."),
 			Ops(ReadOp("mount-ro"), WriteOp("mount-rw")),
-			Resource("volumes", "Volume", "Volume", "volume"),
+			Resource("volume", "Volume", "Volume", "volume"),
 		)),
 
 	// A declaration and a reference, never a value. The value lives outside git in
 	// the secrets service, keyed <project>/<environment>/<key>, so rotation needs no
 	// push. Read access is an edge with one verb; there is no write verb from a
 	// workload, ever (resources.md §2.5, edges.md §3.3).
-	DefineGroup("secrets",
+	DefineGroup("secret",
 		resource(
 			commonAttributes(
 				String("source", InSet("value", "oidc"), Default("value"), InSection("identity"), Doc("Source", "value: stored in the secrets service. oidc: minted per request as a short-lived token, nothing to rotate or leak.")),
@@ -660,7 +660,7 @@ var V2Resources = []*Node{
 			GroupDoc("A named reference to a secret value held outside git. The config never carries the value."), Icon("key"), Category("data"),
 			secIdentity, secAccess,
 			Ops(ReadOp("get")), // there is no write verb from a workload, ever
-			Resource("secrets", "Secret", "Secret", "secret"),
+			Resource("secret", "Secret", "Secret", "secret"),
 		)),
 
 	// ---- coordination ----
@@ -670,35 +670,35 @@ var V2Resources = []*Node{
 	// partition the side that cannot reach K replicas cannot complete a write.
 	// `shards` is fixed at creation because it is the lease and replica-set
 	// granularity (resources.md §3.1).
-	DefineGroup("entities",
+	DefineGroup("entity",
 		resource(
 			wasmAttributes(
 				Bool("durable", InSection("coordination"), Doc("Durable", "Journal every host call so an interrupted turn replays deterministically.")),
-				Bytes("storage/size", Path("storage", "size"), InSection("limits"), Doc("Storage", "Per-instance SQL storage ceiling.")),
+				Bytes("size", Path("size"), InSection("limits"), Doc("Storage", "Per-instance SQL storage ceiling.")),
 			),
 			Nested(variablesGroup()),
 			GroupDoc("A single-writer, durably-stored compute instance addressed by name. CP: a partition that cannot reach K replicas cannot write."), Icon("cube"), Category("compute"),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Section("coordination", "Coordination", "Sharding and durability."),
 			Ops(ReadOp("get"), WriteOp("call")),
-			Resource("entities", "Entity", "Entity", "entity"),
+			Resource("entity", "Entity", "Entity", "entity"),
 		)),
 
 	// Claim / visibility-timeout / ack / DLQ — not pop-and-delete. Today's
 	// pkg/raft Queue.Pop deletes before returning, so a consumer that crashes
 	// loses the job with no trace (resources.md §3.2).
-	DefineGroup("queues",
+	DefineGroup("queue",
 		resource(
 			commonAttributes(
 				Duration("visibility-timeout", Default("30s"), Required(), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
 				Int("max-attempts", Default(5), InSection("delivery"), Doc("Max Attempts", "Deliveries before the item moves to the dead-letter queue.")),
-				String("dead-letter", Ref("queues", Prefix("queues/")), InSection("delivery"), Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts, as \"queues/<name>\".")),
+				String("dead-letter", Ref("queue", Prefix("queue/")), InSection("delivery"), Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts, as \"queue/<name>\".")),
 			),
 			GroupDoc("A global FIFO with claim, visibility timeout, retries and a dead-letter queue. Per-key ordering is an entity, not this."), Icon("list"), Category("data"),
 			secIdentity, secAccess,
 			Section("delivery", "Delivery", "Claim, retry and dead-letter behaviour."),
 			Ops(DeliveredOp("receive"), WriteOp("send")),
-			Resource("queues", "Queue", "Queue", "queue"),
+			Resource("queue", "Queue", "Queue", "queue"),
 		)),
 
 	// ---- routing and naming ----
@@ -724,7 +724,7 @@ var V2Resources = []*Node{
 	//
 	// A gateway's fqdn inside a zone this cloud serves needs no record here; that one
 	// is produced, not authored.
-	DefineGroup("zones",
+	DefineGroup("zone",
 		resource(
 			commonAttributes(
 				String("fqdn", IsFqdn(), Required(), Field("Fqdn"), Accessor("FQDN"), EmitValidation("zone", "dns"), InSection("identity"), Doc("Zone", "The zone apex this cloud answers for, e.g. \"example.com\". Delegate it with NS records at your registrar. The cloud's OWN zone is not declared here — it is generated, and a resource reaches it with host.generated.")),
@@ -733,7 +733,7 @@ var V2Resources = []*Node{
 			GroupDoc("A DNS zone served authoritatively by this cloud, and the records you own in it."), Category("internet"), Icon("dns"),
 			secIdentity, secAccess,
 			Section("records", "Records", "Records this zone answers, in zone-file notation."),
-			Resource("zones", "Zone", "Zone", "zone"),
+			Resource("zone", "Zone", "Zone", "zone"),
 		)),
 
 	// A gateway is a NAME and the policy at that name. It does NOT list its routes:
@@ -769,7 +769,7 @@ var V2Resources = []*Node{
 	// `fqdn` is optional, and that is what collapsed the old `domains` kind into this
 	// one: a named gateway answers on the internet, an unnamed one is reachable only by
 	// being mounted beneath another (a handler whose kind is `gateway`).
-	DefineGroup("gateways",
+	DefineGroup("gateway",
 		resource(
 			// A gateway with no host block is reachable only by being mounted beneath
 			// another one, which is what collapsed the old `domains` kind into this one.
@@ -804,7 +804,7 @@ var V2Resources = []*Node{
 			Section("route", "Route", "The path served and how it is matched."),
 			Section("handler", "Handler", "What serves it."),
 			Section("policy", "Policy", "CORS and rate limiting, at the name."),
-			Resource("gateways", "Gateway", "Gateway", "gateway"),
+			Resource("gateway", "Gateway", "Gateway", "gateway"),
 		)),
 
 	// The same front door for everything that is not HTTP: a raw TCP, UDP or SCTP
@@ -853,7 +853,7 @@ var V2Resources = []*Node{
 	//
 	// Like a gateway's, an fqdn inside a zone this cloud serves needs no record in
 	// `zones` — those are produced, not authored.
-	DefineGroup("proxies",
+	DefineGroup("proxy",
 		resource(
 			append(append(identityAttributes(), hostAttributes("listener")...),
 				String("protocol", InSet("tcp", "udp", "sctp"), Default("tcp"), Required(), InSection("listener"),
@@ -913,7 +913,7 @@ var V2Resources = []*Node{
 			Section("listener", "Listener", "The protocol carried, the name it is reached by, and whether TLS stops here."),
 			Section("handler", "Handler", "The workload on the other end."),
 			Section("limits", "Limits", "What one source may open, and how fast."),
-			Resource("proxies", "Proxy", "Proxy", "proxy"),
+			Resource("proxy", "Proxy", "Proxy", "proxy"),
 		)),
 
 	// Both halves are declared now: the channel edges to its consumer with
@@ -962,16 +962,16 @@ var V2Resources = []*Node{
 	// never touches it. A connector that holds a live connection runs exactly once
 	// per cloud: a quorum lease with an epoch on every event it emits, so a stale
 	// poller's events are rejected rather than duplicated (resources.md §6).
-	DefineGroup("connectors",
+	DefineGroup("connector",
 		resource(
 			commonAttributes(
 				String("type", Required(), InSection("identity"), Doc("Type", "Which external system events are received from, e.g. \"kafka\", \"s3\", \"slack\".")),
-				String("credentials", Ref("secrets", Prefix("secrets/")), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials, as \"secrets/<name>\".")),
+				String("credentials", Ref("secret", Prefix("secret/")), InSection("identity"), Doc("Credentials", "Secret holding this connector's credentials, as \"secret/<name>\".")),
 				Bool("polls", InSection("identity"), Doc("Polls", "This connector holds a live connection to the external system and emits events from it. Exactly one node in the cloud runs it.")),
 			),
 			GroupDoc("An external system events are received from: credentials, and the held connection. Events are delivered as CloudEvents over tau pubsub."), Icon("cable"), Category("trigger"),
 			secIdentity, secAccess,
-			Resource("connectors", "Connector", "Connector", "connector"),
+			Resource("connector", "Connector", "Connector", "connector"),
 		)),
 }
 
@@ -1028,12 +1028,18 @@ func namespacesGroup(depth int) *Node {
 	if depth > 1 {
 		children = append(children, namespacesGroup(depth-1))
 	}
-	return DefineGroup("namespaces",
+	return DefineGroup("namespace",
 		DefineIterGroup(identityAttributes(), children...).
 			With(Singular("Namespace"),
-				// namespaces/shop/namespace.yaml, not config.yaml. The file says what
-				// it holds, and `config` stops being a word this vocabulary has spent.
-				Leaf("namespace"),
+				// namespace/shop/scope.yaml.
+				//
+				// NOT "namespace", which is what it was called while the kinds were
+				// plural. With singular kinds the nested namespaces live in a child
+				// group ALSO called `namespace`, at the same level — and a leaf whose
+				// name collides with a child group is skipped as the leaf and never
+				// walked as a group, which is the same silent drop that made `config`
+				// unusable. A leaf must not be named after any child of its own group.
+				Leaf("scope"),
 				GroupDoc("A named scope holding resources, and namespaces, of its own. Names resolve here first, then in the parent."),
 				secIdentity,
 				Icon("apps")))
@@ -1146,8 +1152,8 @@ func variablesGroup() *Node {
 		DefineIter([]*Attribute{
 			String("value", InSection("config"),
 				Doc("Value", "A literal, stored in git and readable by anyone who can read the repo. For anything that is not a secret.")),
-			String("secret", Ref("secrets", Prefix("secrets/")), InSection("config"),
-				Doc("From Secret", "Take the value from this secret, as \"secrets/<name>\". Only the reference is in git.")),
+			String("secret", Ref("secret", Prefix("secret/")), InSection("config"),
+				Doc("From Secret", "Take the value from this secret, as \"secret/<name>\". Only the reference is in git.")),
 		},
 			GroupDoc("One configuration entry, keyed by the name the workload reads it under."),
 		))

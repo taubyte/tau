@@ -1,0 +1,23 @@
+id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh
+description: takes an order and charges it
+source: module/paylib
+execution:
+    call: checkout
+    timeout: 20s
+    memory: 32MB
+cache:
+    orders:
+        ops: [get, put]
+        timeout: 200ms
+    sessions:
+        namespace: /shop
+        ops: [get]
+storage:
+    receipts:
+        ops: [put]
+secret:
+    stripe:
+        ops: [get]
+messaging:
+    orders:
+        ops: [publish]

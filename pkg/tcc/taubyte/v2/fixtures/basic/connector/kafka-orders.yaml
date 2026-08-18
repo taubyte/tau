@@ -1,0 +1,8 @@
+id: QmUNLLsPACCz1vLxQVkXqqLX5R1X345qqfHbsf67hvA3Nn
+description: holds the connection to an external kafka and republishes what it reads as cloudevents
+type: kafka
+polls: true
+credentials: secret/stripe
+messaging:
+    orders:
+        ops: [publish]

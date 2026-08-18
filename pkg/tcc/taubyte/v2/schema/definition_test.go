@@ -49,7 +49,7 @@ func only(t *testing.T, group map[string]any) map[string]any {
 // after compilation the instances are keyed by id, like every other resource.
 func namespace(t *testing.T, obj map[string]any, name string) map[string]any {
 	t.Helper()
-	ns, ok := obj["namespaces"].(map[string]any)
+	ns, ok := obj["namespace"].(map[string]any)
 	assert.Assert(t, ok, "namespaces missing")
 	for _, v := range ns {
 		if n := v.(map[string]any); n["name"] == name {
@@ -85,7 +85,7 @@ func compileBasic(t *testing.T) map[string]any {
 // back, the trigger block was extended rather than deleted and reachability is
 // still the function's business.
 func TestFunctionHasNoTrigger(t *testing.T) {
-	fn := namedResource(t, resources(t, compileBasic(t), "functions"), "checkout")
+	fn := namedResource(t, resources(t, compileBasic(t), "function"), "checkout")
 
 	for _, gone := range []string{"type", "local", "channel", "protocol", "command", "method", "methods", "domains", "paths", "secure"} {
 		_, present := fn[gone]
@@ -98,30 +98,30 @@ func TestFunctionHasNoTrigger(t *testing.T) {
 }
 
 // `libraries` -> `modules` carries into the reference form: a source of
-// "modules/<name>" resolves to "modules/<id>" against the compiled index.
+// "module/<name>" resolves to "module/<id>" against the compiled index.
 func TestModuleSourceResolves(t *testing.T) {
 	flat := compileBasic(t)
 	modID := ""
-	for id := range resources(t, flat, "modules") {
+	for id := range resources(t, flat, "module") {
 		modID = id
 	}
 	assert.Assert(t, modID != "", "no module compiled")
 
-	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
-	assert.Equal(t, fn["source"], "modules/"+modID)
+	fn := namedResource(t, resources(t, flat, "function"), "checkout")
+	assert.Equal(t, fn["source"], "module/"+modID)
 }
 
 // A queue's dead-letter is a ref to another queue, so a typo is a compile error
 // rather than a silently undelivered item.
 func TestQueueDeadLetterResolves(t *testing.T) {
-	queues := resources(t, compileBasic(t), "queues")
+	queues := resources(t, compileBasic(t), "queue")
 	assert.Equal(t, len(queues), 2)
 
 	var dl string
 	for id, v := range queues {
 		q := v.(map[string]any)
 		if s, ok := q["dead-letter"].(string); ok && s != "" {
-			dl = strings.TrimPrefix(s, "queues/")
+			dl = strings.TrimPrefix(s, "queue/")
 			assert.Assert(t, dl != s, "dead-letter lost its queues/ prefix")
 			assert.Assert(t, dl != id, "a queue must not dead-letter to itself")
 		}
@@ -136,12 +136,12 @@ func TestQueueDeadLetterResolves(t *testing.T) {
 func TestConnectorCredentialsResolve(t *testing.T) {
 	flat := compileBasic(t)
 	secretID := ""
-	for id := range resources(t, flat, "secrets") {
+	for id := range resources(t, flat, "secret") {
 		secretID = id
 	}
-	for _, v := range resources(t, flat, "connectors") {
+	for _, v := range resources(t, flat, "connector") {
 		conn := v.(map[string]any)
-		assert.Equal(t, conn["credentials"], "secrets/"+secretID,
+		assert.Equal(t, conn["credentials"], "secret/"+secretID,
 			"connector %q", conn["name"])
 	}
 }
@@ -154,7 +154,7 @@ func TestDatabaseEngineIsClosed(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/databases/orders.yaml", []byte(`
+	assert.NilError(t, afero.WriteFile(fs, "/database/orders.yaml", []byte(`
 id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
 engine:
     kafka:
@@ -173,18 +173,18 @@ engine:
 // host at all, so neither borrows the other's fields.
 func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 	flat := compileBasic(t)
-	dbs := resources(t, flat, "databases")
+	dbs := resources(t, flat, "database")
 
 	orders := namedResource(t, dbs, "orders")
 	assert.Equal(t, orders["engine/kind"], "postgres")
 	assert.Equal(t, orders["engine/host"], "db.example.com:5432")
-	assert.Assert(t, strings.HasPrefix(orders["engine/credentials"].(string), "secrets/"),
+	assert.Assert(t, strings.HasPrefix(orders["engine/credentials"].(string), "secret/"),
 		"credentials resolve to a secret id, never a value")
 	_, borrowed := orders["engine/distributed/size"]
 	assert.Assert(t, !borrowed)
 
 	obj := root(t, flat)
-	ledger := namedResource(t, namespace(t, obj, "billing")["databases"].(map[string]any), "ledger")
+	ledger := namedResource(t, namespace(t, obj, "billing")["database"].(map[string]any), "ledger")
 	assert.Equal(t, ledger["engine/kind"], "distributed")
 	for _, gone := range []string{"engine/host", "engine/credentials", "engine/database"} {
 		_, present := ledger[gone]
@@ -196,9 +196,9 @@ func TestDatabaseEngineCarriesItsOwnConnection(t *testing.T) {
 func TestNewKindsCompile(t *testing.T) {
 	flat := compileBasic(t)
 
-	assert.Equal(t, only(t, resources(t, flat, "crons"))["schedule"], "0 3 * * *")
-	assert.Equal(t, only(t, resources(t, flat, "caches"))["storage/ttl"], int64(86400000000000), "24h in nanoseconds")
-	assert.Equal(t, only(t, resources(t, flat, "secrets"))["source"], "value", "default applies")
+	assert.Equal(t, only(t, resources(t, flat, "cron"))["schedule"], "0 3 * * *")
+	assert.Equal(t, only(t, resources(t, flat, "cache"))["ttl"], int64(86400000000000), "24h in nanoseconds")
+	assert.Equal(t, only(t, resources(t, flat, "secret"))["source"], "value", "default applies")
 }
 
 // `namespaces` is the SCOPE container: its instances hold resources of their own,
@@ -208,14 +208,14 @@ func TestNamespaceScope(t *testing.T) {
 	obj := root(t, compileBasic(t))
 	shop := namespace(t, obj, "shop")
 
-	fn := namedResource(t, shop["functions"].(map[string]any), "notify")
+	fn := namedResource(t, shop["function"].(map[string]any), "notify")
 	assert.Equal(t, fn["source"], ".", "inline source is not a ref")
 	assert.Equal(t, fn["execution/call"], "notify")
 
-	kv := only(t, shop["caches"].(map[string]any))
+	kv := only(t, shop["cache"].(map[string]any))
 	assert.Equal(t, kv["match"], "sessions")
 
-	app := namedResource(t, resources(t, compileBasic(t), "applications"), "api")
+	app := namedResource(t, resources(t, compileBasic(t), "application"), "api")
 	assert.Equal(t, app["image"], "ghcr.io/acme/api:1.4", "applications is a compute kind, not a scope")
 	// what the platform assigns is never authored: the port is handed to the
 	// workload and tunnelled, and how many instances run is placement
@@ -230,9 +230,9 @@ func TestNamespaceScope(t *testing.T) {
 // own document, so the resource stays a plain file with its id at the root.
 func TestAccessIsPerTarget(t *testing.T) {
 	flat := compileBasic(t)
-	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
+	fn := namedResource(t, resources(t, flat, "function"), "checkout")
 
-	caches, ok := fn["caches"].(map[string]any)
+	caches, ok := fn["cache"].(map[string]any)
 	assert.Assert(t, ok, "no caches block on the function")
 
 	orders := caches["orders"].(map[string]any)
@@ -247,23 +247,23 @@ func TestAccessIsPerTarget(t *testing.T) {
 
 	// nesting did NOT cost the resource its own compile passes
 	assert.Equal(t, fn["execution/timeout"], int64(20000000000), "scalars still parse")
-	assert.Assert(t, strings.HasPrefix(fn["source"].(string), "modules/Qm"), "refs still resolve")
+	assert.Assert(t, strings.HasPrefix(fn["source"].(string), "module/Qm"), "refs still resolve")
 
 	// and a verb the kind does not implement is refused at load
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
-	assert.NilError(t, afero.WriteFile(fs, "/functions/checkout.yaml", []byte(`
+	assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(`
 id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh
 source: "."
 execution: {call: checkout, timeout: 20s, memory: 32MB}
-caches:
+cache:
     orders:
         ops: [query]
 `), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	_, _, err = c.Compile(context.Background())
-	assert.ErrorContains(t, err, "\"query\" is not something a caches does")
+	assert.ErrorContains(t, err, "\"query\" is not something a cache does")
 }
 
 // Ingress lives on the gateway, in its own flat document, the way a v1 function
@@ -276,13 +276,13 @@ caches:
 func TestGatewayRoute(t *testing.T) {
 	flat := compileBasic(t)
 
-	gw := only(t, resources(t, flat, "gateways"))
+	gw := only(t, resources(t, flat, "gateway"))
 	// The name lives on the gateway, and it names a ZONE plus a label rather than a
 	// flat fqdn — so a project moved to another cloud does not carry a name it does
 	// not have there.
 	assert.Equal(t, gw["host/kind"], "zone")
 	assert.Equal(t, gw["host/name"], "shop")
-	assert.Assert(t, strings.HasPrefix(gw["host/zone"].(string), "zones/"),
+	assert.Assert(t, strings.HasPrefix(gw["host/zone"].(string), "zone/"),
 		"the zone resolves to a compiled zone id")
 	assert.Equal(t, gw["certificate/source"], "generated", "generated unless it is provided")
 
@@ -300,7 +300,7 @@ func TestGatewayRoute(t *testing.T) {
 	assert.Assert(t, !standalone, "routes must not be a resource kind")
 
 	// and the function itself still says nothing about being reachable
-	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
+	fn := namedResource(t, resources(t, flat, "function"), "checkout")
 	for _, gone := range []string{"domains", "paths", "method", "type"} {
 		_, present := fn[gone]
 		assert.Assert(t, !present, "functions carries %q", gone)
@@ -315,7 +315,7 @@ func TestGatewayRoute(t *testing.T) {
 func TestNonHTTPHandlerKindIsRefused(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
-	assert.NilError(t, afero.WriteFile(fs, "/gateways/shop.yaml", []byte(`
+	assert.NilError(t, afero.WriteFile(fs, "/gateway/shop.yaml", []byte(`
 id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG
 route:
     path: /checkout
@@ -336,7 +336,7 @@ route:
 		"the refusal has to say what a handler may be")
 	// the position is the value's, so for a key holding a block it lands on the
 	// first line inside that block rather than on the key
-	assert.ErrorContains(t, err, "/gateways/shop.yaml:7:",
+	assert.ErrorContains(t, err, "/gateway/shop.yaml:7:",
 		"and where")
 }
 
@@ -346,15 +346,15 @@ route:
 func TestNamespacesNest(t *testing.T) {
 	shop := namespace(t, root(t, compileBasic(t)), "shop")
 
-	inner, ok := shop["namespaces"].(map[string]any)
+	inner, ok := shop["namespace"].(map[string]any)
 	assert.Assert(t, ok, "a namespace must be able to hold namespaces")
 	eu := only(t, inner)
 	assert.Equal(t, eu["name"], "eu")
 
 	// a third `sessions`, two levels down, distinct from both above it
-	kv := only(t, eu["caches"].(map[string]any))
+	kv := only(t, eu["cache"].(map[string]any))
 	assert.Equal(t, kv["match"], "sessions")
-	assert.Equal(t, kv["storage/size"], int64(2000000))
+	assert.Equal(t, kv["size"], int64(2000000))
 }
 
 // The cost of nesting, asserted so it cannot change silently: the interpreter's
@@ -366,15 +366,15 @@ func TestDeepNamespaceRefsAreNotResolved(t *testing.T) {
 
 	// the contrast first: a first-level namespace declares access like anywhere else
 	shop := namespace(t, root(t, flat), "shop")
-	notify := namedResource(t, shop["functions"].(map[string]any), "notify")
-	sessions := notify["caches"].(map[string]any)["sessions"].(map[string]any)
+	notify := namedResource(t, shop["function"].(map[string]any), "notify")
+	sessions := notify["cache"].(map[string]any)["sessions"].(map[string]any)
 	assert.DeepEqual(t, sessions["ops"], []string{"get"})
 
 	// two levels down there is nothing to resolve against yet, so the assertion is
 	// simply that the scope compiles at all and holds its own resources
-	eu := only(t, shop["namespaces"].(map[string]any))
+	eu := only(t, shop["namespace"].(map[string]any))
 	assert.Equal(t, eu["name"], "eu")
-	assert.Equal(t, len(eu["caches"].(map[string]any)), 1)
+	assert.Equal(t, len(eu["cache"].(map[string]any)), 1)
 }
 
 // Every verb has an effect class, assigned once, in the table next to the kind.
@@ -383,15 +383,15 @@ func TestEffectClasses(t *testing.T) {
 	for _, c := range []struct {
 		kind, verb, effect string
 	}{
-		{"caches", "get", schema.Read},
-		{"caches", "put", schema.Write},
-		{"caches", "watch", schema.Read}, // observes writes it cannot cause
-		{"databases", "query", schema.Read},
-		{"databases", "exec", schema.Write}, // the host cannot classify arbitrary SQL
+		{"cache", "get", schema.Read},
+		{"cache", "put", schema.Write},
+		{"cache", "watch", schema.Read}, // observes writes it cannot cause
+		{"database", "query", schema.Read},
+		{"database", "exec", schema.Write}, // the host cannot classify arbitrary SQL
 		{"messaging", "publish", schema.Write},
 		{"messaging", "subscribe", schema.Read},
-		{"functions", "invoke", schema.Write},
-		{"secrets", "get", schema.Read},
+		{"function", "invoke", schema.Write},
+		{"secret", "get", schema.Read},
 	} {
 		got, ok := schema.EffectOf(c.kind, c.verb)
 		assert.Assert(t, ok, "%s/%s has no effect class", c.kind, c.verb)
@@ -399,12 +399,12 @@ func TestEffectClasses(t *testing.T) {
 	}
 
 	// there is no write verb on a secret from a workload, ever
-	_, ok := schema.EffectOf("secrets", "put")
+	_, ok := schema.EffectOf("secret", "put")
 	assert.Assert(t, !ok, "secrets must have no write verb")
 
 	// and an HTTP method is a route's, never a kind's: a workload nameable by GET
 	// would be a second door into it that no gateway knows about
-	for _, kind := range []string{"functions", "applications", "websites", "gateways", "mcp"} {
+	for _, kind := range []string{"function", "application", "website", "gateway", "mcp"} {
 		for _, m := range []string{"GET", "POST"} {
 			_, ok := schema.EffectOf(kind, m)
 			assert.Assert(t, !ok, "%s must not carry the HTTP method %q as an op", kind, m)
@@ -422,12 +422,12 @@ func TestEffectClasses(t *testing.T) {
 // collapsed, every multi-tenant claim in v2 would be false.
 func TestNamespacesIsolateNames(t *testing.T) {
 	obj := root(t, compileBasic(t))
-	assert.Equal(t, len(obj["namespaces"].(map[string]any)), 2, "fixture should carry two namespaces")
+	assert.Equal(t, len(obj["namespace"].(map[string]any)), 2, "fixture should carry two namespaces")
 
 	shop, billing := namespace(t, obj, "shop"), namespace(t, obj, "billing")
 
 	sessionID := func(scope map[string]any) string {
-		for id, v := range scope["caches"].(map[string]any) {
+		for id, v := range scope["cache"].(map[string]any) {
 			if v.(map[string]any)["name"] == "sessions" {
 				return id
 			}
@@ -437,7 +437,7 @@ func TestNamespacesIsolateNames(t *testing.T) {
 	shopSessions, billingSessions := sessionID(shop), sessionID(billing)
 	assert.Assert(t, shopSessions != "" && billingSessions != "")
 	assert.Assert(t, shopSessions != billingSessions,
-		"caches/sessions in two namespaces must compile to two different resources")
+		"cache/sessions in two namespaces must compile to two different resources")
 }
 
 // Where a target lives is now stated, not inferred: an entry with no `namespace` is
@@ -452,14 +452,14 @@ func TestAccessNamesItsScope(t *testing.T) {
 	flat := compileBasic(t)
 
 	shop := namespace(t, root(t, flat), "shop")
-	notify := namedResource(t, shop["functions"].(map[string]any), "notify")
-	own := notify["caches"].(map[string]any)["sessions"].(map[string]any)
+	notify := namedResource(t, shop["function"].(map[string]any), "notify")
+	own := notify["cache"].(map[string]any)["sessions"].(map[string]any)
 	_, scoped := own["namespace"]
 	assert.Assert(t, !scoped, "a target in the resource's own scope needs no namespace")
 
 	// and from the project root, reaching into a namespace
-	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
-	elsewhere := fn["caches"].(map[string]any)["sessions"].(map[string]any)
+	fn := namedResource(t, resources(t, flat, "function"), "checkout")
+	elsewhere := fn["cache"].(map[string]any)["sessions"].(map[string]any)
 	assert.Equal(t, elsewhere["namespace"], "/shop")
 
 	// the two `sessions` are different resources; the entries name them, and the
@@ -479,11 +479,11 @@ func TestSiblingNamespaceIsNameableAndUnchecked(t *testing.T) {
 	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
 
 	// shop reaches into billing's books
-	assert.NilError(t, afero.WriteFile(fs, "/namespaces/shop/functions/notify.yaml", []byte(`
+	assert.NilError(t, afero.WriteFile(fs, "/namespace/shop/function/notify.yaml", []byte(`
 id: QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR
 source: "."
 execution: {call: notify, timeout: 5s, memory: 16MB}
-databases:
+database:
     ledger:
         namespace: /billing
         ops: [exec]
@@ -495,8 +495,8 @@ databases:
 	assert.NilError(t, err, "naming a sibling namespace compiles; nothing authorises it yet")
 
 	shop := namespace(t, root(t, obj.Flat()), "shop")
-	notify := namedResource(t, shop["functions"].(map[string]any), "notify")
-	ledger := notify["databases"].(map[string]any)["ledger"].(map[string]any)
+	notify := namedResource(t, shop["function"].(map[string]any), "notify")
+	ledger := notify["database"].(map[string]any)["ledger"].(map[string]any)
 	assert.Equal(t, ledger["namespace"], "/billing")
 	assert.DeepEqual(t, ledger["ops"], []string{"exec"})
 }
@@ -524,7 +524,7 @@ func copyTree(dst afero.Fs, from, to string) error {
 func TestZoneIsNotRouting(t *testing.T) {
 	flat := compileBasic(t)
 
-	zone := only(t, resources(t, flat, "zones"))
+	zone := only(t, resources(t, flat, "zone"))
 	assert.Equal(t, zone["fqdn"], "example.com")
 	records := zone["records"].([]string)
 	assert.Equal(t, len(records), 4)
@@ -537,11 +537,11 @@ func TestZoneIsNotRouting(t *testing.T) {
 	for k := range zone {
 		assert.Assert(t, !strings.HasPrefix(k, "use-"), "a zone declared %q", k)
 	}
-	_, ok := schema.EffectOf("zones", "get")
+	_, ok := schema.EffectOf("zone", "get")
 	assert.Assert(t, !ok, "zones must not be a target kind")
 
 	// and the gateway that serves a name under it still holds the ingress
-	gw := only(t, resources(t, flat, "gateways"))
+	gw := only(t, resources(t, flat, "gateway"))
 	assert.Equal(t, gw["host/name"], "shop")
 }
 
@@ -552,8 +552,8 @@ func TestNamespacePathForms(t *testing.T) {
 	obj := root(t, compileBasic(t))
 
 	shop := namespace(t, obj, "shop")
-	notify := namedResource(t, shop["functions"].(map[string]any), "notify")
-	caches := notify["caches"].(map[string]any)
+	notify := namedResource(t, shop["function"].(map[string]any), "notify")
+	caches := notify["cache"].(map[string]any)
 
 	// omitted: shop's own sessions
 	_, scoped := caches["sessions"].(map[string]any)["namespace"]
@@ -563,18 +563,18 @@ func TestNamespacePathForms(t *testing.T) {
 	assert.Equal(t, caches["orders"].(map[string]any)["namespace"], "/")
 
 	// absolute, from two levels down
-	eu := only(t, shop["namespaces"].(map[string]any))
-	relay := only(t, eu["functions"].(map[string]any))
-	assert.Equal(t, relay["databases"].(map[string]any)["ledger"].(map[string]any)["namespace"], "/billing")
+	eu := only(t, shop["namespace"].(map[string]any))
+	relay := only(t, eu["function"].(map[string]any))
+	assert.Equal(t, relay["database"].(map[string]any)["ledger"].(map[string]any)["namespace"], "/billing")
 
 	// and the shape is checked at load
 	for _, bad := range []string{"shop/", "shop//eu", "../billing", "Shop-EU"} {
 		fs := afero.NewMemMapFs()
 		assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
-		assert.NilError(t, afero.WriteFile(fs, "/functions/checkout.yaml", []byte(
+		assert.NilError(t, afero.WriteFile(fs, "/function/checkout.yaml", []byte(
 			"id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\n"+
 				"source: \".\"\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"+
-				"caches:\n    orders:\n        namespace: "+bad+"\n        ops: [get]\n"), 0o644))
+				"cache:\n    orders:\n        namespace: "+bad+"\n        ops: [get]\n"), 0o644))
 		c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 		assert.NilError(t, err)
 		_, _, err = c.Compile(context.Background())
@@ -589,12 +589,12 @@ func TestNamespacePathForms(t *testing.T) {
 func TestAccessEntryModifiers(t *testing.T) {
 	flat := compileBasic(t)
 
-	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
-	orders := fn["caches"].(map[string]any)["orders"].(map[string]any)
+	fn := namedResource(t, resources(t, flat, "function"), "checkout")
+	orders := fn["cache"].(map[string]any)["orders"].(map[string]any)
 	assert.Equal(t, orders["timeout"], int64(200000000), "200ms parses to nanoseconds")
 
 	// and an entry that names none carries none
-	sessions := fn["caches"].(map[string]any)["sessions"].(map[string]any)
+	sessions := fn["cache"].(map[string]any)["sessions"].(map[string]any)
 	_, present := sessions["timeout"]
 	assert.Assert(t, !present, "an unauthored modifier must not appear")
 }
@@ -606,13 +606,13 @@ func TestTargetOwnsThePolicy(t *testing.T) {
 	flat := compileBasic(t)
 
 	// the cache being reached carries the authorizer
-	orders := namedResource(t, resources(t, flat, "caches"), "orders")
+	orders := namedResource(t, resources(t, flat, "cache"), "orders")
 	assert.Equal(t, orders["authorizer/name"], "tier_check")
 	assert.Equal(t, orders["authorizer/namespace"], "/shop")
 
 	// the caller states what it asks for, and names no authorizer
-	fn := namedResource(t, resources(t, flat, "functions"), "checkout")
-	entry := fn["caches"].(map[string]any)["orders"].(map[string]any)
+	fn := namedResource(t, resources(t, flat, "function"), "checkout")
+	entry := fn["cache"].(map[string]any)["orders"].(map[string]any)
 	assert.DeepEqual(t, entry["ops"], []string{"get", "put"})
 	for _, gone := range []string{"via", "via-namespace", "authorizer", "authorizer/name"} {
 		_, present := entry[gone]
@@ -620,7 +620,7 @@ func TestTargetOwnsThePolicy(t *testing.T) {
 	}
 
 	// a kind nothing can reach has no authorizer to declare
-	zone := only(t, resources(t, flat, "zones"))
+	zone := only(t, resources(t, flat, "zone"))
 	_, present := zone["authorizer/name"]
 	assert.Assert(t, !present, "a kind with no ops is not reachable, so it authorises nothing")
 }
@@ -631,7 +631,7 @@ func TestTargetOwnsThePolicy(t *testing.T) {
 func TestPortsAreNamed(t *testing.T) {
 	flat := compileBasic(t)
 
-	app := namedResource(t, resources(t, flat, "applications"), "api")
+	app := namedResource(t, resources(t, flat, "application"), "api")
 	ports := app["ports"].(map[string]any)
 	assert.Equal(t, ports["http"].(map[string]any)["number"], 8080, "the number is the INTERNAL one")
 	assert.Equal(t, ports["metrics"].(map[string]any)["number"], 9090)
@@ -643,7 +643,7 @@ func TestPortsAreNamed(t *testing.T) {
 	assert.Equal(t, app["liveness/port"], "http")
 
 	// or a function decides, which is a different kind of answer and says so
-	pool := namedResource(t, resources(t, flat, "applications"), "worker_pool")
+	pool := namedResource(t, resources(t, flat, "application"), "worker_pool")
 	assert.Equal(t, pool["readiness/kind"], "function")
 	assert.Equal(t, pool["readiness/function/name"], "pool_ready")
 
@@ -655,7 +655,7 @@ func TestPortsAreNamed(t *testing.T) {
 	assert.Assert(t, !probe, "a function-checked workload declares no probe path")
 
 	// so does a route targeting the workload
-	gw := only(t, resources(t, flat, "gateways"))
+	gw := only(t, resources(t, flat, "gateway"))
 	assert.Equal(t, gw["route/handler/kind"], "application")
 	assert.Equal(t, gw["route/handler/port"], "http")
 
@@ -675,7 +675,7 @@ func TestPortsAreNamed(t *testing.T) {
 // a function doing the same is not — while the guest HTTP client is exactly as real as
 // the container's socket.
 func TestEveryWorkloadCanDeclareEgress(t *testing.T) {
-	for _, kind := range []string{"applications", "functions", "workers", "entities", "sandboxes"} {
+	for _, kind := range []string{"application", "function", "worker", "entity", "sandbox"} {
 		var found bool
 		for _, g := range schema.CompileRoot().Children {
 			if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
@@ -694,7 +694,7 @@ func TestEveryWorkloadCanDeclareEgress(t *testing.T) {
 // A cron expression alone does not name a moment: "0 3 * * *" is a different instant
 // in every zone.
 func TestCronCarriesItsTimezone(t *testing.T) {
-	cron := only(t, resources(t, compileBasic(t), "crons"))
+	cron := only(t, resources(t, compileBasic(t), "cron"))
 	assert.Equal(t, cron["schedule"], "0 3 * * *")
 	assert.Equal(t, cron["timezone"], "Europe/Paris", "the zone the schedule is written in")
 	assert.Equal(t, cron["on-overlap"], "skip", "the only choice that cannot make things worse")
@@ -703,28 +703,28 @@ func TestCronCarriesItsTimezone(t *testing.T) {
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/crons/c.yaml",
+	assert.NilError(t, afero.WriteFile(fs, "/cron/c.yaml",
 		[]byte("id: QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4\nschedule: \"@daily\"\n"), 0o644))
 	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
-	assert.Equal(t, only(t, resources(t, obj.Flat(), "crons"))["timezone"], "UTC")
+	assert.Equal(t, only(t, resources(t, obj.Flat(), "cron"))["timezone"], "UTC")
 }
 
 // Whether credentials cross a network in the clear is not a question to answer with a
 // default nobody reads — and a default would also land on a distributed database that
 // never opens a socket.
 func TestExternalDatabaseMustStateItsTransport(t *testing.T) {
-	orders := namedResource(t, resources(t, compileBasic(t), "databases"), "orders")
+	orders := namedResource(t, resources(t, compileBasic(t), "database"), "orders")
 	assert.Equal(t, orders["engine/tls"], "verify-full")
 
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
 		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/secrets/k.yaml",
+	assert.NilError(t, afero.WriteFile(fs, "/secret/k.yaml",
 		[]byte("id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/databases/x.yaml", []byte(`
+	assert.NilError(t, afero.WriteFile(fs, "/database/x.yaml", []byte(`
 id: QmSgvGwSJmtqBCJ8Zw3rNKtCCTqTFcqSUQqLYyPBnW6cVs
 engine:
     postgres:
@@ -735,12 +735,12 @@ engine:
 	assert.NilError(t, err)
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err, "omitting it is allowed; absent means verify-full")
-	x := namedResource(t, resources(t, obj.Flat(), "databases"), "x")
+	x := namedResource(t, resources(t, obj.Flat(), "database"), "x")
 	_, stated := x["engine/tls"]
 	assert.Assert(t, !stated, "and it stays absent rather than compiling a value nobody wrote")
 
 	// and tau's own engine is never asked the question
-	ledger := namedResource(t, namespace(t, root(t, compileBasic(t)), "billing")["databases"].(map[string]any), "ledger")
+	ledger := namedResource(t, namespace(t, root(t, compileBasic(t)), "billing")["database"].(map[string]any), "ledger")
 	_, present := ledger["engine/tls"]
 	assert.Assert(t, !present, "a distributed database opens no socket")
 }
@@ -779,7 +779,7 @@ func TestEverySectionAnAttributeClaimsIsDeclared(t *testing.T) {
 // which secrets it may read — but not a log level, so the only place to put one was
 // inside the image, which makes one image per environment.
 func TestWorkloadVariables(t *testing.T) {
-	api := namedResource(t, resources(t, compileBasic(t), "applications"), "api")
+	api := namedResource(t, resources(t, compileBasic(t), "application"), "api")
 	vars, ok := api["variables"].(map[string]any)
 	assert.Assert(t, ok, "no variables block")
 
@@ -788,12 +788,12 @@ func TestWorkloadVariables(t *testing.T) {
 
 	// a secret is a REFERENCE: the value never enters the config
 	from := vars["STRIPE_KEY"].(map[string]any)["secret"].(string)
-	assert.Assert(t, strings.HasPrefix(from, "secrets/Qm"), "got %q, want a resolved secret id", from)
+	assert.Assert(t, strings.HasPrefix(from, "secret/Qm"), "got %q, want a resolved secret id", from)
 	_, literal := vars["STRIPE_KEY"].(map[string]any)["value"]
 	assert.Assert(t, !literal)
 
 	// every workload kind can be configured, not just the container one
-	for _, kind := range []string{"applications", "functions", "workers", "entities", "sandboxes"} {
+	for _, kind := range []string{"application", "function", "worker", "entity", "sandbox"} {
 		var found bool
 		for _, g := range schema.CompileRoot().Children {
 			if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {

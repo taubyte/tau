@@ -12,7 +12,7 @@ import (
 // completes from, the JSON Schema, and the effect class a query groups by are all
 // read back off this declaration, so none of them can drift from it.
 //
-//	DefineGroup("caches", resource(…,
+//	DefineGroup("cache", resource(…,
 //	    Ops(Read("get"), Read("list"), Read("watch"), Write("put"), Write("delete")),
 //	))
 //
@@ -89,8 +89,10 @@ func OpsOf(kind string) []Verb {
 // resource does to another inside the cloud, an ingress is how something from outside
 // arrives. A kind with neither is not a target at all.
 func ServedByRoute(kind string) bool {
+	// No pluralisation to undo any more: a handler kind IS the kind's name. That
+	// `k+"s"` existed only because the vocabulary named the same thing two ways.
 	for _, k := range append(handlerKinds, proxyHandlerKinds...) {
-		if k+"s" == kind || k == kind {
+		if k == kind {
 			return true
 		}
 	}

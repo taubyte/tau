@@ -1,0 +1,7 @@
+id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB
+match: orders
+size: 32MB
+ttl: 24h
+authorizer:
+    name: tier_check
+    namespace: /shop

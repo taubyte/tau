@@ -1,0 +1,15 @@
+id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY
+description: postgres - nothing about it is http, so no gateway can reach it
+image: "ghcr.io/acme/postgres:16"
+ports:
+    pg: 5432
+readiness:
+    http:
+        port: pg
+        path: /
+image-pull-secret: secret/stripe
+execution:
+    memory: 2GB
+    cpu: 2000
+limits:
+    max-instances: 1

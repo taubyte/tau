@@ -224,7 +224,7 @@ var Omissions = []Omission{
 			"DSL. Zone-file notation is the format every provider imports and exports, so nothing " +
 			"is unexpressible — but the compiler cannot validate a record field by field, complete " +
 			"a type, or point at the line that is wrong.",
-		Instead:  "zones/<name>.records, one zone-file line per entry.",
+		Instead:  "zone/<name>.records, one zone-file line per entry.",
 		Unblocks: "the same missing shape as the route rules: an attribute that can hold a list of objects.",
 	},
 	{

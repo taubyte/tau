@@ -1,8 +1,0 @@
-id: QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4
-schedule: "0 3 * * *"
-timezone: Europe/Paris
-on-overlap: skip
-jitter: 45s
-functions:
-    checkout:
-        ops: [invoke]

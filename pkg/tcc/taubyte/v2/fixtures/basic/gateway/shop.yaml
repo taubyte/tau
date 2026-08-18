@@ -1,0 +1,29 @@
+id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG
+description: the public entry point
+host:
+    zone:
+        in: zone/example-com
+        name: shop
+certificate:
+    source: generated
+route:
+    path: /checkout
+    match: prefix
+    methods: [POST]
+    handler:
+        application:
+            name: api
+            port: http
+transformers:
+    redact:
+        order: 1
+    tier_header:
+        namespace: /shop
+        order: 2
+        direction: both
+cors:
+    origins: ["https://shop.example.com"]
+rate-limit:
+    rpm: 600
+    burst: 60
+    key: ip

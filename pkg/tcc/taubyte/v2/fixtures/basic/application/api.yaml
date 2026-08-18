@@ -1,0 +1,34 @@
+id: QmVUyCkPnH4TfoyRmnAXPzGZ4PGwVJ9wJTvGXFqSaYbnGF
+description: the storefront api; two listening ports, named so nothing repeats a number
+image: "ghcr.io/acme/api:1.4"
+ports:
+    http: 8080
+    metrics: 9090
+readiness:
+    http:
+        port: http
+        path: /healthz
+liveness:
+    http:
+        port: http
+        path: /livez
+    failures: 5
+execution:
+    memory: 512MB
+limits:
+    max-instances: 10
+    concurrency: 80
+variables:
+    LOG_LEVEL:
+        value: info
+    REGION:
+        value: eu-west
+    STRIPE_KEY:
+        secret: secret/stripe
+egress: [api.stripe.com]
+cache:
+    orders:
+        ops: [get, put]
+secret:
+    stripe:
+        ops: [get]

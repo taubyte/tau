@@ -71,7 +71,7 @@ export function iconOf(kind: string): string {
   return ICON[kind] ?? "";
 }
 
-const isScopeContainer = (k: string) => k === "namespaces";
+const isScopeContainer = (k: string) => k === "namespace";
 
 export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel = ""): Graph {
   const nodes: Node[] = [];
@@ -139,7 +139,7 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
               zone: typeof res["host/zone"] === "string" ? (res["host/zone"] as string) : null,
             }
           : undefined,
-      zoneFqdn: group === "zones" && typeof res.fqdn === "string" ? (res.fqdn as string) : undefined,
+      zoneFqdn: group === "zone" && typeof res.fqdn === "string" ? (res.fqdn as string) : undefined,
       dial: typeof res.protocol === "string"
         ? `${res.protocol}${typeof res.service === "string" ? ` · _${res.service}._${res.protocol}` : ""}`
         : undefined,
@@ -299,10 +299,10 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
   for (const pol of pendingPolicy) {
     const own = nodes.find((n) => n.id === pol.from)?.scope ?? "";
     for (const scope of scopeOf(own, pol.scope)) {
-      const target = nodes.find((n) => n.kind === "functions" && n.name === pol.name && n.scope === scope);
+      const target = nodes.find((n) => n.kind === "function" && n.name === pol.name && n.scope === scope);
       if (target) {
         arrows.push({
-          from: pol.from, to: target.id, kind: "functions",
+          from: pol.from, to: target.id, kind: "function",
           verb: pol.verb, effect: "read", policy: true,
         });
         break;

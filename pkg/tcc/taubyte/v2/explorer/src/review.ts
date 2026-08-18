@@ -72,7 +72,7 @@ export function review(g: Graph, compiled: Compiled, verbs: KindVerbs[]): Review
   // A workload nothing fronts is not always wrong: a queue consumer is started by
   // work arriving, not by a request. The distinction is whether it consumes anything.
   for (const n of g.nodes) {
-    if (n.kind !== "applications" && n.kind !== "websites" && n.kind !== "mcp") continue;
+    if (n.kind !== "application" && n.kind !== "website" && n.kind !== "mcp") continue;
     if (servedBy(g, n.id).length) continue;
 
     const consumes = g.arrows.some((a) => a.to === n.id && delivered.has(`${a.kind}/${a.verb.split(", ")[0]}`));
@@ -137,7 +137,7 @@ export function review(g: Graph, compiled: Compiled, verbs: KindVerbs[]): Review
 
   // ---- a container told to receive, with nowhere to put it --------------------
   for (const n of g.nodes) {
-    if (n.kind !== "applications") continue;
+    if (n.kind !== "application") continue;
     const res = raw.get(n.id);
     if (!res) continue;
     for (const [group, val] of Object.entries(res)) {
@@ -176,7 +176,7 @@ export function review(g: Graph, compiled: Compiled, verbs: KindVerbs[]): Review
 
   // ---- who can read a secret -------------------------------------------------
   for (const n of g.nodes) {
-    if (n.kind !== "secrets") continue;
+    if (n.kind !== "secret") continue;
     const readers = g.arrows
       .filter((a) => a.to === n.id)
       .map((a) => g.byId.get(a.from))

@@ -25,8 +25,8 @@ every construct. `functions` alone answers most questions.
 
 | Authored | Loaded by |
 |---|---|
-| `functions/checkout.yaml` — a resource, one flat file, `id` at the document root | `DefineGroup("functions", DefineIter(attrs…))` |
-| `namespaces/shop/namespace.yaml` + `namespaces/shop/functions/*.yaml` — a scope | `DefineGroup("namespaces", DefineIterGroup(attrs, groups…).With(Leaf("namespace")))` |
+| `function/checkout.yaml` — a resource, one flat file, `id` at the document root | `DefineGroup("functions", DefineIter(attrs…))` |
+| `namespace/shop/namespace.yaml` + `namespace/shop/functions/*.yaml` — a scope | `DefineGroup("namespace", DefineIterGroup(attrs, groups…).With(Leaf("scope")))` |
 | `clouds:` as a map inside the project's `project.yaml` | `DefineGroup("clouds", DefineIter(attrs…))` |
 
 A **resource** (`DefineIter`, `Group == false`) reads its attributes from the
@@ -129,10 +129,26 @@ and out ⇒ the field is set and then deleted, silently. Only tag when the name 
 
 ---
 
+### Kind names are SINGULAR
+
+`function/checkout.yaml`, `cache: { orders: … }` — the identifier names the KIND, not the
+collection. It reads "a function named checkout", and it is one rule with no exceptions:
+`messaging` and `mcp` could never be pluralised, `storages` was not a word anyone says,
+and `ServedByRoute` carried a `k+"s"` to bridge singular handler kinds to plural group
+names. That hack is gone.
+
+A consequence worth knowing: a kind name may no longer collide with a resource's own
+block. `cache` used to keep its capacity under `storage:` while the access group for
+storages was `storages:`; singular made both `storage:`. The cache's fields are `size:`
+and `ttl:` at the top level now. `/tmp`-style throwaway check for this lives in the
+review notes — the rule is that no attribute path may START with a kind name.
+
+---
+
 ## 5. Things that do not exist — stop looking
 
 - **A wrapper for the access block.** A resource declares what it reaches as
-  `databases:` / `storages:` / `secrets:` at the top level of its own document, the way
+  `database:` / `storage:` / `secret:` at the top level of its own document, the way
   it declares `source:` and `execution:`. There is no `uses:` (or `edges:`) key; it read
   as a section bolted onto the resource and it only ever existed because it was easier
   to generate.

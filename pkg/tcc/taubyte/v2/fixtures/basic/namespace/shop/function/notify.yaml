@@ -1,0 +1,21 @@
+id: QmbWqxBEKC3P8tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnR
+description: in shop; its own sessions cache, the project-wide orders by absolute path, and eu's relay by a RELATIVE one
+source: "."
+execution:
+    call: notify
+    timeout: 5s
+    memory: 16MB
+cache:
+    sessions:
+        ops: [get]
+    orders:
+        namespace: /
+        ops: [get]
+function:
+    relay:
+        namespace: eu
+        ops: [invoke]
+messaging:
+    orders:
+        namespace: /
+        ops: [subscribe]
