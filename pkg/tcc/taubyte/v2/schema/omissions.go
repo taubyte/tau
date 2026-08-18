@@ -103,40 +103,22 @@ var Omissions = []Omission{
 			"that needs the FULL name cannot hold it. `cors.origins` is the live case: it takes " +
 			"literal origins, and an author cannot write an origin they will not know until the " +
 			"project is deployed. Today that field is only usable with a zone you own.",
-		Instead: "a zone you own, where the name is known when it is authored.",
-		Unblocks: "a symbolic form — a `self` token, or origins expressed as references to a host " +
-			"rather than as strings — resolved by the same pass that resolves the name.",
+		Instead: "`cors.allow-self`, which says \"the origin this gateway answers on\" without " +
+			"naming it. A literal origin for some OTHER generated host is still unwritable.",
+		Unblocks: "origins expressed as references to a host rather than as strings, resolved the " +
+			"same way every other reference is.",
 	},
 	{
-		Name:    "configuration as a FILE, and a mutual exclusion the DSL cannot state",
+		Name:    "a mutual exclusion the DSL cannot state",
 		State:   Open,
 		Decided: Forced,
-		Why: "`variables` covers a workload's configuration as NAMED VALUES, which is what an " +
-			"environment variable is. It does not cover a certificate or a 40KB json document: " +
-			"those want a path on a filesystem, which is a second delivery mechanism rather than a " +
-			"second source. Separately, an entry carries a literal `value` or a `secret` reference " +
-			"and nothing can say \"exactly one of these\" — a mutual exclusion has no representation " +
-			"here any more than a list of objects does.",
+		Why: "A variables entry carries a literal `value` or a `secret` reference, and nothing in " +
+			"the schema can say \"exactly one of these\" — a mutual exclusion has no representation " +
+			"here any more than a list of objects does. The same is true of `path`, which is " +
+			"required only when the entry is delivered as a file.",
 		Instead: "named values only, and a publish-time check for the exclusion — the fifth thing " +
 			"that pass owes.",
 		Unblocks: "an `as: file` with a path when something needs one, which is additive.",
-	},
-	{
-		Name:    "a function's host interface",
-		State:   Open,
-		Decided: ByOwner,
-		Why: "A function is named in four places that hand it four DIFFERENT worlds: a handler " +
-			"gets a request, an authorizer gets a caller and an operation and answers with ops, a " +
-			"gateway transformer gets a parsed HTTP request, a proxy transformer gets bytes on a " +
-			"stream. Each is its own host SDK and its own WIT world, and NOTHING IN A FUNCTION " +
-			"SAYS WHICH ONE IT WAS BUILT AGAINST. So naming a gateway transformer on a proxy " +
-			"compiles clean and fails at runtime, on traffic, and the config that caused it looks " +
-			"correct. This is the one place the vocabulary knows something it refuses to check.",
-		Instead: "nothing. The build breaks late, or the transformer is handed a world it cannot " +
-			"parse.",
-		Unblocks: "an owner call on whether a function declares its world — one attribute, an " +
-			"InSet over the interfaces, checked where the function is named. It is small, and it " +
-			"changes how every function is authored, which is why it is not taken here.",
 	},
 	{
 		Name:    "SNI routing / multiplexing several proxies onto one address",

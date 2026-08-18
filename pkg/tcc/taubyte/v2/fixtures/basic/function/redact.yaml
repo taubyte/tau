@@ -1,5 +1,6 @@
 id: QmPZ9XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuK
 description: strips card numbers out of request bodies on the way in - built against the gateway transformer interface
+implements: gateway-transformer
 source: "."
 execution:
     call: redact

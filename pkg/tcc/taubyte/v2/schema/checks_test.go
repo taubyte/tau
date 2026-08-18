@@ -166,3 +166,64 @@ func TestWebsiteServingMode(t *testing.T) {
 	assert.Equal(t, site["serve/mode"], "spa")
 	assert.Equal(t, site["serve/index"], "index.html", "the default a directory request returns")
 }
+
+// Every USE of a function is a place tcc can see, and the function says which world it
+// was built against — so "compiles clean, fails on live traffic" becomes an error at
+// compile.
+func TestAuditHostWorlds(t *testing.T) {
+	fn := func(world string) string {
+		body := "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nsource: \".\"\nexecution: {call: c, timeout: 1s, memory: 1MB}\n"
+		if world != "" {
+			body += "implements: " + world + "\n"
+		}
+		return body
+	}
+	gw := "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        application:\n            name: a\n            port: p\ntransformers:\n    t:\n        order: 1\n"
+	app := appBody + "ports:\n    p:\n        number: 80\n"
+
+	// built for a gateway, used by a gateway
+	found := auditDocs(t, nil, map[string]string{
+		"/function/t.yaml": fn("gateway-transformer"), "/gateway/g.yaml": gw, "/application/a.yaml": app,
+	})
+	hasNo(t, found, "is used as a")
+
+	// built as a plain handler, used as a transformer
+	found = auditDocs(t, nil, map[string]string{
+		"/function/t.yaml": fn(""), "/gateway/g.yaml": gw, "/application/a.yaml": app,
+	})
+	has(t, found, schema.Broken, "is used as a gateway-transformer")
+
+	// built for a gateway, used by a proxy
+	found = auditDocs(t, nil, map[string]string{
+		"/function/t.yaml":    fn("gateway-transformer"),
+		"/application/a.yaml": app,
+		"/proxy/p.yaml":       "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nprotocol: tcp\nhost:\n    generated:\n        name: db\ntransformers:\n    t:\n        order: 1\nhandler:\n    application:\n        name: a\n        port: p\n",
+	})
+	has(t, found, schema.Broken, "is used as a proxy-transformer")
+}
+
+// Only a container listens on ports. A route naming one on a website points at
+// something that does not exist — the field is on the handler block for every kind
+// because which kinds have ports is not something the schema can condition on.
+func TestAuditHandlerPorts(t *testing.T) {
+	found := auditDocs(t, nil, map[string]string{
+		"/website/w.yaml": "id: QmS4ustL54uo8FzR9455qaxZwuMiUhyvMcX9Ba8nUH4uVv\nsource:\n    branch: main\n    github:\n        id: \"1\"\n        fullname: acme/w\n",
+		"/gateway/g.yaml": "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        website:\n            name: w\n            port: http\n",
+	})
+	has(t, found, schema.Broken, "names port \"http\" on a website")
+}
+
+// A file has to be mounted somewhere the workload can open it.
+func TestAuditVariableAsFile(t *testing.T) {
+	found := auditDocs(t, nil, map[string]string{
+		"/secret/k.yaml":      "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n",
+		"/application/a.yaml": appBody + "variables:\n    CERT:\n        secret: secret/k\n        as: file\n",
+	})
+	has(t, found, schema.Broken, "names no path")
+
+	found = auditDocs(t, nil, map[string]string{
+		"/secret/k.yaml":      "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n",
+		"/application/a.yaml": appBody + "variables:\n    CERT:\n        secret: secret/k\n        as: file\n        path: /etc/tls/cert.pem\n",
+	})
+	hasNo(t, found, "names no path")
+}

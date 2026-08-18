@@ -127,8 +127,24 @@ var secNetwork = Section("network", "Network", "How this workload is reached, an
 // wasmAttributes is the shared shape of everything that runs a WASM entrypoint —
 // function, worker's wasm half, entity and authorizer. Declared once because the
 // four differ in what points AT them, never in how they run.
+// hostWorlds are the interfaces a WASM workload can be built against. A function is
+// named in four places that hand it four DIFFERENT worlds, and nothing in the function
+// said which — so a gateway transformer named on a proxy compiled clean and failed on
+// live traffic, holding bytes it tried to read as a request.
+//
+// Declared rather than inferred, and defaulted to `handler` so the common case writes
+// nothing. What makes it enforceable is that every USE is a place tcc can see: an
+// authorizer field, a transformer entry, a route handler. Audit compares the two.
+//
+// The honest limit: this is the config's word for it, not the artifact's. If the build
+// can read the world out of the component's WIT imports, that is the better source and
+// this becomes the thing checked against it rather than the thing believed.
+var hostWorlds = []string{"handler", "authorizer", "gateway-transformer", "proxy-transformer"}
+
 func wasmAttributes(attrs ...*Attribute) []*Attribute {
 	return commonAttributes(append([]*Attribute{
+		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
+			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream.")),
 		String("source", Required(), Ref("module", Prefix("module/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"module/<name>\" to build from a defined module.")),
 		String("execution/call", Path("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
 		Duration("execution/timeout", Path("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
@@ -825,6 +841,13 @@ var V2Resources = []*Node{
 				String("route/handler/name", Path("route", "handler", Either(handlerKinds...), "name"), Required(), IsVariableName(), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
 				String("route/handler/port", Path("route", "handler", Either(handlerKinds...), "port"), IsVariableName(), InSection("handler"), Doc("Port", "Which of the handler's ports to reach, by name. A workload listening on more than one has to be told which, and the number is never written here — the platform assigns the external one, and there may be several instances of the workload on one host.")),
 
+				// The name this gateway answers on, whatever it turns out to be. A
+				// generated host is `<label>.<project>.<cloud fqdn>` and the cloud's
+				// half is not knowable when the config is written, so an author cannot
+				// put their own origin in the list below — which made cors usable with
+				// a zone you own and not with the default path.
+				Bool("cors/allow-self", Path("cors", "allow-self"), InSection("policy"),
+					Doc("Allow Own Origin", "Allow the origin this gateway itself answers on. The only way to say it when the name is generated.")),
 				StringSlice("cors/origins", Path("cors", "origins"), InSection("policy"), Doc("CORS Origins", "Origins allowed by CORS.")),
 				StringSlice("cors/methods", Path("cors", "methods"), InSection("policy"), Doc("CORS Methods", "Methods allowed by CORS.")),
 				Int("rate-limit/rpm", Path("rate-limit", "rpm"), InSection("policy"), Doc("Rate Limit", "Requests per minute.")),
@@ -1188,6 +1211,16 @@ func variablesGroup() *Node {
 				Doc("Value", "A literal, stored in git and readable by anyone who can read the repo. For anything that is not a secret.")),
 			String("secret", Ref("secret", Prefix("secret/")), InSection("config"),
 				Doc("From Secret", "Take the value from this secret, as \"secret/<name>\". Only the reference is in git.")),
+
+			// An environment variable has a size limit and no structure, so a
+			// certificate, a private key or a large json document cannot travel as
+			// one. A file is a second DELIVERY MECHANISM rather than a second source:
+			// the value still comes from `value` or `secret`, it just arrives
+			// somewhere a program can open.
+			String("as", InSet("env", "file"), Default("env"), InSection("config"),
+				Doc("Delivered As", "env: an environment variable named by this entry's key. file: a file the workload can read, at `path`.")),
+			String("path", ShowWhen("as", "file"), InSection("config"),
+				Doc("Path", "Absolute path the file is mounted at, e.g. \"/etc/tls/cert.pem\". Required when delivered as a file.")),
 		},
 			GroupDoc("One configuration entry, keyed by the name the workload reads it under."),
 		))

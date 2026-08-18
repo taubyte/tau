@@ -101,6 +101,8 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	out = append(out, checkVariables(all)...)
 	out = append(out, checkTransformerWorlds(all)...)
 	out = append(out, checkMountedSites(all)...)
+	out = append(out, checkHostWorlds(all)...)
+	out = append(out, checkHandlerPorts(all)...)
 	out = append(out, checkExternal(all, r)...)
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -326,6 +328,13 @@ func checkVariables(all []compiled) []Finding {
 			if !ok {
 				continue
 			}
+			if as, _ := entry["as"].(string); as == "file" {
+				if p, _ := entry["path"].(string); p == "" {
+					out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+						fmt.Sprintf("variable %q is delivered as a file and names no path", name),
+						"A file has to be mounted somewhere the workload can open it."})
+				}
+			}
 			_, literal := entry["value"]
 			_, secret := entry["secret"]
 			switch {
@@ -363,6 +372,102 @@ func checkMountedSites(all []compiled) []Finding {
 		out = append(out, Finding{Check, res.kind, res.name, res.scope,
 			fmt.Sprintf("serves a website at %q and does not strip the prefix", path),
 			fmt.Sprintf("The site receives %s/... and was almost certainly built for /, so every page is a file it does not have. Set route.strip-prefix, or build the site with %s as its base.", path, path)})
+	}
+	return out
+}
+
+// checkHostWorlds: every USE of a function is a place tcc can see, and the function
+// says which world it was built against. Comparing the two is what turns "compiles
+// clean, fails on live traffic" into an error at compile.
+func checkHostWorlds(all []compiled) []Finding {
+	world := map[string]string{} // "scope\x00name" -> declared world
+	for _, res := range all {
+		if res.kind != "function" {
+			continue
+		}
+		w := res.str("implements")
+		if w == "" {
+			w = "handler"
+		}
+		world[res.scope+"\x00"+res.name] = w
+	}
+
+	// A use names a function and expects one world of it.
+	type use struct{ name, scope, wants, where string }
+	var uses []use
+	for _, res := range all {
+		if n := res.str("authorizer/name"); n != "" {
+			uses = append(uses, use{n, res.str("authorizer/namespace"), "authorizer", res.kind + "/" + res.name + " authorizer"})
+		}
+		wants := ""
+		switch res.kind {
+		case "gateway":
+			wants = "gateway-transformer"
+		case "proxy":
+			wants = "proxy-transformer"
+		}
+		if wants != "" {
+			for name, v := range res.block("transformers") {
+				entry, _ := v.(map[string]any)
+				ns, _ := entry["namespace"].(string)
+				uses = append(uses, use{name, ns, wants, res.kind + "/" + res.name + " transformers"})
+			}
+		}
+		if res.str("route/handler/kind") == "function" {
+			uses = append(uses, use{res.str("route/handler/name"), res.str("route/handler/namespace"), "handler", res.kind + "/" + res.name + " route"})
+		}
+	}
+
+	var out []Finding
+	for _, u := range uses {
+		got, known := lookupWorld(world, u.name, u.scope)
+		if !known || got == u.wants {
+			continue
+		}
+		out = append(out, Finding{Broken, "function", u.name, u.scope,
+			fmt.Sprintf("is used as a %s by %s, and implements %s", u.wants, u.where, got),
+			"Those are different host interfaces. The function will be handed a world it was not built to read, which compiles clean and fails on live traffic."})
+	}
+	return out
+}
+
+// lookupWorld resolves a named function the way the config does: an absolute path, a
+// path relative to the user's scope, or own-scope-then-parents when it names none.
+func lookupWorld(world map[string]string, name, scope string) (string, bool) {
+	scope = strings.TrimPrefix(scope, "/")
+	for {
+		if w, ok := world[scope+"\x00"+name]; ok {
+			return w, true
+		}
+		if scope == "" {
+			return "", false
+		}
+		cut := strings.LastIndex(scope, "/")
+		if cut < 0 {
+			scope = ""
+			continue
+		}
+		scope = scope[:cut]
+	}
+}
+
+// checkHandlerPorts: only a workload that LISTENS has ports. A route naming a port on
+// a website or a function is pointing at something that does not exist — the field is
+// on the handler block for every kind, because which kinds have ports is not something
+// the schema can condition on.
+func checkHandlerPorts(all []compiled) []Finding {
+	var out []Finding
+	for _, res := range all {
+		for _, prefix := range []string{"route/handler", "handler"} {
+			port := res.str(prefix + "/port")
+			kind := res.str(prefix + "/kind")
+			if port == "" || kind == "" || kind == "application" {
+				continue
+			}
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				fmt.Sprintf("names port %q on a %s", port, kind),
+				fmt.Sprintf("A %s does not listen on ports — only a container workload does — so there is nothing for this name to refer to.", kind)})
+		}
 	}
 	return out
 }
