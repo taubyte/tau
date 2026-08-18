@@ -4,10 +4,15 @@ image: "ghcr.io/acme/api:1.4"
 ports:
     http: 8080
     metrics: 9090
-health:
+readiness:
     http:
         port: http
         path: /healthz
+liveness:
+    http:
+        port: http
+        path: /livez
+    failures: 5
 execution:
     memory: 512MB
 limits:

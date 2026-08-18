@@ -108,6 +108,22 @@ var Omissions = []Omission{
 			"rather than as strings — resolved by the same pass that resolves the name.",
 	},
 	{
+		Name:    "an Either()+Key() switch on an OPTIONAL block",
+		State:   Blocked,
+		Decided: Forced,
+		Why: "A Key() attribute fails to load when its block is absent — \"attribute liveness/kind " +
+			"has an empty key\" — so the switch can only sit on a block that is mandatory. Every " +
+			"other use of it in this vocabulary happens to be on one (route.handler, storages.type, " +
+			"engine.kind), which is why it went unnoticed until a probe needed to be optional: a " +
+			"workload with neither readiness nor liveness is ready when it starts and never " +
+			"restarted, which is a reasonable thing to be.",
+		Instead: "fixed paths under each branch — readiness/http/port beside " +
+			"readiness/function/name — and read which branch was taken from which fields are set. " +
+			"It costs the captured key and the guarantee that only one branch is filled in.",
+		Unblocks: "Key() treating an absent block as an empty value rather than an error. Same " +
+			"family as the RequiredWhen defect below, and the same file.",
+	},
+	{
 		Name:    "RequiredWhen against a Key() attribute — a claim the loader does not keep",
 		State:   Blocked,
 		Decided: Forced,
@@ -137,19 +153,6 @@ var Omissions = []Omission{
 		Unblocks: "an owner call on the SHAPE, which is the whole difficulty — env vars, a mounted " +
 			"file, or both; whether a value can reference another resource; and how it interacts " +
 			"with the secret it will inevitably sit next to.",
-	},
-	{
-		Name:    "liveness as a separate question from readiness",
-		State:   Open,
-		Decided: ByOwner,
-		Why: "`health` answers one question and two are being asked. Whether a workload should " +
-			"receive traffic and whether it should be killed and restarted have different answers " +
-			"and different consequences: a workload warming a cache is not ready and must not be " +
-			"restarted, and one deadlocked on a lock is neither. With one signal, the platform " +
-			"must guess which it was told.",
-		Instead: "one health check, read as readiness.",
-		Unblocks: "an owner call on whether tau restarts a workload on its own, which is the only " +
-			"reason the second question exists.",
 	},
 	{
 		Name:    "a function's host interface",

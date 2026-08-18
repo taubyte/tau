@@ -636,15 +636,14 @@ func TestPortsAreNamed(t *testing.T) {
 	assert.Equal(t, ports["http"].(map[string]any)["number"], 8080, "the number is the INTERNAL one")
 	assert.Equal(t, ports["metrics"].(map[string]any)["number"], 9090)
 
-	// health names a port rather than repeating a number
-	assert.Equal(t, app["health/kind"], "http")
-	assert.Equal(t, app["health/port"], "http")
+	// a probe names a port rather than repeating a number
+	assert.Equal(t, app["readiness/port"], "http")
+	assert.Equal(t, app["liveness/port"], "http")
 
-	// or a function decides, which is a different kind of answer and says so
+	// or a function decides, which is a different kind of answer
 	pool := namedResource(t, resources(t, flat, "applications"), "worker_pool")
-	assert.Equal(t, pool["health/kind"], "function")
-	assert.Equal(t, pool["health/function/name"], "pool_ready")
-	_, probe := pool["health/path"]
+	assert.Equal(t, pool["readiness/function/name"], "pool_ready")
+	_, probe := pool["readiness/path"]
 	assert.Assert(t, !probe, "a function-checked workload declares no probe path")
 
 	// so does a route targeting the workload

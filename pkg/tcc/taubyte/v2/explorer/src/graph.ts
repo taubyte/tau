@@ -221,7 +221,8 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
       pendingPolicy.push({ from: id, name: n, scope: ns, verb });
     };
     named("authorizer/name", "authorizer/namespace", "authorized by");
-    named("health/function/name", "health/function/namespace", "readiness decided by");
+    named("readiness/function/name", "readiness/function/namespace", "readiness decided by");
+    named("liveness/function/name", "liveness/function/namespace", "liveness decided by");
 
     // An ingress names its target by (kind, namespace, name) rather than resolving it
     // to an id — a name in another namespace has no spelling the ref resolver accepts.

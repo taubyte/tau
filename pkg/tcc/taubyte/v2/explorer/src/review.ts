@@ -100,8 +100,11 @@ export function review(g: Graph, compiled: Compiled, verbs: KindVerbs[]): Review
     if (!ports || typeof ports !== "object") continue;
 
     const used = new Set<string>();
-    const health = res["health/port"];
-    if (typeof health === "string") used.add(health);
+    // a probe polling a port is a feeder for it, same as an ingress
+    for (const probe of ["readiness/port", "liveness/port"]) {
+      const port = res[probe];
+      if (typeof port === "string") used.add(port);
+    }
 
     // A port is fed by an ingress that targets it, by a health probe, or — the one
     // this check missed at first — by a delivery: a queue posting each item to it is

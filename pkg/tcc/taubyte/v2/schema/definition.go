@@ -27,7 +27,10 @@
 // per-edge modifiers (mount, timeout, retry, via).
 package schema
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // commonAttributes prepends the shared identity block and appends the access block.
 // EVERY resource carries one, because it is a single construct between any two
@@ -175,6 +178,80 @@ var secSource = Section("source", "Source", "Where the code is sourced from.")
 // the platform must know it up front. CPU is a rate: absent means the workload is
 // scheduled without a ceiling and competes fairly, which is a usable default in a way
 // that "no memory limit" is not.
+// applicationAttributes is the container kind's own shape. Assembled in a function
+// rather than inline because two of its blocks — readiness and liveness — are the same
+// five fields twice, and splicing three slices together inside a call argument is
+// harder to read than the thing it builds.
+func applicationAttributes() []*Attribute {
+	out := []*Attribute{
+		String("image", Required(), InSection("code"), Doc("Image", "OCI image reference this workload runs.")),
+		pullSecret(),
+	}
+	out = append(out, probeAttributes("readiness", "network", "Whether this instance should be given work.")...)
+	out = append(out, probeAttributes("liveness", "network", "Whether this instance is still working, or should be replaced.")...)
+	return append(out,
+		// How many consecutive liveness failures before the platform kills the
+		// instance. The cost of being wrong is asymmetric: a readiness blip takes an
+		// instance out of rotation for a second, a liveness blip destroys its state and
+		// its warm caches. Three, because one is a network hiccup and ten is a workload
+		// wedged for a minute while traffic was still being sent to it.
+		Int("liveness/failures", Path("liveness", "failures"), MinInt(1), Default(3), InSection("network"),
+			Doc("Liveness Failures", "Consecutive failed liveness checks before this instance is replaced.")),
+
+		Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory per instance.")),
+		cpuLimit(),
+		egressAttribute(),
+
+		// Ceilings, not counts. How many instances run is still the platform's — these
+		// bound what it may do, which is a different statement from telling it what to
+		// do: one is a limit the operator owns (cost, blast radius, what the workload
+		// can survive), the other is a number the system would have to fight.
+		Int("limits/max-instances", Path("limits", "max-instances"), MinInt(1), InSection("limits"),
+			Doc("Max Instances", "The most instances the platform may run of this workload. A ceiling it scales within, not a count.")),
+		Int("limits/concurrency", Path("limits", "concurrency"), MinInt(1), InSection("limits"),
+			Doc("Concurrency", "The most simultaneous requests one instance may be given. Cloud Run and Knative call this concurrency; Fly calls it a hard limit. Above it the platform queues or starts another instance, within max-instances.")),
+	)
+}
+
+// probeAttributes is how the platform asks a workload a yes/no question about itself.
+// Two of them exist, with the SAME shape and different consequences:
+//
+//	readiness   should this instance be given work?   no -> take it out of rotation
+//	liveness    is this instance still working?       no -> kill it and start another
+//
+// One signal could not answer both, and the difference is not academic: a workload
+// warming a cache is NOT ready and must NOT be restarted — restarting it throws away
+// the warm-up and starts it again — while one deadlocked on a lock is neither ready nor
+// alive, and only a restart fixes it. With a single check the platform has to guess
+// which of the two it was told, and it will guess wrong in exactly the case that
+// matters.
+//
+// Either probe can be an http poll or a FUNCTION, because "working" is not always a
+// status code: a queue drained, a migration finished, a leader lease still held.
+//
+// NOT an Either()+Key() switch, which is what this vocabulary uses everywhere else for
+// exactly this shape. A Key() attribute fails to load when its block is ABSENT —
+// "attribute liveness/kind has an empty key" — so the construct can only sit on a block
+// that is mandatory, and every existing use of it (route.handler, storages.type,
+// engine.kind) happens to be on one. A probe is optional: a workload with neither is
+// ready when it starts and is never restarted, which is a reasonable thing to be. So
+// the branch is read from which fields are set rather than captured in a key.
+// Recorded in omissions.go.
+func probeAttributes(name, section, doc string) []*Attribute {
+	return []*Attribute{
+		String(name+"/port", Path(name, "http", "port"), IsVariableName(), InSection(section),
+			Doc(title(name)+" Port", doc+" Polled over http, on this port of the workload's own, by name.")),
+		String(name+"/path", Path(name, "http", "path"), InSection(section),
+			Doc(title(name)+" Path", "HTTP path polled.")),
+		String(name+"/function/name", Path(name, "function", "name"), IsVariableName(), InSection(section),
+			Doc(title(name)+" Function", "A function that answers for this workload, when \"working\" is not a status code — a queue drained, a migration finished, a lease still held.")),
+		String(name+"/function/namespace", Path(name, "function", "namespace"), IsNamespacePath(), InSection(section),
+			Doc(title(name)+" Function Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
+	}
+}
+
+func title(s string) string { return strings.ToUpper(s[:1]) + s[1:] }
+
 func cpuLimit() *Attribute {
 	return Int("execution/cpu", Path("execution", "cpu"), MinInt(1), InSection("limits"),
 		Doc("CPU", "Ceiling in millicores: 1000 is one core, 250 a quarter of one. Absent means no ceiling — it competes for what is free."))
@@ -289,39 +366,7 @@ var V2Resources = []*Node{
 	// (pkg/netguard) is not representable here and is never relaxable by a resource.
 	DefineGroup("applications",
 		resource(
-			commonAttributes(
-				String("image", Required(), InSection("code"), Doc("Image", "OCI image reference this workload runs.")),
-				pullSecret(),
-				// How the platform decides this workload is up. Two answers, and they
-				// are different in kind, so the switch names which: an HTTP probe the
-				// platform makes itself, or a FUNCTION that decides — given the
-				// workload, it answers healthy or not, and can look at whatever
-				// "healthy" actually means here (a queue drained, a cache warm, a
-				// migration finished) rather than at a status code.
-				String("health/kind", Path("health", Either("http", "function")), Key(), Field("HealthKind"), InSection("network"),
-					Doc("Health", "How readiness is decided: an http probe, or a function that answers.")),
-				String("health/port", Path("health", "http", "port"), IsVariableName(), InSection("network"), ShowWhen("health/kind", "http"),
-					Doc("Health Port", "Which of this workload's ports the probe is made on, by name.")),
-				String("health/path", Path("health", "http", "path"), InSection("network"), ShowWhen("health/kind", "http"),
-					Doc("Health Path", "HTTP path polled for readiness.")),
-				String("health/function/name", Path("health", "function", "name"), IsVariableName(), InSection("network"), ShowWhen("health/kind", "function"),
-					Doc("Health Function", "A function that decides whether this workload is ready.")),
-				String("health/function/namespace", Path("health", "function", "namespace"), IsNamespacePath(), InSection("network"), ShowWhen("health/kind", "function"),
-					Doc("Health Function Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
-				Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory per instance.")),
-				cpuLimit(),
-				egressAttribute(),
-
-				// Ceilings, not counts. How many instances run is still the
-				// platform's — these bound what it may do, which is a different
-				// statement from telling it what to do: one is a limit the operator
-				// owns (cost, blast radius, what the workload can survive), the other
-				// is a number the system would have to fight.
-				Int("limits/max-instances", Path("limits", "max-instances"), MinInt(1), InSection("limits"),
-					Doc("Max Instances", "The most instances the platform may run of this workload. A ceiling it scales within, not a count.")),
-				Int("limits/concurrency", Path("limits", "concurrency"), MinInt(1), InSection("limits"),
-					Doc("Concurrency", "The most simultaneous requests one instance may be given. Cloud Run and Knative call this concurrency; Fly calls it a hard limit. Above it the platform queues or starts another instance, within max-instances.")),
-			),
+			commonAttributes(applicationAttributes()...),
 			Nested(portsGroup()),
 			GroupDoc("A long-running container that listens on HTTP. Ships with volumes or it ships broken."), Icon("box"), Category("compute"),
 			secIdentity, secAccess, secNetwork, secCode, secLimits,

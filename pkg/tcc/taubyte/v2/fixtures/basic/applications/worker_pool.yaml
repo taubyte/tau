@@ -1,9 +1,9 @@
 id: QmRZ8XwnqQzhLTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPYuK
-description: a container queue consumer - it has no host ABI, so each item is POSTed to a port it declared
+description: a container queue consumer - ready when the pool says so; nothing restarts it, so it declares no liveness
 image: "ghcr.io/acme/pool:2.1"
 ports:
     work: 8080
-health:
+readiness:
     function:
         name: pool_ready
 execution:
