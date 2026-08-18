@@ -139,30 +139,6 @@ var Omissions = []Omission{
 			"with the secret it will inevitably sit next to.",
 	},
 	{
-		Name:    "a CPU ceiling",
-		State:   Open,
-		Decided: ByOwner,
-		Why: "`execution/memory` is required on every workload and there is no CPU equivalent, so " +
-			"the platform is told what a workload may hold and not what it may burn. One busy " +
-			"loop is then indistinguishable from correct load, and a node's other tenants pay for " +
-			"it.",
-		Instead: "memory alone, plus whatever the runtime does about scheduling.",
-		Unblocks: "an owner call on whether tau meters CPU at all. It is a different promise from " +
-			"memory — a ceiling on a rate rather than on an amount — and it decides whether the " +
-			"field is a limit, a share, or a price.",
-	},
-	{
-		Name:    "credentials for a private image registry",
-		State:   Open,
-		Decided: ByOwner,
-		Why: "`image` takes any OCI reference, and every private registry needs a credential to " +
-			"pull from. `secrets` exists and nothing connects the two, so a private image is not " +
-			"expressible — which quietly makes the container kinds public-registry-only.",
-		Instead: "a public image.",
-		Unblocks: "an owner call on whether the pull credential belongs on the workload, on a " +
-			"registry resource, or on the cloud.",
-	},
-	{
 		Name:    "liveness as a separate question from readiness",
 		State:   Open,
 		Decided: ByOwner,
@@ -174,29 +150,6 @@ var Omissions = []Omission{
 		Instead: "one health check, read as readiness.",
 		Unblocks: "an owner call on whether tau restarts a workload on its own, which is the only " +
 			"reason the second question exists.",
-	},
-	{
-		Name:    "rate limiting on an L4 proxy",
-		State:   Open,
-		Decided: ByOwner,
-		Why: "A gateway carries cors and rate-limit; a proxy carries neither, and it is the kind " +
-			"that accepts raw connections from the internet. So the HTTP door has a limiter and " +
-			"the TCP door does not.",
-		Instead: "nothing at the edge. Whatever the workload does about it.",
-		Unblocks: "an owner call on the unit — connections per minute, concurrent connections, or " +
-			"bytes — since a request rate does not translate to a protocol with no requests in it.",
-	},
-	{
-		Name:    "what a cron does when the last run is still going",
-		State:   Open,
-		Decided: ByOwner,
-		Why: "A schedule fires on a clock. If the previous run has not finished, the choice is to " +
-			"skip, to queue, or to run both at once, and each is right somewhere: skipping is right " +
-			"for a reconcile, queueing for a billing run, overlap for anything idempotent and " +
-			"cheap. The config does not say, so the runtime picks for everyone.",
-		Instead: "whatever the runtime does.",
-		Unblocks: "an owner call. Jitter belongs to the same decision — a fleet-wide `0 3 * * *` " +
-			"is a thundering herd at 03:00 exactly.",
 	},
 	{
 		Name:    "a function's host interface",

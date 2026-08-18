@@ -689,7 +689,20 @@ func TestEveryWorkloadCanDeclareEgress(t *testing.T) {
 func TestCronCarriesItsTimezone(t *testing.T) {
 	cron := only(t, resources(t, compileBasic(t), "crons"))
 	assert.Equal(t, cron["schedule"], "0 3 * * *")
-	assert.Equal(t, cron["timezone"], "UTC", "UTC by default: the only zone where every day has 24 hours")
+	assert.Equal(t, cron["timezone"], "Europe/Paris", "the zone the schedule is written in")
+	assert.Equal(t, cron["on-overlap"], "skip", "the only choice that cannot make things worse")
+
+	// and a cron that says nothing gets the zone where every day has 24 hours
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/config.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/crons/c.yaml",
+		[]byte("id: QmRAQB6YaCyidP37UdDnjFY5vQuiBrcqdyoW1CuDgwxkD4\nschedule: \"@daily\"\n"), 0o644))
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+	assert.Equal(t, only(t, resources(t, obj.Flat(), "crons"))["timezone"], "UTC")
 }
 
 // Whether credentials cross a network in the clear is not a question to answer with a

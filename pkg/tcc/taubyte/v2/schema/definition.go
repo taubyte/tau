@@ -130,6 +130,7 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 		String("execution/call", Path("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
 		Duration("execution/timeout", Path("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
 		Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory this workload may use, as a human string (e.g. \"32MB\").")),
+		cpuLimit(),
 		egressAttribute(),
 	}, attrs...)...)
 }
@@ -150,6 +151,39 @@ func gitSource() []*Attribute {
 }
 
 var secSource = Section("source", "Source", "Where the code is sourced from.")
+
+// pullSecret sits beside every `image`. A private registry needs a credential to pull
+// from, and without this the container kinds are public-registry-only — which is not a
+// decision anyone took, just a field nobody added.
+//
+// It names a SECRET rather than holding a token, for the same reason a database's
+// credentials do: the value belongs in the secret store and the config holds the
+// reference. And it is on the workload rather than on a registry resource of its own,
+// because a registry with nothing in it but a credential is a secret with extra steps
+// — if a second field ever needs to live beside it, that is when the kind earns its
+// existence.
+// cpuLimit is the other half of what a workload may consume. `execution/memory` says
+// what it may HOLD; nothing said what it may BURN, so a busy loop was indistinguishable
+// from correct load and the node's other tenants paid for it.
+//
+// MILLICORES, an integer, because the unit has to be one nobody has to convert in their
+// head: 1000 is one core, 250 is a quarter of one, and it is the unit every scheduler
+// people have used already speaks. A float "0.25 cores" reads the same and rounds
+// differently on every machine that parses it.
+//
+// Optional, unlike memory. Memory is a hard wall — exceed it and the workload dies, so
+// the platform must know it up front. CPU is a rate: absent means the workload is
+// scheduled without a ceiling and competes fairly, which is a usable default in a way
+// that "no memory limit" is not.
+func cpuLimit() *Attribute {
+	return Int("execution/cpu", Path("execution", "cpu"), MinInt(1), InSection("limits"),
+		Doc("CPU", "Ceiling in millicores: 1000 is one core, 250 a quarter of one. Absent means no ceiling — it competes for what is free."))
+}
+
+func pullSecret() *Attribute {
+	return String("image-pull-secret", Path("image-pull-secret"), Ref("secrets", Prefix("secrets/")), InSection("code"),
+		Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with, as \"secrets/<name>\". Omit for a public registry."))
+}
 
 // handlerKinds are what may serve a route. Closed, because it is the Either() a
 // handler's kind switches on: a key outside this set is a compile error rather than
@@ -257,6 +291,7 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				String("image", Required(), InSection("code"), Doc("Image", "OCI image reference this workload runs.")),
+				pullSecret(),
 				// How the platform decides this workload is up. Two answers, and they
 				// are different in kind, so the switch names which: an HTTP probe the
 				// platform makes itself, or a FUNCTION that decides — given the
@@ -274,6 +309,7 @@ var V2Resources = []*Node{
 				String("health/function/namespace", Path("health", "function", "namespace"), IsNamespacePath(), InSection("network"), ShowWhen("health/kind", "function"),
 					Doc("Health Function Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
 				Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory per instance.")),
+				cpuLimit(),
 				egressAttribute(),
 
 				// Ceilings, not counts. How many instances run is still the
@@ -315,6 +351,7 @@ var V2Resources = []*Node{
 			wasmAttributes(
 				String("runtime", InSet("wasm", "container"), Default("wasm"), InSection("code"), Doc("Runtime", "Which tier runs this worker: wasm or container.")),
 				String("image", RequiredWhen("runtime", "container"), InSection("code"), Doc("Image", "OCI image reference (container runtime only).")),
+				pullSecret(),
 			),
 			GroupDoc("An on-demand workload that runs to completion. Not HTTP-listening."), Icon("gear"), Category("compute"),
 			secIdentity, secAccess, secNetwork, secCode, secLimits,
@@ -329,10 +366,12 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(
 				String("image", Required(), InSection("code"), Doc("Image", "OCI image the sandbox boots from.")),
+				pullSecret(),
 				Duration("lifetime/idle", Path("lifetime", "idle"), InSection("limits"), Doc("Idle Timeout", "Stop the sandbox after this long with no activity.")),
 				Duration("lifetime/max", Path("lifetime", "max"), InSection("limits"), Doc("Max Lifetime", "Hard ceiling on how long a sandbox may live.")),
 				egressAttribute(),
 				Bytes("execution/memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory the sandbox may use.")),
+				cpuLimit(),
 			),
 			GroupDoc("An interactive container with exec and filesystem access, for agent and build sessions."), Icon("terminal"), Category("compute"),
 			secIdentity, secAccess, secNetwork, secCode, secLimits,
@@ -359,9 +398,28 @@ var V2Resources = []*Node{
 				// schedule, so the default should not have it.
 				String("timezone", Default("UTC"), InSection("identity"),
 					Doc("Timezone", "IANA zone the schedule is written in, e.g. \"Europe/Paris\". UTC by default — the only zone where every day has 24 hours.")),
+
+				// What happens when the clock comes round and the last run is still
+				// going. All three are right somewhere — skip for a reconcile that will
+				// catch up on its own, queue for a billing run where every period must
+				// happen exactly once, overlap for anything idempotent and cheap — so
+				// the config says which rather than the runtime picking for everyone.
+				//
+				// `skip` by default because it is the only one that cannot make things
+				// worse: queue turns a slow job into an unbounded backlog, and overlap
+				// runs a job against itself.
+				String("on-overlap", Path("on-overlap"), InSet("skip", "queue", "allow"), Default("skip"), InSection("firing"),
+					Doc("On Overlap", "skip: drop this tick, the run in flight continues. queue: hold it and run when the current one ends. allow: start it anyway, alongside.")),
+
+				// Every node in a fleet reading the same `0 3 * * *` fires at 03:00:00
+				// exactly, which is a thundering herd at whatever the schedule points
+				// at. A window spreads the starts across it.
+				Duration("jitter", InSection("firing"),
+					Doc("Jitter", "Spread each start randomly across this window, e.g. \"30s\". Absent means fire exactly on the tick.")),
 			),
 			GroupDoc("A schedule. It fires whatever it edges to; the target declares nothing."), Icon("clock"), Category("trigger"),
 			secIdentity, secAccess,
+			Section("firing", "Firing", "What happens when the clock comes round."),
 			Resource("crons", "Cron", "Cron", "cron"),
 		)),
 
@@ -778,12 +836,34 @@ var V2Resources = []*Node{
 					Doc("Name", "The workload's name within that namespace.")),
 				String("handler/port", Path("handler", Either(proxyHandlerKinds...), "port"), IsVariableName(), InSection("handler"),
 					Doc("Port", "Which of the workload's ports to stream to, by name. The number stays where the workload declared it.")),
+
+				// A gateway counts REQUESTS per minute. A raw stream has no requests in
+				// it, so the same words do not transfer and the limits here are the two
+				// quantities a connection-oriented listener actually has:
+				//
+				//   rate         how fast new connections may arrive
+				//   concurrent   how many may be open at once
+				//
+				// The second is the one that matters for a protocol that holds a socket
+				// open — a database client pool, a subscriber — where the connection
+				// rate stays near zero and the count is the resource. Neither is a
+				// substitute for the other, which is why both are here and neither has a
+				// default: a ceiling nobody chose is a ceiling nobody can defend.
+				Int("rate-limit/connections-per-minute", Path("rate-limit", "connections-per-minute"), MinInt(1), InSection("limits"),
+					Doc("Connections / minute", "How fast new connections may be accepted from one source. Absent means unlimited.")),
+				Int("rate-limit/burst", Path("rate-limit", "burst"), MinInt(1), InSection("limits"),
+					Doc("Burst", "Connections allowed above the sustained rate.")),
+				Int("rate-limit/concurrent", Path("rate-limit", "concurrent"), MinInt(1), InSection("limits"),
+					Doc("Concurrent", "How many connections may be open at once from one source. The limit that matters when a protocol holds its socket open.")),
+				String("rate-limit/key", Path("rate-limit", "key"), InSet("ip", "subnet"), Default("ip"), InSection("limits"),
+					Doc("Counted Per", "ip: each address separately. subnet: per /24 and /64, which is what stops one host with an address range from being many clients.")),
 			),
 			Nested(transformersGroup()),
 			GroupDoc("An allocated address that accepts a raw connection and streams it to a workload over p2p. For everything a gateway cannot parse."), Category("internet"), Icon("plug"),
 			secIdentity, secTransformers,
 			Section("listener", "Listener", "The protocol carried, the name it is reached by, and whether TLS stops here."),
 			Section("handler", "Handler", "The workload on the other end."),
+			Section("limits", "Limits", "What one source may open, and how fast."),
 			Resource("proxies", "Proxy", "Proxy", "proxy"),
 		)),
 

@@ -7,7 +7,9 @@ health:
     http:
         port: pg
         path: /
+image-pull-secret: secrets/stripe
 execution:
     memory: 2GB
+    cpu: 2000
 limits:
     max-instances: 1

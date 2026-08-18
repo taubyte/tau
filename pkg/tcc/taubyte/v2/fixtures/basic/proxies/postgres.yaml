@@ -11,6 +11,10 @@ transformers:
     pg_audit:
         order: 1
         direction: inbound
+rate-limit:
+    connections-per-minute: 120
+    concurrent: 40
+    key: subnet
 handler:
     application:
         name: db
