@@ -35,8 +35,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import { blastRadius, categoryOf, iconOf, reachesFrom, NODE_H, NODE_W, type Graph } from "./graph";
 import { KindIcon } from "./icons";
-import { IconWorld } from "@tabler/icons-react";
-import { INTERNET, internetEdgeKey, routeKey, type Placed } from "./layout";
+import { IconWorld, IconWorldWww } from "@tabler/icons-react";
+import { CLOUD_ZONE, INTERNET, hopKey, routeKey, type Placed } from "./layout";
 
 export type Selection = { id: string; mode: "blast" | "reach" } | null;
 
@@ -89,6 +89,7 @@ function ScopeNode({ data }: NodeProps) {
 function InternetNode() {
   return (
     <div className="rf-internet">
+      <Handle type="target" position={Position.Left} isConnectable={false} />
       <IconWorld size={16} stroke={1.7} />
       <span>the internet</span>
       <Handle type="source" position={Position.Right} isConnectable={false} />
@@ -96,7 +97,21 @@ function InternetNode() {
   );
 }
 
-const NODE_TYPES = { resource: ResourceNode, scope: ScopeNode, internet: InternetNode };
+// The cloud's own zone: what answers a generated name. Not a resource in any project,
+// so like the internet it is drawn rather than compiled — but it IS in the path, and a
+// diagram that skips it makes a generated name look like it resolves by magic.
+function CloudZoneNode() {
+  return (
+    <div className="rf-internet rf-cloudzone">
+      <Handle type="target" position={Position.Left} isConnectable={false} />
+      <IconWorldWww size={16} stroke={1.7} />
+      <span>the cloud's zone</span>
+      <Handle type="source" position={Position.Right} isConnectable={false} />
+    </div>
+  );
+}
+
+const NODE_TYPES = { resource: ResourceNode, scope: ScopeNode, internet: InternetNode, cloudzone: CloudZoneNode };
 
 // The edge dot routed.
 //
@@ -201,6 +216,15 @@ export function GraphView({
       if (a.from === selection.id) reached.add(a.to);
       if (a.to === selection.id) reached.add(a.from);
     }
+
+    // The ingress path is drawn, not compiled, so it is not in arrows — and a gateway
+    // selected without the zone that answers for it is missing the step that makes its
+    // name work. Both directions: pick the zone, see what it answers for.
+    for (const n of graph.nodes) {
+      if (!n.answeredById) continue;
+      if (n.id === selection.id) reached.add(n.answeredById);
+      if (n.answeredById === selection.id) reached.add(n.id);
+    }
     return reached;
   }, [selection, graph]);
 
@@ -226,6 +250,19 @@ export function GraphView({
         selectable: false,
         draggable: false,
         data: { label: s.scope, faded: false },
+      });
+    }
+
+    if (placed.cloudZone) {
+      out.push({
+        id: CLOUD_ZONE,
+        type: "cloudzone",
+        position: { x: placed.cloudZone.x, y: placed.cloudZone.y },
+        width: placed.cloudZone.w,
+        height: placed.cloudZone.h,
+        draggable: false,
+        selectable: false,
+        data: {},
       });
     }
 
@@ -270,26 +307,40 @@ export function GraphView({
   }, [graph, placed, lit, selection, ink]);
 
   const edges: Edge[] = useMemo(() => {
-    const out: Edge[] = graph.nodes
-      .filter((n) => n.fqdn && placed.routes.has(internetEdgeKey(n.id)))
-      .map((n) => {
-        const route = placed.routes.get(internetEdgeKey(n.id));
-        // A name written across a line shorter than the name lands on the boxes at
-        // either end. It is in the Review tab and the footer either way, so the
-        // diagram drops it rather than smearing it over something.
-        const fits = (route?.len ?? 0) > (n.fqdn?.length ?? 0) * 5.5;
-        return {
-        id: internetEdgeKey(n.id),
-        source: INTERNET,
-        target: n.id,
+    // The path in: the internet asks DNS, the zone answers with a name, the request
+    // reaches what that name points at. Two hops, because that is two different things
+    // happening — and drawing one arrow straight to the gateway made the zone look
+    // like something off to the side rather than the step that makes the name work.
+    const ingressEdge = (from: string, to: string, label?: string): Edge | null => {
+      const route = placed.routes.get(hopKey(from, to));
+      if (!route) return null;
+      const fits = label ? route.len > label.length * 5.5 : false;
+      return {
+        id: hopKey(from, to),
+        source: from,
+        target: to,
         type: "routed",
         data: { route },
-        label: fits ? n.fqdn : undefined,
+        label: fits ? label : undefined,
         className: "rf-edge exposed",
         markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: ink.internet },
         style: { stroke: "var(--internet)", strokeWidth: 1.6, opacity: lit ? 0.15 : 1 },
-        };
-      });
+      };
+    };
+
+    const out: Edge[] = [];
+    const zones = new Set<string>();
+    for (const n of graph.nodes) {
+      if (!n.fqdn || n.kind === "zone") continue;
+      const zone = n.answeredById || CLOUD_ZONE;
+      zones.add(zone);
+      const hop = ingressEdge(zone, n.id, n.fqdn);
+      if (hop) out.push(hop);
+    }
+    for (const zone of zones) {
+      const hop = ingressEdge(INTERNET, zone);
+      if (hop) out.push(hop);
+    }
 
     return out.concat(
       graph.arrows.map((a) => {

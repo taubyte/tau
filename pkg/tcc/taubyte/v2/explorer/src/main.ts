@@ -6,7 +6,7 @@ import { graphHost, renderGraph } from "./graph-mount";
 import { kindIconMarkup } from "./icons";
 import type { Finding } from "./wasm";
 import type { Selection } from "./graph-view";
-import { place, type Placed } from "./layout";
+import { CLOUD_ZONE, place, type Placed } from "./layout";
 
 // The example project is the SAME tree the Go tests compile
 // (pkg/tcc/taubyte/v2/fixtures/basic), pulled in raw at build time. One example,
@@ -61,10 +61,13 @@ function render() {
     const seq = ++layoutSeq;
     // A keystroke while a layout is in flight makes that layout stale; the counter is
     // what stops it landing after the one it lost to.
-    // The exposed set drives the internet node in the layout; it is presentation,
-    // never part of the model.
-    const exposed = g.nodes.filter((n) => n.fqdn).map((n) => n.id);
-    place(g.nodes, g.arrows, exposed).then((p) => {
+    // internet -> zone -> resource. The zone is a real resource when the name lives in
+    // one the project declares, and the cloud's own otherwise. Presentation only: none
+    // of it is in the model.
+    const ingress = g.nodes
+      .filter((n) => n.fqdn && n.kind !== "zone")
+      .map((n) => ({ zone: n.answeredById || CLOUD_ZONE, to: n.id, name: n.fqdn! }));
+    place(g.nodes, g.arrows, ingress).then((p) => {
       if (seq !== layoutSeq) return;
       placed = p;
       placedFor = g;

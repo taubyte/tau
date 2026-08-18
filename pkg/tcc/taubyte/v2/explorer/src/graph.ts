@@ -22,6 +22,8 @@ export interface Node {
   zoneFqdn?: string;
   /** Which zone answers this name — a zone is not an ingress, it is what resolves one. */
   answeredBy?: string;
+  /** That zone's node id, or "" when it is the cloud's own and not a resource here. */
+  answeredById?: string;
   // How a client reaches that name, when it is not just "https". An L4 proxy writes
   // no port and no address, so this is the only place the page can say what to dial.
   dial?: string;
@@ -194,15 +196,17 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
         continue;
       }
 
-      // a plain reference: "<group>/<id>". The verb shown is the compiled key, which
-      // reads well for `source` and `dead-letter` and not for this one: a gateway does
-      // not "host/zone" a zone, it takes its NAME from it.
-      const verbFor = (key: string) => (key === "host/zone" ? "takes its name from" : key);
+      // A gateway's host/zone is drawn as the INGRESS PATH — internet, then the zone
+      // that answers, then what the name points at — so drawing it again here as a
+      // reference would say the same thing twice, and in the wrong direction: the
+      // gateway does not reach the zone, the zone answers for the gateway.
+      if (key === "host/zone") continue;
+
       if (typeof val === "string" && val.includes("/")) {
         const cut = val.indexOf("/");
         const [kind, to] = [val.slice(0, cut), val.slice(cut + 1)];
         if (kindNames.has(kind) && to) {
-          arrows.push({ from: id, to, kind, verb: verbFor(key), effect: "read", ref: true });
+          arrows.push({ from: id, to, kind, verb: key, effect: "read", ref: true });
         }
         continue;
       }
@@ -332,6 +336,7 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
   // shown as the placeholder it is rather than guessed at.
   // Which zone answers each name, so the zone stops looking like a leaf nothing uses.
   const zoneOf = new Map<string, string>();
+  const zoneIdOf = new Map<string, string>();
   for (const n of nodes) {
     if (!n.host) continue;
     const label = n.host.name ? `${n.host.name}.` : "";
@@ -344,10 +349,16 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
     const zoneID = n.host.zone?.replace(/^zone\//, "");
     const zone = zoneID ? byId.get(zoneID) : undefined;
     n.fqdn = zone?.zoneFqdn ? `${label}${zone.zoneFqdn}` : `${label}⟨zone⟩`;
-    if (zone) zoneOf.set(n.id, `${zone.kind}/${zone.name}`);
+    if (zone) {
+      zoneOf.set(n.id, `${zone.kind}/${zone.name}`);
+      zoneIdOf.set(n.id, zone.id);
+    }
   }
 
-  for (const n of nodes) n.answeredBy = zoneOf.get(n.id);
+  for (const n of nodes) {
+    n.answeredBy = zoneOf.get(n.id);
+    n.answeredById = zoneIdOf.get(n.id);
+  }
 
   const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();
   return { nodes, arrows: live, byId, scopes };

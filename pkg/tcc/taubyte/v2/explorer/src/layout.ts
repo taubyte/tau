@@ -40,6 +40,8 @@ export interface Placed {
   routes: Map<string, Route>;
   /** Where the internet sits, when anything is exposed at all. */
   internet: { x: number; y: number; w: number; h: number } | null;
+  /** Where the cloud's own zone sits, when a generated name needs it drawn. */
+  cloudZone: { x: number; y: number; w: number; h: number } | null;
   w: number;
   h: number;
 }
@@ -60,7 +62,19 @@ export const routeKey = (a: Arrow) => `${a.from}->${a.to}->${a.verb}`;
 // is excluded from everything that reasons about the model: no blast radius, no
 // inventory, no findings.
 export const INTERNET = "internet";
-export const internetEdgeKey = (to: string) => `${INTERNET}->${to}`;
+
+// The cloud's own zone. It answers every generated name and it is not a resource in
+// any project, so — like the internet — it is drawn rather than compiled.
+export const CLOUD_ZONE = "cloud-zone";
+
+/** One hop of the path a request takes to get in: internet -> zone -> the resource. */
+export interface Ingress {
+  zone: string; // a zone resource's id, or CLOUD_ZONE
+  to: string;
+  name: string; // the resolved name, as far as the config can know it
+}
+
+export const hopKey = (from: string, to: string) => `${from}=>${to}`;
 
 let engine: Promise<Graphviz> | null = null;
 const graphviz = () => (engine ??= Graphviz.load());
@@ -71,7 +85,7 @@ const cluster = (scope: string) => `cluster_${scope.replace(/[^A-Za-z0-9]/g, "_"
 
 // Namespaces nest, so the subgraphs do. The label is declared so dot reserves room at
 // the top of the box for it; the text itself is drawn by render.ts, into that space.
-function dotFor(nodes: Node[], arrows: Arrow[], exposed: string[]): string {
+function dotFor(nodes: Node[], arrows: Arrow[], ingress: Ingress[]): string {
   const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();
   const childrenOf = (scope: string) =>
     scopes.filter((s) => s.startsWith(scope + "/") && !s.slice(scope.length + 1).includes("/"));
@@ -108,12 +122,16 @@ function dotFor(nodes: Node[], arrows: Arrow[], exposed: string[]): string {
     "  fontsize=11;",
     "  labelloc=t;",
     `  node [shape=box, fixedsize=true, width=${NODE_W / PT}, height=${NODE_H / PT}, label=""];`,
-    ...(exposed.length
-      ? [`  ${q(INTERNET)} [width=${140 / PT}, height=${44 / PT}];`]
+    // internet -> zone -> resource, which is the path a request actually takes: DNS
+    // answers first, and what it answers with is what the request then reaches.
+    ...(ingress.length ? [`  ${q(INTERNET)} [width=${140 / PT}, height=${44 / PT}];`] : []),
+    ...(ingress.some((i) => i.zone === CLOUD_ZONE)
+      ? [`  ${q(CLOUD_ZONE)} [width=${150 / PT}, height=${44 / PT}];`]
       : []),
     ...nodes.filter((n) => !n.scope).map((n) => `  ${q(n.id)};`),
     ...scopes.filter((s) => !s.includes("/")).map((s) => emit(s, 1)),
-    ...exposed.map((id) => `  ${q(INTERNET)} -> ${q(id)};`),
+    ...[...new Set(ingress.map((i) => i.zone))].map((z) => `  ${q(INTERNET)} -> ${q(z)};`),
+    ...ingress.map((i) => `  ${q(i.zone)} -> ${q(i.to)};`),
     ...arrows.map((a) => `  ${q(a.from)} -> ${q(a.to)};`),
     "}",
   ].join("\n");
@@ -209,9 +227,9 @@ function midpointOf(line: { x: number; y: number }[]): { x: number; y: number } 
   return line[line.length - 1];
 }
 
-export async function place(nodes: Node[], arrows: Arrow[], exposed: string[] = []): Promise<Placed> {
+export async function place(nodes: Node[], arrows: Arrow[], ingress: Ingress[] = []): Promise<Placed> {
   const gv = await graphviz();
-  const out = JSON.parse(gv.layout(dotFor(nodes, arrows, exposed), "json", "dot")) as {
+  const out = JSON.parse(gv.layout(dotFor(nodes, arrows, ingress), "json", "dot")) as {
     bb: string;
     objects?: DotObject[];
     edges?: DotEdge[];
@@ -223,9 +241,19 @@ export async function place(nodes: Node[], arrows: Arrow[], exposed: string[] = 
     [...new Set(nodes.map((n) => n.scope))].filter(Boolean).map((s) => [cluster(s), s] as const),
   );
 
+  // Which endpoint pairs are ingress hops. Inferring it from the endpoints does not
+  // work: internet->zone and cloud-zone->proxy have a synthetic end, but zone->gateway
+  // has two real ones and is indistinguishable from an arrow the model produced.
+  const hops = new Set<string>();
+  for (const i of ingress) {
+    hops.add(hopKey(INTERNET, i.zone));
+    hops.add(hopKey(i.zone, i.to));
+  }
+
   const objects = out.objects ?? [];
   const scopes: Placed["scopes"] = [];
   let internet: Placed["internet"] = null;
+  let cloudZone: Placed["cloudZone"] = null;
   for (const o of objects) {
     if (o.bb) {
       const scope = scopeByCluster.get(o.name);
@@ -238,6 +266,10 @@ export async function place(nodes: Node[], arrows: Arrow[], exposed: string[] = 
     const [cx, cy] = o.pos.split(",").map(Number);
     if (o.name === INTERNET) {
       internet = { x: cx - 70, y: flip(H, cy) - 22, w: 140, h: 44 };
+      continue;
+    }
+    if (o.name === CLOUD_ZONE) {
+      cloudZone = { x: cx - 75, y: flip(H, cy) - 22, w: 150, h: 44 };
       continue;
     }
     const node = byId.get(o.name);
@@ -257,9 +289,9 @@ export async function place(nodes: Node[], arrows: Arrow[], exposed: string[] = 
     const from = objects[e.tail]?.name;
     const to = objects[e.head]?.name;
     if (!from || !to) continue;
-    if (from === INTERNET) {
+    if (hops.has(hopKey(from, to))) {
       const r = pathFrom(e.pos, H);
-      if (r) routes.set(internetEdgeKey(to), r);
+      if (r) routes.set(hopKey(from, to), r);
       continue;
     }
     const i = arrows.findIndex((a, idx) => a.from === from && a.to === to && !claimed.has(idx));
@@ -269,5 +301,5 @@ export async function place(nodes: Node[], arrows: Arrow[], exposed: string[] = 
     if (r) routes.set(routeKey(arrows[i]), r);
   }
 
-  return { nodes, scopes, routes, internet, w: W + 24, h: H + 24 };
+  return { nodes, scopes, routes, internet, cloudZone, w: W + 24, h: H + 24 };
 }
