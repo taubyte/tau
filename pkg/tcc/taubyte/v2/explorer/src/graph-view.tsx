@@ -191,6 +191,16 @@ export function GraphView({
         ? blastRadius(selection.id, graph.arrows)
         : reachesFrom(selection.id, graph.arrows);
     reached.add(selection.id);
+
+    // The radius follows USES only — a build-time reference grants no runtime access,
+    // which is why a zone is not in a gateway's blast radius. But it IS something the
+    // gateway declares, and hiding it makes the resource that answers the name look
+    // unrelated to the name. So the selection's immediate neighbours are always lit,
+    // references included; only what lies BEYOND them follows uses.
+    for (const a of graph.arrows) {
+      if (a.from === selection.id) reached.add(a.to);
+      if (a.to === selection.id) reached.add(a.from);
+    }
     return reached;
   }, [selection, graph]);
 

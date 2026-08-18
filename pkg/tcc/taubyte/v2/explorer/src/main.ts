@@ -376,12 +376,15 @@ function reviewPane(result: CompileOk): HTMLElement {
   // kind changed.
   const findings = result.findings ?? [];
   const exposure = graph.nodes
-    .filter((n) => n.fqdn)
+    // a zone carries an fqdn and answers nothing itself: it is what RESOLVES the names
+    // below, which is the column rather than a row
+    .filter((n) => n.fqdn && n.kind !== "zone")
     .map((n) => ({
       id: n.id,
       kind: n.kind,
       name: n.name,
       at: n.fqdn!,
+      zone: n.answeredBy ?? "the cloud's own",
       serves: graph!.arrows
         .filter((a) => a.from === n.id && a.verb === "serves")
         .map((a) => graph!.byId.get(a.to))
@@ -430,7 +433,7 @@ function reviewPane(result: CompileOk): HTMLElement {
   return wrap;
 }
 
-function exposureTable(rows: { id: string; kind: string; name: string; at: string; serves: string[] }[]): HTMLElement {
+function exposureTable(rows: { id: string; kind: string; name: string; at: string; zone: string; serves: string[] }[]): HTMLElement {
   const wrap = div("");
   wrap.appendChild(
     sectionTitle("reachable from the internet", rows.length ? `${rows.length} name${rows.length === 1 ? "" : "s"}` : "nothing answers"),
@@ -438,11 +441,11 @@ function exposureTable(rows: { id: string; kind: string; name: string; at: strin
   if (!rows.length) return wrap;
   const t = document.createElement("table");
   t.innerHTML =
-    "<thead><tr><th>name</th><th>served by</th><th>which fronts</th></tr></thead><tbody>" +
+    "<thead><tr><th>name</th><th>answered by</th><th>served by</th><th>which fronts</th></tr></thead><tbody>" +
     rows
       .map(
         (e) =>
-          `<tr data-id="${esc(e.id)}"><td><code>${esc(e.at)}</code></td><td><code>${esc(e.kind)}/${esc(e.name)}</code></td><td>${
+          `<tr data-id="${esc(e.id)}"><td><code>${esc(e.at)}</code></td><td><code>${esc(e.zone)}</code></td><td><code>${esc(e.kind)}/${esc(e.name)}</code></td><td>${
             e.serves.length ? esc(e.serves.join(", ")) : '<span class="c">nothing yet</span>'
           }</td></tr>`,
       )

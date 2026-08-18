@@ -20,6 +20,8 @@ export interface Node {
   host?: { kind: string; name: string; zone: string | null };
   /** A zone's own apex, so a host that names it can be spelled out. */
   zoneFqdn?: string;
+  /** Which zone answers this name — a zone is not an ingress, it is what resolves one. */
+  answeredBy?: string;
   // How a client reaches that name, when it is not just "https". An L4 proxy writes
   // no port and no address, so this is the only place the page can say what to dial.
   dial?: string;
@@ -192,12 +194,15 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
         continue;
       }
 
-      // a plain reference: "<group>/<id>"
+      // a plain reference: "<group>/<id>". The verb shown is the compiled key, which
+      // reads well for `source` and `dead-letter` and not for this one: a gateway does
+      // not "host/zone" a zone, it takes its NAME from it.
+      const verbFor = (key: string) => (key === "host/zone" ? "takes its name from" : key);
       if (typeof val === "string" && val.includes("/")) {
         const cut = val.indexOf("/");
         const [kind, to] = [val.slice(0, cut), val.slice(cut + 1)];
         if (kindNames.has(kind) && to) {
-          arrows.push({ from: id, to, kind, verb: key, effect: "read", ref: true });
+          arrows.push({ from: id, to, kind, verb: verbFor(key), effect: "read", ref: true });
         }
         continue;
       }
@@ -325,6 +330,8 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
   // A host names a zone; the zone knows its apex. A GENERATED host names the cloud's
   // own zone, which no compiled object contains and no config may assert — so it is
   // shown as the placeholder it is rather than guessed at.
+  // Which zone answers each name, so the zone stops looking like a leaf nothing uses.
+  const zoneOf = new Map<string, string>();
   for (const n of nodes) {
     if (!n.host) continue;
     const label = n.host.name ? `${n.host.name}.` : "";
@@ -335,9 +342,12 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
       continue;
     }
     const zoneID = n.host.zone?.replace(/^zone\//, "");
-    const apex = zoneID ? byId.get(zoneID)?.zoneFqdn : undefined;
-    n.fqdn = apex ? `${label}${apex}` : `${label}⟨zone⟩`;
+    const zone = zoneID ? byId.get(zoneID) : undefined;
+    n.fqdn = zone?.zoneFqdn ? `${label}${zone.zoneFqdn}` : `${label}⟨zone⟩`;
+    if (zone) zoneOf.set(n.id, `${zone.kind}/${zone.name}`);
   }
+
+  for (const n of nodes) n.answeredBy = zoneOf.get(n.id);
 
   const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();
   return { nodes, arrows: live, byId, scopes };
