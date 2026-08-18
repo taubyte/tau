@@ -172,7 +172,7 @@ recorded in `omissions.go`.)
 
 ```go
 StringSlice("domains", Ref("domains"), …)                    // []name → []id
-String("source", Ref("module", Prefix("module/")), …)        // "module/x" → "module/<id>"
+String("source", Ref("modules", Prefix("modules/")), …)      // "modules/x" → "modules/<id>"
 ```
 
 A **scalar** ref needs a `Prefix`; without one `resolveRefAttr` treats the value as a

@@ -447,7 +447,7 @@ func TestNamespacesIsolateNames(t *testing.T) {
 //
 // The cost, asserted so it cannot change silently: an access target is a map KEY, so
 // nothing resolves it at compile time. A typo in a target name is not a compile error
-// the way `source: module/typo` is. See omissions.go.
+// the way `source: modules/typo` is. See omissions.go.
 func TestAccessNamesItsScope(t *testing.T) {
 	flat := compileBasic(t)
 

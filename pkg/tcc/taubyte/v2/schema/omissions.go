@@ -269,7 +269,7 @@ var Omissions = []Omission{
 		Decided: Forced,
 		Why: "An access entry names its target as a map KEY — `caches: { sessions: { ops: [get] } }` " +
 			"— and a key is not a reference, so nothing resolves it. A typo in a target name is " +
-			"not a compile error the way `source: module/typo` is, and the compiled object carries " +
+			"not a compile error the way `source: modules/typo` is, and the compiled object carries " +
 			"a name rather than an id. It is the price of naming the target once with its ops and " +
 			"its namespace beside it; the verb-keyed list it replaced resolved to ids but could not " +
 			"name another namespace at all, which is worse.",
