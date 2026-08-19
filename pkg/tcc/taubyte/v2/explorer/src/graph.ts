@@ -31,6 +31,8 @@ export interface Node {
   derived?: { of: string; why: string };
   /** The frame this resource is the box FOR, when it has one. */
   frame?: string;
+  /** Drawn as nothing: the box says what this is, so the node would be a duplicate. */
+  anchor?: boolean;
   layer: number;
   x: number;
   y: number;
@@ -413,6 +415,11 @@ export function buildGraph(
     frames.set(frame, `${src.kind} · ${src.name}`);
     src.scope = frame;
     src.frame = frame;
+    // The BOX IS the resource, so drawing the resource inside it says the same thing
+    // twice. It stays in the model — everything that points at a workflow still points
+    // at it, and the layout needs something inside the cluster to route those edges to —
+    // but it is drawn as nothing: an anchor the arrows land on, at the box's edge.
+    src.anchor = true;
 
     if (flipped.has(src.id)) {
       for (const d of parts) {

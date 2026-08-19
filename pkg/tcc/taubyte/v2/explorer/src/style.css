@@ -308,3 +308,10 @@ code.om.open { color: var(--internet); }
   color: var(--fg);
   border-color: var(--fg);
 }
+
+/* The resource a frame is drawn FOR: the box carries the name, so this is only where
+   the arrows land. */
+.rf-anchor {
+  width: 1px;
+  height: 1px;
+}

@@ -15,7 +15,7 @@
 // its own docs tell you to bring one, and dot is the one that already got clusters and
 // routing right here.
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import {
   Background,
   BaseEdge,
@@ -31,6 +31,7 @@ import {
   type EdgeProps,
   type Node as FlowNode,
   type NodeProps,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { blastRadius, categoryOf, iconOf, reachesFrom, NODE_H, NODE_W, type Graph } from "./graph";
@@ -48,14 +49,27 @@ interface ResourceData extends Record<string, unknown> {
   category: string;
   faded: boolean;
   picked: boolean;
-  /** Nothing authored this: it is what a transpiled resource becomes. */
+  /** Nothing authored this: it is what a lowered resource becomes. */
   derived: boolean;
+  /** This resource IS the box around it, so it is drawn as a point. */
+  anchor: boolean;
 }
 
 // A resource. Kind above name, bordered by category — the same reading the SVG had,
 // because that part was never the problem.
 function ResourceNode({ data }: NodeProps) {
   const d = data as ResourceData;
+  // The box already says what this is. Drawn as a point so the arrows that point at the
+  // resource still have an end, and the box holds its contents rather than a copy of
+  // its own label.
+  if (d.anchor) {
+    return (
+      <div className="rf-anchor">
+        <Handle type="target" position={Position.Left} isConnectable={false} />
+        <Handle type="source" position={Position.Right} isConnectable={false} />
+      </div>
+    );
+  }
   return (
     <div
       className={`rf-node ${d.category}${d.faded ? " faded" : ""}${d.picked ? " picked" : ""}${d.derived ? " derived" : ""}`}
@@ -202,6 +216,7 @@ export function GraphView({
   selection,
   onPick,
   flippedIds = new Set<string>(),
+  focus,
 }: {
   graph: Graph;
   placed: Placed;
@@ -209,6 +224,12 @@ export function GraphView({
   onPick: (id: string | null) => void;
   /** Which frames are showing what they become. */
   flippedIds?: Set<string>;
+  /**
+   * A frame to keep in front of the reader. Turning a box over changes how much is
+   * inside it, so the layout moves — and a box that expands somewhere else is a box you
+   * have to go and find. The view follows it instead.
+   */
+  focus?: { scope: string; seq: number; from?: { x: number; y: number } };
 }) {
   // Read once per render rather than per edge; a theme flip re-renders the page.
   const ink = useMemo(
@@ -324,8 +345,8 @@ export function GraphView({
         // Declared, not measured: the minimap draws from node dimensions, and a
         // custom node React has not laid out yet has none — which is why the minimap
         // came up blank the first time.
-        width: NODE_W,
-        height: NODE_H,
+        width: n.anchor ? 1 : NODE_W,
+        height: n.anchor ? 1 : NODE_H,
         draggable: false,
         data: {
           kind: n.kind,
@@ -336,6 +357,7 @@ export function GraphView({
           faded: lit !== null && !lit.has(n.id),
           picked: selection?.id === n.id,
           derived: !!n.derived,
+          anchor: !!n.anchor,
         } satisfies ResourceData,
       });
     }
@@ -416,8 +438,39 @@ export function GraphView({
     );
   }, [graph, placed, lit, selection, ink]);
 
+  // A box that expands SOMEWHERE ELSE is a box you have to go and find. Turning one
+  // over changes how much is inside it, so the whole layout shifts — and the fix is not
+  // to centre the box (that moves it too, just somewhere predictable) but to pan by
+  // exactly what the layout moved it by, so it stays under the reader's eye and the
+  // rest of the graph slides instead.
+  const flow = useRef<ReactFlowInstance | null>(null);
+  const lastFocus = useRef(-1);
+  useEffect(() => {
+    if (!focus || focus.seq === lastFocus.current || !flow.current) return;
+    const box = placed.scopes.find((s) => s.scope === focus.scope);
+    if (!box) return;
+    lastFocus.current = focus.seq;
+
+    const vp = flow.current.getViewport();
+    if (focus.from) {
+      flow.current.setViewport(
+        {
+          x: vp.x - (box.x - focus.from.x) * vp.zoom,
+          y: vp.y - (box.y - focus.from.y) * vp.zoom,
+          zoom: vp.zoom,
+        },
+        { duration: 180 },
+      );
+      return;
+    }
+    flow.current.setCenter(box.x + box.w / 2, box.y + box.h / 2, { zoom: vp.zoom, duration: 220 });
+  }, [focus, placed]);
+
   return (
     <ReactFlow
+      onInit={(inst) => {
+        flow.current = inst;
+      }}
       nodes={nodes}
       edges={edges}
       nodeTypes={NODE_TYPES}

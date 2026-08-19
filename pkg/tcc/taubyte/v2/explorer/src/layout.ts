@@ -104,7 +104,11 @@ function dotFor(nodes: Node[], arrows: Arrow[], ingress: Ingress[], frames: Map<
       // room between a namespace's border and the resources inside it, so an edge
       // crossing the boundary has somewhere to be that is not on top of the dashes
       `${pad}  margin=16;`,
-      ...nodes.filter((n) => n.scope === scope).map((n) => `${pad}  ${q(n.id)};`),
+      // An anchor is the box's own resource, drawn as nothing: it is only here so the
+      // edges that point at the resource have somewhere inside the box to land.
+      ...nodes
+        .filter((n) => n.scope === scope)
+        .map((n) => (n.anchor ? `${pad}  ${q(n.id)} [width=0.06, height=0.06];` : `${pad}  ${q(n.id)};`)),
       ...childrenOf(scope).map((c) => emit(c, depth + 1)),
     ].join("\n");
     return `${pad}subgraph ${cluster(scope)} {\n${body}\n${pad}}`;
@@ -286,8 +290,11 @@ export async function place(
     }
     const node = byId.get(o.name);
     if (!node) continue;
-    node.x = cx - NODE_W / 2;
-    node.y = flip(H, cy) - NODE_H / 2;
+    // An anchor has no size to centre: it is a point, and the arrows land on it.
+    const w = node.anchor ? 0 : NODE_W;
+    const h = node.anchor ? 0 : NODE_H;
+    node.x = cx - w / 2;
+    node.y = flip(H, cy) - h / 2;
   }
 
   // dot indexes an edge's endpoints into `objects`, so the arrow that produced one is
