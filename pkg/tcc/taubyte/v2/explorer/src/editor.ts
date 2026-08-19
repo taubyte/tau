@@ -9,12 +9,15 @@
 // Only the model is swapped when the file changes, so each file keeps its own undo
 // stack and its own scroll position, which is what a tab in any editor does.
 
-import * as monaco from "monaco-editor";
+// The editor API and ONE tokenizer, not the package. Importing "monaco-editor" pulls
+// every language it ships — the build emitted json, html, css and typescript workers,
+// several hundred kB each, to colour a config file.
+import * as monaco from "monaco-editor/editor/editor.api";
+import "monaco-editor/languages/definitions/yaml/register";
 import editorWorker from "monaco-editor/editor/editor.worker?worker";
 
-// No language workers: YAML has no Monaco language service, only a tokenizer, so the
-// base worker is all that is ever asked for. Anything else would be shipping a
-// TypeScript compiler to colour a config file.
+// YAML has no Monaco language service, only a tokenizer, so the base worker is the only
+// one ever asked for.
 self.MonacoEnvironment = { getWorker: () => new editorWorker() };
 
 const host = document.createElement("div");
