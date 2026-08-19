@@ -72,6 +72,15 @@ export function flipFrame(id: string) {
   else flipped.add(id);
   // Turning a box over changes how much is inside it, so the layout moves. Follow the
   // box rather than making the reader find where it went.
+  // Opening a box re-runs the layout, and dot's answer for the new sizes puts every
+  // OTHER node somewhere else. The box itself is pinned (the viewport follows it), but
+  // the rest of the graph was teleporting around it, which is the same "where am I"
+  // problem one step removed. So the positions are animated for the length of the
+  // flip: nothing moves instantly, and the eye can follow what went where.
+  const host = graphHost();
+  host.classList.add("settling");
+  window.setTimeout(() => host.classList.remove("settling"), 420);
+
   const frame = graph?.byId.get(id)?.frame;
   if (frame) {
     // where the box is NOW, so the view can put it back there once the layout has moved
