@@ -390,6 +390,15 @@ config is coherent when it is not — and a reviewer reads the picture. If a dra
 a fact, this vocabulary states the fact: direction (`Inbound()`), what is worth an arrow
 (`Ref`), what a client must dial (`Derived(DeriveSRVName, …)`).
 
+**A view may repeat, but never silently.** One resource can be drawn as several boxes —
+a secret six things read is one box with six lines crossing everything between them, and
+beside each user it is six boxes crossing nothing. That is a layout decision, and it is
+allowed. What is not allowed is a copy that does not say it is one: the count is on every
+box, picking one picks all of them, and anything that reports about the resource (what
+uses it, what it uses) asks what the box IS, never which box it is. A panel that filtered
+by the box would say one thing uses a secret that six things use, which is the view lying
+about the config again, in a new place.
+
 ## 9. The one modelling rule
 
 **The target owns the policy, the accessor only states intent.** A resource that can

@@ -52,6 +52,8 @@ interface ResourceData extends Record<string, unknown> {
   derived: boolean;
   /** This resource IS the box around it, so it is drawn as a point. */
   anchor: boolean;
+  /** How many boxes this one resource has, when it is drawn beside each of its users. */
+  copies?: number;
 }
 
 // A resource. Kind above name, bordered by category — the same reading the SVG had,
@@ -85,6 +87,11 @@ function ResourceNode({ data }: NodeProps) {
         </span>
         <span className="rf-name">{d.name}</span>
       </span>
+      {d.copies ? (
+        <span className="rf-copies" title={`one resource, drawn beside each of its ${d.copies} users`}>
+          ×{d.copies}
+        </span>
+      ) : null}
       <Handle type="source" position={Position.Right} isConnectable={false} />
     </div>
   );
@@ -255,6 +262,11 @@ export function GraphView({
 
   const lit = useMemo(() => {
     if (!selection) return null;
+    // A resource drawn beside each of its users is still ONE resource: picking any copy
+    // lights every copy, and reaching one reaches all of them. So everything here is in
+    // terms of what a box IS (`of`), not which box it is.
+    const of = (id: string) => graph.byId.get(id)?.of ?? id;
+    const picked = of(selection.id);
     const reached =
       selection.mode === "blast"
         ? blastRadius(selection.id, graph.arrows)
@@ -267,8 +279,8 @@ export function GraphView({
     // unrelated to the name. So the selection's immediate neighbours are always lit,
     // references included; only what lies BEYOND them follows uses.
     for (const a of graph.arrows) {
-      if (a.from === selection.id) reached.add(a.to);
-      if (a.to === selection.id) reached.add(a.from);
+      if (of(a.from) === picked) reached.add(a.to);
+      if (of(a.to) === picked) reached.add(a.from);
     }
 
     // The ingress path is drawn, not compiled, so it is not in arrows — and a gateway
@@ -276,9 +288,12 @@ export function GraphView({
     // name work. Both directions: pick the zone, see what it answers for.
     for (const n of graph.nodes) {
       if (!n.answeredById) continue;
-      if (n.id === selection.id) reached.add(n.answeredById);
-      if (n.answeredById === selection.id) reached.add(n.id);
+      if (n.of === picked) reached.add(n.answeredById);
+      if (of(n.answeredById) === picked) reached.add(n.id);
     }
+    // ...and a copy is lit when the resource is.
+    const byResource = new Set([...reached].map(of));
+    for (const n of graph.nodes) if (byResource.has(n.of)) reached.add(n.id);
     return reached;
   }, [selection, graph]);
 
@@ -371,7 +386,10 @@ export function GraphView({
           scope: n.scope.includes("@") ? "" : n.scope,
           category: categoryOf(n.kind),
           faded: lit !== null && !lit.has(n.id),
-          picked: selection?.id === n.id,
+          picked: !!selection && (graph.byId.get(selection.id)?.of ?? selection.id) === n.of,
+          // One resource, several boxes. The count is on every one of them, because a
+          // copy with nothing to say it is a copy reads as another resource.
+          copies: n.copies,
           derived: !!n.derived,
           anchor: !!n.anchor,
         } satisfies ResourceData,
@@ -438,7 +456,10 @@ export function GraphView({
         // all thirty at once buries the boxes under text that is unreadable at any
         // zoom where the graph is legible — which is what a tooltip was doing in the
         // SVG version, less usefully.
-        const touched = selection !== null && (a.from === selection.id || a.to === selection.id);
+        const pickedOf = selection && (graph.byId.get(selection.id)?.of ?? selection.id);
+        const touched =
+          pickedOf !== null &&
+          (graph.byId.get(a.from)?.of === pickedOf || graph.byId.get(a.to)?.of === pickedOf);
         return {
           id: `${a.from}->${a.to}->${a.verb}`,
           source: a.from,

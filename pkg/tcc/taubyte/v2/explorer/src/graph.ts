@@ -16,6 +16,14 @@ import type { Compiled, Effect, Instance, Relation, Shapes } from "./wasm";
 
 export interface Node {
   id: string;
+  /**
+   * The RESOURCE this box is. Usually its own id — but a resource many things reach is
+   * drawn once per user, and every copy carries the same `of`. Anything about identity
+   * — is this the selection, does this light up — asks this, never the id.
+   */
+  of: string;
+  /** How many boxes this resource has, when it has more than one. */
+  copies?: number;
   kind: string;
   name: string;
   scope: string; // "" for the project root, else the namespace name
@@ -188,6 +196,7 @@ export function buildGraph(
   for (const r of resources) {
     nodes.push({
       id: r.id,
+      of: r.id,
       kind: r.kind,
       name: r.name || r.id.slice(0, 8),
       scope: r.scope,
@@ -310,6 +319,7 @@ export function buildGraph(
       if (!open && !showsParts) continue; // nothing to show, and nothing to reserve
       const node: Node = {
         id,
+        of: id,
         // Closed, this node IS the step it came from; open, it is what the step became.
         kind: open || !part ? d.kind : "step",
         name: open || !part ? d.name : part,
@@ -384,8 +394,59 @@ export function buildGraph(
   );
   const live2 = live.filter((a) => !drawnByIngress.has(`${a.from}->${a.to}`));
 
-  const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();
-  return { nodes, arrows: live2, byId, scopes, frames };
+  // A RESOURCE THAT EVERYTHING REACHES IS DRAWN ONCE PER USER.
+  //
+  // A secret six things read is one box with six lines converging on it, and those lines
+  // cross everything between them and it. In the config it is one resource; on the page
+  // the single box is what costs the most to read. So it is drawn beside each of its
+  // users, and the box says how many of it there are — one resource, several pictures of
+  // it, which is the honest way round: hiding the count would make copies read as
+  // separate resources.
+  //
+  // Only a SINK is split — something with arrows in and none out. Copying a resource
+  // that reaches things would copy those arrows too, or make one copy the real one and
+  // the rest decoration, and either way it puts back the crossings it was meant to
+  // remove.
+  const nodesOut = splitSinks(nodes, live2, byId);
+
+  const scopes = [...new Set(nodesOut.map((n) => n.scope))].filter(Boolean).sort();
+  return { nodes: nodesOut, arrows: live2, byId, scopes, frames };
+}
+
+
+/** How many users a resource needs before drawing it beside each of them pays off. */
+const SPLIT_AT = 3;
+
+// splitSinks replaces a much-reached sink with one box per user, in place in the arrow
+// list. Returns the nodes to draw; byId gains the copies, so anything that looks a node
+// up by an arrow's endpoint still finds one.
+function splitSinks(nodes: Node[], arrows: Arrow[], byId: Map<string, Node>): Node[] {
+  const inbound = new Map<string, Arrow[]>();
+  const outbound = new Set<string>();
+  for (const a of arrows) {
+    inbound.set(a.to, [...(inbound.get(a.to) ?? []), a]);
+    outbound.add(a.from);
+  }
+
+  const out: Node[] = [];
+  for (const n of nodes) {
+    const ins = inbound.get(n.id) ?? [];
+    // A box that is a frame, an anchor or a part of one belongs to a layout that already
+    // groups it; splitting it would take it out of its box.
+    const splittable =
+      !n.frame && !n.anchor && !n.derived && !n.hidden && !outbound.has(n.id) && ins.length >= SPLIT_AT;
+    if (!splittable) {
+      out.push(n);
+      continue;
+    }
+    ins.forEach((a, i) => {
+      const copy: Node = { ...n, id: `${n.id}~${i}`, of: n.id, copies: ins.length };
+      a.to = copy.id;
+      byId.set(copy.id, copy);
+      out.push(copy);
+    });
+  }
+  return out;
 }
 
 export const NODE_W = 168;

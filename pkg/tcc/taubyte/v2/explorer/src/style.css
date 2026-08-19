@@ -101,6 +101,7 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
   background: var(--card); border: 1.4px solid var(--line); border-radius: 6px;
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   cursor: pointer; transition: opacity .12s, box-shadow .12s;
+  position: relative; /* the copy count sits on the corner */
 }
 .rf-glyph { display: flex; flex: 0 0 auto; color: var(--mut); }
 .rf-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
@@ -117,6 +118,16 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
 .rf-node.compute  { border-color: var(--compute); }
 .rf-node.data     { border-color: var(--data); }
 .rf-node.code     { border-color: var(--code-cat); }
+/* A resource drawn beside each of its users says how many boxes it has. Without the
+   count the copies read as separate resources, which is the one thing the split must
+   never say. */
+.rf-copies {
+  position: absolute; top: -6px; right: -6px;
+  padding: 0 4px; border-radius: 7px;
+  font-size: 9px; font-weight: 700; line-height: 14px;
+  color: var(--bg); background: var(--mut);
+}
+.rf-node.picked .rf-copies { background: var(--acc); }
 .rf-node.picked { border-color: var(--acc); border-width: 2px; box-shadow: 0 0 0 3px color-mix(in srgb, var(--acc) 22%, transparent); }
 /* Faded, never hidden: the shape of the whole graph is the context that makes a
    blast radius mean anything. */

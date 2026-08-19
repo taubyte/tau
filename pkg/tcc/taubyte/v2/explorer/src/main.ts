@@ -413,12 +413,18 @@ function detail(): HTMLElement {
     return d;
   }
   const n = graph.byId.get(selection.id)!;
-  const outs = graph.arrows.filter((a) => a.from === n.id);
-  const ins = graph.arrows.filter((a) => a.to === n.id);
+  // A resource drawn beside each of its users has one box per user, and each box holds
+  // one of the arrows. The panel is about the RESOURCE, so it asks what a box IS: filter
+  // by n.id and a secret six things read would report one.
+  const of = (id: string) => graph!.byId.get(id)?.of ?? id;
+  const outs = graph.arrows.filter((a) => of(a.from) === n.of);
+  const ins = graph.arrows.filter((a) => of(a.to) === n.of);
   const line = (a: { verb: string; effect: string }, other: string) =>
     `<li><span class="verb ${a.effect}">${esc(a.verb)}</span> ${esc(other)}</li>`;
   d.innerHTML = `
-    <h3>${esc(n.kind)}/${esc(n.name)}${n.scope ? ` <span class="c">in ${esc(n.scope)}</span>` : ""}</h3>
+    <h3>${esc(n.kind)}/${esc(n.name)}${n.scope ? ` <span class="c">in ${esc(n.scope)}</span>` : ""}${
+      n.copies ? ` <span class="c">one resource, ${n.copies} boxes</span>` : ""
+    }</h3>
     <div class="two">
       <div><h4>uses</h4><ul>${
         outs.map((a) => line(a, `${graph!.byId.get(a.to)!.kind}/${graph!.byId.get(a.to)!.name}`)).join("") ||
