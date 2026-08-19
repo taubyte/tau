@@ -158,3 +158,12 @@ func TestStrictIsOptInPerVocabulary(t *testing.T) {
 	_, err = e.Process()
 	assert.NilError(t, err, "without Strict() an unknown key is still dropped")
 }
+
+// The other half of the silence: the key is real, but a BLOCK was written where a
+// value belongs. Nothing reads it, no key is unknown, and the field is simply absent.
+func TestStrictRejectsBlockWhereValueBelongs(t *testing.T) {
+	err := compileDoc(t, "id: one\nname:\n    first: x\n")
+	assert.ErrorContains(t, err, "'name' takes a value, not a block")
+
+	assert.NilError(t, compileDoc(t, "id: one\nname: x\n"))
+}

@@ -1,0 +1,5 @@
+id: QmVoLuMe5tqsKc98xmWNzrzDtRLMiMPL8wBuTGsMnRPgD1
+description: postgres's data directory - a container database is only a database if this outlives the container
+quota: 20GB
+checkpoint:
+    interval: 15m

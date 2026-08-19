@@ -221,6 +221,21 @@ func (c *claim) walk(query *yaseer.Query) error {
 				fmt.Errorf("unknown key '%s'%s", key, c.suggest()))
 		}
 		if sub.leaf && len(sub.kids) == 0 {
+			// The key is real, and the walk would stop here — which left the OTHER
+			// half of the same silence: a BLOCK written where a value belongs.
+			//
+			//	transformers:      the attribute is a list; a mapping here reads as
+			//	    redact:        nothing, so the transformers simply never run and
+			//	        order: 1   no key in the document is unknown
+			//
+			// A wrong-typed scalar is already an error (setAttributes), and no
+			// attribute type is a mapping, so this needs no exception.
+			if !sub.any && isBlockAt(query, key) {
+				at := query.Get(key)
+				filePath, line, column := at.Location()
+				return located(filePath, line, column,
+					fmt.Errorf("attribute '%s' takes a value, not a block", key))
+			}
 			continue
 		}
 		if err := sub.walk(query.Get(key)); err != nil {
@@ -249,6 +264,15 @@ func (c *claim) suggest() string {
 		keys = keys[:max]
 	}
 	return fmt.Sprintf("; valid keys here: %s%s", strings.Join(keys, ", "), trimmed)
+}
+
+// isBlockAt reports whether the document holds a mapping under key.
+func isBlockAt(query *yaseer.Query, key string) bool {
+	var v any
+	if query.Get(key).Value(&v) != nil {
+		return false
+	}
+	return isMapping(v)
 }
 
 // isMapping reports whether a resolved node is a yaml mapping, which is the only

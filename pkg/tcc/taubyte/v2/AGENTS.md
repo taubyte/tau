@@ -178,6 +178,14 @@ Do not smuggle structure into strings. A route is not
 per-field error locations — four of the five reasons the DSL exists. If the shape does
 not fit, say so and stop; do not invent a seventh encoding.
 
+An ADDRESS is not smuggled structure. `transformers: [redact, eu/stamp,
+/shop/tier_header]` carries one dimension — where a resource is — in the same
+notation a `namespace:` field would spell out, and the ordered list IS the order the
+chain runs in. That is a path, not a grammar: nothing else is packed beside it, and
+the address is validated by the same rule everywhere it appears
+(`IsResourceAddresses`, `verbs.go`). The line is whether a second dimension is
+riding along; `"kv/orders get,put"` has one, `eu/stamp` does not.
+
 (The one accepted exception is `zones.records`, which uses zone-file presentation
 lines — an actual industry interchange format, not an invented grammar. The cost is
 recorded in `omissions.go`.)

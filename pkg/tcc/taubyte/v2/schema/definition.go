@@ -682,7 +682,7 @@ var V2Resources = []*Node{
 			secIdentity, secAccess,
 			Section("storage", "Storage", "Capacity."),
 			Section("checkpoint", "Checkpoint", "Durability out of band from the write path."),
-			Ops(ReadOp("mount-ro"), WriteOp("mount-rw")),
+			Ops(Mounts(ReadOp("mount-ro")), Mounts(WriteOp("mount-rw"))),
 			Resource("volume", "Volume", "Volume", "volume"),
 		)),
 
@@ -848,13 +848,13 @@ var V2Resources = []*Node{
 				// a zone you own and not with the default path.
 				Bool("cors/allow-self", Path("cors", "allow-self"), InSection("policy"),
 					Doc("Allow Own Origin", "Allow the origin this gateway itself answers on. The only way to say it when the name is generated.")),
+				transformersAttribute(),
 				StringSlice("cors/origins", Path("cors", "origins"), InSection("policy"), Doc("CORS Origins", "Origins allowed by CORS.")),
 				StringSlice("cors/methods", Path("cors", "methods"), InSection("policy"), Doc("CORS Methods", "Methods allowed by CORS.")),
 				Int("rate-limit/rpm", Path("rate-limit", "rpm"), InSection("policy"), Doc("Rate Limit", "Requests per minute.")),
 				Int("rate-limit/burst", Path("rate-limit", "burst"), InSection("policy"), Doc("Burst", "Requests allowed above the sustained rate.")),
 				String("rate-limit/key", Path("rate-limit", "key"), InSection("policy"), Doc("Rate Limit Key", "What the limit is counted per: \"ip\" or \"header:<name>\".")),
 			),
-			Nested(transformersGroup()),
 			GroupDoc("A name, the policy at it, and what it serves."), Category("internet"), Icon("route"),
 			secIdentity, secTransformers,
 			Section("naming", "Naming", "The name served, and where its certificate comes from."),
@@ -916,8 +916,13 @@ var V2Resources = []*Node{
 				String("protocol", InSet("tcp", "udp", "sctp"), Default("tcp"), Required(), InSection("listener"),
 					Doc("Protocol", "The transport carried. tcp is the transparent one; see this kind's docs for what a tunnel does to udp and sctp.")),
 
+				// The SRV label, and with it the port a client that cannot do SRV should
+				// dial. `postgres` publishes `_postgres._tcp.<name>` and tells anything
+				// that only knows conventions to use 5432. Defaults to this resource's
+				// name, so it is only written when the resource is called something the
+				// protocol is not.
 				String("service", IsVariableName(), InSection("listener"),
-					Doc("Service", "IANA service name, e.g. \"postgres\". It builds the SRV label published beside this name, and gives clients that cannot do SRV lookups the conventional port to dial. Defaults to this resource's name.")),
+					Doc("Service", "The IANA service this speaks, e.g. \"postgres\". Publishes _<service>._<protocol> beside this name in DNS, and is how a client that cannot look up SRV knows which conventional port to dial. Defaults to the resource's name.")),
 
 				// Only `terminate` earns its keep: the proxy holds the certificate so a
 				// plaintext workload can answer on a public name, reusing exactly the
@@ -934,14 +939,26 @@ var V2Resources = []*Node{
 					Doc("Certificate Key", "PEM-encoded private key for the certificate.")),
 
 				// Same shape as a gateway route's handler, one kind wide.
-				String("handler/kind", Path("handler", Either(proxyHandlerKinds...)), Key(), Field("HandlerKind"), InSection("handler"),
-					Doc("Handler", "Which kind sits behind this proxy (the key selects the handler block).")),
-				String("handler/namespace", Path("handler", Either(proxyHandlerKinds...), "namespace"), IsNamespacePath(), InSection("handler"),
+				// FORWARD, not "handler". A gateway HANDLES a request — it parses one,
+				// matches a path, and something answers it. A proxy handles nothing: it
+				// accepts a connection and forwards the bytes. Calling both "handler"
+				// borrowed a word from the layer above and made an L4 listener read as
+				// if it understood what was going through it.
+				transformersAttribute(),
+				String("forward/kind", Path("forward", Either(proxyHandlerKinds...)), Key(), Field("HandlerKind"), InSection("forward"),
+					Doc("Forward To", "Which kind the connection is forwarded to (the key selects the block).")),
+				String("forward/namespace", Path("forward", Either(proxyHandlerKinds...), "namespace"), IsNamespacePath(), InSection("forward"),
 					Doc("Namespace", "Path to the namespace holding the workload, e.g. \"/shop/eu\". Omitted means the project root.")),
-				String("handler/name", Path("handler", Either(proxyHandlerKinds...), "name"), Required(), IsVariableName(), InSection("handler"),
+				String("forward/name", Path("forward", Either(proxyHandlerKinds...), "name"), Required(), IsVariableName(), InSection("forward"),
 					Doc("Name", "The workload's name within that namespace.")),
-				String("handler/port", Path("handler", Either(proxyHandlerKinds...), "port"), IsVariableName(), InSection("handler"),
-					Doc("Port", "Which of the workload's ports to stream to, by name. The number stays where the workload declared it.")),
+
+				// THE WORKLOAD'S OWN PORT, by name — the one it binds inside its
+				// container. It is the only port in this file, and deliberately: the
+				// port CLIENTS dial is allocated by the platform and published in DNS,
+				// because at L4 the port is the address and an authored one would
+				// collide across projects. See the note on this kind.
+				String("forward/port", Path("forward", Either(proxyHandlerKinds...), "port"), IsVariableName(), InSection("forward"),
+					Doc("Port", "Which of the workload's own named ports to stream to. Not the port clients dial — that one is assigned and published in DNS.")),
 
 				// A gateway counts REQUESTS per minute. A raw stream has no requests in
 				// it, so the same words do not transfer and the limits here are the two
@@ -964,11 +981,10 @@ var V2Resources = []*Node{
 				String("rate-limit/key", Path("rate-limit", "key"), InSet("ip", "subnet"), Default("ip"), InSection("limits"),
 					Doc("Counted Per", "ip: each address separately. subnet: per /24 and /64, which is what stops one host with an address range from being many clients.")),
 			),
-			Nested(transformersGroup()),
 			GroupDoc("An allocated address that accepts a raw connection and streams it to a workload over p2p. For everything a gateway cannot parse."), Category("internet"), Icon("plug"),
 			secIdentity, secTransformers,
 			Section("listener", "Listener", "The protocol carried, the name it is reached by, and whether TLS stops here."),
-			Section("handler", "Handler", "The workload on the other end."),
+			Section("forward", "Forward", "The workload on the other end."),
 			Section("limits", "Limits", "What one source may open, and how fast."),
 			Resource("proxy", "Proxy", "Proxy", "proxy"),
 		)),
@@ -1118,51 +1134,34 @@ func GenerationRoot() []*Node { return v2Root.Children }
 // CompileRoot is the interpreter's entrypoint into the DSL: the whole project root.
 func CompileRoot() *Node { return v2Root }
 
-// transformersGroup is the middleware chain on an ingress, keyed by the name of the
-// function that runs.
+// transformersAttribute is the middleware chain on an ingress: the functions traffic
+// passes through, in the order they run.
 //
-//	transformers:
-//	    redact:
-//	        namespace: /shop
-//	        order: 1
-//	    tier_header:
-//	        order: 2
-//	        direction: inbound
+//	transformers: [redact, /shop/tier_header, eu/stamp]
 //
-// It is the same shape as an access entry, on purpose: a key that names a resource,
-// with the fields of THIS use under it. An author who has written `caches:` has
-// already written this.
+// A LIST, because a list is ordered by being a list. It was a map keyed by the
+// function's name with an `order:` integer inside each entry — which is a list with the
+// ordering written out by hand, because a yaml mapping has none. The integer existed
+// only to put back what the shape had thrown away.
 //
-// A transformer ENRICHES and FILTERS — add a header, strip a field, annotate, drop.
-// That is different in kind from an authorizer, which answers what a caller may do and
-// lives on the resource being reached. Both are functions; neither is a kind of its
-// own; what makes one what it is, is the host interface it was built against.
+// Each element ADDRESSES a function the way a namespace path does everywhere else:
+// `redact` is this scope then its parents, `eu/stamp` is relative, `/shop/tier_header`
+// is absolute from the project root. That is one address rather than a name plus a
+// namespace field, and it is the only form a list element can take — a list of objects
+// has no representation in this DSL.
 //
-// AND THE TWO INGRESSES DO NOT SHARE ONE. A gateway transformer is handed a parsed
-// HTTP request — method, path, headers, body — and a proxy transformer is handed
-// bytes on a stream that it must not pretend to understand. Two host interfaces, two
-// WIT worlds, one config shape. Which means the config cannot tell you that you named
-// a gateway transformer on a proxy: nothing in a function declares which world it was
-// built for. See Omissions, "a function's host interface".
-//
-// `order` is required rather than defaulted because a YAML mapping has no order and a
-// chain does: redact-then-enrich and enrich-then-redact are different programs, and an
-// implicit 0 on every entry would make which one runs a matter of map iteration.
-func transformersGroup() *Node {
-	return DefineGroup("transformers",
-		DefineIter([]*Attribute{
-			String("namespace", IsNamespacePath(), InSection("transformers"),
-				Doc("Namespace", "Where the function lives. \"/shop\" is absolute from the project root; \"eu\" is relative to this resource's own namespace. Omitted means this resource's own scope, then its parents.")),
-			Int("order", Required(), MinInt(1), InSection("transformers"),
-				Doc("Order", "Position in the chain, low to high. Required: a mapping has no order, and a filter chain has.")),
-			String("direction", InSet("inbound", "outbound", "both"), Default("inbound"), InSection("transformers"),
-				Doc("Direction", "inbound: on the way to the workload. outbound: on the way back. both: run twice, once each way.")),
-		},
-			GroupDoc("A function that enriches or filters traffic through this ingress, and where it sits in the chain."),
-		))
+// THERE IS NO `direction`. It said inbound / outbound / both, and it was wrong to be
+// here: whether a function can touch the response is a property of the host interface
+// it was built against, not of this use of it. A function that only sees the request
+// cannot be made to see the response by a word in the config, and one that sees both
+// does not need permission. If a response-only chain is ever wanted, it is another
+// world in `implements`, not a flag here.
+func transformersAttribute() *Attribute {
+	return StringSlice("transformers", IsResourceAddresses(), InSection("transformers"),
+		Doc("Transformers", "Functions traffic passes through, in order. Each names a function: \"redact\" in this scope, \"eu/stamp\" relative to it, \"/shop/tier_header\" from the project root."))
 }
 
-var secTransformers = Section("transformers", "Transformers", "Functions that enrich or filter traffic passing through, in order.")
+var secTransformers = Section("transformers", "Transformers", "Functions traffic passes through, in the order they run.")
 
 // variablesGroup is how a workload is configured: entries keyed by the NAME the
 // workload reads them under.

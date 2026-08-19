@@ -7,15 +7,12 @@ host:
 service: postgres
 tls:
     mode: none
-transformers:
-    pg_audit:
-        order: 1
-        direction: inbound
+transformers: [pg_audit]
 rate-limit:
     connections-per-minute: 120
     concurrent: 40
     key: subnet
-handler:
+forward:
     application:
         name: db
         port: pg

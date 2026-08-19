@@ -148,6 +148,42 @@ func (r compiled) str(key string) string {
 	return s
 }
 
+// list reads a StringSlice off the compiled object, which arrives as []string or, when
+// it came through JSON, as []any.
+func (r compiled) list(key string) []string {
+	switch v := r.fields[key].(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, x := range v {
+			if s, ok := x.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+// splitAddress reads "redact", "eu/stamp" or "/shop/tier_header" into the scope to look
+// in and the name to look for — the same three forms a namespace path takes anywhere.
+func splitAddress(addr, own string) (scope, name string) {
+	cut := strings.LastIndex(addr, "/")
+	if cut < 0 {
+		return own, addr
+	}
+	name = addr[cut+1:]
+	prefix := addr[:cut]
+	if strings.HasPrefix(addr, "/") {
+		return strings.TrimPrefix(prefix, "/"), name
+	}
+	if own == "" {
+		return prefix, name
+	}
+	return own + "/" + prefix, name
+}
+
 func (r compiled) block(key string) map[string]any {
 	m, _ := r.fields[key].(map[string]any)
 	return m
@@ -158,7 +194,7 @@ func (r compiled) block(key string) map[string]any {
 func checkReachable(all []compiled, byKind map[string][]compiled) []Finding {
 	fronted := map[string]bool{}
 	for _, res := range all {
-		for _, prefix := range []string{"route/handler", "handler"} {
+		for _, prefix := range []string{"route/handler", "forward"} {
 			kind, name := res.str(prefix+"/kind"), res.str(prefix+"/name")
 			if kind != "" && name != "" {
 				fronted[kind+"/"+name] = true
@@ -257,7 +293,7 @@ func checkPortsAreFed(all []compiled) []Finding {
 			}
 		}
 		for _, other := range all {
-			for _, prefix := range []string{"route/handler", "handler"} {
+			for _, prefix := range []string{"route/handler", "forward"} {
 				if other.str(prefix+"/name") == res.name {
 					if p := other.str(prefix + "/port"); p != "" {
 						used[p] = true
@@ -407,10 +443,9 @@ func checkHostWorlds(all []compiled) []Finding {
 			wants = "proxy-transformer"
 		}
 		if wants != "" {
-			for name, v := range res.block("transformers") {
-				entry, _ := v.(map[string]any)
-				ns, _ := entry["namespace"].(string)
-				uses = append(uses, use{name, ns, wants, res.kind + "/" + res.name + " transformers"})
+			for _, addr := range res.list("transformers") {
+				scope, name := splitAddress(addr, res.scope)
+				uses = append(uses, use{name, scope, wants, res.kind + "/" + res.name + " transformers"})
 			}
 		}
 		if res.str("route/handler/kind") == "function" {
@@ -468,7 +503,7 @@ func lookupWorld(world map[string]string, name, scope string) (string, bool) {
 func checkHandlerPorts(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
-		for _, prefix := range []string{"route/handler", "handler"} {
+		for _, prefix := range []string{"route/handler", "forward"} {
 			port := res.str(prefix + "/port")
 			kind := res.str(prefix + "/kind")
 			if port == "" || kind == "" || kind == "application" {
@@ -499,7 +534,8 @@ func checkTransformerWorlds(all []compiled) []Finding {
 		default:
 			continue
 		}
-		for name := range res.block("transformers") {
+		for _, addr := range res.list("transformers") {
+			_, name := splitAddress(addr, res.scope)
 			if worlds[name] == nil {
 				worlds[name] = map[string]bool{}
 			}

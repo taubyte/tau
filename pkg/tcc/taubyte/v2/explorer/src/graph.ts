@@ -182,17 +182,17 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
         continue;
       }
 
-      // the transformer chain: keyed by the FUNCTION's name, with the fields of this
-      // use under it. Same addressing as an authorizer — a name plus an optional
-      // namespace — so it resolves through the same pass.
-      if (key === "transformers" && !!val && typeof val === "object" && !Array.isArray(val)) {
-        for (const [fn, e] of Object.entries(val as Record<string, Compiled>)) {
-          const ns = typeof e.namespace === "string" ? (e.namespace as string) : null;
-          pendingPolicy.push({
-            from: id, name: fn, scope: ns,
-            verb: `transforms ${e.direction ?? "inbound"}, #${e.order ?? "?"}`,
-          });
-        }
+      // the transformer chain: an ORDERED list of addresses, each naming a function
+      // the way any cross-namespace reference is written — "redact" here, "eu/stamp"
+      // below here, "/shop/tier_header" from the root.
+      if (key === "transformers" && Array.isArray(val)) {
+        val.forEach((addr, i) => {
+          if (typeof addr !== "string") return;
+          const cut = addr.lastIndexOf("/");
+          const name = cut < 0 ? addr : addr.slice(cut + 1);
+          const scope = cut < 0 ? null : addr.slice(0, cut) || "/";
+          pendingPolicy.push({ from: id, name, scope, verb: `transforms #${i + 1}` });
+        });
         continue;
       }
 
@@ -237,8 +237,8 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
     // to an id — a name in another namespace has no spelling the ref resolver accepts.
     // Resolve it here, against the nodes actually compiled. Two prefixes because there
     // are two front doors: a gateway route parses HTTP and carries the handler under
-    // `route/`, an L4 proxy parses nothing and has only the handler.
-    for (const p of ["route/handler", "handler"]) {
+    // `route/`, an L4 proxy parses nothing and only forwards.
+    for (const p of ["route/handler", "forward"]) {
       const hk = res[`${p}/kind`];
       const hn = res[`${p}/name`];
       if (typeof hk !== "string" || typeof hn !== "string") continue;

@@ -1,7 +1,9 @@
 package schema
 
 import (
+	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
@@ -41,7 +43,17 @@ type Verb struct {
 	// it, and this is the flag that puts a `deliver` block on those access entries and
 	// on no others.
 	Delivered bool
+
+	// Mounted marks a verb that attaches a FILESYSTEM to the workload. Like Delivered
+	// it exists because the verb alone is not the whole statement: "this container may
+	// mount that volume" does not say where, and a database in a container is entirely
+	// a question of where — /var/lib/postgresql/data is not a detail, it is the reason
+	// the volume exists.
+	Mounted bool
 }
+
+// Mounts marks a verb as attaching a filesystem, which gives its access entry a path.
+func Mounts(v Verb) Verb { v.Mounted = true; return v }
 
 // Read/Write/Admin name a verb and its effect class in one term, so a verb cannot be
 // declared without one.
@@ -51,6 +63,16 @@ func AdminOp(name string) Verb { return Verb{Name: name, Effect: Admin} }
 
 // DeliveredOp is a read whose data ARRIVES. See Verb.Delivered.
 func DeliveredOp(name string) Verb { return Verb{Name: name, Effect: Read, Delivered: true} }
+
+// isMounted reports whether any of a kind's verbs attaches a filesystem.
+func isMounted(kind string) bool {
+	for _, v := range OpsOf(kind) {
+		if v.Mounted {
+			return true
+		}
+	}
+	return false
+}
 
 // isDelivered reports whether any of a kind's verbs hands work over.
 func isDelivered(kind string) bool {
@@ -167,7 +189,7 @@ func accessGroups() []*Node {
 				// them. An entry is that place.
 				Duration("timeout", InSection("access"),
 					Doc("Timeout", "How long one operation on it may take before it is given up on.")),
-			}, deliverAttributes(kind)...),
+			}, append(deliverAttributes(kind), mountAttributes(kind)...)...),
 				// No Resource(...): an access entry is data under its parent, not a
 				// kind. That descriptor would emit a generated type for it and would
 				// mark the group as something a scope walk cares about.
@@ -341,3 +363,74 @@ func deliverAttributes(kind string) []*Attribute {
 			Doc("Deliver To Path", "The path each item is posted to, e.g. \"/work\".")),
 	}
 }
+
+// mountAttributes say WHERE a filesystem is attached.
+//
+//	volume:
+//	    pgdata:
+//	        ops: [mount-rw]
+//	        path: /var/lib/postgresql/data
+//
+// Required, because a mount with no path is not a mount — and the kind that needs this
+// most is a database running in a container, where the path IS the configuration: point
+// postgres at the wrong directory and it initialises an empty one on local disk and
+// loses everything on the next placement.
+//
+// Per USE, not per volume: two workloads can mount the same volume at different paths,
+// and the same workload can mount two volumes.
+func mountAttributes(kind string) []*Attribute {
+	if !isMounted(kind) {
+		return nil
+	}
+	return []*Attribute{
+		String("path", Required(), InSection("access"),
+			Doc("Mount Path", "Absolute path inside the workload where this filesystem appears, e.g. \"/var/lib/postgresql/data\".")),
+	}
+}
+
+// IsResourceAddresses validates a list of resource addresses — the form a list element
+// has to take, since a list of objects has no representation in this DSL and a name
+// therefore has to carry its own scope:
+//
+//	redact                this scope, then its parents
+//	eu/stamp              relative to this scope
+//	/shop/tier_header     absolute, from the project root
+//
+// The last segment is a resource name and follows the same rule every name does; the
+// segments before it are namespaces and follow the same rule those do.
+func IsResourceAddresses() engine.Option {
+	return Validator(func(in []string) error {
+		for _, addr := range in {
+			if err := checkAddress(addr); err != nil {
+				return fmt.Errorf("%q: %w", addr, err)
+			}
+		}
+		return nil
+	})
+}
+
+func checkAddress(addr string) error {
+	if addr == "" {
+		return errors.New("is empty")
+	}
+	if strings.HasSuffix(addr, "/") {
+		return errors.New("ends in a slash, so it names no resource")
+	}
+	segs := strings.Split(strings.TrimPrefix(addr, "/"), "/")
+	for i, seg := range segs {
+		if seg == "" {
+			return errors.New("has an empty segment")
+		}
+		last := i == len(segs)-1
+		if !nameRe.MatchString(seg) {
+			what := "namespace"
+			if last {
+				what = "resource name"
+			}
+			return fmt.Errorf("%q is not a valid %s", seg, what)
+		}
+	}
+	return nil
+}
+
+var nameRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
