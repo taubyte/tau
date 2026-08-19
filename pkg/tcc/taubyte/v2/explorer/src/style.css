@@ -40,9 +40,17 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
 .err pre { margin: .3rem 0 0; white-space: pre-wrap; }
 
 /* layout */
-.cols { display: grid; grid-template-columns: 340px 1fr; flex: 1; min-height: 0; }
+/* three columns: what files exist, the one you are editing, and what it compiles to.
+   The editor used to sit under the tree, so reading it meant scrolling past every
+   filename in the project. */
+.cols { display: grid; grid-template-columns: 240px minmax(320px, 26vw) 1fr; flex: 1; min-height: 0; }
 .pane { min-height: 0; overflow: auto; }
 .files { border-right: 1px solid var(--line); display: flex; flex-direction: column; background: var(--card); }
+.editor-pane {
+  border-right: 1px solid var(--line); background: var(--card);
+  display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+}
+.editor { flex: 1; min-height: 0; }
 .main { padding: 1rem 1.4rem 3rem; }
 
 .st { display: flex; align-items: baseline; gap: .6rem; margin: 1.1rem 0 .5rem; }
@@ -65,11 +73,6 @@ code, pre, textarea, .fields { font-family: ui-monospace, SFMono-Regular, Menlo,
 .tree .file:hover { background: var(--code); }
 .tree .file.on { background: var(--fg); color: var(--bg); }
 .tree .file.on::before { color: var(--bg); opacity: .7; }
-.files textarea {
-  flex: 1; min-height: 300px; margin: 0 .6rem .6rem; padding: .7rem .8rem;
-  background: var(--code); color: var(--fg); border: 1px solid var(--line);
-  border-radius: 6px; font-size: .8rem; line-height: 1.5; resize: none; tab-size: 2;
-}
 
 /* graph */
 .legend { display: flex; align-items: center; gap: 1rem; font-size: .8rem; color: var(--mut); margin-bottom: .5rem; }

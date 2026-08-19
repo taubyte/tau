@@ -4,6 +4,7 @@ import { buildGraph, categoryOf, iconOf, setCategories, type Graph } from "./gra
 import { esc, jsonRoot } from "./render";
 import { graphHost, renderGraph } from "./graph-mount";
 import { kindIconMarkup } from "./icons";
+import { editorHost, onEditorChange, showFile } from "./editor";
 import type { Finding } from "./wasm";
 import type { Selection } from "./graph-view";
 import { CLOUD_ZONE, place, type Placed } from "./layout";
@@ -41,6 +42,10 @@ let tab: "graph" | "review" | "compiled" | "vocabulary" | "omitted" = "graph";
 const app = document.getElementById("app")!;
 
 async function main() {
+  onEditorChange((text) => {
+    files[current] = text;
+    render();
+  });
   const tcc = await loadTcc();
   verbs = tcc.verbs();
   kinds = tcc.kinds();
@@ -77,32 +82,23 @@ function render() {
   paint();
 }
 
-// paint rebuilds the DOM from whatever is currently known. It runs on every compile
-// and again when a layout resolves, so anything the user was doing has to survive it
-// — which is why the caret is restored here rather than at one call site.
+// paint rebuilds the DOM from whatever is currently known. It runs on every compile and
+// again when a layout resolves — so everything the user was doing lives in an element
+// that is kept and re-attached rather than rebuilt: the editor, the graph host, and the
+// React root inside it.
 function paint() {
   const result = lastResult!;
   const ok = !("error" in result);
-
-  const editor = document.querySelector<HTMLTextAreaElement>(".files textarea");
-  const hadFocus = editor !== null && document.activeElement === editor;
-  const caret = editor?.selectionStart ?? 0;
 
   app.innerHTML = "";
   app.appendChild(header(ok ? null : (result as { error: string }).error));
 
   const cols = div("cols");
   cols.appendChild(filesPane());
+  cols.appendChild(editorPane());
   cols.appendChild(mainPane(result));
   app.appendChild(cols);
 
-  if (hadFocus) {
-    const next = document.querySelector<HTMLTextAreaElement>(".files textarea");
-    if (next) {
-      next.focus();
-      next.selectionStart = next.selectionEnd = caret;
-    }
-  }
 }
 
 function header(error: string | null): HTMLElement {
@@ -146,16 +142,17 @@ function filesPane(): HTMLElement {
   tree.appendChild(fileTree());
   pane.appendChild(sectionTitle("the config tree", `${Object.keys(files).length} files`));
   pane.appendChild(tree);
+  return pane;
+}
 
+// Its own column, so the file is on screen at the same time as the graph it produces.
+// It used to sit under the tree, which meant scrolling past thirty-three filenames to
+// read the one file you were editing.
+function editorPane(): HTMLElement {
+  const pane = div("pane editor-pane");
   pane.appendChild(sectionTitle(current, "editable — compiles on every keystroke"));
-  const ta = document.createElement("textarea");
-  ta.value = files[current] ?? "";
-  ta.spellcheck = false;
-  ta.oninput = () => {
-    files[current] = ta.value;
-    render(); // paint() puts the caret back, on this pass and on the layout's
-  };
-  pane.appendChild(ta);
+  pane.appendChild(editorHost());
+  showFile(current, files[current] ?? "");
   return pane;
 }
 
