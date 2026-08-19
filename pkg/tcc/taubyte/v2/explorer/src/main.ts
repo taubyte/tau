@@ -64,29 +64,9 @@ const flipped = new Set<string>();
 
 window.addEventListener("tcc-flip", (e) => flipFrame((e as CustomEvent<string>).detail));
 
-let focus: { scope: string; seq: number; from?: { x: number; y: number } } | undefined;
-let focusSeq = 0;
-
 export function flipFrame(id: string) {
   if (flipped.has(id)) flipped.delete(id);
   else flipped.add(id);
-  // Turning a box over changes how much is inside it, so the layout moves. Follow the
-  // box rather than making the reader find where it went.
-  // Opening a box re-runs the layout, and dot's answer for the new sizes puts every
-  // OTHER node somewhere else. The box itself is pinned (the viewport follows it), but
-  // the rest of the graph was teleporting around it, which is the same "where am I"
-  // problem one step removed. So the positions are animated for the length of the
-  // flip: nothing moves instantly, and the eye can follow what went where.
-  const host = graphHost();
-  host.classList.add("settling");
-  window.setTimeout(() => host.classList.remove("settling"), 420);
-
-  const frame = graph?.byId.get(id)?.frame;
-  if (frame) {
-    // where the box is NOW, so the view can put it back there once the layout has moved
-    const at = placed?.scopes.find((s) => s.scope === frame);
-    focus = { scope: frame, seq: ++focusSeq, from: at ? { x: at.x, y: at.y } : undefined };
-  }
   render();
 }
 
@@ -317,7 +297,6 @@ function graphPane(): HTMLElement {
       reveal(".files .file.on");
     },
       flipped,
-      focus,
     );
   }
   wrap.appendChild(detail());

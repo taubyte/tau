@@ -33,6 +33,8 @@ export interface Node {
   frame?: string;
   /** Drawn as nothing: the box says what this is, so the node would be a duplicate. */
   anchor?: boolean;
+  /** In the layout but not on the page: it exists on the box's other face. */
+  hidden?: boolean;
   layer: number;
   x: number;
   y: number;
@@ -51,6 +53,8 @@ export interface Arrow {
   // still a dependency — X cannot build or run without Y — but it grants no verb,
   // so it is drawn differently and never counts toward a blast radius.
   ref?: boolean;
+  /** Which face of a box this belongs to. Absent means both. */
+  face?: "written" | "lowered";
 }
 export interface Graph {
   nodes: Node[];
@@ -410,25 +414,32 @@ export function buildGraph(
   }
 
   // A LOWERED RESOURCE IS A BOX, the same way a namespace is: a frame holding the parts
-  // that belong to it. Two things can be inside it, and the box flips between them —
-  // what was WRITTEN (the steps, wired to each other and to what they run) and what it
-  // BECOMES (the queues and the entity). Both are read from the same plan tcc computed;
-  // neither is recomputed here, and nothing in this file knows what a step is.
+  // that belong to it, with two faces — what was WRITTEN (the steps) and what it BECOMES
+  // (the queues). Both are read from the same plan tcc computed; neither is recomputed
+  // here, and nothing in this file knows what a step is.
+  //
+  // THE LAYOUT IS THE SAME FOR BOTH FACES, and that is the whole trick. Turning a box
+  // over used to re-run dot with a different node count, which moved every other node on
+  // the page — a gateway three columns away jumped 300px, and panning to hold the box
+  // still just pushed other things off the edge of the panel. So the layout is always
+  // computed for the LOWERED face, edges included, and the written face reuses those
+  // positions: one node per derived resource, wearing the step's name when the box is
+  // closed and the queue's when it is open.
+  //
+  // Nothing moves, because nothing about the layout changed. No pan, no animation, no
+  // clipping.
   const frames = new Map<string, string>();
   const sourcesOf = new Map<string, Lowered[]>();
   for (const d of lowered) {
-    const of = d.of;
-    sourcesOf.set(of, [...(sourcesOf.get(of) ?? []), d]);
+    sourcesOf.set(d.of, [...(sourcesOf.get(d.of) ?? []), d]);
   }
 
   for (const [of, parts] of sourcesOf) {
     const src = nodes.find((n) => `${n.kind}/${n.name}` === of);
     if (!src) continue;
 
-    // Where the resource actually LIVES, kept before the frame takes its place. The
-    // parts inside a box still reach resources in the namespace the box is in, and
-    // looking for them in the frame finds nothing — silently, which is how every
-    // step-to-function arrow went missing and left the workflow hanging in the air.
+    // Where the resource actually LIVES, kept before the frame takes its place: the
+    // parts inside a box still reach resources in the namespace the box is in.
     const home = src.scope;
 
     // `@` cannot begin a resource name, so a frame can never collide with a namespace.
@@ -436,86 +447,68 @@ export function buildGraph(
     frames.set(frame, `${src.kind} · ${src.name}`);
     src.scope = frame;
     src.frame = frame;
-    // The BOX IS the resource, so drawing the resource inside it says the same thing
+    // The box IS the resource, so drawing the resource inside it says the same thing
     // twice. It stays in the model — everything that points at a workflow still points
-    // at it, and the layout needs something inside the cluster to route those edges to —
-    // but it is drawn as nothing: an anchor the arrows land on, at the box's edge.
+    // at it — but it is drawn as a point the arrows land on, at the box's edge.
     src.anchor = true;
 
-    if (flipped.has(src.id)) {
-      for (const d of parts) {
-        const id = `derived:${d.kind}/${d.name}`;
-        if (byId.has(id)) continue;
-        const node: Node = {
-          id, kind: d.kind, name: d.name, scope: frame,
-          derived: { of: d.of, why: d.why }, layer: 0, x: 0, y: 0,
-        };
-        nodes.push(node);
-        byId.set(id, node);
-      }
-      for (const d of parts) {
-        const from = byId.get(`derived:${d.kind}/${d.name}`);
-        if (!from) continue;
-        for (const l of d.links ?? []) {
-          const to =
-            byId.get(`derived:${l.kind}/${l.name}`) ??
-            nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === (l.scope || home));
-          if (!to) continue;
-          // A queue does not hand work to another queue: the function that consumed it
-          // is what sends on, and tcc says so on the link.
-          const origin = l.from
-            ? (byId.get(`derived:${l.from.kind}/${l.from.name}`) ??
-              nodes.find((n) => n.kind === l.from!.kind && n.name === l.from!.name))
-            : from;
-          if (!origin) continue;
-          live.push({
-            from: origin.id, to: to.id, kind: l.kind, verb: l.verb,
-            effect: (l.effect as Effect) ?? "write", ref: l.ref,
-          });
-        }
-      }
-      continue;
-    }
+    const open = flipped.has(src.id);
+    const byPath = new Map<string, Node>();
 
-    // As written: one node per part, in the order the author wrote them. A part with no
-    // name of its own is skipped rather than drawn as an empty box.
-    const partNodes = new Map<string, Node>();
     for (const d of parts) {
-      const path = d.source?.path;
-      const partName = typeof d.source?.part?.name === "string" ? (d.source.part.name as string) : "";
-      if (!path || !partName || partNodes.has(path)) continue;
-      const id = `part:${of}/${path}`;
-      // NOT derived: a step is what the author wrote. The box says which workflow it
-      // belongs to, so there is no containment edge either — an arrow saying "this is
-      // inside that" repeats the rectangle it is drawn inside.
-      const node: Node = { id, kind: "step", name: partName, scope: frame, layer: 0, x: 0, y: 0 };
-      partNodes.set(path, node);
+      const id = `derived:${d.kind}/${d.name}`;
+      if (byId.has(id)) continue;
+      const part = typeof d.source?.part?.name === "string" ? (d.source.part.name as string) : "";
+      const node: Node = {
+        id,
+        // Closed, this node IS the step it came from; open, it is what the step became.
+        kind: open || !part ? d.kind : "step",
+        name: open || !part ? d.name : part,
+        scope: frame,
+        derived: open ? { of: d.of, why: d.why } : undefined,
+        // A derived resource with no step behind it — the failure queue — exists in the
+        // layout either way, so the box does not change size, and is simply not drawn
+        // on the face where it does not exist.
+        hidden: !open && !part,
+        layer: 0,
+        x: 0,
+        y: 0,
+      };
       nodes.push(node);
       byId.set(id, node);
+      if (d.source?.path) byPath.set(d.source.path, node);
     }
 
-    // The wiring, attributed to the part rather than to what it became: a step runs its
-    // function, and hands on to the step after it.
-    const partByName = new Map([...partNodes.values()].map((n) => [n.name, n]));
+    // Both faces' edges, tagged with the face they belong to. dot sees all of them, so
+    // the ranking is the same whichever face is showing; the page draws one face.
     for (const d of parts) {
-      const from = d.source?.path ? partNodes.get(d.source.path) : undefined;
-      if (!from) continue;
+      const self = byId.get(`derived:${d.kind}/${d.name}`);
+      if (!self) continue;
       for (const l of d.links ?? []) {
-        // A link to another part of the same lowering is drawn between the PARTS: the
-        // queue named `checkout_charge` is the step named `charge`, seen from the other
-        // side of the lowering.
-        const sibling = [...sourcesOf.get(of)!].find((o) => o.kind === l.kind && o.name === l.name);
-        const to = sibling?.source?.part?.name
-          ? partByName.get(sibling.source.part.name as string)
-          : nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === (l.scope || home));
-        if (!to || to.id === from.id) continue;
-        // As written, an edge that tcc says starts at the step's own function still
-        // starts at the STEP here: the function is what the step runs, and drawing the
-        // hop from outside the box would take the eye out of it and back.
-        live.push({
-          from: from.id, to: to.id, kind: l.kind, verb: l.verb,
-          effect: (l.effect as Effect) ?? "write", ref: l.ref,
-        });
+        const target =
+          byId.get(`derived:${l.kind}/${l.name}`) ??
+          nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === (l.scope || home));
+        if (!target) continue;
+        const effect = (l.effect as Effect) ?? "write";
+
+        // OPEN: exactly what tcc said, origin included — a function sends to the next
+        // queue, a queue points at its dead-letter.
+        const origin = l.from
+          ? (byId.get(`derived:${l.from.kind}/${l.from.name}`) ??
+            nodes.find((n) => n.kind === l.from!.kind && n.name === l.from!.name))
+          : self;
+        if (origin) {
+          live.push({ from: origin.id, to: target.id, kind: l.kind, verb: l.verb, effect, ref: l.ref, face: "lowered" });
+        }
+
+        // CLOSED: the same relationships attributed to the STEP, because that is what a
+        // reader has in front of them — the hop to the next step is the step's, not a
+        // queue's, and the function is what the step runs. A link that only points at
+        // lowered machinery (the dead-letter) has nothing to say as written.
+        if (l.ref) continue;
+        if (!target.hidden) {
+          live.push({ from: self.id, to: target.id, kind: l.kind, verb: l.verb, effect, face: "written" });
+        }
       }
     }
   }
