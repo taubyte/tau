@@ -328,6 +328,43 @@ reachable through them; read `CompileRoot().Attributes` for those.
 
 ---
 
+## 8b. A kind that is REWRITTEN rather than run
+
+Some kinds name nothing a component holds. A `workflow` is a way of writing queues; it
+LOWERS into them at compile, so the vocabulary gains a construct and operations gains
+nothing to deploy. The mechanism is tcc's (`interp/lowering.go`); the vocabulary
+declares what it becomes, in terms:
+
+```go
+Lowers(
+    Into("queue",
+        PerEach("steps"),
+        Named("{name}_{each.name}"),
+        Sets("max-attempts", "{each.attempts}"),
+        LinksTo("function", "{each.run}", "consumed by", LinkEffect(Read)),
+        LinksTo("queue", "{name}_{each.next.name}", "sends to", From("function", "{each.run}")),
+    ),
+)
+```
+
+Rules that came out of getting each of these wrong first:
+
+- **A lowering ADDS; it never replaces.** The authored resource stays as the shell,
+  which is the metadata decompile needs and the thing everything else points at. tcc
+  compilation is reversible and that is not negotiable for a new construct.
+- **Read the lowering as a PICTURE before believing it.** Three modelling errors were
+  invisible in the config and obvious as a diagram: a queue feeding a queue, nothing
+  consuming a queue, and nothing starting the workflow at all.
+- **A derived resource must be able to EXIST.** `CheckLowerings` refuses a lowering that
+  leaves a required field of the produced kind unset — which caught a workflow lowering
+  into a code-bearing `entity` and setting none of the code.
+- **Templates never grow a calculator.** A step counts `attempts`, not `retries`, so the
+  queue's `max-attempts` is a copy. If a lowering needs arithmetic, the field is named
+  wrong.
+- **The plan carries its source.** A fault found in something nobody wrote is reported
+  against something somebody did — the workflow and the step — or a diagnostic about
+  generated config is worth nothing.
+
 ## 9. The one modelling rule
 
 **The target owns the policy, the accessor only states intent.** A resource that can
