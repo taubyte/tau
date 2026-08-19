@@ -214,10 +214,10 @@ func (r compiled) block(key string) map[string]any {
 func checkReachable(all []compiled, byKind map[string][]compiled) []Finding {
 	fronted := map[string]bool{}
 	for _, res := range all {
-		// The ways something is reached, read off the kinds that declare one rather
-		// than listed here — a list is a copy, and a copy is a thing that goes stale
-		// the next time a kind gains an inbound block.
-		for _, prefix := range HandsToPrefixes() {
+		// The ways something is reached, derived from the references whose kind the
+		// author picks rather than listed here — a list is a copy, and a copy goes
+		// stale the next time a kind gains an inbound block.
+		for _, prefix := range InboundBlocks() {
 			kind, name := res.str(prefix+"/kind"), res.str(prefix+"/name")
 			if kind != "" && name != "" {
 				fronted[kind+"/"+name] = true
@@ -316,7 +316,7 @@ func checkPortsAreFed(all []compiled) []Finding {
 			}
 		}
 		for _, other := range all {
-			for _, prefix := range HandsToPrefixes() {
+			for _, prefix := range InboundBlocks() {
 				if other.str(prefix+"/name") == res.name {
 					if p := other.str(prefix + "/port"); p != "" {
 						used[p] = true
@@ -812,7 +812,7 @@ func volumeKey(all []compiled, name, ns, own string) string {
 func checkHandlerPorts(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
-		for _, prefix := range HandsToPrefixes() {
+		for _, prefix := range InboundBlocks() {
 			port := res.str(prefix + "/port")
 			kind := res.str(prefix + "/kind")
 			if port == "" || kind == "" || kind == "application" {

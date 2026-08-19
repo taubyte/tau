@@ -342,7 +342,7 @@ func namespacePathChecker() engine.Option {
 // A resource with no authorizer is decided by its declared access alone.
 func authorizerAttributes() []*Attribute {
 	return []*Attribute{
-		String("authorizer/name", Path("authorizer", "name"), IsVariableName(), NamesResource("function"), InSection("authorizer"),
+		String("authorizer/name", Path("authorizer", "name"), IsVariableName(), Ref("function", ByName()), InSection("authorizer"),
 			Doc("Authorizer", "A function that decides what a caller may do to this resource, and returns the ops it gets.")),
 		String("authorizer/namespace", Path("authorizer", "namespace"), IsNamespacePath(), InSection("authorizer"),
 			Doc("Authorizer Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
@@ -417,89 +417,107 @@ func mountAttributes(kind string) []*Attribute {
 	}
 }
 
-// HandsToPrefixes is every block in this vocabulary where a resource names what it hands
-// traffic on to, read off the kinds themselves.
+// References is every place this vocabulary points at another resource: fields that
+// resolve to an id, fields that keep a name, and blocks whose target kind the author
+// picks. ONE list, because it is one fact — "this points at a resource" — and a consumer
+// asking two questions to learn it is one that will answer a new case in one place and
+// forget the other.
 //
-// It replaces a literal list of three prefixes that both the audit and the explorer
-// carried. That list was a bug waiting: `stream` was added with a `serve` block and drew
-// no arrow and failed no check until it was noticed by eye, because two separate copies
-// of "the ways in" had not been edited.
-func HandsToPrefixes() []string {
-	seen := map[string]bool{}
-	out := []string{}
-	for _, g := range V2Resources {
-		if len(g.Children) == 0 {
-			continue
-		}
-		if p := engine.HandsToOf(g.Children[0]); p != "" && !seen[p] {
-			seen[p] = true
-			out = append(out, p)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
-// NamedResourceFields is every attribute that holds the NAME of another resource, with
-// the kind it names and the namespace field beside it. Read off the schema, so a policy
-// field added tomorrow is drawn and checked without editing a consumer.
-func NamedResourceFields() []NamedField {
-	out := []NamedField{}
+// That is exactly what happened. An inbound block and a name-carrying field were two
+// separate terms beside Ref, so three ways to say one thing, and the graph knew about
+// them one at a time. They are Ref(...) with modifiers now: ByName where the value stays
+// a name, KindFrom where the kind is chosen in the document, Inbound where the
+// relationship runs the other way.
+func References() []Reference {
+	out := []Reference{}
 	seen := map[string]bool{}
 	for _, g := range V2Resources {
 		if len(g.Children) == 0 {
 			continue
 		}
-		collectNamedFields(g.Children[0], "", &out, seen)
+		kind, _ := g.Match.(string)
+		collectReferences(kind, g.Children[0], "", &out, seen)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Field < out[j].Field })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].On != out[j].On {
+			return out[i].On < out[j].On
+		}
+		return out[i].Field < out[j].Field
+	})
 	return out
 }
 
-// NamedField is one attribute that names another resource.
-type NamedField struct {
-	Field     string // the attribute holding the name
-	Namespace string // the attribute holding its namespace, when there is one
-	Kind      string // what kind it names
-	// In is the nested group whose ENTRIES carry this field — "transformers", "steps" —
-	// and empty when the field is on the resource itself.
-	//
-	// It is not a detail. A transformer entry's field is called `name`, and so is every
-	// resource's own name: a consumer that applied the list to resources drew an arrow
-	// from every resource to a function of the same name, which for a function is an
-	// arrow from itself to itself.
+// Reference is one attribute that points at another resource.
+type Reference struct {
+	On       string // the kind declaring it
+	Field    string // the attribute holding the target
+	Kind     string // the kind it points at, when the schema fixes it
+	KindFrom string // the sibling holding the kind, when the author picks it
+	// Namespace is the sibling holding the target's namespace, when there is one.
+	Namespace string
+	Prefix    string // the value's prefix, for a reference that resolves
+	ByName    bool   // the value stays a name rather than resolving to an id
+	Inbound   bool   // the relationship runs toward the declarer
+	// In is the nested group whose ENTRIES carry this, empty on the resource itself. A
+	// transformer entry's field is called `name`, and so is every resource's own — a
+	// consumer that applied one to the other drew every function pointing at itself.
 	In string
 }
 
-func collectNamedFields(iter *engine.Node, in string, out *[]NamedField, seen map[string]bool) {
+func collectReferences(kind string, iter *engine.Node, in string, out *[]Reference, seen map[string]bool) {
 	for _, a := range iter.Attributes {
-		kind := engine.NamesResourceOf(a)
-		if kind == "" || seen[in+"\x00"+a.Name] {
+		spec, ok := a.Meta["ref"].(engine.RefSpec)
+		if !ok {
 			continue
 		}
-		seen[in+"\x00"+a.Name] = true
-		f := NamedField{Field: a.Name, Kind: kind, In: in}
+		key := kind + "\x00" + in + "\x00" + a.Name
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		r := Reference{
+			On: kind, Field: a.Name, Kind: spec.Group, KindFrom: spec.KindFrom,
+			Prefix: spec.Prefix, ByName: spec.ByName, Inbound: spec.Inbound, In: in,
+		}
 		// The namespace beside it, by the vocabulary's own convention: the same prefix
 		// (`authorizer/name` -> `authorizer/namespace`), or the block's own `namespace`
-		// where the name field has no prefix of its own (a workflow step's `run` sits
-		// beside `namespace`).
+		// where the field has no prefix of its own (a workflow step's `run`).
 		for _, cand := range []string{strings.TrimSuffix(a.Name, "name") + "namespace", "namespace"} {
-			if f.Namespace != "" {
+			if r.Namespace != "" {
 				break
 			}
 			for _, b := range iter.Attributes {
 				if b.Name == cand && b.Name != a.Name {
-					f.Namespace = cand
+					r.Namespace = cand
 				}
 			}
 		}
-		*out = append(*out, f)
+		*out = append(*out, r)
 	}
 	for _, child := range iter.Children {
 		if key, _ := child.Match.(string); key != "" && len(child.Children) > 0 {
-			collectNamedFields(child.Children[0], key, out, seen)
+			collectReferences(kind, child.Children[0], key, out, seen)
 		}
 	}
+}
+
+// InboundBlocks is every block where a kind names what it hands traffic on to, derived
+// from the references whose kind the author picks. The prefix is the field minus its
+// `/name`, because that is what the block IS — nothing declares it twice.
+func InboundBlocks() []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, r := range References() {
+		if r.KindFrom == "" {
+			continue
+		}
+		if prefix := strings.TrimSuffix(r.Field, "/name"); prefix != r.Field && !seen[prefix] {
+			seen[prefix] = true
+			out = append(out, prefix)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // AccessShape is how an access entry is written: the field holding the ops, and the one

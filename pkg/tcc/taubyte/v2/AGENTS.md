@@ -365,6 +365,31 @@ Rules that came out of getting each of these wrong first:
   against something somebody did — the workflow and the step — or a diagnostic about
   generated config is worth nothing.
 
+## 8c. The rules a consumer depends on
+
+The DSL is the only place that knows this vocabulary. Four rules, each of which was
+broken here before it was written down.
+
+**Everything in the DSL is generic.** A term in `engine` or `interp` may not know a
+kind. The vocabulary declares; the generic layer carries. `Icon()`, `Category()`,
+`Ops()` are the pattern.
+
+**Reuse or enhance before inventing.** `NamesResource()` and `HandsTo()` were added
+beside `Ref()` — three ways to say "this points at a resource of kind K", so a consumer
+asked three questions, and a new case went into one of them and was forgotten in the
+others. It is one term with modifiers: `Ref(kind, ByName(), KindFrom(field),
+Inbound())`, read back through `References()`.
+
+**No consumer hardcodes this vocabulary.** A graph, a CLI, a console must draw a version
+they have never seen. If a consumer knows which key is an ingress, which field names a
+function, which kind is the scope container, or how a file path is built, that is a hole
+HERE.
+
+**Never compensate in a view.** A picture special-cased into looking right says the
+config is coherent when it is not — and a reviewer reads the picture. If a drawing needs
+a fact, this vocabulary states the fact: direction (`Inbound()`), what is worth an arrow
+(`Ref`), what a client must dial (`Derived(DeriveSRVName, …)`).
+
 ## 9. The one modelling rule
 
 **The target owns the policy, the accessor only states intent.** A resource that can

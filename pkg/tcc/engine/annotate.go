@@ -371,6 +371,21 @@ type RefSpec struct {
 	// Direction is the whole claim an edge makes, so it is declared rather than guessed
 	// — the same reason a verb says whether it is Delivered.
 	Inbound bool
+
+	// ByName: the value stays a NAME. Most references resolve to the target's id at
+	// compile; some deliberately do not — an authorizer, a workflow step's function, a
+	// transformer entry — because they cross scopes the resolver does not follow, or
+	// because the vocabulary wants the authored word kept.
+	//
+	// They are still references, and that is the point: "this field points at a
+	// resource of kind K" is ONE fact, and a second term for the unresolved half would
+	// mean every consumer asking two questions to learn one thing.
+	ByName bool
+
+	// KindFrom names a sibling attribute holding the target's KIND, for a reference
+	// whose kind is chosen in the document rather than fixed by the schema — a gateway
+	// route's handler, a proxy's forward, a stream's serve. Group is empty then.
+	KindFrom string
 }
 
 // RefOpt tunes a RefSpec.
@@ -379,6 +394,14 @@ type RefOpt func(*RefSpec)
 // Inbound marks a reference whose relationship runs TOWARD the resource declaring it.
 // See RefSpec.Inbound.
 func Inbound() RefOpt { return func(s *RefSpec) { s.Inbound = true } }
+
+// ByName marks a reference that keeps the authored name rather than resolving to an id.
+// See RefSpec.ByName.
+func ByName() RefOpt { return func(s *RefSpec) { s.ByName = true } }
+
+// KindFrom marks a reference whose target KIND is read from a sibling attribute — the
+// Key() of the switch the author picked. See RefSpec.KindFrom.
+func KindFrom(field string) RefOpt { return func(s *RefSpec) { s.KindFrom = field } }
 
 // Prefix sets the RefSpec key prefix.
 func Prefix(p string) RefOpt {

@@ -136,16 +136,24 @@ export interface Lowered {
 
 /** What this vocabulary's shapes are, from tcc. Set once, with the kinds. */
 let SHAPES: Shapes = {
-  handsTo: [],
-  names: [],
+  refs: [],
+  inbound: [],
   kinds: {},
   access: { ops: "ops", namespace: "namespace" },
   layout: { resource: "{kind}/{name}.yaml", scope: "{name}", leaf: "project" },
 };
 
+/** The references a kind declares, on itself or on the entries of a nested group. */
+const refsOf = (kind: string, inGroup = "") =>
+  SHAPES.refs.filter((r) => r.on === kind && r.in === inGroup);
+
 export function setShapes(s: Shapes): void {
   SHAPES = s;
 }
+
+/** What to call a reference on an edge: the field, minus the part that repeats the kind. */
+const verbOf = (field: string, kind: string) =>
+  field.replace(/\/?name$/, "").replace(/\//g, " ") || kind;
 
 /** Where a resource's document lives, from the layout tcc reports. */
 export function fileOf(n: { kind: string; name: string; scope: string; home?: string }): string {
@@ -203,9 +211,10 @@ export function buildGraph(
   }
 
   const root = (compiled.object as Compiled) ?? compiled;
-  const pendingHandlers: { from: string; kind: string; name: string; scope: string }[] = [];
   // an access entry names its target; it is matched once every node is known
-  const pendingPolicy: { from: string; name: string; scope: string | null; verb: string; kind: string }[] = [];
+  const pendingPolicy: {
+    from: string; name: string; scope: string | null; verb: string; kind: string; use?: boolean;
+  }[] = [];
   const pendingAccess: {
     from: string; kind: string; name: string; scope: string | null; verb: string; effect: Effect;
     inbound?: boolean;
@@ -309,33 +318,15 @@ export function buildGraph(
         val.forEach((entry, i) => {
           const el = entry as Compiled;
           if (!el || typeof el !== "object") return;
-          for (const f of SHAPES.names.filter((x) => x.in === key)) {
-            const n = el[f.field];
+          for (const r of refsOf(group, key)) {
+            const n = el[r.field];
             if (typeof n !== "string" || n === "") continue;
-            const ns = f.namespace && typeof el[f.namespace] === "string" ? (el[f.namespace] as string) : null;
-            pendingPolicy.push({ from: id, name: n, scope: ns, kind: f.kind, verb: `${key} #${i + 1}` });
+            const ns = r.namespace && typeof el[r.namespace] === "string" ? (el[r.namespace] as string) : null;
+            const kind = r.kindFrom && typeof el[r.kindFrom] === "string" ? (el[r.kindFrom] as string) : r.kind;
+            if (!kind) continue;
+            pendingPolicy.push({ from: id, name: n, scope: ns, kind, verb: `${key} #${i + 1}` });
           }
         });
-        continue;
-      }
-
-      // A REFERENCE is one the schema declares — `Ref(kind)` on the attribute — not any
-      // string that happens to contain a slash. The guess drew whatever looked the part,
-      // and could not tell a reference from a value with a slash in it.
-      const declared = (SHAPES.kinds[group]?.refs ?? []).find((r) => r.field === key);
-      if (declared && typeof val === "string" && val !== "") {
-        const to = val.slice(val.indexOf("/") + 1);
-        if (to && to !== val) {
-          // WHICH WAY IT RUNS is the schema's to say. Most references are declared by
-          // the thing that depends on the target; some — a name and the zone that
-          // answers for it — run the other way, and an arrow from the declarer would
-          // claim the opposite of what happens.
-          arrows.push(
-            declared.inbound
-              ? { from: to, to: id, kind: group, verb: key, effect: "read", ref: true }
-              : { from: id, to, kind: declared.kind, verb: key, effect: "read", ref: true },
-          );
-        }
         continue;
       }
 
@@ -351,36 +342,38 @@ export function buildGraph(
     // Two places a resource names a function that decides something ABOUT it, rather
     // than something it reaches: who may use it, and whether it is ready. Both are
     // the resource's own declaration, so both arrows start at it.
-    // A field that holds the NAME of another resource — an authorizer, a readiness
-    // function, a step's function — is declared as one in the schema (NamesResource),
-    // so this draws them all without knowing which fields they are. It used to be three
-    // hardcoded field names, which meant a fourth drew nothing.
-    for (const f of SHAPES.names) {
-      if (f.in) continue; // it lives on a nested entry, not on the resource
-      const n = res[f.field];
-      if (typeof n !== "string" || n === "") continue;
-      const ns = f.namespace && typeof res[f.namespace] === "string" ? (res[f.namespace] as string) : null;
-      // The verb is the field's own name, which is what the author wrote and what the
-      // reader is looking for — `authorizer/name` reads as "authorizer".
-      pendingPolicy.push({
-        from: id, name: n, scope: ns, kind: f.kind,
-        verb: f.field.replace(/\/?name$/, "").replace(/\//g, " ") || f.kind,
-      });
+    // EVERY REFERENCE THIS KIND DECLARES, in one pass: whether the value resolved to
+    // an id or stayed a name changes only how the target is found, and the schema says
+    // which. It was two passes over two lists, and a case added to one of them.
+    for (const r of refsOf(group)) {
+      const val = res[r.field];
+      if (typeof val !== "string" || val === "") continue;
+      const ns = r.namespace && typeof res[r.namespace] === "string" ? (res[r.namespace] as string) : null;
+      const kind = r.kindFrom && typeof res[r.kindFrom] === "string" ? (res[r.kindFrom] as string) : r.kind;
+      if (!kind) continue;
+
+      if (r.byName) {
+        // A reference whose KIND the author picks is where this resource hands traffic
+        // on — a route's handler, a proxy's forward, a stream's serve — and that is a
+        // use, not a note about policy. One whose kind the schema fixed is the other
+        // thing: a function named to decide something about this resource.
+        pendingPolicy.push({
+          from: id, name: val, scope: ns, kind,
+          verb: r.kindFrom ? "serves" : verbOf(r.field, kind),
+          use: !!r.kindFrom,
+        });
+        continue;
+      }
+      // a resolved reference carries "<kind>/<id>", whatever the kind is
+      const to = val.slice(val.indexOf("/") + 1);
+      if (!to || to === val) continue;
+      arrows.push(
+        r.inbound
+          ? { from: to, to: id, kind: group, verb: r.field, effect: "read", ref: true }
+          : { from: id, to, kind, verb: r.field, effect: "read", ref: true },
+      );
     }
 
-    // An ingress names its target by (kind, namespace, name) rather than resolving it
-    // to an id — a name in another namespace has no spelling the ref resolver accepts.
-    // Resolve it here, against the nodes actually compiled. WHICH blocks those are is
-    // the schema's answer, not this file's: a gateway route carries its handler under
-    // `route/`, a proxy forwards, a stream is served — three spellings on purpose, and
-    // a list of them here is a copy that goes stale the next time a kind gains one.
-    for (const p of SHAPES.handsTo) {
-      const hk = res[`${p}/kind`];
-      const hn = res[`${p}/name`];
-      if (typeof hk !== "string" || typeof hn !== "string") continue;
-      const ns = typeof res[`${p}/namespace`] === "string" ? (res[`${p}/namespace`] as string) : "";
-      pendingHandlers.push({ from: id, kind: hk, name: hn, scope: ns.replace(/^\/+/, "") });
-    }
   };
 
   const collect = (scopeObj: Compiled, scope: string) => {
@@ -447,8 +440,9 @@ export function buildGraph(
       const target = nodes.find((n) => n.kind === pol.kind && n.name === pol.name && n.scope === scope);
       if (target) {
         arrows.push({
-          from: pol.from, to: target.id, kind: pol.kind,
-          verb: pol.verb, effect: "read", policy: true,
+          from: pol.from, to: target.id, kind: pol.kind, verb: pol.verb,
+          effect: pol.use ? "write" : "read",
+          policy: !pol.use,
         });
         break;
       }
@@ -456,11 +450,6 @@ export function buildGraph(
   }
 
   // handlers resolve by name once every node is known
-  for (const h of pendingHandlers) {
-    const target = nodes.find((n) => n.kind === h.kind && n.name === h.name && (!h.scope || n.scope === h.scope));
-    if (target) arrows.push({ from: h.from, to: target.id, kind: h.kind, verb: "serves", effect: "write" });
-  }
-
   const byId = new Map(nodes.map((n) => [n.id, n]));
   // An arrow to something outside this project compiles to an id we do not hold.
   const live = merge(arrows.filter((a) => byId.has(a.to) && byId.has(a.from)));

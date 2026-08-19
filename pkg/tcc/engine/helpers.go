@@ -160,9 +160,19 @@ func DefineList(name string, attrs []*Attribute, extra ...any) *Node {
 // interpreter dispatches on rather than from a hand-kept list of types.
 func listUnsupported(a *Attribute) (string, bool) {
 	for _, term := range []string{"scalar", "ref", "tag", "enumBool", "derivedBool", "onlyWhen"} {
-		if _, ok := a.Meta[term]; ok {
-			return term + "()", true
+		if _, ok := a.Meta[term]; !ok {
+			continue
 		}
+		// A ByName reference is the exception, and only because nothing has to run for
+		// it: it declares what the field points at and keeps the authored name, so the
+		// resolver skips it wherever it appears. The others all need the per-instance
+		// pass a list element never gets.
+		if term == "ref" {
+			if spec, ok := a.Meta["ref"].(RefSpec); ok && spec.ByName {
+				continue
+			}
+		}
+		return term + "()", true
 	}
 	return "", false
 }
@@ -201,28 +211,6 @@ func (n *Node) With(opts ...NodeOption) *Node {
 	return n
 }
 
-// HandsTo declares the block where a kind names WHAT IT HANDS TRAFFIC ON TO — a gateway
-// route's handler, a proxy's forward, a stream's serve.
-//
-// The three are spelled differently on purpose (a gateway handles a request, a proxy
-// forwards bytes, a stream is answered), and that is exactly why nothing downstream may
-// know the spellings: every consumer that wanted to draw or check "what serves this"
-// was carrying a list of three prefixes, so a FOURTH kind with an inbound block drew no
-// arrow and failed no check until somebody noticed by eye.
-//
-// The block's shape is the same in all three: `<prefix>/kind` is the Either switch,
-// `<prefix>/name`, `<prefix>/namespace` and `<prefix>/port` hang off it.
-func HandsTo(prefix string) NodeOption { return GroupAnnotate("handsTo", prefix) }
-
-// HandsToOf reports the block a kind hands traffic on through, or "".
-func HandsToOf(n *Node) string {
-	if n == nil {
-		return ""
-	}
-	p, _ := n.Meta["handsTo"].(string)
-	return p
-}
-
 // AnswersAt declares the block where a kind says WHAT NAME IT ANSWERS ON — the
 // generated one, or a label in a zone the project owns. Same arrangement as HandsTo:
 // the prefix is declared, the shape under it is the vocabulary's convention
@@ -240,24 +228,6 @@ func AnswersAtOf(n *Node) string {
 	}
 	p, _ := n.Meta["answersAt"].(string)
 	return p
-}
-
-// NamesResource declares that an attribute holds the NAME of another resource of the
-// given kind — an authorizer, a readiness function, a step's function — resolved with
-// the `<prefix>/namespace` sibling beside it when there is one.
-//
-// It is not a Ref: a Ref binds one group in one scope and resolves to an id at compile,
-// and these deliberately do not. What they need is for a consumer to be able to FIND
-// them without a hardcoded list of the four fields that happen to work this way today.
-func NamesResource(kind string) Option { return Annotate("namesResource", kind) }
-
-// NamesResourceOf reports the kind an attribute names, or "".
-func NamesResourceOf(a *Attribute) string {
-	if a == nil {
-		return ""
-	}
-	k, _ := a.Meta["namesResource"].(string)
-	return k
 }
 
 // IsNamespaceField reports whether an attribute holds a NAMESPACE PATH — the "where does

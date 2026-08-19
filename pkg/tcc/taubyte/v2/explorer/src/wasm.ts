@@ -26,22 +26,33 @@ export interface Kind {
 }
 /** What a consumer would otherwise have to know about this vocabulary. From tcc. */
 export interface Shapes {
+  /**
+   * Every place this vocabulary points at another resource — ONE list, because it is
+   * one fact. Some resolve to an id and some keep a name; some have a fixed kind and
+   * some read it from a sibling the author picked; some run the other way.
+   */
+  refs: {
+    on: string;
+    field: string;
+    kind: string;
+    kindFrom: string;
+    namespace: string;
+    prefix: string;
+    byName: boolean;
+    inbound: boolean;
+    in: string;
+  }[];
   /** Blocks where a kind names what it hands traffic on to. */
-  handsTo: string[];
-  /** Fields that hold the name of another resource. */
-  names: { field: string; namespace: string; kind: string; in: string }[];
+  inbound: string[];
   /** How an access entry is written. */
   access: { ops: string; namespace: string };
   /** Where a document lives, as templates. */
   layout: { resource: string; scope: string; leaf: string };
-  /** Per kind: its inbound block, its naming block, and its derived fields. */
+  /** Per kind: its naming block, and its derived fields. */
   kinds: Record<
     string,
     {
-      handsTo?: string;
       answersAt?: string;
-      /** Attributes that REFERENCE another kind — the only string fields worth an arrow. */
-      refs?: { field: string; kind: string; prefix: string; inbound?: boolean }[];
       derived?: { field: string; derivation: string; from: string[]; label: string }[];
     }
   >;

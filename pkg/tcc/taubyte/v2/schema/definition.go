@@ -270,7 +270,7 @@ func probeAttributes(name, section, doc string) []*Attribute {
 			Doc(title(name)+" Port", "Which of this workload's ports the poll is made on, by name.")),
 		String(name+"/path", Path(name, "http", "path"), InSection(section), ShowWhen(name+"/kind", "http"),
 			Doc(title(name)+" Path", "HTTP path polled.")),
-		String(name+"/function/name", Path(name, "function", "name"), IsVariableName(), NamesResource("function"), InSection(section), ShowWhen(name+"/kind", "function"),
+		String(name+"/function/name", Path(name, "function", "name"), IsVariableName(), Ref("function", ByName()), InSection(section), ShowWhen(name+"/kind", "function"),
 			Doc(title(name)+" Function", "A function that answers for this workload, when \"working\" is not a status code — a queue drained, a migration finished, a lease still held.")),
 		String(name+"/function/namespace", Path(name, "function", "namespace"), IsNamespacePath(), InSection(section), ShowWhen(name+"/kind", "function"),
 			Doc(title(name)+" Function Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
@@ -918,7 +918,7 @@ var V2Resources = []*Node{
 				// the switch: which kind handles it, and where that resource lives
 				String("route/handler/kind", Path("route", "handler", Either(handlerKinds...)), Key(), Field("HandlerKind"), InSection("handler"), Doc("Handler", "Which kind serves this path (the key selects the handler block).")),
 				String("route/handler/namespace", Path("route", "handler", Either(handlerKinds...), "namespace"), InSection("handler"), Doc("Namespace", "Path to the namespace holding the handler, e.g. \"/shop/eu\". Omitted means the project root.")),
-				String("route/handler/name", Path("route", "handler", Either(handlerKinds...), "name"), Required(), IsVariableName(), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
+				String("route/handler/name", Path("route", "handler", Either(handlerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom("route/handler/kind"), ByName()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
 				String("route/handler/port", Path("route", "handler", Either(handlerKinds...), "port"), IsVariableName(), InSection("handler"), Doc("Port", "Which of the handler's ports to reach, by name. A workload listening on more than one has to be told which, and the number is never written here — the platform assigns the external one, and there may be several instances of the workload on one host.")),
 
 				// The name this gateway answers on, whatever it turns out to be. A
@@ -936,7 +936,7 @@ var V2Resources = []*Node{
 			),
 			Nested(transformersGroup()),
 			GroupDoc("A name, the policy at it, and what it serves."), Category("internet"), Icon("route"),
-			HandsTo("route/handler"), AnswersAt("host"),
+			AnswersAt("host"),
 			secIdentity, secTransformers,
 			Section("naming", "Naming", "The name served, and where its certificate comes from."),
 			Section("route", "Route", "The path served and how it is matched."),
@@ -1040,7 +1040,7 @@ var V2Resources = []*Node{
 					Doc("Forward To", "Which kind the connection is forwarded to (the key selects the block).")),
 				String("forward/namespace", Path("forward", Either(proxyHandlerKinds...), "namespace"), IsNamespacePath(), InSection("forward"),
 					Doc("Namespace", "Path to the namespace holding the workload, e.g. \"/shop/eu\". Omitted means the project root.")),
-				String("forward/name", Path("forward", Either(proxyHandlerKinds...), "name"), Required(), IsVariableName(), InSection("forward"),
+				String("forward/name", Path("forward", Either(proxyHandlerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom("forward/kind"), ByName()), InSection("forward"),
 					Doc("Name", "The workload's name within that namespace.")),
 
 				// THE WORKLOAD'S OWN PORT, by name — the one it binds inside its
@@ -1074,7 +1074,7 @@ var V2Resources = []*Node{
 			),
 			Nested(transformersGroup()),
 			GroupDoc("An allocated address that accepts a raw connection and streams it to a workload over p2p. For everything a gateway cannot parse."), Category("internet"), Icon("plug"),
-			HandsTo("forward"), AnswersAt("host"),
+			AnswersAt("host"),
 			secIdentity, secTransformers,
 			Section("listener", "Listener", "The protocol carried, the name it is reached by, and whether TLS stops here."),
 			Section("forward", "Forward", "The workload on the other end."),
@@ -1176,13 +1176,12 @@ var V2Resources = []*Node{
 					Doc("Served By", "Which kind answers this stream (the key selects the block).")),
 				String("serve/namespace", Path("serve", Either(streamServerKinds...), "namespace"), IsNamespacePath(), InSection("stream"),
 					Doc("Namespace", "Path to the namespace holding it, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
-				String("serve/name", Path("serve", Either(streamServerKinds...), "name"), Required(), IsVariableName(), InSection("stream"),
+				String("serve/name", Path("serve", Either(streamServerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom("serve/kind"), ByName()), InSection("stream"),
 					Doc("Name", "Its name within that namespace.")),
 				String("serve/port", Path("serve", Either(streamServerKinds...), "port"), IsVariableName(), InSection("stream"),
 					Doc("Port", "Which of the workload's own named ports the stream is delivered to. Containers only; a function is dispatched, not connected.")),
 			),
 			GroupDoc("A named byte stream between two workloads inside the project, over libp2p. The way in that is not an ingress."), Icon("stream"), Category("compute"),
-			HandsTo("serve"),
 			secIdentity, secAccess,
 			Section("stream", "Stream", "The name it answers to, and what answers it."),
 			Ops(WriteOp("dial")), // dial is write: what travels is opaque
@@ -1626,7 +1625,7 @@ func stepsGroup() *Node {
 			Doc("Step", "What this step is called. Another step's on-error names it, and the run's state is keyed by it.")),
 		String("namespace", IsNamespacePath(), InSection("steps"),
 			Doc("Namespace", "Path to the namespace holding the function, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
-		String("run", Required(), IsVariableName(), NamesResource("function"), InSection("steps"),
+		String("run", Required(), IsVariableName(), Ref("function", ByName()), InSection("steps"),
 			Doc("Function", "The function this step invokes.")),
 
 		// ATTEMPTS, not retries. "3 retries" is three or four runs depending on who is
@@ -1648,7 +1647,7 @@ func transformersGroup() *Node {
 	return DefineList("transformers", []*Attribute{
 		String("namespace", IsNamespacePath(), InSection("transformers"),
 			Doc("Namespace", "Path to the namespace holding the function, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
-		String("name", Required(), IsVariableName(), NamesResource("function"), InSection("transformers"),
+		String("name", Required(), IsVariableName(), Ref("function", ByName()), InSection("transformers"),
 			Doc("Name", "The function's name within that namespace.")),
 
 		// The one decision that is genuinely per-use. It is also the one with a

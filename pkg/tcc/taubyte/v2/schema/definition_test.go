@@ -907,32 +907,56 @@ func TestEveryLoweringNamesARealKind(t *testing.T) {
 
 // THE STANDING RULE: no consumer hardcodes this vocabulary, so a graph, a CLI or a
 // console draws a version of it they have never seen. Icon() and Category() and Ops()
-// were the first of these; these are the rest, and this test is what says they are
-// actually declared rather than assumed somewhere else.
+// were the first of these; these are the rest.
+//
+// AND THERE IS ONE WAY TO SAY EACH THING. Pointing at another resource was briefly
+// three terms — Ref, plus one for fields that keep a name, plus one for blocks whose
+// kind the author picks — which is three places to add a case and two to forget. It is
+// Ref with modifiers, and this asserts that the whole vocabulary is readable through it.
 func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
-	// Every block where a kind hands traffic on, found by asking the kinds.
-	handsTo := schema.HandsToPrefixes()
-	assert.DeepEqual(t, handsTo, []string{"forward", "route/handler", "serve"})
-
-	// Every field that names another resource, with the namespace beside it.
-	named := map[string]string{}
-	for _, f := range schema.NamedResourceFields() {
-		assert.Equal(t, f.Kind, "function", "%s names a kind that is not a function", f.Field)
-		named[f.Field] = f.Namespace
-	}
-	for field, ns := range map[string]string{
-		"authorizer/name":         "authorizer/namespace",
-		"readiness/function/name": "readiness/function/namespace",
-		"liveness/function/name":  "liveness/function/namespace",
-		"run":                     "namespace", // a workflow step
-		"name":                    "namespace", // a transformer entry
-	} {
-		got, found := named[field]
-		assert.Assert(t, found, "%s is not declared as naming a resource", field)
-		assert.Equal(t, got, ns, "%s", field)
+	refs := schema.References()
+	find := func(on, field string) schema.Reference {
+		t.Helper()
+		for _, r := range refs {
+			if r.On == on && r.Field == field {
+				return r
+			}
+		}
+		t.Fatalf("%s has no declared reference %q", on, field)
+		return schema.Reference{}
 	}
 
-	// How an access entry is written, and where a document lives.
+	// resolves to an id, with a prefix
+	src := find("function", "source")
+	assert.Equal(t, src.Kind, "module")
+	assert.Equal(t, src.Prefix, "module/")
+	assert.Assert(t, !src.ByName)
+
+	// keeps the authored name, and says where its namespace is
+	auth := find("cache", "authorizer/name")
+	assert.Equal(t, auth.Kind, "function")
+	assert.Assert(t, auth.ByName, "an authorizer is named, not resolved")
+	assert.Equal(t, auth.Namespace, "authorizer/namespace")
+
+	// the kind is the author's choice, read from the switch beside it
+	handler := find("gateway", "route/handler/name")
+	assert.Equal(t, handler.KindFrom, "route/handler/kind")
+	assert.Assert(t, handler.ByName)
+
+	// the relationship runs the other way: the zone answers FOR the gateway
+	zone := find("gateway", "host/zone")
+	assert.Assert(t, zone.Inbound, "an arrow from the declarer would claim the opposite")
+
+	// and one that lives on the ENTRIES of a nested group, not on the resource — the
+	// distinction that stopped every resource pointing at a function of its own name
+	step := find("workflow", "run")
+	assert.Equal(t, step.In, "steps")
+	assert.Equal(t, step.Namespace, "namespace")
+
+	// the inbound blocks are derived from the references, not listed anywhere
+	assert.DeepEqual(t, schema.InboundBlocks(), []string{"forward", "route/handler", "serve"})
+
+	// how an access entry is written, and where a document lives
 	access := schema.AccessEntryShape()
 	assert.Equal(t, access.Ops, "ops")
 	assert.Equal(t, access.Namespace, "namespace")

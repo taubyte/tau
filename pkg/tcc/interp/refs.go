@@ -97,6 +97,13 @@ func collectRefAttrs(attrs []*engine.Attribute) []refAttr {
 		if !ok {
 			continue
 		}
+		// A ByName reference is a reference for everyone who READS the schema and not
+		// for the resolver: the authored name is what the vocabulary keeps, and
+		// resolving it would rewrite a value the audit and the runtime expect to be a
+		// name.
+		if spec.ByName {
+			continue
+		}
 		key := a.Name
 		if t, ok := tagOf(a); ok {
 			key = t

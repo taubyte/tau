@@ -50,9 +50,9 @@ var (
 	Duration         = engine.Duration
 	Either           = engine.Either
 	AnswersAt        = engine.AnswersAt
-	HandsTo          = engine.HandsTo
+	ByName           = engine.ByName
 	Inbound          = engine.Inbound
-	NamesResource    = engine.NamesResource
+	KindFrom         = engine.KindFrom
 	Float            = engine.Float
 	EmitValidation   = engine.EmitValidation
 	EnumBool         = engine.EnumBool

@@ -206,9 +206,17 @@ func omissionsFn(js.Value, []js.Value) any {
 
 // kinds() -> [{group, singular, container, category, doc, icon, fields}] read off the schema.
 func shapesFn(js.Value, []js.Value) any {
-	// Per kind: where it hands traffic on, where it says what name it answers on, and
-	// which of its fields are DERIVED — computed from the document rather than authored,
-	// so a consumer can show them without knowing what any of them are.
+	// ONE list of references, and per kind whatever else a consumer cannot infer: where
+	// it says what name it answers on, and which of its fields are derived.
+	refs := []map[string]any{}
+	for _, r := range schema.References() {
+		refs = append(refs, map[string]any{
+			"on": r.On, "field": r.Field, "kind": r.Kind, "kindFrom": r.KindFrom,
+			"namespace": r.Namespace, "prefix": r.Prefix,
+			"byName": r.ByName, "inbound": r.Inbound, "in": r.In,
+		})
+	}
+
 	kinds := map[string]any{}
 	for _, g := range schema.GenerationRoot() {
 		key, _ := g.Match.(string)
@@ -217,32 +225,9 @@ func shapesFn(js.Value, []js.Value) any {
 		}
 		iter := g.Children[0]
 		entry := map[string]any{}
-		if p := engine.HandsToOf(iter); p != "" {
-			entry["handsTo"] = p
-		}
 		if p := engine.AnswersAtOf(iter); p != "" {
 			entry["answersAt"] = p
 		}
-		// WHAT IS WORTH AN ARROW: an attribute the schema declares as a REFERENCE to
-		// another kind. It was a guess — any string value containing a slash whose
-		// prefix happened to be a kind — which drew whatever looked the part and
-		// nothing that did not.
-		refs := []map[string]any{}
-		for _, a := range iter.Attributes {
-			spec, ok := a.Meta["ref"].(engine.RefSpec)
-			if !ok {
-				continue
-			}
-			refs = append(refs, map[string]any{
-				"field": a.Name, "kind": spec.Group, "prefix": spec.Prefix,
-				// which way the relationship runs; see RefSpec.Inbound
-				"inbound": spec.Inbound,
-			})
-		}
-		if len(refs) > 0 {
-			entry["refs"] = refs
-		}
-
 		derived := []map[string]any{}
 		for _, a := range iter.Attributes {
 			kindOf, _ := a.Meta["derived"].(string)
@@ -267,25 +252,21 @@ func shapesFn(js.Value, []js.Value) any {
 		}
 	}
 
-	names := []map[string]any{}
-	for _, f := range schema.NamedResourceFields() {
-		names = append(names, map[string]any{
-			"field": f.Field, "namespace": f.Namespace, "kind": f.Kind, "in": f.In,
-		})
-	}
-	handsTo := []any{}
-	for _, p := range schema.HandsToPrefixes() {
-		handsTo = append(handsTo, p)
+	inbound := []any{}
+	for _, p := range schema.InboundBlocks() {
+		inbound = append(inbound, p)
 	}
 	access := schema.AccessEntryShape()
 	layout := schema.LayoutOf()
 	return toJS(map[string]any{
-		"handsTo": handsTo, "names": names, "kinds": kinds,
+		"refs": refs, "kinds": kinds, "inbound": inbound,
 		"access": map[string]any{"ops": access.Ops, "namespace": access.Namespace},
 		"layout": map[string]any{"resource": layout.Resource, "scope": layout.Scope, "leaf": layout.Leaf},
 	})
 }
 
+// Computing a derived value is the engine's, so a consumer asks rather than
+// reimplementing the derivation it just read about.
 func deriveFn(_ js.Value, args []js.Value) any {
 	if len(args) < 1 {
 		return errResult("derive: expected (derivation, ...inputs)")
