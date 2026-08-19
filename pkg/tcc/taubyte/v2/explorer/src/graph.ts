@@ -475,10 +475,21 @@ export function buildGraph(
       }
     }
 
+    // Does the CLOSED face have anything of its own to show? A workflow does — its
+    // steps — so its hidden parts keep reserving space and the box is the same size
+    // either way, which is what stops the page moving when it is opened.
+    //
+    // An agent does NOT: its lowering is not per-element, so closed there is nothing
+    // inside, and reserving the open size drew a large empty rectangle. It gets a box
+    // the size of its label instead, and grows when it is opened. A box with nothing in
+    // it is worse than a box that changes size.
+    const showsParts = parts.some((d) => typeof d.source?.part?.name === "string");
+
     for (const d of parts) {
       const id = `derived:${d.kind}/${d.name}`;
       if (byId.has(id)) continue;
       const part = typeof d.source?.part?.name === "string" ? (d.source.part.name as string) : "";
+      if (!open && !showsParts) continue; // nothing to show, and nothing to reserve
       const node: Node = {
         id,
         // Closed, this node IS the step it came from; open, it is what the step became.

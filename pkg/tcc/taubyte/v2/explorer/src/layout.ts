@@ -86,6 +86,12 @@ export const hopKey = (from: string, to: string) => `${from}=>${to}`;
 let engine: Promise<Graphviz> | null = null;
 const graphviz = () => (engine ??= Graphviz.load());
 
+// What an empty frame reserves: enough for its own label and the button that opens it,
+// and no more. A closed box with nothing inside was drawing a rectangle the size of what
+// it WOULD contain, which is a lot of nothing.
+const EMPTY_FRAME_W = 210;
+const EMPTY_FRAME_H = 26;
+
 const PT = 72; // dot speaks inches for size and points for position
 const q = (s: string) => `"${s.replace(/"/g, '\\"')}"`;
 const cluster = (scope: string) => `cluster_${scope.replace(/[^A-Za-z0-9]/g, "_")}`;
@@ -106,10 +112,18 @@ function dotFor(nodes: Node[], arrows: Arrow[], ingress: Ingress[], frames: Map<
       // crossing the boundary has somewhere to be that is not on top of the dashes
       `${pad}  margin=16;`,
       // An anchor is the box's own resource, drawn as nothing: it is only here so the
-      // edges that point at the resource have somewhere inside the box to land.
+      // edges that point at the resource have somewhere inside the box to land. It is a
+      // point — UNLESS it is alone in the box, in which case the box has nothing else
+      // to take its size from and would shrink under its own label.
       ...nodes
         .filter((n) => n.scope === scope)
-        .map((n) => (n.anchor ? `${pad}  ${q(n.id)} [width=0.06, height=0.06];` : `${pad}  ${q(n.id)};`)),
+        .map((n) => {
+          if (!n.anchor) return `${pad}  ${q(n.id)};`;
+          const alone = !nodes.some((o) => o.scope === scope && !o.anchor);
+          return alone
+            ? `${pad}  ${q(n.id)} [width=${EMPTY_FRAME_W / PT}, height=${EMPTY_FRAME_H / PT}];`
+            : `${pad}  ${q(n.id)} [width=0.06, height=0.06];`;
+        }),
       ...childrenOf(scope).map((c) => emit(c, depth + 1)),
     ].join("\n");
     return `${pad}subgraph ${cluster(scope)} {\n${body}\n${pad}}`;
