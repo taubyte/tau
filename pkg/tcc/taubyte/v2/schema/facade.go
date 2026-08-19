@@ -56,6 +56,18 @@ func LoweringPlan(obj map[string]any) []interp.Derived {
 	return interp.LoweringPlan(CompileRoot(), obj)
 }
 
+// Carriages is every authored field this vocabulary's lowerings carry out whole, and
+// Remainder is what a shell of that kind has to keep because nothing gives it back. Both
+// are tcc's (interp); this binds them to THIS vocabulary's root.
+func Carriages(kind string) []interp.Carriage { return interp.Carriages(CompileRoot(), kind) }
+func Remainder(kind string) []string          { return interp.Remainder(CompileRoot(), kind) }
+
+// ReadBack recovers the authored values a lowering carried away, out of the resources it
+// produced — the half of the round trip a shell that stored only its remainder needs.
+func ReadBack(plan []interp.Derived, cs []interp.Carriage) map[string]string {
+	return interp.ReadBack(plan, cs)
+}
+
 func WithLocal(path string) Option                { return interp.WithLocal(path) }
 func WithVirtual(fs afero.Fs, path string) Option { return interp.WithVirtual(fs, path) }
 func WithBranch(branch string) Option             { return interp.WithBranch(branch) }
