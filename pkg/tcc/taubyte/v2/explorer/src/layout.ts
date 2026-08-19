@@ -67,6 +67,13 @@ export const INTERNET = "internet";
 // any project, so — like the internet — it is drawn rather than compiled.
 export const CLOUD_ZONE = "cloud-zone";
 
+// The size of both drawn-not-compiled nodes, in ONE place. dot reserves a box of
+// exactly this, React Flow positions a box of exactly this, and the CSS fills it —
+// when those disagreed by 10px the arrow into the cloud zone stopped short of a border
+// that was not where the router thought it was.
+export const INGRESS_W = 150;
+export const INGRESS_H = 44;
+
 /** One hop of the path a request takes to get in: internet -> zone -> the resource. */
 export interface Ingress {
   zone: string; // a zone resource's id, or CLOUD_ZONE
@@ -124,9 +131,9 @@ function dotFor(nodes: Node[], arrows: Arrow[], ingress: Ingress[]): string {
     `  node [shape=box, fixedsize=true, width=${NODE_W / PT}, height=${NODE_H / PT}, label=""];`,
     // internet -> zone -> resource, which is the path a request actually takes: DNS
     // answers first, and what it answers with is what the request then reaches.
-    ...(ingress.length ? [`  ${q(INTERNET)} [width=${140 / PT}, height=${44 / PT}];`] : []),
+    ...(ingress.length ? [`  ${q(INTERNET)} [width=${INGRESS_W / PT}, height=${INGRESS_H / PT}];`] : []),
     ...(ingress.some((i) => i.zone === CLOUD_ZONE)
-      ? [`  ${q(CLOUD_ZONE)} [width=${150 / PT}, height=${44 / PT}];`]
+      ? [`  ${q(CLOUD_ZONE)} [width=${INGRESS_W / PT}, height=${INGRESS_H / PT}];`]
       : []),
     ...nodes.filter((n) => !n.scope).map((n) => `  ${q(n.id)};`),
     ...scopes.filter((s) => !s.includes("/")).map((s) => emit(s, 1)),
@@ -265,11 +272,11 @@ export async function place(nodes: Node[], arrows: Arrow[], ingress: Ingress[] =
     if (!o.pos) continue;
     const [cx, cy] = o.pos.split(",").map(Number);
     if (o.name === INTERNET) {
-      internet = { x: cx - 70, y: flip(H, cy) - 22, w: 140, h: 44 };
+      internet = { x: cx - INGRESS_W / 2, y: flip(H, cy) - INGRESS_H / 2, w: INGRESS_W, h: INGRESS_H };
       continue;
     }
     if (o.name === CLOUD_ZONE) {
-      cloudZone = { x: cx - 75, y: flip(H, cy) - 22, w: 150, h: 44 };
+      cloudZone = { x: cx - INGRESS_W / 2, y: flip(H, cy) - INGRESS_H / 2, w: INGRESS_W, h: INGRESS_H };
       continue;
     }
     const node = byId.get(o.name);

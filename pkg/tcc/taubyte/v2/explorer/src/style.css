@@ -223,8 +223,10 @@ code.om.open { color: var(--internet); }
 }
 
 /* the internet: the one node on the canvas that is not a resource */
+/* fills the node React Flow sized from INGRESS_W/H — a width here would be a third
+   opinion about how big this box is, and the router only knows dot's */
 .rf-internet {
-  width: 140px; height: 44px; padding: 0 12px;
+  width: 100%; height: 100%; padding: 0 12px; box-sizing: border-box;
   display: flex; align-items: center; gap: 8px;
   border: 1.4px dashed var(--internet); border-radius: 22px;
   background: color-mix(in srgb, var(--internet) 8%, var(--card));
