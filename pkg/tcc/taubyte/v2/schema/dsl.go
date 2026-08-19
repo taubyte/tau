@@ -51,6 +51,7 @@ var (
 	Either           = engine.Either
 	AnswersAt        = engine.AnswersAt
 	HandsTo          = engine.HandsTo
+	Inbound          = engine.Inbound
 	NamesResource    = engine.NamesResource
 	Float            = engine.Float
 	EmitValidation   = engine.EmitValidation

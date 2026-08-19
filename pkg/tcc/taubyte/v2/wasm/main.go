@@ -223,6 +223,26 @@ func shapesFn(js.Value, []js.Value) any {
 		if p := engine.AnswersAtOf(iter); p != "" {
 			entry["answersAt"] = p
 		}
+		// WHAT IS WORTH AN ARROW: an attribute the schema declares as a REFERENCE to
+		// another kind. It was a guess — any string value containing a slash whose
+		// prefix happened to be a kind — which drew whatever looked the part and
+		// nothing that did not.
+		refs := []map[string]any{}
+		for _, a := range iter.Attributes {
+			spec, ok := a.Meta["ref"].(engine.RefSpec)
+			if !ok {
+				continue
+			}
+			refs = append(refs, map[string]any{
+				"field": a.Name, "kind": spec.Group, "prefix": spec.Prefix,
+				// which way the relationship runs; see RefSpec.Inbound
+				"inbound": spec.Inbound,
+			})
+		}
+		if len(refs) > 0 {
+			entry["refs"] = refs
+		}
+
 		derived := []map[string]any{}
 		for _, a := range iter.Attributes {
 			kindOf, _ := a.Meta["derived"].(string)
@@ -249,7 +269,9 @@ func shapesFn(js.Value, []js.Value) any {
 
 	names := []map[string]any{}
 	for _, f := range schema.NamedResourceFields() {
-		names = append(names, map[string]any{"field": f.Field, "namespace": f.Namespace, "kind": f.Kind})
+		names = append(names, map[string]any{
+			"field": f.Field, "namespace": f.Namespace, "kind": f.Kind, "in": f.In,
+		})
 	}
 	handsTo := []any{}
 	for _, p := range schema.HandsToPrefixes() {

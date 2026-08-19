@@ -29,7 +29,7 @@ export interface Shapes {
   /** Blocks where a kind names what it hands traffic on to. */
   handsTo: string[];
   /** Fields that hold the name of another resource. */
-  names: { field: string; namespace: string; kind: string }[];
+  names: { field: string; namespace: string; kind: string; in: string }[];
   /** How an access entry is written. */
   access: { ops: string; namespace: string };
   /** Where a document lives, as templates. */
@@ -40,6 +40,8 @@ export interface Shapes {
     {
       handsTo?: string;
       answersAt?: string;
+      /** Attributes that REFERENCE another kind — the only string fields worth an arrow. */
+      refs?: { field: string; kind: string; prefix: string; inbound?: boolean }[];
       derived?: { field: string; derivation: string; from: string[]; label: string }[];
     }
   >;

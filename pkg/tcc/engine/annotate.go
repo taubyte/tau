@@ -362,10 +362,23 @@ func OnlyWhen(attr string, vals ...string) Option {
 type RefSpec struct {
 	Group  string
 	Prefix string
+	// Inbound reverses the DIRECTION of the relationship. A reference is normally
+	// declared by the thing that depends on the target — a function names the module it
+	// is built from, and the arrow runs function -> module. Some run the other way: a
+	// gateway names the ZONE it answers in, and the zone is what answers FOR the
+	// gateway, so an arrow drawn from the declarer says the opposite of what happens.
+	//
+	// Direction is the whole claim an edge makes, so it is declared rather than guessed
+	// — the same reason a verb says whether it is Delivered.
+	Inbound bool
 }
 
 // RefOpt tunes a RefSpec.
 type RefOpt func(*RefSpec)
+
+// Inbound marks a reference whose relationship runs TOWARD the resource declaring it.
+// See RefSpec.Inbound.
+func Inbound() RefOpt { return func(s *RefSpec) { s.Inbound = true } }
 
 // Prefix sets the RefSpec key prefix.
 func Prefix(p string) RefOpt {

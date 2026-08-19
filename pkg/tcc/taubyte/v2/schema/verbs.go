@@ -450,7 +450,7 @@ func NamedResourceFields() []NamedField {
 		if len(g.Children) == 0 {
 			continue
 		}
-		collectNamedFields(g.Children[0], &out, seen)
+		collectNamedFields(g.Children[0], "", &out, seen)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Field < out[j].Field })
 	return out
@@ -461,16 +461,24 @@ type NamedField struct {
 	Field     string // the attribute holding the name
 	Namespace string // the attribute holding its namespace, when there is one
 	Kind      string // what kind it names
+	// In is the nested group whose ENTRIES carry this field — "transformers", "steps" —
+	// and empty when the field is on the resource itself.
+	//
+	// It is not a detail. A transformer entry's field is called `name`, and so is every
+	// resource's own name: a consumer that applied the list to resources drew an arrow
+	// from every resource to a function of the same name, which for a function is an
+	// arrow from itself to itself.
+	In string
 }
 
-func collectNamedFields(iter *engine.Node, out *[]NamedField, seen map[string]bool) {
+func collectNamedFields(iter *engine.Node, in string, out *[]NamedField, seen map[string]bool) {
 	for _, a := range iter.Attributes {
 		kind := engine.NamesResourceOf(a)
-		if kind == "" || seen[a.Name] {
+		if kind == "" || seen[in+"\x00"+a.Name] {
 			continue
 		}
-		seen[a.Name] = true
-		f := NamedField{Field: a.Name, Kind: kind}
+		seen[in+"\x00"+a.Name] = true
+		f := NamedField{Field: a.Name, Kind: kind, In: in}
 		// The namespace beside it, by the vocabulary's own convention: the same prefix
 		// (`authorizer/name` -> `authorizer/namespace`), or the block's own `namespace`
 		// where the name field has no prefix of its own (a workflow step's `run` sits
@@ -488,8 +496,8 @@ func collectNamedFields(iter *engine.Node, out *[]NamedField, seen map[string]bo
 		*out = append(*out, f)
 	}
 	for _, child := range iter.Children {
-		if len(child.Children) > 0 {
-			collectNamedFields(child.Children[0], out, seen)
+		if key, _ := child.Match.(string); key != "" && len(child.Children) > 0 {
+			collectNamedFields(child.Children[0], key, out, seen)
 		}
 	}
 }

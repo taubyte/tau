@@ -372,7 +372,10 @@ func hostAttributes(section string) []*Attribute {
 			Doc("Host", "generated: a name under the cloud's own zone, resolved when it is deployed. zone: a name in a zone you own and delegated here.")),
 		String("host/name", Path("host", Either("generated", "zone"), "name"), IsVariableName(), InSection(section),
 			Doc("Name", "The label within that zone, e.g. \"shop\". Omit it for the zone apex.")),
-		String("host/zone", Path("host", "zone", "in"), Ref("zone", Prefix("zone/")), RequiredWhen("host/kind", "zone"), InSection(section), ShowWhen("host/kind", "zone"),
+		// INBOUND: the zone is what ANSWERS for this name. The reference is declared
+		// here because this is where the name is chosen, but the relationship runs the
+		// other way, and an arrow from here would say the gateway reaches the zone.
+		String("host/zone", Path("host", "zone", "in"), Ref("zone", Prefix("zone/"), Inbound()), RequiredWhen("host/kind", "zone"), InSection(section), ShowWhen("host/kind", "zone"),
 			Doc("Zone", "The zone this name lives in, as \"zone/<name>\". Only for a zone you own; a generated name has no zone to choose.")),
 	}
 }

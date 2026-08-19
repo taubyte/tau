@@ -225,7 +225,11 @@ export function buildGraph(
   // routes — and a namespace may hold namespaces, at any depth. Both are just
   // maps of maps in the compiled object, so the walk is written once and applies
   // to whatever the schema nests next.
-  const looksLikeResources = (v: unknown): v is Record<string, Compiled> =>
+  // A nested map is a group of RESOURCES only if its key is a kind. `variables:` and
+  // `ports:` are maps of maps too, and drawing them put a node on the page for every
+  // environment variable — they are data belonging to a resource, not resources.
+  const looksLikeResources = (key: string, v: unknown): v is Record<string, Compiled> =>
+    kindNames.has(key) &&
     !!v &&
     typeof v === "object" &&
     !Array.isArray(v) &&
@@ -305,7 +309,7 @@ export function buildGraph(
         val.forEach((entry, i) => {
           const el = entry as Compiled;
           if (!el || typeof el !== "object") return;
-          for (const f of SHAPES.names) {
+          for (const f of SHAPES.names.filter((x) => x.in === key)) {
             const n = el[f.field];
             if (typeof n !== "string" || n === "") continue;
             const ns = f.namespace && typeof el[f.namespace] === "string" ? (el[f.namespace] as string) : null;
@@ -315,23 +319,28 @@ export function buildGraph(
         continue;
       }
 
-      // A gateway's host/zone is drawn as the INGRESS PATH — internet, then the zone
-      // that answers, then what the name points at — so drawing it again here as a
-      // reference would say the same thing twice, and in the wrong direction: the
-      // gateway does not reach the zone, the zone answers for the gateway.
-      if (key === `${SHAPES.kinds[group]?.answersAt ?? ""}/zone`) continue;
-
-      if (typeof val === "string" && val.includes("/")) {
-        const cut = val.indexOf("/");
-        const [kind, to] = [val.slice(0, cut), val.slice(cut + 1)];
-        if (kindNames.has(kind) && to) {
-          arrows.push({ from: id, to, kind, verb: key, effect: "read", ref: true });
+      // A REFERENCE is one the schema declares — `Ref(kind)` on the attribute — not any
+      // string that happens to contain a slash. The guess drew whatever looked the part,
+      // and could not tell a reference from a value with a slash in it.
+      const declared = (SHAPES.kinds[group]?.refs ?? []).find((r) => r.field === key);
+      if (declared && typeof val === "string" && val !== "") {
+        const to = val.slice(val.indexOf("/") + 1);
+        if (to && to !== val) {
+          // WHICH WAY IT RUNS is the schema's to say. Most references are declared by
+          // the thing that depends on the target; some — a name and the zone that
+          // answers for it — run the other way, and an arrow from the declarer would
+          // claim the opposite of what happens.
+          arrows.push(
+            declared.inbound
+              ? { from: to, to: id, kind: group, verb: key, effect: "read", ref: true }
+              : { from: id, to, kind: declared.kind, verb: key, effect: "read", ref: true },
+          );
         }
         continue;
       }
 
       // a nested group under this resource
-      if (looksLikeResources(val)) {
+      if (looksLikeResources(key, val)) {
         for (const [childID, child] of Object.entries(val)) {
           addResource(key, childID, child, scope);
           arrows.push({ from: id, to: childID, kind: key, verb: key, effect: "read", ref: true });
@@ -347,6 +356,7 @@ export function buildGraph(
     // so this draws them all without knowing which fields they are. It used to be three
     // hardcoded field names, which meant a fourth drew nothing.
     for (const f of SHAPES.names) {
+      if (f.in) continue; // it lives on a nested entry, not on the resource
       const n = res[f.field];
       if (typeof n !== "string" || n === "") continue;
       const ns = f.namespace && typeof res[f.namespace] === "string" ? (res[f.namespace] as string) : null;
@@ -622,8 +632,20 @@ export function buildGraph(
     }
   }
 
+  // The zone that answers for a name is drawn as the INGRESS PATH — internet, then the
+  // zone, then what the name points at — which is the same pair as the inbound
+  // reference the config declares. Drawn twice it is two lines saying one thing, so the
+  // one the path already covers is dropped.
+  //
+  // Not "skip this key": the rule is that an edge the ingress path draws is not drawn
+  // again, which holds for whatever else ever answers for a name.
+  const drawnByIngress = new Set(
+    nodes.filter((n) => n.answeredById).map((n) => `${n.answeredById}->${n.id}`),
+  );
+  const live2 = live.filter((a) => !drawnByIngress.has(`${a.from}->${a.to}`));
+
   const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();
-  return { nodes, arrows: live, byId, scopes, frames };
+  return { nodes, arrows: live2, byId, scopes, frames };
 }
 
 export const NODE_W = 168;
