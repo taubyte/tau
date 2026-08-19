@@ -87,7 +87,17 @@ type Node struct {
 	// a nested group is data belonging to the instance, so the instance keeps its
 	// scalar parsing, its wire-key renames and its name->id index, and names inside
 	// the group resolve where the resource was authored.
-	Nested     bool
+	Nested bool
+	// Sequence marks a group authored as a YAML SEQUENCE rather than a mapping —
+	// an ORDERED list of objects. Its instances have no names, only positions, so
+	// it compiles to one ordered value instead of children keyed by name.
+	//
+	// It is a group like any other underneath: each element is loaded through the
+	// same iterator, so per-field types, defaults, required, validators, unknown-key
+	// rejection and per-field error locations all work inside an element. The only
+	// difference is where the key comes from — the author writes the order, the
+	// engine reads it back as the index.
+	Sequence   bool
 	Match      StringMatch
 	Attributes []*Attribute
 	Children   []*Node

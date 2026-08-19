@@ -3,6 +3,7 @@ package seer
 import (
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/afero"
@@ -239,6 +240,12 @@ func (n *Query) List() ([]string, error) {
 		return mapKeys(ival), nil
 	case map[interface{}]interface{}:
 		return mapKeys(safeInterfaceToStringKeys(ival)), nil
+	case []interface{}:
+		out := make([]string, len(ival))
+		for i := range ival {
+			out[i] = strconv.Itoa(i)
+		}
+		return out, nil
 	default:
 		return nil, fmt.Errorf("listing keys failed with %v type(%T) is not a map or a slice", val, val)
 	}

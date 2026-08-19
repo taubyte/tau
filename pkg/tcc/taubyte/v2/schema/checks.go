@@ -166,6 +166,27 @@ func (r compiled) list(key string) []string {
 	return nil
 }
 
+// elements reads a list of objects — a DefineList group — off the compiled object.
+func (r compiled) elements(key string) []map[string]any {
+	items, ok := r.fields[key].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, it := range items {
+		if m, isMap := it.(map[string]any); isMap {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// addr reads a string field off a list element.
+func addr(el map[string]any, key string) string {
+	s, _ := el[key].(string)
+	return s
+}
+
 // splitAddress reads "redact", "eu/stamp" or "/shop/tier_header" into the scope to look
 // in and the name to look for — the same three forms a namespace path takes anywhere.
 func splitAddress(addr, own string) (scope, name string) {
@@ -443,8 +464,8 @@ func checkHostWorlds(all []compiled) []Finding {
 			wants = "proxy-transformer"
 		}
 		if wants != "" {
-			for _, addr := range res.list("transformers") {
-				scope, name := splitAddress(addr, res.scope)
+			for _, el := range res.elements("transformers") {
+				scope, name := splitAddress(addr(el, "function"), res.scope)
 				uses = append(uses, use{name, scope, wants, res.kind + "/" + res.name + " transformers"})
 			}
 		}
@@ -534,8 +555,8 @@ func checkTransformerWorlds(all []compiled) []Finding {
 		default:
 			continue
 		}
-		for _, addr := range res.list("transformers") {
-			_, name := splitAddress(addr, res.scope)
+		for _, el := range res.elements("transformers") {
+			_, name := splitAddress(addr(el, "function"), res.scope)
 			if worlds[name] == nil {
 				worlds[name] = map[string]bool{}
 			}

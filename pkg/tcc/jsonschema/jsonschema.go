@@ -338,6 +338,17 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 		if _, isResource := resourceSpec(node.Children[0]); isResource {
 			continue
 		}
+		// A list is an ordered sequence of the same element, so it emits items
+		// rather than additionalProperties — the difference the editor needs to
+		// offer "add another step" instead of asking for a key.
+		if node.Sequence {
+			props.set(name, map[string]any{
+				"type":        "array",
+				"description": groupDoc(node.Children[0]),
+				"items":       g.objectSchema(node.Children[0], nil, ""),
+			})
+			continue
+		}
 		props.set(name, map[string]any{
 			"type":                 "object",
 			"description":          groupDoc(node.Children[0]),

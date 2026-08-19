@@ -125,6 +125,17 @@ func (s *instance) dumpNested(n *Node, obj object.Object[object.Refrence], query
 		if !ok || len(child.Children) == 0 {
 			continue
 		}
+		// A list is one ordered value, not children — write it as the sequence it
+		// was authored as. Setting the whole slice keeps the order and lets yaml
+		// emit a real sequence, which Get(index) would not.
+		if child.Sequence {
+			if items, exists := obj.Get(groupName).([]any); exists && len(items) > 0 {
+				if err := query.Get(groupName).Set(items).Commit(); err != nil {
+					return fmt.Errorf("dumping %s failed: %w", groupName, err)
+				}
+			}
+			continue
+		}
 		groupObj, err := obj.Child(groupName).Object()
 		if err == object.ErrNotExist {
 			continue

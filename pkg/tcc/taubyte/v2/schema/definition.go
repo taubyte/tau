@@ -21,10 +21,10 @@
 //     level of its own document — `databases:`, `storages:`, `secrets:` — not under a
 //     `uses:` wrapper. Declared or it does not exist. See verbs.go.
 //
-// Still absent, because a list of objects has no representation in the DSL and the
-// authored form for these is not settled: the `route` embed's per-path rules
-// (headers/redirects/rewrites/status), `connector.params`, `domain` DNS records, and
-// per-edge modifiers (mount, timeout, retry, via).
+// Still absent, but no longer for want of a shape — DefineList arrived with the
+// transformer chain, so what is left is the modelling: the `route` embed's per-path
+// rules (headers/redirects/rewrites/status), `connector.params`, `domain` DNS records,
+// and per-edge modifiers (mount, timeout, retry, via). See omissions.go.
 package schema
 
 import (
@@ -848,13 +848,13 @@ var V2Resources = []*Node{
 				// a zone you own and not with the default path.
 				Bool("cors/allow-self", Path("cors", "allow-self"), InSection("policy"),
 					Doc("Allow Own Origin", "Allow the origin this gateway itself answers on. The only way to say it when the name is generated.")),
-				transformersAttribute(),
 				StringSlice("cors/origins", Path("cors", "origins"), InSection("policy"), Doc("CORS Origins", "Origins allowed by CORS.")),
 				StringSlice("cors/methods", Path("cors", "methods"), InSection("policy"), Doc("CORS Methods", "Methods allowed by CORS.")),
 				Int("rate-limit/rpm", Path("rate-limit", "rpm"), InSection("policy"), Doc("Rate Limit", "Requests per minute.")),
 				Int("rate-limit/burst", Path("rate-limit", "burst"), InSection("policy"), Doc("Burst", "Requests allowed above the sustained rate.")),
 				String("rate-limit/key", Path("rate-limit", "key"), InSection("policy"), Doc("Rate Limit Key", "What the limit is counted per: \"ip\" or \"header:<name>\".")),
 			),
+			Nested(transformersGroup()),
 			GroupDoc("A name, the policy at it, and what it serves."), Category("internet"), Icon("route"),
 			secIdentity, secTransformers,
 			Section("naming", "Naming", "The name served, and where its certificate comes from."),
@@ -944,7 +944,6 @@ var V2Resources = []*Node{
 				// accepts a connection and forwards the bytes. Calling both "handler"
 				// borrowed a word from the layer above and made an L4 listener read as
 				// if it understood what was going through it.
-				transformersAttribute(),
 				String("forward/kind", Path("forward", Either(proxyHandlerKinds...)), Key(), Field("HandlerKind"), InSection("forward"),
 					Doc("Forward To", "Which kind the connection is forwarded to (the key selects the block).")),
 				String("forward/namespace", Path("forward", Either(proxyHandlerKinds...), "namespace"), IsNamespacePath(), InSection("forward"),
@@ -981,6 +980,7 @@ var V2Resources = []*Node{
 				String("rate-limit/key", Path("rate-limit", "key"), InSet("ip", "subnet"), Default("ip"), InSection("limits"),
 					Doc("Counted Per", "ip: each address separately. subnet: per /24 and /64, which is what stops one host with an address range from being many clients.")),
 			),
+			Nested(transformersGroup()),
 			GroupDoc("An allocated address that accepts a raw connection and streams it to a workload over p2p. For everything a gateway cannot parse."), Category("internet"), Icon("plug"),
 			secIdentity, secTransformers,
 			Section("listener", "Listener", "The protocol carried, the name it is reached by, and whether TLS stops here."),
@@ -1134,21 +1134,28 @@ func GenerationRoot() []*Node { return v2Root.Children }
 // CompileRoot is the interpreter's entrypoint into the DSL: the whole project root.
 func CompileRoot() *Node { return v2Root }
 
-// transformersAttribute is the middleware chain on an ingress: the functions traffic
+// transformersGroup is the middleware chain on an ingress: the functions traffic
 // passes through, in the order they run.
 //
-//	transformers: [redact, /shop/tier_header, eu/stamp]
+//	transformers:
+//	    - function: redact
+//	      fail: closed
+//	    - function: /shop/tier_header
 //
 // A LIST, because a list is ordered by being a list. It was a map keyed by the
 // function's name with an `order:` integer inside each entry — which is a list with the
 // ordering written out by hand, because a yaml mapping has none. The integer existed
 // only to put back what the shape had thrown away.
 //
-// Each element ADDRESSES a function the way a namespace path does everywhere else:
+// A list of OBJECTS rather than of names, because a use of a transformer carries
+// decisions that belong to the use and not to the function: the same `redact` can be
+// advisory on one gateway and mandatory on another. A list of bare names has one place
+// to put that — nowhere — and the workaround is a second parallel list, which is how
+// config formats end up with `transformers` and `transformers_required`.
+//
+// Each element ADDRESSES its function the way a namespace path does everywhere else:
 // `redact` is this scope then its parents, `eu/stamp` is relative, `/shop/tier_header`
-// is absolute from the project root. That is one address rather than a name plus a
-// namespace field, and it is the only form a list element can take — a list of objects
-// has no representation in this DSL.
+// is absolute from the project root.
 //
 // THERE IS NO `direction`. It said inbound / outbound / both, and it was wrong to be
 // here: whether a function can touch the response is a property of the host interface
@@ -1156,9 +1163,18 @@ func CompileRoot() *Node { return v2Root }
 // cannot be made to see the response by a word in the config, and one that sees both
 // does not need permission. If a response-only chain is ever wanted, it is another
 // world in `implements`, not a flag here.
-func transformersAttribute() *Attribute {
-	return StringSlice("transformers", IsResourceAddresses(), InSection("transformers"),
-		Doc("Transformers", "Functions traffic passes through, in order. Each names a function: \"redact\" in this scope, \"eu/stamp\" relative to it, \"/shop/tier_header\" from the project root."))
+func transformersGroup() *Node {
+	return DefineList("transformers", []*Attribute{
+		String("function", Required(), IsResourceAddress(), InSection("transformers"),
+			Doc("Function", "The function traffic passes through: \"redact\" in this scope, \"eu/stamp\" relative to it, \"/shop/tier_header\" from the project root.")),
+
+		// The one decision that is genuinely per-use. It is also the one with a
+		// dangerous default in both directions, so it is stated rather than assumed:
+		// a filter that fails open stops filtering exactly when something is wrong,
+		// and an enrichment that fails closed takes the site down to add a header.
+		String("fail", InSet("closed", "open"), Default("closed"), InSection("transformers"),
+			Doc("On Failure", "What happens to traffic if this transformer errors or times out: \"closed\" rejects it, \"open\" passes it through untransformed.")),
+	}, GroupDoc("Functions traffic passes through, in the order they run."))
 }
 
 var secTransformers = Section("transformers", "Transformers", "Functions traffic passes through, in the order they run.")

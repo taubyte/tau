@@ -4,6 +4,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/spf13/afero"
+
 	"slices"
 
 	"gotest.tools/v3/assert"
@@ -257,4 +259,23 @@ func TestRootList(t *testing.T) {
 			}
 		}
 	})
+}
+
+// A sequence enumerates as its indices, so the same Get(key) walk that reads a
+// mapping's entries reads a list's elements — which is what lets a caller treat
+// "a list of objects" as entries rather than as one opaque decoded value.
+func TestListOfSequence(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/config.yaml",
+		[]byte("steps:\n    - name: a\n    - name: b\n    - name: c\n"), 0o644))
+	seer, err := New(VirtualFS(fs, "/"))
+	assert.NilError(t, err)
+
+	items, err := seer.Get("config").Get("steps").List()
+	assert.NilError(t, err)
+	assert.DeepEqual(t, items, []string{"0", "1", "2"})
+
+	var name string
+	assert.NilError(t, seer.Get("config").Get("steps").Get("2").Get("name").Value(&name))
+	assert.Equal(t, name, "c")
 }

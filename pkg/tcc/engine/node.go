@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/object"
@@ -522,6 +523,59 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 	return nil
 }
 
+// loadSequence reads a group authored as a YAML sequence. Each element goes through
+// the SAME iterator as a name-keyed entry — types, defaults, required, validators and
+// unknown-key rejection all apply, and each error points at the element's own line.
+//
+// What differs is the result. A name-keyed group becomes children the object model
+// files under their names; a list has no names, and filing elements under "0", "1",
+// "2" would leave every reader to sort them back — numerically, or "10" lands between
+// "1" and "2" and the pipeline silently runs in the wrong order. So the sequence
+// compiles to ONE ordered value, and the order is the document's.
+func loadSequence[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer.Query, strict bool) error {
+	name, ok := n.Match.(string)
+	if !ok || len(n.Children) == 0 {
+		return nil
+	}
+	at := query.Get(name)
+
+	var doc any
+	if at.Value(&doc) != nil {
+		return nil // absent, which for a list means empty
+	}
+	// A mapping here is the shape mistake the DSL exists to catch: the entries would
+	// load, in whatever order the map yielded, and the pipeline would run in an order
+	// nobody wrote.
+	if isMapping(doc) {
+		filePath, line, column := at.Location()
+		return located(filePath, line, column,
+			fmt.Errorf("'%s' is an ordered list, not a set of named entries — write it as a sequence", name))
+	}
+	items, isList := doc.([]any)
+	if !isList {
+		filePath, line, column := at.Location()
+		return located(filePath, line, column, fmt.Errorf("'%s' must be a list", name))
+	}
+
+	iter := n.Children[0]
+	out := make([]any, 0, len(items))
+	for i := range items {
+		el, err := load[T](iter, at.Get(strconv.Itoa(i)), strict)
+		if err != nil {
+			return err
+		}
+		out = append(out, el.Flat())
+	}
+
+	// Only the compiled (Refrence) object holds plain values; the seer-linked one
+	// carries queries instead, and nothing reads a list through it. Same split
+	// setAttributes already makes for defaults.
+	if o, okType := obj.(object.Object[object.Refrence]); okType {
+		o.Set(name, out)
+	}
+	return nil
+}
+
 func load[T ObjectDataType](n *Node, query *yaseer.Query, strict bool) (object.Object[T], error) {
 	obj := object.New[T]()
 
@@ -599,6 +653,12 @@ func loadChildren[T ObjectDataType](n *Node, obj object.Object[T], query *yaseer
 	}
 
 	for _, itm := range n.Children {
+		if itm.Sequence {
+			if err := loadSequence(itm, obj, query, strict); err != nil {
+				return err
+			}
+			continue
+		}
 		for _, l := range list {
 			// Only a GROUP keeps its own fields in a leaf document, so only a group
 			// reserves that name. A nested resource reads its attributes from its own

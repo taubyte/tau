@@ -388,9 +388,8 @@ func mountAttributes(kind string) []*Attribute {
 	}
 }
 
-// IsResourceAddresses validates a list of resource addresses — the form a list element
-// has to take, since a list of objects has no representation in this DSL and a name
-// therefore has to carry its own scope:
+// IsResourceAddress validates ONE resource address — a name carrying its own scope,
+// which is how a resource is named from somewhere that is not its own namespace:
 //
 //	redact                this scope, then its parents
 //	eu/stamp              relative to this scope
@@ -398,6 +397,17 @@ func mountAttributes(kind string) []*Attribute {
 //
 // The last segment is a resource name and follows the same rule every name does; the
 // segments before it are namespaces and follow the same rule those do.
+//
+// An address is not a Ref: nothing resolves it to an id at compile, because a Ref binds
+// one group in one scope and this deliberately crosses scopes. What checks it exists is
+// Audit (checks.go), which can see the whole project.
+func IsResourceAddress() engine.Option {
+	return Validator(func(in string) error {
+		return checkAddress(in)
+	})
+}
+
+// IsResourceAddresses validates a LIST of them.
 func IsResourceAddresses() engine.Option {
 	return Validator(func(in []string) error {
 		for _, addr := range in {

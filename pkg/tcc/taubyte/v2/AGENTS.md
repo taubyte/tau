@@ -65,6 +65,39 @@ Arbitrarily deep, fixed keys. Reach for this before anything else.
 
 ---
 
+## 2a. Repeated objects: named entries, or an ordered list
+
+Two shapes, and the difference is whether an entry has a NAME or a POSITION.
+
+```go
+Nested(DefineGroup("variables", DefineIter(attrs)))   // keyed by name
+Nested(DefineList("transformers", attrs))             // ordered by position
+```
+
+```yaml
+variables:                      transformers:
+    LOG_LEVEL: {value: info}        - function: redact
+    REGION:    {value: eu-west}       fail: closed
+                                    - function: /shop/tier_header
+```
+
+Prefer the NAMED form. A name is a handle — it can be referred to, diffed, and
+merged; an index is none of those, and in a CRDT two edits to "element 3" are two
+edits to different things. Reach for `DefineList` when the entries are a PIPELINE,
+where running them in another order means something else. Ordering written by hand
+inside a mapping (`order: 1`) is the tell that the shape is wrong.
+
+Inside an element, everything the ENGINE does works: types, `Required()`,
+`Default()`, `InSet`, validators, unknown-key rejection, per-field error locations.
+What does NOT work is anything the INTERPRETER runs per object instance — `Ref()`,
+`Duration()`/`Bytes()` scalar parsing, `Tag()` renames, `EnumBool`, `DerivedBool`,
+`OnlyWhen` — because a list compiles to one ordered value rather than to children.
+`DefineList` panics at construction if an attribute declares one, so this is a build
+failure and never a quietly mis-compiled field. Name another resource from inside an
+element with an ADDRESS (see §5), not a `Ref()`.
+
+---
+
 ## 3. The conditional switch: `Either(...)` + `Key()`
 
 A closed set of alternative keys, with `Key()` capturing which branch was taken and
@@ -152,8 +185,10 @@ review notes — the rule is that no attribute path may START with a kind name.
   it declares `source:` and `execution:`. There is no `uses:` (or `edges:`) key; it read
   as a section bolted onto the resource and it only ever existed because it was easier
   to generate.
-- **List-of-objects / map-of-objects attributes.** Types are
-  `int | bool | float64 | string | []string` (`engine/types.go:32-44`).
+- **A list-of-objects ATTRIBUTE.** Attribute types are
+  `int | bool | float64 | string | []string` (`engine/types.go`) and that has not
+  changed. A list of objects is a NODE, not a type: `DefineList("transformers", …)`
+  (see §2a). Reaching for a new attribute type is still the wrong move.
 - **A validated target NAME on a nested entry.** The entry's key is not a value, so
   nothing resolves or checks it — `Key()` reads the last resolved segment of the
   attribute's OWN path, never the key its object is filed under. Recorded in
@@ -322,6 +357,30 @@ depending on the shape of the path. That is three behaviours wearing one name, a
 the third existed only to keep an old test green. It was rejected, correctly. If a new
 capability needs a new meaning, give it its own addressable form — a path location,
 say — rather than a mode on an existing term.
+
+## 10a. A project must be portable, and a project must become a template
+
+Two directions, and every field has to survive both.
+
+**Portable.** A project is imported into ANOTHER cloud and another realm and works
+there. So nothing in the config may name the cloud it happens to be running in: not a
+fqdn the operator owns, not an address the platform assigned, not an id that only
+resolves in one deployment. This is why the generated host is `<name>.<project
+label>.<cloud fqdn>` with only the first two halves in the config, why an L4 proxy
+authors no port and no ip, and why a gateway names a `zone` RESOURCE rather than a
+fqdn. A field that reads fine in one cloud and is meaningless in the next is a bug
+even when it compiles.
+
+**Template.** The same project is exported as a starting point for someone else's.
+That subtracts IDENTITY: the project id and every resource CID, the git repositories,
+the zones the author owns, the secret values. What is left has to still be a valid,
+readable project — so identity has to be SEPARABLE rather than woven through, and a
+resource has to be nameable by a name (an address, a zone reference) rather than only
+by an id that regeneration invalidates.
+
+The test for a new field: could this project be dropped into another cloud unchanged,
+and could it be handed to a stranger with the identity stripped? If either answer is
+no, the field is carrying deployment state and belongs somewhere else.
 
 ## 11. Decisions are not yours
 

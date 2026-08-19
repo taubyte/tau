@@ -1,5 +1,7 @@
 package engine
 
+import "fmt"
+
 func stringify(a any) string {
 	switch b := a.(type) {
 	case string:
@@ -109,6 +111,60 @@ func Nested(children ...*Node) NodeOption {
 		n.Nested = true
 		n.Children = append(n.Children, children...)
 	}
+}
+
+// DefineList declares an ORDERED LIST OF OBJECTS: a group authored as a YAML
+// sequence, each element carrying the given attributes.
+//
+//	DefineList("transformers", []*Attribute{
+//	    String("function", Required()), String("fail"),
+//	})
+//
+//	transformers:
+//	    - function: redact
+//	      fail: closed
+//	    - function: /shop/tier_header
+//
+// Reach for it when the entries are a PIPELINE — when running them in a different
+// order means something different. A name-keyed group (DefineGroup + DefineIter) is
+// the right shape when entries are addressed rather than sequenced, and it is the
+// better default: a name is a handle, an index is not.
+//
+// The list is a group plus its iterator, the same two nodes any other group is; the
+// marker only says where the keys come from.
+func DefineList(name string, attrs []*Attribute, extra ...any) *Node {
+	for _, a := range attrs {
+		if term, ok := listUnsupported(a); ok {
+			// Refusing at construction, loudly, beats compiling a list whose
+			// elements quietly skip a projection. See the comment on the term list.
+			panic(fmt.Sprintf("DefineList(%q): attribute %q declares %s, which does not run inside a list element", name, a.Name, term))
+		}
+	}
+	return &Node{
+		Group:    true,
+		Sequence: true,
+		Match:    name,
+		Children: []*Node{DefineIter(attrs, extra...)},
+	}
+}
+
+// listUnsupported names the terms whose work happens ABOVE the engine — the wire
+// projections and ref resolution the interpreter runs per object instance. A list
+// element is one ordered VALUE, not an instance, so those passes never see it:
+// a Duration inside a list would stay "50ms" where every other Duration is
+// nanoseconds, and a Ref would stay a name where every other ref is an id.
+//
+// Everything the ENGINE does works normally inside an element — type, Required,
+// Default, Validator, Path, InSet, unknown-key rejection, per-field locations.
+// The line is exactly the layer boundary, so it is drawn from the Meta keys the
+// interpreter dispatches on rather than from a hand-kept list of types.
+func listUnsupported(a *Attribute) (string, bool) {
+	for _, term := range []string{"scalar", "ref", "tag", "enumBool", "derivedBool", "onlyWhen"} {
+		if _, ok := a.Meta[term]; ok {
+			return term + "()", true
+		}
+	}
+	return "", false
 }
 
 func DefineIterGroup(attrs []*Attribute, children ...*Node) *Node {

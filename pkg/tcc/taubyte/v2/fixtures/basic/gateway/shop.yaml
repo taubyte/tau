@@ -14,7 +14,11 @@ route:
         application:
             name: api
             port: http
-transformers: [redact, /shop/tier_header]
+transformers:
+    - function: redact
+      fail: closed
+    - function: /shop/tier_header
+      fail: open
 cors:
     origins: ["https://shop.example.com"]
 rate-limit:

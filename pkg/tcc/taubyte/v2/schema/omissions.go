@@ -114,8 +114,8 @@ var Omissions = []Omission{
 		Decided: Forced,
 		Why: "A variables entry carries a literal `value` or a `secret` reference, and nothing in " +
 			"the schema can say \"exactly one of these\" — a mutual exclusion has no representation " +
-			"here any more than a list of objects does. The same is true of `path`, which is " +
-			"required only when the entry is delivered as a file.",
+			"here. The same is true of `path`, which is required only when the entry is delivered " +
+			"as a file.",
 		Instead: "named values only, and a publish-time check for the exclusion — the fifth thing " +
 			"that pass owes.",
 		Unblocks: "an `as: file` with a path when something needs one, which is additive.",
@@ -202,12 +202,13 @@ var Omissions = []Omission{
 		State:   Blocked,
 		Decided: Forced,
 		Why: "A zone's records are authored as zone-file lines rather than as objects with a " +
-			"name, type, TTL and value, because a list of objects has no representation in the " +
-			"DSL. Zone-file notation is the format every provider imports and exports, so nothing " +
-			"is unexpressible — but the compiler cannot validate a record field by field, complete " +
-			"a type, or point at the line that is wrong.",
-		Instead:  "zone/<name>.records, one zone-file line per entry.",
-		Unblocks: "the same missing shape as the route rules: an attribute that can hold a list of objects.",
+			"name, type, TTL and value, because when they were written a list of objects had no " +
+			"representation in the DSL. Zone-file notation is the format every provider imports " +
+			"and exports, so nothing is unexpressible — but the compiler cannot validate a record " +
+			"field by field, complete a type, or point at the line that is wrong.",
+		Instead: "zone/<name>.records, one zone-file line per entry.",
+		Unblocks: "nothing any more — DefineList arrived with the transformer chain. What is left " +
+			"is the modelling: one element per record type, or one with a type key.",
 	},
 	{
 		Name:    "smartops",
@@ -239,11 +240,12 @@ var Omissions = []Omission{
 		State:   Blocked,
 		Decided: Forced,
 		Why: "A gateway's routes are per-kind sub-blocks of parallel lists — paths, methods, " +
-			"targets — because the DSL has no list-of-objects and no arbitrary-keyed map under a " +
-			"resource. Within one kind the pairing is POSITIONAL, so two paths to two different " +
-			"functions line up by index and nothing enforces that the lists are the same length.",
-		Instead:  "routes.<kind>.{paths, methods, to} on the gateway.",
-		Unblocks: "an attribute type that can hold a list of objects.",
+			"targets — because when they were written the DSL had no list of objects. Within one " +
+			"kind the pairing is POSITIONAL, so two paths to two different functions line up by " +
+			"index and nothing enforces that the lists are the same length.",
+		Instead: "one route per gateway, which is what v2 ships.",
+		Unblocks: "nothing any more — DefineList arrived with the transformer chain. Whether a " +
+			"gateway should carry several routes is a modelling question, not a missing shape.",
 	},
 	{
 		Name:    "compile-time resolution of an access target",
@@ -290,7 +292,7 @@ var Omissions = []Omission{
 			"blue/green rollout in the category is expressed. A route here targets a list of names " +
 			"with no per-target field, so there is nowhere to put the weight.",
 		Instead:  "nothing. A route sends everything it matches to its target.",
-		Unblocks: "a per-target field on a use, which is the same missing shape as the route rules.",
+		Unblocks: "a per-target field on a use, which nesting has since made possible.",
 	},
 	{
 		Name:    "header and query matching",
@@ -300,19 +302,22 @@ var Omissions = []Omission{
 			"transport depends on exactly that — it mirrors JSON-RPC fields into `Mcp-Method` and " +
 			"`Mcp-Name` headers so an intermediary can route without parsing the body. A match is " +
 			"a list of objects, and a route here carries one path and one match type.",
-		Instead:  "path and method only.",
-		Unblocks: "a list-of-objects attribute; until then an authenticated MCP server cannot be routed by header.",
+		Instead: "path and method only.",
+		Unblocks: "nothing any more — DefineList arrived with the transformer chain, so a match " +
+			"list is now expressible. Until it is modelled, an authenticated MCP server cannot " +
+			"be routed by header.",
 	},
 	{
 		Name:    "per-resource route rules",
 		State:   Blocked,
 		Decided: Forced,
 		Why: "Per-path headers, redirects, rewrites and status overrides are lists of objects, and " +
-			"the DSL's attribute types stop at a list of strings. Four importers depend on exactly " +
-			"those four with per-path granularity; without them a static-site import changes the " +
-			"site's behaviour rather than moving it.",
-		Instead:  "gateways carry CORS and rate limiting, which are scalars and lists of strings.",
-		Unblocks: "an attribute type that can hold a list of objects, or a nested group under a resource.",
+			"when this was written the DSL's shapes stopped at a list of strings. Four importers " +
+			"depend on exactly those four with per-path granularity; without them a static-site " +
+			"import changes the site's behaviour rather than moving it.",
+		Instead: "gateways carry CORS and rate limiting, which are scalars and lists of strings.",
+		Unblocks: "nothing any more — DefineList arrived with the transformer chain. The four " +
+			"rule kinds still have to be modelled and given a runtime.",
 	},
 	{
 		Name:    "authorizers",
@@ -367,8 +372,9 @@ var Omissions = []Omission{
 			"there is a per-target place to put them. What still has nowhere to go is `mount`, " +
 			"which belongs to a route rather than to a use, and CloudEvents `filters`, which is " +
 			"a list of attribute matches.",
-		Instead:  "via and timeout on the entry; a gateway's route carries the path.",
-		Unblocks: "a list-of-objects attribute, for the filters half.",
+		Instead: "via and timeout on the entry; a gateway's route carries the path.",
+		Unblocks: "nothing any more for the filters half — DefineList arrived with the transformer " +
+			"chain, so a filter list is expressible and only unmodelled.",
 	},
 	{
 		Name:    "shards / replica-set granularity on an entity",

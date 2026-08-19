@@ -23,6 +23,7 @@ var (
 	DefineGroup      = engine.DefineGroup
 	DefineIter       = engine.DefineIter
 	DefineIterGroup  = engine.DefineIterGroup
+	DefineList       = engine.DefineList
 	Doc              = engine.Doc
 	Duration         = engine.Duration
 	Either           = engine.Either
