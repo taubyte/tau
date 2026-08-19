@@ -11,21 +11,31 @@ import (
 	"github.com/taubyte/tau/pkg/tcc/transform"
 )
 
-// decompileOrder is the fixed inverse-processing order, taken verbatim from
-// decompile/pass3/pipe.go. Like indexOrder it is NOT the DSL declaration order:
-// the per-resource inverses touch only their own group and disjoint keys, so the
-// order does not affect the result, but it is kept explicit to mirror the
-// hand-written passes it replaces one-for-one.
-var decompileOrder = []string{
-	"functions",
-	"smartops",
-	"websites",
-	"databases",
-	"storages",
-	"domains",
-	"libraries",
-	"messaging",
-	"services",
+// decompileOrder is the groups to run the per-resource inverse over: every top-level
+// group that declares a resource descriptor, in the order the vocabulary declares them.
+//
+// It was a HARDCODED LIST of v1's nine group names, taken verbatim from the
+// hand-written pass it replaced. That made the decompiler v1-shaped rather than
+// schema-driven, and the consequence was not cosmetic: for any other vocabulary the
+// list matched nothing, so no resource was ever inverse-processed, `id` was never
+// restored from the key, and decompiling failed on the first resource with "required
+// attribute 'id' is missing". A v2 project could be compiled and not written back.
+//
+// Order does not affect the result — each inverse touches only its own group and
+// disjoint keys — which is what makes reading it off the schema safe for v1 too.
+func decompileOrder(root *engine.Node) []string {
+	var out []string
+	for _, g := range root.Children {
+		key, _ := g.Match.(string)
+		if key == "" || len(g.Children) == 0 {
+			continue
+		}
+		if _, ok := g.Children[0].Meta["resource"].([4]string); !ok {
+			continue // the scope container, and leaf maps like v1's clouds
+		}
+		out = append(out, key)
+	}
+	return out
 }
 
 // NewDecompileDriver returns the mechanical inverse of CompileDriver+ResolveRefs,
@@ -53,7 +63,7 @@ func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o objec
 		utils.Global(container, &decompileRefs{groups: d.root.Children}),
 		&decompileApps{container: container},
 	}
-	for _, key := range decompileOrder {
+	for _, key := range decompileOrder(d.root) {
 		g := findGroup(d.root, key)
 		if g == nil || len(g.Children) == 0 {
 			continue
@@ -215,7 +225,15 @@ func (a *decompileApps) Process(ct transform.Context[object.Refrence], o object.
 		return nil, fmt.Errorf("fetching %s failed with %w", a.container, err)
 	}
 	for _, id := range apps.Children() {
-		if _, err := utils.RenameByName(apps.Child(id)); err != nil {
+		sel := apps.Child(id)
+		// Innermost first: a scope may hold scopes, and renaming this one before its
+		// children would move the subtree out from under the walk.
+		if inner, err := sel.Object(); err == nil {
+			if _, err := a.Process(ct, inner); err != nil {
+				return nil, fmt.Errorf("renaming inside %s failed with %w", id, err)
+			}
+		}
+		if _, err := utils.RenameByName(sel); err != nil {
 			return nil, fmt.Errorf("renaming application %s failed with %w", id, err)
 		}
 	}
@@ -240,11 +258,69 @@ func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o ob
 		return nil, fmt.Errorf("fetching %s failed with %w", ri.groupKey, err)
 	}
 	for _, key := range groupObj.Children() {
-		if err := applyInstanceInverse(groupObj.Child(key), ri.iter); err != nil {
+		sel := groupObj.Child(key)
+		// A NESTED GROUP's entries carry the same wire projections the resource's own
+		// attributes do — an access entry's `timeout` is nanoseconds on the wire and a
+		// human string in the document — and nothing was putting them back. The forward
+		// pass walks them (driver.go's iter.Nested branch); the inverse has to walk them
+		// too, or a resource with an access block cannot be written out at all.
+		//
+		// Before the instance inverse, because that one renames the instance by name and
+		// the nested walk wants the object it is holding.
+		if ri.iter.Nested {
+			inst, err := sel.Object()
+			if err != nil {
+				return nil, fmt.Errorf("fetching %s %s failed with %w", ri.groupKey, key, err)
+			}
+			if err := applyNestedInverse(inst, ri.iter.Children); err != nil {
+				return nil, fmt.Errorf("%s %s: %w", ri.groupKey, key, err)
+			}
+		}
+		if err := applyInstanceInverse(sel, ri.iter); err != nil {
 			return nil, fmt.Errorf("%s %s: %w", ri.groupKey, key, err)
 		}
 	}
 	return o, nil
+}
+
+// applyNestedInverse walks a resource's own child groups — its access blocks, ports,
+// variables — and undoes the wire projections on each entry. An entry is not a resource:
+// it is keyed by a name the author chose and never had an id, so there is no key swap to
+// invert, only the scalar and rename work.
+func applyNestedInverse(inst object.Object[object.Refrence], groups []*engine.Node) error {
+	for _, g := range groups {
+		key, _ := g.Match.(string)
+		if key == "" || len(g.Children) == 0 {
+			continue
+		}
+		// A list compiles to one ordered VALUE rather than to children, so there is
+		// nothing to walk and nothing was projected: dump writes it back as it stands.
+		if g.Sequence {
+			continue
+		}
+		groupObj, err := inst.Child(key).Object()
+		if err == object.ErrNotExist {
+			continue
+		}
+		if err != nil {
+			return fmt.Errorf("fetching %s failed with %w", key, err)
+		}
+		iter := g.Children[0]
+		for _, name := range groupObj.Children() {
+			sel := groupObj.Child(name)
+			for _, a := range iter.Attributes {
+				if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok {
+					if err := sc.Format(sel, a.Name); err != nil {
+						return fmt.Errorf("%s/%s: %w", key, name, err)
+					}
+				}
+				if tag, ok := tagOf(a); ok {
+					sel.Move(tag, a.Name)
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // applyInstanceInverse runs the per-resource-instance wire projections in reverse:

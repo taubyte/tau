@@ -329,6 +329,22 @@ var Omissions = []Omission{
 			"step, and a branch is a step with two.",
 	},
 	{
+		Name:    "compensation, and a workflow's history",
+		State:   Blocked,
+		Decided: Forced,
+		Why: "Two things a line cannot hold. A COMPENSATION step — put the stock back when the " +
+			"charge failed — is reachable only on failure, and a step in the line runs when the " +
+			"one before it succeeded; naming it as an error target makes it both, which reads " +
+			"correctly and does the wrong thing (an audit check reports it). And a run's HISTORY " +
+			"— what ran, when, what it returned — has nowhere to go: the run's state is the " +
+			"message and the queue it sits in, which answers where a run IS and nothing about " +
+			"where it has been.",
+		Instead: "failure lands in the dead-letter queue for a person; a separate workflow for a " +
+			"compensation path.",
+		Unblocks: "Catch, which is the same shape as Choice — a branch out of the line — and, for " +
+			"history, a database and a decision about what is worth writing down.",
+	},
+	{
 		Name:    "emitting what a workflow lowers into",
 		State:   Open,
 		Decided: ByOwner,
@@ -336,10 +352,13 @@ var Omissions = []Omission{
 			"stops there. It does not write those resources into the compiled object, so nothing " +
 			"downstream can provision them yet.",
 		Instead: "the plan, which is enough to draw, audit and cost, and which the explorer shows.",
-		Unblocks: "four decisions, none of them code. What id a derived resource gets and whether " +
-			"it survives a rename of its source. Whether a derived queue counts against the " +
-			"project's quota. What `tau graph` shows — the workflow, or what it became. And what " +
-			"happens on the collision an audit check already reports.",
+		Unblocks: "four decisions, none of them code, plus one requirement. What id a derived " +
+			"resource gets and whether it survives a rename of its source. Whether a derived " +
+			"queue counts against the project's quota. What `tau graph` shows — the workflow, or " +
+			"what it became. What happens on the collision an audit check already reports. And " +
+			"the requirement: whatever is emitted carries where it came from, because tcc " +
+			"DECOMPILES — a compiled project holding three queues nobody wrote has to go back to " +
+			"yaml as a workflow, not as three queue documents.",
 	},
 	{
 		Name:    "an agent's instructions as a file",

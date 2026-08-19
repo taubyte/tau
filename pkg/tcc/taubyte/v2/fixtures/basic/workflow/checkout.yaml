@@ -1,12 +1,11 @@
 id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zb
-description: reserve stock, then charge - nothing new is deployed to run this
+description: reserve the stock, then charge. a failed charge lands in checkout_failed for a person - putting the stock back automatically is a compensation branch, which a line cannot hold
 timeout: 1h
 concurrency: 50
 steps:
     - name: reserve
-      run: checkout
+      run: reserve_stock
       attempts: 4
     - name: charge
-      run: checkout
-      attempts: 2
-      on-error: reserve
+      run: charge_card
+      attempts: 1

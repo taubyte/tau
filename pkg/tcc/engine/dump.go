@@ -221,7 +221,7 @@ func (s *instance) dumpAttributes(n *Node, obj object.Object[object.Refrence], q
 		}
 
 		// Write value to path
-		if err := writeValueToPath(query, path, attr, val, obj); err != nil {
+		if err := writeValueToPath(n, query, path, attr, val, obj); err != nil {
 			return fmt.Errorf("writing attribute '%s' failed: %w", attr.Name, err)
 		}
 	}
@@ -229,10 +229,10 @@ func (s *instance) dumpAttributes(n *Node, obj object.Object[object.Refrence], q
 	return nil
 }
 
-func writeValueToPath(query *yaseer.Query, path []StringMatch, attr *Attribute, val interface{}, obj object.Object[object.Refrence]) error {
+func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *Attribute, val interface{}, obj object.Object[object.Refrence]) error {
 	q := query
 
-	for _, p := range path {
+	for depth, p := range path {
 		switch pt := p.(type) {
 		case string:
 			q = q.Get(pt)
@@ -264,8 +264,14 @@ func writeValueToPath(query *yaseer.Query, path []StringMatch, attr *Attribute, 
 						return fmt.Errorf("key attribute '%s' value '%s' does not match Either() options %v", attr.Name, keyVal, values)
 					}
 				} else {
-					// For non-key Either(), find the type attribute to determine branch
-					typeVal, err := findTypeValue(obj)
+					// For a non-Key Either(), the branch is whatever the Key()
+					// attribute on this same switch captured. Which attribute that is
+					// comes from the SCHEMA — the sibling whose path has the same
+					// Either at the same depth and carries Key() — not from a field
+					// conventionally called `type`. v1 named every switch's key `type`
+					// and this looked for exactly that, so a vocabulary that names it
+					// `engine/kind` could not be written back at all.
+					typeVal, err := branchKeyValue(n, obj, path, depth)
 					if err != nil {
 						return fmt.Errorf("cannot determine Either() branch for attribute '%s': %w", attr.Name, err)
 					}
@@ -297,15 +303,46 @@ func writeValueToPath(query *yaseer.Query, path []StringMatch, attr *Attribute, 
 	return nil
 }
 
-// findTypeValue finds the "type" attribute value in the object, used for Either() path resolution
-func findTypeValue(obj object.Object[object.Refrence]) (string, error) {
-	typeVal := obj.Get("type")
-	if typeVal == nil {
-		return "", fmt.Errorf("type attribute not found")
+// branchKeyValue reads which branch an Either() switch took, off the attribute that
+// captured it: the Key() attribute whose path holds an Either at the same depth. That
+// is the same construct the loader uses to record the branch, so the write-back asks
+// the same question the read did.
+func branchKeyValue(n *Node, obj object.Object[object.Refrence], path []StringMatch, depth int) (string, error) {
+	for _, a := range n.Attributes {
+		if !a.Key || len(a.Path) <= depth {
+			continue
+		}
+		if _, isEither := a.Path[depth].(FiniteMatcher); !isEither {
+			continue
+		}
+		// The SAME switch, not merely one at the same depth: a proxy has two — `host`
+		// and `forward` — and matching on depth alone read the host's branch into the
+		// forward's path.
+		if !samePrefix(a.Path, path, depth) {
+			continue
+		}
+		v, err := obj.GetString(a.Name)
+		if err != nil || v == "" {
+			continue
+		}
+		return v, nil
 	}
-	typeStr, ok := typeVal.(string)
-	if !ok {
-		return "", fmt.Errorf("type attribute is not a string")
+	// v1's convention, kept as the fallback: a switch whose key attribute is simply
+	// called `type` and carries no Key().
+	if typeVal, ok := obj.Get("type").(string); ok && typeVal != "" {
+		return typeVal, nil
 	}
-	return typeStr, nil
+	return "", fmt.Errorf("no Key() attribute captured this switch, and no `type` field")
+}
+
+// samePrefix reports whether two attribute paths name the same block up to depth.
+func samePrefix(a, b []StringMatch, depth int) bool {
+	for i := 0; i < depth; i++ {
+		x, okx := a[i].(string)
+		y, oky := b[i].(string)
+		if !okx || !oky || x != y {
+			return false
+		}
+	}
+	return true
 }

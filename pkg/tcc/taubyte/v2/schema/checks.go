@@ -548,6 +548,26 @@ func checkWorkflows(all []compiled) []Finding {
 		for _, step := range steps {
 			named[field(step, "name")] = true
 		}
+		// A step that is BOTH the next in the line and somebody's error target runs on
+		// success as well as on failure, which is almost never what a compensation step
+		// is for: "put the stock back" after a charge that WORKED. The line has one
+		// order and no branch, so the two roles cannot be told apart — the config reads
+		// correctly and does the wrong thing.
+		for i, step := range steps {
+			if i == 0 {
+				continue
+			}
+			name := field(step, "name")
+			for _, other := range steps {
+				if field(other, "on-error") != name || field(steps[i-1], "name") != field(other, "name") {
+					continue
+				}
+				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+					fmt.Sprintf("step %q runs after %q AND is where %q sends failure", name, field(other, "name"), field(other, "name")),
+					"It would run when the step before it succeeded and when it failed, which is not what a compensation step is for. A line has one order and no branch: give the handler its own workflow, or let failure land in the dead-letter queue."})
+			}
+		}
+
 		for _, step := range steps {
 			name := field(step, "name")
 			if target := field(step, "on-error"); target != "" && !named[target] {

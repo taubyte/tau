@@ -1,0 +1,11 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zd
+description: takes the money - one attempt, because charging twice is worse than not charging
+source: "."
+execution:
+    call: charge
+    timeout: 30s
+    memory: 32MB
+secret:
+    stripe:
+        ops: [get]
+egress: [api.stripe.com]

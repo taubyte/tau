@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -165,9 +166,24 @@ func UsesLowering(root *engine.Node) bool {
 // does not add it. What is missing before it can be emitted is not code — it is
 // decisions. What id does a derived resource get, and does it survive a rename of its
 // source. Does a derived queue count against the project's quota. What happens when an
-// author writes a resource whose name a lowering also produces (CheckPlan answers that
-// one already). Emitting first and deciding later would put those answers in whatever
-// the first implementation happened to do.
+// author writes a resource whose name a lowering also produces (an audit check answers
+// that one already). Emitting first and deciding later would put those answers in
+// whatever the first implementation happened to do.
+//
+// ONE OF THEM IS NOT A DECISION BUT A REQUIREMENT, and it is why Source is on this
+// struct rather than computed on demand: whatever is emitted has to carry where it came
+// from, because tcc DECOMPILES. A compiled project goes back to yaml, and a compiled
+// project holding three queues that nobody wrote must produce a workflow — not three
+// queue documents and a workflow that has quietly become something else. The marker is
+// what lets the decompiler drop the derived and keep the authored, and a lowering that
+// emitted anonymous resources would be a one-way door.
+//
+// A LOWERING ADDS; IT NEVER REPLACES. The authored resource stays exactly where it was,
+// and that is what makes the round trip possible: it is the shell, and the shell is the
+// metadata. Its steps are still written down, so decompiling is "keep what is authored,
+// drop what is marked" rather than a reconstruction that has to infer a workflow from
+// the queues it happened to produce. It is also what everything else keeps pointing at
+// — a cron declares `start` on the workflow, not on the first queue.
 type Derived struct {
 	Kind   string         // the kind produced
 	Name   string         // its name
@@ -493,6 +509,34 @@ func walkResources(root *engine.Node, scope map[string]any, at string, fn func(k
 	}
 }
 
+// unsatisfied names the required attributes of the produced kind that the lowering does
+// not set and that nothing else fills in. A field with a Default or one the platform
+// Generates needs no help; everything else has to come from the lowering.
+func unsatisfied(root *engine.Node, l Lowering) []string {
+	iter := iterOfKind(root, l.into)
+	if iter == nil {
+		return nil
+	}
+	var missing []string
+	for _, a := range iter.Attributes {
+		if !a.Required || a.Default != nil {
+			continue
+		}
+		if _, gen := a.Meta["generated"]; gen {
+			continue
+		}
+		if _, der := a.Meta["derived"]; der {
+			continue
+		}
+		if _, ok := l.set[a.Name]; ok {
+			continue
+		}
+		missing = append(missing, a.Name)
+	}
+	sort.Strings(missing)
+	return missing
+}
+
 // CheckLowerings verifies at BUILD time that every lowering names a kind the
 // vocabulary has and fills a name. A lowering into a kind nobody declared is a plan
 // that cannot be carried out, and finding that when someone runs the compiler is
@@ -517,9 +561,21 @@ func CheckLowerings(root *engine.Node) []string {
 			if strings.TrimSpace(l.name) == "" {
 				problems = append(problems, "lowering into "+l.into+" produces no name")
 			}
+			// A lowering has to produce a resource that could actually EXIST. A kind's
+			// required fields are required of anything of that kind, including what a
+			// compiler wrote — and the mistake this catches is a real one: a workflow
+			// lowering into an `entity` for its run state, when an entity is a
+			// code-bearing compute instance whose source, entrypoint, timeout and
+			// memory nothing was setting. That is a resource nobody could instantiate,
+			// and without this check it was a plan that read fine.
+			for _, missing := range unsatisfied(root, l) {
+				problems = append(problems, "lowering into "+l.into+" leaves "+missing+" unset, which that kind requires")
+			}
 		}
 		return false
 	})
+	// The same kind appears once per namespace depth, so a single mistake would be
+	// reported eight times. One problem, said once.
 	sort.Strings(problems)
-	return problems
+	return slices.Compact(problems)
 }

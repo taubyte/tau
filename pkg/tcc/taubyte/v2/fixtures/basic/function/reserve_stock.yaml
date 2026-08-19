@@ -1,0 +1,10 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zc
+description: holds the items in the order so nobody else can buy them
+source: "."
+execution:
+    call: reserve
+    timeout: 15s
+    memory: 32MB
+database:
+    orders:
+        ops: [exec]

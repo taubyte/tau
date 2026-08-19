@@ -861,7 +861,13 @@ func TestWorkflowLowers(t *testing.T) {
 	assert.Assert(t, got["queue/checkout_reserve"] != "", "one queue per step: %v", got)
 	assert.Assert(t, got["queue/checkout_charge"] != "")
 	assert.Assert(t, got["queue/checkout_failed"] != "", "somewhere for a step that gave up")
-	assert.Assert(t, got["entity/checkout_run"] != "", "a run is a single-writer key")
+
+	// NO store for the run's state: the state is the message, and which queue it is in
+	// is which step it is at. It briefly lowered into an entity, which is a code-bearing
+	// kind whose code nothing was setting — a resource nobody could instantiate.
+	for k := range got {
+		assert.Assert(t, !strings.HasPrefix(k, "entity/"), "a workflow needs no entity: %v", got)
+	}
 
 	for _, d := range plan {
 		if d.Name != "checkout_reserve" {
@@ -872,7 +878,7 @@ func TestWorkflowLowers(t *testing.T) {
 		for _, l := range d.Links {
 			links[l.Kind+"/"+l.Name] = l.Verb
 		}
-		assert.Equal(t, links["function/checkout"], "consumed by", "a queue nothing receives from is a queue nothing happens in")
+		assert.Equal(t, links["function/reserve_stock"], "consumed by", "a queue nothing receives from is a queue nothing happens in")
 		assert.Equal(t, links["queue/checkout_charge"], "then", "the chain is what makes it a pipeline")
 	}
 }

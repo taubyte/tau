@@ -21,7 +21,7 @@ func Global(container string, wrapped transform.Transformer[object.Refrence]) tr
 }
 
 func (g *global) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	// global
+	// the project scope itself
 	ct = ct.Fork(o)
 	o, err := g.wrapped.Process(ct, o)
 	if err != nil {
@@ -32,14 +32,26 @@ func (g *global) Process(ct transform.Context[object.Refrence], o object.Object[
 	if g.container == "" {
 		return o, nil
 	}
+	if err := g.scopes(ct, o); err != nil {
+		return nil, err
+	}
+	return o, nil
+}
 
-	// apps
+// scopes walks the container's instances, processing each ONCE and then descending into
+// any it holds itself.
+//
+// v1's applications could not hold applications, so one level was the whole tree. v2's
+// namespaces nest, and a resource in a namespace inside a namespace was never visited —
+// the forward pass reaches it and this did not, which is one of the ways a v2 project
+// compiled and could not be written back.
+func (g *global) scopes(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) error {
 	oapps, err := o.Child(g.container).Object()
 	if err != nil {
 		if err == object.ErrNotExist {
-			return o, nil
+			return nil
 		}
-		return nil, fmt.Errorf("fetching %s failed with %w", g.container, err)
+		return fmt.Errorf("fetching %s failed with %w", g.container, err)
 	}
 
 	for _, app := range oapps.Children() {
@@ -47,10 +59,12 @@ func (g *global) Process(ct transform.Context[object.Refrence], o object.Object[
 		oapp, _ := sel.Object()
 		oapp, err := g.wrapped.Process(ct.Fork(oapp), oapp)
 		if err != nil {
-			return nil, fmt.Errorf("processing application %s failed with %w", app, err)
+			return fmt.Errorf("processing application %s failed with %w", app, err)
+		}
+		if err := g.scopes(ct, oapp); err != nil {
+			return fmt.Errorf("inside %s: %w", app, err)
 		}
 		sel.Add(oapp)
 	}
-
-	return o, nil
+	return nil
 }

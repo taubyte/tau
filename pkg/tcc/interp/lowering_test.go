@@ -17,10 +17,10 @@ func pipelineSchema() (engine.Schema, *engine.Node) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
-			engine.String("id", engine.Required()),
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
 		}, engine.Resource("job", "Job", "Job", "job"))),
 		engine.DefineGroup("log", engine.DefineIter([]*engine.Attribute{
-			engine.String("id", engine.Required()),
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
 		}, engine.Resource("log", "Log", "Log", "log"))),
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required()),
@@ -161,4 +161,39 @@ func TestLoweringChainsToTheNextElement(t *testing.T) {
 	assert.Equal(t, next("build-compile"), "job/build-test")
 	assert.Equal(t, next("build-test"), "job/build-ship")
 	assert.Equal(t, next("build-ship"), "", "the last element has no next, and that is where the chain ends")
+}
+
+// A lowering has to produce a resource that could EXIST: a kind's required fields are
+// required of anything of that kind, including what a compiler wrote. The mistake this
+// catches is real — a workflow lowering into a code-bearing kind and setting none of
+// the code.
+func TestCheckLoweringsRefusesAnUnbuildableResource(t *testing.T) {
+	root := engine.Root(
+		[]*engine.Attribute{engine.String("id")},
+		engine.DefineGroup("worker", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
+			engine.String("call", engine.Required()),
+			engine.String("mem", engine.Required(), engine.Default("32MB")),
+		}, engine.Resource("worker", "Worker", "Worker", "worker"))),
+		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{engine.String("id")},
+			interp.Lowers(interp.Into("worker", interp.Named("{name}-w"))))),
+	)
+
+	problems := interp.CheckLowerings(root)
+	assert.Equal(t, len(problems), 1, "got %v", problems)
+	assert.Equal(t, problems[0], "lowering into worker leaves call unset, which that kind requires")
+
+	// setting it satisfies the check; a field with a default or one the platform
+	// generates never needed setting
+	ok := engine.Root(
+		[]*engine.Attribute{engine.String("id")},
+		engine.DefineGroup("worker", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
+			engine.String("call", engine.Required()),
+			engine.String("mem", engine.Required(), engine.Default("32MB")),
+		}, engine.Resource("worker", "Worker", "Worker", "worker"))),
+		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{engine.String("id")},
+			interp.Lowers(interp.Into("worker", interp.Named("{name}-w"), interp.Sets("call", "run"))))),
+	)
+	assert.Equal(t, len(interp.CheckLowerings(ok)), 0)
 }

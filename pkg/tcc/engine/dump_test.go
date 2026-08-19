@@ -288,7 +288,7 @@ func TestWriteValueToPath_WithSimpleString(t *testing.T) {
 	attr := &Attribute{Name: "myattr", Type: TypeString}
 	obj := object.New[object.Refrence]()
 
-	err = writeValueToPath(query, []StringMatch{"level1", "level2"}, attr, "myvalue", obj)
+	err = writeValueToPath(&Node{}, query, []StringMatch{"level1", "level2"}, attr, "myvalue", obj)
 	assert.NilError(t, err)
 
 	err = query.Commit()
@@ -320,7 +320,7 @@ func TestWriteValueToPath_WithEitherAndKey(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("source", "http")
 
-	err = writeValueToPath(query, attr.Path, attr, "http", obj)
+	err = writeValueToPath(&Node{}, query, attr.Path, attr, "http", obj)
 	assert.NilError(t, err)
 
 	err = query.Commit()
@@ -351,7 +351,7 @@ func TestWriteValueToPath_WithEitherAndType(t *testing.T) {
 	obj.Set("type", "http")
 	obj.Set("endpoint", "/api/v1")
 
-	err = writeValueToPath(query, attr.Path, attr, "/api/v1", obj)
+	err = writeValueToPath(&Node{}, query, attr.Path, attr, "/api/v1", obj)
 	assert.NilError(t, err)
 
 	err = query.Commit()
@@ -381,32 +381,43 @@ func TestWriteValueToPath_WithEitherNoMatch(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("source", "invalid") // Does not match Either options
 
-	err = writeValueToPath(query, attr.Path, attr, "invalid", obj)
+	err = writeValueToPath(&Node{}, query, attr.Path, attr, "invalid", obj)
 	assert.ErrorContains(t, err, "does not match Either() options")
 }
 
-func TestFindTypeValue_Success(t *testing.T) {
+// The branch a non-Key attribute is written into comes from the Key() attribute that
+// captured the switch — read off the schema, not from a field conventionally named
+// `type`. v1 named every switch `type` and the old lookup demanded exactly that, so a
+// vocabulary naming it `engine/kind` could not be written back at all.
+func TestBranchKeyValue_FromTheKeyAttribute(t *testing.T) {
+	n := &Node{Attributes: []*Attribute{
+		String("engine/kind", Path("engine", Either("distributed", "postgres")), Key()),
+		String("host/kind", Path("host", Either("generated", "zone")), Key()),
+	}}
+	obj := object.New[object.Refrence]()
+	obj.Set("engine/kind", "postgres")
+	obj.Set("host/kind", "generated")
+
+	// the same switch, not merely one at the same depth: two switches sit at depth 1
+	got, err := branchKeyValue(n, obj, []StringMatch{"engine", Either("distributed", "postgres"), "host"}, 1)
+	assert.NilError(t, err)
+	assert.Equal(t, got, "postgres")
+
+	got, err = branchKeyValue(n, obj, []StringMatch{"host", Either("generated", "zone"), "name"}, 1)
+	assert.NilError(t, err)
+	assert.Equal(t, got, "generated")
+}
+
+// v1's convention still answers, so nothing that worked stops working.
+func TestBranchKeyValue_FallsBackToType(t *testing.T) {
 	obj := object.New[object.Refrence]()
 	obj.Set("type", "http")
-
-	typeVal, err := findTypeValue(obj)
+	got, err := branchKeyValue(&Node{}, obj, []StringMatch{Either("http")}, 0)
 	assert.NilError(t, err)
-	assert.Equal(t, typeVal, "http")
-}
+	assert.Equal(t, got, "http")
 
-func TestFindTypeValue_WhenMissing(t *testing.T) {
-	obj := object.New[object.Refrence]()
-
-	_, err := findTypeValue(obj)
-	assert.ErrorContains(t, err, "type attribute not found")
-}
-
-func TestFindTypeValue_WhenNotString(t *testing.T) {
-	obj := object.New[object.Refrence]()
-	obj.Set("type", 123) // Not a string
-
-	_, err := findTypeValue(obj)
-	assert.ErrorContains(t, err, "type attribute is not a string")
+	_, err = branchKeyValue(&Node{}, object.New[object.Refrence](), []StringMatch{Either("http")}, 0)
+	assert.ErrorContains(t, err, "no Key() attribute")
 }
 
 func TestDumpChild_WithNonGroupError(t *testing.T) {

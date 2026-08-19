@@ -1250,10 +1250,25 @@ var V2Resources = []*Node{
 					Carries("runs that gave up, kept for a person to look at - nothing consumes this"),
 				),
 
-				Into("entity",
-					Named("{name}_run"),
-					Carries("one run's state: which step it is at, and what it carried"),
-				),
+				// AND NOTHING ELSE. There is no store for the run's state, because the
+				// run's state is the MESSAGE: what the run carries travels with it from
+				// one step's queue to the next, and which queue it is sitting in IS
+				// which step it is at. A pipeline needs no second place to write that
+				// down, and the second place is what would have to be kept in agreement
+				// with the first.
+				//
+				// It briefly lowered into an `entity` for exactly that job, which was
+				// wrong twice: an entity is a code-bearing compute instance — source,
+				// entrypoint, timeout and memory, none of which a workflow has to give
+				// it — so it was a resource nobody could instantiate, and it was
+				// answering a question the queue had already answered. CheckLowerings
+				// now refuses a lowering that leaves a required field unset, so that
+				// particular mistake is a build failure rather than a plan that reads
+				// fine.
+				//
+				// What is genuinely missing is run HISTORY — what ran, when, and what it
+				// returned — which is a database and a decision, not a queue. Recorded
+				// in omissions.go.
 			),
 			Resource("workflow", "Workflow", "Workflow", "workflow"),
 		)),
