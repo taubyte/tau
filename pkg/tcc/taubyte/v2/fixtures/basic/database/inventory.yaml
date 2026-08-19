@@ -1,8 +1,0 @@
-id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zx
-description: the postgres this project runs itself - named by the proxy that gives it an address, because its dns name ends in the cloud's fqdn and that is not ours to write
-engine:
-    postgres:
-        host: proxy/postgres
-        database: inventory
-        credentials: secret/stripe
-        tls: verify-full

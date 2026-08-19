@@ -295,6 +295,22 @@ var Omissions = []Omission{
 		Unblocks: "a per-target field on a use, which nesting has since made possible.",
 	},
 	{
+		Name:    "reaching a workload that does not speak HTTP, from inside the project",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "A project can RUN a Postgres — an application, a volume, and an L4 proxy that gives " +
+			"it an address — and another resource in the same project still has no way to reach " +
+			"it. Every inbound path in this vocabulary is an INGRESS: a gateway route parses HTTP " +
+			"from outside, a proxy accepts a connection from outside. Naming the proxy from inside " +
+			"the project was tried and rejected: it sends a query out to the edge address and back " +
+			"in to reach a container in the same cloud, and it makes an ingress do double duty as " +
+			"a service-discovery name.",
+		Instead: "nothing. The `database` kind's external engines are for a server somebody else " +
+			"runs, which is what `engine/host` says.",
+		Unblocks: "an in-project addressing concept — a stream named by a path or protocol, " +
+			"reached over p2p, with no edge in the path. Not designed; see the notes.",
+	},
+	{
 		Name:    "authenticated MCP",
 		State:   Blocked,
 		Decided: Forced,

@@ -619,37 +619,8 @@ var V2Resources = []*Node{
 				// An external engine carries its OWN connection. There is no reference
 				// to a `connector` here, and that absence is the point — see the note
 				// above this kind.
-				// TWO FORMS IN ONE FIELD: a literal `host[:port]` for a server outside
-				// the cloud, or `proxy/<name>` for one this project runs itself — an
-				// application, its volume, and the L4 proxy that gives it an address.
-				//
-				// That second case had no spelling at all. The workload's only name is
-				// `<name>.<project label>.<cloud fqdn>`, and the last label is the
-				// cloud's, so writing it here is the portability bug §10a exists to
-				// prevent: the same config would name a server that does not exist in
-				// the next cloud.
-				//
-				// A REFERENCE rather than a new engine branch or a workload+port block.
-				// The engine kind is a wire protocol and a driver, and a Postgres you run
-				// speaks the same protocol as one you rent; only where the address comes
-				// from differs. Naming the workload directly would be the second door the
-				// `application` kind refuses to have, and it would restate the proxy's
-				// own `forward` block inside another kind.
-				//
-				// It costs nothing in the engine: a prefixed Ref resolves only values
-				// under its prefix and passes anything else through untouched
-				// (interp/refs.go), and a hostname cannot contain a slash, so the two
-				// forms cannot collide. Same construct as a workload's `source`, which is
-				// "." or "module/<name>".
-				//
-				// Two limits, both real. The proxy has to be in this database's scope or
-				// an ancestor, because that is as far as a ref resolves — a sibling
-				// namespace needs the namespace+name shape. And a client that dials the
-				// proxy directly does not pass the database's authorizer: `database` owns
-				// the policy, the proxy is only the address, and they are two doors.
-				String("engine/host", Path("engine", Either(externalDatabaseEngines...), "host"), Ref("proxy", Prefix("proxy/")), IsDatabaseHost(),
-					RequiredWhen("engine/kind", externalDatabaseEngines...), InSection("engine"),
-					Doc("Host", "Where the server is reached: \"host\" or \"host:port\" for one outside the cloud, or \"proxy/<name>\" for one this project runs itself.")),
+				String("engine/host", Path("engine", Either(externalDatabaseEngines...), "host"), RequiredWhen("engine/kind", externalDatabaseEngines...), InSection("engine"),
+					Doc("Host", "Where the external database is reached, as host or host:port.")),
 				String("engine/database", Path("engine", Either(externalDatabaseEngines...), "database"), InSection("engine"),
 					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
 				String("engine/credentials", Path("engine", Either(externalDatabaseEngines...), "credentials"), RequiredWhen("engine/kind", externalDatabaseEngines...), Ref("secret", Prefix("secret/")), InSection("engine"),
