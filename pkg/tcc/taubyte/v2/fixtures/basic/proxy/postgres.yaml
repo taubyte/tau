@@ -8,7 +8,7 @@ service: postgres
 tls:
     mode: none
 transformers:
-    - function: pg_audit
+    - name: pg_audit
 rate-limit:
     connections-per-minute: 120
     concurrent: 40

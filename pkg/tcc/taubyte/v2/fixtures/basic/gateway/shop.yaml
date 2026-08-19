@@ -15,9 +15,10 @@ route:
             name: api
             port: http
 transformers:
-    - function: redact
+    - name: redact
       fail: closed
-    - function: /shop/tier_header
+    - namespace: /shop
+      name: tier_header
       fail: open
 cors:
     origins: ["https://shop.example.com"]

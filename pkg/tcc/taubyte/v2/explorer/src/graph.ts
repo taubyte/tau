@@ -182,20 +182,17 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
         continue;
       }
 
-      // the transformer chain: an ORDERED list of objects, each naming its function
-      // the way any cross-namespace reference is written — "redact" here, "eu/stamp"
-      // below here, "/shop/tier_header" from the root.
+      // the transformer chain: an ORDERED list of objects, each naming a function by
+      // (namespace, name) — the same pair every other cross-namespace reference uses,
+      // so it resolves through the same pass.
       if (key === "transformers" && Array.isArray(val)) {
         val.forEach((entry, i) => {
-          const fn = (entry as Compiled)?.function;
-          if (typeof fn !== "string") return;
-          const cut = fn.lastIndexOf("/");
-          const name = cut < 0 ? fn : fn.slice(cut + 1);
-          const scope = cut < 0 ? null : fn.slice(0, cut) || "/";
-          const fail = (entry as Compiled)?.fail;
+          const e = entry as Compiled;
+          if (typeof e?.name !== "string") return;
+          const ns = typeof e.namespace === "string" ? (e.namespace as string) : null;
           pendingPolicy.push({
-            from: id, name, scope,
-            verb: `transforms #${i + 1}${fail === "open" ? ", fails open" : ""}`,
+            from: id, name: e.name, scope: ns,
+            verb: `transforms #${i + 1}${e.fail === "open" ? ", fails open" : ""}`,
           });
         });
         continue;

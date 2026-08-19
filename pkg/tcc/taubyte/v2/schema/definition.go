@@ -1153,9 +1153,10 @@ func CompileRoot() *Node { return v2Root }
 // to put that — nowhere — and the workaround is a second parallel list, which is how
 // config formats end up with `transformers` and `transformers_required`.
 //
-// Each element ADDRESSES its function the way a namespace path does everywhere else:
-// `redact` is this scope then its parents, `eu/stamp` is relative, `/shop/tier_header`
-// is absolute from the project root.
+// A transformer is always a FUNCTION, so an element does not say which kind — it says
+// where, in the two fields every other cross-namespace reference in this vocabulary
+// uses. `namespace` omitted means this scope and then its parents, exactly as it does
+// on a handler and on an authorizer.
 //
 // THERE IS NO `direction`. It said inbound / outbound / both, and it was wrong to be
 // here: whether a function can touch the response is a property of the host interface
@@ -1165,8 +1166,10 @@ func CompileRoot() *Node { return v2Root }
 // world in `implements`, not a flag here.
 func transformersGroup() *Node {
 	return DefineList("transformers", []*Attribute{
-		String("function", Required(), IsResourceAddress(), InSection("transformers"),
-			Doc("Function", "The function traffic passes through: \"redact\" in this scope, \"eu/stamp\" relative to it, \"/shop/tier_header\" from the project root.")),
+		String("namespace", IsNamespacePath(), InSection("transformers"),
+			Doc("Namespace", "Path to the namespace holding the function, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
+		String("name", Required(), IsVariableName(), InSection("transformers"),
+			Doc("Name", "The function's name within that namespace.")),
 
 		// The one decision that is genuinely per-use. It is also the one with a
 		// dangerous default in both directions, so it is stated rather than assumed:

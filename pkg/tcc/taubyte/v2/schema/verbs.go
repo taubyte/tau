@@ -1,9 +1,7 @@
 package schema
 
 import (
-	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
@@ -387,60 +385,3 @@ func mountAttributes(kind string) []*Attribute {
 			Doc("Mount Path", "Absolute path inside the workload where this filesystem appears, e.g. \"/var/lib/postgresql/data\".")),
 	}
 }
-
-// IsResourceAddress validates ONE resource address — a name carrying its own scope,
-// which is how a resource is named from somewhere that is not its own namespace:
-//
-//	redact                this scope, then its parents
-//	eu/stamp              relative to this scope
-//	/shop/tier_header     absolute, from the project root
-//
-// The last segment is a resource name and follows the same rule every name does; the
-// segments before it are namespaces and follow the same rule those do.
-//
-// An address is not a Ref: nothing resolves it to an id at compile, because a Ref binds
-// one group in one scope and this deliberately crosses scopes. What checks it exists is
-// Audit (checks.go), which can see the whole project.
-func IsResourceAddress() engine.Option {
-	return Validator(func(in string) error {
-		return checkAddress(in)
-	})
-}
-
-// IsResourceAddresses validates a LIST of them.
-func IsResourceAddresses() engine.Option {
-	return Validator(func(in []string) error {
-		for _, addr := range in {
-			if err := checkAddress(addr); err != nil {
-				return fmt.Errorf("%q: %w", addr, err)
-			}
-		}
-		return nil
-	})
-}
-
-func checkAddress(addr string) error {
-	if addr == "" {
-		return errors.New("is empty")
-	}
-	if strings.HasSuffix(addr, "/") {
-		return errors.New("ends in a slash, so it names no resource")
-	}
-	segs := strings.Split(strings.TrimPrefix(addr, "/"), "/")
-	for i, seg := range segs {
-		if seg == "" {
-			return errors.New("has an empty segment")
-		}
-		last := i == len(segs)-1
-		if !nameRe.MatchString(seg) {
-			what := "namespace"
-			if last {
-				what = "resource name"
-			}
-			return fmt.Errorf("%q is not a valid %s", seg, what)
-		}
-	}
-	return nil
-}
-
-var nameRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)

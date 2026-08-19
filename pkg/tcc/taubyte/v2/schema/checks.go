@@ -181,28 +181,10 @@ func (r compiled) elements(key string) []map[string]any {
 	return out
 }
 
-// addr reads a string field off a list element.
-func addr(el map[string]any, key string) string {
+// field reads a string off a list element.
+func field(el map[string]any, key string) string {
 	s, _ := el[key].(string)
 	return s
-}
-
-// splitAddress reads "redact", "eu/stamp" or "/shop/tier_header" into the scope to look
-// in and the name to look for — the same three forms a namespace path takes anywhere.
-func splitAddress(addr, own string) (scope, name string) {
-	cut := strings.LastIndex(addr, "/")
-	if cut < 0 {
-		return own, addr
-	}
-	name = addr[cut+1:]
-	prefix := addr[:cut]
-	if strings.HasPrefix(addr, "/") {
-		return strings.TrimPrefix(prefix, "/"), name
-	}
-	if own == "" {
-		return prefix, name
-	}
-	return own + "/" + prefix, name
 }
 
 func (r compiled) block(key string) map[string]any {
@@ -465,8 +447,7 @@ func checkHostWorlds(all []compiled) []Finding {
 		}
 		if wants != "" {
 			for _, el := range res.elements("transformers") {
-				scope, name := splitAddress(addr(el, "function"), res.scope)
-				uses = append(uses, use{name, scope, wants, res.kind + "/" + res.name + " transformers"})
+				uses = append(uses, use{field(el, "name"), field(el, "namespace"), wants, res.kind + "/" + res.name + " transformers"})
 			}
 		}
 		if res.str("route/handler/kind") == "function" {
@@ -556,7 +537,7 @@ func checkTransformerWorlds(all []compiled) []Finding {
 			continue
 		}
 		for _, el := range res.elements("transformers") {
-			_, name := splitAddress(addr(el, "function"), res.scope)
+			name := field(el, "name")
 			if worlds[name] == nil {
 				worlds[name] = map[string]bool{}
 			}

@@ -117,13 +117,13 @@ func Nested(children ...*Node) NodeOption {
 // sequence, each element carrying the given attributes.
 //
 //	DefineList("transformers", []*Attribute{
-//	    String("function", Required()), String("fail"),
+//	    String("namespace"), String("name", Required()),
 //	})
 //
 //	transformers:
-//	    - function: redact
-//	      fail: closed
-//	    - function: /shop/tier_header
+//	    - name: redact
+//	    - namespace: /shop
+//	      name: tier_header
 //
 // Reach for it when the entries are a PIPELINE — when running them in a different
 // order means something different. A name-keyed group (DefineGroup + DefineIter) is

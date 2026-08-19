@@ -178,7 +178,7 @@ func TestAuditHostWorlds(t *testing.T) {
 		}
 		return body
 	}
-	gw := "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        application:\n            name: a\n            port: p\ntransformers:\n    - function: t\n"
+	gw := "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        application:\n            name: a\n            port: p\ntransformers:\n    - name: t\n"
 	app := appBody + "ports:\n    p:\n        number: 80\n"
 
 	// built for a gateway, used by a gateway
@@ -197,7 +197,7 @@ func TestAuditHostWorlds(t *testing.T) {
 	found = auditDocs(t, nil, map[string]string{
 		"/function/t.yaml":    fn("gateway-transformer"),
 		"/application/a.yaml": app,
-		"/proxy/p.yaml":       "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nprotocol: tcp\nhost:\n    generated:\n        name: db\ntransformers:\n    - function: t\nforward:\n    application:\n        name: a\n        port: p\n",
+		"/proxy/p.yaml":       "id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\nprotocol: tcp\nhost:\n    generated:\n        name: db\ntransformers:\n    - name: t\nforward:\n    application:\n        name: a\n        port: p\n",
 	})
 	has(t, found, schema.Broken, "is used as a proxy-transformer")
 }
@@ -234,7 +234,7 @@ func TestAuditVariableAsFile(t *testing.T) {
 func TestAuditGhostFunctions(t *testing.T) {
 	found := auditDocs(t, nil, map[string]string{
 		"/application/a.yaml": appBody + "ports:\n    p:\n        number: 80\n",
-		"/gateway/g.yaml":     "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        application:\n            name: a\n            port: p\ntransformers:\n    - function: ghost\n",
+		"/gateway/g.yaml":     "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nroute:\n    path: /\n    handler:\n        application:\n            name: a\n            port: p\ntransformers:\n    - name: ghost\n",
 		"/cache/c.yaml":       "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nmatch: c\nsize: 1MB\nauthorizer:\n    name: alsoghost\n",
 	})
 	has(t, found, schema.Broken, "is named as a gateway-transformer by gateway/g transformers, and does not exist")
