@@ -33,6 +33,15 @@ export interface Omission {
 }
 export type Compiled = Record<string, unknown>;
 /** One cross-resource finding, decided by tcc — see schema/checks.go. */
+export interface Lowered {
+  kind: string;
+  name: string;
+  of: string;
+  scope: string;
+  why: string;
+  links: { kind: string; name: string; verb: string }[];
+}
+
 export interface Finding {
   severity: "broken" | "check" | "note";
   kind: string;
@@ -44,6 +53,8 @@ export interface Finding {
 
 export interface CompileOk {
   findings?: Finding[];
+  /** What the lowered resources become, and their wiring. Computed by tcc, not here. */
+  lowered?: Lowered[];
   /** The project's label in a cloud's generated zone — derived from its id. */
   projectLabel?: string;
   object: Compiled;

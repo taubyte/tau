@@ -272,3 +272,14 @@ code.om.open { color: var(--internet); }
   font-family: ui-monospace, monospace; font-size: .74rem; color: var(--mut);
 }
 .chip b { color: var(--fg); }
+
+/* A resource nothing authored: what a workflow lowers into. Dashed, because the
+   difference between "you wrote this" and "this is what yours becomes" is the whole
+   point of showing it at all. */
+.rf-node.derived {
+  border-style: dashed;
+  background: transparent;
+}
+.rf-node.derived .rf-name {
+  font-style: italic;
+}

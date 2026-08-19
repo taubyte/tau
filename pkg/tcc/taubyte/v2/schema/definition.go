@@ -30,6 +30,8 @@ package schema
 import (
 	"errors"
 	"strings"
+
+	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // commonAttributes prepends the shared identity block and appends the access block.
@@ -299,6 +301,11 @@ func pullSecret() *Attribute {
 // handler's kind switches on: a key outside this set is a compile error rather than
 // a route that silently never fires.
 var handlerKinds = []string{"function", "application", "website", "gateway", "mcp"}
+
+// streamServerKinds are what may answer a stream. A container gets the bytes on one of
+// its own ports; a function is dispatched with the stream in hand. Both are real, and
+// nothing else is: a website is HTTP by definition and a gateway is an ingress.
+var streamServerKinds = []string{"application", "function"}
 
 // proxyHandlerKinds are what may sit behind an L4 proxy. Only a container: a raw
 // connection is held open and streamed, and a function is request-and-answer with no
@@ -1069,6 +1076,160 @@ var V2Resources = []*Node{
 			Resource("mcp", "MCP", "MCP", "mcp"),
 		)),
 
+	// ---- in-project addressing ----
+
+	// The kind v1 called `services`, back with the name it should have had. A STREAM:
+	// a named, ordered, bidirectional byte channel between two workloads inside the
+	// project, carried by libp2p, with no edge in the path.
+	//
+	// It exists because every other inbound path in this vocabulary is an INGRESS. A
+	// gateway route parses HTTP arriving from outside; a proxy accepts a connection
+	// from outside. A function that wants to talk to the project's own Postgres, or to
+	// a sidecar that speaks a protocol nobody standardised, had exactly two options:
+	// go out to the edge and back in, or nothing. This is the nothing, filled in.
+	//
+	// NOT `p2p`, which names the transport rather than the thing, and not `services`,
+	// which is a word every reader fills in differently.
+	//
+	// THE PROTOCOL IS NAMESPACED BY THE PLATFORM, not by the author. What is written
+	// here is a name inside the project; what goes on the wire has the project's
+	// identity prepended, so two projects that both call a stream `sync` do not meet.
+	// An author who could write the full wire protocol could collide with another
+	// tenant on purpose, which is the same reason a proxy authors no port.
+	//
+	// Deliberately thin, and stated as such: v1's whole declaration was one field. What
+	// serves the stream is named here, the way a proxy names what it forwards to,
+	// because a stream nothing answers is a name that dials into a void.
+	DefineGroup("stream",
+		resource(
+			commonAttributes(
+				String("protocol", Required(), IsVariableName(), InSection("stream"),
+					Doc("Protocol", "The name this stream is addressed by within the project, e.g. \"sync\". What goes on the wire has the project's identity prepended, so two projects using the same name never meet.")),
+
+				// Same shape as a proxy's `forward` and a gateway route's handler: the
+				// resource that answers, by kind, namespace and name.
+				String("serve/kind", Path("serve", Either(streamServerKinds...)), Key(), InSection("stream"),
+					Doc("Served By", "Which kind answers this stream (the key selects the block).")),
+				String("serve/namespace", Path("serve", Either(streamServerKinds...), "namespace"), IsNamespacePath(), InSection("stream"),
+					Doc("Namespace", "Path to the namespace holding it, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
+				String("serve/name", Path("serve", Either(streamServerKinds...), "name"), Required(), IsVariableName(), InSection("stream"),
+					Doc("Name", "Its name within that namespace.")),
+				String("serve/port", Path("serve", Either(streamServerKinds...), "port"), IsVariableName(), InSection("stream"),
+					Doc("Port", "Which of the workload's own named ports the stream is delivered to. Containers only; a function is dispatched, not connected.")),
+			),
+			GroupDoc("A named byte stream between two workloads inside the project, over libp2p. The way in that is not an ingress."), Icon("stream"), Category("compute"),
+			secIdentity, secAccess,
+			Section("stream", "Stream", "The name it answers to, and what answers it."),
+			Ops(WriteOp("dial")), // dial is write: what travels is opaque
+			Resource("stream", "Stream", "Stream", "stream"),
+		)),
+
+	// ---- agents ----
+
+	// An LLM loop with tools, declared rather than written. It is a workload like any
+	// other — it is invoked, it has ceilings, it reaches things — and exactly one part
+	// of it is new: the model.
+	//
+	// ITS TOOLS ARE ITS ACCESS BLOCK. That falls out of the vocabulary rather than
+	// being designed: an agent may call the functions it declares `invoke` on, read the
+	// databases it declares `query` on, and nothing else. A separate `tools:` list
+	// would be a second grant path that the authorizer on the target never sees, which
+	// is the door §9 exists to keep shut. So an agent's blast radius is a graph query
+	// that already works.
+	//
+	// `steps` is not a performance knob. An agent that calls a tool, reads the result
+	// and decides again has no natural end, and the failure mode is not a slow request
+	// — it is a loop that spends money until someone notices. A ceiling nobody chose
+	// is the one thing worse than a ceiling that is wrong, so it is required.
+	DefineGroup("agent",
+		resource(
+			commonAttributes(
+				String("model", Required(), InSection("model"),
+					Doc("Model", "The model this agent runs on, e.g. \"claude-opus-5\".")),
+				String("credentials", Ref("secret", Prefix("secret/")), RequiredWhen("model-source", "external"), InSection("model"),
+					Doc("Credentials", "Secret holding the provider credential, as \"secret/<name>\".")),
+				String("model-source", InSet("external", "local"), Default("external"), InSection("model"),
+					Doc("Model Source", "external: a provider reached over the network, which needs a credential. local: a model served inside the cloud.")),
+
+				// The prompt is a string here and a file nowhere, which is the wrong
+				// way round for anything long. Recorded in omissions.go rather than
+				// solved by letting a 40KB system prompt into a yaml document.
+				String("instructions", InSection("model"),
+					Doc("Instructions", "The system prompt. For anything longer than a paragraph, keep it in the workload's own source and leave this empty.")),
+
+				Int("limits/steps", Path("limits", "steps"), MinInt(1), Required(), InSection("limits"),
+					Doc("Max Steps", "How many times this agent may call a tool and decide again in one invocation. Required: an agent with no ceiling is a loop that spends money until someone notices.")),
+				Int("limits/concurrent", Path("limits", "concurrent"), MinInt(1), InSection("limits"),
+					Doc("Concurrent", "How many invocations may run at once.")),
+				egressAttribute(),
+			),
+			Nested(variablesGroup()),
+			GroupDoc("An LLM loop with tools. What it may call is what it declares access to — there is no second list."), Icon("agent"), Category("compute"),
+			secIdentity, secAccess, secConfig, secNetwork, secLimits,
+			Section("model", "Model", "Which model answers, and what it is told."),
+			Ops(WriteOp("invoke")),
+			Resource("agent", "Agent", "Agent", "agent"),
+		)),
+
+	// A state machine over things that already exist. Steps run in the order written;
+	// each names a function, may be retried, and may hand off to another step when it
+	// finally fails.
+	//
+	// IT LOWERS. A workflow is not a component — nothing in the substrate runs
+	// "workflows". Each step becomes a queue with the step's retry budget, failures
+	// land in a dead-letter queue, and the run's own state lives in an entity, which is
+	// the only kind here that gives a single writer per key. Every one of those is a
+	// primitive this vocabulary already has and the platform already runs, which is
+	// what makes a workflow a compile-time construct rather than a new subsystem to
+	// operate. See Lowers() below, and interp/lowering.go for the expansion.
+	//
+	// LINEAR, for now, and that is a real limit rather than a simplification: there is
+	// no Choice, no Parallel, no Map. Those are the shapes that make Step Functions
+	// what it is, and each needs something the list element cannot hold yet.
+	// omissions.go records which.
+	DefineGroup("workflow",
+		resource(
+			commonAttributes(
+				Duration("timeout", InSection("run"),
+					Doc("Timeout", "Ceiling on one whole run, as a human string (e.g. \"1h\"). Absent means a run may take as long as its steps do.")),
+				Int("concurrency", MinInt(1), InSection("run"),
+					Doc("Concurrency", "How many runs may be in flight at once. Absent means unlimited.")),
+			),
+			Nested(stepsGroup()),
+			GroupDoc("An ordered pipeline of functions with retries. It runs on queues and an entity — nothing new is deployed to serve it."), Icon("workflow"), Category("trigger"),
+			secIdentity, secAccess,
+			Section("run", "Run", "Ceilings on one run and on all of them."),
+			Section("steps", "Steps", "What runs, in order."),
+			Ops(WriteOp("start")),
+
+			// THE LOWERING, declared rather than computed. tcc expands it (interp/
+			// lowering.go); this says what a workflow becomes and nothing about how.
+			//
+			// One queue PER STEP rather than one for the workflow, because a queue is
+			// where a retry budget lives and the budget is the step's: `reserve` may be
+			// worth three attempts and `charge` exactly one. Sharing a queue would make
+			// the whole pipeline share whichever number was written last.
+			//
+			// An ENTITY for the run rather than a row in a database, because a run is
+			// the definition of a single-writer key — two nodes advancing the same run
+			// past the same step is the one thing this must not do, and an entity is the
+			// only kind here that fences it.
+			interp.Lowers(
+				interp.Lowering{Into: "queue", PerEach: "steps", Name: "{name}_{each.name}",
+					Why: "work waiting for step {each.name}",
+					Set: map[string]string{"max-attempts": "{each.attempts}", "dead-letter": "queue/{name}_failed"},
+					Links: []interp.Link{
+						{To: "function/{each.run}", Verb: "invokes", Scope: "{each.namespace}"},
+						{To: "queue/{name}_failed", Verb: "gives up to"},
+					}},
+				interp.Lowering{Into: "queue", Name: "{name}_failed",
+					Why: "what a step gave up on, with the run it belonged to"},
+				interp.Lowering{Into: "entity", Name: "{name}_run",
+					Why: "one run's state: which step it is at, and what it carried"},
+			),
+			Resource("workflow", "Workflow", "Workflow", "workflow"),
+		)),
+
 	// One type for every external system: it holds the credentials, and for
 	// source-like externals it holds the connection too — Lambda's event-source
 	// mapping, where a separate poller joins the source and the invoked compute
@@ -1204,6 +1365,34 @@ func CompileRoot() *Node { return v2Root }
 // cannot be made to see the response by a word in the config, and one that sees both
 // does not need permission. If a response-only chain is ever wanted, it is another
 // world in `implements`, not a flag here.
+// stepsGroup is the workflow's pipeline: an ordered list, because the order IS the
+// program. Every field here is one the ENGINE can carry — a list element does not get
+// the interpreter's passes, so `retries` is an integer rather than a Duration and a
+// step names its function with the namespace+name pair used everywhere else.
+func stepsGroup() *Node {
+	return DefineList("steps", []*Attribute{
+		String("name", Required(), IsVariableName(), InSection("steps"),
+			Doc("Step", "What this step is called. Another step's on-error names it, and the run's state is keyed by it.")),
+		String("namespace", IsNamespacePath(), InSection("steps"),
+			Doc("Namespace", "Path to the namespace holding the function, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
+		String("run", Required(), IsVariableName(), InSection("steps"),
+			Doc("Function", "The function this step invokes.")),
+
+		// ATTEMPTS, not retries. "3 retries" is three or four runs depending on who is
+		// reading, and the number lands in a queue's `max-attempts`, which counts runs
+		// — so the config counts what the thing it becomes counts, and the lowering is
+		// a copy rather than arithmetic. Templates must not grow a calculator.
+		//
+		// Not a duration either: what a step may TAKE is the function's own
+		// execution/timeout, and a second ceiling here would be a number that disagrees
+		// with it.
+		Int("attempts", MinInt(1), Default(1), InSection("steps"),
+			Doc("Attempts", "How many times this step is run before it has failed. 1 means no retry. The delay between attempts is the queue's, not the step's.")),
+		String("on-error", IsVariableName(), InSection("steps"),
+			Doc("On Error", "Another step to run when this one has exhausted its retries. Omitted means the run fails there.")),
+	}, GroupDoc("One step: a function, how often it is retried, and where failure goes."))
+}
+
 func transformersGroup() *Node {
 	return DefineList("transformers", []*Attribute{
 		String("namespace", IsNamespacePath(), InSection("transformers"),

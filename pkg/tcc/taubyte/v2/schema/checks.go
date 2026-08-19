@@ -104,6 +104,9 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	out = append(out, checkHostWorlds(all)...)
 	out = append(out, checkHandlerPorts(all)...)
 	out = append(out, checkVolumeWriters(all)...)
+	out = append(out, checkWorkflows(all)...)
+	out = append(out, checkLoweringCollisions(root, all)...)
+	out = append(out, checkLoweredLinks(root, all)...)
 	out = append(out, checkExternal(all, r)...)
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -211,7 +214,9 @@ func (r compiled) block(key string) map[string]any {
 func checkReachable(all []compiled, byKind map[string][]compiled) []Finding {
 	fronted := map[string]bool{}
 	for _, res := range all {
-		for _, prefix := range []string{"route/handler", "forward"} {
+		// The ways something is reached: an HTTP route, an L4 proxy, and a stream —
+		// which is the one that does not come from outside.
+		for _, prefix := range []string{"route/handler", "forward", "serve"} {
 			kind, name := res.str(prefix+"/kind"), res.str(prefix+"/name")
 			if kind != "" && name != "" {
 				fronted[kind+"/"+name] = true
@@ -310,7 +315,7 @@ func checkPortsAreFed(all []compiled) []Finding {
 			}
 		}
 		for _, other := range all {
-			for _, prefix := range []string{"route/handler", "forward"} {
+			for _, prefix := range []string{"route/handler", "forward", "serve"} {
 				if other.str(prefix+"/name") == res.name {
 					if p := other.str(prefix + "/port"); p != "" {
 						used[p] = true
@@ -512,6 +517,138 @@ func lookupWorld(world map[string]string, name, scope string) (string, bool) {
 	}
 }
 
+// checkWorkflows: what only a workflow can get wrong. A step naming a function that
+// does not exist is NOT here — that one is a link in the lowering, and checkLoweredLinks
+// reports it generically, with the trail.
+func checkWorkflows(all []compiled) []Finding {
+	var out []Finding
+	for _, res := range all {
+		if res.kind != "workflow" {
+			continue
+		}
+		steps := res.elements("steps")
+		if len(steps) == 0 {
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				"has no steps, so it lowers to nothing and starting it does nothing",
+				"A workflow IS its steps: with none, the queues and the entity it would become are not created and a start has nowhere to go."})
+			continue
+		}
+
+		named := map[string]bool{}
+		for _, step := range steps {
+			named[field(step, "name")] = true
+		}
+		for _, step := range steps {
+			name := field(step, "name")
+			if target := field(step, "on-error"); target != "" && !named[target] {
+				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+					fmt.Sprintf("step %q sends failure to %q, which is not a step of this workflow", name, target),
+					"On error the run would jump to a step that does not exist, which is the same as having no handler at all — except it reads like it has one."})
+			}
+		}
+	}
+	return out
+}
+
+// checkLoweredLinks: a fault INSIDE something nobody wrote, reported against something
+// somebody did.
+//
+// A workflow becomes queues, and one of those queues invokes the function its step
+// named. If that function does not exist, the thing that is broken is a queue the
+// author cannot find in their repository — so the finding names the WORKFLOW and the
+// step, and the trail says which part of the lowering failed. That is the whole reason
+// a plan carries its source: a diagnostic about generated config is worthless if it
+// only names generated config.
+func checkLoweredLinks(root map[string]any, all []compiled) []Finding {
+	// Keyed SCOPE-first, because lookupName walks up the scope and appends the rest of
+	// the identity: the parts have to be in that order or every lookup misses.
+	exists := map[string]bool{}
+	for _, res := range all {
+		exists[res.scope+"\x00"+res.kind+"\x00"+res.name] = true
+	}
+
+	plan := LoweringPlan(root)
+	derived := map[string]bool{}
+	for _, d := range plan {
+		derived[d.Kind+"\x00"+d.Name] = true
+	}
+
+	var out []Finding
+	for _, d := range plan {
+		for _, l := range d.Links {
+			if derived[l.Kind+"\x00"+l.Name] {
+				continue // points at another part of the same lowering
+			}
+			scope := l.Scope
+			if scope == "" {
+				scope = d.Scope
+			}
+			if lookupName(exists, l.Kind+"\x00"+l.Name, scope) {
+				continue
+			}
+			out = append(out, Finding{Broken, d.Source.Kind, d.Source.Name, d.Source.Scope,
+				fmt.Sprintf("%s %s/%s, which does not exist", l.Verb, l.Kind, l.Name),
+				"Found in what this becomes rather than in what you wrote: " + d.Trail() +
+					". The name is carried through the lowering unchanged, so fixing it where it is written fixes this."})
+		}
+	}
+	return out
+}
+
+// checkLoweringCollisions: a lowered resource takes a name, and an authored resource
+// can already have it. The two would be the same key in the compiled object, and which
+// one wins is not something an author should have to know.
+func checkLoweringCollisions(root map[string]any, all []compiled) []Finding {
+	authored := map[string]compiled{}
+	for _, res := range all {
+		authored[res.kind+"\x00"+res.scope+"\x00"+res.name] = res
+	}
+
+	var out []Finding
+	for _, d := range LoweringPlan(root) {
+		for _, res := range all {
+			if res.kind+"/"+res.name != d.Of {
+				continue
+			}
+			if _, taken := authored[d.Kind+"\x00"+res.scope+"\x00"+d.Name]; taken {
+				out = append(out, Finding{Broken, d.Kind, d.Name, res.scope,
+					fmt.Sprintf("is authored here AND is what %s becomes", d.Of),
+					"A transpiled resource takes the name too, and both would be the same key. Rename one — the authored one is the one you can see."})
+			}
+		}
+	}
+	return out
+}
+
+// lookupName is lookupWorld's question without the world: does this key exist in this
+// scope, or in one of its parents. The key carries whatever identity the caller needs
+// beyond the scope — a bare name, or a kind and a name.
+func lookupName(known map[string]bool, name, scope string) bool {
+	scope = strings.TrimPrefix(scope, "/")
+	for {
+		if known[scope+"\x00"+name] {
+			return true
+		}
+		if scope == "" {
+			return false
+		}
+		if cut := strings.LastIndex(scope, "/"); cut >= 0 {
+			scope = scope[:cut]
+		} else {
+			scope = ""
+		}
+	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // checkVolumeWriters: a volume is a SINGLE-WRITER leased directory, and nothing in the
 // declaration says so. Access is declared by the ACCESSOR and the target only bounds it
 // — which is right for every other kind, and for a volume means two workloads can each
@@ -615,7 +752,7 @@ func volumeKey(all []compiled, name, ns, own string) string {
 func checkHandlerPorts(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
-		for _, prefix := range []string{"route/handler", "forward"} {
+		for _, prefix := range []string{"route/handler", "forward", "serve"} {
 			port := res.str(prefix + "/port")
 			kind := res.str(prefix + "/kind")
 			if port == "" || kind == "" || kind == "application" {

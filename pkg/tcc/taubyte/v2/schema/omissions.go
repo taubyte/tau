@@ -314,6 +314,56 @@ var Omissions = []Omission{
 			"verbs are, are all open.",
 	},
 	{
+		Name:    "branching, parallelism and fan-out in a workflow",
+		State:   Blocked,
+		Decided: Forced,
+		Why: "A workflow is a LINE: steps run in the order written, each may be retried, and " +
+			"failure may jump to one other step. Step Functions is what it is because of the " +
+			"shapes that are missing — Choice (a branch on the result), Parallel (two lines that " +
+			"join), Map (one line run over every element of a list). Each needs something a list " +
+			"element cannot hold: a condition is an expression, and Parallel and Map are lists " +
+			"inside a list.",
+		Instead: "one line, and a second workflow started by the first where a branch was wanted.",
+		Unblocks: "an expression term for Choice, and nested lists for the other two. Both are " +
+			"DSL work rather than runtime work — the lowering already produces one queue per " +
+			"step, and a branch is a step with two.",
+	},
+	{
+		Name:    "emitting what a workflow lowers into",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "tcc computes the plan — the queues, the entity, and the wiring between them — and " +
+			"stops there. It does not write those resources into the compiled object, so nothing " +
+			"downstream can provision them yet.",
+		Instead: "the plan, which is enough to draw, audit and cost, and which the explorer shows.",
+		Unblocks: "four decisions, none of them code. What id a derived resource gets and whether " +
+			"it survives a rename of its source. Whether a derived queue counts against the " +
+			"project's quota. What `tau graph` shows — the workflow, or what it became. And what " +
+			"happens on the collision an audit check already reports.",
+	},
+	{
+		Name:    "an agent's instructions as a file",
+		State:   Open,
+		Decided: Forced,
+		Why: "A system prompt is prose, often pages of it, and the only place to put one is a " +
+			"string in a yaml document — where it is unreadable, unreviewable line by line, and " +
+			"mixed in with configuration.",
+		Instead:  "a short `instructions`, and anything longer kept in the workload's own source.",
+		Unblocks: "the same shape a variable's `as: file` wants: a path into the resource's repository.",
+	},
+	{
+		Name:    "an MCP server as an agent's tools",
+		State:   Open,
+		Decided: ByOwner,
+		Why: "An agent's tools are the functions it declares access to, which is the whole design — " +
+			"one grant path, and the target's authorizer sees it. But `mcp` declares no ops, so an " +
+			"agent cannot name one, and an MCP server IS a tool registry. Reaching it through its " +
+			"gateway route means leaving the cloud to call something inside it, which is the " +
+			"mistake the stream kind exists to stop.",
+		Instead:  "functions, named one by one.",
+		Unblocks: "ops on `mcp` — `tools` to list and `call` to invoke — which is a small addition and a real decision.",
+	},
+	{
 		Name:    "authenticated MCP",
 		State:   Blocked,
 		Decided: Forced,

@@ -49,6 +49,13 @@ func AuditProject(ctx context.Context, r Resolver, opts ...Option) ([]Finding, e
 	return Audit(obj.Flat(), r), nil
 }
 
+// LoweringPlan is what this project's lowered resources become — the resources, and
+// the wiring between them, so a consumer can show what is INSIDE one of them. The
+// expansion is tcc's (interp.LoweringPlan); this binds it to THIS vocabulary's root.
+func LoweringPlan(obj map[string]any) []interp.Derived {
+	return interp.LoweringPlan(CompileRoot(), obj)
+}
+
 func WithLocal(path string) Option                { return interp.WithLocal(path) }
 func WithVirtual(fs afero.Fs, path string) Option { return interp.WithVirtual(fs, path) }
 func WithBranch(branch string) Option             { return interp.WithBranch(branch) }

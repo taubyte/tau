@@ -277,3 +277,38 @@ func TestAuditVolumeWriters(t *testing.T) {
 	})
 	hasNo(t, found, "instances")
 }
+
+// A fault INSIDE a lowering is reported against what the AUTHOR wrote. The broken
+// thing is a queue nobody wrote and cannot find; the finding has to name the workflow,
+// the step, and which part of the lowering failed — or a generated-config diagnostic is
+// worth nothing.
+func TestAuditReportsALoweringFaultAgainstItsSource(t *testing.T) {
+	const wf = "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nsteps:\n    - name: reserve\n      run: %s\n      attempts: 2\n"
+
+	found := auditDocs(t, nil, map[string]string{
+		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nsource: \".\"\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",
+		"/workflow/checkout.yaml": strings.Replace(wf, "%s", "reserve", 1),
+	})
+	hasNo(t, found, "does not exist")
+
+	found = auditDocs(t, nil, map[string]string{
+		"/function/reserve.yaml":  "id: QmNf1SA5DVFbNTVYYPvKqTLLYzGqPZAmtLqYmYnFCEcvLh\nsource: \".\"\nexecution: {call: c, timeout: 1s, memory: 1MB}\n",
+		"/workflow/checkout.yaml": strings.Replace(wf, "%s", "resrve", 1),
+	})
+	f := findOne(t, found, "does not exist")
+	assert.Equal(t, f.Kind, "workflow", "the finding names what the author wrote")
+	assert.Equal(t, f.Name, "checkout")
+	assert.Assert(t, strings.Contains(f.Detail, "steps/0"), "and which step: %s", f.Detail)
+	assert.Assert(t, strings.Contains(f.Detail, "queue/checkout_reserve"), "and which part of the lowering: %s", f.Detail)
+}
+
+func findOne(t *testing.T, found []schema.Finding, contains string) schema.Finding {
+	t.Helper()
+	for _, f := range found {
+		if strings.Contains(f.Title, contains) {
+			return f
+		}
+	}
+	t.Fatalf("no finding containing %q; got %v", contains, found)
+	return schema.Finding{}
+}

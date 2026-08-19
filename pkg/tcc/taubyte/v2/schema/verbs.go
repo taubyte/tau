@@ -103,15 +103,15 @@ func OpsOf(kind string) []Verb {
 	return nil
 }
 
-// ServedByRoute reports whether traffic from outside can be handed to this kind — by
-// a gateway route if it is HTTP, or by an L4 proxy if it is a raw connection. It is
-// the OTHER way to be reachable, and the two are not interchangeable: ops are what one
-// resource does to another inside the cloud, an ingress is how something from outside
+// ServedByRoute reports whether traffic can be handed to this kind — by a gateway route
+// if it is HTTP, by an L4 proxy if it is a raw connection from outside, or by a stream
+// if it is a raw connection from inside the project. It is the OTHER way to be
+// reachable: ops are what one resource does to another, this is how a connection
 // arrives. A kind with neither is not a target at all.
 func ServedByRoute(kind string) bool {
 	// No pluralisation to undo any more: a handler kind IS the kind's name. That
 	// `k+"s"` existed only because the vocabulary named the same thing two ways.
-	for _, k := range append(handlerKinds, proxyHandlerKinds...) {
+	for _, k := range append(append(handlerKinds, proxyHandlerKinds...), streamServerKinds...) {
 		if k == kind {
 			return true
 		}

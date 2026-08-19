@@ -11,6 +11,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   IconApps,
+  IconArrowsRightLeft,
   IconBolt,
   IconBook,
   IconBox,
@@ -24,8 +25,10 @@ import {
   IconPlug,
   IconPlugConnected,
   IconPoint,
+  IconRobot,
   IconRoute,
   IconServer,
+  IconSitemap,
   IconSettings,
   IconTerminal2,
   IconWorld,
@@ -34,6 +37,7 @@ import {
 } from "@tabler/icons-react";
 
 const ICONS: Record<string, TablerIcon> = {
+  agent: IconRobot,
   apps: IconApps,
   bolt: IconBolt,
   book: IconBook,
@@ -52,7 +56,9 @@ const ICONS: Record<string, TablerIcon> = {
   message: IconMessage,
   plug: IconPlug,
   route: IconRoute,
+  stream: IconArrowsRightLeft,
   terminal: IconTerminal2,
+  workflow: IconSitemap,
 };
 
 export function KindIcon({ icon, size = 13 }: { icon: string; size?: number }) {

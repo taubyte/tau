@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/interp"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 	"gotest.tools/v3/assert"
 )
@@ -846,4 +847,38 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 	p := only(t, resources(t, obj.Flat(), "proxy"))
 	assert.Equal(t, p["protocol"], "tcp")
 	assert.Equal(t, p["certificate/source"], "generated")
+}
+
+// The workflow's lowering, on the real vocabulary: what it becomes, and the wiring that
+// lets a consumer draw the inside of one without knowing what a workflow is.
+func TestWorkflowLowers(t *testing.T) {
+	plan := schema.LoweringPlan(compileBasic(t))
+
+	got := map[string]string{}
+	for _, d := range plan {
+		got[d.Kind+"/"+d.Name] = d.Why
+	}
+	assert.Assert(t, got["queue/checkout_reserve"] != "", "one queue per step: %v", got)
+	assert.Assert(t, got["queue/checkout_charge"] != "")
+	assert.Assert(t, got["queue/checkout_failed"] != "", "somewhere for a step that gave up")
+	assert.Assert(t, got["entity/checkout_run"] != "", "a run is a single-writer key")
+
+	for _, d := range plan {
+		if d.Name != "checkout_reserve" {
+			continue
+		}
+		assert.Equal(t, d.Of, "workflow/checkout")
+		links := map[string]string{}
+		for _, l := range d.Links {
+			links[l.Kind+"/"+l.Name] = l.Verb
+		}
+		assert.Equal(t, links["function/checkout"], "invokes")
+		assert.Equal(t, links["queue/checkout_failed"], "gives up to")
+	}
+}
+
+// A lowering into a kind the vocabulary does not have is a plan nothing can carry out,
+// and the vocabulary author is the one who should hear about it.
+func TestEveryLoweringNamesARealKind(t *testing.T) {
+	assert.DeepEqual(t, interp.CheckLowerings(schema.CompileRoot()), []string(nil))
 }

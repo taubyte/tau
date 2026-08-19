@@ -27,6 +27,8 @@ export interface Node {
   // How a client reaches that name, when it is not just "https". An L4 proxy writes
   // no port and no address, so this is the only place the page can say what to dial.
   dial?: string;
+  /** A resource nothing authored: what a transpiled resource becomes. */
+  derived?: { of: string; why: string };
   layer: number;
   x: number;
   y: number;
@@ -77,7 +79,22 @@ export function iconOf(kind: string): string {
 
 const isScopeContainer = (k: string) => k === "namespace";
 
-export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel = ""): Graph {
+/** One resource a lowered resource becomes, as computed by tcc — never here. */
+export interface Lowered {
+  kind: string;
+  name: string;
+  of: string;
+  scope: string;
+  why: string;
+  links: { kind: string; name: string; verb: string }[];
+}
+
+export function buildGraph(
+  compiled: Compiled,
+  verbs: KindVerbs[],
+  projectLabel = "",
+  lowered: Lowered[] = [],
+): Graph {
   const nodes: Node[] = [];
   const arrows: Arrow[] = [];
   const verbEffect = new Map<string, Effect>();
@@ -237,10 +254,11 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
 
     // An ingress names its target by (kind, namespace, name) rather than resolving it
     // to an id — a name in another namespace has no spelling the ref resolver accepts.
-    // Resolve it here, against the nodes actually compiled. Two prefixes because there
-    // are two front doors: a gateway route parses HTTP and carries the handler under
-    // `route/`, an L4 proxy parses nothing and only forwards.
-    for (const p of ["route/handler", "forward"]) {
+    // Resolve it here, against the nodes actually compiled. Three prefixes because
+    // there are three ways in: a gateway route parses HTTP and carries the handler
+    // under `route/`, an L4 proxy parses nothing and forwards, and a stream is the
+    // one that never leaves the project.
+    for (const p of ["route/handler", "forward", "serve"]) {
       const hk = res[`${p}/kind`];
       const hn = res[`${p}/name`];
       if (typeof hk !== "string" || typeof hn !== "string") continue;
@@ -360,6 +378,42 @@ export function buildGraph(compiled: Compiled, verbs: KindVerbs[], projectLabel 
   for (const n of nodes) {
     n.answeredBy = zoneOf.get(n.id);
     n.answeredById = zoneIdOf.get(n.id);
+  }
+
+  // What the lowered resources become. These are NOT in the compiled object — tcc
+  // computes the plan and the page draws it — so they are added last, as their own
+  // nodes, with an arrow from the resource they came from. Drawn as references because
+  // that is what they are: the workflow does not CALL its queues, it becomes them.
+  for (const d of lowered) {
+    const src = nodes.find((n) => `${n.kind}/${n.name}` === d.of);
+    if (!src) continue;
+    const id = `derived:${d.kind}/${d.name}`;
+    if (byId.has(id)) continue;
+    const node: Node = {
+      id, kind: d.kind, name: d.name, scope: src.scope,
+      derived: { of: d.of, why: d.why }, layer: 0, x: 0, y: 0,
+    };
+    nodes.push(node);
+    byId.set(id, node);
+    live.push({ from: src.id, to: id, kind: d.kind, verb: "becomes", effect: "read", ref: true });
+  }
+
+  // The wiring BETWEEN them, which is what makes this a view of the inside rather than
+  // a list of names: the queue for a step invokes its function, and hands what it gave
+  // up on to the failure queue. tcc computed both ends; this only draws them.
+  //
+  // A link may point at a derived resource or at an authored one — a step's function is
+  // a real function somebody wrote — so both are looked up.
+  for (const d of lowered) {
+    const from = byId.get(`derived:${d.kind}/${d.name}`);
+    if (!from) continue;
+    for (const l of d.links ?? []) {
+      const to =
+        byId.get(`derived:${l.kind}/${l.name}`) ??
+        nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === d.scope);
+      if (!to) continue;
+      live.push({ from: from.id, to: to.id, kind: l.kind, verb: l.verb, effect: "write" });
+    }
   }
 
   const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();

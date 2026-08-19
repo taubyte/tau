@@ -109,6 +109,24 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	out["findings"] = found
 
+	// What the lowered resources become, and how they are wired to each other. Computed
+	// here for the same reason the audit is: it is a fact about the vocabulary, and a
+	// second implementation in the page would drift the first time a lowering changed.
+	// It is also what lets the page show the INSIDE of a workflow without knowing what
+	// a workflow is.
+	plan := schema.LoweringPlan(obj.Flat())
+	lowered := make([]map[string]any, 0, len(plan))
+	for _, d := range plan {
+		links := make([]map[string]any, 0, len(d.Links))
+		for _, l := range d.Links {
+			links = append(links, map[string]any{"kind": l.Kind, "name": l.Name, "verb": l.Verb})
+		}
+		lowered = append(lowered, map[string]any{
+			"kind": d.Kind, "name": d.Name, "of": d.Of, "scope": d.Scope, "why": d.Why, "links": links,
+		})
+	}
+	out["lowered"] = lowered
+
 	if len(validations) > 0 {
 		vs := make([]map[string]any, 0, len(validations))
 		for _, v := range validations {

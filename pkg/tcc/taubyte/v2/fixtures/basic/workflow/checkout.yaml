@@ -1,0 +1,12 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zb
+description: reserve stock, then charge - nothing new is deployed to run this
+timeout: 1h
+concurrency: 50
+steps:
+    - name: reserve
+      run: checkout
+      attempts: 4
+    - name: charge
+      run: checkout
+      attempts: 2
+      on-error: reserve

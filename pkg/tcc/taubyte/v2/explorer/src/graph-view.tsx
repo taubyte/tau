@@ -48,6 +48,8 @@ interface ResourceData extends Record<string, unknown> {
   category: string;
   faded: boolean;
   picked: boolean;
+  /** Nothing authored this: it is what a transpiled resource becomes. */
+  derived: boolean;
 }
 
 // A resource. Kind above name, bordered by category — the same reading the SVG had,
@@ -55,7 +57,10 @@ interface ResourceData extends Record<string, unknown> {
 function ResourceNode({ data }: NodeProps) {
   const d = data as ResourceData;
   return (
-    <div className={`rf-node ${d.category}${d.faded ? " faded" : ""}${d.picked ? " picked" : ""}`}>
+    <div
+      className={`rf-node ${d.category}${d.faded ? " faded" : ""}${d.picked ? " picked" : ""}${d.derived ? " derived" : ""}`}
+      title={d.derived ? "not authored — what a workflow becomes" : undefined}
+    >
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <span className="rf-glyph">
         <KindIcon icon={d.icon} size={15} />
@@ -300,6 +305,7 @@ export function GraphView({
           category: categoryOf(n.kind),
           faded: lit !== null && !lit.has(n.id),
           picked: selection?.id === n.id,
+          derived: !!n.derived,
         } satisfies ResourceData,
       });
     }
