@@ -40,7 +40,10 @@ function theme(): string {
   return matchMedia("(prefers-color-scheme: dark)").matches ? "vs-dark" : "vs";
 }
 
-export function showFile(path: string, text: string): void {
+// readOnly is for a document nobody wrote — what a lowering produces. Monaco is told,
+// rather than the page pretending: an editor that silently discards your typing is
+// worse than one that will not take it.
+export function showFile(path: string, text: string, readOnly = false): void {
   if (!editor) {
     editor = monaco.editor.create(host, {
       theme: theme(),
@@ -72,4 +75,5 @@ export function showFile(path: string, text: string): void {
     model.setValue(text);
   }
   if (editor.getModel() !== model) editor.setModel(model);
+  editor.updateOptions({ readOnly });
 }

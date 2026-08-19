@@ -1,12 +1,13 @@
 package interp_test
 
 import (
+	"context"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
-	yaseer "github.com/taubyte/tau/pkg/yaseer"
 	"gotest.tools/v3/assert"
 )
 
@@ -50,17 +51,25 @@ func pipelineSchema() (engine.Schema, *engine.Node) {
 	return engine.SchemaDefinition(root), root
 }
 
-func lowerDoc(t *testing.T, doc string) []interp.Derived {
+// Compiled through the INTERPRETER, not the engine alone: a compiled resource is keyed
+// by its id, and that keying is one of the interpreter's transforms. Reading the plan
+// off a raw engine object would key instances by filename and quietly derive the same
+// id for two different resources — which is how this helper was wrong to begin with.
+func lowerDoc(t *testing.T, doc string) []interp.Derived { return lowerNamed(t, "build", doc) }
+
+// A resource's NAME is its filename in this vocabulary, so renaming one means moving the
+// file — which is exactly what a derived id has to survive.
+func lowerNamed(t *testing.T, file, doc string) []interp.Derived {
 	t.Helper()
 	project, root := pipelineSchema()
 
 	fs := afero.NewMemMapFs()
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml", []byte("id: root\n"), 0o644))
-	assert.NilError(t, afero.WriteFile(fs, "/pipeline/build.yaml", []byte(doc), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/pipeline/"+file+".yaml", []byte(doc), 0o644))
 
-	e, err := engine.New(project, yaseer.VirtualFS(fs, "/"))
+	c, err := interp.New(project, root, interp.WithVirtual(fs, "/"))
 	assert.NilError(t, err)
-	obj, err := e.Process()
+	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 	return interp.LoweringPlan(root, obj.Flat())
 }
@@ -248,4 +257,29 @@ func TestLoweringLinkClasses(t *testing.T) {
 	assert.Equal(t, plan[0].Links[0].Effect, "read")
 	assert.Equal(t, plan[0].Links[0].Ref, false)
 	assert.Equal(t, plan[0].Links[1].Ref, true, "a link that points is not a use")
+}
+
+// A resource a compiler wrote is stored under its id and referred to by it, so the id
+// has to be the SAME every time the config is compiled — otherwise every build looks
+// like a delete and a create, and two clouds compiling one project disagree about what
+// is the same resource.
+func TestDerivedIDIsDeterministic(t *testing.T) {
+	const doc = "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n"
+	first, second := lowerDoc(t, doc), lowerDoc(t, doc)
+	assert.Equal(t, first[0].ID, second[0].ID)
+	assert.Assert(t, first[0].ID != "", "a derived resource with no id cannot be stored")
+	assert.Assert(t, strings.HasPrefix(first[0].ID, "Qm"), "same shape as a minted id: %s", first[0].ID)
+
+	// it hangs off the SOURCE's id, so renaming the source does not re-key what it
+	// produced — the name it PRODUCES changes, the identity does not
+	renamed := lowerNamed(t, "renamed", doc)
+	assert.Equal(t, byName(t, renamed, "renamed-compile").ID, first[0].ID)
+
+	// ...and two different sources never collide, however alike their parts are
+	other := lowerDoc(t, "id: two\nname: build\nstages:\n    - name: compile\n      run: cc\n")
+	assert.Assert(t, other[0].ID != first[0].ID)
+
+	// the part is part of it, so two steps of one workflow are two resources
+	pair := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: a\n      run: cc\n    - name: b\n      run: cc\n")
+	assert.Assert(t, byName(t, pair, "build-a").ID != byName(t, pair, "build-b").ID)
 }

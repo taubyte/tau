@@ -284,6 +284,13 @@ code.om.open { color: var(--internet); }
   font-style: italic;
 }
 
+/* A frame's label is a handle: the box IS its resource, so clicking the box has to pick
+   it. React Flow's edge layer sits above the nodes, so the label says it takes clicks. */
+.rf-scope.frame .rf-scopelabel {
+  pointer-events: all;
+  cursor: pointer;
+}
+
 /* A FRAME IS NOT A NAMESPACE. A namespace is a place resources live in; a frame is one
    resource shown from the inside, and reading them as the same thing is the mistake the
    shared rectangle invites. So it is drawn as a solid panel with its own tint, against

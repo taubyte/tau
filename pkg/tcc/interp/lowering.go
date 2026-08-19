@@ -1,6 +1,7 @@
 package interp
 
 import (
+	"fmt"
 	"slices"
 	"sort"
 	"strconv"
@@ -215,8 +216,19 @@ func UsesLowering(root *engine.Node) bool {
 // the queues it happened to produce. It is also what everything else keeps pointing at
 // — a cron declares `start` on the workflow, not on the first queue.
 type Derived struct {
-	Kind   string         // the kind produced
-	Name   string         // its name
+	Kind string // the kind produced
+	Name string // its name
+
+	// ID is deterministic: the same config compiles to the same id, forever, on every
+	// machine. A resource a compiler wrote is stored under its id and referred to by
+	// it, so minting a fresh one each compile would make every build look like a delete
+	// and a create — and two clouds compiling the same project would disagree about
+	// what is the same resource.
+	//
+	// Derived from the SOURCE's id (not its name, which can be renamed), the kind, and
+	// the part — a step name where there is one, and the lowering's own name template
+	// where there is not, so a workflow rename does not re-key what it produced.
+	ID     string
 	Of     string         // "<kind>/<name>" of the resource it was lowered from
 	Scope  string         // the namespace that resource lives in
 	Why    string         // one line: what this one carries
@@ -290,6 +302,47 @@ type Resolved struct {
 
 func (d Derived) String() string { return d.Kind + "/" + d.Name + " (" + d.Why + ")" }
 
+// Yaml is the document this derived resource would BE — what an author would have had
+// to write to get it by hand.
+//
+// It is rendered here rather than by whatever is displaying it, for the same reason the
+// plan is computed here: a second implementation would be the same knowledge written
+// twice, and this one is the only place that knows a lowering produced authored-shaped
+// keys. The header says where it came from, because the first question anyone asks of a
+// file they did not write is who wrote it.
+func (d Derived) Yaml() string {
+	var b strings.Builder
+	b.WriteString("# " + d.Kind + "/" + d.Name + " — generated, not in your repository\n")
+	b.WriteString("# from " + d.Source.String() + "\n")
+	if d.Why != "" {
+		b.WriteString("# " + d.Why + "\n")
+	}
+	b.WriteString("#\n")
+	if d.ID != "" {
+		b.WriteString("id: " + d.ID + "\n")
+	}
+
+	keys := make([]string, 0, len(d.Fields))
+	for k := range d.Fields {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		b.WriteString(k + ": " + fmt.Sprint(d.Fields[k]) + "\n")
+	}
+
+	for _, l := range d.Links {
+		if l.Ref {
+			continue // already a field above
+		}
+		b.WriteString("\n# " + l.Verb + " " + l.Kind + "/" + l.Name)
+	}
+	if len(d.Links) > 0 {
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 // LoweringPlan is every resource a compiled project's lowered kinds become, in a
 // stable order. Pure: same config, same plan, no network, no clock.
 func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
@@ -299,10 +352,10 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 	}
 
 	var out []Derived
-	walkResources(root, scope, "", func(kind string, iter *engine.Node, name string, res map[string]any, at string) {
+	walkResources(root, scope, "", func(kind string, iter *engine.Node, id, name string, res map[string]any, at string) {
 		src := Source{Kind: kind, Name: name, Scope: at}
 		for _, l := range LoweringsOf(iter) {
-			out = append(out, plan(l, kind, name, res, at, src, nil)...)
+			out = append(out, plan(l, kind, name, id, res, at, src, nil)...)
 		}
 	})
 
@@ -328,11 +381,13 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 // and a cycle has to end in a message rather than a hang.
 const MaxLoweringDepth = 8
 
-func plan(l Lowering, kind, name string, res map[string]any, scope string, src Source, via []string) []Derived {
+func plan(l Lowering, kind, name, srcID string, res map[string]any, scope string, src Source, via []string) []Derived {
 	of := kind + "/" + name
+
 	if l.perEach == "" {
 		return []Derived{{
 			Kind: l.into, Name: expand(l.name, res, nil, nil), Of: of, Scope: scope,
+			ID:  derivedID(srcID, l.into, l.name),
 			Why: expand(l.why, res, nil, nil), Fields: set(l.set, res, nil, nil),
 			Links: links(l.links, res, nil, nil), Source: src, Via: via,
 		}}
@@ -354,13 +409,32 @@ func plan(l Lowering, kind, name string, res map[string]any, scope string, src S
 		at := src
 		at.Path = l.perEach + "/" + strconv.Itoa(i)
 		at.Part = el
+		part, _ := el["name"].(string)
+		if part == "" {
+			part = at.Path // no name of its own: its position is the only handle
+		}
 		out = append(out, Derived{
 			Kind: l.into, Name: expand(l.name, res, el, next), Of: of, Scope: scope,
+			ID:  derivedID(srcID, l.into, part),
 			Why: expand(l.why, res, el, next), Fields: set(l.set, res, el, next),
 			Links: links(l.links, res, el, next), Source: at, Via: via,
 		})
 	}
 	return out
+}
+
+// derivedID hangs a derived resource's id off what produced it. Empty when the source
+// has no id, because an id derived from nothing is a collision waiting for a second
+// project.
+func derivedID(srcID, kind, part string) string {
+	if srcID == "" {
+		return ""
+	}
+	id, err := engine.Derive(engine.DeriveResourceID, srcID, kind, part)
+	if err != nil {
+		return ""
+	}
+	return id
 }
 
 // nest expands the derived resources that are themselves of a lowering kind, carrying
@@ -383,7 +457,7 @@ func nest(root *engine.Node, parents []Derived, depth int) []Derived {
 		res["name"] = p.Name
 		via := append(append([]string{}, p.Via...), p.Kind+"/"+p.Name)
 		for _, l := range ls {
-			out = append(out, plan(l, p.Kind, p.Name, res, p.Scope, p.Source, via)...)
+			out = append(out, plan(l, p.Kind, p.Name, p.ID, res, p.Scope, p.Source, via)...)
 		}
 	}
 	return append(out, nest(root, out, depth+1)...)
@@ -531,7 +605,7 @@ func lookup(key string, res, each, next map[string]any) (string, bool) {
 // walkResources visits every compiled resource, carrying the kind's iterator node so a
 // caller can read its annotations, and the scope it was authored in. The scope
 // container is read off the schema (containerKey), never named here.
-func walkResources(root *engine.Node, scope map[string]any, at string, fn func(kind string, iter *engine.Node, name string, res map[string]any, at string)) {
+func walkResources(root *engine.Node, scope map[string]any, at string, fn func(kind string, iter *engine.Node, id, name string, res map[string]any, at string)) {
 	container := containerKey(root)
 	for _, g := range root.Children {
 		key, _ := g.Match.(string)
@@ -543,7 +617,7 @@ func walkResources(root *engine.Node, scope map[string]any, at string, fn func(k
 			continue
 		}
 		iter := g.Children[0]
-		for _, v := range instances {
+		for id, v := range instances {
 			res, ok := v.(map[string]any)
 			if !ok {
 				continue
@@ -557,7 +631,9 @@ func walkResources(root *engine.Node, scope map[string]any, at string, fn func(k
 				walkResources(&engine.Node{Children: iter.Children}, res, child, fn)
 				continue
 			}
-			fn(key, iter, name, res, at)
+			// A compiled resource is KEYED by its id and does not carry it as a field,
+			// so the walk hands it down rather than the plan digging for it.
+			fn(key, iter, id, name, res, at)
 		}
 	}
 }

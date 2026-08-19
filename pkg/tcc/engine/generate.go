@@ -20,6 +20,10 @@ import (
 // Known generator ids. A generated field names one of these; a consumer that
 // doesn't recognize the id treats the field as read-only and leaves it alone.
 const (
+	// DeriveResourceID is the id of a resource nobody authored: what a lowering
+	// produces. Same inputs, same id, forever — see derivedCID.
+	DeriveResourceID = "resource-id"
+
 	// GenCID mints a fresh CIDv0-shaped id: a base58 sha2-256 multihash over the
 	// seed plus fresh randomness. Unique per call, and parses as a CID (see IsCID).
 	GenCID = "cid"
@@ -117,6 +121,8 @@ func Derive(kind string, from ...string) (string, error) {
 	switch kind {
 	case DeriveDNSLabel:
 		return dnsLabel(from...)
+	case DeriveResourceID:
+		return derivedCID(from...)
 	case "":
 		return "", errors.New("not a derived field")
 	}
@@ -153,6 +159,30 @@ func dnsLabel(from ...string) (string, error) {
 	}
 	sum := sha256.Sum256([]byte(strings.Join(from, "\x00")))
 	return dnsLabelEncoding.EncodeToString(sum[:])[:dnsLabelLength], nil
+}
+
+// derivedCID is GenCID without the randomness, and the difference is the whole point.
+//
+// A resource a compiler wrote has to have the SAME id every time the config is
+// compiled: it is stored under that id, referred to by it, and re-minting it on every
+// compile would make each build look like a delete and a create. So it is a pure
+// function of what produced it — the source resource's id, the kind, and the part —
+// which also means it survives a rename of anything that is not one of those, and that
+// two clouds compiling the same project agree without coordinating.
+//
+// Same multihash shape as a minted id (sha2-256, base58), so nothing downstream can
+// tell the two apart by looking, and IsCID accepts it.
+func derivedCID(from ...string) (string, error) {
+	if len(from) == 0 {
+		return "", errors.New("a derived id needs something to derive from")
+	}
+	// NUL-joined: two different splits of the same characters must not collide, which
+	// concatenation alone would allow (a+bc == ab+c).
+	hash, err := mh.Sum([]byte(strings.Join(from, "\x00")), mh.SHA2_256, -1)
+	if err != nil {
+		return "", err
+	}
+	return hash.B58String(), nil
 }
 
 func newCID(seed ...any) (string, error) {

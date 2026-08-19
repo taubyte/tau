@@ -132,6 +132,9 @@ func compileFn(_ js.Value, args []js.Value) any {
 		}
 		lowered = append(lowered, map[string]any{
 			"kind": d.Kind, "name": d.Name, "of": d.Of, "scope": d.Scope, "why": d.Why, "links": links,
+			// deterministic, and the document it would be — a resource nobody wrote is
+			// still a resource somebody may need to read
+			"id": d.ID, "yaml": d.Yaml(),
 			// Where it came from, so the page can show the construct as written as well
 			// as what it becomes.
 			"source": map[string]any{

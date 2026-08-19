@@ -97,7 +97,20 @@ function ScopeNode({ data }: NodeProps) {
   const d = data as { label: string; faded: boolean; flip?: string; flipped?: boolean };
   return (
     <div className={`rf-scope${d.faded ? " faded" : ""}${d.flip ? " frame" : ""}`}>
-      <span className="rf-scopelabel">{d.label}</span>
+      {/* The box IS its resource, so its name is the handle for it: clicking it picks
+          the workflow the way clicking any other node picks that node. React Flow's own
+          node-click does not reach a frame — the edge layer sits above it — so the label
+          says so itself. */}
+      <span
+        className="rf-scopelabel"
+        onClick={(e) => {
+          if (!d.flip) return;
+          e.stopPropagation();
+          window.dispatchEvent(new CustomEvent("tcc-pick", { detail: d.flip }));
+        }}
+      >
+        {d.label}
+      </span>
       {/* A box that can be turned over: what was WRITTEN, or what it BECOMES. Both are
           the same plan read from opposite ends, so the button is a view and never an
           edit. */}
@@ -295,7 +308,7 @@ export function GraphView({
         parentId: parent ? `ns:${s.scope.slice(0, cut)}` : undefined,
         position: parent ? { x: s.x - parent.x, y: s.y - parent.y } : { x: s.x, y: s.y },
         style: { width: s.w, height: s.h },
-        selectable: false,
+        selectable: !!frameOwner.get(s.scope),
         draggable: false,
         data: {
           label: graph.frames.get(s.scope) ?? `namespace · ${s.scope}`,
@@ -457,7 +470,17 @@ export function GraphView({
       edges={edges}
       nodeTypes={NODE_TYPES}
       edgeTypes={EDGE_TYPES}
-      onNodeClick={(_e, node) => onPick(node.id.startsWith("ns:") ? null : node.id)}
+      onNodeClick={(_e, node) => {
+        // A FRAME is its resource: the box carries the name, so clicking the box is
+        // clicking the workflow. A namespace is not — it is a place, and picking a
+        // place selects nothing.
+        if (node.id.startsWith("ns:")) {
+          const owner = frameOwner.get(node.id.slice(3));
+          onPick(owner ?? null);
+          return;
+        }
+        onPick(node.id);
+      }}
       onPaneClick={() => onPick(null)}
       fitView
       fitViewOptions={{ padding: 0.15, maxZoom: 1 }}

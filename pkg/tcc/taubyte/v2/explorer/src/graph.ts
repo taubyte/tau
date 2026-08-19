@@ -31,6 +31,12 @@ export interface Node {
   derived?: { of: string; why: string };
   /** The frame this resource is the box FOR, when it has one. */
   frame?: string;
+  /**
+   * Where the resource actually lives, when a frame has taken over its scope. The
+   * frame is a layout key, not a place — everything that answers "where is this" (its
+   * file, its namespace) has to keep asking the real one.
+   */
+  home?: string;
   /** Drawn as nothing: the box says what this is, so the node would be a duplicate. */
   anchor?: boolean;
   /** In the layout but not on the page: it exists on the box's other face. */
@@ -108,6 +114,8 @@ export interface Lowered {
   of: string;
   scope: string;
   why: string;
+  id?: string;
+  yaml?: string;
   links: {
     kind: string;
     name: string;
@@ -445,6 +453,7 @@ export function buildGraph(
     // `@` cannot begin a resource name, so a frame can never collide with a namespace.
     const frame = `${src.scope ? `${src.scope}/` : ""}@${src.name}`;
     frames.set(frame, `${src.kind} · ${src.name}`);
+    src.home = home;
     src.scope = frame;
     src.frame = frame;
     // The box IS the resource, so drawing the resource inside it says the same thing
@@ -508,6 +517,16 @@ export function buildGraph(
         if (l.ref) continue;
         if (!target.hidden) {
           live.push({ from: self.id, to: target.id, kind: l.kind, verb: l.verb, effect, face: "written" });
+        }
+
+        // ...and an edge that comes in from OUTSIDE lands on the workflow. Open, the
+        // function that ran a step sends to the next step's queue, which is a thing
+        // inside the box; closed, that queue is not a thing the reader has been shown,
+        // so the arrow would either vanish — leaving the function with no outgoing edge
+        // it plainly has — or point at machinery. It points at the box, which is the
+        // resource that owns what happens next.
+        if (origin && origin.id !== self.id && origin.scope !== frame) {
+          live.push({ from: origin.id, to: src.id, kind: src.kind, verb: l.verb, effect, face: "written" });
         }
       }
     }

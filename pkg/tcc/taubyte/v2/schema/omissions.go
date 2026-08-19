@@ -352,8 +352,10 @@ var Omissions = []Omission{
 			"stops there. It does not write those resources into the compiled object, so nothing " +
 			"downstream can provision them yet.",
 		Instead: "the plan, which is enough to draw, audit and cost, and which the explorer shows.",
-		Unblocks: "four decisions, none of them code, plus one requirement. What id a derived " +
-			"resource gets and whether it survives a rename of its source. Whether a derived " +
+		Unblocks: "three decisions, none of them code, plus one requirement. The id is settled: " +
+			"a derived resource's id is a pure function of its source's id, the kind, and the " +
+			"part (engine.DeriveResourceID), so the same config compiles to the same id forever " +
+			"and a rename of the source does not re-key what it produced. Left: whether a derived " +
 			"queue counts against the project's quota. What `tau graph` shows — the workflow, or " +
 			"what it became. What happens on the collision an audit check already reports. And " +
 			"the requirement: whatever is emitted carries where it came from, because tcc " +

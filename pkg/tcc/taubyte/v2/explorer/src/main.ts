@@ -63,6 +63,29 @@ function compile(): CompileOk | { error: string } {
 const flipped = new Set<string>();
 
 window.addEventListener("tcc-flip", (e) => flipFrame((e as CustomEvent<string>).detail));
+window.addEventListener("tcc-pick", (e) => pickNode((e as CustomEvent<string>).detail));
+
+// Picking a node from anywhere: the graph, a frame's label, a finding. One path, so
+// what happens when you click a resource does not depend on which view you clicked it
+// in.
+export function pickNode(id: string): void {
+  selection = { id, mode: "blast" };
+  const node = graph?.byId.get(id);
+  const made = loweredById(id);
+  if (made) {
+    generated = { title: `${made.kind}/${made.name}.yaml`, body: made.yaml ?? "" };
+  } else if (node) {
+    generated = null;
+    const path = fileOf(node);
+    if (path in files) current = path;
+  }
+  render();
+  reveal(".files .file.on");
+}
+
+// What is being shown in the editor pane when it is NOT one of the project's files: a
+// resource nobody wrote, rendered by tcc. Cleared the moment a real file is picked.
+let generated: { title: string; body: string } | null = null;
 
 export function flipFrame(id: string) {
   if (flipped.has(id)) flipped.delete(id);
@@ -162,10 +185,25 @@ function filesPane(): HTMLElement {
 // read the one file you were editing.
 function editorPane(): HTMLElement {
   const pane = div("pane editor-pane");
+  if (generated) {
+    pane.appendChild(sectionTitle(generated.title, "generated — not in your repository, and not editable"));
+    pane.appendChild(editorHost());
+    showFile("generated:" + generated.title, generated.body, true);
+    return pane;
+  }
   pane.appendChild(sectionTitle(current, "editable — compiles on every keystroke"));
   pane.appendChild(editorHost());
-  showFile(current, files[current] ?? "");
+  showFile(current, files[current] ?? "", false);
   return pane;
+}
+
+// The lowered resource a node stands for, if it is one. The id carries it: a derived
+// node is `derived:<kind>/<name>`, which is exactly what the plan calls it.
+function loweredById(id: string) {
+  const made = (lastResult && !("error" in lastResult) ? (lastResult.lowered ?? []) : []).find(
+    (d) => `derived:${d.kind}/${d.name}` === id,
+  );
+  return made;
 }
 
 // A real directory tree, because the layout IS part of the DSL: a resource is a file
@@ -212,6 +250,7 @@ function dirEl(d: Dir): HTMLElement {
     line.textContent = name;
     line.onclick = () => {
       current = path;
+      generated = null; // back to a file you can edit
       // The tree and the graph are two views of one resource, so selecting in
       // either selects in both. A file with no node — a namespace's own document —
       // clears the selection rather than leaving one pointing somewhere else.
@@ -290,8 +329,17 @@ function graphPane(): HTMLElement {
       // thing, and a node whose source you cannot read is half an answer.
       const node = id === null ? null : graph!.byId.get(id);
       if (node) {
-        const path = fileOf(node);
-        if (path in files) current = path;
+        // A DERIVED node has no file: nobody wrote it. What it does have is the
+        // document it would be, which tcc renders — so the pane shows that, read-only,
+        // rather than leaving a click with no answer.
+        const made = id === null ? undefined : loweredById(id);
+        if (made) {
+          generated = { title: `${made.kind}/${made.name}.yaml`, body: made.yaml ?? "" };
+        } else {
+          generated = null;
+          const path = fileOf(node);
+          if (path in files) current = path;
+        }
       }
       render();
       reveal(".files .file.on");
@@ -307,8 +355,11 @@ function graphPane(): HTMLElement {
 // lives at <kind>/<name>.yaml, under one namespaces/<name>/ level per scope segment.
 // Derived rather than carried, so it cannot drift from the tree — and the caller
 // checks the result exists, which is what catches it if it ever does.
-function fileOf(n: { kind: string; name: string; scope: string }): string {
-  const dirs = n.scope ? n.scope.split("/").map((s) => `namespaces/${s}`).join("/") + "/" : "";
+function fileOf(n: { kind: string; name: string; scope: string; home?: string }): string {
+  // `home` when a frame has taken the scope: a box's name is a layout key, and the file
+  // is still where the resource was written.
+  const scope = n.home ?? n.scope;
+  const dirs = scope ? scope.split("/").map((s) => `namespaces/${s}`).join("/") + "/" : "";
   return `${dirs}${n.kind}/${n.name}.yaml`;
 }
 
