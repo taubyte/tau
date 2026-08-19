@@ -33,55 +33,114 @@ import (
 // language, and the point of declaring a lowering is that a reader can see what a
 // construct becomes without running it.
 
-// Lowering is one resource — or one per element of a list — that a transpiled kind
-// becomes.
+// Lowering is one resource — or one per element of a list — that a lowered kind
+// becomes. Its fields are unexported ON PURPOSE: this DSL is written in terms, not in
+// struct literals, and the only way to build one is the terms below. The same rule the
+// rest of the vocabulary follows — `String("x", Required(), InSection("y"))`, never a
+// literal — and the same one PromoteEnvKeyed and StringShape follow, which keep their
+// specs internal behind a function.
 type Lowering struct {
-	// Into is the kind produced. It has to be a kind the vocabulary really has:
-	// lowering into something undeclared is a plan nothing can carry out, and
-	// CheckLowerings says so at build time rather than at compile.
-	Into string
-
-	// PerEach names a list attribute whose elements each produce one of these. Empty
-	// means one per resource. A workflow's steps are the case this exists for: the
-	// retry budget belongs to the step, so the queue does too.
-	PerEach string
-
-	// Name is what the derived resource is called, as a template. Why is one line
-	// saying what it carries, same syntax. See expand for the syntax; both are
-	// deliberately templates rather than closures, so a lowering can be printed.
-	Name string
-	Why  string
-
-	// Set is the derived resource's own fields, as templates. Without them a plan is a
-	// list of names: nothing downstream can tell a queue that retries four times from
-	// one that retries once, and — the reason this is not optional — a lowering cannot
-	// NEST, because the next lowering down has no values to read.
-	Set map[string]string
-
-	// Links are what this derived resource connects to — the wiring INSIDE the
-	// construct. Without them a plan is a list of names, and a consumer that wants to
-	// show what a workflow actually does would have to know what a workflow is, which
-	// is the knowledge that must not leave the vocabulary.
-	//
-	// With them, tcc answers "what is inside this resource" completely enough to draw:
-	// nodes from the lowerings, edges from the links, both computed here.
-	Links []Link
+	into    string
+	perEach string
+	name    string
+	why     string
+	set     map[string]string
+	links   []link
 }
 
-// Link is one edge out of a derived resource, to another derived resource or to an
-// authored one. Both ends are templates over the same fields Name is.
-type Link struct {
-	To   string // "<kind>/<name template>"
-	Verb string // what the edge means to a reader: "invokes", "gives up to"
-	// Scope is where the target lives, as a template. Empty means the same scope as
-	// the resource that was lowered. It exists because a step may name a function in
-	// another namespace, and a checker that assumed otherwise would report a working
-	// config as broken.
-	Scope string
+type link struct{ kind, name, verb, scope string }
+
+type (
+	// LoweringOption configures one lowering.
+	LoweringOption func(*Lowering)
+	// LinkOption configures one link out of a lowered resource.
+	LinkOption func(*link)
+)
+
+// Into declares that a resource of this kind is produced.
+//
+//	Into("queue",
+//	    PerEach("steps"),
+//	    Named("{name}_{each.name}"),
+//	    Carries("work waiting for step {each.name}"),
+//	    Sets("max-attempts", "{each.attempts}"),
+//	    LinksTo("function", "{each.run}", "invokes", InScope("{each.namespace}")),
+//	)
+//
+// The kind has to be one the vocabulary really has: lowering into something undeclared
+// is a plan nothing can carry out, and CheckLowerings says so at build time.
+func Into(kind string, opts ...LoweringOption) Lowering {
+	l := Lowering{into: kind}
+	for _, o := range opts {
+		o(&l)
+	}
+	return l
+}
+
+// PerEach produces one of these per element of a list attribute, instead of one per
+// resource. A workflow's steps are the case this exists for: the retry budget belongs
+// to the step, so the queue does too.
+func PerEach(list string) LoweringOption {
+	return func(l *Lowering) { l.perEach = list }
+}
+
+// Named is what the derived resource is called, as a template over the source's fields
+// and — under PerEach — the element's. `{name}` is the source, `{each.name}` the
+// element, `{each.next.name}` the element after it. A template rather than a closure,
+// so a lowering can be printed.
+func Named(tmpl string) LoweringOption {
+	return func(l *Lowering) { l.name = tmpl }
+}
+
+// Carries is one line saying what this derived resource holds, same syntax as Named.
+// It is documentation with a job: it is what a reader sees when they ask what a
+// construct became.
+func Carries(tmpl string) LoweringOption {
+	return func(l *Lowering) { l.why = tmpl }
+}
+
+// Sets gives the derived resource one of its own fields. Without these a plan is a list
+// of names: nothing downstream can tell a queue that retries four times from one that
+// retries once, and — the reason this is not optional — a lowering cannot NEST, because
+// the next lowering down has no values to read.
+func Sets(field, tmpl string) LoweringOption {
+	return func(l *Lowering) {
+		if l.set == nil {
+			l.set = map[string]string{}
+		}
+		l.set[field] = tmpl
+	}
+}
+
+// LinksTo is what this derived resource connects to — the wiring INSIDE the construct.
+// Without it a plan is a list of names, and a consumer that wanted to show what a
+// workflow actually does would have to know what a workflow is, which is the knowledge
+// that must not leave the vocabulary.
+//
+// The verb is for a reader: "invokes", "gives up to".
+func LinksTo(kind, name, verb string, opts ...LinkOption) LoweringOption {
+	lk := link{kind: kind, name: name, verb: verb}
+	for _, o := range opts {
+		o(&lk)
+	}
+	return func(l *Lowering) { l.links = append(l.links, lk) }
+}
+
+// InScope says where the link's target lives, as a template. Omitted means the same
+// scope as the resource that was lowered. It exists because a step may name a function
+// in another namespace, and a checker that assumed otherwise would report a working
+// config as broken.
+func InScope(tmpl string) LinkOption {
+	return func(l *link) { l.scope = tmpl }
 }
 
 // Lowers declares that a kind lowers into others. Declared on the kind's iterator,
 // beside Ops() and Resource(), because it is a statement about the kind.
+//
+//	Lowers(
+//	    Into("queue", PerEach("steps"), Named("{name}_{each.name}"), …),
+//	    Into("entity", Named("{name}_run"), …),
+//	)
 func Lowers(into ...Lowering) engine.NodeOption {
 	return engine.GroupAnnotate("lowers", into)
 }
@@ -212,29 +271,33 @@ const MaxLoweringDepth = 8
 
 func plan(l Lowering, kind, name string, res map[string]any, scope string, src Source, via []string) []Derived {
 	of := kind + "/" + name
-	if l.PerEach == "" {
+	if l.perEach == "" {
 		return []Derived{{
-			Kind: l.Into, Name: expand(l.Name, res, nil), Of: of, Scope: scope,
-			Why: expand(l.Why, res, nil), Fields: set(l.Set, res, nil),
-			Links: links(l.Links, res, nil), Source: src, Via: via,
+			Kind: l.into, Name: expand(l.name, res, nil, nil), Of: of, Scope: scope,
+			Why: expand(l.why, res, nil, nil), Fields: set(l.set, res, nil, nil),
+			Links: links(l.links, res, nil, nil), Source: src, Via: via,
 		}}
 	}
 
-	items, _ := res[l.PerEach].([]any)
+	items, _ := res[l.perEach].([]any)
 	out := make([]Derived, 0, len(items))
 	for i, it := range items {
 		el, ok := it.(map[string]any)
 		if !ok {
 			continue
 		}
+		var next map[string]any
+		if i+1 < len(items) {
+			next, _ = items[i+1].(map[string]any)
+		}
 		// The element's own position, so a diagnostic can point at the lines that
 		// produced this and not merely at the document that holds them.
 		at := src
-		at.Path = l.PerEach + "/" + strconv.Itoa(i)
+		at.Path = l.perEach + "/" + strconv.Itoa(i)
 		out = append(out, Derived{
-			Kind: l.Into, Name: expand(l.Name, res, el), Of: of, Scope: scope,
-			Why: expand(l.Why, res, el), Fields: set(l.Set, res, el),
-			Links: links(l.Links, res, el), Source: at, Via: via,
+			Kind: l.into, Name: expand(l.name, res, el, next), Of: of, Scope: scope,
+			Why: expand(l.why, res, el, next), Fields: set(l.set, res, el, next),
+			Links: links(l.links, res, el, next), Source: at, Via: via,
 		})
 	}
 	return out
@@ -289,13 +352,13 @@ func iterOfKind(root *engine.Node, kind string) *engine.Node {
 }
 
 // set expands the derived resource's own fields.
-func set(fields map[string]string, res, each map[string]any) map[string]any {
+func set(fields map[string]string, res, each, next map[string]any) map[string]any {
 	if len(fields) == 0 {
 		return nil
 	}
 	out := make(map[string]any, len(fields))
 	for k, tmpl := range fields {
-		out[k] = expand(tmpl, res, each)
+		out[k] = expand(tmpl, res, each, next)
 	}
 	return out
 }
@@ -303,18 +366,14 @@ func set(fields map[string]string, res, each map[string]any) map[string]any {
 // links expands each declared link. One whose name template cannot be filled is
 // DROPPED rather than emitted half-written: a step with no `on-error` has no failure
 // edge, and that is the common case rather than a mistake.
-func links(ls []Link, res, each map[string]any) []Resolved {
+func links(ls []link, res, each, next map[string]any) []Resolved {
 	out := make([]Resolved, 0, len(ls))
 	for _, l := range ls {
-		kind, tmpl, found := strings.Cut(l.To, "/")
-		if !found {
-			continue
-		}
-		name := expand(tmpl, res, each)
+		name := expand(l.name, res, each, next)
 		if name == "" || strings.ContainsAny(name, "{}") {
 			continue
 		}
-		out = append(out, Resolved{Kind: kind, Name: name, Verb: l.Verb, Scope: expand(l.Scope, res, each)})
+		out = append(out, Resolved{Kind: l.kind, Name: name, Verb: l.verb, Scope: expand(l.scope, res, each, next)})
 	}
 	if len(out) == 0 {
 		return nil
@@ -325,7 +384,7 @@ func links(ls []Link, res, each map[string]any) []Resolved {
 // expand fills `{field}` from the resource and `{each.field}` from the list element.
 // A name that cannot be filled is left as it was written, so a broken template shows up
 // as a visible `{typo}` in the plan rather than as a silently empty name.
-func expand(tmpl string, res, each map[string]any) string {
+func expand(tmpl string, res, each, next map[string]any) string {
 	var b strings.Builder
 	for {
 		open := strings.IndexByte(tmpl, '{')
@@ -341,7 +400,7 @@ func expand(tmpl string, res, each map[string]any) string {
 		close += open
 		b.WriteString(tmpl[:open])
 		key := tmpl[open+1 : close]
-		if v, ok := lookup(key, res, each); ok && v != "" {
+		if v, ok := lookup(key, res, each, next); ok && v != "" {
 			b.WriteString(v)
 		} else {
 			// left as written, so an unfilled template is visible in the plan as
@@ -352,9 +411,21 @@ func expand(tmpl string, res, each map[string]any) string {
 	}
 }
 
-func lookup(key string, res, each map[string]any) (string, bool) {
+func lookup(key string, res, each, next map[string]any) (string, bool) {
 	src := res
-	if rest, ok := strings.CutPrefix(key, "each."); ok {
+	// `{each.next.x}` is the FOLLOWING element's x. An ordered list whose elements can
+	// only see themselves lowers into independent things; a chain — step, then the next
+	// step — is most of the reason a list is ordered in the first place, and without
+	// this the vocabulary would have to make the author write the order twice.
+	//
+	// It stops at one step. Arbitrary navigation is a query language, and the shapes
+	// that need it (a branch, a join) need more than a template anyway.
+	if rest, ok := strings.CutPrefix(key, "each.next."); ok {
+		if next == nil {
+			return "", false
+		}
+		src, key = next, rest
+	} else if rest, ok := strings.CutPrefix(key, "each."); ok {
 		if each == nil {
 			return "", false
 		}
@@ -431,13 +502,13 @@ func CheckLowerings(root *engine.Node) []string {
 	eachIter(root, func(iter *engine.Node) bool {
 		for _, l := range LoweringsOf(iter) {
 			switch {
-			case l.Into == "":
+			case l.into == "":
 				problems = append(problems, "a lowering names no kind")
-			case !kinds[l.Into]:
-				problems = append(problems, "lowering into "+l.Into+", which is not a kind")
+			case !kinds[l.into]:
+				problems = append(problems, "lowering into "+l.into+", which is not a kind")
 			}
-			if strings.TrimSpace(l.Name) == "" {
-				problems = append(problems, "lowering into "+l.Into+" produces no name")
+			if strings.TrimSpace(l.name) == "" {
+				problems = append(problems, "lowering into "+l.into+" produces no name")
 			}
 		}
 		return false

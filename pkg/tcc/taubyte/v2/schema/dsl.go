@@ -1,6 +1,9 @@
 package schema
 
-import "github.com/taubyte/tau/pkg/tcc/engine"
+import (
+	"github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/interp"
+)
 
 // DSL builder re-exports, so definition.go reads as bare String(...)/DefineGroup(...)
 // without a dot-import (which would collide with this package's own New/Option).
@@ -17,13 +20,25 @@ const GenCID = engine.GenCID
 const DeriveDNSLabel = engine.DeriveDNSLabel
 
 var (
-	Accessor         = engine.Accessor
-	Bool             = engine.Bool
-	Bytes            = engine.Bytes
-	DefineGroup      = engine.DefineGroup
-	DefineIter       = engine.DefineIter
-	DefineIterGroup  = engine.DefineIterGroup
-	DefineList       = engine.DefineList
+	Accessor        = engine.Accessor
+	Bool            = engine.Bool
+	Bytes           = engine.Bytes
+	DefineGroup     = engine.DefineGroup
+	DefineIter      = engine.DefineIter
+	DefineIterGroup = engine.DefineIterGroup
+	DefineList      = engine.DefineList
+
+	// The lowering terms. They live in interp rather than engine because the
+	// interpreter is what expands them; they are re-exported here so a vocabulary
+	// reads in one language.
+	Lowers           = interp.Lowers
+	Into             = interp.Into
+	PerEach          = interp.PerEach
+	Named            = interp.Named
+	Carries          = interp.Carries
+	Sets             = interp.Sets
+	LinksTo          = interp.LinksTo
+	InScope          = interp.InScope
 	Doc              = engine.Doc
 	Duration         = engine.Duration
 	Either           = engine.Either

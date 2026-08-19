@@ -32,10 +32,17 @@ func pipelineSchema() (engine.Schema, *engine.Node) {
 			})),
 			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
 			interp.Lowers(
-				interp.Lowering{Into: "job", PerEach: "stages", Name: "{name}-{each.name}",
-					Why:   "stage {each.name}",
-					Links: []interp.Link{{To: "job/{each.run}", Verb: "runs"}}},
-				interp.Lowering{Into: "log", Name: "{name}-log", Why: "what happened"},
+				interp.Into("job",
+					interp.PerEach("stages"),
+					interp.Named("{name}-{each.name}"),
+					interp.Carries("stage {each.name}"),
+					interp.LinksTo("job", "{each.run}", "runs"),
+					interp.LinksTo("job", "{name}-{each.next.name}", "then"),
+				),
+				interp.Into("log",
+					interp.Named("{name}-log"),
+					interp.Carries("what happened"),
+				),
 			),
 		)),
 	).With(engine.Leaf("project"))
@@ -76,13 +83,15 @@ func TestLoweringLinks(t *testing.T) {
 
 	compile, bare := byName(t, plan, "build-compile"), byName(t, plan, "build-bare")
 
-	assert.Equal(t, len(compile.Links), 1)
+	// `runs` from its own field, and `then` to the element after it
+	assert.Equal(t, len(compile.Links), 2)
 	assert.Equal(t, compile.Links[0].Kind+"/"+compile.Links[0].Name, "job/cc")
 	assert.Equal(t, compile.Links[0].Verb, "runs")
+	assert.Equal(t, compile.Links[1].Name, "build-bare", "chains to the next element")
 
 	// `bare` has no `run`, so the link cannot be filled — and a half-written edge is
 	// worse than no edge, so it is dropped rather than emitted as "job/{each.run}".
-	assert.Equal(t, len(bare.Links), 0, "an unfillable link is dropped, not guessed")
+	assert.Equal(t, len(bare.Links), 0, "no run, and nothing after it: both links unfillable, both dropped")
 }
 
 func byName(t *testing.T, plan []interp.Derived, name string) interp.Derived {
@@ -115,8 +124,8 @@ func TestCheckLowerings(t *testing.T) {
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{engine.String("id")},
 			interp.Lowers(
-				interp.Lowering{Into: "nonesuch", Name: "x"},
-				interp.Lowering{Into: "pipeline"},
+				interp.Into("nonesuch", interp.Named("x")),
+				interp.Into("pipeline"),
 			))),
 	)
 	problems := interp.CheckLowerings(bad)
@@ -133,4 +142,23 @@ func TestNoLoweringDeclared(t *testing.T) {
 	)
 	assert.Assert(t, !interp.UsesLowering(root))
 	assert.Equal(t, len(interp.LoweringPlan(root, map[string]any{})), 0)
+}
+
+// A list lowers into a CHAIN, not into independent things: an element can name the one
+// after it. Without that, an ordered list produces N unconnected resources and the
+// order it was written in means nothing.
+func TestLoweringChainsToTheNextElement(t *testing.T) {
+	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n    - name: test\n    - name: ship\n")
+
+	next := func(name string) string {
+		for _, l := range byName(t, plan, name).Links {
+			if l.Verb == "then" {
+				return l.Kind + "/" + l.Name
+			}
+		}
+		return ""
+	}
+	assert.Equal(t, next("build-compile"), "job/build-test")
+	assert.Equal(t, next("build-test"), "job/build-ship")
+	assert.Equal(t, next("build-ship"), "", "the last element has no next, and that is where the chain ends")
 }

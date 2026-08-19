@@ -3,6 +3,6 @@ schedule: "0 3 * * *"
 timezone: Europe/Paris
 on-overlap: skip
 jitter: 45s
-function:
+workflow:
     checkout:
-        ops: [invoke]
+        ops: [start]

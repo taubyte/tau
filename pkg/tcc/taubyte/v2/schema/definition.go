@@ -30,8 +30,6 @@ package schema
 import (
 	"errors"
 	"strings"
-
-	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // commonAttributes prepends the shared identity block and appends the access block.
@@ -1214,18 +1212,48 @@ var V2Resources = []*Node{
 			// the definition of a single-writer key — two nodes advancing the same run
 			// past the same step is the one thing this must not do, and an entity is the
 			// only kind here that fences it.
-			interp.Lowers(
-				interp.Lowering{Into: "queue", PerEach: "steps", Name: "{name}_{each.name}",
-					Why: "work waiting for step {each.name}",
-					Set: map[string]string{"max-attempts": "{each.attempts}", "dead-letter": "queue/{name}_failed"},
-					Links: []interp.Link{
-						{To: "function/{each.run}", Verb: "invokes", Scope: "{each.namespace}"},
-						{To: "queue/{name}_failed", Verb: "gives up to"},
-					}},
-				interp.Lowering{Into: "queue", Name: "{name}_failed",
-					Why: "what a step gave up on, with the run it belonged to"},
-				interp.Lowering{Into: "entity", Name: "{name}_run",
-					Why: "one run's state: which step it is at, and what it carried"},
+			Lowers(
+				// One queue PER STEP: a queue is where a retry budget lives, and the
+				// budget is the step's — `reserve` may be worth four attempts and
+				// `charge` exactly one. Sharing a queue would make the whole pipeline
+				// share whichever number was written last.
+				Into("queue",
+					PerEach("steps"),
+					Named("{name}_{each.name}"),
+					Carries("work waiting for step {each.name}"),
+					Sets("max-attempts", "{each.attempts}"),
+					Sets("dead-letter", "queue/{name}_failed"),
+
+					// WHO CONSUMES IT. A queue nothing receives from is a queue nothing
+					// happens in, so the step's function is named as its consumer — the
+					// `receive` half of the queue's own verbs, in the direction work
+					// actually travels.
+					LinksTo("function", "{each.run}", "consumed by", InScope("{each.namespace}")),
+
+					// WHAT MAKES IT A PIPELINE. Without this the queues are independent
+					// and nothing says `charge` runs after `reserve`: the step's function
+					// sends to the NEXT step's queue when it is done. The last step has no
+					// next, the template cannot be filled, and the link is dropped — which
+					// is exactly right, because that is where the run ends.
+					LinksTo("queue", "{name}_{each.next.name}", "then"),
+
+					// And where a step that has used up its attempts sends the run, when
+					// it named somewhere other than the failure queue.
+					LinksTo("queue", "{name}_{each.on-error}", "on error"),
+				),
+
+				// The end of the line, with NO CONSUMER — deliberately. A dead-letter
+				// queue is where a run stops so a person can look at it; something
+				// draining it automatically would be the retry that already happened.
+				Into("queue",
+					Named("{name}_failed"),
+					Carries("runs that gave up, kept for a person to look at - nothing consumes this"),
+				),
+
+				Into("entity",
+					Named("{name}_run"),
+					Carries("one run's state: which step it is at, and what it carried"),
+				),
 			),
 			Resource("workflow", "Workflow", "Workflow", "workflow"),
 		)),

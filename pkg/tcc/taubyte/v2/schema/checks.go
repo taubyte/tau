@@ -526,6 +526,16 @@ func checkWorkflows(all []compiled) []Finding {
 		if res.kind != "workflow" {
 			continue
 		}
+		// A workflow is started, never self-starting: v2 has no triggers, so what runs
+		// one is whatever declares `start` on it — a cron, a function, a gateway route.
+		// Nothing declaring it is a pipeline that is never fed, which is the same
+		// silence as a workload no ingress names.
+		if !startedBy(all, res) {
+			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+				"nothing starts it, so its first step is never fed",
+				"A workflow does not run itself. Something has to declare `start` on it — a cron, a function, or a route — the same way anything else in this vocabulary is reached."})
+		}
+
 		steps := res.elements("steps")
 		if len(steps) == 0 {
 			out = append(out, Finding{Broken, res.kind, res.name, res.scope,
@@ -548,6 +558,35 @@ func checkWorkflows(all []compiled) []Finding {
 		}
 	}
 	return out
+}
+
+// startedBy reports whether anything declares a start on this workflow, resolved the
+// way every access entry is: the entry's namespace, or the accessor's own scope and
+// then its parents.
+func startedBy(all []compiled, target compiled) bool {
+	for _, res := range all {
+		for name, e := range res.block(target.kind) {
+			if name != target.name {
+				continue
+			}
+			entry, ok := e.(map[string]any)
+			if !ok {
+				continue
+			}
+			scope := field(entry, "namespace")
+			if scope == "" {
+				scope = res.scope
+			}
+			if strings.TrimPrefix(scope, "/") == target.scope {
+				return true
+			}
+			// an omitted namespace resolves outward, so a parent scope counts too
+			if field(entry, "namespace") == "" && strings.HasPrefix(res.scope, target.scope) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // checkLoweredLinks: a fault INSIDE something nobody wrote, reported against something

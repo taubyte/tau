@@ -872,8 +872,8 @@ func TestWorkflowLowers(t *testing.T) {
 		for _, l := range d.Links {
 			links[l.Kind+"/"+l.Name] = l.Verb
 		}
-		assert.Equal(t, links["function/checkout"], "invokes")
-		assert.Equal(t, links["queue/checkout_failed"], "gives up to")
+		assert.Equal(t, links["function/checkout"], "consumed by", "a queue nothing receives from is a queue nothing happens in")
+		assert.Equal(t, links["queue/checkout_charge"], "then", "the chain is what makes it a pipeline")
 	}
 }
 
