@@ -1252,11 +1252,12 @@ var V2Resources = []*Node{
 					// is another queue, and moving an item there when its attempts are
 					// gone is the queue's own doing rather than anything the function
 					// decides. It is the field above, drawn.
-					// A REFERENCE, drawn the way the authored `dead-letter` field is: it
-					// is the same statement, and rendering the lowering's copy as a use
-					// would say the lowering invented a relationship the config did not
-					// have.
-					LinksTo("queue", "{name}_failed", "gives up to", AsReference()),
+					// A REFERENCE, drawn the way the authored `dead-letter` field is, and
+					// CALLED what that field is called. It is the same statement — the
+					// queue moves an item there when its attempts are gone, which is the
+					// queue's own doing — and a second word for it was the whole reason
+					// the arrow between two queues read as unexplained.
+					LinksTo("queue", "{name}_failed", "dead-letter", AsReference()),
 				),
 
 				// The end of the line, with NO CONSUMER — deliberately. A dead-letter

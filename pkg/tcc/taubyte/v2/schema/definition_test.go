@@ -880,7 +880,7 @@ func TestWorkflowLowers(t *testing.T) {
 		}
 		assert.Equal(t, links["function/reserve_stock"], "consumed by", "a queue nothing receives from is a queue nothing happens in")
 		assert.Equal(t, links["queue/checkout_charge"], "sends to", "the chain is what makes it a pipeline")
-		assert.Equal(t, links["queue/checkout_failed"], "gives up to")
+		assert.Equal(t, links["queue/checkout_failed"], "dead-letter", "the same word the authored field uses")
 
 		// AND IT STARTS AT THE FUNCTION. A queue does not hand work to another queue;
 		// the function that consumed this one is what sends on, and an edge drawn
@@ -889,7 +889,7 @@ func TestWorkflowLowers(t *testing.T) {
 			if l.Verb == "sends to" {
 				assert.Equal(t, l.From.Kind+"/"+l.From.Name, "function/reserve_stock")
 			}
-			if l.Verb == "gives up to" {
+			if l.Verb == "dead-letter" {
 				assert.Equal(t, l.From.Kind, "", "a dead-letter hop IS the queue's own doing")
 			}
 		}

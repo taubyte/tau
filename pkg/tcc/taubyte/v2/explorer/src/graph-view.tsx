@@ -435,13 +435,24 @@ export function GraphView({
         // zoom where the graph is legible — which is what a tooltip was doing in the
         // SVG version, less usefully.
         const touched = selection !== null && (a.from === selection.id || a.to === selection.id);
+        // An OPEN box's edges are always labelled. Everywhere else a verb on every edge
+        // buries the boxes under text, and you can click for it — but inside a box that
+        // has just been opened, every node is something the reader has not seen before,
+        // and an unlabelled arrow between two of them is the question this is supposed
+        // to answer. It is also few edges: that is what a box is.
+        const inOpenFrame = (id: string) => {
+          const scope = graph.byId.get(id)?.scope ?? "";
+          const holder = graph.nodes.find((n) => n.frame === scope);
+          return !!holder && flippedIds.has(holder.id);
+        };
+        const opened = inOpenFrame(a.from) || inOpenFrame(a.to);
         return {
           id: `${a.from}->${a.to}->${a.verb}`,
           source: a.from,
           target: a.to,
           type: "routed",
           data: { route: placed.routes.get(routeKey(a)) },
-          label: touched ? a.verb : undefined,
+          label: touched || opened ? a.verb : undefined,
           className: `rf-edge ${cls}${faded ? " faded" : ""}`,
           // An arrowhead, which the first cut of this forgot: direction is the entire
           // claim an edge makes here — who acts on whom — and a line without one says
