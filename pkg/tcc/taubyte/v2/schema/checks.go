@@ -457,11 +457,12 @@ func checkHostWorlds(all []compiled) []Finding {
 	}
 
 	// A use names a function and expects one world of it.
-	type use struct{ name, scope, wants, where string }
+	// own is where the use was written; ns is what it said about where to look.
+	type use struct{ name, own, ns, wants, where string }
 	var uses []use
 	for _, res := range all {
 		if n := res.str("authorizer/name"); n != "" {
-			uses = append(uses, use{n, res.str("authorizer/namespace"), "authorizer", res.kind + "/" + res.name + " authorizer"})
+			uses = append(uses, use{n, res.scope, res.str("authorizer/namespace"), "authorizer", res.kind + "/" + res.name + " authorizer"})
 		}
 		wants := ""
 		switch res.kind {
@@ -472,23 +473,23 @@ func checkHostWorlds(all []compiled) []Finding {
 		}
 		if wants != "" {
 			for _, el := range res.elements("transformers") {
-				uses = append(uses, use{field(el, "name"), field(el, "namespace"), wants, res.kind + "/" + res.name + " transformers"})
+				uses = append(uses, use{field(el, "name"), res.scope, field(el, "namespace"), wants, res.kind + "/" + res.name + " transformers"})
 			}
 		}
 		if res.str("route/handler/kind") == "function" {
-			uses = append(uses, use{res.str("route/handler/name"), res.str("route/handler/namespace"), "handler", res.kind + "/" + res.name + " route"})
+			uses = append(uses, use{res.str("route/handler/name"), res.scope, res.str("route/handler/namespace"), "handler", res.kind + "/" + res.name + " route"})
 		}
 	}
 
 	var out []Finding
 	for _, u := range uses {
-		got, known := lookupWorld(world, u.name, u.scope)
+		got, known := lookupWorld(world, u.name, u.own, u.ns)
 		if !known {
 			// The entry's KEY is the function's name, and a key is not a value — no
 			// Ref() resolves it, so a typo here compiles clean and the transformer or
 			// authorizer simply never runs. Silent, and in the authorizer's case
 			// silently unguarded.
-			out = append(out, Finding{Broken, "function", u.name, u.scope,
+			out = append(out, Finding{Broken, "function", u.name, u.ns,
 				fmt.Sprintf("is named as a %s by %s, and does not exist", u.wants, u.where),
 				"The name is the key of the entry, and a key is not a reference the compiler resolves — so this one names nothing and the step never runs."})
 			continue
@@ -496,31 +497,21 @@ func checkHostWorlds(all []compiled) []Finding {
 		if got == u.wants {
 			continue
 		}
-		out = append(out, Finding{Broken, "function", u.name, u.scope,
+		out = append(out, Finding{Broken, "function", u.name, u.ns,
 			fmt.Sprintf("is used as a %s by %s, and implements %s", u.wants, u.where, got),
 			"Those are different host interfaces. The function will be handed a world it was not built to read, which compiles clean and fails on live traffic."})
 	}
 	return out
 }
 
-// lookupWorld resolves a named function the way the config does: an absolute path, a
-// path relative to the user's scope, or own-scope-then-parents when it names none.
-func lookupWorld(world map[string]string, name, scope string) (string, bool) {
-	scope = strings.TrimPrefix(scope, "/")
-	for {
+// lookupWorld resolves a named function the way every name is resolved.
+func lookupWorld(world map[string]string, name, own, ns string) (string, bool) {
+	for _, scope := range scopeChain(own, ns) {
 		if w, ok := world[scope+"\x00"+name]; ok {
 			return w, true
 		}
-		if scope == "" {
-			return "", false
-		}
-		cut := strings.LastIndex(scope, "/")
-		if cut < 0 {
-			scope = ""
-			continue
-		}
-		scope = scope[:cut]
 	}
+	return "", false
 }
 
 // checkWorkflows: what only a workflow can get wrong. A step naming a function that
@@ -599,16 +590,10 @@ func startedBy(all []compiled, target compiled) bool {
 			if !ok {
 				continue
 			}
-			scope := field(entry, "namespace")
-			if scope == "" {
-				scope = res.scope
-			}
-			if strings.TrimPrefix(scope, "/") == target.scope {
-				return true
-			}
-			// an omitted namespace resolves outward, so a parent scope counts too
-			if field(entry, "namespace") == "" && strings.HasPrefix(res.scope, target.scope) {
-				return true
+			for _, scope := range scopeChain(res.scope, field(entry, "namespace")) {
+				if scope == target.scope {
+					return true
+				}
 			}
 		}
 	}

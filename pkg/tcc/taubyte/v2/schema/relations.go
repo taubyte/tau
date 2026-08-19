@@ -68,21 +68,14 @@ func Relations(obj map[string]any) []Relation {
 		byName[res.kind+"\x00"+res.scope+"\x00"+res.name] = res
 		byID[res.id] = res
 	}
-	find := func(kind, name, scope string) (compiled, bool) {
-		scope = strings.TrimPrefix(scope, "/")
-		for {
+	// own is where the reference was written, ns what it said about where to look.
+	find := func(kind, name, own, ns string) (compiled, bool) {
+		for _, scope := range scopeChain(own, ns) {
 			if r, ok := byName[kind+"\x00"+scope+"\x00"+name]; ok {
 				return r, true
 			}
-			if scope == "" {
-				return compiled{}, false
-			}
-			if cut := strings.LastIndex(scope, "/"); cut >= 0 {
-				scope = scope[:cut]
-			} else {
-				scope = ""
-			}
 		}
+		return compiled{}, false
 	}
 
 	var out []Relation
@@ -109,7 +102,7 @@ func Relations(obj map[string]any) []Relation {
 // channel are declared by the consumer, and the work travels the other way — drawn from
 // the declaration, a queue worker has two arrows out and none in, which reads as a
 // workload nothing ever starts.
-func accessRelations(res compiled, find func(kind, name, scope string) (compiled, bool)) []Relation {
+func accessRelations(res compiled, find func(kind, name, own, ns string) (compiled, bool)) []Relation {
 	var out []Relation
 	for kind, val := range res.fields {
 		entries, ok := val.(map[string]any)
@@ -121,11 +114,7 @@ func accessRelations(res compiled, find func(kind, name, scope string) (compiled
 			if !ok {
 				continue
 			}
-			scope := field(entry, AccessEntryShape().Namespace)
-			if scope == "" {
-				scope = res.scope
-			}
-			to, found := find(kind, target, scope)
+			to, found := find(kind, target, res.scope, field(entry, AccessEntryShape().Namespace))
 			if !found {
 				continue // an unresolvable target is the audit's business, not this one's
 			}
@@ -153,7 +142,7 @@ func delivered(kind, op string) bool {
 
 // referenceRelations: every declared reference, resolved. A reference that resolves to
 // an id is looked up by id; one that keeps a name is looked up the way a name is.
-func referenceRelations(res compiled, byID map[string]compiled, find func(kind, name, scope string) (compiled, bool)) []Relation {
+func referenceRelations(res compiled, byID map[string]compiled, find func(kind, name, own, ns string) (compiled, bool)) []Relation {
 	var out []Relation
 	for _, ref := range References() {
 		if ref.On != res.kind {
@@ -179,7 +168,7 @@ func referenceRelations(res compiled, byID map[string]compiled, find func(kind, 
 	return out
 }
 
-func resolveReference(res compiled, from map[string]any, ref Reference, byID map[string]compiled, find func(kind, name, scope string) (compiled, bool)) (Relation, bool) {
+func resolveReference(res compiled, from map[string]any, ref Reference, byID map[string]compiled, find func(kind, name, own, ns string) (compiled, bool)) (Relation, bool) {
 	val, _ := from[ref.Field].(string)
 	if val == "" {
 		return Relation{}, false
@@ -212,14 +201,11 @@ func resolveReference(res compiled, from map[string]any, ref Reference, byID map
 		return r, true
 	}
 
-	scope := ref.Namespace
-	if scope != "" {
-		scope = field(from, ref.Namespace)
+	ns := ""
+	if ref.Namespace != "" {
+		ns = field(from, ref.Namespace)
 	}
-	if scope == "" {
-		scope = res.scope
-	}
-	to, found := find(kind, val, scope)
+	to, found := find(kind, val, res.scope, ns)
 	if !found {
 		return Relation{}, false
 	}

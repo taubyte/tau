@@ -165,6 +165,29 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	out["names"] = names
 
+	// WHAT RESOURCES THERE ARE, and the namespace each lives in. Finding them means
+	// telling a nested group from an access block from a list, which is schema knowledge:
+	// the walk lives with the schema and every consumer gets the same answer.
+	res := []map[string]any{}
+	for _, r := range schema.Resources(obj.Flat()) {
+		res = append(res, map[string]any{
+			"id": r.ID, "kind": r.Kind, "name": r.Name, "scope": r.Scope, "fields": r.Fields,
+		})
+	}
+	out["resources"] = res
+
+	// EVERY RELATIONSHIP BETWEEN TWO RESOURCES, already resolved: a name is resolved
+	// against a scope, and a consumer that does its own resolving is one that will
+	// disagree with the compiler about what a name means.
+	rels := []map[string]any{}
+	for _, r := range schema.Relations(obj.Flat()) {
+		rels = append(rels, map[string]any{
+			"from": r.From, "to": r.To, "kind": r.Kind,
+			"verb": r.Verb, "effect": r.Effect, "class": string(r.Class),
+		})
+	}
+	out["relations"] = rels
+
 	if len(validations) > 0 {
 		vs := make([]map[string]any, 0, len(validations))
 		for _, v := range validations {

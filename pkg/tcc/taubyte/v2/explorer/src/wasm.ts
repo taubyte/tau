@@ -88,10 +88,36 @@ export interface Finding {
   detail: string;
 }
 
+/** One compiled resource. What a resource is, and where it lives, is decided by tcc. */
+export interface Instance {
+  id: string;
+  kind: string;
+  name: string;
+  /** The namespace path it lives in, "" at the project root. */
+  scope: string;
+  /** The compiled resource itself, for the values a consumer reads off it. */
+  fields: Compiled;
+}
+
+/** One resolved relationship between two resources. Resolved by tcc — see relations.go. */
+export interface Relation {
+  from: string;
+  to: string;
+  kind: string;
+  verb: string;
+  /** read | write | admin for a use; empty for a reference, which grants nothing. */
+  effect?: string;
+  class: "use" | "handoff" | "policy" | "reference";
+}
+
 export interface CompileOk {
   findings?: Finding[];
   /** What each resource is reached at. Computed by tcc: a name is three places glued. */
   names?: Record<string, { name: string; zone: string; fqdn: string; generated: boolean }>;
+  /** Every resource in the project, found by tcc: a walk that needs the schema. */
+  resources?: Instance[];
+  /** Every relationship between two resources, already resolved and already directed. */
+  relations?: Relation[];
   /** What the lowered resources become, and their wiring. Computed by tcc, not here. */
   lowered?: Lowered[];
   /** The project's label in a cloud's generated zone — derived from its id. */

@@ -1,11 +1,18 @@
 // The graph the compiled config already is.
 //
-// Nothing here infers anything: a node is a compiled resource, an arrow is a
-// `use-<kind>-<verb>` key on it, and the arrow's colour is the verb's effect class.
-// That is the whole claim of the model — the diagram is a read of the config, not a
-// drawing kept beside it — so this file is deliberately dumb.
+// Nothing here infers anything, and by now nothing here CAN: tcc hands over the
+// resources and the relationships between them, already resolved and already pointing
+// the way the action goes. A node is a resource, an arrow is a relation, and the arrow's
+// colour is the effect the vocabulary gave that verb.
+//
+// This file used to do the resolving — which name means which resource, which map of
+// maps is a group of resources, which way a delivered verb runs. Every one of those is
+// a rule the compiler already applies, and a second implementation of a rule is a
+// disagreement waiting to happen: the copy here drew a node for every access entry and
+// dropped a use whose namespace was relative, both of which read as facts about the
+// config. What is left is layout and paint.
 
-import type { Compiled, Effect, KindVerbs, Shapes } from "./wasm";
+import type { Compiled, Effect, Instance, Relation, Shapes } from "./wasm";
 
 export interface Node {
   id: string;
@@ -81,7 +88,6 @@ let CATEGORY: Record<string, string> = {};
 let ICON: Record<string, string> = {};
 
 export function setCategories(kinds: { group: string; category: string; icon?: string; container?: boolean }[]) {
-  SCOPE_CONTAINER = kinds.find((k) => k.container)?.group ?? "";
   CATEGORY = Object.fromEntries(kinds.map((k) => [k.group, k.category || "other"]));
   // The icon is declared on the kind too — Icon(...) in definition.go — so it comes
   // from the same place and drifts for the same reason if it is copied anywhere else.
@@ -102,13 +108,6 @@ export function iconOf(kind: string): string {
   if (kind === "step") return "step";
   return ICON[kind] ?? "";
 }
-
-// WHICH KIND IS THE SCOPE CONTAINER is a fact the schema states — kinds() has carried
-// `container` from the start — and this file was typing the name instead. A vocabulary
-// that called its scopes something else would have compiled here and drawn a flat
-// project.
-let SCOPE_CONTAINER = "";
-const isScopeContainer = (k: string) => !!SCOPE_CONTAINER && k === SCOPE_CONTAINER;
 
 /** One resource a lowered resource becomes, as computed by tcc — never here. */
 export interface Lowered {
@@ -141,17 +140,9 @@ let SHAPES: Shapes = {
   layout: { resource: "{kind}/{name}.yaml", scope: "{name}", leaf: "project" },
 };
 
-/** The references a kind declares, on itself or on the entries of a nested group. */
-const refsOf = (kind: string, inGroup = "") =>
-  SHAPES.refs.filter((r) => r.on === kind && r.in === inGroup);
-
 export function setShapes(s: Shapes): void {
   SHAPES = s;
 }
-
-/** What to call a reference on an edge: the field, minus the part that repeats the kind. */
-const verbOf = (field: string, kind: string) =>
-  field.replace(/\/?name$/, "").replace(/\//g, " ") || kind;
 
 /** Where a resource's document lives, from the layout tcc reports. */
 export function fileOf(n: { kind: string; name: string; scope: string; home?: string }): string {
@@ -177,8 +168,10 @@ function derivedOf(kind: string, res: Compiled): { label: string; value: string 
 }
 
 export function buildGraph(
-  compiled: Compiled,
-  verbs: KindVerbs[],
+  /** Every resource, from tcc: what a resource IS, and where it lives, is the schema's. */
+  resources: Instance[],
+  /** Every resolved relationship, from tcc. This file resolves no names. */
+  relations: Relation[] = [],
   names: Record<string, { name: string; zone: string; fqdn: string; generated: boolean }> = {},
   lowered: Lowered[] = [],
   /** Which lowered resources are showing what they BECOME rather than what was written. */
@@ -186,250 +179,44 @@ export function buildGraph(
 ): Graph {
   const nodes: Node[] = [];
   const arrows: Arrow[] = [];
-  const verbEffect = new Map<string, Effect>();
-  const verbDelivered = new Set<string>();
-  for (const kv of verbs) {
-    for (const v of kv.verbs) {
-      verbEffect.set(`${kv.kind}/${v.name}`, v.effect);
-      if (v.delivered) verbDelivered.add(`${kv.kind}/${v.name}`);
-    }
-  }
 
-  const root = (compiled.object as Compiled) ?? compiled;
   // an access entry names its target; it is matched once every node is known
-  const pendingPolicy: {
-    from: string; name: string; scope: string | null; verb: string; kind: string; use?: boolean;
-  }[] = [];
-  const pendingAccess: {
-    from: string; kind: string; name: string; scope: string | null; verb: string; effect: Effect;
-    inbound?: boolean;
-  }[] = [];
-
-  // an access block is a map of target-name -> { ops, namespace? }
-  // An ACCESS BLOCK is a key that names a reachable kind, holding entries with the ops
-  // field the schema says an access entry has. It used to be "entries with a key called
-  // ops", which is the same guess written as a fact.
-  const looksLikeAccess = (v: unknown): v is Record<string, Compiled> =>
-    !!v && typeof v === "object" && !Array.isArray(v) &&
-    Object.values(v as Record<string, unknown>).every(
-      (e) => !!e && typeof e === "object" && !Array.isArray(e) && SHAPES.access.ops in (e as object),
-    );
-
-  // A compiled resource may itself hold a nested group — a gateway holds its
-  // routes — and a namespace may hold namespaces, at any depth. Both are just
-  // maps of maps in the compiled object, so the walk is written once and applies
-  // to whatever the schema nests next.
-  // A nested map is a group of RESOURCES only if its key is a kind. `variables:` and
-  // `ports:` are maps of maps too, and drawing them put a node on the page for every
-  // environment variable — they are data belonging to a resource, not resources.
-  const looksLikeResources = (key: string, v: unknown): v is Record<string, Compiled> =>
-    kindNames.has(key) &&
-    !!v &&
-    typeof v === "object" &&
-    !Array.isArray(v) &&
-    Object.values(v as Record<string, unknown>).every(
-      (x) => !!x && typeof x === "object" && !Array.isArray(x),
-    ) &&
-    Object.keys(v as object).length > 0;
-
-  // Every compiled key is a PATH now, so the arrow rules read the path rather than a
-  // dashed prefix:
-  //
-  //   <kind>/<verb>            an access declaration; the values are resolved ids
-  //   route/handler/{kind,name,namespace}   a gateway's handler, named not resolved
-  //   <group>/<id>             a plain reference (source, credentials, dead-letter)
-  const kindNames = new Set(Object.keys(CATEGORY));
-
-  const addResource = (group: string, id: string, res: Compiled, scope: string) => {
+  // WHAT RESOURCES EXIST, from tcc. Finding them in the compiled object means telling a
+  // nested group from an access block from a list of objects, and that is schema
+  // knowledge: this file's own version of the walk drew a node for every access entry —
+  // twenty boxes named after resources that already had one.
+  for (const r of resources) {
     nodes.push({
-      id,
-      kind: group,
-      name: String(res.name ?? id.slice(0, 8)),
-      scope,
-      // The name is a zone plus a label now, and for a generated host the zone is
-      // not knowable here at all — it is the cloud's, decided at deploy. Resolved in
-      // a second pass, once the zones are compiled and can be looked up.
+      id: r.id,
+      kind: r.kind,
+      name: r.name || r.id.slice(0, 8),
+      scope: r.scope,
       // Whatever this kind DERIVES — an SRV name, anything added later. Computed by the
       // engine, labelled by the schema, and never assembled here: a renderer composing
       // its own version of a fact is a second definition that agrees by coincidence.
-      computed: derivedOf(group, res),
+      computed: derivedOf(r.kind, r.fields),
       layer: 0,
       x: 0,
       y: 0,
     });
-
-    for (const [key, val] of Object.entries(res)) {
-      // an access block: kind -> { targetName: { namespace?, ops } }. The target is
-      // NAMED, not resolved, so it is matched against compiled nodes by (kind,
-      // name, namespace) the same way a gateway handler is.
-      if (kindNames.has(key) && looksLikeAccess(val)) {
-        for (const [target, entry] of Object.entries(val as Record<string, Compiled>)) {
-          const opsField = entry[SHAPES.access.ops];
-          const ops = Array.isArray(opsField) ? (opsField as string[]) : [];
-          // "/x" is absolute from the project root, "x" is relative to this
-          // resource's own namespace, "/" is the root itself, absent means the
-          // resource's own scope then its parents.
-          const nsField = entry[SHAPES.access.namespace];
-          const ns = typeof nsField === "string" ? (nsField as string) : null;
-          for (const op of ops) {
-            pendingAccess.push({
-              from: id,
-              kind: key,
-              name: target,
-              scope: ns,
-              verb: op,
-              effect: verbEffect.get(`${key}/${op}`) ?? "write",
-              // `receive` and `subscribe` are declared by the consumer but the work
-              // travels the other way. Drawn from the declaration, a queue worker has
-              // two arrows out and none in, and reads as a workload nothing ever
-              // starts — which is exactly backwards from what runs.
-              inbound: verbDelivered.has(`${key}/${op}`),
-            });
-          }
-        }
-        continue;
-      }
-
-      // A LIST OF OBJECTS whose elements name resources — a transformer chain — needs
-      // no branch of its own: each element's fields are declared in the schema the same
-      // way a resource's are, so the same pass that draws an authorizer draws these.
-      if (Array.isArray(val)) {
-        val.forEach((entry, i) => {
-          const el = entry as Compiled;
-          if (!el || typeof el !== "object") return;
-          for (const r of refsOf(group, key)) {
-            const n = el[r.field];
-            if (typeof n !== "string" || n === "") continue;
-            const ns = r.namespace && typeof el[r.namespace] === "string" ? (el[r.namespace] as string) : null;
-            const kind = r.kindFrom && typeof el[r.kindFrom] === "string" ? (el[r.kindFrom] as string) : r.kind;
-            if (!kind) continue;
-            pendingPolicy.push({ from: id, name: n, scope: ns, kind, verb: `${key} #${i + 1}` });
-          }
-        });
-        continue;
-      }
-
-      // a nested group under this resource
-      if (looksLikeResources(key, val)) {
-        for (const [childID, child] of Object.entries(val)) {
-          addResource(key, childID, child, scope);
-          arrows.push({ from: id, to: childID, kind: key, verb: key, effect: "read", ref: true });
-        }
-      }
-    }
-
-    // Two places a resource names a function that decides something ABOUT it, rather
-    // than something it reaches: who may use it, and whether it is ready. Both are
-    // the resource's own declaration, so both arrows start at it.
-    // EVERY REFERENCE THIS KIND DECLARES, in one pass: whether the value resolved to
-    // an id or stayed a name changes only how the target is found, and the schema says
-    // which. It was two passes over two lists, and a case added to one of them.
-    for (const r of refsOf(group)) {
-      const val = res[r.field];
-      if (typeof val !== "string" || val === "") continue;
-      const ns = r.namespace && typeof res[r.namespace] === "string" ? (res[r.namespace] as string) : null;
-      const kind = r.kindFrom && typeof res[r.kindFrom] === "string" ? (res[r.kindFrom] as string) : r.kind;
-      if (!kind) continue;
-
-      if (r.byName) {
-        // A reference whose KIND the author picks is where this resource hands traffic
-        // on — a route's handler, a proxy's forward, a stream's serve — and that is a
-        // use, not a note about policy. One whose kind the schema fixed is the other
-        // thing: a function named to decide something about this resource.
-        pendingPolicy.push({
-          from: id, name: val, scope: ns, kind,
-          verb: r.kindFrom ? "serves" : verbOf(r.field, kind),
-          use: !!r.kindFrom,
-        });
-        continue;
-      }
-      // a resolved reference carries "<kind>/<id>", whatever the kind is
-      const to = val.slice(val.indexOf("/") + 1);
-      if (!to || to === val) continue;
-      arrows.push(
-        r.inbound
-          ? { from: to, to: id, kind: group, verb: r.field, effect: "read", ref: true }
-          : { from: id, to, kind, verb: r.field, effect: "read", ref: true },
-      );
-    }
-
-  };
-
-  const collect = (scopeObj: Compiled, scope: string) => {
-    for (const [group, val] of Object.entries(scopeObj)) {
-      if (!val || typeof val !== "object" || Array.isArray(val)) continue;
-      const instances = val as Record<string, Compiled>;
-      if (isScopeContainer(group)) {
-        for (const inst of Object.values(instances)) {
-          // nested namespaces read as a path, so two levels down is visible as such
-          const name = String(inst.name ?? "?");
-          collect(inst, scope ? `${scope}/${name}` : name);
-        }
-        continue;
-      }
-      for (const [id, res] of Object.entries(instances)) {
-        if (!res || typeof res !== "object") continue;
-        addResource(group, id, res, scope);
-      }
-    }
-  };
-  collect(root, "");
-
-  // Resolve each access entry the way the config says to: absolute from the root
-  // with a leading slash, relative to the resource's own namespace without one, and
-  // own-scope-then-parents when it names none at all.
-  const scopeOf = (own: string, ns: string | null): string[] => {
-    if (ns === null) {
-      // no path: own scope, then each parent, then the root
-      const out = [own];
-      let cur = own;
-      while (cur.includes("/")) {
-        cur = cur.slice(0, cur.lastIndexOf("/"));
-        out.push(cur);
-      }
-      if (own !== "") out.push("");
-      return out;
-    }
-    if (ns === "/") return [""];
-    if (ns.startsWith("/")) return [ns.slice(1)];
-    return [own ? `${own}/${ns}` : ns];
-  };
-
-  for (const a of pendingAccess) {
-    const own = nodes.find((n) => n.id === a.from)?.scope ?? "";
-    for (const scope of scopeOf(own, a.scope)) {
-      const target = nodes.find((n) => n.kind === a.kind && n.name === a.name && n.scope === scope);
-      if (target) {
-        // a delivered verb is flipped: the declaration stays where it is authored,
-        // the ARROW follows the work
-        arrows.push(
-          a.inbound
-            ? { from: target.id, to: a.from, kind: a.kind, verb: a.verb, effect: a.effect }
-            : { from: a.from, to: target.id, kind: a.kind, verb: a.verb, effect: a.effect },
-        );
-        break;
-      }
-    }
   }
 
-  // an authorizer is a function, addressed like any other target
-  for (const pol of pendingPolicy) {
-    const own = nodes.find((n) => n.id === pol.from)?.scope ?? "";
-    for (const scope of scopeOf(own, pol.scope)) {
-      const target = nodes.find((n) => n.kind === pol.kind && n.name === pol.name && n.scope === scope);
-      if (target) {
-        arrows.push({
-          from: pol.from, to: target.id, kind: pol.kind, verb: pol.verb,
-          effect: pol.use ? "write" : "read",
-          policy: !pol.use,
-          handoff: pol.use,
-        });
-        break;
-      }
-    }
+  // EVERY RELATIONSHIP, already resolved. Which name means which resource, which way a
+  // delivered verb runs, and which reference points back at its declarer are all decided
+  // by the compiler — this loop only picks how each class is drawn.
+  for (const r of relations) {
+    arrows.push({
+      from: r.from,
+      to: r.to,
+      kind: r.kind,
+      verb: r.verb,
+      effect: (r.effect || "read") as Effect,
+      policy: r.class === "policy" || undefined,
+      handoff: r.class === "handoff" || undefined,
+      ref: r.class === "reference" || undefined,
+    });
   }
 
-  // handlers resolve by name once every node is known
   const byId = new Map(nodes.map((n) => [n.id, n]));
   // An arrow to something outside this project compiles to an id we do not hold.
   const live = merge(arrows.filter((a) => byId.has(a.to) && byId.has(a.from)));
