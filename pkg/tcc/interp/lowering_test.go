@@ -219,3 +219,33 @@ func TestLoweringLinkOrigin(t *testing.T) {
 	assert.Equal(t, chained, 1)
 	assert.Equal(t, own, 1, "the link with no origin is the resource's own")
 }
+
+// A lowering's edges carry the vocabulary's own classes. Without them every edge a
+// lowering produced was drawn as a use, including the ones that only POINT — and a
+// queue naming its dead-letter queue is the same statement as the authored field, so
+// drawing the two differently says the lowering invented a relationship.
+func TestLoweringLinkClasses(t *testing.T) {
+	root := engine.Root(
+		[]*engine.Attribute{engine.String("id")},
+		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
+		}, engine.Resource("job", "Job", "Job", "job"))),
+		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
+			engine.String("id"), engine.String("name"),
+		},
+			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
+			interp.Lowers(interp.Into("job", interp.Named("{name}-j"),
+				interp.LinksTo("job", "a", "uses", interp.Effect("read")),
+				interp.LinksTo("job", "b", "points at", interp.AsReference()),
+			)),
+		)),
+	)
+
+	plan := interp.LoweringPlan(root, map[string]any{
+		"pipeline": map[string]any{"x": map[string]any{"name": "x"}},
+	})
+	assert.Equal(t, len(plan), 1)
+	assert.Equal(t, plan[0].Links[0].Effect, "read")
+	assert.Equal(t, plan[0].Links[0].Ref, false)
+	assert.Equal(t, plan[0].Links[1].Ref, true, "a link that points is not a use")
+}

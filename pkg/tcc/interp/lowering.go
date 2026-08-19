@@ -53,6 +53,10 @@ type link struct {
 	kind, name, verb, scope string
 	// where the edge STARTS, when that is not the derived resource itself
 	fromKind, fromName string
+	// what KIND of edge it is, in the vocabulary's own terms. Opaque here: the
+	// interpreter does not know what "read" means, it only carries the word.
+	effect string
+	ref    bool
 }
 
 type (
@@ -137,6 +141,20 @@ func LinksTo(kind, name, verb string, opts ...LinkOption) LoweringOption {
 // something that cannot happen. Both ends are templates, like everything else here.
 func From(kind, name string) LinkOption {
 	return func(l *link) { l.fromKind, l.fromName = kind, name }
+}
+
+// Effect says what kind of edge this is, in the vocabulary's own words — the same
+// classes its verbs use. Opaque to the interpreter, which carries it rather than
+// interpreting it.
+func Effect(class string) LinkOption {
+	return func(l *link) { l.effect = class }
+}
+
+// AsReference marks a link that POINTS rather than acts: a queue naming its dead-letter
+// queue is the same statement as the authored `dead-letter` field, and drawing the two
+// differently says the lowering invented a relationship the config did not have.
+func AsReference() LinkOption {
+	return func(l *link) { l.ref = true }
 }
 
 // InScope says where the link's target lives, as a template. Omitted means the same
@@ -264,6 +282,10 @@ type Resolved struct {
 	// From is what the edge starts at, when that is not the resource carrying it.
 	// Empty Kind means it starts at the derived resource itself.
 	From struct{ Kind, Name string }
+	// Effect is the vocabulary's own class for this edge, and Ref marks one that
+	// points rather than acts.
+	Effect string
+	Ref    bool
 }
 
 func (d Derived) String() string { return d.Kind + "/" + d.Name + " (" + d.Why + ")" }
@@ -419,7 +441,7 @@ func links(ls []link, res, each, next map[string]any) []Resolved {
 		if strings.ContainsAny(scope, "{}") {
 			scope = ""
 		}
-		r := Resolved{Kind: l.kind, Name: name, Verb: l.verb, Scope: scope}
+		r := Resolved{Kind: l.kind, Name: name, Verb: l.verb, Scope: scope, Effect: l.effect, Ref: l.ref}
 		if l.fromKind != "" {
 			from := expand(l.fromName, res, each, next)
 			if from == "" || strings.ContainsAny(from, "{}") {

@@ -40,6 +40,8 @@ var (
 	LinksTo          = interp.LinksTo
 	InScope          = interp.InScope
 	From             = interp.From
+	LinkEffect       = interp.Effect
+	AsReference      = interp.AsReference
 	Doc              = engine.Doc
 	Duration         = engine.Duration
 	Either           = engine.Either

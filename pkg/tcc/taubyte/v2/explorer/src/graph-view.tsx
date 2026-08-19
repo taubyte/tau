@@ -352,7 +352,10 @@ export function GraphView({
           kind: n.kind,
           icon: iconOf(n.kind),
           name: n.name,
-          scope: n.scope,
+          // The frame's own name is internal — `@checkout` is a layout key, not a
+          // place — and a node wearing it read as "queue, in namespace @CHECKOUT".
+          // Inside a box, the box says where you are.
+          scope: n.scope.includes("@") ? "" : n.scope,
           category: categoryOf(n.kind),
           faded: lit !== null && !lit.has(n.id),
           picked: selection?.id === n.id,

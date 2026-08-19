@@ -104,7 +104,15 @@ export interface Lowered {
   of: string;
   scope: string;
   why: string;
-  links: { kind: string; name: string; verb: string; scope?: string; from?: { kind: string; name: string } }[];
+  links: {
+    kind: string;
+    name: string;
+    verb: string;
+    scope?: string;
+    effect?: string;
+    ref?: boolean;
+    from?: { kind: string; name: string };
+  }[];
   source?: { kind: string; name: string; scope: string; path: string; part?: Record<string, unknown> };
 }
 
@@ -460,7 +468,10 @@ export function buildGraph(
               nodes.find((n) => n.kind === l.from!.kind && n.name === l.from!.name))
             : from;
           if (!origin) continue;
-          live.push({ from: origin.id, to: to.id, kind: l.kind, verb: l.verb, effect: "write" });
+          live.push({
+            from: origin.id, to: to.id, kind: l.kind, verb: l.verb,
+            effect: (l.effect as Effect) ?? "write", ref: l.ref,
+          });
         }
       }
       continue;
@@ -501,7 +512,10 @@ export function buildGraph(
         // As written, an edge that tcc says starts at the step's own function still
         // starts at the STEP here: the function is what the step runs, and drawing the
         // hop from outside the box would take the eye out of it and back.
-        live.push({ from: from.id, to: to.id, kind: l.kind, verb: l.verb, effect: "write" });
+        live.push({
+          from: from.id, to: to.id, kind: l.kind, verb: l.verb,
+          effect: (l.effect as Effect) ?? "write", ref: l.ref,
+        });
       }
     }
   }

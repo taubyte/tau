@@ -119,7 +119,10 @@ func compileFn(_ js.Value, args []js.Value) any {
 	for _, d := range plan {
 		links := make([]map[string]any, 0, len(d.Links))
 		for _, l := range d.Links {
-			link := map[string]any{"kind": l.Kind, "name": l.Name, "verb": l.Verb, "scope": l.Scope}
+			link := map[string]any{
+				"kind": l.Kind, "name": l.Name, "verb": l.Verb, "scope": l.Scope,
+				"effect": l.Effect, "ref": l.Ref,
+			}
 			// where the edge STARTS, when that is not the derived resource — a queue
 			// does not hand work to another queue, the function that consumed it does
 			if l.From.Kind != "" {

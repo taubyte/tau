@@ -1228,7 +1228,8 @@ var V2Resources = []*Node{
 					// happens in, so the step's function is named as its consumer — the
 					// `receive` half of the queue's own verbs, in the direction work
 					// actually travels.
-					LinksTo("function", "{each.run}", "consumed by", InScope("{each.namespace}")),
+					LinksTo("function", "{each.run}", "consumed by", InScope("{each.namespace}"),
+						LinkEffect(Read)),
 
 					// WHAT MAKES IT A PIPELINE — and it starts at the FUNCTION, not at
 					// the queue. A queue does not hand work to another queue; the
@@ -1240,18 +1241,22 @@ var V2Resources = []*Node{
 					// link is dropped — which is exactly right, because that is where the
 					// run ends.
 					LinksTo("queue", "{name}_{each.next.name}", "sends to",
-						From("function", "{each.run}")),
+						From("function", "{each.run}"), LinkEffect(Write)),
 
 					// Same origin for a step that names somewhere other than the failure
 					// queue to go when it has used up its attempts.
 					LinksTo("queue", "{name}_{each.on-error}", "on error",
-						From("function", "{each.run}")),
+						From("function", "{each.run}"), LinkEffect(Write)),
 
 					// This one IS queue-to-queue, and truthfully: a queue's dead-letter
 					// is another queue, and moving an item there when its attempts are
 					// gone is the queue's own doing rather than anything the function
 					// decides. It is the field above, drawn.
-					LinksTo("queue", "{name}_failed", "gives up to"),
+					// A REFERENCE, drawn the way the authored `dead-letter` field is: it
+					// is the same statement, and rendering the lowering's copy as a use
+					// would say the lowering invented a relationship the config did not
+					// have.
+					LinksTo("queue", "{name}_failed", "gives up to", AsReference()),
 				),
 
 				// The end of the line, with NO CONSUMER — deliberately. A dead-letter
