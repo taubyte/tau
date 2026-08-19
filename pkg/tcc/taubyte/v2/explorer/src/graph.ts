@@ -24,9 +24,8 @@ export interface Node {
   answeredBy?: string;
   /** That zone's node id, or "" when it is the cloud's own and not a resource here. */
   answeredById?: string;
-  // How a client reaches that name, when it is not just "https". An L4 proxy writes
-  // no port and no address, so this is the only place the page can say what to dial.
-  dial?: string;
+  /** Whatever this kind derives — computed by the engine, labelled by the schema. */
+  computed?: { label: string; value: string }[];
   /** A resource nothing authored: what a lowered resource becomes, or a part of one. */
   derived?: { of: string; why: string };
   /** The frame this resource is the box FOR, when it has one. */
@@ -136,10 +135,52 @@ export interface Lowered {
 }
 
 /** What this vocabulary's shapes are, from tcc. Set once, with the kinds. */
-let SHAPES: Shapes = { handsTo: [], names: [] };
+let SHAPES: Shapes = {
+  handsTo: [],
+  names: [],
+  kinds: {},
+  access: { ops: "ops", namespace: "namespace" },
+  layout: { resource: "{kind}/{name}.yaml", scope: "{name}", leaf: "project" },
+};
 
 export function setShapes(s: Shapes): void {
   SHAPES = s;
+}
+
+/** Where a resource's document lives, from the layout tcc reports. */
+export function fileOf(n: { kind: string; name: string; scope: string; home?: string }): string {
+  const scope = n.home ?? n.scope;
+  const dirs = scope
+    ? scope.split("/").map((s) => SHAPES.layout.scope.replace("{name}", s)).join("/") + "/"
+    : "";
+  return dirs + SHAPES.layout.resource.replace("{kind}", n.kind).replace("{name}", n.name);
+}
+
+/** The naming block a kind declares, read into the shape the drawing uses. */
+function hostOf(kind: string, res: Compiled): Node["host"] {
+  const at = SHAPES.kinds[kind]?.answersAt;
+  if (!at) return undefined;
+  const k = res[`${at}/kind`];
+  if (typeof k !== "string") return undefined;
+  return {
+    kind: k,
+    name: typeof res[`${at}/name`] === "string" ? (res[`${at}/name`] as string) : "",
+    zone: typeof res[`${at}/zone`] === "string" ? (res[`${at}/zone`] as string) : null,
+  };
+}
+
+/** Every derived field of a kind, computed by the engine. */
+function derivedOf(kind: string, res: Compiled): { label: string; value: string }[] | undefined {
+  const specs = SHAPES.kinds[kind]?.derived;
+  if (!specs?.length || !window.tccV2) return undefined;
+  const out: { label: string; value: string }[] = [];
+  for (const spec of specs) {
+    const inputs = spec.from.map((f) => (typeof res[f] === "string" ? (res[f] as string) : ""));
+    if (inputs.some((i) => i === "")) continue;
+    const value = window.tccV2.derive(spec.derivation, ...inputs);
+    if (value) out.push({ label: spec.label || spec.field, value });
+  }
+  return out.length ? out : undefined;
 }
 
 export function buildGraph(
@@ -171,10 +212,13 @@ export function buildGraph(
   }[] = [];
 
   // an access block is a map of target-name -> { ops, namespace? }
+  // An ACCESS BLOCK is a key that names a reachable kind, holding entries with the ops
+  // field the schema says an access entry has. It used to be "entries with a key called
+  // ops", which is the same guess written as a fact.
   const looksLikeAccess = (v: unknown): v is Record<string, Compiled> =>
     !!v && typeof v === "object" && !Array.isArray(v) &&
     Object.values(v as Record<string, unknown>).every(
-      (e) => !!e && typeof e === "object" && !Array.isArray(e) && "ops" in (e as object),
+      (e) => !!e && typeof e === "object" && !Array.isArray(e) && SHAPES.access.ops in (e as object),
     );
 
   // A compiled resource may itself hold a nested group — a gateway holds its
@@ -186,7 +230,7 @@ export function buildGraph(
     typeof v === "object" &&
     !Array.isArray(v) &&
     Object.values(v as Record<string, unknown>).every(
-      (x) => !!x && typeof x === "object" && !Array.isArray(x) && "name" in (x as object),
+      (x) => !!x && typeof x === "object" && !Array.isArray(x),
     ) &&
     Object.keys(v as object).length > 0;
 
@@ -207,18 +251,16 @@ export function buildGraph(
       // The name is a zone plus a label now, and for a generated host the zone is
       // not knowable here at all — it is the cloud's, decided at deploy. Resolved in
       // a second pass, once the zones are compiled and can be looked up.
-      host:
-        typeof res["host/kind"] === "string"
-          ? {
-              kind: res["host/kind"] as string,
-              name: typeof res["host/name"] === "string" ? (res["host/name"] as string) : "",
-              zone: typeof res["host/zone"] === "string" ? (res["host/zone"] as string) : null,
-            }
-          : undefined,
-      zoneFqdn: group === "zone" && typeof res.fqdn === "string" ? (res.fqdn as string) : undefined,
-      dial: typeof res.protocol === "string"
-        ? `${res.protocol}${typeof res.service === "string" ? ` · _${res.service}._${res.protocol}` : ""}`
-        : undefined,
+      // WHERE this resource says what name it answers on is the schema's answer
+      // (AnswersAt), not a key spelled here.
+      host: hostOf(group, res),
+      // A kind that carries an fqdn and answers nothing else is what resolves a name:
+      // it is read off the field, not off the kind's name.
+      zoneFqdn: !SHAPES.kinds[group]?.answersAt && typeof res.fqdn === "string" ? (res.fqdn as string) : undefined,
+      // Whatever this kind DERIVES — an SRV name, anything added later. Computed by the
+      // engine, labelled by the schema, and never assembled here: a renderer composing
+      // its own version of a fact is a second definition that agrees by coincidence.
+      computed: derivedOf(group, res),
       layer: 0,
       x: 0,
       y: 0,
@@ -230,11 +272,13 @@ export function buildGraph(
       // name, namespace) the same way a gateway handler is.
       if (kindNames.has(key) && looksLikeAccess(val)) {
         for (const [target, entry] of Object.entries(val as Record<string, Compiled>)) {
-          const ops = Array.isArray(entry.ops) ? (entry.ops as string[]) : [];
+          const opsField = entry[SHAPES.access.ops];
+          const ops = Array.isArray(opsField) ? (opsField as string[]) : [];
           // "/x" is absolute from the project root, "x" is relative to this
           // resource's own namespace, "/" is the root itself, absent means the
           // resource's own scope then its parents.
-          const ns = typeof entry.namespace === "string" ? (entry.namespace as string) : null;
+          const nsField = entry[SHAPES.access.namespace];
+          const ns = typeof nsField === "string" ? (nsField as string) : null;
           for (const op of ops) {
             pendingAccess.push({
               from: id,
@@ -275,7 +319,7 @@ export function buildGraph(
       // that answers, then what the name points at — so drawing it again here as a
       // reference would say the same thing twice, and in the wrong direction: the
       // gateway does not reach the zone, the zone answers for the gateway.
-      if (key === "host/zone") continue;
+      if (key === `${SHAPES.kinds[group]?.answersAt ?? ""}/zone`) continue;
 
       if (typeof val === "string" && val.includes("/")) {
         const cut = val.indexOf("/");
@@ -422,13 +466,17 @@ export function buildGraph(
   for (const n of nodes) {
     if (!n.host) continue;
     const label = n.host.name ? `${n.host.name}.` : "";
-    if (n.host.kind === "generated") {
+    // WHICH BRANCH this is does not need its name: a name in a zone the project owns
+    // carries a reference to that zone, and the other kind of name does not. Reading
+    // the branch's spelling meant this file knew the word "generated".
+    if (!n.host.zone) {
       // The project's own label is derived from its id, so it is known here. The
       // cloud's fqdn is not in the config and is not guessed.
       n.fqdn = projectLabel ? `${label}${projectLabel}.⟨cloud⟩` : `${label}⟨cloud zone⟩`;
       continue;
     }
-    const zoneID = n.host.zone?.replace(/^zone\//, "");
+    // A scalar reference compiles to "<kind>/<id>", whatever the kind is.
+    const zoneID = n.host.zone.slice(n.host.zone.indexOf("/") + 1);
     const zone = zoneID ? byId.get(zoneID) : undefined;
     n.fqdn = zone?.zoneFqdn ? `${label}${zone.zoneFqdn}` : `${label}⟨zone⟩`;
     if (zone) {

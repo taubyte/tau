@@ -223,6 +223,25 @@ func HandsToOf(n *Node) string {
 	return p
 }
 
+// AnswersAt declares the block where a kind says WHAT NAME IT ANSWERS ON — the
+// generated one, or a label in a zone the project owns. Same arrangement as HandsTo:
+// the prefix is declared, the shape under it is the vocabulary's convention
+// (`<prefix>/kind` is the switch, `<prefix>/name` the label, `<prefix>/zone` the zone it
+// is in), and no consumer holds the spelling.
+//
+// It is what lets a drawing put the internet in front of the right resources without a
+// list of which kinds have names.
+func AnswersAt(prefix string) NodeOption { return GroupAnnotate("answersAt", prefix) }
+
+// AnswersAtOf reports the naming block of a kind, or "".
+func AnswersAtOf(n *Node) string {
+	if n == nil {
+		return ""
+	}
+	p, _ := n.Meta["answersAt"].(string)
+	return p
+}
+
 // NamesResource declares that an attribute holds the NAME of another resource of the
 // given kind — an authorizer, a readiness function, a step's function — resolved with
 // the `<prefix>/namespace` sibling beside it when there is one.
@@ -239,4 +258,15 @@ func NamesResourceOf(a *Attribute) string {
 	}
 	k, _ := a.Meta["namesResource"].(string)
 	return k
+}
+
+// IsNamespaceField reports whether an attribute holds a NAMESPACE PATH — the "where does
+// it live" half of naming another resource. Declared by the validator the vocabulary
+// puts on it, so a consumer finds it without knowing the word.
+func IsNamespaceField(a *Attribute) bool {
+	if a == nil {
+		return false
+	}
+	b, _ := a.Meta["namespacePath"].(bool)
+	return b
 }

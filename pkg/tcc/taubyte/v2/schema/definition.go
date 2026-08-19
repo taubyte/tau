@@ -933,7 +933,7 @@ var V2Resources = []*Node{
 			),
 			Nested(transformersGroup()),
 			GroupDoc("A name, the policy at it, and what it serves."), Category("internet"), Icon("route"),
-			HandsTo("route/handler"),
+			HandsTo("route/handler"), AnswersAt("host"),
 			secIdentity, secTransformers,
 			Section("naming", "Naming", "The name served, and where its certificate comes from."),
 			Section("route", "Route", "The path served and how it is matched."),
@@ -1002,6 +1002,14 @@ var V2Resources = []*Node{
 				String("service", IsVariableName(), InSection("listener"),
 					Doc("Service", "The IANA service this speaks, e.g. \"postgres\". Publishes _<service>._<protocol> beside this name in DNS, and is how a client that cannot look up SRV knows which conventional port to dial. Defaults to the resource's name.")),
 
+				// WHAT A CLIENT LOOKS UP, stated rather than left for a reader to
+				// assemble out of `service` and `protocol`. It is the same reason
+				// `zone-label` is derived on the project: a name that several consumers
+				// need must have one definition, and a renderer composing its own is a
+				// second one that agrees only by coincidence.
+				String("srv", Derived(DeriveSRVName, "service", "protocol"), NoAccessors(), InSection("listener"),
+					Doc("SRV Name", "The DNS name a client looks up to find the port, e.g. \"_postgres._tcp\". Derived from the service and the protocol; never authored.")),
+
 				// Only `terminate` earns its keep: the proxy holds the certificate so a
 				// plaintext workload can answer on a public name, reusing exactly the
 				// gateway's cert machinery. There is no `passthrough` mode because there
@@ -1063,7 +1071,7 @@ var V2Resources = []*Node{
 			),
 			Nested(transformersGroup()),
 			GroupDoc("An allocated address that accepts a raw connection and streams it to a workload over p2p. For everything a gateway cannot parse."), Category("internet"), Icon("plug"),
-			HandsTo("forward"),
+			HandsTo("forward"), AnswersAt("host"),
 			secIdentity, secTransformers,
 			Section("listener", "Listener", "The protocol carried, the name it is reached by, and whether TLS stops here."),
 			Section("forward", "Forward", "The workload on the other end."),

@@ -83,6 +83,10 @@ func Generate(kind string, seed ...any) (string, error) {
 
 // Known derivation ids.
 const (
+	// DeriveSRVName is the DNS name a client looks up to find a service's port: the
+	// RFC 2782 form, `_service._protocol`. See srvName.
+	DeriveSRVName = "srv-name"
+
 	// DeriveDNSLabel turns an identifier into one DNS label: sha2-256, base32, 13
 	// characters. See dnsLabel for why base32 and why 13.
 	DeriveDNSLabel = "dns-label"
@@ -123,6 +127,8 @@ func Derive(kind string, from ...string) (string, error) {
 		return dnsLabel(from...)
 	case DeriveResourceID:
 		return derivedCID(from...)
+	case DeriveSRVName:
+		return srvName(from...)
 	case "":
 		return "", errors.New("not a derived field")
 	}
@@ -159,6 +165,21 @@ func dnsLabel(from ...string) (string, error) {
 	}
 	sum := sha256.Sum256([]byte(strings.Join(from, "\x00")))
 	return dnsLabelEncoding.EncodeToString(sum[:])[:dnsLabelLength], nil
+}
+
+// srvName is RFC 2782's `_service._protocol`, which is what a client actually looks up
+// when the port is not something it may assume.
+//
+// DERIVED rather than left to whoever is displaying it. A view was composing this out of
+// two fields, which made a fact about what a client must DO into a decoration invented
+// by a renderer: it appeared in one drawing and nowhere else, and nothing else that
+// needed the name — a CLI, a console, the runtime publishing the record — could have
+// agreed with it except by coincidence.
+func srvName(from ...string) (string, error) {
+	if len(from) < 2 || from[0] == "" || from[1] == "" {
+		return "", errors.New("an SRV name needs a service and a protocol")
+	}
+	return "_" + from[0] + "._" + from[1], nil
 }
 
 // derivedCID is GenCID without the randomness, and the difference is the whole point.

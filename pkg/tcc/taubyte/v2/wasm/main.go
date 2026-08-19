@@ -14,6 +14,7 @@ import (
 	"syscall/js"
 
 	"github.com/spf13/afero"
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/jsonschema"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -24,6 +25,9 @@ func main() {
 	api.Set("schema", js.FuncOf(schemaFn))
 	api.Set("verbs", js.FuncOf(verbsFn))
 	api.Set("kinds", js.FuncOf(kindsFn))
+	// Computing a derived value is the engine's, so a consumer asks rather than
+	// reimplementing the derivation it just read about.
+	api.Set("derive", js.FuncOf(deriveFn))
 	api.Set("omissions", js.FuncOf(omissionsFn))
 	// The SHAPES a consumer would otherwise have to know: which block a kind hands
 	// traffic on through, and which fields name another resource. Read off the schema so
@@ -202,6 +206,47 @@ func omissionsFn(js.Value, []js.Value) any {
 
 // kinds() -> [{group, singular, container, category, doc, icon, fields}] read off the schema.
 func shapesFn(js.Value, []js.Value) any {
+	// Per kind: where it hands traffic on, where it says what name it answers on, and
+	// which of its fields are DERIVED — computed from the document rather than authored,
+	// so a consumer can show them without knowing what any of them are.
+	kinds := map[string]any{}
+	for _, g := range schema.GenerationRoot() {
+		key, _ := g.Match.(string)
+		if key == "" || len(g.Children) == 0 {
+			continue
+		}
+		iter := g.Children[0]
+		entry := map[string]any{}
+		if p := engine.HandsToOf(iter); p != "" {
+			entry["handsTo"] = p
+		}
+		if p := engine.AnswersAtOf(iter); p != "" {
+			entry["answersAt"] = p
+		}
+		derived := []map[string]any{}
+		for _, a := range iter.Attributes {
+			kindOf, _ := a.Meta["derived"].(string)
+			if kindOf == "" {
+				continue
+			}
+			from, _ := a.Meta["derivedFrom"].([]string)
+			inputs := []any{}
+			for _, f := range from {
+				inputs = append(inputs, f)
+			}
+			label, _ := a.Meta["doc"].([2]string)
+			derived = append(derived, map[string]any{
+				"field": a.Name, "derivation": kindOf, "from": inputs, "label": label[0],
+			})
+		}
+		if len(derived) > 0 {
+			entry["derived"] = derived
+		}
+		if len(entry) > 0 {
+			kinds[key] = entry
+		}
+	}
+
 	names := []map[string]any{}
 	for _, f := range schema.NamedResourceFields() {
 		names = append(names, map[string]any{"field": f.Field, "namespace": f.Namespace, "kind": f.Kind})
@@ -210,7 +255,28 @@ func shapesFn(js.Value, []js.Value) any {
 	for _, p := range schema.HandsToPrefixes() {
 		handsTo = append(handsTo, p)
 	}
-	return toJS(map[string]any{"handsTo": handsTo, "names": names})
+	access := schema.AccessEntryShape()
+	layout := schema.LayoutOf()
+	return toJS(map[string]any{
+		"handsTo": handsTo, "names": names, "kinds": kinds,
+		"access": map[string]any{"ops": access.Ops, "namespace": access.Namespace},
+		"layout": map[string]any{"resource": layout.Resource, "scope": layout.Scope, "leaf": layout.Leaf},
+	})
+}
+
+func deriveFn(_ js.Value, args []js.Value) any {
+	if len(args) < 1 {
+		return errResult("derive: expected (derivation, ...inputs)")
+	}
+	inputs := make([]string, 0, len(args)-1)
+	for _, a := range args[1:] {
+		inputs = append(inputs, a.String())
+	}
+	v, err := engine.Derive(args[0].String(), inputs...)
+	if err != nil {
+		return ""
+	}
+	return v
 }
 
 func kindsFn(js.Value, []js.Value) any {

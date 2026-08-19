@@ -904,3 +904,40 @@ func TestWorkflowLowers(t *testing.T) {
 func TestEveryLoweringNamesARealKind(t *testing.T) {
 	assert.DeepEqual(t, interp.CheckLowerings(schema.CompileRoot()), []string(nil))
 }
+
+// THE STANDING RULE: no consumer hardcodes this vocabulary, so a graph, a CLI or a
+// console draws a version of it they have never seen. Icon() and Category() and Ops()
+// were the first of these; these are the rest, and this test is what says they are
+// actually declared rather than assumed somewhere else.
+func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
+	// Every block where a kind hands traffic on, found by asking the kinds.
+	handsTo := schema.HandsToPrefixes()
+	assert.DeepEqual(t, handsTo, []string{"forward", "route/handler", "serve"})
+
+	// Every field that names another resource, with the namespace beside it.
+	named := map[string]string{}
+	for _, f := range schema.NamedResourceFields() {
+		assert.Equal(t, f.Kind, "function", "%s names a kind that is not a function", f.Field)
+		named[f.Field] = f.Namespace
+	}
+	for field, ns := range map[string]string{
+		"authorizer/name":         "authorizer/namespace",
+		"readiness/function/name": "readiness/function/namespace",
+		"liveness/function/name":  "liveness/function/namespace",
+		"run":                     "namespace", // a workflow step
+		"name":                    "namespace", // a transformer entry
+	} {
+		got, found := named[field]
+		assert.Assert(t, found, "%s is not declared as naming a resource", field)
+		assert.Equal(t, got, ns, "%s", field)
+	}
+
+	// How an access entry is written, and where a document lives.
+	access := schema.AccessEntryShape()
+	assert.Equal(t, access.Ops, "ops")
+	assert.Equal(t, access.Namespace, "namespace")
+
+	layout := schema.LayoutOf()
+	assert.Equal(t, layout.Resource, "{kind}/{name}.yaml")
+	assert.Equal(t, layout.Scope, "namespace/{name}")
+}

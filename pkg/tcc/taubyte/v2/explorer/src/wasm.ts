@@ -30,6 +30,19 @@ export interface Shapes {
   handsTo: string[];
   /** Fields that hold the name of another resource. */
   names: { field: string; namespace: string; kind: string }[];
+  /** How an access entry is written. */
+  access: { ops: string; namespace: string };
+  /** Where a document lives, as templates. */
+  layout: { resource: string; scope: string; leaf: string };
+  /** Per kind: its inbound block, its naming block, and its derived fields. */
+  kinds: Record<
+    string,
+    {
+      handsTo?: string;
+      answersAt?: string;
+      derived?: { field: string; derivation: string; from: string[]; label: string }[];
+    }
+  >;
 }
 
 export interface Omission {
@@ -79,6 +92,8 @@ interface TccV2 {
   verbs(): KindVerbs[];
   kinds(): Kind[];
   shapes(): Shapes;
+  /** Compute a derived value. The derivation is the engine's, so nobody reimplements it. */
+  derive(derivation: string, ...inputs: string[]): string;
   omissions(): Omission[];
 }
 

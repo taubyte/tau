@@ -1,6 +1,6 @@
 import "./style.css";
 import { loadTcc, type CompileOk, type Kind, type KindVerbs, type Omission } from "./wasm";
-import { buildGraph, categoryOf, iconOf, setCategories, setShapes, type Graph } from "./graph";
+import { buildGraph, categoryOf, fileOf, iconOf, setCategories, setShapes, type Graph } from "./graph";
 import { esc, jsonRoot } from "./render";
 import { graphHost, renderGraph } from "./graph-mount";
 import { kindIconMarkup } from "./icons";
@@ -354,18 +354,6 @@ function graphPane(): HTMLElement {
   return wrap;
 }
 
-// A node's source file, derived from the same layout rule the tree draws: a resource
-// lives at <kind>/<name>.yaml, under one namespaces/<name>/ level per scope segment.
-// Derived rather than carried, so it cannot drift from the tree — and the caller
-// checks the result exists, which is what catches it if it ever does.
-function fileOf(n: { kind: string; name: string; scope: string; home?: string }): string {
-  // `home` when a frame has taken the scope: a box's name is a layout key, and the file
-  // is still where the resource was written.
-  const scope = n.home ?? n.scope;
-  const dirs = scope ? scope.split("/").map((s) => `namespaces/${s}`).join("/") + "/" : "";
-  return `${dirs}${n.kind}/${n.name}.yaml`;
-}
-
 // Both panes scroll and both are longer than their viewport, so a selection made in
 // one is often off-screen in the other — and a selection you cannot see reads as
 // nothing having happened. Each direction reveals the OTHER pane: the one you clicked
@@ -402,8 +390,13 @@ function detail(): HTMLElement {
                 .filter((a) => a.from === n.id && !a.ref)
                 .map((a) => graph!.byId.get(a.to)!)
                 .map((t) => `<code>${esc(t.kind)}/${esc(t.name)}</code>${t.scope ? ` <span class="c">in ${esc(t.scope)}</span>` : ""}`);
+              // whatever the kind derives — an SRV name, anything added later — shown
+              // by its own label rather than by a field this file knows about
+              const computed = (n.computed ?? [])
+                .map((c) => `${esc(c.label)} ${esc(c.value)}`)
+                .join(" · ");
               return `<b>${esc(n.fqdn!)}</b>${
-                n.dial ? ` <span class="c">${esc(n.dial)}</span>` : ""
+                computed ? ` <span class="c">${computed}</span>` : ""
               } — <code>${esc(n.kind)}/${esc(n.name)}</code>${
                 serves.length ? ` serves ${serves.join(", ")}` : " serves nothing yet"
               }.`;

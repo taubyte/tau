@@ -292,6 +292,13 @@ func IsURL() engine.Option {
 }
 
 func IsNamespacePath() engine.Option {
+	return func(a *engine.Attribute) {
+		engine.Annotate("namespacePath", true)(a)
+		namespacePathChecker()(a)
+	}
+}
+
+func namespacePathChecker() engine.Option {
 	return Validator(func(p string) error {
 		if p == "" || p == "/" {
 			return nil // omitted, or the project root itself
@@ -485,4 +492,71 @@ func collectNamedFields(iter *engine.Node, out *[]NamedField, seen map[string]bo
 			collectNamedFields(child.Children[0], out, seen)
 		}
 	}
+}
+
+// AccessShape is how an access entry is written: the field holding the ops, and the one
+// holding the target's namespace. Read off the schema rather than assumed, so a consumer
+// recognises an access block without knowing that the word is "ops".
+type AccessShape struct {
+	Ops       string
+	Namespace string
+}
+
+// AccessEntryShape reports it, by looking at the access group the vocabulary attaches to
+// every reachable kind: the attribute carrying that kind's verb enum is the ops field.
+func AccessEntryShape() AccessShape {
+	out := AccessShape{}
+	for _, g := range V2Resources {
+		if len(g.Children) == 0 {
+			continue
+		}
+		for _, child := range g.Children[0].Children {
+			key, _ := child.Match.(string)
+			if key == "" || len(child.Children) == 0 || len(OpsOf(key)) == 0 {
+				continue // not an access group
+			}
+			for _, a := range child.Children[0].Attributes {
+				if _, isEnum := a.Meta["enum"]; isEnum && out.Ops == "" {
+					out.Ops = a.Name
+				}
+				if engine.IsNamespaceField(a) && out.Namespace == "" {
+					out.Namespace = a.Name
+				}
+			}
+			if out.Ops != "" {
+				return out
+			}
+		}
+	}
+	return out
+}
+
+// Layout is where a resource's document lives, as templates a consumer fills in. The
+// engine walks these directories; a consumer that hardcodes the same rule is a second
+// copy of it.
+type Layout struct {
+	Resource string // "{kind}/{name}.yaml"
+	Scope    string // "{container}/{name}"
+	Leaf     string // the document a scope keeps its own fields in
+}
+
+func LayoutOf() Layout {
+	return Layout{
+		Resource: "{kind}/{name}.yaml",
+		Scope:    scopeContainerKey() + "/{name}",
+		Leaf:     engine.LeafOf(CompileRoot()),
+	}
+}
+
+func scopeContainerKey() string {
+	for _, g := range CompileRoot().Children {
+		if len(g.Children) == 0 {
+			continue
+		}
+		if iter := g.Children[0]; iter.Group && len(iter.Children) > 0 {
+			key, _ := g.Match.(string)
+			return key
+		}
+	}
+	return ""
 }

@@ -19,6 +19,8 @@ const GenCID = engine.GenCID
 
 const DeriveDNSLabel = engine.DeriveDNSLabel
 
+const DeriveSRVName = engine.DeriveSRVName
+
 var (
 	Accessor        = engine.Accessor
 	Bool            = engine.Bool
@@ -47,6 +49,7 @@ var (
 	Doc              = engine.Doc
 	Duration         = engine.Duration
 	Either           = engine.Either
+	AnswersAt        = engine.AnswersAt
 	HandsTo          = engine.HandsTo
 	NamesResource    = engine.NamesResource
 	Float            = engine.Float
