@@ -24,6 +24,14 @@ export interface Kind {
   icon: string;
   fields: string[];
 }
+/** What a consumer would otherwise have to know about this vocabulary. From tcc. */
+export interface Shapes {
+  /** Blocks where a kind names what it hands traffic on to. */
+  handsTo: string[];
+  /** Fields that hold the name of another resource. */
+  names: { field: string; namespace: string; kind: string }[];
+}
+
 export interface Omission {
   name: string;
   state: "never" | "blocked" | "open";
@@ -70,6 +78,7 @@ interface TccV2 {
   schema(): Record<string, unknown>;
   verbs(): KindVerbs[];
   kinds(): Kind[];
+  shapes(): Shapes;
   omissions(): Omission[];
 }
 

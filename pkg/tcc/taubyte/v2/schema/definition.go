@@ -270,7 +270,7 @@ func probeAttributes(name, section, doc string) []*Attribute {
 			Doc(title(name)+" Port", "Which of this workload's ports the poll is made on, by name.")),
 		String(name+"/path", Path(name, "http", "path"), InSection(section), ShowWhen(name+"/kind", "http"),
 			Doc(title(name)+" Path", "HTTP path polled.")),
-		String(name+"/function/name", Path(name, "function", "name"), IsVariableName(), InSection(section), ShowWhen(name+"/kind", "function"),
+		String(name+"/function/name", Path(name, "function", "name"), IsVariableName(), NamesResource("function"), InSection(section), ShowWhen(name+"/kind", "function"),
 			Doc(title(name)+" Function", "A function that answers for this workload, when \"working\" is not a status code — a queue drained, a migration finished, a lease still held.")),
 		String(name+"/function/namespace", Path(name, "function", "namespace"), IsNamespacePath(), InSection(section), ShowWhen(name+"/kind", "function"),
 			Doc(title(name)+" Function Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
@@ -933,6 +933,7 @@ var V2Resources = []*Node{
 			),
 			Nested(transformersGroup()),
 			GroupDoc("A name, the policy at it, and what it serves."), Category("internet"), Icon("route"),
+			HandsTo("route/handler"),
 			secIdentity, secTransformers,
 			Section("naming", "Naming", "The name served, and where its certificate comes from."),
 			Section("route", "Route", "The path served and how it is matched."),
@@ -1062,6 +1063,7 @@ var V2Resources = []*Node{
 			),
 			Nested(transformersGroup()),
 			GroupDoc("An allocated address that accepts a raw connection and streams it to a workload over p2p. For everything a gateway cannot parse."), Category("internet"), Icon("plug"),
+			HandsTo("forward"),
 			secIdentity, secTransformers,
 			Section("listener", "Listener", "The protocol carried, the name it is reached by, and whether TLS stops here."),
 			Section("forward", "Forward", "The workload on the other end."),
@@ -1169,6 +1171,7 @@ var V2Resources = []*Node{
 					Doc("Port", "Which of the workload's own named ports the stream is delivered to. Containers only; a function is dispatched, not connected.")),
 			),
 			GroupDoc("A named byte stream between two workloads inside the project, over libp2p. The way in that is not an ingress."), Icon("stream"), Category("compute"),
+			HandsTo("serve"),
 			secIdentity, secAccess,
 			Section("stream", "Stream", "The name it answers to, and what answers it."),
 			Ops(WriteOp("dial")), // dial is write: what travels is opaque
@@ -1612,7 +1615,7 @@ func stepsGroup() *Node {
 			Doc("Step", "What this step is called. Another step's on-error names it, and the run's state is keyed by it.")),
 		String("namespace", IsNamespacePath(), InSection("steps"),
 			Doc("Namespace", "Path to the namespace holding the function, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
-		String("run", Required(), IsVariableName(), InSection("steps"),
+		String("run", Required(), IsVariableName(), NamesResource("function"), InSection("steps"),
 			Doc("Function", "The function this step invokes.")),
 
 		// ATTEMPTS, not retries. "3 retries" is three or four runs depending on who is
@@ -1634,7 +1637,7 @@ func transformersGroup() *Node {
 	return DefineList("transformers", []*Attribute{
 		String("namespace", IsNamespacePath(), InSection("transformers"),
 			Doc("Namespace", "Path to the namespace holding the function, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
-		String("name", Required(), IsVariableName(), InSection("transformers"),
+		String("name", Required(), IsVariableName(), NamesResource("function"), InSection("transformers"),
 			Doc("Name", "The function's name within that namespace.")),
 
 		// The one decision that is genuinely per-use. It is also the one with a

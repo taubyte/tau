@@ -47,6 +47,8 @@ var (
 	Doc              = engine.Doc
 	Duration         = engine.Duration
 	Either           = engine.Either
+	HandsTo          = engine.HandsTo
+	NamesResource    = engine.NamesResource
 	Float            = engine.Float
 	EmitValidation   = engine.EmitValidation
 	EnumBool         = engine.EnumBool

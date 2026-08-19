@@ -25,6 +25,10 @@ func main() {
 	api.Set("verbs", js.FuncOf(verbsFn))
 	api.Set("kinds", js.FuncOf(kindsFn))
 	api.Set("omissions", js.FuncOf(omissionsFn))
+	// The SHAPES a consumer would otherwise have to know: which block a kind hands
+	// traffic on through, and which fields name another resource. Read off the schema so
+	// a graph, a CLI or a console draws a vocabulary it has never seen.
+	api.Set("shapes", js.FuncOf(shapesFn))
 	js.Global().Set("tccV2", api)
 	select {}
 }
@@ -197,6 +201,18 @@ func omissionsFn(js.Value, []js.Value) any {
 }
 
 // kinds() -> [{group, singular, container, category, doc, icon, fields}] read off the schema.
+func shapesFn(js.Value, []js.Value) any {
+	names := []map[string]any{}
+	for _, f := range schema.NamedResourceFields() {
+		names = append(names, map[string]any{"field": f.Field, "namespace": f.Namespace, "kind": f.Kind})
+	}
+	handsTo := []any{}
+	for _, p := range schema.HandsToPrefixes() {
+		handsTo = append(handsTo, p)
+	}
+	return toJS(map[string]any{"handsTo": handsTo, "names": names})
+}
+
 func kindsFn(js.Value, []js.Value) any {
 	out := []map[string]any{}
 	for _, g := range schema.GenerationRoot() {

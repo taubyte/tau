@@ -1,6 +1,6 @@
 import "./style.css";
 import { loadTcc, type CompileOk, type Kind, type KindVerbs, type Omission } from "./wasm";
-import { buildGraph, categoryOf, iconOf, setCategories, type Graph } from "./graph";
+import { buildGraph, categoryOf, iconOf, setCategories, setShapes, type Graph } from "./graph";
 import { esc, jsonRoot } from "./render";
 import { graphHost, renderGraph } from "./graph-mount";
 import { kindIconMarkup } from "./icons";
@@ -51,6 +51,9 @@ async function main() {
   kinds = tcc.kinds();
   omissions = tcc.omissions();
   setCategories(kinds);
+  // What this vocabulary's shapes are — which block hands traffic on, which fields name
+  // another resource — so the graph draws a vocabulary it has never seen.
+  setShapes(window.tccV2!.shapes());
   render();
 }
 

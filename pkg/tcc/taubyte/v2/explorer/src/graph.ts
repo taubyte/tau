@@ -5,7 +5,7 @@
 // That is the whole claim of the model — the diagram is a read of the config, not a
 // drawing kept beside it — so this file is deliberately dumb.
 
-import type { Compiled, Effect, KindVerbs } from "./wasm";
+import type { Compiled, Effect, KindVerbs, Shapes } from "./wasm";
 
 export interface Node {
   id: string;
@@ -83,7 +83,8 @@ export interface Graph {
 let CATEGORY: Record<string, string> = {};
 let ICON: Record<string, string> = {};
 
-export function setCategories(kinds: { group: string; category: string; icon?: string }[]) {
+export function setCategories(kinds: { group: string; category: string; icon?: string; container?: boolean }[]) {
+  SCOPE_CONTAINER = kinds.find((k) => k.container)?.group ?? "";
   CATEGORY = Object.fromEntries(kinds.map((k) => [k.group, k.category || "other"]));
   // The icon is declared on the kind too — Icon(...) in definition.go — so it comes
   // from the same place and drifts for the same reason if it is copied anywhere else.
@@ -105,7 +106,12 @@ export function iconOf(kind: string): string {
   return ICON[kind] ?? "";
 }
 
-const isScopeContainer = (k: string) => k === "namespace";
+// WHICH KIND IS THE SCOPE CONTAINER is a fact the schema states — kinds() has carried
+// `container` from the start — and this file was typing the name instead. A vocabulary
+// that called its scopes something else would have compiled here and drawn a flat
+// project.
+let SCOPE_CONTAINER = "";
+const isScopeContainer = (k: string) => !!SCOPE_CONTAINER && k === SCOPE_CONTAINER;
 
 /** One resource a lowered resource becomes, as computed by tcc — never here. */
 export interface Lowered {
@@ -127,6 +133,13 @@ export interface Lowered {
     from?: { kind: string; name: string };
   }[];
   source?: { kind: string; name: string; scope: string; path: string; part?: Record<string, unknown> };
+}
+
+/** What this vocabulary's shapes are, from tcc. Set once, with the kinds. */
+let SHAPES: Shapes = { handsTo: [], names: [] };
+
+export function setShapes(s: Shapes): void {
+  SHAPES = s;
 }
 
 export function buildGraph(
@@ -151,7 +164,7 @@ export function buildGraph(
   const root = (compiled.object as Compiled) ?? compiled;
   const pendingHandlers: { from: string; kind: string; name: string; scope: string }[] = [];
   // an access entry names its target; it is matched once every node is known
-  const pendingPolicy: { from: string; name: string; scope: string | null; verb: string }[] = [];
+  const pendingPolicy: { from: string; name: string; scope: string | null; verb: string; kind: string }[] = [];
   const pendingAccess: {
     from: string; kind: string; name: string; scope: string | null; verb: string; effect: Effect;
     inbound?: boolean;
@@ -241,18 +254,19 @@ export function buildGraph(
         continue;
       }
 
-      // the transformer chain: an ORDERED list of objects, each naming a function by
-      // (namespace, name) — the same pair every other cross-namespace reference uses,
-      // so it resolves through the same pass.
-      if (key === "transformers" && Array.isArray(val)) {
+      // A LIST OF OBJECTS whose elements name resources — a transformer chain — needs
+      // no branch of its own: each element's fields are declared in the schema the same
+      // way a resource's are, so the same pass that draws an authorizer draws these.
+      if (Array.isArray(val)) {
         val.forEach((entry, i) => {
-          const e = entry as Compiled;
-          if (typeof e?.name !== "string") return;
-          const ns = typeof e.namespace === "string" ? (e.namespace as string) : null;
-          pendingPolicy.push({
-            from: id, name: e.name, scope: ns,
-            verb: `transforms #${i + 1}${e.fail === "open" ? ", fails open" : ""}`,
-          });
+          const el = entry as Compiled;
+          if (!el || typeof el !== "object") return;
+          for (const f of SHAPES.names) {
+            const n = el[f.field];
+            if (typeof n !== "string" || n === "") continue;
+            const ns = f.namespace && typeof el[f.namespace] === "string" ? (el[f.namespace] as string) : null;
+            pendingPolicy.push({ from: id, name: n, scope: ns, kind: f.kind, verb: `${key} #${i + 1}` });
+          }
         });
         continue;
       }
@@ -284,23 +298,29 @@ export function buildGraph(
     // Two places a resource names a function that decides something ABOUT it, rather
     // than something it reaches: who may use it, and whether it is ready. Both are
     // the resource's own declaration, so both arrows start at it.
-    const named = (nameKey: string, nsKey: string, verb: string) => {
-      const n = res[nameKey];
-      if (typeof n !== "string") return;
-      const ns = typeof res[nsKey] === "string" ? (res[nsKey] as string) : null;
-      pendingPolicy.push({ from: id, name: n, scope: ns, verb });
-    };
-    named("authorizer/name", "authorizer/namespace", "authorized by");
-    named("readiness/function/name", "readiness/function/namespace", "readiness decided by");
-    named("liveness/function/name", "liveness/function/namespace", "liveness decided by");
+    // A field that holds the NAME of another resource — an authorizer, a readiness
+    // function, a step's function — is declared as one in the schema (NamesResource),
+    // so this draws them all without knowing which fields they are. It used to be three
+    // hardcoded field names, which meant a fourth drew nothing.
+    for (const f of SHAPES.names) {
+      const n = res[f.field];
+      if (typeof n !== "string" || n === "") continue;
+      const ns = f.namespace && typeof res[f.namespace] === "string" ? (res[f.namespace] as string) : null;
+      // The verb is the field's own name, which is what the author wrote and what the
+      // reader is looking for — `authorizer/name` reads as "authorizer".
+      pendingPolicy.push({
+        from: id, name: n, scope: ns, kind: f.kind,
+        verb: f.field.replace(/\/?name$/, "").replace(/\//g, " ") || f.kind,
+      });
+    }
 
     // An ingress names its target by (kind, namespace, name) rather than resolving it
     // to an id — a name in another namespace has no spelling the ref resolver accepts.
-    // Resolve it here, against the nodes actually compiled. Three prefixes because
-    // there are three ways in: a gateway route parses HTTP and carries the handler
-    // under `route/`, an L4 proxy parses nothing and forwards, and a stream is the
-    // one that never leaves the project.
-    for (const p of ["route/handler", "forward", "serve"]) {
+    // Resolve it here, against the nodes actually compiled. WHICH blocks those are is
+    // the schema's answer, not this file's: a gateway route carries its handler under
+    // `route/`, a proxy forwards, a stream is served — three spellings on purpose, and
+    // a list of them here is a copy that goes stale the next time a kind gains one.
+    for (const p of SHAPES.handsTo) {
       const hk = res[`${p}/kind`];
       const hn = res[`${p}/name`];
       if (typeof hk !== "string" || typeof hn !== "string") continue;
@@ -370,10 +390,10 @@ export function buildGraph(
   for (const pol of pendingPolicy) {
     const own = nodes.find((n) => n.id === pol.from)?.scope ?? "";
     for (const scope of scopeOf(own, pol.scope)) {
-      const target = nodes.find((n) => n.kind === "function" && n.name === pol.name && n.scope === scope);
+      const target = nodes.find((n) => n.kind === pol.kind && n.name === pol.name && n.scope === scope);
       if (target) {
         arrows.push({
-          from: pol.from, to: target.id, kind: "function",
+          from: pol.from, to: target.id, kind: pol.kind,
           verb: pol.verb, effect: "read", policy: true,
         });
         break;

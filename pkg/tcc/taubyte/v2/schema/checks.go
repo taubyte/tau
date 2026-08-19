@@ -214,9 +214,10 @@ func (r compiled) block(key string) map[string]any {
 func checkReachable(all []compiled, byKind map[string][]compiled) []Finding {
 	fronted := map[string]bool{}
 	for _, res := range all {
-		// The ways something is reached: an HTTP route, an L4 proxy, and a stream —
-		// which is the one that does not come from outside.
-		for _, prefix := range []string{"route/handler", "forward", "serve"} {
+		// The ways something is reached, read off the kinds that declare one rather
+		// than listed here — a list is a copy, and a copy is a thing that goes stale
+		// the next time a kind gains an inbound block.
+		for _, prefix := range HandsToPrefixes() {
 			kind, name := res.str(prefix+"/kind"), res.str(prefix+"/name")
 			if kind != "" && name != "" {
 				fronted[kind+"/"+name] = true
@@ -315,7 +316,7 @@ func checkPortsAreFed(all []compiled) []Finding {
 			}
 		}
 		for _, other := range all {
-			for _, prefix := range []string{"route/handler", "forward", "serve"} {
+			for _, prefix := range HandsToPrefixes() {
 				if other.str(prefix+"/name") == res.name {
 					if p := other.str(prefix + "/port"); p != "" {
 						used[p] = true
@@ -811,7 +812,7 @@ func volumeKey(all []compiled, name, ns, own string) string {
 func checkHandlerPorts(all []compiled) []Finding {
 	var out []Finding
 	for _, res := range all {
-		for _, prefix := range []string{"route/handler", "forward", "serve"} {
+		for _, prefix := range HandsToPrefixes() {
 			port := res.str(prefix + "/port")
 			kind := res.str(prefix + "/kind")
 			if port == "" || kind == "" || kind == "application" {

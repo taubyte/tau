@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
@@ -334,7 +335,7 @@ func IsNamespacePath() engine.Option {
 // A resource with no authorizer is decided by its declared access alone.
 func authorizerAttributes() []*Attribute {
 	return []*Attribute{
-		String("authorizer/name", Path("authorizer", "name"), IsVariableName(), InSection("authorizer"),
+		String("authorizer/name", Path("authorizer", "name"), IsVariableName(), NamesResource("function"), InSection("authorizer"),
 			Doc("Authorizer", "A function that decides what a caller may do to this resource, and returns the ops it gets.")),
 		String("authorizer/namespace", Path("authorizer", "namespace"), IsNamespacePath(), InSection("authorizer"),
 			Doc("Authorizer Namespace", "Where that function lives. Omitted means this resource's own scope, then its parents.")),
@@ -406,5 +407,82 @@ func mountAttributes(kind string) []*Attribute {
 	return []*Attribute{
 		String("path", Required(), InSection("access"),
 			Doc("Mount Path", "Absolute path inside the workload where this filesystem appears, e.g. \"/var/lib/postgresql/data\".")),
+	}
+}
+
+// HandsToPrefixes is every block in this vocabulary where a resource names what it hands
+// traffic on to, read off the kinds themselves.
+//
+// It replaces a literal list of three prefixes that both the audit and the explorer
+// carried. That list was a bug waiting: `stream` was added with a `serve` block and drew
+// no arrow and failed no check until it was noticed by eye, because two separate copies
+// of "the ways in" had not been edited.
+func HandsToPrefixes() []string {
+	seen := map[string]bool{}
+	out := []string{}
+	for _, g := range V2Resources {
+		if len(g.Children) == 0 {
+			continue
+		}
+		if p := engine.HandsToOf(g.Children[0]); p != "" && !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// NamedResourceFields is every attribute that holds the NAME of another resource, with
+// the kind it names and the namespace field beside it. Read off the schema, so a policy
+// field added tomorrow is drawn and checked without editing a consumer.
+func NamedResourceFields() []NamedField {
+	out := []NamedField{}
+	seen := map[string]bool{}
+	for _, g := range V2Resources {
+		if len(g.Children) == 0 {
+			continue
+		}
+		collectNamedFields(g.Children[0], &out, seen)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Field < out[j].Field })
+	return out
+}
+
+// NamedField is one attribute that names another resource.
+type NamedField struct {
+	Field     string // the attribute holding the name
+	Namespace string // the attribute holding its namespace, when there is one
+	Kind      string // what kind it names
+}
+
+func collectNamedFields(iter *engine.Node, out *[]NamedField, seen map[string]bool) {
+	for _, a := range iter.Attributes {
+		kind := engine.NamesResourceOf(a)
+		if kind == "" || seen[a.Name] {
+			continue
+		}
+		seen[a.Name] = true
+		f := NamedField{Field: a.Name, Kind: kind}
+		// The namespace beside it, by the vocabulary's own convention: the same prefix
+		// (`authorizer/name` -> `authorizer/namespace`), or the block's own `namespace`
+		// where the name field has no prefix of its own (a workflow step's `run` sits
+		// beside `namespace`).
+		for _, cand := range []string{strings.TrimSuffix(a.Name, "name") + "namespace", "namespace"} {
+			if f.Namespace != "" {
+				break
+			}
+			for _, b := range iter.Attributes {
+				if b.Name == cand && b.Name != a.Name {
+					f.Namespace = cand
+				}
+			}
+		}
+		*out = append(*out, f)
+	}
+	for _, child := range iter.Children {
+		if len(child.Children) > 0 {
+			collectNamedFields(child.Children[0], out, seen)
+		}
 	}
 }
