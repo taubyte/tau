@@ -89,6 +89,9 @@ export function categoryOf(kind: string): string {
 }
 
 export function iconOf(kind: string): string {
+  // `step` is a PART of a kind rather than a kind, so the schema has no icon for it and
+  // the lookup fell through to the fallback dot — which is what every step was drawn as.
+  if (kind === "step") return "step";
   return ICON[kind] ?? "";
 }
 
@@ -414,6 +417,12 @@ export function buildGraph(
     const src = nodes.find((n) => `${n.kind}/${n.name}` === of);
     if (!src) continue;
 
+    // Where the resource actually LIVES, kept before the frame takes its place. The
+    // parts inside a box still reach resources in the namespace the box is in, and
+    // looking for them in the frame finds nothing — silently, which is how every
+    // step-to-function arrow went missing and left the workflow hanging in the air.
+    const home = src.scope;
+
     // `@` cannot begin a resource name, so a frame can never collide with a namespace.
     const frame = `${src.scope ? `${src.scope}/` : ""}@${src.name}`;
     frames.set(frame, `${src.kind} · ${src.name}`);
@@ -442,7 +451,7 @@ export function buildGraph(
         for (const l of d.links ?? []) {
           const to =
             byId.get(`derived:${l.kind}/${l.name}`) ??
-            nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === d.scope);
+            nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === (l.scope || home));
           if (!to) continue;
           // A queue does not hand work to another queue: the function that consumed it
           // is what sends on, and tcc says so on the link.
@@ -487,7 +496,7 @@ export function buildGraph(
         const sibling = [...sourcesOf.get(of)!].find((o) => o.kind === l.kind && o.name === l.name);
         const to = sibling?.source?.part?.name
           ? partByName.get(sibling.source.part.name as string)
-          : nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === (l.scope || src.scope));
+          : nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === (l.scope || home));
         if (!to || to.id === from.id) continue;
         // As written, an edge that tcc says starts at the step's own function still
         // starts at the STEP here: the function is what the step runs, and drawing the

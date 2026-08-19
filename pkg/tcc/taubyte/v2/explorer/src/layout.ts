@@ -93,6 +93,7 @@ const cluster = (scope: string) => `cluster_${scope.replace(/[^A-Za-z0-9]/g, "_"
 // Namespaces nest, so the subgraphs do. The label is declared so dot reserves room at
 // the top of the box for it; the text itself is drawn by render.ts, into that space.
 function dotFor(nodes: Node[], arrows: Arrow[], ingress: Ingress[], frames: Map<string, string>): string {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
   const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();
   const childrenOf = (scope: string) =>
     scopes.filter((s) => s.startsWith(scope + "/") && !s.slice(scope.length + 1).includes("/"));
@@ -143,7 +144,19 @@ function dotFor(nodes: Node[], arrows: Arrow[], ingress: Ingress[], frames: Map<
     ...scopes.filter((s) => !s.includes("/")).map((s) => emit(s, 1)),
     ...[...new Set(ingress.map((i) => i.zone))].map((z) => `  ${q(INTERNET)} -> ${q(z)};`),
     ...ingress.map((i) => `  ${q(i.zone)} -> ${q(i.to)};`),
-    ...arrows.map((a) => `  ${q(a.from)} -> ${q(a.to)};`),
+    // An edge that ends at a frame's ANCHOR ends at the frame: the anchor is drawn as
+    // nothing, so without this the arrow stops in the middle of the box pointing at
+    // no visible thing. `compound=true` plus lhead/ltail is dot's way of saying "clip
+    // this at the cluster boundary", which is what the reader is being told anyway —
+    // the arrow goes INTO the workflow, not to some point inside it.
+    ...arrows.map((a) => {
+      const ends: string[] = [];
+      const from = byId.get(a.from);
+      const to = byId.get(a.to);
+      if (to?.anchor && to.frame) ends.push(`lhead=${cluster(to.frame)}`);
+      if (from?.anchor && from.frame) ends.push(`ltail=${cluster(from.frame)}`);
+      return `  ${q(a.from)} -> ${q(a.to)}${ends.length ? ` [${ends.join(", ")}]` : ""};`;
+    }),
     "}",
   ].join("\n");
 }

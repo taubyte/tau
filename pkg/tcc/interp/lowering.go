@@ -411,7 +411,15 @@ func links(ls []link, res, each, next map[string]any) []Resolved {
 		if name == "" || strings.ContainsAny(name, "{}") {
 			continue
 		}
-		r := Resolved{Kind: l.kind, Name: name, Verb: l.verb, Scope: expand(l.scope, res, each, next)}
+		// An unfillable SCOPE is not a scope called "{each.namespace}" — it is the
+		// absent one, which means "wherever the lowered resource lives". Leaving the
+		// template in was silent and total: every consumer looked for a namespace by
+		// that literal name, found nothing, and drew no edge at all.
+		scope := expand(l.scope, res, each, next)
+		if strings.ContainsAny(scope, "{}") {
+			scope = ""
+		}
+		r := Resolved{Kind: l.kind, Name: name, Verb: l.verb, Scope: scope}
 		if l.fromKind != "" {
 			from := expand(l.fromName, res, each, next)
 			if from == "" || strings.ContainsAny(from, "{}") {
