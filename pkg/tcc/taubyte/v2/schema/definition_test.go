@@ -72,6 +72,32 @@ func namedResource(t *testing.T, group map[string]any, name string) map[string]a
 	return nil
 }
 
+// compileDocs compiles a project made of the given documents, and fails the test if it
+// does not compile. compileDocsErr returns the error instead, for the cases that must not.
+func compileDocs(t *testing.T, docs map[string]string) map[string]any {
+	t.Helper()
+	flat, err := compileDocsErr(t, docs)
+	assert.NilError(t, err)
+	return flat
+}
+
+func compileDocsErr(t *testing.T, docs map[string]string) (map[string]any, error) {
+	t.Helper()
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	for path, body := range docs {
+		assert.NilError(t, afero.WriteFile(fs, path, []byte(body), 0o644))
+	}
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	return obj.Flat(), nil
+}
+
 func compileBasic(t *testing.T) map[string]any {
 	t.Helper()
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
@@ -836,4 +862,34 @@ func TestDefaultsThatWereUnreachable(t *testing.T) {
 	p := only(t, resources(t, obj.Flat(), "proxy"))
 	assert.Equal(t, p["protocol"], "tcp")
 	assert.Equal(t, p["certificate/source"], "generated")
+}
+
+// A database may name a server the project runs ITSELF — an application, its volume and
+// the proxy that gives it an address — which had no spelling: that workload's only name
+// ends in the cloud's fqdn, and writing it is the portability bug §10a exists to stop.
+func TestDatabaseNamesAProxyOrAHost(t *testing.T) {
+	docs := func(host string) map[string]string {
+		return map[string]string{
+			"/application/pg.yaml": "id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nimage: postgres:16\nexecution:\n    memory: 1GB\nports:\n    pg:\n        number: 5432\n",
+			"/proxy/pg.yaml":       "id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nprotocol: tcp\nhost:\n    generated:\n        name: db\nforward:\n    application:\n        name: pg\n        port: pg\n",
+			"/secret/pgcreds.yaml": "id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Xy\n",
+			"/database/orders.yaml": "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nengine:\n    postgres:\n        host: " + host +
+				"\n        credentials: secret/pgcreds\n",
+		}
+	}
+
+	// the reference form resolves to the proxy's id, keeping its prefix
+	flat := compileDocs(t, docs("proxy/pg"))
+	db := only(t, resources(t, flat, "database"))
+	host, _ := db["engine/host"].(string)
+	assert.Assert(t, strings.HasPrefix(host, "proxy/Qm"), "expected a resolved proxy ref, got %q", host)
+
+	// and a literal host still passes through untouched
+	flat = compileDocs(t, docs("db.example.com:5432"))
+	db = only(t, resources(t, flat, "database"))
+	assert.Equal(t, db["engine/host"], "db.example.com:5432")
+
+	// what is not a host, and not a proxy, is neither
+	_, err := compileDocsErr(t, docs("postgres://db.example.com/orders"))
+	assert.ErrorContains(t, err, "is a URL")
 }

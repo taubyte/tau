@@ -619,8 +619,37 @@ var V2Resources = []*Node{
 				// An external engine carries its OWN connection. There is no reference
 				// to a `connector` here, and that absence is the point — see the note
 				// above this kind.
-				String("engine/host", Path("engine", Either(externalDatabaseEngines...), "host"), RequiredWhen("engine/kind", externalDatabaseEngines...), InSection("engine"),
-					Doc("Host", "Where the external database is reached, as host or host:port.")),
+				// TWO FORMS IN ONE FIELD: a literal `host[:port]` for a server outside
+				// the cloud, or `proxy/<name>` for one this project runs itself — an
+				// application, its volume, and the L4 proxy that gives it an address.
+				//
+				// That second case had no spelling at all. The workload's only name is
+				// `<name>.<project label>.<cloud fqdn>`, and the last label is the
+				// cloud's, so writing it here is the portability bug §10a exists to
+				// prevent: the same config would name a server that does not exist in
+				// the next cloud.
+				//
+				// A REFERENCE rather than a new engine branch or a workload+port block.
+				// The engine kind is a wire protocol and a driver, and a Postgres you run
+				// speaks the same protocol as one you rent; only where the address comes
+				// from differs. Naming the workload directly would be the second door the
+				// `application` kind refuses to have, and it would restate the proxy's
+				// own `forward` block inside another kind.
+				//
+				// It costs nothing in the engine: a prefixed Ref resolves only values
+				// under its prefix and passes anything else through untouched
+				// (interp/refs.go), and a hostname cannot contain a slash, so the two
+				// forms cannot collide. Same construct as a workload's `source`, which is
+				// "." or "module/<name>".
+				//
+				// Two limits, both real. The proxy has to be in this database's scope or
+				// an ancestor, because that is as far as a ref resolves — a sibling
+				// namespace needs the namespace+name shape. And a client that dials the
+				// proxy directly does not pass the database's authorizer: `database` owns
+				// the policy, the proxy is only the address, and they are two doors.
+				String("engine/host", Path("engine", Either(externalDatabaseEngines...), "host"), Ref("proxy", Prefix("proxy/")), IsDatabaseHost(),
+					RequiredWhen("engine/kind", externalDatabaseEngines...), InSection("engine"),
+					Doc("Host", "Where the server is reached: \"host\" or \"host:port\" for one outside the cloud, or \"proxy/<name>\" for one this project runs itself.")),
 				String("engine/database", Path("engine", Either(externalDatabaseEngines...), "database"), InSection("engine"),
 					Doc("Database", "The database name within that server. Defaults to this resource's name.")),
 				String("engine/credentials", Path("engine", Either(externalDatabaseEngines...), "credentials"), RequiredWhen("engine/kind", externalDatabaseEngines...), Ref("secret", Prefix("secret/")), InSection("engine"),
@@ -1032,6 +1061,17 @@ var V2Resources = []*Node{
 			Resource("messaging", "Messaging", "Messaging", "messaging"),
 		)),
 
+	// NO `auth` FIELD. It was `none | oauth`, and `oauth` promised to "validate tokens
+	// minted by a NAMED authorization server" with nowhere to name one — no issuer, no
+	// audience, no keys. A security-shaped claim nothing could honour, which is the
+	// inert-field defect this vocabulary deleted `notification.email` for, and worse:
+	// an author who read it would believe the server was protected.
+	//
+	// Deleted rather than completed, because the prerequisite is itself blocked — an
+	// authenticated MCP has to be routed on the `Mcp-Method` / `Mcp-Name` headers and
+	// this vocabulary cannot match on a header yet (omissions.go). The shape it comes
+	// back as is recorded there, so the return is a list entry rather than a redesign.
+	//
 	// Thin on purpose: the tools are already functions. Stateless Streamable HTTP,
 	// POST only, no sessions. It compiles to route-table rows that additionally
 	// predicate on the Mcp-Method / Mcp-Name headers the 2026-07-28 spec mirrors out
@@ -1041,7 +1081,6 @@ var V2Resources = []*Node{
 	DefineGroup("mcp",
 		resource(
 			commonAttributes(
-				String("auth", InSet("none", "oauth"), Default("none"), InSection("identity"), Doc("Auth", "none, or oauth to validate tokens minted by a named authorization server. tau is a resource server only; it never issues.")),
 				String("tools/cache-scope", Path("tools", "cache-scope"), InSet("none", "public", "principal"), Default("none"), InSection("tools"), Doc("Cache Scope", "How widely tools/list may be cached. public is cacheable across the whole swarm.")),
 				Duration("tools/cache-ttl", Path("tools", "cache-ttl"), InSection("tools"), Doc("Cache TTL", "How long a cached tools/list stays valid.")),
 			),

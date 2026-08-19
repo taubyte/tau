@@ -295,6 +295,25 @@ var Omissions = []Omission{
 		Unblocks: "a per-target field on a use, which nesting has since made possible.",
 	},
 	{
+		Name:    "authenticated MCP",
+		State:   Blocked,
+		Decided: Forced,
+		Why: "`auth: none | oauth` was declared with nowhere to name the authorization server " +
+			"whose tokens it claimed to validate — no issuer, no audience, no keys — so the value " +
+			"promised a protection nothing could perform. Deleted rather than completed, because " +
+			"the prerequisite is blocked too: an authenticated MCP is routed on the Mcp-Method and " +
+			"Mcp-Name headers, and this vocabulary cannot match on a header.",
+		Instead: "unauthenticated MCP. A gateway in front of it carries what policy there is.",
+		Unblocks: "a resource-server runtime, plus header matching. The shape it returns as, so " +
+			"this is a list entry and not a redesign: an `auth` block whose oauth branch requires " +
+			"ONE field, `issuer` — an https authorization-server identifier — with `scopes` " +
+			"optional. The AUDIENCE is never authored: it is the canonical URL this server is " +
+			"reached at, which ends in the cloud's fqdn and so cannot be written here (the same " +
+			"reason cors origins cannot be); the platform derives it from the gateway route that " +
+			"serves it. `jwks-uri` is not authored either — it is discovered from the issuer's " +
+			"own metadata, and a second copy of it in config is a key source that can go stale.",
+	},
+	{
 		Name:    "header and query matching",
 		State:   Blocked,
 		Decided: Forced,

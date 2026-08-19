@@ -2,6 +2,8 @@ package schema
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
@@ -267,6 +269,48 @@ func opNames(kind string) []string {
 // project root, anything else is relative to the resource's own namespace — which is
 // the root itself for a resource at the root. Segments are namespace names, so each
 // must be one.
+// IsDatabaseHost admits the two forms `engine/host` takes: a reference to a proxy this
+// project runs, or a literal host with an optional port. It exists because the field
+// cannot use StringShape — that validates against a closed set of literals and prefixes,
+// and the literal half here is every hostname there is.
+//
+// The reference half is checked strictly (it names a resource, and a name that is not a
+// name resolves to nothing). The literal half is checked for the mistakes that are
+// unambiguous — a URL where a host belongs, a path, whitespace, a port that is not a
+// number — and not for whether the name exists, which is DNS's answer and not tcc's.
+var nameRe = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_-]*$`)
+
+func IsDatabaseHost() engine.Option {
+	return Validator(func(h string) error {
+		if h == "" {
+			return nil
+		}
+		if rest, ok := strings.CutPrefix(h, "proxy/"); ok {
+			if !nameRe.MatchString(rest) {
+				return fmt.Errorf("%q does not name a proxy", h)
+			}
+			return nil
+		}
+		if strings.Contains(h, "://") {
+			return fmt.Errorf("%q is a URL; this takes a host, optionally with a port", h)
+		}
+		if strings.ContainsAny(h, " \t/") {
+			return fmt.Errorf("%q is not a host", h)
+		}
+		host, port, found := strings.Cut(h, ":")
+		if host == "" {
+			return fmt.Errorf("%q names no host", h)
+		}
+		if found {
+			n, err := strconv.Atoi(port)
+			if err != nil || n < 1 || n > 65535 {
+				return fmt.Errorf("%q: %q is not a port", h, port)
+			}
+		}
+		return nil
+	})
+}
+
 func IsNamespacePath() engine.Option {
 	return Validator(func(p string) error {
 		if p == "" || p == "/" {
