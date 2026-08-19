@@ -197,6 +197,12 @@ type Source struct {
 	Name  string // its name
 	Scope string // its namespace
 	Path  string // where inside its document, e.g. "steps/0". Empty for the whole resource.
+
+	// Part is the element itself, when this came from one. It is here so a consumer can
+	// show the construct AS WRITTEN — a workflow's steps, wired to each other — and not
+	// only what it becomes. Both views are the same computation read from opposite
+	// ends, and neither should need a second implementation that knows what a step is.
+	Part map[string]any
 }
 
 func (s Source) String() string {
@@ -294,6 +300,7 @@ func plan(l Lowering, kind, name string, res map[string]any, scope string, src S
 		// produced this and not merely at the document that holds them.
 		at := src
 		at.Path = l.perEach + "/" + strconv.Itoa(i)
+		at.Part = el
 		out = append(out, Derived{
 			Kind: l.into, Name: expand(l.name, res, el, next), Of: of, Scope: scope,
 			Why: expand(l.why, res, el, next), Fields: set(l.set, res, el, next),

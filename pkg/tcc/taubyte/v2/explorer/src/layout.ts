@@ -92,7 +92,7 @@ const cluster = (scope: string) => `cluster_${scope.replace(/[^A-Za-z0-9]/g, "_"
 
 // Namespaces nest, so the subgraphs do. The label is declared so dot reserves room at
 // the top of the box for it; the text itself is drawn by render.ts, into that space.
-function dotFor(nodes: Node[], arrows: Arrow[], ingress: Ingress[]): string {
+function dotFor(nodes: Node[], arrows: Arrow[], ingress: Ingress[], frames: Map<string, string>): string {
   const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();
   const childrenOf = (scope: string) =>
     scopes.filter((s) => s.startsWith(scope + "/") && !s.slice(scope.length + 1).includes("/"));
@@ -100,7 +100,7 @@ function dotFor(nodes: Node[], arrows: Arrow[], ingress: Ingress[]): string {
   const emit = (scope: string, depth: number): string => {
     const pad = "  ".repeat(depth);
     const body = [
-      `${pad}  label=${q(`namespace · ${scope}`)};`,
+      `${pad}  label=${q(frames.get(scope) ?? `namespace · ${scope}`)};`,
       // room between a namespace's border and the resources inside it, so an edge
       // crossing the boundary has somewhere to be that is not on top of the dashes
       `${pad}  margin=16;`,
@@ -234,9 +234,14 @@ function midpointOf(line: { x: number; y: number }[]): { x: number; y: number } 
   return line[line.length - 1];
 }
 
-export async function place(nodes: Node[], arrows: Arrow[], ingress: Ingress[] = []): Promise<Placed> {
+export async function place(
+  nodes: Node[],
+  arrows: Arrow[],
+  ingress: Ingress[] = [],
+  frames: Map<string, string> = new Map(),
+): Promise<Placed> {
   const gv = await graphviz();
-  const out = JSON.parse(gv.layout(dotFor(nodes, arrows, ingress), "json", "dot")) as {
+  const out = JSON.parse(gv.layout(dotFor(nodes, arrows, ingress, frames), "json", "dot")) as {
     bb: string;
     objects?: DotObject[];
     edges?: DotEdge[];

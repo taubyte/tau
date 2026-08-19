@@ -27,8 +27,10 @@ export interface Node {
   // How a client reaches that name, when it is not just "https". An L4 proxy writes
   // no port and no address, so this is the only place the page can say what to dial.
   dial?: string;
-  /** A resource nothing authored: what a transpiled resource becomes. */
+  /** A resource nothing authored: what a lowered resource becomes, or a part of one. */
   derived?: { of: string; why: string };
+  /** The frame this resource is the box FOR, when it has one. */
+  frame?: string;
   layer: number;
   x: number;
   y: number;
@@ -53,6 +55,13 @@ export interface Graph {
   arrows: Arrow[];
   byId: Map<string, Node>;
   scopes: string[]; // namespace names, in the order they should be drawn
+  /**
+   * What each frame is called. A namespace is one frame; a workflow is another, drawn
+   * the same way because it is the same thing to a reader — a box holding parts that
+   * belong together. The label is here rather than in the layout so the layout keeps
+   * knowing nothing about kinds.
+   */
+  frames: Map<string, string>;
 }
 
 // Which category a kind belongs to is DECLARED on the kind, in the DSL
@@ -86,7 +95,8 @@ export interface Lowered {
   of: string;
   scope: string;
   why: string;
-  links: { kind: string; name: string; verb: string }[];
+  links: { kind: string; name: string; verb: string; scope?: string }[];
+  source?: { kind: string; name: string; scope: string; path: string; part?: Record<string, unknown> };
 }
 
 export function buildGraph(
@@ -94,6 +104,8 @@ export function buildGraph(
   verbs: KindVerbs[],
   projectLabel = "",
   lowered: Lowered[] = [],
+  /** Which lowered resources are showing what they BECOME rather than what was written. */
+  flipped: Set<string> = new Set(),
 ): Graph {
   const nodes: Node[] = [];
   const arrows: Arrow[] = [];
@@ -380,44 +392,94 @@ export function buildGraph(
     n.answeredById = zoneIdOf.get(n.id);
   }
 
-  // What the lowered resources become. These are NOT in the compiled object — tcc
-  // computes the plan and the page draws it — so they are added last, as their own
-  // nodes, with an arrow from the resource they came from. Drawn as references because
-  // that is what they are: the workflow does not CALL its queues, it becomes them.
+  // A LOWERED RESOURCE IS A BOX, the same way a namespace is: a frame holding the parts
+  // that belong to it. Two things can be inside it, and the box flips between them —
+  // what was WRITTEN (the steps, wired to each other and to what they run) and what it
+  // BECOMES (the queues and the entity). Both are read from the same plan tcc computed;
+  // neither is recomputed here, and nothing in this file knows what a step is.
+  const frames = new Map<string, string>();
+  const sourcesOf = new Map<string, Lowered[]>();
   for (const d of lowered) {
-    const src = nodes.find((n) => `${n.kind}/${n.name}` === d.of);
-    if (!src) continue;
-    const id = `derived:${d.kind}/${d.name}`;
-    if (byId.has(id)) continue;
-    const node: Node = {
-      id, kind: d.kind, name: d.name, scope: src.scope,
-      derived: { of: d.of, why: d.why }, layer: 0, x: 0, y: 0,
-    };
-    nodes.push(node);
-    byId.set(id, node);
-    live.push({ from: src.id, to: id, kind: d.kind, verb: "becomes", effect: "read", ref: true });
+    const of = d.of;
+    sourcesOf.set(of, [...(sourcesOf.get(of) ?? []), d]);
   }
 
-  // The wiring BETWEEN them, which is what makes this a view of the inside rather than
-  // a list of names: the queue for a step invokes its function, and hands what it gave
-  // up on to the failure queue. tcc computed both ends; this only draws them.
-  //
-  // A link may point at a derived resource or at an authored one — a step's function is
-  // a real function somebody wrote — so both are looked up.
-  for (const d of lowered) {
-    const from = byId.get(`derived:${d.kind}/${d.name}`);
-    if (!from) continue;
-    for (const l of d.links ?? []) {
-      const to =
-        byId.get(`derived:${l.kind}/${l.name}`) ??
-        nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === d.scope);
-      if (!to) continue;
-      live.push({ from: from.id, to: to.id, kind: l.kind, verb: l.verb, effect: "write" });
+  for (const [of, parts] of sourcesOf) {
+    const src = nodes.find((n) => `${n.kind}/${n.name}` === of);
+    if (!src) continue;
+
+    // `@` cannot begin a resource name, so a frame can never collide with a namespace.
+    const frame = `${src.scope ? `${src.scope}/` : ""}@${src.name}`;
+    frames.set(frame, `${src.kind} · ${src.name}`);
+    src.scope = frame;
+    src.frame = frame;
+
+    if (flipped.has(src.id)) {
+      for (const d of parts) {
+        const id = `derived:${d.kind}/${d.name}`;
+        if (byId.has(id)) continue;
+        const node: Node = {
+          id, kind: d.kind, name: d.name, scope: frame,
+          derived: { of: d.of, why: d.why }, layer: 0, x: 0, y: 0,
+        };
+        nodes.push(node);
+        byId.set(id, node);
+        live.push({ from: src.id, to: id, kind: d.kind, verb: "becomes", effect: "read", ref: true });
+      }
+      for (const d of parts) {
+        const from = byId.get(`derived:${d.kind}/${d.name}`);
+        if (!from) continue;
+        for (const l of d.links ?? []) {
+          const to =
+            byId.get(`derived:${l.kind}/${l.name}`) ??
+            nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === d.scope);
+          if (!to) continue;
+          live.push({ from: from.id, to: to.id, kind: l.kind, verb: l.verb, effect: "write" });
+        }
+      }
+      continue;
+    }
+
+    // As written: one node per part, in the order the author wrote them. A part with no
+    // name of its own is skipped rather than drawn as an empty box.
+    const partNodes = new Map<string, Node>();
+    for (const d of parts) {
+      const path = d.source?.path;
+      const partName = typeof d.source?.part?.name === "string" ? (d.source.part.name as string) : "";
+      if (!path || !partName || partNodes.has(path)) continue;
+      const id = `part:${of}/${path}`;
+      const node: Node = {
+        id, kind: "step", name: partName, scope: frame,
+        derived: { of, why: d.why }, layer: 0, x: 0, y: 0,
+      };
+      partNodes.set(path, node);
+      nodes.push(node);
+      byId.set(id, node);
+      live.push({ from: src.id, to: id, kind: "step", verb: "runs", effect: "read", ref: true });
+    }
+
+    // The wiring, attributed to the part rather than to what it became: a step runs its
+    // function, and hands on to the step after it.
+    const partByName = new Map([...partNodes.values()].map((n) => [n.name, n]));
+    for (const d of parts) {
+      const from = d.source?.path ? partNodes.get(d.source.path) : undefined;
+      if (!from) continue;
+      for (const l of d.links ?? []) {
+        // A link to another part of the same lowering is drawn between the PARTS: the
+        // queue named `checkout_charge` is the step named `charge`, seen from the other
+        // side of the lowering.
+        const sibling = [...sourcesOf.get(of)!].find((o) => o.kind === l.kind && o.name === l.name);
+        const to = sibling?.source?.part?.name
+          ? partByName.get(sibling.source.part.name as string)
+          : nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === (l.scope || src.scope));
+        if (!to || to.id === from.id) continue;
+        live.push({ from: from.id, to: to.id, kind: l.kind, verb: l.verb, effect: "write" });
+      }
     }
   }
 
   const scopes = [...new Set(nodes.map((n) => n.scope))].filter(Boolean).sort();
-  return { nodes, arrows: live, byId, scopes };
+  return { nodes, arrows: live, byId, scopes, frames };
 }
 
 export const NODE_W = 168;

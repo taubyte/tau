@@ -283,3 +283,28 @@ code.om.open { color: var(--internet); }
 .rf-node.derived .rf-name {
   font-style: italic;
 }
+
+/* A frame that can be turned over. Same box as a namespace — it is the same idea to a
+   reader — with the button that swaps what is inside it. */
+.rf-scope.frame {
+  border-style: dashed;
+}
+.rf-flip {
+  position: absolute;
+  top: 3px;
+  right: 6px;
+  font: inherit;
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--dim);
+  cursor: pointer;
+  pointer-events: all;
+}
+.rf-flip:hover {
+  color: var(--fg);
+  border-color: var(--fg);
+}

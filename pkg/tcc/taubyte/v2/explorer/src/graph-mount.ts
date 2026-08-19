@@ -21,7 +21,8 @@ export function renderGraph(
   placed: Placed,
   selection: Selection,
   onPick: (id: string | null) => void,
+  flippedIds: Set<string> = new Set(),
 ): void {
   root ??= createRoot(host);
-  root.render(createElement(GraphView, { graph, placed, selection, onPick }));
+  root.render(createElement(GraphView, { graph, placed, selection, onPick, flippedIds }));
 }

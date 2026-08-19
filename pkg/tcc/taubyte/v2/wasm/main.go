@@ -123,6 +123,12 @@ func compileFn(_ js.Value, args []js.Value) any {
 		}
 		lowered = append(lowered, map[string]any{
 			"kind": d.Kind, "name": d.Name, "of": d.Of, "scope": d.Scope, "why": d.Why, "links": links,
+			// Where it came from, so the page can show the construct as written as well
+			// as what it becomes.
+			"source": map[string]any{
+				"kind": d.Source.Kind, "name": d.Source.Name, "scope": d.Source.Scope,
+				"path": d.Source.Path, "part": d.Source.Part,
+			},
 		})
 	}
 	out["lowered"] = lowered

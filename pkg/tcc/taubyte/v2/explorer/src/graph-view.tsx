@@ -81,10 +81,25 @@ function ResourceNode({ data }: NodeProps) {
 // a node that CONTAINS nodes rather than a rectangle drawn around a set of positions —
 // it cannot disagree with the compiler about what is inside it.
 function ScopeNode({ data }: NodeProps) {
-  const d = data as { label: string; faded: boolean };
+  const d = data as { label: string; faded: boolean; flip?: string; flipped?: boolean };
   return (
-    <div className={`rf-scope${d.faded ? " faded" : ""}`}>
-      <span className="rf-scopelabel">namespace · {d.label}</span>
+    <div className={`rf-scope${d.faded ? " faded" : ""}${d.flip ? " frame" : ""}`}>
+      <span className="rf-scopelabel">{d.label}</span>
+      {/* A box that can be turned over: what was WRITTEN, or what it BECOMES. Both are
+          the same plan read from opposite ends, so the button is a view and never an
+          edit. */}
+      {d.flip ? (
+        <button
+          className="rf-flip"
+          onClick={(e) => {
+            e.stopPropagation();
+            window.dispatchEvent(new CustomEvent("tcc-flip", { detail: d.flip }));
+          }}
+          title={d.flipped ? "show what was written" : "show what it becomes"}
+        >
+          {d.flipped ? "as written" : "what it becomes"}
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -186,11 +201,14 @@ export function GraphView({
   placed,
   selection,
   onPick,
+  flippedIds = new Set<string>(),
 }: {
   graph: Graph;
   placed: Placed;
   selection: Selection;
   onPick: (id: string | null) => void;
+  /** Which frames are showing what they become. */
+  flippedIds?: Set<string>;
 }) {
   // Read once per render rather than per edge; a theme flip re-renders the page.
   const ink = useMemo(
@@ -233,6 +251,13 @@ export function GraphView({
     return reached;
   }, [selection, graph]);
 
+  // Which frame belongs to which resource, so the box's button flips the right one.
+  const frameOwner = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const n of graph.nodes) if (n.frame) m.set(n.frame, n.id);
+    return m;
+  }, [graph]);
+
   const nodes: FlowNode[] = useMemo(() => {
     const out: FlowNode[] = [];
     const frame = new Map(placed.scopes.map((s) => [s.scope, s]));
@@ -254,7 +279,12 @@ export function GraphView({
         style: { width: s.w, height: s.h },
         selectable: false,
         draggable: false,
-        data: { label: s.scope, faded: false },
+        data: {
+          label: graph.frames.get(s.scope) ?? `namespace · ${s.scope}`,
+          faded: false,
+          flip: frameOwner.get(s.scope),
+          flipped: frameOwner.has(s.scope) && flippedIds.has(frameOwner.get(s.scope)!),
+        },
       });
     }
 

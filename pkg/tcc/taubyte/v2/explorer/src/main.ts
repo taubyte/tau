@@ -58,10 +58,22 @@ function compile(): CompileOk | { error: string } {
   return window.tccV2!.compile(files, { branch: "main" });
 }
 
+// Which lowered resources are showing what they BECOME. A box flips; the state is the
+// page's, not the config's, so it survives a recompile and never reaches tcc.
+const flipped = new Set<string>();
+
+window.addEventListener("tcc-flip", (e) => flipFrame((e as CustomEvent<string>).detail));
+
+export function flipFrame(id: string) {
+  if (flipped.has(id)) flipped.delete(id);
+  else flipped.add(id);
+  render();
+}
+
 function render() {
   lastResult = compile();
   if (!("error" in lastResult)) {
-    graph = buildGraph(lastResult.object, verbs, lastResult.projectLabel, lastResult.lowered ?? []);
+    graph = buildGraph(lastResult.object, verbs, lastResult.projectLabel, lastResult.lowered ?? [], flipped);
     const g = graph;
     const seq = ++layoutSeq;
     // A keystroke while a layout is in flight makes that layout stale; the counter is
@@ -72,7 +84,7 @@ function render() {
     const ingress = g.nodes
       .filter((n) => n.fqdn && n.kind !== "zone")
       .map((n) => ({ zone: n.answeredById || CLOUD_ZONE, to: n.id, name: n.fqdn! }));
-    place(g.nodes, g.arrows, ingress).then((p) => {
+    place(g.nodes, g.arrows, ingress, g.frames).then((p) => {
       if (seq !== layoutSeq) return;
       placed = p;
       placedFor = g;
@@ -265,7 +277,11 @@ function graphPane(): HTMLElement {
   // the user panned to — survives a DOM rebuild.
   wrap.appendChild(graphHost());
   if (graph && placed && placedFor === graph) {
-    renderGraph(graph, placed, selection, (id) => {
+    renderGraph(
+      graph,
+      placed,
+      selection,
+      (id) => {
       selection =
         id === null
           ? null
@@ -279,7 +295,9 @@ function graphPane(): HTMLElement {
       }
       render();
       reveal(".files .file.on");
-    });
+    },
+      flipped,
+    );
   }
   wrap.appendChild(detail());
   return wrap;
