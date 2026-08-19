@@ -240,3 +240,40 @@ func TestAuditGhostFunctions(t *testing.T) {
 	has(t, found, schema.Broken, "is named as a gateway-transformer by gateway/g transformers, and does not exist")
 	has(t, found, schema.Broken, "is named as a authorizer by cache/c authorizer, and does not exist")
 }
+
+// A volume is leased to ONE writer, and nothing in the declaration says so: access is
+// declared by the accessor, so two workloads can each ask to write and both compile.
+func TestAuditVolumeWriters(t *testing.T) {
+	const vol = "id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\nquota: 1GB\n"
+	mount := func(op string) string {
+		return appBody + "volume:\n    data:\n        ops: [" + op + "]\n        path: /data\n"
+	}
+
+	found := auditDocs(t, nil, map[string]string{
+		"/volume/data.yaml":   vol,
+		"/application/a.yaml": mount("mount-rw"),
+		"/application/b.yaml": strings.Replace(mount("mount-rw"), "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", 1),
+	})
+	has(t, found, schema.Broken, "is mounted for writing by")
+
+	// one writer and one reader is the shape that works
+	found = auditDocs(t, nil, map[string]string{
+		"/volume/data.yaml":   vol,
+		"/application/a.yaml": mount("mount-rw"),
+		"/application/b.yaml": strings.Replace(mount("mount-ro"), "QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY", "QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG", 1),
+	})
+	hasNo(t, found, "is mounted for writing by")
+
+	// and the same contradiction inside one resource: ten instances, one lease
+	found = auditDocs(t, nil, map[string]string{
+		"/volume/data.yaml":   vol,
+		"/application/a.yaml": mount("mount-rw") + "limits:\n    max-instances: 10\n",
+	})
+	has(t, found, schema.Broken, "may run 10 instances")
+
+	found = auditDocs(t, nil, map[string]string{
+		"/volume/data.yaml":   vol,
+		"/application/a.yaml": mount("mount-rw") + "limits:\n    max-instances: 1\n",
+	})
+	hasNo(t, found, "instances")
+}

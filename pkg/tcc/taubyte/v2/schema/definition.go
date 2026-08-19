@@ -273,6 +273,23 @@ func cpuLimit() *Attribute {
 		Doc("CPU", "Ceiling in millicores: 1000 is one core, 250 a quarter of one. Absent means no ceiling — it competes for what is free."))
 }
 
+// certificateSecret is a supplied certificate: ONE secret holding the chain and the
+// private key, the way a Kubernetes TLS secret does.
+//
+// It was two inline PEM fields, which put a PRIVATE KEY in the git repository — in a
+// vocabulary whose `secret` kind exists to say the config never carries a value, and
+// beside `database.engine/credentials`, which already takes a reference. A key that
+// has ever been committed is a key that has to be treated as leaked.
+//
+// One reference rather than a secret for the key and a field for the chain, because
+// they are one artifact: they are issued together, they expire together, and rotating
+// them in two places means a window where they do not match.
+func certificateSecret(section string) *Attribute {
+	return String("certificate/secret", Path("certificate", "secret"), Ref("secret", Prefix("secret/")),
+		RequiredWhen("certificate/source", "provided"), Field("CertSecret"), InSection(section), ShowWhen("certificate/source", "provided"),
+		Doc("Certificate Secret", "Secret holding the certificate chain and its private key, as \"secret/<name>\". The key never goes in git."))
+}
+
 func pullSecret() *Attribute {
 	return String("image-pull-secret", Path("image-pull-secret"), Ref("secret", Prefix("secret/")), InSection("code"),
 		Doc("Image Pull Secret", "Secret holding the registry credential this image is pulled with, as \"secret/<name>\". Omit for a public registry."))
@@ -384,7 +401,7 @@ var V2Resources = []*Node{
 		resource(
 			commonAttributes(applicationAttributes()...),
 			Nested(portsGroup(), variablesGroup()),
-			GroupDoc("A long-running container that listens on HTTP. Ships with volumes or it ships broken."), Icon("box"), Category("compute"),
+			GroupDoc("A long-running container that listens on HTTP. Mount a volume for anything it must keep."), Icon("box"), Category("compute"),
 			secIdentity, secAccess, secConfig, secNetwork, secCode, secLimits,
 			Resource("application", "Application", "Application", "application"),
 		)),
@@ -543,7 +560,10 @@ var V2Resources = []*Node{
 				String("reach/network", Path("reach", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Local", []string{"host"}, []string{"all", "host"}, [2]string{"host", "all"}), NoAccessors(), InSection("keys"), Doc("Network Access", "Which peers may reach this cache: all, subnet, or host.")),
 				Bytes("size", Path("size"), Required(), InSection("keys"), Doc("Size", "Maximum size, as a human string (e.g. \"32MB\").")),
 				Duration("ttl", Path("ttl"), InSection("keys"), Doc("Time-To-Live", "Entry lifetime. A floor, not a guarantee: peers may disagree about existence for up to the clock skew.")),
-				String("encryption/key", Path("encryption", "key"), NoAccessors(), InSection("encryption"), Doc("Encryption Key", "Key material or reference used to encrypt entries at rest.")),
+				// A REFERENCE, never the material. "key material or reference" let the
+				// same field be either, and the safe reading was the one nothing enforced.
+				String("encryption/key", Path("encryption", "key"), Ref("secret", Prefix("secret/")), NoAccessors(), InSection("encryption"),
+					Doc("Encryption Key", "Secret holding the key entries are encrypted with, as \"secret/<name>\".")),
 			),
 			GroupDoc("An eventually-consistent key-value cache served to the project's peers. Not a system of record."), Icon("bolt"), Category("data"),
 			secIdentity, secAccess,
@@ -676,7 +696,7 @@ var V2Resources = []*Node{
 				Bytes("size", Path("quota"), Required(), InSection("storage"), Doc("Size", "Hard quota for the directory, as a human string (e.g. \"10GB\").")),
 				Duration("checkpoint/interval", Path("checkpoint", "interval"), Default("60s"), InSection("checkpoint"), Doc("Checkpoint Interval", "How often the volume is walked, chunked and uploaded.")),
 				Duration("checkpoint/rpo-budget", Path("checkpoint", "rpo-budget"), InSection("checkpoint"), Doc("RPO Budget", "Ceiling on the age of the last committed snapshot before on-budget-exceeded fires.")),
-				String("checkpoint/on-budget-exceeded", Path("checkpoint", "on-budget-exceeded"), InSet("alert", "freeze-writes"), Default("alert"), InSection("checkpoint"), Doc("On Budget Exceeded", "What to do when the committed-snapshot age passes rpo-budget.")),
+				String("checkpoint/on-budget-exceeded", Path("checkpoint", "on-budget-exceeded"), InSet("alert", "freeze-writes"), Default("alert"), InSection("checkpoint"), Doc("On Budget Exceeded", "What to do when the committed-snapshot age passes rpo-budget. Nothing happens without a budget to pass.")),
 			),
 			GroupDoc("A single-writer leased directory with full POSIX semantics, checkpointed into the CAS. No RWX; bind mounts are refused."), Icon("drive"), Category("data"),
 			secIdentity, secAccess,
@@ -729,7 +749,7 @@ var V2Resources = []*Node{
 	DefineGroup("queue",
 		resource(
 			commonAttributes(
-				Duration("visibility-timeout", Default("30s"), Required(), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
+				Duration("visibility-timeout", Default("30s"), InSection("delivery"), Doc("Visibility Timeout", "How long a claimed item stays invisible before it becomes deliverable again.")),
 				Int("max-attempts", Default(5), InSection("delivery"), Doc("Max Attempts", "Deliveries before the item moves to the dead-letter queue.")),
 				String("dead-letter", Ref("queue", Prefix("queue/")), InSection("delivery"), Doc("Dead Letter Queue", "Queue that receives items which exhausted max-attempts, as \"queue/<name>\".")),
 			),
@@ -813,9 +833,8 @@ var V2Resources = []*Node{
 			// A gateway with no host block is reachable only by being mounted beneath
 			// another one, which is what collapsed the old `domains` kind into this one.
 			append(append(identityAttributes(), hostAttributes("naming")...),
-				String("certificate/source", Path("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("naming"), ShowWhen("host/kind", "zone"), Doc("Certificate", "generated: issued on demand for this name. provided: supplied below. A host under the cloud's own zone needs neither — that zone has a wildcard.")),
-				String("certificate/cert", Path("certificate", "cert"), RequiredWhen("certificate/source", "provided"), Field("CertFile"), InSection("naming"), ShowWhen("certificate/source", "provided"), Doc("Certificate PEM", "PEM-encoded certificate chain.")),
-				String("certificate/key", Path("certificate", "key"), RequiredWhen("certificate/source", "provided"), Field("KeyFile"), InSection("naming"), ShowWhen("certificate/source", "provided"), Doc("Certificate Key", "PEM-encoded private key for the certificate.")),
+				String("certificate/source", Path("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("naming"), ShowWhen("host/kind", "zone"), Doc("Certificate", "generated: issued on demand for this name. provided: from the secret below. A host under the cloud's own zone needs neither — that zone has a wildcard.")),
+				certificateSecret("naming"),
 
 				// The compiled keys are PATHS, not dashed names: TNS is a CRDT, so
 				// `route/handler/namespace` is three mergeable segments while
@@ -913,7 +932,7 @@ var V2Resources = []*Node{
 	DefineGroup("proxy",
 		resource(
 			append(append(identityAttributes(), hostAttributes("listener")...),
-				String("protocol", InSet("tcp", "udp", "sctp"), Default("tcp"), Required(), InSection("listener"),
+				String("protocol", InSet("tcp", "udp", "sctp"), Default("tcp"), InSection("listener"),
 					Doc("Protocol", "The transport carried. tcp is the transparent one; see this kind's docs for what a tunnel does to udp and sctp.")),
 
 				// The SRV label, and with it the port a client that cannot do SRV should
@@ -931,12 +950,15 @@ var V2Resources = []*Node{
 				// so nothing is multiplexed and no SNI is read.
 				String("tls/mode", Path("tls", "mode"), InSet("none", "terminate"), Default("none"), Field("TLSMode"), InSection("listener"),
 					Doc("TLS", "none: an opaque pipe, whatever the protocol does about TLS is its own business. terminate: the proxy answers TLS and hands plaintext to the workload.")),
-				String("certificate/source", Path("certificate", "source"), InSet("generated", "provided"), RequiredWhen("tls/mode", "terminate"), Field("CertSource"), InSection("listener"), ShowWhen("host/kind", "zone"),
-					Doc("Certificate", "generated: issued on demand for this name. provided: supplied below.")),
-				String("certificate/cert", Path("certificate", "cert"), RequiredWhen("certificate/source", "provided"), Field("CertFile"), InSection("listener"), ShowWhen("certificate/source", "provided"),
-					Doc("Certificate PEM", "PEM-encoded certificate chain.")),
-				String("certificate/key", Path("certificate", "key"), RequiredWhen("certificate/source", "provided"), Field("KeyFile"), InSection("listener"), ShowWhen("certificate/source", "provided"),
-					Doc("Certificate Key", "PEM-encoded private key for the certificate.")),
+				// F14: DEFAULTED, not RequiredWhen. `tls: terminate` on a GENERATED host
+				// needs no certificate — the cloud holds a wildcard for its own zone,
+				// which is the gateway's rule and there is no reason for a proxy to have
+				// a different one. RequiredWhen("tls/mode","terminate") demanded the
+				// field for exactly that case, while ShowWhen hid it from the editor: a
+				// compile blocked on a field the author could not see.
+				String("certificate/source", Path("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("listener"), ShowWhen("host/kind", "zone"),
+					Doc("Certificate", "generated: issued on demand for this name. provided: from the secret below. A host under the cloud's own zone needs neither — that zone has a wildcard.")),
+				certificateSecret("listener"),
 
 				// Same shape as a gateway route's handler, one kind wide.
 				// FORWARD, not "handler". A gateway HANDLES a request — it parses one,

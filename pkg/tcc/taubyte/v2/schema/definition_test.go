@@ -808,3 +808,32 @@ func TestWorkloadVariables(t *testing.T) {
 		assert.Assert(t, found, "%s cannot be configured", kind)
 	}
 }
+
+// A Default() and a Required() on one attribute contradict each other: Required is
+// checked first, so the default never applies and the JSON Schema publishes a value
+// the compiler rejects.
+func TestDefaultsThatWereUnreachable(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
+		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/application/a.yaml", []byte(
+		"id: QmSgvGwXHLPnCXKTPnbTZWpqAqLmv5qJpsKHYS8FfKCYPY\nimage: img\nexecution:\n    memory: 1MB\nports:\n    p:\n        number: 80\n"), 0o644))
+	assert.NilError(t, afero.WriteFile(fs, "/queue/q.yaml",
+		[]byte("id: QmPZ9gcCEpqKTo6aq61g2nXGUhM4iCL3ewB6LDXZCtioEB\n"), 0o644))
+	// a generated host needs no certificate even when TLS stops here — the cloud
+	// holds a wildcard for its own zone, which is the gateway's rule too
+	assert.NilError(t, afero.WriteFile(fs, "/proxy/p.yaml", []byte(
+		"id: QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG\nhost:\n    generated:\n        name: db\ntls:\n    mode: terminate\nforward:\n    application:\n        name: a\n        port: p\n"), 0o644))
+
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	obj, _, err := c.Compile(context.Background())
+	assert.NilError(t, err)
+
+	q := only(t, resources(t, obj.Flat(), "queue"))
+	assert.Equal(t, q["visibility-timeout"], int64(30000000000), "the default has to be reachable")
+
+	p := only(t, resources(t, obj.Flat(), "proxy"))
+	assert.Equal(t, p["protocol"], "tcp")
+	assert.Equal(t, p["certificate/source"], "generated")
+}

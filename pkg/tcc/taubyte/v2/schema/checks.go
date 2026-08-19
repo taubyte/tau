@@ -103,6 +103,7 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	out = append(out, checkMountedSites(all)...)
 	out = append(out, checkHostWorlds(all)...)
 	out = append(out, checkHandlerPorts(all)...)
+	out = append(out, checkVolumeWriters(all)...)
 	out = append(out, checkExternal(all, r)...)
 
 	sort.SliceStable(out, func(i, j int) bool {
@@ -185,6 +186,19 @@ func (r compiled) elements(key string) []map[string]any {
 func field(el map[string]any, key string) string {
 	s, _ := el[key].(string)
 	return s
+}
+
+// int reads a numeric field, which arrives as int or, through JSON, as float64.
+func (r compiled) int(key string) int {
+	switch v := r.fields[key].(type) {
+	case int:
+		return v
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	}
+	return 0
 }
 
 func (r compiled) block(key string) map[string]any {
@@ -496,6 +510,102 @@ func lookupWorld(world map[string]string, name, scope string) (string, bool) {
 		}
 		scope = scope[:cut]
 	}
+}
+
+// checkVolumeWriters: a volume is a SINGLE-WRITER leased directory, and nothing in the
+// declaration says so. Access is declared by the ACCESSOR and the target only bounds it
+// — which is right for every other kind, and for a volume means two workloads can each
+// write `ops: [mount-rw]` and both compile. The second one does not get a degraded
+// mount; it gets a directory another process already holds the lease on.
+//
+// The same statement fails a second way inside ONE resource: a workload with
+// `max-instances: 10` and a rw mount is asking for ten writers to a one-writer
+// filesystem. Nine of them cannot start, and which nine is a race.
+//
+// Both need a second resource to answer — the volume's own kind for one, the workload's
+// ceiling for the other — which is why neither is an attribute validator.
+func checkVolumeWriters(all []compiled) []Finding {
+	var out []Finding
+	writers := map[string][]compiled{}
+
+	for _, res := range all {
+		for target, e := range res.block("volume") {
+			entry, ok := e.(map[string]any)
+			if !ok || !mountsForWriting(entry) {
+				continue
+			}
+			writers[volumeKey(all, target, field(entry, "namespace"), res.scope)] = append(
+				writers[volumeKey(all, target, field(entry, "namespace"), res.scope)], res)
+
+			if n := res.int("limits/max-instances"); n > 1 {
+				out = append(out, Finding{Broken, res.kind, res.name, res.scope,
+					fmt.Sprintf("mounts volume %q for writing and may run %d instances", target, n),
+					"A volume is leased to one writer. Either the ceiling comes down to 1, or the volume is mounted read-only and something else owns the writes."})
+			}
+		}
+	}
+
+	for key, ws := range writers {
+		if len(ws) < 2 {
+			continue
+		}
+		sort.Slice(ws, func(i, j int) bool { return ws[i].kind+ws[i].name < ws[j].kind+ws[j].name })
+		names := make([]string, 0, len(ws))
+		for _, w := range ws {
+			names = append(names, w.kind+"/"+w.name)
+		}
+		name := key
+		if cut := strings.LastIndex(key, "\x00"); cut >= 0 {
+			name = key[cut+1:]
+		}
+		out = append(out, Finding{Broken, "volume", name, "",
+			"is mounted for writing by " + strings.Join(names, " and "),
+			"A volume has one writer. The others are asking for a lease that is already held, and which of them starts is a race."})
+	}
+	return out
+}
+
+// mountsForWriting reports whether an access entry asks for a mount that writes,
+// read off the volume kind's own verbs rather than by matching the name "mount-rw".
+func mountsForWriting(entry map[string]any) bool {
+	for _, op := range ops(entry) {
+		for _, v := range OpsOf("volume") {
+			if v.Name == op && v.Mounted && v.Effect == Write {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// volumeKey resolves an access target to the volume it actually names, so two writers
+// that spell the same volume differently still collide. Falls back to the written
+// namespace when no volume of that name exists — an unresolvable target is
+// checkReachable's business, not this one's.
+func volumeKey(all []compiled, name, ns, own string) string {
+	scope := strings.TrimPrefix(ns, "/")
+	if ns == "" {
+		scope = own
+	} else if !strings.HasPrefix(ns, "/") && own != "" {
+		scope = own + "/" + ns
+	}
+	for {
+		for _, res := range all {
+			if res.kind == "volume" && res.name == name && res.scope == scope {
+				return scope + "\x00" + name
+			}
+		}
+		if scope == "" || ns != "" {
+			break
+		}
+		cut := strings.LastIndex(scope, "/")
+		if cut < 0 {
+			scope = ""
+			continue
+		}
+		scope = scope[:cut]
+	}
+	return scope + "\x00" + name
 }
 
 // checkHandlerPorts: only a workload that LISTENS has ports. A route naming a port on
