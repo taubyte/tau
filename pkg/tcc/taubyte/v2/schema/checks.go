@@ -75,7 +75,10 @@ func StubResolver() Resolver { return allGood{} }
 
 type compiled struct {
 	kind, name, scope string
-	fields            map[string]any
+	// id is the KEY a compiled resource is filed under, which is where its id lives —
+	// a compiled resource does not carry it as a field.
+	id     string
+	fields map[string]any
 }
 
 // Audit runs every cross-resource check over a compiled object.
@@ -125,7 +128,7 @@ func collect(scope map[string]any, path string) []compiled {
 		if !ok {
 			continue
 		}
-		for _, v := range instances {
+		for id, v := range instances {
 			res, ok := v.(map[string]any)
 			if !ok {
 				continue
@@ -139,13 +142,15 @@ func collect(scope map[string]any, path string) []compiled {
 				out = append(out, collect(res, child)...)
 				continue
 			}
-			out = append(out, compiled{kind: group, name: name, scope: path, fields: res})
+			out = append(out, compiled{kind: group, name: name, scope: path, id: id, fields: res})
 		}
 	}
 	return out
 }
 
-const scopeContainer = "namespace"
+// The scope container's key, read off the schema: the top-level group whose instances
+// hold resources of their own. A constant here would be a second place to rename it.
+var scopeContainer = scopeContainerKey()
 
 func (r compiled) str(key string) string {
 	s, _ := r.fields[key].(string)

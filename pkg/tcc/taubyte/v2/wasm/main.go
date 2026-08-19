@@ -153,6 +153,18 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	out["lowered"] = lowered
 
+	// WHAT EACH RESOURCE IS REACHED AT. A name is the label it chose, the zone that
+	// answers for it and the project's own label — three places, so whoever assembles
+	// them decides what the name is, and a view assembling its own is a second answer.
+	// The cloud's fqdn stays absent, because it is not in the config.
+	names := map[string]any{}
+	for id, r := range schema.ReachableNames(obj.Flat()) {
+		names[id] = map[string]any{
+			"name": r.Name, "zone": r.Zone, "fqdn": r.Fqdn, "generated": r.Generated,
+		}
+	}
+	out["names"] = names
+
 	if len(validations) > 0 {
 		vs := make([]map[string]any, 0, len(validations))
 		for _, v := range validations {

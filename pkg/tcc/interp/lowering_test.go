@@ -283,3 +283,56 @@ func TestDerivedIDIsDeterministic(t *testing.T) {
 	pair := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: a\n      run: cc\n    - name: b\n      run: cc\n")
 	assert.Assert(t, byName(t, pair, "build-a").ID != byName(t, pair, "build-b").ID)
 }
+
+// A LOWERING IS A FUNCTION OF THE SHELL, so every field it reads has to be one the shell
+// has. A template naming a field that does not exist is not an error anywhere else —
+// expand leaves the unfilled `{each.attemps}` in the value, and it travels into a
+// derived resource looking like config — so it is caught where the mistake is.
+func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
+	root := engine.Root(
+		[]*engine.Attribute{engine.String("id")},
+		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
+		}, engine.Resource("job", "Job", "Job", "job"))),
+		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
+			engine.String("id"), engine.String("name"),
+		},
+			engine.Nested(engine.DefineList("stages", []*engine.Attribute{
+				engine.String("name"), engine.Int("attempts"),
+			})),
+			interp.Lowers(interp.Into("job",
+				interp.PerEach("stages"),
+				interp.Named("{name}-{each.name}"),
+				interp.Sets("tries", "{each.attemps}"),            // a typo
+				interp.LinksTo("job", "{each.next.nmae}", "then"), // and another
+			)),
+		)),
+	)
+
+	problems := interp.CheckLowerings(root)
+	assert.Equal(t, len(problems), 2, "got %v", problems)
+	assert.Assert(t, strings.Contains(problems[0], "{each.attemps}"), problems[0])
+	assert.Assert(t, strings.Contains(problems[1], "{each.next.nmae}"), problems[1])
+
+	// what the shell really has is accepted, on the resource and on its elements
+	ok := engine.Root(
+		[]*engine.Attribute{engine.String("id")},
+		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
+			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
+		}, engine.Resource("job", "Job", "Job", "job"))),
+		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
+			engine.String("id"), engine.String("name"),
+		},
+			engine.Nested(engine.DefineList("stages", []*engine.Attribute{
+				engine.String("name"), engine.Int("attempts"),
+			})),
+			interp.Lowers(interp.Into("job",
+				interp.PerEach("stages"),
+				interp.Named("{name}-{each.name}"),
+				interp.Sets("tries", "{each.attempts}"),
+				interp.LinksTo("job", "{each.next.name}", "then"),
+			)),
+		)),
+	)
+	assert.Equal(t, len(interp.CheckLowerings(ok)), 0, "got %v", interp.CheckLowerings(ok))
+}

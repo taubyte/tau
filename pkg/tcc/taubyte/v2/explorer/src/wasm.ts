@@ -90,6 +90,8 @@ export interface Finding {
 
 export interface CompileOk {
   findings?: Finding[];
+  /** What each resource is reached at. Computed by tcc: a name is three places glued. */
+  names?: Record<string, { name: string; zone: string; fqdn: string; generated: boolean }>;
   /** What the lowered resources become, and their wiring. Computed by tcc, not here. */
   lowered?: Lowered[];
   /** The project's label in a cloud's generated zone — derived from its id. */

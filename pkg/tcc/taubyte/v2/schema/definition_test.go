@@ -965,3 +965,34 @@ func TestConsumersNeedNoHardcodedShapes(t *testing.T) {
 	assert.Equal(t, layout.Resource, "{kind}/{name}.yaml")
 	assert.Equal(t, layout.Scope, "namespace/{name}")
 }
+
+// A NAME IS THREE PLACES GLUED: the label a resource chose, the zone that answers for
+// it, and — for a generated one — the project's own label, derived from its id. Whoever
+// glues them decides what the name is, so it is glued here and nowhere else. A drawing
+// was doing its own version, which agreed with this one by coincidence.
+func TestReachableNames(t *testing.T) {
+	names := schema.ReachableNames(compileBasic(t))
+
+	got := map[string]string{}
+	generated := map[string]bool{}
+	for _, r := range names {
+		got[r.Name] = r.Fqdn
+		generated[r.Name] = r.Generated
+	}
+
+	// a zone the project declares: the whole name is knowable
+	assert.Equal(t, got["shop"], "shop.example.com")
+	assert.Equal(t, got["ask"], "ask.example.com")
+	assert.Assert(t, !generated["shop"])
+
+	// the cloud's own zone: the project's half is derived from its id, and the cloud's
+	// half is NOT here — it is not in the config and is not the project's to assert
+	assert.Assert(t, generated["db"], "a generated name has to say that it is one")
+	assert.Equal(t, got["db"], "db."+schema.ProjectLabel("QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR"))
+	assert.Assert(t, !strings.Contains(got["db"], "cloud"), "the missing half is left missing, not guessed")
+
+	// a zone is what ANSWERS, not what is answered for
+	for _, r := range names {
+		assert.Assert(t, r.Name != "example-com", "a zone must not be listed as reachable")
+	}
+}

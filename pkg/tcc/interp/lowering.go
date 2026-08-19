@@ -850,6 +850,83 @@ func unsatisfied(root *engine.Node, l Lowering) []string {
 	return missing
 }
 
+// unknownInputs names every template reference a lowering makes to a field that does
+// not exist — on the resource, or on the elements of the list it iterates.
+func unknownInputs(iter *engine.Node, l Lowering) []string {
+	has := map[string]bool{}
+	for _, a := range iter.Attributes {
+		has[a.Name] = true
+	}
+	// the identity every resource carries, which is set by the loader rather than
+	// declared on the kind
+	for _, id := range []string{"name", "id"} {
+		has[id] = true
+	}
+
+	each := map[string]bool{}
+	if l.perEach != "" {
+		for _, child := range iter.Children {
+			if key, _ := child.Match.(string); key == l.perEach && len(child.Children) > 0 {
+				for _, a := range child.Children[0].Attributes {
+					each[a.Name] = true
+				}
+			}
+		}
+	}
+
+	var unknown []string
+	seen := map[string]bool{}
+	check := func(tmpl string) {
+		for _, key := range templateKeys(tmpl) {
+			field, scope := key, has
+			if rest, ok := strings.CutPrefix(key, "each.next."); ok {
+				field, scope = rest, each
+			} else if rest, ok := strings.CutPrefix(key, "each."); ok {
+				field, scope = rest, each
+			}
+			if scope[field] || seen[key] {
+				continue
+			}
+			seen[key] = true
+			unknown = append(unknown, "{"+key+"}")
+		}
+	}
+
+	check(l.name)
+	check(l.why)
+	if l.when != "" && !has[l.when] {
+		unknown = append(unknown, l.when)
+	}
+	for _, tmpl := range l.set {
+		check(tmpl)
+	}
+	for _, lk := range l.links {
+		check(lk.name)
+		check(lk.scope)
+		check(lk.fromName)
+	}
+	sort.Strings(unknown)
+	return unknown
+}
+
+// templateKeys is every `{…}` in a template.
+func templateKeys(tmpl string) []string {
+	var out []string
+	for {
+		open := strings.IndexByte(tmpl, '{')
+		if open < 0 {
+			return out
+		}
+		close := strings.IndexByte(tmpl[open:], '}')
+		if close < 0 {
+			return out
+		}
+		close += open
+		out = append(out, tmpl[open+1:close])
+		tmpl = tmpl[close+1:]
+	}
+}
+
 // CheckLowerings verifies at BUILD time that every lowering names a kind the
 // vocabulary has and fills a name. A lowering into a kind nobody declared is a plan
 // that cannot be carried out, and finding that when someone runs the compiler is
@@ -883,6 +960,18 @@ func CheckLowerings(root *engine.Node) []string {
 			// and without this check it was a plan that read fine.
 			for _, missing := range unsatisfied(root, l) {
 				problems = append(problems, "lowering into "+l.into+" leaves "+missing+" unset, which that kind requires")
+			}
+			// EVERY INPUT MUST EXIST ON THE SHELL. A lowering is a function of the
+			// resource it lowers, so its templates name that resource's fields — and a
+			// name that is not one is not an error anywhere else: expand leaves an
+			// unfilled `{each.attemps}` in the value, which travels into a derived
+			// resource and looks like config.
+			//
+			// It is also what makes the lowering reversible in the way that matters:
+			// what the shell becomes is computed from the shell's own attributes, all
+			// of them declared, so nothing arrives from somewhere a reader cannot see.
+			for _, unknown := range unknownInputs(iter, l) {
+				problems = append(problems, "lowering into "+l.into+" reads "+unknown+", which is not a field of what it lowers")
 			}
 		}
 		return false

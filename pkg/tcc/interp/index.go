@@ -207,11 +207,16 @@ func indexPlaceholder(ic *IndexCtx, index object.Object[object.Refrence], groupK
 	return nil
 }
 
-// indexOrder is the fixed V1 index order, taken verbatim from pass4/pipe.go. It is
-// NOT the DSL declaration order: link buckets shared across scopes accumulate in
-// this order, so it is load-bearing for parity and must not be derived from the
-// schema. services is absent (it declares HasIndex but has no index footprint).
-var indexOrder = []string{
+// v1IndexOrder is v1's accumulation ORDER, taken verbatim from pass4/pipe.go: link
+// buckets shared across scopes accumulate in this sequence, so it is load-bearing for
+// parity and cannot be sorted or derived.
+//
+// It is an ORDER, not the SET. It used to be both, which made it the same latent bug
+// `decompileOrder` turned out to be: for any vocabulary but v1 it matches nothing, so
+// every indexed group is skipped and the indexes come out empty with no error. v2 does
+// not index today, so this was dormant rather than broken — the day it does, it would
+// have been silent.
+var v1IndexOrder = []string{
 	"functions",
 	"websites",
 	"libraries",
@@ -220,6 +225,39 @@ var indexOrder = []string{
 	"messaging",
 	"smartops",
 	"domains",
+}
+
+// indexedGroups is every group that declares an index footprint, in v1's order where
+// v1 names it and in declaration order after that.
+func indexedGroups(root *engine.Node) []string {
+	declared := map[string]bool{}
+	for _, g := range root.Children {
+		key, _ := g.Match.(string)
+		if key == "" || len(g.Children) == 0 {
+			continue
+		}
+		for _, k := range indexMetaKeys {
+			if _, ok := g.Children[0].Meta[k]; ok {
+				declared[key] = true
+				break
+			}
+		}
+	}
+
+	out := make([]string, 0, len(declared))
+	for _, key := range v1IndexOrder {
+		if declared[key] {
+			out = append(out, key)
+			delete(declared, key)
+		}
+	}
+	for _, g := range root.Children {
+		if key, _ := g.Match.(string); declared[key] {
+			out = append(out, key)
+			delete(declared, key)
+		}
+	}
+	return out
 }
 
 // IndexDriver replaces the whole pass4 layer with one generic transform. It
@@ -249,8 +287,9 @@ func (d *IndexDriver) Process(ct transform.Context[object.Refrence], o object.Ob
 	// context path (root, project-object-subtree[, app]) and the project-then-apps
 	// accumulation order are byte-for-byte what the hand-written passes produced.
 	container := containerKey(d.root)
-	pipe := make([]transform.Transformer[object.Refrence], 0, len(indexOrder))
-	for _, key := range indexOrder {
+	groups := indexedGroups(d.root)
+	pipe := make([]transform.Transformer[object.Refrence], 0, len(groups))
+	for _, key := range groups {
 		g := findGroup(d.root, key)
 		if g == nil || len(g.Children) == 0 {
 			continue

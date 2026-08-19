@@ -12,14 +12,10 @@ export interface Node {
   kind: string;
   name: string;
   scope: string; // "" for the project root, else the namespace name
-  // Any resource that compiled an `fqdn` is a name the outside world can reach.
-  // Read off the field rather than off a list of kinds, so a new kind that carries
-  // a name is answered without editing this file.
+  // What this resource is reached at, as far as it is knowable. From tcc's names: a
+  // name is the label it chose plus the zone that answers, and gluing them together is
+  // the vocabulary's job, not a drawing's.
   fqdn?: string;
-  /** How this resource is named, before the zone is resolved. */
-  host?: { kind: string; name: string; zone: string | null };
-  /** A zone's own apex, so a host that names it can be spelled out. */
-  zoneFqdn?: string;
   /** Which zone answers this name — a zone is not an ingress, it is what resolves one. */
   answeredBy?: string;
   /** That zone's node id, or "" when it is the cloud's own and not a resource here. */
@@ -54,6 +50,8 @@ export interface Arrow {
   // it runs in the other direction from everything else — it is what decides what
   // the arrows INTO this resource are actually worth.
   policy?: boolean;
+  /** Traffic goes here: what a route, a proxy or a stream hands on to. */
+  handoff?: boolean;
   // A plain reference (source, credentials, dead-letter) rather than a use. It is
   // still a dependency — X cannot build or run without Y — but it grants no verb,
   // so it is drawn differently and never counts toward a blast radius.
@@ -164,19 +162,6 @@ export function fileOf(n: { kind: string; name: string; scope: string; home?: st
   return dirs + SHAPES.layout.resource.replace("{kind}", n.kind).replace("{name}", n.name);
 }
 
-/** The naming block a kind declares, read into the shape the drawing uses. */
-function hostOf(kind: string, res: Compiled): Node["host"] {
-  const at = SHAPES.kinds[kind]?.answersAt;
-  if (!at) return undefined;
-  const k = res[`${at}/kind`];
-  if (typeof k !== "string") return undefined;
-  return {
-    kind: k,
-    name: typeof res[`${at}/name`] === "string" ? (res[`${at}/name`] as string) : "",
-    zone: typeof res[`${at}/zone`] === "string" ? (res[`${at}/zone`] as string) : null,
-  };
-}
-
 /** Every derived field of a kind, computed by the engine. */
 function derivedOf(kind: string, res: Compiled): { label: string; value: string }[] | undefined {
   const specs = SHAPES.kinds[kind]?.derived;
@@ -194,7 +179,7 @@ function derivedOf(kind: string, res: Compiled): { label: string; value: string 
 export function buildGraph(
   compiled: Compiled,
   verbs: KindVerbs[],
-  projectLabel = "",
+  names: Record<string, { name: string; zone: string; fqdn: string; generated: boolean }> = {},
   lowered: Lowered[] = [],
   /** Which lowered resources are showing what they BECOME rather than what was written. */
   flipped: Set<string> = new Set(),
@@ -264,12 +249,6 @@ export function buildGraph(
       // The name is a zone plus a label now, and for a generated host the zone is
       // not knowable here at all — it is the cloud's, decided at deploy. Resolved in
       // a second pass, once the zones are compiled and can be looked up.
-      // WHERE this resource says what name it answers on is the schema's answer
-      // (AnswersAt), not a key spelled here.
-      host: hostOf(group, res),
-      // A kind that carries an fqdn and answers nothing else is what resolves a name:
-      // it is read off the field, not off the kind's name.
-      zoneFqdn: !SHAPES.kinds[group]?.answersAt && typeof res.fqdn === "string" ? (res.fqdn as string) : undefined,
       // Whatever this kind DERIVES — an SRV name, anything added later. Computed by the
       // engine, labelled by the schema, and never assembled here: a renderer composing
       // its own version of a fact is a second definition that agrees by coincidence.
@@ -443,6 +422,7 @@ export function buildGraph(
           from: pol.from, to: target.id, kind: pol.kind, verb: pol.verb,
           effect: pol.use ? "write" : "read",
           policy: !pol.use,
+          handoff: pol.use,
         });
         break;
       }
@@ -456,37 +436,21 @@ export function buildGraph(
 
   // Coordinates come from ELK now (layout.ts) — this file decides WHAT is on the
   // graph, not where it goes.
-  // A host names a zone; the zone knows its apex. A GENERATED host names the cloud's
-  // own zone, which no compiled object contains and no config may assert — so it is
-  // shown as the placeholder it is rather than guessed at.
-  // Which zone answers each name, so the zone stops looking like a leaf nothing uses.
-  const zoneOf = new Map<string, string>();
-  const zoneIdOf = new Map<string, string>();
+  // WHAT EACH RESOURCE IS REACHED AT comes from tcc: the label it chose, the zone that
+  // answers for it, and the project's own derived label are three separate places, and
+  // whoever glues them together decides what the name IS. This file used to glue them.
+  //
+  // The cloud's fqdn is the one piece nothing knows — it is not in the config — so the
+  // gap is DRAWN as a gap rather than filled in with a guess.
   for (const n of nodes) {
-    if (!n.host) continue;
-    const label = n.host.name ? `${n.host.name}.` : "";
-    // WHICH BRANCH this is does not need its name: a name in a zone the project owns
-    // carries a reference to that zone, and the other kind of name does not. Reading
-    // the branch's spelling meant this file knew the word "generated".
-    if (!n.host.zone) {
-      // The project's own label is derived from its id, so it is known here. The
-      // cloud's fqdn is not in the config and is not guessed.
-      n.fqdn = projectLabel ? `${label}${projectLabel}.⟨cloud⟩` : `${label}⟨cloud zone⟩`;
-      continue;
-    }
-    // A scalar reference compiles to "<kind>/<id>", whatever the kind is.
-    const zoneID = n.host.zone.slice(n.host.zone.indexOf("/") + 1);
-    const zone = zoneID ? byId.get(zoneID) : undefined;
-    n.fqdn = zone?.zoneFqdn ? `${label}${zone.zoneFqdn}` : `${label}⟨zone⟩`;
+    const at = names[n.id];
+    if (!at) continue;
+    n.fqdn = at.generated ? `${at.fqdn || n.name}.⟨cloud⟩` : at.fqdn || `${at.name}.⟨zone⟩`;
+    const zone = at.zone ? byId.get(at.zone) : undefined;
     if (zone) {
-      zoneOf.set(n.id, `${zone.kind}/${zone.name}`);
-      zoneIdOf.set(n.id, zone.id);
+      n.answeredBy = `${zone.kind}/${zone.name}`;
+      n.answeredById = zone.id;
     }
-  }
-
-  for (const n of nodes) {
-    n.answeredBy = zoneOf.get(n.id);
-    n.answeredById = zoneIdOf.get(n.id);
   }
 
   // A LOWERED RESOURCE IS A BOX, the same way a namespace is: a frame holding the parts

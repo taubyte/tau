@@ -415,7 +415,11 @@ export function GraphView({
     const out: Edge[] = [];
     const zones = new Set<string>();
     for (const n of graph.nodes) {
-      if (!n.fqdn || n.kind === "zone") continue;
+      // Only what ANSWERS on a name has one — tcc says which, and a zone is what
+      // answers rather than what is answered for, so it is not in that list. The kind
+      // was being named here to exclude it, back when this file read the fqdn field
+      // off any resource that had one.
+      if (!n.fqdn) continue;
       const zone = n.answeredById || CLOUD_ZONE;
       zones.add(zone);
       const hop = ingressEdge(zone, n.id, n.fqdn);

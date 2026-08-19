@@ -89,8 +89,31 @@ func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope obj
 		if len(g.Children) == 0 {
 			continue
 		}
-		refs := collectRefAttrs(g.Children[0].Attributes)
-		if len(refs) == 0 {
+		iter := g.Children[0]
+		refs := collectRefAttrs(iter.Attributes)
+		// A NESTED GROUP'S ENTRIES CARRY REFERENCES TOO — a variables entry naming the
+		// secret it takes its value from — and they compile to ids like any other. The
+		// inversion walked the resource's own attributes and stopped, so a project
+		// decompiled with `secret: secret/Qm…` in it: a document that reads like config
+		// and does not compile, because a name is what a reference resolves FROM.
+		// Only a resource that declares NESTED DATA groups — `Nested(...)` — has entries
+		// of its own to invert. A container's children are SCOPES, and the scope walk
+		// already visits those: descending into them here inverted every id twice, and
+		// the second pass looked up a name as though it were an id and failed.
+		nested := map[string][]refAttr{}
+		for _, child := range iter.Children {
+			if !iter.Nested {
+				break
+			}
+			key, _ := child.Match.(string)
+			if key == "" || len(child.Children) == 0 {
+				continue
+			}
+			if inner := collectRefAttrs(child.Children[0].Attributes); len(inner) > 0 {
+				nested[key] = inner
+			}
+		}
+		if len(refs) == 0 && len(nested) == 0 {
 			continue
 		}
 
@@ -118,6 +141,30 @@ func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope obj
 			for _, ra := range refs {
 				if err := invertRefAttr(sel, ra, getMap); err != nil {
 					return nil, err
+				}
+			}
+			if len(nested) == 0 {
+				continue
+			}
+			inst, err := sel.Object()
+			if err != nil {
+				return nil, fmt.Errorf("fetching %s/%s failed with %w", groupKey, instName, err)
+			}
+			for key, inner := range nested {
+				entries, err := inst.Child(key).Object()
+				if err == object.ErrNotExist {
+					continue
+				}
+				if err != nil {
+					return nil, fmt.Errorf("fetching %s/%s/%s failed with %w", groupKey, instName, key, err)
+				}
+				for _, entryName := range entries.Children() {
+					entry := entries.Child(entryName)
+					for _, ra := range inner {
+						if err := invertRefAttr(entry, ra, getMap); err != nil {
+							return nil, err
+						}
+					}
 				}
 			}
 		}

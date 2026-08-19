@@ -99,7 +99,7 @@ export function flipFrame(id: string) {
 function render() {
   lastResult = compile();
   if (!("error" in lastResult)) {
-    graph = buildGraph(lastResult.object, verbs, lastResult.projectLabel, lastResult.lowered ?? [], flipped);
+    graph = buildGraph(lastResult.object, verbs, lastResult.names ?? {}, lastResult.lowered ?? [], flipped);
     const g = graph;
     const seq = ++layoutSeq;
     // A keystroke while a layout is in flight makes that layout stale; the counter is
@@ -451,7 +451,7 @@ function reviewPane(result: CompileOk): HTMLElement {
       at: n.fqdn!,
       zone: n.answeredBy ?? "the cloud's own",
       serves: graph!.arrows
-        .filter((a) => a.from === n.id && a.verb === "serves")
+        .filter((a) => a.from === n.id && a.handoff)
         .map((a) => graph!.byId.get(a.to))
         .filter((x): x is NonNullable<typeof x> => !!x)
         .map((t) => `${t.kind}/${t.name}${t.scope ? ` in ${t.scope}` : ""}`),
