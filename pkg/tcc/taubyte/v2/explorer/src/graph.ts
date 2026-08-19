@@ -81,6 +81,10 @@ export function setCategories(kinds: { group: string; category: string; icon?: s
 }
 
 export function categoryOf(kind: string): string {
+  // `step` is not a kind — it is a part of one, and the vocabulary has no category for
+  // it. It gets its own so it is coloured as what it is rather than falling through to
+  // the colour of everything unrecognised.
+  if (kind === "step") return "part";
   return CATEGORY[kind] ?? "other";
 }
 
@@ -97,7 +101,7 @@ export interface Lowered {
   of: string;
   scope: string;
   why: string;
-  links: { kind: string; name: string; verb: string; scope?: string }[];
+  links: { kind: string; name: string; verb: string; scope?: string; from?: { kind: string; name: string } }[];
   source?: { kind: string; name: string; scope: string; path: string; part?: Record<string, unknown> };
 }
 
@@ -431,7 +435,6 @@ export function buildGraph(
         };
         nodes.push(node);
         byId.set(id, node);
-        live.push({ from: src.id, to: id, kind: d.kind, verb: "becomes", effect: "read", ref: true });
       }
       for (const d of parts) {
         const from = byId.get(`derived:${d.kind}/${d.name}`);
@@ -441,7 +444,14 @@ export function buildGraph(
             byId.get(`derived:${l.kind}/${l.name}`) ??
             nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === d.scope);
           if (!to) continue;
-          live.push({ from: from.id, to: to.id, kind: l.kind, verb: l.verb, effect: "write" });
+          // A queue does not hand work to another queue: the function that consumed it
+          // is what sends on, and tcc says so on the link.
+          const origin = l.from
+            ? (byId.get(`derived:${l.from.kind}/${l.from.name}`) ??
+              nodes.find((n) => n.kind === l.from!.kind && n.name === l.from!.name))
+            : from;
+          if (!origin) continue;
+          live.push({ from: origin.id, to: to.id, kind: l.kind, verb: l.verb, effect: "write" });
         }
       }
       continue;
@@ -455,14 +465,13 @@ export function buildGraph(
       const partName = typeof d.source?.part?.name === "string" ? (d.source.part.name as string) : "";
       if (!path || !partName || partNodes.has(path)) continue;
       const id = `part:${of}/${path}`;
-      const node: Node = {
-        id, kind: "step", name: partName, scope: frame,
-        derived: { of, why: d.why }, layer: 0, x: 0, y: 0,
-      };
+      // NOT derived: a step is what the author wrote. The box says which workflow it
+      // belongs to, so there is no containment edge either — an arrow saying "this is
+      // inside that" repeats the rectangle it is drawn inside.
+      const node: Node = { id, kind: "step", name: partName, scope: frame, layer: 0, x: 0, y: 0 };
       partNodes.set(path, node);
       nodes.push(node);
       byId.set(id, node);
-      live.push({ from: src.id, to: id, kind: "step", verb: "runs", effect: "read", ref: true });
     }
 
     // The wiring, attributed to the part rather than to what it became: a step runs its
@@ -480,6 +489,9 @@ export function buildGraph(
           ? partByName.get(sibling.source.part.name as string)
           : nodes.find((n) => n.kind === l.kind && n.name === l.name && n.scope === (l.scope || src.scope));
         if (!to || to.id === from.id) continue;
+        // As written, an edge that tcc says starts at the step's own function still
+        // starts at the STEP here: the function is what the step runs, and drawing the
+        // hop from outside the box would take the eye out of it and back.
         live.push({ from: from.id, to: to.id, kind: l.kind, verb: l.verb, effect: "write" });
       }
     }

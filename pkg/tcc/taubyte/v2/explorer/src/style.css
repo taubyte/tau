@@ -284,11 +284,23 @@ code.om.open { color: var(--internet); }
   font-style: italic;
 }
 
-/* A frame that can be turned over. Same box as a namespace — it is the same idea to a
-   reader — with the button that swaps what is inside it. */
+/* A FRAME IS NOT A NAMESPACE. A namespace is a place resources live in; a frame is one
+   resource shown from the inside, and reading them as the same thing is the mistake the
+   shared rectangle invites. So it is drawn as a solid panel with its own tint, against
+   the namespace's dashed outline. */
 .rf-scope.frame {
-  border-style: dashed;
+  border-style: solid;
+  border-color: var(--trigger);
+  background: color-mix(in srgb, var(--trigger) 7%, transparent);
 }
+.rf-scope.frame .rf-scopelabel {
+  color: var(--trigger);
+}
+
+/* A step: what the author wrote, so it is drawn like anything else authored — solid,
+   readable — and never with the derived treatment. */
+.rf-node.part { border-color: var(--trigger); }
+.rf-node.part .rf-glyph { color: var(--trigger); }
 .rf-flip {
   position: absolute;
   top: 3px;

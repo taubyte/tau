@@ -1230,16 +1230,28 @@ var V2Resources = []*Node{
 					// actually travels.
 					LinksTo("function", "{each.run}", "consumed by", InScope("{each.namespace}")),
 
-					// WHAT MAKES IT A PIPELINE. Without this the queues are independent
-					// and nothing says `charge` runs after `reserve`: the step's function
-					// sends to the NEXT step's queue when it is done. The last step has no
-					// next, the template cannot be filled, and the link is dropped — which
-					// is exactly right, because that is where the run ends.
-					LinksTo("queue", "{name}_{each.next.name}", "then"),
+					// WHAT MAKES IT A PIPELINE — and it starts at the FUNCTION, not at
+					// the queue. A queue does not hand work to another queue; the
+					// function that consumed this one sends to the next step's queue
+					// when it is done, and an edge drawn queue-to-queue describes
+					// something that cannot happen.
+					//
+					// The last step has no next, the template cannot be filled, and the
+					// link is dropped — which is exactly right, because that is where the
+					// run ends.
+					LinksTo("queue", "{name}_{each.next.name}", "sends to",
+						From("function", "{each.run}")),
 
-					// And where a step that has used up its attempts sends the run, when
-					// it named somewhere other than the failure queue.
-					LinksTo("queue", "{name}_{each.on-error}", "on error"),
+					// Same origin for a step that names somewhere other than the failure
+					// queue to go when it has used up its attempts.
+					LinksTo("queue", "{name}_{each.on-error}", "on error",
+						From("function", "{each.run}")),
+
+					// This one IS queue-to-queue, and truthfully: a queue's dead-letter
+					// is another queue, and moving an item there when its attempts are
+					// gone is the queue's own doing rather than anything the function
+					// decides. It is the field above, drawn.
+					LinksTo("queue", "{name}_failed", "gives up to"),
 				),
 
 				// The end of the line, with NO CONSUMER — deliberately. A dead-letter

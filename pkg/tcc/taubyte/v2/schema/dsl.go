@@ -39,6 +39,7 @@ var (
 	Sets             = interp.Sets
 	LinksTo          = interp.LinksTo
 	InScope          = interp.InScope
+	From             = interp.From
 	Doc              = engine.Doc
 	Duration         = engine.Duration
 	Either           = engine.Either

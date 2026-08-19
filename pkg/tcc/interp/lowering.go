@@ -49,7 +49,11 @@ type Lowering struct {
 	links   []link
 }
 
-type link struct{ kind, name, verb, scope string }
+type link struct {
+	kind, name, verb, scope string
+	// where the edge STARTS, when that is not the derived resource itself
+	fromKind, fromName string
+}
 
 type (
 	// LoweringOption configures one lowering.
@@ -125,6 +129,14 @@ func LinksTo(kind, name, verb string, opts ...LinkOption) LoweringOption {
 		o(&lk)
 	}
 	return func(l *Lowering) { l.links = append(l.links, lk) }
+}
+
+// From says what the edge starts AT, when the derived resource is not the thing doing
+// it. A queue does not hand work to another queue — the function that consumed the
+// first one is what sends to the second — and an edge drawn queue-to-queue says
+// something that cannot happen. Both ends are templates, like everything else here.
+func From(kind, name string) LinkOption {
+	return func(l *link) { l.fromKind, l.fromName = kind, name }
 }
 
 // InScope says where the link's target lives, as a template. Omitted means the same
@@ -249,6 +261,9 @@ type Resolved struct {
 	Name  string
 	Verb  string
 	Scope string // "" means the lowered resource's own scope
+	// From is what the edge starts at, when that is not the resource carrying it.
+	// Empty Kind means it starts at the derived resource itself.
+	From struct{ Kind, Name string }
 }
 
 func (d Derived) String() string { return d.Kind + "/" + d.Name + " (" + d.Why + ")" }
@@ -396,7 +411,15 @@ func links(ls []link, res, each, next map[string]any) []Resolved {
 		if name == "" || strings.ContainsAny(name, "{}") {
 			continue
 		}
-		out = append(out, Resolved{Kind: l.kind, Name: name, Verb: l.verb, Scope: expand(l.scope, res, each, next)})
+		r := Resolved{Kind: l.kind, Name: name, Verb: l.verb, Scope: expand(l.scope, res, each, next)}
+		if l.fromKind != "" {
+			from := expand(l.fromName, res, each, next)
+			if from == "" || strings.ContainsAny(from, "{}") {
+				continue // an origin that cannot be named is an edge that cannot be drawn
+			}
+			r.From.Kind, r.From.Name = l.fromKind, from
+		}
+		out = append(out, r)
 	}
 	if len(out) == 0 {
 		return nil

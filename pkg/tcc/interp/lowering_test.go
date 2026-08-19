@@ -37,7 +37,8 @@ func pipelineSchema() (engine.Schema, *engine.Node) {
 					interp.Named("{name}-{each.name}"),
 					interp.Carries("stage {each.name}"),
 					interp.LinksTo("job", "{each.run}", "runs"),
-					interp.LinksTo("job", "{name}-{each.next.name}", "then"),
+					interp.LinksTo("job", "{name}-{each.next.name}", "then",
+						interp.From("job", "{each.run}")),
 				),
 				interp.Into("log",
 					interp.Named("{name}-log"),
@@ -148,7 +149,7 @@ func TestNoLoweringDeclared(t *testing.T) {
 // after it. Without that, an ordered list produces N unconnected resources and the
 // order it was written in means nothing.
 func TestLoweringChainsToTheNextElement(t *testing.T) {
-	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n    - name: test\n    - name: ship\n")
+	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n    - name: test\n      run: ct\n    - name: ship\n      run: cs\n")
 
 	next := func(name string) string {
 		for _, l := range byName(t, plan, name).Links {
@@ -196,4 +197,25 @@ func TestCheckLoweringsRefusesAnUnbuildableResource(t *testing.T) {
 			interp.Lowers(interp.Into("worker", interp.Named("{name}-w"), interp.Sets("call", "run"))))),
 	)
 	assert.Equal(t, len(interp.CheckLowerings(ok)), 0)
+}
+
+// An edge may start somewhere other than the resource that carries it. Without that, a
+// lowering can only draw what the derived resource does, and some of what it would draw
+// is false: a queue handing work to another queue is not a thing that happens — the
+// function that consumed the first one is what sends to the second.
+func TestLoweringLinkOrigin(t *testing.T) {
+	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n    - name: test\n      run: ct\n")
+
+	compile := byName(t, plan, "build-compile")
+	var chained, own int
+	for _, l := range compile.Links {
+		if l.From.Kind != "" {
+			chained++
+			assert.Equal(t, l.From.Kind+"/"+l.From.Name, "job/cc", "the chain starts at what ran")
+		} else {
+			own++
+		}
+	}
+	assert.Equal(t, chained, 1)
+	assert.Equal(t, own, 1, "the link with no origin is the resource's own")
 }
