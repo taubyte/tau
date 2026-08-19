@@ -1,0 +1,17 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zg
+description: the way in to the agent - an agent is asked a question and answers it, which is a request and a response
+host:
+    zone:
+        in: zone/example-com
+        name: ask
+route:
+    path: /
+    match: prefix
+    methods: [POST]
+    handler:
+        agent:
+            name: support
+rate-limit:
+    rpm: 60
+    burst: 10
+    key: ip

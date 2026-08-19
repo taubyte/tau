@@ -1,0 +1,11 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zh
+description: what the support agent answers with - one credential, rotated in one place, for every caller
+identifier: claude-opus-5
+format: anthropic
+inference:
+    remote:
+        endpoint: https://api.anthropic.com
+        credentials: secret/anthropic
+parameters:
+    temperature: 0.2
+    max-tokens: 4096

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/object"
 )
 
 // LOWERING: a kind that is REWRITTEN rather than run.
@@ -46,8 +47,13 @@ type Lowering struct {
 	perEach string
 	name    string
 	why     string
-	set     map[string]string
-	links   []link
+	// when: a field that has to be set for this to be produced at all
+	when string
+	// acts: this part does what the source resource DECLARES — the tools an agent may
+	// reach are reached by its loop
+	acts  bool
+	set   map[string]string
+	links []link
 }
 
 type link struct {
@@ -85,6 +91,29 @@ func Into(kind string, opts ...LoweringOption) Lowering {
 		o(&l)
 	}
 	return l
+}
+
+// When produces this only if the named field is set on the resource being lowered. An
+// optional half of a construct — an agent's memory — becomes nothing when it is not
+// declared, rather than an empty resource nobody asked for.
+//
+// A field being set, and nothing else. Not an expression: a lowering a reader cannot
+// evaluate in their head is a lowering that has to be run to be understood.
+func When(field string) LoweringOption {
+	return func(l *Lowering) { l.when = field }
+}
+
+// Acts marks the part that does what the SOURCE declares.
+//
+// An agent's access block is its tools, and it is the LOOP that calls them: opened, the
+// box should read model-and-memory-and-tools around the thing doing the calling, not a
+// box with arrows leaving it for reasons the picture does not give. A workflow marks
+// nothing, because no single part acts for it — each step's own function does.
+//
+// It changes no compiled value. It says which derived resource a consumer should hang
+// the source's own edges on while it is showing the inside.
+func Acts() LoweringOption {
+	return func(l *Lowering) { l.acts = true }
 }
 
 // PerEach produces one of these per element of a list attribute, instead of one per
@@ -247,6 +276,12 @@ type Derived struct {
 	// lowering can say WHICH level went wrong. Empty when this came straight from
 	// something authored.
 	Via []string
+
+	// Doc is the yaml this resource would be. See document().
+	Doc string
+
+	// Acts marks the part that does what the source declares. See Acts().
+	Acts bool
 }
 
 // Source points at the authored config a derived resource came from.
@@ -302,15 +337,19 @@ type Resolved struct {
 
 func (d Derived) String() string { return d.Kind + "/" + d.Name + " (" + d.Why + ")" }
 
-// Yaml is the document this derived resource would BE — what an author would have had
-// to write to get it by hand.
+// Doc is the document this derived resource would BE — what an author would have had to
+// write to get it by hand — and it is built at PLAN time because that is where the
+// schema is.
 //
-// It is rendered here rather than by whatever is displaying it, for the same reason the
-// plan is computed here: a second implementation would be the same knowledge written
-// twice, and this one is the only place that knows a lowering produced authored-shaped
-// keys. The header says where it came from, because the first question anyone asks of a
-// file they did not write is who wrote it.
-func (d Derived) Yaml() string {
+// It has to be authorable, not merely readable. A field's compiled key is not its
+// authored path: `execution/call` is one name for one attribute and three lines of yaml
+// (`execution:` / `  call:`), and writing the flat key produced a document that failed
+// to compile with "unknown key 'execution/call'". Generated config that would be
+// rejected if anyone authored it is worse than none, so the paths come off the schema.
+
+// document renders a derived resource as yaml, nesting each field at the path its
+// attribute declares.
+func document(root *engine.Node, d Derived) string {
 	var b strings.Builder
 	b.WriteString("# " + d.Kind + "/" + d.Name + " — generated, not in your repository\n")
 	b.WriteString("# from " + d.Source.String() + "\n")
@@ -322,14 +361,12 @@ func (d Derived) Yaml() string {
 		b.WriteString("id: " + d.ID + "\n")
 	}
 
-	keys := make([]string, 0, len(d.Fields))
-	for k := range d.Fields {
-		keys = append(keys, k)
+	tree := map[string]any{}
+	iter := iterOfKind(root, d.Kind)
+	for name, v := range d.Fields {
+		place(tree, authoredPath(iter, name), fmt.Sprint(v))
 	}
-	sort.Strings(keys)
-	for _, k := range keys {
-		b.WriteString(k + ": " + fmt.Sprint(d.Fields[k]) + "\n")
-	}
+	writeTree(&b, tree, 0)
 
 	for _, l := range d.Links {
 		if l.Ref {
@@ -341,6 +378,66 @@ func (d Derived) Yaml() string {
 		b.WriteString("\n")
 	}
 	return b.String()
+}
+
+// authoredPath is where a field is WRITTEN, which is its attribute's Path — not its
+// compiled name. A path with a matcher in it (an Either branch) has no single authored
+// location, so it stays flat and the document says what it can.
+func authoredPath(iter *engine.Node, name string) []string {
+	if iter == nil {
+		return []string{name}
+	}
+	for _, a := range iter.Attributes {
+		if a.Name != name {
+			continue
+		}
+		if len(a.Path) == 0 {
+			return []string{name}
+		}
+		out := make([]string, 0, len(a.Path))
+		for _, seg := range a.Path {
+			s, ok := seg.(string)
+			if !ok {
+				return []string{name}
+			}
+			out = append(out, s)
+		}
+		return out
+	}
+	return []string{name}
+}
+
+func place(tree map[string]any, path []string, value string) {
+	for i, seg := range path {
+		if i == len(path)-1 {
+			tree[seg] = value
+			return
+		}
+		child, ok := tree[seg].(map[string]any)
+		if !ok {
+			child = map[string]any{}
+			tree[seg] = child
+		}
+		tree = child
+	}
+}
+
+func writeTree(b *strings.Builder, tree map[string]any, depth int) {
+	keys := make([]string, 0, len(tree))
+	for k := range tree {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	pad := strings.Repeat("    ", depth)
+	for _, k := range keys {
+		switch v := tree[k].(type) {
+		case map[string]any:
+			b.WriteString(pad + k + ":\n")
+			writeTree(b, v, depth+1)
+		default:
+			b.WriteString(pad + k + ": " + fmt.Sprint(v) + "\n")
+		}
+	}
 }
 
 // LoweringPlan is every resource a compiled project's lowered kinds become, in a
@@ -355,7 +452,7 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 	walkResources(root, scope, "", func(kind string, iter *engine.Node, id, name string, res map[string]any, at string) {
 		src := Source{Kind: kind, Name: name, Scope: at}
 		for _, l := range LoweringsOf(iter) {
-			out = append(out, plan(l, kind, name, id, res, at, src, nil)...)
+			out = append(out, plan(root, l, kind, name, id, res, at, src, nil)...)
 		}
 	})
 
@@ -366,6 +463,10 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 	// lowers into B and B into A is a build mistake, and without a cap it is a build
 	// mistake that hangs the compiler instead of reporting itself.
 	out = append(out, nest(root, out, 1)...)
+
+	for i := range out {
+		out[i].Doc = document(root, out[i])
+	}
 
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Of != out[j].Of {
@@ -381,15 +482,98 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 // and a cycle has to end in a message rather than a hang.
 const MaxLoweringDepth = 8
 
-func plan(l Lowering, kind, name, srcID string, res map[string]any, scope string, src Source, via []string) []Derived {
+// soleReference reports the raw value of a template that is exactly one reference —
+// `{memory/size}` — and nothing else. A template that BUILDS a string ("{name}_failed")
+// has no single value behind it, and one that names nothing has none at all.
+func soleReference(tmpl string, res, each, next map[string]any) (any, bool) {
+	if len(tmpl) < 3 || tmpl[0] != '{' || tmpl[len(tmpl)-1] != '}' || strings.Contains(tmpl[1:len(tmpl)-1], "{") {
+		return nil, false
+	}
+	key := tmpl[1 : len(tmpl)-1]
+	src := res
+	if rest, ok := strings.CutPrefix(key, "each.next."); ok {
+		src, key = next, rest
+	} else if rest, ok := strings.CutPrefix(key, "each."); ok {
+		src, key = each, rest
+	}
+	if src == nil {
+		return nil, false
+	}
+	v, ok := src[key]
+	return v, ok
+}
+
+// setFor expands a lowering's fields and puts any SCALAR back into the form an author
+// writes. A compiled value is the wire form — a Duration is nanoseconds, a Bytes is a
+// count — and a lowering copies from a compiled resource into a document that is
+// supposed to be authorable. Copying `size` straight through produced
+// `size: 2000000000`, which is not merely ugly: it does not compile, because Bytes
+// requires a unit. Generated config that would be rejected if anyone authored it is
+// worse than none.
+//
+// The inverse is the same one decompile uses — the scalar term carries both directions
+// — so there is no second table of "how do I turn nanoseconds back into 20s".
+func setFor(root *engine.Node, into string, fields map[string]string, res, each, next map[string]any) map[string]any {
+	out := set(fields, res, each, next)
+	if len(out) == 0 {
+		return out
+	}
+	iter := iterOfKind(root, into)
+	if iter == nil {
+		return out
+	}
+	for _, a := range iter.Attributes {
+		v, ok := out[a.Name]
+		if !ok {
+			continue
+		}
+		sc, isScalar := a.Meta["scalar"].(engine.ScalarSpec)
+		if !isScalar {
+			continue
+		}
+		// Format reads the WIRE value — nanoseconds, a byte count — and `expand` has
+		// already turned everything into a string. So a scalar field takes the raw
+		// value straight from the source, which is only meaningful when the template is
+		// one reference and nothing else: "{memory/size}" is a value being carried,
+		// "{name}_x" is a string being built.
+		raw, ok := soleReference(fields[a.Name], res, each, next)
+		if !ok {
+			continue
+		}
+		// Format takes a selector to the object HOLDING the field, which is how the
+		// decompiler calls it, so it gets a one-field object to hold.
+		holder := object.New[object.Refrence]()
+		one := object.New[object.Refrence]()
+		one.Set(a.Name, raw)
+		sel := holder.Child("x")
+		if err := sel.Add(one); err != nil {
+			continue
+		}
+		if err := sc.Format(sel, a.Name); err != nil {
+			continue // leave the wire form rather than lose the value
+		}
+		if formatted, err := sel.GetString(a.Name); err == nil && formatted != "" {
+			out[a.Name] = formatted
+		}
+		_ = v
+	}
+	return out
+}
+
+func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[string]any, scope string, src Source, via []string) []Derived {
+	if l.when != "" {
+		if v, ok := lookup(l.when, res, nil, nil); !ok || v == "" {
+			return nil
+		}
+	}
 	of := kind + "/" + name
 
 	if l.perEach == "" {
 		return []Derived{{
 			Kind: l.into, Name: expand(l.name, res, nil, nil), Of: of, Scope: scope,
 			ID:  derivedID(srcID, l.into, l.name),
-			Why: expand(l.why, res, nil, nil), Fields: set(l.set, res, nil, nil),
-			Links: links(l.links, res, nil, nil), Source: src, Via: via,
+			Why: expand(l.why, res, nil, nil), Fields: setFor(root, l.into, l.set, res, nil, nil),
+			Links: links(l.links, res, nil, nil), Source: src, Via: via, Acts: l.acts,
 		}}
 	}
 
@@ -416,8 +600,8 @@ func plan(l Lowering, kind, name, srcID string, res map[string]any, scope string
 		out = append(out, Derived{
 			Kind: l.into, Name: expand(l.name, res, el, next), Of: of, Scope: scope,
 			ID:  derivedID(srcID, l.into, part),
-			Why: expand(l.why, res, el, next), Fields: set(l.set, res, el, next),
-			Links: links(l.links, res, el, next), Source: at, Via: via,
+			Why: expand(l.why, res, el, next), Fields: setFor(root, l.into, l.set, res, el, next),
+			Links: links(l.links, res, el, next), Source: at, Via: via, Acts: l.acts,
 		})
 	}
 	return out
@@ -457,7 +641,7 @@ func nest(root *engine.Node, parents []Derived, depth int) []Derived {
 		res["name"] = p.Name
 		via := append(append([]string{}, p.Via...), p.Kind+"/"+p.Name)
 		for _, l := range ls {
-			out = append(out, plan(l, p.Kind, p.Name, p.ID, res, p.Scope, p.Source, via)...)
+			out = append(out, plan(root, l, p.Kind, p.Name, p.ID, res, p.Scope, p.Source, via)...)
 		}
 	}
 	return append(out, nest(root, out, depth+1)...)

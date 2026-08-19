@@ -101,13 +101,24 @@ var secIdentity = Section("identity", "Identity", "Resource identity and metadat
 //	code     — a build artifact
 func Category(name string) NodeOption { return GroupAnnotate("category", name) }
 
-// sourceShape: a code source is "." (inline) or "module/<name>". v1's prefix was
-// "libraries/"; the rename carries into the reference form.
+// sourceShape: a code source is "." (inline), "module/<name>", or "tau/<name>" — the
+// runtime's OWN code.
+//
+// The third form arrived with the first lowering that produces a workload. An agent
+// becomes a function whose loop — call the model, hand it the tools it may reach, run
+// one, decide again, stop at the ceiling — is the same program for every agent, and
+// belongs to the platform rather than to the author's repository. It has to be
+// EXPRESSIBLE, because a lowering that set a source no document could legally contain
+// would be generating config that does not compile.
+//
+// It is not an extension point: `tau/` names something the runtime ships, so the set is
+// closed by what exists rather than by what an author can write. An agent whose loop
+// were the author's code would be a `function`.
 //
 // PLURAL, like every other kind. It was `module` alone, which meant one directory in
 // a project read `module/` while its nineteen siblings read `functions/`, `caches/`,
 // `queues/` — a rule with one exception is a rule everybody has to remember.
-var sourceShape = StringShape([]string{"."}, []string{"module/"})
+var sourceShape = StringShape([]string{"."}, []string{"module/", "tau/"})
 
 // egressAttribute is the per-workload ALLOWLIST of hosts a workload may reach,
 // layered on top of the node-wide deny floor (pkg/netguard) which it can never widen.
@@ -298,7 +309,11 @@ func pullSecret() *Attribute {
 // handlerKinds are what may serve a route. Closed, because it is the Either() a
 // handler's kind switches on: a key outside this set is a compile error rather than
 // a route that silently never fires.
-var handlerKinds = []string{"function", "application", "website", "gateway", "mcp"}
+// `agent` is in the list because an agent is asked a question and answers it, which is
+// a request and a response — the same shape a function has. Leaving it out meant an
+// agent could be declared and never reached: nothing could route to one, and the audit
+// could not complain either, because a kind no route can name is not one it checks.
+var handlerKinds = []string{"function", "application", "website", "gateway", "mcp", "agent"}
 
 // streamServerKinds are what may answer a stream. A container gets the bytes on one of
 // its own ports; a function is dispatched with the stream in hand. Both are real, and
@@ -709,6 +724,44 @@ var V2Resources = []*Node{
 			Section("checkpoint", "Checkpoint", "Durability out of band from the write path."),
 			Ops(Mounts(ReadOp("mount-ro")), Mounts(WriteOp("mount-rw"))),
 			Resource("volume", "Volume", "Volume", "volume"),
+		)),
+
+	// Nearest-neighbour search over embeddings: what an agent remembers, what a
+	// retrieval step searches, what a recommender ranks with.
+	//
+	// ITS OWN KIND rather than an engine on `database`, and the vocabulary's own rule
+	// decides it: verbs are per kind, and these are not a database's. A database is
+	// asked a QUERY and answers rows; this is asked for the nearest N to a vector and
+	// answers neighbours with distances. `query`/`exec` cannot describe `search`/
+	// `upsert` — and an engine key that changed which verbs a kind has would break the
+	// one thing Ops() exists to guarantee, that a kind's verb set is a fact about the
+	// kind.
+	//
+	// DIMENSIONS ARE FIXED AT CREATION and required, because they are not a setting: an
+	// index is built for a width, every vector in it has that width, and changing it is
+	// a new index and a re-embed of everything. A default would be a guess at which
+	// embedding model someone is using.
+	DefineGroup("vector",
+		resource(
+			commonAttributes(
+				Int("dimensions", MinInt(1), Required(), InSection("index"),
+					Doc("Dimensions", "The width of every vector stored here, which the embedding model decides — 1536 for OpenAI's text-embedding-3-small, 1024 for Cohere v3. Fixed: changing it is a new index and a re-embed.")),
+
+				// The metric has to match how the model was TRAINED, which is why it is
+				// named rather than tuned: cosine for a model trained on normalized
+				// embeddings, dot for one that is not, euclidean where magnitude means
+				// something. Getting it wrong does not error — it just ranks badly.
+				String("metric", InSet("cosine", "dot", "euclidean"), Default("cosine"), InSection("index"),
+					Doc("Metric", "How closeness is measured. Match the embedding model: cosine for normalized embeddings, dot where magnitude carries meaning, euclidean for raw distance.")),
+
+				Bytes("size", Path("size"), Required(), InSection("index"),
+					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\"). An index is the vectors plus their neighbour graph, so it is larger than the vectors alone.")),
+			),
+			GroupDoc("Nearest-neighbour search over embeddings. What an agent remembers, and what a retrieval step searches."), Icon("vector"), Category("data"),
+			secIdentity, secAccess,
+			Section("index", "Index", "The width of a vector, how closeness is measured, and how much of it there may be."),
+			Ops(ReadOp("search"), WriteOp("upsert"), WriteOp("delete")),
+			Resource("vector", "Vector", "Vector", "vector"),
 		)),
 
 	// A declaration and a reference, never a value. The value lives outside git in
@@ -1122,6 +1175,70 @@ var V2Resources = []*Node{
 			Resource("stream", "Stream", "Stream", "stream"),
 		)),
 
+	// ---- models ----
+
+	// WHERE INFERENCE HAPPENS, and on whose account. Its own kind because it is its own
+	// thing: the same model answers for three agents and a function, it has a
+	// credential that rotates, an endpoint that moves, and parameters somebody tunes —
+	// and none of that is a property of whoever is calling it. It was a STRING on the
+	// agent (`model: claude-opus-5`) with the credential beside it, which made every
+	// agent carry a copy of the same four facts and gave the credential nowhere to live
+	// but the caller.
+	//
+	// LOCAL AND REMOTE ARE THE SAME KIND, because the caller does not care: a model is
+	// an endpoint that speaks a wire format. `remote` is a provider's, `local` is a
+	// workload in this project serving one — which is how a self-hosted vLLM or ollama
+	// arrives without a second kind for it, and reuses the container story rather than
+	// inventing an inference one.
+	//
+	// FORMAT is not the provider. Half the world serves the OpenAI wire format,
+	// including things that are not OpenAI, so what a caller has to know is the shape of
+	// the request and not whose logo is on it.
+	DefineGroup("model",
+		resource(
+			commonAttributes(
+				String("identifier", Required(), InSection("model"),
+					Doc("Identifier", "What this model is called where it is served, e.g. \"claude-opus-5\" or \"llama-3.1-70b\". The resource's own name is yours; this one is theirs.")),
+				String("format", InSet("openai", "anthropic", "ollama"), Required(), InSection("model"),
+					Doc("API Format", "The wire format the endpoint speaks. Not the provider: plenty of things that are not OpenAI serve the OpenAI format, and the caller needs the shape of the request.")),
+
+				// `inference`, not `serve`. A stream already says `serve:` and means
+				// something else by it — WHICH KIND answers — and two keys with one
+				// spelling is how a check written for one starts firing on the other.
+				// It did: the port check read this switch's `local` as a resource kind.
+				String("inference/kind", Path("inference", Either("remote", "local")), Key(), InSection("model"),
+					Doc("Inference", "remote: a provider reached over the network. local: a workload in this project serving it (the key selects the block).")),
+				String("inference/endpoint", Path("inference", "remote", "endpoint"), IsURL(), RequiredWhen("inference/kind", "remote"), InSection("model"),
+					Doc("Endpoint", "Base URL of the provider, e.g. \"https://api.anthropic.com\".")),
+				String("inference/credentials", Path("inference", "remote", "credentials"), Ref("secret", Prefix("secret/")), RequiredWhen("inference/kind", "remote"), InSection("model"),
+					Doc("Credentials", "Secret holding the provider credential, as \"secret/<name>\". It lives here rather than on each caller, so rotating it is one edit.")),
+				String("inference/workload", Path("inference", "local", "name"), IsVariableName(), RequiredWhen("inference/kind", "local"), InSection("model"),
+					Doc("Workload", "The application in this project that serves this model.")),
+				String("inference/port", Path("inference", "local", "port"), IsVariableName(), InSection("model"),
+					Doc("Port", "Which of that workload's named ports inference is reached on.")),
+
+				// TYPED, not a map. The DSL has no arbitrary-keyed values, and that is
+				// the right constraint here rather than a limit worked around: these are
+				// the four every format has, they have ranges worth checking, and a
+				// provider-specific fifth belongs to whoever added the provider.
+				// Recorded in omissions.go.
+				Float("parameters/temperature", Path("parameters", "temperature"), InSection("parameters"),
+					Doc("Temperature", "How much the model is allowed to vary its answer. 0 is as close to deterministic as a model gets.")),
+				Float("parameters/top-p", Path("parameters", "top-p"), InSection("parameters"),
+					Doc("Top P", "Nucleus sampling: consider only the most likely tokens summing to this probability.")),
+				Int("parameters/max-tokens", Path("parameters", "max-tokens"), MinInt(1), InSection("parameters"),
+					Doc("Max Tokens", "Ceiling on one answer. A cost ceiling as much as a length one.")),
+				StringSlice("parameters/stop", Path("parameters", "stop"), InSection("parameters"),
+					Doc("Stop Sequences", "Strings that end an answer when the model produces them.")),
+			),
+			GroupDoc("Where inference happens and on whose account: an endpoint, a wire format, a credential, and the parameters it is called with."), Icon("model"), Category("compute"),
+			secIdentity, secAccess,
+			Section("model", "Model", "What it is, what it speaks, and where it is served."),
+			Section("parameters", "Parameters", "How it is called."),
+			Ops(WriteOp("infer")), // infer is write: it costs money and answers differently every time
+			Resource("model", "Model", "Model", "model"),
+		)),
+
 	// ---- agents ----
 
 	// An LLM loop with tools, declared rather than written. It is a workload like any
@@ -1142,18 +1259,40 @@ var V2Resources = []*Node{
 	DefineGroup("agent",
 		resource(
 			commonAttributes(
-				String("model", Required(), InSection("model"),
-					Doc("Model", "The model this agent runs on, e.g. \"claude-opus-5\".")),
-				String("credentials", Ref("secret", Prefix("secret/")), RequiredWhen("model-source", "external"), InSection("model"),
-					Doc("Credentials", "Secret holding the provider credential, as \"secret/<name>\".")),
-				String("model-source", InSet("external", "local"), Default("external"), InSection("model"),
-					Doc("Model Source", "external: a provider reached over the network, which needs a credential. local: a model served inside the cloud.")),
+				// ONE model, named as a resource. The endpoint, the credential, the wire
+				// format and the parameters are its business, not this agent's — which
+				// is what stopped every agent carrying a copy of the same four facts and
+				// gave the credential somewhere to live that is not the caller.
+				String("model", Ref("model", Prefix("model/")), Required(), InSection("model"),
+					Doc("Model", "The model this agent answers with, as \"model/<name>\".")),
 
 				// The prompt is a string here and a file nowhere, which is the wrong
 				// way round for anything long. Recorded in omissions.go rather than
 				// solved by letting a 40KB system prompt into a yaml document.
 				String("instructions", InSection("model"),
 					Doc("Instructions", "The system prompt. For anything longer than a paragraph, keep it in the workload's own source and leave this empty.")),
+
+				// MEMORY. Declared here and stored in a vector index, which is what the
+				// lowering produces: an agent that remembers is an agent with somewhere
+				// to put embeddings, and that somewhere is a resource like any other —
+				// it has a size, it is searched, and something may be granted access to
+				// it. Declaring it inside the agent rather than making the author wire
+				// one up is the difference between "remembers" being a property of the
+				// agent and being an assembly job.
+				//
+				// The dimensions are the EMBEDDING model's, not the chat model's, which
+				// is why the embedder is named beside them: the two are different models
+				// and an agent needs both.
+				// AN EMBEDDER IS A MODEL, so it is named the same way. Different model
+				// from the one that answers — the widths and the pricing are different —
+				// which is exactly why memory needs its own reference rather than
+				// borrowing the agent's.
+				String("memory/embedder", Path("memory", "embedder"), Ref("model", Prefix("model/")), InSection("memory"),
+					Doc("Embedding Model", "The model that turns what this agent sees into vectors, as \"model/<name>\". Naming it is what turns memory on.")),
+				Int("memory/dimensions", Path("memory", "dimensions"), MinInt(1), RequiredWhen("memory/embedder"), InSection("memory"),
+					Doc("Dimensions", "The width the embedding model produces — 1536 for text-embedding-3-small. Fixed once there is anything in memory.")),
+				Bytes("memory/size", Path("memory", "size"), Default("1GB"), InSection("memory"),
+					Doc("Memory Size", "How much the agent may remember, as a human string.")),
 
 				Int("limits/steps", Path("limits", "steps"), MinInt(1), Required(), InSection("limits"),
 					Doc("Max Steps", "How many times this agent may call a tool and decide again in one invocation. Required: an agent with no ceiling is a loop that spends money until someone notices.")),
@@ -1165,7 +1304,44 @@ var V2Resources = []*Node{
 			GroupDoc("An LLM loop with tools. What it may call is what it declares access to — there is no second list."), Icon("agent"), Category("compute"),
 			secIdentity, secAccess, secConfig, secNetwork, secLimits,
 			Section("model", "Model", "Which model answers, and what it is told."),
+			Section("memory", "Memory", "What it remembers, and how wide the vectors are."),
 			Ops(WriteOp("invoke")),
+
+			// AN AGENT LOWERS, like a workflow: nothing in the substrate runs "agents".
+			// The loop is a function, and what it remembers is a vector index — both
+			// resources the platform already runs, so an agent adds a vocabulary and no
+			// component.
+			//
+			// The function's SOURCE is the runtime's own (`tau/agent`), which is the one
+			// thing here an author does not supply: the loop — call the model, hand it
+			// the tools it may reach, run one, decide again, stop at the ceiling — is the
+			// same program for every agent, and the parts that differ are the fields
+			// above. An agent whose loop was the author's code would be a `function`.
+			Lowers(
+				Into("function",
+					// The loop is what CALLS the tools this agent declares, so opened,
+					// the box reads model-and-memory-and-tools around it.
+					Acts(),
+					Named("{name}_infer"),
+					Carries("the loop: call the model, run a tool, decide again"),
+					Sets("source", "tau/agent"),
+					Sets("execution/call", "infer"),
+					Sets("execution/timeout", "5m"),
+					Sets("execution/memory", "128MB"),
+					Sets("implements", "handler"),
+				),
+
+				// Only when there is an embedder to fill it: an agent that remembers
+				// nothing gets no index rather than an empty one.
+				Into("vector",
+					When("memory/embedder"),
+					Named("{name}_memory"),
+					Carries("what {name} remembers"),
+					Sets("dimensions", "{memory/dimensions}"),
+					Sets("size", "{memory/size}"),
+					LinksTo("function", "{name}_infer", "searched by", LinkEffect(Read)),
+				),
+			),
 			Resource("agent", "Agent", "Agent", "agent"),
 		)),
 

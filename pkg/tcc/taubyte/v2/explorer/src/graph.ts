@@ -116,6 +116,7 @@ export interface Lowered {
   why: string;
   id?: string;
   yaml?: string;
+  acts?: boolean;
   links: {
     kind: string;
     name: string;
@@ -463,6 +464,16 @@ export function buildGraph(
 
     const open = flipped.has(src.id);
     const byPath = new Map<string, Node>();
+
+    // The part that ACTS for this resource, when the lowering names one: an agent's
+    // tools are called by its loop, so with the box open the agent's own edges hang off
+    // the loop rather than leaving the box for reasons the picture does not give.
+    const actor = open ? parts.find((d) => d.acts) : undefined;
+    if (actor) {
+      for (const a of live) {
+        if (a.from === src.id) a.from = `derived:${actor.kind}/${actor.name}`;
+      }
+    }
 
     for (const d of parts) {
       const id = `derived:${d.kind}/${d.name}`;

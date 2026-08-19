@@ -146,9 +146,12 @@ func TestQueueDeadLetterResolves(t *testing.T) {
 // config, only the reference does.
 func TestConnectorCredentialsResolve(t *testing.T) {
 	flat := compileBasic(t)
+	// the one the connector actually names, now that the project has more than one
 	secretID := ""
-	for id := range resources(t, flat, "secret") {
-		secretID = id
+	for id, v := range resources(t, flat, "secret") {
+		if v.(map[string]any)["name"] == "stripe" {
+			secretID = id
+		}
 	}
 	for _, v := range resources(t, flat, "connector") {
 		conn := v.(map[string]any)
@@ -209,7 +212,7 @@ func TestNewKindsCompile(t *testing.T) {
 
 	assert.Equal(t, only(t, resources(t, flat, "cron"))["schedule"], "0 3 * * *")
 	assert.Equal(t, only(t, resources(t, flat, "cache"))["ttl"], int64(86400000000000), "24h in nanoseconds")
-	assert.Equal(t, only(t, resources(t, flat, "secret"))["source"], "value", "default applies")
+	assert.Equal(t, namedResource(t, resources(t, flat, "secret"), "stripe")["source"], "value", "default applies")
 }
 
 // `namespaces` is the SCOPE container: its instances hold resources of their own,
@@ -287,7 +290,7 @@ cache:
 func TestGatewayRoute(t *testing.T) {
 	flat := compileBasic(t)
 
-	gw := only(t, resources(t, flat, "gateway"))
+	gw := namedResource(t, resources(t, flat, "gateway"), "shop")
 	// The name lives on the gateway, and it names a ZONE plus a label rather than a
 	// flat fqdn — so a project moved to another cloud does not carry a name it does
 	// not have there.
@@ -552,7 +555,7 @@ func TestZoneIsNotRouting(t *testing.T) {
 	assert.Assert(t, !ok, "zones must not be a target kind")
 
 	// and the gateway that serves a name under it still holds the ingress
-	gw := only(t, resources(t, flat, "gateway"))
+	gw := namedResource(t, resources(t, flat, "gateway"), "shop")
 	assert.Equal(t, gw["host/name"], "shop")
 }
 
@@ -666,7 +669,7 @@ func TestPortsAreNamed(t *testing.T) {
 	assert.Assert(t, !probe, "a function-checked workload declares no probe path")
 
 	// so does a route targeting the workload
-	gw := only(t, resources(t, flat, "gateway"))
+	gw := namedResource(t, resources(t, flat, "gateway"), "shop")
 	assert.Equal(t, gw["route/handler/kind"], "application")
 	assert.Equal(t, gw["route/handler/port"], "http")
 

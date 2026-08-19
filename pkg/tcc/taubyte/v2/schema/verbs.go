@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"net/url"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
@@ -267,6 +268,28 @@ func opNames(kind string) []string {
 // project root, anything else is relative to the resource's own namespace — which is
 // the root itself for a resource at the root. Segments are namespace names, so each
 // must be one.
+// IsURL checks the one thing a base URL has to be: an https (or http) address with a
+// host and no path stuffed into it. Not a full URL grammar — what this catches is the
+// mistakes that are unambiguous, the way IsDatabaseHost did.
+func IsURL() engine.Option {
+	return Validator(func(u string) error {
+		if u == "" {
+			return nil
+		}
+		parsed, err := url.Parse(u)
+		if err != nil {
+			return fmt.Errorf("%q is not a URL: %w", u, err)
+		}
+		if parsed.Scheme != "https" && parsed.Scheme != "http" {
+			return fmt.Errorf("%q needs an https:// (or http://) scheme", u)
+		}
+		if parsed.Host == "" {
+			return fmt.Errorf("%q names no host", u)
+		}
+		return nil
+	})
+}
+
 func IsNamespacePath() engine.Option {
 	return Validator(func(p string) error {
 		if p == "" || p == "/" {

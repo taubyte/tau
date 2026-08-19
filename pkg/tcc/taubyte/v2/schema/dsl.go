@@ -34,6 +34,8 @@ var (
 	Lowers           = interp.Lowers
 	Into             = interp.Into
 	PerEach          = interp.PerEach
+	When             = interp.When
+	Acts             = interp.Acts
 	Named            = interp.Named
 	Carries          = interp.Carries
 	Sets             = interp.Sets
@@ -45,6 +47,7 @@ var (
 	Doc              = engine.Doc
 	Duration         = engine.Duration
 	Either           = engine.Either
+	Float            = engine.Float
 	EmitValidation   = engine.EmitValidation
 	EnumBool         = engine.EnumBool
 	Field            = engine.Field

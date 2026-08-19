@@ -1,0 +1,8 @@
+id: QmXnnyufdzAWL5CqZ2RnSNgPbvCc1ALT73s6epPrRnZ1Zi
+description: served by a workload in this project - local and remote are the same kind, because a caller only sees an endpoint and a format
+identifier: nomic-embed-text
+format: openai
+inference:
+    local:
+        name: db
+        port: pg

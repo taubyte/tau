@@ -41,6 +41,7 @@ export interface Lowered {
   why: string;
   id?: string;
   yaml?: string;
+  acts?: boolean;
   links: { kind: string; name: string; verb: string }[];
 }
 
