@@ -15,7 +15,7 @@ function:
     relay:
         namespace: eu
         ops: [invoke]
-messaging:
+channel:
     orders:
         namespace: /
         ops: [subscribe]

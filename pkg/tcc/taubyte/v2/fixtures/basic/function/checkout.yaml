@@ -18,6 +18,6 @@ storage:
 secret:
     stripe:
         ops: [get]
-messaging:
+channel:
     orders:
         ops: [publish]

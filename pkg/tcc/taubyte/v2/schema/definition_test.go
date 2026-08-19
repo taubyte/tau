@@ -87,9 +87,19 @@ func compileBasic(t *testing.T) map[string]any {
 func TestFunctionHasNoTrigger(t *testing.T) {
 	fn := namedResource(t, resources(t, compileBasic(t), "function"), "checkout")
 
-	for _, gone := range []string{"type", "local", "channel", "protocol", "command", "method", "methods", "domains", "paths", "secure"} {
+	for _, gone := range []string{"type", "local", "protocol", "command", "method", "methods", "domains", "paths", "secure"} {
 		_, present := fn[gone]
 		assert.Assert(t, !present, "functions carries %q; the trigger block is meant to be deleted, not extended", gone)
+	}
+
+	// `channel` is the one name that survives, and it means the opposite of what it
+	// meant in v1. There it was a TRIGGER — a scalar naming the channel that fired this
+	// function. Here it is an ACCESS BLOCK — entries keyed by channel name, each with
+	// its ops — so the direction is the function declaring what it reaches. The shape is
+	// what tells them apart, so the shape is what this asserts.
+	if ch, present := fn["channel"]; present {
+		_, isBlock := ch.(map[string]any)
+		assert.Assert(t, isBlock, "functions carries a scalar %q: that is v1's trigger coming back", "channel")
 	}
 
 	assert.Equal(t, fn["execution/call"], "checkout")
@@ -388,8 +398,8 @@ func TestEffectClasses(t *testing.T) {
 		{"cache", "watch", schema.Read}, // observes writes it cannot cause
 		{"database", "query", schema.Read},
 		{"database", "exec", schema.Write}, // the host cannot classify arbitrary SQL
-		{"messaging", "publish", schema.Write},
-		{"messaging", "subscribe", schema.Read},
+		{"channel", "publish", schema.Write},
+		{"channel", "subscribe", schema.Read},
 		{"function", "invoke", schema.Write},
 		{"secret", "get", schema.Read},
 	} {

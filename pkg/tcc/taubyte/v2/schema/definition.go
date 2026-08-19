@@ -7,7 +7,7 @@
 //
 //   - The function trigger block is GONE. A function declares nothing about how it
 //     is reached; reachability is an inbound edge authored on the domain, gateway,
-//     messaging channel, p2p service or cron that reaches it. Same for a website's
+//     channel, p2p service or cron that reaches it. Same for a website's
 //     domains/paths. ".notes/v2/resources.md" §1.3, §1.5.
 //   - smartops is deleted. Policy is `authorizers` (request-scoped, per-edge);
 //     limits are platform-enforced at dispatch. "resources.md" Deletions.
@@ -1015,21 +1015,29 @@ var V2Resources = []*Node{
 	// `subscribe`, the producer edges back with `publish`. Two statements because
 	// they are two capabilities — collapsing them into `write` erases a real
 	// boundary, and today the publish half is not checked at all (resources.md §5.3).
-	DefineGroup("messaging",
+	// NOT `messaging`, which was v1's word and named a DOMAIN rather than a thing. Every
+	// other kind is a noun for the thing itself — a database, a queue, a cache — and
+	// nobody says "a messaging". The kind's own field prefix and its documentation
+	// already said `channel`; the name now says it too.
+	//
+	// With the kind called `channel`, `channel: match:` inside `channel/orders.yaml` was
+	// the same word twice, so the two matching fields sit at the document root — which
+	// is where `cache` and `storage` already put the identical pair.
+	DefineGroup("channel",
 		resource(
 			commonAttributes(
-				Bool("local", InSection("channel"), Doc("Local", "Restrict the channel to the local node / project scope.")),
-				String("channel/match", Path("channel", "match"), Required(), Field("Match"), Accessor("ChannelMatch"), NoSetter(), InSection("channel"), Doc("Match", "Channel name or pattern this resource matches.")),
-				Bool("channel/regex", Path("channel", "regex"), NoSetter(), InSection("channel"), Doc("Regex", "Treat match as a regular expression.")),
+				Bool("local", InSection("matching"), Doc("Local", "Restrict the channel to the local node / project scope.")),
+				String("match", Required(), Field("Match"), Accessor("ChannelMatch"), NoSetter(), InSection("matching"), Doc("Match", "Channel name or pattern this resource matches.")),
+				Bool("useRegex", Path("regex"), NoSetter(), InSection("matching"), Doc("Use Regex", "Treat match as a regular expression instead of a literal name.")),
 				Bool("bridges/mqtt/enable", Path("bridges", "mqtt", "enable"), Accessor("MQTT"), NoSetter(), InSection("bridges"), Doc("MQTT", "Expose this channel over the MQTT bridge.")),
 				Bool("bridges/websocket/enable", Path("bridges", "websocket", "enable"), Accessor("WebSocket"), NoSetter(), InSection("bridges"), Doc("WebSocket", "Expose this channel over the WebSocket bridge.")),
 			),
 			GroupDoc("A PubSub channel, optionally bridged to MQTT/WebSocket. It edges to its subscribers; publishers edge to it."), Icon("message"), Category("trigger"),
 			secIdentity, secAccess,
-			Section("channel", "Channel", "Channel matching."),
+			Section("matching", "Matching", "The name or pattern this channel answers to."),
 			Section("bridges", "Bridges", "External protocol bridges."),
 			Ops(DeliveredOp("subscribe"), WriteOp("publish")), // never collapse these into "write"
-			Resource("messaging", "Messaging", "Messaging", "messaging"),
+			Resource("channel", "Channel", "Channel", "channel"),
 		)),
 
 	// NO `auth` FIELD. It was `none | oauth`, and `oauth` promised to "validate tokens

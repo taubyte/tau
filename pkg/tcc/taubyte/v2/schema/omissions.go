@@ -307,8 +307,11 @@ var Omissions = []Omission{
 			"a service-discovery name.",
 		Instead: "nothing. The `database` kind's external engines are for a server somebody else " +
 			"runs, which is what `engine/host` says.",
-		Unblocks: "an in-project addressing concept — a stream named by a path or protocol, " +
-			"reached over p2p, with no edge in the path. Not designed; see the notes.",
+		Unblocks: "the kind v1 called `services` and v2 has not put back, now named `stream`: a " +
+			"stream addressed by a path or protocol, reached over p2p with no edge in the path, " +
+			"the project's id prepended so one project's protocol cannot collide with another's. " +
+			"Not designed — what is prepended, whether the path is matched or exact, and what its " +
+			"verbs are, are all open.",
 	},
 	{
 		Name:    "authenticated MCP",

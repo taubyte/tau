@@ -3,6 +3,6 @@ description: holds the connection to an external kafka and republishes what it r
 type: kafka
 polls: true
 credentials: secret/stripe
-messaging:
+channel:
     orders:
         ops: [publish]

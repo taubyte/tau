@@ -505,11 +505,11 @@ function vocabulary(): HTMLElement {
   wrap.appendChild(t);
 
   wrap.appendChild(
-    sectionTitle("verbs and effect classes", "per kind, because a standard verb set breaks on the second one"),
+    sectionTitle("verbs and effect classes", "what a resource may ask to do to each kind. Only kinds something can reach are here \u2014 nothing uses a cron or a zone, and that absence is the statement"),
   );
   const v = document.createElement("table");
   v.innerHTML =
-    "<thead><tr><th>target kind</th><th>verbs</th></tr></thead><tbody>" +
+    "<thead><tr><th>kind</th><th>verbs</th></tr></thead><tbody>" +
     [...verbs]
       .sort((a, b) => a.kind.localeCompare(b.kind))
       .map(
