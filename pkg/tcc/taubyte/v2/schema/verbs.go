@@ -646,20 +646,7 @@ type Layout struct {
 func LayoutOf() Layout {
 	return Layout{
 		Resource: "{kind}/{name}.yaml",
-		Scope:    scopeContainerKey() + "/{name}",
+		Scope:    scopeContainer + "/{name}",
 		Leaf:     engine.LeafOf(CompileRoot()),
 	}
-}
-
-func scopeContainerKey() string {
-	for _, g := range CompileRoot().Children {
-		if len(g.Children) == 0 {
-			continue
-		}
-		if iter := g.Children[0]; iter.Group && len(iter.Children) > 0 {
-			key, _ := g.Match.(string)
-			return key
-		}
-	}
-	return ""
 }

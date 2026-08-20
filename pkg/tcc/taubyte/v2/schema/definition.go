@@ -30,6 +30,8 @@ package schema
 import (
 	"errors"
 	"strings"
+
+	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // commonAttributes prepends the shared identity block and appends the access block.
@@ -1540,12 +1542,20 @@ const MaxNamespaceDepth = 8
 // namespacesGroup is the scope container — v1's `applications`, with one change:
 // in v2 a namespace holds namespaces, so a reseller's tenant can hold its own
 // tenants. Each level is a distinct copy of the node tree, built down to depth.
+// scopeContainer is the group whose instances hold resources of their own — the
+// top-level key, and the directory a scope is. It was read back off the compiled root
+// by everything that needed it, on the argument that a constant would be a second
+// place to rename it; naming it here and BUILDING the group from it makes this the
+// only place, and stops the index footprint reading the root while the root is being
+// built.
+const scopeContainer = "namespace"
+
 func namespacesGroup(depth int) *Node {
 	children := append([]*Node{}, V2Resources...)
 	if depth > 1 {
 		children = append(children, namespacesGroup(depth-1))
 	}
-	return DefineGroup("namespace",
+	return DefineGroup(scopeContainer,
 		DefineIterGroup(identityAttributes(), children...).
 			With(Singular("Namespace"),
 				// namespace/shop/scope.yaml.
@@ -1559,10 +1569,14 @@ func namespacesGroup(depth int) *Node {
 				Leaf("scope"),
 				GroupDoc("A named scope holding resources, and namespaces, of its own. Names resolve here first, then in the parent."),
 				secIdentity,
-				Icon("apps")))
+				Icon("apps"),
+				// A namespace is looked up by name like everything else: `/shop/eu`
+				// is written as names and the object is keyed by ids, so something
+				// has to turn one into the other. Last position, after every kind.
+				interp.Indexes(len(V2Resources), byName)))
 }
 
-var _ = func() any { attachAccess(); return nil }()
+var _ = func() any { attachAccess(); attachIndexes(); return nil }()
 
 var v2Root = Root(
 	rootAttributes(),

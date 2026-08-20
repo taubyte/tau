@@ -152,10 +152,6 @@ func collect(scope map[string]any, path string) []compiled {
 	return out
 }
 
-// The scope container's key, read off the schema: the top-level group whose instances
-// hold resources of their own. A constant here would be a second place to rename it.
-var scopeContainer = scopeContainerKey()
-
 func (r compiled) str(key string) string {
 	s, _ := r.fields[key].(string)
 	return s

@@ -394,18 +394,36 @@ Rules that came out of getting each of these wrong first:
 - **The plan carries its source.** A fault found in something nobody wrote is reported
   against something somebody did — the workflow and the step.
 
-## 8b-i. When v2 gets an index
+## 8b-i. The index
 
-It has none today: `UsesIndexing(CompileRoot())` is false, so nothing v2 compiles reaches
-a lookup table yet. When that changes, it goes in through the generic primitive and
-nothing else:
+v2 has one footprint, `byName` in `schema/index.go`, and every kind carries it —
+`attachIndexes()` hangs it off each group the way `attachAccess()` hangs off the access
+blocks, because a rule that holds for all of them is not twenty-five lines each of which
+can be forgotten when the twenty-sixth arrives.
 
-```go
-Indexes(position,
-    linkTo(somePath),      // append this resource to a bucket
-    …,
-)
 ```
+projects/<pid>[/namespace/<nsid>]…/<kind>/<name>/links
+    -> branches/<b>/projects/<pid>[/namespace/<nsid>]…/<kind>/<rid>
+```
+
+It answers the question every v2 edge asks. A compiled resource carries its target's
+NAME, never its id — `kv/orders` plus where to look — so a node holding
+`(scope, kind, name)` has to turn that into a resource, and without a table that is a
+walk of every scope's every group. Resolving outward, which is what a bare name does
+(`scoping.go`), is dropping the last two segments and asking again.
+
+Three properties of the shape, each a decision rather than an inheritance:
+
+- **The kind is in the key.** v1's by-name index has none, so a consumer picks its own
+  kind out by reading the resource type from each value — a consumer parsing this
+  vocabulary's address space, which §8c forbids.
+- **The scope is its ids**, so the key and the value it holds are built from the same
+  segments. A namespace is itself indexed by name, which is what turns a written
+  `/shop/eu` into those ids.
+- **No commit in the value.** The branch is in it and the reader resolves the branch to
+  the release it is serving, which is what the trailing `links` bucket is for.
+
+Everything below is why it is only ever expressed this way.
 
 An entry is one of three things — `Link` (a bucket many resources accumulate in), `Set`
 (a single fact about this one), `Hole` (a key reserved for something nothing points at
@@ -420,11 +438,22 @@ path, which is how they are written now.
 
 If something genuinely cannot be, that is a MISSING PRIMITIVE and it is worth saying so:
 raise what shape the driver is missing rather than adding a seventh annotation, because
-the seventh is how the first six happened.
+the seventh is how the first six happened. This index needed exactly one, and it was a
+fix rather than an addition: `IndexCtx.Scope` was the id of the scope a resource is in,
+worked out by asking the root's container for the name of the object it had been handed
+— a direct child only one level down. v1's applications cannot hold applications, so one
+level was the whole tree; everything two namespaces deep was indexed as though it sat at
+the project root. It is the scope CHAIN now, ids from the root down.
 
 The POSITION is not decoration. Buckets accumulate across scopes in the order groups are
-visited, so a different sequence is a different artifact — v2's positions have to be
-chosen deliberately when it has more than one indexed group.
+visited, so a different sequence is a different artifact. v2's is the declaration order
+of `V2Resources`, with the scope container last.
+
+**A group with no index footprint emits no deferred validations either.** The whole
+driver is gated on `UsesIndexing`, and inside it an attribute's `EmitValidation` fires
+after the footprint runs — so v2's `zone`/dns check was declared and dead until this
+landed. Do not read that coupling as a rule; it is a trap in the driver, recorded in
+`.notes/v2/lowering.md`.
 
 ## 8c. The rules a consumer depends on
 
