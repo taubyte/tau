@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/spf13/afero"
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
@@ -58,13 +59,16 @@ func (c *Compiler) Lowered(ctx context.Context, layout Layout) (*Compiler, error
 		return nil, err
 	}
 
-	// The documents FIRST, all of them, and only then the entries: an access can name a
-	// resource another lowering produced (an agent's memory is searched by the loop it
-	// also produced), and editing a document that is about to be written would edit a
-	// file and then have it replaced.
-	for _, d := range plan {
-		if err := writeDocument(view, layout, d); err != nil {
-			return nil, err
+	// The documents FIRST, all of them, and only then the entries: an entry can land on
+	// a document another lowering produces (an agent's memory is searched by the loop it
+	// also produced), and editing a file that is about to be written would be edited and
+	// then replaced.
+	emissions := Emissions(c.compileRoot, obj.Flat(), layout)
+	for _, e := range emissions {
+		for _, doc := range e.Documents {
+			if err := write(view, doc); err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -72,16 +76,9 @@ func (c *Compiler) Lowered(ctx context.Context, layout Layout) (*Compiler, error
 	if err != nil {
 		return nil, err
 	}
-	for _, d := range plan {
-		// An access entry belongs on the resource that DECLARES it, which is usually not
-		// the one the lowering produced: the queue is received from by the step's
-		// function, and the entry is the function's. The derived document carries the
-		// ones it declares itself (see document()), so only the others are placed here.
-		for _, g := range d.Grants {
-			if g.From.Self() {
-				continue
-			}
-			if err := placeAccess(seer, layout, d, g); err != nil {
+	for _, e := range emissions {
+		for _, entry := range e.Entries {
+			if err := placeEntry(seer, entry); err != nil {
 				return nil, err
 			}
 		}
@@ -120,77 +117,34 @@ func overlay(base afero.Fs) (afero.Fs, error) {
 	return afero.NewCopyOnWriteFs(afero.NewReadOnlyFs(base), layer), nil
 }
 
-func writeDocument(fs afero.Fs, layout Layout, d Derived) error {
-	// Absolute, always: an in-memory filesystem keys on the exact path, so a document
-	// written as "queue/x.yaml" is a different file from the "/queue/x.yaml" everything
-	// else asks for — and the second one silently does not exist.
-	path := "/" + scopeDir(layout, d.Scope) + fill(layout.Resource, d.Kind, d.Name)
-	if dir := path[:strings.LastIndex(path, "/")+1]; dir != "" {
+func write(fs afero.Fs, doc Document) error {
+	if dir := doc.Path[:strings.LastIndex(doc.Path, "/")+1]; dir != "" {
 		if err := fs.MkdirAll(dir, 0o755); err != nil {
 			return err
 		}
 	}
-	return afero.WriteFile(fs, path, []byte(d.Doc), 0o644)
+	return afero.WriteFile(fs, doc.Path, []byte(doc.Body), 0o644)
 }
 
-// placeAccess writes one access entry onto the document of the resource that declares
-// it, leaving the rest of that document alone — which is what yaseer is for.
-func placeAccess(seer *yaseer.Seer, layout Layout, d Derived, g Access) error {
-	scope := g.From.Scope
-	if scope == "" {
-		scope = d.Scope
-	}
+// placeEntry writes one access entry onto the document of the resource that declares it,
+// leaving the rest of that document alone — which is what yaseer is for.
+func placeEntry(seer *yaseer.Seer, e Entry) error {
 	q := seer.Query()
-	for _, dir := range scopeParts(layout, scope) {
-		q = q.Get(dir)
+	for _, part := range strings.Split(strings.TrimSuffix(strings.TrimPrefix(e.Path, "/"), ".yaml"), "/") {
+		q = q.Get(part)
 	}
-	q = q.Get(g.From.Kind).Get(g.From.Name).Document()
-
-	// What it reaches: the derived resource itself, or a name the lowering gave.
-	target, kind, at := d.Name, d.Kind, d.Scope
-	if !g.To.Self() {
-		target, kind = g.To.Name, g.To.Kind
-		if g.To.Scope != "" {
-			at = g.To.Scope
-		}
-	}
-	entry := q.Get(kind).Get(target)
-
-	// The namespace is only written when the two are not in the same place, and then
-	// absolutely: a relative path would be read from the accessor's scope, which is not
-	// where this was decided.
-	if at != scope {
-		if err := entry.Get("namespace").Set("/" + at).Commit(); err != nil {
+	entry := q.Document().Get(e.Kind).Get(e.Name)
+	if e.Namespace != "" {
+		if err := entry.Get("namespace").Set(e.Namespace).Commit(); err != nil {
 			return err
 		}
 	}
-	return entry.Get("ops").Set([]string{g.Op}).Commit()
+	return entry.Get("ops").Set([]string{e.Op}).Commit()
 }
 
-// scopeDir is the directory a scope's documents live in, e.g. "shop/eu" ->
-// "namespace/shop/namespace/eu/".
-func scopeDir(layout Layout, scope string) string {
-	parts := scopeParts(layout, scope)
-	if len(parts) == 0 {
-		return ""
-	}
-	return strings.Join(parts, "/") + "/"
-}
-
-func scopeParts(layout Layout, scope string) []string {
-	if scope == "" {
-		return nil
-	}
-	var out []string
-	for _, name := range strings.Split(scope, "/") {
-		out = append(out, strings.Split(fill(layout.Scope, "", name), "/")...)
-	}
-	return out
-}
-
-func fill(tmpl, kind, name string) string {
-	return strings.NewReplacer("{kind}", kind, "{name}", name).Replace(tmpl)
-}
+// Root is the schema this compiler compiles against, for a caller that needs to ask the
+// vocabulary a question about what it just compiled.
+func (c *Compiler) Root() *engine.Node { return c.compileRoot }
 
 // FsOf is where a compiler reads from. Exposed for the tests that need to look at a view.
 func FsOf(c *Compiler) afero.Fs { return c.baseFs }

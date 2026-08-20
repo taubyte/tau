@@ -59,6 +59,20 @@ func Lowered(ctx context.Context, c *Compiler) (*Compiler, error) {
 	return c.Lowered(ctx, interp.Layout{Resource: l.Resource, Scope: l.Scope})
 }
 
+// EmissionOf is what ONE resource becomes: the documents it produces and the entries it
+// places on documents that already exist. It is the question a console asks when someone
+// opens a workflow, and the one a CLI answers before it applies anything.
+func EmissionOf(obj map[string]any, kind, name, scope string) (interp.Emission, bool) {
+	l := LayoutOf()
+	return interp.EmissionOf(CompileRoot(), obj, interp.Layout{Resource: l.Resource, Scope: l.Scope}, kind, name, scope)
+}
+
+// Emissions is the same for every lowerable resource in the project.
+func Emissions(obj map[string]any) []interp.Emission {
+	l := LayoutOf()
+	return interp.Emissions(CompileRoot(), obj, interp.Layout{Resource: l.Resource, Scope: l.Scope})
+}
+
 // ViewFsOf is for tests: the filesystem a compiler reads from.
 func ViewFsOf(c *Compiler) afero.Fs { return interp.FsOf(c) }
 
