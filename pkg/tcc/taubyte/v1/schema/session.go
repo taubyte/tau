@@ -49,6 +49,10 @@ func (taubyteLayout) RootDoc() string { return engine.NodeDefaultSeerLeaf }
 // resources, and it declares neither Resource() nor Singular(). Reporting it
 // would hand every consumer a nameless entry to filter out — the DSL already
 // says it isn't one.
+// Identity is what this vocabulary calls the two fields every resource carries, read off
+// the schema that states it.
+func (taubyteLayout) Identity() (string, string) { return engine.IdentityOf(CompileRoot()) }
+
 func (taubyteLayout) Kinds() []session.Kind {
 	groups := engine.Groups(GenerationRoot())
 	out := make([]session.Kind, 0, len(groups))

@@ -310,3 +310,20 @@ func TestAnEntryLandsOnAProducedResource(t *testing.T) {
 	assert.Assert(t, entry != nil, "nothing says the loop searches the memory: %v", vectors)
 	assert.DeepEqual(t, entry["ops"], []string{"search"})
 }
+
+// THE ROOT DOCUMENT IS WHAT THE SCHEMA SAYS IT IS. This vocabulary declares
+// Leaf("project"), so its root is project.yaml — and a binding that answered with the
+// engine's fallback named a file that does not exist, which made the project's own
+// document unaddressable and unreadable through the session.
+func TestSessionKnowsTheRootDocument(t *testing.T) {
+	fs := afero.NewMemMapFs()
+	assert.NilError(t, copyTree(fs, "../fixtures/basic", "/"))
+	s, err := schema.AdoptSession(fs)
+	assert.NilError(t, err)
+
+	assert.DeepEqual(t, s.Root(), []string{"project"})
+
+	id, err := s.Get(s.Root(), []string{"id"})
+	assert.NilError(t, err, "the project's own document is not readable")
+	assert.Assert(t, id != "")
+}

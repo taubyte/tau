@@ -48,12 +48,21 @@ type v2Layout struct{}
 func (v2Layout) ContainerDoc(group string) string {
 	return engine.ContainerDoc(GenerationRoot(), group)
 }
-func (v2Layout) RootDoc() string { return engine.NodeDefaultSeerLeaf }
+
+// RootDoc is what the SCHEMA says, not what the engine falls back to: this vocabulary
+// declares Leaf("project"), so the root document is project.yaml. Answering "config"
+// made Session.Root() name a file that does not exist, and docPath reject the one that
+// does.
+func (v2Layout) RootDoc() string { return engine.LeafOf(CompileRoot()) }
 
 // ResourcePath and ScopePath are the same templates decompile writes by, which is what
 // makes a lowering's documents land where an author would have put them.
 func (v2Layout) ResourcePath() string { return LayoutOf().Resource }
 func (v2Layout) ScopePath() string    { return LayoutOf().Scope }
+
+// Identity is what this vocabulary calls the two fields every resource carries, read off
+// the schema that states it.
+func (v2Layout) Identity() (string, string) { return engine.IdentityOf(CompileRoot()) }
 
 func (v2Layout) Kinds() []session.Kind {
 	groups := engine.Groups(GenerationRoot())

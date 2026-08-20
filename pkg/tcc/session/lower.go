@@ -36,7 +36,8 @@ func (s *Session) Became(ctx context.Context, res []string, opts CompileOptions)
 		return nil, nil, nil, err
 	}
 
-	id, found := idOf(obj.Flat(), kind, name, scope)
+	_, nameField := s.identity()
+	id, found := idOf(obj.Flat(), kind, name, scope, nameField)
 	if !found {
 		return obj, nil, nil, fmt.Errorf("session: %s/%s is not in the compiled configuration", kind, name)
 	}
@@ -44,18 +45,13 @@ func (s *Session) Became(ctx context.Context, res []string, opts CompileOptions)
 	return obj, made, added, nil
 }
 
-// idOf finds a resource's compiled id by what it is called and where it lives.
-func idOf(flat map[string]any, kind, name, scope string) (string, bool) {
+// idOf finds a resource's compiled id by what it is called and where it lives. What the
+// name is IN is the vocabulary's answer, which the binding supplies — the session has no
+// business guessing a field name any more than the interpreter does.
+func idOf(flat map[string]any, kind, name, scope, nameField string) (string, bool) {
 	root, ok := flat["object"].(map[string]any)
 	if !ok {
 		root = flat
-	}
-	for _, r := range interp.LoweredOf(flat).Resources {
-		if r.Kind == kind && r.Name == name && r.Scope == scope {
-			// a resource the compile produced is found the same way, and its id is
-			// already the key of the record
-			break
-		}
 	}
 	instances, ok := root[kind].(map[string]any)
 	if !ok {
@@ -66,7 +62,7 @@ func idOf(flat map[string]any, kind, name, scope string) (string, bool) {
 		if !ok {
 			continue
 		}
-		if n, _ := res["name"].(string); n == name {
+		if n, _ := res[nameField].(string); n == name {
 			return id, true
 		}
 	}
@@ -101,4 +97,14 @@ func (s *Session) resourceAt(res []string) (kind, name, scope string, err error)
 		return "", "", "", err
 	}
 	return k.Group, rest[1], strings.Join(scopes, "/"), nil
+}
+
+// identity is what this DSL calls a resource's id and its name. A binding that does not
+// say leaves both empty, and a session over it can find nothing by name — which is the
+// honest outcome rather than a guess that works for one vocabulary.
+func (s *Session) identity() (id, name string) {
+	if l, ok := s.bind.Layout.(IdentifiedLayout); ok {
+		return l.Identity()
+	}
+	return "", ""
 }

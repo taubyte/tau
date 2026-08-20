@@ -94,6 +94,14 @@ type Layout interface {
 	Kinds() []Kind
 }
 
+// IdentifiedLayout is a Layout that also says what a resource's id and name are called.
+// Optional, because a DSL of plain documents has neither; a session over one simply
+// cannot look a resource up by name.
+type IdentifiedLayout interface {
+	Layout
+	Identity() (id, name string)
+}
+
 // Kind is one kind of thing the DSL names. Group is the canonical key (the
 // config directory it is authored under); Name is the singular the DSL declares
 // for one instance, lowercased, and is accepted as an alias wherever a kind is
