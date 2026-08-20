@@ -204,7 +204,7 @@ func To(kind, name string, scope ...string) ReachOption {
 }
 
 // Lowers declares that a kind lowers into others. Declared on the kind's iterator,
-// beside Ops() and Resource(), because it is a statement about the kind.
+// beside Verbs() and Resource(), because it is a statement about the kind.
 //
 //	Lowers(
 //	    Into("queue", PerEach("steps"), Named("{name}_{each.name}"), …),
