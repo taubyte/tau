@@ -1008,8 +1008,9 @@ func loweringCycles(root *engine.Node) []string {
 	return slices.Compact(found)
 }
 
-// unknownOps is every op a lowering asks for that the kind it is asked of does not have.
-func unknownOps(root *engine.Node, l Lowering) []string {
+// unknownVerbs is every verb a lowering asks for that the kind it is asked of does not
+// have.
+func unknownVerbs(root *engine.Node, l Lowering) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, r := range l.reaches {
@@ -1026,7 +1027,7 @@ func unknownOps(root *engine.Node, l Lowering) []string {
 		if iter == nil {
 			continue // an unknown kind is already reported, once, above
 		}
-		ops := engine.OpsOf(iter)
+		ops := engine.VerbsOf(iter)
 		if ops == nil {
 			out = append(out, "\""+r.op+"\" on "+kind+", which nothing may reach")
 			continue
@@ -1108,7 +1109,7 @@ func CheckLowerings(root *engine.Node) []string {
 			// does not declare is not config — it compiles nowhere and grants nothing.
 			// The prose verbs this replaced ("consumed by") were exactly that, which is
 			// why they could never be emitted.
-			for _, bad := range unknownOps(root, l) {
+			for _, bad := range unknownVerbs(root, l) {
 				problems = append(problems, "lowering into "+l.into+" asks for "+bad)
 			}
 		}

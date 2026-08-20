@@ -304,30 +304,33 @@ func Singular(goName string) NodeOption {
 	return GroupAnnotate("singular", goName)
 }
 
-// Ops carries a kind's verb set — what something else may ask to do to it. What a verb IS
-// belongs to the vocabulary (an effect class, whether it is delivered, whether it mounts);
-// all the generic layer ever needs is the names, so that is all this asks for.
+// Verbs carries what something else may ask to do to a kind. What a verb IS belongs to
+// the vocabulary — an effect class, whether it is delivered, whether it mounts — and all
+// the generic layer ever needs is the names, so that is all this asks for.
 //
-// It exists here rather than in a vocabulary because a lowering has to check the op it
-// produces against the kind that will carry it, and reading a key one vocabulary invented
-// is how the generic layer ends up knowing one.
-func Ops(v OpNamer) NodeOption { return GroupAnnotate("ops", v) }
+// It is `Verbs` and not `Ops` because `ops` is one vocabulary's word for the field it
+// writes them in. A layer that must not know a vocabulary cannot be named after one.
+func Verbs(v VerbNamer) NodeOption { return GroupAnnotate("verbs", v) }
 
-// OpNamer is a verb set asked for its names.
-type OpNamer interface{ Names() []string }
+// VerbNamer is a verb set asked for its names.
+type VerbNamer interface{ Names() []string }
 
-// OpsOf reads a kind's verb set back off its iterator. Nil when nothing may reach it.
-func OpsOf(iter *Node) OpNamer {
+// VerbsOf reads a kind's verb set back off its iterator. Nil when nothing may reach it.
+func VerbsOf(iter *Node) VerbNamer {
 	if iter == nil {
 		return nil
 	}
-	v, _ := iter.Meta["ops"].(OpNamer)
+	v, _ := iter.Meta["verbs"].(VerbNamer)
 	return v
 }
 
+// IsScopePath marks the attribute that says where a named target lives — the half
+// IsScopeField reads back.
+func IsScopePath() Option { return Annotate("scopePath", true) }
+
 // AreVerbs marks the attribute of an access entry that holds the verbs, and says whose.
-// It is the other half of what IsNamespaceField already marks: between them a vocabulary
-// describes an access entry without anyone having to know what it called the fields.
+// It is the other half of what IsScopeField marks: between them a vocabulary describes an
+// access entry without anyone having to know what it called the fields.
 //
 // A lowering produces those entries and a decompile takes them back off. Told the field
 // NAMES, both would know one vocabulary; told where to look, they know none.

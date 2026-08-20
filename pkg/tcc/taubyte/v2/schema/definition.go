@@ -69,7 +69,7 @@ func attachAccess() {
 		iter.Nested = true
 		iter.Children = append(iter.Children, groups...)
 
-		if _, reachable := iter.Meta["ops"].(Verbs); reachable {
+		if VerbsOfIter(iter) != nil {
 			iter.Attributes = append(iter.Attributes, authz...)
 			secAuthorizer(iter)
 		}

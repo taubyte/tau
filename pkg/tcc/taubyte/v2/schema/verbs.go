@@ -90,7 +90,7 @@ func isDelivered(kind string) bool {
 // route knows about, with no path, no gateway policy and no name in front of it.
 //
 // Ops annotates a kind with its verb set.
-func Ops(verbs ...Verb) NodeOption { return engine.Ops(Verbs(verbs)) }
+func Ops(verbs ...Verb) NodeOption { return engine.Verbs(Verbs(verbs)) }
 
 // Verbs is a kind's verb set. It is a named type so the generic layer can ask it for the
 // names without knowing what a Verb is: a lowering declares the op it asks for, and
@@ -107,13 +107,20 @@ func (vs Verbs) Names() []string {
 	return out
 }
 
+// VerbsOfIter reads a kind's declared verbs off its iterator, in this vocabulary's type.
+// The engine carries them as names only, which is all it needs.
+func VerbsOfIter(iter *Node) Verbs {
+	v, _ := engine.VerbsOf(iter).(Verbs)
+	return v
+}
+
 // OpsOf reads a kind's declared verbs back off the schema.
 func OpsOf(kind string) []Verb {
 	for _, g := range V2Resources {
 		if name, _ := g.Match.(string); name != kind || len(g.Children) == 0 {
 			continue
 		}
-		if v, ok := g.Children[0].Meta["ops"].(Verbs); ok {
+		if v := VerbsOfIter(g.Children[0]); v != nil {
 			return v
 		}
 	}
@@ -144,7 +151,7 @@ func Kinds() []string {
 		if len(g.Children) == 0 {
 			continue
 		}
-		if _, ok := g.Children[0].Meta["ops"].(Verbs); ok {
+		if v := VerbsOfIter(g.Children[0]); v != nil {
 			out = append(out, name)
 		}
 	}
@@ -313,7 +320,7 @@ func IsURL() engine.Option {
 
 func IsNamespacePath() engine.Option {
 	return func(a *engine.Attribute) {
-		engine.Annotate("namespacePath", true)(a)
+		engine.IsScopePath()(a)
 		namespacePathChecker()(a)
 	}
 }
@@ -565,7 +572,7 @@ func AccessEntryShape() AccessShape {
 				if _, isEnum := a.Meta["enum"]; isEnum && out.Ops == "" {
 					out.Ops = a.Name
 				}
-				if engine.IsNamespaceField(a) && out.Namespace == "" {
+				if engine.IsScopeField(a) && out.Namespace == "" {
 					out.Namespace = a.Name
 				}
 			}

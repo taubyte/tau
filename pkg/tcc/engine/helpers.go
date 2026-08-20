@@ -230,14 +230,17 @@ func AnswersAtOf(n *Node) string {
 	return p
 }
 
-// IsNamespaceField reports whether an attribute holds a NAMESPACE PATH — the "where does
-// it live" half of naming another resource. Declared by the validator the vocabulary
-// puts on it, so a consumer finds it without knowing the word.
-func IsNamespaceField(a *Attribute) bool {
+// IsScopeField reports whether an attribute holds the SCOPE PATH — the "where does it
+// live" half of naming another resource. Declared by the vocabulary, so a consumer finds
+// it without knowing the word.
+//
+// It is `Scope` and not `Namespace` because `namespace` is one vocabulary's word for it,
+// and in that vocabulary it is also the name of a KIND. The generic layer had both.
+func IsScopeField(a *Attribute) bool {
 	if a == nil {
 		return false
 	}
-	b, _ := a.Meta["namespacePath"].(bool)
+	b, _ := a.Meta["scopePath"].(bool)
 	return b
 }
 
@@ -245,7 +248,7 @@ func IsNamespaceField(a *Attribute) bool {
 // attribute that holds the verbs, and the one that says where to look for the target.
 // Either is empty when the schema does not mark it — and for anything that WRITES an
 // entry that is a refusal rather than a licence to guess a field name.
-func AccessFields(iter *Node) (verbs, namespace string) {
+func AccessFields(iter *Node) (verbs, scope string) {
 	if iter == nil {
 		return "", ""
 	}
@@ -253,9 +256,9 @@ func AccessFields(iter *Node) (verbs, namespace string) {
 		if IsVerbsField(a) {
 			verbs = a.Name
 		}
-		if IsNamespaceField(a) {
-			namespace = a.Name
+		if IsScopeField(a) {
+			scope = a.Name
 		}
 	}
-	return verbs, namespace
+	return verbs, scope
 }
