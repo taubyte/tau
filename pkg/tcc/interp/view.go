@@ -136,7 +136,7 @@ func free(flat map[string]any, docs []placement) error {
 				if !ok {
 					continue
 				}
-				name, _ := res["name"].(string)
+				name, _ := res[engine.FieldName].(string)
 				if name == "" {
 					continue
 				}
@@ -218,14 +218,14 @@ func at(seer *yaseer.Seer, address []string) *yaseer.Query {
 // it back out of their repository.
 func grant(seer *yaseer.Seer, g granted, shape EntryShape) (bool, error) {
 	entry := at(seer, g.at).Get(g.kind).Get(g.name)
-	if g.namespace != "" {
+	if g.where != "" {
 		// Only when nobody has said where to look. An author who wrote a namespace on
 		// this entry meant it, and replacing it would point their access somewhere else
 		// without a word.
 		var where string
 		entry.Get(shape.Namespace).Value(&where)
 		if where == "" {
-			if err := entry.Get(shape.Namespace).Set(g.namespace).Commit(); err != nil {
+			if err := entry.Get(shape.Namespace).Set(g.where).Commit(); err != nil {
 				return false, err
 			}
 		}

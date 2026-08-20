@@ -194,11 +194,11 @@ func indexByScope(ic *IndexCtx, index object.Object[object.Refrence], cap engine
 func indexPlaceholder(ic *IndexCtx, index object.Object[object.Refrence], groupKey, keyField string) error {
 	fqdn, err := ic.Obj.GetString(keyField)
 	if err != nil {
-		return fmt.Errorf("domain %s is not a string: %w", keyField, err)
+		return fmt.Errorf("index key %s is not a string: %w", keyField, err)
 	}
 	p, err := methods.ReversedFqdnBasicPath(fqdn, common.PathVariable(groupKey))
 	if err != nil {
-		return fmt.Errorf("getting basic path for domain failed with %w", err)
+		return fmt.Errorf("getting basic path for the index key failed with %w", err)
 	}
 	key := p.Versioning().Links().String()
 	if index.Get(key) == nil {

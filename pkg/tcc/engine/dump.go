@@ -167,13 +167,13 @@ func (s *instance) dumpApplications(iterGroupNode *Node, appsObj object.Object[o
 	for _, appName := range appsObj.Children() {
 		appObj, err := appsObj.Child(appName).Object()
 		if err != nil {
-			return fmt.Errorf("fetching application %s failed: %w", appName, err)
+			return fmt.Errorf("fetching scope %s failed: %w", appName, err)
 		}
 
 		// Write application config.yaml: {appName}/config.yaml
 		appConfigQuery := query.Get(appName).Get(LeafOf(iterGroupNode)).Document()
 		if err := s.dumpAttributes(iterGroupNode, appObj, appConfigQuery); err != nil {
-			return fmt.Errorf("dumping application %s config failed: %w", appName, err)
+			return fmt.Errorf("dumping scope %s failed: %w", appName, err)
 		}
 		if err := appConfigQuery.Commit(); err != nil {
 			return fmt.Errorf("committing application %s config failed: %w", appName, err)

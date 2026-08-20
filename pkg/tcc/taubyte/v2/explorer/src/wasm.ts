@@ -25,37 +25,20 @@ export interface Kind {
   fields: string[];
 }
 /** What a consumer would otherwise have to know about this vocabulary. From tcc. */
+/**
+ * What a consumer would otherwise have to know, read off the schema.
+ *
+ * It holds what is ASKED FOR and nothing else. Four more facts used to be here — every
+ * reference a kind declares, the blocks that hand traffic on, what an access entry is
+ * called, where each kind states the name it answers on — and the page stopped reading
+ * all four once tcc began answering the questions they were for (resources, relations,
+ * names). A shape nobody reads is a second definition waiting to disagree with the first.
+ */
 export interface Shapes {
-  /**
-   * Every place this vocabulary points at another resource — ONE list, because it is
-   * one fact. Some resolve to an id and some keep a name; some have a fixed kind and
-   * some read it from a sibling the author picked; some run the other way.
-   */
-  refs: {
-    on: string;
-    field: string;
-    kind: string;
-    kindFrom: string;
-    namespace: string;
-    prefix: string;
-    byName: boolean;
-    inbound: boolean;
-    in: string;
-  }[];
-  /** Blocks where a kind names what it hands traffic on to. */
-  inbound: string[];
-  /** How an access entry is written. */
-  access: { ops: string; namespace: string };
   /** Where a document lives, as templates. */
   layout: { resource: string; scope: string; leaf: string };
-  /** Per kind: its naming block, and its derived fields. */
-  kinds: Record<
-    string,
-    {
-      answersAt?: string;
-      derived?: { field: string; derivation: string; from: string[]; label: string }[];
-    }
-  >;
+  /** Per kind: the fields it DERIVES, which only the engine can compute. */
+  kinds: Record<string, { derived?: { field: string; derivation: string; from: string[]; label: string }[] }>;
 }
 
 export interface Omission {

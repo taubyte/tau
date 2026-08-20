@@ -31,14 +31,14 @@ type placement struct {
 
 // granted is one access entry a lowering adds to a resource somebody wrote.
 type granted struct {
-	at        []string // the accessor's document address
-	on        End      // the accessor
-	kind      string   // the target's kind
-	name      string   // the target's name
-	op        string
-	namespace string // written only when the target is somewhere else, absolutely
-	from      string // the authored resource whose lowering added it
-	scope     string // where the accessor lives, for finding its compiled id
+	at    []string // the accessor's document address
+	on    End      // the accessor
+	kind  string   // the target's kind
+	name  string   // the target's name
+	op    string
+	where string // the scope field's value: written only when the target is elsewhere
+	from  string // the authored resource whose lowering added it
+	scope string // where the accessor lives, for finding its compiled id
 }
 
 // placements is everything a project's lowerings produce, in a stable order.
@@ -78,10 +78,10 @@ func placements(root *engine.Node, obj map[string]any, layout Layout, shape Entr
 			// relative path would be read from the accessor's scope, which is not where
 			// this was decided.
 			if at != scope {
-				add.namespace = "/" + at
+				add.where = "/" + at
 			}
-			if add.namespace == "//" {
-				add.namespace = "/"
+			if add.where == "//" {
+				add.where = "/"
 			}
 			adds = append(adds, add)
 		}
@@ -157,7 +157,7 @@ func onlyOnWhatExists(flat map[string]any, docs []placement, adds []granted) []g
 				if !ok {
 					continue
 				}
-				name, _ := res["name"].(string)
+				name, _ := res[engine.FieldName].(string)
 				if name == "" {
 					continue
 				}

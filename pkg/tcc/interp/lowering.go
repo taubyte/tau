@@ -374,7 +374,7 @@ func (d Derived) String() string { return d.Kind + "/" + d.Name + " (" + d.Why +
 func authored(root *engine.Node, d Derived, shape EntryShape) map[string]any {
 	tree := map[string]any{}
 	if d.ID != "" {
-		tree["id"] = d.ID
+		tree[engine.FieldID] = d.ID
 	}
 
 	iter := iterOfKind(root, d.Kind)
@@ -889,9 +889,9 @@ func unknownInputs(iter *engine.Node, l Lowering) []string {
 	for _, a := range iter.Attributes {
 		has[a.Name] = true
 	}
-	// the identity every resource carries, which is set by the loader rather than
-	// declared on the kind
-	for _, id := range []string{"name", "id"} {
+	// the identity every resource carries, which the interpreter sets rather than the
+	// kind declaring it (engine.FieldID / engine.FieldName)
+	for _, id := range []string{engine.FieldName, engine.FieldID} {
 		has[id] = true
 	}
 

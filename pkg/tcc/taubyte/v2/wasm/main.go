@@ -32,9 +32,9 @@ func main() {
 	// reimplementing the derivation it just read about.
 	api.Set("derive", js.FuncOf(deriveFn))
 	api.Set("omissions", js.FuncOf(omissionsFn))
-	// The SHAPES a consumer would otherwise have to know: which block a kind hands
-	// traffic on through, and which fields name another resource. Read off the schema so
-	// a graph, a CLI or a console draws a vocabulary it has never seen.
+	// The shapes a consumer cannot infer: where a document lives, and which fields a kind
+	// derives. Read off the schema, so a graph, a CLI or a console handles a vocabulary
+	// it has never seen.
 	api.Set("shapes", js.FuncOf(shapesFn))
 	// What a resource nobody wrote WOULD be, as config: decompile, all the way. The
 	// compiler renders no yaml — writing config is the decompiler's job, and this is the
@@ -261,30 +261,23 @@ func omissionsFn(js.Value, []js.Value) any {
 
 // kinds() -> [{group, singular, container, category, doc, icon, fields}] read off the schema.
 func shapesFn(js.Value, []js.Value) any {
-	// ONE list of references, and per kind whatever else a consumer cannot infer: where
-	// it says what name it answers on, and which of its fields are derived.
-	refs := []map[string]any{}
-	for _, r := range schema.References() {
-		refs = append(refs, map[string]any{
-			"on": r.On, "field": r.Field, "kind": r.Kind, "kindFrom": r.KindFrom,
-			"namespace": r.Namespace, "prefix": r.Prefix,
-			"byName": r.ByName, "inbound": r.Inbound, "in": r.In,
-		})
-	}
-
+	// WHAT A CONSUMER CANNOT INFER, and nothing else. Where a document lives, and which
+	// fields a kind derives — the second because deriving one is the engine's, so a
+	// consumer asks rather than reimplementing a derivation it just read about.
+	//
+	// Four more facts were here: every reference a kind declares, the blocks that hand
+	// traffic on, what an access entry is called, and where each kind states the name it
+	// answers on. Nothing reads them now — tcc answers those questions directly, as
+	// resources, relations and names — and a shape nobody reads is a second definition
+	// waiting to disagree with the first.
 	kinds := map[string]any{}
 	for _, g := range schema.GenerationRoot() {
 		key, _ := g.Match.(string)
 		if key == "" || len(g.Children) == 0 {
 			continue
 		}
-		iter := g.Children[0]
-		entry := map[string]any{}
-		if p := engine.AnswersAtOf(iter); p != "" {
-			entry["answersAt"] = p
-		}
 		derived := []map[string]any{}
-		for _, a := range iter.Attributes {
+		for _, a := range g.Children[0].Attributes {
 			kindOf, _ := a.Meta["derived"].(string)
 			if kindOf == "" {
 				continue
@@ -300,28 +293,16 @@ func shapesFn(js.Value, []js.Value) any {
 			})
 		}
 		if len(derived) > 0 {
-			entry["derived"] = derived
-		}
-		if len(entry) > 0 {
-			kinds[key] = entry
+			kinds[key] = map[string]any{"derived": derived}
 		}
 	}
 
-	inbound := []any{}
-	for _, p := range schema.InboundBlocks() {
-		inbound = append(inbound, p)
-	}
-	access := schema.AccessEntryShape()
 	layout := schema.LayoutOf()
 	return toJS(map[string]any{
-		"refs": refs, "kinds": kinds, "inbound": inbound,
-		"access": map[string]any{"ops": access.Ops, "namespace": access.Namespace},
+		"kinds":  kinds,
 		"layout": map[string]any{"resource": layout.Resource, "scope": layout.Scope, "leaf": layout.Leaf},
 	})
 }
-
-// Computing a derived value is the engine's, so a consumer asks rather than
-// reimplementing the derivation it just read about.
 func deriveFn(_ js.Value, args []js.Value) any {
 	if len(args) < 1 {
 		return errResult("derive: expected (derivation, ...inputs)")

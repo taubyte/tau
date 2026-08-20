@@ -11,6 +11,21 @@ import (
 // to describe the layout — does not state.
 var NodeDefaultSeerLeaf = "config"
 
+// THE IDENTITY EVERY RESOURCE CARRIES, and the only two field names the generic layer
+// knows. They are not a vocabulary's choice: the interpreter keys a compiled resource by
+// its id and finds it again by its name, so a schema that called them something else
+// would not compile at all. Every other field name comes from the schema.
+//
+// Named here because a contract repeated as a string literal in twelve places is a
+// contract nobody can find, and because the next person grepping for one of them should
+// land on this paragraph.
+const (
+	// FieldID is the key a resource is stored under.
+	FieldID = "id"
+	// FieldName is what it is called, which is the name references resolve against.
+	FieldName = "name"
+)
+
 type instance struct {
 	schema *schemaDef
 	seer   *yaseer.Seer

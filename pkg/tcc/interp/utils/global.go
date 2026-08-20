@@ -59,7 +59,7 @@ func (g *global) scopes(ct transform.Context[object.Refrence], o object.Object[o
 		oapp, _ := sel.Object()
 		oapp, err := g.wrapped.Process(ct.Fork(oapp), oapp)
 		if err != nil {
-			return fmt.Errorf("processing application %s failed with %w", app, err)
+			return fmt.Errorf("processing scope %s failed with %w", app, err)
 		}
 		if err := g.scopes(ct, oapp); err != nil {
 			return fmt.Errorf("inside %s: %w", app, err)

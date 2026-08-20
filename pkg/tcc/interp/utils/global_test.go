@@ -158,5 +158,7 @@ func TestGlobal_ApplicationProcessError(t *testing.T) {
 	_, err := wrapped.Process(ctx, obj)
 
 	// Should fail when processing the application
-	assert.ErrorContains(t, err, "processing application")
+	// "scope", not "application": this layer processes whatever a vocabulary nests
+	// resources under, and one of them calls it a namespace.
+	assert.ErrorContains(t, err, "processing scope")
 }

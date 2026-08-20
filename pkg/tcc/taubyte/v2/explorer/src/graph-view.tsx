@@ -378,13 +378,13 @@ export function GraphView({
         draggable: false,
         data: {
           kind: n.kind,
-          icon: iconOf(n.kind),
+          icon: iconOf(n.looksLike ?? n.kind),
           name: n.name,
           // The frame's own name is internal — `@checkout` is a layout key, not a
           // place — and a node wearing it read as "queue, in namespace @CHECKOUT".
           // Inside a box, the box says where you are.
           scope: n.scope.includes("@") ? "" : n.scope,
-          category: categoryOf(n.kind),
+          category: categoryOf(n.looksLike ?? n.kind),
           faded: lit !== null && !lit.has(n.id),
           picked: !!selection && (graph.byId.get(selection.id)?.of ?? selection.id) === n.of,
           // One resource, several boxes. The count is on every one of them, because a

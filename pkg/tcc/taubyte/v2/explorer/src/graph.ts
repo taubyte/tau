@@ -49,6 +49,13 @@ export interface Node {
   home?: string;
   /** Drawn as nothing: the box says what this is, so the node would be a duplicate. */
   anchor?: boolean;
+  /**
+   * Which kind's icon and colour this wears, when it is not one itself. A node standing
+   * for a PART of a resource — one element of a list — has no kind of its own, and the
+   * page has no business inventing a name for it: it says which list it came from and
+   * borrows the look of the resource it belongs to.
+   */
+  looksLike?: string;
   /** In the layout but not on the page: it exists on the box's other face. */
   hidden?: boolean;
   layer: number;
@@ -106,25 +113,19 @@ export function categoryOf(kind: string): string {
   // `step` is not a kind — it is a part of one, and the vocabulary has no category for
   // it. It gets its own so it is coloured as what it is rather than falling through to
   // the colour of everything unrecognised.
-  if (kind === "step") return "part";
+
   return CATEGORY[kind] ?? "other";
 }
 
 export function iconOf(kind: string): string {
-  // `step` is a PART of a kind rather than a kind, so the schema has no icon for it and
-  // the lookup fell through to the fallback dot — which is what every step was drawn as.
-  if (kind === "step") return "step";
+
   return ICON[kind] ?? "";
 }
 
 /** What this vocabulary's shapes are, from tcc. Set once, with the kinds. */
-let SHAPES: Shapes = {
-  refs: [],
-  inbound: [],
-  kinds: {},
-  access: { ops: "ops", namespace: "namespace" },
-  layout: { resource: "{kind}/{name}.yaml", scope: "{name}", leaf: "project" },
-};
+// Empty until tcc answers, which it does before anything is drawn. A default that looked
+// like the taubyte vocabulary would be this file quietly knowing one.
+let SHAPES: Shapes = { kinds: {}, layout: { resource: "", scope: "", leaf: "" } };
 
 export function setShapes(s: Shapes): void {
   SHAPES = s;
@@ -250,6 +251,8 @@ export function buildGraph(
   // The part of the authored resource each one came from — "steps/0" — read off the
   // resource itself, because the compiler addressed it that way.
   const fieldsOf = new Map(resources.map((r) => [r.id, r.fields]));
+  // "steps/0" -> "steps": which list of the authored resource this came from.
+  const listOf = (at: string): string => (at.includes("/") ? at.slice(0, at.lastIndexOf("/")) : at);
   const partName = (from: string, at: string): string => {
     const cut = at.lastIndexOf("/");
     if (cut < 0) return "";
@@ -292,8 +295,11 @@ export function buildGraph(
       const node: Node = {
         id: d.id,
         of: d.id,
-        // Closed, this node wears the part it came from; open, it wears what it is.
-        kind: open || !part ? d.kind : "step",
+        // Closed, this node wears the part it came from; open, it wears what it is. The
+        // part's label is the LIST the compiler recorded it under — `steps/0` means the
+        // `steps` of that resource — because the page does not get to name it.
+        kind: open || !part ? d.kind : listOf(d.at),
+        looksLike: open || !part ? undefined : src.kind,
         name: open || !part ? d.name : part,
         scope: frame,
         derived: { of: `${src.kind}/${src.name}`, why: "" },

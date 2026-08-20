@@ -3,6 +3,7 @@ package interp
 import (
 	"sort"
 
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/object"
 )
 
@@ -151,7 +152,7 @@ func recordOf(obj Object, docs []placement, adds []granted) Lowered {
 				if !ok {
 					continue
 				}
-				name, _ := res["name"].(string)
+				name, _ := res[engine.FieldName].(string)
 				if name == "" {
 					continue
 				}
