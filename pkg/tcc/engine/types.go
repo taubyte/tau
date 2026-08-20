@@ -71,10 +71,17 @@ type StringMatch any // string or PathMatcher
 type AttributeValidator func(any) error
 
 type Attribute struct {
-	Name      string
+	// Name is the attribute's identity: its key, joined by "/" when the key has more
+	// than one segment. Cross-references (ShowWhen, RequiredWhen, KindFrom, a lowering's
+	// templates) address an attribute by it.
+	Name string
+	// Segments is the key as declared — one level of the compiled object per entry, so
+	// `Key("execution", "call")` compiles into execution -> call rather than onto a flat
+	// leaf that spells its own path. Empty means a single-segment key, which is Name.
+	Segments  []string
 	Type      Type
 	Required  bool
-	Key       bool // means the value is the key of a map
+	Captures  bool // this attribute captures WHICH branch of an Either() was taken
 	Default   any
 	Path      []StringMatch
 	Compat    []StringMatch

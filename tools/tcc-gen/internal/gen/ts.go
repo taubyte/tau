@@ -214,7 +214,7 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 	// group, so a branched field and the key that selects it share one type.
 	branchAlias, branchParam := "", ""
 	for _, a := range n.Attributes {
-		if _, alts, _, ok := branchOf(a); ok && a.Key {
+		if _, alts, _, ok := branchOf(a); ok && a.Captures {
 			branchParam = tsName(structFieldName(group, a))
 			branchAlias = spec + upperFirst(branchParam)
 			if _, exists := enums[branchAlias]; !exists {
@@ -229,7 +229,7 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 			continue
 		}
 		prefix, alts, suffix, branched := branchOf(a)
-		if a.Key && !branched {
+		if a.Captures && !branched {
 			continue // a key with no alternatives is not addressable
 		}
 		path, ok := pathSegs(a)
@@ -237,7 +237,7 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 			continue
 		}
 		gt := goType(a.Type)
-		if gt == "" && !a.Key {
+		if gt == "" && !a.Captures {
 			continue
 		}
 		// NB: no scalar retype — these edit the SOURCE config, where
@@ -261,7 +261,7 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 		f := tsField{name: fname, typ: typ, path: path}
 		if branched {
 			f.prefix, f.alts, f.suffix = prefix, alts, suffix
-			f.alias, f.param, f.isKey = branchAlias, branchParam, a.Key
+			f.alias, f.param, f.isKey = branchAlias, branchParam, a.Captures
 			if f.alias == "" {
 				// A branching field with no Key attribute over the same
 				// alternatives has nothing to name the branch. Rather than
@@ -270,7 +270,7 @@ func tsFieldsOf(n *engine.Node, group, spec string, enums map[string]tsEnum, enu
 				return nil, fmt.Errorf("%s.%s branches over %v but %s declares no Key attribute to select it",
 					group, a.Name, alts, group)
 			}
-			if a.Key {
+			if a.Captures {
 				f.typ = branchAlias
 			}
 		}

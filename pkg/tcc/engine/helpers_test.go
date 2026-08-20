@@ -32,11 +32,11 @@ func TestDefineIterGroup(t *testing.T) {
 
 func TestFloat_Helper(t *testing.T) {
 	// Use case: Testing Float helper function
-	attr := Float("myFloat", Key(), Default(3.14))
+	attr := Float("myFloat", Captures(), Default(3.14))
 
 	assert.Equal(t, attr.Name, "myFloat")
 	assert.Equal(t, attr.Type, TypeFloat)
-	assert.Equal(t, attr.Key, true)
+	assert.Equal(t, attr.Captures, true)
 	assert.Equal(t, attr.Default, 3.14)
 }
 

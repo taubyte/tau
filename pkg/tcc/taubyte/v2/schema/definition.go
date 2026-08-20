@@ -159,9 +159,9 @@ func wasmAttributes(attrs ...*Attribute) []*Attribute {
 		String("implements", InSet(hostWorlds...), Default("handler"), InSection("code"),
 			Doc("Implements", "Which host interface this was built against. handler: takes a request. authorizer: takes a caller and an operation, answers with ops. gateway-transformer: takes a parsed HTTP request. proxy-transformer: takes bytes on a stream.")),
 		String("source", Required(), Ref("module", Prefix("module/")), sourceShape, InSection("code"), Doc("Source", "Code source: \".\" for inline code, or \"module/<name>\" to build from a defined module.")),
-		String("execution-call", Path("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
-		Duration("execution-timeout", Path("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
-		Bytes("execution-memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory this workload may use, as a human string (e.g. \"32MB\").")),
+		String(Key("execution", "call"), Required(), InSection("code"), Doc("Entrypoint", "Exported entrypoint symbol invoked in the WASM component.")),
+		Duration(Key("execution", "timeout"), Required(), InSection("limits"), Doc("Timeout", "Maximum execution time, as a human string (e.g. \"30s\").")),
+		Bytes(Key("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory this workload may use, as a human string (e.g. \"32MB\").")),
 		cpuLimit(),
 		egressAttribute(),
 	}, attrs...)...)
@@ -176,7 +176,7 @@ var secLimits = Section("limits", "Limits", "Runtime resource limits.")
 func gitSource() []*Attribute {
 	return []*Attribute{
 		String("source-branch", Path("source", "branch"), RepoBranch(), InSection("source"), Doc("Branch", "Git branch to build from.")),
-		String("provider", Path("source", Either("github")), Key(), Field("Provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
+		String("provider", Path("source", Either("github")), Captures(), Field("Provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
 		String("repository-id", Path("source", "github", "id"), Required(), Field("RepoID"), NoAccessors(), InSection("source"), Doc("Repository ID", "GitHub repository numeric id.")),
 		String("repository-name", Path("source", "github", "fullname"), Required(), RepoName(), Field("RepoName"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
 	}
@@ -227,7 +227,7 @@ func applicationAttributes() []*Attribute {
 		Int("liveness-failures", Path("liveness", "failures"), MinInt(1), Default(3), InSection("network"),
 			Doc("Liveness Failures", "Consecutive failed liveness checks before this instance is replaced.")),
 
-		Bytes("execution-memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory per instance.")),
+		Bytes(Key("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory per instance.")),
 		cpuLimit(),
 		egressAttribute(),
 
@@ -266,7 +266,7 @@ func applicationAttributes() []*Attribute {
 // function cannot both be filled in.
 func probeAttributes(name, section, doc string) []*Attribute {
 	return []*Attribute{
-		String(name+"-kind", Path(name, Either("http", "function")), Key(), InSection(section),
+		String(name+"-kind", Path(name, Either("http", "function")), Captures(), InSection(section),
 			Doc(title(name), doc+" An http poll, or a function that answers.")),
 		String(name+"-port", Path(name, "http", "port"), IsVariableName(), InSection(section), ShowWhen(name+"-kind", "http"),
 			Doc(title(name)+" Port", "Which of this workload's ports the poll is made on, by name.")),
@@ -370,7 +370,7 @@ var proxyHandlerKinds = []string{"application"}
 // Omitting `name` means the apex of that zone.
 func hostAttributes(section string) []*Attribute {
 	return []*Attribute{
-		String("host-kind", Path("host", Either("generated", "zone")), Key(), Field("HostKind"), InSection(section),
+		String("host-kind", Path("host", Either("generated", "zone")), Captures(), Field("HostKind"), InSection(section),
 			Doc("Host", "generated: a name under the cloud's own zone, resolved when it is deployed. zone: a name in a zone you own and delegated here.")),
 		String("host-name", Path("host", Either("generated", "zone"), "name"), IsVariableName(), InSection(section),
 			Doc("Name", "The label within that zone, e.g. \"shop\". Omit it for the zone apex.")),
@@ -475,7 +475,7 @@ var V2Resources = []*Node{
 				Duration("lifetime-idle", Path("lifetime", "idle"), InSection("limits"), Doc("Idle Timeout", "Stop the sandbox after this long with no activity.")),
 				Duration("lifetime-max", Path("lifetime", "max"), InSection("limits"), Doc("Max Lifetime", "Hard ceiling on how long a sandbox may live.")),
 				egressAttribute(),
-				Bytes("execution-memory", Path("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory the sandbox may use.")),
+				Bytes(Key("execution", "memory"), Required(), InSection("limits"), Doc("Memory", "Maximum memory the sandbox may use.")),
 				cpuLimit(),
 			),
 			Nested(variablesGroup()),
@@ -636,7 +636,7 @@ var V2Resources = []*Node{
 	DefineGroup("database",
 		resource(
 			commonAttributes(
-				String("engine-kind", Path("engine", Either(databaseEngines...)), Key(), Field("Engine"), InSection("engine"),
+				String("engine-kind", Path("engine", Either(databaseEngines...)), Captures(), Field("Engine"), InSection("engine"),
 					Doc("Engine", "Which engine backs this database. distributed is tau's own, replicated across the swarm; the rest are external systems reached over the network.")),
 				Bytes("engine-distributed-size", Path("engine", "distributed", "size"), RequiredWhen("engine-kind", "distributed"), InSection("engine"), ShowWhen("engine-kind", "distributed"),
 					Doc("Size", "Maximum on-disk size, as a human string (e.g. \"1GB\").")),
@@ -661,14 +661,14 @@ var V2Resources = []*Node{
 				//   Required()                        fires on `distributed` too, which
 				//                                     opens no socket
 				//   RequiredWhen("engine-kind", …)    never fires at all, because
-				//                                     engine/kind is a Key() attribute
+				//                                     the engine kind is a Captures() attribute
 				//                                     and RequiredWhen reads a sibling's
 				//                                     DOCUMENT value, which for a Key is
 				//                                     the branch's contents rather than
 				//                                     its name
 				//
 				// The second is a live defect, not a quirk of this field:
-				// engine/distributed/size makes the same claim and is equally
+				// Path("engine","distributed","size") makes the same claim and is equally
 				// unenforced. Recorded in omissions.go.
 				String("engine-tls", Path("engine", Either(externalDatabaseEngines...), "tls"), InSet("verify-full", "require", "disable"), InSection("engine"), ShowWhen("engine-kind", externalDatabaseEngines...),
 					Doc("TLS", "How the connection is protected. Omitted means verify-full. verify-full: encrypted, with the server's certificate and hostname checked. require: encrypted, certificate unverified - a network attacker can still be the server. disable: plaintext, credentials included."))),
@@ -691,7 +691,7 @@ var V2Resources = []*Node{
 	DefineGroup("storage",
 		resource(
 			commonAttributes(
-				String("type", Path(Either("object", "streaming")), Key(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
+				String("type", Path(Either("object", "streaming")), Captures(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
 				String("match", RequiredUnless("useRegex"), InSection("storage"), Doc("Match", "Key or key-pattern this storage serves.")),
 				Bool("useRegex", Path("regex"), InSection("storage"), Doc("Use Regex", "Treat match as a regular expression instead of a literal prefix.")),
 				String("reach-network", Path("reach", "network"), InSet("all", "subnet", "host"), Default("all"), EnumBool("Public", []string{"all"}, []string{"all", "subnet", "host"}, [2]string{"all", "subnet"}), NoAccessors(), InSection("reach"), Doc("Network Access", "Which peers may reach this storage: all, subnet, or host.")),
@@ -899,9 +899,11 @@ var V2Resources = []*Node{
 				String("certificate-source", Path("certificate", "source"), InSet("generated", "provided"), Default("generated"), Field("CertSource"), InSection("naming"), ShowWhen("host-kind", "zone"), Doc("Certificate", "generated: issued on demand for this name. provided: from the secret below. A host under the cloud's own zone needs neither — that zone has a wildcard.")),
 				certificateSecret("naming"),
 
-				// The compiled keys are PATHS, not dashed names: TNS is a CRDT, so
-				// `route/handler/namespace` is three mergeable segments while
-				// `handler-namespace` is one opaque leaf that can only be replaced whole.
+				// THE NESTING IS DECLARED BY Path, never spelled into the key. TNS is
+				// a CRDT and the compiled object is a tree, so route -> handler ->
+				// namespace has to be three mergeable levels; a key that spelled the
+				// path itself would be one opaque leaf that can only be replaced whole,
+				// which is why "/" in a key is a build failure (engine/keys.go).
 				String("route-path", Path("route", "path"), Required(), InSection("route"), Doc("Path", "The path served, e.g. \"/checkout\" or \"/\".")),
 				String("route-match", Path("route", "match"), InSet("prefix", "exact", "regex"), Default("prefix"), InSection("route"), Doc("Match", "How the path is compared: prefix, exact, or regex.")),
 				// A handler mounted at /docs receives /docs/x unless this is set. For an
@@ -918,7 +920,7 @@ var V2Resources = []*Node{
 				StringSlice("route-methods", Path("route", "methods"), InSection("route"), Doc("Methods", "HTTP methods answered. Omit for any. GET/HEAD/OPTIONS read, the rest write.")),
 
 				// the switch: which kind handles it, and where that resource lives
-				String("route-handler-kind", Path("route", "handler", Either(handlerKinds...)), Key(), Field("HandlerKind"), InSection("handler"), Doc("Handler", "Which kind serves this path (the key selects the handler block).")),
+				String("route-handler-kind", Path("route", "handler", Either(handlerKinds...)), Captures(), Field("HandlerKind"), InSection("handler"), Doc("Handler", "Which kind serves this path (the key selects the handler block).")),
 				String("route-handler-namespace", Path("route", "handler", Either(handlerKinds...), "namespace"), InSection("handler"), Doc("Namespace", "Path to the namespace holding the handler, e.g. \"/shop/eu\". Omitted means the project root.")),
 				String("route-handler-name", Path("route", "handler", Either(handlerKinds...), "name"), Required(), IsVariableName(), Ref("", KindFrom("route-handler-kind"), ByName()), InSection("handler"), Doc("Name", "The handler resource's name within that namespace.")),
 				String("route-handler-port", Path("route", "handler", Either(handlerKinds...), "port"), IsVariableName(), InSection("handler"), Doc("Port", "Which of the handler's ports to reach, by name. A workload listening on more than one has to be told which, and the number is never written here — the platform assigns the external one, and there may be several instances of the workload on one host.")),
@@ -1038,7 +1040,7 @@ var V2Resources = []*Node{
 				// accepts a connection and forwards the bytes. Calling both "handler"
 				// borrowed a word from the layer above and made an L4 listener read as
 				// if it understood what was going through it.
-				String("forward-kind", Path("forward", Either(proxyHandlerKinds...)), Key(), Field("HandlerKind"), InSection("forward"),
+				String("forward-kind", Path("forward", Either(proxyHandlerKinds...)), Captures(), Field("HandlerKind"), InSection("forward"),
 					Doc("Forward To", "Which kind the connection is forwarded to (the key selects the block).")),
 				String("forward-namespace", Path("forward", Either(proxyHandlerKinds...), "namespace"), IsNamespacePath(), InSection("forward"),
 					Doc("Namespace", "Path to the namespace holding the workload, e.g. \"/shop/eu\". Omitted means the project root.")),
@@ -1174,7 +1176,7 @@ var V2Resources = []*Node{
 
 				// Same shape as a proxy's `forward` and a gateway route's handler: the
 				// resource that answers, by kind, namespace and name.
-				String("serve-kind", Path("serve", Either(streamServerKinds...)), Key(), InSection("stream"),
+				String("serve-kind", Path("serve", Either(streamServerKinds...)), Captures(), InSection("stream"),
 					Doc("Served By", "Which kind answers this stream (the key selects the block).")),
 				String("serve-namespace", Path("serve", Either(streamServerKinds...), "namespace"), IsNamespacePath(), InSection("stream"),
 					Doc("Namespace", "Path to the namespace holding it, e.g. \"/shop/eu\". Omitted means this scope, then its parents.")),
@@ -1221,7 +1223,7 @@ var V2Resources = []*Node{
 				// something else by it — WHICH KIND answers — and two keys with one
 				// spelling is how a check written for one starts firing on the other.
 				// It did: the port check read this switch's `local` as a resource kind.
-				String("inference-kind", Path("inference", Either("remote", "local")), Key(), InSection("model"),
+				String("inference-kind", Path("inference", Either("remote", "local")), Captures(), InSection("model"),
 					Doc("Inference", "remote: a provider reached over the network. local: a workload in this project serving it (the key selects the block).")),
 				String("inference-endpoint", Path("inference", "remote", "endpoint"), IsURL(), RequiredWhen("inference-kind", "remote"), InSection("model"),
 					Doc("Endpoint", "Base URL of the provider, e.g. \"https://api.anthropic.com\".")),
@@ -1340,9 +1342,9 @@ var V2Resources = []*Node{
 					Named("{name}_infer"),
 					Carries("the loop: call the model, run a tool, decide again"),
 					Sets("source", "tau/agent"),
-					Sets("execution-call", "infer"),
-					Sets("execution-timeout", "5m"),
-					Sets("execution-memory", "128MB"),
+					Sets(Key("execution", "call"), "infer"),
+					Sets(Key("execution", "timeout"), "5m"),
+					Sets(Key("execution", "memory"), "128MB"),
 					Sets("implements", "handler"),
 				),
 

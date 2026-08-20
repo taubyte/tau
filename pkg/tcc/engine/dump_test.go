@@ -326,10 +326,10 @@ func TestWriteValueToPath_WithEitherAndKey(t *testing.T) {
 
 	// Key attribute with Either() path
 	attr := &Attribute{
-		Name: "source",
-		Type: TypeString,
-		Key:  true,
-		Path: []StringMatch{Either("http", "p2p")},
+		Name:     "source",
+		Type:     TypeString,
+		Captures: true,
+		Path:     []StringMatch{Either("http", "p2p")},
 	}
 	obj := object.New[object.Refrence]()
 	obj.Set("source", "http")
@@ -356,14 +356,14 @@ func TestWriteValueToPath_WithEitherAndType(t *testing.T) {
 	query := seer.Query().Get("test").Document()
 
 	// A non-key attribute inside a switch: the branch comes from whichever attribute the
-	// schema marked Key(), which is what the node has to carry.
+	// schema marked Captures(), which is what the node has to carry.
 	attr := &Attribute{
 		Name: "endpoint",
 		Type: TypeString,
 		Path: []StringMatch{Either("http", "p2p"), "endpoint"},
 	}
 	n := &Node{Attributes: []*Attribute{
-		String("type", Path(Either("http", "p2p")), Key()),
+		String("type", Path(Either("http", "p2p")), Captures()),
 	}}
 	obj := object.New[object.Refrence]()
 	obj.Set("type", "http")
@@ -391,10 +391,10 @@ func TestWriteValueToPath_WithEitherNoMatch(t *testing.T) {
 	query := seer.Query().Get("test").Document()
 
 	attr := &Attribute{
-		Name: "source",
-		Type: TypeString,
-		Key:  true,
-		Path: []StringMatch{Either("http", "p2p")},
+		Name:     "source",
+		Type:     TypeString,
+		Captures: true,
+		Path:     []StringMatch{Either("http", "p2p")},
 	}
 	obj := object.New[object.Refrence]()
 	obj.Set("source", "invalid") // Does not match Either options
@@ -403,18 +403,18 @@ func TestWriteValueToPath_WithEitherNoMatch(t *testing.T) {
 	assert.ErrorContains(t, err, "does not match Either() options")
 }
 
-// The branch a non-Key attribute is written into comes from the Key() attribute that
+// The branch a non-Key attribute is written into comes from the Captures() attribute that
 // captured the switch — read off the schema, not from a field conventionally named
 // `type`. v1 named every switch `type` and the old lookup demanded exactly that, so a
-// vocabulary naming it `engine/kind` could not be written back at all.
+// vocabulary calling it anything else could not be written back at all.
 func TestBranchKeyValue_FromTheKeyAttribute(t *testing.T) {
 	n := &Node{Attributes: []*Attribute{
-		String("engine/kind", Path("engine", Either("distributed", "postgres")), Key()),
-		String("host/kind", Path("host", Either("generated", "zone")), Key()),
+		String("engine-kind", Path("engine", Either("distributed", "postgres")), Captures()),
+		String("host-kind", Path("host", Either("generated", "zone")), Captures()),
 	}}
 	obj := object.New[object.Refrence]()
-	obj.Set("engine/kind", "postgres")
-	obj.Set("host/kind", "generated")
+	obj.Set("engine-kind", "postgres")
+	obj.Set("host-kind", "generated")
 
 	// the same switch, not merely one at the same depth: two switches sit at depth 1
 	got, err := branchKeyValue(n, obj, []StringMatch{"engine", Either("distributed", "postgres"), "host"}, 1)
@@ -426,7 +426,7 @@ func TestBranchKeyValue_FromTheKeyAttribute(t *testing.T) {
 	assert.Equal(t, got, "generated")
 }
 
-// A SWITCH IS DECIDED BY Key(), and by nothing else. There used to be a fallback to a
+// A SWITCH IS DECIDED BY Captures(), and by nothing else. There used to be a fallback to a
 // field literally called `type` — one vocabulary's word, in the layer that must not have
 // one, on the path that writes config back out. A vocabulary whose `type` means something
 // else would have taken the wrong branch and said nothing.
@@ -435,12 +435,12 @@ func TestBranchKeyValue_NeedsAKey(t *testing.T) {
 	obj.Set("type", "http")
 
 	_, err := branchKeyValue(&Node{}, obj, []StringMatch{Either("http")}, 0)
-	assert.ErrorContains(t, err, "no Key() attribute",
-		"a field named `type` is not a declaration; Key() is")
+	assert.ErrorContains(t, err, "no Captures() attribute",
+		"a field named `type` is not a declaration; Captures() is")
 
 	// ...and with the declaration, the same object answers
 	n := &Node{Attributes: []*Attribute{
-		String("type", Path(Either("http", "p2p")), Key()),
+		String("type", Path(Either("http", "p2p")), Captures()),
 	}}
 	got, err := branchKeyValue(n, obj, []StringMatch{Either("http", "p2p")}, 0)
 	assert.NilError(t, err)

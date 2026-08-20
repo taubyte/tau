@@ -120,7 +120,7 @@ var TaubyteRessources = []*Node{
 			TaubyteAttributes(
 				String("path", Path("source", "path"), InSection("source"), Doc("Path", "Subpath within the repository that holds the library code.")),
 				String("branch", Path("source", "branch"), RepoBranch(), InSection("source"), Doc("Branch", "Git branch to build the library from.")),
-				String("git-provider", Path("source", Either("github")), Key(), Field("Provider"), Tag("provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
+				String("git-provider", Path("source", Either("github")), Captures(), Field("Provider"), Tag("provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
 				String("github-id", Path("source", "github", "id"), Required(), Field("RepoID"), Tag("repository-id"), NoAccessors(), InSection("source"), Doc("Repository ID", "GitHub repository numeric id.")),
 				String("github-fullname", Path("source", "github", "fullname"), Required(), RepoName(), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
 			),
@@ -191,7 +191,7 @@ var TaubyteRessources = []*Node{
 	DefineGroup("storages",
 		DefineIter(
 			TaubyteAttributes(
-				String("type", Path(Either("object", "streaming")), Key(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
+				String("type", Path(Either("object", "streaming")), Captures(), InSection("storage"), Doc("Type", "Storage kind: object or streaming (the key selects the type block).")),
 				// NOTE: match is required-unless-regex for databases (above) and is the
 				// same here by the same runtime argument (storages.go:49 compares it
 				// exactly, so an empty non-regex match is unreachable). It is NOT
@@ -221,7 +221,7 @@ var TaubyteRessources = []*Node{
 				StringSlice("domains", Path("domains"), Required(), Ref("domains"), InSection("serving"), Doc("Domains", "Domains that serve this website. Each must name a defined domain.")),
 				StringSlice("paths", Path("paths"), Compat("source", "paths"), Required(), InSection("serving"), Doc("Paths", "URL path patterns served by this website.")), // TODO: add validation
 				String("branch", Path("source", "branch"), RepoBranch(), InSection("source"), Doc("Branch", "Git branch to build the website from.")),                       // TODO: deprecate
-				String("git-provider", Path("source", Either("github")), Key(), Field("Provider"), Tag("provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
+				String("git-provider", Path("source", Either("github")), Captures(), Field("Provider"), Tag("provider"), InSection("source"), Doc("Provider", "Source-control provider hosting the repository (the key selects the provider block).")),
 				String("github-id", Path("source", "github", "id"), Required(), Field("RepoID"), Tag("repository-id"), NoAccessors(), InSection("source"), Doc("Repository ID", "GitHub repository numeric id.")),
 				String("github-fullname", Path("source", "github", "fullname"), Required(), RepoName(), Field("RepoName"), Tag("repository-name"), NoAccessors(), InSection("source"), Doc("Repository", "GitHub repository full name (owner/repo).")),
 			),

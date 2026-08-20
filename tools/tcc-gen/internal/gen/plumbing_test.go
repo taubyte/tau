@@ -112,7 +112,7 @@ func TestPrintReport(t *testing.T) {
 // a matcher path and no Field override derives its name from the (hyphenated)
 // attribute name, which must be sanitized into a valid Go identifier.
 func TestStructFieldNameSanitize(t *testing.T) {
-	a := engine.String("git-provider", engine.Path("source", engine.Either("github")), engine.Key())
+	a := engine.String("git-provider", engine.Path("source", engine.Either("github")), engine.Captures())
 	if got := structFieldName("websites", a); got != "GitProvider" {
 		t.Errorf("structFieldName = %q, want GitProvider", got)
 	}

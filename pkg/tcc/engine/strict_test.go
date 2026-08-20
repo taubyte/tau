@@ -21,7 +21,7 @@ func strictSchema() Schema {
 					String("call", Path("execution", "call")),
 					String("mem", Path("execution", "memory")),
 					String("regex", Path("regex"), Compat("useRegex")),
-					String("kind", Path("engine", Either("local", "remote")), Key()),
+					String("kind", Path("engine", Either("local", "remote")), Captures()),
 					String("host", Path("engine", Either("local", "remote"), "host")),
 					String("anything", Path("labels", All(), "value")),
 				},
@@ -148,7 +148,7 @@ func TestStrictIsOptInPerVocabulary(t *testing.T) {
 		Attributes(String("id")),
 		DefineGroup("things", DefineIter([]*Attribute{
 			String("id", Required()),
-			String("kind", Path("engine", Either("local", "remote")), Key()),
+			String("kind", Path("engine", Either("local", "remote")), Captures()),
 			String("host", Path("engine", Either("local", "remote"), "host")),
 		})),
 	))

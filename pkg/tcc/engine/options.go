@@ -8,9 +8,9 @@ func Path(path ...StringMatch) Option {
 	}
 }
 
-func Key() Option {
+func Captures() Option {
 	return func(a *Attribute) {
-		a.Key = true
+		a.Captures = true
 	}
 }
 

@@ -23,8 +23,6 @@ const DeriveSRVName = engine.DeriveSRVName
 
 var (
 	Accessor        = engine.Accessor
-	Bool            = engine.Bool
-	Bytes           = engine.Bytes
 	DefineGroup     = engine.DefineGroup
 	DefineIter      = engine.DefineIter
 	DefineIterGroup = engine.DefineIterGroup
@@ -40,18 +38,15 @@ var (
 	Acts             = interp.Acts
 	Named            = interp.Named
 	Carries          = interp.Carries
-	Sets             = interp.Sets
 	Writes           = interp.Writes
 	On               = interp.On
 	At               = interp.At
 	Doc              = engine.Doc
-	Duration         = engine.Duration
 	Either           = engine.Either
 	AnswersAt        = engine.AnswersAt
 	ByName           = engine.ByName
 	Inbound          = engine.Inbound
 	KindFrom         = engine.KindFrom
-	Float            = engine.Float
 	EmitValidation   = engine.EmitValidation
 	EnumBool         = engine.EnumBool
 	Field            = engine.Field
@@ -59,11 +54,10 @@ var (
 	GroupAnnotate    = engine.GroupAnnotate
 	GroupDoc         = engine.GroupDoc
 	Icon             = engine.Icon
-	Int              = engine.Int
 	IsCID            = engine.IsCID
 	IsFqdn           = engine.IsFqdn
 	IsVariableName   = engine.IsVariableName
-	Key              = engine.Key
+	Captures         = engine.Captures
 	MinInt           = engine.MinInt
 	Nested           = engine.Nested
 	NoAccessors      = engine.NoAccessors
@@ -89,9 +83,7 @@ var (
 	Leaf             = engine.Leaf
 	Derived          = engine.Derived
 	Strict           = engine.Strict
-	String           = engine.String
 	StringShape      = engine.StringShape
-	StringSlice      = engine.StringSlice
 	Tag              = engine.Tag
 	WireDrop         = engine.WireDrop
 )
@@ -100,3 +92,26 @@ var (
 func Default[T any](val T) engine.Option                      { return engine.Default(val) }
 func Validator[T any](validator func(T) error) engine.Option  { return engine.Validator(validator) }
 func InSet[T string | int | float64](elms ...T) engine.Option { return engine.InSet(elms...) }
+
+// The typed attribute constructors take EITHER a plain string key or a multi-segment
+// Key(...), so they are generic and cannot be re-exported as values like the rest.
+type AKey = engine.AKey
+
+func Key(segments ...string) AKey { return engine.Key(segments...) }
+
+// Sets names one of the produced kind's attributes, by key.
+func Sets[T string | AKey](field T, tmpl string) interp.LoweringOption {
+	return interp.Sets(field, tmpl)
+}
+
+func String[T string | AKey](name T, o ...engine.Option) *Attribute { return engine.String(name, o...) }
+func StringSlice[T string | AKey](name T, o ...engine.Option) *Attribute {
+	return engine.StringSlice(name, o...)
+}
+func Int[T string | AKey](name T, o ...engine.Option) *Attribute   { return engine.Int(name, o...) }
+func Bool[T string | AKey](name T, o ...engine.Option) *Attribute  { return engine.Bool(name, o...) }
+func Float[T string | AKey](name T, o ...engine.Option) *Attribute { return engine.Float(name, o...) }
+func Bytes[T string | AKey](name T, o ...engine.Option) *Attribute { return engine.Bytes(name, o...) }
+func Duration[T string | AKey](name T, o ...engine.Option) *Attribute {
+	return engine.Duration(name, o...)
+}

@@ -21,15 +21,12 @@ var (
 	Accessor         = engine.Accessor
 	Addressing       = engine.Addressing
 	AttachesToAll    = engine.AttachesToAll
-	Bool             = engine.Bool
-	Bytes            = engine.Bytes
 	Compat           = engine.Compat
 	DefineGroup      = engine.DefineGroup
 	DefineIter       = engine.DefineIter
 	DefineIterGroup  = engine.DefineIterGroup
 	DerivedBool      = engine.DerivedBool
 	Doc              = engine.Doc
-	Duration         = engine.Duration
 	Either           = engine.Either
 	Embeds           = engine.Embeds
 	EmitValidation   = engine.EmitValidation
@@ -43,7 +40,7 @@ var (
 	IsFqdn           = engine.IsFqdn
 	IsHttpMethod     = engine.IsHttpMethod
 	IsVariableName   = engine.IsVariableName
-	Key              = engine.Key
+	Captures         = engine.Captures
 	NoAccessors      = engine.NoAccessors
 	NoGetter         = engine.NoGetter
 	NoSetter         = engine.NoSetter
@@ -67,9 +64,7 @@ var (
 	Singular         = engine.Singular
 	Leaf             = engine.Leaf
 	Identity         = engine.Identity
-	String           = engine.String
 	StringShape      = engine.StringShape
-	StringSlice      = engine.StringSlice
 	Tag              = engine.Tag
 	WireDrop         = engine.WireDrop
 )
@@ -79,3 +74,21 @@ var (
 func Default[T any](val T) engine.Option                      { return engine.Default(val) }
 func Validator[T any](validator func(T) error) engine.Option  { return engine.Validator(validator) }
 func InSet[T string | int | float64](elms ...T) engine.Option { return engine.InSet(elms...) }
+
+// The typed attribute constructors take EITHER a plain string key or a multi-segment
+// Key(...), so they are generic and cannot be re-exported as values like the rest.
+type AKey = engine.AKey
+
+func Key(segments ...string) AKey { return engine.Key(segments...) }
+
+func String[T string | AKey](name T, o ...engine.Option) *Attribute { return engine.String(name, o...) }
+func StringSlice[T string | AKey](name T, o ...engine.Option) *Attribute {
+	return engine.StringSlice(name, o...)
+}
+func Int[T string | AKey](name T, o ...engine.Option) *Attribute   { return engine.Int(name, o...) }
+func Bool[T string | AKey](name T, o ...engine.Option) *Attribute  { return engine.Bool(name, o...) }
+func Float[T string | AKey](name T, o ...engine.Option) *Attribute { return engine.Float(name, o...) }
+func Bytes[T string | AKey](name T, o ...engine.Option) *Attribute { return engine.Bytes(name, o...) }
+func Duration[T string | AKey](name T, o ...engine.Option) *Attribute {
+	return engine.Duration(name, o...)
+}

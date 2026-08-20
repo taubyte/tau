@@ -143,7 +143,7 @@ func Resources(root []*engine.Node) ([]*Resource, error) {
 			if common[a.Name] {
 				continue
 			}
-			if a.Key || (noSetter(a) && noGetter(a)) {
+			if a.Captures || (noSetter(a) && noGetter(a)) {
 				continue // map-key attr, or no mechanical accessor at all
 			}
 			path, ok := pathSegs(a)

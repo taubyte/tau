@@ -148,13 +148,27 @@ func Carries(tmpl string) LoweringOption {
 // of names: nothing downstream can tell a queue that retries four times from one that
 // retries once, and — the reason this is not optional — a lowering cannot NEST, because
 // the next lowering down has no values to read.
-func Sets(field, tmpl string) LoweringOption {
+func Sets[T string | engine.AKey](field T, tmpl string) LoweringOption {
+	name := fieldName(field)
 	return func(l *Lowering) {
 		if l.set == nil {
 			l.set = map[string]string{}
 		}
-		l.set[field] = tmpl
+		l.set[name] = tmpl
 	}
+}
+
+// fieldName is how a lowering names one of the produced kind's attributes: a plain key,
+// or the segments of a nested one. An attribute's identity is its key, joined — which is
+// the one place "/" is written, by the engine and never by a vocabulary.
+func fieldName[T string | engine.AKey](field T) string {
+	switch f := any(field).(type) {
+	case string:
+		return f
+	case engine.AKey:
+		return strings.Join(f, "/")
+	}
+	return ""
 }
 
 // LinksTo is what this derived resource connects to — the wiring INSIDE the construct.

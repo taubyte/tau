@@ -137,23 +137,31 @@ Related conditionals: `RequiredWhen`, `RequiredUnless`, `OnlyWhen`, `ShowWhen`,
 
 ---
 
-## 4. `Tag()` is the wire key, and it must be a path
+## 4. A key may never contain `/`
 
-TNS stores the compiled map as a tree and merges it as a CRDT, so the compiled key
-**is** the TNS path. Use slashes:
+The compiled configuration is an OBJECT, and `/` is what separates one level of it from
+the next — in a TNS path, in a lowering's `At(path…)`, in every walk over the tree. So a
+key holding a slash is a key pretending to be a path: it reads as hierarchy everywhere it
+is printed and is one opaque leaf everywhere it is stored, which for a CRDT means two
+writers touching different halves of it collide over one cell.
 
 ```go
-Tag("route/handler/namespace")   // three mergeable segments
-Tag("handler-namespace")         // one opaque leaf — wrong
+String("execution-call", Path("execution", "call"))   // nesting is DECLARED
+String("execution/call")                              // panics
+Tag("route/handler/namespace")                        // panics
 ```
+
+**This is what `Path(...)` is for.** Hierarchy is segments the engine builds levels from;
+it is never a key that spells its own path. Same for anything else that is not a name — a
+dot, a space, a leading digit. A key is a variable name, `-` allowed.
+
+`engine/keys.go` refuses all of it at construction — attribute names, `Tag`, `DefineGroup`,
+`DefineList`, `Leaf` — the way `DefineList` already refuses a term that cannot run inside an
+element. A schema that cannot express a legal object is a build failure, not a config that
+compiles into a shape nothing can merge.
 
 `Path(...)` is where the value is **read from**, `Tag(...)` is where it is **written
 to**. Two independent knobs; don't collapse them.
-
-The rule to hold: **an attribute authored under a nested block compiles to that
-path.** `Path("execution","call")` ⇒ `Tag("execution/call")`. Where the path contains
-an `Either(...)`, the tag names the branch by hand — `Tag("engine/distributed/size")`,
-`Tag("route/handler/namespace")`.
 
 ### `Tag(x)` on an attribute already named `x` deletes the field
 

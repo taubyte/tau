@@ -11,12 +11,12 @@ func TestNode_Map(t *testing.T) {
 		Match: "test",
 		Attributes: []*Attribute{
 			{
-				Name:    "attr1",
-				Type:    TypeInt,
-				Key:     true,
-				Default: 123,
-				Path:    []StringMatch{StringMatchAll{}},
-				Compat:  []StringMatch{StringMatchAll{}},
+				Name:     "attr1",
+				Type:     TypeInt,
+				Captures: true,
+				Default:  123,
+				Path:     []StringMatch{StringMatchAll{}},
+				Compat:   []StringMatch{StringMatchAll{}},
 			},
 			{
 				Name: "attr2",

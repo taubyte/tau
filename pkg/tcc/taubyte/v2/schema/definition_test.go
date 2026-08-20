@@ -107,9 +107,9 @@ func TestFunctionHasNoTrigger(t *testing.T) {
 		assert.Assert(t, isBlock, "functions carries a scalar %q: that is v1's trigger coming back", "channel")
 	}
 
-	assert.Equal(t, fn["execution-call"], "checkout")
-	assert.Equal(t, fn["execution-timeout"], int64(20000000000), "20s parses to nanoseconds")
-	assert.Equal(t, fn["execution-memory"], int64(32000000), "32MB parses to bytes")
+	assert.Equal(t, nested(fn, "execution", "call"), "checkout")
+	assert.Equal(t, nested(fn, "execution", "timeout"), int64(20000000000), "20s parses to nanoseconds")
+	assert.Equal(t, nested(fn, "execution", "memory"), int64(32000000), "32MB parses to bytes")
 }
 
 // `libraries` -> `modules` carries into the reference form: a source of
@@ -228,7 +228,7 @@ func TestNamespaceScope(t *testing.T) {
 
 	fn := namedResource(t, shop["function"].(map[string]any), "notify")
 	assert.Equal(t, fn["source"], ".", "inline source is not a ref")
-	assert.Equal(t, fn["execution-call"], "notify")
+	assert.Equal(t, nested(fn, "execution", "call"), "notify")
 
 	kv := only(t, shop["cache"].(map[string]any))
 	assert.Equal(t, kv["match"], "sessions")
@@ -264,7 +264,7 @@ func TestAccessIsPerTarget(t *testing.T) {
 	assert.DeepEqual(t, sessions["ops"], []string{"get"})
 
 	// nesting did NOT cost the resource its own compile passes
-	assert.Equal(t, fn["execution-timeout"], int64(20000000000), "scalars still parse")
+	assert.Equal(t, nested(fn, "execution", "timeout"), int64(20000000000), "scalars still parse")
 	assert.Assert(t, strings.HasPrefix(fn["source"].(string), "module/Qm"), "refs still resolve")
 
 	// and a verb the kind does not implement is refused at load
@@ -288,7 +288,7 @@ cache:
 // carried its whole trigger block in one file.
 //
 // The handler is a switch on the target kind — an Either() in the attribute path
-// with Key() capturing the branch — so `handler: { function: { namespace, name } }`
+// with Captures() capturing the branch — so `handler: { function: { namespace, name } }`
 // compiles to the kind, the namespace path and the name, and a key outside the
 // closed set is a compile error rather than a route that never fires.
 func TestGatewayRoute(t *testing.T) {
@@ -309,7 +309,7 @@ func TestGatewayRoute(t *testing.T) {
 	assert.DeepEqual(t, gw["route-methods"], []string{"POST"})
 
 	// the switch, and the resource path through namespaces
-	assert.Equal(t, gw["route-handler-kind"], "application", "Key() captures which branch the handler took")
+	assert.Equal(t, gw["route-handler-kind"], "application", "Captures() captures which branch the handler took")
 	assert.Equal(t, gw["route-handler-name"], "api")
 	assert.Equal(t, gw["route-handler-port"], "http", "a workload with two ports is told which")
 
@@ -666,7 +666,7 @@ func TestPortsAreNamed(t *testing.T) {
 	assert.Equal(t, pool["readiness-function-name"], "pool_ready")
 
 	// and a workload that declares no liveness simply has none — the case an
-	// Either()+Key() switch could not express before
+	// Either()+Captures() switch could not express before
 	_, live := pool["liveness-kind"]
 	assert.Assert(t, !live, "no liveness declared, so nothing restarts it")
 	_, probe := pool["readiness-path"]
@@ -1008,4 +1008,17 @@ func TestReachableNames(t *testing.T) {
 	for _, r := range names {
 		assert.Assert(t, r.Name != "example-com", "a zone must not be listed as reachable")
 	}
+}
+
+// nested reads a value at a multi-segment key, which is what a nested Path compiles to.
+func nested(res map[string]any, segments ...string) any {
+	at := res
+	for _, seg := range segments[:len(segments)-1] {
+		next, ok := at[seg].(map[string]any)
+		if !ok {
+			return nil
+		}
+		at = next
+	}
+	return at[segments[len(segments)-1]]
 }

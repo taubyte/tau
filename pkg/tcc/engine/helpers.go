@@ -1,6 +1,9 @@
 package engine
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 func stringify(a any) string {
 	switch b := a.(type) {
@@ -24,36 +27,91 @@ func stringify(a any) string {
 	}
 }
 
-func defAttr(name string, _type Type, options []Option) *Attribute {
+// AKey is a compiled key with more than one segment — one level of the object per
+// entry. Built with Key(...); an attribute whose key is a single segment is declared
+// with a plain string, as it always was.
+type AKey []string
+
+// Key declares the key an attribute compiles to, in segments.
+//
+//	String(Key("execution", "call"))
+//
+// The compiled configuration is an object and "/" separates its levels, so the key is
+// SEGMENTS rather than a string spelling them — a key may never contain "/" (keys.go).
+//
+// Where the value is AUTHORED is the same place unless the vocabulary says otherwise:
+// `Path(...)` is declared only when the two differ, which is what v1 does when it reads
+// `execution.call` and compiles it onto a flat `call`.
+func Key(segments ...string) AKey { return AKey(segments) }
+
+// keyOf normalises either spelling of an attribute's key.
+func keyOf[T string | AKey](name T) (string, []string) {
+	switch k := any(name).(type) {
+	case string:
+		mustBeKey("attribute", k)
+		return k, nil
+	case AKey:
+		if len(k) == 0 {
+			panic("Key() declares no segments")
+		}
+		for _, seg := range k {
+			mustBeKey("attribute key segment", seg)
+		}
+		if len(k) == 1 {
+			return k[0], nil
+		}
+		return strings.Join(k, "/"), k
+	}
+	panic("unreachable")
+}
+
+func defAttr[T string | AKey](name T, _type Type, options []Option) *Attribute {
+	id, segments := keyOf(name)
 	a := &Attribute{
-		Name: name,
-		Type: _type,
+		Name:     id,
+		Segments: segments,
+		Type:     _type,
 	}
 
 	for _, opt := range options {
 		opt(a)
 	}
 
+	// WHERE IT IS AUTHORED IS WHERE IT COMPILES, unless the vocabulary says otherwise.
+	// Path(...) is declared only when the two differ — v1 reads `execution.call` and
+	// compiles it onto a flat `call`, so it declares one; v2 reads and writes the same
+	// place, so it declares none. Resolved here rather than at load because the strict
+	// key check reads Path before any document is opened.
+	if len(a.Path) == 0 {
+		a.Path = make([]StringMatch, 0, len(segments)+1)
+		if len(segments) == 0 {
+			a.Path = append(a.Path, a.Name)
+		}
+		for _, seg := range segments {
+			a.Path = append(a.Path, seg)
+		}
+	}
+
 	return a
 }
 
-func Int(name string, options ...Option) *Attribute {
+func Int[T string | AKey](name T, options ...Option) *Attribute {
 	return defAttr(name, TypeInt, options)
 }
 
-func Bool(name string, options ...Option) *Attribute {
+func Bool[T string | AKey](name T, options ...Option) *Attribute {
 	return defAttr(name, TypeBool, options)
 }
 
-func Float(name string, options ...Option) *Attribute {
+func Float[T string | AKey](name T, options ...Option) *Attribute {
 	return defAttr(name, TypeFloat, options)
 }
 
-func String(name string, options ...Option) *Attribute {
+func String[T string | AKey](name T, options ...Option) *Attribute {
 	return defAttr(name, TypeString, options)
 }
 
-func StringSlice(name string, options ...Option) *Attribute {
+func StringSlice[T string | AKey](name T, options ...Option) *Attribute {
 	return defAttr(name, TypeStringSlice, options)
 }
 
@@ -79,6 +137,7 @@ func Define(match StringMatch, attrs []*Attribute, children ...*Node) *Node {
 }
 
 func DefineGroup(match string, children ...*Node) *Node {
+	mustBeKey("group", match)
 	return &Node{
 		Group:    true,
 		Match:    match,
@@ -133,6 +192,7 @@ func Nested(children ...*Node) NodeOption {
 // The list is a group plus its iterator, the same two nodes any other group is; the
 // marker only says where the keys come from.
 func DefineList(name string, attrs []*Attribute, extra ...any) *Node {
+	mustBeKey("list", name)
 	for _, a := range attrs {
 		if term, ok := listUnsupported(a); ok {
 			// Refusing at construction, loudly, beats compiling a list whose
@@ -191,6 +251,7 @@ func DefineIterGroup(attrs []*Attribute, children ...*Node) *Node {
 // take options inline. Generation-only metadata; no runtime effect.
 // Leaf names the document this group's instances keep their own fields in.
 func Leaf(name string) NodeOption {
+	mustBeKey("leaf", name)
 	return func(n *Node) { n.Leaf = name }
 }
 

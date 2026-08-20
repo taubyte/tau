@@ -47,7 +47,7 @@ func TestDeriveDNSLabelShape(t *testing.T) {
 	assert.ErrorContains(t, err, "unknown derivation")
 }
 
-// RequiredWhen naming a Key() sibling used to be a promise the loader did not keep:
+// RequiredWhen naming a Captures() sibling used to be a promise the loader did not keep:
 // the condition read the sibling's document VALUE, and a Key's path ends in the
 // Either() where the document holds the branch, so the comparison never matched and
 // the field was never required. `engine/distributed/size` said RequiredWhen and a
@@ -57,7 +57,7 @@ func TestRequiredWhenReadsAKeysBranch(t *testing.T) {
 		Attributes(String("id")),
 		DefineGroup("things", DefineIter([]*Attribute{
 			String("id", Required()),
-			String("kind", Path("engine", Either("local", "remote")), Key()),
+			String("kind", Path("engine", Either("local", "remote")), Captures()),
 			String("host", Path("engine", "remote", "host"), RequiredWhen("kind", "remote")),
 		})),
 	))
@@ -83,7 +83,7 @@ func TestRequiredWhenReadsAKeysBranch(t *testing.T) {
 	}
 }
 
-// An Either()+Key() switch on an OPTIONAL block. Absent and wrong are different
+// An Either()+Captures() switch on an OPTIONAL block. Absent and wrong are different
 // documents and were getting the same answer, which is why every switch in the tau
 // vocabulary sits on a block that must be there — not by design, but because the
 // others could not be written.
@@ -93,10 +93,10 @@ func TestKeySwitchOnAnOptionalBlock(t *testing.T) {
 		DefineGroup("things", DefineIter([]*Attribute{
 			String("id", Required()),
 			// optional: hangs off a `probe` block that need not be there
-			String("probe", Path("probe", Either("http", "function")), Key()),
+			String("probe", Path("probe", Either("http", "function")), Captures()),
 			String("probe-path", Path("probe", "http", "path")),
 			// mandatory: the switch is at the top level, so its parent is the document
-			String("shape", Path(Either("round", "square")), Key()),
+			String("shape", Path(Either("round", "square")), Captures()),
 		})),
 	))
 

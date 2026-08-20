@@ -112,7 +112,7 @@ func TestRequiredFieldsAreAddressable(t *testing.T) {
 			if !a.Required && !conditional {
 				continue
 			}
-			if a.Key {
+			if a.Captures {
 				continue // a map key is required by construction (empty key errors)
 			}
 			path := engine.RequiredPathOf(a)

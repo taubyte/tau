@@ -177,10 +177,10 @@ func TestSetAttributes_KeyAttribute(t *testing.T) {
 	node := &Node{
 		Attributes: []*Attribute{
 			{
-				Name: "keyAttr",
-				Type: TypeString,
-				Key:  true,
-				Path: []StringMatch{"keyname"},
+				Name:     "keyAttr",
+				Type:     TypeString,
+				Captures: true,
+				Path:     []StringMatch{"keyname"},
 			},
 		},
 	}
@@ -208,10 +208,10 @@ func TestSetAttributes_KeyAttributeEmpty(t *testing.T) {
 	node := &Node{
 		Attributes: []*Attribute{
 			{
-				Name: "keyAttr",
-				Type: TypeString,
-				Key:  true,
-				Path: []StringMatch{"type1"}, // Valid path
+				Name:     "keyAttr",
+				Type:     TypeString,
+				Captures: true,
+				Path:     []StringMatch{"type1"}, // Valid path
 			},
 		},
 	}

@@ -102,7 +102,7 @@ func (n *Node) attributesToMap() map[string]any {
 	for _, attr := range n.Attributes {
 		// Pre-allocate map with estimated capacity based on possible fields
 		estimatedCapacity := 2 // type is always present
-		if attr.Key {
+		if attr.Captures {
 			estimatedCapacity++
 		}
 		if attr.Default != nil {
@@ -116,7 +116,7 @@ func (n *Node) attributesToMap() map[string]any {
 		}
 		m := make(map[string]any, estimatedCapacity)
 		m["type"] = attr.Type.String()
-		if attr.Key {
+		if attr.Captures {
 			m["key"] = true
 		}
 		if attr.Default != nil {
@@ -322,7 +322,7 @@ func requiredHere(n *Node, attr *Attribute, query *yaseer.Query) bool {
 		//
 		// Without this, `RequiredWhen("engine/kind", "distributed")` was a promise the
 		// loader did not keep: a distributed database with no size compiled clean.
-		if sib.Key {
+		if sib.Captures {
 			_, resolved, err := inferPathQuery(path, query)
 			if err != nil || len(resolved) == 0 {
 				return false
@@ -420,6 +420,8 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 	}
 
 	for _, attr := range n.Attributes {
+		// defAttr resolves this from the key; an Attribute built as a struct literal
+		// (tests, and anything assembled by hand) still needs the fallback.
 		if len(attr.Path) == 0 {
 			attr.Path = []StringMatch{attr.Name}
 		}
@@ -431,11 +433,11 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 			}
 		}
 
-		if attr.Key {
+		if attr.Captures {
 			if len(resolved) > 0 {
 				switch o := obj.(type) {
 				case object.Object[object.Refrence]:
-					o.Set(attr.Name, object.Refrence(resolved[len(resolved)-1]))
+					place(o, attr, object.Refrence(resolved[len(resolved)-1]))
 				}
 				continue
 			}
@@ -492,7 +494,7 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 			if attr.Default != nil {
 				switch o := obj.(type) {
 				case object.Object[object.Refrence]:
-					o.Set(attr.Name, attr.Default)
+					place(o, attr, attr.Default)
 				}
 			}
 			continue
@@ -516,11 +518,54 @@ func setAttributes[T ObjectDataType](n *Node, obj object.Object[T], query *yasee
 
 		switch o := obj.(type) {
 		case object.Object[object.Refrence]:
-			o.Set(attr.Name, val)
+			place(o, attr, val)
 		}
 	}
 
 	return nil
+}
+
+// WHERE A VALUE LANDS IN THE COMPILED OBJECT.
+//
+// `Path(...)` is the address, and the compiled object is a tree, so an attribute
+// authored under a nested block compiles INTO that block: `Path("execution","call")`
+// puts the value at execution -> call, two levels a CRDT merges independently. It used
+// to land on a flat key named after the attribute, which is why a vocabulary that wanted
+// the nesting to survive had to spell the path into the name — `execution-call` — and
+// end up with one opaque leaf that can only be replaced whole.
+//
+// `Tag(...)` still overrides, as one segment: that is how a vocabulary whose WIRE format
+// deliberately differs from its authored shape says so. v1 is exactly that — its
+// compiled keys are flat by design and its consumers read them that way.
+//
+// A Captures() attribute is the odd one: its path ENDS in the Either it captured, so the
+// branch name is the value rather than a level to write under. It lands beside the
+// branch, under its own name.
+func place(o object.Object[object.Refrence], attr *Attribute, val any) {
+	segments := CompiledSegments(attr)
+	last := len(segments) - 1
+	if last == 0 {
+		o.Set(segments[0], val)
+		return
+	}
+	parent, err := o.CreatePath(segments[:last]...)
+	if err != nil {
+		o.Set(attr.Name, val) // the tree refused the path; better a flat key than a lost value
+		return
+	}
+	parent.Set(segments[last], val)
+}
+
+// CompiledSegments is the key path an attribute's value is written at — one level of
+// the compiled object per entry.
+func CompiledSegments(attr *Attribute) []string {
+	if len(attr.Segments) > 0 {
+		return attr.Segments
+	}
+	// Single segment. NOT the Tag: a tagged attribute is renamed later, by
+	// applyInstanceOps, and the gates that run in between (OnlyWhen) key off the name
+	// it was loaded under. Landing on the tag here skips them.
+	return []string{attr.Name}
 }
 
 // loadSequence reads a group authored as a YAML sequence. Each element goes through

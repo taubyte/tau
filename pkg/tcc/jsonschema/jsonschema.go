@@ -285,7 +285,7 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 		}
 		leaf := g.attrSchema(a)
 		segs, ok := pathSegs(a)
-		if ok && !a.Key {
+		if ok && !a.Captures {
 			setNested(props, segs, leaf)
 		} else {
 			// Dynamic/map-keyed location: can't be a clean nested property, so
@@ -296,7 +296,7 @@ func (g jsonSchemaGen) objectSchema(iter *engine.Node, nested []*engine.Node, ti
 		}
 		if a.Required {
 			switch {
-			case !ok || a.Key:
+			case !ok || a.Captures:
 				// A dynamic (Either/Key) location is emitted as a FLAT marker
 				// property, not at its real path, so naming it in `required`
 				// would demand a top-level property that does not exist and

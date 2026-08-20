@@ -192,7 +192,7 @@ func (s *instance) dumpApplications(iterGroupNode *Node, appsObj object.Object[o
 
 func (s *instance) dumpAttributes(n *Node, obj object.Object[object.Refrence], query *yaseer.Query) error {
 	for _, attr := range n.Attributes {
-		val := obj.Get(attr.Name)
+		val := read(obj, attr)
 		if val == nil {
 			// Check if required
 			if attr.Required {
@@ -229,6 +229,31 @@ func (s *instance) dumpAttributes(n *Node, obj object.Object[object.Refrence], q
 	return nil
 }
 
+// read pulls an attribute's compiled value back out, at the key it was written to —
+// which for a multi-segment key is a nested level rather than a flat leaf.
+func read(obj object.Object[object.Refrence], attr *Attribute) any {
+	segments := CompiledSegments(attr)
+	last := len(segments) - 1
+	if last == 0 {
+		return obj.Get(segments[0])
+	}
+	at, err := obj.Fetch(segments[:last]...)
+	if err != nil {
+		return nil
+	}
+	return at.Get(segments[last])
+}
+
+func readString(obj object.Object[object.Refrence], attr *Attribute) (string, error) {
+	switch v := read(obj, attr).(type) {
+	case string:
+		return v, nil
+	case fmt.Stringer:
+		return v.String(), nil
+	}
+	return "", fmt.Errorf("attribute '%s' is not a string", attr.Name)
+}
+
 func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *Attribute, val interface{}, obj object.Object[object.Refrence]) error {
 	q := query
 
@@ -245,9 +270,9 @@ func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *At
 				valuesStr = strings.Trim(valuesStr, "[]")
 				values := strings.Fields(valuesStr)
 
-				// For Key() attributes, use the stored key value to determine Either() branch
-				if attr.Key {
-					keyVal, err := obj.GetString(attr.Name)
+				// For Captures() attributes, use the stored key value to determine the branch
+				if attr.Captures {
+					keyVal, err := readString(obj, attr)
 					if err != nil {
 						return fmt.Errorf("key attribute '%s' is not a string", attr.Name)
 					}
@@ -304,12 +329,12 @@ func writeValueToPath(n *Node, query *yaseer.Query, path []StringMatch, attr *At
 }
 
 // branchKeyValue reads which branch an Either() switch took, off the attribute that
-// captured it: the Key() attribute whose path holds an Either at the same depth. That
+// captured it: the Captures() attribute whose path holds an Either at the same depth. That
 // is the same construct the loader uses to record the branch, so the write-back asks
 // the same question the read did.
 func branchKeyValue(n *Node, obj object.Object[object.Refrence], path []StringMatch, depth int) (string, error) {
 	for _, a := range n.Attributes {
-		if !a.Key || len(a.Path) <= depth {
+		if !a.Captures || len(a.Path) <= depth {
 			continue
 		}
 		if _, isEither := a.Path[depth].(FiniteMatcher); !isEither {
@@ -321,7 +346,7 @@ func branchKeyValue(n *Node, obj object.Object[object.Refrence], path []StringMa
 		if !samePrefix(a.Path, path, depth) {
 			continue
 		}
-		v, err := obj.GetString(a.Name)
+		v, err := readString(obj, a)
 		if err != nil || v == "" {
 			continue
 		}
@@ -332,7 +357,7 @@ func branchKeyValue(n *Node, obj object.Object[object.Refrence], path []StringMa
 	// other vocabulary with a `type` attribute meaning something else would have taken
 	// the wrong branch on write-back, silently. Key() is how a schema says which
 	// attribute decides a switch, and a schema that does not say cannot be written back.
-	return "", fmt.Errorf("no Key() attribute captured this switch")
+	return "", fmt.Errorf("no Captures() attribute captured this switch")
 }
 
 // samePrefix reports whether two attribute paths name the same block up to depth.

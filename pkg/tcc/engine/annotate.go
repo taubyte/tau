@@ -17,14 +17,14 @@ func Annotate(key string, val any) Option {
 // The engine itself treats them exactly as strings; the ScalarSpec is inert data
 // the driver (Parse/Format) and tcc-gen (GoType) read, so each scalar's meaning
 // lives in one place instead of a switch in every consumer.
-func Duration(name string, opts ...Option) *Attribute {
+func Duration[T string | AKey](name T, opts ...Option) *Attribute {
 	return String(name, append(opts,
 		Annotate("scalar", ScalarSpec{ID: "duration", GoType: "uint64", Parse: parseDuration, Format: formatDuration}),
 		durationValidator(),
 	)...)
 }
 
-func Bytes(name string, opts ...Option) *Attribute {
+func Bytes[T string | AKey](name T, opts ...Option) *Attribute {
 	return String(name, append(opts,
 		Annotate("scalar", ScalarSpec{ID: "bytes", GoType: "uint64", Parse: parseBytes, Format: formatBytes}),
 		bytesValidator(),
@@ -176,6 +176,7 @@ func Field(goName string) Option {
 // field, when the on-disk key isn't derivable from the schema (e.g. github-id ->
 // `mapstructure:"repository-id"`). Generation-only; no runtime effect.
 func Tag(key string) Option {
+	mustBeKey("tag", key)
 	return Annotate("tag", key)
 }
 

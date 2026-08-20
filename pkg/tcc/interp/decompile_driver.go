@@ -368,7 +368,8 @@ func applyNestedInverse(inst object.Object[object.Refrence], groups []*engine.No
 			sel := groupObj.Child(name)
 			for _, a := range iter.Attributes {
 				if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok {
-					if err := sc.Format(sel, a.Name); err != nil {
+					holder, field := holderOf(sel, a)
+					if err := sc.Format(holder, field); err != nil {
 						return fmt.Errorf("%s/%s: %w", key, name, err)
 					}
 				}
@@ -432,7 +433,8 @@ func applyInstanceInverse(sel object.Selector[object.Refrence], iter *engine.Nod
 	//    scalar term carries, so there is no per-scalar switch to keep in sync.
 	for _, a := range attrs {
 		if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok {
-			if err := sc.Format(sel, a.Name); err != nil {
+			holder, field := holderOf(sel, a)
+			if err := sc.Format(holder, field); err != nil {
 				return err
 			}
 		}

@@ -52,7 +52,7 @@ type claim struct {
 	any bool
 	// leaf: an attribute's value is read here. With no kids, nothing below is schema
 	// and the walk stops; with kids, a branch of an Either() both holds a value (via
-	// Key()) and has fields under it, so the walk continues.
+	// Captures()) and has fields under it, so the walk continues.
 	leaf bool
 }
 

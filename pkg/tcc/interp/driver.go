@@ -158,7 +158,8 @@ func applyInstanceOps(sel object.Selector[object.Refrence], attrs []*engine.Attr
 	//    its own codec, so there is no per-scalar switch to keep in sync.
 	for _, a := range attrs {
 		if sc, ok := a.Meta["scalar"].(engine.ScalarSpec); ok {
-			if err := sc.Parse(sel, a.Name); err != nil {
+			holder, field := holderOf(sel, a)
+			if err := sc.Parse(holder, field); err != nil {
 				return err
 			}
 		}
@@ -207,6 +208,30 @@ func applyInstanceOps(sel object.Selector[object.Refrence], attrs []*engine.Attr
 	}
 
 	return nil
+}
+
+// holderOf is the selector a value actually sits under, and the key it sits at. A
+// single-segment key is on the resource itself; a multi-segment one is a level down,
+// because that is what Key("execution", "call") compiles to.
+func holderOf(sel object.Selector[object.Refrence], a *engine.Attribute) (object.Selector[object.Refrence], string) {
+	segments := engine.CompiledSegments(a)
+	last := len(segments) - 1
+	if last == 0 {
+		return sel, segments[0]
+	}
+	o, err := sel.Object()
+	if err != nil {
+		return sel, a.Name
+	}
+	holder := o.Child(segments[0])
+	for _, seg := range segments[1:last] {
+		next, err := holder.Object()
+		if err != nil {
+			return sel, a.Name
+		}
+		holder = next.Child(seg)
+	}
+	return holder, segments[last]
 }
 
 // applyRootOps applies the project-scope attribute annotations: EmitValidation

@@ -7,10 +7,10 @@ import (
 
 func TestKey(t *testing.T) {
 	attr := &Attribute{}
-	option := Key()
+	option := Captures()
 	option(attr)
 
-	if !attr.Key {
+	if !attr.Captures {
 		t.Errorf("Expected Key to be true")
 	}
 }
