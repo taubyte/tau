@@ -394,6 +394,38 @@ Rules that came out of getting each of these wrong first:
 - **The plan carries its source.** A fault found in something nobody wrote is reported
   against something somebody did — the workflow and the step.
 
+## 8b-i. When v2 gets an index
+
+It has none today: `UsesIndexing(CompileRoot())` is false, so nothing v2 compiles reaches
+a lookup table yet. When that changes, it goes in through the generic primitive and
+nothing else:
+
+```go
+Indexes(position,
+    linkTo(somePath),      // append this resource to a bucket
+    …,
+)
+```
+
+An entry is one of three things — `Link` (a bucket many resources accumulate in), `Set`
+(a single fact about this one), `Hole` (a key reserved for something nothing points at
+yet) — over a path this vocabulary computes. `ctx.Each(ref, group, key)` is there for the
+fan-out: what this resource references, by what those are called.
+
+**Do not add a footprint the driver has to know about.** v1 had six — by-name,
+foreign-key, repository, name, by-scope, placeholder — and each one taught the
+interpreter a little more of tau's address space, until `pkg/specs` was imported by the
+layer that has to serve every vocabulary. All six are expressible as Link/Set/Hole over a
+path, which is how they are written now.
+
+If something genuinely cannot be, that is a MISSING PRIMITIVE and it is worth saying so:
+raise what shape the driver is missing rather than adding a seventh annotation, because
+the seventh is how the first six happened.
+
+The POSITION is not decoration. Buckets accumulate across scopes in the order groups are
+visited, so a different sequence is a different artifact — v2's positions have to be
+chosen deliberately when it has more than one indexed group.
+
 ## 8c. The rules a consumer depends on
 
 The DSL is the only place that knows this vocabulary. Five rules, each of which was
