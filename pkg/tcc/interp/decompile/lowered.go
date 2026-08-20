@@ -20,7 +20,7 @@ import (
 // reaches for reasons of their own, and dropping the whole entry would delete config
 // nobody generated.
 //
-// ALL THE WAY is the other depth, reached with WithGenerated, for a reader that wants what
+// ALL THE WAY is the other depth, reached with WithAsLowered, for a reader that wants what
 // the compiler produced rather than what an author would recognise — a console showing
 // what one workflow became, a diff against what is deployed.
 //
@@ -32,7 +32,7 @@ import (
 // from its id to its name, and the record speaks in ids.
 type authoredOnly struct {
 	lowered interp.Lowered
-	// keep is WithGenerated: the record still comes off, nothing else does.
+	// keep is WithAsLowered: the record still comes off, nothing else does.
 	keep bool
 }
 

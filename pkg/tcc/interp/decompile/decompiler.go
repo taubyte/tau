@@ -19,9 +19,9 @@ type Decompiler struct {
 	compileRoot *engine.Node
 	engine      engine.Engine
 
-	// generated is the all-the-way depth: write what the compiler produced rather than
-	// what an author wrote. See WithGenerated and lowered.go.
-	generated bool
+	// asLowered is the all-the-way depth: write the configuration as it RUNS rather than
+	// as an author wrote it. See WithAsLowered and lowered.go.
+	asLowered bool
 }
 
 type Option func(d *Decompiler) error
@@ -50,7 +50,7 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (d 
 // Decompile converts a compiled object back to YAML files using the engine's schema.
 //
 // It writes what somebody WROTE: the resources a lowering produced, and the access
-// entries it granted, are taken back out first — see lowered.go, and WithGenerated for
+// entries it granted, are taken back out first — see lowered.go, and WithAsLowered for
 // the depth that keeps them.
 //
 // Note: This modifies the input object in place (same as regular compilation transforms),
@@ -86,6 +86,6 @@ func (d *Decompiler) pipe(lowered interp.Lowered) []transform.Transformer[object
 	if interp.UsesIndexing(d.compileRoot) || interp.UsesLowering(d.compileRoot) {
 		pipe = append(pipe, unwrapEnvelope())
 	}
-	pipe = append(pipe, &authoredOnly{lowered: lowered, keep: d.generated})
+	pipe = append(pipe, &authoredOnly{lowered: lowered, keep: d.asLowered})
 	return append(pipe, interp.NewDecompileDriver(d.compileRoot))
 }

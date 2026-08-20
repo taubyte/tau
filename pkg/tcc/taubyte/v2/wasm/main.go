@@ -410,7 +410,7 @@ func generatedFn(_ js.Value, args []js.Value) any {
 	// A private filesystem: decompiling writes documents, and the page's own files are
 	// not the decompiler's to touch.
 	into := afero.NewMemMapFs()
-	d, err := schema.NewDecompiler(schema.DecompileToVirtual(into, "/"), schema.WithGenerated())
+	d, err := schema.NewDecompiler(schema.DecompileToVirtual(into, "/"), schema.WithAsLowered())
 	if err != nil {
 		return errResult(err.Error())
 	}

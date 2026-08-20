@@ -90,13 +90,13 @@ func WithVirtual(fs afero.Fs, path string) Option { return interp.WithVirtual(fs
 func WithBranch(branch string) Option             { return interp.WithBranch(branch) }
 func WithEnvironment(env string) Option           { return interp.WithEnv("environment", env) }
 
-// DecompileToVirtual and WithGenerated are the decompiler's own options, re-exported so a
-// caller depends on this package alone. WithGenerated is the DEPTH: without it a
+// DecompileToVirtual and WithAsLowered are the decompiler's own options, re-exported so a
+// caller depends on this package alone. WithAsLowered is the DEPTH: without it a
 // decompile writes back only what somebody wrote, which is what a repository must hold.
 func DecompileToVirtual(fs afero.Fs, path string) decompile.Option {
 	return decompile.WithVirtual(fs, path)
 }
-func WithGenerated() decompile.Option { return decompile.WithGenerated() }
+func WithAsLowered() decompile.Option { return decompile.WithAsLowered() }
 
 func NewDecompiler(o ...decompile.Option) (*decompile.Decompiler, error) {
 	return decompile.New(TaubyteProject, CompileRoot(), o...)

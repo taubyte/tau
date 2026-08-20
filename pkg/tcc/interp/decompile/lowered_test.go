@@ -185,7 +185,7 @@ func TestAuthoredOnly_DropsWhatNobodyWrote(t *testing.T) {
 
 // All the way: the same object the compiler produced, minus the record, which is not
 // config in either depth.
-func TestAuthoredOnly_WithGeneratedKeepsEverything(t *testing.T) {
+func TestAuthoredOnly_WithAsLoweredKeepsEverything(t *testing.T) {
 	out := run(t, compiled(t), true)
 
 	gone(t, out, interp.LoweredKey)

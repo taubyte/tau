@@ -111,7 +111,7 @@ func TestLoweredResourcesDoNotDecompile(t *testing.T) {
 	assert.DeepEqual(t, plan, schema.LoweringPlan(got))
 }
 
-// THE OTHER DEPTH. `WithGenerated` writes everything, which is where a console's
+// THE OTHER DEPTH. `WithAsLowered` writes everything, which is where a console's
 // "generated, not editable" pane comes from — the same call the explorer's wasm build
 // makes. Half way is what a repository holds; this is what a reader is shown.
 //
@@ -121,13 +121,13 @@ func TestLoweredResourcesDoNotDecompile(t *testing.T) {
 // author, and the next compile refuses — a name a lowering takes has to be free. A reader
 // who mistook the generated pane for config they could commit would find that out after
 // committing it.
-func TestDecompileAllTheWayWritesWhatWasGenerated(t *testing.T) {
+func TestDecompileAllTheWayWritesWhatWasLowered(t *testing.T) {
 	first := compileFor(t, schema.WithLocal("../fixtures/basic"))
 	plan := schema.LoweringPlan(first.Flat())
 	assert.Assert(t, len(plan) > 0, "the fixture must lower something for this to mean anything")
 
 	out := afero.NewMemMapFs()
-	d, err := schema.NewDecompiler(decompile.WithVirtual(out, "/"), schema.WithGenerated())
+	d, err := schema.NewDecompiler(decompile.WithVirtual(out, "/"), schema.WithAsLowered())
 	assert.NilError(t, err)
 	assert.NilError(t, d.Decompile(first))
 

@@ -19,17 +19,17 @@ func WithVirtual(fs afero.Fs, path string) Option {
 	}
 }
 
-// WithGenerated writes ALL THE WAY: the resources a lowering produced and the access
-// entries it granted stay, so what is written back is what the compiler produced rather
-// than what an author wrote.
+// WithAsLowered writes ALL THE WAY: the resources a lowering produced and the access
+// entries it granted stay, so what is written back is the configuration AS LOWERED —
+// as it runs — rather than as an author wrote it.
 //
 // It is not the default and should not become one. What comes out of it does not
-// round-trip — compiling it lowers the generated resources a second time — so it is for a
-// reader (a console showing what a workflow became, a diff against a deployed object),
-// never for a repository.
-func WithGenerated() Option {
+// round-trip — compiling it lowers those resources a second time — so it is for a reader
+// (a console showing what a workflow became, a diff against a deployed object), never for
+// a repository.
+func WithAsLowered() Option {
 	return func(d *Decompiler) error {
-		d.generated = true
+		d.asLowered = true
 		return nil
 	}
 }

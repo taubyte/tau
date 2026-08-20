@@ -356,7 +356,7 @@ written, for an editor and for computing a lowering from. A caller who had to re
 second call would sooner or later hold an object silently missing what it needs.
 
 **Decompile chooses how far back it goes.** Half way, the default, writes only what
-somebody wrote: what belongs in a repository. `WithGenerated` writes everything. The
+somebody wrote: what belongs in a repository. `WithAsLowered` writes everything. The
 object carries the record that makes the choice possible — which resources nobody wrote,
 where each came from, and which access entries a lowering added to a resource somebody
 did. It sits BESIDE the project, where the index subtree sits, because a resource has to
