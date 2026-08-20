@@ -12,7 +12,7 @@
 // dropped a use whose namespace was relative, both of which read as facts about the
 // config. What is left is layout and paint.
 
-import type { Compiled, Effect, Emission, Instance, LoweredProject, Relation, Shapes } from "./wasm";
+import type { Compiled, Effect, Instance, LoweredProject, Relation, Shapes } from "./wasm";
 
 export interface Node {
   id: string;
@@ -159,10 +159,8 @@ export function buildGraph(
   /** Every resolved relationship, from tcc. This file resolves no names. */
   relations: Relation[] = [],
   names: Record<string, { name: string; zone: string; fqdn: string; generated: boolean }> = {},
-  /** What each lowerable resource becomes, from tcc. */
-  emissions: Emission[] = [],
-  /** The project AFTER lowering — the same shapes, because it is the same kind of thing. */
-  loweredProject: LoweredProject = { resources: [], relations: [] },
+  /** The project as it RUNS, and what in it nobody wrote. From tcc. */
+  lowered: LoweredProject = { produced: {}, granted: [], resources: [], relations: [] },
   /** Which boxes are showing what they BECOME rather than what was written. */
   flipped: Set<string> = new Set(),
 ): Graph {
@@ -243,8 +241,26 @@ export function buildGraph(
   const frames = new Map<string, string>();
   const derivedIds = new Set<string>();
 
-  for (const e of emissions) {
-    const src = nodes.find((n) => n.kind === e.of.kind && n.name === e.of.name && n.scope === e.of.scope);
+  // Which produced resources came from which authored one. The compiler recorded it;
+  // grouping is all that is left to do here.
+  const producedBy = new Map<string, { id: string; kind: string; name: string; at: string }[]>();
+  for (const [id, p] of Object.entries(lowered.produced)) {
+    producedBy.set(p.from, [...(producedBy.get(p.from) ?? []), { id, kind: p.kind, name: p.name, at: p.at }]);
+  }
+  // The part of the authored resource each one came from — "steps/0" — read off the
+  // resource itself, because the compiler addressed it that way.
+  const fieldsOf = new Map(resources.map((r) => [r.id, r.fields]));
+  const partName = (from: string, at: string): string => {
+    const cut = at.lastIndexOf("/");
+    if (cut < 0) return "";
+    const items = fieldsOf.get(from)?.[at.slice(0, cut)];
+    if (!Array.isArray(items)) return "";
+    const el = items[Number(at.slice(cut + 1))] as Record<string, unknown> | undefined;
+    return typeof el?.name === "string" ? el.name : "";
+  };
+
+  for (const [from, made] of producedBy) {
+    const src = byId.get(from);
     if (!src) continue;
 
     // Where the resource actually LIVES, kept before the frame takes its place: what is
@@ -267,21 +283,21 @@ export function buildGraph(
     // either way, which is what stops the page moving when it is opened. An agent does
     // not: its lowering is not per-element, so closed there is nothing inside, and
     // reserving the open size drew a large empty rectangle.
-    const shows = e.documents.some((d) => typeof d.part?.name === "string");
+    const shows = made.some((d) => !!partName(from, d.at));
 
-    for (const d of e.documents) {
+    for (const d of made) {
       if (byId.has(d.id)) continue;
-      const part = typeof d.part?.name === "string" ? (d.part.name as string) : "";
+      const part = partName(from, d.at);
       if (!open && !shows) continue; // nothing to show, and nothing to reserve
       const node: Node = {
         id: d.id,
         of: d.id,
-        // Closed, this node wears the step it came from; open, it wears what it is.
+        // Closed, this node wears the part it came from; open, it wears what it is.
         kind: open || !part ? d.kind : "step",
         name: open || !part ? d.name : part,
         scope: frame,
-        derived: { of: `${e.of.kind}/${e.of.name}`, why: d.why },
-        // Something with no step behind it — the failure queue — exists in the layout
+        derived: { of: `${src.kind}/${src.name}`, why: "" },
+        // Something with no part behind it — the failure queue — exists in the layout
         // either way, so the box does not change size, and is simply not drawn on the
         // face where it does not belong.
         hidden: !open && !part,
@@ -300,7 +316,7 @@ export function buildGraph(
   // the same shape, read the same way, as every other edge on this page. There is no
   // lowering-specific edge code left, and there is nothing here that knows what a step
   // is.
-  for (const r of loweredProject.relations) {
+  for (const r of lowered.relations) {
     if (!derivedIds.has(r.from) && !derivedIds.has(r.to)) continue;
     if (!byId.has(r.from) || !byId.has(r.to)) continue;
     live.push({

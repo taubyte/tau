@@ -146,21 +146,15 @@ func TestGeneratedDocumentsCompile(t *testing.T) {
 	obj, _, err := c.Compile(context.Background())
 	assert.NilError(t, err)
 
+	// COMPILING IS WHAT PROVES IT. A lowering produces resources, and they go through the
+	// same pipeline as everything else — so a lowering that produces something a kind
+	// would reject is a compile error, here, rather than a document that reads fine and
+	// deploys to nothing. There is nothing left to check separately.
 	plan := schema.LoweringPlan(obj.Flat())
 	assert.Assert(t, len(plan) > 0, "the fixture has to lower something for this to mean anything")
-
-	// All of them together, the way emission would write them: a derived resource may
-	// reference another derived resource, and each alone would not resolve.
-	fs := afero.NewMemMapFs()
-	assert.NilError(t, afero.WriteFile(fs, "/project.yaml",
-		[]byte("id: QmTz6X9hTn18fpKxrnbE3BvmkZHy3r1mRyHzfXK3gVZLxR\n"), 0o644))
 	for _, d := range plan {
-		assert.Assert(t, d.Doc != "", "%s/%s has no document", d.Kind, d.Name)
-		assert.NilError(t, afero.WriteFile(fs, "/"+d.Kind+"/"+d.Name+".yaml", []byte(d.Doc), 0o644))
+		assert.Assert(t, d.ID != "", "%s/%s has no id to be stored under", d.Kind, d.Name)
+		assert.Assert(t, hasResource(obj.Flat(), d.Kind, d.Name),
+			"%s/%s is planned and is not in the compiled object", d.Kind, d.Name)
 	}
-
-	back, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch("main"))
-	assert.NilError(t, err)
-	_, _, err = back.Compile(context.Background())
-	assert.NilError(t, err, "what a lowering produces must be a project that compiles")
 }

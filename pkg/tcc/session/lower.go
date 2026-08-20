@@ -2,114 +2,103 @@ package session
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
-// WHAT A RESOURCE BECOMES, asked the same way everything else is asked.
+// WHAT A RESOURCE BECAME.
 //
-// Some kinds are rewritten at compile time: a workflow is not run by anything, and what
-// runs is the queues and functions it lowers to. A consumer needs that answer in two
-// shapes, and both are here rather than in each consumer:
+// Some kinds are rewritten when they compile: a workflow is not run by anything, and what
+// runs is the queues and functions it becomes. That is not a second operation a caller
+// asks for — compiling IS lowering — so the question here is not "lower this", it is
+// "which of these compiled resources exist because I wrote that one".
 //
-//	Lower(res)   what THIS resource becomes — the console's zoom-in, the CLI's dry run
-//	Lowered()    the whole project after lowering — what actually gets deployed
-//
-// The address is the ordinary one: the same []string that Get, Set and ValidateResource
-// take. A caller that can validate a resource can lower it, with nothing new to learn.
+// The compiled object answers it: the compile records what it produced and where each
+// piece came from. A console opening a workflow, and a CLI showing what a deploy will
+// contain, are both reading that record.
 
-// DocumentLayout is a Layout that also says WHERE documents live. A lowering produces
-// documents, so it needs the answer; a DSL that does not declare it cannot be lowered,
-// which is honest rather than guessed at.
-type DocumentLayout interface {
-	Layout
-	// ResourcePath is the document template for a resource, over {kind} and {name}.
-	ResourcePath() string
-	// ScopePath is the directory template for one level of scope, over {name}.
-	ScopePath() string
-}
-
-// Lower is what one resource becomes: the documents it produces, and the entries it
-// places on documents that already exist. A resource that lowers to nothing — most of
-// them — returns an empty emission and no error, because "this becomes nothing" is an
-// answer rather than a failure.
-func (s *Session) Lower(ctx context.Context, res []string, opts CompileOptions) (interp.Emission, error) {
-	layout, err := s.documentLayout()
-	if err != nil {
-		return interp.Emission{}, err
-	}
+// Became is what one resource became: the compiled object, the ids of the resources
+// produced from this one, and the access entries its lowering added to resources
+// somebody else wrote.
+//
+// A resource that becomes nothing — most of them — answers with empty lists and no
+// error. Asking is not a mistake.
+func (s *Session) Became(ctx context.Context, res []string, opts CompileOptions) (interp.Object, []string, []interp.Granted, error) {
 	kind, name, scope, err := s.resourceAt(res)
 	if err != nil {
-		return interp.Emission{}, err
+		return nil, nil, nil, err
 	}
 
-	c, err := s.compiler(opts)
+	obj, _, err := s.Compile(ctx, opts)
 	if err != nil {
-		return interp.Emission{}, err
-	}
-	obj, _, err := c.Compile(ctx)
-	if err != nil {
-		return interp.Emission{}, err
+		return nil, nil, nil, err
 	}
 
-	e, _ := interp.EmissionOf(c.Root(), obj.Flat(), layout, kind, name, scope)
-	return e, nil
+	id, found := idOf(obj.Flat(), kind, name, scope)
+	if !found {
+		return obj, nil, nil, fmt.Errorf("session: %s/%s is not in the compiled configuration", kind, name)
+	}
+	made, added := interp.LoweredOf(obj.Flat()).Of(id)
+	return obj, made, added, nil
 }
 
-// Lowered is the whole project after lowering: the object a runtime is given, with the
-// resources every lowering produced in it. The files are not touched — the view it
-// compiles is in memory.
-func (s *Session) Lowered(ctx context.Context, opts CompileOptions) (interp.Object, error) {
-	layout, err := s.documentLayout()
-	if err != nil {
-		return nil, err
-	}
-	c, err := s.compiler(opts)
-	if err != nil {
-		return nil, err
-	}
-	lowered, err := c.Lowered(ctx, layout)
-	if err != nil {
-		return nil, err
-	}
-	obj, _, err := lowered.Compile(ctx)
-	return obj, err
-}
-
-func (s *Session) documentLayout() (interp.Layout, error) {
-	l, ok := s.bind.Layout.(DocumentLayout)
+// idOf finds a resource's compiled id by what it is called and where it lives.
+func idOf(flat map[string]any, kind, name, scope string) (string, bool) {
+	root, ok := flat["object"].(map[string]any)
 	if !ok {
-		return interp.Layout{}, errors.New("session: this DSL does not say where its documents live, so nothing can be lowered")
+		root = flat
 	}
-	return interp.Layout{Resource: l.ResourcePath(), Scope: l.ScopePath()}, nil
+	for _, r := range interp.LoweredOf(flat).Resources {
+		if r.Kind == kind && r.Name == name && r.Scope == scope {
+			// a resource the compile produced is found the same way, and its id is
+			// already the key of the record
+			break
+		}
+	}
+	instances, ok := root[kind].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	for id, v := range instances {
+		res, ok := v.(map[string]any)
+		if !ok {
+			continue
+		}
+		if n, _ := res["name"].(string); n == name {
+			return id, true
+		}
+	}
+	return "", false
 }
 
-// resourceAt reads an ordinary resource address as the kind, name and scope a lowering
-// is keyed on.
+// resourceAt reads an ordinary resource address — the same []string Get, Set and
+// ValidateResource take — as the kind, name and scope the compiled object knows it by.
+//
+// Scopes NEST, so the address does too: [namespace, shop, namespace, eu, function,
+// notify] is `notify` in `shop/eu`. Reading only the two shapes that fit in four
+// segments would have answered "not a resource" for anything two namespaces deep, which
+// is a limit on the vocabulary invented by the reader.
 func (s *Session) resourceAt(res []string) (kind, name, scope string, err error) {
 	bad := func(why string) error {
-		return fmt.Errorf("session: %q is not a resource that can lower (%s)", strings.Join(res, "/"), why)
+		return fmt.Errorf("session: %q is not a resource address (%s)", strings.Join(res, "/"), why)
 	}
-	switch len(res) {
-	case 2:
-		k, err := s.kind(res[0])
-		if err != nil {
-			return "", "", "", err
+
+	rest := res
+	var scopes []string
+	if c, ok := s.container(); ok {
+		for len(rest) >= 2 && rest[0] == c.Group {
+			scopes = append(scopes, rest[1])
+			rest = rest[2:]
 		}
-		return k.Group, res[1], "", nil
-	case 4:
-		if c, ok := s.container(); !ok || c.Group != res[0] {
-			return "", "", "", bad(strconv.Quote(res[0]) + " is not a scope")
-		}
-		k, err := s.kind(res[2])
-		if err != nil {
-			return "", "", "", err
-		}
-		return k.Group, res[3], res[1], nil
 	}
-	return "", "", "", bad("a resource is a kind and a name, optionally inside a scope")
+	if len(rest) != 2 {
+		return "", "", "", bad("a resource is a kind and a name, inside as many scopes as it lives in")
+	}
+	k, err := s.kind(rest[0])
+	if err != nil {
+		return "", "", "", err
+	}
+	return k.Group, rest[1], strings.Join(scopes, "/"), nil
 }

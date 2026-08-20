@@ -2,8 +2,10 @@ package interp
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"os"
-	"strings"
+	"slices"
 
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/engine"
@@ -18,10 +20,14 @@ import (
 // demand, which is what this used to do, put those resources everywhere except where
 // they were needed.
 //
-// They are not written to disk, and the authored files are never touched. The view is a
-// copy-on-write layer over the project: the documents a lowering produces are added to
-// it, and an authored document that gains an access entry is edited IN THE LAYER. What
-// comes back is a compiler over that layer, so everything downstream — reference
+// NOTHING IS WRITTEN TO DISK and nothing is rendered by hand. The view is a copy-on-write
+// layer over the project, held in memory: what a lowering produces is a tree, handed to
+// yaseer exactly as an editor hands it one, and an authored document that gains an entry
+// is edited in the layer with the rest of it left alone. yaseer serialises into that
+// layer, which is the only place any yaml exists, and the layer is dropped when the
+// compile ends.
+//
+// What comes back is a compiler over the layer, so everything downstream — reference
 // resolution, scalars, validation, indexing — happens exactly as it does for config
 // somebody wrote. Which is the strongest claim the design can make: what a lowering
 // produces is not a special kind of resource, it is config.
@@ -34,61 +40,212 @@ type Layout struct {
 	Scope    string // "namespace/{name}"
 }
 
-// Lowered returns a compiler over the lowered view. When the vocabulary declares no
-// lowerings — or this project uses none — it returns the compiler it was given, because
-// a view identical to the project is a copy nobody needs.
-func (c *Compiler) Lowered(ctx context.Context, layout Layout) (*Compiler, error) {
-	if !UsesLowering(c.compileRoot) {
-		return c, nil
+// EntryShape is how a vocabulary writes one resource's access to another: the field holding
+// the verbs, and the field saying where the target is. A lowering produces those entries,
+// so it has to write them the way this vocabulary reads them — and the names are the
+// vocabulary's, not the interpreter's. Hardcoding "ops" and "namespace" here made the
+// generic layer know one vocabulary, which is the one thing it must never do.
+type EntryShape struct {
+	Ops       string
+	Namespace string
+}
+
+// lower compiles the project again over the lowered view, and records beside the result
+// what was lowered — so the object says which of its resources nobody wrote, and
+// decompile can stop at what somebody did.
+func (c *Compiler) lower(ctx context.Context, authored Object, validations []NextValidation) (Object, []NextValidation, error) {
+	if c.layout.Resource == "" {
+		return nil, nil, errors.New("interp: this schema declares lowerings but no layout, so nothing can be lowered — see WithLayout")
 	}
-	obj, _, err := c.Compile(ctx)
-	if err != nil {
-		return nil, err
-	}
-	plan := LoweringPlan(c.compileRoot, obj.Flat())
-	if len(plan) == 0 {
-		return c, nil
+	if c.access.Ops == "" {
+		return nil, nil, errors.New("interp: this schema declares lowerings but no access shape, so an entry cannot be written — see WithAccess")
 	}
 
+	docs, adds := placements(c.compileRoot, authored.Flat(), c.layout, c.access)
+	if len(docs) == 0 {
+		return authored, validations, nil
+	}
+	// AN ENTRY NEVER INVENTS THE RESOURCE IT LANDS ON. A step naming a function that does
+	// not exist is a fault the audit reports against the workflow that named it — but the
+	// editor creates a document it is asked to write into, so placing the entry anyway
+	// produced an empty function with a queue block and no code, and the compile failed
+	// with "required attribute 'id'" against a file nobody wrote.
+	adds = onlyOnWhatExists(authored.Flat(), docs, adds)
+
+	// A NAME A LOWERING TAKES MUST BE FREE. Writing a produced resource over an authored
+	// one replaced somebody's config with the compiler's, and the compile carried on: the
+	// audit reported the collision afterwards, against an object that had already lost
+	// the file it was reporting about.
+	if err := free(authored.Flat(), docs); err != nil {
+		return nil, nil, err
+	}
+
+	// A plan that hit the nesting cap is a plan with the bottom missing, and compiling it
+	// would produce a configuration that is wrong in a way nothing else will mention.
+	for _, d := range docs {
+		if d.depth >= MaxLoweringDepth {
+			return nil, nil, fmt.Errorf("interp: %s/%s lowers more than %d levels deep; the rest was not produced",
+				d.kind, d.name, MaxLoweringDepth)
+		}
+	}
+
+	view, added, err := c.view(docs, adds)
+	if err != nil {
+		return nil, nil, err
+	}
+	lowered, err := New(c.project, c.compileRoot, append(c.viewOptions(), WithVirtual(view, "/"))...)
+	if err != nil {
+		return nil, nil, err
+	}
+	obj, moreValidations, err := lowered.Authored(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	// The record carries what was ADDED, not what was planned. An author who wrote
+	// `ops: [receive]` by hand and a lowering that grants the same op are one entry, and
+	// a record claiming the compiler put it there would have decompile delete somebody's
+	// config on the way back out.
+	if err := record(obj, recordOf(obj, docs, added)); err != nil {
+		return nil, nil, err
+	}
+	return obj, moreValidations, nil
+}
+
+// free reports the first name a lowering takes that is not its to take: one an author
+// already used, or one another part of the same lowering already produced.
+func free(flat map[string]any, docs []placement) error {
+	taken := map[string]string{}
+	for _, d := range docs {
+		key := d.scope + "\x00" + d.kind + "\x00" + d.name
+		if by, clash := taken[key]; clash {
+			return fmt.Errorf("interp: %s/%s is produced twice, by %s and by %s", d.kind, d.name, by, d.from)
+		}
+		taken[key] = d.from
+	}
+
+	var walk func(scope map[string]any, at string)
+	var err error
+	walk = func(scope map[string]any, at string) {
+		for group, v := range scope {
+			instances, ok := v.(map[string]any)
+			if !ok {
+				continue
+			}
+			for _, r := range instances {
+				res, ok := r.(map[string]any)
+				if !ok {
+					continue
+				}
+				name, _ := res["name"].(string)
+				if name == "" {
+					continue
+				}
+				if by, clash := taken[at+"\x00"+group+"\x00"+name]; clash && err == nil {
+					err = fmt.Errorf("interp: %s/%s is written here AND is what %s becomes; one of them has to be renamed", group, name, by)
+				}
+				child := name
+				if at != "" {
+					child = at + "/" + name
+				}
+				walk(res, child)
+			}
+		}
+	}
+	if inner, ok := flat["object"].(map[string]any); ok {
+		flat = inner
+	}
+	walk(flat, "")
+	return err
+}
+
+// view is the project with everything a lowering produces in it, in memory. The files on
+// disk are never opened for writing — a compiler that edited its input is one nobody could
+// trust with a repository.
+func (c *Compiler) view(docs []placement, adds []granted) (afero.Fs, []granted, error) {
 	base := c.baseFs
 	if c.basePath != "" {
 		base = afero.NewBasePathFs(base, c.basePath)
 	}
 	view, err := overlay(base)
 	if err != nil {
-		return nil, err
-	}
-
-	// The documents FIRST, all of them, and only then the entries: an entry can land on
-	// a document another lowering produces (an agent's memory is searched by the loop it
-	// also produced), and editing a file that is about to be written would be edited and
-	// then replaced.
-	emissions := Emissions(c.compileRoot, obj.Flat(), layout)
-	for _, e := range emissions {
-		for _, doc := range e.Documents {
-			if err := write(view, doc); err != nil {
-				return nil, err
-			}
-		}
+		return nil, nil, err
 	}
 
 	seer, err := yaseer.New(yaseer.VirtualFS(view, "/"))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	for _, e := range emissions {
-		for _, entry := range e.Entries {
-			if err := placeEntry(seer, entry); err != nil {
-				return nil, err
+
+	// The resources FIRST, all of them, and only then the entries: an entry can land on
+	// a resource another lowering produced (an agent's memory is searched by the loop it
+	// also produced), and writing the resource afterwards would replace the entry.
+	for _, d := range docs {
+		if err := at(seer, d.at).Set(d.tree).Commit(); err != nil {
+			return nil, nil, fmt.Errorf("placing %s/%s: %w", d.kind, d.name, err)
+		}
+	}
+	added := make([]granted, 0, len(adds))
+	for _, g := range adds {
+		was, err := grant(seer, g, c.access)
+		if err != nil {
+			return nil, nil, fmt.Errorf("granting %s on %s/%s: %w", g.op, g.on.Kind, g.on.Name, err)
+		}
+		if was {
+			added = append(added, g)
+		}
+	}
+	return view, added, seer.Sync()
+}
+
+// at addresses a document the way an editor does: the segments, then the document.
+func at(seer *yaseer.Seer, address []string) *yaseer.Query {
+	q := seer.Query()
+	for _, seg := range address {
+		q = q.Get(seg)
+	}
+	return q.Document()
+}
+
+// grant adds one access entry to a resource that already exists, leaving everything else
+// in it alone — which is what yaseer is for.
+//
+// The ops MERGE. Two can name one target — a step whose failure goes back to its own
+// queue makes its function both receive from that queue and send to it — and the author
+// may have written one by hand. Setting the list replaced whatever was there, and what it
+// dropped was invisible: a queue nothing consumes still compiles.
+// It reports whether it ADDED anything. An op the author already wrote is left alone and
+// is not reported — it is theirs, and a record saying otherwise would have decompile take
+// it back out of their repository.
+func grant(seer *yaseer.Seer, g granted, shape EntryShape) (bool, error) {
+	entry := at(seer, g.at).Get(g.kind).Get(g.name)
+	if g.namespace != "" {
+		// Only when nobody has said where to look. An author who wrote a namespace on
+		// this entry meant it, and replacing it would point their access somewhere else
+		// without a word.
+		var where string
+		entry.Get(shape.Namespace).Value(&where)
+		if where == "" {
+			if err := entry.Get(shape.Namespace).Set(g.namespace).Commit(); err != nil {
+				return false, err
 			}
 		}
 	}
-	if err := seer.Sync(); err != nil {
-		return nil, err
-	}
 
-	return New(c.project, c.compileRoot, append(c.viewOptions(), WithVirtual(view, "/"))...)
+	var have []string
+	// An absent list is not an error: this is the first op on a target nobody has
+	// written about.
+	entry.Get(shape.Ops).Value(&have)
+	if slices.Contains(have, g.op) {
+		return false, nil
+	}
+	return true, entry.Get(shape.Ops).Set(append(have, g.op)).Commit()
 }
+
+// Layout is where this compiler's vocabulary keeps its documents.
+func (c *Compiler) Layout() Layout { return c.layout }
+
+// Access is how it writes one resource reaching another.
+func (c *Compiler) Access() EntryShape { return c.access }
 
 // viewOptions is everything about this compiler except where it reads from.
 func (c *Compiler) viewOptions() []Option {
@@ -117,34 +274,6 @@ func overlay(base afero.Fs) (afero.Fs, error) {
 	return afero.NewCopyOnWriteFs(afero.NewReadOnlyFs(base), layer), nil
 }
 
-func write(fs afero.Fs, doc Document) error {
-	if dir := doc.Path[:strings.LastIndex(doc.Path, "/")+1]; dir != "" {
-		if err := fs.MkdirAll(dir, 0o755); err != nil {
-			return err
-		}
-	}
-	return afero.WriteFile(fs, doc.Path, []byte(doc.Body), 0o644)
-}
-
-// placeEntry writes one access entry onto the document of the resource that declares it,
-// leaving the rest of that document alone — which is what yaseer is for.
-func placeEntry(seer *yaseer.Seer, e Entry) error {
-	q := seer.Query()
-	for _, part := range strings.Split(strings.TrimSuffix(strings.TrimPrefix(e.Path, "/"), ".yaml"), "/") {
-		q = q.Get(part)
-	}
-	entry := q.Document().Get(e.Kind).Get(e.Name)
-	if e.Namespace != "" {
-		if err := entry.Get("namespace").Set(e.Namespace).Commit(); err != nil {
-			return err
-		}
-	}
-	return entry.Get("ops").Set([]string{e.Op}).Commit()
-}
-
 // Root is the schema this compiler compiles against, for a caller that needs to ask the
 // vocabulary a question about what it just compiled.
 func (c *Compiler) Root() *engine.Node { return c.compileRoot }
-
-// FsOf is where a compiler reads from. Exposed for the tests that need to look at a view.
-func FsOf(c *Compiler) afero.Fs { return c.baseFs }

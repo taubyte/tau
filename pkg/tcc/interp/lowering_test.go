@@ -68,9 +68,12 @@ func lowerNamed(t *testing.T, file, doc string) []interp.Derived {
 	assert.NilError(t, afero.WriteFile(fs, "/project.yaml", []byte("id: root\n"), 0o644))
 	assert.NilError(t, afero.WriteFile(fs, "/pipeline/"+file+".yaml", []byte(doc), 0o644))
 
-	c, err := interp.New(project, root, interp.WithVirtual(fs, "/"))
+	c, err := interp.New(project, root, interp.WithVirtual(fs, "/"),
+		interp.WithLayout(interp.Layout{Resource: "{kind}/{name}.yaml"}))
 	assert.NilError(t, err)
-	obj, _, err := c.Compile(context.Background())
+	// AUTHORED, because a plan is what the written config becomes — reading it off the
+	// compiled object would be reading it off the answer.
+	obj, _, err := c.Authored(context.Background())
 	assert.NilError(t, err)
 	return interp.LoweringPlan(root, obj.Flat())
 }
@@ -141,9 +144,13 @@ func TestCheckLowerings(t *testing.T) {
 			))),
 	)
 	problems := interp.CheckLowerings(bad)
-	assert.Equal(t, len(problems), 2)
+	assert.Equal(t, len(problems), 3, "got %v", problems)
 	assert.Equal(t, problems[0], "lowering into nonesuch, which is not a kind")
 	assert.Equal(t, problems[1], "lowering into pipeline produces no name")
+	// ...and a kind that lowers into itself produces resources forever. The runtime cap
+	// stops the hang and nothing else: the plan it returns is silently short, which is a
+	// lie about what a config becomes.
+	assert.Equal(t, problems[2], "lowerings cycle: pipeline -> pipeline")
 }
 
 // A schema that declares no lowering pays nothing and answers nothing.
@@ -231,21 +238,20 @@ func TestLoweringLinkOrigin(t *testing.T) {
 	assert.Equal(t, own, 1, "the access with no target of its own reaches the derived resource")
 }
 
-// AN ACCESS A DERIVED RESOURCE DECLARES IS IN ITS DOCUMENT, written the way an author
-// writes one. That is the whole point of the shape: what a lowering produces is config,
-// so it can be compiled, stored and executed rather than only drawn.
-func TestLoweringWritesTheAccessItDeclares(t *testing.T) {
+// AN ACCESS A DERIVED RESOURCE DECLARES IS ITS OWN; one somebody else declares belongs to
+// them. Which side declares is the whole reason Reaches has two ends.
+func TestLoweringSaysWhoDeclaresTheAccess(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		}, engine.Resource("job", "Job", "Job", "job"), engine.GroupAnnotate("ops", testOps{"run", "hand-off"}))),
+		}, engine.Resource("job", "Job", "Job", "job"), engine.GroupAnnotate("ops", testOps{"read", "write"}))),
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
 			engine.String("id"), engine.String("name"),
 		},
 			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
 			interp.Lowers(interp.Into("job", interp.Named("{name}-j"),
-				// declared BY this one: it lands in this one's document
+				// declared BY this one: it is this one's to carry
 				interp.Reaches("read", interp.To("job", "a")),
 				// declared by something else: it lands on that, not here
 				interp.Reaches("write", interp.From("job", "b")),
@@ -259,12 +265,20 @@ func TestLoweringWritesTheAccessItDeclares(t *testing.T) {
 	assert.Equal(t, len(plan), 1)
 	assert.Equal(t, len(plan[0].Grants), 2)
 
-	doc := plan[0].Doc
-	assert.Assert(t, strings.Contains(doc, "job:"), "the access it declares is in its document: %s", doc)
-	assert.Assert(t, strings.Contains(doc, "    a:"), "%s", doc)
-	assert.Assert(t, strings.Contains(doc, "ops: [read]"), "%s", doc)
-	assert.Assert(t, !strings.Contains(doc, "ops: [write]"),
-		"an access somebody ELSE declares belongs on their document, not this one: %s", doc)
+	var own, elsewhere int
+	for _, g := range plan[0].Grants {
+		if g.From.Self() {
+			own++
+			assert.Equal(t, g.To.Kind+"/"+g.To.Name, "job/a")
+			assert.Equal(t, g.Op, "read")
+			continue
+		}
+		elsewhere++
+		assert.Equal(t, g.From.Kind+"/"+g.From.Name, "job/b")
+		assert.Assert(t, g.To.Self(), "what it reaches is the derived resource itself")
+	}
+	assert.Equal(t, own, 1)
+	assert.Equal(t, elsewhere, 1)
 }
 
 // A resource a compiler wrote is stored under its id and referred to by it, so the id

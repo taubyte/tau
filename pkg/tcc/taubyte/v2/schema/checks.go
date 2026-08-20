@@ -110,7 +110,9 @@ func Audit(obj map[string]any, r Resolver) []Finding {
 	out = append(out, checkHandlerPorts(all)...)
 	out = append(out, checkVolumeWriters(all)...)
 	out = append(out, checkWorkflows(all)...)
-	out = append(out, checkLoweringCollisions(root, all)...)
+	// The record of what the compile produced sits BESIDE the project, so it is read
+	// from the object rather than from the project inside it.
+	out = append(out, checkLoweringCollisions(root, interp.LoweredOf(obj), all)...)
 	out = append(out, checkLoweredLinks(root, all)...)
 	out = append(out, checkExternal(all, r)...)
 
@@ -605,9 +607,15 @@ func startedBy(all []compiled, target compiled) bool {
 // checkLoweringCollisions: a lowered resource takes a name, and an authored resource
 // can already have it. The two would be the same key in the compiled object, and which
 // one wins is not something an author should have to know.
-func checkLoweringCollisions(root map[string]any, all []compiled) []Finding {
+func checkLoweringCollisions(root map[string]any, produced interp.Lowered, all []compiled) []Finding {
+	// What the compile PRODUCED is not authored, and the object holds both now. Without
+	// this the check reported every generated resource as colliding with itself, which
+	// is the audit accusing the compiler of its own work.
 	authored := map[string]compiled{}
 	for _, res := range all {
+		if produced.Produced(res.id) {
+			continue
+		}
 		authored[res.kind+"\x00"+res.scope+"\x00"+res.name] = res
 	}
 

@@ -295,6 +295,14 @@ func (s *Session) List(p []string) ([]string, error) {
 
 // Compile assembles the whole config; returns the object, deferred checks, and
 // any error.
+// Compile is the configuration as it RUNS: lowerings applied, so the object holds the
+// queues and functions a workflow becomes rather than the workflow.
+//
+// This is the default on purpose. Some kinds are rewritten at compile time and nothing
+// executes what was written — so a caller who compiled and forgot to lower would get an
+// object that silently lacks the resources it needs, which is a mistake nobody should be
+// able to make by omission. A DSL with no lowerings compiles to exactly what it always
+// did.
 func (s *Session) Compile(ctx context.Context, opts CompileOptions) (interp.Object, []interp.NextValidation, error) {
 	c, err := s.compiler(opts)
 	if err != nil {
@@ -303,15 +311,27 @@ func (s *Session) Compile(ctx context.Context, opts CompileOptions) (interp.Obje
 	return c.Compile(ctx)
 }
 
+// Authored is the configuration as it was WRITTEN — no lowerings applied. It is what an
+// editor shows, and what decompile round-trips: a generated resource must never be
+// written back to somebody's repository.
+func (s *Session) Authored(ctx context.Context, opts CompileOptions) (interp.Object, []interp.NextValidation, error) {
+	c, err := s.compiler(opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c.Authored(ctx)
+}
+
 // Validate re-runs the compiler for diagnostics only: it returns the deferred
 // checks and any error, discarding the artifact. Values can't be validated in
 // isolation, so this is the honest whole-config check.
+//
+// It validates what RUNS, which is the only useful answer: a lowering that produces a
+// document the compiler rejects is a config that cannot be deployed, and an author who
+// was told their own files are fine would find that out from a failed deploy.
 func (s *Session) Validate(ctx context.Context, opts CompileOptions) ([]interp.NextValidation, error) {
-	c, err := s.compiler(opts)
-	if err != nil {
-		return nil, err
-	}
-	return c.Validate(ctx)
+	_, validations, err := s.Compile(ctx, opts)
+	return validations, err
 }
 
 func (s *Session) compiler(opts CompileOptions) (*interp.Compiler, error) {

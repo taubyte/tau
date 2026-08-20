@@ -22,7 +22,11 @@ type (
 var DefaultBranch = interp.DefaultBranch
 
 func New(opts ...Option) (*interp.Compiler, error) {
-	return interp.New(TaubyteProject, CompileRoot(), opts...)
+	// A lowering produces resources and the entries that reach them, and BOTH shapes are
+	// this vocabulary's answer rather than the interpreter's: where a resource lives, and
+	// what an access entry is called.
+	return interp.New(TaubyteProject, CompileRoot(),
+		append(opts, interp.WithLayout(layout()), interp.WithAccess(entryShape()))...)
 }
 
 // Validate runs the whole compile pipeline for diagnostics only, returning the
@@ -49,32 +53,26 @@ func AuditProject(ctx context.Context, r Resolver, opts ...Option) ([]Finding, e
 	return Audit(obj.Flat(), r), nil
 }
 
-// Lowered is the project as it is AFTER lowering: a compiler over an in-memory view that
-// holds the documents a lowering produces and the access entries it puts on authored
-// resources. The files on disk are not touched. Compile it and the object has the
-// queues, the functions and the entries — which is what a runtime needs, because nothing
-// runs a workflow.
-func Lowered(ctx context.Context, c *Compiler) (*Compiler, error) {
-	l := LayoutOf()
-	return c.Lowered(ctx, interp.Layout{Resource: l.Resource, Scope: l.Scope})
+// Became is what one resource became when it compiled: the ids produced from it, and the
+// access entries its lowering added to resources somebody wrote. A question about the
+// compiled object, because lowering IS compiling.
+func Became(obj map[string]any, id string) ([]string, []interp.Granted) {
+	return interp.LoweredOf(obj).Of(id)
 }
 
-// EmissionOf is what ONE resource becomes: the documents it produces and the entries it
-// places on documents that already exist. It is the question a console asks when someone
-// opens a workflow, and the one a CLI answers before it applies anything.
-func EmissionOf(obj map[string]any, kind, name, scope string) (interp.Emission, bool) {
-	l := LayoutOf()
-	return interp.EmissionOf(CompileRoot(), obj, interp.Layout{Resource: l.Resource, Scope: l.Scope}, kind, name, scope)
+// entryShape is how this vocabulary writes one resource reaching another, in the
+// interpreter's terms. Read off AccessEntryShape, which the audit already reads, so the
+// two cannot disagree about what an entry is called.
+func entryShape() interp.EntryShape {
+	a := AccessEntryShape()
+	return interp.EntryShape{Ops: a.Ops, Namespace: a.Namespace}
 }
 
-// Emissions is the same for every lowerable resource in the project.
-func Emissions(obj map[string]any) []interp.Emission {
+// layout is where this vocabulary keeps its documents, in the interpreter's terms.
+func layout() interp.Layout {
 	l := LayoutOf()
-	return interp.Emissions(CompileRoot(), obj, interp.Layout{Resource: l.Resource, Scope: l.Scope})
+	return interp.Layout{Resource: l.Resource, Scope: l.Scope}
 }
-
-// ViewFsOf is for tests: the filesystem a compiler reads from.
-func ViewFsOf(c *Compiler) afero.Fs { return interp.FsOf(c) }
 
 // LoweringPlan is what this project's lowered resources become — the resources, and
 // the wiring between them, so a consumer can show what is INSIDE one of them. The
@@ -99,6 +97,17 @@ func WithLocal(path string) Option                { return interp.WithLocal(path
 func WithVirtual(fs afero.Fs, path string) Option { return interp.WithVirtual(fs, path) }
 func WithBranch(branch string) Option             { return interp.WithBranch(branch) }
 func WithEnvironment(env string) Option           { return interp.WithEnv("environment", env) }
+
+// DecompileToVirtual and WithGenerated are the decompiler's own options, re-exported so a
+// caller depends on this package alone. WithGenerated is the DEPTH: without it a
+// decompile writes back only what somebody wrote, which is what a repository must hold.
+func DecompileToVirtual(fs afero.Fs, path string) decompile.Option {
+	return decompile.WithVirtual(fs, path)
+}
+func WithGenerated() decompile.Option { return decompile.WithGenerated() }
+
 func NewDecompiler(o ...decompile.Option) (*decompile.Decompiler, error) {
-	return decompile.New(TaubyteProject, CompileRoot(), o...)
+	// The entry shape goes in for the same reason it goes into the compiler: taking back
+	// an op a lowering added means knowing what this vocabulary calls them.
+	return decompile.New(TaubyteProject, CompileRoot(), append(o, decompile.WithAccess(entryShape()))...)
 }

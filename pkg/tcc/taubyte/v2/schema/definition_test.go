@@ -73,11 +73,15 @@ func namedResource(t *testing.T, group map[string]any, name string) map[string]a
 	return nil
 }
 
+// compileBasic is the fixture AS WRITTEN. Compiling lowers, so the object a runtime gets
+// also holds the queues a workflow becomes — which is right, and is not what most of
+// these tests are about: they check what the vocabulary does with what somebody wrote.
+// The tests that are about lowering ask for the lowered object by name.
 func compileBasic(t *testing.T) map[string]any {
 	t.Helper()
 	c, err := schema.New(schema.WithLocal("../fixtures/basic"), schema.WithBranch("main"))
 	assert.NilError(t, err)
-	obj, _, err := c.Compile(context.Background())
+	obj, _, err := c.Authored(context.Background())
 	assert.NilError(t, err)
 	return obj.Flat()
 }

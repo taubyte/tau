@@ -1,7 +1,6 @@
 package interp
 
 import (
-	"fmt"
 	"slices"
 	"sort"
 	"strconv"
@@ -286,17 +285,18 @@ type Derived struct {
 	// something authored.
 	Via []string
 
-	// Doc is the yaml this resource would be. See document().
-	Doc string
-
 	// Acts marks the part that does what the source declares. See Acts().
 	Acts bool
 }
 
 // Source points at the authored config a derived resource came from.
 type Source struct {
-	Kind  string // the authored resource's kind
-	Name  string // its name
+	Kind string // the authored resource's kind
+	Name string // its name
+	// ID is its compiled id. A lowering that produced something which lowers in turn
+	// still points HERE: what a reader asks is what exists because they wrote this, and
+	// the intermediate is not something they wrote.
+	ID    string
 	Scope string // its namespace
 	Path  string // where inside its document, e.g. "steps/0". Empty for the whole resource.
 
@@ -358,46 +358,56 @@ func (d Derived) String() string { return d.Kind + "/" + d.Name + " (" + d.Why +
 // schema is.
 //
 // It has to be authorable, not merely readable. A field's compiled key is not its
-// authored path: `execution/call` is one name for one attribute and three lines of yaml
-// (`execution:` / `  call:`), and writing the flat key produced a document that failed
-// to compile with "unknown key 'execution/call'". Generated config that would be
+// authored path: `execution/call` is one name for one attribute and two levels of
+// document (`execution:` / `  call:`), and writing the flat key produced a resource that
+// failed to compile with "unknown key 'execution/call'". Generated config that would be
 // rejected if anyone authored it is worse than none, so the paths come off the schema.
+//
+// It is a TREE, not text. Nothing here renders yaml: this goes to yaseer over an in-memory
+// layer, the same way an editor hands it a document, and yaseer is what serialises. Doing
+// it by hand was a second yaml writer with its own way of getting duplicate keys wrong —
+// two accesses to one kind wrote `queue:` twice, and in yaml the second is the only one
+// there is.
 
-// document renders a derived resource as yaml, nesting each field at the path its
-// attribute declares.
-func document(root *engine.Node, d Derived) string {
-	var b strings.Builder
-	b.WriteString("# " + d.Kind + "/" + d.Name + " — generated, not in your repository\n")
-	b.WriteString("# from " + d.Source.String() + "\n")
-	if d.Why != "" {
-		b.WriteString("# " + d.Why + "\n")
-	}
-	b.WriteString("#\n")
-	if d.ID != "" {
-		b.WriteString("id: " + d.ID + "\n")
-	}
-
+// authored is the resource as it would have been written: every field at the path its
+// attribute declares, every access the resource itself grants, and its deterministic id.
+func authored(root *engine.Node, d Derived, shape EntryShape) map[string]any {
 	tree := map[string]any{}
+	if d.ID != "" {
+		tree["id"] = d.ID
+	}
+
 	iter := iterOfKind(root, d.Kind)
 	for name, v := range d.Fields {
-		place(tree, authoredPath(iter, name), fmt.Sprint(v))
+		place(tree, authoredPath(iter, name), v)
 	}
-	writeTree(&b, tree, 0)
 
-	// An access this resource DECLARES is part of its document, written the way an
-	// author writes one. The ones it does not declare belong on the resource that does,
-	// and are placed there rather than mentioned here.
+	// An access this resource DECLARES is part of it, exactly as an author writes one.
+	// The ones it does not declare belong to the resource that does, and are placed
+	// there instead.
 	for _, g := range d.Grants {
 		if !g.From.Self() {
 			continue
 		}
-		b.WriteString(g.To.Kind + ":\n    " + g.To.Name + ":\n")
-		if g.To.Scope != "" {
-			b.WriteString("        namespace: " + g.To.Scope + "\n")
+		block, _ := tree[g.To.Kind].(map[string]any)
+		if block == nil {
+			block = map[string]any{}
+			tree[g.To.Kind] = block
 		}
-		b.WriteString("        ops: [" + g.Op + "]\n")
+		entry, _ := block[g.To.Name].(map[string]any)
+		if entry == nil {
+			entry = map[string]any{}
+			block[g.To.Name] = entry
+		}
+		if g.To.Scope != "" {
+			entry[shape.Namespace] = g.To.Scope
+		}
+		ops, _ := entry[shape.Ops].([]string)
+		if !slices.Contains(ops, g.Op) {
+			entry[shape.Ops] = append(ops, g.Op)
+		}
 	}
-	return b.String()
+	return tree
 }
 
 // authoredPath is where a field is WRITTEN, which is its attribute's Path — not its
@@ -427,7 +437,7 @@ func authoredPath(iter *engine.Node, name string) []string {
 	return []string{name}
 }
 
-func place(tree map[string]any, path []string, value string) {
+func place(tree map[string]any, path []string, value any) {
 	for i, seg := range path {
 		if i == len(path)-1 {
 			tree[seg] = value
@@ -442,24 +452,6 @@ func place(tree map[string]any, path []string, value string) {
 	}
 }
 
-func writeTree(b *strings.Builder, tree map[string]any, depth int) {
-	keys := make([]string, 0, len(tree))
-	for k := range tree {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	pad := strings.Repeat("    ", depth)
-	for _, k := range keys {
-		switch v := tree[k].(type) {
-		case map[string]any:
-			b.WriteString(pad + k + ":\n")
-			writeTree(b, v, depth+1)
-		default:
-			b.WriteString(pad + k + ": " + fmt.Sprint(v) + "\n")
-		}
-	}
-}
-
 // LoweringPlan is every resource a compiled project's lowered kinds become, in a
 // stable order. Pure: same config, same plan, no network, no clock.
 func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
@@ -470,7 +462,7 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 
 	var out []Derived
 	walkResources(root, scope, "", func(kind string, iter *engine.Node, id, name string, res map[string]any, at string) {
-		src := Source{Kind: kind, Name: name, Scope: at}
+		src := Source{Kind: kind, Name: name, ID: id, Scope: at}
 		for _, l := range LoweringsOf(iter) {
 			out = append(out, plan(root, l, kind, name, id, res, at, src, nil)...)
 		}
@@ -484,15 +476,29 @@ func LoweringPlan(root *engine.Node, obj map[string]any) []Derived {
 	// mistake that hangs the compiler instead of reporting itself.
 	out = append(out, nest(root, out, 1)...)
 
-	for i := range out {
-		out[i].Doc = document(root, out[i])
-	}
-
+	// A TOTAL order. Sorting on a pair that two derived resources can share leaves the
+	// rest to map iteration, and the plan stops being a pure function of the config —
+	// which is what decides collisions, grant order and every id downstream of them.
 	sort.SliceStable(out, func(i, j int) bool {
-		if out[i].Of != out[j].Of {
-			return out[i].Of < out[j].Of
+		a, b := out[i], out[j]
+		if a.Scope != b.Scope {
+			return a.Scope < b.Scope
 		}
-		return out[i].Kind+out[i].Name < out[j].Kind+out[j].Name
+		if a.Of != b.Of {
+			return a.Of < b.Of
+		}
+		if a.Kind != b.Kind {
+			return a.Kind < b.Kind
+		}
+		if a.Name != b.Name {
+			return a.Name < b.Name
+		}
+		// Two elements of one list can share a name — which is a fault the audit reports,
+		// and until somebody fixes it the order still has to be the same every time.
+		if a.Source.Path != b.Source.Path {
+			return a.Source.Path < b.Source.Path
+		}
+		return a.ID < b.ID
 	})
 	return out
 }
@@ -936,6 +942,40 @@ func unknownInputs(iter *engine.Node, l Lowering) []string {
 	return unknown
 }
 
+// loweringCycles finds every cycle in "kind A lowers into kind B".
+func loweringCycles(root *engine.Node) []string {
+	into := map[string][]string{}
+	eachIter(root, func(iter *engine.Node) bool {
+		for _, g := range root.Children {
+			key, _ := g.Match.(string)
+			if key == "" || len(g.Children) == 0 || g.Children[0] != iter {
+				continue
+			}
+			for _, l := range LoweringsOf(iter) {
+				into[key] = append(into[key], l.into)
+			}
+		}
+		return false
+	})
+
+	var found []string
+	var walk func(kind string, seen []string)
+	walk = func(kind string, seen []string) {
+		if i := slices.Index(seen, kind); i >= 0 {
+			found = append(found, strings.Join(append(seen[i:], kind), " -> "))
+			return
+		}
+		for _, next := range into[kind] {
+			walk(next, append(append([]string{}, seen...), kind))
+		}
+	}
+	for kind := range into {
+		walk(kind, nil)
+	}
+	sort.Strings(found)
+	return slices.Compact(found)
+}
+
 // opNamer is a kind's verb set, asked for its names. The vocabulary declares what a verb
 // IS — an effect class, whether it is delivered — and none of that is the interpreter's;
 // what it needs is whether a name is one of them.
@@ -1047,6 +1087,24 @@ func CheckLowerings(root *engine.Node) []string {
 		}
 		return false
 	})
+	// The record of what a compile produced sits beside the object under one key. A
+	// vocabulary that declares a group by that name would have the two overwrite each
+	// other, and the failure would look like resources going missing.
+	for _, g := range root.Children {
+		if key, _ := g.Match.(string); key == LoweredKey {
+			problems = append(problems, "a group is called "+LoweredKey+", which is where a compile records what it lowered")
+		}
+	}
+
+	// A CYCLE IS A BUILD MISTAKE, and it is one nobody's config can fix: a kind that
+	// lowers into a kind that lowers back into it produces resources forever. The runtime
+	// cap stops the hang, and stopping is all it does — the plan it returns is silently
+	// truncated, which is a lie about what a config becomes. Said here instead, where a
+	// vocabulary author can see it without writing any config at all.
+	for _, cycle := range loweringCycles(root) {
+		problems = append(problems, "lowerings cycle: "+cycle)
+	}
+
 	// The same kind appears once per namespace depth, so a single mistake would be
 	// reported eight times. One problem, said once.
 	sort.Strings(problems)

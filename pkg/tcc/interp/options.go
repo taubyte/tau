@@ -40,5 +40,25 @@ func WithEnv(key, val string) Option {
 	}
 }
 
+// WithLayout tells the compiler where this vocabulary keeps its documents, which is what
+// a lowering needs to write one. A schema that declares lowerings and no layout cannot be
+// compiled — loudly, because the alternative is an object silently missing the resources
+// a workflow becomes.
+func WithLayout(l Layout) Option {
+	return func(c *Compiler) error {
+		c.layout = l
+		return nil
+	}
+}
+
+// WithAccess tells the compiler how this vocabulary writes one resource's access to
+// another, which is what a lowering produces alongside the resources themselves.
+func WithAccess(a EntryShape) Option {
+	return func(c *Compiler) error {
+		c.access = a
+		return nil
+	}
+}
+
 // WithBranch pins the compile branch, which the IndexDriver bakes into index paths.
 func WithBranch(branch string) Option { return WithEnv("branch", branch) }

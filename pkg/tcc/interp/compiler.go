@@ -35,6 +35,8 @@ type Compiler struct {
 	project  engine.Schema
 	baseFs   afero.Fs
 	basePath string
+	layout   Layout
+	access   EntryShape
 }
 
 var DefaultBranch = "main"
@@ -64,7 +66,23 @@ func New(project engine.Schema, compileRoot *engine.Node, options ...Option) (c 
 	return c, nil
 }
 
+// Compile is the configuration AS IT RUNS.
+//
+// Some kinds are rewritten at compile time — a workflow is not run by anything; what runs
+// is the queues and functions it becomes — so compiling means lowering. There is no
+// second call to remember: a caller who forgot one would be holding an object that is
+// missing the resources it needs, and nothing about it would say so.
 func (c *Compiler) Compile(ctx context.Context) (Object, []NextValidation, error) {
+	obj, validations, err := c.Authored(ctx)
+	if err != nil || !UsesLowering(c.compileRoot) {
+		return obj, validations, err
+	}
+	return c.lower(ctx, obj, validations)
+}
+
+// Authored is the configuration AS IT WAS WRITTEN, with no lowering applied. It is what
+// an editor shows and what a lowering is computed from; everything else wants Compile.
+func (c *Compiler) Authored(ctx context.Context) (Object, []NextValidation, error) {
 	obj, err := c.engine.Process()
 	if err != nil {
 		return nil, nil, err
@@ -128,12 +146,16 @@ func compilePipe(root *engine.Node, env Env) []transform.Transformer[object.Refr
 		pipe = append(pipe, AttachAll(root))
 	}
 
-	// IndexDriver: interpret the DSL's per-resource index-footprint closures to build
-	// the compiled `indexes` subtree. The chroot exists solely to make room for that
-	// `indexes` sibling, so both are gated together on whether any group declares an
-	// index footprint.
-	if UsesIndexing(root) {
+	// The chroot wraps the project under `object` so a sibling can sit beside it. Two
+	// things want one: the index subtree, and the record of what a compile lowered.
+	// Without it that record would be a top-level key among the resource groups, and
+	// every walk over the object would read it as a group of resources called `lowered`.
+	if UsesIndexing(root) || UsesLowering(root) {
 		pipe = append(pipe, chrootEnvelope())
+	}
+	// IndexDriver: interpret the DSL's per-resource index-footprint closures to build
+	// the compiled `indexes` subtree.
+	if UsesIndexing(root) {
 		pipe = append(pipe, NewIndexDriver(root, env["branch"]))
 	}
 

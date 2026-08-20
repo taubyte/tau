@@ -11,10 +11,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"strings"
 	"syscall/js"
 
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/interp"
 	"github.com/taubyte/tau/pkg/tcc/jsonschema"
 	schema "github.com/taubyte/tau/pkg/tcc/taubyte/v2/schema"
 )
@@ -33,6 +36,10 @@ func main() {
 	// traffic on through, and which fields name another resource. Read off the schema so
 	// a graph, a CLI or a console draws a vocabulary it has never seen.
 	api.Set("shapes", js.FuncOf(shapesFn))
+	// What a resource nobody wrote WOULD be, as config: decompile, all the way. The
+	// compiler renders no yaml — writing config is the decompiler's job, and this is the
+	// only place that does it.
+	api.Set("generated", js.FuncOf(generatedFn))
 	js.Global().Set("tccV2", api)
 	select {}
 }
@@ -83,10 +90,20 @@ func compileFn(_ js.Value, args []js.Value) any {
 	if err != nil {
 		return errResult(err.Error())
 	}
-	obj, validations, err := c.Compile(context.Background())
+	// AS WRITTEN, first: that is what the page shows and what the author is editing.
+	obj, validations, err := c.Authored(context.Background())
 	if err != nil {
 		return errResult(err.Error())
 	}
+	// ...and as it RUNS. Compiling lowers, so this is where the queues a workflow becomes
+	// exist. Two compiles rather than one because the page needs both: an editor that
+	// only had the second would show its user resources they cannot edit, mixed in with
+	// the ones they wrote.
+	loweredObj, _, err := c.Compile(context.Background())
+	if err != nil {
+		return errResult(err.Error())
+	}
+	lowered := loweredObj.Flat()
 
 	// The project's label in a cloud's generated zone is a pure function of its id, so
 	// it can be shown rather than guessed at. Only the cloud's own fqdn is unknown
@@ -108,7 +125,10 @@ func compileFn(_ js.Value, args []js.Value) any {
 	// The stub resolver: what tcc cannot see — is this zone delegated, is this image
 	// pullable — nothing in a browser can see either.
 	flatObj := obj.Flat()
-	findings := schema.Audit(flatObj, schema.StubResolver())
+	// The audit runs over what RUNS: a lowering that produced something broken is a
+	// config that cannot be deployed, and an author told their own files are fine would
+	// find that out from a failed deploy.
+	findings := schema.Audit(lowered, schema.StubResolver())
 	found := make([]map[string]any, 0, len(findings))
 	for _, f := range findings {
 		found = append(found, map[string]any{
@@ -118,55 +138,39 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	out["findings"] = found
 
-	// WHAT EACH LOWERABLE RESOURCE BECOMES: the documents it produces and the entries it
-	// places on documents somebody wrote. The page shows the inside of a workflow with
-	// this and never learns what a workflow is.
-	emissions := make([]map[string]any, 0)
-	for _, e := range schema.Emissions(flatObj) {
-		docs := make([]map[string]any, 0, len(e.Documents))
-		for _, d := range e.Documents {
-			docs = append(docs, map[string]any{
-				"kind": d.Kind, "name": d.Name, "id": d.ID, "yaml": d.Body,
-				"path": d.Path, "at": d.At, "part": d.Part, "why": d.Why,
-			})
+	// WHAT NOBODY WROTE, and where it came from. The page draws the project as it was
+	// WRITTEN — that is what an author is editing — and asks for the lowered one only
+	// when a box is opened. Both are the same shapes, because a produced resource is an
+	// ordinary resource; the difference is only which of them exist.
+	rec := interp.LoweredOf(lowered)
+	made := map[string]any{}
+	for id, p := range rec.Resources {
+		made[id] = map[string]any{
+			"from": p.From, "at": p.At, "kind": p.Kind, "name": p.Name, "scope": p.Scope,
 		}
-		entries := make([]map[string]any, 0, len(e.Entries))
-		for _, x := range e.Entries {
-			entries = append(entries, map[string]any{
-				"on":   map[string]any{"kind": x.On.Kind, "name": x.On.Name, "scope": x.On.Scope},
-				"kind": x.Kind, "name": x.Name, "op": x.Op, "namespace": x.Namespace,
-			})
-		}
-		emissions = append(emissions, map[string]any{
-			"of":        map[string]any{"kind": e.Of.Kind, "name": e.Of.Name, "scope": e.Of.Scope},
-			"documents": docs, "entries": entries,
+	}
+	granted := []map[string]any{}
+	for _, g := range rec.Entries {
+		granted = append(granted, map[string]any{
+			"on": g.On, "kind": g.Kind, "name": g.Name, "op": g.Op, "from": g.From,
 		})
 	}
-	out["emissions"] = emissions
-
-	// AND THE PROJECT AFTER LOWERING. Not a plan of it: the compiled object, with the
-	// queues and the entries in it, because that is what a runtime is handed. The page
-	// draws the inside of a box from THIS — the same resources and the same relations it
-	// draws everything else from, so the picture of generated config is made the way the
-	// picture of written config is.
-	if lc, err := schema.Lowered(context.Background(), c); err == nil && lc != nil {
-		if lobj, _, err := lc.Compile(context.Background()); err == nil {
-			lflat := lobj.Flat()
-			lres := []map[string]any{}
-			for _, r := range schema.Resources(lflat) {
-				lres = append(lres, map[string]any{
-					"id": r.ID, "kind": r.Kind, "name": r.Name, "scope": r.Scope, "fields": r.Fields,
-				})
-			}
-			lrel := []map[string]any{}
-			for _, r := range schema.Relations(lflat) {
-				lrel = append(lrel, map[string]any{
-					"from": r.From, "to": r.To, "kind": r.Kind,
-					"verb": r.Verb, "effect": r.Effect, "class": string(r.Class),
-				})
-			}
-			out["lowered"] = map[string]any{"resources": lres, "relations": lrel}
-		}
+	loweredResources := []map[string]any{}
+	for _, r := range schema.Resources(lowered) {
+		loweredResources = append(loweredResources, map[string]any{
+			"id": r.ID, "kind": r.Kind, "name": r.Name, "scope": r.Scope, "fields": r.Fields,
+		})
+	}
+	loweredRelations := []map[string]any{}
+	for _, r := range schema.Relations(lowered) {
+		loweredRelations = append(loweredRelations, map[string]any{
+			"from": r.From, "to": r.To, "kind": r.Kind,
+			"verb": r.Verb, "effect": r.Effect, "class": string(r.Class),
+		})
+	}
+	out["lowered"] = map[string]any{
+		"produced": made, "granted": granted,
+		"resources": loweredResources, "relations": loweredRelations,
 	}
 
 	// WHAT EACH RESOURCE IS REACHED AT. A name is the label it chose, the zone that
@@ -373,6 +377,76 @@ func kindsFn(js.Value, []js.Value) any {
 			"category": category, "doc": doc, "icon": icon, "fields": fields,
 			"reach": reach,
 		})
+	}
+	return toJS(out)
+}
+
+// generated(files, {branch}) -> { "<path>": "<yaml>", ... } | { error }
+//
+// Decompiling ALL THE WAY: the authored documents plus the ones a lowering produced. The
+// authored half is thrown away here — the page already has those, they are what the user
+// is editing — so what comes back is exactly the config nobody wrote.
+//
+// It is a separate call, made when a box is opened rather than on every keystroke,
+// because it is a whole decompile and nothing needs it until somebody looks.
+func generatedFn(_ js.Value, args []js.Value) any {
+	if len(args) < 1 || !args[0].Truthy() {
+		return errResult("generated: expected (files, options?)")
+	}
+
+	fs := afero.NewMemMapFs()
+	files := args[0]
+	authored := map[string]bool{}
+	keys := js.Global().Get("Object").Call("keys", files)
+	for i := 0; i < keys.Length(); i++ {
+		path := keys.Index(i).String()
+		authored["/"+path] = true
+		if err := afero.WriteFile(fs, "/"+path, []byte(files.Get(path).String()), 0o644); err != nil {
+			return errResult("writing " + path + ": " + err.Error())
+		}
+	}
+
+	branch := schema.DefaultBranch
+	if len(args) > 1 && args[1].Truthy() {
+		if v := args[1].Get("branch"); v.Truthy() {
+			branch = v.String()
+		}
+	}
+
+	c, err := schema.New(schema.WithVirtual(fs, "/"), schema.WithBranch(branch))
+	if err != nil {
+		return errResult(err.Error())
+	}
+	obj, _, err := c.Compile(context.Background())
+	if err != nil {
+		return errResult(err.Error())
+	}
+
+	// A private filesystem: decompiling writes documents, and the page's own files are
+	// not the decompiler's to touch.
+	into := afero.NewMemMapFs()
+	d, err := schema.NewDecompiler(schema.DecompileToVirtual(into, "/"), schema.WithGenerated())
+	if err != nil {
+		return errResult(err.Error())
+	}
+	if err := d.Decompile(obj); err != nil {
+		return errResult(err.Error())
+	}
+
+	out := map[string]any{}
+	err = afero.Walk(into, "/", func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil || info.IsDir() || authored[path] {
+			return nil
+		}
+		body, err := afero.ReadFile(into, path)
+		if err != nil {
+			return err
+		}
+		out[strings.TrimPrefix(path, "/")] = string(body)
+		return nil
+	})
+	if err != nil {
+		return errResult(err.Error())
 	}
 	return toJS(out)
 }

@@ -66,37 +66,8 @@ export interface Omission {
   unblocks: string;
 }
 export type Compiled = Record<string, unknown>;
-/** What one lowerable resource becomes. Computed by tcc — see interp/emission.go. */
-export interface Emission {
-  of: { kind: string; name: string; scope: string };
-  /** The documents it produces: resources nobody wrote, each with the id it compiles under. */
-  documents: {
-    kind: string;
-    name: string;
-    id: string;
-    yaml: string;
-    path: string;
-    /** The piece of the authored document responsible — "steps/0" — and the element itself. */
-    at: string;
-    part?: Record<string, unknown>;
-    why: string;
-  }[];
-  /** The access entries it places on documents somebody else wrote. */
-  entries: {
-    on: { kind: string; name: string; scope: string };
-    kind: string;
-    name: string;
-    op: string;
-    namespace: string;
-  }[];
-}
 
-/** The project AFTER lowering: the same shapes as the authored one, because it is one. */
-export interface LoweredProject {
-  resources: Instance[];
-  relations: Relation[];
-}
-
+/** One cross-resource finding, decided by tcc — see schema/checks.go. */
 export interface Finding {
   severity: "broken" | "check" | "note";
   kind: string;
@@ -128,6 +99,17 @@ export interface Relation {
   class: "use" | "handoff" | "policy" | "reference";
 }
 
+/** What a compile produced that nobody wrote. From tcc — see interp/lowered.go. */
+export interface LoweredProject {
+  /** Every produced resource, by its compiled id, and the authored resource it came from. */
+  produced: Record<string, { from: string; at: string; kind: string; name: string; scope: string }>;
+  /** Every access entry a lowering added to a resource somebody DID write. */
+  granted: { on: string; kind: string; name: string; op: string; from: string }[];
+  /** The project AS IT RUNS: the same shapes as the authored one, because it is one. */
+  resources: Instance[];
+  relations: Relation[];
+}
+
 export interface CompileOk {
   findings?: Finding[];
   /** What each resource is reached at. Computed by tcc: a name is three places glued. */
@@ -136,9 +118,7 @@ export interface CompileOk {
   resources?: Instance[];
   /** Every relationship between two resources, already resolved and already directed. */
   relations?: Relation[];
-  /** What each lowerable resource becomes. */
-  emissions?: Emission[];
-  /** The compiled project after lowering — what a runtime is handed. */
+  /** The project as it RUNS, and what in it nobody wrote. */
   lowered?: LoweredProject;
   /** The project's label in a cloud's generated zone — derived from its id. */
   projectLabel?: string;
@@ -153,6 +133,12 @@ interface TccV2 {
   verbs(): KindVerbs[];
   kinds(): Kind[];
   shapes(): Shapes;
+  /**
+   * What the resources nobody wrote WOULD be, as config: decompile, all the way, minus
+   * the files the caller already has. Called when a box is opened, not on every
+   * keystroke — it is a whole decompile, and nothing needs it until somebody looks.
+   */
+  generated(files: Record<string, string>, opts?: { branch?: string }): Record<string, string> | { error: string };
   /** Compute a derived value. The derivation is the engine's, so nobody reimplements it. */
   derive(derivation: string, ...inputs: string[]): string;
   omissions(): Omission[];

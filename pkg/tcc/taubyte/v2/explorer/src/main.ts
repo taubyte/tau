@@ -98,13 +98,13 @@ export function flipFrame(id: string) {
 
 function render() {
   lastResult = compile();
+  generatedFiles = null; // the config changed, so what it produces did too
   if (!("error" in lastResult)) {
     graph = buildGraph(
       lastResult.resources ?? [],
       lastResult.relations ?? [],
       lastResult.names ?? {},
-      lastResult.emissions ?? [],
-      lastResult.lowered ?? { resources: [], relations: [] },
+      lastResult.lowered ?? { produced: {}, granted: [], resources: [], relations: [] },
       flipped,
     );
     const g = graph;
@@ -207,15 +207,30 @@ function editorPane(): HTMLElement {
   return pane;
 }
 
-// The document a node stands for, when nobody wrote it. A derived resource compiles
-// under a deterministic id, so it is looked up by the same id everything else is.
+// The resource a node stands for, when nobody wrote it. It is an ordinary compiled
+// resource in the lowered project — there is no separate document for it, and there is
+// no yaml anywhere in the compiler to show. What it IS is what it compiled to.
 function loweredById(id: string) {
   if (!lastResult || "error" in lastResult) return undefined;
-  for (const e of lastResult.emissions ?? []) {
-    const doc = e.documents.find((d) => d.id === id);
-    if (doc) return doc;
+  const made = lastResult.lowered?.produced?.[id];
+  if (!made) return undefined;
+  return { kind: made.kind, name: made.name, yaml: generatedDocument(made.kind, made.name) };
+}
+
+// WHAT IT WOULD BE AS CONFIG comes from the DECOMPILER, which is the only thing in tcc
+// that writes yaml — the compiler renders none, ever. Asked for once and kept, because it
+// is a whole decompile: nothing needs it until a box is opened.
+let generatedFiles: Record<string, string> | null = null;
+function generatedDocument(kind: string, name: string): string {
+  if (!generatedFiles) {
+    const out = window.tccV2?.generated(files, { branch: "main" });
+    generatedFiles = out && !("error" in out) ? out : {};
   }
-  return undefined;
+  const suffix = `${kind}/${name}.yaml`;
+  for (const [path, body] of Object.entries(generatedFiles)) {
+    if (path === suffix || path.endsWith("/" + suffix)) return body;
+  }
+  return "";
 }
 
 // A real directory tree, because the layout IS part of the DSL: a resource is a file
