@@ -17,11 +17,10 @@ import (
 // a feature of one kind: a compiled project goes back to the yaml it came from. Every
 // construct has to survive the trip, which is the thing to hold on to while adding one.
 //
-// The workflow is the case worth guarding. It LOWERS — it becomes queues — and the day
-// those queues are written into the compiled object, this test is what says whether the
-// project still decompiles as a workflow or as three queue documents and a workflow
-// that has quietly become something else. Today the lowering is a plan and nothing is
-// emitted, so this passes; that is exactly why it is worth pinning now.
+// The workflow is the case worth guarding. It LOWERS — it becomes queues, and those
+// queues ARE in the compiled object — so this test is what says whether the project
+// still decompiles as a workflow or as three queue documents and a workflow that has
+// quietly become something else.
 func TestProjectDecompilesBack(t *testing.T) {
 	// TWO compiles of the same project: decompiling MUTATES the object it is handed
 	// (the reverse pipeline is transforms, like the forward one), so comparing against
@@ -76,9 +75,9 @@ func TestDecompileWritesEveryDocument(t *testing.T) {
 // contain the WORKFLOW — not the queues it becomes, and not a workflow that has quietly
 // turned into something else.
 //
-// Today the plan is not emitted, so this passes for a boring reason. It is here for the
-// day it is: the failure it catches is a project that compiles, deploys, and decompiles
-// into somebody else's config.
+// The queues are in the object, so this is a live guard rather than a placeholder: the
+// failure it catches is a project that compiles, deploys, and decompiles into somebody
+// else's config.
 func TestLoweredResourcesDoNotDecompile(t *testing.T) {
 	first := compileFor(t, schema.WithLocal("../fixtures/basic"))
 	plan := schema.LoweringPlan(first.Flat())
@@ -110,6 +109,44 @@ func TestLoweredResourcesDoNotDecompile(t *testing.T) {
 
 	// and the plan computed from the round-tripped object is the same plan
 	assert.DeepEqual(t, plan, schema.LoweringPlan(got))
+}
+
+// THE OTHER DEPTH. `WithGenerated` writes everything, which is where a console's
+// "generated, not editable" pane comes from — the same call the explorer's wasm build
+// makes. Half way is what a repository holds; this is what a reader is shown.
+//
+// It is checked against the plan rather than against filenames written here, and the
+// second half is the part that matters more than it looks: this tree does NOT compile,
+// and it must not. Writing it back over a repository would give the workflow's queues an
+// author, and the next compile refuses — a name a lowering takes has to be free. A reader
+// who mistook the generated pane for config they could commit would find that out after
+// committing it.
+func TestDecompileAllTheWayWritesWhatWasGenerated(t *testing.T) {
+	first := compileFor(t, schema.WithLocal("../fixtures/basic"))
+	plan := schema.LoweringPlan(first.Flat())
+	assert.Assert(t, len(plan) > 0, "the fixture must lower something for this to mean anything")
+
+	out := afero.NewMemMapFs()
+	d, err := schema.NewDecompiler(decompile.WithVirtual(out, "/"), schema.WithGenerated())
+	assert.NilError(t, err)
+	assert.NilError(t, d.Decompile(first))
+
+	for _, r := range plan {
+		path := "/" + r.Kind + "/" + r.Name + ".yaml"
+		_, err := out.Stat(path)
+		assert.NilError(t, err, "%s is what a lowering produced and was not written", path)
+	}
+
+	// what somebody wrote is still there too: all the way is everything, not only the
+	// generated half
+	_, err = out.Stat("/workflow/checkout.yaml")
+	assert.NilError(t, err)
+
+	c, err := schema.New(schema.WithVirtual(out, "/"), schema.WithBranch("main"))
+	assert.NilError(t, err)
+	_, _, err = c.Compile(context.Background())
+	assert.ErrorContains(t, err, "has to be renamed",
+		"the generated depth compiled, which would make it look like a repository")
 }
 
 func compileFor(t *testing.T, opt schema.Option) schema.Object {
