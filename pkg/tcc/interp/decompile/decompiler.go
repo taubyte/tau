@@ -86,6 +86,6 @@ func (d *Decompiler) pipe(lowered interp.Lowered) []transform.Transformer[object
 	if interp.UsesIndexing(d.compileRoot) || interp.UsesLowering(d.compileRoot) {
 		pipe = append(pipe, unwrapEnvelope())
 	}
-	pipe = append(pipe, &authoredOnly{lowered: lowered, root: d.compileRoot, keep: d.generated})
+	pipe = append(pipe, &authoredOnly{lowered: lowered, keep: d.generated})
 	return append(pipe, interp.NewDecompileDriver(d.compileRoot))
 }

@@ -304,47 +304,6 @@ func Singular(goName string) NodeOption {
 	return GroupAnnotate("singular", goName)
 }
 
-// Verbs carries what something else may ask to do to a kind. What a verb IS belongs to
-// the vocabulary — an effect class, whether it is delivered, whether it mounts — and all
-// the generic layer ever needs is the names, so that is all this asks for.
-//
-// It is `Verbs` and not `Ops` because `ops` is one vocabulary's word for the field it
-// writes them in. A layer that must not know a vocabulary cannot be named after one.
-func Verbs(v VerbNamer) NodeOption { return GroupAnnotate("verbs", v) }
-
-// VerbNamer is a verb set asked for its names.
-type VerbNamer interface{ Names() []string }
-
-// VerbsOf reads a kind's verb set back off its iterator. Nil when nothing may reach it.
-func VerbsOf(iter *Node) VerbNamer {
-	if iter == nil {
-		return nil
-	}
-	v, _ := iter.Meta["verbs"].(VerbNamer)
-	return v
-}
-
-// IsScopePath marks the attribute that says where a named target lives — the half
-// IsScopeField reads back.
-func IsScopePath() Option { return Annotate("scopePath", true) }
-
-// AreVerbs marks the attribute of an access entry that holds the verbs, and says whose.
-// It is the other half of what IsScopeField marks: between them a vocabulary describes an
-// access entry without anyone having to know what it called the fields.
-//
-// A lowering produces those entries and a decompile takes them back off. Told the field
-// NAMES, both would know one vocabulary; told where to look, they know none.
-func AreVerbs(ofKind string) Option { return Annotate("verbsOf", ofKind) }
-
-// IsVerbsField reports whether an attribute holds an access entry's verbs.
-func IsVerbsField(a *Attribute) bool {
-	if a == nil {
-		return false
-	}
-	_, ok := a.Meta["verbsOf"].(string)
-	return ok
-}
-
 // EnumBoolSpec is the compile/decompile contract for an EnumBool attribute.
 type EnumBoolSpec struct {
 	GoName      string    // bool struct-field name (network-access -> Local/Public)

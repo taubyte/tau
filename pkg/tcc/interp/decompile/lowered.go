@@ -1,7 +1,6 @@
 package decompile
 
 import (
-	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
 	"github.com/taubyte/tau/pkg/tcc/object"
 	"github.com/taubyte/tau/pkg/tcc/transform"
@@ -33,10 +32,6 @@ import (
 // from its id to its name, and the record speaks in ids.
 type authoredOnly struct {
 	lowered interp.Lowered
-	// root is the schema, which is where the parts of an access entry are found: taking
-	// an op back off one means knowing which field holds them, and that is the
-	// vocabulary's answer rather than this package's.
-	root *engine.Node
 	// keep is WithGenerated: the record still comes off, nothing else does.
 	keep bool
 }
@@ -77,55 +72,71 @@ func (a *authoredOnly) strip(o object.Object[object.Refrence], granted map[strin
 			continue
 		}
 		for _, g := range granted[key] {
-			revoke(child, g, a.root)
+			revoke(child, g)
 		}
 		a.strip(child, granted)
 	}
 }
 
-// revoke takes one op back off the entry that carries it, and takes the entry — then the
-// whole target-kind block — with it when nothing of either is left. An empty `ops` is not
-// an entry that grants nothing, it is a document the schema rejects, and an empty block is
-// a key the author never typed.
-func revoke(res object.Object[object.Refrence], g interp.Granted, root *engine.Node) {
-	verbs := verbsField(root, g.Kind)
-	if verbs == "" {
-		return // the vocabulary does not say which field holds them
-	}
-	block, err := res.Child(g.Kind).Object()
-	if err != nil {
-		return
-	}
-	entry, err := block.Child(g.Name).Object()
-	if err != nil {
+// revoke takes one value back off the path a lowering wrote it to, and takes the empty
+// containers with it: a list with nothing in it is not an empty list, it is a field the
+// author never typed, and the same goes for the maps that held it.
+//
+// It reads no schema and no vocabulary. A path is a path — walk it, remove the value,
+// and prune upward while nothing is left. That is the whole of undoing a lowering.
+func revoke(res object.Object[object.Refrence], g interp.Granted) {
+	if len(g.Path) == 0 {
 		return
 	}
 
+	// walk in, keeping every container on the way so an emptied one can be pruned
+	holders := []object.Object[object.Refrence]{res}
+	at := res
+	for _, seg := range g.Path[:len(g.Path)-1] {
+		next, err := at.Child(seg).Object()
+		if err != nil {
+			return
+		}
+		holders = append(holders, next)
+		at = next
+	}
+
+	field := g.Path[len(g.Path)-1]
 	var left []string
-	for _, op := range ops(entry, verbs) {
-		if op != g.Op {
-			left = append(left, op)
+	listed := false
+	for _, v := range values(at, field) {
+		listed = true
+		if v != g.Value {
+			left = append(left, v)
 		}
 	}
-	if len(left) > 0 {
-		entry.Set(verbs, left)
+	switch {
+	case listed && len(left) > 0:
+		at.Set(field, left)
 		return
+	case listed:
+		at.Delete(field)
+	default:
+		if s, ok := any(at.Get(field)).(string); ok && s == g.Value {
+			at.Delete(field)
+		} else {
+			return // somebody changed it; it is theirs now
+		}
 	}
 
-	block.Delete(g.Name)
-	// Flat() is only reached once the block has no entries left, where it is a handful of
-	// keys at most — it is here because a block can hold attributes of its own, and
-	// Children() alone would call a block with one empty.
-	if len(block.Children()) == 0 && len(block.Flat()) == 0 {
-		res.Delete(g.Kind)
+	// prune the containers that are now empty, innermost first
+	for i := len(holders) - 1; i > 0; i-- {
+		if len(holders[i].Children()) > 0 || len(holders[i].Flat()) > 0 {
+			return
+		}
+		holders[i-1].Delete(g.Path[i-1])
 	}
 }
 
-// ops reads an entry's verb list, under whatever this vocabulary calls it. It compiles as
-// []string; an object that has been through a wire format hands the same list back as
-// []any, and both are the entry.
-func ops(entry object.Object[object.Refrence], verbs string) []string {
-	switch v := any(entry.Get(verbs)).(type) {
+// values reads a field that holds a list. It compiles as []string; an object that has
+// been through a wire format hands the same list back as []any, and both are the field.
+func values(o object.Object[object.Refrence], field string) []string {
+	switch v := any(o.Get(field)).(type) {
 	case []string:
 		return v
 	case []any:
@@ -150,31 +161,4 @@ func loweredOf(obj Object) interp.Lowered {
 		return interp.LoweredOf(nil)
 	}
 	return interp.LoweredOf(map[string]any{interp.LoweredKey: rec.Flat()})
-}
-
-// verbsField is the attribute an access entry to this kind keeps its verbs in, found on
-// the schema. The entry's group sits under whichever kind declares it, and every kind
-// that can be reached has one, so the first is as good as the last.
-func verbsField(root *engine.Node, target string) string {
-	var found string
-	var walk func(nodes []*engine.Node)
-	walk = func(nodes []*engine.Node) {
-		for _, g := range nodes {
-			if len(g.Children) == 0 || found != "" {
-				continue
-			}
-			iter := g.Children[0]
-			for _, child := range iter.Children {
-				if key, _ := child.Match.(string); key == target && len(child.Children) > 0 {
-					if verbs, _ := engine.AccessFields(child.Children[0]); verbs != "" {
-						found = verbs
-						return
-					}
-				}
-			}
-			walk(iter.Children)
-		}
-	}
-	walk(root.Children)
-	return found
 }

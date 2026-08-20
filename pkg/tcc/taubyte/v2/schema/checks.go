@@ -660,25 +660,25 @@ func checkLoweredLinks(root map[string]any, all []compiled) []Finding {
 
 	var out []Finding
 	for _, d := range plan {
-		// Both ends of every access it implies have to exist: the accessor is where the
-		// entry lands, and the target is what the entry names.
-		for _, g := range d.Grants {
-			for _, end := range []interp.End{g.From, g.To} {
-				if end.Self() || derived[end.Kind+"\x00"+end.Name] {
-					continue // the derived resource, or another part of the same lowering
-				}
-				scope := end.Scope
-				if scope == "" {
-					scope = d.Scope
-				}
-				if lookupName(exists, end.Kind+"\x00"+end.Name, scope) {
-					continue
-				}
-				out = append(out, Finding{Broken, d.Source.Kind, d.Source.Name, d.Source.Scope,
-					fmt.Sprintf("%s %s/%s, which does not exist", g.Op, end.Kind, end.Name),
-					"Found in what this becomes rather than in what you wrote: " + d.Trail() +
-						". The name is carried through the lowering unchanged, so fixing it where it is written fixes this."})
+		// A resource a lowering WRITES INTO has to exist. It is the half a reader cannot
+		// see: the queue is produced with a name they chose, but the function it says
+		// receives from it is one they named in a step — and a name that matches nothing
+		// leaves the queue with no consumer at all.
+		for _, w := range d.Writes {
+			if w.On.Kind == "" || derived[w.On.Kind+"\x00"+w.On.Name] {
+				continue // the derived resource, or another part of the same lowering
 			}
+			scope := w.On.Scope
+			if scope == "" {
+				scope = d.Scope
+			}
+			if lookupName(exists, w.On.Kind+"\x00"+w.On.Name, scope) {
+				continue
+			}
+			out = append(out, Finding{Broken, d.Source.Kind, d.Source.Name, d.Source.Scope,
+				fmt.Sprintf("%s %s/%s, which does not exist", w.Value, w.On.Kind, w.On.Name),
+				"Found in what this becomes rather than in what you wrote: " + d.Trail() +
+					". The name is carried through the lowering unchanged, so fixing it where it is written fixes this."})
 		}
 	}
 	return out

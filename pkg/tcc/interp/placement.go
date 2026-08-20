@@ -11,8 +11,8 @@ import (
 //
 // A lowering produces two kinds of change, and the compiler applies both to an in-memory
 // layer over the project: resources that did not exist — the queues a workflow runs on —
-// and access entries on resources that did, because the function that runs a step is what
-// declares it receives from that step's queue.
+// and values written into resources that did, because the function that runs a step is
+// what has to say it receives from that step's queue.
 //
 // Both are addressed the way a document is addressed, because that is what they are.
 // Nothing here renders yaml: the tree goes to yaseer, which is the same thing an editor
@@ -29,18 +29,14 @@ type placement struct {
 	depth                 int    // how many lowerings deep this one is
 }
 
-// granted is one access entry a lowering adds to a resource somebody wrote.
+// granted is one value a lowering puts into a resource somebody else wrote.
 type granted struct {
-	at    []string // the accessor's document address
-	on    End      // the accessor
-	kind  string   // the target's kind
-	name  string   // the target's name
-	op    string
-	where string // the scope field's value: written only when the target is elsewhere
-	// the fields THIS vocabulary writes an entry with, found on the schema
-	verbsField, whereField string
-	from                   string // the authored resource whose lowering added it
-	scope                  string // where the accessor lives, for finding its compiled id
+	at    []string // that resource's document address
+	on    End      // and which resource it is
+	path  []string // where inside it
+	value string
+	from  string // the authored resource whose lowering wrote it
+	scope string // where that resource lives, for finding its compiled id
 }
 
 // placements is everything a project's lowerings produce, in a stable order.
@@ -56,46 +52,22 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 			from: d.Source.ID, part: d.Source.Path, depth: len(d.Via),
 		})
 
-		for _, g := range d.Grants {
-			if g.From.Self() {
+		for _, w := range d.Writes {
+			if w.On.Kind == "" {
 				continue // it is in the resource above, where an author would have written it
 			}
 			// A scope a lowering names is read the way a scope is read anywhere: absolute
 			// from the root with a leading slash, and otherwise relative to where the
 			// resource being lowered lives. Taking it as absolute put `eu` at the root,
 			// which is a resource in the wrong namespace and compiles.
-			scope := within(d.Scope, g.From.Scope)
-			// What it reaches: the derived resource itself, or a name the lowering gave.
-			target, kind, at := d.Name, d.Kind, d.Scope
-			if !g.To.Self() {
-				target, kind = g.To.Name, g.To.Kind
-				at = within(d.Scope, g.To.Scope)
-			}
-			// HOW THIS VOCABULARY WRITES ONE, found on the schema: the entry sits in a
-			// group of the accessor's kind keyed by the target's, and its own attributes
-			// say which holds the verbs and which says where to look. A vocabulary that
-			// marks neither cannot have entries written for it, which is a refusal rather
-			// than a guess at a field name.
-			verbs, where := accessFields(root, g.From.Kind, kind)
-			if verbs == "" {
-				continue
-			}
-			add := granted{
-				at:   address(layout, scope, g.From.Kind, g.From.Name),
-				on:   End{Kind: g.From.Kind, Name: g.From.Name, Scope: scope},
-				kind: kind, name: target, op: g.Op, from: d.Source.ID, scope: scope,
-				verbsField: verbs, whereField: where,
-			}
-			// Only when the two are not in the same place, and then absolutely: a
-			// relative path would be read from the accessor's scope, which is not where
-			// this was decided.
-			if at != scope {
-				add.where = "/" + at
-			}
-			if add.where == "//" {
-				add.where = "/"
-			}
-			adds = append(adds, add)
+			scope := within(d.Scope, w.On.Scope)
+			adds = append(adds, granted{
+				at:    address(layout, scope, w.On.Kind, w.On.Name),
+				on:    End{Kind: w.On.Kind, Name: w.On.Name, Scope: scope},
+				path:  w.Path,
+				value: w.Value,
+				from:  d.Source.ID, scope: scope,
+			})
 		}
 	}
 
@@ -104,7 +76,9 @@ func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placeme
 		if a, b := strings.Join(adds[i].at, "/"), strings.Join(adds[j].at, "/"); a != b {
 			return a < b
 		}
-		return adds[i].name+adds[i].op < adds[j].name+adds[j].op
+		a := strings.Join(adds[i].path, "/") + "\x00" + adds[i].value
+		b := strings.Join(adds[j].path, "/") + "\x00" + adds[j].value
+		return a < b
 	})
 	return docs, adds
 }

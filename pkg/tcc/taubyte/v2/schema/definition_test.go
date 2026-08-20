@@ -882,35 +882,32 @@ func TestWorkflowLowers(t *testing.T) {
 		}
 		assert.Equal(t, d.Of, "workflow/checkout")
 
-		// WHAT IT IMPLIES IS AN ACCESS ENTRY, both ends filled in — the entry an author
-		// would have written, which is what makes it emittable rather than only
-		// drawable.
-		grants := map[string]string{}
-		for _, g := range d.Grants {
-			from := "self"
-			if !g.From.Self() {
-				from = g.From.Kind + "/" + g.From.Name
+		// WHAT IT IMPLIES IS AN ENTRY SOMEBODY ELSE CARRIES: a value at a path, on the
+		// function that runs the step. That the value is a verb and the path an access
+		// entry is this vocabulary's reading of it — the compiler carries a write.
+		writes := map[string]string{}
+		for _, w := range d.Writes {
+			on := "self"
+			if w.On.Kind != "" {
+				on = w.On.Kind + "/" + w.On.Name
 			}
-			to := "self"
-			if !g.To.Self() {
-				to = g.To.Kind + "/" + g.To.Name
-			}
-			grants[from+" -> "+to] = g.Op
+			writes[on+" "+strings.Join(w.Path, "/")] = w.Value
 		}
 		// a queue nothing receives from is a queue nothing happens in
-		assert.Equal(t, grants["function/reserve_stock -> self"], "receive")
-		// ...and the chain is what makes it a pipeline. It starts at the FUNCTION: a
+		assert.Equal(t, writes["function/reserve_stock queue/checkout_reserve/ops"], "receive")
+		// ...and the chain is what makes it a pipeline. It is written on the FUNCTION: a
 		// queue does not hand work to another queue, the function that consumed this one
 		// sends on, and an entry on the queue would describe something that cannot
 		// happen.
-		assert.Equal(t, grants["function/reserve_stock -> queue/checkout_charge"], "send")
+		assert.Equal(t, writes["function/reserve_stock queue/checkout_charge/ops"], "send")
 
 		// The dead-letter queue is NOT here: it is the `dead-letter` field, which is
 		// already config. A second statement of it was the whole reason the arrow
 		// between two queues read as unexplained.
 		assert.Equal(t, d.Fields["dead-letter"], "queue/checkout_failed")
-		for _, g := range d.Grants {
-			assert.Assert(t, g.To.Name != "checkout_failed", "the dead-letter is a field, not an access")
+		for _, w := range d.Writes {
+			assert.Assert(t, !strings.Contains(strings.Join(w.Path, "/"), "checkout_failed"),
+				"the dead-letter is a field, not an entry")
 		}
 	}
 }

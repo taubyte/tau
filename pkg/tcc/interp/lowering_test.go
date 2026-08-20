@@ -19,7 +19,7 @@ func pipelineSchema() (engine.Schema, *engine.Node) {
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		}, engine.Resource("job", "Job", "Job", "job"), engine.Verbs(testVerbs{"run", "hand-off"}))),
+		}, engine.Resource("job", "Job", "Job", "job"))),
 		engine.DefineGroup("log", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
 		}, engine.Resource("log", "Log", "Log", "log"))),
@@ -37,10 +37,11 @@ func pipelineSchema() (engine.Schema, *engine.Node) {
 					interp.PerEach("stages"),
 					interp.Named("{name}-{each.name}"),
 					interp.Carries("stage {each.name}"),
-					interp.Reaches("run", interp.From("job", "{each.run}")),
-					interp.Reaches("hand-off",
-						interp.From("job", "{each.run}"),
-						interp.To("job", "{name}-{each.next.name}")),
+					// what runs this stage says so on itself, at a path of its own
+					interp.Writes("{name}-{each.name}", interp.On("job", "{each.run}"),
+						interp.At("runs")),
+					interp.Writes("{name}-{each.next.name}", interp.On("job", "{each.run}"),
+						interp.At("hands-off-to")),
 				),
 				interp.Into("log",
 					interp.Named("{name}-log"),
@@ -92,21 +93,21 @@ func TestLoweringPlan(t *testing.T) {
 
 // The wiring is what makes a plan drawable rather than a list of names: a consumer can
 // show what is INSIDE a pipeline without knowing what a pipeline is.
-func TestLoweringLinks(t *testing.T) {
+func TestLoweringWrites(t *testing.T) {
 	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n    - name: bare\n")
 
 	compile, bare := byName(t, plan, "build-compile"), byName(t, plan, "build-bare")
 
-	// what runs it, from its own field, and the hand-off to the element after it
-	assert.Equal(t, len(compile.Grants), 2)
-	assert.Equal(t, compile.Grants[0].From.Kind+"/"+compile.Grants[0].From.Name, "job/cc")
-	assert.Equal(t, compile.Grants[0].Op, "run")
-	assert.Assert(t, compile.Grants[0].To.Self(), "the derived resource is what is reached")
-	assert.Equal(t, compile.Grants[1].To.Name, "build-bare", "chains to the next element")
+	// both writes land on what RUNS this stage: this one's name, and the next one's
+	assert.Equal(t, len(compile.Writes), 2)
+	assert.Equal(t, compile.Writes[0].On.Kind+"/"+compile.Writes[0].On.Name, "job/cc")
+	assert.DeepEqual(t, compile.Writes[0].Path, []string{"runs"})
+	assert.Equal(t, compile.Writes[0].Value, "build-compile")
+	assert.Equal(t, compile.Writes[1].Value, "build-bare", "chains to the next element")
 
-	// `bare` has no `run`, so neither end can be filled — and a half-written entry is
-	// worse than none, so it is dropped rather than emitted as "job/{each.run}".
-	assert.Equal(t, len(bare.Grants), 0, "no run, and nothing after it: both unfillable, both dropped")
+	// `bare` has no `run`, so neither write can be addressed — and a half-written value
+	// is worse than none, so both are dropped rather than emitted as "{each.run}".
+	assert.Equal(t, len(bare.Writes), 0, "no run, and nothing after it: both unfillable, both dropped")
 }
 
 func byName(t *testing.T, plan []interp.Derived, name string) interp.Derived {
@@ -170,15 +171,15 @@ func TestLoweringChainsToTheNextElement(t *testing.T) {
 	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n    - name: test\n      run: ct\n    - name: ship\n      run: cs\n")
 
 	next := func(name string) string {
-		for _, g := range byName(t, plan, name).Grants {
-			if g.Op == "hand-off" {
-				return g.To.Kind + "/" + g.To.Name
+		for _, w := range byName(t, plan, name).Writes {
+			if len(w.Path) == 1 && w.Path[0] == "hands-off-to" {
+				return w.Value
 			}
 		}
 		return ""
 	}
-	assert.Equal(t, next("build-compile"), "job/build-test")
-	assert.Equal(t, next("build-test"), "job/build-ship")
+	assert.Equal(t, next("build-compile"), "build-test")
+	assert.Equal(t, next("build-test"), "build-ship")
 	assert.Equal(t, next("build-ship"), "", "the last element has no next, and that is where the chain ends")
 }
 
@@ -221,40 +222,36 @@ func TestCheckLoweringsRefusesAnUnbuildableResource(t *testing.T) {
 // lowering can only draw what the derived resource does, and some of what it would draw
 // is false: a queue handing work to another queue is not a thing that happens — the
 // function that consumed the first one is what sends to the second.
-func TestLoweringLinkOrigin(t *testing.T) {
+func TestLoweringWritesIntoSomethingElse(t *testing.T) {
 	plan := lowerDoc(t, "id: one\nname: build\nstages:\n    - name: compile\n      run: cc\n    - name: test\n      run: ct\n")
 
 	compile := byName(t, plan, "build-compile")
-	var chained, own int
-	for _, g := range compile.Grants {
-		assert.Equal(t, g.From.Kind+"/"+g.From.Name, "job/cc", "both are declared by what ran")
-		if g.To.Self() {
-			own++
-		} else {
-			chained++
-		}
+	assert.Equal(t, len(compile.Writes), 2)
+	for _, w := range compile.Writes {
+		assert.Equal(t, w.On.Kind+"/"+w.On.Name, "job/cc",
+			"both are written into what ran the stage, not into the stage's own resource")
 	}
-	assert.Equal(t, chained, 1)
-	assert.Equal(t, own, 1, "the access with no target of its own reaches the derived resource")
 }
 
-// AN ACCESS A DERIVED RESOURCE DECLARES IS ITS OWN; one somebody else declares belongs to
-// them. Which side declares is the whole reason Reaches has two ends.
-func TestLoweringSaysWhoDeclaresTheAccess(t *testing.T) {
+// A WRITE WITH NO TARGET GOES INTO THE RESOURCE THE LOWERING PRODUCED; one that names a
+// resource goes into that. Which of the two is the whole reason On() exists — and the
+// difference decides whose document carries the value.
+func TestLoweringSaysWhereTheValueGoes(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		}, engine.Resource("job", "Job", "Job", "job"), engine.Verbs(testVerbs{"read", "write"}))),
+			engine.String("runs"),
+		}, engine.Resource("job", "Job", "Job", "job"))),
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
 			engine.String("id"), engine.String("name"),
 		},
 			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
 			interp.Lowers(interp.Into("job", interp.Named("{name}-j"),
-				// declared BY this one: it is this one's to carry
-				interp.Reaches("read", interp.To("job", "a")),
-				// declared by something else: it lands on that, not here
-				interp.Reaches("write", interp.From("job", "b")),
+				// written into THIS one: it is this one's to carry
+				interp.Writes("a", interp.At("runs")),
+				// written into something else: it lands on that, not here
+				interp.Writes("b", interp.On("job", "b"), interp.At("runs")),
 			)),
 		)),
 	).With(engine.Identity("id", "name"))
@@ -263,19 +260,17 @@ func TestLoweringSaysWhoDeclaresTheAccess(t *testing.T) {
 		"pipeline": map[string]any{"x": map[string]any{"name": "x"}},
 	})
 	assert.Equal(t, len(plan), 1)
-	assert.Equal(t, len(plan[0].Grants), 2)
+	assert.Equal(t, len(plan[0].Writes), 2)
 
 	var own, elsewhere int
-	for _, g := range plan[0].Grants {
-		if g.From.Self() {
+	for _, w := range plan[0].Writes {
+		if w.On.Kind == "" {
 			own++
-			assert.Equal(t, g.To.Kind+"/"+g.To.Name, "job/a")
-			assert.Equal(t, g.Op, "read")
+			assert.Equal(t, w.Value, "a")
 			continue
 		}
 		elsewhere++
-		assert.Equal(t, g.From.Kind+"/"+g.From.Name, "job/b")
-		assert.Assert(t, g.To.Self(), "what it reaches is the derived resource itself")
+		assert.Equal(t, w.On.Kind+"/"+w.On.Name, "job/b")
 	}
 	assert.Equal(t, own, 1)
 	assert.Equal(t, elsewhere, 1)
@@ -315,7 +310,7 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		}, engine.Resource("job", "Job", "Job", "job"), engine.Verbs(testVerbs{"run", "hand-off"}))),
+		}, engine.Resource("job", "Job", "Job", "job"))),
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
 			engine.String("id"), engine.String("name"),
 		},
@@ -325,8 +320,8 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 			interp.Lowers(interp.Into("job",
 				interp.PerEach("stages"),
 				interp.Named("{name}-{each.name}"),
-				interp.Sets("tries", "{each.attemps}"),                      // a typo
-				interp.Reaches("run", interp.To("job", "{each.next.nmae}")), // and another
+				interp.Sets("tries", "{each.attemps}"),               // a typo
+				interp.Writes("{each.next.nmae}", interp.At("runs")), // and another
 			)),
 		)),
 	).With(engine.Identity("id", "name"))
@@ -341,7 +336,7 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
 			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		}, engine.Resource("job", "Job", "Job", "job"), engine.Verbs(testVerbs{"run", "hand-off"}))),
+		}, engine.Resource("job", "Job", "Job", "job"))),
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
 			engine.String("id"), engine.String("name"),
 		},
@@ -352,7 +347,7 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 				interp.PerEach("stages"),
 				interp.Named("{name}-{each.name}"),
 				interp.Sets("tries", "{each.attempts}"),
-				interp.Reaches("run", interp.To("job", "{each.next.name}")),
+				interp.Writes("{each.next.name}", interp.At("runs")),
 			)),
 		)),
 	)
@@ -361,30 +356,3 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 
 // testVerbs is a verb set the way a vocabulary declares one: the generic layer asks it
 // for the names and knows nothing else about a verb.
-type testVerbs []string
-
-func (v testVerbs) Names() []string { return v }
-
-// AN OP THE TARGET KIND DOES NOT HAVE is not config. What a lowering produces is the
-// entry an author would have written, and `ops: [recieve]` grants nothing, compiles
-// nowhere, and reads as though it works.
-func TestCheckLoweringsRefusesAnOpTheKindDoesNotHave(t *testing.T) {
-	root := engine.Root(
-		[]*engine.Attribute{engine.String("id")},
-		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{
-			engine.String("id", engine.Required(), engine.Generated(engine.GenCID)),
-		}, engine.Resource("job", "Job", "Job", "job"), engine.Verbs(testVerbs{"run"}))),
-		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{
-			engine.String("id"), engine.String("name"),
-		},
-			engine.Resource("pipeline", "Pipeline", "Pipeline", "pipeline"),
-			interp.Lowers(interp.Into("job", interp.Named("{name}-j"),
-				interp.Reaches("runn", interp.From("job", "a")),
-			)),
-		)),
-	).With(engine.Identity("id", "name"))
-
-	problems := interp.CheckLowerings(root)
-	assert.Equal(t, len(problems), 1, "got %v", problems)
-	assert.Assert(t, strings.Contains(problems[0], `"runn" on job, which has run`), problems[0])
-}

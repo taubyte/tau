@@ -31,15 +31,15 @@ type Carriage struct {
 	// In is the list whose elements hold it — "steps" — and empty when it is the
 	// resource's own field.
 	In string
-	// Into is the kind produced, and As is where the value lands in it: a field name,
-	// or ">op" for the name at the far end of the access declared with that op.
+	// Into is the kind produced, and As is where the value lands: a field name, or ">"
+	// for the NAME of the resource this lowering writes into.
 	Into string
 	As   string
 }
 
-// linkAt addresses the name at the end of a link, which is a place a value lands just as
-// much as a field is — a step's `run` is only ever written there.
-const linkAt = ">"
+// targetName addresses the NAME of the resource a lowering wrote into, which is a place a
+// value lands just as much as a field is.
+const targetName = ">"
 
 // Carriages is every authored field of a kind that its lowerings carry out invertibly.
 func Carriages(root *engine.Node, kind string) []Carriage {
@@ -74,16 +74,17 @@ func Carriages(root *engine.Node, kind string) []Carriage {
 		for field, tmpl := range l.set {
 			add(tmpl, field)
 		}
-		// The name at the far end of an access is a place a value lands, addressed by
-		// the op — so two accesses sharing an op address the same place, and neither can
-		// be read back from it.
-		for _, r := range l.reaches {
-			if !once(l.reaches, r.op) {
-				continue
-			}
-			if r.fromKind != "" {
-				add(r.fromName, linkAt+r.op)
-			}
+		// The NAME of the resource a lowering writes into is a place a value lands: a
+		// step's `run` is only ever written as the resource that carries what the step
+		// produced. Several writes may go into that same resource — the queue it
+		// receives from and the one it sends to are both entries on the function — and
+		// any of them gives the name back.
+		//
+		// But only when they all name the SAME one. A lowering that writes into two
+		// different resources has two names at that address and neither can be read
+		// back from it.
+		if tmpl, only := soleTarget(l.writes); only {
+			add(tmpl, targetName)
 		}
 	}
 
@@ -179,10 +180,10 @@ func ReadBack(plan []Derived, cs []Carriage) map[string]string {
 // valueAt reads the one place a carriage lands: a field of the derived resource, or the
 // name at the end of one of its links.
 func valueAt(d Derived, as string) (string, bool) {
-	if op, ok := strings.CutPrefix(as, linkAt); ok {
-		for _, g := range d.Grants {
-			if g.Op == op && !g.From.Self() {
-				return g.From.Name, true
+	if as == targetName {
+		for _, w := range d.Writes {
+			if w.On.Kind != "" {
+				return w.On.Name, true
 			}
 		}
 		return "", false
@@ -209,13 +210,18 @@ func soleKey(tmpl string) (string, bool) {
 	return key, true
 }
 
-// once reports whether an op addresses exactly one access.
-func once(rs []reach, op string) bool {
-	n := 0
-	for _, r := range rs {
-		if r.op == op {
-			n++
+// soleTarget is the name template every write of a lowering goes into, when they all go
+// into the same one.
+func soleTarget(ws []write) (string, bool) {
+	tmpl := ""
+	for _, w := range ws {
+		if w.onKind == "" {
+			continue
 		}
+		if tmpl != "" && w.onName != tmpl {
+			return "", false
+		}
+		tmpl = w.onName
 	}
-	return n == 1
+	return tmpl, tmpl != ""
 }

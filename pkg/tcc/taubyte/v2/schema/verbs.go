@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/taubyte/tau/pkg/tcc/engine"
+	"github.com/taubyte/tau/pkg/tcc/interp"
 )
 
 // Ops declares what may be done TO this kind, on the kind itself. It is the only
@@ -90,7 +91,7 @@ func isDelivered(kind string) bool {
 // route knows about, with no path, no gateway policy and no name in front of it.
 //
 // Ops annotates a kind with its verb set.
-func Ops(verbs ...Verb) NodeOption { return engine.Verbs(Verbs(verbs)) }
+func Ops(verbs ...Verb) NodeOption { return GroupAnnotate("ops", Verbs(verbs)) }
 
 // Verbs is a kind's verb set. It is a named type so the generic layer can ask it for the
 // names without knowing what a Verb is: a lowering declares the op it asks for, and
@@ -107,10 +108,11 @@ func (vs Verbs) Names() []string {
 	return out
 }
 
-// VerbsOfIter reads a kind's declared verbs off its iterator, in this vocabulary's type.
-// The engine carries them as names only, which is all it needs.
+// VerbsOfIter reads a kind's declared verbs off its iterator. Nothing outside this
+// package reads them: what a verb is, and that a kind has any, is this vocabulary's
+// idea — the compiler carries values at paths and never learns the word.
 func VerbsOfIter(iter *Node) Verbs {
-	v, _ := engine.VerbsOf(iter).(Verbs)
+	v, _ := iter.Meta["ops"].(Verbs)
 	return v
 }
 
@@ -202,9 +204,9 @@ func accessGroups() []*Node {
 		verbs := opNames(kind)
 		out = append(out, DefineGroup(kind,
 			DefineIter(append([]*Attribute{
-				String("namespace", IsNamespacePath(), InSection("access"),
+				String(accessScope, IsNamespacePath(), InSection("access"),
 					Doc("Namespace", "Where it lives. \"/billing\" is absolute, from the project root; \"eu\" is relative to this resource's own namespace (or the root, for a resource at the root). Omitted means this resource's own scope, then its parents.")),
-				StringSlice("ops", Required(), AreVerbsOf(kind), InSection("access"),
+				StringSlice(accessOps, Required(), AreVerbsOf(kind), InSection("access"),
 					Doc("Ops", fmt.Sprintf("What this resource asks to do to it: %s. The target decides what it actually gets — see that resource's authorizer.", strings.Join(verbs, ", ")))),
 				// Per-use modifiers. These were unexpressible while access was a
 				// verb-keyed list of names: there was no per-target place to put
@@ -219,6 +221,71 @@ func accessGroups() []*Node {
 			)))
 	}
 	return out
+}
+
+// REACHING IS THIS VOCABULARY'S IDEA, so the term for it lives here.
+//
+// A lowering that wires what it produced to what already exists is, in tcc's terms, a
+// value written into a resource at a path. What makes that value a VERB, the path an
+// access entry, and the entry a statement about what one resource may do to another, is
+// all this vocabulary's — and none of it belongs in a compiler that has to serve the next
+// vocabulary too. So Reaches expands into interp.Writes, using the shape this vocabulary
+// already declares for an entry.
+//
+//	Reaches("receive", From("function", "{each.run}", "{each.namespace}"))
+//	Reaches("send", From("function", "{each.run}"), To("queue", "{name}_{each.next.name}"))
+//
+// The op has to be one the target's kind declares; CheckVerbs says so at build time.
+func Reaches(op string, opts ...ReachOption) interp.LoweringOption {
+	r := reach{op: op}
+	for _, o := range opts {
+		o(&r)
+	}
+	return func(l *interp.Lowering) {
+		to := interp.At(r.toKind, r.toName, accessOps)
+		if r.toKind == "" {
+			// the derived resource itself is what is reached; the accessor's entry names
+			// it by the kind and name the lowering produced, which the plan fills in
+			to = interp.At("{into}", "{produced}", accessOps)
+		}
+		on := []interp.WriteOption{to}
+		if r.fromKind != "" {
+			on = append(on, interp.On(r.fromKind, r.fromName, r.fromScope))
+		}
+		interp.Writes(op, on...)(l)
+	}
+}
+
+// ReachOption configures one Reaches.
+type ReachOption func(*reach)
+
+type reach struct {
+	op                            string
+	fromKind, fromName, fromScope string
+	toKind, toName, toScope       string
+}
+
+// From is the side that DECLARES — the accessor, which is where the entry lands. A queue
+// does not hand work to another queue: the function that consumed the first one is what
+// sends to the second, and that function is what declares both.
+func From(kind, name string, scope ...string) ReachOption {
+	return func(r *reach) {
+		r.fromKind, r.fromName = kind, name
+		if len(scope) > 0 {
+			r.fromScope = scope[0]
+		}
+	}
+}
+
+// To is the side being reached. Omitted means the resource the lowering produced, which
+// is the usual shape: something new, reached by something that already exists.
+func To(kind, name string, scope ...string) ReachOption {
+	return func(r *reach) {
+		r.toKind, r.toName = kind, name
+		if len(scope) > 0 {
+			r.toScope = scope[0]
+		}
+	}
 }
 
 // EachInSet is InSet for a StringSlice.
@@ -259,11 +326,7 @@ func AreVerbsOf(kind string) engine.Option {
 	return func(a *Attribute) {
 		verbsOfChecker(kind)(a)
 		engine.Annotate("enum", opNames(kind))(a)
-		// ...and say what this attribute IS, not only what may go in it. A lowering
-		// produces access entries, and writing one means finding the field that holds
-		// the verbs. Told the field's NAME it would know one vocabulary; told where to
-		// look for it, it knows none. IsNamespacePath already marks the other half.
-		engine.AreVerbs(kind)(a)
+
 	}
 }
 
@@ -320,7 +383,7 @@ func IsURL() engine.Option {
 
 func IsNamespacePath() engine.Option {
 	return func(a *engine.Attribute) {
-		engine.IsScopePath()(a)
+		engine.Annotate("namespacePath", true)(a)
 		namespacePathChecker()(a)
 	}
 }
@@ -558,31 +621,18 @@ type AccessShape struct {
 // AccessEntryShape reports it, by looking at the access group the vocabulary attaches to
 // every reachable kind: the attribute carrying that kind's verb enum is the ops field.
 func AccessEntryShape() AccessShape {
-	out := AccessShape{}
-	for _, g := range V2Resources {
-		if len(g.Children) == 0 {
-			continue
-		}
-		for _, child := range g.Children[0].Children {
-			key, _ := child.Match.(string)
-			if key == "" || len(child.Children) == 0 || len(OpsOf(key)) == 0 {
-				continue // not an access group
-			}
-			for _, a := range child.Children[0].Attributes {
-				if _, isEnum := a.Meta["enum"]; isEnum && out.Ops == "" {
-					out.Ops = a.Name
-				}
-				if engine.IsScopeField(a) && out.Namespace == "" {
-					out.Namespace = a.Name
-				}
-			}
-			if out.Ops != "" {
-				return out
-			}
-		}
-	}
-	return out
+	return AccessShape{Ops: accessOps, Namespace: accessScope}
 }
+
+// The two fields an access entry is written with, in this vocabulary's words. Said once
+// and used everywhere it matters: accessGroups declares them, Reaches writes at them, and
+// the audit reads them. Deriving them by walking the schema was a way of not repeating
+// them, and it made the vocabulary unable to state its own shape while it was being
+// built — a package-level cycle.
+const (
+	accessOps   = "ops"
+	accessScope = "namespace"
+)
 
 // Layout is where a resource's document lives, as templates a consumer fills in. The
 // engine walks these directories; a consumer that hardcodes the same rule is a second

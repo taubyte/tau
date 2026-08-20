@@ -40,15 +40,18 @@ type Provenance struct {
 	Scope string `json:"scope,omitempty"`
 }
 
-// Granted is one access entry a lowering added to a resource somebody DID write.
+// Granted is one value a lowering wrote into a resource somebody DID write.
+//
+// A path and a value, and nothing about what either MEANS. Taking it back off is walking
+// the same path — which is why decompile can undo a lowering for a vocabulary it has
+// never seen, and why this record says nothing about verbs, access or reaching.
 type Granted struct {
-	// On is the compiled id of the resource that now declares it.
+	// On is the compiled id of the resource that now carries it.
 	On string `json:"on"`
-	// Kind, Name and Op are the entry itself: what it reaches and with which verb.
-	Kind string `json:"kind"`
-	Name string `json:"name"`
-	Op   string `json:"op"`
-	// From is the compiled id of the authored resource whose lowering added it.
+	// Path is where inside that resource, and Value is what was put there.
+	Path  []string `json:"path"`
+	Value string   `json:"value"`
+	// From is the compiled id of the authored resource whose lowering wrote it.
 	From string `json:"from"`
 }
 
@@ -105,13 +108,31 @@ func LoweredOf(flat map[string]any) Lowered {
 	if entries, ok := rec["entries"].([]any); ok {
 		for _, v := range entries {
 			m, _ := v.(map[string]any)
-			out.Entries = append(out.Entries, Granted{
-				On: str(m, "on"), Kind: str(m, "kind"), Name: str(m, "name"),
-				Op: str(m, "op"), From: str(m, "from"),
-			})
+			g := Granted{On: str(m, "on"), Value: str(m, "value"), From: str(m, "from")}
+			for _, seg := range list(m, "path") {
+				g.Path = append(g.Path, seg)
+			}
+			out.Entries = append(out.Entries, g)
 		}
 	}
 	return out
+}
+
+// list reads a []string back off a record that may have been through a wire format.
+func list(m map[string]any, key string) []string {
+	switch v := m[key].(type) {
+	case []string:
+		return v
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if s, ok := e.(string); ok {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 func str(m map[string]any, key string) string {
@@ -176,7 +197,7 @@ func recordOf(root *engine.Node, obj Object, docs []placement, adds []granted) L
 			// record of an entry on nothing would be a lie about where it landed.
 			continue
 		}
-		l.Entries = append(l.Entries, Granted{On: id, Kind: g.kind, Name: g.name, Op: g.op, From: g.from})
+		l.Entries = append(l.Entries, Granted{On: id, Path: g.path, Value: g.value, From: g.from})
 	}
 	return l
 }
@@ -213,8 +234,12 @@ func record(obj Object, l Lowered) error {
 
 	entries := make([]any, 0, len(l.Entries))
 	for _, g := range l.Entries {
+		path := make([]any, 0, len(g.Path))
+		for _, seg := range g.Path {
+			path = append(path, seg)
+		}
 		entries = append(entries, map[string]any{
-			"on": g.On, "kind": g.Kind, "name": g.Name, "op": g.Op, "from": g.From,
+			"on": g.On, "path": path, "value": g.Value, "from": g.From,
 		})
 	}
 	if len(entries) > 0 {

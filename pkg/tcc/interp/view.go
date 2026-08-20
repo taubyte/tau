@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/spf13/afero"
 	"github.com/taubyte/tau/pkg/tcc/engine"
@@ -174,9 +175,10 @@ func (c *Compiler) view(docs []placement, adds []granted) (afero.Fs, []granted, 
 	}
 	added := make([]granted, 0, len(adds))
 	for _, g := range adds {
-		was, err := grant(seer, g)
+		was, err := grant(seer, g, listAt(c.compileRoot, g.on.Kind, g.path))
 		if err != nil {
-			return nil, nil, fmt.Errorf("granting %s on %s/%s: %w", g.op, g.on.Kind, g.on.Name, err)
+			return nil, nil, fmt.Errorf("writing %s at %s of %s/%s: %w",
+				g.value, strings.Join(g.path, "/"), g.on.Kind, g.on.Name, err)
 		}
 		if was {
 			added = append(added, g)
@@ -193,44 +195,6 @@ func at(seer *yaseer.Seer, address []string) *yaseer.Query {
 	}
 	return q.Document()
 }
-
-// grant adds one access entry to a resource that already exists, leaving everything else
-// in it alone — which is what yaseer is for.
-//
-// The ops MERGE. Two can name one target — a step whose failure goes back to its own
-// queue makes its function both receive from that queue and send to it — and the author
-// may have written one by hand. Setting the list replaced whatever was there, and what it
-// dropped was invisible: a queue nothing consumes still compiles.
-// It reports whether it ADDED anything. An op the author already wrote is left alone and
-// is not reported — it is theirs, and a record saying otherwise would have decompile take
-// it back out of their repository.
-func grant(seer *yaseer.Seer, g granted) (bool, error) {
-	entry := at(seer, g.at).Get(g.kind).Get(g.name)
-	if g.where != "" && g.whereField != "" {
-		// Only when nobody has said where to look. An author who wrote a namespace on
-		// this entry meant it, and replacing it would point their access somewhere else
-		// without a word.
-		var where string
-		entry.Get(g.whereField).Value(&where)
-		if where == "" {
-			if err := entry.Get(g.whereField).Set(g.where).Commit(); err != nil {
-				return false, err
-			}
-		}
-	}
-
-	var have []string
-	// An absent list is not an error: this is the first op on a target nobody has
-	// written about.
-	entry.Get(g.verbsField).Value(&have)
-	if slices.Contains(have, g.op) {
-		return false, nil
-	}
-	return true, entry.Get(g.verbsField).Set(append(have, g.op)).Commit()
-}
-
-// Layout is where this compiler's vocabulary keeps its documents.
-func (c *Compiler) Layout() Layout { return c.layout }
 
 // viewOptions is everything about this compiler except where it reads from.
 func (c *Compiler) viewOptions() []Option {
@@ -257,6 +221,81 @@ func overlay(base afero.Fs) (afero.Fs, error) {
 		return nil, err
 	}
 	return afero.NewCopyOnWriteFs(afero.NewReadOnlyFs(base), layer), nil
+}
+
+// listAt reports whether the attribute a path ends at holds a LIST, which is the schema's
+// answer and the only thing that decides whether a value is appended or set. The path is
+// walked the way it is written: nested group keys, entry names, and last the field — a
+// group's entries all share one iterator, so an entry's own name is skipped over.
+func listAt(root *engine.Node, kind string, path []string) bool {
+	iter := iterOfKind(root, kind)
+	for i := 0; iter != nil && i < len(path); i++ {
+		if a := attrNamed(iter, path[i]); a != nil {
+			return a.Type == engine.TypeStringSlice
+		}
+		child := childGroup(iter, path[i])
+		if child == nil {
+			return false
+		}
+		iter = child
+		i++ // the next segment names the entry, and every entry shares this iterator
+	}
+	return false
+}
+
+// childGroup is the iterator of a nested group of this kind, by its key.
+func childGroup(iter *engine.Node, key string) *engine.Node {
+	for _, child := range iter.Children {
+		if k, _ := child.Match.(string); k == key && len(child.Children) > 0 {
+			return child.Children[0]
+		}
+	}
+	return nil
+}
+
+func attrNamed(iter *engine.Node, name string) *engine.Attribute {
+	for _, a := range iter.Attributes {
+		if a.Name == name {
+			return a
+		}
+	}
+	return nil
+}
+
+// grant writes one value into a resource that already exists, leaving everything else in
+// it alone — which is what yaseer is for.
+//
+// AN AUTHOR'S OWN VALUE IS NEVER REPLACED. Into a list the value is appended when it is
+// not already there; into a scalar it goes only when the field is empty. Which of the two
+// it is comes from the schema, not from a rule here: a lowering that writes into a list
+// and one that writes into a field are the same instruction.
+//
+// It reports whether it CHANGED anything. A value the author had already written is left
+// alone and is not reported — it is theirs, and a record saying otherwise would have
+// decompile take it back out of their repository.
+func grant(seer *yaseer.Seer, g granted, isList bool) (bool, error) {
+	q := at(seer, g.at)
+	for _, seg := range g.path {
+		q = q.Get(seg)
+	}
+
+	if !isList {
+		var have string
+		q.Value(&have)
+		if have != "" {
+			return false, nil
+		}
+		return true, q.Set(g.value).Commit()
+	}
+
+	var have []string
+	// An absent list is not an error: this is the first value at a path nobody has
+	// written to.
+	q.Value(&have)
+	if slices.Contains(have, g.value) {
+		return false, nil
+	}
+	return true, q.Set(append(have, g.value)).Commit()
 }
 
 // Root is the schema this compiler compiles against, for a caller that needs to ask the

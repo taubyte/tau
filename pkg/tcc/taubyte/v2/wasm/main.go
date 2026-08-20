@@ -151,8 +151,12 @@ func compileFn(_ js.Value, args []js.Value) any {
 	}
 	granted := []map[string]any{}
 	for _, g := range rec.Entries {
+		path := make([]any, 0, len(g.Path))
+		for _, seg := range g.Path {
+			path = append(path, seg)
+		}
 		granted = append(granted, map[string]any{
-			"on": g.On, "kind": g.Kind, "name": g.Name, "op": g.Op, "from": g.From,
+			"on": g.On, "path": path, "value": g.Value, "from": g.From,
 		})
 	}
 	loweredResources := []map[string]any{}

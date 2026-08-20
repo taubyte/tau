@@ -229,36 +229,3 @@ func AnswersAtOf(n *Node) string {
 	p, _ := n.Meta["answersAt"].(string)
 	return p
 }
-
-// IsScopeField reports whether an attribute holds the SCOPE PATH — the "where does it
-// live" half of naming another resource. Declared by the vocabulary, so a consumer finds
-// it without knowing the word.
-//
-// It is `Scope` and not `Namespace` because `namespace` is one vocabulary's word for it,
-// and in that vocabulary it is also the name of a KIND. The generic layer had both.
-func IsScopeField(a *Attribute) bool {
-	if a == nil {
-		return false
-	}
-	b, _ := a.Meta["scopePath"].(bool)
-	return b
-}
-
-// AccessFields is an access entry's two parts, found on the entry's own iterator: the
-// attribute that holds the verbs, and the one that says where to look for the target.
-// Either is empty when the schema does not mark it — and for anything that WRITES an
-// entry that is a refusal rather than a licence to guess a field name.
-func AccessFields(iter *Node) (verbs, scope string) {
-	if iter == nil {
-		return "", ""
-	}
-	for _, a := range iter.Attributes {
-		if IsVerbsField(a) {
-			verbs = a.Name
-		}
-		if IsScopeField(a) {
-			scope = a.Name
-		}
-	}
-	return verbs, scope
-}

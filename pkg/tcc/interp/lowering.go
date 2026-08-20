@@ -50,31 +50,33 @@ type Lowering struct {
 	when string
 	// acts: this part does what the source resource DECLARES — the tools an agent may
 	// reach are reached by its loop
-	acts    bool
-	set     map[string]string
-	reaches []reach
+	acts   bool
+	set    map[string]string
+	writes []write
 }
 
-// reach is one ACCESS a lowering declares: an accessor, a target, and the op it asks
-// for. Both ends default to the derived resource itself, and both are templates.
+// write is one value a lowering puts into a resource, at an attribute path.
 //
-// It used to be a `link` carrying a prose verb ("consumed by") and a colour class, which
-// is a drawing rather than a declaration — there was nothing in it a compiler could
-// emit. An access entry is what an author would have written, so it is what a lowering
-// says.
-type reach struct {
-	op string
-	// each end: kind, name and the scope its name resolves in. Empty kind means the
-	// derived resource itself.
-	fromKind, fromName, fromScope string
-	toKind, toName, toScope       string
+// It used to be a `reach`: an accessor, a target and an op — one vocabulary's model of
+// "this resource may do that to that one" sitting in the layer that must not have a
+// model. Everything downstream inherited it: the engine grew terms for what an access
+// entry is called, the record spoke in verbs, and the decompiler knew how to take one
+// back off. None of that is the interpreter's business. What IS its business is smaller
+// and says the same thing: put this value in that field.
+type write struct {
+	value string
+	// which resource, as templates. Empty kind means the one the lowering produced.
+	onKind, onName, onScope string
+	// where inside it: nested group keys, entry names, and finally the field. Every
+	// segment is a template.
+	path []string
 }
 
 type (
 	// LoweringOption configures one lowering.
 	LoweringOption func(*Lowering)
-	// ReachOption configures one access a lowered resource declares.
-	ReachOption func(*reach)
+	// WriteOption configures one value a lowering writes.
+	WriteOption func(*write)
 )
 
 // Into declares that a resource of this kind is produced.
@@ -160,47 +162,45 @@ func Sets(field, tmpl string) LoweringOption {
 // workflow actually does would have to know what a workflow is, which is the knowledge
 // that must not leave the vocabulary.
 //
-// Reaches declares an ACCESS: who reaches what, with which op. The op has to be one the
-// target's kind declares — `receive` on a queue, `search` on a vector — because what
-// this produces is the entry an author would have written, and an entry naming a verb
-// the kind does not have is not config.
+// Writes puts a value into a resource, at the path an author would have written it at:
 //
-//	Reaches("receive", From("function", "{each.run}", "{each.namespace}"))
-//	Reaches("send", From("function", "{each.run}"), To("queue", "{name}_{each.next.name}"))
+//	Writes("receive", On("function", "{each.run}", "{each.namespace}"),
+//	    At("queue", "{name}_{each.name}", "ops"))
 //
-// Both ends default to the derived resource itself, so the common case names one side.
-func Reaches(op string, opts ...ReachOption) LoweringOption {
-	r := reach{op: op}
+// It says nothing about what that means. Whether those three segments are an access
+// entry, a routing table or something no vocabulary has invented yet is the vocabulary's
+// affair — it builds its own term out of this one, and the interpreter carries the value.
+//
+// Two rules, both from the schema rather than from a convention here: a value goes into a
+// LIST by being appended when it is not already there, and into a scalar only when the
+// field is empty. Whichever it is, an author's own value is never replaced.
+func Writes(value string, opts ...WriteOption) LoweringOption {
+	w := write{value: value}
 	for _, o := range opts {
-		o(&r)
+		o(&w)
 	}
-	return func(l *Lowering) { l.reaches = append(l.reaches, r) }
+	return func(l *Lowering) { l.writes = append(l.writes, w) }
 }
 
-// From is the side that DECLARES — the accessor, which is where the entry lands. A queue
-// does not hand work to another queue: the function that consumed the first one is what
-// sends to the second, and that function is what declares both.
+// On is the resource written INTO. Omitted means the one the lowering produced, which is
+// the common case; naming another is how a lowering wires something it produced to
+// something that already exists.
 //
-// The scope is optional and says where the name resolves; omitted means the scope the
-// lowered resource lives in.
-func From(kind, name string, scope ...string) ReachOption {
-	return func(r *reach) {
-		r.fromKind, r.fromName = kind, name
+// The scope is optional and says where the name resolves: absolute from the root with a
+// leading slash, and otherwise relative to where the lowered resource lives.
+func On(kind, name string, scope ...string) WriteOption {
+	return func(w *write) {
+		w.onKind, w.onName = kind, name
 		if len(scope) > 0 {
-			r.fromScope = scope[0]
+			w.onScope = scope[0]
 		}
 	}
 }
 
-// To is the side being reached. Omitted means the derived resource itself, which is the
-// usual shape: something the lowering produced, reached by something that already exists.
-func To(kind, name string, scope ...string) ReachOption {
-	return func(r *reach) {
-		r.toKind, r.toName = kind, name
-		if len(scope) > 0 {
-			r.toScope = scope[0]
-		}
-	}
+// At is the path inside that resource: the keys of whatever it is nested in, and last the
+// field itself. Every segment is a template.
+func At(path ...string) WriteOption {
+	return func(w *write) { w.path = path }
 }
 
 // Lowers declares that a kind lowers into others. Declared on the kind's iterator,
@@ -270,7 +270,7 @@ type Derived struct {
 	Scope  string         // the namespace that resource lives in
 	Why    string         // one line: what this one carries
 	Fields map[string]any // its own values, expanded from Set
-	Grants []Access       // the access entries it implies, both ends filled in
+	Writes []Written      // the values it puts into resources, templates filled in
 
 	// Source is the AUTHORED config responsible for this, and it is the reason a
 	// derived resource is not anonymous. An error found in something nobody wrote has
@@ -330,18 +330,17 @@ func (d Derived) Trail() string {
 }
 
 // Resolved is a Link with its template expanded.
-// Access is one reach with both ends filled in: the entry an author would have written,
-// ready to be placed on the accessor.
-type Access struct {
-	// Op is the verb, and it is one of the target kind's own.
-	Op string
-	// From is who declares it — the accessor. Empty Kind means the derived resource.
-	From End
-	// To is what it reaches. Empty Kind means the derived resource.
-	To End
+// Written is one write with its templates filled in: a value, the resource it goes into,
+// and where inside that resource it goes.
+type Written struct {
+	Value string
+	// On is the resource it is written into. Empty Kind means the derived resource.
+	On End
+	// Path is the way in: nested keys first, the field last.
+	Path []string
 }
 
-// End is one side of an access: a resource named in a scope.
+// End is one resource, named in a scope.
 type End struct {
 	Kind, Name string
 	// Scope is where the name resolves; "" means where the lowered resource lives.
@@ -385,54 +384,38 @@ func authored(root *engine.Node, d Derived) map[string]any {
 		place(tree, authoredPath(iter, name), v)
 	}
 
-	// An access this resource DECLARES is part of it, exactly as an author writes one.
-	// The ones it does not declare belong to the resource that does, and are placed
-	// there instead.
-	for _, g := range d.Grants {
-		if !g.From.Self() {
+	// A write whose target is this resource is part of it, at the path it names. One that
+	// goes somewhere else belongs to that resource, and is placed there instead.
+	for _, w := range d.Writes {
+		if w.On.Kind != "" || len(w.Path) == 0 {
 			continue
 		}
-		verbs, where := accessFields(root, d.Kind, g.To.Kind)
-		if verbs == "" {
-			continue // this vocabulary does not say how one is written; see AreVerbs
-		}
-		block, _ := tree[g.To.Kind].(map[string]any)
-		if block == nil {
-			block = map[string]any{}
-			tree[g.To.Kind] = block
-		}
-		entry, _ := block[g.To.Name].(map[string]any)
-		if entry == nil {
-			entry = map[string]any{}
-			block[g.To.Name] = entry
-		}
-		if g.To.Scope != "" && where != "" {
-			entry[where] = g.To.Scope
-		}
-		ops, _ := entry[verbs].([]string)
-		if !slices.Contains(ops, g.Op) {
-			entry[verbs] = append(ops, g.Op)
-		}
+		put(tree, w.Path, w.Value)
 	}
 	return tree
 }
 
-// accessFields is how THIS vocabulary writes "resource of kind `on` reaches a `target`":
-// the access entry sits in a nested group of the accessor's kind, keyed by the target's
-// kind, and the entry's own attributes say which of them holds the verbs and which says
-// where to look. Nothing here knows a field name.
-func accessFields(root *engine.Node, on, target string) (verbs, namespace string) {
-	iter := iterOfKind(root, on)
-	if iter == nil {
-		return "", ""
-	}
-	for _, child := range iter.Children {
-		if key, _ := child.Match.(string); key != target || len(child.Children) == 0 {
-			continue
+// put walks a path of keys, making the maps it needs, and puts the value at the end. A
+// LIST gets the value appended when it is not already in it — which the schema decides,
+// not this function: a field that already holds a list is one.
+func put(tree map[string]any, path []string, value string) {
+	for _, key := range path[:len(path)-1] {
+		next, _ := tree[key].(map[string]any)
+		if next == nil {
+			next = map[string]any{}
+			tree[key] = next
 		}
-		return engine.AccessFields(child.Children[0])
+		tree = next
 	}
-	return "", ""
+	last := path[len(path)-1]
+	switch have := tree[last].(type) {
+	case []string:
+		if !slices.Contains(have, value) {
+			tree[last] = append(have, value)
+		}
+	case nil:
+		tree[last] = value
+	}
 }
 
 // authoredPath is where a field is WRITTEN, which is its attribute's Path — not its
@@ -626,7 +609,7 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 			Kind: l.into, Name: expand(l.name, res, nil, nil), Of: of, Scope: scope,
 			ID:  derivedID(srcID, l.into, l.name),
 			Why: expand(l.why, res, nil, nil), Fields: setFor(root, l.into, l.set, res, nil, nil),
-			Grants: reaches(l.reaches, res, nil, nil), Source: src, Via: via, Acts: l.acts,
+			Writes: writes(l.writes, l.into, expand(l.name, res, nil, nil), res, nil, nil), Source: src, Via: via, Acts: l.acts,
 		}}
 	}
 
@@ -654,7 +637,7 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 			Kind: l.into, Name: expand(l.name, res, el, next), Of: of, Scope: scope,
 			ID:  derivedID(srcID, l.into, part),
 			Why: expand(l.why, res, el, next), Fields: setFor(root, l.into, l.set, res, el, next),
-			Grants: reaches(l.reaches, res, el, next), Source: at, Via: via, Acts: l.acts,
+			Writes: writes(l.writes, l.into, expand(l.name, res, el, next), res, el, next), Source: at, Via: via, Acts: l.acts,
 		})
 	}
 	return out
@@ -738,36 +721,49 @@ func set(fields map[string]string, res, each, next map[string]any) map[string]an
 // links expands each declared link. One whose name template cannot be filled is
 // DROPPED rather than emitted half-written: a step with no `on-error` has no failure
 // edge, and that is the common case rather than a mistake.
-func reaches(rs []reach, res, each, next map[string]any) []Access {
-	out := make([]Access, 0, len(rs))
-	for _, r := range rs {
-		end := func(kind, name, scope string) (End, bool) {
-			if kind == "" {
-				return End{}, true // the derived resource itself
-			}
-			n := expand(name, res, each, next)
-			// A name that cannot be filled is an access that does not exist: the last
-			// step has no next, so there is no queue for it to send to. Dropped, not
-			// emitted half-written.
-			if n == "" || strings.ContainsAny(n, "{}") {
-				return End{}, false
-			}
-			sc := expand(scope, res, each, next)
-			if strings.ContainsAny(sc, "{}") {
-				sc = "" // an unfillable scope is the absent one: wherever the resource lives
-			}
-			return End{Kind: kind, Name: n, Scope: sc}, true
+// into/produced are the kind and name of the resource this lowering makes, which a write
+// needs when it points AT it: a value written into somebody else's resource that names
+// this one has to name it, and only the plan knows what it ended up called.
+func writes(ws []write, into, produced string, res, each, next map[string]any) []Written {
+	self := strings.NewReplacer("{into}", into, "{produced}", produced)
+	out := make([]Written, 0, len(ws))
+	for _, w := range ws {
+		value := expand(self.Replace(w.value), res, each, next)
+		// A value that cannot be filled is a write that does not happen: the last step
+		// has no next, so there is no queue for it to send to. Dropped, not written
+		// half-finished.
+		if value == "" || strings.ContainsAny(value, "{}") {
+			continue
 		}
 
-		from, ok := end(r.fromKind, r.fromName, r.fromScope)
-		if !ok {
+		on := End{}
+		if w.onKind != "" {
+			name := expand(self.Replace(w.onName), res, each, next)
+			if name == "" || strings.ContainsAny(name, "{}") {
+				continue
+			}
+			scope := expand(w.onScope, res, each, next)
+			if strings.ContainsAny(scope, "{}") {
+				scope = "" // an unfillable scope is the absent one: wherever it lives
+			}
+			on = End{Kind: w.onKind, Name: name, Scope: scope}
+		}
+
+		path := make([]string, 0, len(w.path))
+		ok := true
+		for _, seg := range w.path {
+			filled := expand(self.Replace(seg), res, each, next)
+			if filled == "" || strings.ContainsAny(filled, "{}") {
+				ok = false
+				break
+			}
+			path = append(path, filled)
+		}
+		if !ok || len(path) == 0 {
 			continue
 		}
-		to, ok := end(r.toKind, r.toName, r.toScope)
-		if !ok {
-			continue
-		}
-		out = append(out, Access{Op: r.op, From: from, To: to})
+
+		out = append(out, Written{Value: value, On: on, Path: path})
 	}
 	if len(out) == 0 {
 		return nil
@@ -942,6 +938,10 @@ func unknownInputs(root, iter *engine.Node, l Lowering) []string {
 	seen := map[string]bool{}
 	check := func(tmpl string) {
 		for _, key := range templateKeys(tmpl) {
+			// what the lowering produces, which the plan fills in
+			if key == "into" || key == "produced" {
+				continue
+			}
 			field, scope := key, has
 			if rest, ok := strings.CutPrefix(key, "each.next."); ok {
 				field, scope = rest, each
@@ -964,11 +964,13 @@ func unknownInputs(root, iter *engine.Node, l Lowering) []string {
 	for _, tmpl := range l.set {
 		check(tmpl)
 	}
-	for _, r := range l.reaches {
-		check(r.fromName)
-		check(r.fromScope)
-		check(r.toName)
-		check(r.toScope)
+	for _, w := range l.writes {
+		check(w.value)
+		check(w.onName)
+		check(w.onScope)
+		for _, seg := range w.path {
+			check(seg)
+		}
 	}
 	sort.Strings(unknown)
 	return unknown
@@ -1006,38 +1008,6 @@ func loweringCycles(root *engine.Node) []string {
 	}
 	sort.Strings(found)
 	return slices.Compact(found)
-}
-
-// unknownVerbs is every verb a lowering asks for that the kind it is asked of does not
-// have.
-func unknownVerbs(root *engine.Node, l Lowering) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, r := range l.reaches {
-		kind := r.toKind
-		if kind == "" {
-			kind = l.into // the derived resource itself is what is reached
-		}
-		if seen[kind+"\x00"+r.op] {
-			continue
-		}
-		seen[kind+"\x00"+r.op] = true
-
-		iter := iterOfKind(root, kind)
-		if iter == nil {
-			continue // an unknown kind is already reported, once, above
-		}
-		ops := engine.VerbsOf(iter)
-		if ops == nil {
-			out = append(out, "\""+r.op+"\" on "+kind+", which nothing may reach")
-			continue
-		}
-		if !slices.Contains(ops.Names(), r.op) {
-			out = append(out, "\""+r.op+"\" on "+kind+", which has "+strings.Join(ops.Names(), ", "))
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 // templateKeys is every `{…}` in a template.
@@ -1103,14 +1073,6 @@ func CheckLowerings(root *engine.Node) []string {
 			// of them declared, so nothing arrives from somewhere a reader cannot see.
 			for _, unknown := range unknownInputs(root, iter, l) {
 				problems = append(problems, "lowering into "+l.into+" reads "+unknown+", which is not a field of what it lowers")
-			}
-			// EVERY OP MUST BE ONE THE TARGET KIND HAS. What a lowering produces is the
-			// entry an author would have written, and an entry naming a verb the kind
-			// does not declare is not config — it compiles nowhere and grants nothing.
-			// The prose verbs this replaced ("consumed by") were exactly that, which is
-			// why they could never be emitted.
-			for _, bad := range unknownVerbs(root, l) {
-				problems = append(problems, "lowering into "+l.into+" asks for "+bad)
 			}
 		}
 		return false

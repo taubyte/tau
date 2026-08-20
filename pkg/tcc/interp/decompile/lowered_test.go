@@ -86,13 +86,23 @@ func record(t *testing.T) Object {
 
 	rec := object.New[object.Refrence]()
 	assert.NilError(t, rec.Child("resources").Add(resources))
+	// A path and a value, and nothing about what either means: the same record works for
+	// a vocabulary that never heard of an access entry.
 	rec.Set("entries", []any{
-		map[string]any{"on": fnCheckout, "kind": "queue", "name": "checkout_reserve", "op": "receive", "from": workflow},
-		map[string]any{"on": fnCheckout, "kind": "queue", "name": "checkout_charge", "op": "send", "from": workflow},
-		map[string]any{"on": fnAudit, "kind": "cache", "name": "orders", "op": "get", "from": workflow},
-		map[string]any{"on": fnEu, "kind": "queue", "name": "eu_reserve", "op": "receive", "from": workflow},
+		written(fnCheckout, "receive", "queue", "checkout_reserve", "ops"),
+		written(fnCheckout, "send", "queue", "checkout_charge", "ops"),
+		written(fnAudit, "get", "cache", "orders", "ops"),
+		written(fnEu, "receive", "queue", "eu_reserve", "ops"),
 	})
 	return rec
+}
+
+func written(on, value string, path ...string) map[string]any {
+	segs := make([]any, 0, len(path))
+	for _, p := range path {
+		segs = append(segs, p)
+	}
+	return map[string]any{"on": on, "path": segs, "value": value, "from": workflow}
 }
 
 func group(t *testing.T, parent Object, key string) Object {
@@ -130,34 +140,10 @@ func gone(t *testing.T, o Object, path ...string) {
 	assert.Assert(t, err != nil, "expected %v to be gone", path)
 }
 
-// testRoot is a schema that says what an access entry looks like, which is how the
-// revoking half finds the field to take an op out of: a `queue` group under a `function`,
-// whose entries carry a verb list marked with AreVerbs. A real vocabulary states the same
-// thing — this one is small enough to read.
-func testRoot() *engine.Node {
-	// one access group per kind something can reach, which is what a vocabulary generates
-	access := func(kind string) *engine.Node {
-		return engine.DefineGroup(kind, engine.DefineIter([]*engine.Attribute{
-			engine.StringSlice("ops", engine.AreVerbs(kind)),
-			engine.String("namespace"),
-		}))
-	}
-	return engine.Root(
-		[]*engine.Attribute{engine.String("id")},
-		engine.DefineGroup("function", engine.DefineIter(
-			[]*engine.Attribute{engine.String("id"), engine.String("name")},
-			engine.Nested(access("queue")),
-			engine.Nested(access("cache")),
-		)),
-		engine.DefineGroup("queue", engine.DefineIter([]*engine.Attribute{engine.String("id")})),
-		engine.DefineGroup("cache", engine.DefineIter([]*engine.Attribute{engine.String("id")})),
-	)
-}
-
 func run(t *testing.T, obj Object, keep bool) Object {
 	t.Helper()
 	ctx := transform.NewContext[object.Refrence](context.Background())
-	out, err := transform.Pipe(ctx, obj, unwrapEnvelope(), &authoredOnly{lowered: loweredOf(obj), root: testRoot(), keep: keep})
+	out, err := transform.Pipe(ctx, obj, unwrapEnvelope(), &authoredOnly{lowered: loweredOf(obj), keep: keep})
 	assert.NilError(t, err)
 	return out
 }
@@ -180,7 +166,7 @@ func TestAuthoredOnly_DropsWhatNobodyWrote(t *testing.T) {
 	// An op that was handed over comes back off; one the author wrote beside it stays,
 	// so the entry survives.
 	reserve := at(t, out, "function", fnCheckout, "queue", "checkout_reserve")
-	assert.DeepEqual(t, ops(reserve, "ops"), []string{"send"})
+	assert.DeepEqual(t, values(reserve, "ops"), []string{"send"})
 
 	// An entry whose every op was handed over goes, and the block it was in stays because
 	// another entry is still in it.
@@ -209,7 +195,7 @@ func TestAuthoredOnly_WithGeneratedKeepsEverything(t *testing.T) {
 	at(t, out, "namespace", nsEu, "queue", qEu)
 
 	reserve := at(t, out, "function", fnCheckout, "queue", "checkout_reserve")
-	assert.DeepEqual(t, ops(reserve, "ops"), []string{"receive", "send"})
+	assert.DeepEqual(t, values(reserve, "ops"), []string{"receive", "send"})
 	at(t, out, "function", fnCheckout, "queue", "checkout_charge")
 	at(t, out, "function", fnAudit, "cache", "orders")
 	at(t, out, "namespace", nsEu, "function", fnEu, "queue", "eu_reserve")

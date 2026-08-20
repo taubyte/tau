@@ -41,9 +41,9 @@ var (
 	Named            = interp.Named
 	Carries          = interp.Carries
 	Sets             = interp.Sets
-	Reaches          = interp.Reaches
-	From             = interp.From
-	To               = interp.To
+	Writes           = interp.Writes
+	On               = interp.On
+	At               = interp.At
 	Doc              = engine.Doc
 	Duration         = engine.Duration
 	Either           = engine.Either

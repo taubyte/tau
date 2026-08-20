@@ -3,6 +3,7 @@ package schema_test
 import (
 	"context"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/spf13/afero"
@@ -93,11 +94,11 @@ func TestObjectRecordsWhatItLowered(t *testing.T) {
 	// of what has to be taken back off.
 	byWhat := map[string]string{}
 	for _, g := range added {
-		byWhat[g.Kind+"/"+g.Name+" "+g.Op] = g.On
+		byWhat[strings.Join(g.Path, "/")+" "+g.Value] = g.On
 	}
-	assert.Equal(t, byWhat["queue/checkout_reserve receive"], idOf(t, flat, "function", "reserve_stock"))
-	assert.Equal(t, byWhat["queue/checkout_charge send"], idOf(t, flat, "function", "reserve_stock"))
-	assert.Equal(t, byWhat["queue/checkout_charge receive"], idOf(t, flat, "function", "charge_card"))
+	assert.Equal(t, byWhat["queue/checkout_reserve/ops receive"], idOf(t, flat, "function", "reserve_stock"))
+	assert.Equal(t, byWhat["queue/checkout_charge/ops send"], idOf(t, flat, "function", "reserve_stock"))
+	assert.Equal(t, byWhat["queue/checkout_charge/ops receive"], idOf(t, flat, "function", "charge_card"))
 
 	// A resource that becomes nothing has no record and answers with nothing.
 	none, alsoNone := schema.Became(flat, idOf(t, flat, "function", "checkout"))
@@ -287,7 +288,7 @@ func TestAnAuthoredOpIsNotRecordedAsGranted(t *testing.T) {
 
 	fnID := idOf(t, obj.Flat(), "function", "relay_own")
 	for _, g := range interp.LoweredOf(obj.Flat()).Entries {
-		assert.Assert(t, !(g.On == fnID && g.Op == "receive"),
+		assert.Assert(t, !(g.On == fnID && g.Value == "receive"),
 			"the compiler claims it granted an op the author wrote: %+v", g)
 	}
 }

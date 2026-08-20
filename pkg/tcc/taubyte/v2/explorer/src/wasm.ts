@@ -86,8 +86,8 @@ export interface Relation {
 export interface LoweredProject {
   /** Every produced resource, by its compiled id, and the authored resource it came from. */
   produced: Record<string, { from: string; at: string; kind: string; name: string; scope: string }>;
-  /** Every access entry a lowering added to a resource somebody DID write. */
-  granted: { on: string; kind: string; name: string; op: string; from: string }[];
+  /** Every value a lowering wrote into a resource somebody DID write: a path and a value. */
+  granted: { on: string; path: string[]; value: string; from: string }[];
   /** The project AS IT RUNS: the same shapes as the authored one, because it is one. */
   resources: Instance[];
   relations: Relation[];
