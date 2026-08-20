@@ -27,11 +27,14 @@ import (
 // (matching the frozen scope rules), and it MUST run after the CompileDriver has
 // populated the name->id index — a group's names only resolve once it is indexed.
 func AttachAll(root *engine.Node) transform.Transformer[object.Refrence] {
-	return utils.Global(containerKey(root), &attachAll{groups: root.Children})
+	_, nameField := engine.IdentityOf(root)
+	return utils.Global(containerKey(root), &attachAll{groups: root.Children, nameField: nameField})
 }
 
 type attachAll struct {
-	groups []*engine.Node
+	// what the schema calls a resource's name, for the index the resolver reads
+	nameField string
+	groups    []*engine.Node
 }
 
 func (a *attachAll) Process(ct transform.Context[object.Refrence], scope object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
@@ -67,7 +70,7 @@ func (a *attachAll) Process(ct transform.Context[object.Refrence], scope object.
 		}
 
 		for _, instName := range groupObj.Children() {
-			if err := attachFromTags(ct, groupObj.Child(instName), attachKey, prefix); err != nil {
+			if err := attachFromTags(ct, groupObj.Child(instName), attachKey, prefix, a.nameField); err != nil {
 				return nil, fmt.Errorf("%s %s: %w", groupKey, instName, err)
 			}
 		}
@@ -95,7 +98,7 @@ func attachesToAllKey(groups []*engine.Node) string {
 // project-root scope, via ResolveNamesToId) and writes the id list to the
 // resource's attachKey wire field when non-empty. Mirrors attachSmartOpsFromTags:
 // the set happens only for a non-empty list and the tags are not modified.
-func attachFromTags(ct transform.Context[object.Refrence], sel object.Selector[object.Refrence], attachKey, prefix string) error {
+func attachFromTags(ct transform.Context[object.Refrence], sel object.Selector[object.Refrence], attachKey, prefix, nameField string) error {
 	val, err := sel.Get("tags")
 	if err != nil || val == nil {
 		return nil
@@ -116,7 +119,7 @@ func attachFromTags(ct transform.Context[object.Refrence], sel object.Selector[o
 		return nil
 	}
 
-	ids, err := utils.ResolveNamesToId(ct, attachKey, names)
+	ids, err := utils.ResolveNamesToId(ct, attachKey, names, nameField)
 	if err != nil {
 		return fmt.Errorf("resolving %s tags failed with %w", attachKey, err)
 	}

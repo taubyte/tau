@@ -265,7 +265,11 @@ func cloudsGroup() *Node {
 var taubyteRoot = Root(
 	taubyteRootAttributes(),
 	append(append([]*Node{}, TaubyteRessources...), applicationsGroup(), cloudsGroup())...,
-).With(Singular("Project"))
+).With(Singular("Project"),
+	// A resource is stored under its `id` and called by the name of the document it was
+	// written in. Said here because the interpreter has to know it, and a layer that must
+	// not know a vocabulary cannot be the place it is written down.
+	Identity("id", "name"))
 
 var TaubyteProject = SchemaDefinition(taubyteRoot)
 

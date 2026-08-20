@@ -40,16 +40,6 @@ type Layout struct {
 	Scope    string // "namespace/{name}"
 }
 
-// EntryShape is how a vocabulary writes one resource's access to another: the field holding
-// the verbs, and the field saying where the target is. A lowering produces those entries,
-// so it has to write them the way this vocabulary reads them — and the names are the
-// vocabulary's, not the interpreter's. Hardcoding "ops" and "namespace" here made the
-// generic layer know one vocabulary, which is the one thing it must never do.
-type EntryShape struct {
-	Ops       string
-	Namespace string
-}
-
 // lower compiles the project again over the lowered view, and records beside the result
 // what was lowered — so the object says which of its resources nobody wrote, and
 // decompile can stop at what somebody did.
@@ -57,11 +47,8 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	if c.layout.Resource == "" {
 		return nil, nil, errors.New("interp: this schema declares lowerings but no layout, so nothing can be lowered — see WithLayout")
 	}
-	if c.access.Ops == "" {
-		return nil, nil, errors.New("interp: this schema declares lowerings but no access shape, so an entry cannot be written — see WithAccess")
-	}
 
-	docs, adds := placements(c.compileRoot, authored.Flat(), c.layout, c.access)
+	docs, adds := placements(c.compileRoot, authored.Flat(), c.layout)
 	if len(docs) == 0 {
 		return authored, validations, nil
 	}
@@ -70,13 +57,13 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	// editor creates a document it is asked to write into, so placing the entry anyway
 	// produced an empty function with a queue block and no code, and the compile failed
 	// with "required attribute 'id'" against a file nobody wrote.
-	adds = onlyOnWhatExists(authored.Flat(), docs, adds)
+	adds = onlyOnWhatExists(c.compileRoot, authored.Flat(), docs, adds)
 
 	// A NAME A LOWERING TAKES MUST BE FREE. Writing a produced resource over an authored
 	// one replaced somebody's config with the compiler's, and the compile carried on: the
 	// audit reported the collision afterwards, against an object that had already lost
 	// the file it was reporting about.
-	if err := free(authored.Flat(), docs); err != nil {
+	if err := free(c.compileRoot, authored.Flat(), docs); err != nil {
 		return nil, nil, err
 	}
 
@@ -105,7 +92,7 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 	// `ops: [receive]` by hand and a lowering that grants the same op are one entry, and
 	// a record claiming the compiler put it there would have decompile delete somebody's
 	// config on the way back out.
-	if err := record(obj, recordOf(obj, docs, added)); err != nil {
+	if err := record(obj, recordOf(c.compileRoot, obj, docs, added)); err != nil {
 		return nil, nil, err
 	}
 	return obj, moreValidations, nil
@@ -113,7 +100,7 @@ func (c *Compiler) lower(ctx context.Context, authored Object, validations []Nex
 
 // free reports the first name a lowering takes that is not its to take: one an author
 // already used, or one another part of the same lowering already produced.
-func free(flat map[string]any, docs []placement) error {
+func free(root *engine.Node, flat map[string]any, docs []placement) error {
 	taken := map[string]string{}
 	for _, d := range docs {
 		key := d.scope + "\x00" + d.kind + "\x00" + d.name
@@ -123,6 +110,7 @@ func free(flat map[string]any, docs []placement) error {
 		taken[key] = d.from
 	}
 
+	_, nameField := engine.IdentityOf(root)
 	var walk func(scope map[string]any, at string)
 	var err error
 	walk = func(scope map[string]any, at string) {
@@ -136,7 +124,7 @@ func free(flat map[string]any, docs []placement) error {
 				if !ok {
 					continue
 				}
-				name, _ := res[engine.FieldName].(string)
+				name, _ := res[nameField].(string)
 				if name == "" {
 					continue
 				}
@@ -186,7 +174,7 @@ func (c *Compiler) view(docs []placement, adds []granted) (afero.Fs, []granted, 
 	}
 	added := make([]granted, 0, len(adds))
 	for _, g := range adds {
-		was, err := grant(seer, g, c.access)
+		was, err := grant(seer, g)
 		if err != nil {
 			return nil, nil, fmt.Errorf("granting %s on %s/%s: %w", g.op, g.on.Kind, g.on.Name, err)
 		}
@@ -216,16 +204,16 @@ func at(seer *yaseer.Seer, address []string) *yaseer.Query {
 // It reports whether it ADDED anything. An op the author already wrote is left alone and
 // is not reported — it is theirs, and a record saying otherwise would have decompile take
 // it back out of their repository.
-func grant(seer *yaseer.Seer, g granted, shape EntryShape) (bool, error) {
+func grant(seer *yaseer.Seer, g granted) (bool, error) {
 	entry := at(seer, g.at).Get(g.kind).Get(g.name)
-	if g.where != "" {
+	if g.where != "" && g.whereField != "" {
 		// Only when nobody has said where to look. An author who wrote a namespace on
 		// this entry meant it, and replacing it would point their access somewhere else
 		// without a word.
 		var where string
-		entry.Get(shape.Namespace).Value(&where)
+		entry.Get(g.whereField).Value(&where)
 		if where == "" {
-			if err := entry.Get(shape.Namespace).Set(g.where).Commit(); err != nil {
+			if err := entry.Get(g.whereField).Set(g.where).Commit(); err != nil {
 				return false, err
 			}
 		}
@@ -234,18 +222,15 @@ func grant(seer *yaseer.Seer, g granted, shape EntryShape) (bool, error) {
 	var have []string
 	// An absent list is not an error: this is the first op on a target nobody has
 	// written about.
-	entry.Get(shape.Ops).Value(&have)
+	entry.Get(g.verbsField).Value(&have)
 	if slices.Contains(have, g.op) {
 		return false, nil
 	}
-	return true, entry.Get(shape.Ops).Set(append(have, g.op)).Commit()
+	return true, entry.Get(g.verbsField).Set(append(have, g.op)).Commit()
 }
 
 // Layout is where this compiler's vocabulary keeps its documents.
 func (c *Compiler) Layout() Layout { return c.layout }
-
-// Access is how it writes one resource reaching another.
-func (c *Compiler) Access() EntryShape { return c.access }
 
 // viewOptions is everything about this compiler except where it reads from.
 func (c *Compiler) viewOptions() []Option {

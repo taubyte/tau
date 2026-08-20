@@ -1567,7 +1567,11 @@ var _ = func() any { attachAccess(); return nil }()
 var v2Root = Root(
 	rootAttributes(),
 	append(append([]*Node{}, V2Resources...), namespacesGroup(MaxNamespaceDepth))...,
-).With(Singular("Project"), Leaf("project"), Strict())
+).With(Singular("Project"), Leaf("project"), Strict(),
+	// A resource is stored under its `id` and called by the name of the document it was
+	// written in — the interpreter's two field names, which are this vocabulary's to
+	// choose and therefore this vocabulary's to state.
+	Identity("id", "name"))
 
 var TaubyteProject = SchemaDefinition(v2Root)
 

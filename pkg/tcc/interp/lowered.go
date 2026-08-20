@@ -126,7 +126,7 @@ func str(m map[string]any, key string) string {
 // from the plan — the plan knows it as a name in a scope, which is the same lookup the
 // compiler already did, and doing it again here against the result is the only way to be
 // sure the two agree.
-func recordOf(obj Object, docs []placement, adds []granted) Lowered {
+func recordOf(root *engine.Node, obj Object, docs []placement, adds []granted) Lowered {
 	l := Lowered{Resources: make(map[string]Provenance, len(docs))}
 	for _, d := range docs {
 		l.Resources[d.id] = Provenance{From: d.from, At: d.part, Kind: d.kind, Name: d.name, Scope: d.scope}
@@ -135,6 +135,7 @@ func recordOf(obj Object, docs []placement, adds []granted) Lowered {
 	// Scopes nest, and a name is only unique inside one: keyed without the scope, an
 	// entry on `shop/eu/function/relay` was recorded against whichever `relay` the map
 	// happened to yield.
+	_, nameField := engine.IdentityOf(root)
 	byName := map[string]string{}
 	flat := obj.Flat()
 	if inner, ok := flat["object"].(map[string]any); ok {
@@ -152,7 +153,7 @@ func recordOf(obj Object, docs []placement, adds []granted) Lowered {
 				if !ok {
 					continue
 				}
-				name, _ := res[engine.FieldName].(string)
+				name, _ := res[nameField].(string)
 				if name == "" {
 					continue
 				}

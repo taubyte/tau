@@ -86,13 +86,14 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 	// index (no Resource descriptor, matching pass1/applications.go), then its
 	// nested resource groups are processed in that instance's scope.
 	if iter.Group && len(iter.Children) > 0 {
+		idField, nameField := engine.IdentityOf(d.root)
 		for _, instName := range groupObj.Children() {
 			sel := groupObj.Child(instName)
 			instObj, err := sel.Object()
 			if err != nil {
 				return fmt.Errorf("fetching %s/%s failed with %w", groupKey, instName, err)
 			}
-			if _, err := utils.RenameById(sel, instName); err != nil {
+			if _, err := utils.RenameById(sel, instName, idField, nameField); err != nil {
 				return fmt.Errorf("promoting %s %s failed with %w", groupKey, instName, err)
 			}
 			if err := d.processGroups(ct.Fork(instObj), instObj, iter.Children); err != nil {
@@ -105,19 +106,23 @@ func (d *CompileDriver) processGroup(ct transform.Context[object.Refrence], scop
 	// A resource group: per-instance attribute projections, then id-promotion,
 	// then (for Resource groups) the name->id index.
 	_, isResource := iter.Meta["resource"].([4]string)
-	promote := hasAttr(iter, "id")
+	// WHICH ATTRIBUTE IS THE IDENTITY is the schema's to say (engine.Identity, on the
+	// root): a group whose iterator declares it is keyed by it, and the document's own
+	// name becomes the resource's.
+	idField, nameField := engine.IdentityOf(d.root)
+	promote := idField != "" && hasAttr(iter, idField)
 	for _, instName := range groupObj.Children() {
 		sel := groupObj.Child(instName)
 		if err := applyInstanceOps(sel, iter.Attributes); err != nil {
 			return fmt.Errorf("%s %s: %w", groupKey, instName, err)
 		}
 		if promote {
-			idStr, err := utils.RenameById(sel, instName)
+			idStr, err := utils.RenameById(sel, instName, idField, nameField)
 			if err != nil {
 				return fmt.Errorf("promoting %s %s failed with %w", groupKey, instName, err)
 			}
 			if isResource {
-				if err := utils.IndexById(ct, groupKey, instName, idStr); err != nil {
+				if err := utils.IndexById(ct, groupKey, instName, idStr, nameField); err != nil {
 					return fmt.Errorf("indexing %s %s failed with %w", groupKey, instName, err)
 				}
 			}

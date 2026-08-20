@@ -36,7 +36,6 @@ type Compiler struct {
 	baseFs   afero.Fs
 	basePath string
 	layout   Layout
-	access   EntryShape
 }
 
 var DefaultBranch = "main"

@@ -112,9 +112,10 @@ func Remainder(root *engine.Node, kind string) []string {
 		carried[c.In+"\x00"+c.Field] = true
 	}
 
+	idField, nameField := engine.IdentityOf(root)
 	var out []string
 	for _, a := range iter.Attributes {
-		if a.Name == "name" || a.Name == "id" || carried["\x00"+a.Name] {
+		if a.Name == nameField || a.Name == idField || carried["\x00"+a.Name] {
 			continue
 		}
 		out = append(out, a.Name)

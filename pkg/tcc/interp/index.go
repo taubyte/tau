@@ -294,7 +294,11 @@ func (d *IndexDriver) Process(ct transform.Context[object.Refrence], o object.Ob
 		if g == nil || len(g.Children) == 0 {
 			continue
 		}
-		gi := &groupIndexer{groupKey: key, iter: g.Children[0], branch: d.branch, container: container}
+		idField, nameField := engine.IdentityOf(d.root)
+		gi := &groupIndexer{
+			groupKey: key, iter: g.Children[0], branch: d.branch, container: container,
+			idField: idField, nameField: nameField,
+		}
 		pipe = append(pipe, utils.Sub(utils.Global(container, gi), "object"))
 	}
 
@@ -315,10 +319,13 @@ func findGroup(root *engine.Node, key string) *engine.Node {
 // every pass4/<resource>.go file: it computes the identity/IndexValue/Lookup each
 // pass4 file computed by hand, then runs the group's declared closures.
 type groupIndexer struct {
-	groupKey  string
-	iter      *engine.Node
-	branch    string
-	container string
+	// what the schema calls a resource's id and its name (engine.Identity): an index is
+	// keyed by one and carries the other, and neither word is this package's
+	idField, nameField string
+	groupKey           string
+	iter               *engine.Node
+	branch             string
+	container          string
 }
 
 func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
@@ -353,7 +360,7 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 		return nil, fmt.Errorf("fetching %s config failed with %w", gi.groupKey, err)
 	}
 
-	projectId, err := configRoot.GetString("id")
+	projectId, err := configRoot.GetString(gi.idField)
 	if err != nil {
 		return nil, fmt.Errorf("project id is not a string: %w", err)
 	}
@@ -378,7 +385,7 @@ func (gi *groupIndexer) Process(ct transform.Context[object.Refrence], config ob
 			return nil, fmt.Errorf("fetching %s object for %s failed with %w", gi.groupKey, id, err)
 		}
 
-		name, _ := instObj.GetString("name")
+		name, _ := instObj.GetString(gi.nameField)
 
 		indexValue, err := methods.IndexValue(gi.branch, projectId, appId, id, common.PathVariable(gi.groupKey))
 		if err != nil {

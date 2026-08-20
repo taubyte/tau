@@ -11,20 +11,30 @@ import (
 // to describe the layout — does not state.
 var NodeDefaultSeerLeaf = "config"
 
-// THE IDENTITY EVERY RESOURCE CARRIES, and the only two field names the generic layer
-// knows. They are not a vocabulary's choice: the interpreter keys a compiled resource by
-// its id and finds it again by its name, so a schema that called them something else
-// would not compile at all. Every other field name comes from the schema.
+// IDENTITY: which attribute is a resource's id, and which field receives the name of the
+// document it was written in.
 //
-// Named here because a contract repeated as a string literal in twelve places is a
-// contract nobody can find, and because the next person grepping for one of them should
-// land on this paragraph.
-const (
-	// FieldID is the key a resource is stored under.
-	FieldID = "id"
-	// FieldName is what it is called, which is the name references resolve against.
-	FieldName = "name"
-)
+// The interpreter keys a compiled resource by the first and resolves references against
+// the second, so it has to know both — and it used to know them as the string literals
+// "id" and "name", in a dozen places, which is one vocabulary's choice written into the
+// layer that must not have one. Naming them as constants only made the assumption easier
+// to find; the schema says it now.
+//
+// Stated ONCE, on the root, because it is a convention of the whole vocabulary rather
+// than of any kind in it.
+func Identity(id, name string) NodeOption {
+	return GroupAnnotate("identity", [2]string{id, name})
+}
+
+// IdentityOf reads it back. Empty when the schema does not say, which means no resource
+// is keyed by an id and none is given a name — a schema of plain documents.
+func IdentityOf(root *Node) (id, name string) {
+	if root == nil {
+		return "", ""
+	}
+	pair, _ := root.Meta["identity"].([2]string)
+	return pair[0], pair[1]
+}
 
 type instance struct {
 	schema *schemaDef

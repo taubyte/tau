@@ -371,10 +371,13 @@ func (d Derived) String() string { return d.Kind + "/" + d.Name + " (" + d.Why +
 
 // authored is the resource as it would have been written: every field at the path its
 // attribute declares, every access the resource itself grants, and its deterministic id.
-func authored(root *engine.Node, d Derived, shape EntryShape) map[string]any {
+func authored(root *engine.Node, d Derived) map[string]any {
 	tree := map[string]any{}
-	if d.ID != "" {
-		tree[engine.FieldID] = d.ID
+	// The id goes in under whatever this vocabulary calls it: a produced resource is
+	// stored under a deterministic id like any other, and the field it states that in is
+	// the schema's to name.
+	if idField, _ := engine.IdentityOf(root); idField != "" && d.ID != "" {
+		tree[idField] = d.ID
 	}
 
 	iter := iterOfKind(root, d.Kind)
@@ -389,6 +392,10 @@ func authored(root *engine.Node, d Derived, shape EntryShape) map[string]any {
 		if !g.From.Self() {
 			continue
 		}
+		verbs, where := accessFields(root, d.Kind, g.To.Kind)
+		if verbs == "" {
+			continue // this vocabulary does not say how one is written; see AreVerbs
+		}
 		block, _ := tree[g.To.Kind].(map[string]any)
 		if block == nil {
 			block = map[string]any{}
@@ -399,15 +406,33 @@ func authored(root *engine.Node, d Derived, shape EntryShape) map[string]any {
 			entry = map[string]any{}
 			block[g.To.Name] = entry
 		}
-		if g.To.Scope != "" {
-			entry[shape.Namespace] = g.To.Scope
+		if g.To.Scope != "" && where != "" {
+			entry[where] = g.To.Scope
 		}
-		ops, _ := entry[shape.Ops].([]string)
+		ops, _ := entry[verbs].([]string)
 		if !slices.Contains(ops, g.Op) {
-			entry[shape.Ops] = append(ops, g.Op)
+			entry[verbs] = append(ops, g.Op)
 		}
 	}
 	return tree
+}
+
+// accessFields is how THIS vocabulary writes "resource of kind `on` reaches a `target`":
+// the access entry sits in a nested group of the accessor's kind, keyed by the target's
+// kind, and the entry's own attributes say which of them holds the verbs and which says
+// where to look. Nothing here knows a field name.
+func accessFields(root *engine.Node, on, target string) (verbs, namespace string) {
+	iter := iterOfKind(root, on)
+	if iter == nil {
+		return "", ""
+	}
+	for _, child := range iter.Children {
+		if key, _ := child.Match.(string); key != target || len(child.Children) == 0 {
+			continue
+		}
+		return engine.AccessFields(child.Children[0])
+	}
+	return "", ""
 }
 
 // authoredPath is where a field is WRITTEN, which is its attribute's Path — not its
@@ -587,6 +612,8 @@ func setFor(root *engine.Node, into string, fields map[string]string, res, each,
 }
 
 func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[string]any, scope string, src Source, via []string) []Derived {
+	// What a thing is CALLED is the schema's word, and a list element uses it too.
+	_, nameField := engine.IdentityOf(root)
 	if l.when != "" {
 		if v, ok := lookup(l.when, res, nil, nil); !ok || v == "" {
 			return nil
@@ -619,7 +646,7 @@ func plan(root *engine.Node, l Lowering, kind, name, srcID string, res map[strin
 		at := src
 		at.Path = l.perEach + "/" + strconv.Itoa(i)
 		at.Part = el
-		part, _ := el["name"].(string)
+		part, _ := el[nameField].(string)
 		if part == "" {
 			part = at.Path // no name of its own: its position is the only handle
 		}
@@ -653,6 +680,7 @@ func nest(root *engine.Node, parents []Derived, depth int) []Derived {
 	if depth >= MaxLoweringDepth || len(parents) == 0 {
 		return nil
 	}
+	_, nameField := engine.IdentityOf(root)
 	var out []Derived
 	for _, p := range parents {
 		iter := iterOfKind(root, p.Kind)
@@ -664,7 +692,7 @@ func nest(root *engine.Node, parents []Derived, depth int) []Derived {
 		if res == nil {
 			res = map[string]any{}
 		}
-		res["name"] = p.Name
+		res[nameField] = p.Name
 		via := append(append([]string{}, p.Via...), p.Kind+"/"+p.Name)
 		for _, l := range ls {
 			out = append(out, plan(root, l, p.Kind, p.Name, p.ID, res, p.Scope, p.Source, via)...)
@@ -823,6 +851,7 @@ func lookup(key string, res, each, next map[string]any) (string, bool) {
 // container is read off the schema (containerKey), never named here.
 func walkResources(root *engine.Node, scope map[string]any, at string, fn func(kind string, iter *engine.Node, id, name string, res map[string]any, at string)) {
 	container := containerKey(root)
+	_, nameField := engine.IdentityOf(root)
 	for _, g := range root.Children {
 		key, _ := g.Match.(string)
 		if key == "" || len(g.Children) == 0 {
@@ -838,7 +867,7 @@ func walkResources(root *engine.Node, scope map[string]any, at string, fn func(k
 			if !ok {
 				continue
 			}
-			name, _ := res["name"].(string)
+			name, _ := res[nameField].(string)
 			if key == container {
 				child := at
 				if name != "" {
@@ -884,15 +913,18 @@ func unsatisfied(root *engine.Node, l Lowering) []string {
 
 // unknownInputs names every template reference a lowering makes to a field that does
 // not exist — on the resource, or on the elements of the list it iterates.
-func unknownInputs(iter *engine.Node, l Lowering) []string {
+func unknownInputs(root, iter *engine.Node, l Lowering) []string {
 	has := map[string]bool{}
 	for _, a := range iter.Attributes {
 		has[a.Name] = true
 	}
-	// the identity every resource carries, which the interpreter sets rather than the
-	// kind declaring it (engine.FieldID / engine.FieldName)
-	for _, id := range []string{engine.FieldName, engine.FieldID} {
-		has[id] = true
+	// the identity every resource carries, which the interpreter sets rather than the kind
+	// declaring it — and which the schema names (engine.Identity)
+	idField, nameField := engine.IdentityOf(root)
+	for _, id := range []string{idField, nameField} {
+		if id != "" {
+			has[id] = true
+		}
 	}
 
 	each := map[string]bool{}
@@ -976,11 +1008,6 @@ func loweringCycles(root *engine.Node) []string {
 	return slices.Compact(found)
 }
 
-// opNamer is a kind's verb set, asked for its names. The vocabulary declares what a verb
-// IS — an effect class, whether it is delivered — and none of that is the interpreter's;
-// what it needs is whether a name is one of them.
-type opNamer interface{ Names() []string }
-
 // unknownOps is every op a lowering asks for that the kind it is asked of does not have.
 func unknownOps(root *engine.Node, l Lowering) []string {
 	var out []string
@@ -999,8 +1026,8 @@ func unknownOps(root *engine.Node, l Lowering) []string {
 		if iter == nil {
 			continue // an unknown kind is already reported, once, above
 		}
-		ops, declared := iter.Meta["ops"].(opNamer)
-		if !declared {
+		ops := engine.OpsOf(iter)
+		if ops == nil {
 			out = append(out, "\""+r.op+"\" on "+kind+", which nothing may reach")
 			continue
 		}
@@ -1073,7 +1100,7 @@ func CheckLowerings(root *engine.Node) []string {
 			// It is also what makes the lowering reversible in the way that matters:
 			// what the shell becomes is computed from the shell's own attributes, all
 			// of them declared, so nothing arrives from somewhere a reader cannot see.
-			for _, unknown := range unknownInputs(iter, l) {
+			for _, unknown := range unknownInputs(root, iter, l) {
 				problems = append(problems, "lowering into "+l.into+" reads "+unknown+", which is not a field of what it lowers")
 			}
 			// EVERY OP MUST BE ONE THE TARGET KIND HAS. What a lowering produces is the

@@ -22,11 +22,11 @@ type (
 var DefaultBranch = interp.DefaultBranch
 
 func New(opts ...Option) (*interp.Compiler, error) {
-	// A lowering produces resources and the entries that reach them, and BOTH shapes are
-	// this vocabulary's answer rather than the interpreter's: where a resource lives, and
-	// what an access entry is called.
-	return interp.New(TaubyteProject, CompileRoot(),
-		append(opts, interp.WithLayout(layout()), interp.WithAccess(entryShape()))...)
+	// The layout goes in because a lowering produces resources, and where a resource lives
+	// is this vocabulary's answer rather than the interpreter's. What an access entry is
+	// called needs no option: the schema already marks both of its parts, and the lowering
+	// reads them there.
+	return interp.New(TaubyteProject, CompileRoot(), append(opts, interp.WithLayout(layout()))...)
 }
 
 // Validate runs the whole compile pipeline for diagnostics only, returning the
@@ -58,14 +58,6 @@ func AuditProject(ctx context.Context, r Resolver, opts ...Option) ([]Finding, e
 // compiled object, because lowering IS compiling.
 func Became(obj map[string]any, id string) ([]string, []interp.Granted) {
 	return interp.LoweredOf(obj).Of(id)
-}
-
-// entryShape is how this vocabulary writes one resource reaching another, in the
-// interpreter's terms. Read off AccessEntryShape, which the audit already reads, so the
-// two cannot disagree about what an entry is called.
-func entryShape() interp.EntryShape {
-	a := AccessEntryShape()
-	return interp.EntryShape{Ops: a.Ops, Namespace: a.Namespace}
 }
 
 // layout is where this vocabulary keeps its documents, in the interpreter's terms.
@@ -107,7 +99,5 @@ func DecompileToVirtual(fs afero.Fs, path string) decompile.Option {
 func WithGenerated() decompile.Option { return decompile.WithGenerated() }
 
 func NewDecompiler(o ...decompile.Option) (*decompile.Decompiler, error) {
-	// The entry shape goes in for the same reason it goes into the compiler: taking back
-	// an op a lowering added means knowing what this vocabulary calls them.
-	return decompile.New(TaubyteProject, CompileRoot(), append(o, decompile.WithAccess(entryShape()))...)
+	return decompile.New(TaubyteProject, CompileRoot(), o...)
 }

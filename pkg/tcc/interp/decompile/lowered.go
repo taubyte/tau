@@ -1,6 +1,7 @@
 package decompile
 
 import (
+	"github.com/taubyte/tau/pkg/tcc/engine"
 	"github.com/taubyte/tau/pkg/tcc/interp"
 	"github.com/taubyte/tau/pkg/tcc/object"
 	"github.com/taubyte/tau/pkg/tcc/transform"
@@ -32,10 +33,10 @@ import (
 // from its id to its name, and the record speaks in ids.
 type authoredOnly struct {
 	lowered interp.Lowered
-	// shape is what THIS vocabulary calls the parts of an access entry. Taking an op back
-	// off one means knowing which field holds them, and that name is not the
-	// interpreter's to assume.
-	shape interp.EntryShape
+	// root is the schema, which is where the parts of an access entry are found: taking
+	// an op back off one means knowing which field holds them, and that is the
+	// vocabulary's answer rather than this package's.
+	root *engine.Node
 	// keep is WithGenerated: the record still comes off, nothing else does.
 	keep bool
 }
@@ -76,7 +77,7 @@ func (a *authoredOnly) strip(o object.Object[object.Refrence], granted map[strin
 			continue
 		}
 		for _, g := range granted[key] {
-			revoke(child, g, a.shape)
+			revoke(child, g, a.root)
 		}
 		a.strip(child, granted)
 	}
@@ -86,7 +87,11 @@ func (a *authoredOnly) strip(o object.Object[object.Refrence], granted map[strin
 // whole target-kind block — with it when nothing of either is left. An empty `ops` is not
 // an entry that grants nothing, it is a document the schema rejects, and an empty block is
 // a key the author never typed.
-func revoke(res object.Object[object.Refrence], g interp.Granted, shape interp.EntryShape) {
+func revoke(res object.Object[object.Refrence], g interp.Granted, root *engine.Node) {
+	verbs := verbsField(root, g.Kind)
+	if verbs == "" {
+		return // the vocabulary does not say which field holds them
+	}
 	block, err := res.Child(g.Kind).Object()
 	if err != nil {
 		return
@@ -97,13 +102,13 @@ func revoke(res object.Object[object.Refrence], g interp.Granted, shape interp.E
 	}
 
 	var left []string
-	for _, op := range ops(entry, shape) {
+	for _, op := range ops(entry, verbs) {
 		if op != g.Op {
 			left = append(left, op)
 		}
 	}
 	if len(left) > 0 {
-		entry.Set(shape.Ops, left)
+		entry.Set(verbs, left)
 		return
 	}
 
@@ -119,8 +124,8 @@ func revoke(res object.Object[object.Refrence], g interp.Granted, shape interp.E
 // ops reads an entry's verb list, under whatever this vocabulary calls it. It compiles as
 // []string; an object that has been through a wire format hands the same list back as
 // []any, and both are the entry.
-func ops(entry object.Object[object.Refrence], shape interp.EntryShape) []string {
-	switch v := any(entry.Get(shape.Ops)).(type) {
+func ops(entry object.Object[object.Refrence], verbs string) []string {
+	switch v := any(entry.Get(verbs)).(type) {
 	case []string:
 		return v
 	case []any:
@@ -145,4 +150,31 @@ func loweredOf(obj Object) interp.Lowered {
 		return interp.LoweredOf(nil)
 	}
 	return interp.LoweredOf(map[string]any{interp.LoweredKey: rec.Flat()})
+}
+
+// verbsField is the attribute an access entry to this kind keeps its verbs in, found on
+// the schema. The entry's group sits under whichever kind declares it, and every kind
+// that can be reached has one, so the first is as good as the last.
+func verbsField(root *engine.Node, target string) string {
+	var found string
+	var walk func(nodes []*engine.Node)
+	walk = func(nodes []*engine.Node) {
+		for _, g := range nodes {
+			if len(g.Children) == 0 || found != "" {
+				continue
+			}
+			iter := g.Children[0]
+			for _, child := range iter.Children {
+				if key, _ := child.Match.(string); key == target && len(child.Children) > 0 {
+					if verbs, _ := engine.AccessFields(child.Children[0]); verbs != "" {
+						found = verbs
+						return
+					}
+				}
+			}
+			walk(iter.Children)
+		}
+	}
+	walk(root.Children)
+	return found
 }

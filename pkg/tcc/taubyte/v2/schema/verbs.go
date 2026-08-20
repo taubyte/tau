@@ -90,7 +90,7 @@ func isDelivered(kind string) bool {
 // route knows about, with no path, no gateway policy and no name in front of it.
 //
 // Ops annotates a kind with its verb set.
-func Ops(verbs ...Verb) NodeOption { return GroupAnnotate("ops", Verbs(verbs)) }
+func Ops(verbs ...Verb) NodeOption { return engine.Ops(Verbs(verbs)) }
 
 // Verbs is a kind's verb set. It is a named type so the generic layer can ask it for the
 // names without knowing what a Verb is: a lowering declares the op it asks for, and
@@ -252,6 +252,11 @@ func AreVerbsOf(kind string) engine.Option {
 	return func(a *Attribute) {
 		verbsOfChecker(kind)(a)
 		engine.Annotate("enum", opNames(kind))(a)
+		// ...and say what this attribute IS, not only what may go in it. A lowering
+		// produces access entries, and writing one means finding the field that holds
+		// the verbs. Told the field's NAME it would know one vocabulary; told where to
+		// look for it, it knows none. IsNamespacePath already marks the other half.
+		engine.AreVerbs(kind)(a)
 	}
 }
 

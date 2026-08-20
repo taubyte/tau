@@ -109,7 +109,7 @@ func TestRenameById_Success(t *testing.T) {
 	assert.NilError(t, err)
 
 	// Rename by id
-	idStr, err := RenameById(sel, "newName")
+	idStr, err := RenameById(sel, "newName", "id", "name")
 	assert.NilError(t, err)
 	assert.Equal(t, idStr, "resource-id-123")
 
@@ -136,7 +136,7 @@ func TestRenameById_MissingId(t *testing.T) {
 	// No id field set
 
 	// Should return error
-	_, err := RenameById(sel, "name")
+	_, err := RenameById(sel, "name", "id", "name")
 	assert.ErrorContains(t, err, "fetching id failed")
 }
 
@@ -149,7 +149,7 @@ func TestRenameById_InvalidIdType(t *testing.T) {
 	assert.NilError(t, err)
 
 	// Should return error
-	_, err = RenameById(sel, "name")
+	_, err = RenameById(sel, "name", "id", "name")
 	assert.ErrorContains(t, err, "id is not a string")
 }
 
@@ -165,11 +165,11 @@ func TestRenameById_DuplicateName(t *testing.T) {
 	sel2.Set("id", "id-1")
 
 	// Rename first one
-	_, err := RenameById(sel1, "name1")
+	_, err := RenameById(sel1, "name1", "id", "name")
 	assert.NilError(t, err)
 
 	// Try to rename second one to same id - should fail
-	_, err = RenameById(sel2, "name2")
+	_, err = RenameById(sel2, "name2", "id", "name")
 	assert.ErrorContains(t, err, "renaming to id failed")
 }
 
@@ -182,7 +182,7 @@ func TestRenameById_CustomFieldName(t *testing.T) {
 	assert.NilError(t, err)
 
 	// Rename by id with custom name
-	idStr, err := RenameById(sel, "customName")
+	idStr, err := RenameById(sel, "customName", "id", "name")
 	assert.NilError(t, err)
 	assert.Equal(t, idStr, "custom-id-456")
 
@@ -242,7 +242,7 @@ func TestRenameByName_Success(t *testing.T) {
 	assert.NilError(t, err)
 
 	// Rename by name
-	nameStr, err := RenameByName(sel)
+	nameStr, err := RenameByName(sel, "id", "name")
 	assert.NilError(t, err)
 	assert.Equal(t, nameStr, "my-resource")
 
@@ -269,7 +269,7 @@ func TestRenameByName_MissingName(t *testing.T) {
 	// No name field set
 
 	// Should return error
-	_, err := RenameByName(sel)
+	_, err := RenameByName(sel, "id", "name")
 	assert.ErrorContains(t, err, "fetching name failed")
 }
 
@@ -282,7 +282,7 @@ func TestRenameByName_InvalidNameType(t *testing.T) {
 	assert.NilError(t, err)
 
 	// Should return error
-	_, err = RenameByName(sel)
+	_, err = RenameByName(sel, "id", "name")
 	assert.ErrorContains(t, err, "name is not a string")
 }
 
@@ -297,7 +297,7 @@ func TestRenameByName_EmptyKey(t *testing.T) {
 	assert.NilError(t, err)
 
 	// Should return error because key is empty
-	_, err = RenameByName(sel)
+	_, err = RenameByName(sel, "id", "name")
 	assert.ErrorContains(t, err, "current key is empty")
 }
 
@@ -313,10 +313,10 @@ func TestRenameByName_DuplicateName(t *testing.T) {
 	sel2.Set("name", "same-name")
 
 	// Rename first one
-	_, err := RenameByName(sel1)
+	_, err := RenameByName(sel1, "id", "name")
 	assert.NilError(t, err)
 
 	// Try to rename second one to same name - should fail
-	_, err = RenameByName(sel2)
+	_, err = RenameByName(sel2, "id", "name")
 	assert.ErrorContains(t, err, "renaming to name failed")
 }

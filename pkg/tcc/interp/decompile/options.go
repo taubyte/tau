@@ -2,7 +2,6 @@ package decompile
 
 import (
 	"github.com/spf13/afero"
-	"github.com/taubyte/tau/pkg/tcc/interp"
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
@@ -16,16 +15,6 @@ func WithLocal(path string) Option {
 func WithVirtual(fs afero.Fs, path string) Option {
 	return func(d *Decompiler) error {
 		d.seerOptions = append(d.seerOptions, yaseer.VirtualFS(fs, path))
-		return nil
-	}
-}
-
-// WithAccess tells the decompiler what this vocabulary calls the parts of an access
-// entry. Taking back an op a lowering added means knowing which field holds them, and
-// that name belongs to the vocabulary — the same shape the compiler is given.
-func WithAccess(a interp.EntryShape) Option {
-	return func(d *Decompiler) error {
-		d.access = a
 		return nil
 	}
 }

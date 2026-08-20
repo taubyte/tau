@@ -240,3 +240,22 @@ func IsNamespaceField(a *Attribute) bool {
 	b, _ := a.Meta["namespacePath"].(bool)
 	return b
 }
+
+// AccessFields is an access entry's two parts, found on the entry's own iterator: the
+// attribute that holds the verbs, and the one that says where to look for the target.
+// Either is empty when the schema does not mark it — and for anything that WRITES an
+// entry that is a refusal rather than a licence to guess a field name.
+func AccessFields(iter *Node) (verbs, namespace string) {
+	if iter == nil {
+		return "", ""
+	}
+	for _, a := range iter.Attributes {
+		if IsVerbsField(a) {
+			verbs = a.Name
+		}
+		if IsNamespaceField(a) {
+			namespace = a.Name
+		}
+	}
+	return verbs, namespace
+}

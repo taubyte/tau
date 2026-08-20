@@ -85,6 +85,7 @@ var (
 	Section          = engine.Section
 	ShowWhen         = engine.ShowWhen
 	Singular         = engine.Singular
+	Identity         = engine.Identity
 	Leaf             = engine.Leaf
 	Derived          = engine.Derived
 	Strict           = engine.Strict

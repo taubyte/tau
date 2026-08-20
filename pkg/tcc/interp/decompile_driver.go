@@ -59,16 +59,19 @@ func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o objec
 	//     the resource walks that follow can iterate apps by whatever key they now
 	//     carry (the walk is key-agnostic).
 	container := containerKey(d.root)
+	idField, nameField := engine.IdentityOf(d.root)
 	pipe := []transform.Transformer[object.Refrence]{
-		utils.Global(container, &decompileRefs{groups: d.root.Children}),
-		&decompileApps{container: container},
+		utils.Global(container, &decompileRefs{groups: d.root.Children, nameField: nameField}),
+		&decompileApps{container: container, idField: idField, nameField: nameField},
 	}
 	for _, key := range decompileOrder(d.root) {
 		g := findGroup(d.root, key)
 		if g == nil || len(g.Children) == 0 {
 			continue
 		}
-		pipe = append(pipe, utils.Global(container, &decompileResource{groupKey: key, iter: g.Children[0]}))
+		pipe = append(pipe, utils.Global(container, &decompileResource{
+			groupKey: key, iter: g.Children[0], idField: idField, nameField: nameField,
+		}))
 	}
 	return transform.Pipe(ct, o, pipe...)
 }
@@ -81,6 +84,10 @@ func (d *decompileDriver) Process(ct transform.Context[object.Refrence], o objec
 // decompile/pass2/common.go used.
 type decompileRefs struct {
 	groups []*engine.Node
+	// nameField is what this vocabulary calls the name of a resource, from the schema:
+	// inverting a reference means finding the resource an id belongs to and writing what
+	// it is CALLED, and the word for that is not this package's.
+	nameField string
 }
 
 func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
@@ -131,7 +138,7 @@ func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope obj
 			if m, ok := maps[target]; ok {
 				return m
 			}
-			m := buildIdToNameMap(ct, scope, target)
+			m := buildIdToNameMap(ct, scope, target, r.nameField)
 			maps[target] = m
 			return m
 		}
@@ -176,12 +183,12 @@ func (r *decompileRefs) Process(ct transform.Context[object.Refrence], scope obj
 // resource id in `group` to its authored name, checking the current scope first
 // and — when in an application scope (ctx path depth > 1) — falling back to the
 // project-root group for globals the app references (local names take precedence).
-func buildIdToNameMap(ct transform.Context[object.Refrence], o object.Object[object.Refrence], group string) map[string]string {
+func buildIdToNameMap(ct transform.Context[object.Refrence], o object.Object[object.Refrence], group, nameField string) map[string]string {
 	idToName := map[string]string{}
 
 	if groupObj, err := o.Child(group).Object(); err == nil {
 		for _, id := range groupObj.Children() {
-			name, err := groupObj.Child(id).GetString("name")
+			name, err := groupObj.Child(id).GetString(nameField)
 			if err != nil {
 				continue
 			}
@@ -197,7 +204,7 @@ func buildIdToNameMap(ct transform.Context[object.Refrence], o object.Object[obj
 					if _, exists := idToName[id]; exists {
 						continue
 					}
-					if name, err := rootGroupObj.Child(id).GetString("name"); err == nil {
+					if name, err := rootGroupObj.Child(id).GetString(nameField); err == nil {
 						idToName[id] = name
 					}
 				}
@@ -258,7 +265,10 @@ func invertRefAttr(sel object.Selector[object.Refrence], ra refAttr, getMap func
 // application's compiled id key back to its authored name (restoring the id field),
 // mirroring decompile/pass3/applications.go. It does NOT recurse — the per-resource
 // walks that follow handle each app's nested resources via utils.Global.
-type decompileApps struct{ container string }
+type decompileApps struct {
+	container          string
+	idField, nameField string
+}
 
 func (a *decompileApps) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
 	if a.container == "" {
@@ -280,8 +290,8 @@ func (a *decompileApps) Process(ct transform.Context[object.Refrence], o object.
 				return nil, fmt.Errorf("renaming inside %s failed with %w", id, err)
 			}
 		}
-		if _, err := utils.RenameByName(sel); err != nil {
-			return nil, fmt.Errorf("renaming application %s failed with %w", id, err)
+		if _, err := utils.RenameByName(sel, a.idField, a.nameField); err != nil {
+			return nil, fmt.Errorf("renaming scope %s failed with %w", id, err)
 		}
 	}
 	return o, nil
@@ -292,8 +302,9 @@ func (a *decompileApps) Process(ct transform.Context[object.Refrence], o object.
 // projections. Wrapped in utils.Global so it covers the project scope and every
 // application scope, exactly like the passes it replaces.
 type decompileResource struct {
-	groupKey string
-	iter     *engine.Node
+	groupKey           string
+	iter               *engine.Node
+	idField, nameField string
 }
 
 func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
@@ -323,7 +334,7 @@ func (ri *decompileResource) Process(ct transform.Context[object.Refrence], o ob
 				return nil, fmt.Errorf("%s %s: %w", ri.groupKey, key, err)
 			}
 		}
-		if err := applyInstanceInverse(sel, ri.iter); err != nil {
+		if err := applyInstanceInverse(sel, ri.iter, ri.idField, ri.nameField); err != nil {
 			return nil, fmt.Errorf("%s %s: %w", ri.groupKey, key, err)
 		}
 	}
@@ -378,7 +389,7 @@ func applyNestedInverse(inst object.Object[object.Refrence], groups []*engine.No
 // rename-back and bool op naturally does nothing, absorbing pass3's dead moves).
 // The stages touch disjoint keys, so this order (which differs from pass3's textual
 // order) yields the identical result.
-func applyInstanceInverse(sel object.Selector[object.Refrence], iter *engine.Node) error {
+func applyInstanceInverse(sel object.Selector[object.Refrence], iter *engine.Node, idField, nameField string) error {
 	attrs := iter.Attributes
 
 	// 1. DerivedBool: drop the synthesized bool (functions `secure`); the source
@@ -427,10 +438,10 @@ func applyInstanceInverse(sel object.Selector[object.Refrence], iter *engine.Nod
 		}
 	}
 
-	// 6. id->name key swap (inverse of RenameById): every keyed resource — i.e.
-	//    every DefineIter carrying an `id` attr — which is all nine here.
-	if hasAttr(iter, "id") {
-		if _, err := utils.RenameByName(sel); err != nil {
+	// 6. id->name key swap (inverse of RenameById): every keyed resource — i.e. every
+	//    DefineIter carrying the identity attribute the schema names.
+	if idField != "" && hasAttr(iter, idField) {
+		if _, err := utils.RenameByName(sel, idField, nameField); err != nil {
 			return fmt.Errorf("renaming by name failed with %w", err)
 		}
 	}

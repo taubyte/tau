@@ -130,14 +130,34 @@ func gone(t *testing.T, o Object, path ...string) {
 	assert.Assert(t, err != nil, "expected %v to be gone", path)
 }
 
-// testShape is what this test's vocabulary calls the parts of an access entry — the same
-// thing a real one states, said once here.
-var testShape = interp.EntryShape{Ops: "ops", Namespace: "namespace"}
+// testRoot is a schema that says what an access entry looks like, which is how the
+// revoking half finds the field to take an op out of: a `queue` group under a `function`,
+// whose entries carry a verb list marked with AreVerbs. A real vocabulary states the same
+// thing — this one is small enough to read.
+func testRoot() *engine.Node {
+	// one access group per kind something can reach, which is what a vocabulary generates
+	access := func(kind string) *engine.Node {
+		return engine.DefineGroup(kind, engine.DefineIter([]*engine.Attribute{
+			engine.StringSlice("ops", engine.AreVerbs(kind)),
+			engine.String("namespace"),
+		}))
+	}
+	return engine.Root(
+		[]*engine.Attribute{engine.String("id")},
+		engine.DefineGroup("function", engine.DefineIter(
+			[]*engine.Attribute{engine.String("id"), engine.String("name")},
+			engine.Nested(access("queue")),
+			engine.Nested(access("cache")),
+		)),
+		engine.DefineGroup("queue", engine.DefineIter([]*engine.Attribute{engine.String("id")})),
+		engine.DefineGroup("cache", engine.DefineIter([]*engine.Attribute{engine.String("id")})),
+	)
+}
 
 func run(t *testing.T, obj Object, keep bool) Object {
 	t.Helper()
 	ctx := transform.NewContext[object.Refrence](context.Background())
-	out, err := transform.Pipe(ctx, obj, unwrapEnvelope(), &authoredOnly{lowered: loweredOf(obj), shape: testShape, keep: keep})
+	out, err := transform.Pipe(ctx, obj, unwrapEnvelope(), &authoredOnly{lowered: loweredOf(obj), root: testRoot(), keep: keep})
 	assert.NilError(t, err)
 	return out
 }
@@ -160,7 +180,7 @@ func TestAuthoredOnly_DropsWhatNobodyWrote(t *testing.T) {
 	// An op that was handed over comes back off; one the author wrote beside it stays,
 	// so the entry survives.
 	reserve := at(t, out, "function", fnCheckout, "queue", "checkout_reserve")
-	assert.DeepEqual(t, ops(reserve, testShape), []string{"send"})
+	assert.DeepEqual(t, ops(reserve, "ops"), []string{"send"})
 
 	// An entry whose every op was handed over goes, and the block it was in stays because
 	// another entry is still in it.
@@ -189,7 +209,7 @@ func TestAuthoredOnly_WithGeneratedKeepsEverything(t *testing.T) {
 	at(t, out, "namespace", nsEu, "queue", qEu)
 
 	reserve := at(t, out, "function", fnCheckout, "queue", "checkout_reserve")
-	assert.DeepEqual(t, ops(reserve, testShape), []string{"receive", "send"})
+	assert.DeepEqual(t, ops(reserve, "ops"), []string{"receive", "send"})
 	at(t, out, "function", fnCheckout, "queue", "checkout_charge")
 	at(t, out, "function", fnAudit, "cache", "orders")
 	at(t, out, "namespace", nsEu, "function", fnEu, "queue", "eu_reserve")

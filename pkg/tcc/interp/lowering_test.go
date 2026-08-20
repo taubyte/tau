@@ -48,7 +48,7 @@ func pipelineSchema() (engine.Schema, *engine.Node) {
 				),
 			),
 		)),
-	).With(engine.Leaf("project"))
+	).With(engine.Leaf("project"), engine.Identity("id", "name"))
 	return engine.SchemaDefinition(root), root
 }
 
@@ -142,7 +142,7 @@ func TestCheckLowerings(t *testing.T) {
 				interp.Into("nonesuch", interp.Named("x")),
 				interp.Into("pipeline"),
 			))),
-	)
+	).With(engine.Identity("id", "name"))
 	problems := interp.CheckLowerings(bad)
 	assert.Equal(t, len(problems), 3, "got %v", problems)
 	assert.Equal(t, problems[0], "lowering into nonesuch, which is not a kind")
@@ -158,7 +158,7 @@ func TestNoLoweringDeclared(t *testing.T) {
 	root := engine.Root(
 		[]*engine.Attribute{engine.String("id")},
 		engine.DefineGroup("job", engine.DefineIter([]*engine.Attribute{engine.String("id")})),
-	)
+	).With(engine.Identity("id", "name"))
 	assert.Assert(t, !interp.UsesLowering(root))
 	assert.Equal(t, len(interp.LoweringPlan(root, map[string]any{})), 0)
 }
@@ -196,7 +196,7 @@ func TestCheckLoweringsRefusesAnUnbuildableResource(t *testing.T) {
 		}, engine.Resource("worker", "Worker", "Worker", "worker"))),
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{engine.String("id")},
 			interp.Lowers(interp.Into("worker", interp.Named("{name}-w"))))),
-	)
+	).With(engine.Identity("id", "name"))
 
 	problems := interp.CheckLowerings(root)
 	assert.Equal(t, len(problems), 1, "got %v", problems)
@@ -213,8 +213,8 @@ func TestCheckLoweringsRefusesAnUnbuildableResource(t *testing.T) {
 		}, engine.Resource("worker", "Worker", "Worker", "worker"))),
 		engine.DefineGroup("pipeline", engine.DefineIter([]*engine.Attribute{engine.String("id")},
 			interp.Lowers(interp.Into("worker", interp.Named("{name}-w"), interp.Sets("call", "run"))))),
-	)
-	assert.Equal(t, len(interp.CheckLowerings(ok)), 0)
+	).With(engine.Identity("id", "name"))
+	assert.Equal(t, len(interp.CheckLowerings(ok)), 0, "got %v", interp.CheckLowerings(ok))
 }
 
 // An edge may start somewhere other than the resource that carries it. Without that, a
@@ -257,7 +257,7 @@ func TestLoweringSaysWhoDeclaresTheAccess(t *testing.T) {
 				interp.Reaches("write", interp.From("job", "b")),
 			)),
 		)),
-	)
+	).With(engine.Identity("id", "name"))
 
 	plan := interp.LoweringPlan(root, map[string]any{
 		"pipeline": map[string]any{"x": map[string]any{"name": "x"}},
@@ -329,7 +329,7 @@ func TestCheckLoweringsRefusesAnInputThatDoesNotExist(t *testing.T) {
 				interp.Reaches("run", interp.To("job", "{each.next.nmae}")), // and another
 			)),
 		)),
-	)
+	).With(engine.Identity("id", "name"))
 
 	problems := interp.CheckLowerings(root)
 	assert.Equal(t, len(problems), 2, "got %v", problems)
@@ -382,7 +382,7 @@ func TestCheckLoweringsRefusesAnOpTheKindDoesNotHave(t *testing.T) {
 				interp.Reaches("runn", interp.From("job", "a")),
 			)),
 		)),
-	)
+	).With(engine.Identity("id", "name"))
 
 	problems := interp.CheckLowerings(root)
 	assert.Equal(t, len(problems), 1, "got %v", problems)

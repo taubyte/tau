@@ -304,6 +304,44 @@ func Singular(goName string) NodeOption {
 	return GroupAnnotate("singular", goName)
 }
 
+// Ops carries a kind's verb set — what something else may ask to do to it. What a verb IS
+// belongs to the vocabulary (an effect class, whether it is delivered, whether it mounts);
+// all the generic layer ever needs is the names, so that is all this asks for.
+//
+// It exists here rather than in a vocabulary because a lowering has to check the op it
+// produces against the kind that will carry it, and reading a key one vocabulary invented
+// is how the generic layer ends up knowing one.
+func Ops(v OpNamer) NodeOption { return GroupAnnotate("ops", v) }
+
+// OpNamer is a verb set asked for its names.
+type OpNamer interface{ Names() []string }
+
+// OpsOf reads a kind's verb set back off its iterator. Nil when nothing may reach it.
+func OpsOf(iter *Node) OpNamer {
+	if iter == nil {
+		return nil
+	}
+	v, _ := iter.Meta["ops"].(OpNamer)
+	return v
+}
+
+// AreVerbs marks the attribute of an access entry that holds the verbs, and says whose.
+// It is the other half of what IsNamespaceField already marks: between them a vocabulary
+// describes an access entry without anyone having to know what it called the fields.
+//
+// A lowering produces those entries and a decompile takes them back off. Told the field
+// NAMES, both would know one vocabulary; told where to look, they know none.
+func AreVerbs(ofKind string) Option { return Annotate("verbsOf", ofKind) }
+
+// IsVerbsField reports whether an attribute holds an access entry's verbs.
+func IsVerbsField(a *Attribute) bool {
+	if a == nil {
+		return false
+	}
+	_, ok := a.Meta["verbsOf"].(string)
+	return ok
+}
+
 // EnumBoolSpec is the compile/decompile contract for an EnumBool attribute.
 type EnumBoolSpec struct {
 	GoName      string    // bool struct-field name (network-access -> Local/Public)

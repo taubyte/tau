@@ -37,19 +37,21 @@ type granted struct {
 	name  string   // the target's name
 	op    string
 	where string // the scope field's value: written only when the target is elsewhere
-	from  string // the authored resource whose lowering added it
-	scope string // where the accessor lives, for finding its compiled id
+	// the fields THIS vocabulary writes an entry with, found on the schema
+	verbsField, whereField string
+	from                   string // the authored resource whose lowering added it
+	scope                  string // where the accessor lives, for finding its compiled id
 }
 
 // placements is everything a project's lowerings produce, in a stable order.
-func placements(root *engine.Node, obj map[string]any, layout Layout, shape EntryShape) ([]placement, []granted) {
+func placements(root *engine.Node, obj map[string]any, layout Layout) ([]placement, []granted) {
 	var docs []placement
 	var adds []granted
 
 	for _, d := range LoweringPlan(root, obj) {
 		docs = append(docs, placement{
 			at:   address(layout, d.Scope, d.Kind, d.Name),
-			tree: authored(root, d, shape),
+			tree: authored(root, d),
 			id:   d.ID, kind: d.Kind, name: d.Name, scope: d.Scope,
 			from: d.Source.ID, part: d.Source.Path, depth: len(d.Via),
 		})
@@ -69,10 +71,20 @@ func placements(root *engine.Node, obj map[string]any, layout Layout, shape Entr
 				target, kind = g.To.Name, g.To.Kind
 				at = within(d.Scope, g.To.Scope)
 			}
+			// HOW THIS VOCABULARY WRITES ONE, found on the schema: the entry sits in a
+			// group of the accessor's kind keyed by the target's, and its own attributes
+			// say which holds the verbs and which says where to look. A vocabulary that
+			// marks neither cannot have entries written for it, which is a refusal rather
+			// than a guess at a field name.
+			verbs, where := accessFields(root, g.From.Kind, kind)
+			if verbs == "" {
+				continue
+			}
 			add := granted{
 				at:   address(layout, scope, g.From.Kind, g.From.Name),
 				on:   End{Kind: g.From.Kind, Name: g.From.Name, Scope: scope},
 				kind: kind, name: target, op: g.Op, from: d.Source.ID, scope: scope,
+				verbsField: verbs, whereField: where,
 			}
 			// Only when the two are not in the same place, and then absolutely: a
 			// relative path would be read from the accessor's scope, which is not where
@@ -140,10 +152,11 @@ func fill(tmpl, kind, name string) string {
 // saying it searches the memory the same lowering generated lands ON it. Checking only
 // what was written silently deleted that, and the agent's memory became a resource
 // nothing reaches.
-func onlyOnWhatExists(flat map[string]any, docs []placement, adds []granted) []granted {
+func onlyOnWhatExists(root *engine.Node, flat map[string]any, docs []placement, adds []granted) []granted {
 	if inner, ok := flat["object"].(map[string]any); ok {
 		flat = inner
 	}
+	_, nameField := engine.IdentityOf(root)
 	exists := map[string]bool{}
 	var walk func(scope map[string]any, at string)
 	walk = func(scope map[string]any, at string) {
@@ -157,7 +170,7 @@ func onlyOnWhatExists(flat map[string]any, docs []placement, adds []granted) []g
 				if !ok {
 					continue
 				}
-				name, _ := res[engine.FieldName].(string)
+				name, _ := res[nameField].(string)
 				if name == "" {
 					continue
 				}

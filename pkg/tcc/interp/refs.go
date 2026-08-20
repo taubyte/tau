@@ -21,11 +21,15 @@ import (
 // key the store identically (app -> project -> root scope walk). Resolution runs
 // after the CompileDriver, so the index is complete before any ref is read.
 func ResolveRefs(root *engine.Node) transform.Transformer[object.Refrence] {
-	return utils.Global(containerKey(root), &resolveRefs{groups: root.Children})
+	_, nameField := engine.IdentityOf(root)
+	return utils.Global(containerKey(root), &resolveRefs{groups: root.Children, nameField: nameField})
 }
 
 type resolveRefs struct {
 	groups []*engine.Node
+	// what the schema calls a resource's name: a reference is resolved through the
+	// name->id index, and that index is keyed by it
+	nameField string
 }
 
 // refAttr is a ref-carrying attribute paired with the compiled wire key it lives
@@ -36,7 +40,7 @@ type refAttr struct {
 }
 
 func (r *resolveRefs) Process(ct transform.Context[object.Refrence], scope object.Object[object.Refrence]) (object.Object[object.Refrence], error) {
-	if err := resolveGroups(ct, scope, r.groups); err != nil {
+	if err := resolveGroups(ct, scope, r.groups, r.nameField); err != nil {
 		return nil, err
 	}
 	return scope, nil
@@ -46,7 +50,7 @@ func (r *resolveRefs) Process(ct transform.Context[object.Refrence], scope objec
 // then recurses into a nested resource's own groups with the SAME context — a nested
 // group is data inside the resource, not a scope, so a reference written there
 // resolves against the index of the scope the resource was authored in.
-func resolveGroups(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], groups []*engine.Node) error {
+func resolveGroups(ct transform.Context[object.Refrence], scope object.Object[object.Refrence], groups []*engine.Node, nameField string) error {
 	for _, g := range groups {
 		groupKey, _ := g.Match.(string)
 		if len(g.Children) == 0 {
@@ -69,7 +73,7 @@ func resolveGroups(ct transform.Context[object.Refrence], scope object.Object[ob
 		for _, instName := range groupObj.Children() {
 			sel := groupObj.Child(instName)
 			for _, ra := range refs {
-				if err := resolveRefAttr(ct, sel, ra); err != nil {
+				if err := resolveRefAttr(ct, sel, ra, nameField); err != nil {
 					return err
 				}
 			}
@@ -80,7 +84,7 @@ func resolveGroups(ct transform.Context[object.Refrence], scope object.Object[ob
 			if err != nil {
 				return fmt.Errorf("fetching %s/%s failed with %w", groupKey, instName, err)
 			}
-			if err := resolveGroups(ct, instObj, iter.Children); err != nil {
+			if err := resolveGroups(ct, instObj, iter.Children, nameField); err != nil {
 				return err
 			}
 		}
@@ -122,7 +126,7 @@ func collectRefAttrs(attrs []*engine.Attribute) []refAttr {
 //     without the prefix (e.g. ".") pass through untouched.
 //
 // A missing/nil value is a no-op (matching pass2's `if err == nil && v != nil`).
-func resolveRefAttr(ct transform.Context[object.Refrence], sel object.Selector[object.Refrence], ra refAttr) error {
+func resolveRefAttr(ct transform.Context[object.Refrence], sel object.Selector[object.Refrence], ra refAttr, nameField string) error {
 	val, err := sel.Get(ra.wireKey)
 	if err != nil || val == nil {
 		return nil
@@ -133,7 +137,7 @@ func resolveRefAttr(ct transform.Context[object.Refrence], sel object.Selector[o
 		if !ok {
 			return fmt.Errorf("%s is not a []string", ra.wireKey)
 		}
-		ids, err := utils.ResolveNamesToId(ct, ra.spec.Group, names)
+		ids, err := utils.ResolveNamesToId(ct, ra.spec.Group, names, nameField)
 		if err != nil {
 			return fmt.Errorf("resolving %s names to IDs failed with %w", ra.spec.Group, err)
 		}
@@ -148,7 +152,7 @@ func resolveRefAttr(ct transform.Context[object.Refrence], sel object.Selector[o
 		return nil
 	}
 	name := strings.TrimPrefix(s, ra.spec.Prefix)
-	ids, err := utils.ResolveNamesToId(ct, ra.spec.Group, []string{name})
+	ids, err := utils.ResolveNamesToId(ct, ra.spec.Group, []string{name}, nameField)
 	if err != nil {
 		return fmt.Errorf("resolving %s names to IDs failed with %w", ra.spec.Group, err)
 	}

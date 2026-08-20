@@ -51,14 +51,5 @@ func WithLayout(l Layout) Option {
 	}
 }
 
-// WithAccess tells the compiler how this vocabulary writes one resource's access to
-// another, which is what a lowering produces alongside the resources themselves.
-func WithAccess(a EntryShape) Option {
-	return func(c *Compiler) error {
-		c.access = a
-		return nil
-	}
-}
-
 // WithBranch pins the compile branch, which the IndexDriver bakes into index paths.
 func WithBranch(branch string) Option { return WithEnv("branch", branch) }
