@@ -127,6 +127,7 @@ func TestRequiredAttributeError_ReportsLocation(t *testing.T) {
 
 	node := &Node{
 		Group: true,
+		Leaf:  "config", // the document this group's fields live in, which the schema names
 		Attributes: []*Attribute{
 			{Name: "name", Type: TypeString},
 			{

@@ -589,7 +589,7 @@ func GenerateTS(rootNode *engine.Node) ([]byte, error) {
 			fmt.Sprintf("constructor(s: Session, name: string) {\n    super(s, [%q, name]);\n  }", container))
 	}
 	writeTSClass(&b, tsResource{spec: projectSpec, group: "", fields: projectFields},
-		fmt.Sprintf("constructor(s: Session) {\n    super(s, [%q]);\n  }", engine.NodeDefaultSeerLeaf))
+		fmt.Sprintf("constructor(s: Session) {\n    super(s, [%q]);\n  }", engine.LeafOf(rootNode)))
 
 	// Compiled resource shapes: the data types as decoded from the TNS object
 	// (what the console receives over the wire), keyed by the compiled JSON keys.

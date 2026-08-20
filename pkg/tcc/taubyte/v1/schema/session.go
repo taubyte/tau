@@ -38,7 +38,7 @@ type taubyteLayout struct{}
 func (taubyteLayout) ContainerDoc(group string) string {
 	return engine.ContainerDoc(GenerationRoot(), group)
 }
-func (taubyteLayout) RootDoc() string { return engine.NodeDefaultSeerLeaf }
+func (taubyteLayout) RootDoc() string { return engine.LeafOf(CompileRoot()) }
 
 // Kinds projects the DSL's groups into the session's kind vocabulary. The
 // singular is lowercased so a consumer routing on a kind string ("function")

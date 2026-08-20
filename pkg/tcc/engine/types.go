@@ -5,12 +5,6 @@ import (
 	yaseer "github.com/taubyte/tau/pkg/yaseer"
 )
 
-// NodeDefaultSeerLeaf is the document a container's instances keep their OWN fields in
-// when the DSL does not say. A group can name its own with Leaf(...), and should: a
-// package-level default is a layout rule that the schema — the thing whose whole job is
-// to describe the layout — does not state.
-var NodeDefaultSeerLeaf = "config"
-
 // IDENTITY: which attribute is a resource's id, and which field receives the name of the
 // document it was written in.
 //
@@ -97,7 +91,7 @@ type Node struct {
 
 	// Leaf is the document this group's instances keep their own fields in —
 	// `namespace` gives namespaces/shop/namespace.yaml. Empty means
-	// NodeDefaultSeerLeaf.
+	// the document a container instance keeps its own fields in; see Leaf.
 	//
 	// It exists because that name was a GLOBAL, and a global reserved the word
 	// everywhere: a nested group called `config` under a resource was silently

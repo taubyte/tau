@@ -18,6 +18,8 @@ func TestDump_WithRootConfigOnly(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
+			Leaf:  "config", // the schema says it now; the engine has no default
+
 			Match: nil, // Root node
 			Attributes: []*Attribute{
 				{Name: "id", Type: TypeString, Required: true},
@@ -59,6 +61,8 @@ func TestDump_WithNestedResources(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
+			Leaf:  "config", // the schema says it now; the engine has no default
+
 			Match: nil,
 			Attributes: []*Attribute{
 				{Name: "id", Type: TypeString, Required: true},
@@ -115,6 +119,8 @@ func TestDump_WithMissingRequiredAttribute(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
+			Leaf:  "config", // the schema says it now; the engine has no default
+
 			Match: nil,
 			Attributes: []*Attribute{
 				{Name: "id", Type: TypeString, Required: true},
@@ -140,6 +146,8 @@ func TestDump_WithValidationError(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
+			Leaf:  "config", // the schema says it now; the engine has no default
+
 			Match: nil,
 			Attributes: []*Attribute{
 				{
@@ -174,6 +182,8 @@ func TestDump_SkipsDefaultAttributeValues(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
+			Leaf:  "config", // the schema says it now; the engine has no default
+
 			Match: nil,
 			Attributes: []*Attribute{
 				{Name: "id", Type: TypeString, Required: true},
@@ -205,6 +215,8 @@ func TestDump_WithEmptyGroup(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
+			Leaf:  "config", // the schema says it now; the engine has no default
+
 			Match: nil,
 			Attributes: []*Attribute{
 				{Name: "id", Type: TypeString, Required: true},
@@ -250,6 +262,8 @@ func TestDump_WithCustomPath(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
+			Leaf:  "config", // the schema says it now; the engine has no default
+
 			Match: nil,
 			Attributes: []*Attribute{
 				{Name: "id", Type: TypeString, Required: true},
@@ -509,6 +523,8 @@ func TestDump_WithApplications(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
+			Leaf:  "config", // the schema says it now; the engine has no default
+
 			Match: nil,
 			Attributes: []*Attribute{
 				{Name: "id", Type: TypeString, Required: true},
@@ -521,6 +537,7 @@ func TestDump_WithApplications(t *testing.T) {
 						{
 							Group: true,
 							Match: StringMatchAll{}, // DefineIterGroup
+							Leaf:  "config",         // where an instance's own fields live
 							Attributes: []*Attribute{
 								{Name: "id", Type: TypeString, Required: true},
 								{Name: "name", Type: TypeString},
@@ -579,6 +596,8 @@ func TestDump_WithMultipleResources(t *testing.T) {
 	schema := &schemaDef{
 		root: &Node{
 			Group: true,
+			Leaf:  "config", // the schema says it now; the engine has no default
+
 			Match: nil,
 			Attributes: []*Attribute{
 				{Name: "id", Type: TypeString, Required: true},

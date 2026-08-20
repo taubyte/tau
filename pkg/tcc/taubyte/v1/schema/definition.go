@@ -249,7 +249,11 @@ var TaubyteRessources = []*Node{
 // package (it's a container identity, not a config-decode resource).
 func applicationsGroup() *Node {
 	return DefineGroup("applications",
-		DefineIterGroup(TaubyteAttributes(), TaubyteRessources...).With(Singular("Application"), GroupDoc("An application: a named grouping of resources with its own scope within the project."), Icon("apps")))
+		DefineIterGroup(TaubyteAttributes(), TaubyteRessources...).With(Singular("Application"),
+			// an application's own fields live in applications/<name>/config.yaml —
+			// stated here, because the layout is the schema's to describe
+			Leaf("config"),
+			GroupDoc("An application: a named grouping of resources with its own scope within the project."), Icon("apps")))
 }
 
 // cloudsGroup: clouds.<fqdn>.{account, plan} — DefineIter (not Group, so no
@@ -274,7 +278,7 @@ func cloudsGroup() *Node {
 var taubyteRoot = Root(
 	taubyteRootAttributes(),
 	append(append([]*Node{}, TaubyteRessources...), applicationsGroup(), cloudsGroup())...,
-).With(Singular("Project"),
+).With(Singular("Project"), Leaf("config"),
 	// A resource is stored under its `id` and called by the name of the document it was
 	// written in. Said here because the interpreter has to know it, and a layer that must
 	// not know a vocabulary cannot be the place it is written down.

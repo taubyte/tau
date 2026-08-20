@@ -194,12 +194,14 @@ func Leaf(name string) NodeOption {
 	return func(n *Node) { n.Leaf = name }
 }
 
-// LeafOf is the document a group's instances keep their own fields in, declared or
-// defaulted. Exported because a consumer mapping an address to a file — a session, a
+// LeafOf is the document a group's instances keep their own fields in, as the schema
+// declares it with Leaf(). Empty when it declares none — which used to fall back to
+// "config", a layout rule invented by the thing whose whole job is to carry the one the
+// schema states. Exported because a consumer mapping an address to a file — a session, a
 // CLI, a UI — must not re-derive the convention.
 func LeafOf(n *Node) string {
-	if n == nil || n.Leaf == "" {
-		return NodeDefaultSeerLeaf
+	if n == nil {
+		return ""
 	}
 	return n.Leaf
 }
