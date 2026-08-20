@@ -1667,7 +1667,7 @@ var secTransformers = Section("transformers", "Transformers", "Functions traffic
 //	    STRIPE_KEY:  { secret: stripe }
 //
 // NOT named `config`, which is the word everyone reaches for first. `config` is the
-// engine's own leaf name (NodeDefaultSeerLeaf): loadChildren skips a child key called
+// the leaf this vocabulary names: loadChildren skips a child key called
 // that, because it is where a CONTAINER keeps its own fields, so a nested group by that
 // name is read as nothing at all — silently, which is how this was found. `variables`
 // is also what v1 called them.

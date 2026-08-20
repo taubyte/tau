@@ -94,7 +94,7 @@ func TestLoad_WithGroupNode_StringMatcherChild(t *testing.T) {
 }
 
 func TestLoad_WithGroupNode_SkipsConfigLeaf(t *testing.T) {
-	// Use case: Testing load with group node that skips NodeDefaultSeerLeaf
+	// Use case: Testing load with a group node that skips its own leaf document
 	fs := afero.NewMemMapFs()
 	fs.MkdirAll("/test/config", 0755)
 	fs.MkdirAll("/test/child1", 0755)

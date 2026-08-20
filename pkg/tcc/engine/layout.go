@@ -2,7 +2,7 @@ package engine
 
 // Document layout introspection: where a DSL's resources keep their fields on
 // disk. The engine already encodes this in dump.go (a container's instances are
-// directories, each with a NodeDefaultSeerLeaf document; every other resource is
+// directories, each with the document its Leaf() names; every other resource is
 // one file). These read it back out so a caller — a session, a CLI, a UI — maps
 // a resource address to its document without re-deriving the convention.
 
